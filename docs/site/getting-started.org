@@ -1,6 +1,8 @@
 #+TITLE: Getting started
 
-This guide is about getting to a *useful* Org2 setup quickly: point the compiler at notes you already own, then start deriving agendas, graph views, editor features, and published artifacts from the same corpus.
+This guide is about getting to a *useful* Org2 setup quickly: point the compiler at notes you already own, then start deriving agendas, graph views, editor features, agent workflows, and published artifacts from the same corpus.
+
+The current end-to-end agent setup uses *OpenClaw*. The native lifecycle plugin feeds substantial OpenClaw work into Runs & Review, and the Mac chat connects directly to an OpenClaw Gateway. This reflects the first adapter that has been implemented, while the underlying CLI, run files, workflows, context interfaces, and MCP surface remain available to Codex, local models, scripts, and future agent integrations.
 
 * 1) Install Org2
 
@@ -66,6 +68,25 @@ open ~/Applications/Org2Workspace.app
 #+end_src
 
 See [[file:editors-macos.org][macOS Workspace]] for the current app surface.
+
+** Current agent setup: OpenClaw
+
+There are two complementary OpenClaw connections:
+
+1. The =org2-lifecycle= plugin records substantial main-agent turns, subagent executions, and cron executions as durable Org2 runs. Stable OpenClaw keys correlate retries and lifecycle events without turning ordinary conversation or personal TODOs into runs.
+2. The Mac app's *OpenClaw Chat* surface connects to the Gateway for selected-agent chat, streamed progress, tool activity, runtime slash commands, and stop control.
+
+From an Org2 checkout, install and inspect the lifecycle plugin with:
+
+#+begin_src sh
+npm run test:openclaw
+openclaw plugins install --link ./integrations/openclaw
+openclaw plugins inspect org2-lifecycle --runtime --json
+#+end_src
+
+In OpenClaw configuration, explicitly enable =org2-lifecycle=, allow its typed conversation hooks, and set =corpusDir= to the Org2 corpus you want represented in Runs & Review. Restart the Gateway after installing or changing plugin code. The plugin's [[https://github.com/aviaviavi/org2/tree/main/integrations/openclaw][integration README]] carries the source-local setup notes.
+
+To connect Mac chat, open *OpenClaw Chat → Configure*, enter the Gateway endpoint and token, select the agent, and save. A remote Gateway normally requires device pairing: use *Save & Request Pairing*, approve the displayed request on the Gateway host, and reconnect. The app can use the OpenAI-compatible endpoint as a reduced-observability fallback for ordinary chat, while Gateway-native commands and lifecycle features require the live protocol.
 
 ** iOS app
 
@@ -164,6 +185,7 @@ org2 publish docs-site --config org2.json
 - useful editor backend support
 - cited agent retrieval and a machine-readable installed capability manifest
 - local/remote data notebooks with explicit refresh and chart rendering
+- OpenClaw lifecycle capture into durable runs plus native Gateway chat in the Mac app
 
 ** Still evolving
 

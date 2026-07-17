@@ -18,9 +18,19 @@ const scenarios = [
     fileName: "macos-workspace-agenda.png",
   },
   {
+    mode: "approvals",
+    target: "publish the beacon launch brief",
+    fileName: "macos-workspace-runs-review.png",
+  },
+  {
     mode: "files",
     target: "notes/projects/beacon-launch",
     fileName: "macos-workspace-files.png",
+  },
+  {
+    mode: "files",
+    target: "views/launch-readiness-data",
+    fileName: "macos-workspace-data.png",
   },
   {
     mode: "openclaw",

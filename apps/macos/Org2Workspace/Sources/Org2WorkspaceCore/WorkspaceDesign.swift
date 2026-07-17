@@ -101,26 +101,86 @@ enum WorkspaceActivityIndicatorSize {
     }
   }
 
-  var controlSize: ControlSize {
+  var width: CGFloat {
     switch self {
-    case .mini: .mini
-    case .small: .small
-    case .regular: .regular
+    case .mini: 13
+    case .small: 19
+    case .regular: 38
     }
   }
 }
 
+enum WorkspaceActivityIndicatorStyle {
+  case signal
+  case typing
+  case scan
+}
+
 struct WorkspaceActivityIndicator: View {
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   var size: WorkspaceActivityIndicatorSize = .small
   var tint: Color = .accentColor
+  var style: WorkspaceActivityIndicatorStyle = .signal
 
   var body: some View {
-    ProgressView()
-      .progressViewStyle(.circular)
-      .controlSize(size.controlSize)
-      .tint(tint)
-      .frame(width: size.diameter, height: size.diameter)
+    TimelineView(.animation(minimumInterval: 1 / 30, paused: reduceMotion)) { context in
+      let phase = reduceMotion
+        ? 0.18
+        : context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.2) / 1.2
+
+      indicator(phase: phase)
+    }
+      .frame(width: size.width, height: size.diameter)
       .accessibilityLabel("Loading")
+  }
+
+  @ViewBuilder
+  private func indicator(phase: Double) -> some View {
+    switch style {
+    case .signal:
+      HStack(alignment: .center, spacing: max(1.5, size.diameter * 0.12)) {
+        ForEach(0..<3, id: \.self) { index in
+          Capsule()
+            .fill(tint.opacity(0.52 + Double(wave(phase, index: index)) * 0.48))
+            .frame(
+              width: max(2, size.diameter * 0.17),
+              height: max(3, size.diameter * (0.30 + wave(phase, index: index) * 0.58))
+            )
+        }
+      }
+    case .typing:
+      HStack(spacing: max(2, size.diameter * 0.18)) {
+        ForEach(0..<3, id: \.self) { index in
+          Circle()
+            .fill(tint.opacity(0.38 + Double(wave(phase, index: index)) * 0.62))
+            .frame(width: max(3, size.diameter * 0.25), height: max(3, size.diameter * 0.25))
+            .offset(y: -wave(phase, index: index) * size.diameter * 0.22)
+        }
+      }
+    case .scan:
+      GeometryReader { proxy in
+        let travel = max(0, proxy.size.width - proxy.size.height * 0.38)
+        Capsule()
+          .fill(tint.opacity(0.12))
+          .frame(height: max(2, proxy.size.height * 0.24))
+          .overlay(alignment: .leading) {
+            Capsule()
+              .fill(tint)
+              .frame(width: max(4, proxy.size.height * 0.38))
+              .offset(x: travel * CGFloat(pingPong(phase)))
+          }
+          .frame(maxHeight: .infinity, alignment: .center)
+      }
+    }
+  }
+
+  private func wave(_ phase: Double, index: Int) -> CGFloat {
+    let angle = (phase * 2 * Double.pi) - (Double(index) * 0.85)
+    return CGFloat((sin(angle) + 1) / 2)
+  }
+
+  private func pingPong(_ phase: Double) -> Double {
+    phase < 0.5 ? phase * 2 : (1 - phase) * 2
   }
 }
 
@@ -132,13 +192,48 @@ struct WorkspaceLoadingStateView: View {
   }
 
   var body: some View {
-    VStack(spacing: 10) {
-      WorkspaceActivityIndicator(size: .regular)
+    VStack(spacing: 12) {
+      WorkspaceShimmerPlaceholder()
       Text(title)
         .font(.callout.weight(.medium))
         .foregroundStyle(.secondary)
     }
     .padding(14)
+  }
+}
+
+private struct WorkspaceShimmerPlaceholder: View {
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  var body: some View {
+    TimelineView(.animation(minimumInterval: 1 / 30, paused: reduceMotion)) { context in
+      let phase = reduceMotion
+        ? 0.45
+        : context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.6) / 1.6
+
+      VStack(alignment: .leading, spacing: 7) {
+        shimmerLine(width: 112, phase: phase)
+        shimmerLine(width: 84, phase: phase)
+        shimmerLine(width: 98, phase: phase)
+      }
+    }
+    .accessibilityHidden(true)
+  }
+
+  private func shimmerLine(width: CGFloat, phase: Double) -> some View {
+    RoundedRectangle(cornerRadius: 3, style: .continuous)
+      .fill(Color.secondary.opacity(0.10))
+      .frame(width: width, height: 7)
+      .overlay(alignment: .leading) {
+        LinearGradient(
+          colors: [.clear, Color.accentColor.opacity(0.25), .clear],
+          startPoint: .leading,
+          endPoint: .trailing
+        )
+        .frame(width: 48)
+        .offset(x: (width + 48) * CGFloat(phase) - 48)
+      }
+      .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
   }
 }
 

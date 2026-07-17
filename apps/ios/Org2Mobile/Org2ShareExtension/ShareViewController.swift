@@ -216,7 +216,7 @@ private struct ShareCaptureView: View {
         if isLoading {
           Section {
             HStack(spacing: 10) {
-              ProgressView()
+              ShareActivityGlyph(style: .incoming, label: "Loading shared item")
               Text("Loading shared item")
             }
           }
@@ -265,7 +265,7 @@ private struct ShareCaptureView: View {
             onSave(title, bodyText, scheduledDate)
           } label: {
             if isSaving {
-              ProgressView()
+              ShareActivityGlyph(style: .saving, label: "Saving")
             } else {
               Text("Save")
             }
@@ -283,5 +283,51 @@ private struct ShareCaptureView: View {
   private var canSave: Bool {
     !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
       || !bodyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+  }
+}
+
+private enum ShareActivityStyle: Equatable {
+  case incoming
+  case saving
+}
+
+private struct ShareActivityGlyph: View {
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  let style: ShareActivityStyle
+  let label: String
+
+  var body: some View {
+    TimelineView(.animation(minimumInterval: 1 / 30, paused: reduceMotion)) { context in
+      let phase = reduceMotion
+        ? 0.2
+        : context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.2) / 1.2
+
+      if style == .incoming {
+        VStack(alignment: .leading, spacing: 2.5) {
+          ForEach(0..<3, id: \.self) { index in
+            Capsule()
+              .fill(Color.accentColor.opacity(0.28 + Double(wave(phase, index: index)) * 0.72))
+              .frame(width: CGFloat(16 - index * 3), height: 2.5)
+          }
+        }
+      } else {
+        HStack(spacing: 2.5) {
+          ForEach(0..<3, id: \.self) { index in
+            RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+              .fill(Color.accentColor.opacity(0.32 + Double(wave(phase, index: index)) * 0.68))
+              .frame(width: 3.5, height: 3.5)
+              .rotationEffect(.degrees(45))
+              .offset(y: -wave(phase, index: index) * 2.5)
+          }
+        }
+      }
+    }
+    .frame(width: 20, height: 16)
+    .accessibilityLabel(label)
+  }
+
+  private func wave(_ phase: Double, index: Int) -> CGFloat {
+    let angle = phase * 2 * Double.pi - Double(index) * 0.9
+    return CGFloat((sin(angle) + 1) / 2)
   }
 }

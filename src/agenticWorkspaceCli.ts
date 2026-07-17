@@ -21,6 +21,7 @@ import {
   saveAgentRun,
   transitionAgentRun,
   updateAgentRunAssignment,
+  updateAgentRunOutcome,
   updateAgentRunStep,
   validateAgentRun,
   type AgentRunStatus,
@@ -77,6 +78,9 @@ function optionalChoice<const Choices extends readonly string[]>(value: string |
 const HELP = `Agentic workspace commands:
   org2 run create --goal TEXT [--accept TEXT] [--risk CLASS] [--owner NAME] [--capability ID] [--dir CORPUS]
   org2 run list|show|validate|start|resume|retry|cancel|complete|fail|block|fork|normalize
+  org2 run block ID --reason "Specific clarification needed"
+  org2 run complete ID --summary "What happened" [--highlight TEXT] [--next-action TEXT]
+  org2 run outcome ID --summary "What happened" [--highlight TEXT] [--next-action TEXT]
   org2 run assign ID [--owner NAME] [--assignee NAME]
   org2 run comment ID --author NAME --body TEXT
   org2 run step ID STEP --status STATUS
@@ -116,8 +120,12 @@ async function runCommand(parsed: ParsedArgs): Promise<void> {
   const existing = loadAgentRun(corpus, id);
   let run = existing;
   const transitions: Record<string, AgentRunStatus> = { start: "running", resume: "running", retry: "queued", cancel: "canceled", complete: "completed", fail: "failed", block: "blocked" };
-  if (transitions[action]) run = transitionAgentRun(existing, transitions[action]!, { actor: flag(parsed, "actor"), reason: flag(parsed, "reason") });
+  if (transitions[action]) run = transitionAgentRun(existing, transitions[action]!, {
+    actor: flag(parsed, "actor"), reason: flag(parsed, "reason"), summary: flag(parsed, "summary"),
+    highlights: flags(parsed, "highlight"), nextActions: flags(parsed, "next-action"),
+  });
   else if (action === "assign") run = updateAgentRunAssignment(existing, { owner: flag(parsed, "owner"), assignee: flag(parsed, "assignee"), actor: flag(parsed, "actor") });
+  else if (action === "outcome") run = updateAgentRunOutcome(existing, { summary: required(flag(parsed, "summary"), "--summary is required"), highlights: flags(parsed, "highlight"), nextActions: flags(parsed, "next-action"), actor: flag(parsed, "actor") });
   else if (action === "comment") run = addAgentRunComment(existing, required(flag(parsed, "author"), "--author is required"), required(flag(parsed, "body"), "--body is required"));
   else if (action === "step") run = updateAgentRunStep(existing, required(parsed.positional[2], "step id is required"), choice(flag(parsed, "status"), AGENT_RUN_STEP_STATUSES, "step status"), { actor: flag(parsed, "actor"), detail: flag(parsed, "detail") });
   else if (action === "artifact") run = addAgentRunArtifact(existing, { path: required(flag(parsed, "path"), "--path is required"), role: choice(flag(parsed, "role", "draft"), AGENT_RUN_ARTIFACT_ROLES, "artifact role"), title: flag(parsed, "title"), mediaType: flag(parsed, "media-type"), sha256: flag(parsed, "sha256"), reviewStatus: optionalChoice(flag(parsed, "review-status"), AGENT_RUN_ARTIFACT_REVIEW_STATUSES, "artifact review status") }, flag(parsed, "actor"));

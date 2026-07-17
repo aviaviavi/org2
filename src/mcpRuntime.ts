@@ -126,7 +126,7 @@ async function handle(root: string, request: any): Promise<any> {
   }
   if (request.method === "tools/list") return result({ tools: [
     { name: "org2_run_create", description: "Create a durable Org2 agent run from a reusable workflow", inputSchema: { type: "object", required: ["workflow"], properties: { workflow: { type: "string" }, inputs: { type: "object" }, owner: { type: "string" } } } },
-    { name: "org2_run_transition", description: "Transition a durable Org2 run", inputSchema: { type: "object", required: ["run", "status"], properties: { run: { type: "string" }, status: { type: "string" }, actor: { type: "string" }, reason: { type: "string" } } } },
+    { name: "org2_run_transition", description: "Transition a durable Org2 run. Completion requires a concise, human-readable summary.", inputSchema: { type: "object", required: ["run", "status"], properties: { run: { type: "string" }, status: { type: "string" }, actor: { type: "string" }, reason: { type: "string" }, summary: { type: "string" }, highlights: { type: "array", items: { type: "string" } }, nextActions: { type: "array", items: { type: "string" } } } } },
     { name: "org2_run_list", description: "List durable Org2 runs and review state", inputSchema: { type: "object", properties: {} } },
   ] });
   if (request.method === "tools/call") {
@@ -139,8 +139,10 @@ async function handle(root: string, request: any): Promise<any> {
       return result({ content: [{ type: "text", text: JSON.stringify({ run, file }, null, 2) }] });
     }
     if (name === "org2_run_transition") {
-      const run = loadAgentRun(root, String(args.run));
-      transitionAgentRun(run, args.status, { actor: args.actor, reason: args.reason });
+      const run = transitionAgentRun(loadAgentRun(root, String(args.run)), args.status, {
+        actor: args.actor, reason: args.reason, summary: args.summary,
+        highlights: args.highlights, nextActions: args.nextActions,
+      });
       saveAgentRun(root, run);
       return result({ content: [{ type: "text", text: JSON.stringify(run, null, 2) }] });
     }

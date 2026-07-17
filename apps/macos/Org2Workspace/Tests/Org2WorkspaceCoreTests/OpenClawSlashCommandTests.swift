@@ -39,22 +39,106 @@ final class OpenClawSlashCommandTests: XCTestCase {
   }
 
   @MainActor
-  func testUnknownCommandStaysLocal() throws {
+  func testUnknownCommandPassesThroughToOpenClaw() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-slash-command-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: root) }
+    let recorder = SlashCommandRequestRecorder()
     let store = WorkspaceStore(
       cli: Org2CLI(repoRoot: try Org2CLI.defaultRepoRoot()),
       openClawTranscriptURL: root.appendingPathComponent("chat.json"),
-      openClawSendHandler: { _, _, _, _ in XCTFail("Unknown command reached the agent"); return "" }
+      openClawSendHandler: { messages, _, _, _ in await recorder.record(messages) }
     )
 
     store.submitOpenClawComposerInput(text: "/wat")
+    let deadline = Date().addingTimeInterval(3)
+    while store.openClawMessages.count < 2, Date() < deadline {
+      try await Task.sleep(for: .milliseconds(20))
+    }
 
-    XCTAssertEqual(store.openClawMessages.map(\.role), [.user, .system])
+    XCTAssertEqual(store.openClawMessages.map(\.role), [.user, .assistant])
     XCTAssertEqual(store.openClawMessages.first?.content, "/wat")
-    XCTAssertTrue(store.openClawMessages.last?.content.contains("Unknown command") == true)
+    XCTAssertEqual(store.openClawMessages.last?.content, "Done")
+    let requestMessages = await recorder.messages
+    XCTAssertEqual(requestMessages.first?.content, "/wat")
+  }
+
+  func testGatewayCatalogDecodesCommandsAliasesAndArguments() throws {
+    let data = Data(#"""
+    {
+      "commands": [
+        {
+          "name": "triage",
+          "textAliases": ["/triage", "/tr"],
+          "description": "Triage the current queue",
+          "category": "tools",
+          "source": "plugin",
+          "scope": "text",
+          "acceptsArgs": true,
+          "args": [
+            {"name": "scope", "description": "What to triage", "type": "string", "required": true},
+            {"name": "limit", "description": "Maximum count", "type": "number"}
+          ]
+        }
+      ]
+    }
+    """#.utf8)
+
+    let commands = try OpenClawGatewayCommandCatalog.decode(data)
+    XCTAssertEqual(commands.count, 1)
+    XCTAssertEqual(commands[0].name, "triage")
+    XCTAssertEqual(commands[0].aliases, ["tr"])
+    XCTAssertEqual(commands[0].arguments, "<scope> [limit]")
+    XCTAssertEqual(commands[0].origin, .openClaw)
+    XCTAssertEqual(
+      OpenClawSlashCommands.suggestions(for: "/tr", gatewayCommands: commands).map(\.name),
+      ["triage"]
+    )
+    guard case .command(let command, let arguments) = OpenClawSlashCommands.parse(
+      "/tr all",
+      gatewayCommands: commands
+    ) else {
+      return XCTFail("Expected the Gateway alias to parse")
+    }
+    XCTAssertEqual(command.name, "triage")
+    XCTAssertEqual(arguments, "all")
+  }
+
+  func testUnknownSlashCommandRequiresTheGatewayButEscapedSlashDoesNot() {
+    XCTAssertTrue(OpenClawSlashCommands.isGatewayCommand("/new-plugin-command", gatewayCommands: []))
+    XCTAssertFalse(OpenClawSlashCommands.isGatewayCommand("//new-plugin-command", gatewayCommands: []))
+    XCTAssertFalse(OpenClawSlashCommands.isGatewayCommand("/agenda", gatewayCommands: []))
+  }
+
+  func testGatewaySlashCommandSkipsWorkspaceContextEnvelope() {
+    let context = OpenClawWorkspaceContext(
+      localCorpusRoot: "/tmp/org2",
+      remoteCorpusRoot: "/workspace/org2",
+      selectedSurface: "OpenClaw Chat",
+      selectedLocation: nil,
+      selectedEntrySource: nil,
+      backlinks: nil,
+      agenda: nil,
+      searchQuery: "",
+      searchResults: []
+    )
+
+    XCTAssertEqual(
+      WorkspaceStore.openClawGatewayMessage(
+        userMessage: "/triage all",
+        workspaceContext: context,
+        isGatewayCommand: true
+      ),
+      "/triage all"
+    )
+    XCTAssertTrue(
+      WorkspaceStore.openClawGatewayMessage(
+        userMessage: "Summarize this",
+        workspaceContext: context,
+        isGatewayCommand: false
+      ).hasPrefix("<org2-workspace-context>")
+    )
   }
 
   @MainActor

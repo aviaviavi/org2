@@ -258,8 +258,10 @@ org2 run approval-request RUN_ID --title &quot;Release report&quot; \
   --action &quot;publish operating review&quot; --risk external-action --role owner --dir ~/notes
 org2 run approval-decide RUN_ID APPROVAL_ID --decision approved \
   --actor avi --role owner --receipt approval:local:123 --dir ~/notes
-org2 run complete RUN_ID --dir ~/notes</code></pre>
-<p>Other lifecycle operations include <code>resume</code>, <code>retry</code>, <code>block</code>, <code>fail</code>, <code>cancel</code>, <code>fork</code>, <code>assign</code>, <code>comment</code>, and <code>artifact</code>. <code>run normalize</code> converts legacy <code>AGENT_RUN_ID</code> headings into shared records while retaining a citation to their source location.</p>
+org2 run complete RUN_ID \
+  --summary &quot;Prepared the cited operating review and validated its PDF export.&quot; \
+  --highlight &quot;All claims retain citations&quot; --next-action &quot;Share after owner review&quot; --dir ~/notes</code></pre>
+<p>Other lifecycle operations include <code>resume</code>, <code>retry</code>, <code>block</code>, <code>fail</code>, <code>cancel</code>, <code>fork</code>, <code>assign</code>, <code>comment</code>, <code>outcome</code>, and <code>artifact</code>. Completing a run requires <code>--summary</code> with a human-readable result; repeat <code>--highlight</code> and <code>--next-action</code> to populate the reviewer-facing outcome. <code>run outcome</code> may record or revise that outcome before completion. Blocking requires <code>--reason</code> with the specific clarification or next action; Org2 rejects an unactionable reasonless blocked state. <code>run normalize</code> converts legacy <code>AGENT_RUN_ID</code> headings into shared records while retaining a citation to their source location.</p>
 <p>An approval may name both a required role and a specific reviewer. <code>approval-decide</code> refuses a mismatched <code>--role</code> or <code>--actor</code>, and the decision event preserves the asserted role plus any release receipt. This is a durable workflow boundary; operating-system or organizational identity enforcement can sit above it.</p>
 <p><code>org2 review list</code> returns <code>org2:review-queue:v1</code> JSON combining pending run approvals, review-required artifacts, blocked clarification requests, and warning/failed validation. It complements the existing <code>org2 approvals</code> headline workflow; the Mac <strong>Runs &amp; Review</strong> surface presents both.</p>
 </section>

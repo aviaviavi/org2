@@ -54,6 +54,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <h1 class="org2-document-title">Features</h1>
 </header>
 <p>Org2 is a local-first context compiler for plain-text workspaces. It turns notes, events, files, conversations, data records, and agent work into structured semantics, then derives views, checks, editor behavior, Workspace surfaces, and publishable artifacts from that shared model.</p>
+<p>Together, those pieces form an early open-source workspace for AI-assisted work: people can move from a meeting or note to a cited agent run, inspect its outputs and validation, approve consequential actions, and keep the durable result in ordinary files. OpenClaw is the first native end-to-end agent integration; the run, workflow, context, CLI, and MCP layers are designed for additional runtimes.</p>
 <section class="org2-headline level-1">
 <h1 id="compiler-workflow">Compiler workflow</h1>
 <p>The central loop is:</p>
@@ -85,6 +86,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <li><p>Durable agent runs with a validated state machine, plans, assignments, budgets, citations, artifacts, approvals, validation, comments, retries, cancellation, forking, and legacy task/session normalization</p></li>
 <li><p>Reusable, versioned workflow packages with parameters, capability and risk declarations, validation, approval boundaries, schedules, file-change/capture/meeting triggers, packaging metadata, and a built-in meeting-to-controlled-execution recipe</p></li>
 <li><p>A unified CLI review queue plus the Mac <strong>Runs &amp; Review</strong> surface for active, completed, blocked, failed, and approval-needed delegated work</p></li>
+<li><p>A native <code>org2-lifecycle</code> OpenClaw plugin that correlates substantial main-agent turns, subagents, and cron executions with durable Run Center records</p></li>
 <li><p>Artifact dependency/freshness graphs, rebuild plans, outcome evaluation and sanitized replay fixtures, capability-based hosted/local runtime selection, and MCP server/client snapshot boundaries</p></li>
 </ul>
 </section>
@@ -166,7 +168,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <p>A few concrete ways Org2 fits into a real workflow:</p>
 <ul>
 <li><p><strong>Daily planning</strong>: keep TODOs, scheduled dates, deadlines, priorities, effort, and tags in plain files; derive agenda views in the CLI, VS Code, or the agenda TUI.</p></li>
-<li><p><strong>Mac workspace</strong>: open a corpus in the native macOS app, review agenda items, quick-open files, edit rendered blocks, record/import meetings, and hand selected context to OpenClaw without moving the source of truth out of plain files.</p></li>
+<li><p><strong>Mac workspace</strong>: open a corpus in the native macOS app, review agent runs and approvals, explore interactive data views, plan from the agenda, edit source, record or import meetings, and hand selected context to OpenClaw.</p></li>
 <li><p><strong>Meeting pipeline</strong>: store transcripts as raw evidence, curate summaries/TODOs/Linear candidates into notes, then run backlinking and lint to keep the result connected and auditable.</p></li>
 <li><p><strong>Research corpus</strong>: capture source material, assign IDs, strengthen weak references into links, query with file/line citations, and publish selected pages.</p></li>
 <li><p><strong>Automation boundary</strong>: let scripts and agents read compiled corpus artifacts from stable outputs, while generated outputs remain reviewable under <code>views/</code> or <code>compiled/</code>.</p></li>
@@ -179,13 +181,13 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <li><p>corpus picker and file scanner,</p></li>
 <li><p>guided first-run choices for opening an existing plain-text corpus or creating a safe starter corpus in an empty folder,</p></li>
 <li><p>agenda surface with filtering, modes, keyboard navigation, and task/planning mutations,</p></li>
-<li><p>Runs &amp; Review surface for durable run progress, evidence, artifacts, validation, handoffs, retry/cancel/resume actions, approval decisions, and Save as Workflow,</p></li>
-<li><p>quick-open and daily-note navigation,</p></li>
+<li><p>outcome-first Runs &amp; Review surface for durable run results, useful outputs, next actions, approvals, and clarifications, using the standard workspace detail pane rather than a nested third column; runs and approvals refresh silently once per minute while the app is active and immediately when it returns to the foreground, repeated failures collapse to the latest execution in Needs attention while All preserves the durable history, dismissed failures remain recorded as cancelled, plans, citations, routine validation, and machine metadata remain available as collapsed technical detail, completed one-off runs can be converted into reusable workflows with an explicit confirmation, and existing workflow runs show their provenance instead of offering a misleading duplicate action,</p></li>
+<li><p>quick-open, personal per-corpus pinned files, and daily-note navigation,</p></li>
 <li><p>search and backlinks-backed detail navigation,</p></li>
 <li><p>ID-backed knowledge-node creation from Search,</p></li>
 <li><p>rendered document view with structured block editors,</p></li>
 <li><p>meeting recording/import with local-first transcription artifacts,</p></li>
-<li><p>OpenClaw chat with selected workspace context plus discoverable slash commands for navigation, search, related notes, spellcheck, lint, document export, configured publishing, briefs, and summaries,</p></li>
+<li><p>OpenClaw chat with selected workspace context, compact persisted progress feeds that group repetitive tool activity, and a merged slash-command menu: local navigation/compiler commands and runtime commands discovered from the selected OpenClaw agent through <code>commands.list</code>,</p></li>
 <li><p>GPG-backed org-crypt configuration and encrypt/decrypt actions.</p></li>
 <li><p>explicit refresh of data notebooks, Keychain-backed Metabase credentials, materialized tables, and interactive chart presentation without document-supplied JavaScript.</p></li>
 </ul>

@@ -649,6 +649,94 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(settings.bearerToken, "secret")
   }
 
+  func testOpenClawGatewayExtractsVisibleTextWithoutLeakingThinkingBlocks() {
+    let message: [String: Any] = [
+      "role": "assistant",
+      "content": [
+        ["type": "thinking", "thinking": "provider-exposed thought"],
+        ["type": "text", "text": "Visible answer"],
+        ["type": "text", "text": "with another block"]
+      ]
+    ]
+
+    XCTAssertEqual(
+      OpenClawGatewayClient.messageText(message, includeThinking: false),
+      "Visible answer\nwith another block"
+    )
+    XCTAssertEqual(
+      OpenClawGatewayClient.messageText(message, includeThinking: true),
+      "provider-exposed thought\nVisible answer\nwith another block"
+    )
+  }
+
+  func testOpenClawGatewayPreservesPairingRequestFromSocketClose() {
+    let error = OpenClawGatewayClient.gatewayError(
+      fromCloseReason: "pairing required: device is not approved yet (requestId: req-123)",
+      deviceID: "abcdef0123456789"
+    )
+
+    XCTAssertEqual(
+      error.localizedDescription,
+      "pairing required: device is not approved yet (requestId: req-123) "
+        + "Approve Org2 Workspace request req-123 on the Gateway (device abcdef012345), "
+        + "then click Save & Request Pairing again."
+    )
+    XCTAssertTrue(error.permitsHTTPFallback)
+  }
+
+  func testOpenClawGatewayExplainsImmediateHandshakeClose() {
+    let error = OpenClawGatewayClient.gatewayHandshakeClosedError(
+      deviceID: "abcdef0123456789"
+    )
+
+    XCTAssertEqual(
+      error.localizedDescription,
+      "OpenClaw closed the signed device handshake before macOS delivered its final reason. "
+        + "Approve the pending Org2 Workspace request for device abcdef012345 on the Gateway, "
+        + "then click Save & Request Pairing again."
+    )
+    XCTAssertTrue(error.permitsHTTPFallback)
+  }
+
+  func testOpenClawSessionKeyIsScopedToSelectedAgent() {
+    XCTAssertEqual(
+      WorkspaceStore.agentScopedOpenClawSessionKey(
+        "org2-workspace:3ADAB8C8-D926-4E9D-913F-040D9215DD44",
+        agentID: "openclaw/org2"
+      ),
+      "agent:org2:org2-workspace:3ADAB8C8-D926-4E9D-913F-040D9215DD44"
+    )
+    XCTAssertEqual(
+      WorkspaceStore.agentScopedOpenClawSessionKey(
+        "agent:main:org2-workspace:existing",
+        agentID: "org2"
+      ),
+      "agent:org2:org2-workspace:existing"
+    )
+    XCTAssertEqual(
+      WorkspaceStore.agentScopedOpenClawSessionKey(
+        "agent:org2:org2-workspace:existing",
+        agentID: "openclaw/org2"
+      ),
+      "agent:org2:org2-workspace:existing"
+    )
+  }
+
+  func testOpenClawDeviceIdentityStorageIsIsolatedByBundle() {
+    XCTAssertEqual(
+      OpenClawGatewayIdentityStorage.account(bundleIdentifier: "org.org2.workspace"),
+      "gatewayDevicePrivateKey.org.org2.workspace"
+    )
+    XCTAssertEqual(
+      OpenClawGatewayIdentityStorage.account(bundleIdentifier: "org.org2.workspace.codex"),
+      "gatewayDevicePrivateKey.org.org2.workspace.codex"
+    )
+    XCTAssertNotEqual(
+      OpenClawGatewayIdentityStorage.account(bundleIdentifier: "org.org2.workspace"),
+      OpenClawGatewayIdentityStorage.account(bundleIdentifier: "org.org2.workspace.codex")
+    )
+  }
+
   func testOpenClawGatewaySettingsNormalizeBearerTokenInputs() throws {
     let missingConfig = URL(fileURLWithPath: "/tmp/missing-clawdbot-\(UUID().uuidString).json")
     let userSettings = OpenClawGatewaySettings.resolve(
@@ -2582,6 +2670,29 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(OpenClawComposerKeyCommand.isNewlineCommand(keyCode: 76, modifiers: [.command]))
     XCTAssertFalse(OpenClawComposerKeyCommand.isNewlineCommand(keyCode: 36, modifiers: []))
     XCTAssertFalse(OpenClawComposerKeyCommand.isNewlineCommand(keyCode: 36, modifiers: [.command, .shift]))
+  }
+
+  func testOpenClawComposerSuggestionKeyboardCommands() {
+    XCTAssertEqual(OpenClawComposerKeyCommand.suggestionCommand(keyCode: 48, modifiers: []), .complete)
+    XCTAssertEqual(OpenClawComposerKeyCommand.suggestionCommand(keyCode: 125, modifiers: []), .move(1))
+    XCTAssertEqual(OpenClawComposerKeyCommand.suggestionCommand(keyCode: 126, modifiers: []), .move(-1))
+    XCTAssertNil(OpenClawComposerKeyCommand.suggestionCommand(keyCode: 48, modifiers: [.command]))
+    XCTAssertNil(OpenClawComposerKeyCommand.suggestionCommand(keyCode: 125, modifiers: [.shift]))
+    XCTAssertNil(OpenClawComposerKeyCommand.suggestionCommand(keyCode: 49, modifiers: []))
+  }
+
+  func testOpenClawSlashCommandSelectionWrapsAndClamps() {
+    let suggestions = OpenClawSlashCommands.suggestions(for: "/")
+    XCTAssertGreaterThan(suggestions.count, 2)
+    XCTAssertEqual(OpenClawSlashCommandSelection.selectedCommand(in: suggestions, index: 0), suggestions[0])
+    XCTAssertEqual(OpenClawSlashCommandSelection.selectedCommand(in: suggestions, index: 100), suggestions.last)
+    XCTAssertNil(OpenClawSlashCommandSelection.selectedCommand(in: [], index: 0))
+
+    XCTAssertEqual(OpenClawSlashCommandSelection.movedIndex(0, by: 1, count: 3), 1)
+    XCTAssertEqual(OpenClawSlashCommandSelection.movedIndex(2, by: 1, count: 3), 0)
+    XCTAssertEqual(OpenClawSlashCommandSelection.movedIndex(0, by: -1, count: 3), 2)
+    XCTAssertEqual(OpenClawSlashCommandSelection.movedIndex(4, by: 1, count: 3), 2)
+    XCTAssertEqual(OpenClawSlashCommandSelection.movedIndex(4, by: 1, count: 0), 0)
   }
 
   func testOpenClawComposerDraftSyncMergesExternalDraftChangesWithoutDroppingLocalTyping() {
@@ -10426,6 +10537,15 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(updated.contains(":REJECTION_REASON: Not the right reply needs a rewrite"))
   }
 
+  func testApprovalRejectionReasonRequiresNonWhitespaceText() {
+    XCTAssertNil(WorkspaceStore.normalizedApprovalRejectionReason(""))
+    XCTAssertNil(WorkspaceStore.normalizedApprovalRejectionReason(" \n\t "))
+    XCTAssertEqual(
+      WorkspaceStore.normalizedApprovalRejectionReason("  Needs a rewrite\n"),
+      "Needs a rewrite"
+    )
+  }
+
   @MainActor
   func testRejectApprovalItemUsesStableIDWhenLinePointsAtParent() async throws {
     let root = FileManager.default.temporaryDirectory
@@ -11211,6 +11331,7 @@ final class Org2ModelsTests: XCTestCase {
     store.beginEditingSelectedEntry()
     XCTAssertFalse(store.canSaveActiveEdit)
     store.editableEntryText = store.editableEntryText.replacingOccurrences(of: "Body", with: "Updated body")
+    store.noteSourceEditorLocalTextChanged(store.editableEntryText)
     XCTAssertTrue(store.canSaveActiveEdit)
     await store.saveActiveEdit()
 
@@ -12374,6 +12495,32 @@ final class Org2ModelsTests: XCTestCase {
     }
 
     XCTAssertFalse(store.selectedEntryHTML?.contains("Original summary") == true)
+  }
+
+  @MainActor
+  func testWorkspaceRefreshIncludesDurableAgentRuns() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-refresh-agent-runs-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let cli = Org2CLI(repoRoot: try Org2CLI.defaultRepoRoot())
+    _ = try await cli.run([
+      "run", "create",
+      "--id", "global-refresh-run",
+      "--goal", "Verify the global refresh contract",
+      "--dir", root.path,
+      "--json"
+    ])
+
+    let store = WorkspaceStore(cli: cli)
+    store.setCorpusRoot(root, persistsDefault: false)
+    XCTAssertTrue(store.agentRuns.isEmpty)
+
+    await store.refreshWorkspace()
+
+    XCTAssertEqual(store.agentRuns.map(\.id), ["global-refresh-run"])
+    XCTAssertFalse(store.isRefreshingWorkspace)
   }
 
   @MainActor

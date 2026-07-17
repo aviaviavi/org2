@@ -352,8 +352,7 @@ private struct ApprovalRow: View {
 
       if isApproving {
         HStack(spacing: 6) {
-          ProgressView()
-            .controlSize(.small)
+          MobileActivityIndicator(style: .approval, tint: .green, label: "Approving")
           Text("Approving...")
         }
         .font(.caption.weight(.semibold))
@@ -430,8 +429,7 @@ private struct ApprovalDetailView: View {
           } label: {
             if isApproving {
               HStack(spacing: 8) {
-                ProgressView()
-                  .controlSize(.small)
+                MobileActivityIndicator(style: .approval, tint: .white, label: "Approving")
                 Text("Approving...")
               }
               .frame(maxWidth: .infinity)
@@ -651,8 +649,7 @@ private struct NewNoteView: View {
           if let status = store.statusMessage {
             HStack(spacing: 6) {
               if store.isPreparingCorpus || store.isLoading {
-                ProgressView()
-                  .controlSize(.small)
+                MobileActivityIndicator(style: .sync, label: "Updating corpus")
               }
               Text(status)
                 .font(.caption)
@@ -825,8 +822,7 @@ private struct RefreshButton: View {
       Task { await store.refresh() }
     } label: {
       if store.isPreparingCorpus || store.isLoading {
-        ProgressView()
-          .controlSize(.small)
+        MobileActivityIndicator(style: .sync, label: "Refreshing")
       } else {
         Image(systemName: "arrow.clockwise")
       }
@@ -837,13 +833,96 @@ private struct RefreshButton: View {
 
 private struct LoadingCorpusView: View {
   var body: some View {
-    VStack(spacing: 10) {
-      ProgressView()
+    VStack(spacing: 12) {
+      MobileShimmerLines()
       Text("Loading corpus")
         .font(.callout)
         .foregroundStyle(.secondary)
     }
     .padding()
+  }
+}
+
+private enum MobileActivityStyle: Equatable {
+  case sync
+  case approval
+}
+
+private struct MobileActivityIndicator: View {
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  let style: MobileActivityStyle
+  var tint: Color = .accentColor
+  var label = "Loading"
+
+  var body: some View {
+    TimelineView(.animation(minimumInterval: 1 / 30, paused: reduceMotion)) { context in
+      let phase = reduceMotion
+        ? 0.2
+        : context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.15) / 1.15
+
+      HStack(alignment: .center, spacing: style == .approval ? 2.5 : 2) {
+        ForEach(0..<3, id: \.self) { index in
+          let value = wave(phase, index: index)
+          activityMark(value: value)
+          .frame(
+            width: style == .approval ? 3.5 : 2.5,
+            height: style == .approval ? 3.5 : 4 + value * 8
+          )
+          .offset(y: style == .approval ? -value * 2.5 : 0)
+        }
+      }
+    }
+    .frame(width: 18, height: 14)
+    .accessibilityLabel(label)
+  }
+
+  private func wave(_ phase: Double, index: Int) -> CGFloat {
+    let angle = phase * 2 * Double.pi - Double(index) * 0.9
+    return CGFloat((sin(angle) + 1) / 2)
+  }
+
+  @ViewBuilder
+  private func activityMark(value: CGFloat) -> some View {
+    if style == .approval {
+      Circle().fill(tint.opacity(0.35 + Double(value) * 0.65))
+    } else {
+      Capsule().fill(tint.opacity(0.35 + Double(value) * 0.65))
+    }
+  }
+}
+
+private struct MobileShimmerLines: View {
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  var body: some View {
+    TimelineView(.animation(minimumInterval: 1 / 30, paused: reduceMotion)) { context in
+      let phase = reduceMotion
+        ? 0.45
+        : context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.55) / 1.55
+
+      VStack(alignment: .leading, spacing: 7) {
+        line(width: 118, phase: phase)
+        line(width: 88, phase: phase)
+        line(width: 104, phase: phase)
+      }
+    }
+    .accessibilityHidden(true)
+  }
+
+  private func line(width: CGFloat, phase: Double) -> some View {
+    RoundedRectangle(cornerRadius: 4, style: .continuous)
+      .fill(Color.secondary.opacity(0.12))
+      .frame(width: width, height: 8)
+      .overlay(alignment: .leading) {
+        LinearGradient(
+          colors: [.clear, Color.accentColor.opacity(0.28), .clear],
+          startPoint: .leading,
+          endPoint: .trailing
+        )
+        .frame(width: 50)
+        .offset(x: (width + 50) * CGFloat(phase) - 50)
+      }
+      .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
   }
 }
 

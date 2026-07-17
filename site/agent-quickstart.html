@@ -56,6 +56,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <p class="org2-document-subtitle" role="doc-subtitle">Discover and use Org2 safely in a few commands</p>
 </header>
 <p>This page is the shortest path for Codex, OpenClaw, local models, scripts, and other agents to understand an Org2 installation. Org2 is a local-first knowledge compiler: ordinary <code>.org2</code> and <code>.org</code> files are canonical, while indexes, agendas, graph data, context packets, reports, apps, and published pages are derived from the shared compiler/runtime.</p>
+<p>OpenClaw currently has the deepest native integration. The repository's <code>org2-lifecycle</code> plugin maps substantial OpenClaw turns, subagents, and cron executions into durable runs; the Mac app also speaks the OpenClaw Gateway protocol. Other agents can use the same cited retrieval, run/workflow files, CLI JSON, and MCP interfaces without adopting OpenClaw.</p>
 <section class="org2-headline level-1">
 <h1 id="first-minute">First minute</h1>
 <p>Ask the installed CLI what it can do instead of relying on model memory:</p>
@@ -88,7 +89,7 @@ org2 agent bundle --query &quot;billing migration&quot; --scope project:billing 
 <section class="org2-headline level-1">
 <h1 id="common-workflows">Common workflows</h1>
 <ul>
-<li><p><strong>Delegate durable work</strong>: <code>run create/list/show/start/resume/cancel/fork</code> keeps goals, cited context, plans, assignments, artifacts, approvals, validation, and event history in <code>.org2/runs/*.org2</code>.</p></li>
+<li><p><strong>Delegate durable work</strong>: <code>run create/list/show/start/resume/cancel/fork</code> keeps goals, cited context, plans, assignments, artifacts, approvals, validation, and event history in <code>.org2/runs/*.org2</code>. If work cannot continue, <code>run block ID --reason &quot;Specific question or next action&quot;</code> records an actionable clarification; a generic reasonless blocked state is rejected.</p></li>
 <li><p><strong>Teach and replay a process</strong>: <code>workflow save/run/triggers/package</code> converts a completed run into a versioned recipe with inputs, capabilities, outputs, checks, and approval boundaries.</p></li>
 <li><p><strong>Review and evaluate</strong>: <code>review list/show</code> unifies pending run approvals, review-required artifacts, clarifications, and failed checks; <code>eval run/fixture</code> checks observable outcomes and creates sanitized regression fixtures.</p></li>
 <li><p><strong>Use portable tools and models</strong>: <code>runtime select</code> resolves capability/privacy policies, <code>mcp serve</code> exposes corpus resources and run tools, and <code>mcp snapshot</code> preserves external results with provenance.</p></li>
@@ -104,6 +105,10 @@ org2 agent bundle --query &quot;billing migration&quot; --scope project:billing 
 <p>See <a href="tooling-reference.html">Tooling reference</a> for commands, <a href="language-reference.html">Language reference</a> for syntax, <a href="corpus-flow.html">Corpus flow</a> for artifact zones and trust boundaries, and <a href="features.html">Features</a> for how the pieces fit together.</p>
 </section>
 <section class="org2-headline level-1">
+<h1 id="native-openclaw-lifecycle-bridge">Native OpenClaw lifecycle bridge</h1>
+<p>Install the checked-out integration with <code>openclaw plugins install --link ./integrations/openclaw</code>. The <code>org2-lifecycle</code> plugin must be enabled, permitted to use its typed conversation hooks, and configured with the target <code>corpusDir</code>. Verify the live Gateway surface with <code>openclaw plugins inspect org2-lifecycle --runtime --json</code> after restarting the Gateway. Ordinary conversation and personal TODOs stay out of Run Center; substantial main-agent work, subagents, and cron executions receive correlated durable run records.</p>
+</section>
+<section class="org2-headline level-1">
 <h1 id="durable-delegation-example">Durable delegation example</h1>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 run create --goal &quot;Prepare a cited launch briefing&quot; \
   --accept &quot;A reviewed briefing and PDF exist&quot; \
@@ -113,9 +118,11 @@ org2 run start RUN_ID --dir ~/notes
 org2 run artifact RUN_ID --path views/launch-brief.org2 --role view \
   --review-status review-required --dir ~/notes
 org2 review list --status pending --dir ~/notes --json
-org2 run complete RUN_ID --dir ~/notes
+org2 run complete RUN_ID \
+  --summary &quot;Prepared the cited launch briefing and reviewed PDF; no follow-up is required.&quot; \
+  --highlight &quot;Launch claims retain source citations&quot; --dir ~/notes
 org2 workflow save RUN_ID --id launch-briefing --dir ~/notes</code></pre>
-<p>The durable record is ordinary Org2 text under <code>.org2/runs/</code>. Its human-readable sections and versioned JSON machine-state block describe the same run. Workflow packages use the same pattern under <code>.org2/workflows/</code>. Apps and agents may index these files, but they are not allowed to replace them with private state.</p>
+<p>The durable record is ordinary Org2 text under <code>.org2/runs/</code>. Its human-readable sections and versioned JSON machine-state block describe the same run. Completion requires a concise <code>--summary</code> written for the person reviewing the result; repeat <code>--highlight</code> and <code>--next-action</code> when those details matter. Workflow packages use the same pattern under <code>.org2/workflows/</code>. Apps and agents may index these files, but they are not allowed to replace them with private state.</p>
 <p>Install and execute the built-in flagship recipe with:</p>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 workflow install-builtin meeting-to-controlled-execution --dir ~/notes
 org2 workflow run meeting-to-controlled-execution \
@@ -131,7 +138,7 @@ org2 plan set --file projects.org2 --line 42 --kind scheduled --date 2026-07-20 
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 context &quot;launch risks&quot; --dir ~/notes --recursive --format json &gt; compiled/launch-context.json
 org2 lint --dir ~/notes --recursive --format json</code></pre>
 <p>Agents embedded in the macOS Workspace should still use shared CLI/parser semantics for IDs, links, source ranges, agenda behavior, data queries, and context. App presentation state is not the language implementation.</p>
-<p>The Mac chat's user-facing slash commands follow that rule: local commands such as <code>/search</code>, <code>/related</code>, <code>/lint</code>, <code>/spellcheck</code>, <code>/export</code>, and <code>/publish</code> call shared compiler/runtime behavior, while <code>/brief</code> and <code>/summarize</code> hand the selected source context to the configured agent. The app does not expose a separate <code>/context</code> command; source selection and cited context assembly remain internal agent plumbing.</p>
+<p>The Mac chat's user-facing slash commands follow that rule: local commands such as <code>/search</code>, <code>/related</code>, <code>/lint</code>, <code>/spellcheck</code>, <code>/export</code>, and <code>/publish</code> call shared compiler/runtime behavior, while <code>/brief</code> and <code>/summarize</code> hand the selected source context to the configured agent. With a live OpenClaw Gateway, the app also discovers the selected agent's runtime command inventory through <code>commands.list</code> and forwards those invocations unchanged to <code>chat.send</code>. Gateway commands are not routed through HTTP compatibility. The app does not expose a separate <code>/context</code> command; source selection and cited context assembly remain internal agent plumbing.</p>
 <p>For a completely new local workspace, the Mac app can initialize an empty folder with a minimal <code>org2.json</code>, inbox, welcome note, and <code>notes/</code>, <code>daily/</code>, <code>views/</code>, and <code>compiled/</code> zones. Those generated starter files are ordinary corpus text and should be treated like any other user-owned source.</p>
 </section>
 </main>

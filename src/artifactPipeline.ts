@@ -119,12 +119,14 @@ export const MEETING_TO_CONTROLLED_EXECUTION_WORKFLOW = {
   version: "1.0.0",
   title: "Meeting to controlled execution",
   description: "Turn a provenance-preserving meeting capture into cited decisions, reviewable tasks, refreshed data, finished artifacts, and approval-gated publication.",
+  instructions: "Process {{meeting}} into a cited meeting brief with decisions, reviewable tasks, and portable outputs under {{output}}.",
   riskClass: "external-action",
   capabilities: ["agent-context", "meeting-ingest", "data-query", "chart-render", "publish", "approval"],
   inputs: [
     { id: "meeting", description: "Meeting transcript or capture reference", required: true },
     { id: "output", description: "Reviewable output directory", required: false, default: "views/meeting-execution" },
   ],
+  contextRules: ["{{meeting}}"],
   steps: [
     { id: "preserve", kind: "compiler", title: "Preserve transcript provenance" },
     { id: "extract", kind: "agent", title: "Extract cited summary, decisions, questions, and proposed tasks" },

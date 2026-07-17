@@ -10,6 +10,79 @@ public struct AgentRunListPayload: Decodable, Sendable {
   }
 }
 
+enum AgentRunScope: String, CaseIterable, Identifiable {
+  case active = "Active"
+  case attention = "Needs attention"
+  case completed = "Completed"
+  case all = "All"
+
+  var id: String { rawValue }
+
+  func entries(in runs: [AgentRunItem]) -> [AgentRunScopeEntry] {
+    switch self {
+    case .attention:
+      return Self.attentionEntries(in: runs)
+    case .active, .completed, .all:
+      return runs.filter(includes).map { AgentRunScopeEntry(run: $0) }
+    }
+  }
+
+  func count(in runs: [AgentRunItem]) -> Int {
+    entries(in: runs).count
+  }
+
+  private func includes(_ run: AgentRunItem) -> Bool {
+    switch self {
+    case .active: ["queued", "running"].contains(run.status)
+    case .attention: run.needsAttention
+    case .completed: run.isFinished
+    case .all: true
+    }
+  }
+
+  private static func attentionEntries(in runs: [AgentRunItem]) -> [AgentRunScopeEntry] {
+    let orderedRuns = runs.sorted {
+      $0.updatedAt == $1.updatedAt ? $0.id < $1.id : $0.updatedAt > $1.updatedAt
+    }
+    var latestRunIDBySeries: [String: AgentRunItem.ID] = [:]
+    var failureCountBySeries: [String: Int] = [:]
+
+    for run in orderedRuns {
+      let key = run.failureSeriesKey
+      if latestRunIDBySeries[key] == nil {
+        latestRunIDBySeries[key] = run.id
+      }
+      if run.status == "failed" {
+        failureCountBySeries[key, default: 0] += 1
+      }
+    }
+
+    return orderedRuns.compactMap { run in
+      if run.status == "failed" {
+        let key = run.failureSeriesKey
+        guard latestRunIDBySeries[key] == run.id else { return nil }
+        return AgentRunScopeEntry(
+          run: run,
+          representedFailureCount: failureCountBySeries[key, default: 1]
+        )
+      }
+      return run.needsAttention ? AgentRunScopeEntry(run: run) : nil
+    }
+  }
+}
+
+struct AgentRunScopeEntry: Identifiable, Equatable {
+  let run: AgentRunItem
+  let representedFailureCount: Int
+
+  init(run: AgentRunItem, representedFailureCount: Int = 0) {
+    self.run = run
+    self.representedFailureCount = representedFailureCount
+  }
+
+  var id: AgentRunItem.ID { run.id }
+}
+
 public struct AgentRunItem: Identifiable, Decodable, Hashable, Sendable {
   public let id: String
   public let goal: String
@@ -31,6 +104,7 @@ public struct AgentRunItem: Identifiable, Decodable, Hashable, Sendable {
   public let validations: [AgentRunValidationItem]
   public let comments: [AgentRunCommentItem]
   public let events: [AgentRunEventItem]
+  public let outcome: AgentRunOutcomeItem?
   public let createdAt: String
   public let updatedAt: String
   public let startedAt: String?
@@ -39,9 +113,153 @@ public struct AgentRunItem: Identifiable, Decodable, Hashable, Sendable {
   public let failure: String?
 
   public var pendingApprovalCount: Int { approvals.filter { $0.status == "pending" }.count }
-  public var completedStepCount: Int { plan.filter { $0.status == "completed" || $0.status == "skipped" }.count }
-  public var needsAttention: Bool { pendingApprovalCount > 0 || status == "blocked" || status == "failed" || status == "waiting-approval" }
-  public var progressText: String { plan.isEmpty ? "No plan" : "\(completedStepCount)/\(plan.count) steps" }
+  public var completedStepCount: Int { plan.filter { $0.status == "completed" }.count }
+  public var skippedStepCount: Int { plan.filter { $0.status == "skipped" }.count }
+  public var latestValidations: [AgentRunValidationItem] {
+    var seen = Set<String>()
+    return validations.reversed().filter { seen.insert($0.name.lowercased()).inserted }.reversed()
+  }
+  public var attentionValidations: [AgentRunValidationItem] {
+    latestValidations.filter { $0.status == "failed" || $0.status == "warning" }
+  }
+  public var isFinished: Bool {
+    status == "completed" || status == "canceled"
+  }
+  public var needsAttention: Bool {
+    guard status != "canceled" else { return false }
+    return pendingApprovalCount > 0
+      || status == "blocked"
+      || status == "failed"
+      || status == "waiting-approval"
+      || !attentionValidations.isEmpty
+      || artifacts.contains { $0.reviewStatus == "review-required" }
+  }
+  public var progressText: String {
+    guard !plan.isEmpty else { return "No plan" }
+    if skippedStepCount > 0 {
+      return "\(completedStepCount) completed · \(skippedStepCount) skipped"
+    }
+    return "\(completedStepCount)/\(plan.count) completed"
+  }
+  public var workflowDisplayName: String? { workflowId.map(Self.humanizedLabel) }
+  fileprivate var failureSeriesKey: String {
+    let normalizedGoal = goal
+      .lowercased()
+      .split(whereSeparator: \.isWhitespace)
+      .joined(separator: " ")
+    return [workflowId ?? "", normalizedGoal, assignee ?? owner ?? ""]
+      .joined(separator: "\u{1f}")
+  }
+  public var humanOutcomeSummary: String {
+    if let summary = outcome?.summary.trimmingCharacters(in: .whitespacesAndNewlines), !summary.isEmpty {
+      return summary
+    }
+    if status == "completed" {
+      let outputNames = artifacts.map(\.displayTitle)
+      let outputSummary: String
+      switch outputNames.count {
+      case 0: outputSummary = "The run finished without recording a human-readable outcome."
+      case 1: outputSummary = "Produced \(outputNames[0])."
+      case 2: outputSummary = "Produced \(outputNames[0]) and \(outputNames[1])."
+      default: outputSummary = "Produced \(outputNames.dropLast().joined(separator: ", ")), and \(outputNames.last!)."
+      }
+      guard !plan.isEmpty else { return outputSummary }
+      let stepSummary = skippedStepCount > 0
+        ? "Completed \(completedStepCount) steps; \(skippedStepCount) optional steps were skipped."
+        : "Completed \(completedStepCount) of \(plan.count) steps."
+      return "\(outputSummary) \(stepSummary)"
+    }
+    return goal
+  }
+  public var humanNextAction: String? {
+    if let actions = outcome?.nextActions, !actions.isEmpty { return nil }
+    if status == "completed" && !needsAttention { return "No action required" }
+    return nil
+  }
+  public var clarificationPrompt: String? {
+    guard status == "blocked",
+          let prompt = blockedReason?.trimmingCharacters(in: .whitespacesAndNewlines),
+          !prompt.isEmpty,
+          prompt.localizedCaseInsensitiveCompare("Blocked pending clarification") != .orderedSame
+    else { return nil }
+    return prompt
+  }
+
+  public static func humanizedLabel(_ rawValue: String) -> String {
+    rawValue
+      .replacingOccurrences(of: "-", with: " ")
+      .replacingOccurrences(of: "_", with: " ")
+      .split(separator: " ")
+      .map { $0.prefix(1).uppercased() + $0.dropFirst() }
+      .joined(separator: " ")
+  }
+}
+
+public struct AgentRunOutcomeItem: Decodable, Hashable, Sendable {
+  public let summary: String
+  public let highlights: [String]
+  public let nextActions: [String]
+}
+
+enum AgentRunTimestampPresentation {
+  static func date(from rawValue: String) -> Date? {
+    let fractionalFormatter = ISO8601DateFormatter()
+    fractionalFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    if let date = fractionalFormatter.date(from: rawValue) { return date }
+
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime]
+    return formatter.date(from: rawValue)
+  }
+
+  static func displayText(
+    for rawValue: String,
+    now: Date = Date(),
+    calendar: Calendar = .current,
+    locale: Locale = .current,
+    timeZone: TimeZone = .current
+  ) -> String {
+    guard let date = date(from: rawValue) else { return rawValue }
+    var localCalendar = calendar
+    localCalendar.timeZone = timeZone
+
+    let timeFormatter = DateFormatter()
+    timeFormatter.locale = locale
+    timeFormatter.timeZone = timeZone
+    timeFormatter.dateStyle = .none
+    timeFormatter.timeStyle = .short
+    let time = timeFormatter.string(from: date)
+
+    if localCalendar.isDate(date, inSameDayAs: now) {
+      return "today at \(time)"
+    }
+    if let yesterday = localCalendar.date(byAdding: .day, value: -1, to: now),
+       localCalendar.isDate(date, inSameDayAs: yesterday) {
+      return "yesterday at \(time)"
+    }
+
+    let formatter = DateFormatter()
+    formatter.locale = locale
+    formatter.timeZone = timeZone
+    formatter.dateStyle = .medium
+    formatter.timeStyle = .short
+    return formatter.string(from: date)
+  }
+
+  static func detailText(
+    for rawValue: String,
+    locale: Locale = .current,
+    timeZone: TimeZone = .current
+  ) -> String {
+    guard let date = date(from: rawValue) else { return rawValue }
+    let formatter = DateFormatter()
+    formatter.locale = locale
+    formatter.timeZone = timeZone
+    formatter.dateStyle = .full
+    formatter.timeStyle = .medium
+    let zone = timeZone.abbreviation(for: date).map { " \($0)" } ?? ""
+    return formatter.string(from: date) + zone
+  }
 }
 
 public struct AgentRunContextItem: Decodable, Hashable, Sendable {
@@ -69,6 +287,21 @@ public struct AgentRunArtifactItem: Identifiable, Decodable, Hashable, Sendable 
   public let sha256: String?
   public let reviewStatus: String?
   public let createdAt: String
+
+  public var displayTitle: String {
+    if let title = title?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty, title != path {
+      return title
+    }
+    let filename = URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent
+    var label = AgentRunItem.humanizedLabel(filename)
+    if URL(fileURLWithPath: path).pathExtension.lowercased() == "pdf",
+       !label.localizedCaseInsensitiveContains("pdf") {
+      label += " PDF"
+    }
+    return label.isEmpty ? path : label
+  }
+
+  public var roleDisplayText: String { AgentRunItem.humanizedLabel(role) }
 }
 
 public struct AgentRunApprovalItem: Identifiable, Decodable, Hashable, Sendable {
@@ -92,6 +325,8 @@ public struct AgentRunValidationItem: Identifiable, Decodable, Hashable, Sendabl
   public let status: String
   public let checkedAt: String
   public let detail: String?
+
+  public var displayName: String { AgentRunItem.humanizedLabel(name) }
 }
 
 public struct AgentRunCommentItem: Identifiable, Decodable, Hashable, Sendable {
@@ -961,6 +1196,7 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
   public let attachments: [OpenClawChatAttachment]
   public let createdAt: Date
   public let changeSummary: OpenClawCorpusChangeSummary?
+  public let responseTrace: OpenClawResponseTrace?
   public let sendFailure: String?
   public let deliveryStatus: DeliveryStatus
 
@@ -971,6 +1207,7 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
     attachments: [OpenClawChatAttachment] = [],
     createdAt: Date = Date(),
     changeSummary: OpenClawCorpusChangeSummary? = nil,
+    responseTrace: OpenClawResponseTrace? = nil,
     sendFailure: String? = nil,
     deliveryStatus: DeliveryStatus = .sent
   ) {
@@ -980,6 +1217,7 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
     self.attachments = attachments
     self.createdAt = createdAt
     self.changeSummary = changeSummary
+    self.responseTrace = responseTrace
     self.sendFailure = sendFailure
     self.deliveryStatus = role == .user ? deliveryStatus : .sent
   }
@@ -991,6 +1229,7 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
     case attachments
     case createdAt
     case changeSummary
+    case responseTrace
     case sendFailure
     case deliveryStatus
   }
@@ -1003,6 +1242,7 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
     attachments = try container.decodeIfPresent([OpenClawChatAttachment].self, forKey: .attachments) ?? []
     createdAt = try container.decode(Date.self, forKey: .createdAt)
     changeSummary = try container.decodeIfPresent(OpenClawCorpusChangeSummary.self, forKey: .changeSummary)
+    responseTrace = try container.decodeIfPresent(OpenClawResponseTrace.self, forKey: .responseTrace)
     sendFailure = try container.decodeIfPresent(String.self, forKey: .sendFailure)
     deliveryStatus = role == .user
       ? (try container.decodeIfPresent(DeliveryStatus.self, forKey: .deliveryStatus) ?? (sendFailure == nil ? .sent : .failed))
@@ -1017,6 +1257,7 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
       attachments: attachments,
       createdAt: createdAt,
       changeSummary: changeSummary,
+      responseTrace: responseTrace,
       sendFailure: nextSendFailure,
       deliveryStatus: nextSendFailure == nil ? .sent : .failed
     )
@@ -1033,9 +1274,24 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
       attachments: attachments,
       createdAt: createdAt,
       changeSummary: changeSummary,
+      responseTrace: responseTrace,
       sendFailure: nextSendFailure,
       deliveryStatus: nextDeliveryStatus
     )
+  }
+}
+
+public struct OpenClawResponseTrace: Hashable, Codable, Sendable {
+  public let reasoning: String
+  public let activities: [OpenClawRunActivity]
+
+  public init(reasoning: String = "", activities: [OpenClawRunActivity] = []) {
+    self.reasoning = reasoning
+    self.activities = activities
+  }
+
+  public var isEmpty: Bool {
+    reasoning.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && activities.isEmpty
   }
 }
 
@@ -1165,6 +1421,7 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
 
   public func replacingOpenClawChatMetadata(
     title nextTitle: String? = nil,
+    sessionKey nextSessionKey: String? = nil,
     isPinned nextIsPinned: Bool? = nil,
     isArchived nextIsArchived: Bool? = nil,
     unreadMessageCount nextUnreadMessageCount: Int? = nil
@@ -1174,7 +1431,7 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
       title: nextTitle ?? title,
       createdAt: createdAt,
       updatedAt: updatedAt,
-      sessionKey: sessionKey,
+      sessionKey: nextSessionKey ?? sessionKey,
       messages: messages,
       isPinned: nextIsPinned ?? isPinned,
       isArchived: nextIsArchived ?? isArchived,

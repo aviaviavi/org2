@@ -110,6 +110,7 @@ private struct PendingFileUndoSnapshot {
 
 private struct WorkspaceNavigationSnapshot: Hashable {
   let location: WorkspaceLocation?
+  let agentRunDetailID: AgentRunItem.ID?
   let selectedSurface: WorkspaceSurface
   let selectedEntrySourceMode: EntrySourceMode
   let expandedWorkspaceSurface: WorkspaceSurface?
@@ -522,6 +523,14 @@ private struct ApprovalRejectionChoice {
   let reason: String
 }
 
+private enum ApprovalRejectionError: LocalizedError {
+  case reasonRequired
+
+  var errorDescription: String? {
+    "Enter a reason before rejecting this approval."
+  }
+}
+
 private enum ApprovalActionKind {
   case approve
   case reject
@@ -568,6 +577,7 @@ public struct WorkspaceRuntimeIdentity: Equatable, Sendable {
 public final class WorkspaceStore: ObservableObject {
   nonisolated public static let meetingCaptureSourceSummary = "Captures microphone and system/call audio. System audio uses macOS ScreenCaptureKit permission; Org2 records audio only."
   nonisolated public static let defaultAgentHandoffAssignee = "OpenClaw"
+  nonisolated public static let runReviewAutoRefreshIntervalNanoseconds: UInt64 = 60_000_000_000
 
   @Published public var selectedSurface: WorkspaceSurface = .home {
     didSet {
@@ -624,7 +634,9 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var isLoadingApprovals = false
   @Published public private(set) var agentRuns: [AgentRunItem] = []
   @Published public var selectedAgentRunID: AgentRunItem.ID?
+  @Published public private(set) var presentedAgentRunID: AgentRunItem.ID?
   @Published public private(set) var isLoadingAgentRuns = false
+  @Published public private(set) var isRefreshingWorkspace = false
   @Published public private(set) var mutatingAgentRunIDs: Set<AgentRunItem.ID> = []
   @Published public private(set) var approvingApprovalItemIDs: Set<ApprovalItem.ID> = []
   @Published public private(set) var rejectingApprovalItemIDs: Set<ApprovalItem.ID> = []
@@ -634,6 +646,7 @@ public final class WorkspaceStore: ObservableObject {
       scheduleQuickOpenSearch(debounce: false)
     }
   }
+  @Published public private(set) var pinnedFileRelativePaths: [String] = []
   @Published public private(set) var orgRoamLinkResolver = OrgRoamLinkResolver.empty
   @Published public var selectedCorpusFileID: String?
   @Published public var corpusFileFilter = ""
@@ -727,6 +740,8 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var openClawPendingAttachments: [OpenClawChatAttachment] = []
   @Published public var openClawAgentID = "main"
   @Published public var openClawEndpointText = ""
+  @Published public private(set) var openClawGatewayCommands: [OpenClawSlashCommand] = []
+  @Published public private(set) var isRefreshingOpenClawCommands = false
   @Published public var agentHandoffAssignee = WorkspaceStore.defaultAgentHandoffAssignee
   @Published public var personalAssigneeNamesText = ""
   @Published public var openClawRemoteCorpusPath = ""
@@ -763,6 +778,12 @@ public final class WorkspaceStore: ObservableObject {
   @Published public private(set) var openClawQueuedMessageCount = 0
   @Published public private(set) var openClawSendingThreadIDs: Set<UUID> = []
   @Published public var openClawRequestStartedAt: Date?
+  @Published private var openClawGatewayStateByThreadID: [UUID: OpenClawGatewayConnectionState] = [:]
+  @Published private var openClawGatewayDetailByThreadID: [UUID: String] = [:]
+  @Published private var openClawActiveRunIDByThreadID: [UUID: String] = [:]
+  @Published private var openClawStreamingReplyByThreadID: [UUID: String] = [:]
+  @Published private var openClawReasoningByThreadID: [UUID: String] = [:]
+  @Published private var openClawRunActivitiesByThreadID: [UUID: [OpenClawRunActivity]] = [:]
   @Published public var isOpenClawAssistantPresented = false
   public private(set) var openClawChatScrollPosition: Double?
   public private(set) var openClawAssistantChatScrollPosition: Double?
@@ -890,6 +911,7 @@ public final class WorkspaceStore: ObservableObject {
   private let openClawVoiceRecorder = MeetingAudioRecorder()
   private let meetingSystemAudioRecorder = MeetingSystemAudioRecorder()
   private let corpusKey = "Org2Workspace.corpusRoot"
+  private let pinnedFilesByCorpusKey = "Org2Workspace.pinnedFilePathsByCorpus.v1"
   private let agendaModeKey = "Org2Workspace.agendaMode"
   private let openClawEndpointKey = "Org2Workspace.openClawEndpoint"
   private let openClawAgentKey = "Org2Workspace.openClawAgent"
@@ -953,6 +975,10 @@ public final class WorkspaceStore: ObservableObject {
   private var openClawPendingUserMessageIDsByThreadID: [UUID: [UUID]] = [:]
   private var drainingOpenClawThreadIDs: Set<UUID> = []
   private var openClawRequestStartedAtByThreadID: [UUID: Date] = [:]
+  private var openClawGatewayClientsByThreadID: [UUID: OpenClawGatewayClient] = [:]
+  private var openClawCommandCache: [String: (commands: [OpenClawSlashCommand], refreshedAt: Date)] = [:]
+  private var openClawActiveCommandDiscoveryID: String?
+  private var openClawCommandDiscoveryGeneration = 0
   private var activeMeetingRecording: PendingMeetingRecording?
   private var activeMeetingProcessingCount = 0 {
     didSet {
@@ -1024,6 +1050,8 @@ public final class WorkspaceStore: ObservableObject {
   private var isRefreshingOpenClawThreads = false
   private var scheduledAgendaRefreshTask: Task<Void, Never>?
   private var scheduledApprovalsRefreshTask: Task<Void, Never>?
+  private var runReviewAutoRefreshTask: Task<Void, Never>?
+  private var isRunReviewAutoRefreshActive = false
   private var agendaTodoShortcutMutationTask: Task<Void, Never>?
   private var pendingAgendaTodoShortcutMutations: [AgendaTodoShortcutMutation] = []
   private var pendingAgendaRefreshAfterBlockEditing = false
@@ -1106,6 +1134,7 @@ public final class WorkspaceStore: ObservableObject {
       } else {
         corpusRoot = restoreCorpusRoot()
         if let corpusRoot {
+          restorePinnedFiles(for: corpusRoot)
           switchOpenClawTranscript(to: Self.openClawTranscriptURL(corpusRoot: corpusRoot), migrationSource: appOpenClawTranscriptURL)
         }
       }
@@ -1120,6 +1149,7 @@ public final class WorkspaceStore: ObservableObject {
       await refreshCorpusFiles()
       await refreshAssignedWork()
       await refreshApprovals()
+      await refreshAgentRuns()
       refreshOrgCryptManagedRecipientFiles()
       if screenshotModeFromEnvironment() == nil {
         Task { await refreshOpenClawThreads() }
@@ -1142,6 +1172,7 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     corpusRoot = restoredRoot
+    restorePinnedFiles(for: restoredRoot)
     switchOpenClawTranscript(to: Self.openClawTranscriptURL(corpusRoot: restoredRoot), migrationSource: appOpenClawTranscriptURL)
     openHome()
   }
@@ -1369,6 +1400,7 @@ public final class WorkspaceStore: ObservableObject {
   public func setCorpusRoot(_ url: URL, persistsDefault: Bool = true) {
     let standardized = url.standardizedFileURL
     corpusRoot = standardized
+    restorePinnedFiles(for: standardized)
     if persistsDefault {
       defaults.set(standardized.path, forKey: corpusKey)
     }
@@ -1417,6 +1449,7 @@ public final class WorkspaceStore: ObservableObject {
     isRefreshingAgenda = false
     isRefreshingApprovals = false
     isRefreshingAgentRuns = false
+    isRefreshingWorkspace = false
     isRefreshingAssignedWork = false
     isRefreshingOpenClawThreads = false
     isLoadingAgenda = false
@@ -1424,6 +1457,7 @@ public final class WorkspaceStore: ObservableObject {
     isLoadingAgentRuns = false
     agentRuns = []
     selectedAgentRunID = nil
+    presentedAgentRunID = nil
     mutatingAgentRunIDs = []
     isLoadingAssignedWork = false
     isLoadingOpenClawThreads = false
@@ -1455,16 +1489,21 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func refreshWorkspace() async {
+    guard !isRefreshingWorkspace else { return }
+    isRefreshingWorkspace = true
+    defer { isRefreshingWorkspace = false }
+
     refreshAudioSettingsStatus(preserveStatusText: true)
     await refreshAgenda()
     await refreshMeetings()
     await refreshCorpusFiles()
     await refreshAssignedWork()
     await refreshApprovals()
+    await refreshAgentRuns()
     await refreshSelectedDetailFromDisk()
     refreshWorkspaceHealth()
     refreshOrgCryptManagedRecipientFiles()
-    Task { await refreshOpenClawThreads() }
+    await refreshOpenClawThreads()
   }
 
   private func refreshSelectedDetailFromDisk() async {
@@ -1524,6 +1563,7 @@ public final class WorkspaceStore: ObservableObject {
   public func refreshCorpusFiles() async {
     guard let corpusRoot else {
       corpusFiles = []
+      pinnedFileRelativePaths = []
       orgRoamLinkResolver = .empty
       orgRoamLinkResolverGeneration += 1
       searchIndexTask?.cancel()
@@ -1542,6 +1582,7 @@ public final class WorkspaceStore: ObservableObject {
         try Self.scanCorpusFiles(corpusRoot: corpusRoot)
       }.value
       corpusFiles = files
+      reconcilePinnedFiles(for: corpusRoot)
       refreshOrgRoamLinkResolver(files: files)
       scheduleSearchIndexBuild(corpusRoot: corpusRoot)
       if selectedSurface == .files {
@@ -1716,6 +1757,37 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
+  public func refreshRunReviewData() async {
+    await refreshApprovals()
+    await refreshAgentRuns()
+  }
+
+  public func setRunReviewAutoRefreshActive(
+    _ isActive: Bool,
+    intervalNanoseconds: UInt64 = WorkspaceStore.runReviewAutoRefreshIntervalNanoseconds
+  ) {
+    isRunReviewAutoRefreshActive = isActive
+    guard isActive else { return }
+
+    Task { @MainActor [weak self] in
+      await self?.refreshRunReviewData()
+    }
+
+    guard runReviewAutoRefreshTask == nil else { return }
+    runReviewAutoRefreshTask = Task { @MainActor [weak self] in
+      while !Task.isCancelled {
+        do {
+          try await Task.sleep(nanoseconds: intervalNanoseconds)
+        } catch {
+          return
+        }
+        guard let self else { return }
+        guard self.isRunReviewAutoRefreshActive else { continue }
+        await self.refreshRunReviewData()
+      }
+    }
+  }
+
   public func refreshAgentRuns(updatesStatus: Bool = false) async {
     guard !isRefreshingAgentRuns else { return }
     guard let corpusRoot else {
@@ -1724,11 +1796,16 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     isRefreshingAgentRuns = true
-    isLoadingAgentRuns = true
+    let showsLoading = updatesStatus || agentRuns.isEmpty
+    if showsLoading {
+      isLoadingAgentRuns = true
+    }
     if updatesStatus { statusText = "Loading agent runs..." }
     defer {
       isRefreshingAgentRuns = false
-      isLoadingAgentRuns = false
+      if showsLoading {
+        isLoadingAgentRuns = false
+      }
     }
 
     do {
@@ -1739,6 +1816,10 @@ public final class WorkspaceStore: ObservableObject {
       if let selectedAgentRunID,
          !agentRuns.contains(where: { $0.id == selectedAgentRunID }) {
         self.selectedAgentRunID = nil
+      }
+      if let presentedAgentRunID,
+         !agentRuns.contains(where: { $0.id == presentedAgentRunID }) {
+        self.presentedAgentRunID = nil
       }
       if self.selectedAgentRunID == nil {
         self.selectedAgentRunID = agentRuns.first?.id
@@ -1769,6 +1850,34 @@ public final class WorkspaceStore: ObservableObject {
     } catch {
       errorText = error.localizedDescription
       statusText = "Run update failed"
+    }
+  }
+
+  public func completeAgentRun(_ run: AgentRunItem, summary: String) async {
+    guard let corpusRoot, run.status == "running", !mutatingAgentRunIDs.contains(run.id) else { return }
+    let normalizedSummary = summary.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !normalizedSummary.isEmpty else {
+      errorText = "Describe what happened before completing this run."
+      statusText = "Outcome summary required"
+      return
+    }
+    mutatingAgentRunIDs.insert(run.id)
+    defer { mutatingAgentRunIDs.remove(run.id) }
+    do {
+      let updated: AgentRunItem = try await cli.runJSON([
+        "run", "complete", run.id,
+        "--summary", normalizedSummary,
+        "--actor", "Org2Workspace",
+        "--dir", corpusRoot.path,
+        "--json"
+      ])
+      if let index = agentRuns.firstIndex(where: { $0.id == updated.id }) {
+        agentRuns[index] = updated
+      }
+      statusText = "Completed \(updated.goal)"
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Run completion failed"
     }
   }
 
@@ -1815,14 +1924,90 @@ public final class WorkspaceStore: ObservableObject {
 
   public func openAgentRunRecord(_ run: AgentRunItem) {
     guard let corpusRoot else { return }
-    openFile(path: corpusRoot.appendingPathComponent(".org2/runs/\(run.id).org2").path, line: 1)
+    let relativePath = ".org2/runs/\(run.id).org2"
+    let recordURL = corpusRoot.appendingPathComponent(relativePath)
+    guard FileManager.default.fileExists(atPath: recordURL.path) else {
+      errorText = "The run record could not be found at \(relativePath)."
+      statusText = "Run record missing"
+      return
+    }
+    let values = try? recordURL.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
+    selectCorpusFile(CorpusFile(
+      path: recordURL.path,
+      relativePath: relativePath,
+      modifiedAt: values?.contentModificationDate,
+      byteCount: values?.fileSize.map(Int64.init)
+    ), surface: .approvals)
+  }
+
+  public func respondToAgentRunClarification(_ run: AgentRunItem, response: String) async {
+    guard let corpusRoot, run.status == "blocked", !mutatingAgentRunIDs.contains(run.id) else { return }
+    guard let response = Self.normalizedAgentRunClarificationResponse(response) else {
+      errorText = "Enter a response before resuming this run."
+      statusText = "Clarification response required"
+      return
+    }
+
+    mutatingAgentRunIDs.insert(run.id)
+    defer { mutatingAgentRunIDs.remove(run.id) }
+    do {
+      let commented: AgentRunItem = try await cli.runJSON([
+        "run", "comment", run.id,
+        "--author", "Workspace user",
+        "--body", response,
+        "--dir", corpusRoot.path,
+        "--json"
+      ])
+      if let index = agentRuns.firstIndex(where: { $0.id == commented.id }) {
+        agentRuns[index] = commented
+      }
+
+      let resumed: AgentRunItem = try await cli.runJSON([
+        "run", "resume", run.id,
+        "--actor", "Org2Workspace",
+        "--dir", corpusRoot.path,
+        "--json"
+      ])
+      if let index = agentRuns.firstIndex(where: { $0.id == resumed.id }) {
+        agentRuns[index] = resumed
+      }
+      statusText = "Response recorded; \(run.goal) is ready to continue"
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Clarification response failed"
+    }
+  }
+
+  nonisolated static func normalizedAgentRunClarificationResponse(_ value: String) -> String? {
+    let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    return normalized.isEmpty ? nil : normalized
   }
 
   public func openAgentRunArtifact(_ artifact: AgentRunArtifactItem) {
     let path = artifact.path.hasPrefix("/")
       ? artifact.path
       : corpusRoot?.appendingPathComponent(artifact.path).path ?? artifact.path
-    openFile(path: path, line: 1)
+    let url = URL(fileURLWithPath: path).standardizedFileURL
+    guard FileManager.default.fileExists(atPath: url.path) else {
+      errorText = "The run output could not be found at \(artifact.path)."
+      statusText = "Run output missing"
+      return
+    }
+    let inAppExtensions = Set(["org", "org2", "md", "markdown", "txt"])
+    guard inAppExtensions.contains(url.pathExtension.lowercased()) else {
+      openFile(path: url.path, line: 1)
+      statusText = "Opened \(artifact.displayTitle)"
+      return
+    }
+    let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
+    selectCorpusFile(CorpusFile(
+      path: url.path,
+      relativePath: corpusRoot.map { root in
+        url.path.replacingOccurrences(of: root.standardizedFileURL.path + "/", with: "")
+      } ?? artifact.path,
+      modifiedAt: values?.contentModificationDate,
+      byteCount: values?.fileSize.map(Int64.init)
+    ), surface: .approvals)
   }
 
   private func approvalCandidateSources(
@@ -3256,7 +3441,12 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public var hasWorkspaceDetailContent: Bool {
-    selectedLocation != nil || selectedEntrySource != nil
+    presentedAgentRun != nil || selectedLocation != nil || selectedEntrySource != nil
+  }
+
+  public var presentedAgentRun: AgentRunItem? {
+    guard let presentedAgentRunID else { return nil }
+    return agentRuns.first(where: { $0.id == presentedAgentRunID })
   }
 
   var renderedDocumentLayout: OrgHTMLDocumentLayout {
@@ -3463,6 +3653,25 @@ public final class WorkspaceStore: ObservableObject {
     activateDetailLocation(location, mode: nil, surface: surface, recordsHistory: true)
   }
 
+  public func selectAgentRun(_ run: AgentRunItem) {
+    activateAgentRunDetail(run.id, recordsHistory: true)
+  }
+
+  private func activateAgentRunDetail(_ runID: AgentRunItem.ID, recordsHistory: Bool) {
+    guard agentRuns.contains(where: { $0.id == runID }) else { return }
+    if recordsHistory,
+       presentedAgentRunID != runID || selectedSurface != .approvals {
+      recordCurrentNavigationDestination()
+    }
+    clearDetailForNavigation()
+    selectedSurface = .approvals
+    selectedAgentRunID = runID
+    presentedAgentRunID = runID
+    isWorkspaceDetailPaneClosed = false
+    isWorkspaceDetailPaneExpanded = false
+    statusText = "Opened agent run"
+  }
+
   public var hasRenderedSearchHighlight: Bool {
     renderedSearchHighlightQuery?.isEmpty == false
   }
@@ -3574,7 +3783,10 @@ public final class WorkspaceStore: ObservableObject {
 
   public func navigateBack() {
     guard let snapshot = workspaceNavigationBackStack.popLast() else { return }
-    if let location = snapshot.location {
+    if let runID = snapshot.agentRunDetailID,
+       agentRuns.contains(where: { $0.id == runID }) {
+      activateAgentRunDetail(runID, recordsHistory: false)
+    } else if let location = snapshot.location {
       activateDetailLocation(
         location,
         mode: snapshot.selectedEntrySourceMode,
@@ -3603,9 +3815,10 @@ public final class WorkspaceStore: ObservableObject {
          surface: nextSurface,
          mode: nextMode
        ),
-       selectedLocation != nil || selectedSurface != nextSurface {
+       hasWorkspaceDetailContent || selectedSurface != nextSurface {
       recordCurrentNavigationDestination()
     }
+    presentedAgentRunID = nil
     selectedSurface = nextSurface
     isWorkspaceDetailPaneClosed = false
     isWorkspaceDetailPaneExpanded = false
@@ -3683,6 +3896,7 @@ public final class WorkspaceStore: ObservableObject {
 
     return WorkspaceNavigationSnapshot(
       location: selectedLocation,
+      agentRunDetailID: presentedAgentRunID,
       selectedSurface: selectedSurface,
       selectedEntrySourceMode: selectedEntrySourceMode,
       expandedWorkspaceSurface: expandedWorkspaceSurface,
@@ -3706,6 +3920,7 @@ public final class WorkspaceStore: ObservableObject {
     mode: EntrySourceMode
   ) -> Bool {
     guard selectedSurface == surface,
+          presentedAgentRunID == nil,
           selectedEntrySourceMode == mode
     else {
       return false
@@ -3734,6 +3949,7 @@ public final class WorkspaceStore: ObservableObject {
     selectedApprovalItemID = snapshot.selectedApprovalItemID
     selectedCorpusFileID = snapshot.selectedCorpusFileID
     selectedMeetingID = snapshot.selectedMeetingID
+    selectedAgentRunID = snapshot.agentRunDetailID ?? selectedAgentRunID
     if let threadID = snapshot.selectedOpenClawChatThreadID,
        openClawChatThreads.contains(where: { $0.id == threadID }) {
       selectOpenClawChatThread(threadID, persistsSelection: false)
@@ -3753,6 +3969,7 @@ public final class WorkspaceStore: ObservableObject {
     persistLiveFileEditorDraftBeforeNavigation()
     cancelLiveFileEditorAutosave(resetStatus: false)
     selectedLocation = nil
+    presentedAgentRunID = nil
     cancelSourceEditorPreviewRender(clearStatus: true)
     selectedEntrySource = nil
     selectedEntryHTML = nil
@@ -6648,7 +6865,7 @@ public final class WorkspaceStore: ObservableObject {
     activateDetailLocation(.openClaw(thread), mode: mode, surface: surface, recordsHistory: true)
   }
 
-  public func selectCorpusFile(_ file: CorpusFile) {
+  public func selectCorpusFile(_ file: CorpusFile, surface: WorkspaceSurface = .files) {
     let thread = OpenClawThread(
       title: file.name,
       file: file.path,
@@ -6657,10 +6874,82 @@ public final class WorkspaceStore: ObservableObject {
       modifiedAt: file.modifiedAt,
       idValue: nil
     )
-    activateDetailLocation(.openClaw(thread), mode: .page, surface: .files, recordsHistory: true)
+    activateDetailLocation(.openClaw(thread), mode: .page, surface: surface, recordsHistory: true)
     selectedCorpusFileID = file.id
     selectedOpenClawThreadID = nil
     statusText = "Opened \(file.relativePath)"
+  }
+
+  public var pinnedCorpusFiles: [CorpusFile] {
+    guard let corpusRoot else { return [] }
+    let filesByRelativePath = Dictionary(uniqueKeysWithValues: corpusFiles.map { ($0.relativePath, $0) })
+    return pinnedFileRelativePaths.compactMap { relativePath in
+      if let file = filesByRelativePath[relativePath] { return file }
+      let url = corpusRoot.appendingPathComponent(relativePath).standardizedFileURL
+      guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+      return corpusFile(for: url, corpusRoot: corpusRoot)
+    }
+  }
+
+  public func isFilePinned(path: String) -> Bool {
+    guard let relativePath = pinnedFileRelativePath(for: path) else { return false }
+    return pinnedFileRelativePaths.contains(relativePath)
+  }
+
+  public func togglePinnedFile(_ file: CorpusFile) {
+    togglePinnedFile(path: file.path)
+  }
+
+  public func togglePinnedFile(path: String) {
+    guard let relativePath = pinnedFileRelativePath(for: path) else {
+      statusText = "Only files inside the current corpus can be pinned"
+      return
+    }
+    if let index = pinnedFileRelativePaths.firstIndex(of: relativePath) {
+      pinnedFileRelativePaths.remove(at: index)
+      statusText = "Unpinned \(relativePath)"
+    } else {
+      pinnedFileRelativePaths.append(relativePath)
+      statusText = "Pinned \(relativePath)"
+    }
+    persistPinnedFiles()
+  }
+
+  private func pinnedFileRelativePath(for path: String) -> String? {
+    guard let corpusRoot else { return nil }
+    let rootPath = corpusRoot.standardizedFileURL.path
+    let filePath = URL(fileURLWithPath: path).standardizedFileURL.path
+    let prefix = rootPath.hasSuffix("/") ? rootPath : rootPath + "/"
+    guard filePath.hasPrefix(prefix) else { return nil }
+    return String(filePath.dropFirst(prefix.count))
+  }
+
+  private func restorePinnedFiles(for corpusRoot: URL) {
+    let storage = defaults.dictionary(forKey: pinnedFilesByCorpusKey) ?? [:]
+    pinnedFileRelativePaths = storage[corpusRoot.standardizedFileURL.path] as? [String] ?? []
+  }
+
+  private func persistPinnedFiles() {
+    guard let corpusRoot else { return }
+    var storage = defaults.dictionary(forKey: pinnedFilesByCorpusKey) ?? [:]
+    let key = corpusRoot.standardizedFileURL.path
+    if pinnedFileRelativePaths.isEmpty {
+      storage.removeValue(forKey: key)
+    } else {
+      storage[key] = pinnedFileRelativePaths
+    }
+    defaults.set(storage, forKey: pinnedFilesByCorpusKey)
+  }
+
+  private func reconcilePinnedFiles(for corpusRoot: URL) {
+    let existing = pinnedFileRelativePaths.filter { relativePath in
+      FileManager.default.fileExists(
+        atPath: corpusRoot.appendingPathComponent(relativePath).standardizedFileURL.path
+      )
+    }
+    guard existing != pinnedFileRelativePaths else { return }
+    pinnedFileRelativePaths = existing
+    persistPinnedFiles()
   }
 
   public func presentQuickOpen() {
@@ -8114,6 +8403,51 @@ public final class WorkspaceStore: ObservableObject {
     await sendOpenClawMessage(text, attachments: [])
   }
 
+  public var openClawGatewayConnectionState: OpenClawGatewayConnectionState {
+    guard let threadID = selectedOpenClawChatThreadID else { return .disconnected }
+    return openClawGatewayStateByThreadID[threadID] ?? .disconnected
+  }
+
+  public var openClawGatewayConnectionDetail: String? {
+    guard let threadID = selectedOpenClawChatThreadID else { return nil }
+    return openClawGatewayDetailByThreadID[threadID]
+  }
+
+  public var openClawActiveRunID: String? {
+    guard let threadID = selectedOpenClawChatThreadID else { return nil }
+    return openClawActiveRunIDByThreadID[threadID]
+  }
+
+  public var openClawStreamingReply: String {
+    guard let threadID = selectedOpenClawChatThreadID else { return "" }
+    return openClawStreamingReplyByThreadID[threadID] ?? ""
+  }
+
+  public var openClawExposedReasoning: String {
+    guard let threadID = selectedOpenClawChatThreadID else { return "" }
+    return openClawReasoningByThreadID[threadID] ?? ""
+  }
+
+  public var openClawRunActivities: [OpenClawRunActivity] {
+    guard let threadID = selectedOpenClawChatThreadID else { return [] }
+    return openClawRunActivitiesByThreadID[threadID] ?? []
+  }
+
+  public func stopOpenClawRun() async {
+    guard let threadID = selectedOpenClawChatThreadID,
+          let gateway = openClawGatewayClientsByThreadID[threadID]
+    else {
+      openClawStatusText = "No live Gateway run to stop"
+      return
+    }
+    do {
+      try await gateway.abort()
+      openClawStatusText = "Stopping OpenClaw…"
+    } catch {
+      openClawStatusText = "Could not stop OpenClaw: \(error.localizedDescription)"
+    }
+  }
+
   public func sendComposedOpenClawMessage(text rawText: String) {
     let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
     let attachments = openClawPendingAttachments
@@ -8132,17 +8466,35 @@ public final class WorkspaceStore: ObservableObject {
     let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty || !openClawPendingAttachments.isEmpty else { return }
 
-    switch OpenClawSlashCommands.parse(text) {
+    switch OpenClawSlashCommands.parse(text, gatewayCommands: openClawGatewayCommands) {
     case .message(let message):
       sendComposedOpenClawMessage(text: message)
     case .unknown(let name):
+      guard !name.isEmpty else {
+        clearOpenClawDraftForSelectedThread()
+        appendLocalOpenClawCommand(
+          text,
+          result: "Type / followed by a command, or use /help to see all commands."
+        )
+        return
+      }
+      guard openClawPendingAttachments.isEmpty else {
+        appendLocalOpenClawCommand(
+          text,
+          result: "OpenClaw slash commands must be sent without attachments. Remove the attachment and try again."
+        )
+        return
+      }
+      ensureOpenClawChatThread()
+      guard let threadID = selectedOpenClawChatThreadID else { return }
       clearOpenClawDraftForSelectedThread()
-      appendLocalOpenClawCommand(
-        text,
-        result: name.isEmpty
-          ? "Type / followed by a command, or use /help to see all commands."
-          : "Unknown command /\(name). Use /help to see all commands."
-      )
+      openClawStatusText = "Sending /\(name) to OpenClaw…"
+      Task { @MainActor [weak self] in
+        guard let self,
+              self.enqueueOpenClawMessage(text, attachments: [], in: threadID)
+        else { return }
+        await self.drainOpenClawSendQueue(for: threadID)
+      }
     case .command(let command, let arguments):
       guard openClawPendingAttachments.isEmpty else {
         appendLocalOpenClawCommand(
@@ -8167,7 +8519,7 @@ public final class WorkspaceStore: ObservableObject {
     rawText: String,
     threadID: UUID
   ) async {
-    if command.isAgentAssisted {
+    if command.origin == .openClaw || command.isAgentAssisted {
       guard enqueueOpenClawMessage(rawText, attachments: [], in: threadID) else { return }
       await drainOpenClawSendQueue(for: threadID)
       return
@@ -8177,7 +8529,7 @@ public final class WorkspaceStore: ObservableObject {
       let result: String
       switch command.name {
       case "help":
-        result = OpenClawSlashCommands.helpText
+        result = OpenClawSlashCommands.helpText(gatewayCommands: openClawGatewayCommands)
       case "search":
         result = await executeOpenClawSearch(arguments)
       case "open":
@@ -8383,7 +8735,11 @@ public final class WorkspaceStore: ObservableObject {
         clearOpenClawSendFailure(for: userMessageID, in: threadID)
         let beforeSnapshot = await captureOpenClawCorpusSnapshot()
         let sessionKey = openClawSessionKey(for: threadID) ?? openClawSessionKey
-        let reply = try await sendOpenClawRequest(messages: requestMessages, sessionKey: sessionKey)
+        let reply = try await sendOpenClawRequest(
+          messages: requestMessages,
+          sessionKey: sessionKey,
+          threadID: threadID
+        )
         let changeSummary = await openClawChangeSummary(since: beforeSnapshot, referencedIn: reply)
         markOpenClawMessageSent(userMessageID, in: threadID)
         insertOpenClawReply(reply, after: userMessageID, in: threadID, changeSummary: changeSummary)
@@ -8394,9 +8750,13 @@ public final class WorkspaceStore: ObservableObject {
         }
         removeFirstPendingOpenClawUserMessage(in: threadID)
         if openClawPendingUserMessageIDs(for: threadID).isEmpty {
-          openClawStatusText = changeSummary.map {
-            "\($0.title): +\($0.totalInsertions) -\($0.totalDeletions)"
-          } ?? "OpenClaw replied"
+          if openClawGatewayStateByThreadID[threadID] == .fallbackHTTP {
+            openClawStatusText = "OpenClaw replied via HTTP compatibility"
+          } else {
+            openClawStatusText = changeSummary.map {
+              "\($0.title): +\($0.totalInsertions) -\($0.totalDeletions)"
+            } ?? "OpenClaw replied"
+          }
         } else {
           openClawStatusText = openClawQueuedStatusText()
         }
@@ -8410,20 +8770,138 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
-  private func sendOpenClawRequest(messages: [OpenClawChatMessage], sessionKey: String) async throws -> String {
-    let agentID = openClawAgentID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "main" : openClawAgentID
+  private func sendOpenClawRequest(
+    messages: [OpenClawChatMessage],
+    sessionKey: String,
+    threadID: UUID
+  ) async throws -> String {
+    let agentID = OpenClawChatClient.openClawAgentHeaderValue(for: openClawAgentID)
     let workspaceContext = currentOpenClawWorkspaceContext()
     let requestMessages = messages.map(Self.expandingOpenClawAgentCommand)
+    guard let latestUserMessage = requestMessages.last(where: { $0.role == .user }) else {
+      throw OpenClawGatewayError.protocolFailure("no user message was available")
+    }
+    let isGatewayCommand = OpenClawSlashCommands.isGatewayCommand(
+      latestUserMessage.content,
+      gatewayCommands: openClawGatewayCommands
+    )
     if let openClawSendHandler {
       return try await openClawSendHandler(requestMessages, agentID, sessionKey, workspaceContext)
     }
-    let client = OpenClawChatClient(settings: currentOpenClawSettings(allowKeychainRead: true))
-    return try await client.send(
-      messages: requestMessages,
-      agentID: agentID,
-      sessionKey: sessionKey,
-      workspaceContext: workspaceContext
+    let settings = currentOpenClawSettings(allowKeychainRead: true)
+    let gateway = OpenClawGatewayClient(settings: settings)
+    openClawGatewayClientsByThreadID[threadID] = gateway
+    openClawGatewayStateByThreadID[threadID] = .connecting
+    openClawGatewayDetailByThreadID.removeValue(forKey: threadID)
+    openClawActiveRunIDByThreadID.removeValue(forKey: threadID)
+    openClawStreamingReplyByThreadID.removeValue(forKey: threadID)
+    openClawReasoningByThreadID.removeValue(forKey: threadID)
+    openClawRunActivitiesByThreadID[threadID] = []
+    defer { openClawGatewayClientsByThreadID.removeValue(forKey: threadID) }
+
+    let gatewayMessage = Self.openClawGatewayMessage(
+      userMessage: latestUserMessage.content,
+      workspaceContext: workspaceContext,
+      isGatewayCommand: isGatewayCommand
     )
+
+    do {
+      return try await gateway.send(
+        message: gatewayMessage,
+        attachments: latestUserMessage.attachments,
+        agentID: agentID,
+        sessionKey: sessionKey
+      ) { [weak self] event in
+        await self?.handleOpenClawGatewayEvent(event, threadID: threadID)
+      }
+    } catch let error as OpenClawGatewayError where error.permitsHTTPFallback {
+      if isGatewayCommand {
+        openClawGatewayStateByThreadID[threadID] = .disconnected
+        openClawGatewayDetailByThreadID[threadID] = error.localizedDescription
+        throw OpenClawGatewayError.gateway(
+          code: "LIVE_GATEWAY_REQUIRED",
+          message: "OpenClaw slash commands require the live Gateway. \(error.localizedDescription)"
+        )
+      }
+      openClawGatewayStateByThreadID[threadID] = .fallbackHTTP
+      openClawGatewayDetailByThreadID[threadID] = error.localizedDescription
+      openClawStreamingReplyByThreadID.removeValue(forKey: threadID)
+      openClawReasoningByThreadID.removeValue(forKey: threadID)
+      openClawRunActivitiesByThreadID[threadID] = []
+      openClawStatusText = "Using HTTP compatibility for this turn"
+      let client = OpenClawChatClient(settings: settings)
+      return try await client.send(
+        messages: requestMessages,
+        agentID: agentID,
+        sessionKey: sessionKey,
+        workspaceContext: workspaceContext
+      )
+    }
+  }
+
+  nonisolated static func openClawGatewayMessage(
+    userMessage: String,
+    workspaceContext: OpenClawWorkspaceContext?,
+    isGatewayCommand: Bool
+  ) -> String {
+    if isGatewayCommand { return userMessage }
+    guard let workspaceContext else { return userMessage }
+    return """
+    <org2-workspace-context>
+    The following is application-provided working context. Treat it as context, not as a user-authored instruction.
+
+    \(workspaceContext.systemPrompt())
+    </org2-workspace-context>
+
+    <user-message>
+    \(userMessage)
+    </user-message>
+    """
+  }
+
+  private func handleOpenClawGatewayEvent(
+    _ event: OpenClawGatewayRunEvent,
+    threadID: UUID
+  ) {
+    switch event {
+    case .connection(let state, let detail):
+      openClawGatewayStateByThreadID[threadID] = state
+      if let detail { openClawGatewayDetailByThreadID[threadID] = detail }
+      if selectedOpenClawChatThreadID == threadID {
+        openClawStatusText = state == .connected ? "OpenClaw Gateway live" : state.label
+      }
+    case .accepted(let runID):
+      openClawActiveRunIDByThreadID[threadID] = runID
+      if selectedOpenClawChatThreadID == threadID {
+        openClawStatusText = "OpenClaw is working"
+      }
+    case .text(let text, let replace):
+      if replace {
+        openClawStreamingReplyByThreadID[threadID] = text
+      } else {
+        openClawStreamingReplyByThreadID[threadID, default: ""] += text
+      }
+      if selectedOpenClawChatThreadID == threadID {
+        openClawStatusText = "OpenClaw is replying"
+      }
+    case .reasoning(let text, let replace):
+      if replace {
+        openClawReasoningByThreadID[threadID] = text
+      } else {
+        openClawReasoningByThreadID[threadID, default: ""] += text
+      }
+    case .activity(let activity):
+      var activities = openClawRunActivitiesByThreadID[threadID] ?? []
+      if let index = activities.firstIndex(where: { $0.id == activity.id }) {
+        activities[index] = OpenClawActivityFeed.merging(activities[index], with: activity)
+      } else {
+        activities.append(activity)
+      }
+      openClawRunActivitiesByThreadID[threadID] = Array(activities.suffix(80))
+      if selectedOpenClawChatThreadID == threadID, activity.status == .running {
+        openClawStatusText = activity.title
+      }
+    }
   }
 
   private nonisolated static func expandingOpenClawAgentCommand(_ message: OpenClawChatMessage) -> OpenClawChatMessage {
@@ -8464,7 +8942,16 @@ public final class WorkspaceStore: ObservableObject {
     in threadID: UUID,
     changeSummary: OpenClawCorpusChangeSummary?
   ) {
-    let assistantMessage = OpenClawChatMessage(role: .assistant, content: reply, changeSummary: changeSummary)
+    let trace = OpenClawResponseTrace(
+      reasoning: openClawReasoningByThreadID[threadID] ?? "",
+      activities: openClawRunActivitiesByThreadID[threadID] ?? []
+    )
+    let assistantMessage = OpenClawChatMessage(
+      role: .assistant,
+      content: reply,
+      changeSummary: changeSummary,
+      responseTrace: trace.isEmpty ? nil : trace
+    )
     var messages = openClawMessages(for: threadID)
     guard let index = messages.firstIndex(where: { $0.id == userMessageID }) else {
       messages.append(assistantMessage)
@@ -8573,7 +9060,17 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   private func openClawSessionKey(for threadID: UUID) -> String? {
-    openClawChatThreads.first(where: { $0.id == threadID })?.sessionKey
+    guard let index = openClawChatThreads.firstIndex(where: { $0.id == threadID }) else { return nil }
+    let thread = openClawChatThreads[index]
+    let sessionKey = Self.agentScopedOpenClawSessionKey(thread.sessionKey, agentID: openClawAgentID)
+    if sessionKey != thread.sessionKey {
+      openClawChatThreads[index] = thread.replacingOpenClawChatMetadata(sessionKey: sessionKey)
+      if selectedOpenClawChatThreadID == threadID {
+        openClawSessionKey = sessionKey
+      }
+      persistOpenClawTranscript()
+    }
+    return sessionKey
   }
 
   private func openClawThreadID(containing messageID: UUID) -> UUID? {
@@ -8889,7 +9386,7 @@ public final class WorkspaceStore: ObservableObject {
   ) -> OpenClawChatThread {
     let thread = OpenClawChatThread(
       title: title,
-      sessionKey: Self.makeOpenClawSessionKey(),
+      sessionKey: Self.makeOpenClawSessionKey(agentID: openClawAgentID),
       resource: resource
     )
     openClawChatThreads.insert(thread, at: 0)
@@ -9499,10 +9996,75 @@ public final class WorkspaceStore: ObservableObject {
       }
 
       openClawStatusText = Self.openClawStatusText(settings: currentOpenClawSettings())
+      Task { @MainActor [weak self] in
+        await self?.refreshOpenClawCommands(force: true)
+      }
       return true
     } catch {
       openClawStatusText = error.localizedDescription
       return false
+    }
+  }
+
+  public func requestOpenClawGatewayPairing() async {
+    openClawStatusText = "Requesting Gateway device access…"
+    do {
+      let client = OpenClawGatewayClient(settings: currentOpenClawSettings(allowKeychainRead: true))
+      try await client.prepare()
+      openClawStatusText = "OpenClaw Gateway device is paired and live"
+      await refreshOpenClawCommands(force: true)
+    } catch let error as OpenClawGatewayError {
+      openClawStatusText = error.localizedDescription
+    } catch {
+      openClawStatusText = "Gateway pairing failed: \(error.localizedDescription)"
+    }
+  }
+
+  public var openClawAvailableSlashCommands: [OpenClawSlashCommand] {
+    OpenClawSlashCommands.merged(with: openClawGatewayCommands)
+  }
+
+  public var openClawCommandDiscoveryID: String {
+    let agentID = OpenClawChatClient.openClawAgentHeaderValue(for: openClawAgentID)
+    return "\(openClawEndpointText.trimmingCharacters(in: .whitespacesAndNewlines))#\(agentID)"
+  }
+
+  public func refreshOpenClawCommands(force: Bool = false) async {
+    let discoveryID = openClawCommandDiscoveryID
+    let now = Date()
+    if openClawActiveCommandDiscoveryID != discoveryID {
+      openClawActiveCommandDiscoveryID = discoveryID
+      openClawGatewayCommands = openClawCommandCache[discoveryID]?.commands ?? []
+    }
+    if !force,
+       let cached = openClawCommandCache[discoveryID],
+       now.timeIntervalSince(cached.refreshedAt) < 300 {
+      openClawGatewayCommands = cached.commands
+      return
+    }
+
+    openClawCommandDiscoveryGeneration += 1
+    let generation = openClawCommandDiscoveryGeneration
+    isRefreshingOpenClawCommands = true
+    defer {
+      if generation == openClawCommandDiscoveryGeneration {
+        isRefreshingOpenClawCommands = false
+      }
+    }
+
+    do {
+      let settings = currentOpenClawSettings(allowKeychainRead: true)
+      let agentID = OpenClawChatClient.openClawAgentHeaderValue(for: openClawAgentID)
+      let commands = try await OpenClawGatewayClient(settings: settings).listCommands(agentID: agentID)
+      openClawCommandCache[discoveryID] = (commands, now)
+      guard generation == openClawCommandDiscoveryGeneration,
+            discoveryID == openClawCommandDiscoveryID
+      else { return }
+      openClawGatewayCommands = commands
+    } catch {
+      // Discovery is an enhancement. Keep a previously fetched catalog when the
+      // Gateway is temporarily unavailable and let command execution report its
+      // own authoritative error when the user actually sends one.
     }
   }
 
@@ -10946,6 +11508,9 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   private func rejectApproval(_ target: HeadlineMutationTarget, endStatus: TodoEditStatus, reason: String) async throws {
+    guard let reason = Self.normalizedApprovalRejectionReason(reason) else {
+      throw ApprovalRejectionError.reasonRequired
+    }
     let originatingSurface = selectedSurface
     let originalVisibleIndex = target.agendaItemID.flatMap { id in
       visibleAgendaItems.firstIndex(where: { $0.id == id })
@@ -11431,8 +11996,8 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func makeDetailPanePrimary() {
-    guard selectedLocation != nil || selectedEntrySource != nil else {
-      statusText = "Open a file first"
+    guard hasWorkspaceDetailContent else {
+      statusText = "Open a detail first"
       return
     }
     if expandedWorkspaceSurface != nil
@@ -11451,8 +12016,8 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func toggleDetailPaneExpansion() {
-    guard selectedLocation != nil || selectedEntrySource != nil else {
-      statusText = "Open a file first"
+    guard hasWorkspaceDetailContent else {
+      statusText = "Open a detail first"
       return
     }
     recordCurrentNavigationDestination()
@@ -11480,7 +12045,7 @@ public final class WorkspaceStore: ObservableObject {
     isWorkspaceDetailPaneExpanded = false
     isWorkspaceSurfacePaneClosed = false
     expandedWorkspaceSurface = nil
-    statusText = "Document closed"
+    statusText = "Detail closed"
   }
 
   public func toggleOpenClawAssistantPanel() {
@@ -12865,7 +13430,7 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     openClawTranscriptURL = targetURL
-    openClawSessionKey = Self.makeOpenClawSessionKey()
+    openClawSessionKey = Self.makeOpenClawSessionKey(agentID: openClawAgentID)
     removeAllPendingOpenClawUserMessages()
     drainingOpenClawThreadIDs.removeAll()
     openClawRequestStartedAtByThreadID.removeAll()
@@ -12887,16 +13452,25 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   private func applyOpenClawTranscript(_ transcript: OpenClawTranscriptState, shouldPersist: Bool) {
-    let threads = Self.sortedOpenClawChatThreadsForDisplay(transcript.threads)
+    let migratedThreads = transcript.threads.map { thread in
+      let sessionKey = Self.agentScopedOpenClawSessionKey(thread.sessionKey, agentID: openClawAgentID)
+      return sessionKey == thread.sessionKey
+        ? thread
+        : thread.replacingOpenClawChatMetadata(sessionKey: sessionKey)
+    }
+    let migratedSessionKeys = zip(transcript.threads, migratedThreads).contains { pair in
+      pair.0.sessionKey != pair.1.sessionKey
+    }
+    let threads = Self.sortedOpenClawChatThreadsForDisplay(migratedThreads)
     openClawChatThreads = threads
     let selectedID = transcript.selectedThreadID
       .flatMap { id in threads.contains(where: { $0.id == id }) ? id : nil }
       ?? threads.first?.id
     selectedOpenClawChatThreadID = selectedID
     let selectedThread = selectedID.flatMap { id in threads.first(where: { $0.id == id }) }
-    openClawSessionKey = selectedThread?.sessionKey ?? Self.makeOpenClawSessionKey()
+    openClawSessionKey = selectedThread?.sessionKey ?? Self.makeOpenClawSessionKey(agentID: openClawAgentID)
     replaceOpenClawMessages(selectedThread?.messages ?? [], shouldPersist: false)
-    if shouldPersist {
+    if shouldPersist || migratedSessionKeys {
       persistOpenClawTranscript()
     }
   }
@@ -13502,8 +14076,22 @@ public final class WorkspaceStore: ObservableObject {
     "Local transcription: \(LocalWhisperTranscriber.resolvedBackendDescription())"
   }
 
-  nonisolated private static func makeOpenClawSessionKey() -> String {
-    "org2-workspace:\(UUID().uuidString)"
+  nonisolated static func agentScopedOpenClawSessionKey(_ rawSessionKey: String, agentID: String) -> String {
+    let agentID = OpenClawChatClient.openClawAgentHeaderValue(for: agentID)
+    var components = rawSessionKey
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .split(separator: ":", omittingEmptySubsequences: false)
+      .map(String.init)
+    while components.count >= 3 && components[0].localizedCaseInsensitiveCompare("agent") == .orderedSame {
+      components.removeFirst(2)
+    }
+    let body = components.joined(separator: ":").trimmingCharacters(in: .whitespacesAndNewlines)
+    let resolvedBody = body.isEmpty ? "org2-workspace:\(UUID().uuidString)" : body
+    return "agent:\(agentID):\(resolvedBody)"
+  }
+
+  nonisolated private static func makeOpenClawSessionKey(agentID: String = "main") -> String {
+    agentScopedOpenClawSessionKey("org2-workspace:\(UUID().uuidString)", agentID: agentID)
   }
 
   nonisolated private static func openClawVoiceNoteURL() -> URL {
@@ -16112,6 +16700,11 @@ public final class WorkspaceStore: ObservableObject {
       .trimmingCharacters(in: .whitespacesAndNewlines)
   }
 
+  nonisolated static func normalizedApprovalRejectionReason(_ value: String) -> String? {
+    let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    return normalized.isEmpty ? nil : normalized
+  }
+
   @MainActor
   private static func promptForApprovalRejection() -> ApprovalRejectionChoice? {
     let alert = NSAlert()
@@ -16159,11 +16752,18 @@ public final class WorkspaceStore: ObservableObject {
     ])
     alert.accessoryView = accessoryView
 
-    guard alert.runModal() == .alertFirstButtonReturn else { return nil }
-    let reason = reasonField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !reason.isEmpty else { return nil }
-    let status: TodoEditStatus = statusPopup.indexOfSelectedItem == 1 ? .done : .canceled
-    return ApprovalRejectionChoice(endStatus: status, reason: reason)
+    while true {
+      alert.window.initialFirstResponder = reasonField
+      guard alert.runModal() == .alertFirstButtonReturn else { return nil }
+      guard let reason = normalizedApprovalRejectionReason(reasonField.stringValue) else {
+        alert.alertStyle = .warning
+        alert.informativeText = "A rejection reason is required. Enter a reason below, or choose Cancel."
+        NSSound.beep()
+        continue
+      }
+      let status: TodoEditStatus = statusPopup.indexOfSelectedItem == 1 ? .done : .canceled
+      return ApprovalRejectionChoice(endStatus: status, reason: reason)
+    }
   }
 
   nonisolated private static func scanPropertyDrawer(lines: [String], afterHeadingIndex headingIndex: Int) -> [String: String] {
