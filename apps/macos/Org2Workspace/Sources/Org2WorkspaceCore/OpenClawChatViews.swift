@@ -52,9 +52,23 @@ struct ChatBubbleView: View {
             compact: compact
           )
         }
+        if message.role == .assistant,
+           let responseTrace = message.responseTrace,
+           !responseTrace.isEmpty {
+          Divider()
+            .padding(.top, 10)
+            .padding(.bottom, 2)
+          OpenClawProgressFeedView(
+            reasoning: responseTrace.reasoning,
+            activities: responseTrace.activities,
+            compact: compact,
+            isLive: false
+          )
+        }
         if message.role == .assistant, let changeSummary = message.changeSummary {
           Divider()
-            .padding(.vertical, 2)
+            .padding(.top, 10)
+            .padding(.bottom, 2)
           OpenClawChangeSummaryView(summary: changeSummary, compact: compact)
         }
       }
@@ -341,6 +355,7 @@ struct OpenClawComposerView: View {
   @EnvironmentObject private var store: WorkspaceStore
   @State private var localDraft = ""
   @State private var lastStoreDraft = ""
+  @State private var selectedSlashSuggestionIndex = 0
   let focusOnAppear: Bool
   let compact: Bool
 
@@ -366,18 +381,24 @@ struct OpenClawComposerView: View {
         OpenClawComposerTextView(
           text: $localDraft,
           focusOnAppear: focusOnAppear,
-          onReturn: handleReturn
+          onReturn: handleReturn,
+          onSuggestionCommand: handleSuggestionCommand
         )
         .padding(4)
       }
       .frame(minHeight: composerHeight, idealHeight: composerHeight, maxHeight: composerHeight)
       .animation(.easeOut(duration: 0.12), value: composerHeight)
 
-      let slashSuggestions = OpenClawSlashCommands.suggestions(for: localDraft)
+      let slashSuggestions = OpenClawSlashCommands.suggestions(
+        for: localDraft,
+        gatewayCommands: store.openClawGatewayCommands
+      )
       if !slashSuggestions.isEmpty {
-        OpenClawSlashCommandSuggestions(commands: slashSuggestions) { command in
-          localDraft = command.arguments.isEmpty ? "/\(command.name)" : "/\(command.name) "
-        }
+        OpenClawSlashCommandSuggestions(
+          commands: slashSuggestions,
+          selectedCommandID: selectedSlashSuggestion(in: slashSuggestions)?.id,
+          select: completeSlashCommand
+        )
       }
 
       if !store.openClawPendingAttachments.isEmpty {
@@ -386,12 +407,9 @@ struct OpenClawComposerView: View {
 
       HStack(spacing: 8) {
         if store.isSendingOpenClawMessage {
-          HStack(spacing: 6) {
-            WorkspaceActivityIndicator(size: .small)
-            Text(store.openClawQueuedMessageCount > 1 ? "\(store.openClawQueuedMessageCount - 1) queued" : "Sending")
-              .font(.caption.weight(.medium))
-              .foregroundStyle(.secondary)
-          }
+          Text(store.openClawQueuedMessageCount > 1 ? "\(store.openClawQueuedMessageCount - 1) queued" : "Sending")
+            .font(.caption.weight(.medium))
+            .foregroundStyle(.secondary)
         }
         if store.isRecordingOpenClawVoiceNote {
           HStack(spacing: 6) {
@@ -465,7 +483,11 @@ struct OpenClawComposerView: View {
       flushDraftToStore()
     }
     .onChange(of: localDraft) {
+      selectedSlashSuggestionIndex = 0
       cacheDraftLocally()
+      if localDraft == "/" {
+        Task { await store.refreshOpenClawCommands() }
+      }
     }
     .onChange(of: store.openClawDraft) { _, newValue in
       let mergedDraft = OpenClawComposerDraftSync.localDraftAfterStoreChange(
@@ -499,6 +521,38 @@ struct OpenClawComposerView: View {
     return true
   }
 
+  private func handleSuggestionCommand(_ command: OpenClawComposerSuggestionKeyCommand) -> Bool {
+    let suggestions = OpenClawSlashCommands.suggestions(
+      for: localDraft,
+      gatewayCommands: store.openClawGatewayCommands
+    )
+    guard !suggestions.isEmpty else { return false }
+
+    switch command {
+    case .complete:
+      guard let selected = selectedSlashSuggestion(in: suggestions) else { return false }
+      completeSlashCommand(selected)
+    case .move(let offset):
+      selectedSlashSuggestionIndex = OpenClawSlashCommandSelection.movedIndex(
+        selectedSlashSuggestionIndex,
+        by: offset,
+        count: suggestions.count
+      )
+    }
+    return true
+  }
+
+  private func selectedSlashSuggestion(in suggestions: [OpenClawSlashCommand]) -> OpenClawSlashCommand? {
+    OpenClawSlashCommandSelection.selectedCommand(
+      in: suggestions,
+      index: selectedSlashSuggestionIndex
+    )
+  }
+
+  private func completeSlashCommand(_ command: OpenClawSlashCommand) {
+    localDraft = command.arguments.isEmpty ? "/\(command.name)" : "/\(command.name) "
+  }
+
   private func cacheDraftLocally() {
     store.cacheOpenClawComposerDraft(localDraft)
   }
@@ -515,6 +569,7 @@ struct OpenClawComposerView: View {
 
 private struct OpenClawSlashCommandSuggestions: View {
   let commands: [OpenClawSlashCommand]
+  let selectedCommandID: OpenClawSlashCommand.ID?
   let select: (OpenClawSlashCommand) -> Void
 
   var body: some View {
@@ -534,8 +589,8 @@ private struct OpenClawSlashCommandSuggestions: View {
               .foregroundStyle(.secondary)
               .lineLimit(1)
             Spacer(minLength: 4)
-            if command.isAgentAssisted {
-              Text("Agent")
+            if command.origin == .openClaw || command.isAgentAssisted {
+              Text(command.origin == .openClaw ? "OpenClaw" : "Agent")
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(.secondary)
             }
@@ -543,9 +598,23 @@ private struct OpenClawSlashCommandSuggestions: View {
           .contentShape(Rectangle())
           .padding(.horizontal, 9)
           .padding(.vertical, 6)
+          .background(
+            command.id == selectedCommandID ? Color.accentColor.opacity(0.12) : Color.clear,
+            in: RoundedRectangle(cornerRadius: 5, style: .continuous)
+          )
         }
         .buttonStyle(.plain)
       }
+
+      HStack(spacing: 10) {
+        Label("Navigate", systemImage: "arrow.up.arrow.down")
+        Text("Tab Complete")
+      }
+      .font(.caption2.weight(.medium))
+      .foregroundStyle(.tertiary)
+      .frame(maxWidth: .infinity, alignment: .trailing)
+      .padding(.horizontal, 8)
+      .padding(.vertical, 3)
     }
     .padding(4)
     .background(WorkspaceDesign.surfaceBackground, in: RoundedRectangle(cornerRadius: WorkspaceDesign.cornerRadius))
@@ -683,8 +752,47 @@ enum OpenClawComposerKeyCommand {
     return isReturnKey(keyCode) && relevantModifiers == [.command]
   }
 
+  static func suggestionCommand(
+    keyCode: UInt16,
+    modifiers: NSEvent.ModifierFlags
+  ) -> OpenClawComposerSuggestionKeyCommand? {
+    let relevantModifiers = modifiers.intersection([.command, .option, .control, .shift])
+    guard relevantModifiers.isEmpty else { return nil }
+    switch keyCode {
+    case 48:
+      return .complete
+    case 125:
+      return .move(1)
+    case 126:
+      return .move(-1)
+    default:
+      return nil
+    }
+  }
+
   private static func isReturnKey(_ keyCode: UInt16) -> Bool {
     keyCode == 36 || keyCode == 76
+  }
+}
+
+enum OpenClawComposerSuggestionKeyCommand: Equatable {
+  case complete
+  case move(Int)
+}
+
+enum OpenClawSlashCommandSelection {
+  static func selectedCommand(
+    in commands: [OpenClawSlashCommand],
+    index: Int
+  ) -> OpenClawSlashCommand? {
+    guard !commands.isEmpty else { return nil }
+    return commands[min(max(0, index), commands.count - 1)]
+  }
+
+  static func movedIndex(_ index: Int, by offset: Int, count: Int) -> Int {
+    guard count > 0 else { return 0 }
+    let normalizedIndex = ((index % count) + count) % count
+    return ((normalizedIndex + offset) % count + count) % count
   }
 }
 
@@ -692,6 +800,7 @@ private struct OpenClawComposerTextView: NSViewRepresentable {
   @Binding var text: String
   let focusOnAppear: Bool
   let onReturn: () -> Bool
+  let onSuggestionCommand: (OpenClawComposerSuggestionKeyCommand) -> Bool
 
   func makeCoordinator() -> Coordinator {
     Coordinator(parent: self)
@@ -709,6 +818,9 @@ private struct OpenClawComposerTextView: NSViewRepresentable {
     textView.delegate = context.coordinator
     textView.onReturn = {
       context.coordinator.parent.onReturn()
+    }
+    textView.onSuggestionCommand = {
+      context.coordinator.parent.onSuggestionCommand($0)
     }
     textView.string = text
     textView.font = .systemFont(ofSize: NSFont.systemFontSize)
@@ -740,6 +852,9 @@ private struct OpenClawComposerTextView: NSViewRepresentable {
     textView.onReturn = {
       context.coordinator.parent.onReturn()
     }
+    textView.onSuggestionCommand = {
+      context.coordinator.parent.onSuggestionCommand($0)
+    }
     if textView.string != text {
       let selectedRange = textView.selectedRange()
       textView.string = text
@@ -765,8 +880,15 @@ private struct OpenClawComposerTextView: NSViewRepresentable {
 
   final class CommandSubmitTextView: NSTextView {
     var onReturn: (() -> Bool)?
+    var onSuggestionCommand: ((OpenClawComposerSuggestionKeyCommand) -> Bool)?
 
     override func keyDown(with event: NSEvent) {
+      if let command = OpenClawComposerKeyCommand.suggestionCommand(
+        keyCode: event.keyCode,
+        modifiers: event.modifierFlags
+      ), onSuggestionCommand?(command) == true {
+        return
+      }
       if OpenClawComposerKeyCommand.isSendCommand(keyCode: event.keyCode, modifiers: event.modifierFlags),
          onReturn?() == true {
         return
@@ -782,21 +904,78 @@ private struct OpenClawComposerTextView: NSViewRepresentable {
 
 struct OpenClawTypingIndicatorView: View {
   let startedAt: Date?
+  let connectionState: OpenClawGatewayConnectionState
+  let connectionDetail: String?
+  let runID: String?
+  let streamingReply: String
+  let reasoning: String
+  let activities: [OpenClawRunActivity]
+  let compact: Bool
+  let onStop: () -> Void
 
   var body: some View {
     HStack {
-      VStack(alignment: .leading, spacing: 5) {
+      VStack(alignment: .leading, spacing: 9) {
         HStack(spacing: 8) {
-          WorkspaceActivityIndicator(size: .small)
+          WorkspaceActivityIndicator(size: .small, style: .signal)
+          Text(statusTitle)
+            .font(.caption.weight(.medium))
+            .foregroundStyle(.secondary)
           TimelineView(.periodic(from: startedAt ?? Date(), by: 1)) { context in
-            Text("OpenClaw is thinking\(elapsedSuffix(now: context.date))")
-              .font(.caption.weight(.medium))
-              .foregroundStyle(.secondary)
+            Text(elapsedText(now: context.date))
+              .font(.caption2.monospacedDigit())
+              .foregroundStyle(.tertiary)
+              .frame(minWidth: 42, alignment: .leading)
+          }
+          Spacer(minLength: 8)
+          if canStop {
+            Button(action: onStop) {
+              Image(systemName: "stop.fill")
+                .font(.caption.weight(.semibold))
+                .frame(width: 20, height: 20)
+                .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .accessibilityLabel("Stop OpenClaw run")
+            .help("Stop this OpenClaw run")
           }
         }
-        Text("Waiting for the gateway response")
-          .font(.caption)
-          .foregroundStyle(.tertiary)
+        .frame(minHeight: 20)
+
+        if !streamingReply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+          OrgInlineText(streamingReply)
+            .lineLimit(nil)
+            .frame(maxWidth: compact ? 360 : 640, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
+        } else {
+          Text(progressSummary)
+            .font(.caption)
+            .foregroundStyle(.tertiary)
+            .lineLimit(2)
+            .contentTransition(.opacity)
+            .animation(WorkspaceMotion.quick, value: progressSummary)
+        }
+
+        HStack(spacing: 5) {
+          Circle()
+            .fill(connectionColor)
+            .frame(width: 5, height: 5)
+          Text(connectionState.label)
+        }
+        .font(.caption2)
+        .foregroundStyle(.tertiary)
+        .help(connectionHelp)
+        .animation(WorkspaceMotion.quick, value: connectionState)
+
+        if hasProgress {
+          OpenClawProgressFeedView(
+            reasoning: reasoning,
+            activities: activities,
+            compact: compact,
+            isLive: true
+          )
+        }
       }
       .padding(10)
       .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -804,16 +983,180 @@ struct OpenClawTypingIndicatorView: View {
         RoundedRectangle(cornerRadius: 8, style: .continuous)
           .stroke(Color.secondary.opacity(0.16))
       )
-      Spacer(minLength: 48)
+      .frame(maxWidth: compact ? 430 : 700, alignment: .leading)
+      Spacer(minLength: compact ? 24 : 48)
     }
     .frame(maxWidth: .infinity, alignment: .leading)
   }
 
-  private func elapsedSuffix(now: Date) -> String {
-    guard let startedAt else { return "" }
+  private var statusTitle: String {
+    connectionState == .disconnected ? "Connection interrupted" : "OpenClaw is working"
+  }
+
+  private var progressSummary: String {
+    if let latest = OpenClawActivityFeed.items(from: activities).last(where: { $0.status == .running }) {
+      return latest.title
+    }
+    switch connectionState {
+    case .connecting: return "Opening the live connection…"
+    case .reconnecting: return "Reconnecting without resending…"
+    case .connected: return runID == nil ? "Starting the run…" : "Live activity will appear here."
+    case .fallbackHTTP: return "Gateway unavailable; continuing over HTTP."
+    case .disconnected: return connectionDetail ?? "The connection was interrupted."
+    }
+  }
+
+  private var canStop: Bool {
+    connectionState == .connected && runID != nil
+  }
+
+  private var trimmedReasoning: String {
+    reasoning.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  private var hasProgress: Bool {
+    !OpenClawActivityFeed.items(from: activities).isEmpty || !trimmedReasoning.isEmpty
+  }
+
+  private var connectionHelp: String {
+    var parts: [String] = []
+    if let connectionDetail, !connectionDetail.isEmpty { parts.append(connectionDetail) }
+    if let runID { parts.append("Run \(runID)") }
+    return parts.isEmpty ? connectionState.label : parts.joined(separator: "\n")
+  }
+
+  private var connectionColor: Color {
+    switch connectionState {
+    case .connected: return .green
+    case .connecting, .reconnecting: return .orange
+    case .fallbackHTTP: return .blue
+    case .disconnected: return .red
+    }
+  }
+
+  private func elapsedText(now: Date) -> String {
+    guard let startedAt else { return "0s" }
     let seconds = max(0, Int(now.timeIntervalSince(startedAt)))
-    if seconds < 1 { return "" }
-    if seconds < 60 { return " \(seconds)s" }
-    return " \(seconds / 60)m \(seconds % 60)s"
+    if seconds < 60 { return "\(seconds)s" }
+    return "\(seconds / 60)m \(seconds % 60)s"
+  }
+}
+
+private struct OpenClawProgressFeedView: View {
+  let reasoning: String
+  let activities: [OpenClawRunActivity]
+  let compact: Bool
+  let isLive: Bool
+
+  @State private var showsFullFeed = false
+
+  private var items: [OpenClawActivityFeedItem] {
+    OpenClawActivityFeed.items(from: activities)
+  }
+
+  private var trimmedReasoning: String {
+    reasoning.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  private var collapsedItemLimit: Int { compact ? 2 : 3 }
+
+  private var visibleItems: ArraySlice<OpenClawActivityFeedItem> {
+    showsFullFeed ? items[...] : items.suffix(collapsedItemLimit)
+  }
+
+  private var canExpand: Bool {
+    items.count > collapsedItemLimit || trimmedReasoning.count > 360
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 7) {
+      HStack(spacing: 7) {
+        Label(isLive ? "Progress" : "Work log", systemImage: isLive ? "waveform.path.ecg" : "clock.arrow.circlepath")
+          .font(.caption.weight(.semibold))
+          .foregroundStyle(.secondary)
+        Spacer(minLength: 8)
+        if canExpand {
+          Button {
+            withAnimation(WorkspaceMotion.disclosure) {
+              showsFullFeed.toggle()
+            }
+          } label: {
+            Label(
+              showsFullFeed ? "Show less" : "Show full feed",
+              systemImage: showsFullFeed ? "chevron.up" : "chevron.down"
+            )
+          }
+          .labelStyle(.titleAndIcon)
+          .buttonStyle(.plain)
+          .font(.caption2.weight(.medium))
+          .foregroundStyle(.secondary)
+        }
+      }
+
+      if !trimmedReasoning.isEmpty {
+        Text(trimmedReasoning)
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .lineLimit(showsFullFeed ? nil : (isLive ? 5 : 2))
+          .textSelection(.enabled)
+          .frame(maxWidth: compact ? 360 : 640, alignment: .leading)
+      }
+
+      if !visibleItems.isEmpty {
+        VStack(alignment: .leading, spacing: 6) {
+          ForEach(visibleItems) { item in
+            OpenClawActivityFeedRow(item: item)
+          }
+        }
+      }
+
+      if !showsFullFeed, items.count > collapsedItemLimit {
+        Text("\(items.count - collapsedItemLimit) earlier update\(items.count - collapsedItemLimit == 1 ? "" : "s") hidden")
+          .font(.caption2)
+          .foregroundStyle(.tertiary)
+      }
+    }
+    .frame(maxWidth: compact ? 360 : 640, alignment: .leading)
+  }
+}
+
+private struct OpenClawActivityFeedRow: View {
+  let item: OpenClawActivityFeedItem
+
+  var body: some View {
+    HStack(alignment: .top, spacing: 7) {
+      Image(systemName: icon)
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(tint)
+        .frame(width: 14)
+      VStack(alignment: .leading, spacing: 2) {
+        Text(item.title)
+          .font(.caption.weight(.medium))
+        if let detail = item.detail, !detail.isEmpty {
+          Text(detail)
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
+            .lineLimit(3)
+            .textSelection(.enabled)
+        }
+      }
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+  }
+
+  private var icon: String {
+    switch item.status {
+    case .running: return "wrench.and.screwdriver"
+    case .succeeded: return "checkmark.circle.fill"
+    case .failed: return "exclamationmark.triangle.fill"
+    }
+  }
+
+  private var tint: Color {
+    switch item.status {
+    case .running: return .accentColor
+    case .succeeded: return .green
+    case .failed: return .red
+    }
   }
 }

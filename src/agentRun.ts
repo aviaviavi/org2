@@ -159,6 +159,12 @@ export interface AgentRunBudget {
   elapsedSeconds?: number;
 }
 
+export interface AgentRunOutcome {
+  summary: string;
+  highlights: string[];
+  nextActions: string[];
+}
+
 export interface AgentRun {
   schema: typeof ORG2_AGENT_RUN_SCHEMA;
   id: string;
@@ -181,6 +187,7 @@ export interface AgentRun {
   validations: AgentRunValidation[];
   comments: AgentRunComment[];
   events: AgentRunEvent[];
+  outcome?: AgentRunOutcome;
   budget?: AgentRunBudget;
   parentRunId?: string;
   forkedFromEventId?: string;
@@ -208,6 +215,7 @@ export interface AgentRunCreateInput {
   capabilities?: string[];
   context?: AgentRunContextRef[];
   plan?: Array<Omit<AgentRunPlanStep, "id" | "status"> & { id?: string; status?: AgentRunStepStatus }>;
+  outcome?: Partial<AgentRunOutcome>;
   budget?: AgentRunBudget;
   parentRunId?: string;
   forkedFromEventId?: string;
@@ -327,6 +335,11 @@ export function createAgentRun(input: AgentRunCreateInput): AgentRun {
     ...(input.budget ? { budget: { ...input.budget } } : {}),
     ...(optional(input.parentRunId) ? { parentRunId: optional(input.parentRunId) } : {}),
     ...(optional(input.forkedFromEventId) ? { forkedFromEventId: optional(input.forkedFromEventId) } : {}),
+    ...(optional(input.outcome?.summary) ? { outcome: {
+      summary: optional(input.outcome?.summary)!,
+      highlights: unique(input.outcome?.highlights),
+      nextActions: unique(input.outcome?.nextActions),
+    } } : {}),
   };
   if (status === "running") run.startedAt = now;
   if (status === "completed") run.completedAt = now;
@@ -354,6 +367,11 @@ export function validateAgentRun(value: unknown): AgentRunValidationResult {
   for (const [name, value] of Object.entries(run.budget || {})) {
     if (value !== undefined && (!Number.isFinite(value) || value < 0)) issues.push({ path: `$.budget.${name}`, message: "must be a non-negative finite number" });
   }
+  if (run.outcome !== undefined) {
+    if (!String(run.outcome.summary || "").trim()) issues.push({ path: "$.outcome.summary", message: "must not be empty" });
+    if (!Array.isArray(run.outcome.highlights)) issues.push({ path: "$.outcome.highlights", message: "must be an array" });
+    if (!Array.isArray(run.outcome.nextActions)) issues.push({ path: "$.outcome.nextActions", message: "must be an array" });
+  }
   const stepIds = new Set<string>();
   for (const [index, step] of (run.plan || []).entries()) {
     if (!step.id || stepIds.has(step.id)) issues.push({ path: `$.plan[${index}].id`, message: "must be unique and non-empty" });
@@ -363,9 +381,17 @@ export function validateAgentRun(value: unknown): AgentRunValidationResult {
   return { valid: issues.length === 0, issues };
 }
 
-export function transitionAgentRun(run: AgentRun, status: AgentRunStatus, options: { actor?: string; reason?: string; now?: string } = {}): AgentRun {
+export function transitionAgentRun(run: AgentRun, status: AgentRunStatus, options: { actor?: string; reason?: string; summary?: string; highlights?: string[]; nextActions?: string[]; now?: string } = {}): AgentRun {
   if (run.status === status) return { ...run };
   if (!TRANSITIONS[run.status].includes(status)) throw new Error(`run cannot transition from ${run.status} to ${status}`);
+  const blockedReason = status === "blocked" ? optional(options.reason) : undefined;
+  if (status === "blocked" && !blockedReason) {
+    throw new Error("blocking a run requires --reason with a specific clarification or next action");
+  }
+  const completionSummary = status === "completed" ? optional(options.summary) || optional(run.outcome?.summary) : undefined;
+  if (status === "completed" && !completionSummary) {
+    throw new Error("completing a run requires --summary with a human-readable outcome");
+  }
   const now = isoNow(options.now);
   const next: AgentRun = {
     ...run,
@@ -374,12 +400,36 @@ export function transitionAgentRun(run: AgentRun, status: AgentRunStatus, option
     events: [...run.events, event("status-changed", now, options.actor, `${run.status} -> ${status}`, { from: run.status, to: status, ...(options.reason ? { reason: options.reason } : {}) })],
   };
   if (status === "running" && !next.startedAt) next.startedAt = now;
-  if (status === "completed") next.completedAt = now;
+  if (status === "completed") {
+    next.completedAt = now;
+    next.outcome = {
+      summary: completionSummary!,
+      highlights: options.highlights === undefined ? unique(run.outcome?.highlights) : unique(options.highlights),
+      nextActions: options.nextActions === undefined ? unique(run.outcome?.nextActions) : unique(options.nextActions),
+    };
+  }
   if (status !== "blocked") delete next.blockedReason;
-  if (status === "blocked") next.blockedReason = optional(options.reason) || "Blocked pending clarification";
+  if (status === "blocked") next.blockedReason = blockedReason;
   if (status === "failed") next.failure = optional(options.reason) || "Run failed";
   if (status !== "failed") delete next.failure;
   return next;
+}
+
+export function updateAgentRunOutcome(run: AgentRun, input: { summary: string; highlights?: string[]; nextActions?: string[]; actor?: string; now?: string }): AgentRun {
+  const summary = optional(input.summary);
+  if (!summary) throw new Error("run outcome summary is required");
+  const now = isoNow(input.now);
+  const outcome: AgentRunOutcome = {
+    summary,
+    highlights: unique(input.highlights),
+    nextActions: unique(input.nextActions),
+  };
+  return {
+    ...run,
+    outcome,
+    updatedAt: now,
+    events: [...run.events, event("outcome-updated", now, input.actor, summary)],
+  };
 }
 
 export function updateAgentRunAssignment(run: AgentRun, input: { owner?: string; assignee?: string; actor?: string; now?: string }): AgentRun {
@@ -560,6 +610,17 @@ export function renderAgentRunOrg(run: AgentRun): string {
     "",
     "** Goal",
     run.goal,
+    "",
+    "** Outcome",
+    ...(run.outcome ? [
+      run.outcome.summary,
+      "",
+      "*** Highlights",
+      ...(run.outcome.highlights.length ? run.outcome.highlights.map((item) => `- ${item}`) : ["- None recorded."]),
+      "",
+      "*** Next actions",
+      ...(run.outcome.nextActions.length ? run.outcome.nextActions.map((item) => `- ${item}`) : ["- None required."]),
+    ] : ["No human-readable outcome has been recorded yet."]),
     "",
     "** Acceptance criteria",
     ...(run.acceptanceCriteria.length ? run.acceptanceCriteria.map((item) => `- ${item}`) : ["- None recorded."]),

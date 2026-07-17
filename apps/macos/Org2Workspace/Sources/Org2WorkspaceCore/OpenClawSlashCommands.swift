@@ -2,27 +2,42 @@ import AppKit
 import Foundation
 
 public struct OpenClawSlashCommand: Identifiable, Equatable, Sendable {
+  public enum Origin: String, Sendable {
+    case org2
+    case openClaw
+  }
+
   public let name: String
+  public let aliases: [String]
   public let arguments: String
   public let summary: String
   public let systemImage: String
   public let isAgentAssisted: Bool
+  public let origin: Origin
 
-  public var id: String { name }
+  public var id: String { "\(origin.rawValue):\(name)" }
   public var invocation: String { arguments.isEmpty ? "/\(name)" : "/\(name) \(arguments)" }
 
   public init(
     name: String,
+    aliases: [String] = [],
     arguments: String = "",
     summary: String,
     systemImage: String,
-    isAgentAssisted: Bool = false
+    isAgentAssisted: Bool = false,
+    origin: Origin = .org2
   ) {
     self.name = name
+    self.aliases = aliases
     self.arguments = arguments
     self.summary = summary
     self.systemImage = systemImage
     self.isAgentAssisted = isAgentAssisted
+    self.origin = origin
+  }
+
+  public func matches(_ candidate: String) -> Bool {
+    name == candidate || aliases.contains(candidate)
   }
 }
 
@@ -49,6 +64,13 @@ public enum OpenClawSlashCommands {
   ]
 
   public static func parse(_ rawValue: String) -> OpenClawSlashCommandParseResult {
+    parse(rawValue, gatewayCommands: [])
+  }
+
+  public static func parse(
+    _ rawValue: String,
+    gatewayCommands: [OpenClawSlashCommand]
+  ) -> OpenClawSlashCommandParseResult {
     let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
     guard value.hasPrefix("/") else { return .message(value) }
     if value.hasPrefix("//") { return .message(String(value.dropFirst())) }
@@ -57,21 +79,134 @@ public enum OpenClawSlashCommands {
     let split = body.split(maxSplits: 1, whereSeparator: { $0.isWhitespace })
     let name = split.first.map(String.init)?.lowercased() ?? ""
     guard !name.isEmpty else { return .unknown("") }
-    guard let command = all.first(where: { $0.name == name }) else { return .unknown(name) }
+    guard let command = merged(with: gatewayCommands).first(where: { $0.matches(name) }) else {
+      return .unknown(name)
+    }
     let arguments = split.count > 1 ? String(split[1]).trimmingCharacters(in: .whitespacesAndNewlines) : ""
     return .command(command, arguments: arguments)
   }
 
   public static func suggestions(for rawValue: String, limit: Int = 7) -> [OpenClawSlashCommand] {
+    suggestions(for: rawValue, gatewayCommands: [], limit: limit)
+  }
+
+  public static func suggestions(
+    for rawValue: String,
+    gatewayCommands: [OpenClawSlashCommand],
+    limit: Int = 7
+  ) -> [OpenClawSlashCommand] {
     guard rawValue.hasPrefix("/"), !rawValue.hasPrefix("//"), !rawValue.contains("\n") else { return [] }
     let fragment = rawValue.dropFirst().split(whereSeparator: { $0.isWhitespace }).first.map(String.init)?.lowercased() ?? ""
     guard !rawValue.dropFirst().contains(where: { $0.isWhitespace }) else { return [] }
-    return Array(all.filter { fragment.isEmpty || $0.name.hasPrefix(fragment) }.prefix(limit))
+    return Array(merged(with: gatewayCommands).filter { command in
+      fragment.isEmpty
+        || command.name.hasPrefix(fragment)
+        || command.aliases.contains(where: { $0.hasPrefix(fragment) })
+    }.prefix(limit))
   }
 
   public static var helpText: String {
-    let rows = all.map { "\($0.invocation) — \($0.summary)" }.joined(separator: "\n")
-    return "Available commands\n\n\(rows)\n\nUse // at the beginning to send a literal slash message."
+    helpText(gatewayCommands: [])
+  }
+
+  public static func helpText(gatewayCommands: [OpenClawSlashCommand]) -> String {
+    let localRows = all.map { "\($0.invocation) — \($0.summary)" }.joined(separator: "\n")
+    let remote = merged(with: gatewayCommands).filter { $0.origin == .openClaw }
+    let remoteSection: String
+    if remote.isEmpty {
+      remoteSection = ""
+    } else {
+      let rows = remote.map { "\($0.invocation) — \($0.summary)" }.joined(separator: "\n")
+      remoteSection = "\n\nOpenClaw commands\n\n\(rows)"
+    }
+    return "Org2 commands\n\n\(localRows)\(remoteSection)\n\nUse // at the beginning to send a literal slash message."
+  }
+
+  public static func merged(with gatewayCommands: [OpenClawSlashCommand]) -> [OpenClawSlashCommand] {
+    let localNames = Set(all.map(\.name))
+    return all + gatewayCommands.filter { command in
+      command.origin == .openClaw && !localNames.contains(command.name)
+    }
+  }
+
+  public static func isGatewayCommand(
+    _ rawValue: String,
+    gatewayCommands: [OpenClawSlashCommand]
+  ) -> Bool {
+    let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard value.hasPrefix("/"), !value.hasPrefix("//") else { return false }
+    switch parse(value, gatewayCommands: gatewayCommands) {
+    case .command(let command, _): return command.origin == .openClaw
+    case .unknown(let name): return !name.isEmpty
+    case .message: return false
+    }
+  }
+}
+
+enum OpenClawGatewayCommandCatalog {
+  private struct Payload: Decodable {
+    let commands: [Entry]
+  }
+
+  private struct Entry: Decodable {
+    let name: String
+    let textAliases: [String]?
+    let description: String
+    let category: String?
+    let source: String
+    let acceptsArgs: Bool
+    let args: [Argument]?
+  }
+
+  private struct Argument: Decodable {
+    let name: String
+    let required: Bool?
+  }
+
+  static func decode(_ data: Data) throws -> [OpenClawSlashCommand] {
+    try JSONDecoder().decode(Payload.self, from: data).commands.compactMap { entry in
+      let name = normalizedName(entry.name)
+      guard !name.isEmpty else { return nil }
+      let aliases = (entry.textAliases ?? [])
+        .map(normalizedName)
+        .filter { !$0.isEmpty && $0 != name }
+      let arguments = argumentSynopsis(for: entry)
+      return OpenClawSlashCommand(
+        name: name,
+        aliases: Array(Set(aliases)).sorted(),
+        arguments: arguments,
+        summary: entry.description,
+        systemImage: systemImage(source: entry.source, category: entry.category),
+        origin: .openClaw
+      )
+    }
+  }
+
+  private static func normalizedName(_ rawValue: String) -> String {
+    rawValue.trimmingCharacters(in: CharacterSet(charactersIn: "/ ").union(.whitespacesAndNewlines)).lowercased()
+  }
+
+  private static func argumentSynopsis(for entry: Entry) -> String {
+    let arguments = (entry.args ?? []).map { argument in
+      argument.required == true ? "<\(argument.name)>" : "[\(argument.name)]"
+    }
+    if !arguments.isEmpty { return arguments.joined(separator: " ") }
+    return entry.acceptsArgs ? "[ARGS]" : ""
+  }
+
+  private static func systemImage(source: String, category: String?) -> String {
+    switch source {
+    case "plugin": return "puzzlepiece.extension"
+    case "skill": return "wand.and.stars"
+    default:
+      switch category {
+      case "session": return "bubble.left.and.bubble.right"
+      case "status": return "info.circle"
+      case "tools": return "wrench.and.screwdriver"
+      case "management": return "gearshape"
+      default: return "command"
+      }
+    }
   }
 }
 

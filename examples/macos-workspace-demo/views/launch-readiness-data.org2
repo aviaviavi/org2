@@ -1,0 +1,44 @@
+#+TITLE: Beacon launch readiness
+#+SUBTITLE: A local, reproducible view over project data
+
+* Weekly activation
+
+This materialized view keeps the query result, freshness metadata, and chart definition beside the launch notes that use it. Refreshing the data is explicit; reading the document does not contact an external service.
+
+#+query-data: result=weekly_activation rows=5 ran_at=2026-06-15T16:30:00Z freshness=24h source_hash=demo
+#+name: weekly_activation
+| week | activated_teams |
+|------+-----------------|
+|    1 |              18 |
+|    2 |              31 |
+|    3 |              47 |
+|    4 |              62 |
+|    5 |              78 |
+
+#+name: weekly_activation_chart
+```chart line
+title: Activated teams by beta week
+x: week
+y: activated_teams
+source: weekly_activation
+height: 240
+```
+
+* Launch blockers
+
+#+name: blockers_by_area
+| area        | open_blockers |
+|-------------+---------------|
+| Onboarding  |             2 |
+| Data import |             1 |
+| Docs        |             3 |
+| Support     |             1 |
+
+#+name: blockers_chart
+```chart bar
+title: Open blockers by area
+x: area
+y: open_blockers
+source: blockers_by_area
+height: 260
+```

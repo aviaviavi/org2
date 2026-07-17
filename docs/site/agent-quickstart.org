@@ -3,6 +3,8 @@
 
 This page is the shortest path for Codex, OpenClaw, local models, scripts, and other agents to understand an Org2 installation. Org2 is a local-first knowledge compiler: ordinary =.org2= and =.org= files are canonical, while indexes, agendas, graph data, context packets, reports, apps, and published pages are derived from the shared compiler/runtime.
 
+OpenClaw currently has the deepest native integration. The repository's =org2-lifecycle= plugin maps substantial OpenClaw turns, subagents, and cron executions into durable runs; the Mac app also speaks the OpenClaw Gateway protocol. Other agents can use the same cited retrieval, run/workflow files, CLI JSON, and MCP interfaces without adopting OpenClaw.
+
 * First minute
 
 Ask the installed CLI what it can do instead of relying on model memory:
@@ -41,7 +43,7 @@ The shorthand =org2 context QUERY= renders a cited Markdown/Org context pack for
 
 * Common workflows
 
-- *Delegate durable work*: =run create/list/show/start/resume/cancel/fork= keeps goals, cited context, plans, assignments, artifacts, approvals, validation, and event history in =.org2/runs/*.org2=.
+- *Delegate durable work*: =run create/list/show/start/resume/cancel/fork= keeps goals, cited context, plans, assignments, artifacts, approvals, validation, and event history in =.org2/runs/*.org2=. If work cannot continue, =run block ID --reason "Specific question or next action"= records an actionable clarification; a generic reasonless blocked state is rejected.
 - *Teach and replay a process*: =workflow save/run/triggers/package= converts a completed run into a versioned recipe with inputs, capabilities, outputs, checks, and approval boundaries.
 - *Review and evaluate*: =review list/show= unifies pending run approvals, review-required artifacts, clarifications, and failed checks; =eval run/fixture= checks observable outcomes and creates sanitized regression fixtures.
 - *Use portable tools and models*: =runtime select= resolves capability/privacy policies, =mcp serve= exposes corpus resources and run tools, and =mcp snapshot= preserves external results with provenance.
@@ -56,6 +58,10 @@ The shorthand =org2 context QUERY= renders a cited Markdown/Org context pack for
 
 See [[file:tooling-reference.org][Tooling reference]] for commands, [[file:language-reference.org][Language reference]] for syntax, [[file:corpus-flow.org][Corpus flow]] for artifact zones and trust boundaries, and [[file:features.org][Features]] for how the pieces fit together.
 
+* Native OpenClaw lifecycle bridge
+
+Install the checked-out integration with =openclaw plugins install --link ./integrations/openclaw=. The =org2-lifecycle= plugin must be enabled, permitted to use its typed conversation hooks, and configured with the target =corpusDir=. Verify the live Gateway surface with =openclaw plugins inspect org2-lifecycle --runtime --json= after restarting the Gateway. Ordinary conversation and personal TODOs stay out of Run Center; substantial main-agent work, subagents, and cron executions receive correlated durable run records.
+
 * Durable delegation example
 
 #+begin_src sh
@@ -67,11 +73,13 @@ org2 run start RUN_ID --dir ~/notes
 org2 run artifact RUN_ID --path views/launch-brief.org2 --role view \
   --review-status review-required --dir ~/notes
 org2 review list --status pending --dir ~/notes --json
-org2 run complete RUN_ID --dir ~/notes
+org2 run complete RUN_ID \
+  --summary "Prepared the cited launch briefing and reviewed PDF; no follow-up is required." \
+  --highlight "Launch claims retain source citations" --dir ~/notes
 org2 workflow save RUN_ID --id launch-briefing --dir ~/notes
 #+end_src
 
-The durable record is ordinary Org2 text under =.org2/runs/=. Its human-readable sections and versioned JSON machine-state block describe the same run. Workflow packages use the same pattern under =.org2/workflows/=. Apps and agents may index these files, but they are not allowed to replace them with private state.
+The durable record is ordinary Org2 text under =.org2/runs/=. Its human-readable sections and versioned JSON machine-state block describe the same run. Completion requires a concise =--summary= written for the person reviewing the result; repeat =--highlight= and =--next-action= when those details matter. Workflow packages use the same pattern under =.org2/workflows/=. Apps and agents may index these files, but they are not allowed to replace them with private state.
 
 Install and execute the built-in flagship recipe with:
 
@@ -100,6 +108,6 @@ org2 lint --dir ~/notes --recursive --format json
 
 Agents embedded in the macOS Workspace should still use shared CLI/parser semantics for IDs, links, source ranges, agenda behavior, data queries, and context. App presentation state is not the language implementation.
 
-The Mac chat's user-facing slash commands follow that rule: local commands such as =/search=, =/related=, =/lint=, =/spellcheck=, =/export=, and =/publish= call shared compiler/runtime behavior, while =/brief= and =/summarize= hand the selected source context to the configured agent. The app does not expose a separate =/context= command; source selection and cited context assembly remain internal agent plumbing.
+The Mac chat's user-facing slash commands follow that rule: local commands such as =/search=, =/related=, =/lint=, =/spellcheck=, =/export=, and =/publish= call shared compiler/runtime behavior, while =/brief= and =/summarize= hand the selected source context to the configured agent. With a live OpenClaw Gateway, the app also discovers the selected agent's runtime command inventory through =commands.list= and forwards those invocations unchanged to =chat.send=. Gateway commands are not routed through HTTP compatibility. The app does not expose a separate =/context= command; source selection and cited context assembly remain internal agent plumbing.
 
 For a completely new local workspace, the Mac app can initialize an empty folder with a minimal =org2.json=, inbox, welcome note, and =notes/=, =daily/=, =views/=, and =compiled/= zones. Those generated starter files are ordinary corpus text and should be treated like any other user-owned source.

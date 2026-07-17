@@ -35,6 +35,8 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
       "Mutating commands generally preview unless `--apply` is present; inspect previews before applying.",
       "Keep generated work in reviewable zones such as views/ or compiled/ before promotion into canonical notes/.",
       "Preserve file and line citations, IDs, provenance, source hashes, and review state when deriving artifacts.",
+      "Never block a durable run without an actionable clarification; `org2 run block ID --reason TEXT` requires the specific question or next action.",
+      "Never complete a durable run without a concise result for the reviewer; `org2 run complete ID --summary TEXT` requires a human-readable outcome and accepts repeatable highlights and next actions.",
       "Run targeted tests plus `org2 lint` around writes when practical; never put secrets in notes or generated artifacts.",
     ],
     workflows: [
@@ -116,6 +118,7 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
       { id: "vscode", role: "Best-supported general editing workflow, backed by shared CLI/LSP semantics." },
       { id: "macos-workspace", role: "Native alpha workspace shell with first-run corpus setup, agenda, capture, reading/editing, meetings, data notebooks, agent handoffs, and discoverable chat slash commands backed by shared compiler semantics." },
       { id: "ios-mobile", role: "Source-distributed mobile corpus and approval client." },
+      { id: "openclaw", role: "First native agent-runtime adapter: Gateway chat in the Mac app plus an optional lifecycle plugin that maps substantial turns, subagents, and cron work into durable runs." },
     ],
     docs: [
       { id: "agent-quickstart", url: "https://org2.avi.press/agent-quickstart.html" },

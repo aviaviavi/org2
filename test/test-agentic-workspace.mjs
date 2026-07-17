@@ -37,6 +37,22 @@ try {
   assert.throws(() => requestAgentRunApproval(run, { title: "Broken", action: "broken", riskClass: "unknown" }), /invalid approval risk class/);
   const pendingApproval = requestAgentRunApproval(run, { id: "test", title: "Test", action: "test", riskClass: "local-draft" });
   assert.throws(() => decideAgentRunApproval(pendingApproval, "test", "unknown", { actor: "Avi" }), /invalid approval decision/);
+  assert.throws(
+    () => transitionAgentRun(createAgentRun({ id: "missing-clarification", goal: "Require an actionable blocker" }), "blocked"),
+    /requires --reason/
+  );
+  assert.equal(
+    transitionAgentRun(
+      createAgentRun({ id: "specific-clarification", goal: "Ask a useful question" }),
+      "blocked",
+      { reason: "Which reporting period should this cover?" }
+    ).blockedReason,
+    "Which reporting period should this cover?"
+  );
+  assert.throws(
+    () => transitionAgentRun(transitionAgentRun(createAgentRun({ id: "missing-outcome", goal: "Explain the result" }), "running"), "completed"),
+    /requires --summary/
+  );
 
   const invalidStep = spawnSync(process.execPath, [path.resolve("dist/cli.js"), "run", "step", run.id, "draft", "--status", "unknown", "--dir", root], { encoding: "utf8" });
   assert.notEqual(invalidStep.status, 0);
@@ -54,7 +70,12 @@ try {
   run = decideAgentRunApproval(run, "release", "approved", { actor: "Avi", actorRole: "owner", receipt: "approval:local:1" });
   assert.equal(run.status, "running");
   run = addAgentRunArtifact(run, { id: "pdf", path: "compiled/board.pdf", role: "export", reviewStatus: "reviewed", mediaType: "application/pdf" });
-  run = transitionAgentRun(run, "completed");
+  run = transitionAgentRun(run, "completed", {
+    summary: "Prepared and reviewed the cited board briefing and its PDF export.",
+    highlights: ["The briefing and PDF are ready for use."],
+    nextActions: [],
+  });
+  assert.equal(run.outcome.summary, "Prepared and reviewed the cited board briefing and its PDF export.");
   saveAgentRun(root, run);
   assert.equal(listAgentRuns(root).length, 1);
   assert.equal(forkAgentRun(run, { id: "board-brief-revision" }).parentRunId, run.id);
@@ -80,6 +101,10 @@ try {
   assert.equal(packagedCorpusTemplate(workflow).schema, "org2:corpus-template:v1");
   assert.equal(replayWorkflowFixture(workflow, { schema: "org2:workflow-replay-fixture:v1", workflowVersion: "1.0.0", inputs: { quarter: "Q3" }, expectedGoal: "Prepare the Q3 board briefing", expectedSteps: ["draft"], expectedCapabilities: ["publish"], expectedRiskClass: "local-draft" }).passed, true);
   assert.equal(fs.existsSync(installBuiltinWorkflow(root, MEETING_TO_CONTROLLED_EXECUTION_WORKFLOW)), true);
+  const installedMeetingWorkflow = loadWorkflow(root, "meeting-to-controlled-execution");
+  const meetingRun = instantiateWorkflow(installedMeetingWorkflow, { meeting: "meetings/standup.org2" });
+  assert.match(meetingRun.goal, /meetings\/standup\.org2/);
+  assert.equal(meetingRun.context[0].ref, "meetings/standup.org2");
 
   const source = path.join(root, "notes", "source.org2");
   const report = path.join(root, "compiled", "report.pdf");
@@ -114,6 +139,16 @@ try {
   const messages = response.trim().split("\n").map((line) => JSON.parse(line));
   assert.equal(messages[0].result.serverInfo.name, "org2");
   assert.equal(messages[1].result.tools.some((tool) => tool.name === "org2_run_create"), true);
+
+  const mcpTransitionRun = createAgentRun({ id: "mcp-transition", goal: "Persist an MCP transition" });
+  saveAgentRun(root, mcpTransitionRun);
+  const transitionInput = new PassThrough(); const transitionOutput = new PassThrough(); let transitionResponse = "";
+  transitionOutput.setEncoding("utf8"); transitionOutput.on("data", (chunk) => transitionResponse += chunk);
+  const transitionServing = serveMcp(root, transitionInput, transitionOutput);
+  transitionInput.end(`${JSON.stringify({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "org2_run_transition", arguments: { run: "mcp-transition", status: "running", actor: "test" } } })}\n`);
+  await transitionServing;
+  assert.equal(JSON.parse(transitionResponse.trim()).result.content[0].type, "text");
+  assert.equal(loadAgentRun(root, "mcp-transition").status, "running");
 
   saveMcpClients(root, [{
     id: "org2-self",

@@ -41,7 +41,7 @@ public struct ContentView: View {
         Button {
           Task { await store.refreshWorkspace() }
         } label: {
-          if store.isLoadingAgenda {
+          if store.isRefreshingWorkspace {
             HStack(spacing: 6) {
               WorkspaceActivityIndicator(size: .small)
               Text("Refresh")
@@ -50,7 +50,8 @@ public struct ContentView: View {
             Label("Refresh", systemImage: "arrow.clockwise")
           }
         }
-        .disabled(store.corpusRoot == nil || store.isLoadingAgenda)
+        .disabled(store.corpusRoot == nil || store.isRefreshingWorkspace)
+        .help("Refresh the entire workspace (⌘R)")
       }
     }
     .keyboardEventMonitor { event, scope in
@@ -336,6 +337,26 @@ private struct SidebarView: View {
         }
       }
 
+      if !store.pinnedCorpusFiles.isEmpty {
+        Section("Pinned") {
+          ForEach(store.pinnedCorpusFiles) { file in
+            Button {
+              store.selectCorpusFile(file)
+            } label: {
+              SidebarPinnedFileRow(
+                file: file,
+                isSelected: store.selectedLocation?.file == file.path
+              )
+            }
+            .buttonStyle(.plain)
+            .contextMenu {
+              CorpusFileContextMenu(file: file)
+            }
+            .help(file.relativePath)
+          }
+        }
+      }
+
       Section("Corpus") {
         if let root = store.corpusRoot {
           VStack(alignment: .leading, spacing: 5) {
@@ -413,6 +434,34 @@ private struct SidebarView: View {
       get: { store.selectedSurface },
       set: { store.makeSurfacePrimary($0) }
     )
+  }
+}
+
+private struct SidebarPinnedFileRow: View {
+  let file: CorpusFile
+  let isSelected: Bool
+
+  var body: some View {
+    HStack(spacing: 8) {
+      Image(systemName: "doc.text")
+        .foregroundStyle(isSelected ? Color.accentColor : .secondary)
+        .frame(width: 16)
+      VStack(alignment: .leading, spacing: 1) {
+        Text(file.name)
+          .font(.callout.weight(isSelected ? .medium : .regular))
+          .lineLimit(1)
+          .truncationMode(.tail)
+        if !file.directory.isEmpty {
+          Text(file.directory)
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
+            .lineLimit(1)
+            .truncationMode(.middle)
+        }
+      }
+      Spacer(minLength: 0)
+    }
+    .contentShape(Rectangle())
   }
 }
 
@@ -845,9 +894,7 @@ private struct FilesView: View {
         WorkspaceLoadingStateView("Scanning files")
         Spacer()
       } else if store.filteredCorpusFiles.isEmpty {
-        EmptyStateView(title: "No Files", detail: "No org2, org, or markdown files matched.", action: "Refresh") {
-          Task { await store.refreshCorpusFiles() }
-        }
+        EmptyStateView(title: "No Files", detail: "No org2, org, or markdown files matched. Use the toolbar Refresh after adding files.")
       } else {
         List(selection: $store.selectedCorpusFileID) {
           ForEach(store.filteredCorpusFiles) { file in
@@ -913,6 +960,15 @@ private struct CorpusFileContextMenu: View {
       afterOpen?()
     } label: {
       Label("Open", systemImage: "doc.text")
+    }
+
+    Button {
+      store.togglePinnedFile(file)
+    } label: {
+      Label(
+        store.isFilePinned(path: file.path) ? "Unpin File" : "Pin File",
+        systemImage: store.isFilePinned(path: file.path) ? "pin.slash" : "pin"
+      )
     }
 
     Button {
@@ -1554,9 +1610,7 @@ private struct AgendaView: View {
       }
 
       if let error = store.errorText, store.agenda == nil {
-        EmptyStateView(title: "Agenda Failed", detail: error, action: "Refresh") {
-          Task { await store.refreshAgenda() }
-        }
+        EmptyStateView(title: "Agenda Failed", detail: "\(error)\n\nUse the toolbar Refresh to retry.")
       } else if let agenda = store.agenda {
         AgendaControls(agendaFilterFocused: $agendaFilterFocused)
 
@@ -1770,25 +1824,14 @@ private struct RunsAndReviewView: View {
 
 private struct RunCenterView: View {
   @EnvironmentObject private var store: WorkspaceStore
-  @State private var scope: Scope = .active
+  @State private var scope: AgentRunScope = .active
 
-  private enum Scope: String, CaseIterable, Identifiable {
-    case active = "Active"
-    case attention = "Needs attention"
-    case completed = "Completed"
-    case all = "All"
-    var id: String { rawValue }
+  private var visibleEntries: [AgentRunScopeEntry] {
+    scope.entries(in: store.agentRuns)
   }
 
   private var visibleRuns: [AgentRunItem] {
-    store.agentRuns.filter { run in
-      switch scope {
-      case .active: ["queued", "running"].contains(run.status)
-      case .attention: run.needsAttention
-      case .completed: run.status == "completed"
-      case .all: true
-      }
-    }
+    visibleEntries.map(\.run)
   }
 
   private var selectedRun: AgentRunItem? {
@@ -1803,18 +1846,23 @@ private struct RunCenterView: View {
       }
 
       HStack(spacing: 10) {
-        MetricView(title: "Working", value: "\(store.agentRuns.filter { ["queued", "running"].contains($0.status) }.count)")
-        MetricView(title: "Approval", value: "\(store.agentRuns.filter { $0.status == "waiting-approval" }.count)")
-        MetricView(title: "Blocked", value: "\(store.agentRuns.filter { $0.status == "blocked" || $0.status == "failed" }.count)")
-        MetricView(title: "Completed", value: "\(store.agentRuns.filter { $0.status == "completed" }.count)")
+        ForEach(AgentRunScope.allCases) { candidate in
+          Button {
+            withAnimation(WorkspaceMotion.quick) {
+              scope = candidate
+            }
+          } label: {
+            RunCenterScopeMetric(
+              title: candidate.rawValue,
+              count: candidate.count(in: store.agentRuns),
+              isSelected: scope == candidate
+            )
+          }
+          .buttonStyle(.plain)
+          .accessibilityLabel("\(candidate.rawValue), \(candidate.count(in: store.agentRuns)) runs")
+          .accessibilityValue(scope == candidate ? "Selected" : "")
+        }
       }
-      .padding(.horizontal, WorkspaceDesign.contentInset)
-      .padding(.bottom, 10)
-
-      Picker("Run state", selection: $scope) {
-        ForEach(Scope.allCases) { scope in Text(scope.rawValue).tag(scope) }
-      }
-      .pickerStyle(.segmented)
       .padding(.horizontal, WorkspaceDesign.contentInset)
       .padding(.bottom, 12)
 
@@ -1823,41 +1871,104 @@ private struct RunCenterView: View {
       if store.isLoadingAgentRuns && store.agentRuns.isEmpty {
         Spacer(); WorkspaceLoadingStateView("Loading agent runs"); Spacer()
       } else if visibleRuns.isEmpty {
-        EmptyStateView(title: "No \(scope.rawValue) Runs", detail: "Runs created by the CLI, chat commands, schedules, and workflows appear here.", action: "Refresh") {
-          Task { await store.refreshAgentRuns(updatesStatus: true) }
-        }
+        EmptyStateView(title: "No \(scope.rawValue) Runs", detail: "Runs created by agents, schedules, and workflows appear here automatically.")
       } else {
-        HSplitView {
-          List(visibleRuns, selection: $store.selectedAgentRunID) { run in
-            RunCenterRow(run: run).tag(run.id)
+        List(visibleEntries) { entry in
+          Button {
+            store.selectAgentRun(entry.run)
+          } label: {
+            RunCenterRow(
+              run: entry.run,
+              representedFailureCount: entry.representedFailureCount,
+              isSelected: store.selectedAgentRunID == entry.run.id
+            )
           }
-          .listStyle(.inset)
-          .frame(minWidth: 280, idealWidth: 340)
-
-          if let selectedRun { RunCenterDetail(run: selectedRun) }
-          else { Text("Select a run").foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity) }
+          .buttonStyle(.plain)
+          .listRowBackground(Color.clear)
         }
+        .listStyle(.inset)
       }
     }
     .onAppear {
-      if store.agentRuns.isEmpty && !store.isLoadingAgentRuns { Task { await store.refreshAgentRuns() } }
-    }
-    .onChange(of: scope) {
-      if let selected = store.selectedAgentRunID,
-         !visibleRuns.contains(where: { $0.id == selected }) {
-        store.selectedAgentRunID = visibleRuns.first?.id
+      if let selectedRun {
+        store.selectAgentRun(selectedRun)
+      } else if store.agentRuns.isEmpty && !store.isLoadingAgentRuns {
+        Task { await store.refreshAgentRuns() }
       }
     }
+    .onChange(of: store.selectedAgentRunID) {
+      guard let selectedRun else { return }
+      store.selectAgentRun(selectedRun)
+    }
+    .onChange(of: scope) {
+      syncVisibleRunSelection()
+    }
+    .onChange(of: visibleEntries.map(\.id)) {
+      syncVisibleRunSelection()
+    }
+  }
+
+  private func syncVisibleRunSelection() {
+    if let selected = store.selectedAgentRunID,
+       !visibleEntries.contains(where: { $0.id == selected }) {
+      store.selectedAgentRunID = visibleEntries.first?.id
+    }
+  }
+}
+
+private struct RunCenterScopeMetric: View {
+  let title: String
+  let count: Int
+  let isSelected: Bool
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 2) {
+      Text("\(count)")
+        .font(.title3.weight(.semibold))
+        .monospacedDigit()
+        .lineLimit(1)
+      Text(title)
+        .font(.caption.weight(.medium))
+        .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+        .lineLimit(1)
+        .minimumScaleFactor(0.82)
+    }
+    .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+    .padding(.horizontal, 12)
+    .padding(.vertical, 9)
+    .background(
+      isSelected ? Color.accentColor.opacity(0.10) : WorkspaceDesign.panelFill,
+      in: RoundedRectangle(cornerRadius: WorkspaceDesign.cornerRadius, style: .continuous)
+    )
+    .overlay {
+      RoundedRectangle(cornerRadius: WorkspaceDesign.cornerRadius, style: .continuous)
+        .stroke(isSelected ? Color.accentColor.opacity(0.45) : WorkspaceDesign.hairline)
+    }
+    .contentShape(Rectangle())
   }
 }
 
 private struct RunCenterRow: View {
   let run: AgentRunItem
+  let representedFailureCount: Int
+  let isSelected: Bool
 
   var body: some View {
     VStack(alignment: .leading, spacing: 6) {
       HStack(spacing: 7) {
         StatusPill(text: run.status)
+        if representedFailureCount > 1 {
+          Text("Latest of \(representedFailureCount) failed attempts")
+            .font(.caption2.weight(.medium))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+        }
+        if let workflow = run.workflowDisplayName {
+          Text(workflow)
+            .font(.caption2.weight(.medium))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+        }
         if run.pendingApprovalCount > 0 {
           Label("\(run.pendingApprovalCount)", systemImage: "checkmark.seal")
             .font(.caption2.weight(.semibold)).foregroundStyle(.orange)
@@ -1866,16 +1977,36 @@ private struct RunCenterRow: View {
       Text(run.goal).font(.body.weight(.semibold)).lineLimit(2)
       HStack(spacing: 8) {
         Text(run.progressText)
-        if let assignee = run.assignee { Text("• \(assignee)") }
+        Text("• Updated \(AgentRunTimestampPresentation.displayText(for: run.updatedAt))")
       }
       .font(.caption).foregroundStyle(.secondary).lineLimit(1)
     }
-    .padding(.vertical, 5)
+    .padding(.horizontal, 10)
+    .padding(.vertical, 8)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(
+      isSelected ? Color.accentColor.opacity(0.09) : Color.clear,
+      in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+    )
+    .overlay(alignment: .leading) {
+      if isSelected {
+        Capsule()
+          .fill(Color.accentColor)
+          .frame(width: 3)
+          .padding(.vertical, 8)
+      }
+    }
+    .contentShape(Rectangle())
+    .accessibilityAddTraits(isSelected ? .isSelected : [])
   }
 }
 
 private struct RunCenterDetail: View {
   @EnvironmentObject private var store: WorkspaceStore
+  @State private var clarificationResponse = ""
+  @State private var completionSummary = ""
+  @State private var isCompletionPresented = false
+  @State private var isWorkflowConfirmationPresented = false
   let run: AgentRunItem
 
   private var isMutating: Bool { store.mutatingAgentRunIDs.contains(run.id) }
@@ -1884,26 +2015,70 @@ private struct RunCenterDetail: View {
     ScrollView {
       VStack(alignment: .leading, spacing: 18) {
         VStack(alignment: .leading, spacing: 6) {
-          HStack { StatusPill(text: run.status); StatusPill(text: run.riskClass) }
+          HStack(spacing: 8) {
+            StatusPill(text: run.status)
+            if let workflow = run.workflowDisplayName {
+              Label(
+                run.workflowVersion.map { "From \(workflow) v\($0)" } ?? "From \(workflow)",
+                systemImage: "clock.arrow.circlepath"
+              )
+              .font(.caption.weight(.medium))
+              .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 8)
+            DetailPaneControlGroup()
+          }
           Text(run.goal).font(.title2.weight(.semibold)).textSelection(.enabled)
-          Text("Updated \(run.updatedAt)").font(.caption).foregroundStyle(.secondary)
+          Text("Updated \(AgentRunTimestampPresentation.displayText(for: run.updatedAt))")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .help(AgentRunTimestampPresentation.detailText(for: run.updatedAt))
         }
 
         runActions
 
-        if let reason = run.blockedReason ?? run.failure {
-          Label(reason, systemImage: "exclamationmark.triangle.fill")
-            .foregroundStyle(.orange).padding(10)
+        if run.status == "blocked" {
+          clarificationSection
+        } else if let failure = run.failure {
+          Label(failure, systemImage: "exclamationmark.triangle.fill")
+            .foregroundStyle(.orange)
+            .padding(10)
             .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
         }
 
-        if !run.plan.isEmpty {
-          runSection("Plan") {
-            ForEach(run.plan) { step in
-              HStack(alignment: .top) {
-                Image(systemName: step.status == "completed" ? "checkmark.circle.fill" : step.status == "failed" ? "xmark.circle.fill" : step.status == "running" ? "play.circle.fill" : "circle")
-                  .foregroundStyle(step.status == "completed" ? .green : step.status == "failed" ? .red : .secondary)
-                VStack(alignment: .leading) { Text(step.title); Text("\(step.kind) • \(step.status)").font(.caption).foregroundStyle(.secondary) }
+        if run.status == "completed" {
+          runSection("Outcome") {
+            VStack(alignment: .leading, spacing: 10) {
+              Text(run.humanOutcomeSummary)
+                .font(.body)
+                .textSelection(.enabled)
+
+              if let outcome = run.outcome, !outcome.highlights.isEmpty {
+                VStack(alignment: .leading, spacing: 5) {
+                  Text("Highlights").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                  ForEach(Array(outcome.highlights.enumerated()), id: \.offset) { _, highlight in
+                    Label(highlight, systemImage: "sparkles")
+                  }
+                }
+              }
+
+              if let outcome = run.outcome, !outcome.nextActions.isEmpty {
+                VStack(alignment: .leading, spacing: 5) {
+                  Text("Next actions").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                  ForEach(Array(outcome.nextActions.enumerated()), id: \.offset) { _, action in
+                    Label(action, systemImage: "arrow.right.circle")
+                  }
+                }
+              } else if run.humanNextAction != nil {
+                Label("No action required", systemImage: "checkmark.circle.fill")
+                  .font(.callout.weight(.medium))
+                  .foregroundStyle(.green)
+              }
+
+              if run.outcome == nil {
+                Text("This older run did not record a completion summary, so this overview was assembled from its outputs and steps.")
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
               }
             }
           }
@@ -1926,42 +2101,98 @@ private struct RunCenterDetail: View {
         }
 
         if !run.artifacts.isEmpty {
-          runSection("Artifacts") {
+          runSection("Outputs") {
             ForEach(run.artifacts) { artifact in
               Button { store.openAgentRunArtifact(artifact) } label: {
-                Label(artifact.title ?? artifact.path, systemImage: artifact.role == "export" ? "square.and.arrow.up" : "doc.text")
-              }.buttonStyle(.link)
+                HStack(alignment: .top, spacing: 9) {
+                  Image(systemName: artifact.role == "export" ? "square.and.arrow.up" : "doc.text")
+                  VStack(alignment: .leading, spacing: 2) {
+                    Text(artifact.displayTitle).font(.body.weight(.medium))
+                    Text("\(artifact.roleDisplayText) · \(artifact.path)")
+                      .font(.caption)
+                      .foregroundStyle(.secondary)
+                      .lineLimit(1)
+                  }
+                }
+              }
+              .buttonStyle(.plain)
+              .help("Open \(artifact.path) in Org2")
             }
           }
         }
 
-        if !run.validations.isEmpty {
-          runSection("Validation") {
-            ForEach(run.validations) { validation in
-              Label("\(validation.name): \(validation.status)", systemImage: validation.status == "passed" ? "checkmark.seal.fill" : "exclamationmark.triangle")
-                .foregroundStyle(validation.status == "passed" ? .green : .orange)
+        if !run.attentionValidations.isEmpty || run.artifacts.contains(where: { $0.reviewStatus == "review-required" }) {
+          runSection("Needs attention") {
+            ForEach(run.attentionValidations) { validation in
+              Label(
+                validation.detail ?? "\(validation.displayName): \(AgentRunItem.humanizedLabel(validation.status))",
+                systemImage: "exclamationmark.triangle.fill"
+              )
+              .foregroundStyle(validation.status == "failed" ? .red : .orange)
+            }
+            ForEach(run.artifacts.filter { $0.reviewStatus == "review-required" }) { artifact in
+              Button { store.openAgentRunArtifact(artifact) } label: {
+                Label("Review \(artifact.displayTitle)", systemImage: "doc.badge.ellipsis")
+              }
+              .buttonStyle(.link)
             }
           }
         }
 
-        if !run.context.isEmpty {
-          runSection("Cited context") {
-            ForEach(Array(run.context.enumerated()), id: \.offset) { _, item in
-              Text(item.citation ?? item.ref).font(.callout.monospaced()).textSelection(.enabled)
-            }
-          }
-        }
-
-        if !run.comments.isEmpty {
-          runSection("Handoff and comments") {
-            ForEach(run.comments) { comment in
-              VStack(alignment: .leading) { Text(comment.author).font(.caption.weight(.semibold)); Text(comment.body) }
-            }
-          }
-        }
+        technicalDetails
       }
       .padding(WorkspaceDesign.contentInset)
       .frame(maxWidth: .infinity, alignment: .leading)
+    }
+    .onChange(of: run.id) {
+      clarificationResponse = ""
+      completionSummary = ""
+      isCompletionPresented = false
+    }
+    .sheet(isPresented: $isCompletionPresented) {
+      RunCompletionSheet(summary: $completionSummary) { summary in
+        isCompletionPresented = false
+        Task { await store.completeAgentRun(run, summary: summary) }
+      }
+    }
+    .alert("Create a reusable workflow?", isPresented: $isWorkflowConfirmationPresented) {
+      Button("Cancel", role: .cancel) {}
+      Button("Create Workflow") { Task { await store.saveAgentRunAsWorkflow(run) } }
+    } message: {
+      Text("This creates a new reusable workflow definition from this one-off run. It does not rerun, publish, or send anything.")
+    }
+  }
+
+  private var clarificationSection: some View {
+    runSection(run.clarificationPrompt == nil ? "Clarification missing" : "Clarification needed") {
+      VStack(alignment: .leading, spacing: 10) {
+        if let prompt = run.clarificationPrompt {
+          Label(prompt, systemImage: "questionmark.bubble.fill")
+            .foregroundStyle(.orange)
+        } else {
+          Label("The agent blocked this run without recording a specific question.", systemImage: "exclamationmark.triangle.fill")
+            .foregroundStyle(.orange)
+          Text("Tell it how to proceed below. Future runs must record an actionable clarification before entering the blocked state.")
+            .font(.callout)
+            .foregroundStyle(.secondary)
+        }
+
+        TextField("Your response or direction", text: $clarificationResponse, axis: .vertical)
+          .lineLimit(2...5)
+
+        Button {
+          let response = clarificationResponse
+          clarificationResponse = ""
+          Task { await store.respondToAgentRunClarification(run, response: response) }
+        } label: {
+          Label("Reply & Resume", systemImage: "paperplane.fill")
+        }
+        .buttonStyle(WorkspaceActionButtonStyle())
+        .disabled(
+          isMutating
+            || WorkspaceStore.normalizedAgentRunClarificationResponse(clarificationResponse) == nil
+        )
+      }
     }
   }
 
@@ -1970,16 +2201,30 @@ private struct RunCenterDetail: View {
       if run.status == "queued" { actionButton("Start", "play.fill", "start") }
       if run.status == "blocked" { actionButton("Resume", "play.fill", "resume") }
       if run.status == "failed" || run.status == "canceled" { actionButton("Retry", "arrow.clockwise", "retry") }
+      if run.status == "failed" {
+        Button {
+          Task { await store.mutateAgentRun(run, action: "cancel") }
+        } label: {
+          Label("Dismiss", systemImage: "archivebox")
+        }
+        .buttonStyle(WorkspaceActionButtonStyle())
+        .disabled(isMutating)
+        .help("Keep the durable record but remove this failure from Needs attention")
+      }
       if ["queued", "running", "waiting-approval", "blocked"].contains(run.status) { actionButton("Cancel", "xmark.circle", "cancel") }
-      if run.status == "running" { actionButton("Complete", "checkmark.circle", "complete") }
-      if run.status == "completed" {
-        Button { Task { await store.saveAgentRunAsWorkflow(run) } } label: { Label("Save as Workflow", systemImage: "square.stack.3d.up") }
+      if run.status == "running" {
+        Button { isCompletionPresented = true } label: { Label("Complete…", systemImage: "checkmark.circle") }
           .buttonStyle(WorkspaceActionButtonStyle()).disabled(isMutating)
       }
-      Button { store.openAgentRunRecord(run) } label: { Label("Open Record", systemImage: "doc.text") }
+      if run.status == "completed" && run.workflowId == nil {
+        Button { isWorkflowConfirmationPresented = true } label: { Label("Create Reusable Workflow…", systemImage: "square.stack.3d.up") }
+          .buttonStyle(WorkspaceActionButtonStyle())
+          .disabled(isMutating)
+          .help("Create a reusable workflow definition from this one-off run")
+      }
+      Button { store.openAgentRunRecord(run) } label: { Label("View Record", systemImage: "doc.text") }
         .buttonStyle(WorkspaceActionButtonStyle())
-      Button { Task { await store.refreshAgentRuns(updatesStatus: true) } } label: { Label("Refresh", systemImage: "arrow.clockwise") }
-        .labelStyle(.iconOnly).buttonStyle(WorkspaceActionButtonStyle())
+        .help("Render the durable run record inside Org2")
       if isMutating { WorkspaceActivityIndicator(size: .mini) }
     }.controlSize(.small)
   }
@@ -1989,6 +2234,107 @@ private struct RunCenterDetail: View {
       .buttonStyle(WorkspaceActionButtonStyle()).disabled(isMutating)
   }
 
+  private var technicalDetails: some View {
+    DisclosureGroup {
+      VStack(alignment: .leading, spacing: 16) {
+        if !run.plan.isEmpty {
+          technicalGroup("Plan") {
+            ForEach(run.plan) { step in
+              HStack(alignment: .top) {
+                Image(systemName: stepIcon(step.status))
+                  .foregroundStyle(stepColor(step.status))
+                VStack(alignment: .leading) {
+                  Text(step.title)
+                  Text("\(AgentRunItem.humanizedLabel(step.kind)) · \(AgentRunItem.humanizedLabel(step.status))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+              }
+            }
+          }
+        }
+
+        if !run.acceptanceCriteria.isEmpty {
+          technicalGroup("Acceptance criteria") {
+            ForEach(Array(run.acceptanceCriteria.enumerated()), id: \.offset) { _, criterion in
+              Label(criterion, systemImage: "checkmark")
+            }
+          }
+        }
+
+        if !run.latestValidations.isEmpty {
+          technicalGroup("Latest validation results") {
+            ForEach(run.latestValidations) { validation in
+              Label(
+                "\(validation.displayName): \(AgentRunItem.humanizedLabel(validation.status))",
+                systemImage: validation.status == "passed" ? "checkmark.seal.fill" : validation.status == "skipped" ? "minus.circle" : "exclamationmark.triangle"
+              )
+              .foregroundStyle(validation.status == "passed" ? .green : validation.status == "skipped" ? .secondary : .orange)
+            }
+          }
+        }
+
+        if !run.context.isEmpty {
+          technicalGroup("Cited context") {
+            ForEach(Array(run.context.enumerated()), id: \.offset) { _, item in
+              Text(item.citation ?? item.ref).font(.callout.monospaced()).textSelection(.enabled)
+            }
+          }
+        }
+
+        if !run.comments.isEmpty {
+          technicalGroup("Handoff and comments") {
+            ForEach(run.comments) { comment in
+              VStack(alignment: .leading) {
+                Text(comment.author).font(.caption.weight(.semibold))
+                Text(comment.body)
+              }
+            }
+          }
+        }
+
+        technicalGroup("Run details") {
+          Text("Risk: \(AgentRunItem.humanizedLabel(run.riskClass))")
+          if let assignee = run.assignee { Text("Assignee: \(assignee)") }
+          Text("Run ID: \(run.id)").textSelection(.enabled)
+        }
+      }
+      .padding(.top, 10)
+    } label: {
+      Label("Technical details", systemImage: "wrench.and.screwdriver")
+        .font(.headline)
+    }
+    .padding(12)
+    .background(WorkspaceDesign.panelFill, in: RoundedRectangle(cornerRadius: WorkspaceDesign.cornerRadius))
+  }
+
+  private func technicalGroup<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+    VStack(alignment: .leading, spacing: 7) {
+      Text(title).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+      content()
+    }
+  }
+
+  private func stepIcon(_ status: String) -> String {
+    switch status {
+    case "completed": return "checkmark.circle.fill"
+    case "failed": return "xmark.circle.fill"
+    case "running": return "play.circle.fill"
+    case "skipped": return "minus.circle"
+    case "blocked": return "exclamationmark.circle.fill"
+    default: return "circle"
+    }
+  }
+
+  private func stepColor(_ status: String) -> Color {
+    switch status {
+    case "completed": return .green
+    case "failed": return .red
+    case "blocked": return .orange
+    default: return .secondary
+    }
+  }
+
   private func runSection<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
     VStack(alignment: .leading, spacing: 9) {
       Text(title).font(.headline)
@@ -1996,6 +2342,35 @@ private struct RunCenterDetail: View {
     }
     .padding(12).frame(maxWidth: .infinity, alignment: .leading)
     .background(WorkspaceDesign.panelFill, in: RoundedRectangle(cornerRadius: WorkspaceDesign.cornerRadius))
+  }
+}
+
+private struct RunCompletionSheet: View {
+  @Environment(\.dismiss) private var dismiss
+  @Binding var summary: String
+  let complete: (String) -> Void
+
+  private var normalizedSummary: String {
+    summary.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 16) {
+      Text("Complete Run").font(.title2.weight(.semibold))
+      Text("Describe what happened in plain language. This is the first thing people will see when they review the run.")
+        .foregroundStyle(.secondary)
+      TextField("Outcome summary", text: $summary, axis: .vertical)
+        .lineLimit(3...7)
+      HStack {
+        Spacer()
+        Button("Cancel") { dismiss() }
+        Button("Complete Run") { complete(normalizedSummary) }
+          .keyboardShortcut(.defaultAction)
+          .disabled(normalizedSummary.isEmpty)
+      }
+    }
+    .padding(22)
+    .frame(width: 520)
   }
 }
 
@@ -2062,17 +2437,13 @@ private struct ApprovalsView: View {
   @ViewBuilder
   private var approvalList: some View {
     if let error = store.errorText, store.approvalItems.isEmpty {
-      EmptyStateView(title: "Approvals Failed", detail: error, action: "Refresh") {
-        Task { await store.refreshApprovals(updatesStatus: true) }
-      }
+      EmptyStateView(title: "Approvals Failed", detail: "\(error)\n\nUse the toolbar Refresh to retry.")
     } else if store.isLoadingApprovals && store.approvalItems.isEmpty {
       Spacer()
       WorkspaceLoadingStateView("Loading approvals")
       Spacer()
     } else if store.visibleApprovalItems.isEmpty {
-      EmptyStateView(title: "No Approvals", detail: "No pending approval candidates matched.", action: "Refresh") {
-        Task { await store.refreshApprovals(updatesStatus: true) }
-      }
+      EmptyStateView(title: "No Approvals", detail: "No pending approval candidates matched.")
     } else {
       List(selection: $store.selectedApprovalItemID) {
         ForEach(store.visibleApprovalItems) { item in
@@ -2776,9 +3147,7 @@ private struct SearchView: View {
     case .nodes:
       let nodes = store.searchNodes
       if nodes.isEmpty {
-        EmptyStateView(title: "No Nodes", detail: nodeEmptyStateDetail, action: "Refresh Index") {
-          Task { await store.refreshCorpusFiles() }
-        }
+        EmptyStateView(title: "No Nodes", detail: "\(nodeEmptyStateDetail) Use the toolbar Refresh to rebuild the corpus index.")
       } else {
         List(nodes) { node in
           NodeSearchRow(node: node)
@@ -3584,6 +3953,9 @@ private struct OpenClawChatView: View {
       OpenClawConfigurationSheet()
         .environmentObject(store)
     }
+    .task {
+      await store.refreshOpenClawCommands()
+    }
   }
 
   private var chatColumn: some View {
@@ -3623,9 +3995,6 @@ private struct OpenClawChatView: View {
             .truncationMode(.tail)
         }
         Spacer(minLength: 0)
-        if store.isSendingOpenClawMessage {
-          WorkspaceActivityIndicator(size: .small)
-        }
         Button {
           store.makeSurfacePrimary(.openClaw)
         } label: {
@@ -3661,10 +4030,6 @@ private struct OpenClawChatView: View {
 
   @ViewBuilder
   private var headerActions: some View {
-    if store.isSendingOpenClawMessage {
-      WorkspaceActivityIndicator(size: .small)
-    }
-
     Button {
       store.createOpenClawChatThread()
     } label: {
@@ -3687,10 +4052,6 @@ private struct OpenClawChatView: View {
 
   @ViewBuilder
   private var homeHeaderActions: some View {
-    if store.isSendingOpenClawMessage {
-      WorkspaceActivityIndicator(size: .small)
-    }
-
     Button {
       store.createOpenClawChatThread()
     } label: {
@@ -3776,7 +4137,19 @@ private struct OpenClawChatView: View {
                 .id(message.id)
             }
             if store.isSendingOpenClawMessage {
-              OpenClawTypingIndicatorView(startedAt: store.openClawRequestStartedAt)
+              OpenClawTypingIndicatorView(
+                startedAt: store.openClawRequestStartedAt,
+                connectionState: store.openClawGatewayConnectionState,
+                connectionDetail: store.openClawGatewayConnectionDetail,
+                runID: store.openClawActiveRunID,
+                streamingReply: store.openClawStreamingReply,
+                reasoning: store.openClawExposedReasoning,
+                activities: store.openClawRunActivities,
+                compact: presentation.isCompact,
+                onStop: {
+                  Task { await store.stopOpenClawRun() }
+                }
+              )
                 .id("openclaw-typing")
             }
           }
@@ -4030,6 +4403,7 @@ private struct OpenClawConfigurationSheet: View {
   @State private var briefsStartNewThread = true
   @State private var token = ""
   @State private var clearToken = false
+  @State private var isRequestingPairing = false
 
   var body: some View {
     VStack(alignment: .leading, spacing: 16) {
@@ -4121,24 +4495,31 @@ private struct OpenClawConfigurationSheet: View {
       }
 
       HStack {
+        Button {
+          guard saveConfiguration() else { return }
+          isRequestingPairing = true
+          Task {
+            await store.requestOpenClawGatewayPairing()
+            isRequestingPairing = false
+          }
+        } label: {
+          if isRequestingPairing {
+            HStack(spacing: 6) {
+              WorkspaceActivityIndicator(size: .small, style: .signal)
+              Text("Requesting Pairing")
+            }
+          } else {
+            Label("Save & Request Pairing", systemImage: "lock.open")
+          }
+        }
+        .disabled(isRequestingPairing)
+        .help("Create a stable Org2 Workspace device identity and request Gateway operator access")
         Spacer()
         Button("Cancel") {
           dismiss()
         }
         Button("Save") {
-          let saved = store.saveOpenClawConfiguration(
-            endpoint: endpoint,
-            agent: agent,
-            handoffAssignee: handoffAssignee,
-            personalAssigneeNames: personalAssigneeNames,
-            remoteCorpusPath: remoteCorpusPath,
-            briefsStartNewThread: briefsStartNewThread,
-            token: token,
-            clearToken: clearToken
-          )
-          if saved {
-            dismiss()
-          }
+          if saveConfiguration() { dismiss() }
         }
         .buttonStyle(.borderedProminent)
       }
@@ -4155,6 +4536,19 @@ private struct OpenClawConfigurationSheet: View {
       token = ""
       clearToken = false
     }
+  }
+
+  private func saveConfiguration() -> Bool {
+    store.saveOpenClawConfiguration(
+      endpoint: endpoint,
+      agent: agent,
+      handoffAssignee: handoffAssignee,
+      personalAssigneeNames: personalAssigneeNames,
+      remoteCorpusPath: remoteCorpusPath,
+      briefsStartNewThread: briefsStartNewThread,
+      token: token,
+      clearToken: clearToken
+    )
   }
 }
 
@@ -4500,7 +4894,9 @@ private struct DetailView: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
-      if let location = store.selectedLocation {
+      if let run = store.presentedAgentRun {
+        RunCenterDetail(run: run)
+      } else if let location = store.selectedLocation {
         DetailHeader(location: location)
         Divider()
         VStack(spacing: 0) {
@@ -4889,6 +5285,17 @@ private struct DetailHeader: View {
   private var sourceMenu: some View {
     Menu {
       Button {
+        store.togglePinnedFile(path: location.file)
+      } label: {
+        Label(
+          store.isFilePinned(path: location.file) ? "Unpin File" : "Pin File",
+          systemImage: store.isFilePinned(path: location.file) ? "pin.slash" : "pin"
+        )
+      }
+
+      Divider()
+
+      Button {
         store.open(location)
       } label: {
         Label("Open Source", systemImage: "arrow.up.forward.square")
@@ -5264,7 +5671,7 @@ private struct OrgHTMLLoadingView: View {
 
   var body: some View {
     HStack(spacing: 8) {
-      WorkspaceActivityIndicator(size: .small)
+      WorkspaceActivityIndicator(size: .small, style: .scan)
       Text(label)
         .font(.callout)
         .foregroundStyle(.secondary)
@@ -5393,6 +5800,7 @@ private struct OrgSourceEditorWithLinkTools: View {
       .frame(minHeight: 320, maxHeight: .infinity)
       .layoutPriority(1)
       .background(Color.secondary.opacity(0.045), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+      .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
       .overlay(
         RoundedRectangle(cornerRadius: 6, style: .continuous)
           .stroke(WorkspaceDesign.hairline)
@@ -6536,22 +6944,24 @@ struct StatusPill: View {
 
   private var statusColor: Color {
     switch text.uppercased() {
-    case "TODO": .blue.opacity(0.15)
-    case "PROG", "IN_PROGRESS": .indigo.opacity(0.16)
-    case "WAIT", "HOLD", "PAUSED": .orange.opacity(0.16)
-    case "DONE": .green.opacity(0.16)
-    case "CANCELLED", "CANCELED": .red.opacity(0.15)
+    case "TODO", "QUEUED": .blue.opacity(0.13)
+    case "PROG", "IN_PROGRESS", "RUNNING": .indigo.opacity(0.14)
+    case "WAIT", "HOLD", "PAUSED", "WAITING-APPROVAL", "BLOCKED": .orange.opacity(0.14)
+    case "DONE", "COMPLETED": .green.opacity(0.14)
+    case "FAILED": .red.opacity(0.13)
+    case "CANCELLED", "CANCELED": Color.secondary.opacity(0.11)
     default: WorkspaceDesign.subtleFill
     }
   }
 
   private var statusForeground: Color {
     switch text.uppercased() {
-    case "TODO": .blue
-    case "PROG", "IN_PROGRESS": .indigo
-    case "WAIT", "HOLD", "PAUSED": .orange
-    case "DONE": .green
-    case "CANCELLED", "CANCELED": .red
+    case "TODO", "QUEUED": .blue
+    case "PROG", "IN_PROGRESS", "RUNNING": .indigo
+    case "WAIT", "HOLD", "PAUSED", "WAITING-APPROVAL", "BLOCKED": .orange
+    case "DONE", "COMPLETED": .green
+    case "FAILED": .red
+    case "CANCELLED", "CANCELED": .secondary
     default: .secondary
     }
   }
@@ -6560,8 +6970,20 @@ struct StatusPill: View {
 private struct EmptyStateView: View {
   let title: String
   let detail: String
-  let action: String
-  let perform: () -> Void
+  let action: String?
+  let perform: (() -> Void)?
+
+  init(
+    title: String,
+    detail: String,
+    action: String? = nil,
+    perform: (() -> Void)? = nil
+  ) {
+    self.title = title
+    self.detail = detail
+    self.action = action
+    self.perform = perform
+  }
 
   var body: some View {
     VStack(spacing: 12) {
@@ -6578,10 +7000,12 @@ private struct EmptyStateView: View {
           .textSelection(.enabled)
           .padding(.horizontal, 24)
       }
-      Button(action) {
-        perform()
+      if let action, let perform {
+        Button(action) {
+          perform()
+        }
+        .buttonStyle(WorkspaceActionButtonStyle())
       }
-      .buttonStyle(WorkspaceActionButtonStyle())
       Spacer()
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)

@@ -6,6 +6,7 @@ import SwiftUI
 @main
 struct Org2WorkspaceApp: App {
   @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+  @Environment(\.scenePhase) private var scenePhase
   @StateObject private var store = WorkspaceStore()
   private let globalCaptureHotKey = GlobalCaptureHotKey()
 
@@ -39,6 +40,10 @@ struct Org2WorkspaceApp: App {
           if status != noErr {
             store.statusText = "Global capture shortcut unavailable (\(status))"
           }
+          store.setRunReviewAutoRefreshActive(scenePhase == .active)
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+          store.setRunReviewAutoRefreshActive(newPhase == .active)
         }
         .task {
           await store.bootstrap()

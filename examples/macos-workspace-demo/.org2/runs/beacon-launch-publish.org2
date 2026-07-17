@@ -1,0 +1,127 @@
+#+TITLE: Run: Publish the Beacon launch brief
+#+ORG2_KIND: agent-run
+
+* TODO Publish the Beacon launch brief :agent-run:
+
+#+begin_src json :org2-agent-run
+{
+  "schema": "org2:agent-run:v1",
+  "id": "beacon-launch-publish",
+  "goal": "Publish the Beacon launch brief",
+  "acceptanceCriteria": [
+    "The brief cites the beta review and launch-readiness data",
+    "A person approves the public release"
+  ],
+  "status": "running",
+  "riskClass": "external-action",
+  "owner": "Avi",
+  "assignee": "OpenClaw",
+  "workflowId": "meeting-to-controlled-execution",
+  "workflowVersion": "1.0.0",
+  "providerPolicy": "source-cited-draft",
+  "provider": "openclaw",
+  "model": "configured-agent",
+  "capabilities": ["agent-context", "publish", "validation"],
+  "context": [
+    {
+      "ref": "meetings/2026-06-15-0900-beta-review.org2",
+      "title": "Beta review",
+      "citation": "meetings/2026-06-15-0900-beta-review.org2:1"
+    },
+    {
+      "ref": "views/launch-readiness-data.org2",
+      "title": "Launch readiness data",
+      "citation": "views/launch-readiness-data.org2:1"
+    }
+  ],
+  "plan": [
+    {
+      "id": "collect",
+      "title": "Collect cited meeting and readiness context",
+      "kind": "compiler",
+      "status": "completed",
+      "completedAt": "2026-06-15T16:10:00.000Z"
+    },
+    {
+      "id": "draft",
+      "title": "Draft the launch brief",
+      "kind": "agent",
+      "status": "completed",
+      "completedAt": "2026-06-15T16:18:00.000Z"
+    },
+    {
+      "id": "validate",
+      "title": "Validate citations and publishing output",
+      "kind": "validation",
+      "status": "completed",
+      "completedAt": "2026-06-15T16:22:00.000Z"
+    },
+    {
+      "id": "approve",
+      "title": "Approve public release",
+      "kind": "approval",
+      "status": "running",
+      "startedAt": "2026-06-15T16:23:00.000Z"
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "launch-brief",
+      "path": "notes/projects/beacon-launch.org2",
+      "role": "report",
+      "title": "Beacon launch brief",
+      "mediaType": "text/org",
+      "reviewStatus": "review-required",
+      "createdAt": "2026-06-15T16:18:00.000Z"
+    }
+  ],
+  "approvals": [
+    {
+      "id": "publish",
+      "title": "Publish launch brief",
+      "action": "Publish the cited Beacon launch brief to the configured documentation site",
+      "riskClass": "external-action",
+      "status": "pending",
+      "requestedRole": "owner",
+      "requestedFrom": "Avi",
+      "requestedAt": "2026-06-15T16:23:00.000Z"
+    }
+  ],
+  "validations": [
+    {
+      "id": "citations",
+      "name": "Source citations",
+      "status": "passed",
+      "checkedAt": "2026-06-15T16:22:00.000Z",
+      "detail": "Every launch claim resolves to the meeting transcript or readiness view"
+    }
+  ],
+  "comments": [
+    {
+      "id": "handoff",
+      "author": "OpenClaw",
+      "body": "Draft and validation are complete. The public publish is paused at the owner approval boundary.",
+      "createdAt": "2026-06-15T16:23:00.000Z"
+    }
+  ],
+  "events": [
+    {
+      "id": "created",
+      "type": "created",
+      "at": "2026-06-15T16:04:00.000Z",
+      "actor": "Avi",
+      "detail": "Publish the Beacon launch brief"
+    },
+    {
+      "id": "approval-requested",
+      "type": "approval-requested",
+      "at": "2026-06-15T16:23:00.000Z",
+      "actor": "OpenClaw",
+      "detail": "Publish launch brief"
+    }
+  ],
+  "createdAt": "2026-06-15T16:04:00.000Z",
+  "updatedAt": "2026-06-15T16:23:00.000Z",
+  "startedAt": "2026-06-15T16:05:00.000Z"
+}
+#+end_src

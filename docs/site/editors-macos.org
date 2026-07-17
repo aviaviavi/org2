@@ -12,23 +12,25 @@ These screenshots are captured from the synthetic corpus in =examples/macos-work
 
 #+begin_export html
 <div class="org2-shot-grid">
+  <figure><img src="assets/screenshots/macos-workspace-runs-review.png" alt="Org2 Workspace Run Center showing a cited launch brief ready for owner approval" loading="lazy" /><figcaption>Runs &amp; Review: inspect delegated work, outputs, validation, and the approval boundary in one workspace flow.</figcaption></figure>
+  <figure><img src="assets/screenshots/macos-workspace-data.png" alt="Org2 Workspace data notebook showing materialized launch metrics and a chart" loading="lazy" /><figcaption>Data notebooks: render local or explicitly refreshed query results as rich, interactive charts while the declarations remain plain text.</figcaption></figure>
   <figure><img src="assets/screenshots/macos-workspace-agenda.png" alt="Org2 Workspace agenda showing scheduled demo tasks and a selected entry" loading="lazy" /><figcaption>Agenda: review scheduled work, ownership, TODO state, and entry context from local files.</figcaption></figure>
-  <figure><img src="assets/screenshots/macos-workspace-files.png" alt="Org2 Workspace files view showing a selected Beacon Launch note" loading="lazy" /><figcaption>Files: open ordinary corpus files, generated views, and source-backed artifacts in the same detail pane.</figcaption></figure>
   <figure><img src="assets/screenshots/macos-workspace-openclaw.png" alt="Org2 Workspace OpenClaw chat showing a local chat transcript and change summary" loading="lazy" /><figcaption>OpenClaw chat: hand off selected workspace context while keeping transcript state local.</figcaption></figure>
   <figure><img src="assets/screenshots/macos-workspace-meetings.png" alt="Org2 Workspace meetings view showing a recorded meeting and transcript artifact" loading="lazy" /><figcaption>Meetings: record or import audio, keep transcripts in the corpus, and review meeting notes beside the list.</figcaption></figure>
+  <figure><img src="assets/screenshots/macos-workspace-files.png" alt="Org2 Workspace files view showing a selected Beacon Launch note" loading="lazy" /><figcaption>Files: open ordinary corpus files, generated views, and source-backed artifacts in the same detail pane.</figcaption></figure>
 </div>
 #+end_export
 
 * Current surfaces
 
-The sidebar exposes the main workspace surfaces:
+The sidebar exposes the main workspace surfaces. Files pinned from the Files list or an open document's *File* menu appear in a personal, per-corpus *Pinned* section for quick return without changing the corpus itself.
 
 - *Agenda* :: review scheduled/deadline work across the selected corpus, filter items, switch agenda modes, mutate TODO/planning state, and open the selected item in the detail pane.
-- *Runs & Review* :: use the Run Center to see active, completed, blocked, failed, and approval-needed durable agent runs; inspect their plan, cited inputs, artifacts, validation, handoffs, and comments; start, resume, retry, cancel, complete, approve/revise/reject, open the plain-text record, or save completed work as a reusable workflow. The Review Queue tab retains the parser-backed headline approval workflow and OpenClaw discussion path.
+- *Runs & Review* :: use the Run Center to see active, completed, blocked, failed, and approval-needed durable agent runs. While the app is active, it silently refreshes durable runs and the Review Queue once per minute and refreshes them immediately when the app returns to the foreground. *Needs attention* is an actionable projection rather than an append-only crash log: repeated failed executions of the same goal collapse to the latest attempt, and a newer running, completed, or cancelled execution removes the older failures from that scope. *All* retains every durable record, and *Dismiss* keeps a failed record while marking it cancelled so it no longer needs attention. The run list uses the workspace's standard detail pane instead of creating a nested third column; selecting an output replaces the run detail with that file, and Back returns to the run. A completed run leads with its plain-language outcome, highlights, next actions, and readable output names; genuine warnings and review requirements remain prominent, while the plan, citations, routine validation, risk, and machine metadata are collapsed under *Technical details*. Skipped steps are labeled separately instead of counted as completed, and repeated validation attempts collapse to the latest result. Runs created from an existing workflow show that provenance and do not offer a duplicate *Save as Workflow* action; a completed one-off run may be turned into a reusable workflow through the explicitly described *Create Reusable Workflow…* confirmation. Blocked runs show the agent's required clarification and accept an in-app *Reply & Resume* response; legacy reasonless blockers are called out as unactionable instead of masquerading as a question. Completion requires a human-readable outcome summary. Durable records keep interoperable UTC timestamps, while the Run Center presents readable dates and times in the viewer's local timezone. The Review Queue tab retains the parser-backed headline approval workflow and OpenClaw discussion path. Rejecting a headline approval requires an audit reason; submitting the dialog without one keeps it open with a visible validation message.
 - *Files* :: scan =.org2=, =.org=, and Markdown files, filter them, and quick-open a file with keyboard shortcuts.
 - *Search* :: run literal, case-insensitive full-text search across =.org2= and =.org= files under the selected corpus, then open results with source context.
 - *Meetings* :: record or import local audio, create meeting/transcript artifacts under the corpus, and keep transcription provenance in Org2 files.
-- *OpenClaw Chat* :: send selected workspace context to a configured OpenClaw endpoint while keeping the conversation state local to the app.
+- *OpenClaw Chat* :: send selected workspace context through the OpenClaw Gateway while keeping the conversation state local to the app. Gateway protocol v4 provides streamed replies, connection/run state, tool and lifecycle activity, optional provider-exposed reasoning, and a Stop action; the OpenAI-compatible HTTP endpoint remains a compatibility fallback when the WebSocket protocol is unavailable.
 
 Global capture is available while the app is running. =Cmd-Ctrl-Return= opens a capture modal from anywhere on macOS, and the in-app =Capture= command uses the same path. Captures append to today's daily note, using =roam.dailiesDir= from =org2.json= when configured. The modal can write notes or TODOs, set TODO state, priority, tags, scheduled/deadline dates, and mark a capture ready for agent handoff. The paste control accepts text, URLs, local files, and pasted image data; local files and images are copied into =attachments/= and linked from the capture.
 
@@ -65,6 +67,8 @@ The current app workflow supports local/table datasets plus configured ClickHous
 
 Interactive line, bar, and histogram charts remain compiler-described and app-presented: source controls deterministic size/height/sort settings, while the app provides nearest-point hover, exact-value tooltips, keyboard mark navigation, and resizable cards. Notes cannot inject arbitrary JavaScript, and static SVG remains the CLI/export fallback.
 
+This is one place where the Mac app can take the Org tradition substantially further. Org tables, result blocks, and chart declarations remain readable and versionable as source, while the HTML-backed reading surface has room for dense layouts and interactions that would be awkward in a terminal-style buffer.
+
 The important product rule is that the app should write ordinary Org2 text. Users should be able to inspect every change in Git or another editor.
 
 * Meetings
@@ -77,11 +81,21 @@ See [[https://github.com/aviaviavi/org2/blob/main/docs/meetings.md][Org2 meeting
 
 * OpenClaw and agents
 
-The app includes OpenClaw chat for sending messages with current workspace context.
+OpenClaw is the first fully wired agent runtime for the Mac app. That is the current implementation boundary rather than a permanent restriction: durable run files, workflows, approvals, context packs, CLI commands, and MCP interfaces are shared runtime surfaces that other agents can use.
+
+The app includes OpenClaw chat for sending messages with current workspace context. It prefers OpenClaw Gateway protocol v4 over a native WebSocket connection and uses the configured bearer token for the Gateway handshake. The accepted run ID, connection state, streamed reply, provider-exposed progress, and structured tool events appear together in the in-progress transcript card. Repeated low-information tool events are grouped into readable summaries instead of exposing rows of raw completion JSON. The work log is saved with the assistant reply, stays compact by default, and can be expanded to scroll through the full retained feed. The Stop control sends =chat.abort= for the accepted run. If the Gateway WebSocket cannot be reached or negotiated, that turn falls back to the existing OpenAI-compatible HTTP endpoint and clearly labels the reduced-observability mode.
+
+The repository also ships the native =org2-lifecycle= plugin under =integrations/openclaw/=. It records substantial OpenClaw main-agent turns, subagent executions, and cron work in the same durable run model shown by Runs & Review. See [[file:getting-started.org][Getting started]] for the install path.
+
+Remote Gateways normally require a paired device identity before granting =operator.read= and =operator.write=. *Save & Request Pairing* in OpenClaw configuration creates a stable Ed25519 device identity in the macOS keychain and opens a Gateway pairing request. Approve the displayed request ID on the Gateway host; the next request can then use the live protocol. Until approval, normal chat continues over the HTTP compatibility endpoint without replaying an already-accepted Gateway run.
+
+The progress feed only shows reasoning content that OpenClaw and the selected provider intentionally expose. It is not a promise of private or hidden chain-of-thought data, and it remains absent when the provider or Gateway does not emit a reasoning stream.
 
 The chat composer sends with =Return= and inserts a newline with =Cmd-Return=. The =Dictate= control records a short local microphone note, transcribes it with the same local Whisper resolution path used by meeting capture, and sends the transcript as a normal OpenClaw message.
 
-Typing =/= opens a discoverable command menu. Commands that only need compiler or app state run locally and leave their result in the chat transcript; commands marked *Agent* are expanded into a scoped request and sent with the selected document context. Unknown commands are not silently forwarded. Begin a message with =//= to send a literal leading slash.
+Typing =/= opens a discoverable command menu. Use the Up and Down arrow keys to move through its suggestions and press =Tab= to complete the highlighted command; clicking a command still completes it directly. Commands that only need compiler or app state run locally and leave their result in the chat transcript; commands marked *Agent* are expanded into a scoped request and sent with the selected document context.
+
+When the live Gateway is available, the app calls =commands.list= for the selected agent and merges OpenClaw's runtime-native, skill, and plugin commands into the same menu. Those commands are labeled *OpenClaw* and are sent to =chat.send= exactly as typed, without the Org2 context envelope. Commands absent from the most recently discovered catalog are also forwarded so a newly installed command can work before the cache refreshes; OpenClaw remains the authority that validates and authorizes them. Gateway slash commands do not fall back to the OpenAI-compatible HTTP endpoint. Begin a message with =//= to send a literal leading slash as ordinary chat text.
 
 The first command set is:
 
@@ -115,6 +129,8 @@ High-value shortcuts include:
 
 - =Cmd-1= through =Cmd-5= for primary surfaces,
 - =Cmd-6= for OpenClaw Chat,
+- automatic foreground refresh for durable runs and approvals every minute, plus an immediate refresh when the app becomes active,
+- the global toolbar Refresh or =Cmd-R= to refresh agenda, meetings, files and indexes, assigned work, approvals, durable runs, agent threads, and the selected document on demand without redundant surface-local refresh buttons,
 - =Cmd-P= / =Cmd-K= for quick open,
 - =Cmd-Ctrl-Return= for system-wide capture while the app is running,
 - =Cmd-7=, =Cmd-8=, and =Cmd-9= for today/yesterday/tomorrow daily notes,
