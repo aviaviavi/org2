@@ -69,6 +69,14 @@ assert.equal(normalizedPlanning.changed, true);
 assert.match(normalizedPlanning.text, /^\* TODO Mixed\nSCHEDULED: <2026-07-08 Wed>\nBody$/m);
 assert.doesNotMatch(normalizedPlanning.text, /scheduled: .* SCHEDULED:/);
 
+const repairedEmptyPlanning = updatePlanningInText("* TODO Empty planning\nSCHEDULED:\nBody\n", {
+  filePath: "tasks.org2",
+  lineNumber: 1,
+  kind: "SCHEDULED",
+  date: "2026-07-08",
+});
+assert.equal(repairedEmptyPlanning.text, "* TODO Empty planning\nSCHEDULED: <2026-07-08 Wed>\nBody\n");
+
 const crlfPlanning = updatePlanningInText("* TODO CRLF\r\nBody\r\n", {
   filePath: "tasks.org2",
   lineNumber: 1,

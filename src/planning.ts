@@ -42,7 +42,7 @@ function replacePlanningTokenInLine(line: string, kind: PlanningKind, timestamp:
   }
 
   // If the line contains `${kind}:` but not a recognized <...> timestamp, do a looser replacement.
-  const looseRe = new RegExp(`\\b${kind}:\\s+[^\n]*?(?=(\\s+(SCHEDULED|DEADLINE|CLOSED):)|$)`, "i");
+  const looseRe = new RegExp(`\\b${kind}:\\s*[^\n]*?(?=(\\s+(SCHEDULED|DEADLINE|CLOSED):)|$)`, "i");
   if (looseRe.test(line)) {
     return line.replace(looseRe, `${kind}: ${timestamp}`);
   }
@@ -105,11 +105,7 @@ export function updatePlanningInText(input: string, opts: UpdatePlanningOptions)
   }
 
   // No existing token.
-  if (planStart >= endExclusive) {
-    // Subtree is only the headline; insert planning line right after.
-    lines.splice(planStart, 0, `${opts.kind}: ${timestamp}`);
-    changed = true;
-  } else if (planEnd === planStart) {
+  if (planEnd === planStart) {
     // No planning lines; insert immediately after headline.
     lines.splice(planStart, 0, `${opts.kind}: ${timestamp}`);
     changed = true;
