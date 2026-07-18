@@ -34,6 +34,36 @@ try {
   assert.equal(shown.status, 0, shown.stderr);
   assert.equal(JSON.parse(shown.stdout).identity.id, "team-operations");
 
+  const personalRoot = fs.mkdtempSync(path.join(os.tmpdir(), "org2-corpus-personal-"));
+  try {
+    initializeCorpusIdentity(personalRoot, { id: "avi-notes", name: "Avi Notes", kind: "personal" }, { apply: true });
+    fs.writeFileSync(path.join(root, "notes", "team.org2"), "* TODO Team planning\nSCHEDULED: <2026-07-20 Mon>\nShared roadmap phrase.\n");
+    fs.writeFileSync(path.join(personalRoot, "notes", "personal.org2"), "* TODO Personal planning\nSCHEDULED: <2026-07-20 Mon>\nPersonal roadmap phrase.\n");
+
+    const agenda = spawnSync(process.execPath, [
+      "dist/cli.js", "workspace", "agenda",
+      "--mount", personalRoot, "--mount", root,
+      "--from", "2026-07-20", "--to", "2026-07-20", "--json",
+    ], { encoding: "utf8" });
+    assert.equal(agenda.status, 0, agenda.stderr);
+    const agendaPayload = JSON.parse(agenda.stdout);
+    assert.equal(agendaPayload.$schema, "org2:workspace-agenda:v1");
+    assert.deepEqual(agendaPayload.corpora.map((corpus) => corpus.id), ["avi-notes", "team-operations"]);
+    assert.deepEqual(agendaPayload.days[0].items.map((item) => item.corpus.id), ["avi-notes", "team-operations"]);
+
+    const search = spawnSync(process.execPath, [
+      "dist/cli.js", "workspace", "search", "roadmap phrase",
+      "--mount", personalRoot, "--mount", root, "--recursive", "--limit", "10", "--json",
+    ], { encoding: "utf8" });
+    assert.equal(search.status, 0, search.stderr);
+    const searchPayload = JSON.parse(search.stdout);
+    assert.equal(searchPayload.$schema, "org2:workspace-search:v1");
+    assert.equal(searchPayload.issues.length, 0, JSON.stringify(searchPayload, null, 2));
+    assert.deepEqual(searchPayload.results.map((item) => item.corpus.id), ["avi-notes", "team-operations"]);
+  } finally {
+    fs.rmSync(personalRoot, { recursive: true, force: true });
+  }
+
   const invalidRoot = fs.mkdtempSync(path.join(os.tmpdir(), "org2-corpus-invalid-"));
   try {
     fs.writeFileSync(path.join(invalidRoot, "org2.json"), "{}\n");

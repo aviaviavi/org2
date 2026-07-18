@@ -187,6 +187,45 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(restored.corpusRoot?.path, personal.path)
   }
 
+  @MainActor
+  func testAgendaAndSearchCanReadAllMountedCorpora() async throws {
+    let container = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-federated-reads-\(UUID().uuidString)", isDirectory: true)
+    let personal = container.appendingPathComponent("personal", isDirectory: true)
+    let shared = container.appendingPathComponent("team", isDirectory: true)
+    try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: container) }
+    _ = try WorkspaceStore.initializeStarterCorpus(at: personal, kind: "personal")
+    _ = try WorkspaceStore.initializeStarterCorpus(at: shared, kind: "shared")
+    let day = ISO8601DateFormatter().string(from: Date()).prefix(10)
+    try "* TODO Personal item\nSCHEDULED: <\(day)>\nPersonal federation phrase.\n".write(
+      to: personal.appendingPathComponent("notes/personal.org2"), atomically: true, encoding: .utf8
+    )
+    try "* TODO Shared item\nSCHEDULED: <\(day)>\nShared federation phrase.\n".write(
+      to: shared.appendingPathComponent("notes/shared.org2"), atomically: true, encoding: .utf8
+    )
+    let suiteName = "org2-federated-reads-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()), defaults: defaults)
+
+    store.setCorpusRoot(personal)
+    await store.refreshActiveCorpusIdentity()
+    store.setCorpusRoot(shared)
+    await store.refreshActiveCorpusIdentity()
+    store.setCorpusRoot(personal)
+    store.agendaReadScope = .allCorpora
+    await store.refreshAgenda()
+
+    XCTAssertEqual(store.agenda?.corpora?.count, 2)
+    XCTAssertEqual(Set(store.agenda?.days.flatMap(\.items).compactMap { $0.corpus?.kind } ?? []), Set(["personal", "shared"]))
+
+    store.searchReadScope = .allCorpora
+    store.searchQuery = "federation phrase"
+    await store.runSearch()
+    XCTAssertEqual(Set(store.searchResults.compactMap { $0.corpus?.kind }), Set(["personal", "shared"]))
+  }
+
   func testInitializeStarterCorpusRefusesNonemptyFolder() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-starter-corpus-nonempty-\(UUID().uuidString)", isDirectory: true)
@@ -240,6 +279,46 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(payload.days[0].items[0].properties["EFFORT"], "30m")
     XCTAssertEqual(payload.days[0].items[0].tags, ["work"])
     XCTAssertEqual(payload.days[0].items[0].priority, "A")
+  }
+
+  func testDecodesCorpusQualifiedWorkspaceReads() throws {
+    let agendaJSON = """
+    {
+      "$schema": "org2:workspace-agenda:v1",
+      "range": { "start": "2026-07-20", "end": "2026-07-20", "days": 1 },
+      "overdue": [],
+      "days": [{
+        "date": "2026-07-20",
+        "weekday": "Mon",
+        "items": [{
+          "todo": "TODO", "headline": "Team planning", "kind": "SCHEDULED",
+          "file": "/tmp/team/notes/plan.org2", "line": 0, "tags": [], "properties": {},
+          "corpus": { "schema": "org2:corpus:v1", "id": "team", "name": "Team", "kind": "shared", "root": "/tmp/team" }
+        }]
+      }],
+      "corpora": [{ "schema": "org2:corpus:v1", "id": "team", "name": "Team", "kind": "shared", "root": "/tmp/team" }],
+      "issues": []
+    }
+    """
+    let searchJSON = """
+    {
+      "$schema": "org2:workspace-search:v1", "query": "plan", "mode": "line", "sort": "scan",
+      "results": [{
+        "file": "/tmp/team/notes/plan.org2", "line": 1, "tags": [], "snippet": "Team planning",
+        "corpus": { "schema": "org2:corpus:v1", "id": "team", "name": "Team", "kind": "shared", "root": "/tmp/team" }
+      }],
+      "corpora": [{ "schema": "org2:corpus:v1", "id": "team", "name": "Team", "kind": "shared", "root": "/tmp/team" }],
+      "issues": []
+    }
+    """
+
+    let agenda = try JSONDecoder().decode(AgendaPayload.self, from: Data(agendaJSON.utf8))
+    let search = try JSONDecoder().decode(SearchPayload.self, from: Data(searchJSON.utf8))
+
+    XCTAssertEqual(agenda.days[0].items[0].corpus?.id, "team")
+    XCTAssertEqual(agenda.corpora?.first?.kind, "shared")
+    XCTAssertEqual(search.results[0].corpus?.root, "/tmp/team")
+    XCTAssertEqual(search.issues?.count, 0)
   }
 
   func testAgendaPriorityPillNormalizesOrgPriorityTokens() {
@@ -2062,6 +2141,8 @@ final class Org2ModelsTests: XCTestCase {
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()), defaults: defaults)
 
     XCTAssertEqual(store.agendaMode, .focus)
+    XCTAssertEqual(store.agendaReadScope, .activeCorpus)
+    XCTAssertEqual(store.searchReadScope, .activeCorpus)
   }
 
   @MainActor

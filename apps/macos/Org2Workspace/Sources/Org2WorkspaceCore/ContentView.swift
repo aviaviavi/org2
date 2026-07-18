@@ -1690,6 +1690,10 @@ private struct AgendaView: View {
         store.syncAgendaSelectionAfterDisplayOptionsChange()
       }
     }
+    .onChange(of: store.agendaReadScope) {
+      guard store.agendaMode != .assigned else { return }
+      Task { await store.refreshAgenda() }
+    }
     .onChange(of: store.agendaFilter) {
       store.syncAgendaSelectionAfterDisplayOptionsChange()
     }
@@ -1730,6 +1734,16 @@ private struct AgendaControls: View {
         }
         .pickerStyle(.segmented)
         .frame(maxWidth: 300)
+
+        if store.agendaMode != .assigned {
+          Picker("Scope", selection: $store.agendaReadScope) {
+            ForEach(WorkspaceReadScope.allCases) { scope in
+              Text(scope.title).tag(scope)
+            }
+          }
+          .frame(width: 135)
+          .help("Read agenda items from the active corpus or every mounted corpus")
+        }
 
         Spacer(minLength: 0)
 
@@ -2959,7 +2973,7 @@ private struct AgendaItemListView: View {
               .contextMenu {
                 WorkspaceLocationContextMenu(
                   location: .agenda(item),
-                  showsHeadingActions: true,
+                  showsHeadingActions: store.isResultInActiveCorpus(item.corpus),
                   select: { store.selectAgendaItem(item) }
                 ) {
                   Label("Open", systemImage: "calendar")
@@ -3151,6 +3165,7 @@ private struct AgendaRow: View {
           .contentShape(Rectangle())
       }
       .buttonStyle(.plain)
+      .disabled(!store.isResultInActiveCorpus(item.corpus))
       .help(store.isAgendaItemBulkSelected(item) ? "Remove from bulk selection" : "Add to bulk selection")
       .padding(.top, 1)
 
@@ -3169,12 +3184,20 @@ private struct AgendaRow: View {
               .font(.caption)
               .foregroundStyle(.secondary)
           }
+          if let corpus = item.corpus {
+            Text(corpus.name)
+              .font(.caption2.weight(.semibold))
+              .foregroundStyle(.secondary)
+              .padding(.horizontal, 6)
+              .padding(.vertical, 2)
+              .background(WorkspaceDesign.subtleFill, in: Capsule())
+          }
         }
         HStack(spacing: 8) {
           Text([item.kind, item.time].compactMap { $0 }.joined(separator: " "))
             .lineLimit(1)
             .fixedSize(horizontal: true, vertical: false)
-          Text(store.relativePath(item.file) + ":\(item.lineForEditor)")
+          Text(store.corpusQualifiedPath(item.file, corpus: item.corpus) + ":\(item.lineForEditor)")
             .lineLimit(1)
             .truncationMode(.middle)
         }
@@ -3351,6 +3374,16 @@ private struct SearchView: View {
         .pickerStyle(.segmented)
         .frame(width: 180)
 
+        if store.searchMode == .text {
+          Picker("Scope", selection: $store.searchReadScope) {
+            ForEach(WorkspaceReadScope.allCases) { scope in
+              Text(scope.title).tag(scope)
+            }
+          }
+          .frame(width: 135)
+          .help("Search the active corpus or every mounted corpus")
+        }
+
         TextField(store.searchMode.placeholder, text: $store.searchQuery)
           .textFieldStyle(.roundedBorder)
           .focused($isSearchFocused)
@@ -3386,6 +3419,12 @@ private struct SearchView: View {
     }
     .onChange(of: store.searchFocusToken) {
       isSearchFocused = true
+    }
+    .onChange(of: store.searchReadScope) {
+      guard store.searchMode == .text,
+            !store.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      else { return }
+      Task { await store.runSearch() }
     }
   }
 
@@ -3493,13 +3532,13 @@ private struct SearchView: View {
     SearchRow(result: result)
       .contentShape(Rectangle())
       .onTapGesture {
-        store.select(.search(result))
+        store.selectSearchResult(result)
       }
       .contextMenu {
         WorkspaceLocationContextMenu(
           location: .search(result),
-          showsHeadingActions: result.todo != nil,
-          select: { store.select(.search(result)) }
+          showsHeadingActions: result.todo != nil && store.isResultInActiveCorpus(result.corpus),
+          select: { store.selectSearchResult(result) }
         ) {
           Label("Open", systemImage: "magnifyingglass")
         }
@@ -3584,6 +3623,14 @@ private struct SearchRow: View {
               .font(.caption)
               .foregroundStyle(.secondary)
           }
+          if let corpus = result.corpus {
+            Text(corpus.name)
+              .font(.caption2.weight(.semibold))
+              .foregroundStyle(.secondary)
+              .padding(.horizontal, 6)
+              .padding(.vertical, 2)
+              .background(WorkspaceDesign.subtleFill, in: Capsule())
+          }
           if let matchCount {
             Text("\(matchCount) matches")
               .font(.caption.weight(.medium))
@@ -3597,7 +3644,7 @@ private struct SearchRow: View {
           .font(.callout)
           .foregroundStyle(.secondary)
           .lineLimit(2)
-          Text(store.relativePath(result.file) + ":\(result.lineForEditor)")
+          Text(store.corpusQualifiedPath(result.file, corpus: result.corpus) + ":\(result.lineForEditor)")
             .font(.caption)
             .foregroundStyle(.tertiary)
             .lineLimit(1)

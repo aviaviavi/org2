@@ -27,6 +27,7 @@ When working in a corpus, look for the nearest =org2.json=. It can define file s
 4. Keep generated work in =views/= or =compiled/= with provenance and review state before promoting it into canonical =notes/=.
 5. Make small, inspectable text edits. Run targeted tests and =org2 lint= around writes when practical.
 6. Never store credentials in Org2 notes. Config names environment variables or profiles; secret values remain external.
+7. Treat multi-corpus reads as an explicit grant. Pass every =--mount= yourself; do not infer agent access from corpora remembered by a person's app.
 
 * Agent retrieval
 
@@ -48,6 +49,7 @@ The shorthand =org2 context QUERY= renders a cited Markdown/Org context pack for
 - *Review and evaluate*: =review list/show= unifies pending run approvals, review-required artifacts, clarifications, and failed checks; =eval run/fixture= checks observable outcomes and creates sanitized regression fixtures.
 - *Use portable tools and models*: =runtime select= resolves capability/privacy policies, =mcp serve= exposes corpus resources and run tools, and =mcp snapshot= preserves external results with provenance.
 - *Plan and act*: =agenda=, =todo=, =approvals=, =plan=, and =clock=.
+- *Read across identified corpora*: =workspace agenda= and =workspace search= combine canonical per-corpus JSON results without creating a merged database or a workspace-wide write target.
 - *Capture and organize*: =capture=, =archive=, and =refile=.
 - *Find and connect knowledge*: =search=, =query=, =id=, =backlinks=, =entity=, =index=, and =roam ...=.
 - *Check corpus health*: =fmt --check=, =lint=, and =graph audit=.

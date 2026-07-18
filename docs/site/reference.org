@@ -15,7 +15,7 @@ Org2 reference is split into two detailed sections:
   - artifact roles, provenance, and generated-output boundaries
 - [[file:collaboration.org][Shared corpora and collaboration]]
   - portable corpus identity and local mounts
-  - active-corpus write boundaries and the incremental team path
+  - corpus-qualified federated agenda/search, active-corpus write boundaries, and the incremental team path
 - [[file:tooling-reference.org][Tooling reference]]
   - agenda filters and views
   - formatter behavior

@@ -31,6 +31,33 @@ public struct WorkspaceCorpusMount: Codable, Hashable, Sendable, Identifiable {
   public var displayKind: String { kind?.capitalized ?? "Unidentified" }
 }
 
+public struct WorkspaceResultCorpus: Decodable, Hashable, Sendable {
+  public let schema: String
+  public let id: String
+  public let name: String
+  public let kind: String
+  public let root: String
+}
+
+public struct WorkspaceReadIssue: Decodable, Hashable, Sendable {
+  public let root: String
+  public let message: String
+}
+
+public enum WorkspaceReadScope: String, CaseIterable, Identifiable, Sendable {
+  case activeCorpus
+  case allCorpora
+
+  public var id: String { rawValue }
+
+  public var title: String {
+    switch self {
+    case .activeCorpus: "This Corpus"
+    case .allCorpora: "All Corpora"
+    }
+  }
+}
+
 public struct AgentRunListPayload: Decodable, Sendable {
   public let schema: String?
   public let runs: [AgentRunItem]
@@ -432,6 +459,8 @@ public struct AgendaPayload: Decodable, Sendable {
   public let days: [AgendaDay]
   public let skippedFiles: Int?
   public let workload: AgendaWorkload?
+  public let corpora: [WorkspaceResultCorpus]?
+  public let issues: [WorkspaceReadIssue]?
 
   enum CodingKeys: String, CodingKey {
     case schema = "$schema"
@@ -440,6 +469,8 @@ public struct AgendaPayload: Decodable, Sendable {
     case days
     case skippedFiles
     case workload
+    case corpora
+    case issues
   }
 
   public var totalItemCount: Int {
@@ -493,6 +524,7 @@ public struct AgendaItem: Decodable, Identifiable, Hashable, Sendable {
   public let effort: String?
   public let idValue: String?
   public let habit: HabitAgendaState?
+  public let corpus: WorkspaceResultCorpus?
 
   enum CodingKeys: String, CodingKey {
     case todo
@@ -509,6 +541,7 @@ public struct AgendaItem: Decodable, Identifiable, Hashable, Sendable {
     case effort
     case idValue = "id"
     case habit
+    case corpus
   }
 
   public init(
@@ -525,7 +558,8 @@ public struct AgendaItem: Decodable, Identifiable, Hashable, Sendable {
     time: String?,
     effort: String?,
     idValue: String?,
-    habit: HabitAgendaState?
+    habit: HabitAgendaState?,
+    corpus: WorkspaceResultCorpus? = nil
   ) {
     self.todo = todo
     self.headline = headline
@@ -541,6 +575,7 @@ public struct AgendaItem: Decodable, Identifiable, Hashable, Sendable {
     self.effort = effort
     self.idValue = idValue
     self.habit = habit
+    self.corpus = corpus
   }
 
   public init(from decoder: Decoder) throws {
@@ -559,6 +594,7 @@ public struct AgendaItem: Decodable, Identifiable, Hashable, Sendable {
     effort = try container.decodeIfPresent(String.self, forKey: .effort)
     idValue = try container.decodeIfPresent(String.self, forKey: .idValue)
     habit = try container.decodeIfPresent(HabitAgendaState.self, forKey: .habit)
+    corpus = try container.decodeIfPresent(WorkspaceResultCorpus.self, forKey: .corpus)
   }
 
   public var id: String {
@@ -589,7 +625,8 @@ public struct AgendaItem: Decodable, Identifiable, Hashable, Sendable {
       time: time,
       effort: effort,
       idValue: idValue,
-      habit: habit
+      habit: habit,
+      corpus: corpus
     )
   }
 
@@ -791,6 +828,8 @@ public struct SearchPayload: Decodable, Sendable {
   public let mode: String
   public let sort: String
   public let results: [SearchResult]
+  public let corpora: [WorkspaceResultCorpus]?
+  public let issues: [WorkspaceReadIssue]?
 
   enum CodingKeys: String, CodingKey {
     case schema = "$schema"
@@ -798,6 +837,8 @@ public struct SearchPayload: Decodable, Sendable {
     case mode
     case sort
     case results
+    case corpora
+    case issues
   }
 }
 
@@ -816,6 +857,7 @@ public struct SearchResult: Decodable, Identifiable, Hashable, Sendable {
   public let sourceRange: SourceRange?
   public let matchedLines: [MatchedLine]?
   public let date: String?
+  public let corpus: WorkspaceResultCorpus?
 
   enum CodingKeys: String, CodingKey {
     case file
@@ -832,6 +874,41 @@ public struct SearchResult: Decodable, Identifiable, Hashable, Sendable {
     case sourceRange
     case matchedLines
     case date
+    case corpus
+  }
+
+  public init(
+    file: String,
+    line: Int,
+    lineEnd: Int?,
+    heading: String?,
+    headingLine: Int?,
+    headingLevel: Int?,
+    headingAncestry: [HeadingRef]?,
+    idValue: String?,
+    todo: String?,
+    tags: [String],
+    snippet: String,
+    sourceRange: SourceRange?,
+    matchedLines: [MatchedLine]?,
+    date: String?,
+    corpus: WorkspaceResultCorpus? = nil
+  ) {
+    self.file = file
+    self.line = line
+    self.lineEnd = lineEnd
+    self.heading = heading
+    self.headingLine = headingLine
+    self.headingLevel = headingLevel
+    self.headingAncestry = headingAncestry
+    self.idValue = idValue
+    self.todo = todo
+    self.tags = tags
+    self.snippet = snippet
+    self.sourceRange = sourceRange
+    self.matchedLines = matchedLines
+    self.date = date
+    self.corpus = corpus
   }
 
   public var id: String {

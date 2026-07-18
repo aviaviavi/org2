@@ -45,6 +45,7 @@ import { discoverMcpClient, installBuiltinWorkflow, loadMcpClients, saveMcpClien
 import { loadRuntimePolicy, runtimePolicyPath, saveRuntimePolicy, selectRuntime, validateRuntimePaths } from "./runtimePolicy.js";
 import { evaluateRun, loadEvalExpectation, loadWorkflowReplayFixture, replayWorkflowFixture, sanitizeRunFixture, saveEvalResult } from "./workflowEval.js";
 import { ORG2_CORPUS_KINDS, corpusIdentityStatus, initializeCorpusIdentity } from "./corpusIdentity.js";
+import { federatedAgenda, federatedSearch } from "./federatedWorkspace.js";
 
 interface ParsedArgs { positional: string[]; flags: Map<string, string[]>; }
 function parseArgs(args: string[]): ParsedArgs {
@@ -81,6 +82,8 @@ function optionalChoice<const Choices extends readonly string[]>(value: string |
 
 const HELP = `Agentic workspace commands:
   org2 corpus show|validate|init [--dir CORPUS] [--id ID --name NAME --kind personal|shared|project] [--apply]
+  org2 workspace agenda --mount CORPUS [--mount CORPUS ...] [--from DATE --to DATE]
+  org2 workspace search QUERY --mount CORPUS [--mount CORPUS ...] [--limit N]
   org2 run create --goal TEXT [--accept TEXT] [--risk CLASS] [--owner NAME] [--capability ID] [--dir CORPUS]
   org2 run list|show|validate|start|resume|retry|cancel|complete|fail|block|fork|normalize
   org2 run block ID --reason "Specific clarification needed"
@@ -101,6 +104,37 @@ const HELP = `Agentic workspace commands:
   org2 eval run RUN --expect FILE | org2 eval replay WORKFLOW --fixture FILE | org2 eval fixture RUN --output FILE
 
 Writes are local, inspectable files under .org2/ or reviewable corpus zones. Consequential actions remain approval-gated.`;
+
+function forwardedArgs(parsed: ParsedArgs, excluded: Set<string>): string[] {
+  const result: string[] = [];
+  for (const [name, values] of parsed.flags) {
+    if (excluded.has(name)) continue;
+    for (const value of values) {
+      result.push(`--${name}`);
+      if (value !== "true") result.push(value);
+    }
+  }
+  return result;
+}
+
+async function workspaceCommand(parsed: ParsedArgs): Promise<void> {
+  const action = parsed.positional[0] || "agenda";
+  const mounts = flags(parsed, "mount");
+  if (mounts.length === 0) throw new Error("workspace reads require at least one --mount CORPUS");
+  const args = forwardedArgs(parsed, new Set(["mount", "dir", "json", "format"]));
+  if (action === "agenda") {
+    output(parsed, await federatedAgenda({ mounts, forwardedArgs: args }));
+    return;
+  }
+  if (action === "search") {
+    const query = required(parsed.positional[1], "search query is required");
+    const rawLimit = flag(parsed, "limit", "50")!;
+    if (!/^\d+$/.test(rawLimit) || Number(rawLimit) < 1) throw new Error("--limit must be a positive integer");
+    output(parsed, await federatedSearch(query, { mounts, forwardedArgs: args, limit: Number(rawLimit) }));
+    return;
+  }
+  throw new Error(`unknown workspace action: ${action}`);
+}
 
 function corpusCommand(parsed: ParsedArgs): void {
   const action = parsed.positional[0] || "show";
@@ -274,10 +308,11 @@ function evalCommand(parsed: ParsedArgs): void {
 
 export async function runAgenticWorkspaceCommand(args: string[]): Promise<boolean> {
   const family = args[0];
-  if (!family || !["corpus", "run", "review", "workflow", "artifact", "runtime", "mcp", "eval"].includes(family)) return false;
+  if (!family || !["corpus", "workspace", "run", "review", "workflow", "artifact", "runtime", "mcp", "eval"].includes(family)) return false;
   const parsed = parseArgs(args.slice(1));
   if (enabled(parsed, "help") || parsed.positional[0] === "help") { output(parsed, HELP); return true; }
   if (family === "corpus") corpusCommand(parsed);
+  else if (family === "workspace") await workspaceCommand(parsed);
   else if (family === "run") await runCommand(parsed);
   else if (family === "review") reviewCommand(parsed);
   else if (family === "workflow") workflowCommand(parsed);

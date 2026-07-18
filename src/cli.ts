@@ -9949,6 +9949,7 @@ Usage:
 
 Core commands:
   org2 corpus <show|validate|init> [--dir CORPUS] [--id ID --name NAME --kind KIND] [--apply]
+  org2 workspace <agenda|search> [QUERY] --mount CORPUS [--mount CORPUS ...] [--json]
   org2 run <create|list|show|validate|start|resume|retry|cancel|complete|fail|block|fork|normalize> [options]
   org2 review <list|show> [options]
   org2 workflow <list|show|validate|save|run|triggers|package|corpus-template|install-builtin> [options]

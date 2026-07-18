@@ -75,6 +75,7 @@ org2 agent --help</code></pre>
 <li><p>Keep generated work in <code>views/</code> or <code>compiled/</code> with provenance and review state before promoting it into canonical <code>notes/</code>.</p></li>
 <li><p>Make small, inspectable text edits. Run targeted tests and <code>org2 lint</code> around writes when practical.</p></li>
 <li><p>Never store credentials in Org2 notes. Config names environment variables or profiles; secret values remain external.</p></li>
+<li><p>Treat multi-corpus reads as an explicit grant. Pass every <code>--mount</code> yourself; do not infer agent access from corpora remembered by a person's app.</p></li>
 </ol>
 </section>
 <section class="org2-headline level-1">
@@ -94,6 +95,7 @@ org2 agent bundle --query &quot;billing migration&quot; --scope project:billing 
 <li><p><strong>Review and evaluate</strong>: <code>review list/show</code> unifies pending run approvals, review-required artifacts, clarifications, and failed checks; <code>eval run/fixture</code> checks observable outcomes and creates sanitized regression fixtures.</p></li>
 <li><p><strong>Use portable tools and models</strong>: <code>runtime select</code> resolves capability/privacy policies, <code>mcp serve</code> exposes corpus resources and run tools, and <code>mcp snapshot</code> preserves external results with provenance.</p></li>
 <li><p><strong>Plan and act</strong>: <code>agenda</code>, <code>todo</code>, <code>approvals</code>, <code>plan</code>, and <code>clock</code>.</p></li>
+<li><p><strong>Read across identified corpora</strong>: <code>workspace agenda</code> and <code>workspace search</code> combine canonical per-corpus JSON results without creating a merged database or a workspace-wide write target.</p></li>
 <li><p><strong>Capture and organize</strong>: <code>capture</code>, <code>archive</code>, and <code>refile</code>.</p></li>
 <li><p><strong>Find and connect knowledge</strong>: <code>search</code>, <code>query</code>, <code>id</code>, <code>backlinks</code>, <code>entity</code>, <code>index</code>, and <code>roam ...</code>.</p></li>
 <li><p><strong>Check corpus health</strong>: <code>fmt --check</code>, <code>lint</code>, and <code>graph audit</code>.</p></li>

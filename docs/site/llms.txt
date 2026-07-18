@@ -10,7 +10,7 @@ Installed agents should begin with:
 
 The first command emits the machine-readable `org2:capabilities:v1` manifest. Mutating commands generally preview unless `--apply` is provided. Preserve citations, IDs, provenance, and review state; place generated work in `views/` or `compiled/` before promotion into canonical notes.
 
-Portable corpus identity lives in the root `org2.json`. Use `org2 corpus show|validate|init` before mounting a corpus for team or agent use. A Mac workspace may remember multiple local mounts, but commands and writes remain scoped to the explicitly active corpus; an agent must not inherit all human-visible mounts by convenience.
+Portable corpus identity lives in the root `org2.json`. Use `org2 corpus show|validate|init` before mounting a corpus for team or agent use. `org2 workspace agenda|search` can combine read-only results from repeatable, explicitly named `--mount` paths and attaches corpus identity to every result. Writes remain scoped to the active corpus; an agent must not inherit all human-visible mounts by convenience.
 
 The native macOS Workspace also exposes a discoverable chat slash-command layer. Its local commands reuse shared search, backlink, lint, render, and publish semantics; agent-assisted `/brief` and `/summarize` receive selected source context with citations. When the live OpenClaw Gateway supports `commands.list`, runtime-native, skill, and plugin commands for the selected agent are merged into autocomplete and forwarded unchanged through `chat.send`; they do not use HTTP compatibility. Gateway progress intentionally exposed by the provider is stored with the assistant reply, while repetitive tool completion events are grouped into a compact work log. See the macOS Workspace reference for details.
 

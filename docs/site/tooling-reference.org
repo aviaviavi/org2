@@ -21,6 +21,7 @@ Main workflows:
 - =agent capabilities=, =agent context/search/fetch/bundle=, =context=, =brief=
 - =run=, =review=, =workflow=, =artifact=, =runtime=, =mcp=, =eval=
 - =corpus= identity inspection, validation, and preview-first initialization
+- =workspace agenda=, =workspace search= for read-only projections across explicitly mounted corpora
 - =compile corpus=
 - =render-chart=
 - =query-data=
@@ -45,6 +46,17 @@ org2 corpus init --dir ~/team-notes --id team-notes --name "Team Notes" --kind s
 #+end_src
 
 =corpus init= previews by default, preserves unrelated =org2.json= settings, creates standard corpus zones when applied, and refuses to silently replace a different existing identity. See [[file:collaboration.org][Shared corpora and collaboration]].
+
+* Federated workspace reads
+
+Repeat =--mount= to combine agenda or search results from identified corpora:
+
+#+begin_src sh
+org2 workspace agenda --mount ~/notes --mount ~/team-notes --recursive --json
+org2 workspace search "quarterly plan" --mount ~/notes --mount ~/team-notes --recursive --json
+#+end_src
+
+These commands are read-only composition over the normal =agenda= and =search= engines. Results include a =corpus= object with stable ID, name, kind, and the local root needed for navigation. Invalid, unavailable, or duplicate-identity mounts appear in =issues=. The command never discovers a person's app mounts and never establishes a destination for capture or edits.
 
 ** Command conventions and stability
 

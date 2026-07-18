@@ -619,6 +619,7 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
   @Published public var agendaFilterFocusToken = 0
+  @Published public var agendaReadScope: WorkspaceReadScope = .activeCorpus
   @Published public var isAgendaFilterFocused = false
   @Published public var selectedAgendaItemID: String?
   @Published public var bulkSelectedAgendaItemIDs: Set<String> = []
@@ -706,6 +707,7 @@ public final class WorkspaceStore: ObservableObject {
   @Published public private(set) var quickOpenFiles: [CorpusFile] = []
   @Published public private(set) var isFilteringQuickOpenFiles = false
   @Published public var searchMode: WorkspaceSearchMode = .text
+  @Published public var searchReadScope: WorkspaceReadScope = .activeCorpus
   @Published public var searchQuery = ""
   @Published public var searchFocusToken = 0
   @Published public var searchResults: [SearchResult] = []
@@ -1598,6 +1600,22 @@ public final class WorkspaceStore: ObservableObject {
     defaults.set(data, forKey: corpusMountsKey)
   }
 
+  private func workspaceMountPaths() -> [String] {
+    var paths: [String] = []
+    if let corpusRoot {
+      paths.append(corpusRoot.standardizedFileURL.path)
+    }
+    paths.append(contentsOf: mountedCorpora.map(\.path))
+    var seen = Set<String>()
+    return paths
+      .map { URL(fileURLWithPath: $0).standardizedFileURL.path }
+      .filter { seen.insert($0).inserted }
+  }
+
+  private func workspaceMountArguments() -> [String] {
+    workspaceMountPaths().flatMap { ["--mount", $0] }
+  }
+
   private static func restoreCorpusMounts(from defaults: UserDefaults, key: String) -> [WorkspaceCorpusMount] {
     guard let data = defaults.data(forKey: key),
           let mounts = try? JSONDecoder().decode([WorkspaceCorpusMount].self, from: data)
@@ -1747,19 +1765,23 @@ public final class WorkspaceStore: ObservableObject {
     do {
       let today = Self.formatDate(Date())
       let end = Self.formatDate(Calendar(identifier: .gregorian).date(byAdding: .day, value: 6, to: Date()) ?? Date())
-      let payload: AgendaPayload = try await cli.runJSON([
-        "agenda",
-        "--dir", corpusRoot.path,
+      let federates = agendaReadScope == .allCorpora && workspaceMountPaths().count > 1
+      var arguments = federates
+        ? ["workspace", "agenda"] + workspaceMountArguments()
+        : ["agenda", "--dir", corpusRoot.path]
+      arguments += [
         "--recursive",
         "--from", today,
         "--to", end,
         "--format", "json",
         "--workload"
-      ])
+      ]
+      let payload: AgendaPayload = try await cli.runJSON(arguments)
       agenda = payload
       syncAgendaSelectionAfterRefresh(preserveSelection: preserveSelection)
       if updatesStatus {
-        statusText = "\(payload.totalItemCount) agenda item\(payload.totalItemCount == 1 ? "" : "s")"
+        let issueSuffix = payload.issues?.isEmpty == false ? ", \(payload.issues!.count) corpus issue\(payload.issues!.count == 1 ? "" : "s")" : ""
+        statusText = "\(payload.totalItemCount) agenda item\(payload.totalItemCount == 1 ? "" : "s")\(issueSuffix)"
       }
     } catch {
       errorText = error.localizedDescription
@@ -3203,8 +3225,8 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     do {
-      let files = corpusFiles
-      let pageNodes = orgRoamLinkResolver.nodes.filter(\.isPageNode)
+      let files = searchReadScope == .activeCorpus ? corpusFiles : []
+      let pageNodes = searchReadScope == .activeCorpus ? orgRoamLinkResolver.nodes.filter(\.isPageNode) : []
       async let supplementalResults = Task.detached(priority: .userInitiated) {
         let resolvedPageNodes = pageNodes.isEmpty
           ? files.compactMap(Self.scanRoamFileNode)
@@ -3214,15 +3236,18 @@ public final class WorkspaceStore: ObservableObject {
           Self.searchPageNodesForWorkspace(resolvedPageNodes, query: query, limit: 25)
         )
       }.value
-      let payload: SearchPayload = try await cli.runJSON([
-        "search", query,
-        "--dir", corpusRoot.path,
+      let federates = searchReadScope == .allCorpora && workspaceMountPaths().count > 1
+      var arguments = federates
+        ? ["workspace", "search", query] + workspaceMountArguments()
+        : ["search", query, "--dir", corpusRoot.path]
+      arguments += [
         "--recursive",
         "--limit", "50",
         "--context", "1",
         "--index", "auto",
         "--format", "json"
-      ])
+      ]
+      let payload: SearchPayload = try await cli.runJSON(arguments)
       let (fileResults, pageResults) = await supplementalResults
       searchResults = Self.prioritizedSearchResultsForDisplay(payload.results)
       openClawChatSearchResults = chatResults
@@ -3231,7 +3256,8 @@ public final class WorkspaceStore: ObservableObject {
       selectedSurface = .search
       let elapsed = Date().timeIntervalSince(started)
       let totalCount = workspaceTextSearchResultCount
-      statusText = "\(totalCount) search result\(totalCount == 1 ? "" : "s") in \(String(format: "%.1f", elapsed))s"
+      let issueSuffix = payload.issues?.isEmpty == false ? ", \(payload.issues!.count) corpus issue\(payload.issues!.count == 1 ? "" : "s")" : ""
+      statusText = "\(totalCount) search result\(totalCount == 1 ? "" : "s") in \(String(format: "%.1f", elapsed))s\(issueSuffix)"
     } catch {
       errorText = error.localizedDescription
       statusText = "Search failed"
@@ -3950,6 +3976,65 @@ public final class WorkspaceStore: ObservableObject {
       resetPageSearchMatches()
     }
     activateDetailLocation(location, mode: nil, surface: surface, recordsHistory: true)
+  }
+
+  public func selectSearchResult(_ result: SearchResult) {
+    if activateCorpusIfNeeded(for: result.corpus, location: .search(result), surface: .search) {
+      return
+    }
+    select(.search(result), surface: .search)
+  }
+
+  @discardableResult
+  private func activateCorpusIfNeeded(
+    for corpus: WorkspaceResultCorpus?,
+    location: WorkspaceLocation,
+    surface: WorkspaceSurface
+  ) -> Bool {
+    guard let corpus else { return false }
+    let destination = URL(fileURLWithPath: corpus.root).standardizedFileURL
+    guard destination.path != corpusRoot?.standardizedFileURL.path else { return false }
+    guard !isSwitchingCorpus && !isRefreshingWorkspace else {
+      statusText = "Wait for the current workspace refresh before opening another corpus."
+      return true
+    }
+    guard !hasActiveEdit && !liveFileEditorHasUnsavedChanges else {
+      errorText = "Save or cancel the current edit before opening another corpus."
+      statusText = "Unsaved edit"
+      return true
+    }
+    guard isDirectory(destination.path) else {
+      errorText = "The mounted corpus is not available at \(destination.path)."
+      statusText = "Corpus unavailable"
+      return true
+    }
+
+    isSwitchingCorpus = true
+    setCorpusRoot(destination)
+    statusText = "Opening \(corpus.name)..."
+    Task { @MainActor [weak self] in
+      guard let self else { return }
+      await self.refreshWorkspace()
+      if case .search = location,
+         !self.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        await self.runSearch()
+      }
+      self.isSwitchingCorpus = false
+      self.select(location, surface: surface)
+      self.statusText = "Opened \(corpus.name)"
+    }
+    return true
+  }
+
+  public func isResultInActiveCorpus(_ corpus: WorkspaceResultCorpus?) -> Bool {
+    guard let corpus else { return true }
+    return URL(fileURLWithPath: corpus.root).standardizedFileURL.path == corpusRoot?.standardizedFileURL.path
+  }
+
+  public func corpusQualifiedPath(_ file: String, corpus: WorkspaceResultCorpus?) -> String {
+    guard let corpus else { return relativePath(file) }
+    let relative = Self.relativePath(for: file, root: URL(fileURLWithPath: corpus.root))
+    return "\(corpus.name) · \(relative)"
   }
 
   public func selectAgentRun(_ run: AgentRunItem) {
@@ -10707,6 +10792,10 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func toggleAgendaItemBulkSelection(_ item: AgendaItem) {
+    guard isResultInActiveCorpus(item.corpus) else {
+      statusText = "Open \(item.corpus?.name ?? "the corpus") before editing this item"
+      return
+    }
     var ids = bulkSelectedAgendaItemIDs
     if ids.contains(item.id) {
       ids.remove(item.id)
@@ -10718,7 +10807,7 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func selectAllVisibleAgendaItemsForBulkAction() {
-    let ids = Set(visibleAgendaItems.map(\.id))
+    let ids = Set(visibleAgendaItems.filter { isResultInActiveCorpus($0.corpus) }.map(\.id))
     bulkSelectedAgendaItemIDs = ids
     if ids.isEmpty {
       statusText = "No visible agenda items"
@@ -10770,6 +10859,9 @@ public final class WorkspaceStore: ObservableObject {
   public func selectAgendaItem(_ item: AgendaItem) {
     deactivateAgendaFilterFocus()
     suppressNextAgendaSelectionActivation = false
+    if activateCorpusIfNeeded(for: item.corpus, location: .agenda(item), surface: .agenda) {
+      return
+    }
     select(.agenda(item), surface: .agenda)
   }
 
@@ -11117,7 +11209,9 @@ public final class WorkspaceStore: ObservableObject {
       overdue: transformDays(agenda.overdue),
       days: transformDays(agenda.days),
       skippedFiles: agenda.skippedFiles,
-      workload: agenda.workload
+      workload: agenda.workload,
+      corpora: agenda.corpora,
+      issues: agenda.issues
     )
 
     if let updatedSelectedItem,
