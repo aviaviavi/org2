@@ -13,6 +13,9 @@ Org2 reference is split into two detailed sections:
 - [[file:corpus-flow.org][Corpus flow]]
   - canonical =raw/= -> =notes/= -> =compiled/= -> =views/= -> =publish/= zones
   - artifact roles, provenance, and generated-output boundaries
+- [[file:collaboration.org][Shared corpora and collaboration]]
+  - portable corpus identity and local mounts
+  - active-corpus write boundaries and the incremental team path
 - [[file:tooling-reference.org][Tooling reference]]
   - agenda filters and views
   - formatter behavior

@@ -1,0 +1,95 @@
+#+TITLE: Shared corpora and collaboration
+#+SUBTITLE: Ordinary folders as explicit trust boundaries
+
+Org2 collaboration starts with a small rule: do not share a person's entire private corpus merely because one project or teammate needs shared context. Put routinely shared notes, tasks, meetings, decisions, workflows, and review records in a separately mounted shared corpus.
+
+A corpus remains an ordinary folder or repository. Transport and membership can come from Git, a file-sync provider, or operating-system permissions. Org2 does not present descriptive metadata as a replacement for those enforcement layers.
+
+* Portable corpus identity
+
+An identified corpus carries a small portable record inside =org2.json=:
+
+#+begin_src json
+{
+  "corpus": {
+    "schema": "org2:corpus:v1",
+    "id": "team-operations",
+    "name": "Team Operations",
+    "kind": "shared"
+  }
+}
+#+end_src
+
+The ID is stable across clones and local mount paths. The name is human-facing. The initial kinds are =personal=, =shared=, and =project=. Credentials, local paths, and membership do not belong in this portable record.
+
+Inspect or validate an existing corpus with:
+
+#+begin_src sh
+org2 corpus show --dir ~/notes --json
+org2 corpus validate --dir ~/notes
+#+end_src
+
+Add identity to a new or existing corpus with a preview-first command:
+
+#+begin_src sh
+org2 corpus init --dir ~/team-operations \
+  --id team-operations \
+  --name "Team Operations" \
+  --kind shared
+
+# After reviewing the preview:
+org2 corpus init --dir ~/team-operations \
+  --id team-operations \
+  --name "Team Operations" \
+  --kind shared \
+  --apply
+#+end_src
+
+Applying creates the standard visible zones when missing and merges the identity into =org2.json=. It refuses to replace a different existing ID unless =--force= is explicit.
+
+* Mac workspace mounts
+
+Org2 Workspace remembers every corpus you open. The *Corpora* section identifies the active corpus, shows whether it is personal, shared, or project-scoped, and switches among mounted local paths. *Create a shared team corpus* makes a starter folder with a portable shared identity.
+
+All current reads and writes remain scoped to the explicitly active corpus. Switching resets corpus-specific navigation, search, run, approval, workflow, meeting, and chat state before refreshing the destination. The local mount registry stores paths on that Mac; it is app configuration, not portable corpus content.
+
+This first slice deliberately does not merge corpora into one database. Agenda, search, capture, OpenClaw context, workflows, and file edits operate on the active corpus.
+
+* A practical team pilot
+
+For an initial small-team rollout:
+
+1. Create one shared corpus for one real workflow or project.
+2. Put only the context collaborators routinely need in that corpus.
+3. Share the folder or repository using infrastructure the team already trusts.
+4. Have each collaborator mount both their personal corpus and the shared corpus in Org2 Workspace.
+5. Keep personal quick capture in the personal corpus's daily note; switch to the shared corpus before creating shared tasks, notes, runs, or workflows.
+6. Give an agent only the shared corpus path when it should not receive personal context.
+
+The shared artifact should make sense on its own. A link into an unmounted private corpus is not a substitute for the minimum context a teammate or scoped agent needs.
+
+* Safety boundary
+
+- Corpus identity describes the boundary; filesystem, repository, sync, and encryption controls enforce access.
+- An agent must receive an explicit corpus path or future workspace profile. It must not inherit every corpus visible to a person by convenience.
+- Generated work should stay in =views/= or =compiled/= until reviewed for promotion.
+- Org-crypt can restrict exceptional subtrees within a corpus, but it is not the default collaboration interface.
+- Local mount paths and inaccessible source details must not be copied into portable shared artifacts.
+
+* What comes next
+
+The next collaboration layers build on this identity and mount boundary:
+
+- optional federated agenda and search, with corpus identity attached to every result;
+- previewable handoff from a private corpus into a shared corpus;
+- explicit workspace profiles for people, agents, and automation;
+- coarse read, proposal, generated-zone, and direct-write policies at Org2 command boundaries.
+
+Real-time collaborative editing and hosted identity are not prerequisites. The near-term goal is coherent ownership, handoff, review, and agent scoping over files the team already controls.
+
+* Related
+
+- [[file:getting-started.org][Getting started]]
+- [[file:editors-macos.org][macOS Workspace]]
+- [[file:corpus-flow.org][Corpus flow]]
+- [[file:workflows.org][Workflows]]

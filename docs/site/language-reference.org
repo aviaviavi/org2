@@ -140,9 +140,9 @@ You can add/override abbreviations in =org2.json=:
 #+begin_src json
 {
   "links": {
-    "linearTeam": "scarf",
+    "linearTeam": "acme",
     "abbreviations": {
-      "linear": "https://linear.app/scarf/issue/%s",
+      "linear": "https://linear.app/acme/issue/%s",
       "gh": "https://github.example.com/%s"
     }
   }
@@ -150,7 +150,7 @@ You can add/override abbreviations in =org2.json=:
 #+end_src
 
 And define file-local abbreviations with Org-compatible syntax:
-- Define: =#+LINK: linear https://linear.app/scarf/issue/%s=
+- Define: =#+LINK: linear https://linear.app/acme/issue/%s=
 - Use: =[[linear:APP-3718][APP-3718]]= or =[[linear:APP-3718]]=
 
 Precedence (highest to lowest):
@@ -159,6 +159,23 @@ Precedence (highest to lowest):
 3) built-ins
 
 Org2 expands abbreviation targets when rendering/exporting and for LSP document-link targets.
+
+* Corpus identity
+
+The root =org2.json= may identify the corpus independently of its local path:
+
+#+begin_src json
+{
+  "corpus": {
+    "schema": "org2:corpus:v1",
+    "id": "team-operations",
+    "name": "Team Operations",
+    "kind": "shared"
+  }
+}
+#+end_src
+
+=id= is a stable lowercase slug, =name= is the human-facing label, and =kind= is =personal=, =shared=, or =project=. This record is portable. Local mount paths, credentials, and membership stay outside the corpus. See [[file:collaboration.org][Shared corpora and collaboration]] and =spec/v0/corpus.schema.json=.
 
 * Inline emphasis
 

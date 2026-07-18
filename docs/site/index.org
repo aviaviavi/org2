@@ -210,6 +210,7 @@ It is early alpha, but already practical for CLI + VS Code workflows. Language b
 - [[file:editors-macos.org][macOS Workspace]]
 - [[file:corpus-flow.org][Corpus flow]]
 - [[file:workflows.org][Workflows]]
+- [[file:collaboration.org][Shared corpora and collaboration]]
 - [[file:ai-processing-architecture.org][AI processing architecture]]
 - [[file:openclaw-knowledge-layer.org][OpenClaw knowledge layer]]
 - [[file:org2-vs-markdown.org][Org2 vs Markdown]]

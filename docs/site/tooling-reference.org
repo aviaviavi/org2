@@ -20,6 +20,7 @@ Main workflows:
 - =index=, =entity=, =approvals=, =clock=
 - =agent capabilities=, =agent context/search/fetch/bundle=, =context=, =brief=
 - =run=, =review=, =workflow=, =artifact=, =runtime=, =mcp=, =eval=
+- =corpus= identity inspection, validation, and preview-first initialization
 - =compile corpus=
 - =render-chart=
 - =query-data=
@@ -31,6 +32,19 @@ Main workflows:
 - =graph audit=
 - =ai validate-job=
 - =lsp=
+
+* Corpus identity
+
+Portable identity lives under the =corpus= key in the root =org2.json=. It lets clones and local mounts refer to the same personal, shared, or project corpus without treating a machine-local path as identity.
+
+#+begin_src sh
+org2 corpus show --dir ~/notes --json
+org2 corpus validate --dir ~/notes
+org2 corpus init --dir ~/team-notes --id team-notes --name "Team Notes" --kind shared
+org2 corpus init --dir ~/team-notes --id team-notes --name "Team Notes" --kind shared --apply
+#+end_src
+
+=corpus init= previews by default, preserves unrelated =org2.json= settings, creates standard corpus zones when applied, and refuses to silently replace a different existing identity. See [[file:collaboration.org][Shared corpora and collaboration]].
 
 ** Command conventions and stability
 

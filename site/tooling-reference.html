@@ -76,6 +76,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <li><p><code>index</code>, <code>entity</code>, <code>approvals</code>, <code>clock</code></p></li>
 <li><p><code>agent capabilities</code>, <code>agent context/search/fetch/bundle</code>, <code>context</code>, <code>brief</code></p></li>
 <li><p><code>run</code>, <code>review</code>, <code>workflow</code>, <code>artifact</code>, <code>runtime</code>, <code>mcp</code>, <code>eval</code></p></li>
+<li><p><code>corpus</code> identity inspection, validation, and preview-first initialization</p></li>
 <li><p><code>compile corpus</code></p></li>
 <li><p><code>render-chart</code></p></li>
 <li><p><code>query-data</code></p></li>
@@ -88,6 +89,15 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <li><p><code>ai validate-job</code></p></li>
 <li><p><code>lsp</code></p></li>
 </ul>
+</section>
+<section class="org2-headline level-1">
+<h1 id="corpus-identity">Corpus identity</h1>
+<p>Portable identity lives under the <code>corpus</code> key in the root <code>org2.json</code>. It lets clones and local mounts refer to the same personal, shared, or project corpus without treating a machine-local path as identity.</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 corpus show --dir ~/notes --json
+org2 corpus validate --dir ~/notes
+org2 corpus init --dir ~/team-notes --id team-notes --name &quot;Team Notes&quot; --kind shared
+org2 corpus init --dir ~/team-notes --id team-notes --name &quot;Team Notes&quot; --kind shared --apply</code></pre>
+<p><code>corpus init</code> previews by default, preserves unrelated <code>org2.json</code> settings, creates standard corpus zones when applied, and refuses to silently replace a different existing identity. See <a href="collaboration.html">Shared corpora and collaboration</a>.</p>
 <section class="org2-headline level-2">
 <h2 id="command-conventions-and-stability">Command conventions and stability</h2>
 <p>Audit summary for CLI consistency: most commands already use <code>--dir</code> for corpus roots, <code>--recursive</code> for traversal, <code>--format</code> for alternate output, and <code>--apply</code> for mutating writes. The lowest-risk cleanup is to make JSON output easier and consistent across commands.</p>

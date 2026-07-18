@@ -44,6 +44,7 @@ import { artifactRebuildPlan, buildArtifactGraph, loadArtifactDeclarations, MEET
 import { discoverMcpClient, installBuiltinWorkflow, loadMcpClients, saveMcpClients, serveMcp, writeMcpSnapshot } from "./mcpRuntime.js";
 import { loadRuntimePolicy, runtimePolicyPath, saveRuntimePolicy, selectRuntime, validateRuntimePaths } from "./runtimePolicy.js";
 import { evaluateRun, loadEvalExpectation, loadWorkflowReplayFixture, replayWorkflowFixture, sanitizeRunFixture, saveEvalResult } from "./workflowEval.js";
+import { ORG2_CORPUS_KINDS, corpusIdentityStatus, initializeCorpusIdentity } from "./corpusIdentity.js";
 
 interface ParsedArgs { positional: string[]; flags: Map<string, string[]>; }
 function parseArgs(args: string[]): ParsedArgs {
@@ -79,6 +80,7 @@ function optionalChoice<const Choices extends readonly string[]>(value: string |
 }
 
 const HELP = `Agentic workspace commands:
+  org2 corpus show|validate|init [--dir CORPUS] [--id ID --name NAME --kind personal|shared|project] [--apply]
   org2 run create --goal TEXT [--accept TEXT] [--risk CLASS] [--owner NAME] [--capability ID] [--dir CORPUS]
   org2 run list|show|validate|start|resume|retry|cancel|complete|fail|block|fork|normalize
   org2 run block ID --reason "Specific clarification needed"
@@ -99,6 +101,29 @@ const HELP = `Agentic workspace commands:
   org2 eval run RUN --expect FILE | org2 eval replay WORKFLOW --fixture FILE | org2 eval fixture RUN --output FILE
 
 Writes are local, inspectable files under .org2/ or reviewable corpus zones. Consequential actions remain approval-gated.`;
+
+function corpusCommand(parsed: ParsedArgs): void {
+  const action = parsed.positional[0] || "show";
+  const corpus = root(parsed);
+  if (action === "show" || action === "validate") {
+    const status = corpusIdentityStatus(corpus);
+    output(parsed, status, status.valid
+      ? `${status.identity!.name}\n${status.identity!.id}\t${status.identity!.kind}\n${status.root}`
+      : status.issues.map((issue) => `${issue.path}: ${issue.message}`).join("\n"));
+    if (action === "validate" && !status.valid) process.exitCode = 1;
+    return;
+  }
+  if (action === "init") {
+    const result = initializeCorpusIdentity(corpus, {
+      id: required(flag(parsed, "id"), "--id is required"),
+      name: required(flag(parsed, "name"), "--name is required"),
+      kind: choice(flag(parsed, "kind", "personal"), ORG2_CORPUS_KINDS, "corpus kind"),
+    }, { apply: enabled(parsed, "apply"), force: enabled(parsed, "force") });
+    output(parsed, result, `${result.applied ? "initialized" : "would initialize"} ${result.status.identity!.id}\n${result.status.configFile}`);
+    return;
+  }
+  throw new Error(`unknown corpus action: ${action}`);
+}
 
 async function runCommand(parsed: ParsedArgs): Promise<void> {
   const action = parsed.positional[0] || "help";
@@ -249,10 +274,11 @@ function evalCommand(parsed: ParsedArgs): void {
 
 export async function runAgenticWorkspaceCommand(args: string[]): Promise<boolean> {
   const family = args[0];
-  if (!family || !["run", "review", "workflow", "artifact", "runtime", "mcp", "eval"].includes(family)) return false;
+  if (!family || !["corpus", "run", "review", "workflow", "artifact", "runtime", "mcp", "eval"].includes(family)) return false;
   const parsed = parseArgs(args.slice(1));
   if (enabled(parsed, "help") || parsed.positional[0] === "help") { output(parsed, HELP); return true; }
-  if (family === "run") await runCommand(parsed);
+  if (family === "corpus") corpusCommand(parsed);
+  else if (family === "run") await runCommand(parsed);
   else if (family === "review") reviewCommand(parsed);
   else if (family === "workflow") workflowCommand(parsed);
   else if (family === "artifact") artifactCommand(parsed);

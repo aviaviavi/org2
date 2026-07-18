@@ -56,6 +56,8 @@ On first launch, the Workspace offers two paths:
 
 The starter is ordinary plain text and directories, not an app-owned database. You can immediately inspect or edit every generated file in Finder, Git, or another editor.
 
+For a team pilot, create or identify a separate shared corpus rather than exposing a personal corpus. The Mac app remembers multiple mounts and keeps writes scoped to the active corpus. See [[file:collaboration.org][Shared corpora and collaboration]].
+
 The initial downloadable disk image is built for Apple Silicon Macs. Current release builds are developer-signed, not notarized. If macOS blocks the first launch, open *System Settings → Privacy & Security* and allow Org2Workspace, or right-click the app in Finder and choose *Open*.
 
 For source builds and local dogfooding, build the app from the repository:

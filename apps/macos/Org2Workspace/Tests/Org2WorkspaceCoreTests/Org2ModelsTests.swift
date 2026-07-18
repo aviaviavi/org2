@@ -126,6 +126,65 @@ final class Org2ModelsTests: XCTestCase {
     let config = try XCTUnwrap(JSONSerialization.jsonObject(with: configData) as? [String: Any])
     XCTAssertEqual(config["recursive"] as? Bool, true)
     XCTAssertNotNil(config["roam"] as? [String: Any])
+    let identity = try XCTUnwrap(config["corpus"] as? [String: Any])
+    XCTAssertEqual(identity["schema"] as? String, "org2:corpus:v1")
+    XCTAssertEqual(identity["kind"] as? String, "personal")
+    XCTAssertFalse((identity["id"] as? String ?? "").isEmpty)
+  }
+
+  func testInitializeSharedStarterCorpusRecordsPortableIdentity() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-shared-corpus-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    _ = try WorkspaceStore.initializeStarterCorpus(at: root, kind: "shared")
+
+    let configData = try Data(contentsOf: root.appendingPathComponent("org2.json"))
+    let config = try XCTUnwrap(JSONSerialization.jsonObject(with: configData) as? [String: Any])
+    let identity = try XCTUnwrap(config["corpus"] as? [String: Any])
+    XCTAssertEqual(identity["kind"] as? String, "shared")
+    XCTAssertEqual(identity["name"] as? String, root.lastPathComponent)
+    XCTAssertNotNil((identity["id"] as? String)?.range(
+      of: #"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$"#,
+      options: .regularExpression
+    ))
+  }
+
+  @MainActor
+  func testCorpusMountsPersistAcrossStoreInstances() async throws {
+    let container = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-corpus-mounts-\(UUID().uuidString)", isDirectory: true)
+    let personal = container.appendingPathComponent("personal", isDirectory: true)
+    let shared = container.appendingPathComponent("team", isDirectory: true)
+    try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: container) }
+    _ = try WorkspaceStore.initializeStarterCorpus(at: personal, kind: "personal")
+    _ = try WorkspaceStore.initializeStarterCorpus(at: shared, kind: "shared")
+    let suiteName = "org2-corpus-mounts-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defaults.set(
+      [personal.standardizedFileURL.path: "/remote/personal", shared.standardizedFileURL.path: "/remote/team"],
+      forKey: "Org2Workspace.openClawRemoteCorpusPathsByCorpus.v1"
+    )
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()), defaults: defaults)
+    store.setCorpusRoot(personal)
+    XCTAssertEqual(store.openClawRemoteCorpusPath, "/remote/personal")
+    await store.refreshActiveCorpusIdentity()
+    store.setCorpusRoot(shared)
+    XCTAssertEqual(store.openClawRemoteCorpusPath, "/remote/team")
+    await store.refreshActiveCorpusIdentity()
+
+    XCTAssertEqual(store.mountedCorpora.count, 2)
+    XCTAssertEqual(store.activeCorpusIdentity?.kind, "shared")
+    XCTAssertEqual(store.mountedCorpora.first(where: { $0.path == personal.path })?.kind, "personal")
+
+    let restored = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()), defaults: defaults)
+    XCTAssertEqual(restored.mountedCorpora.count, 2)
+    let personalMount = try XCTUnwrap(restored.mountedCorpora.first(where: { $0.path == personal.path }))
+    restored.switchCorpus(to: personalMount)
+    XCTAssertEqual(restored.corpusRoot?.path, personal.path)
   }
 
   func testInitializeStarterCorpusRefusesNonemptyFolder() throws {

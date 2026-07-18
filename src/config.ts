@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import type { Org2CorpusIdentity } from "./corpusIdentity.js";
 
 export type Org2PublishProjectConfig = {
   baseDir: string;
@@ -55,6 +56,7 @@ export type Org2MetabaseDataSourceConfig = {
 export type Org2DataSourceConfig = Org2ClickHouseDataSourceConfig | Org2MetabaseDataSourceConfig;
 
 export interface Org2Config {
+  corpus?: Org2CorpusIdentity;
   agendaFiles?: string[];
   recursive?: boolean;
   ignorePatterns?: string[];
