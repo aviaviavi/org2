@@ -379,9 +379,9 @@ private struct SidebarView: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
             } else {
-              Text("Unidentified corpus")
+              Text("Local corpus")
                 .font(.caption2.weight(.medium))
-                .foregroundStyle(.orange)
+                .foregroundStyle(.tertiary)
             }
             Text(root.deletingLastPathComponent().path)
               .font(.caption2)

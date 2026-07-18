@@ -28,7 +28,7 @@ public struct WorkspaceCorpusMount: Codable, Hashable, Sendable, Identifiable {
   public let kind: String?
 
   public var id: String { path }
-  public var displayKind: String { kind?.capitalized ?? "Unidentified" }
+  public var displayKind: String { kind?.capitalized ?? "Local" }
 }
 
 public struct WorkspaceResultCorpus: Decodable, Hashable, Sendable {
