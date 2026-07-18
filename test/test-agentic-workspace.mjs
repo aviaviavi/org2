@@ -159,6 +159,13 @@ try {
   assert.equal(messages[0].result.serverInfo.name, "org2");
   assert.equal(messages[1].result.tools.some((tool) => tool.name === "org2_run_create"), true);
 
+  const invalidInput = new PassThrough(); const invalidOutput = new PassThrough(); let invalidResponse = "";
+  invalidOutput.setEncoding("utf8"); invalidOutput.on("data", (chunk) => invalidResponse += chunk);
+  const invalidServing = serveMcp(root, invalidInput, invalidOutput);
+  invalidInput.end(`${JSON.stringify({ jsonrpc: "2.0", id: 3, method: 42, params: {} })}\n`);
+  await invalidServing;
+  assert.equal(JSON.parse(invalidResponse.trim()).error.code, -32600);
+
   const mcpTransitionRun = createAgentRun({ id: "mcp-transition", goal: "Persist an MCP transition" });
   saveAgentRun(root, mcpTransitionRun);
   const transitionInput = new PassThrough(); const transitionOutput = new PassThrough(); let transitionResponse = "";

@@ -5,6 +5,93 @@ import { spawnSync } from "node:child_process";
 import { listAgentRuns, loadAgentRun, saveAgentRun, transitionAgentRun } from "./agentRun.js";
 import { instantiateWorkflow, listWorkflows, loadWorkflow, saveWorkflow } from "./agentWorkflow.js";
 
+type JsonObject = Record<string, unknown>;
+type JsonRpcId = string | number | null;
+
+interface JsonRpcRequest {
+  id?: JsonRpcId;
+  method: string;
+  params: JsonObject;
+}
+
+interface JsonRpcResponse {
+  jsonrpc: "2.0";
+  id?: JsonRpcId;
+  result?: unknown;
+  error?: { code: number; message: string };
+}
+
+class InvalidJsonRpcRequestError extends Error {}
+
+function jsonObject(value: unknown): JsonObject | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? value as JsonObject
+    : undefined;
+}
+
+function parseJsonRpcRequest(value: unknown): JsonRpcRequest {
+  const request = jsonObject(value);
+  if (!request || request.jsonrpc !== "2.0" || typeof request.method !== "string" || !request.method.trim()) {
+    throw new InvalidJsonRpcRequestError("invalid JSON-RPC request");
+  }
+  if (request.id !== undefined && request.id !== null && typeof request.id !== "string" && typeof request.id !== "number") {
+    throw new InvalidJsonRpcRequestError("invalid JSON-RPC request id");
+  }
+  const params = request.params === undefined ? {} : jsonObject(request.params);
+  if (!params) throw new InvalidJsonRpcRequestError("JSON-RPC params must be an object");
+  return { id: request.id as JsonRpcId | undefined, method: request.method, params };
+}
+
+function parseJsonRpcMessage(line: string): JsonObject {
+  const value: unknown = JSON.parse(line);
+  const message = jsonObject(value);
+  if (!message) throw new Error("MCP client returned a non-object JSON-RPC message");
+  return message;
+}
+
+function responseResult(message: JsonObject | undefined): JsonObject | undefined {
+  return jsonObject(message?.result);
+}
+
+function responseArray(message: JsonObject | undefined, key: string): unknown[] {
+  const value = responseResult(message)?.[key];
+  return Array.isArray(value) ? value : [];
+}
+
+function responseErrorMessage(message: JsonObject | undefined): string | undefined {
+  if (message?.error === undefined) return undefined;
+  const error = jsonObject(message?.error);
+  return typeof error?.message === "string" ? error.message : "unknown MCP error";
+}
+
+function requiredString(value: unknown, label: string): string {
+  if (typeof value !== "string" || !value.trim()) throw new Error(`${label} must be a non-empty string`);
+  return value;
+}
+
+function optionalString(value: unknown, label: string): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string") throw new Error(`${label} must be a string`);
+  return value;
+}
+
+function stringArray(value: unknown, label: string): string[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) {
+    throw new Error(`${label} must be an array of strings`);
+  }
+  return value;
+}
+
+function workflowInputs(value: unknown): Record<string, string> {
+  if (value === undefined) return {};
+  const inputs = jsonObject(value);
+  if (!inputs || Object.values(inputs).some((item) => typeof item !== "string")) {
+    throw new Error("workflow inputs must be an object with string values");
+  }
+  return inputs as Record<string, string>;
+}
+
 export interface McpClientDefinition {
   id: string;
   command: string;
@@ -64,16 +151,18 @@ export function discoverMcpClient(root: string, clientId: string, options: { tim
   });
   if (execution.error) throw execution.error;
   if (execution.status !== 0) throw new Error(`MCP client ${clientId} exited ${execution.status}: ${String(execution.stderr || "").trim()}`);
-  const messages = String(execution.stdout || "").split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line) as any);
-  const byId = new Map(messages.filter((item) => item.id !== undefined).map((item) => [item.id, item]));
-  if (byId.get(1)?.error) throw new Error(`MCP initialize failed: ${byId.get(1).error.message}`);
+  const messages = String(execution.stdout || "").split(/\r?\n/).filter(Boolean).map(parseJsonRpcMessage);
+  const byId = new Map<unknown, JsonObject>(messages.filter((item) => item.id !== undefined).map((item) => [item.id, item]));
+  const initializeError = responseErrorMessage(byId.get(1));
+  if (initializeError) throw new Error(`MCP initialize failed: ${initializeError}`);
+  const initializeResult = responseResult(byId.get(1));
   const capabilities = {
-    serverInfo: byId.get(1)?.result?.serverInfo,
-    protocolVersion: byId.get(1)?.result?.protocolVersion,
-    advertised: byId.get(1)?.result?.capabilities || {},
-    resources: byId.get(2)?.result?.resources || [],
-    tools: byId.get(3)?.result?.tools || [],
-    prompts: byId.get(4)?.result?.prompts || [],
+    serverInfo: initializeResult?.serverInfo,
+    protocolVersion: initializeResult?.protocolVersion,
+    advertised: jsonObject(initializeResult?.capabilities) || {},
+    resources: responseArray(byId.get(2), "resources"),
+    tools: responseArray(byId.get(3), "tools"),
+    prompts: responseArray(byId.get(4), "prompts"),
   };
   let snapshot: string | undefined;
   if (options.snapshotId) {
@@ -104,14 +193,14 @@ function resourceList(root: string) {
   return files.map((file) => ({ uri: `org2://corpus/${path.relative(root, file)}`, name: path.relative(root, file), mimeType: "text/org" }));
 }
 
-async function handle(root: string, request: any): Promise<any> {
+async function handle(root: string, request: JsonRpcRequest): Promise<JsonRpcResponse | null> {
   const id = request.id;
-  const result = (value: unknown) => ({ jsonrpc: "2.0", id, result: value });
+  const result = (value: unknown): JsonRpcResponse => ({ jsonrpc: "2.0", id, result: value });
   if (request.method === "initialize") return result({ protocolVersion: "2025-03-26", capabilities: { resources: {}, tools: {}, prompts: {} }, serverInfo: { name: "org2", version: "0.3.0" } });
   if (request.method === "notifications/initialized") return null;
   if (request.method === "resources/list") return result({ resources: resourceList(root) });
   if (request.method === "resources/read") {
-    const uri = String(request.params?.uri || "");
+    const uri = String(request.params.uri || "");
     const prefix = "org2://corpus/";
     if (!uri.startsWith(prefix)) throw new Error("unsupported resource URI");
     const relative = uri.slice(prefix.length);
@@ -121,7 +210,7 @@ async function handle(root: string, request: any): Promise<any> {
   }
   if (request.method === "prompts/list") return result({ prompts: listWorkflows(root).map((workflow) => ({ name: workflow.id, description: workflow.description, arguments: workflow.inputs.map((input) => ({ name: input.id, description: input.description, required: input.required })) })) });
   if (request.method === "prompts/get") {
-    const workflow = loadWorkflow(root, String(request.params?.name || ""));
+    const workflow = loadWorkflow(root, String(request.params.name || ""));
     return result({ description: workflow.description, messages: [{ role: "user", content: { type: "text", text: workflow.instructions } }] });
   }
   if (request.method === "tools/list") return result({ tools: [
@@ -130,18 +219,18 @@ async function handle(root: string, request: any): Promise<any> {
     { name: "org2_run_list", description: "List durable Org2 runs and review state", inputSchema: { type: "object", properties: {} } },
   ] });
   if (request.method === "tools/call") {
-    const name = request.params?.name;
-    const args = request.params?.arguments || {};
+    const name = request.params.name;
+    const args = jsonObject(request.params.arguments) || {};
     if (name === "org2_run_list") return result({ content: [{ type: "text", text: JSON.stringify(listAgentRuns(root), null, 2) }] });
     if (name === "org2_run_create") {
-      const run = instantiateWorkflow(loadWorkflow(root, String(args.workflow)), args.inputs || {}, { owner: args.owner });
+      const run = instantiateWorkflow(loadWorkflow(root, requiredString(args.workflow, "workflow")), workflowInputs(args.inputs), { owner: optionalString(args.owner, "owner") });
       const file = saveAgentRun(root, run);
       return result({ content: [{ type: "text", text: JSON.stringify({ run, file }, null, 2) }] });
     }
     if (name === "org2_run_transition") {
-      const run = transitionAgentRun(loadAgentRun(root, String(args.run)), args.status, {
-        actor: args.actor, reason: args.reason, summary: args.summary,
-        highlights: args.highlights, nextActions: args.nextActions,
+      const run = transitionAgentRun(loadAgentRun(root, requiredString(args.run, "run")), requiredString(args.status, "status") as Parameters<typeof transitionAgentRun>[1], {
+        actor: optionalString(args.actor, "actor"), reason: optionalString(args.reason, "reason"), summary: optionalString(args.summary, "summary"),
+        highlights: stringArray(args.highlights, "highlights"), nextActions: stringArray(args.nextActions, "nextActions"),
       });
       saveAgentRun(root, run);
       return result({ content: [{ type: "text", text: JSON.stringify(run, null, 2) }] });
@@ -155,9 +244,20 @@ export async function serveMcp(root: string, input: NodeJS.ReadableStream = proc
   const lines = readline.createInterface({ input });
   for await (const line of lines) {
     if (!String(line).trim()) continue;
-    let response: any;
-    try { response = await handle(path.resolve(root), JSON.parse(String(line))); }
-    catch (error) { response = { jsonrpc: "2.0", id: null, error: { code: -32603, message: (error as Error).message } }; }
+    let response: JsonRpcResponse | null;
+    try {
+      const value: unknown = JSON.parse(String(line));
+      response = await handle(path.resolve(root), parseJsonRpcRequest(value));
+    } catch (error) {
+      response = {
+        jsonrpc: "2.0",
+        id: null,
+        error: {
+          code: error instanceof InvalidJsonRpcRequestError ? -32600 : -32603,
+          message: error instanceof Error ? error.message : String(error),
+        },
+      };
+    }
     if (response) output.write(`${JSON.stringify(response)}\n`);
   }
 }
