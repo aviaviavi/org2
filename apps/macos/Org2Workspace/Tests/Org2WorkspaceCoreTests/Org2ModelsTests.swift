@@ -78,6 +78,17 @@ private actor OpenClawSuspendedSendRecorder {
 }
 
 final class Org2ModelsTests: XCTestCase {
+  func testCorpusMountWithoutPortableIdentityUsesNeutralLocalLabel() {
+    let mount = WorkspaceCorpusMount(
+      path: "/tmp/notes",
+      corpusID: nil,
+      name: "notes",
+      kind: nil
+    )
+
+    XCTAssertEqual(mount.displayKind, "Local")
+  }
+
   private func searchResult(
     file: String,
     line: Int,
