@@ -224,6 +224,18 @@ public struct OpenClawPreparedWorkflowRun: Sendable {
   }
 }
 
+public struct OpenClawWorkflowContinuation: Sendable {
+  public let runID: String
+  public let sessionKey: String
+  public let prompt: String
+
+  public init(runID: String, sessionKey: String, prompt: String) {
+    self.runID = runID
+    self.sessionKey = sessionKey
+    self.prompt = prompt
+  }
+}
+
 public enum OpenClawGatewayError: LocalizedError, Sendable {
   case invalidEndpoint
   case connection(String)
@@ -474,11 +486,14 @@ public actor OpenClawGatewayClient {
 
   public func prepareWorkflowRun(
     workflowID: String,
-    inputs: [String: String]
+    inputs: [String: String],
+    corpusID: String?
   ) async throws -> OpenClawPreparedWorkflowRun {
+    var params: [String: Any] = ["workflowId": workflowID, "inputs": inputs]
+    if let corpusID, !corpusID.isEmpty { params["corpusId"] = corpusID }
     let payload = try await requestPayload(
       method: "org2.workflow.prepareRun",
-      params: ["workflowId": workflowID, "inputs": inputs]
+      params: params
     )
     guard let run = Self.dictionary(payload["run"]),
           let runID = Self.string(run["id"]), !runID.isEmpty,
@@ -489,8 +504,24 @@ public actor OpenClawGatewayClient {
     return OpenClawPreparedWorkflowRun(runID: runID, prompt: prompt)
   }
 
-  public func syncWorkflows() async throws {
-    _ = try await requestPayload(method: "org2.workflow.sync", params: [:])
+  public func resumeWorkflowRun(runID: String, corpusID: String?) async throws -> OpenClawWorkflowContinuation {
+    var params: [String: Any] = ["runId": runID]
+    if let corpusID, !corpusID.isEmpty { params["corpusId"] = corpusID }
+    let payload = try await requestPayload(method: "org2.workflow.resume", params: params)
+    guard let run = Self.dictionary(payload["run"]),
+          let returnedRunID = Self.string(run["id"]), !returnedRunID.isEmpty,
+          let sessionKey = Self.string(payload["sessionKey"]), !sessionKey.isEmpty,
+          let prompt = Self.string(payload["prompt"]), !prompt.isEmpty
+    else {
+      throw OpenClawGatewayError.protocolFailure("org2.workflow.resume returned an invalid payload")
+    }
+    return OpenClawWorkflowContinuation(runID: returnedRunID, sessionKey: sessionKey, prompt: prompt)
+  }
+
+  public func syncWorkflows(corpusID: String?) async throws {
+    var params: [String: Any] = [:]
+    if let corpusID, !corpusID.isEmpty { params["corpusId"] = corpusID }
+    _ = try await requestPayload(method: "org2.workflow.sync", params: params)
   }
 
   deinit {

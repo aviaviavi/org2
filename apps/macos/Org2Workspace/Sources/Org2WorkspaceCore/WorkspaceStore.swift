@@ -2096,7 +2096,11 @@ public final class WorkspaceStore: ObservableObject {
     do {
       let settings = currentOpenClawSettings(allowKeychainRead: true)
       let gateway = OpenClawGatewayClient(settings: settings)
-      let prepared = try await gateway.prepareWorkflowRun(workflowID: workflow.id, inputs: inputs)
+      let prepared = try await gateway.prepareWorkflowRun(
+        workflowID: workflow.id,
+        inputs: inputs,
+        corpusID: activeCorpusIdentity?.id
+      )
       let thread = createOpenClawChatThread(
         title: "Workflow: \(workflow.title)",
         statusText: "Starting \(workflow.title)"
@@ -2113,7 +2117,7 @@ public final class WorkspaceStore: ObservableObject {
 
   public func syncAgentWorkflowsWithOpenClaw() async throws {
     let gateway = OpenClawGatewayClient(settings: currentOpenClawSettings(allowKeychainRead: true))
-    try await gateway.syncWorkflows()
+    try await gateway.syncWorkflows(corpusID: activeCorpusIdentity?.id)
   }
 
   public func mutateAgentRun(_ run: AgentRunItem, action: String, reason: String? = nil) async {
@@ -2181,10 +2185,37 @@ public final class WorkspaceStore: ObservableObject {
         agentRuns[index] = updated
       }
       statusText = "\(approval.title): \(decision)"
+      if decision == "approved", updated.status == "running", updated.workflowId != nil {
+        do {
+          try await continueOpenClawWorkflowAfterApproval(updated)
+          statusText = "Approved and continued \(updated.goal)"
+        } catch {
+          errorText = error.localizedDescription
+          statusText = "Approved; OpenClaw continuation pending"
+        }
+      }
     } catch {
       errorText = error.localizedDescription
       statusText = "Approval update failed"
     }
+  }
+
+  private func continueOpenClawWorkflowAfterApproval(_ run: AgentRunItem) async throws {
+    let gateway = OpenClawGatewayClient(settings: currentOpenClawSettings(allowKeychainRead: true))
+    let continuation = try await gateway.resumeWorkflowRun(runID: run.id, corpusID: activeCorpusIdentity?.id)
+    let thread: OpenClawChatThread
+    if let existing = openClawChatThreads.first(where: { $0.sessionKey == continuation.sessionKey }) {
+      if existing.isArchived { restoreOpenClawChatThread(existing.id) }
+      thread = openClawChatThreads.first(where: { $0.id == existing.id }) ?? existing
+    } else {
+      thread = createOpenClawChatThread(
+        title: "Workflow: \(run.goal)",
+        statusText: "Continuing approved workflow",
+        sessionKey: continuation.sessionKey
+      )
+    }
+    let shouldDrain = enqueueOpenClawMessage(continuation.prompt, attachments: [], in: thread.id)
+    if shouldDrain { await drainOpenClawSendQueue(for: thread.id) }
   }
 
   public func saveAgentRunAsWorkflow(_ run: AgentRunItem) async {
@@ -9766,11 +9797,12 @@ public final class WorkspaceStore: ObservableObject {
   private func createOpenClawChatThread(
     title: String,
     statusText: String,
-    resource: OpenClawResourceReference? = nil
+    resource: OpenClawResourceReference? = nil,
+    sessionKey: String? = nil
   ) -> OpenClawChatThread {
     let thread = OpenClawChatThread(
       title: title,
-      sessionKey: Self.makeOpenClawSessionKey(agentID: openClawAgentID),
+      sessionKey: sessionKey ?? Self.makeOpenClawSessionKey(agentID: openClawAgentID),
       resource: resource
     )
     openClawChatThreads.insert(thread, at: 0)

@@ -222,6 +222,16 @@ export interface AgentRunCreateInput {
   now?: string;
 }
 
+export interface AgentRunRuntimeUpdate {
+  provider?: string;
+  model?: string;
+  tokensUsed?: number;
+  costUsedUsd?: number;
+  elapsedSeconds?: number;
+  actor?: string;
+  now?: string;
+}
+
 export interface AgentRunValidationIssue {
   path: string;
   message: string;
@@ -389,6 +399,9 @@ export function transitionAgentRun(run: AgentRun, status: AgentRunStatus, option
     throw new Error("blocking a run requires --reason with a specific clarification or next action");
   }
   const completionSummary = status === "completed" ? optional(options.summary) || optional(run.outcome?.summary) : undefined;
+  if (status === "completed" && run.approvals.some((approval) => approval.status === "pending")) {
+    throw new Error("completing a run with pending approvals is not allowed");
+  }
   if (status === "completed" && !completionSummary) {
     throw new Error("completing a run requires --summary with a human-readable outcome");
   }
@@ -429,6 +442,36 @@ export function updateAgentRunOutcome(run: AgentRun, input: { summary: string; h
     outcome,
     updatedAt: now,
     events: [...run.events, event("outcome-updated", now, input.actor, summary)],
+  };
+}
+
+export function updateAgentRunRuntime(run: AgentRun, input: AgentRunRuntimeUpdate): AgentRun {
+  const now = isoNow(input.now);
+  const provider = optional(input.provider) || run.provider;
+  const model = optional(input.model) || run.model;
+  const budget = { ...(run.budget || {}) };
+  for (const [name, value] of [
+    ["tokensUsed", input.tokensUsed],
+    ["costUsedUsd", input.costUsedUsd],
+    ["elapsedSeconds", input.elapsedSeconds],
+  ] as const) {
+    if (value === undefined) continue;
+    if (!Number.isFinite(value) || value < 0) throw new Error(`run runtime ${name} must be a non-negative finite number`);
+    budget[name] = value;
+  }
+  const details = [
+    provider ? `provider=${provider}` : undefined,
+    model ? `model=${model}` : undefined,
+    input.tokensUsed !== undefined ? `tokens=${input.tokensUsed}` : undefined,
+    input.elapsedSeconds !== undefined ? `elapsed=${input.elapsedSeconds}s` : undefined,
+  ].filter(Boolean).join(" ");
+  return {
+    ...run,
+    ...(provider ? { provider } : {}),
+    ...(model ? { model } : {}),
+    ...(Object.keys(budget).length ? { budget } : {}),
+    updatedAt: now,
+    events: [...run.events, event("runtime-updated", now, input.actor, details || "Runtime metadata updated")],
   };
 }
 

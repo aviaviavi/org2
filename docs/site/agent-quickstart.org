@@ -44,7 +44,7 @@ The shorthand =org2 context QUERY= renders a cited Markdown/Org context pack for
 
 * Common workflows
 
-- *Delegate durable work*: =run create/list/show/start/resume/cancel/fork= keeps goals, cited context, plans, assignments, artifacts, approvals, validation, and event history in =.org2/runs/*.org2=. If work cannot continue, =run block ID --reason "Specific question or next action"= records an actionable clarification; a generic reasonless blocked state is rejected.
+- *Delegate durable work*: =run create/list/show/start/resume/cancel/fork= keeps goals, cited context, plans, assignments, runtime metadata, artifacts, approvals, validation, and event history in =.org2/runs/*.org2=. Use =run runtime= for observable provider/model and usage fields. If work cannot continue, =run block ID --reason "Specific question or next action"= records an actionable clarification; a generic reasonless blocked state is rejected.
 - *Teach and replay a process*: =workflow save/run/triggers/package= converts a completed run into a versioned recipe with inputs, capabilities, outputs, checks, and approval boundaries.
 - *Review and evaluate*: =review list/show= unifies pending run approvals, review-required artifacts, clarifications, and failed checks; =eval run/fixture= checks observable outcomes and creates sanitized regression fixtures.
 - *Use portable tools and models*: =runtime select= resolves capability/privacy policies, =mcp serve= exposes corpus resources and run tools, and =mcp snapshot= preserves external results with provenance.
@@ -62,7 +62,7 @@ See [[file:tooling-reference.org][Tooling reference]] for commands, [[file:langu
 
 * Native OpenClaw lifecycle bridge
 
-Install the checked-out integration with =openclaw plugins install --link ./integrations/openclaw=. The =org2-lifecycle= plugin must be enabled, permitted to use its typed conversation hooks, and configured with the target =corpusDir=. Verify the live Gateway surface with =openclaw plugins inspect org2-lifecycle --runtime --json= after restarting the Gateway. Ordinary conversation and personal TODOs stay out of Run Center; substantial main-agent work, subagents, and cron executions receive correlated durable run records.
+Install the checked-out integration with =openclaw plugins install --link ./integrations/openclaw=. The =org2-lifecycle= plugin must be enabled, permitted to use its typed conversation hooks, and configured with the target =corpusDir=. Verify the live Gateway surface with =openclaw plugins inspect org2-lifecycle --runtime --json= after restarting the Gateway. The adapter is a single-corpus write boundary: Mac workflow requests include the active portable corpus ID and fail before execution if it differs from the configured corpus. Ordinary conversation and personal TODOs stay out of Run Center; substantial main-agent work, subagents, and cron executions receive correlated durable run records. Workflow turns that request approval remain open, and a Mac approval continues the same durable run in its correlated chat session.
 
 * Durable delegation example
 

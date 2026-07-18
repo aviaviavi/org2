@@ -41,9 +41,39 @@ export function workflowExecutionPrompt(workflow, inputs = {}, runId) {
     `ORG2_WORKFLOW_INPUTS: ${JSON.stringify(inputs)}`,
     "",
     `Execute the Org2 workflow \"${workflow.title}\" from its canonical plain-text workflow file.`,
-    "Read the workflow and durable run with the Org2 CLI, follow their context, steps, outputs, validations, and approval boundaries, and keep generated work in the declared reviewable locations.",
-    "Do not bypass an approval or silently promote generated work into canonical notes.",
+    "Read the workflow and durable run with the Org2 CLI. Update run steps as they progress, record produced artifacts and validation results, and keep generated work in the declared reviewable locations.",
+    "At an approval boundary, request the approval on this run and end the turn without performing the protected action. Org2 will explicitly continue the same run after approval.",
+    "Do not bypass an approval, complete a run with a pending review boundary, or silently promote generated work into canonical notes.",
   ].join("\n");
+}
+
+export function workflowContinuationPrompt(workflow, runId) {
+  return [
+    `ORG2_WORKFLOW_ID: ${workflow.id}`,
+    `ORG2_WORKFLOW_VERSION: ${workflow.version}`,
+    `ORG2_WORKFLOW_RUN_ID: ${runId}`,
+    "ORG2_WORKFLOW_RESUME: approval-decided",
+    "",
+    `Continue the Org2 workflow \"${workflow.title}\" using its existing durable run.`,
+    "Re-read the workflow and run with the Org2 CLI. Continue from the first incomplete step, perform only actions covered by recorded approvals, and preserve the run's artifacts, validation, and event history.",
+  ].join("\n");
+}
+
+function messageText(content) {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) return content.map((part) => messageText(part)).filter(Boolean).join("\n");
+  if (content && typeof content === "object") {
+    if (typeof content.text === "string") return content.text;
+    if (typeof content.content === "string" || Array.isArray(content.content)) return messageText(content.content);
+  }
+  return "";
+}
+
+export function executionSummary(messages, fallback = "OpenClaw execution completed successfully.") {
+  const entries = Array.isArray(messages) ? [...messages].reverse() : [];
+  const assistant = entries.find((message) => message?.role === "assistant" && messageText(message.content).trim());
+  const text = messageText(assistant?.content).replace(/\s+/g, " ").trim();
+  return (text || fallback).slice(0, 1200);
 }
 
 export function outcomeCommand(outcome, success = true) {
@@ -64,13 +94,14 @@ export class Org2Lifecycle {
     this.log = options.log || console;
     this.owner = options.owner || "user";
     this.exec = options.exec || this.#exec.bind(this);
-    this.state = { version: 2, mappings: {}, workflowJobs: {} };
+    this.state = { version: 3, mappings: {}, workflowJobs: {} };
     this.cron = options.cron;
     this.queue = Promise.resolve();
   }
 
   async init() {
     try { this.state = JSON.parse(await readFile(this.stateFile, "utf8")); } catch {}
+    this.state.version = 3;
     this.state.mappings ||= {};
     this.state.workflowJobs ||= {};
   }
@@ -100,6 +131,27 @@ export class Org2Lifecycle {
     await rename(tmp, this.stateFile);
   }
 
+  async corpus() {
+    return JSON.parse(await this.exec(["corpus", "show", "--json"]));
+  }
+
+  async assertCorpus(expectedCorpusId) {
+    const status = await this.corpus();
+    if (expectedCorpusId && status.identity?.id !== expectedCorpusId) {
+      throw new Error(`Org2 corpus mismatch: Mac app selected ${expectedCorpusId}, but OpenClaw is configured for ${status.identity?.id || "an unidentified corpus"}`);
+    }
+    return status;
+  }
+
+  async #updateRuntime(runId, details = {}) {
+    const args = ["run", "runtime", runId, "--actor", "org2-lifecycle"];
+    if (details.provider) args.push("--provider", String(details.provider));
+    if (details.model) args.push("--model", String(details.model));
+    if (Number.isFinite(details.tokensUsed)) args.push("--tokens-used", String(details.tokensUsed));
+    if (Number.isFinite(details.elapsedSeconds)) args.push("--elapsed-seconds", String(details.elapsedSeconds));
+    if (args.length > 5) await this.exec(args);
+  }
+
   async ensure(key, details) {
     const existing = this.state.mappings[key];
     if (existing?.org2RunId) return existing.org2RunId;
@@ -111,6 +163,8 @@ export class Org2Lifecycle {
       "--owner", this.owner,
       "--capability", "agent-context",
       "--capability", "validation",
+      ...(details.provider ? ["--provider", String(details.provider)] : []),
+      ...(details.model ? ["--model", String(details.model)] : []),
       "--json",
     ]));
     const id = created.run.id;
@@ -122,6 +176,8 @@ export class Org2Lifecycle {
       kind: details.kind,
       sessionKey: details.sessionKey,
       openclawRunId: details.openclawRunId,
+      provider: details.provider,
+      model: details.model,
       createdAt: new Date().toISOString(),
     };
     await this.#save();
@@ -134,12 +190,15 @@ export class Org2Lifecycle {
     await this.exec(["run", "comment", runId, "--author", "org2-lifecycle", "--body",
       `OPENCLAW_KEY: ${key}\nOPENCLAW_KIND: ${details.kind || "workflow"}\nOPENCLAW_SESSION: ${details.sessionKey || "unknown"}\nOPENCLAW_RUN: ${details.openclawRunId || "unknown"}`]);
     await this.exec(["run", "start", runId]);
+    await this.#updateRuntime(runId, details);
     this.state.mappings[key] = {
       org2RunId: runId,
       kind: details.kind || "workflow",
       workflowId: details.workflowId,
       sessionKey: details.sessionKey,
       openclawRunId: details.openclawRunId,
+      provider: details.provider,
+      model: details.model,
       createdAt: new Date().toISOString(),
     };
     await this.#save();
@@ -147,6 +206,7 @@ export class Org2Lifecycle {
   }
 
   async prepareWorkflowRun(workflowId, inputs = {}, details = {}) {
+    const corpus = await this.assertCorpus(details.expectedCorpusId);
     const args = ["workflow", "run", workflowId, "--owner", this.owner, "--json"];
     for (const [name, value] of Object.entries(inputs)) args.push("--input", `${name}=${value}`);
     const created = JSON.parse(await this.exec(args));
@@ -155,7 +215,7 @@ export class Org2Lifecycle {
       run: created.run,
       workflow,
       prompt: workflowExecutionPrompt(workflow, inputs, created.run.id),
-      ...details,
+      corpus: corpus.identity,
     };
   }
 
@@ -175,38 +235,106 @@ export class Org2Lifecycle {
     return payload.workflows || [];
   }
 
-  async finish(key, outcome, error) {
+  async recordUsage(openclawRunId, usage = {}) {
+    if (!openclawRunId) return;
+    const mapping = Object.values(this.state.mappings).find((item) => item.openclawRunId === openclawRunId && !item.finishedAt);
+    if (!mapping) return;
+    const total = Number.isFinite(usage.total)
+      ? usage.total
+      : [usage.input, usage.output, usage.cacheRead, usage.cacheWrite]
+        .reduce((sum, value) => sum + (Number.isFinite(value) ? value : 0), 0);
+    if (total > 0) mapping.tokensUsed = (mapping.tokensUsed || 0) + total;
+  }
+
+  async resumeWorkflowRun(runId, details = {}) {
+    const corpus = await this.assertCorpus(details.expectedCorpusId);
+    const run = JSON.parse(await this.exec(["run", "show", runId, "--json"]));
+    if (!run.workflowId) throw new Error(`${runId} is not a workflow run`);
+    if (run.status !== "running") throw new Error(`${runId} cannot continue while ${run.status}`);
+    if ((run.approvals || []).some((approval) => approval.status === "pending")) {
+      throw new Error(`${runId} still has pending approvals`);
+    }
+    const mapping = Object.values(this.state.mappings)
+      .filter((item) => item.org2RunId === runId && item.sessionKey)
+      .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))[0];
+    if (!mapping?.sessionKey) throw new Error(`OpenClaw session correlation is missing for ${runId}`);
+    const workflow = await this.workflow(run.workflowId);
+    mapping.resumedAt = new Date().toISOString();
+    await this.#save();
+    return {
+      run,
+      workflow,
+      sessionKey: mapping.sessionKey,
+      prompt: workflowContinuationPrompt(workflow, runId),
+      corpus: corpus.identity,
+    };
+  }
+
+  async finish(key, outcome, details = {}) {
     // Start and finish may be observed by overlapping Gateway generations
     // during a hot restart. Refresh the durable map so terminal events do not
     // depend on one process's in-memory view.
-    try {
-      const disk = JSON.parse(await readFile(this.stateFile, "utf8"));
-      this.state.mappings = { ...(this.state.mappings || {}), ...(disk.mappings || {}) };
-    } catch {}
+    if (!this.state.mappings[key]) {
+      try {
+        const disk = JSON.parse(await readFile(this.stateFile, "utf8"));
+        this.state.mappings = { ...(disk.mappings || {}), ...(this.state.mappings || {}) };
+      } catch {}
+    }
     const mapping = this.state.mappings[key];
     if (!mapping || mapping.finishedAt) return;
-    if (error) {
+    await this.#updateRuntime(mapping.org2RunId, {
+      provider: details.provider || mapping.provider,
+      model: details.model || mapping.model,
+      tokensUsed: mapping.tokensUsed,
+      elapsedSeconds: Number.isFinite(details.durationMs) ? details.durationMs / 1000 : undefined,
+    });
+    if (details.error) {
       await this.exec(["run", "comment", mapping.org2RunId, "--author", "org2-lifecycle", "--body",
-        `OpenClaw terminal error: ${String(error).slice(0, 1000)}`]);
+        `OpenClaw terminal error: ${String(details.error).slice(0, 1000)}`]);
     }
-    await this.exec(["run", outcomeCommand(outcome), mapping.org2RunId]);
-    mapping.finishedAt = new Date().toISOString();
-    mapping.outcome = outcome;
+    const run = JSON.parse(await this.exec(["run", "show", mapping.org2RunId, "--json"]));
+    const command = outcomeCommand(outcome);
+    if (command === "complete" && (run.status === "waiting-approval" || run.status === "blocked")) {
+      mapping.pausedAt = new Date().toISOString();
+      mapping.pausedStatus = run.status;
+      await this.#save();
+      return { terminal: false, status: run.status };
+    }
+    if (["completed", "failed", "canceled"].includes(run.status)) {
+      mapping.finishedAt = new Date().toISOString();
+      mapping.outcome = outcome;
+      await this.#save();
+      return { terminal: true, status: run.status };
+    }
+    const args = ["run", command, mapping.org2RunId, "--actor", "org2-lifecycle"];
+    if (command === "complete") args.push("--summary", details.summary || "OpenClaw execution completed successfully.");
+    if (command === "fail") args.push("--reason", String(details.error || "OpenClaw execution failed").slice(0, 1000));
+    await this.exec(args);
+    const finishedAt = new Date().toISOString();
+    for (const item of Object.values(this.state.mappings)) {
+      if (item.org2RunId !== mapping.org2RunId) continue;
+      item.finishedAt = finishedAt;
+      item.outcome = outcome;
+    }
     await this.#save();
+    return { terminal: true, status: command === "complete" ? "completed" : command === "fail" ? "failed" : "canceled" };
   }
 
-  async reconcile() {
+  async reconcile(expectedCorpusId) {
+    await this.assertCorpus(expectedCorpusId);
     if (this.cron) await this.#reconcileWorkflowJobs();
     await this.#save();
     return this.workflowStatus();
   }
 
-  async workflowStatus() {
+  async workflowStatus(expectedCorpusId) {
+    const corpus = await this.assertCorpus(expectedCorpusId);
     const workflows = await this.workflows();
     const jobs = this.cron ? await this.cron.list({ includeDisabled: true }) : [];
     const jobsById = new Map(jobs.map((job) => [job.id, job]));
     return {
       schema: "org2:openclaw-workflow-status:v1",
+      corpus: corpus.identity,
       workflows: workflows.map((workflow) => {
         const binding = this.state.workflowJobs[workflow.id];
         return { ...workflow, openclaw: binding ? { ...binding, job: jobsById.get(binding.jobId) } : undefined };

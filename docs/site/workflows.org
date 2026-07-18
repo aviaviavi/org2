@@ -59,8 +59,9 @@ The =org2-lifecycle= plugin is the current execution bridge:
 
 1. For a manual execution, the plugin instantiates the workflow into a durable Org2 run before the agent begins.
 2. The plugin sends OpenClaw a workflow marker and a request to read the canonical workflow and run records.
-3. OpenClaw lifecycle events update that same run instead of creating a duplicate generic run.
-4. Outputs, validation, and approvals remain visible in Runs & Review.
+3. OpenClaw lifecycle events update that same run instead of creating a duplicate generic run. Available provider, model, token, and elapsed-time metadata is preserved on the run, and successful terminal turns record a concise outcome summary.
+4. When execution requests approval or clarification, the turn may end while the durable run remains open. Approving in the Mac app continues the existing workflow in its correlated OpenClaw chat session; a pending approval or blocked run is never treated as successful completion.
+5. Outputs, validation, steps, and approvals remain visible in Runs & Review as the agent records them through the shared CLI.
 
 For scheduled work, the schedule declaration stays in the workflow file while OpenClaw owns due checks and execution:
 
@@ -70,6 +71,8 @@ For scheduled work, the schedule declaration stays in the workflow file while Op
 4. Pausing the workflow disables its managed OpenClaw job.
 
 OpenClaw job IDs and correlation mappings are adapter state. They are not part of the portable workflow definition. This boundary prevents scheduler details from leaking into authored corpus files and allows another runtime adapter to execute the same process later.
+
+The plugin has one explicit =corpusDir= write target. Requests from the Mac app carry the selected portable corpus ID, and the adapter refuses to act when that identity does not match its configured corpus. Read-only mounted agenda and search views do not silently become agent write access.
 
 The first scheduling slice uses cron expressions plus an optional IANA timezone. OpenClaw remains authoritative for due checks, retry behavior, and execution history; Org2 remains authoritative for the desired workflow, review boundaries, and durable work record.
 
