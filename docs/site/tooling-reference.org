@@ -22,6 +22,7 @@ Main workflows:
 - =run=, =review=, =workflow=, =artifact=, =runtime=, =mcp=, =eval=
 - =corpus= identity inspection, validation, and preview-first initialization
 - =workspace agenda=, =workspace search= for read-only projections across explicitly mounted corpora
+- =source list=, =source doctor=, =source bind=, =source sync= for external source mirrors
 - =compile corpus=
 - =render-chart=
 - =query-data=
@@ -57,6 +58,39 @@ org2 workspace search "quarterly plan" --mount ~/notes --mount ~/team-notes --re
 #+end_src
 
 These commands are read-only composition over the normal =agenda= and =search= engines. Results include a =corpus= object with stable ID, name, kind, and the local root needed for navigation. Invalid, unavailable, or duplicate-identity mounts appear in =issues=. The command never discovers a person's app mounts and never establishes a destination for capture or edits.
+
+* External source mirrors
+
+The root =org2.json= can declare portable, non-secret Slack and Notion source intent. Org2 delegates crawling to the MIT-licensed =slacrawl= and =notcrawl= binaries instead of implementing provider APIs or desktop-cache parsing itself:
+
+#+begin_src json
+{
+  "externalSources": {
+    "team-slack": {
+      "type": "slack",
+      "scopes": ["engineering", "product"],
+      "media": "metadata-only",
+      "rawZone": "raw/connectors/slack/team"
+    },
+    "company-notion": {
+      "type": "notion",
+      "media": "metadata-only"
+    }
+  }
+}
+#+end_src
+
+The corpus declaration contains no credentials or machine paths. Each authorized machine creates its own binding outside the corpus under =ORG2_INDEX_HOME= (default =~/.org2/index=):
+
+#+begin_src sh
+org2 source list --dir ~/notes --json
+org2 source bind team-slack --config ~/.slacrawl/team.toml --dir ~/notes
+org2 source bind team-slack --config ~/.slacrawl/team.toml --dir ~/notes --apply
+org2 source doctor --dir ~/notes --json
+org2 source sync team-slack --dir ~/notes --json
+#+end_src
+
+=bind= previews by default and writes its local file with owner-only permissions when applied. Bindings may override the crawler binary, crawler config, and working directory. Archive database, cache, and Markdown storage locations remain explicit in the crawler's machine-local config. =sync= invokes the crawler directly without a shell and uses a per-profile machine lock. The Mac app and OpenClaw can call the same CLI surface, so sync is not tied to a laptop UI. Cross-machine archive reconciliation and transformation into =org2-connector/v1= records remain separate adapter concerns; a crawler mirror is derived source data, not canonical Org2 knowledge.
 
 ** Command conventions and stability
 

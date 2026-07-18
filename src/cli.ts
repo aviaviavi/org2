@@ -29,6 +29,7 @@ import { extractClockReport } from "./clock.js";
 import { buildAgentContextPayload, renderAgentContextPack, type AgentInclude } from "./agentContext.js";
 import { buildOrg2CapabilityManifest } from "./capabilities.js";
 import { runAgenticWorkspaceCommand } from "./agenticWorkspaceCli.js";
+import { runSourceCommand } from "./sourceRuntime.js";
 import { renderOrgChart, renderOrgCharts } from "./chartRender.js";
 import { applyDataQueryResult, runOrg2DataQuery } from "./dataQuery.js";
 import {
@@ -8136,6 +8137,7 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2);
 
   if (await runAgenticWorkspaceCommand(args)) return;
+  if (await runSourceCommand(args)) return;
 
   if (args[0] === "ingest") {
     await runIngestCommand(args.slice(1));
