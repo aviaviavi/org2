@@ -2,7 +2,7 @@
 
 * Status
 
-Proposed product direction. This document defines the initial model and an incremental implementation path; it is not a claim that the described collaboration and permission features already exist.
+Active product direction. The portable identity/validation portion of Phase 1 and the first Phase 2 Mac mounting/switching slice are implemented. Propagating identity through federated compiler output, cross-corpus handoff, principal profiles, and permission enforcement remain proposed below.
 
 * Problem
 

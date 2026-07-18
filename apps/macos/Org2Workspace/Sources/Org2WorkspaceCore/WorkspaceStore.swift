@@ -624,6 +624,9 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var bulkSelectedAgendaItemIDs: Set<String> = []
   private var suppressNextAgendaSelectionActivation = false
   @Published public var corpusRoot: URL?
+  @Published public private(set) var mountedCorpora: [WorkspaceCorpusMount] = []
+  @Published public private(set) var activeCorpusIdentity: CorpusIdentity?
+  @Published public private(set) var isSwitchingCorpus = false
   @Published public var agenda: AgendaPayload? {
     didSet {
       rebuildAgendaDisplayCache()
@@ -929,6 +932,7 @@ public final class WorkspaceStore: ObservableObject {
   private let openClawVoiceRecorder = MeetingAudioRecorder()
   private let meetingSystemAudioRecorder = MeetingSystemAudioRecorder()
   private let corpusKey = "Org2Workspace.corpusRoot"
+  private let corpusMountsKey = "Org2Workspace.corpusMounts.v1"
   private let pinnedFilesByCorpusKey = "Org2Workspace.pinnedFilePathsByCorpus.v1"
   private let agendaModeKey = "Org2Workspace.agendaMode"
   private let openClawEndpointKey = "Org2Workspace.openClawEndpoint"
@@ -936,6 +940,7 @@ public final class WorkspaceStore: ObservableObject {
   private let agentHandoffAssigneeKey = "Org2Workspace.agentHandoffAssignee"
   private let personalAssigneeNamesKey = "Org2Workspace.personalAssigneeNames"
   private let openClawRemoteCorpusPathKey = "Org2Workspace.openClawRemoteCorpusPath"
+  private let openClawRemoteCorpusPathsByCorpusKey = "Org2Workspace.openClawRemoteCorpusPathsByCorpus.v1"
   private let openClawBriefsStartNewThreadKey = "Org2Workspace.openClawBriefsStartNewThread"
   private let renderedDocumentWidthKey = "Org2Workspace.renderedDocument.width"
   private let renderedDocumentMarginKey = "Org2Workspace.renderedDocument.margin"
@@ -1089,6 +1094,7 @@ public final class WorkspaceStore: ObservableObject {
     legacyDefaultsDomains: [String]? = nil
   ) {
     self.defaults = defaults
+    mountedCorpora = Self.restoreCorpusMounts(from: defaults, key: corpusMountsKey)
     let fallbackTranscriptURL = openClawFallbackTranscriptURL ?? Self.defaultOpenClawTranscriptURL()
     usesFixedOpenClawTranscriptURL = openClawTranscriptURL != nil
     appOpenClawTranscriptURL = fallbackTranscriptURL
@@ -1152,10 +1158,8 @@ public final class WorkspaceStore: ObservableObject {
       if let screenshotCorpusRoot = screenshotCorpusRootFromEnvironment() {
         setCorpusRoot(screenshotCorpusRoot, persistsDefault: false)
       } else {
-        corpusRoot = restoreCorpusRoot()
-        if let corpusRoot {
-          restorePinnedFiles(for: corpusRoot)
-          switchOpenClawTranscript(to: Self.openClawTranscriptURL(corpusRoot: corpusRoot), migrationSource: appOpenClawTranscriptURL)
+        if let restoredRoot = restoreCorpusRoot() {
+          setCorpusRoot(restoredRoot, persistsDefault: false)
         }
       }
     }
@@ -1191,9 +1195,7 @@ public final class WorkspaceStore: ObservableObject {
       return
     }
 
-    corpusRoot = restoredRoot
-    restorePinnedFiles(for: restoredRoot)
-    switchOpenClawTranscript(to: Self.openClawTranscriptURL(corpusRoot: restoredRoot), migrationSource: appOpenClawTranscriptURL)
+    setCorpusRoot(restoredRoot, persistsDefault: false)
     openHome()
   }
 
@@ -1297,18 +1299,28 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func createCorpus() {
+    createCorpus(kind: "personal")
+  }
+
+  public func createSharedCorpus() {
+    createCorpus(kind: "shared")
+  }
+
+  private func createCorpus(kind: String) {
     let panel = NSOpenPanel()
     panel.canChooseFiles = false
     panel.canChooseDirectories = true
     panel.canCreateDirectories = true
     panel.allowsMultipleSelection = false
-    panel.prompt = "Create Corpus"
-    panel.message = "Choose or create an empty folder for the new Org2 corpus"
+    panel.prompt = kind == "shared" ? "Create Shared Corpus" : "Create Corpus"
+    panel.message = kind == "shared"
+      ? "Choose or create an empty folder or repository for the shared Org2 corpus"
+      : "Choose or create an empty folder for the new Org2 corpus"
 
     guard panel.runModal() == .OK, let url = panel.url else { return }
 
     do {
-      let welcomeURL = try Self.initializeStarterCorpus(at: url)
+      let welcomeURL = try Self.initializeStarterCorpus(at: url, kind: kind)
       setCorpusRoot(url)
       selectedSurface = .files
       statusText = "Created starter corpus at \(url.standardizedFileURL.path)"
@@ -1324,7 +1336,7 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
-  nonisolated static func initializeStarterCorpus(at url: URL) throws -> URL {
+  nonisolated static func initializeStarterCorpus(at url: URL, kind: String = "personal") throws -> URL {
     let fileManager = FileManager.default
     let root = url.standardizedFileURL
     var isDirectory: ObjCBool = false
@@ -1353,33 +1365,26 @@ public final class WorkspaceStore: ObservableObject {
       )
     }
 
-    let config = """
-    {
-      "agendaFiles": [
-        "inbox.org2",
-        "notes/**/*.org2",
-        "notes/**/*.org",
-        "daily/**/*.org2",
-        "daily/**/*.org"
-      ],
-      "recursive": true,
-      "ignorePatterns": [
-        ".git/**",
-        ".#*",
-        "compiled/**"
-      ],
-      "roam": {
-        "indexDir": "notes",
-        "nodesDir": "notes",
-        "dailiesDir": "daily"
-      }
-    }
-    """
-    try (config + "\n").write(
-      to: root.appendingPathComponent("org2.json"),
-      atomically: true,
-      encoding: .utf8
+    let name = root.lastPathComponent.isEmpty ? "Org2 Corpus" : root.lastPathComponent
+    let normalizedKind = kind == "shared" ? "shared" : kind == "project" ? "project" : "personal"
+    let suffix = UUID().uuidString.lowercased().replacingOccurrences(of: "-", with: "").prefix(12)
+    let identity = CorpusIdentity(
+      schema: "org2:corpus:v1",
+      id: "\(normalizedKind)-\(suffix)",
+      name: name,
+      kind: normalizedKind
     )
+    let identityData = try JSONEncoder().encode(identity)
+    let identityObject = try JSONSerialization.jsonObject(with: identityData)
+    let config: [String: Any] = [
+      "corpus": identityObject,
+      "agendaFiles": ["inbox.org2", "notes/**/*.org2", "notes/**/*.org", "daily/**/*.org2", "daily/**/*.org"],
+      "recursive": true,
+      "ignorePatterns": [".git/**", ".#*", "compiled/**"],
+      "roam": ["indexDir": "notes", "nodesDir": "notes", "dailiesDir": "daily"]
+    ]
+    let configData = try JSONSerialization.data(withJSONObject: config, options: [.prettyPrinted, .sortedKeys])
+    try (configData + Data("\n".utf8)).write(to: root.appendingPathComponent("org2.json"), options: .atomic)
 
     let inbox = """
     #+TITLE: Inbox
@@ -1422,6 +1427,9 @@ public final class WorkspaceStore: ObservableObject {
   public func setCorpusRoot(_ url: URL, persistsDefault: Bool = true) {
     let standardized = url.standardizedFileURL
     corpusRoot = standardized
+    activeCorpusIdentity = nil
+    upsertCorpusMount(path: standardized.path, identity: nil)
+    openClawRemoteCorpusPath = restoreOpenClawRemoteCorpusPath(for: standardized)
     restorePinnedFiles(for: standardized)
     if persistsDefault {
       defaults.set(standardized.path, forKey: corpusKey)
@@ -1514,12 +1522,97 @@ public final class WorkspaceStore: ObservableObject {
     errorText = nil
   }
 
+  public func switchCorpus(to mount: WorkspaceCorpusMount) {
+    guard !isSwitchingCorpus && !isRefreshingWorkspace else {
+      statusText = "Wait for the current workspace refresh before switching corpora."
+      return
+    }
+    guard !hasActiveEdit && !liveFileEditorHasUnsavedChanges else {
+      errorText = "Save or cancel the current edit before switching corpora."
+      statusText = "Unsaved edit"
+      return
+    }
+    guard isDirectory(mount.path) else {
+      errorText = "The mounted corpus is not available at \(mount.path)."
+      statusText = "Corpus unavailable"
+      return
+    }
+    setCorpusRoot(URL(fileURLWithPath: mount.path))
+    statusText = "Switched to \(mount.name)"
+    isSwitchingCorpus = true
+    Task { @MainActor [weak self] in
+      guard let self else { return }
+      await self.refreshWorkspace()
+      self.isSwitchingCorpus = false
+    }
+  }
+
+  public func forgetCorpus(_ mount: WorkspaceCorpusMount) {
+    guard corpusRoot?.standardizedFileURL.path != mount.path else {
+      errorText = "Switch to another corpus before forgetting the active corpus."
+      return
+    }
+    mountedCorpora.removeAll { $0.path == mount.path }
+    persistCorpusMounts()
+  }
+
+  public func refreshActiveCorpusIdentity() async {
+    guard let corpusRoot else {
+      activeCorpusIdentity = nil
+      return
+    }
+    do {
+      let status: CorpusIdentityStatus = try await cli.runJSON([
+        "corpus", "show", "--dir", corpusRoot.path, "--json"
+      ])
+      activeCorpusIdentity = status.identity
+      upsertCorpusMount(path: corpusRoot.path, identity: status.identity)
+    } catch {
+      activeCorpusIdentity = nil
+      upsertCorpusMount(path: corpusRoot.path, identity: nil)
+    }
+  }
+
+  private func upsertCorpusMount(path: String, identity: CorpusIdentity?) {
+    let standardized = URL(fileURLWithPath: path).standardizedFileURL.path
+    let existing = mountedCorpora.first { $0.path == standardized }
+    let mount = WorkspaceCorpusMount(
+      path: standardized,
+      corpusID: identity?.id ?? existing?.corpusID,
+      name: identity?.name ?? existing?.name ?? URL(fileURLWithPath: standardized).lastPathComponent,
+      kind: identity?.kind ?? existing?.kind
+    )
+    if let index = mountedCorpora.firstIndex(where: { $0.path == standardized }) {
+      mountedCorpora[index] = mount
+    } else {
+      mountedCorpora.append(mount)
+    }
+    mountedCorpora.sort { lhs, rhs in
+      lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+    }
+    persistCorpusMounts()
+  }
+
+  private func persistCorpusMounts() {
+    guard let data = try? JSONEncoder().encode(mountedCorpora) else { return }
+    defaults.set(data, forKey: corpusMountsKey)
+  }
+
+  private static func restoreCorpusMounts(from defaults: UserDefaults, key: String) -> [WorkspaceCorpusMount] {
+    guard let data = defaults.data(forKey: key),
+          let mounts = try? JSONDecoder().decode([WorkspaceCorpusMount].self, from: data)
+    else { return [] }
+    var seen = Set<String>()
+    return mounts.filter { seen.insert($0.path).inserted }
+  }
+
   public func refreshWorkspace() async {
     guard !isRefreshingWorkspace else { return }
     isRefreshingWorkspace = true
     defer { isRefreshingWorkspace = false }
 
     refreshAudioSettingsStatus(preserveStatusText: true)
+    await refreshActiveCorpusIdentity()
     await refreshAgenda()
     await refreshMeetings()
     await refreshCorpusFiles()
@@ -10182,6 +10275,12 @@ public final class WorkspaceStore: ObservableObject {
       defaults.set(handoffAssignee, forKey: agentHandoffAssigneeKey)
       defaults.set(personalAssigneeNames, forKey: personalAssigneeNamesKey)
       defaults.set(remoteCorpusPath, forKey: openClawRemoteCorpusPathKey)
+      if let corpusRoot {
+        var paths = defaults.dictionary(forKey: openClawRemoteCorpusPathsByCorpusKey) as? [String: String] ?? [:]
+        if remoteCorpusPath.isEmpty { paths.removeValue(forKey: corpusRoot.standardizedFileURL.path) }
+        else { paths[corpusRoot.standardizedFileURL.path] = remoteCorpusPath }
+        defaults.set(paths, forKey: openClawRemoteCorpusPathsByCorpusKey)
+      }
       openClawEndpointText = normalizedEndpoint
       openClawAgentID = agent
       agentHandoffAssignee = handoffAssignee
@@ -13549,6 +13648,20 @@ public final class WorkspaceStore: ObservableObject {
       return nil
     }
     return URL(fileURLWithPath: saved).standardizedFileURL
+  }
+
+  private func restoreOpenClawRemoteCorpusPath(for root: URL) -> String {
+    let path = root.standardizedFileURL.path
+    if let paths = defaults.dictionary(forKey: openClawRemoteCorpusPathsByCorpusKey) as? [String: String],
+       let configured = paths[path] {
+      return configured
+    }
+    // The pre-mount setting belonged to the single saved corpus. Reuse it only
+    // for that exact path; a newly mounted corpus must never inherit it.
+    if defaults.string(forKey: corpusKey).map({ URL(fileURLWithPath: $0).standardizedFileURL.path }) == path {
+      return defaults.string(forKey: openClawRemoteCorpusPathKey) ?? ""
+    }
+    return ""
   }
 
   private func currentOpenClawSettings(allowKeychainRead: Bool = false) -> OpenClawGatewaySettings {

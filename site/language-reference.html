@@ -196,16 +196,16 @@ CLOSED: [2026-02-20 Fri]</code></pre>
 <p>You can add/override abbreviations in <code>org2.json</code>:</p>
 <pre class="org2-src language-json" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-json">{
   &quot;links&quot;: {
-    &quot;linearTeam&quot;: &quot;scarf&quot;,
+    &quot;linearTeam&quot;: &quot;acme&quot;,
     &quot;abbreviations&quot;: {
-      &quot;linear&quot;: &quot;https://linear.app/scarf/issue/%s&quot;,
+      &quot;linear&quot;: &quot;https://linear.app/acme/issue/%s&quot;,
       &quot;gh&quot;: &quot;https://github.example.com/%s&quot;
     }
   }
 }</code></pre>
 <p>And define file-local abbreviations with Org-compatible syntax:</p>
 <ul>
-<li><p>Define: <code>#+LINK: linear https://linear.app/scarf/issue/%s</code></p></li>
+<li><p>Define: <code>#+LINK: linear https://linear.app/acme/issue/%s</code></p></li>
 <li><p>Use: <code>[[linear:APP-3718][APP-3718]]</code> or <code>[[linear:APP-3718]]</code></p></li>
 </ul>
 <p>Precedence (highest to lowest):</p>
@@ -215,6 +215,19 @@ CLOSED: [2026-02-20 Fri]</code></pre>
 <li><p>built-ins</p></li>
 </ol>
 <p>Org2 expands abbreviation targets when rendering/exporting and for LSP document-link targets.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="corpus-identity">Corpus identity</h1>
+<p>The root <code>org2.json</code> may identify the corpus independently of its local path:</p>
+<pre class="org2-src language-json" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-json">{
+  &quot;corpus&quot;: {
+    &quot;schema&quot;: &quot;org2:corpus:v1&quot;,
+    &quot;id&quot;: &quot;team-operations&quot;,
+    &quot;name&quot;: &quot;Team Operations&quot;,
+    &quot;kind&quot;: &quot;shared&quot;
+  }
+}</code></pre>
+<p><code>id</code> is a stable lowercase slug, <code>name</code> is the human-facing label, and <code>kind</code> is <code>personal</code>, <code>shared</code>, or <code>project</code>. This record is portable. Local mount paths, credentials, and membership stay outside the corpus. See <a href="collaboration.html">Shared corpora and collaboration</a> and <code>spec/v0/corpus.schema.json</code>.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="inline-emphasis">Inline emphasis</h1>

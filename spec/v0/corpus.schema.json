@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://org2.avi.press/spec/v0/corpus.schema.json",
+  "title": "Org2 corpus identity",
+  "type": "object",
+  "required": ["schema", "id", "name", "kind"],
+  "properties": {
+    "schema": { "const": "org2:corpus:v1" },
+    "id": { "type": "string", "pattern": "^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$" },
+    "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "kind": { "enum": ["personal", "shared", "project"] }
+  },
+  "additionalProperties": false
+}

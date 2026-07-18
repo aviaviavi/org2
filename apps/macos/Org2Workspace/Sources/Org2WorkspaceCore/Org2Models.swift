@@ -1,5 +1,36 @@
 import Foundation
 
+public struct CorpusIdentity: Codable, Hashable, Sendable {
+  public let schema: String
+  public let id: String
+  public let name: String
+  public let kind: String
+}
+
+public struct CorpusIdentityIssue: Decodable, Hashable, Sendable {
+  public let path: String
+  public let message: String
+}
+
+public struct CorpusIdentityStatus: Decodable, Sendable {
+  public let schema: String
+  public let root: String
+  public let configFile: String
+  public let identity: CorpusIdentity?
+  public let valid: Bool
+  public let issues: [CorpusIdentityIssue]
+}
+
+public struct WorkspaceCorpusMount: Codable, Hashable, Sendable, Identifiable {
+  public let path: String
+  public let corpusID: String?
+  public let name: String
+  public let kind: String?
+
+  public var id: String { path }
+  public var displayKind: String { kind?.capitalized ?? "Unidentified" }
+}
+
 public struct AgentRunListPayload: Decodable, Sendable {
   public let schema: String?
   public let runs: [AgentRunItem]

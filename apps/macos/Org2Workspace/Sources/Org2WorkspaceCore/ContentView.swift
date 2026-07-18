@@ -35,7 +35,7 @@ public struct ContentView: View {
         Button {
           store.chooseCorpus()
         } label: {
-          Label("Open Corpus", systemImage: "folder")
+          Label("Mount Corpus", systemImage: "folder.badge.plus")
         }
 
         Button {
@@ -149,6 +149,13 @@ private struct CorpusOnboardingView: View {
           }
         }
         .frame(maxWidth: 820)
+
+        Button {
+          store.createSharedCorpus()
+        } label: {
+          Label("Create a shared team corpus", systemImage: "person.2")
+        }
+        .help("Create an identified corpus intended to be mounted by multiple collaborators")
 
         VStack(spacing: 5) {
           Text("Already use Org Mode?")
@@ -357,14 +364,25 @@ private struct SidebarView: View {
         }
       }
 
-      Section("Corpus") {
+      Section("Corpora") {
         if let root = store.corpusRoot {
           VStack(alignment: .leading, spacing: 5) {
-            Text(root.lastPathComponent)
+            Text(store.activeCorpusIdentity?.name ?? root.lastPathComponent)
               .font(.caption.weight(.semibold))
               .foregroundStyle(.secondary)
               .lineLimit(1)
               .truncationMode(.tail)
+            if let identity = store.activeCorpusIdentity {
+              Text("\(identity.kind.capitalized) · \(identity.id)")
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(.tertiary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            } else {
+              Text("Unidentified corpus")
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(.orange)
+            }
             Text(root.deletingLastPathComponent().path)
               .font(.caption2)
               .foregroundStyle(.tertiary)
@@ -392,6 +410,36 @@ private struct SidebarView: View {
               .foregroundStyle(.tertiary)
             }
           }
+
+          if store.mountedCorpora.count > 1 {
+            ForEach(store.mountedCorpora.filter { $0.path != root.standardizedFileURL.path }) { mount in
+              Button {
+                store.switchCorpus(to: mount)
+              } label: {
+                HStack(spacing: 7) {
+                  Image(systemName: mount.kind == "shared" ? "person.2" : "folder")
+                  VStack(alignment: .leading, spacing: 1) {
+                    Text(mount.name).lineLimit(1)
+                    Text(mount.displayKind).font(.caption2).foregroundStyle(.tertiary)
+                  }
+                }
+                .contentShape(Rectangle())
+              }
+              .buttonStyle(.plain)
+              .disabled(store.isSwitchingCorpus)
+              .contextMenu {
+                Button("Forget Corpus") { store.forgetCorpus(mount) }
+              }
+              .help(mount.path)
+            }
+          }
+
+          Button {
+            store.chooseCorpus()
+          } label: {
+            Label("Mount Another Corpus", systemImage: "folder.badge.plus")
+          }
+          .buttonStyle(.plain)
         } else {
           VStack(alignment: .leading, spacing: 8) {
             Button {
@@ -403,6 +451,11 @@ private struct SidebarView: View {
               store.createCorpus()
             } label: {
               Label("New Corpus", systemImage: "plus.square.on.folder")
+            }
+            Button {
+              store.createSharedCorpus()
+            } label: {
+              Label("New Shared Corpus", systemImage: "person.2.fill")
             }
           }
         }

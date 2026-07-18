@@ -37,10 +37,11 @@ What already works well today:
 - A unified CLI review queue plus the Mac *Runs & Review* surface for active, completed, blocked, failed, and approval-needed delegated work
 - A native =org2-lifecycle= OpenClaw plugin that correlates substantial main-agent turns, subagents, and cron executions with durable Run Center records, prepares manual workflow runs before execution, and reconciles active Org2 schedules into OpenClaw cron
 - Artifact dependency/freshness graphs, rebuild plans, outcome evaluation and sanitized replay fixtures, capability-based hosted/local runtime selection, and MCP server/client snapshot boundaries
+- Portable personal/shared/project corpus identity, preview-first CLI initialization and validation, and remembered Mac mounts with explicit active-corpus switching
 
 * Workspace and context records
 
-Org2 Workspace is the product direction for focused clients over the same local corpus. The macOS app now exists as an alpha client for global capture, agenda and run/approval review, file and knowledge navigation, source editing with compiler-generated HTML reading, meeting capture, OpenClaw handoff, agent-thread browsing, daily notes, data notebooks, knowledge-node creation, and org-crypt workflows. Entity pages, richer meeting memory, capture/refile workflows, and data-backed reports continue to use parser/compiler output, so clients share a source of truth.
+Org2 Workspace is the product direction for focused clients over ordinary local corpora. The macOS app now exists as an alpha client for mounting and switching among personal/shared corpora, global capture, agenda and run/approval review, file and knowledge navigation, source editing with compiler-generated HTML reading, meeting capture, OpenClaw handoff, agent-thread browsing, daily notes, data notebooks, knowledge-node creation, and org-crypt workflows. Entity pages, richer meeting memory, capture workflows, and data-backed reports continue to use parser/compiler output, so clients share a source of truth.
 
 The format already has the building blocks for that direction:
 
@@ -135,7 +136,7 @@ A few concrete ways Org2 fits into a real workflow:
 
 The native Mac app lives in =apps/macos/Org2Workspace=. It is early, but it is already more than a parser demo:
 
-- corpus picker and file scanner,
+- identified personal/shared corpus mounts, explicit active-corpus switching, and a file scanner scoped to the active corpus,
 - guided first-run choices for opening an existing plain-text corpus or creating a safe starter corpus in an empty folder,
 - agenda surface with filtering, modes, keyboard navigation, and task/planning mutations,
 - outcome-first Runs & Review surface for durable run results, useful outputs, next actions, approvals, and clarifications, using the standard workspace detail pane rather than a nested third column; runs and approvals refresh silently once per minute while the app is active and immediately when it returns to the foreground, repeated failures collapse to the latest execution in Needs attention while All preserves the durable history, dismissed failures remain recorded as cancelled, plans, citations, routine validation, and machine metadata remain available as collapsed technical detail, completed one-off runs can be converted into reusable workflows with an explicit confirmation, and existing workflow runs show their provenance instead of offering a misleading duplicate action,
@@ -148,7 +149,7 @@ The native Mac app lives in =apps/macos/Org2Workspace=. It is early, but it is a
 - GPG-backed org-crypt configuration and encrypt/decrypt actions.
 - explicit refresh of data notebooks, Keychain-backed Metabase credentials, materialized tables, and interactive chart presentation without document-supplied JavaScript.
 
-The next major app milestone should deepen *capture routing and refiling*: refile into existing files/headings, add effort and richer templates at capture time, and preserve clean Org2 source throughout. Meeting-to-action, knowledge-browser, broader data-source configuration, and packaging/first-run work can proceed in parallel, landing in their natural product surfaces.
+The next collaboration milestone should add optional federated agenda/search with corpus identity on every result, followed by previewable private-to-shared handoff. Those views must preserve the explicit active destination for writes and must not silently combine agent access across mounted corpora. See [[file:collaboration.org][Shared corpora and collaboration]].
 
 See [[file:editors-macos.org][macOS Workspace]] for the current app surface and build/run notes.
 

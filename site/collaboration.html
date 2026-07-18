@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Shared corpora and collaboration</title>
+<meta name="subtitle" content="Ordinary folders as explicit trust boundaries" />
+<link rel="icon" type="image/png" href="assets/favicon.png" />
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
+<script type="module" src="assets/shiki-vscode.js"></script>
+<script defer src="assets/nav.js"></script>
+<meta property="og:type" content="website" />
+<meta property="og:title" content="Shared corpora and collaboration" />
+<meta property="og:description" content="Ordinary folders as explicit trust boundaries" />
+<meta property="og:url" content="https://org2.avi.press/collaboration.html" />
+<meta property="og:image" content="https://org2.avi.press/assets/og/collaboration.svg" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Shared corpora and collaboration" />
+<meta name="twitter:description" content="Ordinary folders as explicit trust boundaries" />
+<meta name="twitter:image" content="https://org2.avi.press/assets/og/collaboration.svg" />
+<link rel="stylesheet" href="assets/site.css" />
+<style>
+:root { color-scheme: light dark; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 2rem auto; max-width: 860px; padding: 0 1rem; line-height: 1.5; }
+main { display: grid; gap: 0.75rem; }
+section.org2-headline { margin: 0.5rem 0 1rem; }
+h1,h2,h3,h4,h5,h6 { margin: 1rem 0 0.5rem; line-height: 1.25; }
+.org2-todo { font-size: 0.8em; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; opacity: 0.9; }
+.org2-tags { font-size: 0.8em; opacity: 0.8; }
+.org2-tag { border: 1px solid currentColor; border-radius: 999px; padding: 0 0.35em; }
+.org2-planning { font-size: 0.95em; opacity: 0.9; }
+.org2-planning-kind { font-weight: 600; }
+.org2-properties { display: grid; grid-template-columns: max-content 1fr; gap: 0.15rem 0.75rem; margin: 0.5rem 0; }
+.org2-properties dt { font-weight: 600; }
+.org2-properties dd { margin: 0; }
+.org2-src, .org2-example, .org2-verse, .org2-comment, .org2-directive, pre { overflow-x: auto; padding: 0.75rem; border-radius: 0.5rem; background: rgba(127,127,127,0.12); }
+.org2-center { text-align: center; }
+.org2-underline { text-decoration: underline; }
+table { border-collapse: collapse; width: 100%; margin: 0.5rem 0 1rem; }
+th, td { border: 1px solid rgba(127,127,127,0.35); padding: 0.35rem 0.5rem; text-align: left; }
+thead th { background: rgba(127,127,127,0.16); }
+a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
+</style>
+<style>
+#content { max-width: 60em; margin: auto; line-height: 1.35; }
+#content li > p { margin: 0; }
+#content li + li { margin-top: 0.2rem; }
+</style>
+</head>
+<body>
+<div id="content" class="content">
+<main class="org2-document">
+<div class="org2-nav"><details class="org2-nav-menu" open><summary>Menu</summary><nav aria-label="Docs"><a href="index.html">Home</a><a href="features.html">Features</a><a href="getting-started.html">Getting started</a><details class="org2-nav-dropdown"><summary>Reference</summary><div class="org2-nav-dropdown-menu"><a href="reference.html">Overview</a><a href="corpus-flow.html">Corpus flow</a><a href="language-reference.html">Language reference</a><a href="tooling-reference.html">Tooling reference</a><a href="maintenance-workflows.html">Maintenance and health</a><a href="openclaw-knowledge-layer.html">OpenClaw knowledge layer</a><a href="knowledge-compiler-roadmap.html">Knowledge compiler roadmap</a><a href="semantics-status.html">Semantics and status</a><a href="migration.html">Practical migration</a></div></details><details class="org2-nav-dropdown"><summary>Editors</summary><div class="org2-nav-dropdown-menu"><a href="editors.html">Overview</a><a href="editors-macos.html">macOS Workspace</a><a href="editors-vscode.html">VS Code</a><a href="editors-vim.html">Vim / Neovim</a><a href="editors-emacs.html">Emacs</a></div></details><details class="org2-nav-dropdown"><summary>Comparisons</summary><div class="org2-nav-dropdown-menu"><a href="org2-vs-org-mode.html">Org2 vs Org Mode</a><a href="org2-vs-markdown.html">Org2 vs Markdown</a><a href="org2-vs-obsidian.html">Org2 vs Obsidian</a></div></details><a class="org2-nav-github" href="https://github.com/aviaviavi/org2" target="_blank" rel="noopener noreferrer"><svg class="org2-nav-github-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8a8.013 8.013 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.57 7.57 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.19 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg> GitHub</a><form class="org2-site-search" role="search"><button class="org2-site-search-toggle" type="button" aria-label="Open docs search" aria-expanded="false">⌕</button><label class="sr-only" for="org2-site-search-input">Search docs</label><input id="org2-site-search-input" type="search" placeholder="Search docs" autocomplete="off" aria-label="Search docs" aria-expanded="false"/><div class="org2-site-search-results" hidden></div></form></nav></details></div>
+<header class="org2-document-header">
+<h1 class="org2-document-title">Shared corpora and collaboration</h1>
+<p class="org2-document-subtitle" role="doc-subtitle">Ordinary folders as explicit trust boundaries</p>
+</header>
+<p>Org2 collaboration starts with a small rule: do not share a person's entire private corpus merely because one project or teammate needs shared context. Put routinely shared notes, tasks, meetings, decisions, workflows, and review records in a separately mounted shared corpus.</p>
+<p>A corpus remains an ordinary folder or repository. Transport and membership can come from Git, a file-sync provider, or operating-system permissions. Org2 does not present descriptive metadata as a replacement for those enforcement layers.</p>
+<section class="org2-headline level-1">
+<h1 id="portable-corpus-identity">Portable corpus identity</h1>
+<p>An identified corpus carries a small portable record inside <code>org2.json</code>:</p>
+<pre class="org2-src language-json" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-json">{
+  &quot;corpus&quot;: {
+    &quot;schema&quot;: &quot;org2:corpus:v1&quot;,
+    &quot;id&quot;: &quot;team-operations&quot;,
+    &quot;name&quot;: &quot;Team Operations&quot;,
+    &quot;kind&quot;: &quot;shared&quot;
+  }
+}</code></pre>
+<p>The ID is stable across clones and local mount paths. The name is human-facing. The initial kinds are <code>personal</code>, <code>shared</code>, and <code>project</code>. Credentials, local paths, and membership do not belong in this portable record.</p>
+<p>Inspect or validate an existing corpus with:</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 corpus show --dir ~/notes --json
+org2 corpus validate --dir ~/notes</code></pre>
+<p>Add identity to a new or existing corpus with a preview-first command:</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 corpus init --dir ~/team-operations \
+  --id team-operations \
+  --name &quot;Team Operations&quot; \
+  --kind shared
+
+# After reviewing the preview:
+org2 corpus init --dir ~/team-operations \
+  --id team-operations \
+  --name &quot;Team Operations&quot; \
+  --kind shared \
+  --apply</code></pre>
+<p>Applying creates the standard visible zones when missing and merges the identity into <code>org2.json</code>. It refuses to replace a different existing ID unless <code>--force</code> is explicit.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="mac-workspace-mounts">Mac workspace mounts</h1>
+<p>Org2 Workspace remembers every corpus you open. The <strong>Corpora</strong> section identifies the active corpus, shows whether it is personal, shared, or project-scoped, and switches among mounted local paths. <strong>Create a shared team corpus</strong> makes a starter folder with a portable shared identity.</p>
+<p>All current reads and writes remain scoped to the explicitly active corpus. Switching resets corpus-specific navigation, search, run, approval, workflow, meeting, and chat state before refreshing the destination. The local mount registry stores paths on that Mac; it is app configuration, not portable corpus content.</p>
+<p>This first slice deliberately does not merge corpora into one database. Agenda, search, capture, OpenClaw context, workflows, and file edits operate on the active corpus.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="a-practical-team-pilot">A practical team pilot</h1>
+<p>For an initial small-team rollout:</p>
+<ol>
+<li><p>Create one shared corpus for one real workflow or project.</p></li>
+<li><p>Put only the context collaborators routinely need in that corpus.</p></li>
+<li><p>Share the folder or repository using infrastructure the team already trusts.</p></li>
+<li><p>Have each collaborator mount both their personal corpus and the shared corpus in Org2 Workspace.</p></li>
+<li><p>Keep personal quick capture in the personal corpus's daily note; switch to the shared corpus before creating shared tasks, notes, runs, or workflows.</p></li>
+<li><p>Give an agent only the shared corpus path when it should not receive personal context.</p></li>
+</ol>
+<p>The shared artifact should make sense on its own. A link into an unmounted private corpus is not a substitute for the minimum context a teammate or scoped agent needs.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="safety-boundary">Safety boundary</h1>
+<ul>
+<li><p>Corpus identity describes the boundary; filesystem, repository, sync, and encryption controls enforce access.</p></li>
+<li><p>An agent must receive an explicit corpus path or future workspace profile. It must not inherit every corpus visible to a person by convenience.</p></li>
+<li><p>Generated work should stay in <code>views/</code> or <code>compiled/</code> until reviewed for promotion.</p></li>
+<li><p>Org-crypt can restrict exceptional subtrees within a corpus, but it is not the default collaboration interface.</p></li>
+<li><p>Local mount paths and inaccessible source details must not be copied into portable shared artifacts.</p></li>
+</ul>
+</section>
+<section class="org2-headline level-1">
+<h1 id="what-comes-next">What comes next</h1>
+<p>The next collaboration layers build on this identity and mount boundary:</p>
+<ul>
+<li><p>optional federated agenda and search, with corpus identity attached to every result;</p></li>
+<li><p>previewable handoff from a private corpus into a shared corpus;</p></li>
+<li><p>explicit workspace profiles for people, agents, and automation;</p></li>
+<li><p>coarse read, proposal, generated-zone, and direct-write policies at Org2 command boundaries.</p></li>
+</ul>
+<p>Real-time collaborative editing and hosted identity are not prerequisites. The near-term goal is coherent ownership, handoff, review, and agent scoping over files the team already controls.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="related">Related</h1>
+<ul>
+<li><p><a href="getting-started.html">Getting started</a></p></li>
+<li><p><a href="editors-macos.html">macOS Workspace</a></p></li>
+<li><p><a href="corpus-flow.html">Corpus flow</a></p></li>
+<li><p><a href="workflows.html">Workflows</a></p></li>
+</ul>
+</section>
+</main>
+</div>
+<footer class="org2-footer"><p>Org2 docs</p><img referrerpolicy="no-referrer-when-downgrade" src="https://static.scarf.sh/a.png?x-pxid=e39e0a38-773e-4446-b8b0-804f923e3dc3" alt="" /></footer>
+</body>
+</html>

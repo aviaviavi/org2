@@ -29,6 +29,7 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
       "Prefer JSON output for integrations (`--format json` or `--json` where supported).",
       "Use `org2 agent context|search|fetch|bundle` for bounded, cited corpus retrieval.",
       "Use `org2 run --help` for durable delegated work, `org2 workflow` for reusable recipes, and `org2 mcp serve` for MCP discovery.",
+      "Use `org2 corpus show|validate|init` to inspect or establish portable corpus identity before team mounting.",
     ],
     safety: [
       "Treat corpus files as user-owned source code: make small, reviewable text changes.",
@@ -40,6 +41,12 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
       "Run targeted tests plus `org2 lint` around writes when practical; never put secrets in notes or generated artifacts.",
     ],
     workflows: [
+      {
+        id: "corpus-identity-and-mounting",
+        purpose: "Inspect, validate, or initialize portable personal, shared, and project corpus identities.",
+        commands: ["org2 corpus"],
+        writes: "preview-by-default",
+      },
       {
         id: "agentic-workspace",
         purpose: "Create, inspect, resume, review, validate, fork, and package durable agent runs and reusable workflows.",
@@ -116,7 +123,7 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
     clients: [
       { id: "cli", role: "Canonical automation and integration surface over the shared TypeScript compiler/runtime." },
       { id: "vscode", role: "Best-supported general editing workflow, backed by shared CLI/LSP semantics." },
-      { id: "macos-workspace", role: "Native alpha workspace shell with first-run corpus setup, agenda, capture, reading/editing, meetings, data notebooks, workflow/run/review controls, agent handoffs, and discoverable chat slash commands backed by shared compiler semantics." },
+      { id: "macos-workspace", role: "Native alpha workspace shell with personal/shared corpus mounts and explicit switching, agenda, capture, reading/editing, meetings, data notebooks, workflow/run/review controls, agent handoffs, and discoverable chat slash commands backed by shared compiler semantics." },
       { id: "ios-mobile", role: "Source-distributed mobile corpus and approval client." },
       { id: "openclaw", role: "First native agent-runtime adapter: Gateway chat plus a lifecycle plugin that maps substantial work into durable runs, prepares manual workflow execution, and reconciles active workflow schedules into OpenClaw cron." },
     ],
@@ -126,6 +133,7 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
       { id: "tooling-reference", url: "https://org2.avi.press/tooling-reference.html" },
       { id: "language-reference", url: "https://org2.avi.press/language-reference.html" },
       { id: "corpus-flow", url: "https://org2.avi.press/corpus-flow.html" },
+      { id: "collaboration", url: "https://org2.avi.press/collaboration.html" },
       { id: "workflows", url: "https://org2.avi.press/workflows.html" },
       { id: "macos-workspace", url: "https://org2.avi.press/editors-macos.html" },
     ],
