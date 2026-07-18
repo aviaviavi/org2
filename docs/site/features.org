@@ -33,9 +33,9 @@ What already works well today:
 - Local and remote data notebooks with explicit DuckDB-backed materialization, reusable SQL views, provenance-stamped result tables, and deterministic charts
 - Agent discovery and cited retrieval through =org2 agent capabilities=, =agent context/search/fetch/bundle=, =context=, =brief=, and compiled corpus artifacts
 - Durable agent runs with a validated state machine, plans, assignments, budgets, citations, artifacts, approvals, validation, comments, retries, cancellation, forking, and legacy task/session normalization
-- Reusable, versioned workflow packages with parameters, capability and risk declarations, validation, approval boundaries, schedules, file-change/capture/meeting triggers, packaging metadata, and a built-in meeting-to-controlled-execution recipe
+- Visible, plain-text =workflows/*.org2= process files with draft/active/paused lifecycle, parameters, capability and risk declarations, validation, approval boundaries, schedules, file-change/capture/meeting triggers, packaging metadata, and a built-in meeting-to-controlled-execution recipe
 - A unified CLI review queue plus the Mac *Runs & Review* surface for active, completed, blocked, failed, and approval-needed delegated work
-- A native =org2-lifecycle= OpenClaw plugin that correlates substantial main-agent turns, subagents, and cron executions with durable Run Center records
+- A native =org2-lifecycle= OpenClaw plugin that correlates substantial main-agent turns, subagents, and cron executions with durable Run Center records, prepares manual workflow runs before execution, and reconciles active Org2 schedules into OpenClaw cron
 - Artifact dependency/freshness graphs, rebuild plans, outcome evaluation and sanitized replay fixtures, capability-based hosted/local runtime selection, and MCP server/client snapshot boundaries
 
 * Workspace and context records

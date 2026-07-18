@@ -499,6 +499,20 @@ private struct ApprovalMutationIdentity: Sendable {
   let idValue: String?
 }
 
+private struct ApprovalSelectionAnchor {
+  let file: String
+  let idValue: String?
+  let title: String
+  let visibleIndex: Int?
+
+  init(item: ApprovalItem, visibleIndex: Int?) {
+    self.file = item.file
+    self.idValue = item.idValue?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfBlank
+    self.title = item.title
+    self.visibleIndex = visibleIndex
+  }
+}
+
 private struct ApprovalCandidateSource: Sendable {
   let file: CorpusFile
   let sourceText: String
@@ -638,6 +652,10 @@ public final class WorkspaceStore: ObservableObject {
   @Published public private(set) var isLoadingAgentRuns = false
   @Published public private(set) var isRefreshingWorkspace = false
   @Published public private(set) var mutatingAgentRunIDs: Set<AgentRunItem.ID> = []
+  @Published public private(set) var agentWorkflows: [AgentWorkflowItem] = []
+  @Published public var selectedAgentWorkflowID: AgentWorkflowItem.ID?
+  @Published public private(set) var isLoadingAgentWorkflows = false
+  @Published public private(set) var mutatingAgentWorkflowIDs: Set<AgentWorkflowItem.ID> = []
   @Published public private(set) var approvingApprovalItemIDs: Set<ApprovalItem.ID> = []
   @Published public private(set) var rejectingApprovalItemIDs: Set<ApprovalItem.ID> = []
   @Published public var corpusFiles: [CorpusFile] = [] {
@@ -1046,10 +1064,12 @@ public final class WorkspaceStore: ObservableObject {
   private var isRefreshingAgenda = false
   private var isRefreshingApprovals = false
   private var isRefreshingAgentRuns = false
+  private var isRefreshingAgentWorkflows = false
   private var isRefreshingAssignedWork = false
   private var isRefreshingOpenClawThreads = false
   private var scheduledAgendaRefreshTask: Task<Void, Never>?
   private var scheduledApprovalsRefreshTask: Task<Void, Never>?
+  private var approvalSelectionAnchor: ApprovalSelectionAnchor?
   private var runReviewAutoRefreshTask: Task<Void, Never>?
   private var isRunReviewAutoRefreshActive = false
   private var agendaTodoShortcutMutationTask: Task<Void, Never>?
@@ -1326,7 +1346,7 @@ public final class WorkspaceStore: ObservableObject {
       throw StarterCorpusCreationError.notEmpty(root.path)
     }
 
-    for directory in ["notes", "daily", "views", "compiled"] {
+    for directory in ["notes", "daily", "views", "compiled", "workflows"] {
       try fileManager.createDirectory(
         at: root.appendingPathComponent(directory, isDirectory: true),
         withIntermediateDirectories: true
@@ -1366,7 +1386,7 @@ public final class WorkspaceStore: ObservableObject {
 
     * Inbox
 
-    Capture quick notes and tasks here, then refile them when their destination is clear.
+    This optional intake buffer is for importers or sync clients that cannot safely append to an actively edited daily note. Mac capture appends to today's daily note.
     """
     try (inbox + "\n").write(
       to: root.appendingPathComponent("inbox.org2"),
@@ -1389,8 +1409,10 @@ public final class WorkspaceStore: ObservableObject {
     * Next steps
 
     - Use Capture to append a note or TODO to today's daily note.
-    - Keep durable notes in =notes/= and quick intake in =inbox.org2=.
+    - Use daily notes for quick capture and =notes/= for durable knowledge.
+    - Keep =inbox.org2= as an optional transport/import buffer when a sync client cannot safely append to the active daily note.
     - Put generated, reviewable work in =views/= or =compiled/= before promoting it into canonical notes.
+    - Keep reusable processes as editable Org2 files in =workflows/=.
     - Open any file in source mode whenever you want full-fidelity text editing.
     """
     try (welcome + "\n").write(to: welcomeURL, atomically: true, encoding: .utf8)
@@ -1408,6 +1430,7 @@ public final class WorkspaceStore: ObservableObject {
     agenda = nil
     approvalItems = []
     selectedApprovalItemID = nil
+    approvalSelectionAnchor = nil
     approvalFilter = ""
     corpusFiles = []
     orgRoamLinkResolver = .empty
@@ -1449,6 +1472,7 @@ public final class WorkspaceStore: ObservableObject {
     isRefreshingAgenda = false
     isRefreshingApprovals = false
     isRefreshingAgentRuns = false
+    isRefreshingAgentWorkflows = false
     isRefreshingWorkspace = false
     isRefreshingAssignedWork = false
     isRefreshingOpenClawThreads = false
@@ -1456,6 +1480,8 @@ public final class WorkspaceStore: ObservableObject {
     isLoadingApprovals = false
     isLoadingAgentRuns = false
     agentRuns = []
+    agentWorkflows = []
+    selectedAgentWorkflowID = nil
     selectedAgentRunID = nil
     presentedAgentRunID = nil
     mutatingAgentRunIDs = []
@@ -1500,6 +1526,7 @@ public final class WorkspaceStore: ObservableObject {
     await refreshAssignedWork()
     await refreshApprovals()
     await refreshAgentRuns()
+    await refreshAgentWorkflows()
     await refreshSelectedDetailFromDisk()
     refreshWorkspaceHealth()
     refreshOrgCryptManagedRecipientFiles()
@@ -1760,6 +1787,7 @@ public final class WorkspaceStore: ObservableObject {
   public func refreshRunReviewData() async {
     await refreshApprovals()
     await refreshAgentRuns()
+    await refreshAgentWorkflows()
   }
 
   public func setRunReviewAutoRefreshActive(
@@ -1831,6 +1859,146 @@ public final class WorkspaceStore: ObservableObject {
       errorText = error.localizedDescription
       if updatesStatus { statusText = "Agent runs failed" }
     }
+  }
+
+  public func refreshAgentWorkflows(updatesStatus: Bool = false) async {
+    guard !isRefreshingAgentWorkflows else { return }
+    guard let corpusRoot else {
+      agentWorkflows = []
+      selectedAgentWorkflowID = nil
+      if updatesStatus { statusText = "No corpus selected" }
+      return
+    }
+    isRefreshingAgentWorkflows = true
+    let showsLoading = updatesStatus || agentWorkflows.isEmpty
+    if showsLoading { isLoadingAgentWorkflows = true }
+    if updatesStatus { statusText = "Loading workflows..." }
+    defer {
+      isRefreshingAgentWorkflows = false
+      if showsLoading { isLoadingAgentWorkflows = false }
+    }
+    do {
+      let payload: AgentWorkflowListPayload = try await cli.runJSON([
+        "workflow", "list", "--dir", corpusRoot.path, "--json"
+      ])
+      agentWorkflows = payload.workflows
+      if let selectedAgentWorkflowID,
+         !agentWorkflows.contains(where: { $0.id == selectedAgentWorkflowID }) {
+        self.selectedAgentWorkflowID = nil
+      }
+      if self.selectedAgentWorkflowID == nil { self.selectedAgentWorkflowID = agentWorkflows.first?.id }
+      if updatesStatus {
+        statusText = "\(agentWorkflows.count) workflow\(agentWorkflows.count == 1 ? "" : "s")"
+      }
+    } catch {
+      errorText = error.localizedDescription
+      if updatesStatus { statusText = "Workflows failed" }
+    }
+  }
+
+  public func selectAgentWorkflow(_ workflow: AgentWorkflowItem) {
+    selectedAgentWorkflowID = workflow.id
+    let url = URL(fileURLWithPath: workflow.file)
+    let file = CorpusFile(
+      path: url.path,
+      relativePath: relativePath(url.path),
+      modifiedAt: (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate,
+      byteCount: (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize.map(Int64.init)
+    )
+    selectCorpusFile(file, surface: .approvals)
+  }
+
+  public func setAgentWorkflowState(_ workflow: AgentWorkflowItem, state: String) async {
+    guard let corpusRoot, ["active", "paused", "draft"].contains(state),
+          !mutatingAgentWorkflowIDs.contains(workflow.id) else { return }
+    mutatingAgentWorkflowIDs.insert(workflow.id)
+    defer { mutatingAgentWorkflowIDs.remove(workflow.id) }
+    do {
+      let action = state == "active" ? "activate" : state == "paused" ? "pause" : "draft"
+      _ = try await cli.run(["workflow", action, workflow.id, "--dir", corpusRoot.path, "--json"])
+      await refreshAgentWorkflows()
+      do {
+        try await syncAgentWorkflowsWithOpenClaw()
+        statusText = "\(workflow.title): \(state)"
+      } catch {
+        statusText = "\(workflow.title): \(state); OpenClaw sync pending"
+      }
+      if let refreshed = agentWorkflows.first(where: { $0.id == workflow.id }) { selectAgentWorkflow(refreshed) }
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Workflow update failed"
+    }
+  }
+
+  public func validateAgentWorkflow(_ workflow: AgentWorkflowItem) async {
+    guard let corpusRoot else { return }
+    do {
+      _ = try await cli.run(["workflow", "validate", workflow.id, "--dir", corpusRoot.path, "--json"])
+      statusText = "\(workflow.title) is valid"
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Workflow validation failed"
+    }
+  }
+
+  public func setAgentWorkflowSchedule(
+    _ workflow: AgentWorkflowItem,
+    cron: String,
+    timezone: String,
+    enabled: Bool
+  ) async {
+    guard let corpusRoot, !mutatingAgentWorkflowIDs.contains(workflow.id) else { return }
+    mutatingAgentWorkflowIDs.insert(workflow.id)
+    defer { mutatingAgentWorkflowIDs.remove(workflow.id) }
+    do {
+      var arguments = ["workflow", "schedule", workflow.id, "--dir", corpusRoot.path, "--json"]
+      if enabled {
+        arguments += ["--cron", cron.trimmingCharacters(in: .whitespacesAndNewlines)]
+        let timezone = timezone.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !timezone.isEmpty { arguments += ["--timezone", timezone] }
+      } else {
+        arguments.append("--disable")
+      }
+      _ = try await cli.run(arguments)
+      await refreshAgentWorkflows()
+      do {
+        try await syncAgentWorkflowsWithOpenClaw()
+        statusText = enabled ? "Scheduled \(workflow.title)" : "Disabled \(workflow.title) schedule"
+      } catch {
+        statusText = enabled ? "Saved schedule; OpenClaw sync pending" : "Disabled schedule; OpenClaw sync pending"
+      }
+      if let refreshed = agentWorkflows.first(where: { $0.id == workflow.id }) { selectAgentWorkflow(refreshed) }
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Workflow schedule failed"
+    }
+  }
+
+  public func runAgentWorkflow(_ workflow: AgentWorkflowItem, inputs: [String: String]) async {
+    guard !mutatingAgentWorkflowIDs.contains(workflow.id) else { return }
+    mutatingAgentWorkflowIDs.insert(workflow.id)
+    defer { mutatingAgentWorkflowIDs.remove(workflow.id) }
+    do {
+      let settings = currentOpenClawSettings(allowKeychainRead: true)
+      let gateway = OpenClawGatewayClient(settings: settings)
+      let prepared = try await gateway.prepareWorkflowRun(workflowID: workflow.id, inputs: inputs)
+      let thread = createOpenClawChatThread(
+        title: "Workflow: \(workflow.title)",
+        statusText: "Starting \(workflow.title)"
+      )
+      navigateToSurface(.openClaw)
+      selectOpenClawChatThread(thread.id)
+      await sendOpenClawMessage(text: prepared.prompt)
+      await refreshAgentRuns()
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Workflow run failed"
+    }
+  }
+
+  public func syncAgentWorkflowsWithOpenClaw() async throws {
+    let gateway = OpenClawGatewayClient(settings: currentOpenClawSettings(allowKeychainRead: true))
+    try await gateway.syncWorkflows()
   }
 
   public func mutateAgentRun(_ run: AgentRunItem, action: String, reason: String? = nil) async {
@@ -1915,7 +2083,11 @@ public final class WorkspaceStore: ObservableObject {
         "--dir", corpusRoot.path,
         "--json"
       ])
-      statusText = "Saved \(run.goal) as workflow"
+      await refreshAgentWorkflows()
+      if let workflow = agentWorkflows.first(where: { $0.id == "workflow-\(run.id)" }) {
+        selectAgentWorkflow(workflow)
+      }
+      statusText = "Created draft workflow from \(run.goal)"
     } catch {
       errorText = error.localizedDescription
       statusText = "Save as workflow failed"
@@ -2380,6 +2552,10 @@ public final class WorkspaceStore: ObservableObject {
   public func selectApprovalItem(_ item: ApprovalItem) {
     select(.agenda(item.agendaItem()), surface: .approvals)
     selectedApprovalItemID = item.id
+    approvalSelectionAnchor = ApprovalSelectionAnchor(
+      item: item,
+      visibleIndex: visibleApprovalItems.firstIndex(where: { $0.id == item.id })
+    )
     statusText = item.sourceLabel
   }
 
@@ -2480,15 +2656,44 @@ public final class WorkspaceStore: ObservableObject {
   private func syncApprovalSelectionAfterRefresh() {
     guard !visibleApprovalItems.isEmpty else {
       selectedApprovalItemID = nil
+      approvalSelectionAnchor = nil
       return
     }
     if let selectedApprovalItemID,
-       visibleApprovalItems.contains(where: { $0.id == selectedApprovalItemID }) {
+       let selectedItem = visibleApprovalItems.first(where: { $0.id == selectedApprovalItemID }) {
+      approvalSelectionAnchor = ApprovalSelectionAnchor(
+        item: selectedItem,
+        visibleIndex: visibleApprovalItems.firstIndex(where: { $0.id == selectedItem.id })
+      )
       return
     }
     if selectedSurface == .approvals {
-      selectApprovalItem(visibleApprovalItems[0])
+      let anchoredItem = approvalSelectionAnchor.flatMap { approvalItem(matching: $0) }
+      selectApprovalItem(anchoredItem ?? visibleApprovalItems[0])
     }
+  }
+
+  private func approvalItem(matching anchor: ApprovalSelectionAnchor) -> ApprovalItem? {
+    if let idValue = anchor.idValue,
+       let stableIDMatch = visibleApprovalItems.first(where: {
+         $0.file == anchor.file
+           && $0.idValue?.trimmingCharacters(in: .whitespacesAndNewlines) == idValue
+       }) {
+      return stableIDMatch
+    }
+
+    let titleMatches = visibleApprovalItems.enumerated().filter { _, item in
+      item.file == anchor.file && item.title == anchor.title
+    }
+    if !titleMatches.isEmpty {
+      let preferredIndex = anchor.visibleIndex ?? titleMatches[0].offset
+      return titleMatches.min(by: { lhs, rhs in
+        abs(lhs.offset - preferredIndex) < abs(rhs.offset - preferredIndex)
+      })?.element
+    }
+
+    guard let visibleIndex = anchor.visibleIndex else { return nil }
+    return visibleApprovalItems[min(max(visibleIndex, 0), visibleApprovalItems.count - 1)]
   }
 
   private func rebuildApprovalDisplayCache() {
@@ -2545,6 +2750,7 @@ public final class WorkspaceStore: ObservableObject {
       selectApprovalItem(item)
     } else {
       selectedApprovalItemID = nil
+      approvalSelectionAnchor = nil
     }
   }
 

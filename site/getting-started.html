@@ -87,7 +87,7 @@ npm run org2 -- agenda --help</code></pre>
 <p>On first launch, the Workspace offers two paths:</p>
 <ul>
 <li><p><strong>Open an existing corpus</strong> to point Org2 at any folder of <code>.org</code> or <code>.org2</code> files. No migration is required.</p></li>
-<li><p><strong>Create a new corpus</strong> to choose an empty folder and add a small starter layout: <code>org2.json</code>, <code>inbox.org2</code>, a welcome note, <code>daily/</code>, <code>notes/</code>, <code>views/</code>, and <code>compiled/</code>.</p></li>
+<li><p><strong>Create a new corpus</strong> to choose an empty folder and add a small starter layout: <code>org2.json</code>, an optional transport inbox, a welcome note, <code>daily/</code>, <code>notes/</code>, <code>views/</code>, <code>compiled/</code>, and <code>workflows/</code>. Mac quick capture appends to today's daily note; a sync-constrained client may use the inbox as an isolated intake buffer.</p></li>
 </ul>
 <p>The starter is ordinary plain text and directories, not an app-owned database. You can immediately inspect or edit every generated file in Finder, Git, or another editor.</p>
 <p>The initial downloadable disk image is built for Apple Silicon Macs. Current release builds are developer-signed, not notarized. If macOS blocks the first launch, open <strong>System Settings → Privacy &amp; Security</strong> and allow Org2Workspace, or right-click the app in Finder and choose <strong>Open</strong>.</p>

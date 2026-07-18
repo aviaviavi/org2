@@ -948,7 +948,7 @@ struct OpenClawTypingIndicatorView: View {
             .lineLimit(nil)
             .frame(maxWidth: compact ? 360 : 640, alignment: .leading)
             .fixedSize(horizontal: false, vertical: true)
-        } else {
+        } else if let progressSummary {
           Text(progressSummary)
             .font(.caption)
             .foregroundStyle(.tertiary)
@@ -993,14 +993,14 @@ struct OpenClawTypingIndicatorView: View {
     connectionState == .disconnected ? "Connection interrupted" : "OpenClaw is working"
   }
 
-  private var progressSummary: String {
+  var progressSummary: String? {
     if let latest = OpenClawActivityFeed.items(from: activities).last(where: { $0.status == .running }) {
       return latest.title
     }
     switch connectionState {
     case .connecting: return "Opening the live connection…"
     case .reconnecting: return "Reconnecting without resending…"
-    case .connected: return runID == nil ? "Starting the run…" : "Live activity will appear here."
+    case .connected: return runID == nil ? "Starting the run…" : nil
     case .fallbackHTTP: return "Gateway unavailable; continuing over HTTP."
     case .disconnected: return connectionDetail ?? "The connection was interrupted."
     }

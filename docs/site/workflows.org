@@ -1,0 +1,84 @@
+#+TITLE: Workflows
+#+SUBTITLE: Plain-text processes executed by replaceable runtimes
+
+An Org2 workflow is a maintained, reusable process. Each workflow is an ordinary =.org2= file under the visible top-level =workflows/= directory. The file is the source of truth: it can be opened in Org2 Workspace, another editor, a terminal, or Git without depending on private application state.
+
+The Mac app and runtime adapters provide tooling around the file. They can list workflows, validate them, collect inputs, start runs, activate or pause schedules, and show execution history. Those controls must update or act from the canonical workflow file rather than creating a second GUI-owned definition.
+
+* Workflow, run, and runtime
+
+- A *workflow* describes how a class of work should happen: inputs, context rules, instructions, steps, outputs, validation, approvals, and triggers.
+- A *run* records one execution of one workflow version, including its concrete context, state, artifacts, approvals, validation, events, and outcome.
+- A *runtime adapter* executes the workflow. OpenClaw is the first native adapter; the workflow and run formats do not depend on one provider.
+
+Repeating a prompt is useful, but it does not by itself create a workflow. A workflow earns its durable form by making the process inspectable, editable, versionable, reviewable, and reliable across executions.
+
+* File ownership
+
+The default corpus layout separates authored process from execution state:
+
+#+begin_src text
+workflows/                 authored workflow files
+.org2/runs/                generated durable run records
+.org2/                     runtime bindings, correlation state, and derived control data
+#+end_src
+
+Older early-alpha installations may contain =.org2/workflows/=. Org2 continues to read that location, prefers a visible =workflows/= file when both contain the same workflow ID, and provides =org2 workflow migrate= to move non-conflicting legacy files. New and newly saved workflows use =workflows/=.
+
+One workflow per file is the default. A note or project heading may link to or invoke a workflow, while independent files keep workflow identity, version history, review, and distribution straightforward.
+
+* Creating and maintaining a workflow
+
+A completed one-off run can become a draft workflow:
+
+#+begin_src sh
+org2 workflow save RUN_ID --id weekly-review --dir ~/notes
+#+end_src
+
+The saved file is a proposal, not an automatic publication or rerun. Review the concrete context copied from the original run, replace one-off values with inputs where appropriate, and inspect outputs, validation, and approval boundaries before activation.
+
+The Mac *Runs & Review → Workflows* surface lists the files and opens the selected workflow in the normal Org2 document editor. *Edit Source* uses the same full-fidelity source mode available to other corpus files. Structured controls such as *Run Now*, *Validate*, *Schedule*, *Activate*, and *Pause* are conveniences over the file and shared CLI.
+
+Useful lifecycle commands include:
+
+#+begin_src sh
+org2 workflow list --dir ~/notes --json
+org2 workflow validate weekly-review --dir ~/notes
+org2 workflow activate weekly-review --dir ~/notes
+org2 workflow pause weekly-review --dir ~/notes
+org2 workflow schedule weekly-review --cron "0 9 * * 1" \
+  --timezone America/Los_Angeles --dir ~/notes
+org2 workflow migrate --dir ~/notes
+#+end_src
+
+Draft, active, and paused describe operational intent. Editing the file remains possible in every state. A workflow should be validated and reviewed before an edited version becomes responsible for consequential or scheduled work.
+
+* OpenClaw execution
+
+The =org2-lifecycle= plugin is the current execution bridge:
+
+1. For a manual execution, the plugin instantiates the workflow into a durable Org2 run before the agent begins.
+2. The plugin sends OpenClaw a workflow marker and a request to read the canonical workflow and run records.
+3. OpenClaw lifecycle events update that same run instead of creating a duplicate generic run.
+4. Outputs, validation, and approvals remain visible in Runs & Review.
+
+For scheduled work, the schedule declaration stays in the workflow file while OpenClaw owns due checks and execution:
+
+1. Activating or syncing workflows reconciles enabled schedule triggers into OpenClaw cron.
+2. The cron payload identifies the workflow and version; it does not maintain a separate copy of the process.
+3. Each cron execution instantiates a new correlated Org2 run.
+4. Pausing the workflow disables its managed OpenClaw job.
+
+OpenClaw job IDs and correlation mappings are adapter state. They are not part of the portable workflow definition. This boundary prevents scheduler details from leaking into authored corpus files and allows another runtime adapter to execute the same process later.
+
+The first scheduling slice uses cron expressions plus an optional IANA timezone. OpenClaw remains authoritative for due checks, retry behavior, and execution history; Org2 remains authoritative for the desired workflow, review boundaries, and durable work record.
+
+* Safety and review
+
+A workflow declares capabilities and a risk class. Expected outputs should land in reviewable locations such as =views/= or =compiled/=, and consequential or external actions should carry an explicit approval requirement. Activating a schedule never weakens those boundaries.
+
+Keep runtime credentials outside workflow files. A workflow may name a capability or symbolic runtime policy, but provider tokens, Gateway credentials, machine-local job IDs, and private scheduler state belong in runtime configuration.
+
+* Current limits
+
+This is an early workflow surface. The canonical file carries readable Org2 authoring fields plus a versioned machine-state block for the complete portable definition. The visible title, description, instructions, version, risk, and lifecycle state are authoritative when edited in source; a later structured save normalizes those values back into the complete definition. Source mode remains the complete editing escape hatch while structured assistance for inputs, steps, outputs, validation, and approvals becomes deeper. OpenClaw is the only adapter with native manual execution and schedule reconciliation today. More trigger types, richer revision comparison, automatic parameter suggestions, and additional runtime adapters can build on the same file/run boundary.

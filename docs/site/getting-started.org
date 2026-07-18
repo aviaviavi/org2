@@ -52,7 +52,7 @@ Org2 Workspace is the native macOS app. The easiest install path is the download
 On first launch, the Workspace offers two paths:
 
 - *Open an existing corpus* to point Org2 at any folder of =.org= or =.org2= files. No migration is required.
-- *Create a new corpus* to choose an empty folder and add a small starter layout: =org2.json=, =inbox.org2=, a welcome note, =daily/=, =notes/=, =views/=, and =compiled/=.
+- *Create a new corpus* to choose an empty folder and add a small starter layout: =org2.json=, an optional transport inbox, a welcome note, =daily/=, =notes/=, =views/=, =compiled/=, and =workflows/=. Mac quick capture appends to today's daily note; a sync-constrained client may use the inbox as an isolated intake buffer.
 
 The starter is ordinary plain text and directories, not an app-owned database. You can immediately inspect or edit every generated file in Finder, Git, or another editor.
 

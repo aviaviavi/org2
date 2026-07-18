@@ -83,6 +83,56 @@ struct AgentRunScopeEntry: Identifiable, Equatable {
   var id: AgentRunItem.ID { run.id }
 }
 
+public struct AgentWorkflowListPayload: Decodable, Sendable {
+  public let schema: String
+  public let workflows: [AgentWorkflowItem]
+}
+
+public struct AgentWorkflowInputItem: Decodable, Hashable, Sendable, Identifiable {
+  public let id: String
+  public let description: String
+  public let required: Bool
+  public let `default`: String?
+}
+
+public struct AgentWorkflowTriggerItem: Decodable, Hashable, Sendable, Identifiable {
+  public let id: String
+  public let type: String
+  public let enabled: Bool
+  public let schedule: String?
+  public let timezone: String?
+}
+
+public struct AgentWorkflowItem: Identifiable, Decodable, Hashable, Sendable {
+  public let id: String
+  public let version: String
+  public let title: String
+  public let description: String
+  public let state: String
+  public let instructions: String
+  public let riskClass: String
+  public let capabilities: [String]
+  public let inputs: [AgentWorkflowInputItem]
+  public let triggers: [AgentWorkflowTriggerItem]
+  public let file: String
+  public let legacyLocation: Bool
+  public let sourceRunId: String?
+  public let createdAt: String
+  public let updatedAt: String
+
+  public var scheduleTrigger: AgentWorkflowTriggerItem? {
+    triggers.first { $0.id == "openclaw-schedule" && $0.type == "schedule" }
+  }
+
+  public var scheduleSummary: String {
+    guard let trigger = scheduleTrigger, trigger.enabled, let schedule = trigger.schedule else {
+      return "Manual"
+    }
+    if let timezone = trigger.timezone, !timezone.isEmpty { return "\(schedule) · \(timezone)" }
+    return schedule
+  }
+}
+
 public struct AgentRunItem: Identifiable, Decodable, Hashable, Sendable {
   public let id: String
   public let goal: String

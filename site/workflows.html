@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Workflows</title>
+<meta name="subtitle" content="Plain-text processes executed by replaceable runtimes" />
+<link rel="icon" type="image/png" href="assets/favicon.png" />
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
+<script type="module" src="assets/shiki-vscode.js"></script>
+<script defer src="assets/nav.js"></script>
+<meta property="og:type" content="website" />
+<meta property="og:title" content="Workflows" />
+<meta property="og:description" content="Plain-text processes executed by replaceable runtimes" />
+<meta property="og:url" content="https://org2.avi.press/workflows.html" />
+<meta property="og:image" content="https://org2.avi.press/assets/og/workflows.svg" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Workflows" />
+<meta name="twitter:description" content="Plain-text processes executed by replaceable runtimes" />
+<meta name="twitter:image" content="https://org2.avi.press/assets/og/workflows.svg" />
+<link rel="stylesheet" href="assets/site.css" />
+<style>
+:root { color-scheme: light dark; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 2rem auto; max-width: 860px; padding: 0 1rem; line-height: 1.5; }
+main { display: grid; gap: 0.75rem; }
+section.org2-headline { margin: 0.5rem 0 1rem; }
+h1,h2,h3,h4,h5,h6 { margin: 1rem 0 0.5rem; line-height: 1.25; }
+.org2-todo { font-size: 0.8em; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; opacity: 0.9; }
+.org2-tags { font-size: 0.8em; opacity: 0.8; }
+.org2-tag { border: 1px solid currentColor; border-radius: 999px; padding: 0 0.35em; }
+.org2-planning { font-size: 0.95em; opacity: 0.9; }
+.org2-planning-kind { font-weight: 600; }
+.org2-properties { display: grid; grid-template-columns: max-content 1fr; gap: 0.15rem 0.75rem; margin: 0.5rem 0; }
+.org2-properties dt { font-weight: 600; }
+.org2-properties dd { margin: 0; }
+.org2-src, .org2-example, .org2-verse, .org2-comment, .org2-directive, pre { overflow-x: auto; padding: 0.75rem; border-radius: 0.5rem; background: rgba(127,127,127,0.12); }
+.org2-center { text-align: center; }
+.org2-underline { text-decoration: underline; }
+table { border-collapse: collapse; width: 100%; margin: 0.5rem 0 1rem; }
+th, td { border: 1px solid rgba(127,127,127,0.35); padding: 0.35rem 0.5rem; text-align: left; }
+thead th { background: rgba(127,127,127,0.16); }
+a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
+</style>
+<style>
+#content { max-width: 60em; margin: auto; line-height: 1.35; }
+#content li > p { margin: 0; }
+#content li + li { margin-top: 0.2rem; }
+</style>
+</head>
+<body>
+<div id="content" class="content">
+<main class="org2-document">
+<div class="org2-nav"><details class="org2-nav-menu" open><summary>Menu</summary><nav aria-label="Docs"><a href="index.html">Home</a><a href="features.html">Features</a><a href="getting-started.html">Getting started</a><details class="org2-nav-dropdown"><summary>Reference</summary><div class="org2-nav-dropdown-menu"><a href="reference.html">Overview</a><a href="corpus-flow.html">Corpus flow</a><a href="language-reference.html">Language reference</a><a href="tooling-reference.html">Tooling reference</a><a href="maintenance-workflows.html">Maintenance and health</a><a href="openclaw-knowledge-layer.html">OpenClaw knowledge layer</a><a href="knowledge-compiler-roadmap.html">Knowledge compiler roadmap</a><a href="semantics-status.html">Semantics and status</a><a href="migration.html">Practical migration</a></div></details><details class="org2-nav-dropdown"><summary>Editors</summary><div class="org2-nav-dropdown-menu"><a href="editors.html">Overview</a><a href="editors-macos.html">macOS Workspace</a><a href="editors-vscode.html">VS Code</a><a href="editors-vim.html">Vim / Neovim</a><a href="editors-emacs.html">Emacs</a></div></details><details class="org2-nav-dropdown"><summary>Comparisons</summary><div class="org2-nav-dropdown-menu"><a href="org2-vs-org-mode.html">Org2 vs Org Mode</a><a href="org2-vs-markdown.html">Org2 vs Markdown</a><a href="org2-vs-obsidian.html">Org2 vs Obsidian</a></div></details><a class="org2-nav-github" href="https://github.com/aviaviavi/org2" target="_blank" rel="noopener noreferrer"><svg class="org2-nav-github-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8a8.013 8.013 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.57 7.57 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.19 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg> GitHub</a><form class="org2-site-search" role="search"><button class="org2-site-search-toggle" type="button" aria-label="Open docs search" aria-expanded="false">⌕</button><label class="sr-only" for="org2-site-search-input">Search docs</label><input id="org2-site-search-input" type="search" placeholder="Search docs" autocomplete="off" aria-label="Search docs" aria-expanded="false"/><div class="org2-site-search-results" hidden></div></form></nav></details></div>
+<header class="org2-document-header">
+<h1 class="org2-document-title">Workflows</h1>
+<p class="org2-document-subtitle" role="doc-subtitle">Plain-text processes executed by replaceable runtimes</p>
+</header>
+<p>An Org2 workflow is a maintained, reusable process. Each workflow is an ordinary <code>.org2</code> file under the visible top-level <code>workflows/</code> directory. The file is the source of truth: it can be opened in Org2 Workspace, another editor, a terminal, or Git without depending on private application state.</p>
+<p>The Mac app and runtime adapters provide tooling around the file. They can list workflows, validate them, collect inputs, start runs, activate or pause schedules, and show execution history. Those controls must update or act from the canonical workflow file rather than creating a second GUI-owned definition.</p>
+<section class="org2-headline level-1">
+<h1 id="workflow-run-and-runtime">Workflow, run, and runtime</h1>
+<ul>
+<li><p>A <strong>workflow</strong> describes how a class of work should happen: inputs, context rules, instructions, steps, outputs, validation, approvals, and triggers.</p></li>
+<li><p>A <strong>run</strong> records one execution of one workflow version, including its concrete context, state, artifacts, approvals, validation, events, and outcome.</p></li>
+<li><p>A <strong>runtime adapter</strong> executes the workflow. OpenClaw is the first native adapter; the workflow and run formats do not depend on one provider.</p></li>
+</ul>
+<p>Repeating a prompt is useful, but it does not by itself create a workflow. A workflow earns its durable form by making the process inspectable, editable, versionable, reviewable, and reliable across executions.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="file-ownership">File ownership</h1>
+<p>The default corpus layout separates authored process from execution state:</p>
+<pre class="org2-src language-text" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-text">workflows/                 authored workflow files
+.org2/runs/                generated durable run records
+.org2/                     runtime bindings, correlation state, and derived control data</code></pre>
+<p>Older early-alpha installations may contain <code>.org2/workflows/</code>. Org2 continues to read that location, prefers a visible <code>workflows/</code> file when both contain the same workflow ID, and provides <code>org2 workflow migrate</code> to move non-conflicting legacy files. New and newly saved workflows use <code>workflows/</code>.</p>
+<p>One workflow per file is the default. A note or project heading may link to or invoke a workflow, while independent files keep workflow identity, version history, review, and distribution straightforward.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="creating-and-maintaining-a-workflow">Creating and maintaining a workflow</h1>
+<p>A completed one-off run can become a draft workflow:</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 workflow save RUN_ID --id weekly-review --dir ~/notes</code></pre>
+<p>The saved file is a proposal, not an automatic publication or rerun. Review the concrete context copied from the original run, replace one-off values with inputs where appropriate, and inspect outputs, validation, and approval boundaries before activation.</p>
+<p>The Mac <strong>Runs &amp; Review → Workflows</strong> surface lists the files and opens the selected workflow in the normal Org2 document editor. <strong>Edit Source</strong> uses the same full-fidelity source mode available to other corpus files. Structured controls such as <strong>Run Now</strong>, <strong>Validate</strong>, <strong>Schedule</strong>, <strong>Activate</strong>, and <strong>Pause</strong> are conveniences over the file and shared CLI.</p>
+<p>Useful lifecycle commands include:</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 workflow list --dir ~/notes --json
+org2 workflow validate weekly-review --dir ~/notes
+org2 workflow activate weekly-review --dir ~/notes
+org2 workflow pause weekly-review --dir ~/notes
+org2 workflow schedule weekly-review --cron &quot;0 9 * * 1&quot; \
+  --timezone America/Los_Angeles --dir ~/notes
+org2 workflow migrate --dir ~/notes</code></pre>
+<p>Draft, active, and paused describe operational intent. Editing the file remains possible in every state. A workflow should be validated and reviewed before an edited version becomes responsible for consequential or scheduled work.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="openclaw-execution">OpenClaw execution</h1>
+<p>The <code>org2-lifecycle</code> plugin is the current execution bridge:</p>
+<ol>
+<li><p>For a manual execution, the plugin instantiates the workflow into a durable Org2 run before the agent begins.</p></li>
+<li><p>The plugin sends OpenClaw a workflow marker and a request to read the canonical workflow and run records.</p></li>
+<li><p>OpenClaw lifecycle events update that same run instead of creating a duplicate generic run.</p></li>
+<li><p>Outputs, validation, and approvals remain visible in Runs &amp; Review.</p></li>
+</ol>
+<p>For scheduled work, the schedule declaration stays in the workflow file while OpenClaw owns due checks and execution:</p>
+<ol>
+<li><p>Activating or syncing workflows reconciles enabled schedule triggers into OpenClaw cron.</p></li>
+<li><p>The cron payload identifies the workflow and version; it does not maintain a separate copy of the process.</p></li>
+<li><p>Each cron execution instantiates a new correlated Org2 run.</p></li>
+<li><p>Pausing the workflow disables its managed OpenClaw job.</p></li>
+</ol>
+<p>OpenClaw job IDs and correlation mappings are adapter state. They are not part of the portable workflow definition. This boundary prevents scheduler details from leaking into authored corpus files and allows another runtime adapter to execute the same process later.</p>
+<p>The first scheduling slice uses cron expressions plus an optional IANA timezone. OpenClaw remains authoritative for due checks, retry behavior, and execution history; Org2 remains authoritative for the desired workflow, review boundaries, and durable work record.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="safety-and-review">Safety and review</h1>
+<p>A workflow declares capabilities and a risk class. Expected outputs should land in reviewable locations such as <code>views/</code> or <code>compiled/</code>, and consequential or external actions should carry an explicit approval requirement. Activating a schedule never weakens those boundaries.</p>
+<p>Keep runtime credentials outside workflow files. A workflow may name a capability or symbolic runtime policy, but provider tokens, Gateway credentials, machine-local job IDs, and private scheduler state belong in runtime configuration.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="current-limits">Current limits</h1>
+<p>This is an early workflow surface. The canonical file carries readable Org2 authoring fields plus a versioned machine-state block for the complete portable definition. The visible title, description, instructions, version, risk, and lifecycle state are authoritative when edited in source; a later structured save normalizes those values back into the complete definition. Source mode remains the complete editing escape hatch while structured assistance for inputs, steps, outputs, validation, and approvals becomes deeper. OpenClaw is the only adapter with native manual execution and schedule reconciliation today. More trigger types, richer revision comparison, automatic parameter suggestions, and additional runtime adapters can build on the same file/run boundary.</p>
+</section>
+</main>
+</div>
+<footer class="org2-footer"><p>Org2 docs</p><img referrerpolicy="no-referrer-when-downgrade" src="https://static.scarf.sh/a.png?x-pxid=e39e0a38-773e-4446-b8b0-804f923e3dc3" alt="" /></footer>
+</body>
+</html>

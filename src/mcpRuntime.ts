@@ -164,5 +164,5 @@ export async function serveMcp(root: string, input: NodeJS.ReadableStream = proc
 
 export function installBuiltinWorkflow(root: string, workflow: any): string {
   const now = new Date().toISOString();
-  return saveWorkflow(root, { ...workflow, schema: "org2:workflow:v1", compatibility: { org2: ">=0.3.0 <1", schema: "org2:workflow:v1" }, createdAt: now, updatedAt: now });
+  return saveWorkflow(root, { ...workflow, schema: "org2:workflow:v1", state: "draft", compatibility: { org2: ">=0.3.0 <1", schema: "org2:workflow:v1" }, createdAt: now, updatedAt: now });
 }

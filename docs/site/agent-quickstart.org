@@ -79,7 +79,7 @@ org2 run complete RUN_ID \
 org2 workflow save RUN_ID --id launch-briefing --dir ~/notes
 #+end_src
 
-The durable record is ordinary Org2 text under =.org2/runs/=. Its human-readable sections and versioned JSON machine-state block describe the same run. Completion requires a concise =--summary= written for the person reviewing the result; repeat =--highlight= and =--next-action= when those details matter. Workflow packages use the same pattern under =.org2/workflows/=. Apps and agents may index these files, but they are not allowed to replace them with private state.
+The durable record is ordinary Org2 text under =.org2/runs/=. Its human-readable sections and versioned JSON machine-state block describe the same run. Completion requires a concise =--summary= written for the person reviewing the result; repeat =--highlight= and =--next-action= when those details matter. Authored workflow files use the same pattern under the visible top-level =workflows/=. Apps and agents may provide tooling around these files, but they are not allowed to replace them with private state. See [[file:workflows.org][Workflows]].
 
 Install and execute the built-in flagship recipe with:
 

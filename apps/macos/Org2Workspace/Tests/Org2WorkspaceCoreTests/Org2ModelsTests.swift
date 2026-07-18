@@ -116,6 +116,7 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("daily").path))
     XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("views").path))
     XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("compiled").path))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("workflows").path))
 
     let welcome = try String(contentsOf: welcomeURL, encoding: .utf8)
     XCTAssertTrue(welcome.contains("#+TITLE: Welcome to Org2"))
@@ -1570,6 +1571,63 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(updated.contains(":REVIEW_STATUS: approved"))
     XCTAssertTrue(updated.contains(":STATUS: approved"))
     XCTAssertTrue(store.approvalItems.isEmpty)
+  }
+
+  @MainActor
+  func testApprovingMiddleItemKeepsSelectionOnNextApprovalAfterRefresh() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-approval-selection-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("approvals.org2")
+    try """
+    * TODO Approve first draft
+    :PROPERTIES:
+    :ID: approval-first
+    :STATUS: draft-needs-review
+    :END:
+    First draft.
+
+    * TODO Approve second draft
+    :PROPERTIES:
+    :ID: approval-second
+    :STATUS: draft-needs-review
+    :END:
+    Second draft.
+
+    * TODO Approve third draft
+    :PROPERTIES:
+    :ID: approval-third
+    :STATUS: draft-needs-review
+    :END:
+    Third draft.
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root, persistsDefault: false)
+    await store.refreshApprovals()
+
+    XCTAssertEqual(store.visibleApprovalItems.map(\.idValue), [
+      "approval-first",
+      "approval-second",
+      "approval-third"
+    ])
+    let second = try XCTUnwrap(store.visibleApprovalItems.first(where: { $0.idValue == "approval-second" }))
+    store.selectApprovalItem(second)
+
+    await store.approve(second)
+
+    XCTAssertEqual(
+      store.visibleApprovalItems.first(where: { $0.id == store.selectedApprovalItemID })?.idValue,
+      "approval-third"
+    )
+
+    await store.refreshApprovals()
+
+    XCTAssertEqual(store.visibleApprovalItems.map(\.idValue), ["approval-first", "approval-third"])
+    XCTAssertEqual(
+      store.visibleApprovalItems.first(where: { $0.id == store.selectedApprovalItemID })?.idValue,
+      "approval-third"
+    )
   }
 
   @MainActor

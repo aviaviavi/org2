@@ -1804,6 +1804,7 @@ private struct RunsAndReviewView: View {
   private enum Page: String, CaseIterable, Identifiable {
     case runs = "Run Center"
     case review = "Review Queue"
+    case workflows = "Workflows"
     var id: String { rawValue }
   }
 
@@ -1817,8 +1818,225 @@ private struct RunsAndReviewView: View {
       .padding(.horizontal, WorkspaceDesign.contentInset)
       .padding(.top, 10)
 
-      if page == .runs { RunCenterView() } else { ApprovalsView() }
+      switch page {
+      case .runs: RunCenterView()
+      case .review: ApprovalsView()
+      case .workflows: WorkflowsView()
+      }
     }
+  }
+}
+
+private struct WorkflowsView: View {
+  @EnvironmentObject private var store: WorkspaceStore
+  @State private var runWorkflow: AgentWorkflowItem?
+  @State private var scheduleWorkflow: AgentWorkflowItem?
+
+  var body: some View {
+    VStack(spacing: 0) {
+      HeaderBar(
+        title: "Workflows",
+        subtitle: "Plain-text processes in workflows/",
+        surface: .approvals
+      ) {
+        if store.isLoadingAgentWorkflows { WorkspaceActivityIndicator(size: .small) }
+        Button {
+          Task {
+            do {
+              await store.refreshAgentWorkflows()
+              try await store.syncAgentWorkflowsWithOpenClaw()
+              store.statusText = "Workflows synced with OpenClaw"
+            } catch {
+              store.errorText = error.localizedDescription
+              store.statusText = "OpenClaw workflow sync failed"
+            }
+          }
+        } label: {
+          Label("Sync", systemImage: "arrow.triangle.2.circlepath")
+        }
+      }
+
+      if store.isLoadingAgentWorkflows && store.agentWorkflows.isEmpty {
+        Spacer(); WorkspaceLoadingStateView("Loading workflows"); Spacer()
+      } else if store.agentWorkflows.isEmpty {
+        EmptyStateView(
+          title: "No Workflows",
+          detail: "Complete a run and choose Create Reusable Workflow. The resulting Org2 file will appear in workflows/."
+        )
+      } else {
+        List(selection: $store.selectedAgentWorkflowID) {
+          ForEach(store.agentWorkflows) { workflow in
+            WorkflowRow(workflow: workflow)
+              .tag(workflow.id)
+              .contentShape(Rectangle())
+              .onTapGesture { store.selectAgentWorkflow(workflow) }
+              .contextMenu {
+                Button("Run Now") { runWorkflow = workflow }
+                Button("Edit Source") {
+                  store.selectAgentWorkflow(workflow)
+                  store.beginEditingCurrentScope()
+                }
+                Button("Validate") { Task { await store.validateAgentWorkflow(workflow) } }
+                Divider()
+                Button("Schedule…") { scheduleWorkflow = workflow }
+                if workflow.state == "active" {
+                  Button("Pause") { Task { await store.setAgentWorkflowState(workflow, state: "paused") } }
+                } else {
+                  Button("Activate") { Task { await store.setAgentWorkflowState(workflow, state: "active") } }
+                }
+              }
+          }
+        }
+        .listStyle(.inset)
+        .onChange(of: store.selectedAgentWorkflowID) {
+          guard let id = store.selectedAgentWorkflowID,
+                let workflow = store.agentWorkflows.first(where: { $0.id == id }) else { return }
+          store.selectAgentWorkflow(workflow)
+        }
+      }
+    }
+    .task {
+      if store.agentWorkflows.isEmpty { await store.refreshAgentWorkflows() }
+    }
+    .sheet(item: $runWorkflow) { workflow in
+      WorkflowRunSheet(workflow: workflow)
+        .environmentObject(store)
+    }
+    .sheet(item: $scheduleWorkflow) { workflow in
+      WorkflowScheduleSheet(workflow: workflow)
+        .environmentObject(store)
+    }
+  }
+}
+
+private struct WorkflowRow: View {
+  @EnvironmentObject private var store: WorkspaceStore
+  let workflow: AgentWorkflowItem
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 5) {
+      HStack(spacing: 8) {
+        Text(workflow.title)
+          .font(.body.weight(.semibold))
+          .lineLimit(1)
+        Spacer(minLength: 8)
+        if store.mutatingAgentWorkflowIDs.contains(workflow.id) {
+          WorkspaceActivityIndicator(size: .mini)
+        }
+        StatusPill(text: workflow.state)
+      }
+      Text(workflow.description)
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .lineLimit(2)
+      HStack(spacing: 8) {
+        Label("v\(workflow.version)", systemImage: "point.3.connected.trianglepath.dotted")
+        Label(workflow.scheduleSummary, systemImage: workflow.scheduleTrigger?.enabled == true ? "clock" : "play")
+        if workflow.legacyLocation {
+          Label("Legacy location", systemImage: "exclamationmark.triangle")
+        }
+      }
+      .font(.caption2.weight(.medium))
+      .foregroundStyle(.tertiary)
+      .lineLimit(1)
+    }
+    .padding(.vertical, WorkspaceDesign.rowVerticalPadding)
+  }
+}
+
+private struct WorkflowRunSheet: View {
+  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(\.dismiss) private var dismiss
+  let workflow: AgentWorkflowItem
+  @State private var values: [String: String]
+
+  init(workflow: AgentWorkflowItem) {
+    self.workflow = workflow
+    _values = State(initialValue: Dictionary(uniqueKeysWithValues: workflow.inputs.map { ($0.id, $0.default ?? "") }))
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 16) {
+      Text("Run \(workflow.title)").font(.title2.weight(.semibold))
+      Text("OpenClaw will execute this workflow from its canonical Org2 file. A durable run is created before agent work begins.")
+        .foregroundStyle(.secondary)
+      if workflow.inputs.isEmpty {
+        Text("This workflow has no inputs.").foregroundStyle(.secondary)
+      } else {
+        Form {
+          ForEach(workflow.inputs) { input in
+            TextField(input.description, text: binding(for: input.id))
+              .help(input.required ? "Required input: \(input.id)" : "Optional input: \(input.id)")
+          }
+        }
+        .formStyle(.grouped)
+      }
+      HStack {
+        Spacer()
+        Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+        Button("Run Now") {
+          let inputs = values.filter { !$0.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+          dismiss()
+          Task { await store.runAgentWorkflow(workflow, inputs: inputs) }
+        }
+        .keyboardShortcut(.defaultAction)
+        .buttonStyle(.borderedProminent)
+        .disabled(hasMissingRequiredInput)
+      }
+    }
+    .padding(24)
+    .frame(width: 560, height: max(300, CGFloat(230 + workflow.inputs.count * 54)))
+  }
+
+  private var hasMissingRequiredInput: Bool {
+    workflow.inputs.contains { $0.required && (values[$0.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+  }
+
+  private func binding(for id: String) -> Binding<String> {
+    Binding(get: { values[id] ?? "" }, set: { values[id] = $0 })
+  }
+}
+
+private struct WorkflowScheduleSheet: View {
+  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(\.dismiss) private var dismiss
+  let workflow: AgentWorkflowItem
+  @State private var enabled: Bool
+  @State private var cron: String
+  @State private var timezone: String
+
+  init(workflow: AgentWorkflowItem) {
+    self.workflow = workflow
+    let trigger = workflow.scheduleTrigger
+    _enabled = State(initialValue: trigger?.enabled == true)
+    _cron = State(initialValue: trigger?.schedule ?? "0 9 * * 1")
+    _timezone = State(initialValue: trigger?.timezone ?? TimeZone.current.identifier)
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 16) {
+      Text("Schedule \(workflow.title)").font(.title2.weight(.semibold))
+      Text("OpenClaw owns due checks and execution. The desired schedule remains in the workflow’s plain-text definition.")
+        .foregroundStyle(.secondary)
+      Toggle("Enable schedule", isOn: $enabled)
+      TextField("Cron expression", text: $cron).disabled(!enabled)
+      TextField("IANA timezone", text: $timezone).disabled(!enabled)
+      Text("Example: 0 9 * * 1 runs every Monday at 9:00 in the selected timezone.")
+        .font(.caption).foregroundStyle(.secondary)
+      HStack {
+        Spacer()
+        Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+        Button("Save") {
+          dismiss()
+          Task { await store.setAgentWorkflowSchedule(workflow, cron: cron, timezone: timezone, enabled: enabled) }
+        }
+        .keyboardShortcut(.defaultAction)
+        .buttonStyle(.borderedProminent)
+        .disabled(enabled && cron.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+      }
+    }
+    .padding(24)
+    .frame(width: 520)
   }
 }
 
