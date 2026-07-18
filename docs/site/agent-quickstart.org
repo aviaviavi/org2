@@ -17,7 +17,7 @@ org2 agent --help
 
 =org2 agent capabilities= emits the versioned JSON schema =org2:capabilities:v1=. It summarizes workflow families, write behavior, client roles, safety rules, and deeper documentation URLs. Use =org2 COMMAND --help= for the current flags of a specific command.
 
-When working in a corpus, look for the nearest =org2.json=. It can define file selection, recursion, ignored paths, TODO vocabulary, data-source profiles, publishing projects, and roam/dailies locations. Do not assume a private database or app owns the canonical state.
+When working in a corpus, look for the nearest =org2.json=. It can define file selection, recursion, ignored paths, TODO vocabulary, data-source profiles, external-source intent, publishing projects, and roam/dailies locations. Do not assume a private database or app owns the canonical state.
 
 * Safe operating contract
 
@@ -50,6 +50,7 @@ The shorthand =org2 context QUERY= renders a cited Markdown/Org context pack for
 - *Use portable tools and models*: =runtime select= resolves capability/privacy policies, =mcp serve= exposes corpus resources and run tools, and =mcp snapshot= preserves external results with provenance.
 - *Plan and act*: =agenda=, =todo=, =approvals=, =plan=, and =clock=.
 - *Read across identified corpora*: =workspace agenda= and =workspace search= combine canonical per-corpus JSON results without creating a merged database or a workspace-wide write target.
+- *Refresh external mirrors*: =source list/doctor/bind/sync= orchestrates =slacrawl= and =notcrawl=. Portable profiles contain no secrets; every machine supplies its own binding outside the corpus.
 - *Capture and organize*: =capture=, =archive=, and =refile=.
 - *Find and connect knowledge*: =search=, =query=, =id=, =backlinks=, =entity=, =index=, and =roam ...=.
 - *Check corpus health*: =fmt --check=, =lint=, and =graph audit=.

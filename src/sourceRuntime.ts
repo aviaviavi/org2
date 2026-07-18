@@ -1,0 +1,237 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { spawnSync } from "node:child_process";
+import { findConfigFile, loadConfig, type Org2ExternalSourceConfig } from "./config.js";
+import { org2CorpusIndexDir } from "./indexPaths.js";
+
+export type SourceBinding = {
+  binary?: string;
+  configPath?: string;
+  workingDirectory?: string;
+};
+
+type SourceBindingsEnvelope = {
+  schemaVersion: 1;
+  bindings: Record<string, SourceBinding>;
+};
+
+type SourceStatus = {
+  id: string;
+  type: "slack" | "notion";
+  enabled: boolean;
+  scopes: string[];
+  rawZone: string;
+  media: "lazy" | "metadata-only";
+  bindingPath: string;
+  binary: string;
+  binaryAvailable: boolean;
+  configPath?: string;
+  configAvailable: boolean;
+  ready: boolean;
+};
+
+function usage(): string {
+  return `External source commands:
+  org2 source list [--dir CORPUS] [--json]
+  org2 source doctor [PROFILE...] [--dir CORPUS] [--json]
+  org2 source bind PROFILE [--binary PATH] [--config PATH] [--working-directory PATH] [--dir CORPUS] [--apply] [--json]
+  org2 source sync [PROFILE...] [--dir CORPUS] [--json]
+
+The corpus declares non-secret externalSources in org2.json. Machine-local bindings are stored
+outside the corpus under ORG2_INDEX_HOME (or ~/.org2/index). Sync delegates to slacrawl/notcrawl.`;
+}
+
+function parseArgs(args: string[]) {
+  const positional: string[] = [];
+  let dir = "";
+  let json = false;
+  let apply = false;
+  let binary: string | undefined;
+  let configPath: string | undefined;
+  let workingDirectory: string | undefined;
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i]!;
+    if (arg === "--dir") dir = args[++i] || "";
+    else if (arg === "--json" || (arg === "--format" && args[i + 1] === "json")) {
+      json = true;
+      if (arg === "--format") i += 1;
+    } else if (arg === "--apply") apply = true;
+    else if (arg === "--binary") binary = args[++i];
+    else if (arg === "--config") configPath = args[++i];
+    else if (arg === "--working-directory") workingDirectory = args[++i];
+    else if (arg === "--help" || arg === "-h") positional.push("help");
+    else if (arg.startsWith("-")) throw new Error(`unknown source option: ${arg}`);
+    else positional.push(arg);
+  }
+  return { positional, dir, json, apply, binary, configPath, workingDirectory };
+}
+
+function resolveCorpus(dir: string): { root: string; profiles: Record<string, Org2ExternalSourceConfig> } {
+  const start = path.resolve(dir || process.cwd());
+  const configFile = findConfigFile(start);
+  if (!configFile) throw new Error(`no org2.json found from ${start}`);
+  const root = path.dirname(configFile);
+  return { root, profiles: loadConfig(configFile).externalSources || {} };
+}
+
+export function sourceBindingsPath(root: string): string {
+  return path.join(org2CorpusIndexDir(root), "source-bindings-v1.json");
+}
+
+function readBindings(root: string): SourceBindingsEnvelope {
+  const file = sourceBindingsPath(root);
+  if (!fs.existsSync(file)) return { schemaVersion: 1, bindings: {} };
+  const parsed = JSON.parse(fs.readFileSync(file, "utf8")) as SourceBindingsEnvelope;
+  if (parsed.schemaVersion !== 1 || !parsed.bindings || typeof parsed.bindings !== "object") {
+    throw new Error(`invalid source bindings file: ${file}`);
+  }
+  return parsed;
+}
+
+function binaryFor(profile: Org2ExternalSourceConfig, binding: SourceBinding): string {
+  return binding.binary || (profile.type === "slack" ? "slacrawl" : "notcrawl");
+}
+
+function configFor(profile: Org2ExternalSourceConfig, binding: SourceBinding): string {
+  return path.resolve(binding.configPath || path.join(os.homedir(), profile.type === "slack" ? ".slacrawl/config.toml" : ".notcrawl/config.toml"));
+}
+
+function commandAvailable(binary: string): boolean {
+  if (binary.includes(path.sep)) return fs.existsSync(path.resolve(binary));
+  return spawnSync("/usr/bin/env", ["which", binary], { encoding: "utf8" }).status === 0;
+}
+
+function statuses(root: string, profiles: Record<string, Org2ExternalSourceConfig>): SourceStatus[] {
+  const bindingFile = sourceBindingsPath(root);
+  const bindings = readBindings(root).bindings;
+  return Object.entries(profiles).sort(([a], [b]) => a.localeCompare(b)).map(([id, profile]) => {
+    const binding = bindings[id] || {};
+    const binary = binaryFor(profile, binding);
+    const configPath = configFor(profile, binding);
+    const binaryAvailable = commandAvailable(binary);
+    const configAvailable = fs.existsSync(configPath);
+    return {
+      id,
+      type: profile.type,
+      enabled: profile.enabled !== false,
+      scopes: profile.scopes || [],
+      rawZone: profile.rawZone || `raw/connectors/${profile.type}/${id}`,
+      media: profile.media || "metadata-only",
+      bindingPath: bindingFile,
+      binary,
+      binaryAvailable,
+      configPath,
+      configAvailable,
+      ready: profile.enabled !== false && binaryAvailable && configAvailable,
+    };
+  });
+}
+
+function emit(value: unknown, json: boolean): void {
+  if (json) process.stdout.write(JSON.stringify(value, null, 2) + "\n");
+  else if (Array.isArray(value)) {
+    for (const item of value as SourceStatus[]) {
+      process.stdout.write(`${item.id}\t${item.type}\t${item.ready ? "ready" : item.enabled ? "needs-setup" : "disabled"}\t${item.binary}\n`);
+    }
+  } else if (value && typeof value === "object" && "sources" in value) {
+    const payload = value as { ok?: boolean; sources: Array<SourceStatus & { doctorOk?: boolean }> };
+    process.stdout.write(`${payload.ok === false ? "Source checks need attention" : "Source checks passed"}\n`);
+    for (const item of payload.sources) process.stdout.write(`${item.id}\t${item.doctorOk ? "ready" : item.enabled ? "needs-setup" : "disabled"}\n`);
+  } else process.stdout.write(String(value) + "\n");
+}
+
+export async function runSourceCommand(args: string[]): Promise<boolean> {
+  if (args[0] !== "source" && args[0] !== "sources") return false;
+  const parsed = parseArgs(args.slice(1));
+  const action = parsed.positional.shift() || "list";
+  if (action === "help") { process.stdout.write(usage() + "\n"); return true; }
+  const { root, profiles } = resolveCorpus(parsed.dir);
+  const selected = parsed.positional;
+  const select = <T extends { id: string }>(items: T[]) => selected.length ? items.filter((item) => selected.includes(item.id)) : items;
+  if (selected.some((id) => !profiles[id])) throw new Error(`unknown external source profile: ${selected.find((id) => !profiles[id])}`);
+
+  if (action === "list" || action === "doctor") {
+    const result = select(statuses(root, profiles));
+    if (action === "list") emit(result, parsed.json);
+    else {
+      const checked = result.map((item) => {
+        if (!item.enabled || !item.ready) return { ...item, doctorOk: false };
+        const child = spawnSync(item.binary, ["--config", item.configPath!, "doctor", "--json"], { encoding: "utf8", env: process.env });
+        return { ...item, doctorOk: child.status === 0, doctorStatus: child.status, ...(parsed.json ? { doctorStdout: child.stdout, doctorStderr: child.stderr } : {}) };
+      });
+      const ok = checked.every((item) => !item.enabled || item.doctorOk);
+      emit({ schema: "org2:source-doctor:v1", root, ok, sources: checked }, parsed.json);
+      if (!ok) process.exitCode = 1;
+    }
+    return true;
+  }
+
+  if (action === "bind") {
+    const id = selected[0];
+    if (!id || selected.length !== 1) throw new Error("org2 source bind requires exactly one PROFILE");
+    const envelope = readBindings(root);
+    const current = envelope.bindings[id] || {};
+    const next = {
+      ...current,
+      ...(parsed.binary !== undefined ? { binary: parsed.binary } : {}),
+      ...(parsed.configPath !== undefined ? { configPath: path.resolve(parsed.configPath) } : {}),
+      ...(parsed.workingDirectory !== undefined ? { workingDirectory: path.resolve(parsed.workingDirectory) } : {}),
+    };
+    const preview = { profile: id, bindingPath: sourceBindingsPath(root), binding: next, applied: parsed.apply };
+    if (parsed.apply) {
+      fs.mkdirSync(path.dirname(preview.bindingPath), { recursive: true });
+      envelope.bindings[id] = next;
+      fs.writeFileSync(preview.bindingPath, JSON.stringify(envelope, null, 2) + "\n", { mode: 0o600 });
+      try { fs.chmodSync(preview.bindingPath, 0o600); } catch {}
+    }
+    emit(preview, parsed.json);
+    return true;
+  }
+
+  if (action === "sync") {
+    const allStatuses = statuses(root, profiles);
+    const requested = select(allStatuses).filter((item) => item.enabled);
+    const bindings = readBindings(root).bindings;
+    const results = [];
+    for (const status of requested) {
+      if (!status.ready) {
+        results.push({ id: status.id, ok: false, skipped: true, error: "source binding is not ready; run org2 source doctor" });
+        continue;
+      }
+      const profile = profiles[status.id]!;
+      const binding = bindings[status.id] || {};
+      const crawlerArgs = [
+        "--config", configFor(profile, binding),
+        "sync",
+        ...(profile.syncArgs || (profile.type === "slack" ? ["--source", "api", "--latest-only"] : ["--source", "api"])),
+      ];
+      const lockDir = path.join(org2CorpusIndexDir(root), `source-${status.id}.lock`);
+      try {
+        fs.mkdirSync(lockDir);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+          results.push({ id: status.id, ok: false, skipped: true, error: "sync already running on this machine" });
+          continue;
+        }
+        throw error;
+      }
+      try {
+        const child = spawnSync(status.binary, crawlerArgs, {
+          cwd: binding.workingDirectory ? path.resolve(binding.workingDirectory) : root,
+          encoding: "utf8",
+          stdio: parsed.json ? "pipe" : "inherit",
+          env: process.env,
+        });
+        results.push({ id: status.id, ok: child.status === 0, status: child.status, signal: child.signal, ...(parsed.json ? { stdout: child.stdout, stderr: child.stderr } : {}) });
+      } finally {
+        fs.rmdirSync(lockDir);
+      }
+    }
+    if (parsed.json) emit({ schema: "org2:source-sync:v1", root, results }, true);
+    if (results.some((result) => !result.ok)) process.exitCode = 1;
+    return true;
+  }
+
+  throw new Error(`unknown source action: ${action}\n${usage()}`);
+}

@@ -55,6 +55,15 @@ export type Org2MetabaseDataSourceConfig = {
 
 export type Org2DataSourceConfig = Org2ClickHouseDataSourceConfig | Org2MetabaseDataSourceConfig;
 
+export type Org2ExternalSourceConfig = {
+  type: "slack" | "notion";
+  enabled?: boolean;
+  scopes?: string[];
+  rawZone?: string;
+  media?: "lazy" | "metadata-only";
+  syncArgs?: string[];
+};
+
 export interface Org2Config {
   corpus?: Org2CorpusIdentity;
   agendaFiles?: string[];
@@ -76,6 +85,8 @@ export interface Org2Config {
     projects?: Record<string, Org2PublishProjectConfig>;
   };
   dataSources?: Record<string, Org2DataSourceConfig>;
+  /** Portable, non-secret source intent. Credentials and machine paths live in local bindings. */
+  externalSources?: Record<string, Org2ExternalSourceConfig>;
 }
 
 export function findConfigFile(startDir: string): string | null {

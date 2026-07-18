@@ -30,6 +30,7 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
       "Use `org2 agent context|search|fetch|bundle` for bounded, cited corpus retrieval.",
       "Use `org2 run --help` for durable delegated work, `org2 workflow` for reusable recipes, and `org2 mcp serve` for MCP discovery.",
       "Use `org2 corpus show|validate|init` to inspect or establish portable corpus identity before team mounting.",
+      "Use `org2 source list|doctor|bind|sync` to manage corpus-declared Slack and Notion crawler profiles without storing credentials in the corpus.",
       "Use `org2 workspace agenda|search` only with explicitly granted `--mount` paths for read-only multi-corpus projections.",
     ],
     safety: [
@@ -61,6 +62,12 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
         id: "agentic-workspace",
         purpose: "Create, inspect, resume, review, validate, fork, and package durable agent runs and reusable workflows.",
         commands: ["org2 run", "org2 review", "org2 workflow", "org2 eval"],
+        writes: "mixed",
+      },
+      {
+        id: "external-source-sync",
+        purpose: "Inspect and run corpus-declared external source mirrors through machine-local slacrawl/notcrawl bindings.",
+        commands: ["org2 source list", "org2 source doctor", "org2 source bind", "org2 source sync"],
         writes: "mixed",
       },
       {
