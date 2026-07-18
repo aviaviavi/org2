@@ -53,202 +53,167 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <header class="org2-document-header">
 <h1 class="org2-document-title">Features</h1>
 </header>
-<p>Org2 is a local-first context compiler for plain-text workspaces. It turns notes, events, files, conversations, data records, and agent work into structured semantics, then derives views, checks, editor behavior, Workspace surfaces, and publishable artifacts from that shared model.</p>
-<p>Together, those pieces form an early open-source workspace for AI-assisted work: people can move from a meeting or note to a cited agent run, inspect its outputs and validation, approve consequential actions, and keep the durable result in ordinary files. OpenClaw is the first native end-to-end agent integration; the run, workflow, context, CLI, and MCP layers are designed for additional runtimes.</p>
-<section class="org2-headline level-1">
-<h1 id="compiler-workflow">Compiler workflow</h1>
-<p>The central loop is:</p>
-<ol>
-<li><p>capture raw source material and working notes in plain files,</p></li>
-<li><p>parse headings, tasks, links, drawers, properties, timestamps, blocks, tables, and source ranges,</p></li>
-<li><p>resolve IDs, backlinks, planning state, artifact roles, provenance, and graph relationships,</p></li>
-<li><p>compile that corpus into useful outputs: agendas, diagnostics, graph views, entity pages, agent context, editor intelligence, HTML pages, and published sites.</p></li>
-</ol>
-<p>Because every output comes from the same semantic model, Org2 can support planning, knowledge management, data-backed reports, publishing, and automation without locking you into one app.</p>
-</section>
-<section class="org2-headline level-1">
-<h1 id="core-workflow-surface">Core workflow surface</h1>
-<p>What already works well today:</p>
-<ul>
-<li><p>Headings, drawers, properties, planning lines, TODO keywords, links, blocks, tables, and timestamps</p></li>
-<li><p>Agenda views across many files</p></li>
-<li><p>TODO / planning edits from CLI and VS Code</p></li>
-<li><p>Capture, archive, and refile workflows</p></li>
-<li><p>Canonical formatting</p></li>
-<li><p>HTML export and multi-file publishing</p></li>
-<li><p>Cited workspace search/query for asking factual questions against source notes</p></li>
-<li><p>Roam-style IDs, backlinks, dailies, node creation, linkify previews with semantic/alias-aware suggestions, AI-assisted review reports, and graph reports</p></li>
-<li><p>Durable agent-thread and data-link metadata for Workspace clients and external agents</p></li>
-<li><p>Org-crypt subtree encryption/decryption workflows, including per-subtree multi-recipient encryption for user/device/agent access without putting plaintext in a vendor database</p></li>
-<li><p>Shared editor backend features, including LSP where an editor benefits from it</p></li>
-<li><p>Local and remote data notebooks with explicit DuckDB-backed materialization, reusable SQL views, provenance-stamped result tables, and deterministic charts</p></li>
-<li><p>Agent discovery and cited retrieval through <code>org2 agent capabilities</code>, <code>agent context/search/fetch/bundle</code>, <code>context</code>, <code>brief</code>, and compiled corpus artifacts</p></li>
-<li><p>Durable agent runs with a validated state machine, plans, assignments, budgets, citations, artifacts, approvals, validation, comments, retries, cancellation, forking, and legacy task/session normalization</p></li>
-<li><p>Visible, plain-text <code>workflows/*.org2</code> process files with draft/active/paused lifecycle, parameters, capability and risk declarations, validation, approval boundaries, schedules, file-change/capture/meeting triggers, packaging metadata, and a built-in meeting-to-controlled-execution recipe</p></li>
-<li><p>A unified CLI review queue plus the Mac <strong>Runs &amp; Review</strong> surface for active, completed, blocked, failed, and approval-needed delegated work</p></li>
-<li><p>A native <code>org2-lifecycle</code> OpenClaw plugin that correlates substantial main-agent turns, subagents, and cron executions with durable Run Center records, preserves runtime metadata and outcome summaries, keeps approval boundaries open until a decision, continues approved workflows in their existing chat session, verifies the Mac app's selected corpus identity, and reconciles active Org2 schedules into OpenClaw cron</p></li>
-<li><p>Artifact dependency/freshness graphs, rebuild plans, outcome evaluation and sanitized replay fixtures, capability-based hosted/local runtime selection, and MCP server/client snapshot boundaries</p></li>
-<li><p>Portable personal/shared/project corpus identity, preview-first CLI initialization and validation, remembered Mac mounts, and read-only federated agenda/search with corpus-qualified results</p></li>
-</ul>
-</section>
-<section class="org2-headline level-1">
-<h1 id="workspace-and-context-records">Workspace and context records</h1>
-<p>Org2 Workspace is the product direction for focused clients over ordinary local corpora. The macOS app now exists as an alpha client for mounting and switching among personal/shared corpora, global capture, agenda and run/approval review, file and knowledge navigation, source editing with compiler-generated HTML reading, meeting capture, OpenClaw handoff, agent-thread browsing, daily notes, data notebooks, knowledge-node creation, and org-crypt workflows. Entity pages, richer meeting memory, capture workflows, and data-backed reports continue to use parser/compiler output, so clients share a source of truth.</p>
-<p>The format already has the building blocks for that direction:</p>
-<ul>
-<li><p>TODOs, scheduled/deadline timestamps, priorities, effort, and tags for agenda surfaces,</p></li>
-<li><p>IDs, aliases, backlinks, and file links for entity and graph navigation,</p></li>
-<li><p><code>KIND: agent-thread</code> records with selected context, session/transcript references, status, and durable outputs,</p></li>
-<li><p><code>KIND: warehouse-query</code>, <code>dataset</code>, <code>data-link</code>, <code>sql-view</code>, <code>event-stream</code>, and <code>timeline-link</code> records for report evidence,</p></li>
-<li><p>event/timeline metadata such as stream IDs, event types, entities, actors, cursors, change IDs, and occurred/captured timestamps,</p></li>
-<li><p>artifact role/provenance metadata for generated drafts, compiled views, and published outputs.</p></li>
-</ul>
-<p>This keeps Org2 useful both as a personal knowledge base and as an organizational context layer over notes, meetings, tickets, repos, files, metrics, and agent work.</p>
-</section>
-<section class="org2-headline level-1">
-<h1 id="agent-collaboration">Agent collaboration</h1>
-<p>Org2 is a good medium for collaborating with agents because the handoff state lives in the corpus. A task can carry selected context, source refs, transcript links, review status, policy gates, generated artifacts, and durable outputs in a form that humans can inspect and tools can fetch.</p>
-<p>The useful properties are concrete:</p>
-<ul>
-<li><p>agents receive scoped context packs with file and line citations,</p></li>
-<li><p>agent threads are durable headings with status and attachments,</p></li>
-<li><p>generated drafts live under reviewable artifact metadata,</p></li>
-<li><p>provenance links raw sources, drafts, promoted notes, and published output,</p></li>
-<li><p>policy fields can mark work that needs approval before external side effects.</p></li>
-<li><p>completed work can be saved as a provider-independent workflow, evaluated against fixtures, and selected for an eligible hosted or local runtime by symbolic policy.</p></li>
-</ul>
-<p>That gives Codex, OpenClaw, local models, scripts, and future workspace clients a shared way to coordinate around the same notes.</p>
-</section>
-<section class="org2-headline level-1">
-<h1 id="scoped-encryption-for-agents">Scoped encryption for agents</h1>
-<p>Org2 can use GPG-backed <code>:crypt:</code> subtrees as a local access-control layer for agent workflows. You can encrypt selected entries to an agent's public key while other encrypted entries remain readable only to their own recipients.</p>
-<p>This is especially useful for mixed personal/team/agent corpora:</p>
-<ul>
-<li><p>keep most private notes encrypted only to your own device keys,</p></li>
-<li><p>share a specific task, meeting note, or research subtree with one agent by adding its recipient file,</p></li>
-<li><p>sync the same encrypted files through ordinary file infrastructure,</p></li>
-<li><p>revoke future access by removing the agent recipient and re-encrypting the subtree.</p></li>
-</ul>
-<p>The boundary is explicit in the note itself and travels with the file.</p>
-</section>
-<section class="org2-headline level-1">
-<h1 id="planning-agenda">Planning + agenda</h1>
-<p>Org2's planning workflow is already pretty serious.</p>
-<p>Highlights:</p>
-<ul>
-<li><p>Scheduled + deadline items across many files</p></li>
-<li><p>Rich date-window controls</p></li>
-<li><p>Filter dimensions for status, kind, date/time, tags, IDs, properties, priority, effort, file, headline text, and more</p></li>
-<li><p>Sort and group controls for daily planning views</p></li>
-<li><p>Practical handling of real-world TODO vocabularies (for example WAIT/HOLD/PAUSED normalize into in-progress-style buckets)</p></li>
-</ul>
-<p>The agenda work goes beyond “show me tasks due today.” It is becoming a real backend for keyboard-driven planning, including an interactive terminal agenda:</p>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 agenda --dir ~/notes --recursive --tui</code></pre>
-<p>Use the TUI when you want a live, scannable planning surface without leaving the terminal; use <code>--format json</code> when another tool should consume the same agenda model.</p>
-</section>
-<section class="org2-headline level-1">
-<h1 id="knowledge-management-roam-workflows">Knowledge management / roam workflows</h1>
-<p>Org2 has first-class support for linked-note workflows:</p>
-<ul>
-<li><p>Stable IDs</p></li>
-<li><p>Backlinks</p></li>
-<li><p>Wiki links and <code>id:</code> links</p></li>
-<li><p>Node creation</p></li>
-<li><p>Dailies navigation</p></li>
-<li><p>Link insertion helpers</p></li>
-<li><p>Cited search/query output for answering questions with source file + line references</p></li>
-<li><p>Workspace graph operations via Roam DB sync and graph reports</p></li>
-<li><p>Linkify preview/apply flows for safely strengthening exact weak text references into links</p></li>
-<li><p>Review-only represented-node suggestions that explain semantic/alias matches with confidence, evidence tokens, and source ranges</p></li>
-<li><p>AI-assisted link/entity suggestion reports that rank compiler candidates with the mock adapter while preserving the review-only boundary</p></li>
-</ul>
-<p>This matters because Org-style notes get dramatically better once links, references, dailies, and fact lookup stop feeling bolted on.</p>
-</section>
-<section class="org2-headline level-1">
-<h1 id="example-usage-patterns">Example usage patterns</h1>
-<p>A few concrete ways Org2 fits into a real workflow:</p>
-<ul>
-<li><p><strong>Daily planning</strong>: keep TODOs, scheduled dates, deadlines, priorities, effort, and tags in plain files; derive agenda views in the CLI, VS Code, or the agenda TUI.</p></li>
-<li><p><strong>Mac workspace</strong>: open a corpus in the native macOS app, review agent runs and approvals, explore interactive data views, plan from the agenda, edit source, record or import meetings, and hand selected context to OpenClaw.</p></li>
-<li><p><strong>Meeting pipeline</strong>: store transcripts as raw evidence, curate summaries/TODOs/Linear candidates into notes, then run backlinking and lint to keep the result connected and auditable.</p></li>
-<li><p><strong>Research corpus</strong>: capture source material, assign IDs, strengthen weak references into links, query with file/line citations, and publish selected pages.</p></li>
-<li><p><strong>Automation boundary</strong>: let scripts and agents read compiled corpus artifacts from stable outputs, while generated outputs remain reviewable under <code>views/</code> or <code>compiled/</code>.</p></li>
-</ul>
-</section>
-<section class="org2-headline level-1">
-<h1 id="macos-workspace">macOS Workspace</h1>
-<p>The native Mac app lives in <code>apps/macos/Org2Workspace</code>. It is early, but it is already more than a parser demo:</p>
-<ul>
-<li><p>identified personal/shared corpus mounts, explicit active-corpus switching, read-only all-corpora Agenda and text Search, and a file scanner scoped to the active corpus,</p></li>
-<li><p>guided first-run choices for opening an existing plain-text corpus or creating a safe starter corpus in an empty folder,</p></li>
-<li><p>agenda surface with filtering, modes, keyboard navigation, and task/planning mutations,</p></li>
-<li><p>outcome-first Runs &amp; Review surface for durable run results, useful outputs, next actions, approvals, and clarifications, using the standard workspace detail pane rather than a nested third column; runs and approvals refresh silently once per minute while the app is active and immediately when it returns to the foreground, repeated failures collapse to the latest execution in Needs attention while All preserves the durable history, dismissed failures remain recorded as cancelled, plans, citations, routine validation, and machine metadata remain available as collapsed technical detail, completed one-off runs can be converted into reusable workflows with an explicit confirmation, and existing workflow runs show their provenance instead of offering a misleading duplicate action,</p></li>
-<li><p>quick-open, personal per-corpus pinned files, and daily-note navigation,</p></li>
-<li><p>search and backlinks-backed detail navigation,</p></li>
-<li><p>ID-backed knowledge-node creation from Search,</p></li>
-<li><p>rendered document view with structured block editors,</p></li>
-<li><p>meeting recording/import with local-first transcription artifacts,</p></li>
-<li><p>OpenClaw chat with selected workspace context, compact persisted progress feeds that group repetitive tool activity, and a merged slash-command menu: local navigation/compiler commands and runtime commands discovered from the selected OpenClaw agent through <code>commands.list</code>,</p></li>
-<li><p>GPG-backed org-crypt configuration and encrypt/decrypt actions.</p></li>
-<li><p>explicit refresh of data notebooks, Keychain-backed Metabase credentials, materialized tables, and interactive chart presentation without document-supplied JavaScript.</p></li>
-</ul>
-<p>The next collaboration milestone is previewable private-to-shared handoff. Federated Agenda and Search already preserve the explicit active destination for writes, and CLI callers must name each corpus rather than inheriting a person's remembered mounts. See <a href="collaboration.html">Shared corpora and collaboration</a>.</p>
-<p>See <a href="editors-macos.html">macOS Workspace</a> for the current app surface and build/run notes.</p>
-</section>
-<section class="org2-headline level-1">
-<h1 id="vs-code-experience">VS Code experience</h1>
-<p>VS Code is currently the most complete Org2 editor story.</p>
-<p>That includes:</p>
-<ul>
-<li><p>Syntax highlighting and folding</p></li>
-<li><p>Agenda UI</p></li>
-<li><p>TODO / planning commands</p></li>
-<li><p>Capture / archive / refile commands</p></li>
-<li><p>Formatter commands with preview/apply flows</p></li>
-<li><p>HTML export commands</p></li>
-<li><p>Workspace search/query commands for cited note lookup</p></li>
-<li><p>Roam commands for IDs/backlinks/dailies/linkify/graph reports, including semantic suggestion previews and AI-assisted link/entity reports</p></li>
-<li><p>Power-keymap shortcuts for fast workflows</p></li>
-</ul>
-<p>If you want to <strong>use</strong> Org2 today instead of just admire the idea, this is the path.</p>
-</section>
-<section class="org2-headline level-1">
-<h1 id="editor-backend-capabilities">Editor backend capabilities</h1>
-<p>Org2 exposes editor capabilities through shared parser and CLI surfaces, with LSP support where the protocol is a good fit.</p>
-<p>Current highlights include:</p>
-<ul>
-<li><p>Definitions / declarations / references for file and ID links</p></li>
-<li><p>Hover, completion, signature help, and highlights</p></li>
-<li><p>Rename + linked editing for IDs and file-link targets</p></li>
-<li><p>Workspace file-rename support for updating Org file links</p></li>
-<li><p>Formatting, range formatting, and on-type table-aware formatting</p></li>
-<li><p>Semantic tokens, inlay hints, code lens, document colors</p></li>
-<li><p>Call hierarchy for Org ID/file links</p></li>
-</ul>
-<p>The strategic point is the shared backend: editor features should come from the corpus model, whether a client reaches it through LSP, direct CLI calls, or a native Workspace surface.</p>
-</section>
-<section class="org2-headline level-1">
-<h1 id="publishing">Publishing</h1>
-<p>Publishing is already a first-class workflow.</p>
-<ul>
-<li><p>Single-file HTML export</p></li>
-<li><p>Recursive workspace export</p></li>
-<li><p>Project-level publish definitions via <code>org2.json</code></p></li>
-<li><p>TOC / heading-numbering / stylesheet / file-link-rewrite support</p></li>
-<li><p>This docs site is generated by Org2 itself</p></li>
-</ul>
-</section>
-<section class="org2-headline level-1">
-<h1 id="positioning">Positioning</h1>
-<p>Org2 keeps the parts of Org-shaped plain text that matter and aims at a portable compiler/runtime for knowledge work. The bet is that a personal knowledge base should behave like a local compiler target:</p>
-<ul>
-<li><p>keep raw notes portable and inspectable,</p></li>
-<li><p>compile them into explicit semantics,</p></li>
-<li><p>generate many views and artifacts from one corpus model,</p></li>
-<li><p>meet users where they already work, including VS Code, CLI automation, and publishing pipelines.</p></li>
-</ul>
-<p>Compatibility matters because existing notes matter. It is secondary to making the corpus computable.</p>
-</section>
+<div class="org2-features-page">
+  <section class="org2-feature-hero" aria-labelledby="feature-hero-title">
+    <p class="org2-kicker">One corpus. Many useful surfaces.</p>
+    <h2 id="feature-hero-title">Plain text in. A working knowledge system out.</h2>
+    <p>Org2 is a local-first context compiler for notes, tasks, meetings, data, and agent work. Keep ordinary files as the source of truth; derive agendas, graphs, cited context, review queues, editor intelligence, and published artifacts from one shared semantic model.</p>
+    <nav class="org2-feature-jumps" aria-label="Features on this page">
+      <a href="#compiler-loop">Compiler loop</a>
+      <a href="#planning-knowledge">Planning &amp; knowledge</a>
+      <a href="#agent-work">Agent work</a>
+      <a href="#data-notebooks">Data notebooks</a>
+      <a href="#feature-inventory">Everything else</a>
+    </nav>
+  </section>
+
+  <section class="org2-feature-section" id="compiler-loop" aria-labelledby="compiler-loop-title">
+    <div class="org2-feature-heading">
+      <p class="org2-kicker">The compiler loop</p>
+      <h2 id="compiler-loop-title">Capture once. Compile many views.</h2>
+      <p>Org2 does not make each client rediscover what your files mean. The shared parser resolves structure and relationships once, then every surface consumes the same semantics.</p>
+    </div>
+    <div class="org2-compiler-flow" aria-label="Org2 compiler workflow">
+      <article><span>01</span><strong>Capture</strong><p>Notes, TODOs, meetings, links, files, data records, and agent handoffs stay in inspectable text.</p></article>
+      <article><span>02</span><strong>Parse</strong><p>Headings, properties, timestamps, blocks, tables, source ranges, and artifact metadata become structure.</p></article>
+      <article><span>03</span><strong>Resolve</strong><p>IDs, backlinks, planning state, provenance, graph edges, approvals, and freshness become shared semantics.</p></article>
+      <article><span>04</span><strong>Derive</strong><p>Agendas, diagnostics, graphs, context packs, apps, editor features, reports, and sites fall out of the model.</p></article>
+    </div>
+    <p class="org2-feature-note"><strong>The important boundary:</strong> the Mac app, VS Code, CLI, agents, and publishing pipeline are clients of the corpus—not competing databases.</p>
+  </section>
+
+  <section class="org2-feature-story" id="planning-knowledge" aria-labelledby="planning-knowledge-title">
+    <div class="org2-feature-copy">
+      <p class="org2-kicker">Planning + knowledge</p>
+      <h2 id="planning-knowledge-title">Plan from the same files you think in.</h2>
+      <p>TODO state, schedules, deadlines, priorities, effort, tags, IDs, aliases, and links remain readable in the note. Org2 turns them into focused agenda views and a navigable knowledge graph.</p>
+      <ul>
+        <li>Agenda across many files, with date windows, filters, grouping, and real-world TODO vocabularies.</li>
+        <li>Stable IDs, backlinks, dailies, node creation, link previews, and graph-health checks.</li>
+        <li>Preview-first mutations from the CLI and editors; writes require an explicit apply step.</li>
+      </ul>
+      <div class="org2-command" aria-label="Planning and graph commands">
+        <span>Try the shared model from the terminal</span>
+        <pre><code>org2 agenda --dir ~/notes --recursive --tui
+org2 roam graph --dir ~/notes --recursive --format report</code></pre>
+      </div>
+      <p class="org2-feature-links"><a href="workflows.html">Explore everyday workflows</a> <a href="tooling-reference.html">See CLI reference</a></p>
+    </div>
+    <div class="org2-feature-media org2-feature-media-pair">
+      <figure><img src="assets/screenshots/macos-workspace-agenda.png" alt="Org2 Workspace agenda with scheduled tasks, assignees, and linked note context" loading="lazy" /><figcaption>A native agenda over ordinary corpus files.</figcaption></figure>
+      <figure><img src="assets/screenshots/graph.png" alt="Org2 knowledge graph connecting backlinks, source provenance, agenda, editor, and meeting nodes" loading="lazy" /><figcaption>The same IDs and links compiled into a graph.</figcaption></figure>
+    </div>
+  </section>
+
+  <section class="org2-feature-story org2-feature-story-reverse" id="agent-work" aria-labelledby="agent-work-title">
+    <div class="org2-feature-copy">
+      <p class="org2-kicker">Agent collaboration</p>
+      <h2 id="agent-work-title">Give agents context without giving up the paper trail.</h2>
+      <p>Selected context, citations, plans, budgets, outputs, validation, clarifications, and approvals live in durable run and workflow records. People can inspect what happened before approving a consequential action.</p>
+      <ul>
+        <li>Bounded context packs carry file-and-line citations instead of an opaque prompt dump.</li>
+        <li>Generated work lands in reviewable artifact zones before promotion into canonical notes.</li>
+        <li>OpenClaw is the first native end-to-end integration; CLI, MCP, and plain files keep the model provider-independent.</li>
+      </ul>
+      <div class="org2-command" aria-label="Agent context and review commands">
+        <span>Retrieve cited context, then inspect pending decisions</span>
+        <pre><code>org2 agent context --query "launch risks" --dir ~/notes --recursive
+org2 review list --status pending --dir ~/notes</code></pre>
+      </div>
+      <p class="org2-feature-links"><a href="agent-quickstart.html">Agent quickstart</a> <a href="openclaw-knowledge-layer.html">OpenClaw integration</a></p>
+    </div>
+    <div class="org2-feature-media">
+      <figure><img src="assets/screenshots/macos-workspace-runs-review.png" alt="Org2 Workspace Run Center showing an approval-ready launch brief with outputs and review state" loading="lazy" /><figcaption>Runs &amp; Review keeps outcomes, artifacts, validation, and the approval boundary together.</figcaption></figure>
+    </div>
+  </section>
+
+  <section class="org2-feature-story" id="data-notebooks" aria-labelledby="data-notebooks-title">
+    <div class="org2-feature-copy">
+      <p class="org2-kicker">Data notebooks</p>
+      <h2 id="data-notebooks-title">Put the evidence beside the decision.</h2>
+      <p>Org2 notes can declare local or configured remote datasets, reusable SQL views, materialized results, freshness policy, and deterministic charts. Refresh is explicit; merely opening or publishing a document never runs a warehouse query.</p>
+      <ul>
+        <li>DuckDB-backed CSV, Parquet, JSON, table, ClickHouse, and Metabase inputs.</li>
+        <li>Provenance-stamped result tables and source-aware chart definitions.</li>
+        <li>Named external credential profiles; inline secrets are rejected.</li>
+      </ul>
+      <div class="org2-command" aria-label="Data notebook commands">
+        <span>Inspect first; materialize only when you choose</span>
+        <pre><code>org2 query-data --file notes/readiness.org2 --inspect
+org2 query-data --file notes/readiness.org2 --results weekly --apply</code></pre>
+      </div>
+      <p class="org2-feature-links"><a href="language-reference.html#local-datasets-and-sql-views">Read the notebook syntax</a> <a href="tooling-reference.html">See query-data options</a></p>
+    </div>
+    <div class="org2-feature-media">
+      <figure><img src="assets/screenshots/macos-workspace-data.png" alt="Org2 Workspace rendering a launch readiness data notebook with a materialized table and chart" loading="lazy" /><figcaption>Materialized rows, freshness metadata, and visualization remain connected to the source note.</figcaption></figure>
+    </div>
+  </section>
+
+  <section class="org2-feature-story org2-feature-story-reverse" id="meetings-context" aria-labelledby="meetings-context-title">
+    <div class="org2-feature-copy">
+      <p class="org2-kicker">Meetings + context records</p>
+      <h2 id="meetings-context-title">Turn a conversation into durable, connected work.</h2>
+      <p>The macOS Workspace can record or import a meeting, keep audio and transcripts local, and render summaries, decisions, and follow-ups from ordinary files. Those records can then feed agenda items, cited agent runs, entity pages, and reports.</p>
+      <ul>
+        <li>Local-first transcription with explicit artifact paths and status.</li>
+        <li>Event and timeline metadata for connecting meetings, people, projects, and later work.</li>
+        <li>Raw evidence, curated notes, generated drafts, and published output retain provenance.</li>
+      </ul>
+      <p class="org2-feature-links"><a href="editors-macos.html">See the macOS Workspace</a> <a href="corpus-flow.html">Follow the artifact flow</a></p>
+    </div>
+    <div class="org2-feature-media">
+      <figure><img src="assets/screenshots/macos-workspace-meetings.png" alt="Org2 Workspace meeting view with transcript metadata, summary, decisions, and action items" loading="lazy" /><figcaption>A meeting becomes source-backed context rather than disappearing into a call recording.</figcaption></figure>
+    </div>
+  </section>
+
+  <section class="org2-feature-section" id="editors-publishing" aria-labelledby="editors-publishing-title">
+    <div class="org2-feature-heading">
+      <p class="org2-kicker">Meet people where they work</p>
+      <h2 id="editors-publishing-title">One backend, several good front doors.</h2>
+      <p>Use the native Workspace for richer review flows, VS Code for the most complete editing experience, the CLI for automation, LSP where the protocol fits, and HTML publishing for selected outputs.</p>
+    </div>
+    <div class="org2-editor-strip">
+      <figure><img src="assets/screenshots/basic.png" alt="An Org2 project note open in Visual Studio Code with syntax highlighting, tasks, properties, and ID links" loading="lazy" /><figcaption><strong>VS Code</strong><span>Syntax, folding, agenda, capture, refiling, formatting, links, search, and planning commands.</span></figcaption></figure>
+      <div class="org2-editor-cards">
+        <article><strong>Shared editor intelligence</strong><p>Definitions, references, hover, completion, rename, semantic tokens, table-aware formatting, and file-link updates come from shared semantics.</p></article>
+        <article><strong>Publishing</strong><p>Export one file or publish a recursive project with navigation, styles, rewritten links, and generated indexes. This documentation site is built by Org2.</p></article>
+        <div class="org2-command" aria-label="Formatting and publishing commands">
+          <span>Preview the safe path</span>
+          <pre><code>org2 fmt --dir ~/notes --recursive --check
+org2 publish docs-site --config org2.json --preview</code></pre>
+        </div>
+      </div>
+    </div>
+    <p class="org2-feature-links org2-feature-links-centered"><a href="editors.html">Compare editor integrations</a> <a href="getting-started.html">Get started</a></p>
+  </section>
+
+  <section class="org2-feature-section" id="feature-inventory" aria-labelledby="feature-inventory-title">
+    <div class="org2-feature-heading">
+      <p class="org2-kicker">The wider surface</p>
+      <h2 id="feature-inventory-title">A compact inventory of what works today.</h2>
+      <p>The highlights above are the story. This is the scan-friendly checklist.</p>
+    </div>
+    <div class="org2-feature-card-grid">
+      <article><h3>Plain-text core</h3><ul><li>Headings, drawers, properties, TODOs, planning, links, blocks, tables, timestamps</li><li>Capture, archive, refile, canonical formatting</li><li>Single-file export and multi-file publishing</li><li>Source ranges and structured compiler output</li></ul></article>
+      <article><h3>Knowledge + planning</h3><ul><li>Agenda CLI, JSON, TUI, VS Code, and Mac surfaces</li><li>IDs, backlinks, dailies, nodes, link insertion, graph reports</li><li>Cited search, query, entity pages, and context bundles</li><li>Linkify previews and review-only semantic suggestions</li></ul></article>
+      <article><h3>Agents + review</h3><ul><li>Durable runs, workflows, plans, steps, budgets, comments, retries</li><li>Artifacts, validation, approvals, review queues, outcome records</li><li>OpenClaw lifecycle and schedule integration</li><li>MCP resources, prompts, tools, client discovery, and snapshots</li></ul></article>
+      <article><h3>Data + provenance</h3><ul><li>Datasets, SQL views, materialized results, deterministic charts</li><li>Artifact roles, dependency graphs, freshness, and rebuild plans</li><li>Meeting, event-stream, timeline, and data-link records</li><li>Evaluation fixtures and sanitized workflow replay</li></ul></article>
+      <article><h3>Editors + clients</h3><ul><li>Native macOS Workspace and mobile approval flows</li><li>VS Code commands plus shared LSP capabilities</li><li>Vim / Neovim and Emacs integration paths</li><li>CLI JSON for scripts and additional clients</li></ul></article>
+      <article><h3>Safety + portability</h3><ul><li>Local files stay canonical and Git-reviewable</li><li>Preview-first mutations and explicit approval gates</li><li>GPG-backed per-subtree, multi-recipient encryption</li><li>Portable personal, shared, and project corpus identity</li></ul></article>
+    </div>
+  </section>
+
+  <section class="org2-feature-cta" aria-labelledby="feature-cta-title">
+    <p class="org2-kicker">Early alpha, useful today</p>
+    <h2 id="feature-cta-title">Start with files you already own.</h2>
+    <p>The easiest path is CLI + VS Code. Add the macOS Workspace when you want richer agenda, meeting, data, and agent-review surfaces.</p>
+    <div class="org2-hero-actions">
+      <a class="org2-button org2-button-primary" href="getting-started.html">Get started</a>
+      <a class="org2-button" href="reference.html">Browse the reference</a>
+      <a class="org2-button" href="https://github.com/aviaviavi/org2">View on GitHub</a>
+    </div>
+  </section>
+</div>
 </main>
 </div>
 <footer class="org2-footer"><p>Org2 docs</p><img referrerpolicy="no-referrer-when-downgrade" src="https://static.scarf.sh/a.png?x-pxid=e39e0a38-773e-4446-b8b0-804f923e3dc3" alt="" /></footer>
