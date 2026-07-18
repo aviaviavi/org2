@@ -88,7 +88,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <li><p>A unified CLI review queue plus the Mac <strong>Runs &amp; Review</strong> surface for active, completed, blocked, failed, and approval-needed delegated work</p></li>
 <li><p>A native <code>org2-lifecycle</code> OpenClaw plugin that correlates substantial main-agent turns, subagents, and cron executions with durable Run Center records, prepares manual workflow runs before execution, and reconciles active Org2 schedules into OpenClaw cron</p></li>
 <li><p>Artifact dependency/freshness graphs, rebuild plans, outcome evaluation and sanitized replay fixtures, capability-based hosted/local runtime selection, and MCP server/client snapshot boundaries</p></li>
-<li><p>Portable personal/shared/project corpus identity, preview-first CLI initialization and validation, and remembered Mac mounts with explicit active-corpus switching</p></li>
+<li><p>Portable personal/shared/project corpus identity, preview-first CLI initialization and validation, remembered Mac mounts, and read-only federated agenda/search with corpus-qualified results</p></li>
 </ul>
 </section>
 <section class="org2-headline level-1">
@@ -179,7 +179,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <h1 id="macos-workspace">macOS Workspace</h1>
 <p>The native Mac app lives in <code>apps/macos/Org2Workspace</code>. It is early, but it is already more than a parser demo:</p>
 <ul>
-<li><p>identified personal/shared corpus mounts, explicit active-corpus switching, and a file scanner scoped to the active corpus,</p></li>
+<li><p>identified personal/shared corpus mounts, explicit active-corpus switching, read-only all-corpora Agenda and text Search, and a file scanner scoped to the active corpus,</p></li>
 <li><p>guided first-run choices for opening an existing plain-text corpus or creating a safe starter corpus in an empty folder,</p></li>
 <li><p>agenda surface with filtering, modes, keyboard navigation, and task/planning mutations,</p></li>
 <li><p>outcome-first Runs &amp; Review surface for durable run results, useful outputs, next actions, approvals, and clarifications, using the standard workspace detail pane rather than a nested third column; runs and approvals refresh silently once per minute while the app is active and immediately when it returns to the foreground, repeated failures collapse to the latest execution in Needs attention while All preserves the durable history, dismissed failures remain recorded as cancelled, plans, citations, routine validation, and machine metadata remain available as collapsed technical detail, completed one-off runs can be converted into reusable workflows with an explicit confirmation, and existing workflow runs show their provenance instead of offering a misleading duplicate action,</p></li>
@@ -192,7 +192,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <li><p>GPG-backed org-crypt configuration and encrypt/decrypt actions.</p></li>
 <li><p>explicit refresh of data notebooks, Keychain-backed Metabase credentials, materialized tables, and interactive chart presentation without document-supplied JavaScript.</p></li>
 </ul>
-<p>The next collaboration milestone should add optional federated agenda/search with corpus identity on every result, followed by previewable private-to-shared handoff. Those views must preserve the explicit active destination for writes and must not silently combine agent access across mounted corpora. See <a href="collaboration.html">Shared corpora and collaboration</a>.</p>
+<p>The next collaboration milestone is previewable private-to-shared handoff. Federated Agenda and Search already preserve the explicit active destination for writes, and CLI callers must name each corpus rather than inheriting a person's remembered mounts. See <a href="collaboration.html">Shared corpora and collaboration</a>.</p>
 <p>See <a href="editors-macos.html">macOS Workspace</a> for the current app surface and build/run notes.</p>
 </section>
 <section class="org2-headline level-1">

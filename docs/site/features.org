@@ -37,7 +37,7 @@ What already works well today:
 - A unified CLI review queue plus the Mac *Runs & Review* surface for active, completed, blocked, failed, and approval-needed delegated work
 - A native =org2-lifecycle= OpenClaw plugin that correlates substantial main-agent turns, subagents, and cron executions with durable Run Center records, prepares manual workflow runs before execution, and reconciles active Org2 schedules into OpenClaw cron
 - Artifact dependency/freshness graphs, rebuild plans, outcome evaluation and sanitized replay fixtures, capability-based hosted/local runtime selection, and MCP server/client snapshot boundaries
-- Portable personal/shared/project corpus identity, preview-first CLI initialization and validation, and remembered Mac mounts with explicit active-corpus switching
+- Portable personal/shared/project corpus identity, preview-first CLI initialization and validation, remembered Mac mounts, and read-only federated agenda/search with corpus-qualified results
 
 * Workspace and context records
 
@@ -136,7 +136,7 @@ A few concrete ways Org2 fits into a real workflow:
 
 The native Mac app lives in =apps/macos/Org2Workspace=. It is early, but it is already more than a parser demo:
 
-- identified personal/shared corpus mounts, explicit active-corpus switching, and a file scanner scoped to the active corpus,
+- identified personal/shared corpus mounts, explicit active-corpus switching, read-only all-corpora Agenda and text Search, and a file scanner scoped to the active corpus,
 - guided first-run choices for opening an existing plain-text corpus or creating a safe starter corpus in an empty folder,
 - agenda surface with filtering, modes, keyboard navigation, and task/planning mutations,
 - outcome-first Runs & Review surface for durable run results, useful outputs, next actions, approvals, and clarifications, using the standard workspace detail pane rather than a nested third column; runs and approvals refresh silently once per minute while the app is active and immediately when it returns to the foreground, repeated failures collapse to the latest execution in Needs attention while All preserves the durable history, dismissed failures remain recorded as cancelled, plans, citations, routine validation, and machine metadata remain available as collapsed technical detail, completed one-off runs can be converted into reusable workflows with an explicit confirmation, and existing workflow runs show their provenance instead of offering a misleading duplicate action,
@@ -149,7 +149,7 @@ The native Mac app lives in =apps/macos/Org2Workspace=. It is early, but it is a
 - GPG-backed org-crypt configuration and encrypt/decrypt actions.
 - explicit refresh of data notebooks, Keychain-backed Metabase credentials, materialized tables, and interactive chart presentation without document-supplied JavaScript.
 
-The next collaboration milestone should add optional federated agenda/search with corpus identity on every result, followed by previewable private-to-shared handoff. Those views must preserve the explicit active destination for writes and must not silently combine agent access across mounted corpora. See [[file:collaboration.org][Shared corpora and collaboration]].
+The next collaboration milestone is previewable private-to-shared handoff. Federated Agenda and Search already preserve the explicit active destination for writes, and CLI callers must name each corpus rather than inheriting a person's remembered mounts. See [[file:collaboration.org][Shared corpora and collaboration]].
 
 See [[file:editors-macos.org][macOS Workspace]] for the current app surface and build/run notes.
 

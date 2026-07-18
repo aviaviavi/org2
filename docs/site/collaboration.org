@@ -47,13 +47,31 @@ org2 corpus init --dir ~/team-operations \
 
 Applying creates the standard visible zones when missing and merges the identity into =org2.json=. It refuses to replace a different existing ID unless =--force= is explicit.
 
-* Mac workspace mounts
+* Mac workspace mounts and federated reads
 
 Org2 Workspace remembers every corpus you open. The *Corpora* section identifies the active corpus, shows whether it is personal, shared, or project-scoped, and switches among mounted local paths. *Create a shared team corpus* makes a starter folder with a portable shared identity.
 
-All current reads and writes remain scoped to the explicitly active corpus. Switching resets corpus-specific navigation, search, run, approval, workflow, meeting, and chat state before refreshing the destination. The local mount registry stores paths on that Mac; it is app configuration, not portable corpus content.
+The Agenda and text Search surfaces can read either the active corpus or all mounted corpora. Federated rows carry the portable corpus identity and show the corpus name beside the source path. Opening a row from another corpus activates that corpus before loading the entry.
 
-This first slice deliberately does not merge corpora into one database. Agenda, search, capture, OpenClaw context, workflows, and file edits operate on the active corpus.
+Writes remain scoped to the explicitly active corpus. Capture, bulk agenda changes, source edits, OpenClaw context, workflows, runs, approvals, and meetings do not acquire a workspace-wide destination. A cross-corpus agenda row must be opened, and its corpus therefore activated, before it can be edited. The local mount registry stores paths on that Mac; it is app configuration, not portable corpus content.
+
+This does not merge corpora into one database. The shared CLI runs the canonical agenda or search engine against each explicitly supplied corpus, then combines the deterministic JSON results and attaches identity. Agenda semantics remain in the same compiler/runtime path used for a single corpus.
+
+Automation can request the same read-only projection with repeatable mounts:
+
+#+begin_src sh
+org2 workspace agenda \
+  --mount ~/personal-notes \
+  --mount ~/team-operations \
+  --recursive --from 2026-07-20 --to 2026-07-26 --json
+
+org2 workspace search "launch readiness" \
+  --mount ~/personal-notes \
+  --mount ~/team-operations \
+  --recursive --limit 50 --json
+#+end_src
+
+Every eligible mount needs a valid portable identity. The payload reports invalid or unavailable mounts under =issues= instead of quietly treating a local path as identity. Duplicate corpus IDs are rejected from the combined projection.
 
 * A practical team pilot
 
@@ -63,7 +81,7 @@ For an initial small-team rollout:
 2. Put only the context collaborators routinely need in that corpus.
 3. Share the folder or repository using infrastructure the team already trusts.
 4. Have each collaborator mount both their personal corpus and the shared corpus in Org2 Workspace.
-5. Keep personal quick capture in the personal corpus's daily note; switch to the shared corpus before creating shared tasks, notes, runs, or workflows.
+5. Use all-corpora Agenda and Search for awareness. Keep personal quick capture in the personal corpus's daily note; switch to the shared corpus before creating shared tasks, notes, runs, or workflows.
 6. Give an agent only the shared corpus path when it should not receive personal context.
 
 The shared artifact should make sense on its own. A link into an unmounted private corpus is not a substitute for the minimum context a teammate or scoped agent needs.
@@ -72,15 +90,15 @@ The shared artifact should make sense on its own. A link into an unmounted priva
 
 - Corpus identity describes the boundary; filesystem, repository, sync, and encryption controls enforce access.
 - An agent must receive an explicit corpus path or future workspace profile. It must not inherit every corpus visible to a person by convenience.
+- Federated CLI reads require every mount to be named explicitly. A remembered human workspace does not silently expand an agent's scope.
 - Generated work should stay in =views/= or =compiled/= until reviewed for promotion.
 - Org-crypt can restrict exceptional subtrees within a corpus, but it is not the default collaboration interface.
 - Local mount paths and inaccessible source details must not be copied into portable shared artifacts.
 
 * What comes next
 
-The next collaboration layers build on this identity and mount boundary:
+The next collaboration layers build on this identity, mount, and federated-read boundary:
 
-- optional federated agenda and search, with corpus identity attached to every result;
 - previewable handoff from a private corpus into a shared corpus;
 - explicit workspace profiles for people, agents, and automation;
 - coarse read, proposal, generated-zone, and direct-write policies at Org2 command boundaries.

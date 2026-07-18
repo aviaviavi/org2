@@ -30,6 +30,7 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
       "Use `org2 agent context|search|fetch|bundle` for bounded, cited corpus retrieval.",
       "Use `org2 run --help` for durable delegated work, `org2 workflow` for reusable recipes, and `org2 mcp serve` for MCP discovery.",
       "Use `org2 corpus show|validate|init` to inspect or establish portable corpus identity before team mounting.",
+      "Use `org2 workspace agenda|search` only with explicitly granted `--mount` paths for read-only multi-corpus projections.",
     ],
     safety: [
       "Treat corpus files as user-owned source code: make small, reviewable text changes.",
@@ -39,6 +40,7 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
       "Never block a durable run without an actionable clarification; `org2 run block ID --reason TEXT` requires the specific question or next action.",
       "Never complete a durable run without a concise result for the reviewer; `org2 run complete ID --summary TEXT` requires a human-readable outcome and accepts repeatable highlights and next actions.",
       "Run targeted tests plus `org2 lint` around writes when practical; never put secrets in notes or generated artifacts.",
+      "Never infer agent access from corpora remembered by a person's app; every federated CLI mount must be explicit.",
     ],
     workflows: [
       {
@@ -46,6 +48,12 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
         purpose: "Inspect, validate, or initialize portable personal, shared, and project corpus identities.",
         commands: ["org2 corpus"],
         writes: "preview-by-default",
+      },
+      {
+        id: "federated-workspace-read",
+        purpose: "Combine agenda or search output from explicitly named identified corpora while retaining corpus identity on every result.",
+        commands: ["org2 workspace agenda", "org2 workspace search"],
+        writes: "read-only",
       },
       {
         id: "agentic-workspace",
@@ -123,7 +131,7 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
     clients: [
       { id: "cli", role: "Canonical automation and integration surface over the shared TypeScript compiler/runtime." },
       { id: "vscode", role: "Best-supported general editing workflow, backed by shared CLI/LSP semantics." },
-      { id: "macos-workspace", role: "Native alpha workspace shell with personal/shared corpus mounts and explicit switching, agenda, capture, reading/editing, meetings, data notebooks, workflow/run/review controls, agent handoffs, and discoverable chat slash commands backed by shared compiler semantics." },
+      { id: "macos-workspace", role: "Native alpha workspace shell with personal/shared corpus mounts, corpus-qualified federated agenda/search, explicit write-corpus switching, capture, reading/editing, meetings, data notebooks, workflow/run/review controls, agent handoffs, and discoverable chat slash commands backed by shared compiler semantics." },
       { id: "ios-mobile", role: "Source-distributed mobile corpus and approval client." },
       { id: "openclaw", role: "First native agent-runtime adapter: Gateway chat plus a lifecycle plugin that maps substantial work into durable runs, prepares manual workflow execution, and reconciles active workflow schedules into OpenClaw cron." },
     ],
