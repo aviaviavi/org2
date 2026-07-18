@@ -9,6 +9,7 @@
     "properties": {
       "corpusDir": { "type": "string" },
       "stateFile": { "type": "string" },
+      "owner": { "type": "string" },
       "trackMainTurns": { "type": "boolean" },
       "trackCron": { "type": "boolean" },
       "trackSubagents": { "type": "boolean" }

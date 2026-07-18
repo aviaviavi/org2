@@ -116,9 +116,9 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
     clients: [
       { id: "cli", role: "Canonical automation and integration surface over the shared TypeScript compiler/runtime." },
       { id: "vscode", role: "Best-supported general editing workflow, backed by shared CLI/LSP semantics." },
-      { id: "macos-workspace", role: "Native alpha workspace shell with first-run corpus setup, agenda, capture, reading/editing, meetings, data notebooks, agent handoffs, and discoverable chat slash commands backed by shared compiler semantics." },
+      { id: "macos-workspace", role: "Native alpha workspace shell with first-run corpus setup, agenda, capture, reading/editing, meetings, data notebooks, workflow/run/review controls, agent handoffs, and discoverable chat slash commands backed by shared compiler semantics." },
       { id: "ios-mobile", role: "Source-distributed mobile corpus and approval client." },
-      { id: "openclaw", role: "First native agent-runtime adapter: Gateway chat in the Mac app plus an optional lifecycle plugin that maps substantial turns, subagents, and cron work into durable runs." },
+      { id: "openclaw", role: "First native agent-runtime adapter: Gateway chat plus a lifecycle plugin that maps substantial work into durable runs, prepares manual workflow execution, and reconciles active workflow schedules into OpenClaw cron." },
     ],
     docs: [
       { id: "agent-quickstart", url: "https://org2.avi.press/agent-quickstart.html" },
@@ -126,6 +126,7 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
       { id: "tooling-reference", url: "https://org2.avi.press/tooling-reference.html" },
       { id: "language-reference", url: "https://org2.avi.press/language-reference.html" },
       { id: "corpus-flow", url: "https://org2.avi.press/corpus-flow.html" },
+      { id: "workflows", url: "https://org2.avi.press/workflows.html" },
       { id: "macos-workspace", url: "https://org2.avi.press/editors-macos.html" },
     ],
   };

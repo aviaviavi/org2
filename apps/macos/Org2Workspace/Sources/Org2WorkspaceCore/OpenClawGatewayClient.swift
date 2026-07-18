@@ -214,6 +214,16 @@ public enum OpenClawGatewayRunEvent: Sendable {
   case activity(OpenClawRunActivity)
 }
 
+public struct OpenClawPreparedWorkflowRun: Sendable {
+  public let runID: String
+  public let prompt: String
+
+  public init(runID: String, prompt: String) {
+    self.runID = runID
+    self.prompt = prompt
+  }
+}
+
 public enum OpenClawGatewayError: LocalizedError, Sendable {
   case invalidEndpoint
   case connection(String)
@@ -462,6 +472,27 @@ public actor OpenClawGatewayClient {
     }
   }
 
+  public func prepareWorkflowRun(
+    workflowID: String,
+    inputs: [String: String]
+  ) async throws -> OpenClawPreparedWorkflowRun {
+    let payload = try await requestPayload(
+      method: "org2.workflow.prepareRun",
+      params: ["workflowId": workflowID, "inputs": inputs]
+    )
+    guard let run = Self.dictionary(payload["run"]),
+          let runID = Self.string(run["id"]), !runID.isEmpty,
+          let prompt = Self.string(payload["prompt"]), !prompt.isEmpty
+    else {
+      throw OpenClawGatewayError.protocolFailure("org2.workflow.prepareRun returned an invalid payload")
+    }
+    return OpenClawPreparedWorkflowRun(runID: runID, prompt: prompt)
+  }
+
+  public func syncWorkflows() async throws {
+    _ = try await requestPayload(method: "org2.workflow.sync", params: [:])
+  }
+
   deinit {
     socket?.cancel(with: .goingAway, reason: nil)
   }
@@ -611,6 +642,32 @@ public actor OpenClawGatewayClient {
       params: params,
       on: socket
     )
+  }
+
+  private func requestPayload(method: String, params: [String: Any]) async throws -> [String: Any] {
+    let socket = try makeSocket()
+    self.socket = socket
+    socket.resume()
+    do {
+      let nonce = try await awaitChallenge(on: socket)
+      try await connect(on: socket, nonce: nonce)
+      let requestID = UUID().uuidString.lowercased()
+      try await sendRequest(id: requestID, method: method, params: params, on: socket)
+      while true {
+        let frame = try await receiveObject(on: socket)
+        guard Self.string(frame["type"]) == "res", Self.string(frame["id"]) == requestID else { continue }
+        guard Self.bool(frame["ok"]) == true else { throw Self.gatewayError(from: frame) }
+        let payload = Self.dictionary(frame["payload"]) ?? [:]
+        socket.cancel(with: .normalClosure, reason: nil)
+        return payload
+      }
+    } catch let error as OpenClawGatewayError {
+      socket.cancel(with: .goingAway, reason: nil)
+      throw error
+    } catch {
+      socket.cancel(with: .goingAway, reason: nil)
+      throw OpenClawGatewayError.connection(error.localizedDescription)
+    }
   }
 
   private func makeSocket() throws -> URLSessionWebSocketTask {

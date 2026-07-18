@@ -11,6 +11,8 @@ import {
 
 export const ORG2_WORKFLOW_SCHEMA = "org2:workflow:v1" as const;
 
+export type AgentWorkflowState = "draft" | "active" | "paused";
+
 export interface WorkflowInput {
   id: string;
   description: string;
@@ -30,6 +32,7 @@ export interface WorkflowTrigger {
   type: "manual" | "schedule" | "file-change" | "capture" | "meeting-import";
   enabled: boolean;
   schedule?: string;
+  timezone?: string;
   path?: string;
   lastRunAt?: string;
 }
@@ -40,6 +43,7 @@ export interface AgentWorkflow {
   version: string;
   title: string;
   description: string;
+  state: AgentWorkflowState;
   instructions: string;
   capabilities: string[];
   riskClass: AgentRunRiskClass;
@@ -100,6 +104,7 @@ export function workflowFromRun(run: AgentRun, options: { id?: string; title?: s
     version: options.version || "1.0.0",
     title: options.title || run.goal,
     description: `Reusable workflow captured from run ${run.id}.`,
+    state: "draft",
     instructions: run.goal,
     capabilities: [...run.capabilities],
     riskClass: run.riskClass,
@@ -122,6 +127,7 @@ export function validateWorkflow(workflow: AgentWorkflow): WorkflowValidationRes
   if (workflow.schema !== ORG2_WORKFLOW_SCHEMA) issues.push({ path: "schema", message: `must equal ${ORG2_WORKFLOW_SCHEMA}` });
   try { safeId(workflow.id); } catch (error) { issues.push({ path: "id", message: (error as Error).message }); }
   if (!workflow.title?.trim()) issues.push({ path: "title", message: "is required" });
+  if (!["draft", "active", "paused"].includes(workflow.state || "draft")) issues.push({ path: "state", message: "must be draft, active, or paused" });
   if (!/^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$/.test(workflow.version || "")) issues.push({ path: "version", message: "must be semantic version syntax" });
   const ids = new Set<string>();
   for (const [index, step] of (workflow.steps || []).entries()) {
@@ -158,8 +164,17 @@ export function instantiateWorkflow(workflow: AgentWorkflow, inputs: Record<stri
   });
 }
 
-export function workflowDirectory(root: string): string { return path.join(path.resolve(root), ".org2", "workflows"); }
+export function workflowDirectory(root: string): string { return path.join(path.resolve(root), "workflows"); }
+export function legacyWorkflowDirectory(root: string): string { return path.join(path.resolve(root), ".org2", "workflows"); }
 export function workflowPath(root: string, id: string): string { return path.join(workflowDirectory(root), `${safeId(id)}.org2`); }
+
+export function workflowSourcePath(root: string, id: string): string {
+  const primary = workflowPath(root, id);
+  if (fs.existsSync(primary)) return primary;
+  const legacy = path.join(legacyWorkflowDirectory(root), `${safeId(id)}.org2`);
+  if (fs.existsSync(legacy)) return legacy;
+  return primary;
+}
 
 export function renderWorkflowOrg(workflow: AgentWorkflow): string {
   const validation = validateWorkflow(workflow);
@@ -170,6 +185,7 @@ export function renderWorkflowOrg(workflow: AgentWorkflow): string {
     ":PROPERTIES:",
     `:ORG2_WORKFLOW_ID: ${workflow.id}`,
     `:ORG2_WORKFLOW_VERSION: ${workflow.version}`,
+    `:WORKFLOW_STATE: ${workflow.state}`,
     `:RISK_CLASS: ${workflow.riskClass}`,
     ":END:",
     workflow.description,
@@ -188,7 +204,26 @@ export function renderWorkflowOrg(workflow: AgentWorkflow): string {
 export function parseWorkflowOrg(raw: string): AgentWorkflow {
   const match = raw.match(/#\+begin_src\s+json\s+:org2-workflow\s*\r?\n([\s\S]*?)\r?\n#\+end_src/i);
   if (!match) throw new Error("workflow file is missing its :org2-workflow machine-state block");
-  const workflow = JSON.parse(match[1] || "{}") as AgentWorkflow;
+  const parsed = JSON.parse(match[1] || "{}") as AgentWorkflow;
+  const headingTitle = raw.match(/^\*\s+(.+)\s*$/m)?.[1]?.trim();
+  const state = raw.match(/^:WORKFLOW_STATE:\s*(.+)\s*$/mi)?.[1]?.trim();
+  const riskClass = raw.match(/^:RISK_CLASS:\s*(.+)\s*$/mi)?.[1]?.trim();
+  const version = raw.match(/^:ORG2_WORKFLOW_VERSION:\s*(.+)\s*$/mi)?.[1]?.trim();
+  const description = raw.match(/^:END:\s*\r?\n([\s\S]*?)\r?\n\*\* Instructions\s*$/m)?.[1]?.trim();
+  const instructions = raw.match(/^\*\* Instructions\s*\r?\n([\s\S]*?)\r?\n\*\* Machine state\s*$/m)?.[1]?.trim();
+  // The readable Org2 fields are authoring fields, not a decorative copy. The
+  // machine block carries the complete portable schema; editing these visible
+  // fields in any text editor overrides their corresponding machine values and
+  // the next structured save writes the normalized definition back out.
+  const workflow = {
+    ...parsed,
+    ...(headingTitle ? { title: headingTitle } : {}),
+    ...(description ? { description } : {}),
+    ...(instructions ? { instructions } : {}),
+    ...(version ? { version } : {}),
+    ...(riskClass ? { riskClass: riskClass as AgentRunRiskClass } : {}),
+    state: (state || parsed.state || "draft") as AgentWorkflowState,
+  };
   const validation = validateWorkflow(workflow);
   if (!validation.valid) throw new Error(`invalid workflow: ${validation.issues.map((issue) => `${issue.path} ${issue.message}`).join("; ")}`);
   return workflow;
@@ -204,15 +239,54 @@ export function saveWorkflow(root: string, workflow: AgentWorkflow): string {
 }
 
 export function loadWorkflow(root: string, id: string): AgentWorkflow {
-  return parseWorkflowOrg(fs.readFileSync(workflowPath(root, id), "utf8"));
+  return parseWorkflowOrg(fs.readFileSync(workflowSourcePath(root, id), "utf8"));
 }
 
 export function listWorkflows(root: string): AgentWorkflow[] {
-  const dir = workflowDirectory(root);
-  if (!fs.existsSync(dir)) return [];
-  return fs.readdirSync(dir).filter((name) => /\.org2$/i.test(name)).flatMap((name) => {
-    try { return [parseWorkflowOrg(fs.readFileSync(path.join(dir, name), "utf8"))]; } catch { return []; }
-  }).sort((a, b) => a.id.localeCompare(b.id));
+  const byID = new Map<string, AgentWorkflow>();
+  // Load the legacy directory first so a visible top-level workflow wins when
+  // both locations contain the same id during migration.
+  for (const dir of [legacyWorkflowDirectory(root), workflowDirectory(root)]) {
+    if (!fs.existsSync(dir)) continue;
+    for (const name of fs.readdirSync(dir).filter((item) => /\.org2$/i.test(item))) {
+      try {
+        const workflow = parseWorkflowOrg(fs.readFileSync(path.join(dir, name), "utf8"));
+        byID.set(workflow.id, workflow);
+      } catch {}
+    }
+  }
+  return [...byID.values()].sort((a, b) => a.id.localeCompare(b.id));
+}
+
+export function updateWorkflow(
+  root: string,
+  id: string,
+  update: (workflow: AgentWorkflow) => AgentWorkflow,
+  now?: string,
+): { workflow: AgentWorkflow; file: string } {
+  const workflow = update(loadWorkflow(root, id));
+  workflow.updatedAt = nowIso(now);
+  return { workflow, file: saveWorkflow(root, workflow) };
+}
+
+export function migrateLegacyWorkflows(root: string): Array<{ id: string; from: string; to: string; skipped: boolean }> {
+  const legacy = legacyWorkflowDirectory(root);
+  if (!fs.existsSync(legacy)) return [];
+  const results: Array<{ id: string; from: string; to: string; skipped: boolean }> = [];
+  for (const name of fs.readdirSync(legacy).filter((item) => /\.org2$/i.test(item))) {
+    const from = path.join(legacy, name);
+    let workflow: AgentWorkflow;
+    try { workflow = parseWorkflowOrg(fs.readFileSync(from, "utf8")); } catch { continue; }
+    const to = workflowPath(root, workflow.id);
+    if (fs.existsSync(to)) {
+      results.push({ id: workflow.id, from, to, skipped: true });
+      continue;
+    }
+    fs.mkdirSync(path.dirname(to), { recursive: true });
+    fs.renameSync(from, to);
+    results.push({ id: workflow.id, from, to, skipped: false });
+  }
+  return results;
 }
 
 function parseEvery(raw: string): number | null {
@@ -244,6 +318,7 @@ export function packagedWorkflowManifest(workflow: AgentWorkflow): Record<string
     id: workflow.id,
     version: workflow.version,
     title: workflow.title,
+    state: workflow.state,
     compatibility: workflow.compatibility,
     capabilities: workflow.capabilities,
     riskClass: workflow.riskClass,
@@ -259,7 +334,7 @@ export function packagedCorpusTemplate(workflow: AgentWorkflow): Record<string, 
     id: `${workflow.id}-workspace`,
     version: workflow.version,
     compatibility: workflow.compatibility,
-    directories: ["notes", "raw", "views", "compiled", ".org2/workflows", ".org2/runs"],
+    directories: ["notes", "raw", "views", "compiled", "workflows", ".org2/runs"],
     starterFiles: [
       { path: "inbox.org2", content: "#+TITLE: Inbox\n\n* Inbox\n" },
       { path: "notes/welcome.org2", content: `#+TITLE: ${workflow.title}\n\nThis workspace includes the ${workflow.id} workflow.\n` },

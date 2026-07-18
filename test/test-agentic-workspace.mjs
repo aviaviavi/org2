@@ -10,7 +10,7 @@ import {
   parseAgentRunOrg, renderAgentRunOrg, requestAgentRunApproval, saveAgentRun,
   transitionAgentRun, updateAgentRunAssignment, updateAgentRunStep, validateAgentRun,
 } from "../dist/agentRun.js";
-import { dueWorkflowTriggers, instantiateWorkflow, loadWorkflow, packagedCorpusTemplate, saveWorkflow, workflowFromRun } from "../dist/agentWorkflow.js";
+import { dueWorkflowTriggers, instantiateWorkflow, legacyWorkflowDirectory, loadWorkflow, migrateLegacyWorkflows, packagedCorpusTemplate, parseWorkflowOrg, renderWorkflowOrg, saveWorkflow, workflowFromRun, workflowPath } from "../dist/agentWorkflow.js";
 import { artifactRebuildPlan, buildArtifactGraph, MEETING_TO_CONTROLLED_EXECUTION_WORKFLOW } from "../dist/artifactPipeline.js";
 import { discoverMcpClient, installBuiltinWorkflow, saveMcpClients, serveMcp, writeMcpSnapshot } from "../dist/mcpRuntime.js";
 import { defaultRuntimePolicy, selectRuntime, validateRuntimePaths } from "../dist/runtimePolicy.js";
@@ -93,7 +93,17 @@ try {
   workflow.instructions = "Prepare the {{quarter}} board briefing";
   workflow.triggers.push({ id: "daily", type: "schedule", enabled: true, schedule: "every 1d", lastRunAt: "2026-07-12T00:00:00Z" });
   saveWorkflow(root, workflow);
+  assert.equal(workflowPath(root, workflow.id), path.join(root, "workflows", "board-briefing.org2"));
+  assert.equal(fs.existsSync(workflowPath(root, workflow.id)), true);
   assert.equal(loadWorkflow(root, workflow.id).version, "1.0.0");
+  const editedWorkflowSource = renderWorkflowOrg(workflow)
+    .replace("* Prepare a cited board briefing", "* Maintained board workflow")
+    .replace("Prepare the {{quarter}} board briefing\n\n** Machine state", "Prepare a carefully cited {{quarter}} board briefing\n\n** Machine state")
+    .replace(":WORKFLOW_STATE: draft", ":WORKFLOW_STATE: active");
+  const editedWorkflow = parseWorkflowOrg(editedWorkflowSource);
+  assert.equal(editedWorkflow.title, "Maintained board workflow");
+  assert.equal(editedWorkflow.instructions, "Prepare a carefully cited {{quarter}} board briefing");
+  assert.equal(editedWorkflow.state, "active");
   assert.equal(dueWorkflowTriggers(workflow, { now: "2026-07-14T00:00:00Z" }).some((item) => item.id === "daily"), true);
   const instantiated = instantiateWorkflow(workflow, { quarter: "Q3" });
   assert.equal(instantiated.goal, "Prepare the Q3 board briefing");
@@ -105,6 +115,15 @@ try {
   const meetingRun = instantiateWorkflow(installedMeetingWorkflow, { meeting: "meetings/standup.org2" });
   assert.match(meetingRun.goal, /meetings\/standup\.org2/);
   assert.equal(meetingRun.context[0].ref, "meetings/standup.org2");
+
+  const legacyWorkflow = { ...workflow, id: "legacy-workflow", title: "Legacy workflow" };
+  const legacyDirectory = legacyWorkflowDirectory(root);
+  fs.mkdirSync(legacyDirectory, { recursive: true });
+  fs.writeFileSync(path.join(legacyDirectory, "legacy-workflow.org2"), fs.readFileSync(workflowPath(root, workflow.id), "utf8").replaceAll("board-briefing", "legacy-workflow").replace("Prepare a cited board briefing", "Legacy workflow"));
+  assert.equal(loadWorkflow(root, "legacy-workflow").id, "legacy-workflow");
+  const migration = migrateLegacyWorkflows(root);
+  assert.equal(migration.some((item) => item.id === "legacy-workflow" && !item.skipped), true);
+  assert.equal(fs.existsSync(workflowPath(root, "legacy-workflow")), true);
 
   const source = path.join(root, "notes", "source.org2");
   const report = path.join(root, "compiled", "report.pdf");

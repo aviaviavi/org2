@@ -31,10 +31,13 @@ import {
   instantiateWorkflow,
   listWorkflows,
   loadWorkflow,
+  migrateLegacyWorkflows,
   packagedWorkflowManifest,
   packagedCorpusTemplate,
   saveWorkflow,
+  updateWorkflow,
   validateWorkflow,
+  workflowSourcePath,
   workflowFromRun,
 } from "./agentWorkflow.js";
 import { artifactRebuildPlan, buildArtifactGraph, loadArtifactDeclarations, MEETING_TO_CONTROLLED_EXECUTION_WORKFLOW, saveArtifactGraph } from "./artifactPipeline.js";
@@ -89,7 +92,7 @@ const HELP = `Agentic workspace commands:
   org2 run approval-request ID --title TEXT --action TEXT [--risk CLASS] [--role ROLE]
   org2 run approval-decide ID APPROVAL --decision approved|rejected|revised|canceled --actor NAME [--receipt TEXT]
   org2 review list [--status pending] | org2 review show RUN
-  org2 workflow list|show|validate|save|run|triggers|package|corpus-template|install-builtin
+  org2 workflow list|show|validate|save|run|triggers|activate|pause|draft|schedule|migrate|package|corpus-template|install-builtin
   org2 artifact graph --manifest FILE | org2 artifact rebuild --manifest FILE
   org2 runtime init|show|select|verify-paths
   org2 mcp serve|clients|client-add|discover|snapshot
@@ -156,13 +159,51 @@ function reviewCommand(parsed: ParsedArgs): void {
 
 function workflowCommand(parsed: ParsedArgs): void {
   const action = parsed.positional[0] || "list"; const corpus = root(parsed);
-  if (action === "list") { const workflows = listWorkflows(corpus); output(parsed, { schema: "org2:workflow-list:v1", workflows }, workflows.length ? workflows.map((item) => `${item.id}@${item.version}\t${item.title}`).join("\n") : "No workflows."); return; }
+  if (action === "list") {
+    const workflows = listWorkflows(corpus).map((workflow) => ({
+      ...workflow,
+      file: workflowSourcePath(corpus, workflow.id),
+      legacyLocation: workflowSourcePath(corpus, workflow.id).includes(`${path.sep}.org2${path.sep}workflows${path.sep}`),
+    }));
+    output(parsed, { schema: "org2:workflow-list:v1", workflows }, workflows.length ? workflows.map((item) => `${item.id}@${item.version}\t${item.state}\t${item.title}`).join("\n") : "No workflows.");
+    return;
+  }
+  if (action === "migrate") {
+    const migrated = migrateLegacyWorkflows(corpus);
+    output(parsed, { schema: "org2:workflow-migration:v1", migrated }, migrated.length ? migrated.map((item) => `${item.skipped ? "kept" : "moved"}\t${item.id}\t${item.to}`).join("\n") : "No legacy workflows.");
+    return;
+  }
   if (action === "install-builtin") { const name = parsed.positional[1] || "meeting-to-controlled-execution"; if (name !== "meeting-to-controlled-execution") throw new Error(`unknown built-in workflow: ${name}`); const file = installBuiltinWorkflow(corpus, MEETING_TO_CONTROLLED_EXECUTION_WORKFLOW); output(parsed, { id: name, file }, `installed ${name}\n${file}`); return; }
   const id = required(parsed.positional[1], `workflow id is required for ${action}`);
   if (action === "save") { const run = loadAgentRun(corpus, id); const workflow = workflowFromRun(run, { id: flag(parsed, "id"), title: flag(parsed, "title"), version: flag(parsed, "version") }); const file = saveWorkflow(corpus, workflow); output(parsed, { workflow, file }, `saved ${workflow.id}@${workflow.version}`); return; }
   const workflow = loadWorkflow(corpus, id);
   if (action === "show") { output(parsed, workflow); return; }
   if (action === "validate") { const result = validateWorkflow(workflow); output(parsed, result, result.valid ? `${id}: valid` : result.issues.map((issue) => `${issue.path}: ${issue.message}`).join("\n")); if (!result.valid) process.exitCode = 1; return; }
+  if (action === "activate" || action === "pause" || action === "draft") {
+    const state = action === "activate" ? "active" : action === "pause" ? "paused" : "draft";
+    const updated = updateWorkflow(corpus, id, (item) => ({ ...item, state }));
+    output(parsed, updated, `${id}: ${state}`);
+    return;
+  }
+  if (action === "schedule") {
+    const cron = flag(parsed, "cron")?.trim();
+    const timezone = flag(parsed, "timezone")?.trim() || flag(parsed, "tz")?.trim();
+    const disabled = parsed.flags.has("disable");
+    if (!disabled && !cron) throw new Error("workflow schedule requires --cron EXPR or --disable");
+    const updated = updateWorkflow(corpus, id, (item) => {
+      const triggers = item.triggers.filter((trigger) => trigger.id !== "openclaw-schedule");
+      triggers.push({
+        id: "openclaw-schedule",
+        type: "schedule",
+        enabled: !disabled,
+        ...(cron ? { schedule: cron } : {}),
+        ...(timezone ? { timezone } : {}),
+      });
+      return { ...item, triggers };
+    });
+    output(parsed, updated, disabled ? `${id}: schedule disabled` : `${id}: scheduled ${cron}`);
+    return;
+  }
   if (action === "package") { output(parsed, packagedWorkflowManifest(workflow)); return; }
   if (action === "corpus-template") { const template = packagedCorpusTemplate(workflow); const out = flag(parsed, "out"); if (out) { const file = path.resolve(out); fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, `${JSON.stringify(template, null, 2)}\n`, "utf8"); output(parsed, { template, file }, file); } else output(parsed, template); return; }
   if (action === "triggers") { const due = dueWorkflowTriggers(workflow, { now: flag(parsed, "now"), changedPaths: flags(parsed, "changed"), event: flag(parsed, "event") as any }); output(parsed, { workflow: id, due }, due.length ? due.map((trigger) => `${trigger.id}\t${trigger.type}`).join("\n") : "No triggers due."); return; }

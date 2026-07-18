@@ -9,6 +9,7 @@
     "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" },
     "version": { "type": "string" },
     "title": { "type": "string", "minLength": 1 },
+    "state": { "enum": ["draft", "active", "paused"] },
     "instructions": { "type": "string", "minLength": 1 },
     "capabilities": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
     "riskClass": { "enum": ["read-only", "local-draft", "canonical-write", "external-action", "high-impact"] },

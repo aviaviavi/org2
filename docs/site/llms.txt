@@ -14,7 +14,7 @@ The native macOS Workspace also exposes a discoverable chat slash-command layer.
 
 OpenClaw is currently the deepest native adapter. The repository's `integrations/openclaw` lifecycle plugin records substantial main-agent turns, subagent executions, and cron executions as correlated durable runs. Other agents can use the same run/workflow files, cited retrieval, CLI JSON, and MCP surfaces.
 
-Durable delegation uses normal files under `.org2/runs/` and `.org2/workflows/`. Discover the interfaces with:
+Durable delegation uses generated run records under `.org2/runs/` and authored workflow files under the visible `workflows/` directory. Org2 continues to read the legacy `.org2/workflows/` location. Discover the interfaces with:
 
     org2 run --help
     org2 workflow --help

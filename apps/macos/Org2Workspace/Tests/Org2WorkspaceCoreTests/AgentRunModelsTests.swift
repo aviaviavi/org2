@@ -40,6 +40,36 @@ final class AgentRunModelsTests: XCTestCase {
     XCTAssertTrue(run.needsAttention)
   }
 
+  func testDecodesPlainTextWorkflowCatalog() throws {
+    let data = Data(#"""
+    {
+      "schema": "org2:workflow-list:v1",
+      "workflows": [{
+        "id": "weekly-review",
+        "version": "1.2.0",
+        "title": "Weekly review",
+        "description": "Prepare a cited weekly review.",
+        "state": "active",
+        "instructions": "Prepare {{week}}.",
+        "riskClass": "local-draft",
+        "capabilities": ["agent-context"],
+        "inputs": [{"id":"week","description":"Week","required":true,"default":"current"}],
+        "triggers": [{"id":"openclaw-schedule","type":"schedule","enabled":true,"schedule":"0 9 * * 1","timezone":"America/Los_Angeles"}],
+        "file": "/tmp/workflows/weekly-review.org2",
+        "legacyLocation": false,
+        "createdAt": "2026-07-17T00:00:00.000Z",
+        "updatedAt": "2026-07-17T00:00:00.000Z"
+      }]
+    }
+    """#.utf8)
+
+    let workflow = try XCTUnwrap(JSONDecoder().decode(AgentWorkflowListPayload.self, from: data).workflows.first)
+    XCTAssertEqual(workflow.id, "weekly-review")
+    XCTAssertEqual(workflow.inputs.first?.default, "current")
+    XCTAssertEqual(workflow.scheduleSummary, "0 9 * * 1 · America/Los_Angeles")
+    XCTAssertFalse(workflow.legacyLocation)
+  }
+
   func testCompletedRunPresentsOutcomeAndCollapsesSupersededValidationResults() throws {
     let data = Data(#"""
     {

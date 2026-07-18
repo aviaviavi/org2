@@ -22,34 +22,32 @@ final class OpenClawChatLayoutTests: XCTestCase {
     XCTAssertGreaterThan(hostingView.fittingSize.height, 118)
   }
 
-  func testOpenClawStatusCardKeepsAStableHeightAcrossTransportStates() {
-    let states: [(OpenClawGatewayConnectionState, String?)] = [
-      (.connecting, nil),
-      (.connected, "run-123"),
-      (.fallbackHTTP, nil),
-    ]
+  func testOpenClawStatusCardOmitsEmptyLiveActivityPlaceholder() {
+    let activeRun = OpenClawTypingIndicatorView(
+      startedAt: Date(),
+      connectionState: .connected,
+      connectionDetail: nil,
+      runID: "run-123",
+      streamingReply: "",
+      reasoning: "",
+      activities: [],
+      compact: false,
+      onStop: {}
+    )
+    let startingRun = OpenClawTypingIndicatorView(
+      startedAt: Date(),
+      connectionState: .connected,
+      connectionDetail: nil,
+      runID: nil,
+      streamingReply: "",
+      reasoning: "",
+      activities: [],
+      compact: false,
+      onStop: {}
+    )
 
-    let heights = states.map { state, runID in
-      let view = OpenClawTypingIndicatorView(
-        startedAt: Date(),
-        connectionState: state,
-        connectionDetail: nil,
-        runID: runID,
-        streamingReply: "",
-        reasoning: "",
-        activities: [],
-        compact: false,
-        onStop: {}
-      )
-      .frame(width: 760, alignment: .leading)
-      let hostingView = NSHostingView(rootView: view)
-      hostingView.frame = NSRect(x: 0, y: 0, width: 760, height: 1)
-      hostingView.layoutSubtreeIfNeeded()
-      return hostingView.fittingSize.height
-    }
-
-    let heightRange = (heights.max() ?? 0) - (heights.min() ?? 0)
-    XCTAssertLessThanOrEqual(heightRange, 0.5)
+    XCTAssertNil(activeRun.progressSummary)
+    XCTAssertEqual(startingRun.progressSummary, "Starting the run…")
   }
 
   func testActivityFeedGroupsRepeatedShellEventsAndHidesRawCompletionMetadata() throws {

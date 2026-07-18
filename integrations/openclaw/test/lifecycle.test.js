@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { conciseGoal, cronKey, outcomeCommand, shouldTrackMainTurn } from "../lib/lifecycle.js";
+import { conciseGoal, cronKey, outcomeCommand, shouldTrackMainTurn, workflowExecutionPrompt, workflowMarker } from "../lib/lifecycle.js";
 import { Org2Lifecycle } from "../lib/lifecycle.js";
 
 test("tracks substantial work but not acknowledgements or heartbeats", () => {
@@ -24,6 +24,62 @@ test("uses the same cron key when finish adds run and session ids", () => {
   const started = { jobId: "job-1", runAtMs: 123 };
   const finished = { jobId: "job-1", runAtMs: 123, runId: "run-1", sessionId: "session-1" };
   assert.equal(cronKey(started), cronKey(finished));
+});
+
+test("recognizes prepared Org2 workflow runs", () => {
+  const prompt = workflowExecutionPrompt({ id: "weekly-review", version: "1.2.0", title: "Weekly review" }, { week: "2026-W29" }, "run-42");
+  assert.deepEqual(workflowMarker(prompt), {
+    workflowId: "weekly-review",
+    workflowRunId: "run-42",
+    inputs: { week: "2026-W29" },
+  });
+  assert.equal(shouldTrackMainTurn(prompt, {}), true);
+  assert.equal(shouldTrackMainTurn(prompt, { jobId: "cron-1" }), false);
+});
+
+test("prepares a durable run before handing a workflow to OpenClaw", async () => {
+  const calls = [];
+  const workflow = { id: "weekly-review", version: "1.0.0", title: "Weekly review" };
+  const lifecycle = new Org2Lifecycle({
+    owner: "operator",
+    exec: async (args) => {
+      calls.push(args);
+      if (args[0] === "workflow" && args[1] === "run") return JSON.stringify({ run: { id: "run-1" } });
+      if (args[0] === "workflow" && args[1] === "show") return JSON.stringify(workflow);
+      return "";
+    },
+  });
+  const prepared = await lifecycle.prepareWorkflowRun("weekly-review", { week: "29" });
+  assert.equal(prepared.run.id, "run-1");
+  assert.equal(workflowMarker(prepared.prompt).workflowRunId, "run-1");
+  assert.deepEqual(calls[0], ["workflow", "run", "weekly-review", "--owner", "operator", "--json", "--input", "week=29"]);
+});
+
+test("reconciles an active Org2 schedule into OpenClaw cron", async () => {
+  const added = [];
+  const cron = {
+    list: async () => [],
+    add: async (input) => { added.push(input); return { id: "job-1" }; },
+    update: async () => {},
+    remove: async () => ({ removed: true }),
+  };
+  const lifecycle = new Org2Lifecycle({
+    cron,
+    exec: async (args) => {
+      if (args[0] === "workflow" && args[1] === "list") return JSON.stringify({ workflows: [{
+        id: "weekly-review", version: "1.0.0", title: "Weekly review", state: "active",
+        triggers: [{ id: "openclaw-schedule", type: "schedule", enabled: true, schedule: "0 9 * * 1", timezone: "America/Los_Angeles" }],
+      }] });
+      return "";
+    },
+    stateFile: join(await mkdtemp(join(tmpdir(), "org2-openclaw-cron-")), "state.json"),
+  });
+  await lifecycle.init();
+  await lifecycle.reconcile();
+  assert.equal(added.length, 1);
+  assert.equal(added[0].schedule.expr, "0 9 * * 1");
+  assert.equal(added[0].schedule.tz, "America/Los_Angeles");
+  assert.equal(workflowMarker(added[0].payload.text).workflowId, "weekly-review");
 });
 
 test("finish reloads a mapping written by another gateway generation", async () => {
