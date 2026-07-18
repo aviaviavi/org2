@@ -1,6 +1,6 @@
 {
   "name": "@aviaviavi/org2-openclaw",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "peerDependencies": { "openclaw": ">=2026.7.1" },

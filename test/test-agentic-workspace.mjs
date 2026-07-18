@@ -8,7 +8,7 @@ import {
   addAgentRunArtifact, addAgentRunComment, addAgentRunValidation, createAgentRun,
   decideAgentRunApproval, forkAgentRun, listAgentRuns, loadAgentRun, normalizeLegacyAgentRuns,
   parseAgentRunOrg, renderAgentRunOrg, requestAgentRunApproval, saveAgentRun,
-  transitionAgentRun, updateAgentRunAssignment, updateAgentRunStep, validateAgentRun,
+  transitionAgentRun, updateAgentRunAssignment, updateAgentRunRuntime, updateAgentRunStep, validateAgentRun,
 } from "../dist/agentRun.js";
 import { dueWorkflowTriggers, instantiateWorkflow, legacyWorkflowDirectory, loadWorkflow, migrateLegacyWorkflows, packagedCorpusTemplate, parseWorkflowOrg, renderWorkflowOrg, saveWorkflow, workflowFromRun, workflowPath } from "../dist/agentWorkflow.js";
 import { artifactRebuildPlan, buildArtifactGraph, MEETING_TO_CONTROLLED_EXECUTION_WORKFLOW } from "../dist/artifactPipeline.js";
@@ -36,6 +36,7 @@ try {
   assert.throws(() => addAgentRunValidation(run, { name: "broken", status: "unknown" }), /invalid validation status/);
   assert.throws(() => requestAgentRunApproval(run, { title: "Broken", action: "broken", riskClass: "unknown" }), /invalid approval risk class/);
   const pendingApproval = requestAgentRunApproval(run, { id: "test", title: "Test", action: "test", riskClass: "local-draft" });
+  assert.throws(() => transitionAgentRun(pendingApproval, "completed", { summary: "Should remain open." }), /pending approvals/);
   assert.throws(() => decideAgentRunApproval(pendingApproval, "test", "unknown", { actor: "Avi" }), /invalid approval decision/);
   assert.throws(
     () => transitionAgentRun(createAgentRun({ id: "missing-clarification", goal: "Require an actionable blocker" }), "blocked"),
@@ -65,6 +66,11 @@ try {
   run = addAgentRunValidation(run, { id: "citations", name: "citations", status: "passed" });
   run = addAgentRunComment(run, "Avi", "Tighten the recommendation section.");
   run = updateAgentRunAssignment(run, { assignee: "writing-agent", actor: "Avi" });
+  run = updateAgentRunRuntime(run, { provider: "openai", model: "gpt-5", tokensUsed: 1234, elapsedSeconds: 42, actor: "org2-lifecycle" });
+  assert.equal(run.provider, "openai");
+  assert.equal(run.model, "gpt-5");
+  assert.equal(run.budget.tokensUsed, 1234);
+  assert.equal(run.budget.elapsedSeconds, 42);
   run = requestAgentRunApproval(run, { id: "release", title: "Release briefing", action: "publish PDF", riskClass: "external-action", requestedRole: "owner" });
   assert.equal(run.status, "waiting-approval");
   run = decideAgentRunApproval(run, "release", "approved", { actor: "Avi", actorRole: "owner", receipt: "approval:local:1" });
@@ -78,6 +84,7 @@ try {
   assert.equal(run.outcome.summary, "Prepared and reviewed the cited board briefing and its PDF export.");
   saveAgentRun(root, run);
   assert.equal(listAgentRuns(root).length, 1);
+  assert.equal(loadAgentRun(root, run.id).budget.tokensUsed, 1234);
   assert.equal(forkAgentRun(run, { id: "board-brief-revision" }).parentRunId, run.id);
 
   let gated = createAgentRun({ id: "multi-approval", goal: "Exercise a multi-approval boundary" });

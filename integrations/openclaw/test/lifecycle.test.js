@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { conciseGoal, cronKey, outcomeCommand, shouldTrackMainTurn, workflowExecutionPrompt, workflowMarker } from "../lib/lifecycle.js";
+import { conciseGoal, cronKey, executionSummary, outcomeCommand, shouldTrackMainTurn, workflowContinuationPrompt, workflowExecutionPrompt, workflowMarker } from "../lib/lifecycle.js";
 import { Org2Lifecycle } from "../lib/lifecycle.js";
 
 test("tracks substantial work but not acknowledgements or heartbeats", () => {
@@ -19,6 +19,14 @@ test("maps terminal outcomes", () => {
 });
 
 test("bounds run goals", () => assert.ok(conciseGoal("x".repeat(400)).length <= 240));
+
+test("extracts a concise outcome from the last assistant message", () => {
+  assert.equal(executionSummary([
+    { role: "assistant", content: "Older" },
+    { role: "user", content: "Continue" },
+    { role: "assistant", content: [{ type: "text", text: "Finished the workflow.\nArtifacts are ready." }] },
+  ]), "Finished the workflow. Artifacts are ready.");
+});
 
 test("uses the same cron key when finish adds run and session ids", () => {
   const started = { jobId: "job-1", runAtMs: 123 };
@@ -44,6 +52,7 @@ test("prepares a durable run before handing a workflow to OpenClaw", async () =>
     owner: "operator",
     exec: async (args) => {
       calls.push(args);
+      if (args[0] === "corpus") return JSON.stringify({ identity: { id: "personal" } });
       if (args[0] === "workflow" && args[1] === "run") return JSON.stringify({ run: { id: "run-1" } });
       if (args[0] === "workflow" && args[1] === "show") return JSON.stringify(workflow);
       return "";
@@ -52,7 +61,7 @@ test("prepares a durable run before handing a workflow to OpenClaw", async () =>
   const prepared = await lifecycle.prepareWorkflowRun("weekly-review", { week: "29" });
   assert.equal(prepared.run.id, "run-1");
   assert.equal(workflowMarker(prepared.prompt).workflowRunId, "run-1");
-  assert.deepEqual(calls[0], ["workflow", "run", "weekly-review", "--owner", "operator", "--json", "--input", "week=29"]);
+  assert.deepEqual(calls.find((args) => args[0] === "workflow" && args[1] === "run"), ["workflow", "run", "weekly-review", "--owner", "operator", "--json", "--input", "week=29"]);
 });
 
 test("reconciles an active Org2 schedule into OpenClaw cron", async () => {
@@ -66,6 +75,7 @@ test("reconciles an active Org2 schedule into OpenClaw cron", async () => {
   const lifecycle = new Org2Lifecycle({
     cron,
     exec: async (args) => {
+      if (args[0] === "corpus") return JSON.stringify({ identity: { id: "personal" } });
       if (args[0] === "workflow" && args[1] === "list") return JSON.stringify({ workflows: [{
         id: "weekly-review", version: "1.0.0", title: "Weekly review", state: "active",
         triggers: [{ id: "openclaw-schedule", type: "schedule", enabled: true, schedule: "0 9 * * 1", timezone: "America/Los_Angeles" }],
@@ -82,15 +92,67 @@ test("reconciles an active Org2 schedule into OpenClaw cron", async () => {
   assert.equal(workflowMarker(added[0].payload.text).workflowId, "weekly-review");
 });
 
-test("finish reloads a mapping written by another gateway generation", async () => {
+test("finish reloads a mapping and records the required completion summary", async () => {
   const dir = await mkdtemp(join(tmpdir(), "org2-openclaw-"));
   const stateFile = join(dir, "state.json");
   const calls = [];
-  const lifecycle = new Org2Lifecycle({ stateFile, exec: async (args) => { calls.push(args); return ""; } });
+  const lifecycle = new Org2Lifecycle({ stateFile, exec: async (args) => {
+    calls.push(args);
+    if (args[0] === "run" && args[1] === "show") return JSON.stringify({ id: "run-1", status: "running" });
+    return "";
+  } });
   await lifecycle.init();
   await writeFile(stateFile, JSON.stringify({ version: 1, mappings: { key: { org2RunId: "run-1" } } }));
-  await lifecycle.finish("key", "ok");
-  assert.deepEqual(calls[0], ["run", "complete", "run-1"]);
+  await lifecycle.finish("key", "ok", { summary: "Finished the requested work." });
+  assert.deepEqual(calls.find((args) => args[1] === "complete"), [
+    "run", "complete", "run-1", "--actor", "org2-lifecycle", "--summary", "Finished the requested work.",
+  ]);
   const state = JSON.parse(await readFile(stateFile, "utf8"));
+  assert.equal(state.version, 3);
   assert.equal(state.mappings.key.outcome, "ok");
+});
+
+test("a successful OpenClaw turn leaves approval and clarification boundaries open", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "org2-openclaw-approval-"));
+  const stateFile = join(dir, "state.json");
+  const calls = [];
+  const lifecycle = new Org2Lifecycle({ stateFile, exec: async (args) => {
+    calls.push(args);
+    if (args[0] === "run" && args[1] === "show") return JSON.stringify({ id: "run-1", status: "waiting-approval" });
+    return "";
+  } });
+  await lifecycle.init();
+  lifecycle.state.mappings.key = { org2RunId: "run-1", sessionKey: "agent:main:org2:thread-1" };
+  const result = await lifecycle.finish("key", "ok", { summary: "Approval requested." });
+  assert.deepEqual(result, { terminal: false, status: "waiting-approval" });
+  assert.equal(calls.some((args) => args[1] === "complete"), false);
+});
+
+test("resumes an approved workflow in its correlated OpenClaw session", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "org2-openclaw-resume-"));
+  const stateFile = join(dir, "state.json");
+  const workflow = { id: "weekly-review", version: "1.0.0", title: "Weekly review" };
+  const lifecycle = new Org2Lifecycle({ stateFile, exec: async (args) => {
+    if (args[0] === "corpus") return JSON.stringify({ identity: { id: "personal" } });
+    if (args[0] === "run" && args[1] === "show") return JSON.stringify({ id: "run-1", status: "running", workflowId: workflow.id, approvals: [{ status: "approved" }] });
+    if (args[0] === "workflow" && args[1] === "show") return JSON.stringify(workflow);
+    return "";
+  } });
+  await lifecycle.init();
+  lifecycle.state.mappings.key = { org2RunId: "run-1", sessionKey: "agent:main:org2:thread-1", createdAt: "2026-07-18T10:00:00Z" };
+  const resumed = await lifecycle.resumeWorkflowRun("run-1", { expectedCorpusId: "personal" });
+  assert.equal(resumed.sessionKey, "agent:main:org2:thread-1");
+  assert.equal(workflowMarker(resumed.prompt).workflowRunId, "run-1");
+  assert.match(workflowContinuationPrompt(workflow, "run-1"), /approval-decided/);
+});
+
+test("rejects a Mac workflow request for a different configured corpus", async () => {
+  const lifecycle = new Org2Lifecycle({ exec: async (args) => {
+    if (args[0] === "corpus") return JSON.stringify({ identity: { id: "team" } });
+    return "";
+  } });
+  await assert.rejects(
+    lifecycle.prepareWorkflowRun("weekly-review", {}, { expectedCorpusId: "personal" }),
+    /corpus mismatch/,
+  );
 });
