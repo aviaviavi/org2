@@ -1161,7 +1161,11 @@ public final class WorkspaceStore: ObservableObject {
         setCorpusRoot(screenshotCorpusRoot, persistsDefault: false)
       } else {
         if let restoredRoot = restoreCorpusRoot() {
-          setCorpusRoot(restoredRoot, persistsDefault: false)
+          setCorpusRoot(
+            restoredRoot,
+            persistsDefault: false,
+            openClawMigrationSource: appOpenClawTranscriptURL
+          )
         }
       }
     }
@@ -1197,7 +1201,11 @@ public final class WorkspaceStore: ObservableObject {
       return
     }
 
-    setCorpusRoot(restoredRoot, persistsDefault: false)
+    setCorpusRoot(
+      restoredRoot,
+      persistsDefault: false,
+      openClawMigrationSource: appOpenClawTranscriptURL
+    )
     openHome()
   }
 
@@ -1427,6 +1435,14 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func setCorpusRoot(_ url: URL, persistsDefault: Bool = true) {
+    setCorpusRoot(url, persistsDefault: persistsDefault, openClawMigrationSource: nil)
+  }
+
+  private func setCorpusRoot(
+    _ url: URL,
+    persistsDefault: Bool,
+    openClawMigrationSource: URL?
+  ) {
     let standardized = url.standardizedFileURL
     corpusRoot = standardized
     activeCorpusIdentity = nil
@@ -1436,7 +1452,10 @@ public final class WorkspaceStore: ObservableObject {
     if persistsDefault {
       defaults.set(standardized.path, forKey: corpusKey)
     }
-    switchOpenClawTranscript(to: Self.openClawTranscriptURL(corpusRoot: standardized))
+    switchOpenClawTranscript(
+      to: Self.openClawTranscriptURL(corpusRoot: standardized),
+      migrationSource: openClawMigrationSource
+    )
     agenda = nil
     approvalItems = []
     selectedApprovalItemID = nil

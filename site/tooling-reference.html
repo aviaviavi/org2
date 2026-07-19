@@ -78,6 +78,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <li><p><code>run</code>, <code>review</code>, <code>workflow</code>, <code>artifact</code>, <code>runtime</code>, <code>mcp</code>, <code>eval</code></p></li>
 <li><p><code>corpus</code> identity inspection, validation, and preview-first initialization</p></li>
 <li><p><code>workspace agenda</code>, <code>workspace search</code> for read-only projections across explicitly mounted corpora</p></li>
+<li><p><code>source list</code>, <code>source doctor</code>, <code>source bind</code>, <code>source sync</code> for external source mirrors</p></li>
 <li><p><code>compile corpus</code></p></li>
 <li><p><code>render-chart</code></p></li>
 <li><p><code>query-data</code></p></li>
@@ -106,6 +107,31 @@ org2 corpus init --dir ~/team-notes --id team-notes --name &quot;Team Notes&quot
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 workspace agenda --mount ~/notes --mount ~/team-notes --recursive --json
 org2 workspace search &quot;quarterly plan&quot; --mount ~/notes --mount ~/team-notes --recursive --json</code></pre>
 <p>These commands are read-only composition over the normal <code>agenda</code> and <code>search</code> engines. Results include a <code>corpus</code> object with stable ID, name, kind, and the local root needed for navigation. Invalid, unavailable, or duplicate-identity mounts appear in <code>issues</code>. The command never discovers a person's app mounts and never establishes a destination for capture or edits.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="external-source-mirrors">External source mirrors</h1>
+<p>The root <code>org2.json</code> can declare portable, non-secret Slack and Notion source intent. Org2 delegates crawling to the MIT-licensed <code>slacrawl</code> and <code>notcrawl</code> binaries instead of implementing provider APIs or desktop-cache parsing itself:</p>
+<pre class="org2-src language-json" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-json">{
+  &quot;externalSources&quot;: {
+    &quot;team-slack&quot;: {
+      &quot;type&quot;: &quot;slack&quot;,
+      &quot;scopes&quot;: [&quot;engineering&quot;, &quot;product&quot;],
+      &quot;media&quot;: &quot;metadata-only&quot;,
+      &quot;rawZone&quot;: &quot;raw/connectors/slack/team&quot;
+    },
+    &quot;company-notion&quot;: {
+      &quot;type&quot;: &quot;notion&quot;,
+      &quot;media&quot;: &quot;metadata-only&quot;
+    }
+  }
+}</code></pre>
+<p>The corpus declaration contains no credentials or machine paths. Each authorized machine creates its own binding outside the corpus under <code>ORG2_INDEX_HOME</code> (default <code>~/.org2/index</code>):</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 source list --dir ~/notes --json
+org2 source bind team-slack --config ~/.slacrawl/team.toml --dir ~/notes
+org2 source bind team-slack --config ~/.slacrawl/team.toml --dir ~/notes --apply
+org2 source doctor --dir ~/notes --json
+org2 source sync team-slack --dir ~/notes --json</code></pre>
+<p><code>bind</code> previews by default and writes its local file with owner-only permissions when applied. Bindings may override the crawler binary, crawler config, and working directory. Archive database, cache, and Markdown storage locations remain explicit in the crawler's machine-local config. <code>sync</code> invokes the crawler directly without a shell and uses a per-profile machine lock. The Mac app and OpenClaw can call the same CLI surface, so sync is not tied to a laptop UI. Cross-machine archive reconciliation and transformation into <code>org2-connector/v1</code> records remain separate adapter concerns; a crawler mirror is derived source data, not canonical Org2 knowledge.</p>
 <section class="org2-headline level-2">
 <h2 id="command-conventions-and-stability">Command conventions and stability</h2>
 <p>Audit summary for CLI consistency: most commands already use <code>--dir</code> for corpus roots, <code>--recursive</code> for traversal, <code>--format</code> for alternate output, and <code>--apply</code> for mutating writes. The lowest-risk cleanup is to make JSON output easier and consistent across commands.</p>

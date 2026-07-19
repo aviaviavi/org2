@@ -4,6 +4,8 @@ All notable changes to the Org2 VS Code extension are documented in this file.
 
 ## Unreleased
 
+## 0.4.0 - 2026-07-19
+
 - Added syntax highlighting for checkbox progress cookies (`[n/m]`, `[p%]`).
 - Agenda property filters now follow Org2 effective property inheritance from file and ancestor heading drawers.
 - Added syntax coverage tests for Org timestamp repeaters and warning offsets.
