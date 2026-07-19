@@ -33,6 +33,18 @@ try {
   assert.equal(profiles.find((item) => item.id === "slack").ready, false);
   assert.equal(run("doctor", "slack").status, 1);
 
+  const missingDir = run("list", "--dir");
+  assert.equal(missingDir.status, 1);
+  assert.match(missingDir.stderr, /--dir requires a value/);
+
+  const missingBinary = run("bind", "slack", "--binary", "--apply");
+  assert.equal(missingBinary.status, 1);
+  assert.match(missingBinary.stderr, /--binary requires a value/);
+
+  const unsupportedFormat = run("list", "--format", "text");
+  assert.equal(unsupportedFormat.status, 1);
+  assert.match(unsupportedFormat.stderr, /source --format must be json/);
+
   const preview = run("bind", "slack", "--binary", fakeCrawler, "--config", crawlerConfig);
   assert.equal(preview.status, 0, preview.stderr);
   assert.equal(JSON.parse(preview.stdout).applied, false);

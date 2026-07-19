@@ -42,6 +42,12 @@ The corpus declares non-secret externalSources in org2.json. Machine-local bindi
 outside the corpus under ORG2_INDEX_HOME (or ~/.org2/index). Sync delegates to slacrawl/notcrawl.`;
 }
 
+function optionValue(args: string[], index: number, option: string): string {
+  const value = args[index + 1];
+  if (!value || value.startsWith("-")) throw new Error(`${option} requires a value`);
+  return value;
+}
+
 function parseArgs(args: string[]) {
   const positional: string[] = [];
   let dir = "";
@@ -52,15 +58,26 @@ function parseArgs(args: string[]) {
   let workingDirectory: string | undefined;
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i]!;
-    if (arg === "--dir") dir = args[++i] || "";
-    else if (arg === "--json" || (arg === "--format" && args[i + 1] === "json")) {
+    if (arg === "--dir") {
+      dir = optionValue(args, i, arg);
+      i += 1;
+    } else if (arg === "--json") json = true;
+    else if (arg === "--format") {
+      const format = optionValue(args, i, arg);
+      i += 1;
+      if (format !== "json") throw new Error("source --format must be json");
       json = true;
-      if (arg === "--format") i += 1;
     } else if (arg === "--apply") apply = true;
-    else if (arg === "--binary") binary = args[++i];
-    else if (arg === "--config") configPath = args[++i];
-    else if (arg === "--working-directory") workingDirectory = args[++i];
-    else if (arg === "--help" || arg === "-h") positional.push("help");
+    else if (arg === "--binary") {
+      binary = optionValue(args, i, arg);
+      i += 1;
+    } else if (arg === "--config") {
+      configPath = optionValue(args, i, arg);
+      i += 1;
+    } else if (arg === "--working-directory") {
+      workingDirectory = optionValue(args, i, arg);
+      i += 1;
+    } else if (arg === "--help" || arg === "-h") positional.push("help");
     else if (arg.startsWith("-")) throw new Error(`unknown source option: ${arg}`);
     else positional.push(arg);
   }
