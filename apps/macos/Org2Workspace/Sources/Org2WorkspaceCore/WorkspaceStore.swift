@@ -2347,6 +2347,35 @@ public final class WorkspaceStore: ObservableObject {
     ), surface: .approvals)
   }
 
+  public func openAgentRunContext(_ context: AgentRunContextItem) {
+    guard let corpusRoot, let reference = context.fileReference else {
+      errorText = "This run context is not a local file reference."
+      statusText = "Run context unavailable"
+      return
+    }
+    let url = (reference.hasPrefix("/")
+      ? URL(fileURLWithPath: reference)
+      : corpusRoot.appendingPathComponent(reference)).standardizedFileURL
+    let rootPath = corpusRoot.standardizedFileURL.path
+    guard url.path == rootPath || url.path.hasPrefix(rootPath + "/") else {
+      errorText = "The run context is outside the active corpus."
+      statusText = "Run context unavailable"
+      return
+    }
+    guard FileManager.default.fileExists(atPath: url.path) else {
+      errorText = "The run context could not be found at \(reference)."
+      statusText = "Run context missing"
+      return
+    }
+    let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
+    selectCorpusFile(CorpusFile(
+      path: url.path,
+      relativePath: url.path.replacingOccurrences(of: rootPath + "/", with: ""),
+      modifiedAt: values?.contentModificationDate,
+      byteCount: values?.fileSize.map(Int64.init)
+    ), surface: .approvals)
+  }
+
   private func approvalCandidateSources(
     files: [CorpusFile],
     corpusRoot: URL,

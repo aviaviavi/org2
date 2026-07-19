@@ -18,6 +18,7 @@ final class AgentRunModelsTests: XCTestCase {
         "riskClass": "external-action",
         "owner": "Avi",
         "assignee": "writer",
+        "parentRunId": "parent-run",
         "capabilities": ["publish"],
         "context": [{"ref":"notes/source.org2","citation":"notes/source.org2:1"}],
         "plan": [{"id":"draft","title":"Draft","kind":"agent","status":"completed"}],
@@ -35,6 +36,7 @@ final class AgentRunModelsTests: XCTestCase {
     let payload = try JSONDecoder().decode(AgentRunListPayload.self, from: data)
     let run = try XCTUnwrap(payload.runs.first)
     XCTAssertEqual(run.id, "run-1")
+    XCTAssertEqual(run.parentRunId, "parent-run")
     XCTAssertEqual(run.pendingApprovalCount, 1)
     XCTAssertEqual(run.progressText, "1/1 completed")
     XCTAssertTrue(run.needsAttention)
@@ -112,6 +114,46 @@ final class AgentRunModelsTests: XCTestCase {
     XCTAssertEqual(run.latestValidations.map(\.status), ["passed"])
     XCTAssertFalse(run.needsAttention)
     XCTAssertEqual(run.humanNextAction, "No action required")
+  }
+
+  func testRunCenterKeepsMultipleMeetingOutcomesIndependentlyVisible() throws {
+    let meetingRef = "meetings/2026-07-17-080044-dev-standup.org2"
+    let envelope = try makeRun(
+      id: "meeting-workflow",
+      goal: "Turn a provenance-preserving meeting capture into cited decisions and reviewable tasks",
+      status: "blocked",
+      workflowId: "meeting-to-controlled-execution",
+      contextRefs: [meetingRef]
+    )
+    let feedbackDigest = try makeRun(
+      id: "feedback-digest",
+      goal: "Set up the Tuesday/Friday customer-feedback digest",
+      status: "blocked",
+      parentRunId: envelope.id
+    )
+    let runnerDocs = try makeRun(
+      id: "runner-docs",
+      goal: "Document hosted versus self-hosted runner recovery",
+      status: "completed",
+      contextRefs: [meetingRef]
+    )
+
+    let runs = [feedbackDigest, envelope, runnerDocs]
+    let sections = RunCenterPresentation.sections(
+      for: AgentRunScope.all.entries(in: runs),
+      allRuns: runs
+    )
+
+    let section = try XCTUnwrap(sections.first)
+    XCTAssertEqual(sections.count, 1)
+    XCTAssertEqual(section.sourceMeeting?.displayTitle, "Dev Standup · 2026-07-17")
+    XCTAssertEqual(section.entries.map(\.id), ["feedback-digest", "meeting-workflow", "runner-docs"])
+    XCTAssertEqual(section.entries.map(\.run.goal), [
+      "Set up the Tuesday/Friday customer-feedback digest",
+      "Turn a provenance-preserving meeting capture into cited decisions and reviewable tasks",
+      "Document hosted versus self-hosted runner recovery",
+    ])
+    XCTAssertEqual(section.entries.map(\.run.status), ["blocked", "blocked", "completed"])
   }
 
   func testAgentRunTimestampUsesLocalReadableTime() throws {
@@ -224,6 +266,27 @@ final class AgentRunModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testMeetingSourceContextOpensInsideRunCenter() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-run-meeting-context-\(UUID().uuidString)", isDirectory: true)
+    let meetings = root.appendingPathComponent("meetings", isDirectory: true)
+    try FileManager.default.createDirectory(at: meetings, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let meeting = meetings.appendingPathComponent("2026-07-17-080044-dev-standup.org2")
+    try "#+TITLE: Meeting: Dev Standup\n".write(to: meeting, atomically: true, encoding: .utf8)
+    let run = try makeRun(contextRefs: ["meetings/2026-07-17-080044-dev-standup.org2"])
+    let context = try XCTUnwrap(run.sourceMeetingContext)
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root, persistsDefault: false)
+
+    store.openAgentRunContext(context)
+
+    XCTAssertEqual(store.selectedLocation?.file, meeting.path)
+    XCTAssertEqual(store.selectedSurface, .approvals)
+  }
+
+  @MainActor
   func testOpenAgentRunRecordUsesInAppDetailWithoutLeavingRunsSurface() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-run-record-navigation-\(UUID().uuidString)", isDirectory: true)
@@ -303,6 +366,7 @@ final class AgentRunModelsTests: XCTestCase {
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
     store.setCorpusRoot(root, persistsDefault: false)
     await store.refreshAgentRuns()
+    XCTAssertNil(store.errorText, store.errorText ?? "")
     let run = try XCTUnwrap(store.agentRuns.first)
 
     store.selectAgentRun(run)
@@ -324,6 +388,9 @@ final class AgentRunModelsTests: XCTestCase {
     id: String = "run-1",
     goal: String = "Prepare a cited briefing",
     status: String = "queued",
+    workflowId: String? = nil,
+    parentRunId: String? = nil,
+    contextRefs: [String] = [],
     blockedReason: String? = nil,
     validationStatus: String? = nil,
     reviewRequired: Bool = false,
@@ -336,7 +403,7 @@ final class AgentRunModelsTests: XCTestCase {
       "status": status,
       "riskClass": "local-draft",
       "capabilities": [],
-      "context": [],
+      "context": contextRefs.map { ["ref": $0] },
       "plan": [],
       "artifacts": reviewRequired ? [[
         "id": "artifact-1",
@@ -357,6 +424,8 @@ final class AgentRunModelsTests: XCTestCase {
       "createdAt": "2026-07-14T00:00:00.000Z",
       "updatedAt": updatedAt
     ]
+    if let workflowId { value["workflowId"] = workflowId }
+    if let parentRunId { value["parentRunId"] = parentRunId }
     if let blockedReason { value["blockedReason"] = blockedReason }
     return try JSONDecoder().decode(
       AgentRunItem.self,
