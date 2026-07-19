@@ -3,7 +3,7 @@ name: Release packages
 on:
   push:
     tags:
-      - "v*.*.*"
+      - "*.*.*"
   workflow_dispatch:
     inputs:
       dry_run:
@@ -101,6 +101,7 @@ jobs:
         if: ${{ steps.version.outputs.dry_run != 'true' }}
         uses: softprops/action-gh-release@v2
         with:
+          name: ${{ steps.version.outputs.version }}
           files: |
             *.tgz
             editors/vscode-org2/*.vsix

@@ -64,7 +64,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 org2 --help
 org2 agent --help</code></pre>
 <p><code>org2 agent capabilities</code> emits the versioned JSON schema <code>org2:capabilities:v1</code>. It summarizes workflow families, write behavior, client roles, safety rules, and deeper documentation URLs. Use <code>org2 COMMAND --help</code> for the current flags of a specific command.</p>
-<p>When working in a corpus, look for the nearest <code>org2.json</code>. It can define file selection, recursion, ignored paths, TODO vocabulary, data-source profiles, publishing projects, and roam/dailies locations. Do not assume a private database or app owns the canonical state.</p>
+<p>When working in a corpus, look for the nearest <code>org2.json</code>. It can define file selection, recursion, ignored paths, TODO vocabulary, data-source profiles, external-source intent, publishing projects, and roam/dailies locations. Do not assume a private database or app owns the canonical state.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="safe-operating-contract">Safe operating contract</h1>
@@ -96,6 +96,7 @@ org2 agent bundle --query &quot;billing migration&quot; --scope project:billing 
 <li><p><strong>Use portable tools and models</strong>: <code>runtime select</code> resolves capability/privacy policies, <code>mcp serve</code> exposes corpus resources and run tools, and <code>mcp snapshot</code> preserves external results with provenance.</p></li>
 <li><p><strong>Plan and act</strong>: <code>agenda</code>, <code>todo</code>, <code>approvals</code>, <code>plan</code>, and <code>clock</code>.</p></li>
 <li><p><strong>Read across identified corpora</strong>: <code>workspace agenda</code> and <code>workspace search</code> combine canonical per-corpus JSON results without creating a merged database or a workspace-wide write target.</p></li>
+<li><p><strong>Refresh external mirrors</strong>: <code>source list/doctor/bind/sync</code> orchestrates <code>slacrawl</code> and <code>notcrawl</code>. Portable profiles contain no secrets; every machine supplies its own binding outside the corpus.</p></li>
 <li><p><strong>Capture and organize</strong>: <code>capture</code>, <code>archive</code>, and <code>refile</code>.</p></li>
 <li><p><strong>Find and connect knowledge</strong>: <code>search</code>, <code>query</code>, <code>id</code>, <code>backlinks</code>, <code>entity</code>, <code>index</code>, and <code>roam ...</code>.</p></li>
 <li><p><strong>Check corpus health</strong>: <code>fmt --check</code>, <code>lint</code>, and <code>graph audit</code>.</p></li>

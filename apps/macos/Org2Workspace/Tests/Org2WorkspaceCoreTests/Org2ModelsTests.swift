@@ -4154,7 +4154,7 @@ final class Org2ModelsTests: XCTestCase {
       at: 2,
       effectiveRange: nil
     ) as? NSColor
-    XCTAssertEqual(largeColor, NSColor.textColor)
+    XCTAssertEqual(largeColor, NSColor.labelColor)
   }
 
   @MainActor
@@ -11636,6 +11636,7 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertNil(store.editingBlockID)
 
     store.editableEntryText += "\n* Quick note\nSome body\n"
+    store.noteSourceEditorLocalTextChanged(store.editableEntryText)
     await store.saveActiveEdit()
     try await waitForEntryRender(store)
 
@@ -11724,6 +11725,7 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(store.isEditingEntry)
 
     store.editableEntryText = store.editableEntryText.replacingOccurrences(of: "Body", with: "Edited body")
+    store.noteSourceEditorLocalTextChanged(store.editableEntryText)
     await store.saveActiveEdit()
 
     let updated = try String(contentsOf: note, encoding: .utf8)
@@ -11772,6 +11774,7 @@ final class Org2ModelsTests: XCTestCase {
     """.write(to: note, atomically: true, encoding: .utf8)
 
     store.editableEntryText += "\n* Mac note\nShould not overwrite phone note.\n"
+    store.noteSourceEditorLocalTextChanged(store.editableEntryText)
     await store.saveActiveEdit()
 
     let updated = try String(contentsOf: note, encoding: .utf8)
@@ -11892,6 +11895,7 @@ final class Org2ModelsTests: XCTestCase {
 
     store.beginEditingCurrentScope()
     store.editableEntryText = store.editableEntryText.replacingOccurrences(of: "plaintext", with: "changed plaintext")
+    store.noteSourceEditorLocalTextChanged(store.editableEntryText)
     await store.saveActiveEdit()
 
     let updated = try String(contentsOf: note, encoding: .utf8)
@@ -12767,6 +12771,7 @@ final class Org2ModelsTests: XCTestCase {
     store.beginEditingCurrentScope()
     XCTAssertTrue(store.isEditingEntry)
     store.editableEntryText = draft
+    store.noteSourceEditorLocalTextChanged(store.editableEntryText)
     await store.loadEntrySource(for: location)
 
     XCTAssertEqual(store.editableEntryText, draft)
