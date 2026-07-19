@@ -493,12 +493,6 @@ blockquote {
   font-size: 0.94rem;
 }
 
-@media (min-width: 960px) {
-  #content:has(.org2-shot-grid) {
-    max-width: 84rem;
-  }
-}
-
 .org2-sample {
   margin: 2.25rem 0 2.75rem;
 }
@@ -653,145 +647,6 @@ blockquote {
   .org2-syntax-planning,
   .org2-syntax-prop {
     color: #d8b4fe;
-  }
-}
-
-@media (min-width: 960px) {
-  body:has(.org2-sample) {
-    max-width: none;
-  }
-
-  #content:has(.org2-sample) {
-    max-width: 84rem;
-  }
-
-  #content:has(.org2-sample) > main > :not(.org2-sample) {
-    width: 100%;
-    max-width: 52rem;
-    margin-left: auto;
-    margin-right: auto;
-  }
-
-  .org2-sample-layout {
-    grid-template-columns: 11.5rem minmax(0, 1fr) 11.5rem;
-    gap: 1rem;
-    align-items: stretch;
-  }
-
-  .org2-sample-callouts {
-    position: relative;
-    display: block;
-  }
-
-  .org2-sample-callouts div {
-    position: absolute;
-    top: var(--callout-top);
-    width: 100%;
-  }
-
-  .org2-sample-callouts-left div {
-    text-align: right;
-  }
-
-  .org2-sample-callouts-left div::after,
-  .org2-sample-callouts-right div::before {
-    position: absolute;
-    top: 1rem;
-    width: 1rem;
-    border-top: 1px solid color-mix(in srgb, var(--muted) 45%, transparent);
-    content: "";
-  }
-
-  .org2-sample-callouts-left div::after {
-    right: -1rem;
-  }
-
-  .org2-sample-callouts-right div::before {
-    left: -1rem;
-  }
-}
-
-.org2-hero {
-  margin: 1rem 0 2rem;
-  padding: clamp(1rem, 3vw, 1.6rem);
-  border: 1px solid var(--border);
-  border-radius: 18px;
-  background: color-mix(in srgb, var(--code-bg) 55%, transparent);
-}
-
-
-.org2-hero-lede {
-  max-width: 48rem;
-  margin: 1.1rem 0 0;
-  color: var(--muted);
-  font-size: clamp(1rem, 1.6vw, 1.16rem);
-  line-height: 1.5;
-}
-
-.org2-hero-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-  margin: 1.4rem 0 0;
-}
-
-.org2-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 0.65rem 1rem;
-  color: var(--fg);
-  text-decoration: none;
-  font-weight: 700;
-  background: var(--bg);
-}
-
-.org2-button:hover {
-  border-color: var(--link);
-  color: var(--link);
-}
-
-.org2-button-primary {
-  color: var(--bg);
-  background: var(--fg);
-  border-color: var(--fg);
-}
-
-.org2-button-primary:hover {
-  color: var(--bg);
-  background: var(--link);
-  border-color: var(--link);
-}
-
-.org2-hero-points {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 0.8rem;
-  margin-top: 1.6rem;
-}
-
-.org2-hero-points div {
-  padding: 0.85rem;
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  background: color-mix(in srgb, var(--bg) 72%, transparent);
-}
-
-.org2-hero-points strong,
-.org2-hero-points span {
-  display: block;
-}
-
-.org2-hero-points span {
-  color: var(--muted);
-  margin-top: 0.2rem;
-}
-
-@media (min-width: 760px) {
-  .org2-hero-points {
-    grid-template-columns: repeat(3, 1fr);
   }
 }
 
@@ -1177,16 +1032,6 @@ blockquote {
   color: var(--muted);
 }
 
-@media (min-width: 960px) {
-  body:has(.org2-features-page) {
-    max-width: none;
-  }
-
-  #content:has(.org2-features-page) {
-    max-width: 76rem;
-  }
-}
-
 @media (max-width: 920px) {
   .org2-compiler-flow {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1238,5 +1083,249 @@ blockquote {
   .org2-feature-jumps a,
   .org2-feature-links a {
     padding: 0.36rem 0.62rem;
+  }
+}
+
+/* Shared overview treatment for Home, Features, and Getting Started. */
+.org2-page-intro {
+  margin: 1rem 0 2.5rem;
+  padding: 1.15rem 1.2rem 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--code-bg) 42%, transparent);
+}
+
+.org2-page-intro > p {
+  max-width: 48rem;
+  margin: 0;
+  color: var(--muted);
+  font-size: 1.06rem;
+  line-height: 1.55;
+}
+
+.org2-page-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+  margin-top: 1.25rem;
+}
+
+.org2-page-summary > div {
+  padding-top: 0.7rem;
+  border-top: 2px solid var(--border);
+}
+
+.org2-page-summary strong,
+.org2-page-summary span {
+  display: block;
+}
+
+.org2-page-summary span {
+  margin-top: 0.25rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.org2-sample-layout {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.org2-sample-file {
+  order: 1;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.1);
+}
+
+.org2-sample-callouts-left {
+  order: 2;
+}
+
+.org2-sample-callouts-right {
+  order: 3;
+}
+
+.org2-sample-callouts {
+  position: static;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.org2-sample-callouts div {
+  position: static;
+  padding: 0.65rem 0 0;
+  border: 0;
+  border-top: 2px solid var(--border);
+  border-radius: 0;
+  text-align: left;
+  background: transparent;
+}
+
+.org2-sample-callouts-left div::after,
+.org2-sample-callouts-right div::before {
+  display: none;
+}
+
+/* Features: retain the visual examples, with a quieter documentation rhythm. */
+.org2-features-page {
+  gap: 3.75rem;
+  margin-top: 0;
+}
+
+.org2-feature-section,
+.org2-feature-cta {
+  width: 100%;
+}
+
+.org2-feature-heading {
+  max-width: none;
+  margin: 0 0 1.25rem;
+  text-align: left;
+}
+
+.org2-feature-heading h2,
+.org2-feature-copy h2,
+.org2-feature-cta h2 {
+  max-width: none;
+  margin: 0;
+  font-size: 1.55rem;
+  letter-spacing: normal;
+}
+
+.org2-feature-heading > p:last-child {
+  margin: 0.45rem 0 0;
+}
+
+.org2-compiler-flow {
+  gap: 1rem;
+}
+
+.org2-compiler-flow article {
+  min-height: 0;
+  padding: 0.75rem 0 0;
+  border: 0;
+  border-top: 2px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+}
+
+.org2-compiler-flow article:not(:last-child)::after {
+  display: none;
+}
+
+.org2-compiler-flow strong {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.org2-compiler-flow p {
+  font-size: 0.88rem;
+}
+
+.org2-feature-note {
+  max-width: none;
+  margin: 1.15rem 0 0;
+  padding-left: 0.85rem;
+  border-left: 2px solid var(--border);
+  text-align: left;
+}
+
+.org2-feature-story,
+.org2-feature-story-reverse {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1.1rem;
+  align-items: start;
+}
+
+.org2-feature-story-reverse .org2-feature-copy {
+  order: initial;
+}
+
+.org2-feature-copy > p,
+.org2-feature-copy li {
+  color: var(--muted);
+}
+
+.org2-feature-media figure,
+.org2-editor-strip figure {
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.1);
+}
+
+.org2-shot-grid figure {
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.1);
+}
+
+.org2-feature-media-pair {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.org2-command {
+  border-radius: 8px;
+}
+
+.org2-feature-links {
+  gap: 1rem;
+  font-size: 0.9rem;
+}
+
+.org2-feature-links a {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  color: var(--link);
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+  background: transparent;
+}
+
+.org2-feature-links a:hover {
+  border: 0;
+}
+
+.org2-editor-strip {
+  grid-template-columns: minmax(0, 1.2fr) minmax(16rem, 0.8fr);
+}
+
+.org2-editor-cards article {
+  padding: 0.8rem 0 0;
+  border: 0;
+  border-top: 2px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+}
+
+.org2-feature-card-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.5rem 1.25rem;
+}
+
+.org2-feature-card-grid article {
+  padding: 0.8rem 0 0;
+  border: 0;
+  border-top: 2px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+}
+
+.org2-feature-cta {
+  padding: 1.25rem 0 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+}
+
+.org2-feature-cta > p {
+  max-width: none;
+}
+
+@media (max-width: 760px) {
+  .org2-page-summary,
+  .org2-sample-callouts,
+  .org2-feature-card-grid,
+  .org2-feature-media-pair,
+  .org2-editor-strip {
+    grid-template-columns: minmax(0, 1fr);
   }
 }

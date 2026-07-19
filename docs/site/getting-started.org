@@ -1,6 +1,15 @@
 #+TITLE: Getting started
 
-This guide is about getting to a *useful* Org2 setup quickly: point the compiler at notes you already own, then start deriving agendas, graph views, editor features, agent workflows, and published artifacts from the same corpus.
+#+BEGIN_EXPORT html
+<section class="org2-page-intro">
+  <p>Point Org2 at notes you already own, then start deriving agendas, graph views, editor features, agent workflows, and published artifacts from the same corpus.</p>
+  <div class="org2-page-summary" aria-label="Getting started overview">
+    <div><strong>Install what you need.</strong><span>Use the CLI, the native Mac app, or both.</span></div>
+    <div><strong>Keep your existing files.</strong><span>Ordinary Org files work as compiler input; new files can use <code>.org2</code>.</span></div>
+    <div><strong>Add richer views gradually.</strong><span>Start with agenda and search, then add editors, agents, data, or publishing.</span></div>
+  </div>
+</section>
+#+END_EXPORT
 
 The current end-to-end agent setup uses *OpenClaw*. The native lifecycle plugin feeds substantial OpenClaw work into Runs & Review, and the Mac chat connects directly to an OpenClaw Gateway. This reflects the first adapter that has been implemented, while the underlying CLI, run files, workflows, context interfaces, and MCP surface remain available to Codex, local models, scripts, and future agent integrations.
 
