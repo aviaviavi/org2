@@ -141,6 +141,43 @@ struct AgentRunScopeEntry: Identifiable, Equatable {
   var id: AgentRunItem.ID { run.id }
 }
 
+struct RunCenterSection: Identifiable, Equatable {
+  let id: String
+  let sourceMeeting: AgentRunContextItem?
+  let entries: [AgentRunScopeEntry]
+}
+
+enum RunCenterPresentation {
+  static func sections(
+    for entries: [AgentRunScopeEntry],
+    allRuns: [AgentRunItem]
+  ) -> [RunCenterSection] {
+    var sections: [RunCenterSection] = []
+    var sectionIndexByID: [String: Int] = [:]
+
+    for entry in entries {
+      let sourceMeeting = entry.run.sourceMeetingContext(in: allRuns)
+      let sectionID = sourceMeeting.map { "meeting:\($0.fileReference ?? $0.ref)" } ?? "other"
+      if let index = sectionIndexByID[sectionID] {
+        let existing = sections[index]
+        sections[index] = RunCenterSection(
+          id: existing.id,
+          sourceMeeting: existing.sourceMeeting,
+          entries: existing.entries + [entry]
+        )
+      } else {
+        sectionIndexByID[sectionID] = sections.count
+        sections.append(RunCenterSection(
+          id: sectionID,
+          sourceMeeting: sourceMeeting,
+          entries: [entry]
+        ))
+      }
+    }
+    return sections
+  }
+}
+
 public struct AgentWorkflowListPayload: Decodable, Sendable {
   public let schema: String
   public let workflows: [AgentWorkflowItem]
@@ -213,6 +250,7 @@ public struct AgentRunItem: Identifiable, Decodable, Hashable, Sendable {
   public let comments: [AgentRunCommentItem]
   public let events: [AgentRunEventItem]
   public let outcome: AgentRunOutcomeItem?
+  public let parentRunId: String?
   public let createdAt: String
   public let updatedAt: String
   public let startedAt: String?
@@ -250,6 +288,24 @@ public struct AgentRunItem: Identifiable, Decodable, Hashable, Sendable {
     return "\(completedStepCount)/\(plan.count) completed"
   }
   public var workflowDisplayName: String? { workflowId.map(Self.humanizedLabel) }
+  public var sourceMeetingContext: AgentRunContextItem? {
+    context.first(where: \.isMeetingReference)
+  }
+  public func sourceMeetingContext(in runs: [AgentRunItem]) -> AgentRunContextItem? {
+    if let sourceMeetingContext { return sourceMeetingContext }
+    let runsByID = runs.reduce(into: [String: AgentRunItem]()) { result, run in
+      if result[run.id] == nil { result[run.id] = run }
+    }
+    var visited = Set([id])
+    var ancestorID = parentRunId
+    while let currentID = ancestorID,
+          visited.insert(currentID).inserted,
+          let ancestor = runsByID[currentID] {
+      if let sourceMeetingContext = ancestor.sourceMeetingContext { return sourceMeetingContext }
+      ancestorID = ancestor.parentRunId
+    }
+    return nil
+  }
   fileprivate var failureSeriesKey: String {
     let normalizedGoal = goal
       .lowercased()
@@ -375,6 +431,42 @@ public struct AgentRunContextItem: Decodable, Hashable, Sendable {
   public let title: String?
   public let citation: String?
   public let sha256: String?
+
+  public var fileReference: String? {
+    let value = ref.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !value.isEmpty else { return nil }
+    if value.hasPrefix("file:") { return String(value.dropFirst("file:".count)) }
+    if value.contains("://") || value.range(of: #"^[A-Za-z][A-Za-z0-9+.-]*:"#, options: .regularExpression) != nil {
+      return nil
+    }
+    return value
+  }
+
+  public var isMeetingReference: Bool {
+    guard let fileReference else { return false }
+    let normalized = fileReference.replacingOccurrences(of: "\\", with: "/").lowercased()
+    return normalized.contains("/meetings/") || normalized.hasPrefix("meetings/")
+  }
+
+  public var displayTitle: String {
+    if let title = title?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
+      return title
+    }
+    guard let fileReference else { return ref }
+    let stem = URL(fileURLWithPath: fileReference).deletingPathExtension().lastPathComponent
+    let parts = stem.split(separator: "-").map(String.init)
+    let hasDatedMeetingPrefix = parts.count >= 5
+      && parts[0].count == 4
+      && parts[1].count == 2
+      && parts[2].count == 2
+      && parts[3].count == 6
+    if hasDatedMeetingPrefix {
+      let meeting = AgentRunItem.humanizedLabel(parts.dropFirst(4).joined(separator: "-"))
+      return meeting.isEmpty ? "Meeting · \(parts[0])-\(parts[1])-\(parts[2])" : "\(meeting) · \(parts[0])-\(parts[1])-\(parts[2])"
+    }
+    let label = AgentRunItem.humanizedLabel(stem)
+    return label.isEmpty ? ref : label
+  }
 }
 
 public struct AgentRunStepItem: Identifiable, Decodable, Hashable, Sendable {

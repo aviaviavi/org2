@@ -2119,6 +2119,10 @@ private struct RunCenterView: View {
     visibleEntries.map(\.run)
   }
 
+  private var visibleSections: [RunCenterSection] {
+    RunCenterPresentation.sections(for: visibleEntries, allRuns: store.agentRuns)
+  }
+
   private var selectedRun: AgentRunItem? {
     guard let id = store.selectedAgentRunID else { return visibleRuns.first }
     return visibleRuns.first(where: { $0.id == id }) ?? visibleRuns.first
@@ -2158,18 +2162,32 @@ private struct RunCenterView: View {
       } else if visibleRuns.isEmpty {
         EmptyStateView(title: "No \(scope.rawValue) Runs", detail: "Runs created by agents, schedules, and workflows appear here automatically.")
       } else {
-        List(visibleEntries) { entry in
-          Button {
-            store.selectAgentRun(entry.run)
-          } label: {
-            RunCenterRow(
-              run: entry.run,
-              representedFailureCount: entry.representedFailureCount,
-              isSelected: store.selectedAgentRunID == entry.run.id
-            )
+        List {
+          ForEach(visibleSections) { section in
+            Section {
+              ForEach(section.entries) { entry in
+                Button {
+                  store.selectAgentRun(entry.run)
+                } label: {
+                  RunCenterRow(
+                    run: entry.run,
+                    sourceMeeting: section.sourceMeeting,
+                    representedFailureCount: entry.representedFailureCount,
+                    isSelected: store.selectedAgentRunID == entry.run.id
+                  )
+                }
+                .buttonStyle(.plain)
+                .listRowBackground(Color.clear)
+              }
+            } header: {
+              if let sourceMeeting = section.sourceMeeting {
+                Label(sourceMeeting.displayTitle, systemImage: "calendar")
+                  .font(.caption.weight(.semibold))
+                  .foregroundStyle(.secondary)
+                  .textCase(nil)
+              }
+            }
           }
-          .buttonStyle(.plain)
-          .listRowBackground(Color.clear)
         }
         .listStyle(.inset)
       }
@@ -2235,6 +2253,7 @@ private struct RunCenterScopeMetric: View {
 
 private struct RunCenterRow: View {
   let run: AgentRunItem
+  let sourceMeeting: AgentRunContextItem?
   let representedFailureCount: Int
   let isSelected: Bool
 
@@ -2248,11 +2267,10 @@ private struct RunCenterRow: View {
             .foregroundStyle(.secondary)
             .lineLimit(1)
         }
-        if let workflow = run.workflowDisplayName {
-          Text(workflow)
+        if run.parentRunId != nil {
+          Text("Outcome")
             .font(.caption2.weight(.medium))
             .foregroundStyle(.secondary)
-            .lineLimit(1)
         }
         if run.pendingApprovalCount > 0 {
           Label("\(run.pendingApprovalCount)", systemImage: "checkmark.seal")
@@ -2262,6 +2280,9 @@ private struct RunCenterRow: View {
       Text(run.goal).font(.body.weight(.semibold)).lineLimit(2)
       HStack(spacing: 8) {
         Text(run.progressText)
+        if let workflow = run.workflowDisplayName {
+          Text("• Workflow: \(workflow)")
+        }
         Text("• Updated \(AgentRunTimestampPresentation.displayText(for: run.updatedAt))")
       }
       .font(.caption).foregroundStyle(.secondary).lineLimit(1)
@@ -2283,6 +2304,7 @@ private struct RunCenterRow: View {
     }
     .contentShape(Rectangle())
     .accessibilityAddTraits(isSelected ? .isSelected : [])
+    .accessibilityHint(sourceMeeting.map { "Meeting outcome from \($0.displayTitle)" } ?? "")
   }
 }
 
@@ -2295,6 +2317,18 @@ private struct RunCenterDetail: View {
   let run: AgentRunItem
 
   private var isMutating: Bool { store.mutatingAgentRunIDs.contains(run.id) }
+  private var sourceMeeting: AgentRunContextItem? {
+    run.sourceMeetingContext(in: store.agentRuns)
+  }
+  private var relatedRuns: [AgentRunItem] {
+    guard let sourceRef = sourceMeeting?.fileReference else { return [] }
+    var seen = Set<String>()
+    return store.agentRuns.filter { candidate in
+      candidate.id != run.id
+        && seen.insert(candidate.id).inserted
+        && candidate.sourceMeetingContext(in: store.agentRuns)?.fileReference == sourceRef
+    }
+  }
 
   var body: some View {
     ScrollView {
@@ -2318,9 +2352,40 @@ private struct RunCenterDetail: View {
             .font(.caption)
             .foregroundStyle(.secondary)
             .help(AgentRunTimestampPresentation.detailText(for: run.updatedAt))
+          if let sourceMeeting {
+            Button {
+              store.openAgentRunContext(sourceMeeting)
+            } label: {
+              Label("From \(sourceMeeting.displayTitle)", systemImage: "calendar")
+            }
+            .buttonStyle(.link)
+            .help("Open \(sourceMeeting.fileReference ?? sourceMeeting.ref) in Org2")
+          }
         }
 
         runActions
+
+        if !relatedRuns.isEmpty {
+          runSection("Related meeting outcomes") {
+            ForEach(relatedRuns) { relatedRun in
+              Button {
+                store.selectAgentRun(relatedRun)
+              } label: {
+                HStack(alignment: .top, spacing: 8) {
+                  StatusPill(text: relatedRun.status)
+                  Text(relatedRun.goal)
+                    .font(.callout.weight(.medium))
+                    .multilineTextAlignment(.leading)
+                  Spacer(minLength: 8)
+                  Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+                }
+              }
+              .buttonStyle(.plain)
+            }
+          }
+        }
 
         if run.status == "blocked" {
           clarificationSection
