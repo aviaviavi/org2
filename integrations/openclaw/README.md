@@ -41,9 +41,9 @@ by =before_tool_call= until the exact Org2 approval is approved. Successful
 sends reconcile and complete the draft run. Material draft updates supersede a
 pending approval and request a fresh decision.
 
-The built-in effect recognizers cover ClawLink/direct tools whose operation
-names contain =draft= plus =create/save/update/upsert= or =send/deliver=, and
-the configured Google Workspace CLI form (=gog gmail drafts create/send=).
+The built-in effect recognizers cover direct tools whose operation names
+contain =draft= plus =create/save/update/upsert= or =send/deliver=, and the
+configured Google Workspace CLI form (=gog gmail drafts create/send=).
 Connectors should expose stable provider draft IDs for deterministic matching.
 
 The adapter remains pinned to one configured `corpusDir` for writes. Mac

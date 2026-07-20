@@ -9,7 +9,6 @@ function string(value) {
 }
 
 function operation(toolName, params = {}) {
-  if (toolName === "clawlink_call_tool") return string(params.tool);
   if (/^(exec|exec_command|bash)$/i.test(toolName)) {
     return string(params.command || params.cmd || params.source || params.code || params.input);
   }
@@ -113,7 +112,6 @@ function fingerprint(params) {
 }
 
 function provider(toolName, op) {
-  if (toolName === "clawlink_call_tool") return `clawlink:${op.split(/[_:.]/)[0] || "external"}`;
   if (/gog\s+gmail/i.test(op)) return "gmail:gog";
   return toolName;
 }

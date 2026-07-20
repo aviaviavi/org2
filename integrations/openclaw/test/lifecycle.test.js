@@ -330,30 +330,19 @@ test("rejects a Mac workflow request for a different configured corpus", async (
   );
 });
 
-test("recognizes a ClawLink Gmail draft and its later send", () => {
+test("does not recognize ClawLink operations", () => {
   const params = {
     tool: "gmail_create_draft",
     connectionId: 7,
     arguments: { to: "person@example.com", subject: "Short update", body: "Hello" },
   };
-  const result = { content: [{ type: "text", text: `ClawLink tool result: gmail_create_draft\n\n${JSON.stringify({ result: { draftId: "draft-42" } })}` }] };
-  const effect = draftCreatedEffect("clawlink_call_tool", params, result);
-  assert.equal(effect.draftId, "draft-42");
-  assert.equal(effect.destination, "person@example.com");
-  assert.equal(effect.subject, "Short update");
-  assert.match(approvalTitle(effect), /Short update/);
-  assert.match(approvalAction(effect), /draft-42/);
-  assert.deepEqual(draftSendEffect("clawlink_call_tool", {
+  const result = { content: [{ type: "text", text: JSON.stringify({ result: { draftId: "draft-42" } }) }] };
+  assert.equal(draftCreatedEffect("clawlink_call_tool", params, result), null);
+  assert.equal(draftSendEffect("clawlink_call_tool", {
     tool: "gmail_send_draft",
     connectionId: 7,
     arguments: { draftId: "draft-42" },
-  }), {
-    kind: "outbound-draft-send",
-    key: effect.key,
-    provider: effect.provider,
-    account: effect.account,
-    draftId: "draft-42",
-  });
+  }), null);
 });
 
 test("recognizes gog Gmail draft commands", () => {
