@@ -9,6 +9,7 @@ import {
   decideAgentRunApproval, forkAgentRun, listAgentRuns, loadAgentRun, normalizeLegacyAgentRuns,
   parseAgentRunOrg, renderAgentRunOrg, requestAgentRunApproval, saveAgentRun,
   transitionAgentRun, updateAgentRunAssignment, updateAgentRunRuntime, updateAgentRunStep, validateAgentRun,
+  updateAgentRunArtifactReview,
 } from "../dist/agentRun.js";
 import { dueWorkflowTriggers, instantiateWorkflow, legacyWorkflowDirectory, loadWorkflow, migrateLegacyWorkflows, packagedCorpusTemplate, parseWorkflowOrg, renderWorkflowOrg, saveWorkflow, workflowFromRun, workflowPath } from "../dist/agentWorkflow.js";
 import { artifactRebuildPlan, buildArtifactGraph, MEETING_TO_CONTROLLED_EXECUTION_WORKFLOW } from "../dist/artifactPipeline.js";
@@ -63,6 +64,10 @@ try {
   run = transitionAgentRun(run, "running", { now: "2026-07-14T10:00:00Z" });
   run = updateAgentRunStep(run, "draft", "completed", { actor: "research-agent", now: "2026-07-14T10:01:00Z" });
   run = addAgentRunArtifact(run, { id: "brief", path: "views/board/briefing.org2", role: "view", reviewStatus: "review-required" });
+  assert.throws(
+    () => transitionAgentRun(run, "completed", { summary: "Review is still pending." }),
+    /review-required artifacts/
+  );
   run = addAgentRunValidation(run, { id: "citations", name: "citations", status: "passed" });
   run = addAgentRunComment(run, "Avi", "Tighten the recommendation section.");
   run = updateAgentRunAssignment(run, { assignee: "writing-agent", actor: "Avi" });
@@ -75,6 +80,9 @@ try {
   assert.equal(run.status, "waiting-approval");
   run = decideAgentRunApproval(run, "release", "approved", { actor: "Avi", actorRole: "owner", receipt: "approval:local:1" });
   assert.equal(run.status, "running");
+  run = updateAgentRunArtifactReview(run, "brief", "reviewed", { actor: "Avi" });
+  assert.equal(run.artifacts.find((artifact) => artifact.id === "brief").reviewStatus, "reviewed");
+  assert.equal(run.events.at(-1).type, "artifact-review-changed");
   run = addAgentRunArtifact(run, { id: "pdf", path: "compiled/board.pdf", role: "export", reviewStatus: "reviewed", mediaType: "application/pdf" });
   run = transitionAgentRun(run, "completed", {
     summary: "Prepared and reviewed the cited board briefing and its PDF export.",
@@ -86,6 +94,31 @@ try {
   assert.equal(listAgentRuns(root).length, 1);
   assert.equal(loadAgentRun(root, run.id).budget.tokensUsed, 1234);
   assert.equal(forkAgentRun(run, { id: "board-brief-revision" }).parentRunId, run.id);
+
+  fs.mkdirSync(path.join(root, "views", "review-sync"), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, "views", "review-sync", "direction.org2"),
+    "#+TITLE: Direction\n#+ORG2_REVIEW_STATUS: review-required\n\n* Decision\nProceed.\n",
+    "utf8",
+  );
+  let reviewSync = transitionAgentRun(createAgentRun({ id: "review-sync", goal: "Review a direction" }), "running");
+  reviewSync = addAgentRunArtifact(reviewSync, {
+    id: "direction",
+    path: "views/review-sync/direction.org2",
+    role: "report",
+    reviewStatus: "review-required",
+  });
+  saveAgentRun(root, reviewSync);
+  const reviewDecision = spawnSync(process.execPath, [
+    path.resolve("dist/cli.js"), "run", "artifact-review", reviewSync.id, "direction",
+    "--status", "reviewed", "--actor", "Avi", "--dir", root, "--json",
+  ], { encoding: "utf8" });
+  assert.equal(reviewDecision.status, 0, reviewDecision.stderr || reviewDecision.stdout);
+  assert.equal(loadAgentRun(root, reviewSync.id).artifacts[0].reviewStatus, "reviewed");
+  assert.match(
+    fs.readFileSync(path.join(root, "views", "review-sync", "direction.org2"), "utf8"),
+    /^#\+ORG2_REVIEW_STATUS: reviewed$/m,
+  );
 
   let gated = createAgentRun({ id: "multi-approval", goal: "Exercise a multi-approval boundary" });
   gated = requestAgentRunApproval(gated, { id: "legal", title: "Legal review", action: "release", riskClass: "external-action", requestedRole: "legal" });

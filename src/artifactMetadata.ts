@@ -86,6 +86,29 @@ export function sha256Hex(raw: string): string {
   return crypto.createHash("sha256").update(raw).digest("hex");
 }
 
+export function updateArtifactReviewStatusInText(raw: string, status: string): string {
+  const cleanStatus = String(status || "").trim().toLowerCase();
+  if (!cleanStatus) throw new Error("artifact review status is required");
+  let updated = raw;
+  let found = false;
+  if (/^#\+ORG2_REVIEW_STATUS:\s*.+$/im.test(raw)) {
+    updated = updated.replace(/^#\+ORG2_REVIEW_STATUS:\s*.+$/gim, `#+ORG2_REVIEW_STATUS: ${cleanStatus}`);
+    found = true;
+  }
+  if (/^:ORG2_REVIEW_STATUS:\s*.+$/im.test(raw)) {
+    updated = updated.replace(/^:ORG2_REVIEW_STATUS:\s*.+$/gim, `:ORG2_REVIEW_STATUS: ${cleanStatus}`);
+    found = true;
+  }
+  if (found) return updated;
+  if (/:PROPERTIES:\s*\n/i.test(raw)) {
+    return raw.replace(/:PROPERTIES:\s*\n/i, (match) => `${match}:ORG2_REVIEW_STATUS: ${cleanStatus}\n`);
+  }
+  if (/^#\+TITLE:.*$/im.test(raw)) {
+    return raw.replace(/^#\+TITLE:.*$/im, (match) => `${match}\n#+ORG2_REVIEW_STATUS: ${cleanStatus}`);
+  }
+  return `#+ORG2_REVIEW_STATUS: ${cleanStatus}\n${raw}`;
+}
+
 export function buildGeneratedArtifactMetadata(opts: BuildGeneratedArtifactMetadataOptions): Org2GeneratedArtifactMetadata {
   const generatedAt = String(opts.generatedAt || new Date().toISOString()).trim();
   const provenance = Array.from(new Set((opts.provenance || []).map((entry) => String(entry || "").trim()).filter(Boolean)));

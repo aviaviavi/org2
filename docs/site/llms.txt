@@ -28,6 +28,7 @@ Durable delegation uses generated run records under `.org2/runs/` and authored w
 Runs preserve goals, acceptance criteria, cited inputs, plans, risk, provider metadata, budgets, artifacts, approvals, validation, comments, and observable events. Workflow packages declare inputs, capabilities, writes, outputs, triggers, checks, approval boundaries, and compatibility. External MCP/connector data that becomes durable work should be stored as a provenance-bearing snapshot; credentials stay outside the corpus.
 Agents must use `org2 run block RUN_ID --reason "Specific clarification or next action"`; reasonless blocked runs are rejected because they give the reviewer nothing actionable to answer.
 Agents must complete durable runs with `org2 run complete RUN_ID --summary "What happened"`; use repeatable `--highlight` and `--next-action` flags when useful. The summary is the primary human-facing result, not a log line or a restatement of the goal.
+Agents must not complete runs whose artifacts remain `review-required`. After a human decision, use `org2 run artifact-review RUN_ID ARTIFACT_ID --status reviewed|rejected --actor NAME`; for linked Org/Org2 files inside the corpus, the command updates both the run snapshot and artifact metadata.
 Agents and runtime adapters should record observable execution metadata with `org2 run runtime RUN_ID --provider ID --model ID` plus available `--tokens-used`, `--cost-used-usd`, or `--elapsed-seconds` values. Credentials never belong in the run.
 
 ## Agent entry points

@@ -46,7 +46,7 @@ import {
 } from "./searchIndex.js";
 import { loadAiJobManifest, validateAiJobManifest } from "./aiJobManifest.js";
 import { createAiAdapterRequest, MockAiAdapter, type AiAdapterContextItem, type AiAdapterResponse } from "./aiAdapter.js";
-import { buildGeneratedArtifactMetadata, formatOrg2ArtifactPropertyDrawer, sha256Hex } from "./artifactMetadata.js";
+import { buildGeneratedArtifactMetadata, formatOrg2ArtifactPropertyDrawer, sha256Hex, updateArtifactReviewStatusInText } from "./artifactMetadata.js";
 import { defaultCorpusCachePath, org2IndexHome } from "./indexPaths.js";
 import { ingestDemoSource, type Org2RawCaptureInput } from "./ingestionPipeline.js";
 import { parseHeadlineTitleForRoam } from "./headlineTitle.js";
@@ -7957,20 +7957,6 @@ function artifactProperty(raw: string, key: string): string {
   const keywordMatch = raw.match(new RegExp(`^#\\+${key}:\\s*(.+?)\\s*$`, "im"));
   return keywordMatch ? String(keywordMatch[1] || "").trim() : "";
 }
-function setArtifactReviewStatus(raw: string, status: "reviewed" | "rejected" | "deferred"): string {
-  let updated = raw.replace(/^#\+ORG2_REVIEW_STATUS:\s*.+\n?/gim, "");
-
-  if (/^:ORG2_REVIEW_STATUS:\s*.+$/im.test(updated)) {
-    return updated.replace(/^:ORG2_REVIEW_STATUS:\s*.+$/gim, `:ORG2_REVIEW_STATUS: ${status}`);
-  }
-
-  if (/:PROPERTIES:\n/i.test(updated)) {
-    return updated.replace(/:PROPERTIES:\n/i, `:PROPERTIES:\n:ORG2_REVIEW_STATUS: ${status}\n`);
-  }
-
-  return `:PROPERTIES:\n:ORG2_REVIEW_STATUS: ${status}\n:END:\n\n${updated}`;
-}
-
 function collectAiReviewQueue(filesToScan: string[]): AiReviewQueueItem[] {
   const items: AiReviewQueueItem[] = [];
   for (const file of filesToScan) {
@@ -9952,7 +9938,7 @@ Usage:
 Core commands:
   org2 corpus <show|validate|init> [--dir CORPUS] [--id ID --name NAME --kind KIND] [--apply]
   org2 workspace <agenda|search> [QUERY] --mount CORPUS [--mount CORPUS ...] [--json]
-  org2 run <create|list|show|validate|start|resume|retry|cancel|complete|fail|block|fork|normalize|assign|comment|outcome|runtime|step|artifact|validation|approval-request|approval-decide> [options]
+  org2 run <create|list|show|validate|start|resume|retry|cancel|complete|fail|block|fork|normalize|assign|comment|outcome|runtime|step|artifact|artifact-review|validation|approval-request|approval-decide> [options]
   org2 review <list|show> [options]
   org2 workflow <list|show|validate|save|run|triggers|package|corpus-template|install-builtin> [options]
   org2 artifact <graph|rebuild> --manifest FILE [--apply]
@@ -10785,7 +10771,7 @@ Flags:
       if (aiPromoteFile && aiReviewStatus) {
         const reviewPath = path.resolve(aiPromoteFile);
         const raw = fs.readFileSync(reviewPath, "utf8").replace(/\r\n/g, "\n");
-        const updated = setArtifactReviewStatus(raw, aiReviewStatus);
+        const updated = updateArtifactReviewStatusInText(raw, aiReviewStatus);
         if (!aiApply) {
           if (aiFormat === "json") {
             console.log(JSON.stringify({ $schema: "org2:ai-review:v1", file: aiPromoteFile, applied: false, status: aiReviewStatus }, null, 2));
