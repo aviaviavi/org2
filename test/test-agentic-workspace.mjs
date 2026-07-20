@@ -5,7 +5,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { PassThrough } from "node:stream";
 import {
-  addAgentRunArtifact, addAgentRunComment, addAgentRunValidation, createAgentRun,
+  addAgentRunArtifact, addAgentRunComment, addAgentRunValidation, completeAgentRunExternally, createAgentRun,
   decideAgentRunApproval, forkAgentRun, listAgentRuns, loadAgentRun, normalizeLegacyAgentRuns,
   parseAgentRunOrg, renderAgentRunOrg, requestAgentRunApproval, saveAgentRun,
   transitionAgentRun, updateAgentRunAssignment, updateAgentRunRuntime, updateAgentRunStep, validateAgentRun,
@@ -51,6 +51,61 @@ try {
     ).blockedReason,
     "Which reporting period should this cover?"
   );
+  let completedElsewhere = transitionAgentRun(
+    createAgentRun({
+      id: "completed-elsewhere",
+      goal: "Publish a release note",
+      plan: [{ id: "publish", title: "Publish the release note", kind: "agent" }],
+    }),
+    "blocked",
+    { reason: "The release process is unavailable." }
+  );
+  completedElsewhere = addAgentRunArtifact(completedElsewhere, {
+    id: "unused-draft",
+    path: "views/release-note.org2",
+    role: "draft",
+    reviewStatus: "review-required",
+  });
+  completedElsewhere = requestAgentRunApproval(completedElsewhere, {
+    id: "unused-approval",
+    title: "Publish release note",
+    action: "publish",
+    riskClass: "external-action",
+  });
+  completedElsewhere = transitionAgentRun(completedElsewhere, "blocked", {
+    reason: "The release was handled in the external release process."
+  });
+  completedElsewhere = completeAgentRunExternally(completedElsewhere, {
+    summary: "Published through the external release process.",
+    actor: "Avi",
+    now: "2026-07-14T12:00:00Z",
+  });
+  assert.equal(completedElsewhere.status, "completed");
+  assert.equal(completedElsewhere.outcome.summary, "Published through the external release process.");
+  assert.equal(completedElsewhere.approvals[0].status, "pending");
+  assert.equal(completedElsewhere.artifacts[0].reviewStatus, "review-required");
+  assert.equal(completedElsewhere.plan[0].status, "skipped");
+  assert.match(completedElsewhere.plan[0].detail, /completed outside this workflow/);
+  assert.equal(completedElsewhere.events.at(-1).type, "completed-externally");
+  assert.throws(
+    () => completeAgentRunExternally(
+      createAgentRun({ id: "not-blocked", goal: "Reject invalid external completion" }),
+      { summary: "Done.", actor: "Avi" }
+    ),
+    /only a blocked run/
+  );
+  saveAgentRun(root, transitionAgentRun(
+    createAgentRun({ id: "external-cli", goal: "Record an externally completed outcome" }),
+    "blocked",
+    { reason: "Waiting for work in another system." }
+  ));
+  const externalCompletion = spawnSync(process.execPath, [
+    path.resolve("dist/cli.js"), "run", "complete-external", "external-cli",
+    "--summary", "Completed in the external system.", "--actor", "Avi", "--dir", root, "--json",
+  ], { encoding: "utf8" });
+  assert.equal(externalCompletion.status, 0, externalCompletion.stderr || externalCompletion.stdout);
+  assert.equal(loadAgentRun(root, "external-cli").events.at(-1).type, "completed-externally");
+  fs.unlinkSync(path.join(root, ".org2", "runs", "external-cli.org2"));
   assert.throws(
     () => transitionAgentRun(transitionAgentRun(createAgentRun({ id: "missing-outcome", goal: "Explain the result" }), "running"), "completed"),
     /requires --summary/

@@ -2308,11 +2308,38 @@ private struct RunCenterRow: View {
   }
 }
 
+private enum RunCompletionMode {
+  case run
+  case external
+
+  var title: String {
+    switch self {
+    case .run: "Complete Run"
+    case .external: "Mark Done Elsewhere"
+    }
+  }
+
+  var detail: String {
+    switch self {
+    case .run: "Describe what happened in plain language. This is the first thing people will see when they review the run."
+    case .external: "Describe where or how the outcome was completed. The blocked workflow will close, while its pending approvals and unreviewed artifacts remain in the durable history."
+    }
+  }
+
+  var actionTitle: String {
+    switch self {
+    case .run: "Complete Run"
+    case .external: "Mark Done Elsewhere"
+    }
+  }
+}
+
 private struct RunCenterDetail: View {
   @EnvironmentObject private var store: WorkspaceStore
   @State private var clarificationResponse = ""
   @State private var completionSummary = ""
   @State private var isCompletionPresented = false
+  @State private var completionMode: RunCompletionMode = .run
   @State private var isWorkflowConfirmationPresented = false
   let run: AgentRunItem
 
@@ -2498,11 +2525,17 @@ private struct RunCenterDetail: View {
       clarificationResponse = ""
       completionSummary = ""
       isCompletionPresented = false
+      completionMode = .run
     }
     .sheet(isPresented: $isCompletionPresented) {
-      RunCompletionSheet(summary: $completionSummary) { summary in
+      RunCompletionSheet(summary: $completionSummary, mode: completionMode) { summary in
         isCompletionPresented = false
-        Task { await store.completeAgentRun(run, summary: summary) }
+        Task {
+          switch completionMode {
+          case .run: await store.completeAgentRun(run, summary: summary)
+          case .external: await store.completeAgentRunExternally(run, summary: summary)
+          }
+        }
       }
     }
     .alert("Create a reusable workflow?", isPresented: $isWorkflowConfirmationPresented) {
@@ -2549,7 +2582,18 @@ private struct RunCenterDetail: View {
   private var runActions: some View {
     HStack(spacing: 7) {
       if run.status == "queued" { actionButton("Start", "play.fill", "start") }
-      if run.status == "blocked" { actionButton("Resume", "play.fill", "resume") }
+      if run.status == "blocked" {
+        actionButton("Resume", "play.fill", "resume")
+        Button {
+          completionMode = .external
+          isCompletionPresented = true
+        } label: {
+          Label("Mark Done Elsewhere…", systemImage: "checkmark.circle")
+        }
+        .buttonStyle(WorkspaceActionButtonStyle())
+        .disabled(isMutating)
+        .help("Record that the outcome was completed outside this workflow")
+      }
       if run.status == "failed" || run.status == "canceled" { actionButton("Retry", "arrow.clockwise", "retry") }
       if run.status == "failed" {
         Button {
@@ -2563,7 +2607,10 @@ private struct RunCenterDetail: View {
       }
       if ["queued", "running", "waiting-approval", "blocked"].contains(run.status) { actionButton("Cancel", "xmark.circle", "cancel") }
       if run.status == "running" {
-        Button { isCompletionPresented = true } label: { Label("Complete…", systemImage: "checkmark.circle") }
+        Button {
+          completionMode = .run
+          isCompletionPresented = true
+        } label: { Label("Complete…", systemImage: "checkmark.circle") }
           .buttonStyle(WorkspaceActionButtonStyle()).disabled(isMutating)
       }
       if run.status == "completed" && run.workflowId == nil {
@@ -2698,6 +2745,7 @@ private struct RunCenterDetail: View {
 private struct RunCompletionSheet: View {
   @Environment(\.dismiss) private var dismiss
   @Binding var summary: String
+  let mode: RunCompletionMode
   let complete: (String) -> Void
 
   private var normalizedSummary: String {
@@ -2706,15 +2754,15 @@ private struct RunCompletionSheet: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 16) {
-      Text("Complete Run").font(.title2.weight(.semibold))
-      Text("Describe what happened in plain language. This is the first thing people will see when they review the run.")
+      Text(mode.title).font(.title2.weight(.semibold))
+      Text(mode.detail)
         .foregroundStyle(.secondary)
       TextField("Outcome summary", text: $summary, axis: .vertical)
         .lineLimit(3...7)
       HStack {
         Spacer()
         Button("Cancel") { dismiss() }
-        Button("Complete Run") { complete(normalizedSummary) }
+        Button(mode.actionTitle) { complete(normalizedSummary) }
           .keyboardShortcut(.defaultAction)
           .disabled(normalizedSummary.isEmpty)
       }

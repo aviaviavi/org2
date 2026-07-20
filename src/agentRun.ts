@@ -391,29 +391,44 @@ export function validateAgentRun(value: unknown): AgentRunValidationResult {
   return { valid: issues.length === 0, issues };
 }
 
-export function transitionAgentRun(run: AgentRun, status: AgentRunStatus, options: { actor?: string; reason?: string; summary?: string; highlights?: string[]; nextActions?: string[]; now?: string } = {}): AgentRun {
+export function transitionAgentRun(run: AgentRun, status: AgentRunStatus, options: { actor?: string; reason?: string; summary?: string; highlights?: string[]; nextActions?: string[]; now?: string; completionSource?: "external" } = {}): AgentRun {
   if (run.status === status) return { ...run };
-  if (!TRANSITIONS[run.status].includes(status)) throw new Error(`run cannot transition from ${run.status} to ${status}`);
+  const completedExternally = status === "completed" && options.completionSource === "external";
+  const allowedExternalCompletion = completedExternally && run.status === "blocked";
+  if (!TRANSITIONS[run.status].includes(status) && !allowedExternalCompletion) throw new Error(`run cannot transition from ${run.status} to ${status}`);
+  if (options.completionSource === "external" && !allowedExternalCompletion) {
+    throw new Error("external completion is only allowed for a blocked run");
+  }
   const blockedReason = status === "blocked" ? optional(options.reason) : undefined;
   if (status === "blocked" && !blockedReason) {
     throw new Error("blocking a run requires --reason with a specific clarification or next action");
   }
   const completionSummary = status === "completed" ? optional(options.summary) || optional(run.outcome?.summary) : undefined;
-  if (status === "completed" && run.approvals.some((approval) => approval.status === "pending")) {
+  if (status === "completed" && !completedExternally && run.approvals.some((approval) => approval.status === "pending")) {
     throw new Error("completing a run with pending approvals is not allowed");
   }
-  if (status === "completed" && run.artifacts.some((artifact) => artifact.reviewStatus === "review-required")) {
+  if (status === "completed" && !completedExternally && run.artifacts.some((artifact) => artifact.reviewStatus === "review-required")) {
     throw new Error("completing a run with review-required artifacts is not allowed; record the review with `org2 run artifact-review RUN_ID ARTIFACT_ID --status reviewed`");
   }
   if (status === "completed" && !completionSummary) {
     throw new Error("completing a run requires --summary with a human-readable outcome");
   }
   const now = isoNow(options.now);
+  const statusEvent = event("status-changed", now, options.actor, `${run.status} -> ${status}`, {
+    from: run.status,
+    to: status,
+    ...(options.reason ? { reason: options.reason } : {}),
+    ...(completedExternally ? { completionSource: "external" } : {}),
+  });
   const next: AgentRun = {
     ...run,
     status,
     updatedAt: now,
-    events: [...run.events, event("status-changed", now, options.actor, `${run.status} -> ${status}`, { from: run.status, to: status, ...(options.reason ? { reason: options.reason } : {}) })],
+    events: [
+      ...run.events,
+      statusEvent,
+      ...(completedExternally ? [event("completed-externally", now, options.actor, completionSummary)] : []),
+    ],
   };
   if (status === "running" && !next.startedAt) next.startedAt = now;
   if (status === "completed") {
@@ -429,6 +444,28 @@ export function transitionAgentRun(run: AgentRun, status: AgentRunStatus, option
   if (status === "failed") next.failure = optional(options.reason) || "Run failed";
   if (status !== "failed") delete next.failure;
   return next;
+}
+
+export function completeAgentRunExternally(run: AgentRun, input: { summary: string; actor: string; now?: string }): AgentRun {
+  if (run.status !== "blocked") throw new Error("only a blocked run can be marked completed outside the workflow");
+  const actor = optional(input.actor);
+  if (!actor) throw new Error("marking a run completed outside the workflow requires an actor");
+  const now = isoNow(input.now);
+  const externalDetail = "Outcome completed outside this workflow.";
+  const prepared: AgentRun = {
+    ...run,
+    plan: run.plan.map((step) => ["completed", "skipped"].includes(step.status) ? step : {
+      ...step,
+      status: "skipped",
+      detail: step.detail ? `${step.detail} ${externalDetail}` : externalDetail,
+    }),
+  };
+  return transitionAgentRun(prepared, "completed", {
+    summary: input.summary,
+    actor,
+    now,
+    completionSource: "external",
+  });
 }
 
 export function updateAgentRunOutcome(run: AgentRun, input: { summary: string; highlights?: string[]; nextActions?: string[]; actor?: string; now?: string }): AgentRun {
