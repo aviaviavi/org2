@@ -402,6 +402,9 @@ export function transitionAgentRun(run: AgentRun, status: AgentRunStatus, option
   if (status === "completed" && run.approvals.some((approval) => approval.status === "pending")) {
     throw new Error("completing a run with pending approvals is not allowed");
   }
+  if (status === "completed" && run.artifacts.some((artifact) => artifact.reviewStatus === "review-required")) {
+    throw new Error("completing a run with review-required artifacts is not allowed; record the review with `org2 run artifact-review RUN_ID ARTIFACT_ID --status reviewed`");
+  }
   if (status === "completed" && !completionSummary) {
     throw new Error("completing a run requires --summary with a human-readable outcome");
   }
@@ -512,6 +515,34 @@ export function addAgentRunArtifact(run: AgentRun, input: Omit<AgentRunArtifact,
     ...(input.reviewStatus ? { reviewStatus: input.reviewStatus } : {}),
   };
   return { ...run, artifacts: [...run.artifacts, artifact], updatedAt: now, events: [...run.events, event("artifact-added", now, actor, artifactPath, { artifactId: artifact.id, role: artifact.role })] };
+}
+
+export function updateAgentRunArtifactReview(
+  run: AgentRun,
+  artifactId: string,
+  reviewStatus: AgentRunArtifactReviewStatus,
+  options: { actor?: string; now?: string } = {},
+): AgentRun {
+  if (!AGENT_RUN_ARTIFACT_REVIEW_STATUSES.includes(reviewStatus)) throw new Error(`invalid artifact review status: ${reviewStatus}`);
+  const index = run.artifacts.findIndex((artifact) => artifact.id === artifactId);
+  if (index < 0) throw new Error(`unknown artifact id: ${artifactId}`);
+  const previous = run.artifacts[index]!;
+  if (previous.reviewStatus === reviewStatus) return { ...run };
+  const now = isoNow(options.now);
+  const artifacts = [...run.artifacts];
+  artifacts[index] = { ...previous, reviewStatus };
+  return {
+    ...run,
+    artifacts,
+    updatedAt: now,
+    events: [...run.events, event(
+      "artifact-review-changed",
+      now,
+      options.actor,
+      `${previous.path}: ${previous.reviewStatus || "unspecified"} -> ${reviewStatus}`,
+      { artifactId, from: previous.reviewStatus || "", to: reviewStatus },
+    )],
+  };
 }
 
 export function addAgentRunValidation(run: AgentRun, input: Omit<AgentRunValidation, "id" | "checkedAt"> & { id?: string; checkedAt?: string }, actor?: string): AgentRun {

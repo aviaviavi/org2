@@ -21,12 +21,14 @@ import {
   saveAgentRun,
   transitionAgentRun,
   updateAgentRunAssignment,
+  updateAgentRunArtifactReview,
   updateAgentRunOutcome,
   updateAgentRunRuntime,
   updateAgentRunStep,
   validateAgentRun,
   type AgentRunStatus,
 } from "./agentRun.js";
+import { updateArtifactReviewStatusInText } from "./artifactMetadata.js";
 import {
   dueWorkflowTriggers,
   instantiateWorkflow,
@@ -81,12 +83,23 @@ function optionalChoice<const Choices extends readonly string[]>(value: string |
   return value === undefined ? undefined : choice(value, choices, label);
 }
 
+function syncLinkedArtifactReviewStatus(corpus: string, artifactPath: string, reviewStatus: string): void {
+  const file = path.resolve(corpus, artifactPath);
+  const relative = path.relative(corpus, file);
+  if (relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) return;
+  if (![".org", ".org2"].includes(path.extname(file).toLowerCase())) return;
+  if (!fs.existsSync(file) || !fs.statSync(file).isFile()) return;
+  const raw = fs.readFileSync(file, "utf8");
+  const updated = updateArtifactReviewStatusInText(raw, reviewStatus);
+  if (updated !== raw) fs.writeFileSync(file, updated, "utf8");
+}
+
 const HELP = `Agentic workspace commands:
   org2 corpus show|validate|init [--dir CORPUS] [--id ID --name NAME --kind personal|shared|project] [--apply]
   org2 workspace agenda --mount CORPUS [--mount CORPUS ...] [--from DATE --to DATE]
   org2 workspace search QUERY --mount CORPUS [--mount CORPUS ...] [--limit N]
   org2 run create --goal TEXT [--accept TEXT] [--risk CLASS] [--owner NAME] [--capability ID] [--dir CORPUS]
-  org2 run list|show|validate|start|resume|retry|cancel|complete|fail|block|fork|normalize
+  org2 run list|show|validate|start|resume|retry|cancel|complete|fail|block|fork|normalize|artifact-review
   org2 run block ID --reason "Specific clarification needed"
   org2 run complete ID --summary "What happened" [--highlight TEXT] [--next-action TEXT]
   org2 run outcome ID --summary "What happened" [--highlight TEXT] [--next-action TEXT]
@@ -95,6 +108,7 @@ const HELP = `Agentic workspace commands:
   org2 run comment ID --author NAME --body TEXT
   org2 run step ID STEP --status STATUS
   org2 run artifact ID --path FILE [--role ROLE] [--review-status STATUS]
+  org2 run artifact-review ID ARTIFACT --status reviewed|promoted|rejected [--actor NAME]
   org2 run validation ID --name NAME --status passed|failed|warning|skipped
   org2 run approval-request ID --title TEXT --action TEXT [--risk CLASS] [--role ROLE]
   org2 run approval-decide ID APPROVAL --decision approved|rejected|revised|canceled --actor NAME [--receipt TEXT]
@@ -210,6 +224,14 @@ async function runCommand(parsed: ParsedArgs): Promise<void> {
   else if (action === "comment") run = addAgentRunComment(existing, required(flag(parsed, "author"), "--author is required"), required(flag(parsed, "body"), "--body is required"));
   else if (action === "step") run = updateAgentRunStep(existing, required(parsed.positional[2], "step id is required"), choice(flag(parsed, "status"), AGENT_RUN_STEP_STATUSES, "step status"), { actor: flag(parsed, "actor"), detail: flag(parsed, "detail") });
   else if (action === "artifact") run = addAgentRunArtifact(existing, { path: required(flag(parsed, "path"), "--path is required"), role: choice(flag(parsed, "role", "draft"), AGENT_RUN_ARTIFACT_ROLES, "artifact role"), title: flag(parsed, "title"), mediaType: flag(parsed, "media-type"), sha256: flag(parsed, "sha256"), reviewStatus: optionalChoice(flag(parsed, "review-status"), AGENT_RUN_ARTIFACT_REVIEW_STATUSES, "artifact review status") }, flag(parsed, "actor"));
+  else if (action === "artifact-review") {
+    const artifactId = required(parsed.positional[2], "artifact id is required");
+    const reviewStatus = choice(flag(parsed, "status"), AGENT_RUN_ARTIFACT_REVIEW_STATUSES, "artifact review status");
+    const artifact = existing.artifacts.find((item) => item.id === artifactId);
+    if (!artifact) throw new Error(`unknown artifact id: ${artifactId}`);
+    run = updateAgentRunArtifactReview(existing, artifactId, reviewStatus, { actor: flag(parsed, "actor") });
+    syncLinkedArtifactReviewStatus(root(parsed), artifact.path, reviewStatus);
+  }
   else if (action === "validation") run = addAgentRunValidation(existing, { name: required(flag(parsed, "name"), "--name is required"), status: choice(flag(parsed, "status"), AGENT_RUN_VALIDATION_STATUSES, "validation status"), detail: flag(parsed, "detail") }, flag(parsed, "actor"));
   else if (action === "approval-request") run = requestAgentRunApproval(existing, { title: required(flag(parsed, "title"), "--title is required"), action: required(flag(parsed, "action"), "--action is required"), riskClass: choice(flag(parsed, "risk", existing.riskClass), AGENT_RUN_RISK_CLASSES, "approval risk class"), requestedRole: flag(parsed, "role"), requestedFrom: flag(parsed, "from"), note: flag(parsed, "note") }, flag(parsed, "actor"));
   else if (action === "approval-decide") run = decideAgentRunApproval(existing, required(parsed.positional[2], "approval id is required"), choice(flag(parsed, "decision"), AGENT_RUN_APPROVAL_DECISIONS, "approval decision"), { actor: required(flag(parsed, "actor"), "--actor is required"), actorRole: flag(parsed, "role"), note: flag(parsed, "note"), receipt: flag(parsed, "receipt") });

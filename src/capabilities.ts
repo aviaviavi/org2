@@ -41,6 +41,7 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
       "Never block a durable run without an actionable clarification; `org2 run block ID --reason TEXT` requires the specific question or next action.",
       "Never complete a durable run without a concise result for the reviewer; `org2 run complete ID --summary TEXT` requires a human-readable outcome and accepts repeatable highlights and next actions.",
       "A run with a pending approval cannot be completed; record the request, stop before the protected action, and resume only after the approval decision returns the run to running.",
+      "A run with a review-required artifact cannot be completed; after the human decision, use `org2 run artifact-review RUN_ID ARTIFACT_ID --status reviewed|rejected --actor NAME` to update both the durable run and linked Org artifact before completion.",
       "Record observable runtime metadata with `org2 run runtime ID` when provider, model, token usage, cost, or elapsed time is available; never put credentials in a run record.",
       "Run targeted tests plus `org2 lint` around writes when practical; never put secrets in notes or generated artifacts.",
       "Never infer agent access from corpora remembered by a person's app; every federated CLI mount must be explicit.",
