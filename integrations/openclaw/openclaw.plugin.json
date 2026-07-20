@@ -12,7 +12,8 @@
       "owner": { "type": "string" },
       "trackMainTurns": { "type": "boolean" },
       "trackCron": { "type": "boolean" },
-      "trackSubagents": { "type": "boolean" }
+      "trackSubagents": { "type": "boolean" },
+      "trackDraftApprovals": { "type": "boolean" }
     }
   }
 }

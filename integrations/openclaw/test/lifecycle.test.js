@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { conciseGoal, cronKey, durableRunMarker, executionSummary, outcomeCommand, shouldTrackMainTurn, workflowContinuationPrompt, workflowExecutionPrompt, workflowMarker, workflowRevisionPrompt } from "../lib/lifecycle.js";
 import { Org2Lifecycle } from "../lib/lifecycle.js";
+import { approvalAction, approvalTitle, draftCreatedEffect, draftSendEffect } from "../lib/draft-approvals.js";
 
 test("tracks substantial work but not acknowledgements or heartbeats", () => {
   assert.equal(shouldTrackMainTurn("Please implement the lifecycle plugin", {}), true);
@@ -327,4 +328,74 @@ test("rejects a Mac workflow request for a different configured corpus", async (
     lifecycle.prepareWorkflowRun("weekly-review", {}, { expectedCorpusId: "personal" }),
     /corpus mismatch/,
   );
+});
+
+test("recognizes a ClawLink Gmail draft and its later send", () => {
+  const params = {
+    tool: "gmail_create_draft",
+    connectionId: 7,
+    arguments: { to: "person@example.com", subject: "Short update", body: "Hello" },
+  };
+  const result = { content: [{ type: "text", text: `ClawLink tool result: gmail_create_draft\n\n${JSON.stringify({ result: { draftId: "draft-42" } })}` }] };
+  const effect = draftCreatedEffect("clawlink_call_tool", params, result);
+  assert.equal(effect.draftId, "draft-42");
+  assert.equal(effect.destination, "person@example.com");
+  assert.equal(effect.subject, "Short update");
+  assert.match(approvalTitle(effect), /Short update/);
+  assert.match(approvalAction(effect), /draft-42/);
+  assert.deepEqual(draftSendEffect("clawlink_call_tool", {
+    tool: "gmail_send_draft",
+    connectionId: 7,
+    arguments: { draftId: "draft-42" },
+  }), {
+    kind: "outbound-draft-send",
+    key: effect.key,
+    provider: effect.provider,
+    account: effect.account,
+    draftId: "draft-42",
+  });
+});
+
+test("recognizes gog Gmail draft commands", () => {
+  const created = draftCreatedEffect("exec", {
+    command: "gog gmail drafts create --account avi@example.com --to person@example.com --subject Update --body Hello",
+  }, JSON.stringify({ draftId: "gog-1" }));
+  assert.equal(created.draftId, "gog-1");
+  assert.equal(draftSendEffect("exec", { command: "gog gmail drafts send gog-1" }).draftId, "gog-1");
+  const wrapped = draftCreatedEffect("exec", {
+    source: `const result = await tools.exec_command({cmd: "gog gmail drafts create --to person@example.com --subject Update"});`,
+  }, `Script completed\nOutput:\n${JSON.stringify({ draftId: "gog-wrapped-1" })}`);
+  assert.equal(wrapped.draftId, "gog-wrapped-1");
+  assert.equal(draftSendEffect("exec", {
+    source: `await tools.exec_command({cmd: "gog gmail drafts send gog-wrapped-1"});`,
+  }).draftId, "gog-wrapped-1");
+});
+
+test("requests an Org2 approval for a draft and gates sending on its decision", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "org2-openclaw-draft-"));
+  const stateFile = join(dir, "state.json");
+  const calls = [];
+  let approvalStatus = "pending";
+  const lifecycle = new Org2Lifecycle({ owner: "avi", stateFile, exec: async (args) => {
+    calls.push(args);
+    if (args[0] === "run" && args[1] === "approval-request") {
+      return JSON.stringify({ approvals: [{ id: "approval-1", status: "pending" }] });
+    }
+    if (args[0] === "run" && args[1] === "show") {
+      return JSON.stringify({ id: "run-1", status: approvalStatus === "approved" ? "running" : "waiting-approval", approvals: [{ id: "approval-1", status: approvalStatus }] });
+    }
+    return "";
+  } });
+  await lifecycle.init();
+  lifecycle.state.mappings.turn = { org2RunId: "run-1", openclawRunId: "openclaw-1", createdAt: "2026-07-19T00:00:00Z" };
+  const effect = {
+    key: "gmail:default:draft-1", provider: "gmail", account: "default", draftId: "draft-1",
+    destination: "person@example.com", subject: "Update", fingerprint: "abc", title: "Approve update", action: "Send update",
+  };
+  const record = await lifecycle.requestDraftApproval(effect, { openclawRunId: "openclaw-1" });
+  assert.equal(record.approvalId, "approval-1");
+  assert.equal((await lifecycle.draftSendDecision({ key: effect.key, draftId: effect.draftId })).allowed, false);
+  approvalStatus = "approved";
+  assert.equal((await lifecycle.draftSendDecision({ key: effect.key, draftId: effect.draftId })).allowed, true);
+  assert.ok(calls.some((args) => args[1] === "approval-request" && args.includes("external-action")));
 });

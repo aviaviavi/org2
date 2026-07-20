@@ -144,7 +144,7 @@ export class Org2Lifecycle {
     this.log = options.log || console;
     this.owner = options.owner || "user";
     this.exec = options.exec || this.#exec.bind(this);
-    this.state = { version: 4, mappings: {}, workflowJobs: {} };
+    this.state = { version: 4, mappings: {}, workflowJobs: {}, drafts: {} };
     this.cron = options.cron;
     this.queue = Promise.resolve();
   }
@@ -154,6 +154,7 @@ export class Org2Lifecycle {
     this.state.version = 4;
     this.state.mappings ||= {};
     this.state.workflowJobs ||= {};
+    this.state.drafts ||= {};
   }
 
   setCron(cron) { this.cron = cron; }
@@ -175,6 +176,7 @@ export class Org2Lifecycle {
     try { disk = JSON.parse(await readFile(this.stateFile, "utf8")); } catch {}
     this.state.mappings = { ...(disk.mappings || {}), ...(this.state.mappings || {}) };
     this.state.workflowJobs = { ...(disk.workflowJobs || {}), ...(this.state.workflowJobs || {}) };
+    this.state.drafts = { ...(disk.drafts || {}), ...(this.state.drafts || {}) };
     await mkdir(dirname(this.stateFile), { recursive: true });
     const tmp = `${this.stateFile}.${process.pid}.tmp`;
     await writeFile(tmp, `${JSON.stringify(this.state, null, 2)}\n`);
@@ -315,6 +317,84 @@ export class Org2Lifecycle {
       : [usage.input, usage.output, usage.cacheRead, usage.cacheWrite]
         .reduce((sum, value) => sum + (Number.isFinite(value) ? value : 0), 0);
     if (total > 0) mapping.tokensUsed = (mapping.tokensUsed || 0) + total;
+  }
+
+  #mappingForOpenClawRun(openclawRunId, sessionKey) {
+    const values = Object.values(this.state.mappings);
+    return values.find((item) => openclawRunId && item.openclawRunId === openclawRunId && !item.finishedAt)
+      || values.filter((item) => sessionKey && item.sessionKey === sessionKey && !item.finishedAt)
+        .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))[0];
+  }
+
+  async requestDraftApproval(effect, details = {}) {
+    const existing = this.state.drafts[effect.key];
+    if (existing?.fingerprint === effect.fingerprint && existing?.approvalId) return existing;
+    let mapping = this.#mappingForOpenClawRun(details.openclawRunId, details.sessionKey);
+    if (!mapping) {
+      const runId = await this.ensure(`draft:${effect.key}`, {
+        kind: "external-draft",
+        goal: `Prepare ${effect.subject} draft for ${effect.destination}`,
+        risk: "external-action",
+        sessionKey: details.sessionKey,
+        openclawRunId: details.openclawRunId,
+      });
+      mapping = { org2RunId: runId };
+    }
+    if (existing?.approvalId) {
+      const previousRun = JSON.parse(await this.exec(["run", "show", existing.org2RunId, "--json"]));
+      const previous = (previousRun.approvals || []).find((item) => item.id === existing.approvalId);
+      if (previous?.status === "pending") {
+        await this.exec(["run", "approval-decide", existing.org2RunId, existing.approvalId,
+          "--decision", "revised", "--actor", "org2-lifecycle", "--note", "The external draft changed and requires renewed approval."]);
+      }
+    }
+    const updated = JSON.parse(await this.exec([
+      "run", "approval-request", mapping.org2RunId,
+      "--title", effect.title,
+      "--action", effect.action,
+      "--risk", "external-action",
+      "--from", this.owner,
+      "--actor", "org2-lifecycle",
+      "--json",
+    ]));
+    const approval = [...(updated.approvals || [])].reverse().find((item) => item.status === "pending");
+    if (!approval?.id) throw new Error(`Org2 did not return an approval id for draft ${effect.draftId}`);
+    const record = {
+      ...effect,
+      org2RunId: mapping.org2RunId,
+      approvalId: approval.id,
+      status: "pending",
+      updatedAt: new Date().toISOString(),
+    };
+    this.state.drafts[effect.key] = record;
+    await this.#save();
+    return record;
+  }
+
+  async draftSendDecision(effect) {
+    const record = this.state.drafts[effect.key];
+    if (!record?.approvalId) return { allowed: false, reason: `No Org2 approval exists for external draft ${effect.draftId}.` };
+    const run = JSON.parse(await this.exec(["run", "show", record.org2RunId, "--json"]));
+    const approval = (run.approvals || []).find((item) => item.id === record.approvalId);
+    if (approval?.status !== "approved") {
+      return { allowed: false, reason: `External draft ${effect.draftId} is ${approval?.status || "untracked"} in Org2 and cannot be sent.` };
+    }
+    return { allowed: true, record };
+  }
+
+  async recordDraftSent(effect) {
+    const record = this.state.drafts[effect.key];
+    if (!record) return;
+    await this.exec(["run", "comment", record.org2RunId, "--author", "org2-lifecycle", "--body",
+      `External draft sent after approval. Provider: ${record.provider}; draft: ${record.draftId}; destination: ${record.destination}.`]);
+    const run = JSON.parse(await this.exec(["run", "show", record.org2RunId, "--json"]));
+    if (run.status === "running") {
+      await this.exec(["run", "complete", record.org2RunId, "--actor", "org2-lifecycle", "--summary",
+        `Approved external draft sent to ${record.destination}.`]);
+    }
+    record.status = "sent";
+    record.sentAt = new Date().toISOString();
+    await this.#save();
   }
 
   async resumeWorkflowRun(runId, details = {}) {
