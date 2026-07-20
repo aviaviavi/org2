@@ -1353,8 +1353,9 @@ blockquote {
   --signal-soft: #ffe1d8;
   --mint: #b9e3ce;
   --blue-soft: #e7ecff;
-  --code-bg: #151c1a;
-  --code-fg: #e8f0eb;
+  --code-bg: #f1f3ef;
+  --code-fg: #202a27;
+  --code-border: #c9cec7;
   --syntax-keyword: #168261;
   --syntax-todo: #c84f32;
   --syntax-link: #2854d7;
@@ -1390,6 +1391,7 @@ blockquote {
     --blue-soft: #222d51;
     --code-bg: #0b100f;
     --code-fg: #edf3ef;
+    --code-border: #303936;
     --syntax-keyword: #79d4ad;
     --syntax-todo: #ff9478;
     --syntax-link: #9bb2ff;
@@ -1752,7 +1754,7 @@ body #content {
   font-size: 0.86em;
 }
 
-/* Code is a dark technical surface, visibly nested in the paper. */
+/* Code is a technical surface matched to the active syntax theme. */
 #content pre,
 #content .org2-src,
 #content .org2-example,
@@ -1762,7 +1764,7 @@ body #content {
   position: relative;
   margin: 1rem 0 1.4rem;
   padding: 1rem 1.1rem !important;
-  border: 1px solid color-mix(in srgb, var(--border) 40%, #050807) !important;
+  border: 1px solid var(--code-border) !important;
   border-top: 3px solid var(--link) !important;
   border-radius: 7px !important;
   background: var(--code-bg) !important;
