@@ -42,7 +42,7 @@ File links work well for page-oriented collections. Longer-lived knowledge often
 
 Org2 treats those relationships as compiler input. Link maintenance, cited search, refactoring, and editor navigation can therefore share the same source ranges and resolved graph.
 
-** Rich views should remain connected to their declarations
+** Rich views remain connected to their declarations
 
 Org2 data notebooks keep dataset and SQL declarations in plain text, materialize explicit results, record freshness and provenance, and render tables or interactive charts in the Mac app. Meeting recordings and transcripts, agenda items, graph reports, and published pages follow the same source-backed pattern.
 

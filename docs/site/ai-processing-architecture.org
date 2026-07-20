@@ -96,7 +96,7 @@ Command responsibilities:
 | =ai suggest-links= | Produce ranked link/entity suggestions with reasons and source refs. | No |
 | =ai validate-job= | Validate manifest shape and unsafe settings. | No |
 
-All write-capable AI commands default to generated zones such as =views/= or =compiled/=. They should require an explicit apply/promote step before modifying =notes/=.
+All write-capable AI commands default to generated zones such as =views/= or =compiled/=. They require an explicit apply/promote step before modifying =notes/=.
 
 * Data flow contract
 
