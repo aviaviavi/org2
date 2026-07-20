@@ -7,7 +7,7 @@ import { execFileSync } from 'node:child_process';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const cli = path.join(repo, 'dist', 'cli.js');
-const { parseClockTimestamp } = await import(path.join(repo, 'dist', 'clock.js'));
+const { extractClockReport, parseClockTimestamp } = await import(path.join(repo, 'dist', 'clock.js'));
 
 assert.equal(parseClockTimestamp('[2026-02-30 Mon 12:00]'), null);
 assert.equal(parseClockTimestamp('[2026-13-01 Tue 12:00]'), null);
@@ -61,5 +61,20 @@ const text = execFileSync('node', [cli, 'clock', '--dir', tmpDir], { encoding: '
 assert.match(text, /Total: 3:00/);
 assert.match(text, /By heading:/);
 assert.match(text, /Project Alpha: 3:00/);
+
+const nestedOverlapFile = path.join(tmpDir, 'nested-overlap.org2');
+fs.writeFileSync(nestedOverlapFile, `* Nested overlaps
+CLOCK: [2026-05-28 Thu 09:00]--[2026-05-28 Thu 12:00]
+CLOCK: [2026-05-28 Thu 10:00]--[2026-05-28 Thu 10:30]
+CLOCK: [2026-05-28 Thu 11:00]--[2026-05-28 Thu 11:30]
+`);
+const nestedOverlapReport = extractClockReport([nestedOverlapFile], { rootDir: tmpDir });
+assert.deepEqual(
+  nestedOverlapReport.issues.map((issue) => ({ line: issue.line, overlapsLine: issue.overlapsLine })),
+  [
+    { line: 3, overlapsLine: 2 },
+    { line: 4, overlapsLine: 2 },
+  ],
+);
 
 console.log('✓ clock');
