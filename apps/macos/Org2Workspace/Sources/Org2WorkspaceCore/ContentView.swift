@@ -4537,6 +4537,7 @@ private struct OpenClawChatView: View {
             }
           }
         }
+        .textSelection(.enabled)
         .padding(presentation.isCompact ? 10 : 16)
       }
       .background(OpenClawChatScrollPositionBridge(
