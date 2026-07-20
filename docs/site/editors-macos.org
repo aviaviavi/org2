@@ -93,7 +93,7 @@ Remote Gateways normally require a paired device identity before granting =opera
 
 The progress feed only shows reasoning content that OpenClaw and the selected provider intentionally expose. It is not a promise of private or hidden chain-of-thought data, and it remains absent when the provider or Gateway does not emit a reasoning stream.
 
-The chat composer sends with =Return= and inserts a newline with =Cmd-Return=. The =Dictate= control records a short local microphone note, transcribes it with the same local Whisper resolution path used by meeting capture, and sends the transcript as a normal OpenClaw message.
+The chat composer sends with =Return= and inserts a newline with =Cmd-Return=. Transcript text can be selected continuously across multiple messages, and each message has a subtle hover-revealed copy control for copying that message alone. The =Dictate= control records a short local microphone note, transcribes it with the same local Whisper resolution path used by meeting capture, and sends the transcript as a normal OpenClaw message.
 
 Typing =/= opens a discoverable command menu. Use the Up and Down arrow keys to move through its suggestions and press =Tab= to complete the highlighted command; clicking a command still completes it directly. Commands that only need compiler or app state run locally and leave their result in the chat transcript; commands marked *Agent* are expanded into a scoped request and sent with the selected document context.
 

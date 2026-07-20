@@ -4,6 +4,8 @@ import SwiftUI
 struct ChatBubbleView: View {
   let message: OpenClawChatMessage
   let compact: Bool
+  @State private var isHovering = false
+  @State private var didCopy = false
 
   init(message: OpenClawChatMessage, compact: Bool = false) {
     self.message = message
@@ -35,8 +37,9 @@ struct ChatBubbleView: View {
               .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
           }
         }
+        .padding(.trailing, 22)
         if !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-          OrgInlineText(message.content)
+          OrgInlineText(message.content, managesTextSelection: false)
             .lineLimit(nil)
             .frame(maxWidth: compact ? 360 : 640, alignment: .leading)
             .fixedSize(horizontal: false, vertical: true)
@@ -79,7 +82,18 @@ struct ChatBubbleView: View {
         RoundedRectangle(cornerRadius: 8, style: .continuous)
           .stroke(borderColor)
       )
+      .overlay(alignment: .topTrailing) {
+        copyButton
+          .padding(.top, 6)
+          .padding(.trailing, 6)
+      }
       .fixedSize(horizontal: false, vertical: true)
+      .onHover { isHovering in
+        withAnimation(WorkspaceMotion.quick) {
+          self.isHovering = isHovering
+          if !isHovering { didCopy = false }
+        }
+      }
 
       if message.role != .user {
         Spacer(minLength: compact ? 24 : 48)
@@ -90,6 +104,23 @@ struct ChatBubbleView: View {
     }
     .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
     .fixedSize(horizontal: false, vertical: true)
+  }
+
+  private var copyButton: some View {
+    Button {
+      OpenClawMessageClipboard.copy(message)
+      didCopy = true
+    } label: {
+      Image(systemName: didCopy ? "checkmark" : "doc.on.doc")
+        .font(.caption2.weight(.semibold))
+        .frame(width: 20, height: 20)
+        .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .foregroundStyle(didCopy ? Color.green : Color.secondary)
+    .opacity(isHovering || didCopy ? 0.9 : 0.18)
+    .help(didCopy ? "Copied" : "Copy message")
+    .accessibilityLabel(didCopy ? "Message copied" : "Copy message")
   }
 
   private var background: Color {
@@ -123,6 +154,21 @@ struct ChatBubbleView: View {
     case .system:
       return .orange
     }
+  }
+}
+
+enum OpenClawMessageClipboard {
+  nonisolated static func text(for message: OpenClawChatMessage) -> String {
+    if !message.content.isEmpty {
+      return message.content
+    }
+    return message.attachments.map { "[Attachment: \($0.fileName)]" }.joined(separator: "\n")
+  }
+
+  @MainActor
+  static func copy(_ message: OpenClawChatMessage, to pasteboard: NSPasteboard = .general) {
+    pasteboard.clearContents()
+    pasteboard.setString(text(for: message), forType: .string)
   }
 }
 

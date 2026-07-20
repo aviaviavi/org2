@@ -22,6 +22,35 @@ final class OpenClawChatLayoutTests: XCTestCase {
     XCTAssertGreaterThan(hostingView.fittingSize.height, 118)
   }
 
+  func testMessageClipboardCopiesContentWithoutRoleChrome() {
+    let message = OpenClawChatMessage(
+      role: .assistant,
+      content: "First paragraph.\n\nSecond paragraph."
+    )
+    let pasteboard = NSPasteboard(name: NSPasteboard.Name("org2-chat-copy-\(UUID().uuidString)"))
+    defer { pasteboard.releaseGlobally() }
+
+    OpenClawMessageClipboard.copy(message, to: pasteboard)
+
+    XCTAssertEqual(pasteboard.string(forType: .string), "First paragraph.\n\nSecond paragraph.")
+  }
+
+  func testAttachmentOnlyMessageHasCopyableFallbackText() {
+    let message = OpenClawChatMessage(
+      role: .user,
+      content: "",
+      attachments: [
+        OpenClawChatAttachment(
+          fileName: "diagram.png",
+          mimeType: "image/png",
+          data: Data([0x01])
+        )
+      ]
+    )
+
+    XCTAssertEqual(OpenClawMessageClipboard.text(for: message), "[Attachment: diagram.png]")
+  }
+
   func testOpenClawStatusCardOmitsEmptyLiveActivityPlaceholder() {
     let activeRun = OpenClawTypingIndicatorView(
       startedAt: Date(),

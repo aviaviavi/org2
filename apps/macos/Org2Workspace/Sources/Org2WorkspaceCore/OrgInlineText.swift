@@ -75,17 +75,29 @@ struct OrgInlineText: View {
   let raw: String
   let font: Font
   let lineSpacing: CGFloat
+  let managesTextSelection: Bool
 
-  init(_ raw: String, font: Font = .body, lineSpacing: CGFloat = 2) {
+  init(
+    _ raw: String,
+    font: Font = .body,
+    lineSpacing: CGFloat = 2,
+    managesTextSelection: Bool = true
+  ) {
     self.raw = raw
     self.font = font
     self.lineSpacing = lineSpacing
+    self.managesTextSelection = managesTextSelection
   }
 
+  @ViewBuilder
   var body: some View {
     if textSelectionEnabled {
-      baseText
-        .textSelection(.enabled)
+      if managesTextSelection {
+        baseText
+          .textSelection(.enabled)
+      } else {
+        baseText
+      }
     } else {
       baseText
         .textSelection(.disabled)
