@@ -11,6 +11,7 @@ import {
   addAgentRunArtifact,
   addAgentRunComment,
   addAgentRunValidation,
+  completeAgentRunExternally,
   createAgentRun,
   decideAgentRunApproval,
   forkAgentRun,
@@ -99,9 +100,10 @@ const HELP = `Agentic workspace commands:
   org2 workspace agenda --mount CORPUS [--mount CORPUS ...] [--from DATE --to DATE]
   org2 workspace search QUERY --mount CORPUS [--mount CORPUS ...] [--limit N]
   org2 run create --goal TEXT [--accept TEXT] [--risk CLASS] [--owner NAME] [--capability ID] [--dir CORPUS]
-  org2 run list|show|validate|start|resume|retry|cancel|complete|fail|block|fork|normalize|artifact-review
+  org2 run list|show|validate|start|resume|retry|cancel|complete|complete-external|fail|block|fork|normalize|artifact-review
   org2 run block ID --reason "Specific clarification needed"
   org2 run complete ID --summary "What happened" [--highlight TEXT] [--next-action TEXT]
+  org2 run complete-external ID --summary "Where or how it was completed" --actor NAME
   org2 run outcome ID --summary "What happened" [--highlight TEXT] [--next-action TEXT]
   org2 run runtime ID [--provider ID] [--model ID] [--tokens-used N] [--cost-used-usd N] [--elapsed-seconds N]
   org2 run assign ID [--owner NAME] [--assignee NAME]
@@ -198,7 +200,11 @@ async function runCommand(parsed: ParsedArgs): Promise<void> {
   const existing = loadAgentRun(corpus, id);
   let run = existing;
   const transitions: Record<string, AgentRunStatus> = { start: "running", resume: "running", retry: "queued", cancel: "canceled", complete: "completed", fail: "failed", block: "blocked" };
-  if (transitions[action]) run = transitionAgentRun(existing, transitions[action]!, {
+  if (action === "complete-external") run = completeAgentRunExternally(existing, {
+    summary: required(flag(parsed, "summary"), "--summary is required"),
+    actor: required(flag(parsed, "actor"), "--actor is required"),
+  });
+  else if (transitions[action]) run = transitionAgentRun(existing, transitions[action]!, {
     actor: flag(parsed, "actor"), reason: flag(parsed, "reason"), summary: flag(parsed, "summary"),
     highlights: flags(parsed, "highlight"), nextActions: flags(parsed, "next-action"),
   });
