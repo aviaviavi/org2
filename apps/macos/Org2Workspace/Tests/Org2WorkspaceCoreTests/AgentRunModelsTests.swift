@@ -40,6 +40,25 @@ final class AgentRunModelsTests: XCTestCase {
     XCTAssertEqual(run.pendingApprovalCount, 1)
     XCTAssertEqual(run.progressText, "1/1 completed")
     XCTAssertTrue(run.needsAttention)
+    XCTAssertTrue(run.matchesRunFilter("cited briefing"))
+    XCTAssertTrue(run.matchesRunFilter("writer publish"))
+    XCTAssertTrue(run.matchesRunFilter("notes source"))
+    XCTAssertTrue(run.matchesRunFilter("brief pdf"))
+    XCTAssertTrue(run.matchesRunFilter("release pending"))
+    XCTAssertTrue(run.matchesRunFilter("please revise"))
+    XCTAssertTrue(run.matchesRunFilter("  \n "))
+    XCTAssertFalse(run.matchesRunFilter("deployment checklist"))
+  }
+
+  @MainActor
+  func testRunsAndReviewSearchFocusSignalsBothPossibleVisibleTabs() throws {
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+
+    store.focusRunsAndReviewFilter()
+
+    XCTAssertEqual(store.selectedSurface, .approvals)
+    XCTAssertEqual(store.agentRunFilterFocusToken, 1)
+    XCTAssertEqual(store.approvalFilterFocusToken, 1)
   }
 
   func testDecodesPlainTextWorkflowCatalog() throws {

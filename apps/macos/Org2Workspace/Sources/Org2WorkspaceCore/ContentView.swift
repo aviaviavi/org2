@@ -2110,9 +2110,10 @@ private struct WorkflowScheduleSheet: View {
 private struct RunCenterView: View {
   @EnvironmentObject private var store: WorkspaceStore
   @State private var scope: AgentRunScope = .active
+  @FocusState private var filterFocused: Bool
 
   private var visibleEntries: [AgentRunScopeEntry] {
-    scope.entries(in: store.agentRuns)
+    scope.entries(in: store.agentRuns).filter { $0.run.matchesRunFilter(store.agentRunFilter) }
   }
 
   private var visibleRuns: [AgentRunItem] {
@@ -2155,12 +2156,18 @@ private struct RunCenterView: View {
       .padding(.horizontal, WorkspaceDesign.contentInset)
       .padding(.bottom, 12)
 
+      RunCenterSearch(filterFocused: $filterFocused)
+
       Divider()
 
       if store.isLoadingAgentRuns && store.agentRuns.isEmpty {
         Spacer(); WorkspaceLoadingStateView("Loading agent runs"); Spacer()
       } else if visibleRuns.isEmpty {
-        EmptyStateView(title: "No \(scope.rawValue) Runs", detail: "Runs created by agents, schedules, and workflows appear here automatically.")
+        if store.agentRunFilter.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+          EmptyStateView(title: "No \(scope.rawValue) Runs", detail: "Runs created by agents, schedules, and workflows appear here automatically.")
+        } else {
+          EmptyStateView(title: "No Matching Runs", detail: "No \(scope.rawValue.lowercased()) runs match this search.")
+        }
       } else {
         List {
           ForEach(visibleSections) { section in
@@ -2209,6 +2216,9 @@ private struct RunCenterView: View {
     .onChange(of: visibleEntries.map(\.id)) {
       syncVisibleRunSelection()
     }
+    .onChange(of: store.agentRunFilterFocusToken) {
+      filterFocused = true
+    }
   }
 
   private func syncVisibleRunSelection() {
@@ -2216,6 +2226,37 @@ private struct RunCenterView: View {
        !visibleEntries.contains(where: { $0.id == selected }) {
       store.selectedAgentRunID = visibleEntries.first?.id
     }
+  }
+}
+
+private struct RunCenterSearch: View {
+  @EnvironmentObject private var store: WorkspaceStore
+  var filterFocused: FocusState<Bool>.Binding
+
+  var body: some View {
+    HStack(spacing: 8) {
+      Image(systemName: "magnifyingglass")
+        .font(.caption)
+        .foregroundStyle(.tertiary)
+      TextField("Search runs", text: $store.agentRunFilter)
+        .textFieldStyle(.roundedBorder)
+        .focused(filterFocused)
+        .onSubmit {
+          filterFocused.wrappedValue = false
+        }
+      if !store.agentRunFilter.isEmpty {
+        Button {
+          store.clearAgentRunFilter()
+        } label: {
+          Label("Clear", systemImage: "xmark.circle.fill")
+        }
+        .labelStyle(.iconOnly)
+        .help("Clear run search")
+      }
+    }
+    .controlSize(.small)
+    .padding(.horizontal, WorkspaceDesign.contentInset)
+    .padding(.bottom, 12)
   }
 }
 
@@ -2841,7 +2882,11 @@ private struct ApprovalsView: View {
       WorkspaceLoadingStateView("Loading approvals")
       Spacer()
     } else if store.visibleApprovalItems.isEmpty {
-      EmptyStateView(title: "No Approvals", detail: "No pending approval candidates matched.")
+      if store.approvalFilter.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        EmptyStateView(title: "No Approvals", detail: "No pending approval candidates matched.")
+      } else {
+        EmptyStateView(title: "No Matching Approvals", detail: "No pending approvals match this search.")
+      }
     } else {
       List(selection: $store.selectedApprovalItemID) {
         ForEach(store.visibleApprovalItems) { item in
@@ -2894,10 +2939,10 @@ private struct ApprovalControls: View {
 
   var body: some View {
     HStack(spacing: 8) {
-      Image(systemName: "line.3.horizontal.decrease.circle")
+      Image(systemName: "magnifyingglass")
         .font(.caption)
         .foregroundStyle(.tertiary)
-      TextField("Filter approvals", text: $store.approvalFilter)
+      TextField("Search approvals", text: $store.approvalFilter)
         .textFieldStyle(.roundedBorder)
         .focused(filterFocused)
         .onSubmit {
@@ -2910,7 +2955,7 @@ private struct ApprovalControls: View {
           Label("Clear", systemImage: "xmark.circle.fill")
         }
         .labelStyle(.iconOnly)
-        .help("Clear approval filter")
+        .help("Clear approval search")
       }
     }
     .controlSize(.small)
