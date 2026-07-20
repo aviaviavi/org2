@@ -9178,6 +9178,7 @@ public final class WorkspaceStore: ObservableObject {
 
   private func drainOpenClawSendQueue(for threadID: UUID) async {
     guard !drainingOpenClawThreadIDs.contains(threadID) else { return }
+    prepareOpenClawRunPresentation(for: threadID)
     drainingOpenClawThreadIDs.insert(threadID)
     openClawRequestStartedAtByThreadID[threadID] = Date()
     syncSelectedOpenClawSendState()
@@ -9206,6 +9207,7 @@ public final class WorkspaceStore: ObservableObject {
         let changeSummary = await openClawChangeSummary(since: beforeSnapshot, referencedIn: reply)
         markOpenClawMessageSent(userMessageID, in: threadID)
         insertOpenClawReply(reply, after: userMessageID, in: threadID, changeSummary: changeSummary)
+        clearOpenClawCompletedRunPresentation(for: threadID)
         if let changeSummary {
           await refreshAfterOpenClawChanges(changeSummary)
         } else {
@@ -9254,12 +9256,7 @@ public final class WorkspaceStore: ObservableObject {
     let settings = currentOpenClawSettings(allowKeychainRead: true)
     let gateway = OpenClawGatewayClient(settings: settings)
     openClawGatewayClientsByThreadID[threadID] = gateway
-    openClawGatewayStateByThreadID[threadID] = .connecting
-    openClawGatewayDetailByThreadID.removeValue(forKey: threadID)
-    openClawActiveRunIDByThreadID.removeValue(forKey: threadID)
-    openClawStreamingReplyByThreadID.removeValue(forKey: threadID)
-    openClawReasoningByThreadID.removeValue(forKey: threadID)
-    openClawRunActivitiesByThreadID[threadID] = []
+    prepareOpenClawRunPresentation(for: threadID)
     defer { openClawGatewayClientsByThreadID.removeValue(forKey: threadID) }
 
     let gatewayMessage = Self.openClawGatewayMessage(
@@ -9322,7 +9319,7 @@ public final class WorkspaceStore: ObservableObject {
     """
   }
 
-  private func handleOpenClawGatewayEvent(
+  func handleOpenClawGatewayEvent(
     _ event: OpenClawGatewayRunEvent,
     threadID: UUID
   ) {
@@ -9365,6 +9362,19 @@ public final class WorkspaceStore: ObservableObject {
         openClawStatusText = activity.title
       }
     }
+  }
+
+  private func prepareOpenClawRunPresentation(for threadID: UUID) {
+    openClawGatewayStateByThreadID[threadID] = .connecting
+    openClawGatewayDetailByThreadID.removeValue(forKey: threadID)
+    clearOpenClawCompletedRunPresentation(for: threadID)
+  }
+
+  private func clearOpenClawCompletedRunPresentation(for threadID: UUID) {
+    openClawActiveRunIDByThreadID.removeValue(forKey: threadID)
+    openClawStreamingReplyByThreadID.removeValue(forKey: threadID)
+    openClawReasoningByThreadID.removeValue(forKey: threadID)
+    openClawRunActivitiesByThreadID[threadID] = []
   }
 
   private nonisolated static func expandingOpenClawAgentCommand(_ message: OpenClawChatMessage) -> OpenClawChatMessage {

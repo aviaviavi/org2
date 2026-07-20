@@ -1516,6 +1516,41 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testOpenClawSendClearsPreviousStreamingReplyBeforeShowingProgress() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-chat-stream-reset-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let recorder = OpenClawSuspendedSendRecorder()
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json"),
+      openClawSendHandler: { messages, _, _, _ in
+        try await recorder.send(messages: messages)
+      }
+    )
+    store.createOpenClawChatThread()
+    let threadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
+    store.handleOpenClawGatewayEvent(.text("Previous assistant reply", replace: true), threadID: threadID)
+    XCTAssertEqual(store.openClawStreamingReply, "Previous assistant reply")
+
+    store.openClawDraft = "Follow-up question"
+    let sendTask = Task { await store.sendOpenClawMessage() }
+    let deadline = Date().addingTimeInterval(5)
+    while !(await recorder.hasStarted()) && Date() < deadline {
+      try await Task.sleep(nanoseconds: 20_000_000)
+    }
+
+    XCTAssertTrue(store.isSendingOpenClawMessage)
+    XCTAssertEqual(store.openClawStreamingReply, "")
+
+    store.handleOpenClawGatewayEvent(.text("Fresh assistant reply", replace: true), threadID: threadID)
+    XCTAssertEqual(store.openClawStreamingReply, "Fresh assistant reply")
+    await recorder.finish(reply: "Fresh assistant reply")
+    await sendTask.value
+    XCTAssertEqual(store.openClawStreamingReply, "")
+  }
+
+  @MainActor
   func testComposedOpenClawMessageStaysInThreadSelectedAtSubmission() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-chat-submit-thread-\(UUID().uuidString)", isDirectory: true)
