@@ -272,7 +272,7 @@ public struct AgentRunItem: Identifiable, Decodable, Hashable, Sendable {
     status == "completed" || status == "canceled"
   }
   public var needsAttention: Bool {
-    guard status != "canceled" else { return false }
+    guard !isFinished, !["queued", "running"].contains(status) else { return false }
     return pendingApprovalCount > 0
       || status == "blocked"
       || status == "failed"

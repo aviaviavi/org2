@@ -43,6 +43,7 @@ test("recognizes prepared Org2 workflow runs", () => {
   });
   assert.equal(shouldTrackMainTurn(prompt, {}), true);
   assert.equal(shouldTrackMainTurn(prompt, { jobId: "cron-1" }), false);
+  assert.match(workflowContinuationPrompt({ id: "weekly-review", version: "1.2.0", title: "Weekly review" }, "run-42"), /artifact-review/);
 });
 
 test("prepares a durable run before handing a workflow to OpenClaw", async () => {
@@ -126,6 +127,47 @@ test("a successful OpenClaw turn leaves approval and clarification boundaries op
   const result = await lifecycle.finish("key", "ok", { summary: "Approval requested." });
   assert.deepEqual(result, { terminal: false, status: "waiting-approval" });
   assert.equal(calls.some((args) => args[1] === "complete"), false);
+});
+
+test("a successful OpenClaw turn leaves review-required artifacts open", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "org2-openclaw-artifact-review-"));
+  const stateFile = join(dir, "state.json");
+  const calls = [];
+  const lifecycle = new Org2Lifecycle({ stateFile, exec: async (args) => {
+    calls.push(args);
+    if (args[0] === "run" && args[1] === "show") {
+      return JSON.stringify({
+        id: "run-1",
+        status: "running",
+        artifacts: [{ id: "report", reviewStatus: "review-required" }],
+      });
+    }
+    return "";
+  } });
+  await lifecycle.init();
+  lifecycle.state.mappings.key = { org2RunId: "run-1", sessionKey: "agent:main:org2:thread-1" };
+  const result = await lifecycle.finish("key", "ok", { summary: "Report produced for review." });
+  assert.deepEqual(result, { terminal: false, status: "review-required" });
+  assert.equal(calls.some((args) => args[1] === "complete"), false);
+});
+
+test("a replayed terminal event accepts an already-completed historical run", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "org2-openclaw-completed-review-"));
+  const stateFile = join(dir, "state.json");
+  const lifecycle = new Org2Lifecycle({ stateFile, exec: async (args) => {
+    if (args[0] === "run" && args[1] === "show") {
+      return JSON.stringify({
+        id: "run-1",
+        status: "completed",
+        artifacts: [{ id: "report", reviewStatus: "review-required" }],
+      });
+    }
+    return "";
+  } });
+  await lifecycle.init();
+  lifecycle.state.mappings.key = { org2RunId: "run-1", sessionKey: "agent:main:org2:thread-1" };
+  const result = await lifecycle.finish("key", "ok", { summary: "Already completed." });
+  assert.deepEqual(result, { terminal: true, status: "completed" });
 });
 
 test("resumes an approved workflow in its correlated OpenClaw session", async () => {
