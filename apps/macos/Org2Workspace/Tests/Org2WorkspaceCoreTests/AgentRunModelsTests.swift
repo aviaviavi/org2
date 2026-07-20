@@ -220,13 +220,31 @@ final class AgentRunModelsTests: XCTestCase {
     XCTAssertTrue(run.isFinished)
   }
 
+  func testCompletedRunDoesNotNeedAttentionWhenOldReviewSignalsRemain() throws {
+    let run = try makeRun(
+      status: "completed",
+      validationStatus: "warning",
+      reviewRequired: true
+    )
+
+    XCTAssertFalse(run.needsAttention)
+    XCTAssertTrue(run.isFinished)
+    XCTAssertEqual(run.attentionValidations.map(\.status), ["warning"])
+  }
+
   func testRunCenterScopeCountsUseTheSamePredicatesAsTheirLists() throws {
     let runs = try [
       makeRun(id: "queued", goal: "Queued work", status: "queued"),
       makeRun(id: "approval", goal: "Approval work", status: "waiting-approval"),
       makeRun(id: "blocked", goal: "Blocked work", status: "blocked"),
       makeRun(id: "failed", goal: "Failed work", status: "failed"),
-      makeRun(id: "completed", goal: "Completed work", status: "completed"),
+      makeRun(
+        id: "completed",
+        goal: "Completed work",
+        status: "completed",
+        validationStatus: "warning",
+        reviewRequired: true
+      ),
       makeRun(id: "canceled", goal: "Canceled work", status: "canceled", validationStatus: "failed", reviewRequired: true),
     ]
 
