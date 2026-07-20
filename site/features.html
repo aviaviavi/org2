@@ -88,7 +88,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
       </ul>
       <div class="org2-command" aria-label="Planning and graph commands">
         <span>Planning and graph commands</span>
-        <pre><code>org2 agenda --dir ~/notes --recursive --tui
+        <pre class="org2-src language-sh"><code class="language-sh">org2 agenda --dir ~/notes --recursive --tui
 org2 roam graph --dir ~/notes --recursive --format report</code></pre>
       </div>
       <p class="org2-feature-links"><a href="workflows.html">Everyday workflows</a><a href="tooling-reference.html">CLI reference</a></p>
@@ -110,7 +110,7 @@ org2 roam graph --dir ~/notes --recursive --format report</code></pre>
       </ul>
       <div class="org2-command" aria-label="Agent context and review commands">
         <span>Context and review commands</span>
-        <pre><code>org2 agent context --query "launch risks" --dir ~/notes --recursive
+        <pre class="org2-src language-sh"><code class="language-sh">org2 agent context --query "launch risks" --dir ~/notes --recursive
 org2 review list --status pending --dir ~/notes</code></pre>
       </div>
       <p class="org2-feature-links"><a href="agent-quickstart.html">Agent quickstart</a><a href="openclaw-knowledge-layer.html">OpenClaw integration</a></p>
@@ -131,7 +131,7 @@ org2 review list --status pending --dir ~/notes</code></pre>
       </ul>
       <div class="org2-command" aria-label="Data notebook commands">
         <span>Inspect or materialize a result</span>
-        <pre><code>org2 query-data --file notes/readiness.org2 --inspect
+        <pre class="org2-src language-sh"><code class="language-sh">org2 query-data --file notes/readiness.org2 --inspect
 org2 query-data --file notes/readiness.org2 --results weekly --apply</code></pre>
       </div>
       <p class="org2-feature-links"><a href="language-reference.html#local-datasets-and-sql-views">Notebook syntax</a><a href="tooling-reference.html">Query-data options</a></p>
@@ -169,7 +169,7 @@ org2 query-data --file notes/readiness.org2 --results weekly --apply</code></pre
         <article><strong>Publishing</strong><p>Export one file or publish a recursive project with navigation, styles, rewritten links, and generated indexes. This documentation site is built by Org2.</p></article>
         <div class="org2-command" aria-label="Formatting and publishing commands">
           <span>Check formatting or preview a site</span>
-          <pre><code>org2 fmt --dir ~/notes --recursive --check
+          <pre class="org2-src language-sh"><code class="language-sh">org2 fmt --dir ~/notes --recursive --check
 org2 publish docs-site --config org2.json --preview</code></pre>
         </div>
       </div>
