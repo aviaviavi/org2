@@ -1329,3 +1329,1023 @@ blockquote {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/*
+ * Org2 visual system — "compiled paper"
+ *
+ * Warm reading surfaces carry the human side of the product. Cobalt rails,
+ * coral state markers, compact mono labels, and square geometry expose the
+ * structure underneath. The palette also defines the canonical chart colors
+ * so documentation, generated data, and future app surfaces can share a voice.
+ */
+:root {
+  color-scheme: light;
+  --canvas: #f2f0e9;
+  --bg: #fcfbf7;
+  --fg: #18201e;
+  --muted: #5e6b66;
+  --quiet: #7c8782;
+  --border: #d7d6ce;
+  --border-strong: #b9bcb5;
+  --link: #2854d7;
+  --link-strong: #173bad;
+  --signal: #c2472c;
+  --signal-soft: #ffe1d8;
+  --mint: #b9e3ce;
+  --blue-soft: #e7ecff;
+  --code-bg: #151c1a;
+  --code-fg: #e8f0eb;
+  --syntax-keyword: #168261;
+  --syntax-todo: #c84f32;
+  --syntax-link: #2854d7;
+  --syntax-meta: #7656c9;
+  --surface-raised: #ffffff;
+  --shadow: 0 16px 42px rgba(29, 43, 38, 0.075);
+  --shadow-small: 0 6px 18px rgba(29, 43, 38, 0.06);
+  --font-sans: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-mono: "SFMono-Regular", "Cascadia Code", "Roboto Mono", Consolas, "Liberation Mono", monospace;
+  --org2-chart-mark: #2854d7;
+  --org2-chart-surface: #fcfbf7;
+  --org2-chart-axis: #8c9691;
+  --org2-chart-grid: #d7d6ce;
+  --org2-chart-label: #5e6b66;
+  --org2-chart-title: #18201e;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --canvas: #0f1412;
+    --bg: #151b19;
+    --fg: #eef2ed;
+    --muted: #a7b1ac;
+    --quiet: #87928d;
+    --border: #303936;
+    --border-strong: #4b5651;
+    --link: #86a3ff;
+    --link-strong: #a8bcff;
+    --signal: #ff8668;
+    --signal-soft: #4a2921;
+    --mint: #79c8a7;
+    --blue-soft: #222d51;
+    --code-bg: #0b100f;
+    --code-fg: #edf3ef;
+    --syntax-keyword: #79d4ad;
+    --syntax-todo: #ff9478;
+    --syntax-link: #9bb2ff;
+    --syntax-meta: #c5adff;
+    --surface-raised: #1b2320;
+    --shadow: 0 24px 70px rgba(0, 0, 0, 0.35);
+    --shadow-small: 0 10px 28px rgba(0, 0, 0, 0.26);
+    --org2-chart-mark: #86a3ff;
+    --org2-chart-surface: #151b19;
+    --org2-chart-axis: #77817c;
+    --org2-chart-grid: #303936;
+    --org2-chart-label: #a7b1ac;
+    --org2-chart-title: #eef2ed;
+  }
+}
+
+html {
+  scroll-behavior: smooth;
+  background: var(--canvas);
+}
+
+html body {
+  position: relative;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  background: var(--canvas);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: 15.5px;
+  font-kerning: normal;
+  line-height: 1.64;
+  text-rendering: optimizeLegibility;
+}
+
+html body::before { display: none; }
+
+body #content {
+  width: min(100%, 78rem);
+  max-width: 78rem;
+  margin: 0 auto;
+  padding: 0 clamp(1rem, 4vw, 3.25rem) 3rem;
+}
+
+#content .org2-document {
+  display: block;
+  min-width: 0;
+}
+
+#content .org2-document > p,
+#content .org2-document > ul,
+#content .org2-document > ol,
+#content .org2-document > blockquote,
+#content .org2-document > table,
+#content .org2-document > pre,
+#content .org2-document > .org2-src,
+#content .org2-document > .org2-headline {
+  max-width: 52rem;
+}
+
+#content .org2-document > p,
+#content .org2-document > ul,
+#content .org2-document > ol,
+#content .org2-headline p,
+#content .org2-headline li {
+  letter-spacing: -0.006em;
+}
+
+/* Navigation: a quiet product bar with a compact structural wordmark. */
+#content .org2-nav {
+  position: sticky;
+  top: 0.65rem;
+  z-index: 50;
+  margin: 0 -0.4rem 2rem;
+  padding: 0.48rem 0.55rem;
+  border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  box-shadow: 0 10px 34px rgba(23, 35, 31, 0.08);
+  backdrop-filter: blur(18px) saturate(135%);
+}
+
+#content .org2-nav-menu nav {
+  gap: 0.15rem;
+}
+
+#content .org2-nav a,
+#content .org2-nav-dropdown > summary {
+  border: 0;
+  border-radius: 6px;
+  padding: 0.43rem 0.62rem;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 500;
+  letter-spacing: 0.015em;
+  line-height: 1.2;
+}
+
+#content .org2-nav a:hover,
+#content .org2-nav a:focus-visible,
+#content .org2-nav-dropdown > summary:hover,
+#content .org2-nav-dropdown > summary:focus-visible {
+  border: 0;
+  outline: none;
+  background: var(--blue-soft);
+  color: var(--link-strong);
+}
+
+#content .org2-nav a[aria-current="page"] {
+  background: var(--blue-soft);
+  color: var(--link-strong);
+}
+
+#content .org2-nav-menu nav > a:first-child {
+  display: inline-flex;
+  min-width: 7rem;
+  align-items: center;
+  margin-right: 0.6rem;
+  padding: 0.18rem 0.62rem 0.18rem 0.18rem;
+  color: transparent;
+  font-size: 0;
+}
+
+#content .org2-nav-menu nav > a:first-child::before {
+  display: block;
+  width: 1.72rem;
+  height: 1.72rem;
+  flex: 0 0 auto;
+  margin-right: 0.48rem;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg) url("apple-touch-icon.png") center / 128% no-repeat;
+  content: "";
+  filter: contrast(1.15);
+}
+
+#content .org2-nav-menu nav > a:first-child::after {
+  color: var(--fg);
+  content: "Org2";
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+#content .org2-nav-github {
+  margin-left: auto;
+  padding-left: 0.8rem;
+  border-left: 1px solid var(--border);
+  border-radius: 0;
+}
+
+#content .org2-nav-github:hover,
+#content .org2-nav-github:focus-visible {
+  background: transparent;
+  color: var(--fg);
+}
+
+#content .org2-site-search-toggle {
+  width: 1.9rem;
+  height: 1.9rem;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+}
+
+#content .org2-site-search-toggle:hover,
+#content .org2-site-search-toggle:focus-visible {
+  background: var(--blue-soft);
+  color: var(--link-strong);
+}
+
+#content .org2-site-search input,
+#content .org2-site-search-results,
+#content .org2-nav-dropdown-menu {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-small);
+}
+
+#content .org2-nav-dropdown-menu {
+  padding: 0.4rem;
+}
+
+#content .org2-site-search-results a {
+  color: var(--fg);
+}
+
+/* The document header is the editorial face of the system. */
+#content .org2-document-header {
+  position: relative;
+  max-width: 62rem;
+  margin: clamp(2.75rem, 6vw, 4.75rem) 0 clamp(2rem, 4vw, 3.25rem);
+  padding: 0;
+  border-bottom: 0;
+}
+
+#content .org2-document-header::before {
+  display: none;
+}
+
+#content .org2-document-header::after {
+  display: none;
+}
+
+#content .org2-document-title {
+  max-width: 22ch;
+  margin: 0;
+  color: var(--fg);
+  font-size: clamp(2.4rem, 4.5vw, 3.65rem);
+  font-weight: 500;
+  letter-spacing: -0.045em;
+  line-height: 1;
+  text-wrap: balance;
+}
+
+#content .org2-document-title::before {
+  display: inline-block;
+  margin-right: 0.5rem;
+  color: var(--signal);
+  content: "*";
+  font-family: var(--font-mono);
+  font-size: 0.34em;
+  font-weight: 600;
+  vertical-align: 0.72em;
+}
+
+#content .org2-document-subtitle {
+  max-width: 42rem;
+  margin: 0.85rem 0 0;
+  color: var(--muted);
+  font-size: clamp(1rem, 1.5vw, 1.12rem);
+  font-weight: 400;
+  letter-spacing: -0.012em;
+  line-height: 1.5;
+  text-wrap: balance;
+}
+
+/* Reading rhythm and Org-derived hierarchy. */
+#content h1,
+#content h2,
+#content h3,
+#content h4,
+#content h5,
+#content h6 {
+  color: var(--fg);
+  font-family: var(--font-sans);
+  text-wrap: balance;
+}
+
+#content section.org2-headline {
+  position: relative;
+  margin: clamp(2rem, 4vw, 3.35rem) 0 1.35rem;
+}
+
+#content section.org2-headline.level-1 > h1 {
+  position: relative;
+  margin: 0 0 1.25rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--border);
+  font-size: clamp(1.6rem, 2.75vw, 2rem);
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+}
+
+#content section.org2-headline.level-1 > h1::before {
+  display: inline-block;
+  margin-right: 0.62rem;
+  color: var(--link);
+  content: "*";
+  font-family: var(--font-mono);
+  font-size: 0.62em;
+  font-weight: 600;
+  transform: translateY(-0.14em);
+}
+
+#content section.org2-headline.level-2 > h2 {
+  margin: 2rem 0 0.75rem;
+  font-size: clamp(1.12rem, 2vw, 1.34rem);
+  font-weight: 600;
+  letter-spacing: -0.018em;
+}
+
+#content section.org2-headline.level-2 > h2::before {
+  margin-right: 0.55rem;
+  color: var(--signal);
+  content: "**";
+  font-family: var(--font-mono);
+  font-size: 0.5em;
+  letter-spacing: -0.2em;
+  vertical-align: 0.18em;
+}
+
+#content p,
+#content li,
+#content td,
+#content dd {
+  color: var(--fg);
+}
+
+#content a {
+  color: var(--link);
+  text-decoration-color: color-mix(in srgb, var(--link) 38%, transparent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.18em;
+}
+
+#content a:hover {
+  color: var(--link-strong);
+  text-decoration-color: var(--signal);
+  text-decoration-thickness: 2px;
+}
+
+#content a:focus-visible,
+#content button:focus-visible,
+#content summary:focus-visible,
+#content input:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 3px;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--link) 24%, var(--bg));
+  color: var(--fg);
+}
+
+#content strong {
+  font-weight: 600;
+}
+
+#content ul,
+#content ol {
+  padding-left: 1.35rem;
+}
+
+#content li::marker {
+  color: var(--link);
+  font-family: var(--font-mono);
+}
+
+#content blockquote {
+  margin: 1.5rem 0;
+  padding: 0.2rem 0 0.2rem 1.1rem;
+  border-left: 3px solid var(--signal);
+  color: var(--muted);
+  font-size: 1.04rem;
+}
+
+#content :not(pre) > code {
+  padding: 0.12em 0.34em;
+  border: 1px solid color-mix(in srgb, var(--link) 18%, var(--border));
+  border-radius: 4px;
+  background: var(--blue-soft);
+  color: var(--link-strong);
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+}
+
+/* Code is a dark technical surface, visibly nested in the paper. */
+#content pre,
+#content .org2-src,
+#content .org2-example,
+#content .org2-verse,
+#content .org2-comment,
+#content .org2-directive {
+  position: relative;
+  margin: 1rem 0 1.4rem;
+  padding: 1rem 1.1rem !important;
+  border: 1px solid color-mix(in srgb, var(--border) 40%, #050807) !important;
+  border-top: 3px solid var(--link) !important;
+  border-radius: 7px !important;
+  background: var(--code-bg) !important;
+  box-shadow: var(--shadow-small);
+  color: var(--code-fg);
+  font-family: var(--font-mono) !important;
+  font-size: clamp(0.77rem, 1.5vw, 0.9rem) !important;
+  line-height: 1.55 !important;
+}
+
+#content pre code,
+#content .org2-src code {
+  border: 0;
+  background: transparent !important;
+  color: inherit;
+  font-family: inherit;
+}
+
+#content .org2-syntax-keyword,
+#content .org2-syntax-heading {
+  color: var(--syntax-keyword);
+}
+
+#content .org2-syntax-todo,
+#content .org2-syntax-date {
+  color: var(--syntax-todo);
+}
+
+#content .org2-syntax-tag,
+#content .org2-syntax-link {
+  color: var(--syntax-link);
+}
+
+#content .org2-syntax-planning,
+#content .org2-syntax-prop {
+  color: var(--syntax-meta);
+}
+
+#content .org2-syntax-drawer,
+#content .org2-syntax-block {
+  color: var(--muted);
+}
+
+#content .org2-command {
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--code-bg);
+  box-shadow: var(--shadow-small);
+}
+
+#content .org2-command > span,
+#content .org2-sample-file figcaption {
+  min-height: 2.35rem;
+  padding: 0.62rem 0.82rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 42%, transparent);
+  background: color-mix(in srgb, var(--code-bg) 92%, var(--link));
+  color: color-mix(in srgb, var(--code-fg) 72%, transparent);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.025em;
+}
+
+#content .org2-command pre {
+  margin: 0;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none;
+}
+
+/* Structured data uses the same rail-and-node grammar as headings. */
+#content table {
+  overflow: hidden;
+  margin: 1.25rem 0 1.75rem;
+  border: 1px solid var(--border);
+  border-collapse: separate;
+  border-spacing: 0;
+  border-radius: 7px;
+  background: var(--bg);
+  box-shadow: var(--shadow-small);
+  font-size: 0.9rem;
+}
+
+#content th,
+#content td {
+  padding: 0.68rem 0.75rem;
+  border: 0;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+#content th:last-child,
+#content td:last-child {
+  border-right: 0;
+}
+
+#content tr:last-child td {
+  border-bottom: 0;
+}
+
+#content th {
+  background: var(--blue-soft);
+  color: var(--link-strong);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.035em;
+  text-transform: uppercase;
+}
+
+#content .org2-chart {
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg);
+  box-shadow: var(--shadow-small);
+}
+
+/* Overview modules establish the public-facing brand without burying prose. */
+#content .org2-page-intro {
+  position: relative;
+  max-width: 70rem;
+  margin: 0 0 clamp(2.5rem, 5vw, 4rem);
+  padding: clamp(1.25rem, 3vw, 2rem);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  box-shadow: var(--shadow);
+}
+
+#content .org2-page-intro::after { display: none; }
+
+#content .org2-page-intro > p {
+  position: relative;
+  z-index: 1;
+  max-width: 50rem;
+  color: var(--fg);
+  font-size: clamp(1rem, 1.5vw, 1.1rem);
+  font-weight: 400;
+  letter-spacing: -0.012em;
+  line-height: 1.58;
+}
+
+#content .org2-page-summary {
+  position: relative;
+  z-index: 1;
+  counter-reset: org2-summary;
+  gap: clamp(0.9rem, 3vw, 2rem);
+  margin-top: clamp(1.8rem, 4vw, 3rem);
+}
+
+#content .org2-page-summary > div {
+  position: relative;
+  padding: 1rem 0 0 2.15rem;
+  border-top: 2px solid var(--fg);
+  counter-increment: org2-summary;
+}
+
+#content .org2-page-summary > div::before {
+  position: absolute;
+  top: 1.05rem;
+  left: 0;
+  color: var(--signal);
+  content: "0" counter(org2-summary);
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  font-weight: 600;
+}
+
+#content .org2-page-summary strong {
+  color: var(--fg);
+  font-size: 0.96rem;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+#content .org2-page-summary span {
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+
+/* Product examples and screenshots feel like precise artifacts, not cards. */
+#content .org2-sample {
+  max-width: 70rem;
+  margin: clamp(3rem, 6vw, 5rem) 0;
+}
+
+#content .org2-sample-intro {
+  max-width: 52rem;
+  margin: 0 0 1.5rem;
+}
+
+#content .org2-sample-intro h2,
+#content .org2-feature-heading h2,
+#content .org2-feature-copy h2,
+#content .org2-feature-cta h2 {
+  margin: 0;
+  font-size: clamp(1.5rem, 2.75vw, 2rem);
+  font-weight: 500;
+  letter-spacing: -0.028em;
+  line-height: 1.15;
+}
+
+#content .org2-sample-file,
+#content .org2-feature-media figure,
+#content .org2-editor-strip figure,
+#content .org2-shot-grid figure {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-raised);
+  box-shadow: var(--shadow);
+}
+
+#content .org2-sample-file {
+  border-top: 3px solid var(--signal);
+  background: var(--code-bg);
+}
+
+#content .org2-sample-file pre {
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none;
+}
+
+#content .org2-sample-callouts {
+  gap: 0.75rem 1.25rem;
+}
+
+#content .org2-sample-callouts div {
+  position: relative;
+  padding: 0.72rem 0 0 1.1rem;
+  border-top: 1px solid var(--border);
+}
+
+#content .org2-sample-callouts div::before {
+  position: absolute;
+  top: 0.88rem;
+  left: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--signal);
+  content: "";
+}
+
+#content .org2-sample-callouts strong {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+#content .org2-sample-callouts span,
+#content .org2-shot-grid figcaption,
+#content .org2-feature-media figcaption,
+#content .org2-editor-strip figcaption {
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+#content .org2-shot-grid {
+  gap: clamp(1.2rem, 3vw, 2.25rem);
+}
+
+#content .org2-shot-grid figure,
+#content .org2-feature-media figure,
+#content .org2-editor-strip figure {
+  overflow: hidden;
+  transition: transform 180ms ease, box-shadow 180ms ease;
+}
+
+#content .org2-shot-grid figure:hover,
+#content .org2-feature-media figure:hover,
+#content .org2-editor-strip figure:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 26px 72px rgba(29, 43, 38, 0.15);
+}
+
+/* Feature pages reuse the tokens with a denser systems-diagram rhythm. */
+#content .org2-features-page {
+  gap: clamp(3.5rem, 6vw, 5.5rem);
+}
+
+#content .org2-feature-section {
+  max-width: 70rem;
+}
+
+#content .org2-feature-heading {
+  margin-bottom: 1.5rem;
+}
+
+#content .org2-feature-heading > p:last-child,
+#content .org2-feature-copy > p,
+#content .org2-feature-copy li,
+#content .org2-feature-note {
+  color: var(--muted);
+}
+
+#content .org2-compiler-flow {
+  counter-reset: org2-flow;
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  box-shadow: var(--shadow-small);
+}
+
+#content .org2-compiler-flow article {
+  position: relative;
+  min-height: 11rem;
+  padding: 3.35rem 1.1rem 1.1rem;
+  border: 0;
+  border-right: 1px solid var(--border);
+  background: transparent;
+  counter-increment: org2-flow;
+}
+
+#content .org2-compiler-flow article:last-child {
+  border-right: 0;
+}
+
+#content .org2-compiler-flow article::before {
+  position: absolute;
+  top: 1rem;
+  left: 1.1rem;
+  color: var(--signal);
+  content: "0" counter(org2-flow);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+#content .org2-compiler-flow article::after {
+  position: absolute;
+  top: 1.38rem;
+  right: -4px;
+  z-index: 2;
+  display: block;
+  width: 7px;
+  height: 7px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--link);
+  content: "";
+}
+
+#content .org2-compiler-flow article:last-child::after {
+  display: none;
+}
+
+#content .org2-compiler-flow strong {
+  margin: 0;
+  font-size: 1rem;
+  letter-spacing: -0.02em;
+}
+
+#content .org2-feature-note {
+  padding-left: 1rem;
+  border-left: 3px solid var(--mint);
+}
+
+#content .org2-feature-card-grid {
+  gap: 0.75rem;
+}
+
+#content .org2-feature-card-grid article,
+#content .org2-editor-cards article,
+#content .org2-feature-cta {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  box-shadow: var(--shadow-small);
+}
+
+#content .org2-feature-card-grid article,
+#content .org2-editor-cards article {
+  position: relative;
+  padding: 1.15rem;
+  overflow: hidden;
+}
+
+#content .org2-feature-card-grid article::before,
+#content .org2-editor-cards article::before {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--link);
+  content: "";
+}
+
+#content .org2-feature-card-grid article:nth-child(3n + 2)::before {
+  background: var(--signal);
+}
+
+#content .org2-feature-card-grid article:nth-child(3n)::before {
+  background: var(--mint);
+}
+
+#content .org2-feature-links a,
+#content .org2-feature-jumps a {
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  text-decoration: none;
+}
+
+#content .org2-feature-links a:hover,
+#content .org2-feature-jumps a:hover {
+  border-color: var(--link);
+  background: var(--blue-soft);
+  color: var(--link-strong);
+}
+
+#content .org2-feature-cta {
+  position: relative;
+  padding: clamp(1.5rem, 4vw, 2.8rem);
+  overflow: hidden;
+  border-top: 3px solid var(--signal);
+}
+
+#content .org2-feature-cta > p:not(.org2-kicker) {
+  color: var(--muted);
+}
+
+#content .org2-footer {
+  max-width: 70rem;
+  margin-top: 6rem;
+  padding: 1rem 0 0;
+  border-top: 1px solid var(--border);
+  color: var(--quiet);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+@media (max-width: 920px) {
+  #content .org2-compiler-flow {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  #content .org2-compiler-flow article:nth-child(2) {
+    border-right: 0;
+  }
+
+  #content .org2-compiler-flow article:nth-child(-n + 2) {
+    border-bottom: 1px solid var(--border);
+  }
+
+  #content .org2-feature-card-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 759px) {
+  html body {
+    font-size: 15.5px;
+  }
+
+  body #content {
+    margin-top: 0;
+    padding: 0 0.85rem 2rem;
+  }
+
+  #content .org2-nav {
+    top: 0.4rem;
+    margin: 0 -0.2rem 1.5rem;
+    border-radius: 8px;
+  }
+
+  #content .org2-nav-menu > summary {
+    display: block;
+    width: 100%;
+    padding: 0.48rem 0.6rem;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--fg);
+    font-family: var(--font-mono);
+    font-size: 0.76rem;
+  }
+
+  #content .org2-nav-menu nav {
+    gap: 0.22rem;
+    padding-top: 0.45rem;
+    border-top: 1px solid var(--border);
+  }
+
+  #content .org2-nav-menu nav > a:first-child,
+  #content .org2-nav-menu nav > a,
+  #content .org2-nav-dropdown,
+  #content .org2-nav-dropdown > summary,
+  #content .org2-site-search,
+  #content .org2-site-search-toggle {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  #content .org2-nav-menu nav > a:first-child {
+    margin: 0 0 0.3rem;
+  }
+
+  #content .org2-nav-github {
+    margin: 0;
+    padding-left: 0.62rem;
+    border-left: 0;
+  }
+
+  #content .org2-document-header {
+    margin-top: 3.5rem;
+  }
+
+  #content .org2-document-title {
+    font-size: clamp(2.3rem, 11vw, 3.2rem);
+  }
+
+  #content .org2-page-summary,
+  #content .org2-sample-callouts,
+  #content .org2-feature-card-grid,
+  #content .org2-feature-media-pair,
+  #content .org2-editor-strip,
+  #content .org2-compiler-flow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  #content .org2-compiler-flow article,
+  #content .org2-compiler-flow article:nth-child(2) {
+    min-height: 0;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  #content .org2-compiler-flow article:last-child {
+    border-bottom: 0;
+  }
+
+  #content .org2-page-intro {
+    padding: 1.25rem;
+  }
+
+  #content .org2-shot-grid figure,
+  #content .org2-feature-media figure,
+  #content .org2-editor-strip figure {
+    border-radius: 7px;
+  }
+}
+
+@media (max-width: 520px) {
+  #content pre,
+  #content pre.org2-shiki-block,
+  #content .org2-src,
+  #content .org2-example,
+  #content .org2-verse,
+  #content .org2-comment,
+  #content .org2-directive {
+    padding: 0.75rem !important;
+    border-radius: 6px !important;
+    font-size: 0.7rem !important;
+  }
+
+  #content .org2-sample-file pre {
+    font-size: 0.56rem !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  #content .org2-shot-grid figure,
+  #content .org2-feature-media figure,
+  #content .org2-editor-strip figure {
+    transition: none;
+  }
+}
