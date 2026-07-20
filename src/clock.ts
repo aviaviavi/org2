@@ -134,10 +134,11 @@ export function extractClockReport(files: string[], opts?: { rootDir?: string })
   for (const interval of intervals) byFile.set(interval.file, [...(byFile.get(interval.file) || []), interval]);
   for (const group of byFile.values()) {
     const sorted = group.slice().sort((a, b) => a.start.localeCompare(b.start));
+    let latestEnding = sorted[0];
     for (let i = 1; i < sorted.length; i += 1) {
-      const prev = sorted[i - 1]!;
       const curr = sorted[i]!;
-      if (curr.start < prev.end) issues.push({ type: "overlapping-clock", severity: "warning", file: curr.file, line: curr.line, nodeKey: curr.nodeKey, overlapsLine: prev.line, raw: curr.raw, message: `CLOCK entry overlaps line ${prev.line}.` });
+      if (latestEnding && curr.start < latestEnding.end) issues.push({ type: "overlapping-clock", severity: "warning", file: curr.file, line: curr.line, nodeKey: curr.nodeKey, overlapsLine: latestEnding.line, raw: curr.raw, message: `CLOCK entry overlaps line ${latestEnding.line}.` });
+      if (!latestEnding || curr.end > latestEnding.end) latestEnding = curr;
     }
   }
 
