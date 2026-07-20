@@ -2976,6 +2976,36 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(presentation.clipboardText, "[Context: Page]\nWhy did this fail?")
   }
 
+  @MainActor
+  func testLegacyOpenClawContextPillResolvesPageTitleAndOpensSource() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-context-pill-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let filename = "74717eff-8133-4b2c-a8eb-fa622adc2e0d.org2"
+    let file = root.appendingPathComponent(filename)
+    try "#+TITLE: Scarf pricing strategy\n\n* Revenue share\n".write(
+      to: file,
+      atomically: true,
+      encoding: .utf8
+    )
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root, persistsDefault: false)
+    let context = try XCTUnwrap(OpenClawContextPresentation(
+      "Use selected page at \(filename):1 as context.\n\nWhat should change?"
+    ).contexts.first)
+
+    let resolved = store.resolvedOpenClawContext(context)
+    XCTAssertEqual(resolved.title, "Scarf pricing strategy")
+    XCTAssertEqual(resolved.reference, context.reference)
+    XCTAssertEqual(resolved.sourceLine, context.sourceLine)
+
+    store.openOpenClawContext(resolved)
+    XCTAssertEqual(store.selectedLocation?.file, file.path)
+    XCTAssertEqual(store.selectedLocation?.lineForEditor, 1)
+  }
+
   func testOpenClawComposerDraftSyncMergesExternalDraftChangesWithoutDroppingLocalTyping() {
     XCTAssertEqual(
       OpenClawComposerDraftSync.localDraftAfterStoreChange(
