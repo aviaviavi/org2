@@ -1,5 +1,6 @@
 import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 import { cronKey, durableRunMarker, executionSummary, Org2Lifecycle, shouldTrackMainTurn, workflowMarker } from "./lib/lifecycle.js";
+import { approvalAction, approvalTitle, draftCreatedEffect, draftSendEffect } from "./lib/draft-approvals.js";
 
 export default definePluginEntry({
   id: "org2-lifecycle",
@@ -11,6 +12,7 @@ export default definePluginEntry({
     const trackMainTurns = config.trackMainTurns !== false;
     const trackCron = config.trackCron !== false;
     const trackSubagents = config.trackSubagents !== false;
+    const trackDraftApprovals = config.trackDraftApprovals !== false;
 
     api.on("gateway_start", async (_event, ctx) => {
       lifecycle.setCron(ctx.getCron?.());
@@ -102,6 +104,34 @@ export default definePluginEntry({
 
     api.on("llm_output", async (event, ctx) => {
       await lifecycle.serialize(() => lifecycle.recordUsage(event.runId || ctx.runId, event.usage));
+    });
+
+    api.on("before_tool_call", async (event, ctx) => {
+      if (!trackDraftApprovals) return;
+      const effect = draftSendEffect(event.toolName, event.params);
+      if (!effect) return;
+      const decision = await lifecycle.serialize(() => lifecycle.draftSendDecision(effect));
+      if (decision.allowed) return;
+      return { block: true, blockReason: `${decision.reason} Approve the matching item in Org2, then retry the send.` };
+    });
+
+    api.on("after_tool_call", async (event, ctx) => {
+      if (!trackDraftApprovals) return;
+      const sent = draftSendEffect(event.toolName, event.params);
+      if (sent && !event.error) {
+        await lifecycle.serialize(() => lifecycle.recordDraftSent(sent));
+        return;
+      }
+      const created = draftCreatedEffect(event.toolName, event.params, event.result, event.error);
+      if (!created) return;
+      await lifecycle.serialize(() => lifecycle.requestDraftApproval({
+        ...created,
+        title: approvalTitle(created),
+        action: approvalAction(created),
+      }, {
+        openclawRunId: event.runId || ctx.runId,
+        sessionKey: ctx.sessionKey,
+      }));
     });
 
     api.on("agent_end", async (event, ctx) => {

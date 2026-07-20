@@ -33,6 +33,19 @@ terminal agent event, the adapter fails that still-active run as interrupted
 instead of leaving it indefinitely `running`. Runs deliberately paused for an
 approval, clarification, or artifact review remain open.
 
+The plugin also enforces approval continuity for external-message drafts. After
+a supported connector or CLI creates or updates an unsent draft, the plugin
+requests an Org2 approval on the correlated run and records the provider draft
+identity in its private lifecycle state. A later send of that draft is blocked
+by =before_tool_call= until the exact Org2 approval is approved. Successful
+sends reconcile and complete the draft run. Material draft updates supersede a
+pending approval and request a fresh decision.
+
+The built-in effect recognizers cover ClawLink/direct tools whose operation
+names contain =draft= plus =create/save/update/upsert= or =send/deliver=, and
+the configured Google Workspace CLI form (=gog gmail drafts create/send=).
+Connectors should expose stable provider draft IDs for deterministic matching.
+
 The adapter remains pinned to one configured `corpusDir` for writes. Mac
 workflow requests include the selected portable corpus ID, and the plugin
 rejects a mismatch before creating, syncing, or continuing work. Stable
