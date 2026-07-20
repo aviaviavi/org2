@@ -220,6 +220,19 @@ final class AgentRunModelsTests: XCTestCase {
     XCTAssertTrue(run.isFinished)
   }
 
+  func testRunningRunDoesNotNeedAttentionWhileReviewSignalsRemain() throws {
+    let run = try makeRun(
+      status: "running",
+      validationStatus: "warning",
+      reviewRequired: true
+    )
+
+    XCTAssertFalse(run.needsAttention)
+    XCTAssertFalse(run.isFinished)
+    XCTAssertEqual(AgentRunScope.active.entries(in: [run]).map(\.id), [run.id])
+    XCTAssertTrue(AgentRunScope.attention.entries(in: [run]).isEmpty)
+  }
+
   func testCompletedRunDoesNotNeedAttentionWhenOldReviewSignalsRemain() throws {
     let run = try makeRun(
       status: "completed",
