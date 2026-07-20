@@ -688,6 +688,8 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var selectedApprovalItemID: ApprovalItem.ID?
   @Published public var isLoadingApprovals = false
   @Published public private(set) var agentRuns: [AgentRunItem] = []
+  @Published public var agentRunFilter = ""
+  @Published public var agentRunFilterFocusToken = 0
   @Published public var selectedAgentRunID: AgentRunItem.ID?
   @Published public private(set) var presentedAgentRunID: AgentRunItem.ID?
   @Published public private(set) var isLoadingAgentRuns = false
@@ -7508,7 +7510,7 @@ public final class WorkspaceStore: ObservableObject {
     case .agenda:
       focusAgendaFilter(clearsFilter: false)
     case .approvals:
-      focusApprovalFilter()
+      focusRunsAndReviewFilter()
     case .files:
       focusCorpusFileFilter()
     case .home, .meetings, .openClaw:
@@ -11175,6 +11177,16 @@ public final class WorkspaceStore: ObservableObject {
   public func focusApprovalFilter() {
     selectedSurface = .approvals
     approvalFilterFocusToken += 1
+  }
+
+  public func focusRunsAndReviewFilter() {
+    selectedSurface = .approvals
+    agentRunFilterFocusToken += 1
+    approvalFilterFocusToken += 1
+  }
+
+  public func clearAgentRunFilter() {
+    agentRunFilter = ""
   }
 
   public func focusCorpusFileFilter() {

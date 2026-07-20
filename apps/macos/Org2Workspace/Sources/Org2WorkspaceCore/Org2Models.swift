@@ -349,6 +349,65 @@ public struct AgentRunItem: Identifiable, Decodable, Hashable, Sendable {
     return prompt
   }
 
+  public func matchesRunFilter(_ query: String) -> Bool {
+    let terms = query
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .lowercased()
+      .split(whereSeparator: { $0.isWhitespace })
+      .map(String.init)
+    guard !terms.isEmpty else { return true }
+
+    var values = [
+      id,
+      goal,
+      status,
+      riskClass,
+      owner,
+      assignee,
+      workflowId,
+      workflowVersion,
+      providerPolicy,
+      provider,
+      model,
+      parentRunId,
+      blockedReason,
+      failure,
+      outcome?.summary,
+    ].compactMap { $0 }
+    values.append(contentsOf: acceptanceCriteria)
+    values.append(contentsOf: capabilities)
+    values.append(contentsOf: outcome?.highlights ?? [])
+    values.append(contentsOf: outcome?.nextActions ?? [])
+
+    for item in context {
+      values.append(contentsOf: [item.ref, item.title, item.citation, item.sha256].compactMap { $0 })
+    }
+    for item in plan {
+      values.append(contentsOf: [item.id, item.title, item.kind, item.status, item.capability, item.detail].compactMap { $0 })
+    }
+    for item in artifacts {
+      values.append(contentsOf: [item.id, item.path, item.role, item.title, item.mediaType, item.reviewStatus].compactMap { $0 })
+    }
+    for item in approvals {
+      values.append(contentsOf: [
+        item.id, item.title, item.action, item.riskClass, item.status,
+        item.requestedRole, item.requestedFrom, item.decidedBy, item.note, item.receipt,
+      ].compactMap { $0 })
+    }
+    for item in validations {
+      values.append(contentsOf: [item.id, item.name, item.status, item.detail].compactMap { $0 })
+    }
+    for item in comments {
+      values.append(contentsOf: [item.author, item.body].compactMap { $0 })
+    }
+    for item in events {
+      values.append(contentsOf: [item.type, item.actor, item.detail].compactMap { $0 })
+    }
+
+    let haystack = values.joined(separator: "\n").lowercased()
+    return terms.allSatisfy { haystack.contains($0) }
+  }
+
   public static func humanizedLabel(_ rawValue: String) -> String {
     rawValue
       .replacingOccurrences(of: "-", with: " ")
