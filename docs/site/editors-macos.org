@@ -71,7 +71,7 @@ Interactive line, bar, and histogram charts remain compiler-described and app-pr
 
 This is one place where the Mac app can take the Org tradition substantially further. Org tables, result blocks, and chart declarations remain readable and versionable as source, while the HTML-backed reading surface has room for dense layouts and interactions that would be awkward in a terminal-style buffer.
 
-The important product rule is that the app should write ordinary Org2 text. Users should be able to inspect every change in Git or another editor.
+The app writes ordinary Org2 text. Users can inspect every change in Git or another editor.
 
 * Meetings
 

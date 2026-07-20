@@ -56,7 +56,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <p>Org2 treats corpus maintenance as a core compiler capability: cleanup, graph repair, and review become part of the normal workflow.</p>
 <p>A knowledge corpus has source files, derived artifacts, links, IDs, provenance, publish outputs, editor indexes, and generated views. The compiler model gives Org2 one place to parse those files, check trust boundaries, and report or repair drift before it reaches publishing or daily planning.</p>
 <section class="org2-headline level-1">
-<h1 id="core-passes-org2-should-own">Core passes Org2 should own</h1>
+<h1 id="core-maintenance-passes">Core maintenance passes</h1>
 <p>The maintenance story groups existing and planned checks into a few explicit passes:</p>
 <ul>
 <li><p><strong>Format normalization</strong> with <code>org2 fmt</code>: keep syntax and prose layout stable enough for clean diffs and generated edits.</p></li>
@@ -95,12 +95,12 @@ org2 publish docs-site --config org2.json --preview</code></pre>
 </section>
 <section class="org2-headline level-1">
 <h1 id="trust-boundaries">Trust boundaries</h1>
-<p>Org2 should preserve a clear distinction between source files and generated artifacts.</p>
+<p>Org2 preserves a clear distinction between source files and generated artifacts.</p>
 <ul>
 <li><p>Source notes are edited by people and tools.</p></li>
-<li><p>Compiled views, publish outputs, and generated reports should carry artifact role/provenance metadata when they live in the corpus.</p></li>
-<li><p>Lint should flag missing or stale provenance before derived content is trusted as source.</p></li>
-<li><p>Repair passes should default to preview/check modes where possible and require <code>--apply</code> before writing.</p></li>
+<li><p>Compiled views, publish outputs, and generated reports carry artifact role/provenance metadata when they live in the corpus.</p></li>
+<li><p>Lint flags missing or stale provenance before derived content is trusted as source.</p></li>
+<li><p>Repair passes default to preview/check modes where possible and require <code>--apply</code> before writing.</p></li>
 </ul>
 </section>
 <section class="org2-headline level-1">

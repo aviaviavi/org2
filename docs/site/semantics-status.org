@@ -40,7 +40,7 @@ These are intended to remain stable for users, but details can still change acro
 
 * Identity, provenance, and graph operations
 
-Org2 treats linked knowledge as compiler state rather than editor decoration. A note corpus should be able to answer three practical questions reliably:
+Org2 treats linked knowledge as compiler state rather than editor decoration. Its corpus model answers three practical questions reliably:
 
 - What is this node's stable identity?
 - Where did this fact, link, or derived artifact come from?
@@ -66,7 +66,7 @@ This keeps search results, backlinks, exports, and future maintenance passes exp
 
 ** Graph operation contract
 
-Graph-aware commands should separate three phases:
+Graph-aware commands separate three phases:
 
 1. parse source files into syntax and metadata,
 2. resolve identities, aliases, links, and backlinks into a graph model,

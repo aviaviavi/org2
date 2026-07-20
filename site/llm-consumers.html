@@ -55,7 +55,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <h1 class="org2-document-title">External LLM consumer pattern</h1>
 <p class="org2-document-subtitle" role="doc-subtitle">Cited Org2 context without provider calls in core</p>
 </header>
-<p>Org2 is useful to LLM assistants because it compiles local plain-text notes into cited, machine-readable evidence. The core Org2 CLI should stay deterministic: it parses, queries, lints, and compiles a corpus, but it does not need an LLM provider or hosted service to do that work.</p>
+<p>Org2 is useful to LLM assistants because it compiles local plain-text notes into cited, machine-readable evidence. The core Org2 CLI stays deterministic: it parses, queries, lints, and compiles a corpus, but it does not need an LLM provider or hosted service to do that work.</p>
 <p>This page describes the recommended boundary for OpenClaw, Claude, Codex, local models, or any other external agent. For the proposed in-repo AI job architecture, see <a href="ai-processing-architecture.html">AI processing architecture</a>.</p>
 <section class="org2-headline level-1">
 <h1 id="boundary">Boundary</h1>

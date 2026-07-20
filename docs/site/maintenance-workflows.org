@@ -4,7 +4,7 @@ Org2 treats corpus maintenance as a core compiler capability: cleanup, graph rep
 
 A knowledge corpus has source files, derived artifacts, links, IDs, provenance, publish outputs, editor indexes, and generated views. The compiler model gives Org2 one place to parse those files, check trust boundaries, and report or repair drift before it reaches publishing or daily planning.
 
-* Core passes Org2 should own
+* Core maintenance passes
 
 The maintenance story groups existing and planned checks into a few explicit passes:
 
@@ -53,12 +53,12 @@ This rebuilds =dist/=, validates fixture pairs with =tools/fixture-runner.mjs --
 
 * Trust boundaries
 
-Org2 should preserve a clear distinction between source files and generated artifacts.
+Org2 preserves a clear distinction between source files and generated artifacts.
 
 - Source notes are edited by people and tools.
-- Compiled views, publish outputs, and generated reports should carry artifact role/provenance metadata when they live in the corpus.
-- Lint should flag missing or stale provenance before derived content is trusted as source.
-- Repair passes should default to preview/check modes where possible and require =--apply= before writing.
+- Compiled views, publish outputs, and generated reports carry artifact role/provenance metadata when they live in the corpus.
+- Lint flags missing or stale provenance before derived content is trusted as source.
+- Repair passes default to preview/check modes where possible and require =--apply= before writing.
 
 * Current concrete workflow
 
