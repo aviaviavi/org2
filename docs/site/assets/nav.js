@@ -191,10 +191,25 @@
     });
   }
 
+  function setupCurrentPage() {
+    function normalize(pathname) {
+      return pathname.endsWith('/') ? pathname + 'index.html' : pathname;
+    }
+
+    var current = normalize(window.location.pathname);
+    document.querySelectorAll('.org2-nav a[href]').forEach(function (link) {
+      var target = new URL(link.getAttribute('href'), window.location.href);
+      if (target.origin === window.location.origin && normalize(target.pathname) === current) {
+        link.setAttribute('aria-current', 'page');
+      }
+    });
+  }
+
   function init() {
     setup();
     setupHoverDropdowns();
     setupSearch();
+    setupCurrentPage();
   }
 
   window.addEventListener('resize', setup);
