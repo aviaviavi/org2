@@ -43,7 +43,7 @@ export function workflowExecutionPrompt(workflow, inputs = {}, runId) {
     `Execute the Org2 workflow \"${workflow.title}\" from its canonical plain-text workflow file.`,
     "Read the workflow and durable run with the Org2 CLI. Update run steps as they progress, record produced artifacts and validation results, and keep generated work in the declared reviewable locations.",
     "At an approval boundary, request the approval on this run and end the turn without performing the protected action. Org2 will explicitly continue the same run after approval.",
-    "Do not bypass an approval, complete a run with a pending review boundary, or silently promote generated work into canonical notes.",
+    "Do not bypass an approval, complete a run with a pending review boundary, or silently promote generated work into canonical notes. After a human review decision, record it with `org2 run artifact-review RUN_ID ARTIFACT_ID --status reviewed|rejected` before completing the run.",
   ].join("\n");
 }
 
@@ -56,6 +56,7 @@ export function workflowContinuationPrompt(workflow, runId) {
     "",
     `Continue the Org2 workflow \"${workflow.title}\" using its existing durable run.`,
     "Re-read the workflow and run with the Org2 CLI. Continue from the first incomplete step, perform only actions covered by recorded approvals, and preserve the run's artifacts, validation, and event history.",
+    "When an approval resolves an artifact review boundary, record the artifact decision with `org2 run artifact-review RUN_ID ARTIFACT_ID --status reviewed|rejected` before completing the run.",
   ].join("\n");
 }
 
@@ -294,6 +295,14 @@ export class Org2Lifecycle {
     }
     const run = JSON.parse(await this.exec(["run", "show", mapping.org2RunId, "--json"]));
     const command = outcomeCommand(outcome);
+    if (command === "complete"
+      && !["completed", "failed", "canceled"].includes(run.status)
+      && (run.artifacts || []).some((artifact) => artifact.reviewStatus === "review-required")) {
+      mapping.pausedAt = new Date().toISOString();
+      mapping.pausedStatus = "review-required";
+      await this.#save();
+      return { terminal: false, status: "review-required" };
+    }
     if (command === "complete" && (run.status === "waiting-approval" || run.status === "blocked")) {
       mapping.pausedAt = new Date().toISOString();
       mapping.pausedStatus = run.status;

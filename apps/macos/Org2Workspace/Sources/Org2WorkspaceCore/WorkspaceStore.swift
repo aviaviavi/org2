@@ -2187,6 +2187,34 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
+  public func completeAgentRunExternally(_ run: AgentRunItem, summary: String) async {
+    guard let corpusRoot, run.status == "blocked", !mutatingAgentRunIDs.contains(run.id) else { return }
+    let normalizedSummary = summary.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !normalizedSummary.isEmpty else {
+      errorText = "Describe where or how the work was completed."
+      statusText = "External completion note required"
+      return
+    }
+    mutatingAgentRunIDs.insert(run.id)
+    defer { mutatingAgentRunIDs.remove(run.id) }
+    do {
+      let updated: AgentRunItem = try await cli.runJSON([
+        "run", "complete-external", run.id,
+        "--summary", normalizedSummary,
+        "--actor", "Org2Workspace",
+        "--dir", corpusRoot.path,
+        "--json"
+      ])
+      if let index = agentRuns.firstIndex(where: { $0.id == updated.id }) {
+        agentRuns[index] = updated
+      }
+      statusText = "Recorded external completion for \(updated.goal)"
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "External completion failed"
+    }
+  }
+
   public func decideAgentRunApproval(_ run: AgentRunItem, approval: AgentRunApprovalItem, decision: String) async {
     guard let corpusRoot, !mutatingAgentRunIDs.contains(run.id) else { return }
     mutatingAgentRunIDs.insert(run.id)
