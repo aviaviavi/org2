@@ -1,6 +1,101 @@
 import AppKit
 import SwiftUI
 
+struct OpenClawPresentedContext: Identifiable, Hashable, Sendable {
+  let kind: String
+  let title: String
+  let reference: String
+  let sourceLine: String
+
+  var id: String { "\(kind)|\(reference)" }
+
+  var systemImage: String {
+    switch kind.lowercased() {
+    case let value where value.contains("block"):
+      return "text.quote"
+    case let value where value.contains("entry") || value.contains("heading"):
+      return "text.line.first.and.arrowtriangle.forward"
+    case let value where value.contains("page") || value.contains("file"):
+      return "doc.text"
+    default:
+      return "scope"
+    }
+  }
+}
+
+struct OpenClawContextPresentation: Equatable, Sendable {
+  let contexts: [OpenClawPresentedContext]
+  let userText: String
+
+  init(_ rawText: String, extractsContexts: Bool = true) {
+    guard extractsContexts else {
+      contexts = []
+      userText = rawText
+      return
+    }
+    var remaining = rawText.replacingOccurrences(of: "\r\n", with: "\n")
+    var parsed: [OpenClawPresentedContext] = []
+
+    while !remaining.isEmpty {
+      let separator = remaining.range(of: "\n\n")
+      let candidate = separator.map { String(remaining[..<$0.lowerBound]) } ?? remaining
+      guard let context = Self.parseContextLine(candidate) else { break }
+      parsed.append(context)
+      if let separator {
+        remaining = String(remaining[separator.upperBound...])
+      } else {
+        remaining = ""
+      }
+    }
+
+    contexts = parsed
+    userText = remaining
+  }
+
+  func replacingUserText(_ nextUserText: String) -> String {
+    Self.serialize(contexts: contexts, userText: nextUserText)
+  }
+
+  func removing(_ context: OpenClawPresentedContext) -> String {
+    Self.serialize(contexts: contexts.filter { $0.id != context.id }, userText: userText)
+  }
+
+  var clipboardText: String {
+    let contextLines = contexts.map { "[Context: \($0.title)]" }
+    return (contextLines + (userText.isEmpty ? [] : [userText])).joined(separator: "\n")
+  }
+
+  private static func serialize(contexts: [OpenClawPresentedContext], userText: String) -> String {
+    guard !contexts.isEmpty else { return userText }
+    return contexts.map(\.sourceLine).joined(separator: "\n\n") + "\n\n" + userText
+  }
+
+  private static func parseContextLine(_ line: String) -> OpenClawPresentedContext? {
+    guard line.hasPrefix("Use "), line.hasSuffix(" as context.") else { return nil }
+    let body = String(line.dropFirst(4).dropLast(" as context.".count))
+    let kind: String
+    let title: String
+    let reference: String
+    if let quoteStart = body.range(of: " “"),
+       let separator = body.range(of: "” at ", range: quoteStart.upperBound..<body.endIndex) {
+      kind = String(body[..<quoteStart.lowerBound])
+      title = String(body[quoteStart.upperBound..<separator.lowerBound])
+      reference = String(body[separator.upperBound...])
+    } else {
+      guard let separator = body.range(of: " at ") else { return nil }
+      kind = String(body[..<separator.lowerBound])
+      reference = String(body[separator.upperBound...])
+      title = kind
+        .replacingOccurrences(of: "selected ", with: "", options: [.caseInsensitive, .anchored])
+        .replacingOccurrences(of: "current ", with: "", options: [.caseInsensitive, .anchored])
+        .capitalized
+    }
+
+    guard !kind.isEmpty, !title.isEmpty else { return nil }
+    return OpenClawPresentedContext(kind: kind, title: title, reference: reference, sourceLine: line)
+  }
+}
+
 struct ChatBubbleView: View {
   let message: OpenClawChatMessage
   let compact: Bool
@@ -13,6 +108,10 @@ struct ChatBubbleView: View {
   }
 
   var body: some View {
+    let presentation = OpenClawContextPresentation(
+      message.content,
+      extractsContexts: message.role == .user
+    )
     HStack(alignment: .top, spacing: 10) {
       if message.role == .user {
         Spacer(minLength: compact ? 24 : 48)
@@ -38,8 +137,11 @@ struct ChatBubbleView: View {
           }
         }
         .padding(.trailing, 22)
-        if !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-          OrgInlineText(message.content, managesTextSelection: false)
+        if !presentation.contexts.isEmpty {
+          OpenClawContextPillsView(contexts: presentation.contexts)
+        }
+        if !presentation.userText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+          OrgInlineText(presentation.userText, managesTextSelection: false)
             .lineLimit(nil)
             .frame(maxWidth: compact ? 360 : 640, alignment: .leading)
             .fixedSize(horizontal: false, vertical: true)
@@ -160,7 +262,10 @@ struct ChatBubbleView: View {
 enum OpenClawMessageClipboard {
   nonisolated static func text(for message: OpenClawChatMessage) -> String {
     if !message.content.isEmpty {
-      return message.content
+      return OpenClawContextPresentation(
+        message.content,
+        extractsContexts: message.role == .user
+      ).clipboardText
     }
     return message.attachments.map { "[Attachment: \($0.fileName)]" }.joined(separator: "\n")
   }
@@ -169,6 +274,67 @@ enum OpenClawMessageClipboard {
   static func copy(_ message: OpenClawChatMessage, to pasteboard: NSPasteboard = .general) {
     pasteboard.clearContents()
     pasteboard.setString(text(for: message), forType: .string)
+  }
+}
+
+private struct OpenClawContextPillsView: View {
+  let contexts: [OpenClawPresentedContext]
+  var remove: ((OpenClawPresentedContext) -> Void)?
+
+  init(
+    contexts: [OpenClawPresentedContext],
+    remove: ((OpenClawPresentedContext) -> Void)? = nil
+  ) {
+    self.contexts = contexts
+    self.remove = remove
+  }
+
+  var body: some View {
+    ScrollView(.horizontal, showsIndicators: false) {
+      HStack(spacing: 6) {
+        ForEach(contexts) { context in
+          OpenClawContextPill(context: context, remove: remove)
+        }
+      }
+      .padding(.vertical, 1)
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+  }
+}
+
+private struct OpenClawContextPill: View {
+  let context: OpenClawPresentedContext
+  let remove: ((OpenClawPresentedContext) -> Void)?
+
+  var body: some View {
+    HStack(spacing: 5) {
+      Image(systemName: context.systemImage)
+        .font(.caption2.weight(.semibold))
+        .accessibilityHidden(true)
+      Text(context.title)
+        .font(.caption.weight(.medium))
+        .lineLimit(1)
+        .truncationMode(.tail)
+      if let remove {
+        Button {
+          remove(context)
+        } label: {
+          Image(systemName: "xmark")
+            .font(.system(size: 8, weight: .bold))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.secondary)
+        .help("Remove \(context.title) from context")
+        .accessibilityLabel("Remove \(context.title) from context")
+      }
+    }
+    .foregroundStyle(Color.accentColor)
+    .padding(.horizontal, 8)
+    .padding(.vertical, 4)
+    .frame(maxWidth: 240)
+    .background(Color.accentColor.opacity(0.09), in: Capsule())
+    .overlay(Capsule().stroke(Color.accentColor.opacity(0.18)))
+    .help("\(context.kind.capitalized): \(context.title)")
   }
 }
 
@@ -406,37 +572,50 @@ struct OpenClawComposerView: View {
   let compact: Bool
 
   var body: some View {
+    let presentation = OpenClawContextPresentation(localDraft)
     VStack(alignment: .trailing, spacing: 8) {
-      let composerHeight = OpenClawComposerSizing.height(for: localDraft, compact: compact)
-      ZStack(alignment: .topLeading) {
-        RoundedRectangle(cornerRadius: WorkspaceDesign.cornerRadius, style: .continuous)
-          .fill(WorkspaceDesign.surfaceBackground)
-          .overlay(
-            RoundedRectangle(cornerRadius: WorkspaceDesign.cornerRadius, style: .continuous)
-              .stroke(canSend ? Color.accentColor.opacity(0.26) : WorkspaceDesign.hairline)
-          )
+      let composerHeight = OpenClawComposerSizing.height(for: presentation.userText, compact: compact)
+      VStack(alignment: .leading, spacing: 0) {
+        if !presentation.contexts.isEmpty {
+          OpenClawContextPillsView(contexts: presentation.contexts) { context in
+            localDraft = presentation.removing(context)
+          }
+          .padding(.horizontal, 8)
+          .padding(.top, 7)
+          .padding(.bottom, 6)
 
-        if localDraft.isEmpty {
-          Text("Message OpenClaw")
-            .font(.body)
-            .foregroundStyle(.tertiary)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 9)
+          Divider()
+            .padding(.horizontal, 8)
         }
 
-        OpenClawComposerTextView(
-          text: $localDraft,
-          focusOnAppear: focusOnAppear,
-          onReturn: handleReturn,
-          onSuggestionCommand: handleSuggestionCommand
-        )
-        .padding(4)
+        ZStack(alignment: .topLeading) {
+          if presentation.userText.isEmpty {
+            Text("Message OpenClaw")
+              .font(.body)
+              .foregroundStyle(.tertiary)
+              .padding(.horizontal, 10)
+              .padding(.vertical, 9)
+          }
+
+          OpenClawComposerTextView(
+            text: visibleDraftBinding,
+            focusOnAppear: focusOnAppear,
+            onReturn: handleReturn,
+            onSuggestionCommand: handleSuggestionCommand
+          )
+          .padding(4)
+        }
+        .frame(minHeight: composerHeight, idealHeight: composerHeight, maxHeight: composerHeight)
       }
-      .frame(minHeight: composerHeight, idealHeight: composerHeight, maxHeight: composerHeight)
+      .background(WorkspaceDesign.surfaceBackground, in: RoundedRectangle(cornerRadius: WorkspaceDesign.cornerRadius, style: .continuous))
+      .overlay(
+        RoundedRectangle(cornerRadius: WorkspaceDesign.cornerRadius, style: .continuous)
+          .stroke(canSend ? Color.accentColor.opacity(0.26) : WorkspaceDesign.hairline)
+      )
       .animation(.easeOut(duration: 0.12), value: composerHeight)
 
       let slashSuggestions = OpenClawSlashCommands.suggestions(
-        for: localDraft,
+        for: presentation.userText,
         gatewayCommands: store.openClawGatewayCommands
       )
       if !slashSuggestions.isEmpty {
@@ -531,7 +710,7 @@ struct OpenClawComposerView: View {
     .onChange(of: localDraft) {
       selectedSlashSuggestionIndex = 0
       cacheDraftLocally()
-      if localDraft == "/" {
+      if OpenClawContextPresentation(localDraft).userText == "/" {
         Task { await store.refreshOpenClawCommands() }
       }
     }
@@ -552,6 +731,15 @@ struct OpenClawComposerView: View {
       || !store.openClawPendingAttachments.isEmpty
   }
 
+  private var visibleDraftBinding: Binding<String> {
+    Binding(
+      get: { OpenClawContextPresentation(localDraft).userText },
+      set: { nextText in
+        localDraft = OpenClawContextPresentation(localDraft).replacingUserText(nextText)
+      }
+    )
+  }
+
   private func sendIfPossible() -> Bool {
     guard canSend else { return false }
     let text = localDraft
@@ -569,7 +757,7 @@ struct OpenClawComposerView: View {
 
   private func handleSuggestionCommand(_ command: OpenClawComposerSuggestionKeyCommand) -> Bool {
     let suggestions = OpenClawSlashCommands.suggestions(
-      for: localDraft,
+      for: OpenClawContextPresentation(localDraft).userText,
       gatewayCommands: store.openClawGatewayCommands
     )
     guard !suggestions.isEmpty else { return false }
@@ -596,7 +784,8 @@ struct OpenClawComposerView: View {
   }
 
   private func completeSlashCommand(_ command: OpenClawSlashCommand) {
-    localDraft = command.arguments.isEmpty ? "/\(command.name)" : "/\(command.name) "
+    let commandText = command.arguments.isEmpty ? "/\(command.name)" : "/\(command.name) "
+    localDraft = OpenClawContextPresentation(localDraft).replacingUserText(commandText)
   }
 
   private func cacheDraftLocally() {

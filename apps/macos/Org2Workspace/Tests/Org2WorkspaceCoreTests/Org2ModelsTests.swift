@@ -2939,6 +2939,43 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(OpenClawSlashCommandSelection.movedIndex(4, by: 1, count: 0), 0)
   }
 
+  func testOpenClawContextPresentationSeparatesMultipleContextPillsFromUserText() {
+    let raw = """
+    Use selected block “Launch risks” at /remote/org2/projects.org2:12-18 as context.
+
+    Use selected page “Product plan” at /remote/org2/Product at risk.org2:1 as context.
+
+    What should change?
+    """
+    let presentation = OpenClawContextPresentation(raw)
+
+    XCTAssertEqual(presentation.contexts.map(\.title), ["Launch risks", "Product plan"])
+    XCTAssertEqual(presentation.contexts.map(\.kind), ["selected block", "selected page"])
+    XCTAssertEqual(presentation.contexts[1].reference, "/remote/org2/Product at risk.org2:1")
+    XCTAssertEqual(presentation.userText, "What should change?")
+    XCTAssertEqual(presentation.clipboardText, "[Context: Launch risks]\n[Context: Product plan]\nWhat should change?")
+    XCTAssertFalse(presentation.clipboardText.contains("/remote/org2"))
+
+    XCTAssertEqual(
+      presentation.removing(presentation.contexts[0]),
+      "Use selected page “Product plan” at /remote/org2/Product at risk.org2:1 as context.\n\nWhat should change?"
+    )
+    XCTAssertEqual(
+      presentation.replacingUserText("Summarize it."),
+      "Use selected block “Launch risks” at /remote/org2/projects.org2:12-18 as context.\n\nUse selected page “Product plan” at /remote/org2/Product at risk.org2:1 as context.\n\nSummarize it."
+    )
+  }
+
+  func testOpenClawContextPresentationHidesLegacyOpaqueReference() {
+    let presentation = OpenClawContextPresentation(
+      "Use selected page at 74717eff-8133-4b2c-a8eb-fa622adc2e0d.org2:1 as context.\n\nWhy did this fail?"
+    )
+
+    XCTAssertEqual(presentation.contexts.map(\.title), ["Page"])
+    XCTAssertEqual(presentation.userText, "Why did this fail?")
+    XCTAssertEqual(presentation.clipboardText, "[Context: Page]\nWhy did this fail?")
+  }
+
   func testOpenClawComposerDraftSyncMergesExternalDraftChangesWithoutDroppingLocalTyping() {
     XCTAssertEqual(
       OpenClawComposerDraftSync.localDraftAfterStoreChange(
@@ -3418,10 +3455,10 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertFalse(store.isOpenClawAssistantPresented)
     let contextThreadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
     XCTAssertEqual(store.openClawChatThreads.count, 1)
-    XCTAssertEqual(store.openClawChatThreads.first?.title, "Ask: daily")
+    XCTAssertEqual(store.openClawChatThreads.first?.title, "Ask: Test")
     XCTAssertEqual(
       store.openClawDraft,
-      "Use selected entry at /remote/org2/daily.org2:7 as context.\n\nWhat should I do next?"
+      "Use selected entry “Test” at /remote/org2/daily.org2:7 as context.\n\nWhat should I do next?"
     )
     XCTAssertEqual(store.openClawStatusText, "Added daily.org2:7 to OpenClaw")
 
@@ -3430,7 +3467,7 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(store.openClawChatThreads.count, 1)
     XCTAssertEqual(
       store.openClawDraft,
-      "Use selected entry at /remote/org2/daily.org2:7 as context.\n\nWhat should I do next?"
+      "Use selected entry “Test” at /remote/org2/daily.org2:7 as context.\n\nWhat should I do next?"
     )
 
     store.performUndoCommand()
@@ -3440,9 +3477,53 @@ final class Org2ModelsTests: XCTestCase {
     store.performRedoCommand()
     XCTAssertEqual(
       store.openClawDraft,
-      "Use selected entry at /remote/org2/daily.org2:7 as context.\n\nWhat should I do next?"
+      "Use selected entry “Test” at /remote/org2/daily.org2:7 as context.\n\nWhat should I do next?"
     )
     XCTAssertEqual(store.openClawStatusText, "Redid OpenClaw draft change")
+  }
+
+  @MainActor
+  func testAskOpenClawAboutMultipleEntriesReusesEmptyContextThread() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-multiple-ai-context-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let suiteName = "org2-workspace-multiple-ai-context-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let store = WorkspaceStore(
+      defaults: defaults,
+      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json"),
+      legacyDefaultsDomains: []
+    )
+    store.corpusRoot = root
+    store.openClawRemoteCorpusPath = "/remote/org2"
+    store.selectedEntrySource = EntrySource(
+      file: root.appendingPathComponent("launch.org2").path,
+      startLine: 3,
+      endLineExclusive: 5,
+      text: "* Launch risks\nDetails",
+      isSubtree: true
+    )
+
+    store.askOpenClawAboutCurrentSelection()
+    store.selectedRenderedBlocks = []
+    store.selectedBlockID = nil
+    store.selectedEntrySource = EntrySource(
+      file: root.appendingPathComponent("deploy.org2").path,
+      startLine: 9,
+      endLineExclusive: 11,
+      text: "* Deployment checklist\nDetails",
+      isSubtree: true
+    )
+    store.askOpenClawAboutCurrentSelection()
+
+    XCTAssertEqual(store.openClawChatThreads.count, 1)
+    let presentation = OpenClawContextPresentation(store.openClawDraft)
+    XCTAssertEqual(presentation.contexts.map(\.title), ["Deployment checklist", "Launch risks"])
+    XCTAssertEqual(presentation.contexts.map(\.reference), [
+      "/remote/org2/deploy.org2:9",
+      "/remote/org2/launch.org2:3"
+    ])
   }
 
   @MainActor
@@ -3487,10 +3568,10 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(store.selectedSurface, .openClaw)
     XCTAssertEqual(store.selectedBlockID, paragraph.id)
     XCTAssertEqual(store.openClawChatThreads.count, 1)
-    XCTAssertEqual(store.openClawChatThreads.first?.title, "Ask: project.org2")
+    XCTAssertEqual(store.openClawChatThreads.first?.title, "Ask: First paragraph")
     XCTAssertEqual(
       store.openClawDraft,
-      "Use selected block at /remote/org2/project.org2:13-14 as context.\n\n"
+      "Use selected block “First paragraph” at /remote/org2/project.org2:13-14 as context.\n\n"
     )
     XCTAssertEqual(store.openClawStatusText, "Added project.org2:13-14 to OpenClaw")
   }
@@ -3531,7 +3612,7 @@ final class Org2ModelsTests: XCTestCase {
     let heading = try XCTUnwrap(store.selectedRenderedBlocks.first { $0.startLine == 22 })
     XCTAssertEqual(store.selectedBlockID, heading.id)
     XCTAssertEqual(store.selectedSurface, .openClaw)
-    XCTAssertEqual(store.openClawDraft, "Use selected block at /remote/org2/project.org2:22 as context.\n\n")
+    XCTAssertEqual(store.openClawDraft, "Use selected block “Target heading” at /remote/org2/project.org2:22 as context.\n\n")
     XCTAssertEqual(store.openClawStatusText, "Added project.org2:22 to OpenClaw")
   }
 
@@ -3566,7 +3647,7 @@ final class Org2ModelsTests: XCTestCase {
     let section = try XCTUnwrap(store.selectedRenderedBlocks.first { $0.startLine == 40 })
     XCTAssertEqual(store.selectedBlockID, section.id)
     XCTAssertEqual(store.selectedSurface, .openClaw)
-    XCTAssertEqual(store.openClawDraft, "Use selected block at /remote/org2/board.org2:40 as context.\n\n")
+    XCTAssertEqual(store.openClawDraft, "Use selected block “Revenue” at /remote/org2/board.org2:40 as context.\n\n")
   }
 
   func testOpenClawFileReferenceExtractsOrgPaths() {
