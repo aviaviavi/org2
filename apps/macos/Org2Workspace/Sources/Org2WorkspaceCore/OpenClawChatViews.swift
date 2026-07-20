@@ -9,6 +9,11 @@ struct OpenClawPresentedContext: Identifiable, Hashable, Sendable {
 
   var id: String { "\(kind)|\(reference)" }
 
+  var usesGenericTitle: Bool {
+    let normalized = title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    return ["page", "file", "entry", "heading", "block", "selection", "context"].contains(normalized)
+  }
+
   var systemImage: String {
     switch kind.lowercased() {
     case let value where value.contains("block"):
@@ -278,6 +283,7 @@ enum OpenClawMessageClipboard {
 }
 
 private struct OpenClawContextPillsView: View {
+  @EnvironmentObject private var store: WorkspaceStore
   let contexts: [OpenClawPresentedContext]
   var remove: ((OpenClawPresentedContext) -> Void)?
 
@@ -293,7 +299,10 @@ private struct OpenClawContextPillsView: View {
     ScrollView(.horizontal, showsIndicators: false) {
       HStack(spacing: 6) {
         ForEach(contexts) { context in
-          OpenClawContextPill(context: context, remove: remove)
+          OpenClawContextPill(
+            context: store.resolvedOpenClawContext(context),
+            remove: remove
+          )
         }
       }
       .padding(.vertical, 1)
@@ -303,38 +312,68 @@ private struct OpenClawContextPillsView: View {
 }
 
 private struct OpenClawContextPill: View {
+  @EnvironmentObject private var store: WorkspaceStore
   let context: OpenClawPresentedContext
   let remove: ((OpenClawPresentedContext) -> Void)?
+  @State private var isHovering = false
 
   var body: some View {
-    HStack(spacing: 5) {
-      Image(systemName: context.systemImage)
-        .font(.caption2.weight(.semibold))
-        .accessibilityHidden(true)
-      Text(context.title)
-        .font(.caption.weight(.medium))
-        .lineLimit(1)
-        .truncationMode(.tail)
-      if let remove {
+    HStack(spacing: 3) {
+      Button {
+        store.openOpenClawContext(context)
+      } label: {
+        HStack(spacing: 5) {
+          Image(systemName: context.systemImage)
+            .font(.caption2.weight(.semibold))
+            .accessibilityHidden(true)
+          Text(context.title)
+            .font(.caption.weight(.medium))
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .frame(maxWidth: isHovering ? 320 : 152, alignment: .leading)
+          if remove == nil, isHovering {
+            Image(systemName: "arrow.up.right")
+              .font(.system(size: 8, weight: .bold))
+              .foregroundStyle(.secondary)
+              .transition(.opacity.combined(with: .scale(scale: 0.82)))
+          }
+        }
+        .padding(.leading, 8)
+        .padding(.trailing, remove == nil || !isHovering ? 8 : 2)
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
+      .help("Open \(context.title)")
+      .accessibilityLabel("Open context: \(context.title)")
+
+      if let remove, isHovering {
         Button {
           remove(context)
         } label: {
           Image(systemName: "xmark")
             .font(.system(size: 8, weight: .bold))
+            .frame(width: 16, height: 18)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .foregroundStyle(.secondary)
+        .padding(.trailing, 4)
+        .transition(.opacity.combined(with: .scale(scale: 0.82)))
         .help("Remove \(context.title) from context")
         .accessibilityLabel("Remove \(context.title) from context")
       }
     }
     .foregroundStyle(Color.accentColor)
-    .padding(.horizontal, 8)
-    .padding(.vertical, 4)
-    .frame(maxWidth: 240)
     .background(Color.accentColor.opacity(0.09), in: Capsule())
     .overlay(Capsule().stroke(Color.accentColor.opacity(0.18)))
-    .help("\(context.kind.capitalized): \(context.title)")
+    .contentShape(Capsule())
+    .onHover { hovering in
+      withAnimation(WorkspaceMotion.quick) {
+        isHovering = hovering
+      }
+    }
+    .animation(WorkspaceMotion.quick, value: isHovering)
   }
 }
 

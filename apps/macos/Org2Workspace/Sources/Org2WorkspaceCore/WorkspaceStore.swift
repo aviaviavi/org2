@@ -13791,6 +13791,31 @@ public final class WorkspaceStore: ObservableObject {
     return title.count > 64 ? String(title.prefix(61)) + "…" : title
   }
 
+  func resolvedOpenClawContext(_ context: OpenClawPresentedContext) -> OpenClawPresentedContext {
+    guard context.usesGenericTitle else { return context }
+    let reference = OpenClawFileReference(path: context.reference, line: nil)
+    guard let path = localPathForOpenClawReference(reference.path) else { return context }
+    let url = URL(fileURLWithPath: path).standardizedFileURL
+    let stem = url.deletingPathExtension().lastPathComponent
+    let fallback = UUID(uuidString: stem) == nil ? Self.titleFromFileStem(stem) : context.title
+    guard let prefix = try? Self.readPrefix(url, maxBytes: 256 * 1024) else { return context }
+    let title = Self.openClawTitle(from: prefix, fallback: fallback).title
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !title.isEmpty, title.localizedCaseInsensitiveCompare(context.title) != .orderedSame else {
+      return context
+    }
+    return OpenClawPresentedContext(
+      kind: context.kind,
+      title: title.count > 96 ? String(title.prefix(93)) + "…" : title,
+      reference: context.reference,
+      sourceLine: context.sourceLine
+    )
+  }
+
+  func openOpenClawContext(_ context: OpenClawPresentedContext) {
+    openChatFileReference(OpenClawFileReference(path: context.reference, line: nil))
+  }
+
   private func canReuseOpenClawContextDraftThread(mode: OpenClawThreadMode) -> Bool {
     guard mode == .newThread,
           let thread = selectedOpenClawChatThread,
