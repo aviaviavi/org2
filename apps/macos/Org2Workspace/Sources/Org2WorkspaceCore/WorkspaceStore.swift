@@ -129,6 +129,7 @@ private struct WorkspaceNavigationSnapshot: Hashable {
 
 private struct OpenClawContextPointer: Equatable, Sendable {
   let kind: String
+  let displayTitle: String
   let reference: String
   let displayReference: String
   let threadTitle: String
@@ -152,12 +153,48 @@ private struct OpenClawBlockContextPointer: Equatable, Sendable {
   let file: String
   let startLine: Int
   let endLineExclusive: Int
+  let displayTitle: String
 
   init?(source: EntrySource?, block: OrgEditableBlock) {
     guard let source else { return nil }
     file = source.file
     startLine = block.startLine
     endLineExclusive = block.endLineExclusive
+    displayTitle = Self.displayTitle(for: block)
+  }
+
+  private static func displayTitle(for block: OrgEditableBlock) -> String {
+    let title: String
+    switch block.rendered {
+    case .heading(let heading):
+      title = heading.title
+    case .paragraph(let text):
+      title = text
+    case .listItem(_, _, _, let text):
+      title = text
+    case .planning(let planning):
+      title = "\(planning.kind.capitalized) \(planning.value)"
+    case .keyword(let key, let value):
+      title = value.isEmpty ? key : "\(key): \(value)"
+    case .source(let language, _):
+      title = language.map { "\($0.uppercased()) code" } ?? "Code block"
+    case .table:
+      title = "Table"
+    case .properties:
+      title = "Properties"
+    case .quote(let lines):
+      title = lines.first ?? "Quote"
+    case .horizontalRule:
+      title = "Divider"
+    case .blank:
+      title = "Selected block"
+    }
+    let firstLine = title.split(separator: "\n", omittingEmptySubsequences: true).first.map(String.init) ?? title
+    let cleaned = firstLine
+      .trimmingCharacters(in: CharacterSet(charactersIn: " *_/=~+\t"))
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !cleaned.isEmpty else { return "Selected block" }
+    return cleaned.count > 64 ? String(cleaned.prefix(61)) + "…" : cleaned
   }
 }
 
@@ -13608,9 +13645,11 @@ public final class WorkspaceStore: ObservableObject {
 
     if let source = selectedEntrySource {
       let kind = source.isSubtree ? "selected entry" : "selected page"
-      let title = selectedLocation?.title ?? Self.titleFromFileStem(URL(fileURLWithPath: source.file).deletingPathExtension().lastPathComponent)
+      let fallbackTitle = selectedLocation?.title ?? Self.titleFromFileStem(URL(fileURLWithPath: source.file).deletingPathExtension().lastPathComponent)
+      let title = openClawContextDisplayTitle(for: source, fallback: fallbackTitle, generic: source.isSubtree ? "Selected entry" : "Selected page")
       return OpenClawContextPointer(
         kind: kind,
+        displayTitle: title,
         reference: "\(mappedPathForOpenClaw(source.file)):\(source.startLine)",
         displayReference: "\(relativePath(source.file)):\(source.startLine)",
         threadTitle: "Ask: \(title)"
@@ -13618,11 +13657,17 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     if let location = selectedLocation {
+      let title = openClawReadableContextTitle(
+        location.title,
+        file: location.file,
+        generic: "Current selection"
+      )
       return OpenClawContextPointer(
         kind: "current selection",
+        displayTitle: title,
         reference: "\(mappedPathForOpenClaw(location.file)):\(location.lineForEditor)",
         displayReference: "\(relativePath(location.file)):\(location.lineForEditor)",
-        threadTitle: "Ask: \(location.title)"
+        threadTitle: "Ask: \(title)"
       )
     }
 
@@ -13670,17 +13715,22 @@ public final class WorkspaceStore: ObservableObject {
     }
     return OpenClawContextPointer(
       kind: "selected block",
+      displayTitle: block.displayTitle,
       reference: reference,
       displayReference: displayReference,
-      threadTitle: "Ask: \(selectedLocation?.title ?? displayFile)"
+      threadTitle: "Ask: \(block.displayTitle)"
     )
   }
 
   private func addOpenClawContext(_ pointer: OpenClawContextPointer, threadMode: OpenClawThreadMode) {
-    let injectedContext = "Use \(pointer.kind) at \(pointer.reference) as context.\n\n"
+    let displayTitle = pointer.displayTitle
+      .replacingOccurrences(of: "\n", with: " ")
+      .replacingOccurrences(of: "”", with: "'")
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    let injectedContext = "Use \(pointer.kind) “\(displayTitle)” at \(pointer.reference) as context.\n\n"
     let hadSelectedThread = selectedOpenClawChatThreadID != nil
     let unthreadedDraft = hadSelectedThread ? "" : openClawDraft
-    if !canReuseOpenClawContextDraftThread(for: pointer, mode: threadMode) {
+    if !canReuseOpenClawContextDraftThread(mode: threadMode) {
       prepareOpenClawThread(
         mode: threadMode,
         title: pointer.threadTitle,
@@ -13705,16 +13755,36 @@ public final class WorkspaceStore: ObservableObject {
     statusText = "Added \(pointer.displayReference) to OpenClaw"
   }
 
-  private func canReuseOpenClawContextDraftThread(
-    for pointer: OpenClawContextPointer,
-    mode: OpenClawThreadMode
-  ) -> Bool {
+  private func openClawContextDisplayTitle(
+    for source: EntrySource,
+    fallback: String,
+    generic: String
+  ) -> String {
+    if let heading = OrgEntryRenderer.parseEditable(source.text, baseLine: source.startLine).compactMap({ block -> String? in
+      guard case .heading(let heading) = block.rendered else { return nil }
+      return heading.title
+    }).first {
+      return openClawReadableContextTitle(heading, file: source.file, generic: generic)
+    }
+    return openClawReadableContextTitle(fallback, file: source.file, generic: generic)
+  }
+
+  private func openClawReadableContextTitle(_ rawTitle: String, file _: String, generic: String) -> String {
+    let firstLine = rawTitle.split(separator: "\n", omittingEmptySubsequences: true).first.map(String.init) ?? rawTitle
+    let title = firstLine.trimmingCharacters(in: .whitespacesAndNewlines)
+    let titleStem = URL(fileURLWithPath: title).deletingPathExtension().lastPathComponent
+    guard !title.isEmpty,
+          UUID(uuidString: titleStem) == nil
+    else { return generic }
+    return title.count > 64 ? String(title.prefix(61)) + "…" : title
+  }
+
+  private func canReuseOpenClawContextDraftThread(mode: OpenClawThreadMode) -> Bool {
     guard mode == .newThread,
           let thread = selectedOpenClawChatThread,
-          thread.messages.isEmpty,
-          openClawDraft.contains(pointer.reference)
+          thread.messages.isEmpty
     else { return false }
-    return Self.normalizedOpenClawThreadTitle(thread.title) == Self.normalizedOpenClawThreadTitle(pointer.threadTitle)
+    return !OpenClawContextPresentation(currentOpenClawDraftForSelectedThread()).contexts.isEmpty
   }
 
   private func mappedPathForOpenClaw(_ path: String) -> String {
