@@ -1365,6 +1365,7 @@ blockquote {
   --shadow-small: 0 6px 18px rgba(29, 43, 38, 0.06);
   --font-sans: "Helvetica Neue", Helvetica, Arial, sans-serif;
   --font-mono: "SFMono-Regular", "Cascadia Code", "Roboto Mono", Consolas, "Liberation Mono", monospace;
+  --page-gutter: clamp(1rem, 4vw, 3.25rem);
   --org2-chart-mark: #2854d7;
   --org2-chart-surface: #fcfbf7;
   --org2-chart-axis: #8c9691;
@@ -1434,7 +1435,7 @@ body #content {
   width: min(100%, 78rem);
   max-width: 78rem;
   margin: 0 auto;
-  padding: 0 clamp(1rem, 4vw, 3.25rem) 3rem;
+  padding: 0 var(--page-gutter) 3rem;
 }
 
 #content .org2-document {
@@ -2199,16 +2200,31 @@ body #content {
   color: var(--muted);
 }
 
-#content .org2-footer {
-  max-width: 70rem;
-  margin-top: 6rem;
-  padding: 1rem 0 0;
-  border-top: 1px solid var(--border);
+body > .org2-footer {
+  position: relative;
+  width: min(100%, 78rem);
+  max-width: 78rem;
+  margin: 6rem auto 0;
+  padding: 1rem var(--page-gutter) 3rem;
+  border-top: 0;
   color: var(--quiet);
   font-family: var(--font-mono);
   font-size: 0.68rem;
   letter-spacing: 0.05em;
   text-transform: uppercase;
+}
+
+body > .org2-footer::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: var(--page-gutter);
+  left: var(--page-gutter);
+  border-top: 1px solid var(--border);
+}
+
+body > .org2-footer p {
+  margin: 0;
 }
 
 @media (max-width: 920px) {
@@ -2230,13 +2246,17 @@ body #content {
 }
 
 @media (max-width: 759px) {
+  :root {
+    --page-gutter: 0.85rem;
+  }
+
   html body {
     font-size: 15.5px;
   }
 
   body #content {
     margin-top: 0;
-    padding: 0 0.85rem 2rem;
+    padding: 0 var(--page-gutter) 2rem;
   }
 
   #content .org2-nav {
