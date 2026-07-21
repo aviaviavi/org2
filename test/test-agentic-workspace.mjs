@@ -187,6 +187,7 @@ try {
   workflow.inputs.push({ id: "quarter", description: "Reporting quarter", required: true });
   workflow.instructions = "Prepare the {{quarter}} board briefing";
   workflow.triggers.push({ id: "daily", type: "schedule", enabled: true, schedule: "every 1d", lastRunAt: "2026-07-12T00:00:00Z" });
+  workflow.triggers.push({ id: "after-capture", type: "capture", enabled: true });
   saveWorkflow(root, workflow);
   assert.equal(workflowPath(root, workflow.id), path.join(root, "workflows", "board-briefing.org2"));
   assert.equal(fs.existsSync(workflowPath(root, workflow.id)), true);
@@ -200,6 +201,18 @@ try {
   assert.equal(editedWorkflow.instructions, "Prepare a carefully cited {{quarter}} board briefing");
   assert.equal(editedWorkflow.state, "active");
   assert.equal(dueWorkflowTriggers(workflow, { now: "2026-07-14T00:00:00Z" }).some((item) => item.id === "daily"), true);
+  const captureTriggers = spawnSync(process.execPath, [
+    path.resolve("dist/cli.js"), "workflow", "triggers", workflow.id,
+    "--event", "capture", "--dir", root, "--json",
+  ], { encoding: "utf8" });
+  assert.equal(captureTriggers.status, 0, captureTriggers.stderr || captureTriggers.stdout);
+  assert.equal(JSON.parse(captureTriggers.stdout).due.some((item) => item.id === "after-capture"), true);
+  const invalidEvent = spawnSync(process.execPath, [
+    path.resolve("dist/cli.js"), "workflow", "triggers", workflow.id,
+    "--event", "captured", "--dir", root,
+  ], { encoding: "utf8" });
+  assert.notEqual(invalidEvent.status, 0);
+  assert.match(invalidEvent.stderr, /invalid workflow event: captured; expected one of: capture, meeting-import/);
   const instantiated = instantiateWorkflow(workflow, { quarter: "Q3" });
   assert.equal(instantiated.goal, "Prepare the Q3 board briefing");
   assert.equal(instantiated.workflowId, "board-briefing");

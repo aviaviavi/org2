@@ -342,11 +342,12 @@ org2 workflow schedule weekly-operating-review --cron "0 9 * * 1" --timezone Ame
 org2 workflow pause weekly-operating-review --dir ~/notes
 org2 workflow migrate --dir ~/notes
 org2 workflow triggers weekly-operating-review --changed data/metrics.csv --dir ~/notes --json
+org2 workflow triggers weekly-operating-review --event capture --dir ~/notes --json
 org2 workflow package weekly-operating-review --dir ~/notes --json
 org2 workflow corpus-template weekly-operating-review --out dist/weekly-review-template.json --dir ~/notes
 #+end_src
 
-Schedule syntax is intentionally deterministic and small: =every 15m=, =every 4h=, or =every 1d=. Event hosts ask =workflow triggers= which declarations are due, then instantiate the workflow; the durable run remains the execution record.
+Schedule syntax is intentionally deterministic and small: =every 15m=, =every 4h=, or =every 1d=. Event hosts ask =workflow triggers= which declarations are due, then instantiate the workflow; =--event= accepts only =capture= or =meeting-import= and rejects unknown event names. The durable run remains the execution record.
 
 =workflow package= emits distribution metadata for one provider-independent workflow. =workflow corpus-template= wraps that metadata with ordinary starter files and the standard =raw/=, =notes/=, =views/=, =compiled/=, run, and workflow zones as =org2:corpus-template:v1=. The package is data, not an installer: recipients review it, initialize/open a corpus with their client, and place the workflow record in =workflows/=. Org2 still reads the legacy early-alpha =.org2/workflows/= location; =workflow migrate= moves non-conflicting files into the visible directory.
 

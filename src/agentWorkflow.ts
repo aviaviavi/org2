@@ -10,8 +10,10 @@ import {
 } from "./agentRun.js";
 
 export const ORG2_WORKFLOW_SCHEMA = "org2:workflow:v1" as const;
+export const WORKFLOW_EVENT_TRIGGER_TYPES = ["capture", "meeting-import"] as const;
 
 export type AgentWorkflowState = "draft" | "active" | "paused";
+export type WorkflowEventTriggerType = typeof WORKFLOW_EVENT_TRIGGER_TYPES[number];
 
 export interface WorkflowInput {
   id: string;
@@ -29,7 +31,7 @@ export interface WorkflowOutput {
 
 export interface WorkflowTrigger {
   id: string;
-  type: "manual" | "schedule" | "file-change" | "capture" | "meeting-import";
+  type: "manual" | "schedule" | "file-change" | WorkflowEventTriggerType;
   enabled: boolean;
   schedule?: string;
   timezone?: string;
@@ -296,7 +298,7 @@ function parseEvery(raw: string): number | null {
   return amount * (match[2]?.toLowerCase() === "m" ? 60_000 : match[2]?.toLowerCase() === "h" ? 3_600_000 : 86_400_000);
 }
 
-export function dueWorkflowTriggers(workflow: AgentWorkflow, options: { now?: string; changedPaths?: string[]; event?: "capture" | "meeting-import" } = {}): WorkflowTrigger[] {
+export function dueWorkflowTriggers(workflow: AgentWorkflow, options: { now?: string; changedPaths?: string[]; event?: WorkflowEventTriggerType } = {}): WorkflowTrigger[] {
   const now = new Date(options.now || Date.now()).getTime();
   return workflow.triggers.filter((trigger) => {
     if (!trigger.enabled || trigger.type === "manual") return false;
