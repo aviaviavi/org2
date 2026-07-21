@@ -1,5 +1,233 @@
 import Foundation
 
+public struct WorkspaceSourceSchedule: Codable, Equatable, Sendable {
+  public enum Kind: String, Codable, Sendable {
+    case interval
+    case daily
+  }
+
+  public var enabled: Bool
+  public var kind: Kind
+  public var everyMinutes: Int?
+  public var time: String?
+  public var timezone: String
+
+  public var fingerprint: String {
+    [enabled ? "1" : "0", kind.rawValue, everyMinutes.map(String.init) ?? "", time ?? "", timezone]
+      .joined(separator: "|")
+  }
+
+  public var summary: String {
+    guard enabled else { return "Off" }
+    switch kind {
+    case .interval:
+      let minutes = everyMinutes ?? 0
+      if minutes.isMultiple(of: 60) {
+        let hours = minutes / 60
+        return "Every \(hours) hour\(hours == 1 ? "" : "s")"
+      }
+      return "Every \(minutes) minute\(minutes == 1 ? "" : "s")"
+    case .daily:
+      return "Daily at \(time ?? "00:00") · \(timezone == "local" ? "local time" : timezone)"
+    }
+  }
+}
+
+public struct WorkspaceSourceProfileStatus: Codable, Identifiable, Equatable, Sendable {
+  public var id: String
+  public var type: String
+  public var enabled: Bool
+  public var scopes: [String]
+  public var workspaceId: String?
+  public var rawZone: String
+  public var reviewZone: String
+  public var ingestionSince: String?
+  public var ingestionLimit: Int
+  public var syncArgs: [String]
+  public var media: String
+  public var schedule: WorkspaceSourceSchedule?
+  public var binary: String
+  public var binaryAvailable: Bool
+  public var configPath: String?
+  public var configAvailable: Bool
+  public var ready: Bool
+}
+
+public struct WorkspaceSourceScheduleState: Codable, Equatable, Sendable {
+  public var scheduleFingerprint: String
+  public var initializedAt: Date
+  public var lastAttemptAt: Date?
+  public var lastSuccessAt: Date?
+  public var nextRunAt: Date?
+  public var lastError: String?
+
+  public init(
+    scheduleFingerprint: String,
+    initializedAt: Date,
+    lastAttemptAt: Date? = nil,
+    lastSuccessAt: Date? = nil,
+    nextRunAt: Date? = nil,
+    lastError: String? = nil
+  ) {
+    self.scheduleFingerprint = scheduleFingerprint
+    self.initializedAt = initializedAt
+    self.lastAttemptAt = lastAttemptAt
+    self.lastSuccessAt = lastSuccessAt
+    self.nextRunAt = nextRunAt
+    self.lastError = lastError
+  }
+}
+
+public enum WorkspaceSourceSchedulePlanner {
+  public static func nextRun(
+    after date: Date,
+    schedule: WorkspaceSourceSchedule,
+    localTimeZone: TimeZone = .current
+  ) -> Date? {
+    guard schedule.enabled else { return nil }
+    switch schedule.kind {
+    case .interval:
+      guard let minutes = schedule.everyMinutes, minutes > 0 else { return nil }
+      return date.addingTimeInterval(TimeInterval(minutes * 60))
+    case .daily:
+      guard let time = schedule.time else { return nil }
+      let parts = time.split(separator: ":", omittingEmptySubsequences: false)
+      guard parts.count == 2,
+            let hour = Int(parts[0]),
+            let minute = Int(parts[1]),
+            (0...23).contains(hour),
+            (0...59).contains(minute)
+      else { return nil }
+      var calendar = Calendar(identifier: .gregorian)
+      calendar.timeZone = schedule.timezone == "local"
+        ? localTimeZone
+        : (TimeZone(identifier: schedule.timezone) ?? localTimeZone)
+      return calendar.nextDate(
+        after: date,
+        matching: DateComponents(hour: hour, minute: minute, second: 0),
+        matchingPolicy: .nextTime,
+        repeatedTimePolicy: .first,
+        direction: .forward
+      )
+    }
+  }
+
+  public static func isDue(_ state: WorkspaceSourceScheduleState, at date: Date) -> Bool {
+    guard let nextRunAt = state.nextRunAt else { return false }
+    return nextRunAt <= date
+  }
+}
+
+public final class WorkspaceSourceScheduleStateStore {
+  public static let defaultPersistenceKey = "org2.workspace.source-schedule-state.v1"
+
+  private let defaults: UserDefaults
+  private let persistenceKey: String
+
+  public init(
+    defaults: UserDefaults = .standard,
+    persistenceKey: String = WorkspaceSourceScheduleStateStore.defaultPersistenceKey
+  ) {
+    self.defaults = defaults
+    self.persistenceKey = persistenceKey
+  }
+
+  public func state(corpusPath: String, profileID: String) -> WorkspaceSourceScheduleState? {
+    envelope().entries[entryKey(corpusPath: corpusPath, profileID: profileID)]
+  }
+
+  public func setState(
+    _ state: WorkspaceSourceScheduleState,
+    corpusPath: String,
+    profileID: String
+  ) {
+    var value = envelope()
+    value.entries[entryKey(corpusPath: corpusPath, profileID: profileID)] = state
+    guard let data = try? JSONEncoder().encode(value) else { return }
+    defaults.set(data, forKey: persistenceKey)
+  }
+
+  private func entryKey(corpusPath: String, profileID: String) -> String {
+    "\(URL(fileURLWithPath: corpusPath).standardizedFileURL.path)\u{001F}\(profileID)"
+  }
+
+  private func envelope() -> PersistenceEnvelope {
+    guard let data = defaults.data(forKey: persistenceKey),
+          let value = try? JSONDecoder().decode(PersistenceEnvelope.self, from: data),
+          value.schemaVersion == 1
+    else { return PersistenceEnvelope(schemaVersion: 1, entries: [:]) }
+    return value
+  }
+
+  private struct PersistenceEnvelope: Codable {
+    var schemaVersion: Int
+    var entries: [String: WorkspaceSourceScheduleState]
+  }
+}
+
+public struct WorkspaceCrawlerCount: Codable, Identifiable, Equatable, Sendable {
+  public var id: String
+  public var label: String
+  public var value: Int
+}
+
+public struct WorkspaceCrawlerStatus: Codable, Equatable, Sendable {
+  public var appId: String
+  public var state: String
+  public var summary: String
+  public var databasePath: String?
+  public var databaseBytes: UInt64
+  public var lastSyncAt: String?
+  public var counts: [WorkspaceCrawlerCount]
+
+  private enum CodingKeys: String, CodingKey {
+    case appId = "app_id"
+    case state, summary
+    case databasePath = "database_path"
+    case databaseBytes = "database_bytes"
+    case lastSyncAt = "last_sync_at"
+    case counts
+  }
+}
+
+public struct WorkspaceSourceRuntimeStatus: Codable, Identifiable, Equatable, Sendable {
+  public var id: String
+  public var type: String?
+  public var ok: Bool
+  public var crawlerStatus: WorkspaceCrawlerStatus?
+  public var error: String?
+}
+
+public struct WorkspaceSourceStatusEnvelope: Codable, Equatable, Sendable {
+  public var schema: String
+  public var root: String
+  public var sources: [WorkspaceSourceRuntimeStatus]
+}
+
+public struct WorkspaceSourceImportSummary: Codable, Equatable, Sendable {
+  public var apply: Bool
+  public var since: String?
+  public var inputCount: Int
+  public var acceptedCount: Int
+  public var skippedCount: Int
+  public var groupCount: Int
+  public var changedFileCount: Int
+}
+
+public struct WorkspaceSourceOperationResult: Codable, Identifiable, Equatable, Sendable {
+  public var id: String
+  public var ok: Bool
+  public var imported: WorkspaceSourceImportSummary?
+  public var error: String?
+}
+
+public struct WorkspaceSourceOperationEnvelope: Codable, Equatable, Sendable {
+  public var schema: String
+  public var root: String
+  public var applied: Bool?
+  public var results: [WorkspaceSourceOperationResult]
+}
+
 /// An extensible identifier for a source connector. Known kinds are conveniences rather than
 /// an exhaustive enum so newer connector implementations can be persisted by older app builds.
 public struct WorkspaceSourceKind: RawRepresentable, Codable, Hashable, Sendable {

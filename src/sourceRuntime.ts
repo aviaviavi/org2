@@ -4,6 +4,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { findConfigFile, loadConfig, type Org2ExternalSourceConfig } from "./config.js";
 import { org2CorpusIndexDir } from "./indexPaths.js";
+import { importCrawlerArchive } from "./sourceIngestion.js";
 
 export type SourceBinding = {
   binary?: string;
@@ -21,8 +22,20 @@ type SourceStatus = {
   type: "slack" | "notion";
   enabled: boolean;
   scopes: string[];
+  workspaceId?: string;
   rawZone: string;
+  reviewZone: string;
+  ingestionSince?: string;
+  ingestionLimit: number;
+  syncArgs: string[];
   media: "lazy" | "metadata-only";
+  schedule?: {
+    enabled: boolean;
+    kind: "interval" | "daily";
+    everyMinutes?: number;
+    time?: string;
+    timezone: string;
+  };
   bindingPath: string;
   binary: string;
   binaryAvailable: boolean;
@@ -31,12 +44,42 @@ type SourceStatus = {
   ready: boolean;
 };
 
+function normalizedSchedule(id: string, profile: Org2ExternalSourceConfig): SourceStatus["schedule"] {
+  const schedule = profile.schedule;
+  if (!schedule) return undefined;
+  const timezone = String(schedule.timezone || "local").trim() || "local";
+  if (timezone !== "local") {
+    try {
+      new Intl.DateTimeFormat("en-US", { timeZone: timezone }).format(new Date());
+    } catch {
+      throw new Error(`external source ${id} schedule timezone is invalid: ${timezone}`);
+    }
+  }
+  if (schedule.kind === "interval") {
+    const everyMinutes = Number(schedule.everyMinutes);
+    if (!Number.isInteger(everyMinutes) || everyMinutes <= 0) {
+      throw new Error(`external source ${id} interval schedule requires a positive integer everyMinutes`);
+    }
+    return { enabled: schedule.enabled !== false, kind: "interval", everyMinutes, timezone };
+  }
+  if (schedule.kind === "daily") {
+    const time = String(schedule.time || "").trim();
+    if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(time)) {
+      throw new Error(`external source ${id} daily schedule requires time in HH:MM form`);
+    }
+    return { enabled: schedule.enabled !== false, kind: "daily", time, timezone };
+  }
+  throw new Error(`external source ${id} schedule kind must be interval or daily`);
+}
+
 function usage(): string {
   return `External source commands:
   org2 source list [--dir CORPUS] [--json]
   org2 source doctor [PROFILE...] [--dir CORPUS] [--json]
   org2 source bind PROFILE [--binary PATH] [--config PATH] [--working-directory PATH] [--dir CORPUS] [--apply] [--json]
-  org2 source sync [PROFILE...] [--dir CORPUS] [--json]
+  org2 source status [PROFILE...] [--dir CORPUS] [--json]
+  org2 source import [PROFILE...] [--since 14d|TIMESTAMP] [--limit N] [--dir CORPUS] [--apply] [--json]
+  org2 source sync [PROFILE...] [--ingest] [--since 14d|TIMESTAMP] [--limit N] [--dir CORPUS] [--apply] [--json]
 
 The corpus declares non-secret externalSources in org2.json. Machine-local bindings are stored
 outside the corpus under ORG2_INDEX_HOME (or ~/.org2/index). Sync delegates to slacrawl/notcrawl.`;
@@ -53,9 +96,12 @@ function parseArgs(args: string[]) {
   let dir = "";
   let json = false;
   let apply = false;
+  let ingest = false;
   let binary: string | undefined;
   let configPath: string | undefined;
   let workingDirectory: string | undefined;
+  let since: string | undefined;
+  let limit: number | undefined;
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i]!;
     if (arg === "--dir") {
@@ -68,6 +114,7 @@ function parseArgs(args: string[]) {
       if (format !== "json") throw new Error("source --format must be json");
       json = true;
     } else if (arg === "--apply") apply = true;
+    else if (arg === "--ingest") ingest = true;
     else if (arg === "--binary") {
       binary = optionValue(args, i, arg);
       i += 1;
@@ -77,11 +124,19 @@ function parseArgs(args: string[]) {
     } else if (arg === "--working-directory") {
       workingDirectory = optionValue(args, i, arg);
       i += 1;
+    } else if (arg === "--since") {
+      since = optionValue(args, i, arg);
+      i += 1;
+    } else if (arg === "--limit") {
+      const value = Number(optionValue(args, i, arg));
+      if (!Number.isInteger(value) || value <= 0) throw new Error("source --limit must be a positive integer");
+      limit = value;
+      i += 1;
     } else if (arg === "--help" || arg === "-h") positional.push("help");
     else if (arg.startsWith("-")) throw new Error(`unknown source option: ${arg}`);
     else positional.push(arg);
   }
-  return { positional, dir, json, apply, binary, configPath, workingDirectory };
+  return { positional, dir, json, apply, ingest, binary, configPath, workingDirectory, since, limit };
 }
 
 function resolveCorpus(dir: string): { root: string; profiles: Record<string, Org2ExternalSourceConfig> } {
@@ -133,8 +188,14 @@ function statuses(root: string, profiles: Record<string, Org2ExternalSourceConfi
       type: profile.type,
       enabled: profile.enabled !== false,
       scopes: profile.scopes || [],
+      ...(profile.workspaceId ? { workspaceId: profile.workspaceId } : {}),
       rawZone: profile.rawZone || `raw/connectors/${profile.type}/${id}`,
+      reviewZone: profile.ingestion?.reviewZone || `views/connectors/${profile.type}/${id}`,
+      ...(profile.ingestion?.since ? { ingestionSince: profile.ingestion.since } : {}),
+      ingestionLimit: profile.ingestion?.maxItems || 5_000,
+      syncArgs: profile.syncArgs || (profile.type === "slack" ? ["--source", "api", "--latest-only"] : ["--source", "api"]),
       media: profile.media || "metadata-only",
+      ...(profile.schedule ? { schedule: normalizedSchedule(id, profile) } : {}),
       bindingPath: bindingFile,
       binary,
       binaryAvailable,
@@ -156,6 +217,11 @@ function emit(value: unknown, json: boolean): void {
     process.stdout.write(`${payload.ok === false ? "Source checks need attention" : "Source checks passed"}\n`);
     for (const item of payload.sources) process.stdout.write(`${item.id}\t${item.doctorOk ? "ready" : item.enabled ? "needs-setup" : "disabled"}\n`);
   } else process.stdout.write(String(value) + "\n");
+}
+
+function truncateOutput(value: string | null | undefined, max = 8_000): string {
+  const text = value || "";
+  return text.length <= max ? text : `${text.slice(0, max)}\n… ${text.length - max} characters omitted`;
 }
 
 export async function runSourceCommand(args: string[]): Promise<boolean> {
@@ -184,6 +250,34 @@ export async function runSourceCommand(args: string[]): Promise<boolean> {
     return true;
   }
 
+  if (action === "status") {
+    const result = [];
+    for (const item of select(statuses(root, profiles))) {
+      if (!item.enabled || !item.ready) {
+        result.push({ id: item.id, ok: false, skipped: true, error: "source binding is not ready; run org2 source doctor" });
+        continue;
+      }
+      const child = spawnSync(item.binary, ["--config", item.configPath!, "status", "--json"], {
+        encoding: "utf8",
+        env: process.env,
+        maxBuffer: 16 * 1024 * 1024,
+      });
+      let crawlerStatus: unknown;
+      try { crawlerStatus = JSON.parse(child.stdout || "null"); } catch { crawlerStatus = null; }
+      result.push({
+        id: item.id,
+        type: item.type,
+        ok: child.status === 0 && crawlerStatus !== null,
+        status: child.status,
+        crawlerStatus,
+        ...(child.status === 0 ? {} : { stderr: truncateOutput(child.stderr) }),
+      });
+    }
+    emit({ schema: "org2:source-status:v1", root, sources: result }, parsed.json);
+    if (result.some((item) => !item.ok)) process.exitCode = 1;
+    return true;
+  }
+
   if (action === "bind") {
     const id = selected[0];
     if (!id || selected.length !== 1) throw new Error("org2 source bind requires exactly one PROFILE");
@@ -203,6 +297,32 @@ export async function runSourceCommand(args: string[]): Promise<boolean> {
       try { fs.chmodSync(preview.bindingPath, 0o600); } catch {}
     }
     emit(preview, parsed.json);
+    return true;
+  }
+
+  if (action === "import") {
+    const allStatuses = statuses(root, profiles);
+    const requested = select(allStatuses).filter((item) => item.enabled);
+    const results = requested.map((status) => {
+      if (!status.ready) return { id: status.id, ok: false, skipped: true, error: "source binding is not ready; run org2 source doctor" };
+      try {
+        const imported = importCrawlerArchive({
+          root,
+          profileId: status.id,
+          profile: profiles[status.id]!,
+          binary: status.binary,
+          configPath: status.configPath!,
+          since: parsed.since,
+          limit: parsed.limit,
+          apply: parsed.apply,
+        });
+        return { id: status.id, ok: true, imported };
+      } catch (error) {
+        return { id: status.id, ok: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    });
+    emit({ schema: "org2:source-import-run:v1", root, applied: parsed.apply, results }, parsed.json);
+    if (results.some((result) => !result.ok)) process.exitCode = 1;
     return true;
   }
 
@@ -240,7 +360,39 @@ export async function runSourceCommand(args: string[]): Promise<boolean> {
           stdio: parsed.json ? "pipe" : "inherit",
           env: process.env,
         });
-        results.push({ id: status.id, ok: child.status === 0, status: child.status, signal: child.signal, ...(parsed.json ? { stdout: child.stdout, stderr: child.stderr } : {}) });
+        const ok = child.status === 0;
+        let imported: unknown;
+        if (ok && parsed.ingest) {
+          try {
+            imported = importCrawlerArchive({
+              root,
+              profileId: status.id,
+              profile,
+              binary: status.binary,
+              configPath: status.configPath!,
+              since: parsed.since,
+              limit: parsed.limit,
+              apply: parsed.apply,
+            });
+          } catch (error) {
+            results.push({
+              id: status.id,
+              ok: false,
+              status: child.status,
+              error: `crawler sync succeeded but Org2 import failed: ${error instanceof Error ? error.message : String(error)}`,
+              ...(parsed.json ? { stdout: truncateOutput(child.stdout), stderr: truncateOutput(child.stderr) } : {}),
+            });
+            continue;
+          }
+        }
+        results.push({
+          id: status.id,
+          ok,
+          status: child.status,
+          signal: child.signal,
+          ...(imported ? { imported } : {}),
+          ...(parsed.json ? { stdout: truncateOutput(child.stdout), stderr: truncateOutput(child.stderr) } : {}),
+        });
       } finally {
         fs.rmdirSync(lockDir);
       }

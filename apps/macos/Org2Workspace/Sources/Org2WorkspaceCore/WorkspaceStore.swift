@@ -631,6 +631,7 @@ public final class WorkspaceStore: ObservableObject {
   nonisolated public static let runReviewAutoRefreshIntervalNanoseconds: UInt64 = 60_000_000_000
   nonisolated public static let defaultWorkspaceRefreshTimeoutNanoseconds: UInt64 = 15_000_000_000
   nonisolated public static let defaultEntryRenderTimeoutNanoseconds: UInt64 = 15_000_000_000
+  nonisolated public static let sourceAutoSyncCheckIntervalNanoseconds: UInt64 = 60_000_000_000
 
   @Published public var selectedSurface: WorkspaceSurface = .home {
     didSet {
@@ -769,6 +770,15 @@ public final class WorkspaceStore: ObservableObject {
   @Published public private(set) var pageSearchSelectedOccurrenceIndex: Int?
   private var pageSearchRenderedMatches: [PageSearchRenderedMatch] = []
   @Published public var meetings: [MeetingWorkspaceItem] = []
+  @Published public private(set) var sourceProfiles: [WorkspaceSourceProfileStatus] = []
+  @Published public private(set) var sourceRuntimeStatuses: [String: WorkspaceSourceRuntimeStatus] = [:]
+  @Published public private(set) var sourceScheduleStates: [String: WorkspaceSourceScheduleState] = [:]
+  @Published public private(set) var sourceOperationMessages: [String: String] = [:]
+  @Published public private(set) var activeSourceOperationIDs: Set<String> = []
+  @Published public private(set) var isLoadingSources = false
+  @Published public var isSourceCredentialPresented = false
+  @Published public var sourceCredentialProfileID: String?
+  @Published public var sourceCredentialDraft = ""
   @Published public private(set) var processingMeetings: [MeetingProcessingItem] = []
   @Published public var selectedMeetingID: String?
   @Published public var meetingTitleDraft = ""
@@ -971,6 +981,7 @@ public final class WorkspaceStore: ObservableObject {
 
   public let cli: Org2CLI
   private let defaults: UserDefaults
+  private let sourceScheduleStateStore: WorkspaceSourceScheduleStateStore
   private let meetingRecorder = MeetingAudioRecorder()
   private let openClawVoiceRecorder = MeetingAudioRecorder()
   private let meetingSystemAudioRecorder = MeetingSystemAudioRecorder()
@@ -1129,6 +1140,8 @@ public final class WorkspaceStore: ObservableObject {
   private var approvalSelectionAnchor: ApprovalSelectionAnchor?
   private var runReviewAutoRefreshTask: Task<Void, Never>?
   private var isRunReviewAutoRefreshActive = false
+  private var sourceAutoSyncTask: Task<Void, Never>?
+  private var isSourceAutoSyncActive = false
   private var agendaTodoShortcutMutationTask: Task<Void, Never>?
   private var pendingAgendaTodoShortcutMutations: [AgendaTodoShortcutMutation] = []
   private var pendingAgendaRefreshAfterBlockEditing = false
@@ -1146,6 +1159,7 @@ public final class WorkspaceStore: ObservableObject {
     legacyDefaultsDomains: [String]? = nil
   ) {
     self.defaults = defaults
+    sourceScheduleStateStore = WorkspaceSourceScheduleStateStore(defaults: defaults)
     mountedCorpora = Self.restoreCorpusMounts(from: defaults, key: corpusMountsKey)
     let fallbackTranscriptURL = openClawFallbackTranscriptURL ?? Self.defaultOpenClawTranscriptURL()
     usesFixedOpenClawTranscriptURL = openClawTranscriptURL != nil
@@ -1228,6 +1242,7 @@ public final class WorkspaceStore: ObservableObject {
       }
       await refreshAgenda()
       await refreshMeetings()
+      await refreshSourceConnections()
       await refreshCorpusFiles()
       await refreshAssignedWork()
       await refreshApprovals()
@@ -1328,6 +1343,8 @@ public final class WorkspaceStore: ObservableObject {
       }) {
         selectMeeting(meeting)
       }
+    case "sources":
+      selectedSurface = .sources
     case "files":
       selectedSurface = .files
       if let file = filteredCorpusFiles.first(where: { file in
@@ -1750,6 +1767,8 @@ public final class WorkspaceStore: ObservableObject {
     guard shouldContinueWorkspaceRefresh(generation) else { return }
     await refreshMeetings()
     guard shouldContinueWorkspaceRefresh(generation) else { return }
+    await refreshSourceConnections()
+    guard shouldContinueWorkspaceRefresh(generation) else { return }
     await refreshCorpusFiles()
     guard shouldContinueWorkspaceRefresh(generation) else { return }
     await refreshAssignedWork()
@@ -1816,11 +1835,332 @@ public final class WorkspaceStore: ObservableObject {
     isLoadingAgentRuns = false
     isLoadingAgentWorkflows = false
     isLoadingMeetings = false
+    isLoadingSources = false
     isScanningCorpusFiles = false
     isLoadingAssignedWork = false
     isLoadingOpenClawThreads = false
     statusText = message
     errorText = message
+  }
+
+  public func refreshSourceConnections() async {
+    guard let corpusRoot, !isLoadingSources else {
+      if corpusRoot == nil {
+        sourceProfiles = []
+        sourceRuntimeStatuses = [:]
+        sourceScheduleStates = [:]
+      }
+      return
+    }
+    isLoadingSources = true
+    defer { isLoadingSources = false }
+    do {
+      let profiles: [WorkspaceSourceProfileStatus] = try await cli.runJSON(
+        ["source", "list", "--dir", corpusRoot.path, "--json"]
+      )
+      sourceProfiles = profiles
+      if profiles.isEmpty {
+        sourceRuntimeStatuses = [:]
+        sourceScheduleStates = [:]
+        return
+      }
+      let envelope: WorkspaceSourceStatusEnvelope = try await cli.runJSON(
+        ["source", "status", "--dir", corpusRoot.path, "--json"]
+      )
+      sourceRuntimeStatuses = Dictionary(uniqueKeysWithValues: envelope.sources.map { ($0.id, $0) })
+      refreshSourceScheduleStates()
+    } catch {
+      sourceOperationMessages["workspace"] = error.localizedDescription
+    }
+  }
+
+  public func checkSourceSetup(_ profile: WorkspaceSourceProfileStatus) async {
+    guard let corpusRoot, !activeSourceOperationIDs.contains(profile.id) else { return }
+    activeSourceOperationIDs.insert(profile.id)
+    defer { activeSourceOperationIDs.remove(profile.id) }
+    do {
+      _ = try await cli.run(
+        ["source", "doctor", profile.id, "--dir", corpusRoot.path, "--json"],
+        environment: sourceEnvironment(for: profile)
+      )
+      sourceOperationMessages[profile.id] = "Setup check passed."
+    } catch {
+      sourceOperationMessages[profile.id] = error.localizedDescription
+    }
+  }
+
+  public func previewSourceImport(_ profile: WorkspaceSourceProfileStatus) async {
+    guard let corpusRoot, !activeSourceOperationIDs.contains(profile.id) else { return }
+    activeSourceOperationIDs.insert(profile.id)
+    defer { activeSourceOperationIDs.remove(profile.id) }
+    do {
+      let envelope: WorkspaceSourceOperationEnvelope = try await cli.runJSON(
+        ["source", "import", profile.id, "--dir", corpusRoot.path, "--json"],
+        environment: sourceEnvironment(for: profile)
+      )
+      if let summary = envelope.results.first?.imported {
+        sourceOperationMessages[profile.id] = "Preview: \(summary.acceptedCount) records across \(summary.groupCount) review packets."
+      } else {
+        sourceOperationMessages[profile.id] = envelope.results.first?.error ?? "Preview finished."
+      }
+    } catch {
+      sourceOperationMessages[profile.id] = error.localizedDescription
+    }
+  }
+
+  public func syncAndStageSource(_ profile: WorkspaceSourceProfileStatus) async {
+    _ = await performSyncAndStageSource(profile, trigger: .manual)
+  }
+
+  @discardableResult
+  private func performSyncAndStageSource(
+    _ profile: WorkspaceSourceProfileStatus,
+    trigger: SourceSyncTrigger
+  ) async -> Bool {
+    guard let corpusRoot, !activeSourceOperationIDs.contains(profile.id) else { return false }
+    activeSourceOperationIDs.insert(profile.id)
+    defer { activeSourceOperationIDs.remove(profile.id) }
+    do {
+      let envelope: WorkspaceSourceOperationEnvelope = try await cli.runJSON(
+        ["source", "sync", profile.id, "--ingest", "--apply", "--dir", corpusRoot.path, "--json"],
+        environment: sourceEnvironment(for: profile)
+      )
+      guard let result = envelope.results.first, result.ok else {
+        throw NSError(
+          domain: "Org2Workspace.SourceSync",
+          code: 1,
+          userInfo: [NSLocalizedDescriptionKey: envelope.results.first?.error ?? "Source sync failed."]
+        )
+      }
+      if let summary = result.imported {
+        sourceOperationMessages[profile.id] = "Staged \(summary.acceptedCount) records in \(summary.groupCount) review packets."
+      } else {
+        sourceOperationMessages[profile.id] = "Sync finished."
+      }
+      recordSourceScheduleResult(profile, trigger: trigger, succeeded: true, error: nil)
+      await refreshCorpusFiles()
+      await refreshSourceConnections()
+      return true
+    } catch {
+      sourceOperationMessages[profile.id] = error.localizedDescription
+      recordSourceScheduleResult(
+        profile,
+        trigger: trigger,
+        succeeded: false,
+        error: error.localizedDescription
+      )
+      return false
+    }
+  }
+
+  public func revealSourceReviews(_ profile: WorkspaceSourceProfileStatus) {
+    guard let corpusRoot else { return }
+    let folder = corpusRoot.appendingPathComponent(profile.reviewZone).standardizedFileURL
+    try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    NSWorkspace.shared.open(folder)
+  }
+
+  public func presentSourceCredential(for profile: WorkspaceSourceProfileStatus) {
+    sourceCredentialProfileID = profile.id
+    sourceCredentialDraft = ""
+    isSourceCredentialPresented = true
+  }
+
+  public func sourceHasStoredCredential(_ profile: WorkspaceSourceProfileStatus) -> Bool {
+    SourceCredentialsKeychain.containsToken(profileID: profile.id)
+  }
+
+  public func savePresentedSourceCredential() {
+    guard let profileID = sourceCredentialProfileID else { return }
+    let token = sourceCredentialDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !token.isEmpty else {
+      sourceOperationMessages[profileID] = "Enter a token before saving."
+      return
+    }
+    do {
+      try SourceCredentialsKeychain.saveToken(token, profileID: profileID)
+      sourceOperationMessages[profileID] = "Credential saved securely in Keychain."
+      sourceCredentialDraft = ""
+      isSourceCredentialPresented = false
+    } catch {
+      sourceOperationMessages[profileID] = error.localizedDescription
+    }
+  }
+
+  public func deleteSourceCredential(_ profile: WorkspaceSourceProfileStatus) {
+    do {
+      try SourceCredentialsKeychain.deleteToken(profileID: profile.id)
+      sourceOperationMessages[profile.id] = "Stored credential removed."
+    } catch {
+      sourceOperationMessages[profile.id] = error.localizedDescription
+    }
+  }
+
+  private func sourceEnvironment(for profile: WorkspaceSourceProfileStatus) -> [String: String] {
+    guard profile.type == "notion",
+          let token = SourceCredentialsKeychain.readToken(profileID: profile.id)
+    else { return [:] }
+    return ["NOTION_TOKEN": token]
+  }
+
+  public func setSourceAutoSyncActive(
+    _ isActive: Bool,
+    checkIntervalNanoseconds: UInt64 = WorkspaceStore.sourceAutoSyncCheckIntervalNanoseconds
+  ) {
+    isSourceAutoSyncActive = isActive
+    if !isActive {
+      sourceAutoSyncTask?.cancel()
+      sourceAutoSyncTask = nil
+      return
+    }
+
+    guard sourceAutoSyncTask == nil else { return }
+    Task { @MainActor [weak self] in
+      await self?.checkDueSourceSchedules(refreshProfiles: false)
+    }
+
+    sourceAutoSyncTask = Task { @MainActor [weak self] in
+      while !Task.isCancelled {
+        do {
+          try await Task.sleep(nanoseconds: checkIntervalNanoseconds)
+        } catch {
+          return
+        }
+        guard let self, self.isSourceAutoSyncActive else { continue }
+        await self.checkDueSourceSchedules(refreshProfiles: false)
+      }
+    }
+  }
+
+  public func sourceAutoSyncDidBecomeActive() {
+    guard isSourceAutoSyncActive else { return }
+    Task { @MainActor [weak self] in
+      await self?.checkDueSourceSchedules(refreshProfiles: true)
+    }
+  }
+
+  private func checkDueSourceSchedules(refreshProfiles: Bool, now: Date = Date()) async {
+    guard corpusRoot != nil else { return }
+    if refreshProfiles || sourceProfiles.isEmpty {
+      await refreshSourceConnections()
+    }
+    refreshSourceScheduleStates(now: now)
+    let dueProfiles = sourceProfiles.filter { profile in
+      guard let schedule = profile.schedule, schedule.enabled,
+            let state = sourceScheduleStates[profile.id]
+      else { return false }
+      return WorkspaceSourceSchedulePlanner.isDue(state, at: now)
+    }
+
+    for profile in dueProfiles {
+      if !profile.ready {
+        let message = "Automatic sync is waiting for source setup to be completed."
+        sourceOperationMessages[profile.id] = message
+        recordSourceScheduleResult(
+          profile,
+          trigger: .scheduled,
+          succeeded: false,
+          error: message,
+          at: now
+        )
+        continue
+      }
+      if profile.type == "notion" && !sourceHasStoredCredential(profile) {
+        let message = "Automatic sync is waiting for a Notion token in Keychain."
+        sourceOperationMessages[profile.id] = message
+        recordSourceScheduleResult(
+          profile,
+          trigger: .scheduled,
+          succeeded: false,
+          error: message,
+          at: now
+        )
+        continue
+      }
+      _ = await performSyncAndStageSource(profile, trigger: .scheduled)
+    }
+  }
+
+  private func refreshSourceScheduleStates(now: Date = Date()) {
+    guard let corpusRoot else {
+      sourceScheduleStates = [:]
+      return
+    }
+    var refreshed: [String: WorkspaceSourceScheduleState] = [:]
+    for profile in sourceProfiles {
+      guard let schedule = profile.schedule else { continue }
+      var state = sourceScheduleStateStore.state(
+        corpusPath: corpusRoot.path,
+        profileID: profile.id
+      )
+      if state == nil || state?.scheduleFingerprint != schedule.fingerprint {
+        state = WorkspaceSourceScheduleState(
+          scheduleFingerprint: schedule.fingerprint,
+          initializedAt: now,
+          lastSuccessAt: crawlerLastSyncDate(profileID: profile.id),
+          nextRunAt: WorkspaceSourceSchedulePlanner.nextRun(after: now, schedule: schedule)
+        )
+      } else if schedule.enabled && state?.nextRunAt == nil {
+        state?.nextRunAt = WorkspaceSourceSchedulePlanner.nextRun(after: now, schedule: schedule)
+      } else if !schedule.enabled {
+        state?.nextRunAt = nil
+      }
+      guard let state else { continue }
+      sourceScheduleStateStore.setState(
+        state,
+        corpusPath: corpusRoot.path,
+        profileID: profile.id
+      )
+      refreshed[profile.id] = state
+    }
+    sourceScheduleStates = refreshed
+  }
+
+  private func recordSourceScheduleResult(
+    _ profile: WorkspaceSourceProfileStatus,
+    trigger: SourceSyncTrigger,
+    succeeded: Bool,
+    error: String?,
+    at date: Date = Date()
+  ) {
+    guard let corpusRoot, let schedule = profile.schedule, schedule.enabled else { return }
+    var state = sourceScheduleStateStore.state(
+      corpusPath: corpusRoot.path,
+      profileID: profile.id
+    ) ?? WorkspaceSourceScheduleState(
+      scheduleFingerprint: schedule.fingerprint,
+      initializedAt: date
+    )
+    state.scheduleFingerprint = schedule.fingerprint
+    state.lastAttemptAt = date
+    if succeeded {
+      state.lastSuccessAt = date
+      state.lastError = nil
+      state.nextRunAt = WorkspaceSourceSchedulePlanner.nextRun(after: date, schedule: schedule)
+    } else {
+      state.lastError = error
+      if case .scheduled = trigger {
+        state.nextRunAt = date.addingTimeInterval(15 * 60)
+      } else if state.nextRunAt == nil {
+        state.nextRunAt = WorkspaceSourceSchedulePlanner.nextRun(after: date, schedule: schedule)
+      }
+    }
+    sourceScheduleStateStore.setState(
+      state,
+      corpusPath: corpusRoot.path,
+      profileID: profile.id
+    )
+    sourceScheduleStates[profile.id] = state
+  }
+
+  private func crawlerLastSyncDate(profileID: String) -> Date? {
+    guard let value = sourceRuntimeStatuses[profileID]?.crawlerStatus?.lastSyncAt else { return nil }
+    return ISO8601DateFormatter().date(from: value)
+  }
+
+  private enum SourceSyncTrigger {
+    case manual
+    case scheduled
   }
 
   private func refreshSelectedDetailFromDisk() async {
@@ -7672,7 +8012,7 @@ public final class WorkspaceStore: ObservableObject {
       focusRunsAndReviewFilter()
     case .files:
       focusCorpusFileFilter()
-    case .home, .meetings, .openClaw:
+    case .home, .meetings, .sources, .openClaw:
       return focusPageSearch()
     case .search:
       if selectedLocation != nil {
@@ -19859,12 +20199,13 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
   case files
   case search
   case meetings
+  case sources
   case openClaw
 
   public var id: String { rawValue }
 
   public static var sidebarCases: [WorkspaceSurface] {
-    [.home, .agenda, .files, .approvals, .search, .meetings, .openClaw]
+    [.home, .agenda, .files, .approvals, .search, .meetings, .sources, .openClaw]
   }
 
   public var title: String {
@@ -19875,6 +20216,7 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
     case .files: "Files"
     case .search: "Search"
     case .meetings: "Meetings"
+    case .sources: "Sources"
     case .openClaw: "OpenClaw Chat"
     }
   }
@@ -19887,6 +20229,7 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
     case .files: "doc.text"
     case .search: "magnifyingglass"
     case .meetings: "mic"
+    case .sources: "arrow.triangle.2.circlepath.circle"
     case .openClaw: "sparkles"
     }
   }
@@ -19899,6 +20242,7 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
     case .files: "⌘3"
     case .search: "⌘⇧F"
     case .meetings: "⌘5/⌘M"
+    case .sources: ""
     case .openClaw: "⌘6"
     }
   }
