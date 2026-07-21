@@ -1,5 +1,5 @@
 #+TITLE: Org2
-#+SUBTITLE: A plain-text workspace for notes, data, meetings, and agent work
+#+SUBTITLE: An open-source plain-text workspace for notes, data, meetings, and agent work
 
 #+BEGIN_EXPORT html
 <section class="org2-page-intro">
@@ -18,6 +18,11 @@ The native Mac app brings those pieces into an early open-source workspace for A
 
 #+BEGIN_EXPORT html
 <section class="org2-sample" aria-labelledby="org2-sample-title">
+  <aside class="org2-lineage-note" aria-labelledby="org2-lineage-title">
+    <p class="org2-lineage-label" id="org2-lineage-title">For Org mode users</p>
+    <p><strong>Org2 aims to be an editor-agnostic successor to Emacs Org mode</strong>—carrying forward its durable plain-text model and programmable structure, then extending those ideas for a world where editors, native apps, and AI agents need to share the same context.</p>
+    <a href="org2-vs-org-mode.html">How Org2 compares <span aria-hidden="true">→</span></a>
+  </aside>
   <div class="org2-sample-intro">
     <h2 id="org2-sample-title">What an Org2 file looks like</h2>
     <p>One plain-text document can carry notes, tasks, dates, links, data records, source provenance, and agent handoff boundaries while staying readable in any editor.</p>
