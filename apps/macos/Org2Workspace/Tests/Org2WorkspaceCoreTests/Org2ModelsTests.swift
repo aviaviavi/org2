@@ -6828,8 +6828,9 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(WorkspaceSurface.files.commandShortcutTitle, "⌘3")
     XCTAssertEqual(WorkspaceSurface.search.commandShortcutTitle, "⌘⇧F")
     XCTAssertEqual(WorkspaceSurface.meetings.commandShortcutTitle, "⌘5/⌘M")
+    XCTAssertEqual(WorkspaceSurface.sources.commandShortcutTitle, "")
     XCTAssertEqual(WorkspaceSurface.openClaw.commandShortcutTitle, "⌘6")
-    XCTAssertEqual(WorkspaceSurface.sidebarCases, [.home, .agenda, .files, .approvals, .search, .meetings, .openClaw])
+    XCTAssertEqual(WorkspaceSurface.sidebarCases, [.home, .agenda, .files, .approvals, .search, .meetings, .sources, .openClaw])
   }
 
   @MainActor

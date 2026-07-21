@@ -38,6 +38,10 @@ export interface AgentIngestConnectorMetadata {
   service?: string;
   conversationId?: string;
   conversationTitle?: string;
+  pageId?: string;
+  spaceId?: string;
+  parentId?: string;
+  sourceName?: string;
   group?: boolean;
   participants?: string[];
   callId?: string;
@@ -549,11 +553,11 @@ function extractCandidates(records: AgentIngestRecord[]): { summaries: string[];
   return { summaries, todos };
 }
 
-export function renderIngestReviewArtifact(records: AgentIngestRecord[], opts: { title?: string; generatedAt?: string } = {}): string {
+export function renderIngestReviewArtifact(records: AgentIngestRecord[], opts: { title?: string; generatedAt?: string; generator?: string; quoteRecordText?: boolean } = {}): string {
   const provenance = records.map((record) => `${record.source.kind}:${record.id}`);
   const metadata = buildGeneratedArtifactMetadata({
     role: "report",
-    generator: "org2-agent-ingest-fixture",
+    generator: opts.generator || "org2-agent-ingest-fixture",
     generatedAt: opts.generatedAt,
     provenance,
     sourceHashes: records.map((record) => ({ kind: "artifact", value: `${record.source.kind}:${record.id}`, sha256: sha256Hex(record.text) })),
@@ -568,7 +572,8 @@ export function renderIngestReviewArtifact(records: AgentIngestRecord[], opts: {
   lines.push("", "* Source records");
   for (const record of records) {
     const source = record.source;
-    lines.push(`** ${record.title}`, `:PROPERTIES:`, `:ORG2_SOURCE_KIND: ${source.kind}`, `:ORG2_SOURCE_ID: ${record.id}`, `:ORG2_SOURCE_TIMESTAMP: ${source.timestamp}`);
+    const recordTitle = record.title.replace(/[\r\n\t]+/g, " ").replace(/\s{2,}/g, " ").trim() || "Untitled source record";
+    lines.push(`** ${recordTitle}`, `:PROPERTIES:`, `:ORG2_SOURCE_KIND: ${source.kind}`, `:ORG2_SOURCE_ID: ${record.id}`, `:ORG2_SOURCE_TIMESTAMP: ${source.timestamp}`);
     if (source.channel) lines.push(`:ORG2_SLACK_CHANNEL: ${source.channel}`);
     if (source.thread) lines.push(`:ORG2_SLACK_THREAD: ${source.thread}`);
     if (source.mailbox) lines.push(`:ORG2_GMAIL_MAILBOX: ${source.mailbox}`);
@@ -584,6 +589,10 @@ export function renderIngestReviewArtifact(records: AgentIngestRecord[], opts: {
     if (typeof source.hasTranscript === "boolean") lines.push(`:ORG2_CALL_HAS_TRANSCRIPT: ${source.hasTranscript}`);
     if (source.conversationId) lines.push(`:ORG2_MESSAGE_CONVERSATION_ID: ${source.conversationId}`);
     if (source.conversationTitle) lines.push(`:ORG2_MESSAGE_CONVERSATION_TITLE: ${source.conversationTitle}`);
+    if (source.pageId) lines.push(`:ORG2_NOTION_PAGE_ID: ${source.pageId}`);
+    if (source.spaceId) lines.push(`:ORG2_NOTION_SPACE_ID: ${source.spaceId}`);
+    if (source.parentId) lines.push(`:ORG2_NOTION_PARENT_ID: ${source.parentId}`);
+    if (source.sourceName) lines.push(`:ORG2_NOTION_SOURCE: ${source.sourceName}`);
     if (source.participants?.length) lines.push(`:ORG2_MESSAGE_PARTICIPANTS: ${source.participants.join(",")}`);
     if (typeof source.group === "boolean") lines.push(`:ORG2_MESSAGE_GROUP: ${source.group}`);
     if (source.label) lines.push(`:ORG2_GMAIL_LABEL: ${source.label}`);
@@ -594,7 +603,10 @@ export function renderIngestReviewArtifact(records: AgentIngestRecord[], opts: {
     if (typeof source.starred === "boolean") lines.push(`:ORG2_EMAIL_STARRED: ${source.starred}`);
     if (source.url) lines.push(`:ORG2_SOURCE_URL: ${source.url}`);
     if (source.sensitivity) lines.push(`:ORG2_SENSITIVITY: ${source.sensitivity}`);
-    lines.push(`:END:`, record.text, "");
+    const recordText = opts.quoteRecordText
+      ? record.text.split(/\r?\n/).map((line) => `: ${line}`).join("\n")
+      : record.text;
+    lines.push(`:END:`, recordText, "");
   }
   return `${lines.join("\n").replace(/\n{3,}/g, "\n\n").trim()}\n`;
 }

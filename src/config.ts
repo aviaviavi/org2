@@ -59,9 +59,23 @@ export type Org2ExternalSourceConfig = {
   type: "slack" | "notion";
   enabled?: boolean;
   scopes?: string[];
+  workspaceId?: string;
   rawZone?: string;
   media?: "lazy" | "metadata-only";
   syncArgs?: string[];
+  ingestion?: {
+    since?: string;
+    maxItems?: number;
+    reviewZone?: string;
+  };
+  schedule?: {
+    enabled?: boolean;
+    kind: "interval" | "daily";
+    everyMinutes?: number;
+    time?: string;
+    /** IANA timezone name or "local" to follow the machine running the sync. */
+    timezone?: string;
+  };
 };
 
 export interface Org2Config {

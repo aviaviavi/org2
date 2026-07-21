@@ -105,6 +105,18 @@ org2 query-data --file notes/readiness.org2 --results weekly --apply</code></pre
     </div>
   </section>
 
+  <section class="org2-feature-section" id="external-sources" aria-labelledby="external-sources-title">
+    <div class="org2-feature-heading">
+      <h2 id="external-sources-title">Slack and Notion arrive through a review boundary</h2>
+      <p>Corpus-declared source profiles orchestrate Peter Steinberger's <code>slacrawl</code> and <code>notcrawl</code> archives. The CLI and macOS Sources surface can inspect health, preview a bounded import, or sync and stage raw captures plus review-required Org2 packets on manual, interval, or daily schedules.</p>
+    </div>
+    <div class="org2-feature-grid">
+      <article><h3>Local and inspectable</h3><p>Crawler databases, machine bindings, and credentials stay outside canonical notes. Staged JSON and Org2 files retain stable source IDs, timestamps, hashes, URLs, and provenance.</p></article>
+      <article><h3>Review before promotion</h3><p>Imported material lands under configured raw and views zones. People and agents can redact, verify, and promote selected knowledge without treating an external mirror as canonical truth.</p></article>
+      <article><h3>One shared runtime</h3><p>The Mac app calls the same <code>org2 source</code> commands available to scripts and agents, keeps optional Notion credentials in macOS Keychain, and catches up missed scheduled runs after wake or launch.</p></article>
+    </div>
+  </section>
+
   <section class="org2-feature-section" id="editors-publishing" aria-labelledby="editors-publishing-title">
     <div class="org2-feature-heading">
       <h2 id="editors-publishing-title">Editors and publishing use the same semantics</h2>
