@@ -236,6 +236,42 @@ public struct OpenClawWorkflowContinuation: Sendable {
   }
 }
 
+public struct OpenClawExecApprovalDetails: Equatable, Sendable {
+  public let id: String
+  public let commandText: String
+  public let commandPreview: String?
+  public let allowedDecisions: [String]
+  public let host: String?
+  public let nodeID: String?
+  public let agentID: String?
+  public let expiresAtMilliseconds: Double?
+
+  public init(
+    id: String,
+    commandText: String,
+    commandPreview: String? = nil,
+    allowedDecisions: [String] = [],
+    host: String? = nil,
+    nodeID: String? = nil,
+    agentID: String? = nil,
+    expiresAtMilliseconds: Double? = nil
+  ) {
+    self.id = id
+    self.commandText = commandText
+    self.commandPreview = commandPreview
+    self.allowedDecisions = allowedDecisions
+    self.host = host
+    self.nodeID = nodeID
+    self.agentID = agentID
+    self.expiresAtMilliseconds = expiresAtMilliseconds
+  }
+
+  public var reviewText: String {
+    let preview = commandPreview?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    return preview.isEmpty ? commandText : preview
+  }
+}
+
 public enum OpenClawGatewayError: LocalizedError, Sendable {
   case invalidEndpoint
   case connection(String)
@@ -416,6 +452,7 @@ public actor OpenClawGatewayClient {
   private var runID: String?
   private var deviceID: String?
   private var awaitingHello = false
+  private var stopRequested = false
 
   public init(settings: OpenClawGatewaySettings) {
     self.settings = settings
@@ -524,6 +561,33 @@ public actor OpenClawGatewayClient {
     _ = try await requestPayload(method: "org2.workflow.sync", params: params)
   }
 
+  public func execApprovalDetails(id: String) async throws -> OpenClawExecApprovalDetails {
+    let payload = try await requestPayload(
+      method: "exec.approval.get",
+      params: ["id": id],
+      scopes: ["operator.read", "operator.approvals"]
+    )
+    return try Self.execApprovalDetails(from: payload)
+  }
+
+  static func execApprovalDetails(from payload: [String: Any]) throws -> OpenClawExecApprovalDetails {
+    guard let id = string(payload["id"]), !id.isEmpty,
+          let commandText = string(payload["commandText"]), !commandText.isEmpty
+    else {
+      throw OpenClawGatewayError.protocolFailure("exec.approval.get returned an invalid payload")
+    }
+    return OpenClawExecApprovalDetails(
+      id: id,
+      commandText: commandText,
+      commandPreview: string(payload["commandPreview"]),
+      allowedDecisions: payload["allowedDecisions"] as? [String] ?? [],
+      host: string(payload["host"]),
+      nodeID: string(payload["nodeId"]),
+      agentID: string(payload["agentId"]),
+      expiresAtMilliseconds: (payload["expiresAtMs"] as? NSNumber)?.doubleValue
+    )
+  }
+
   deinit {
     socket?.cancel(with: .goingAway, reason: nil)
   }
@@ -535,6 +599,8 @@ public actor OpenClawGatewayClient {
     sessionKey: String,
     onEvent: @escaping EventHandler
   ) async throws -> String {
+    stopRequested = false
+    runID = nil
     self.sessionKey = sessionKey
     self.agentID = agentID
     await onEvent(.connection(.connecting, nil))
@@ -639,6 +705,9 @@ public actor OpenClawGatewayClient {
       }
     } catch let error as OpenClawGatewayError {
       socket.cancel(with: .goingAway, reason: nil)
+      if stopRequested {
+        throw OpenClawGatewayError.aborted(nil)
+      }
       if let runID, error.permitsHTTPFallback {
         return try await recoverAcceptedRun(
           runID: runID,
@@ -650,6 +719,9 @@ public actor OpenClawGatewayClient {
       throw error
     } catch {
       socket.cancel(with: .goingAway, reason: nil)
+      if stopRequested {
+        throw OpenClawGatewayError.aborted(nil)
+      }
       if let runID {
         return try await recoverAcceptedRun(
           runID: runID,
@@ -664,24 +736,40 @@ public actor OpenClawGatewayClient {
 
   public func abort() async throws {
     guard let socket, let sessionKey else { return }
-    var params: [String: Any] = ["sessionKey": sessionKey, "preserveSideRuns": true]
-    if let agentID { params["agentId"] = agentID }
-    if let runID { params["runId"] = runID }
+    stopRequested = true
+    defer { socket.cancel(with: .goingAway, reason: nil) }
     try await sendRequest(
       id: UUID().uuidString.lowercased(),
       method: "chat.abort",
-      params: params,
+      params: Self.abortRequestParams(sessionKey: sessionKey, agentID: agentID),
       on: socket
     )
+    // The live receive loop owns response consumption for this socket. Give the
+    // Gateway a brief chance to emit its aborted event, then close locally so a
+    // reconnected or orphaned run can never leave the UI stuck in Sending.
+    try? await Task.sleep(for: .milliseconds(250))
   }
 
-  private func requestPayload(method: String, params: [String: Any]) async throws -> [String: Any] {
+  nonisolated static func abortRequestParams(
+    sessionKey: String,
+    agentID: String?
+  ) -> [String: Any] {
+    var params: [String: Any] = ["sessionKey": sessionKey, "preserveSideRuns": true]
+    if let agentID { params["agentId"] = agentID }
+    return params
+  }
+
+  private func requestPayload(
+    method: String,
+    params: [String: Any],
+    scopes: [String] = ["operator.read", "operator.write"]
+  ) async throws -> [String: Any] {
     let socket = try makeSocket()
     self.socket = socket
     socket.resume()
     do {
       let nonce = try await awaitChallenge(on: socket)
-      try await connect(on: socket, nonce: nonce)
+      try await connect(on: socket, nonce: nonce, scopes: scopes)
       let requestID = UUID().uuidString.lowercased()
       try await sendRequest(id: requestID, method: method, params: params, on: socket)
       while true {
@@ -730,11 +818,14 @@ public actor OpenClawGatewayClient {
     return nonce
   }
 
-  private func connect(on socket: URLSessionWebSocketTask, nonce: String) async throws {
+  private func connect(
+    on socket: URLSessionWebSocketTask,
+    nonce: String,
+    scopes: [String] = ["operator.read", "operator.write"]
+  ) async throws {
     let requestID = UUID().uuidString.lowercased()
     let identity = try OpenClawDeviceIdentity.loadOrCreate()
     deviceID = identity.deviceID
-    let scopes = ["operator.read", "operator.write"]
     let signedAt = Int(Date().timeIntervalSince1970 * 1_000)
     let signatureToken = settings.bearerToken ?? ""
     let signaturePayload = [

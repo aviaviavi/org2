@@ -39,19 +39,23 @@ public struct ContentView: View {
         }
 
         Button {
-          Task { await store.refreshWorkspace() }
+          if store.isRefreshingWorkspace {
+            store.cancelWorkspaceRefresh()
+          } else {
+            Task { await store.refreshWorkspace() }
+          }
         } label: {
           if store.isRefreshingWorkspace {
             HStack(spacing: 6) {
               WorkspaceActivityIndicator(size: .small)
-              Text("Refresh")
+              Text("Cancel Refresh")
             }
           } else {
             Label("Refresh", systemImage: "arrow.clockwise")
           }
         }
-        .disabled(store.corpusRoot == nil || store.isRefreshingWorkspace)
-        .help("Refresh the entire workspace (⌘R)")
+        .disabled(store.corpusRoot == nil && !store.isRefreshingWorkspace)
+        .help(store.isRefreshingWorkspace ? "Stop the current workspace refresh (⌘R)" : "Refresh the entire workspace (⌘R)")
       }
     }
     .keyboardEventMonitor { event, scope in
@@ -2382,6 +2386,9 @@ private struct RunCenterDetail: View {
   @State private var isCompletionPresented = false
   @State private var completionMode: RunCompletionMode = .run
   @State private var isWorkflowConfirmationPresented = false
+  @State private var openClawApprovalDetails: OpenClawExecApprovalDetails?
+  @State private var isLoadingOpenClawApprovalDetails = false
+  @State private var openClawApprovalDetailsError: String?
   let run: AgentRunItem
 
   private var isMutating: Bool { store.mutatingAgentRunIDs.contains(run.id) }
@@ -2506,13 +2513,23 @@ private struct RunCenterDetail: View {
         if !pending.isEmpty {
           runSection("Waiting for approval") {
             ForEach(pending) { approval in
-              VStack(alignment: .leading, spacing: 6) {
-                Text(approval.title).font(.body.weight(.semibold)); Text(approval.action).font(.callout).foregroundStyle(.secondary)
+              VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 4) {
+                  Text(approval.title).font(.body.weight(.semibold))
+                  Text(approval.action).font(.callout).foregroundStyle(.secondary)
+                }
+
+                approvalReviewMaterial(approval)
+
                 HStack {
                   Button("Approve") { Task { await store.decideAgentRunApproval(run, approval: approval, decision: "approved") } }
+                    .disabled(isMutating || !canApprove(approval))
+                    .help(canApprove(approval) ? "Approve the displayed action" : "Reviewable action details are required before approval")
                   Button("Revise") { Task { await store.decideAgentRunApproval(run, approval: approval, decision: "revised") } }
+                    .disabled(isMutating)
                   Button("Reject") { Task { await store.decideAgentRunApproval(run, approval: approval, decision: "rejected") } }
-                }.buttonStyle(WorkspaceActionButtonStyle()).controlSize(.small).disabled(isMutating)
+                    .disabled(isMutating)
+                }.buttonStyle(WorkspaceActionButtonStyle()).controlSize(.small)
               }
             }
           }
@@ -2567,6 +2584,12 @@ private struct RunCenterDetail: View {
       completionSummary = ""
       isCompletionPresented = false
       completionMode = .run
+      openClawApprovalDetails = nil
+      openClawApprovalDetailsError = nil
+      isLoadingOpenClawApprovalDetails = false
+    }
+    .task(id: "\(run.id):\(run.updatedAt)") {
+      await loadOpenClawApprovalDetails()
     }
     .sheet(isPresented: $isCompletionPresented) {
       RunCompletionSheet(summary: $completionSummary, mode: completionMode) { summary in
@@ -2585,6 +2608,125 @@ private struct RunCenterDetail: View {
     } message: {
       Text("This creates a new reusable workflow definition from this one-off run. It does not rerun, publish, or send anything.")
     }
+  }
+
+  @ViewBuilder
+  private func approvalReviewMaterial(_ approval: AgentRunApprovalItem) -> some View {
+    if let note = approval.note?.trimmingCharacters(in: .whitespacesAndNewlines), !note.isEmpty {
+      VStack(alignment: .leading, spacing: 4) {
+        Text("Approval details").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+        Text(note).font(.callout).textSelection(.enabled)
+      }
+    }
+
+    if run.openClawExecApprovalID != nil {
+      if isLoadingOpenClawApprovalDetails {
+        HStack(spacing: 7) {
+          WorkspaceActivityIndicator(size: .mini)
+          Text("Loading the exact action from OpenClaw…")
+            .font(.callout)
+            .foregroundStyle(.secondary)
+        }
+      } else if let details = openClawApprovalDetails {
+        VStack(alignment: .leading, spacing: 7) {
+          Text("Exact action to approve")
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.secondary)
+          Text(details.reviewText)
+            .font(.system(.callout, design: .monospaced))
+            .textSelection(.enabled)
+            .padding(9)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 6))
+
+          if let preview = details.commandPreview?.trimmingCharacters(in: .whitespacesAndNewlines),
+             !preview.isEmpty,
+             preview != details.commandText {
+            DisclosureGroup("Raw command") {
+              Text(details.commandText)
+                .font(.system(.caption, design: .monospaced))
+                .textSelection(.enabled)
+                .padding(.top, 5)
+            }
+            .font(.caption)
+          }
+
+          let metadata = [
+            details.host.map { "Host: \($0)" },
+            details.agentID.map { "Agent: \($0)" },
+          ].compactMap { $0 }
+          if !metadata.isEmpty {
+            Text(metadata.joined(separator: " · "))
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+        }
+      } else {
+        Label(
+          "The exact OpenClaw action is unavailable, so approval is disabled. Retry after the Gateway is reachable or reject this request.",
+          systemImage: "exclamationmark.triangle.fill"
+        )
+        .font(.callout)
+        .foregroundStyle(.orange)
+        if let error = openClawApprovalDetailsError {
+          Text(error)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .textSelection(.enabled)
+        }
+      }
+    } else if !run.artifacts.isEmpty {
+      VStack(alignment: .leading, spacing: 6) {
+        Text("Review outputs before approving")
+          .font(.caption.weight(.semibold))
+          .foregroundStyle(.secondary)
+        ForEach(run.artifacts) { artifact in
+          Button { store.openAgentRunArtifact(artifact) } label: {
+            Label(artifact.displayTitle, systemImage: "doc.text")
+          }
+          .buttonStyle(.link)
+        }
+      }
+    } else if requiresReviewMaterial(approval),
+              approval.note?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
+      Label(
+        "No recipient, content, command, or reviewable output was attached. Approval is disabled.",
+        systemImage: "exclamationmark.triangle.fill"
+      )
+      .font(.callout)
+      .foregroundStyle(.orange)
+    }
+  }
+
+  private func requiresReviewMaterial(_ approval: AgentRunApprovalItem) -> Bool {
+    approval.riskClass == "external-action" || approval.riskClass == "high-impact"
+  }
+
+  private func canApprove(_ approval: AgentRunApprovalItem) -> Bool {
+    guard requiresReviewMaterial(approval) else { return true }
+    if run.openClawExecApprovalID != nil { return openClawApprovalDetails != nil }
+    if approval.note?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false { return true }
+    return !run.artifacts.isEmpty
+  }
+
+  @MainActor
+  private func loadOpenClawApprovalDetails() async {
+    openClawApprovalDetails = nil
+    openClawApprovalDetailsError = nil
+    guard run.pendingApprovalCount > 0, run.openClawExecApprovalID != nil else {
+      isLoadingOpenClawApprovalDetails = false
+      return
+    }
+    isLoadingOpenClawApprovalDetails = true
+    do {
+      let details = try await store.openClawExecApprovalDetails(for: run)
+      guard !Task.isCancelled else { return }
+      openClawApprovalDetails = details
+    } catch {
+      guard !Task.isCancelled else { return }
+      openClawApprovalDetailsError = error.localizedDescription
+    }
+    isLoadingOpenClawApprovalDetails = false
   }
 
   private var clarificationSection: some View {
@@ -6078,7 +6220,7 @@ private struct LiveFileEditorBody: View {
   var body: some View {
     Group {
       if store.isLoadingEntrySource && store.selectedEntrySource == nil {
-        OrgHTMLLoadingView(label: "Loading source")
+        OrgHTMLLoadingView(label: "Loading source", onCancel: store.cancelSelectedEntryLoading)
       } else if let source = store.selectedEntrySource {
         if store.isEditingEntry {
           OrgSourceEditorWithLinkTools()
@@ -6105,7 +6247,7 @@ private struct LiveFileEditorBody: View {
         } else if let error = store.selectedEntryRenderError {
           OrgHTMLRenderFailureView(message: error)
         } else {
-          OrgHTMLLoadingView(label: "Rendering page")
+          OrgHTMLLoadingView(label: "Rendering page", onCancel: store.cancelSelectedEntryLoading)
         }
       } else if let error = store.selectedEntryRenderError {
         OrgHTMLRenderFailureView(message: error)
@@ -6145,13 +6287,20 @@ private struct LegacyStructuredEntryEditorView: View {
 
 private struct OrgHTMLLoadingView: View {
   let label: String
+  var onCancel: (() -> Void)? = nil
 
   var body: some View {
-    HStack(spacing: 8) {
-      WorkspaceActivityIndicator(size: .small, style: .scan)
-      Text(label)
-        .font(.callout)
-        .foregroundStyle(.secondary)
+    VStack(spacing: 12) {
+      HStack(spacing: 8) {
+        WorkspaceActivityIndicator(size: .small, style: .scan)
+        Text(label)
+          .font(.callout)
+          .foregroundStyle(.secondary)
+      }
+      if let onCancel {
+        Button("Stop Waiting", action: onCancel)
+          .controlSize(.small)
+      }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
   }
@@ -6577,7 +6726,7 @@ private struct EntryBodyView: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
       if store.isLoadingEntrySource && store.selectedEntrySource == nil {
-        OrgHTMLLoadingView(label: "Loading source")
+        OrgHTMLLoadingView(label: "Loading source", onCancel: store.cancelSelectedEntryLoading)
       } else if let source = store.selectedEntrySource {
         if store.isEditingEntry {
           OrgSourceEditorWithLinkTools()
@@ -6604,7 +6753,7 @@ private struct EntryBodyView: View {
         } else if let error = store.selectedEntryRenderError {
           OrgHTMLRenderFailureView(message: error)
         } else {
-          OrgHTMLLoadingView(label: "Rendering preview")
+          OrgHTMLLoadingView(label: "Rendering preview", onCancel: store.cancelSelectedEntryLoading)
         }
       } else if let error = store.selectedEntryRenderError {
         OrgHTMLRenderFailureView(message: error)

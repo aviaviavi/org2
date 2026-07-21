@@ -259,6 +259,25 @@ public struct AgentRunItem: Identifiable, Decodable, Hashable, Sendable {
   public let failure: String?
 
   public var pendingApprovalCount: Int { approvals.filter { $0.status == "pending" }.count }
+  public var openClawExecApprovalID: String? {
+    for comment in comments.reversed() {
+      for line in comment.body.split(whereSeparator: \.isNewline) {
+        let rawLine = String(line).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard rawLine.lowercased().hasPrefix("openclaw_key:") else { continue }
+        let key = rawLine.dropFirst("OPENCLAW_KEY:".count)
+          .trimmingCharacters(in: .whitespacesAndNewlines)
+        let components = key.split(separator: ":", omittingEmptySubsequences: false)
+        guard components.count >= 4,
+              components[0].lowercased() == "draft",
+              components[1].lowercased() == "exec"
+        else { continue }
+        let approvalID = components.dropFirst(3).joined(separator: ":")
+          .trimmingCharacters(in: .whitespacesAndNewlines)
+        if !approvalID.isEmpty { return approvalID }
+      }
+    }
+    return nil
+  }
   public var completedStepCount: Int { plan.filter { $0.status == "completed" }.count }
   public var skippedStepCount: Int { plan.filter { $0.status == "skipped" }.count }
   public var latestValidations: [AgentRunValidationItem] {
