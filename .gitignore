@@ -1,6 +1,7 @@
 node_modules/
 dist/
 .build/
+.DS_Store
 .codex/
 **/.org2/index/
 **/.org2/corpus-index-cache.json

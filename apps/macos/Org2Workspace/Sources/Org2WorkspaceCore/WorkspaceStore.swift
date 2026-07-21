@@ -629,6 +629,8 @@ public final class WorkspaceStore: ObservableObject {
   nonisolated public static let meetingCaptureSourceSummary = "Captures microphone and system/call audio. System audio uses macOS ScreenCaptureKit permission; Org2 records audio only."
   nonisolated public static let defaultAgentHandoffAssignee = "OpenClaw"
   nonisolated public static let runReviewAutoRefreshIntervalNanoseconds: UInt64 = 60_000_000_000
+  nonisolated public static let defaultWorkspaceRefreshTimeoutNanoseconds: UInt64 = 15_000_000_000
+  nonisolated public static let defaultEntryRenderTimeoutNanoseconds: UInt64 = 15_000_000_000
 
   @Published public var selectedSurface: WorkspaceSurface = .home {
     didSet {
@@ -1078,8 +1080,17 @@ public final class WorkspaceStore: ObservableObject {
   private var entryHTMLRenderGeneration = 0
   private var activeEntrySourceLoadingGeneration: Int?
   private var entrySourceLoadWatchdogTask: Task<Void, Never>?
+  private var entryHTMLRenderTask: Task<Void, Never>?
+  private var entryHTMLRenderWatchdogTask: Task<Void, Never>?
   var entrySourceLoadTimeoutNanoseconds: UInt64 = 3_000_000_000
+  var entryHTMLRenderTimeoutNanoseconds = WorkspaceStore.defaultEntryRenderTimeoutNanoseconds
   var entrySourceLoaderForTesting: (@Sendable (String, Int, EntrySourceMode) async throws -> EntrySource)?
+  var entryHTMLRendererForTesting: (@Sendable (String, String, Int, String?) async throws -> String)?
+  private var workspaceRefreshGeneration = 0
+  private var workspaceRefreshOperationTask: Task<Void, Never>?
+  private var workspaceRefreshWatchdogTask: Task<Void, Never>?
+  var workspaceRefreshTimeoutNanoseconds = WorkspaceStore.defaultWorkspaceRefreshTimeoutNanoseconds
+  var workspaceRefreshOperationForTesting: (@MainActor @Sendable () async -> Void)?
   private var liveFileEditorAutosaveTask: Task<Void, Never>?
   private var liveFileEditorAutosaveGeneration = 0
   private var sourceEditorCommandGeneration = 0
@@ -1141,7 +1152,9 @@ public final class WorkspaceStore: ObservableObject {
     appOpenClawTranscriptURL = fallbackTranscriptURL
     self.openClawTranscriptURL = openClawTranscriptURL ?? fallbackTranscriptURL
     self.openClawSendHandler = openClawSendHandler
-    self.cli = cli ?? (try? Org2CLI(repoRoot: Org2CLI.defaultRepoRoot())) ?? Org2CLI(repoRoot: URL(fileURLWithPath: "/Users/avi/dev/org2"))
+    self.cli = cli
+      ?? (try? Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+      ?? Org2CLI(repoRoot: URL(fileURLWithPath: FileManager.default.currentDirectoryPath))
     let settings = OpenClawGatewaySettings.resolve()
     let migrationDomains = legacyDefaultsDomains
       ?? (
@@ -1575,9 +1588,18 @@ public final class WorkspaceStore: ObservableObject {
     isRenderingEntrySource = false
     entrySourceLoadWatchdogTask?.cancel()
     entrySourceLoadWatchdogTask = nil
+    entryHTMLRenderWatchdogTask?.cancel()
+    entryHTMLRenderWatchdogTask = nil
+    entryHTMLRenderTask?.cancel()
+    entryHTMLRenderTask = nil
     entrySourceLoadGeneration += 1
     entryHTMLRenderGeneration += 1
     activeEntrySourceLoadingGeneration = nil
+    workspaceRefreshOperationTask?.cancel()
+    workspaceRefreshOperationTask = nil
+    workspaceRefreshWatchdogTask?.cancel()
+    workspaceRefreshWatchdogTask = nil
+    workspaceRefreshGeneration += 1
     backlinks = nil
     errorText = nil
   }
@@ -1684,22 +1706,121 @@ public final class WorkspaceStore: ObservableObject {
 
   public func refreshWorkspace() async {
     guard !isRefreshingWorkspace else { return }
+    workspaceRefreshGeneration += 1
+    let generation = workspaceRefreshGeneration
     isRefreshingWorkspace = true
-    defer { isRefreshingWorkspace = false }
+    errorText = nil
+
+    let operation = Task { @MainActor [weak self] in
+      guard let self else { return }
+      if let testOperation = self.workspaceRefreshOperationForTesting {
+        await testOperation()
+      } else {
+        await self.performWorkspaceRefresh(generation: generation)
+      }
+      guard generation == self.workspaceRefreshGeneration,
+            !Task.isCancelled
+      else { return }
+      self.finishWorkspaceRefresh(generation: generation)
+    }
+    workspaceRefreshOperationTask = operation
+    scheduleWorkspaceRefreshWatchdog(generation: generation)
+
+    while generation == workspaceRefreshGeneration, isRefreshingWorkspace {
+      if Task.isCancelled {
+        cancelWorkspaceRefresh(message: "Workspace refresh canceled")
+        return
+      }
+      do {
+        try await Task.sleep(nanoseconds: 20_000_000)
+      } catch {
+        cancelWorkspaceRefresh(message: "Workspace refresh canceled")
+        return
+      }
+    }
+  }
+
+  private func performWorkspaceRefresh(generation: Int) async {
+    guard shouldContinueWorkspaceRefresh(generation) else { return }
 
     refreshAudioSettingsStatus(preserveStatusText: true)
     await refreshActiveCorpusIdentity()
+    guard shouldContinueWorkspaceRefresh(generation) else { return }
     await refreshAgenda()
+    guard shouldContinueWorkspaceRefresh(generation) else { return }
     await refreshMeetings()
+    guard shouldContinueWorkspaceRefresh(generation) else { return }
     await refreshCorpusFiles()
+    guard shouldContinueWorkspaceRefresh(generation) else { return }
     await refreshAssignedWork()
+    guard shouldContinueWorkspaceRefresh(generation) else { return }
     await refreshApprovals()
+    guard shouldContinueWorkspaceRefresh(generation) else { return }
     await refreshAgentRuns()
+    guard shouldContinueWorkspaceRefresh(generation) else { return }
     await refreshAgentWorkflows()
+    guard shouldContinueWorkspaceRefresh(generation) else { return }
     await refreshSelectedDetailFromDisk()
+    guard shouldContinueWorkspaceRefresh(generation) else { return }
     refreshWorkspaceHealth()
     refreshOrgCryptManagedRecipientFiles()
     await refreshOpenClawThreads()
+  }
+
+  private func shouldContinueWorkspaceRefresh(_ generation: Int) -> Bool {
+    generation == workspaceRefreshGeneration && isRefreshingWorkspace && !Task.isCancelled
+  }
+
+  private func scheduleWorkspaceRefreshWatchdog(generation: Int) {
+    workspaceRefreshWatchdogTask?.cancel()
+    let timeout = workspaceRefreshTimeoutNanoseconds
+    workspaceRefreshWatchdogTask = Task { @MainActor [weak self] in
+      do {
+        try await Task.sleep(nanoseconds: timeout)
+      } catch {
+        return
+      }
+      guard let self,
+            generation == self.workspaceRefreshGeneration,
+            self.isRefreshingWorkspace
+      else { return }
+      let seconds = max(1, Int(ceil(Double(timeout) / 1_000_000_000)))
+      self.cancelWorkspaceRefresh(
+        message: "Workspace refresh timed out after \(seconds) seconds. Existing workspace data is still available; retry when ready."
+      )
+    }
+  }
+
+  private func finishWorkspaceRefresh(generation: Int) {
+    guard generation == workspaceRefreshGeneration else { return }
+    workspaceRefreshWatchdogTask?.cancel()
+    workspaceRefreshWatchdogTask = nil
+    workspaceRefreshOperationTask = nil
+    isRefreshingWorkspace = false
+  }
+
+  public func cancelWorkspaceRefresh() {
+    cancelWorkspaceRefresh(message: "Workspace refresh canceled. Existing workspace data is still available.")
+  }
+
+  private func cancelWorkspaceRefresh(message: String) {
+    guard isRefreshingWorkspace else { return }
+    workspaceRefreshGeneration += 1
+    workspaceRefreshOperationTask?.cancel()
+    workspaceRefreshOperationTask = nil
+    workspaceRefreshWatchdogTask?.cancel()
+    workspaceRefreshWatchdogTask = nil
+    isRefreshingWorkspace = false
+    isLoadingAgenda = false
+    isLoadingApprovals = false
+    isLoadingAgentRuns = false
+    isLoadingAgentWorkflows = false
+    isLoadingMeetings = false
+    isScanningCorpusFiles = false
+    isLoadingAssignedWork = false
+    isLoadingOpenClawThreads = false
+    statusText = message
+    errorText = message
   }
 
   private func refreshSelectedDetailFromDisk() async {
@@ -2284,6 +2405,12 @@ public final class WorkspaceStore: ObservableObject {
       errorText = error.localizedDescription
       statusText = "Approval update failed"
     }
+  }
+
+  public func openClawExecApprovalDetails(for run: AgentRunItem) async throws -> OpenClawExecApprovalDetails? {
+    guard let approvalID = run.openClawExecApprovalID else { return nil }
+    let gateway = OpenClawGatewayClient(settings: currentOpenClawSettings(allowKeychainRead: true))
+    return try await gateway.execApprovalDetails(id: approvalID)
   }
 
   private func continueOpenClawWorkflowAfterApproval(_ run: AgentRunItem) async throws {
@@ -4388,6 +4515,10 @@ public final class WorkspaceStore: ObservableObject {
     selectedEntryRenderError = nil
     selectedEntryHTMLRenderKey = nil
     selectedRenderedBlocks = []
+    entryHTMLRenderTask?.cancel()
+    entryHTMLRenderTask = nil
+    entryHTMLRenderWatchdogTask?.cancel()
+    entryHTMLRenderWatchdogTask = nil
     isRenderingEntrySource = false
     entryHTMLRenderGeneration += 1
     Task { await loadBacklinks(for: location) }
@@ -4511,6 +4642,10 @@ public final class WorkspaceStore: ObservableObject {
     selectedEntryRenderError = nil
     selectedEntryHTMLRenderKey = nil
     selectedRenderedBlocks = []
+    entryHTMLRenderTask?.cancel()
+    entryHTMLRenderTask = nil
+    entryHTMLRenderWatchdogTask?.cancel()
+    entryHTMLRenderWatchdogTask = nil
     isRenderingEntrySource = false
     isEditingEntry = false
     editableEntryText = ""
@@ -4728,6 +4863,25 @@ public final class WorkspaceStore: ObservableObject {
     resetBlockState()
     guard let selectedLocation else { return }
     await loadEntrySource(for: selectedLocation)
+  }
+
+  public func cancelSelectedEntryLoading() {
+    guard isLoadingEntrySource || isRenderingEntrySource else { return }
+    entrySourceLoadGeneration += 1
+    entryHTMLRenderGeneration += 1
+    entrySourceLoadWatchdogTask?.cancel()
+    entrySourceLoadWatchdogTask = nil
+    entryHTMLRenderWatchdogTask?.cancel()
+    entryHTMLRenderWatchdogTask = nil
+    entryHTMLRenderTask?.cancel()
+    entryHTMLRenderTask = nil
+    activeEntrySourceLoadingGeneration = nil
+    isLoadingEntrySource = false
+    isRenderingEntrySource = false
+    selectedEntryHTML = nil
+    let message = "Loading stopped. The file is unchanged; retry the preview when ready."
+    selectedEntryRenderError = message
+    statusText = "Preview loading stopped"
   }
 
   private func updateSelectedFileDataNotebookState(for file: String?) {
@@ -12670,7 +12824,11 @@ public final class WorkspaceStore: ObservableObject {
         presentQuickOpen()
       case "r":
         guard corpusRoot != nil else { return false }
-        Task { await refreshWorkspace() }
+        if isRefreshingWorkspace {
+          cancelWorkspaceRefresh()
+        } else {
+          Task { await refreshWorkspace() }
+        }
       case "s":
         guard scope == .all else {
           return OrgSyntaxTextView.saveFocusedTextViewIfPossible(for: event)
@@ -13955,16 +14113,9 @@ public final class WorkspaceStore: ObservableObject {
       return saved
     }
 
-    let candidates = [
-      "/Users/avi/avi.org2",
-      "/Users/avi/openclaw/aviaviavi-org2",
-      "/Users/avi/clawd/aviaviavi-org2",
-      "/Users/avi/dev/org2"
-    ]
-
-    return candidates.first(where: isDirectory).map {
-      URL(fileURLWithPath: $0).standardizedFileURL
-    }
+    return mountedCorpora
+      .first(where: { isDirectory($0.path) })
+      .map { URL(fileURLWithPath: $0.path).standardizedFileURL }
   }
 
   private func restoreSavedCorpusRoot() -> URL? {
@@ -13984,6 +14135,22 @@ public final class WorkspaceStore: ObservableObject {
     // for that exact path; a newly mounted corpus must never inherit it.
     if defaults.string(forKey: corpusKey).map({ URL(fileURLWithPath: $0).standardizedFileURL.path }) == path {
       return defaults.string(forKey: openClawRemoteCorpusPathKey) ?? ""
+    }
+
+    // Early multi-corpus builds could persist the mount list without ever
+    // writing corpusRoot. If there is exactly one established mount, the old
+    // single-corpus OpenClaw path can only belong to that corpus. Promote it to
+    // the per-corpus map so later mounts never inherit it.
+    let legacyRemotePath = defaults.string(forKey: openClawRemoteCorpusPathKey)?
+      .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    if defaults.string(forKey: corpusKey) == nil,
+       !legacyRemotePath.isEmpty,
+       mountedCorpora.count == 1,
+       mountedCorpora[0].path == path {
+      var paths = defaults.dictionary(forKey: openClawRemoteCorpusPathsByCorpusKey) as? [String: String] ?? [:]
+      paths[path] = legacyRemotePath
+      defaults.set(paths, forKey: openClawRemoteCorpusPathsByCorpusKey)
+      return legacyRemotePath
     }
     return ""
   }
@@ -14137,6 +14304,11 @@ public final class WorkspaceStore: ObservableObject {
     let renderGeneration = entryHTMLRenderGeneration
     isRenderingEntrySource = true
     selectedEntryRenderError = nil
+    scheduleEntryHTMLRenderWatchdog(
+      for: source,
+      generation: generation,
+      renderGeneration: renderGeneration
+    )
 
     let cachedHTML = renderedHTMLCache[renderKey]?.html
     if let cachedHTML {
@@ -14146,15 +14318,24 @@ public final class WorkspaceStore: ObservableObject {
       selectedEntryHTMLRenderKey = renderKey
     }
 
-    Task { @MainActor in
+    entryHTMLRenderTask?.cancel()
+    entryHTMLRenderTask = Task { @MainActor [weak self] in
+      guard let self else { return }
       if cachedHTML == nil {
         do {
-          let html = try await cli.renderAppHTML(
-            source.text,
-            sourcePath: source.file,
-            sourceLineOffset: max(0, source.startLine - 1),
-            stylesheetPath: appHTMLStylesheetPath
-          )
+          let sourceLineOffset = max(0, source.startLine - 1)
+          let stylesheetPath = self.appHTMLStylesheetPath
+          let html: String
+          if let testRenderer = self.entryHTMLRendererForTesting {
+            html = try await testRenderer(source.text, source.file, sourceLineOffset, stylesheetPath)
+          } else {
+            html = try await self.cli.renderAppHTML(
+              source.text,
+              sourcePath: source.file,
+              sourceLineOffset: sourceLineOffset,
+              stylesheetPath: stylesheetPath
+            )
+          }
           guard generation == self.entrySourceLoadGeneration,
                 renderGeneration == self.entryHTMLRenderGeneration,
                 self.selectedEntrySource?.id == source.id,
@@ -14198,7 +14379,45 @@ public final class WorkspaceStore: ObservableObject {
         self.cacheRenderedBlocks(blocks, for: source, modifiedAt: modifiedAt)
       }
       self.applyRenderedBlocks(blocks, for: source)
+      self.entryHTMLRenderWatchdogTask?.cancel()
+      self.entryHTMLRenderWatchdogTask = nil
+      self.entryHTMLRenderTask = nil
       self.isRenderingEntrySource = false
+    }
+  }
+
+  private func scheduleEntryHTMLRenderWatchdog(
+    for source: EntrySource,
+    generation: Int,
+    renderGeneration: Int
+  ) {
+    entryHTMLRenderWatchdogTask?.cancel()
+    let timeout = entryHTMLRenderTimeoutNanoseconds
+    entryHTMLRenderWatchdogTask = Task { @MainActor [weak self] in
+      do {
+        try await Task.sleep(nanoseconds: timeout)
+      } catch {
+        return
+      }
+      guard let self,
+            generation == self.entrySourceLoadGeneration,
+            renderGeneration == self.entryHTMLRenderGeneration,
+            self.selectedEntrySource?.id == source.id,
+            self.selectedEntryHTML == nil,
+            self.selectedEntryRenderError == nil,
+            self.isRenderingEntrySource
+      else { return }
+
+      self.entryHTMLRenderGeneration += 1
+      self.entryHTMLRenderTask?.cancel()
+      self.entryHTMLRenderTask = nil
+      self.entryHTMLRenderWatchdogTask = nil
+      self.isRenderingEntrySource = false
+      let seconds = max(1, Int(ceil(Double(timeout) / 1_000_000_000)))
+      let message = "Preview rendering timed out after \(seconds) seconds. Retry to render the file again."
+      self.selectedEntryRenderError = message
+      self.statusText = "Preview rendering timed out"
+      self.errorText = message
     }
   }
 

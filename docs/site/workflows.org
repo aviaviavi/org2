@@ -80,7 +80,7 @@ The first scheduling slice uses cron expressions plus an optional IANA timezone.
 
 * Safety and review
 
-A workflow declares capabilities and a risk class. Expected outputs should land in reviewable locations such as =views/= or =compiled/=, and consequential or external actions should carry an explicit approval requirement. Activating a schedule never weakens those boundaries.
+A workflow declares capabilities and a risk class. Expected outputs should land in reviewable locations such as =views/= or =compiled/=, and consequential or external actions should carry an explicit approval requirement. An external-action or high-impact approval must expose the exact recipient, content, command, and attachments through an inspectable artifact, approval note, or live runtime detail; an opaque identifier or fingerprint is not enough to approve. The Mac Run Center retrieves linked OpenClaw exec details when they remain available and disables *Approve* when no reviewable material can be shown. Activating a schedule never weakens those boundaries.
 
 Keep runtime credentials outside workflow files. A workflow may name a capability or symbolic runtime policy, but provider tokens, Gateway credentials, machine-local job IDs, and private scheduler state belong in runtime configuration.
 

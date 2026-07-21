@@ -47,9 +47,14 @@ public struct Org2CLI: Sendable {
     if sourceRanges {
       arguments.insert("--source-ranges", at: 0)
     }
-    let data = try await Task.detached(priority: .userInitiated) {
+    let operation = Task.detached(priority: .userInitiated) {
       try runProcess(scriptPath: repoRoot.appendingPathComponent("dist/parse.js"), arguments: arguments)
-    }.value
+    }
+    let data = try await withTaskCancellationHandler {
+      try await operation.value
+    } onCancel: {
+      operation.cancel()
+    }
     return try JSONDecoder().decode(T.self, from: data)
   }
 
@@ -67,13 +72,18 @@ public struct Org2CLI: Sendable {
     if sourceRanges {
       arguments.insert("--source-ranges", at: 0)
     }
-    let data = try await Task.detached(priority: .userInitiated) {
+    let operation = Task.detached(priority: .userInitiated) {
       try runProcess(
         scriptPath: repoRoot.appendingPathComponent("dist/parse.js"),
         arguments: arguments,
         standardInput: Data(text.utf8)
       )
-    }.value
+    }
+    let data = try await withTaskCancellationHandler {
+      try await operation.value
+    } onCancel: {
+      operation.cancel()
+    }
     return try JSONDecoder().decode(T.self, from: data)
   }
 
@@ -91,14 +101,19 @@ public struct Org2CLI: Sendable {
     if let stylesheetPath, !stylesheetPath.isEmpty {
       arguments.append(contentsOf: ["--stylesheet", stylesheetPath])
     }
-    let data = try await Task.detached(priority: .userInitiated) {
+    let operation = Task.detached(priority: .userInitiated) {
       try runProcess(
         scriptPath: repoRoot.appendingPathComponent("dist/render-html.js"),
         arguments: arguments,
         standardInput: Data(text.utf8),
         timeout: timeout
       )
-    }.value
+    }
+    let data = try await withTaskCancellationHandler {
+      try await operation.value
+    } onCancel: {
+      operation.cancel()
+    }
     return String(decoding: data, as: UTF8.self)
   }
 
@@ -111,14 +126,19 @@ public struct Org2CLI: Sendable {
     if sourceLineOffset > 0 {
       arguments.append(contentsOf: ["--source-line-offset", "\(sourceLineOffset)"])
     }
-    let data = try await Task.detached(priority: .utility) {
+    let operation = Task.detached(priority: .utility) {
       try runProcess(
         scriptPath: repoRoot.appendingPathComponent("dist/editor-analysis.js"),
         arguments: arguments,
         standardInput: Data(text.utf8),
         timeout: timeout
       )
-    }.value
+    }
+    let data = try await withTaskCancellationHandler {
+      try await operation.value
+    } onCancel: {
+      operation.cancel()
+    }
     let payload = try JSONDecoder().decode(Org2EditorAnalysisPayload.self, from: data)
     return OrgSourceEditorSemanticSnapshot(payload: payload)
   }
@@ -133,9 +153,14 @@ public struct Org2CLI: Sendable {
   }
 
   public func run(_ arguments: [String], environment: [String: String] = [:]) async throws -> Data {
-    try await Task.detached(priority: .userInitiated) {
+    let operation = Task.detached(priority: .userInitiated) {
       try runProcess(scriptPath: cliPath, arguments: arguments, environment: environment)
-    }.value
+    }
+    return try await withTaskCancellationHandler {
+      try await operation.value
+    } onCancel: {
+      operation.cancel()
+    }
   }
 
   public func runSync(_ arguments: [String]) throws -> Data {
@@ -182,6 +207,12 @@ public struct Org2CLI: Sendable {
 
     try process.run()
 
+    // The child inherits its own copies. Keeping the parent's write ends open
+    // can prevent readDataToEndOfFile() from ever observing EOF after the child
+    // exits, leaving refresh tasks permanently stuck in readGroup.wait().
+    try? stdout.fileHandleForWriting.close()
+    try? stderr.fileHandleForWriting.close()
+
     if let standardInput, let stdin {
       readGroup.enter()
       DispatchQueue.global(qos: .userInitiated).async {
@@ -204,29 +235,43 @@ public struct Org2CLI: Sendable {
       readGroup.leave()
     }
 
-    let didTimeOut: Bool
-    if let timeout {
-      let deadline = Date().addingTimeInterval(max(0.01, timeout))
-      while process.isRunning && Date() < deadline {
+    let deadline = timeout.map { Date().addingTimeInterval(max(0.01, $0)) }
+    var didTimeOut = false
+    var wasCancelled = false
+    while process.isRunning {
+      if Task.isCancelled {
+        wasCancelled = true
+        break
+      }
+      if let deadline, Date() >= deadline {
+        didTimeOut = true
+        break
+      }
+      Thread.sleep(forTimeInterval: 0.01)
+    }
+
+    if process.isRunning && (didTimeOut || wasCancelled) {
+      process.terminate()
+      let terminationDeadline = Date().addingTimeInterval(0.5)
+      while process.isRunning && Date() < terminationDeadline {
         Thread.sleep(forTimeInterval: 0.01)
       }
-      didTimeOut = process.isRunning
-      if didTimeOut {
-        process.terminate()
-        let terminationDeadline = Date().addingTimeInterval(0.5)
-        while process.isRunning && Date() < terminationDeadline {
-          Thread.sleep(forTimeInterval: 0.01)
-        }
-        if process.isRunning {
-          Darwin.kill(process.processIdentifier, SIGKILL)
-        }
+      if process.isRunning {
+        Darwin.kill(process.processIdentifier, SIGKILL)
       }
-    } else {
-      didTimeOut = false
     }
 
     process.waitUntilExit()
-    readGroup.wait()
+    // A command (or a descendant it spawned) can keep a pipe descriptor open
+    // after the direct child exits. Never let output draining turn that into an
+    // unbounded application hang. Do not forcibly close a FileHandle while its
+    // reader is active; Foundation can raise an Objective-C exception. The
+    // reader owns the pipe and will unwind naturally when the descriptor closes.
+    _ = readGroup.wait(timeout: .now() + 1)
+
+    if wasCancelled {
+      throw CancellationError()
+    }
 
     if didTimeOut {
       throw Org2CLIError.commandTimedOut(seconds: Int(timeout?.rounded(.up) ?? 0))

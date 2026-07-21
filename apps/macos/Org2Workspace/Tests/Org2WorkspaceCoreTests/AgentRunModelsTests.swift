@@ -70,6 +70,36 @@ final class AgentRunModelsTests: XCTestCase {
     XCTAssertFalse(textArtifact.isPDF)
   }
 
+  func testFindsOpenClawExecApprovalIDInLifecycleComment() throws {
+    let data = Data(#"""
+    {
+      "id": "run-1",
+      "goal": "Prepare an external message",
+      "acceptanceCriteria": [],
+      "status": "waiting-approval",
+      "riskClass": "external-action",
+      "capabilities": [],
+      "context": [],
+      "plan": [],
+      "artifacts": [],
+      "approvals": [],
+      "validations": [],
+      "comments": [{
+        "id": "comment-1",
+        "author": "org2-lifecycle",
+        "body": "OPENCLAW_KEY: draft:exec:default:IC_example123\nOPENCLAW_KIND: external-draft",
+        "createdAt": "2026-07-20T00:00:00.000Z"
+      }],
+      "events": [],
+      "createdAt": "2026-07-20T00:00:00.000Z",
+      "updatedAt": "2026-07-20T00:00:00.000Z"
+    }
+    """#.utf8)
+
+    let run = try JSONDecoder().decode(AgentRunItem.self, from: data)
+    XCTAssertEqual(run.openClawExecApprovalID, "IC_example123")
+  }
+
   @MainActor
   func testRunsAndReviewSearchFocusSignalsBothPossibleVisibleTabs() throws {
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))

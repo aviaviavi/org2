@@ -561,6 +561,57 @@ final class Org2ModelsTests: XCTestCase {
     }
   }
 
+  func testOrg2CLICancellationTerminatesRunningProcess() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-cli-cancel-\(UUID().uuidString)", isDirectory: true)
+    let dist = root.appendingPathComponent("dist", isDirectory: true)
+    try FileManager.default.createDirectory(at: dist, withIntermediateDirectories: true)
+    try "setInterval(() => {}, 1000);\n".write(
+      to: dist.appendingPathComponent("cli.js"),
+      atomically: true,
+      encoding: .utf8
+    )
+    defer { try? FileManager.default.removeItem(at: root) }
+    let cli = Org2CLI(repoRoot: root)
+    let operation = Task { try await cli.run(["hang"]) }
+    try await Task.sleep(nanoseconds: 50_000_000)
+
+    operation.cancel()
+
+    do {
+      _ = try await operation.value
+      XCTFail("Expected cancellation")
+    } catch is CancellationError {
+      // Expected: cancellation must escape instead of leaving the pipe reader blocked.
+    }
+  }
+
+  func testOrg2CLIDoesNotWaitForeverWhenDescendantKeepsOutputPipeOpen() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-cli-inherited-pipe-\(UUID().uuidString)", isDirectory: true)
+    let dist = root.appendingPathComponent("dist", isDirectory: true)
+    try FileManager.default.createDirectory(at: dist, withIntermediateDirectories: true)
+    try """
+    const { spawn } = require("node:child_process");
+    spawn(process.execPath, ["-e", "setTimeout(() => {}, 3000)"], {
+      detached: true,
+      stdio: ["ignore", 1, 2]
+    }).unref();
+    process.stdout.write("ready");
+    """.write(
+      to: dist.appendingPathComponent("cli.js"),
+      atomically: true,
+      encoding: .utf8
+    )
+    defer { try? FileManager.default.removeItem(at: root) }
+    let cli = Org2CLI(repoRoot: root)
+    let started = Date()
+
+    _ = try await cli.run(["inherited-pipe"])
+
+    XCTAssertLessThan(Date().timeIntervalSince(started), 2.5)
+  }
+
   func testOrg2CLIBrokenInputPipeDoesNotTerminateHostProcess() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-render-broken-pipe-\(UUID().uuidString)", isDirectory: true)
@@ -817,6 +868,37 @@ final class Org2ModelsTests: XCTestCase {
       OpenClawGatewayClient.messageText(message, includeThinking: true),
       "provider-exposed thought\nVisible answer\nwith another block"
     )
+  }
+
+  func testOpenClawGatewayStopTargetsSessionAfterReconnect() {
+    let params = OpenClawGatewayClient.abortRequestParams(
+      sessionKey: "agent:org2:org2-workspace:test-thread",
+      agentID: "org2"
+    )
+
+    XCTAssertEqual(params["sessionKey"] as? String, "agent:org2:org2-workspace:test-thread")
+    XCTAssertEqual(params["agentId"] as? String, "org2")
+    XCTAssertEqual(params["preserveSideRuns"] as? Bool, true)
+    XCTAssertNil(params["runId"])
+  }
+
+  func testDecodesOpenClawExecApprovalDetailsForReview() throws {
+    let details = try OpenClawGatewayClient.execApprovalDetails(from: [
+      "id": "IC_example123",
+      "commandText": "send-message --to person@example.com --body 'Hello'",
+      "commandPreview": "To: person@example.com\n\nHello",
+      "allowedDecisions": ["allow-once", "deny"],
+      "host": "gateway",
+      "agentId": "default",
+      "expiresAtMs": NSNumber(value: 1_721_500_000_000 as Int64),
+    ])
+
+    XCTAssertEqual(details.id, "IC_example123")
+    XCTAssertEqual(details.reviewText, "To: person@example.com\n\nHello")
+    XCTAssertEqual(details.allowedDecisions, ["allow-once", "deny"])
+    XCTAssertEqual(details.host, "gateway")
+    XCTAssertEqual(details.agentID, "default")
+    XCTAssertEqual(details.expiresAtMilliseconds, 1_721_500_000_000)
   }
 
   func testOpenClawGatewayPreservesPairingRequestFromSocketClose() {
@@ -2317,7 +2399,7 @@ final class Org2ModelsTests: XCTestCase {
     legacyDefaults.set("openclaw/org2", forKey: "Org2Workspace.openClawAgent")
     legacyDefaults.set("OpenClaw", forKey: "Org2Workspace.agentHandoffAssignee")
     legacyDefaults.set("Avi", forKey: "Org2Workspace.personalAssigneeNames")
-    legacyDefaults.set("~/avi.org2", forKey: "Org2Workspace.openClawRemoteCorpusPath")
+    legacyDefaults.set("/remote/org2", forKey: "Org2Workspace.openClawRemoteCorpusPath")
 
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
@@ -2329,7 +2411,7 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(store.openClawAgentID, "openclaw/org2")
     XCTAssertEqual(store.agentHandoffAssignee, "OpenClaw")
     XCTAssertEqual(store.personalAssigneeNamesText, "Avi")
-    XCTAssertEqual(store.openClawRemoteCorpusPath, "~/avi.org2")
+    XCTAssertEqual(store.openClawRemoteCorpusPath, "/remote/org2")
     XCTAssertTrue(currentDefaults.bool(forKey: "Org2Workspace.legacyDefaultsMigrated.v1"))
   }
 
@@ -3715,14 +3797,14 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   func testOrgInlineParserRendersMarkdownFileCitationsInline() {
-    let spans = OrgInlineParser.parse("Found in [personal.org](/Users/avi/avi.org2/personal.org:58-63).")
+    let spans = OrgInlineParser.parse("Found in [personal.org](/workspace/org2/personal.org:58-63).")
 
     XCTAssertEqual(spans, [
       .text("Found in "),
       .link(
         label: "personal.org",
-        target: "/Users/avi/avi.org2/personal.org:58-63",
-        fileReference: OpenClawFileReference(path: "/Users/avi/avi.org2/personal.org", line: 58)
+        target: "/workspace/org2/personal.org:58-63",
+        fileReference: OpenClawFileReference(path: "/workspace/org2/personal.org", line: 58)
       ),
       .text(".")
     ])
@@ -7589,6 +7671,83 @@ final class Org2ModelsTests: XCTestCase {
     }
     XCTAssertEqual(store.statusText, "Source load failed")
     XCTAssertNil(store.selectedEntrySource)
+  }
+
+  @MainActor
+  func testEntryRenderingAutomaticallyStopsAfterDeadline() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-render-timeout-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let note = root.appendingPathComponent("slow-render.org2")
+    try "* TODO Slow render\nBody\n".write(to: note, atomically: true, encoding: .utf8)
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data("""
+    {
+      "todo": "TODO",
+      "headline": "Slow render",
+      "kind": "SCHEDULED",
+      "file": "\(note.path)",
+      "line": 1,
+      "body": null,
+      "level": 1,
+      "tags": [],
+      "properties": {}
+    }
+    """.utf8))
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.entryHTMLRenderTimeoutNanoseconds = 30_000_000
+    store.entryHTMLRendererForTesting = { _, _, _, _ in
+      try await Task.sleep(nanoseconds: 5_000_000_000)
+      return "<html></html>"
+    }
+
+    store.select(.agenda(item))
+
+    try await waitForCondition {
+      store.selectedEntryRenderError?.localizedCaseInsensitiveContains("timed out") == true
+        && !store.isRenderingEntrySource
+    }
+    XCTAssertEqual(store.statusText, "Preview rendering timed out")
+  }
+
+  @MainActor
+  func testEntryLoadingCanBeStoppedManually() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-source-cancel-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let note = root.appendingPathComponent("cancel-load.org2")
+    try "* TODO Cancel load\n".write(to: note, atomically: true, encoding: .utf8)
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data("""
+    {
+      "todo": "TODO",
+      "headline": "Cancel load",
+      "kind": "SCHEDULED",
+      "file": "\(note.path)",
+      "line": 1,
+      "body": null,
+      "level": 1,
+      "tags": [],
+      "properties": {}
+    }
+    """.utf8))
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.entrySourceLoaderForTesting = { _, _, _ in
+      try await Task.sleep(nanoseconds: 5_000_000_000)
+      throw CocoaError(.fileReadUnknown)
+    }
+    store.select(.agenda(item))
+    try await waitForCondition { store.isLoadingEntrySource }
+
+    store.cancelSelectedEntryLoading()
+
+    XCTAssertFalse(store.isLoadingEntrySource)
+    XCTAssertFalse(store.isRenderingEntrySource)
+    XCTAssertTrue(store.selectedEntryRenderError?.localizedCaseInsensitiveContains("stopped") == true)
   }
 
   @MainActor
@@ -12880,6 +13039,45 @@ final class Org2ModelsTests: XCTestCase {
 
     XCTAssertEqual(store.agentRuns.map(\.id), ["global-refresh-run"])
     XCTAssertFalse(store.isRefreshingWorkspace)
+  }
+
+  @MainActor
+  func testWorkspaceRefreshAutomaticallyStopsAfterDeadline() async throws {
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.workspaceRefreshTimeoutNanoseconds = 30_000_000
+    store.workspaceRefreshOperationForTesting = {
+      do {
+        try await Task.sleep(nanoseconds: 5_000_000_000)
+      } catch {
+        return
+      }
+    }
+
+    await store.refreshWorkspace()
+
+    XCTAssertFalse(store.isRefreshingWorkspace)
+    XCTAssertTrue(store.statusText.localizedCaseInsensitiveContains("timed out"))
+    XCTAssertTrue(store.errorText?.localizedCaseInsensitiveContains("timed out") == true)
+  }
+
+  @MainActor
+  func testWorkspaceRefreshCanBeCanceledManually() async throws {
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.workspaceRefreshOperationForTesting = {
+      do {
+        try await Task.sleep(nanoseconds: 5_000_000_000)
+      } catch {
+        return
+      }
+    }
+    let refresh = Task { await store.refreshWorkspace() }
+    try await waitForCondition { store.isRefreshingWorkspace }
+
+    store.cancelWorkspaceRefresh()
+    await refresh.value
+
+    XCTAssertFalse(store.isRefreshingWorkspace)
+    XCTAssertTrue(store.statusText.localizedCaseInsensitiveContains("canceled"))
   }
 
   @MainActor
