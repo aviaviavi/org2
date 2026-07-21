@@ -3,6 +3,37 @@ import XCTest
 @testable import Org2WorkspaceCore
 
 final class SourceConnectionsTests: XCTestCase {
+  func testAutomaticSourceScheduleChecksOncePerMinute() {
+    XCTAssertEqual(WorkspaceStore.sourceAutoSyncCheckIntervalNanoseconds, 60_000_000_000)
+  }
+
+  func testDecodesCompilerSourceProfilesAndCrawlerStatus() throws {
+    let profilesJSON = Data(#"""
+    [{"id":"slack","type":"slack","enabled":true,"scopes":[],"workspaceId":"T01","rawZone":"raw/connectors/slack","reviewZone":"views/connectors/slack","ingestionSince":"14d","ingestionLimit":5000,"syncArgs":["--source","desktop"],"media":"metadata-only","schedule":{"enabled":true,"kind":"interval","everyMinutes":120,"timezone":"local"},"bindingPath":"/tmp/bindings.json","binary":"slacrawl","binaryAvailable":true,"configPath":"/tmp/slacrawl.toml","configAvailable":true,"ready":true}]
+    """#.utf8)
+    let profiles = try JSONDecoder().decode([WorkspaceSourceProfileStatus].self, from: profilesJSON)
+    XCTAssertEqual(profiles.first?.workspaceId, "T01")
+    XCTAssertEqual(profiles.first?.ingestionSince, "14d")
+    XCTAssertEqual(profiles.first?.reviewZone, "views/connectors/slack")
+    XCTAssertEqual(profiles.first?.schedule?.summary, "Every 2 hours")
+
+    let statusJSON = Data(#"""
+    {"schema":"org2:source-status:v1","root":"/tmp/corpus","sources":[{"id":"slack","type":"slack","ok":true,"crawlerStatus":{"app_id":"slacrawl","state":"current","summary":"42 messages across 3 channels","database_path":"/tmp/slacrawl.db","database_bytes":1024,"last_sync_at":"2026-07-20T18:20:19Z","counts":[{"id":"messages","label":"Messages","value":42}]}}]}
+    """#.utf8)
+    let status = try JSONDecoder().decode(WorkspaceSourceStatusEnvelope.self, from: statusJSON)
+    XCTAssertEqual(status.sources.first?.crawlerStatus?.summary, "42 messages across 3 channels")
+    XCTAssertEqual(status.sources.first?.crawlerStatus?.counts.first?.value, 42)
+  }
+
+  func testDecodesSourceImportPreview() throws {
+    let data = Data(#"""
+    {"schema":"org2:source-import-run:v1","root":"/tmp/corpus","applied":false,"results":[{"id":"notion","ok":true,"imported":{"apply":false,"inputCount":100,"acceptedCount":90,"skippedCount":10,"groupCount":2,"changedFileCount":2}}]}
+    """#.utf8)
+    let envelope = try JSONDecoder().decode(WorkspaceSourceOperationEnvelope.self, from: data)
+    XCTAssertEqual(envelope.results.first?.imported?.acceptedCount, 90)
+    XCTAssertEqual(envelope.results.first?.imported?.groupCount, 2)
+  }
+
   func testDefaultsToEmptyRegistryAndInternalStorage() {
     let (defaults, key) = isolatedDefaults()
     let registry = WorkspaceSourceConnectionRegistry(defaults: defaults, persistenceKey: key)
@@ -88,6 +119,63 @@ final class SourceConnectionsTests: XCTestCase {
     XCTAssertEqual(registry.connections, [])
     XCTAssertEqual(registry.storageRoot, .internalDefault)
     XCTAssertEqual(defaults.data(forKey: key), corrupt)
+  }
+
+  func testSchedulePlannerHandlesIntervalsDailyTimesAndDueChecks() throws {
+    let formatter = ISO8601DateFormatter()
+    let start = try XCTUnwrap(formatter.date(from: "2026-07-21T01:00:00Z"))
+    let interval = WorkspaceSourceSchedule(
+      enabled: true,
+      kind: .interval,
+      everyMinutes: 120,
+      time: nil,
+      timezone: "local"
+    )
+    XCTAssertEqual(
+      WorkspaceSourceSchedulePlanner.nextRun(after: start, schedule: interval),
+      start.addingTimeInterval(2 * 60 * 60)
+    )
+
+    let daily = WorkspaceSourceSchedule(
+      enabled: true,
+      kind: .daily,
+      everyMinutes: nil,
+      time: "02:00",
+      timezone: "UTC"
+    )
+    let sameDay = try XCTUnwrap(formatter.date(from: "2026-07-21T02:00:00Z"))
+    XCTAssertEqual(WorkspaceSourceSchedulePlanner.nextRun(after: start, schedule: daily), sameDay)
+    let afterDaily = try XCTUnwrap(formatter.date(from: "2026-07-21T03:00:00Z"))
+    let nextDay = try XCTUnwrap(formatter.date(from: "2026-07-22T02:00:00Z"))
+    XCTAssertEqual(WorkspaceSourceSchedulePlanner.nextRun(after: afterDaily, schedule: daily), nextDay)
+
+    let state = WorkspaceSourceScheduleState(
+      scheduleFingerprint: daily.fingerprint,
+      initializedAt: start,
+      nextRunAt: sameDay
+    )
+    XCTAssertFalse(WorkspaceSourceSchedulePlanner.isDue(state, at: start))
+    XCTAssertTrue(WorkspaceSourceSchedulePlanner.isDue(state, at: sameDay))
+  }
+
+  func testScheduleStateStorePersistsPerCorpusAndProfile() throws {
+    let (defaults, key) = isolatedDefaults()
+    let store = WorkspaceSourceScheduleStateStore(defaults: defaults, persistenceKey: key)
+    let now = Date(timeIntervalSince1970: 1_752_840_000)
+    let state = WorkspaceSourceScheduleState(
+      scheduleFingerprint: "interval|120",
+      initializedAt: now,
+      lastAttemptAt: now,
+      lastSuccessAt: now,
+      nextRunAt: now.addingTimeInterval(7_200)
+    )
+
+    store.setState(state, corpusPath: "/tmp/corpus-a", profileID: "slack")
+
+    let restored = WorkspaceSourceScheduleStateStore(defaults: defaults, persistenceKey: key)
+    XCTAssertEqual(restored.state(corpusPath: "/tmp/corpus-a", profileID: "slack"), state)
+    XCTAssertNil(restored.state(corpusPath: "/tmp/corpus-b", profileID: "slack"))
+    XCTAssertNil(restored.state(corpusPath: "/tmp/corpus-a", profileID: "notion"))
   }
 
   private func isolatedDefaults() -> (UserDefaults, String) {

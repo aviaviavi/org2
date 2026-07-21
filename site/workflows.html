@@ -101,6 +101,7 @@ org2 workflow migrate --dir ~/notes</code></pre>
 <li><p>When execution requests approval or clarification, the turn may end while the durable run remains open. Approving in the Mac app continues the existing workflow in its correlated OpenClaw chat session; a pending approval or blocked run is never treated as successful completion.</p></li>
 <li><p>Outputs, validation, steps, and approvals remain visible in Runs &amp; Review as the agent records them through the shared CLI.</p></li>
 </ol>
+<p>Opening a PDF output from Runs &amp; Review uses the system's default PDF application (Preview by default on macOS). Text outputs continue to open in the Org2 workspace, with raw source editing available when needed.</p>
 <p>For scheduled work, the schedule declaration stays in the workflow file while OpenClaw owns due checks and execution:</p>
 <ol>
 <li><p>Activating or syncing workflows reconciles enabled schedule triggers into OpenClaw cron.</p></li>
@@ -114,7 +115,7 @@ org2 workflow migrate --dir ~/notes</code></pre>
 </section>
 <section class="org2-headline level-1">
 <h1 id="safety-and-review">Safety and review</h1>
-<p>A workflow declares capabilities and a risk class. Expected outputs should land in reviewable locations such as <code>views/</code> or <code>compiled/</code>, and consequential or external actions should carry an explicit approval requirement. Activating a schedule never weakens those boundaries.</p>
+<p>A workflow declares capabilities and a risk class. Expected outputs should land in reviewable locations such as <code>views/</code> or <code>compiled/</code>, and consequential or external actions should carry an explicit approval requirement. An external-action or high-impact approval must expose the exact recipient, content, command, and attachments through an inspectable artifact, approval note, or live runtime detail; an opaque identifier or fingerprint is not enough to approve. The Mac Run Center retrieves linked OpenClaw exec details when they remain available and disables <strong>Approve</strong> when no reviewable material can be shown. Activating a schedule never weakens those boundaries.</p>
 <p>Keep runtime credentials outside workflow files. A workflow may name a capability or symbolic runtime policy, but provider tokens, Gateway credentials, machine-local job IDs, and private scheduler state belong in runtime configuration.</p>
 </section>
 <section class="org2-headline level-1">

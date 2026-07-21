@@ -78,7 +78,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <li><p><code>run</code>, <code>review</code>, <code>workflow</code>, <code>artifact</code>, <code>runtime</code>, <code>mcp</code>, <code>eval</code></p></li>
 <li><p><code>corpus</code> identity inspection, validation, and preview-first initialization</p></li>
 <li><p><code>workspace agenda</code>, <code>workspace search</code> for read-only projections across explicitly mounted corpora</p></li>
-<li><p><code>source list</code>, <code>source doctor</code>, <code>source bind</code>, <code>source sync</code> for external source mirrors</p></li>
+<li><p><code>source list</code>, <code>source doctor</code>, <code>source status</code>, <code>source bind</code>, <code>source import</code>, <code>source sync</code> for external source mirrors and staged review packets</p></li>
 <li><p><code>compile corpus</code></p></li>
 <li><p><code>render-chart</code></p></li>
 <li><p><code>query-data</code></p></li>
@@ -116,12 +116,30 @@ org2 workspace search &quot;quarterly plan&quot; --mount ~/notes --mount ~/team-
     &quot;team-slack&quot;: {
       &quot;type&quot;: &quot;slack&quot;,
       &quot;scopes&quot;: [&quot;engineering&quot;, &quot;product&quot;],
+      &quot;workspaceId&quot;: &quot;T012345&quot;,
       &quot;media&quot;: &quot;metadata-only&quot;,
-      &quot;rawZone&quot;: &quot;raw/connectors/slack/team&quot;
+      &quot;rawZone&quot;: &quot;raw/connectors/slack/team&quot;,
+      &quot;ingestion&quot;: {
+        &quot;since&quot;: &quot;14d&quot;,
+        &quot;maxItems&quot;: 5000,
+        &quot;reviewZone&quot;: &quot;views/connectors/slack/team&quot;
+      },
+      &quot;schedule&quot;: {
+        &quot;enabled&quot;: true,
+        &quot;kind&quot;: &quot;interval&quot;,
+        &quot;everyMinutes&quot;: 120,
+        &quot;timezone&quot;: &quot;local&quot;
+      }
     },
     &quot;company-notion&quot;: {
       &quot;type&quot;: &quot;notion&quot;,
-      &quot;media&quot;: &quot;metadata-only&quot;
+      &quot;media&quot;: &quot;metadata-only&quot;,
+      &quot;schedule&quot;: {
+        &quot;enabled&quot;: true,
+        &quot;kind&quot;: &quot;daily&quot;,
+        &quot;time&quot;: &quot;02:00&quot;,
+        &quot;timezone&quot;: &quot;America/Los_Angeles&quot;
+      }
     }
   }
 }</code></pre>
@@ -130,8 +148,12 @@ org2 workspace search &quot;quarterly plan&quot; --mount ~/notes --mount ~/team-
 org2 source bind team-slack --config ~/.slacrawl/team.toml --dir ~/notes
 org2 source bind team-slack --config ~/.slacrawl/team.toml --dir ~/notes --apply
 org2 source doctor --dir ~/notes --json
-org2 source sync team-slack --dir ~/notes --json</code></pre>
-<p><code>bind</code> previews by default and writes its local file with owner-only permissions when applied. Bindings may override the crawler binary, crawler config, and working directory. Archive database, cache, and Markdown storage locations remain explicit in the crawler's machine-local config. <code>sync</code> invokes the crawler directly without a shell and uses a per-profile machine lock. The Mac app and OpenClaw can call the same CLI surface, so sync is not tied to a laptop UI. Cross-machine archive reconciliation and transformation into <code>org2-connector/v1</code> records remain separate adapter concerns; a crawler mirror is derived source data, not canonical Org2 knowledge.</p>
+org2 source status --dir ~/notes --json
+org2 source import team-slack --dir ~/notes --json
+org2 source sync team-slack --ingest --apply --dir ~/notes --json</code></pre>
+<p><code>bind</code> previews by default and writes its local file with owner-only permissions when applied. Bindings may override the crawler binary, crawler config, and working directory. Archive database, cache, and Markdown storage locations remain explicit in the crawler's machine-local config. <code>status</code> reports crawler archive counts and freshness. <code>import</code> reads the local archive, applies profile scopes, <code>since</code>, and item limits, then previews raw JSON captures plus review-required Org2 packets. A Notion integration token is itself the API access boundary, so authenticated API records are accepted even when they lack a desktop workspace label; configured <code>scopes</code> still filter desktop-cache fallbacks. Externally supplied bodies are fixed-width quoted in the review packet so headings, TODOs, drawers, and other source syntax cannot become active Org semantics. Pass <code>--apply</code> to write the artifacts. <code>sync --ingest --apply</code> updates the crawler and stages them in one locked operation. Existing files are rewritten only when their deterministic contents changed, and apply removes obsolete packet pairs only when their raw envelope proves they were generated for that exact source profile. Promotion into canonical <code>notes/</code> remains a separate human review step.</p>
+<p>The optional <code>schedule</code> declaration is portable source intent. <code>kind: &quot;interval&quot;</code> requires a positive integer <code>everyMinutes</code>; <code>kind: &quot;daily&quot;</code> requires a 24-hour <code>time</code> in <code>HH:MM</code> form. <code>timezone</code> accepts <code>local</code> or an IANA timezone name. <code>source list --json</code> validates and returns the normalized schedule.</p>
+<p>The Mac app's <strong>Sources</strong> surface calls this same CLI contract. It shows source health and archive counts, previews imports, runs <strong>Sync &amp; Stage</strong>, reveals the review zone, and stores an optional Notion API token in macOS Keychain. While the app process is running it checks configured schedules once per minute. A newly enabled or edited schedule begins with its next future occurrence instead of immediately replaying old time slots; after that, a missed occurrence catches up after wake or on the next app launch. Failed automatic runs retain a visible error and retry after 15 minutes. Last-attempt and next-run bookkeeping is machine-local app state, not canonical corpus data. Credentials never enter <code>org2.json</code>, raw captures, or review packets. The app and other agents can therefore manage the same corpus profile without making app state canonical.</p>
 <section class="org2-headline level-2">
 <h2 id="command-conventions-and-stability">Command conventions and stability</h2>
 <p>Audit summary for CLI consistency: most commands already use <code>--dir</code> for corpus roots, <code>--recursive</code> for traversal, <code>--format</code> for alternate output, and <code>--apply</code> for mutating writes. The lowest-risk cleanup is to make JSON output easier and consistent across commands.</p>
@@ -324,9 +346,10 @@ org2 workflow schedule weekly-operating-review --cron &quot;0 9 * * 1&quot; --ti
 org2 workflow pause weekly-operating-review --dir ~/notes
 org2 workflow migrate --dir ~/notes
 org2 workflow triggers weekly-operating-review --changed data/metrics.csv --dir ~/notes --json
+org2 workflow triggers weekly-operating-review --event capture --dir ~/notes --json
 org2 workflow package weekly-operating-review --dir ~/notes --json
 org2 workflow corpus-template weekly-operating-review --out dist/weekly-review-template.json --dir ~/notes</code></pre>
-<p>Schedule syntax is intentionally deterministic and small: <code>every 15m</code>, <code>every 4h</code>, or <code>every 1d</code>. Event hosts ask <code>workflow triggers</code> which declarations are due, then instantiate the workflow; the durable run remains the execution record.</p>
+<p>Schedule syntax is intentionally deterministic and small: <code>every 15m</code>, <code>every 4h</code>, or <code>every 1d</code>. Event hosts ask <code>workflow triggers</code> which declarations are due, then instantiate the workflow; <code>--event</code> accepts only <code>capture</code> or <code>meeting-import</code> and rejects unknown event names. The durable run remains the execution record.</p>
 <p><code>workflow package</code> emits distribution metadata for one provider-independent workflow. <code>workflow corpus-template</code> wraps that metadata with ordinary starter files and the standard <code>raw/</code>, <code>notes/</code>, <code>views/</code>, <code>compiled/</code>, run, and workflow zones as <code>org2:corpus-template:v1</code>. The package is data, not an installer: recipients review it, initialize/open a corpus with their client, and place the workflow record in <code>workflows/</code>. Org2 still reads the legacy early-alpha <code>.org2/workflows/</code> location; <code>workflow migrate</code> moves non-conflicting files into the visible directory.</p>
 <p>The built-in <code>meeting-to-controlled-execution</code> package preserves meeting provenance, extracts cited decisions/tasks/questions, delegates bounded work, refreshes configured data/charts, compiles finished artifacts, requests release review, and gates publication:</p>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 workflow install-builtin meeting-to-controlled-execution --dir ~/notes</code></pre>

@@ -301,6 +301,8 @@ private struct WorkspaceSurfaceView: View {
         SearchView()
       case .meetings:
         MeetingsView()
+      case .sources:
+        SourcesView()
       case .openClaw:
         OpenClawChatView()
       }
@@ -4057,6 +4059,265 @@ private struct NodeSearchContextMenu: View {
     } label: {
       Label("Linkify File", systemImage: "link")
     }
+  }
+}
+
+private struct SourcesView: View {
+  @EnvironmentObject private var store: WorkspaceStore
+
+  var body: some View {
+    VStack(spacing: 0) {
+      HeaderBar(
+        title: "Sources",
+        subtitle: "Local Slack and Notion archives staged as reviewable Org2 files",
+        surface: .sources
+      ) {
+        if store.isLoadingSources {
+          WorkspaceActivityIndicator(size: .small)
+        }
+        Button {
+          Task { await store.refreshSourceConnections() }
+        } label: {
+          Label("Refresh", systemImage: "arrow.clockwise")
+        }
+        .disabled(store.isLoadingSources)
+      }
+
+      if store.sourceProfiles.isEmpty {
+        Spacer()
+        EmptyStateView(
+          title: "No Sources Configured",
+          detail: "Declare externalSources in this corpus’s org2.json, then refresh.",
+          action: "Refresh"
+        ) {
+          Task { await store.refreshSourceConnections() }
+        }
+        Spacer()
+      } else {
+        ScrollView {
+          LazyVStack(alignment: .leading, spacing: 14) {
+            Text("Sync updates each crawler’s private local archive. Stage writes bounded raw captures and review-required Org2 packets into this corpus; it never promotes them into canonical notes. Configured schedules run while Org2 Workspace is open and catch up after sleep or on the next launch.")
+              .font(.callout)
+              .foregroundStyle(.secondary)
+              .fixedSize(horizontal: false, vertical: true)
+
+            ForEach(store.sourceProfiles) { profile in
+              SourceProfileCard(
+                profile: profile,
+                runtime: store.sourceRuntimeStatuses[profile.id]
+              )
+            }
+
+            if let workspaceMessage = store.sourceOperationMessages["workspace"] {
+              Text(workspaceMessage)
+                .font(.caption)
+                .foregroundStyle(.orange)
+                .textSelection(.enabled)
+            }
+          }
+          .padding(WorkspaceDesign.contentInset)
+          .frame(maxWidth: .infinity, alignment: .leading)
+        }
+      }
+    }
+    .task {
+      if store.sourceProfiles.isEmpty {
+        await store.refreshSourceConnections()
+      }
+    }
+    .sheet(isPresented: $store.isSourceCredentialPresented) {
+      SourceCredentialSheet()
+        .environmentObject(store)
+    }
+  }
+}
+
+private struct SourceProfileCard: View {
+  @EnvironmentObject private var store: WorkspaceStore
+  let profile: WorkspaceSourceProfileStatus
+  let runtime: WorkspaceSourceRuntimeStatus?
+
+  private var isRunning: Bool { store.activeSourceOperationIDs.contains(profile.id) }
+  private var needsToken: Bool {
+    profile.type == "notion" && profile.syncArgs.contains("api") && !store.sourceHasStoredCredential(profile)
+  }
+  private var canSync: Bool { profile.ready && !needsToken }
+  private var statusColor: Color { canSync && runtime?.ok != false ? .green : .orange }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      HStack(alignment: .firstTextBaseline, spacing: 10) {
+        Image(systemName: profile.type == "slack" ? "number.square.fill" : "doc.text.fill")
+          .foregroundStyle(profile.type == "slack" ? Color.purple : Color.black.opacity(0.72))
+        VStack(alignment: .leading, spacing: 2) {
+          Text(profile.id.capitalized)
+            .font(.headline)
+          Text(runtime?.crawlerStatus?.summary ?? "Crawler status unavailable")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        Spacer(minLength: 12)
+        Label(
+          needsToken ? "Needs token" : profile.ready ? "Ready" : "Needs setup",
+          systemImage: canSync ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
+        )
+          .font(.caption.weight(.semibold))
+          .foregroundStyle(statusColor)
+      }
+
+      if let counts = runtime?.crawlerStatus?.counts, !counts.isEmpty {
+        HStack(spacing: 16) {
+          ForEach(Array(counts.prefix(4))) { count in
+            VStack(alignment: .leading, spacing: 1) {
+              Text(count.value.formatted())
+                .font(.callout.monospacedDigit().weight(.semibold))
+              Text(count.label)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            }
+          }
+        }
+      }
+
+      Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 5) {
+        GridRow {
+          Text("Window").foregroundStyle(.secondary)
+          Text(profile.ingestionSince ?? "All available")
+        }
+        if let workspaceID = profile.workspaceId {
+          GridRow {
+            Text("Workspace").foregroundStyle(.secondary)
+            Text(workspaceID).textSelection(.enabled)
+          }
+        }
+        GridRow {
+          Text("Raw").foregroundStyle(.secondary)
+          Text(profile.rawZone).lineLimit(1).truncationMode(.middle)
+        }
+        GridRow {
+          Text("Review").foregroundStyle(.secondary)
+          Text(profile.reviewZone).lineLimit(1).truncationMode(.middle)
+        }
+        if let lastSync = runtime?.crawlerStatus?.lastSyncAt {
+          GridRow {
+            Text("Last sync").foregroundStyle(.secondary)
+            Text(lastSync).textSelection(.enabled)
+          }
+        }
+        if let schedule = profile.schedule {
+          GridRow {
+            Text("Schedule").foregroundStyle(.secondary)
+            Text(schedule.summary)
+          }
+          if let nextRunAt = store.sourceScheduleStates[profile.id]?.nextRunAt {
+            GridRow {
+              Text("Next automatic").foregroundStyle(.secondary)
+              Text(nextRunAt.formatted(date: .abbreviated, time: .shortened))
+            }
+          }
+          if let lastAttemptAt = store.sourceScheduleStates[profile.id]?.lastAttemptAt {
+            GridRow {
+              Text("Last attempt").foregroundStyle(.secondary)
+              Text(lastAttemptAt.formatted(date: .abbreviated, time: .shortened))
+            }
+          }
+        }
+      }
+      .font(.caption)
+
+      if let scheduleError = store.sourceScheduleStates[profile.id]?.lastError {
+        Label(scheduleError, systemImage: "exclamationmark.triangle.fill")
+          .font(.caption)
+          .foregroundStyle(.red)
+          .textSelection(.enabled)
+      }
+
+      if let message = store.sourceOperationMessages[profile.id] {
+        Text(message)
+          .font(.caption)
+          .foregroundStyle(message.localizedCaseInsensitiveContains("failed") || message.localizedCaseInsensitiveContains("error") ? Color.red : Color.secondary)
+          .textSelection(.enabled)
+      }
+
+      ViewThatFits(in: .horizontal) {
+        sourceActions
+        VStack(alignment: .leading, spacing: 8) { sourceActions }
+      }
+    }
+    .padding(16)
+    .background(WorkspaceDesign.panelFill, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    .overlay {
+      RoundedRectangle(cornerRadius: 12, style: .continuous)
+        .stroke(WorkspaceDesign.hairline, lineWidth: 1)
+    }
+  }
+
+  private var sourceActions: some View {
+    HStack(spacing: 8) {
+      Button {
+        Task { await store.syncAndStageSource(profile) }
+      } label: {
+        Label(isRunning ? "Working" : "Sync & Stage", systemImage: "arrow.triangle.2.circlepath")
+      }
+      .disabled(isRunning || !canSync)
+
+      Button("Preview") {
+        Task { await store.previewSourceImport(profile) }
+      }
+      .disabled(isRunning || !profile.ready)
+
+      Button("Check Setup") {
+        Task { await store.checkSourceSetup(profile) }
+      }
+      .disabled(isRunning)
+
+      Button("Reveal Reviews") {
+        store.revealSourceReviews(profile)
+      }
+
+      if profile.type == "notion" {
+        Button(store.sourceHasStoredCredential(profile) ? "Replace Token" : "Add Token") {
+          store.presentSourceCredential(for: profile)
+        }
+        if store.sourceHasStoredCredential(profile) {
+          Button("Remove Token", role: .destructive) {
+            store.deleteSourceCredential(profile)
+          }
+        }
+      }
+    }
+    .controlSize(.small)
+    .buttonStyle(WorkspaceActionButtonStyle())
+  }
+}
+
+private struct SourceCredentialSheet: View {
+  @EnvironmentObject private var store: WorkspaceStore
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 14) {
+      Text("Connect Notion")
+        .font(.title2.weight(.semibold))
+      Text("Paste a Notion internal integration token. Org2 stores it in macOS Keychain and passes it only to notcrawl; it is never written to the corpus.")
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
+      SecureField("Notion token", text: $store.sourceCredentialDraft)
+        .textFieldStyle(.roundedBorder)
+      HStack {
+        Spacer()
+        Button("Cancel") {
+          store.sourceCredentialDraft = ""
+          store.isSourceCredentialPresented = false
+        }
+        Button("Save Token") {
+          store.savePresentedSourceCredential()
+        }
+        .keyboardShortcut(.defaultAction)
+        .disabled(store.sourceCredentialDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+      }
+    }
+    .padding(22)
+    .frame(width: 480)
   }
 }
 
