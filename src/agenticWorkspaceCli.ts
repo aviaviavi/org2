@@ -31,6 +31,7 @@ import {
 } from "./agentRun.js";
 import { updateArtifactReviewStatusInText } from "./artifactMetadata.js";
 import {
+  WORKFLOW_EVENT_TRIGGER_TYPES,
   dueWorkflowTriggers,
   instantiateWorkflow,
   listWorkflows,
@@ -312,7 +313,16 @@ function workflowCommand(parsed: ParsedArgs): void {
   }
   if (action === "package") { output(parsed, packagedWorkflowManifest(workflow)); return; }
   if (action === "corpus-template") { const template = packagedCorpusTemplate(workflow); const out = flag(parsed, "out"); if (out) { const file = path.resolve(out); fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, `${JSON.stringify(template, null, 2)}\n`, "utf8"); output(parsed, { template, file }, file); } else output(parsed, template); return; }
-  if (action === "triggers") { const due = dueWorkflowTriggers(workflow, { now: flag(parsed, "now"), changedPaths: flags(parsed, "changed"), event: flag(parsed, "event") as any }); output(parsed, { workflow: id, due }, due.length ? due.map((trigger) => `${trigger.id}\t${trigger.type}`).join("\n") : "No triggers due."); return; }
+  if (action === "triggers") {
+    const event = optionalChoice(flag(parsed, "event"), WORKFLOW_EVENT_TRIGGER_TYPES, "workflow event");
+    const due = dueWorkflowTriggers(workflow, {
+      now: flag(parsed, "now"),
+      changedPaths: flags(parsed, "changed"),
+      event,
+    });
+    output(parsed, { workflow: id, due }, due.length ? due.map((trigger) => `${trigger.id}\t${trigger.type}`).join("\n") : "No triggers due.");
+    return;
+  }
   if (action === "run") { const inputs = Object.fromEntries(flags(parsed, "input").map((item) => { const at = item.indexOf("="); if (at < 1) throw new Error("--input must be NAME=VALUE"); return [item.slice(0, at), item.slice(at + 1)]; })); const run = instantiateWorkflow(workflow, inputs, { owner: flag(parsed, "owner"), assignee: flag(parsed, "assignee") }); const file = saveAgentRun(corpus, run); output(parsed, { run, file }, `created run ${run.id} from ${id}@${workflow.version}`); return; }
   throw new Error(`unknown workflow action: ${action}`);
 }
