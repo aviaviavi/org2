@@ -1949,6 +1949,58 @@ body #content {
   line-height: 1.5;
 }
 
+#content .org2-lineage-note {
+  display: grid;
+  grid-template-columns: minmax(8.5rem, 0.24fr) minmax(0, 1fr) auto;
+  gap: clamp(0.9rem, 2.5vw, 1.6rem);
+  align-items: center;
+  max-width: 70rem;
+  margin: 0 0 clamp(1.5rem, 3vw, 2.25rem);
+  padding: 0.95rem 1rem;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--syntax-keyword);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--mint) 28%, var(--bg));
+  box-shadow: var(--shadow-small);
+}
+
+#content .org2-lineage-note p {
+  margin: 0;
+}
+
+#content .org2-lineage-label {
+  color: var(--syntax-keyword);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 650;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+}
+
+#content .org2-lineage-note > p:nth-child(2) {
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.55;
+}
+
+#content .org2-lineage-note strong {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+#content .org2-lineage-note a {
+  white-space: nowrap;
+  color: var(--link);
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+#content .org2-lineage-note a:hover {
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+}
+
 /* Product examples and screenshots feel like precise artifacts, not cards. */
 #content .org2-sample {
   max-width: 70rem;
@@ -2333,6 +2385,15 @@ body > .org2-footer p {
 
   #content .org2-page-intro {
     padding: 1.25rem;
+  }
+
+  #content .org2-lineage-note {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.55rem;
+  }
+
+  #content .org2-lineage-note a {
+    justify-self: start;
   }
 
   #content .org2-shot-grid figure,
