@@ -73,6 +73,12 @@ This is one place where the Mac app can take the Org tradition substantially fur
 
 The app writes ordinary Org2 text. Users can inspect every change in Git or another editor.
 
+* External sources
+
+The *Sources* surface manages Slack and Notion profiles declared in the active corpus's =org2.json=. It shows =slacrawl=/=notcrawl= archive health and counts, supports a no-write import preview, and runs *Sync & Stage* through the shared =org2 source= CLI. Profiles may declare an interval or daily schedule; while the app is running, the surface shows the normalized cadence, next automatic run, last attempt, and any actionable failure. The scheduler checks once per minute, catches up overdue work after wake or launch, and retries failed automatic runs after 15 minutes. Schedule intent remains portable in =org2.json=, while execution timestamps and errors remain machine-local. Staging writes bounded raw JSON under the configured =rawZone= and provenance-stamped, review-required Org2 packets under =ingestion.reviewZone=; it does not silently promote imported material into canonical notes. Source bodies are fixed-width quoted in review packets, so external headings, TODOs, property drawers, and similar text remain inert until deliberately promoted.
+
+Machine paths and credentials remain outside the corpus. Local crawler bindings live under the machine's Org2 index home. A Notion API token entered in the app is stored in macOS Keychain and passed only to =notcrawl= for that operation. The surface can reveal the review directory so imported material can be inspected through Org2 Workspace, Git, or any text editor.
+
 * Meetings
 
 Org2 Workspace records meetings as local corpus artifacts. A meeting write normally creates an audio file, a meeting note, and a transcript artifact under =meetings/=.

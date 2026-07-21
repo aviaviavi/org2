@@ -44,9 +44,13 @@ struct Org2WorkspaceApp: App {
         }
         .onChange(of: scenePhase) { _, newPhase in
           store.setRunReviewAutoRefreshActive(newPhase == .active)
+          if newPhase == .active {
+            store.sourceAutoSyncDidBecomeActive()
+          }
         }
         .task {
           await store.bootstrap()
+          store.setSourceAutoSyncActive(true)
         }
     }
     .commands {

@@ -22,7 +22,7 @@ Main workflows:
 - =run=, =review=, =workflow=, =artifact=, =runtime=, =mcp=, =eval=
 - =corpus= identity inspection, validation, and preview-first initialization
 - =workspace agenda=, =workspace search= for read-only projections across explicitly mounted corpora
-- =source list=, =source doctor=, =source bind=, =source sync= for external source mirrors
+- =source list=, =source doctor=, =source status=, =source bind=, =source import=, =source sync= for external source mirrors and staged review packets
 - =compile corpus=
 - =render-chart=
 - =query-data=
@@ -69,12 +69,30 @@ The root =org2.json= can declare portable, non-secret Slack and Notion source in
     "team-slack": {
       "type": "slack",
       "scopes": ["engineering", "product"],
+      "workspaceId": "T012345",
       "media": "metadata-only",
-      "rawZone": "raw/connectors/slack/team"
+      "rawZone": "raw/connectors/slack/team",
+      "ingestion": {
+        "since": "14d",
+        "maxItems": 5000,
+        "reviewZone": "views/connectors/slack/team"
+      },
+      "schedule": {
+        "enabled": true,
+        "kind": "interval",
+        "everyMinutes": 120,
+        "timezone": "local"
+      }
     },
     "company-notion": {
       "type": "notion",
-      "media": "metadata-only"
+      "media": "metadata-only",
+      "schedule": {
+        "enabled": true,
+        "kind": "daily",
+        "time": "02:00",
+        "timezone": "America/Los_Angeles"
+      }
     }
   }
 }
@@ -87,10 +105,16 @@ org2 source list --dir ~/notes --json
 org2 source bind team-slack --config ~/.slacrawl/team.toml --dir ~/notes
 org2 source bind team-slack --config ~/.slacrawl/team.toml --dir ~/notes --apply
 org2 source doctor --dir ~/notes --json
-org2 source sync team-slack --dir ~/notes --json
+org2 source status --dir ~/notes --json
+org2 source import team-slack --dir ~/notes --json
+org2 source sync team-slack --ingest --apply --dir ~/notes --json
 #+end_src
 
-=bind= previews by default and writes its local file with owner-only permissions when applied. Bindings may override the crawler binary, crawler config, and working directory. Archive database, cache, and Markdown storage locations remain explicit in the crawler's machine-local config. =sync= invokes the crawler directly without a shell and uses a per-profile machine lock. The Mac app and OpenClaw can call the same CLI surface, so sync is not tied to a laptop UI. Cross-machine archive reconciliation and transformation into =org2-connector/v1= records remain separate adapter concerns; a crawler mirror is derived source data, not canonical Org2 knowledge.
+=bind= previews by default and writes its local file with owner-only permissions when applied. Bindings may override the crawler binary, crawler config, and working directory. Archive database, cache, and Markdown storage locations remain explicit in the crawler's machine-local config. =status= reports crawler archive counts and freshness. =import= reads the local archive, applies profile scopes, =since=, and item limits, then previews raw JSON captures plus review-required Org2 packets. A Notion integration token is itself the API access boundary, so authenticated API records are accepted even when they lack a desktop workspace label; configured =scopes= still filter desktop-cache fallbacks. Externally supplied bodies are fixed-width quoted in the review packet so headings, TODOs, drawers, and other source syntax cannot become active Org semantics. Pass =--apply= to write the artifacts. =sync --ingest --apply= updates the crawler and stages them in one locked operation. Existing files are rewritten only when their deterministic contents changed, and apply removes obsolete packet pairs only when their raw envelope proves they were generated for that exact source profile. Promotion into canonical =notes/= remains a separate human review step.
+
+The optional =schedule= declaration is portable source intent. =kind: "interval"= requires a positive integer =everyMinutes=; =kind: "daily"= requires a 24-hour =time= in =HH:MM= form. =timezone= accepts =local= or an IANA timezone name. =source list --json= validates and returns the normalized schedule.
+
+The Mac app's *Sources* surface calls this same CLI contract. It shows source health and archive counts, previews imports, runs *Sync & Stage*, reveals the review zone, and stores an optional Notion API token in macOS Keychain. While the app process is running it checks configured schedules once per minute. A newly enabled or edited schedule begins with its next future occurrence instead of immediately replaying old time slots; after that, a missed occurrence catches up after wake or on the next app launch. Failed automatic runs retain a visible error and retry after 15 minutes. Last-attempt and next-run bookkeeping is machine-local app state, not canonical corpus data. Credentials never enter =org2.json=, raw captures, or review packets. The app and other agents can therefore manage the same corpus profile without making app state canonical.
 
 ** Command conventions and stability
 
