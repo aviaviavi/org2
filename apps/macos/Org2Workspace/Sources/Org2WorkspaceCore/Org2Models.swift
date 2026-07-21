@@ -560,6 +560,17 @@ public struct AgentRunArtifactItem: Identifiable, Decodable, Hashable, Sendable 
     return label.isEmpty ? path : label
   }
 
+  public var isPDF: Bool {
+    if URL(fileURLWithPath: path).pathExtension.lowercased() == "pdf" {
+      return true
+    }
+    return mediaType?
+      .split(separator: ";", maxSplits: 1)
+      .first?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .lowercased() == "application/pdf"
+  }
+
   public var roleDisplayText: String { AgentRunItem.humanizedLabel(role) }
 }
 

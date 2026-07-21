@@ -2397,6 +2397,11 @@ public final class WorkspaceStore: ObservableObject {
       statusText = "Run output missing"
       return
     }
+    if artifact.isPDF {
+      NSWorkspace.shared.open(url)
+      statusText = "Opened \(artifact.displayTitle)"
+      return
+    }
     let inAppExtensions = Set(["org", "org2", "md", "markdown", "txt"])
     guard inAppExtensions.contains(url.pathExtension.lowercased()) else {
       openFile(path: url.path, line: 1)

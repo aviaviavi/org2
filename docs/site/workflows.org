@@ -63,6 +63,8 @@ The =org2-lifecycle= plugin is the current execution bridge:
 4. When execution requests approval or clarification, the turn may end while the durable run remains open. Approving in the Mac app continues the existing workflow in its correlated OpenClaw chat session; a pending approval or blocked run is never treated as successful completion.
 5. Outputs, validation, steps, and approvals remain visible in Runs & Review as the agent records them through the shared CLI.
 
+Opening a PDF output from Runs & Review uses the system's default PDF application (Preview by default on macOS). Text outputs continue to open in the Org2 workspace, with raw source editing available when needed.
+
 For scheduled work, the schedule declaration stays in the workflow file while OpenClaw owns due checks and execution:
 
 1. Activating or syncing workflows reconciles enabled schedule triggers into OpenClaw cron.
