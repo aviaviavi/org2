@@ -48,6 +48,26 @@ final class AgentRunModelsTests: XCTestCase {
     XCTAssertTrue(run.matchesRunFilter("please revise"))
     XCTAssertTrue(run.matchesRunFilter("  \n "))
     XCTAssertFalse(run.matchesRunFilter("deployment checklist"))
+    XCTAssertTrue(try XCTUnwrap(run.artifacts.first).isPDF)
+  }
+
+  func testRecognizesPDFRunArtifactsFromExtensionOrMediaType() throws {
+    let extensionArtifact = try JSONDecoder().decode(
+      AgentRunArtifactItem.self,
+      from: Data(#"{"id":"pdf","path":"compiled/BRIEF.PDF","role":"export","createdAt":"2026-07-14T00:00:00.000Z"}"#.utf8)
+    )
+    let mediaTypeArtifact = try JSONDecoder().decode(
+      AgentRunArtifactItem.self,
+      from: Data(#"{"id":"pdf","path":"compiled/brief","role":"export","mediaType":"application/pdf; charset=binary","createdAt":"2026-07-14T00:00:00.000Z"}"#.utf8)
+    )
+    let textArtifact = try JSONDecoder().decode(
+      AgentRunArtifactItem.self,
+      from: Data(#"{"id":"note","path":"compiled/brief.org2","role":"draft","mediaType":"text/plain","createdAt":"2026-07-14T00:00:00.000Z"}"#.utf8)
+    )
+
+    XCTAssertTrue(extensionArtifact.isPDF)
+    XCTAssertTrue(mediaTypeArtifact.isPDF)
+    XCTAssertFalse(textArtifact.isPDF)
   }
 
   @MainActor
