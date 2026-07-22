@@ -47,6 +47,8 @@ if (args.includes("messages")) {
   ]));
 } else if (args.includes("status")) {
   process.stdout.write(JSON.stringify({ schema_version: "crawlkit.control.v1", summary: "2 messages", last_sync_at: "2026-07-19T00:00:00Z", database_bytes: 42, counts: [{ id: "messages", label: "Messages", value: 2 }] }));
+} else if (args.includes("--hang")) {
+  setInterval(() => {}, 1000);
 } else {
   process.stdout.write(args.join("\\n") + "\\n");
 }
@@ -157,6 +159,18 @@ if (args.includes("messages")) {
   assert.match(result.stdout, /--config/);
   assert.match(result.stdout, /sync/);
   assert.match(result.stdout, /--latest-only/);
+
+  const timeoutConfig = JSON.parse(fs.readFileSync(path.join(corpus, "org2.json"), "utf8"));
+  timeoutConfig.externalSources.slack.syncArgs = ["--hang"];
+  fs.writeFileSync(path.join(corpus, "org2.json"), JSON.stringify(timeoutConfig, null, 2));
+  const timedOut = run("sync", "slack", "--timeout", "0.05");
+  assert.equal(timedOut.status, 1, timedOut.stderr);
+  assert.match(JSON.parse(timedOut.stdout).results[0].error, /timed out after 0\.05 seconds/);
+
+  delete timeoutConfig.externalSources.slack.syncArgs;
+  fs.writeFileSync(path.join(corpus, "org2.json"), JSON.stringify(timeoutConfig, null, 2));
+  const retryAfterTimeout = run("sync", "slack");
+  assert.equal(retryAfterTimeout.status, 0, retryAfterTimeout.stderr);
 
   const invalidLimit = run("import", "slack", "--limit", "0");
   assert.equal(invalidLimit.status, 1);
