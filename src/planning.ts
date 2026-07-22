@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { parseIsoCalendarDate } from "./calendarDate.js";
 import { computeSubtreeRange, findHeadingAtOrAbove, findPlanningBlockEnd, splitSourceLines } from "./sourceLines.js";
 
 export type PlanningKind = "SCHEDULED" | "DEADLINE";
@@ -12,22 +13,17 @@ export function planningKindFromArg(kind: PlanningKindArg): PlanningKind {
 
 function formatOrgDateTimestamp(dateIso: string): string {
   // Format like <2026-01-17 Sat>
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateIso);
-  if (!m) throw new Error(`Invalid --date (expected YYYY-MM-DD): ${dateIso}`);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateIso)) {
+    throw new Error(`Invalid --date (expected YYYY-MM-DD): ${dateIso}`);
+  }
 
-  const year = Number(m[1]);
-  const month = Number(m[2]);
-  const day = Number(m[3]);
-
-  const d = new Date(0);
-  d.setUTCHours(0, 0, 0, 0);
-  d.setUTCFullYear(year, month - 1, day);
-  if (d.getUTCFullYear() !== year || d.getUTCMonth() !== month - 1 || d.getUTCDate() !== day) {
+  const parsed = parseIsoCalendarDate(dateIso);
+  if (!parsed) {
     throw new Error(`Invalid --date: ${dateIso}`);
   }
 
   const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-  const dow = days[d.getUTCDay()];
+  const dow = days[parsed.date.getUTCDay()];
   return `<${dateIso} ${dow}>`;
 }
 

@@ -71,6 +71,13 @@ const impossibleDateIssues = lintArtifactMetadataInText(impossibleDates, 'views/
 assert.ok(impossibleDateIssues.some((issue) => issue.rule === 'artifact-generated-at-invalid'));
 assert.ok(impossibleDateIssues.some((issue) => issue.rule === 'artifact-freshness-date-invalid' && issue.message.includes('ORG2_VALID_AS_OF')));
 
+const earlyYearDate = impossibleDates
+  .replaceAll('2026-02-30', '0099-01-01')
+  .replace('impossible-date-dashboard', 'early-year-dashboard');
+const earlyYearDateIssues = lintArtifactMetadataInText(earlyYearDate, 'views/early-year.org2');
+assert.ok(!earlyYearDateIssues.some((issue) => issue.rule === 'artifact-generated-at-invalid'));
+assert.ok(!earlyYearDateIssues.some((issue) => issue.rule === 'artifact-freshness-date-invalid'));
+
 const missingFreshness = `:PROPERTIES:
 :ID: generated-no-freshness
 :ORG2_ARTIFACT_ROLE: view

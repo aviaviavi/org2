@@ -1,4 +1,5 @@
 import { ORG2_ARTIFACT_REVIEW_STATUS_VALUES, ORG2_CLAIM_STATE_VALUES } from "./artifactMetadata.js";
+import { parseIsoCalendarDate } from "./calendarDate.js";
 
 export type ArtifactRole = "raw" | "canonical" | "compiled" | "view" | "report";
 
@@ -176,17 +177,7 @@ function isValidGeneratedAt(raw: string): boolean {
   const value = String(raw || "").trim();
   if (!value) return false;
   if (!ISO_DATE_RE.test(value) && !ISO_DATE_TIME_RE.test(value)) return false;
-  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
-  if (!match) return false;
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  const calendarDate = new Date(Date.UTC(year, month - 1, day));
-  return (
-    calendarDate.getUTCFullYear() === year &&
-    calendarDate.getUTCMonth() === month - 1 &&
-    calendarDate.getUTCDate() === day
-  );
+  return parseIsoCalendarDate(value.slice(0, 10)) !== null;
 }
 
 function splitSourceHashes(raw: string): string[] {
