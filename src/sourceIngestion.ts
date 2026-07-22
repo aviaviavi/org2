@@ -20,6 +20,7 @@ export type SourceImportOptions = {
   configPath: string;
   since?: string;
   limit?: number;
+  timeoutMs?: number;
   apply?: boolean;
   now?: Date;
 };
@@ -88,12 +89,19 @@ function parseSince(value: string | undefined, now: Date): { label?: string; tim
   return { label: raw, timestamp };
 }
 
-function runCrawlerJson(binary: string, args: string[]): unknown[] {
+function runCrawlerJson(binary: string, args: string[], timeoutMs?: number): unknown[] {
   const child = spawnSync(binary, args, {
     encoding: "utf8",
     env: process.env,
     maxBuffer: 128 * 1024 * 1024,
+    ...(timeoutMs ? { timeout: timeoutMs, killSignal: "SIGTERM" as const } : {}),
   });
+  if ((child.error as NodeJS.ErrnoException | undefined)?.code === "ETIMEDOUT") {
+    throw new Error(`${path.basename(binary)} archive read timed out after ${timeoutMs! / 1_000} seconds`);
+  }
+  if (child.error) {
+    throw new Error(`${path.basename(binary)} archive read failed: ${child.error.message}`);
+  }
   if (child.status !== 0) {
     throw new Error(`${path.basename(binary)} archive read failed: ${string(child.stderr) || string(child.stdout) || `exit ${child.status}`}`);
   }
@@ -115,7 +123,7 @@ function slackRecords(options: SourceImportOptions, scanLimit: number): AgentIng
   const args = ["--config", options.configPath, "--json", "messages"];
   if (options.profile.workspaceId) args.push("--workspace", options.profile.workspaceId);
   args.push("--limit", String(scanLimit));
-  return runCrawlerJson(options.binary, args).map((raw, index) => {
+  return runCrawlerJson(options.binary, args, options.timeoutMs).map((raw, index) => {
     const row = object(raw);
     const workspaceId = singleLine(row.workspace_id);
     const workspaceName = singleLine(row.workspace_name) || workspaceId;
@@ -144,7 +152,11 @@ function slackRecords(options: SourceImportOptions, scanLimit: number): AgentIng
 }
 
 function notionRecords(options: SourceImportOptions, scanLimit: number): AgentIngestRecord[] {
-  return runCrawlerJson(options.binary, ["--config", options.configPath, "tui", "--json", "--limit", String(scanLimit)]).map((raw, index) => {
+  return runCrawlerJson(
+    options.binary,
+    ["--config", options.configPath, "tui", "--json", "--limit", String(scanLimit)],
+    options.timeoutMs,
+  ).map((raw, index) => {
     const row = object(raw);
     const fields = object(row.fields);
     const id = singleLine(row.id) || `notion-page-${index}`;

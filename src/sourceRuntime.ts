@@ -44,6 +44,9 @@ type SourceStatus = {
   ready: boolean;
 };
 
+const DEFAULT_CRAWLER_TIMEOUT_MS = 30 * 60_000;
+const MAX_CRAWLER_TIMEOUT_SECONDS = 24 * 60 * 60;
+
 function normalizedSchedule(id: string, profile: Org2ExternalSourceConfig): SourceStatus["schedule"] {
   const schedule = profile.schedule;
   if (!schedule) return undefined;
@@ -75,11 +78,11 @@ function normalizedSchedule(id: string, profile: Org2ExternalSourceConfig): Sour
 function usage(): string {
   return `External source commands:
   org2 source list [--dir CORPUS] [--json]
-  org2 source doctor [PROFILE...] [--dir CORPUS] [--json]
+  org2 source doctor [PROFILE...] [--timeout SECONDS] [--dir CORPUS] [--json]
   org2 source bind PROFILE [--binary PATH] [--config PATH] [--working-directory PATH] [--dir CORPUS] [--apply] [--json]
-  org2 source status [PROFILE...] [--dir CORPUS] [--json]
-  org2 source import [PROFILE...] [--since 14d|TIMESTAMP] [--limit N] [--dir CORPUS] [--apply] [--json]
-  org2 source sync [PROFILE...] [--ingest] [--since 14d|TIMESTAMP] [--limit N] [--dir CORPUS] [--apply] [--json]
+  org2 source status [PROFILE...] [--timeout SECONDS] [--dir CORPUS] [--json]
+  org2 source import [PROFILE...] [--since 14d|TIMESTAMP] [--limit N] [--timeout SECONDS] [--dir CORPUS] [--apply] [--json]
+  org2 source sync [PROFILE...] [--ingest] [--since 14d|TIMESTAMP] [--limit N] [--timeout SECONDS] [--dir CORPUS] [--apply] [--json]
 
 The corpus declares non-secret externalSources in org2.json. Machine-local bindings are stored
 outside the corpus under ORG2_INDEX_HOME (or ~/.org2/index). Sync delegates to slacrawl/notcrawl.`;
@@ -102,6 +105,7 @@ function parseArgs(args: string[]) {
   let workingDirectory: string | undefined;
   let since: string | undefined;
   let limit: number | undefined;
+  let timeoutMs = DEFAULT_CRAWLER_TIMEOUT_MS;
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i]!;
     if (arg === "--dir") {
@@ -132,11 +136,18 @@ function parseArgs(args: string[]) {
       if (!Number.isInteger(value) || value <= 0) throw new Error("source --limit must be a positive integer");
       limit = value;
       i += 1;
+    } else if (arg === "--timeout") {
+      const seconds = Number(optionValue(args, i, arg));
+      if (!Number.isFinite(seconds) || seconds <= 0 || seconds > MAX_CRAWLER_TIMEOUT_SECONDS) {
+        throw new Error(`source --timeout must be a positive number of seconds no greater than ${MAX_CRAWLER_TIMEOUT_SECONDS}`);
+      }
+      timeoutMs = Math.max(1, Math.ceil(seconds * 1_000));
+      i += 1;
     } else if (arg === "--help" || arg === "-h") positional.push("help");
     else if (arg.startsWith("-")) throw new Error(`unknown source option: ${arg}`);
     else positional.push(arg);
   }
-  return { positional, dir, json, apply, ingest, binary, configPath, workingDirectory, since, limit };
+  return { positional, dir, json, apply, ingest, binary, configPath, workingDirectory, since, limit, timeoutMs };
 }
 
 function resolveCorpus(dir: string): { root: string; profiles: Record<string, Org2ExternalSourceConfig> } {
@@ -224,6 +235,14 @@ function truncateOutput(value: string | null | undefined, max = 8_000): string {
   return text.length <= max ? text : `${text.slice(0, max)}\n… ${text.length - max} characters omitted`;
 }
 
+function crawlerProcessError(binary: string, error: Error | undefined, timeoutMs: number): string | undefined {
+  if (!error) return undefined;
+  if ((error as NodeJS.ErrnoException).code === "ETIMEDOUT") {
+    return `${path.basename(binary)} timed out after ${timeoutMs / 1_000} seconds`;
+  }
+  return `${path.basename(binary)} failed: ${error.message}`;
+}
+
 export async function runSourceCommand(args: string[]): Promise<boolean> {
   if (args[0] !== "source" && args[0] !== "sources") return false;
   const parsed = parseArgs(args.slice(1));
@@ -240,8 +259,20 @@ export async function runSourceCommand(args: string[]): Promise<boolean> {
     else {
       const checked = result.map((item) => {
         if (!item.enabled || !item.ready) return { ...item, doctorOk: false };
-        const child = spawnSync(item.binary, ["--config", item.configPath!, "doctor", "--json"], { encoding: "utf8", env: process.env });
-        return { ...item, doctorOk: child.status === 0, doctorStatus: child.status, ...(parsed.json ? { doctorStdout: child.stdout, doctorStderr: child.stderr } : {}) };
+        const child = spawnSync(item.binary, ["--config", item.configPath!, "doctor", "--json"], {
+          encoding: "utf8",
+          env: process.env,
+          timeout: parsed.timeoutMs,
+          killSignal: "SIGTERM",
+        });
+        const doctorError = crawlerProcessError(item.binary, child.error, parsed.timeoutMs);
+        return {
+          ...item,
+          doctorOk: child.status === 0 && !doctorError,
+          doctorStatus: child.status,
+          ...(doctorError ? { doctorError } : {}),
+          ...(parsed.json ? { doctorStdout: child.stdout, doctorStderr: child.stderr } : {}),
+        };
       });
       const ok = checked.every((item) => !item.enabled || item.doctorOk);
       emit({ schema: "org2:source-doctor:v1", root, ok, sources: checked }, parsed.json);
@@ -261,15 +292,19 @@ export async function runSourceCommand(args: string[]): Promise<boolean> {
         encoding: "utf8",
         env: process.env,
         maxBuffer: 16 * 1024 * 1024,
+        timeout: parsed.timeoutMs,
+        killSignal: "SIGTERM",
       });
+      const processError = crawlerProcessError(item.binary, child.error, parsed.timeoutMs);
       let crawlerStatus: unknown;
       try { crawlerStatus = JSON.parse(child.stdout || "null"); } catch { crawlerStatus = null; }
       result.push({
         id: item.id,
         type: item.type,
-        ok: child.status === 0 && crawlerStatus !== null,
+        ok: child.status === 0 && crawlerStatus !== null && !processError,
         status: child.status,
         crawlerStatus,
+        ...(processError ? { error: processError } : {}),
         ...(child.status === 0 ? {} : { stderr: truncateOutput(child.stderr) }),
       });
     }
@@ -314,6 +349,7 @@ export async function runSourceCommand(args: string[]): Promise<boolean> {
           configPath: status.configPath!,
           since: parsed.since,
           limit: parsed.limit,
+          timeoutMs: parsed.timeoutMs,
           apply: parsed.apply,
         });
         return { id: status.id, ok: true, imported };
@@ -359,8 +395,11 @@ export async function runSourceCommand(args: string[]): Promise<boolean> {
           encoding: "utf8",
           stdio: parsed.json ? "pipe" : "inherit",
           env: process.env,
+          timeout: parsed.timeoutMs,
+          killSignal: "SIGTERM",
         });
-        const ok = child.status === 0;
+        const processError = crawlerProcessError(status.binary, child.error, parsed.timeoutMs);
+        const ok = child.status === 0 && !processError;
         let imported: unknown;
         if (ok && parsed.ingest) {
           try {
@@ -372,6 +411,7 @@ export async function runSourceCommand(args: string[]): Promise<boolean> {
               configPath: status.configPath!,
               since: parsed.since,
               limit: parsed.limit,
+              timeoutMs: parsed.timeoutMs,
               apply: parsed.apply,
             });
           } catch (error) {
@@ -390,6 +430,7 @@ export async function runSourceCommand(args: string[]): Promise<boolean> {
           ok,
           status: child.status,
           signal: child.signal,
+          ...(processError ? { error: processError } : {}),
           ...(imported ? { imported } : {}),
           ...(parsed.json ? { stdout: truncateOutput(child.stdout), stderr: truncateOutput(child.stderr) } : {}),
         });
