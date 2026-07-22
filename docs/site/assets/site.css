@@ -1910,6 +1910,11 @@ body #content {
   line-height: 1.58;
 }
 
+#content .org2-page-intro + p,
+#content .org2-page-intro + p + p {
+  max-width: 70rem;
+}
+
 #content .org2-page-summary {
   position: relative;
   z-index: 1;
