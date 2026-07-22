@@ -47,6 +47,14 @@ const leapDayPlanning = updatePlanningInText("* TODO Leap day\n", {
 });
 assert.match(leapDayPlanning.text, /SCHEDULED: <2028-02-29 Tue>/);
 
+const earlyYearPlanning = updatePlanningInText("* TODO Early year\n", {
+  filePath: "tasks.org2",
+  lineNumber: 1,
+  kind: "SCHEDULED",
+  date: "0099-01-01",
+});
+assert.match(earlyYearPlanning.text, /SCHEDULED: <0099-01-01 Thu>/);
+
 for (const invalidDate of ["2026-02-29", "2026-02-31", "2026-13-01"]) {
   assert.throws(
     () => updatePlanningInText("* TODO Invalid date\n", {
