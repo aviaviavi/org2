@@ -1253,6 +1253,7 @@ struct OpenClawTypingIndicatorView: View {
       }
       .padding(10)
       .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+      .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
       .overlay(
         RoundedRectangle(cornerRadius: 8, style: .continuous)
           .stroke(Color.secondary.opacity(0.16))
@@ -1328,8 +1329,8 @@ private struct OpenClawProgressFeedView: View {
     OpenClawActivityFeed.items(from: activities)
   }
 
-  private var trimmedReasoning: String {
-    reasoning.trimmingCharacters(in: .whitespacesAndNewlines)
+  private var presentedReasoning: String? {
+    OpenClawProgressPresentation.reasoningText(from: reasoning)
   }
 
   private var collapsedItemLimit: Int { compact ? 2 : 3 }
@@ -1339,13 +1340,13 @@ private struct OpenClawProgressFeedView: View {
   }
 
   private var canExpand: Bool {
-    items.count > collapsedItemLimit || trimmedReasoning.count > 360
+    items.count > collapsedItemLimit || (presentedReasoning?.count ?? 0) > 240
   }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 7) {
       HStack(spacing: 7) {
-        Label(isLive ? "Progress" : "Work log", systemImage: isLive ? "waveform.path.ecg" : "clock.arrow.circlepath")
+        Label(isLive ? "Working" : "How it worked", systemImage: isLive ? "waveform.path.ecg" : "clock.arrow.circlepath")
           .font(.caption.weight(.semibold))
           .foregroundStyle(.secondary)
         Spacer(minLength: 8)
@@ -1367,19 +1368,29 @@ private struct OpenClawProgressFeedView: View {
         }
       }
 
-      if !trimmedReasoning.isEmpty {
-        Text(trimmedReasoning)
-          .font(.caption)
-          .foregroundStyle(.secondary)
-          .lineLimit(showsFullFeed ? nil : (isLive ? 5 : 2))
-          .textSelection(.enabled)
-          .frame(maxWidth: compact ? 360 : 640, alignment: .leading)
+      if let presentedReasoning {
+        HStack(alignment: .top, spacing: 7) {
+          Image(systemName: "sparkles")
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.purple)
+            .frame(width: 14)
+          VStack(alignment: .leading, spacing: 2) {
+            Text("Approach")
+              .font(.caption.weight(.medium))
+            Text(presentedReasoning)
+              .font(.caption2)
+              .foregroundStyle(.secondary)
+              .lineLimit(showsFullFeed ? 8 : (isLive ? 3 : 2))
+              .truncationMode(.tail)
+          }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
       }
 
       if !visibleItems.isEmpty {
         VStack(alignment: .leading, spacing: 6) {
           ForEach(visibleItems) { item in
-            OpenClawActivityFeedRow(item: item)
+            OpenClawActivityFeedRow(item: item, isExpanded: showsFullFeed)
           }
         }
       }
@@ -1391,11 +1402,13 @@ private struct OpenClawProgressFeedView: View {
       }
     }
     .frame(maxWidth: compact ? 360 : 640, alignment: .leading)
+    .clipped()
   }
 }
 
 private struct OpenClawActivityFeedRow: View {
   let item: OpenClawActivityFeedItem
+  let isExpanded: Bool
 
   var body: some View {
     HStack(alignment: .top, spacing: 7) {
@@ -1410,8 +1423,9 @@ private struct OpenClawActivityFeedRow: View {
           Text(detail)
             .font(.caption2)
             .foregroundStyle(.tertiary)
-            .lineLimit(3)
-            .textSelection(.enabled)
+            .lineLimit(isExpanded ? 3 : 1)
+            .truncationMode(.middle)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
       }
     }
@@ -1432,5 +1446,31 @@ private struct OpenClawActivityFeedRow: View {
     case .succeeded: return .green
     case .failed: return .red
     }
+  }
+}
+
+enum OpenClawProgressPresentation {
+  private static let maximumReasoningLength = 1_200
+
+  static func reasoningText(from raw: String) -> String? {
+    let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return nil }
+
+    if let data = trimmed.data(using: .utf8),
+       (try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])) != nil {
+      return nil
+    }
+
+    let looksLikeEncodedPayload = trimmed.contains("\\\"content\\\"")
+      || trimmed.contains("\\\"results\\\"")
+      || trimmed.hasPrefix("{\\n")
+      || trimmed.hasPrefix("[\\n")
+    guard !looksLikeEncodedPayload else { return nil }
+
+    let readable = trimmed
+      .replacingOccurrences(of: "[ \\t]+", with: " ", options: .regularExpression)
+      .replacingOccurrences(of: "\\n{3,}", with: "\n\n", options: .regularExpression)
+    guard readable.count > maximumReasoningLength else { return readable }
+    return String(readable.prefix(maximumReasoningLength - 1)).trimmingCharacters(in: .whitespacesAndNewlines) + "\u{2026}"
   }
 }

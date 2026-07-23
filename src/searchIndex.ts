@@ -34,6 +34,10 @@ export type Org2SearchIndexBuildResult = {
   skippedFiles: number;
 };
 
+export type Org2SearchIndexUpdateResult = Org2SearchIndexBuildResult & {
+  updatedFiles: number;
+};
+
 export type Org2SearchResultPayload = {
   $schema: "org2:search:v1";
   query: string;
@@ -43,7 +47,7 @@ export type Org2SearchResultPayload = {
   dateTo?: string;
   fileZones?: string[];
   index?: {
-    mode: "auto" | "never" | "rebuild";
+    mode: "auto" | "current" | "never" | "rebuild";
     used: boolean;
     path?: string;
     builtAt?: string;
@@ -137,6 +141,78 @@ export function buildSearchIndex(options: {
   return { index, path: indexPath, fileCount: indexedFiles.length, lineCount, byteCount, skippedFiles };
 }
 
+/**
+ * Updates only the supplied paths in an existing index. Removed paths are
+ * deleted from the index. Returns null when a compatible base index does not
+ * exist, so callers can fall back to a complete rebuild without trusting stale
+ * derived data.
+ */
+export function updateSearchIndex(options: {
+  rootDir: string;
+  changedFiles: string[];
+  recursive: boolean;
+  includeArchives: boolean;
+}): Org2SearchIndexUpdateResult | null {
+  const rootDir = path.resolve(options.rootDir);
+  const indexPath = defaultSearchIndexPath(rootDir);
+  let existing: Org2SearchIndex;
+  try {
+    existing = JSON.parse(fs.readFileSync(indexPath, "utf8")) as Org2SearchIndex;
+  } catch {
+    return null;
+  }
+  if (
+    existing.$schema !== "org2:search-index:v1" ||
+    existing.version !== 1 ||
+    path.resolve(existing.rootDir) !== rootDir ||
+    existing.recursive !== options.recursive ||
+    existing.includeArchives !== options.includeArchives
+  ) {
+    return null;
+  }
+
+  const changed = new Set(options.changedFiles.map((file) => path.resolve(file)));
+  const indexedFiles = existing.files.filter((file) => !changed.has(path.resolve(file.path)));
+  let skippedFiles = 0;
+  for (const absolutePath of changed) {
+    if (!isIndexableChangedPath(rootDir, absolutePath, options.includeArchives)) continue;
+    try {
+      const stat = fs.statSync(absolutePath);
+      if (!stat.isFile()) continue;
+      const raw = fs.readFileSync(absolutePath, "utf8").replace(/\r\n/g, "\n");
+      indexedFiles.push({
+        path: absolutePath,
+        relativePath: relativeIndexPath(rootDir, absolutePath),
+        modifiedMs: Math.trunc(stat.mtimeMs),
+        byteCount: stat.size,
+        lines: raw.split("\n"),
+      });
+    } catch (error) {
+      // A path that vanished between the event and this read is a deletion, not
+      // an indexing failure. Other read errors are reported but never preserve
+      // the stale indexed copy.
+      if (fs.existsSync(absolutePath)) skippedFiles += 1;
+    }
+  }
+
+  indexedFiles.sort((a, b) => a.path.localeCompare(b.path));
+  const index: Org2SearchIndex = {
+    ...existing,
+    builtAt: new Date().toISOString(),
+    files: indexedFiles,
+  };
+  const result: Org2SearchIndexUpdateResult = {
+    index,
+    path: indexPath,
+    fileCount: indexedFiles.length,
+    lineCount: indexedFiles.reduce((count, file) => count + file.lines.length, 0),
+    byteCount: indexedFiles.reduce((count, file) => count + file.byteCount, 0),
+    skippedFiles,
+    updatedFiles: changed.size,
+  };
+  return result;
+}
+
 export function writeSearchIndex(result: Org2SearchIndexBuildResult): void {
   fs.mkdirSync(path.dirname(result.path), { recursive: true });
   const tmpPath = `${result.path}.${process.pid}.tmp`;
@@ -182,6 +258,25 @@ export function loadFreshSearchIndex(options: {
   return { index: parsed, path: indexPath };
 }
 
+export function loadCompatibleSearchIndex(options: {
+  rootDir: string;
+  recursive: boolean;
+  includeArchives: boolean;
+}): { index: Org2SearchIndex; path: string } | null {
+  const rootDir = path.resolve(options.rootDir);
+  const indexPath = defaultSearchIndexPath(rootDir);
+  let index: Org2SearchIndex;
+  try {
+    index = JSON.parse(fs.readFileSync(indexPath, "utf8")) as Org2SearchIndex;
+  } catch {
+    return null;
+  }
+  if (index.$schema !== "org2:search-index:v1" || index.version !== 1) return null;
+  if (path.resolve(index.rootDir) !== rootDir) return null;
+  if (index.recursive !== options.recursive || index.includeArchives !== options.includeArchives) return null;
+  return { index, path: indexPath };
+}
+
 export function searchIndexedCorpus(index: Org2SearchIndex, options: Org2SearchOptions): Org2SearchHit[] {
   const hits: Org2SearchHit[] = [];
   const needle = options.query.toLowerCase();
@@ -194,7 +289,7 @@ export function searchIndexedCorpus(index: Org2SearchIndex, options: Org2SearchO
     if (hits.length >= options.limit && normalizedSort(options.sort) === "scan") break;
   }
 
-  return sortAndLimitSearchHits(hits, options.sort, options.limit);
+  return sortAndLimitSearchHits(hits, options.sort, options.limit, options.query);
 }
 
 export function searchFilesByScan(files: string[], options: Org2SearchOptions): { hits: Org2SearchHit[]; skippedFileCount: number } {
@@ -218,7 +313,12 @@ export function searchFilesByScan(files: string[], options: Org2SearchOptions): 
   }
 
   return {
-    hits: sortAndLimitSearchHits(options.subtree ? Array.from(subtreeHits.values()) : hits, options.sort, options.limit),
+    hits: sortAndLimitSearchHits(
+      options.subtree ? Array.from(subtreeHits.values()) : hits,
+      options.sort,
+      options.limit,
+      options.query,
+    ),
     skippedFileCount,
   };
 }
@@ -329,14 +429,41 @@ function collectSearchHitsForLines(
   }
 }
 
-function sortAndLimitSearchHits(hits: Org2SearchHit[], sort: string, limit: number): Org2SearchHit[] {
+function sortAndLimitSearchHits(hits: Org2SearchHit[], sort: string, limit: number, query: string): Org2SearchHit[] {
   const normalized = normalizedSort(sort);
   if (["date-desc", "newest", "recent"].includes(normalized)) {
     hits.sort((a, b) => (b.sortDate || "").localeCompare(a.sortDate || "") || a.file.localeCompare(b.file) || a.line - b.line);
   } else if (["date-asc", "oldest"].includes(normalized)) {
     hits.sort((a, b) => (a.sortDate || "").localeCompare(b.sortDate || "") || a.file.localeCompare(b.file) || a.line - b.line);
+  } else if (normalized === "relevance") {
+    const needle = query.trim().toLowerCase();
+    hits.sort((a, b) => compareSearchRelevance(a, b, needle));
   }
   return hits.slice(0, limit);
+}
+
+function compareSearchRelevance(a: Org2SearchHit, b: Org2SearchHit, needle: string): number {
+  const aRank = searchRelevanceRank(a, needle);
+  const bRank = searchRelevanceRank(b, needle);
+  for (let index = 0; index < aRank.length; index += 1) {
+    const difference = aRank[index]! - bRank[index]!;
+    if (difference !== 0) return difference;
+  }
+  return 0;
+}
+
+function searchRelevanceRank(hit: Org2SearchHit, needle: string): number[] {
+  const todo = (hit.todo || "").trim().toUpperCase();
+  const isActiveTodo = Boolean(todo) && !["DONE", "CANCELED", "CANCELLED"].includes(todo);
+  const hasHeading = Boolean(hit.heading?.trim());
+  const heading = (hit.heading || "").trim().toLowerCase();
+  const headingMatch = heading === needle ? 0 : heading.includes(needle) ? 1 : 2;
+  const matchedHeadingLine = hit.headingLine === hit.line ? 0 : 1;
+
+  // Keep the broad buckets deliberately small and deterministic. The caller's
+  // scan order remains the tie-breaker because modern Array.sort is stable.
+  const resultKind = isActiveTodo ? 0 : hasHeading ? 1 : 2;
+  return [resultKind, headingMatch, matchedHeadingLine];
 }
 
 function parseSearchHeading(line: string): Omit<SearchHeading, "line"> | null {
@@ -391,4 +518,16 @@ function normalizedSort(sort: string): string {
 function relativeIndexPath(rootDir: string, absolutePath: string): string {
   const relative = path.relative(rootDir, absolutePath);
   return relative && !relative.startsWith("..") && !path.isAbsolute(relative) ? relative : path.basename(absolutePath);
+}
+
+function isIndexableChangedPath(rootDir: string, absolutePath: string, includeArchives: boolean): boolean {
+  const relativePath = path.relative(rootDir, absolutePath);
+  if (!relativePath || relativePath.startsWith("..") || path.isAbsolute(relativePath)) return false;
+  const extension = path.extname(absolutePath).toLowerCase();
+  if (extension !== ".org" && extension !== ".org2") return false;
+  const components = relativePath.split(path.sep);
+  if (components.some((component) => component.startsWith(".") || component === "node_modules" || component === "dist" || component === "build" || component === "DerivedData" || component === "sync-conflicts")) return false;
+  if (!includeArchives && components.some((component) => component.toLowerCase() === "archive" || component.toLowerCase() === "archives")) return false;
+  const name = path.basename(absolutePath);
+  return !name.startsWith(".syncthing.") && !name.includes(".sync-conflict-") && !name.endsWith(".tmp");
 }

@@ -16,16 +16,20 @@ Portable external-source intent may also live in `org2.json`, but credentials an
 
 The native macOS Workspace also exposes a discoverable chat slash-command layer. Its local commands reuse shared search, backlink, lint, render, and publish semantics; agent-assisted `/brief` and `/summarize` receive selected source context with citations. When the live OpenClaw Gateway supports `commands.list`, runtime-native, skill, and plugin commands for the selected agent are merged into autocomplete and forwarded unchanged through `chat.send`; they do not use HTTP compatibility. Gateway progress intentionally exposed by the provider is stored with the assistant reply, while repetitive tool completion events are grouped into a compact work log. See the macOS Workspace reference for details.
 
+Normal Mac Workspace chat turns include a non-secret snapshot of the active corpus's configured Org2 source profiles and general source-discovery guidance. OpenClaw uses `org2 source list/status` and the returned profile IDs, types, scopes, raw zones, and review zones as the authority, searches staged source material as ordinary Org2 text, and refreshes a matching enabled profile when fresher material is needed. It asks the user about setup only when `org2 source doctor` reports a specific missing machine-local binding or credential.
+
 OpenClaw is currently the deepest native adapter. The repository's `integrations/openclaw` lifecycle plugin records substantial main-agent turns, subagent executions, and cron executions as correlated durable runs. It preserves available provider/model and usage metadata, records terminal outcome summaries, leaves approval or clarification boundaries open, continues an approved workflow in its correlated chat session, and verifies the Mac app's selected portable corpus identity against its single configured write corpus. Other agents can use the same run/workflow files, cited retrieval, CLI JSON, and MCP surfaces.
 
 Durable delegation uses generated run records under `.org2/runs/` and authored workflow files under the visible `workflows/` directory. Org2 continues to read the legacy `.org2/workflows/` location. Discover the interfaces with:
 
     org2 run --help
     org2 workflow --help
+    org2 approvals --dir CORPUS --recursive --format json
     org2 review list --dir CORPUS --json
     org2 mcp serve --dir CORPUS
 
 Runs preserve goals, acceptance criteria, cited inputs, plans, risk, provider metadata, budgets, artifacts, approvals, validation, comments, and observable events. Workflow packages declare inputs, capabilities, writes, outputs, triggers, checks, approval boundaries, and compatibility. External MCP/connector data that becomes durable work should be stored as a provenance-bearing snapshot; credentials stay outside the corpus.
+`org2 approvals` is the unified pending-decision queue. A `kind=run` item names the exact `runId` and `approvalId` in `.org2/runs/`, includes the run goal/status and remaining approval count, and must be decided through `org2 run approval-decide`; a `kind=headline` item remains an ordinary cited corpus heading. Do not create a second heading to mirror a run approval.
 Agents must use `org2 run block RUN_ID --reason "Specific clarification or next action"`; reasonless blocked runs are rejected because they give the reviewer nothing actionable to answer.
 Agents must complete durable runs with `org2 run complete RUN_ID --summary "What happened"`; use repeatable `--highlight` and `--next-action` flags when useful. The summary is the primary human-facing result, not a log line or a restatement of the goal.
 Agents must not complete runs whose artifacts remain `review-required`. After a human decision, use `org2 run artifact-review RUN_ID ARTIFACT_ID --status reviewed|rejected --actor NAME`; for linked Org/Org2 files inside the corpus, the command updates both the run snapshot and artifact metadata.

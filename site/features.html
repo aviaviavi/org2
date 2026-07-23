@@ -106,11 +106,13 @@ org2 roam graph --dir ~/notes --recursive --format report</code></pre>
       <ul>
         <li>Bounded context packs carry file-and-line citations instead of an opaque prompt dump.</li>
         <li>Generated work lands in reviewable artifact zones before promotion into canonical notes.</li>
+        <li>One pending-decision queue combines run-bound approvals with standalone file-backed approvals while preserving each item's canonical identity.</li>
         <li>OpenClaw is the first native end-to-end integration; CLI, MCP, and plain files keep the model provider-independent.</li>
       </ul>
       <div class="org2-command" aria-label="Agent context and review commands">
         <span>Context and review commands</span>
         <pre class="org2-src language-sh"><code class="language-sh">org2 agent context --query "launch risks" --dir ~/notes --recursive
+org2 approvals --dir ~/notes --recursive --format json
 org2 review list --status pending --dir ~/notes</code></pre>
       </div>
       <p class="org2-feature-links"><a href="agent-quickstart.html">Agent quickstart</a><a href="openclaw-knowledge-layer.html">OpenClaw integration</a></p>

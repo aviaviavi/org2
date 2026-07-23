@@ -79,6 +79,40 @@ final class OpenClawChatLayoutTests: XCTestCase {
     XCTAssertEqual(startingRun.progressSummary, "Starting the run…")
   }
 
+  func testOpenClawStatusCardStaysBoundedWithStructuredToolOutput() {
+    let result = #"{"content":[{"text":"{\"results\":[{\"path\":\"memory/2026-04-01.md\",\"text\":\""#
+      + String(repeating: "unformatted result ", count: 100)
+      + #"\"}]}"}]}"#
+    let view = OpenClawTypingIndicatorView(
+      startedAt: Date(),
+      connectionState: .connected,
+      connectionDetail: nil,
+      runID: "run-123",
+      streamingReply: "",
+      reasoning: "Checking recent notes before answering.",
+      activities: [
+        OpenClawRunActivity(
+          id: "tool-1",
+          runID: "run-123",
+          kind: .tool,
+          title: "memory_search",
+          detail: result,
+          status: .succeeded
+        )
+      ],
+      compact: false,
+      onStop: {}
+    )
+    .frame(width: 540, alignment: .leading)
+    let hostingView = NSHostingView(rootView: view)
+
+    hostingView.frame = NSRect(x: 0, y: 0, width: 540, height: 1)
+    hostingView.layoutSubtreeIfNeeded()
+
+    XCTAssertLessThanOrEqual(hostingView.fittingSize.width, 540)
+    XCTAssertLessThan(hostingView.fittingSize.height, 260)
+  }
+
   func testActivityFeedGroupsRepeatedShellEventsAndHidesRawCompletionMetadata() throws {
     let activities = (0..<10).map { index in
       OpenClawRunActivity(
@@ -139,6 +173,44 @@ final class OpenClawChatLayoutTests: XCTestCase {
     let item = try XCTUnwrap(OpenClawActivityFeed.items(from: [activity]).first)
     XCTAssertEqual(item.title, "Web fetch")
     XCTAssertNil(item.detail)
+  }
+
+  func testActivityFeedNeverShowsSmallStructuredToolResultsAsRawJSON() throws {
+    let activity = OpenClawRunActivity(
+      id: "tool-1",
+      runID: "run-1",
+      kind: .tool,
+      title: "memory_search",
+      detail: #"{"content":[{"text":"{\"results\":[{\"path\":\"memory.org\"}]}"}]}"#,
+      status: .succeeded
+    )
+
+    let item = try XCTUnwrap(OpenClawActivityFeed.items(from: [activity]).first)
+    XCTAssertEqual(item.title, "Memory search")
+    XCTAssertNil(item.detail)
+  }
+
+  func testActivityFeedFormatsSearchArgumentsForPeople() throws {
+    let activity = OpenClawRunActivity(
+      id: "tool-1",
+      runID: "run-1",
+      kind: .tool,
+      title: "memory_search",
+      detail: #"{"query":"monthly revenue"}"#,
+      status: .running
+    )
+
+    let item = try XCTUnwrap(OpenClawActivityFeed.items(from: [activity]).first)
+    XCTAssertEqual(item.detail, "Searching for \u{201c}monthly revenue\u{201d}")
+  }
+
+  func testProgressPresentationHidesStructuredReasoningAndBoundsProse() {
+    XCTAssertNil(OpenClawProgressPresentation.reasoningText(from: #"{"results":[1,2,3]}"#))
+
+    let prose = String(repeating: "Checking relevant context. ", count: 100)
+    let presented = OpenClawProgressPresentation.reasoningText(from: prose)
+    XCTAssertNotNil(presented)
+    XCTAssertLessThanOrEqual(presented?.count ?? .max, 1_200)
   }
 
   func testAssistantResponseTraceRoundTripsWithTranscriptMessage() throws {

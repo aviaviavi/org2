@@ -51,6 +51,81 @@ final class AgentRunModelsTests: XCTestCase {
     XCTAssertTrue(try XCTUnwrap(run.artifacts.first).isPDF)
   }
 
+  func testDecodesRunApprovalAsUnifiedQueueItem() throws {
+    let data = Data(#"""
+    {
+      "kind": "run",
+      "title": "Release report",
+      "status": "pending",
+      "todo": null,
+      "level": null,
+      "file": "/tmp/corpus/.org2/runs/run-1.org2",
+      "line": 1,
+      "idValue": "approval-1",
+      "properties": {},
+      "body": "publish report",
+      "tags": [],
+      "approvalId": "approval-1",
+      "action": "publish report",
+      "riskClass": "external-action",
+      "requestedRole": "owner",
+      "requestedAt": "2026-07-21T00:00:00.000Z",
+      "runId": "run-1",
+      "runGoal": "Prepare report",
+      "runStatus": "waiting-approval",
+      "runPendingApprovalCount": 2,
+      "runApprovalCount": 3,
+      "runDecisionEffect": "Approving this leaves 1 other pending approval before the run can resume."
+    }
+    """#.utf8)
+
+    let item = try JSONDecoder().decode(ApprovalItem.self, from: data)
+    XCTAssertTrue(item.isRunApproval)
+    XCTAssertEqual(item.id, "run:run-1:approval-1")
+    XCTAssertEqual(item.sourceLabel, "Run run-1")
+    XCTAssertEqual(item.runDependencyText, "Approving this leaves 1 other pending approval before the run can resume.")
+    XCTAssertTrue(item.matchesApprovalFilter("prepare report external-action"))
+  }
+
+  @MainActor
+  func testUnifiedQueueDecisionUpdatesTheCanonicalRunApproval() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-run-approval-queue-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let cli = Org2CLI(repoRoot: try Org2CLI.defaultRepoRoot())
+    _ = try await cli.run([
+      "run", "create", "--id", "approval-run", "--goal", "Release report",
+      "--dir", root.path, "--json"
+    ])
+    _ = try await cli.run(["run", "start", "approval-run", "--dir", root.path, "--json"])
+    _ = try await cli.run([
+      "run", "approval-request", "approval-run",
+      "--title", "Approve release", "--action", "publish report",
+      "--risk", "external-action", "--role", "owner",
+      "--dir", root.path, "--json"
+    ])
+
+    let store = WorkspaceStore(cli: cli)
+    store.setCorpusRoot(root, persistsDefault: false)
+    await store.refreshAgentRuns()
+    await store.refreshApprovals()
+
+    let queueItem = try XCTUnwrap(store.approvalItems.first(where: { $0.isRunApproval }))
+    XCTAssertEqual(queueItem.runId, "approval-run")
+    XCTAssertEqual(queueItem.runPendingApprovalCount, 1)
+    XCTAssertEqual(queueItem.runDependencyText, "This is the last pending approval; approving it resumes the run.")
+
+    await store.approve(queueItem)
+    await store.refreshApprovals()
+
+    let updatedRun = try XCTUnwrap(store.agentRuns.first(where: { $0.id == "approval-run" }))
+    XCTAssertEqual(updatedRun.status, "running")
+    XCTAssertEqual(updatedRun.approvals.first?.status, "approved")
+    XCTAssertFalse(store.approvalItems.contains(where: { $0.id == queueItem.id }))
+  }
+
   func testRecognizesPDFRunArtifactsFromExtensionOrMediaType() throws {
     let extensionArtifact = try JSONDecoder().decode(
       AgentRunArtifactItem.self,

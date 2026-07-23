@@ -60,42 +60,66 @@ fs.writeFileSync(conflict, `* TODO Review deleted sync artifact
 :END:
 `, "utf8");
 
+cli(["run", "create", "--id", "release-run", "--goal", "Release the weekly brief", "--dir", tmp, "--json"]);
+cli(["run", "start", "release-run", "--dir", tmp, "--json"]);
+cli(["run", "approval-request", "release-run", "--title", "Approve recipients", "--action", "confirm recipient list", "--risk", "external-action", "--role", "owner", "--dir", tmp, "--json"]);
+cli(["run", "approval-request", "release-run", "--title", "Approve final copy", "--action", "send weekly brief", "--risk", "external-action", "--role", "owner", "--dir", tmp, "--json"]);
+
 const staleIndex = JSON.parse(cli(["index", "--dir", tmp, "--files", note, conflict, "--format", "json"]));
 assert.equal(staleIndex.fileCount, 2);
 fs.unlinkSync(conflict);
 
 const payload = JSON.parse(cli(["approvals", "--dir", tmp, "--recursive", "--format", "json"]));
-assert.equal(payload.$schema, "org2:approvals:v1");
+assert.equal(payload.$schema, "org2:approvals:v2");
 assert.equal(payload.index.used, true);
 assert.equal(payload.index.rebuilt, true);
-assert.equal(payload.count, 2);
+assert.equal(payload.count, 4);
 assert.equal(payload.skippedCandidates ?? 0, 0);
-assert.equal(payload.items[0].title, "Review outreach copy");
-assert.equal(payload.items[0].line, 3);
-assert.equal(payload.items[0].idValue, "approval-1");
-assert.equal(payload.items[0].status, "draft-needs-review");
-assert.equal(payload.items[0].body, "Send this once approved.");
-assert.doesNotMatch(payload.items[0].file, /\.stversions/);
-assert.deepEqual(payload.items[0].properties, {
+const runItems = payload.items.filter((item) => item.kind === "run");
+const headlineItems = payload.items.filter((item) => item.kind === "headline");
+assert.equal(runItems.length, 2);
+assert.equal(runItems[0].runId, "release-run");
+assert.equal(runItems[0].runGoal, "Release the weekly brief");
+assert.equal(runItems[0].runStatus, "waiting-approval");
+assert.equal(runItems[0].runPendingApprovalCount, 2);
+assert.equal(runItems[0].runApprovalCount, 2);
+assert.equal(runItems[0].runDecisionEffect, "Approving this leaves 1 other pending approval before the run can resume.");
+assert.equal(headlineItems[0].title, "Review outreach copy");
+assert.equal(headlineItems[0].line, 3);
+assert.equal(headlineItems[0].idValue, "approval-1");
+assert.equal(headlineItems[0].status, "draft-needs-review");
+assert.equal(headlineItems[0].body, "Send this once approved.");
+assert.doesNotMatch(headlineItems[0].file, /\.stversions/);
+assert.deepEqual(headlineItems[0].properties, {
   ID: "approval-1",
   STATUS: "draft-needs-review",
 });
-assert.equal(payload.items[1].title, "Approve sending Mercor technographics data overview draft");
-assert.equal(payload.items[1].idValue, "approval-priority");
-assert.equal(payload.items[1].status, "waiting-on-avi-approval");
+assert.equal(headlineItems[1].title, "Approve sending Mercor technographics data overview draft");
+assert.equal(headlineItems[1].idValue, "approval-priority");
+assert.equal(headlineItems[1].status, "waiting-on-avi-approval");
 
 const scannedPayload = JSON.parse(cli(["approvals", "--dir", tmp, "--recursive", "--index", "never", "--format", "json"]));
 assert.equal(scannedPayload.index.used, false);
-assert.equal(scannedPayload.count, 2);
-assert.doesNotMatch(scannedPayload.items[0].file, /\.stversions/);
+assert.equal(scannedPayload.count, 4);
+assert.doesNotMatch(scannedPayload.items.find((item) => item.kind === "headline").file, /\.stversions/);
 
 const indexedPayload = JSON.parse(cli(["approvals", "--dir", tmp, "--recursive", "--format", "json"]));
 assert.equal(indexedPayload.index.used, true);
 assert.equal(indexedPayload.index.rebuilt, undefined);
-assert.equal(indexedPayload.count, 2);
+assert.equal(indexedPayload.count, 4);
 
 const text = cli(["approvals", "--dir", tmp, "--recursive"]);
 assert.match(text, /approvals\.org2:3 TODO Review outreach copy \[draft-needs-review\]/);
 assert.match(text, /TODO Approve sending Mercor technographics data overview draft \[waiting-on-avi-approval\]/);
+assert.match(text, /run:release-run:.+ Approve .+ \[pending; 2 pending for run\]/);
+
+const approvalToDecide = runItems[0].approvalId;
+cli(["run", "approval-decide", "release-run", approvalToDecide, "--decision", "approved", "--actor", "Avi", "--role", "owner", "--dir", tmp, "--json"]);
+const afterDecision = JSON.parse(cli(["approvals", "--dir", tmp, "--recursive", "--format", "json"]));
+const remainingRunApproval = afterDecision.items.find((item) => item.kind === "run");
+assert.equal(afterDecision.count, 3);
+assert.equal(remainingRunApproval.runId, "release-run");
+assert.equal(remainingRunApproval.runPendingApprovalCount, 1);
+assert.equal(remainingRunApproval.runDecisionEffect, "This is the last pending approval; approving it resumes the run.");
 
 console.log("✓ cli approvals");

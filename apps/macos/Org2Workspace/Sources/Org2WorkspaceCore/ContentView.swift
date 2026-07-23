@@ -7,13 +7,18 @@ public struct ContentView: View {
   public init() {}
 
   public var body: some View {
-    NavigationSplitView {
-      SidebarView()
-        .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 260)
-    } detail: {
-      WorkspaceMainArea()
-    }
-    .toolbar {
+    GeometryReader { proxy in
+      NavigationSplitView {
+        SidebarView()
+          .navigationSplitViewColumnWidth(
+            min: WorkspaceSidebarLayout.minimumWidth,
+            ideal: WorkspaceSidebarLayout.idealWidth,
+            max: WorkspaceSidebarLayout.maximumWidth(for: proxy.size.width)
+          )
+      } detail: {
+        WorkspaceMainArea()
+      }
+      .toolbar {
       ToolbarItem(placement: .navigation) {
         Button {
           store.navigateBack()
@@ -58,36 +63,37 @@ public struct ContentView: View {
         .help(store.isRefreshingWorkspace ? "Stop the current workspace refresh (⌘R)" : "Refresh the entire workspace (⌘R)")
       }
     }
-    .keyboardEventMonitor { event, scope in
-      store.handleWorkspaceKeyDown(event, scope: scope)
-    }
-    .environment(\.openOrgFileReference) { reference in
-      store.openChatFileReference(reference)
-    }
-    .environment(\.orgRoamLinkResolver, store.orgRoamLinkResolver)
-    .sheet(isPresented: $store.isQuickOpenPresented) {
-      QuickOpenView()
-        .environmentObject(store)
-    }
-    .sheet(isPresented: $store.isKeyboardShortcutsPresented) {
-      KeyboardShortcutsView()
-        .environmentObject(store)
-    }
-    .sheet(isPresented: $store.isOrgCryptConfigurationPresented) {
-      OrgCryptConfigurationSheet()
-        .environmentObject(store)
-    }
-    .sheet(isPresented: $store.isDataSourceConfigurationPresented) {
-      DataSourceConfigurationSheet()
-        .environmentObject(store)
-    }
-    .sheet(isPresented: $store.isCapturePanelPresented) {
-      GlobalCaptureView()
-        .environmentObject(store)
-    }
-    .sheet(isPresented: $store.isSimilarTodoAssignmentPresented) {
-      SimilarTodoAssignmentView()
-        .environmentObject(store)
+      .keyboardEventMonitor { event, scope in
+        store.handleWorkspaceKeyDown(event, scope: scope)
+      }
+      .environment(\.openOrgFileReference) { reference in
+        store.openChatFileReference(reference)
+      }
+      .environment(\.orgRoamLinkResolver, store.orgRoamLinkResolver)
+      .sheet(isPresented: $store.isQuickOpenPresented) {
+        QuickOpenView()
+          .environmentObject(store)
+      }
+      .sheet(isPresented: $store.isKeyboardShortcutsPresented) {
+        KeyboardShortcutsView()
+          .environmentObject(store)
+      }
+      .sheet(isPresented: $store.isOrgCryptConfigurationPresented) {
+        OrgCryptConfigurationSheet()
+          .environmentObject(store)
+      }
+      .sheet(isPresented: $store.isDataSourceConfigurationPresented) {
+        DataSourceConfigurationSheet()
+          .environmentObject(store)
+      }
+      .sheet(isPresented: $store.isCapturePanelPresented) {
+        GlobalCaptureView()
+          .environmentObject(store)
+      }
+      .sheet(isPresented: $store.isSimilarTodoAssignmentPresented) {
+        SimilarTodoAssignmentView()
+          .environmentObject(store)
+      }
     }
   }
 }
@@ -276,6 +282,11 @@ private struct WorkspaceSurfaceCacheView: NSViewRepresentable {
             store.openChatFileReference(reference)
           }
       ))
+      // The host is fully constrained to its container. Asking SwiftUI for an
+      // intrinsic, minimum, and maximum size as well makes AppKit measure the
+      // entire active surface during every constraint pass, which is
+      // particularly expensive for corpus-scale Lists.
+      host.sizingOptions = []
       host.translatesAutoresizingMaskIntoConstraints = false
       hosts[surface] = host
       return host
@@ -333,159 +344,79 @@ private struct WorkspaceDetailArea: View {
 
 private struct SidebarView: View {
   @EnvironmentObject private var store: WorkspaceStore
+  @State private var showsCommandShortcuts = false
 
   var body: some View {
-    List(selection: surfaceSelection) {
-      Section("Workspace") {
-        ForEach(WorkspaceSurface.sidebarCases) { surface in
-          if surface == .openClaw {
-            OpenClawSidebarSurfaceGroup()
-              .tag(surface)
-          } else {
-            SidebarSurfaceRow(surface: surface)
-              .tag(surface)
-              .contentShape(Rectangle())
-              .help(surface.commandShortcutTitle.isEmpty ? surface.title : "\(surface.title) (\(surface.commandShortcutTitle))")
+    let pinnedCorpusFiles = store.pinnedCorpusFiles
+    VStack(spacing: 0) {
+      SidebarHeader(showsCommandShortcuts: showsCommandShortcuts)
+
+      List(selection: surfaceSelection) {
+        Section("Workspace") {
+          ForEach(WorkspaceSurface.sidebarCases) { surface in
+            SidebarSurfaceRow(
+              surface: surface,
+              showsCommandShortcut: showsCommandShortcuts,
+              notificationCount: surface == .approvals ? store.approvalItems.count : 0
+            )
+            .tag(surface)
+            .contentShape(Rectangle())
+            .help(surface.commandShortcutTitle.isEmpty ? surface.title : "\(surface.title) (\(surface.commandShortcutTitle))")
           }
         }
-      }
 
-      if !store.pinnedCorpusFiles.isEmpty {
-        Section("Pinned") {
-          ForEach(store.pinnedCorpusFiles) { file in
-            Button {
-              store.selectCorpusFile(file)
-            } label: {
-              SidebarPinnedFileRow(
-                file: file,
-                isSelected: store.selectedLocation?.file == file.path
-              )
-            }
-            .buttonStyle(.plain)
-            .contextMenu {
-              CorpusFileContextMenu(file: file)
-            }
-            .help(file.relativePath)
-          }
-        }
-      }
-
-      Section("Corpora") {
-        if let root = store.corpusRoot {
-          VStack(alignment: .leading, spacing: 5) {
-            Text(store.activeCorpusIdentity?.name ?? root.lastPathComponent)
-              .font(.caption.weight(.semibold))
-              .foregroundStyle(.secondary)
-              .lineLimit(1)
-              .truncationMode(.tail)
-            if let identity = store.activeCorpusIdentity {
-              Text("\(identity.kind.capitalized) · \(identity.id)")
-                .font(.caption2.weight(.medium))
-                .foregroundStyle(.tertiary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-            } else {
-              Text("Local corpus")
-                .font(.caption2.weight(.medium))
-                .foregroundStyle(.tertiary)
-            }
-            Text(root.deletingLastPathComponent().path)
-              .font(.caption2)
-              .foregroundStyle(.tertiary)
-              .lineLimit(2)
-              .truncationMode(.middle)
-              .textSelection(.enabled)
-            HStack(spacing: 5) {
-              Image(systemName: "doc.text")
-              Text("\(store.corpusFiles.count) file\(store.corpusFiles.count == 1 ? "" : "s")")
-            }
-            .font(.caption2.weight(.medium))
-            .foregroundStyle(.tertiary)
-            if store.isBuildingSearchIndex || !store.searchIndexStatusText.isEmpty {
-              HStack(spacing: 5) {
-                if store.isBuildingSearchIndex {
-                  WorkspaceActivityIndicator(size: .mini)
-                } else {
-                  Image(systemName: "magnifyingglass")
-                }
-                Text(store.searchIndexStatusText)
-                  .lineLimit(1)
-                  .truncationMode(.tail)
-              }
-              .font(.caption2.weight(.medium))
-              .foregroundStyle(.tertiary)
-            }
-          }
-
-          if store.mountedCorpora.count > 1 {
-            ForEach(store.mountedCorpora.filter { $0.path != root.standardizedFileURL.path }) { mount in
+        if !pinnedCorpusFiles.isEmpty {
+          Section("Pinned") {
+            ForEach(pinnedCorpusFiles) { file in
               Button {
-                store.switchCorpus(to: mount)
+                store.selectCorpusFile(file)
               } label: {
-                HStack(spacing: 7) {
-                  Image(systemName: mount.kind == "shared" ? "person.2" : "folder")
-                  VStack(alignment: .leading, spacing: 1) {
-                    Text(mount.name).lineLimit(1)
-                    Text(mount.displayKind).font(.caption2).foregroundStyle(.tertiary)
-                  }
-                }
-                .contentShape(Rectangle())
+                SidebarPinnedFileRow(
+                  file: file,
+                  isSelected: store.selectedLocation?.file == file.path
+                )
               }
               .buttonStyle(.plain)
-              .disabled(store.isSwitchingCorpus)
               .contextMenu {
-                Button("Forget Corpus") { store.forgetCorpus(mount) }
+                CorpusFileContextMenu(file: file)
               }
-              .help(mount.path)
-            }
-          }
-
-          Button {
-            store.chooseCorpus()
-          } label: {
-            Label("Mount Another Corpus", systemImage: "folder.badge.plus")
-          }
-          .buttonStyle(.plain)
-        } else {
-          VStack(alignment: .leading, spacing: 8) {
-            Button {
-              store.chooseCorpus()
-            } label: {
-              Label("Open Corpus", systemImage: "folder")
-            }
-            Button {
-              store.createCorpus()
-            } label: {
-              Label("New Corpus", systemImage: "plus.square.on.folder")
-            }
-            Button {
-              store.createSharedCorpus()
-            } label: {
-              Label("New Shared Corpus", systemImage: "person.2.fill")
+              .help(file.relativePath)
             }
           }
         }
-      }
 
-      Section("Daily") {
-        ForEach(DailyNoteTarget.allCases) { target in
-          Button {
-            store.openDailyNote(target)
-          } label: {
-            HStack(spacing: 8) {
-              Label(target.title, systemImage: target == .today ? "sun.max" : "calendar")
-                .font(.callout.weight(.medium))
-              Spacer(minLength: 0)
-              KeyboardShortcutBadge(text: target.commandShortcutTitle)
+        Section("Daily") {
+          ForEach(DailyNoteTarget.allCases) { target in
+            Button {
+              store.openDailyNote(target)
+            } label: {
+              HStack(spacing: 8) {
+                Label(target.title, systemImage: target == .today ? "sun.max" : "calendar")
+                  .font(.callout.weight(.medium))
+                Spacer(minLength: 0)
+                if showsCommandShortcuts {
+                  KeyboardShortcutBadge(text: target.commandShortcutTitle)
+                    .transition(.opacity.combined(with: .move(edge: .trailing)))
+                }
+              }
+              .contentShape(Rectangle())
             }
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            .help("\(target.title) daily note (\(target.commandShortcutTitle))")
           }
-          .buttonStyle(.plain)
-          .help("\(target.title) daily note (\(target.commandShortcutTitle))")
+        }
+
+        Section("Chat") {
+          OpenClawSidebarSurfaceGroup(showsCommandShortcut: showsCommandShortcuts)
+            .tag(WorkspaceSurface.openClaw)
         }
       }
+      .listStyle(.sidebar)
+
+      SidebarCorpusSwitcher()
     }
-    .listStyle(.sidebar)
+    .commandShortcutRevealMonitor($showsCommandShortcuts)
+    .animation(WorkspaceMotion.quick, value: showsCommandShortcuts)
   }
 
   private var surfaceSelection: Binding<WorkspaceSurface> {
@@ -493,6 +424,150 @@ private struct SidebarView: View {
       get: { store.selectedSurface },
       set: { store.makeSurfacePrimary($0) }
     )
+  }
+}
+
+private struct SidebarHeader: View {
+  @EnvironmentObject private var store: WorkspaceStore
+  let showsCommandShortcuts: Bool
+
+  var body: some View {
+    HStack(spacing: 8) {
+      Text("Org2")
+        .font(.headline.weight(.semibold))
+
+      Spacer(minLength: 0)
+
+      if showsCommandShortcuts {
+        KeyboardShortcutBadge(text: WorkspaceSurface.search.commandShortcutTitle)
+          .transition(.opacity.combined(with: .move(edge: .trailing)))
+      }
+
+      Button {
+        store.focusSearchSurface()
+      } label: {
+        Label("Search", systemImage: "magnifyingglass")
+      }
+      .labelStyle(.iconOnly)
+      .buttonStyle(.plain)
+      .foregroundStyle(store.selectedSurface == .search ? Color.accentColor : WorkspaceDesign.secondaryText)
+      .frame(width: 26, height: 26)
+      .background(
+        store.selectedSurface == .search ? WorkspaceDesign.selectedFill : Color.clear,
+        in: RoundedRectangle(cornerRadius: WorkspaceDesign.controlRadius, style: .continuous)
+      )
+      .help("Search workspace (\(WorkspaceSurface.search.commandShortcutTitle))")
+    }
+    .padding(.leading, 13)
+    .padding(.trailing, 10)
+    .padding(.top, 9)
+    .padding(.bottom, 7)
+  }
+}
+
+private struct SidebarCorpusSwitcher: View {
+  @EnvironmentObject private var store: WorkspaceStore
+
+  var body: some View {
+    Menu {
+      if !store.mountedCorpora.isEmpty {
+        ForEach(store.mountedCorpora) { mount in
+          Button {
+            store.switchCorpus(to: mount)
+          } label: {
+            Label(
+              mount.name,
+              systemImage: mount.path == store.corpusRoot?.standardizedFileURL.path
+                ? "checkmark"
+                : mount.kind == "shared" ? "person.2" : "folder"
+            )
+          }
+          .disabled(mount.path == store.corpusRoot?.standardizedFileURL.path || store.isSwitchingCorpus)
+        }
+
+        Divider()
+
+        if !forgettableCorpora.isEmpty {
+          Menu {
+            ForEach(forgettableCorpora) { mount in
+              Button("Forget \(mount.name)", role: .destructive) {
+                store.forgetCorpus(mount)
+              }
+            }
+          } label: {
+            Label("Forget Corpus", systemImage: "trash")
+          }
+
+          Divider()
+        }
+      }
+
+      Button {
+        store.chooseCorpus()
+      } label: {
+        Label("Mount Another Corpus…", systemImage: "folder.badge.plus")
+      }
+
+      if store.corpusRoot == nil {
+        Button {
+          store.createCorpus()
+        } label: {
+          Label("Create Corpus…", systemImage: "plus.square.on.folder")
+        }
+
+        Button {
+          store.createSharedCorpus()
+        } label: {
+          Label("Create Shared Corpus…", systemImage: "person.2.fill")
+        }
+      }
+    } label: {
+      HStack(spacing: 8) {
+        Image(systemName: activeCorpusIcon)
+          .frame(width: 16)
+        Text(activeCorpusName)
+          .lineLimit(1)
+          .truncationMode(.tail)
+        Spacer(minLength: 0)
+        if store.isSwitchingCorpus {
+          WorkspaceActivityIndicator(size: .mini)
+        } else {
+          Image(systemName: "chevron.up.chevron.down")
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(.tertiary)
+        }
+      }
+      .font(.callout.weight(.medium))
+      .contentShape(Rectangle())
+    }
+    .menuStyle(.borderlessButton)
+    .menuIndicator(.hidden)
+    .padding(.horizontal, 12)
+    .padding(.vertical, 9)
+    .overlay(alignment: .top) {
+      Rectangle()
+        .fill(WorkspaceDesign.hairline)
+        .frame(height: 0.5)
+    }
+    .help(store.corpusRoot?.path ?? "Open or create a corpus")
+  }
+
+  private var activeCorpusName: String {
+    if let root = store.corpusRoot {
+      return store.activeCorpusIdentity?.name ?? root.lastPathComponent
+    }
+    return "Open Corpus"
+  }
+
+  private var activeCorpusIcon: String {
+    if store.activeCorpusIdentity?.kind == "shared" {
+      return "person.2"
+    }
+    return store.corpusRoot == nil ? "folder.badge.plus" : "folder"
+  }
+
+  private var forgettableCorpora: [WorkspaceCorpusMount] {
+    store.mountedCorpora.filter { $0.path != store.corpusRoot?.standardizedFileURL.path }
   }
 }
 
@@ -526,14 +601,26 @@ private struct SidebarPinnedFileRow: View {
 
 private struct SidebarSurfaceRow: View {
   let surface: WorkspaceSurface
+  let showsCommandShortcut: Bool
+  let notificationCount: Int
 
   var body: some View {
     HStack(spacing: 8) {
       Label(surface.title, systemImage: surface.systemImage)
         .font(.callout.weight(.medium))
       Spacer(minLength: 0)
-      if !surface.commandShortcutTitle.isEmpty {
+      if notificationCount > 0 && !showsCommandShortcut {
+        Text(notificationCount > 99 ? "99+" : "\(notificationCount)")
+          .font(.caption2.weight(.semibold).monospacedDigit())
+          .foregroundStyle(.orange)
+          .padding(.horizontal, 5)
+          .padding(.vertical, 1)
+          .background(Color.orange.opacity(0.10), in: Capsule())
+          .accessibilityLabel(notificationCount == 1 ? "1 item needs review" : "\(notificationCount) items need review")
+      }
+      if showsCommandShortcut && !surface.commandShortcutTitle.isEmpty {
         KeyboardShortcutBadge(text: surface.commandShortcutTitle)
+          .transition(.opacity.combined(with: .move(edge: .trailing)))
       }
     }
   }
@@ -542,6 +629,7 @@ private struct SidebarSurfaceRow: View {
 private struct OpenClawSidebarSurfaceGroup: View {
   @EnvironmentObject private var store: WorkspaceStore
   @State private var isThreadListExpanded = true
+  let showsCommandShortcut: Bool
 
   private let surface = WorkspaceSurface.openClaw
 
@@ -591,8 +679,9 @@ private struct OpenClawSidebarSurfaceGroup: View {
         .foregroundStyle(.secondary)
         .help(isThreadListExpanded ? "Hide chat threads" : "Show chat threads")
 
-        if !surface.commandShortcutTitle.isEmpty {
+        if showsCommandShortcut && !surface.commandShortcutTitle.isEmpty {
           KeyboardShortcutBadge(text: surface.commandShortcutTitle)
+            .transition(.opacity.combined(with: .move(edge: .trailing)))
         }
       }
 
@@ -627,16 +716,21 @@ private struct OpenClawSidebarThreadList: View {
         ScrollView {
           LazyVStack(alignment: .leading, spacing: 2) {
             ForEach(visibleThreads) { thread in
+              let contextThread = resolvedContextThread(fallback: thread)
               OpenClawSidebarThreadRow(
                 thread: thread,
                 isSelected: store.selectedOpenClawChatThreadID == thread.id && store.selectedSurface == .openClaw,
-                contextThreadID: resolvedContextThreadID(fallback: thread.id),
+                isSending: store.openClawSendingThreadIDs.contains(thread.id),
+                contextThread: contextThread,
                 select: {
                   contextualThreadID = thread.id
                   store.makeSurfacePrimary(.openClaw)
                   store.selectOpenClawChatThread(thread.id)
                 },
-                rename: beginRenaming
+                rename: beginRenaming,
+                togglePin: { store.toggleOpenClawChatThreadPin(contextThread.id) },
+                archive: { store.archiveOpenClawChatThread(contextThread.id) },
+                restore: { store.restoreOpenClawChatThread(contextThread.id) }
               )
               .onHover { isHovered in
                 if isHovered {
@@ -700,16 +794,21 @@ private struct OpenClawSidebarThreadList: View {
 
             if showsArchivedThreads {
               ForEach(store.archivedOpenClawChatThreads) { thread in
+                let contextThread = resolvedContextThread(fallback: thread)
                 OpenClawSidebarThreadRow(
                   thread: thread,
                   isSelected: store.selectedOpenClawChatThreadID == thread.id && store.selectedSurface == .openClaw,
-                  contextThreadID: resolvedContextThreadID(fallback: thread.id),
+                  isSending: store.openClawSendingThreadIDs.contains(thread.id),
+                  contextThread: contextThread,
                   select: {
                     contextualThreadID = thread.id
                     store.makeSurfacePrimary(.openClaw)
                     store.selectOpenClawChatThread(thread.id)
                   },
-                  rename: beginRenaming
+                  rename: beginRenaming,
+                  togglePin: { store.toggleOpenClawChatThreadPin(contextThread.id) },
+                  archive: { store.archiveOpenClawChatThread(contextThread.id) },
+                  restore: { store.restoreOpenClawChatThread(contextThread.id) }
                 )
                 .onHover { isHovered in
                   if isHovered {
@@ -757,12 +856,13 @@ private struct OpenClawSidebarThreadList: View {
     isRenamePresented = true
   }
 
-  private func resolvedContextThreadID(fallback: UUID) -> UUID {
-    OpenClawSidebarContextTarget.resolve(
+  private func resolvedContextThread(fallback: OpenClawChatThread) -> OpenClawChatThread {
+    let id = OpenClawSidebarContextTarget.resolve(
       hoveredThreadID: contextualThreadID,
       selectedThreadID: store.selectedSurface == .openClaw ? store.selectedOpenClawChatThreadID : nil,
-      fallbackThreadID: fallback
+      fallbackThreadID: fallback.id
     )
+    return store.openClawChatThreads.first(where: { $0.id == id }) ?? fallback
   }
 }
 
@@ -777,12 +877,15 @@ enum OpenClawSidebarContextTarget {
 }
 
 private struct OpenClawSidebarThreadRow: View {
-  @EnvironmentObject private var store: WorkspaceStore
   let thread: OpenClawChatThread
   let isSelected: Bool
-  let contextThreadID: UUID
+  let isSending: Bool
+  let contextThread: OpenClawChatThread
   let select: () -> Void
   let rename: (OpenClawChatThread) -> Void
+  let togglePin: () -> Void
+  let archive: () -> Void
+  let restore: () -> Void
 
   var body: some View {
     Button(action: select) {
@@ -792,7 +895,7 @@ private struct OpenClawSidebarThreadRow: View {
           .foregroundStyle(.primary)
           .lineLimit(1)
           .truncationMode(.tail)
-        if store.openClawSendingThreadIDs.contains(thread.id) {
+        if isSending {
           WorkspaceActivityIndicator(size: .mini)
             .help("OpenClaw is thinking")
         }
@@ -850,7 +953,7 @@ private struct OpenClawSidebarThreadRow: View {
       }
 
       Button {
-        store.toggleOpenClawChatThreadPin(contextThread.id)
+        togglePin()
       } label: {
         Label(
           contextThread.isPinned ? "Unpin Thread" : "Pin Thread",
@@ -860,22 +963,18 @@ private struct OpenClawSidebarThreadRow: View {
 
       if contextThread.isArchived {
         Button {
-          store.restoreOpenClawChatThread(contextThread.id)
+          restore()
         } label: {
           Label("Unarchive Thread", systemImage: "tray.and.arrow.up")
         }
       } else {
         Button {
-          store.archiveOpenClawChatThread(contextThread.id)
+          archive()
         } label: {
           Label("Archive Thread", systemImage: "archivebox")
         }
       }
     }
-  }
-
-  private var contextThread: OpenClawChatThread {
-    store.openClawChatThreads.first(where: { $0.id == contextThreadID }) ?? thread
   }
 
   private static func relativeDate(_ date: Date) -> String {
@@ -1526,10 +1625,11 @@ private struct KeyboardShortcutsView: View {
             ShortcutHelpItem(keys: "⌘1", action: "Home"),
             ShortcutHelpItem(keys: "⌘2", action: "Agenda"),
             ShortcutHelpItem(keys: "⌘3", action: "Files"),
-            ShortcutHelpItem(keys: "⌘4", action: "Approvals"),
+            ShortcutHelpItem(keys: "⌘4", action: "Runs & Review"),
             ShortcutHelpItem(keys: "⌘⇧F", action: "Corpus search"),
             ShortcutHelpItem(keys: "⌘5 / ⌘M", action: "Meetings"),
-            ShortcutHelpItem(keys: "⌘6 / ⌘0", action: "OpenClaw Chat")
+            ShortcutHelpItem(keys: "⌘6", action: "OpenClaw Chat"),
+            ShortcutHelpItem(keys: "⌘0", action: "Sources")
           ])
 
           ShortcutSection(title: "Pane Layout", shortcuts: [
@@ -1872,26 +1972,19 @@ private struct AgendaListView: View {
 }
 
 private struct RunsAndReviewView: View {
-  @State private var page: Page = .runs
-
-  private enum Page: String, CaseIterable, Identifiable {
-    case runs = "Run Center"
-    case review = "Review Queue"
-    case workflows = "Workflows"
-    var id: String { rawValue }
-  }
+  @EnvironmentObject private var store: WorkspaceStore
 
   var body: some View {
     VStack(spacing: 0) {
-      Picker("Runs and review", selection: $page) {
-        ForEach(Page.allCases) { page in Text(page.rawValue).tag(page) }
+      Picker("Runs and review", selection: $store.runsAndReviewPage) {
+        ForEach(RunsAndReviewPage.allCases) { page in Text(page.rawValue).tag(page) }
       }
       .pickerStyle(.segmented)
       .frame(maxWidth: 340)
       .padding(.horizontal, WorkspaceDesign.contentInset)
       .padding(.top, 10)
 
-      switch page {
+      switch store.runsAndReviewPage {
       case .runs: RunCenterView()
       case .review: ApprovalsView()
       case .workflows: WorkflowsView()
@@ -2119,7 +2212,7 @@ private struct RunCenterView: View {
   @FocusState private var filterFocused: Bool
 
   private var visibleEntries: [AgentRunScopeEntry] {
-    scope.entries(in: store.agentRuns).filter { $0.run.matchesRunFilter(store.agentRunFilter) }
+    scope.entries(in: store.agentRuns).filter { store.agentRunMatchesFilter($0.run) }
   }
 
   private var visibleRuns: [AgentRunItem] {
@@ -2514,6 +2607,9 @@ private struct RunCenterDetail: View {
         let pending = run.approvals.filter { $0.status == "pending" }
         if !pending.isEmpty {
           runSection("Waiting for approval") {
+            Text("\(pending.count) of \(run.approvals.count) approval\(run.approvals.count == 1 ? "" : "s") still need a decision. These are the same approvals shown in Review Queue; deciding in either place updates this run record.")
+              .font(.caption)
+              .foregroundStyle(.secondary)
             ForEach(pending) { approval in
               VStack(alignment: .leading, spacing: 10) {
                 VStack(alignment: .leading, spacing: 4) {
@@ -2531,6 +2627,11 @@ private struct RunCenterDetail: View {
                     .disabled(isMutating)
                   Button("Reject") { Task { await store.decideAgentRunApproval(run, approval: approval, decision: "rejected") } }
                     .disabled(isMutating)
+                  Spacer()
+                  Button("Show in Review Queue") {
+                    store.showApprovalInQueue(run: run, approval: approval)
+                  }
+                  .buttonStyle(.link)
                 }.buttonStyle(WorkspaceActionButtonStyle()).controlSize(.small)
               }
             }
@@ -2887,7 +2988,7 @@ private struct RunCenterDetail: View {
         .font(.headline)
     }
     .padding(12)
-    .background(WorkspaceDesign.panelFill, in: RoundedRectangle(cornerRadius: WorkspaceDesign.cornerRadius))
+    .workspaceCardSurface()
   }
 
   private func technicalGroup<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
@@ -2923,7 +3024,7 @@ private struct RunCenterDetail: View {
       content()
     }
     .padding(12).frame(maxWidth: .infinity, alignment: .leading)
-    .background(WorkspaceDesign.panelFill, in: RoundedRectangle(cornerRadius: WorkspaceDesign.cornerRadius))
+    .workspaceCardSurface()
   }
 }
 
@@ -3034,22 +3135,40 @@ private struct ApprovalsView: View {
     } else {
       List(selection: $store.selectedApprovalItemID) {
         ForEach(store.visibleApprovalItems) { item in
-          ApprovalRow(item: item) {
-            discussionMessage = "I need to discuss this approval item before deciding."
-            discussionItem = item
-          }
+          ApprovalRow(
+            item: item,
+            sourceReference: item.isRunApproval ? item.sourceLabel : "\(store.relativePath(item.file)):\(item.line)",
+            isApproving: store.isApprovingApproval(item),
+            isRejecting: store.isRejectingApproval(item),
+            approve: { Task { await store.approve(item) } },
+            revise: item.isRunApproval ? { Task { await store.revise(item) } } : nil,
+            reject: { store.promptAndRejectApproval(item) },
+            copy: { store.copyApprovalDiscussionText(item) },
+            discuss: {
+              discussionMessage = "I need to discuss this approval item before deciding."
+              discussionItem = item
+            }
+          )
           .tag(item.id)
           .contentShape(Rectangle())
           .onTapGesture {
             store.selectApprovalItem(item)
           }
           .contextMenu {
-            WorkspaceLocationContextMenu(
-              location: .agenda(item.agendaItem()),
-              showsHeadingActions: true,
-              select: { store.selectApprovalItem(item) }
-            ) {
-              Label("Open", systemImage: "checkmark.seal")
+            if item.isRunApproval {
+              Button {
+                store.selectApprovalItem(item)
+              } label: {
+                Label("Open Run", systemImage: "clock.arrow.circlepath")
+              }
+            } else {
+              WorkspaceLocationContextMenu(
+                location: .agenda(item.agendaItem()),
+                showsHeadingActions: true,
+                select: { store.selectApprovalItem(item) }
+              ) {
+                Label("Open", systemImage: "checkmark.seal")
+              }
             }
             Divider()
             Button {
@@ -3109,9 +3228,19 @@ private struct ApprovalControls: View {
 }
 
 private struct ApprovalRow: View {
-  @EnvironmentObject private var store: WorkspaceStore
   let item: ApprovalItem
+  let sourceReference: String
+  let isApproving: Bool
+  let isRejecting: Bool
+  let approve: () -> Void
+  let revise: (() -> Void)?
+  let reject: () -> Void
+  let copy: () -> Void
   let discuss: () -> Void
+
+  private var isActionInProgress: Bool {
+    isApproving || isRejecting
+  }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
@@ -3129,11 +3258,24 @@ private struct ApprovalRow: View {
           .lineLimit(3)
       }
 
+      if let runGoal = item.runGoal {
+        VStack(alignment: .leading, spacing: 3) {
+          Label(runGoal, systemImage: "clock.arrow.circlepath")
+            .font(.callout.weight(.medium))
+            .lineLimit(2)
+          if let dependency = item.runDependencyText {
+            Text(dependency)
+              .font(.caption.weight(.medium))
+              .foregroundStyle(item.runPendingApprovalCount == 1 ? Color.orange : Color.secondary)
+          }
+        }
+      }
+
       HStack(spacing: 8) {
         if let todo = item.todo {
           StatusPill(text: todo)
         }
-        Label("\(store.relativePath(item.file)):\(item.line)", systemImage: "doc.text")
+        Label(sourceReference, systemImage: "doc.text")
           .lineLimit(1)
           .truncationMode(.middle)
         Spacer(minLength: 0)
@@ -3143,9 +3285,9 @@ private struct ApprovalRow: View {
 
       HStack(spacing: 6) {
         Button {
-          Task { await store.approve(item) }
+          approve()
         } label: {
-          if store.isApprovingApproval(item) {
+          if isApproving {
             HStack(spacing: 6) {
               WorkspaceActivityIndicator(size: .mini)
               Text("Approving")
@@ -3155,7 +3297,7 @@ private struct ApprovalRow: View {
           }
         }
         .buttonStyle(WorkspaceActionButtonStyle())
-        .disabled(store.isApprovalActionInProgress(item))
+        .disabled(isActionInProgress)
 
         Button {
           discuss()
@@ -3164,10 +3306,20 @@ private struct ApprovalRow: View {
         }
         .buttonStyle(WorkspaceActionButtonStyle())
 
+        if let revise {
+          Button {
+            revise()
+          } label: {
+            Label("Revise", systemImage: "arrow.uturn.backward")
+          }
+          .buttonStyle(WorkspaceActionButtonStyle())
+          .disabled(isActionInProgress)
+        }
+
         Button {
-          store.promptAndRejectApproval(item)
+          reject()
         } label: {
-          if store.isRejectingApproval(item) {
+          if isRejecting {
             HStack(spacing: 6) {
               WorkspaceActivityIndicator(size: .mini)
               Text("Rejecting")
@@ -3177,10 +3329,10 @@ private struct ApprovalRow: View {
           }
         }
         .buttonStyle(WorkspaceActionButtonStyle())
-        .disabled(store.isApprovalActionInProgress(item))
+        .disabled(isActionInProgress)
 
         Button {
-          store.copyApprovalDiscussionText(item)
+          copy()
         } label: {
           Label("Copy", systemImage: "doc.on.doc")
         }
@@ -3266,7 +3418,15 @@ private struct AgendaItemListView: View {
       ForEach(store.agendaDisplaySections) { section in
         Section(section.label) {
           ForEach(section.items) { item in
-            AgendaRow(item: item)
+            AgendaRow(
+              item: item,
+              sourceReference: store.corpusQualifiedPath(item.file, corpus: item.corpus) + ":\(item.lineForEditor)",
+              isBulkSelected: store.isAgendaItemBulkSelected(item),
+              isEditable: store.isResultInActiveCorpus(item.corpus),
+              isAgentAssigned: store.isAgentAssignee(item.properties["ASSIGNEE"]),
+              isPersonalAssigned: store.isPersonalAssignee(item.properties["ASSIGNEE"]),
+              toggleBulkSelection: { store.toggleAgendaItemBulkSelection(item) }
+            )
               .tag(item.id)
               .contentShape(Rectangle())
               .onTapGesture {
@@ -3329,7 +3489,10 @@ private struct AssignedAgendaListView: View {
         ForEach(store.assignedWorkSections) { section in
           Section(section.label) {
             ForEach(section.items) { item in
-              AssignedWorkRow(item: item)
+              AssignedWorkRow(
+                item: item,
+                sourceReference: store.relativePath(item.file) + ":\(item.lineForEditor)"
+              )
                 .tag(item.id)
                 .contentShape(Rectangle())
                 .onTapGesture {
@@ -3452,23 +3615,28 @@ private struct AgendaBulkActionBar: View {
 }
 
 private struct AgendaRow: View {
-  @EnvironmentObject private var store: WorkspaceStore
   let item: AgendaItem
+  let sourceReference: String
+  let isBulkSelected: Bool
+  let isEditable: Bool
+  let isAgentAssigned: Bool
+  let isPersonalAssigned: Bool
+  let toggleBulkSelection: () -> Void
 
   var body: some View {
     HStack(alignment: .top, spacing: 10) {
       Button {
-        store.toggleAgendaItemBulkSelection(item)
+        toggleBulkSelection()
       } label: {
-        Image(systemName: store.isAgendaItemBulkSelected(item) ? "checkmark.square.fill" : "square")
+        Image(systemName: isBulkSelected ? "checkmark.square.fill" : "square")
           .font(.body)
-          .foregroundStyle(store.isAgendaItemBulkSelected(item) ? Color.accentColor : Color.secondary)
+          .foregroundStyle(isBulkSelected ? Color.accentColor : Color.secondary)
           .frame(width: 18, height: 18)
           .contentShape(Rectangle())
       }
       .buttonStyle(.plain)
-      .disabled(!store.isResultInActiveCorpus(item.corpus))
-      .help(store.isAgendaItemBulkSelected(item) ? "Remove from bulk selection" : "Add to bulk selection")
+      .disabled(!isEditable)
+      .help(isBulkSelected ? "Remove from bulk selection" : "Add to bulk selection")
       .padding(.top, 1)
 
       HStack(spacing: 4) {
@@ -3499,7 +3667,7 @@ private struct AgendaRow: View {
           Text([item.kind, item.time].compactMap { $0 }.joined(separator: " "))
             .lineLimit(1)
             .fixedSize(horizontal: true, vertical: false)
-          Text(store.corpusQualifiedPath(item.file, corpus: item.corpus) + ":\(item.lineForEditor)")
+          Text(sourceReference)
             .lineLimit(1)
             .truncationMode(.middle)
         }
@@ -3507,7 +3675,11 @@ private struct AgendaRow: View {
         .foregroundStyle(.secondary)
       }
       Spacer(minLength: 0)
-      AgendaAssignmentIndicator(item: item)
+      AgendaAssignmentIndicator(
+        item: item,
+        isAgentAssigned: isAgentAssigned,
+        isPersonalAssigned: isPersonalAssigned
+      )
     }
     .padding(.vertical, WorkspaceDesign.rowVerticalPadding)
   }
@@ -3602,17 +3774,14 @@ enum AgendaPriorityTone: Equatable {
 }
 
 private struct AgendaAssignmentIndicator: View {
-  @EnvironmentObject private var store: WorkspaceStore
   let item: AgendaItem
+  let isAgentAssigned: Bool
+  let isPersonalAssigned: Bool
 
   private var assignee: String? {
     let trimmed = item.properties["ASSIGNEE"]?
       .trimmingCharacters(in: .whitespacesAndNewlines)
     return trimmed?.isEmpty == false ? trimmed : nil
-  }
-
-  private var isAgentAssigned: Bool {
-    store.isAgentAssignee(assignee)
   }
 
   private var label: String {
@@ -3624,7 +3793,7 @@ private struct AgendaAssignmentIndicator: View {
       return "Assigned to agent: \(assignee)"
     }
     if let assignee {
-      return store.isPersonalAssignee(assignee) ? "Assigned to you: \(assignee)" : "Assigned to \(assignee)"
+      return isPersonalAssigned ? "Assigned to you: \(assignee)" : "Assigned to \(assignee)"
     }
     return "Assigned to you"
   }
@@ -3762,7 +3931,10 @@ private struct SearchView: View {
         EmptyStateView(title: "No Nodes", detail: "\(nodeEmptyStateDetail) Use the toolbar Refresh to rebuild the corpus index.")
       } else {
         List(nodes) { node in
-          NodeSearchRow(node: node)
+          NodeSearchRow(
+            node: node,
+            sourceReference: store.relativePath(node.file) + ":\(node.line)"
+          )
             .contentShape(Rectangle())
             .onTapGesture {
               store.selectSearchNode(node)
@@ -3819,7 +3991,10 @@ private struct SearchView: View {
           store.selectOpenClawChatSearchResult(result)
         }
     case .page(let node):
-      NodeSearchRow(node: node)
+      NodeSearchRow(
+        node: node,
+        sourceReference: store.relativePath(node.file) + ":\(node.line)"
+      )
         .contentShape(Rectangle())
         .onTapGesture {
           store.selectSearchNode(node)
@@ -3831,7 +4006,10 @@ private struct SearchView: View {
   }
 
   private func corpusSearchRow(_ result: SearchResult) -> some View {
-    SearchRow(result: result)
+    SearchRow(
+      result: result,
+      sourceReference: store.corpusQualifiedPath(result.file, corpus: result.corpus) + ":\(result.lineForEditor)"
+    )
       .contentShape(Rectangle())
       .onTapGesture {
         store.selectSearchResult(result)
@@ -3886,8 +4064,8 @@ private struct ChatSearchRow: View {
 }
 
 private struct SearchRow: View {
-  @EnvironmentObject private var store: WorkspaceStore
   let result: SearchResult
+  let sourceReference: String
   var isNested = false
   var matchCount: Int?
   var isExpanded: Bool?
@@ -3946,7 +4124,7 @@ private struct SearchRow: View {
           .font(.callout)
           .foregroundStyle(.secondary)
           .lineLimit(2)
-          Text(store.corpusQualifiedPath(result.file, corpus: result.corpus) + ":\(result.lineForEditor)")
+          Text(sourceReference)
             .font(.caption)
             .foregroundStyle(.tertiary)
             .lineLimit(1)
@@ -3960,8 +4138,8 @@ private struct SearchRow: View {
 }
 
 private struct NodeSearchRow: View {
-  @EnvironmentObject private var store: WorkspaceStore
   let node: OrgRoamNodeReference
+  let sourceReference: String
 
   var body: some View {
     HStack(alignment: .top, spacing: 8) {
@@ -3987,7 +4165,7 @@ private struct NodeSearchRow: View {
         }
 
         HStack(spacing: 8) {
-          Text(store.relativePath(node.file) + ":\(node.line)")
+          Text(sourceReference)
             .lineLimit(1)
             .truncationMode(.middle)
           if let idValue = node.idValue {
@@ -4432,7 +4610,11 @@ private struct MeetingsView: View {
           ForEach(store.meetingDisplaySections) { section in
             Section(section.label) {
               ForEach(section.meetings) { meeting in
-                MeetingRow(meeting: meeting, isProcessing: store.isMeetingProcessing(meeting))
+                MeetingRow(
+                  meeting: meeting,
+                  isProcessing: store.isMeetingProcessing(meeting),
+                  sourceReference: store.relativePath(meeting.file) + ":\(meeting.lineForEditor)"
+                )
                   .tag(meeting.id)
                   .contentShape(Rectangle())
                   .onTapGesture {
@@ -4716,9 +4898,9 @@ struct WorkspaceInputMeterView: View {
 }
 
 private struct MeetingRow: View {
-  @EnvironmentObject private var store: WorkspaceStore
   let meeting: MeetingWorkspaceItem
   let isProcessing: Bool
+  let sourceReference: String
 
   var body: some View {
     HStack(alignment: .top, spacing: 8) {
@@ -4750,7 +4932,7 @@ private struct MeetingRow: View {
         .font(.caption)
         .foregroundStyle(.secondary)
 
-        Text(store.relativePath(meeting.file) + ":\(meeting.lineForEditor)")
+        Text(sourceReference)
           .font(.caption)
           .foregroundStyle(.tertiary)
           .lineLimit(1)
@@ -5726,8 +5908,8 @@ private struct EmptyChatView: View {
 }
 
 private struct AssignedWorkRow: View {
-  @EnvironmentObject private var store: WorkspaceStore
   let item: AssignedWorkItem
+  let sourceReference: String
 
   var body: some View {
     HStack(alignment: .top, spacing: 8) {
@@ -5749,7 +5931,7 @@ private struct AssignedWorkRow: View {
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
             .background(Color.secondary.opacity(0.12), in: Capsule())
-          Text(store.relativePath(item.file) + ":\(item.lineForEditor)")
+          Text(sourceReference)
             .font(.caption)
             .foregroundStyle(.tertiary)
             .lineLimit(1)
@@ -5852,19 +6034,24 @@ private struct DetailHeader: View {
   let location: WorkspaceLocation
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 8) {
+    VStack(alignment: .leading, spacing: 10) {
       ViewThatFits(in: .horizontal) {
-        HStack(alignment: .top, spacing: 20) {
+        HStack(alignment: .top, spacing: 16) {
           detailIdentity
             .frame(maxWidth: .infinity, alignment: .leading)
           if !headerMetadataRows.isEmpty {
             DetailMetadataGrid(rows: headerMetadataRows)
               .fixedSize(horizontal: true, vertical: false)
           }
+          DetailPaneControlGroup()
         }
 
-        VStack(alignment: .leading, spacing: 8) {
-          detailIdentity
+        VStack(alignment: .leading, spacing: 7) {
+          HStack(alignment: .top, spacing: 8) {
+            detailIdentity
+              .frame(maxWidth: .infinity, alignment: .leading)
+            DetailPaneControlGroup()
+          }
           if !headerMetadataRows.isEmpty {
             DetailMetadataGrid(rows: headerMetadataRows)
           }
@@ -5929,18 +6116,18 @@ private struct DetailHeader: View {
     .padding(.horizontal, WorkspaceDesign.headerHorizontalInset)
     .padding(.vertical, WorkspaceDesign.headerVerticalInset)
     .frame(maxWidth: .infinity, alignment: .leading)
-    .background(WorkspaceDesign.barBackground)
+    .background(WorkspaceDesign.surfaceBackground)
     .onChange(of: store.pageSearchFocusToken) {
       isPageSearchFocused = true
     }
   }
 
   private var detailIdentity: some View {
-    HStack(alignment: .top, spacing: 10) {
-      WorkspaceIconBadge(systemImage: locationIcon, tint: .accentColor, fill: Color.accentColor.opacity(0.12))
+    HStack(alignment: .top, spacing: 9) {
+      WorkspaceIconBadge(systemImage: locationIcon, tint: .accentColor, fill: Color.accentColor.opacity(0.09))
       VStack(alignment: .leading, spacing: 3) {
         Text(location.title)
-          .font(.title2.weight(.semibold))
+          .font(.title3.weight(.semibold))
           .lineLimit(nil)
         if !location.subtitle.isEmpty {
           Text(location.subtitle)
@@ -6044,37 +6231,36 @@ private struct DetailHeader: View {
 
   private var fullDetailActionBar: some View {
     HStack(spacing: 7) {
-      detailNavigationControls
-      Divider()
-        .frame(height: 18)
-      viewAndResourceControls
+      WorkspaceControlStrip {
+        detailNavigationControls
+        viewAndResourceControls
+      }
       Spacer(minLength: 8)
-      primaryDocumentControls
+      WorkspaceControlStrip {
+        primaryDocumentControls
+      }
     }
     .fixedSize(horizontal: true, vertical: false)
   }
 
   private var compactDetailActionBar: some View {
     VStack(alignment: .leading, spacing: 8) {
-      HStack(spacing: 7) {
+      WorkspaceControlStrip {
         detailNavigationControls
-        Divider()
-          .frame(height: 18)
         viewAndResourceControls
-        Spacer(minLength: 0)
       }
 
       HStack(spacing: 7) {
-        primaryDocumentControls
         Spacer(minLength: 0)
+        WorkspaceControlStrip {
+          primaryDocumentControls
+        }
       }
     }
   }
 
   private var detailNavigationControls: some View {
-    HStack(spacing: 7) {
-      DetailPaneControlGroup()
-
+    Group {
       if store.hasRenderedSearchHighlight {
         Button {
           store.clearRenderedSearchHighlight()
@@ -6265,15 +6451,16 @@ private struct DetailHeader: View {
   }
 
   private var scopePicker: some View {
-    Picker("Scope", selection: entrySourceModeSelection) {
-      ForEach(EntrySourceMode.allCases) { mode in
-        Text(mode.title).tag(mode)
+    Menu {
+      Picker("Document Scope", selection: entrySourceModeSelection) {
+        ForEach(EntrySourceMode.allCases) { mode in
+          Text(mode.title).tag(mode)
+        }
       }
+    } label: {
+      Label(store.selectedEntrySourceMode.title, systemImage: "doc.text")
     }
-    .pickerStyle(.segmented)
-    .labelsHidden()
     .accessibilityLabel("Document scope")
-    .frame(width: 112)
     .fixedSize(horizontal: true, vertical: false)
     .onChange(of: store.selectedEntrySourceMode) {
       Task { await store.reloadSelectedEntrySource() }
@@ -7736,9 +7923,11 @@ private struct HeaderBar<Trailing: View>: View {
     .buttonStyle(WorkspaceActionButtonStyle())
     .padding(.horizontal, WorkspaceDesign.headerHorizontalInset)
     .padding(.vertical, WorkspaceDesign.headerVerticalInset)
-    .background(WorkspaceDesign.barBackground)
+    .background(WorkspaceDesign.surfaceBackground)
     .overlay(alignment: .bottom) {
-      Divider()
+      Rectangle()
+        .fill(WorkspaceDesign.hairline)
+        .frame(height: 0.5)
     }
   }
 
@@ -7749,7 +7938,7 @@ private struct HeaderBar<Trailing: View>: View {
           WorkspaceIconBadge(
             systemImage: surface.systemImage,
             tint: .accentColor,
-            fill: Color.accentColor.opacity(0.10)
+            fill: Color.accentColor.opacity(0.08)
           )
         }
 
@@ -7908,6 +8097,38 @@ private struct EmptyStateView: View {
   }
 }
 
+enum CommandShortcutReveal {
+  static func isActive(for modifierFlags: NSEvent.ModifierFlags) -> Bool {
+    modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.command)
+  }
+}
+
+private struct CommandShortcutRevealMonitor: ViewModifier {
+  @Binding var isCommandPressed: Bool
+  @State private var monitor: Any?
+
+  func body(content: Content) -> some View {
+    content
+      .onAppear {
+        let commandPressed = $isCommandPressed
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { event in
+          commandPressed.wrappedValue = CommandShortcutReveal.isActive(for: event.modifierFlags)
+          return event
+        }
+      }
+      .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
+        isCommandPressed = false
+      }
+      .onDisappear {
+        if let monitor {
+          NSEvent.removeMonitor(monitor)
+        }
+        monitor = nil
+        isCommandPressed = false
+      }
+  }
+}
+
 private struct KeyboardEventMonitor: ViewModifier {
   let handler: (NSEvent, WorkspaceKeyboardShortcutScope) -> Bool
   @State private var monitor: Any?
@@ -7972,6 +8193,10 @@ enum WorkspaceKeyboardEventRouting {
 }
 
 private extension View {
+  func commandShortcutRevealMonitor(_ isCommandPressed: Binding<Bool>) -> some View {
+    modifier(CommandShortcutRevealMonitor(isCommandPressed: isCommandPressed))
+  }
+
   func keyboardEventMonitor(_ handler: @escaping (NSEvent, WorkspaceKeyboardShortcutScope) -> Bool) -> some View {
     modifier(KeyboardEventMonitor(handler: handler))
   }

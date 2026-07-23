@@ -90,6 +90,9 @@ const APP_DOCUMENT_STYLE = `:root {
   --org2-faint: rgba(36, 38, 42, 0.08);
   --org2-rule: rgba(36, 38, 42, 0.12);
   --org2-code: rgba(36, 38, 42, 0.055);
+  --org2-surface: #ffffff;
+  --org2-elevated-surface: #fbfbfc;
+  --org2-shadow: rgba(24, 27, 33, 0.07);
   --org2-link: #1769aa;
   --org2-accent: #2f73b7;
   --org2-success: #20804a;
@@ -111,6 +114,9 @@ const APP_DOCUMENT_STYLE = `:root {
     --org2-faint: rgba(233, 234, 237, 0.08);
     --org2-rule: rgba(233, 234, 237, 0.13);
     --org2-code: rgba(233, 234, 237, 0.07);
+    --org2-surface: #1f2125;
+    --org2-elevated-surface: #24262b;
+    --org2-shadow: rgba(0, 0, 0, 0.24);
     --org2-link: #70b7f0;
     --org2-accent: #79b8ed;
     --org2-success: #6ac58c;
@@ -186,9 +192,12 @@ main.org2-document {
   font-variant-numeric: tabular-nums;
 }
 .org2-file-properties-body {
-  margin: 0.55rem 0 0 1rem;
-  padding: 0.5rem 0 0.15rem 0.75rem;
-  border-left: 1px solid var(--org2-rule);
+  margin: 0.55rem 0 0;
+  padding: 0.58rem 0.72rem;
+  border: 1px solid var(--org2-rule);
+  border-radius: 10px;
+  background: var(--org2-elevated-surface);
+  box-shadow: 0 1px 2px var(--org2-shadow);
 }
 .org2-file-properties .org2-keyword { margin: 0.16rem 0; font-size: inherit; }
 .org2-headline { margin: 0; }
@@ -297,7 +306,7 @@ pre, .org2-src, .org2-example, .org2-verse, .org2-export, .org2-directive {
   color: var(--org2-text);
   background: var(--org2-code) !important;
   border: 1px solid var(--org2-rule) !important;
-  border-radius: 6px !important;
+  border-radius: 10px !important;
   font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
   font-size: 0.88rem !important;
   line-height: 1.45 !important;
@@ -329,7 +338,15 @@ input[type="checkbox"] { width: 0.95rem; height: 0.95rem; margin: 0 0.42rem 0 -0
 .org2-planning { color: var(--org2-muted); font-size: 0.88rem; font-variant-numeric: tabular-nums; }
 .org2-planning-kind { color: var(--org2-warning); font-size: 0.78em; font-weight: 700; }
 .org2-timestamp, .org2-timestamp-range { font-variant-numeric: tabular-nums; }
-.org2-properties-drawer { margin: 0.75rem 0 1rem; padding: 0.55rem 0.8rem 0.65rem; background: var(--org2-faint); border-left: 2px solid var(--org2-rule); font-size: 0.82rem; }
+.org2-properties-drawer {
+  margin: 0.75rem 0 1rem;
+  padding: 0.58rem 0.72rem;
+  border: 1px solid var(--org2-rule);
+  border-radius: 10px;
+  background: var(--org2-elevated-surface);
+  box-shadow: 0 1px 2px var(--org2-shadow);
+  font-size: 0.82rem;
+}
 .org2-properties-drawer > summary {
   position: relative;
   padding-left: 1.15rem;
@@ -339,8 +356,15 @@ input[type="checkbox"] { width: 0.95rem; height: 0.95rem; margin: 0 0.42rem 0 -0
   list-style: none;
   user-select: none;
 }
-.org2-properties-drawer[open] > summary { margin-bottom: 0.5rem; }
-.org2-properties { display: grid; grid-template-columns: minmax(6rem, max-content) 1fr; gap: 0.22rem 0.9rem; margin: 0; padding: 0; }
+.org2-properties-drawer[open] > summary { margin-bottom: 0.52rem; }
+.org2-properties {
+  display: grid;
+  grid-template-columns: minmax(6rem, max-content) 1fr;
+  gap: 0.3rem 0.9rem;
+  margin: 0;
+  padding: 0.5rem 0 0;
+  border-top: 1px solid var(--org2-rule);
+}
 .org2-properties dt { color: var(--org2-muted); font-weight: 650; }
 .org2-properties dd { margin: 0; min-width: 0; overflow-wrap: anywhere; font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; }
 .org2-drawer { margin: 0.75rem 0; color: var(--org2-muted); font-size: 0.9rem; }

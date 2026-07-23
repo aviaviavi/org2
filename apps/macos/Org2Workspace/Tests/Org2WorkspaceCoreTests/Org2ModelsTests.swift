@@ -882,6 +882,111 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertNil(params["runId"])
   }
 
+  func testOpenClawGatewayReconcilesReplyFromRestartReplacementRun() {
+    let payload: [String: Any] = [
+      "messages": [
+        [
+          "role": "assistant",
+          "timestamp": 1_000,
+          "content": [["type": "text", "text": "Stale reply"]],
+        ],
+        [
+          "role": "user",
+          "timestamp": 2_000,
+          "idempotencyKey": "original-run:user",
+          "content": "Current request",
+        ],
+        [
+          "role": "user",
+          "timestamp": 3_000,
+          "content": "[System] Continue after gateway restart.",
+        ],
+        [
+          "role": "assistant",
+          "timestamp": 4_000,
+          "content": [["type": "text", "text": "Recovered reply"]],
+        ],
+      ],
+      "sessionInfo": [
+        "status": "done",
+        "hasActiveRun": false,
+        "endedAt": 4_100,
+      ],
+    ]
+
+    XCTAssertEqual(
+      OpenClawGatewayClient.chatHistoryReconciliation(
+        from: payload,
+        runID: "original-run",
+        requestStartedAtMilliseconds: 1_900
+      ),
+      .completed("Recovered reply")
+    )
+  }
+
+  func testOpenClawGatewayReconcilesTruncatedHistoryByRequestStartTime() {
+    let payload: [String: Any] = [
+      "messages": [
+        [
+          "role": "assistant",
+          "timestamp": 1_000,
+          "content": [["type": "text", "text": "Stale reply"]],
+        ],
+        [
+          "role": "assistant",
+          "timestamp": 3_000,
+          "content": [["type": "text", "text": "Fresh reply"]],
+        ],
+      ],
+      "sessionInfo": [
+        "status": "failed",
+        "hasActiveRun": false,
+        "endedAt": 3_100,
+      ],
+    ]
+
+    XCTAssertEqual(
+      OpenClawGatewayClient.chatHistoryReconciliation(
+        from: payload,
+        runID: "missing-from-truncated-history",
+        requestStartedAtMilliseconds: 2_000
+      ),
+      .completed("Fresh reply")
+    )
+  }
+
+  func testOpenClawGatewayKeepsWaitingForReplacementRunWithoutAReply() {
+    let payload: [String: Any] = [
+      "messages": [],
+      "sessionInfo": [
+        "status": "running",
+        "hasActiveRun": true,
+        "activeRunIds": ["replacement-run"],
+        "updatedAt": 3_000,
+      ],
+    ]
+
+    XCTAssertEqual(
+      OpenClawGatewayClient.chatHistoryReconciliation(
+        from: payload,
+        runID: "original-run",
+        requestStartedAtMilliseconds: 2_000
+      ),
+      .pending(hasActiveRun: true)
+    )
+    XCTAssertEqual(OpenClawGatewayClient.acceptedRunRecoveryPollTimeoutMilliseconds, 5_000)
+  }
+
+  func testOpenClawGatewayDoesNotHTTPFallbackAfterRunAcceptance() {
+    let error = OpenClawGatewayError.acceptedRunRecovery("gateway restarted")
+
+    XCTAssertFalse(error.permitsHTTPFallback)
+    XCTAssertEqual(
+      error.localizedDescription,
+      "OpenClaw accepted the run but could not reconcile its result: gateway restarted"
+    )
+  }
+
   func testDecodesOpenClawExecApprovalDetailsForReview() throws {
     let details = try OpenClawGatewayClient.execApprovalDetails(from: [
       "id": "IC_example123",
@@ -2188,6 +2293,50 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(summary.totalInsertions, 1)
     XCTAssertEqual(summary.totalDeletions, 0)
     XCTAssertEqual(summary.files.first?.relativePath, "agents/account-outreach.org2")
+  }
+
+  @MainActor
+  func testOpenClawReplyLeavesLiveUIBeforeChangeSummaryFinishes() async throws {
+    let temp = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-chat-fast-terminal-ui-\(UUID().uuidString)", isDirectory: true)
+    let root = temp.appendingPathComponent("corpus", isDirectory: true)
+    let transcript = temp.appendingPathComponent("transcript", isDirectory: true)
+      .appendingPathComponent("openclaw-chat.json")
+    let note = root.appendingPathComponent("note.org2")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    try "Before\n".write(to: note, atomically: true, encoding: .utf8)
+
+    let suiteName = "org2-workspace-chat-fast-terminal-ui-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+
+    let notePath = note.path
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: transcript,
+      openClawSendHandler: { _, _, _, _ in
+        Task.detached {
+          try? await Task.sleep(nanoseconds: 250_000_000)
+          try? "Before\nAfter\n".write(toFile: notePath, atomically: true, encoding: .utf8)
+        }
+        return "Updated note.org2"
+      }
+    )
+    store.setCorpusRoot(root)
+    store.openClawDraft = "Update the note"
+
+    let sendTask = Task { await store.sendOpenClawMessage() }
+    for _ in 0..<50 where store.openClawMessages.last?.role != .assistant {
+      try await Task.sleep(nanoseconds: 10_000_000)
+    }
+
+    XCTAssertEqual(store.openClawMessages.last?.content, "Updated note.org2")
+    XCTAssertFalse(store.isSendingOpenClawMessage)
+    XCTAssertEqual(store.openClawStatusText, "OpenClaw replied")
+
+    await sendTask.value
+    XCTAssertEqual(store.openClawMessages.last?.changeSummary?.totalInsertions, 1)
   }
 
   @MainActor
@@ -6796,7 +6945,7 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertFalse(store.handleGlobalKeyDown(keyDown(characters: "7", keyCode: 26, modifiers: [.command, .shift])))
 
     XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "0", keyCode: 29, modifiers: [.command])))
-    XCTAssertEqual(store.selectedSurface, .openClaw)
+    XCTAssertEqual(store.selectedSurface, .sources)
     XCTAssertFalse(store.isOpenClawAssistantPresented)
 
     XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "/", keyCode: 44, modifiers: [.command])))
@@ -6910,9 +7059,22 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(WorkspaceSurface.files.commandShortcutTitle, "⌘3")
     XCTAssertEqual(WorkspaceSurface.search.commandShortcutTitle, "⌘⇧F")
     XCTAssertEqual(WorkspaceSurface.meetings.commandShortcutTitle, "⌘5/⌘M")
-    XCTAssertEqual(WorkspaceSurface.sources.commandShortcutTitle, "")
+    XCTAssertEqual(WorkspaceSurface.sources.commandShortcutTitle, "⌘0")
     XCTAssertEqual(WorkspaceSurface.openClaw.commandShortcutTitle, "⌘6")
-    XCTAssertEqual(WorkspaceSurface.sidebarCases, [.home, .agenda, .files, .approvals, .search, .meetings, .sources, .openClaw])
+    XCTAssertEqual(WorkspaceSurface.sidebarCases, [.home, .agenda, .files, .approvals, .meetings, .sources])
+  }
+
+  func testSidebarShortcutHintsOnlyRevealForCommandModifier() {
+    XCTAssertTrue(CommandShortcutReveal.isActive(for: [.command]))
+    XCTAssertTrue(CommandShortcutReveal.isActive(for: [.command, .shift]))
+    XCTAssertFalse(CommandShortcutReveal.isActive(for: [.shift]))
+    XCTAssertFalse(CommandShortcutReveal.isActive(for: []))
+  }
+
+  func testSidebarCanResizeToOneQuarterOfWorkspaceWidth() {
+    XCTAssertEqual(WorkspaceSidebarLayout.maximumWidth(for: 1_400), 350)
+    XCTAssertEqual(WorkspaceSidebarLayout.maximumWidth(for: 800), 200)
+    XCTAssertEqual(WorkspaceSidebarLayout.maximumWidth(for: 600), WorkspaceSidebarLayout.minimumWidth)
   }
 
   @MainActor
@@ -7997,6 +8159,40 @@ final class Org2ModelsTests: XCTestCase {
       """,
       isSubtree: true
     )
+    let sourceProfile = WorkspaceSourceProfileStatus(
+      id: "team-knowledge",
+      type: "knowledge-base",
+      enabled: true,
+      scopes: ["workspace-a"],
+      workspaceId: nil,
+      rawZone: "raw/connectors/knowledge/team",
+      reviewZone: "views/connectors/knowledge/team",
+      ingestionSince: "90d",
+      ingestionLimit: 5_000,
+      syncArgs: [],
+      media: "metadata-only",
+      schedule: nil,
+      binary: "source-crawler",
+      binaryAvailable: true,
+      configPath: nil,
+      configAvailable: true,
+      ready: true
+    )
+    let sourceRuntime = WorkspaceSourceRuntimeStatus(
+      id: "team-knowledge",
+      type: "knowledge-base",
+      ok: true,
+      crawlerStatus: WorkspaceCrawlerStatus(
+        appId: "source-crawler",
+        state: "ready",
+        summary: "42 pages available",
+        databasePath: nil,
+        databaseBytes: 1_024,
+        lastSyncAt: "2026-07-21T17:00:00Z",
+        counts: []
+      ),
+      error: nil
+    )
 
     let context = OpenClawWorkspaceContext(
       localCorpusRoot: localRoot,
@@ -8008,7 +8204,9 @@ final class Org2ModelsTests: XCTestCase {
       agenda: nil,
       searchQuery: "",
       searchResults: [],
-      agentThreadDirectories: ["\(localRoot)/agents", "\(localRoot)/notes/openclaw"]
+      agentThreadDirectories: ["\(localRoot)/agents", "\(localRoot)/notes/openclaw"],
+      sourceProfiles: [sourceProfile],
+      sourceRuntimeStatuses: [sourceProfile.id: sourceRuntime]
     )
 
     let prompt = context.systemPrompt()
@@ -8019,7 +8217,14 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(prompt.contains("OpenClaw handoff rules"))
     XCTAssertTrue(prompt.contains(":KIND: agent-thread"))
     XCTAssertTrue(prompt.contains("Context attachments"))
+    XCTAssertTrue(prompt.contains("org2 agent capabilities"))
     XCTAssertTrue(prompt.contains("org2 search <query> --dir <root>"))
+    XCTAssertTrue(prompt.contains("Connected Org2 sources"))
+    XCTAssertTrue(prompt.contains("external-source profiles in its root org2.json"))
+    XCTAssertTrue(prompt.contains("Do not make the user explain or select source infrastructure"))
+    XCTAssertTrue(prompt.contains("team-knowledge — type: knowledge-base; enabled; ready; healthy; scopes: workspace-a"))
+    XCTAssertTrue(prompt.contains("\(remoteRoot)/raw/connectors/knowledge/team"))
+    XCTAssertTrue(prompt.contains("last sync: 2026-07-21T17:00:00Z"))
     XCTAssertTrue(prompt.contains("Clickable citations in AI chat"))
     XCTAssertTrue(prompt.contains("[descriptive label](\(remoteRoot)/notes/example.org2:42)"))
     XCTAssertTrue(prompt.contains("#L42-L47"))
