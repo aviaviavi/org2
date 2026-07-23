@@ -15,6 +15,37 @@ private final class ObservedPathSet: @unchecked Sendable {
 }
 
 final class CorpusFileWatcherTests: XCTestCase {
+  func testClassifiesRuntimeRunChangesSeparatelyFromVisibleCorpusContent() {
+    let root = URL(fileURLWithPath: "/tmp/org2-corpus").standardizedFileURL
+    let note = root.appendingPathComponent("notes/visible.org2").path
+    let markdown = root.appendingPathComponent("views/report.md").path
+    let run = root.appendingPathComponent(".org2/runs/run-1.org2").path
+    let syncHistory = root.appendingPathComponent(".stversions/notes/visible~old.org2").path
+    let temporary = root.appendingPathComponent("notes/.visible.org2.tmp").path
+
+    let classification = WorkspaceStore.classifyCorpusFileEvents(
+      [note, run, syncHistory, temporary, markdown, note, "/tmp/outside.org2"],
+      corpusRoot: root
+    )
+
+    XCTAssertEqual(classification.contentPaths, [note, markdown])
+    XCTAssertTrue(classification.hasAgentRunStateChanges)
+  }
+
+  func testRuntimeOnlyFileEventsDoNotEnterTheGeneralCorpusRefreshPath() {
+    let root = URL(fileURLWithPath: "/tmp/org2-corpus").standardizedFileURL
+    let classification = WorkspaceStore.classifyCorpusFileEvents(
+      [
+        root.appendingPathComponent(".org2/runs/run-1.org2").path,
+        root.appendingPathComponent(".org2/search-index.json").path,
+      ],
+      corpusRoot: root
+    )
+
+    XCTAssertTrue(classification.contentPaths.isEmpty)
+    XCTAssertTrue(classification.hasAgentRunStateChanges)
+  }
+
   func testReportsNestedFileWritesWithoutScanningTheCorpus() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-watcher-\(UUID().uuidString)", isDirectory: true)

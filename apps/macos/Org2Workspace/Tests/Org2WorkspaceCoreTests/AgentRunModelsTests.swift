@@ -1,3 +1,4 @@
+import Combine
 import XCTest
 @testable import Org2WorkspaceCore
 
@@ -300,6 +301,29 @@ final class AgentRunModelsTests: XCTestCase {
     XCTAssertEqual(section.entries.map(\.run.status), ["blocked", "blocked", "completed"])
   }
 
+  func testRunCenterResolvesSharedAncestorContextOnceForLargeRunFamilies() throws {
+    let meetingRef = "meetings/2026-07-17-080044-dev-standup.org2"
+    let envelope = try makeRun(
+      id: "meeting-workflow",
+      goal: "Process the meeting",
+      contextRefs: [meetingRef]
+    )
+    let children = try (0..<1_000).map { index in
+      try makeRun(
+        id: "child-\(index)",
+        goal: "Child outcome \(index)",
+        parentRunId: envelope.id
+      )
+    }
+
+    let contexts = RunCenterPresentation.sourceMeetingContextsByRunID(
+      in: children + [envelope]
+    )
+
+    XCTAssertEqual(contexts.count, children.count + 1)
+    XCTAssertEqual(contexts["child-999"]?.ref, meetingRef)
+  }
+
   func testAgentRunTimestampUsesLocalReadableTime() throws {
     let timeZone = try XCTUnwrap(TimeZone(identifier: "America/Los_Angeles"))
     let locale = Locale(identifier: "en_US")
@@ -548,6 +572,14 @@ final class AgentRunModelsTests: XCTestCase {
     XCTAssertEqual(store.presentedAgentRun?.id, run.id)
     XCTAssertNil(store.selectedLocation)
     XCTAssertEqual(store.selectedSurface, .approvals)
+
+    var repeatedSelectionPublishCount = 0
+    let repeatedSelectionCancellable = store.objectWillChange.sink {
+      repeatedSelectionPublishCount += 1
+    }
+    store.selectAgentRun(run)
+    XCTAssertEqual(repeatedSelectionPublishCount, 0)
+    repeatedSelectionCancellable.cancel()
 
     store.openAgentRunArtifact(try XCTUnwrap(run.artifacts.first))
     XCTAssertNil(store.presentedAgentRun)

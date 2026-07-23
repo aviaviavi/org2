@@ -68,7 +68,7 @@ public struct AgentRunListPayload: Decodable, Sendable {
   }
 }
 
-enum AgentRunScope: String, CaseIterable, Identifiable {
+enum AgentRunScope: String, CaseIterable, Identifiable, Hashable {
   case active = "Active"
   case attention = "Needs attention"
   case completed = "Completed"
@@ -129,7 +129,9 @@ enum AgentRunScope: String, CaseIterable, Identifiable {
   }
 }
 
-struct AgentRunScopeEntry: Identifiable, Equatable {
+// Keep these presentation collections intentionally non-Equatable. SwiftUI otherwise
+// deep-compares every full AgentRunItem whenever the Run Center body is rebuilt.
+struct AgentRunScopeEntry: Identifiable {
   let run: AgentRunItem
   let representedFailureCount: Int
 
@@ -141,22 +143,70 @@ struct AgentRunScopeEntry: Identifiable, Equatable {
   var id: AgentRunItem.ID { run.id }
 }
 
-struct RunCenterSection: Identifiable, Equatable {
+struct RunCenterSection: Identifiable {
   let id: String
   let sourceMeeting: AgentRunContextItem?
   let entries: [AgentRunScopeEntry]
 }
 
 enum RunCenterPresentation {
+  static func sourceMeetingContextsByRunID(
+    in runs: [AgentRunItem]
+  ) -> [AgentRunItem.ID: AgentRunContextItem] {
+    let runsByID = Dictionary(runs.map { ($0.id, $0) }, uniquingKeysWith: { current, _ in current })
+    var contexts: [AgentRunItem.ID: AgentRunContextItem] = [:]
+    contexts.reserveCapacity(runs.count)
+    var resolvedRunIDs = Set<AgentRunItem.ID>()
+    resolvedRunIDs.reserveCapacity(runs.count)
+
+    for run in runs {
+      guard !resolvedRunIDs.contains(run.id) else { continue }
+      var chain: [AgentRunItem.ID] = []
+      var chainRunIDs = Set<AgentRunItem.ID>()
+      var currentRunID: AgentRunItem.ID? = run.id
+      var resolvedContext: AgentRunContextItem?
+
+      while let candidateID = currentRunID {
+        if let cachedContext = contexts[candidateID] {
+          resolvedContext = cachedContext
+          break
+        }
+        if resolvedRunIDs.contains(candidateID) {
+          break
+        }
+        guard chainRunIDs.insert(candidateID).inserted,
+              let candidate = runsByID[candidateID]
+        else {
+          break
+        }
+        chain.append(candidateID)
+        if let directContext = candidate.sourceMeetingContext {
+          resolvedContext = directContext
+          break
+        }
+        currentRunID = candidate.parentRunId
+      }
+
+      for candidateID in chain {
+        resolvedRunIDs.insert(candidateID)
+        if let resolvedContext {
+          contexts[candidateID] = resolvedContext
+        }
+      }
+    }
+    return contexts
+  }
+
   static func sections(
     for entries: [AgentRunScopeEntry],
     allRuns: [AgentRunItem]
   ) -> [RunCenterSection] {
     var sections: [RunCenterSection] = []
     var sectionIndexByID: [String: Int] = [:]
+    let sourceMeetingContexts = sourceMeetingContextsByRunID(in: allRuns)
 
     for entry in entries {
-      let sourceMeeting = entry.run.sourceMeetingContext(in: allRuns)
+      let sourceMeeting = sourceMeetingContexts[entry.run.id]
       let sectionID = sourceMeeting.map { "meeting:\($0.fileReference ?? $0.ref)" } ?? "other"
       if let index = sectionIndexByID[sectionID] {
         let existing = sections[index]
@@ -311,10 +361,13 @@ public struct AgentRunItem: Identifiable, Decodable, Hashable, Sendable {
     context.first(where: \.isMeetingReference)
   }
   public func sourceMeetingContext(in runs: [AgentRunItem]) -> AgentRunContextItem? {
+    let runsByID = Dictionary(runs.map { ($0.id, $0) }, uniquingKeysWith: { current, _ in current })
+    return sourceMeetingContext(in: runsByID)
+  }
+  func sourceMeetingContext(
+    in runsByID: [AgentRunItem.ID: AgentRunItem]
+  ) -> AgentRunContextItem? {
     if let sourceMeetingContext { return sourceMeetingContext }
-    let runsByID = runs.reduce(into: [String: AgentRunItem]()) { result, run in
-      if result[run.id] == nil { result[run.id] = run }
-    }
     var visited = Set([id])
     var ancestorID = parentRunId
     while let currentID = ancestorID,

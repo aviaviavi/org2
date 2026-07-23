@@ -45,6 +45,11 @@ private struct CorpusChangeObservation {
   let snapshot: OpenClawCorpusSnapshot
 }
 
+struct CorpusFileEventClassification: Equatable, Sendable {
+  let contentPaths: [String]
+  let hasAgentRunStateChanges: Bool
+}
+
 private struct RenderedHTMLCacheEntry {
   let html: String
 }
@@ -1169,6 +1174,8 @@ public final class WorkspaceStore: ObservableObject {
   private var pendingNodeBriefArtifactRelativePath: String?
   private var pendingNodeBriefTitle: String?
   private var postOpenClawWorkspaceRefreshTask: Task<Void, Never>?
+  private var runReviewFileEventRefreshTask: Task<Void, Never>?
+  private var runReviewFileEventGeneration = 0
   private var pendingCorpusChangedPaths: Set<String> = []
   private var corpusFileWatcher: CorpusFileWatcher?
   private var corpusFileEventSerial = 0
@@ -1687,6 +1694,9 @@ public final class WorkspaceStore: ObservableObject {
     scheduledApprovalsRefreshTask = nil
     postOpenClawWorkspaceRefreshTask?.cancel()
     postOpenClawWorkspaceRefreshTask = nil
+    runReviewFileEventGeneration += 1
+    runReviewFileEventRefreshTask?.cancel()
+    runReviewFileEventRefreshTask = nil
     pendingCorpusChangedPaths = []
     agendaTodoShortcutMutationTask?.cancel()
     agendaTodoShortcutMutationTask = nil
@@ -1719,11 +1729,15 @@ public final class WorkspaceStore: ObservableObject {
     corpusFileWatcher = CorpusFileWatcher(rootURL: standardized) { [weak self] paths, requiresFullScan in
       Task { @MainActor [weak self] in
         guard let self else { return }
-        self.recordCorpusFileEvents(paths)
+        let classified = Self.classifyCorpusFileEvents(paths, corpusRoot: standardized)
+        self.recordCorpusFileEvents(classified.contentPaths)
         if requiresFullScan {
           self.scheduleFullCorpusFileRefreshAfterEvents()
-        } else {
-          self.scheduleIncrementalCorpusRefresh(paths)
+        } else if !classified.contentPaths.isEmpty {
+          self.scheduleIncrementalCorpusRefresh(classified.contentPaths)
+        }
+        if classified.hasAgentRunStateChanges {
+          self.scheduleRunReviewRefreshAfterEvents()
         }
       }
     }
@@ -2346,10 +2360,17 @@ public final class WorkspaceStore: ObservableObject {
       let files = try await Task.detached(priority: .utility) {
         try Self.scanCorpusFiles(corpusRoot: corpusRoot)
       }.value
-      corpusFiles = files
+      let currentFiles = corpusFiles
+      let filesChanged = await Task.detached(priority: .utility) {
+        currentFiles != files
+      }.value
+      guard !Task.isCancelled else { return }
+      if filesChanged {
+        corpusFiles = files
+        refreshOrgRoamLinkResolver(files: files)
+        scheduleSearchIndexBuild(corpusRoot: corpusRoot)
+      }
       reconcilePinnedFiles(for: corpusRoot)
-      refreshOrgRoamLinkResolver(files: files)
-      scheduleSearchIndexBuild(corpusRoot: corpusRoot)
       if selectedSurface == .files {
         statusText = "\(files.count) corpus file\(files.count == 1 ? "" : "s")"
       }
@@ -2457,7 +2478,15 @@ public final class WorkspaceStore: ObservableObject {
           "--recursive",
           "--format", "json"
         ])
-        approvalItems = Self.sortedApprovalItems(payload.items)
+        let nextApprovalItems = Self.sortedApprovalItems(payload.items)
+        let currentApprovalItems = approvalItems
+        let approvalsChanged = await Task.detached(priority: .utility) {
+          currentApprovalItems != nextApprovalItems
+        }.value
+        guard !Task.isCancelled else { return }
+        if approvalsChanged {
+          approvalItems = nextApprovalItems
+        }
         syncApprovalSelectionAfterRefresh()
         if updatesStatus {
           statusText = "\(payload.count) approval\(payload.count == 1 ? "" : "s")"
@@ -2513,7 +2542,15 @@ public final class WorkspaceStore: ObservableObject {
           sourceText: candidate.sourceText
         ))
       }
-      approvalItems = Self.sortedApprovalItems(items)
+      let nextApprovalItems = Self.sortedApprovalItems(items)
+      let currentApprovalItems = approvalItems
+      let approvalsChanged = await Task.detached(priority: .utility) {
+        currentApprovalItems != nextApprovalItems
+      }.value
+      guard !Task.isCancelled else { return }
+      if approvalsChanged {
+        approvalItems = nextApprovalItems
+      }
       syncApprovalSelectionAfterRefresh()
       if updatesStatus {
         statusText = "\(approvalItems.count) approval\(approvalItems.count == 1 ? "" : "s")"
@@ -2582,20 +2619,28 @@ public final class WorkspaceStore: ObservableObject {
       let payload: AgentRunListPayload = try await cli.runJSON([
         "run", "list", "--dir", corpusRoot.path, "--json"
       ])
-      agentRuns = payload.runs
+      let currentRuns = agentRuns
+      let nextRuns = payload.runs
+      let runsChanged = await Task.detached(priority: .utility) {
+        currentRuns != nextRuns
+      }.value
+      guard !Task.isCancelled else { return }
+      if runsChanged {
+        agentRuns = nextRuns
+      }
       if let selectedAgentRunID,
-         !agentRuns.contains(where: { $0.id == selectedAgentRunID }) {
+         !nextRuns.contains(where: { $0.id == selectedAgentRunID }) {
         self.selectedAgentRunID = nil
       }
       if let presentedAgentRunID,
-         !agentRuns.contains(where: { $0.id == presentedAgentRunID }) {
+         !nextRuns.contains(where: { $0.id == presentedAgentRunID }) {
         self.presentedAgentRunID = nil
       }
       if self.selectedAgentRunID == nil {
-        self.selectedAgentRunID = agentRuns.first?.id
+        self.selectedAgentRunID = nextRuns.first?.id
       }
       if updatesStatus {
-        statusText = "\(agentRuns.count) agent run\(agentRuns.count == 1 ? "" : "s")"
+        statusText = "\(nextRuns.count) agent run\(nextRuns.count == 1 ? "" : "s")"
       }
     } catch {
       errorText = error.localizedDescription
@@ -2623,14 +2668,22 @@ public final class WorkspaceStore: ObservableObject {
       let payload: AgentWorkflowListPayload = try await cli.runJSON([
         "workflow", "list", "--dir", corpusRoot.path, "--json"
       ])
-      agentWorkflows = payload.workflows
+      let currentWorkflows = agentWorkflows
+      let nextWorkflows = payload.workflows
+      let workflowsChanged = await Task.detached(priority: .utility) {
+        currentWorkflows != nextWorkflows
+      }.value
+      guard !Task.isCancelled else { return }
+      if workflowsChanged {
+        agentWorkflows = nextWorkflows
+      }
       if let selectedAgentWorkflowID,
-         !agentWorkflows.contains(where: { $0.id == selectedAgentWorkflowID }) {
+         !nextWorkflows.contains(where: { $0.id == selectedAgentWorkflowID }) {
         self.selectedAgentWorkflowID = nil
       }
-      if self.selectedAgentWorkflowID == nil { self.selectedAgentWorkflowID = agentWorkflows.first?.id }
+      if self.selectedAgentWorkflowID == nil { self.selectedAgentWorkflowID = nextWorkflows.first?.id }
       if updatesStatus {
-        statusText = "\(agentWorkflows.count) workflow\(agentWorkflows.count == 1 ? "" : "s")"
+        statusText = "\(nextWorkflows.count) workflow\(nextWorkflows.count == 1 ? "" : "s")"
       }
     } catch {
       errorText = error.localizedDescription
@@ -3391,14 +3444,18 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func selectApprovalItem(_ item: ApprovalItem) {
-    selectedApprovalItemID = item.id
+    if selectedApprovalItemID != item.id {
+      selectedApprovalItemID = item.id
+    }
     approvalSelectionAnchor = ApprovalSelectionAnchor(
       item: item,
       visibleIndex: visibleApprovalItems.firstIndex(where: { $0.id == item.id })
     )
     if let runID = item.runId, let run = agentRuns.first(where: { $0.id == runID }) {
       selectAgentRun(run)
-      selectedApprovalItemID = item.id
+      if selectedApprovalItemID != item.id {
+        selectedApprovalItemID = item.id
+      }
       statusText = item.runDependencyText ?? item.sourceLabel
       return
     }
@@ -4793,6 +4850,17 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func select(_ location: WorkspaceLocation, surface: WorkspaceSurface? = nil) {
+    let nextMode = resolvedEntrySourceMode(for: location, requestedMode: nil)
+    let nextSurface = surface ?? selectedSurface
+    if isCurrentNavigationDestination(
+      location: location,
+      surface: nextSurface,
+      mode: nextMode
+    ), !isWorkspaceDetailPaneClosed {
+      applyDetailSelectionMetadata(for: location)
+      return
+    }
+
     if case .search = location {
       isPageSearchPresented = false
       pageSearchQuery = ""
@@ -4872,6 +4940,12 @@ public final class WorkspaceStore: ObservableObject {
 
   private func activateAgentRunDetail(_ runID: AgentRunItem.ID, recordsHistory: Bool) {
     guard agentRuns.contains(where: { $0.id == runID }) else { return }
+    if selectedSurface == .approvals,
+       selectedAgentRunID == runID,
+       presentedAgentRunID == runID,
+       !isWorkspaceDetailPaneClosed {
+      return
+    }
     if recordsHistory,
        presentedAgentRunID != runID || selectedSurface != .approvals {
       recordCurrentNavigationDestination()
@@ -5232,16 +5306,24 @@ public final class WorkspaceStore: ObservableObject {
 
   private func applyDetailSelectionMetadata(for location: WorkspaceLocation) {
     if case .agenda(let item) = location {
-      selectedAgendaItemID = item.id
+      if selectedAgendaItemID != item.id {
+        selectedAgendaItemID = item.id
+      }
     }
     if case .assigned(let item) = location {
-      selectedAssignedWorkItemID = item.id
+      if selectedAssignedWorkItemID != item.id {
+        selectedAssignedWorkItemID = item.id
+      }
     }
     if case .openClaw(let thread) = location {
-      selectedOpenClawThreadID = thread.id
+      if selectedOpenClawThreadID != thread.id {
+        selectedOpenClawThreadID = thread.id
+      }
     }
     if case .meeting(let meeting) = location {
-      selectedMeetingID = meeting.id
+      if selectedMeetingID != meeting.id {
+        selectedMeetingID = meeting.id
+      }
     }
   }
 
@@ -8117,8 +8199,12 @@ public final class WorkspaceStore: ObservableObject {
       idValue: nil
     )
     activateDetailLocation(.openClaw(thread), mode: .page, surface: surface, recordsHistory: true)
-    selectedCorpusFileID = file.id
-    selectedOpenClawThreadID = nil
+    if selectedCorpusFileID != file.id {
+      selectedCorpusFileID = file.id
+    }
+    if selectedOpenClawThreadID != nil {
+      selectedOpenClawThreadID = nil
+    }
     statusText = "Opened \(file.relativePath)"
   }
 
@@ -9493,10 +9579,10 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func ensureHomeDetailReady() {
-    expandedWorkspaceSurface = nil
-    isWorkspaceSurfacePaneClosed = false
-    isWorkspaceDetailPaneClosed = false
-    isWorkspaceDetailPaneExpanded = false
+    if expandedWorkspaceSurface != nil { expandedWorkspaceSurface = nil }
+    if isWorkspaceSurfacePaneClosed { isWorkspaceSurfacePaneClosed = false }
+    if isWorkspaceDetailPaneClosed { isWorkspaceDetailPaneClosed = false }
+    if isWorkspaceDetailPaneExpanded { isWorkspaceDetailPaneExpanded = false }
     guard isTodayHomeDetailSelected else {
       openHome()
       return
@@ -10511,6 +10597,41 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
+  nonisolated static func classifyCorpusFileEvents(
+    _ paths: [String],
+    corpusRoot: URL
+  ) -> CorpusFileEventClassification {
+    let root = corpusRoot.standardizedFileURL.path
+    let rootPrefix = root + "/"
+    let contentExtensions = Set(["org", "org2", "md"])
+    var contentPaths: [String] = []
+    var seenContentPaths = Set<String>()
+    var hasAgentRunStateChanges = false
+
+    for rawPath in paths {
+      let path = URL(fileURLWithPath: rawPath).standardizedFileURL.path
+      guard path.hasPrefix(rootPrefix) else { continue }
+      let relativePath = String(path.dropFirst(rootPrefix.count))
+      if relativePath.hasPrefix(".org2/runs/"),
+         URL(fileURLWithPath: path).pathExtension.lowercased() == "org2" {
+        hasAgentRunStateChanges = true
+        continue
+      }
+      guard contentExtensions.contains(URL(fileURLWithPath: path).pathExtension.lowercased()),
+            !isDefaultIgnoredSyncArtifactPath(path),
+            seenContentPaths.insert(path).inserted
+      else {
+        continue
+      }
+      contentPaths.append(path)
+    }
+
+    return CorpusFileEventClassification(
+      contentPaths: contentPaths,
+      hasAgentRunStateChanges: hasAgentRunStateChanges
+    )
+  }
+
   private func attributedOpenClawChangeSummary(
     _ summary: OpenClawCorpusChangeSummary,
     referencedIn reply: String
@@ -10623,6 +10744,35 @@ public final class WorkspaceStore: ObservableObject {
       let paths = Array(self.pendingCorpusChangedPaths)
       self.pendingCorpusChangedPaths = []
       await self.applyIncrementalCorpusChanges(paths)
+    }
+  }
+
+  private func scheduleRunReviewRefreshAfterEvents() {
+    runReviewFileEventGeneration += 1
+    guard runReviewFileEventRefreshTask == nil else { return }
+
+    runReviewFileEventRefreshTask = Task { @MainActor [weak self] in
+      while let self, !Task.isCancelled {
+        let generation = self.runReviewFileEventGeneration
+        do {
+          try await Task.sleep(nanoseconds: 1_000_000_000)
+        } catch {
+          return
+        }
+        guard !Task.isCancelled else { return }
+        guard generation == self.runReviewFileEventGeneration else { continue }
+        guard self.selectedSurface == .approvals else {
+          self.runReviewFileEventRefreshTask = nil
+          return
+        }
+
+        await self.refreshApprovals(updatesStatus: false)
+        await self.refreshAgentRuns(updatesStatus: false)
+        if generation == self.runReviewFileEventGeneration {
+          self.runReviewFileEventRefreshTask = nil
+          return
+        }
+      }
     }
   }
 
