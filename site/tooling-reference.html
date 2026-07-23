@@ -85,6 +85,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <li><p><code>roam ...</code></p></li>
 <li><p><code>crypt ...</code></p></li>
 <li><p><code>export html</code></p></li>
+<li><p><code>export beamer</code></p></li>
 <li><p><code>publish</code></p></li>
 <li><p><code>lint</code></p></li>
 <li><p><code>graph audit</code></p></li>
@@ -500,8 +501,12 @@ org2 crypt reencrypt --file secrets.org2 --line 42 \
 <h1 id="export-publish">Export + publish</h1>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 export html --file README.org --out README.html --apply
 org2 export html --dir docs/site --recursive --out-dir site --apply
+org2 export beamer --file talks/demo.org2 --out publish/demo.tex --apply
+org2 export beamer --file talks/demo.org2 --out publish/demo.pdf --pdf --apply
 org2 publish docs-site --config org2.json</code></pre>
 <p>Useful export options include TOC, heading numbering, stylesheet injection, and Org-file-link rewrite to HTML targets.</p>
+<p><code>export beamer</code> previews by default. Without <code>--pdf</code> it produces reviewable <code>.tex</code>; with <code>--pdf</code> it runs <code>pdflatex</code> twice so references, outlines, and overlays settle before the PDF is written. Select another installed command or absolute executable path with <code>--latex-engine</code>. The compiler invokes the engine directly with non-interactive, halt-on-error flags and does not enable shell escape.</p>
+<p>Presentation export reads the shared Org2 AST and maps both legacy Org Beamer properties and backend-neutral Org2 slide properties into one presentation model. See <a href="language-reference.html">Language reference</a> for slide structure, columns, blocks, notes, overlays, and raw backend escape hatches.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="lsp">LSP</h1>

@@ -65,6 +65,8 @@ On first launch, the Workspace offers two paths:
 
 The starter is ordinary plain text and directories, not an app-owned database. You can immediately inspect or edit every generated file in Finder, Git, or another editor.
 
+To publish a talk, open an =.org= or =.org2= file and choose *File → Export Slides as PDF…* or *Export Slides as LaTeX…*. The PDF path uses the shared Beamer compiler and requires a TeX installation such as MacTeX. See [[file:editors-macos.org][macOS Workspace → Slide export]] for slide structure, compatibility, and troubleshooting.
+
 For a team pilot, create or identify a separate shared corpus rather than exposing a personal corpus. The Mac app remembers multiple mounts and keeps writes scoped to the active corpus. See [[file:collaboration.org][Shared corpora and collaboration]].
 
 The initial downloadable disk image is built for Apple Silicon Macs. Current release builds are developer-signed, not notarized. If macOS blocks the first launch, open *System Settings → Privacy & Security* and allow Org2Workspace, or right-click the app in Finder and choose *Open*.
@@ -174,6 +176,7 @@ The most useful commands to know first are:
 - =agent capabilities= / =agent context= / =context= / =brief=: discover functionality and retrieve cited, bounded context for agents
 - =query-data= / =render-chart=: materialize explicit datasets/SQL and render deterministic charts
 - =export html= / =publish=: produce docs and sites
+- =export beamer=: produce Beamer LaTeX or compile a presentation PDF
 - =lsp=: optional shared editor backend for clients that use the protocol
 
 * 6) Generate the docs site locally
@@ -193,6 +196,7 @@ org2 publish docs-site --config org2.json
 - strong VS Code support
 - roam-style linked-note workflows
 - HTML export + publish pipeline
+- Beamer-compatible presentation export to TeX/PDF
 - useful editor backend support
 - cited agent retrieval and a machine-readable installed capability manifest
 - local/remote data notebooks with explicit refresh and chart rendering

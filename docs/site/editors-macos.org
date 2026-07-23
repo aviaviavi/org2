@@ -63,6 +63,29 @@ Source editing can optionally show that HTML renderer in a resizable split view.
 
 Document presentation is customizable without enabling document scripts. Use the document-layout menu to create or edit =.org2/app.css= at the corpus root; its CSS applies to read mode and the source preview. The app continues to exclude =HTML_HEAD= scripts and raw export HTML from its safe rendering profile.
 
+* Slide export
+
+Org2 Workspace can turn an open =.org= or =.org2= talk into a Beamer PDF without leaving the app:
+
+1. Open the talk in the document pane.
+2. Choose *File → Export Slides as PDF…* from the macOS menu bar, or open the document header's *File* menu and choose the same command.
+3. Choose the destination. The app saves any pending edit, compiles the entire source file, and confirms the written path.
+
+Choose *Export Slides as LaTeX…* instead when you want the intermediate =.tex= file for inspection, manual compilation, or further customization. Both commands use the same shared Org2 presentation model and Beamer renderer as =org2 export beamer=; Swift does not maintain a second slide parser.
+
+PDF export requires a TeX installation that provides =pdflatex=. MacTeX installs it in =/Library/TeX/texbin=, which the app includes when resolving command-line tools. Relative image paths are resolved from the talk file's directory, so a reference such as =[[file:images/architecture.png]]= continues to work when the PDF is written elsewhere.
+
+The familiar Org outline convention works without migration: with =#+OPTIONS: H:2=, level-one headlines are sections and level-two headlines are slides. Existing =BEAMER_*= properties remain accepted, while new talks may use backend-neutral =SLIDE_*= properties. See [[file:language-reference.org][Language reference → Presentations]] for themes, columns, overlays, notes, image sizing, raw LaTeX escape hatches, and CLI examples.
+
+For pdfLaTeX compatibility, the renderer translates common Unicode arrows, comparison operators, checkmarks, bullets, and dashes in headings, prose, metadata, and source/example blocks. Symbols such as =→=, =↘=, =≥=, and =✓= therefore do not require per-talk LaTeX declarations.
+
+On failure, the app presents one bounded, actionable compiler summary rather than placing the complete LaTeX transcript in a native alert. Common fixes are:
+
+- confirm that an image path is relative to the talk and that the file exists,
+- export LaTeX to inspect the generated source,
+- run the CLI directly when a complete terminal transcript is useful,
+- add a required package with =#+LATEX_HEADER:= when the talk uses custom LaTeX.
+
 * Data notebooks and charts
 
 Files containing =```dataset= and =```sql results=...= blocks act as explicit data notebooks. The rendered view can refresh a selected result through the shared =org2 query-data= backend, write the provenance-stamped materialized table back to the ordinary source file, and then render attached chart blocks. Merely opening or rendering a note never contacts a remote warehouse.

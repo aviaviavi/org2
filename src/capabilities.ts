@@ -117,8 +117,8 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
       },
       {
         id: "publishing",
-        purpose: "Export one file or publish a multi-file project as HTML.",
-        commands: ["org2 export", "org2 publish"],
+        purpose: "Export documents and Beamer-compatible slide decks, compile presentation PDFs, or publish a multi-file HTML project.",
+        commands: ["org2 export html", "org2 export beamer", "org2 publish"],
         writes: "preview-by-default",
       },
       {

@@ -1,0 +1,74 @@
+#+TITLE: Org2 Presentation Compatibility
+#+AUTHOR: Avi Press
+#+EMAIL: avi@example.com
+#+OPTIONS: H:2 toc:t num:t
+#+LATEX_CLASS: beamer
+#+LATEX_CLASS_OPTIONS: [presentation,aspectratio=169]
+#+BEAMER_THEME: Madrid
+#+LATEX_HEADER: \AtBeginSection[]{\begin{frame}<beamer>\frametitle{Outline}\tableofcontents[currentsection]\end{frame}}
+
+* Compatibility
+** Columns and source
+*** Left
+    :PROPERTIES:
+    :BEAMER_COL: 0.45
+    :BEAMER_ENV: block
+    :END:
+    - Top-level item
+      - Nested item
+    - Back at the top level
+*** Right
+    :PROPERTIES:
+    :BEAMER_COL: 0.45
+    :BEAMER_ACT: <2->
+    :BEAMER_ENV: block
+    :END:
+    #+BEGIN_SRC typescript
+const answer = 42;
+    #+END_SRC
+
+    #+RESULTS:
+    [[file:generated-result.png]]
+
+** Images and notes
+*** Illustration
+    :PROPERTIES:
+    :BEAMER_ENV: block
+    :END:
+    #+ATTR_LATEX: :height 0.5\textwidth
+    [[file:diagram.png]]
+*** Remember this                                                   :B_note:
+    :PROPERTIES:
+    :BEAMER_ENV: note
+    :END:
+    Mention the source ranges.
+
+* Native Org2 vocabulary
+** Backend-neutral properties
+    Follow the southeast path ↘ and verify x ≥ 2.
+
+    #+BEGIN_SRC text
+flow ↘ target
+    #+END_SRC
+
+*** Native block
+    :PROPERTIES:
+    :SLIDE_COLUMN: 45%
+    :SLIDE_REVEAL: 3-
+    :SLIDE_ENV: block
+    :END:
+    Org2 concepts compile to renderer-specific output.
+
+    #+LATEX: \pause
+
+    #+BEGIN_QUOTE
+    Presentation semantics belong to Org2.
+    #+END_QUOTE
+
+    | Target | Output |
+    |--------+--------|
+    | Beamer | PDF    |
+
+    #+BEGIN_EXPORT beamer
+    \vfill
+    #+END_EXPORT

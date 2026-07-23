@@ -9,6 +9,17 @@ public enum WorkspaceKeyboardShortcutScope: Equatable, Sendable {
   case globalOnly
 }
 
+public struct Org2SlideExportNotice: Identifiable, Equatable, Sendable {
+  public let id = UUID()
+  public let title: String
+  public let message: String
+
+  public init(title: String, message: String) {
+    self.title = title
+    self.message = message
+  }
+}
+
 private enum StarterCorpusCreationError: LocalizedError {
   case notDirectory(String)
   case notEmpty(String)
@@ -1061,6 +1072,8 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var isEditingEntry = false
   @Published public var isSavingEntry = false
   @Published public var isSavingBlock = false
+  @Published public private(set) var isExportingSlides = false
+  @Published public var slideExportNotice: Org2SlideExportNotice?
   @Published public private(set) var isLiveFileEditorAutosaving = false
   @Published public private(set) var liveFileEditorStatusText = ""
   @Published public var isLoadingBacklinks = false
@@ -6117,6 +6130,82 @@ public final class WorkspaceStore: ObservableObject {
       || canSaveActiveEdit
       || canSaveLiveFileEditor
       || (orgCryptEncryptOnSave && selectedFileForOrgCryptSave != nil)
+  }
+
+  public var canExportSlides: Bool {
+    slideExportSourceFile != nil && !isExportingSlides && !isSavingEntry && !isSavingBlock
+  }
+
+  public func exportSlides(format: Org2SlideExportFormat) async {
+    guard let sourceFile = slideExportSourceFile else {
+      statusText = "Open an Org or Org2 file first"
+      return
+    }
+    guard !isExportingSlides else { return }
+    guard await savePendingEditsBeforeSlideExport() else { return }
+
+    let panel = NSSavePanel()
+    panel.canCreateDirectories = true
+    panel.directoryURL = sourceFile.deletingLastPathComponent()
+    panel.nameFieldStringValue = sourceFile.deletingPathExtension().lastPathComponent + ".\(format.fileExtension)"
+    if format == .pdf {
+      panel.allowedContentTypes = [.pdf]
+    } else {
+      panel.allowedContentTypes = [UTType(filenameExtension: "tex") ?? .plainText]
+    }
+    panel.title = "Export Slides as \(format.title)"
+    panel.prompt = "Export"
+
+    guard panel.runModal() == .OK, let destination = panel.url else {
+      statusText = "Slide export cancelled"
+      return
+    }
+
+    isExportingSlides = true
+    statusText = "Exporting slides…"
+    defer { isExportingSlides = false }
+
+    do {
+      try await cli.exportBeamer(file: sourceFile, destination: destination, format: format)
+      statusText = "Exported slides to \(destination.lastPathComponent)"
+      errorText = nil
+      slideExportNotice = Org2SlideExportNotice(
+        title: "Slides Exported",
+        message: destination.path
+      )
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Slide export failed: \(error.localizedDescription)"
+      slideExportNotice = Org2SlideExportNotice(
+        title: "Couldn’t Export Slides",
+        message: error.localizedDescription
+      )
+    }
+  }
+
+  private var slideExportSourceFile: URL? {
+    let path = selectedEntrySource?.file ?? selectedLocation?.file
+    guard let path else { return nil }
+    let sourceFile = URL(fileURLWithPath: path).standardizedFileURL
+    guard ["org", "org2"].contains(sourceFile.pathExtension.lowercased()) else { return nil }
+    return sourceFile
+  }
+
+  private func savePendingEditsBeforeSlideExport() async -> Bool {
+    let hadPendingEdit = entryEditorHasUnsavedChanges
+      || liveFileEditorHasUnsavedChanges
+      || editingBlockID != nil
+    guard hadPendingEdit else { return true }
+
+    await saveActiveEdit()
+    let stillPending = entryEditorHasUnsavedChanges
+      || liveFileEditorHasUnsavedChanges
+      || editingBlockID != nil
+    if stillPending {
+      statusText = "Save the current edit before exporting slides"
+      return false
+    }
+    return true
   }
 
   public var hasActiveEdit: Bool {

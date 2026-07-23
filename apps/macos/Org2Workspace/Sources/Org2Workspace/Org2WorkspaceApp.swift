@@ -108,6 +108,18 @@ struct Org2WorkspaceApp: App {
         }
         .keyboardShortcut("s", modifiers: [.command])
         .disabled(!store.canSaveCurrentFile)
+
+        Divider()
+
+        Button("Export Slides as PDF...") {
+          Task { await store.exportSlides(format: .pdf) }
+        }
+        .disabled(!store.canExportSlides)
+
+        Button("Export Slides as LaTeX...") {
+          Task { await store.exportSlides(format: .latex) }
+        }
+        .disabled(!store.canExportSlides)
       }
 
       CommandMenu("Pane") {

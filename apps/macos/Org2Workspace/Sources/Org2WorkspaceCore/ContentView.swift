@@ -105,6 +105,13 @@ public struct ContentView: View {
         SimilarTodoAssignmentView()
           .environmentObject(store)
       }
+      .alert(item: $store.slideExportNotice) { notice in
+        Alert(
+          title: Text(notice.title),
+          message: Text(notice.message),
+          dismissButton: .default(Text("OK"))
+        )
+      }
     }
   }
 }
@@ -6427,6 +6434,22 @@ private struct DetailHeader: View {
       } label: {
         Label("Reveal in Finder", systemImage: "folder")
       }
+
+      Divider()
+
+      Button {
+        Task { await store.exportSlides(format: .pdf) }
+      } label: {
+        Label("Export Slides as PDF…", systemImage: "rectangle.on.rectangle")
+      }
+      .disabled(!store.canExportSlides)
+
+      Button {
+        Task { await store.exportSlides(format: .latex) }
+      } label: {
+        Label("Export Slides as LaTeX…", systemImage: "doc.plaintext")
+      }
+      .disabled(!store.canExportSlides)
 
       Divider()
 
