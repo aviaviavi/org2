@@ -1,6 +1,10 @@
 import Darwin
 import Foundation
 
+private struct Org2JSONDecodedValue<Value>: @unchecked Sendable {
+  let value: Value
+}
+
 public struct Org2CLI: Sendable {
   private static let ignoreBrokenPipeSignal: Void = {
     _ = Darwin.signal(SIGPIPE, SIG_IGN)
@@ -34,7 +38,7 @@ public struct Org2CLI: Sendable {
     as type: T.Type = T.self
   ) async throws -> T {
     let data = try await run(arguments, environment: environment)
-    return try JSONDecoder().decode(T.self, from: data)
+    return try await decodeJSON(T.self, from: data)
   }
 
   public func runJSONSync<T: Decodable>(_ arguments: [String], as type: T.Type = T.self) throws -> T {
@@ -55,7 +59,7 @@ public struct Org2CLI: Sendable {
     } onCancel: {
       operation.cancel()
     }
-    return try JSONDecoder().decode(T.self, from: data)
+    return try await decodeJSON(T.self, from: data)
   }
 
   public func parseTextJSON<T: Decodable>(
@@ -84,7 +88,7 @@ public struct Org2CLI: Sendable {
     } onCancel: {
       operation.cancel()
     }
-    return try JSONDecoder().decode(T.self, from: data)
+    return try await decodeJSON(T.self, from: data)
   }
 
   public func renderAppHTML(
@@ -139,7 +143,7 @@ public struct Org2CLI: Sendable {
     } onCancel: {
       operation.cancel()
     }
-    let payload = try JSONDecoder().decode(Org2EditorAnalysisPayload.self, from: data)
+    let payload = try await decodeJSON(Org2EditorAnalysisPayload.self, from: data)
     return OrgSourceEditorSemanticSnapshot(payload: payload)
   }
 
@@ -165,6 +169,13 @@ public struct Org2CLI: Sendable {
 
   public func runSync(_ arguments: [String]) throws -> Data {
     try runProcess(scriptPath: cliPath, arguments: arguments)
+  }
+
+  private func decodeJSON<T: Decodable>(_ type: T.Type, from data: Data) async throws -> T {
+    let decoded = try await Task.detached(priority: .userInitiated) {
+      Org2JSONDecodedValue(value: try JSONDecoder().decode(T.self, from: data))
+    }.value
+    return decoded.value
   }
 
   private func runProcess(

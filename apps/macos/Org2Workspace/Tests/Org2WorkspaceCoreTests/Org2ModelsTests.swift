@@ -5,6 +5,14 @@ import SwiftUI
 import XCTest
 @testable import Org2WorkspaceCore
 
+private struct DecodeThreadPayload: Decodable {
+  let decodedOnMainThread: Bool
+
+  init(from decoder: Decoder) throws {
+    decodedOnMainThread = Thread.isMainThread
+  }
+}
+
 private actor OpenClawQueuedSendRecorder {
   private var calls: [[String]] = []
 
@@ -427,6 +435,22 @@ final class Org2ModelsTests: XCTestCase {
 
     XCTAssertEqual(payload.results.count, 1)
     XCTAssertEqual(payload.results[0].snippet.count, 160000)
+  }
+
+  @MainActor
+  func testOrg2CLIDecodesJSONAwayFromTheMainActor() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-cli-decode-thread-\(UUID().uuidString)", isDirectory: true)
+    let dist = root.appendingPathComponent("dist", isDirectory: true)
+    try FileManager.default.createDirectory(at: dist, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    try #"process.stdout.write("{}");"#
+      .write(to: dist.appendingPathComponent("cli.js"), atomically: true, encoding: .utf8)
+
+    let payload: DecodeThreadPayload = try await Org2CLI(repoRoot: root).runJSON([])
+
+    XCTAssertFalse(payload.decodedOnMainThread)
   }
 
   func testOrg2CLIParsesCanonicalAstWithBuiltInParser() throws {

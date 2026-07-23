@@ -1,6 +1,17 @@
 import AppKit
 import SwiftUI
 
+@MainActor
+private func performAfterSwiftUIViewUpdate(
+  _ operation: @escaping @MainActor @Sendable () -> Void
+) {
+  Task { @MainActor in
+    await Task.yield()
+    guard !Task.isCancelled else { return }
+    operation()
+  }
+}
+
 public struct ContentView: View {
   @EnvironmentObject private var store: WorkspaceStore
 
@@ -104,17 +115,17 @@ private struct WorkspaceMainArea: View {
   var body: some View {
     if store.corpusRoot == nil {
       CorpusOnboardingView()
-    } else if store.isWorkspaceSurfacePaneClosed && store.hasWorkspaceDetailContent {
-      WorkspaceDetailArea()
-    } else if store.isWorkspaceDetailPaneClosed || !store.hasWorkspaceDetailContent {
-      WorkspaceSurfaceCacheView(selectedSurface: store.selectedSurface)
     } else {
       HSplitView {
-        WorkspaceSurfaceCacheView(selectedSurface: store.selectedSurface)
-          .frame(minWidth: 320, idealWidth: 460)
+        if !store.isWorkspaceSurfacePaneClosed || !store.hasWorkspaceDetailContent {
+          WorkspaceSurfaceCacheView(selectedSurface: store.selectedSurface)
+            .frame(minWidth: 320, idealWidth: 460)
+        }
 
-        WorkspaceDetailArea()
-          .frame(minWidth: 520, idealWidth: 720)
+        if store.hasWorkspaceDetailContent && !store.isWorkspaceDetailPaneClosed {
+          WorkspaceDetailArea()
+            .frame(minWidth: 520, idealWidth: 720)
+        }
       }
     }
   }
@@ -238,7 +249,7 @@ private struct WorkspaceSurfaceCacheView: NSViewRepresentable {
   }
 
   func updateNSView(_ view: NSView, context: Context) {
-    context.coordinator.show(surface: selectedSurface, in: view, store: store)
+    context.coordinator.scheduleShow(surface: selectedSurface, in: view, store: store)
   }
 
   @MainActor
@@ -246,10 +257,21 @@ private struct WorkspaceSurfaceCacheView: NSViewRepresentable {
     private var hosts: [WorkspaceSurface: NSHostingView<AnyView>] = [:]
     private var activeSurface: WorkspaceSurface?
     private var activeConstraints: [NSLayoutConstraint] = []
+    private var pendingShowTask: Task<Void, Never>?
 
-    func show(surface: WorkspaceSurface, in container: NSView, store: WorkspaceStore) {
+    func scheduleShow(surface: WorkspaceSurface, in container: NSView, store: WorkspaceStore) {
       guard activeSurface != surface || hosts[surface]?.superview !== container else { return }
+      pendingShowTask?.cancel()
+      pendingShowTask = Task { @MainActor [weak self] in
+        await Task.yield()
+        guard !Task.isCancelled, let self else { return }
+        self.pendingShowTask = nil
+        self.show(surface: surface, in: container, store: store)
+      }
+    }
 
+    private func show(surface: WorkspaceSurface, in container: NSView, store: WorkspaceStore) {
+      guard activeSurface != surface || hosts[surface]?.superview !== container else { return }
       NSLayoutConstraint.deactivate(activeConstraints)
       activeConstraints = []
       if let activeSurface, let activeHost = hosts[activeSurface] {
@@ -422,7 +444,13 @@ private struct SidebarView: View {
   private var surfaceSelection: Binding<WorkspaceSurface> {
     Binding(
       get: { store.selectedSurface },
-      set: { store.makeSurfacePrimary($0) }
+      set: { surface in
+        guard surface != store.selectedSurface else { return }
+        performAfterSwiftUIViewUpdate {
+          guard surface != store.selectedSurface else { return }
+          store.makeSurfacePrimary(surface)
+        }
+      }
     )
   }
 }
@@ -1070,7 +1098,10 @@ private struct FilesView: View {
           else {
             return
           }
-          store.selectCorpusFile(file)
+          performAfterSwiftUIViewUpdate {
+            guard store.selectedCorpusFileID == id else { return }
+            store.selectCorpusFile(file)
+          }
         }
       }
     }
@@ -1787,13 +1818,17 @@ private struct AgendaView: View {
       }
     }
     .onChange(of: store.agendaMode) {
-      if store.agendaMode == .assigned {
-        Task {
-          await store.refreshAssignedWork()
-          store.syncAssignedAgendaSelectionAfterDisplayOptionsChange()
+      let mode = store.agendaMode
+      performAfterSwiftUIViewUpdate {
+        guard store.agendaMode == mode else { return }
+        if mode == .assigned {
+          Task {
+            await store.refreshAssignedWork()
+            store.syncAssignedAgendaSelectionAfterDisplayOptionsChange()
+          }
+        } else {
+          store.syncAgendaSelectionAfterDisplayOptionsChange()
         }
-      } else {
-        store.syncAgendaSelectionAfterDisplayOptionsChange()
       }
     }
     .onChange(of: store.agendaReadScope) {
@@ -1801,13 +1836,21 @@ private struct AgendaView: View {
       Task { await store.refreshAgenda() }
     }
     .onChange(of: store.agendaFilter) {
-      store.syncAgendaSelectionAfterDisplayOptionsChange()
+      let filter = store.agendaFilter
+      performAfterSwiftUIViewUpdate {
+        guard store.agendaFilter == filter else { return }
+        store.syncAgendaSelectionAfterDisplayOptionsChange()
+      }
     }
     .onChange(of: store.agendaFilterFocusToken) {
       agendaFilterFocused = true
     }
     .onChange(of: agendaFilterFocused) {
-      store.isAgendaFilterFocused = agendaFilterFocused
+      let isFocused = agendaFilterFocused
+      performAfterSwiftUIViewUpdate {
+        guard store.isAgendaFilterFocused != isFocused else { return }
+        store.isAgendaFilterFocused = isFocused
+      }
     }
     .onChange(of: store.isAgendaFilterFocused) {
       agendaFilterFocused = store.isAgendaFilterFocused
@@ -2035,7 +2078,6 @@ private struct WorkflowsView: View {
             WorkflowRow(workflow: workflow)
               .tag(workflow.id)
               .contentShape(Rectangle())
-              .onTapGesture { store.selectAgentWorkflow(workflow) }
               .contextMenu {
                 Button("Run Now") { runWorkflow = workflow }
                 Button("Edit Source") {
@@ -2057,7 +2099,10 @@ private struct WorkflowsView: View {
         .onChange(of: store.selectedAgentWorkflowID) {
           guard let id = store.selectedAgentWorkflowID,
                 let workflow = store.agentWorkflows.first(where: { $0.id == id }) else { return }
-          store.selectAgentWorkflow(workflow)
+          performAfterSwiftUIViewUpdate {
+            guard store.selectedAgentWorkflowID == id else { return }
+            store.selectAgentWorkflow(workflow)
+          }
         }
       }
     }
@@ -2211,24 +2256,19 @@ private struct RunCenterView: View {
   @State private var scope: AgentRunScope = .active
   @FocusState private var filterFocused: Bool
 
-  private var visibleEntries: [AgentRunScopeEntry] {
-    scope.entries(in: store.agentRuns).filter { store.agentRunMatchesFilter($0.run) }
-  }
-
-  private var visibleRuns: [AgentRunItem] {
-    visibleEntries.map(\.run)
-  }
-
-  private var visibleSections: [RunCenterSection] {
-    RunCenterPresentation.sections(for: visibleEntries, allRuns: store.agentRuns)
-  }
-
-  private var selectedRun: AgentRunItem? {
-    guard let id = store.selectedAgentRunID else { return visibleRuns.first }
-    return visibleRuns.first(where: { $0.id == id }) ?? visibleRuns.first
-  }
-
   var body: some View {
+    let allRuns = store.agentRuns
+    let visibleEntries = scope.entries(in: allRuns).filter { store.agentRunMatchesFilter($0.run) }
+    let visibleSections = RunCenterPresentation.sections(for: visibleEntries, allRuns: allRuns)
+    let selectedRun = store.selectedAgentRunID.flatMap { id in
+      visibleEntries.first(where: { $0.run.id == id })?.run
+    } ?? visibleEntries.first?.run
+    let scopeCounts = Dictionary(
+      uniqueKeysWithValues: AgentRunScope.allCases.map { candidate in
+        (candidate, candidate.count(in: allRuns))
+      }
+    )
+
     VStack(spacing: 0) {
       HeaderBar(title: "Run Center", subtitle: "Durable delegated work", surface: .approvals) {
         if store.isLoadingAgentRuns { WorkspaceActivityIndicator(size: .small) }
@@ -2243,12 +2283,12 @@ private struct RunCenterView: View {
           } label: {
             RunCenterScopeMetric(
               title: candidate.rawValue,
-              count: candidate.count(in: store.agentRuns),
+              count: scopeCounts[candidate, default: 0],
               isSelected: scope == candidate
             )
           }
           .buttonStyle(.plain)
-          .accessibilityLabel("\(candidate.rawValue), \(candidate.count(in: store.agentRuns)) runs")
+          .accessibilityLabel("\(candidate.rawValue), \(scopeCounts[candidate, default: 0]) runs")
           .accessibilityValue(scope == candidate ? "Selected" : "")
         }
       }
@@ -2261,7 +2301,7 @@ private struct RunCenterView: View {
 
       if store.isLoadingAgentRuns && store.agentRuns.isEmpty {
         Spacer(); WorkspaceLoadingStateView("Loading agent runs"); Spacer()
-      } else if visibleRuns.isEmpty {
+      } else if visibleEntries.isEmpty {
         if store.agentRunFilter.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
           EmptyStateView(title: "No \(scope.rawValue) Runs", detail: "Runs created by agents, schedules, and workflows appear here automatically.")
         } else {
@@ -2300,27 +2340,37 @@ private struct RunCenterView: View {
     }
     .onAppear {
       if let selectedRun {
-        store.selectAgentRun(selectedRun)
+        performAfterSwiftUIViewUpdate {
+          store.selectAgentRun(selectedRun)
+        }
       } else if store.agentRuns.isEmpty && !store.isLoadingAgentRuns {
         Task { await store.refreshAgentRuns() }
       }
     }
     .onChange(of: store.selectedAgentRunID) {
       guard let selectedRun else { return }
-      store.selectAgentRun(selectedRun)
+      let id = selectedRun.id
+      performAfterSwiftUIViewUpdate {
+        guard store.selectedAgentRunID == id else { return }
+        store.selectAgentRun(selectedRun)
+      }
     }
     .onChange(of: scope) {
-      syncVisibleRunSelection()
+      performAfterSwiftUIViewUpdate {
+        syncVisibleRunSelection(in: visibleEntries)
+      }
     }
     .onChange(of: visibleEntries.map(\.id)) {
-      syncVisibleRunSelection()
+      performAfterSwiftUIViewUpdate {
+        syncVisibleRunSelection(in: visibleEntries)
+      }
     }
     .onChange(of: store.agentRunFilterFocusToken) {
       filterFocused = true
     }
   }
 
-  private func syncVisibleRunSelection() {
+  private func syncVisibleRunSelection(in visibleEntries: [AgentRunScopeEntry]) {
     if let selected = store.selectedAgentRunID,
        !visibleEntries.contains(where: { $0.id == selected }) {
       store.selectedAgentRunID = visibleEntries.first?.id
@@ -2487,20 +2537,19 @@ private struct RunCenterDetail: View {
   let run: AgentRunItem
 
   private var isMutating: Bool { store.mutatingAgentRunIDs.contains(run.id) }
-  private var sourceMeeting: AgentRunContextItem? {
-    run.sourceMeetingContext(in: store.agentRuns)
-  }
-  private var relatedRuns: [AgentRunItem] {
-    guard let sourceRef = sourceMeeting?.fileReference else { return [] }
-    var seen = Set<String>()
-    return store.agentRuns.filter { candidate in
-      candidate.id != run.id
-        && seen.insert(candidate.id).inserted
-        && candidate.sourceMeetingContext(in: store.agentRuns)?.fileReference == sourceRef
-    }
-  }
 
   var body: some View {
+    let sourceMeetingContexts = RunCenterPresentation.sourceMeetingContextsByRunID(in: store.agentRuns)
+    let sourceMeeting = sourceMeetingContexts[run.id]
+    let relatedRuns: [AgentRunItem] = if let sourceRef = sourceMeeting?.fileReference {
+      store.agentRuns.filter { candidate in
+        candidate.id != run.id
+          && sourceMeetingContexts[candidate.id]?.fileReference == sourceRef
+      }
+    } else {
+      []
+    }
+
     ScrollView {
       VStack(alignment: .leading, spacing: 18) {
         VStack(alignment: .leading, spacing: 6) {
@@ -3107,7 +3156,10 @@ private struct ApprovalsView: View {
       else {
         return
       }
-      store.selectApprovalItem(item)
+      performAfterSwiftUIViewUpdate {
+        guard store.selectedApprovalItemID == id else { return }
+        store.selectApprovalItem(item)
+      }
     }
     .onChange(of: store.approvalFilterFocusToken) {
       filterFocused = true
@@ -3151,9 +3203,6 @@ private struct ApprovalsView: View {
           )
           .tag(item.id)
           .contentShape(Rectangle())
-          .onTapGesture {
-            store.selectApprovalItem(item)
-          }
           .contextMenu {
             if item.isRunApproval {
               Button {
@@ -3430,7 +3479,10 @@ private struct AgendaItemListView: View {
               .tag(item.id)
               .contentShape(Rectangle())
               .onTapGesture {
-                store.handleAgendaItemClick(item, modifiers: NSApp.currentEvent?.modifierFlags ?? [])
+                let modifiers = NSApp.currentEvent?.modifierFlags ?? []
+                if modifiers.intersection([.command]).contains(.command) {
+                  store.toggleAgendaItemBulkSelection(item)
+                }
               }
               .contextMenu {
                 WorkspaceLocationContextMenu(
@@ -3471,7 +3523,10 @@ private struct AgendaItemListView: View {
       else {
         return
       }
-      store.selectAgendaItem(item)
+      performAfterSwiftUIViewUpdate {
+        guard store.selectedAgendaItemID == id else { return }
+        store.selectAgendaItem(item)
+      }
     }
   }
 }
@@ -3495,9 +3550,6 @@ private struct AssignedAgendaListView: View {
               )
                 .tag(item.id)
                 .contentShape(Rectangle())
-                .onTapGesture {
-                  store.selectAssignedWorkItem(item)
-                }
                 .contextMenu {
                   WorkspaceLocationContextMenu(
                     location: .assigned(item),
@@ -3523,7 +3575,10 @@ private struct AssignedAgendaListView: View {
         else {
           return
         }
-        store.selectAssignedWorkItem(item)
+        performAfterSwiftUIViewUpdate {
+          guard store.selectedAssignedWorkItemID == id else { return }
+          store.selectAssignedWorkItem(item)
+        }
       }
       .onAppear {
         if store.assignedWorkItems.isEmpty {
@@ -4617,9 +4672,6 @@ private struct MeetingsView: View {
                 )
                   .tag(meeting.id)
                   .contentShape(Rectangle())
-                  .onTapGesture {
-                    store.selectMeeting(meeting)
-                  }
                   .contextMenu {
                     WorkspaceLocationContextMenu(
                       location: .meeting(meeting),
@@ -4645,7 +4697,10 @@ private struct MeetingsView: View {
           else {
             return
           }
-          store.select(.meeting(meeting))
+          performAfterSwiftUIViewUpdate {
+            guard store.selectedMeetingID == id else { return }
+            store.selectMeeting(meeting)
+          }
         }
       }
     }
