@@ -1640,6 +1640,39 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testOpenClawChatThreadsDoNotPlaySoundForExistingAssistantMessagesAfterLocalRewrite() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-chat-existing-reply-sound-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let transcript = root.appendingPathComponent("openclaw-chat.json")
+    let suiteName = "org2-workspace-chat-existing-reply-sound-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: transcript
+    )
+    var soundCount = 0
+    store.openClawIncomingMessageSoundPlayer = {
+      soundCount += 1
+    }
+    store.makeSurfacePrimary(.openClaw)
+    let user = OpenClawChatMessage(role: .user, content: "Original question")
+    let assistant = OpenClawChatMessage(role: .assistant, content: "Existing reply")
+    store.openClawMessages = [user, assistant]
+    XCTAssertEqual(soundCount, 0)
+
+    store.selectedSurface = .agenda
+    let insertedUser = OpenClawChatMessage(role: .user, content: "Local inserted note")
+    store.openClawMessages = [user, insertedUser, assistant]
+
+    XCTAssertEqual(store.openClawUnreadMessageCount, 0)
+    XCTAssertEqual(soundCount, 0)
+  }
+
+  @MainActor
   func testOpenClawChatThreadsMigrateLegacySingleTranscriptPayload() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-chat-legacy-threads-\(UUID().uuidString)", isDirectory: true)
