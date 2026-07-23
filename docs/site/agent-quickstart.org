@@ -56,7 +56,7 @@ The shorthand =org2 context QUERY= renders a cited Markdown/Org context pack for
 - *Check corpus health*: =fmt --check=, =lint=, and =graph audit=.
 - *Work with data*: =query-data= materializes explicit dataset/SQL blocks; =render-chart= renders deterministic chart declarations. Remote refresh is always explicit.
 - *Create reviewed AI artifacts*: =ai validate-job=, =ai run=, =ai review=, =ai suggest-links=, and =ai promote= preserve the review boundary.
-- *Publish*: =export html= and =publish= derive HTML without replacing the source corpus.
+- *Publish*: =export html= and =publish= derive HTML without replacing the source corpus; =export beamer= derives reviewable LaTeX or a compiled presentation PDF from an Org/Org2 talk.
 - *Use editor semantics*: =lsp= exposes shared navigation, completion, diagnostics, formatting, and refactoring behavior.
 
 See [[file:tooling-reference.org][Tooling reference]] for commands, [[file:language-reference.org][Language reference]] for syntax, [[file:corpus-flow.org][Corpus flow]] for artifact zones and trust boundaries, and [[file:features.org][Features]] for how the pieces fit together.

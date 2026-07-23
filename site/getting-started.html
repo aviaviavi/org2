@@ -97,6 +97,7 @@ npm run org2 -- agenda --help</code></pre>
 <li><p><strong>Create a new corpus</strong> to choose an empty folder and add a small starter layout: <code>org2.json</code>, an optional transport inbox, a welcome note, <code>daily/</code>, <code>notes/</code>, <code>views/</code>, <code>compiled/</code>, and <code>workflows/</code>. Mac quick capture appends to today's daily note; a sync-constrained client may use the inbox as an isolated intake buffer.</p></li>
 </ul>
 <p>The starter is ordinary plain text and directories, not an app-owned database. You can immediately inspect or edit every generated file in Finder, Git, or another editor.</p>
+<p>To publish a talk, open an <code>.org</code> or <code>.org2</code> file and choose <strong>File → Export Slides as PDF…</strong> or <strong>Export Slides as LaTeX…</strong>. The PDF path uses the shared Beamer compiler and requires a TeX installation such as MacTeX. See <a href="editors-macos.html">macOS Workspace → Slide export</a> for slide structure, compatibility, and troubleshooting.</p>
 <p>For a team pilot, create or identify a separate shared corpus rather than exposing a personal corpus. The Mac app remembers multiple mounts and keeps writes scoped to the active corpus. See <a href="collaboration.html">Shared corpora and collaboration</a>.</p>
 <p>The initial downloadable disk image is built for Apple Silicon Macs. Current release builds are developer-signed, not notarized. If macOS blocks the first launch, open <strong>System Settings → Privacy &amp; Security</strong> and allow Org2Workspace, or right-click the app in Finder and choose <strong>Open</strong>.</p>
 <p>For source builds and local dogfooding, build the app from the repository:</p>
@@ -183,6 +184,7 @@ openclaw plugins inspect org2-lifecycle --runtime --json</code></pre>
 <li><p><code>agent capabilities</code> / <code>agent context</code> / <code>context</code> / <code>brief</code>: discover functionality and retrieve cited, bounded context for agents</p></li>
 <li><p><code>query-data</code> / <code>render-chart</code>: materialize explicit datasets/SQL and render deterministic charts</p></li>
 <li><p><code>export html</code> / <code>publish</code>: produce docs and sites</p></li>
+<li><p><code>export beamer</code>: produce Beamer LaTeX or compile a presentation PDF</p></li>
 <li><p><code>lsp</code>: optional shared editor backend for clients that use the protocol</p></li>
 </ul>
 </section>
@@ -201,6 +203,7 @@ openclaw plugins inspect org2-lifecycle --runtime --json</code></pre>
 <li><p>strong VS Code support</p></li>
 <li><p>roam-style linked-note workflows</p></li>
 <li><p>HTML export + publish pipeline</p></li>
+<li><p>Beamer-compatible presentation export to TeX/PDF</p></li>
 <li><p>useful editor backend support</p></li>
 <li><p>cited agent retrieval and a machine-readable installed capability manifest</p></li>
 <li><p>local/remote data notebooks with explicit refresh and chart rendering</p></li>

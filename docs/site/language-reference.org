@@ -463,6 +463,74 @@ FROM fetches
 
 This is deliberately scoped to explicit local/ad hoc data sources. Org2 stores the source path, read-only URL, table/view name, optional column and primary-key metadata, credential/config reference, query, and materialized result/provenance; secrets, bearer tokens, and remote warehouse credentials belong in external tooling, not in notes.
 
+* Presentations
+
+Org2 can compile an Org-shaped outline into a backend-neutral presentation model and render that model as Beamer LaTeX or PDF:
+
+#+begin_src sh
+org2 export beamer --file talk.org2
+org2 export beamer --file talk.org2 --out talk.tex --apply
+org2 export beamer --file talk.org2 --out talk.pdf --pdf --apply
+#+end_src
+
+Export previews by default. =--pdf= invokes =pdflatex= twice; use =--latex-engine COMMAND= to select another installed LaTeX engine.
+
+For pdfLaTeX compatibility, common Unicode arrows, comparison operators, checkmarks, bullets, dashes, and related symbols are translated to equivalent LaTeX commands in prose, headings, metadata, and literal/source blocks. This includes symbols such as =→=, =↘=, =≥=, and =✓= that pdfLaTeX's default UTF-8 layer does not define directly.
+
+The frame level defaults to 2 and follows the familiar Org convention in =#+OPTIONS: H:2=: level-one headlines become sections and level-two headlines become slides. =#+ORG2_SLIDE_LEVEL:=, =#+SLIDE_LEVEL:=, and legacy =#+BEAMER_FRAME_LEVEL:= can set the level explicitly. =toc:t= adds an outline frame.
+
+A minimal talk is ordinary Org-shaped text:
+
+#+begin_src org
+#+TITLE: Shipping a local-first compiler
+#+AUTHOR: Example Speaker
+#+OPTIONS: H:2 toc:t
+#+BEAMER_THEME: Madrid
+
+* Why
+** Plain text is the interface
+- Reviewable in Git
+- Editable anywhere
+- One source → slides, sites, and agent context
+
+* How
+** Shared semantics
+The compiler parses once and renders each target from the same structure.
+#+end_src
+
+Document metadata and Beamer compatibility keywords include:
+
+- =#+TITLE:=, =#+AUTHOR:=, =#+DATE:=
+- =#+LATEX_CLASS_OPTIONS:=
+- =#+BEAMER_THEME:=, =#+BEAMER_COLOR_THEME:=, =#+BEAMER_FONT_THEME:=
+- =#+BEAMER_INNER_THEME:=, =#+BEAMER_OUTER_THEME:=
+- repeatable =#+LATEX_HEADER:= and =#+BEAMER_HEADER:=
+
+Headlines below a slide become presentation groups. Legacy properties remain accepted so existing Org Beamer talks can move over incrementally:
+
+| Org2 property | Legacy alias | Meaning |
+|---------------+--------------+---------|
+| =SLIDE_ENV= | =BEAMER_ENV= | =block=, =note=, =ignoreheading=, or =plain= |
+| =SLIDE_COLUMN= | =BEAMER_COL= | column width such as =0.45= or =45%= |
+| =SLIDE_REVEAL= | =BEAMER_ACT= | overlay such as =<2->= or =3-= |
+| =SLIDE_ROLE: note= | =BEAMER_ENV: note= | speaker note content |
+
+The =:B_note:= tag is also accepted for legacy notes. Source blocks make their frame =fragile=. Lists, nested blocks, quotes, tables, links, inline emphasis, images, and =#+ATTR_LATEX= image sizing render through the shared syntax tree. A =#+RESULTS:= image immediately following a source block is omitted from Beamer output, matching Org's default code-export behavior.
+
+Backend-specific escape hatches remain explicit and reviewable:
+
+#+begin_src org
+#+LATEX: \pause
+
+#+BEGIN_EXPORT beamer
+\vfill
+#+END_EXPORT
+#+end_src
+
+Relative image paths resolve from the source file's directory during PDF compilation. Unknown slide environments produce warnings rather than being silently discarded.
+
+The macOS Workspace exposes the same pipeline through *File → Export Slides as PDF…* and *File → Export Slides as LaTeX…*. See [[file:editors-macos.org][macOS Workspace → Slide export]] for the application workflow and troubleshooting.
+
 * Keyword/directive lines
 
 Org2 parses keyword lines in =#+KEY: VALUE= form.
@@ -477,6 +545,9 @@ Commonly used in export/publish:
 - =#+KEYWORDS:=
 - =#+LANGUAGE:=
 - =#+HTML_HEAD:=
+- =#+LATEX_CLASS_OPTIONS:=
+- =#+LATEX_HEADER:=
+- =#+BEAMER_THEME:=
 - =#+ID:=
 
 Unknown directives are preserved for round-tripping.

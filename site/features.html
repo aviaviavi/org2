@@ -174,17 +174,18 @@ org2 query-data --file notes/readiness.org2 --results weekly --apply</code></pre
   <section class="org2-feature-section" id="editors-publishing" aria-labelledby="editors-publishing-title">
     <div class="org2-feature-heading">
       <h2 id="editors-publishing-title">Editors and publishing use the same semantics</h2>
-      <p>Use the native Workspace for richer review flows, VS Code for the most complete editing experience, the CLI for automation, LSP where the protocol fits, and HTML publishing for selected outputs.</p>
+      <p>Use the native Workspace for richer review flows, VS Code for the most complete editing experience, the CLI for automation, LSP where the protocol fits, HTML publishing for selected outputs, and Beamer-compatible export for talks.</p>
     </div>
     <div class="org2-editor-strip">
       <figure><img src="assets/screenshots/basic.png" alt="An Org2 project note open in Visual Studio Code with syntax highlighting, tasks, properties, and ID links" loading="lazy" /><figcaption><strong>VS Code.</strong> Syntax, folding, agenda, capture, refiling, formatting, links, search, and planning commands.</figcaption></figure>
       <div class="org2-editor-cards">
         <article><strong>Shared editor intelligence</strong><p>Definitions, references, hover, completion, rename, semantic tokens, table-aware formatting, and file-link updates come from shared semantics.</p></article>
-        <article><strong>Publishing</strong><p>Export one file or publish a recursive project with navigation, styles, rewritten links, and generated indexes. This documentation site is built by Org2.</p></article>
+        <article><strong>Publishing</strong><p>Export one file, compile an Org/Org2 talk to Beamer TeX or PDF, or publish a recursive project with navigation, styles, rewritten links, and generated indexes. This documentation site is built by Org2.</p></article>
         <div class="org2-command" aria-label="Formatting and publishing commands">
           <span>Check formatting or preview a site</span>
           <pre class="org2-src language-sh"><code class="language-sh">org2 fmt --dir ~/notes --recursive --check
-org2 publish docs-site --config org2.json --preview</code></pre>
+org2 publish docs-site --config org2.json --preview
+org2 export beamer --file talk.org2 --pdf --apply</code></pre>
         </div>
       </div>
     </div>
@@ -197,7 +198,7 @@ org2 publish docs-site --config org2.json --preview</code></pre>
       <p>A scan-friendly inventory of the broader surface available today.</p>
     </div>
     <div class="org2-feature-card-grid">
-      <article><h3>Plain-text core</h3><ul><li>Headings, drawers, properties, TODOs, planning, links, blocks, tables, timestamps</li><li>Capture, archive, refile, canonical formatting</li><li>Single-file export and multi-file publishing</li><li>Source ranges and structured compiler output</li></ul></article>
+      <article><h3>Plain-text core</h3><ul><li>Headings, drawers, properties, TODOs, planning, links, blocks, tables, timestamps</li><li>Capture, archive, refile, canonical formatting</li><li>HTML/site publishing plus Beamer-compatible presentation export</li><li>Source ranges and structured compiler output</li></ul></article>
       <article><h3>Knowledge + planning</h3><ul><li>Agenda CLI, JSON, TUI, VS Code, and Mac surfaces</li><li>IDs, backlinks, dailies, nodes, link insertion, graph reports</li><li>Cited search, query, entity pages, and context bundles</li><li>Linkify previews and review-only semantic suggestions</li></ul></article>
       <article><h3>Agents + review</h3><ul><li>Durable runs, workflows, plans, steps, budgets, comments, retries</li><li>Artifacts, validation, approvals, review queues, outcome records</li><li>OpenClaw lifecycle and schedule integration</li><li>MCP resources, prompts, tools, client discovery, and snapshots</li></ul></article>
       <article><h3>Data + provenance</h3><ul><li>Datasets, SQL views, materialized results, deterministic charts</li><li>Artifact roles, dependency graphs, freshness, and rebuild plans</li><li>Meeting, event-stream, timeline, and data-link records</li><li>Evaluation fixtures and sanitized workflow replay</li></ul></article>

@@ -24,6 +24,8 @@ import { planningKindFromArg, updatePlanningInText, type PlanningKindArg } from 
 import { computeSubtreeRange, findHeadingAtOrAbove, isHeadlineLine, upsertHeadlinePropertyInLines } from "./sourceLines.js";
 import { findBacklinksInText, type Backlink } from "./backlinks.js";
 import { renderOrgDocumentToHtml, renderOrgExportIndexToHtml } from "./export.js";
+import { renderPresentationToBeamer } from "./presentation.js";
+import { compileBeamerPdf } from "./beamerCompile.js";
 import { compileCorpus, compileCorpusIncremental, extractCheckboxProgress, renderCompiledCorpus } from "./corpusCompile.js";
 import { extractClockReport } from "./clock.js";
 import { buildAgentContextPayload, renderAgentContextPack, type AgentInclude } from "./agentContext.js";
@@ -8277,8 +8279,8 @@ async function main(): Promise<void> {
   let refileApply = false;
   let refileFormat: "text" | "diff" | "json" = "text";
 
-  // HTML export/publishing
-  let exportAction: "html" = "html";
+  // Document export/publishing
+  let exportAction: "html" | "beamer" = "html";
   let exportFile = "";
   let publishProject = "";
   let publishConfigPath = "";
@@ -8298,6 +8300,8 @@ async function main(): Promise<void> {
   let exportApply = false;
   let exportFormat: "text" | "json" = "text";
   let exportTitle = "";
+  let exportPdf = false;
+  let exportLatexEngine = "pdflatex";
 
   // Todo status editing
   let todoAction: "set" | "toggle" | "assign" | "approve" = "toggle";
@@ -8517,8 +8521,8 @@ async function main(): Promise<void> {
       i++;
       if (i < args.length && !args[i]!.startsWith("--")) {
         const sub = args[i]!;
-        if (sub === "html") {
-          exportAction = "html";
+        if (sub === "html" || sub === "beamer") {
+          exportAction = sub;
           i++;
         }
       }
@@ -9837,6 +9841,19 @@ async function main(): Promise<void> {
         exportIncludeDefaultStyle = false;
       }
       i++;
+    } else if (arg === "--pdf") {
+      if (command === "export") {
+        exportPdf = true;
+      }
+      i++;
+    } else if (arg === "--latex-engine") {
+      i++;
+      if (i < args.length) {
+        if (command === "export") {
+          exportLatexEngine = String(args[i] || "").trim() || "pdflatex";
+        }
+        i++;
+      }
     } else if (arg === "--toc") {
       if (command === "export") {
         exportIncludeToc = true;
@@ -10025,6 +10042,7 @@ Core commands:
 Export / publish:
   org2 export html --file FILE [--out FILE] [--apply]
   org2 export html --dir DIR [--recursive] [--out-dir DIR] [--index FILE] [--apply]
+  org2 export beamer --file FILE [--out FILE] [--pdf] [--latex-engine COMMAND] [--apply]
   org2 publish [PROJECT] [--config PATH] [--preview]
 
 Roam / IDs:
@@ -10088,7 +10106,7 @@ Tips:
 function printScopedUsage(
   command: string,
   options: {
-    exportAction: "html";
+    exportAction: "html" | "beamer";
     todoAction: "set" | "toggle" | "assign" | "approve";
     planAction: "set" | "today";
     cryptAction: "encrypt" | "decrypt" | "reencrypt";
@@ -10218,7 +10236,19 @@ Flags:
   --to-pos LINE[:COL] Destination position
   --apply            Write changes instead of previewing`;
   } else if (command === "export") {
-    text = `org2 export ${options.exportAction}
+    text = options.exportAction === "beamer"
+      ? `org2 export beamer
+
+Usage:
+  org2 export beamer --file FILE [--out FILE] [--pdf] [--latex-engine COMMAND] [--apply]
+
+Flags:
+  --file FILE             Input Org/Org2 presentation
+  --out FILE              Output .tex or .pdf file
+  --pdf                   Compile the generated Beamer source to PDF
+  --latex-engine COMMAND  LaTeX engine command or path (default: pdflatex)
+  --apply                 Write the output instead of previewing`
+      : `org2 export html
 
 Usage:
   org2 export html --file FILE [--out FILE] [--apply]
@@ -11815,6 +11845,112 @@ Flags:
   }
 
   if (command === "export") {
+    if (exportAction === "beamer") {
+      if (!exportFile) {
+        console.error("Error: export beamer requires --file FILE");
+        process.exit(1);
+      }
+      if (String(dir || "").trim()) {
+        console.error("Error: export beamer currently supports one --file at a time");
+        process.exit(1);
+      }
+      if (exportOutDir || exportIndex || exportIndexTitle) {
+        console.error("Error: --out-dir and --index options are only supported by export html");
+        process.exit(1);
+      }
+
+      const sourcePathInput = exportFile;
+      const sourcePath = path.resolve(sourcePathInput);
+      const sourceRaw = fs.readFileSync(sourcePath, "utf8").replace(/\r\n/g, "\n");
+      const sourceAst = parseOrgToCanonicalAst(sourceRaw, { sourceRanges: true });
+      const rendered = renderPresentationToBeamer(sourceAst);
+      const fatalDiagnostics = rendered.diagnostics.filter((diagnostic) => diagnostic.severity === "error");
+      if (fatalDiagnostics.length > 0) {
+        for (const diagnostic of fatalDiagnostics) {
+          console.error(
+            `Error${diagnostic.line ? `:${diagnostic.line}` : ""}: ${diagnostic.message} (${diagnostic.code})`,
+          );
+        }
+        process.exit(1);
+      }
+
+      const defaultOutputPath = (() => {
+        const extension = exportPdf ? ".pdf" : ".tex";
+        if (/\.(org|org2)$/i.test(sourcePathInput)) {
+          return sourcePathInput.replace(/\.(org|org2)$/i, extension);
+        }
+        return `${sourcePathInput}${extension}`;
+      })();
+      const outputPathInput = exportOut || defaultOutputPath;
+      const outputPath = path.resolve(outputPathInput);
+      let changed = true;
+      let pdfBytes: number | undefined;
+
+      if (exportPdf) {
+        if (exportApply) {
+          const compiled = compileBeamerPdf(rendered.tex, {
+            sourcePath,
+            engine: exportLatexEngine,
+          });
+          if (!compiled.ok) {
+            console.error(`Error: ${compiled.message}`);
+            if (exportFormat !== "json" && compiled.log.trim()) console.error(compiled.log.trim());
+            process.exit(1);
+          }
+          const existing = fs.existsSync(outputPath) ? fs.readFileSync(outputPath) : null;
+          changed = !existing || !existing.equals(compiled.pdf);
+          fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+          fs.writeFileSync(outputPath, compiled.pdf);
+          pdfBytes = compiled.pdf.byteLength;
+        }
+      } else {
+        const existing = fs.existsSync(outputPath)
+          ? fs.readFileSync(outputPath, "utf8").replace(/\r\n/g, "\n")
+          : "";
+        changed = existing !== rendered.tex;
+        if (exportApply) {
+          fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+          fs.writeFileSync(outputPath, rendered.tex, "utf8");
+        }
+      }
+
+      const warningDiagnostics = rendered.diagnostics.filter((diagnostic) => diagnostic.severity === "warning");
+      if (exportFormat === "json") {
+        process.stdout.write(
+          JSON.stringify(
+            {
+              kind: exportPdf ? "export-beamer-pdf" : "export-beamer-tex",
+              sourcePath: sourcePathInput,
+              outputPath: outputPathInput,
+              apply: exportApply,
+              changed,
+              title: rendered.presentation.metadata.title,
+              sectionCount: rendered.presentation.sections.filter((section) => section.title.length > 0).length,
+              slideCount: rendered.presentation.sections.reduce((count, section) => count + section.slides.length, 0),
+              engine: exportPdf ? exportLatexEngine : undefined,
+              pdfBytes,
+              diagnostics: rendered.diagnostics,
+            },
+            null,
+            2,
+          ) + "\n",
+        );
+        return;
+      }
+
+      for (const diagnostic of warningDiagnostics) {
+        console.error(
+          `Warning${diagnostic.line ? `:${diagnostic.line}` : ""}: ${diagnostic.message} (${diagnostic.code})`,
+        );
+      }
+      const verb = exportApply ? "Exported" : "Previewed";
+      const formatName = exportPdf ? "Beamer PDF" : "Beamer TeX";
+      process.stdout.write(
+        `${verb} ${formatName}: ${sourcePathInput} -> ${outputPathInput}${exportApply && !changed ? " (unchanged)" : ""}\n`,
+      );
+      return;
+    }
+
     if (exportAction !== "html") {
       console.error("Error: export currently supports only `html`");
       process.exit(1);

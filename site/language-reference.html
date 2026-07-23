@@ -450,6 +450,60 @@ FROM fetches
 </section>
 </section>
 <section class="org2-headline level-1">
+<h1 id="presentations">Presentations</h1>
+<p>Org2 can compile an Org-shaped outline into a backend-neutral presentation model and render that model as Beamer LaTeX or PDF:</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 export beamer --file talk.org2
+org2 export beamer --file talk.org2 --out talk.tex --apply
+org2 export beamer --file talk.org2 --out talk.pdf --pdf --apply</code></pre>
+<p>Export previews by default. <code>--pdf</code> invokes <code>pdflatex</code> twice; use <code>--latex-engine COMMAND</code> to select another installed LaTeX engine.</p>
+<p>For pdfLaTeX compatibility, common Unicode arrows, comparison operators, checkmarks, bullets, dashes, and related symbols are translated to equivalent LaTeX commands in prose, headings, metadata, and literal/source blocks. This includes symbols such as <code>→</code>, <code>↘</code>, <code>≥</code>, and <code>✓</code> that pdfLaTeX's default UTF-8 layer does not define directly.</p>
+<p>The frame level defaults to 2 and follows the familiar Org convention in <code>#+OPTIONS: H:2</code>: level-one headlines become sections and level-two headlines become slides. <code>#+ORG2_SLIDE_LEVEL:</code>, <code>#+SLIDE_LEVEL:</code>, and legacy <code>#+BEAMER_FRAME_LEVEL:</code> can set the level explicitly. <code>toc:t</code> adds an outline frame.</p>
+<p>A minimal talk is ordinary Org-shaped text:</p>
+<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">#+TITLE: Shipping a local-first compiler
+#+AUTHOR: Example Speaker
+#+OPTIONS: H:2 toc:t
+#+BEAMER_THEME: Madrid
+
+* Why
+** Plain text is the interface
+- Reviewable in Git
+- Editable anywhere
+- One source → slides, sites, and agent context
+
+* How
+** Shared semantics
+The compiler parses once and renders each target from the same structure.</code></pre>
+<p>Document metadata and Beamer compatibility keywords include:</p>
+<ul>
+<li><p><code>#+TITLE:</code>, <code>#+AUTHOR:</code>, <code>#+DATE:</code></p></li>
+<li><p><code>#+LATEX_CLASS_OPTIONS:</code></p></li>
+<li><p><code>#+BEAMER_THEME:</code>, <code>#+BEAMER_COLOR_THEME:</code>, <code>#+BEAMER_FONT_THEME:</code></p></li>
+<li><p><code>#+BEAMER_INNER_THEME:</code>, <code>#+BEAMER_OUTER_THEME:</code></p></li>
+<li><p>repeatable <code>#+LATEX_HEADER:</code> and <code>#+BEAMER_HEADER:</code></p></li>
+</ul>
+<p>Headlines below a slide become presentation groups. Legacy properties remain accepted so existing Org Beamer talks can move over incrementally:</p>
+<table>
+<thead>
+<tr><th>Org2 property</th><th>Legacy alias</th><th>Meaning</th></tr>
+</thead>
+<tbody>
+<tr><td><code>SLIDE_ENV</code></td><td><code>BEAMER_ENV</code></td><td><code>block</code>, <code>note</code>, <code>ignoreheading</code>, or <code>plain</code></td></tr>
+<tr><td><code>SLIDE_COLUMN</code></td><td><code>BEAMER_COL</code></td><td>column width such as <code>0.45</code> or <code>45%</code></td></tr>
+<tr><td><code>SLIDE_REVEAL</code></td><td><code>BEAMER_ACT</code></td><td>overlay such as <code>&lt;2-&gt;</code> or <code>3-</code></td></tr>
+<tr><td><code>SLIDE_ROLE: note</code></td><td><code>BEAMER_ENV: note</code></td><td>speaker note content</td></tr>
+</tbody>
+</table>
+<p>The <code>:B_note:</code> tag is also accepted for legacy notes. Source blocks make their frame <code>fragile</code>. Lists, nested blocks, quotes, tables, links, inline emphasis, images, and <code>#+ATTR_LATEX</code> image sizing render through the shared syntax tree. A <code>#+RESULTS:</code> image immediately following a source block is omitted from Beamer output, matching Org's default code-export behavior.</p>
+<p>Backend-specific escape hatches remain explicit and reviewable:</p>
+<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">#+LATEX: \pause
+
+#+BEGIN_EXPORT beamer
+\vfill
+#+END_EXPORT</code></pre>
+<p>Relative image paths resolve from the source file's directory during PDF compilation. Unknown slide environments produce warnings rather than being silently discarded.</p>
+<p>The macOS Workspace exposes the same pipeline through <strong>File → Export Slides as PDF…</strong> and <strong>File → Export Slides as LaTeX…</strong>. See <a href="editors-macos.html">macOS Workspace → Slide export</a> for the application workflow and troubleshooting.</p>
+</section>
+<section class="org2-headline level-1">
 <h1 id="keyworddirective-lines">Keyword/directive lines</h1>
 <p>Org2 parses keyword lines in <code>#+KEY: VALUE</code> form.</p>
 <p>Commonly used in export/publish:</p>
@@ -462,6 +516,9 @@ FROM fetches
 <li><p><code>#+KEYWORDS:</code></p></li>
 <li><p><code>#+LANGUAGE:</code></p></li>
 <li><p><code>#+HTML_HEAD:</code></p></li>
+<li><p><code>#+LATEX_CLASS_OPTIONS:</code></p></li>
+<li><p><code>#+LATEX_HEADER:</code></p></li>
+<li><p><code>#+BEAMER_THEME:</code></p></li>
 <li><p><code>#+ID:</code></p></li>
 </ul>
 <p>Unknown directives are preserved for round-tripping.</p>

@@ -104,6 +104,26 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <p>Document presentation is customizable without enabling document scripts. Use the document-layout menu to create or edit <code>.org2/app.css</code> at the corpus root; its CSS applies to read mode and the source preview. The app continues to exclude <code>HTML_HEAD</code> scripts and raw export HTML from its safe rendering profile.</p>
 </section>
 <section class="org2-headline level-1">
+<h1 id="slide-export">Slide export</h1>
+<p>Org2 Workspace can turn an open <code>.org</code> or <code>.org2</code> talk into a Beamer PDF without leaving the app:</p>
+<ol>
+<li><p>Open the talk in the document pane.</p></li>
+<li><p>Choose <strong>File → Export Slides as PDF…</strong> from the macOS menu bar, or open the document header's <strong>File</strong> menu and choose the same command.</p></li>
+<li><p>Choose the destination. The app saves any pending edit, compiles the entire source file, and confirms the written path.</p></li>
+</ol>
+<p>Choose <strong>Export Slides as LaTeX…</strong> instead when you want the intermediate <code>.tex</code> file for inspection, manual compilation, or further customization. Both commands use the same shared Org2 presentation model and Beamer renderer as <code>org2 export beamer</code>; Swift does not maintain a second slide parser.</p>
+<p>PDF export requires a TeX installation that provides <code>pdflatex</code>. MacTeX installs it in <code>/Library/TeX/texbin</code>, which the app includes when resolving command-line tools. Relative image paths are resolved from the talk file's directory, so a reference such as <code>[[file:images/architecture.png]]</code> continues to work when the PDF is written elsewhere.</p>
+<p>The familiar Org outline convention works without migration: with <code>#+OPTIONS: H:2</code>, level-one headlines are sections and level-two headlines are slides. Existing <code>BEAMER_*</code> properties remain accepted, while new talks may use backend-neutral <code>SLIDE_*</code> properties. See <a href="language-reference.html">Language reference → Presentations</a> for themes, columns, overlays, notes, image sizing, raw LaTeX escape hatches, and CLI examples.</p>
+<p>For pdfLaTeX compatibility, the renderer translates common Unicode arrows, comparison operators, checkmarks, bullets, and dashes in headings, prose, metadata, and source/example blocks. Symbols such as <code>→</code>, <code>↘</code>, <code>≥</code>, and <code>✓</code> therefore do not require per-talk LaTeX declarations.</p>
+<p>On failure, the app presents one bounded, actionable compiler summary rather than placing the complete LaTeX transcript in a native alert. Common fixes are:</p>
+<ul>
+<li><p>confirm that an image path is relative to the talk and that the file exists,</p></li>
+<li><p>export LaTeX to inspect the generated source,</p></li>
+<li><p>run the CLI directly when a complete terminal transcript is useful,</p></li>
+<li><p>add a required package with <code>#+LATEX_HEADER:</code> when the talk uses custom LaTeX.</p></li>
+</ul>
+</section>
+<section class="org2-headline level-1">
 <h1 id="data-notebooks-and-charts">Data notebooks and charts</h1>
 <p>Files containing <code>```dataset</code> and <code>```sql results</code>...= blocks act as explicit data notebooks. The rendered view can refresh a selected result through the shared <code>org2 query-data</code> backend, write the provenance-stamped materialized table back to the ordinary source file, and then render attached chart blocks. Merely opening or rendering a note never contacts a remote warehouse.</p>
 <p>The current app workflow supports local/table datasets plus configured ClickHouse and Metabase profiles. For the Scarf Metabase workflow, the app stores the API key in the macOS Keychain, stores only non-secret profile configuration in <code>org2.json</code>, distinguishes configuration/authentication/query failures, and offers an explicit retry path. Native SQL datasets can identify the configured Metabase database without depending on a mutable saved question.</p>

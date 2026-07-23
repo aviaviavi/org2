@@ -29,6 +29,7 @@ Main workflows:
 - =roam ...=
 - =crypt ...=
 - =export html=
+- =export beamer=
 - =publish=
 - =lint=
 - =graph audit=
@@ -580,10 +581,16 @@ Per-entry recipient properties let one corpus mix private-only and shared-with-a
 #+begin_src sh
 org2 export html --file README.org --out README.html --apply
 org2 export html --dir docs/site --recursive --out-dir site --apply
+org2 export beamer --file talks/demo.org2 --out publish/demo.tex --apply
+org2 export beamer --file talks/demo.org2 --out publish/demo.pdf --pdf --apply
 org2 publish docs-site --config org2.json
 #+end_src
 
 Useful export options include TOC, heading numbering, stylesheet injection, and Org-file-link rewrite to HTML targets.
+
+=export beamer= previews by default. Without =--pdf= it produces reviewable =.tex=; with =--pdf= it runs =pdflatex= twice so references, outlines, and overlays settle before the PDF is written. Select another installed command or absolute executable path with =--latex-engine=. The compiler invokes the engine directly with non-interactive, halt-on-error flags and does not enable shell escape.
+
+Presentation export reads the shared Org2 AST and maps both legacy Org Beamer properties and backend-neutral Org2 slide properties into one presentation model. See [[file:language-reference.org][Language reference]] for slide structure, columns, blocks, notes, overlays, and raw backend escape hatches.
 
 * LSP
 

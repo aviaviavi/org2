@@ -5,6 +5,27 @@ private struct Org2JSONDecodedValue<Value>: @unchecked Sendable {
   let value: Value
 }
 
+public enum Org2SlideExportFormat: String, CaseIterable, Identifiable, Sendable {
+  case pdf
+  case latex
+
+  public var id: String { rawValue }
+
+  public var fileExtension: String {
+    switch self {
+    case .pdf: "pdf"
+    case .latex: "tex"
+    }
+  }
+
+  public var title: String {
+    switch self {
+    case .pdf: "PDF"
+    case .latex: "LaTeX"
+    }
+  }
+}
+
 public struct Org2CLI: Sendable {
   private static let ignoreBrokenPipeSignal: Void = {
     _ = Darwin.signal(SIGPIPE, SIG_IGN)
@@ -169,6 +190,23 @@ public struct Org2CLI: Sendable {
 
   public func runSync(_ arguments: [String]) throws -> Data {
     try runProcess(scriptPath: cliPath, arguments: arguments)
+  }
+
+  public func exportBeamer(
+    file: URL,
+    destination: URL,
+    format: Org2SlideExportFormat
+  ) async throws {
+    var arguments = [
+      "export", "beamer",
+      "--file", file.standardizedFileURL.path,
+      "--out", destination.standardizedFileURL.path,
+    ]
+    if format == .pdf {
+      arguments.append("--pdf")
+    }
+    arguments.append(contentsOf: ["--format", "json", "--apply"])
+    _ = try await run(arguments)
   }
 
   private func decodeJSON<T: Decodable>(_ type: T.Type, from data: Data) async throws -> T {
@@ -347,9 +385,9 @@ public struct Org2CLI: Sendable {
     return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
   }
 
-  private static func processEnvironment() -> [String: String] {
+  static func processEnvironment() -> [String: String] {
     var environment = ProcessInfo.processInfo.environment
-    let defaultPath = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+    let defaultPath = "/Library/TeX/texbin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
     if let existing = environment["PATH"], !existing.isEmpty {
       environment["PATH"] = "\(defaultPath):\(existing)"
     } else {

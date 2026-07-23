@@ -670,7 +670,7 @@ function parseDrawer(lines: string[], startLineIndex: number): ParseDrawerResult
     const lineNumber = i + 1;
     const line = lines[i] ?? "";
 
-    if (line === ":END:") {
+    if (line === `${indent}:END:`) {
       const bodyLines = lines.slice(startLineIndex + 1, i);
       return {
         drawer: {
@@ -1333,6 +1333,7 @@ export function parseOrgToCanonicalAst(input: string, options: ParseOptions = {}
               flushItemParagraph();
               // Parse nested list items
               let nestedList: ListNode | null = null;
+              let nestedListIndentColumn: number | null = null;
               let nestedItemParaLines: string[] = [];
               
               while (i < lines.length) {
@@ -1372,6 +1373,11 @@ export function parseOrgToCanonicalAst(input: string, options: ParseOptions = {}
                 }
                 
                 const nestedItemIndentColumn = nestedLeadingSpaces + nestedItem.indentColumn;
+                if (nestedListIndentColumn === null) {
+                  nestedListIndentColumn = nestedItemIndentColumn;
+                } else if (nestedItemIndentColumn < nestedListIndentColumn) {
+                  break;
+                }
                 
                 // Check nesting consistency
                 if (!nestedList) {
