@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { DuckDBConnection } from "@duckdb/node-api";
 import { findConfigFile, loadConfig, type Org2DataSourceConfig } from "./config.js";
 import { loadRemoteDataset, type RemoteDatasetRequest } from "./dataSources.js";
+import { isOrgTableDataLine, isOrgTableHline, parseOrgTableDataLine } from "./orgTableData.js";
 
 export type DataQueryDiagnostic = {
   severity: "error" | "warning";
@@ -314,24 +315,9 @@ function parseKeywordLine(line: string): { key: string; value: string } | null {
   return { key: String(match[1] || "").toUpperCase(), value: String(match[2] || "").trim() };
 }
 
-function isTableLine(line: string): boolean {
-  return /^\s*\|/.test(line);
-}
-
-function parseTableLine(line: string): string[] | null {
-  if (!isTableLine(line)) return null;
-  const trimmed = line.trim();
-  const inner = trimmed.startsWith("|") ? trimmed.slice(1, trimmed.endsWith("|") ? -1 : undefined) : trimmed;
-  return inner.split("|").map((cell) => cell.trim());
-}
-
-function isHline(cells: string[]): boolean {
-  return cells.length > 0 && cells.every((cell) => /^[+\-= ]*$/.test(cell) && /[-=]/.test(cell));
-}
-
 function parseNamedOrgTable(name: string, line: number, endLine: number, tableLines: string[]): NamedOrgTable | null {
-  const rows = tableLines.map(parseTableLine).filter((row): row is string[] => Array.isArray(row));
-  const firstDataRow = rows.find((row) => !isHline(row));
+  const rows = tableLines.map(parseOrgTableDataLine).filter((row): row is string[] => Array.isArray(row));
+  const firstDataRow = rows.find((row) => !isOrgTableHline(row));
   if (!firstDataRow) return null;
   const headerIndex = rows.indexOf(firstDataRow);
   return {
@@ -339,7 +325,7 @@ function parseNamedOrgTable(name: string, line: number, endLine: number, tableLi
     line,
     endLine,
     headers: firstDataRow,
-    rows: rows.slice(headerIndex + 1).filter((row) => !isHline(row)),
+    rows: rows.slice(headerIndex + 1).filter((row) => !isOrgTableHline(row)),
   };
 }
 
@@ -358,10 +344,10 @@ function collectNamedOrgTables(input: string): Map<string, NamedOrgTable> {
       continue;
     }
 
-    if (isTableLine(line)) {
+    if (isOrgTableDataLine(line)) {
       const tableStartLine = i + 1;
       const tableLines: string[] = [];
-      while (i < lines.length && isTableLine(lines[i] || "")) {
+      while (i < lines.length && isOrgTableDataLine(lines[i] || "")) {
         tableLines.push(lines[i] || "");
         i++;
       }
@@ -693,7 +679,7 @@ export function applyDataQueryResult(input: string, result: DataQueryResult): { 
     let existingEnd = existingStart + 1;
     while (existingEnd < lines.length) {
       const line = lines[existingEnd] || "";
-      if (/^\s*#\+(?:name|results):/i.test(line) || isTableLine(line)) {
+      if (/^\s*#\+(?:name|results):/i.test(line) || isOrgTableDataLine(line)) {
         existingEnd++;
         continue;
       }

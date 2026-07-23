@@ -1,4 +1,5 @@
 import { parseOrgToCanonicalAst } from "./parser.js";
+import { isOrgTableDataLine, isOrgTableHline, parseOrgTableDataLine } from "./orgTableData.js";
 
 export type ChartRenderFormat = "svg";
 
@@ -103,31 +104,16 @@ function parseKeyword(line: string, lineNumber: number): Keyword | null {
   };
 }
 
-function isTableLine(line: string): boolean {
-  return /^\s*\|/.test(line);
-}
-
-function parseTableLine(line: string): string[] | null {
-  if (!isTableLine(line)) return null;
-  const trimmed = line.trim();
-  const inner = trimmed.startsWith("|") ? trimmed.slice(1, trimmed.endsWith("|") ? -1 : undefined) : trimmed;
-  return inner.split("|").map((cell) => cell.trim());
-}
-
-function isHline(cells: string[]): boolean {
-  return cells.length > 0 && cells.every((cell) => /^[+\-= ]*$/.test(cell) && /[-=]/.test(cell));
-}
-
 function parseTable(lines: string[]): { headers: string[]; rows: string[][]; diagnostics: ChartRenderDiagnostic[] } {
-  const parsed = lines.map(parseTableLine).filter((row): row is string[] => Array.isArray(row));
+  const parsed = lines.map(parseOrgTableDataLine).filter((row): row is string[] => Array.isArray(row));
   const diagnostics: ChartRenderDiagnostic[] = [];
-  const firstDataRow = parsed.find((row) => !isHline(row));
+  const firstDataRow = parsed.find((row) => !isOrgTableHline(row));
   if (!firstDataRow) {
     return { headers: [], rows: [], diagnostics: [diagnostic("Chart table has no header row")] };
   }
 
   const headerIndex = parsed.indexOf(firstDataRow);
-  const rows = parsed.slice(headerIndex + 1).filter((row) => !isHline(row));
+  const rows = parsed.slice(headerIndex + 1).filter((row) => !isOrgTableHline(row));
   if (rows.length === 0) diagnostics.push(diagnostic("Chart table has no data rows"));
   return { headers: firstDataRow, rows, diagnostics };
 }
@@ -357,10 +343,10 @@ function collectNamedTables(lines: string[], file?: string): Map<string, ParsedT
       continue;
     }
 
-    if (isTableLine(line)) {
+    if (isOrgTableDataLine(line)) {
       const tableStartLine = i + 1;
       const tableLines: string[] = [];
-      while (i < lines.length && isTableLine(lines[i] || "")) {
+      while (i < lines.length && isOrgTableDataLine(lines[i] || "")) {
         tableLines.push(lines[i] || "");
         i++;
       }
@@ -406,10 +392,10 @@ function collectChartCandidates(raw: string, file?: string): ChartCandidate[] {
       continue;
     }
 
-    if (isTableLine(line)) {
+    if (isOrgTableDataLine(line)) {
       const tableStartLine = i + 1;
       const tableLines: string[] = [];
-      while (i < lines.length && isTableLine(lines[i] || "")) {
+      while (i < lines.length && isOrgTableDataLine(lines[i] || "")) {
         tableLines.push(lines[i] || "");
         i++;
       }
