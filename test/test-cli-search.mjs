@@ -24,6 +24,16 @@ The old alpha note is done.
 Waiting on a beta reply.
 `, "utf8");
 
+const relevanceFile = path.join(tmp, "relevance.org2");
+fs.writeFileSync(relevanceFile, `${Array.from({ length: 60 }, (_, index) => `Mercor historical mention ${index + 1}`).join("\n")}
+
+* Mercor account notes
+Mercor appears in this ordinary entry.
+
+* TODO Follow up with Mercor after review
+Mercor appears again in the task body.
+`, "utf8");
+
 const run = (...args) => execFileSync("node", ["dist/cli.js", ...args], { encoding: "utf8" });
 
 const text = run("search", "cited", "--file", file);
@@ -53,6 +63,51 @@ const indexedSearch = JSON.parse(run("search", "cited", "--dir", tmp, "--recursi
 assert.equal(indexedSearch.$schema, "org2:search:v1");
 assert.equal(indexedSearch.index.used, true);
 assert.equal(indexedSearch.results[0].heading, "Alpha plan");
+
+fs.appendFileSync(file, "\nInstant incremental marker.\n", "utf8");
+const incrementalBuild = JSON.parse(run(
+  "index", "--dir", tmp, "--recursive", "--file", file, "--incremental", "--format", "json",
+));
+assert.equal(incrementalBuild.incremental, true);
+assert.equal(incrementalBuild.updatedFiles, 1);
+const incrementalSearch = JSON.parse(run("search", "instant incremental", "--dir", tmp, "--recursive", "--index", "auto", "--format", "json"));
+assert.equal(incrementalSearch.index.used, true);
+assert.equal(incrementalSearch.results.length, 1);
+const currentIndexSearch = JSON.parse(run("search", "instant incremental", "--dir", tmp, "--recursive", "--index", "current", "--format", "json"));
+assert.equal(currentIndexSearch.index.mode, "current");
+assert.equal(currentIndexSearch.index.used, true);
+assert.equal(currentIndexSearch.results.length, 1);
+
+const deletedFile = path.join(tmp, "deleted.org2");
+fs.writeFileSync(deletedFile, "* Deleted index marker\n", "utf8");
+run("index", "--dir", tmp, "--recursive", "--file", deletedFile, "--incremental", "--format", "json");
+fs.unlinkSync(deletedFile);
+const incrementalDelete = JSON.parse(run("index", "--dir", tmp, "--recursive", "--file", deletedFile, "--incremental", "--format", "json"));
+assert.equal(incrementalDelete.incremental, true);
+const deletedSearch = JSON.parse(run("search", "deleted index marker", "--dir", tmp, "--recursive", "--index", "auto", "--format", "json"));
+assert.equal(deletedSearch.index.used, true);
+assert.equal(deletedSearch.results.length, 0);
+
+const relevanceSearch = JSON.parse(run(
+  "search",
+  "Mercor",
+  "--dir",
+  tmp,
+  "--recursive",
+  "--index",
+  "auto",
+  "--sort",
+  "relevance",
+  "--limit",
+  "5",
+  "--format",
+  "json",
+));
+assert.equal(relevanceSearch.sort, "relevance");
+assert.equal(relevanceSearch.results[0].heading, "Follow up with Mercor after review");
+assert.equal(relevanceSearch.results[0].todo, "TODO");
+assert.equal(relevanceSearch.results[0].line, relevanceSearch.results[0].headingLine);
+assert.equal(relevanceSearch.results[2].heading, "Mercor account notes");
 
 fs.appendFileSync(file, "\nIndexed freshness marker.\n", "utf8");
 const staleIndexSearch = JSON.parse(run("search", "freshness marker", "--dir", tmp, "--recursive", "--index", "auto", "--format", "json"));

@@ -29,17 +29,21 @@ import { extractClockReport } from "./clock.js";
 import { buildAgentContextPayload, renderAgentContextPack, type AgentInclude } from "./agentContext.js";
 import { buildOrg2CapabilityManifest } from "./capabilities.js";
 import { runAgenticWorkspaceCommand } from "./agenticWorkspaceCli.js";
+import { agentRunPath, listAgentRuns, type AgentRun } from "./agentRun.js";
 import { runSourceCommand } from "./sourceRuntime.js";
 import { renderOrgChart, renderOrgCharts } from "./chartRender.js";
 import { applyDataQueryResult, runOrg2DataQuery } from "./dataQuery.js";
 import {
   buildSearchIndex,
+  loadCompatibleSearchIndex,
   loadFreshSearchIndex,
   searchFilesByScan,
   searchIndexedCorpus,
   searchPayload,
+  updateSearchIndex,
   writeSearchIndex,
   type Org2SearchIndex,
+  type Org2SearchIndexBuildResult,
   type Org2SearchHit,
   type Org2SearchOptions,
   type Org2SearchResultPayload,
@@ -794,6 +798,7 @@ type GraphAuditReport = {
 };
 
 type ApprovalQueueItem = {
+  kind: "headline" | "run";
   title: string;
   status: string;
   todo: string | null;
@@ -804,13 +809,25 @@ type ApprovalQueueItem = {
   properties: Record<string, string>;
   body: string;
   tags: string[];
+  approvalId?: string;
+  action?: string;
+  riskClass?: string;
+  requestedRole?: string;
+  requestedFrom?: string;
+  requestedAt?: string;
+  runId?: string;
+  runGoal?: string;
+  runStatus?: string;
+  runPendingApprovalCount?: number;
+  runApprovalCount?: number;
+  runDecisionEffect?: string;
 };
 
 type ApprovalQueuePayload = {
-  $schema: "org2:approvals:v1";
+  $schema: "org2:approvals:v2";
   count: number;
   index?: {
-    mode: "auto" | "never" | "rebuild";
+    mode: "auto" | "current" | "never" | "rebuild";
     used: boolean;
     path?: string;
     builtAt?: string;
@@ -1139,6 +1156,7 @@ function appendApprovalItemFromHeadline(
   if (!status) return;
 
   items.push({
+    kind: "headline",
     title,
     status,
     todo,
@@ -1152,6 +1170,48 @@ function appendApprovalItemFromHeadline(
   });
 }
 
+function approvalItemsFromRuns(rootDir: string, runs: AgentRun[]): ApprovalQueueItem[] {
+  return runs.flatMap((run) => {
+    const pending = run.approvals.filter((approval) => approval.status === "pending");
+    return pending.map((approval) => {
+      const remainingAfterThis = pending.length - 1;
+      const otherDecisionsApproved = run.approvals.every((candidate) => candidate.id === approval.id || candidate.status === "approved");
+      const runDecisionEffect = run.status !== "waiting-approval"
+        ? `Deciding this approval does not clear the run's separate ${run.status} state.`
+        : remainingAfterThis > 0
+          ? `Approving this leaves ${remainingAfterThis} other pending approval${remainingAfterThis === 1 ? "" : "s"} before the run can resume.`
+          : otherDecisionsApproved
+            ? "This is the last pending approval; approving it resumes the run."
+            : "This is the last pending approval, but another decision was not approved, so the run will remain blocked.";
+      return {
+        kind: "run" as const,
+        title: approval.title,
+        status: approval.status,
+        todo: null,
+        level: null,
+        file: agentRunPath(rootDir, run.id),
+        line: 1,
+        idValue: approval.id,
+        properties: {},
+        body: approval.note || approval.action,
+        tags: [],
+        approvalId: approval.id,
+        action: approval.action,
+        riskClass: approval.riskClass,
+        ...(approval.requestedRole ? { requestedRole: approval.requestedRole } : {}),
+        ...(approval.requestedFrom ? { requestedFrom: approval.requestedFrom } : {}),
+        requestedAt: approval.requestedAt,
+        runId: run.id,
+        runGoal: run.goal,
+        runStatus: run.status,
+        runPendingApprovalCount: pending.length,
+        runApprovalCount: run.approvals.length,
+        runDecisionEffect,
+      };
+    });
+  });
+}
+
 function approvalItemsInDocument(document: DocumentNode, file: string, sourceText: string): ApprovalQueueItem[] {
   const sourceLines = sourceText.replace(/\r\n/g, "\n").split("\n");
   const items: ApprovalQueueItem[] = [];
@@ -1161,6 +1221,11 @@ function approvalItemsInDocument(document: DocumentNode, file: string, sourceTex
 
 function sortedApprovalItems(items: ApprovalQueueItem[]): ApprovalQueueItem[] {
   return [...items].sort((lhs, rhs) => {
+    if (lhs.kind !== rhs.kind) return lhs.kind === "run" ? -1 : 1;
+    if (lhs.kind === "run" && rhs.kind === "run") {
+      const requestedOrder = String(rhs.requestedAt || "").localeCompare(String(lhs.requestedAt || ""));
+      if (requestedOrder !== 0) return requestedOrder;
+    }
     const statusOrder = lhs.status.localeCompare(rhs.status, undefined, { sensitivity: "base" });
     if (statusOrder !== 0) return statusOrder;
     const titleOrder = lhs.title.localeCompare(rhs.title, undefined, { sensitivity: "base" });
@@ -8330,7 +8395,7 @@ async function main(): Promise<void> {
   let searchSort = "scan";
   let searchDateFrom = "";
   let searchDateTo = "";
-  let searchIndexMode: "auto" | "never" | "rebuild" = "auto";
+  let searchIndexMode: "auto" | "current" | "never" | "rebuild" = "auto";
   let querySubtree = false;
   let queryAnswerContext = false;
 
@@ -8339,6 +8404,7 @@ async function main(): Promise<void> {
 
   // Rebuildable local indexes
   let indexFormat: "text" | "json" = "text";
+  let indexIncremental = false;
 
   // Lint / corpus health
   let lintFormat: "text" | "json" = "text";
@@ -9623,10 +9689,10 @@ async function main(): Promise<void> {
           exportIndex = args[i]!;
         } else if (command === "search" || command === "query" || command === "approvals") {
           const value = String(args[i] || "").trim().toLowerCase();
-          if (value === "auto" || value === "never" || value === "rebuild") {
+          if (value === "auto" || value === "never" || value === "rebuild" || ((command === "search" || command === "query") && value === "current")) {
             searchIndexMode = value;
           } else {
-            console.error("Error: --index must be one of auto, never, or rebuild");
+            console.error("Error: --index must be one of auto, current (search/query only), never, or rebuild");
             process.exit(1);
           }
         }
@@ -9675,6 +9741,7 @@ async function main(): Promise<void> {
       i++;
     } else if (arg === "--incremental") {
       if (command === "compile") compileIncremental = true;
+      if (command === "index") indexIncremental = true;
       i++;
     } else if (arg === "--cache") {
       i++;
@@ -9994,7 +10061,7 @@ Roam / IDs:
   org2 graph audit --dir DIR [--recursive] [--format report|json]
 
 Maintenance / health:
-  org2 index [--dir DIR] [--recursive] [--include-archives] [--file FILE|--files FILE ...] [--format text|json]
+  org2 index [--dir DIR] [--recursive] [--include-archives] [--file FILE|--files FILE ...] [--incremental] [--format text|json]
   org2 approvals [--dir DIR] [--recursive] [--include-archives] [--file FILE|--files FILE ...] [--index auto|never|rebuild] [--format text|json]
   org2 compile corpus [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--out FILE] [--format json|jsonl] [--incremental] [--cache FILE]
   org2 ai validate-job --job FILE [--format text|json]
@@ -10222,7 +10289,7 @@ Flags:
     text = `org2 index
 
 Usage:
-  org2 index [--dir DIR] [--recursive] [--include-archives] [--file FILE|--files FILE ...] [--format text|json]
+  org2 index [--dir DIR] [--recursive] [--include-archives] [--file FILE|--files FILE ...] [--incremental] [--format text|json]
 
 Builds a rebuildable exact-text search index under ${org2IndexHome()}/<corpus-slug>-<hash>/search-v1.json. Org files remain canonical; the index is disposable machine-local derived storage.
 
@@ -10232,6 +10299,7 @@ Flags:
   --include-archives Include archive files/directories in index scans
   --file FILE        Single target file
   --files FILE       One or more target files
+  --incremental      Update only --file/--files in an existing compatible index
   --format text|json Output format`;
   } else if (command === "search") {
     text = `org2 search
@@ -10252,12 +10320,13 @@ Flags:
   --heading TEXT     Require nearest heading title text
   --limit N          Maximum matches (default 50)
   --context N        Context lines around each match (default 1)
-  --index auto|never|rebuild Use a fresh derived index when available, never use it, or rebuild before searching
+  --index auto|current|never|rebuild Use a fresh derived index, a watcher-maintained current index, no index, or rebuild before searching
   --subtree          Return one cited heading/subtree per matching section
   --answer-context   Include subtree text for downstream answer prompts (JSON)
   --date-from DATE   Filter by file/heading date (YYYY-MM-DD)
   --date-to DATE     Filter by file/heading date (YYYY-MM-DD)
   --file-zone TEXT   Require TEXT in the file path
+  --sort MODE        scan|relevance|date-desc|date-asc
   --format text|json Output format`;
   } else if (command === "query") {
     text = `org2 query
@@ -10286,7 +10355,7 @@ Flags:
   --date-from DATE  Filter by file/heading date (YYYY-MM-DD)
   --date-to DATE    Filter by file/heading date (YYYY-MM-DD)
   --file-zone TEXT  Require TEXT in the file path
-  --sort MODE       scan|date-desc|date-asc (use date-desc for “last met” style lookups)
+  --sort MODE       scan|relevance|date-desc|date-asc
   --format text|json Output format`;
   } else if (command === "compile") {
     text = `org2 compile corpus
@@ -12572,12 +12641,6 @@ Flags:
           const config = loadConfig(configPath);
           rootDir = path.dirname(configPath);
           files = resolveFilesFromConfig(config, rootDir);
-          if (files.length === 0) {
-            console.error(
-              `Error: config found at ${configPath} but no matching files for patterns: ${config.agendaFiles?.join(", ") || "*.org"}`,
-            );
-            process.exit(1);
-          }
         } catch (err) {
           console.error(`Error loading config: ${err instanceof Error ? err.message : String(err)}`);
           process.exit(1);
@@ -12588,15 +12651,27 @@ Flags:
       }
     }
 
+    if (indexIncremental && files.length === 0) {
+      console.error("Error: org2 index --incremental requires --file or --files");
+      process.exit(1);
+    }
     if (dir && files.length === 0) files = listOrgLikeFiles(dir, recursive, includeArchives);
     if (!rootDir) rootDir = files.length ? path.dirname(path.resolve(files[0]!)) : process.cwd();
 
-    const result = buildSearchIndex({
-      rootDir,
-      files,
-      recursive,
-      includeArchives,
-    });
+    const incrementalResult = indexIncremental
+      ? updateSearchIndex({ rootDir, changedFiles: files, recursive, includeArchives })
+      : null;
+    const incrementalApplied = incrementalResult !== null;
+    const result: Org2SearchIndexBuildResult = incrementalResult
+      ?? buildSearchIndex({
+        rootDir,
+        files: indexIncremental && dir
+          ? listOrgLikeFiles(dir, recursive, includeArchives)
+          : files,
+        recursive,
+        includeArchives,
+      });
+    const updatedFileCount = incrementalResult?.updatedFiles;
     writeSearchIndex(result);
 
     if (indexFormat === "json") {
@@ -12614,6 +12689,8 @@ Flags:
             lineCount: result.lineCount,
             byteCount: result.byteCount,
             skippedFiles: result.skippedFiles,
+            incremental: incrementalApplied,
+            updatedFiles: updatedFileCount,
           },
           null,
           2,
@@ -12623,7 +12700,7 @@ Flags:
     }
 
     process.stdout.write(
-      `Indexed ${result.fileCount} file${result.fileCount === 1 ? "" : "s"} (${result.lineCount} lines) -> ${result.path}\n`,
+      `${incrementalApplied ? "Updated index for" : "Indexed"} ${updatedFileCount ?? result.fileCount} file${(updatedFileCount ?? result.fileCount) === 1 ? "" : "s"} (${result.lineCount} lines total) -> ${result.path}\n`,
     );
     if (result.skippedFiles > 0) {
       process.stderr.write(`Skipped ${result.skippedFiles} file${result.skippedFiles === 1 ? "" : "s"}.\n`);
@@ -12656,6 +12733,8 @@ Flags:
       }
     }
 
+    if (!rootDir) rootDir = files.length ? path.dirname(path.resolve(files[0]!)) : process.cwd();
+    const runs = listAgentRuns(rootDir);
     if (dir && files.length === 0) files = listOrgLikeFiles(rootDir, recursive, includeArchives);
     files = Array.from(
       new Set(
@@ -12664,8 +12743,7 @@ Flags:
           .filter((file) => isApprovalIndexableFilePath(file, includeArchives)),
       ),
     ).sort((a, b) => a.localeCompare(b));
-    if (!rootDir) rootDir = files.length ? path.dirname(files[0]!) : process.cwd();
-    if (files.length === 0) {
+    if (files.length === 0 && runs.length === 0) {
       console.error("Error: no Org files found for org2 approvals");
       process.exit(1);
     }
@@ -12674,7 +12752,9 @@ Flags:
     let candidates: ApprovalCandidateSource[] = [];
     let skippedCandidates = 0;
 
-    if (searchIndexMode === "never") {
+    if (files.length === 0) {
+      indexStatus = { mode: searchIndexMode, used: false };
+    } else if (searchIndexMode === "never") {
       const scanned = approvalCandidateSourcesByScanningFiles(files, includeArchives);
       candidates = scanned.candidates;
       skippedCandidates += scanned.skippedFiles;
@@ -12706,7 +12786,7 @@ Flags:
       }
     }
 
-    const items: ApprovalQueueItem[] = [];
+    const items: ApprovalQueueItem[] = approvalItemsFromRuns(rootDir, runs);
     for (const candidate of candidates) {
       try {
         const document = parseOrgToCanonicalAst(candidate.parseText, {
@@ -12724,7 +12804,7 @@ Flags:
 
     const sortedItems = sortedApprovalItems(items);
     const payload: ApprovalQueuePayload = {
-      $schema: "org2:approvals:v1",
+      $schema: "org2:approvals:v2",
       count: sortedItems.length,
       index: indexStatus,
       ...(skippedCandidates > 0 ? { skippedCandidates } : {}),
@@ -12742,6 +12822,10 @@ Flags:
     }
 
     for (const item of sortedItems) {
+      if (item.kind === "run") {
+        process.stdout.write(`run:${item.runId}:${item.approvalId} ${item.title} [${item.status}; ${item.runPendingApprovalCount} pending for run]\n`);
+        continue;
+      }
       const todo = item.todo ? `${item.todo} ` : "";
       process.stdout.write(`${item.file}:${item.line} ${todo}${item.title} [${item.status}]\n`);
     }
@@ -12971,7 +13055,9 @@ Flags:
       }
     }
 
-    if (dir && files.length === 0) files = listOrgLikeFiles(dir, recursive, includeArchives);
+    if (dir && files.length === 0 && searchIndexMode !== "current") {
+      files = listOrgLikeFiles(dir, recursive, includeArchives);
+    }
     if (!searchRootDir && files.length > 0) searchRootDir = path.dirname(path.resolve(files[0]!));
 
     const context = Math.max(0, Number.parseInt(searchContextRaw, 10) || 0);
@@ -13021,6 +13107,18 @@ Flags:
       writeSearchIndex(result);
       hits = searchIndexedCorpus(result.index, searchOptions);
       indexStatus = { mode: searchIndexMode, used: true, path: result.path, builtAt: result.index.builtAt };
+    } else if (canUseIndex && searchIndexMode === "current") {
+      const loaded = loadCompatibleSearchIndex({ rootDir: searchRootDir, recursive, includeArchives });
+      if (loaded) {
+        hits = searchIndexedCorpus(loaded.index, searchOptions);
+        indexStatus = { mode: searchIndexMode, used: true, path: loaded.path, builtAt: loaded.index.builtAt };
+      } else {
+        files = listOrgLikeFiles(searchRootDir, recursive, includeArchives);
+        const scanned = searchFilesByScan(files, searchOptions);
+        hits = scanned.hits;
+        skippedFileCount = scanned.skippedFileCount;
+        indexStatus = { mode: searchIndexMode, used: false, stale: true };
+      }
     } else if (canUseIndex && searchIndexMode === "auto") {
       const loaded = loadFreshSearchIndex({ rootDir: searchRootDir, files, recursive, includeArchives });
       if (loaded) {

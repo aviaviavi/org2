@@ -37,6 +37,8 @@ try {
   assert.throws(() => addAgentRunValidation(run, { name: "broken", status: "unknown" }), /invalid validation status/);
   assert.throws(() => requestAgentRunApproval(run, { title: "Broken", action: "broken", riskClass: "unknown" }), /invalid approval risk class/);
   const pendingApproval = requestAgentRunApproval(run, { id: "test", title: "Test", action: "test", riskClass: "local-draft" });
+  assert.match(renderAgentRunOrg(pendingApproval), /\*\* Approvals \[1\/1 pending\]/);
+  assert.match(renderAgentRunOrg(pendingApproval), /PENDING Test — test \(local-draft\) =test=/);
   assert.throws(() => transitionAgentRun(pendingApproval, "completed", { summary: "Should remain open." }), /pending approvals/);
   assert.throws(() => decideAgentRunApproval(pendingApproval, "test", "unknown", { actor: "Avi" }), /invalid approval decision/);
   assert.throws(

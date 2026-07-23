@@ -49,7 +49,7 @@ Applying creates the standard visible zones when missing and merges the identity
 
 * Mac workspace mounts and federated reads
 
-Org2 Workspace remembers every corpus you open. The *Corpora* section identifies the active corpus, shows whether it is personal, shared, or project-scoped, and switches among mounted local paths. *Create a shared team corpus* makes a starter folder with a portable shared identity.
+Org2 Workspace remembers every corpus you open. The compact switcher at the bottom of the sidebar shows the active corpus name and switches among mounted local paths; full identity and path metadata stay out of the navigation until needed. *Create a shared team corpus* makes a starter folder with a portable shared identity.
 
 The Agenda and text Search surfaces can read either the active corpus or all mounted corpora. Federated rows carry the portable corpus identity and show the corpus name beside the source path. Opening a row from another corpus activates that corpus before loading the entry.
 

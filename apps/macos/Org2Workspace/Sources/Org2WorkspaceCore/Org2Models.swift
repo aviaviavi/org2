@@ -376,6 +376,10 @@ public struct AgentRunItem: Identifiable, Decodable, Hashable, Sendable {
       .map(String.init)
     guard !terms.isEmpty else { return true }
 
+    return terms.allSatisfy { runFilterText.contains($0) }
+  }
+
+  var runFilterText: String {
     var values = [
       id,
       goal,
@@ -423,8 +427,7 @@ public struct AgentRunItem: Identifiable, Decodable, Hashable, Sendable {
       values.append(contentsOf: [item.type, item.actor, item.detail].compactMap { $0 })
     }
 
-    let haystack = values.joined(separator: "\n").lowercased()
-    return terms.allSatisfy { haystack.contains($0) }
+    return values.joined(separator: "\n").lowercased()
   }
 
   public static func humanizedLabel(_ rawValue: String) -> String {
@@ -824,7 +827,11 @@ public struct AgendaItem: Decodable, Identifiable, Hashable, Sendable {
   func matchesAgendaFilterTerms(_ terms: [String]) -> Bool {
     guard !terms.isEmpty else { return true }
 
-    let haystack = [
+    return terms.allSatisfy { agendaFilterText.contains($0) }
+  }
+
+  var agendaFilterText: String {
+    [
       todo,
       headline,
       kind,
@@ -840,8 +847,6 @@ public struct AgendaItem: Decodable, Identifiable, Hashable, Sendable {
       .compactMap { $0 }
       .joined(separator: "\n")
       .lowercased()
-
-    return terms.allSatisfy { haystack.contains($0) }
   }
 }
 
@@ -890,7 +895,16 @@ public struct AssignedWorkItem: Identifiable, Hashable, Sendable {
   }
 }
 
+public enum RunsAndReviewPage: String, CaseIterable, Identifiable, Sendable {
+  case runs = "Run Center"
+  case review = "Review Queue"
+  case workflows = "Workflows"
+
+  public var id: String { rawValue }
+}
+
 public struct ApprovalItem: Identifiable, Hashable, Sendable, Decodable {
+  public let kind: String?
   public let title: String
   public let status: String
   public let todo: String?
@@ -901,6 +915,18 @@ public struct ApprovalItem: Identifiable, Hashable, Sendable, Decodable {
   public let properties: [String: String]
   public let body: String
   public let tags: [String]
+  public let approvalId: String?
+  public let action: String?
+  public let riskClass: String?
+  public let requestedRole: String?
+  public let requestedFrom: String?
+  public let requestedAt: String?
+  public let runId: String?
+  public let runGoal: String?
+  public let runStatus: String?
+  public let runPendingApprovalCount: Int?
+  public let runApprovalCount: Int?
+  public let runDecisionEffect: String?
 
   public init(
     title: String,
@@ -912,8 +938,22 @@ public struct ApprovalItem: Identifiable, Hashable, Sendable, Decodable {
     idValue: String?,
     properties: [String: String],
     body: String,
-    tags: [String]
+    tags: [String],
+    kind: String? = nil,
+    approvalId: String? = nil,
+    action: String? = nil,
+    riskClass: String? = nil,
+    requestedRole: String? = nil,
+    requestedFrom: String? = nil,
+    requestedAt: String? = nil,
+    runId: String? = nil,
+    runGoal: String? = nil,
+    runStatus: String? = nil,
+    runPendingApprovalCount: Int? = nil,
+    runApprovalCount: Int? = nil,
+    runDecisionEffect: String? = nil
   ) {
+    self.kind = kind
     self.title = title
     self.status = status
     self.todo = todo
@@ -924,14 +964,35 @@ public struct ApprovalItem: Identifiable, Hashable, Sendable, Decodable {
     self.properties = properties
     self.body = body
     self.tags = tags
+    self.approvalId = approvalId
+    self.action = action
+    self.riskClass = riskClass
+    self.requestedRole = requestedRole
+    self.requestedFrom = requestedFrom
+    self.requestedAt = requestedAt
+    self.runId = runId
+    self.runGoal = runGoal
+    self.runStatus = runStatus
+    self.runPendingApprovalCount = runPendingApprovalCount
+    self.runApprovalCount = runApprovalCount
+    self.runDecisionEffect = runDecisionEffect
   }
 
   public var id: String {
-    "\(file):\(line):\(idValue ?? title)"
+    if let runId, let approvalId { return "run:\(runId):\(approvalId)" }
+    return "\(file):\(line):\(idValue ?? title)"
   }
 
+  public var isRunApproval: Bool { kind == "run" && runId != nil && approvalId != nil }
+
   public var sourceLabel: String {
-    "\(file):\(line)"
+    if let runId { return "Run \(runId)" }
+    return "\(file):\(line)"
+  }
+
+  public var runDependencyText: String? {
+    guard isRunApproval else { return nil }
+    return runDecisionEffect
   }
 
   public var discussionText: String {
@@ -941,6 +1002,8 @@ public struct ApprovalItem: Identifiable, Hashable, Sendable, Decodable {
     \(Org2Display.cleanInline(title))
     Source: \(sourceLabel)
     Status: \(status)
+    \(runGoal.map { "Run: \($0)" } ?? "")
+    \(runDependencyText ?? "")
 
     \(Org2Display.cleanBlock(body).trimmedForDisplay(maxCharacters: 900))
     """
@@ -973,20 +1036,32 @@ public struct ApprovalItem: Identifiable, Hashable, Sendable, Decodable {
       .map(String.init)
     guard !terms.isEmpty else { return true }
 
-    let haystack = [
+    return terms.allSatisfy { approvalFilterText.contains($0) }
+  }
+
+  var approvalFilterText: String {
+    [
       title,
       status,
       todo,
       file,
       idValue,
       body,
+      approvalId,
+      action,
+      riskClass,
+      requestedRole,
+      requestedFrom,
+      runId,
+      runGoal,
+      runStatus,
+      runDecisionEffect,
       tags.joined(separator: " "),
       properties.map { "\($0.key) \($0.value)" }.joined(separator: "\n")
     ]
       .compactMap { $0 }
       .joined(separator: "\n")
       .lowercased()
-    return terms.allSatisfy { haystack.contains($0) }
   }
 }
 
@@ -1616,6 +1691,20 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
       responseTrace: responseTrace,
       sendFailure: nextSendFailure,
       deliveryStatus: nextDeliveryStatus
+    )
+  }
+
+  public func replacingChangeSummary(_ nextChangeSummary: OpenClawCorpusChangeSummary?) -> OpenClawChatMessage {
+    OpenClawChatMessage(
+      id: id,
+      role: role,
+      content: content,
+      attachments: attachments,
+      createdAt: createdAt,
+      changeSummary: nextChangeSummary,
+      responseTrace: responseTrace,
+      sendFailure: sendFailure,
+      deliveryStatus: deliveryStatus
     )
   }
 }
@@ -4242,31 +4331,36 @@ public enum WorkspaceLocation: Hashable, Sendable {
 }
 
 public enum Org2Display {
+  private static let labeledLinkRegex = try! NSRegularExpression(
+    pattern: #"\[\[([^\]\n]+)\]\[([^\]\n]*)\]\]"#
+  )
+  private static let bareLinkRegex = try! NSRegularExpression(
+    pattern: #"\[\[([^\]\n]+)\]\]"#
+  )
+  private static let bareIDRegex = try! NSRegularExpression(
+    pattern: #"\bid:([0-9a-fA-F-]{36})\b"#
+  )
+
   public static func cleanInline(_ raw: String) -> String {
     var text = raw
-    text = replaceMatches(
-      in: text,
-      pattern: #"\[\[([^\]\n]+)\]\[([^\]\n]*)\]\]"#
-    ) { match in
-      guard match.numberOfRanges >= 3 else { return match.fullText(in: text) }
-      return match.string(at: 2, in: text)
+    if text.contains("[[") {
+      text = replaceMatches(in: text, regex: labeledLinkRegex) { match in
+        guard match.numberOfRanges >= 3 else { return match.fullText(in: text) }
+        return match.string(at: 2, in: text)
+      }
+
+      text = replaceMatches(in: text, regex: bareLinkRegex) { match in
+        guard match.numberOfRanges >= 2 else { return match.fullText(in: text) }
+        let target = match.string(at: 1, in: text)
+        return cleanTarget(target)
+      }
     }
 
-    text = replaceMatches(
-      in: text,
-      pattern: #"\[\[([^\]\n]+)\]\]"#
-    ) { match in
-      guard match.numberOfRanges >= 2 else { return match.fullText(in: text) }
-      let target = match.string(at: 1, in: text)
-      return cleanTarget(target)
-    }
-
-    text = replaceMatches(
-      in: text,
-      pattern: #"\bid:([0-9a-fA-F-]{36})\b"#
-    ) { match in
-      guard match.numberOfRanges >= 2 else { return match.fullText(in: text) }
-      return "id:\(shortID(match.string(at: 1, in: text)))"
+    if text.range(of: "id:", options: .caseInsensitive) != nil {
+      text = replaceMatches(in: text, regex: bareIDRegex) { match in
+        guard match.numberOfRanges >= 2 else { return match.fullText(in: text) }
+        return "id:\(shortID(match.string(at: 1, in: text)))"
+      }
     }
 
     return text
@@ -4298,10 +4392,9 @@ public enum Org2Display {
 
   private static func replaceMatches(
     in text: String,
-    pattern: String,
+    regex: NSRegularExpression,
     transform: (NSTextCheckingResult) -> String
   ) -> String {
-    guard let regex = try? NSRegularExpression(pattern: pattern) else { return text }
     let nsText = text as NSString
     let matches = regex.matches(in: text, range: NSRange(location: 0, length: nsText.length)).reversed()
     var output = text

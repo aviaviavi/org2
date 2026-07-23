@@ -69,6 +69,8 @@ struct OpenClawActivityFeedItem: Identifiable, Equatable, Sendable {
 }
 
 enum OpenClawActivityFeed {
+  private static let maximumDetailLength = 180
+
   static func items(from activities: [OpenClawRunActivity]) -> [OpenClawActivityFeedItem] {
     var grouped: [(key: String, activities: [OpenClawRunActivity])] = []
 
@@ -138,11 +140,24 @@ enum OpenClawActivityFeed {
     guard let detail = detail?.trimmingCharacters(in: .whitespacesAndNewlines), !detail.isEmpty else {
       return nil
     }
-    guard let data = detail.data(using: .utf8),
-          let object = try? JSONSerialization.jsonObject(with: data),
-          let dictionary = object as? [String: Any]
-    else {
-      return detail
+    if let data = detail.data(using: .utf8),
+       let object = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]) {
+      return meaningfulStructuredDetail(object, status: status)
+    }
+
+    return readablePlainDetail(detail, status: status)
+  }
+
+  private static func meaningfulStructuredDetail(
+    _ object: Any,
+    status: OpenClawRunActivity.Status
+  ) -> String? {
+    if let encoded = object as? String {
+      return readablePlainDetail(encoded, status: status)
+    }
+    guard let dictionary = object as? [String: Any] else {
+      // Arrays and scalar tool results are machine output, not chat copy.
+      return status == .failed ? "Tool call failed" : nil
     }
 
     let lowSignalKeys = Set(["durationMs", "exitCode", "status"])
@@ -152,18 +167,65 @@ enum OpenClawActivityFeed {
       }
       return nil
     }
-    for key in ["cmd", "command", "path", "file", "query", "url"] {
+
+    if let query = stringValue(in: dictionary, keys: ["query", "search", "pattern"]),
+       let readable = readablePlainDetail(query, status: status) {
+      return "Searching for \u{201c}\(readable)\u{201d}"
+    }
+    if let command = stringValue(in: dictionary, keys: ["cmd", "command"]),
+       let readable = readablePlainDetail(command, status: status) {
+      return readable
+    }
+    if let path = stringValue(in: dictionary, keys: ["path", "file", "filePath"]),
+       let readable = readablePlainDetail(path, status: status) {
+      return readable
+    }
+    if let url = stringValue(in: dictionary, keys: ["url"]),
+       let readable = readablePlainDetail(url, status: status) {
+      return readable
+    }
+    if status == .failed,
+       let error = stringValue(in: dictionary, keys: ["error", "errorMessage", "message"]),
+       let readable = readablePlainDetail(error, status: status) {
+      return readable
+    }
+
+    // Command arguments and result envelopes stay in diagnostic logs. Showing
+    // them here creates both unreadable JSON and accidental transcript overflow.
+    return status == .failed ? "Tool call failed" : nil
+  }
+
+  private static func stringValue(in dictionary: [String: Any], keys: [String]) -> String? {
+    for key in keys {
       if let value = dictionary[key] as? String,
          !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-        return value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return value
       }
     }
-    // Tool result envelopes can contain an entire fetched document or another
-    // encoded response. They are useful in logs, but not as transcript chrome.
-    if detail.count > 280 {
+    return nil
+  }
+
+  private static func readablePlainDetail(
+    _ raw: String,
+    status: OpenClawRunActivity.Status
+  ) -> String? {
+    let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return nil }
+
+    // Some gateways deliver a JSON result as an escaped string. Do not let the
+    // encoding accident turn into user-visible transcript content.
+    let structuredPrefixes = ["{", "[", "\\{", "\\[", "\"{", "\"["]
+    let looksStructured = structuredPrefixes.contains { trimmed.hasPrefix($0) }
+      || trimmed.contains("\\\"content\\\"")
+      || trimmed.contains("\\\"results\\\"")
+    if looksStructured {
       return status == .failed ? "Tool call failed" : nil
     }
-    return detail
+
+    let readable = trimmed
+      .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+    guard readable.count > maximumDetailLength else { return readable }
+    return String(readable.prefix(maximumDetailLength - 1)).trimmingCharacters(in: .whitespaces) + "\u{2026}"
   }
 
   private static func normalizedToolName(_ raw: String) -> String {
@@ -279,6 +341,7 @@ public enum OpenClawGatewayError: LocalizedError, Sendable {
   case gateway(code: String?, message: String)
   case emptyResponse
   case aborted(String?)
+  case acceptedRunRecovery(String)
 
   public var errorDescription: String? {
     switch self {
@@ -294,6 +357,8 @@ public enum OpenClawGatewayError: LocalizedError, Sendable {
       return "OpenClaw finished without a response."
     case .aborted(let message):
       return message?.isEmpty == false ? "OpenClaw run stopped: \(message!)" : "OpenClaw run stopped."
+    case .acceptedRunRecovery(let message):
+      return "OpenClaw accepted the run but could not reconcile its result: \(message)"
     }
   }
 
@@ -304,10 +369,16 @@ public enum OpenClawGatewayError: LocalizedError, Sendable {
     case .gateway(let code, let message):
       return code == "NOT_PAIRED"
         || (code == "INVALID_REQUEST" && message.localizedCaseInsensitiveContains("missing scope"))
-    case .emptyResponse, .aborted:
+    case .emptyResponse, .aborted, .acceptedRunRecovery:
       return false
     }
   }
+}
+
+enum OpenClawChatHistoryReconciliation: Equatable {
+  case pending(hasActiveRun: Bool)
+  case completed(String)
+  case failed(String)
 }
 
 enum OpenClawGatewayIdentityStorage {
@@ -442,6 +513,8 @@ private final class OpenClawWebSocketSessionDelegate: NSObject, URLSessionWebSoc
 /// in-flight Org2 turn, while the Gateway remains the authority for run state.
 public actor OpenClawGatewayClient {
   public typealias EventHandler = @Sendable (OpenClawGatewayRunEvent) async -> Void
+
+  static let acceptedRunRecoveryPollTimeoutMilliseconds = 5_000
 
   private let settings: OpenClawGatewaySettings
   private let sessionDelegate: OpenClawWebSocketSessionDelegate
@@ -599,6 +672,7 @@ public actor OpenClawGatewayClient {
     sessionKey: String,
     onEvent: @escaping EventHandler
   ) async throws -> String {
+    let requestStartedAtMilliseconds = Date().timeIntervalSince1970 * 1_000
     stopRequested = false
     runID = nil
     self.sessionKey = sessionKey
@@ -709,10 +783,11 @@ public actor OpenClawGatewayClient {
         throw OpenClawGatewayError.aborted(nil)
       }
       if let runID, error.permitsHTTPFallback {
-        return try await recoverAcceptedRun(
+        return try await recoverAcceptedRunWithoutResending(
           runID: runID,
           sessionKey: sessionKey,
           agentID: agentID,
+          requestStartedAtMilliseconds: requestStartedAtMilliseconds,
           onEvent: onEvent
         )
       }
@@ -723,14 +798,39 @@ public actor OpenClawGatewayClient {
         throw OpenClawGatewayError.aborted(nil)
       }
       if let runID {
-        return try await recoverAcceptedRun(
+        return try await recoverAcceptedRunWithoutResending(
           runID: runID,
           sessionKey: sessionKey,
           agentID: agentID,
+          requestStartedAtMilliseconds: requestStartedAtMilliseconds,
           onEvent: onEvent
         )
       }
       throw OpenClawGatewayError.connection(error.localizedDescription)
+    }
+  }
+
+  private func recoverAcceptedRunWithoutResending(
+    runID: String,
+    sessionKey: String,
+    agentID: String,
+    requestStartedAtMilliseconds: Double,
+    onEvent: @escaping EventHandler
+  ) async throws -> String {
+    do {
+      return try await recoverAcceptedRun(
+        runID: runID,
+        sessionKey: sessionKey,
+        agentID: agentID,
+        requestStartedAtMilliseconds: requestStartedAtMilliseconds,
+        onEvent: onEvent
+      )
+    } catch let error as OpenClawGatewayError {
+      if case .acceptedRunRecovery = error { throw error }
+      if case .aborted = error { throw error }
+      throw OpenClawGatewayError.acceptedRunRecovery(error.localizedDescription)
+    } catch {
+      throw OpenClawGatewayError.acceptedRunRecovery(error.localizedDescription)
     }
   }
 
@@ -884,6 +984,7 @@ public actor OpenClawGatewayClient {
     runID: String,
     sessionKey: String,
     agentID: String,
+    requestStartedAtMilliseconds: Double,
     onEvent: @escaping EventHandler
   ) async throws -> String {
     await onEvent(.connection(.reconnecting, "The run was already accepted; reconnecting without resending it."))
@@ -903,10 +1004,12 @@ public actor OpenClawGatewayClient {
           runID: runID,
           sessionKey: sessionKey,
           agentID: agentID,
+          requestStartedAtMilliseconds: requestStartedAtMilliseconds,
           onEvent: onEvent,
           on: nextSocket
         )
       } catch {
+        if stopRequested { throw OpenClawGatewayError.aborted(nil) }
         lastError = error
         socket?.cancel(with: .goingAway, reason: nil)
         await onEvent(.connection(.reconnecting, "Reconnect attempt \(attempt) failed."))
@@ -922,6 +1025,7 @@ public actor OpenClawGatewayClient {
     runID: String,
     sessionKey: String,
     agentID: String,
+    requestStartedAtMilliseconds: Double,
     onEvent: @escaping EventHandler,
     on socket: URLSessionWebSocketTask
   ) async throws -> String {
@@ -931,7 +1035,7 @@ public actor OpenClawGatewayClient {
       try await sendRequest(
         id: waitID,
         method: "agent.wait",
-        params: ["runId": runID, "timeoutMs": 30_000],
+        params: ["runId": runID, "timeoutMs": Self.acceptedRunRecoveryPollTimeoutMilliseconds],
         on: socket
       )
       while true {
@@ -947,33 +1051,45 @@ public actor OpenClawGatewayClient {
         guard Self.bool(frame["ok"]) == true else { throw Self.gatewayError(from: frame) }
         let payload = Self.dictionary(frame["payload"]) ?? [:]
         let status = Self.string(payload["status"]) ?? "timeout"
-        if status == "timeout" { break }
-        if status == "error" {
-          throw OpenClawGatewayError.gateway(
-            code: nil,
-            message: Self.string(payload["error"]) ?? "OpenClaw run failed after reconnecting."
-          )
-        }
-        return try await loadLatestAssistantMessage(
+        let reconciliation = try await loadReconciledSession(
+          runID: runID,
           sessionKey: sessionKey,
           agentID: agentID,
+          requestStartedAtMilliseconds: requestStartedAtMilliseconds,
           on: socket
         )
+        switch reconciliation {
+        case .completed(let reply):
+          return reply
+        case .failed(let message):
+          throw OpenClawGatewayError.gateway(code: nil, message: message)
+        case .pending(let hasActiveRun):
+          if status == "error", !hasActiveRun {
+            throw OpenClawGatewayError.gateway(
+              code: nil,
+              message: Self.string(payload["error"]) ?? "OpenClaw run failed after reconnecting."
+            )
+          }
+          break
+        }
+        break
       }
     }
     throw OpenClawGatewayError.gateway(code: "timeout", message: "OpenClaw run timed out.")
   }
 
-  private func loadLatestAssistantMessage(
+  private func loadReconciledSession(
+    runID: String,
     sessionKey: String,
     agentID: String,
+    requestStartedAtMilliseconds: Double,
     on socket: URLSessionWebSocketTask
-  ) async throws -> String {
+  ) async throws -> OpenClawChatHistoryReconciliation {
     let historyID = UUID().uuidString.lowercased()
     try await sendRequest(
       id: historyID,
       method: "chat.history",
-      params: ["sessionKey": sessionKey, "agentId": agentID, "limit": 12, "maxChars": 100_000],
+      params: ["sessionKey": sessionKey, "agentId": agentID, "limit": 100, "maxChars": 100_000],
       on: socket
     )
     while true {
@@ -981,15 +1097,63 @@ public actor OpenClawGatewayClient {
       guard Self.string(frame["type"]) == "res", Self.string(frame["id"]) == historyID else { continue }
       guard Self.bool(frame["ok"]) == true else { throw Self.gatewayError(from: frame) }
       let payload = Self.dictionary(frame["payload"]) ?? [:]
-      let messages = payload["messages"] as? [Any] ?? []
-      for message in messages.reversed() {
-        guard let object = Self.dictionary(message), Self.string(object["role"]) == "assistant" else { continue }
-        let text = Self.messageText(object, includeThinking: false)
-          .trimmingCharacters(in: .whitespacesAndNewlines)
-        if !text.isEmpty { return text }
-      }
-      throw OpenClawGatewayError.emptyResponse
+      return Self.chatHistoryReconciliation(
+        from: payload,
+        runID: runID,
+        requestStartedAtMilliseconds: requestStartedAtMilliseconds
+      )
     }
+  }
+
+  static func chatHistoryReconciliation(
+    from payload: [String: Any],
+    runID: String,
+    requestStartedAtMilliseconds: Double
+  ) -> OpenClawChatHistoryReconciliation {
+    let messages = payload["messages"] as? [Any] ?? []
+    let requestMarker = "\(runID):user"
+    let requestIndex = messages.lastIndex { value in
+      guard let message = dictionary(value) else { return false }
+      if string(message["idempotencyKey"]) == requestMarker { return true }
+      return string(dictionary(message["__openclaw"])?["idempotencyKey"]) == requestMarker
+    }
+
+    let candidateMessages: [Any]
+    if let requestIndex {
+      candidateMessages = Array(messages.suffix(from: messages.index(after: requestIndex)))
+    } else {
+      candidateMessages = messages.filter { value in
+        guard let message = dictionary(value),
+              let timestamp = milliseconds(message["timestamp"])
+        else { return false }
+        return timestamp >= requestStartedAtMilliseconds
+      }
+    }
+
+    for value in candidateMessages.reversed() {
+      guard let message = dictionary(value), string(message["role"]) == "assistant" else { continue }
+      let text = messageText(message, includeThinking: false)
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+      if !text.isEmpty { return .completed(text) }
+    }
+
+    let sessionInfo = dictionary(payload["sessionInfo"]) ?? [:]
+    let activeRunIDs = sessionInfo["activeRunIds"] as? [Any] ?? []
+    let hasActiveRun = bool(sessionInfo["hasActiveRun"]) ?? !activeRunIDs.isEmpty
+    let status = string(sessionInfo["status"])?.lowercased() ?? ""
+    let terminalStatuses = Set(["done", "completed", "succeeded", "failed", "error", "aborted", "cancelled", "canceled", "timed_out"])
+    let terminalTimestamp = milliseconds(sessionInfo["endedAt"])
+      ?? milliseconds(sessionInfo["updatedAt"])
+      ?? 0
+    let belongsToRequest = requestIndex != nil || terminalTimestamp >= requestStartedAtMilliseconds
+
+    guard !hasActiveRun, terminalStatuses.contains(status), belongsToRequest else {
+      return .pending(hasActiveRun: hasActiveRun)
+    }
+    if status == "done" || status == "completed" || status == "succeeded" {
+      return .failed("OpenClaw finished without a response.")
+    }
+    return .failed("OpenClaw session ended with status \(status).")
   }
 
   private func sendRequest(
@@ -1167,4 +1331,11 @@ public actor OpenClawGatewayClient {
   private static func dictionary(_ value: Any?) -> [String: Any]? { value as? [String: Any] }
   private static func string(_ value: Any?) -> String? { value as? String }
   private static func bool(_ value: Any?) -> Bool? { value as? Bool }
+  private static func milliseconds(_ value: Any?) -> Double? {
+    if let number = value as? NSNumber { return number.doubleValue }
+    if let value = value as? Double { return value }
+    if let value = value as? Int { return Double(value) }
+    if let value = value as? String { return Double(value) }
+    return nil
+  }
 }

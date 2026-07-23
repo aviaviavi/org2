@@ -2,8 +2,8 @@ import AppKit
 import SwiftUI
 
 enum WorkspaceDesign {
-  static let cornerRadius: CGFloat = 7
-  static let controlRadius: CGFloat = 6
+  static let cornerRadius: CGFloat = 11
+  static let controlRadius: CGFloat = 7
   static let contentInset: CGFloat = 16
   static let rowVerticalPadding: CGFloat = 8
   static let headerHorizontalInset: CGFloat = 16
@@ -60,6 +60,14 @@ enum WorkspaceDesign {
     Color.secondary.opacity(0.055)
   }
 
+  static var controlHoverFill: Color {
+    Color.secondary.opacity(0.085)
+  }
+
+  static var controlGroupFill: Color {
+    Color.secondary.opacity(0.045)
+  }
+
   static var controlPressedFill: Color {
     Color.accentColor.opacity(0.12)
   }
@@ -74,6 +82,15 @@ enum WorkspaceMotion {
   static let disclosure = Animation.easeInOut(duration: 0.16)
 }
 
+enum WorkspaceSidebarLayout {
+  static let minimumWidth: CGFloat = 180
+  static let idealWidth: CGFloat = 232
+
+  static func maximumWidth(for containerWidth: CGFloat) -> CGFloat {
+    max(minimumWidth, containerWidth * 0.25)
+  }
+}
+
 struct WorkspaceIconBadge: View {
   let systemImage: String
   var tint: Color = .secondary
@@ -81,10 +98,10 @@ struct WorkspaceIconBadge: View {
 
   var body: some View {
     Image(systemName: systemImage)
-      .font(.system(size: 13, weight: .medium))
+      .font(.system(size: 12, weight: .medium))
       .foregroundStyle(tint)
-      .frame(width: 26, height: 26)
-      .background(fill, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+      .frame(width: 24, height: 24)
+      .background(fill, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
   }
 }
 
@@ -122,65 +139,50 @@ struct WorkspaceActivityIndicator: View {
   var tint: Color = .accentColor
   var style: WorkspaceActivityIndicatorStyle = .signal
 
-  var body: some View {
-    TimelineView(.animation(minimumInterval: 1 / 30, paused: reduceMotion)) { context in
-      let phase = reduceMotion
-        ? 0.18
-        : context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.2) / 1.2
-
-      indicator(phase: phase)
-    }
-      .frame(width: size.width, height: size.diameter)
-      .accessibilityLabel("Loading")
-  }
-
   @ViewBuilder
-  private func indicator(phase: Double) -> some View {
-    switch style {
-    case .signal:
-      HStack(alignment: .center, spacing: max(1.5, size.diameter * 0.12)) {
-        ForEach(0..<3, id: \.self) { index in
-          Capsule()
-            .fill(tint.opacity(0.52 + Double(wave(phase, index: index)) * 0.48))
-            .frame(
-              width: max(2, size.diameter * 0.17),
-              height: max(3, size.diameter * (0.30 + wave(phase, index: index) * 0.58))
-            )
-        }
-      }
-    case .typing:
-      HStack(spacing: max(2, size.diameter * 0.18)) {
-        ForEach(0..<3, id: \.self) { index in
-          Circle()
-            .fill(tint.opacity(0.38 + Double(wave(phase, index: index)) * 0.62))
-            .frame(width: max(3, size.diameter * 0.25), height: max(3, size.diameter * 0.25))
-            .offset(y: -wave(phase, index: index) * size.diameter * 0.22)
-        }
-      }
-    case .scan:
-      GeometryReader { proxy in
-        let travel = max(0, proxy.size.width - proxy.size.height * 0.38)
-        Capsule()
-          .fill(tint.opacity(0.12))
-          .frame(height: max(2, proxy.size.height * 0.24))
-          .overlay(alignment: .leading) {
-            Capsule()
-              .fill(tint)
-              .frame(width: max(4, proxy.size.height * 0.38))
-              .offset(x: travel * CGFloat(pingPong(phase)))
-          }
-          .frame(maxHeight: .infinity, alignment: .center)
-      }
+  var body: some View {
+    if reduceMotion {
+      Image(systemName: "ellipsis")
+        .font(.system(size: max(8, size.diameter * 0.65), weight: .semibold))
+        .foregroundStyle(tint)
+        .frame(width: size.width, height: size.diameter)
+        .accessibilityLabel("Loading")
+    } else {
+      WorkspaceNativeProgressIndicator(size: size)
+        .frame(width: size.width, height: size.diameter)
+        .accessibilityLabel("Loading")
     }
   }
+}
 
-  private func wave(_ phase: Double, index: Int) -> CGFloat {
-    let angle = (phase * 2 * Double.pi) - (Double(index) * 0.85)
-    return CGFloat((sin(angle) + 1) / 2)
+private struct WorkspaceNativeProgressIndicator: NSViewRepresentable {
+  let size: WorkspaceActivityIndicatorSize
+
+  func makeNSView(context: Context) -> NSProgressIndicator {
+    let indicator = NSProgressIndicator()
+    indicator.style = .spinning
+    indicator.isIndeterminate = true
+    indicator.usesThreadedAnimation = true
+    indicator.controlSize = controlSize
+    indicator.startAnimation(nil)
+    return indicator
   }
 
-  private func pingPong(_ phase: Double) -> Double {
-    phase < 0.5 ? phase * 2 : (1 - phase) * 2
+  func updateNSView(_ indicator: NSProgressIndicator, context: Context) {
+    indicator.controlSize = controlSize
+    indicator.startAnimation(nil)
+  }
+
+  static func dismantleNSView(_ indicator: NSProgressIndicator, coordinator: ()) {
+    indicator.stopAnimation(nil)
+  }
+
+  private var controlSize: NSControl.ControlSize {
+    switch size {
+    case .mini: .mini
+    case .small: .small
+    case .regular: .regular
+    }
   }
 }
 
@@ -193,47 +195,12 @@ struct WorkspaceLoadingStateView: View {
 
   var body: some View {
     VStack(spacing: 12) {
-      WorkspaceShimmerPlaceholder()
+      WorkspaceActivityIndicator(size: .regular, style: .scan)
       Text(title)
         .font(.callout.weight(.medium))
         .foregroundStyle(.secondary)
     }
     .padding(14)
-  }
-}
-
-private struct WorkspaceShimmerPlaceholder: View {
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-  var body: some View {
-    TimelineView(.animation(minimumInterval: 1 / 30, paused: reduceMotion)) { context in
-      let phase = reduceMotion
-        ? 0.45
-        : context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.6) / 1.6
-
-      VStack(alignment: .leading, spacing: 7) {
-        shimmerLine(width: 112, phase: phase)
-        shimmerLine(width: 84, phase: phase)
-        shimmerLine(width: 98, phase: phase)
-      }
-    }
-    .accessibilityHidden(true)
-  }
-
-  private func shimmerLine(width: CGFloat, phase: Double) -> some View {
-    RoundedRectangle(cornerRadius: 3, style: .continuous)
-      .fill(Color.secondary.opacity(0.10))
-      .frame(width: width, height: 7)
-      .overlay(alignment: .leading) {
-        LinearGradient(
-          colors: [.clear, Color.accentColor.opacity(0.25), .clear],
-          startPoint: .leading,
-          endPoint: .trailing
-        )
-        .frame(width: 48)
-        .offset(x: (width + 48) * CGFloat(phase) - 48)
-      }
-      .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
   }
 }
 
@@ -254,8 +221,21 @@ struct WorkspaceActionButtonStyle: ButtonStyle {
   @Environment(\.isEnabled) private var isEnabled
 
   func makeBody(configuration: Configuration) -> some View {
+    WorkspaceActionButtonBody(
+      configuration: configuration,
+      isEnabled: isEnabled
+    )
+  }
+}
+
+private struct WorkspaceActionButtonBody: View {
+  let configuration: ButtonStyleConfiguration
+  let isEnabled: Bool
+  @State private var isHovering = false
+
+  var body: some View {
     configuration.label
-      .font(.callout.weight(.semibold))
+      .font(.callout.weight(.medium))
       .foregroundStyle(isEnabled
         ? WorkspaceDesign.primaryText.opacity(configuration.isPressed ? 0.86 : 0.93)
         : WorkspaceDesign.secondaryText)
@@ -263,15 +243,69 @@ struct WorkspaceActionButtonStyle: ButtonStyle {
       .truncationMode(.tail)
       .fixedSize(horizontal: false, vertical: true)
       .padding(.horizontal, 8)
-      .padding(.vertical, 4.5)
+      .padding(.vertical, 4)
+      .frame(minHeight: 26)
+      .contentShape(RoundedRectangle(cornerRadius: WorkspaceDesign.controlRadius, style: .continuous))
       .background(
-        configuration.isPressed ? WorkspaceDesign.controlPressedFill : WorkspaceDesign.controlFill,
+        backgroundFill,
         in: RoundedRectangle(cornerRadius: WorkspaceDesign.controlRadius, style: .continuous)
       )
-      .overlay(
-        RoundedRectangle(cornerRadius: WorkspaceDesign.controlRadius, style: .continuous)
-          .stroke(WorkspaceDesign.hairline)
-      )
       .opacity(isEnabled ? 1 : 0.55)
+      .animation(WorkspaceMotion.quick, value: isHovering)
+      .onHover { isHovering = $0 }
+  }
+
+  private var backgroundFill: Color {
+    if configuration.isPressed {
+      return WorkspaceDesign.controlPressedFill
+    }
+    if isHovering {
+      return WorkspaceDesign.controlHoverFill
+    }
+    return .clear
+  }
+}
+
+struct WorkspaceControlStrip<Content: View>: View {
+  @ViewBuilder let content: Content
+
+  init(@ViewBuilder content: () -> Content) {
+    self.content = content()
+  }
+
+  var body: some View {
+    HStack(spacing: 1) {
+      content
+    }
+    .padding(3)
+    .background(
+      WorkspaceDesign.controlGroupFill,
+      in: RoundedRectangle(cornerRadius: WorkspaceDesign.cornerRadius, style: .continuous)
+    )
+    .overlay {
+      RoundedRectangle(cornerRadius: WorkspaceDesign.cornerRadius, style: .continuous)
+        .stroke(WorkspaceDesign.hairline, lineWidth: 0.75)
+    }
+  }
+}
+
+struct WorkspaceCardSurface: ViewModifier {
+  func body(content: Content) -> some View {
+    content
+      .background {
+        RoundedRectangle(cornerRadius: WorkspaceDesign.cornerRadius, style: .continuous)
+          .fill(WorkspaceDesign.surfaceBackground)
+          .shadow(color: Color.black.opacity(0.055), radius: 4, x: 0, y: 1)
+      }
+      .overlay {
+        RoundedRectangle(cornerRadius: WorkspaceDesign.cornerRadius, style: .continuous)
+          .stroke(WorkspaceDesign.hairline, lineWidth: 0.75)
+      }
+  }
+}
+
+extension View {
+  func workspaceCardSurface() -> some View {
+    modifier(WorkspaceCardSurface())
   }
 }

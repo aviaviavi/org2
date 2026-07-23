@@ -217,6 +217,8 @@ public struct OpenClawWorkspaceContext: Sendable {
   public let searchQuery: String
   public let searchResults: [SearchResult]
   public let agentThreadDirectories: [String]
+  public let sourceProfiles: [WorkspaceSourceProfileStatus]
+  public let sourceRuntimeStatuses: [String: WorkspaceSourceRuntimeStatus]
 
   public init(
     localCorpusRoot: String?,
@@ -228,7 +230,9 @@ public struct OpenClawWorkspaceContext: Sendable {
     agenda: AgendaPayload?,
     searchQuery: String,
     searchResults: [SearchResult],
-    agentThreadDirectories: [String] = []
+    agentThreadDirectories: [String] = [],
+    sourceProfiles: [WorkspaceSourceProfileStatus] = [],
+    sourceRuntimeStatuses: [String: WorkspaceSourceRuntimeStatus] = [:]
   ) {
     let localCorpusRoot = Self.cleanRoot(localCorpusRoot)
     let remoteCorpusRoot = Self.cleanRoot(remoteCorpusRoot)
@@ -245,6 +249,8 @@ public struct OpenClawWorkspaceContext: Sendable {
       .map(Self.cleanRoot)
       .compactMap { $0 }
       .map { Self.mappedPath($0, localCorpusRoot: localCorpusRoot, remoteCorpusRoot: remoteCorpusRoot) }
+    self.sourceProfiles = sourceProfiles
+    self.sourceRuntimeStatuses = sourceRuntimeStatuses
   }
 
   public func systemPrompt() -> String {
@@ -265,6 +271,7 @@ public struct OpenClawWorkspaceContext: Sendable {
     Org2 is a plain-text, org-mode-inspired knowledge workspace. Files are usually .org2 or .org. Headings use leading stars; TODO state, priority, and tags live on headings. Planning metadata uses SCHEDULED, DEADLINE, and CLOSED lines. Stable node identity lives in :PROPERTIES: drawers using :ID:. Links commonly use [[id:<uuid>][label]].
 
     Use existing org2 tooling when available instead of inventing a parser:
+    - org2 agent capabilities for the current machine-readable command and safety contract
     - org2 agenda --dir <root> --recursive --from <date> --to <date> --format json --workload
     - org2 search <query> --dir <root> --limit 50 --context 1 --format json
     - org2 backlinks --id <uuid> --dir <root> --recursive --format json
@@ -272,6 +279,8 @@ public struct OpenClawWorkspaceContext: Sendable {
 
     Do not write generated Backlinks sections into note files. Treat backlinks as computed views. Preserve the org2 plaintext format and cite file paths plus line numbers for concrete claims.
     """)
+
+    sections.append(formatExternalSourceRouting())
 
     sections.append("""
     Clickable citations in AI chat
@@ -324,6 +333,53 @@ public struct OpenClawWorkspaceContext: Sendable {
     ]
     if let id = location.idValue, !id.isEmpty {
       lines.append("- ID: \(id)")
+    }
+    return lines.joined(separator: "\n")
+  }
+
+  private func formatExternalSourceRouting() -> String {
+    var lines = [
+      "Connected Org2 sources",
+      "",
+      "The active corpus can declare external-source profiles in its root org2.json. Those declarations and the `org2 source` CLI are the authority for which sources are connected, how they are scoped, where their staged material lives, and whether their local mirror is ready. Do not make the user explain or select source infrastructure that the corpus already declares.",
+      "",
+      "When a request may depend on connected material, handle discovery automatically:",
+      "1. Run `org2 source list --dir <root> --json` and match the request against the returned profile IDs, types, scopes, raw zones, and review zones. Never infer a specific organization or provider when the profile metadata can answer it.",
+      "2. Run `org2 source status --dir <root> --json` when freshness or availability matters.",
+      "3. Search the declared raw and review zones together with the rest of the Org2 corpus. Use `org2 search` and preserve citations to the matched plain-text Org2 material.",
+      "4. If a matching enabled profile needs fresher material, use `org2 source sync PROFILE --ingest --apply --dir <root> --json`, then search the staged output. Sync writes bounded, reviewable material to raw/ and views/; it does not promote source text into canonical notes.",
+      "5. If a declared profile cannot be used, run `org2 source doctor PROFILE --dir <root> --json` and follow its concrete diagnostic.",
+      "",
+      "Do not respond with a generic request to install, choose, or authorize a connector when the corpus declares a usable source profile. Ask for user action only when `org2 source doctor` reports a specific missing machine-local binding or credential that you cannot supply. Name the exact profile and the single required action. Do not create or edit a corpus file merely to record that retrieval was unavailable.",
+      "",
+      "Keep credentials out of the corpus and chat. Preserve the declared raw/review boundary and provenance before promoting any source-derived claim into notes/."
+    ]
+
+    if sourceProfiles.isEmpty {
+      lines.append(contentsOf: [
+        "",
+        "Configured Org2 source snapshot: none was loaded into the app context. Run `org2 source list` before concluding that no connected source exists."
+      ])
+      return lines.joined(separator: "\n")
+    }
+
+    lines.append(contentsOf: ["", "Configured Org2 source profiles (non-secret app snapshot):"])
+    for profile in sourceProfiles {
+      let runtime = sourceRuntimeStatuses[profile.id]
+      let scopes = profile.scopes.isEmpty ? "all configured content" : profile.scopes.joined(separator: ", ")
+      let readiness = profile.ready ? "ready" : "setup needed"
+      let health = runtime.map { $0.ok ? "healthy" : "unhealthy" } ?? "status unavailable"
+      var details = [
+        "- \(profile.id) — type: \(profile.type); \(profile.enabled ? "enabled" : "disabled"); \(readiness); \(health); scopes: \(scopes)",
+        "  Raw zone: \(sourceZonePath(profile.rawZone)); review zone: \(sourceZonePath(profile.reviewZone))"
+      ]
+      if let crawler = runtime?.crawlerStatus {
+        let lastSync = crawler.lastSyncAt ?? "never reported"
+        details.append("  Mirror: \(crawler.state); last sync: \(lastSync); \(crawler.summary)")
+      } else if runtime?.error?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
+        details.append("  Status detail: the crawler reported an error; run `org2 source doctor \(profile.id)` for actionable diagnostics.")
+      }
+      lines.append(contentsOf: details)
     }
     return lines.joined(separator: "\n")
   }
@@ -395,6 +451,14 @@ public struct OpenClawWorkspaceContext: Sendable {
 
   private func mappedPath(_ path: String) -> String {
     Self.mappedPath(path, localCorpusRoot: localCorpusRoot, remoteCorpusRoot: remoteCorpusRoot)
+  }
+
+  private func sourceZonePath(_ rawPath: String) -> String {
+    let path = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
+    if path.hasPrefix("/") { return mappedPath(path) }
+    let relative = path.hasPrefix("./") ? String(path.dropFirst(2)) : path
+    guard let root = remoteCorpusRoot ?? localCorpusRoot else { return relative }
+    return root + "/" + relative
   }
 
   private var citationExamplePath: String {

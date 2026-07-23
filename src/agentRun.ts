@@ -745,8 +745,15 @@ export function renderAgentRunOrg(run: AgentRun): string {
     "** Artifacts",
     ...(run.artifacts.length ? run.artifacts.map((artifact) => `- [[file:${artifact.path}][${artifact.title || artifact.path}]] (${artifact.role}; ${artifact.reviewStatus || "generated"})`) : ["- No artifacts recorded."]),
     "",
-    "** Approvals",
-    ...(run.approvals.length ? run.approvals.map((approval) => `- ${approval.status.toUpperCase()} ${approval.title} — ${approval.action} (${approval.riskClass})`) : ["- No approvals recorded."]),
+    `** Approvals [${run.approvals.filter((approval) => approval.status === "pending").length}/${run.approvals.length} pending]`,
+    ...(run.approvals.length ? run.approvals.map((approval) => {
+      const reviewer = approval.requestedFrom
+        ? `; reviewer ${approval.requestedFrom}`
+        : approval.requestedRole
+          ? `; role ${approval.requestedRole}`
+          : "";
+      return `- ${approval.status.toUpperCase()} ${approval.title} — ${approval.action} (${approval.riskClass}${reviewer}) =${approval.id}=`;
+    }) : ["- No approvals recorded."]),
     "",
     "** Validations",
     ...(run.validations.length ? run.validations.map((item) => `- ${item.status.toUpperCase()} ${item.name}${item.detail ? ` — ${item.detail}` : ""}`) : ["- No validations recorded."]),
