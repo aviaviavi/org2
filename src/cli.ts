@@ -53,6 +53,7 @@ import { buildGeneratedArtifactMetadata, formatOrg2ArtifactPropertyDrawer, sha25
 import { defaultCorpusCachePath, org2IndexHome } from "./indexPaths.js";
 import { ingestDemoSource, type Org2RawCaptureInput } from "./ingestionPipeline.js";
 import { parseHeadlineTitleForRoam } from "./headlineTitle.js";
+import { parseIsoCalendarDate } from "./calendarDate.js";
 import {
   collectArtifactIdsInText,
   collectArtifactProvenanceRefsInText,
@@ -75,13 +76,12 @@ function embeddedChartsForSource(raw: string, file?: string) {
     .map((chart) => ({ svg: chart.svg, source: chart.source, presentation: chart.presentation }));
 }
 
-// Parse ISO date string to Date
 function parseIsoDate(dateStr: string): Date {
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) {
+  const parsed = parseIsoCalendarDate(dateStr);
+  if (!parsed) {
     throw new Error(`Invalid date format: ${dateStr}`);
   }
-  return d;
+  return parsed.date;
 }
 
 // Parse timestamp like "<2026-01-17 Sat>"
