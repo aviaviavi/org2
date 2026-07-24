@@ -616,31 +616,44 @@ type ParseDrawerResult = {
 
 function parsePropertyDrawer(lines: string[], startLineIndex: number): ParsePropertyDrawerResult {
   const startLineNumber = startLineIndex + 1;
+  const start = lines[startLineIndex] ?? "";
+  const startMatch = /^(\s*):PROPERTIES:$/.exec(start);
 
-  if (lines[startLineIndex] !== ":PROPERTIES:") {
+  if (!startMatch) {
     fail(makeError("Invalid property drawer; expected :PROPERTIES:", startLineNumber, 1));
+  }
+
+  const indent = startMatch[1] ?? "";
+  if (indent.includes("\t")) {
+    fail(makeError("Unsupported construct: tab character", startLineNumber, start.indexOf("\t") + 1));
   }
 
   const properties: PropertyDrawerNode["properties"] = [];
 
   for (let i = startLineIndex + 1; i < lines.length; i += 1) {
     const lineNumber = i + 1;
-    const line = lines[i];
+    const sourceLine = lines[i] ?? "";
 
-    if (line === ":END:") {
+    if (sourceLine === `${indent}:END:`) {
       return {
         drawer: { type: "PropertyDrawer", properties },
         nextLineIndex: i + 1,
       };
     }
 
+    if (!sourceLine.startsWith(indent)) {
+      fail(makeError("Invalid property drawer line; expected matching indentation", lineNumber, 1));
+    }
+
+    const line = sourceLine.slice(indent.length);
+
     if (isBlank(line)) {
-      fail(makeError("Invalid property drawer; blank lines are not allowed", lineNumber, 1));
+      fail(makeError("Invalid property drawer; blank lines are not allowed", lineNumber, indent.length + 1));
     }
 
     const match = /^:([^:\s]+):(\s*)(.*)$/.exec(line);
     if (!match) {
-      fail(makeError("Invalid property drawer line; expected :KEY: VALUE", lineNumber, 1));
+      fail(makeError("Invalid property drawer line; expected :KEY: VALUE", lineNumber, indent.length + 1));
     }
 
     const key = match[1];
@@ -648,7 +661,7 @@ function parsePropertyDrawer(lines: string[], startLineIndex: number): ParseProp
     const rawValue = match[3];
 
     if (ws.includes("\t")) {
-      fail(makeError("Unsupported construct: tab character", lineNumber, key.length + 3));
+      fail(makeError("Unsupported construct: tab character", lineNumber, indent.length + key.length + 3));
     }
 
     properties.push({ key, value: rawValue });
@@ -1247,7 +1260,7 @@ export function parseOrgToCanonicalAst(input: string, options: ParseOptions = {}
       continue;
     }
 
-    if (line === ":PROPERTIES:") {
+    if (/^\s*:PROPERTIES:$/.test(line)) {
       flushParagraph();
       endList();
       flushAffiliatedKeywords();
