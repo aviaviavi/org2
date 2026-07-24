@@ -5726,6 +5726,46 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testQuickOpenSearchesAndOpensAIChatThreadsByTitle() async throws {
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.createOpenClawChatThread()
+    let threadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
+    store.renameOpenClawChatThread(threadID, title: "Launch readiness review")
+    store.openClawMessages = [
+      OpenClawChatMessage(role: .user, content: "This message body uses unrelated words.")
+    ]
+    store.corpusFiles = [
+      CorpusFile(path: "/tmp/notes.org2", relativePath: "notes.org2", modifiedAt: nil, byteCount: nil)
+    ]
+
+    store.quickOpenQuery = "launch readiness"
+    try await waitForCondition {
+      store.quickOpenItems.contains {
+        guard case .chatThread(let thread) = $0 else { return false }
+        return thread.id == threadID
+      }
+    }
+
+    let item = try XCTUnwrap(store.quickOpenItems.first {
+      guard case .chatThread(let thread) = $0 else { return false }
+      return thread.id == threadID
+    })
+    store.selectQuickOpenItem(item)
+
+    XCTAssertEqual(store.selectedSurface, .openClaw)
+    XCTAssertEqual(store.selectedOpenClawChatThreadID, threadID)
+
+    store.quickOpenQuery = "unrelated words"
+    try await waitForCondition {
+      !store.isFilteringQuickOpenFiles
+    }
+    XCTAssertFalse(store.quickOpenItems.contains {
+      guard case .chatThread = $0 else { return false }
+      return true
+    })
+  }
+
+  @MainActor
   func testOpenClawFileReferenceMapsRemotePathIntoDetailPane() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-chat-link-\(UUID().uuidString)", isDirectory: true)

@@ -5,6 +5,26 @@ import XCTest
 
 @MainActor
 final class OpenClawChatLayoutTests: XCTestCase {
+  func testChatScrollRestorationDefaultsUnsavedThreadsToMostRecentMessage() {
+    let threadID = UUID()
+    let unsaved = OpenClawChatScrollRestoration(threadID: threadID, savedPosition: nil)
+    let saved = OpenClawChatScrollRestoration(threadID: threadID, savedPosition: 0.42)
+
+    XCTAssertEqual(unsaved.position, 1)
+    XCTAssertEqual(saved.position, 0.42, accuracy: 0.001)
+  }
+
+  func testChatScrollRestorationRestartsOnlyWhenThreadChanges() {
+    let firstThreadID = UUID()
+    let secondThreadID = UUID()
+    let initial = OpenClawChatScrollRestoration(threadID: firstThreadID, savedPosition: nil)
+    let sameThread = OpenClawChatScrollRestoration(threadID: firstThreadID, savedPosition: 0.42)
+    let nextThread = OpenClawChatScrollRestoration(threadID: secondThreadID, savedPosition: nil)
+
+    XCTAssertFalse(sameThread.requiresNewRestoration(after: initial))
+    XCTAssertTrue(nextThread.requiresNewRestoration(after: initial))
+  }
+
   func testAssistantBubbleExpandsVerticallyForWrappedText() throws {
     let message = OpenClawChatMessage(
       role: .assistant,

@@ -30,7 +30,7 @@ import { compileCorpus, compileCorpusIncremental, extractCheckboxProgress, rende
 import { extractClockReport } from "./clock.js";
 import { buildAgentContextPayload, renderAgentContextPack, type AgentInclude } from "./agentContext.js";
 import { buildOrg2CapabilityManifest } from "./capabilities.js";
-import { agentRunPath, listAgentRuns, type AgentRun } from "./agentRun.js";
+import { agentRunPath, currentAgentRunApprovalBoundary, listAgentRuns, type AgentRun } from "./agentRun.js";
 import { renderOrgChart, renderOrgCharts } from "./chartRender.js";
 import {
   buildSearchIndex,
@@ -1174,7 +1174,8 @@ function approvalItemsFromRuns(rootDir: string, runs: AgentRun[]): ApprovalQueue
     const pending = run.approvals.filter((approval) => approval.status === "pending");
     return pending.map((approval) => {
       const remainingAfterThis = pending.length - 1;
-      const otherDecisionsApproved = run.approvals.every((candidate) => candidate.id === approval.id || candidate.status === "approved");
+      const otherDecisionsApproved = currentAgentRunApprovalBoundary(run)
+        .every((candidate) => candidate.id === approval.id || candidate.status === "approved");
       const runDecisionEffect = run.status !== "waiting-approval"
         ? `Deciding this approval does not clear the run's separate ${run.status} state.`
         : remainingAfterThis > 0

@@ -98,6 +98,34 @@ assert.equal(headlineItems[1].title, "Approve sending Mercor technographics data
 assert.equal(headlineItems[1].idValue, "approval-priority");
 assert.equal(headlineItems[1].status, "waiting-on-avi-approval");
 
+cli(["run", "create", "--id", "revision-run", "--goal", "Release revised copy", "--dir", tmp, "--json"]);
+cli(["run", "start", "revision-run", "--dir", tmp, "--json"]);
+let revisionRun = JSON.parse(cli([
+  "run", "approval-request", "revision-run",
+  "--title", "Approve original copy", "--action", "send original copy",
+  "--risk", "external-action", "--role", "owner", "--dir", tmp, "--json",
+]));
+cli([
+  "run", "approval-decide", "revision-run", revisionRun.approvals.at(-1).id,
+  "--decision", "revised", "--actor", "Avi", "--role", "owner", "--dir", tmp, "--json",
+]);
+revisionRun = JSON.parse(cli([
+  "run", "approval-request", "revision-run",
+  "--title", "Approve revised copy", "--action", "send revised copy",
+  "--risk", "external-action", "--role", "owner", "--dir", tmp, "--json",
+]));
+const replacementApprovalId = revisionRun.approvals.at(-1).id;
+const replacementPayload = JSON.parse(cli(["approvals", "--dir", tmp, "--recursive", "--format", "json"]));
+const replacementItem = replacementPayload.items.find((item) => item.runId === "revision-run");
+assert.equal(replacementItem.runStatus, "waiting-approval");
+assert.equal(replacementItem.runDecisionEffect, "This is the last pending approval; approving it resumes the run.");
+revisionRun = JSON.parse(cli([
+  "run", "approval-decide", "revision-run", replacementApprovalId,
+  "--decision", "approved", "--actor", "Avi", "--role", "owner", "--dir", tmp, "--json",
+]));
+assert.equal(revisionRun.status, "running");
+assert.deepEqual(revisionRun.approvals.map((approval) => approval.status), ["revised", "approved"]);
+
 const scannedPayload = JSON.parse(cli(["approvals", "--dir", tmp, "--recursive", "--index", "never", "--format", "json"]));
 assert.equal(scannedPayload.index.used, false);
 assert.equal(scannedPayload.count, 4);
