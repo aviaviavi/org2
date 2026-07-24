@@ -1,0 +1,1 @@
+Error: invalid agenda --from value: 2026-02-30. Expected YYYY-MM-DD.
