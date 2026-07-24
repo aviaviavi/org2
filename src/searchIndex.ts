@@ -1,11 +1,30 @@
 import fs from "node:fs";
 import path from "node:path";
+import v8 from "node:v8";
 import { parseHeadlineTitleForRoam } from "./headlineTitle.js";
 import { defaultSearchIndexPath } from "./indexPaths.js";
 import { computeSubtreeRange } from "./sourceLines.js";
 import { normalizeTodoKeyword } from "./todo.js";
 
 export { defaultSearchIndexPath };
+
+export function binarySearchIndexPath(indexPath: string): string {
+  return `${indexPath}.v8`;
+}
+
+function readSearchIndex(indexPath: string): Org2SearchIndex {
+  const binaryPath = binarySearchIndexPath(indexPath);
+  try {
+    const binaryStat = fs.statSync(binaryPath);
+    const jsonStat = fs.statSync(indexPath);
+    if (binaryStat.mtimeMs >= jsonStat.mtimeMs) {
+      return v8.deserialize(fs.readFileSync(binaryPath)) as Org2SearchIndex;
+    }
+  } catch {
+    // Older indexes and portable copies may only have the JSON representation.
+  }
+  return JSON.parse(fs.readFileSync(indexPath, "utf8")) as Org2SearchIndex;
+}
 
 export type Org2SearchIndexFile = {
   path: string;
@@ -157,7 +176,7 @@ export function updateSearchIndex(options: {
   const indexPath = defaultSearchIndexPath(rootDir);
   let existing: Org2SearchIndex;
   try {
-    existing = JSON.parse(fs.readFileSync(indexPath, "utf8")) as Org2SearchIndex;
+    existing = readSearchIndex(indexPath);
   } catch {
     return null;
   }
@@ -215,9 +234,13 @@ export function updateSearchIndex(options: {
 
 export function writeSearchIndex(result: Org2SearchIndexBuildResult): void {
   fs.mkdirSync(path.dirname(result.path), { recursive: true });
-  const tmpPath = `${result.path}.${process.pid}.tmp`;
-  fs.writeFileSync(tmpPath, JSON.stringify(result.index, null, 2) + "\n", "utf8");
-  fs.renameSync(tmpPath, result.path);
+  const binaryPath = binarySearchIndexPath(result.path);
+  const jsonTmpPath = `${result.path}.${process.pid}.tmp`;
+  const binaryTmpPath = `${binaryPath}.${process.pid}.tmp`;
+  fs.writeFileSync(jsonTmpPath, JSON.stringify(result.index) + "\n", "utf8");
+  fs.writeFileSync(binaryTmpPath, v8.serialize(result.index));
+  fs.renameSync(jsonTmpPath, result.path);
+  fs.renameSync(binaryTmpPath, binaryPath);
 }
 
 export function loadFreshSearchIndex(options: {
@@ -230,7 +253,7 @@ export function loadFreshSearchIndex(options: {
   const indexPath = defaultSearchIndexPath(rootDir);
   let parsed: Org2SearchIndex;
   try {
-    parsed = JSON.parse(fs.readFileSync(indexPath, "utf8")) as Org2SearchIndex;
+    parsed = readSearchIndex(indexPath);
   } catch {
     return null;
   }
@@ -267,7 +290,7 @@ export function loadCompatibleSearchIndex(options: {
   const indexPath = defaultSearchIndexPath(rootDir);
   let index: Org2SearchIndex;
   try {
-    index = JSON.parse(fs.readFileSync(indexPath, "utf8")) as Org2SearchIndex;
+    index = readSearchIndex(indexPath);
   } catch {
     return null;
   }

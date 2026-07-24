@@ -487,6 +487,7 @@ See [[file:ai-draft-artifacts.org][AI draft artifacts]] for the full format, rev
 #+begin_src sh
 org2 compile corpus --dir ~/notes --recursive --out compiled/corpus.json
 org2 compile corpus --dir ~/notes --recursive --format jsonl --out compiled/corpus.jsonl
+org2 compile corpus --dir ~/notes --recursive --incremental --out compiled/corpus.json
 #+end_src
 
 The JSON form includes:
@@ -499,6 +500,8 @@ The JSON form includes:
 - text snippets suitable for previews or retrieval pipelines
 
 Use JSONL for larger corpora when downstream tools prefer one record per line; the first JSONL record carries the same artifact metadata header as the JSON form. If you wrap compiled artifacts in Org files, stamp the wrapper with the same =ORG2_ARTIFACT_*=, =ORG2_SOURCE_HASHES=, and =ORG2_REVIEW_STATUS= fields and keep using =org2 lint= for generated-output health checks.
+
+For repeated whole-corpus reads, =--incremental= stores compiled semantics plus per-file cache metadata in the machine-local Org2 index home and reparses only added or changed files. Deleted files are dropped from the next artifact, while corpus-wide backlinks, entities, relations, and statistics are rebuilt from reusable file semantics so the output remains equivalent to a full compile. =--cache FILE= overrides the derived cache location. Human-facing =context=, =agent context=, and =brief= commands use this incremental cache automatically.
 
 * Search + cited query
 
@@ -523,7 +526,7 @@ Useful flags:
 - =--date-from= / =--date-to= and =--file-zone= narrow results by local corpus zones and source dates.
 - =--format json= returns machine-readable file, line, heading, snippet, source range, and context fields.
 
-=org2 index= builds disposable machine-local search data. After an initial build, =org2 index --incremental --file FILE= replaces or removes only that file's index entry; if no compatible base index exists, it safely falls back to a complete build. Watcher-backed clients may search that maintained index with =--index current=, avoiding a directory walk and per-file freshness check on every query. The macOS app uses both paths for filesystem events so frequent agent edits and live searches do not repeatedly scan the corpus. =auto= remains the conservative CLI default for callers without a watcher.
+=org2 index= builds disposable machine-local search data. Its JSON artifact remains inspectable, and Org2 also maintains a versioned binary sidecar for faster repeat loads; an absent, stale, or unreadable sidecar safely falls back to JSON. After an initial build, =org2 index --incremental --file FILE= replaces or removes only that file's index entry; if no compatible base index exists, it safely falls back to a complete build. Watcher-backed clients may search that maintained index with =--index current=, avoiding a directory walk and per-file freshness check on every query. The macOS app uses both paths for filesystem events so frequent agent edits and live searches do not repeatedly scan the corpus. =auto= remains the conservative CLI default for callers without a watcher.
 
 * Roam workflows
 

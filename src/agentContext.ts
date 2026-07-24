@@ -259,6 +259,15 @@ type AgentNode = {
   neighbors?: Array<{ key: string; id: string | null; title: string; file: string; citation: string; direction: "out" | "in"; linkType: "id" | "wiki" }>;
 };
 
+type AgentBacklink = NonNullable<AgentNode["backlinks"]>[number];
+
+type AgentCorpusLookup = {
+  nodeByKey: Map<string, CompiledCorpusNode>;
+  nodeById: Map<string, CompiledCorpusNode>;
+  nodeByTitle: Map<string, CompiledCorpusNode>;
+  backlinksByTargetKey: Map<string, AgentBacklink[]>;
+};
+
 export type AgentPayload = {
   $schema: "org2:agent-context:v1";
   action: AgentAction;
@@ -451,7 +460,7 @@ function recencyScoreFor(node: CompiledCorpusNode, nowMs = Date.now()): { score:
   return { score, reason: `dated ${date.toISOString().slice(0, 10)} (${score.toFixed(2)} recency)` };
 }
 
-function salienceScoreFor(corpus: CompiledCorpus, node: CompiledCorpusNode, opts: AgentContextOptions): { score: number; reasons: string[] } {
+function salienceScoreFor(node: CompiledCorpusNode, opts: AgentContextOptions, lookup: AgentCorpusLookup): { score: number; reasons: string[] } {
   let score = 0;
   const reasons: string[] = [];
   const explicit = numericProperty(node, ["ORG2_SALIENCE", "SALIENCE", "IMPORTANCE", "PRIORITY"]);
@@ -461,7 +470,7 @@ function salienceScoreFor(corpus: CompiledCorpus, node: CompiledCorpusNode, opts
   if (isActiveTodoKeyword(node.todo)) { score += 2; reasons.push(`active TODO ${node.todo}`); }
   const activePlanning = node.planning.filter((p) => p.kind === "SCHEDULED" || p.kind === "DEADLINE");
   if (activePlanning.length) { score += Math.min(3, activePlanning.length * 1.5); reasons.push("scheduled/deadline planning"); }
-  const backlinkCount = inferredBacklinksFor(corpus, node).length;
+  const backlinkCount = inferredBacklinksFor(lookup, node).length;
   if (backlinkCount) { const backlinkScore = Math.min(3, Math.log2(backlinkCount + 1)); score += backlinkScore; reasons.push(`${backlinkCount} backlink/mention${backlinkCount === 1 ? "" : "s"}`); }
   if (opts.scope) {
     const scope = opts.scope.toLowerCase().replace(/^[^:]+:/, "").trim();
@@ -471,7 +480,7 @@ function salienceScoreFor(corpus: CompiledCorpus, node: CompiledCorpusNode, opts
   return { score, reasons };
 }
 
-function scoreNode(corpus: CompiledCorpus, node: CompiledCorpusNode, terms: string[], opts: AgentContextOptions): { score: number; matchedTerms: string[]; selectionReason: string[] } {
+function scoreNode(node: CompiledCorpusNode, terms: string[], opts: AgentContextOptions, lookup: AgentCorpusLookup): { score: number; matchedTerms: string[]; selectionReason: string[] } {
   const haystack = [node.title, node.snippet, node.id || "", ...node.tags, ...node.aliases, ...Object.keys(node.effectiveProperties || node.properties), ...Object.values(node.effectiveProperties || node.properties)].join("\n").toLowerCase();
   const matchedTerms = terms.filter((term) => haystack.includes(term));
   const selectionReason: string[] = matchedTerms.length ? [`matched ${matchedTerms.length} query term${matchedTerms.length === 1 ? "" : "s"}: ${matchedTerms.join(", ")}`] : [];
@@ -500,7 +509,7 @@ function scoreNode(corpus: CompiledCorpus, node: CompiledCorpusNode, terms: stri
   const salienceWeight = Number.isFinite(opts.salienceWeight) ? opts.salienceWeight! : 1;
   const recency = recencyScoreFor(node);
   if (recency.score && recencyWeight) { score += recency.score * recencyWeight; if (recency.reason) selectionReason.push(`${recency.reason} × recency weight ${recencyWeight}`); }
-  const salience = salienceScoreFor(corpus, node, opts);
+  const salience = salienceScoreFor(node, opts, lookup);
   if (salience.score && salienceWeight) selectionReason.push(...salience.reasons.map((reason) => `${reason} × salience weight ${salienceWeight}`));
   score += salience.score * salienceWeight;
   if (isOperationalContextFile(node.file)) {
@@ -524,10 +533,23 @@ function findNodeById(corpus: CompiledCorpus, id: string): CompiledCorpusNode | 
   return corpus.nodes.find((node) => normalizeId(node.id) === needle || normalizeId(node.key) === needle) || null;
 }
 
-function inferredBacklinksFor(corpus: CompiledCorpus, node: CompiledCorpusNode): NonNullable<AgentNode["backlinks"]> {
-  type AgentBacklink = NonNullable<AgentNode["backlinks"]>[number];
+function buildAgentCorpusLookup(corpus: CompiledCorpus): AgentCorpusLookup {
   const nodeByKey = new Map(corpus.nodes.map((candidate) => [candidate.key, candidate]));
-  const out = new Map<string, AgentBacklink>();
+  const nodesById = new Map<string, CompiledCorpusNode[]>();
+  for (const candidate of corpus.nodes) {
+    if (!candidate.id) continue;
+    const normalizedId = normalizeId(candidate.id);
+    const existing = nodesById.get(normalizedId) || [];
+    existing.push(candidate);
+    nodesById.set(normalizedId, existing);
+  }
+  const nodeById = new Map(
+    Array.from(nodesById, ([id, candidates]) => [id, candidates[candidates.length - 1]!]),
+  );
+  const nodeByTitle = new Map(
+    corpus.nodes.map((candidate) => [candidate.title.trim().toLowerCase(), candidate]),
+  );
+  const backlinkMapsByTargetKey = new Map<string, Map<string, AgentBacklink>>();
   const candidateScore = (backlink: AgentBacklink): [number, number, number] => {
     const source = nodeByKey.get(backlink.sourceKey);
     if (!source) return [0, 0, 0];
@@ -536,7 +558,12 @@ function inferredBacklinksFor(corpus: CompiledCorpus, node: CompiledCorpusNode):
     const level = source.level || (source.kind === "heading" ? 1 : 0);
     return [level, start, -span];
   };
-  const addBacklink = (backlink: AgentBacklink) => {
+  const addBacklink = (targetKey: string, backlink: AgentBacklink) => {
+    let out = backlinkMapsByTargetKey.get(targetKey);
+    if (!out) {
+      out = new Map<string, AgentBacklink>();
+      backlinkMapsByTargetKey.set(targetKey, out);
+    }
     const key = `${backlink.file}:${backlink.line}`;
     const existing = out.get(key);
     if (!existing) {
@@ -551,16 +578,19 @@ function inferredBacklinksFor(corpus: CompiledCorpus, node: CompiledCorpusNode):
       return;
     }
   };
-  for (const backlink of node.backlinks) {
-    addBacklink({ ...backlink, citation: `${backlink.file}:${backlink.line}` });
+
+  for (const target of corpus.nodes) {
+    for (const backlink of target.backlinks) {
+      addBacklink(target.key, { ...backlink, citation: `${backlink.file}:${backlink.line}` });
+    }
   }
-  if (node.id) {
-    const needle = normalizeId(node.id);
-    for (const source of corpus.nodes) {
-      if (source.key === node.key) continue;
-      for (const link of source.links) {
-        if (normalizeId(link.target.replace(/^id:/i, "")) !== needle) continue;
-        addBacklink({
+
+  for (const source of corpus.nodes) {
+    for (const link of source.links) {
+      const targets = nodesById.get(normalizeId(link.target.replace(/^id:/i, ""))) || [];
+      for (const target of targets) {
+        if (source.key === target.key) continue;
+        addBacklink(target.key, {
           sourceKey: source.key,
           sourceId: source.id,
           sourceTitle: source.title,
@@ -572,22 +602,33 @@ function inferredBacklinksFor(corpus: CompiledCorpus, node: CompiledCorpusNode):
       }
     }
   }
-  return Array.from(out.values()).sort((a, b) => a.citation.localeCompare(b.citation));
+
+  const backlinksByTargetKey = new Map(
+    Array.from(backlinkMapsByTargetKey, ([targetKey, backlinks]) => [
+      targetKey,
+      Array.from(backlinks.values()).sort((a, b) => a.citation.localeCompare(b.citation)),
+    ]),
+  );
+  return { nodeByKey, nodeById, nodeByTitle, backlinksByTargetKey };
 }
 
-function neighborsFor(corpus: CompiledCorpus, node: CompiledCorpusNode): AgentNode["neighbors"] {
-  const byId = new Map(corpus.nodes.filter((n) => n.id).map((n) => [normalizeId(n.id), n]));
-  const byTitle = new Map(corpus.nodes.map((n) => [n.title.trim().toLowerCase(), n]));
+function inferredBacklinksFor(lookup: AgentCorpusLookup, node: CompiledCorpusNode): NonNullable<AgentNode["backlinks"]> {
+  return lookup.backlinksByTargetKey.get(node.key) || [];
+}
+
+function neighborsFor(lookup: AgentCorpusLookup, node: CompiledCorpusNode): AgentNode["neighbors"] {
   const out = new Map<string, NonNullable<AgentNode["neighbors"]>[number]>();
   for (const link of node.links) {
-    const idTarget = link.type === "id" || /^id:/i.test(link.target) ? byId.get(normalizeId(link.target.replace(/^id:/i, ""))) : undefined;
-    const target = idTarget || (link.type === "wiki" ? byTitle.get(link.target.trim().toLowerCase()) : undefined);
+    const idTarget = link.type === "id" || /^id:/i.test(link.target)
+      ? lookup.nodeById.get(normalizeId(link.target.replace(/^id:/i, "")))
+      : undefined;
+    const target = idTarget || (link.type === "wiki" ? lookup.nodeByTitle.get(link.target.trim().toLowerCase()) : undefined);
     if (!target) continue;
     const linkType = idTarget ? "id" : "wiki";
     out.set(`out:${target.key}`, { key: target.key, id: target.id, title: target.title, file: target.file, citation: citationFor(target), direction: "out", linkType });
   }
-  for (const backlink of inferredBacklinksFor(corpus, node)) {
-    const source = corpus.nodes.find((n) => n.key === backlink.sourceKey);
+  for (const backlink of inferredBacklinksFor(lookup, node)) {
+    const source = lookup.nodeByKey.get(backlink.sourceKey);
     if (!source) continue;
     out.set(`in:${source.key}`, { key: source.key, id: source.id, title: source.title, file: source.file, citation: citationFor(source), direction: "in", linkType: backlink.linkType });
   }
@@ -1270,7 +1311,7 @@ function relatedDataLinksFor(corpus: CompiledCorpus, node: CompiledCorpusNode): 
   return Array.from(out.values()).sort((a, b) => a.citation.localeCompare(b.citation) || a.title.localeCompare(b.title));
 }
 
-function toAgentNode(corpus: CompiledCorpus, node: CompiledCorpusNode, include: Set<AgentInclude>, score?: { score: number; matchedTerms: string[]; selectionReason?: string[] }): AgentNode {
+function toAgentNode(corpus: CompiledCorpus, node: CompiledCorpusNode, include: Set<AgentInclude>, lookup: AgentCorpusLookup, score?: { score: number; matchedTerms: string[]; selectionReason?: string[] }): AgentNode {
   const source = { file: node.file, sourceRange: node.sourceRange, citation: citationFor(node) };
   const thread = agentThreadMetadataFor(corpus, node);
   const relatedThreads = relatedThreadsFor(corpus, node);
@@ -1300,8 +1341,8 @@ function toAgentNode(corpus: CompiledCorpus, node: CompiledCorpusNode, include: 
     ...(dataLink ? { dataLink } : {}),
     ...(relatedDataLinks.length ? { relatedDataLinks } : {}),
     ...(include.has("sources") ? { sources: [source] } : {}),
-    ...(include.has("backlinks") ? { backlinks: inferredBacklinksFor(corpus, node) } : {}),
-    ...(include.has("neighbors") ? { neighbors: neighborsFor(corpus, node) } : {}),
+    ...(include.has("backlinks") ? { backlinks: inferredBacklinksFor(lookup, node) } : {}),
+    ...(include.has("neighbors") ? { neighbors: neighborsFor(lookup, node) } : {}),
   };
 }
 
@@ -1646,6 +1687,7 @@ export function buildAgentContextPayload(corpus: CompiledCorpus, opts: AgentCont
   const limit = Math.max(1, Math.min(100, opts.limit || 10));
   const maxChars = Math.max(200, opts.maxChars || 12000);
   const errors: string[] = [];
+  const lookup = buildAgentCorpusLookup(corpus);
   let selected: Array<{ node: CompiledCorpusNode; score?: { score: number; matchedTerms: string[]; selectionReason?: string[] } }> = [];
 
   if (opts.action === "fetch") {
@@ -1657,13 +1699,13 @@ export function buildAgentContextPayload(corpus: CompiledCorpus, opts: AgentCont
     if (terms.length === 0) errors.push("Query must include at least one searchable term.");
     selected = corpus.nodes
       .filter((node) => nodeMatchesFilters(node, opts))
-      .map((node) => ({ node, score: scoreNode(corpus, node, terms, opts) }))
+      .map((node) => ({ node, score: scoreNode(node, terms, opts, lookup) }))
       .filter((item) => (item.score?.score || 0) > 0)
       .sort((a, b) => (b.score!.score - a.score!.score) || a.node.file.localeCompare(b.node.file) || a.node.sourceRange.startLine - b.node.sourceRange.startLine)
       .slice(0, limit);
   }
 
-  const results = selected.map((item) => toAgentNode(corpus, item.node, include, item.score));
+  const results = selected.map((item) => toAgentNode(corpus, item.node, include, lookup, item.score));
   const payload: AgentPayload = {
     $schema: "org2:agent-context:v1",
     action: opts.action,

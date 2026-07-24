@@ -1210,6 +1210,7 @@ public final class WorkspaceStore: ObservableObject {
   var entryHTMLRenderTimeoutNanoseconds = WorkspaceStore.defaultEntryRenderTimeoutNanoseconds
   var entrySourceLoaderForTesting: (@Sendable (String, Int, EntrySourceMode) async throws -> EntrySource)?
   var entryHTMLRendererForTesting: (@Sendable (String, String, Int, String?) async throws -> String)?
+  var slideExportFileOpenerForTesting: ((URL) -> Bool)?
   private var workspaceRefreshGeneration = 0
   private var workspaceRefreshOperationTask: Task<Void, Never>?
   private var workspaceRefreshWatchdogTask: Task<Void, Never>?
@@ -6167,12 +6168,7 @@ public final class WorkspaceStore: ObservableObject {
 
     do {
       try await cli.exportBeamer(file: sourceFile, destination: destination, format: format)
-      statusText = "Exported slides to \(destination.lastPathComponent)"
-      errorText = nil
-      slideExportNotice = Org2SlideExportNotice(
-        title: "Slides Exported",
-        message: destination.path
-      )
+      finishSuccessfulSlideExport(format: format, destination: destination)
     } catch {
       errorText = error.localizedDescription
       statusText = "Slide export failed: \(error.localizedDescription)"
@@ -6181,6 +6177,36 @@ public final class WorkspaceStore: ObservableObject {
         message: error.localizedDescription
       )
     }
+  }
+
+  func finishSuccessfulSlideExport(
+    format: Org2SlideExportFormat,
+    destination: URL
+  ) {
+    errorText = nil
+
+    if format == .pdf {
+      let didOpen = slideExportFileOpenerForTesting?(destination)
+        ?? NSWorkspace.shared.open(destination)
+      if didOpen {
+        statusText = "Exported and opened \(destination.lastPathComponent)"
+        slideExportNotice = nil
+        return
+      }
+
+      statusText = "Exported slides to \(destination.lastPathComponent), but couldn’t open the PDF"
+      slideExportNotice = Org2SlideExportNotice(
+        title: "Slides Exported",
+        message: "\(destination.path)\n\nThe PDF was saved, but macOS couldn’t open it automatically."
+      )
+      return
+    }
+
+    statusText = "Exported slides to \(destination.lastPathComponent)"
+    slideExportNotice = Org2SlideExportNotice(
+      title: "Slides Exported",
+      message: destination.path
+    )
   }
 
   private var slideExportSourceFile: URL? {

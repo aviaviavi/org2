@@ -1,0 +1,35 @@
+{
+  "type": "Document",
+  "version": "0",
+  "children": [
+    {
+      "type": "Paragraph",
+      "children": [
+        { "type": "Text", "value": "Use " },
+        { "type": "Emphasis", "kind": "code", "marker": "`", "content": "ASSIGNEE" },
+        { "type": "Text", "value": " and " },
+        { "type": "Emphasis", "kind": "code", "marker": "`", "content": "doesn't" },
+        { "type": "Text", "value": " as inline code." }
+      ]
+    },
+    {
+      "type": "List",
+      "ordered": false,
+      "items": [
+        {
+          "type": "ListItem",
+          "children": [
+            {
+              "type": "Paragraph",
+              "children": [
+                { "type": "Text", "value": "Assign an owner using the " },
+                { "type": "Emphasis", "kind": "code", "marker": "`", "content": "ASSIGNEE" },
+                { "type": "Text", "value": " property." }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

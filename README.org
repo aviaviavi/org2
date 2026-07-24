@@ -26,6 +26,31 @@ Run the full test suite with:
 npm test
 #+end_src
 
+Benchmark read-only CLI operations against a representative corpus with:
+
+#+begin_src sh
+npm run benchmark:cli -- --dir /path/to/corpus
+npm run benchmark:cli -- --dir /path/to/corpus --suite full --runs 3
+#+end_src
+
+The interactive suite covers startup, agenda, search, approvals, and an isolated
+full index build. The full suite also covers full and incremental compilation,
+lint, graph audit, and cold/warm agent context. Index and cache output is
+redirected to a temporary directory; the source corpus and its live index are
+not modified.
+
+The normal test suite also includes a reproducible performance regression test
+over a generated 500-file, 5,500-node corpus. Run it independently with:
+
+#+begin_src sh
+npm run test:performance
+#+end_src
+
+It enforces explicit budgets for CLI startup, compilation, lint, graph audit,
+cold/warm agent context, and a one-file incremental rebuild. On known slower CI
+hardware, multiply all budgets with =ORG2_PERF_BUDGET_SCALE=2 npm run
+test:performance= rather than weakening the checked-in defaults.
+
 Build or update the local macOS app bundle with:
 
 #+begin_src sh

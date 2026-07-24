@@ -57,12 +57,18 @@ assert.ok(indexBuild.path.startsWith(indexHome + path.sep), `expected index unde
 assert.ok(!indexBuild.path.startsWith(tmp + path.sep), `index should not be written inside corpus root: ${indexBuild.path}`);
 assert.equal(fs.existsSync(path.join(tmp, ".org2", "index", "search-v1.json")), false);
 assert.ok(fs.existsSync(indexBuild.path));
+assert.ok(fs.existsSync(`${indexBuild.path}.v8`));
 assert.ok(indexBuild.fileCount >= 1);
 
 const indexedSearch = JSON.parse(run("search", "cited", "--dir", tmp, "--recursive", "--index", "auto", "--format", "json"));
 assert.equal(indexedSearch.$schema, "org2:search:v1");
 assert.equal(indexedSearch.index.used, true);
 assert.equal(indexedSearch.results[0].heading, "Alpha plan");
+
+fs.writeFileSync(`${indexBuild.path}.v8`, "corrupt binary cache", "utf8");
+const fallbackSearch = JSON.parse(run("search", "cited", "--dir", tmp, "--recursive", "--index", "current", "--format", "json"));
+assert.equal(fallbackSearch.index.used, true);
+assert.equal(fallbackSearch.results[0].heading, "Alpha plan");
 
 fs.appendFileSync(file, "\nInstant incremental marker.\n", "utf8");
 const incrementalBuild = JSON.parse(run(

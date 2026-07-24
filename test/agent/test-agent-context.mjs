@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "org2-agent-test-"));
+const indexHome = path.join(tmp, ".index");
 const a = path.join(tmp, "alpha.org2");
 const b = path.join(tmp, "beta.org2");
 fs.writeFileSync(a, `#+title: Alpha File
@@ -38,7 +39,10 @@ fs.writeFileSync(b, `#+title: Beta File
 Backlink to [[id:alpha-1][Alpha plan]].
 `, "utf8");
 
-const runJson = (...args) => JSON.parse(execFileSync("node", ["dist/cli.js", ...args], { encoding: "utf8" }));
+const runJson = (...args) => JSON.parse(execFileSync("node", ["dist/cli.js", ...args], {
+  encoding: "utf8",
+  env: { ...process.env, ORG2_INDEX_HOME: indexHome },
+}));
 
 const context = runJson("agent", "context", "--query", "retrieval API", "--dir", tmp, "--recursive", "--include", "sources,neighbors,backlinks", "--limit", "5", "--max-chars", "800");
 assert.equal(context.$schema, "org2:agent-context:v1");

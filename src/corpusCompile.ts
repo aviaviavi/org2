@@ -1,8 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
+import v8 from "node:v8";
 import { buildGeneratedArtifactMetadata, sha256Hex, type Org2GeneratedArtifactMetadata } from "./artifactMetadata.js";
 import { normalizeTodoKeyword } from "./todo.js";
-import { extractClockReport, type OrgClockInterval, type OrgClockIssue } from "./clock.js";
+import { extractClockReport, type OrgClockInterval, type OrgClockIssue, type OrgClockSummary } from "./clock.js";
 
 export type CompiledCorpusLink = {
   type: "id" | "wiki" | "file" | "url" | "other";
@@ -510,6 +511,146 @@ function nodeLabels(node: CompiledCorpusNode): string[] {
   return Array.from(new Set([node.title, ...node.aliases].map((value) => value.trim()).filter(Boolean)));
 }
 
+function summarizeClockIntervals(intervals: OrgClockInterval[]): OrgClockSummary {
+  const summary: OrgClockSummary = {
+    totalMinutes: 0,
+    byDay: {},
+    byHeading: {},
+    byTag: {},
+    byProject: {},
+    byFile: {},
+  };
+  const add = (bucket: Record<string, number>, key: string | undefined, minutes: number) => {
+    const normalized = (key || "").trim() || "(none)";
+    bucket[normalized] = (bucket[normalized] || 0) + minutes;
+  };
+  for (const interval of intervals) {
+    summary.totalMinutes += interval.minutes;
+    add(summary.byDay, interval.start.slice(0, 10), interval.minutes);
+    add(summary.byHeading, interval.heading, interval.minutes);
+    add(summary.byProject, interval.project, interval.minutes);
+    add(summary.byFile, interval.file, interval.minutes);
+    for (const tag of interval.tags) add(summary.byTag, tag, interval.minutes);
+  }
+  return summary;
+}
+
+function finalizeCompiledCorpus(options: {
+  rootDir: string;
+  corpusFiles: CompiledCorpusFile[];
+  sourceNodes: CompiledCorpusNode[];
+  clocks: OrgClockInterval[];
+  clockIssues: OrgClockIssue[];
+  checkboxProgress: CheckboxProgress;
+  checkboxIssues: CompiledCorpus["checkboxIssues"];
+  generatedAt?: string;
+  indexState: CompiledCorpusIndexState;
+}): CompiledCorpus {
+  const nodes: CompiledCorpusNode[] = options.sourceNodes.map((node) => ({
+    ...node,
+    backlinks: [],
+  }));
+  const byId = new Map<string, CompiledCorpusNode>();
+  const labels = new Map<string, Set<string>>();
+  for (const node of nodes) {
+    if (node.id && !byId.has(node.id)) byId.set(node.id, node);
+    if (!node.id) continue;
+    for (const label of nodeLabels(node)) {
+      const key = normalizeLabel(label);
+      if (!key) continue;
+      const set = labels.get(key) || new Set<string>();
+      set.add(node.id);
+      labels.set(key, set);
+    }
+  }
+
+  for (const source of nodes) {
+    for (const link of source.links) {
+      let targetId: string | null = null;
+      let resolvedBy: "id" | "wiki" | null = null;
+      if (link.type === "id") {
+        targetId = normalizeId(link.target.replace(/^id:/i, ""));
+        resolvedBy = "id";
+      } else if (link.type === "wiki") {
+        const candidates = Array.from(labels.get(normalizeLabel(link.target)) || []);
+        if (candidates.length === 1) {
+          targetId = candidates[0] || null;
+          resolvedBy = "wiki";
+        }
+      }
+      if (!targetId || !resolvedBy) continue;
+      const target = byId.get(targetId);
+      if (!target) continue;
+      target.backlinks.push({
+        sourceKey: source.key,
+        sourceId: source.id,
+        sourceTitle: source.title,
+        file: source.file,
+        line: link.line,
+        linkType: resolvedBy,
+      });
+    }
+  }
+
+  for (const node of nodes) {
+    node.entityType = nodeEntityType(node);
+    node.backlinks.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.sourceKey.localeCompare(b.sourceKey));
+  }
+
+  const entities = buildEntityIndex(nodes);
+  const relations = buildRelationIndex(nodes, byId, labels);
+  const entityProfiles = buildEntityProfiles(nodes, entities, relations, labels);
+  const totalLinks = nodes.reduce((sum, node) => sum + node.links.length, 0);
+  const totalBacklinks = nodes.reduce((sum, node) => sum + node.backlinks.length, 0);
+  const sortedNodes = nodes.sort((a, b) => a.file.localeCompare(b.file) || a.sourceRange.startLine - b.sourceRange.startLine || a.kind.localeCompare(b.kind));
+  const corpusFiles = options.corpusFiles.sort((a, b) => a.file.localeCompare(b.file));
+
+  return {
+    schemaVersion: "org2-compiled-corpus/v1",
+    generatedBy: "org2 compile corpus",
+    artifact: buildGeneratedArtifactMetadata({
+      role: "compiled",
+      generator: "org2 compile corpus",
+      generatedAt: options.generatedAt,
+      provenance: corpusFiles.map((file) => `file:${file.file}`),
+      sourceHashes: corpusFiles.map((file) => ({ kind: "file", value: file.file, sha256: file.sha256 })),
+      reviewStatus: "generated",
+      claimState: "source-backed",
+      observedAt: options.generatedAt,
+      validAsOf: options.generatedAt,
+    }),
+    rootDir: options.rootDir,
+    files: corpusFiles,
+    nodes: sortedNodes,
+    stats: {
+      files: corpusFiles.length,
+      nodes: sortedNodes.length,
+      headings: sortedNodes.filter((node) => node.kind === "heading").length,
+      links: totalLinks,
+      backlinks: totalBacklinks,
+      entities: entities.length,
+      relations: relations.length,
+      entityProfiles: entityProfiles.length,
+    },
+    entities,
+    entityProfiles,
+    relations,
+    clocks: options.clocks,
+    clockIssues: options.clockIssues,
+    checkboxProgress: {
+      ...options.checkboxProgress,
+      percent: options.checkboxProgress.total > 0
+        ? Math.round((options.checkboxProgress.checked / options.checkboxProgress.total) * 100)
+        : 0,
+    },
+    checkboxIssues: options.checkboxIssues,
+    clockSummary: summarizeClockIntervals(options.clocks),
+    effortSummary: buildEffortSummary(sortedNodes),
+    index: buildLookupIndex(sortedNodes),
+    indexState: options.indexState,
+  };
+}
+
 export function compileCorpus(files: string[], opts?: { rootDir?: string; generatedAt?: string }): CompiledCorpus {
   const rootDir = path.resolve(opts?.rootDir || process.cwd());
   const sortedFiles = Array.from(new Set(files.map((file) => path.resolve(file)))).sort();
@@ -618,109 +759,49 @@ export function compileCorpus(files: string[], opts?: { rootDir?: string; genera
     }
   }
 
-  const byId = new Map<string, CompiledCorpusNode>();
-  const labels = new Map<string, Set<string>>();
-  for (const node of nodes) {
-    if (node.id && !byId.has(node.id)) byId.set(node.id, node);
-    if (!node.id) continue;
-    for (const label of nodeLabels(node)) {
-      const key = normalizeLabel(label);
-      if (!key) continue;
-      const set = labels.get(key) || new Set<string>();
-      set.add(node.id);
-      labels.set(key, set);
-    }
-  }
-
-  for (const source of nodes) {
-    for (const link of source.links) {
-      let targetId: string | null = null;
-      let resolvedBy: "id" | "wiki" | null = null;
-      if (link.type === "id") {
-        targetId = normalizeId(link.target.replace(/^id:/i, ""));
-        resolvedBy = "id";
-      } else if (link.type === "wiki") {
-        const candidates = Array.from(labels.get(normalizeLabel(link.target)) || []);
-        if (candidates.length === 1) {
-          targetId = candidates[0] || null;
-          resolvedBy = "wiki";
-        }
-      }
-      if (!targetId || !resolvedBy) continue;
-      const target = byId.get(targetId);
-      if (!target) continue;
-      target.backlinks.push({
-        sourceKey: source.key,
-        sourceId: source.id,
-        sourceTitle: source.title,
-        file: source.file,
-        line: link.line,
-        linkType: resolvedBy,
-      });
-    }
-  }
-
-  for (const node of nodes) {
-    node.entityType = nodeEntityType(node);
-    node.backlinks.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.sourceKey.localeCompare(b.sourceKey));
-  }
-
-  const entities = buildEntityIndex(nodes);
-  const relations = buildRelationIndex(nodes, byId, labels);
-  const entityProfiles = buildEntityProfiles(nodes, entities, relations, labels);
-
-  const totalLinks = nodes.reduce((sum, node) => sum + node.links.length, 0);
-  const totalBacklinks = nodes.reduce((sum, node) => sum + node.backlinks.length, 0);
-  const sortedNodes = nodes.sort((a, b) => a.file.localeCompare(b.file) || a.sourceRange.startLine - b.sourceRange.startLine || a.kind.localeCompare(b.kind));
-  return {
-    schemaVersion: "org2-compiled-corpus/v1",
-    generatedBy: "org2 compile corpus",
-    artifact: buildGeneratedArtifactMetadata({
-      role: "compiled",
-      generator: "org2 compile corpus",
-      generatedAt: opts?.generatedAt,
-      provenance: corpusFiles.map((file) => `file:${file.file}`),
-      sourceHashes: corpusFiles.map((file) => ({ kind: "file", value: file.file, sha256: file.sha256 })),
-      reviewStatus: "generated",
-      claimState: "source-backed",
-      observedAt: opts?.generatedAt,
-      validAsOf: opts?.generatedAt,
-    }),
+  return finalizeCompiledCorpus({
     rootDir,
-    files: corpusFiles.sort((a, b) => a.file.localeCompare(b.file)),
-    nodes: sortedNodes,
-    stats: {
-      files: corpusFiles.length,
-      nodes: nodes.length,
-      headings: nodes.filter((node) => node.kind === "heading").length,
-      links: totalLinks,
-      backlinks: totalBacklinks,
-      entities: entities.length,
-      relations: relations.length,
-      entityProfiles: entityProfiles.length,
-    },
-    entities,
-    entityProfiles,
-    relations,
+    corpusFiles,
+    sourceNodes: nodes,
     clocks: clockReport.intervals,
     clockIssues: clockReport.issues,
-    checkboxProgress: {
-      ...corpusCheckboxProgress,
-      percent: corpusCheckboxProgress.total > 0 ? Math.round((corpusCheckboxProgress.checked / corpusCheckboxProgress.total) * 100) : 0,
-    },
+    checkboxProgress: corpusCheckboxProgress,
     checkboxIssues: [...checkboxIssuesByKey.values()].sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line),
-    clockSummary: clockReport.summary,
-    effortSummary: buildEffortSummary(sortedNodes),
-    index: buildLookupIndex(sortedNodes),
-    indexState: { mode: "full", status: "fresh", reusedFiles: 0, parsedFiles: corpusFiles.length, deletedFiles: 0 },
-  };
+    generatedAt: opts?.generatedAt,
+    indexState: {
+      mode: "full",
+      status: "fresh",
+      reusedFiles: 0,
+      parsedFiles: corpusFiles.length,
+      deletedFiles: 0,
+    },
+  });
 }
 
 
+type IncrementalCorpusFileFingerprint = {
+  file: string;
+  absolutePath: string;
+  size: number;
+  mtimeMs: number;
+  sha256: string;
+};
+
+type IncrementalCorpusFragment = {
+  fingerprint: IncrementalCorpusFileFingerprint;
+  file: CompiledCorpusFile;
+  nodes: CompiledCorpusNode[];
+  clocks: OrgClockInterval[];
+  clockIssues: OrgClockIssue[];
+  checkboxProgress: CheckboxProgress;
+  checkboxIssues: CompiledCorpus["checkboxIssues"];
+};
+
 type IncrementalCorpusCache = {
-  schemaVersion: "org2-incremental-corpus-cache/v1";
+  schemaVersion: "org2-incremental-corpus-cache/v3";
   rootDir: string;
-  files: Array<{ file: string; absolutePath: string; size: number; mtimeMs: number; sha256: string }>;
+  files: IncrementalCorpusFileFingerprint[];
+  checkboxProgressByFile: Record<string, CheckboxProgress>;
   corpus: CompiledCorpus;
 };
 
@@ -1021,13 +1102,146 @@ function buildLookupIndex(nodes: CompiledCorpusNode[]): CompiledCorpusLookupInde
   return index;
 }
 
-function fileFingerprint(filePath: string, rootDir: string): { file: string; absolutePath: string; size: number; mtimeMs: number; sha256: string } {
+function fileFingerprint(filePath: string, rootDir: string): IncrementalCorpusFileFingerprint {
   const stat = fs.statSync(filePath);
   return { file: relativePath(rootDir, filePath), absolutePath: filePath, size: stat.size, mtimeMs: stat.mtimeMs, sha256: "" };
 }
 
+function incrementalCorpusBinaryCachePath(cacheFile: string): string {
+  return `${cacheFile}.v8`;
+}
+
+function readIncrementalCorpusCache(cacheFile: string): IncrementalCorpusCache {
+  const binaryPath = incrementalCorpusBinaryCachePath(cacheFile);
+  try {
+    const binaryStat = fs.statSync(binaryPath);
+    const jsonStat = fs.statSync(cacheFile);
+    if (binaryStat.mtimeMs >= jsonStat.mtimeMs) {
+      return v8.deserialize(fs.readFileSync(binaryPath)) as IncrementalCorpusCache;
+    }
+  } catch {
+    // The JSON representation remains the portable and inspectable fallback.
+  }
+  return JSON.parse(fs.readFileSync(cacheFile, "utf8")) as IncrementalCorpusCache;
+}
+
+function writeIncrementalCorpusCache(cacheFile: string, cache: IncrementalCorpusCache): void {
+  fs.mkdirSync(path.dirname(cacheFile), { recursive: true });
+  const binaryPath = incrementalCorpusBinaryCachePath(cacheFile);
+  const jsonTmpPath = `${cacheFile}.${process.pid}.tmp`;
+  const binaryTmpPath = `${binaryPath}.${process.pid}.tmp`;
+  fs.writeFileSync(jsonTmpPath, JSON.stringify(cache) + "\n", "utf8");
+  fs.writeFileSync(binaryTmpPath, v8.serialize(cache));
+  fs.renameSync(jsonTmpPath, cacheFile);
+  fs.renameSync(binaryTmpPath, binaryPath);
+}
+
+function corpusFragment(
+  corpus: CompiledCorpus,
+  fingerprint: IncrementalCorpusFileFingerprint,
+  checkboxProgress?: CheckboxProgress,
+): IncrementalCorpusFragment {
+  const file = corpus.files.find((entry) => entry.file === fingerprint.file);
+  if (!file) throw new Error(`compiled corpus did not contain ${fingerprint.file}`);
+  const progress = checkboxProgress || checkboxProgressForFile(fingerprint.absolutePath);
+  return {
+    fingerprint,
+    file,
+    nodes: corpus.nodes
+      .filter((node) => node.file === fingerprint.file)
+      .map((node) => ({ ...node, backlinks: [] })),
+    clocks: corpus.clocks.filter((clock) => clock.file === fingerprint.file),
+    clockIssues: corpus.clockIssues.filter((issue) => issue.file === fingerprint.file),
+    checkboxProgress: progress,
+    checkboxIssues: corpus.checkboxIssues.filter((issue) => issue.file === fingerprint.file),
+  };
+}
+
 function withIndexState(corpus: CompiledCorpus, state: CompiledCorpusIndexState): CompiledCorpus {
-  return { ...corpus, index: buildLookupIndex(corpus.nodes), indexState: state };
+  return { ...corpus, indexState: state };
+}
+
+function checkboxProgressForFile(filePath: string): CheckboxProgress {
+  const lines = normalizeText(fs.readFileSync(filePath, "utf8")).split("\n");
+  return extractCheckboxProgress(lines, 0, lines.length);
+}
+
+function cachedFragments(
+  cache: IncrementalCorpusCache,
+  fingerprints: IncrementalCorpusFileFingerprint[],
+): Map<string, IncrementalCorpusFragment> {
+  const filesByName = new Map(cache.corpus.files.map((file) => [file.file, file]));
+  const nodesByFile = new Map<string, CompiledCorpusNode[]>();
+  const clocksByFile = new Map<string, OrgClockInterval[]>();
+  const clockIssuesByFile = new Map<string, OrgClockIssue[]>();
+  const checkboxIssuesByFile = new Map<string, CompiledCorpus["checkboxIssues"]>();
+  for (const node of cache.corpus.nodes) {
+    const nodes = nodesByFile.get(node.file) || [];
+    nodes.push({ ...node, backlinks: [] });
+    nodesByFile.set(node.file, nodes);
+  }
+  for (const clock of cache.corpus.clocks) {
+    const clocks = clocksByFile.get(clock.file) || [];
+    clocks.push(clock);
+    clocksByFile.set(clock.file, clocks);
+  }
+  for (const issue of cache.corpus.clockIssues) {
+    const issues = clockIssuesByFile.get(issue.file) || [];
+    issues.push(issue);
+    clockIssuesByFile.set(issue.file, issues);
+  }
+  for (const issue of cache.corpus.checkboxIssues) {
+    const issues = checkboxIssuesByFile.get(issue.file) || [];
+    issues.push(issue);
+    checkboxIssuesByFile.set(issue.file, issues);
+  }
+  return new Map(fingerprints.map((fingerprint) => {
+    const file = filesByName.get(fingerprint.file);
+    const checkboxProgress = cache.checkboxProgressByFile[fingerprint.file];
+    if (!file || !checkboxProgress) throw new Error(`incremental cache is missing ${fingerprint.file}`);
+    return [fingerprint.absolutePath, {
+      fingerprint,
+      file,
+      nodes: nodesByFile.get(fingerprint.file) || [],
+      clocks: clocksByFile.get(fingerprint.file) || [],
+      clockIssues: clockIssuesByFile.get(fingerprint.file) || [],
+      checkboxProgress,
+      checkboxIssues: checkboxIssuesByFile.get(fingerprint.file) || [],
+    }];
+  }));
+}
+
+function assembleIncrementalCorpus(
+  rootDir: string,
+  fragments: IncrementalCorpusFragment[],
+  generatedAt: string | undefined,
+  indexState: CompiledCorpusIndexState,
+): CompiledCorpus {
+  const checkboxProgress: CheckboxProgress = {
+    total: 0,
+    checked: 0,
+    unchecked: 0,
+    percent: 0,
+    cookies: [],
+  };
+  for (const fragment of fragments) {
+    checkboxProgress.total += fragment.checkboxProgress.total;
+    checkboxProgress.checked += fragment.checkboxProgress.checked;
+    checkboxProgress.unchecked += fragment.checkboxProgress.unchecked;
+  }
+  return finalizeCompiledCorpus({
+    rootDir,
+    corpusFiles: fragments.map((fragment) => fragment.file),
+    sourceNodes: fragments.flatMap((fragment) => fragment.nodes),
+    clocks: fragments.flatMap((fragment) => fragment.clocks),
+    clockIssues: fragments.flatMap((fragment) => fragment.clockIssues)
+      .sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line),
+    checkboxProgress,
+    checkboxIssues: fragments.flatMap((fragment) => fragment.checkboxIssues)
+      .sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line),
+    generatedAt,
+    indexState,
+  });
 }
 
 export function compileCorpusIncremental(files: string[], opts: { rootDir?: string; cacheFile: string; generatedAt?: string }): CompiledCorpus {
@@ -1039,18 +1253,118 @@ export function compileCorpusIncremental(files: string[], opts: { rootDir?: stri
   let reason: string | undefined;
   try {
     if (fs.existsSync(cacheFile)) {
-      const parsed = JSON.parse(fs.readFileSync(cacheFile, "utf8")) as IncrementalCorpusCache;
-      if (parsed.schemaVersion === "org2-incremental-corpus-cache/v1" && parsed.rootDir === rootDir && parsed.corpus && Array.isArray(parsed.files)) cache = parsed;
+      const parsed = readIncrementalCorpusCache(cacheFile);
+      if (
+        parsed.schemaVersion === "org2-incremental-corpus-cache/v3"
+        && parsed.rootDir === rootDir
+        && Array.isArray(parsed.files)
+        && parsed.checkboxProgressByFile
+        && parsed.corpus
+      ) cache = parsed;
       else reason = "cache schema or rootDir mismatch";
     }
   } catch (err) { reason = `cache unreadable: ${err instanceof Error ? err.message : String(err)}`; }
-  const same = cache && cache.files.length === current.length && current.every((entry, i) => { const cached = cache!.files[i]; return cached && cached.file === entry.file && cached.absolutePath === entry.absolutePath && cached.size === entry.size && cached.mtimeMs === entry.mtimeMs; });
-  if (same) return withIndexState(cache!.corpus, { mode: "incremental", status: "fresh", cacheFile, reusedFiles: current.length, parsedFiles: 0, deletedFiles: 0 });
-  const deletedFiles = cache ? cache.files.filter((entry) => !current.some((now) => now.file === entry.file)).length : 0;
-  const corpus = compileCorpus(sortedFiles, { rootDir, generatedAt: opts.generatedAt });
-  const result = withIndexState(corpus, { mode: "incremental", status: reason ? "stale" : "fresh", cacheFile, reusedFiles: 0, parsedFiles: current.length, deletedFiles, ...(reason ? { reason } : {}) });
-  try { fs.mkdirSync(path.dirname(cacheFile), { recursive: true }); fs.writeFileSync(cacheFile, JSON.stringify({ schemaVersion: "org2-incremental-corpus-cache/v1", rootDir, files: current, corpus: result }, null, 2) + "\n"); }
-  catch (err) { return withIndexState(corpus, { mode: "incremental", status: "stale", cacheFile, reusedFiles: 0, parsedFiles: current.length, deletedFiles, reason: `cache write failed: ${err instanceof Error ? err.message : String(err)}` }); }
+  const same = cache
+    && cache.files.length === current.length
+    && current.every((entry, index) => {
+      const cached = cache!.files[index];
+      return cached
+        && cached.file === entry.file
+        && cached.absolutePath === entry.absolutePath
+        && cached.size === entry.size
+        && cached.mtimeMs === entry.mtimeMs;
+    });
+  if (same) {
+    return withIndexState(cache!.corpus, {
+      mode: "incremental",
+      status: "fresh",
+      cacheFile,
+      reusedFiles: current.length,
+      parsedFiles: 0,
+      deletedFiles: 0,
+    });
+  }
+
+  const deletedFiles = cache
+    ? cache.files.filter((entry) => !current.some((now) => now.absolutePath === entry.absolutePath)).length
+    : 0;
+  let result: CompiledCorpus;
+  let checkboxProgressByFile: Record<string, CheckboxProgress>;
+  let parsedFiles: number;
+  let reusedFiles: number;
+
+  if (!cache) {
+    const corpus = compileCorpus(sortedFiles, { rootDir, generatedAt: opts.generatedAt });
+    parsedFiles = current.length;
+    reusedFiles = 0;
+    checkboxProgressByFile = Object.fromEntries(
+      current.map((fingerprint) => [fingerprint.file, checkboxProgressForFile(fingerprint.absolutePath)]),
+    );
+    result = withIndexState(corpus, {
+      mode: "incremental",
+      status: reason ? "stale" : "fresh",
+      cacheFile,
+      reusedFiles,
+      parsedFiles,
+      deletedFiles,
+      ...(reason ? { reason } : {}),
+    });
+  } else {
+    const previousFingerprints = cache.files.filter((fingerprint) => (
+      current.some((entry) => entry.absolutePath === fingerprint.absolutePath)
+    ));
+    const reusableFragments = cachedFragments(cache, previousFingerprints);
+    parsedFiles = 0;
+    reusedFiles = 0;
+    const fragments = current.map((fingerprint) => {
+      const cached = reusableFragments.get(fingerprint.absolutePath);
+      if (
+        cached
+        && cached.fingerprint.file === fingerprint.file
+        && cached.fingerprint.size === fingerprint.size
+        && cached.fingerprint.mtimeMs === fingerprint.mtimeMs
+      ) {
+        reusedFiles += 1;
+        return cached;
+      }
+      parsedFiles += 1;
+      return corpusFragment(
+        compileCorpus([fingerprint.absolutePath], { rootDir, generatedAt: opts.generatedAt }),
+        fingerprint,
+      );
+    });
+    checkboxProgressByFile = Object.fromEntries(
+      fragments.map((fragment) => [fragment.fingerprint.file, fragment.checkboxProgress]),
+    );
+    result = assembleIncrementalCorpus(rootDir, fragments, opts.generatedAt, {
+      mode: "incremental",
+      status: reason ? "stale" : "fresh",
+      cacheFile,
+      reusedFiles,
+      parsedFiles,
+      deletedFiles,
+      ...(reason ? { reason } : {}),
+    });
+  }
+
+  try {
+    writeIncrementalCorpusCache(cacheFile, {
+      schemaVersion: "org2-incremental-corpus-cache/v3",
+      rootDir,
+      files: current,
+      checkboxProgressByFile,
+      corpus: result,
+    });
+  } catch (err) {
+    result = {
+      ...result,
+      indexState: {
+        ...result.indexState!,
+        status: "stale",
+        reason: `cache write failed: ${err instanceof Error ? err.message : String(err)}`,
+      },
+    };
+  }
   return result;
 }
 

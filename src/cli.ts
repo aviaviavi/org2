@@ -30,11 +30,8 @@ import { compileCorpus, compileCorpusIncremental, extractCheckboxProgress, rende
 import { extractClockReport } from "./clock.js";
 import { buildAgentContextPayload, renderAgentContextPack, type AgentInclude } from "./agentContext.js";
 import { buildOrg2CapabilityManifest } from "./capabilities.js";
-import { runAgenticWorkspaceCommand } from "./agenticWorkspaceCli.js";
 import { agentRunPath, listAgentRuns, type AgentRun } from "./agentRun.js";
-import { runSourceCommand } from "./sourceRuntime.js";
 import { renderOrgChart, renderOrgCharts } from "./chartRender.js";
-import { applyDataQueryResult, runOrg2DataQuery } from "./dataQuery.js";
 import {
   buildSearchIndex,
   loadCompatibleSearchIndex,
@@ -1295,7 +1292,9 @@ function appendRoamGraphLintIssues(files: string[], issues: ArtifactLintIssue[])
   if (files.length === 0) return;
 
   const graph = buildRoamGraph(files);
-  const maintenance = buildRoamGraphMaintenanceReport(files, graph);
+  const maintenance = buildRoamGraphMaintenanceReport(files, graph, {
+    includeLinkifySuggestions: false,
+  });
 
   for (const finding of maintenance.linkFindings) {
     issues.push({
@@ -1867,11 +1866,16 @@ function buildRoamGraph(files: string[]): RoamGraphData {
 }
 
 
-function buildRoamGraphMaintenanceReport(files: string[], graph: RoamGraphData): RoamGraphMaintenanceReport {
+function buildRoamGraphMaintenanceReport(
+  files: string[],
+  graph: RoamGraphData,
+  options: { includeLinkifySuggestions?: boolean } = {},
+): RoamGraphMaintenanceReport {
   const nodeIds = new Set(graph.nodes.map((node) => node.id.toLowerCase()));
   const nodeById = new Map(graph.nodes.map((node) => [node.id.toLowerCase(), node]));
   const titleIndex = buildRoamTitleIndex(files);
-  const labelIndex = buildRoamLinkifyIndex(files);
+  const includeLinkifySuggestions = options.includeLinkifySuggestions === true;
+  const labelIndex = includeLinkifySuggestions ? buildRoamLinkifyIndex(files) : null;
   const linkFindings: RoamGraphMaintenanceLinkFinding[] = [];
   const linkifySuggestions: RoamGraphMaintenanceLinkifySuggestion[] = [];
 
@@ -1952,33 +1956,35 @@ function buildRoamGraphMaintenanceReport(files: string[], graph: RoamGraphData):
       }
     }
 
-    const linkifyResult = applyRoamLinkifyToFile(content, filePath, labelIndex);
-    for (const match of linkifyResult.debugMatches || []) {
-      linkifySuggestions.push({
-        kind: "exact",
-        file: filePath,
-        line: match.line,
-        label: match.label,
-        candidate: match.candidate,
-        count: match.count,
-        reason: "exact eligible label occurrence can be linked safely in preview/apply mode",
-      });
-    }
-    for (const suggestion of linkifyResult.debugRepresented || []) {
-      linkifySuggestions.push({
-        kind: "represented-node",
-        file: filePath,
-        line: suggestion.line,
-        lineEnd: suggestion.lineEnd,
-        sourceRange: suggestion.sourceRange,
-        sourceKind: suggestion.sourceKind,
-        label: suggestion.label,
-        candidate: suggestion.candidate,
-        confidence: suggestion.confidence,
-        reason: suggestion.reason,
-        text: suggestion.text,
-        evidence: suggestion.evidence,
-      });
+    if (labelIndex) {
+      const linkifyResult = applyRoamLinkifyToFile(content, filePath, labelIndex);
+      for (const match of linkifyResult.debugMatches || []) {
+        linkifySuggestions.push({
+          kind: "exact",
+          file: filePath,
+          line: match.line,
+          label: match.label,
+          candidate: match.candidate,
+          count: match.count,
+          reason: "exact eligible label occurrence can be linked safely in preview/apply mode",
+        });
+      }
+      for (const suggestion of linkifyResult.debugRepresented || []) {
+        linkifySuggestions.push({
+          kind: "represented-node",
+          file: filePath,
+          line: suggestion.line,
+          lineEnd: suggestion.lineEnd,
+          sourceRange: suggestion.sourceRange,
+          sourceKind: suggestion.sourceKind,
+          label: suggestion.label,
+          candidate: suggestion.candidate,
+          confidence: suggestion.confidence,
+          reason: suggestion.reason,
+          text: suggestion.text,
+          evidence: suggestion.evidence,
+        });
+      }
     }
   }
 
@@ -2100,7 +2106,9 @@ function renderRoamGraphReportText(report: RoamGraphMaintenanceReport): string {
 
 function buildGraphAuditReport(files: string[]): GraphAuditReport {
   const graph = buildRoamGraph(files);
-  const maintenance = buildRoamGraphMaintenanceReport(files, graph);
+  const maintenance = buildRoamGraphMaintenanceReport(files, graph, {
+    includeLinkifySuggestions: false,
+  });
   const findings: GraphAuditFinding[] = [];
 
   for (const finding of maintenance.linkFindings) {
@@ -7685,7 +7693,9 @@ async function buildAiLinkSuggestionReport(options: { dir: string; recursive: bo
   const allFiles = explicitTargets.size > 0 ? Array.from(explicitTargets) : listOrgLikeFiles(options.dir, options.recursive, options.includeArchives);
   const labelIndex = buildRoamLinkifyIndex(allFiles);
   const graph = buildRoamGraph(allFiles);
-  const maintenance = buildRoamGraphMaintenanceReport(allFiles, graph);
+  const maintenance = buildRoamGraphMaintenanceReport(allFiles, graph, {
+    includeLinkifySuggestions: true,
+  });
   const targetFiles = explicitTargets.size > 0 ? allFiles.filter((file) => explicitTargets.has(path.resolve(file))) : allFiles;
   const targetSet = new Set(targetFiles.map((file) => path.resolve(file)));
   const suggestions: AiLinkEntitySuggestion[] = [];
@@ -8189,8 +8199,14 @@ or {metadata:{...}, content:"..."}. Generated view artifacts are review-required
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
 
-  if (await runAgenticWorkspaceCommand(args)) return;
-  if (await runSourceCommand(args)) return;
+  if (["corpus", "workspace", "run", "review", "workflow", "artifact", "runtime", "mcp", "eval"].includes(args[0] || "")) {
+    const { runAgenticWorkspaceCommand } = await import("./agenticWorkspaceCli.js");
+    if (await runAgenticWorkspaceCommand(args)) return;
+  }
+  if (args[0] === "source" || args[0] === "sources") {
+    const { runSourceCommand } = await import("./sourceRuntime.js");
+    if (await runSourceCommand(args)) return;
+  }
 
   if (args[0] === "ingest") {
     await runIngestCommand(args.slice(1));
@@ -10401,6 +10417,8 @@ Flags:
   --files FILE       One or more target files
   --out FILE         Write the compiled corpus artifact to a file
   --format json|jsonl Output format (default json)
+  --incremental      Reparse only changed files and reuse cached file fragments
+  --cache FILE       Override the machine-local incremental cache path
 
 Output:
   Stable schema-versioned corpus artifact for LLM/tool clients. Includes
@@ -10717,6 +10735,7 @@ Flags:
   }
 
   if (command === "query-data") {
+    const { applyDataQueryResult, runOrg2DataQuery } = await import("./dataQuery.js");
     if (dataQueryFile && dataQueryStdin) {
       console.error("Error: query-data accepts only one of --file or --stdin");
       process.exit(1);
@@ -10805,7 +10824,10 @@ Flags:
     const today = process.env.ORG2_TODAY || new Date().toISOString().slice(0, 10);
     const query = agentQuery || (briefAction === "today" ? today : briefName);
     const scope = agentScope || (briefAction === "project" ? `project:${briefName}` : "");
-    const corpus = compileCorpus(files, { rootDir });
+    const corpus = compileCorpusIncremental(files, {
+      rootDir,
+      cacheFile: defaultCorpusCachePath(rootDir),
+    });
     const recencyWeight = parseAgentRankingWeight(agentRecencyWeightRaw, "--recency-weight");
     const salienceWeight = parseAgentRankingWeight(agentSalienceWeightRaw, "--salience-weight");
     const payload = briefAction === "node"
@@ -10849,7 +10871,10 @@ Flags:
     if (files.length === 0) { console.error("Error: no Org files found for org2 agent/context retrieval"); process.exit(1); }
     const rootDir = dir ? path.resolve(dir) : path.dirname(path.resolve(files[0]!));
     const include = Array.from(new Set(agentIncludeRaw.split(",").map((value) => value.trim().toLowerCase()).filter((value): value is AgentInclude => value === "sources" || value === "backlinks" || value === "neighbors")));
-    const corpus = compileCorpus(files, { rootDir });
+    const corpus = compileCorpusIncremental(files, {
+      rootDir,
+      cacheFile: defaultCorpusCachePath(rootDir),
+    });
     const recencyWeight = parseAgentRankingWeight(agentRecencyWeightRaw, "--recency-weight");
     const salienceWeight = parseAgentRankingWeight(agentSalienceWeightRaw, "--salience-weight");
     const payload = buildAgentContextPayload(corpus, { action: agentAction, query: agentQuery, id: agentId, limit: Number.parseInt(agentLimitRaw, 10) || 10, maxChars: parseBudgetToChars(agentMaxCharsRaw), include, scope: agentScope, since: agentSince, sourceType: agentSourceType, reviewStatus: agentReviewStatus, recencyWeight, salienceWeight });
@@ -11342,7 +11367,9 @@ Flags:
       const outputPath = path.resolve(roamGraphOut || path.join(dir, "org2-roam-graph.html"));
 
       if (roamFormat === "json") {
-        const maintenance = buildRoamGraphMaintenanceReport(allFiles, graph);
+        const maintenance = buildRoamGraphMaintenanceReport(allFiles, graph, {
+          includeLinkifySuggestions: true,
+        });
         process.stdout.write(
           JSON.stringify(
             {
@@ -11362,7 +11389,9 @@ Flags:
           ) + "\n",
         );
       } else if (roamFormat === "report") {
-        const maintenance = buildRoamGraphMaintenanceReport(allFiles, graph);
+        const maintenance = buildRoamGraphMaintenanceReport(allFiles, graph, {
+          includeLinkifySuggestions: true,
+        });
         const reportText = renderRoamGraphReportText(maintenance);
         if (roamGraphOut) {
           fs.mkdirSync(path.dirname(outputPath), { recursive: true });

@@ -18,7 +18,7 @@ const document = parseOrgToCanonicalAst(source, { sourceRanges: true });
 assert.equal(printCanonicalAstToOrg(document), source);
 
 const rendered = renderOrgDocumentToAppHtml(document);
-assert.match(rendered.html, /divergence `0\t0`/);
+assert.match(rendered.html, /divergence <code>0\t0<\/code>/);
 assert.match(rendered.html, /Copied output can contain\ttabs/);
 assert.match(rendered.html, /Ordinary prose can contain\ta copied tab too/);
 
