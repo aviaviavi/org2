@@ -184,7 +184,7 @@ The root =org2.json= may identify the corpus independently of its local path:
 - Underline: =_underline_=
 - Strike: =+strike+=
 - Verbatim: ==verbatim==
-- Code: =~code~=
+- Code: =~code~=, with Markdown-style =`code`= accepted as shorthand
 
 * Blocks
 

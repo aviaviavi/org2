@@ -204,6 +204,7 @@ const EMPHASIS_MARKERS: Array<{ marker: string; kind: EmphasisKind }> = [
   { marker: "+", kind: "strike" },
   { marker: "=", kind: "verbatim" },
   { marker: "~", kind: "code" },
+  { marker: "`", kind: "code" },
 ];
 
 function parseEmphasisAt(value: string, startIndex: number): ParsedEmphasisAt | null {
@@ -213,9 +214,14 @@ function parseEmphasisAt(value: string, startIndex: number): ParsedEmphasisAt | 
 
   const prev = startIndex > 0 ? value[startIndex - 1] : undefined;
   const next = startIndex + 1 < value.length ? value[startIndex + 1] : undefined;
+  const isBacktickCode = opener === "`";
 
-  if (!isBoundaryChar(prev)) return null;
+  // Backticks are Markdown-style shorthand, so unlike native Org emphasis they
+  // may sit next to word characters. Runs remain ordinary text so fenced block
+  // examples (including unsupported four-backtick fences) are not consumed.
+  if (!isBacktickCode && !isBoundaryChar(prev)) return null;
   if (next === undefined || isWhitespace(next)) return null;
+  if (isBacktickCode && next === opener) return null;
 
   // Find the first matching closer that satisfies boundary rules.
   for (let closeIndex = startIndex + 1; closeIndex < value.length; closeIndex += 1) {
@@ -225,7 +231,8 @@ function parseEmphasisAt(value: string, startIndex: number): ParsedEmphasisAt | 
     const afterClose = closeIndex + 1 < value.length ? value[closeIndex + 1] : undefined;
 
     if (beforeClose === undefined || isWhitespace(beforeClose)) continue;
-    if (!isBoundaryChar(afterClose)) continue;
+    if (isBacktickCode && (beforeClose === opener || afterClose === opener)) continue;
+    if (!isBacktickCode && !isBoundaryChar(afterClose)) continue;
 
     const content = value.slice(startIndex + 1, closeIndex);
     if (content.includes("\n")) continue;

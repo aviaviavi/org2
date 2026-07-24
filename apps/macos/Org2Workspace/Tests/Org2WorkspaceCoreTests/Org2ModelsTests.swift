@@ -4002,6 +4002,21 @@ final class Org2ModelsTests: XCTestCase {
     ])
   }
 
+  func testRenderedListTextRendersBacktickCodeShorthand() throws {
+    let raw = "- Assign an owner using the `ASSIGNEE` property."
+    let block = try XCTUnwrap(OrgEntryRenderer.parseEditable(raw).first)
+    guard case .listItem(_, _, _, let fallback) = block.rendered else {
+      return XCTFail("Expected list item")
+    }
+
+    let listText = OrgRenderedLineDisplayCache.listText(rawText: block.rawText, fallback: fallback)
+    XCTAssertEqual(OrgInlineParser.parse(listText), [
+      .text("Assign an owner using the "),
+      .code("ASSIGNEE"),
+      .text(" property.")
+    ])
+  }
+
   func testOrgInlineParserRendersMarkdownFileCitationsInline() {
     let spans = OrgInlineParser.parse("Found in [personal.org](/workspace/org2/personal.org:58-63).")
 

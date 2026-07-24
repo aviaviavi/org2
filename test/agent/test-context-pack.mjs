@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "org2-context-pack-test-"));
+process.env.ORG2_INDEX_HOME = path.join(tmp, ".index");
 fs.writeFileSync(path.join(tmp, "support.org2"), `#+title: Scarf Support
 
 * TODO Scarf support triage :scarf:support:

@@ -58,6 +58,61 @@ final class SlideExportTests: XCTestCase {
     )
   }
 
+  @MainActor
+  func testSuccessfulPDFExportOpensTheDeckAutomatically() {
+    let store = WorkspaceStore(
+      cli: Org2CLI(repoRoot: FileManager.default.temporaryDirectory)
+    )
+    let destination = URL(fileURLWithPath: "/tmp/talk.pdf")
+    var openedURL: URL?
+    store.slideExportFileOpenerForTesting = { url in
+      openedURL = url
+      return true
+    }
+
+    store.finishSuccessfulSlideExport(format: .pdf, destination: destination)
+
+    XCTAssertEqual(openedURL, destination)
+    XCTAssertEqual(store.statusText, "Exported and opened talk.pdf")
+    XCTAssertNil(store.slideExportNotice)
+    XCTAssertNil(store.errorText)
+  }
+
+  @MainActor
+  func testSuccessfulLatexExportDoesNotOpenTheFile() {
+    let store = WorkspaceStore(
+      cli: Org2CLI(repoRoot: FileManager.default.temporaryDirectory)
+    )
+    let destination = URL(fileURLWithPath: "/tmp/talk.tex")
+    var didAttemptOpen = false
+    store.slideExportFileOpenerForTesting = { _ in
+      didAttemptOpen = true
+      return true
+    }
+
+    store.finishSuccessfulSlideExport(format: .latex, destination: destination)
+
+    XCTAssertFalse(didAttemptOpen)
+    XCTAssertEqual(store.statusText, "Exported slides to talk.tex")
+    XCTAssertEqual(store.slideExportNotice?.message, destination.path)
+  }
+
+  @MainActor
+  func testPDFOpenFailureKeepsTheSuccessfulExport() {
+    let store = WorkspaceStore(
+      cli: Org2CLI(repoRoot: FileManager.default.temporaryDirectory)
+    )
+    let destination = URL(fileURLWithPath: "/tmp/talk.pdf")
+    store.slideExportFileOpenerForTesting = { _ in false }
+
+    store.finishSuccessfulSlideExport(format: .pdf, destination: destination)
+
+    XCTAssertTrue(store.statusText.contains("but couldn’t open the PDF"))
+    XCTAssertEqual(store.slideExportNotice?.title, "Slides Exported")
+    XCTAssertTrue(store.slideExportNotice?.message.contains("was saved") == true)
+    XCTAssertNil(store.errorText)
+  }
+
   private func assertExportArguments(
     format: Org2SlideExportFormat,
     expectedTail: [String]

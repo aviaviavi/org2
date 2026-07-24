@@ -420,7 +420,8 @@ org2 ai suggest-links --dir ~/notes --recursive --out views/link-suggestions.org
 <h1 id="compiled-corpus-artifacts">Compiled corpus artifacts</h1>
 <p><code>org2 compile corpus</code> emits a stable, schema-versioned knowledge artifact that LLM tools, search indexes, and other automation can consume. Org2 only compiles local plain-text notes into structured data; it does not call an LLM or require any hosted AI service.</p>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 compile corpus --dir ~/notes --recursive --out compiled/corpus.json
-org2 compile corpus --dir ~/notes --recursive --format jsonl --out compiled/corpus.jsonl</code></pre>
+org2 compile corpus --dir ~/notes --recursive --format jsonl --out compiled/corpus.jsonl
+org2 compile corpus --dir ~/notes --recursive --incremental --out compiled/corpus.json</code></pre>
 <p>The JSON form includes:</p>
 <ul>
 <li><p>standardized <code>artifact</code> metadata: role, generator, generated-at timestamp, source provenance, source hashes, and review status</p></li>
@@ -431,6 +432,7 @@ org2 compile corpus --dir ~/notes --recursive --format jsonl --out compiled/corp
 <li><p>text snippets suitable for previews or retrieval pipelines</p></li>
 </ul>
 <p>Use JSONL for larger corpora when downstream tools prefer one record per line; the first JSONL record carries the same artifact metadata header as the JSON form. If you wrap compiled artifacts in Org files, stamp the wrapper with the same <code>ORG2_ARTIFACT_*</code>, <code>ORG2_SOURCE_HASHES</code>, and <code>ORG2_REVIEW_STATUS</code> fields and keep using <code>org2 lint</code> for generated-output health checks.</p>
+<p>For repeated whole-corpus reads, <code>--incremental</code> stores compiled semantics plus per-file cache metadata in the machine-local Org2 index home and reparses only added or changed files. Deleted files are dropped from the next artifact, while corpus-wide backlinks, entities, relations, and statistics are rebuilt from reusable file semantics so the output remains equivalent to a full compile. <code>--cache FILE</code> overrides the derived cache location. Human-facing <code>context</code>, <code>agent context</code>, and <code>brief</code> commands use this incremental cache automatically.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="search-cited-query">Search + cited query</h1>
@@ -451,7 +453,7 @@ org2 query &quot;Sentra&quot; --dir ~/notes --recursive --format json</code></pr
 <li><p><code>--date-from</code> / <code>--date-to</code> and <code>--file-zone</code> narrow results by local corpus zones and source dates.</p></li>
 <li><p><code>--format json</code> returns machine-readable file, line, heading, snippet, source range, and context fields.</p></li>
 </ul>
-<p><code>org2 index</code> builds disposable machine-local search data. After an initial build, <code>org2 index --incremental --file FILE</code> replaces or removes only that file's index entry; if no compatible base index exists, it safely falls back to a complete build. Watcher-backed clients may search that maintained index with <code>--index current</code>, avoiding a directory walk and per-file freshness check on every query. The macOS app uses both paths for filesystem events so frequent agent edits and live searches do not repeatedly scan the corpus. <code>auto</code> remains the conservative CLI default for callers without a watcher.</p>
+<p><code>org2 index</code> builds disposable machine-local search data. Its JSON artifact remains inspectable, and Org2 also maintains a versioned binary sidecar for faster repeat loads; an absent, stale, or unreadable sidecar safely falls back to JSON. After an initial build, <code>org2 index --incremental --file FILE</code> replaces or removes only that file's index entry; if no compatible base index exists, it safely falls back to a complete build. Watcher-backed clients may search that maintained index with <code>--index current</code>, avoiding a directory walk and per-file freshness check on every query. The macOS app uses both paths for filesystem events so frequent agent edits and live searches do not repeatedly scan the corpus. <code>auto</code> remains the conservative CLI default for callers without a watcher.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="roam-workflows">Roam workflows</h1>
