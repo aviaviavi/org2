@@ -3487,8 +3487,8 @@ private struct AgendaItemListView: View {
               .contentShape(Rectangle())
               .onTapGesture {
                 let modifiers = NSApp.currentEvent?.modifierFlags ?? []
-                if modifiers.intersection([.command]).contains(.command) {
-                  store.toggleAgendaItemBulkSelection(item)
+                performAfterSwiftUIViewUpdate {
+                  store.handleAgendaItemClick(item, modifiers: modifiers)
                 }
               }
               .contextMenu {
