@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { renderOrgCharts } from "../dist/chartRender.js";
 import { renderOrgDocumentToAppHtml, renderOrgDocumentToHtml } from "../dist/export.js";
 import { parseOrgToCanonicalAst } from "../dist/parser.js";
+import { printCanonicalAstToOrg } from "../dist/printer.js";
 
 const source = `#+TITLE: App rendering
 #+HTML_HEAD: <script>globalThis.documentHeadRan = true</script>
@@ -85,6 +86,63 @@ assert.doesNotMatch(published.html, /org2-table-scroll/);
 assert.doesNotMatch(published.html, /org2-app-document-script/);
 assert.match(published.html, /<section class="org2-headline level-1"/);
 assert.match(published.html, /<dl class="org2-properties">/);
+
+const indentedDrawerSource = `* Section
+** Slide one
+*** Column
+    :PROPERTIES:
+    :BEAMER_COL: 0.45
+    :BEAMER_ENV: block
+    :END:
+    Column body.
+** Slide two
+Sibling body.
+`;
+const indentedDrawerDocument = parseOrgToCanonicalAst(indentedDrawerSource, { sourceRanges: true });
+const section = indentedDrawerDocument.children.find((node) => node.type === "Headline");
+assert.ok(section && section.type === "Headline");
+const slideOne = section.children.find((node) =>
+  node.type === "Headline" && node.title.some((inline) => inline.type === "Text" && inline.value === "Slide one")
+);
+assert.ok(slideOne && slideOne.type === "Headline");
+const column = slideOne.children.find((node) =>
+  node.type === "Headline" && node.title.some((inline) => inline.type === "Text" && inline.value === "Column")
+);
+assert.ok(column && column.type === "Headline");
+assert.equal(column.children[0]?.type, "PropertyDrawer");
+assert.ok(section.children.some((node) =>
+  node.type === "Headline" && node.title.some((inline) => inline.type === "Text" && inline.value === "Slide two")
+), "a sibling heading after an indented property drawer must remain outside the drawer");
+
+const indentedDrawerRendered = renderOrgDocumentToAppHtml(indentedDrawerDocument);
+assert.match(indentedDrawerRendered.html, /<details class="org2-properties-drawer" open/);
+assert.match(indentedDrawerRendered.html, /<h2[^>]*>Slide two<\/h2>/);
+assert.match(indentedDrawerRendered.html, /Sibling body\./);
+assert.doesNotMatch(indentedDrawerRendered.html, /<details class="org2-drawer"><summary>PROPERTIES<\/summary>/);
+
+const canonicalizedDrawer = printCanonicalAstToOrg(indentedDrawerDocument);
+assert.match(canonicalizedDrawer, /\*\*\* Column\n:PROPERTIES:\n:BEAMER_COL: 0\.45\n:BEAMER_ENV: block\n:END:/);
+assert.doesNotMatch(canonicalizedDrawer, /^ +:PROPERTIES:$/m);
+const reparsedCanonicalDrawer = parseOrgToCanonicalAst(canonicalizedDrawer);
+assert.ok(reparsedCanonicalDrawer.children.some((node) =>
+  node.type === "Headline"
+  && node.children.some((child) =>
+    child.type === "Headline"
+    && child.title.some((inline) => inline.type === "Text" && inline.value === "Slide two")
+  )
+));
+assert.throws(
+  () => parseOrgToCanonicalAst(`* Section
+** Slide one
+    :PROPERTIES:
+    :BEAMER_ENV: block
+:END:
+** Slide two
+Sibling body.
+`),
+  /Invalid property drawer line; expected matching indentation/,
+  "a mismatched indented property drawer must fail instead of consuming following headings",
+);
 
 const fileMetadataSource = `#+title: Machine report
 #+id: report-id
