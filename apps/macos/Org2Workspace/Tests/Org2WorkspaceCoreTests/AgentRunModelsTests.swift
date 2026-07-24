@@ -104,7 +104,7 @@ final class AgentRunModelsTests: XCTestCase {
     _ = try await cli.run([
       "run", "approval-request", "approval-run",
       "--title", "Approve release", "--action", "publish report",
-      "--risk", "external-action", "--role", "owner",
+      "--risk", "external-action", "--role", "owner", "--from", "Avi",
       "--dir", root.path, "--json"
     ])
 
@@ -125,6 +125,53 @@ final class AgentRunModelsTests: XCTestCase {
     XCTAssertEqual(updatedRun.status, "running")
     XCTAssertEqual(updatedRun.approvals.first?.status, "approved")
     XCTAssertFalse(store.approvalItems.contains(where: { $0.id == queueItem.id }))
+  }
+
+  @MainActor
+  func testRunCenterDecisionUsesAssignedReviewerAndClearsUnifiedQueueItem() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-run-center-approval-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let cli = Org2CLI(repoRoot: try Org2CLI.defaultRepoRoot())
+    _ = try await cli.run([
+      "run", "create", "--id", "run-center-approval", "--goal", "Release three drafts",
+      "--dir", root.path, "--json"
+    ])
+    _ = try await cli.run(["run", "start", "run-center-approval", "--dir", root.path, "--json"])
+    for index in 1...3 {
+      _ = try await cli.run([
+        "run", "approval-request", "run-center-approval",
+        "--title", "Approve draft \(index)", "--action", "send draft \(index)",
+        "--risk", "external-action", "--role", "approver", "--from", "Avi",
+        "--dir", root.path, "--json"
+      ])
+    }
+
+    let store = WorkspaceStore(cli: cli)
+    store.setCorpusRoot(root, persistsDefault: false)
+    await store.refreshAgentRuns()
+    await store.refreshApprovals()
+
+    let run = try XCTUnwrap(store.agentRuns.first(where: { $0.id == "run-center-approval" }))
+    let approval = try XCTUnwrap(run.approvals.first)
+    let queueItemID = "run:\(run.id):\(approval.id)"
+    XCTAssertEqual(run.pendingApprovalCount, 3)
+    XCTAssertTrue(store.approvalItems.contains(where: { $0.id == queueItemID }))
+
+    await store.decideAgentRunApproval(run, approval: approval, decision: "approved")
+
+    let updatedRun = try XCTUnwrap(store.agentRuns.first(where: { $0.id == run.id }))
+    XCTAssertEqual(updatedRun.pendingApprovalCount, 2)
+    XCTAssertEqual(updatedRun.approvals.first?.status, "approved")
+    XCTAssertFalse(store.approvalItems.contains(where: { $0.id == queueItemID }))
+  }
+
+  func testRunApprovalDecisionActorUsesAssignedReviewerWhenPresent() {
+    XCTAssertEqual(WorkspaceStore.agentRunApprovalDecisionActor(requestedFrom: " Avi "), "Avi")
+    XCTAssertEqual(WorkspaceStore.agentRunApprovalDecisionActor(requestedFrom: "  "), "Org2Workspace")
+    XCTAssertEqual(WorkspaceStore.agentRunApprovalDecisionActor(requestedFrom: nil), "Org2Workspace")
   }
 
   func testRecognizesPDFRunArtifactsFromExtensionOrMediaType() throws {

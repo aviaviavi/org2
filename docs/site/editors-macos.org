@@ -152,7 +152,7 @@ The app includes configuration and run actions for GPG-backed =:crypt:= subtrees
 
 The Search surface calls =org2 search= for one corpus or =org2 workspace search= with every mounted path for an all-corpora read. A recursive filesystem watcher keeps the active corpus's file list, node resolver, and disposable search index current by updating only changed files; it falls back to a complete scan only when macOS reports dropped filesystem events. The visible surface refreshes only when a changed file can affect it. Searches use relevance-ranked candidates, one line of context, and JSON output; the app displays at most 50 corpus-text results. Active TODO matches lead, followed by file, chat-thread, page, and entry names before chat-message and raw corpus-text matches. Within a result kind, an exact heading match leads a heading substring match, which leads a deeper body match. Repeated matching lines under the same active TODO collapse to one result. This is literal text lookup, not semantic/vector search: it matches case-insensitive text in normal =.org2= and =.org= files and returns cited file/line snippets with nearest-heading metadata. Federated results also carry portable corpus identity. Archive files and directories stay excluded.
 
-The same surface includes a =New Node= action for creating an ID-backed Org2 note in the configured roam/index directory. It belongs with search and backlinks because node creation is part of navigating and extending the knowledge graph.
+The same surface includes a =New Node= action for creating an ID-backed Org2 note in the configured roam/index directory. It belongs with search and backlinks because node creation is part of navigating and extending the knowledge graph. =Cmd-P= / =Cmd-K= opens the faster Quick Open sheet, which fuzzy-matches both corpus file paths and AI chat thread titles; selecting a chat result opens that conversation directly.
 
 The next knowledge-browser work should make this more useful by adding graph-neighborhood views, link insertion, backlink-driven navigation, and broken-link repair.
 
@@ -167,7 +167,7 @@ High-value shortcuts include:
 - automatic foreground refresh for durable runs and approvals every minute, plus an immediate refresh when the app becomes active,
 - the global toolbar Refresh or =Cmd-R= to refresh agenda, meetings, files and indexes, assigned work, approvals, durable runs, agent threads, and the selected document on demand without redundant surface-local refresh buttons; while it runs, the same control becomes =Cancel Refresh=, and the app automatically stops the refresh after 15 seconds while preserving the previously loaded workspace data,
 - document loading and rendering surfaces expose =Stop Waiting= immediately and replace a stalled preview with a retryable error after 15 seconds, so a single problematic page cannot leave its detail pane stuck indefinitely,
-- =Cmd-P= / =Cmd-K= for quick open,
+- =Cmd-P= / =Cmd-K= for quick open across corpus files and AI chat thread titles,
 - =Cmd-Ctrl-Return= for system-wide capture while the app is running,
 - =Cmd-7=, =Cmd-8=, and =Cmd-9= for today/yesterday/tomorrow daily notes,
 - agenda-local =j= / =k= navigation, =/= filtering, and TODO/planning shortcuts,

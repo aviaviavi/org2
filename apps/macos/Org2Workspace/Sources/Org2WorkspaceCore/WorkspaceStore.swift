@@ -246,6 +246,20 @@ public enum QuickOpenSelectionDirection: Equatable, Sendable {
   case down
 }
 
+public enum WorkspaceQuickOpenItem: Identifiable, Hashable, Sendable {
+  case file(CorpusFile)
+  case chatThread(OpenClawChatThread)
+
+  public var id: String {
+    switch self {
+    case .file(let file):
+      "file:\(file.id)"
+    case .chatThread(let thread):
+      "chat:\(thread.id.uuidString)"
+    }
+  }
+}
+
 private struct QuickOpenIndexedFile: Sendable {
   let file: CorpusFile
   let normalizedRelativePath: String
@@ -813,6 +827,7 @@ public final class WorkspaceStore: ObservableObject {
   }
   @Published public var selectedQuickOpenFileID: String?
   @Published public private(set) var quickOpenFiles: [CorpusFile] = []
+  @Published public private(set) var quickOpenItems: [WorkspaceQuickOpenItem] = []
   @Published public private(set) var isFilteringQuickOpenFiles = false
   @Published public var searchMode: WorkspaceSearchMode = .text {
     didSet {
@@ -899,6 +914,10 @@ public final class WorkspaceStore: ObservableObject {
   @Published public private(set) var openClawChatThreads: [OpenClawChatThread] = [] {
     didSet {
       rebuildOpenClawThreadDisplayCache()
+      if isQuickOpenPresented,
+         !quickOpenQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        scheduleQuickOpenSearch(debounce: false)
+      }
     }
   }
   public private(set) var visibleOpenClawChatThreads: [OpenClawChatThread] = []
@@ -2891,22 +2910,30 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func decideAgentRunApproval(_ run: AgentRunItem, approval: AgentRunApprovalItem, decision: String) async {
-    guard let corpusRoot, !mutatingAgentRunIDs.contains(run.id) else { return }
+    guard corpusRoot != nil, !mutatingAgentRunIDs.contains(run.id) else { return }
     mutatingAgentRunIDs.insert(run.id)
     defer { mutatingAgentRunIDs.remove(run.id) }
     do {
-      let updated: AgentRunItem = try await cli.runJSON([
-        "run", "approval-decide", run.id, approval.id,
-        "--decision", decision,
-        "--actor", "Org2Workspace",
-        "--role", approval.requestedRole ?? "owner",
-        "--dir", corpusRoot.path,
-        "--json"
-      ])
+      let updated = try await performAgentRunApprovalDecision(
+        runID: run.id,
+        approvalID: approval.id,
+        decision: decision,
+        requestedRole: approval.requestedRole,
+        requestedFrom: approval.requestedFrom
+      )
       if let index = agentRuns.firstIndex(where: { $0.id == updated.id }) {
         agentRuns[index] = updated
+      } else {
+        agentRuns.insert(updated, at: 0)
       }
-      statusText = "\(approval.title): \(decision)"
+      let queueItemID = ApprovalItem.ID("run:\(run.id):\(approval.id)")
+      approvalItems.removeAll { $0.id == queueItemID }
+      if selectedApprovalItemID == queueItemID {
+        selectedApprovalItemID = nil
+        approvalSelectionAnchor = nil
+      }
+      scheduleApprovalsRefresh()
+      statusText = "\(approval.title): \(decision) · \(updated.pendingApprovalCount) pending"
       if decision == "approved", updated.status == "running", updated.workflowId != nil {
         do {
           try await continueOpenClawWorkflowAfterApproval(updated)
@@ -3592,25 +3619,21 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   private func decideRunApprovalItem(_ item: ApprovalItem, decision: String, note: String? = nil) async throws {
-    guard let corpusRoot, let runID = item.runId, let approvalID = item.approvalId else {
+    guard corpusRoot != nil, let runID = item.runId, let approvalID = item.approvalId else {
       throw CocoaError(.fileReadCorruptFile, userInfo: [NSLocalizedDescriptionKey: "This run approval is missing its run or approval identity."])
     }
     guard !mutatingAgentRunIDs.contains(runID) else { return }
     mutatingAgentRunIDs.insert(runID)
     defer { mutatingAgentRunIDs.remove(runID) }
 
-    var arguments = [
-      "run", "approval-decide", runID, approvalID,
-      "--decision", decision,
-      "--actor", "Org2Workspace",
-      "--role", item.requestedRole ?? "owner",
-      "--dir", corpusRoot.path,
-      "--json"
-    ]
-    if let note = note?.trimmingCharacters(in: .whitespacesAndNewlines), !note.isEmpty {
-      arguments.append(contentsOf: ["--note", note])
-    }
-    let updated: AgentRunItem = try await cli.runJSON(arguments)
+    let updated = try await performAgentRunApprovalDecision(
+      runID: runID,
+      approvalID: approvalID,
+      decision: decision,
+      requestedRole: item.requestedRole,
+      requestedFrom: item.requestedFrom,
+      note: note
+    )
     if let index = agentRuns.firstIndex(where: { $0.id == updated.id }) {
       agentRuns[index] = updated
     } else {
@@ -3626,6 +3649,36 @@ public final class WorkspaceStore: ObservableObject {
         statusText = "Approved; OpenClaw continuation pending"
       }
     }
+  }
+
+  private func performAgentRunApprovalDecision(
+    runID: String,
+    approvalID: String,
+    decision: String,
+    requestedRole: String?,
+    requestedFrom: String?,
+    note: String? = nil
+  ) async throws -> AgentRunItem {
+    guard let corpusRoot else {
+      throw CocoaError(.fileNoSuchFile, userInfo: [NSLocalizedDescriptionKey: "No corpus is selected."])
+    }
+    var arguments = [
+      "run", "approval-decide", runID, approvalID,
+      "--decision", decision,
+      "--actor", Self.agentRunApprovalDecisionActor(requestedFrom: requestedFrom),
+      "--role", requestedRole ?? "owner",
+      "--dir", corpusRoot.path,
+      "--json"
+    ]
+    if let note = note?.trimmingCharacters(in: .whitespacesAndNewlines), !note.isEmpty {
+      arguments.append(contentsOf: ["--note", note])
+    }
+    return try await cli.runJSON(arguments)
+  }
+
+  nonisolated static func agentRunApprovalDecisionActor(requestedFrom: String?) -> String {
+    let reviewer = requestedFrom?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    return reviewer.isEmpty ? "Org2Workspace" : reviewer
   }
 
   public func discussApprovalInOpenClaw(
@@ -8616,12 +8669,23 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public var selectedQuickOpenFile: CorpusFile? {
-    let files = quickOpenFiles
+    if let selectedQuickOpenFileID {
+      guard let selected = quickOpenItems.first(where: { $0.id == selectedQuickOpenFileID }),
+            case .file(let file) = selected
+      else {
+        return nil
+      }
+      return file
+    }
+    return quickOpenFiles.first
+  }
+
+  public var selectedQuickOpenItem: WorkspaceQuickOpenItem? {
     if let selectedQuickOpenFileID,
-       let selected = files.first(where: { $0.id == selectedQuickOpenFileID }) {
+       let selected = quickOpenItems.first(where: { $0.id == selectedQuickOpenFileID }) {
       return selected
     }
-    return files.first
+    return quickOpenItems.first
   }
 
   public func resetQuickOpenSelection() {
@@ -8629,27 +8693,38 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func moveQuickOpenSelection(_ direction: QuickOpenSelectionDirection) {
-    let files = quickOpenFiles
-    guard !files.isEmpty else {
+    let items = quickOpenItems
+    guard !items.isEmpty else {
       selectedQuickOpenFileID = nil
       return
     }
 
     let currentIndex = selectedQuickOpenFileID.flatMap { id in
-      files.firstIndex { $0.id == id }
+      items.firstIndex { $0.id == id }
     }
     let nextIndex: Int
     switch (direction, currentIndex) {
     case (.down, nil):
-      nextIndex = files.startIndex
+      nextIndex = items.startIndex
     case (.up, nil):
-      nextIndex = files.index(before: files.endIndex)
+      nextIndex = items.index(before: items.endIndex)
     case (.down, let index?):
-      nextIndex = index == files.index(before: files.endIndex) ? files.startIndex : files.index(after: index)
+      nextIndex = index == items.index(before: items.endIndex) ? items.startIndex : items.index(after: index)
     case (.up, let index?):
-      nextIndex = index == files.startIndex ? files.index(before: files.endIndex) : files.index(before: index)
+      nextIndex = index == items.startIndex ? items.index(before: items.endIndex) : items.index(before: index)
     }
-    selectedQuickOpenFileID = files[nextIndex].id
+    selectedQuickOpenFileID = items[nextIndex].id
+  }
+
+  public func selectQuickOpenItem(_ item: WorkspaceQuickOpenItem) {
+    switch item {
+    case .file(let file):
+      selectCorpusFile(file)
+    case .chatThread(let thread):
+      navigateToSurface(.openClaw)
+      selectOpenClawChatThread(thread.id)
+      statusText = "Opened \(thread.title)"
+    }
   }
 
   private func rebuildQuickOpenIndex() {
@@ -8675,27 +8750,39 @@ public final class WorkspaceStore: ObservableObject {
     guard !trimmedQuery.isEmpty else {
       isFilteringQuickOpenFiles = false
       quickOpenFiles = Array(corpusFiles.prefix(80))
+      quickOpenItems = quickOpenFiles.map(WorkspaceQuickOpenItem.file)
       pruneQuickOpenSelection()
       return
     }
 
     let indexedFiles = quickOpenIndexedFiles
+    let chatThreads = openClawChatThreads
     isFilteringQuickOpenFiles = true
     quickOpenFiles = []
-    quickOpenSearchTask = Task { [indexedFiles, query, generation, debounce] in
+    quickOpenItems = []
+    quickOpenSearchTask = Task { [indexedFiles, chatThreads, query, generation, debounce] in
       if debounce {
         try? await Task.sleep(nanoseconds: 80_000_000)
       }
       guard !Task.isCancelled else { return }
 
       let matches = await Task.detached(priority: .userInitiated) {
-        Self.filterIndexedQuickOpenFiles(indexedFiles, query: query, limit: 80)
+        Self.filterQuickOpenItems(
+          files: indexedFiles,
+          chatThreads: chatThreads,
+          query: query,
+          limit: 80
+        )
       }.value
       guard !Task.isCancelled else { return }
 
       await MainActor.run { [weak self] in
         guard let self, self.quickOpenSearchGeneration == generation else { return }
-        self.quickOpenFiles = matches
+        self.quickOpenItems = matches
+        self.quickOpenFiles = matches.compactMap { item in
+          guard case .file(let file) = item else { return nil }
+          return file
+        }
         self.isFilteringQuickOpenFiles = false
         self.pruneQuickOpenSelection()
       }
@@ -8704,7 +8791,7 @@ public final class WorkspaceStore: ObservableObject {
 
   private func pruneQuickOpenSelection() {
     guard let selectedQuickOpenFileID else { return }
-    if !quickOpenFiles.contains(where: { $0.id == selectedQuickOpenFileID }) {
+    if !quickOpenItems.contains(where: { $0.id == selectedQuickOpenFileID }) {
       self.selectedQuickOpenFileID = nil
     }
   }
@@ -8741,6 +8828,47 @@ public final class WorkspaceStore: ObservableObject {
       }
       .prefix(limit)
       .map(\.0.file)
+  }
+
+  nonisolated private static func filterQuickOpenItems(
+    files: [QuickOpenIndexedFile],
+    chatThreads: [OpenClawChatThread],
+    query rawQuery: String,
+    limit: Int
+  ) -> [WorkspaceQuickOpenItem] {
+    let normalizedQuery = normalizedQuickOpenQuery(
+      rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+    )
+    guard !normalizedQuery.isEmpty else {
+      return Array(files.prefix(limit).map { WorkspaceQuickOpenItem.file($0.file) })
+    }
+
+    let fileMatches = files.compactMap { indexedFile -> (WorkspaceQuickOpenItem, Int, String)? in
+      guard let score = fuzzyScore(
+        normalizedQuery: normalizedQuery,
+        normalizedCandidate: indexedFile.normalizedRelativePath
+      ) else {
+        return nil
+      }
+      return (.file(indexedFile.file), score, indexedFile.file.relativePath)
+    }
+    let chatMatches = chatThreads.compactMap { thread -> (WorkspaceQuickOpenItem, Int, String)? in
+      guard let score = fuzzyScore(
+        normalizedQuery: normalizedQuery,
+        normalizedCandidate: normalizedQuickOpenCandidate(thread.title)
+      ) else {
+        return nil
+      }
+      return (.chatThread(thread), score, thread.title)
+    }
+
+    return (fileMatches + chatMatches)
+      .sorted { lhs, rhs in
+        if lhs.1 != rhs.1 { return lhs.1 > rhs.1 }
+        return lhs.2.localizedStandardCompare(rhs.2) == .orderedAscending
+      }
+      .prefix(limit)
+      .map(\.0)
   }
 
   private func rebuildSearchNodeIndex() {

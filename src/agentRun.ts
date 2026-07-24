@@ -65,6 +65,8 @@ export const AGENT_RUN_APPROVAL_DECISIONS = [
   "canceled",
 ] as const;
 
+export const AGENT_RUN_APPROVAL_BLOCK_REASON = "One or more approvals were not approved";
+
 export const AGENT_RUN_VALIDATION_STATUSES = [
   "passed",
   "failed",
@@ -246,7 +248,7 @@ const TRANSITIONS: Record<AgentRunStatus, readonly AgentRunStatus[]> = {
   queued: ["running", "waiting-approval", "blocked", "canceled", "failed"],
   running: ["waiting-approval", "blocked", "completed", "failed", "canceled"],
   "waiting-approval": ["running", "blocked", "completed", "failed", "canceled"],
-  blocked: ["queued", "running", "failed", "canceled"],
+  blocked: ["queued", "running", "waiting-approval", "failed", "canceled"],
   completed: [],
   failed: ["queued", "running", "canceled"],
   canceled: ["queued"],
@@ -613,8 +615,34 @@ export function requestAgentRunApproval(run: AgentRun, input: Omit<AgentRunAppro
     ...(optional(input.receipt) ? { receipt: optional(input.receipt) } : {}),
   };
   if (!approval.title || !approval.action) throw new Error("approval title and action are required");
-  const next = run.status === "running" || run.status === "queued" ? transitionAgentRun(run, "waiting-approval", { actor, now }) : { ...run };
+  const opensApprovalBoundary = run.status === "running"
+    || run.status === "queued"
+    || (run.status === "blocked" && run.blockedReason === AGENT_RUN_APPROVAL_BLOCK_REASON);
+  const next = opensApprovalBoundary
+    ? transitionAgentRun(run, "waiting-approval", { actor, now })
+    : { ...run };
   return { ...next, approvals: [...next.approvals, approval], updatedAt: now, events: [...next.events, event("approval-requested", now, actor, approval.title, { approvalId: approval.id, riskClass: approval.riskClass })] };
+}
+
+export function currentAgentRunApprovalBoundary(run: AgentRun): AgentRunApproval[] {
+  let boundaryStart = -1;
+  for (let index = run.events.length - 1; index >= 0; index -= 1) {
+    const candidate = run.events[index]!;
+    if (candidate.type === "status-changed" && candidate.data?.to === "waiting-approval") {
+      boundaryStart = index;
+      break;
+    }
+  }
+  if (boundaryStart < 0) return run.approvals;
+
+  const boundaryIds = new Set(
+    run.events.slice(boundaryStart + 1)
+      .filter((candidate) => candidate.type === "approval-requested")
+      .map((candidate) => optional(candidate.data?.approvalId))
+      .filter((id): id is string => Boolean(id)),
+  );
+  if (boundaryIds.size === 0) return run.approvals;
+  return run.approvals.filter((approval) => boundaryIds.has(approval.id));
 }
 
 export function decideAgentRunApproval(run: AgentRun, approvalId: string, decision: AgentRunApprovalDecision, input: { actor: string; actorRole?: string; note?: string; receipt?: string; now?: string }): AgentRun {
@@ -636,8 +664,12 @@ export function decideAgentRunApproval(run: AgentRun, approvalId: string, decisi
   };
   let next: AgentRun = { ...run, approvals, updatedAt: now, events: [...run.events, event("approval-decided", now, input.actor, `${approvalId}: ${decision}`, { approvalId, decision, ...(input.actorRole ? { actorRole: input.actorRole } : {}) })] };
   if (run.status === "waiting-approval" && approvals.every((approval) => approval.status !== "pending")) {
-    const allApproved = approvals.every((approval) => approval.status === "approved");
-    next = transitionAgentRun(next, allApproved ? "running" : "blocked", { actor: input.actor, reason: allApproved ? undefined : "One or more approvals were not approved", now });
+    const allApproved = currentAgentRunApprovalBoundary(next).every((approval) => approval.status === "approved");
+    next = transitionAgentRun(next, allApproved ? "running" : "blocked", {
+      actor: input.actor,
+      reason: allApproved ? undefined : AGENT_RUN_APPROVAL_BLOCK_REASON,
+      now,
+    });
   }
   return next;
 }

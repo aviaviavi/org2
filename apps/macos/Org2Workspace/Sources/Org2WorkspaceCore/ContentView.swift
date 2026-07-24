@@ -1376,7 +1376,7 @@ private struct QuickOpenView: View {
       HStack(spacing: 8) {
         Image(systemName: "magnifyingglass")
           .foregroundStyle(.secondary)
-        TextField("Quick open file", text: $store.quickOpenQuery)
+        TextField("Quick open files and AI chats", text: $store.quickOpenQuery)
           .textFieldStyle(.plain)
           .font(.title3)
           .focused($queryFocused)
@@ -1394,25 +1394,35 @@ private struct QuickOpenView: View {
       if store.isScanningCorpusFiles || store.isFilteringQuickOpenFiles {
         HStack(spacing: 8) {
           WorkspaceActivityIndicator(size: .small)
-          Text(store.isScanningCorpusFiles ? "Scanning files" : "Searching files")
+          Text(store.isScanningCorpusFiles ? "Scanning files" : "Searching")
             .foregroundStyle(.secondary)
         }
       }
 
       List(selection: $store.selectedQuickOpenFileID) {
-        ForEach(store.quickOpenFiles) { file in
-          CorpusFileRow(file: file)
-            .tag(file.id)
-            .contentShape(Rectangle())
-            .onTapGesture {
-              open(file)
-            }
-            .contextMenu {
-              CorpusFileContextMenu(file: file) {
-                store.isQuickOpenPresented = false
-                dismiss()
+        ForEach(store.quickOpenItems) { item in
+          switch item {
+          case .file(let file):
+            CorpusFileRow(file: file)
+              .tag(item.id)
+              .contentShape(Rectangle())
+              .onTapGesture {
+                open(item)
               }
-            }
+              .contextMenu {
+                CorpusFileContextMenu(file: file) {
+                  store.isQuickOpenPresented = false
+                  dismiss()
+                }
+              }
+          case .chatThread(let thread):
+            QuickOpenChatThreadRow(thread: thread)
+              .tag(item.id)
+              .contentShape(Rectangle())
+              .onTapGesture {
+                open(item)
+              }
+          }
         }
       }
       .listStyle(.plain)
@@ -1428,13 +1438,13 @@ private struct QuickOpenView: View {
   }
 
   private func openSelectedOrFirst() -> Bool {
-    guard let file = store.selectedQuickOpenFile else { return false }
-    open(file)
+    guard let item = store.selectedQuickOpenItem else { return false }
+    open(item)
     return true
   }
 
-  private func open(_ file: CorpusFile) {
-    store.selectCorpusFile(file)
+  private func open(_ item: WorkspaceQuickOpenItem) {
+    store.selectQuickOpenItem(item)
     store.isQuickOpenPresented = false
     dismiss()
   }
@@ -1459,6 +1469,39 @@ private struct QuickOpenView: View {
     default:
       return false
     }
+  }
+}
+
+private struct QuickOpenChatThreadRow: View {
+  let thread: OpenClawChatThread
+
+  var body: some View {
+    HStack(alignment: .center, spacing: 8) {
+      WorkspaceIconBadge(
+        systemImage: "bubble.left.and.bubble.right",
+        tint: .accentColor,
+        fill: Color.accentColor.opacity(0.10)
+      )
+      VStack(alignment: .leading, spacing: 3) {
+        Text(thread.title)
+          .font(.body.weight(.medium))
+          .lineLimit(1)
+        HStack(spacing: 6) {
+          Text("AI Chat")
+          Text("·")
+          Text("\(thread.messageCount) message\(thread.messageCount == 1 ? "" : "s")")
+          if thread.isArchived {
+            Text("·")
+            Text("Archived")
+          }
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
+      }
+      Spacer(minLength: 0)
+    }
+    .padding(.vertical, WorkspaceDesign.rowVerticalPadding)
   }
 }
 
@@ -2026,13 +2069,25 @@ private struct RunsAndReviewView: View {
 
   var body: some View {
     VStack(spacing: 0) {
-      Picker("Runs and review", selection: $store.runsAndReviewPage) {
-        ForEach(RunsAndReviewPage.allCases) { page in Text(page.rawValue).tag(page) }
+      HStack(spacing: 0) {
+        Spacer(minLength: 0)
+        Picker("Runs and review", selection: $store.runsAndReviewPage) {
+          ForEach(RunsAndReviewPage.allCases) { page in Text(page.rawValue).tag(page) }
+        }
+        .labelsHidden()
+        .pickerStyle(.segmented)
+        .frame(maxWidth: 340)
+        Spacer(minLength: 0)
       }
-      .pickerStyle(.segmented)
-      .frame(maxWidth: 340)
       .padding(.horizontal, WorkspaceDesign.contentInset)
-      .padding(.top, 10)
+      .padding(.vertical, 10)
+      .frame(maxWidth: .infinity)
+      .background(WorkspaceDesign.barBackground)
+      .overlay(alignment: .bottom) {
+        Rectangle()
+          .fill(WorkspaceDesign.hairline)
+          .frame(height: 0.5)
+      }
 
       switch store.runsAndReviewPage {
       case .runs: RunCenterView()
@@ -2300,6 +2355,7 @@ private struct RunCenterView: View {
         }
       }
       .padding(.horizontal, WorkspaceDesign.contentInset)
+      .padding(.top, 12)
       .padding(.bottom, 12)
 
       RunCenterSearch(filterFocused: $filterFocused)
@@ -5281,6 +5337,7 @@ private struct OpenClawChatView: View {
         .padding(presentation.isCompact ? 10 : 16)
       }
       .background(OpenClawChatScrollPositionBridge(
+        threadID: store.selectedOpenClawChatThreadID,
         initialPosition: store.openClawChatScrollPosition(isAssistantPanel: presentation.isCompact),
         onPositionChange: { position in
           store.recordOpenClawChatScrollPosition(position, isAssistantPanel: presentation.isCompact)
@@ -5304,9 +5361,27 @@ private struct OpenClawChatView: View {
   }
 }
 
+struct OpenClawChatScrollRestoration: Equatable {
+  let threadID: UUID?
+  let savedPosition: Double?
+
+  var position: Double {
+    min(1, max(0, savedPosition ?? 1))
+  }
+
+  func requiresNewRestoration(after previous: Self) -> Bool {
+    threadID != previous.threadID
+  }
+}
+
 private struct OpenClawChatScrollPositionBridge: NSViewRepresentable {
+  let threadID: UUID?
   let initialPosition: Double?
   let onPositionChange: (Double) -> Void
+
+  private var restoration: OpenClawChatScrollRestoration {
+    OpenClawChatScrollRestoration(threadID: threadID, savedPosition: initialPosition)
+  }
 
   func makeCoordinator() -> Coordinator {
     Coordinator(parent: self)
@@ -5317,7 +5392,7 @@ private struct OpenClawChatScrollPositionBridge: NSViewRepresentable {
   }
 
   func updateNSView(_ view: NSView, context: Context) {
-    context.coordinator.parent = self
+    context.coordinator.updateParent(self)
     context.coordinator.restoreIfNeeded(from: view)
   }
 
@@ -5335,10 +5410,23 @@ private struct OpenClawChatScrollPositionBridge: NSViewRepresentable {
     private var didRestore = false
     private var isRestoring = false
     private var restoreAttempts = 0
+    private var restoration: OpenClawChatScrollRestoration
 
     init(parent: OpenClawChatScrollPositionBridge) {
       self.parent = parent
+      restoration = parent.restoration
       super.init()
+    }
+
+    func updateParent(_ parent: OpenClawChatScrollPositionBridge) {
+      let nextRestoration = parent.restoration
+      self.parent = parent
+      guard nextRestoration.requiresNewRestoration(after: restoration) else { return }
+      restoration = nextRestoration
+      didRestore = false
+      isRestoring = false
+      restoreAttempts = 0
+      stopObserving()
     }
 
     func restoreIfNeeded(from view: NSView) {
@@ -5483,7 +5571,7 @@ private struct OpenClawChatScrollPositionBridge: NSViewRepresentable {
     }
 
     private func restoreIfPossible(in scrollView: NSScrollView) -> Bool {
-      restore(scrollView, to: parent.initialPosition ?? 1)
+      restore(scrollView, to: restoration.position)
     }
 
     private func restore(_ scrollView: NSScrollView, to position: Double) -> Bool {

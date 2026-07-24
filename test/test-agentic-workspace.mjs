@@ -185,6 +185,35 @@ try {
   gated = decideAgentRunApproval(gated, "owner", "approved", { actor: "Avi", actorRole: "owner" });
   assert.equal(gated.status, "blocked");
 
+  gated = requestAgentRunApproval(gated, {
+    id: "replacement",
+    title: "Approve revised release",
+    action: "release revised copy",
+    riskClass: "external-action",
+    requestedRole: "owner",
+  });
+  assert.equal(gated.status, "waiting-approval");
+  gated = decideAgentRunApproval(gated, "replacement", "approved", { actor: "Avi", actorRole: "owner" });
+  assert.equal(gated.status, "running");
+  assert.equal(gated.approvals.find((approval) => approval.id === "legal").status, "rejected");
+  assert.equal(gated.approvals.find((approval) => approval.id === "replacement").status, "approved");
+
+  let separatelyBlocked = transitionAgentRun(
+    createAgentRun({ id: "separately-blocked", goal: "Keep separate blockers intact" }),
+    "blocked",
+    { reason: "The external service is unavailable." },
+  );
+  separatelyBlocked = requestAgentRunApproval(separatelyBlocked, {
+    id: "separate-approval",
+    title: "Approve retry",
+    action: "retry after recovery",
+    riskClass: "external-action",
+  });
+  assert.equal(separatelyBlocked.status, "blocked");
+  separatelyBlocked = decideAgentRunApproval(separatelyBlocked, "separate-approval", "approved", { actor: "Avi" });
+  assert.equal(separatelyBlocked.status, "blocked");
+  assert.equal(separatelyBlocked.blockedReason, "The external service is unavailable.");
+
   const workflow = workflowFromRun(run, { id: "board-briefing", now: "2026-07-14T11:00:00Z" });
   workflow.inputs.push({ id: "quarter", description: "Reporting quarter", required: true });
   workflow.instructions = "Prepare the {{quarter}} board briefing";
