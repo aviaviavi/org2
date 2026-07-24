@@ -30,6 +30,7 @@ final class CorpusFileWatcherTests: XCTestCase {
 
     XCTAssertEqual(classification.contentPaths, [note, markdown])
     XCTAssertTrue(classification.hasAgentRunStateChanges)
+    XCTAssertFalse(classification.hasConfigurationChanges)
   }
 
   func testRuntimeOnlyFileEventsDoNotEnterTheGeneralCorpusRefreshPath() {
@@ -44,6 +45,120 @@ final class CorpusFileWatcherTests: XCTestCase {
 
     XCTAssertTrue(classification.contentPaths.isEmpty)
     XCTAssertTrue(classification.hasAgentRunStateChanges)
+    XCTAssertFalse(classification.hasConfigurationChanges)
+  }
+
+  func testClassifiesWorkspaceConfigurationChangesForFullReconciliation() {
+    let root = URL(fileURLWithPath: "/tmp/org2-corpus").standardizedFileURL
+    let classification = WorkspaceStore.classifyCorpusFileEvents(
+      [
+        root.appendingPathComponent("org2.json").path,
+        root.appendingPathComponent(".org2/app.css").path,
+      ],
+      corpusRoot: root
+    )
+
+    XCTAssertTrue(classification.contentPaths.isEmpty)
+    XCTAssertFalse(classification.hasAgentRunStateChanges)
+    XCTAssertTrue(classification.hasConfigurationChanges)
+  }
+
+  func testMeetingFilesInvalidateMeetingAndAggregateSurfaces() {
+    let root = URL(fileURLWithPath: "/tmp/org2-corpus").standardizedFileURL
+    let note = root.appendingPathComponent("notes/plan.org2").path
+    let meeting = root.appendingPathComponent("meetings/weekly.org2").path
+
+    XCTAssertEqual(
+      WorkspaceStore.invalidatedWorkspaceSurfaces(for: [note], corpusRoot: root),
+      [.agenda, .approvals, .search]
+    )
+    XCTAssertEqual(
+      WorkspaceStore.invalidatedWorkspaceSurfaces(for: [meeting], corpusRoot: root),
+      [.agenda, .approvals, .search, .meetings, .openClaw]
+    )
+  }
+
+  func testAgendaClockInvalidatesAtTheNextLocalMidnight() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "America/New_York"))
+    let now = try XCTUnwrap(calendar.date(from: DateComponents(
+      year: 2026,
+      month: 7,
+      day: 24,
+      hour: 16,
+      minute: 45
+    )))
+    let expected = try XCTUnwrap(calendar.date(from: DateComponents(
+      year: 2026,
+      month: 7,
+      day: 25
+    )))
+
+    XCTAssertEqual(
+      WorkspaceStore.nextAgendaClockInvalidationDate(after: now, calendar: calendar),
+      expected
+    )
+  }
+
+  @MainActor
+  func testInactiveCorpusEventRefreshesDirtySurfaceWhenWorkspaceBecomesActive() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-realtime-refresh-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let firstPaths = try MeetingArtifactWriter.preparePaths(
+      corpusRoot: root,
+      title: "First live meeting",
+      recordedAt: Date(timeIntervalSince1970: 1_790_000_000)
+    )
+    try Data("audio".utf8).write(to: firstPaths.audioURL)
+    _ = try MeetingArtifactWriter.writeArtifacts(
+      paths: firstPaths,
+      corpusRoot: root,
+      duration: nil,
+      transcript: MeetingTranscriptResult(text: "First.", status: .complete, engine: "test")
+    )
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root, persistsDefault: false)
+    store.setWorkspaceRealtimeRefreshActive(false)
+    await store.refreshMeetings()
+    XCTAssertEqual(store.meetings.count, 1)
+    XCTAssertFalse(store.isWorkspaceSurfaceDirty(.meetings))
+
+    let secondPaths = try MeetingArtifactWriter.preparePaths(
+      corpusRoot: root,
+      title: "Second live meeting",
+      recordedAt: Date(timeIntervalSince1970: 1_790_003_600)
+    )
+    try Data("audio".utf8).write(to: secondPaths.audioURL)
+    let secondBundle = try MeetingArtifactWriter.writeArtifacts(
+      paths: secondPaths,
+      corpusRoot: root,
+      duration: nil,
+      transcript: MeetingTranscriptResult(text: "Second.", status: .complete, engine: "test")
+    )
+    store.handleCorpusFileEvents(
+      [secondBundle.noteURL.path],
+      corpusRoot: root,
+      requiresFullScan: false
+    )
+
+    XCTAssertTrue(store.isWorkspaceSurfaceDirty(.meetings))
+    XCTAssertEqual(store.meetings.count, 1)
+
+    store.selectedSurface = .meetings
+    store.setWorkspaceRealtimeRefreshActive(true)
+    defer { store.setWorkspaceRealtimeRefreshActive(false) }
+
+    let deadline = Date().addingTimeInterval(10)
+    while (store.meetings.count != 2 || store.isWorkspaceSurfaceDirty(.meetings)),
+          Date() < deadline {
+      try await Task.sleep(nanoseconds: 20_000_000)
+    }
+    XCTAssertEqual(store.meetings.count, 2)
+    XCTAssertFalse(store.isWorkspaceSurfaceDirty(.meetings))
   }
 
   func testReportsNestedFileWritesWithoutScanningTheCorpus() throws {

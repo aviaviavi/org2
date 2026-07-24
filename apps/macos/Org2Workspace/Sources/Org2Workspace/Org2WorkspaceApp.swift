@@ -40,9 +40,11 @@ struct Org2WorkspaceApp: App {
           if status != noErr {
             store.statusText = "Global capture shortcut unavailable (\(status))"
           }
+          store.setWorkspaceRealtimeRefreshActive(scenePhase == .active)
           store.setRunReviewAutoRefreshActive(scenePhase == .active)
         }
         .onChange(of: scenePhase) { _, newPhase in
+          store.setWorkspaceRealtimeRefreshActive(newPhase == .active)
           store.setRunReviewAutoRefreshActive(newPhase == .active)
           if newPhase == .active {
             store.sourceAutoSyncDidBecomeActive()

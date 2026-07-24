@@ -59,6 +59,7 @@ private struct CorpusChangeObservation {
 struct CorpusFileEventClassification: Equatable, Sendable {
   let contentPaths: [String]
   let hasAgentRunStateChanges: Bool
+  let hasConfigurationChanges: Bool
 }
 
 private struct RenderedHTMLCacheEntry {
@@ -689,6 +690,7 @@ public final class WorkspaceStore: ObservableObject {
       if isWorkspaceSurfacePaneClosed { isWorkspaceSurfacePaneClosed = false }
       if expandedWorkspaceSurface != nil { expandedWorkspaceSurface = nil }
       if isWorkspaceDetailPaneExpanded { isWorkspaceDetailPaneExpanded = false }
+      scheduleRefreshForActivatedSurface(selectedSurface)
     }
   }
   @Published public var expandedWorkspaceSurface: WorkspaceSurface?
@@ -1206,10 +1208,18 @@ public final class WorkspaceStore: ObservableObject {
   private var pendingNodeBriefArtifactRelativePath: String?
   private var pendingNodeBriefTitle: String?
   private var postOpenClawWorkspaceRefreshTask: Task<Void, Never>?
+  private var corpusEventRefreshGeneration = 0
   private var runReviewFileEventRefreshTask: Task<Void, Never>?
   private var runReviewFileEventGeneration = 0
   private var pendingCorpusChangedPaths: Set<String> = []
-  private var corpusFileWatcher: CorpusFileWatcher?
+  private var corpusFileWatchers: [String: CorpusFileWatcher] = [:]
+  private var mountedCorpusEventRefreshTask: Task<Void, Never>?
+  private var workspaceSurfaceRefreshTasks: [WorkspaceSurface: Task<Void, Never>] = [:]
+  private var agendaClockRefreshTask: Task<Void, Never>?
+  private var needsFullCorpusRefreshAfterEvents = false
+  private var isWorkspaceRealtimeRefreshActive = false
+  public private(set) var dirtyWorkspaceSurfaces: Set<WorkspaceSurface> = []
+  private var workspaceSurfaceDirtyGenerations: [WorkspaceSurface: UInt64] = [:]
   private var corpusFileEventSerial = 0
   private var recentCorpusFileEvents: [(serial: Int, path: String)] = []
   private var pendingG = false
@@ -1381,8 +1391,7 @@ public final class WorkspaceStore: ObservableObject {
       await refreshSourceConnections()
       await refreshCorpusFiles()
       await refreshAssignedWork()
-      await refreshApprovals()
-      await refreshAgentRuns()
+      await refreshRunReviewData()
       refreshOrgCryptManagedRecipientFiles()
       if screenshotModeFromEnvironment() == nil {
         Task { await refreshOpenClawThreads() }
@@ -1727,9 +1736,21 @@ public final class WorkspaceStore: ObservableObject {
     scheduledApprovalsRefreshTask = nil
     postOpenClawWorkspaceRefreshTask?.cancel()
     postOpenClawWorkspaceRefreshTask = nil
+    corpusEventRefreshGeneration += 1
     runReviewFileEventGeneration += 1
     runReviewFileEventRefreshTask?.cancel()
     runReviewFileEventRefreshTask = nil
+    mountedCorpusEventRefreshTask?.cancel()
+    mountedCorpusEventRefreshTask = nil
+    workspaceSurfaceRefreshTasks.values.forEach { $0.cancel() }
+    workspaceSurfaceRefreshTasks = [:]
+    agendaClockRefreshTask?.cancel()
+    agendaClockRefreshTask = nil
+    dirtyWorkspaceSurfaces = Set(WorkspaceSurface.allCases.filter { $0 != .home })
+    for surface in dirtyWorkspaceSurfaces {
+      workspaceSurfaceDirtyGenerations[surface, default: 0] &+= 1
+    }
+    needsFullCorpusRefreshAfterEvents = false
     pendingCorpusChangedPaths = []
     agendaTodoShortcutMutationTask?.cancel()
     agendaTodoShortcutMutationTask = nil
@@ -1759,21 +1780,8 @@ public final class WorkspaceStore: ObservableObject {
     workspaceRefreshGeneration += 1
     backlinks = nil
     errorText = nil
-    corpusFileWatcher = CorpusFileWatcher(rootURL: standardized) { [weak self] paths, requiresFullScan in
-      Task { @MainActor [weak self] in
-        guard let self else { return }
-        let classified = Self.classifyCorpusFileEvents(paths, corpusRoot: standardized)
-        self.recordCorpusFileEvents(classified.contentPaths)
-        if requiresFullScan {
-          self.scheduleFullCorpusFileRefreshAfterEvents()
-        } else if !classified.contentPaths.isEmpty {
-          self.scheduleIncrementalCorpusRefresh(classified.contentPaths)
-        }
-        if classified.hasAgentRunStateChanges {
-          self.scheduleRunReviewRefreshAfterEvents()
-        }
-      }
-    }
+    rebuildCorpusFileWatchers()
+    scheduleAgendaClockInvalidation()
   }
 
   public func switchCorpus(to mount: WorkspaceCorpusMount) {
@@ -1808,6 +1816,7 @@ public final class WorkspaceStore: ObservableObject {
     }
     mountedCorpora.removeAll { $0.path == mount.path }
     persistCorpusMounts()
+    rebuildCorpusFileWatchers()
   }
 
   public func refreshActiveCorpusIdentity() async {
@@ -1845,6 +1854,7 @@ public final class WorkspaceStore: ObservableObject {
       lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
     }
     persistCorpusMounts()
+    rebuildCorpusFileWatchers()
   }
 
   private func persistCorpusMounts() {
@@ -1862,6 +1872,109 @@ public final class WorkspaceStore: ObservableObject {
     return paths
       .map { URL(fileURLWithPath: $0).standardizedFileURL.path }
       .filter { seen.insert($0).inserted }
+  }
+
+  private func rebuildCorpusFileWatchers() {
+    guard corpusRoot != nil else {
+      corpusFileWatchers = [:]
+      return
+    }
+    let desiredPaths = Set(workspaceMountPaths().filter(isDirectory))
+    for path in Array(corpusFileWatchers.keys) where !desiredPaths.contains(path) {
+      corpusFileWatchers.removeValue(forKey: path)
+    }
+    for path in desiredPaths where corpusFileWatchers[path] == nil {
+      let root = URL(fileURLWithPath: path).standardizedFileURL
+      corpusFileWatchers[path] = CorpusFileWatcher(rootURL: root) { [weak self] paths, requiresFullScan in
+        Task { @MainActor [weak self] in
+          self?.handleCorpusFileEvents(
+            paths,
+            corpusRoot: root,
+            requiresFullScan: requiresFullScan
+          )
+        }
+      }
+    }
+  }
+
+  func handleCorpusFileEvents(
+    _ paths: [String],
+    corpusRoot eventRoot: URL,
+    requiresFullScan: Bool
+  ) {
+    let classified = Self.classifyCorpusFileEvents(paths, corpusRoot: eventRoot)
+    let activeRootPath = corpusRoot?.standardizedFileURL.path
+    let isActiveCorpus = eventRoot.standardizedFileURL.path == activeRootPath
+
+    guard isActiveCorpus else {
+      var surfaces = Set<WorkspaceSurface>()
+      if agendaReadScope == .allCorpora,
+         requiresFullScan || !classified.contentPaths.isEmpty || classified.hasConfigurationChanges {
+        surfaces.insert(.agenda)
+      }
+      if searchReadScope == .allCorpora,
+         requiresFullScan || !classified.contentPaths.isEmpty || classified.hasConfigurationChanges {
+        surfaces.insert(.search)
+      }
+      guard !surfaces.isEmpty else { return }
+      markWorkspaceSurfacesDirty(surfaces, refreshVisible: false)
+      scheduleMountedCorpusProjectionRefresh()
+      return
+    }
+
+    recordCorpusFileEvents(classified.contentPaths)
+    if requiresFullScan || classified.hasConfigurationChanges {
+      scheduleFullCorpusFileRefreshAfterEvents()
+    } else if !classified.contentPaths.isEmpty {
+      markWorkspaceSurfacesDirty(
+        Self.invalidatedWorkspaceSurfaces(
+          for: classified.contentPaths,
+          corpusRoot: eventRoot
+        ),
+        refreshVisible: false
+      )
+      scheduleIncrementalCorpusRefresh(classified.contentPaths)
+    }
+    if classified.hasAgentRunStateChanges {
+      markWorkspaceSurfacesDirty([.approvals], refreshVisible: false)
+      scheduleRunReviewRefreshAfterEvents()
+    }
+  }
+
+  nonisolated static func invalidatedWorkspaceSurfaces(
+    for changedPaths: [String],
+    corpusRoot: URL
+  ) -> Set<WorkspaceSurface> {
+    let rootPrefix = corpusRoot.standardizedFileURL.path + "/"
+    var surfaces: Set<WorkspaceSurface> = [.agenda, .approvals, .search]
+    let openClawDirectoryPrefixes = openClawThreadDirectories(corpusRoot: corpusRoot)
+      .map { $0.standardizedFileURL.path + "/" }
+    if changedPaths.contains(where: { rawPath in
+      let path = URL(fileURLWithPath: rawPath).standardizedFileURL.path
+      return openClawDirectoryPrefixes.contains { path.hasPrefix($0) }
+    }) {
+      surfaces.insert(.openClaw)
+    }
+    if changedPaths.contains(where: { rawPath in
+      let path = URL(fileURLWithPath: rawPath).standardizedFileURL.path
+      guard path.hasPrefix(rootPrefix) else { return false }
+      let relativePath = String(path.dropFirst(rootPrefix.count))
+      return relativePath.hasPrefix("meetings/") || relativePath.hasPrefix("raw/")
+    }) {
+      surfaces.insert(.meetings)
+    }
+    return surfaces
+  }
+
+  private func scheduleMountedCorpusProjectionRefresh() {
+    mountedCorpusEventRefreshTask?.cancel()
+    guard isWorkspaceRealtimeRefreshActive else { return }
+    mountedCorpusEventRefreshTask = Task { @MainActor [weak self] in
+      try? await Task.sleep(nanoseconds: 250_000_000)
+      guard !Task.isCancelled, let self else { return }
+      self.mountedCorpusEventRefreshTask = nil
+      await self.refreshWorkspaceSurfaceIfDirty(self.selectedSurface)
+    }
   }
 
   private func workspaceMountArguments() -> [String] {
@@ -2007,6 +2120,7 @@ public final class WorkspaceStore: ObservableObject {
       }
       return
     }
+    let dirtyGeneration = workspaceSurfaceDirtyGenerations[.sources, default: 0]
     isLoadingSources = true
     defer { isLoadingSources = false }
     do {
@@ -2017,6 +2131,7 @@ public final class WorkspaceStore: ObservableObject {
       if profiles.isEmpty {
         sourceRuntimeStatuses = [:]
         sourceScheduleStates = [:]
+        markWorkspaceSurfaceCleanIfUnchanged(.sources, generation: dirtyGeneration)
         return
       }
       let envelope: WorkspaceSourceStatusEnvelope = try await cli.runJSON(
@@ -2024,6 +2139,7 @@ public final class WorkspaceStore: ObservableObject {
       )
       sourceRuntimeStatuses = Dictionary(uniqueKeysWithValues: envelope.sources.map { ($0.id, $0) })
       refreshSourceScheduleStates()
+      markWorkspaceSurfaceCleanIfUnchanged(.sources, generation: dirtyGeneration)
     } catch {
       sourceOperationMessages["workspace"] = error.localizedDescription
     }
@@ -2386,6 +2502,7 @@ public final class WorkspaceStore: ObservableObject {
       return
     }
 
+    let dirtyGeneration = workspaceSurfaceDirtyGenerations[.files, default: 0]
     isScanningCorpusFiles = true
     defer { isScanningCorpusFiles = false }
 
@@ -2404,6 +2521,7 @@ public final class WorkspaceStore: ObservableObject {
         scheduleSearchIndexBuild(corpusRoot: corpusRoot)
       }
       reconcilePinnedFiles(for: corpusRoot)
+      markWorkspaceSurfaceCleanIfUnchanged(.files, generation: dirtyGeneration)
       if selectedSurface == .files {
         statusText = "\(files.count) corpus file\(files.count == 1 ? "" : "s")"
       }
@@ -2430,6 +2548,7 @@ public final class WorkspaceStore: ObservableObject {
       return
     }
 
+    let dirtyGeneration = workspaceSurfaceDirtyGenerations[.agenda, default: 0]
     isRefreshingAgenda = true
     let showsLoading = updatesStatus || agenda == nil
     if showsLoading {
@@ -2460,6 +2579,7 @@ public final class WorkspaceStore: ObservableObject {
       let payload: AgendaPayload = try await cli.runJSON(arguments)
       agenda = payload
       syncAgendaSelectionAfterRefresh(preserveSelection: preserveSelection)
+      markWorkspaceSurfaceCleanIfUnchanged(.agenda, generation: dirtyGeneration)
       if updatesStatus {
         let issueSuffix = payload.issues?.isEmpty == false ? ", \(payload.issues!.count) corpus issue\(payload.issues!.count == 1 ? "" : "s")" : ""
         statusText = "\(payload.totalItemCount) agenda item\(payload.totalItemCount == 1 ? "" : "s")\(issueSuffix)"
@@ -2597,9 +2717,11 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func refreshRunReviewData() async {
+    let dirtyGeneration = workspaceSurfaceDirtyGenerations[.approvals, default: 0]
     await refreshApprovals()
     await refreshAgentRuns()
     await refreshAgentWorkflows()
+    markWorkspaceSurfaceCleanIfUnchanged(.approvals, generation: dirtyGeneration)
   }
 
   public func setRunReviewAutoRefreshActive(
@@ -2607,10 +2729,16 @@ public final class WorkspaceStore: ObservableObject {
     intervalNanoseconds: UInt64 = WorkspaceStore.runReviewAutoRefreshIntervalNanoseconds
   ) {
     isRunReviewAutoRefreshActive = isActive
-    guard isActive else { return }
+    guard isActive else {
+      runReviewAutoRefreshTask?.cancel()
+      runReviewAutoRefreshTask = nil
+      return
+    }
 
-    Task { @MainActor [weak self] in
-      await self?.refreshRunReviewData()
+    if selectedSurface == .approvals {
+      markWorkspaceSurfacesDirty([.approvals], refreshVisible: true)
+    } else {
+      markWorkspaceSurfacesDirty([.approvals], refreshVisible: false)
     }
 
     guard runReviewAutoRefreshTask == nil else { return }
@@ -2623,7 +2751,10 @@ public final class WorkspaceStore: ObservableObject {
         }
         guard let self else { return }
         guard self.isRunReviewAutoRefreshActive else { continue }
-        await self.refreshRunReviewData()
+        self.markWorkspaceSurfacesDirty(
+          [.approvals],
+          refreshVisible: self.selectedSurface == .approvals
+        )
       }
     }
   }
@@ -4144,12 +4275,14 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func runSearch() async {
+    let dirtyGeneration = workspaceSurfaceDirtyGenerations[.search, default: 0]
     let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !query.isEmpty else {
       searchResults = []
       openClawChatSearchResults = []
       workspaceFileSearchResults = []
       workspacePageSearchResults = []
+      markWorkspaceSurfaceCleanIfUnchanged(.search, generation: dirtyGeneration)
       return
     }
     isSearching = true
@@ -4169,6 +4302,7 @@ public final class WorkspaceStore: ObservableObject {
       statusText = chatResults.isEmpty
         ? "No corpus selected"
         : "\(chatResults.count) chat result\(chatResults.count == 1 ? "" : "s") in \(String(format: "%.1f", elapsed))s"
+      markWorkspaceSurfaceCleanIfUnchanged(.search, generation: dirtyGeneration)
       return
     }
 
@@ -4192,7 +4326,7 @@ public final class WorkspaceStore: ObservableObject {
         "--recursive",
         "--limit", String(Self.workspaceSearchCandidateLimit),
         "--context", "1",
-        "--index", "current",
+        "--index", federates ? "auto" : "current",
         "--sort", "relevance",
         "--format", "json"
       ]
@@ -4211,6 +4345,7 @@ public final class WorkspaceStore: ObservableObject {
       let totalCount = workspaceTextSearchResultCount
       let issueSuffix = payload.issues?.isEmpty == false ? ", \(payload.issues!.count) corpus issue\(payload.issues!.count == 1 ? "" : "s")" : ""
       statusText = "\(totalCount) search result\(totalCount == 1 ? "" : "s") in \(String(format: "%.1f", elapsed))s\(issueSuffix)"
+      markWorkspaceSurfaceCleanIfUnchanged(.search, generation: dirtyGeneration)
     } catch {
       errorText = error.localizedDescription
       statusText = "Search failed"
@@ -4223,6 +4358,7 @@ public final class WorkspaceStore: ObservableObject {
       return
     }
 
+    let dirtyGeneration = workspaceSurfaceDirtyGenerations[.meetings, default: 0]
     isLoadingMeetings = true
     defer { isLoadingMeetings = false }
 
@@ -4237,6 +4373,7 @@ public final class WorkspaceStore: ObservableObject {
       reconcileMeetingProcessingState(with: items)
       syncMeetingSelectionAfterRefresh()
       recoverInterruptedMeetingTranscriptions(knownItems: items)
+      markWorkspaceSurfaceCleanIfUnchanged(.meetings, generation: dirtyGeneration)
     } catch {
       errorText = error.localizedDescription
       statusText = "Meeting scan failed"
@@ -8214,6 +8351,7 @@ public final class WorkspaceStore: ObservableObject {
       return
     }
 
+    let dirtyGeneration = workspaceSurfaceDirtyGenerations[.openClaw, default: 0]
     isRefreshingOpenClawThreads = true
     let shouldShowLoading = showsLoading || openClawThreads.isEmpty
     if shouldShowLoading {
@@ -8232,6 +8370,7 @@ public final class WorkspaceStore: ObservableObject {
       }.value
       openClawThreads = threads
       syncOpenClawSelectionAfterRefresh()
+      markWorkspaceSurfaceCleanIfUnchanged(.openClaw, generation: dirtyGeneration)
     } catch {
       errorText = error.localizedDescription
       statusText = "Agent records scan failed"
@@ -8246,6 +8385,7 @@ public final class WorkspaceStore: ObservableObject {
       return
     }
 
+    let dirtyGeneration = workspaceSurfaceDirtyGenerations[.agenda, default: 0]
     isRefreshingAssignedWork = true
     let shouldShowLoading = showsLoading || assignedWorkItems.isEmpty
     if shouldShowLoading {
@@ -8279,6 +8419,7 @@ public final class WorkspaceStore: ObservableObject {
       if selectedSurface == .agenda, agendaMode == .assigned {
         statusText = "\(items.count) all-time item\(items.count == 1 ? "" : "s")"
       }
+      markWorkspaceSurfaceCleanIfUnchanged(.agenda, generation: dirtyGeneration)
     } catch {
       errorText = error.localizedDescription
       statusText = "Assigned work scan failed"
@@ -10850,11 +10991,16 @@ public final class WorkspaceStore: ObservableObject {
     var contentPaths: [String] = []
     var seenContentPaths = Set<String>()
     var hasAgentRunStateChanges = false
+    var hasConfigurationChanges = false
 
     for rawPath in paths {
       let path = URL(fileURLWithPath: rawPath).standardizedFileURL.path
       guard path.hasPrefix(rootPrefix) else { continue }
       let relativePath = String(path.dropFirst(rootPrefix.count))
+      if relativePath == "org2.json" || relativePath == ".org2/app.css" {
+        hasConfigurationChanges = true
+        continue
+      }
       if relativePath.hasPrefix(".org2/runs/"),
          URL(fileURLWithPath: path).pathExtension.lowercased() == "org2" {
         hasAgentRunStateChanges = true
@@ -10871,7 +11017,8 @@ public final class WorkspaceStore: ObservableObject {
 
     return CorpusFileEventClassification(
       contentPaths: contentPaths,
-      hasAgentRunStateChanges: hasAgentRunStateChanges
+      hasAgentRunStateChanges: hasAgentRunStateChanges,
+      hasConfigurationChanges: hasConfigurationChanges
     )
   }
 
@@ -10976,23 +11123,196 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
+  public func setWorkspaceRealtimeRefreshActive(_ isActive: Bool) {
+    guard isWorkspaceRealtimeRefreshActive != isActive else { return }
+    isWorkspaceRealtimeRefreshActive = isActive
+    if isActive {
+      workspaceDidBecomeActive()
+    } else {
+      mountedCorpusEventRefreshTask?.cancel()
+      mountedCorpusEventRefreshTask = nil
+      workspaceSurfaceRefreshTasks.values.forEach { $0.cancel() }
+      workspaceSurfaceRefreshTasks = [:]
+    }
+  }
+
+  public func workspaceDidBecomeActive() {
+    guard isWorkspaceRealtimeRefreshActive else { return }
+    rebuildCorpusFileWatchers()
+    scheduleAgendaClockInvalidation()
+
+    if needsFullCorpusRefreshAfterEvents {
+      scheduleFullCorpusFileRefreshAfterEvents()
+      return
+    }
+    if !pendingCorpusChangedPaths.isEmpty {
+      scheduleIncrementalCorpusRefresh([])
+      return
+    }
+
+    if let selectedLocation,
+       let knownFile = corpusFiles.first(where: {
+         $0.path == URL(fileURLWithPath: selectedLocation.file).standardizedFileURL.path
+       }),
+       knownFile.modifiedAt != Self.modificationDate(
+         for: URL(fileURLWithPath: selectedLocation.file).standardizedFileURL
+       ) {
+      scheduleIncrementalCorpusRefresh([selectedLocation.file])
+      return
+    }
+
+    if selectedSurface != .home {
+      markWorkspaceSurfacesDirty([selectedSurface], refreshVisible: true)
+    }
+  }
+
+  public func isWorkspaceSurfaceDirty(_ surface: WorkspaceSurface) -> Bool {
+    dirtyWorkspaceSurfaces.contains(surface)
+  }
+
+  private func markWorkspaceSurfacesDirty(
+    _ surfaces: Set<WorkspaceSurface>,
+    refreshVisible: Bool
+  ) {
+    let invalidatedSurfaces = surfaces.filter { $0 != .home }
+    dirtyWorkspaceSurfaces.formUnion(invalidatedSurfaces)
+    for surface in invalidatedSurfaces {
+      workspaceSurfaceDirtyGenerations[surface, default: 0] &+= 1
+    }
+    guard refreshVisible,
+          isWorkspaceRealtimeRefreshActive,
+          dirtyWorkspaceSurfaces.contains(selectedSurface)
+    else {
+      return
+    }
+    scheduleRefreshForActivatedSurface(selectedSurface)
+  }
+
+  private func markWorkspaceSurfaceCleanIfUnchanged(
+    _ surface: WorkspaceSurface,
+    generation: UInt64
+  ) {
+    guard workspaceSurfaceDirtyGenerations[surface, default: 0] == generation else { return }
+    dirtyWorkspaceSurfaces.remove(surface)
+  }
+
+  private func scheduleRefreshForActivatedSurface(
+    _ surface: WorkspaceSurface,
+    delayNanoseconds: UInt64 = 0
+  ) {
+    guard isWorkspaceRealtimeRefreshActive,
+          dirtyWorkspaceSurfaces.contains(surface),
+          workspaceSurfaceRefreshTasks[surface] == nil
+    else {
+      return
+    }
+
+    workspaceSurfaceRefreshTasks[surface] = Task { @MainActor [weak self] in
+      if delayNanoseconds > 0 {
+        try? await Task.sleep(nanoseconds: delayNanoseconds)
+      } else {
+        await Task.yield()
+      }
+      guard !Task.isCancelled, let self else { return }
+      await self.refreshWorkspaceSurfaceIfDirty(surface)
+      self.workspaceSurfaceRefreshTasks[surface] = nil
+      if self.isWorkspaceRealtimeRefreshActive,
+         self.selectedSurface == surface,
+         self.dirtyWorkspaceSurfaces.contains(surface) {
+        self.scheduleRefreshForActivatedSurface(surface, delayNanoseconds: 150_000_000)
+      }
+    }
+  }
+
+  private func refreshWorkspaceSurfaceIfDirty(_ surface: WorkspaceSurface) async {
+    guard dirtyWorkspaceSurfaces.contains(surface),
+          !workspaceSurfaceIsRefreshing(surface)
+    else {
+      return
+    }
+    let dirtyGeneration = workspaceSurfaceDirtyGenerations[surface, default: 0]
+
+    switch surface {
+    case .home:
+      break
+    case .agenda:
+      if agendaMode == .assigned {
+        await refreshAssignedWork(showsLoading: false)
+      } else {
+        await refreshAgenda(preserveSelection: true, updatesStatus: false)
+      }
+    case .approvals:
+      await refreshRunReviewData()
+    case .files:
+      await refreshCorpusFiles()
+    case .search:
+      if !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        await runSearch()
+      }
+    case .meetings:
+      await refreshMeetings()
+    case .sources:
+      await refreshSourceConnections()
+    case .openClaw:
+      await refreshOpenClawThreads(showsLoading: false)
+    }
+    markWorkspaceSurfaceCleanIfUnchanged(surface, generation: dirtyGeneration)
+  }
+
+  private func workspaceSurfaceIsRefreshing(_ surface: WorkspaceSurface) -> Bool {
+    switch surface {
+    case .home:
+      false
+    case .agenda:
+      agendaMode == .assigned ? isRefreshingAssignedWork : isRefreshingAgenda
+    case .approvals:
+      isRefreshingApprovals || isRefreshingAgentRuns || isRefreshingAgentWorkflows
+    case .files:
+      isScanningCorpusFiles
+    case .search:
+      isSearching
+    case .meetings:
+      isLoadingMeetings
+    case .sources:
+      isLoadingSources
+    case .openClaw:
+      isRefreshingOpenClawThreads
+    }
+  }
+
+  private func scheduleAgendaClockInvalidation(now: Date = Date()) {
+    agendaClockRefreshTask?.cancel()
+    guard corpusRoot != nil else { return }
+    let next = Self.nextAgendaClockInvalidationDate(after: now)
+    let delay = max(0.1, next.timeIntervalSince(now))
+    agendaClockRefreshTask = Task { @MainActor [weak self] in
+      try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+      guard !Task.isCancelled, let self else { return }
+      self.markWorkspaceSurfacesDirty([.agenda], refreshVisible: true)
+      self.scheduleAgendaClockInvalidation()
+    }
+  }
+
+  nonisolated static func nextAgendaClockInvalidationDate(
+    after date: Date,
+    calendar: Calendar = .current
+  ) -> Date {
+    let start = calendar.startOfDay(for: date)
+    return calendar.date(byAdding: .day, value: 1, to: start)
+      ?? date.addingTimeInterval(86_400)
+  }
+
   private func scheduleIncrementalCorpusRefresh(_ changedPaths: [String]) {
     pendingCorpusChangedPaths.formUnion(changedPaths.map {
       URL(fileURLWithPath: $0).standardizedFileURL.path
     })
-    postOpenClawWorkspaceRefreshTask?.cancel()
-    postOpenClawWorkspaceRefreshTask = Task { @MainActor [weak self] in
-      try? await Task.sleep(nanoseconds: 120_000_000)
-      guard !Task.isCancelled, let self else { return }
-      let paths = Array(self.pendingCorpusChangedPaths)
-      self.pendingCorpusChangedPaths = []
-      await self.applyIncrementalCorpusChanges(paths)
-    }
+    scheduleCorpusEventRefreshTask()
   }
 
   private func scheduleRunReviewRefreshAfterEvents() {
     runReviewFileEventGeneration += 1
     guard runReviewFileEventRefreshTask == nil else { return }
+    guard isWorkspaceRealtimeRefreshActive else { return }
 
     runReviewFileEventRefreshTask = Task { @MainActor [weak self] in
       while let self, !Task.isCancelled {
@@ -11004,13 +11324,13 @@ public final class WorkspaceStore: ObservableObject {
         }
         guard !Task.isCancelled else { return }
         guard generation == self.runReviewFileEventGeneration else { continue }
-        guard self.selectedSurface == .approvals else {
+        guard self.isWorkspaceRealtimeRefreshActive,
+              self.selectedSurface == .approvals else {
           self.runReviewFileEventRefreshTask = nil
           return
         }
 
-        await self.refreshApprovals(updatesStatus: false)
-        await self.refreshAgentRuns(updatesStatus: false)
+        await self.refreshWorkspaceSurfaceIfDirty(.approvals)
         if generation == self.runReviewFileEventGeneration {
           self.runReviewFileEventRefreshTask = nil
           return
@@ -11020,35 +11340,68 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   private func scheduleFullCorpusFileRefreshAfterEvents() {
-    postOpenClawWorkspaceRefreshTask?.cancel()
+    needsFullCorpusRefreshAfterEvents = true
+    scheduleCorpusEventRefreshTask()
+  }
+
+  private func scheduleCorpusEventRefreshTask() {
+    guard isWorkspaceRealtimeRefreshActive,
+          postOpenClawWorkspaceRefreshTask == nil
+    else {
+      return
+    }
+    corpusEventRefreshGeneration += 1
+    let generation = corpusEventRefreshGeneration
     postOpenClawWorkspaceRefreshTask = Task { @MainActor [weak self] in
-      try? await Task.sleep(nanoseconds: 200_000_000)
-      guard !Task.isCancelled, let self else { return }
-      self.pendingCorpusChangedPaths = []
-      await self.refreshCorpusFiles()
-      await self.searchIndexTask?.value
-      guard !Task.isCancelled else { return }
-      switch self.selectedSurface {
-      case .agenda:
-        if self.agendaMode == .assigned {
-          await self.refreshAssignedWork(showsLoading: false)
+      try? await Task.sleep(nanoseconds: 120_000_000)
+      guard let self else { return }
+
+      while !Task.isCancelled, self.isWorkspaceRealtimeRefreshActive {
+        if self.needsFullCorpusRefreshAfterEvents {
+          self.needsFullCorpusRefreshAfterEvents = false
+          self.pendingCorpusChangedPaths = []
+          await self.performFullCorpusFileRefreshAfterEvents()
         } else {
-          await self.refreshAgenda(preserveSelection: true, updatesStatus: false)
+          let paths = Array(self.pendingCorpusChangedPaths)
+          self.pendingCorpusChangedPaths = []
+          await self.applyIncrementalCorpusChanges(paths)
+          if Task.isCancelled {
+            self.pendingCorpusChangedPaths.formUnion(paths)
+            break
+          }
         }
-      case .approvals:
-        await self.refreshApprovals(updatesStatus: false)
-      case .search:
-        if !self.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-          await self.runSearch()
+
+        guard self.needsFullCorpusRefreshAfterEvents ||
+                !self.pendingCorpusChangedPaths.isEmpty
+        else {
+          break
         }
-      case .meetings:
-        await self.refreshMeetings()
-      case .openClaw:
-        await self.refreshOpenClawThreads(showsLoading: false)
-      case .home, .files, .sources:
-        break
+        try? await Task.sleep(nanoseconds: 120_000_000)
+      }
+
+      guard generation == self.corpusEventRefreshGeneration else { return }
+      self.postOpenClawWorkspaceRefreshTask = nil
+      if self.isWorkspaceRealtimeRefreshActive,
+         self.needsFullCorpusRefreshAfterEvents ||
+          !self.pendingCorpusChangedPaths.isEmpty {
+        self.scheduleCorpusEventRefreshTask()
       }
     }
+  }
+
+  private func performFullCorpusFileRefreshAfterEvents() async {
+    markWorkspaceSurfacesDirty(
+      [.agenda, .approvals, .files, .search, .meetings, .sources, .openClaw],
+      refreshVisible: false
+    )
+    let filesDirtyGeneration = workspaceSurfaceDirtyGenerations[.files, default: 0]
+    await refreshCorpusFiles()
+    await searchIndexTask?.value
+    guard !Task.isCancelled else { return }
+    markWorkspaceSurfaceCleanIfUnchanged(.files, generation: filesDirtyGeneration)
+    await refreshSelectedDetailFromDisk()
+    guard !Task.isCancelled else { return }
+    await refreshWorkspaceSurfaceIfDirty(selectedSurface)
   }
 
   private func applyIncrementalCorpusChanges(_ changedPaths: [String]) async {
@@ -11085,32 +11438,11 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     guard !Task.isCancelled else { return }
-    switch selectedSurface {
-    case .agenda:
-      if agendaMode == .assigned {
-        await refreshAssignedWork(showsLoading: false)
-      } else {
-        await refreshAgenda(preserveSelection: true, updatesStatus: false)
-      }
-    case .approvals:
-      await refreshApprovals(updatesStatus: false)
-      await refreshAgentRuns()
-    case .search:
-      if !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-        await runSearch()
-      }
-    case .meetings:
-      if paths.contains(where: {
-        let relativePath = String($0.dropFirst(rootPrefix.count))
-        return relativePath.hasPrefix("meetings/") || relativePath.hasPrefix("raw/")
-      }) {
-        await refreshMeetings()
-      }
-    case .openClaw:
-      await refreshOpenClawThreads(showsLoading: false)
-    case .home, .files, .sources:
-      break
-    }
+    markWorkspaceSurfacesDirty(
+      Self.invalidatedWorkspaceSurfaces(for: paths, corpusRoot: root),
+      refreshVisible: false
+    )
+    await refreshWorkspaceSurfaceIfDirty(selectedSurface)
   }
 
   private func updateSearchIndex(changedPaths: [String], corpusRoot: URL) async {
