@@ -66,6 +66,7 @@ Example:
 ** Property drawers
 
 - Drawer delimiters: =:PROPERTIES:= ... =:END:=
+- Consistently space-indented property drawers are accepted for legacy files. =org2 fmt= canonicalizes their delimiter and property lines to column zero.
 - Common keys used by Org2 workflows:
   - =:ID:=
   - =:CUSTOM_ID:=
