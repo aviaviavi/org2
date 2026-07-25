@@ -1171,6 +1171,7 @@ public final class WorkspaceStore: ObservableObject {
   private let appOpenClawTranscriptURL: URL
   private let usesFixedOpenClawTranscriptURL: Bool
   private let openClawSendHandler: (@Sendable ([OpenClawChatMessage], String, String, OpenClawWorkspaceContext?) async throws -> String)?
+  private let openClawRecoveryHandler: (@Sendable (OpenClawPendingTurn, String) async throws -> String)?
   private var openClawSessionKey = WorkspaceStore.makeOpenClawSessionKey()
   private var shouldPersistOpenClawMessages = false
   private var isApplyingOpenClawThreadMessages = false
@@ -1181,6 +1182,7 @@ public final class WorkspaceStore: ObservableObject {
   private var drainingOpenClawThreadIDs: Set<UUID> = []
   private var openClawRequestStartedAtByThreadID: [UUID: Date] = [:]
   private var openClawGatewayClientsByThreadID: [UUID: OpenClawGatewayClient] = [:]
+  private var openClawRecoveryRetryTask: Task<Void, Never>?
   private var openClawCommandCache: [String: (commands: [OpenClawSlashCommand], refreshedAt: Date)] = [:]
   private var openClawActiveCommandDiscoveryID: String?
   private var openClawCommandDiscoveryGeneration = 0
@@ -1302,6 +1304,7 @@ public final class WorkspaceStore: ObservableObject {
     openClawTranscriptURL: URL? = nil,
     openClawFallbackTranscriptURL: URL? = nil,
     openClawSendHandler: (@Sendable ([OpenClawChatMessage], String, String, OpenClawWorkspaceContext?) async throws -> String)? = nil,
+    openClawRecoveryHandler: (@Sendable (OpenClawPendingTurn, String) async throws -> String)? = nil,
     legacyDefaultsDomains: [String]? = nil
   ) {
     self.defaults = defaults
@@ -1312,6 +1315,7 @@ public final class WorkspaceStore: ObservableObject {
     appOpenClawTranscriptURL = fallbackTranscriptURL
     self.openClawTranscriptURL = openClawTranscriptURL ?? fallbackTranscriptURL
     self.openClawSendHandler = openClawSendHandler
+    self.openClawRecoveryHandler = openClawRecoveryHandler
     self.cli = cli
       ?? (try? Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
       ?? Org2CLI(repoRoot: URL(fileURLWithPath: FileManager.default.currentDirectoryPath))
@@ -1381,6 +1385,8 @@ public final class WorkspaceStore: ObservableObject {
         }
       }
     }
+
+    await recoverPendingOpenClawTurns()
 
     if corpusRoot != nil {
       if selectedSurface == .home {
@@ -2029,6 +2035,8 @@ public final class WorkspaceStore: ObservableObject {
     guard shouldContinueWorkspaceRefresh(generation) else { return }
 
     refreshAudioSettingsStatus(preserveStatusText: true)
+    await recoverPendingOpenClawTurns()
+    guard shouldContinueWorkspaceRefresh(generation) else { return }
     await refreshActiveCorpusIdentity()
     guard shouldContinueWorkspaceRefresh(generation) else { return }
     await refreshAgenda()
@@ -10479,7 +10487,6 @@ public final class WorkspaceStore: ObservableObject {
           sessionKey: sessionKey,
           threadID: threadID
         )
-        markOpenClawMessageSent(userMessageID, in: threadID)
         let assistantMessageID = insertOpenClawReply(reply, after: userMessageID, in: threadID, changeSummary: nil)
         clearOpenClawCompletedRunPresentation(for: threadID)
         removeFirstPendingOpenClawUserMessage(in: threadID)
@@ -10510,10 +10517,125 @@ public final class WorkspaceStore: ObservableObject {
       } catch {
         let failureText = Self.openClawSendFailureText(from: error)
         openClawStatusText = failureText
+        if openClawChatThreads.first(where: { $0.id == threadID })?.pendingTurn != nil {
+          openClawGatewayStateByThreadID[threadID] = .reconnecting
+          openClawGatewayDetailByThreadID[threadID] =
+            "This turn is saved and will reconnect without sending it twice."
+          scheduleOpenClawPendingTurnRecovery()
+          return
+        }
         markPendingOpenClawMessagesFailed(failureText, in: threadID)
         removeAllPendingOpenClawUserMessages(in: threadID)
         return
       }
+    }
+  }
+
+  func recoverPendingOpenClawTurns() async {
+    let threadIDs = openClawChatThreads.compactMap { thread in
+      thread.pendingTurn == nil ? nil : thread.id
+    }
+    for threadID in threadIDs {
+      await recoverPendingOpenClawTurn(in: threadID)
+    }
+  }
+
+  private func recoverPendingOpenClawTurn(in threadID: UUID) async {
+    guard !drainingOpenClawThreadIDs.contains(threadID),
+          let thread = openClawChatThreads.first(where: { $0.id == threadID }),
+          let pendingTurn = thread.pendingTurn
+    else {
+      return
+    }
+    guard let pendingUserMessage = thread.messages.first(where: {
+      $0.id == pendingTurn.userMessageID && $0.role == .user
+    }) else {
+      clearOpenClawPendingTurn(pendingTurn.runID, in: threadID, shouldPersist: true)
+      return
+    }
+
+    prepareOpenClawRunPresentation(for: threadID)
+    drainingOpenClawThreadIDs.insert(threadID)
+    openClawRequestStartedAtByThreadID[threadID] = pendingTurn.startedAt
+    openClawActiveRunIDByThreadID[threadID] = pendingTurn.runID
+    syncSelectedOpenClawSendState()
+    openClawStatusText = "Reconnecting to OpenClaw"
+
+    var completed = false
+    do {
+      let reply: String
+      if let openClawRecoveryHandler {
+        reply = try await openClawRecoveryHandler(pendingTurn, thread.sessionKey)
+      } else {
+        let gateway = OpenClawGatewayClient(settings: currentOpenClawSettings(allowKeychainRead: true))
+        openClawGatewayClientsByThreadID[threadID] = gateway
+        reply = try await gateway.send(
+          message: pendingTurn.gatewayMessage,
+          attachments: pendingUserMessage.attachments,
+          agentID: pendingTurn.agentID,
+          sessionKey: thread.sessionKey,
+          idempotencyKey: pendingTurn.runID,
+          requestStartedAt: pendingTurn.startedAt
+        ) { [weak self] event in
+          await self?.handleOpenClawGatewayEvent(event, threadID: threadID)
+        }
+      }
+      _ = insertOpenClawReply(
+        reply,
+        after: pendingTurn.userMessageID,
+        in: threadID,
+        changeSummary: nil
+      )
+      removeFirstPendingOpenClawUserMessage(in: threadID)
+      clearOpenClawCompletedRunPresentation(for: threadID)
+      openClawStatusText = openClawPendingUserMessageIDs(for: threadID).isEmpty
+        ? "OpenClaw reconnected and replied"
+        : openClawQueuedStatusText()
+      completed = true
+      await refreshSelectedDetailFromDisk()
+    } catch {
+      openClawGatewayStateByThreadID[threadID] = .reconnecting
+      openClawGatewayDetailByThreadID[threadID] =
+        "This turn is saved and will reconnect without sending it twice."
+      openClawStatusText = "OpenClaw will reconnect to this saved turn"
+      scheduleOpenClawPendingTurnRecovery()
+    }
+
+    openClawGatewayClientsByThreadID.removeValue(forKey: threadID)
+    drainingOpenClawThreadIDs.remove(threadID)
+    openClawRequestStartedAtByThreadID.removeValue(forKey: threadID)
+    syncSelectedOpenClawSendState()
+    if completed, !openClawPendingUserMessageIDs(for: threadID).isEmpty {
+      await drainOpenClawSendQueue(for: threadID)
+    }
+  }
+
+  private func scheduleOpenClawPendingTurnRecovery() {
+    guard openClawRecoveryRetryTask == nil,
+          openClawChatThreads.contains(where: { $0.pendingTurn != nil })
+    else {
+      return
+    }
+    openClawRecoveryRetryTask = Task { @MainActor [weak self] in
+      var delaySeconds: UInt64 = 5
+      while !Task.isCancelled {
+        do {
+          try await Task.sleep(nanoseconds: delaySeconds * 1_000_000_000)
+        } catch {
+          break
+        }
+        guard let self,
+              self.openClawChatThreads.contains(where: { $0.pendingTurn != nil })
+        else {
+          break
+        }
+        await self.recoverPendingOpenClawTurns()
+        guard self.openClawChatThreads.contains(where: { $0.pendingTurn != nil }) else {
+          break
+        }
+        delaySeconds = min(delaySeconds * 2, 60)
+      }
+      self?.openClawRecoveryRetryTask = nil
     }
   }
 
@@ -10546,17 +10668,28 @@ public final class WorkspaceStore: ObservableObject {
       workspaceContext: workspaceContext,
       isGatewayCommand: isGatewayCommand
     )
+    let pendingTurn = OpenClawPendingTurn(
+      userMessageID: latestUserMessage.id,
+      runID: UUID().uuidString.lowercased(),
+      agentID: agentID,
+      gatewayMessage: gatewayMessage
+    )
+    replaceOpenClawPendingTurn(pendingTurn, in: threadID, shouldPersist: true)
+    openClawActiveRunIDByThreadID[threadID] = pendingTurn.runID
 
     do {
       return try await gateway.send(
         message: gatewayMessage,
         attachments: latestUserMessage.attachments,
         agentID: agentID,
-        sessionKey: sessionKey
+        sessionKey: sessionKey,
+        idempotencyKey: pendingTurn.runID,
+        requestStartedAt: pendingTurn.startedAt
       ) { [weak self] event in
         await self?.handleOpenClawGatewayEvent(event, threadID: threadID)
       }
     } catch let error as OpenClawGatewayError where error.permitsHTTPFallback {
+      clearOpenClawPendingTurn(pendingTurn.runID, in: threadID, shouldPersist: true)
       if isGatewayCommand {
         openClawGatewayStateByThreadID[threadID] = .disconnected
         openClawGatewayDetailByThreadID[threadID] = error.localizedDescription
@@ -10578,7 +10711,18 @@ public final class WorkspaceStore: ObservableObject {
         sessionKey: sessionKey,
         workspaceContext: workspaceContext
       )
+    } catch {
+      if !Self.openClawRunMayStillBeWorking(after: error) {
+        clearOpenClawPendingTurn(pendingTurn.runID, in: threadID, shouldPersist: true)
+      }
+      throw error
     }
+  }
+
+  nonisolated private static func openClawRunMayStillBeWorking(after error: Error) -> Bool {
+    guard let gatewayError = error as? OpenClawGatewayError else { return false }
+    if case .acceptedRunRecovery = gatewayError { return true }
+    return false
   }
 
   nonisolated static func openClawGatewayMessage(
@@ -10710,21 +10854,30 @@ public final class WorkspaceStore: ObservableObject {
     var messages = openClawMessages(for: threadID)
     guard let index = messages.firstIndex(where: { $0.id == userMessageID }) else {
       messages.append(assistantMessage)
-      replaceOpenClawMessages(
-        messages,
-        for: threadID,
-        shouldPersist: true,
-        notifiesForNewAssistantMessages: true
+      if selectedOpenClawChatThreadID == threadID {
+        replaceOpenClawMessages(messages, shouldPersist: false)
+      }
+      updateOpenClawChatThread(
+        threadID,
+        messages: messages,
+        notifiesForNewAssistantMessages: true,
+        pendingTurnUpdate: .replace(nil)
       )
+      persistOpenClawTranscript()
       return assistantMessage.id
     }
+    messages[index] = messages[index].replacingDeliveryStatus(.sent, sendFailure: nil)
     messages.insert(assistantMessage, at: messages.index(after: index))
-    replaceOpenClawMessages(
-      messages,
-      for: threadID,
-      shouldPersist: true,
-      notifiesForNewAssistantMessages: true
+    if selectedOpenClawChatThreadID == threadID {
+      replaceOpenClawMessages(messages, shouldPersist: false)
+    }
+    updateOpenClawChatThread(
+      threadID,
+      messages: messages,
+      notifiesForNewAssistantMessages: true,
+      pendingTurnUpdate: .replace(nil)
     )
+    persistOpenClawTranscript()
     return assistantMessage.id
   }
 
@@ -10760,10 +10913,6 @@ public final class WorkspaceStore: ObservableObject {
 
   private func clearOpenClawSendFailure(for messageID: UUID, in threadID: UUID) {
     replaceOpenClawSendFailure(for: messageID, in: threadID, with: nil)
-  }
-
-  private func markOpenClawMessageSent(_ messageID: UUID, in threadID: UUID) {
-    replaceOpenClawDeliveryStatus(for: messageID, in: threadID, with: .sent)
   }
 
   private func markPendingOpenClawMessagesFailed(_ failureText: String, in threadID: UUID) {
@@ -10824,6 +10973,35 @@ public final class WorkspaceStore: ObservableObject {
     if shouldPersist {
       persistOpenClawTranscript()
     }
+  }
+
+  private func replaceOpenClawPendingTurn(
+    _ pendingTurn: OpenClawPendingTurn?,
+    in threadID: UUID,
+    shouldPersist: Bool
+  ) {
+    guard let thread = openClawChatThreads.first(where: { $0.id == threadID }) else { return }
+    updateOpenClawChatThread(
+      threadID,
+      messages: thread.messages,
+      pendingTurnUpdate: .replace(pendingTurn)
+    )
+    if shouldPersist {
+      persistOpenClawTranscript()
+    }
+  }
+
+  private func clearOpenClawPendingTurn(
+    _ runID: String,
+    in threadID: UUID,
+    shouldPersist: Bool
+  ) {
+    guard let pendingTurn = openClawChatThreads.first(where: { $0.id == threadID })?.pendingTurn,
+          pendingTurn.runID == runID
+    else {
+      return
+    }
+    replaceOpenClawPendingTurn(nil, in: threadID, shouldPersist: shouldPersist)
   }
 
   private func openClawSessionKey(for threadID: UUID) -> String? {
@@ -11503,6 +11681,9 @@ public final class WorkspaceStore: ObservableObject {
     clearOpenClawDraftForSelectedThread()
     openClawPendingAttachments = []
     if let threadID {
+      if let runID = openClawChatThreads.first(where: { $0.id == threadID })?.pendingTurn?.runID {
+        clearOpenClawPendingTurn(runID, in: threadID, shouldPersist: true)
+      }
       removeAllPendingOpenClawUserMessages(in: threadID)
       drainingOpenClawThreadIDs.remove(threadID)
       openClawRequestStartedAtByThreadID.removeValue(forKey: threadID)
@@ -11798,7 +11979,8 @@ public final class WorkspaceStore: ObservableObject {
   private func updateOpenClawChatThread(
     _ threadID: UUID,
     messages: [OpenClawChatMessage],
-    notifiesForNewAssistantMessages: Bool = false
+    notifiesForNewAssistantMessages: Bool = false,
+    pendingTurnUpdate: OpenClawPendingTurnUpdate = .preserve
   ) {
     guard let index = openClawChatThreads.firstIndex(where: { $0.id == threadID })
     else {
@@ -11814,6 +11996,13 @@ public final class WorkspaceStore: ObservableObject {
       ? 0
       : current.unreadMessageCount + newAssistantMessageCount
     let title = Self.updatedOpenClawThreadTitle(current: current, messages: messages)
+    let pendingTurn: OpenClawPendingTurn?
+    switch pendingTurnUpdate {
+    case .preserve:
+      pendingTurn = current.pendingTurn
+    case .replace(let nextPendingTurn):
+      pendingTurn = nextPendingTurn
+    }
     let updated = OpenClawChatThread(
       id: current.id,
       title: title,
@@ -11824,7 +12013,8 @@ public final class WorkspaceStore: ObservableObject {
       isPinned: current.isPinned,
       isArchived: current.isArchived,
       unreadMessageCount: unreadMessageCount,
-      resource: current.resource
+      resource: current.resource,
+      pendingTurn: pendingTurn
     )
     openClawChatThreads[index] = updated
     sortOpenClawChatThreadsForDisplay()
@@ -15794,6 +15984,8 @@ public final class WorkspaceStore: ObservableObject {
 
     openClawTranscriptURL = targetURL
     openClawSessionKey = Self.makeOpenClawSessionKey(agentID: openClawAgentID)
+    openClawRecoveryRetryTask?.cancel()
+    openClawRecoveryRetryTask = nil
     removeAllPendingOpenClawUserMessages()
     drainingOpenClawThreadIDs.removeAll()
     openClawRequestStartedAtByThreadID.removeAll()
@@ -15826,6 +16018,15 @@ public final class WorkspaceStore: ObservableObject {
     }
     let threads = Self.sortedOpenClawChatThreadsForDisplay(migratedThreads)
     openClawChatThreads = threads
+    openClawPendingUserMessageIDsByThreadID = Dictionary(
+      uniqueKeysWithValues: threads.compactMap { thread in
+        guard thread.pendingTurn != nil else { return nil }
+        let messageIDs = thread.messages.compactMap { message in
+          message.role == .user && message.deliveryStatus == .sending ? message.id : nil
+        }
+        return messageIDs.isEmpty ? nil : (thread.id, messageIDs)
+      }
+    )
     let selectedID = transcript.selectedThreadID
       .flatMap { id in threads.contains(where: { $0.id == id }) ? id : nil }
       ?? threads.first?.id
@@ -15833,6 +16034,7 @@ public final class WorkspaceStore: ObservableObject {
     let selectedThread = selectedID.flatMap { id in threads.first(where: { $0.id == id }) }
     openClawSessionKey = selectedThread?.sessionKey ?? Self.makeOpenClawSessionKey(agentID: openClawAgentID)
     replaceOpenClawMessages(selectedThread?.messages ?? [], shouldPersist: false)
+    syncSelectedOpenClawSendState()
     if shouldPersist || migratedSessionKeys {
       persistOpenClawTranscript()
     }
@@ -16598,6 +16800,16 @@ public final class WorkspaceStore: ObservableObject {
   ) -> OpenClawTranscriptState {
     OpenClawTranscriptState(
       threads: transcript.threads.map { thread in
+        let hasRecoverablePendingTurn = thread.pendingTurn.map { pendingTurn in
+          thread.messages.contains {
+            $0.id == pendingTurn.userMessageID
+              && $0.role == .user
+              && $0.deliveryStatus == .sending
+          }
+        } ?? false
+        if hasRecoverablePendingTurn {
+          return thread
+        }
         let messages = thread.messages.map { message in
           guard message.role == .user,
                 message.deliveryStatus == .sending
@@ -16609,7 +16821,9 @@ public final class WorkspaceStore: ObservableObject {
             sendFailure: openClawInterruptedSendFailureText
           )
         }
-        return thread.replacingMessages(messages)
+        return thread
+          .replacingMessages(messages)
+          .replacingPendingTurn(nil)
       },
       selectedThreadID: transcript.selectedThreadID
     )
@@ -16618,7 +16832,7 @@ public final class WorkspaceStore: ObservableObject {
   nonisolated private static func saveOpenClawTranscript(_ transcript: OpenClawTranscriptState, to url: URL) throws {
     try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
     let payload = OpenClawTranscriptPayload(
-      version: 3,
+      version: 4,
       messages: nil,
       threads: transcript.threads,
       selectedThreadID: transcript.selectedThreadID
@@ -21392,6 +21606,11 @@ private struct WorkspaceOrg2Config: Decodable {
   struct OpenClaw: Decodable {
     let threadDirs: [String]?
   }
+}
+
+private enum OpenClawPendingTurnUpdate {
+  case preserve
+  case replace(OpenClawPendingTurn?)
 }
 
 private struct OpenClawTranscriptState {
