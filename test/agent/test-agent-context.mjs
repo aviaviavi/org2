@@ -373,7 +373,6 @@ Business question for package fetch activity.
 :COVERAGE: customers-with-package-fetches
 :WINDOW_START: 2026-01-01
 :WINDOW_END: 2026-06-12
-:FRESHNESS_SLA: 2h
 :WATERMARK: 2026-06-12T12:00:00-07:00
 :DATA_LATENCY: 30m
 :AVAILABILITY: available
@@ -508,7 +507,6 @@ assert.equal(dataLink.results[0].dataLink.samplingMethod, "stratified");
 assert.equal(dataLink.results[0].dataLink.coverage, "customers-with-package-fetches");
 assert.equal(dataLink.results[0].dataLink.windowStart, "2026-01-01");
 assert.equal(dataLink.results[0].dataLink.windowEnd, "2026-06-12");
-assert.equal(dataLink.results[0].dataLink.freshnessSla, "2h");
 assert.equal(dataLink.results[0].dataLink.watermark, "2026-06-12T12:00:00-07:00");
 assert.equal(dataLink.results[0].dataLink.dataLatency, "30m");
 assert.equal(dataLink.results[0].dataLink.availability, "available");
@@ -599,7 +597,6 @@ assert.deepEqual(descendantQuery.dataLink.filters, ["package = 'firebolt/foo'", 
 assert.deepEqual(descendantQuery.dataLink.groupBy, ["company_id", "package"]);
 assert.equal(descendantQuery.dataLink.timeColumn, "fetched_at");
 assert.equal(descendantQuery.dataLink.timezone, "America/Los_Angeles");
-assert.equal(descendantQuery.dataLink.freshnessSla, "2h");
 assert.equal(descendantQuery.dataLink.watermark, "2026-06-12T12:00:00-07:00");
 assert.equal(descendantQuery.dataLink.dataLatency, "30m");
 assert.equal(descendantQuery.dataLink.availability, "available");

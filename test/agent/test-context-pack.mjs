@@ -73,7 +73,6 @@ See [[id:decision-1][decision note]].
 :COVERAGE: open-support-tickets
 :WINDOW_START: 2026-05-01
 :WINDOW_END: 2026-05-15
-:FRESHNESS_SLA: 4h
 :WATERMARK: 2026-05-15T09:45:00-07:00
 :DATA_LATENCY: 15m
 :AVAILABILITY: degraded
@@ -280,7 +279,6 @@ assert.match(selected, /sampling: latest-day/);
 assert.match(selected, /coverage: open-support-tickets/);
 assert.match(selected, /window start: 2026-05-01/);
 assert.match(selected, /window end: 2026-05-15/);
-assert.match(selected, /freshness SLA: 4h/);
 assert.match(selected, /watermark: 2026-05-15T09:45:00-07:00/);
 assert.match(selected, /data latency: 15m/);
 assert.match(selected, /availability: degraded/);
@@ -374,7 +372,6 @@ assert.equal(supportTicketVolume.dataLink.samplingMethod, "latest-day");
 assert.equal(supportTicketVolume.dataLink.coverage, "open-support-tickets");
 assert.equal(supportTicketVolume.dataLink.windowStart, "2026-05-01");
 assert.equal(supportTicketVolume.dataLink.windowEnd, "2026-05-15");
-assert.equal(supportTicketVolume.dataLink.freshnessSla, "4h");
 assert.equal(supportTicketVolume.dataLink.watermark, "2026-05-15T09:45:00-07:00");
 assert.equal(supportTicketVolume.dataLink.dataLatency, "15m");
 assert.equal(supportTicketVolume.dataLink.availability, "degraded");
