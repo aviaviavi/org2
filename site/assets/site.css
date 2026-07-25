@@ -1377,35 +1377,35 @@ blockquote {
 @media (prefers-color-scheme: dark) {
   :root {
     color-scheme: dark;
-    --canvas: #0f1412;
-    --bg: #151b19;
-    --fg: #eef2ed;
-    --muted: #a7b1ac;
-    --quiet: #87928d;
-    --border: #303936;
-    --border-strong: #4b5651;
+    --canvas: #151a18;
+    --bg: #1b211f;
+    --fg: #dce3de;
+    --muted: #a2ada7;
+    --quiet: #818c87;
+    --border: #36403c;
+    --border-strong: #505b56;
     --link: #86a3ff;
     --link-strong: #a8bcff;
     --signal: #ff8668;
     --signal-soft: #4a2921;
     --mint: #79c8a7;
     --blue-soft: #222d51;
-    --code-bg: #0b100f;
-    --code-fg: #edf3ef;
-    --code-border: #303936;
+    --code-bg: #121715;
+    --code-fg: #d9e1dc;
+    --code-border: #36403c;
     --syntax-keyword: #79d4ad;
     --syntax-todo: #ff9478;
     --syntax-link: #9bb2ff;
     --syntax-meta: #c5adff;
-    --surface-raised: #1b2320;
-    --shadow: 0 24px 70px rgba(0, 0, 0, 0.35);
-    --shadow-small: 0 10px 28px rgba(0, 0, 0, 0.26);
+    --surface-raised: #222927;
+    --shadow: 0 24px 70px rgba(0, 0, 0, 0.28);
+    --shadow-small: 0 10px 28px rgba(0, 0, 0, 0.22);
     --org2-chart-mark: #86a3ff;
-    --org2-chart-surface: #151b19;
+    --org2-chart-surface: #1b211f;
     --org2-chart-axis: #77817c;
-    --org2-chart-grid: #303936;
-    --org2-chart-label: #a7b1ac;
-    --org2-chart-title: #eef2ed;
+    --org2-chart-grid: #36403c;
+    --org2-chart-label: #a2ada7;
+    --org2-chart-title: #dce3de;
   }
 }
 
@@ -1513,7 +1513,7 @@ body #content {
   min-width: 7rem;
   align-items: center;
   margin-right: 0.6rem;
-  padding: 0.18rem 0.62rem 0.18rem 0.18rem;
+  padding: 0.18rem 0.62rem 0.18rem 0.32rem;
   color: transparent;
   font-size: 0;
 }
