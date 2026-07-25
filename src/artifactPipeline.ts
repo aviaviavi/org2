@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import type { AgentWorkflowTemplate } from "./agentWorkflow.js";
 
 export const ORG2_ARTIFACT_GRAPH_SCHEMA = "org2:artifact-graph:v1" as const;
 
@@ -143,4 +144,4 @@ export const MEETING_TO_CONTROLLED_EXECUTION_WORKFLOW = {
   validations: ["citations", "artifact-freshness", "protected-zones", "export"],
   approvals: [{ title: "Release finished meeting artifacts", action: "publish-or-send", riskClass: "external-action", requestedRole: "owner" }],
   triggers: [{ id: "meeting-import", type: "meeting-import", enabled: true }],
-} as const;
+} satisfies AgentWorkflowTemplate;

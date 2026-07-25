@@ -34,6 +34,7 @@ import {
   WORKFLOW_EVENT_TRIGGER_TYPES,
   dueWorkflowTriggers,
   instantiateWorkflow,
+  installBuiltinWorkflow,
   listWorkflows,
   loadWorkflow,
   migrateLegacyWorkflows,
@@ -46,7 +47,7 @@ import {
   workflowFromRun,
 } from "./agentWorkflow.js";
 import { artifactRebuildPlan, buildArtifactGraph, loadArtifactDeclarations, MEETING_TO_CONTROLLED_EXECUTION_WORKFLOW, saveArtifactGraph } from "./artifactPipeline.js";
-import { discoverMcpClient, installBuiltinWorkflow, loadMcpClients, saveMcpClients, serveMcp, writeMcpSnapshot } from "./mcpRuntime.js";
+import { discoverMcpClient, loadMcpClients, saveMcpClients, serveMcp, writeMcpSnapshot } from "./mcpRuntime.js";
 import { loadRuntimePolicy, runtimePolicyPath, saveRuntimePolicy, selectRuntime, validateRuntimePaths } from "./runtimePolicy.js";
 import { evaluateRun, loadEvalExpectation, loadWorkflowReplayFixture, replayWorkflowFixture, sanitizeRunFixture, saveEvalResult } from "./workflowEval.js";
 import { ORG2_CORPUS_KINDS, corpusIdentityStatus, initializeCorpusIdentity } from "./corpusIdentity.js";
