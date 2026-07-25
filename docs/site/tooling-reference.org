@@ -179,7 +179,7 @@ org2 fmt --dir ~/notes --recursive --apply
 
 * Chart rendering
 
-=org2 render-chart= renders an SVG artifact from =#+chart:= / =#+plot:= metadata or an adjacent fenced =```chart= block attached to an org2 table. This gives editor clients a shared backend instead of making each extension reimplement table parsing and chart semantics.
+=org2 render-chart= renders an SVG artifact from =#+chart:= / =#+plot:= metadata or an adjacent fenced =```chart= block attached to an org2 table. Editor clients share this backend, so each extension uses the same table parsing and chart semantics.
 
 #+begin_src sh
 org2 render-chart --file report.org2 --block-id quarterly_revenue --out /tmp/quarterly-revenue.svg

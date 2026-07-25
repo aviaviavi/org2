@@ -53,7 +53,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <header class="org2-document-header">
 <h1 class="org2-document-title">macOS Workspace</h1>
 </header>
-<p>Org2 Workspace is the native macOS client for working with an Org2 corpus. It is an alpha app in <code>apps/macos/Org2Workspace</code>, built as a Swift Package, and uses the same parser/CLI output as the rest of Org2 instead of maintaining a private database.</p>
+<p>Org2 Workspace is the native macOS client for an Org2 corpus. This alpha Swift Package lives in <code>apps/macos/Org2Workspace</code> and uses the same parser and CLI output as the rest of Org2. It does not maintain a private database.</p>
 <p>The app is currently best understood as a local workspace shell for dogfooding the product direction: global capture, durable run and approval review, agenda review, file and knowledge navigation, search, compiler-generated HTML reading, native source editing, meeting capture, data notebooks, OpenClaw handoff, knowledge-node creation, and crypt workflows over normal files.</p>
 <p>On first launch, a guided empty state offers <strong>Open an existing corpus</strong>, <strong>Create a new corpus</strong>, or <strong>Create a shared team corpus</strong>. Opening accepts an existing folder of Org/Org2 files without migration. Creating asks for an empty folder, writes a portable personal or shared identity in <code>org2.json</code> plus an inbox and welcome note, creates <code>notes/</code>, <code>daily/</code>, <code>views/</code>, <code>compiled/</code>, and <code>workflows/</code>, then opens the welcome note. It refuses to initialize a non-empty folder so existing files are never silently overwritten.</p>
 <section class="org2-headline level-1">
@@ -139,7 +139,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <section class="org2-headline level-1">
 <h1 id="meetings">Meetings</h1>
 <p>Org2 Workspace records meetings as local corpus artifacts. A meeting write normally creates an audio file, a meeting note, and a transcript artifact under <code>meetings/</code>.</p>
-<p>Transcription is local-first. The app tries a configured <code>ORG2_WORKSPACE_WHISPER_COMMAND</code>, then common whisper.cpp commands, then the OpenAI Whisper CLI. If no local transcriber is available, it still writes the meeting artifacts with <code>:transcription_status: unavailable</code> rather than uploading private audio.</p>
+<p>Transcription stays local. The app tries a configured <code>ORG2_WORKSPACE_WHISPER_COMMAND</code>, then common whisper.cpp commands, then the OpenAI Whisper CLI. If no local transcriber is available, it writes the meeting artifacts with <code>:transcription_status: unavailable</code> and does not upload private audio.</p>
 <p>See <a href="https://github.com/aviaviavi/org2/blob/main/docs/meetings.md">Org2 meetings</a> for the artifact shape and transcriber resolution order.</p>
 </section>
 <section class="org2-headline level-1">
@@ -212,7 +212,7 @@ swift run Org2Workspace</code></pre>
 <h1 id="next-priorities">Next priorities</h1>
 <p>The lead priority is deepening the workflow lifecycle over canonical plain-text files: clearer revision and diff handling, stronger parameterization assistance when saving a run, execution history and schedule health, and additional runtime adapters over the same workflow/run contract.</p>
 <p>Mac quick capture intentionally appends to today's daily note. Refile remains available in the shared CLI as an organizational escape hatch, but linked daily notes reduce the need to make physical movement the primary capture model. Mobile may use an isolated intake file when its synchronization transport cannot safely share the actively edited daily note; that transport boundary does not redefine the desktop corpus model.</p>
-<p>Meeting promotion, knowledge browsing, broader data-source configuration, capture templates, and packaging can proceed as long as they preserve shared write semantics: meeting promotion should create ordinary TODOs/notes, the knowledge browser should reuse IDs/backlinks rather than private graph state, data refresh should remain explicit and provenance-stamped, and packaging should verify the same CLI/parser artifacts the app actually calls.</p>
+<p>Meeting promotion, knowledge browsing, broader data-source configuration, capture templates, and packaging can proceed when they preserve shared write semantics. Meeting promotion should create ordinary TODOs and notes. The knowledge browser should reuse IDs and backlinks, data refresh should remain explicit and provenance-stamped, and packaging should verify the same CLI and parser artifacts the app calls.</p>
 </section>
 </main>
 </div>
