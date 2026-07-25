@@ -37,7 +37,7 @@ org2 workflow save RUN_ID --id weekly-review --dir ~/notes
 
 The saved file is a proposal, not an automatic publication or rerun. Review the concrete context copied from the original run, replace one-off values with inputs where appropriate, and inspect outputs, validation, and approval boundaries before activation.
 
-The Mac *Runs & Review → Workflows* surface lists the files and opens the selected workflow in the normal Org2 document editor. *Edit Source* uses the same full-fidelity source mode available to other corpus files. Structured controls such as *Run Now*, *Validate*, *Schedule*, *Activate*, and *Pause* are conveniences over the file and shared CLI.
+The Mac *Agent Work → Workflows* surface lists the files and opens the selected workflow in the normal Org2 document editor. *Edit Source* uses the same full-fidelity source mode available to other corpus files. Structured controls such as *Run Now*, *Validate*, *Schedule*, *Activate*, and *Pause* are conveniences over the file and shared CLI.
 
 Useful lifecycle commands include:
 
@@ -61,9 +61,9 @@ The =org2-lifecycle= plugin is the current execution bridge:
 2. The plugin sends OpenClaw a workflow marker and a request to read the canonical workflow and run records.
 3. OpenClaw lifecycle events update that same run instead of creating a duplicate generic run. Available provider, model, token, and elapsed-time metadata is preserved on the run, and successful terminal turns record a concise outcome summary.
 4. When execution requests approval or clarification, the turn may end while the durable run remains open. Approving in the Mac app continues the existing workflow in its correlated OpenClaw chat session; a pending approval or blocked run is never treated as successful completion.
-5. Outputs, validation, steps, and approvals remain visible in Runs & Review as the agent records them through the shared CLI.
+5. Outputs, validation, steps, and approvals remain visible in Agent Work as the agent records them through the shared CLI.
 
-Opening a PDF output from Runs & Review uses the system's default PDF application (Preview by default on macOS). Text outputs continue to open in the Org2 workspace, with raw source editing available when needed.
+Opening a PDF output from Agent Work uses the system's default PDF application (Preview by default on macOS). Text outputs continue to open in the Org2 workspace, with raw source editing available when needed.
 
 For scheduled work, the schedule declaration stays in the workflow file while OpenClaw owns due checks and execution:
 
@@ -80,7 +80,7 @@ The first scheduling slice uses cron expressions plus an optional IANA timezone.
 
 * Safety and review
 
-A workflow declares capabilities and a risk class. Expected outputs should land in reviewable locations such as =views/= or =compiled/=, and consequential or external actions should carry an explicit approval requirement. An external-action or high-impact approval must expose the exact recipient, content, command, and attachments through an inspectable artifact, approval note, or live runtime detail; an opaque identifier or fingerprint is not enough to approve. The Mac Run Center retrieves linked OpenClaw exec details when they remain available and disables *Approve* when no reviewable material can be shown. Activating a schedule never weakens those boundaries.
+A workflow declares capabilities and a risk class. Expected outputs should land in reviewable locations such as =views/= or =compiled/=, and consequential or external actions should carry an explicit approval requirement. An external-action or high-impact approval must expose the exact recipient, content, command, and attachments through an inspectable artifact, approval note, or live runtime detail; an opaque identifier or fingerprint is not enough to approve. The Mac Agent Work surface retrieves linked OpenClaw exec details when they remain available and disables *Approve* when no reviewable material can be shown. Activating a schedule never weakens those boundaries.
 
 Keep runtime credentials outside workflow files. A workflow may name a capability or symbolic runtime policy, but provider tokens, Gateway credentials, machine-local job IDs, and private scheduler state belong in runtime configuration.
 

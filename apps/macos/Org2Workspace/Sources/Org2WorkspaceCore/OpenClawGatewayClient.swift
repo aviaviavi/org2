@@ -98,7 +98,12 @@ enum OpenClawActivityFeed {
       let failures = group.filter { $0.status == .failed }.count
       let running = group.filter { $0.status == .running }.count
       let succeeded = group.count - failures - running
-      let status: OpenClawRunActivity.Status = failures > 0 ? .failed : (running > 0 ? .running : .succeeded)
+      // A recoverable tool error should not make an otherwise healthy group
+      // look like the whole turn failed. Keep active work active, and only
+      // summarize a completed group as failed when failures are the majority.
+      let status: OpenClawRunActivity.Status = running > 0
+        ? .running
+        : (failures > succeeded ? .failed : .succeeded)
       let detail: String?
       if group.count == 1 {
         detail = meaningfulDetail(first.detail, status: first.status)

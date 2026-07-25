@@ -66,7 +66,7 @@ org2 review list --status pending --dir ~/notes</code></pre>
       <p class="org2-feature-links"><a href="agent-quickstart.html">Agent quickstart</a><a href="openclaw-knowledge-layer.html">OpenClaw integration</a></p>
     </div>
     <div class="org2-feature-media">
-      <figure><img src="assets/screenshots/macos-workspace-runs-review.png" alt="Org2 Workspace Run Center showing an approval-ready launch brief with outputs and review state" loading="lazy" /><figcaption>Runs &amp; Review keeps outcomes, artifacts, validation, and approval state together.</figcaption></figure>
+      <figure><img src="assets/screenshots/macos-workspace-runs-review.png" alt="Org2 Workspace Agent Work showing an approval-ready launch brief with outputs and review state" loading="lazy" /><figcaption>Agent Work keeps outcomes, artifacts, validation, and approval state together.</figcaption></figure>
     </div>
   </section>
 

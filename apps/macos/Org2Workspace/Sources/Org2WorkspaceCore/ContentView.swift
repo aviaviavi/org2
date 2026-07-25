@@ -1706,7 +1706,7 @@ private struct KeyboardShortcutsView: View {
             ShortcutHelpItem(keys: "⌘1", action: "Home"),
             ShortcutHelpItem(keys: "⌘2", action: "Agenda"),
             ShortcutHelpItem(keys: "⌘3", action: "Files"),
-            ShortcutHelpItem(keys: "⌘4", action: "Runs & Review"),
+            ShortcutHelpItem(keys: "⌘4", action: "Agent Work"),
             ShortcutHelpItem(keys: "⌘⇧F", action: "Corpus search"),
             ShortcutHelpItem(keys: "⌘5 / ⌘M", action: "Meetings"),
             ShortcutHelpItem(keys: "⌘6", action: "OpenClaw Chat"),
@@ -2071,7 +2071,7 @@ private struct RunsAndReviewView: View {
     VStack(spacing: 0) {
       HStack(spacing: 0) {
         Spacer(minLength: 0)
-        Picker("Runs and review", selection: $store.runsAndReviewPage) {
+        Picker("Agent work", selection: $store.runsAndReviewPage) {
           ForEach(RunsAndReviewPage.allCases) { page in Text(page.rawValue).tag(page) }
         }
         .labelsHidden()
@@ -2332,7 +2332,7 @@ private struct RunCenterView: View {
     )
 
     VStack(spacing: 0) {
-      HeaderBar(title: "Run Center", subtitle: "Durable delegated work", surface: .approvals) {
+      HeaderBar(title: "Runs", subtitle: "Durable delegated work", surface: .approvals) {
         if store.isLoadingAgentRuns { WorkspaceActivityIndicator(size: .small) }
       }
 
@@ -2719,7 +2719,7 @@ private struct RunCenterDetail: View {
         let pending = run.approvals.filter { $0.status == "pending" }
         if !pending.isEmpty {
           runSection("Waiting for approval") {
-            Text("\(pending.count) of \(run.approvals.count) approval\(run.approvals.count == 1 ? "" : "s") still need a decision. These are the same approvals shown in Review Queue; deciding in either place updates this run record.")
+            Text("\(pending.count) of \(run.approvals.count) approval\(run.approvals.count == 1 ? "" : "s") still need a decision. These are the same approvals shown in Review; deciding in either place updates this run record.")
               .font(.caption)
               .foregroundStyle(.secondary)
             ForEach(pending) { approval in
@@ -2740,7 +2740,7 @@ private struct RunCenterDetail: View {
                   Button("Reject") { Task { await store.decideAgentRunApproval(run, approval: approval, decision: "rejected") } }
                     .disabled(isMutating)
                   Spacer()
-                  Button("Show in Review Queue") {
+                  Button("Show in Review") {
                     store.showApprovalInQueue(run: run, approval: approval)
                   }
                   .buttonStyle(.link)
@@ -5304,7 +5304,13 @@ private struct OpenClawChatView: View {
   }
 
   private var chatTranscript: some View {
-    ScrollViewReader { proxy in
+    let scrollUpdate = OpenClawChatScrollUpdate(
+      threadID: store.selectedOpenClawChatThreadID,
+      messageCount: store.openClawMessages.count,
+      isSending: store.isSendingOpenClawMessage
+    )
+
+    return ScrollViewReader { proxy in
       ScrollView {
         LazyVStack(alignment: .leading, spacing: presentation.isCompact ? 8 : 10) {
           if store.openClawMessages.isEmpty {
@@ -5343,21 +5349,45 @@ private struct OpenClawChatView: View {
           store.recordOpenClawChatScrollPosition(position, isAssistantPanel: presentation.isCompact)
         }
       ))
-      .onChange(of: store.openClawMessages.count) {
-        if let last = store.openClawMessages.last {
-          withAnimation(WorkspaceMotion.quick) {
-            proxy.scrollTo(last.id, anchor: .bottom)
+      .onChange(of: scrollUpdate) { previous, current in
+        switch current.animatedTarget(after: previous) {
+        case .latestMessage:
+          if let last = store.openClawMessages.last {
+            withAnimation(WorkspaceMotion.quick) {
+              proxy.scrollTo(last.id, anchor: .bottom)
+            }
           }
-        }
-      }
-      .onChange(of: store.isSendingOpenClawMessage) {
-        if store.isSendingOpenClawMessage {
+        case .typingIndicator:
           withAnimation(WorkspaceMotion.quick) {
             proxy.scrollTo("openclaw-typing", anchor: .bottom)
           }
+        case nil:
+          break
         }
       }
     }
+  }
+}
+
+enum OpenClawChatAnimatedScrollTarget: Equatable {
+  case latestMessage
+  case typingIndicator
+}
+
+struct OpenClawChatScrollUpdate: Equatable {
+  let threadID: UUID?
+  let messageCount: Int
+  let isSending: Bool
+
+  func animatedTarget(after previous: Self) -> OpenClawChatAnimatedScrollTarget? {
+    guard threadID == previous.threadID else { return nil }
+    if isSending && !previous.isSending {
+      return .typingIndicator
+    }
+    if messageCount > previous.messageCount {
+      return .latestMessage
+    }
+    return nil
   }
 }
 

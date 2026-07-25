@@ -173,7 +173,7 @@ The goal is boring composability: plain files that are easy to inspect, easy to 
 
 #+BEGIN_EXPORT html
 <div class="org2-shot-grid">
-  <figure><img src="assets/screenshots/macos-workspace-runs-review.png" alt="Org2 Workspace Runs and Review showing an approval-ready delegated launch brief" loading="lazy" /><figcaption>Runs &amp; Review: follow delegated work from cited context through outputs and validation, then approve the consequential step.</figcaption></figure>
+  <figure><img src="assets/screenshots/macos-workspace-runs-review.png" alt="Org2 Workspace Agent Work showing an approval-ready delegated launch brief" loading="lazy" /><figcaption>Agent Work: follow delegated work from cited context through outputs and validation, then approve the consequential step.</figcaption></figure>
   <figure><img src="assets/screenshots/macos-workspace-data.png" alt="Org2 Workspace rendering a launch-readiness data notebook with an interactive chart" loading="lazy" /><figcaption>Data notebooks: keep materialized results, freshness metadata, and interactive charts beside the notes that use them.</figcaption></figure>
   <figure><img src="assets/screenshots/macos-workspace-agenda.png" alt="Org2 Workspace agenda showing launch readiness tasks and linked context" loading="lazy" /><figcaption>Mac Workspace agenda: plan from tasks, deadlines, assignees, links, and source context in the same local corpus.</figcaption></figure>
   <figure><img src="assets/screenshots/macos-workspace-meetings.png" alt="Org2 Workspace meeting surface with a beta review transcript and summary" loading="lazy" /><figcaption>Meeting capture: recordings, transcripts, decisions, and follow-ups become ordinary Org2 files.</figcaption></figure>

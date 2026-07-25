@@ -5,6 +5,43 @@ import XCTest
 
 @MainActor
 final class OpenClawChatLayoutTests: XCTestCase {
+  func testChatThreadSwitchDoesNotRequestAnimatedScrolling() {
+    let previous = OpenClawChatScrollUpdate(
+      threadID: UUID(),
+      messageCount: 3,
+      isSending: false
+    )
+    let next = OpenClawChatScrollUpdate(
+      threadID: UUID(),
+      messageCount: 12,
+      isSending: true
+    )
+
+    XCTAssertNil(next.animatedTarget(after: previous))
+  }
+
+  func testChatActivityWithinAThreadStillRequestsAnimatedScrolling() {
+    let threadID = UUID()
+    let idle = OpenClawChatScrollUpdate(
+      threadID: threadID,
+      messageCount: 3,
+      isSending: false
+    )
+    let appended = OpenClawChatScrollUpdate(
+      threadID: threadID,
+      messageCount: 4,
+      isSending: false
+    )
+    let sending = OpenClawChatScrollUpdate(
+      threadID: threadID,
+      messageCount: 4,
+      isSending: true
+    )
+
+    XCTAssertEqual(appended.animatedTarget(after: idle), .latestMessage)
+    XCTAssertEqual(sending.animatedTarget(after: appended), .typingIndicator)
+  }
+
   func testChatScrollRestorationDefaultsUnsavedThreadsToMostRecentMessage() {
     let threadID = UUID()
     let unsaved = OpenClawChatScrollRestoration(threadID: threadID, savedPosition: nil)
@@ -71,7 +108,7 @@ final class OpenClawChatLayoutTests: XCTestCase {
     XCTAssertEqual(OpenClawMessageClipboard.text(for: message), "[Attachment: diagram.png]")
   }
 
-  func testOpenClawStatusCardOmitsEmptyLiveActivityPlaceholder() {
+  func testOpenClawStatusCardUsesOneDynamicStatusLine() {
     let activeRun = OpenClawTypingIndicatorView(
       startedAt: Date(),
       connectionState: .connected,
@@ -95,8 +132,29 @@ final class OpenClawChatLayoutTests: XCTestCase {
       onStop: {}
     )
 
-    XCTAssertNil(activeRun.progressSummary)
-    XCTAssertEqual(startingRun.progressSummary, "Starting the run…")
+    XCTAssertEqual(activeRun.statusTitle, "OpenClaw is working")
+    XCTAssertEqual(startingRun.statusTitle, "Starting OpenClaw")
+
+    let runningTool = OpenClawTypingIndicatorView(
+      startedAt: Date(),
+      connectionState: .connected,
+      connectionDetail: nil,
+      runID: "run-123",
+      streamingReply: "",
+      reasoning: "",
+      activities: [
+        OpenClawRunActivity(
+          id: "tool-1",
+          runID: "run-123",
+          kind: .tool,
+          title: "bash",
+          status: .running
+        )
+      ],
+      compact: false,
+      onStop: {}
+    )
+    XCTAssertEqual(runningTool.statusTitle, "Running shell command")
   }
 
   func testOpenClawStatusCardStaysBoundedWithStructuredToolOutput() {
@@ -150,8 +208,24 @@ final class OpenClawChatLayoutTests: XCTestCase {
     let item = try XCTUnwrap(OpenClawActivityFeed.items(from: activities).first)
     XCTAssertEqual(item.title, "10 shell commands")
     XCTAssertEqual(item.detail, "9 completed · 1 failed")
-    XCTAssertEqual(item.status, .failed)
+    XCTAssertEqual(item.status, .succeeded)
     XCTAssertFalse(item.detail?.contains("durationMs") == true)
+  }
+
+  func testActivityFeedOnlyMarksAGroupFailedWhenFailuresAreTheMajority() throws {
+    let activities = (0..<10).map { index in
+      OpenClawRunActivity(
+        id: "tool-\(index)",
+        runID: "run-1",
+        kind: .tool,
+        title: "bash",
+        status: index < 6 ? .failed : .succeeded
+      )
+    }
+
+    let item = try XCTUnwrap(OpenClawActivityFeed.items(from: activities).first)
+    XCTAssertEqual(item.detail, "4 completed · 6 failed")
+    XCTAssertEqual(item.status, .failed)
   }
 
   func testActivityUpdateKeepsUsefulArgumentsWhenResultOnlyContainsMetadata() {

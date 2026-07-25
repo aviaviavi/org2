@@ -1191,10 +1191,10 @@ struct OpenClawTypingIndicatorView: View {
     HStack {
       VStack(alignment: .leading, spacing: 9) {
         HStack(spacing: 8) {
-          WorkspaceActivityIndicator(size: .small, style: .signal)
-          Text(statusTitle)
-            .font(.caption.weight(.medium))
-            .foregroundStyle(.secondary)
+          OpenClawShimmeringStatusText(
+            statusTitle,
+            animates: connectionState != .disconnected
+          )
           TimelineView(.periodic(from: startedAt ?? Date(), by: 1)) { context in
             Text(elapsedText(now: context.date))
               .font(.caption2.monospacedDigit())
@@ -1216,31 +1216,14 @@ struct OpenClawTypingIndicatorView: View {
           }
         }
         .frame(minHeight: 20)
+        .help(connectionHelp)
 
         if !streamingReply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
           OrgInlineText(streamingReply)
             .lineLimit(nil)
             .frame(maxWidth: compact ? 360 : 640, alignment: .leading)
             .fixedSize(horizontal: false, vertical: true)
-        } else if let progressSummary {
-          Text(progressSummary)
-            .font(.caption)
-            .foregroundStyle(.tertiary)
-            .lineLimit(2)
-            .contentTransition(.opacity)
-            .animation(WorkspaceMotion.quick, value: progressSummary)
         }
-
-        HStack(spacing: 5) {
-          Circle()
-            .fill(connectionColor)
-            .frame(width: 5, height: 5)
-          Text(connectionState.label)
-        }
-        .font(.caption2)
-        .foregroundStyle(.tertiary)
-        .help(connectionHelp)
-        .animation(WorkspaceMotion.quick, value: connectionState)
 
         if hasProgress {
           OpenClawProgressFeedView(
@@ -1252,32 +1235,34 @@ struct OpenClawTypingIndicatorView: View {
         }
       }
       .padding(10)
-      .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-      .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-      .overlay(
-        RoundedRectangle(cornerRadius: 8, style: .continuous)
-          .stroke(Color.secondary.opacity(0.16))
-      )
       .frame(maxWidth: compact ? 430 : 700, alignment: .leading)
       Spacer(minLength: compact ? 24 : 48)
     }
     .frame(maxWidth: .infinity, alignment: .leading)
   }
 
-  private var statusTitle: String {
-    connectionState == .disconnected ? "Connection interrupted" : "OpenClaw is working"
-  }
-
-  var progressSummary: String? {
-    if let latest = OpenClawActivityFeed.items(from: activities).last(where: { $0.status == .running }) {
-      return latest.title
-    }
+  var statusTitle: String {
     switch connectionState {
-    case .connecting: return "Opening the live connection…"
-    case .reconnecting: return "Reconnecting without resending…"
-    case .connected: return runID == nil ? "Starting the run…" : nil
-    case .fallbackHTTP: return "Gateway unavailable; continuing over HTTP."
-    case .disconnected: return connectionDetail ?? "The connection was interrupted."
+    case .connecting:
+      return "Connecting to OpenClaw"
+    case .reconnecting:
+      return "Reconnecting to OpenClaw"
+    case .fallbackHTTP:
+      return "OpenClaw is working over HTTP"
+    case .disconnected:
+      return "Connection interrupted"
+    case .connected:
+      if let latest = OpenClawActivityFeed.items(from: activities)
+        .last(where: { $0.status == .running }) {
+        return "Running \(latest.title.lowercased())"
+      }
+      if runID == nil {
+        return "Starting OpenClaw"
+      }
+      if !trimmedReasoning.isEmpty {
+        return "OpenClaw is thinking"
+      }
+      return "OpenClaw is working"
     }
   }
 
@@ -1300,20 +1285,57 @@ struct OpenClawTypingIndicatorView: View {
     return parts.isEmpty ? connectionState.label : parts.joined(separator: "\n")
   }
 
-  private var connectionColor: Color {
-    switch connectionState {
-    case .connected: return .green
-    case .connecting, .reconnecting: return .orange
-    case .fallbackHTTP: return .blue
-    case .disconnected: return .red
-    }
-  }
-
   private func elapsedText(now: Date) -> String {
     guard let startedAt else { return "0s" }
     let seconds = max(0, Int(now.timeIntervalSince(startedAt)))
     if seconds < 60 { return "\(seconds)s" }
     return "\(seconds / 60)m \(seconds % 60)s"
+  }
+}
+
+private struct OpenClawShimmeringStatusText: View {
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  let title: String
+  let animates: Bool
+
+  init(_ title: String, animates: Bool = true) {
+    self.title = title
+    self.animates = animates
+  }
+
+  var body: some View {
+    Text(title)
+      .font(.caption.weight(.medium))
+      .foregroundStyle(.secondary)
+      .lineLimit(1)
+      .overlay {
+        if animates && !reduceMotion {
+          TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
+            GeometryReader { geometry in
+              let width = geometry.size.width
+              let bandWidth = min(90, max(40, width * 0.5))
+              let progress = context.date.timeIntervalSinceReferenceDate
+                .truncatingRemainder(dividingBy: 2.2) / 2.2
+
+              LinearGradient(
+                colors: [.clear, Color.primary.opacity(0.55), .clear],
+                startPoint: .leading,
+                endPoint: .trailing
+              )
+              .frame(width: bandWidth)
+              .offset(x: -bandWidth + ((width + bandWidth) * progress))
+            }
+            .mask(alignment: .leading) {
+              Text(title)
+                .font(.caption.weight(.medium))
+                .lineLimit(1)
+            }
+          }
+        }
+      }
+      .contentTransition(.opacity)
+      .animation(WorkspaceMotion.quick, value: title)
   }
 }
 
@@ -1345,26 +1367,17 @@ private struct OpenClawProgressFeedView: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 7) {
-      HStack(spacing: 7) {
-        Label(isLive ? "Working" : "How it worked", systemImage: isLive ? "waveform.path.ecg" : "clock.arrow.circlepath")
-          .font(.caption.weight(.semibold))
-          .foregroundStyle(.secondary)
-        Spacer(minLength: 8)
-        if canExpand {
-          Button {
-            withAnimation(WorkspaceMotion.disclosure) {
-              showsFullFeed.toggle()
-            }
-          } label: {
-            Label(
-              showsFullFeed ? "Show less" : "Show full feed",
-              systemImage: showsFullFeed ? "chevron.up" : "chevron.down"
-            )
+      if !isLive || canExpand {
+        HStack(spacing: 7) {
+          if !isLive {
+            Label("How it worked", systemImage: "clock.arrow.circlepath")
+              .font(.caption.weight(.semibold))
+              .foregroundStyle(.secondary)
           }
-          .labelStyle(.titleAndIcon)
-          .buttonStyle(.plain)
-          .font(.caption2.weight(.medium))
-          .foregroundStyle(.secondary)
+          Spacer(minLength: 8)
+          if canExpand {
+            expansionButton
+          }
         }
       }
 
@@ -1404,6 +1417,23 @@ private struct OpenClawProgressFeedView: View {
     .frame(maxWidth: compact ? 360 : 640, alignment: .leading)
     .clipped()
   }
+
+  private var expansionButton: some View {
+    Button {
+      withAnimation(WorkspaceMotion.disclosure) {
+        showsFullFeed.toggle()
+      }
+    } label: {
+      Label(
+        showsFullFeed ? "Show less" : "Show full feed",
+        systemImage: showsFullFeed ? "chevron.up" : "chevron.down"
+      )
+    }
+    .labelStyle(.titleAndIcon)
+    .buttonStyle(.plain)
+    .font(.caption2.weight(.medium))
+    .foregroundStyle(.secondary)
+  }
 }
 
 private struct OpenClawActivityFeedRow: View {
@@ -1414,7 +1444,7 @@ private struct OpenClawActivityFeedRow: View {
     HStack(alignment: .top, spacing: 7) {
       Image(systemName: icon)
         .font(.caption.weight(.semibold))
-        .foregroundStyle(tint)
+        .foregroundStyle(.secondary)
         .frame(width: 14)
       VStack(alignment: .leading, spacing: 2) {
         Text(item.title)
@@ -1437,14 +1467,6 @@ private struct OpenClawActivityFeedRow: View {
     case .running: return "wrench.and.screwdriver"
     case .succeeded: return "checkmark.circle.fill"
     case .failed: return "exclamationmark.triangle.fill"
-    }
-  }
-
-  private var tint: Color {
-    switch item.status {
-    case .running: return .accentColor
-    case .succeeded: return .green
-    case .failed: return .red
     }
   }
 }

@@ -55,7 +55,7 @@ This is useful when deterministic behavior outside the desktop app matters: CI c
 
 Org2 defines TODO and planning behavior directly, then builds agenda views and mutations on top. It also keeps delegated work in durable run records with plans, citations, outputs, validation, clarifications, comments, retries, cancellation, and approvals.
 
-The Mac *Runs & Review* surface presents that state as a workflow for coordinating with agents. OpenClaw is the current end-to-end integration; the underlying records and interfaces are provider-independent.
+The Mac *Agent Work* surface presents that state as a workflow for coordinating with agents. OpenClaw is the current end-to-end integration; the underlying records and interfaces are provider-independent.
 
 ** Data, meetings, and generated work keep an evidence trail
 

@@ -3651,7 +3651,7 @@ public final class WorkspaceStore: ObservableObject {
     runsAndReviewPage = .review
     approvalFilter = ""
     selectedApprovalItemID = "run:\(run.id):\(approval.id)"
-    statusText = "Opened approval in Review Queue"
+    statusText = "Opened approval in Review"
   }
 
   public func approve(_ item: ApprovalItem) async {
@@ -21693,7 +21693,7 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
     switch self {
     case .home: "Home"
     case .agenda: "Agenda"
-    case .approvals: "Runs & Review"
+    case .approvals: "Agent Work"
     case .files: "Files"
     case .search: "Search"
     case .meetings: "Meetings"
