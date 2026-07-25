@@ -9,7 +9,7 @@ This roadmap extends the [[file:knowledge-compiler-roadmap.org][knowledge compil
 
 * Implementation status
 
-The first complete vertical slice of all five phases is implemented in the early-alpha runtime. It includes the portable run and workflow schemas, CLI lifecycle and review commands, the native Mac Run Center, workflow triggers and packaging, artifact freshness graphs, the meeting-to-controlled-execution template, capability-based runtime selection, MCP server/client configuration and provenance snapshots, outcome evaluation, sanitized replay fixtures, assignments, role-based approvals, comments, and audit events.
+The first complete vertical slice of all five phases is implemented in the early-alpha runtime. It includes the portable run and workflow schemas, CLI lifecycle and review commands, the native Mac Agent Work surface, workflow triggers and packaging, artifact freshness graphs, the meeting-to-controlled-execution template, capability-based runtime selection, MCP server/client configuration and provenance snapshots, outcome evaluation, sanitized replay fixtures, assignments, role-based approvals, comments, and audit events.
 
 The roadmap remains active: each surface can become deeper, gain more production adapters, and improve its user experience without changing the ownership boundaries below. The versioned schemas are =org2:agent-run:v1= and =org2:workflow:v1=; workflow packages declare their compatible Org2 and schema ranges.
 
@@ -64,9 +64,9 @@ An agent run should have a portable semantic model containing:
 
 The model should be representable in normal Org2 text and consumable through the CLI. Apps may maintain derived indexes for responsiveness, but the run record and its durable outputs must remain inspectable outside the app.
 
-** Run Center
+** Agent Work
 
-Workspace clients should expose a Run Center or Activity surface that answers:
+Workspace clients should expose an Agent Work surface that answers:
 
 - What is working now?
 - What completed, and what did it produce?
@@ -251,7 +251,7 @@ Product development should favor capabilities that meet at least one of these te
 
 - Define the portable agent-run schema and state machine.
 - Add CLI discovery, inspection, validation, and mutation commands.
-- Build a Workspace Run Center with active, completed, blocked, and approval-needed states.
+- Build a Workspace Agent Work surface with active, completed, blocked, and approval-needed states.
 - Normalize existing agent-task, session, artifact, and approval metadata into the shared model.
 
 ** Phase 2: teachable workflows and review

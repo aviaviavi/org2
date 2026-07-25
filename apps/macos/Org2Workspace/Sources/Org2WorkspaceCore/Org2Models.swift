@@ -130,7 +130,7 @@ enum AgentRunScope: String, CaseIterable, Identifiable, Hashable {
 }
 
 // Keep these presentation collections intentionally non-Equatable. SwiftUI otherwise
-// deep-compares every full AgentRunItem whenever the Run Center body is rebuilt.
+// deep-compares every full AgentRunItem whenever the Runs view is rebuilt.
 struct AgentRunScopeEntry: Identifiable {
   let run: AgentRunItem
   let representedFailureCount: Int
@@ -949,8 +949,8 @@ public struct AssignedWorkItem: Identifiable, Hashable, Sendable {
 }
 
 public enum RunsAndReviewPage: String, CaseIterable, Identifiable, Sendable {
-  case runs = "Run Center"
-  case review = "Review Queue"
+  case runs = "Runs"
+  case review = "Review"
   case workflows = "Workflows"
 
   public var id: String { rawValue }
