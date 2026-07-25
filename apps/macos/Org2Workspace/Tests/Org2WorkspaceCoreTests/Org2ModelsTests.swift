@@ -1578,6 +1578,163 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testSettlingAndReopeningOpenClawThreadPersistsDurableState() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-chat-thread-settle-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let transcript = root.appendingPathComponent("openclaw-chat.json")
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      openClawTranscriptURL: transcript
+    )
+    store.openClawMessages = [OpenClawChatMessage(role: .user, content: "Retain this history")]
+    let threadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
+
+    store.settleOpenClawChatThread(threadID, at: Date(timeIntervalSince1970: 1_700_000_000))
+
+    XCTAssertTrue(store.settledOpenClawChatThreads.contains(where: { $0.id == threadID }))
+    XCTAssertFalse(store.visibleOpenClawChatThreads.contains(where: { $0.id == threadID }))
+    XCTAssertEqual(
+      store.openClawChatThreads.first(where: { $0.id == threadID })?.messages.first?.content,
+      "Retain this history"
+    )
+
+    let restored = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      openClawTranscriptURL: transcript
+    )
+    XCTAssertTrue(restored.settledOpenClawChatThreads.contains(where: { $0.id == threadID }))
+    XCTAssertEqual(
+      restored.openClawChatThreads.first(where: { $0.id == threadID })?.messages.first?.content,
+      "Retain this history"
+    )
+
+    restored.reopenOpenClawChatThread(threadID)
+    XCTAssertTrue(restored.visibleOpenClawChatThreads.contains(where: { $0.id == threadID }))
+    XCTAssertFalse(restored.settledOpenClawChatThreads.contains(where: { $0.id == threadID }))
+  }
+
+  @MainActor
+  func testOpenClawAutoSettleConfigurationTimingSafetyAndPersistence() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-chat-thread-auto-settle-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let transcript = root.appendingPathComponent("openclaw-chat.json")
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      openClawTranscriptURL: transcript
+    )
+    let now = Date(timeIntervalSince1970: 1_800_000_000)
+    let old = now.addingTimeInterval(-172_800)
+    let eligible = OpenClawChatThread(
+      title: "Eligible",
+      createdAt: old,
+      updatedAt: old,
+      sessionKey: "agent:main:eligible",
+      messages: [OpenClawChatMessage(role: .user, content: "done", createdAt: old)]
+    )
+    let pinned = OpenClawChatThread(
+      title: "Pinned",
+      createdAt: old,
+      updatedAt: old,
+      sessionKey: "agent:main:pinned",
+      messages: [OpenClawChatMessage(role: .user, content: "keep active", createdAt: old)],
+      isPinned: true
+    )
+    let failed = OpenClawChatThread(
+      title: "Failed",
+      createdAt: old,
+      updatedAt: old,
+      sessionKey: "agent:main:failed",
+      messages: [
+        OpenClawChatMessage(
+          role: .user,
+          content: "retry me",
+          createdAt: old,
+          sendFailure: "offline",
+          deliveryStatus: .failed
+        )
+      ]
+    )
+    let selected = OpenClawChatThread(
+      title: "Selected",
+      createdAt: old,
+      updatedAt: old,
+      sessionKey: "agent:main:selected",
+      messages: [OpenClawChatMessage(role: .user, content: "currently open", createdAt: old)]
+    )
+    let settings = OpenClawThreadSettlementSettings(autoSettleAfterSeconds: 86_400)
+
+    XCTAssertTrue(WorkspaceStore.canAutoSettleOpenClawChatThread(
+      eligible,
+      settings: settings,
+      selectedThreadID: selected.id,
+      now: now
+    ))
+    XCTAssertFalse(WorkspaceStore.canAutoSettleOpenClawChatThread(
+      pinned,
+      settings: settings,
+      selectedThreadID: selected.id,
+      now: now
+    ))
+    XCTAssertFalse(WorkspaceStore.canAutoSettleOpenClawChatThread(
+      failed,
+      settings: settings,
+      selectedThreadID: selected.id,
+      now: now
+    ))
+    XCTAssertFalse(WorkspaceStore.canAutoSettleOpenClawChatThread(
+      selected,
+      settings: settings,
+      selectedThreadID: selected.id,
+      now: now
+    ))
+
+    store.createOpenClawChatThread()
+    store.openClawMessages = [OpenClawChatMessage(role: .user, content: "old", createdAt: old)]
+    let oldThreadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
+    store.createOpenClawChatThread()
+    store.openClawMessages = [OpenClawChatMessage(role: .user, content: "selected", createdAt: old)]
+
+    store.setOpenClawAutoSettleInterval(.oneDay)
+    let autoSettled = store.autoSettleOpenClawChatThreads(now: now)
+
+    XCTAssertTrue(autoSettled.contains(oldThreadID))
+    XCTAssertEqual(store.openClawThreadSettlementSettings.interval, .oneDay)
+    let restored = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      openClawTranscriptURL: transcript
+    )
+    XCTAssertEqual(restored.openClawThreadSettlementSettings.interval, .oneDay)
+
+    restored.setOpenClawAutoSettleInterval(.never)
+    XCTAssertEqual(restored.openClawThreadSettlementSettings.interval, .never)
+  }
+
+  func testLegacyArchivedOpenClawThreadDecodesAsSettled() throws {
+    let id = UUID()
+    let decoder = JSONDecoder()
+    let raw = """
+    {
+      "id": "\(id.uuidString)",
+      "title": "Legacy archived",
+      "createdAt": 700000000,
+      "updatedAt": 700000100,
+      "sessionKey": "agent:main:legacy",
+      "messages": [],
+      "isPinned": false,
+      "isArchived": true,
+      "unreadMessageCount": 0
+    }
+    """
+
+    let thread = try decoder.decode(OpenClawChatThread.self, from: Data(raw.utf8))
+
+    XCTAssertTrue(thread.isSettled)
+    XCTAssertEqual(thread.settledAt, thread.updatedAt)
+  }
+
+  @MainActor
   func testOpenClawChatThreadsTrackUnreadBackgroundRepliesAndSound() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-chat-thread-unread-\(UUID().uuidString)", isDirectory: true)

@@ -52,6 +52,15 @@ import { loadRuntimePolicy, runtimePolicyPath, saveRuntimePolicy, selectRuntime,
 import { evaluateRun, loadEvalExpectation, loadWorkflowReplayFixture, replayWorkflowFixture, sanitizeRunFixture, saveEvalResult } from "./workflowEval.js";
 import { ORG2_CORPUS_KINDS, corpusIdentityStatus, initializeCorpusIdentity } from "./corpusIdentity.js";
 import { federatedAgenda, federatedSearch } from "./federatedWorkspace.js";
+import {
+  autoSettleOpenClawThreads,
+  configureOpenClawThreadSettlement,
+  isOpenClawThreadSettled,
+  loadOpenClawThreadState,
+  openClawDateMilliseconds,
+  reopenOpenClawThread,
+  settleOpenClawThread,
+} from "./openClawThreadState.js";
 
 interface ParsedArgs { positional: string[]; flags: Map<string, string[]>; }
 function parseArgs(args: string[]): ParsedArgs {
@@ -101,6 +110,8 @@ const HELP = `Agentic workspace commands:
   org2 corpus show|validate|init [--dir CORPUS] [--id ID --name NAME --kind personal|shared|project] [--apply]
   org2 workspace agenda --mount CORPUS [--mount CORPUS ...] [--from DATE --to DATE]
   org2 workspace search QUERY --mount CORPUS [--mount CORPUS ...] [--limit N]
+  org2 thread list|show|settle|reopen|configure|auto-settle [--dir CORPUS] [--apply]
+  org2 thread configure --auto-settle never|SECONDS [--dir CORPUS] [--apply]
   org2 run create --goal TEXT [--accept TEXT] [--risk CLASS] [--owner NAME] [--capability ID] [--dir CORPUS]
   org2 run list|show|validate|start|resume|retry|cancel|complete|complete-external|fail|block|fork|normalize|artifact-review
   org2 run block ID --reason "Specific clarification needed"
@@ -177,6 +188,79 @@ function corpusCommand(parsed: ParsedArgs): void {
     return;
   }
   throw new Error(`unknown corpus action: ${action}`);
+}
+
+function threadCommand(parsed: ParsedArgs): void {
+  const action = parsed.positional[0] || "list";
+  const corpus = root(parsed);
+  if (action === "list") {
+    const state = loadOpenClawThreadState(corpus);
+    const filter = flag(parsed, "state", "all");
+    if (!["all", "active", "settled"].includes(filter!)) {
+      throw new Error("--state must be all, active, or settled");
+    }
+    const threads = state.threads
+      .filter((thread) => filter === "all" || (filter === "settled") === isOpenClawThreadSettled(thread))
+      .sort((left, right) => {
+        const settledOrder = Number(isOpenClawThreadSettled(left)) - Number(isOpenClawThreadSettled(right));
+        if (settledOrder !== 0) return settledOrder;
+        const leftTime = openClawDateMilliseconds(left.updatedAt);
+        const rightTime = openClawDateMilliseconds(right.updatedAt);
+        if (Number.isFinite(leftTime) && Number.isFinite(rightTime) && leftTime !== rightTime) {
+          return rightTime - leftTime;
+        }
+        return String(left.title || left.id).localeCompare(String(right.title || right.id));
+      });
+    output(parsed, { ...state, threads }, threads.length
+      ? threads.map((thread) => `${thread.id}\t${isOpenClawThreadSettled(thread) ? "settled" : "active"}\t${thread.title || "Untitled"}`).join("\n")
+      : "No chat threads.");
+    return;
+  }
+  if (action === "show") {
+    const id = required(parsed.positional[1], "thread id is required");
+    const state = loadOpenClawThreadState(corpus);
+    const thread = state.threads.find((item) => item.id === id);
+    if (!thread) throw new Error(`unknown OpenClaw thread: ${id}`);
+    output(parsed, {
+      schema: "org2:openclaw-thread:v1",
+      state: isOpenClawThreadSettled(thread) ? "settled" : "active",
+      thread,
+      settlementSettings: state.settlementSettings,
+    }, `${id}\t${isOpenClawThreadSettled(thread) ? "settled" : "active"}\t${thread.title || "Untitled"}`);
+    return;
+  }
+  const apply = enabled(parsed, "apply");
+  if (action === "settle") {
+    const id = required(parsed.positional[1], "thread id is required");
+    const result = settleOpenClawThread(corpus, id, { apply });
+    output(parsed, result, `${result.applied ? "settled" : result.changed ? "would settle" : "already settled"} ${id}`);
+    return;
+  }
+  if (action === "reopen") {
+    const id = required(parsed.positional[1], "thread id is required");
+    const result = reopenOpenClawThread(corpus, id, { apply });
+    output(parsed, result, `${result.applied ? "reopened" : result.changed ? "would reopen" : "already active"} ${id}`);
+    return;
+  }
+  if (action === "configure") {
+    const raw = required(flag(parsed, "auto-settle"), "--auto-settle is required");
+    const seconds = raw === "never" || raw === "disabled" ? null : Number(raw);
+    if (seconds !== null && (!Number.isFinite(seconds) || seconds <= 0)) {
+      throw new Error("--auto-settle must be never or a positive number of seconds");
+    }
+    const result = configureOpenClawThreadSettlement(corpus, seconds, { apply });
+    output(parsed, result, `${result.applied ? "configured" : result.changed ? "would configure" : "unchanged"} auto-settle ${seconds ?? "never"}`);
+    return;
+  }
+  if (action === "auto-settle") {
+    const rawNow = flag(parsed, "now");
+    const now = rawNow ? new Date(rawNow) : new Date();
+    if (!Number.isFinite(now.getTime())) throw new Error("--now must be an ISO date");
+    const result = autoSettleOpenClawThreads(corpus, { apply, now });
+    output(parsed, result, `${result.applied ? "settled" : "eligible"} ${result.affectedThreadIds.length} thread(s)`);
+    return;
+  }
+  throw new Error(`unknown thread action: ${action}`);
 }
 
 async function runCommand(parsed: ParsedArgs): Promise<void> {
@@ -366,11 +450,12 @@ function evalCommand(parsed: ParsedArgs): void {
 
 export async function runAgenticWorkspaceCommand(args: string[]): Promise<boolean> {
   const family = args[0];
-  if (!family || !["corpus", "workspace", "run", "review", "workflow", "artifact", "runtime", "mcp", "eval"].includes(family)) return false;
+  if (!family || !["corpus", "workspace", "thread", "run", "review", "workflow", "artifact", "runtime", "mcp", "eval"].includes(family)) return false;
   const parsed = parseArgs(args.slice(1));
   if (enabled(parsed, "help") || parsed.positional[0] === "help") { output(parsed, HELP); return true; }
   if (family === "corpus") corpusCommand(parsed);
   else if (family === "workspace") await workspaceCommand(parsed);
+  else if (family === "thread") threadCommand(parsed);
   else if (family === "run") await runCommand(parsed);
   else if (family === "review") reviewCommand(parsed);
   else if (family === "workflow") workflowCommand(parsed);
