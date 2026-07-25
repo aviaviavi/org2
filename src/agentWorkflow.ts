@@ -62,6 +62,13 @@ export interface AgentWorkflow {
   updatedAt: string;
 }
 
+export type AgentWorkflowTemplate = Omit<
+  AgentWorkflow,
+  "schema" | "state" | "compatibility" | "createdAt" | "updatedAt"
+> & {
+  schema: "org2:workflow-template:v1";
+};
+
 export interface WorkflowValidationResult {
   valid: boolean;
   issues: Array<{ path: string; message: string }>;
@@ -238,6 +245,18 @@ export function saveWorkflow(root: string, workflow: AgentWorkflow): string {
   fs.writeFileSync(temporary, renderWorkflowOrg(workflow), "utf8");
   fs.renameSync(temporary, target);
   return target;
+}
+
+export function installBuiltinWorkflow(root: string, template: AgentWorkflowTemplate): string {
+  const now = new Date().toISOString();
+  return saveWorkflow(root, {
+    ...template,
+    schema: ORG2_WORKFLOW_SCHEMA,
+    state: "draft",
+    compatibility: { org2: ">=0.3.0 <1", schema: ORG2_WORKFLOW_SCHEMA },
+    createdAt: now,
+    updatedAt: now,
+  });
 }
 
 export function loadWorkflow(root: string, id: string): AgentWorkflow {

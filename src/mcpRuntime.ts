@@ -3,7 +3,7 @@ import path from "node:path";
 import readline from "node:readline";
 import { spawnSync } from "node:child_process";
 import { listAgentRuns, loadAgentRun, saveAgentRun, transitionAgentRun } from "./agentRun.js";
-import { instantiateWorkflow, listWorkflows, loadWorkflow, saveWorkflow } from "./agentWorkflow.js";
+import { instantiateWorkflow, listWorkflows, loadWorkflow } from "./agentWorkflow.js";
 
 type JsonObject = Record<string, unknown>;
 type JsonRpcId = string | number | null;
@@ -262,7 +262,5 @@ export async function serveMcp(root: string, input: NodeJS.ReadableStream = proc
   }
 }
 
-export function installBuiltinWorkflow(root: string, workflow: any): string {
-  const now = new Date().toISOString();
-  return saveWorkflow(root, { ...workflow, schema: "org2:workflow:v1", state: "draft", compatibility: { org2: ">=0.3.0 <1", schema: "org2:workflow:v1" }, createdAt: now, updatedAt: now });
-}
+/** @deprecated Import from agentWorkflow instead. */
+export { installBuiltinWorkflow } from "./agentWorkflow.js";

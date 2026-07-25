@@ -11,9 +11,9 @@ import {
   transitionAgentRun, updateAgentRunAssignment, updateAgentRunRuntime, updateAgentRunStep, validateAgentRun,
   updateAgentRunArtifactReview,
 } from "../dist/agentRun.js";
-import { dueWorkflowTriggers, instantiateWorkflow, legacyWorkflowDirectory, loadWorkflow, migrateLegacyWorkflows, packagedCorpusTemplate, parseWorkflowOrg, renderWorkflowOrg, saveWorkflow, workflowFromRun, workflowPath } from "../dist/agentWorkflow.js";
+import { dueWorkflowTriggers, installBuiltinWorkflow, instantiateWorkflow, legacyWorkflowDirectory, loadWorkflow, migrateLegacyWorkflows, packagedCorpusTemplate, parseWorkflowOrg, renderWorkflowOrg, saveWorkflow, workflowFromRun, workflowPath } from "../dist/agentWorkflow.js";
 import { artifactRebuildPlan, buildArtifactGraph, MEETING_TO_CONTROLLED_EXECUTION_WORKFLOW } from "../dist/artifactPipeline.js";
-import { discoverMcpClient, installBuiltinWorkflow, saveMcpClients, serveMcp, writeMcpSnapshot } from "../dist/mcpRuntime.js";
+import { discoverMcpClient, saveMcpClients, serveMcp, writeMcpSnapshot } from "../dist/mcpRuntime.js";
 import { defaultRuntimePolicy, selectRuntime, validateRuntimePaths } from "../dist/runtimePolicy.js";
 import { evaluateRun, replayWorkflowFixture, sanitizeRunFixture } from "../dist/workflowEval.js";
 
