@@ -49,6 +49,12 @@ try {
       thread("pinned", { isPinned: true }),
       thread("unread", { unreadMessageCount: 1 }),
       thread("failed", { messages: [message("failed")] }),
+      thread("recovered", {
+        messages: [
+          message("failed"),
+          { ...message(), role: "assistant" },
+        ],
+      }),
       thread("pending", { pendingTurn: { runID: "run-1" } }),
       thread("recent", { updatedAt: appleReferenceDateSeconds(recent) }),
       thread("empty", { messages: [] }),
@@ -69,15 +75,17 @@ try {
   assert.equal(loadOpenClawThreadState(root).settlementSettings.autoSettleAfterSeconds, 86_400);
 
   const autoPreview = autoSettleOpenClawThreads(root, { now });
-  assert.deepEqual(autoPreview.affectedThreadIds, ["eligible"]);
+  assert.deepEqual(autoPreview.affectedThreadIds, ["eligible", "recovered", "empty"]);
   assert.equal(isOpenClawThreadSettled(loadOpenClawThreadState(root).threads.find((item) => item.id === "eligible")), false);
 
   const autoApplied = autoSettleOpenClawThreads(root, { now, apply: true });
-  assert.deepEqual(autoApplied.affectedThreadIds, ["eligible"]);
+  assert.deepEqual(autoApplied.affectedThreadIds, ["eligible", "recovered", "empty"]);
   const settled = loadOpenClawThreadState(root);
   assert.equal(settled.version, 5);
-  assert.equal(isOpenClawThreadSettled(settled.threads.find((item) => item.id === "eligible")), true);
-  for (const id of ["selected", "pinned", "unread", "failed", "pending", "recent", "empty"]) {
+  for (const id of ["eligible", "recovered", "empty"]) {
+    assert.equal(isOpenClawThreadSettled(settled.threads.find((item) => item.id === id)), true, id);
+  }
+  for (const id of ["selected", "pinned", "unread", "failed", "pending", "recent"]) {
     assert.equal(isOpenClawThreadSettled(settled.threads.find((item) => item.id === id)), false, id);
   }
 

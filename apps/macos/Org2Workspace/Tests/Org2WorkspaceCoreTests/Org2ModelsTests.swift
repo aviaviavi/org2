@@ -1656,6 +1656,32 @@ final class Org2ModelsTests: XCTestCase {
         )
       ]
     )
+    let recovered = OpenClawChatThread(
+      title: "Recovered",
+      createdAt: old,
+      updatedAt: old,
+      sessionKey: "agent:main:recovered",
+      messages: [
+        OpenClawChatMessage(
+          role: .user,
+          content: "retry me",
+          createdAt: old,
+          sendFailure: "offline",
+          deliveryStatus: .failed
+        ),
+        OpenClawChatMessage(
+          role: .assistant,
+          content: "recovered",
+          createdAt: old.addingTimeInterval(60)
+        )
+      ]
+    )
+    let empty = OpenClawChatThread(
+      title: "Empty",
+      createdAt: old,
+      updatedAt: old,
+      sessionKey: "agent:main:empty"
+    )
     let selected = OpenClawChatThread(
       title: "Selected",
       createdAt: old,
@@ -1679,6 +1705,18 @@ final class Org2ModelsTests: XCTestCase {
     ))
     XCTAssertFalse(WorkspaceStore.canAutoSettleOpenClawChatThread(
       failed,
+      settings: settings,
+      selectedThreadID: selected.id,
+      now: now
+    ))
+    XCTAssertTrue(WorkspaceStore.canAutoSettleOpenClawChatThread(
+      recovered,
+      settings: settings,
+      selectedThreadID: selected.id,
+      now: now
+    ))
+    XCTAssertTrue(WorkspaceStore.canAutoSettleOpenClawChatThread(
+      empty,
       settings: settings,
       selectedThreadID: selected.id,
       now: now

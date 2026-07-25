@@ -1961,6 +1961,14 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
     settledAt != nil || isArchived
   }
 
+  public var hasUnresolvedLatestDelivery: Bool {
+    guard let latestMessage = messages.last else { return false }
+    return latestMessage.deliveryStatus == .sending
+      || latestMessage.deliveryStatus == .failed
+      || latestMessage.deliveryStatus == .interrupted
+      || latestMessage.sendFailure != nil
+  }
+
   enum CodingKeys: String, CodingKey {
     case id
     case title

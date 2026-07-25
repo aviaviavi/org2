@@ -11944,17 +11944,12 @@ public final class WorkspaceStore: ObservableObject {
           !thread.isPinned,
           thread.pendingTurn == nil,
           thread.unreadMessageCount == 0,
-          !thread.messages.isEmpty,
+          !thread.hasUnresolvedLatestDelivery,
           thread.updatedAt <= now.addingTimeInterval(-interval)
     else {
       return false
     }
-    return !thread.messages.contains {
-      $0.deliveryStatus == .sending
-        || $0.deliveryStatus == .failed
-        || $0.deliveryStatus == .interrupted
-        || $0.sendFailure != nil
-    }
+    return true
   }
 
   private func selectOpenClawChatThread(_ id: UUID, persistsSelection: Bool) {
