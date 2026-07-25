@@ -172,7 +172,6 @@ type AgentDataLinkMetadata = {
   windowStart?: string;
   windowEnd?: string;
   lastRun?: string;
-  freshnessSla?: string;
   watermark?: string;
   dataLatency?: string;
   availability?: string;
@@ -1045,7 +1044,6 @@ function dataLinkMetadataFor(corpus: CompiledCorpus, node: CompiledCorpusNode): 
   const windowStart = stringDataProperty(props, ["WINDOW_START", "START_AT", "FROM", "ORG2_WINDOW_START"]);
   const windowEnd = stringDataProperty(props, ["WINDOW_END", "END_AT", "THROUGH", "TO", "ORG2_WINDOW_END"]);
   const lastRun = stringDataProperty(props, ["LAST_RUN", "RAN_AT", "UPDATED_AT", "ORG2_LAST_RUN"]);
-  const freshnessSla = stringDataProperty(props, ["FRESHNESS_SLA", "DATA_FRESHNESS_SLA", "SLA", "SLO", "ORG2_FRESHNESS_SLA"]);
   const watermark = stringDataProperty(props, ["WATERMARK", "DATA_WATERMARK", "MAX_EVENT_AT", "MAX_OBSERVED_AT", "ORG2_WATERMARK"]);
   const dataLatency = stringDataProperty(props, ["DATA_LATENCY", "LATENCY", "LAG", "DATA_LAG", "ORG2_DATA_LATENCY"]);
   const availability = stringDataProperty(props, ["AVAILABILITY", "AVAILABILITY_STATUS", "DATA_AVAILABILITY", "ORG2_AVAILABILITY"]);
@@ -1133,7 +1131,6 @@ function dataLinkMetadataFor(corpus: CompiledCorpus, node: CompiledCorpusNode): 
     ...(windowStart ? { windowStart } : {}),
     ...(windowEnd ? { windowEnd } : {}),
     ...(lastRun ? { lastRun } : {}),
-    ...(freshnessSla ? { freshnessSla } : {}),
     ...(watermark ? { watermark } : {}),
     ...(dataLatency ? { dataLatency } : {}),
     ...(availability ? { availability } : {}),
@@ -1652,7 +1649,6 @@ export function renderAgentContextPack(payload: AgentPayload, format: "markdown"
       item.dataLink.windowStart ? `window start: ${item.dataLink.windowStart}` : "",
       item.dataLink.windowEnd ? `window end: ${item.dataLink.windowEnd}` : "",
       item.dataLink.lastRun ? `last run: ${item.dataLink.lastRun}` : "",
-      item.dataLink.freshnessSla ? `freshness SLA: ${item.dataLink.freshnessSla}` : "",
       item.dataLink.watermark ? `watermark: ${item.dataLink.watermark}` : "",
       item.dataLink.dataLatency ? `data latency: ${item.dataLink.dataLatency}` : "",
       item.dataLink.availability ? `availability: ${item.dataLink.availability}` : "",

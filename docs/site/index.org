@@ -67,7 +67,6 @@ The native Mac app brings those pieces into an early open-source workspace for A
   <span class="org2-syntax-drawer">:PROPERTIES:</span>
   <span class="org2-syntax-prop">:ID:</span> launch-readiness-data
   <span class="org2-syntax-prop">:KIND:</span> dataset
-  <span class="org2-syntax-prop">:FRESHNESS_SLA:</span> 24h
   <span class="org2-syntax-drawer">:END:</span>
 
   <span class="org2-syntax-block">```dataset launch_readiness</span>
