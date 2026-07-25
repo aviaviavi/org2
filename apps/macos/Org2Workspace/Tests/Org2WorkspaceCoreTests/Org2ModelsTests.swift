@@ -13,6 +13,26 @@ private struct DecodeThreadPayload: Decodable {
   }
 }
 
+private struct OpenClawTranscriptFixture: Encodable {
+  let version: Int
+  let messages: [OpenClawChatMessage]?
+  let threads: [OpenClawChatThread]
+  let selectedThreadID: UUID?
+}
+
+private actor OpenClawRecoveryRecorder {
+  private var turns: [OpenClawPendingTurn] = []
+
+  func recover(_ turn: OpenClawPendingTurn) -> String {
+    turns.append(turn)
+    return "Recovered after relaunch"
+  }
+
+  func recordedTurns() -> [OpenClawPendingTurn] {
+    turns
+  }
+}
+
 private actor OpenClawQueuedSendRecorder {
   private var calls: [[String]] = []
 
@@ -1001,6 +1021,13 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(OpenClawGatewayClient.acceptedRunRecoveryPollTimeoutMilliseconds, 5_000)
   }
 
+  func testOpenClawGatewayReconcilesDuplicateSendAcknowledgements() {
+    XCTAssertTrue(OpenClawGatewayClient.shouldReconcileAfterSendAcknowledgement(["status": "in_flight"]))
+    XCTAssertTrue(OpenClawGatewayClient.shouldReconcileAfterSendAcknowledgement(["status": "ok"]))
+    XCTAssertFalse(OpenClawGatewayClient.shouldReconcileAfterSendAcknowledgement(["status": "started"]))
+    XCTAssertFalse(OpenClawGatewayClient.shouldReconcileAfterSendAcknowledgement(nil))
+  }
+
   func testOpenClawGatewayDoesNotHTTPFallbackAfterRunAcceptance() {
     let error = OpenClawGatewayError.acceptedRunRecovery("gateway restarted")
 
@@ -1939,6 +1966,91 @@ final class Org2ModelsTests: XCTestCase {
 
     await recorder.finish(reply: "late original reply")
     await sendTask.value
+  }
+
+  @MainActor
+  func testOpenClawGatewayTurnReconnectsOnceAfterRelaunch() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-chat-durable-turn-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let transcript = root.appendingPathComponent("openclaw-chat.json")
+    let suiteName = "org2-workspace-chat-durable-turn-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let userMessage = OpenClawChatMessage(
+      role: .user,
+      content: "Finish this even if I quit",
+      deliveryStatus: .sending
+    )
+    let queuedMessage = OpenClawChatMessage(
+      role: .user,
+      content: "Then handle this queued follow-up",
+      deliveryStatus: .sending
+    )
+    let pendingTurn = OpenClawPendingTurn(
+      userMessageID: userMessage.id,
+      runID: "durable-run-id",
+      agentID: "main",
+      gatewayMessage: "Exact persisted Gateway request",
+      startedAt: Date(timeIntervalSince1970: 1_700_000_000)
+    )
+    let thread = OpenClawChatThread(
+      title: "Durable turn",
+      sessionKey: "agent:main:org2-workspace:durable",
+      messages: [userMessage, queuedMessage],
+      pendingTurn: pendingTurn
+    )
+    let fixture = OpenClawTranscriptFixture(
+      version: 4,
+      messages: nil,
+      threads: [thread],
+      selectedThreadID: thread.id
+    )
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    try encoder.encode(fixture).write(to: transcript, options: .atomic)
+
+    let recorder = OpenClawRecoveryRecorder()
+    let restored = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: transcript,
+      openClawSendHandler: { _, _, _, _ in "Queued follow-up reply" },
+      openClawRecoveryHandler: { turn, _ in await recorder.recover(turn) }
+    )
+
+    XCTAssertEqual(restored.openClawMessages.first?.deliveryStatus, .sending)
+    XCTAssertEqual(restored.selectedOpenClawChatThread?.pendingTurn?.runID, "durable-run-id")
+    await restored.bootstrap()
+
+    XCTAssertEqual(restored.openClawMessages.map { "\($0.role.rawValue):\($0.content)" }, [
+      "user:Finish this even if I quit",
+      "assistant:Recovered after relaunch",
+      "user:Then handle this queued follow-up",
+      "assistant:Queued follow-up reply"
+    ])
+    XCTAssertEqual(restored.openClawMessages.first?.deliveryStatus, .sent)
+    XCTAssertNil(restored.selectedOpenClawChatThread?.pendingTurn)
+    let recoveredTurns = await recorder.recordedTurns()
+    XCTAssertEqual(recoveredTurns.map(\.runID), ["durable-run-id"])
+    XCTAssertEqual(recoveredTurns.first?.gatewayMessage, "Exact persisted Gateway request")
+
+    let relaunchedAgain = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: transcript,
+      openClawRecoveryHandler: { turn, _ in await recorder.recover(turn) }
+    )
+    await relaunchedAgain.recoverPendingOpenClawTurns()
+
+    XCTAssertEqual(relaunchedAgain.openClawMessages.map(\.content), [
+      "Finish this even if I quit",
+      "Recovered after relaunch",
+      "Then handle this queued follow-up",
+      "Queued follow-up reply"
+    ])
+    let finalRecoveredTurns = await recorder.recordedTurns()
+    XCTAssertEqual(finalRecoveredTurns.count, 1)
   }
 
   @MainActor

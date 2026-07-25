@@ -670,9 +670,11 @@ public actor OpenClawGatewayClient {
     attachments: [OpenClawChatAttachment],
     agentID: String,
     sessionKey: String,
+    idempotencyKey: String? = nil,
+    requestStartedAt: Date? = nil,
     onEvent: @escaping EventHandler
   ) async throws -> String {
-    let requestStartedAtMilliseconds = Date().timeIntervalSince1970 * 1_000
+    let requestStartedAtMilliseconds = (requestStartedAt ?? Date()).timeIntervalSince1970 * 1_000
     stopRequested = false
     runID = nil
     self.sessionKey = sessionKey
@@ -688,7 +690,7 @@ public actor OpenClawGatewayClient {
       try await connect(on: socket, nonce: nonce)
       await onEvent(.connection(.connected, nil))
 
-      let proposedRunID = UUID().uuidString.lowercased()
+      let proposedRunID = idempotencyKey ?? UUID().uuidString.lowercased()
       let sendID = UUID().uuidString.lowercased()
       var params: [String: Any] = [
         "sessionKey": sessionKey,
@@ -725,6 +727,16 @@ public actor OpenClawGatewayClient {
           runID = acceptedRunID
           accepted = true
           await onEvent(.accepted(runID: acceptedRunID))
+          if Self.shouldReconcileAfterSendAcknowledgement(payload) {
+            return try await waitAndReconcile(
+              runID: acceptedRunID,
+              sessionKey: sessionKey,
+              agentID: agentID,
+              requestStartedAtMilliseconds: requestStartedAtMilliseconds,
+              onEvent: onEvent,
+              on: socket
+            )
+          }
           continue
         }
         guard Self.string(frame["type"]) == "event" else { continue }
@@ -808,6 +820,11 @@ public actor OpenClawGatewayClient {
       }
       throw OpenClawGatewayError.connection(error.localizedDescription)
     }
+  }
+
+  static func shouldReconcileAfterSendAcknowledgement(_ payload: [String: Any]?) -> Bool {
+    guard let status = Self.string(payload?["status"])?.lowercased() else { return false }
+    return status == "in_flight" || status == "ok"
   }
 
   private func recoverAcceptedRunWithoutResending(
