@@ -924,6 +924,7 @@ public final class WorkspaceStore: ObservableObject {
   }
   public private(set) var visibleOpenClawChatThreads: [OpenClawChatThread] = []
   public private(set) var archivedOpenClawChatThreads: [OpenClawChatThread] = []
+  @Published public private(set) var openClawThreadSettlementSettings = OpenClawThreadSettlementSettings()
   public private(set) var openClawUnreadMessageCount = 0
   @Published public private(set) var selectedOpenClawChatThreadID: UUID?
   @Published public private(set) var lastArchivedOpenClawChatThreadID: UUID?
@@ -3099,7 +3100,7 @@ public final class WorkspaceStore: ObservableObject {
     let continuation = try await gateway.resumeWorkflowRun(runID: run.id, corpusID: activeCorpusIdentity?.id)
     let thread: OpenClawChatThread
     if let existing = openClawChatThreads.first(where: { $0.sessionKey == continuation.sessionKey }) {
-      if existing.isArchived { restoreOpenClawChatThread(existing.id) }
+      if existing.isSettled { reopenOpenClawChatThread(existing.id) }
       thread = openClawChatThreads.first(where: { $0.id == existing.id }) ?? existing
     } else {
       thread = createOpenClawChatThread(
@@ -11699,12 +11700,16 @@ public final class WorkspaceStore: ObservableObject {
     return openClawChatThreads.first(where: { $0.id == selectedOpenClawChatThreadID })
   }
 
+  public var settledOpenClawChatThreads: [OpenClawChatThread] {
+    archivedOpenClawChatThreads
+  }
+
   private func rebuildOpenClawThreadDisplayCache() {
     visibleOpenClawChatThreads = Self.sortedOpenClawChatThreadsForDisplay(
-      openClawChatThreads.filter { !$0.isArchived }
+      openClawChatThreads.filter { !$0.isSettled }
     )
     archivedOpenClawChatThreads = Self.sortedOpenClawChatThreadsForDisplay(
-      openClawChatThreads.filter(\.isArchived)
+      openClawChatThreads.filter(\.isSettled)
     )
     openClawUnreadMessageCount = openClawChatThreads.reduce(0) { $0 + $1.unreadMessageCount }
   }
@@ -11712,7 +11717,7 @@ public final class WorkspaceStore: ObservableObject {
   public var canUndoOpenClawChatThreadArchive: Bool {
     guard let lastArchivedOpenClawChatThreadID else { return false }
     return openClawChatThreads.contains {
-      $0.id == lastArchivedOpenClawChatThreadID && $0.isArchived
+      $0.id == lastArchivedOpenClawChatThreadID && $0.isSettled
     }
   }
 
@@ -11733,8 +11738,8 @@ public final class WorkspaceStore: ObservableObject {
     let pointer = openClawContextPointerForCurrentSelection()
 
     if let thread = openClawChatThreads.first(where: { $0.resource?.key == resource.key }) {
-      if thread.isArchived {
-        restoreOpenClawChatThread(thread.id)
+      if thread.isSettled {
+        reopenOpenClawChatThread(thread.id)
       }
       navigateToSurface(.openClaw)
       selectOpenClawChatThread(thread.id)
@@ -11831,14 +11836,17 @@ public final class WorkspaceStore: ObservableObject {
     persistOpenClawTranscript()
   }
 
-  public func archiveOpenClawChatThread(_ id: UUID) {
+  public func settleOpenClawChatThread(_ id: UUID, at settledAt: Date = Date()) {
     let visibleThreadsBeforeArchive = visibleOpenClawChatThreads
     let visibleIndex = visibleThreadsBeforeArchive.firstIndex(where: { $0.id == id })
     guard let index = openClawChatThreads.firstIndex(where: { $0.id == id }),
-          !openClawChatThreads[index].isArchived
+          !openClawChatThreads[index].isSettled
     else { return }
     let thread = openClawChatThreads[index]
-    openClawChatThreads[index] = thread.replacingOpenClawChatMetadata(isArchived: true)
+    openClawChatThreads[index] = thread.replacingOpenClawChatMetadata(
+      isArchived: true,
+      settledAt: .some(settledAt)
+    )
     lastArchivedOpenClawChatThreadID = id
     sortOpenClawChatThreadsForDisplay()
     persistOpenClawTranscript()
@@ -11855,12 +11863,15 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
-  public func restoreOpenClawChatThread(_ id: UUID) {
+  public func reopenOpenClawChatThread(_ id: UUID) {
     guard let index = openClawChatThreads.firstIndex(where: { $0.id == id }),
-          openClawChatThreads[index].isArchived
+          openClawChatThreads[index].isSettled
     else { return }
     let thread = openClawChatThreads[index]
-    openClawChatThreads[index] = thread.replacingOpenClawChatMetadata(isArchived: false)
+    openClawChatThreads[index] = thread.replacingOpenClawChatMetadata(
+      isArchived: false,
+      settledAt: .some(nil)
+    )
     if lastArchivedOpenClawChatThreadID == id {
       lastArchivedOpenClawChatThreadID = nil
     }
@@ -11870,7 +11881,80 @@ public final class WorkspaceStore: ObservableObject {
 
   public func undoLastOpenClawChatThreadArchive() {
     guard let lastArchivedOpenClawChatThreadID else { return }
-    restoreOpenClawChatThread(lastArchivedOpenClawChatThreadID)
+    reopenOpenClawChatThread(lastArchivedOpenClawChatThreadID)
+  }
+
+  public func archiveOpenClawChatThread(_ id: UUID) {
+    settleOpenClawChatThread(id)
+  }
+
+  public func restoreOpenClawChatThread(_ id: UUID) {
+    reopenOpenClawChatThread(id)
+  }
+
+  public func setOpenClawAutoSettleInterval(_ interval: OpenClawAutoSettleInterval) {
+    openClawThreadSettlementSettings = OpenClawThreadSettlementSettings(
+      autoSettleAfterSeconds: interval.seconds
+    )
+    autoSettleOpenClawChatThreads(shouldPersist: false)
+    persistOpenClawTranscript()
+  }
+
+  @discardableResult
+  public func autoSettleOpenClawChatThreads(
+    now: Date = Date(),
+    shouldPersist: Bool = true
+  ) -> [UUID] {
+    let selectedID = selectedOpenClawChatThreadID
+    var settledIDs: [UUID] = []
+    openClawChatThreads = openClawChatThreads.map { thread in
+      guard Self.canAutoSettleOpenClawChatThread(
+        thread,
+        settings: openClawThreadSettlementSettings,
+        selectedThreadID: selectedID,
+        now: now
+      ) else {
+        return thread
+      }
+      settledIDs.append(thread.id)
+      return thread.replacingOpenClawChatMetadata(
+        isArchived: true,
+        settledAt: .some(now)
+      )
+    }
+    if !settledIDs.isEmpty {
+      sortOpenClawChatThreadsForDisplay()
+      if shouldPersist {
+        persistOpenClawTranscript()
+      }
+    }
+    return settledIDs
+  }
+
+  nonisolated static func canAutoSettleOpenClawChatThread(
+    _ thread: OpenClawChatThread,
+    settings: OpenClawThreadSettlementSettings,
+    selectedThreadID: UUID?,
+    now: Date
+  ) -> Bool {
+    guard let interval = settings.autoSettleAfterSeconds,
+          interval > 0,
+          !thread.isSettled,
+          thread.id != selectedThreadID,
+          !thread.isPinned,
+          thread.pendingTurn == nil,
+          thread.unreadMessageCount == 0,
+          !thread.messages.isEmpty,
+          thread.updatedAt <= now.addingTimeInterval(-interval)
+    else {
+      return false
+    }
+    return !thread.messages.contains {
+      $0.deliveryStatus == .sending
+        || $0.deliveryStatus == .failed
+        || $0.deliveryStatus == .interrupted
+        || $0.sendFailure != nil
+    }
   }
 
   private func selectOpenClawChatThread(_ id: UUID, persistsSelection: Bool) {
@@ -12012,6 +12096,7 @@ public final class WorkspaceStore: ObservableObject {
       messages: messages,
       isPinned: current.isPinned,
       isArchived: current.isArchived,
+      settledAt: current.settledAt,
       unreadMessageCount: unreadMessageCount,
       resource: current.resource,
       pendingTurn: pendingTurn
@@ -12041,7 +12126,7 @@ public final class WorkspaceStore: ObservableObject {
     _ threads: [OpenClawChatThread]
   ) -> [OpenClawChatThread] {
     threads.sorted { lhs, rhs in
-      if lhs.isArchived != rhs.isArchived { return !lhs.isArchived }
+      if lhs.isSettled != rhs.isSettled { return !lhs.isSettled }
       if lhs.isPinned != rhs.isPinned { return lhs.isPinned }
       return lhs.updatedAt > rhs.updatedAt
     }
@@ -12342,6 +12427,7 @@ public final class WorkspaceStore: ObservableObject {
     personalAssigneeNames: String? = nil,
     remoteCorpusPath: String,
     briefsStartNewThread: Bool? = nil,
+    autoSettleInterval: OpenClawAutoSettleInterval? = nil,
     token: String,
     clearToken: Bool
   ) -> Bool {
@@ -12379,6 +12465,9 @@ public final class WorkspaceStore: ObservableObject {
       personalAssigneeNamesText = personalAssigneeNames
       openClawRemoteCorpusPath = remoteCorpusPath
       openClawBriefsStartNewThread = briefsStartNewThread
+      if let autoSettleInterval {
+        setOpenClawAutoSettleInterval(autoSettleInterval)
+      }
 
       if clearToken {
         try OpenClawKeychain.deleteToken()
@@ -15949,7 +16038,8 @@ public final class WorkspaceStore: ObservableObject {
       try Self.saveOpenClawTranscript(
         OpenClawTranscriptState(
           threads: openClawChatThreads,
-          selectedThreadID: selectedOpenClawChatThreadID
+          selectedThreadID: selectedOpenClawChatThreadID,
+          settlementSettings: openClawThreadSettlementSettings
         ),
         to: openClawTranscriptURL
       )
@@ -15978,7 +16068,11 @@ public final class WorkspaceStore: ObservableObject {
       transcript = Self.openClawTranscriptState(fromLegacyMessages: openClawMessages)
       shouldPersistMigratedMessages = true
     } else {
-      transcript = OpenClawTranscriptState(threads: [], selectedThreadID: nil)
+      transcript = OpenClawTranscriptState(
+        threads: [],
+        selectedThreadID: nil,
+        settlementSettings: OpenClawThreadSettlementSettings()
+      )
       shouldPersistMigratedMessages = false
     }
 
@@ -16007,6 +16101,7 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   private func applyOpenClawTranscript(_ transcript: OpenClawTranscriptState, shouldPersist: Bool) {
+    openClawThreadSettlementSettings = transcript.settlementSettings
     let migratedThreads = transcript.threads.map { thread in
       let sessionKey = Self.agentScopedOpenClawSessionKey(thread.sessionKey, agentID: openClawAgentID)
       return sessionKey == thread.sessionKey
@@ -16016,8 +16111,13 @@ public final class WorkspaceStore: ObservableObject {
     let migratedSessionKeys = zip(transcript.threads, migratedThreads).contains { pair in
       pair.0.sessionKey != pair.1.sessionKey
     }
-    let threads = Self.sortedOpenClawChatThreadsForDisplay(migratedThreads)
-    openClawChatThreads = threads
+    openClawChatThreads = Self.sortedOpenClawChatThreadsForDisplay(migratedThreads)
+    let selectedID = transcript.selectedThreadID
+      .flatMap { id in openClawChatThreads.contains(where: { $0.id == id }) ? id : nil }
+      ?? openClawChatThreads.first?.id
+    selectedOpenClawChatThreadID = selectedID
+    let autoSettledIDs = autoSettleOpenClawChatThreads(shouldPersist: false)
+    let threads = openClawChatThreads
     openClawPendingUserMessageIDsByThreadID = Dictionary(
       uniqueKeysWithValues: threads.compactMap { thread in
         guard thread.pendingTurn != nil else { return nil }
@@ -16027,15 +16127,11 @@ public final class WorkspaceStore: ObservableObject {
         return messageIDs.isEmpty ? nil : (thread.id, messageIDs)
       }
     )
-    let selectedID = transcript.selectedThreadID
-      .flatMap { id in threads.contains(where: { $0.id == id }) ? id : nil }
-      ?? threads.first?.id
-    selectedOpenClawChatThreadID = selectedID
     let selectedThread = selectedID.flatMap { id in threads.first(where: { $0.id == id }) }
     openClawSessionKey = selectedThread?.sessionKey ?? Self.makeOpenClawSessionKey(agentID: openClawAgentID)
     replaceOpenClawMessages(selectedThread?.messages ?? [], shouldPersist: false)
     syncSelectedOpenClawSendState()
-    if shouldPersist || migratedSessionKeys {
+    if shouldPersist || migratedSessionKeys || !autoSettledIDs.isEmpty {
       persistOpenClawTranscript()
     }
   }
@@ -16780,13 +16876,18 @@ public final class WorkspaceStore: ObservableObject {
     guard let data = try? Data(contentsOf: url),
           let payload = try? JSONDecoder().decode(OpenClawTranscriptPayload.self, from: data)
     else {
-      return OpenClawTranscriptState(threads: [], selectedThreadID: nil)
+      return OpenClawTranscriptState(
+        threads: [],
+        selectedThreadID: nil,
+        settlementSettings: OpenClawThreadSettlementSettings()
+      )
     }
     if let threads = payload.threads {
       return openClawTranscriptStateByMarkingInterruptedSends(
         OpenClawTranscriptState(
           threads: threads,
-          selectedThreadID: payload.selectedThreadID
+          selectedThreadID: payload.selectedThreadID,
+          settlementSettings: payload.settlementSettings ?? OpenClawThreadSettlementSettings()
         )
       )
     }
@@ -16825,17 +16926,19 @@ public final class WorkspaceStore: ObservableObject {
           .replacingMessages(messages)
           .replacingPendingTurn(nil)
       },
-      selectedThreadID: transcript.selectedThreadID
+      selectedThreadID: transcript.selectedThreadID,
+      settlementSettings: transcript.settlementSettings
     )
   }
 
   nonisolated private static func saveOpenClawTranscript(_ transcript: OpenClawTranscriptState, to url: URL) throws {
     try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
     let payload = OpenClawTranscriptPayload(
-      version: 4,
+      version: 5,
       messages: nil,
       threads: transcript.threads,
-      selectedThreadID: transcript.selectedThreadID
+      selectedThreadID: transcript.selectedThreadID,
+      settlementSettings: transcript.settlementSettings
     )
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -16846,7 +16949,11 @@ public final class WorkspaceStore: ObservableObject {
 
   nonisolated private static func openClawTranscriptState(fromLegacyMessages messages: [OpenClawChatMessage]) -> OpenClawTranscriptState {
     guard !messages.isEmpty else {
-      return OpenClawTranscriptState(threads: [], selectedThreadID: nil)
+      return OpenClawTranscriptState(
+        threads: [],
+        selectedThreadID: nil,
+        settlementSettings: OpenClawThreadSettlementSettings()
+      )
     }
     let createdAt = messages.first?.createdAt ?? Date()
     let updatedAt = messages.last?.createdAt ?? createdAt
@@ -16857,7 +16964,11 @@ public final class WorkspaceStore: ObservableObject {
       sessionKey: makeOpenClawSessionKey(),
       messages: messages
     )
-    return OpenClawTranscriptState(threads: [thread], selectedThreadID: thread.id)
+    return OpenClawTranscriptState(
+      threads: [thread],
+      selectedThreadID: thread.id,
+      settlementSettings: OpenClawThreadSettlementSettings()
+    )
   }
 
   nonisolated private static func modificationDate(for url: URL) -> Date? {
@@ -21616,6 +21727,7 @@ private enum OpenClawPendingTurnUpdate {
 private struct OpenClawTranscriptState {
   let threads: [OpenClawChatThread]
   let selectedThreadID: UUID?
+  let settlementSettings: OpenClawThreadSettlementSettings
 }
 
 private struct OpenClawTranscriptPayload: Codable {
@@ -21623,6 +21735,7 @@ private struct OpenClawTranscriptPayload: Codable {
   let messages: [OpenClawChatMessage]?
   let threads: [OpenClawChatThread]?
   let selectedThreadID: UUID?
+  let settlementSettings: OpenClawThreadSettlementSettings?
 }
 
 private enum WorkspaceEditError: LocalizedError {

@@ -146,6 +146,8 @@ The first command set is:
 
 This is deliberately a handoff boundary. The corpus stores selected context, transcript references, generated artifacts, and durable outputs; the external agent can act on that context without the Mac app becoming the only source of truth. Generated work stays in normal corpus zones such as =views/= or =compiled/= until a person reviews or promotes it.
 
+The chat list treats threads as an inbox. Active threads appear first in an information-dense two-line row; hovering exposes *Settle*. Settling moves the intact conversation into a visually subdued *Settled* section, and *Reopen* returns it to active work. Quick Open and Search still include settled titles and messages, and opening one restores its original session, context, and handoff behavior. The OpenClaw configuration sheet can disable automatic settling or choose an inactivity interval. That policy and each =settledAt= transition live in the active corpus's =.org2/openclaw-chat.json=, so the CLI and other runtimes see the same state. Auto-settlement never selects the currently open, pinned, unread, pending, failed, interrupted, or empty thread.
+
 * Org-crypt
 
 The app includes configuration and run actions for GPG-backed =:crypt:= subtrees. It can encrypt plaintext =:crypt:= subtrees on save, decrypt selected encrypted subtrees for review, manage recipient lists, and use the macOS keychain for the optional passphrase workflow.

@@ -63,8 +63,8 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
       },
       {
         id: "agentic-workspace",
-        purpose: "Create, inspect, resume, review, validate, fork, and package durable agent runs and reusable workflows.",
-        commands: ["org2 run", "org2 review", "org2 workflow", "org2 eval"],
+        purpose: "Manage settled chat history, create and inspect durable agent runs, and package reusable workflows.",
+        commands: ["org2 thread", "org2 run", "org2 review", "org2 workflow", "org2 eval"],
         writes: "mixed",
       },
       {
