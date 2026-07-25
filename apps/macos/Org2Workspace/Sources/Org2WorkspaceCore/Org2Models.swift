@@ -1855,6 +1855,62 @@ public struct OpenClawPendingTurn: Hashable, Codable, Sendable {
   }
 }
 
+public enum OpenClawAutoSettleInterval: String, CaseIterable, Identifiable, Codable, Sendable {
+  case never
+  case oneDay
+  case threeDays
+  case oneWeek
+  case twoWeeks
+  case thirtyDays
+
+  public var id: String { rawValue }
+
+  public var title: String {
+    switch self {
+    case .never: "Never"
+    case .oneDay: "After 1 day"
+    case .threeDays: "After 3 days"
+    case .oneWeek: "After 1 week"
+    case .twoWeeks: "After 2 weeks"
+    case .thirtyDays: "After 30 days"
+    }
+  }
+
+  public var seconds: TimeInterval? {
+    switch self {
+    case .never: nil
+    case .oneDay: 86_400
+    case .threeDays: 259_200
+    case .oneWeek: 604_800
+    case .twoWeeks: 1_209_600
+    case .thirtyDays: 2_592_000
+    }
+  }
+
+  public init(seconds: TimeInterval?) {
+    guard let seconds, seconds > 0 else {
+      self = .never
+      return
+    }
+    self = Self.allCases
+      .filter { $0.seconds != nil }
+      .min { abs(($0.seconds ?? 0) - seconds) < abs(($1.seconds ?? 0) - seconds) }
+      ?? .never
+  }
+}
+
+public struct OpenClawThreadSettlementSettings: Hashable, Codable, Sendable {
+  public let autoSettleAfterSeconds: TimeInterval?
+
+  public init(autoSettleAfterSeconds: TimeInterval? = nil) {
+    self.autoSettleAfterSeconds = autoSettleAfterSeconds.flatMap { $0 > 0 ? $0 : nil }
+  }
+
+  public var interval: OpenClawAutoSettleInterval {
+    OpenClawAutoSettleInterval(seconds: autoSettleAfterSeconds)
+  }
+}
+
 public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
   public let id: UUID
   public let title: String
@@ -1864,6 +1920,7 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
   public let messages: [OpenClawChatMessage]
   public let isPinned: Bool
   public let isArchived: Bool
+  public let settledAt: Date?
   public let unreadMessageCount: Int
   public let resource: OpenClawResourceReference?
   public let pendingTurn: OpenClawPendingTurn?
@@ -1877,6 +1934,7 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
     messages: [OpenClawChatMessage] = [],
     isPinned: Bool = false,
     isArchived: Bool = false,
+    settledAt: Date? = nil,
     unreadMessageCount: Int = 0,
     resource: OpenClawResourceReference? = nil,
     pendingTurn: OpenClawPendingTurn? = nil
@@ -1889,6 +1947,7 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
     self.messages = messages
     self.isPinned = isPinned
     self.isArchived = isArchived
+    self.settledAt = settledAt ?? (isArchived ? updatedAt : nil)
     self.unreadMessageCount = max(0, unreadMessageCount)
     self.resource = resource
     self.pendingTurn = pendingTurn
@@ -1896,6 +1955,10 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
 
   public var messageCount: Int {
     messages.count
+  }
+
+  public var isSettled: Bool {
+    settledAt != nil || isArchived
   }
 
   enum CodingKeys: String, CodingKey {
@@ -1907,6 +1970,7 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
     case messages
     case isPinned
     case isArchived
+    case settledAt
     case unreadMessageCount
     case resource
     case pendingTurn
@@ -1922,6 +1986,7 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
     messages = try container.decode([OpenClawChatMessage].self, forKey: .messages)
     isPinned = try container.decodeIfPresent(Bool.self, forKey: .isPinned) ?? false
     isArchived = try container.decodeIfPresent(Bool.self, forKey: .isArchived) ?? false
+    settledAt = try container.decodeIfPresent(Date.self, forKey: .settledAt) ?? (isArchived ? updatedAt : nil)
     unreadMessageCount = max(0, try container.decodeIfPresent(Int.self, forKey: .unreadMessageCount) ?? 0)
     resource = try container.decodeIfPresent(OpenClawResourceReference.self, forKey: .resource)
     pendingTurn = try container.decodeIfPresent(OpenClawPendingTurn.self, forKey: .pendingTurn)
@@ -1932,9 +1997,12 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
     sessionKey nextSessionKey: String? = nil,
     isPinned nextIsPinned: Bool? = nil,
     isArchived nextIsArchived: Bool? = nil,
+    settledAt nextSettledAt: Date?? = nil,
     unreadMessageCount nextUnreadMessageCount: Int? = nil
   ) -> OpenClawChatThread {
-    OpenClawChatThread(
+    let archived = nextIsArchived ?? isArchived
+    let settlement = nextSettledAt ?? (archived ? settledAt : nil)
+    return OpenClawChatThread(
       id: id,
       title: nextTitle ?? title,
       createdAt: createdAt,
@@ -1942,7 +2010,8 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
       sessionKey: nextSessionKey ?? sessionKey,
       messages: messages,
       isPinned: nextIsPinned ?? isPinned,
-      isArchived: nextIsArchived ?? isArchived,
+      isArchived: archived,
+      settledAt: settlement,
       unreadMessageCount: nextUnreadMessageCount ?? unreadMessageCount,
       resource: resource,
       pendingTurn: pendingTurn
@@ -1959,6 +2028,7 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
       messages: nextMessages,
       isPinned: isPinned,
       isArchived: isArchived,
+      settledAt: settledAt,
       unreadMessageCount: unreadMessageCount,
       resource: resource,
       pendingTurn: pendingTurn
@@ -1975,6 +2045,7 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
       messages: messages,
       isPinned: isPinned,
       isArchived: isArchived,
+      settledAt: settledAt,
       unreadMessageCount: unreadMessageCount,
       resource: resource,
       pendingTurn: nextPendingTurn

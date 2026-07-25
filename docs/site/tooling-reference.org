@@ -319,6 +319,24 @@ The capability command emits =org2:capabilities:v1= JSON covering workflows, saf
 
 See [[file:agent-quickstart.org][Agent quickstart]] for the operating contract and common recipes.
 
+* Chat thread settlement
+
+=org2 thread= reads the corpus-owned OpenClaw transcript at =.org2/openclaw-chat.json=. Active and settled threads retain the same stable ID, messages, session key, context, and timestamps; settlement is a reversible work-state transition, not deletion.
+
+#+begin_src sh
+org2 thread list --dir ~/notes --state all --json
+org2 thread show THREAD_ID --dir ~/notes --json
+org2 thread settle THREAD_ID --dir ~/notes          # preview
+org2 thread settle THREAD_ID --dir ~/notes --apply
+org2 thread reopen THREAD_ID --dir ~/notes --apply
+org2 thread configure --auto-settle 604800 --dir ~/notes --apply
+org2 thread configure --auto-settle never --dir ~/notes --apply
+org2 thread auto-settle --dir ~/notes                # preview eligible IDs
+org2 thread auto-settle --dir ~/notes --apply
+#+end_src
+
+The transcript schema keeps the legacy =isArchived= field for older clients and adds =settledAt= plus =settlementSettings.autoSettleAfterSeconds=. Existing archived threads therefore load as settled, while older unclassified threads remain active. Auto-settlement requires non-empty inactive history and excludes the selected thread, pinned or unread threads, pending turns, and any failed, interrupted, or still-sending message.
+
 * Durable agent runs and review
 
 =org2 run= manages =org2:agent-run:v1= records under =.org2/runs/=. Each record contains readable Org sections plus a canonical JSON block; writes are atomic. The state machine supports queued, running, waiting-approval, blocked, completed, failed, and canceled states. Invalid transitions fail instead of silently rewriting history.
