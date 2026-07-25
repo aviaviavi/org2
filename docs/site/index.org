@@ -5,9 +5,9 @@
 <section class="org2-page-intro">
   <p>Org2 gives people and agents one local, plain-text workspace for work that needs to outlive one app: notes, tasks, meetings, source files, data, decisions, generated artifacts, and published docs. The same shared semantics power planning, visualization, cited agent context, durable runs, approvals, and review.</p>
   <div class="org2-page-summary" aria-label="Org2 value summary">
-    <div><strong>Own the files.</strong><span>Readable Org/Org2 on disk, usable from editors, CLIs, Git, and normal sync tools.</span></div>
-    <div><strong>Coordinate consequential work.</strong><span>Runs, plans, outputs, clarifications, validation, and approvals stay connected to their sources.</span></div>
-    <div><strong>See the whole workspace.</strong><span>Agendas, meetings, charts, reports, and published pages are views over the same corpus.</span></div>
+    <div><strong>Own the files.</strong><span>Notes, meetings, raw inputs, and data sources stay local, readable, and yours.</span></div>
+    <div><strong>Build shared knowledge.</strong><span>You and your agents grow durable context together, grounded in sources and review.</span></div>
+    <div><strong>Ship the work.</strong><span>Use the agent harnesses and models you choose to create websites, slide decks, documents, data notebooks, and more.</span></div>
   </div>
 </section>
 #+END_EXPORT
