@@ -448,7 +448,6 @@ private struct SidebarView: View {
 
         Section("Chat") {
           OpenClawSidebarSurfaceGroup(showsCommandShortcut: showsCommandShortcuts)
-            .tag(WorkspaceSurface.openClaw)
         }
       }
       .listStyle(.sidebar)
@@ -740,15 +739,12 @@ private struct OpenClawSidebarSurfaceGroup: View {
 
 private struct OpenClawSidebarThreadList: View {
   @EnvironmentObject private var store: WorkspaceStore
-  @State private var showsAllThreads = false
   @State private var showsSettledThreads = false
   @State private var isRenamePresented = false
   @State private var renamingThreadID: UUID?
   @State private var renameDraft = ""
   @State private var contextualThreadID: UUID?
 
-  private let maxHeight: CGFloat = 220
-  private let initialLimit = 5
   private let autoSettleTimer = Timer.publish(every: 300, on: .main, in: .common).autoconnect()
 
   var body: some View {
@@ -760,9 +756,77 @@ private struct OpenClawSidebarThreadList: View {
           .padding(.leading, 42)
           .padding(.vertical, 3)
       } else {
-        ScrollView {
-          LazyVStack(alignment: .leading, spacing: 2) {
-            ForEach(visibleThreads) { thread in
+        LazyVStack(alignment: .leading, spacing: 2) {
+          ForEach(store.visibleOpenClawChatThreads) { thread in
+            let contextThread = resolvedContextThread(fallback: thread)
+            OpenClawSidebarThreadRow(
+              thread: thread,
+              isSelected: store.selectedOpenClawChatThreadID == thread.id && store.selectedSurface == .openClaw,
+              isSending: store.openClawSendingThreadIDs.contains(thread.id),
+              contextThread: contextThread,
+              select: {
+                contextualThreadID = thread.id
+                store.makeSurfacePrimary(.openClaw)
+                store.selectOpenClawChatThread(thread.id)
+              },
+              rename: beginRenaming,
+              togglePin: { store.toggleOpenClawChatThreadPin(contextThread.id) },
+              settle: { store.settleOpenClawChatThread(contextThread.id) },
+              reopen: { store.reopenOpenClawChatThread(contextThread.id) }
+            )
+            .onHover { isHovered in
+              if isHovered {
+                contextualThreadID = thread.id
+              }
+            }
+          }
+
+          if !store.settledOpenClawChatThreads.isEmpty {
+            HStack(spacing: 4) {
+              Button {
+                withAnimation(WorkspaceMotion.disclosure) {
+                  showsSettledThreads.toggle()
+                }
+              } label: {
+                HStack(spacing: 5) {
+                  Image(systemName: "checkmark.circle")
+                  Text("Settled")
+                  Text("\(store.settledOpenClawChatThreads.count)")
+                    .foregroundStyle(.tertiary)
+                  Spacer(minLength: 0)
+                  Image(systemName: "chevron.down")
+                    .font(.caption2.weight(.semibold))
+                    .rotationEffect(.degrees(showsSettledThreads ? 0 : -90))
+                }
+                  .font(.callout)
+                  .foregroundStyle(.secondary)
+                  .padding(.vertical, 6)
+              }
+              .buttonStyle(.plain)
+              .help(showsSettledThreads ? "Hide settled chat threads" : "Show settled chat threads")
+
+              if store.canUndoOpenClawChatThreadArchive {
+                Button {
+                  withAnimation(WorkspaceMotion.disclosure) {
+                    store.undoLastOpenClawChatThreadArchive()
+                  }
+                } label: {
+                  Image(systemName: "arrow.uturn.backward")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 24, height: 24)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Reopen last settled chat thread")
+              }
+            }
+            .padding(.leading, 42)
+            .padding(.trailing, 8)
+          }
+
+          if showsSettledThreads {
+            ForEach(store.settledOpenClawChatThreads) { thread in
               let contextThread = resolvedContextThread(fallback: thread)
               OpenClawSidebarThreadRow(
                 thread: thread,
@@ -779,105 +843,16 @@ private struct OpenClawSidebarThreadList: View {
                 settle: { store.settleOpenClawChatThread(contextThread.id) },
                 reopen: { store.reopenOpenClawChatThread(contextThread.id) }
               )
+              .opacity(0.68)
               .onHover { isHovered in
                 if isHovered {
                   contextualThreadID = thread.id
                 }
               }
             }
-
-            if store.visibleOpenClawChatThreads.count > initialLimit {
-              Button {
-                withAnimation(WorkspaceMotion.disclosure) {
-                  showsAllThreads.toggle()
-                }
-              } label: {
-                Text(showsAllThreads ? "Show less" : "Show more")
-                  .font(.callout)
-                  .foregroundStyle(.secondary)
-                  .frame(maxWidth: .infinity, alignment: .leading)
-                  .padding(.leading, 42)
-                  .padding(.vertical, 6)
-              }
-              .buttonStyle(.plain)
-              .help(showsAllThreads ? "Collapse chat threads" : "Show more chat threads")
-            }
-
-            if !store.settledOpenClawChatThreads.isEmpty {
-              HStack(spacing: 4) {
-                Button {
-                  withAnimation(WorkspaceMotion.disclosure) {
-                    showsSettledThreads.toggle()
-                  }
-                } label: {
-                  HStack(spacing: 5) {
-                    Image(systemName: "checkmark.circle")
-                    Text("Settled")
-                    Text("\(store.settledOpenClawChatThreads.count)")
-                      .foregroundStyle(.tertiary)
-                    Spacer(minLength: 0)
-                    Image(systemName: "chevron.down")
-                      .font(.caption2.weight(.semibold))
-                      .rotationEffect(.degrees(showsSettledThreads ? 0 : -90))
-                  }
-                  .font(.callout)
-                  .foregroundStyle(.secondary)
-                  .padding(.vertical, 6)
-                }
-                .buttonStyle(.plain)
-                .help(showsSettledThreads ? "Hide settled chat threads" : "Show settled chat threads")
-
-                if store.canUndoOpenClawChatThreadArchive {
-                  Button {
-                    withAnimation(WorkspaceMotion.disclosure) {
-                      store.undoLastOpenClawChatThreadArchive()
-                    }
-                  } label: {
-                    Image(systemName: "arrow.uturn.backward")
-                      .font(.caption.weight(.semibold))
-                      .foregroundStyle(.secondary)
-                      .frame(width: 24, height: 24)
-                      .contentShape(Rectangle())
-                  }
-                  .buttonStyle(.plain)
-                  .help("Reopen last settled chat thread")
-                }
-              }
-              .padding(.leading, 42)
-              .padding(.trailing, 8)
-            }
-
-            if showsSettledThreads {
-              ForEach(store.settledOpenClawChatThreads) { thread in
-                let contextThread = resolvedContextThread(fallback: thread)
-                OpenClawSidebarThreadRow(
-                  thread: thread,
-                  isSelected: store.selectedOpenClawChatThreadID == thread.id && store.selectedSurface == .openClaw,
-                  isSending: store.openClawSendingThreadIDs.contains(thread.id),
-                  contextThread: contextThread,
-                  select: {
-                    contextualThreadID = thread.id
-                    store.makeSurfacePrimary(.openClaw)
-                    store.selectOpenClawChatThread(thread.id)
-                  },
-                  rename: beginRenaming,
-                  togglePin: { store.toggleOpenClawChatThreadPin(contextThread.id) },
-                  settle: { store.settleOpenClawChatThread(contextThread.id) },
-                  reopen: { store.reopenOpenClawChatThread(contextThread.id) }
-                )
-                .opacity(0.68)
-                .onHover { isHovered in
-                  if isHovered {
-                    contextualThreadID = thread.id
-                  }
-                }
-              }
-            }
           }
-          .padding(.vertical, 1)
         }
-        .frame(maxHeight: showsAllThreads || showsSettledThreads ? maxHeight : nil)
-        .scrollIndicators(showsAllThreads || showsSettledThreads ? .visible : .hidden)
+        .padding(.vertical, 1)
       }
     }
     .padding(.top, 2)
@@ -903,13 +878,6 @@ private struct OpenClawSidebarThreadList: View {
         self.renamingThreadID = nil
       }
     }
-  }
-
-  private var visibleThreads: [OpenClawChatThread] {
-    if showsAllThreads {
-      return store.visibleOpenClawChatThreads
-    }
-    return Array(store.visibleOpenClawChatThreads.prefix(initialLimit))
   }
 
   private func beginRenaming(_ thread: OpenClawChatThread) {
@@ -953,7 +921,7 @@ private struct OpenClawSidebarThreadRow: View {
   var body: some View {
     HStack(spacing: 2) {
       Button(action: select) {
-        HStack(alignment: .top, spacing: 8) {
+        HStack(alignment: .center, spacing: 8) {
           VStack(alignment: .leading, spacing: 2) {
             Text(thread.title)
               .font(.callout.weight(isSelected ? .medium : .regular))
@@ -982,6 +950,12 @@ private struct OpenClawSidebarThreadRow: View {
               .font(.caption2.weight(.semibold))
               .foregroundStyle(.secondary)
               .help("Canonical resource thread")
+          }
+          if thread.hasUnresolvedLatestDelivery {
+            Image(systemName: "exclamationmark.triangle.fill")
+              .font(.caption2.weight(.semibold))
+              .foregroundStyle(.orange)
+              .help("Latest message needs attention")
           }
           if thread.isPinned {
             Image(systemName: "pin.fill")
@@ -5739,7 +5713,7 @@ private struct OpenClawConfigurationSheet: View {
             }
             .labelsHidden()
             .frame(width: 220)
-            Text("Pinned, unread, selected, sending, interrupted, or failed threads stay active.")
+            Text("Selected, pinned, unread, pending, or currently failed/interrupted threads stay active.")
               .font(.caption2)
               .foregroundStyle(.secondary)
           }

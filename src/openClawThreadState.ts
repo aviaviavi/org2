@@ -128,13 +128,14 @@ export function canAutoSettleOpenClawThread(
   const interval = settings.autoSettleAfterSeconds;
   if (!interval || interval <= 0 || isOpenClawThreadSettled(thread)) return false;
   if (thread.id === selectedThreadID || thread.isPinned || thread.pendingTurn) return false;
-  if ((thread.unreadMessageCount || 0) > 0 || !thread.messages?.length) return false;
-  if (thread.messages.some((message) => (
-    message.deliveryStatus === "sending"
-      || message.deliveryStatus === "failed"
-      || message.deliveryStatus === "interrupted"
-      || Boolean(message.sendFailure)
-  ))) return false;
+  if ((thread.unreadMessageCount || 0) > 0) return false;
+  const latestMessage = thread.messages?.[thread.messages.length - 1];
+  if (
+    latestMessage?.deliveryStatus === "sending"
+    || latestMessage?.deliveryStatus === "failed"
+    || latestMessage?.deliveryStatus === "interrupted"
+    || Boolean(latestMessage?.sendFailure)
+  ) return false;
   const updatedAt = openClawDateMilliseconds(thread.updatedAt);
   return Number.isFinite(updatedAt) && updatedAt <= now.getTime() - interval * 1000;
 }

@@ -335,7 +335,7 @@ org2 thread auto-settle --dir ~/notes                # preview eligible IDs
 org2 thread auto-settle --dir ~/notes --apply
 #+end_src
 
-The transcript schema keeps the legacy =isArchived= field for older clients and adds =settledAt= plus =settlementSettings.autoSettleAfterSeconds=. Existing archived threads therefore load as settled, while older unclassified threads remain active. Auto-settlement requires non-empty inactive history and excludes the selected thread, pinned or unread threads, pending turns, and any failed, interrupted, or still-sending message.
+The transcript schema keeps the legacy =isArchived= field for older clients and adds =settledAt= plus =settlementSettings.autoSettleAfterSeconds=. Existing archived threads therefore load as settled, while older unclassified threads remain active. Auto-settlement excludes the selected thread, pinned or unread threads, pending turns, and a latest message that is still sending, failed, or interrupted. Empty threads and threads with a historical failure followed by a successful delivery remain eligible once inactive.
 
 * Durable agent runs and review
 
