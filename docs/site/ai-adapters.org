@@ -1,7 +1,7 @@
 #+TITLE: AI adapter interface
 #+SUBTITLE: Provider boundaries for optional model calls
 
-Org2's AI layer is provider-agnostic. Core parsing, formatting, linting, publishing, corpus compilation, query, and manifest validation do not require an LLM provider. When an AI workflow eventually needs model output, it should call a small adapter boundary instead of importing a vendor SDK throughout Org2.
+Org2's core parsing, formatting, linting, publishing, corpus compilation, query, and manifest validation work without an LLM provider. AI workflows that need model output call a small adapter boundary, keeping vendor SDKs out of the rest of Org2.
 
 The TypeScript contract lives in =src/aiAdapter.ts=. It defines:
 

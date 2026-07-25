@@ -62,7 +62,7 @@ Generated views should preserve enough source context for users and tools to aud
 - line/section context when available,
 - the command or workflow that produced the derived artifact.
 
-This keeps search results, backlinks, exports, and future maintenance passes explainable instead of becoming anonymous generated text.
+These records make search results, backlinks, exports, and later maintenance passes traceable to their sources.
 
 ** Graph operation contract
 

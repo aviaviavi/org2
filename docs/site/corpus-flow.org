@@ -9,7 +9,7 @@ The canonical flow is:
 raw/ -> notes/ -> compiled/ -> views/ -> publish/
 #+end_src
 
-You do not need every zone on day one. The value is that when a corpus adopts these names, Org2 lint can check the trust boundary instead of relying on convention alone.
+Start with the zones your corpus needs. Once a corpus adopts these names, Org2 lint can check the trust boundary without relying on convention alone.
 
 * Zones
 
@@ -107,4 +107,4 @@ corpus/
   publish/
 #+end_src
 
-Then wire editor, query, export, and publish commands to read from =notes/= and write derived results into =compiled/=, =views/=, or =publish/= rather than back into canonical notes.
+Then wire editor, query, export, and publish commands to read from =notes/=. Write derived results into =compiled/=, =views/=, or =publish/=, leaving canonical notes unchanged.

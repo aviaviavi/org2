@@ -58,7 +58,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <p>Org2 treats a corpus like a small local knowledge compiler. Source material moves through explicit zones so humans and tools can tell which files are authored, which files are derived, and which boundaries need provenance.</p>
 <p>The canonical flow is:</p>
 <pre class="org2-src language-text" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-text">raw/ -&gt; notes/ -&gt; compiled/ -&gt; views/ -&gt; publish/</code></pre>
-<p>You do not need every zone on day one. The value is that when a corpus adopts these names, Org2 lint can check the trust boundary instead of relying on convention alone.</p>
+<p>Start with the zones your corpus needs. Once a corpus adopts these names, Org2 lint can check the trust boundary without relying on convention alone.</p>
 <section class="org2-headline level-1">
 <h1 id="zones">Zones</h1>
 <table>
@@ -142,7 +142,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
   compiled/
   views/
   publish/</code></pre>
-<p>Then wire editor, query, export, and publish commands to read from <code>notes/</code> and write derived results into <code>compiled/</code>, <code>views/</code>, or <code>publish/</code> rather than back into canonical notes.</p>
+<p>Then wire editor, query, export, and publish commands to read from <code>notes/</code>. Write derived results into <code>compiled/</code>, <code>views/</code>, or <code>publish/</code>, leaving canonical notes unchanged.</p>
 </section>
 </main>
 </div>

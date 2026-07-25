@@ -140,7 +140,7 @@ The result is a shared working graph: notes, tasks, events, sources, entities, e
 
 For an individual, Org2 can be a life/work memory system: daily notes, projects, meetings, tasks, source material, backlinks, AI drafts, and agenda views all live in the same local corpus.
 
-For an organization, the same format can hold higher-leverage operational context: customer reports, support narratives, repo and ticket trails, decision records, metrics snapshots, business event timelines, and durable agent outputs. Org2 can name, link, cite, and compile the context those apps produce, so the knowledge layer stays portable across clients and automations.
+For an organization, the same format can hold operational context: customer reports, support narratives, repo and ticket trails, decision records, metrics snapshots, business event timelines, and durable agent outputs. Org2 can name, link, cite, and compile the context those apps produce, so the knowledge layer stays portable across clients and automations.
 
 * Private-by-default agent collaboration
 

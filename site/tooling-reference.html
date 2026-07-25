@@ -203,7 +203,7 @@ org2 fmt --dir ~/notes --recursive --apply</code></pre>
 </section>
 <section class="org2-headline level-1">
 <h1 id="chart-rendering">Chart rendering</h1>
-<p><code>org2 render-chart</code> renders an SVG artifact from <code>#+chart:</code> / <code>#+plot:</code> metadata or an adjacent fenced <code>```chart</code> block attached to an org2 table. This gives editor clients a shared backend instead of making each extension reimplement table parsing and chart semantics.</p>
+<p><code>org2 render-chart</code> renders an SVG artifact from <code>#+chart:</code> / <code>#+plot:</code> metadata or an adjacent fenced <code>```chart</code> block attached to an org2 table. Editor clients share this backend, so each extension uses the same table parsing and chart semantics.</p>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 render-chart --file report.org2 --block-id quarterly_revenue --out /tmp/quarterly-revenue.svg
 org2 render-chart --file report.org2 --line 42 --format json</code></pre>
 <p>The first renderer supports deterministic <code>bar</code>, <code>line</code>, and bucketed <code>histogram</code> charts with <code>x</code> and <code>y</code> column mappings. New hand-written examples should prefer fenced chart blocks when they are easier to scan:</p>
