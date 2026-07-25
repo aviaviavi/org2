@@ -327,27 +327,38 @@ private struct WorkspaceSurfaceView: View {
   let surface: WorkspaceSurface
 
   var body: some View {
-    Group {
-      switch surface {
-      case .home:
-        HomeView()
-      case .agenda:
-        AgendaView()
-      case .approvals:
-        RunsAndReviewView()
-      case .files:
-        FilesView()
-      case .search:
-        SearchView()
-      case .meetings:
-        MeetingsView()
-      case .sources:
-        SourcesView()
-      case .openClaw:
-        OpenClawChatView()
+    GeometryReader { proxy in
+      Group {
+        switch surface {
+        case .home:
+          HomeView()
+        case .agenda:
+          AgendaView()
+        case .approvals:
+          RunsAndReviewView()
+        case .files:
+          FilesView()
+        case .search:
+          SearchView()
+        case .meetings:
+          MeetingsView()
+        case .sources:
+          SourcesView()
+        case .openClaw:
+          OpenClawChatView()
+        }
       }
+      // Some surface controls and rows have a useful minimum content width.
+      // When the split pane becomes narrower, pin that overflow to the leading
+      // edge so navigation and primary actions stay visible; any unavoidable
+      // clipping then happens only at the trailing edge.
+      .frame(
+        width: max(0, proxy.size.width),
+        height: max(0, proxy.size.height),
+        alignment: .topLeading
+      )
+      .clipped()
     }
-    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     .foregroundStyle(WorkspaceDesign.primaryText)
   }
 }
@@ -1842,7 +1853,7 @@ private struct AgendaView: View {
   @FocusState private var agendaFilterFocused: Bool
 
   var body: some View {
-    VStack(spacing: 0) {
+    VStack(alignment: .leading, spacing: 0) {
       HeaderBar(title: "Agenda", subtitle: headerSubtitle, surface: .agenda) {
         if store.agendaMode == .assigned ? store.isLoadingAssignedWork : store.isLoadingAgenda {
           WorkspaceActivityIndicator(size: .small)
@@ -1867,6 +1878,7 @@ private struct AgendaView: View {
         }
       }
     }
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     .onChange(of: store.agendaMode) {
       let mode = store.agendaMode
       performAfterSwiftUIViewUpdate {
@@ -5122,10 +5134,6 @@ private struct OpenClawChatView: View {
     VStack(spacing: 0) {
       header
 
-      configurationStrip
-
-      Divider()
-
       chatColumn
     }
     .sheet(isPresented: $isShowingConfiguration) {
@@ -5174,6 +5182,14 @@ private struct OpenClawChatView: View {
             .truncationMode(.tail)
         }
         Spacer(minLength: 0)
+        Button {
+          isShowingConfiguration = true
+        } label: {
+          Label("Configure", systemImage: "slider.horizontal.3")
+        }
+        .labelStyle(.iconOnly)
+        .help("Configure OpenClaw")
+
         Button {
           store.makeSurfacePrimary(.openClaw)
         } label: {
@@ -5243,64 +5259,12 @@ private struct OpenClawChatView: View {
       Label("Clear", systemImage: "trash")
     }
     .disabled(store.isSendingOpenClawMessage || store.openClawMessages.isEmpty)
-  }
 
-  @ViewBuilder
-  private var configurationStrip: some View {
-    if presentation == .fullPage {
-      VStack(alignment: .leading, spacing: 6) {
-        HStack(spacing: 8) {
-          Label("Chat", systemImage: "cpu")
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: true, vertical: false)
-          TextField("main", text: $store.openClawAgentID)
-            .textFieldStyle(.roundedBorder)
-            .frame(width: 160)
-          Spacer(minLength: 0)
-          Label(store.agentHandoffAssignee, systemImage: "person.crop.circle.badge.checkmark")
-            .font(.caption.weight(.medium))
-            .foregroundStyle(.secondary)
-            .lineLimit(1)
-            .truncationMode(.tail)
-            .help("Handoff assignee")
-        }
-
-        HStack(spacing: 10) {
-          configCaption(systemImage: "folder", text: store.openClawContextRootText)
-          configCaption(systemImage: "network", text: store.openClawEndpointText)
-        }
-      }
-      .padding(.horizontal, WorkspaceDesign.contentInset)
-      .padding(.bottom, 10)
-    } else {
-      HStack(spacing: 8) {
-        TextField("Chat Agent", text: $store.openClawAgentID)
-          .textFieldStyle(.roundedBorder)
-        Button {
-          isShowingConfiguration = true
-        } label: {
-          Label("Configure", systemImage: "slider.horizontal.3")
-        }
-        .labelStyle(.iconOnly)
-        .help("Configure OpenClaw")
-      }
-      .padding(.horizontal, 10)
-      .padding(.bottom, 10)
+    Button {
+      isShowingConfiguration = true
+    } label: {
+      Label("Configure", systemImage: "slider.horizontal.3")
     }
-  }
-
-  private func configCaption(systemImage: String, text: String) -> some View {
-    HStack(spacing: 4) {
-      Image(systemName: systemImage)
-        .font(.caption2.weight(.semibold))
-      Text(text)
-        .lineLimit(1)
-        .truncationMode(.middle)
-    }
-    .font(.caption)
-    .foregroundStyle(.tertiary)
-    .help(text)
   }
 
   private var chatTranscript: some View {

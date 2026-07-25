@@ -183,7 +183,8 @@ struct ChatBubbleView: View {
         }
       }
       .padding(.horizontal, 11)
-      .padding(.vertical, 9)
+      .padding(.top, 9)
+      .padding(.bottom, 12)
       .background(background, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
       .overlay(
         RoundedRectangle(cornerRadius: 8, style: .continuous)
