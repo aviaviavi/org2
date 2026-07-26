@@ -809,6 +809,7 @@ type ApprovalQueueItem = {
   body: string;
   tags: string[];
   approvalId?: string;
+  fingerprint?: string;
   action?: string;
   riskClass?: string;
   requestedRole?: string;
@@ -1196,6 +1197,7 @@ function approvalItemsFromRuns(rootDir: string, runs: AgentRun[]): ApprovalQueue
         body: approval.note || approval.action,
         tags: [],
         approvalId: approval.id,
+        fingerprint: approval.fingerprint,
         action: approval.action,
         riskClass: approval.riskClass,
         ...(approval.requestedRole ? { requestedRole: approval.requestedRole } : {}),

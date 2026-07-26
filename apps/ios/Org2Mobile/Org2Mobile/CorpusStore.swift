@@ -178,6 +178,12 @@ final class CorpusStore: ObservableObject {
   func approve(_ approval: ApprovalEntry) async {
     guard rootURL != nil else { return }
     do {
+      if approval.isRunApproval {
+        try appendRunApprovalDecision(approval, decision: "approved")
+        statusMessage = "Queued the exact run approval decision for OpenClaw"
+        approvals.removeAll { $0.id == approval.id }
+        return
+      }
       let url = try approveInCorpus(approval)
       statusMessage = "Approved \(url.lastPathComponent)"
       await refresh()
@@ -192,6 +198,12 @@ final class CorpusStore: ObservableObject {
   func reject(_ approval: ApprovalEntry, endStatus: OrgTodoStatus, reason: String) async {
     guard rootURL != nil else { return }
     do {
+      if approval.isRunApproval {
+        try appendRunApprovalDecision(approval, decision: "rejected", note: reason)
+        statusMessage = "Queued the exact run rejection for OpenClaw"
+        approvals.removeAll { $0.id == approval.id }
+        return
+      }
       let url = try rejectInCorpus(approval, endStatus: endStatus, reason: reason)
       statusMessage = "Rejected \(url.lastPathComponent)"
       await refresh()
@@ -363,10 +375,57 @@ final class CorpusStore: ObservableObject {
     return CorpusRefreshSnapshot(
       documents: parsed,
       agenda: OrgParser.agendaEntries(from: parsed),
-      approvals: OrgParser.approvalEntries(from: parsed),
+      approvals: (OrgParser.approvalEntries(from: parsed) + runApprovalEntries(rootURL: baseURL)).sorted {
+        if $0.status != $1.status { return $0.status < $1.status }
+        return $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
+      },
       skipped: skipped,
       discoveredFileCount: urls.count
     )
+  }
+
+  nonisolated private static func runApprovalEntries(rootURL: URL) -> [ApprovalEntry] {
+    let directory = rootURL.appendingPathComponent(".org2/runs", isDirectory: true)
+    guard let urls = try? FileManager.default.contentsOfDirectory(
+      at: directory,
+      includingPropertiesForKeys: [.isRegularFileKey],
+      options: [.skipsPackageDescendants]
+    ) else { return [] }
+
+    return urls.filter { $0.pathExtension.lowercased() == "org2" }.flatMap { url -> [ApprovalEntry] in
+      guard let raw = try? String(contentsOf: url, encoding: .utf8),
+            let begin = raw.range(of: "#+begin_src json :org2-agent-run", options: .caseInsensitive),
+            let end = raw.range(of: "#+end_src", options: .caseInsensitive, range: begin.upperBound..<raw.endIndex) else {
+        return []
+      }
+      let json = raw[begin.upperBound..<end.lowerBound].trimmingCharacters(in: .whitespacesAndNewlines)
+      guard let data = json.data(using: .utf8),
+            let run = try? JSONDecoder().decode(MobileAgentRun.self, from: data) else {
+        return []
+      }
+      let file = ".org2/runs/\(url.lastPathComponent)"
+      return run.approvals.filter { $0.status == "pending" }.map { approval in
+        ApprovalEntry(
+          id: "run:\(run.id):\(approval.id)",
+          title: approval.title,
+          status: approval.status,
+          todo: nil,
+          level: nil,
+          file: file,
+          line: 1,
+          sourceID: approval.id,
+          properties: [:],
+          body: approval.note ?? approval.action,
+          tags: [],
+          kind: "run",
+          runID: run.id,
+          approvalID: approval.id,
+          fingerprint: approval.fingerprint,
+          action: approval.action,
+          riskClass: approval.riskClass
+        )
+      }
+    }
   }
 
   nonisolated private static func corpusFileURLs(in rootURL: URL) throws -> [URL] {
@@ -552,6 +611,33 @@ final class CorpusStore: ObservableObject {
     """
 
     try appendMobileInbox(content, attachments: attachments, entryID: entryID, baseURL: try preferredCorpusBaseURL(for: rootURL))
+  }
+
+  private func appendRunApprovalDecision(_ approval: ApprovalEntry, decision: String, note: String? = nil) throws {
+    guard let runID = approval.runID, let approvalID = approval.approvalID else {
+      throw CocoaError(.fileReadCorruptFile)
+    }
+    let fingerprintArgument = approval.fingerprint.map { " --fingerprint \($0)" } ?? ""
+    let cleanNote = note?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let noteArgument = cleanNote?.isEmpty == false ? " --note \(cleanNote!)" : ""
+    let body = """
+    Apply this native Org2 run approval decision with the shared CLI. Verify the immutable identity and fingerprint; do not edit the run machine-state block directly.
+
+    ORG2_RUN_ID: \(runID)
+    ORG2_APPROVAL_ID: \(approvalID)
+    ORG2_APPROVAL_FINGERPRINT: \(approval.fingerprint ?? "legacy-unavailable")
+    ORG2_APPROVAL_DECISION: \(decision)
+
+    Command:
+    org2 run approval-decide \(runID) \(approvalID) --decision \(decision) --actor mobile\(fingerprintArgument)\(noteArgument)
+    """
+    try appendOpenClawRequest(
+      action: .decide,
+      title: approval.title,
+      sourceFile: approval.file,
+      sourceLine: approval.line,
+      body: body
+    )
   }
 
   private func appendMobileNote(title: String, body: String, attachments: [NoteAttachment], scheduledDate: Date?) throws -> URL {
@@ -794,6 +880,8 @@ final class CorpusStore: ObservableObject {
 
       \(approval.whatsappText)
       """
+    case .decide:
+      approval.whatsappText
     }
   }
 
@@ -1430,6 +1518,21 @@ private struct MobileOrg2Config: Decodable {
   let agendaFiles: [String]?
   let recursive: Bool?
   let ignorePatterns: [String]?
+}
+
+private struct MobileAgentRun: Decodable {
+  let id: String
+  let approvals: [MobileAgentRunApproval]
+}
+
+private struct MobileAgentRunApproval: Decodable {
+  let id: String
+  let fingerprint: String?
+  let title: String
+  let action: String
+  let riskClass: String
+  let status: String
+  let note: String?
 }
 
 private struct CorpusRefreshSnapshot {

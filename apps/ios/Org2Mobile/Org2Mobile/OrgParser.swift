@@ -127,6 +127,12 @@ enum OrgParser {
               properties: node.properties,
               body: node.body.prettyPrintedOrgLinks().trimmingCharacters(in: .whitespacesAndNewlines),
               tags: node.tags,
+              kind: "headline",
+              runID: nil,
+              approvalID: nil,
+              fingerprint: nil,
+              action: nil,
+              riskClass: nil,
             )
           )
         }

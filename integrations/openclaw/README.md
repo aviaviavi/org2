@@ -8,10 +8,14 @@ The plugin tracks substantial main-agent turns, subagent executions, and cron
 executions. It also prepares manual Org2 workflow runs before agent execution,
 reconciles active schedule triggers from visible `workflows/*.org2` files into
 OpenClaw cron, and continues an existing run in its correlated chat session
-after an approval returns the run to `running`. Successful turns record a
-reviewer-facing outcome summary; approval and clarification boundaries remain
-open instead of being mistaken for completion. Available provider, model,
-token, and elapsed-time metadata is copied into the durable run.
+after an approval returns the run to `running`. Scheduled executions retain one
+logical workflow identity while each cron firing has a distinct attempt. When a
+schedule declares an Org2 event/fresh-work gate, the adapter asks the CLI to
+create the attempt and stops workflow work when the gate returns a skip instead
+of inventing an empty durable run. Successful turns record a reviewer-facing
+outcome summary; approval and clarification boundaries remain open instead of
+being mistaken for completion. Available provider, model, token, and
+elapsed-time metadata is copied into the durable run.
 
 The adapter remains pinned to one configured `corpusDir` for writes. Mac
 workflow requests include the selected portable corpus ID, and the plugin
