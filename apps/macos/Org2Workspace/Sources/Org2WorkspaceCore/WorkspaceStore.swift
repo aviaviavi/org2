@@ -3057,6 +3057,7 @@ public final class WorkspaceStore: ObservableObject {
       let updated = try await performAgentRunApprovalDecision(
         runID: run.id,
         approvalID: approval.id,
+        fingerprint: approval.fingerprint,
         decision: decision,
         requestedRole: approval.requestedRole,
         requestedFrom: approval.requestedFrom
@@ -3769,6 +3770,7 @@ public final class WorkspaceStore: ObservableObject {
     let updated = try await performAgentRunApprovalDecision(
       runID: runID,
       approvalID: approvalID,
+      fingerprint: item.fingerprint,
       decision: decision,
       requestedRole: item.requestedRole,
       requestedFrom: item.requestedFrom,
@@ -3794,6 +3796,7 @@ public final class WorkspaceStore: ObservableObject {
   private func performAgentRunApprovalDecision(
     runID: String,
     approvalID: String,
+    fingerprint: String?,
     decision: String,
     requestedRole: String?,
     requestedFrom: String?,
@@ -3810,6 +3813,9 @@ public final class WorkspaceStore: ObservableObject {
       "--dir", corpusRoot.path,
       "--json"
     ]
+    if let fingerprint = fingerprint?.trimmingCharacters(in: .whitespacesAndNewlines), !fingerprint.isEmpty {
+      arguments.append(contentsOf: ["--fingerprint", fingerprint])
+    }
     if let note = note?.trimmingCharacters(in: .whitespacesAndNewlines), !note.isEmpty {
       arguments.append(contentsOf: ["--note", note])
     }

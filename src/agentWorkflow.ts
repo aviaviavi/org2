@@ -14,6 +14,19 @@ export const WORKFLOW_EVENT_TRIGGER_TYPES = ["capture", "meeting-import"] as con
 
 export type AgentWorkflowState = "draft" | "active" | "paused";
 export type WorkflowEventTriggerType = typeof WORKFLOW_EVENT_TRIGGER_TYPES[number];
+export type WorkflowSignalType = WorkflowEventTriggerType | "file-change";
+
+export interface WorkflowSignal {
+  id: string;
+  type: WorkflowSignalType;
+  at: string;
+  paths: string[];
+}
+
+export interface WorkflowTriggerGate {
+  events?: WorkflowSignalType[];
+  paths?: string[];
+}
 
 export interface WorkflowInput {
   id: string;
@@ -37,6 +50,8 @@ export interface WorkflowTrigger {
   timezone?: string;
   path?: string;
   lastRunAt?: string;
+  lastAttemptAt?: string;
+  gate?: WorkflowTriggerGate;
 }
 
 export interface AgentWorkflow {
@@ -56,6 +71,7 @@ export interface AgentWorkflow {
   validations: string[];
   approvals: Array<Pick<AgentRunApproval, "title" | "action" | "riskClass" | "requestedRole">>;
   triggers: WorkflowTrigger[];
+  signals?: WorkflowSignal[];
   compatibility: { org2: string; schema: string };
   sourceRunId?: string;
   createdAt: string;
@@ -146,6 +162,19 @@ export function validateWorkflow(workflow: AgentWorkflow): WorkflowValidationRes
   for (const [index, trigger] of (workflow.triggers || []).entries()) {
     if (trigger.type === "schedule" && !trigger.schedule) issues.push({ path: `triggers[${index}].schedule`, message: "is required for schedule triggers" });
     if (trigger.type === "file-change" && !trigger.path) issues.push({ path: `triggers[${index}].path`, message: "is required for file-change triggers" });
+    if (trigger.gate && !(trigger.gate.events?.length || trigger.gate.paths?.length)) {
+      issues.push({ path: `triggers[${index}].gate`, message: "must declare at least one event or path" });
+    }
+    for (const event of trigger.gate?.events || []) {
+      if (![...WORKFLOW_EVENT_TRIGGER_TYPES, "file-change"].includes(event)) {
+        issues.push({ path: `triggers[${index}].gate.events`, message: `unsupported event: ${event}` });
+      }
+    }
+  }
+  for (const [index, signal] of (workflow.signals || []).entries()) {
+    if (!signal.id?.trim()) issues.push({ path: `signals[${index}].id`, message: "is required" });
+    if (![...WORKFLOW_EVENT_TRIGGER_TYPES, "file-change"].includes(signal.type)) issues.push({ path: `signals[${index}].type`, message: "is not supported" });
+    if (!signal.at || Number.isNaN(new Date(signal.at).getTime())) issues.push({ path: `signals[${index}].at`, message: "must be an ISO timestamp" });
   }
   return { valid: issues.length === 0, issues };
 }
@@ -154,7 +183,13 @@ function applyTemplate(value: string, inputs: Record<string, string>): string {
   return value.replace(/\{\{\s*([A-Za-z0-9._-]+)\s*\}\}/g, (_match, name: string) => inputs[name] ?? `{{${name}}}`);
 }
 
-export function instantiateWorkflow(workflow: AgentWorkflow, inputs: Record<string, string>, options: { owner?: string; assignee?: string; now?: string } = {}): AgentRun {
+export function instantiateWorkflow(workflow: AgentWorkflow, inputs: Record<string, string>, options: {
+  owner?: string;
+  assignee?: string;
+  now?: string;
+  logicalWorkId?: string;
+  attempt?: AgentRun["attempt"];
+} = {}): AgentRun {
   const missing = workflow.inputs.filter((input) => input.required && !(inputs[input.id] || input.default));
   if (missing.length) throw new Error(`missing required workflow inputs: ${missing.map((input) => input.id).join(", ")}`);
   const resolved = Object.fromEntries(workflow.inputs.map((input) => [input.id, inputs[input.id] ?? input.default ?? ""]));
@@ -169,6 +204,8 @@ export function instantiateWorkflow(workflow: AgentWorkflow, inputs: Record<stri
     capabilities: workflow.capabilities,
     context: workflow.contextRules.map((ref) => ({ ref: applyTemplate(ref, resolved) })),
     plan: workflow.steps.map((step) => ({ ...step, title: applyTemplate(step.title, resolved), detail: step.detail ? applyTemplate(step.detail, resolved) : undefined })),
+    logicalWorkId: options.logicalWorkId,
+    attempt: options.attempt,
     now: options.now,
   });
 }
@@ -327,10 +364,64 @@ export function dueWorkflowTriggers(workflow: AgentWorkflow, options: { now?: st
       const interval = parseEvery(trigger.schedule);
       if (!interval) return false;
       const last = trigger.lastRunAt ? new Date(trigger.lastRunAt).getTime() : 0;
-      return Number.isFinite(last) && now - last >= interval;
+      return Number.isFinite(last) && now - last >= interval && workflowTriggerEligibility(workflow, trigger.id).eligible;
     }
     return false;
   });
+}
+
+export function recordWorkflowSignal(
+  workflow: AgentWorkflow,
+  input: { id?: string; type: WorkflowSignalType; at?: string; paths?: string[] },
+): AgentWorkflow {
+  if (![...WORKFLOW_EVENT_TRIGGER_TYPES, "file-change"].includes(input.type)) throw new Error(`invalid workflow signal: ${input.type}`);
+  const at = nowIso(input.at);
+  const signal: WorkflowSignal = {
+    id: safeId(input.id || crypto.randomUUID()),
+    type: input.type,
+    at,
+    paths: Array.from(new Set((input.paths || []).map((item) => item.trim()).filter(Boolean))),
+  };
+  return {
+    ...workflow,
+    signals: [...(workflow.signals || []), signal],
+    updatedAt: at,
+  };
+}
+
+export function workflowTriggerEligibility(
+  workflow: AgentWorkflow,
+  triggerId: string,
+): { eligible: boolean; reason: string; signalIds: string[] } {
+  const trigger = workflow.triggers.find((item) => item.id === triggerId);
+  if (!trigger) throw new Error(`workflow trigger not found: ${triggerId}`);
+  if (!trigger.enabled) return { eligible: false, reason: "trigger is disabled", signalIds: [] };
+  if (!trigger.gate) return { eligible: true, reason: "trigger has no event gate", signalIds: [] };
+  const boundary = new Date(trigger.lastAttemptAt || trigger.lastRunAt || 0).getTime();
+  const matching = (workflow.signals || []).filter((signal) => {
+    const at = new Date(signal.at).getTime();
+    if (!Number.isFinite(at) || at <= boundary) return false;
+    const eventMatches = !trigger.gate?.events?.length || trigger.gate.events.includes(signal.type);
+    const pathMatches = !trigger.gate?.paths?.length || signal.paths.some((candidate) =>
+      trigger.gate!.paths!.some((expected) => candidate === expected || candidate.startsWith(`${expected}/`))
+    );
+    return eventMatches && pathMatches;
+  });
+  return matching.length
+    ? { eligible: true, reason: `${matching.length} fresh signal${matching.length === 1 ? "" : "s"} matched`, signalIds: matching.map((item) => item.id) }
+    : { eligible: false, reason: "no matching event or fresh-work signal arrived after the previous attempt", signalIds: [] };
+}
+
+export function markWorkflowTriggerAttempt(workflow: AgentWorkflow, triggerId: string, atRaw?: string): AgentWorkflow {
+  const at = nowIso(atRaw);
+  let found = false;
+  const triggers = workflow.triggers.map((trigger) => {
+    if (trigger.id !== triggerId) return trigger;
+    found = true;
+    return { ...trigger, lastAttemptAt: at, lastRunAt: at };
+  });
+  if (!found) throw new Error(`workflow trigger not found: ${triggerId}`);
+  return { ...workflow, triggers, updatedAt: at };
 }
 
 export function packagedWorkflowManifest(workflow: AgentWorkflow): Record<string, unknown> {

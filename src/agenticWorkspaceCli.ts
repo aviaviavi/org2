@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import {
@@ -20,6 +21,7 @@ import {
   normalizeLegacyAgentRuns,
   requestAgentRunApproval,
   saveAgentRun,
+  summarizeAgentRunAttempts,
   transitionAgentRun,
   updateAgentRunAssignment,
   updateAgentRunArtifactReview,
@@ -37,12 +39,15 @@ import {
   installBuiltinWorkflow,
   listWorkflows,
   loadWorkflow,
+  markWorkflowTriggerAttempt,
   migrateLegacyWorkflows,
   packagedWorkflowManifest,
   packagedCorpusTemplate,
+  recordWorkflowSignal,
   saveWorkflow,
   updateWorkflow,
   validateWorkflow,
+  workflowTriggerEligibility,
   workflowSourcePath,
   workflowFromRun,
 } from "./agentWorkflow.js";
@@ -126,9 +131,9 @@ const HELP = `Agentic workspace commands:
   org2 run artifact-review ID ARTIFACT --status reviewed|promoted|rejected [--actor NAME]
   org2 run validation ID --name NAME --status passed|failed|warning|skipped
   org2 run approval-request ID --title TEXT --action TEXT [--risk CLASS] [--role ROLE]
-  org2 run approval-decide ID APPROVAL --decision approved|rejected|revised|canceled --actor NAME [--receipt TEXT]
+  org2 run approval-decide ID APPROVAL --decision approved|rejected|revised|canceled --actor NAME [--fingerprint SHA256] [--receipt TEXT]
   org2 review list [--status pending] | org2 review show RUN
-  org2 workflow list|show|validate|save|run|triggers|activate|pause|draft|schedule|migrate|package|corpus-template|install-builtin
+  org2 workflow list|show|validate|save|run|triggers|signal|gate|activate|pause|draft|schedule|migrate|package|corpus-template|install-builtin
   org2 artifact graph --manifest FILE | org2 artifact rebuild --manifest FILE
   org2 runtime init|show|select|verify-paths
   org2 mcp serve|clients|client-add|discover|snapshot
@@ -271,13 +276,13 @@ async function runCommand(parsed: ParsedArgs): Promise<void> {
     const risk = choice(flag(parsed, "risk", "local-draft"), AGENT_RUN_RISK_CLASSES, "risk class");
     const tokenLimit = flag(parsed, "token-limit"); const costLimit = flag(parsed, "cost-limit-usd"); const timeLimit = flag(parsed, "time-limit-seconds");
     const plan = flags(parsed, "step").map((raw, index) => { const colon = raw.indexOf(":"); const kind = colon > 0 ? raw.slice(0, colon) : "agent"; const title = colon > 0 ? raw.slice(colon + 1) : raw; if (!title.trim()) throw new Error(`--step ${index + 1} must be [${AGENT_RUN_STEP_KINDS.join("|")}]:TITLE`); return { id: `step-${index + 1}`, kind: choice(kind, AGENT_RUN_STEP_KINDS, `--step ${index + 1} kind`), title: title.trim() }; });
-    const run = createAgentRun({ id: flag(parsed, "id"), goal: required(flag(parsed, "goal"), "--goal is required"), acceptanceCriteria: flags(parsed, "accept"), riskClass: risk, owner: flag(parsed, "owner"), assignee: flag(parsed, "assignee"), providerPolicy: flag(parsed, "policy"), provider: flag(parsed, "provider"), model: flag(parsed, "model"), capabilities: flags(parsed, "capability"), context: flags(parsed, "context").map((ref) => ({ ref })), plan, ...((tokenLimit || costLimit || timeLimit) ? { budget: { ...(tokenLimit ? { tokenLimit: Number(tokenLimit) } : {}), ...(costLimit ? { costLimitUsd: Number(costLimit) } : {}), ...(timeLimit ? { timeLimitSeconds: Number(timeLimit) } : {}) } } : {}) });
+    const run = createAgentRun({ id: flag(parsed, "id"), goal: required(flag(parsed, "goal"), "--goal is required"), acceptanceCriteria: flags(parsed, "accept"), riskClass: risk, owner: flag(parsed, "owner"), assignee: flag(parsed, "assignee"), providerPolicy: flag(parsed, "policy"), provider: flag(parsed, "provider"), model: flag(parsed, "model"), capabilities: flags(parsed, "capability"), context: flags(parsed, "context").map((ref) => ({ ref })), plan, logicalWorkId: flag(parsed, "logical-work-id"), ...((tokenLimit || costLimit || timeLimit) ? { budget: { ...(tokenLimit ? { tokenLimit: Number(tokenLimit) } : {}), ...(costLimit ? { costLimitUsd: Number(costLimit) } : {}), ...(timeLimit ? { timeLimitSeconds: Number(timeLimit) } : {}) } } : {}) });
     const file = saveAgentRun(corpus, run); output(parsed, { run, file }, `created ${run.id}\n${file}`); return;
   }
   if (action === "list") {
     const status = flag(parsed, "status");
     const runs = listAgentRuns(corpus).filter((run) => !status || run.status === status);
-    output(parsed, { schema: "org2:run-list:v1", runs }, runs.length ? runs.map((run) => `${run.id}\t${run.status}\t${run.goal}`).join("\n") : "No runs."); return;
+    output(parsed, { schema: "org2:run-list:v1", runs, logicalWork: summarizeAgentRunAttempts(runs) }, runs.length ? runs.map((run) => `${run.id}\t${run.status}\t${run.attempt ? `${run.logicalWorkId}#${run.attempt.number}\t` : ""}${run.goal}`).join("\n") : "No runs."); return;
   }
   if (action === "normalize") { const result = normalizeLegacyAgentRuns(corpus); output(parsed, result, `created ${result.created.length}; skipped ${result.skippedExisting.length}`); return; }
   const id = required(parsed.positional[1], `run id is required for ${action}`);
@@ -326,7 +331,7 @@ async function runCommand(parsed: ParsedArgs): Promise<void> {
   }
   else if (action === "validation") run = addAgentRunValidation(existing, { name: required(flag(parsed, "name"), "--name is required"), status: choice(flag(parsed, "status"), AGENT_RUN_VALIDATION_STATUSES, "validation status"), detail: flag(parsed, "detail") }, flag(parsed, "actor"));
   else if (action === "approval-request") run = requestAgentRunApproval(existing, { title: required(flag(parsed, "title"), "--title is required"), action: required(flag(parsed, "action"), "--action is required"), riskClass: choice(flag(parsed, "risk", existing.riskClass), AGENT_RUN_RISK_CLASSES, "approval risk class"), requestedRole: flag(parsed, "role"), requestedFrom: flag(parsed, "from"), note: flag(parsed, "note") }, flag(parsed, "actor"));
-  else if (action === "approval-decide") run = decideAgentRunApproval(existing, required(parsed.positional[2], "approval id is required"), choice(flag(parsed, "decision"), AGENT_RUN_APPROVAL_DECISIONS, "approval decision"), { actor: required(flag(parsed, "actor"), "--actor is required"), actorRole: flag(parsed, "role"), note: flag(parsed, "note"), receipt: flag(parsed, "receipt") });
+  else if (action === "approval-decide") run = decideAgentRunApproval(existing, required(parsed.positional[2], "approval id is required"), choice(flag(parsed, "decision"), AGENT_RUN_APPROVAL_DECISIONS, "approval decision"), { actor: required(flag(parsed, "actor"), "--actor is required"), actorRole: flag(parsed, "role"), fingerprint: flag(parsed, "fingerprint"), note: flag(parsed, "note"), receipt: flag(parsed, "receipt") });
   else if (action === "fork") { run = forkAgentRun(existing, { id: flag(parsed, "id"), actor: flag(parsed, "actor"), fromEventId: flag(parsed, "event") }); const file = saveAgentRun(corpus, run); output(parsed, { run, file }, `forked ${existing.id} -> ${run.id}`); return; }
   else throw new Error(`unknown run action: ${action}`);
   saveAgentRun(corpus, run); output(parsed, run, `${run.id}: ${run.status}`);
@@ -381,6 +386,10 @@ function workflowCommand(parsed: ParsedArgs): void {
     const cron = flag(parsed, "cron")?.trim();
     const timezone = flag(parsed, "timezone")?.trim() || flag(parsed, "tz")?.trim();
     const disabled = parsed.flags.has("disable");
+    const gateEvents = flags(parsed, "gate-event").map((event) =>
+      choice(event, [...WORKFLOW_EVENT_TRIGGER_TYPES, "file-change"] as const, "workflow gate event")
+    );
+    const gatePaths = flags(parsed, "gate-path");
     if (!disabled && !cron) throw new Error("workflow schedule requires --cron EXPR or --disable");
     const updated = updateWorkflow(corpus, id, (item) => {
       const triggers = item.triggers.filter((trigger) => trigger.id !== "openclaw-schedule");
@@ -390,6 +399,12 @@ function workflowCommand(parsed: ParsedArgs): void {
         enabled: !disabled,
         ...(cron ? { schedule: cron } : {}),
         ...(timezone ? { timezone } : {}),
+        ...((gateEvents.length || gatePaths.length) ? {
+          gate: {
+            ...(gateEvents.length ? { events: gateEvents } : {}),
+            ...(gatePaths.length ? { paths: gatePaths } : {}),
+          },
+        } : {}),
       });
       return { ...item, triggers };
     });
@@ -408,7 +423,52 @@ function workflowCommand(parsed: ParsedArgs): void {
     output(parsed, { workflow: id, due }, due.length ? due.map((trigger) => `${trigger.id}\t${trigger.type}`).join("\n") : "No triggers due.");
     return;
   }
-  if (action === "run") { const inputs = Object.fromEntries(flags(parsed, "input").map((item) => { const at = item.indexOf("="); if (at < 1) throw new Error("--input must be NAME=VALUE"); return [item.slice(0, at), item.slice(at + 1)]; })); const run = instantiateWorkflow(workflow, inputs, { owner: flag(parsed, "owner"), assignee: flag(parsed, "assignee") }); const file = saveAgentRun(corpus, run); output(parsed, { run, file }, `created run ${run.id} from ${id}@${workflow.version}`); return; }
+  if (action === "signal") {
+    const event = choice(flag(parsed, "event"), [...WORKFLOW_EVENT_TRIGGER_TYPES, "file-change"] as const, "workflow signal");
+    const updated = updateWorkflow(corpus, id, (item) => recordWorkflowSignal(item, {
+      id: flag(parsed, "signal-id"),
+      type: event,
+      at: flag(parsed, "at"),
+      paths: flags(parsed, "changed"),
+    }));
+    output(parsed, updated, `${id}: recorded ${event} signal`);
+    return;
+  }
+  if (action === "gate") {
+    const triggerId = required(flag(parsed, "trigger"), "--trigger is required");
+    const eligibility = workflowTriggerEligibility(workflow, triggerId);
+    output(parsed, { schema: "org2:workflow-gate:v1", workflowId: id, triggerId, ...eligibility }, eligibility.eligible ? `${id}/${triggerId}: eligible` : `${id}/${triggerId}: skipped — ${eligibility.reason}`);
+    return;
+  }
+  if (action === "run") {
+    const inputs = Object.fromEntries(flags(parsed, "input").map((item) => { const at = item.indexOf("="); if (at < 1) throw new Error("--input must be NAME=VALUE"); return [item.slice(0, at), item.slice(at + 1)]; }));
+    const triggerId = flag(parsed, "trigger");
+    const eligibility = triggerId ? workflowTriggerEligibility(workflow, triggerId) : { eligible: true, reason: "manual run", signalIds: [] };
+    if (!eligibility.eligible) {
+      output(parsed, { schema: "org2:workflow-run-skipped:v1", workflowId: id, triggerId, ...eligibility }, `skipped ${id}: ${eligibility.reason}`);
+      return;
+    }
+    const existingAttempts = listAgentRuns(corpus).filter((item) => item.logicalWorkId === (flag(parsed, "logical-work-id") || `workflow:${id}`) && item.attempt);
+    const attemptNumber = existingAttempts.reduce((maximum, item) => Math.max(maximum, item.attempt?.number || 0), 0) + 1;
+    const attemptAt = flag(parsed, "scheduled-for") || new Date().toISOString();
+    const run = instantiateWorkflow(workflow, inputs, {
+      owner: flag(parsed, "owner"),
+      assignee: flag(parsed, "assignee"),
+      logicalWorkId: flag(parsed, "logical-work-id") || (triggerId ? `workflow:${id}` : undefined),
+      attempt: triggerId ? {
+        id: flag(parsed, "attempt-id") || crypto.randomUUID(),
+        number: attemptNumber,
+        triggerId,
+        triggerType: workflow.triggers.find((item) => item.id === triggerId)?.type,
+        scheduledFor: attemptAt,
+        signalIds: eligibility.signalIds,
+      } : undefined,
+    });
+    const file = saveAgentRun(corpus, run);
+    if (triggerId) updateWorkflow(corpus, id, (item) => markWorkflowTriggerAttempt(item, triggerId, attemptAt));
+    output(parsed, { run, file, eligibility }, `created run ${run.id} from ${id}@${workflow.version}${run.attempt ? ` attempt ${run.attempt.number}` : ""}`);
+    return;
+  }
   throw new Error(`unknown workflow action: ${action}`);
 }
 
