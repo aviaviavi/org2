@@ -118,6 +118,10 @@ export default definePluginEntry({
         const marker = workflowMarker(event.job?.payload?.text);
         if (marker) {
           await lifecycle.serialize(() => lifecycle.ensureWorkflow(key, marker.workflowId, marker.inputs, {
+            triggerId: marker.triggerId || "openclaw-schedule",
+            attemptId: key.replace(/[^A-Za-z0-9._-]+/g, "-"),
+            scheduledFor: Number.isFinite(event.runAtMs) ? new Date(event.runAtMs).toISOString() : undefined,
+            logicalWorkId: `workflow:${marker.workflowId}`,
             sessionKey: event.sessionKey,
             openclawRunId: event.runId,
             provider: event.provider,

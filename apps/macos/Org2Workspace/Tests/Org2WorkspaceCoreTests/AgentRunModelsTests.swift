@@ -67,6 +67,7 @@ final class AgentRunModelsTests: XCTestCase {
       "body": "publish report",
       "tags": [],
       "approvalId": "approval-1",
+      "fingerprint": "sha256:abc123",
       "action": "publish report",
       "riskClass": "external-action",
       "requestedRole": "owner",
@@ -83,6 +84,7 @@ final class AgentRunModelsTests: XCTestCase {
     let item = try JSONDecoder().decode(ApprovalItem.self, from: data)
     XCTAssertTrue(item.isRunApproval)
     XCTAssertEqual(item.id, "run:run-1:approval-1")
+    XCTAssertEqual(item.fingerprint, "sha256:abc123")
     XCTAssertEqual(item.sourceLabel, "Run run-1")
     XCTAssertEqual(item.runDependencyText, "Approving this leaves 1 other pending approval before the run can resume.")
     XCTAssertTrue(item.matchesApprovalFilter("prepare report external-action"))

@@ -25,22 +25,25 @@ export function workflowMarker(prompt) {
   const text = String(prompt || "");
   const workflowId = text.match(/^ORG2_WORKFLOW_ID:\s*([^\s]+)\s*$/mi)?.[1];
   const workflowRunId = text.match(/^ORG2_WORKFLOW_RUN_ID:\s*([^\s]+)\s*$/mi)?.[1];
+  const triggerId = text.match(/^ORG2_WORKFLOW_TRIGGER_ID:\s*([^\s]+)\s*$/mi)?.[1];
   const inputsRaw = text.match(/^ORG2_WORKFLOW_INPUTS:\s*(\{.*\})\s*$/mi)?.[1];
   let inputs = {};
   if (inputsRaw) {
     try { inputs = JSON.parse(inputsRaw); } catch {}
   }
-  return workflowId ? { workflowId, workflowRunId, inputs } : null;
+  return workflowId ? { workflowId, workflowRunId, ...(triggerId ? { triggerId } : {}), inputs } : null;
 }
 
-export function workflowExecutionPrompt(workflow, inputs = {}, runId) {
+export function workflowExecutionPrompt(workflow, inputs = {}, runId, triggerId) {
   return [
     `ORG2_WORKFLOW_ID: ${workflow.id}`,
     `ORG2_WORKFLOW_VERSION: ${workflow.version}`,
     ...(runId ? [`ORG2_WORKFLOW_RUN_ID: ${runId}`] : []),
+    ...(triggerId ? [`ORG2_WORKFLOW_TRIGGER_ID: ${triggerId}`] : []),
     `ORG2_WORKFLOW_INPUTS: ${JSON.stringify(inputs)}`,
     "",
     `Execute the Org2 workflow \"${workflow.title}\" from its canonical plain-text workflow file.`,
+    ...(triggerId ? ["This is a scheduled attempt. The Org2 lifecycle adapter checks its declared event/fresh-work gate before creating the durable attempt; if no run was created, stop without executing workflow steps."] : []),
     "Read the workflow and durable run with the Org2 CLI. Update run steps as they progress, record produced artifacts and validation results, and keep generated work in the declared reviewable locations.",
     "At an approval boundary, request the approval on this run and end the turn without performing the protected action. Org2 will explicitly continue the same run after approval.",
     "Before requesting an external-action or high-impact approval, record the exact recipient, content, command, and attachments in an inspectable run artifact or approval note. An opaque ID or content fingerprint is not review material.",
@@ -97,14 +100,14 @@ export class Org2Lifecycle {
     this.log = options.log || console;
     this.owner = options.owner || "user";
     this.exec = options.exec || this.#exec.bind(this);
-    this.state = { version: 3, mappings: {}, workflowJobs: {} };
+    this.state = { version: 4, mappings: {}, workflowJobs: {} };
     this.cron = options.cron;
     this.queue = Promise.resolve();
   }
 
   async init() {
     try { this.state = JSON.parse(await readFile(this.stateFile, "utf8")); } catch {}
-    this.state.version = 3;
+    this.state.version = 4;
     this.state.mappings ||= {};
     this.state.workflowJobs ||= {};
   }
@@ -211,13 +214,19 @@ export class Org2Lifecycle {
   async prepareWorkflowRun(workflowId, inputs = {}, details = {}) {
     const corpus = await this.assertCorpus(details.expectedCorpusId);
     const args = ["workflow", "run", workflowId, "--owner", this.owner, "--json"];
+    if (details.triggerId) args.push("--trigger", String(details.triggerId));
+    if (details.attemptId) args.push("--attempt-id", String(details.attemptId));
+    if (details.scheduledFor) args.push("--scheduled-for", String(details.scheduledFor));
+    if (details.logicalWorkId) args.push("--logical-work-id", String(details.logicalWorkId));
     for (const [name, value] of Object.entries(inputs)) args.push("--input", `${name}=${value}`);
     const created = JSON.parse(await this.exec(args));
     const workflow = await this.workflow(workflowId);
     return {
       run: created.run,
+      skipped: created.schema === "org2:workflow-run-skipped:v1",
+      eligibility: created.eligibility || (created.reason ? { eligible: false, reason: created.reason } : undefined),
       workflow,
-      prompt: workflowExecutionPrompt(workflow, inputs, created.run.id),
+      prompt: created.run ? workflowExecutionPrompt(workflow, inputs, created.run.id, details.triggerId) : undefined,
       corpus: corpus.identity,
     };
   }
@@ -225,7 +234,22 @@ export class Org2Lifecycle {
   async ensureWorkflow(key, workflowId, inputs = {}, details = {}) {
     const existing = this.state.mappings[key];
     if (existing?.org2RunId) return existing.org2RunId;
-    const prepared = await this.prepareWorkflowRun(workflowId, inputs);
+    const prepared = await this.prepareWorkflowRun(workflowId, inputs, details);
+    if (!prepared.run) {
+      const now = new Date().toISOString();
+      this.state.mappings[key] = {
+        kind: "workflow-attempt",
+        workflowId,
+        logicalWorkId: details.logicalWorkId || `workflow:${workflowId}`,
+        attemptId: details.attemptId,
+        skippedAt: now,
+        skippedReason: prepared.eligibility?.reason || "workflow event gate was not eligible",
+        finishedAt: now,
+        outcome: "skipped",
+      };
+      await this.#save();
+      return null;
+    }
     return this.attach(key, prepared.run.id, { ...details, kind: "workflow", workflowId });
   }
 
@@ -377,7 +401,7 @@ export class Org2Lifecycle {
         schedule: { kind: "cron", expr: trigger.schedule, ...(trigger.timezone ? { tz: trigger.timezone } : {}) },
         sessionTarget: "isolated",
         wakeMode: "now",
-        payload: { kind: "agentTurn", text: workflowExecutionPrompt(workflow) },
+        payload: { kind: "agentTurn", text: workflowExecutionPrompt(workflow, {}, undefined, trigger.id) },
       };
       const fingerprint = JSON.stringify(desired);
       if (!job) {

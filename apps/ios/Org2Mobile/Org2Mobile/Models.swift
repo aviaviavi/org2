@@ -94,6 +94,16 @@ struct ApprovalEntry: Identifiable, Hashable, Codable {
   let properties: [String: String]
   let body: String
   let tags: [String]
+  let kind: String?
+  let runID: String?
+  let approvalID: String?
+  let fingerprint: String?
+  let action: String?
+  let riskClass: String?
+
+  var isRunApproval: Bool {
+    kind == "run" && runID != nil && approvalID != nil
+  }
 
   var sourceLabel: String {
     if let line {
@@ -110,6 +120,9 @@ struct ApprovalEntry: Identifiable, Hashable, Codable {
     \(title)
     Source: \(sourceLabel)
     Status: \(status)
+    \(runID.map { "Run: \($0)" } ?? "")
+    \(approvalID.map { "Approval: \($0)" } ?? "")
+    \(fingerprint.map { "Fingerprint: \($0)" } ?? "")
 
     \(body.trimmedForDisplay(maxCharacters: 900))
     """
@@ -118,11 +131,14 @@ struct ApprovalEntry: Identifiable, Hashable, Codable {
 
 enum OpenClawAction: String {
   case discuss
+  case decide
 
   var title: String {
     switch self {
     case .discuss:
       "Discuss"
+    case .decide:
+      "Decide"
     }
   }
 }

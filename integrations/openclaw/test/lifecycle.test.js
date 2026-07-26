@@ -91,6 +91,40 @@ test("reconciles an active Org2 schedule into OpenClaw cron", async () => {
   assert.equal(added[0].schedule.expr, "0 9 * * 1");
   assert.equal(added[0].schedule.tz, "America/Los_Angeles");
   assert.equal(workflowMarker(added[0].payload.text).workflowId, "weekly-review");
+  assert.equal(workflowMarker(added[0].payload.text).triggerId, "openclaw-schedule");
+});
+
+test("records an ineligible scheduled workflow attempt as skipped without creating a run", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "org2-openclaw-gate-"));
+  const lifecycle = new Org2Lifecycle({
+    stateFile: join(dir, "state.json"),
+    exec: async (args) => {
+      if (args[0] === "corpus") return JSON.stringify({ identity: { id: "personal" } });
+      if (args[0] === "workflow" && args[1] === "run") {
+        return JSON.stringify({
+          schema: "org2:workflow-run-skipped:v1",
+          workflowId: "weekly-review",
+          triggerId: "openclaw-schedule",
+          eligible: false,
+          reason: "no matching event or fresh-work signal arrived after the previous attempt",
+        });
+      }
+      if (args[0] === "workflow" && args[1] === "show") {
+        return JSON.stringify({ id: "weekly-review", version: "1.0.0", title: "Weekly review" });
+      }
+      return "";
+    },
+  });
+  await lifecycle.init();
+  const result = await lifecycle.ensureWorkflow("cron:job:1", "weekly-review", {}, {
+    triggerId: "openclaw-schedule",
+    attemptId: "cron-job-1",
+    logicalWorkId: "workflow:weekly-review",
+  });
+  assert.equal(result, null);
+  const state = JSON.parse(await readFile(join(dir, "state.json"), "utf8"));
+  assert.equal(state.mappings["cron:job:1"].outcome, "skipped");
+  assert.match(state.mappings["cron:job:1"].skippedReason, /no matching event/);
 });
 
 test("finish reloads a mapping and records the required completion summary", async () => {
@@ -109,7 +143,7 @@ test("finish reloads a mapping and records the required completion summary", asy
     "run", "complete", "run-1", "--actor", "org2-lifecycle", "--summary", "Finished the requested work.",
   ]);
   const state = JSON.parse(await readFile(stateFile, "utf8"));
-  assert.equal(state.version, 3);
+  assert.equal(state.version, 4);
   assert.equal(state.mappings.key.outcome, "ok");
 });
 
