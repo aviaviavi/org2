@@ -6496,6 +6496,16 @@ private struct DetailHeader: View {
 
   private var documentLayoutMenu: some View {
     Menu {
+      Picker("Preview", selection: $store.documentPreviewKind) {
+        Label("Document", systemImage: "doc.richtext")
+          .tag(OrgDocumentPreviewKind.document)
+        Label("Slides", systemImage: "rectangle.on.rectangle")
+          .tag(OrgDocumentPreviewKind.slides)
+          .disabled(!store.canPreviewSlides)
+      }
+
+      Divider()
+
       Picker("Document Width", selection: $store.renderedDocumentWidth) {
         ForEach(RenderedDocumentWidth.allCases) { width in
           Text(width.title).tag(width)
@@ -6527,10 +6537,10 @@ private struct DetailHeader: View {
         }
       }
     } label: {
-      Label("View", systemImage: "doc.richtext")
+      Label("View", systemImage: store.documentPreviewKind.systemImage)
     }
     .fixedSize(horizontal: true, vertical: false)
-    .help("Document width, margins, and stylesheet")
+    .help("Document or slide preview, width, margins, and stylesheet")
   }
 
   private var sourceMenu: some View {
@@ -6880,6 +6890,11 @@ private struct LiveFileEditorBody: View {
             LegacyStructuredEntryEditorView(source: source)
               .padding(16)
           }
+        } else if store.documentPreviewKind == .slides {
+          OrgSlidePreviewPane()
+            .task(id: source) {
+              store.scheduleSlidePreview(text: source.text, source: source, immediate: true)
+            }
         } else if let html = store.selectedEntryHTML {
           OrgHTMLDocumentView(
             html: html,
@@ -6952,6 +6967,88 @@ private struct OrgHTMLLoadingView: View {
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+  }
+}
+
+private struct OrgSlidePreviewPane: View {
+  @EnvironmentObject private var store: WorkspaceStore
+
+  var body: some View {
+    ZStack(alignment: .bottom) {
+      if let pdf = store.slidePreviewPDF {
+        OrgPDFDocumentView(data: pdf)
+      } else if store.isRenderingSlidePreview {
+        OrgHTMLLoadingView(label: "Compiling slides", onCancel: store.cancelSlidePreview)
+      } else {
+        unavailableView
+      }
+
+      if store.slidePreviewPDF != nil,
+         let error = store.slidePreviewError {
+        HStack(spacing: 8) {
+          Image(systemName: "exclamationmark.triangle")
+            .foregroundStyle(.orange)
+          Text(error)
+            .font(.caption)
+            .lineLimit(2)
+          Spacer(minLength: 8)
+          Button("Retry") {
+            store.retrySlidePreview()
+          }
+          .controlSize(.small)
+        }
+        .padding(10)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+        .padding(12)
+      }
+    }
+    .overlay(alignment: .topTrailing) {
+      if store.slidePreviewPDF != nil,
+         store.isRenderingSlidePreview {
+        HStack(spacing: 6) {
+          WorkspaceActivityIndicator(size: .small)
+          Text("Compiling")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 7)
+        .background(.regularMaterial, in: Capsule())
+        .padding(12)
+      }
+    }
+    .background(Color(nsColor: .textBackgroundColor))
+  }
+
+  private var unavailableView: some View {
+    VStack(spacing: 12) {
+      Image(systemName: "rectangle.on.rectangle.slash")
+        .font(.system(size: 28, weight: .regular))
+        .foregroundStyle(.secondary)
+      Text("Slide preview unavailable")
+        .font(.headline)
+      Text(unavailableMessage)
+        .font(.callout)
+        .foregroundStyle(.secondary)
+        .multilineTextAlignment(.center)
+        .frame(maxWidth: 440)
+      if store.canPreviewSlides {
+        Button {
+          store.retrySlidePreview()
+        } label: {
+          Label("Retry", systemImage: "arrow.clockwise")
+        }
+      }
+    }
+    .padding(24)
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+  }
+
+  private var unavailableMessage: String {
+    if !store.canPreviewSlides {
+      return "Open the full Org or Org2 page to compile its slide deck."
+    }
+    return store.slidePreviewError ?? "Preparing the compiled PDF."
   }
 }
 
@@ -7031,6 +7128,10 @@ private struct OrgSourceEditorWithLinkTools: View {
         store.scheduleSourceEditorPreview(immediate: true)
       }
     }
+    .onChange(of: store.documentPreviewKind) {
+      scheduleSourcePreviewScroll()
+      store.scheduleSourceEditorPreview(immediate: true)
+    }
     .onDisappear {
       sourcePreviewScrollTask?.cancel()
     }
@@ -7109,16 +7210,32 @@ private struct OrgSourceEditorWithLinkTools: View {
   private var sourcePreview: some View {
     VStack(spacing: 0) {
       HStack(spacing: 6) {
-        Label("Preview", systemImage: "doc.richtext")
+        Label("Preview", systemImage: store.documentPreviewKind.systemImage)
           .font(.caption.weight(.semibold))
           .foregroundStyle(.secondary)
 
         Spacer(minLength: 8)
 
-        if store.isRenderingSourceEditorPreview {
+        if (store.documentPreviewKind == .slides
+          ? store.isRenderingSlidePreview
+          : store.isRenderingSourceEditorPreview) {
           WorkspaceActivityIndicator(size: .small)
             .help("Updating preview")
         }
+
+        Picker("Preview kind", selection: $store.documentPreviewKind) {
+          Image(systemName: OrgDocumentPreviewKind.document.systemImage)
+            .tag(OrgDocumentPreviewKind.document)
+            .help(OrgDocumentPreviewKind.document.title)
+          Image(systemName: OrgDocumentPreviewKind.slides.systemImage)
+            .tag(OrgDocumentPreviewKind.slides)
+            .help(OrgDocumentPreviewKind.slides.title)
+            .disabled(!store.canPreviewSlides)
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .frame(width: 68)
+        .help("Rendered document or compiled slide PDF")
 
         Button {
           store.setSourceEditorPreviewPaused(!store.isSourceEditorPreviewPaused)
@@ -7135,24 +7252,28 @@ private struct OrgSourceEditorWithLinkTools: View {
 
       Divider()
 
-      if let html = store.sourceEditorPreviewHTML,
-         let source = store.selectedEntrySource {
-        OrgHTMLDocumentView(
-          html: html,
-          source: source,
-          corpusRoot: store.corpusRoot,
-          searchQuery: nil,
-          searchOccurrenceIndex: nil,
-          searchOccurrenceCount: 0,
-          scrollRequest: sourcePreviewScrollRequest,
-          layout: store.renderedDocumentLayout,
-          askAIAboutHeading: { store.askOpenClawAboutSourceHeading(at: $0) },
-          reportStatus: { store.statusText = $0 }
-        )
-      } else if let error = store.sourceEditorPreviewError {
-        OrgHTMLRenderFailureView(message: error)
+      if store.documentPreviewKind == .slides {
+        OrgSlidePreviewPane()
       } else {
-        OrgHTMLLoadingView(label: "Preparing preview")
+        if let html = store.sourceEditorPreviewHTML,
+           let source = store.selectedEntrySource {
+          OrgHTMLDocumentView(
+            html: html,
+            source: source,
+            corpusRoot: store.corpusRoot,
+            searchQuery: nil,
+            searchOccurrenceIndex: nil,
+            searchOccurrenceCount: 0,
+            scrollRequest: sourcePreviewScrollRequest,
+            layout: store.renderedDocumentLayout,
+            askAIAboutHeading: { store.askOpenClawAboutSourceHeading(at: $0) },
+            reportStatus: { store.statusText = $0 }
+          )
+        } else if let error = store.sourceEditorPreviewError {
+          OrgHTMLRenderFailureView(message: error)
+        } else {
+          OrgHTMLLoadingView(label: "Preparing preview")
+        }
       }
     }
     .background(Color(nsColor: .textBackgroundColor))

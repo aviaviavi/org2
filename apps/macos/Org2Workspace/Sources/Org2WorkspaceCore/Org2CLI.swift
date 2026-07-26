@@ -142,6 +142,37 @@ public struct Org2CLI: Sendable {
     return String(decoding: data, as: UTF8.self)
   }
 
+  public func renderPresentationPDF(
+    _ text: String,
+    sourcePath: String,
+    passes: Int = 1,
+    timeout: TimeInterval = 30
+  ) async throws -> Data {
+    let operation = Task.detached(priority: .userInitiated) {
+      try runProcess(
+        scriptPath: repoRoot.appendingPathComponent("dist/render-presentation-pdf.js"),
+        arguments: [
+          "--source-path", sourcePath,
+          "--passes", "\(max(1, min(4, passes)))",
+        ],
+        standardInput: Data(text.utf8),
+        timeout: timeout
+      )
+    }
+    let data = try await withTaskCancellationHandler {
+      try await operation.value
+    } onCancel: {
+      operation.cancel()
+    }
+    guard data.starts(with: Data("%PDF".utf8)) else {
+      throw Org2CLIError.commandFailed(
+        status: 0,
+        message: "The slide renderer completed without producing a PDF."
+      )
+    }
+    return data
+  }
+
   public func analyzeEditorText(
     _ text: String,
     sourceLineOffset: Int = 0,

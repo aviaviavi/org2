@@ -63,7 +63,11 @@ Source editing can optionally show that HTML renderer in a resizable split view.
 
 Document presentation is customizable without enabling document scripts. Use the document-layout menu to create or edit =.org2/app.css= at the corpus root; its CSS applies to read mode and the source preview. The app continues to exclude =HTML_HEAD= scripts and raw export HTML from its safe rendering profile.
 
-* Slide export
+* Slide preview and export
+
+For a full =.org= or =.org2= page, choose *View → Slides* to compile the talk and inspect its PDF directly in the document pane. The source editor's split preview has the same document/slides selector. Slide preview compiles the current in-memory draft after a short idle delay, so saving is not required before checking the deck. It resolves relative images from the source file's directory and writes no preview artifact into the corpus.
+
+Preview compilation uses one LaTeX pass for responsiveness. A newer edit cancels the obsolete preview request, stale results are rejected, and the last valid PDF remains visible if the next draft does not compile. Pause stops both document and slide refreshes. The bounded error shown in the pane can be retried after the source is corrected.
 
 Org2 Workspace can turn an open =.org= or =.org2= talk into a Beamer PDF without leaving the app:
 
@@ -71,7 +75,7 @@ Org2 Workspace can turn an open =.org= or =.org2= talk into a Beamer PDF without
 2. Choose *File → Export Slides as PDF…* from the macOS menu bar, or open the document header's *File* menu and choose the same command.
 3. Choose the destination. The app saves any pending edit, compiles the entire source file, and opens the finished PDF in the default macOS PDF viewer. If macOS cannot open it automatically, the app confirms that the export still succeeded and shows the written path.
 
-Choose *Export Slides as LaTeX…* instead when you want the intermediate =.tex= file for inspection, manual compilation, or further customization. LaTeX export confirms the written path without opening the file. Both commands use the same shared Org2 presentation model and Beamer renderer as =org2 export beamer=; Swift does not maintain a second slide parser.
+Choose *Export Slides as LaTeX…* instead when you want the intermediate =.tex= file for inspection, manual compilation, or further customization. LaTeX export confirms the written path without opening the file. Final PDF export uses two LaTeX passes so references, outlines, and overlays settle. Preview and both export commands use the same shared Org2 presentation model and Beamer renderer as =org2 export beamer=; Swift does not maintain a second slide parser.
 
 PDF export requires a TeX installation that provides =pdflatex=. MacTeX installs it in =/Library/TeX/texbin=, which the app includes when resolving command-line tools. Relative image paths are resolved from the talk file's directory, so a reference such as =[[file:images/architecture.png]]= continues to work when the PDF is written elsewhere.
 
