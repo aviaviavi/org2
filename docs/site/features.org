@@ -122,13 +122,13 @@ org2 query-data --file notes/readiness.org2 --results weekly --apply</code></pre
   <section class="org2-feature-section" id="editors-publishing" aria-labelledby="editors-publishing-title">
     <div class="org2-feature-heading">
       <h2 id="editors-publishing-title">Editors and publishing use the same semantics</h2>
-      <p>Use the native Workspace for richer review flows, VS Code for the most complete editing experience, the CLI for automation, LSP where the protocol fits, HTML publishing for selected outputs, and Beamer-compatible export for talks.</p>
+      <p>Use the native Workspace for richer review flows and live in-app talk PDF preview, VS Code for the most complete editing experience, the CLI for automation, LSP where the protocol fits, HTML publishing for selected outputs, and Beamer-compatible export for talks.</p>
     </div>
     <div class="org2-editor-strip">
       <figure><img src="assets/screenshots/basic.png" alt="An Org2 project note open in Visual Studio Code with syntax highlighting, tasks, properties, and ID links" loading="lazy" /><figcaption><strong>VS Code.</strong> Syntax, folding, agenda, capture, refiling, formatting, links, search, and planning commands.</figcaption></figure>
       <div class="org2-editor-cards">
         <article><strong>Shared editor intelligence</strong><p>Definitions, references, hover, completion, rename, semantic tokens, table-aware formatting, and file-link updates come from shared semantics.</p></article>
-        <article><strong>Publishing</strong><p>Export one file, compile an Org/Org2 talk to Beamer TeX or PDF, or publish a recursive project with navigation, styles, rewritten links, and generated indexes. This documentation site is built by Org2.</p></article>
+        <article><strong>Publishing</strong><p>Preview an Org/Org2 talk as a live PDF in the Mac app, export it as Beamer TeX or PDF, export one HTML file, or publish a recursive project with navigation, styles, rewritten links, and generated indexes. This documentation site is built by Org2.</p></article>
         <div class="org2-command" aria-label="Formatting and publishing commands">
           <span>Check formatting or preview a site</span>
           <pre class="org2-src language-sh"><code class="language-sh">org2 fmt --dir ~/notes --recursive --check
