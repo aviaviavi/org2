@@ -10,6 +10,13 @@ final class SlideExportTests: XCTestCase {
     XCTAssertEqual(Org2SlideExportFormat.latex.title, "LaTeX")
   }
 
+  func testDocumentPreviewKindMetadata() {
+    XCTAssertEqual(OrgDocumentPreviewKind.document.title, "Document")
+    XCTAssertEqual(OrgDocumentPreviewKind.document.systemImage, "doc.richtext")
+    XCTAssertEqual(OrgDocumentPreviewKind.slides.title, "Slides")
+    XCTAssertEqual(OrgDocumentPreviewKind.slides.systemImage, "rectangle.on.rectangle")
+  }
+
   func testOrg2CLIIncludesMacTeXInChildProcessPath() {
     let path = Org2CLI.processEnvironment()["PATH"] ?? ""
     XCTAssertTrue(path.split(separator: ":").contains("/Library/TeX/texbin"))
@@ -33,6 +40,7 @@ final class SlideExportTests: XCTestCase {
       isSubtree: false
     )
     XCTAssertTrue(store.canExportSlides)
+    XCTAssertTrue(store.canPreviewSlides)
 
     store.selectedEntrySource = EntrySource(
       file: "/tmp/notes.md",
@@ -42,6 +50,87 @@ final class SlideExportTests: XCTestCase {
       isSubtree: false
     )
     XCTAssertFalse(store.canExportSlides)
+    XCTAssertFalse(store.canPreviewSlides)
+  }
+
+  func testOrg2CLIRendersPresentationPDFFromStandardInput() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-slide-preview-cli-\(UUID().uuidString)", isDirectory: true)
+    let dist = root.appendingPathComponent("dist", isDirectory: true)
+    try FileManager.default.createDirectory(at: dist, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    try """
+    const fs = require("fs");
+    fs.writeFileSync("arguments.json", JSON.stringify(process.argv.slice(2)));
+    fs.writeFileSync("input.org2", fs.readFileSync(0));
+    process.stdout.write("%PDF-1.4\\n");
+    """.write(
+      to: dist.appendingPathComponent("render-presentation-pdf.js"),
+      atomically: true,
+      encoding: .utf8
+    )
+
+    let cli = Org2CLI(repoRoot: root)
+    let sourcePath = "/tmp/unsaved-talk.org2"
+    let draft = "#+TITLE: Unsaved\n* Section\n** Draft slide\n"
+    let pdf = try await cli.renderPresentationPDF(
+      draft,
+      sourcePath: sourcePath,
+      passes: 1
+    )
+
+    XCTAssertTrue(pdf.starts(with: Data("%PDF".utf8)))
+    XCTAssertEqual(
+      try String(contentsOf: root.appendingPathComponent("input.org2"), encoding: .utf8),
+      draft
+    )
+    XCTAssertEqual(
+      try JSONDecoder().decode(
+        [String].self,
+        from: Data(contentsOf: root.appendingPathComponent("arguments.json"))
+      ),
+      ["--source-path", sourcePath, "--passes", "1"]
+    )
+  }
+
+  @MainActor
+  func testLiveSlidePreviewKeepsLastSuccessfulPDFWhenDraftFails() async throws {
+    let store = WorkspaceStore(
+      cli: Org2CLI(repoRoot: FileManager.default.temporaryDirectory)
+    )
+    let source = EntrySource(
+      file: "/tmp/talk.org2",
+      startLine: 1,
+      endLineExclusive: 5,
+      text: "#+TITLE: Talk\n* Section\n** Initial\n",
+      isSubtree: false
+    )
+    let expectedPDF = Data("%PDF-1.4\npreview".utf8)
+    let recorder = SlidePreviewRecorder(pdf: expectedPDF)
+    store.slidePreviewRendererForTesting = { text, sourcePath, passes in
+      try await recorder.render(text: text, sourcePath: sourcePath, passes: passes)
+    }
+    store.selectedEntrySource = source
+    store.beginEditingSelectedEntry()
+    store.sourceEditorPresentation = .split
+    store.documentPreviewKind = .slides
+
+    let validDraft = "#+TITLE: Talk\n* Section\n** Live draft\n"
+    store.editableEntryText = validDraft
+    store.scheduleSourceEditorPreview(immediate: true)
+    try await waitForSlidePreview(store) { $0.slidePreviewPDF == expectedPDF }
+
+    let invalidDraft = "#+TITLE: Talk\n* Section\nBROKEN\n"
+    store.editableEntryText = invalidDraft
+    store.scheduleSourceEditorPreview(immediate: true)
+    try await waitForSlidePreview(store) { $0.slidePreviewError != nil }
+
+    XCTAssertEqual(store.slidePreviewPDF, expectedPDF)
+    XCTAssertEqual(store.slidePreviewError, "Draft could not compile")
+    let calls = await recorder.recordedCalls()
+    XCTAssertEqual(calls.map(\.text), [validDraft, invalidDraft])
+    XCTAssertTrue(calls.allSatisfy { $0.sourcePath == source.file && $0.passes == 1 })
   }
 
   func testOrg2CLIExportsBeamerPDFWithApplyFlag() async throws {
@@ -155,5 +244,44 @@ final class SlideExportTests: XCTestCase {
         "--out", destination.standardizedFileURL.path,
       ] + expectedTail
     )
+  }
+
+  @MainActor
+  private func waitForSlidePreview(
+    _ store: WorkspaceStore,
+    condition: (WorkspaceStore) -> Bool
+  ) async throws {
+    for _ in 0..<200 {
+      if condition(store) { return }
+      try await Task.sleep(nanoseconds: 10_000_000)
+    }
+    XCTFail("Timed out waiting for slide preview")
+  }
+}
+
+private actor SlidePreviewRecorder {
+  struct Call: Sendable {
+    let text: String
+    let sourcePath: String
+    let passes: Int
+  }
+
+  private let pdf: Data
+  private var calls: [Call] = []
+
+  init(pdf: Data) {
+    self.pdf = pdf
+  }
+
+  func render(text: String, sourcePath: String, passes: Int) throws -> Data {
+    calls.append(Call(text: text, sourcePath: sourcePath, passes: passes))
+    if text.contains("BROKEN") {
+      throw Org2CLIError.commandFailed(status: 1, message: "Draft could not compile")
+    }
+    return pdf
+  }
+
+  func recordedCalls() -> [Call] {
+    calls
   }
 }

@@ -74,6 +74,27 @@ public enum SourceEditorPresentation: String, CaseIterable, Identifiable, Sendab
   }
 }
 
+public enum OrgDocumentPreviewKind: String, CaseIterable, Identifiable, Sendable {
+  case document
+  case slides
+
+  public var id: String { rawValue }
+
+  public var title: String {
+    switch self {
+    case .document: "Document"
+    case .slides: "Slides"
+    }
+  }
+
+  public var systemImage: String {
+    switch self {
+    case .document: "doc.richtext"
+    case .slides: "rectangle.on.rectangle"
+    }
+  }
+}
+
 struct OrgHTMLDocumentLayout: Equatable {
   let width: RenderedDocumentWidth
   let margin: RenderedDocumentMargin

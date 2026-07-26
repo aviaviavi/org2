@@ -1019,10 +1019,23 @@ public final class WorkspaceStore: ObservableObject {
       }
     }
   }
+  @Published public var documentPreviewKind: OrgDocumentPreviewKind = .document {
+    didSet {
+      defaults.set(documentPreviewKind.rawValue, forKey: documentPreviewKindKey)
+      if documentPreviewKind == .document {
+        cancelSlidePreviewRender(clearStatus: false)
+      } else {
+        cancelSourceEditorPreviewRender(clearStatus: false)
+      }
+    }
+  }
   @Published public var isSourceEditorPreviewPaused = false
   @Published public private(set) var sourceEditorPreviewHTML: String?
   @Published public private(set) var sourceEditorPreviewError: String?
   @Published public private(set) var isRenderingSourceEditorPreview = false
+  @Published public private(set) var slidePreviewPDF: Data?
+  @Published public private(set) var slidePreviewError: String?
+  @Published public private(set) var isRenderingSlidePreview = false
   @Published public var selectedRenderedBlocks: [OrgEditableBlock] = [] {
     didSet {
       defer {
@@ -1128,6 +1141,7 @@ public final class WorkspaceStore: ObservableObject {
   private let renderedDocumentWidthKey = "Org2Workspace.renderedDocument.width"
   private let renderedDocumentMarginKey = "Org2Workspace.renderedDocument.margin"
   private let sourceEditorPresentationKey = "Org2Workspace.sourceEditor.presentation"
+  private let documentPreviewKindKey = "Org2Workspace.documentPreview.kind"
   private let orgCryptEncryptOnSaveKey = "Org2Workspace.orgCrypt.encryptOnSave"
   private let orgCryptRecipientsKey = "Org2Workspace.orgCrypt.recipients"
   private let orgCryptRecipientFilesKey = "Org2Workspace.orgCrypt.recipientFiles"
@@ -1243,6 +1257,7 @@ public final class WorkspaceStore: ObservableObject {
   var entrySourceLoaderForTesting: (@Sendable (String, Int, EntrySourceMode) async throws -> EntrySource)?
   var entryHTMLRendererForTesting: (@Sendable (String, String, Int, String?) async throws -> String)?
   var slideExportFileOpenerForTesting: ((URL) -> Bool)?
+  var slidePreviewRendererForTesting: (@Sendable (String, String, Int) async throws -> Data)?
   private var workspaceRefreshGeneration = 0
   private var workspaceRefreshOperationTask: Task<Void, Never>?
   private var workspaceRefreshWatchdogTask: Task<Void, Never>?
@@ -1297,6 +1312,9 @@ public final class WorkspaceStore: ObservableObject {
   private var searchNodeIndexRows: [SearchNodeIndexRow] = []
   private var sourceEditorPreviewTask: Task<Void, Never>?
   private var sourceEditorPreviewGeneration = 0
+  private var slidePreviewTask: Task<Void, Never>?
+  private var slidePreviewGeneration = 0
+  private var slidePreviewSourceID: String?
   private var sourceEditorLocalDraftText: String?
 
   public init(
@@ -1348,6 +1366,8 @@ public final class WorkspaceStore: ObservableObject {
       .flatMap(RenderedDocumentMargin.init(rawValue:)) ?? .standard
     sourceEditorPresentation = defaults.string(forKey: sourceEditorPresentationKey)
       .flatMap(SourceEditorPresentation.init(rawValue:)) ?? .source
+    documentPreviewKind = defaults.string(forKey: documentPreviewKindKey)
+      .flatMap(OrgDocumentPreviewKind.init(rawValue:)) ?? .document
     orgCryptEncryptOnSave = defaults.object(forKey: orgCryptEncryptOnSaveKey) as? Bool ?? true
     orgCryptRecipientsText = OrgCryptSettings.listText(defaults.stringArray(forKey: orgCryptRecipientsKey) ?? [])
     orgCryptRecipientFilesText = OrgCryptSettings.listText(defaults.stringArray(forKey: orgCryptRecipientFilesKey) ?? [])
@@ -6009,6 +6029,12 @@ public final class WorkspaceStore: ObservableObject {
       return
     }
 
+    if documentPreviewKind == .slides {
+      scheduleSlidePreview(text: editableEntryText, source: source, immediate: immediate)
+      return
+    }
+
+    cancelSlidePreviewRender(clearStatus: false)
     sourceEditorPreviewTask?.cancel()
     sourceEditorPreviewGeneration += 1
     let generation = sourceEditorPreviewGeneration
@@ -6062,6 +6088,98 @@ public final class WorkspaceStore: ObservableObject {
         self.isRenderingSourceEditorPreview = false
       }
     }
+  }
+
+  public var canPreviewSlides: Bool {
+    guard let source = selectedEntrySource else { return false }
+    return Self.canPreviewSlides(source: source)
+  }
+
+  public func scheduleSlidePreview(
+    text: String,
+    source: EntrySource,
+    immediate: Bool = false
+  ) {
+    guard documentPreviewKind == .slides,
+          Self.canPreviewSlides(source: source)
+    else {
+      cancelSlidePreviewRender(clearStatus: false)
+      return
+    }
+
+    slidePreviewTask?.cancel()
+    isRenderingSlidePreview = false
+    slidePreviewGeneration += 1
+    let generation = slidePreviewGeneration
+    if slidePreviewSourceID != source.id {
+      slidePreviewSourceID = source.id
+      slidePreviewPDF = nil
+      slidePreviewError = nil
+    }
+
+    slidePreviewTask = Task { @MainActor [weak self] in
+      guard let self else { return }
+      if !immediate {
+        do {
+          try await Task.sleep(nanoseconds: 900_000_000)
+        } catch {
+          return
+        }
+      }
+      guard !Task.isCancelled,
+            self.documentPreviewKind == .slides,
+            self.selectedEntrySource?.id == source.id
+      else { return }
+      if self.isEditingEntry {
+        guard self.editableEntryText == text else { return }
+      } else {
+        guard self.selectedEntrySource?.text == text else { return }
+      }
+
+      self.isRenderingSlidePreview = true
+      self.slidePreviewError = nil
+      do {
+        let pdf: Data
+        if let renderer = self.slidePreviewRendererForTesting {
+          pdf = try await renderer(text, source.file, 1)
+        } else {
+          pdf = try await self.cli.renderPresentationPDF(
+            text,
+            sourcePath: source.file,
+            passes: 1
+          )
+        }
+        guard !Task.isCancelled,
+              generation == self.slidePreviewGeneration,
+              self.documentPreviewKind == .slides,
+              self.selectedEntrySource?.id == source.id
+        else { return }
+        if self.isEditingEntry {
+          guard self.editableEntryText == text else { return }
+        } else {
+          guard self.selectedEntrySource?.text == text else { return }
+        }
+        self.slidePreviewPDF = pdf
+        self.slidePreviewError = nil
+      } catch is CancellationError {
+        return
+      } catch {
+        guard generation == self.slidePreviewGeneration,
+              self.documentPreviewKind == .slides,
+              self.selectedEntrySource?.id == source.id
+        else { return }
+        self.slidePreviewError = error.localizedDescription
+      }
+      if generation == self.slidePreviewGeneration {
+        self.isRenderingSlidePreview = false
+      }
+    }
+  }
+
+  public func retrySlidePreview() {
+    guard let source = selectedEntrySource else { return }
+    let text = isEditingEntry ? editableEntryText : source.text
+    scheduleSlidePreview(text: text, source: source, immediate: true)
   }
 
   public func setSourceEditorPreviewPaused(_ paused: Bool) {
@@ -6133,10 +6251,34 @@ public final class WorkspaceStore: ObservableObject {
     sourceEditorPreviewTask = nil
     sourceEditorPreviewGeneration += 1
     isRenderingSourceEditorPreview = false
+    cancelSlidePreviewRender(clearStatus: clearStatus)
     if clearStatus {
       sourceEditorPreviewHTML = nil
       sourceEditorPreviewError = nil
     }
+  }
+
+  public func cancelSlidePreview() {
+    cancelSlidePreviewRender(clearStatus: false)
+  }
+
+  private func cancelSlidePreviewRender(clearStatus: Bool) {
+    slidePreviewTask?.cancel()
+    slidePreviewTask = nil
+    slidePreviewGeneration += 1
+    isRenderingSlidePreview = false
+    if clearStatus {
+      slidePreviewPDF = nil
+      slidePreviewError = nil
+      slidePreviewSourceID = nil
+    }
+  }
+
+  nonisolated private static func canPreviewSlides(source: EntrySource) -> Bool {
+    let extensionName = URL(fileURLWithPath: source.file).pathExtension.lowercased()
+    return ["org", "org2"].contains(extensionName)
+      && source.startLine == 1
+      && !source.isSubtree
   }
 
   public func beginEditingCurrentScope() {
