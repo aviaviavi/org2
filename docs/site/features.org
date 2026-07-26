@@ -54,7 +54,8 @@ org2 roam graph --dir ~/notes --recursive --format report</code></pre>
       <ul>
         <li>Bounded context packs carry file-and-line citations instead of an opaque prompt dump.</li>
         <li>Generated work lands in reviewable artifact zones before promotion into canonical notes.</li>
-        <li>One pending-decision queue combines run-bound approvals with standalone file-backed approvals while preserving each item's canonical identity.</li>
+        <li>One pending-decision queue combines run-bound approvals with standalone file-backed approvals; run decisions preserve one native ID and immutable review-material fingerprint across CLI, Mac, mobile, and OpenClaw.</li>
+        <li>Recurring workflow executions roll up under stable logical work while retaining separate scheduler attempts, and event/fresh-path gates skip unchanged expensive work.</li>
         <li>OpenClaw is the first native end-to-end integration; CLI, MCP, and plain files keep the model provider-independent.</li>
       </ul>
       <div class="org2-command" aria-label="Agent context and review commands">

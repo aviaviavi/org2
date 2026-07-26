@@ -7,11 +7,11 @@ import { PassThrough } from "node:stream";
 import {
   addAgentRunArtifact, addAgentRunComment, addAgentRunValidation, completeAgentRunExternally, createAgentRun,
   decideAgentRunApproval, forkAgentRun, listAgentRuns, loadAgentRun, normalizeLegacyAgentRuns,
-  parseAgentRunOrg, renderAgentRunOrg, requestAgentRunApproval, saveAgentRun,
+  parseAgentRunOrg, renderAgentRunOrg, requestAgentRunApproval, saveAgentRun, summarizeAgentRunAttempts,
   transitionAgentRun, updateAgentRunAssignment, updateAgentRunRuntime, updateAgentRunStep, validateAgentRun,
   updateAgentRunArtifactReview,
 } from "../dist/agentRun.js";
-import { dueWorkflowTriggers, installBuiltinWorkflow, instantiateWorkflow, legacyWorkflowDirectory, loadWorkflow, migrateLegacyWorkflows, packagedCorpusTemplate, parseWorkflowOrg, renderWorkflowOrg, saveWorkflow, workflowFromRun, workflowPath } from "../dist/agentWorkflow.js";
+import { dueWorkflowTriggers, installBuiltinWorkflow, instantiateWorkflow, legacyWorkflowDirectory, loadWorkflow, markWorkflowTriggerAttempt, migrateLegacyWorkflows, packagedCorpusTemplate, parseWorkflowOrg, recordWorkflowSignal, renderWorkflowOrg, saveWorkflow, workflowFromRun, workflowPath, workflowTriggerEligibility } from "../dist/agentWorkflow.js";
 import { artifactRebuildPlan, buildArtifactGraph, MEETING_TO_CONTROLLED_EXECUTION_WORKFLOW } from "../dist/artifactPipeline.js";
 import { discoverMcpClient, saveMcpClients, serveMcp, writeMcpSnapshot } from "../dist/mcpRuntime.js";
 import { defaultRuntimePolicy, selectRuntime, validateRuntimePaths } from "../dist/runtimePolicy.js";
@@ -39,6 +39,11 @@ try {
   const pendingApproval = requestAgentRunApproval(run, { id: "test", title: "Test", action: "test", riskClass: "local-draft" });
   assert.match(renderAgentRunOrg(pendingApproval), /\*\* Approvals \[1\/1 pending\]/);
   assert.match(renderAgentRunOrg(pendingApproval), /PENDING Test — test \(local-draft\) =test=/);
+  assert.match(pendingApproval.approvals[0].fingerprint, /^sha256:[a-f0-9]{64}$/);
+  assert.throws(
+    () => decideAgentRunApproval(pendingApproval, "test", "approved", { actor: "Avi", fingerprint: "sha256:wrong" }),
+    /fingerprint does not match/,
+  );
   assert.throws(() => transitionAgentRun(pendingApproval, "completed", { summary: "Should remain open." }), /pending approvals/);
   assert.throws(() => decideAgentRunApproval(pendingApproval, "test", "unknown", { actor: "Avi" }), /invalid approval decision/);
   assert.throws(
@@ -135,8 +140,11 @@ try {
   assert.equal(run.budget.elapsedSeconds, 42);
   run = requestAgentRunApproval(run, { id: "release", title: "Release briefing", action: "publish PDF", riskClass: "external-action", requestedRole: "owner" });
   assert.equal(run.status, "waiting-approval");
-  run = decideAgentRunApproval(run, "release", "approved", { actor: "Avi", actorRole: "owner", receipt: "approval:local:1" });
+  const releaseFingerprint = run.approvals.find((approval) => approval.id === "release").fingerprint;
+  run = decideAgentRunApproval(run, "release", "approved", { actor: "Avi", actorRole: "owner", fingerprint: releaseFingerprint, note: "Reviewed exact PDF", receipt: "approval:local:1" });
   assert.equal(run.status, "running");
+  assert.equal(run.approvals.find((approval) => approval.id === "release").decisionNote, "Reviewed exact PDF");
+  assert.equal(run.approvals.find((approval) => approval.id === "release").fingerprint, releaseFingerprint);
   run = updateAgentRunArtifactReview(run, "brief", "reviewed", { actor: "Avi" });
   assert.equal(run.artifacts.find((artifact) => artifact.id === "brief").reviewStatus, "reviewed");
   assert.equal(run.events.at(-1).type, "artifact-review-changed");
@@ -214,7 +222,7 @@ try {
   assert.equal(separatelyBlocked.status, "blocked");
   assert.equal(separatelyBlocked.blockedReason, "The external service is unavailable.");
 
-  const workflow = workflowFromRun(run, { id: "board-briefing", now: "2026-07-14T11:00:00Z" });
+  let workflow = workflowFromRun(run, { id: "board-briefing", now: "2026-07-14T11:00:00Z" });
   workflow.inputs.push({ id: "quarter", description: "Reporting quarter", required: true });
   workflow.instructions = "Prepare the {{quarter}} board briefing";
   workflow.triggers.push({ id: "daily", type: "schedule", enabled: true, schedule: "every 1d", lastRunAt: "2026-07-12T00:00:00Z" });
@@ -232,6 +240,51 @@ try {
   assert.equal(editedWorkflow.instructions, "Prepare a carefully cited {{quarter}} board briefing");
   assert.equal(editedWorkflow.state, "active");
   assert.equal(dueWorkflowTriggers(workflow, { now: "2026-07-14T00:00:00Z" }).some((item) => item.id === "daily"), true);
+  workflow.triggers = workflow.triggers.map((trigger) => trigger.id === "daily"
+    ? { ...trigger, gate: { events: ["capture"], paths: ["notes"] }, lastAttemptAt: "2026-07-13T00:00:00Z" }
+    : trigger);
+  assert.equal(workflowTriggerEligibility(workflow, "daily").eligible, false);
+  workflow = recordWorkflowSignal(workflow, { id: "capture-1", type: "capture", at: "2026-07-14T00:00:00Z", paths: ["notes/inbox.org2"] });
+  assert.deepEqual(workflowTriggerEligibility(workflow, "daily").signalIds, ["capture-1"]);
+  workflow = markWorkflowTriggerAttempt(workflow, "daily", "2026-07-14T01:00:00Z");
+  assert.equal(workflowTriggerEligibility(workflow, "daily").eligible, false);
+  saveWorkflow(root, workflow);
+  const skippedGate = spawnSync(process.execPath, [
+    path.resolve("dist/cli.js"), "workflow", "run", workflow.id,
+    "--trigger", "daily", "--input", "quarter=Q3", "--dir", root, "--json",
+  ], { encoding: "utf8" });
+  assert.equal(skippedGate.status, 0, skippedGate.stderr || skippedGate.stdout);
+  assert.equal(JSON.parse(skippedGate.stdout).schema, "org2:workflow-run-skipped:v1");
+  const recordedSignal = spawnSync(process.execPath, [
+    path.resolve("dist/cli.js"), "workflow", "signal", workflow.id,
+    "--event", "capture", "--signal-id", "capture-cli", "--at", "2026-07-14T02:00:00Z",
+    "--changed", "notes/inbox.org2", "--dir", root, "--json",
+  ], { encoding: "utf8" });
+  assert.equal(recordedSignal.status, 0, recordedSignal.stderr || recordedSignal.stdout);
+  const eligibleGate = spawnSync(process.execPath, [
+    path.resolve("dist/cli.js"), "workflow", "gate", workflow.id,
+    "--trigger", "daily", "--dir", root, "--json",
+  ], { encoding: "utf8" });
+  assert.equal(eligibleGate.status, 0, eligibleGate.stderr || eligibleGate.stdout);
+  assert.deepEqual(JSON.parse(eligibleGate.stdout).signalIds, ["capture-cli"]);
+  const attemptedWorkflow = spawnSync(process.execPath, [
+    path.resolve("dist/cli.js"), "workflow", "run", workflow.id,
+    "--trigger", "daily", "--attempt-id", "daily-cli-1",
+    "--scheduled-for", "2026-07-14T03:00:00Z", "--input", "quarter=Q3",
+    "--dir", root, "--json",
+  ], { encoding: "utf8" });
+  assert.equal(attemptedWorkflow.status, 0, attemptedWorkflow.stderr || attemptedWorkflow.stdout);
+  const attemptedWorkflowResult = JSON.parse(attemptedWorkflow.stdout);
+  assert.equal(attemptedWorkflowResult.run.logicalWorkId, "workflow:board-briefing");
+  assert.equal(attemptedWorkflowResult.run.attempt.id, "daily-cli-1");
+  assert.equal(attemptedWorkflowResult.run.attempt.number, 1);
+  assert.deepEqual(attemptedWorkflowResult.run.attempt.signalIds, ["capture-cli"]);
+  const consumedSignal = spawnSync(process.execPath, [
+    path.resolve("dist/cli.js"), "workflow", "gate", workflow.id,
+    "--trigger", "daily", "--dir", root, "--json",
+  ], { encoding: "utf8" });
+  assert.equal(consumedSignal.status, 0, consumedSignal.stderr || consumedSignal.stdout);
+  assert.equal(JSON.parse(consumedSignal.stdout).eligible, false);
   const captureTriggers = spawnSync(process.execPath, [
     path.resolve("dist/cli.js"), "workflow", "triggers", workflow.id,
     "--event", "capture", "--dir", root, "--json",
@@ -247,6 +300,16 @@ try {
   const instantiated = instantiateWorkflow(workflow, { quarter: "Q3" });
   assert.equal(instantiated.goal, "Prepare the Q3 board briefing");
   assert.equal(instantiated.workflowId, "board-briefing");
+  const attemptOne = instantiateWorkflow(workflow, { quarter: "Q3" }, {
+    logicalWorkId: "workflow:board-briefing",
+    attempt: { id: "daily-1", number: 1, triggerId: "daily", triggerType: "schedule", scheduledFor: "2026-07-14T01:00:00Z" },
+  });
+  const attemptTwo = instantiateWorkflow(workflow, { quarter: "Q3" }, {
+    logicalWorkId: "workflow:board-briefing",
+    attempt: { id: "daily-2", number: 2, triggerId: "daily", triggerType: "schedule", scheduledFor: "2026-07-15T01:00:00Z" },
+  });
+  assert.equal(summarizeAgentRunAttempts([attemptOne, attemptTwo])[0].attempts, 2);
+  assert.equal(summarizeAgentRunAttempts([attemptOne, attemptTwo])[0].latestAttemptNumber, 2);
   assert.equal(packagedCorpusTemplate(workflow).schema, "org2:corpus-template:v1");
   assert.equal(replayWorkflowFixture(workflow, { schema: "org2:workflow-replay-fixture:v1", workflowVersion: "1.0.0", inputs: { quarter: "Q3" }, expectedGoal: "Prepare the Q3 board briefing", expectedSteps: ["draft"], expectedCapabilities: ["publish"], expectedRiskClass: "local-draft" }).passed, true);
   assert.equal(fs.existsSync(installBuiltinWorkflow(root, MEETING_TO_CONTROLLED_EXECUTION_WORKFLOW)), true);

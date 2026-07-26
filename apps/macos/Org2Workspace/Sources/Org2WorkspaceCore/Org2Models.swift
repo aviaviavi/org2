@@ -651,6 +651,7 @@ public struct AgentRunArtifactItem: Identifiable, Decodable, Hashable, Sendable 
 
 public struct AgentRunApprovalItem: Identifiable, Decodable, Hashable, Sendable {
   public let id: String
+  public let fingerprint: String?
   public let title: String
   public let action: String
   public let riskClass: String
@@ -660,6 +661,7 @@ public struct AgentRunApprovalItem: Identifiable, Decodable, Hashable, Sendable 
   public let requestedAt: String
   public let decidedAt: String?
   public let decidedBy: String?
+  public let decisionNote: String?
   public let note: String?
   public let receipt: String?
 }
@@ -969,6 +971,7 @@ public struct ApprovalItem: Identifiable, Hashable, Sendable, Decodable {
   public let body: String
   public let tags: [String]
   public let approvalId: String?
+  public let fingerprint: String?
   public let action: String?
   public let riskClass: String?
   public let requestedRole: String?
@@ -994,6 +997,7 @@ public struct ApprovalItem: Identifiable, Hashable, Sendable, Decodable {
     tags: [String],
     kind: String? = nil,
     approvalId: String? = nil,
+    fingerprint: String? = nil,
     action: String? = nil,
     riskClass: String? = nil,
     requestedRole: String? = nil,
@@ -1018,6 +1022,7 @@ public struct ApprovalItem: Identifiable, Hashable, Sendable, Decodable {
     self.body = body
     self.tags = tags
     self.approvalId = approvalId
+    self.fingerprint = fingerprint
     self.action = action
     self.riskClass = riskClass
     self.requestedRole = requestedRole

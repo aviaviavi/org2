@@ -8,7 +8,8 @@ The Mac app and runtime adapters provide tooling around the file. They can list 
 * Workflow, run, and runtime
 
 - A *workflow* describes how a class of work should happen: inputs, context rules, instructions, steps, outputs, validation, approvals, and triggers.
-- A *run* records one execution of one workflow version, including its concrete context, state, artifacts, approvals, validation, events, and outcome.
+- A *logical work item* groups recurring executions without conflating scheduler ticks.
+- An *attempt run* records one concrete execution of one workflow version, including its trigger, attempt number, context, state, artifacts, approvals, validation, events, and outcome.
 - A *runtime adapter* executes the workflow. OpenClaw is the first native adapter; the workflow and run formats do not depend on one provider.
 
 Repeating a prompt is useful, but it does not by itself create a workflow. A workflow earns its durable form by making the process inspectable, editable, versionable, reviewable, and reliable across executions.
@@ -68,9 +69,10 @@ Opening a PDF output from Agent Work uses the system's default PDF application (
 For scheduled work, the schedule declaration stays in the workflow file while OpenClaw owns due checks and execution:
 
 1. Activating or syncing workflows reconciles enabled schedule triggers into OpenClaw cron.
-2. The cron payload identifies the workflow and version; it does not maintain a separate copy of the process.
-3. Each cron execution instantiates a new correlated Org2 run.
-4. Pausing the workflow disables its managed OpenClaw job.
+2. The cron payload identifies the workflow, version, and trigger; it does not maintain a separate copy of the process.
+3. Each eligible execution creates a distinct numbered attempt under the workflow's stable logical-work ID. =run list --json= includes a =logicalWork= roll-up without erasing per-attempt evidence.
+4. A schedule may declare =--gate-event= and/or =--gate-path=. =workflow signal= records event/fresh-work evidence, and the lifecycle adapter safely skips a tick when no matching signal is newer than the prior attempt.
+5. Pausing the workflow disables its managed OpenClaw job.
 
 OpenClaw job IDs and correlation mappings are adapter state. They are not part of the portable workflow definition. This boundary prevents scheduler details from leaking into authored corpus files and allows another runtime adapter to execute the same process later.
 
@@ -80,7 +82,7 @@ The first scheduling slice uses cron expressions plus an optional IANA timezone.
 
 * Safety and review
 
-A workflow declares capabilities and a risk class. Expected outputs should land in reviewable locations such as =views/= or =compiled/=, and consequential or external actions should carry an explicit approval requirement. An external-action or high-impact approval must expose the exact recipient, content, command, and attachments through an inspectable artifact, approval note, or live runtime detail; an opaque identifier or fingerprint is not enough to approve. The Mac Agent Work surface retrieves linked OpenClaw exec details when they remain available and disables *Approve* when no reviewable material can be shown. Activating a schedule never weakens those boundaries.
+A workflow declares capabilities and a risk class. Expected outputs should land in reviewable locations such as =views/= or =compiled/=, and consequential or external actions should carry an explicit approval requirement. An external-action or high-impact approval must expose the exact recipient, content, command, and attachments through an inspectable artifact, approval note, or live runtime detail; a fingerprint is integrity evidence, not review material. Once requested, Org2 fingerprints that exact material and preserves the same native approval ID/fingerprint through CLI, Mac, mobile decision transport, and OpenClaw. A mismatched =--fingerprint= is rejected. The Mac Agent Work surface retrieves linked OpenClaw exec details when they remain available and disables *Approve* when no reviewable material can be shown. Activating a schedule never weakens those boundaries.
 
 Keep runtime credentials outside workflow files. A workflow may name a capability or symbolic runtime policy, but provider tokens, Gateway credentials, machine-local job IDs, and private scheduler state belong in runtime configuration.
 

@@ -115,6 +115,7 @@ export interface AgentRunArtifact {
 
 export interface AgentRunApproval {
   id: string;
+  fingerprint: string;
   title: string;
   action: string;
   riskClass: AgentRunRiskClass;
@@ -124,8 +125,18 @@ export interface AgentRunApproval {
   requestedAt: string;
   decidedAt?: string;
   decidedBy?: string;
+  decisionNote?: string;
   note?: string;
   receipt?: string;
+}
+
+export interface AgentRunAttempt {
+  id: string;
+  number: number;
+  triggerId?: string;
+  triggerType?: string;
+  scheduledFor?: string;
+  signalIds?: string[];
 }
 
 export interface AgentRunValidation {
@@ -191,6 +202,8 @@ export interface AgentRun {
   events: AgentRunEvent[];
   outcome?: AgentRunOutcome;
   budget?: AgentRunBudget;
+  logicalWorkId?: string;
+  attempt?: AgentRunAttempt;
   parentRunId?: string;
   forkedFromEventId?: string;
   createdAt: string;
@@ -219,6 +232,8 @@ export interface AgentRunCreateInput {
   plan?: Array<Omit<AgentRunPlanStep, "id" | "status"> & { id?: string; status?: AgentRunStepStatus }>;
   outcome?: Partial<AgentRunOutcome>;
   budget?: AgentRunBudget;
+  logicalWorkId?: string;
+  attempt?: AgentRunAttempt;
   parentRunId?: string;
   forkedFromEventId?: string;
   now?: string;
@@ -242,6 +257,19 @@ export interface AgentRunValidationIssue {
 export interface AgentRunValidationResult {
   valid: boolean;
   issues: AgentRunValidationIssue[];
+}
+
+export interface AgentRunAttemptRollup {
+  logicalWorkId: string;
+  attempts: number;
+  queued: number;
+  running: number;
+  blocked: number;
+  terminal: number;
+  latestRunId: string;
+  latestAttemptNumber: number;
+  latestStatus: AgentRunStatus;
+  updatedAt: string;
 }
 
 const TRANSITIONS: Record<AgentRunStatus, readonly AgentRunStatus[]> = {
@@ -286,6 +314,18 @@ function event(type: string, at: string, actor?: string, detail?: string, data?:
     ...(optional(detail) ? { detail: optional(detail) } : {}),
     ...(data && Object.keys(data).length > 0 ? { data } : {}),
   };
+}
+
+export function agentRunApprovalFingerprint(input: Pick<AgentRunApproval, "title" | "action" | "riskClass"> & Partial<Pick<AgentRunApproval, "requestedRole" | "requestedFrom" | "note">>): string {
+  const material = {
+    title: String(input.title || "").trim(),
+    action: String(input.action || "").trim(),
+    riskClass: input.riskClass,
+    requestedRole: optional(input.requestedRole) || null,
+    requestedFrom: optional(input.requestedFrom) || null,
+    note: optional(input.note) || null,
+  };
+  return `sha256:${crypto.createHash("sha256").update(JSON.stringify(material)).digest("hex")}`;
 }
 
 export function createAgentRun(input: AgentRunCreateInput): AgentRun {
@@ -345,6 +385,15 @@ export function createAgentRun(input: AgentRunCreateInput): AgentRun {
     ...(optional(input.provider) ? { provider: optional(input.provider) } : {}),
     ...(optional(input.model) ? { model: optional(input.model) } : {}),
     ...(input.budget ? { budget: { ...input.budget } } : {}),
+    ...(optional(input.logicalWorkId) ? { logicalWorkId: optional(input.logicalWorkId) } : {}),
+    ...(input.attempt ? { attempt: {
+      id: safeId(input.attempt.id),
+      number: input.attempt.number,
+      ...(optional(input.attempt.triggerId) ? { triggerId: optional(input.attempt.triggerId) } : {}),
+      ...(optional(input.attempt.triggerType) ? { triggerType: optional(input.attempt.triggerType) } : {}),
+      ...(optional(input.attempt.scheduledFor) ? { scheduledFor: isoNow(input.attempt.scheduledFor) } : {}),
+      ...(input.attempt.signalIds?.length ? { signalIds: unique(input.attempt.signalIds) } : {}),
+    } } : {}),
     ...(optional(input.parentRunId) ? { parentRunId: optional(input.parentRunId) } : {}),
     ...(optional(input.forkedFromEventId) ? { forkedFromEventId: optional(input.forkedFromEventId) } : {}),
     ...(optional(input.outcome?.summary) ? { outcome: {
@@ -355,6 +404,9 @@ export function createAgentRun(input: AgentRunCreateInput): AgentRun {
   };
   if (status === "running") run.startedAt = now;
   if (status === "completed") run.completedAt = now;
+  if (run.attempt && (!Number.isInteger(run.attempt.number) || run.attempt.number < 1)) {
+    throw new Error("run attempt number must be a positive integer");
+  }
   return run;
 }
 
@@ -378,6 +430,19 @@ export function validateAgentRun(value: unknown): AgentRunValidationResult {
   }
   for (const [name, value] of Object.entries(run.budget || {})) {
     if (value !== undefined && (!Number.isFinite(value) || value < 0)) issues.push({ path: `$.budget.${name}`, message: "must be a non-negative finite number" });
+  }
+  if (run.attempt) {
+    if (!run.logicalWorkId?.trim()) issues.push({ path: "$.logicalWorkId", message: "is required when attempt is present" });
+    if (!run.attempt.id || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(run.attempt.id)) issues.push({ path: "$.attempt.id", message: "must be a safe non-empty id" });
+    if (!Number.isInteger(run.attempt.number) || run.attempt.number < 1) issues.push({ path: "$.attempt.number", message: "must be a positive integer" });
+  }
+  for (const [index, approval] of (run.approvals || []).entries()) {
+    const expected = agentRunApprovalFingerprint(approval);
+    if (!approval.fingerprint) {
+      issues.push({ path: `$.approvals[${index}].fingerprint`, message: "must be present" });
+    } else if (approval.fingerprint !== expected) {
+      issues.push({ path: `$.approvals[${index}].fingerprint`, message: "does not match immutable approval material" });
+    }
   }
   if (run.outcome !== undefined) {
     if (!String(run.outcome.summary || "").trim()) issues.push({ path: "$.outcome.summary", message: "must not be empty" });
@@ -598,21 +663,25 @@ export function addAgentRunValidation(run: AgentRun, input: Omit<AgentRunValidat
   return { ...run, validations: [...run.validations, validation], updatedAt: now, events: [...run.events, event("validated", now, actor, `${validation.name}: ${validation.status}`)] };
 }
 
-export function requestAgentRunApproval(run: AgentRun, input: Omit<AgentRunApproval, "id" | "status" | "requestedAt"> & { id?: string; requestedAt?: string }, actor?: string): AgentRun {
+export function requestAgentRunApproval(run: AgentRun, input: Omit<AgentRunApproval, "id" | "fingerprint" | "status" | "requestedAt" | "decidedAt" | "decidedBy" | "decisionNote"> & { id?: string; requestedAt?: string }, actor?: string): AgentRun {
   if (["completed", "failed", "canceled"].includes(run.status)) throw new Error(`cannot request approval for a ${run.status} run`);
   if (!AGENT_RUN_RISK_CLASSES.includes(input.riskClass)) throw new Error(`invalid approval risk class: ${input.riskClass}`);
   const now = isoNow(input.requestedAt);
-  const approval: AgentRunApproval = {
+  const material = {
     id: safeId(input.id || crypto.randomUUID()),
     title: String(input.title || "").trim(),
     action: String(input.action || "").trim(),
     riskClass: input.riskClass,
-    status: "pending",
+    status: "pending" as const,
     requestedAt: now,
     ...(optional(input.requestedRole) ? { requestedRole: optional(input.requestedRole) } : {}),
     ...(optional(input.requestedFrom) ? { requestedFrom: optional(input.requestedFrom) } : {}),
     ...(optional(input.note) ? { note: optional(input.note) } : {}),
     ...(optional(input.receipt) ? { receipt: optional(input.receipt) } : {}),
+  };
+  const approval: AgentRunApproval = {
+    ...material,
+    fingerprint: agentRunApprovalFingerprint(material),
   };
   if (!approval.title || !approval.action) throw new Error("approval title and action are required");
   const opensApprovalBoundary = run.status === "running"
@@ -621,7 +690,7 @@ export function requestAgentRunApproval(run: AgentRun, input: Omit<AgentRunAppro
   const next = opensApprovalBoundary
     ? transitionAgentRun(run, "waiting-approval", { actor, now })
     : { ...run };
-  return { ...next, approvals: [...next.approvals, approval], updatedAt: now, events: [...next.events, event("approval-requested", now, actor, approval.title, { approvalId: approval.id, riskClass: approval.riskClass })] };
+  return { ...next, approvals: [...next.approvals, approval], updatedAt: now, events: [...next.events, event("approval-requested", now, actor, approval.title, { approvalId: approval.id, fingerprint: approval.fingerprint, riskClass: approval.riskClass })] };
 }
 
 export function currentAgentRunApprovalBoundary(run: AgentRun): AgentRunApproval[] {
@@ -645,12 +714,15 @@ export function currentAgentRunApprovalBoundary(run: AgentRun): AgentRunApproval
   return run.approvals.filter((approval) => boundaryIds.has(approval.id));
 }
 
-export function decideAgentRunApproval(run: AgentRun, approvalId: string, decision: AgentRunApprovalDecision, input: { actor: string; actorRole?: string; note?: string; receipt?: string; now?: string }): AgentRun {
+export function decideAgentRunApproval(run: AgentRun, approvalId: string, decision: AgentRunApprovalDecision, input: { actor: string; actorRole?: string; fingerprint?: string; note?: string; receipt?: string; now?: string }): AgentRun {
   const now = isoNow(input.now);
   if (!AGENT_RUN_APPROVAL_DECISIONS.includes(decision)) throw new Error(`invalid approval decision: ${decision}`);
   const index = run.approvals.findIndex((approval) => approval.id === approvalId);
   if (index < 0) throw new Error(`approval not found: ${approvalId}`);
   if (run.approvals[index]!.status !== "pending") throw new Error(`approval is already ${run.approvals[index]!.status}`);
+  const expectedFingerprint = agentRunApprovalFingerprint(run.approvals[index]!);
+  if (run.approvals[index]!.fingerprint !== expectedFingerprint) throw new Error("approval material changed after it was requested");
+  if (input.fingerprint && input.fingerprint !== expectedFingerprint) throw new Error("approval fingerprint does not match the requested action");
   if (run.approvals[index]!.requestedRole && input.actorRole !== run.approvals[index]!.requestedRole) throw new Error(`approval requires role ${run.approvals[index]!.requestedRole}; pass the matching actor role`);
   if (run.approvals[index]!.requestedFrom && input.actor !== run.approvals[index]!.requestedFrom) throw new Error(`approval is assigned to ${run.approvals[index]!.requestedFrom}`);
   const approvals = [...run.approvals];
@@ -659,10 +731,10 @@ export function decideAgentRunApproval(run: AgentRun, approvalId: string, decisi
     status: decision,
     decidedAt: now,
     decidedBy: String(input.actor || "").trim(),
-    ...(optional(input.note) ? { note: optional(input.note) } : {}),
+    ...(optional(input.note) ? { decisionNote: optional(input.note) } : {}),
     ...(optional(input.receipt) ? { receipt: optional(input.receipt) } : {}),
   };
-  let next: AgentRun = { ...run, approvals, updatedAt: now, events: [...run.events, event("approval-decided", now, input.actor, `${approvalId}: ${decision}`, { approvalId, decision, ...(input.actorRole ? { actorRole: input.actorRole } : {}) })] };
+  let next: AgentRun = { ...run, approvals, updatedAt: now, events: [...run.events, event("approval-decided", now, input.actor, `${approvalId}: ${decision}`, { approvalId, fingerprint: expectedFingerprint, decision, ...(input.actorRole ? { actorRole: input.actorRole } : {}) })] };
   if (run.status === "waiting-approval" && approvals.every((approval) => approval.status !== "pending")) {
     const allApproved = currentAgentRunApprovalBoundary(next).every((approval) => approval.status === "approved");
     next = transitionAgentRun(next, allApproved ? "running" : "blocked", {
@@ -706,6 +778,7 @@ export function forkAgentRun(run: AgentRun, input: { id?: string; actor?: string
     context: run.context,
     plan: run.plan.map((step) => ({ title: step.title, kind: step.kind, capability: step.capability, detail: step.detail })),
     budget: run.budget ? { tokenLimit: run.budget.tokenLimit, costLimitUsd: run.budget.costLimitUsd, timeLimitSeconds: run.budget.timeLimitSeconds } : undefined,
+    logicalWorkId: run.logicalWorkId,
     parentRunId: run.id,
     forkedFromEventId: input.fromEventId || run.events.at(-1)?.id,
     now: input.now,
@@ -745,6 +818,8 @@ export function renderAgentRunOrg(run: AgentRun): string {
     ...(run.providerPolicy ? [`:PROVIDER_POLICY: ${orgEscape(run.providerPolicy)}`] : []),
     ...(run.provider ? [`:PROVIDER: ${orgEscape(run.provider)}`] : []),
     ...(run.model ? [`:MODEL: ${orgEscape(run.model)}`] : []),
+    ...(run.logicalWorkId ? [`:LOGICAL_WORK_ID: ${orgEscape(run.logicalWorkId)}`] : []),
+    ...(run.attempt ? [`:ATTEMPT_ID: ${orgEscape(run.attempt.id)}`, `:ATTEMPT_NUMBER: ${run.attempt.number}`] : []),
     `:CREATED_AT: ${run.createdAt}`,
     `:UPDATED_AT: ${run.updatedAt}`,
     ...(run.startedAt ? [`:STARTED_AT: ${run.startedAt}`] : []),
@@ -784,7 +859,7 @@ export function renderAgentRunOrg(run: AgentRun): string {
         : approval.requestedRole
           ? `; role ${approval.requestedRole}`
           : "";
-      return `- ${approval.status.toUpperCase()} ${approval.title} — ${approval.action} (${approval.riskClass}${reviewer}) =${approval.id}=`;
+      return `- ${approval.status.toUpperCase()} ${approval.title} — ${approval.action} (${approval.riskClass}${reviewer}) =${approval.id}= [${approval.fingerprint}]`;
     }) : ["- No approvals recorded."]),
     "",
     "** Validations",
@@ -802,7 +877,14 @@ export function renderAgentRunOrg(run: AgentRun): string {
 export function parseAgentRunOrg(raw: string): AgentRun {
   const match = /#\+begin_src\s+json\s+:org2-agent-run\s*\n([\s\S]*?)\n#\+end_src/i.exec(String(raw || "").replace(/\r\n/g, "\n"));
   if (!match) throw new Error("Org2 agent run is missing its machine-state JSON block");
-  const value = JSON.parse(match[1]!) as AgentRun;
+  const parsed = JSON.parse(match[1]!) as AgentRun;
+  const value: AgentRun = {
+    ...parsed,
+    approvals: (parsed.approvals || []).map((approval) => ({
+      ...approval,
+      fingerprint: approval.fingerprint || agentRunApprovalFingerprint(approval),
+    })),
+  };
   const validation = validateAgentRun(value);
   if (!validation.valid) throw new Error(`invalid Org2 agent run: ${validation.issues.map((issue) => `${issue.path} ${issue.message}`).join("; ")}`);
   return value;
@@ -838,6 +920,33 @@ export function listAgentRuns(corpusRoot: string): AgentRun[] {
     .filter((entry) => entry.isFile() && entry.name.endsWith(".org2"))
     .map((entry) => parseAgentRunOrg(fs.readFileSync(path.join(dir, entry.name), "utf8")))
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id));
+}
+
+export function summarizeAgentRunAttempts(runs: AgentRun[]): AgentRunAttemptRollup[] {
+  const groups = new Map<string, AgentRun[]>();
+  for (const run of runs) {
+    if (!run.logicalWorkId || !run.attempt) continue;
+    groups.set(run.logicalWorkId, [...(groups.get(run.logicalWorkId) || []), run]);
+  }
+  return [...groups.entries()].map(([logicalWorkId, attempts]) => {
+    const sorted = [...attempts].sort((a, b) =>
+      (b.attempt?.number || 0) - (a.attempt?.number || 0)
+      || b.updatedAt.localeCompare(a.updatedAt)
+    );
+    const latest = sorted[0]!;
+    return {
+      logicalWorkId,
+      attempts: attempts.length,
+      queued: attempts.filter((item) => item.status === "queued").length,
+      running: attempts.filter((item) => item.status === "running").length,
+      blocked: attempts.filter((item) => item.status === "blocked" || item.status === "waiting-approval").length,
+      terminal: attempts.filter((item) => ["completed", "failed", "canceled"].includes(item.status)).length,
+      latestRunId: latest.id,
+      latestAttemptNumber: latest.attempt!.number,
+      latestStatus: latest.status,
+      updatedAt: latest.updatedAt,
+    };
+  }).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.logicalWorkId.localeCompare(b.logicalWorkId));
 }
 
 function walkOrgFiles(root: string, output: string[] = []): string[] {
