@@ -738,6 +738,9 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(approvals[1].status, "review-required")
     XCTAssertEqual(approvals[1].idValue, "approval-1")
     XCTAssertTrue(approvals[1].body.contains("Please review"))
+    XCTAssertFalse(approvals[1].isApprovable)
+    XCTAssertEqual(approvals[1].binding, "legacy")
+    XCTAssertNotNil(approvals[1].approvalBlockedReason)
     XCTAssertEqual(approvals[2].status, "waiting-on-avi-approval")
     XCTAssertEqual(approvals[2].idValue, "approval-priority")
   }
@@ -11318,6 +11321,53 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testAgentHandoffShortcutCannotHidePendingApproval() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-agent-approval-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("approval.org2")
+    try """
+    * TODO Review and approve launch message
+    :PROPERTIES:
+    :ID: approval-handoff-guard
+    :STATUS: draft-needs-review
+    :END:
+    Exact draft body.
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let itemJSON = """
+    {
+      "todo": "TODO",
+      "headline": "Review and approve launch message",
+      "kind": "SCHEDULED",
+      "file": "\(note.path)",
+      "line": 1,
+      "body": "Exact draft body.",
+      "level": 1,
+      "tags": [],
+      "properties": {
+        "ID": "approval-handoff-guard",
+        "STATUS": "draft-needs-review"
+      }
+    }
+    """
+
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data(itemJSON.utf8))
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.select(.agenda(item))
+
+    await store.applyAgentHandoffShortcut()
+
+    let updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("* TODO Review and approve launch message"))
+    XCTAssertTrue(updated.contains(":STATUS: draft-needs-review"))
+    XCTAssertFalse(updated.contains(":ASSIGNED_AT:"))
+    XCTAssertTrue(store.errorText?.contains("Use Review") == true)
+    XCTAssertEqual(store.statusText, "Agent handoff failed")
+  }
+
+  @MainActor
   func testApproveAndAgentHandoffCompletesApprovalAndCreatesSendTodo() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-approve-handoff-\(UUID().uuidString)", isDirectory: true)
@@ -11477,8 +11527,8 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(updated.contains("* CANCELED Approve reply to Maya / Oracle supplier onboarding details"))
     XCTAssertTrue(updated.contains(":STATUS: rejected"))
     XCTAssertTrue(updated.contains(":REJECTED_AT: <"))
-    XCTAssertTrue(updated.contains(":REJECTION_END_STATUS: CANCELED"))
-    XCTAssertTrue(updated.contains(":REJECTION_REASON: Not the right reply needs a rewrite"))
+    XCTAssertTrue(updated.contains(":ORG2_APPROVAL_DECISION: rejected"))
+    XCTAssertTrue(updated.contains(":APPROVAL_DECISION_NOTE: Not the right reply needs a rewrite"))
   }
 
   func testApprovalRejectionReasonRequiresNonWhitespaceText() {
@@ -11513,24 +11563,29 @@ final class Org2ModelsTests: XCTestCase {
     Draft body
     """.write(to: note, atomically: true, encoding: .utf8)
 
-    let staleLineItem = ApprovalItem(
-      title: "Approve reply to Sergio Sastre Florez badge/download count mismatch",
-      status: "draft-needs-review",
-      todo: "TODO",
-      level: 2,
-      file: note.path,
-      line: 1,
-      idValue: "approval-child-id",
-      properties: [
-        "ID": "approval-child-id",
-        "STATUS": "draft-needs-review",
-        "ASSIGNEE": "Avi"
-      ],
-      body: "Draft body",
-      tags: []
-    )
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
     store.setCorpusRoot(root)
+    await store.refreshApprovals()
+    let staleLineItem = try XCTUnwrap(
+      store.approvalItems.first(where: { $0.idValue == "approval-child-id" })
+    )
+    let listedLine = staleLineItem.line
+    let original = try String(contentsOf: note, encoding: .utf8)
+    let moved = original.replacingOccurrences(
+      of: "** TODO Approve reply to Sergio Sastre Florez badge/download count mismatch",
+      with: """
+      ** TODO Interposed sibling at the formerly reviewed line
+      :PROPERTIES:
+      :ID: interposed-sibling
+      :END:
+
+      ** TODO Approve reply to Sergio Sastre Florez badge/download count mismatch
+      """
+    )
+    try moved.write(to: note, atomically: true, encoding: .utf8)
+    let movedLines = moved.split(separator: "\n", omittingEmptySubsequences: false)
+    XCTAssertTrue(movedLines.indices.contains(listedLine - 1))
+    XCTAssertTrue(movedLines[listedLine - 1].contains("Interposed sibling"))
 
     await store.rejectApproval(staleLineItem, endStatus: .done, reason: "already responded")
 
@@ -11540,8 +11595,8 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertFalse(updated.contains("* DONE Parent wrapper"))
     XCTAssertTrue(updated.contains("** DONE Approve reply to Sergio Sastre Florez badge/download count mismatch"))
     XCTAssertTrue(updated.contains(":STATUS: rejected"))
-    XCTAssertTrue(updated.contains(":REJECTION_END_STATUS: DONE"))
-    XCTAssertTrue(updated.contains(":REJECTION_REASON: already responded"))
+    XCTAssertTrue(updated.contains(":ORG2_APPROVAL_DECISION: rejected"))
+    XCTAssertTrue(updated.contains(":APPROVAL_DECISION_NOTE: already responded"))
   }
 
   @MainActor
@@ -11645,7 +11700,7 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
-  func testApprovalContextTodoMutationDoesNotNavigateToAgenda() async throws {
+  func testApprovalContextTodoMutationIsBlockedWithoutNavigatingToAgenda() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-approval-context-status-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -11666,8 +11721,21 @@ final class Org2ModelsTests: XCTestCase {
 
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
     store.setCorpusRoot(root)
-    await store.refreshAgenda(updatesStatus: false)
-    let item = try XCTUnwrap(store.visibleAgendaItems.first)
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data("""
+    {
+      "todo": "TODO",
+      "headline": "Review approval draft",
+      "kind": "SCHEDULED",
+      "file": "\(note.path)",
+      "line": 0,
+      "body": "",
+      "level": 1,
+      "tags": [],
+      "properties": {
+        "STATUS": "draft-needs-review"
+      }
+    }
+    """.utf8))
     store.select(.agenda(item))
     store.selectedSurface = .approvals
 
@@ -11675,7 +11743,68 @@ final class Org2ModelsTests: XCTestCase {
 
     XCTAssertEqual(store.selectedSurface, .approvals)
     let updated = try String(contentsOf: note, encoding: .utf8)
-    XCTAssertTrue(updated.contains("* DONE Review approval draft"))
+    XCTAssertTrue(updated.contains("* TODO Review approval draft"))
+    XCTAssertFalse(updated.contains("* DONE Review approval draft"))
+    XCTAssertNotNil(store.errorText)
+    XCTAssertEqual(store.statusText, "TODO update failed")
+  }
+
+  @MainActor
+  func testApprovalContextPropertyAndPriorityMutationsAreBlocked() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-approval-context-properties-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("approval.org2")
+    let formatter = DateFormatter()
+    formatter.calendar = Calendar(identifier: .gregorian)
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.timeZone = TimeZone.current
+    formatter.dateFormat = "yyyy-MM-dd"
+    let today = formatter.string(from: Date())
+    try """
+    * TODO Review and approve launch draft
+    SCHEDULED: <\(today)>
+    :PROPERTIES:
+    :ID: approval-property-guard
+    :STATUS: draft-needs-review
+    :END:
+    Exact draft body.
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data("""
+    {
+      "todo": "TODO",
+      "headline": "Review and approve launch draft",
+      "kind": "SCHEDULED",
+      "file": "\(note.path)",
+      "line": 0,
+      "body": "Exact draft body.",
+      "level": 1,
+      "tags": [],
+      "properties": {
+        "ID": "approval-property-guard",
+        "STATUS": "draft-needs-review"
+      }
+    }
+    """.utf8))
+    store.select(.agenda(item))
+
+    await store.applyPropertyShortcut(key: "STATUS", value: "ready")
+    XCTAssertEqual(store.statusText, "Property update failed")
+    XCTAssertTrue(store.errorText?.contains("Use Review") == true)
+
+    store.errorText = nil
+    await store.applyPriorityShortcut("A", to: .agenda(item))
+    XCTAssertEqual(store.statusText, "Priority update failed")
+    XCTAssertTrue(store.errorText?.contains("Use Review") == true)
+
+    let updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("* TODO Review and approve launch draft"))
+    XCTAssertFalse(updated.contains("[#A]"))
+    XCTAssertTrue(updated.contains(":STATUS: draft-needs-review"))
+    XCTAssertFalse(updated.contains(":STATUS: ready"))
   }
 
   @MainActor

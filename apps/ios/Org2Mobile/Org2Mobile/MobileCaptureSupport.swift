@@ -168,21 +168,14 @@ enum MobileCaptureWriter {
       }
     }
 
-    if !FileManager.default.fileExists(atPath: inboxURL.path) {
-      let header = """
-      #+TITLE: Org2 Mobile Inbox
-
-      """
-      try header.write(to: inboxURL, atomically: true, encoding: .utf8)
-    }
-
-    let handle = try FileHandle(forWritingTo: inboxURL)
-    defer {
-      try? handle.close()
-    }
-    try handle.seekToEnd()
-    if let data = content.data(using: .utf8) {
-      try handle.write(contentsOf: data)
+    try Org2CoordinatedFileMutation.mutateTextAtomically(
+      at: inboxURL,
+      createIfMissing: true
+    ) { current in
+      let header = current.isEmpty
+        ? "#+TITLE: Org2 Mobile Inbox\n\n"
+        : ""
+      return (current + header + content, ())
     }
     return inboxURL
   }

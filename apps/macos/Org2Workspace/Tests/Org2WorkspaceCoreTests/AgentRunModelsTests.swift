@@ -24,7 +24,8 @@ final class AgentRunModelsTests: XCTestCase {
         "context": [{"ref":"notes/source.org2","citation":"notes/source.org2:1"}],
         "plan": [{"id":"draft","title":"Draft","kind":"agent","status":"completed"}],
         "artifacts": [{"id":"pdf","path":"compiled/brief.pdf","role":"export","reviewStatus":"review-required","createdAt":"2026-07-14T00:00:00.000Z"}],
-        "approvals": [{"id":"release","title":"Release","action":"publish","riskClass":"external-action","status":"pending","requestedAt":"2026-07-14T00:00:00.000Z"}],
+        "approvals": [{"id":"release","title":"Release","action":"publish","riskClass":"external-action","status":"pending","requirementId":"release-gate","requestedAt":"2026-07-14T00:00:00.000Z"}],
+        "approvalRequirements": [{"id":"release-gate","title":"Release","action":"publish","riskClass":"external-action","requestedRole":"owner","beforeStepId":"draft"}],
         "validations": [{"id":"citations","name":"citations","status":"passed","checkedAt":"2026-07-14T00:00:00.000Z"}],
         "comments": [{"id":"comment","author":"Avi","body":"Please revise.","createdAt":"2026-07-14T00:00:00.000Z"}],
         "events": [{"id":"event","type":"created","at":"2026-07-14T00:00:00.000Z"}],
@@ -39,6 +40,10 @@ final class AgentRunModelsTests: XCTestCase {
     XCTAssertEqual(run.id, "run-1")
     XCTAssertEqual(run.parentRunId, "parent-run")
     XCTAssertEqual(run.pendingApprovalCount, 1)
+    let requirement = try XCTUnwrap(run.declaredApprovalRequirements.first)
+    XCTAssertEqual(run.approvalRequirement(for: try XCTUnwrap(run.approvals.first))?.id, "release-gate")
+    XCTAssertEqual(run.approvalRequirementState(for: requirement), .pending)
+    XCTAssertEqual(requirement.beforeStepId, "draft")
     XCTAssertEqual(run.progressText, "1/1 completed")
     XCTAssertTrue(run.needsAttention)
     XCTAssertTrue(run.matchesRunFilter("cited briefing"))
@@ -56,6 +61,12 @@ final class AgentRunModelsTests: XCTestCase {
     let data = Data(#"""
     {
       "kind": "run",
+      "queueId": "run:run-1:approval-1",
+      "nativeApprovalId": "approval-1",
+      "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "binding": "native",
+      "canApprove": false,
+      "approvalBlockedReason": "Exact review material is required.",
       "title": "Release report",
       "status": "pending",
       "todo": null,
@@ -71,6 +82,15 @@ final class AgentRunModelsTests: XCTestCase {
       "riskClass": "external-action",
       "requestedRole": "owner",
       "requestedAt": "2026-07-21T00:00:00.000Z",
+      "requirement": {
+        "id": "release-gate",
+        "title": "Approve report release",
+        "action": "publish the reviewed report",
+        "riskClass": "external-action",
+        "requestedRole": "owner",
+        "beforeStepId": "publish",
+        "state": "pending"
+      },
       "runId": "run-1",
       "runGoal": "Prepare report",
       "runStatus": "waiting-approval",
@@ -85,7 +105,80 @@ final class AgentRunModelsTests: XCTestCase {
     XCTAssertEqual(item.id, "run:run-1:approval-1")
     XCTAssertEqual(item.sourceLabel, "Run run-1")
     XCTAssertEqual(item.runDependencyText, "Approving this leaves 1 other pending approval before the run can resume.")
+    XCTAssertFalse(item.isApprovable)
+    XCTAssertEqual(item.approvalBlockedReason, "Exact review material is required.")
+    XCTAssertEqual(item.requirement?.id, "release-gate")
+    XCTAssertEqual(item.requirement?.title, "Approve report release")
+    XCTAssertEqual(item.requirement?.action, "publish the reviewed report")
+    XCTAssertEqual(item.requirement?.riskClass, "external-action")
+    XCTAssertEqual(item.requirement?.requestedRole, "owner")
+    XCTAssertEqual(item.requirement?.beforeStepId, "publish")
+    XCTAssertEqual(item.requirement?.state, .pending)
+    XCTAssertTrue(item.boundReviewText.contains("Bound workflow approval requirement"))
+    XCTAssertTrue(item.boundReviewText.contains("Required before step: publish"))
     XCTAssertTrue(item.matchesApprovalFilter("prepare report external-action"))
+  }
+
+  func testDerivesCurrentWorkflowApprovalRequirementStatesFromNewestBoundRequest() throws {
+    let data = Data(#"""
+    {
+      "id": "requirement-states",
+      "goal": "Exercise workflow approval requirements",
+      "acceptanceCriteria": [],
+      "status": "waiting-approval",
+      "riskClass": "external-action",
+      "capabilities": [],
+      "context": [],
+      "plan": [{"id":"publish","title":"Publish","kind":"tool","status":"pending"}],
+      "artifacts": [],
+      "approvals": [
+        {"id":"release-v1","title":"Release","action":"publish","riskClass":"external-action","status":"rejected","requirementId":"release","requestedAt":"2026-07-25T00:00:00.000Z"},
+        {"id":"release-v2","title":"Release","action":"publish","riskClass":"external-action","status":"pending","requirementId":"release","supersedesId":"release-v1","requestedAt":"2026-07-25T00:01:00.000Z"},
+        {"id":"legal-v1","title":"Legal","action":"release","riskClass":"high-impact","status":"approved","requirementId":"legal","requestedAt":"2026-07-25T00:00:00.000Z"},
+        {"id":"security-v1","title":"Security","action":"release","riskClass":"high-impact","status":"canceled","requirementId":"security","requestedAt":"2026-07-25T00:00:00.000Z"}
+      ],
+      "approvalRequirements": [
+        {"id":"release","title":"Release","action":"publish","riskClass":"external-action","beforeStepId":"publish"},
+        {"id":"legal","title":"Legal","action":"release","riskClass":"high-impact"},
+        {"id":"security","title":"Security","action":"release","riskClass":"high-impact"},
+        {"id":"finance","title":"Finance","action":"release","riskClass":"high-impact"}
+      ],
+      "validations": [],
+      "comments": [],
+      "events": [],
+      "createdAt": "2026-07-25T00:00:00.000Z",
+      "updatedAt": "2026-07-25T00:01:00.000Z"
+    }
+    """#.utf8)
+
+    let run = try JSONDecoder().decode(AgentRunItem.self, from: data)
+    let requirements = Dictionary(
+      uniqueKeysWithValues: run.declaredApprovalRequirements.map { ($0.id, $0) }
+    )
+    XCTAssertEqual(
+      run.currentApproval(for: try XCTUnwrap(requirements["release"]))?.id,
+      "release-v2"
+    )
+    XCTAssertEqual(
+      run.approvalRequirementState(for: try XCTUnwrap(requirements["release"])),
+      .pending
+    )
+    XCTAssertEqual(
+      run.approvalRequirementState(for: try XCTUnwrap(requirements["legal"])),
+      .approved
+    )
+    XCTAssertEqual(
+      run.approvalRequirementState(for: try XCTUnwrap(requirements["security"])),
+      .denied
+    )
+    XCTAssertEqual(
+      run.approvalRequirementState(for: try XCTUnwrap(requirements["finance"])),
+      .unbound
+    )
+    XCTAssertTrue(
+      try XCTUnwrap(requirements["release"]).reviewText(state: .pending)
+        .contains("Required before step: publish")
+    )
   }
 
   @MainActor
@@ -105,6 +198,8 @@ final class AgentRunModelsTests: XCTestCase {
       "run", "approval-request", "approval-run",
       "--title", "Approve release", "--action", "publish report",
       "--risk", "external-action", "--role", "owner", "--from", "Avi",
+      "--note", "Publish the exact reviewed report.",
+      "--material-json", #"{"kind":"artifact-release","target":"compiled/report.pdf","artifacts":[{"id":"report","sha256":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]}"#,
       "--dir", root.path, "--json"
     ])
 
@@ -145,6 +240,8 @@ final class AgentRunModelsTests: XCTestCase {
         "run", "approval-request", "run-center-approval",
         "--title", "Approve draft \(index)", "--action", "send draft \(index)",
         "--risk", "external-action", "--role", "approver", "--from", "Avi",
+        "--note", "Send the exact reviewed draft \(index).",
+        "--material-json", #"{"kind":"message","target":"reviewer@example.test","content":"Exact reviewed draft \#(index)."}"#,
         "--dir", root.path, "--json"
       ])
     }
@@ -174,6 +271,50 @@ final class AgentRunModelsTests: XCTestCase {
     XCTAssertEqual(WorkspaceStore.agentRunApprovalDecisionActor(requestedFrom: nil), "Org2Workspace")
   }
 
+  @MainActor
+  func testRunCenterRejectionRequiresAndPersistsAuditReason() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-run-center-rejection-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let cli = Org2CLI(repoRoot: try Org2CLI.defaultRepoRoot())
+    _ = try await cli.run([
+      "run", "create", "--id", "run-center-rejection", "--goal", "Send reviewed message",
+      "--dir", root.path, "--json"
+    ])
+    _ = try await cli.run(["run", "start", "run-center-rejection", "--dir", root.path, "--json"])
+    _ = try await cli.run([
+      "run", "approval-request", "run-center-rejection",
+      "--title", "Approve message", "--action", "send message",
+      "--risk", "external-action", "--role", "approver", "--from", "Avi",
+      "--material-json", #"{"kind":"message","target":"reviewer@example.test","content":"Exact reviewed message."}"#,
+      "--dir", root.path, "--json"
+    ])
+
+    let store = WorkspaceStore(cli: cli)
+    store.setCorpusRoot(root, persistsDefault: false)
+    await store.refreshAgentRuns()
+    let run = try XCTUnwrap(store.agentRuns.first)
+    let approval = try XCTUnwrap(run.approvals.first)
+
+    await store.decideAgentRunApproval(run, approval: approval, decision: "rejected")
+    XCTAssertEqual(store.statusText, "Rejection reason required")
+    XCTAssertEqual(store.errorText, "A rejection reason is required.")
+    XCTAssertEqual(store.agentRuns.first?.approvals.first?.status, "pending")
+
+    await store.decideAgentRunApproval(
+      run,
+      approval: approval,
+      decision: "rejected",
+      note: "Recipient and content are not correct."
+    )
+
+    let updatedApproval = try XCTUnwrap(store.agentRuns.first?.approvals.first)
+    XCTAssertEqual(updatedApproval.status, "rejected")
+    XCTAssertEqual(updatedApproval.decisionNote, "Recipient and content are not correct.")
+  }
+
   func testRecognizesPDFRunArtifactsFromExtensionOrMediaType() throws {
     let extensionArtifact = try JSONDecoder().decode(
       AgentRunArtifactItem.self,
@@ -193,7 +334,7 @@ final class AgentRunModelsTests: XCTestCase {
     XCTAssertFalse(textArtifact.isPDF)
   }
 
-  func testFindsOpenClawExecApprovalIDInLifecycleComment() throws {
+  func testFreeFormLifecycleCommentDoesNotCreateApprovalAuthority() throws {
     let data = Data(#"""
     {
       "id": "run-1",
@@ -220,7 +361,133 @@ final class AgentRunModelsTests: XCTestCase {
     """#.utf8)
 
     let run = try JSONDecoder().decode(AgentRunItem.self, from: data)
-    XCTAssertEqual(run.openClawExecApprovalID, "IC_example123")
+    XCTAssertTrue(run.approvals.isEmpty)
+    XCTAssertEqual(
+      run.comments.first?.body,
+      "OPENCLAW_KEY: draft:exec:default:IC_example123\nOPENCLAW_KIND: external-draft"
+    )
+  }
+
+  func testApprovalItemRendersTheCompleteBoundEnvelope() throws {
+    let bodyTail = "BODY_TAIL_" + String(repeating: "x", count: 320)
+    let pairedTail = "PAIRED_TAIL_" + String(repeating: "y", count: 320)
+    let object: [String: Any] = [
+      "kind": "headline",
+      "queueId": "headline:approval-1",
+      "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "binding": "legacy",
+      "canApprove": true,
+      "title": "Approve the exact launch message",
+      "status": "draft-needs-review",
+      "todo": "TODO",
+      "level": 1,
+      "file": "/tmp/corpus/review.org2",
+      "line": 7,
+      "idValue": "approval-1",
+      "properties": [
+        "ORG2_APPROVAL_ID": "approval-1",
+        "PAIRED_SEND_TODO": "Send the exact launch message",
+        "STATUS": "draft-needs-review",
+      ],
+      "body": "Review body\n\(bodyTail)",
+      "tags": [],
+      "action": "send launch message",
+      "material": [
+        "kind": "command",
+        "target": "gateway",
+        "content": "Exact content including a hidden tail: MATERIAL_TAIL",
+        "command": [
+          "text": "send launch message",
+          "argv": ["/usr/local/bin/send", "--recipient", "reviewer@example.test"],
+          "cwd": "/tmp/corpus",
+        ],
+        "runtimeTarget": [
+          "system": "openclaw",
+          "kind": "typed-tool",
+          "id": "approval-1",
+        ],
+      ],
+      "pairedAction": [
+        "mode": "send",
+        "title": "Send the exact launch message",
+        "todo": "TODO",
+        "properties": [
+          "ASSIGNEE": "OpenClaw",
+          "STATUS": "blocked",
+        ],
+        "body": "Paired action body\n\(pairedTail)",
+      ],
+    ]
+
+    let data = try JSONSerialization.data(withJSONObject: object)
+    let item = try JSONDecoder().decode(ApprovalItem.self, from: data)
+
+    XCTAssertEqual(item.properties["PAIRED_SEND_TODO"], "Send the exact launch message")
+    XCTAssertEqual(item.pairedAction?.properties["STATUS"], "blocked")
+    XCTAssertGreaterThan(item.boundReviewText.count, 700)
+    XCTAssertTrue(item.boundReviewText.contains(bodyTail))
+    XCTAssertTrue(item.boundReviewText.contains("PAIRED_SEND_TODO: Send the exact launch message"))
+    XCTAssertTrue(item.boundReviewText.contains(pairedTail))
+    let materialText = try XCTUnwrap(item.material).reviewText
+    XCTAssertTrue(materialText.contains("MATERIAL_TAIL"))
+    XCTAssertTrue(materialText.contains("[2] reviewer@example.test"))
+    XCTAssertTrue(materialText.contains("Working directory: /tmp/corpus"))
+    XCTAssertTrue(materialText.contains("Runtime target: openclaw · typed-tool · approval-1"))
+  }
+
+  func testExactApprovalMaterialMirrorsCoreKindSpecificReviewability() throws {
+    func material(_ json: String) throws -> AgentRunApprovalMaterialItem {
+      try JSONDecoder().decode(AgentRunApprovalMaterialItem.self, from: Data(json.utf8))
+    }
+
+    XCTAssertFalse(try material(#"{"kind":"message","content":"Legacy content without a recipient"}"#).hasExactApprovalMaterial)
+    XCTAssertTrue(try material(#"{"kind":"message","target":"reviewer@example.test","content":""}"#).hasExactApprovalMaterial)
+    XCTAssertFalse(try material(#"{"kind":"command","command":{"text":"  "}}"#).hasExactApprovalMaterial)
+    XCTAssertTrue(try material(#"{"kind":"command","command":{"text":"send --reviewed"}}"#).hasExactApprovalMaterial)
+    XCTAssertFalse(try material(#"{"kind":"artifact-release","artifacts":[{"id":"report","sha256":"not-a-digest"}]}"#).hasExactApprovalMaterial)
+    XCTAssertTrue(
+      try material(
+        #"{"kind":"artifact-release","artifacts":[{"id":"report","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]}"#
+      ).hasExactApprovalMaterial
+    )
+    XCTAssertFalse(
+      try material(
+        #"{"kind":"external-action","runtimeTarget":{"system":"openclaw","kind":"typed-tool","id":"approval-1"}}"#
+      ).hasExactApprovalMaterial
+    )
+  }
+
+  func testDecodesAndRendersInFlightApprovalEffectReservation() throws {
+    let data = Data(#"""
+    {
+      "id": "approval-1",
+      "title": "Send reviewed message",
+      "action": "send",
+      "riskClass": "external-action",
+      "status": "approved",
+      "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "requestedAt": "2026-07-25T00:00:00.000Z",
+      "effectReservation": {
+        "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "materialDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "toolCallId": "tool-call-42",
+        "reservedAt": "2026-07-25T00:01:00.000Z"
+      }
+    }
+    """#.utf8)
+
+    let approval = try JSONDecoder().decode(AgentRunApprovalItem.self, from: data)
+    XCTAssertEqual(approval.effectReservation?.toolCallId, "tool-call-42")
+    XCTAssertEqual(approval.effectReservation?.reservedAt, "2026-07-25T00:01:00.000Z")
+    XCTAssertEqual(
+      approval.effectReservation?.materialDigest,
+      "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    )
+    let effectState = try XCTUnwrap(approval.effectStateText)
+    XCTAssertTrue(effectState.contains("reconciliation is required"))
+    XCTAssertTrue(effectState.contains("Tool call: tool-call-42"))
+    XCTAssertTrue(effectState.contains("Fingerprint: sha256:aaaaaaaa"))
+    XCTAssertTrue(effectState.contains("Material digest: sha256:bbbbbbbb"))
   }
 
   @MainActor

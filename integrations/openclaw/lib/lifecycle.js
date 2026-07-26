@@ -1,10 +1,138 @@
 import { execFile } from "node:child_process";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
+import { randomUUID } from "node:crypto";
+import { link, lstat, mkdir, readFile, readdir, rename, unlink, writeFile } from "node:fs/promises";
+import { homedir, hostname } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
+import { approvalMaterialDigest, sameApprovalMaterial } from "./approval-effects.js";
 
 const execFileAsync = promisify(execFile);
+const STATE_LOCK_SCHEMA = "org2:mutation-lock-owner:v2";
+const STATE_LOCK_OWNER_KEYS = new Set([
+  "schema",
+  "host",
+  "pid",
+  "token",
+  "phase",
+  "ticket",
+  "createdAt",
+]);
+const UUID_TOKEN_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+function stateLockOwnerRaw(owner) {
+  return `${JSON.stringify(owner)}\n`;
+}
+
+function parseStateLockOwner(raw) {
+  try {
+    const owner = JSON.parse(raw);
+    if (
+      !owner
+      || typeof owner !== "object"
+      || Array.isArray(owner)
+      || !Object.keys(owner).every((key) => STATE_LOCK_OWNER_KEYS.has(key))
+      || owner.schema !== STATE_LOCK_SCHEMA
+      || typeof owner.host !== "string"
+      || owner.host.length === 0
+      || !Number.isSafeInteger(owner.pid)
+      || owner.pid <= 0
+      || owner.pid > 2_147_483_647
+      || typeof owner.token !== "string"
+      || !UUID_TOKEN_PATTERN.test(owner.token)
+      || !["choosing", "ticket"].includes(owner.phase)
+      || typeof owner.createdAt !== "string"
+      || owner.createdAt.length === 0
+      || (owner.phase === "ticket" && (!Number.isSafeInteger(owner.ticket) || owner.ticket <= 0))
+      || (owner.phase === "choosing" && owner.ticket !== undefined)
+    ) {
+      return null;
+    }
+    return owner;
+  } catch {
+    return null;
+  }
+}
+
+function stateLockParticipantIdentity(name) {
+  const choosing = /^choosing\.([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.json$/.exec(name);
+  if (choosing) return { phase: "choosing", token: choosing[1] };
+  const ticket = /^ticket\.(\d{16})\.([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.json$/.exec(name);
+  if (!ticket) return null;
+  const value = Number(ticket[1]);
+  if (!Number.isSafeInteger(value) || value <= 0 || String(value).padStart(16, "0") !== ticket[1]) {
+    return null;
+  }
+  return { phase: "ticket", ticket: value, token: ticket[2] };
+}
+
+function processIsAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error?.code !== "ESRCH";
+  }
+}
+
+function compareStateLockTickets(left, right) {
+  const ticketDifference = Number(left.ticket) - Number(right.ticket);
+  if (ticketDifference !== 0) return ticketDifference;
+  return Buffer.compare(Buffer.from(left.token, "utf8"), Buffer.from(right.token, "utf8"));
+}
+
+async function publishStateLockParticipant(lockDirectory, name, raw) {
+  const file = join(lockDirectory, name);
+  const candidate = join(lockDirectory, `.candidate.${process.pid}.${randomUUID()}`);
+  await writeFile(candidate, raw, { mode: 0o600, flag: "wx" });
+  try {
+    await link(candidate, file);
+  } finally {
+    try { await unlink(candidate); } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+    }
+  }
+  return file;
+}
+
+async function removeStateLockParticipantIfUnchanged(file, raw) {
+  try {
+    if (await readFile(file, "utf8") === raw) await unlink(file);
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
+}
+
+async function activeStateLockParticipants(lockDirectory, currentHost) {
+  const active = [];
+  for (const name of await readdir(lockDirectory)) {
+    if (name.startsWith(".candidate.")) continue;
+    const identity = stateLockParticipantIdentity(name);
+    if (!identity) {
+      throw new Error(`unrecognized Org2 lifecycle lock participant ${join(lockDirectory, name)}`);
+    }
+    const file = join(lockDirectory, name);
+    let raw = "";
+    try { raw = await readFile(file, "utf8"); } catch (error) {
+      if (error?.code === "ENOENT") continue;
+      throw error;
+    }
+    const owner = parseStateLockOwner(raw);
+    if (
+      !owner
+      || owner.phase !== identity.phase
+      || owner.token !== identity.token
+      || owner.ticket !== identity.ticket
+    ) {
+      throw new Error(`invalid Org2 lifecycle lock participant ${file}`);
+    }
+    if (owner.host === currentHost && !processIsAlive(owner.pid)) {
+      await removeStateLockParticipantIfUnchanged(file, raw);
+      continue;
+    }
+    active.push({ file, raw, owner });
+  }
+  return active;
+}
 
 export function conciseGoal(prompt, fallback = "OpenClaw agent execution") {
   const clean = String(prompt || "").replace(/\s+/g, " ").trim();
@@ -42,8 +170,8 @@ export function workflowExecutionPrompt(workflow, inputs = {}, runId) {
     "",
     `Execute the Org2 workflow \"${workflow.title}\" from its canonical plain-text workflow file.`,
     "Read the workflow and durable run with the Org2 CLI. Update run steps as they progress, record produced artifacts and validation results, and keep generated work in the declared reviewable locations.",
-    "At an approval boundary, request the approval on this run and end the turn without performing the protected action. Org2 will explicitly continue the same run after approval.",
-    "Before requesting an external-action or high-impact approval, record the exact recipient, content, command, and attachments in an inspectable run artifact or approval note. An opaque ID or content fingerprint is not review material.",
+    "At a declared approval boundary, use the requirement ID from the run with `org2 run approval-request RUN_ID --requirement REQUIREMENT_ID ...`, then end the turn without performing the protected action. Org2 will explicitly continue the same run after approval.",
+    "Before requesting an external-action or high-impact approval, bind the exact recipient, content, command, and attachments as typed approval material with `--material-json ...` or `--material-file ...`. A note, unrelated artifact, opaque ID, or fingerprint alone is not review material.",
     "Do not bypass an approval, complete a run with a pending review boundary, or silently promote generated work into canonical notes. After a human review decision, record it with `org2 run artifact-review RUN_ID ARTIFACT_ID --status reviewed|rejected` before completing the run.",
   ].join("\n");
 }
@@ -57,7 +185,7 @@ export function workflowContinuationPrompt(workflow, runId) {
     "",
     `Continue the Org2 workflow \"${workflow.title}\" using its existing durable run.`,
     "Re-read the workflow and run with the Org2 CLI. Continue from the first incomplete step, perform only actions covered by recorded approvals, and preserve the run's artifacts, validation, and event history.",
-    "Treat an approval as valid only for the exact review material recorded with it; do not substitute a new recipient, payload, command, or attachment after approval.",
+    "Treat a declared requirement as satisfied only by its current bound approval and the exact review material recorded with it; do not substitute a new recipient, payload, command, or attachment after approval.",
     "When an approval resolves an artifact review boundary, record the artifact decision with `org2 run artifact-review RUN_ID ARTIFACT_ID --status reviewed|rejected` before completing the run.",
   ].join("\n");
 }
@@ -97,16 +225,16 @@ export class Org2Lifecycle {
     this.log = options.log || console;
     this.owner = options.owner || "user";
     this.exec = options.exec || this.#exec.bind(this);
-    this.state = { version: 3, mappings: {}, workflowJobs: {} };
+    this.state = { version: 4, mappings: {}, workflowJobs: {}, drafts: {} };
+    this.baseState = this.#snapshotState(this.state);
     this.cron = options.cron;
     this.queue = Promise.resolve();
   }
 
   async init() {
     try { this.state = JSON.parse(await readFile(this.stateFile, "utf8")); } catch {}
-    this.state.version = 3;
-    this.state.mappings ||= {};
-    this.state.workflowJobs ||= {};
+    this.#normalizeState();
+    this.baseState = this.#snapshotState(this.state);
   }
 
   setCron(cron) { this.cron = cron; }
@@ -123,15 +251,147 @@ export class Org2Lifecycle {
     return stdout;
   }
 
-  async #save() {
-    let disk = { mappings: {} };
-    try { disk = JSON.parse(await readFile(this.stateFile, "utf8")); } catch {}
-    this.state.mappings = { ...(disk.mappings || {}), ...(this.state.mappings || {}) };
-    this.state.workflowJobs = { ...(disk.workflowJobs || {}), ...(this.state.workflowJobs || {}) };
+  #normalizeState() {
+    if (!this.state || typeof this.state !== "object" || Array.isArray(this.state)) this.state = {};
+    this.state.version = Math.max(Number(this.state.version) || 0, 4);
+    this.state.mappings ||= {};
+    this.state.workflowJobs ||= {};
+    this.state.drafts ||= {};
+  }
+
+  #snapshotState(state) {
+    return JSON.parse(JSON.stringify(state || {}));
+  }
+
+  #changedMapKeys(name) {
+    const before = this.baseState?.[name] || {};
+    const after = this.state?.[name] || {};
+    const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
+    return [...keys].filter((key) => (
+      JSON.stringify(before[key]) !== JSON.stringify(after[key])
+    ));
+  }
+
+  async #acquireStateLock() {
     await mkdir(dirname(this.stateFile), { recursive: true });
-    const tmp = `${this.stateFile}.${process.pid}.tmp`;
-    await writeFile(tmp, `${JSON.stringify(this.state, null, 2)}\n`);
+    const lockDirectory = `${this.stateFile}.lock`;
+    try {
+      await mkdir(lockDirectory, { recursive: true, mode: 0o700 });
+    } catch (error) {
+      if (error?.code === "EEXIST") {
+        throw new Error(
+          `the legacy Org2 lifecycle lock at ${lockDirectory} is not compatible with the crash-safe lock protocol`,
+        );
+      }
+      throw error;
+    }
+    if (!(await lstat(lockDirectory)).isDirectory()) {
+      throw new Error(`the Org2 lifecycle lock at ${lockDirectory} is not a directory`);
+    }
+
+    const currentHost = hostname();
+    const token = randomUUID();
+    const createdAt = new Date().toISOString();
+    const choosing = {
+      schema: STATE_LOCK_SCHEMA,
+      host: currentHost,
+      pid: process.pid,
+      token,
+      phase: "choosing",
+      createdAt,
+    };
+    const choosingRaw = stateLockOwnerRaw(choosing);
+    const choosingFile = await publishStateLockParticipant(
+      lockDirectory,
+      `choosing.${token}.json`,
+      choosingRaw,
+    );
+    let ticketFile;
+    let ticketRaw;
+
+    try {
+      const existing = await activeStateLockParticipants(lockDirectory, currentHost);
+      const nextTicket = existing.reduce(
+        (maximum, item) => item.owner.phase === "ticket"
+          ? Math.max(maximum, Number(item.owner.ticket))
+          : maximum,
+        0,
+      ) + 1;
+      if (!Number.isSafeInteger(nextTicket) || nextTicket <= 0) {
+        throw new Error(`the Org2 lifecycle lock ticket space is exhausted for ${lockDirectory}`);
+      }
+      const owner = {
+        ...choosing,
+        phase: "ticket",
+        ticket: nextTicket,
+      };
+      ticketRaw = stateLockOwnerRaw(owner);
+      ticketFile = await publishStateLockParticipant(
+        lockDirectory,
+        `ticket.${String(nextTicket).padStart(16, "0")}.${token}.json`,
+        ticketRaw,
+      );
+      await removeStateLockParticipantIfUnchanged(choosingFile, choosingRaw);
+
+      for (let attempt = 0; attempt < 200; attempt += 1) {
+        const contenders = await activeStateLockParticipants(lockDirectory, currentHost);
+        const blocker = contenders.find((item) => (
+          item.owner.token !== token
+          && (
+            item.owner.phase === "choosing"
+            || compareStateLockTickets(item.owner, owner) < 0
+          )
+        ));
+        if (!blocker) return {
+          lockDirectory,
+          file: ticketFile,
+          raw: ticketRaw,
+          owner,
+        };
+        await new Promise((resolve) => setTimeout(resolve, Math.min(10 + attempt * 2, 100)));
+      }
+      throw new Error("Org2 lifecycle state is already being updated");
+    } catch (error) {
+      await removeStateLockParticipantIfUnchanged(choosingFile, choosingRaw);
+      if (ticketFile && ticketRaw) {
+        await removeStateLockParticipantIfUnchanged(ticketFile, ticketRaw);
+      }
+      throw error;
+    }
+  }
+
+  async #withStateLock(fn) {
+    const lock = await this.#acquireStateLock();
+    try {
+      return await fn(lock);
+    } finally {
+      await removeStateLockParticipantIfUnchanged(lock.file, lock.raw);
+    }
+  }
+
+  async #save(lock) {
+    if (!lock) return this.#withStateLock((held) => this.#save(held));
+    let disk = {};
+    try { disk = JSON.parse(await readFile(this.stateFile, "utf8")); } catch {}
+    const next = {
+      ...disk,
+      version: Math.max(Number(disk.version) || 0, Number(this.state.version) || 0, 4),
+    };
+    for (const name of ["mappings", "workflowJobs", "drafts"]) {
+      const merged = { ...(disk[name] || {}) };
+      for (const key of this.#changedMapKeys(name)) {
+        if (Object.hasOwn(this.state[name] || {}, key)) merged[key] = this.state[name][key];
+        else delete merged[key];
+      }
+      next[name] = merged;
+    }
+    this.state = next;
+    this.#normalizeState();
+    await mkdir(dirname(this.stateFile), { recursive: true });
+    const tmp = `${this.stateFile}.${process.pid}.${randomUUID()}.tmp`;
+    await writeFile(tmp, `${JSON.stringify(this.state, null, 2)}\n`, { mode: 0o600 });
     await rename(tmp, this.stateFile);
+    this.baseState = this.#snapshotState(this.state);
   }
 
   async corpus() {
@@ -155,7 +415,7 @@ export class Org2Lifecycle {
     if (args.length > 5) await this.exec(args);
   }
 
-  async ensure(key, details) {
+  async ensure(key, details, stateLock) {
     const existing = this.state.mappings[key];
     if (existing?.org2RunId) return existing.org2RunId;
     const created = JSON.parse(await this.exec([
@@ -166,6 +426,7 @@ export class Org2Lifecycle {
       "--owner", this.owner,
       "--capability", "agent-context",
       "--capability", "validation",
+      ...(details.context || []).flatMap((ref) => ["--context", String(ref)]),
       ...(details.provider ? ["--provider", String(details.provider)] : []),
       ...(details.model ? ["--model", String(details.model)] : []),
       "--json",
@@ -183,7 +444,7 @@ export class Org2Lifecycle {
       model: details.model,
       createdAt: new Date().toISOString(),
     };
-    await this.#save();
+    await this.#save(stateLock);
     return id;
   }
 
@@ -247,6 +508,241 @@ export class Org2Lifecycle {
       : [usage.input, usage.output, usage.cacheRead, usage.cacheWrite]
         .reduce((sum, value) => sum + (Number.isFinite(value) ? value : 0), 0);
     if (total > 0) mapping.tokensUsed = (mapping.tokensUsed || 0) + total;
+  }
+
+  async #sharedDraftRecord(key) {
+    let disk = {};
+    try { disk = JSON.parse(await readFile(this.stateFile, "utf8")); } catch {}
+    const record = disk.drafts?.[key] || this.state.drafts?.[key];
+    if (record) this.state.drafts[key] = record;
+    return record;
+  }
+
+  async #reloadStateFromDisk() {
+    let disk = {};
+    try { disk = JSON.parse(await readFile(this.stateFile, "utf8")); } catch {}
+    this.state = {
+      ...this.state,
+      ...disk,
+      version: Math.max(Number(this.state.version) || 0, Number(disk.version) || 0, 4),
+      mappings: { ...(this.state.mappings || {}), ...(disk.mappings || {}) },
+      workflowJobs: { ...(this.state.workflowJobs || {}), ...(disk.workflowJobs || {}) },
+      drafts: { ...(this.state.drafts || {}), ...(disk.drafts || {}) },
+    };
+    this.#normalizeState();
+    this.baseState = this.#snapshotState(this.state);
+  }
+
+  #draftApprovalMatches(effect, approval, trustedLegacyMapping = false) {
+    const target = approval?.material?.runtimeTarget;
+    if (target?.system !== effect.provider || target?.kind !== "draft") return false;
+    if (target.id === effect.key) return true;
+    if (target.id !== effect.draftId) return false;
+    try {
+      const content = JSON.parse(approval.material?.content || "");
+      return content?.schema === "org2:gmail-draft-material:v1"
+        && content.account === effect.account
+        && content.draftId === effect.draftId;
+    } catch {
+      return trustedLegacyMapping;
+    }
+  }
+
+  #draftRecord(effect, run, approval) {
+    return {
+      key: effect.key,
+      provider: effect.provider,
+      account: effect.account,
+      draftId: effect.draftId,
+      destination: effect.destination || approval.material?.target,
+      subject: effect.subject,
+      org2RunId: run.id,
+      approvalId: approval.id,
+      approvalFingerprint: approval.fingerprint,
+      materialDigest: approval.material ? approvalMaterialDigest(approval.material) : undefined,
+      status: approval.effectReceipt ? "sent" : approval.status,
+      ...(approval.effectReceipt ? { sentAt: approval.effectReceipt.performedAt } : {}),
+      updatedAt: run.updatedAt,
+    };
+  }
+
+  #assertNoConflictingDraftEffect(run, effect, currentApprovalId) {
+    const conflicting = (run.approvals || []).find((approval) => (
+      approval.id !== currentApprovalId
+      && this.#draftApprovalMatches(effect, approval)
+      && (approval.effectReservation || approval.effectReceipt)
+    ));
+    if (conflicting?.effectReservation) {
+      throw new Error(`Gmail draft ${effect.draftId} has an unresolved effect reservation on approval ${conflicting.id}; reconcile it before creating or performing another version`);
+    }
+    if (conflicting?.effectReceipt) {
+      throw new Error(`Gmail draft ${effect.draftId} was already sent by approval ${conflicting.id}`);
+    }
+  }
+
+  async #reconstructDraftRecord(effect, stateLock) {
+    const mapping = this.state.mappings[`draft:${effect.key}`];
+    const candidates = [];
+    if (mapping?.org2RunId) {
+      try {
+        const run = JSON.parse(await this.exec(["run", "show", mapping.org2RunId, "--json"]));
+        const approval = [...(run.approvals || [])].reverse()
+          .find((candidate) => this.#draftApprovalMatches(effect, candidate, true));
+        if (approval) candidates.push({ run, approval });
+      } catch {}
+    }
+    if (candidates.length === 0) {
+      let listed = { runs: [] };
+      try { listed = JSON.parse(await this.exec(["run", "list", "--json"])); } catch {}
+      for (const run of listed.runs || []) {
+        const approval = [...(run.approvals || [])].reverse()
+          .find((candidate) => this.#draftApprovalMatches(effect, candidate));
+        if (approval) candidates.push({ run, approval });
+      }
+    }
+    if (candidates.length > 1) {
+      throw new Error(`Multiple native Org2 approvals claim Gmail draft ${effect.draftId}; reconcile them before sending`);
+    }
+    if (candidates.length === 0) return undefined;
+    const { run, approval } = candidates[0];
+    const record = this.#draftRecord(effect, run, approval);
+    this.state.drafts[effect.key] = record;
+    this.state.mappings[`draft:${effect.key}`] ||= {
+      org2RunId: run.id,
+      kind: "external-draft",
+      reconstructedAt: new Date().toISOString(),
+    };
+    await this.#save(stateLock);
+    return record;
+  }
+
+  async requestDraftApproval(effect, details = {}) {
+    if (!effect.material || !effect.materialDigest) {
+      throw new Error(`Exact review material is required before requesting approval for Gmail draft ${effect.draftId}`);
+    }
+    return this.#withStateLock(async (stateLock) => {
+      await this.#reloadStateFromDisk();
+      const existing = this.state.drafts[effect.key] || await this.#reconstructDraftRecord(effect, stateLock);
+      if (existing?.materialDigest === effect.materialDigest && existing?.approvalId) return existing;
+      const runId = existing?.org2RunId || await this.ensure(`draft:${effect.key}`, {
+        kind: "external-draft",
+        goal: `Review ${effect.subject} draft to ${effect.destination}`,
+        risk: "external-action",
+        context: [
+          `entity:email:${effect.destination}`,
+          `artifact:${effect.provider}:${effect.draftId}`,
+        ],
+        sessionKey: details.sessionKey,
+        openclawRunId: details.openclawRunId,
+      }, stateLock);
+      let supersedesId;
+      const previousRun = JSON.parse(await this.exec(["run", "show", runId, "--json"]));
+      this.#assertNoConflictingDraftEffect(previousRun, effect);
+      if (existing?.approvalId) {
+        const previous = (previousRun.approvals || []).find((candidate) => candidate.id === existing.approvalId);
+        if (previous?.status === "pending") supersedesId = previous.id;
+      }
+      const updated = JSON.parse(await this.exec([
+        "run", "approval-request", runId,
+        "--title", effect.title,
+        "--action", effect.action,
+        "--note", effect.note,
+        "--material-json", JSON.stringify(effect.material),
+        "--risk", "external-action",
+        "--role", "owner",
+        ...(supersedesId ? ["--supersedes", supersedesId] : []),
+        "--actor", "org2-lifecycle",
+        "--json",
+      ]));
+      const approval = [...(updated.approvals || [])].reverse().find((candidate) => (
+        candidate.status === "pending"
+        && this.#draftApprovalMatches(effect, candidate)
+      ));
+      if (!approval?.id || !approval.fingerprint) {
+        throw new Error(`Org2 did not return a fingerprinted approval for Gmail draft ${effect.draftId}`);
+      }
+      const record = this.#draftRecord(effect, { ...updated, id: updated.id || runId }, approval);
+      record.materialDigest = effect.materialDigest;
+      record.status = "pending";
+      record.updatedAt = new Date().toISOString();
+      this.state.drafts[effect.key] = record;
+      await this.#save(stateLock);
+      return record;
+    });
+  }
+
+  async reserveDraftSend(effect, details = {}) {
+    const toolCallId = String(details.toolCallId || "").trim();
+    if (!toolCallId) throw new Error("A tool call id is required to reserve an approved Gmail send");
+    const record = await this.#sharedDraftRecord(effect.key) || await this.#reconstructDraftRecord(effect);
+    if (!record?.approvalId) throw new Error(`No Org2 approval exists for Gmail draft ${effect.draftId}`);
+    if (!effect.material || !effect.materialDigest) {
+      throw new Error(`Exact current review material is unavailable for Gmail draft ${effect.draftId}`);
+    }
+    const run = JSON.parse(await this.exec(["run", "show", record.org2RunId, "--json"]));
+    const approval = (run.approvals || []).find((candidate) => candidate.id === record.approvalId);
+    this.#assertNoConflictingDraftEffect(run, effect, approval?.id);
+    if (approval?.status !== "approved") {
+      throw new Error(`Gmail draft ${effect.draftId} is ${approval?.status || "untracked"} in Org2`);
+    }
+    if (approval.effectReceipt) throw new Error(`The approved effect for Gmail draft ${effect.draftId} was already performed`);
+    if (!approval.fingerprint || approval.fingerprint !== record.approvalFingerprint) {
+      throw new Error(`The native Org2 approval identity for Gmail draft ${effect.draftId} changed`);
+    }
+    const approvedDigest = approval.material ? approvalMaterialDigest(approval.material) : "";
+    if (
+      approvedDigest !== effect.materialDigest
+      || record.materialDigest !== effect.materialDigest
+      || !sameApprovalMaterial(approval.material, effect.material)
+    ) {
+      throw new Error(`Gmail draft ${effect.draftId} changed after it was reviewed and needs a new approval`);
+    }
+    await this.exec([
+      "run", "approval-effect-reserve", record.org2RunId, record.approvalId,
+      "--fingerprint", approval.fingerprint,
+      "--material-digest", effect.materialDigest,
+      "--tool-call-id", toolCallId,
+      "--actor", "org2-lifecycle",
+    ]);
+    return { record, approval, toolCallId };
+  }
+
+  async recordDraftSent(effect, details = {}) {
+    const toolCallId = String(details.toolCallId || "").trim();
+    const externalId = String(details.externalId || "").trim();
+    if (!toolCallId || !externalId) {
+      throw new Error("A matching tool call id and provider message id are required to record a Gmail send");
+    }
+    const record = await this.#sharedDraftRecord(effect.key) || await this.#reconstructDraftRecord(effect);
+    if (!record) throw new Error(`Cannot reconstruct the native approval for Gmail draft ${effect.draftId}`);
+    const run = JSON.parse(await this.exec(["run", "show", record.org2RunId, "--json"]));
+    const approval = (run.approvals || []).find((candidate) => candidate.id === record.approvalId);
+    if (
+      approval?.effectReceipt?.fingerprint === record.approvalFingerprint
+      && approval.effectReceipt.externalId === externalId
+    ) return;
+    if (approval?.status !== "approved" || approval.fingerprint !== record.approvalFingerprint) {
+      throw new Error(`Cannot record Gmail draft ${effect.draftId} as sent without its matching native approval`);
+    }
+    await this.exec([
+      "run", "approval-effect", record.org2RunId, record.approvalId,
+      "--fingerprint", approval.fingerprint,
+      "--tool-call-id", toolCallId,
+      "--system", effect.provider,
+      "--external-id", externalId,
+      "--actor", "org2-lifecycle",
+    ]);
+    await this.exec(["run", "comment", record.org2RunId, "--author", "org2-lifecycle", "--body",
+      `Approved Gmail draft sent to ${record.destination}.`]);
+    const refreshed = JSON.parse(await this.exec(["run", "show", record.org2RunId, "--json"]));
+    if (refreshed.status === "running") {
+      await this.exec(["run", "complete", record.org2RunId, "--actor", "org2-lifecycle", "--summary",
+        `Approved Gmail draft sent to ${record.destination}.`]);
+    }
+    record.status = "sent";
+    record.sentAt = new Date().toISOString();
+    record.updatedAt = record.sentAt;
+    await this.#save();
   }
 
   async resumeWorkflowRun(runId, details = {}) {

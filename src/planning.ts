@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import { parseIsoCalendarDate } from "./calendarDate.js";
+import { withFileMutationLock, writeTextAtomicallyIfUnchanged } from "./atomicFileMutation.js";
 import { computeSubtreeRange, findHeadingAtOrAbove, findPlanningBlockEnd, splitSourceLines } from "./sourceLines.js";
 
 export type PlanningKind = "SCHEDULED" | "DEADLINE";
@@ -127,10 +128,14 @@ export function updatePlanningInText(input: string, opts: UpdatePlanningOptions)
 }
 
 export function updatePlanningInFile(opts: UpdatePlanningOptions & { apply: boolean }): UpdatePlanningResult {
-  const raw = fs.readFileSync(opts.filePath, "utf8");
-  const res = updatePlanningInText(raw, opts);
-  if (opts.apply) {
-    fs.writeFileSync(opts.filePath, res.text, "utf8");
+  if (!opts.apply) {
+    const raw = fs.readFileSync(opts.filePath, "utf8");
+    return updatePlanningInText(raw, opts);
   }
-  return res;
+  return withFileMutationLock(opts.filePath, () => {
+    const raw = fs.readFileSync(opts.filePath, "utf8");
+    const res = updatePlanningInText(raw, opts);
+    if (res.changed) writeTextAtomicallyIfUnchanged(opts.filePath, raw, res.text);
+    return res;
+  });
 }

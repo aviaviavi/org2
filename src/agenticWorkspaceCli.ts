@@ -17,7 +17,11 @@ import {
   forkAgentRun,
   listAgentRuns,
   loadAgentRun,
+  mutateAgentRun,
   normalizeLegacyAgentRuns,
+  recordAgentRunApprovalEffect,
+  releaseAgentRunApprovalEffectReservation,
+  reserveAgentRunApprovalEffect,
   requestAgentRunApproval,
   saveAgentRun,
   transitionAgentRun,
@@ -27,9 +31,11 @@ import {
   updateAgentRunRuntime,
   updateAgentRunStep,
   validateAgentRun,
+  type AgentRunApprovalMaterial,
   type AgentRunStatus,
 } from "./agentRun.js";
 import { updateArtifactReviewStatusInText } from "./artifactMetadata.js";
+import { withFileMutationLock, writeTextAtomicallyIfUnchanged } from "./atomicFileMutation.js";
 import {
   WORKFLOW_EVENT_TRIGGER_TYPES,
   dueWorkflowTriggers,
@@ -38,10 +44,10 @@ import {
   listWorkflows,
   loadWorkflow,
   migrateLegacyWorkflows,
+  mutateWorkflow,
   packagedWorkflowManifest,
   packagedCorpusTemplate,
   saveWorkflow,
-  updateWorkflow,
   validateWorkflow,
   workflowSourcePath,
   workflowFromRun,
@@ -92,9 +98,11 @@ function syncLinkedArtifactReviewStatus(corpus: string, artifactPath: string, re
   if (relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) return;
   if (![".org", ".org2"].includes(path.extname(file).toLowerCase())) return;
   if (!fs.existsSync(file) || !fs.statSync(file).isFile()) return;
-  const raw = fs.readFileSync(file, "utf8");
-  const updated = updateArtifactReviewStatusInText(raw, reviewStatus);
-  if (updated !== raw) fs.writeFileSync(file, updated, "utf8");
+  withFileMutationLock(file, () => {
+    const raw = fs.readFileSync(file, "utf8");
+    const updated = updateArtifactReviewStatusInText(raw, reviewStatus);
+    if (updated !== raw) writeTextAtomicallyIfUnchanged(file, raw, updated);
+  });
 }
 
 const HELP = `Agentic workspace commands:
@@ -114,8 +122,11 @@ const HELP = `Agentic workspace commands:
   org2 run artifact ID --path FILE [--role ROLE] [--review-status STATUS]
   org2 run artifact-review ID ARTIFACT --status reviewed|promoted|rejected [--actor NAME]
   org2 run validation ID --name NAME --status passed|failed|warning|skipped
-  org2 run approval-request ID --title TEXT --action TEXT [--risk CLASS] [--role ROLE]
-  org2 run approval-decide ID APPROVAL --decision approved|rejected|revised|canceled --actor NAME [--receipt TEXT]
+  org2 run approval-request ID [--id APPROVAL] [--requirement REQUIREMENT | --title TEXT --action TEXT] [--risk CLASS] [--role ROLE] [--from NAME] [--note TEXT] [--material-json JSON|--material-file FILE] [--supersedes APPROVAL]
+  org2 run approval-decide ID APPROVAL --decision approved|rejected|revised|canceled --actor NAME --expected-fingerprint SHA256 [--role ROLE] [--note TEXT] (writes immediately)
+  org2 run approval-effect-reserve ID APPROVAL --fingerprint SHA256 --material-digest SHA256 --tool-call-id ID
+  org2 run approval-effect ID APPROVAL --fingerprint SHA256 [--tool-call-id ID] [--system ID] [--external-id ID]
+  org2 run approval-effect-release ID APPROVAL --fingerprint SHA256 --tool-call-id ID --reason TEXT --actor NAME
   org2 review list [--status pending] | org2 review show RUN
   org2 workflow list|show|validate|save|run|triggers|activate|pause|draft|schedule|migrate|package|corpus-template|install-builtin
   org2 artifact graph --manifest FILE | org2 artifact rebuild --manifest FILE
@@ -135,6 +146,18 @@ function forwardedArgs(parsed: ParsedArgs, excluded: Set<string>): string[] {
     }
   }
   return result;
+}
+
+function approvalMaterial(parsed: ParsedArgs): AgentRunApprovalMaterial | undefined {
+  const inline = flag(parsed, "material-json");
+  const file = flag(parsed, "material-file");
+  if (inline && file) throw new Error("pass only one of --material-json or --material-file");
+  if (!inline && !file) return undefined;
+  const parsedMaterial = JSON.parse(inline || fs.readFileSync(path.resolve(file!), "utf8")) as unknown;
+  if (!parsedMaterial || typeof parsedMaterial !== "object" || Array.isArray(parsedMaterial)) {
+    throw new Error("approval material must be a JSON object");
+  }
+  return parsedMaterial as AgentRunApprovalMaterial;
 }
 
 async function workspaceCommand(parsed: ParsedArgs): Promise<void> {
@@ -199,19 +222,27 @@ async function runCommand(parsed: ParsedArgs): Promise<void> {
   const id = required(parsed.positional[1], `run id is required for ${action}`);
   if (action === "show") { const run = loadAgentRun(corpus, id); output(parsed, run, fs.readFileSync(path.join(corpus, ".org2", "runs", `${id}.org2`), "utf8")); return; }
   if (action === "validate") { const result = validateAgentRun(loadAgentRun(corpus, id)); output(parsed, result, result.valid ? `${id}: valid` : result.issues.map((issue) => `${issue.path}: ${issue.message}`).join("\n")); if (!result.valid) process.exitCode = 1; return; }
-  const existing = loadAgentRun(corpus, id);
-  let run = existing;
+  if (action === "fork") {
+    const existing = loadAgentRun(corpus, id);
+    const run = forkAgentRun(existing, { id: flag(parsed, "id"), actor: flag(parsed, "actor"), fromEventId: flag(parsed, "event") });
+    const file = saveAgentRun(corpus, run);
+    output(parsed, { run, file }, `forked ${existing.id} -> ${run.id}`);
+    return;
+  }
+  let linkedArtifactReview: { path: string; status: string } | undefined;
+  const run = mutateAgentRun(corpus, id, (existing) => {
+    let updated = existing;
   const transitions: Record<string, AgentRunStatus> = { start: "running", resume: "running", retry: "queued", cancel: "canceled", complete: "completed", fail: "failed", block: "blocked" };
-  if (action === "complete-external") run = completeAgentRunExternally(existing, {
+  if (action === "complete-external") updated = completeAgentRunExternally(existing, {
     summary: required(flag(parsed, "summary"), "--summary is required"),
     actor: required(flag(parsed, "actor"), "--actor is required"),
   });
-  else if (transitions[action]) run = transitionAgentRun(existing, transitions[action]!, {
+  else if (transitions[action]) updated = transitionAgentRun(existing, transitions[action]!, {
     actor: flag(parsed, "actor"), reason: flag(parsed, "reason"), summary: flag(parsed, "summary"),
     highlights: flags(parsed, "highlight"), nextActions: flags(parsed, "next-action"),
   });
-  else if (action === "assign") run = updateAgentRunAssignment(existing, { owner: flag(parsed, "owner"), assignee: flag(parsed, "assignee"), actor: flag(parsed, "actor") });
-  else if (action === "outcome") run = updateAgentRunOutcome(existing, { summary: required(flag(parsed, "summary"), "--summary is required"), highlights: flags(parsed, "highlight"), nextActions: flags(parsed, "next-action"), actor: flag(parsed, "actor") });
+  else if (action === "assign") updated = updateAgentRunAssignment(existing, { owner: flag(parsed, "owner"), assignee: flag(parsed, "assignee"), actor: flag(parsed, "actor") });
+  else if (action === "outcome") updated = updateAgentRunOutcome(existing, { summary: required(flag(parsed, "summary"), "--summary is required"), highlights: flags(parsed, "highlight"), nextActions: flags(parsed, "next-action"), actor: flag(parsed, "actor") });
   else if (action === "runtime") {
     const numberFlag = (name: string): number | undefined => {
       const raw = flag(parsed, name);
@@ -220,7 +251,7 @@ async function runCommand(parsed: ParsedArgs): Promise<void> {
       if (!Number.isFinite(value) || value < 0) throw new Error(`--${name} must be a non-negative number`);
       return value;
     };
-    run = updateAgentRunRuntime(existing, {
+    updated = updateAgentRunRuntime(existing, {
       provider: flag(parsed, "provider"),
       model: flag(parsed, "model"),
       tokensUsed: numberFlag("tokens-used"),
@@ -229,23 +260,74 @@ async function runCommand(parsed: ParsedArgs): Promise<void> {
       actor: flag(parsed, "actor"),
     });
   }
-  else if (action === "comment") run = addAgentRunComment(existing, required(flag(parsed, "author"), "--author is required"), required(flag(parsed, "body"), "--body is required"));
-  else if (action === "step") run = updateAgentRunStep(existing, required(parsed.positional[2], "step id is required"), choice(flag(parsed, "status"), AGENT_RUN_STEP_STATUSES, "step status"), { actor: flag(parsed, "actor"), detail: flag(parsed, "detail") });
-  else if (action === "artifact") run = addAgentRunArtifact(existing, { path: required(flag(parsed, "path"), "--path is required"), role: choice(flag(parsed, "role", "draft"), AGENT_RUN_ARTIFACT_ROLES, "artifact role"), title: flag(parsed, "title"), mediaType: flag(parsed, "media-type"), sha256: flag(parsed, "sha256"), reviewStatus: optionalChoice(flag(parsed, "review-status"), AGENT_RUN_ARTIFACT_REVIEW_STATUSES, "artifact review status") }, flag(parsed, "actor"));
+  else if (action === "comment") updated = addAgentRunComment(existing, required(flag(parsed, "author"), "--author is required"), required(flag(parsed, "body"), "--body is required"));
+  else if (action === "step") updated = updateAgentRunStep(existing, required(parsed.positional[2], "step id is required"), choice(flag(parsed, "status"), AGENT_RUN_STEP_STATUSES, "step status"), { actor: flag(parsed, "actor"), detail: flag(parsed, "detail") });
+  else if (action === "artifact") updated = addAgentRunArtifact(existing, { path: required(flag(parsed, "path"), "--path is required"), role: choice(flag(parsed, "role", "draft"), AGENT_RUN_ARTIFACT_ROLES, "artifact role"), title: flag(parsed, "title"), mediaType: flag(parsed, "media-type"), sha256: flag(parsed, "sha256"), reviewStatus: optionalChoice(flag(parsed, "review-status"), AGENT_RUN_ARTIFACT_REVIEW_STATUSES, "artifact review status") }, flag(parsed, "actor"));
   else if (action === "artifact-review") {
     const artifactId = required(parsed.positional[2], "artifact id is required");
     const reviewStatus = choice(flag(parsed, "status"), AGENT_RUN_ARTIFACT_REVIEW_STATUSES, "artifact review status");
     const artifact = existing.artifacts.find((item) => item.id === artifactId);
     if (!artifact) throw new Error(`unknown artifact id: ${artifactId}`);
-    run = updateAgentRunArtifactReview(existing, artifactId, reviewStatus, { actor: flag(parsed, "actor") });
-    syncLinkedArtifactReviewStatus(root(parsed), artifact.path, reviewStatus);
+    updated = updateAgentRunArtifactReview(existing, artifactId, reviewStatus, { actor: flag(parsed, "actor") });
+    linkedArtifactReview = { path: artifact.path, status: reviewStatus };
   }
-  else if (action === "validation") run = addAgentRunValidation(existing, { name: required(flag(parsed, "name"), "--name is required"), status: choice(flag(parsed, "status"), AGENT_RUN_VALIDATION_STATUSES, "validation status"), detail: flag(parsed, "detail") }, flag(parsed, "actor"));
-  else if (action === "approval-request") run = requestAgentRunApproval(existing, { title: required(flag(parsed, "title"), "--title is required"), action: required(flag(parsed, "action"), "--action is required"), riskClass: choice(flag(parsed, "risk", existing.riskClass), AGENT_RUN_RISK_CLASSES, "approval risk class"), requestedRole: flag(parsed, "role"), requestedFrom: flag(parsed, "from"), note: flag(parsed, "note") }, flag(parsed, "actor"));
-  else if (action === "approval-decide") run = decideAgentRunApproval(existing, required(parsed.positional[2], "approval id is required"), choice(flag(parsed, "decision"), AGENT_RUN_APPROVAL_DECISIONS, "approval decision"), { actor: required(flag(parsed, "actor"), "--actor is required"), actorRole: flag(parsed, "role"), note: flag(parsed, "note"), receipt: flag(parsed, "receipt") });
-  else if (action === "fork") { run = forkAgentRun(existing, { id: flag(parsed, "id"), actor: flag(parsed, "actor"), fromEventId: flag(parsed, "event") }); const file = saveAgentRun(corpus, run); output(parsed, { run, file }, `forked ${existing.id} -> ${run.id}`); return; }
+  else if (action === "validation") updated = addAgentRunValidation(existing, { name: required(flag(parsed, "name"), "--name is required"), status: choice(flag(parsed, "status"), AGENT_RUN_VALIDATION_STATUSES, "validation status"), detail: flag(parsed, "detail") }, flag(parsed, "actor"));
+  else if (action === "approval-request") {
+    const requirementId = flag(parsed, "requirement");
+    const requestedRisk = flag(parsed, "risk");
+    updated = requestAgentRunApproval(existing, {
+      id: flag(parsed, "id"),
+      requirementId,
+      title: requirementId ? flag(parsed, "title") : required(flag(parsed, "title"), "--title is required without --requirement"),
+      action: requirementId ? flag(parsed, "action") : required(flag(parsed, "action"), "--action is required without --requirement"),
+      riskClass: requestedRisk
+        ? choice(requestedRisk, AGENT_RUN_RISK_CLASSES, "approval risk class")
+        : requirementId
+          ? undefined
+          : existing.riskClass,
+      material: approvalMaterial(parsed),
+      supersedesId: flag(parsed, "supersedes"),
+      requestedRole: flag(parsed, "role"),
+      requestedFrom: flag(parsed, "from"),
+      note: flag(parsed, "note"),
+    }, flag(parsed, "actor"));
+  }
+  else if (action === "approval-decide") updated = decideAgentRunApproval(existing, required(parsed.positional[2], "approval id is required"), choice(flag(parsed, "decision"), AGENT_RUN_APPROVAL_DECISIONS, "approval decision"), {
+    actor: required(flag(parsed, "actor"), "--actor is required"),
+    actorRole: flag(parsed, "role"),
+    expectedFingerprint: flag(parsed, "expected-fingerprint"),
+    note: flag(parsed, "note"),
+    receipt: flag(parsed, "receipt"),
+  });
+  else if (action === "approval-effect") updated = recordAgentRunApprovalEffect(existing, required(parsed.positional[2], "approval id is required"), {
+    fingerprint: required(flag(parsed, "fingerprint"), "--fingerprint is required"),
+    performedAt: flag(parsed, "performed-at"),
+    system: flag(parsed, "system"),
+    externalId: flag(parsed, "external-id"),
+    toolCallId: flag(parsed, "tool-call-id"),
+    actor: flag(parsed, "actor"),
+  });
+  else if (action === "approval-effect-reserve") updated = reserveAgentRunApprovalEffect(existing, required(parsed.positional[2], "approval id is required"), {
+    fingerprint: required(flag(parsed, "fingerprint"), "--fingerprint is required"),
+    materialDigest: required(flag(parsed, "material-digest"), "--material-digest is required"),
+    toolCallId: required(flag(parsed, "tool-call-id"), "--tool-call-id is required"),
+    reservedAt: flag(parsed, "reserved-at"),
+    actor: flag(parsed, "actor"),
+  });
+  else if (action === "approval-effect-release") updated = releaseAgentRunApprovalEffectReservation(existing, required(parsed.positional[2], "approval id is required"), {
+    fingerprint: required(flag(parsed, "fingerprint"), "--fingerprint is required"),
+    toolCallId: required(flag(parsed, "tool-call-id"), "--tool-call-id is required"),
+    reason: required(flag(parsed, "reason"), "--reason is required"),
+    actor: required(flag(parsed, "actor"), "--actor is required"),
+    releasedAt: flag(parsed, "released-at"),
+  });
   else throw new Error(`unknown run action: ${action}`);
-  saveAgentRun(corpus, run); output(parsed, run, `${run.id}: ${run.status}`);
+    return updated;
+  });
+  if (linkedArtifactReview) {
+    syncLinkedArtifactReviewStatus(corpus, linkedArtifactReview.path, linkedArtifactReview.status);
+  }
+  output(parsed, run, `${run.id}: ${run.status}`);
 }
 
 function reviewCommand(parsed: ParsedArgs): void {
@@ -289,7 +371,7 @@ function workflowCommand(parsed: ParsedArgs): void {
   if (action === "validate") { const result = validateWorkflow(workflow); output(parsed, result, result.valid ? `${id}: valid` : result.issues.map((issue) => `${issue.path}: ${issue.message}`).join("\n")); if (!result.valid) process.exitCode = 1; return; }
   if (action === "activate" || action === "pause" || action === "draft") {
     const state = action === "activate" ? "active" : action === "pause" ? "paused" : "draft";
-    const updated = updateWorkflow(corpus, id, (item) => ({ ...item, state }));
+    const updated = mutateWorkflow(corpus, id, (item) => ({ ...item, state }));
     output(parsed, updated, `${id}: ${state}`);
     return;
   }
@@ -298,7 +380,7 @@ function workflowCommand(parsed: ParsedArgs): void {
     const timezone = flag(parsed, "timezone")?.trim() || flag(parsed, "tz")?.trim();
     const disabled = parsed.flags.has("disable");
     if (!disabled && !cron) throw new Error("workflow schedule requires --cron EXPR or --disable");
-    const updated = updateWorkflow(corpus, id, (item) => {
+    const updated = mutateWorkflow(corpus, id, (item) => {
       const triggers = item.triggers.filter((trigger) => trigger.id !== "openclaw-schedule");
       triggers.push({
         id: "openclaw-schedule",

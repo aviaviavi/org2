@@ -19,6 +19,36 @@ rejects a mismatch before creating, syncing, or continuing work. Stable
 OpenClaw keys are persisted for correlation and deduplication. Ordinary
 conversation and personal TODOs are not promoted into runs.
 
+The plugin also exposes `org2_gmail_draft_send` as the only supported Gmail
+draft-send path. Recognizable direct shell and API sends fail closed. The typed
+tool resolves one configured absolute `gog` executable, re-reads the provider
+draft, resolves account aliases to the canonical provider mailbox identity, and
+binds that identity, ordered headers and thread identity, every MIME body, every
+attachment byte digest, and the exact RFC822 raw digest into canonical
+structured JSON. Reviewer prose is kept separate from the native approval
+authority.
+
+Immediately before the provider call, the tool atomically reserves the approved
+fingerprint and exact material digest under its tool-call ID. Only that
+reservation can consume the effect; a crash or ambiguous provider response
+leaves an uncertain reservation that cannot silently become sendable again.
+The provider call sends the exact reviewed RFC822 snapshot rather than
+re-reading mutable draft content by ID. Successful sends require strict,
+matching provider message and thread identities and record a matching native
+effect receipt. The provider draft is intentionally retained: deleting by its
+mutable ID after the send could erase a concurrent edit. Typed runtime targets
+let the adapter reconstruct the approval correlation after private state loss,
+while locked state writes preserve future schema fields and versions. Provider
+draft IDs and private plugin state remain correlation caches, not alternate
+approval authorities.
+
+This plugin is not a host egress sandbox. Opaque arbitrary shell code cannot be
+proven mail-free from command text alone, so deployments that expose general
+exec must keep Gmail send credentials and Gmail API egress unavailable there.
+The native Org2 approval remains authoritative; the typed sender is its
+execution boundary. Host credential isolation is the enforcement boundary for
+code the plugin cannot identify.
+
 Local development:
 
 ```sh

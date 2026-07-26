@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { withFileMutationLock, writeTextAtomicallyIfUnchanged } from "./atomicFileMutation.js";
 import {
   computeSubtreeRange,
   findDrawerInLines,
@@ -253,12 +254,16 @@ export function updateTodoInText(input: string, opts: UpdateTodoOptions): Update
 }
 
 export function updateTodoInFile(opts: UpdateTodoOptions & { apply: boolean }): UpdateTodoResult {
-  const raw = fs.readFileSync(opts.filePath, "utf8");
-  const res = updateTodoInText(raw, opts);
-  if (opts.apply) {
-    fs.writeFileSync(opts.filePath, res.text, "utf8");
+  if (!opts.apply) {
+    const raw = fs.readFileSync(opts.filePath, "utf8");
+    return updateTodoInText(raw, opts);
   }
-  return res;
+  return withFileMutationLock(opts.filePath, () => {
+    const raw = fs.readFileSync(opts.filePath, "utf8");
+    const res = updateTodoInText(raw, opts);
+    if (res.changed) writeTextAtomicallyIfUnchanged(opts.filePath, raw, res.text);
+    return res;
+  });
 }
 
 export function assignTodoInText(input: string, opts: AssignTodoOptions): AssignTodoResult {
@@ -289,10 +294,14 @@ export function assignTodoInText(input: string, opts: AssignTodoOptions): Assign
 }
 
 export function assignTodoInFile(opts: AssignTodoOptions & { apply: boolean }): AssignTodoResult {
-  const raw = fs.readFileSync(opts.filePath, "utf8");
-  const res = assignTodoInText(raw, opts);
-  if (opts.apply) {
-    fs.writeFileSync(opts.filePath, res.text, "utf8");
+  if (!opts.apply) {
+    const raw = fs.readFileSync(opts.filePath, "utf8");
+    return assignTodoInText(raw, opts);
   }
-  return res;
+  return withFileMutationLock(opts.filePath, () => {
+    const raw = fs.readFileSync(opts.filePath, "utf8");
+    const res = assignTodoInText(raw, opts);
+    if (res.changed) writeTextAtomicallyIfUnchanged(opts.filePath, raw, res.text);
+    return res;
+  });
 }

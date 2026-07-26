@@ -1,6 +1,24 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { withFileMutationLock, writeTextAtomicallyIfUnchanged } from "./atomicFileMutation.js";
+import {
+  approvalMaterialIssues,
+  approvalReviewability,
+  computeApprovalFingerprint,
+  computeApprovalMaterialDigest,
+  isApprovalFingerprint,
+  normalizeApprovalMaterial,
+  type AgentRunApprovalEffectReceipt,
+  type AgentRunApprovalEffectReservation,
+  type AgentRunApprovalMaterial,
+} from "./approval.js";
+
+export type {
+  AgentRunApprovalEffectReceipt,
+  AgentRunApprovalEffectReservation,
+  AgentRunApprovalMaterial,
+} from "./approval.js";
 
 export const ORG2_AGENT_RUN_SCHEMA = "org2:agent-run:v1" as const;
 
@@ -119,14 +137,32 @@ export interface AgentRunApproval {
   action: string;
   riskClass: AgentRunRiskClass;
   status: AgentRunApprovalStatus;
+  requirementId?: string;
+  fingerprint?: string;
+  material?: AgentRunApprovalMaterial;
+  supersedesId?: string;
   requestedRole?: string;
   requestedFrom?: string;
   requestedAt: string;
   decidedAt?: string;
   decidedBy?: string;
   note?: string;
+  decisionNote?: string;
   receipt?: string;
+  effectReservation?: AgentRunApprovalEffectReservation;
+  effectReceipt?: AgentRunApprovalEffectReceipt;
 }
+
+export interface AgentRunApprovalRequirement {
+  id: string;
+  title: string;
+  action: string;
+  riskClass: AgentRunRiskClass;
+  requestedRole?: string;
+  beforeStepId?: string;
+}
+
+export type AgentRunApprovalRequirementState = "unbound" | "pending" | "approved" | "denied";
 
 export interface AgentRunValidation {
   id: string;
@@ -186,6 +222,7 @@ export interface AgentRun {
   plan: AgentRunPlanStep[];
   artifacts: AgentRunArtifact[];
   approvals: AgentRunApproval[];
+  approvalRequirements?: AgentRunApprovalRequirement[];
   validations: AgentRunValidation[];
   comments: AgentRunComment[];
   events: AgentRunEvent[];
@@ -217,6 +254,7 @@ export interface AgentRunCreateInput {
   capabilities?: string[];
   context?: AgentRunContextRef[];
   plan?: Array<Omit<AgentRunPlanStep, "id" | "status"> & { id?: string; status?: AgentRunStepStatus }>;
+  approvalRequirements?: AgentRunApprovalRequirement[];
   outcome?: Partial<AgentRunOutcome>;
   budget?: AgentRunBudget;
   parentRunId?: string;
@@ -303,6 +341,45 @@ export function createAgentRun(input: AgentRunCreateInput): AgentRun {
     }
   }
 
+  const plan = (input.plan || []).map((step, index) => {
+    if (!AGENT_RUN_STEP_KINDS.includes(step.kind)) throw new Error(`invalid run step kind: ${step.kind}`);
+    const status = step.status || "pending";
+    if (!AGENT_RUN_STEP_STATUSES.includes(status)) throw new Error(`invalid run step status: ${status}`);
+    return {
+      id: safeId(step.id || `step-${index + 1}`),
+      title: String(step.title || "").trim(),
+      kind: step.kind,
+      status,
+      ...(optional(step.capability) ? { capability: optional(step.capability) } : {}),
+      ...(optional(step.detail) ? { detail: optional(step.detail) } : {}),
+    };
+  }).filter((step) => step.title);
+  const planIds = new Set(plan.map((step) => step.id));
+  const requirementIds = new Set<string>();
+  const approvalRequirements = (input.approvalRequirements || []).map((requirement) => {
+    const requirementId = safeId(requirement.id);
+    if (requirementIds.has(requirementId)) throw new Error(`approval requirement id already exists: ${requirementId}`);
+    requirementIds.add(requirementId);
+    if (!AGENT_RUN_RISK_CLASSES.includes(requirement.riskClass)) {
+      throw new Error(`invalid approval requirement risk class: ${requirement.riskClass}`);
+    }
+    const title = String(requirement.title || "").trim();
+    const action = String(requirement.action || "").trim();
+    if (!title || !action) throw new Error("approval requirement title and action are required");
+    const beforeStepId = optional(requirement.beforeStepId);
+    if (beforeStepId && !planIds.has(beforeStepId)) {
+      throw new Error(`approval requirement ${requirementId} references unknown step ${beforeStepId}`);
+    }
+    return {
+      id: requirementId,
+      title,
+      action,
+      riskClass: requirement.riskClass,
+      ...(optional(requirement.requestedRole) ? { requestedRole: optional(requirement.requestedRole) } : {}),
+      ...(beforeStepId ? { beforeStepId } : {}),
+    };
+  });
+
   const run: AgentRun = {
     schema: ORG2_AGENT_RUN_SCHEMA,
     id,
@@ -317,21 +394,10 @@ export function createAgentRun(input: AgentRunCreateInput): AgentRun {
       ...(optional(item.citation) ? { citation: optional(item.citation) } : {}),
       ...(optional(item.sha256) ? { sha256: optional(item.sha256)?.toLowerCase() } : {}),
     })).filter((item) => item.ref),
-    plan: (input.plan || []).map((step, index) => {
-      if (!AGENT_RUN_STEP_KINDS.includes(step.kind)) throw new Error(`invalid run step kind: ${step.kind}`);
-      const status = step.status || "pending";
-      if (!AGENT_RUN_STEP_STATUSES.includes(status)) throw new Error(`invalid run step status: ${status}`);
-      return {
-        id: safeId(step.id || `step-${index + 1}`),
-        title: String(step.title || "").trim(),
-        kind: step.kind,
-        status,
-        ...(optional(step.capability) ? { capability: optional(step.capability) } : {}),
-        ...(optional(step.detail) ? { detail: optional(step.detail) } : {}),
-      };
-    }).filter((step) => step.title),
+    plan,
     artifacts: [],
     approvals: [],
+    ...(approvalRequirements.length > 0 ? { approvalRequirements } : {}),
     validations: [],
     comments: [],
     events: [event("created", now, input.owner, goal)],
@@ -354,7 +420,13 @@ export function createAgentRun(input: AgentRunCreateInput): AgentRun {
     } } : {}),
   };
   if (status === "running") run.startedAt = now;
-  if (status === "completed") run.completedAt = now;
+  if (status === "completed") {
+    assertAgentRunApprovalRequirementsSatisfied(run, {
+      action: "creating a completed run",
+      allowSkippedStep: true,
+    });
+    run.completedAt = now;
+  }
   return run;
 }
 
@@ -371,6 +443,9 @@ export function validateAgentRun(value: unknown): AgentRunValidationResult {
   if (!run.riskClass || !AGENT_RUN_RISK_CLASSES.includes(run.riskClass)) issues.push({ path: "$.riskClass", message: `must be one of: ${AGENT_RUN_RISK_CLASSES.join(", ")}` });
   for (const field of ["acceptanceCriteria", "capabilities", "context", "plan", "artifacts", "approvals", "validations", "comments", "events"] as const) {
     if (!Array.isArray(run[field])) issues.push({ path: `$.${field}`, message: "must be an array" });
+  }
+  if (run.approvalRequirements !== undefined && !Array.isArray(run.approvalRequirements)) {
+    issues.push({ path: "$.approvalRequirements", message: "must be an array when present" });
   }
   for (const field of ["createdAt", "updatedAt"] as const) {
     const raw = run[field];
@@ -390,7 +465,225 @@ export function validateAgentRun(value: unknown): AgentRunValidationResult {
     stepIds.add(step.id);
     if (!String(step.title || "").trim()) issues.push({ path: `$.plan[${index}].title`, message: "must not be empty" });
   }
+  const requirements = Array.isArray(run.approvalRequirements) ? run.approvalRequirements : [];
+  const requirementIds = new Set<string>();
+  for (const [index, requirement] of requirements.entries()) {
+    const base = `$.approvalRequirements[${index}]`;
+    if (
+      !requirement.id
+      || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(requirement.id)
+      || requirementIds.has(requirement.id)
+    ) {
+      issues.push({ path: `${base}.id`, message: "must be a unique safe non-empty id" });
+    }
+    requirementIds.add(requirement.id);
+    if (!String(requirement.title || "").trim()) issues.push({ path: `${base}.title`, message: "must not be empty" });
+    if (!String(requirement.action || "").trim()) issues.push({ path: `${base}.action`, message: "must not be empty" });
+    if (!AGENT_RUN_RISK_CLASSES.includes(requirement.riskClass)) {
+      issues.push({ path: `${base}.riskClass`, message: `must be one of: ${AGENT_RUN_RISK_CLASSES.join(", ")}` });
+    }
+    if (requirement.beforeStepId && !stepIds.has(requirement.beforeStepId)) {
+      issues.push({ path: `${base}.beforeStepId`, message: "must reference a plan step in the same run" });
+    }
+  }
+  const guardedStepIds = new Set(requirements.map((requirement) => requirement.beforeStepId).filter(Boolean));
+  for (const [index, step] of (run.plan || []).entries()) {
+    if (step.status === "skipped" && guardedStepIds.has(step.id) && !String(step.detail || "").trim()) {
+      issues.push({
+        path: `$.plan[${index}].detail`,
+        message: "must record why no protected effect occurred when skipping an approval-guarded step",
+      });
+    }
+  }
+  const approvals = run.approvals || [];
+  const approvalIds = new Set<string>();
+  const pendingRequirementIds = new Set<string>();
+  for (const [index, approval] of approvals.entries()) {
+    const base = `$.approvals[${index}]`;
+    if (!approval.id || approvalIds.has(approval.id)) issues.push({ path: `${base}.id`, message: "must be unique and non-empty" });
+    approvalIds.add(approval.id);
+    if (!String(approval.title || "").trim()) issues.push({ path: `${base}.title`, message: "must not be empty" });
+    if (!String(approval.action || "").trim()) issues.push({ path: `${base}.action`, message: "must not be empty" });
+    if (!AGENT_RUN_RISK_CLASSES.includes(approval.riskClass)) issues.push({ path: `${base}.riskClass`, message: `must be one of: ${AGENT_RUN_RISK_CLASSES.join(", ")}` });
+    if (!["pending", ...AGENT_RUN_APPROVAL_DECISIONS].includes(approval.status)) issues.push({ path: `${base}.status`, message: "must be a valid approval status" });
+    if (!approval.requestedAt || Number.isNaN(new Date(approval.requestedAt).getTime())) issues.push({ path: `${base}.requestedAt`, message: "must be an ISO timestamp" });
+    if (approval.decidedAt && Number.isNaN(new Date(approval.decidedAt).getTime())) issues.push({ path: `${base}.decidedAt`, message: "must be an ISO timestamp" });
+    if (approval.requirementId) {
+      const requirement = requirements.find((candidate) => candidate.id === approval.requirementId);
+      if (!requirement) {
+        issues.push({ path: `${base}.requirementId`, message: "must reference an approval requirement in the same run" });
+      } else {
+        if (approval.title !== requirement.title) issues.push({ path: `${base}.title`, message: "must match the bound approval requirement" });
+        if (approval.action !== requirement.action) issues.push({ path: `${base}.action`, message: "must match the bound approval requirement" });
+        if (approval.riskClass !== requirement.riskClass) issues.push({ path: `${base}.riskClass`, message: "must match the bound approval requirement" });
+        if ((approval.requestedRole || undefined) !== (requirement.requestedRole || undefined)) {
+          issues.push({ path: `${base}.requestedRole`, message: "must match the bound approval requirement" });
+        }
+        const reviewability = approvalReviewability(approval);
+        if (!reviewability.canApprove) {
+          issues.push({ path: `${base}.material`, message: reviewability.reason || "must contain reviewable bound material" });
+        }
+      }
+      if (approval.status === "pending") {
+        if (pendingRequirementIds.has(approval.requirementId)) {
+          issues.push({ path: `${base}.requirementId`, message: "must not have more than one pending request version" });
+        }
+        pendingRequirementIds.add(approval.requirementId);
+      }
+    }
+    const materialIssues = approvalMaterialIssues(approval.material);
+    for (const issue of materialIssues) issues.push({ path: `${base}.material`, message: issue });
+    if (approval.fingerprint) {
+      if (!isApprovalFingerprint(approval.fingerprint)) {
+        issues.push({ path: `${base}.fingerprint`, message: "must be a sha256:<hex> digest" });
+      } else if (materialIssues.length === 0 && approval.fingerprint !== computeApprovalFingerprint(approval)) {
+        issues.push({ path: `${base}.fingerprint`, message: "does not match the immutable approval request material" });
+      }
+    }
+    if (approval.effectReservation) {
+      if (!approval.fingerprint || approval.effectReservation.fingerprint !== approval.fingerprint) {
+        issues.push({ path: `${base}.effectReservation.fingerprint`, message: "must match the approved request fingerprint" });
+      }
+      if (!isApprovalFingerprint(approval.effectReservation.materialDigest)) {
+        issues.push({ path: `${base}.effectReservation.materialDigest`, message: "must be a sha256:<hex> digest" });
+      } else if (!approval.material || materialIssues.length > 0) {
+        issues.push({ path: `${base}.effectReservation.materialDigest`, message: "requires valid bound approval material" });
+      } else if (approval.effectReservation.materialDigest !== computeApprovalMaterialDigest(approval.material)) {
+        issues.push({ path: `${base}.effectReservation.materialDigest`, message: "must match the bound approval material" });
+      }
+      if (!String(approval.effectReservation.toolCallId || "").trim()) {
+        issues.push({ path: `${base}.effectReservation.toolCallId`, message: "must not be empty" });
+      }
+      if (Number.isNaN(new Date(approval.effectReservation.reservedAt).getTime())) {
+        issues.push({ path: `${base}.effectReservation.reservedAt`, message: "must be an ISO timestamp" });
+      }
+      if (approval.effectReceipt) {
+        issues.push({ path: `${base}.effectReservation`, message: "must be cleared after an effect receipt is recorded" });
+      }
+    }
+    if (approval.effectReceipt) {
+      if (!approval.fingerprint || approval.effectReceipt.fingerprint !== approval.fingerprint) {
+        issues.push({ path: `${base}.effectReceipt.fingerprint`, message: "must match the approved request fingerprint" });
+      }
+      if (Number.isNaN(new Date(approval.effectReceipt.performedAt).getTime())) {
+        issues.push({ path: `${base}.effectReceipt.performedAt`, message: "must be an ISO timestamp" });
+      }
+    }
+  }
+  for (const [index, approval] of approvals.entries()) {
+    if (approval.supersedesId && (!approvalIds.has(approval.supersedesId) || approval.supersedesId === approval.id)) {
+      issues.push({ path: `$.approvals[${index}].supersedesId`, message: "must reference another approval in the same run" });
+      continue;
+    }
+    if (approval.supersedesId && approval.requirementId) {
+      const superseded = approvals.find((candidate) => candidate.id === approval.supersedesId);
+      if (superseded?.requirementId !== approval.requirementId) {
+        issues.push({ path: `$.approvals[${index}].supersedesId`, message: "must reference an approval for the same requirement" });
+      }
+    }
+  }
+  if (
+    Array.isArray(run.plan)
+    && Array.isArray(run.approvals)
+    && Array.isArray(run.approvalRequirements)
+  ) {
+    const completeRun = run as AgentRun;
+    for (const requirement of run.approvalRequirements) {
+      if (!requirement.beforeStepId) continue;
+      const stepIndex = run.plan.findIndex((step) => step.id === requirement.beforeStepId);
+      const step = run.plan[stepIndex];
+      if (
+        step
+        && (step.status === "running" || step.status === "completed")
+        && !agentRunApprovalRequirementSatisfied(completeRun, requirement)
+      ) {
+        issues.push({
+          path: `$.plan[${stepIndex}].status`,
+          message: `requires approved workflow approval requirement ${requirement.id}`,
+        });
+      }
+    }
+    if (run.status === "completed") {
+      for (const requirement of unsatisfiedAgentRunApprovalRequirements(completeRun, { allowSkippedStep: true })) {
+        issues.push({
+          path: "$.status",
+          message: `completed run requires approved workflow approval requirement ${requirement.id}`,
+        });
+      }
+    }
+  }
   return { valid: issues.length === 0, issues };
+}
+
+export function currentAgentRunApprovalForRequirement(
+  run: AgentRun,
+  requirementId: string,
+): AgentRunApproval | undefined {
+  for (let index = run.approvals.length - 1; index >= 0; index -= 1) {
+    const approval = run.approvals[index]!;
+    if (approval.requirementId === requirementId) return approval;
+  }
+  return undefined;
+}
+
+export function agentRunApprovalRequirementState(
+  run: AgentRun,
+  requirementId: string,
+): AgentRunApprovalRequirementState {
+  const requirement = run.approvalRequirements?.find((candidate) => candidate.id === requirementId);
+  if (!requirement) throw new Error(`approval requirement not found: ${requirementId}`);
+  const approval = currentAgentRunApprovalForRequirement(run, requirementId);
+  if (!approval) return "unbound";
+  if (approval.status === "pending") return "pending";
+  if (approval.status === "approved") return "approved";
+  return "denied";
+}
+
+function agentRunApprovalRequirementSatisfied(
+  run: AgentRun,
+  requirement: AgentRunApprovalRequirement,
+  options: { allowSkippedStep?: boolean } = {},
+): boolean {
+  if (
+    options.allowSkippedStep
+    && requirement.beforeStepId
+    && run.plan.some((step) => (
+      step.id === requirement.beforeStepId
+      && step.status === "skipped"
+      && Boolean(String(step.detail || "").trim())
+    ))
+  ) {
+    return true;
+  }
+  const approval = currentAgentRunApprovalForRequirement(run, requirement.id);
+  return Boolean(
+    approval
+    && approval.status === "approved"
+    && approvalReviewability(approval).canApprove,
+  );
+}
+
+function unsatisfiedAgentRunApprovalRequirements(
+  run: AgentRun,
+  options: { beforeStepId?: string; allowSkippedStep?: boolean } = {},
+): AgentRunApprovalRequirement[] {
+  return (run.approvalRequirements || []).filter((requirement) => (
+    (!options.beforeStepId || requirement.beforeStepId === options.beforeStepId)
+    && !agentRunApprovalRequirementSatisfied(run, requirement, {
+      allowSkippedStep: options.allowSkippedStep,
+    })
+  ));
+}
+
+function assertAgentRunApprovalRequirementsSatisfied(
+  run: AgentRun,
+  options: { beforeStepId?: string; allowSkippedStep?: boolean; action: string },
+): void {
+  const unsatisfied = unsatisfiedAgentRunApprovalRequirements(run, options);
+  if (unsatisfied.length === 0) return;
+  throw new Error(
+    `${options.action} requires approved workflow approval requirement${unsatisfied.length === 1 ? "" : "s"}: ${unsatisfied.map((requirement) => requirement.id).join(", ")}`,
+  );
 }
 
 export function transitionAgentRun(run: AgentRun, status: AgentRunStatus, options: { actor?: string; reason?: string; summary?: string; highlights?: string[]; nextActions?: string[]; now?: string; completionSource?: "external" } = {}): AgentRun {
@@ -398,6 +691,12 @@ export function transitionAgentRun(run: AgentRun, status: AgentRunStatus, option
   const completedExternally = status === "completed" && options.completionSource === "external";
   const allowedExternalCompletion = completedExternally && run.status === "blocked";
   if (!TRANSITIONS[run.status].includes(status) && !allowedExternalCompletion) throw new Error(`run cannot transition from ${run.status} to ${status}`);
+  if (status === "queued" || status === "running") {
+    const approvalBoundary = currentAgentRunApprovalBoundary(run);
+    if (approvalBoundary.length > 0 && !approvalBoundary.every((approval) => approval.status === "approved")) {
+      throw new Error("run cannot resume while its current approval boundary is unresolved");
+    }
+  }
   if (options.completionSource === "external" && !allowedExternalCompletion) {
     throw new Error("external completion is only allowed for a blocked run");
   }
@@ -406,8 +705,17 @@ export function transitionAgentRun(run: AgentRun, status: AgentRunStatus, option
     throw new Error("blocking a run requires --reason with a specific clarification or next action");
   }
   const completionSummary = status === "completed" ? optional(options.summary) || optional(run.outcome?.summary) : undefined;
+  if (status === "completed") {
+    assertAgentRunApprovalRequirementsSatisfied(run, {
+      action: "completing the run",
+      allowSkippedStep: true,
+    });
+  }
   if (status === "completed" && !completedExternally && run.approvals.some((approval) => approval.status === "pending")) {
     throw new Error("completing a run with pending approvals is not allowed");
+  }
+  if (status === "completed" && !completedExternally && run.approvals.some((approval) => approval.effectReservation)) {
+    throw new Error("completing a run with an unresolved approval effect reservation is not allowed; reconcile and record or release the effect first");
   }
   if (status === "completed" && !completedExternally && run.artifacts.some((artifact) => artifact.reviewStatus === "review-required")) {
     throw new Error("completing a run with review-required artifacts is not allowed; record the review with `org2 run artifact-review RUN_ID ARTIFACT_ID --status reviewed`");
@@ -452,6 +760,10 @@ export function completeAgentRunExternally(run: AgentRun, input: { summary: stri
   if (run.status !== "blocked") throw new Error("only a blocked run can be marked completed outside the workflow");
   const actor = optional(input.actor);
   if (!actor) throw new Error("marking a run completed outside the workflow requires an actor");
+  assertAgentRunApprovalRequirementsSatisfied(run, {
+    action: "completing the run externally",
+    allowSkippedStep: true,
+  });
   const now = isoNow(input.now);
   const externalDetail = "Outcome completed outside this workflow.";
   const prepared: AgentRun = {
@@ -598,30 +910,166 @@ export function addAgentRunValidation(run: AgentRun, input: Omit<AgentRunValidat
   return { ...run, validations: [...run.validations, validation], updatedAt: now, events: [...run.events, event("validated", now, actor, `${validation.name}: ${validation.status}`)] };
 }
 
-export function requestAgentRunApproval(run: AgentRun, input: Omit<AgentRunApproval, "id" | "status" | "requestedAt"> & { id?: string; requestedAt?: string }, actor?: string): AgentRun {
+export interface AgentRunApprovalRequestInput {
+  id?: string;
+  requirementId?: string;
+  title?: string;
+  action?: string;
+  riskClass?: AgentRunRiskClass;
+  fingerprint?: string;
+  material?: AgentRunApprovalMaterial;
+  supersedesId?: string;
+  requestedRole?: string;
+  requestedFrom?: string;
+  requestedAt?: string;
+  note?: string;
+  receipt?: string;
+}
+
+function sameApprovalRuntimeTarget(
+  left: AgentRunApprovalMaterial["runtimeTarget"] | undefined,
+  right: AgentRunApprovalMaterial["runtimeTarget"] | undefined,
+): boolean {
+  return Boolean(
+    left
+    && right
+    && left.system === right.system
+    && left.kind === right.kind
+    && left.id === right.id,
+  );
+}
+
+export function requestAgentRunApproval(run: AgentRun, input: AgentRunApprovalRequestInput, actor?: string): AgentRun {
   if (["completed", "failed", "canceled"].includes(run.status)) throw new Error(`cannot request approval for a ${run.status} run`);
-  if (!AGENT_RUN_RISK_CLASSES.includes(input.riskClass)) throw new Error(`invalid approval risk class: ${input.riskClass}`);
+  const requirementId = optional(input.requirementId);
+  const requirement = requirementId
+    ? run.approvalRequirements?.find((candidate) => candidate.id === requirementId)
+    : undefined;
+  if (requirementId && !requirement) throw new Error(`approval requirement not found: ${requirementId}`);
+  if (requirement) {
+    const conflictingFields = [
+      input.title !== undefined && String(input.title || "").trim() !== requirement.title ? "title" : undefined,
+      input.action !== undefined && String(input.action || "").trim() !== requirement.action ? "action" : undefined,
+      input.riskClass !== undefined && input.riskClass !== requirement.riskClass ? "risk class" : undefined,
+      input.requestedRole !== undefined
+        && optional(input.requestedRole) !== optional(requirement.requestedRole)
+        ? "requested role"
+        : undefined,
+    ].filter((field): field is string => Boolean(field));
+    if (conflictingFields.length > 0) {
+      throw new Error(`approval request ${conflictingFields.join(", ")} must match requirement ${requirement.id}`);
+    }
+  }
+  const title = requirement?.title ?? String(input.title || "").trim();
+  const action = requirement?.action ?? String(input.action || "").trim();
+  const riskClass = requirement?.riskClass ?? input.riskClass;
+  const requestedRole = requirement?.requestedRole ?? optional(input.requestedRole);
+  if (!title || !action) throw new Error("approval title and action are required");
+  if (!riskClass || !AGENT_RUN_RISK_CLASSES.includes(riskClass)) throw new Error(`invalid approval risk class: ${riskClass}`);
+  const currentPendingRequirementApproval = requirementId
+    ? run.approvals.find((candidate) => candidate.requirementId === requirementId && candidate.status === "pending")
+    : undefined;
+  if (
+    currentPendingRequirementApproval
+    && input.supersedesId !== currentPendingRequirementApproval.id
+  ) {
+    throw new Error(
+      `approval requirement ${requirementId} already has pending request ${currentPendingRequirementApproval.id}; supersede that request explicitly`,
+    );
+  }
   const now = isoNow(input.requestedAt);
-  const approval: AgentRunApproval = {
-    id: safeId(input.id || crypto.randomUUID()),
-    title: String(input.title || "").trim(),
-    action: String(input.action || "").trim(),
-    riskClass: input.riskClass,
-    status: "pending",
-    requestedAt: now,
-    ...(optional(input.requestedRole) ? { requestedRole: optional(input.requestedRole) } : {}),
+  const id = safeId(input.id || crypto.randomUUID());
+  if (run.approvals.some((candidate) => candidate.id === id)) throw new Error(`approval id already exists: ${id}`);
+  const materialIssues = approvalMaterialIssues(input.material);
+  if (materialIssues.length > 0) {
+    throw new Error(`invalid approval material: ${materialIssues.join("; ")}`);
+  }
+  const material = normalizeApprovalMaterial(input.material);
+  if (material?.runtimeTarget) {
+    const priorEffect = run.approvals.find((approval) => (
+      sameApprovalRuntimeTarget(approval.material?.runtimeTarget, material.runtimeTarget)
+      && (approval.effectReservation || approval.effectReceipt)
+    ));
+    if (priorEffect?.effectReservation) {
+      throw new Error(`runtime target ${material.runtimeTarget.system}:${material.runtimeTarget.kind}:${material.runtimeTarget.id} has an unresolved effect reservation on approval ${priorEffect.id}`);
+    }
+    if (priorEffect?.effectReceipt) {
+      throw new Error(`runtime target ${material.runtimeTarget.system}:${material.runtimeTarget.kind}:${material.runtimeTarget.id} was already performed by approval ${priorEffect.id}`);
+    }
+  }
+  const request = {
+    title,
+    action,
+    riskClass,
+    ...(requirementId ? { requirementId } : {}),
+    ...(requestedRole ? { requestedRole } : {}),
     ...(optional(input.requestedFrom) ? { requestedFrom: optional(input.requestedFrom) } : {}),
     ...(optional(input.note) ? { note: optional(input.note) } : {}),
+    ...(material ? { material } : {}),
+  };
+  const reviewability = approvalReviewability(request);
+  if (!reviewability.canApprove) throw new Error(reviewability.reason);
+  const fingerprint = computeApprovalFingerprint(request);
+  if (input.fingerprint && input.fingerprint !== fingerprint) {
+    throw new Error(`approval fingerprint mismatch: expected ${fingerprint}`);
+  }
+  let supersededIndex = -1;
+  if (input.supersedesId) {
+    supersededIndex = run.approvals.findIndex((candidate) => candidate.id === input.supersedesId);
+    if (supersededIndex < 0) throw new Error(`superseded approval not found: ${input.supersedesId}`);
+    if (run.approvals[supersededIndex]!.status !== "pending") {
+      throw new Error(`superseded approval is already ${run.approvals[supersededIndex]!.status}`);
+    }
+    if (requirementId && run.approvals[supersededIndex]!.requirementId !== requirementId) {
+      throw new Error(`superseded approval must belong to requirement ${requirementId}`);
+    }
+  }
+  const approval: AgentRunApproval = {
+    id,
+    ...request,
+    status: "pending",
+    fingerprint,
+    requestedAt: now,
+    ...(optional(input.supersedesId) ? { supersedesId: optional(input.supersedesId) } : {}),
     ...(optional(input.receipt) ? { receipt: optional(input.receipt) } : {}),
   };
   if (!approval.title || !approval.action) throw new Error("approval title and action are required");
+  const approvals = [...run.approvals];
+  if (supersededIndex >= 0) {
+    approvals[supersededIndex] = {
+      ...approvals[supersededIndex]!,
+      status: "revised",
+      decidedAt: now,
+      decidedBy: optional(actor) || "org2",
+      decisionNote: `Superseded by ${approval.id}.`,
+    };
+  }
+  approvals.push(approval);
   const opensApprovalBoundary = run.status === "running"
     || run.status === "queued"
     || (run.status === "blocked" && run.blockedReason === AGENT_RUN_APPROVAL_BLOCK_REASON);
   const next = opensApprovalBoundary
     ? transitionAgentRun(run, "waiting-approval", { actor, now })
     : { ...run };
-  return { ...next, approvals: [...next.approvals, approval], updatedAt: now, events: [...next.events, event("approval-requested", now, actor, approval.title, { approvalId: approval.id, riskClass: approval.riskClass })] };
+  return {
+    ...next,
+    approvals,
+    updatedAt: now,
+    events: [
+      ...next.events,
+      ...(input.supersedesId ? [event("approval-superseded", now, actor, `${input.supersedesId} -> ${approval.id}`, {
+        approvalId: input.supersedesId,
+        supersededById: approval.id,
+      })] : []),
+      event("approval-requested", now, actor, approval.title, {
+        approvalId: approval.id,
+        fingerprint: approval.fingerprint,
+        riskClass: approval.riskClass,
+        ...(approval.requirementId ? { requirementId: approval.requirementId } : {}),
+        ...(approval.supersedesId ? { supersedesId: approval.supersedesId } : {}),
+      }),
+    ],
+  };
 }
 
 export function currentAgentRunApprovalBoundary(run: AgentRun): AgentRunApproval[] {
@@ -633,7 +1081,11 @@ export function currentAgentRunApprovalBoundary(run: AgentRun): AgentRunApproval
       break;
     }
   }
-  if (boundaryStart < 0) return run.approvals;
+  const current = (items: AgentRunApproval[]): AgentRunApproval[] => {
+    const supersededIds = new Set(items.map((approval) => approval.supersedesId).filter((id): id is string => Boolean(id)));
+    return items.filter((approval) => !supersededIds.has(approval.id));
+  };
+  if (boundaryStart < 0) return current(run.approvals);
 
   const boundaryIds = new Set(
     run.events.slice(boundaryStart + 1)
@@ -641,32 +1093,55 @@ export function currentAgentRunApprovalBoundary(run: AgentRun): AgentRunApproval
       .map((candidate) => optional(candidate.data?.approvalId))
       .filter((id): id is string => Boolean(id)),
   );
-  if (boundaryIds.size === 0) return run.approvals;
-  return run.approvals.filter((approval) => boundaryIds.has(approval.id));
+  if (boundaryIds.size === 0) return current(run.approvals);
+  return current(run.approvals.filter((approval) => boundaryIds.has(approval.id)));
 }
 
-export function decideAgentRunApproval(run: AgentRun, approvalId: string, decision: AgentRunApprovalDecision, input: { actor: string; actorRole?: string; note?: string; receipt?: string; now?: string }): AgentRun {
+export function decideAgentRunApproval(run: AgentRun, approvalId: string, decision: AgentRunApprovalDecision, input: { actor: string; actorRole?: string; expectedFingerprint?: string; note?: string; receipt?: string; now?: string }): AgentRun {
   const now = isoNow(input.now);
   if (!AGENT_RUN_APPROVAL_DECISIONS.includes(decision)) throw new Error(`invalid approval decision: ${decision}`);
+  const actor = String(input.actor || "").trim();
+  if (!actor) throw new Error("approval decision actor is required");
   const index = run.approvals.findIndex((approval) => approval.id === approvalId);
   if (index < 0) throw new Error(`approval not found: ${approvalId}`);
-  if (run.approvals[index]!.status !== "pending") throw new Error(`approval is already ${run.approvals[index]!.status}`);
-  if (run.approvals[index]!.requestedRole && input.actorRole !== run.approvals[index]!.requestedRole) throw new Error(`approval requires role ${run.approvals[index]!.requestedRole}; pass the matching actor role`);
-  if (run.approvals[index]!.requestedFrom && input.actor !== run.approvals[index]!.requestedFrom) throw new Error(`approval is assigned to ${run.approvals[index]!.requestedFrom}`);
+  const approval = run.approvals[index]!;
+  if (approval.status !== "pending") throw new Error(`approval is already ${approval.status}`);
+  const fingerprint = approval.fingerprint || computeApprovalFingerprint(approval);
+  if (!input.expectedFingerprint) throw new Error(`--expected-fingerprint is required for approval ${approvalId}`);
+  if (input.expectedFingerprint !== fingerprint) {
+    throw new Error(`stale approval review: expected fingerprint ${fingerprint}, received ${input.expectedFingerprint}`);
+  }
+  if (decision === "approved") {
+    const reviewability = approvalReviewability(approval);
+    if (!reviewability.canApprove) throw new Error(reviewability.reason);
+  }
+  if (approval.requestedRole && input.actorRole !== approval.requestedRole) throw new Error(`approval requires role ${approval.requestedRole}; pass the matching actor role`);
+  if (approval.requestedFrom && actor !== approval.requestedFrom) throw new Error(`approval is assigned to ${approval.requestedFrom}`);
   const approvals = [...run.approvals];
   approvals[index] = {
-    ...approvals[index]!,
+    ...approval,
+    fingerprint,
     status: decision,
     decidedAt: now,
-    decidedBy: String(input.actor || "").trim(),
-    ...(optional(input.note) ? { note: optional(input.note) } : {}),
+    decidedBy: actor,
+    ...(optional(input.note) ? { decisionNote: optional(input.note) } : {}),
     ...(optional(input.receipt) ? { receipt: optional(input.receipt) } : {}),
   };
-  let next: AgentRun = { ...run, approvals, updatedAt: now, events: [...run.events, event("approval-decided", now, input.actor, `${approvalId}: ${decision}`, { approvalId, decision, ...(input.actorRole ? { actorRole: input.actorRole } : {}) })] };
+  let next: AgentRun = {
+    ...run,
+    approvals,
+    updatedAt: now,
+    events: [...run.events, event("approval-decided", now, actor, `${approvalId}: ${decision}`, {
+      approvalId,
+      decision,
+      fingerprint,
+      ...(input.actorRole ? { actorRole: input.actorRole } : {}),
+    })],
+  };
   if (run.status === "waiting-approval" && approvals.every((approval) => approval.status !== "pending")) {
     const allApproved = currentAgentRunApprovalBoundary(next).every((approval) => approval.status === "approved");
     next = transitionAgentRun(next, allApproved ? "running" : "blocked", {
-      actor: input.actor,
+      actor,
       reason: allApproved ? undefined : AGENT_RUN_APPROVAL_BLOCK_REASON,
       now,
     });
@@ -674,11 +1149,178 @@ export function decideAgentRunApproval(run: AgentRun, approvalId: string, decisi
   return next;
 }
 
+export function recordAgentRunApprovalEffect(
+  run: AgentRun,
+  approvalId: string,
+  input: { fingerprint: string; performedAt?: string; system?: string; externalId?: string; toolCallId?: string; actor?: string },
+): AgentRun {
+  const index = run.approvals.findIndex((approval) => approval.id === approvalId);
+  if (index < 0) throw new Error(`approval not found: ${approvalId}`);
+  const approval = run.approvals[index]!;
+  if (approval.status !== "approved") throw new Error(`approval effect requires an approved request; ${approvalId} is ${approval.status}`);
+  if (!approval.fingerprint) throw new Error(`approval ${approvalId} has no immutable fingerprint`);
+  if (input.fingerprint !== approval.fingerprint) {
+    throw new Error(`approval effect fingerprint mismatch: approved ${approval.fingerprint}, received ${input.fingerprint}`);
+  }
+  if (approval.effectReceipt) {
+    if (
+      approval.effectReceipt.fingerprint === input.fingerprint
+      && (!input.externalId || approval.effectReceipt.externalId === input.externalId)
+    ) return { ...run };
+    throw new Error(`approval ${approvalId} already has a different effect receipt`);
+  }
+  if (approval.effectReservation) {
+    if (!input.toolCallId || input.toolCallId !== approval.effectReservation.toolCallId) {
+      throw new Error(`approval ${approvalId} is reserved for a different tool call`);
+    }
+    if (approval.effectReservation.fingerprint !== input.fingerprint) {
+      throw new Error(`approval ${approvalId} reservation fingerprint changed`);
+    }
+  } else if (input.toolCallId) {
+    throw new Error(`approval ${approvalId} has no matching effect reservation`);
+  }
+  const performedAt = isoNow(input.performedAt);
+  const approvals = [...run.approvals];
+  const recorded: AgentRunApproval = {
+    ...approval,
+    effectReceipt: {
+      fingerprint: input.fingerprint,
+      performedAt,
+      ...(optional(input.system) ? { system: optional(input.system) } : {}),
+      ...(optional(input.externalId) ? { externalId: optional(input.externalId) } : {}),
+    },
+  };
+  delete recorded.effectReservation;
+  approvals[index] = recorded;
+  return {
+    ...run,
+    approvals,
+    updatedAt: performedAt,
+    events: [...run.events, event("approval-effect-recorded", performedAt, input.actor, approval.title, {
+      approvalId,
+      fingerprint: input.fingerprint,
+      ...(input.system ? { system: input.system } : {}),
+      ...(input.externalId ? { externalId: input.externalId } : {}),
+      ...(input.toolCallId ? { toolCallId: input.toolCallId } : {}),
+    })],
+  };
+}
+
+export function reserveAgentRunApprovalEffect(
+  run: AgentRun,
+  approvalId: string,
+  input: { fingerprint: string; materialDigest: string; toolCallId: string; reservedAt?: string; actor?: string },
+): AgentRun {
+  const index = run.approvals.findIndex((approval) => approval.id === approvalId);
+  if (index < 0) throw new Error(`approval not found: ${approvalId}`);
+  const approval = run.approvals[index]!;
+  if (approval.status !== "approved") throw new Error(`approval effect reservation requires an approved request; ${approvalId} is ${approval.status}`);
+  if (!approval.fingerprint || approval.fingerprint !== input.fingerprint) {
+    throw new Error(`approval effect fingerprint mismatch for ${approvalId}`);
+  }
+  if (!isApprovalFingerprint(input.materialDigest)) {
+    throw new Error("approval effect reservation requires a sha256:<hex> material digest");
+  }
+  if (!approval.material) throw new Error(`approval ${approvalId} has no bound material to reserve`);
+  const conflictingEffect = approval.material.runtimeTarget
+    ? run.approvals.find((candidate) => (
+      candidate.id !== approval.id
+      && sameApprovalRuntimeTarget(candidate.material?.runtimeTarget, approval.material?.runtimeTarget)
+      && (candidate.effectReservation || candidate.effectReceipt)
+    ))
+    : undefined;
+  if (conflictingEffect?.effectReservation) {
+    throw new Error(`runtime target is already reserved by approval ${conflictingEffect.id}`);
+  }
+  if (conflictingEffect?.effectReceipt) {
+    throw new Error(`runtime target was already performed by approval ${conflictingEffect.id}`);
+  }
+  const expectedMaterialDigest = computeApprovalMaterialDigest(approval.material);
+  if (input.materialDigest !== expectedMaterialDigest) {
+    throw new Error(`approval effect material digest mismatch: approved ${expectedMaterialDigest}, received ${input.materialDigest}`);
+  }
+  const toolCallId = String(input.toolCallId || "").trim();
+  if (!toolCallId) throw new Error("approval effect reservation requires a tool call id");
+  if (approval.effectReceipt) throw new Error(`approval ${approvalId} already has an effect receipt`);
+  if (approval.effectReservation) {
+    throw new Error(`approval ${approvalId} already has an unresolved effect reservation`);
+  }
+  const reservedAt = isoNow(input.reservedAt);
+  const approvals = [...run.approvals];
+  approvals[index] = {
+    ...approval,
+    effectReservation: {
+      fingerprint: input.fingerprint,
+      materialDigest: input.materialDigest,
+      toolCallId,
+      reservedAt,
+    },
+  };
+  return {
+    ...run,
+    approvals,
+    updatedAt: reservedAt,
+    events: [...run.events, event("approval-effect-reserved", reservedAt, input.actor, approval.title, {
+      approvalId,
+      fingerprint: input.fingerprint,
+      materialDigest: input.materialDigest,
+      toolCallId,
+    })],
+  };
+}
+
+export function releaseAgentRunApprovalEffectReservation(
+  run: AgentRun,
+  approvalId: string,
+  input: { fingerprint: string; toolCallId: string; reason: string; actor: string; releasedAt?: string },
+): AgentRun {
+  const index = run.approvals.findIndex((approval) => approval.id === approvalId);
+  if (index < 0) throw new Error(`approval not found: ${approvalId}`);
+  const approval = run.approvals[index]!;
+  if (approval.effectReceipt) throw new Error(`approval ${approvalId} already has an effect receipt`);
+  const reservation = approval.effectReservation;
+  if (!reservation) throw new Error(`approval ${approvalId} has no effect reservation`);
+  if (reservation.fingerprint !== input.fingerprint || reservation.toolCallId !== input.toolCallId) {
+    throw new Error(`approval ${approvalId} effect reservation does not match`);
+  }
+  const actor = String(input.actor || "").trim();
+  const reason = String(input.reason || "").trim();
+  if (!actor || !reason) throw new Error("releasing an effect reservation requires an actor and a reconciliation reason");
+  const releasedAt = isoNow(input.releasedAt);
+  const approvals = [...run.approvals];
+  const released = { ...approval };
+  delete released.effectReservation;
+  approvals[index] = released;
+  return {
+    ...run,
+    approvals,
+    updatedAt: releasedAt,
+    events: [...run.events, event("approval-effect-reservation-released", releasedAt, actor, reason, {
+      approvalId,
+      fingerprint: input.fingerprint,
+      toolCallId: input.toolCallId,
+    })],
+  };
+}
+
 export function updateAgentRunStep(run: AgentRun, stepId: string, status: AgentRunStepStatus, input: { actor?: string; detail?: string; now?: string } = {}): AgentRun {
   const now = isoNow(input.now);
   if (!AGENT_RUN_STEP_STATUSES.includes(status)) throw new Error(`invalid run step status: ${status}`);
   const index = run.plan.findIndex((step) => step.id === stepId);
   if (index < 0) throw new Error(`plan step not found: ${stepId}`);
+  if (
+    status === "skipped"
+    && run.approvalRequirements?.some((requirement) => requirement.beforeStepId === stepId)
+    && !optional(input.detail)
+  ) {
+    throw new Error(`skipping approval-guarded step ${stepId} must record why no protected effect occurred`);
+  }
+  if (status === "running" || status === "completed") {
+    assertAgentRunApprovalRequirementsSatisfied(run, {
+      action: `moving step ${stepId} to ${status}`,
+      beforeStepId: stepId,
+    });
+  }
   const plan = [...run.plan];
   const existing = plan[index]!;
   plan[index] = {
@@ -704,7 +1346,14 @@ export function forkAgentRun(run: AgentRun, input: { id?: string; actor?: string
     providerPolicy: run.providerPolicy,
     capabilities: run.capabilities,
     context: run.context,
-    plan: run.plan.map((step) => ({ title: step.title, kind: step.kind, capability: step.capability, detail: step.detail })),
+    plan: run.plan.map((step) => ({
+      id: step.id,
+      title: step.title,
+      kind: step.kind,
+      capability: step.capability,
+      detail: step.detail,
+    })),
+    approvalRequirements: run.approvalRequirements?.map((requirement) => ({ ...requirement })),
     budget: run.budget ? { tokenLimit: run.budget.tokenLimit, costLimitUsd: run.budget.costLimitUsd, timeLimitSeconds: run.budget.timeLimitSeconds } : undefined,
     parentRunId: run.id,
     forkedFromEventId: input.fromEventId || run.events.at(-1)?.id,
@@ -777,6 +1426,13 @@ export function renderAgentRunOrg(run: AgentRun): string {
     "** Artifacts",
     ...(run.artifacts.length ? run.artifacts.map((artifact) => `- [[file:${artifact.path}][${artifact.title || artifact.path}]] (${artifact.role}; ${artifact.reviewStatus || "generated"})`) : ["- No artifacts recorded."]),
     "",
+    "** Approval requirements",
+    ...((run.approvalRequirements || []).length ? run.approvalRequirements!.map((requirement) => {
+      const state = agentRunApprovalRequirementState(run, requirement.id);
+      const boundary = requirement.beforeStepId ? `; before ${requirement.beforeStepId}` : "; before completion";
+      return `- ${state.toUpperCase()} ${requirement.title} — ${requirement.action} (${requirement.riskClass}${boundary}) =${requirement.id}=`;
+    }) : ["- No workflow approval requirements declared."]),
+    "",
     `** Approvals [${run.approvals.filter((approval) => approval.status === "pending").length}/${run.approvals.length} pending]`,
     ...(run.approvals.length ? run.approvals.map((approval) => {
       const reviewer = approval.requestedFrom
@@ -818,11 +1474,42 @@ export function agentRunPath(corpusRoot: string, id: string): string {
 
 export function saveAgentRun(corpusRoot: string, run: AgentRun): string {
   const outputPath = agentRunPath(corpusRoot, run.id);
-  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-  const tempPath = `${outputPath}.${process.pid}.${crypto.randomUUID()}.tmp`;
-  fs.writeFileSync(tempPath, renderAgentRunOrg(run), "utf8");
-  fs.renameSync(tempPath, outputPath);
+  withFileMutationLock(outputPath, () => {
+    if (fs.existsSync(outputPath)) throw new Error(`run already exists: ${run.id}`);
+    fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+    const tempPath = `${outputPath}.${process.pid}.${crypto.randomUUID()}.tmp`;
+    try {
+      fs.writeFileSync(tempPath, renderAgentRunOrg(run), { encoding: "utf8", mode: 0o600 });
+      fs.linkSync(tempPath, outputPath);
+    } finally {
+      if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+    }
+  });
   return outputPath;
+}
+
+export function mutateAgentRun(
+  corpusRoot: string,
+  id: string,
+  mutate: (run: AgentRun) => AgentRun,
+): AgentRun {
+  const file = agentRunPath(corpusRoot, id);
+  return withFileMutationLock(file, () => {
+    if (!fs.existsSync(file)) throw new Error(`run not found: ${id}`);
+    const raw = fs.readFileSync(file, "utf8");
+    const current = parseAgentRunOrg(raw);
+    const updated = mutate(current);
+    if (updated.id !== current.id) throw new Error("an in-place run mutation cannot change the run id");
+    if (JSON.stringify(updated.approvalRequirements || []) !== JSON.stringify(current.approvalRequirements || [])) {
+      throw new Error("an in-place run mutation cannot change immutable workflow approval requirements");
+    }
+    const validation = validateAgentRun(updated);
+    if (!validation.valid) {
+      throw new Error(`invalid Org2 agent run: ${validation.issues.map((issue) => `${issue.path} ${issue.message}`).join("; ")}`);
+    }
+    writeTextAtomicallyIfUnchanged(file, raw, renderAgentRunOrg(updated));
+    return updated;
+  });
 }
 
 export function loadAgentRun(corpusRoot: string, id: string): AgentRun {

@@ -51,6 +51,11 @@ await exec([
   "--title", "Approve external action",
   "--action", "send the result",
   "--risk", "external-action",
+  "--material-json", JSON.stringify({
+    kind: "message",
+    target: "reviewed-recipient@example.com",
+    content: "Exact reviewed result.",
+  }),
 ]);
 const paused = await lifecycle.finish("turn:approval", "ok", { summary: "Requested approval." });
 assert.deepEqual(paused, { terminal: false, status: "waiting-approval" });

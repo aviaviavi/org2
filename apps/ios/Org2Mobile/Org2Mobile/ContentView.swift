@@ -244,7 +244,7 @@ private struct ApprovalsView: View {
             Label(approvingID == item.id ? "Approving" : "Approve", systemImage: approvingID == item.id ? "hourglass" : "checkmark")
           }
           .tint(.green)
-          .disabled(approvingID != nil)
+          .disabled(approvingID != nil || !item.canApprove)
 
           Button(role: .destructive) {
             rejection = item
@@ -278,7 +278,16 @@ private struct ApprovalsView: View {
           ContentUnavailableView("No Approvals", systemImage: "checkmark.seal")
         }
       }
-      .navigationTitle("Approvals")
+      .safeAreaInset(edge: .top, spacing: 0) {
+        Text("Legacy corpus-headline approvals only. Use desktop or CLI for the complete native run queue.")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .padding(.horizontal)
+          .padding(.vertical, 8)
+          .background(.bar)
+      }
+      .navigationTitle("Corpus Approvals")
       .toolbar {
         ToolbarItem(placement: .topBarTrailing) {
           RefreshButton()
@@ -314,7 +323,7 @@ private struct ApprovalsView: View {
 
   @MainActor
   private func approve(_ item: ApprovalEntry) async {
-    guard approvingID == nil else { return }
+    guard approvingID == nil, item.canApprove else { return }
     approvingID = item.id
     await store.approve(item)
     if approvingID == item.id {
@@ -349,6 +358,12 @@ private struct ApprovalRow: View {
         .foregroundStyle(.secondary)
         .lineLimit(1)
         .truncationMode(.middle)
+
+      if let reason = item.approvalBlockedReason {
+        Label(reason, systemImage: "exclamationmark.triangle.fill")
+          .font(.caption)
+          .foregroundStyle(.orange)
+      }
 
       if isApproving {
         HStack(spacing: 6) {
@@ -439,7 +454,7 @@ private struct ApprovalDetailView: View {
             }
           }
           .buttonStyle(.borderedProminent)
-          .disabled(isApproving)
+          .disabled(isApproving || !item.canApprove)
 
           Button(role: .destructive) {
             dismiss()
@@ -448,6 +463,7 @@ private struct ApprovalDetailView: View {
             Label("Reject", systemImage: "xmark.octagon")
               .frame(maxWidth: .infinity)
           }
+          .disabled(isApproving)
 
           Button {
             openWhatsApp(text: item.whatsappText) {
@@ -496,7 +512,10 @@ private struct ApprovalDetailView: View {
       ApprovalMetadataRow.Model(label: "TODO", value: item.todo),
       ApprovalMetadataRow.Model(label: "Level", value: item.level.map(String.init)),
       ApprovalMetadataRow.Model(label: "Source", value: item.sourceLabel, isMonospaced: true),
-      ApprovalMetadataRow.Model(label: "ID", value: item.sourceID, isMonospaced: true),
+      ApprovalMetadataRow.Model(label: "Binding", value: "Legacy corpus headline"),
+      ApprovalMetadataRow.Model(label: "Approval ID", value: item.approvalID, isMonospaced: true),
+      ApprovalMetadataRow.Model(label: "Source ID", value: item.sourceID, isMonospaced: true),
+      ApprovalMetadataRow.Model(label: "Fingerprint", value: item.fingerprint, isMonospaced: true),
       ApprovalMetadataRow.Model(label: "Tags", value: item.tags.isEmpty ? nil : item.tags.map { ":\($0):" }.joined(separator: " ")),
     ].compactMap { $0 }
   }

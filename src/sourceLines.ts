@@ -106,11 +106,13 @@ export function upsertHeadlinePropertyInLines(lines: string[], headingIndex: num
   }
 
   const keyPrefix = `:${propertyKey}:`;
+  let updatedExisting = false;
   for (let i = drawer.start + 1; i < drawer.end; i += 1) {
     if ((lines[i] ?? "").toUpperCase().startsWith(keyPrefix)) {
       lines[i] = `${keyPrefix} ${value}`;
-      return;
+      updatedExisting = true;
     }
   }
+  if (updatedExisting) return;
   lines.splice(drawer.end, 0, `${keyPrefix} ${value}`);
 }

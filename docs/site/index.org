@@ -178,7 +178,7 @@ The goal is boring composability: plain files that are easy to inspect, easy to 
   <figure><img src="assets/screenshots/macos-workspace-agenda.png" alt="Org2 Workspace agenda showing launch readiness tasks and linked context" loading="lazy" /><figcaption>Mac Workspace agenda: plan from tasks, deadlines, assignees, links, and source context in the same local corpus.</figcaption></figure>
   <figure><img src="assets/screenshots/macos-workspace-meetings.png" alt="Org2 Workspace meeting surface with a beta review transcript and summary" loading="lazy" /><figcaption>Meeting capture: recordings, transcripts, decisions, and follow-ups become ordinary Org2 files.</figcaption></figure>
   <figure><img src="assets/screenshots/macos-workspace-openclaw.png" alt="Org2 Workspace OpenClaw chat showing selected corpus context and an agent work log" loading="lazy" /><figcaption>OpenClaw chat: work with the currently integrated agent runtime while corpus context and durable outputs stay reviewable.</figcaption></figure>
-  <figure class="org2-shot-phone"><img src="assets/screenshots/ios-mobile-approvals.png" alt="Org2 Mobile approvals list on iPhone showing review-required corpus items" loading="lazy" /><figcaption>Mobile approvals: review generated drafts and approval-gated work from the phone.</figcaption></figure>
+  <figure class="org2-shot-phone"><img src="assets/screenshots/ios-mobile-approvals.png" alt="Org2 Mobile approvals list on iPhone showing review-required corpus items" loading="lazy" /><figcaption>Mobile corpus approvals: review legacy file-backed approval headings from the phone; use desktop or CLI for native run approvals.</figcaption></figure>
 </div>
 #+END_EXPORT
 

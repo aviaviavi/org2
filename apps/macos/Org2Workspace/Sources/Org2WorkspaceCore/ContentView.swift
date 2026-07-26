@@ -2594,9 +2594,6 @@ private struct RunCenterDetail: View {
   @State private var isCompletionPresented = false
   @State private var completionMode: RunCompletionMode = .run
   @State private var isWorkflowConfirmationPresented = false
-  @State private var openClawApprovalDetails: OpenClawExecApprovalDetails?
-  @State private var isLoadingOpenClawApprovalDetails = false
-  @State private var openClawApprovalDetailsError: String?
   let run: AgentRunItem
 
   private var isMutating: Bool { store.mutatingAgentRunIDs.contains(run.id) }
@@ -2729,7 +2726,7 @@ private struct RunCenterDetail: View {
                   Text(approval.action).font(.callout).foregroundStyle(.secondary)
                 }
 
-                approvalReviewMaterial(approval)
+                approvalReviewMaterial(approval, in: run)
 
                 HStack {
                   Button("Approve") { Task { await store.decideAgentRunApproval(run, approval: approval, decision: "approved") } }
@@ -2737,7 +2734,7 @@ private struct RunCenterDetail: View {
                     .help(canApprove(approval) ? "Approve the displayed action" : "Reviewable action details are required before approval")
                   Button("Revise") { Task { await store.decideAgentRunApproval(run, approval: approval, decision: "revised") } }
                     .disabled(isMutating)
-                  Button("Reject") { Task { await store.decideAgentRunApproval(run, approval: approval, decision: "rejected") } }
+                  Button("Reject") { store.promptAndRejectAgentRunApproval(run, approval: approval) }
                     .disabled(isMutating)
                   Spacer()
                   Button("Show in Review") {
@@ -2799,12 +2796,6 @@ private struct RunCenterDetail: View {
       completionSummary = ""
       isCompletionPresented = false
       completionMode = .run
-      openClawApprovalDetails = nil
-      openClawApprovalDetailsError = nil
-      isLoadingOpenClawApprovalDetails = false
-    }
-    .task(id: "\(run.id):\(run.updatedAt)") {
-      await loadOpenClawApprovalDetails()
     }
     .sheet(isPresented: $isCompletionPresented) {
       RunCompletionSheet(summary: $completionSummary, mode: completionMode) { summary in
@@ -2826,7 +2817,32 @@ private struct RunCenterDetail: View {
   }
 
   @ViewBuilder
-  private func approvalReviewMaterial(_ approval: AgentRunApprovalItem) -> some View {
+  private func approvalReviewMaterial(
+    _ approval: AgentRunApprovalItem,
+    in run: AgentRunItem
+  ) -> some View {
+    if let requirement = run.approvalRequirement(for: approval) {
+      VStack(alignment: .leading, spacing: 4) {
+        Text("Bound workflow approval requirement")
+          .font(.caption.weight(.semibold))
+          .foregroundStyle(.secondary)
+        Text(
+          requirement.reviewText(
+            state: run.approvalRequirementState(for: requirement)
+          )
+        )
+        .font(.callout)
+        .textSelection(.enabled)
+      }
+    } else if let requirementId = approval.requirementId {
+      Label(
+        "Approval references missing workflow requirement \(requirementId).",
+        systemImage: "exclamationmark.triangle.fill"
+      )
+      .font(.callout)
+      .foregroundStyle(.orange)
+    }
+
     if let note = approval.note?.trimmingCharacters(in: .whitespacesAndNewlines), !note.isEmpty {
       VStack(alignment: .leading, spacing: 4) {
         Text("Approval details").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
@@ -2834,78 +2850,19 @@ private struct RunCenterDetail: View {
       }
     }
 
-    if run.openClawExecApprovalID != nil {
-      if isLoadingOpenClawApprovalDetails {
-        HStack(spacing: 7) {
-          WorkspaceActivityIndicator(size: .mini)
-          Text("Loading the exact action from OpenClaw…")
-            .font(.callout)
-            .foregroundStyle(.secondary)
-        }
-      } else if let details = openClawApprovalDetails {
-        VStack(alignment: .leading, spacing: 7) {
-          Text("Exact action to approve")
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(.secondary)
-          Text(details.reviewText)
-            .font(.system(.callout, design: .monospaced))
-            .textSelection(.enabled)
-            .padding(9)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 6))
-
-          if let preview = details.commandPreview?.trimmingCharacters(in: .whitespacesAndNewlines),
-             !preview.isEmpty,
-             preview != details.commandText {
-            DisclosureGroup("Raw command") {
-              Text(details.commandText)
-                .font(.system(.caption, design: .monospaced))
-                .textSelection(.enabled)
-                .padding(.top, 5)
-            }
-            .font(.caption)
-          }
-
-          let metadata = [
-            details.host.map { "Host: \($0)" },
-            details.agentID.map { "Agent: \($0)" },
-          ].compactMap { $0 }
-          if !metadata.isEmpty {
-            Text(metadata.joined(separator: " · "))
-              .font(.caption)
-              .foregroundStyle(.secondary)
-          }
-        }
-      } else {
-        Label(
-          "The exact OpenClaw action is unavailable, so approval is disabled. Retry after the Gateway is reachable or reject this request.",
-          systemImage: "exclamationmark.triangle.fill"
-        )
-        .font(.callout)
-        .foregroundStyle(.orange)
-        if let error = openClawApprovalDetailsError {
-          Text(error)
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .textSelection(.enabled)
-        }
+    if let material = approval.material {
+      VStack(alignment: .leading, spacing: 4) {
+        Text("Bound approval material").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+        Text(material.reviewText)
+          .font(.system(.callout, design: material.command == nil ? .default : .monospaced))
+          .textSelection(.enabled)
       }
-    } else if !run.artifacts.isEmpty {
-      VStack(alignment: .leading, spacing: 6) {
-        Text("Review outputs before approving")
-          .font(.caption.weight(.semibold))
-          .foregroundStyle(.secondary)
-        ForEach(run.artifacts) { artifact in
-          Button { store.openAgentRunArtifact(artifact) } label: {
-            Label(artifact.displayTitle, systemImage: "doc.text")
-          }
-          .buttonStyle(.link)
-        }
-      }
-    } else if requiresReviewMaterial(approval),
-              approval.note?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
+    }
+
+    if requiresReviewMaterial(approval),
+       approval.material?.hasExactApprovalMaterial != true {
       Label(
-        "No recipient, content, command, or reviewable output was attached. Approval is disabled.",
+        "Valid bound typed material is required. Approval is disabled.",
         systemImage: "exclamationmark.triangle.fill"
       )
       .font(.callout)
@@ -2919,29 +2876,8 @@ private struct RunCenterDetail: View {
 
   private func canApprove(_ approval: AgentRunApprovalItem) -> Bool {
     guard requiresReviewMaterial(approval) else { return true }
-    if run.openClawExecApprovalID != nil { return openClawApprovalDetails != nil }
-    if approval.note?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false { return true }
-    return !run.artifacts.isEmpty
-  }
-
-  @MainActor
-  private func loadOpenClawApprovalDetails() async {
-    openClawApprovalDetails = nil
-    openClawApprovalDetailsError = nil
-    guard run.pendingApprovalCount > 0, run.openClawExecApprovalID != nil else {
-      isLoadingOpenClawApprovalDetails = false
-      return
-    }
-    isLoadingOpenClawApprovalDetails = true
-    do {
-      let details = try await store.openClawExecApprovalDetails(for: run)
-      guard !Task.isCancelled else { return }
-      openClawApprovalDetails = details
-    } catch {
-      guard !Task.isCancelled else { return }
-      openClawApprovalDetailsError = error.localizedDescription
-    }
-    isLoadingOpenClawApprovalDetails = false
+    if approval.material?.hasExactApprovalMaterial == true { return true }
+    return false
   }
 
   private var clarificationSection: some View {
@@ -3083,6 +3019,22 @@ private struct RunCenterDetail: View {
               VStack(alignment: .leading) {
                 Text(comment.author).font(.caption.weight(.semibold))
                 Text(comment.body)
+              }
+            }
+          }
+        }
+
+        let approvalsWithEffectState = run.approvals.filter { $0.effectStateText != nil }
+        if !approvalsWithEffectState.isEmpty {
+          technicalGroup("Approval effect state") {
+            ForEach(approvalsWithEffectState) { approval in
+              VStack(alignment: .leading, spacing: 4) {
+                Text(approval.title).font(.callout.weight(.semibold))
+                if let effectStateText = approval.effectStateText {
+                  Text(effectStateText)
+                    .font(.caption.monospaced())
+                    .textSelection(.enabled)
+                }
               }
             }
           }
@@ -3288,7 +3240,7 @@ private struct ApprovalsView: View {
             } label: {
               Label("Approve", systemImage: "checkmark")
             }
-            .disabled(store.isApprovalActionInProgress(item))
+            .disabled(store.isApprovalActionInProgress(item) || !item.isApprovable)
             Button {
               discussionMessage = "I need to discuss this approval item before deciding."
               discussionItem = item
@@ -3363,11 +3315,22 @@ private struct ApprovalRow: View {
           .lineLimit(2)
       }
 
-      if !item.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-        Text(Org2Display.cleanBlock(item.body).trimmedForDisplay(maxCharacters: 220))
-          .font(.callout)
+      if !item.boundReviewText.isEmpty {
+        Text(item.boundReviewText)
+          .font(.system(.callout, design: item.binding == "legacy" ? .monospaced : .default))
           .foregroundStyle(.secondary)
-          .lineLimit(3)
+          .textSelection(.enabled)
+      }
+
+      if let material = item.material {
+        VStack(alignment: .leading, spacing: 3) {
+          Text("Bound approval material")
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.secondary)
+          Text(material.reviewText)
+            .font(.system(.caption, design: material.command == nil ? .default : .monospaced))
+            .textSelection(.enabled)
+        }
       }
 
       if let runGoal = item.runGoal {
@@ -3381,6 +3344,12 @@ private struct ApprovalRow: View {
               .foregroundStyle(item.runPendingApprovalCount == 1 ? Color.orange : Color.secondary)
           }
         }
+      }
+
+      if let blockedReason = item.approvalBlockedReason, !item.isApprovable {
+        Label(blockedReason, systemImage: "exclamationmark.shield")
+          .font(.caption)
+          .foregroundStyle(.orange)
       }
 
       HStack(spacing: 8) {
@@ -3409,7 +3378,8 @@ private struct ApprovalRow: View {
           }
         }
         .buttonStyle(WorkspaceActionButtonStyle())
-        .disabled(isActionInProgress)
+        .disabled(isActionInProgress || !item.isApprovable)
+        .help(item.isApprovable ? "Approve" : (item.approvalBlockedReason ?? "Exact review material is required"))
 
         Button {
           discuss()

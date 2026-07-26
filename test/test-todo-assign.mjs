@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
@@ -15,6 +15,11 @@ function cli(args) {
     encoding: "utf8",
     env: { ...process.env, TZ: "America/Los_Angeles" },
   });
+}
+
+function approvalById(id) {
+  return JSON.parse(cli(["approvals", "--dir", tmp, "--recursive", "--index", "never", "--format", "json"]))
+    .items.find((item) => item.kind === "headline" && item.idValue === id);
 }
 
 fs.writeFileSync(note, "* TODO Send approved follow-up\nSCHEDULED: <2026-06-14 Sun>\n\nBody\n", "utf8");
@@ -66,15 +71,24 @@ fs.writeFileSync(note, `* TODO Send approved follow-up
 :ASSIGNEE: Avi
 :END:
 `, "utf8");
+const genericClose = spawnSync("node", [
+  "dist/cli.js", "todo", "set",
+  "--file", note, "--line", "7", "--status", "done", "--apply",
+], { cwd: repo, encoding: "utf8" });
+assert.notEqual(genericClose.status, 0);
+assert.match(genericClose.stderr, /approval headings cannot be closed/);
+const approvalOne = approvalById("approval-1");
 const approved = JSON.parse(cli([
   "todo",
-  "set",
+  "approve",
   "--file",
   note,
   "--line",
   "7",
-  "--status",
-  "done",
+  "--actor",
+  "Avi",
+  "--expected-fingerprint",
+  approvalOne.fingerprint,
   "--apply",
   "--now",
   "2026-06-22T17:00:00-07:00",
@@ -104,6 +118,7 @@ fs.writeFileSync(note, `* TODO Continue approved Linear issue update
 :PAIRED_AGENT_TODO: Continue approved Linear issue update
 :END:
 `, "utf8");
+const approvalTwo = approvalById("approval-2");
 const agentApproved = JSON.parse(cli([
   "todo",
   "approve",
@@ -111,6 +126,10 @@ const agentApproved = JSON.parse(cli([
   note,
   "--line",
   "7",
+  "--actor",
+  "Avi",
+  "--expected-fingerprint",
+  approvalTwo.fingerprint,
   "--apply",
   "--now",
   "2026-06-22T17:05:00-07:00",

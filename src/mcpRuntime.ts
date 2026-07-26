@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
 import { spawnSync } from "node:child_process";
-import { listAgentRuns, loadAgentRun, saveAgentRun, transitionAgentRun } from "./agentRun.js";
+import { listAgentRuns, mutateAgentRun, saveAgentRun, transitionAgentRun } from "./agentRun.js";
 import { instantiateWorkflow, listWorkflows, loadWorkflow } from "./agentWorkflow.js";
 
 type JsonObject = Record<string, unknown>;
@@ -228,11 +228,10 @@ async function handle(root: string, request: JsonRpcRequest): Promise<JsonRpcRes
       return result({ content: [{ type: "text", text: JSON.stringify({ run, file }, null, 2) }] });
     }
     if (name === "org2_run_transition") {
-      const run = transitionAgentRun(loadAgentRun(root, requiredString(args.run, "run")), requiredString(args.status, "status") as Parameters<typeof transitionAgentRun>[1], {
+      const run = mutateAgentRun(root, requiredString(args.run, "run"), (current) => transitionAgentRun(current, requiredString(args.status, "status") as Parameters<typeof transitionAgentRun>[1], {
         actor: optionalString(args.actor, "actor"), reason: optionalString(args.reason, "reason"), summary: optionalString(args.summary, "summary"),
         highlights: stringArray(args.highlights, "highlights"), nextActions: stringArray(args.nextActions, "nextActions"),
-      });
-      saveAgentRun(root, run);
+      }));
       return result({ content: [{ type: "text", text: JSON.stringify(run, null, 2) }] });
     }
     throw new Error(`unknown tool: ${name}`);

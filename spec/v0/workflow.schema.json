@@ -17,11 +17,26 @@
     "steps": { "type": "array" },
     "outputs": { "type": "array" },
     "validations": { "type": "array", "items": { "type": "string" } },
-    "approvals": { "type": "array" },
+    "approvals": { "type": "array", "items": { "$ref": "#/$defs/approvalRequirement" } },
     "triggers": { "type": "array" },
     "compatibility": { "type": "object", "required": ["org2", "schema"] },
     "createdAt": { "type": "string", "format": "date-time" },
     "updatedAt": { "type": "string", "format": "date-time" }
+  },
+  "$defs": {
+    "approvalRequirement": {
+      "type": "object",
+      "required": ["title", "action", "riskClass"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" },
+        "title": { "type": "string", "minLength": 1 },
+        "action": { "type": "string", "minLength": 1 },
+        "riskClass": { "enum": ["read-only", "local-draft", "canonical-write", "external-action", "high-impact"] },
+        "requestedRole": { "type": "string" },
+        "beforeStepId": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": true
+    }
   },
   "additionalProperties": true
 }

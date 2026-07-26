@@ -41,7 +41,7 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
       "Never block a durable run without an actionable clarification; `org2 run block ID --reason TEXT` requires the specific question or next action.",
       "Never complete a durable run without a concise result for the reviewer; `org2 run complete ID --summary TEXT` requires a human-readable outcome and accepts repeatable highlights and next actions.",
       "A run with a pending approval cannot be completed normally; record the request, stop before the protected action, and resume only after the approval decision returns the run to running.",
-      "Treat `org2 approvals` as the unified pending-decision queue: decide `kind=run` items by their exact runId/approvalId through `org2 run approval-decide`, and mutate `kind=headline` items only at their cited source heading.",
+      "Treat `org2 approvals` as the unified pending-decision queue: pass each item's exact queueId and fingerprint to `org2 approval decide`; the command rejects stale review material and dispatches to the canonical run or legacy headline binding.",
       "A run with a review-required artifact cannot be completed normally; after the human decision, use `org2 run artifact-review RUN_ID ARTIFACT_ID --status reviewed|rejected --actor NAME` to update both the durable run and linked Org artifact before completion.",
       "When a person confirms that a blocked outcome was completed outside the workflow, `org2 run complete-external ID --summary TEXT --actor NAME` records that explicit resolution while preserving unresolved approvals and review metadata as history; agents must not infer this resolution on their own.",
       "Record observable runtime metadata with `org2 run runtime ID` when provider, model, token usage, cost, or elapsed time is available; never put credentials in a run record.",
@@ -64,7 +64,7 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
       {
         id: "agentic-workspace",
         purpose: "Create, inspect, resume, review, validate, fork, and package durable agent runs and reusable workflows.",
-        commands: ["org2 run", "org2 review", "org2 workflow", "org2 eval"],
+        commands: ["org2 run", "org2 approvals", "org2 approval decide", "org2 review", "org2 workflow", "org2 eval"],
         writes: "mixed",
       },
       {

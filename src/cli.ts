@@ -30,7 +30,24 @@ import { compileCorpus, compileCorpusIncremental, extractCheckboxProgress, rende
 import { extractClockReport } from "./clock.js";
 import { buildAgentContextPayload, renderAgentContextPack, type AgentInclude } from "./agentContext.js";
 import { buildOrg2CapabilityManifest } from "./capabilities.js";
-import { agentRunPath, currentAgentRunApprovalBoundary, listAgentRuns, type AgentRun } from "./agentRun.js";
+import {
+  agentRunPath,
+  currentAgentRunApprovalBoundary,
+  decideAgentRunApproval,
+  listAgentRuns,
+  loadAgentRun,
+  mutateAgentRun,
+  type AgentRun,
+  type AgentRunApprovalDecision,
+  type AgentRunApprovalMaterial,
+} from "./agentRun.js";
+import {
+  assertPendingApprovalShortcutAllowed,
+  approvalReviewability,
+  computeApprovalFingerprint,
+  computeLegacyHeadlineApprovalFingerprint,
+} from "./approval.js";
+import { withFileMutationLock, withFileMutationLocks, writeTextAtomicallyIfUnchanged } from "./atomicFileMutation.js";
 import { renderOrgChart, renderOrgCharts } from "./chartRender.js";
 import {
   buildSearchIndex,
@@ -798,6 +815,13 @@ type GraphAuditReport = {
 
 type ApprovalQueueItem = {
   kind: "headline" | "run";
+  queueId: string;
+  nativeApprovalId?: string;
+  fingerprint: string;
+  material?: AgentRunApprovalMaterial;
+  binding: "native" | "legacy";
+  canApprove: boolean;
+  approvalBlockedReason?: string;
   title: string;
   status: string;
   todo: string | null;
@@ -814,12 +838,29 @@ type ApprovalQueueItem = {
   requestedRole?: string;
   requestedFrom?: string;
   requestedAt?: string;
+  requirement?: {
+    id: string;
+    title: string;
+    action: string;
+    riskClass: string;
+    requestedRole?: string;
+    beforeStepId?: string;
+    state: "unbound" | "pending" | "approved" | "denied";
+  };
   runId?: string;
   runGoal?: string;
   runStatus?: string;
   runPendingApprovalCount?: number;
   runApprovalCount?: number;
   runDecisionEffect?: string;
+  pairedAction?: {
+    mode: "existing" | "create";
+    title: string;
+    todo: string | null;
+    properties: Record<string, string>;
+    body: string;
+    line?: number;
+  };
 };
 
 type ApprovalQueuePayload = {
@@ -1040,6 +1081,9 @@ function firstApprovalPropertyText(properties: Record<string, string>, keys: str
 }
 
 function approvalStatus(title: string, properties: Record<string, string>): string | null {
+  const canonicalDecision = String(properties.ORG2_APPROVAL_DECISION || "").trim().toLowerCase();
+  if (["approved", "rejected", "revised", "canceled"].includes(canonicalDecision)) return null;
+
   const status = firstApprovalPropertyText(properties, [
     "ORG2_REVIEW_STATUS",
     "REVIEW_STATUS",
@@ -1100,6 +1144,21 @@ function approvalHeadlineProperties(headline: HeadlineNode): Record<string, stri
   return {};
 }
 
+function approvalHeadlineDuplicatePropertyKeys(headline: HeadlineNode): string[] {
+  for (const child of headline.children) {
+    if (child.type !== "PropertyDrawer") continue;
+    const seen = new Set<string>();
+    const duplicates = new Set<string>();
+    for (const property of child.properties) {
+      const key = property.key.toUpperCase();
+      if (seen.has(key)) duplicates.add(key);
+      seen.add(key);
+    }
+    return [...duplicates].sort();
+  }
+  return [];
+}
+
 function isTerminalTodo(todo: string | null | undefined): boolean {
   return todo === "DONE" || todo === "CANCELED" || todo === "CANCELLED";
 }
@@ -1129,6 +1188,139 @@ function approvalBody(sourceLines: string[], sourceRange: SourceRange, children:
   return bodyLines.join("\n").trim();
 }
 
+function legacyHeadlineBodyAt(sourceLines: string[], headlineIndex: number): string {
+  const body: string[] = [];
+  let inProperties = false;
+  for (let index = headlineIndex + 1; index < sourceLines.length; index += 1) {
+    const line = sourceLines[index] || "";
+    if (parseHeadlineLine(line)) break;
+    const trimmed = line.trim();
+    if (trimmed.toUpperCase() === ":PROPERTIES:") {
+      inProperties = true;
+      continue;
+    }
+    if (inProperties) {
+      if (trimmed.toUpperCase() === ":END:") inProperties = false;
+      continue;
+    }
+    if (/^(?:SCHEDULED|DEADLINE|CLOSED):\s*/i.test(trimmed)) continue;
+    body.push(line);
+  }
+  return body.join("\n").trim();
+}
+
+function legacyPairedActionBinding(
+  sourceLines: string[],
+  headline: HeadlineNode,
+  approvalLine: number,
+  approvalTitle: string,
+  properties: Record<string, string>,
+): { pairedAction?: ApprovalQueueItem["pairedAction"]; blockedReason?: string } {
+  const explicitTitles = agendaPairedActionTitleCandidates(properties);
+  const distinctExplicitTitles = new Map<string, string>();
+  for (const title of explicitTitles) {
+    const normalized = normalizeAgendaPropertyValue(title);
+    if (normalized && !distinctExplicitTitles.has(normalized)) distinctExplicitTitles.set(normalized, title);
+  }
+  if (distinctExplicitTitles.size > 1) {
+    return {
+      blockedReason: "The approval declares conflicting paired agent actions. Keep one stable paired-action pointer before approving.",
+    };
+  }
+  if (explicitTitles.length === 0 && headline.level > 1 && /^Approve\b/i.test(approvalTitle)) {
+    for (let index = approvalLine - 2; index >= 0; index -= 1) {
+      const candidate = parseHeadlineLine(sourceLines[index] || "");
+      if (!candidate || candidate.level >= headline.level) continue;
+      if (!isAgendaApprovedAgentActionTitle(candidate.title)) return {};
+      const candidateProperties = extractAgendaPropertiesNearHeadline(sourceLines, index);
+      const terminal = isTerminalTodo(candidate.todo?.toUpperCase());
+      const sent = legacyPairedActionHasSentEvidence(candidateProperties);
+      const duplicateKeys = duplicateAgendaPropertyKeysNearHeadline(sourceLines, index);
+      const blockedReasons = [
+        terminal || sent
+          ? "The paired agent action is already terminal or has send evidence and will not be reopened."
+          : undefined,
+        duplicateKeys.length > 0
+          ? `The paired agent action repeats ${duplicateKeys.join(", ")}. Normalize duplicate properties before approving.`
+          : undefined,
+      ].filter((reason): reason is string => Boolean(reason));
+      return {
+        pairedAction: {
+          mode: "existing",
+          title: candidate.title,
+          todo: candidate.todo?.toUpperCase() || null,
+          properties: candidateProperties,
+          body: legacyHeadlineBodyAt(sourceLines, index),
+          line: index + 1,
+        },
+        ...(blockedReasons.length > 0 ? { blockedReason: blockedReasons.join(" ") } : {}),
+      };
+    }
+  }
+
+  const intendedTitle = explicitTitles[0]
+    || (/^Approve\b/i.test(approvalTitle) ? approvedAgentActionTitle(approvalTitle) : "");
+  if (!intendedTitle) return {};
+  const normalizedTitles = new Set(
+    (explicitTitles.length ? explicitTitles : [intendedTitle]).map(normalizeAgendaPropertyValue),
+  );
+  const matches: Array<{ index: number; parsed: NonNullable<ReturnType<typeof parseHeadlineLine>> }> = [];
+  for (const [index, line] of sourceLines.entries()) {
+    if (index === approvalLine - 1) continue;
+    const parsed = parseHeadlineLine(line || "");
+    if (!parsed || !normalizedTitles.has(normalizeAgendaPropertyValue(parsed.title))) continue;
+    matches.push({ index, parsed });
+  }
+  if (matches.length > 1) {
+    return {
+      blockedReason: "The paired agent action is ambiguous. Give it a unique title or stable pointer before approving.",
+    };
+  }
+  if (matches.length === 0) {
+    return {
+      pairedAction: {
+        mode: "create",
+        title: intendedTitle,
+        todo: "TODO",
+        properties: {},
+        body: "",
+      },
+    };
+  }
+  const match = matches[0]!;
+  const matchProperties = extractAgendaPropertiesNearHeadline(sourceLines, match.index);
+  const terminal = isTerminalTodo(match.parsed.todo?.toUpperCase());
+  const sent = legacyPairedActionHasSentEvidence(matchProperties);
+  const duplicateKeys = duplicateAgendaPropertyKeysNearHeadline(sourceLines, match.index);
+  const blockedReasons = [
+    terminal || sent
+      ? "The paired agent action is already terminal or has send evidence and will not be reopened."
+      : undefined,
+    duplicateKeys.length > 0
+      ? `The paired agent action repeats ${duplicateKeys.join(", ")}. Normalize duplicate properties before approving.`
+      : undefined,
+  ].filter((reason): reason is string => Boolean(reason));
+  return {
+    pairedAction: {
+      mode: "existing",
+      title: match.parsed.title,
+      todo: match.parsed.todo?.toUpperCase() || null,
+      properties: matchProperties,
+      body: legacyHeadlineBodyAt(sourceLines, match.index),
+      line: match.index + 1,
+    },
+    ...(blockedReasons.length > 0 ? { blockedReason: blockedReasons.join(" ") } : {}),
+  };
+}
+
+function legacyPairedActionHasSentEvidence(properties: Record<string, string>): boolean {
+  for (const key of ["SENT_AT", "LAST_SENT_AT", "GMAIL_SENT_MESSAGE_ID", "FOLLOWUP_SENT_AT"]) {
+    if (String(properties[key] || "").trim()) return true;
+  }
+  return ["sent", "bounced", "bounce", "contact-route", "contact-route-needed", "contact-route-missing"]
+    .includes(String(properties.STATUS || "").trim().toLowerCase());
+}
+
 function appendApprovalItemsFromNodes(nodes: Node[], file: string, sourceLines: string[], items: ApprovalQueueItem[]): void {
   for (const node of nodes) {
     if (node.type !== "Headline") continue;
@@ -1150,22 +1342,57 @@ function appendApprovalItemFromHeadline(
   if (!sourceRange) return;
 
   const properties = approvalHeadlineProperties(headline);
+  const duplicatePropertyKeys = Array.from(new Set([
+    ...approvalHeadlineDuplicatePropertyKeys(headline),
+    ...duplicateAgendaPropertyKeysNearHeadline(sourceLines, sourceRange.startLine - 1),
+  ])).sort();
   const title = extractAgendaPriorityFromHeadlineTitle(headlineTitleText(headline)).title;
   const status = approvalStatus(title, properties);
   if (!status) return;
 
+  const idValue = properties.ORG2_APPROVAL_ID || properties.ID || null;
+  const body = approvalBody(sourceLines, sourceRange, headline.children);
+  const pairing = legacyPairedActionBinding(sourceLines, headline, sourceRange.startLine, title, properties);
+  const blockedReasons = [
+    pairing.blockedReason,
+    duplicatePropertyKeys.length > 0
+      ? `The approval property drawer repeats ${duplicatePropertyKeys.join(", ")}. Normalize duplicate properties before approving.`
+      : undefined,
+  ].filter((reason): reason is string => Boolean(reason));
+  const fingerprint = computeLegacyHeadlineApprovalFingerprint({
+    title,
+    body,
+    properties,
+    status,
+    todo,
+    pairedAction: pairing.pairedAction
+      ? {
+        mode: pairing.pairedAction.mode,
+        title: pairing.pairedAction.title,
+        todo: pairing.pairedAction.todo,
+        properties: pairing.pairedAction.properties,
+        body: pairing.pairedAction.body,
+      }
+      : null,
+  });
   items.push({
     kind: "headline",
+    queueId: `headline:${Buffer.from(file).toString("base64url")}:${Buffer.from(idValue || String(sourceRange.startLine)).toString("base64url")}`,
+    fingerprint,
+    binding: "legacy",
+    canApprove: blockedReasons.length === 0,
+    ...(blockedReasons.length > 0 ? { approvalBlockedReason: blockedReasons.join(" ") } : {}),
     title,
     status,
     todo,
     level: headline.level,
     file,
     line: sourceRange.startLine,
-    idValue: properties.ID || null,
+    idValue,
     properties,
-    body: approvalBody(sourceLines, sourceRange, headline.children),
+    body,
     tags: headline.tags ?? [],
+    ...(pairing.pairedAction ? { pairedAction: pairing.pairedAction } : {}),
   });
 }
 
@@ -1183,8 +1410,20 @@ function approvalItemsFromRuns(rootDir: string, runs: AgentRun[]): ApprovalQueue
           : otherDecisionsApproved
             ? "This is the last pending approval; approving it resumes the run."
             : "This is the last pending approval, but another decision was not approved, so the run will remain blocked.";
+      const fingerprint = approval.fingerprint || computeApprovalFingerprint(approval);
+      const reviewability = approvalReviewability(approval);
+      const requirement = approval.requirementId
+        ? run.approvalRequirements?.find((candidate) => candidate.id === approval.requirementId)
+        : undefined;
       return {
         kind: "run" as const,
+        queueId: `run:${run.id}:${approval.id}`,
+        nativeApprovalId: approval.id,
+        fingerprint,
+        ...(approval.material ? { material: approval.material } : {}),
+        binding: "native" as const,
+        canApprove: reviewability.canApprove,
+        ...(reviewability.reason ? { approvalBlockedReason: reviewability.reason } : {}),
         title: approval.title,
         status: approval.status,
         todo: null,
@@ -1200,6 +1439,17 @@ function approvalItemsFromRuns(rootDir: string, runs: AgentRun[]): ApprovalQueue
         riskClass: approval.riskClass,
         ...(approval.requestedRole ? { requestedRole: approval.requestedRole } : {}),
         ...(approval.requestedFrom ? { requestedFrom: approval.requestedFrom } : {}),
+        ...(approval.requirementId ? {
+          requirement: {
+            id: approval.requirementId,
+            title: requirement?.title || approval.title,
+            action: requirement?.action || approval.action,
+            riskClass: requirement?.riskClass || approval.riskClass,
+            ...(requirement?.requestedRole ? { requestedRole: requirement.requestedRole } : {}),
+            ...(requirement?.beforeStepId ? { beforeStepId: requirement.beforeStepId } : {}),
+            state: "pending" as const,
+          },
+        } : {}),
         requestedAt: approval.requestedAt,
         runId: run.id,
         runGoal: run.goal,
@@ -1216,7 +1466,19 @@ function approvalItemsInDocument(document: DocumentNode, file: string, sourceTex
   const sourceLines = sourceText.replace(/\r\n/g, "\n").split("\n");
   const items: ApprovalQueueItem[] = [];
   appendApprovalItemsFromNodes(document.children, file, sourceLines, items);
-  return sortedApprovalItems(items);
+  const identityCounts = new Map<string, number>();
+  for (const item of items) identityCounts.set(item.queueId, (identityCounts.get(item.queueId) || 0) + 1);
+  return sortedApprovalItems(items.map((item) => {
+    if ((identityCounts.get(item.queueId) || 0) < 2) return item;
+    const reason = "This approval identity is duplicated in the file. Give each approval a unique ORG2_APPROVAL_ID before deciding.";
+    return {
+      ...item,
+      canApprove: false,
+      approvalBlockedReason: item.approvalBlockedReason
+        ? `${item.approvalBlockedReason} ${reason}`
+        : reason,
+    };
+  }));
 }
 
 function sortedApprovalItems(items: ApprovalQueueItem[]): ApprovalQueueItem[] {
@@ -1234,6 +1496,134 @@ function sortedApprovalItems(items: ApprovalQueueItem[]): ApprovalQueueItem[] {
     if (fileOrder !== 0) return fileOrder;
     return lhs.line - rhs.line;
   });
+}
+
+function approvalDecisionTimestampProperty(decision: AgentRunApprovalDecision): string {
+  if (decision === "approved") return "APPROVED_AT";
+  if (decision === "rejected") return "REJECTED_AT";
+  if (decision === "revised") return "REVISION_REQUESTED_AT";
+  return "CANCELED_AT";
+}
+
+function approvedAgentActionTitle(approvalTitle: string): string {
+  const clean = approvalTitle.replace(/\s+/g, " ").trim();
+  if (/^approve\s+/i.test(clean)) {
+    const remainder = clean.replace(/^approve\s+/i, "").trim();
+    return remainder ? `Send approved ${remainder}` : "Continue approved task";
+  }
+  return `Continue approved ${clean || "task"}`;
+}
+
+function mutateLegacyHeadlineApproval(
+  raw: string,
+  item: ApprovalQueueItem,
+  decision: AgentRunApprovalDecision,
+  input: { actor: string; note?: string; endStatus?: "done" | "canceled"; now?: Date },
+): string {
+  if (decision === "approved" && !item.canApprove) {
+    throw new Error(item.approvalBlockedReason || "this approval cannot be decided safely");
+  }
+  const newline = raw.includes("\r\n") ? "\r\n" : "\n";
+  const normalized = raw.replace(/\r\n/g, "\n");
+  const now = input.now || new Date();
+  const timestamp = formatOrgTimestamp(now);
+  const todoStatus: TodoStatus = decision === "approved"
+    ? "done"
+    : decision === "revised"
+      ? "todo"
+      : input.endStatus || "canceled";
+  let updated = item.todo
+    ? updateTodoInText(normalized, {
+      filePath: item.file,
+      lineNumber: item.line,
+      status: todoStatus,
+      now,
+    }).text
+    : normalized;
+
+  const lines = updated.split("\n");
+  let approvalIndex = Math.max(0, Math.min(lines.length - 1, item.line - 1));
+  while (approvalIndex >= 0 && !parseHeadlineLine(lines[approvalIndex] || "")) approvalIndex -= 1;
+  if (approvalIndex < 0) throw new Error(`approval heading is no longer present at ${item.file}:${item.line}`);
+  const existingProperties = extractAgendaPropertiesNearHeadline(lines, approvalIndex);
+  const approvalIdentity = existingProperties.ORG2_APPROVAL_ID
+    || existingProperties.ID
+    || crypto.randomUUID();
+  const propertyUpdates: Record<string, string> = {
+    STATUS: decision,
+    ORG2_APPROVAL_DECISION: decision,
+    ORG2_APPROVAL_ID: approvalIdentity,
+    APPROVAL_FINGERPRINT: item.fingerprint,
+    APPROVAL_DECIDED_BY: input.actor,
+    [approvalDecisionTimestampProperty(decision)]: timestamp,
+    ...(input.note?.trim() ? { APPROVAL_DECISION_NOTE: input.note.replace(/\s+/g, " ").trim() } : {}),
+  };
+  for (const key of [
+    "ORG2_REVIEW_STATUS",
+    "REVIEW_STATUS",
+    "REVIEW",
+    "FOLLOWUP_STATUS",
+    "REPLY_STATUS",
+    "ACCESS_POLICY",
+    "REVIEW_POLICY",
+  ]) {
+    if (existingProperties[key] !== undefined) propertyUpdates[key] = decision;
+  }
+  for (const key of [
+    "WAITING_ON",
+    "BLOCKED_BY",
+    "ORG2_WAITING_ON",
+    "NEXT_ACTION",
+    "ACTION_REQUIRED",
+    "ORG2_NEXT_ACTION",
+    "HANDOFF_SUMMARY",
+    "ORG2_HANDOFF_SUMMARY",
+  ]) {
+    if (existingProperties[key] !== undefined) propertyUpdates[key] = "resolved";
+  }
+
+  if (decision === "approved" && item.pairedAction) {
+    propertyUpdates[
+      isAgendaApprovedSendTitle(item.pairedAction.title) ? "PAIRED_SEND_TODO" : "PAIRED_AGENT_TODO"
+    ] = item.pairedAction.title;
+  }
+
+  for (const [key, value] of Object.entries(propertyUpdates)) {
+    upsertHeadlinePropertyInLines(lines, approvalIndex, key, value);
+  }
+
+  if (decision === "approved" && item.pairedAction) {
+    let pairedIndex = -1;
+    if (item.pairedAction.mode === "existing" && item.pairedAction.line) {
+      const normalizedPairedTitle = normalizeAgendaPropertyValue(item.pairedAction.title);
+      const currentMatches = lines.flatMap((line, index) => {
+        const parsed = parseHeadlineLine(line || "");
+        return parsed && normalizeAgendaPropertyValue(parsed.title) === normalizedPairedTitle ? [index] : [];
+      });
+      if (currentMatches.length !== 1) {
+        throw new Error("the paired agent action moved or changed during the approval mutation");
+      }
+      pairedIndex = currentMatches[0]!;
+    } else if (item.pairedAction.mode === "create") {
+      const separator = lines.length > 0 && lines.at(-1)?.trim() ? [""] : [];
+      pairedIndex = lines.length + separator.length;
+      lines.push(
+        ...separator,
+        `* TODO ${item.pairedAction.title}`,
+        ":PROPERTIES:",
+        ":END:",
+      );
+    }
+    if (pairedIndex >= 0) {
+      upsertHeadlinePropertyInLines(lines, pairedIndex, "STATUS", agendaApprovedAgentActionStatus(item.pairedAction.title));
+      upsertHeadlinePropertyInLines(lines, pairedIndex, "ASSIGNEE", "OpenClaw");
+      upsertHeadlinePropertyInLines(lines, pairedIndex, "ORG2_AGENT_HANDOFF_AT", timestamp);
+      upsertHeadlinePropertyInLines(lines, pairedIndex, "APPROVAL_TODO", item.title);
+      upsertHeadlinePropertyInLines(lines, pairedIndex, "APPROVAL_ID", approvalIdentity);
+    }
+  }
+  const output = lines.join("\n");
+  return newline === "\r\n" ? output.replace(/\n/g, "\r\n") : output;
 }
 
 function approvalCandidateSourcesByScanningFiles(files: string[], includeArchives: boolean): { candidates: ApprovalCandidateSource[]; skippedFiles: number } {
@@ -5087,6 +5477,35 @@ function extractAgendaPropertiesNearHeadline(lines: string[], headlineLineIndex:
   return properties;
 }
 
+function duplicateAgendaPropertyKeysNearHeadline(lines: string[], headlineLineIndex: number): string[] {
+  const seen = new Set<string>();
+  const duplicates = new Set<string>();
+  let inProperties = false;
+
+  for (let i = headlineLineIndex + 1; i < lines.length; i += 1) {
+    const line = lines[i] ?? "";
+    if (/^(\*+)\s+/.test(line)) break;
+    const trimmed = line.trim();
+    if (!inProperties) {
+      if (!trimmed || /^(SCHEDULED|DEADLINE|CLOSED):/i.test(trimmed)) continue;
+      if (trimmed.toUpperCase() === ":PROPERTIES:") {
+        inProperties = true;
+        continue;
+      }
+      break;
+    }
+    if (trimmed.toUpperCase() === ":END:") break;
+    const match = /^:([A-Za-z0-9_@#%+.-]+):/.exec(trimmed);
+    if (!match) continue;
+    const key = normalizeAgendaPropertyKey(match[1] ?? "");
+    if (!key) continue;
+    if (seen.has(key)) duplicates.add(key);
+    seen.add(key);
+  }
+
+  return [...duplicates].sort();
+}
+
 function extractAgendaFileProperties(lines: string[]): Record<string, string> {
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i] ?? "";
@@ -5833,29 +6252,46 @@ function formatAgendaTuiPlanningLabel(dateIso: string): string {
 }
 
 function applyAgendaTuiPlanning(item: ScheduledItem, kind: "scheduled" | "deadline", dateIso: string): ScheduledItem {
-  const input = fs.readFileSync(item.filePath, "utf8");
-  const updated = updatePlanningInText(input, {
-    filePath: item.filePath,
-    lineNumber: item.lineNumber + 1,
-    kind: planningKindFromArg(kind),
-    date: dateIso,
+  withFileMutationLock(path.resolve(item.filePath), () => {
+    const input = fs.readFileSync(item.filePath, "utf8");
+    const updated = updatePlanningInText(input, {
+      filePath: item.filePath,
+      lineNumber: item.lineNumber + 1,
+      kind: planningKindFromArg(kind),
+      date: dateIso,
+    });
+    if (updated.text !== input) writeTextAtomicallyIfUnchanged(path.resolve(item.filePath), input, updated.text);
   });
-  fs.writeFileSync(item.filePath, updated.text, "utf8");
   return { ...item, date: dateIso, kind: planningKindFromArg(kind) };
 }
 
+function agendaTuiPendingApproval(item: ScheduledItem, sourceText?: string): ApprovalQueueItem | undefined {
+  const raw = sourceText ?? fs.readFileSync(item.filePath, "utf8");
+  const document = parseOrgToCanonicalAst(raw.replace(/\r\n/g, "\n"), { sourceRanges: true });
+  return approvalItemsInDocument(document, path.resolve(item.filePath), raw)
+    .find((candidate) => candidate.line === item.lineNumber + 1);
+}
+
 function applyAgendaTuiTodo(item: ScheduledItem, status: TodoStatus): ScheduledItem {
-  const input = fs.readFileSync(item.filePath, "utf8");
-  const updated = updateTodoInText(input, {
-    filePath: item.filePath,
-    lineNumber: item.lineNumber + 1,
-    status,
+  withFileMutationLock(path.resolve(item.filePath), () => {
+    const input = fs.readFileSync(item.filePath, "utf8");
+    const approval = agendaTuiPendingApproval(item, input);
+    if (approval && (status === "done" || status === "canceled")) {
+      assertPendingApprovalShortcutAllowed(approval, "close");
+    }
+    const updated = updateTodoInText(input, {
+      filePath: item.filePath,
+      lineNumber: item.lineNumber + 1,
+      status,
+    });
+    if (updated.text !== input) writeTextAtomicallyIfUnchanged(path.resolve(item.filePath), input, updated.text);
   });
-  fs.writeFileSync(item.filePath, updated.text, "utf8");
   return { ...item, todo: status === "in_progress" ? "IN_PROGRESS" : status.toUpperCase() };
 }
 
 function applyAgendaTuiDoneAndAgentHandoff(item: ScheduledItem): ScheduledItem {
+  const approval = agendaTuiPendingApproval(item);
+  assertPendingApprovalShortcutAllowed(approval, "handoff");
   const timestamp = formatOrgTimestamp(new Date());
   const parentSendItem = findAgendaTuiParentSendItem(item);
   const doneItem = applyAgendaTuiTodo(item, "done");
@@ -5900,43 +6336,6 @@ function agendaPairedActionTitleCandidates(properties: Record<string, string>): 
   });
 }
 
-function applyNestedApprovalHandoffInText(text: string, lineNumber: number, timestamp: string): { text: string; changed: boolean } {
-  const lines = text.replace(/\r\n/g, "\n").split("\n");
-  let childIndex = Math.max(0, Math.min(lines.length - 1, lineNumber - 1));
-  while (childIndex >= 0 && !parseHeadlineLine(lines[childIndex] ?? "")) childIndex -= 1;
-  if (childIndex < 0) return { text, changed: false };
-
-  const child = parseHeadlineLine(lines[childIndex] ?? "");
-  if (!child || child.level <= 1 || child.todo !== "DONE" || !isAgendaApprovalTitle(child.title)) {
-    return { text, changed: false };
-  }
-
-  const childProperties = extractAgendaPropertiesNearHeadline(lines, childIndex);
-  const pairedTitles = new Set(agendaPairedActionTitleCandidates(childProperties).map(normalizeAgendaPropertyValue));
-  let parentIndex = -1;
-  let parent: ReturnType<typeof parseHeadlineLine> = null;
-  for (let i = childIndex - 1; i >= 0; i -= 1) {
-    const parsed = parseHeadlineLine(lines[i] ?? "");
-    if (!parsed) continue;
-    if (parsed.level >= child.level) continue;
-    if (pairedTitles.size > 0 && !pairedTitles.has(normalizeAgendaPropertyValue(parsed.title))) return { text, changed: false };
-    if (pairedTitles.size === 0 && !isAgendaApprovedAgentActionTitle(parsed.title)) return { text, changed: false };
-    parentIndex = i;
-    parent = parsed;
-    break;
-  }
-  if (parentIndex < 0 || !parent) return { text, changed: false };
-
-  const approvalId = agendaPrimaryIdFromProperties(childProperties);
-  upsertHeadlinePropertyInLines(lines, childIndex, "STATUS", "approved");
-  upsertHeadlinePropertyInLines(lines, childIndex, isAgendaApprovedSendTitle(parent.title) ? "PAIRED_SEND_TODO" : "PAIRED_AGENT_TODO", parent.title);
-  upsertHeadlinePropertyInLines(lines, parentIndex, "STATUS", agendaApprovedAgentActionStatus(parent.title));
-  upsertHeadlinePropertyInLines(lines, parentIndex, "ASSIGNEE", "OpenClaw");
-  upsertHeadlinePropertyInLines(lines, parentIndex, "ORG2_AGENT_HANDOFF_AT", timestamp);
-  if (approvalId) upsertHeadlinePropertyInLines(lines, parentIndex, "APPROVAL_ID", approvalId);
-  return { text: lines.join("\n"), changed: true };
-}
-
 function findAgendaTuiParentSendItem(item: ScheduledItem): ScheduledItem | null {
   if (item.level <= 1 || !isAgendaApprovalTitle(item.headline)) return null;
   const content = fs.readFileSync(item.filePath, "utf8").replace(/\r\n/g, "\n");
@@ -5970,25 +6369,30 @@ function findAgendaTuiParentSendItem(item: ScheduledItem): ScheduledItem | null 
 }
 
 function applyAgendaTuiPriority(item: ScheduledItem, priority: string | null): ScheduledItem {
-  const lines = fs.readFileSync(item.filePath, "utf8").split(/\r?\n/);
-  const lineIndex = item.lineNumber;
-  const originalLine = lines[lineIndex] ?? "";
-  const parsed = parseHeadlineLine(originalLine);
-  if (!parsed) {
-    throw new Error(`Could not parse headline at ${item.filePath}:${lineIndex + 1}`);
-  }
-
-  const starsMatch = /^(\*+)\s+/.exec(originalLine);
-  if (!starsMatch) {
-    throw new Error(`Could not locate headline stars at ${item.filePath}:${lineIndex + 1}`);
-  }
-
   const nextPriority = normalizeAgendaPriorityToken(priority ?? "");
-  const todoPrefix = parsed.todo ? `${parsed.todo} ` : "";
-  const priorityPrefix = nextPriority ? `[#${nextPriority}] ` : "";
-  const tagsSuffix = parsed.tags.length > 0 ? ` :${parsed.tags.join(":")}:` : "";
-  lines[lineIndex] = `${starsMatch[1]} ${todoPrefix}${priorityPrefix}${parsed.title}${tagsSuffix}`;
-  fs.writeFileSync(item.filePath, lines.join("\n"), "utf8");
+  withFileMutationLock(path.resolve(item.filePath), () => {
+    const input = fs.readFileSync(item.filePath, "utf8");
+    const newline = input.includes("\r\n") ? "\r\n" : "\n";
+    const lines = input.replace(/\r\n/g, "\n").split("\n");
+    const lineIndex = item.lineNumber;
+    const originalLine = lines[lineIndex] ?? "";
+    const parsed = parseHeadlineLine(originalLine);
+    if (!parsed) {
+      throw new Error(`Could not parse headline at ${item.filePath}:${lineIndex + 1}`);
+    }
+
+    const starsMatch = /^(\*+)\s+/.exec(originalLine);
+    if (!starsMatch) {
+      throw new Error(`Could not locate headline stars at ${item.filePath}:${lineIndex + 1}`);
+    }
+
+    const todoPrefix = parsed.todo ? `${parsed.todo} ` : "";
+    const priorityPrefix = nextPriority ? `[#${nextPriority}] ` : "";
+    const tagsSuffix = parsed.tags.length > 0 ? ` :${parsed.tags.join(":")}:` : "";
+    lines[lineIndex] = `${starsMatch[1]} ${todoPrefix}${priorityPrefix}${parsed.title}${tagsSuffix}`;
+    const output = lines.join(newline);
+    if (output !== input) writeTextAtomicallyIfUnchanged(path.resolve(item.filePath), input, output);
+  });
   return { ...item, priority: nextPriority ?? undefined };
 }
 
@@ -6004,14 +6408,21 @@ function parseAgendaTuiPropertyAssignment(raw: string): { key: string; value: st
 }
 
 function applyAgendaTuiProperty(item: ScheduledItem, key: string, value: string): ScheduledItem {
-  const lines = fs.readFileSync(item.filePath, "utf8").replace(/\r\n/g, "\n").split("\n");
-  const headingIndex = item.lineNumber;
-  if (!isHeadlineLine(lines[headingIndex] ?? "")) {
-    throw new Error(`Could not locate headline at ${item.filePath}:${headingIndex + 1}`);
-  }
+  withFileMutationLock(path.resolve(item.filePath), () => {
+    const input = fs.readFileSync(item.filePath, "utf8");
+    const approval = agendaTuiPendingApproval(item, input);
+    assertPendingApprovalShortcutAllowed(approval, "property");
+    const newline = input.includes("\r\n") ? "\r\n" : "\n";
+    const lines = input.replace(/\r\n/g, "\n").split("\n");
+    const headingIndex = item.lineNumber;
+    if (!isHeadlineLine(lines[headingIndex] ?? "")) {
+      throw new Error(`Could not locate headline at ${item.filePath}:${headingIndex + 1}`);
+    }
 
-  upsertHeadlinePropertyInLines(lines, headingIndex, key, value);
-  fs.writeFileSync(item.filePath, lines.join("\n"), "utf8");
+    upsertHeadlinePropertyInLines(lines, headingIndex, key, value);
+    const output = lines.join(newline);
+    if (output !== input) writeTextAtomicallyIfUnchanged(path.resolve(item.filePath), input, output);
+  });
   return { ...item, properties: { ...item.properties, [key]: value } };
 }
 
@@ -6055,14 +6466,16 @@ function appendAgendaTuiTodoToDailyNote(dailyNotePath: string, title: string): v
   fs.mkdirSync(path.dirname(dailyNotePath), { recursive: true });
   const scheduled = formatAgendaTuiDateTimestamp(getTodayString());
   const entry = `* TODO ${title}\nSCHEDULED: ${scheduled}\n`;
-  if (!fs.existsSync(dailyNotePath)) {
-    fs.writeFileSync(dailyNotePath, entry, "utf8");
-    return;
-  }
+  withFileMutationLock(dailyNotePath, () => {
+    if (!fs.existsSync(dailyNotePath)) {
+      fs.writeFileSync(dailyNotePath, entry, { encoding: "utf8", flag: "wx" });
+      return;
+    }
 
-  const existing = fs.readFileSync(dailyNotePath, "utf8");
-  const prefix = existing.length === 0 || existing.endsWith("\n") ? existing : `${existing}\n`;
-  fs.writeFileSync(dailyNotePath, `${prefix}${entry}`, "utf8");
+    const existing = fs.readFileSync(dailyNotePath, "utf8");
+    const prefix = existing.length === 0 || existing.endsWith("\n") ? existing : `${existing}\n`;
+    writeTextAtomicallyIfUnchanged(dailyNotePath, existing, `${prefix}${entry}`);
+  });
 }
 
 async function runAgendaTui(options: {
@@ -8422,6 +8835,15 @@ async function main(): Promise<void> {
 
   // Approval queue
   let approvalsFormat: "text" | "json" = "text";
+  let approvalCommandAction: "decide" = "decide";
+  let approvalQueueId = "";
+  let approvalDecision = "";
+  let approvalActor = "";
+  let approvalActorRole = "";
+  let approvalDecisionNote = "";
+  let approvalExpectedFingerprint = "";
+  let approvalEndStatus = "";
+  let approvalApply = false;
 
   // Rebuildable local indexes
   let indexFormat: "text" | "json" = "text";
@@ -8609,6 +9031,17 @@ async function main(): Promise<void> {
     } else if (arg === "approvals") {
       command = "approvals";
       i++;
+    } else if (arg === "approval") {
+      command = "approval";
+      i++;
+      if (i < args.length && args[i] === "decide") {
+        approvalCommandAction = "decide";
+        i++;
+      }
+      if (i < args.length && !args[i]!.startsWith("--")) {
+        approvalQueueId = args[i]!;
+        i++;
+      }
     } else if (arg === "index") {
       command = "index";
       i++;
@@ -8851,6 +9284,42 @@ async function main(): Promise<void> {
         } else {
           todoStatus = parseTodoStatusArg(args[i] ?? "");
         }
+        i++;
+      }
+    } else if (arg === "--decision") {
+      i++;
+      if (i < args.length) {
+        if (command === "approval") approvalDecision = args[i]!;
+        i++;
+      }
+    } else if (arg === "--actor") {
+      i++;
+      if (i < args.length) {
+        if (command === "approval" || (command === "todo" && todoAction === "approve")) approvalActor = args[i]!;
+        i++;
+      }
+    } else if (arg === "--role") {
+      i++;
+      if (i < args.length) {
+        if (command === "approval") approvalActorRole = args[i]!;
+        i++;
+      }
+    } else if (arg === "--note") {
+      i++;
+      if (i < args.length) {
+        if (command === "approval") approvalDecisionNote = args[i]!;
+        i++;
+      }
+    } else if (arg === "--expected-fingerprint") {
+      i++;
+      if (i < args.length) {
+        if (command === "approval" || (command === "todo" && todoAction === "approve")) approvalExpectedFingerprint = args[i]!;
+        i++;
+      }
+    } else if (arg === "--end-status") {
+      i++;
+      if (i < args.length) {
+        if (command === "approval") approvalEndStatus = args[i]!;
         i++;
       }
     } else if (arg === "--assignee") {
@@ -9974,6 +10443,8 @@ async function main(): Promise<void> {
     } else if (arg === "--apply" || arg === "--in-place") {
       if (command === "todo") {
         todoApply = true;
+      } else if (command === "approval") {
+        approvalApply = true;
       } else if (command === "capture") {
         captureApply = true;
       } else if (command === "plan") {
@@ -10039,7 +10510,7 @@ Usage:
 Core commands:
   org2 corpus <show|validate|init> [--dir CORPUS] [--id ID --name NAME --kind KIND] [--apply]
   org2 workspace <agenda|search> [QUERY] --mount CORPUS [--mount CORPUS ...] [--json]
-  org2 run <create|list|show|validate|start|resume|retry|cancel|complete|complete-external|fail|block|fork|normalize|assign|comment|outcome|runtime|step|artifact|artifact-review|validation|approval-request|approval-decide> [options]
+  org2 run <create|list|show|validate|start|resume|retry|cancel|complete|complete-external|fail|block|fork|normalize|assign|comment|outcome|runtime|step|artifact|artifact-review|validation|approval-request|approval-decide|approval-effect-reserve|approval-effect|approval-effect-release> [options]
   org2 review <list|show> [options]
   org2 workflow <list|show|validate|save|run|triggers|package|corpus-template|install-builtin> [options]
   org2 artifact <graph|rebuild> --manifest FILE [--apply]
@@ -10047,8 +10518,9 @@ Core commands:
   org2 mcp <serve|clients|client-add|discover|snapshot> [options]
   org2 eval <run|fixture> RUN [options]
   org2 agenda --dir DIR [--recursive] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--tui]
-  org2 todo <set|toggle|assign|approve> --file FILE (--line N | --pos LINE[:COL]) [--apply]
+  org2 todo <set|toggle|assign|approve> --file FILE (--line N | --pos LINE[:COL]) [--actor NAME] [--expected-fingerprint SHA256] [--apply]
   org2 approvals --dir DIR [--recursive] [--include-archives] [--index auto|never|rebuild] [--format text|json]
+  org2 approval decide QUEUE_ID --decision approved|rejected|revised|canceled --actor NAME --expected-fingerprint SHA256 --dir DIR [--apply]
   org2 plan <set|today> --file FILE (--line N | --pos LINE[:COL]) [--apply]
   org2 crypt <encrypt|decrypt|reencrypt> --file FILE (--line N | --pos LINE[:COL]) [--passphrase PASS] [--recipient USER]... [--recipient-file FILE]... [--default-recipient-self] [--gpg-program PATH] [--gpg-timeout SECONDS] [--apply]
   org2 capture --file FILE --title TITLE [--template note|task] [--apply]
@@ -10158,7 +10630,7 @@ Flags:
     text = `org2 todo ${options.todoAction}
 
 Usage:
-  org2 todo <set|toggle|assign|approve> --file FILE (--line N | --pos LINE[:COL]) [--apply]
+  org2 todo <set|toggle|assign|approve> --file FILE (--line N | --pos LINE[:COL]) [--actor NAME] [--expected-fingerprint SHA256] [--apply]
 
 Flags:
   --file FILE         Target file
@@ -10166,6 +10638,9 @@ Flags:
   --pos LINE[:COL]    Heading position
   --to TODO           Target TODO keyword for 'set'
   --assignee NAME     Assignee for 'assign'
+  --actor NAME        Required reviewer identity for 'approve'
+  --expected-fingerprint SHA256
+                      Required reviewed fingerprint for 'approve'
   --now ISO           Override approval / closed timestamp
   --apply             Write changes instead of previewing`;
   } else if (command === "approvals") {
@@ -10180,6 +10655,21 @@ Flags:
   --include-archives  Include archive files/directories
   --index MODE        auto (default), never, or rebuild. Auto uses a fresh search index or rebuilds it.
   --format text|json  Output format`;
+  } else if (command === "approval") {
+    text = `org2 approval decide
+
+Usage:
+  org2 approval decide QUEUE_ID --decision approved|rejected|revised|canceled --actor NAME --expected-fingerprint SHA256 --dir DIR [--role ROLE] [--note TEXT] [--end-status done|canceled] [--apply]
+
+The queue ID and fingerprint come from \`org2 approvals --format json\`.
+Run approvals update their canonical run record. Headline approvals use a
+compare-and-swap rewrite of the cited Org file. Omit --apply to preview a
+decision for either binding; pass --apply to write it.
+
+Binding-specific flags:
+  --role ROLE                  Native run approvals only
+  --end-status done|canceled   Legacy headline approvals only
+  --note TEXT                  Both bindings`;
   } else if (command === "plan") {
     text = `org2 plan ${options.planAction}
 
@@ -10681,7 +11171,7 @@ Flags:
     printGeneralUsage(0);
   }
 
-  if (command !== "agenda" && command !== "archive" && command !== "refile" && command !== "export" && command !== "publish" && command !== "todo" && command !== "capture" && command !== "plan" && command !== "crypt" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "approvals" && command !== "index" && command !== "search" && command !== "query" && command !== "clock" && command !== "compile" && command !== "render-chart" && command !== "query-data" && command !== "entity" && command !== "agent" && command !== "context" && command !== "brief" && command !== "lint" && command !== "graph" && command !== "ai" && command !== "roam") {
+  if (command !== "agenda" && command !== "archive" && command !== "refile" && command !== "export" && command !== "publish" && command !== "todo" && command !== "capture" && command !== "plan" && command !== "crypt" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "approvals" && command !== "approval" && command !== "index" && command !== "search" && command !== "query" && command !== "clock" && command !== "compile" && command !== "render-chart" && command !== "query-data" && command !== "entity" && command !== "agent" && command !== "context" && command !== "brief" && command !== "lint" && command !== "graph" && command !== "ai" && command !== "roam") {
     printGeneralUsage(1);
   }
 
@@ -10762,9 +11252,10 @@ Flags:
       process.exit(1);
     }
 
-    const input = dataQueryStdin
-      ? fs.readFileSync(0, "utf8").replace(/\r\n/g, "\n")
-      : fs.readFileSync(path.resolve(dataQueryFile), "utf8").replace(/\r\n/g, "\n");
+    const inputRaw = dataQueryStdin
+      ? fs.readFileSync(0, "utf8")
+      : fs.readFileSync(path.resolve(dataQueryFile), "utf8");
+    const input = inputRaw.replace(/\r\n/g, "\n");
     const result = await runOrg2DataQuery(input, {
       ...(dataQueryFile ? { file: dataQueryFile } : {}),
       ...(dataQueryResultId ? { resultId: dataQueryResultId } : {}),
@@ -10780,7 +11271,11 @@ Flags:
     if (result.ok && dataQueryApply) {
       const sourcePath = path.resolve(dataQueryFile);
       const applied = applyDataQueryResult(input, result);
-      if (applied.changed) fs.writeFileSync(sourcePath, applied.text, "utf8");
+      if (applied.changed) {
+        withFileMutationLock(sourcePath, () => {
+          writeTextAtomicallyIfUnchanged(sourcePath, inputRaw, applied.text);
+        });
+      }
       if (outputIsJson) {
         process.stdout.write(JSON.stringify({ ...result, applied: true, changed: applied.changed, file: sourcePath }, null, 2) + "\n");
       } else {
@@ -10895,7 +11390,8 @@ Flags:
       if (dir) reviewFiles = listOrgLikeFiles(dir, recursive, includeArchives);
       if (aiPromoteFile && aiReviewStatus) {
         const reviewPath = path.resolve(aiPromoteFile);
-        const raw = fs.readFileSync(reviewPath, "utf8").replace(/\r\n/g, "\n");
+        const reviewRaw = fs.readFileSync(reviewPath, "utf8");
+        const raw = reviewRaw.replace(/\r\n/g, "\n");
         const updated = updateArtifactReviewStatusInText(raw, aiReviewStatus);
         if (!aiApply) {
           if (aiFormat === "json") {
@@ -10905,7 +11401,9 @@ Flags:
           }
           return;
         }
-        fs.writeFileSync(reviewPath, updated, "utf8");
+        withFileMutationLock(reviewPath, () => {
+          writeTextAtomicallyIfUnchanged(reviewPath, reviewRaw, updated);
+        });
         if (aiFormat === "json") {
           console.log(JSON.stringify({ $schema: "org2:ai-review:v1", file: aiPromoteFile, applied: true, status: aiReviewStatus }, null, 2));
         } else {
@@ -10946,7 +11444,8 @@ Flags:
 
       const draftPath = path.resolve(aiPromoteFile);
       const toPath = path.resolve(aiPromoteToFile);
-      const draftText = fs.readFileSync(draftPath, "utf8").replace(/\r\n/g, "\n");
+      const draftRaw = fs.readFileSync(draftPath, "utf8");
+      const draftText = draftRaw.replace(/\r\n/g, "\n");
       if (!hasReviewedArtifactStatus(draftText)) {
         const message = "generated artifact must have ORG2_REVIEW_STATUS reviewed before promotion";
         if (aiFormat === "json") {
@@ -10967,10 +11466,28 @@ Flags:
         return;
       }
 
-      const existing = fs.existsSync(toPath) ? fs.readFileSync(toPath, "utf8").replace(/\r\n/g, "\n").trimEnd() : "";
+      const targetExists = fs.existsSync(toPath);
+      const targetRaw = targetExists ? fs.readFileSync(toPath, "utf8") : "";
+      const existing = targetRaw.replace(/\r\n/g, "\n").trimEnd();
+      const promotedTarget = `${existing}${existing ? "\n\n" : ""}${promotedBody.trimEnd()}\n`;
+      const promotedDraft = markArtifactPromoted(draftText);
       fs.mkdirSync(path.dirname(toPath), { recursive: true });
-      fs.writeFileSync(toPath, `${existing}${existing ? "\n\n" : ""}${promotedBody.trimEnd()}\n`, "utf8");
-      fs.writeFileSync(draftPath, markArtifactPromoted(draftText), "utf8");
+      withFileMutationLocks([draftPath, toPath], () => {
+        if (fs.readFileSync(draftPath, "utf8") !== draftRaw) {
+          throw new Error(`concurrent modification detected for ${draftPath}; refresh and retry`);
+        }
+        if (targetExists) {
+          if (!fs.existsSync(toPath) || fs.readFileSync(toPath, "utf8") !== targetRaw) {
+            throw new Error(`concurrent modification detected for ${toPath}; refresh and retry`);
+          }
+        } else if (fs.existsSync(toPath)) {
+          throw new Error(`concurrent modification detected for ${toPath}; refresh and retry`);
+        }
+
+        if (targetExists) writeTextAtomicallyIfUnchanged(toPath, targetRaw, promotedTarget);
+        else fs.writeFileSync(toPath, promotedTarget, { encoding: "utf8", flag: "wx" });
+        writeTextAtomicallyIfUnchanged(draftPath, draftRaw, promotedDraft);
+      });
       if (aiFormat === "json") {
         console.log(JSON.stringify({ $schema: "org2:ai-promote:v1", source: aiPromoteFile, target: aiPromoteToFile, applied: true }, null, 2));
       } else {
@@ -11174,8 +11691,10 @@ Flags:
         process.exit(1);
       }
 
-      if (roamApply) {
-        fs.writeFileSync(roamLinkFile, outText, "utf8");
+      if (roamApply && changed) {
+        withFileMutationLock(path.resolve(roamLinkFile), () => {
+          writeTextAtomicallyIfUnchanged(path.resolve(roamLinkFile), raw, outText);
+        });
       }
 
       if (roamFormat === "json") {
@@ -11242,7 +11761,12 @@ Flags:
           }
         } else {
           fs.mkdirSync(dir, { recursive: true });
-          fs.writeFileSync(filePath, content, "utf8");
+          withFileMutationLock(filePath, () => {
+            if (fs.existsSync(filePath)) {
+              throw new Error(`concurrent modification detected for ${filePath}; refresh and retry`);
+            }
+            fs.writeFileSync(filePath, content, { encoding: "utf8", flag: "wx" });
+          });
         }
       } else {
         console.error("Error: org2 roam node new is mutating; pass --apply to write the file");
@@ -11300,7 +11824,9 @@ Flags:
         if (!result.changed) continue;
 
         if (roamApply) {
-          fs.writeFileSync(filePath, result.outText, "utf8");
+          withFileMutationLock(path.resolve(filePath), () => {
+            writeTextAtomicallyIfUnchanged(path.resolve(filePath), raw, result.outText);
+          });
           appliedCount += 1;
         }
       }
@@ -11449,14 +11975,17 @@ Flags:
     if (roamApply) {
       for (const filePath of missing) {
         try {
-          const raw = fs.readFileSync(filePath, "utf8").replace(/\r\n/g, "\n");
+          const original = fs.readFileSync(filePath, "utf8");
+          const raw = original.replace(/\r\n/g, "\n");
           // Double-check before mutating.
           if (hasFileId(raw)) continue;
 
           const newId = crypto.randomUUID();
           const header = `:PROPERTIES:\n:ID: ${newId}\n:END:\n\n`;
           const out = header + raw.replace(/^\n+/, "");
-          fs.writeFileSync(filePath, out, "utf8");
+          withFileMutationLock(path.resolve(filePath), () => {
+            writeTextAtomicallyIfUnchanged(path.resolve(filePath), original, out);
+          });
           applied += 1;
         } catch {
           // ignore write errors
@@ -12240,7 +12769,8 @@ Flags:
 
     const sourcePathInput = exportFile;
     const sourcePath = path.resolve(sourcePathInput);
-    const sourceRaw = fs.readFileSync(sourcePath, "utf8").replace(/\r\n/g, "\n");
+    const sourceFileRaw = fs.readFileSync(sourcePath, "utf8");
+    const sourceRaw = sourceFileRaw.replace(/\r\n/g, "\n");
     const sourceAst = parseOrgToCanonicalAst(sourceRaw, { sourceRanges: true });
     const sourceCharts = embeddedChartsForSource(sourceRaw, sourcePath);
     const rendered = renderOrgDocumentToHtml(sourceAst, {
@@ -12416,9 +12946,9 @@ Flags:
         ? `${headingLine}\n${propertyDrawer}CAPTURED: ${capturedAt}\n\n${normalizedBody}\n`
         : `${headingLine}\n${propertyDrawer}CAPTURED: ${capturedAt}\n`;
 
-    const beforeText = fs.existsSync(targetFile)
-      ? fs.readFileSync(targetFile, "utf8").replace(/\r\n/g, "\n")
-      : "";
+    const targetExisted = fs.existsSync(targetFile);
+    const beforeFileText = targetExisted ? fs.readFileSync(targetFile, "utf8") : "";
+    const beforeText = beforeFileText.replace(/\r\n/g, "\n");
     const beforeTrimmed = beforeText.trimEnd();
     const outText =
       beforeTrimmed.length > 0
@@ -12430,7 +12960,16 @@ Flags:
 
     if (captureApply && changed) {
       fs.mkdirSync(path.dirname(targetFile), { recursive: true });
-      fs.writeFileSync(targetFile, outText, "utf8");
+      if (targetExisted) {
+        withFileMutationLock(targetFile, () => {
+          writeTextAtomicallyIfUnchanged(targetFile, beforeFileText, outText);
+        });
+      } else {
+        withFileMutationLock(targetFile, () => {
+          if (fs.existsSync(targetFile)) throw new Error(`concurrent modification detected for ${targetFile}; refresh and retry`);
+          fs.writeFileSync(targetFile, outText, { encoding: "utf8", flag: "wx" });
+        });
+      }
     }
 
     const unifiedDiff = (before: string, after: string): string => {
@@ -12641,7 +13180,9 @@ Flags:
 
         // ensure
         if (headlineRes.changed && idApply) {
-          fs.writeFileSync(idFile, headlineRes.outText, "utf8");
+          withFileMutationLock(idFile, () => {
+            writeTextAtomicallyIfUnchanged(idFile, raw, headlineRes.outText);
+          });
         }
 
         if (idFormat === "json") {
@@ -12769,7 +13310,9 @@ Flags:
     const out = outLines.join("\n");
 
     if (idApply) {
-      fs.writeFileSync(idFile, out, "utf8");
+      withFileMutationLock(idFile, () => {
+        writeTextAtomicallyIfUnchanged(idFile, raw, out);
+      });
     }
 
     if (idFormat === "json") {
@@ -12871,6 +13414,127 @@ Flags:
     if (result.skippedFiles > 0) {
       process.stderr.write(`Skipped ${result.skippedFiles} file${result.skippedFiles === 1 ? "" : "s"}.\n`);
     }
+    return;
+  }
+
+  if (command === "approval") {
+    if (approvalCommandAction !== "decide") {
+      console.error(`Error: unknown approval action ${approvalCommandAction}`);
+      process.exit(1);
+    }
+    if (!approvalQueueId) {
+      console.error("Error: approval decide requires QUEUE_ID");
+      process.exit(1);
+    }
+    if (!["approved", "rejected", "revised", "canceled"].includes(approvalDecision)) {
+      console.error("Error: --decision must be approved, rejected, revised, or canceled");
+      process.exit(1);
+    }
+    if (!approvalActor.trim()) {
+      console.error("Error: --actor is required");
+      process.exit(1);
+    }
+    if (!approvalExpectedFingerprint) {
+      console.error("Error: --expected-fingerprint is required");
+      process.exit(1);
+    }
+    if (approvalEndStatus && approvalEndStatus !== "done" && approvalEndStatus !== "canceled") {
+      console.error("Error: --end-status must be done or canceled");
+      process.exit(1);
+    }
+    const decision = approvalDecision as AgentRunApprovalDecision;
+    const rootDir = path.resolve(dir || process.cwd());
+    const runMatch = /^run:([^:]+):([^:]+)$/.exec(approvalQueueId);
+    if (runMatch) {
+      if (approvalEndStatus) {
+        throw new Error("--end-status applies only to legacy headline approvals");
+      }
+      let fingerprint = "";
+      const decide = (run: AgentRun): AgentRun => {
+        const approval = run.approvals.find((candidate) => candidate.id === runMatch[2]);
+        if (!approval) throw new Error(`approval not found: ${runMatch[2]}`);
+        fingerprint = approval.fingerprint || computeApprovalFingerprint(approval);
+        if (approvalExpectedFingerprint !== fingerprint) {
+          throw new Error(`stale approval review: expected fingerprint ${fingerprint}, received ${approvalExpectedFingerprint}`);
+        }
+        return decideAgentRunApproval(run, approval.id, decision, {
+          actor: approvalActor,
+          actorRole: approvalActorRole || undefined,
+          expectedFingerprint: approvalExpectedFingerprint,
+          note: approvalDecisionNote || undefined,
+        });
+      };
+      const updated = approvalApply
+        ? mutateAgentRun(rootDir, runMatch[1]!, decide)
+        : decide(loadAgentRun(rootDir, runMatch[1]!));
+      process.stdout.write(`${JSON.stringify({
+        schema: "org2:approval-decision:v1",
+        queueId: approvalQueueId,
+        binding: "native",
+        fingerprint,
+        decision,
+        applied: approvalApply,
+        run: updated,
+      }, null, 2)}\n`);
+      return;
+    }
+
+    const headlineMatch = /^headline:([^:]+):([^:]+)$/.exec(approvalQueueId);
+    if (!headlineMatch) throw new Error(`invalid approval queue id: ${approvalQueueId}`);
+    if (approvalActorRole) {
+      throw new Error("--role applies only to native run approvals");
+    }
+    const file = Buffer.from(headlineMatch[1]!, "base64url").toString("utf8");
+    const resolvedFile = path.resolve(file);
+    const relative = path.relative(rootDir, resolvedFile);
+    if (path.isAbsolute(relative) || relative.startsWith(`..${path.sep}`) || relative === "..") {
+      throw new Error("headline approval is outside the selected corpus");
+    }
+    const decideHeadline = (raw: string): { item: ApprovalQueueItem; updated: string } => {
+      const document = parseOrgToCanonicalAst(raw.replace(/\r\n/g, "\n"), { sourceRanges: true });
+      const matches = approvalItemsInDocument(document, resolvedFile, raw)
+        .filter((candidate) => candidate.queueId === approvalQueueId);
+      if (matches.length === 0) throw new Error("headline approval is no longer pending at the reviewed identity");
+      if (matches.length > 1) throw new Error("headline approval identity is duplicated; normalize unique ORG2_APPROVAL_ID values before deciding");
+      const item = matches[0]!;
+      if (item.fingerprint !== approvalExpectedFingerprint) {
+        throw new Error(`stale approval review: expected fingerprint ${item.fingerprint}, received ${approvalExpectedFingerprint}`);
+      }
+      const updated = mutateLegacyHeadlineApproval(raw, item, decision, {
+        actor: approvalActor,
+        note: approvalDecisionNote || undefined,
+        endStatus: approvalEndStatus ? approvalEndStatus as "done" | "canceled" : undefined,
+      });
+      return { item, updated };
+    };
+    let raw = "";
+    let headlineDecision: ReturnType<typeof decideHeadline>;
+    if (approvalApply) {
+      headlineDecision = withFileMutationLock(resolvedFile, () => {
+        raw = fs.readFileSync(resolvedFile, "utf8");
+        const result = decideHeadline(raw);
+        if (result.updated !== raw) {
+          writeTextAtomicallyIfUnchanged(resolvedFile, raw, result.updated);
+        }
+        return result;
+      });
+    } else {
+      raw = fs.readFileSync(resolvedFile, "utf8");
+      headlineDecision = decideHeadline(raw);
+    }
+    const { item, updated } = headlineDecision;
+    process.stdout.write(`${JSON.stringify({
+      schema: "org2:approval-decision:v1",
+      queueId: approvalQueueId,
+      binding: "legacy",
+      fingerprint: item.fingerprint,
+      decision,
+      applied: approvalApply,
+      changed: updated !== raw,
+      file: resolvedFile,
+      line: item.line,
+      ...(!approvalApply ? { text: updated } : {}),
+    }, null, 2)}\n`);
     return;
   }
 
@@ -13958,7 +14622,73 @@ Flags:
       }
     }
 
-    const beforeRaw = fs.readFileSync(todoFile, "utf8").replace(/\r\n/g, "\n");
+    const beforeFileRaw = fs.readFileSync(todoFile, "utf8");
+    const beforeRaw = beforeFileRaw.replace(/\r\n/g, "\n");
+    let selectedApproval: ApprovalQueueItem | undefined;
+    if (
+      todoAction === "approve"
+      || todoAction === "toggle"
+      || (todoAction === "set" && (todoStatus === "done" || todoStatus === "canceled"))
+    ) {
+      const selectedHeadingLine = findHeadingAtOrAbove(beforeRaw.split("\n"), todoLine) + 1;
+      selectedApproval = approvalItemsInDocument(
+        parseOrgToCanonicalAst(beforeRaw, { sourceRanges: true }),
+        path.resolve(todoFile),
+        beforeFileRaw,
+      ).find((item) => item.line === selectedHeadingLine);
+    }
+
+    if (todoAction === "approve") {
+      if (!selectedApproval) throw new Error("todo approve requires a pending approval heading");
+      if (!approvalActor.trim()) throw new Error("todo approve requires --actor NAME");
+      if (!approvalExpectedFingerprint) throw new Error("todo approve requires --expected-fingerprint SHA256");
+      const decideSelected = (raw: string): { item: ApprovalQueueItem; updated: string } => {
+        const normalized = raw.replace(/\r\n/g, "\n");
+        const item = approvalItemsInDocument(
+          parseOrgToCanonicalAst(normalized, { sourceRanges: true }),
+          path.resolve(todoFile),
+          raw,
+        ).filter((candidate) => candidate.queueId === selectedApproval.queueId);
+        if (item.length === 0) throw new Error("the approval is no longer pending at the reviewed identity");
+        if (item.length > 1) throw new Error("the approval identity is duplicated; normalize unique ORG2_APPROVAL_ID values before deciding");
+        const currentItem = item[0]!;
+        if (currentItem.fingerprint !== approvalExpectedFingerprint) {
+          throw new Error(`stale approval review: expected fingerprint ${currentItem.fingerprint}, received ${approvalExpectedFingerprint}`);
+        }
+        return {
+          item: currentItem,
+          updated: mutateLegacyHeadlineApproval(raw, currentItem, "approved", {
+            actor: approvalActor,
+            now: nowDate,
+          }),
+        };
+      };
+      let currentRaw = beforeFileRaw;
+      let result: ReturnType<typeof decideSelected>;
+      if (todoApply) {
+        result = withFileMutationLock(path.resolve(todoFile), () => {
+          currentRaw = fs.readFileSync(todoFile, "utf8");
+          const current = decideSelected(currentRaw);
+          if (current.updated !== currentRaw) {
+            writeTextAtomicallyIfUnchanged(path.resolve(todoFile), currentRaw, current.updated);
+          }
+          return current;
+        });
+      } else {
+        result = decideSelected(currentRaw);
+      }
+      process.stdout.write(`${JSON.stringify({
+        file: path.resolve(todoFile),
+        headingLine: result.item.line,
+        oldStatus: String(result.item.todo || "").toLowerCase(),
+        newStatus: "done",
+        fingerprint: result.item.fingerprint,
+        applied: todoApply,
+        changed: result.updated !== currentRaw,
+        ...(!todoApply && todoFormat === "text" ? { text: result.updated } : {}),
+      }, null, 2)}\n`);
+      return;
+    }
 
     let res = todoAction === "assign"
       ? assignTodoInText(beforeRaw, {
@@ -13974,15 +14704,21 @@ Flags:
           ...(todoLogbookEffective ? { logbook: true } : {}),
         });
 
-    if (todoAction !== "assign" && "newStatus" in res && res.newStatus === "done") {
-      const handoff = applyNestedApprovalHandoffInText(res.text, res.headingLineNumber, formatOrgTimestamp(nowDate || new Date()));
-      if (handoff.changed) {
-        res = { ...res, changed: true, text: handoff.text };
-      }
+    if (
+      selectedApproval
+      && todoAction !== "assign"
+      && "newStatus" in res
+      && (res.newStatus === "done" || res.newStatus === "canceled")
+    ) {
+      throw new Error(
+        `approval headings cannot be closed with todo ${todoAction}; use org2 approval decide ${selectedApproval.queueId} --expected-fingerprint ${selectedApproval.fingerprint}`,
+      );
     }
 
-    if (todoApply) {
-      fs.writeFileSync(todoFile, res.text, "utf8");
+    if (todoApply && res.changed) {
+      withFileMutationLock(path.resolve(todoFile), () => {
+        writeTextAtomicallyIfUnchanged(path.resolve(todoFile), beforeFileRaw, res.text);
+      });
     }
 
     if (todoFormat === "diff") {
@@ -14064,7 +14800,8 @@ Flags:
       process.exit(1);
     }
 
-    const beforeRaw = fs.readFileSync(planFile, "utf8").replace(/\r\n/g, "\n");
+    const beforeFileRaw = fs.readFileSync(planFile, "utf8");
+    const beforeRaw = beforeFileRaw.replace(/\r\n/g, "\n");
 
     const res = updatePlanningInText(beforeRaw, {
       filePath: planFile,
@@ -14073,8 +14810,10 @@ Flags:
       date: planDate,
     });
 
-    if (planApply) {
-      fs.writeFileSync(planFile, res.text, "utf8");
+    if (planApply && res.changed) {
+      withFileMutationLock(planFile, () => {
+        writeTextAtomicallyIfUnchanged(planFile, beforeFileRaw, res.text);
+      });
     }
 
     if (planFormat === "diff") {
@@ -14138,7 +14877,8 @@ Flags:
       process.exit(1);
     }
 
-    const beforeRaw = fs.readFileSync(cryptFile, "utf8").replace(/\r\n/g, "\n");
+    const beforeFileRaw = fs.readFileSync(cryptFile, "utf8");
+    const beforeRaw = beforeFileRaw.replace(/\r\n/g, "\n");
     const lines = beforeRaw.split("\n");
     const targetIdx = Math.min(Math.max(cryptLine - 1, 0), Math.max(lines.length - 1, 0));
 
@@ -14414,7 +15154,9 @@ Flags:
     }
 
     if (cryptApply && changed) {
-      fs.writeFileSync(cryptFile, outText, "utf8");
+      withFileMutationLock(cryptFile, () => {
+        writeTextAtomicallyIfUnchanged(cryptFile, beforeFileRaw, outText);
+      });
     }
 
     if (cryptFormat === "diff") {
@@ -14660,7 +15402,9 @@ Flags:
       const normalizedRaw = raw.replace(/\r\n/g, "\n");
       const out = formatOne(raw);
       if (out !== normalizedRaw) {
-        fs.writeFileSync(file, out, "utf8");
+        withFileMutationLock(file, () => {
+          writeTextAtomicallyIfUnchanged(file, raw, out);
+        });
         changedFiles.push(file);
       }
     }
@@ -14732,7 +15476,8 @@ Flags:
     const destinationPath = path.resolve(destinationPathInput);
     const sameFile = sourcePath === destinationPath;
 
-    const sourceRaw = fs.readFileSync(sourcePath, "utf8").replace(/\r\n/g, "\n");
+    const sourceFileRaw = fs.readFileSync(sourcePath, "utf8");
+    const sourceRaw = sourceFileRaw.replace(/\r\n/g, "\n");
     const sourceLines = sourceRaw.split("\n");
 
     const sourcePosLine1 = parsePosLine(refilePos, "--pos");
@@ -14756,11 +15501,13 @@ Flags:
     ];
     const sourceOutText = normalizeOutText(sourceRemainingLines);
 
-    const destinationRaw = sameFile
-      ? sourceRaw
-      : fs.existsSync(destinationPath)
-        ? fs.readFileSync(destinationPath, "utf8").replace(/\r\n/g, "\n")
+    const destinationExisted = sameFile || fs.existsSync(destinationPath);
+    const destinationFileRaw = sameFile
+      ? sourceFileRaw
+      : destinationExisted
+        ? fs.readFileSync(destinationPath, "utf8")
         : "";
+    const destinationRaw = destinationFileRaw.replace(/\r\n/g, "\n");
 
     const destinationBaseText = sameFile ? sourceOutText : destinationRaw;
     const destinationLines = destinationBaseText.length > 0 ? destinationBaseText.split("\n") : [];
@@ -14889,10 +15636,28 @@ Flags:
 
     if (!sameFile) {
       fs.mkdirSync(path.dirname(destinationPath), { recursive: true });
-      fs.writeFileSync(sourcePath, sourceOutText, "utf8");
-      fs.writeFileSync(destinationPath, destinationOutText, "utf8");
+      withFileMutationLocks([sourcePath, destinationPath], () => {
+        if (fs.readFileSync(sourcePath, "utf8") !== sourceFileRaw) {
+          throw new Error(`concurrent modification detected for ${sourcePath}; refresh and retry`);
+        }
+        if (destinationExisted) {
+          if (fs.readFileSync(destinationPath, "utf8") !== destinationFileRaw) {
+            throw new Error(`concurrent modification detected for ${destinationPath}; refresh and retry`);
+          }
+        } else if (fs.existsSync(destinationPath)) {
+          throw new Error(`concurrent modification detected for ${destinationPath}; refresh and retry`);
+        }
+        writeTextAtomicallyIfUnchanged(sourcePath, sourceFileRaw, sourceOutText);
+        if (destinationExisted) {
+          writeTextAtomicallyIfUnchanged(destinationPath, destinationFileRaw, destinationOutText);
+        } else {
+          fs.writeFileSync(destinationPath, destinationOutText, { encoding: "utf8", flag: "wx" });
+        }
+      });
     } else {
-      fs.writeFileSync(sourcePath, destinationOutText, "utf8");
+      withFileMutationLock(sourcePath, () => {
+        writeTextAtomicallyIfUnchanged(sourcePath, sourceFileRaw, destinationOutText);
+      });
     }
 
     if (refileFormat === "text") {
@@ -14917,7 +15682,8 @@ Flags:
     }
 
     const sourcePath = files[0]!;
-    const raw = fs.readFileSync(sourcePath, "utf8").replace(/\r\n/g, "\n");
+    const sourceFileRaw = fs.readFileSync(sourcePath, "utf8");
+    const raw = sourceFileRaw.replace(/\r\n/g, "\n");
     const posLine = parseInt(archivePos.split(":")[0]!, 10);
     if (!Number.isFinite(posLine) || posLine < 1) {
       console.error(`Error: invalid --pos ${archivePos}`);
@@ -14996,13 +15762,30 @@ Flags:
         return;
       }
 
-      const existingArchive = fs.existsSync(archivePath)
-        ? fs.readFileSync(archivePath, "utf8").replace(/\r\n/g, "\n")
-        : "";
+      const archiveExisted = fs.existsSync(archivePath);
+      const archiveFileRaw = archiveExisted ? fs.readFileSync(archivePath, "utf8") : "";
+      const existingArchive = archiveFileRaw.replace(/\r\n/g, "\n");
       const archiveOut = appendSubtreeToArchiveText(existingArchive, subtreeText);
 
-      fs.writeFileSync(sourcePath, newSourceText, "utf8");
-      fs.writeFileSync(archivePath, archiveOut, "utf8");
+      fs.mkdirSync(path.dirname(archivePath), { recursive: true });
+      withFileMutationLocks([sourcePath, archivePath], () => {
+        if (fs.readFileSync(sourcePath, "utf8") !== sourceFileRaw) {
+          throw new Error(`concurrent modification detected for ${sourcePath}; refresh and retry`);
+        }
+        if (archiveExisted) {
+          if (fs.readFileSync(archivePath, "utf8") !== archiveFileRaw) {
+            throw new Error(`concurrent modification detected for ${archivePath}; refresh and retry`);
+          }
+        } else if (fs.existsSync(archivePath)) {
+          throw new Error(`concurrent modification detected for ${archivePath}; refresh and retry`);
+        }
+        writeTextAtomicallyIfUnchanged(sourcePath, sourceFileRaw, newSourceText);
+        if (archiveExisted) {
+          writeTextAtomicallyIfUnchanged(archivePath, archiveFileRaw, archiveOut);
+        } else {
+          fs.writeFileSync(archivePath, archiveOut, { encoding: "utf8", flag: "wx" });
+        }
+      });
 
       const payload = {
         kind: "archive",
@@ -15030,11 +15813,30 @@ Flags:
       return;
     }
 
-    const existingArchive = fs.existsSync(archivePath) ? fs.readFileSync(archivePath, "utf8").replace(/\r\n/g, "\n") : "";
+    const archiveExisted = fs.existsSync(archivePath);
+    const archiveFileRaw = archiveExisted ? fs.readFileSync(archivePath, "utf8") : "";
+    const existingArchive = archiveFileRaw.replace(/\r\n/g, "\n");
     const archiveOut = appendSubtreeToArchiveText(existingArchive, subtreeText);
 
-    fs.writeFileSync(sourcePath, newSourceText, "utf8");
-    fs.writeFileSync(archivePath, archiveOut, "utf8");
+    fs.mkdirSync(path.dirname(archivePath), { recursive: true });
+    withFileMutationLocks([sourcePath, archivePath], () => {
+      if (fs.readFileSync(sourcePath, "utf8") !== sourceFileRaw) {
+        throw new Error(`concurrent modification detected for ${sourcePath}; refresh and retry`);
+      }
+      if (archiveExisted) {
+        if (fs.readFileSync(archivePath, "utf8") !== archiveFileRaw) {
+          throw new Error(`concurrent modification detected for ${archivePath}; refresh and retry`);
+        }
+      } else if (fs.existsSync(archivePath)) {
+        throw new Error(`concurrent modification detected for ${archivePath}; refresh and retry`);
+      }
+      writeTextAtomicallyIfUnchanged(sourcePath, sourceFileRaw, newSourceText);
+      if (archiveExisted) {
+        writeTextAtomicallyIfUnchanged(archivePath, archiveFileRaw, archiveOut);
+      } else {
+        fs.writeFileSync(archivePath, archiveOut, { encoding: "utf8", flag: "wx" });
+      }
+    });
     process.stdout.write(`Archived to ${archivePath}\n`);
     return;
   }

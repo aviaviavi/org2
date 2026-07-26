@@ -575,7 +575,7 @@ private struct HeadlineMutationTarget: Sendable {
       line: item.lineForEditor,
       title: Org2Display.cleanInline(item.headline),
       agendaItemID: item.id,
-      idValue: item.properties["ID"]
+      idValue: item.properties["ORG2_APPROVAL_ID"] ?? item.properties["ID"]
     )
   }
 }
@@ -1309,7 +1309,9 @@ public final class WorkspaceStore: ObservableObject {
   ) {
     self.defaults = defaults
     sourceScheduleStateStore = WorkspaceSourceScheduleStateStore(defaults: defaults)
-    mountedCorpora = Self.restoreCorpusMounts(from: defaults, key: corpusMountsKey)
+    mountedCorpora = Self.shouldIgnoreStandardDefaultsForTests(defaults)
+      ? []
+      : Self.restoreCorpusMounts(from: defaults, key: corpusMountsKey)
     let fallbackTranscriptURL = openClawFallbackTranscriptURL ?? Self.defaultOpenClawTranscriptURL()
     usesFixedOpenClawTranscriptURL = openClawTranscriptURL != nil
     appOpenClawTranscriptURL = fallbackTranscriptURL
@@ -1669,7 +1671,7 @@ public final class WorkspaceStore: ObservableObject {
     upsertCorpusMount(path: standardized.path, identity: nil)
     openClawRemoteCorpusPath = restoreOpenClawRemoteCorpusPath(for: standardized)
     restorePinnedFiles(for: standardized)
-    if persistsDefault {
+    if persistsDefault, !Self.shouldIgnoreStandardDefaultsForTests(defaults) {
       defaults.set(standardized.path, forKey: corpusKey)
     }
     switchOpenClawTranscript(
@@ -1864,6 +1866,7 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   private func persistCorpusMounts() {
+    guard !Self.shouldIgnoreStandardDefaultsForTests(defaults) else { return }
     guard let data = try? JSONEncoder().encode(mountedCorpora) else { return }
     defaults.set(data, forKey: corpusMountsKey)
   }
@@ -3048,17 +3051,34 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
-  public func decideAgentRunApproval(_ run: AgentRunItem, approval: AgentRunApprovalItem, decision: String) async {
+  public func decideAgentRunApproval(
+    _ run: AgentRunItem,
+    approval: AgentRunApprovalItem,
+    decision: String,
+    note: String? = nil
+  ) async {
     guard corpusRoot != nil, !mutatingAgentRunIDs.contains(run.id) else { return }
+    let normalizedNote = note?.trimmingCharacters(in: .whitespacesAndNewlines)
+    if decision == "rejected", normalizedNote?.isEmpty != false {
+      errorText = "A rejection reason is required."
+      statusText = "Rejection reason required"
+      return
+    }
     mutatingAgentRunIDs.insert(run.id)
     defer { mutatingAgentRunIDs.remove(run.id) }
     do {
+      let fingerprint = try await resolvedAgentRunApprovalFingerprint(
+        runID: run.id,
+        reviewedApproval: approval
+      )
       let updated = try await performAgentRunApprovalDecision(
         runID: run.id,
         approvalID: approval.id,
         decision: decision,
+        expectedFingerprint: fingerprint,
         requestedRole: approval.requestedRole,
-        requestedFrom: approval.requestedFrom
+        requestedFrom: approval.requestedFrom,
+        note: normalizedNote
       )
       if let index = agentRuns.firstIndex(where: { $0.id == updated.id }) {
         agentRuns[index] = updated
@@ -3088,10 +3108,57 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
-  public func openClawExecApprovalDetails(for run: AgentRunItem) async throws -> OpenClawExecApprovalDetails? {
-    guard let approvalID = run.openClawExecApprovalID else { return nil }
-    let gateway = OpenClawGatewayClient(settings: currentOpenClawSettings(allowKeychainRead: true))
-    return try await gateway.execApprovalDetails(id: approvalID)
+  public func promptAndRejectAgentRunApproval(
+    _ run: AgentRunItem,
+    approval: AgentRunApprovalItem
+  ) {
+    guard let rejection = Self.promptForRunApprovalRejection() else { return }
+    Task {
+      await decideAgentRunApproval(
+        run,
+        approval: approval,
+        decision: "rejected",
+        note: rejection.reason
+      )
+    }
+  }
+
+  private func resolvedAgentRunApprovalFingerprint(
+    runID: String,
+    reviewedApproval: AgentRunApprovalItem
+  ) async throws -> String {
+    if let fingerprint = reviewedApproval.fingerprint?.trimmingCharacters(in: .whitespacesAndNewlines),
+       !fingerprint.isEmpty {
+      return fingerprint
+    }
+    guard let corpusRoot else {
+      throw CocoaError(.fileNoSuchFile, userInfo: [NSLocalizedDescriptionKey: "No corpus is selected."])
+    }
+    let payload: ApprovalPayload = try await cli.runJSON([
+      "approvals",
+      "--dir", corpusRoot.path,
+      "--recursive",
+      "--format", "json"
+    ])
+    guard let current = payload.items.first(where: {
+      $0.queueId == "run:\(runID):\(reviewedApproval.id)"
+    }),
+    current.isApprovable,
+    current.title == reviewedApproval.title,
+    current.action == reviewedApproval.action,
+    current.riskClass == reviewedApproval.riskClass,
+    current.requestedRole == reviewedApproval.requestedRole,
+    current.requestedFrom == reviewedApproval.requestedFrom,
+    current.material == reviewedApproval.material,
+    current.body == (reviewedApproval.note ?? reviewedApproval.action),
+    let fingerprint = current.fingerprint?.trimmingCharacters(in: .whitespacesAndNewlines),
+    !fingerprint.isEmpty
+    else {
+      throw CocoaError(.fileWriteFileExists, userInfo: [
+        NSLocalizedDescriptionKey: "This approval changed since it was displayed. Refresh and review the current material."
+      ])
+    }
+    return fingerprint
   }
 
   private func continueOpenClawWorkflowAfterApproval(_ run: AgentRunItem) async throws {
@@ -3656,6 +3723,11 @@ public final class WorkspaceStore: ObservableObject {
 
   public func approve(_ item: ApprovalItem) async {
     guard !isApprovalActionInProgress(item) else { return }
+    guard item.isApprovable else {
+      errorText = item.approvalBlockedReason ?? "This approval is missing exact review material."
+      statusText = "Approval is not ready"
+      return
+    }
     let originalVisibleIndex = visibleApprovalItems.firstIndex(where: { $0.id == item.id })
     beginApprovalAction(item, kind: .approve)
     defer { endApprovalAction(item, kind: .approve) }
@@ -3667,15 +3739,16 @@ public final class WorkspaceStore: ObservableObject {
         scheduleApprovalsRefresh()
         return
       }
-      try await approveAndAgentHandoff(HeadlineMutationTarget(
-        file: item.file,
-        line: item.line,
-        title: Org2Display.cleanInline(item.title),
-        agendaItemID: nil,
-        idValue: item.idValue
-      ))
-      removeApprovalItemOptimistically(item.id, originalVisibleIndex: originalVisibleIndex)
-      scheduleApprovalsRefresh()
+      if item.queueId != nil, item.fingerprint != nil {
+        try await performUnifiedHeadlineApprovalDecision(item, decision: "approved")
+        removeApprovalItemOptimistically(item.id, originalVisibleIndex: originalVisibleIndex)
+        scheduleApprovalsRefresh()
+        statusText = "\(item.title): approved"
+        return
+      }
+      throw CocoaError(.featureUnsupported, userInfo: [
+        NSLocalizedDescriptionKey: "This approval came from an older Org2 decision surface. Refresh with the shared CLI before deciding."
+      ])
     } catch {
       errorText = error.localizedDescription
       statusText = "Approve handoff failed"
@@ -3711,19 +3784,21 @@ public final class WorkspaceStore: ObservableObject {
         scheduleApprovalsRefresh()
         return
       }
-      try await rejectApproval(
-        HeadlineMutationTarget(
-          file: item.file,
-          line: item.line,
-          title: Org2Display.cleanInline(item.title),
-          agendaItemID: nil,
-          idValue: item.idValue
-        ),
-        endStatus: endStatus,
-        reason: reason
-      )
-      removeApprovalItemOptimistically(item.id, originalVisibleIndex: originalVisibleIndex)
-      scheduleApprovalsRefresh()
+      if item.queueId != nil, item.fingerprint != nil {
+        try await performUnifiedHeadlineApprovalDecision(
+          item,
+          decision: "rejected",
+          note: reason,
+          endStatus: endStatus
+        )
+        removeApprovalItemOptimistically(item.id, originalVisibleIndex: originalVisibleIndex)
+        scheduleApprovalsRefresh()
+        statusText = "\(item.title): rejected"
+        return
+      }
+      throw CocoaError(.featureUnsupported, userInfo: [
+        NSLocalizedDescriptionKey: "This approval came from an older Org2 decision surface. Refresh with the shared CLI before deciding."
+      ])
     } catch {
       errorText = error.localizedDescription
       statusText = "Reject approval failed"
@@ -3769,6 +3844,7 @@ public final class WorkspaceStore: ObservableObject {
       runID: runID,
       approvalID: approvalID,
       decision: decision,
+      expectedFingerprint: item.fingerprint,
       requestedRole: item.requestedRole,
       requestedFrom: item.requestedFrom,
       note: note
@@ -3794,6 +3870,7 @@ public final class WorkspaceStore: ObservableObject {
     runID: String,
     approvalID: String,
     decision: String,
+    expectedFingerprint: String?,
     requestedRole: String?,
     requestedFrom: String?,
     note: String? = nil
@@ -3801,23 +3878,69 @@ public final class WorkspaceStore: ObservableObject {
     guard let corpusRoot else {
       throw CocoaError(.fileNoSuchFile, userInfo: [NSLocalizedDescriptionKey: "No corpus is selected."])
     }
+    guard let expectedFingerprint = expectedFingerprint?.trimmingCharacters(in: .whitespacesAndNewlines),
+          !expectedFingerprint.isEmpty
+    else {
+      throw CocoaError(.featureUnsupported, userInfo: [
+        NSLocalizedDescriptionKey: "Refresh this run to bind its current approval fingerprint before deciding."
+      ])
+    }
     var arguments = [
-      "run", "approval-decide", runID, approvalID,
+      "approval", "decide", "run:\(runID):\(approvalID)",
       "--decision", decision,
       "--actor", Self.agentRunApprovalDecisionActor(requestedFrom: requestedFrom),
       "--role", requestedRole ?? "owner",
+      "--expected-fingerprint", expectedFingerprint,
       "--dir", corpusRoot.path,
-      "--json"
+      "--apply"
     ]
     if let note = note?.trimmingCharacters(in: .whitespacesAndNewlines), !note.isEmpty {
       arguments.append(contentsOf: ["--note", note])
     }
-    return try await cli.runJSON(arguments)
+    let payload: ApprovalDecisionPayload = try await cli.runJSON(arguments)
+    guard let run = payload.run else {
+      throw CocoaError(.fileReadCorruptFile, userInfo: [NSLocalizedDescriptionKey: "The approval decision did not return its canonical run."])
+    }
+    return run
   }
 
   nonisolated static func agentRunApprovalDecisionActor(requestedFrom: String?) -> String {
     let reviewer = requestedFrom?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     return reviewer.isEmpty ? "Org2Workspace" : reviewer
+  }
+
+  private func performUnifiedHeadlineApprovalDecision(
+    _ item: ApprovalItem,
+    decision: String,
+    note: String? = nil,
+    endStatus: TodoEditStatus? = nil
+  ) async throws {
+    guard let corpusRoot,
+          let queueID = item.queueId?.trimmingCharacters(in: .whitespacesAndNewlines),
+          !queueID.isEmpty,
+          let fingerprint = item.fingerprint?.trimmingCharacters(in: .whitespacesAndNewlines),
+          !fingerprint.isEmpty
+    else {
+      throw CocoaError(.fileReadCorruptFile, userInfo: [NSLocalizedDescriptionKey: "This approval is missing its canonical queue identity or fingerprint."])
+    }
+    var arguments = [
+      "approval", "decide", queueID,
+      "--decision", decision,
+      "--actor", "Org2Workspace",
+      "--expected-fingerprint", fingerprint,
+      "--dir", corpusRoot.path,
+      "--apply"
+    ]
+    if let note = note?.trimmingCharacters(in: .whitespacesAndNewlines), !note.isEmpty {
+      arguments.append(contentsOf: ["--note", note])
+    }
+    if let endStatus, endStatus == .done || endStatus == .canceled {
+      arguments.append(contentsOf: ["--end-status", endStatus.rawValue])
+    }
+    let payload: ApprovalDecisionPayload = try await cli.runJSON(arguments)
+    guard payload.applied else {
+      throw CocoaError(.fileWriteUnknown, userInfo: [NSLocalizedDescriptionKey: "The approval decision was previewed but not applied."])
+    }
   }
 
   public func discussApprovalInOpenClaw(
@@ -4042,7 +4165,10 @@ public final class WorkspaceStore: ObservableObject {
         sourceRange: sourceRange,
         children: headline.children
       ),
-      tags: headline.tags ?? []
+      tags: headline.tags ?? [],
+      binding: "legacy",
+      canApprove: false,
+      approvalBlockedReason: "The shared Org2 approval service is unavailable. Refresh before deciding."
     ))
   }
 
@@ -13720,9 +13846,18 @@ public final class WorkspaceStore: ObservableObject {
     do {
       let timestamp = Self.orgTimestamp(Date())
       var touchedFiles: Set<String> = []
-      for item in agendaMutationOrder(items) {
-        try await markReadyForAgent(HeadlineMutationTarget(item: item), timestamp: timestamp)
-        touchedFiles.insert(item.file)
+      await refreshApprovalsAfterCurrentRefresh(updatesStatus: false)
+      let targets = agendaMutationOrder(items).map(HeadlineMutationTarget.init(item:))
+      for target in targets {
+        try requireNoPendingApproval(for: target)
+      }
+      for target in targets {
+        try await markReadyForAgent(
+          target,
+          timestamp: timestamp,
+          approvalQueueIsCurrent: true
+        )
+        touchedFiles.insert(target.file)
       }
       for file in touchedFiles {
         invalidateCanonicalDocumentCache(for: file)
@@ -13736,21 +13871,31 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
-  private func markReadyForAgent(_ target: HeadlineMutationTarget, timestamp: String) async throws {
+  private func markReadyForAgent(
+    _ target: HeadlineMutationTarget,
+    timestamp: String,
+    approvalQueueIsCurrent: Bool = false
+  ) async throws {
+    if !approvalQueueIsCurrent {
+      await refreshApprovalsAfterCurrentRefresh(updatesStatus: false)
+    }
+    try requireNoPendingApproval(for: target)
+
     if try nestedParentSendHeading(for: target) != nil {
       try await setTodoStatus(.done, for: target)
       return
     }
 
     let assignee = resolvedAgentHandoffAssignee()
-    try await setTodoAssignee(assignee, for: target)
     try upsertHeadlineProperties(
       file: target.file,
       line: target.line,
       properties: [
+        "ASSIGNEE": assignee,
         "STATUS": "ready",
         "ASSIGNED_AT": timestamp
-      ]
+      ],
+      refusesPendingApproval: true
     )
   }
 
@@ -13759,12 +13904,13 @@ public final class WorkspaceStore: ObservableObject {
       statusText = "Select an approval TODO first"
       return
     }
-    do {
-      try await approveAndAgentHandoff(target)
-    } catch {
-      errorText = error.localizedDescription
-      statusText = "Approve handoff failed"
+    await refreshApprovalsAfterCurrentRefresh(updatesStatus: false)
+    guard let item = canonicalApprovalItem(for: target) else {
+      errorText = "This heading is not in the canonical approval queue. Refresh Review before deciding."
+      statusText = "Approval unavailable"
+      return
     }
+    await approve(item)
   }
 
   public func applyApproveAndAgentHandoffShortcut(to location: WorkspaceLocation) async {
@@ -13772,12 +13918,13 @@ public final class WorkspaceStore: ObservableObject {
       statusText = "Select an approval TODO first"
       return
     }
-    do {
-      try await approveAndAgentHandoff(target)
-    } catch {
-      errorText = error.localizedDescription
-      statusText = "Approve handoff failed"
+    await refreshApprovalsAfterCurrentRefresh(updatesStatus: false)
+    guard let item = canonicalApprovalItem(for: target) else {
+      errorText = "This heading is not in the canonical approval queue. Refresh Review before deciding."
+      statusText = "Approval unavailable"
+      return
     }
+    await approve(item)
   }
 
   public func applyRejectApprovalShortcut(endStatus: TodoEditStatus, reason: String) async {
@@ -13785,12 +13932,13 @@ public final class WorkspaceStore: ObservableObject {
       statusText = "Select an approval TODO first"
       return
     }
-    do {
-      try await rejectApproval(target, endStatus: endStatus, reason: reason)
-    } catch {
-      errorText = error.localizedDescription
-      statusText = "Reject approval failed"
+    await refreshApprovalsAfterCurrentRefresh(updatesStatus: false)
+    guard let item = canonicalApprovalItem(for: target) else {
+      errorText = "This heading is not in the canonical approval queue. Refresh Review before deciding."
+      statusText = "Approval unavailable"
+      return
     }
+    await rejectApproval(item, endStatus: endStatus, reason: reason)
   }
 
   public func applyRejectApprovalShortcut(endStatus: TodoEditStatus, reason: String, to location: WorkspaceLocation) async {
@@ -13798,11 +13946,69 @@ public final class WorkspaceStore: ObservableObject {
       statusText = "Select an approval TODO first"
       return
     }
-    do {
-      try await rejectApproval(target, endStatus: endStatus, reason: reason)
-    } catch {
-      errorText = error.localizedDescription
-      statusText = "Reject approval failed"
+    await refreshApprovalsAfterCurrentRefresh(updatesStatus: false)
+    guard let item = canonicalApprovalItem(for: target) else {
+      errorText = "This heading is not in the canonical approval queue. Refresh Review before deciding."
+      statusText = "Approval unavailable"
+      return
+    }
+    await rejectApproval(item, endStatus: endStatus, reason: reason)
+  }
+
+  private func canonicalApprovalItem(for target: HeadlineMutationTarget) -> ApprovalItem? {
+    guard let item = uniquelyMatchingApprovalItem(for: target),
+          item.queueId != nil,
+          item.fingerprint != nil
+    else {
+      return nil
+    }
+    return item
+  }
+
+  private func approvalCandidates(for target: HeadlineMutationTarget) -> [ApprovalItem] {
+    let targetPath = URL(fileURLWithPath: target.file).standardizedFileURL.path
+    let sameFile = approvalItems.filter {
+      URL(fileURLWithPath: $0.file).standardizedFileURL.path == targetPath
+    }
+    if let idValue = target.idValue?.trimmingCharacters(in: .whitespacesAndNewlines), !idValue.isEmpty {
+      return sameFile.filter {
+        $0.idValue?.trimmingCharacters(in: .whitespacesAndNewlines) == idValue
+      }
+    }
+    return sameFile.filter {
+      Org2Display.cleanInline($0.title) == Org2Display.cleanInline(target.title)
+    }
+  }
+
+  private func requireNoPendingApproval(for target: HeadlineMutationTarget) throws {
+    guard approvalCandidates(for: target).isEmpty else {
+      throw CocoaError(.featureUnsupported, userInfo: [
+        NSLocalizedDescriptionKey: "This heading has a pending approval. Use Review to approve, reject, or request a revision."
+      ])
+    }
+  }
+
+  private func uniquelyMatchingApprovalItem(for target: HeadlineMutationTarget) -> ApprovalItem? {
+    let candidates = approvalCandidates(for: target)
+    if candidates.count == 1 {
+      return candidates[0]
+    }
+    let lineMatches = candidates.filter {
+      $0.line == target.line || $0.line + 1 == target.line
+    }
+    return lineMatches.count == 1 ? lineMatches[0] : nil
+  }
+
+  private func refreshApprovalsAfterCurrentRefresh(updatesStatus: Bool) async {
+    while isRefreshingApprovals {
+      guard !Task.isCancelled else { return }
+      try? await Task.sleep(nanoseconds: 10_000_000)
+    }
+    guard !Task.isCancelled else { return }
+    await refreshApprovals(updatesStatus: updatesStatus)
+    while isRefreshingApprovals {
+      guard !Task.isCancelled else { return }
+      try? await Task.sleep(nanoseconds: 10_000_000)
     }
   }
 
@@ -14193,7 +14399,12 @@ public final class WorkspaceStore: ObservableObject {
 
   private func applyPriorityShortcut(_ priority: String?, to target: HeadlineMutationTarget) async {
     do {
-      try updateHeadlinePriority(file: target.file, line: target.line, priority: priority)
+      try updateHeadlinePriority(
+        file: target.file,
+        line: target.line,
+        priority: priority,
+        refusesPendingApproval: true
+      )
       statusText = priority.map { "Priority [#\($0)] -> \(target.title)" }
         ?? "Priority cleared -> \(target.title)"
       await refreshAfterHeadlineMutation(target)
@@ -14350,7 +14561,12 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     do {
-      try upsertHeadlineProperties(file: target.file, line: target.line, properties: [key: value])
+      try upsertHeadlineProperties(
+        file: target.file,
+        line: target.line,
+        properties: [key: value],
+        refusesPendingApproval: true
+      )
       statusText = "\(key)=\(value) -> \(target.title)"
       await refreshAfterHeadlineMutation(target)
     } catch {
@@ -15939,7 +16155,11 @@ public final class WorkspaceStore: ObservableObject {
       let raw = try String(contentsOf: url, encoding: .utf8)
       let result = try OrgCrypt.encryptPlaintextCryptSubtrees(in: raw, file: file, settings: settings)
       guard result.encryptedCount > 0, result.text != raw else { return 0 }
-      try result.text.write(to: url, atomically: true, encoding: .utf8)
+      try Org2CoordinatedFileMutation.writeTextAtomicallyIfUnchanged(
+        result.text,
+        to: url,
+        expectedText: raw
+      )
       return result.encryptedCount
     }.value
   }
@@ -17316,7 +17536,11 @@ public final class WorkspaceStore: ObservableObject {
       )
     }
 
-    try text.write(to: url, atomically: true, encoding: .utf8)
+    try Org2CoordinatedFileMutation.writeTextAtomicallyIfUnchanged(
+      text,
+      to: url,
+      expectedText: previousText
+    )
   }
 
   nonisolated private static func orgFileWriteSafetyAssessment(
@@ -20485,9 +20709,15 @@ public final class WorkspaceStore: ObservableObject {
     return value.isEmpty ? nil : value
   }
 
-  private func upsertHeadlineProperties(file: String, line: Int, properties: [String: String]) throws {
+  private func upsertHeadlineProperties(
+    file: String,
+    line: Int,
+    properties: [String: String],
+    refusesPendingApproval: Bool = false
+  ) throws {
     let url = URL(fileURLWithPath: file)
-    let raw = try String(contentsOf: url, encoding: .utf8).replacingOccurrences(of: "\r\n", with: "\n")
+    let original = try String(contentsOf: url, encoding: .utf8)
+    let raw = original.replacingOccurrences(of: "\r\n", with: "\n")
     var lines = raw.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
     let targetIndex = max(0, min(lines.count - 1, line - 1))
     guard let headingIndex = Self.headingIndex(in: lines, atOrBefore: targetIndex),
@@ -20507,6 +20737,15 @@ public final class WorkspaceStore: ObservableObject {
           subtreeEnd = index
           break
         }
+      }
+    }
+
+    if refusesPendingApproval {
+      let headlineText = lines[headingIndex..<subtreeEnd].joined(separator: "\n")
+      if Self.approvalCandidateTextMayContainItem(headlineText) {
+        throw CocoaError(.featureUnsupported, userInfo: [
+          NSLocalizedDescriptionKey: "This heading has a pending approval. Use Review to approve, reject, or request a revision."
+        ])
       }
     }
 
@@ -20560,7 +20799,11 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     let output = lines.joined(separator: "\n")
-    try output.write(to: url, atomically: true, encoding: .utf8)
+    try Org2CoordinatedFileMutation.writeTextAtomicallyIfUnchanged(
+      output,
+      to: url,
+      expectedText: original
+    )
   }
 
   private func nestedParentSendHeading(for target: HeadlineMutationTarget) throws -> (line: Int, id: String?)? {
@@ -20603,9 +20846,15 @@ public final class WorkspaceStore: ObservableObject {
     return Org2Display.cleanInline(rest)
   }
 
-  private func updateHeadlinePriority(file: String, line: Int, priority: String?) throws {
+  private func updateHeadlinePriority(
+    file: String,
+    line: Int,
+    priority: String?,
+    refusesPendingApproval: Bool = false
+  ) throws {
     let url = URL(fileURLWithPath: file)
-    let raw = try String(contentsOf: url, encoding: .utf8).replacingOccurrences(of: "\r\n", with: "\n")
+    let originalText = try String(contentsOf: url, encoding: .utf8)
+    let raw = originalText.replacingOccurrences(of: "\r\n", with: "\n")
     var lines = raw.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
     let index = max(0, min(lines.count - 1, line - 1))
 
@@ -20616,6 +20865,26 @@ public final class WorkspaceStore: ObservableObject {
     let original = lines[index]
     guard let match = original.range(of: #"^(\*+)\s+(.*)$"#, options: .regularExpression) else {
       throw WorkspaceEditError.noHeadline(file: file, line: line)
+    }
+
+    if refusesPendingApproval {
+      let headingLevel = original.prefix { $0 == "*" }.count
+      var subtreeEnd = lines.count
+      if index + 1 < lines.count {
+        for candidateIndex in (index + 1)..<lines.count {
+          let candidate = lines[candidateIndex]
+          guard candidate.range(of: #"^\*+\s+"#, options: .regularExpression) != nil else { continue }
+          if candidate.prefix(while: { $0 == "*" }).count <= headingLevel {
+            subtreeEnd = candidateIndex
+            break
+          }
+        }
+      }
+      if Self.approvalCandidateTextMayContainItem(lines[index..<subtreeEnd].joined(separator: "\n")) {
+        throw CocoaError(.featureUnsupported, userInfo: [
+          NSLocalizedDescriptionKey: "This heading has a pending approval. Use Review to approve, reject, or request a revision."
+        ])
+      }
     }
 
     let matched = String(original[match])
@@ -20650,7 +20919,11 @@ public final class WorkspaceStore: ObservableObject {
     let priorityPart = normalizedPriority.map { "[#\($0)] " } ?? ""
     lines[index] = "\(stars) \(todoPart)\(priorityPart)\(title)\(tagsSuffix)"
 
-    try lines.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
+    try Org2CoordinatedFileMutation.writeTextAtomicallyIfUnchanged(
+      lines.joined(separator: "\n"),
+      to: url,
+      expectedText: originalText
+    )
   }
 
   private func todayDailyNotePath(corpusRoot: URL) -> URL {
@@ -20685,7 +20958,12 @@ public final class WorkspaceStore: ObservableObject {
       withIntermediateDirectories: true
     )
     let title = url.deletingPathExtension().lastPathComponent
-    try "#+TITLE: \(title)\n\n".write(to: url, atomically: true, encoding: .utf8)
+    try Org2CoordinatedFileMutation.mutateTextAtomically(
+      at: url,
+      createIfMissing: true
+    ) { current, existed in
+      (existed ? current : "#+TITLE: \(title)\n\n", ())
+    }
   }
 
   private func corpusFile(for url: URL, corpusRoot: URL) -> CorpusFile {
@@ -20733,30 +21011,32 @@ public final class WorkspaceStore: ObservableObject {
 
     let target = knowledgeNodePath(corpusRoot: corpusRoot, title: cleanTitle)
     try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
-    let id: String
-    if FileManager.default.fileExists(atPath: target.path) {
-      let existing = try String(contentsOf: target, encoding: .utf8)
-      id = Self.firstOrgID(in: existing) ?? UUID().uuidString
+    let proposedID = UUID().uuidString
+    let sourceLink: String
+    if let sourceLocation {
+      sourceLink = "\nOrigin: [[file:\(relativePath(sourceLocation.file))][\(sourceLocation.title)]]"
     } else {
-      id = UUID().uuidString
-      let sourceLink: String
-      if let sourceLocation {
-        sourceLink = "\nOrigin: [[file:\(relativePath(sourceLocation.file))][\(sourceLocation.title)]]"
-      } else {
-        sourceLink = ""
+      sourceLink = ""
+    }
+    let id = try Org2CoordinatedFileMutation.mutateTextAtomically(
+      at: target,
+      createIfMissing: true
+    ) { current, existed in
+      if existed {
+        return (current, Self.firstOrgID(in: current) ?? proposedID)
       }
       let text = """
       #+TITLE: \(cleanTitle)
 
       * \(cleanTitle)
       :PROPERTIES:
-      :ID: \(id)
+      :ID: \(proposedID)
       :ORG2_CREATED_AT: \(Self.orgDateTimestamp(Date()))
       :END:
       \(sourceLink)
 
       """
-      try text.write(to: target, atomically: true, encoding: .utf8)
+      return (text, proposedID)
     }
     return CreatedKnowledgeNode(title: cleanTitle, file: target.path, id: id)
   }
@@ -20933,32 +21213,17 @@ public final class WorkspaceStore: ObservableObject {
   private func appendCapture(draft: WorkspaceCaptureDraft, to target: URL, corpusRoot: URL) throws {
     try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
     let entry = try captureEntryText(draft: draft, corpusRoot: corpusRoot)
-    if !FileManager.default.fileExists(atPath: target.path) {
-      guard FileManager.default.createFile(atPath: target.path, contents: nil) else {
-        throw CocoaError(.fileWriteUnknown)
-      }
-    }
     try Self.appendText(entry, to: target)
   }
 
   nonisolated private static func appendText(_ text: String, to target: URL) throws {
-    let handle = try FileHandle(forUpdating: target)
-    defer {
-      try? handle.close()
+    try Org2CoordinatedFileMutation.mutateTextAtomically(
+      at: target,
+      createIfMissing: true
+    ) { current in
+      let prefix = current.isEmpty || current.hasSuffix("\n") ? "" : "\n"
+      return ("\(current)\(prefix)\(text)", ())
     }
-
-    let byteCount = try handle.seekToEnd()
-    var prefix = ""
-    if byteCount > 0 {
-      try handle.seek(toOffset: byteCount - 1)
-      let lastByte = handle.readData(ofLength: 1)
-      if lastByte != Data([0x0A]) {
-        prefix = "\n"
-      }
-      try handle.seekToEnd()
-    }
-
-    try handle.write(contentsOf: Data("\(prefix)\(text)".utf8))
   }
 
   private func captureEntryText(draft: WorkspaceCaptureDraft, corpusRoot: URL) throws -> String {

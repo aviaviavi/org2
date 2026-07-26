@@ -296,6 +296,7 @@ public struct AgentRunItem: Identifiable, Decodable, Hashable, Sendable {
   public let plan: [AgentRunStepItem]
   public let artifacts: [AgentRunArtifactItem]
   public let approvals: [AgentRunApprovalItem]
+  public let approvalRequirements: [AgentRunApprovalRequirementItem]?
   public let validations: [AgentRunValidationItem]
   public let comments: [AgentRunCommentItem]
   public let events: [AgentRunEventItem]
@@ -309,24 +310,29 @@ public struct AgentRunItem: Identifiable, Decodable, Hashable, Sendable {
   public let failure: String?
 
   public var pendingApprovalCount: Int { approvals.filter { $0.status == "pending" }.count }
-  public var openClawExecApprovalID: String? {
-    for comment in comments.reversed() {
-      for line in comment.body.split(whereSeparator: \.isNewline) {
-        let rawLine = String(line).trimmingCharacters(in: .whitespacesAndNewlines)
-        guard rawLine.lowercased().hasPrefix("openclaw_key:") else { continue }
-        let key = rawLine.dropFirst("OPENCLAW_KEY:".count)
-          .trimmingCharacters(in: .whitespacesAndNewlines)
-        let components = key.split(separator: ":", omittingEmptySubsequences: false)
-        guard components.count >= 4,
-              components[0].lowercased() == "draft",
-              components[1].lowercased() == "exec"
-        else { continue }
-        let approvalID = components.dropFirst(3).joined(separator: ":")
-          .trimmingCharacters(in: .whitespacesAndNewlines)
-        if !approvalID.isEmpty { return approvalID }
-      }
+  public var declaredApprovalRequirements: [AgentRunApprovalRequirementItem] {
+    approvalRequirements ?? []
+  }
+  public func approvalRequirement(
+    for approval: AgentRunApprovalItem
+  ) -> AgentRunApprovalRequirementItem? {
+    guard let requirementId = approval.requirementId else { return nil }
+    return declaredApprovalRequirements.first { $0.id == requirementId }
+  }
+  public func currentApproval(
+    for requirement: AgentRunApprovalRequirementItem
+  ) -> AgentRunApprovalItem? {
+    approvals.reversed().first { $0.requirementId == requirement.id }
+  }
+  public func approvalRequirementState(
+    for requirement: AgentRunApprovalRequirementItem
+  ) -> AgentRunApprovalRequirementState {
+    guard let approval = currentApproval(for: requirement) else { return .unbound }
+    switch approval.status {
+    case "pending": return .pending
+    case "approved": return .approved
+    default: return .denied
     }
-    return nil
   }
   public var completedStepCount: Int { plan.filter { $0.status == "completed" }.count }
   public var skippedStepCount: Int { plan.filter { $0.status == "skipped" }.count }
@@ -466,8 +472,22 @@ public struct AgentRunItem: Identifiable, Decodable, Hashable, Sendable {
     }
     for item in approvals {
       values.append(contentsOf: [
-        item.id, item.title, item.action, item.riskClass, item.status,
+        item.id, item.title, item.action, item.riskClass, item.status, item.requirementId,
         item.requestedRole, item.requestedFrom, item.decidedBy, item.note, item.receipt,
+        item.effectReservation?.toolCallId,
+        item.effectReservation?.reservedAt,
+        item.effectReservation?.fingerprint,
+        item.effectReservation?.materialDigest,
+        item.effectReceipt?.fingerprint,
+        item.effectReceipt?.performedAt,
+        item.effectReceipt?.system,
+        item.effectReceipt?.externalId,
+      ].compactMap { $0 })
+    }
+    for item in declaredApprovalRequirements {
+      values.append(contentsOf: [
+        item.id, item.title, item.action, item.riskClass, item.requestedRole, item.beforeStepId,
+        approvalRequirementState(for: item).rawValue,
       ].compactMap { $0 })
     }
     for item in validations {
@@ -655,13 +675,230 @@ public struct AgentRunApprovalItem: Identifiable, Decodable, Hashable, Sendable 
   public let action: String
   public let riskClass: String
   public let status: String
+  public let requirementId: String?
+  public let fingerprint: String?
+  public let material: AgentRunApprovalMaterialItem?
+  public let supersedesId: String?
   public let requestedRole: String?
   public let requestedFrom: String?
   public let requestedAt: String
   public let decidedAt: String?
   public let decidedBy: String?
   public let note: String?
+  public let decisionNote: String?
   public let receipt: String?
+  public let effectReservation: AgentRunApprovalEffectReservationItem?
+  public let effectReceipt: AgentRunApprovalEffectReceiptItem?
+
+  public var effectStateText: String? {
+    var lines: [String] = []
+    if let effectReservation {
+      lines += [
+        "Effect reserved; reconciliation is required if execution did not finish.",
+        "Tool call: \(effectReservation.toolCallId)",
+        "Reserved at: \(effectReservation.reservedAt)",
+        "Fingerprint: \(effectReservation.fingerprint)",
+        "Material digest: \(effectReservation.materialDigest)",
+      ]
+    }
+    if let effectReceipt {
+      lines += [
+        "Effect performed at: \(effectReceipt.performedAt)",
+        "Receipt fingerprint: \(effectReceipt.fingerprint)",
+      ]
+      if let system = effectReceipt.system { lines.append("System: \(system)") }
+      if let externalId = effectReceipt.externalId { lines.append("External ID: \(externalId)") }
+    }
+    return lines.isEmpty ? nil : lines.joined(separator: "\n")
+  }
+}
+
+public enum AgentRunApprovalRequirementState: String, Decodable, Hashable, Sendable {
+  case unbound
+  case pending
+  case approved
+  case denied
+}
+
+public struct AgentRunApprovalRequirementItem: Identifiable, Decodable, Hashable, Sendable {
+  public let id: String
+  public let title: String
+  public let action: String
+  public let riskClass: String
+  public let requestedRole: String?
+  public let beforeStepId: String?
+  public let state: AgentRunApprovalRequirementState?
+
+  public func reviewText(state: AgentRunApprovalRequirementState) -> String {
+    var lines = [
+      "Requirement: \(title)",
+      "Requirement ID: \(id)",
+      "Action: \(action)",
+      "Risk: \(AgentRunItem.humanizedLabel(riskClass))",
+      "Current state: \(AgentRunItem.humanizedLabel(state.rawValue))",
+    ]
+    if let requestedRole, !requestedRole.isEmpty {
+      lines.append("Reviewer role: \(requestedRole)")
+    }
+    if let beforeStepId, !beforeStepId.isEmpty {
+      lines.append("Required before step: \(beforeStepId)")
+    } else {
+      lines.append("Required before: run completion")
+    }
+    return lines.joined(separator: "\n")
+  }
+}
+
+public struct AgentRunApprovalMaterialItem: Decodable, Hashable, Sendable {
+  public let kind: String
+  public let target: String?
+  public let content: String?
+  public let command: AgentRunApprovalCommandItem?
+  public let attachments: [AgentRunApprovalAttachmentItem]?
+  public let artifacts: [AgentRunApprovalArtifactRefItem]?
+  public let runtimeTarget: AgentRunApprovalRuntimeTargetItem?
+
+  public var hasExactApprovalMaterial: Bool {
+    let allowedKinds = Set(["message", "command", "artifact-release", "external-action"])
+    guard allowedKinds.contains(kind),
+          commandIsValid,
+          attachmentsAreValid,
+          artifactsAreValid,
+          runtimeTargetIsValid else {
+      return false
+    }
+
+    let hasCommand = command?.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+    let hasAttachments = attachments?.isEmpty == false
+    let hasArtifacts = artifacts?.isEmpty == false
+
+    switch kind {
+    case "message":
+      return target?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+        && content != nil
+    case "command":
+      return hasCommand
+    case "artifact-release":
+      return hasAttachments || hasArtifacts
+    case "external-action":
+      return content != nil || hasCommand || hasAttachments || hasArtifacts
+    default:
+      return false
+    }
+  }
+
+  public var reviewText: String {
+    var sections: [String] = []
+    if let target = target?.trimmingCharacters(in: .whitespacesAndNewlines), !target.isEmpty {
+      sections.append("Target: \(target)")
+    }
+    if let content {
+      sections.append(content.isEmpty ? "Content: (empty)" : content)
+    }
+    if let command {
+      if let argv = command.argv, !argv.isEmpty {
+        sections.append("Command arguments (authoritative):\n" + argv.enumerated().map { "[\($0.offset)] \($0.element)" }.joined(separator: "\n"))
+      }
+      let text = command.text.trimmingCharacters(in: .whitespacesAndNewlines)
+      if !text.isEmpty {
+        sections.append("Command text:\n\(text)")
+      }
+      if let cwd = command.cwd?.trimmingCharacters(in: .whitespacesAndNewlines), !cwd.isEmpty {
+        sections.append("Working directory: \(cwd)")
+      }
+    }
+    if let attachments, !attachments.isEmpty {
+      sections.append("Attachments:\n" + attachments.map {
+        [$0.name, $0.path, $0.sha256].compactMap { $0 }.joined(separator: " · ")
+      }.joined(separator: "\n"))
+    }
+    if let artifacts, !artifacts.isEmpty {
+      sections.append("Artifacts:\n" + artifacts.map { "\($0.id) · \($0.sha256)" }.joined(separator: "\n"))
+    }
+    if let runtimeTarget {
+      sections.append("Runtime target: \(runtimeTarget.system) · \(runtimeTarget.kind) · \(runtimeTarget.id)")
+    }
+    return sections.joined(separator: "\n\n")
+  }
+
+  private var commandIsValid: Bool {
+    guard let command else { return true }
+    return !command.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+  }
+
+  private var attachmentsAreValid: Bool {
+    attachments?.allSatisfy {
+      !$0.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        && Self.isSHA256($0.sha256)
+    } ?? true
+  }
+
+  private var artifactsAreValid: Bool {
+    artifacts?.allSatisfy {
+      !$0.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        && Self.isSHA256($0.sha256)
+    } ?? true
+  }
+
+  private var runtimeTargetIsValid: Bool {
+    guard let runtimeTarget else { return true }
+    return [
+      runtimeTarget.system,
+      runtimeTarget.kind,
+      runtimeTarget.id,
+    ].allSatisfy {
+      !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+  }
+
+  private static func isSHA256(_ value: String) -> Bool {
+    var normalized = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    if normalized.hasPrefix("sha256:") {
+      normalized.removeFirst("sha256:".count)
+    }
+    return normalized.count == 64
+      && normalized.unicodeScalars.allSatisfy {
+        ("0"..."9").contains(Character(String($0)))
+          || ("a"..."f").contains(Character(String($0)))
+      }
+  }
+}
+
+public struct AgentRunApprovalCommandItem: Decodable, Hashable, Sendable {
+  public let text: String
+  public let argv: [String]?
+  public let cwd: String?
+}
+
+public struct AgentRunApprovalAttachmentItem: Decodable, Hashable, Sendable {
+  public let name: String
+  public let path: String?
+  public let sha256: String
+}
+
+public struct AgentRunApprovalArtifactRefItem: Decodable, Hashable, Sendable {
+  public let id: String
+  public let sha256: String
+}
+
+public struct AgentRunApprovalRuntimeTargetItem: Decodable, Hashable, Sendable {
+  public let system: String
+  public let kind: String
+  public let id: String
+}
+
+public struct AgentRunApprovalEffectReceiptItem: Decodable, Hashable, Sendable {
+  public let fingerprint: String
+  public let performedAt: String
+  public let system: String?
+  public let externalId: String?
+}
+
+public struct AgentRunApprovalEffectReservationItem: Decodable, Hashable, Sendable {
+  public let fingerprint: String
+  public let materialDigest: String
+  public let toolCallId: String
+  public let reservedAt: String
 }
 
 public struct AgentRunValidationItem: Identifiable, Decodable, Hashable, Sendable {
@@ -958,6 +1195,15 @@ public enum RunsAndReviewPage: String, CaseIterable, Identifiable, Sendable {
 
 public struct ApprovalItem: Identifiable, Hashable, Sendable, Decodable {
   public let kind: String?
+  public let queueId: String?
+  public let nativeApprovalId: String?
+  public let fingerprint: String?
+  public let material: AgentRunApprovalMaterialItem?
+  public let binding: String?
+  public let canApprove: Bool?
+  public let approvalBlockedReason: String?
+  public let pairedAction: LegacyPairedApprovalActionItem?
+  public let requirement: AgentRunApprovalRequirementItem?
   public let title: String
   public let status: String
   public let todo: String?
@@ -993,6 +1239,15 @@ public struct ApprovalItem: Identifiable, Hashable, Sendable, Decodable {
     body: String,
     tags: [String],
     kind: String? = nil,
+    queueId: String? = nil,
+    nativeApprovalId: String? = nil,
+    fingerprint: String? = nil,
+    material: AgentRunApprovalMaterialItem? = nil,
+    binding: String? = nil,
+    canApprove: Bool? = nil,
+    approvalBlockedReason: String? = nil,
+    pairedAction: LegacyPairedApprovalActionItem? = nil,
+    requirement: AgentRunApprovalRequirementItem? = nil,
     approvalId: String? = nil,
     action: String? = nil,
     riskClass: String? = nil,
@@ -1007,6 +1262,15 @@ public struct ApprovalItem: Identifiable, Hashable, Sendable, Decodable {
     runDecisionEffect: String? = nil
   ) {
     self.kind = kind
+    self.queueId = queueId
+    self.nativeApprovalId = nativeApprovalId
+    self.fingerprint = fingerprint
+    self.material = material
+    self.binding = binding
+    self.canApprove = canApprove
+    self.approvalBlockedReason = approvalBlockedReason
+    self.pairedAction = pairedAction
+    self.requirement = requirement
     self.title = title
     self.status = status
     self.todo = todo
@@ -1032,11 +1296,13 @@ public struct ApprovalItem: Identifiable, Hashable, Sendable, Decodable {
   }
 
   public var id: String {
+    if let queueId, !queueId.isEmpty { return queueId }
     if let runId, let approvalId { return "run:\(runId):\(approvalId)" }
     return "\(file):\(line):\(idValue ?? title)"
   }
 
   public var isRunApproval: Bool { kind == "run" && runId != nil && approvalId != nil }
+  public var isApprovable: Bool { canApprove == true }
 
   public var sourceLabel: String {
     if let runId { return "Run \(runId)" }
@@ -1048,6 +1314,42 @@ public struct ApprovalItem: Identifiable, Hashable, Sendable, Decodable {
     return runDecisionEffect
   }
 
+  public var boundReviewText: String {
+    var sections: [String] = []
+    if let requirement {
+      sections.append(
+        "Bound workflow approval requirement:\n\(requirement.reviewText(state: requirement.state ?? .pending))"
+      )
+    }
+    if let action = action?.trimmingCharacters(in: .whitespacesAndNewlines), !action.isEmpty {
+      sections.append("Action:\n\(action)")
+    }
+    if !body.isEmpty {
+      sections.append("Request body:\n\(body)")
+    }
+    if !properties.isEmpty {
+      let rendered = properties.keys.sorted().map { "\($0): \(properties[$0] ?? "")" }.joined(separator: "\n")
+      sections.append("Bound properties:\n\(rendered)")
+    }
+    if let pairedAction {
+      var paired = [
+        "Mode: \(pairedAction.mode)",
+        "Title: \(pairedAction.title)",
+        "TODO: \(pairedAction.todo ?? "(none)")",
+      ]
+      if !pairedAction.properties.isEmpty {
+        paired.append("Properties:")
+        paired.append(contentsOf: pairedAction.properties.keys.sorted().map {
+          "\($0): \(pairedAction.properties[$0] ?? "")"
+        })
+      }
+      paired.append("Body:")
+      paired.append(pairedAction.body)
+      sections.append("Paired agent action:\n\(paired.joined(separator: "\n"))")
+    }
+    return sections.joined(separator: "\n\n")
+  }
+
   public var discussionText: String {
     """
     OpenClaw approval thread:
@@ -1057,6 +1359,7 @@ public struct ApprovalItem: Identifiable, Hashable, Sendable, Decodable {
     Status: \(status)
     \(runGoal.map { "Run: \($0)" } ?? "")
     \(runDependencyText ?? "")
+    \(approvalBlockedReason ?? "")
 
     \(Org2Display.cleanBlock(body).trimmedForDisplay(maxCharacters: 900))
     """
@@ -1109,6 +1412,17 @@ public struct ApprovalItem: Identifiable, Hashable, Sendable, Decodable {
       runGoal,
       runStatus,
       runDecisionEffect,
+      approvalBlockedReason,
+      fingerprint,
+      requirement?.id,
+      requirement?.title,
+      requirement?.action,
+      requirement?.riskClass,
+      requirement?.requestedRole,
+      requirement?.beforeStepId,
+      requirement?.state?.rawValue,
+      pairedAction?.title,
+      pairedAction?.body,
       tags.joined(separator: " "),
       properties.map { "\($0.key) \($0.value)" }.joined(separator: "\n")
     ]
@@ -1116,6 +1430,28 @@ public struct ApprovalItem: Identifiable, Hashable, Sendable, Decodable {
       .joined(separator: "\n")
       .lowercased()
   }
+}
+
+public struct LegacyPairedApprovalActionItem: Hashable, Sendable, Decodable {
+  public let mode: String
+  public let title: String
+  public let todo: String?
+  public let properties: [String: String]
+  public let body: String
+  public let line: Int?
+}
+
+public struct ApprovalDecisionPayload: Decodable, Sendable {
+  public let schema: String
+  public let queueId: String
+  public let binding: String
+  public let fingerprint: String
+  public let decision: String
+  public let applied: Bool
+  public let changed: Bool?
+  public let file: String?
+  public let line: Int?
+  public let run: AgentRunItem?
 }
 
 public struct HabitAgendaState: Decodable, Hashable, Sendable {

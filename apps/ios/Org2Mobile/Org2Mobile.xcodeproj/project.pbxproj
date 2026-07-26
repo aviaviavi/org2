@@ -19,6 +19,10 @@
 		0A10010A2C20000000000001 /* MobileCaptureSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A1002092C20000000000001 /* MobileCaptureSupport.swift */; };
 		0A10010B2C20000000000001 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A10020C2C20000000000001 /* ShareViewController.swift */; };
 		0A10010C2C20000000000001 /* Org2ShareExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 0A10020E2C20000000000001 /* Org2ShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		0A10010D2C20000000000001 /* ApprovalSemantics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A10020F2C20000000000001 /* ApprovalSemantics.swift */; };
+		0A10010E2C20000000000001 /* Org2CoordinatedFileMutation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A1002102C20000000000001 /* Org2CoordinatedFileMutation.swift */; };
+		0A10010F2C20000000000001 /* Org2CoordinatedFileMutation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A1002102C20000000000001 /* Org2CoordinatedFileMutation.swift */; };
+		0A1011012C20000000000001 /* ApprovalSemanticsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A1012012C20000000000001 /* ApprovalSemanticsTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -28,6 +32,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = 0A1006022C20000000000001;
 			remoteInfo = Org2ShareExtension;
+		};
+		0A101E012C20000000000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 0A100A012C20000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 0A1006012C20000000000001;
+			remoteInfo = Org2Mobile;
 		};
 /* End PBXContainerItemProxy section */
 
@@ -61,6 +72,10 @@
 		0A10020C2C20000000000001 /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
 		0A10020D2C20000000000001 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		0A10020E2C20000000000001 /* Org2ShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = Org2ShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		0A10020F2C20000000000001 /* ApprovalSemantics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApprovalSemantics.swift; sourceTree = "<group>"; };
+		0A1002102C20000000000001 /* Org2CoordinatedFileMutation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Org2CoordinatedFileMutation.swift; sourceTree = "<group>"; };
+		0A1010012C20000000000001 /* Org2MobileTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = Org2MobileTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		0A1012012C20000000000001 /* ApprovalSemanticsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApprovalSemanticsTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -78,6 +93,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		0A1013012C20000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -86,6 +108,7 @@
 			children = (
 				0A1005012C20000000000001 /* Org2Mobile */,
 				0A1005022C20000000000001 /* Org2ShareExtension */,
+				0A1015012C20000000000001 /* Org2MobileTests */,
 				0A1004022C20000000000001 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -95,6 +118,7 @@
 			children = (
 				0A1000012C20000000000001 /* Org2Mobile.app */,
 				0A10020E2C20000000000001 /* Org2ShareExtension.appex */,
+				0A1010012C20000000000001 /* Org2MobileTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -106,6 +130,8 @@
 				0A1002022C20000000000001 /* ContentView.swift */,
 				0A1002032C20000000000001 /* Models.swift */,
 				0A1002092C20000000000001 /* MobileCaptureSupport.swift */,
+				0A10020F2C20000000000001 /* ApprovalSemantics.swift */,
+				0A1002102C20000000000001 /* Org2CoordinatedFileMutation.swift */,
 				0A1002042C20000000000001 /* OrgParser.swift */,
 				0A1002052C20000000000001 /* CorpusStore.swift */,
 				0A1002062C20000000000001 /* DocumentPicker.swift */,
@@ -124,6 +150,14 @@
 				0A10020B2C20000000000001 /* Org2ShareExtension.entitlements */,
 			);
 			path = Org2ShareExtension;
+			sourceTree = "<group>";
+		};
+		0A1015012C20000000000001 /* Org2MobileTests */ = {
+			isa = PBXGroup;
+			children = (
+				0A1012012C20000000000001 /* ApprovalSemanticsTests.swift */,
+			);
+			path = Org2MobileTests;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -165,6 +199,24 @@
 			productReference = 0A10020E2C20000000000001 /* Org2ShareExtension.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		0A1016012C20000000000001 /* Org2MobileTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0A1017012C20000000000001 /* Build configuration list for PBXNativeTarget "Org2MobileTests" */;
+			buildPhases = (
+				0A1018012C20000000000001 /* Sources */,
+				0A1013012C20000000000001 /* Frameworks */,
+				0A1019012C20000000000001 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				0A101F012C20000000000001 /* PBXTargetDependency */,
+			);
+			name = Org2MobileTests;
+			productName = Org2MobileTests;
+			productReference = 0A1010012C20000000000001 /* Org2MobileTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -180,6 +232,10 @@
 					};
 					0A1006022C20000000000001 = {
 						CreatedOnToolsVersion = 16.3;
+					};
+					0A1016012C20000000000001 = {
+						CreatedOnToolsVersion = 16.3;
+						TestTargetID = 0A1006012C20000000000001;
 					};
 				};
 			};
@@ -199,6 +255,7 @@
 			targets = (
 				0A1006012C20000000000001 /* Org2Mobile */,
 				0A1006022C20000000000001 /* Org2ShareExtension */,
+				0A1016012C20000000000001 /* Org2MobileTests */,
 			);
 		};
 /* End PBXProject section */
@@ -220,6 +277,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		0A1019012C20000000000001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -231,6 +295,8 @@
 				0A1001022C20000000000001 /* ContentView.swift in Sources */,
 				0A1001032C20000000000001 /* Models.swift in Sources */,
 				0A1001092C20000000000001 /* MobileCaptureSupport.swift in Sources */,
+				0A10010D2C20000000000001 /* ApprovalSemantics.swift in Sources */,
+				0A10010E2C20000000000001 /* Org2CoordinatedFileMutation.swift in Sources */,
 				0A1001042C20000000000001 /* OrgParser.swift in Sources */,
 				0A1001052C20000000000001 /* CorpusStore.swift in Sources */,
 				0A1001062C20000000000001 /* DocumentPicker.swift in Sources */,
@@ -242,7 +308,16 @@
 			buildActionMask = 2147483647;
 			files = (
 				0A10010A2C20000000000001 /* MobileCaptureSupport.swift in Sources */,
+				0A10010F2C20000000000001 /* Org2CoordinatedFileMutation.swift in Sources */,
 				0A10010B2C20000000000001 /* ShareViewController.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		0A1018012C20000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0A1011012C20000000000001 /* ApprovalSemanticsTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -253,6 +328,11 @@
 			isa = PBXTargetDependency;
 			target = 0A1006022C20000000000001 /* Org2ShareExtension */;
 			targetProxy = 0A100E012C20000000000001 /* PBXContainerItemProxy */;
+		};
+		0A101F012C20000000000001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 0A1006012C20000000000001 /* Org2Mobile */;
+			targetProxy = 0A101E012C20000000000001 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -506,6 +586,52 @@
 			};
 			name = Release;
 		};
+		0A101D012C20000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 9MW3N969TR;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = org.org2.mobile.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Org2Mobile.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Org2Mobile";
+			};
+			name = Debug;
+		};
+		0A101D022C20000000000001 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 9MW3N969TR;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = org.org2.mobile.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Org2Mobile.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Org2Mobile";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -523,6 +649,15 @@
 			buildConfigurations = (
 				0A100D032C20000000000001 /* Debug */,
 				0A100D042C20000000000001 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		0A1017012C20000000000001 /* Build configuration list for PBXNativeTarget "Org2MobileTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0A101D012C20000000000001 /* Debug */,
+				0A101D022C20000000000001 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

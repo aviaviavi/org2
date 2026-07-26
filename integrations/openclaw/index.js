@@ -1,5 +1,14 @@
 import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 import { cronKey, executionSummary, Org2Lifecycle, shouldTrackMainTurn, workflowMarker } from "./lib/lifecycle.js";
+import {
+  draftCreatedEffect,
+  hydrateGogDraftEffect,
+  inspectOutboundEmailCommand,
+} from "./lib/approval-effects.js";
+import {
+  createGmailDraftSendTool,
+  resolveCanonicalGogExecutable,
+} from "./lib/gmail-draft-send-tool.js";
 
 export default definePluginEntry({
   id: "org2-lifecycle",
@@ -11,6 +20,12 @@ export default definePluginEntry({
     const trackMainTurns = config.trackMainTurns !== false;
     const trackCron = config.trackCron !== false;
     const trackSubagents = config.trackSubagents !== false;
+    const configuredGogExecutable = config.gogExecutable || "/usr/local/bin/gog";
+
+    api.registerTool(createGmailDraftSendTool({
+      lifecycle,
+      gogExecutable: configuredGogExecutable,
+    }), { name: "org2_gmail_draft_send" });
 
     api.on("gateway_start", async (_event, ctx) => {
       lifecycle.setCron(ctx.getCron?.());
@@ -78,6 +93,33 @@ export default definePluginEntry({
 
     api.on("llm_output", async (event, ctx) => {
       await lifecycle.serialize(() => lifecycle.recordUsage(event.runId || ctx.runId, event.usage));
+    });
+
+    api.on("before_tool_call", async (event) => {
+      const inspection = inspectOutboundEmailCommand(event.toolName, event.params);
+      if (inspection.kind === "blocked") {
+        return {
+          block: true,
+          blockReason: `${inspection.reason} Use org2_gmail_draft_send for the reviewed external effect.`,
+        };
+      }
+      if (inspection.kind === "send") {
+        return {
+          block: true,
+          blockReason: "Direct shell Gmail sends are disabled. Use org2_gmail_draft_send so the final parameters are bound to a durable native Org2 effect reservation.",
+        };
+      }
+    });
+
+    api.on("after_tool_call", async (event, ctx) => {
+      const created = draftCreatedEffect(event.toolName, event.params, event.result, event.error);
+      if (!created) return;
+      const gogExecutable = await resolveCanonicalGogExecutable(configuredGogExecutable);
+      const exact = await hydrateGogDraftEffect(created, { gogExecutable });
+      await lifecycle.serialize(() => lifecycle.requestDraftApproval(exact, {
+        openclawRunId: event.runId || ctx.runId,
+        sessionKey: ctx.sessionKey,
+      }));
     });
 
     api.on("agent_end", async (event, ctx) => {

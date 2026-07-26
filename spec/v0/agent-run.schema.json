@@ -39,6 +39,7 @@
     "context": { "type": "array", "items": { "$ref": "#/$defs/context" } },
     "plan": { "type": "array", "items": { "$ref": "#/$defs/step" } },
     "artifacts": { "type": "array", "items": { "$ref": "#/$defs/artifact" } },
+    "approvalRequirements": { "type": "array", "items": { "$ref": "#/$defs/approvalRequirement" } },
     "approvals": { "type": "array", "items": { "$ref": "#/$defs/approval" } },
     "validations": { "type": "array", "items": { "$ref": "#/$defs/validation" } },
     "comments": { "type": "array", "items": { "$ref": "#/$defs/comment" } },
@@ -92,7 +93,120 @@
       "additionalProperties": false
     },
     "artifact": { "type": "object", "required": ["id", "path", "role", "createdAt"] },
-    "approval": { "type": "object", "required": ["id", "title", "action", "riskClass", "status", "requestedAt"] },
+    "approvalRequirement": {
+      "type": "object",
+      "required": ["id", "title", "action", "riskClass"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" },
+        "title": { "type": "string", "minLength": 1 },
+        "action": { "type": "string", "minLength": 1 },
+        "riskClass": { "enum": ["read-only", "local-draft", "canonical-write", "external-action", "high-impact"] },
+        "requestedRole": { "type": "string" },
+        "beforeStepId": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "approval": {
+      "type": "object",
+      "required": ["id", "title", "action", "riskClass", "status", "requestedAt"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "action": { "type": "string", "minLength": 1 },
+        "riskClass": { "enum": ["read-only", "local-draft", "canonical-write", "external-action", "high-impact"] },
+        "status": { "enum": ["pending", "approved", "rejected", "revised", "canceled"] },
+        "requirementId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" },
+        "fingerprint": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+        "material": { "$ref": "#/$defs/approvalMaterial" },
+        "supersedesId": { "type": "string", "minLength": 1 },
+        "requestedRole": { "type": "string" },
+        "requestedFrom": { "type": "string" },
+        "requestedAt": { "type": "string", "format": "date-time" },
+        "decidedAt": { "type": "string", "format": "date-time" },
+        "decidedBy": { "type": "string" },
+        "note": { "type": "string" },
+        "decisionNote": { "type": "string" },
+        "receipt": { "type": "string" },
+        "effectReservation": {
+          "type": "object",
+          "required": ["fingerprint", "materialDigest", "toolCallId", "reservedAt"],
+          "properties": {
+            "fingerprint": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+            "materialDigest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+            "toolCallId": { "type": "string", "minLength": 1 },
+            "reservedAt": { "type": "string", "format": "date-time" }
+          },
+          "additionalProperties": false
+        },
+        "effectReceipt": {
+          "type": "object",
+          "required": ["fingerprint", "performedAt"],
+          "properties": {
+            "fingerprint": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+            "performedAt": { "type": "string", "format": "date-time" },
+            "system": { "type": "string" },
+            "externalId": { "type": "string" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": true
+    },
+    "approvalMaterial": {
+      "type": "object",
+      "required": ["kind"],
+      "properties": {
+        "kind": { "enum": ["message", "command", "artifact-release", "external-action"] },
+        "target": { "type": "string" },
+        "content": { "type": "string" },
+        "command": {
+          "type": "object",
+          "required": ["text"],
+          "properties": {
+            "text": { "type": "string" },
+            "argv": { "type": "array", "items": { "type": "string" } },
+            "cwd": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        "attachments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "sha256"],
+            "properties": {
+              "name": { "type": "string" },
+              "path": { "type": "string" },
+              "sha256": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "artifacts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "sha256"],
+            "properties": {
+              "id": { "type": "string" },
+              "sha256": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "runtimeTarget": {
+          "type": "object",
+          "required": ["system", "kind", "id"],
+          "properties": {
+            "system": { "type": "string" },
+            "kind": { "type": "string" },
+            "id": { "type": "string" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
     "validation": { "type": "object", "required": ["id", "name", "status", "checkedAt"] },
     "comment": { "type": "object", "required": ["id", "author", "body", "createdAt"] },
     "event": { "type": "object", "required": ["id", "type", "at"] }

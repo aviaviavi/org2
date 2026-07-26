@@ -105,31 +105,33 @@ enum OrgParser {
   }
 
   static func approvalEntries(from documents: [OrgDocument]) -> [ApprovalEntry] {
-    var entries: [ApprovalEntry] = []
-
-    for document in documents {
-      for node in document.nodes {
-        guard let todo = node.todo?.uppercased(), !terminalTodos.contains(todo) else {
-          continue
-        }
-
-        if let status = approvalStatus(for: node) {
-          entries.append(
-            ApprovalEntry(
-              id: "\(document.relativePath):\(node.line)",
-              title: node.title,
-              status: status,
-              todo: todo,
-              level: node.level,
-              file: document.relativePath,
-              line: node.line,
-              sourceID: node.properties["ID"],
-              properties: node.properties,
-              body: node.body.prettyPrintedOrgLinks().trimmingCharacters(in: .whitespacesAndNewlines),
-              tags: node.tags,
-            )
-          )
-        }
+    let entries = documents.flatMap { document in
+      ApprovalSemantics.snapshots(in: document.body).map { snapshot in
+        let line = snapshot.headingIndex + 1
+        return ApprovalEntry(
+          id: ApprovalSemantics.rowIdentity(
+            file: document.relativePath,
+            line: line,
+            approvalID: snapshot.approvalID,
+            sourceID: snapshot.sourceID
+          ),
+          title: snapshot.title,
+          status: snapshot.status,
+          todo: snapshot.todo,
+          level: snapshot.level,
+          file: document.relativePath,
+          line: line,
+          approvalID: snapshot.approvalID,
+          sourceID: snapshot.sourceID,
+          fingerprint: snapshot.fingerprint,
+          fingerprintInput: snapshot.fingerprintInput,
+          binding: .legacyHeadline,
+          canApprove: snapshot.canApprove,
+          approvalBlockedReason: snapshot.approvalBlockedReason,
+          properties: snapshot.properties,
+          body: snapshot.body,
+          tags: snapshot.tags
+        )
       }
     }
 
@@ -259,114 +261,4 @@ enum OrgParser {
     }
   }
 
-  private static func reviewStatus(in properties: [String: String]) -> String? {
-    propertyText(
-      in: properties,
-      keys: [
-        "ORG2_REVIEW_STATUS",
-        "REVIEW_STATUS",
-        "REVIEW",
-        "STATUS",
-        "FOLLOWUP_STATUS",
-        "REPLY_STATUS",
-      ]
-    ).nilIfBlank
-  }
-
-  private static func approvalStatus(for node: OrgNode) -> String? {
-    let status = reviewStatus(in: node.properties)
-    if let status, isPendingReview(status), titleNeedsHumanApproval(node.title) {
-      return status
-    }
-
-    let waitingOn = propertyText(in: node.properties, keys: ["WAITING_ON", "BLOCKED_BY", "ORG2_WAITING_ON"])
-    if containsApprovalSignal(waitingOn) {
-      return waitingOn.isEmpty ? "approval-required" : waitingOn
-    }
-
-    let nextAction = propertyText(in: node.properties, keys: ["NEXT_ACTION", "ACTION_REQUIRED", "ORG2_NEXT_ACTION"])
-    if containsApprovalSignal(nextAction) {
-      return "approval-required"
-    }
-
-    let handoff = propertyText(in: node.properties, keys: ["HANDOFF_SUMMARY", "ORG2_HANDOFF_SUMMARY"])
-    if containsApprovalSignal(handoff) {
-      return "approval-required"
-    }
-
-    let accessPolicy = propertyText(in: node.properties, keys: ["ACCESS_POLICY", "REVIEW_POLICY"])
-    if isPendingReview(accessPolicy) || containsApprovalSignal(accessPolicy) {
-      return accessPolicy.isEmpty ? "approval-required" : accessPolicy
-    }
-
-    return nil
-  }
-
-  private static func isPendingReview(_ status: String) -> Bool {
-    let normalized = status.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-    if [
-      "review-required",
-      "requires-review",
-      "approval-required",
-      "needs-approval",
-      "needs-review",
-      "pending-review",
-      "pending-approval",
-      "require-approval",
-      "generated",
-      "draft",
-    ].contains(normalized) {
-      return true
-    }
-
-    return normalized.contains("needs-review")
-      || normalized.contains("need-review")
-      || normalized.contains("needs-approval")
-      || normalized.contains("need-approval")
-      || normalized.contains("waiting-on-approval")
-      || normalized.contains("pending-review")
-      || normalized.contains("pending-approval")
-      || normalized.contains("draft-needs-review")
-      || normalized.contains("draft-needs-approval")
-      || normalized.contains("reply-review")
-      || normalized.contains("needs-avi")
-      || normalized.contains("avi-approval")
-      || normalized.contains("needs-human")
-      || normalized.contains("human-review")
-  }
-
-  private static func titleNeedsHumanApproval(_ title: String) -> Bool {
-    let normalized = title.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-    return normalized.hasPrefix("approve ")
-      || normalized.hasPrefix("review ")
-      || normalized.hasPrefix("review/")
-      || normalized.hasPrefix("review-send ")
-      || normalized.hasPrefix("review and approve ")
-      || normalized.hasPrefix("review/approve ")
-  }
-
-  private static func propertyText(in properties: [String: String], keys: [String]) -> String {
-    for key in keys {
-      if let value = properties[key], !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-        return value
-      }
-    }
-    return ""
-  }
-
-  private static func containsApprovalSignal(_ text: String) -> Bool {
-    let normalized = text.lowercased()
-    return normalized.contains("approval")
-      || normalized.contains("approve")
-      || normalized.contains("review")
-      || normalized.contains("avi")
-  }
-
-}
-
-private extension String {
-  var nilIfBlank: String? {
-    let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
-    return trimmed.isEmpty ? nil : trimmed
-  }
 }

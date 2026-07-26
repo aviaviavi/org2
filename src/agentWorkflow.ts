@@ -1,10 +1,15 @@
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import {
+  withFileMutationLock,
+  withFileMutationLocks,
+  writeTextAtomicallyIfUnchanged,
+} from "./atomicFileMutation.js";
+import {
+  AGENT_RUN_RISK_CLASSES,
   createAgentRun,
   type AgentRun,
-  type AgentRunApproval,
+  type AgentRunApprovalRequirement,
   type AgentRunPlanStep,
   type AgentRunRiskClass,
 } from "./agentRun.js";
@@ -39,6 +44,11 @@ export interface WorkflowTrigger {
   lastRunAt?: string;
 }
 
+export interface AgentWorkflowApprovalRequirement
+  extends Pick<AgentRunApprovalRequirement, "title" | "action" | "riskClass" | "requestedRole" | "beforeStepId"> {
+  id?: string;
+}
+
 export interface AgentWorkflow {
   schema: typeof ORG2_WORKFLOW_SCHEMA;
   id: string;
@@ -54,7 +64,7 @@ export interface AgentWorkflow {
   steps: Array<Omit<AgentRunPlanStep, "status" | "startedAt" | "completedAt">>;
   outputs: WorkflowOutput[];
   validations: string[];
-  approvals: Array<Pick<AgentRunApproval, "title" | "action" | "riskClass" | "requestedRole">>;
+  approvals: AgentWorkflowApprovalRequirement[];
   triggers: WorkflowTrigger[];
   compatibility: { org2: string; schema: string };
   sourceRunId?: string;
@@ -95,18 +105,29 @@ export function workflowFromRun(run: AgentRun, options: { id?: string; title?: s
     role: artifact.role,
     ...(artifact.mediaType ? { mediaType: artifact.mediaType } : {}),
   }));
-  const approvalKeys = new Set<string>();
-  const approvals = run.approvals.flatMap((approval) => {
-    const key = `${approval.action}\0${approval.riskClass}\0${approval.requestedRole || ""}`;
-    if (approvalKeys.has(key)) return [];
-    approvalKeys.add(key);
-    return [{
-      title: approval.title,
-      action: approval.action,
-      riskClass: approval.riskClass,
-      ...(approval.requestedRole ? { requestedRole: approval.requestedRole } : {}),
-    }];
-  });
+  const approvals: AgentWorkflowApprovalRequirement[] = run.approvalRequirements?.length
+    ? run.approvalRequirements.map((requirement) => ({
+      id: requirement.id,
+      title: requirement.title,
+      action: requirement.action,
+      riskClass: requirement.riskClass,
+      ...(requirement.requestedRole ? { requestedRole: requirement.requestedRole } : {}),
+      ...(requirement.beforeStepId ? { beforeStepId: requirement.beforeStepId } : {}),
+    }))
+    : (() => {
+      const approvalKeys = new Set<string>();
+      return run.approvals.flatMap((approval) => {
+        const key = `${approval.action}\0${approval.riskClass}\0${approval.requestedRole || ""}`;
+        if (approvalKeys.has(key)) return [];
+        approvalKeys.add(key);
+        return [{
+          title: approval.title,
+          action: approval.action,
+          riskClass: approval.riskClass,
+          ...(approval.requestedRole ? { requestedRole: approval.requestedRole } : {}),
+        }];
+      });
+    })();
   return {
     schema: ORG2_WORKFLOW_SCHEMA,
     id: safeId(options.id || `workflow-${run.id}`),
@@ -143,6 +164,26 @@ export function validateWorkflow(workflow: AgentWorkflow): WorkflowValidationRes
     if (!step.id || ids.has(step.id)) issues.push({ path: `steps[${index}].id`, message: "must be present and unique" });
     ids.add(step.id);
   }
+  const approvalIds = new Set<string>();
+  for (const [index, approval] of (workflow.approvals || []).entries()) {
+    const base = `approvals[${index}]`;
+    const id = approval.id || `workflow-approval-${index + 1}`;
+    try {
+      safeId(id);
+      if (approvalIds.has(id)) issues.push({ path: `${base}.id`, message: "must resolve to a unique id" });
+      approvalIds.add(id);
+    } catch (error) {
+      issues.push({ path: `${base}.id`, message: (error as Error).message });
+    }
+    if (!String(approval.title || "").trim()) issues.push({ path: `${base}.title`, message: "is required" });
+    if (!String(approval.action || "").trim()) issues.push({ path: `${base}.action`, message: "is required" });
+    if (!AGENT_RUN_RISK_CLASSES.includes(approval.riskClass)) {
+      issues.push({ path: `${base}.riskClass`, message: "must be a valid run risk class" });
+    }
+    if (approval.beforeStepId && !ids.has(approval.beforeStepId)) {
+      issues.push({ path: `${base}.beforeStepId`, message: "must reference a workflow step" });
+    }
+  }
   for (const [index, trigger] of (workflow.triggers || []).entries()) {
     if (trigger.type === "schedule" && !trigger.schedule) issues.push({ path: `triggers[${index}].schedule`, message: "is required for schedule triggers" });
     if (trigger.type === "file-change" && !trigger.path) issues.push({ path: `triggers[${index}].path`, message: "is required for file-change triggers" });
@@ -169,6 +210,14 @@ export function instantiateWorkflow(workflow: AgentWorkflow, inputs: Record<stri
     capabilities: workflow.capabilities,
     context: workflow.contextRules.map((ref) => ({ ref: applyTemplate(ref, resolved) })),
     plan: workflow.steps.map((step) => ({ ...step, title: applyTemplate(step.title, resolved), detail: step.detail ? applyTemplate(step.detail, resolved) : undefined })),
+    approvalRequirements: workflow.approvals.map((approval, index) => ({
+      id: approval.id || `workflow-approval-${index + 1}`,
+      title: applyTemplate(approval.title, resolved),
+      action: applyTemplate(approval.action, resolved),
+      riskClass: approval.riskClass,
+      ...(approval.requestedRole ? { requestedRole: applyTemplate(approval.requestedRole, resolved) } : {}),
+      ...(approval.beforeStepId ? { beforeStepId: approval.beforeStepId } : {}),
+    })),
     now: options.now,
   });
 }
@@ -238,12 +287,25 @@ export function parseWorkflowOrg(raw: string): AgentWorkflow {
   return workflow;
 }
 
+/**
+ * Replace a complete workflow definition.
+ *
+ * Callers performing a read-modify-write operation must use mutateWorkflow so
+ * their update is derived from the version reread while holding the shared
+ * mutation lock.
+ */
 export function saveWorkflow(root: string, workflow: AgentWorkflow): string {
   const target = workflowPath(root, workflow.id);
   fs.mkdirSync(path.dirname(target), { recursive: true });
-  const temporary = `${target}.${process.pid}.${crypto.randomUUID()}.tmp`;
-  fs.writeFileSync(temporary, renderWorkflowOrg(workflow), "utf8");
-  fs.renameSync(temporary, target);
+  const rendered = renderWorkflowOrg(workflow);
+  withFileMutationLock(target, () => {
+    if (!fs.existsSync(target)) {
+      fs.writeFileSync(target, rendered, { encoding: "utf8", mode: 0o600, flag: "wx" });
+      return;
+    }
+    const raw = fs.readFileSync(target, "utf8");
+    writeTextAtomicallyIfUnchanged(target, raw, rendered);
+  });
   return target;
 }
 
@@ -285,9 +347,49 @@ export function updateWorkflow(
   update: (workflow: AgentWorkflow) => AgentWorkflow,
   now?: string,
 ): { workflow: AgentWorkflow; file: string } {
-  const workflow = update(loadWorkflow(root, id));
-  workflow.updatedAt = nowIso(now);
-  return { workflow, file: saveWorkflow(root, workflow) };
+  return mutateWorkflow(root, id, update, now);
+}
+
+export function mutateWorkflow(
+  root: string,
+  id: string,
+  update: (workflow: AgentWorkflow) => AgentWorkflow,
+  now?: string,
+): { workflow: AgentWorkflow; file: string } {
+  const target = workflowPath(root, id);
+  const initialSource = workflowSourcePath(root, id);
+  const lockFiles = initialSource === target ? [target] : [initialSource, target];
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+
+  return withFileMutationLocks(lockFiles, () => {
+    // A visible workflow can appear while a legacy workflow waits for both
+    // locks. Prefer it exactly as workflowSourcePath does.
+    const source = fs.existsSync(target)
+      ? target
+      : fs.existsSync(initialSource)
+        ? initialSource
+        : target;
+    if (!fs.existsSync(source)) throw new Error(`workflow not found: ${id}`);
+
+    const raw = fs.readFileSync(source, "utf8");
+    const current = parseWorkflowOrg(raw);
+    const workflow = update(current);
+    if (workflow.id !== current.id || workflow.id !== id) {
+      throw new Error("an in-place workflow mutation cannot change the workflow id");
+    }
+    workflow.updatedAt = nowIso(now);
+    const rendered = renderWorkflowOrg(workflow);
+
+    if (source === target) {
+      writeTextAtomicallyIfUnchanged(target, raw, rendered);
+    } else {
+      if (fs.existsSync(target)) {
+        throw new Error(`concurrent modification detected for ${target}; refresh and retry`);
+      }
+      fs.writeFileSync(target, rendered, { encoding: "utf8", mode: 0o600, flag: "wx" });
+    }
+    return { workflow, file: target };
+  });
 }
 
 export function migrateLegacyWorkflows(root: string): Array<{ id: string; from: string; to: string; skipped: boolean }> {
@@ -299,13 +401,17 @@ export function migrateLegacyWorkflows(root: string): Array<{ id: string; from: 
     let workflow: AgentWorkflow;
     try { workflow = parseWorkflowOrg(fs.readFileSync(from, "utf8")); } catch { continue; }
     const to = workflowPath(root, workflow.id);
-    if (fs.existsSync(to)) {
-      results.push({ id: workflow.id, from, to, skipped: true });
-      continue;
-    }
     fs.mkdirSync(path.dirname(to), { recursive: true });
-    fs.renameSync(from, to);
-    results.push({ id: workflow.id, from, to, skipped: false });
+    const skipped = withFileMutationLock(to, () => {
+      if (fs.existsSync(to)) return true;
+      // A hard-link publication gives migration the same no-overwrite
+      // guarantee as a new workflow save, then removing the legacy name
+      // completes the move without a race-prone rename over a successor.
+      fs.linkSync(from, to);
+      fs.unlinkSync(from);
+      return false;
+    });
+    results.push({ id: workflow.id, from, to, skipped });
   }
   return results;
 }

@@ -182,8 +182,9 @@ final class CorpusStore: ObservableObject {
       statusMessage = "Approved \(url.lastPathComponent)"
       await refresh()
     } catch let error as CorpusMutationError {
-      errorMessage = error.localizedDescription
+      let message = error.localizedDescription
       await refresh(priority: .userInitiated, showsLoading: false)
+      errorMessage = message
     } catch {
       errorMessage = "Could not approve this item in the corpus. Re-select the synced corpus folder and try again."
     }
@@ -195,6 +196,10 @@ final class CorpusStore: ObservableObject {
       let url = try rejectInCorpus(approval, endStatus: endStatus, reason: reason)
       statusMessage = "Rejected \(url.lastPathComponent)"
       await refresh()
+    } catch let error as CorpusMutationError {
+      let message = error.localizedDescription
+      await refresh(priority: .userInitiated, showsLoading: false)
+      errorMessage = message
     } catch {
       errorMessage = "Could not reject this item in the corpus. Re-select the synced corpus folder and try again."
     }
@@ -206,6 +211,10 @@ final class CorpusStore: ObservableObject {
       let url = try setTodoStatusInCorpus(status, for: entry)
       statusMessage = "Set \(entry.title.prettyPrintedOrgLinks()) to \(status.rawValue) in \(url.lastPathComponent)"
       await refresh()
+    } catch let error as CorpusMutationError {
+      let message = error.localizedDescription
+      await refresh(priority: .userInitiated, showsLoading: false)
+      errorMessage = message
     } catch {
       errorMessage = "Could not update this agenda item. Re-select the synced corpus folder and try again."
     }
@@ -571,6 +580,12 @@ final class CorpusStore: ObservableObject {
     guard let rootURL else {
       throw CocoaError(.fileNoSuchFile)
     }
+    guard approval.binding == .legacyHeadline,
+          approval.canApprove,
+          ApprovalSemantics.fingerprint(for: approval.fingerprintInput) == approval.fingerprint
+    else {
+      throw CorpusMutationError.approvalChanged
+    }
 
     let hasSecurityAccess = rootURL.startAccessingSecurityScopedResource()
     defer {
@@ -580,34 +595,54 @@ final class CorpusStore: ObservableObject {
     }
 
     let url = try corpusFileURL(for: approval.file, rootURL: rootURL)
-    let raw = try String(contentsOf: url, encoding: .utf8)
-    let sourceLines = sourceLines(in: raw)
-    let lines = sourceLines.map(\.text)
-    guard let headingIndex = headingIndex(in: lines, matching: approval) else {
-      throw CorpusMutationError.approvalChanged
-    }
+    try Org2CoordinatedFileMutation.mutateTextAtomically(at: url) { raw in
+      let sourceLines = sourceLines(in: raw)
+      let lines = sourceLines.map(\.text)
+      let snapshot = try resolveApprovalSnapshot(in: raw, matching: approval)
+      let headingIndex = snapshot.headingIndex
+      let approvalIdentity = snapshot.approvalID
+        ?? snapshot.sourceID
+        ?? UUID().uuidString.lowercased()
 
-    let timestamp = orgTimestamp(Date())
-    let pairedSendIndex = pairedSendHeadingIndex(in: lines, approvalHeadingIndex: headingIndex)
-    let pairedSendTitle = pairedSendIndex.map { headingTitle(lines[$0]) }
-    var replacements: [ScopedLineReplacement] = []
-    if let pairedSendIndex {
-      replacements.append(try pairedSendReplacement(in: lines, headingIndex: pairedSendIndex, approvalTitle: approval.title, timestamp: timestamp))
-    }
-    replacements.append(
-      try approvalReplacement(
-        in: lines,
-        headingIndex: headingIndex,
-        pairedSendTitle: pairedSendTitle,
-        timestamp: timestamp
+      let timestamp = orgTimestamp(Date())
+      let pairedSendIndex = snapshot.pairedAction?.line.map { $0 - 1 }
+      let pairedSendTitle = snapshot.pairedAction?.title
+      var replacements: [ScopedLineReplacement] = []
+      if let pairedSendIndex {
+        replacements.append(
+          try pairedSendReplacement(
+            in: lines,
+            headingIndex: pairedSendIndex,
+            approvalTitle: approval.title,
+            approvalIdentity: approvalIdentity,
+            timestamp: timestamp
+          )
+        )
+      }
+      replacements.append(
+        try approvalReplacement(
+          in: lines,
+          headingIndex: headingIndex,
+          pairedSendTitle: pairedSendTitle,
+          approvalIdentity: approvalIdentity,
+          reviewedFingerprint: approval.fingerprint,
+          timestamp: timestamp
+        )
       )
-    )
 
-    let output = try applyingScopedLineReplacements(replacements, to: raw, sourceLines: sourceLines)
-    guard try String(contentsOf: url, encoding: .utf8) == raw else {
-      throw CorpusMutationError.fileChanged
+      var output = try applyingScopedLineReplacements(replacements, to: raw, sourceLines: sourceLines)
+      if snapshot.pairedAction?.mode == .create, let pairedAction = snapshot.pairedAction {
+        output = appendingApprovedAgentAction(
+          pairedAction,
+          approvalTitle: approval.title,
+          approvalIdentity: approvalIdentity,
+          timestamp: timestamp,
+          to: output,
+          lineEnding: sourceLines.first(where: { !$0.terminator.isEmpty })?.terminator ?? "\n"
+        )
+      }
+      return (output, ())
     }
-    try output.write(to: url, atomically: true, encoding: .utf8)
     return url
   }
 
@@ -615,6 +650,11 @@ final class CorpusStore: ObservableObject {
     guard let rootURL else {
       throw CocoaError(.fileNoSuchFile)
     }
+    guard approval.binding == .legacyHeadline,
+          ApprovalSemantics.fingerprint(for: approval.fingerprintInput) == approval.fingerprint
+    else {
+      throw CorpusMutationError.approvalChanged
+    }
 
     let hasSecurityAccess = rootURL.startAccessingSecurityScopedResource()
     defer {
@@ -624,43 +664,31 @@ final class CorpusStore: ObservableObject {
     }
 
     let url = try corpusFileURL(for: approval.file, rootURL: rootURL)
-    let raw = try String(contentsOf: url, encoding: .utf8)
-    let sourceLines = sourceLines(in: raw)
-    let lines = sourceLines.map(\.text)
-    guard let headingIndex = headingIndex(in: lines, matching: approval) else {
-      throw CocoaError(.fileNoSuchFile)
-    }
+    try Org2CoordinatedFileMutation.mutateTextAtomically(at: url) { raw in
+      let sourceLines = sourceLines(in: raw)
+      let lines = sourceLines.map(\.text)
+      let snapshot = try resolveApprovalSnapshot(in: raw, matching: approval, requireApprovable: false)
+      let headingIndex = snapshot.headingIndex
+      let approvalIdentity = snapshot.approvalID
+        ?? snapshot.sourceID
+        ?? UUID().uuidString.lowercased()
 
-    let timestamp = orgTimestamp(Date())
-    let pairedSendIndex = pairedSendHeadingIndex(in: lines, approvalHeadingIndex: headingIndex)
-    var replacements: [ScopedLineReplacement] = []
-    if let pairedSendIndex,
-       let pairedReplacement = pairedSendRejectionReplacement(
-        in: lines,
-        headingIndex: pairedSendIndex,
-        approvalTitle: approval.title,
-        endStatus: endStatus,
-        reason: reason,
-        timestamp: timestamp
-       ) {
-      replacements.append(pairedReplacement)
+      let timestamp = orgTimestamp(Date())
+      let replacements = [
+        approvalRejectionReplacement(
+          in: lines,
+          headingIndex: headingIndex,
+          approval: approval,
+          approvalIdentity: approvalIdentity,
+          reviewedFingerprint: approval.fingerprint,
+          endStatus: endStatus,
+          reason: reason,
+          timestamp: timestamp
+        ),
+      ]
+      let output = try applyingScopedLineReplacements(replacements, to: raw, sourceLines: sourceLines)
+      return (output, ())
     }
-    replacements.append(
-      approvalRejectionReplacement(
-        in: lines,
-        headingIndex: headingIndex,
-        approval: approval,
-        endStatus: endStatus,
-        reason: reason,
-        timestamp: timestamp
-      )
-    )
-
-    let output = try applyingScopedLineReplacements(replacements, to: raw, sourceLines: sourceLines)
-    guard try String(contentsOf: url, encoding: .utf8) == raw else {
-      throw CorpusMutationError.fileChanged
-    }
-    try output.write(to: url, atomically: true, encoding: .utf8)
     return url
   }
 
@@ -677,19 +705,23 @@ final class CorpusStore: ObservableObject {
     }
 
     let url = try corpusFileURL(for: entry.file, rootURL: rootURL)
-    let raw = try String(contentsOf: url, encoding: .utf8)
-    var lines = raw.components(separatedBy: .newlines)
-    guard let headingIndex = headingIndex(in: lines, matching: entry) else {
-      throw CocoaError(.fileNoSuchFile)
-    }
+    try Org2CoordinatedFileMutation.mutateTextAtomically(at: url) { raw in
+      let sourceLines = sourceLines(in: raw)
+      let lines = sourceLines.map(\.text)
+      guard let headingIndex = headingIndex(in: lines, matching: entry) else {
+        throw CocoaError(.fileNoSuchFile)
+      }
+      if ApprovalSemantics.snapshots(in: raw).contains(where: { $0.headingIndex == headingIndex }) {
+        throw CorpusMutationError.approvalShortcutBlocked
+      }
 
-    lines[headingIndex] = headingLine(lines[headingIndex], settingTodo: status.rawValue)
-
-    var output = lines.joined(separator: "\n")
-    if raw.hasSuffix("\n"), !output.hasSuffix("\n") {
-      output += "\n"
+      let replacement = ScopedLineReplacement(
+        range: headingIndex..<(headingIndex + 1),
+        lines: [headingLine(lines[headingIndex], settingTodo: status.rawValue)]
+      )
+      let output = try applyingScopedLineReplacements([replacement], to: raw, sourceLines: sourceLines)
+      return (output, ())
     }
-    try output.write(to: url, atomically: true, encoding: .utf8)
     return url
   }
 
@@ -708,21 +740,14 @@ final class CorpusStore: ObservableObject {
       }
     }
 
-    if !FileManager.default.fileExists(atPath: inboxURL.path) {
-      let header = """
-      #+TITLE: Org2 Mobile Inbox
-
-      """
-      try header.write(to: inboxURL, atomically: true, encoding: .utf8)
-    }
-
-    let handle = try FileHandle(forWritingTo: inboxURL)
-    defer {
-      try? handle.close()
-    }
-    try handle.seekToEnd()
-    if let data = content.data(using: .utf8) {
-      try handle.write(contentsOf: data)
+    try Org2CoordinatedFileMutation.mutateTextAtomically(
+      at: inboxURL,
+      createIfMissing: true
+    ) { current in
+      let header = current.isEmpty
+        ? "#+TITLE: Org2 Mobile Inbox\n\n"
+        : ""
+      return (current + header + content, ())
     }
   }
 
@@ -811,26 +836,28 @@ final class CorpusStore: ObservableObject {
       .joined(separator: "\n")
   }
 
-  private func headingIndex(in lines: [String], matching approval: ApprovalEntry) -> Int? {
-    if let line = approval.line {
-      let index = line - 1
-      if lines.indices.contains(index), isHeading(lines[index]), headingMatchesApproval(lines: lines, index: index, approval: approval) {
-        return index
-      }
-    }
-
-    if let sourceID = approval.sourceID?.trimmingCharacters(in: .whitespacesAndNewlines), !sourceID.isEmpty {
-      for index in lines.indices where isHeading(lines[index]) {
-        let properties = propertyDrawerValues(in: lines, headingIndex: index)
-        if properties["ID"] == sourceID {
-          return index
-        }
-      }
-    }
-
-    let normalizedTitle = normalizedOrgTitle(approval.title)
-    return lines.indices.first { index in
-      isHeading(lines[index]) && normalizedOrgTitle(headingTitle(lines[index])) == normalizedTitle
+  private func resolveApprovalSnapshot(
+    in raw: String,
+    matching approval: ApprovalEntry,
+    requireApprovable: Bool = true
+  ) throws -> LegacyHeadlineApprovalSnapshot {
+    do {
+      return try ApprovalSemantics.resolve(
+        in: raw,
+        reference: LegacyHeadlineApprovalReference(
+          approvalID: approval.approvalID,
+          sourceID: approval.sourceID,
+          line: approval.line,
+          fingerprint: approval.fingerprint
+        ),
+        requireApprovable: requireApprovable
+      )
+    } catch LegacyHeadlineApprovalResolutionError.ambiguous {
+      throw CorpusMutationError.approvalAmbiguous
+    } catch LegacyHeadlineApprovalResolutionError.blocked(let reason) {
+      throw CorpusMutationError.approvalBlocked(reason)
+    } catch {
+      throw CorpusMutationError.approvalChanged
     }
   }
 
@@ -852,21 +879,20 @@ final class CorpusStore: ObservableObject {
     normalizedOrgTitle(headingTitle(line)) == normalizedOrgTitle(entry.title)
   }
 
-  private func headingMatchesApproval(lines: [String], index: Int, approval: ApprovalEntry) -> Bool {
-    if let sourceID = approval.sourceID?.trimmingCharacters(in: .whitespacesAndNewlines), !sourceID.isEmpty {
-      return propertyDrawerValues(in: lines, headingIndex: index)["ID"] == sourceID
-    }
-    return normalizedOrgTitle(headingTitle(lines[index])) == normalizedOrgTitle(approval.title)
-  }
-
   private func upsertApprovalProperties(
     in lines: inout [String],
     headingIndex: Int,
     approvalProperties: [String: String],
+    approvalIdentity: String,
+    reviewedFingerprint: String,
     timestamp: String
   ) {
     var properties: [String: String] = [
       "STATUS": "approved",
+      "ORG2_APPROVAL_DECISION": "approved",
+      "ORG2_APPROVAL_ID": approvalIdentity,
+      "APPROVAL_FINGERPRINT": reviewedFingerprint,
+      "APPROVAL_DECIDED_BY": "Org2 Mobile",
       "APPROVED_AT": timestamp,
     ]
 
@@ -891,11 +917,8 @@ final class CorpusStore: ObservableObject {
       "ORG2_NEXT_ACTION",
       "HANDOFF_SUMMARY",
       "ORG2_HANDOFF_SUMMARY",
-    ] {
-      guard let value = approvalProperties[key]?.lowercased() else { continue }
-      if value.contains("approval") || value.contains("approve") || value.contains("review") || value.contains("avi") {
-        properties[key] = "approved"
-      }
+    ] where approvalProperties[key] != nil {
+      properties[key] = "resolved"
     }
 
     upsertProperties(properties, in: &lines, headingIndex: headingIndex)
@@ -905,6 +928,8 @@ final class CorpusStore: ObservableObject {
     in lines: [String],
     headingIndex: Int,
     pairedSendTitle: String?,
+    approvalIdentity: String,
+    reviewedFingerprint: String,
     timestamp: String
   ) throws -> ScopedLineReplacement {
     let currentProperties = propertyDrawerValues(in: lines, headingIndex: headingIndex)
@@ -917,6 +942,8 @@ final class CorpusStore: ObservableObject {
       in: &replacementLines,
       headingIndex: 0,
       approvalProperties: currentProperties,
+      approvalIdentity: approvalIdentity,
+      reviewedFingerprint: reviewedFingerprint,
       timestamp: timestamp
     )
     if let pairedSendTitle {
@@ -930,12 +957,18 @@ final class CorpusStore: ObservableObject {
     in lines: inout [String],
     headingIndex: Int,
     approval: ApprovalEntry,
+    approvalIdentity: String,
+    reviewedFingerprint: String,
     endStatus: OrgTodoStatus,
     reason: String,
     timestamp: String
   ) {
     var properties: [String: String] = [
       "STATUS": "rejected",
+      "ORG2_APPROVAL_DECISION": "rejected",
+      "ORG2_APPROVAL_ID": approvalIdentity,
+      "APPROVAL_FINGERPRINT": reviewedFingerprint,
+      "APPROVAL_DECIDED_BY": "Org2 Mobile",
       "REJECTED_AT": timestamp,
       "REJECTION_END_STATUS": endStatus.rawValue,
       "REJECTION_REASON": sanitizeProperty(reason),
@@ -953,6 +986,19 @@ final class CorpusStore: ObservableObject {
       properties[key] = "rejected"
     }
 
+    for key in [
+      "WAITING_ON",
+      "BLOCKED_BY",
+      "ORG2_WAITING_ON",
+      "NEXT_ACTION",
+      "ACTION_REQUIRED",
+      "ORG2_NEXT_ACTION",
+      "HANDOFF_SUMMARY",
+      "ORG2_HANDOFF_SUMMARY",
+    ] where approval.properties[key] != nil {
+      properties[key] = "resolved"
+    }
+
     upsertProperties(properties, in: &lines, headingIndex: headingIndex)
   }
 
@@ -960,6 +1006,8 @@ final class CorpusStore: ObservableObject {
     in lines: [String],
     headingIndex: Int,
     approval: ApprovalEntry,
+    approvalIdentity: String,
+    reviewedFingerprint: String,
     endStatus: OrgTodoStatus,
     reason: String,
     timestamp: String
@@ -971,6 +1019,8 @@ final class CorpusStore: ObservableObject {
       in: &replacementLines,
       headingIndex: 0,
       approval: approval,
+      approvalIdentity: approvalIdentity,
+      reviewedFingerprint: reviewedFingerprint,
       endStatus: endStatus,
       reason: reason,
       timestamp: timestamp
@@ -1057,6 +1107,7 @@ final class CorpusStore: ObservableObject {
     in lines: [String],
     headingIndex: Int,
     approvalTitle: String,
+    approvalIdentity: String,
     timestamp: String
   ) throws -> ScopedLineReplacement {
     let properties = propertyDrawerValues(in: lines, headingIndex: headingIndex)
@@ -1070,8 +1121,9 @@ final class CorpusStore: ObservableObject {
       [
         "STATUS": approvedAgentActionStatus(for: sendTitle),
         "ASSIGNEE": "OpenClaw",
-        "APPROVED_AT": timestamp,
+        "ORG2_AGENT_HANDOFF_AT": timestamp,
         "APPROVAL_TODO": approvalTitle,
+        "APPROVAL_ID": approvalIdentity,
       ],
       in: &replacementLines,
       headingIndex: 0
@@ -1079,74 +1131,30 @@ final class CorpusStore: ObservableObject {
     return ScopedLineReplacement(range: range, lines: replacementLines)
   }
 
-  private func pairedSendRejectionReplacement(
-    in lines: [String],
-    headingIndex: Int,
+  private func appendingApprovedAgentAction(
+    _ action: LegacyPairedApprovalAction,
     approvalTitle: String,
-    endStatus: OrgTodoStatus,
-    reason: String,
-    timestamp: String
-  ) -> ScopedLineReplacement? {
-    let properties = propertyDrawerValues(in: lines, headingIndex: headingIndex)
-    if let todo = headingTodo(lines[headingIndex]),
-       OrgTodoStatus(rawValue: todo.uppercased())?.isTerminal == true {
-      return nil
-    }
-    if sentEvidence(in: properties) != nil {
-      return nil
-    }
-
-    let range = headingMetadataRange(in: lines, headingIndex: headingIndex)
-    var replacementLines = Array(lines[range])
-    replacementLines[0] = headingLine(replacementLines[0], settingTodo: endStatus.rawValue)
-    upsertProperties(
-      [
-        "STATUS": "rejected",
-        "REJECTED_AT": timestamp,
-        "REJECTION_END_STATUS": endStatus.rawValue,
-        "REJECTION_REASON": sanitizeProperty(reason),
-        "REJECTED_APPROVAL_TODO": approvalTitle,
-      ],
-      in: &replacementLines,
-      headingIndex: 0
-    )
-    return ScopedLineReplacement(range: range, lines: replacementLines)
-  }
-
-  private func pairedSendHeadingIndex(in lines: [String], approvalHeadingIndex: Int) -> Int? {
-    let approvalProperties = propertyDrawerValues(in: lines, headingIndex: approvalHeadingIndex)
-    for key in ["PAIRED_SEND_TODO", "PAIRED_AGENT_TODO", "PAIRED_TODO", "NEXT_AGENT_TODO", "SEND_TODO"] {
-      guard let pairedTitle = approvalProperties[key], !pairedTitle.isEmpty else { continue }
-      let normalizedPairedTitle = normalizedOrgTitle(pairedTitle)
-      if let match = lines.indices.first(where: { index in
-        isHeading(lines[index]) && normalizedOrgTitle(headingTitle(lines[index])) == normalizedPairedTitle
-      }) {
-        return match
-      }
-    }
-
-    guard let approvalLevel = headingLevel(lines[approvalHeadingIndex]) else { return nil }
-    var index = approvalHeadingIndex - 1
-    while index >= 0 {
-      if isHeading(lines[index]), let level = headingLevel(lines[index]), level < approvalLevel {
-        return isApprovedAgentActionTitle(headingTitle(lines[index])) ? index : nil
-      }
-      index -= 1
-    }
-
-    return nil
-  }
-
-  private func isApprovalTitle(_ title: String) -> Bool {
-    title.range(of: #"^Approve\b"#, options: [.regularExpression, .caseInsensitive]) != nil
+    approvalIdentity: String,
+    timestamp: String,
+    to raw: String,
+    lineEnding: String
+  ) -> String {
+    let separator = raw.isEmpty || raw.hasSuffix("\n") ? "" : lineEnding
+    let actionLines = [
+      "* TODO \(action.title)",
+      ":PROPERTIES:",
+      ":APPROVAL_ID: \(approvalIdentity)",
+      ":APPROVAL_TODO: \(sanitizeProperty(approvalTitle))",
+      ":ASSIGNEE: OpenClaw",
+      ":ORG2_AGENT_HANDOFF_AT: \(timestamp)",
+      ":STATUS: \(approvedAgentActionStatus(for: action.title))",
+      ":END:",
+    ]
+    return raw + separator + actionLines.joined(separator: lineEnding) + lineEnding
   }
 
   private func isSendApprovalTitle(_ title: String) -> Bool {
     title.range(of: #"^Send approved\b"#, options: [.regularExpression, .caseInsensitive]) != nil
-  }
-
-  private func isApprovedAgentActionTitle(_ title: String) -> Bool {
-    title.range(of: #"^(Send approved|Continue approved)\b"#, options: [.regularExpression, .caseInsensitive]) != nil
   }
 
   private func approvedAgentActionStatus(for title: String) -> String {
@@ -1287,7 +1295,7 @@ final class CorpusStore: ObservableObject {
     return output
   }
 
-  private func upsertProperties(_ properties: [String: String], in lines: inout [String], headingIndex: Int) {
+  func upsertProperties(_ properties: [String: String], in lines: inout [String], headingIndex: Int) {
     guard let drawer = propertyDrawerRange(in: lines, headingIndex: headingIndex) else {
       let inserted = [":PROPERTIES:"]
         + properties.sorted { $0.key < $1.key }.map { ":\($0.key): \($0.value)" }
@@ -1297,14 +1305,18 @@ final class CorpusStore: ObservableObject {
     }
 
     var pending = properties
+    var updatedKeys = Set<String>()
     var index = drawer.start + 1
     while index < drawer.end {
       let key = propertyKey(in: lines[index])
-      if let key, let value = pending[key] {
+      if let key, let value = properties[key] {
         lines[index] = ":\(key): \(value)"
-        pending.removeValue(forKey: key)
+        updatedKeys.insert(key)
       }
       index += 1
+    }
+    for key in updatedKeys {
+      pending.removeValue(forKey: key)
     }
 
     if !pending.isEmpty {
@@ -1373,12 +1385,6 @@ final class CorpusStore: ObservableObject {
     let stars = line.prefix { $0 == "*" }
     guard !stars.isEmpty else { return false }
     return line.dropFirst(stars.count).first?.isWhitespace == true
-  }
-
-  private func headingLevel(_ line: String) -> Int? {
-    let stars = line.prefix { $0 == "*" }
-    guard !stars.isEmpty, line.dropFirst(stars.count).first?.isWhitespace == true else { return nil }
-    return stars.count
   }
 
   private func headingTodo(_ line: String) -> String? {
@@ -1452,7 +1458,7 @@ private struct ScopedLineReplacement {
 }
 
 private struct CorpusCacheSnapshot: Codable {
-  static let currentVersion = 1
+  static let currentVersion = 2
 
   let version: Int
   let rootPath: String
@@ -1470,7 +1476,9 @@ private struct CorpusBookmarkResolution: Sendable {
 
 private enum CorpusMutationError: LocalizedError {
   case approvalChanged
-  case fileChanged
+  case approvalAmbiguous
+  case approvalBlocked(String)
+  case approvalShortcutBlocked
   case pairedSendAlreadyClosed
   case pairedSendAlreadySent(String)
   case invalidScopedPatch
@@ -1478,9 +1486,13 @@ private enum CorpusMutationError: LocalizedError {
   var errorDescription: String? {
     switch self {
     case .approvalChanged:
-      "This approval changed on disk. Refresh and review the current entry before approving."
-    case .fileChanged:
-      "The file changed while Org2 Mobile was applying the approval. Refresh and try again."
+      "This approval changed on disk. Refresh and review the current entry before deciding."
+    case .approvalAmbiguous:
+      "This approval is ambiguous on disk. Give it a stable ORG2_APPROVAL_ID before deciding."
+    case .approvalBlocked(let reason):
+      reason
+    case .approvalShortcutBlocked:
+      "This item is waiting on an approval decision. Use Corpus Approvals to approve or reject it."
     case .pairedSendAlreadyClosed:
       "The paired send task is already closed. Org2 Mobile will not reopen it from an approval."
     case .pairedSendAlreadySent(let evidence):

@@ -90,7 +90,13 @@ struct ApprovalEntry: Identifiable, Hashable, Codable {
   let level: Int?
   let file: String
   let line: Int?
+  let approvalID: String?
   let sourceID: String?
+  let fingerprint: String
+  let fingerprintInput: LegacyHeadlineApprovalFingerprintInput
+  let binding: ApprovalBinding
+  let canApprove: Bool
+  let approvalBlockedReason: String?
   let properties: [String: String]
   let body: String
   let tags: [String]
