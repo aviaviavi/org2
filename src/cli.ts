@@ -54,6 +54,8 @@ import { defaultCorpusCachePath, org2IndexHome } from "./indexPaths.js";
 import { ingestDemoSource, type Org2RawCaptureInput } from "./ingestionPipeline.js";
 import { parseHeadlineTitleForRoam } from "./headlineTitle.js";
 import { parseIsoCalendarDate } from "./calendarDate.js";
+import { parseTimestampRepeater, parseTimestampWarning } from "./timestampModifiers.js";
+import type { TimestampRepeater, TimestampWarning } from "./ast.js";
 import {
   collectArtifactIdsInText,
   collectArtifactProvenanceRefsInText,
@@ -119,18 +121,6 @@ function extractTimeFromTimestamp(raw: string): string | undefined {
   const normalized = normalizeAgendaTimeToken(raw);
   return normalized || undefined;
 }
-
-type TimestampRepeater = {
-  mode: "+" | "++" | ".+";
-  value: number;
-  unit: "d" | "w" | "m" | "y";
-};
-
-type TimestampWarning = {
-  mode: "-" | "--";
-  value: number;
-  unit: "d" | "w" | "m" | "y";
-};
 
 type ExportMetadataPayload = {
   author?: string;
@@ -352,48 +342,6 @@ function hasExportMetadata(metadata: ExportMetadataPayload | null | undefined): 
       (Array.isArray(metadata.keywords) && metadata.keywords.length > 0) ||
       (Array.isArray(metadata.htmlHead) && metadata.htmlHead.length > 0),
   );
-}
-
-function parseTimestampRepeater(raw: string): TimestampRepeater | null {
-  const match = raw.match(/(?:^|\s)(\+\+|\.\+|\+)(\d+)([dwmy])(?=[^A-Za-z0-9]|$)/i);
-  if (!match) return null;
-
-  const modeRaw = match[1] ?? "+";
-  const valueRaw = match[2] ?? "";
-  const unitRaw = (match[3] ?? "").toLowerCase();
-
-  const value = Number.parseInt(valueRaw, 10);
-  if (!Number.isFinite(value) || value <= 0) return null;
-  if (unitRaw !== "d" && unitRaw !== "w" && unitRaw !== "m" && unitRaw !== "y") return null;
-
-  if (modeRaw !== "+" && modeRaw !== "++" && modeRaw !== ".+") return null;
-
-  return {
-    mode: modeRaw,
-    value,
-    unit: unitRaw,
-  };
-}
-
-function parseTimestampWarning(raw: string): TimestampWarning | null {
-  const match = raw.match(/(?:^|\s)(--|-)(\d+)([dwmy])(?=[^A-Za-z0-9]|$)/i);
-  if (!match) return null;
-
-  const modeRaw = match[1] ?? "-";
-  const valueRaw = match[2] ?? "";
-  const unitRaw = (match[3] ?? "").toLowerCase();
-
-  const value = Number.parseInt(valueRaw, 10);
-  if (!Number.isFinite(value) || value <= 0) return null;
-  if (unitRaw !== "d" && unitRaw !== "w" && unitRaw !== "m" && unitRaw !== "y") return null;
-
-  if (modeRaw !== "-" && modeRaw !== "--") return null;
-
-  return {
-    mode: modeRaw,
-    value,
-    unit: unitRaw,
-  };
 }
 
 function daysInUtcMonth(year: number, monthZeroBased: number): number {

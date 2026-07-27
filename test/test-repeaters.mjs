@@ -4,6 +4,26 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { parseOrgToCanonicalAst } from '../dist/parser.js';
+import { parseTimestampRepeater, parseTimestampWarning } from '../dist/timestampModifiers.js';
+
+assert.deepEqual(parseTimestampRepeater('<2026-05-20 Wed ++2W>'), {
+  mode: '++',
+  value: 2,
+  unit: 'w',
+  raw: '++2W',
+});
+assert.deepEqual(parseTimestampWarning('<2026-05-20 Wed --3d>'), {
+  mode: '--',
+  value: 3,
+  unit: 'd',
+  raw: '--3d',
+});
+for (const invalid of ['+0d', '+1day', '+9007199254740992d']) {
+  assert.equal(parseTimestampRepeater(invalid), undefined);
+}
+for (const invalid of ['-0d', '-1day', '--9007199254740992d']) {
+  assert.equal(parseTimestampWarning(invalid), undefined);
+}
 
 const ast = parseOrgToCanonicalAst(`* TODO Habit\nSCHEDULED: <2026-05-20 Wed ++1w> DEADLINE: <2026-05-21 Thu .+2d --1d>\n`);
 const [headline] = ast.children;
