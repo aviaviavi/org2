@@ -17,6 +17,12 @@ outcome summary; approval and clarification boundaries remain open instead of
 being mistaken for completion. Available provider, model, token, and
 elapsed-time metadata is copied into the durable run.
 
+Delegated prompts may attach a worker to an existing run with an
+`ORG2_RUN_ID:` marker. If a tracked OpenClaw session ends without delivering a
+terminal agent event, the adapter fails that still-active run as interrupted
+instead of leaving it indefinitely `running`. Runs deliberately paused for an
+approval, clarification, or artifact review remain open.
+
 The adapter remains pinned to one configured `corpusDir` for writes. Mac
 workflow requests include the selected portable corpus ID, and the plugin
 rejects a mismatch before creating, syncing, or continuing work. Stable

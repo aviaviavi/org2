@@ -1,5 +1,5 @@
 import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
-import { cronKey, executionSummary, Org2Lifecycle, shouldTrackMainTurn, workflowMarker } from "./lib/lifecycle.js";
+import { cronKey, durableRunMarker, executionSummary, Org2Lifecycle, shouldTrackMainTurn, workflowMarker } from "./lib/lifecycle.js";
 
 export default definePluginEntry({
   id: "org2-lifecycle",
@@ -66,6 +66,17 @@ export default definePluginEntry({
         }));
         return;
       }
+      const durableRunId = durableRunMarker(event.prompt);
+      if (durableRunId) {
+        await lifecycle.serialize(() => lifecycle.attach(key, durableRunId, {
+          kind: "durable-run",
+          sessionKey: ctx.sessionKey,
+          openclawRunId: ctx.runId,
+          provider: ctx.modelProviderId,
+          model: ctx.modelId,
+        }));
+        return;
+      }
       await lifecycle.serialize(() => lifecycle.ensure(key, {
         kind: "agent-turn",
         goal: event.prompt,
@@ -108,6 +119,13 @@ export default definePluginEntry({
       await lifecycle.serialize(() => lifecycle.finish(`subagent:${event.targetSessionKey}`, event.outcome || "ok", {
         error: event.error,
         summary: event.reason ? `OpenClaw subagent finished: ${event.reason}` : "OpenClaw subagent completed successfully.",
+      }));
+    });
+
+    api.on("session_end", async (event, ctx) => {
+      const sessionKey = event.sessionKey || ctx.sessionKey;
+      await lifecycle.serialize(() => lifecycle.interruptSession(sessionKey, event.reason || "unknown", {
+        durationMs: event.durationMs,
       }));
     });
 

@@ -34,6 +34,11 @@ export function workflowMarker(prompt) {
   return workflowId ? { workflowId, workflowRunId, ...(triggerId ? { triggerId } : {}), inputs } : null;
 }
 
+export function durableRunMarker(prompt) {
+  const text = String(prompt || "");
+  return text.match(/^ORG2_RUN_ID:\s*([^\s]+)\s*$/mi)?.[1];
+}
+
 export function workflowExecutionPrompt(workflow, inputs = {}, runId, triggerId) {
   return [
     `ORG2_WORKFLOW_ID: ${workflow.id}`,
@@ -84,7 +89,7 @@ export function executionSummary(messages, fallback = "OpenClaw execution comple
 
 export function outcomeCommand(outcome, success = true) {
   if (outcome === "killed" || outcome === "reset" || outcome === "deleted") return "cancel";
-  if (outcome === "error" || outcome === "timeout" || success === false) return "fail";
+  if (outcome === "error" || outcome === "timeout" || outcome === "interrupted" || success === false) return "fail";
   return "complete";
 }
 
@@ -353,6 +358,22 @@ export class Org2Lifecycle {
     }
     await this.#save();
     return { terminal: true, status: command === "complete" ? "completed" : command === "fail" ? "failed" : "canceled" };
+  }
+
+  async interruptSession(sessionKey, reason = "unknown", details = {}) {
+    if (!sessionKey) return [];
+    const interrupted = [];
+    for (const [key, mapping] of Object.entries(this.state.mappings)) {
+      if (mapping.sessionKey !== sessionKey || mapping.finishedAt || mapping.pausedAt) continue;
+      const error = `OpenClaw session ended before its durable run reached a terminal state (reason: ${reason}).`;
+      const result = await this.finish(key, "interrupted", {
+        ...details,
+        error,
+        summary: error,
+      });
+      if (result) interrupted.push({ key, org2RunId: mapping.org2RunId, ...result });
+    }
+    return interrupted;
   }
 
   async reconcile(expectedCorpusId) {
