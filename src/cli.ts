@@ -30,7 +30,13 @@ import { compileCorpus, compileCorpusIncremental, extractCheckboxProgress, rende
 import { extractClockReport } from "./clock.js";
 import { buildAgentContextPayload, renderAgentContextPack, type AgentInclude } from "./agentContext.js";
 import { buildOrg2CapabilityManifest } from "./capabilities.js";
-import { agentRunPath, currentAgentRunApprovalBoundary, listAgentRuns, type AgentRun } from "./agentRun.js";
+import {
+  agentRunApprovalDecisionKeys,
+  agentRunPath,
+  currentAgentRunApprovalBoundary,
+  listAgentRuns,
+  type AgentRun,
+} from "./agentRun.js";
 import { renderOrgChart, renderOrgCharts } from "./chartRender.js";
 import {
   buildSearchIndex,
@@ -769,6 +775,7 @@ type ApprovalQueueItem = {
   runPendingApprovalCount?: number;
   runApprovalCount?: number;
   runDecisionEffect?: string;
+  decisionKeys?: string[];
 };
 
 type ApprovalQueuePayload = {
@@ -784,6 +791,13 @@ type ApprovalQueuePayload = {
   };
   skippedCandidates?: number;
   items: ApprovalQueueItem[];
+};
+
+type ApprovalQueueCandidate = {
+  item: ApprovalQueueItem;
+  decisionKeys: string[];
+  requestedAt?: string;
+  isPending: boolean;
 };
 
 type SourceRange = { startLine: number; endLine: number };
@@ -1049,6 +1063,33 @@ function approvalHeadlineProperties(headline: HeadlineNode): Record<string, stri
   return {};
 }
 
+function approvalHeadlinePropertiesFromSource(
+  headline: HeadlineNode,
+  sourceLines: string[],
+): Record<string, string> {
+  const sourceRange = (headline as SourceRangedHeadlineNode).sourceRange;
+  if (!sourceRange) return {};
+  let index = sourceRange.startLine;
+  while (index < sourceLines.length) {
+    const line = String(sourceLines[index] || "").trim();
+    if (!line || /^(?:SCHEDULED|DEADLINE|CLOSED):/i.test(line)) {
+      index += 1;
+      continue;
+    }
+    break;
+  }
+  if (String(sourceLines[index] || "").trim().toUpperCase() !== ":PROPERTIES:") return {};
+
+  const properties: Record<string, string> = {};
+  for (index += 1; index < sourceLines.length; index += 1) {
+    const line = String(sourceLines[index] || "").trim();
+    if (line.toUpperCase() === ":END:") break;
+    const match = /^:([A-Za-z0-9_-]+):\s*(.*?)\s*$/.exec(line);
+    if (match) properties[String(match[1] || "").toUpperCase()] = String(match[2] || "");
+  }
+  return properties;
+}
+
 function isTerminalTodo(todo: string | null | undefined): boolean {
   return todo === "DONE" || todo === "CANCELED" || todo === "CANCELLED";
 }
@@ -1078,32 +1119,60 @@ function approvalBody(sourceLines: string[], sourceRange: SourceRange, children:
   return bodyLines.join("\n").trim();
 }
 
-function appendApprovalItemsFromNodes(nodes: Node[], file: string, sourceLines: string[], items: ApprovalQueueItem[]): void {
+function approvalDecisionKey(raw: string): string | null {
+  const normalized = raw.trim().toLowerCase();
+  if (!normalized) return null;
+  return normalized.startsWith("artifact:") ? normalized : `artifact:${normalized}`;
+}
+
+function approvalDecisionKeysFromProperties(properties: Record<string, string>): string[] {
+  const gmailDraftId = String(properties.GMAIL_DRAFT_ID || "").trim();
+  const key = gmailDraftId ? approvalDecisionKey(`gmail:gog:${gmailDraftId}`) : null;
+  return key ? [key] : [];
+}
+
+function appendApprovalItemsFromNodes(
+  nodes: Node[],
+  file: string,
+  sourceLines: string[],
+  candidates: ApprovalQueueCandidate[],
+  inheritedDecisionKeys: string[] = [],
+): void {
   for (const node of nodes) {
     if (node.type !== "Headline") continue;
-    appendApprovalItemFromHeadline(node, file, sourceLines, items);
-    appendApprovalItemsFromNodes(node.children, file, sourceLines, items);
+    const properties = {
+      ...approvalHeadlinePropertiesFromSource(node, sourceLines),
+      ...approvalHeadlineProperties(node),
+    };
+    const decisionKeys = Array.from(new Set([
+      ...inheritedDecisionKeys,
+      ...approvalDecisionKeysFromProperties(properties),
+    ]));
+    const item = approvalItemFromHeadline(node, file, sourceLines, properties);
+    if (item) {
+      candidates.push({ item, decisionKeys, isPending: true });
+    }
+    appendApprovalItemsFromNodes(node.children, file, sourceLines, candidates, decisionKeys);
   }
 }
 
-function appendApprovalItemFromHeadline(
+function approvalItemFromHeadline(
   headline: HeadlineNode,
   file: string,
   sourceLines: string[],
-  items: ApprovalQueueItem[],
-): void {
+  properties: Record<string, string>,
+): ApprovalQueueItem | null {
   const todo = headline.todo?.toUpperCase() ?? null;
-  if (isTerminalTodo(todo)) return;
+  if (isTerminalTodo(todo)) return null;
 
   const sourceRange = (headline as SourceRangedHeadlineNode).sourceRange;
-  if (!sourceRange) return;
+  if (!sourceRange) return null;
 
-  const properties = approvalHeadlineProperties(headline);
   const title = extractAgendaPriorityFromHeadlineTitle(headlineTitleText(headline)).title;
   const status = approvalStatus(title, properties);
-  if (!status) return;
+  if (!status) return null;
 
-  items.push({
+  return {
     kind: "headline",
     title,
     status,
@@ -1115,13 +1184,13 @@ function appendApprovalItemFromHeadline(
     properties,
     body: approvalBody(sourceLines, sourceRange, headline.children),
     tags: headline.tags ?? [],
-  });
+  };
 }
 
-function approvalItemsFromRuns(rootDir: string, runs: AgentRun[]): ApprovalQueueItem[] {
+function approvalCandidatesFromRuns(rootDir: string, runs: AgentRun[]): ApprovalQueueCandidate[] {
   return runs.flatMap((run) => {
     const pending = run.approvals.filter((approval) => approval.status === "pending");
-    return pending.map((approval) => {
+    return run.approvals.map((approval) => {
       const remainingAfterThis = pending.length - 1;
       const otherDecisionsApproved = currentAgentRunApprovalBoundary(run)
         .every((candidate) => candidate.id === approval.id || candidate.status === "approved");
@@ -1133,39 +1202,83 @@ function approvalItemsFromRuns(rootDir: string, runs: AgentRun[]): ApprovalQueue
             ? "This is the last pending approval; approving it resumes the run."
             : "This is the last pending approval, but another decision was not approved, so the run will remain blocked.";
       return {
-        kind: "run" as const,
-        title: approval.title,
-        status: approval.status,
-        todo: null,
-        level: null,
-        file: agentRunPath(rootDir, run.id),
-        line: 1,
-        idValue: approval.id,
-        properties: {},
-        body: approval.note || approval.action,
-        tags: [],
-        approvalId: approval.id,
-        fingerprint: approval.fingerprint,
-        action: approval.action,
-        riskClass: approval.riskClass,
-        ...(approval.requestedRole ? { requestedRole: approval.requestedRole } : {}),
-        ...(approval.requestedFrom ? { requestedFrom: approval.requestedFrom } : {}),
+        item: {
+          kind: "run" as const,
+          title: approval.title,
+          status: approval.status,
+          todo: null,
+          level: null,
+          file: agentRunPath(rootDir, run.id),
+          line: 1,
+          idValue: approval.id,
+          properties: {},
+          body: approval.note || approval.action,
+          tags: [],
+          approvalId: approval.id,
+          fingerprint: approval.fingerprint,
+          action: approval.action,
+          riskClass: approval.riskClass,
+          ...(approval.requestedRole ? { requestedRole: approval.requestedRole } : {}),
+          ...(approval.requestedFrom ? { requestedFrom: approval.requestedFrom } : {}),
+          requestedAt: approval.requestedAt,
+          runId: run.id,
+          runGoal: run.goal,
+          runStatus: run.status,
+          runPendingApprovalCount: pending.length,
+          runApprovalCount: run.approvals.length,
+          runDecisionEffect,
+          decisionKeys: agentRunApprovalDecisionKeys(approval),
+        },
+        decisionKeys: agentRunApprovalDecisionKeys(approval),
         requestedAt: approval.requestedAt,
-        runId: run.id,
-        runGoal: run.goal,
-        runStatus: run.status,
-        runPendingApprovalCount: pending.length,
-        runApprovalCount: run.approvals.length,
-        runDecisionEffect,
+        isPending: approval.status === "pending",
       };
     });
   });
 }
 
-function approvalItemsInDocument(document: DocumentNode, file: string, sourceText: string): ApprovalQueueItem[] {
+function approvalCandidatesInDocument(document: DocumentNode, file: string, sourceText: string): ApprovalQueueCandidate[] {
   const sourceLines = sourceText.replace(/\r\n/g, "\n").split("\n");
-  const items: ApprovalQueueItem[] = [];
-  appendApprovalItemsFromNodes(document.children, file, sourceLines, items);
+  const candidates: ApprovalQueueCandidate[] = [];
+  appendApprovalItemsFromNodes(document.children, file, sourceLines, candidates);
+  return candidates;
+}
+
+function latestApprovalCandidate(
+  lhs: ApprovalQueueCandidate,
+  rhs: ApprovalQueueCandidate,
+): ApprovalQueueCandidate {
+  const requestedOrder = String(lhs.requestedAt || "").localeCompare(String(rhs.requestedAt || ""));
+  if (requestedOrder !== 0) return requestedOrder > 0 ? lhs : rhs;
+  const lhsId = `${lhs.item.runId || ""}:${lhs.item.approvalId || ""}`;
+  const rhsId = `${rhs.item.runId || ""}:${rhs.item.approvalId || ""}`;
+  return lhsId.localeCompare(rhsId) >= 0 ? lhs : rhs;
+}
+
+function unifiedPendingApprovalItems(candidates: ApprovalQueueCandidate[]): ApprovalQueueItem[] {
+  const latestRunCandidateByDecisionKey = new Map<string, ApprovalQueueCandidate>();
+  for (const candidate of candidates) {
+    if (candidate.item.kind !== "run") continue;
+    for (const key of candidate.decisionKeys) {
+      const current = latestRunCandidateByDecisionKey.get(key);
+      latestRunCandidateByDecisionKey.set(
+        key,
+        current ? latestApprovalCandidate(current, candidate) : candidate,
+      );
+    }
+  }
+
+  const items = candidates.flatMap((candidate): ApprovalQueueItem[] => {
+    if (candidate.item.kind === "headline") {
+      const hasCanonicalRunDecision = candidate.decisionKeys.some((key) =>
+        latestRunCandidateByDecisionKey.has(key));
+      return hasCanonicalRunDecision ? [] : [candidate.item];
+    }
+    if (!candidate.isPending) return [];
+    const isLatestDecision = candidate.decisionKeys.every((key) =>
+      latestRunCandidateByDecisionKey.get(key) === candidate);
+    return isLatestDecision ? [candidate.item] : [];
+  });
   return sortedApprovalItems(items);
 }
 
@@ -12902,14 +13015,14 @@ Flags:
       }
     }
 
-    const items: ApprovalQueueItem[] = approvalItemsFromRuns(rootDir, runs);
+    const approvalCandidates = approvalCandidatesFromRuns(rootDir, runs);
     for (const candidate of candidates) {
       try {
         const document = parseOrgToCanonicalAst(candidate.parseText, {
           sourceRanges: true,
           sourceLineOffset: candidate.sourceLineOffset,
         });
-        items.push(...approvalItemsInDocument(document, candidate.file, candidate.sourceText));
+        approvalCandidates.push(...approvalCandidatesInDocument(document, candidate.file, candidate.sourceText));
       } catch (err) {
         skippedCandidates += 1;
         if (verboseErrors) {
@@ -12918,7 +13031,7 @@ Flags:
       }
     }
 
-    const sortedItems = sortedApprovalItems(items);
+    const sortedItems = unifiedPendingApprovalItems(approvalCandidates);
     const payload: ApprovalQueuePayload = {
       $schema: "org2:approvals:v2",
       count: sortedItems.length,

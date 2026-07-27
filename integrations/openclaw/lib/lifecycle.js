@@ -51,6 +51,7 @@ export function workflowExecutionPrompt(workflow, inputs = {}, runId, triggerId)
     ...(triggerId ? ["This is a scheduled attempt. The Org2 lifecycle adapter checks its declared event/fresh-work gate before creating the durable attempt; if no run was created, stop without executing workflow steps."] : []),
     "Read the workflow and durable run with the Org2 CLI. Update run steps as they progress, record produced artifacts and validation results, and keep generated work in the declared reviewable locations.",
     "At an approval boundary, request the approval on this run and end the turn without performing the protected action. Org2 will explicitly continue the same run after approval.",
+    "For a provider draft, keep the exact `Provider draft: PROVIDER:TOOL:DRAFT_ID` line in the approval action. Reuse this run for revisions; never create a second review run for the same provider draft.",
     "Before requesting an external-action or high-impact approval, record the exact recipient, content, command, and attachments in an inspectable run artifact or approval note. An opaque ID or content fingerprint is not review material.",
     "Do not bypass an approval, complete a run with a pending review boundary, or silently promote generated work into canonical notes. After a human review decision, record it with `org2 run artifact-review RUN_ID ARTIFACT_ID --status reviewed|rejected` before completing the run.",
   ].join("\n");
@@ -65,9 +66,47 @@ export function workflowContinuationPrompt(workflow, runId) {
     "",
     `Continue the Org2 workflow \"${workflow.title}\" using its existing durable run.`,
     "Re-read the workflow and run with the Org2 CLI. Continue from the first incomplete step, perform only actions covered by recorded approvals, and preserve the run's artifacts, validation, and event history.",
+    "Use this run for every replacement approval. Resolve provider authority, including decided approvals, through `org2 run approval-resolve --decision-key artifact:PROVIDER:TOOL:DRAFT_ID --json`; do not create a separate review run for a draft already represented here.",
     "Treat an approval as valid only for the exact review material recorded with it; do not substitute a new recipient, payload, command, or attachment after approval.",
     "When an approval resolves an artifact review boundary, record the artifact decision with `org2 run artifact-review RUN_ID ARTIFACT_ID --status reviewed|rejected` before completing the run.",
   ].join("\n");
+}
+
+export function workflowRevisionPrompt(workflow, runId, approval) {
+  return [
+    `ORG2_WORKFLOW_ID: ${workflow.id}`,
+    `ORG2_WORKFLOW_VERSION: ${workflow.version}`,
+    `ORG2_WORKFLOW_RUN_ID: ${runId}`,
+    `ORG2_WORKFLOW_REVISION_APPROVAL_ID: ${approval.id}`,
+    "ORG2_WORKFLOW_RESUME: revision-requested",
+    "",
+    `Revise the review material for the Org2 workflow "${workflow.title}" using its existing durable run.`,
+    "Re-read the workflow and run with the Org2 CLI. The reviewer requested changes in the approval decision note.",
+    `Requested changes: ${approval.decisionNote}`,
+    "Apply that feedback to new review material, preserve the prior artifact and decision as history, and request a replacement approval for the revised action.",
+    "Request the replacement on ORG2_WORKFLOW_RUN_ID. Preserve the exact `Provider draft: PROVIDER:TOOL:DRAFT_ID` line so the CLI can supersede the prior version and reconcile both Review and Runs.",
+    "Do not perform the protected action. A revision request is not approval, and only a later approval of the replacement material may authorize it.",
+  ].join("\n");
+}
+
+function currentApprovalBoundary(run) {
+  let boundaryStart = -1;
+  for (let index = (run.events || []).length - 1; index >= 0; index -= 1) {
+    const candidate = run.events[index];
+    if (candidate?.type === "status-changed" && candidate.data?.to === "waiting-approval") {
+      boundaryStart = index;
+      break;
+    }
+  }
+  if (boundaryStart < 0) return run.approvals || [];
+  const boundaryIds = new Set(
+    (run.events || []).slice(boundaryStart + 1)
+      .filter((candidate) => candidate?.type === "approval-requested")
+      .map((candidate) => String(candidate.data?.approvalId || "").trim())
+      .filter(Boolean),
+  );
+  if (boundaryIds.size === 0) return run.approvals || [];
+  return (run.approvals || []).filter((approval) => boundaryIds.has(approval.id));
 }
 
 function messageText(content) {
@@ -298,6 +337,42 @@ export class Org2Lifecycle {
       workflow,
       sessionKey: mapping.sessionKey,
       prompt: workflowContinuationPrompt(workflow, runId),
+      corpus: corpus.identity,
+    };
+  }
+
+  async resumeWorkflowRevision(runId, approvalId, details = {}) {
+    const corpus = await this.assertCorpus(details.expectedCorpusId);
+    const run = JSON.parse(await this.exec(["run", "show", runId, "--json"]));
+    if (!run.workflowId) throw new Error(`${runId} is not a workflow run`);
+    if (run.status !== "blocked") throw new Error(`${runId} cannot resume a revision while ${run.status}`);
+    if ((run.approvals || []).some((approval) => approval.status === "pending")) {
+      throw new Error(`${runId} still has pending approvals`);
+    }
+    const boundary = currentApprovalBoundary(run);
+    if (boundary.some((approval) => approval.status === "rejected" || approval.status === "canceled")) {
+      throw new Error(`${runId} has a rejected or canceled decision in its current approval boundary`);
+    }
+    const approval = boundary.find((candidate) => candidate.id === approvalId);
+    if (!approval || approval.status !== "revised") {
+      throw new Error(`${approvalId} is not a revision request in the current approval boundary`);
+    }
+    if (!String(approval.decisionNote || "").trim()) {
+      throw new Error(`${approvalId} is missing requested changes`);
+    }
+    const mapping = Object.values(this.state.mappings)
+      .filter((item) => item.org2RunId === runId && item.sessionKey)
+      .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))[0];
+    if (!mapping?.sessionKey) throw new Error(`OpenClaw session correlation is missing for ${runId}`);
+    const resumed = JSON.parse(await this.exec(["run", "resume", runId, "--actor", "org2-lifecycle", "--json"]));
+    const workflow = await this.workflow(run.workflowId);
+    mapping.resumedAt = new Date().toISOString();
+    await this.#save();
+    return {
+      run: resumed,
+      workflow,
+      sessionKey: mapping.sessionKey,
+      prompt: workflowRevisionPrompt(workflow, runId, approval),
       corpus: corpus.identity,
     };
   }

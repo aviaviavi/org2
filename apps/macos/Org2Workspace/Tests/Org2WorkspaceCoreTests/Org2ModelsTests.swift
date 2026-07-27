@@ -2109,6 +2109,48 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(store.openClawStatusText, "OpenClaw replied")
   }
 
+  func testOpenClawLatestDeliveryAttentionDistinguishesSendingFromFailure() {
+    let sending = OpenClawChatThread(
+      title: "Sending",
+      sessionKey: "agent:main:sending",
+      messages: [
+        OpenClawChatMessage(
+          role: .user,
+          content: "In flight",
+          deliveryStatus: .sending
+        )
+      ]
+    )
+    let failed = OpenClawChatThread(
+      title: "Failed",
+      sessionKey: "agent:main:failed",
+      messages: [
+        OpenClawChatMessage(
+          role: .user,
+          content: "Retry me",
+          sendFailure: "Offline",
+          deliveryStatus: .failed
+        )
+      ]
+    )
+    let interrupted = OpenClawChatThread(
+      title: "Interrupted",
+      sessionKey: "agent:main:interrupted",
+      messages: [
+        OpenClawChatMessage(
+          role: .user,
+          content: "Retry after restart",
+          deliveryStatus: .interrupted
+        )
+      ]
+    )
+
+    XCTAssertTrue(sending.hasUnresolvedLatestDelivery)
+    XCTAssertFalse(sending.latestDeliveryNeedsAttention)
+    XCTAssertTrue(failed.latestDeliveryNeedsAttention)
+    XCTAssertTrue(interrupted.latestDeliveryNeedsAttention)
+  }
+
   @MainActor
   func testOpenClawInFlightSendRestoresAsInterruptedAndRetryable() async throws {
     let root = FileManager.default.temporaryDirectory
@@ -12713,9 +12755,52 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertFalse(updated.contains("* Mac note"))
     XCTAssertEqual(store.statusText, "Save conflict: file changed on disk")
     XCTAssertTrue(store.errorText?.contains("File changed on disk") == true)
+    XCTAssertEqual(store.editorSaveConflict?.file, note.path)
+    XCTAssertEqual(store.editorSaveConflict?.canOverwrite, true)
     XCTAssertTrue(store.isEditingEntry)
     XCTAssertTrue(store.entryEditorHasUnsavedChanges)
     XCTAssertTrue(store.editableEntryText.contains("* Mac note"))
+
+    await store.reloadAfterSaveConflict()
+
+    XCTAssertNil(store.editorSaveConflict)
+    XCTAssertTrue(store.isEditingEntry)
+    XCTAssertFalse(store.entryEditorHasUnsavedChanges)
+    XCTAssertTrue(store.editableEntryText.contains("* Phone note\nSynced from mobile."))
+    XCTAssertFalse(store.editableEntryText.contains("* Mac note"))
+
+    store.editableEntryText += "\n* Mac note\nPreserve this local edit.\n"
+    store.noteSourceEditorLocalTextChanged(store.editableEntryText)
+    try """
+    #+TITLE: 2026-06-13 synced again
+
+    * Phone note
+    Synced from mobile.
+
+    * Remote follow-up
+    Written after the reload.
+    """.write(to: note, atomically: true, encoding: .utf8)
+    await store.saveActiveEdit()
+    XCTAssertNotNil(store.editorSaveConflict)
+
+    await store.overwriteAfterSaveConflict()
+
+    let overwritten = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(overwritten.contains("* Phone note\nSynced from mobile."))
+    XCTAssertTrue(overwritten.contains("* Mac note\nPreserve this local edit."))
+    XCTAssertFalse(overwritten.contains("* Remote follow-up"))
+    XCTAssertNil(store.editorSaveConflict)
+    XCTAssertFalse(store.entryEditorHasUnsavedChanges)
+    XCTAssertTrue(store.statusText.contains(".org2-recovery"))
+
+    let recoveryDirectory = root.appendingPathComponent(".org2-recovery", isDirectory: true)
+    let recoveryFiles = try FileManager.default.contentsOfDirectory(
+      at: recoveryDirectory,
+      includingPropertiesForKeys: nil
+    )
+    let recoveryFile = try XCTUnwrap(recoveryFiles.first)
+    let recovered = try String(contentsOf: recoveryFile, encoding: .utf8)
+    XCTAssertTrue(recovered.contains("* Remote follow-up\nWritten after the reload."))
   }
 
   @MainActor

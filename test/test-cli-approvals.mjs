@@ -4,6 +4,14 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import {
+  addAgentRunComment,
+  createAgentRun,
+  loadAgentRun,
+  requestAgentRunApproval,
+  saveAgentRun,
+  transitionAgentRun,
+} from "../dist/agentRun.js";
 
 const repo = process.cwd();
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "org2-approvals-test-"));
@@ -98,6 +106,159 @@ assert.equal(headlineItems[1].title, "Approve sending Mercor technographics data
 assert.equal(headlineItems[1].idValue, "approval-priority");
 assert.equal(headlineItems[1].status, "waiting-on-avi-approval");
 
+fs.appendFileSync(note, `
+
+* TODO Send shared provider draft
+:PROPERTIES:
+:GMAIL_DRAFT_ID: r-shared-provider-draft
+:END:
+** TODO Approve shared provider draft
+:PROPERTIES:
+:ID: shared-provider-headline
+:STATUS: draft-needs-review
+:END:
+This heading is a legacy projection of the durable run approval.
+`, "utf8");
+
+const sharedRuns = [];
+for (const runId of ["shared-provider-old", "shared-provider-current"]) {
+  cli([
+    "run", "create", "--id", runId, "--goal", "Send shared provider draft",
+    "--context", "artifact:gmail:gog:r-shared-provider-draft",
+    "--dir", tmp, "--json",
+  ]);
+  cli(["run", "start", runId, "--dir", tmp, "--json"]);
+  sharedRuns.push(JSON.parse(cli([
+    "run", "approval-request", runId,
+    "--title", "Approve shared provider draft",
+    "--action", "Send exact reviewed content\nProvider draft: gmail:gog:r-shared-provider-draft",
+    "--risk", "external-action", "--role", "owner", "--dir", tmp, "--json",
+  ])));
+}
+const expectedSharedRun = [...sharedRuns]
+  .sort((lhs, rhs) => {
+    const requestedOrder = lhs.approvals.at(-1).requestedAt.localeCompare(rhs.approvals.at(-1).requestedAt);
+    if (requestedOrder !== 0) return requestedOrder;
+    return `${lhs.id}:${lhs.approvals.at(-1).id}`.localeCompare(`${rhs.id}:${rhs.approvals.at(-1).id}`);
+  })
+  .at(-1);
+
+cli([
+  "run", "create", "--id", "shared-provider-hook", "--goal", "Review shared provider draft",
+  "--risk", "external-action", "--dir", tmp, "--json",
+]);
+cli([
+  "run", "comment", "shared-provider-hook", "--author", "org2-lifecycle",
+  "--body", "OPENCLAW_KEY: draft:gmail:gog:owner@example.com:r-shared-provider-draft\nOPENCLAW_KIND: external-draft",
+  "--dir", tmp, "--json",
+]);
+cli(["run", "start", "shared-provider-hook", "--dir", tmp, "--json"]);
+const reusedSharedRun = JSON.parse(cli([
+  "run", "approval-request", "shared-provider-hook",
+  "--title", "Approve shared provider draft from OpenClaw",
+  "--action", "Send exact reviewed content\nProvider draft: gmail:gog:r-shared-provider-draft",
+  "--risk", "external-action", "--role", "owner", "--dir", tmp, "--json",
+]));
+assert.equal(reusedSharedRun.id, expectedSharedRun.id);
+assert.equal(loadAgentRun(tmp, "shared-provider-hook").status, "canceled");
+
+let legacySharedRun = createAgentRun({
+  id: "shared-provider-legacy",
+  goal: "Review legacy shared provider draft",
+  riskClass: "external-action",
+  now: "2026-01-01T00:00:00Z",
+});
+legacySharedRun = addAgentRunComment(
+  legacySharedRun,
+  "org2-lifecycle",
+  "OPENCLAW_KEY: draft:gmail:gog:owner@example.com:r-shared-provider-draft\nOPENCLAW_KIND: external-draft",
+  "2026-01-01T00:00:01Z",
+);
+legacySharedRun = transitionAgentRun(legacySharedRun, "running", { now: "2026-01-01T00:00:02Z" });
+legacySharedRun = requestAgentRunApproval(legacySharedRun, {
+  id: "legacy-shared-approval",
+  title: "Approve legacy shared provider draft",
+  action: "Send older reviewed content\nProvider draft: gmail:gog:r-shared-provider-draft",
+  riskClass: "external-action",
+  requestedRole: "owner",
+  requestedAt: "2026-01-01T00:00:03Z",
+});
+saveAgentRun(tmp, legacySharedRun);
+
+const unifiedPayload = JSON.parse(cli([
+  "approvals", "--dir", tmp, "--recursive", "--index", "never", "--format", "json",
+]));
+const sharedItems = unifiedPayload.items.filter((item) =>
+  item.idValue === "shared-provider-headline"
+    || item.action?.includes("Provider draft: gmail:gog:r-shared-provider-draft"));
+assert.equal(sharedItems.length, 1);
+assert.equal(sharedItems[0].kind, "run");
+assert.equal(sharedItems[0].runId, expectedSharedRun.id);
+assert.deepEqual(sharedItems[0].decisionKeys, ["artifact:gmail:gog:r-shared-provider-draft"]);
+
+cli([
+  "run", "approval-decide", sharedItems[0].runId, sharedItems[0].approvalId,
+  "--decision", "approved", "--actor", "Avi", "--role", "owner",
+  "--fingerprint", sharedItems[0].fingerprint, "--dir", tmp, "--json",
+]);
+const afterSharedDecision = JSON.parse(cli([
+  "approvals", "--dir", tmp, "--recursive", "--index", "never", "--format", "json",
+]));
+assert.equal(afterSharedDecision.items.filter((item) =>
+  item.idValue === "shared-provider-headline"
+    || item.action?.includes("Provider draft: gmail:gog:r-shared-provider-draft")).length, 0);
+const reconciledLegacyRun = loadAgentRun(tmp, "shared-provider-legacy");
+assert.equal(reconciledLegacyRun.status, "canceled");
+assert.equal(reconciledLegacyRun.approvals[0].status, "canceled");
+assert.match(reconciledLegacyRun.approvals[0].receipt, /Superseded by approval/);
+const resolvedSharedApproval = JSON.parse(cli([
+  "run", "approval-resolve",
+  "--decision-key", "gmail:gog:r-shared-provider-draft",
+  "--dir", tmp, "--json",
+]));
+assert.equal(resolvedSharedApproval.found, true);
+assert.equal(resolvedSharedApproval.canonical.runId, expectedSharedRun.id);
+assert.equal(resolvedSharedApproval.canonical.approval.status, "approved");
+assert.equal(resolvedSharedApproval.projections.some((projection) =>
+  projection.runId === "shared-provider-legacy"
+    && projection.approvalStatus === "canceled"), true);
+
+let postDecisionDuplicate = createAgentRun({
+  id: "shared-provider-post-decision",
+  goal: "Review stale shared provider draft",
+  riskClass: "external-action",
+  now: "2026-01-02T00:00:00Z",
+});
+postDecisionDuplicate = addAgentRunComment(
+  postDecisionDuplicate,
+  "org2-lifecycle",
+  "OPENCLAW_KEY: draft:gmail:gog:owner@example.com:r-shared-provider-draft\nOPENCLAW_KIND: external-draft",
+  "2026-01-02T00:00:01Z",
+);
+postDecisionDuplicate = transitionAgentRun(postDecisionDuplicate, "running", { now: "2026-01-02T00:00:02Z" });
+postDecisionDuplicate = requestAgentRunApproval(postDecisionDuplicate, {
+  id: "post-decision-shared-approval",
+  title: "Approve stale shared provider draft",
+  action: "Send stale reviewed content\nProvider draft: gmail:gog:r-shared-provider-draft",
+  riskClass: "external-action",
+  requestedRole: "owner",
+  requestedAt: "2026-01-02T00:00:03Z",
+});
+saveAgentRun(tmp, postDecisionDuplicate);
+const reconciliationPreview = JSON.parse(cli([
+  "run", "approval-reconcile", "--dir", tmp, "--json",
+]));
+assert.equal(reconciliationPreview.applied, false);
+assert.equal(reconciliationPreview.changed, true);
+assert.equal(loadAgentRun(tmp, "shared-provider-post-decision").status, "waiting-approval");
+const reconciliation = JSON.parse(cli([
+  "run", "approval-reconcile", "--apply", "--dir", tmp, "--json",
+]));
+assert.equal(reconciliation.applied, true);
+assert.equal(reconciliation.updates.some((update) =>
+  update.runId === "shared-provider-post-decision" && update.runClosed), true);
+assert.equal(loadAgentRun(tmp, "shared-provider-post-decision").status, "canceled");
+
 cli(["run", "create", "--id", "revision-run", "--goal", "Release revised copy", "--dir", tmp, "--json"]);
 cli(["run", "start", "revision-run", "--dir", tmp, "--json"]);
 let revisionRun = JSON.parse(cli([
@@ -107,8 +268,15 @@ let revisionRun = JSON.parse(cli([
 ]));
 cli([
   "run", "approval-decide", "revision-run", revisionRun.approvals.at(-1).id,
-  "--decision", "revised", "--actor", "Avi", "--role", "owner", "--dir", tmp, "--json",
+  "--decision", "revised", "--actor", "Avi", "--role", "owner",
+  "--note", "Make the opening more direct and remove the internal acronym.",
+  "--dir", tmp, "--json",
 ]);
+assert.equal(
+  JSON.parse(cli(["run", "show", "revision-run", "--dir", tmp, "--json"]))
+    .approvals.at(-1).decisionNote,
+  "Make the opening more direct and remove the internal acronym.",
+);
 revisionRun = JSON.parse(cli([
   "run", "approval-request", "revision-run",
   "--title", "Approve revised copy", "--action", "send revised copy",

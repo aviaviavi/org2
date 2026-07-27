@@ -105,6 +105,12 @@ public struct ContentView: View {
         SimilarTodoAssignmentView()
           .environmentObject(store)
       }
+      .sheet(item: $store.editorSaveConflict, onDismiss: {
+        store.keepEditingAfterSaveConflict()
+      }) { conflict in
+        EditorSaveConflictSheet(conflict: conflict)
+          .environmentObject(store)
+      }
       .alert(item: $store.slideExportNotice) { notice in
         Alert(
           title: Text(notice.title),
@@ -113,6 +119,56 @@ public struct ContentView: View {
         )
       }
     }
+  }
+}
+
+private struct EditorSaveConflictSheet: View {
+  @EnvironmentObject private var store: WorkspaceStore
+  let conflict: Org2EditorSaveConflict
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 16) {
+      Label("File Changed on Disk", systemImage: "exclamationmark.triangle.fill")
+        .font(.title3.weight(.semibold))
+        .foregroundStyle(.orange)
+
+      Text("A newer version of this file was written after the editor loaded it. Your unsaved changes are still safe in the editor.")
+        .fixedSize(horizontal: false, vertical: true)
+
+      Text(store.relativePath(conflict.file))
+        .font(.callout.monospaced())
+        .foregroundStyle(.secondary)
+        .textSelection(.enabled)
+
+      if conflict.canOverwrite {
+        Text("Reloading keeps the newer disk version and discards your editor draft. Overwriting saves your draft and first places the newer disk version in .org2-recovery.")
+          .font(.callout)
+          .foregroundStyle(.secondary)
+          .fixedSize(horizontal: false, vertical: true)
+      } else {
+        Text("Keep editing to copy anything you need, or reload the latest disk version. Overwrite is unavailable for a partial-file edit because it could replace unrelated changes.")
+          .font(.callout)
+          .foregroundStyle(.secondary)
+          .fixedSize(horizontal: false, vertical: true)
+      }
+
+      HStack {
+        Spacer()
+        Button("Keep Editing") {
+          store.keepEditingAfterSaveConflict()
+        }
+        Button("Reload from Disk", role: .destructive) {
+          Task { await store.reloadAfterSaveConflict() }
+        }
+        if conflict.canOverwrite {
+          Button("Overwrite with My Version", role: .destructive) {
+            Task { await store.overwriteAfterSaveConflict() }
+          }
+        }
+      }
+    }
+    .padding(20)
+    .frame(width: 520)
   }
 }
 
@@ -951,7 +1007,7 @@ private struct OpenClawSidebarThreadRow: View {
               .foregroundStyle(.secondary)
               .help("Canonical resource thread")
           }
-          if thread.hasUnresolvedLatestDelivery {
+          if thread.latestDeliveryNeedsAttention {
             Image(systemName: "exclamationmark.triangle.fill")
               .font(.caption2.weight(.semibold))
               .foregroundStyle(.orange)
@@ -2626,6 +2682,8 @@ private struct RunCenterDetail: View {
   @State private var isCompletionPresented = false
   @State private var completionMode: RunCompletionMode = .run
   @State private var isWorkflowConfirmationPresented = false
+  @State private var revisionApproval: AgentRunApprovalItem?
+  @State private var revisionFeedback = ""
   @State private var openClawApprovalDetails: OpenClawExecApprovalDetails?
   @State private var isLoadingOpenClawApprovalDetails = false
   @State private var openClawApprovalDetailsError: String?
@@ -2767,8 +2825,12 @@ private struct RunCenterDetail: View {
                   Button("Approve") { Task { await store.decideAgentRunApproval(run, approval: approval, decision: "approved") } }
                     .disabled(isMutating || !canApprove(approval))
                     .help(canApprove(approval) ? "Approve the displayed action" : "Reviewable action details are required before approval")
-                  Button("Revise") { Task { await store.decideAgentRunApproval(run, approval: approval, decision: "revised") } }
-                    .disabled(isMutating)
+                  Button("Request Changes…") {
+                    revisionFeedback = ""
+                    revisionApproval = approval
+                  }
+                  .disabled(isMutating)
+                  .help("Describe the changes required and return the work to the agent")
                   Button("Reject") { Task { await store.decideAgentRunApproval(run, approval: approval, decision: "rejected") } }
                     .disabled(isMutating)
                   Spacer()
@@ -2831,6 +2893,8 @@ private struct RunCenterDetail: View {
       completionSummary = ""
       isCompletionPresented = false
       completionMode = .run
+      revisionApproval = nil
+      revisionFeedback = ""
       openClawApprovalDetails = nil
       openClawApprovalDetailsError = nil
       isLoadingOpenClawApprovalDetails = false
@@ -2846,6 +2910,18 @@ private struct RunCenterDetail: View {
           case .run: await store.completeAgentRun(run, summary: summary)
           case .external: await store.completeAgentRunExternally(run, summary: summary)
           }
+        }
+      }
+    }
+    .sheet(item: $revisionApproval) { approval in
+      ApprovalRevisionSheet(
+        title: approval.title,
+        action: approval.action,
+        feedback: $revisionFeedback
+      ) { feedback in
+        revisionApproval = nil
+        Task {
+          await store.requestAgentRunChanges(run, approval: approval, feedback: feedback)
         }
       }
     }
@@ -3207,6 +3283,8 @@ private struct ApprovalsView: View {
   @FocusState private var filterFocused: Bool
   @State private var discussionItem: ApprovalItem?
   @State private var discussionMessage = "I need to discuss this approval item before deciding."
+  @State private var revisionItem: ApprovalItem?
+  @State private var revisionFeedback = ""
 
   var body: some View {
     VStack(spacing: 0) {
@@ -3239,6 +3317,16 @@ private struct ApprovalsView: View {
         }
       )
         .environmentObject(store)
+    }
+    .sheet(item: $revisionItem) { item in
+      ApprovalRevisionSheet(
+        title: item.title,
+        action: item.action ?? item.body,
+        feedback: $revisionFeedback
+      ) { feedback in
+        revisionItem = nil
+        Task { await store.requestChanges(item, feedback: feedback) }
+      }
     }
     .onAppear {
       if store.approvalItems.isEmpty && !store.isLoadingApprovals {
@@ -3289,7 +3377,10 @@ private struct ApprovalsView: View {
             isApproving: store.isApprovingApproval(item),
             isRejecting: store.isRejectingApproval(item),
             approve: { Task { await store.approve(item) } },
-            revise: item.isRunApproval ? { Task { await store.revise(item) } } : nil,
+            requestChanges: item.isRunApproval ? {
+              revisionFeedback = ""
+              revisionItem = item
+            } : nil,
             reject: { store.promptAndRejectApproval(item) },
             copy: { store.copyApprovalDiscussionText(item) },
             discuss: {
@@ -3325,6 +3416,15 @@ private struct ApprovalsView: View {
               Label("Approve", systemImage: "checkmark")
             }
             .disabled(store.isApprovalActionInProgress(item))
+            if item.isRunApproval {
+              Button {
+                revisionFeedback = ""
+                revisionItem = item
+              } label: {
+                Label("Request Changes…", systemImage: "arrow.uturn.backward")
+              }
+              .disabled(store.isApprovalActionInProgress(item))
+            }
             Button {
               discussionMessage = "I need to discuss this approval item before deciding."
               discussionItem = item
@@ -3382,7 +3482,7 @@ private struct ApprovalRow: View {
   let isApproving: Bool
   let isRejecting: Bool
   let approve: () -> Void
-  let revise: (() -> Void)?
+  let requestChanges: (() -> Void)?
   let reject: () -> Void
   let copy: () -> Void
   let discuss: () -> Void
@@ -3455,11 +3555,11 @@ private struct ApprovalRow: View {
         }
         .buttonStyle(WorkspaceActionButtonStyle())
 
-        if let revise {
+        if let requestChanges {
           Button {
-            revise()
+            requestChanges()
           } label: {
-            Label("Revise", systemImage: "arrow.uturn.backward")
+            Label("Request Changes…", systemImage: "arrow.uturn.backward")
           }
           .buttonStyle(WorkspaceActionButtonStyle())
           .disabled(isActionInProgress)
@@ -3505,6 +3605,67 @@ private struct ApprovalRow: View {
       }
     }
     .accessibilityAddTraits(isSelected ? .isSelected : [])
+  }
+}
+
+private struct ApprovalRevisionSheet: View {
+  @Environment(\.dismiss) private var dismiss
+  let title: String
+  let action: String
+  @Binding var feedback: String
+  let requestChanges: (String) -> Void
+
+  private var normalizedFeedback: String {
+    feedback.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 14) {
+      VStack(alignment: .leading, spacing: 5) {
+        Text("Request Changes")
+          .font(.headline)
+        Text(Org2Display.cleanInline(title))
+          .font(.body.weight(.semibold))
+          .lineLimit(2)
+        if !action.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+          Text(Org2Display.cleanBlock(action).trimmedForDisplay(maxCharacters: 360))
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .lineLimit(4)
+        }
+      }
+
+      Text("What should the agent change?")
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(.secondary)
+      TextEditor(text: $feedback)
+        .font(.body)
+        .frame(minHeight: 130)
+        .overlay(
+          RoundedRectangle(cornerRadius: 6, style: .continuous)
+            .stroke(WorkspaceDesign.hairline)
+        )
+
+      Text("The current material will remain unapproved. Your feedback will be saved in the run; a correlated workflow will continue by preparing replacement material for approval.")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+
+      HStack {
+        Spacer()
+        Button("Cancel") { dismiss() }
+        Button {
+          let feedback = normalizedFeedback
+          dismiss()
+          requestChanges(feedback)
+        } label: {
+          Label("Request Changes", systemImage: "arrow.uturn.backward")
+        }
+        .buttonStyle(.borderedProminent)
+        .disabled(normalizedFeedback.isEmpty)
+      }
+    }
+    .padding(18)
+    .frame(width: 480)
   }
 }
 

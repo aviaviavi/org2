@@ -328,6 +328,19 @@ export function agentRunApprovalFingerprint(input: Pick<AgentRunApproval, "title
   return `sha256:${crypto.createHash("sha256").update(JSON.stringify(material)).digest("hex")}`;
 }
 
+export function agentRunApprovalDecisionKeys(
+  input: Pick<AgentRunApproval, "action"> & Partial<Pick<AgentRunApproval, "note">>,
+): string[] {
+  const keys = new Set<string>();
+  const reviewMaterial = `${input.action || ""}\n${input.note || ""}`;
+  for (const match of reviewMaterial.matchAll(/^\s*Provider draft:\s*(\S+)\s*$/gim)) {
+    const raw = String(match[1] || "").trim().toLowerCase();
+    if (!raw) continue;
+    keys.add(raw.startsWith("artifact:") ? raw : `artifact:${raw}`);
+  }
+  return [...keys].sort();
+}
+
 export function createAgentRun(input: AgentRunCreateInput): AgentRun {
   const now = isoNow(input.now);
   const id = safeId(input.id || crypto.randomUUID());
@@ -717,6 +730,7 @@ export function currentAgentRunApprovalBoundary(run: AgentRun): AgentRunApproval
 export function decideAgentRunApproval(run: AgentRun, approvalId: string, decision: AgentRunApprovalDecision, input: { actor: string; actorRole?: string; fingerprint?: string; note?: string; receipt?: string; now?: string }): AgentRun {
   const now = isoNow(input.now);
   if (!AGENT_RUN_APPROVAL_DECISIONS.includes(decision)) throw new Error(`invalid approval decision: ${decision}`);
+  if (decision === "revised" && !optional(input.note)) throw new Error("revision decision requires a note describing the requested changes");
   const index = run.approvals.findIndex((approval) => approval.id === approvalId);
   if (index < 0) throw new Error(`approval not found: ${approvalId}`);
   if (run.approvals[index]!.status !== "pending") throw new Error(`approval is already ${run.approvals[index]!.status}`);
@@ -740,6 +754,54 @@ export function decideAgentRunApproval(run: AgentRun, approvalId: string, decisi
     next = transitionAgentRun(next, allApproved ? "running" : "blocked", {
       actor: input.actor,
       reason: allApproved ? undefined : AGENT_RUN_APPROVAL_BLOCK_REASON,
+      now,
+    });
+  }
+  return next;
+}
+
+export function supersedeAgentRunApproval(
+  run: AgentRun,
+  approvalId: string,
+  input: {
+    actor?: string;
+    replacementRunId: string;
+    replacementApprovalId: string;
+    now?: string;
+  },
+): AgentRun {
+  const now = isoNow(input.now);
+  const index = run.approvals.findIndex((approval) => approval.id === approvalId);
+  if (index < 0) throw new Error(`approval not found: ${approvalId}`);
+  if (run.approvals[index]!.status !== "pending") return run;
+  const approvals = [...run.approvals];
+  approvals[index] = {
+    ...approvals[index]!,
+    status: "canceled",
+    decidedAt: now,
+    decidedBy: input.actor || "org2-approval-reconciler",
+    receipt: `Superseded by approval ${input.replacementApprovalId} on run ${input.replacementRunId}.`,
+  };
+  let next: AgentRun = {
+    ...run,
+    approvals,
+    updatedAt: now,
+    events: [...run.events, event(
+      "approval-superseded",
+      now,
+      input.actor || "org2-approval-reconciler",
+      `${approvalId} -> ${input.replacementRunId}:${input.replacementApprovalId}`,
+      {
+        approvalId,
+        replacementRunId: input.replacementRunId,
+        replacementApprovalId: input.replacementApprovalId,
+      },
+    )],
+  };
+  if (run.status === "waiting-approval" && approvals.every((approval) => approval.status !== "pending")) {
+    next = transitionAgentRun(next, "blocked", {
+      actor: input.actor || "org2-approval-reconciler",
+      reason: AGENT_RUN_APPROVAL_BLOCK_REASON,
       now,
     });
   }

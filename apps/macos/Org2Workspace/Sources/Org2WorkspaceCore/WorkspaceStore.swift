@@ -20,6 +20,17 @@ public struct Org2SlideExportNotice: Identifiable, Equatable, Sendable {
   }
 }
 
+public struct Org2EditorSaveConflict: Identifiable, Equatable, Sendable {
+  public let id = UUID()
+  public let file: String
+  public let canOverwrite: Bool
+
+  public init(file: String, canOverwrite: Bool) {
+    self.file = file
+    self.canOverwrite = canOverwrite
+  }
+}
+
 private enum StarterCorpusCreationError: LocalizedError {
   case notDirectory(String)
   case notEmpty(String)
@@ -1109,6 +1120,7 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var isSavingBlock = false
   @Published public private(set) var isExportingSlides = false
   @Published public var slideExportNotice: Org2SlideExportNotice?
+  @Published public var editorSaveConflict: Org2EditorSaveConflict?
   @Published public private(set) var isLiveFileEditorAutosaving = false
   @Published public private(set) var liveFileEditorStatusText = ""
   @Published public var isLoadingBacklinks = false
@@ -1316,6 +1328,8 @@ public final class WorkspaceStore: ObservableObject {
   private var slidePreviewGeneration = 0
   private var slidePreviewSourceID: String?
   private var sourceEditorLocalDraftText: String?
+  private var editorSaveConflictSource: EntrySource?
+  private var editorSaveConflictDraft: String?
 
   public init(
     cli: Org2CLI? = nil,
@@ -3069,7 +3083,12 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
-  public func decideAgentRunApproval(_ run: AgentRunItem, approval: AgentRunApprovalItem, decision: String) async {
+  public func decideAgentRunApproval(
+    _ run: AgentRunItem,
+    approval: AgentRunApprovalItem,
+    decision: String,
+    note: String? = nil
+  ) async {
     guard corpusRoot != nil, !mutatingAgentRunIDs.contains(run.id) else { return }
     mutatingAgentRunIDs.insert(run.id)
     defer { mutatingAgentRunIDs.remove(run.id) }
@@ -3080,7 +3099,8 @@ public final class WorkspaceStore: ObservableObject {
         fingerprint: approval.fingerprint,
         decision: decision,
         requestedRole: approval.requestedRole,
-        requestedFrom: approval.requestedFrom
+        requestedFrom: approval.requestedFrom,
+        note: note
       )
       if let index = agentRuns.firstIndex(where: { $0.id == updated.id }) {
         agentRuns[index] = updated
@@ -3095,19 +3115,24 @@ public final class WorkspaceStore: ObservableObject {
       }
       scheduleApprovalsRefresh()
       statusText = "\(approval.title): \(decision) · \(updated.pendingApprovalCount) pending"
-      if decision == "approved", updated.status == "running", updated.workflowId != nil {
-        do {
-          try await continueOpenClawWorkflowAfterApproval(updated)
-          statusText = "Approved and continued \(updated.goal)"
-        } catch {
-          errorText = error.localizedDescription
-          statusText = "Approved; OpenClaw continuation pending"
-        }
-      }
+      await continueOpenClawAfterApprovalBoundary(updated)
     } catch {
       errorText = error.localizedDescription
       statusText = "Approval update failed"
     }
+  }
+
+  public func requestAgentRunChanges(
+    _ run: AgentRunItem,
+    approval: AgentRunApprovalItem,
+    feedback: String
+  ) async {
+    guard let feedback = Self.normalizedApprovalRevisionFeedback(feedback) else {
+      errorText = "Describe what the agent should change."
+      statusText = "Revision feedback required"
+      return
+    }
+    await decideAgentRunApproval(run, approval: approval, decision: "revised", note: feedback)
   }
 
   public func openClawExecApprovalDetails(for run: AgentRunItem) async throws -> OpenClawExecApprovalDetails? {
@@ -3132,6 +3157,56 @@ public final class WorkspaceStore: ObservableObject {
     }
     let shouldDrain = enqueueOpenClawMessage(continuation.prompt, attachments: [], in: thread.id)
     if shouldDrain { await drainOpenClawSendQueue(for: thread.id) }
+  }
+
+  private func continueOpenClawWorkflowAfterRevision(
+    _ run: AgentRunItem,
+    approval: AgentRunApprovalItem
+  ) async throws {
+    let gateway = OpenClawGatewayClient(settings: currentOpenClawSettings(allowKeychainRead: true))
+    let continuation = try await gateway.resumeWorkflowRevision(
+      runID: run.id,
+      approvalID: approval.id,
+      corpusID: activeCorpusIdentity?.id
+    )
+    let thread: OpenClawChatThread
+    if let existing = openClawChatThreads.first(where: { $0.sessionKey == continuation.sessionKey }) {
+      if existing.isSettled { reopenOpenClawChatThread(existing.id) }
+      thread = openClawChatThreads.first(where: { $0.id == existing.id }) ?? existing
+    } else {
+      thread = createOpenClawChatThread(
+        title: "Workflow: \(run.goal)",
+        statusText: "Continuing requested revision",
+        sessionKey: continuation.sessionKey
+      )
+    }
+    navigateToSurface(.openClaw)
+    selectOpenClawChatThread(thread.id)
+    let shouldDrain = enqueueOpenClawMessage(continuation.prompt, attachments: [], in: thread.id)
+    if shouldDrain { await drainOpenClawSendQueue(for: thread.id) }
+  }
+
+  private func continueOpenClawAfterApprovalBoundary(_ run: AgentRunItem) async {
+    guard run.workflowId != nil else { return }
+    if run.status == "running" {
+      do {
+        try await continueOpenClawWorkflowAfterApproval(run)
+        statusText = "Approved and continued \(run.goal)"
+      } catch {
+        errorText = error.localizedDescription
+        statusText = "Approved; OpenClaw continuation pending"
+      }
+      return
+    }
+    guard let revision = run.resumableRevisionApproval else { return }
+    do {
+      try await continueOpenClawWorkflowAfterRevision(run, approval: revision)
+      await refreshAgentRuns()
+      statusText = "Changes requested; continuing \(run.goal)"
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Changes recorded; OpenClaw continuation pending"
+    }
   }
 
   public func saveAgentRunAsWorkflow(_ run: AgentRunItem) async {
@@ -3684,9 +3759,10 @@ public final class WorkspaceStore: ObservableObject {
 
     do {
       if item.isRunApproval {
-        try await decideRunApprovalItem(item, decision: "approved")
+        let updated = try await decideRunApprovalItem(item, decision: "approved")
         removeApprovalItemOptimistically(item.id, originalVisibleIndex: originalVisibleIndex)
         scheduleApprovalsRefresh()
+        await continueOpenClawAfterApprovalBoundary(updated)
         return
       }
       try await approveAndAgentHandoff(HeadlineMutationTarget(
@@ -3728,7 +3804,7 @@ public final class WorkspaceStore: ObservableObject {
 
     do {
       if item.isRunApproval {
-        try await decideRunApprovalItem(item, decision: "rejected", note: reason)
+        _ = try await decideRunApprovalItem(item, decision: "rejected", note: reason)
         removeApprovalItemOptimistically(item.id, originalVisibleIndex: originalVisibleIndex)
         scheduleApprovalsRefresh()
         return
@@ -3764,26 +3840,37 @@ public final class WorkspaceStore: ObservableObject {
     isApprovingApproval(item) || isRejectingApproval(item)
   }
 
-  public func revise(_ item: ApprovalItem) async {
+  public func requestChanges(_ item: ApprovalItem, feedback: String) async {
     guard item.isRunApproval, !isApprovalActionInProgress(item) else { return }
+    guard let feedback = Self.normalizedApprovalRevisionFeedback(feedback) else {
+      errorText = "Describe what the agent should change."
+      statusText = "Revision feedback required"
+      return
+    }
     let originalVisibleIndex = visibleApprovalItems.firstIndex(where: { $0.id == item.id })
     beginApprovalAction(item, kind: .reject)
     defer { endApprovalAction(item, kind: .reject) }
     do {
-      try await decideRunApprovalItem(item, decision: "revised")
+      let updated = try await decideRunApprovalItem(item, decision: "revised", note: feedback)
       removeApprovalItemOptimistically(item.id, originalVisibleIndex: originalVisibleIndex)
       scheduleApprovalsRefresh()
+      await continueOpenClawAfterApprovalBoundary(updated)
     } catch {
       errorText = error.localizedDescription
       statusText = "Revision request failed"
     }
   }
 
-  private func decideRunApprovalItem(_ item: ApprovalItem, decision: String, note: String? = nil) async throws {
+  private func decideRunApprovalItem(_ item: ApprovalItem, decision: String, note: String? = nil) async throws -> AgentRunItem {
     guard corpusRoot != nil, let runID = item.runId, let approvalID = item.approvalId else {
       throw CocoaError(.fileReadCorruptFile, userInfo: [NSLocalizedDescriptionKey: "This run approval is missing its run or approval identity."])
     }
-    guard !mutatingAgentRunIDs.contains(runID) else { return }
+    guard !mutatingAgentRunIDs.contains(runID) else {
+      throw CocoaError(
+        .fileWriteUnknown,
+        userInfo: [NSLocalizedDescriptionKey: "This run is already being updated."]
+      )
+    }
     mutatingAgentRunIDs.insert(runID)
     defer { mutatingAgentRunIDs.remove(runID) }
 
@@ -3802,15 +3889,7 @@ public final class WorkspaceStore: ObservableObject {
       agentRuns.insert(updated, at: 0)
     }
     statusText = "\(item.title): \(decision) · \(updated.pendingApprovalCount) pending"
-    if decision == "approved", updated.status == "running", updated.workflowId != nil {
-      do {
-        try await continueOpenClawWorkflowAfterApproval(updated)
-        statusText = "Approved and continued \(updated.goal)"
-      } catch {
-        errorText = error.localizedDescription
-        statusText = "Approved; OpenClaw continuation pending"
-      }
-    }
+    return updated
   }
 
   private func performAgentRunApprovalDecision(
@@ -3839,12 +3918,22 @@ public final class WorkspaceStore: ObservableObject {
     if let note = note?.trimmingCharacters(in: .whitespacesAndNewlines), !note.isEmpty {
       arguments.append(contentsOf: ["--note", note])
     }
-    return try await cli.runJSON(arguments)
+    let updated: AgentRunItem = try await cli.runJSON(arguments)
+    // A provider-backed decision can also supersede and close older run
+    // projections. Reload the run list now so Runs and Review clear together
+    // instead of waiting for the filesystem watcher or periodic reconciliation.
+    await refreshAgentRuns()
+    return updated
   }
 
   nonisolated static func agentRunApprovalDecisionActor(requestedFrom: String?) -> String {
     let reviewer = requestedFrom?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     return reviewer.isEmpty ? "Org2Workspace" : reviewer
+  }
+
+  nonisolated static func normalizedApprovalRevisionFeedback(_ value: String) -> String? {
+    let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    return normalized.isEmpty ? nil : normalized
   }
 
   public func discussApprovalInOpenClaw(
@@ -6922,6 +7011,7 @@ public final class WorkspaceStore: ObservableObject {
     } catch {
       errorText = error.localizedDescription
       if case WorkspaceEditError.fileChanged = error {
+        presentEditorSaveConflict(source: source, draft: replacement)
         statusText = "Save conflict: file changed on disk"
       } else {
         statusText = "Save failed"
@@ -6949,6 +7039,82 @@ public final class WorkspaceStore: ObservableObject {
       savedText: replacement,
       keepEditing: !savedStatus.contains("encrypted")
     )
+  }
+
+  private func presentEditorSaveConflict(source: EntrySource, draft: String) {
+    editorSaveConflictSource = source
+    editorSaveConflictDraft = draft
+    editorSaveConflict = Org2EditorSaveConflict(
+      file: source.file,
+      canOverwrite: selectedEntrySourceMode == .page
+        && source.startLine == 1
+        && !source.isSubtree
+    )
+  }
+
+  public func keepEditingAfterSaveConflict() {
+    guard editorSaveConflictSource != nil else { return }
+    clearEditorSaveConflict()
+    statusText = "Kept unsaved editor changes"
+  }
+
+  public func reloadAfterSaveConflict() async {
+    guard let conflict = editorSaveConflict else { return }
+    let shouldResumeEditing = isEditingEntry
+    clearEditorSaveConflict()
+    errorText = nil
+    cancelLiveFileEditorAutosave(resetStatus: true)
+    cancelEditingSelectedEntry()
+    guard let selectedLocation else {
+      statusText = "Could not reload \(relativePath(conflict.file))"
+      return
+    }
+    await loadEntrySource(for: selectedLocation)
+    if shouldResumeEditing {
+      beginEditingSelectedEntry()
+    }
+    statusText = "Reloaded \(relativePath(conflict.file)) from disk"
+  }
+
+  public func overwriteAfterSaveConflict() async {
+    guard let conflict = editorSaveConflict,
+          conflict.canOverwrite,
+          let source = editorSaveConflictSource,
+          let replacement = editorSaveConflictDraft,
+          source.file == conflict.file,
+          selectedEntrySource?.file == conflict.file
+    else {
+      statusText = "The conflicted file is no longer selected"
+      clearEditorSaveConflict()
+      return
+    }
+
+    isSavingEntry = true
+    defer { isSavingEntry = false }
+
+    let undoSnapshot = fileUndoSnapshot(for: source.file)
+    let backupURL: URL
+    do {
+      backupURL = try await Task.detached(priority: .userInitiated) {
+        try Self.overwriteConflictedPage(source, with: replacement)
+      }.value
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Conflict overwrite failed"
+      return
+    }
+
+    clearEditorSaveConflict()
+    errorText = nil
+    recordFileUndo(from: undoSnapshot)
+    await finishSavedEntry(source: source, savedText: replacement, keepEditing: true)
+    statusText = "Saved \(relativePath(source.file)); recovery copy: \(relativePath(backupURL.path))"
+  }
+
+  private func clearEditorSaveConflict() {
+    editorSaveConflict = nil
+    editorSaveConflictSource = nil
+    editorSaveConflictDraft = nil
   }
 
   public func noteLiveFileEditorTextChanged(_ text: String) {
@@ -7018,6 +7184,9 @@ public final class WorkspaceStore: ObservableObject {
     } catch {
       errorText = error.localizedDescription
       if case WorkspaceEditError.fileChanged = error {
+        if explicit {
+          presentEditorSaveConflict(source: source, draft: replacement)
+        }
         liveFileEditorStatusText = "Conflict"
         statusText = "Save conflict: file changed on disk"
       } else {
@@ -17515,6 +17684,29 @@ public final class WorkspaceStore: ObservableObject {
       expectedOriginal: source.text,
       allowDestructiveReplacement: allowDestructiveReplacement
     )
+  }
+
+  nonisolated private static func overwriteConflictedPage(
+    _ source: EntrySource,
+    with replacement: String
+  ) throws -> URL {
+    guard source.startLine == 1, !source.isSubtree else {
+      throw WorkspaceEditError.invalidRange(file: source.file, line: source.startLine)
+    }
+    let url = URL(fileURLWithPath: source.file)
+    let current = try String(contentsOf: url, encoding: .utf8)
+    let backupURL = try writeOrgRecoveryBackup(
+      for: url,
+      previousText: current,
+      reason: "save-conflict"
+    )
+    try writeOrgTextSafely(
+      normalizeLineEndings(replacement),
+      to: url,
+      replacing: current,
+      operation: "conflict overwrite"
+    )
+    return backupURL
   }
 
   nonisolated private static func fileText(file: String) throws -> String {

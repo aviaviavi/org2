@@ -633,6 +633,24 @@ public actor OpenClawGatewayClient {
     return OpenClawWorkflowContinuation(runID: returnedRunID, sessionKey: sessionKey, prompt: prompt)
   }
 
+  public func resumeWorkflowRevision(
+    runID: String,
+    approvalID: String,
+    corpusID: String?
+  ) async throws -> OpenClawWorkflowContinuation {
+    var params: [String: Any] = ["runId": runID, "approvalId": approvalID]
+    if let corpusID, !corpusID.isEmpty { params["corpusId"] = corpusID }
+    let payload = try await requestPayload(method: "org2.workflow.resumeRevision", params: params)
+    guard let run = Self.dictionary(payload["run"]),
+          let returnedRunID = Self.string(run["id"]), !returnedRunID.isEmpty,
+          let sessionKey = Self.string(payload["sessionKey"]), !sessionKey.isEmpty,
+          let prompt = Self.string(payload["prompt"]), !prompt.isEmpty
+    else {
+      throw OpenClawGatewayError.protocolFailure("org2.workflow.resumeRevision returned an invalid payload")
+    }
+    return OpenClawWorkflowContinuation(runID: returnedRunID, sessionKey: sessionKey, prompt: prompt)
+  }
+
   public func syncWorkflows(corpusID: String?) async throws {
     var params: [String: Any] = [:]
     if let corpusID, !corpusID.isEmpty { params["corpusId"] = corpusID }

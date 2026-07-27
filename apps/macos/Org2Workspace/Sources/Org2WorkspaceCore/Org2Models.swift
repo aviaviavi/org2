@@ -309,6 +309,32 @@ public struct AgentRunItem: Identifiable, Decodable, Hashable, Sendable {
   public let failure: String?
 
   public var pendingApprovalCount: Int { approvals.filter { $0.status == "pending" }.count }
+  public var currentApprovalBoundary: [AgentRunApprovalItem] {
+    guard let boundaryAt = events.reversed().first(where: {
+      $0.type == "status-changed"
+        && $0.detail?.range(of: "-> waiting-approval", options: .caseInsensitive) != nil
+    })?.at else {
+      return approvals
+    }
+    let boundary = approvals.filter { $0.requestedAt >= boundaryAt }
+    return boundary.isEmpty ? approvals : boundary
+  }
+  public var resumableRevisionApproval: AgentRunApprovalItem? {
+    guard status == "blocked",
+          pendingApprovalCount == 0,
+          !currentApprovalBoundary.contains(where: {
+            $0.status == "rejected" || $0.status == "canceled"
+          })
+    else {
+      return nil
+    }
+    return currentApprovalBoundary
+      .filter {
+        $0.status == "revised"
+          && $0.decisionNote?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+      }
+      .max { ($0.decidedAt ?? "") < ($1.decidedAt ?? "") }
+  }
   public var openClawExecApprovalID: String? {
     for comment in comments.reversed() {
       for line in comment.body.split(whereSeparator: \.isNewline) {
@@ -983,6 +1009,7 @@ public struct ApprovalItem: Identifiable, Hashable, Sendable, Decodable {
   public let runPendingApprovalCount: Int?
   public let runApprovalCount: Int?
   public let runDecisionEffect: String?
+  public let decisionKeys: [String]?
 
   public init(
     title: String,
@@ -1008,7 +1035,8 @@ public struct ApprovalItem: Identifiable, Hashable, Sendable, Decodable {
     runStatus: String? = nil,
     runPendingApprovalCount: Int? = nil,
     runApprovalCount: Int? = nil,
-    runDecisionEffect: String? = nil
+    runDecisionEffect: String? = nil,
+    decisionKeys: [String]? = nil
   ) {
     self.kind = kind
     self.title = title
@@ -1034,6 +1062,7 @@ public struct ApprovalItem: Identifiable, Hashable, Sendable, Decodable {
     self.runPendingApprovalCount = runPendingApprovalCount
     self.runApprovalCount = runApprovalCount
     self.runDecisionEffect = runDecisionEffect
+    self.decisionKeys = decisionKeys
   }
 
   public var id: String {
@@ -1114,6 +1143,7 @@ public struct ApprovalItem: Identifiable, Hashable, Sendable, Decodable {
       runGoal,
       runStatus,
       runDecisionEffect,
+      decisionKeys?.joined(separator: " "),
       tags.joined(separator: " "),
       properties.map { "\($0.key) \($0.value)" }.joined(separator: "\n")
     ]
@@ -1969,7 +1999,12 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
   public var hasUnresolvedLatestDelivery: Bool {
     guard let latestMessage = messages.last else { return false }
     return latestMessage.deliveryStatus == .sending
-      || latestMessage.deliveryStatus == .failed
+      || latestDeliveryNeedsAttention
+  }
+
+  public var latestDeliveryNeedsAttention: Bool {
+    guard let latestMessage = messages.last else { return false }
+    return latestMessage.deliveryStatus == .failed
       || latestMessage.deliveryStatus == .interrupted
       || latestMessage.sendFailure != nil
   }
