@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { conciseGoal, cronKey, executionSummary, outcomeCommand, shouldTrackMainTurn, workflowContinuationPrompt, workflowExecutionPrompt, workflowMarker } from "../lib/lifecycle.js";
+import { conciseGoal, cronKey, durableRunMarker, executionSummary, outcomeCommand, shouldTrackMainTurn, workflowContinuationPrompt, workflowExecutionPrompt, workflowMarker } from "../lib/lifecycle.js";
 import { Org2Lifecycle } from "../lib/lifecycle.js";
 
 test("tracks substantial work but not acknowledgements or heartbeats", () => {
@@ -15,7 +15,13 @@ test("tracks substantial work but not acknowledgements or heartbeats", () => {
 test("maps terminal outcomes", () => {
   assert.equal(outcomeCommand("ok"), "complete");
   assert.equal(outcomeCommand("timeout"), "fail");
+  assert.equal(outcomeCommand("interrupted"), "fail");
   assert.equal(outcomeCommand("killed"), "cancel");
+});
+
+test("recognizes an explicitly delegated durable run", () => {
+  assert.equal(durableRunMarker("Do the work.\nORG2_RUN_ID: run-42\n"), "run-42");
+  assert.equal(durableRunMarker("ORG2_WORKFLOW_RUN_ID: workflow-run-42"), undefined);
 });
 
 test("bounds run goals", () => assert.ok(conciseGoal("x".repeat(400)).length <= 240));
@@ -202,6 +208,43 @@ test("a replayed terminal event accepts an already-completed historical run", as
   lifecycle.state.mappings.key = { org2RunId: "run-1", sessionKey: "agent:main:org2:thread-1" };
   const result = await lifecycle.finish("key", "ok", { summary: "Already completed." });
   assert.deepEqual(result, { terminal: true, status: "completed" });
+});
+
+test("session end fails active durable runs left without a terminal agent event", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "org2-openclaw-interrupted-"));
+  const stateFile = join(dir, "state.json");
+  const calls = [];
+  const lifecycle = new Org2Lifecycle({ stateFile, exec: async (args) => {
+    calls.push(args);
+    if (args[0] === "run" && args[1] === "show") return JSON.stringify({ id: "run-1", status: "running" });
+    return "";
+  } });
+  await lifecycle.init();
+  lifecycle.state.mappings.key = {
+    org2RunId: "run-1",
+    sessionKey: "agent:main:subagent:child-1",
+  };
+  const interrupted = await lifecycle.interruptSession("agent:main:subagent:child-1", "idle");
+  assert.equal(interrupted.length, 1);
+  assert.deepEqual(calls.find((args) => args[1] === "fail"), [
+    "run", "fail", "run-1", "--actor", "org2-lifecycle",
+    "--reason", "OpenClaw session ended before its durable run reached a terminal state (reason: idle).",
+  ]);
+  const state = JSON.parse(await readFile(stateFile, "utf8"));
+  assert.equal(state.mappings.key.outcome, "interrupted");
+});
+
+test("session end preserves deliberate approval and review pauses", async () => {
+  const lifecycle = new Org2Lifecycle({ exec: async () => {
+    throw new Error("paused mappings must not call Org2");
+  } });
+  lifecycle.state.mappings.approval = {
+    org2RunId: "run-approval",
+    sessionKey: "agent:main:subagent:child-1",
+    pausedAt: "2026-07-27T12:00:00Z",
+    pausedStatus: "waiting-approval",
+  };
+  assert.deepEqual(await lifecycle.interruptSession("agent:main:subagent:child-1", "idle"), []);
 });
 
 test("resumes an approved workflow in its correlated OpenClaw session", async () => {
