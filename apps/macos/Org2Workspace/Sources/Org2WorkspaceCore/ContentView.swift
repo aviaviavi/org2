@@ -3739,20 +3739,20 @@ private struct AgendaItemListView: View {
   @EnvironmentObject private var store: WorkspaceStore
 
   var body: some View {
-    List(selection: $store.selectedAgendaItemID) {
+    List {
       ForEach(store.agendaDisplaySections) { section in
         Section(section.label) {
           ForEach(section.items) { item in
             AgendaRow(
               item: item,
               sourceReference: store.corpusQualifiedPath(item.file, corpus: item.corpus) + ":\(item.lineForEditor)",
+              isSelected: store.selectedAgendaItemID == item.id,
               isBulkSelected: store.isAgendaItemBulkSelected(item),
               isEditable: store.isResultInActiveCorpus(item.corpus),
               isAgentAssigned: store.isAgentAssignee(item.properties["ASSIGNEE"]),
               isPersonalAssigned: store.isPersonalAssignee(item.properties["ASSIGNEE"]),
               toggleBulkSelection: { store.toggleAgendaItemBulkSelection(item) }
             )
-              .tag(item.id)
               .contentShape(Rectangle())
               .onTapGesture {
                 let modifiers = NSApp.currentEvent?.modifierFlags ?? []
@@ -3760,6 +3760,7 @@ private struct AgendaItemListView: View {
                   store.handleAgendaItemClick(item, modifiers: modifiers)
                 }
               }
+              .listRowBackground(Color.clear)
               .contextMenu {
                 WorkspaceLocationContextMenu(
                   location: .agenda(item),
@@ -3816,16 +3817,20 @@ private struct AssignedAgendaListView: View {
       WorkspaceLoadingStateView("Loading assigned work")
       Spacer()
     } else {
-      List(selection: $store.selectedAssignedWorkItemID) {
+      List {
         ForEach(store.assignedWorkSections) { section in
           Section(section.label) {
             ForEach(section.items) { item in
               AssignedWorkRow(
                 item: item,
-                sourceReference: store.relativePath(item.file) + ":\(item.lineForEditor)"
+                sourceReference: store.relativePath(item.file) + ":\(item.lineForEditor)",
+                isSelected: store.selectedAssignedWorkItemID == item.id
               )
-                .tag(item.id)
                 .contentShape(Rectangle())
+                .onTapGesture {
+                  store.selectAssignedWorkItem(item)
+                }
+                .listRowBackground(Color.clear)
                 .contextMenu {
                   WorkspaceLocationContextMenu(
                     location: .assigned(item),
@@ -3948,6 +3953,7 @@ private struct AgendaBulkActionBar: View {
 private struct AgendaRow: View {
   let item: AgendaItem
   let sourceReference: String
+  let isSelected: Bool
   let isBulkSelected: Bool
   let isEditable: Bool
   let isAgentAssigned: Bool
@@ -4012,7 +4018,22 @@ private struct AgendaRow: View {
         isPersonalAssigned: isPersonalAssigned
       )
     }
+    .padding(.horizontal, 10)
     .padding(.vertical, WorkspaceDesign.rowVerticalPadding)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(
+      isSelected ? WorkspaceDesign.selectedFill : Color.clear,
+      in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+    )
+    .overlay(alignment: .leading) {
+      if isSelected {
+        Capsule()
+          .fill(Color.accentColor)
+          .frame(width: 3)
+          .padding(.vertical, 8)
+      }
+    }
+    .accessibilityAddTraits(isSelected ? .isSelected : [])
   }
 }
 
@@ -6276,6 +6297,7 @@ private struct EmptyChatView: View {
 private struct AssignedWorkRow: View {
   let item: AssignedWorkItem
   let sourceReference: String
+  let isSelected: Bool
 
   var body: some View {
     HStack(alignment: .top, spacing: 8) {
@@ -6314,6 +6336,20 @@ private struct AssignedWorkRow: View {
     }
     .padding(.horizontal, WorkspaceDesign.contentInset)
     .padding(.vertical, WorkspaceDesign.rowVerticalPadding)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(
+      isSelected ? WorkspaceDesign.selectedFill : Color.clear,
+      in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+    )
+    .overlay(alignment: .leading) {
+      if isSelected {
+        Capsule()
+          .fill(Color.accentColor)
+          .frame(width: 3)
+          .padding(.vertical, 8)
+      }
+    }
+    .accessibilityAddTraits(isSelected ? .isSelected : [])
   }
 }
 
