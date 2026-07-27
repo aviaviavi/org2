@@ -3280,11 +3280,12 @@ private struct ApprovalsView: View {
         EmptyStateView(title: "No Matching Approvals", detail: "No pending approvals match this search.")
       }
     } else {
-      List(selection: $store.selectedApprovalItemID) {
+      List {
         ForEach(store.visibleApprovalItems) { item in
           ApprovalRow(
             item: item,
             sourceReference: item.isRunApproval ? item.sourceLabel : "\(store.relativePath(item.file)):\(item.line)",
+            isSelected: store.selectedApprovalItemID == item.id,
             isApproving: store.isApprovingApproval(item),
             isRejecting: store.isRejectingApproval(item),
             approve: { Task { await store.approve(item) } },
@@ -3296,8 +3297,11 @@ private struct ApprovalsView: View {
               discussionItem = item
             }
           )
-          .tag(item.id)
           .contentShape(Rectangle())
+          .onTapGesture {
+            store.selectApprovalItem(item)
+          }
+          .listRowBackground(Color.clear)
           .contextMenu {
             if item.isRunApproval {
               Button {
@@ -3374,6 +3378,7 @@ private struct ApprovalControls: View {
 private struct ApprovalRow: View {
   let item: ApprovalItem
   let sourceReference: String
+  let isSelected: Bool
   let isApproving: Bool
   let isRejecting: Bool
   let approve: () -> Void
@@ -3484,7 +3489,22 @@ private struct ApprovalRow: View {
       }
       .controlSize(.small)
     }
-    .padding(.vertical, 6)
+    .padding(.horizontal, 10)
+    .padding(.vertical, 8)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(
+      isSelected ? WorkspaceDesign.selectedFill : Color.clear,
+      in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+    )
+    .overlay(alignment: .leading) {
+      if isSelected {
+        Capsule()
+          .fill(Color.accentColor)
+          .frame(width: 3)
+          .padding(.vertical, 8)
+      }
+    }
+    .accessibilityAddTraits(isSelected ? .isSelected : [])
   }
 }
 
