@@ -8,7 +8,17 @@ The plugin tracks substantial main-agent turns, subagent executions, and cron
 executions. It also prepares manual Org2 workflow runs before agent execution,
 reconciles active schedule triggers from visible `workflows/*.org2` files into
 OpenClaw cron, and continues an existing run in its correlated chat session
-after an approval returns the run to `running`. Scheduled executions retain one
+after an approval returns the run to `running`. A revision request must carry
+concrete feedback; for an eligible revision-only boundary, the plugin resumes
+the correlated session with that durable decision note and instructs the agent
+to produce replacement review material on the same run without performing the
+protected action. Provider-backed approvals keep an exact
+`Provider draft: PROVIDER:TOOL:DRAFT_ID` line. OpenClaw discovers pending
+`decisionKeys` from `org2 approvals --format json` and resolves the canonical
+pending or decided authority through `org2 run approval-resolve --decision-key
+KEY --json`; the CLI owns idempotent request and decision reconciliation, so the
+adapter must not create a parallel review run for the same provider action.
+Scheduled executions retain one
 logical workflow identity while each cron firing has a distinct attempt. When a
 schedule declares an Org2 event/fresh-work gate, the adapter asks the CLI to
 create the attempt and stops workflow work when the gate returns a skip instead

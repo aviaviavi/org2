@@ -12,6 +12,7 @@ import {
   addAgentRunArtifact,
   addAgentRunComment,
   addAgentRunValidation,
+  agentRunApprovalDecisionKeys,
   completeAgentRunExternally,
   createAgentRun,
   decideAgentRunApproval,
@@ -22,6 +23,7 @@ import {
   requestAgentRunApproval,
   saveAgentRun,
   summarizeAgentRunAttempts,
+  supersedeAgentRunApproval,
   transitionAgentRun,
   updateAgentRunAssignment,
   updateAgentRunArtifactReview,
@@ -29,6 +31,8 @@ import {
   updateAgentRunRuntime,
   updateAgentRunStep,
   validateAgentRun,
+  type AgentRun,
+  type AgentRunApproval,
   type AgentRunStatus,
 } from "./agentRun.js";
 import { updateArtifactReviewStatusInText } from "./artifactMetadata.js";
@@ -131,7 +135,9 @@ const HELP = `Agentic workspace commands:
   org2 run artifact-review ID ARTIFACT --status reviewed|promoted|rejected [--actor NAME]
   org2 run validation ID --name NAME --status passed|failed|warning|skipped
   org2 run approval-request ID --title TEXT --action TEXT [--risk CLASS] [--role ROLE]
-  org2 run approval-decide ID APPROVAL --decision approved|rejected|revised|canceled --actor NAME [--fingerprint SHA256] [--receipt TEXT]
+  org2 run approval-decide ID APPROVAL --decision approved|rejected|revised|canceled --actor NAME [--fingerprint SHA256] [--note TEXT] [--receipt TEXT]
+  org2 run approval-resolve --decision-key PROVIDER_KEY [--json]
+  org2 run approval-reconcile [--apply] [--json]
   org2 review list [--status pending] | org2 review show RUN
   org2 workflow list|show|validate|save|run|triggers|signal|gate|activate|pause|draft|schedule|migrate|package|corpus-template|install-builtin
   org2 artifact graph --manifest FILE | org2 artifact rebuild --manifest FILE
@@ -268,6 +274,349 @@ function threadCommand(parsed: ParsedArgs): void {
   throw new Error(`unknown thread action: ${action}`);
 }
 
+type AgentRunApprovalReference = {
+  run: AgentRun;
+  approval: AgentRunApproval;
+};
+
+function approvalKeysOverlap(lhs: string[], rhs: string[]): boolean {
+  const right = new Set(rhs);
+  return lhs.some((key) => right.has(key));
+}
+
+function approvalMaterialVersion(approval: Pick<AgentRunApproval, "action" | "riskClass">): string {
+  const reviewMaterial = String(approval.action || "").replace(/\r\n?/g, "\n").trim();
+  const contentFingerprint = reviewMaterial.match(/^\s*Content fingerprint:\s*(\S+)\s*$/im)?.[1];
+  return contentFingerprint
+    ? `${approval.riskClass}:content:${contentFingerprint.toLowerCase()}`
+    : `${approval.riskClass}:action:${reviewMaterial}`;
+}
+
+function compareApprovalReferences(lhs: AgentRunApprovalReference, rhs: AgentRunApprovalReference): number {
+  return lhs.approval.requestedAt.localeCompare(rhs.approval.requestedAt)
+    || lhs.run.id.localeCompare(rhs.run.id)
+    || lhs.approval.id.localeCompare(rhs.approval.id);
+}
+
+function approvalReferences(runs: AgentRun[], keys: string[]): AgentRunApprovalReference[] {
+  if (keys.length === 0) return [];
+  return runs.flatMap((run) => run.approvals
+    .filter((approval) => approvalKeysOverlap(agentRunApprovalDecisionKeys(approval), keys))
+    .map((approval) => ({ run, approval })));
+}
+
+function isOpenClawExternalDraftRun(run: AgentRun): boolean {
+  return run.comments.some((comment) =>
+    /(?:^|\n)OPENCLAW_KIND:\s*external-draft\s*(?:\n|$)/i.test(comment.body));
+}
+
+function canCloseSupersededApprovalProjection(run: AgentRun, keys: string[]): boolean {
+  if (["completed", "failed", "canceled"].includes(run.status)) return false;
+  if (isOpenClawExternalDraftRun(run)) return true;
+  if (run.plan.length > 0 || run.artifacts.length > 0 || run.approvals.length === 0) return false;
+  return run.approvals.every((approval) => {
+    const approvalKeys = agentRunApprovalDecisionKeys(approval);
+    return approvalKeys.length > 0 && approvalKeysOverlap(approvalKeys, keys);
+  });
+}
+
+function closeSupersededApprovalProjection(
+  run: AgentRun,
+  keys: string[],
+  replacementRunId: string,
+  replacementApprovalId: string,
+  actor?: string,
+): AgentRun {
+  if (!canCloseSupersededApprovalProjection(run, keys)) return run;
+  return transitionAgentRun(run, "canceled", {
+    actor: actor || "org2-approval-reconciler",
+    reason: `Superseded by approval ${replacementApprovalId} on run ${replacementRunId}.`,
+  });
+}
+
+function correlatedApprovalRequest(
+  parsed: ParsedArgs,
+  corpus: string,
+  target: AgentRun,
+): AgentRun | null {
+  const input = {
+    title: required(flag(parsed, "title"), "--title is required"),
+    action: required(flag(parsed, "action"), "--action is required"),
+    riskClass: choice(flag(parsed, "risk", target.riskClass), AGENT_RUN_RISK_CLASSES, "approval risk class"),
+    requestedRole: flag(parsed, "role"),
+    requestedFrom: flag(parsed, "from"),
+    note: flag(parsed, "note"),
+  };
+  const keys = agentRunApprovalDecisionKeys(input);
+  if (keys.length === 0) return null;
+
+  const runs = listAgentRuns(corpus);
+  const references = approvalReferences(runs, keys);
+  const targetOwnsDecision = target.approvals.some((approval) =>
+    approvalKeysOverlap(agentRunApprovalDecisionKeys(approval), keys));
+  const targetIsDraftProjection = isOpenClawExternalDraftRun(target);
+  const exactPending = references
+    .filter((reference) =>
+      reference.approval.status === "pending"
+      && approvalMaterialVersion(reference.approval) === approvalMaterialVersion(input))
+    .sort(compareApprovalReferences)
+    .at(-1);
+
+  if (exactPending && (
+    exactPending.run.id === target.id
+    || targetIsDraftProjection
+    || targetOwnsDecision
+  )) {
+    if (exactPending.run.id !== target.id && canCloseSupersededApprovalProjection(target, keys)) {
+      saveAgentRun(corpus, transitionAgentRun(target, "canceled", {
+        actor: flag(parsed, "actor") || "org2-approval-reconciler",
+        reason: `Duplicate approval request reused ${exactPending.run.id}:${exactPending.approval.id}.`,
+      }));
+    }
+    return exactPending.run;
+  }
+
+  const canonicalReference = [...references].sort(compareApprovalReferences).at(-1);
+  const canonicalRun = targetOwnsDecision || !targetIsDraftProjection || !canonicalReference
+    ? target
+    : canonicalReference.run;
+  const replacementApprovalId = crypto.randomUUID();
+  const actor = flag(parsed, "actor") || "org2-approval-reconciler";
+  const updatedRuns = new Map<string, AgentRun>();
+  updatedRuns.set(canonicalRun.id, canonicalRun);
+
+  for (const reference of references) {
+    if (reference.approval.status !== "pending") continue;
+    const current = updatedRuns.get(reference.run.id) || reference.run;
+    updatedRuns.set(reference.run.id, supersedeAgentRunApproval(current, reference.approval.id, {
+      actor,
+      replacementRunId: canonicalRun.id,
+      replacementApprovalId,
+    }));
+  }
+
+  let updatedCanonical = updatedRuns.get(canonicalRun.id) || canonicalRun;
+  updatedCanonical = requestAgentRunApproval(updatedCanonical, {
+    ...input,
+    id: replacementApprovalId,
+  }, flag(parsed, "actor"));
+  updatedRuns.set(updatedCanonical.id, updatedCanonical);
+
+  if (target.id !== updatedCanonical.id && canCloseSupersededApprovalProjection(target, keys)) {
+    const currentTarget = updatedRuns.get(target.id) || target;
+    updatedRuns.set(target.id, transitionAgentRun(currentTarget, "canceled", {
+      actor,
+      reason: `Approval request was attached to existing run ${updatedCanonical.id}.`,
+    }));
+  }
+  for (const [runId, candidate] of updatedRuns) {
+    if (runId === updatedCanonical.id) continue;
+    saveAgentRun(
+      corpus,
+      closeSupersededApprovalProjection(
+        candidate,
+        keys,
+        updatedCanonical.id,
+        replacementApprovalId,
+        actor,
+      ),
+    );
+  }
+  saveAgentRun(corpus, updatedCanonical);
+  return updatedCanonical;
+}
+
+function correlatedApprovalDecision(
+  parsed: ParsedArgs,
+  corpus: string,
+  target: AgentRun,
+): AgentRun | null {
+  const approvalId = required(parsed.positional[2], "approval id is required");
+  const approval = target.approvals.find((candidate) => candidate.id === approvalId);
+  if (!approval) throw new Error(`approval not found: ${approvalId}`);
+  const keys = agentRunApprovalDecisionKeys(approval);
+  if (keys.length === 0) return null;
+
+  const references = approvalReferences(listAgentRuns(corpus), keys);
+  for (const key of keys) {
+    const latest = references
+      .filter((reference) => agentRunApprovalDecisionKeys(reference.approval).includes(key))
+      .sort(compareApprovalReferences)
+      .at(-1);
+    if (latest && (latest.run.id !== target.id || latest.approval.id !== approval.id)) {
+      throw new Error(
+        `approval ${approval.id} is superseded by ${latest.run.id}:${latest.approval.id}; decide the latest review material`,
+      );
+    }
+  }
+
+  const actor = required(flag(parsed, "actor"), "--actor is required");
+  const updated = decideAgentRunApproval(
+    target,
+    approvalId,
+    choice(flag(parsed, "decision"), AGENT_RUN_APPROVAL_DECISIONS, "approval decision"),
+    {
+      actor,
+      actorRole: flag(parsed, "role"),
+      fingerprint: flag(parsed, "fingerprint"),
+      note: flag(parsed, "note"),
+      receipt: flag(parsed, "receipt"),
+    },
+  );
+  const updatedRuns = new Map<string, AgentRun>();
+
+  for (const reference of references) {
+    if (reference.run.id === target.id || reference.approval.status !== "pending") continue;
+    const current = updatedRuns.get(reference.run.id) || reference.run;
+    updatedRuns.set(reference.run.id, supersedeAgentRunApproval(current, reference.approval.id, {
+      actor: "org2-approval-reconciler",
+      replacementRunId: target.id,
+      replacementApprovalId: approval.id,
+    }));
+  }
+  for (const candidate of updatedRuns.values()) {
+    saveAgentRun(
+      corpus,
+      closeSupersededApprovalProjection(
+        candidate,
+        keys,
+        target.id,
+        approval.id,
+      ),
+    );
+  }
+  saveAgentRun(corpus, updated);
+  return updated;
+}
+
+function reconcileCorrelatedApprovals(corpus: string, apply: boolean): {
+  schema: "org2:approval-reconciliation:v1";
+  applied: boolean;
+  changed: boolean;
+  updates: Array<{
+    decisionKey: string;
+    runId: string;
+    approvalId: string;
+    replacementRunId: string;
+    replacementApprovalId: string;
+    runClosed: boolean;
+  }>;
+} {
+  const runs = listAgentRuns(corpus);
+  const referencesByKey = new Map<string, AgentRunApprovalReference[]>();
+  for (const run of runs) {
+    for (const approval of run.approvals) {
+      for (const key of agentRunApprovalDecisionKeys(approval)) {
+        referencesByKey.set(key, [
+          ...(referencesByKey.get(key) || []),
+          { run, approval },
+        ]);
+      }
+    }
+  }
+
+  const updatedRuns = new Map<string, AgentRun>();
+  const processed = new Set<string>();
+  const updates: Array<{
+    decisionKey: string;
+    runId: string;
+    approvalId: string;
+    replacementRunId: string;
+    replacementApprovalId: string;
+    runClosed: boolean;
+  }> = [];
+  for (const [decisionKey, references] of referencesByKey) {
+    const canonical = [...references].sort(compareApprovalReferences).at(-1);
+    if (!canonical) continue;
+    for (const reference of references) {
+      const identity = `${reference.run.id}:${reference.approval.id}`;
+      if (identity === `${canonical.run.id}:${canonical.approval.id}`
+        || reference.approval.status !== "pending"
+        || processed.has(identity)) {
+        continue;
+      }
+      processed.add(identity);
+      const current = updatedRuns.get(reference.run.id) || reference.run;
+      let reconciled = supersedeAgentRunApproval(current, reference.approval.id, {
+        actor: "org2-approval-reconciler",
+        replacementRunId: canonical.run.id,
+        replacementApprovalId: canonical.approval.id,
+      });
+      const runClosed = canCloseSupersededApprovalProjection(reconciled, [decisionKey]);
+      if (runClosed) {
+        reconciled = closeSupersededApprovalProjection(
+          reconciled,
+          [decisionKey],
+          canonical.run.id,
+          canonical.approval.id,
+        );
+      }
+      updatedRuns.set(reconciled.id, reconciled);
+      updates.push({
+        decisionKey,
+        runId: reference.run.id,
+        approvalId: reference.approval.id,
+        replacementRunId: canonical.run.id,
+        replacementApprovalId: canonical.approval.id,
+        runClosed,
+      });
+    }
+  }
+  if (apply) {
+    for (const run of updatedRuns.values()) saveAgentRun(corpus, run);
+  }
+  return {
+    schema: "org2:approval-reconciliation:v1",
+    applied: apply,
+    changed: updates.length > 0,
+    updates,
+  };
+}
+
+function resolveCorrelatedApproval(corpus: string, rawDecisionKey: string): {
+  schema: "org2:approval-resolution:v1";
+  found: boolean;
+  decisionKey: string;
+  canonical?: {
+    runId: string;
+    runStatus: AgentRunStatus;
+    approval: AgentRunApproval;
+  };
+  projections: Array<{
+    runId: string;
+    runStatus: AgentRunStatus;
+    approvalId: string;
+    approvalStatus: AgentRunApproval["status"];
+    requestedAt: string;
+  }>;
+} {
+  const normalized = rawDecisionKey.trim().toLowerCase();
+  const decisionKey = normalized.startsWith("artifact:") ? normalized : `artifact:${normalized}`;
+  const references = approvalReferences(listAgentRuns(corpus), [decisionKey])
+    .filter((reference) => agentRunApprovalDecisionKeys(reference.approval).includes(decisionKey))
+    .sort(compareApprovalReferences);
+  const canonical = references.at(-1);
+  return {
+    schema: "org2:approval-resolution:v1",
+    found: Boolean(canonical),
+    decisionKey,
+    ...(canonical ? {
+      canonical: {
+        runId: canonical.run.id,
+        runStatus: canonical.run.status,
+        approval: canonical.approval,
+      },
+    } : {}),
+    projections: references.map((reference) => ({
+      runId: reference.run.id,
+      runStatus: reference.run.status,
+      approvalId: reference.approval.id,
+      approvalStatus: reference.approval.status,
+      requestedAt: reference.approval.requestedAt,
+    })),
+  };
+}
+
 async function runCommand(parsed: ParsedArgs): Promise<void> {
   const action = parsed.positional[0] || "help";
   const corpus = root(parsed);
@@ -285,6 +634,29 @@ async function runCommand(parsed: ParsedArgs): Promise<void> {
     output(parsed, { schema: "org2:run-list:v1", runs, logicalWork: summarizeAgentRunAttempts(runs) }, runs.length ? runs.map((run) => `${run.id}\t${run.status}\t${run.attempt ? `${run.logicalWorkId}#${run.attempt.number}\t` : ""}${run.goal}`).join("\n") : "No runs."); return;
   }
   if (action === "normalize") { const result = normalizeLegacyAgentRuns(corpus); output(parsed, result, `created ${result.created.length}; skipped ${result.skippedExisting.length}`); return; }
+  if (action === "approval-reconcile") {
+    const result = reconcileCorrelatedApprovals(corpus, enabled(parsed, "apply"));
+    output(
+      parsed,
+      result,
+      `${result.applied ? "reconciled" : "would reconcile"} ${result.updates.length} duplicate approval projection(s)`,
+    );
+    return;
+  }
+  if (action === "approval-resolve") {
+    const result = resolveCorrelatedApproval(
+      corpus,
+      required(flag(parsed, "decision-key"), "--decision-key is required"),
+    );
+    output(
+      parsed,
+      result,
+      result.canonical
+        ? `${result.decisionKey}\t${result.canonical.approval.status}\t${result.canonical.runId}:${result.canonical.approval.id}`
+        : `${result.decisionKey}\tnot found`,
+    );
+    return;
+  }
   const id = required(parsed.positional[1], `run id is required for ${action}`);
   if (action === "show") { const run = loadAgentRun(corpus, id); output(parsed, run, fs.readFileSync(path.join(corpus, ".org2", "runs", `${id}.org2`), "utf8")); return; }
   if (action === "validate") { const result = validateAgentRun(loadAgentRun(corpus, id)); output(parsed, result, result.valid ? `${id}: valid` : result.issues.map((issue) => `${issue.path}: ${issue.message}`).join("\n")); if (!result.valid) process.exitCode = 1; return; }
@@ -330,8 +702,22 @@ async function runCommand(parsed: ParsedArgs): Promise<void> {
     syncLinkedArtifactReviewStatus(root(parsed), artifact.path, reviewStatus);
   }
   else if (action === "validation") run = addAgentRunValidation(existing, { name: required(flag(parsed, "name"), "--name is required"), status: choice(flag(parsed, "status"), AGENT_RUN_VALIDATION_STATUSES, "validation status"), detail: flag(parsed, "detail") }, flag(parsed, "actor"));
-  else if (action === "approval-request") run = requestAgentRunApproval(existing, { title: required(flag(parsed, "title"), "--title is required"), action: required(flag(parsed, "action"), "--action is required"), riskClass: choice(flag(parsed, "risk", existing.riskClass), AGENT_RUN_RISK_CLASSES, "approval risk class"), requestedRole: flag(parsed, "role"), requestedFrom: flag(parsed, "from"), note: flag(parsed, "note") }, flag(parsed, "actor"));
-  else if (action === "approval-decide") run = decideAgentRunApproval(existing, required(parsed.positional[2], "approval id is required"), choice(flag(parsed, "decision"), AGENT_RUN_APPROVAL_DECISIONS, "approval decision"), { actor: required(flag(parsed, "actor"), "--actor is required"), actorRole: flag(parsed, "role"), fingerprint: flag(parsed, "fingerprint"), note: flag(parsed, "note"), receipt: flag(parsed, "receipt") });
+  else if (action === "approval-request") {
+    const correlated = correlatedApprovalRequest(parsed, corpus, existing);
+    if (correlated) {
+      output(parsed, correlated, `${correlated.id}: ${correlated.status}`);
+      return;
+    }
+    run = requestAgentRunApproval(existing, { title: required(flag(parsed, "title"), "--title is required"), action: required(flag(parsed, "action"), "--action is required"), riskClass: choice(flag(parsed, "risk", existing.riskClass), AGENT_RUN_RISK_CLASSES, "approval risk class"), requestedRole: flag(parsed, "role"), requestedFrom: flag(parsed, "from"), note: flag(parsed, "note") }, flag(parsed, "actor"));
+  }
+  else if (action === "approval-decide") {
+    const correlated = correlatedApprovalDecision(parsed, corpus, existing);
+    if (correlated) {
+      output(parsed, correlated, `${correlated.id}: ${correlated.status}`);
+      return;
+    }
+    run = decideAgentRunApproval(existing, required(parsed.positional[2], "approval id is required"), choice(flag(parsed, "decision"), AGENT_RUN_APPROVAL_DECISIONS, "approval decision"), { actor: required(flag(parsed, "actor"), "--actor is required"), actorRole: flag(parsed, "role"), fingerprint: flag(parsed, "fingerprint"), note: flag(parsed, "note"), receipt: flag(parsed, "receipt") });
+  }
   else if (action === "fork") { run = forkAgentRun(existing, { id: flag(parsed, "id"), actor: flag(parsed, "actor"), fromEventId: flag(parsed, "event") }); const file = saveAgentRun(corpus, run); output(parsed, { run, file }, `forked ${existing.id} -> ${run.id}`); return; }
   else throw new Error(`unknown run action: ${action}`);
   saveAgentRun(corpus, run); output(parsed, run, `${run.id}: ${run.status}`);

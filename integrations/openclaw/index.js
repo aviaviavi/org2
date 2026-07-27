@@ -51,6 +51,19 @@ export default definePluginEntry({
       }
     }, { scope: "operator.write" });
 
+    api.registerGatewayMethod("org2.workflow.resumeRevision", async ({ params, respond }) => {
+      try {
+        const runId = String(params?.runId || "").trim();
+        const approvalId = String(params?.approvalId || "").trim();
+        if (!runId) return respond(false, undefined, { code: "INVALID_REQUEST", message: "runId is required" });
+        if (!approvalId) return respond(false, undefined, { code: "INVALID_REQUEST", message: "approvalId is required" });
+        const expectedCorpusId = String(params?.corpusId || "").trim() || undefined;
+        respond(true, await lifecycle.serialize(() => lifecycle.resumeWorkflowRevision(runId, approvalId, { expectedCorpusId })));
+      } catch (error) {
+        respond(false, undefined, { code: "ORG2_WORKFLOW_ERROR", message: error.message });
+      }
+    }, { scope: "operator.write" });
+
     api.on("before_agent_run", async (event, ctx) => {
       if (!trackMainTurns || !shouldTrackMainTurn(event.prompt, ctx)) return;
       const key = `turn:${ctx.sessionKey || ctx.sessionId || "unknown"}:${ctx.runId || "unknown"}`;

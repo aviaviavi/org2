@@ -141,6 +141,10 @@ try {
   run = requestAgentRunApproval(run, { id: "release", title: "Release briefing", action: "publish PDF", riskClass: "external-action", requestedRole: "owner" });
   assert.equal(run.status, "waiting-approval");
   const releaseFingerprint = run.approvals.find((approval) => approval.id === "release").fingerprint;
+  assert.throws(
+    () => decideAgentRunApproval(run, "release", "revised", { actor: "Avi", actorRole: "owner", fingerprint: releaseFingerprint }),
+    /revision decision requires a note/,
+  );
   run = decideAgentRunApproval(run, "release", "approved", { actor: "Avi", actorRole: "owner", fingerprint: releaseFingerprint, note: "Reviewed exact PDF", receipt: "approval:local:1" });
   assert.equal(run.status, "running");
   assert.equal(run.approvals.find((approval) => approval.id === "release").decisionNote, "Reviewed exact PDF");

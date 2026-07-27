@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { conciseGoal, cronKey, durableRunMarker, executionSummary, outcomeCommand, shouldTrackMainTurn, workflowContinuationPrompt, workflowExecutionPrompt, workflowMarker } from "../lib/lifecycle.js";
+import { conciseGoal, cronKey, durableRunMarker, executionSummary, outcomeCommand, shouldTrackMainTurn, workflowContinuationPrompt, workflowExecutionPrompt, workflowMarker, workflowRevisionPrompt } from "../lib/lifecycle.js";
 import { Org2Lifecycle } from "../lib/lifecycle.js";
 
 test("tracks substantial work but not acknowledgements or heartbeats", () => {
@@ -49,7 +49,9 @@ test("recognizes prepared Org2 workflow runs", () => {
   });
   assert.equal(shouldTrackMainTurn(prompt, {}), true);
   assert.equal(shouldTrackMainTurn(prompt, { jobId: "cron-1" }), false);
+  assert.match(prompt, /Provider draft: PROVIDER:TOOL:DRAFT_ID/);
   assert.match(workflowContinuationPrompt({ id: "weekly-review", version: "1.2.0", title: "Weekly review" }, "run-42"), /artifact-review/);
+  assert.match(workflowContinuationPrompt({ id: "weekly-review", version: "1.2.0", title: "Weekly review" }, "run-42"), /org2 run approval-resolve --decision-key/);
 });
 
 test("prepares a durable run before handing a workflow to OpenClaw", async () => {
@@ -263,6 +265,57 @@ test("resumes an approved workflow in its correlated OpenClaw session", async ()
   assert.equal(resumed.sessionKey, "agent:main:org2:thread-1");
   assert.equal(workflowMarker(resumed.prompt).workflowRunId, "run-1");
   assert.match(workflowContinuationPrompt(workflow, "run-1"), /approval-decided/);
+});
+
+test("resumes a requested workflow revision with the reviewer's durable feedback", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "org2-openclaw-revision-"));
+  const stateFile = join(dir, "state.json");
+  const calls = [];
+  const workflow = { id: "weekly-review", version: "1.0.0", title: "Weekly review" };
+  const approval = {
+    id: "review-copy",
+    status: "revised",
+    decisionNote: "Lead with the recommendation and remove the internal acronym.",
+  };
+  const run = {
+    id: "run-1",
+    status: "blocked",
+    workflowId: workflow.id,
+    approvals: [approval],
+    events: [
+      { type: "status-changed", data: { to: "waiting-approval" } },
+      { type: "approval-requested", data: { approvalId: approval.id } },
+    ],
+  };
+  const lifecycle = new Org2Lifecycle({ stateFile, exec: async (args) => {
+    calls.push(args);
+    if (args[0] === "corpus") return JSON.stringify({ identity: { id: "personal" } });
+    if (args[0] === "run" && args[1] === "show") return JSON.stringify(run);
+    if (args[0] === "run" && args[1] === "resume") return JSON.stringify({ ...run, status: "running" });
+    if (args[0] === "workflow" && args[1] === "show") return JSON.stringify(workflow);
+    return "";
+  } });
+  await lifecycle.init();
+  lifecycle.state.mappings.key = {
+    org2RunId: run.id,
+    sessionKey: "agent:main:org2:thread-1",
+    createdAt: "2026-07-18T10:00:00Z",
+  };
+
+  const resumed = await lifecycle.resumeWorkflowRevision(run.id, approval.id, { expectedCorpusId: "personal" });
+
+  assert.equal(resumed.sessionKey, "agent:main:org2:thread-1");
+  assert.equal(workflowMarker(resumed.prompt).workflowRunId, run.id);
+  assert.match(resumed.prompt, /Lead with the recommendation/);
+  assert.match(resumed.prompt, /request a replacement approval/);
+  assert.match(resumed.prompt, /Request the replacement on ORG2_WORKFLOW_RUN_ID/);
+  assert.match(resumed.prompt, /Provider draft: PROVIDER:TOOL:DRAFT_ID/);
+  assert.match(resumed.prompt, /revision request is not approval/i);
+  assert.deepEqual(
+    calls.find((args) => args[0] === "run" && args[1] === "resume"),
+    ["run", "resume", run.id, "--actor", "org2-lifecycle", "--json"],
+  );
+  assert.match(workflowRevisionPrompt(workflow, run.id, approval), /revision-requested/);
 });
 
 test("rejects a Mac workflow request for a different configured corpus", async () => {

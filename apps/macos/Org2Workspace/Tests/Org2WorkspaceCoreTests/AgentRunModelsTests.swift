@@ -77,7 +77,8 @@ final class AgentRunModelsTests: XCTestCase {
       "runStatus": "waiting-approval",
       "runPendingApprovalCount": 2,
       "runApprovalCount": 3,
-      "runDecisionEffect": "Approving this leaves 1 other pending approval before the run can resume."
+      "runDecisionEffect": "Approving this leaves 1 other pending approval before the run can resume.",
+      "decisionKeys": ["artifact:gmail:gog:r123"]
     }
     """#.utf8)
 
@@ -85,6 +86,7 @@ final class AgentRunModelsTests: XCTestCase {
     XCTAssertTrue(item.isRunApproval)
     XCTAssertEqual(item.id, "run:run-1:approval-1")
     XCTAssertEqual(item.fingerprint, "sha256:abc123")
+    XCTAssertEqual(item.decisionKeys, ["artifact:gmail:gog:r123"])
     XCTAssertEqual(item.sourceLabel, "Run run-1")
     XCTAssertEqual(item.runDependencyText, "Approving this leaves 1 other pending approval before the run can resume.")
     XCTAssertTrue(item.matchesApprovalFilter("prepare report external-action"))
@@ -127,6 +129,56 @@ final class AgentRunModelsTests: XCTestCase {
     XCTAssertEqual(updatedRun.status, "running")
     XCTAssertEqual(updatedRun.approvals.first?.status, "approved")
     XCTAssertFalse(store.approvalItems.contains(where: { $0.id == queueItem.id }))
+  }
+
+  func testRevisionFeedbackNormalizationAndResumableBoundary() throws {
+    XCTAssertNil(WorkspaceStore.normalizedApprovalRevisionFeedback("   \n"))
+    XCTAssertEqual(
+      WorkspaceStore.normalizedApprovalRevisionFeedback(
+        "  Lead with the recommendation and remove the internal acronym.  "
+      ),
+      "Lead with the recommendation and remove the internal acronym."
+    )
+
+    let data = Data(#"""
+    {
+      "id": "revision-run",
+      "goal": "Prepare launch copy",
+      "acceptanceCriteria": [],
+      "status": "blocked",
+      "riskClass": "local-draft",
+      "capabilities": [],
+      "context": [],
+      "plan": [],
+      "artifacts": [],
+      "approvals": [{
+        "id": "review-copy",
+        "title": "Review launch copy",
+        "action": "send launch copy",
+        "riskClass": "external-action",
+        "status": "revised",
+        "requestedAt": "2026-07-27T10:01:00.000Z",
+        "decidedAt": "2026-07-27T10:02:00.000Z",
+        "decisionNote": "Lead with the recommendation."
+      }],
+      "validations": [],
+      "comments": [],
+      "events": [
+        {
+          "id": "waiting",
+          "type": "status-changed",
+          "at": "2026-07-27T10:01:00.000Z",
+          "detail": "running -> waiting-approval"
+        }
+      ],
+      "createdAt": "2026-07-27T10:00:00.000Z",
+      "updatedAt": "2026-07-27T10:02:00.000Z",
+      "blockedReason": "One or more approvals were not approved"
+    }
+    """#.utf8)
+    let run = try JSONDecoder().decode(AgentRunItem.self, from: data)
+    XCTAssertEqual(run.currentApprovalBoundary.map(\.id), ["review-copy"])
+    XCTAssertEqual(run.resumableRevisionApproval?.id, "review-copy")
   }
 
   @MainActor
