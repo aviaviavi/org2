@@ -133,6 +133,35 @@ final class SlideExportTests: XCTestCase {
     XCTAssertTrue(calls.allSatisfy { $0.sourcePath == source.file && $0.passes == 1 })
   }
 
+  @MainActor
+  func testRenderedDocumentSlidePreviewUsesSelectedSourceOutsideEditMode() async throws {
+    let store = WorkspaceStore(
+      cli: Org2CLI(repoRoot: FileManager.default.temporaryDirectory)
+    )
+    let source = EntrySource(
+      file: "/tmp/rendered-talk.org2",
+      startLine: 1,
+      endLineExclusive: 5,
+      text: "#+TITLE: Talk\n* Section\n** Rendered slide\n",
+      isSubtree: false
+    )
+    let expectedPDF = Data("%PDF-1.4\nrendered-preview".utf8)
+    let recorder = SlidePreviewRecorder(pdf: expectedPDF)
+    store.slidePreviewRendererForTesting = { text, sourcePath, passes in
+      try await recorder.render(text: text, sourcePath: sourcePath, passes: passes)
+    }
+    store.selectedEntrySource = source
+    store.documentPreviewKind = .slides
+
+    XCTAssertFalse(store.isEditingEntry)
+    store.scheduleSlidePreview(text: source.text, source: source, immediate: true)
+    try await waitForSlidePreview(store) { $0.slidePreviewPDF == expectedPDF }
+
+    let calls = await recorder.recordedCalls()
+    XCTAssertEqual(calls.map(\.text), [source.text])
+    XCTAssertTrue(calls.allSatisfy { $0.sourcePath == source.file && $0.passes == 1 })
+  }
+
   func testOrg2CLIExportsBeamerPDFWithApplyFlag() async throws {
     try await assertExportArguments(
       format: .pdf,
