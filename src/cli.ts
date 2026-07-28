@@ -63,10 +63,12 @@ import { parseIsoCalendarDate } from "./calendarDate.js";
 import { parseTimestampRepeater, parseTimestampWarning } from "./timestampModifiers.js";
 import type { TimestampRepeater, TimestampWarning } from "./ast.js";
 import {
+  collectArtifactPropertyDrawersInText,
   collectArtifactIdsInText,
   collectArtifactProvenanceRefsInText,
   findDuplicateArtifactIds,
   lintArtifactMetadataInText,
+  parseArtifactSourceHashEntry,
   type ArtifactLintIssue,
 } from "./artifactLint.js";
 import type {
@@ -1397,62 +1399,6 @@ function appendRoamGraphLintIssues(files: string[], issues: ArtifactLintIssue[])
   }
 }
 
-function parseLintPropertyLine(rawLine: string): { key: string; value: string } | null {
-  const match = /^:([A-Za-z0-9_\-]+):\s*(.*?)\s*$/.exec(String(rawLine || ""));
-  if (!match) return null;
-  return { key: String(match[1] || "").toUpperCase(), value: String(match[2] || "").trim() };
-}
-
-function collectLintPropertyDrawers(content: string): Array<{ line: number; properties: Map<string, string> }> {
-  const lines = content.replace(/\r\n/g, "\n").split("\n");
-  const drawers: Array<{ line: number; properties: Map<string, string> }> = [];
-
-  const collectDrawerAt = (idx: number): number => {
-    const properties = new Map<string, string>();
-    let endIdx = idx;
-    for (let j = idx + 1; j < lines.length; j += 1) {
-      endIdx = j;
-      const trimmed = (lines[j] || "").trim();
-      if (trimmed === ":END:") {
-        drawers.push({ line: idx + 1, properties });
-        return endIdx;
-      }
-      const parsed = parseLintPropertyLine(trimmed);
-      if (parsed) properties.set(parsed.key, parsed.value);
-    }
-    return endIdx;
-  };
-
-  let idx = 0;
-  while (idx < lines.length) {
-    const trimmed = (lines[idx] || "").trim();
-    if (!trimmed || trimmed.startsWith("#")) {
-      idx += 1;
-      continue;
-    }
-    break;
-  }
-  if ((lines[idx] || "").trim() === ":PROPERTIES:") collectDrawerAt(idx);
-
-  let currentHeadlineLine = -1;
-  for (let i = 0; i < lines.length; i += 1) {
-    const line = lines[i] || "";
-    if (/^(\*+)\s+/.test(line)) {
-      currentHeadlineLine = i;
-      continue;
-    }
-    if (line.trim() !== ":PROPERTIES:") continue;
-
-    const prev = (lines[i - 1] || "").trim();
-    const prev2 = (lines[i - 2] || "").trim();
-    const belongsToHeadline =
-      currentHeadlineLine >= 0 && (i - 1 === currentHeadlineLine || (prev === "" && i - 2 === currentHeadlineLine && prev2 !== ""));
-    if (belongsToHeadline) i = collectDrawerAt(i);
-  }
-
-  return drawers;
-}
-
 function splitLintList(raw: string): string[] {
   return String(raw || "")
     .split(/[,;]+/)
@@ -1460,14 +1406,8 @@ function splitLintList(raw: string): string[] {
     .filter(Boolean);
 }
 
-function parseLintSourceHashEntry(entry: string): { kind: string; value: string; hash: string } | null {
-  const match = /^([a-z][a-z0-9_-]*):(\S.+)=sha256:([a-fA-F0-9]{64})$/.exec(String(entry || "").trim());
-  if (!match) return null;
-  return { kind: String(match[1] || "").toLowerCase(), value: String(match[2] || "").trim(), hash: String(match[3] || "").toLowerCase() };
-}
-
 function appendArtifactFreshnessLintIssues(content: string, filePath: string, issues: ArtifactLintIssue[]): void {
-  for (const drawer of collectLintPropertyDrawers(content)) {
+  for (const drawer of collectArtifactPropertyDrawersInText(content)) {
     const role = String(drawer.properties.get("ORG2_ARTIFACT_ROLE") || "").trim().toLowerCase();
     if (!["compiled", "view", "report"].includes(role)) continue;
 
@@ -1499,7 +1439,7 @@ function appendArtifactFreshnessLintIssues(content: string, filePath: string, is
     }
 
     for (const entry of splitLintList(drawer.properties.get("ORG2_SOURCE_HASHES") || "")) {
-      const parsed = parseLintSourceHashEntry(entry);
+      const parsed = parseArtifactSourceHashEntry(entry);
       if (!parsed || parsed.kind !== "file") continue;
       const sourcePath = path.resolve(path.dirname(filePath), parsed.value);
       try {
