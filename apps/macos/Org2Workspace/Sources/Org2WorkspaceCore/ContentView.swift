@@ -465,7 +465,7 @@ private struct SidebarView: View {
           Section("Pinned") {
             ForEach(pinnedCorpusFiles) { file in
               Button {
-                store.selectCorpusFile(file)
+                store.openSidebarFile(file)
               } label: {
                 SidebarPinnedFileRow(
                   file: file,
@@ -484,7 +484,7 @@ private struct SidebarView: View {
         Section("Daily") {
           ForEach(DailyNoteTarget.allCases) { target in
             Button {
-              store.openDailyNote(target)
+              store.openDailyNoteFromSidebar(target)
             } label: {
               HStack(spacing: 8) {
                 Label(target.title, systemImage: target == .today ? "sun.max" : "calendar")
@@ -3159,6 +3159,11 @@ private struct RunCenterDetail: View {
           .disabled(isMutating)
           .help("Create a reusable workflow definition from this one-off run")
       }
+      Button { store.askOpenClawAboutAgentRun(run) } label: {
+        Label("Ask AI", systemImage: "sparkles")
+      }
+      .buttonStyle(WorkspaceActionButtonStyle())
+      .help("Start a chat with this durable run record as context")
       Button { store.openAgentRunRecord(run) } label: { Label("View Record", systemImage: "doc.text") }
         .buttonStyle(WorkspaceActionButtonStyle())
         .help("Render the durable run record inside Org2")

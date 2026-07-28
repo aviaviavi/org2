@@ -8508,6 +8508,76 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testSidebarFileNavigationMakesDocumentPrimaryWithoutShowingFilesSurface() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-sidebar-file-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let note = root.appendingPathComponent("pinned.org2")
+    try "#+TITLE: Pinned\n".write(to: note, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.makeSurfacePrimary(.agenda)
+    store.openSidebarFile(CorpusFile(
+      path: note.path,
+      relativePath: note.lastPathComponent,
+      modifiedAt: nil,
+      byteCount: nil
+    ))
+
+    XCTAssertEqual(store.selectedSurface, .files)
+    XCTAssertEqual(store.selectedLocation?.file, note.path)
+    XCTAssertTrue(store.isWorkspaceSurfacePaneClosed)
+    XCTAssertFalse(store.isWorkspaceDetailPaneClosed)
+  }
+
+  @MainActor
+  func testSidebarFileNavigationKeepsVisibleOpenClawChatBesideDocument() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-sidebar-file-chat-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let note = root.appendingPathComponent("pinned.org2")
+    try "#+TITLE: Pinned\n".write(to: note, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.expandSurface(.openClaw)
+    XCTAssertTrue(store.isWorkspaceDetailPaneClosed)
+
+    store.openSidebarFile(CorpusFile(
+      path: note.path,
+      relativePath: note.lastPathComponent,
+      modifiedAt: nil,
+      byteCount: nil
+    ))
+
+    XCTAssertEqual(store.selectedSurface, .openClaw)
+    XCTAssertEqual(store.selectedLocation?.file, note.path)
+    XCTAssertFalse(store.isWorkspaceSurfacePaneClosed)
+    XCTAssertFalse(store.isWorkspaceDetailPaneClosed)
+  }
+
+  @MainActor
+  func testSidebarDailyNoteNavigationMakesDocumentPrimary() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-sidebar-daily-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.makeSurfacePrimary(.agenda)
+    store.openDailyNoteFromSidebar(.today)
+
+    XCTAssertEqual(store.selectedSurface, .files)
+    XCTAssertTrue(store.isWorkspaceSurfacePaneClosed)
+    XCTAssertFalse(store.isWorkspaceDetailPaneClosed)
+    XCTAssertEqual(store.selectedEntrySourceMode, .page)
+  }
+
+  @MainActor
   func testOpenHomeCreatesTodayDailyNoteAsOpenClawDetail() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-home-\(UUID().uuidString)", isDirectory: true)

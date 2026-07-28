@@ -647,6 +647,34 @@ private enum ApprovalActionKind {
   case reject
 }
 
+private struct CorpusWorkspaceCache {
+  var cachedAt: Date
+  var identity: CorpusIdentity?
+  var agenda: AgendaPayload?
+  var approvalItems: [ApprovalItem]
+  var agentRuns: [AgentRunItem]
+  var agentWorkflows: [AgentWorkflowItem]
+  var corpusFiles: [CorpusFile]
+  var orgRoamLinkResolver: OrgRoamLinkResolver
+  var assignedWorkItems: [AssignedWorkItem]
+  var meetings: [MeetingWorkspaceItem]
+  var sourceProfiles: [WorkspaceSourceProfileStatus]
+  var sourceRuntimeStatuses: [String: WorkspaceSourceRuntimeStatus]
+  var sourceScheduleStates: [String: WorkspaceSourceScheduleState]
+  var openClawThreads: [OpenClawThread]
+  var workspaceHealthChecks: [WorkspaceHealthCheck]
+  var searchIndexStatusText: String
+  var dirtySurfaces: Set<WorkspaceSurface>
+  var selectedAgendaItemID: String?
+  var selectedApprovalItemID: ApprovalItem.ID?
+  var selectedAgentRunID: AgentRunItem.ID?
+  var selectedAgentWorkflowID: AgentWorkflowItem.ID?
+  var selectedCorpusFileID: String?
+  var selectedAssignedWorkItemID: AssignedWorkItem.ID?
+  var selectedMeetingID: String?
+  var selectedOpenClawThreadID: String?
+}
+
 struct RecoverableMeetingRecording: Sendable {
   let paths: MeetingArtifactPaths
   let duration: TimeInterval?
@@ -1286,6 +1314,7 @@ public final class WorkspaceStore: ObservableObject {
   }
   private var workspaceUndoStack: [WorkspaceUndoAction] = []
   private var workspaceRedoStack: [WorkspaceUndoAction] = []
+  private var corpusWorkspaceCaches: [String: CorpusWorkspaceCache] = [:]
   private var canonicalDocumentCache: [String: CanonicalDocumentCacheEntry] = [:]
   private var entrySourceCache: [String: EntrySourceCacheEntry] = [:]
   private var entrySourceCacheOrder: [String] = []
@@ -1693,14 +1722,58 @@ public final class WorkspaceStore: ObservableObject {
     setCorpusRoot(url, persistsDefault: persistsDefault, openClawMigrationSource: nil)
   }
 
+  private func cacheCurrentCorpusWorkspace() {
+    guard let corpusRoot else { return }
+    corpusWorkspaceCaches[corpusRoot.standardizedFileURL.path] = CorpusWorkspaceCache(
+      cachedAt: Date(),
+      identity: activeCorpusIdentity,
+      agenda: agenda,
+      approvalItems: approvalItems,
+      agentRuns: agentRuns,
+      agentWorkflows: agentWorkflows,
+      corpusFiles: corpusFiles,
+      orgRoamLinkResolver: orgRoamLinkResolver,
+      assignedWorkItems: assignedWorkItems,
+      meetings: meetings,
+      sourceProfiles: sourceProfiles,
+      sourceRuntimeStatuses: sourceRuntimeStatuses,
+      sourceScheduleStates: sourceScheduleStates,
+      openClawThreads: openClawThreads,
+      workspaceHealthChecks: workspaceHealthChecks,
+      searchIndexStatusText: searchIndexStatusText,
+      dirtySurfaces: dirtyWorkspaceSurfaces,
+      selectedAgendaItemID: selectedAgendaItemID,
+      selectedApprovalItemID: selectedApprovalItemID,
+      selectedAgentRunID: selectedAgentRunID,
+      selectedAgentWorkflowID: selectedAgentWorkflowID,
+      selectedCorpusFileID: selectedCorpusFileID,
+      selectedAssignedWorkItemID: selectedAssignedWorkItemID,
+      selectedMeetingID: selectedMeetingID,
+      selectedOpenClawThreadID: selectedOpenClawThreadID
+    )
+  }
+
+  private func invalidateCachedCorpusWorkspace(
+    at path: String,
+    surfaces: Set<WorkspaceSurface>
+  ) {
+    let standardizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
+    guard var cache = corpusWorkspaceCaches[standardizedPath] else { return }
+    cache.dirtySurfaces.formUnion(surfaces.filter { $0 != .home })
+    corpusWorkspaceCaches[standardizedPath] = cache
+  }
+
+  @discardableResult
   private func setCorpusRoot(
     _ url: URL,
     persistsDefault: Bool,
     openClawMigrationSource: URL?
-  ) {
+  ) -> Bool {
     let standardized = url.standardizedFileURL
+    cacheCurrentCorpusWorkspace()
+    let cachedWorkspace = corpusWorkspaceCaches[standardized.path]
     corpusRoot = standardized
-    activeCorpusIdentity = nil
+    activeCorpusIdentity = cachedWorkspace?.identity
     upsertCorpusMount(path: standardized.path, identity: nil)
     openClawRemoteCorpusPath = restoreOpenClawRemoteCorpusPath(for: standardized)
     restorePinnedFiles(for: standardized)
@@ -1711,15 +1784,16 @@ public final class WorkspaceStore: ObservableObject {
       to: Self.openClawTranscriptURL(corpusRoot: standardized),
       migrationSource: openClawMigrationSource
     )
-    agenda = nil
-    approvalItems = []
-    selectedApprovalItemID = nil
+    agenda = cachedWorkspace?.agenda
+    approvalItems = cachedWorkspace?.approvalItems ?? []
+    selectedAgendaItemID = cachedWorkspace?.selectedAgendaItemID
+    selectedApprovalItemID = cachedWorkspace?.selectedApprovalItemID
     approvalSelectionAnchor = nil
     approvalFilter = ""
-    corpusFiles = []
-    orgRoamLinkResolver = .empty
+    corpusFiles = cachedWorkspace?.corpusFiles ?? []
+    orgRoamLinkResolver = cachedWorkspace?.orgRoamLinkResolver ?? .empty
     orgRoamLinkResolverGeneration += 1
-    selectedCorpusFileID = nil
+    selectedCorpusFileID = cachedWorkspace?.selectedCorpusFileID
     corpusFileFilter = ""
     quickOpenQuery = ""
     searchResults = []
@@ -1727,12 +1801,16 @@ public final class WorkspaceStore: ObservableObject {
     workspaceFileSearchResults = []
     workspacePageSearchResults = []
     bulkSelectedAgendaItemIDs = []
-    assignedWorkItems = []
-    selectedAssignedWorkItemID = nil
-    meetings = []
-    selectedMeetingID = nil
-    openClawThreads = []
-    selectedOpenClawThreadID = nil
+    assignedWorkItems = cachedWorkspace?.assignedWorkItems ?? []
+    selectedAssignedWorkItemID = cachedWorkspace?.selectedAssignedWorkItemID
+    meetings = cachedWorkspace?.meetings ?? []
+    selectedMeetingID = cachedWorkspace?.selectedMeetingID
+    sourceProfiles = cachedWorkspace?.sourceProfiles ?? []
+    sourceRuntimeStatuses = cachedWorkspace?.sourceRuntimeStatuses ?? [:]
+    sourceScheduleStates = cachedWorkspace?.sourceScheduleStates ?? [:]
+    openClawThreads = cachedWorkspace?.openClawThreads ?? []
+    selectedOpenClawThreadID = cachedWorkspace?.selectedOpenClawThreadID
+    workspaceHealthChecks = cachedWorkspace?.workspaceHealthChecks ?? []
     refreshOrgCryptManagedRecipientFiles()
     selectedLocation = nil
     cancelSourceEditorPreviewRender(clearStatus: true)
@@ -1746,13 +1824,6 @@ public final class WorkspaceStore: ObservableObject {
     sourceBlockRuns = [:]
     editableEntryText = ""
     sourceEditorSelection = NSRange(location: 0, length: 0)
-    canonicalDocumentCache = [:]
-    entrySourceCache = [:]
-    entrySourceCacheOrder = []
-    renderedBlocksCache = [:]
-    renderedBlocksCacheOrder = []
-    renderedHTMLCache = [:]
-    renderedHTMLCacheOrder = []
     isRefreshingAgenda = false
     isRefreshingApprovals = false
     isRefreshingAgentRuns = false
@@ -1763,10 +1834,10 @@ public final class WorkspaceStore: ObservableObject {
     isLoadingAgenda = false
     isLoadingApprovals = false
     isLoadingAgentRuns = false
-    agentRuns = []
-    agentWorkflows = []
-    selectedAgentWorkflowID = nil
-    selectedAgentRunID = nil
+    agentRuns = cachedWorkspace?.agentRuns ?? []
+    agentWorkflows = cachedWorkspace?.agentWorkflows ?? []
+    selectedAgentWorkflowID = cachedWorkspace?.selectedAgentWorkflowID
+    selectedAgentRunID = cachedWorkspace?.selectedAgentRunID
     presentedAgentRunID = nil
     mutatingAgentRunIDs = []
     isLoadingAssignedWork = false
@@ -1787,7 +1858,12 @@ public final class WorkspaceStore: ObservableObject {
     workspaceSurfaceRefreshTasks = [:]
     agendaClockRefreshTask?.cancel()
     agendaClockRefreshTask = nil
-    dirtyWorkspaceSurfaces = Set(WorkspaceSurface.allCases.filter { $0 != .home })
+    dirtyWorkspaceSurfaces = cachedWorkspace?.dirtySurfaces
+      ?? Set(WorkspaceSurface.allCases.filter { $0 != .home })
+    if let cachedWorkspace,
+       !Calendar.current.isDate(cachedWorkspace.cachedAt, inSameDayAs: Date()) {
+      dirtyWorkspaceSurfaces.insert(.agenda)
+    }
     for surface in dirtyWorkspaceSurfaces {
       workspaceSurfaceDirtyGenerations[surface, default: 0] &+= 1
     }
@@ -1800,7 +1876,7 @@ public final class WorkspaceStore: ObservableObject {
     searchIndexTask = nil
     searchIndexGeneration += 1
     isBuildingSearchIndex = false
-    searchIndexStatusText = ""
+    searchIndexStatusText = cachedWorkspace?.searchIndexStatusText ?? ""
     resetBlockState()
     isEditingEntry = false
     isLoadingEntrySource = false
@@ -1823,6 +1899,7 @@ public final class WorkspaceStore: ObservableObject {
     errorText = nil
     rebuildCorpusFileWatchers()
     scheduleAgendaClockInvalidation()
+    return cachedWorkspace != nil
   }
 
   public func switchCorpus(to mount: WorkspaceCorpusMount) {
@@ -1840,12 +1917,20 @@ public final class WorkspaceStore: ObservableObject {
       statusText = "Corpus unavailable"
       return
     }
-    setCorpusRoot(URL(fileURLWithPath: mount.path))
+    let restoredCachedWorkspace = setCorpusRoot(
+      URL(fileURLWithPath: mount.path),
+      persistsDefault: true,
+      openClawMigrationSource: nil
+    )
     statusText = "Switched to \(mount.name)"
     isSwitchingCorpus = true
     Task { @MainActor [weak self] in
       guard let self else { return }
-      await self.refreshWorkspace()
+      if restoredCachedWorkspace {
+        await self.refreshWorkspaceSurfaceIfDirty(self.selectedSurface)
+      } else {
+        await self.refreshWorkspace()
+      }
       self.isSwitchingCorpus = false
     }
   }
@@ -1856,6 +1941,7 @@ public final class WorkspaceStore: ObservableObject {
       return
     }
     mountedCorpora.removeAll { $0.path == mount.path }
+    corpusWorkspaceCaches.removeValue(forKey: mount.path)
     persistCorpusMounts()
     rebuildCorpusFileWatchers()
   }
@@ -1948,6 +2034,25 @@ public final class WorkspaceStore: ObservableObject {
     let isActiveCorpus = eventRoot.standardizedFileURL.path == activeRootPath
 
     guard isActiveCorpus else {
+      var cachedSurfaces: Set<WorkspaceSurface>
+      if requiresFullScan || classified.hasConfigurationChanges {
+        cachedSurfaces = Set(WorkspaceSurface.allCases.filter { $0 != .home })
+      } else {
+        cachedSurfaces = classified.contentPaths.isEmpty
+          ? []
+          : Self.invalidatedWorkspaceSurfaces(
+              for: classified.contentPaths,
+              corpusRoot: eventRoot
+            ).union([.files])
+      }
+      if classified.hasAgentRunStateChanges {
+        cachedSurfaces.insert(.approvals)
+      }
+      invalidateCachedCorpusWorkspace(
+        at: eventRoot.path,
+        surfaces: cachedSurfaces
+      )
+
       var surfaces = Set<WorkspaceSurface>()
       if agendaReadScope == .allCorpora,
          requiresFullScan || !classified.contentPaths.isEmpty || classified.hasConfigurationChanges {
@@ -2767,6 +2872,10 @@ public final class WorkspaceStore: ObservableObject {
     markWorkspaceSurfaceCleanIfUnchanged(.approvals, generation: dirtyGeneration)
   }
 
+  func replaceAgentRunsForTesting(_ runs: [AgentRunItem]) {
+    agentRuns = runs
+  }
+
   public func setRunReviewAutoRefreshActive(
     _ isActive: Bool,
     intervalNanoseconds: UInt64 = WorkspaceStore.runReviewAutoRefreshIntervalNanoseconds
@@ -3247,6 +3356,35 @@ public final class WorkspaceStore: ObservableObject {
       modifiedAt: values?.contentModificationDate,
       byteCount: values?.fileSize.map(Int64.init)
     ), surface: .approvals)
+  }
+
+  public func askOpenClawAboutAgentRun(
+    _ run: AgentRunItem,
+    threadMode: OpenClawThreadMode = .newThread
+  ) {
+    guard let corpusRoot else {
+      statusText = "No corpus selected"
+      return
+    }
+    let relativePath = ".org2/runs/\(run.id).org2"
+    let recordURL = corpusRoot.appendingPathComponent(relativePath).standardizedFileURL
+    guard FileManager.default.fileExists(atPath: recordURL.path) else {
+      errorText = "The run record could not be found at \(relativePath)."
+      statusText = "Run record missing"
+      return
+    }
+
+    let title = Org2Display.cleanInline(run.goal)
+    addOpenClawContext(
+      OpenClawContextPointer(
+        kind: "agent run",
+        displayTitle: title,
+        reference: "\(mappedPathForOpenClaw(recordURL.path)):1",
+        displayReference: "\(relativePath):1",
+        threadTitle: "Run: \(title)"
+      ),
+      threadMode: threadMode
+    )
   }
 
   public func respondToAgentRunClarification(_ run: AgentRunItem, response: String) async {
@@ -8843,6 +8981,20 @@ public final class WorkspaceStore: ObservableObject {
     statusText = "Opened \(file.relativePath)"
   }
 
+  public func openSidebarFile(_ file: CorpusFile) {
+    let keepsVisibleChatPane =
+      !isWorkspaceSurfacePaneClosed
+      && (selectedSurface == .home || selectedSurface == .openClaw)
+    let surface = keepsVisibleChatPane ? selectedSurface : .files
+
+    selectCorpusFile(file, surface: surface)
+    expandedWorkspaceSurface = nil
+    isWorkspaceSurfacePaneClosed = !keepsVisibleChatPane
+    isWorkspaceDetailPaneClosed = false
+    isWorkspaceDetailPaneExpanded = false
+    isOpenClawAssistantPresented = false
+  }
+
   public var pinnedCorpusFiles: [CorpusFile] {
     guard let corpusRoot else { return [] }
     let filesByRelativePath = Dictionary(uniqueKeysWithValues: corpusFiles.map { ($0.relativePath, $0) })
@@ -10213,6 +10365,14 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func openDailyNote(_ target: DailyNoteTarget) {
+    openDailyNote(target, opensFromSidebar: false)
+  }
+
+  public func openDailyNoteFromSidebar(_ target: DailyNoteTarget) {
+    openDailyNote(target, opensFromSidebar: true)
+  }
+
+  private func openDailyNote(_ target: DailyNoteTarget, opensFromSidebar: Bool) {
     guard let corpusRoot else {
       statusText = "No corpus selected"
       return
@@ -10225,7 +10385,11 @@ public final class WorkspaceStore: ObservableObject {
       }
       let file = corpusFile(for: url, corpusRoot: corpusRoot)
       upsertCorpusFile(file)
-      selectCorpusFile(file)
+      if opensFromSidebar {
+        openSidebarFile(file)
+      } else {
+        selectCorpusFile(file)
+      }
       statusText = "Opened \(file.relativePath)"
     } catch {
       errorText = error.localizedDescription

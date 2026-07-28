@@ -611,6 +611,41 @@ final class AgentRunModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testAskAIAboutAgentRunStartsChatWithDurableRecordContext() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-run-ask-ai-\(UUID().uuidString)", isDirectory: true)
+    let runs = root.appendingPathComponent(".org2/runs", isDirectory: true)
+    try FileManager.default.createDirectory(at: runs, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try "#+TITLE: Durable run\n".write(
+      to: runs.appendingPathComponent("run-1.org2"),
+      atomically: true,
+      encoding: .utf8
+    )
+
+    let suiteName = "org2-run-ask-ai-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json")
+    )
+    store.setCorpusRoot(root, persistsDefault: false)
+    store.openClawRemoteCorpusPath = "/remote/org2"
+
+    store.askOpenClawAboutAgentRun(try makeRun())
+
+    XCTAssertEqual(store.selectedSurface, .openClaw)
+    XCTAssertEqual(store.openClawChatThreads.first?.title, "Run: Prepare a cited briefing")
+    XCTAssertEqual(
+      store.openClawDraft,
+      "Use agent run “Prepare a cited briefing” at /remote/org2/.org2/runs/run-1.org2:1 as context.\n\n"
+    )
+    XCTAssertEqual(store.openClawStatusText, "Added .org2/runs/run-1.org2:1 to OpenClaw")
+  }
+
+  @MainActor
   func testRunDetailUsesWorkspaceDetailAndArtifactNavigationReturnsWithBack() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-run-detail-navigation-\(UUID().uuidString)", isDirectory: true)
