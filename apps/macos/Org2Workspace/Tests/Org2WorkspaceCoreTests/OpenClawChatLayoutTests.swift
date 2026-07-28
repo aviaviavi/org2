@@ -44,21 +44,47 @@ final class OpenClawChatLayoutTests: XCTestCase {
 
   func testChatScrollRestorationDefaultsUnsavedThreadsToMostRecentMessage() {
     let threadID = UUID()
-    let unsaved = OpenClawChatScrollRestoration(threadID: threadID, savedPosition: nil)
-    let saved = OpenClawChatScrollRestoration(threadID: threadID, savedPosition: 0.42)
+    let unsaved = OpenClawChatScrollRestoration(
+      threadID: threadID,
+      selectionGeneration: 1,
+      savedPosition: nil
+    )
+    let saved = OpenClawChatScrollRestoration(
+      threadID: threadID,
+      selectionGeneration: 1,
+      savedPosition: 0.42
+    )
 
     XCTAssertEqual(unsaved.position, 1)
     XCTAssertEqual(saved.position, 0.42, accuracy: 0.001)
   }
 
-  func testChatScrollRestorationRestartsOnlyWhenThreadChanges() {
+  func testChatScrollRestorationRestartsWhenThreadOrSelectionChanges() {
     let firstThreadID = UUID()
     let secondThreadID = UUID()
-    let initial = OpenClawChatScrollRestoration(threadID: firstThreadID, savedPosition: nil)
-    let sameThread = OpenClawChatScrollRestoration(threadID: firstThreadID, savedPosition: 0.42)
-    let nextThread = OpenClawChatScrollRestoration(threadID: secondThreadID, savedPosition: nil)
+    let initial = OpenClawChatScrollRestoration(
+      threadID: firstThreadID,
+      selectionGeneration: 1,
+      savedPosition: nil
+    )
+    let sameSelection = OpenClawChatScrollRestoration(
+      threadID: firstThreadID,
+      selectionGeneration: 1,
+      savedPosition: 0.42
+    )
+    let reselectedThread = OpenClawChatScrollRestoration(
+      threadID: firstThreadID,
+      selectionGeneration: 2,
+      savedPosition: nil
+    )
+    let nextThread = OpenClawChatScrollRestoration(
+      threadID: secondThreadID,
+      selectionGeneration: 3,
+      savedPosition: nil
+    )
 
-    XCTAssertFalse(sameThread.requiresNewRestoration(after: initial))
+    XCTAssertFalse(sameSelection.requiresNewRestoration(after: initial))
+    XCTAssertTrue(reselectedThread.requiresNewRestoration(after: initial))
     XCTAssertTrue(nextThread.requiresNewRestoration(after: initial))
   }
 

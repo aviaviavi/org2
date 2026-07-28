@@ -4092,6 +4092,26 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testReselectingPinnedOpenClawThreadRequestsFreshBottomPosition() throws {
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.openClawMessages = [
+      OpenClawChatMessage(role: .user, content: "Oldest"),
+      OpenClawChatMessage(role: .assistant, content: "Newest")
+    ]
+    let threadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
+    store.toggleOpenClawChatThreadPin(threadID)
+    store.recordOpenClawChatScrollPosition(0)
+    let previousGeneration = store.openClawChatSelectionGeneration
+
+    store.selectOpenClawChatThread(threadID)
+
+    XCTAssertEqual(store.selectedOpenClawChatThreadID, threadID)
+    XCTAssertTrue(store.selectedOpenClawChatThread?.isPinned == true)
+    XCTAssertNil(store.openClawChatScrollPosition)
+    XCTAssertEqual(store.openClawChatSelectionGeneration, previousGeneration + 1)
+  }
+
+  @MainActor
   func testAskOpenClawAboutCurrentEntryInjectsMappedReference() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-ai-context-\(UUID().uuidString)", isDirectory: true)
