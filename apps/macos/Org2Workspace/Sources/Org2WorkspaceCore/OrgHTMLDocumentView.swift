@@ -114,6 +114,7 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
   let layout: OrgHTMLDocumentLayout
   let askAIAboutHeading: @MainActor (Int) -> Void
   let reportStatus: @MainActor (String) -> Void
+  var reportViewportSourceLine: @MainActor (Int?) -> Void = { _ in }
 
   func makeCoordinator() -> Coordinator {
     Coordinator()
@@ -123,6 +124,10 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
     let configuration = WKWebViewConfiguration()
     configuration.defaultWebpagePreferences.allowsContentJavaScript = true
     configuration.websiteDataStore = .nonPersistent()
+    configuration.userContentController.add(
+      context.coordinator,
+      name: Coordinator.viewportMessageHandlerName
+    )
 
     let webView = WKWebView(frame: .zero, configuration: configuration)
     webView.navigationDelegate = context.coordinator
@@ -140,6 +145,7 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
     coordinator.corpusRoot = corpusRoot
     coordinator.askAIAboutHeading = askAIAboutHeading
     coordinator.reportStatus = reportStatus
+    coordinator.reportViewportSourceLine = reportViewportSourceLine
     let layoutChanged = coordinator.layout != layout
     coordinator.layout = layout
 
@@ -175,6 +181,12 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
     }
   }
 
+  static func dismantleNSView(_ webView: WKWebView, coordinator: Coordinator) {
+    webView.configuration.userContentController.removeScriptMessageHandler(
+      forName: Coordinator.viewportMessageHandlerName
+    )
+  }
+
   private static func movesSearchBackward(from previous: Int?, to next: Int?, count: Int) -> Bool {
     guard let previous, let next, count > 1 else { return false }
     if previous == 0 && next == count - 1 { return true }
@@ -183,7 +195,8 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
   }
 
   @MainActor
-  final class Coordinator: NSObject, WKNavigationDelegate {
+  final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
+    nonisolated static let viewportMessageHandlerName = "org2ViewportSourceLine"
     var renderID: String?
     var searchQuery: String?
     var searchOccurrenceIndex: Int?
@@ -196,12 +209,78 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
     var corpusRoot: URL?
     var askAIAboutHeading: @MainActor (Int) -> Void = { _ in }
     var reportStatus: @MainActor (String) -> Void = { _ in }
+    var reportViewportSourceLine: @MainActor (Int?) -> Void = { _ in }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation?) {
       applyLayout(to: webView)
       installRichCopyHandler(in: webView)
+      installViewportSourceLineReporter(in: webView)
       applySearch(to: webView, backwards: false)
       applyScrollRequest(scrollRequest, to: webView)
+    }
+
+    func userContentController(
+      _ userContentController: WKUserContentController,
+      didReceive message: WKScriptMessage
+    ) {
+      guard message.name == Self.viewportMessageHandlerName else { return }
+      let line = (message.body as? NSNumber)?.intValue
+      reportViewportSourceLine(line.flatMap { $0 > 0 ? $0 : nil })
+    }
+
+    func installViewportSourceLineReporter(in webView: WKWebView) {
+      let script = """
+      (() => {
+        if (window.__org2ViewportSourceLineInstalled) {
+          window.__org2ReportViewportSourceLine?.();
+          return;
+        }
+        window.__org2ViewportSourceLineInstalled = true;
+        let pending = null;
+        const sourceLine = () => {
+          const viewportHeight = Math.max(1, window.innerHeight || 1);
+          const anchorY = Math.min(Math.max(viewportHeight * 0.32, 48), viewportHeight - 1);
+          const entries = Array.from(document.querySelectorAll('[data-org2-start-line]'))
+            .map((element) => {
+              const start = Number(element.dataset.org2StartLine || 0);
+              const end = Number(element.dataset.org2EndLine || start);
+              return { start, end, rect: element.getBoundingClientRect() };
+            })
+            .filter((entry) =>
+              entry.start > 0 &&
+              entry.rect.bottom >= 0 &&
+              entry.rect.top <= viewportHeight
+            );
+          if (entries.length === 0) return null;
+          const containing = entries.filter((entry) =>
+            entry.rect.top <= anchorY && entry.rect.bottom >= anchorY
+          );
+          const candidates = containing.length > 0 ? containing : entries;
+          candidates.sort((lhs, rhs) => {
+            if (containing.length > 0) {
+              const sourceSpan = (lhs.end - lhs.start) - (rhs.end - rhs.start);
+              if (sourceSpan !== 0) return sourceSpan;
+              const visualSpan = lhs.rect.height - rhs.rect.height;
+              if (visualSpan !== 0) return visualSpan;
+            }
+            return Math.abs(lhs.rect.top - anchorY) - Math.abs(rhs.rect.top - anchorY);
+          });
+          return candidates[0]?.start || null;
+        };
+        const report = () => {
+          pending = null;
+          window.webkit.messageHandlers.\(Self.viewportMessageHandlerName).postMessage(sourceLine());
+        };
+        window.__org2ReportViewportSourceLine = () => {
+          if (pending !== null) clearTimeout(pending);
+          pending = setTimeout(report, 80);
+        };
+        window.addEventListener('scroll', window.__org2ReportViewportSourceLine, { passive: true });
+        window.addEventListener('resize', window.__org2ReportViewportSourceLine, { passive: true });
+        requestAnimationFrame(window.__org2ReportViewportSourceLine);
+      })();
+      """
+      webView.evaluateJavaScript(script)
     }
 
     func installRichCopyHandler(in webView: WKWebView) {

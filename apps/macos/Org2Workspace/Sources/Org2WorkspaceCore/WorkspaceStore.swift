@@ -6374,6 +6374,7 @@ public final class WorkspaceStore: ObservableObject {
           pdf = try await self.cli.renderPresentationPDF(
             text,
             sourcePath: source.file,
+            sourceLineOffset: max(0, source.startLine - 1),
             passes: 1
           )
         }
@@ -6509,7 +6510,19 @@ public final class WorkspaceStore: ObservableObject {
       && !source.isSubtree
   }
 
-  public func beginEditingCurrentScope() {
+  public func beginEditingCurrentScope(atSourceLine sourceLine: Int? = nil) {
+    if let sourceLine,
+       let source = selectedEntrySource {
+      let sourceSelection = NSRange(
+        location: Self.sourceEditorUTF16Offset(
+          forAbsoluteLine: sourceLine,
+          in: source
+        ),
+        length: 0
+      )
+      beginEditingSelectedEntry(initialSelection: sourceSelection)
+      return
+    }
     if let selectedBlock {
       beginEditingSource(for: selectedBlock)
       return

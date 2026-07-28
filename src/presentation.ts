@@ -763,7 +763,11 @@ function renderSlide(
   const optionText = options.length > 0 ? `[${options.join(",")}]` : "";
   const overlay = slide.overlay || "";
   const body = renderPresentationElements(slide.elements, diagnostics).trim();
-  return `\\begin{frame}${overlay}${optionText}{${title}}\n${body}\n\\end{frame}`;
+  const sourceLine = slide.sourceRange?.startLine;
+  const sourceMarker = sourceLine
+    ? `\\makebox[0pt][l]{\\href{org2-source-line://${sourceLine}}{\\phantom{\\rule{1pt}{1pt}}}}`
+    : "";
+  return `\\begin{frame}${overlay}${optionText}{${title}}\n${sourceMarker}\n${body}\n\\end{frame}`;
 }
 
 function renderThemeCommand(command: string, value: string | undefined): string {

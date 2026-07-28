@@ -20,6 +20,9 @@ import fs from "node:fs";
 import path from "node:path";
 const outputArgument = process.argv.find((argument) => argument.startsWith("-output-directory="));
 const outputDirectory = outputArgument.slice("-output-directory=".length);
+const texPath = process.argv.find((argument) => argument.endsWith(".tex"));
+const tex = fs.readFileSync(texPath, "utf8");
+if (!tex.includes("org2-source-line://44")) process.exit(9);
 fs.writeFileSync(path.join(outputDirectory, "deck.pdf"), Buffer.from("%PDF-1.4\\n% Org2 preview test\\n"));
 `,
     "utf8",
@@ -31,6 +34,7 @@ fs.writeFileSync(path.join(outputDirectory, "deck.pdf"), Buffer.from("%PDF-1.4\\
     [
       renderer,
       "--source-path", sourcePath,
+      "--source-line-offset", "40",
       "--latex-engine", fakeEngine,
       "--passes", "1",
     ],

@@ -17,6 +17,15 @@ final class SlideExportTests: XCTestCase {
     XCTAssertEqual(OrgDocumentPreviewKind.slides.systemImage, "rectangle.on.rectangle")
   }
 
+  func testSlideSourceLineMarkerURLParsing() {
+    XCTAssertEqual(
+      OrgPDFDocumentView.sourceLine(from: URL(string: "org2-source-line://417")),
+      417
+    )
+    XCTAssertNil(OrgPDFDocumentView.sourceLine(from: URL(string: "https://example.com/417")))
+    XCTAssertNil(OrgPDFDocumentView.sourceLine(from: URL(string: "org2-source-line://0")))
+  }
+
   func testOrg2CLIIncludesMacTeXInChildProcessPath() {
     let path = Org2CLI.processEnvironment()["PATH"] ?? ""
     XCTAssertTrue(path.split(separator: ":").contains("/Library/TeX/texbin"))

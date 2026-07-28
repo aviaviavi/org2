@@ -145,16 +145,21 @@ public struct Org2CLI: Sendable {
   public func renderPresentationPDF(
     _ text: String,
     sourcePath: String,
+    sourceLineOffset: Int = 0,
     passes: Int = 1,
     timeout: TimeInterval = 30
   ) async throws -> Data {
+    var arguments = [
+      "--source-path", sourcePath,
+      "--passes", "\(max(1, min(4, passes)))",
+    ]
+    if sourceLineOffset > 0 {
+      arguments.append(contentsOf: ["--source-line-offset", "\(sourceLineOffset)"])
+    }
     let operation = Task.detached(priority: .userInitiated) {
       try runProcess(
         scriptPath: repoRoot.appendingPathComponent("dist/render-presentation-pdf.js"),
-        arguments: [
-          "--source-path", sourcePath,
-          "--passes", "\(max(1, min(4, passes)))",
-        ],
+        arguments: arguments,
         standardInput: Data(text.utf8),
         timeout: timeout
       )

@@ -1803,6 +1803,16 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     context.coordinator.applyHighlighting(to: textView)
     context.coordinator.scheduleSemanticAnalysis(for: textView, expectedText: text, delayMilliseconds: 0)
     context.coordinator.publishContentHeight(for: textView)
+    if let selection {
+      let requestedSelection = Self.clampedRange(
+        selection.wrappedValue,
+        utf16Length: textView.textStorage?.length ?? OrgSyntaxHighlighter.utf16Length(of: text)
+      )
+      textView.setSelectedRange(requestedSelection)
+      DispatchQueue.main.async { [weak textView] in
+        textView?.scrollRangeToVisible(requestedSelection)
+      }
+    }
     context.coordinator.applyFocusRequestIfNeeded(to: textView, enabled: focusOnAppear)
     return scrollView
   }
@@ -1857,6 +1867,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
           didApplyProgrammaticText: appliedProgrammaticText
          ) {
         textView.setSelectedRange(requestedSelection)
+        textView.scrollRangeToVisible(requestedSelection)
       }
     }
     context.coordinator.applyFocusRequestIfNeeded(to: textView, enabled: focusOnAppear)
