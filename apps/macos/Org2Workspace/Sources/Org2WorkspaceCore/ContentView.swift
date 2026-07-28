@@ -1176,10 +1176,19 @@ private struct FilesView: View {
       } else if store.filteredCorpusFiles.isEmpty {
         EmptyStateView(title: "No Files", detail: "No org2, org, or markdown files matched. Use the toolbar Refresh after adding files.")
       } else {
-        List(selection: $store.selectedCorpusFileID) {
+        List {
           ForEach(store.filteredCorpusFiles) { file in
             CorpusFileRow(file: file)
-              .tag(file.id)
+              .contentShape(Rectangle())
+              .onTapGesture {
+                if store.selectedCorpusFileID == file.id {
+                  store.selectCorpusFile(file)
+                } else {
+                  store.selectedCorpusFileID = file.id
+                }
+              }
+              .modifier(ReadableListSelectionModifier(isSelected: store.selectedCorpusFileID == file.id))
+              .listRowBackground(Color.clear)
               .contextMenu {
                 CorpusFileContextMenu(file: file)
               }
@@ -1229,6 +1238,29 @@ private struct CorpusFileRow: View {
       }
     }
     .padding(.vertical, WorkspaceDesign.rowVerticalPadding)
+  }
+}
+
+private struct ReadableListSelectionModifier: ViewModifier {
+  let isSelected: Bool
+
+  func body(content: Content) -> some View {
+    content
+      .padding(.horizontal, 10)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .background(
+        isSelected ? WorkspaceDesign.selectedFill : Color.clear,
+        in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+      )
+      .overlay(alignment: .leading) {
+        if isSelected {
+          Capsule()
+            .fill(Color.accentColor)
+            .frame(width: 3)
+            .padding(.vertical, 8)
+        }
+      }
+      .accessibilityAddTraits(isSelected ? .isSelected : [])
   }
 }
 
@@ -1486,16 +1518,17 @@ private struct QuickOpenView: View {
         }
       }
 
-      List(selection: $store.selectedQuickOpenFileID) {
+      List {
         ForEach(store.quickOpenItems) { item in
           switch item {
           case .file(let file):
             CorpusFileRow(file: file)
-              .tag(item.id)
               .contentShape(Rectangle())
               .onTapGesture {
                 open(item)
               }
+              .modifier(ReadableListSelectionModifier(isSelected: store.selectedQuickOpenFileID == item.id))
+              .listRowBackground(Color.clear)
               .contextMenu {
                 CorpusFileContextMenu(file: file) {
                   store.isQuickOpenPresented = false
@@ -1504,11 +1537,12 @@ private struct QuickOpenView: View {
               }
           case .chatThread(let thread):
             QuickOpenChatThreadRow(thread: thread)
-              .tag(item.id)
               .contentShape(Rectangle())
               .onTapGesture {
                 open(item)
               }
+              .modifier(ReadableListSelectionModifier(isSelected: store.selectedQuickOpenFileID == item.id))
+              .listRowBackground(Color.clear)
           }
         }
       }
@@ -7107,28 +7141,8 @@ private struct LiveFileEditorBody: View {
             LegacyStructuredEntryEditorView(source: source)
               .padding(16)
           }
-        } else if store.documentPreviewKind == .slides {
-          OrgSlidePreviewPane()
-            .task(id: source) {
-              store.scheduleSlidePreview(text: source.text, source: source, immediate: true)
-            }
-        } else if let html = store.selectedEntryHTML {
-          OrgHTMLDocumentView(
-            html: html,
-            source: source,
-            corpusRoot: store.corpusRoot,
-            searchQuery: store.renderedSearchHighlightQuery,
-            searchOccurrenceIndex: store.pageSearchSelectedOccurrenceIndex,
-            searchOccurrenceCount: store.pageSearchOccurrenceCount,
-            scrollRequest: store.detailScrollRequest,
-            layout: store.renderedDocumentLayout,
-            askAIAboutHeading: { store.askOpenClawAboutSourceHeading(at: $0) },
-            reportStatus: { store.statusText = $0 }
-          )
-        } else if let error = store.selectedEntryRenderError {
-          OrgHTMLRenderFailureView(message: error)
         } else {
-          OrgHTMLLoadingView(label: "Rendering page", onCancel: store.cancelSelectedEntryLoading)
+          OrgRenderedDocumentPreview(source: source, loadingLabel: "Rendering page")
         }
       } else if let error = store.selectedEntryRenderError {
         OrgHTMLRenderFailureView(message: error)
@@ -7140,6 +7154,40 @@ private struct LiveFileEditorBody: View {
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
+  }
+}
+
+private struct OrgRenderedDocumentPreview: View {
+  @EnvironmentObject private var store: WorkspaceStore
+  let source: EntrySource
+  let loadingLabel: String
+
+  var body: some View {
+    Group {
+      if store.documentPreviewKind == .slides {
+        OrgSlidePreviewPane()
+          .task(id: source) {
+            store.scheduleSlidePreview(text: source.text, source: source, immediate: true)
+          }
+      } else if let html = store.selectedEntryHTML {
+        OrgHTMLDocumentView(
+          html: html,
+          source: source,
+          corpusRoot: store.corpusRoot,
+          searchQuery: store.renderedSearchHighlightQuery,
+          searchOccurrenceIndex: store.pageSearchSelectedOccurrenceIndex,
+          searchOccurrenceCount: store.pageSearchOccurrenceCount,
+          scrollRequest: store.detailScrollRequest,
+          layout: store.renderedDocumentLayout,
+          askAIAboutHeading: { store.askOpenClawAboutSourceHeading(at: $0) },
+          reportStatus: { store.statusText = $0 }
+        )
+      } else if let error = store.selectedEntryRenderError {
+        OrgHTMLRenderFailureView(message: error)
+      } else {
+        OrgHTMLLoadingView(label: loadingLabel, onCancel: store.cancelSelectedEntryLoading)
+      }
+    }
   }
 }
 
@@ -7724,23 +7772,8 @@ private struct EntryBodyView: View {
             LegacyStructuredEntryEditorView(source: source)
               .padding(16)
           }
-        } else if let html = store.selectedEntryHTML {
-          OrgHTMLDocumentView(
-            html: html,
-            source: source,
-            corpusRoot: store.corpusRoot,
-            searchQuery: store.renderedSearchHighlightQuery,
-            searchOccurrenceIndex: store.pageSearchSelectedOccurrenceIndex,
-            searchOccurrenceCount: store.pageSearchOccurrenceCount,
-            scrollRequest: store.detailScrollRequest,
-            layout: store.renderedDocumentLayout,
-            askAIAboutHeading: { store.askOpenClawAboutSourceHeading(at: $0) },
-            reportStatus: { store.statusText = $0 }
-          )
-        } else if let error = store.selectedEntryRenderError {
-          OrgHTMLRenderFailureView(message: error)
         } else {
-          OrgHTMLLoadingView(label: "Rendering preview", onCancel: store.cancelSelectedEntryLoading)
+          OrgRenderedDocumentPreview(source: source, loadingLabel: "Rendering preview")
         }
       } else if let error = store.selectedEntryRenderError {
         OrgHTMLRenderFailureView(message: error)
