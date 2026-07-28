@@ -31,6 +31,17 @@ export interface ArtifactDuplicateIdIssue {
   refs: ArtifactIdRef[];
 }
 
+export interface ArtifactPropertyDrawer {
+  line: number; // 1-based
+  properties: Map<string, string>;
+}
+
+export interface ArtifactSourceHashEntry {
+  kind: string;
+  value: string;
+  hash: string;
+}
+
 const PROVENANCE_ENTRY_KINDS = ["id", "file", "query", "run", "url", "note", "artifact"] as const;
 const SHA256_SOURCE_HASH_RE = /^([a-z][a-z0-9_-]*):(\S.+)=sha256:([a-fA-F0-9]{64})$/;
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -139,6 +150,17 @@ function collectHeadlinePropertyDrawers(lines: string[]): Array<{ startLine: num
   return drawers;
 }
 
+export function collectArtifactPropertyDrawersInText(content: string): ArtifactPropertyDrawer[] {
+  const lines = content.replace(/\r\n/g, "\n").split("\n");
+  return [
+    ...collectFilePropertyDrawers(lines),
+    ...collectHeadlinePropertyDrawers(lines),
+  ].map((drawer) => ({
+    line: drawer.startLine,
+    properties: drawer.properties,
+  }));
+}
+
 function parseArtifactRole(raw: string): ArtifactRole | null {
   const normalized = String(raw || "").trim().toLowerCase();
   if (!normalized) return null;
@@ -187,11 +209,19 @@ function splitSourceHashes(raw: string): string[] {
     .filter(Boolean);
 }
 
-function isValidSourceHashEntry(entry: string): boolean {
+export function parseArtifactSourceHashEntry(entry: string): ArtifactSourceHashEntry | null {
   const match = SHA256_SOURCE_HASH_RE.exec(String(entry || "").trim());
-  if (!match) return false;
-  const kind = String(match[1] || "").toLowerCase();
-  return PROVENANCE_ENTRY_KINDS.includes(kind as (typeof PROVENANCE_ENTRY_KINDS)[number]);
+  if (!match) return null;
+  return {
+    kind: String(match[1] || "").toLowerCase(),
+    value: String(match[2] || "").trim(),
+    hash: String(match[3] || "").toLowerCase(),
+  };
+}
+
+function isValidSourceHashEntry(entry: string): boolean {
+  const parsed = parseArtifactSourceHashEntry(entry);
+  return Boolean(parsed && PROVENANCE_ENTRY_KINDS.includes(parsed.kind as (typeof PROVENANCE_ENTRY_KINDS)[number]));
 }
 
 function isValidReviewStatus(raw: string): boolean {

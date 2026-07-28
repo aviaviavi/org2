@@ -85,6 +85,23 @@ fs.writeFileSync(path.join(tmpDir, 'compiled', 'report-copy.org2'), `#+TITLE: Co
 
 Duplicate generated artifact ID.
 `);
+
+fs.writeFileSync(path.join(tmpDir, 'compiled', 'report-secondary-drawer.org2'), `#+TITLE: Compiled Report With Secondary Drawer
+
+:PROPERTIES:
+:OWNER: test-fixture
+:END:
+
+:PROPERTIES:
+:ORG2_ARTIFACT_ROLE: compiled
+:ORG2_PROVENANCE: file:../notes/source.org2
+:ORG2_GENERATED_AT: 2000-01-01T00:00:00Z
+:ORG2_GENERATOR: test-fixture
+:ORG2_SOURCE_HASHES: file:../notes/source.org2=sha256:0000000000000000000000000000000000000000000000000000000000000000
+:END:
+
+Compiled output whose artifact metadata is in a second file-level drawer.
+`);
 const doubleFileId = path.join(tmpDir, 'double-file-id.org2');
 fs.writeFileSync(doubleFileId, `:PROPERTIES:
 :ID: 66666666-6666-4666-8666-666666666666
@@ -108,7 +125,7 @@ fs.writeFileSync(titleBeforeDrawer, `#+TITLE: Title Before Drawer
 
 const json = JSON.parse(execFileSync('node', [cli, 'lint', '--dir', tmpDir, '--recursive', '--format', 'json'], { encoding: 'utf8' }));
 assert.equal(json.$schema, 'org2:lint:v1');
-assert.equal(json.checkedFiles, 9);
+assert.equal(json.checkedFiles, 10);
 
 const rules = new Set(json.issues.map((issue) => issue.rule));
 assert.ok(rules.has('unresolved-wiki-link'));
@@ -124,6 +141,8 @@ assert.ok(json.issues.some((issue) => issue.rule === 'ambiguous-wiki-link' && is
 assert.ok(json.issues.some((issue) => issue.rule === 'ambiguous-wiki-label' && /shared/i.test(issue.message)));
 assert.ok(json.issues.some((issue) => issue.rule === 'artifact-stale-source-mtime' && issue.file.endsWith(path.join('compiled', 'report.org2')) && issue.line === 3));
 assert.ok(json.issues.some((issue) => issue.rule === 'artifact-source-hash-mismatch' && issue.file.endsWith(path.join('compiled', 'report.org2')) && issue.line === 3));
+assert.ok(json.issues.some((issue) => issue.rule === 'artifact-stale-source-mtime' && issue.file.endsWith(path.join('compiled', 'report-secondary-drawer.org2')) && issue.line === 7));
+assert.ok(json.issues.some((issue) => issue.rule === 'artifact-source-hash-mismatch' && issue.file.endsWith(path.join('compiled', 'report-secondary-drawer.org2')) && issue.line === 7));
 
 assert.ok(json.issues.some((issue) => issue.rule === 'file-multiple-id-drawers' && issue.file.endsWith('double-file-id.org2')));
 assert.equal(execFileSync('node', [cli, 'id', 'get', '--file', titleBeforeDrawer], { encoding: 'utf8' }).trim(), '88888888-8888-4888-8888-888888888888');
@@ -137,7 +156,7 @@ console.log('✓ lint-graph-health');
 
 const audit = JSON.parse(execFileSync('node', [cli, 'graph', 'audit', '--dir', tmpDir, '--recursive', '--format', 'json'], { encoding: 'utf8' }));
 assert.equal(audit.$schema, 'org2:graph-audit:v1');
-assert.equal(audit.summary.scannedFiles, 9);
+assert.equal(audit.summary.scannedFiles, 10);
 const auditTypes = new Set(audit.findings.map((finding) => finding.type));
 assert.ok(auditTypes.has('broken-link'));
 assert.ok(auditTypes.has('orphan-note'));
