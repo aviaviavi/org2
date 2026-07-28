@@ -5567,8 +5567,11 @@ private struct OpenClawChatView: View {
         .textSelection(.enabled)
         .padding(presentation.isCompact ? 10 : 16)
       }
+      .defaultScrollAnchor(.bottom)
+      .id(store.openClawChatSelectionGeneration)
       .background(OpenClawChatScrollPositionBridge(
         threadID: store.selectedOpenClawChatThreadID,
+        selectionGeneration: store.openClawChatSelectionGeneration,
         initialPosition: store.openClawChatScrollPosition(isAssistantPanel: presentation.isCompact),
         onPositionChange: { position in
           store.recordOpenClawChatScrollPosition(position, isAssistantPanel: presentation.isCompact)
@@ -5618,6 +5621,7 @@ struct OpenClawChatScrollUpdate: Equatable {
 
 struct OpenClawChatScrollRestoration: Equatable {
   let threadID: UUID?
+  let selectionGeneration: Int
   let savedPosition: Double?
 
   var position: Double {
@@ -5625,17 +5629,22 @@ struct OpenClawChatScrollRestoration: Equatable {
   }
 
   func requiresNewRestoration(after previous: Self) -> Bool {
-    threadID != previous.threadID
+    threadID != previous.threadID || selectionGeneration != previous.selectionGeneration
   }
 }
 
 private struct OpenClawChatScrollPositionBridge: NSViewRepresentable {
   let threadID: UUID?
+  let selectionGeneration: Int
   let initialPosition: Double?
   let onPositionChange: (Double) -> Void
 
   private var restoration: OpenClawChatScrollRestoration {
-    OpenClawChatScrollRestoration(threadID: threadID, savedPosition: initialPosition)
+    OpenClawChatScrollRestoration(
+      threadID: threadID,
+      selectionGeneration: selectionGeneration,
+      savedPosition: initialPosition
+    )
   }
 
   func makeCoordinator() -> Coordinator {

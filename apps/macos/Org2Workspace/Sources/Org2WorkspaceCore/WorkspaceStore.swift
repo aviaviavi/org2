@@ -966,6 +966,7 @@ public final class WorkspaceStore: ObservableObject {
   @Published public private(set) var openClawThreadSettlementSettings = OpenClawThreadSettlementSettings()
   public private(set) var openClawUnreadMessageCount = 0
   @Published public private(set) var selectedOpenClawChatThreadID: UUID?
+  @Published public private(set) var openClawChatSelectionGeneration = 0
   @Published public private(set) var lastArchivedOpenClawChatThreadID: UUID?
   public var openClawIncomingMessageSoundPlayer: @MainActor () -> Void = {
     NSSound(named: NSSound.Name("Glass"))?.play()
@@ -12446,6 +12447,7 @@ public final class WorkspaceStore: ObservableObject {
     syncSelectedOpenClawSendState()
     openClawChatScrollPosition = nil
     openClawAssistantChatScrollPosition = nil
+    openClawChatSelectionGeneration &+= 1
     replaceOpenClawMessages(thread.messages, shouldPersist: false)
     if persistsSelection {
       persistOpenClawTranscript()
