@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { conciseGoal, cronKey, durableRunMarker, executionSummary, outcomeCommand, shouldTrackMainTurn, workflowContinuationPrompt, workflowExecutionPrompt, workflowMarker, workflowRevisionPrompt } from "../lib/lifecycle.js";
 import { Org2Lifecycle } from "../lib/lifecycle.js";
-import { approvalAction, approvalTitle, draftCreatedEffect, draftSendEffect } from "../lib/draft-approvals.js";
+import { approvalAction, approvalContext, approvalTitle, draftCreatedEffect, draftSendEffect } from "../lib/draft-approvals.js";
 
 test("tracks substantial work but not acknowledgements or heartbeats", () => {
   assert.equal(shouldTrackMainTurn("Please implement the lifecycle plugin", {}), true);
@@ -352,12 +352,24 @@ test("recognizes gog Gmail draft commands", () => {
   assert.equal(created.draftId, "gog-1");
   assert.equal(draftSendEffect("exec", { command: "gog gmail drafts send gog-1" }).draftId, "gog-1");
   const wrapped = draftCreatedEffect("exec", {
-    source: `const result = await tools.exec_command({cmd: "gog gmail drafts create --to person@example.com --subject Update"});`,
+    source: `const result = await tools.exec_command({cmd: "gog gmail drafts create --account avi@example.com --to person@example.com --subject 'Readable update' --body 'Hello there'"});`,
   }, `Script completed\nOutput:\n${JSON.stringify({ draftId: "gog-wrapped-1" })}`);
   assert.equal(wrapped.draftId, "gog-wrapped-1");
+  assert.equal(wrapped.account, "avi@example.com");
+  assert.equal(wrapped.destination, "person@example.com");
+  assert.equal(wrapped.subject, "Readable update");
+  assert.equal(wrapped.body, "Hello there");
+  assert.match(approvalAction(wrapped), /To: person@example\.com\nCc: \(none\)\nBcc: \(none\)\nSubject: Readable update[\s\S]*Hello there/);
   assert.equal(draftSendEffect("exec", {
     source: `await tools.exec_command({cmd: "gog gmail drafts send gog-wrapped-1"});`,
   }).draftId, "gog-wrapped-1");
+});
+
+test("does not turn unrelated shell output into draft approvals", () => {
+  const githubCommand = "gh api graphql --field query='mutation CreateDraft { createDiscussion(input: {}) { discussion { id } } }'";
+  const githubResult = JSON.stringify({ data: { createDiscussion: { discussion: { id: "MDQ6VXNlcjEzODgwNzE=" } } } });
+  assert.equal(draftCreatedEffect("exec", { command: githubCommand }, githubResult), null);
+  assert.equal(draftSendEffect("exec", { command: "node send-draft-report.mjs" }), null);
 });
 
 test("requests an Org2 approval for a draft and gates sending on its decision", async () => {
@@ -367,12 +379,20 @@ test("requests an Org2 approval for a draft and gates sending on its decision", 
   let approvalStatus = "pending";
   const lifecycle = new Org2Lifecycle({ owner: "avi", stateFile, exec: async (args) => {
     calls.push(args);
+    if (args[0] === "run" && args[1] === "create") {
+      return JSON.stringify({ run: { id: "draft-run-1" } });
+    }
     if (args[0] === "run" && args[1] === "approval-request") {
       return JSON.stringify({ approvals: [{ id: "approval-1", status: "pending" }] });
     }
     if (args[0] === "run" && args[1] === "show") {
-      return JSON.stringify({ id: "run-1", status: approvalStatus === "approved" ? "running" : "waiting-approval", approvals: [{ id: "approval-1", status: approvalStatus }] });
+      return JSON.stringify({
+        id: "run-1",
+        status: approvalStatus === "approved" ? "running" : "waiting-approval",
+        approvals: [{ id: "approval-1", status: approvalStatus, action: "Send update" }],
+      });
     }
+    if (args[0] === "review") return JSON.stringify({ reviews: [] });
     return "";
   } });
   await lifecycle.init();
@@ -380,11 +400,170 @@ test("requests an Org2 approval for a draft and gates sending on its decision", 
   const effect = {
     key: "gmail:default:draft-1", provider: "gmail", account: "default", draftId: "draft-1",
     destination: "person@example.com", subject: "Update", fingerprint: "abc", title: "Approve update", action: "Send update",
+    context: approvalContext({ provider: "gmail", draftId: "draft-1", destination: "person@example.com" }),
   };
   const record = await lifecycle.requestDraftApproval(effect, { openclawRunId: "openclaw-1" });
+  assert.equal(record.org2RunId, "draft-run-1");
+  assert.ok(calls.some((args) => args[0] === "run" && args[1] === "create"));
+  assert.ok(calls.some((args) => args[0] === "run" && args[1] === "create" && args.includes("entity:email:person@example.com")));
+  assert.ok(calls.some((args) => args[0] === "run" && args[1] === "approval-request" && args[2] === "draft-run-1"));
   assert.equal(record.approvalId, "approval-1");
-  assert.equal((await lifecycle.draftSendDecision({ key: effect.key, draftId: effect.draftId })).allowed, false);
+  assert.equal((await lifecycle.draftSendDecision({ key: effect.key, draftId: effect.draftId, action: effect.action })).allowed, false);
   approvalStatus = "approved";
-  assert.equal((await lifecycle.draftSendDecision({ key: effect.key, draftId: effect.draftId })).allowed, true);
+  assert.equal((await lifecycle.draftSendDecision({ key: effect.key, draftId: effect.draftId, action: effect.action })).allowed, true);
   assert.ok(calls.some((args) => args[1] === "approval-request" && args.includes("external-action")));
+  assert.ok(calls.some((args) => args[1] === "approval-request" && args.includes("--role") && args.includes("owner")));
+  assert.ok(calls.some((args) => args[1] === "approval-request" && args.includes("--note") && args.includes("Send update")));
+});
+
+test("reloads draft approvals written by another plugin process before sending", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "org2-openclaw-shared-draft-"));
+  const stateFile = join(dir, "state.json");
+  const lifecycle = new Org2Lifecycle({ stateFile, exec: async (args) => {
+    if (args[0] === "run" && args[1] === "show") {
+      return JSON.stringify({ id: "run-1", status: "running", approvals: [{ id: "approval-1", status: "approved", action: "Send shared draft" }] });
+    }
+    return "";
+  } });
+  await lifecycle.init();
+
+  await writeFile(stateFile, JSON.stringify({
+    version: 4,
+    mappings: {},
+    workflowJobs: {},
+    drafts: {
+      "gmail:gog:default:draft-shared": {
+        key: "gmail:gog:default:draft-shared",
+        draftId: "draft-shared",
+        org2RunId: "run-1",
+        approvalId: "approval-1",
+      },
+    },
+  }));
+
+  const decision = await lifecycle.draftSendDecision({
+    key: "gmail:gog:default:draft-shared",
+    draftId: "draft-shared",
+    action: "Send shared draft",
+  });
+  assert.equal(decision.allowed, true);
+  assert.equal(decision.record.approvalId, "approval-1");
+});
+
+test("reconciles an approved replacement for a canceled malformed draft approval", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "org2-openclaw-replaced-draft-"));
+  const stateFile = join(dir, "state.json");
+  const exactAction = [
+    "To: person@example.com",
+    "Cc: (none)",
+    "Bcc: (none)",
+    "Subject: Readable update",
+    "",
+    "Body:",
+    "Hello there",
+    "",
+    "Provider draft: gmail:gog:draft-replaced",
+  ].join("\n");
+  const lifecycle = new Org2Lifecycle({ stateFile, exec: async (args) => {
+    if (args[0] === "run" && args[1] === "show") {
+      return JSON.stringify({
+        id: "run-1",
+        approvals: [
+          { id: "approval-old", status: "canceled", action: exactAction.replace(/\n/g, "\\n") },
+          { id: "approval-new", status: "approved", action: exactAction },
+        ],
+      });
+    }
+    if (args[0] === "review") return JSON.stringify({ reviews: [] });
+    return "";
+  } });
+  await lifecycle.init();
+  await writeFile(stateFile, JSON.stringify({
+    version: 4,
+    mappings: {},
+    workflowJobs: {},
+    drafts: {
+      "gmail:gog:default:draft-replaced": {
+        key: "gmail:gog:default:draft-replaced",
+        provider: "gmail:gog",
+        draftId: "draft-replaced",
+        org2RunId: "run-1",
+        approvalId: "approval-old",
+      },
+    },
+  }));
+
+  const decision = await lifecycle.draftSendDecision({
+    key: "gmail:gog:avi@example.com:draft-replaced",
+    provider: "gmail:gog",
+    account: "avi@example.com",
+    draftId: "draft-replaced",
+    action: `${exactAction}\nContent fingerprint: current`,
+  });
+
+  assert.equal(decision.allowed, true);
+  assert.equal(decision.record.approvalId, "approval-new");
+  const state = JSON.parse(await readFile(stateFile, "utf8"));
+  assert.equal(state.drafts["gmail:gog:avi@example.com:draft-replaced"].approvalId, "approval-new");
+});
+
+test("reconciles a missing local draft record from the canonical Org2 review registry", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "org2-openclaw-review-registry-"));
+  const stateFile = join(dir, "state.json");
+  const action = "Send exact canonical draft";
+  const lifecycle = new Org2Lifecycle({ stateFile, exec: async (args) => {
+    if (args[0] === "review") {
+      return JSON.stringify({
+        reviews: [{
+          kind: "approval",
+          runId: "run-canonical",
+          id: "approval-canonical",
+          status: "approved",
+          action,
+        }],
+      });
+    }
+    return "";
+  } });
+  await lifecycle.init();
+
+  const decision = await lifecycle.draftSendDecision({
+    key: "gmail:gog:avi@example.com:draft-canonical",
+    provider: "gmail:gog",
+    account: "avi@example.com",
+    draftId: "draft-canonical",
+    action,
+  });
+
+  assert.equal(decision.allowed, true);
+  assert.equal(decision.record.org2RunId, "run-canonical");
+  assert.equal(decision.record.approvalId, "approval-canonical");
+});
+
+test("fails closed when the canonical approval does not match the live draft", async () => {
+  const lifecycle = new Org2Lifecycle({ exec: async (args) => {
+    if (args[0] === "review") {
+      return JSON.stringify({
+        reviews: [{
+          kind: "approval",
+          runId: "run-other",
+          id: "approval-other",
+          status: "approved",
+          action: "Different content",
+        }],
+      });
+    }
+    return "";
+  } });
+
+  const decision = await lifecycle.draftSendDecision({
+    key: "gmail:gog:avi@example.com:draft-mismatch",
+    provider: "gmail:gog",
+    account: "avi@example.com",
+    draftId: "draft-mismatch",
+    action: "Current live content",
+  });
+
+  assert.equal(decision.allowed, false);
+  assert.match(decision.reason, /No matching Org2 approval/);
 });

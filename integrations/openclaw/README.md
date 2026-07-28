@@ -35,11 +35,22 @@ approval, clarification, or artifact review remain open.
 
 The plugin also enforces approval continuity for external-message drafts. After
 a supported connector or CLI creates or updates an unsent draft, the plugin
-requests an Org2 approval on the correlated run and records the provider draft
+creates one dedicated Org2 run per provider draft, requests a readable approval
+containing its recipients, subject, and body, and records the provider draft
 identity in its private lifecycle state. A later send of that draft is blocked
 by =before_tool_call= until the exact Org2 approval is approved. Successful
 sends reconcile and complete the draft run. Material draft updates supersede a
 pending approval and request a fresh decision.
+
+Draft approval runs also carry structured recipient and provider-draft context.
+The exact readable message is stored as the approval note as well as its action,
+so safety-conscious clients can distinguish attached review material from an
+opaque action label.
+The approval is role-gated to the run owner, but deliberately does not set a
+named `requestedFrom` assignee: the macOS client records decisions as the
+`Org2Workspace` actor. Approval clients use these machine-readable fields to
+determine that the item is actionable; readable prose in the approval action is
+necessary for review but is not sufficient by itself.
 
 The built-in effect recognizers cover direct tools whose operation names
 contain =draft= plus =create/save/update/upsert= or =send/deliver=, and the

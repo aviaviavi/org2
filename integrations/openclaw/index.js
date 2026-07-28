@@ -1,6 +1,6 @@
 import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 import { cronKey, durableRunMarker, executionSummary, Org2Lifecycle, shouldTrackMainTurn, workflowMarker } from "./lib/lifecycle.js";
-import { approvalAction, approvalTitle, draftCreatedEffect, draftSendEffect } from "./lib/draft-approvals.js";
+import { approvalAction, approvalContext, approvalTitle, draftCreatedEffect, draftSendEffect, hydrateGogDraftEffect } from "./lib/draft-approvals.js";
 
 export default definePluginEntry({
   id: "org2-lifecycle",
@@ -110,7 +110,11 @@ export default definePluginEntry({
       if (!trackDraftApprovals) return;
       const effect = draftSendEffect(event.toolName, event.params);
       if (!effect) return;
-      const decision = await lifecycle.serialize(() => lifecycle.draftSendDecision(effect));
+      const readable = await hydrateGogDraftEffect(effect);
+      const decision = await lifecycle.serialize(() => lifecycle.draftSendDecision({
+        ...readable,
+        action: approvalAction(readable),
+      }));
       if (decision.allowed) return;
       return { block: true, blockReason: `${decision.reason} Approve the matching item in Org2, then retry the send.` };
     });
@@ -124,10 +128,12 @@ export default definePluginEntry({
       }
       const created = draftCreatedEffect(event.toolName, event.params, event.result, event.error);
       if (!created) return;
+      const readable = await hydrateGogDraftEffect(created);
       await lifecycle.serialize(() => lifecycle.requestDraftApproval({
-        ...created,
-        title: approvalTitle(created),
-        action: approvalAction(created),
+        ...readable,
+        context: approvalContext(readable),
+        title: approvalTitle(readable),
+        action: approvalAction(readable),
       }, {
         openclawRunId: event.runId || ctx.runId,
         sessionKey: ctx.sessionKey,
