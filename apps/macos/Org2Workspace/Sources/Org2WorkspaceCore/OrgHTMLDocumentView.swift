@@ -111,6 +111,7 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
   let searchOccurrenceIndex: Int?
   let searchOccurrenceCount: Int
   let scrollRequest: DetailScrollRequest?
+  var restorationSourceLine: Int? = nil
   let layout: OrgHTMLDocumentLayout
   let askAIAboutHeading: @MainActor (Int) -> Void
   let reportStatus: @MainActor (String) -> Void
@@ -146,6 +147,7 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
     coordinator.askAIAboutHeading = askAIAboutHeading
     coordinator.reportStatus = reportStatus
     coordinator.reportViewportSourceLine = reportViewportSourceLine
+    coordinator.restorationSourceLine = restorationSourceLine
     let layoutChanged = coordinator.layout != layout
     coordinator.layout = layout
 
@@ -202,6 +204,7 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
     var searchOccurrenceIndex: Int?
     var scrollRequestID: Int?
     var scrollRequest: DetailScrollRequest?
+    var restorationSourceLine: Int?
     var layout = OrgHTMLDocumentLayout(width: .comfortable, margin: .standard)
     var openOrgFileReference: @MainActor (OpenClawFileReference) -> Void = { _ in }
     var linkResolver = OrgRoamLinkResolver.empty
@@ -216,7 +219,11 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
       installRichCopyHandler(in: webView)
       installViewportSourceLineReporter(in: webView)
       applySearch(to: webView, backwards: false)
-      applyScrollRequest(scrollRequest, to: webView)
+      if let scrollRequest {
+        applyScrollRequest(scrollRequest, to: webView)
+      } else if let restorationSourceLine {
+        applySourceLineScroll(restorationSourceLine, to: webView)
+      }
     }
 
     func userContentController(
@@ -368,29 +375,7 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
       scrollRequest = request
       guard let request else { return }
       if case .sourceLine(let line) = request.target {
-        let script = """
-        (() => {
-          const line = \(line);
-          const reveal = () => {
-            const elements = Array.from(document.querySelectorAll('[data-org2-start-line]'));
-            const candidates = elements.filter((element) => {
-              const start = Number(element.dataset.org2StartLine || 0);
-              const end = Number(element.dataset.org2EndLine || start);
-              return start <= line && end >= line;
-            });
-            const target = candidates.sort((lhs, rhs) => {
-              const lhsSpan = Number(lhs.dataset.org2EndLine || 0) - Number(lhs.dataset.org2StartLine || 0);
-              const rhsSpan = Number(rhs.dataset.org2EndLine || 0) - Number(rhs.dataset.org2StartLine || 0);
-              return lhsSpan - rhsSpan;
-            })[0];
-            target?.scrollIntoView({ block: 'center', behavior: 'auto' });
-          };
-          requestAnimationFrame(() => requestAnimationFrame(reveal));
-          setTimeout(reveal, 120);
-          setTimeout(reveal, 350);
-        })();
-        """
-        webView.evaluateJavaScript(script)
+        applySourceLineScroll(line, to: webView)
         return
       }
       guard case .page(let direction) = request.target else { return }
@@ -408,6 +393,48 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
       origin.y = min(max(0, origin.y + distance * directionMultiplier * flippedMultiplier), maxY)
       clipView.scroll(to: origin)
       scrollView.reflectScrolledClipView(clipView)
+    }
+
+    private func applySourceLineScroll(_ line: Int, to webView: WKWebView) {
+      let script = """
+        (() => {
+          const line = \(line);
+          const reveal = () => {
+            const elements = Array.from(document.querySelectorAll('[data-org2-start-line]'));
+            const candidates = elements.filter((element) => {
+              const start = Number(element.dataset.org2StartLine || 0);
+              const end = Number(element.dataset.org2EndLine || start);
+              return start <= line && end >= line;
+            });
+            const containingTarget = candidates.sort((lhs, rhs) => {
+              const lhsSpan = Number(lhs.dataset.org2EndLine || 0) - Number(lhs.dataset.org2StartLine || 0);
+              const rhsSpan = Number(rhs.dataset.org2EndLine || 0) - Number(rhs.dataset.org2StartLine || 0);
+              return lhsSpan - rhsSpan;
+            })[0];
+            const followingTarget = elements
+              .filter((element) => Number(element.dataset.org2StartLine || 0) >= line)
+              .sort((lhs, rhs) =>
+                Number(lhs.dataset.org2StartLine || 0) - Number(rhs.dataset.org2StartLine || 0)
+              )[0];
+            const precedingTarget = elements
+              .filter((element) => Number(element.dataset.org2StartLine || 0) < line)
+              .sort((lhs, rhs) =>
+                Number(rhs.dataset.org2StartLine || 0) - Number(lhs.dataset.org2StartLine || 0)
+              )[0];
+            const target = containingTarget || followingTarget || precedingTarget;
+            if (target) {
+              const viewportHeight = Math.max(1, window.innerHeight || 1);
+              const anchorY = Math.min(Math.max(viewportHeight * 0.32, 48), viewportHeight - 1);
+              const targetY = window.scrollY + target.getBoundingClientRect().top;
+              window.scrollTo({ top: Math.max(0, targetY - anchorY), behavior: 'auto' });
+            }
+          };
+          requestAnimationFrame(() => requestAnimationFrame(reveal));
+          setTimeout(reveal, 120);
+          setTimeout(reveal, 350);
+        })();
+        """
+      webView.evaluateJavaScript(script)
     }
 
     private func open(target rawTarget: String) {

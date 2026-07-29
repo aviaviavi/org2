@@ -1,6 +1,7 @@
 import AppKit
 import Carbon
 import Org2WorkspaceCore
+import Org2WorkspaceDiagnosticsCore
 import SwiftUI
 
 @main
@@ -351,8 +352,11 @@ struct Org2WorkspaceApp: App {
 }
 
 private final class AppDelegate: NSObject, NSApplicationDelegate {
+  private let diagnosticsHeartbeat = WorkspaceDiagnosticsHeartbeatResponder()
+
   func applicationWillFinishLaunching(_ notification: Notification) {
     AppIconInstaller.install()
+    diagnosticsHeartbeat.start()
   }
 
   func applicationDidFinishLaunching(_ notification: Notification) {
@@ -369,6 +373,10 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
       sender.sendAction(#selector(NSWindow.newWindowForTab(_:)), to: nil, from: nil)
     }
     return true
+  }
+
+  func applicationWillTerminate(_ notification: Notification) {
+    diagnosticsHeartbeat.stop()
   }
 }
 

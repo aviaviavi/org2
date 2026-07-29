@@ -1040,8 +1040,14 @@ public final class WorkspaceStore: ObservableObject {
   }
   @Published public var selectedEntrySource: EntrySource? {
     didSet {
-      guard let file = selectedEntrySource?.file else { return }
-      updateSelectedFileDataNotebookState(for: file)
+      if let file = selectedEntrySource?.file {
+        updateSelectedFileDataNotebookState(for: file)
+      }
+      if oldValue?.id != selectedEntrySource?.id {
+        currentDocumentViewportSourceLine = selectedEntrySource.flatMap {
+          documentViewportSourceLine(for: $0)
+        }
+      }
     }
   }
   public private(set) var selectedFileIsDataNotebook = false
@@ -1113,6 +1119,7 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var selectedEntrySourceMode: EntrySourceMode = .entry
   @Published public var editableEntryText = ""
   @Published public var sourceEditorSelection = NSRange(location: 0, length: 0)
+  @Published public private(set) var currentDocumentViewportSourceLine: Int?
   @Published public var sourceEditorCommandRequest: OrgSourceEditorCommandRequest?
   @Published public var sourceEditorDiagnostics: [Org2EditorDiagnostic] = []
   @Published public var selectedBlockID: OrgEditableBlock.ID?
@@ -1190,6 +1197,7 @@ public final class WorkspaceStore: ObservableObject {
   private let renderedDocumentMarginKey = "Org2Workspace.renderedDocument.margin"
   private let sourceEditorPresentationKey = "Org2Workspace.sourceEditor.presentation"
   private let documentPreviewKindKey = "Org2Workspace.documentPreview.kind"
+  private let documentViewportSourceLinesKey = "Org2Workspace.documentViewportSourceLines.v1"
   private let orgCryptEncryptOnSaveKey = "Org2Workspace.orgCrypt.encryptOnSave"
   private let orgCryptRecipientsKey = "Org2Workspace.orgCrypt.recipients"
   private let orgCryptRecipientFilesKey = "Org2Workspace.orgCrypt.recipientFiles"
@@ -1207,6 +1215,7 @@ public final class WorkspaceStore: ObservableObject {
   private static let renderedHTMLCacheLimit = 24
   private static let entrySourceCacheLimit = 24
   private static let detailNavigationHistoryLimit = 100
+  private static let documentViewportSourceLinesLimit = 256
   private static let workspaceUndoStackLimit = 100
   private static let workspaceUndoSnapshotMaxBytes = 2_000_000
   nonisolated private static let liveFileEditorAutosaveDelayNanoseconds: UInt64 = 850_000_000
@@ -1371,6 +1380,7 @@ public final class WorkspaceStore: ObservableObject {
   private var slidePreviewGeneration = 0
   private var slidePreviewSourceID: String?
   private var sourceEditorLocalDraftText: String?
+  private var documentViewportSourceLines: [String: Int] = [:]
   private var editorSaveConflictSource: EntrySource?
   private var editorSaveConflictDraft: String?
 
@@ -1426,6 +1436,10 @@ public final class WorkspaceStore: ObservableObject {
       .flatMap(SourceEditorPresentation.init(rawValue:)) ?? .source
     documentPreviewKind = defaults.string(forKey: documentPreviewKindKey)
       .flatMap(OrgDocumentPreviewKind.init(rawValue:)) ?? .document
+    documentViewportSourceLines = Self.restoreDocumentViewportSourceLines(
+      from: defaults,
+      key: documentViewportSourceLinesKey
+    )
     orgCryptEncryptOnSave = defaults.object(forKey: orgCryptEncryptOnSaveKey) as? Bool ?? true
     orgCryptRecipientsText = OrgCryptSettings.listText(defaults.stringArray(forKey: orgCryptRecipientsKey) ?? [])
     orgCryptRecipientFilesText = OrgCryptSettings.listText(defaults.stringArray(forKey: orgCryptRecipientFilesKey) ?? [])
@@ -1838,6 +1852,7 @@ public final class WorkspaceStore: ObservableObject {
     selectedEntryRenderError = nil
     selectedEntryHTMLRenderKey = nil
     selectedRenderedBlocks = []
+    detailScrollRequest = nil
     foldedRenderedBlockIDs = []
     sourceBlockRuns = [:]
     editableEntryText = ""
@@ -5617,6 +5632,7 @@ public final class WorkspaceStore: ObservableObject {
 
     applyDetailSelectionMetadata(for: location)
     selectedLocation = location
+    detailScrollRequest = nil
     cancelSourceEditorPreviewRender(clearStatus: true)
     isEditingEntry = false
     editableEntryText = ""
@@ -5757,6 +5773,7 @@ public final class WorkspaceStore: ObservableObject {
     selectedEntryRenderError = nil
     selectedEntryHTMLRenderKey = nil
     selectedRenderedBlocks = []
+    detailScrollRequest = nil
     entryHTMLRenderTask?.cancel()
     entryHTMLRenderTask = nil
     entryHTMLRenderWatchdogTask?.cancel()
@@ -5983,6 +6000,7 @@ public final class WorkspaceStore: ObservableObject {
   public func reloadSelectedEntrySource() async {
     isEditingEntry = false
     editableEntryText = ""
+    detailScrollRequest = nil
     resetBlockState()
     guard let selectedLocation else { return }
     await loadEntrySource(for: selectedLocation)
@@ -6236,8 +6254,14 @@ public final class WorkspaceStore: ObservableObject {
     }
     editableEntryText = source.text
     sourceEditorLocalDraftText = source.text
+    let restoredSelection = documentViewportSourceLine(for: source).map {
+      NSRange(
+        location: Self.sourceEditorUTF16Offset(forAbsoluteLine: $0, in: source),
+        length: 0
+      )
+    }
     sourceEditorSelection = Self.clampedSourceEditorSelection(
-      initialSelection ?? NSRange(location: 0, length: 0),
+      initialSelection ?? restoredSelection ?? NSRange(location: 0, length: 0),
       in: source.text
     )
     resetBlockState()
@@ -6245,6 +6269,7 @@ public final class WorkspaceStore: ObservableObject {
     sourceEditorPreviewHTML = selectedEntryHTML
     sourceEditorPreviewError = nil
     isSourceEditorPreviewPaused = false
+    detailScrollRequest = nil
     isEditingEntry = true
   }
 
@@ -6532,8 +6557,10 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func beginEditingCurrentScope(atSourceLine sourceLine: Int? = nil) {
-    if let sourceLine,
+    let targetSourceLine = sourceLine ?? currentDocumentViewportSourceLine
+    if let sourceLine = targetSourceLine,
        let source = selectedEntrySource {
+      recordDocumentViewportSourceLine(sourceLine, for: source)
       let sourceSelection = NSRange(
         location: Self.sourceEditorUTF16Offset(
           forAbsoluteLine: sourceLine,
@@ -6592,6 +6619,7 @@ public final class WorkspaceStore: ObservableObject {
       in: source,
       selection: selection
     )
+    recordDocumentViewportSourceLine(block.startLine, for: source)
     beginEditingSelectedEntry(initialSelection: sourceSelection)
   }
 
@@ -12791,6 +12819,9 @@ public final class WorkspaceStore: ObservableObject {
   public func settleOpenClawChatThread(_ id: UUID, at settledAt: Date = Date()) {
     let visibleThreadsBeforeArchive = visibleOpenClawChatThreads
     let visibleIndex = visibleThreadsBeforeArchive.firstIndex(where: { $0.id == id })
+    let selectedThreadWasSettled = selectedOpenClawChatThreadID.flatMap { selectedID in
+      openClawChatThreads.first(where: { $0.id == selectedID })?.isSettled
+    } ?? false
     guard let index = openClawChatThreads.firstIndex(where: { $0.id == id }),
           !openClawChatThreads[index].isSettled
     else { return }
@@ -12803,7 +12834,7 @@ public final class WorkspaceStore: ObservableObject {
     sortOpenClawChatThreadsForDisplay()
     persistOpenClawTranscript()
 
-    if selectedOpenClawChatThreadID == id {
+    if selectedOpenClawChatThreadID == id || selectedThreadWasSettled {
       let remainingThreads = visibleOpenClawChatThreads
       let replacementIndex = min(visibleIndex ?? 0, max(remainingThreads.count - 1, 0))
       if remainingThreads.indices.contains(replacementIndex) {
@@ -13058,7 +13089,7 @@ public final class WorkspaceStore: ObservableObject {
     )
     openClawChatThreads[index] = updated
     sortOpenClawChatThreadsForDisplay()
-    if newAssistantMessageCount > 0 && !isThreadOpen {
+    if newAssistantMessageCount > 0 {
       openClawIncomingMessageSoundPlayer()
     }
   }
@@ -14376,6 +14407,69 @@ public final class WorkspaceStore: ObservableObject {
       id: (detailScrollRequest?.id ?? 0) + 1,
       target: .sourceLine(max(1, line))
     )
+  }
+
+  public func recordDocumentViewportSourceLine(
+    _ line: Int?,
+    for source: EntrySource? = nil
+  ) {
+    guard let source = source ?? selectedEntrySource,
+          let line
+    else {
+      return
+    }
+    let clampedLine = Self.clampedDocumentViewportSourceLine(line, for: source)
+    let key = Self.documentViewportKey(for: source)
+    if let target = detailScrollRequest?.target {
+      switch target {
+      case .page, .sourceLine:
+        detailScrollRequest = nil
+      case .block, .revealBlock:
+        break
+      }
+    }
+    guard documentViewportSourceLines[key] != clampedLine
+            || currentDocumentViewportSourceLine != clampedLine
+    else {
+      return
+    }
+    documentViewportSourceLines[key] = clampedLine
+    currentDocumentViewportSourceLine = clampedLine
+    if documentViewportSourceLines.count > Self.documentViewportSourceLinesLimit,
+       let discardedKey = documentViewportSourceLines.keys.sorted().first(where: { $0 != key }) {
+      documentViewportSourceLines.removeValue(forKey: discardedKey)
+    }
+    defaults.set(documentViewportSourceLines, forKey: documentViewportSourceLinesKey)
+  }
+
+  public func documentViewportSourceLine(for source: EntrySource) -> Int? {
+    documentViewportSourceLines[Self.documentViewportKey(for: source)].map {
+      Self.clampedDocumentViewportSourceLine($0, for: source)
+    }
+  }
+
+  nonisolated static func documentViewportKey(for source: EntrySource) -> String {
+    URL(fileURLWithPath: source.file).standardizedFileURL.path
+  }
+
+  nonisolated static func clampedDocumentViewportSourceLine(
+    _ line: Int,
+    for source: EntrySource
+  ) -> Int {
+    min(max(source.startLine, line), max(source.startLine, source.endLineExclusive - 1))
+  }
+
+  nonisolated static func restoreDocumentViewportSourceLines(
+    from defaults: UserDefaults,
+    key: String
+  ) -> [String: Int] {
+    (defaults.dictionary(forKey: key) ?? [:]).reduce(into: [:]) { result, item in
+      if let line = item.value as? Int, line > 0 {
+        result[item.key] = line
+      } else if let line = item.value as? NSNumber, line.intValue > 0 {
+        result[item.key] = line.intValue
+      }
+    }
   }
 
   public func selectFirstAgendaItem() {

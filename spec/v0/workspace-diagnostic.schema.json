@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://org2.avi.press/spec/v0/workspace-diagnostic.schema.json",
+  "title": "Org2 Workspace Diagnostic",
+  "type": "object",
+  "required": [
+    "schema",
+    "id",
+    "capturedAt",
+    "trigger",
+    "target",
+    "corpusID",
+    "operatingSystemVersion",
+    "pollIntervalSeconds",
+    "sampleDurationSeconds",
+    "stackSampleExitStatus",
+    "hotPathFrames",
+    "resourceSamples"
+  ],
+  "properties": {
+    "schema": { "const": "org2:workspace-diagnostic:v1" },
+    "id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "capturedAt": { "type": "string", "format": "date-time" },
+    "trigger": { "$ref": "#/$defs/trigger" },
+    "target": { "$ref": "#/$defs/target" },
+    "corpusID": { "type": "string", "minLength": 1 },
+    "operatingSystemVersion": { "type": "string", "minLength": 1 },
+    "pollIntervalSeconds": { "type": "number", "exclusiveMinimum": 0 },
+    "sampleDurationSeconds": { "type": "integer", "minimum": 1, "maximum": 30 },
+    "stackSampleExitStatus": { "type": "integer" },
+    "stackSampleError": { "type": "string", "minLength": 1 },
+    "hotPathFingerprint": {
+      "type": "string",
+      "pattern": "^fnv1a64:[0-9a-f]{16}$"
+    },
+    "hotPathFrames": {
+      "type": "array",
+      "maxItems": 24,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "resourceSamples": {
+      "type": "array",
+      "maxItems": 120,
+      "items": { "$ref": "#/$defs/resourceSample" }
+    }
+  },
+  "$defs": {
+    "trigger": {
+      "type": "object",
+      "required": ["kind", "detail"],
+      "properties": {
+        "kind": {
+          "enum": ["unresponsive", "sustained-cpu", "memory-threshold"]
+        },
+        "detail": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "target": {
+      "type": "object",
+      "required": ["pid", "bundleIdentifier", "applicationName"],
+      "properties": {
+        "pid": { "type": "integer", "minimum": 1 },
+        "bundleIdentifier": { "type": "string", "minLength": 1 },
+        "applicationName": { "type": "string", "minLength": 1 },
+        "applicationVersion": { "type": "string" },
+        "applicationBuild": { "type": "string" },
+        "executableName": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "resourceSample": {
+      "type": "object",
+      "required": ["capturedAt", "residentBytes"],
+      "properties": {
+        "capturedAt": { "type": "string", "format": "date-time" },
+        "cpuPercent": { "type": "number", "minimum": 0 },
+        "residentBytes": { "type": "integer", "minimum": 0 },
+        "heartbeatGapSeconds": { "type": "number", "minimum": 0 }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

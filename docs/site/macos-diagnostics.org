@@ -1,0 +1,60 @@
+#+TITLE: macOS diagnostics watchdog
+
+Org2 includes an opt-in, repository-local watchdog for capturing evidence when Org2 Workspace becomes unresponsive, consumes sustained CPU, or crosses a resident-memory threshold. The helper runs outside the app, so it can still sample all app threads when the main thread is blocked.
+
+The watchdog is a development tool. It never restarts, quits, or mutates the app, and it does not promote diagnostic output into canonical notes.
+
+* Run the watchdog
+
+Build and start the helper from the repository root:
+
+#+begin_src sh
+npm run diagnostics:macos
+#+end_src
+
+By default it follows the daily app with bundle identifier =org.org2.workspace= and reads that app's remembered corpus from machine-local preferences. The corpus must have a valid portable identity in =org2.json=. Pass an explicit corpus or monitor the isolated Codex app when needed:
+
+#+begin_src sh
+npm run diagnostics:macos -- --corpus /path/to/corpus
+npm run diagnostics:macos -- \
+  --bundle-id org.org2.workspace.codex \
+  --corpus /path/to/disposable-corpus
+#+end_src
+
+Press =Control-C= to stop. Run =npm run diagnostics:macos -- --help= for every threshold and override.
+
+The installed app must include the matching heartbeat responder for direct main-thread hang detection. When monitoring an older build, the helper reports that the responder is unavailable and continues with CPU and memory monitoring instead of treating the missing responder as a hang.
+
+* Runtime cost and triggers
+
+While idle, the helper sends one distributed heartbeat and reads one =proc_pidinfo= resource snapshot per second. It does not run =ps=, =top=, Instruments, or continuous log collection. The heavier =/usr/bin/sample= profiler runs only after a trigger.
+
+Default triggers are intentionally conservative:
+
+- a main-thread heartbeat gap of 5 seconds,
+- process CPU at or above 95 percent for 15 seconds,
+- resident memory at or above 1,536 MB,
+- a 10-minute cooldown after any captured incident.
+
+The stack capture lasts 5 seconds at a 10-millisecond sampling interval. Thresholds and sampling duration are configurable from the command line. Setting =--hang-seconds=, =--cpu-percent=, or =--memory-mb= to zero disables that trigger.
+
+* Incident storage
+
+Captured evidence is primary input, so it belongs under =raw/= rather than =compiled/=:
+
+#+begin_example
+raw/diagnostics/org2-workspace/YYYY/MM/DD/
+  TIMESTAMP-TRIGGER-PID-ID/
+    incident.json
+    stacks.sample.txt
+#+end_example
+
+=incident.json= uses the versioned =org2:workspace-diagnostic:v1= envelope defined by =spec/v0/workspace-diagnostic.schema.json= and records the trigger, app/build identity, recent resource snapshots, sampling status, and a privacy-safe hot-path fingerprint. =stacks.sample.txt= is the macOS thread-sampling report.
+
+These files use =.json= and =.sample.txt= extensions, so Org2 Workspace's corpus event classifier does not parse them or invalidate workspace projections. Generated grouping, diagnosis, and fix reports should go under =views/diagnostics/= and cite the raw incident directory.
+
+The watchdog validates the portable corpus identity before writing and remains pinned to that corpus for its lifetime. It does not record note contents, chat bodies, credentials, the absolute corpus path, or an absolute app path. Treat stack reports as local development evidence: symbol and framework names may still describe what the app was doing.
+
+* Current recovery boundary
+
+The first version is capture-only. It deliberately does not kill or relaunch a frozen app because unsaved editor state may exist. Safe cache shedding, cancellation of obsolete rendering work, and an explicit capture-and-relaunch action can be layered on after incident capture is proven reliable.

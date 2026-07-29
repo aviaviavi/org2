@@ -16,6 +16,7 @@
     "dist",
     "spec/v0/agent-run.schema.json",
     "spec/v0/corpus.schema.json",
+    "spec/v0/workspace-diagnostic.schema.json",
     "spec/v0/workflow.schema.json",
     "README.org",
     "LICENSE"
@@ -27,6 +28,7 @@
     "build": "tsc -p tsconfig.json",
     "build:macos-app": "node tools/build-macos-app.mjs",
     "build:macos-app:codex": "node tools/build-macos-app-codex.mjs",
+    "diagnostics:macos": "swift run --package-path apps/macos/Org2Workspace Org2WorkspaceDiagnostics",
     "benchmark:cli": "node tools/benchmark-cli.mjs",
     "setup:macos-app:codex": "node tools/setup-macos-codex-workspace.mjs",
     "open:macos-app:codex": "node tools/open-macos-app-codex.mjs",

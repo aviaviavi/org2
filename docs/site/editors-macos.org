@@ -69,7 +69,7 @@ Document presentation is customizable without enabling document scripts. Use the
 
 For a full =.org= or =.org2= page, choose *View → Slides* to compile the talk and inspect its PDF directly in the document pane. The source editor's split preview has the same document/slides selector. Slide preview compiles the current in-memory draft after a short idle delay, so saving is not required before checking the deck. It resolves relative images from the source file's directory and writes no preview artifact into the corpus.
 
-When you choose *Edit* from a rendered document or compiled slide deck, the source editor opens at the source line nearest the current viewport or slide instead of returning to the top of the file.
+The app remembers the visible source line for each file and shares it across reading and source editing. Choosing *Edit* from a rendered document or compiled slide deck opens the editor at the source line nearest the current viewport or slide; closing the editor, changing document scope, navigating away and back, or reopening the app restores that file near the same place instead of returning to the top.
 
 Preview compilation uses one LaTeX pass for responsiveness. A newer edit cancels the obsolete preview request, stale results are rejected, and the last valid PDF remains visible if the next draft does not compile. Pause stops both document and slide refreshes. The bounded error shown in the pane can be retried after the source is corrected.
 

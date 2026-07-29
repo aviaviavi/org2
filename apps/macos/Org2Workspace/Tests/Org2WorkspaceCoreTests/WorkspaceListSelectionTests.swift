@@ -1,5 +1,6 @@
 import Foundation
 import XCTest
+@testable import Org2WorkspaceCore
 
 final class WorkspaceListSelectionTests: XCTestCase {
   func testMainWorkspaceAvoidsUnreadableNativeListSelection() throws {
@@ -34,6 +35,41 @@ final class WorkspaceListSelectionTests: XCTestCase {
     XCTAssertTrue(
       offenders.isEmpty,
       "Use readable explicit selection instead of native List selection highlighting: \(offenders.joined(separator: ", "))"
+    )
+  }
+
+  func testSidebarSelectionAddsVerticalPaddingWithoutChangingOtherLists() throws {
+    let testFile = URL(fileURLWithPath: #filePath)
+    let packageRoot = testFile
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+    let contentView = packageRoot
+      .appendingPathComponent("Sources/Org2WorkspaceCore/ContentView.swift")
+    let source = try String(contentsOf: contentView, encoding: .utf8)
+
+    XCTAssertTrue(
+      source.contains(
+        """
+        ReadableListSelectionModifier(
+                        isSelected: store.selectedSurface == surface,
+                        verticalPadding: 4
+                      )
+        """
+      )
+    )
+    XCTAssertTrue(source.contains("var verticalPadding: CGFloat = 0"))
+  }
+
+  func testSettledThreadDisclosurePreservesTheUsersChoice() {
+    XCTAssertFalse(
+      OpenClawSettledThreadDisclosure.updated(isExpanded: false, settledThreadCount: 3)
+    )
+    XCTAssertTrue(
+      OpenClawSettledThreadDisclosure.updated(isExpanded: true, settledThreadCount: 4)
+    )
+    XCTAssertFalse(
+      OpenClawSettledThreadDisclosure.updated(isExpanded: true, settledThreadCount: 0)
     )
   }
 }

@@ -1667,6 +1667,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
   let diagnostics: Binding<[Org2EditorDiagnostic]>?
   let onCommandStatus: ((String) -> Void)?
   let selection: Binding<NSRange>?
+  let onViewportSourceLine: ((Int) -> Void)?
   let onGutterBacklinks: ((Int) -> Void)?
   let isFocused: Binding<Bool>?
   let contentHeight: Binding<CGFloat>?
@@ -1698,6 +1699,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     diagnostics: Binding<[Org2EditorDiagnostic]>? = nil,
     onCommandStatus: ((String) -> Void)? = nil,
     selection: Binding<NSRange>? = nil,
+    onViewportSourceLine: ((Int) -> Void)? = nil,
     onGutterBacklinks: ((Int) -> Void)? = nil,
     isFocused: Binding<Bool>? = nil,
     contentHeight: Binding<CGFloat>? = nil,
@@ -1728,6 +1730,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     self.diagnostics = diagnostics
     self.onCommandStatus = onCommandStatus
     self.selection = selection
+    self.onViewportSourceLine = onViewportSourceLine
     self.onGutterBacklinks = onGutterBacklinks
     self.isFocused = isFocused
     self.contentHeight = contentHeight
@@ -1851,6 +1854,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       context.coordinator.clearSemanticState()
       editorText = text
       appliedProgrammaticText = true
+      context.coordinator.resetViewportSourceLinePublishing()
     }
 
     if let selection {
@@ -1933,6 +1937,8 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     private var deferredCaretPublishRange: NSRange?
     nonisolated(unsafe) private var deferredCaretPublishWorkItem: DispatchWorkItem?
     private var deferredCaretPublishGeneration = 0
+    nonisolated(unsafe) private var deferredViewportPublishWorkItem: DispatchWorkItem?
+    private var lastPublishedViewportSourceLine: Int?
     private var lastKnownText: String?
     private var lastKnownTextUTF16Length: Int?
     private var hasAppliedFocusRequest = false
@@ -1957,6 +1963,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       deferredHighlightWorkItem?.cancel()
       deferredTextPublishWorkItem?.cancel()
       deferredCaretPublishWorkItem?.cancel()
+      deferredViewportPublishWorkItem?.cancel()
       semanticAnalysisTask?.cancel()
       if let scrollObserver {
         NotificationCenter.default.removeObserver(scrollObserver)
@@ -2035,6 +2042,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       }
       let selectedRange = textView.selectedRange()
       unfoldIfSelectionEntersHiddenText(selectedRange, in: textView)
+      scheduleViewportSourceLinePublishing(for: textView)
       guard shouldReadTextForSelectionPublishing(selectedRange) else { return }
       publishSelectionIfNeeded(selectedRange, in: textView.string)
     }
@@ -2717,6 +2725,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
             self.highlightVisibleRange(in: textView)
           }
           self.gutterView?.needsDisplay = true
+          self.scheduleViewportSourceLinePublishing(for: textView)
         }
       }
       DispatchQueue.main.async { [weak self, weak textView] in
@@ -2725,6 +2734,57 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
           self.highlightVisibleRange(in: textView)
         }
         self.gutterView?.needsDisplay = true
+        self.scheduleViewportSourceLinePublishing(for: textView, delayMilliseconds: 0)
+      }
+    }
+
+    func resetViewportSourceLinePublishing() {
+      lastPublishedViewportSourceLine = nil
+    }
+
+    func scheduleViewportSourceLinePublishing(
+      for textView: NSTextView,
+      delayMilliseconds: Int = 80
+    ) {
+      guard parent.onViewportSourceLine != nil else { return }
+      deferredViewportPublishWorkItem?.cancel()
+      let workItem = DispatchWorkItem { [weak self, weak textView] in
+        Task { @MainActor in
+          guard let self,
+                let textView,
+                let line = Self.visibleSourceLine(of: textView),
+                line != self.lastPublishedViewportSourceLine
+          else {
+            return
+          }
+          self.lastPublishedViewportSourceLine = line
+          self.parent.onViewportSourceLine?(line)
+        }
+      }
+      deferredViewportPublishWorkItem = workItem
+      DispatchQueue.main.asyncAfter(
+        deadline: .now() + .milliseconds(max(0, delayMilliseconds)),
+        execute: workItem
+      )
+    }
+
+    static func visibleSourceLine(of textView: NSTextView) -> Int? {
+      let text = textView.string
+      guard !text.isEmpty else { return 1 }
+      let visibleRect = textView.visibleRect
+      guard visibleRect.height > 0 else { return nil }
+      let anchorY = min(
+        max(visibleRect.minY + visibleRect.height * 0.32, visibleRect.minY + 24),
+        visibleRect.maxY - 1
+      )
+      let characterIndex = min(
+        max(0, textView.characterIndexForInsertion(
+          at: NSPoint(x: textView.textContainerOrigin.x + 1, y: anchorY)
+        )),
+        (text as NSString).length
+      )
+      return 1 + text.utf16.prefix(characterIndex).reduce(into: 0) { line, unit in
+        if unit == 10 { line += 1 }
       }
     }
 

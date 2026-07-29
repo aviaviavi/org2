@@ -48,6 +48,22 @@ final class CorpusFileWatcherTests: XCTestCase {
     XCTAssertFalse(classification.hasConfigurationChanges)
   }
 
+  func testRawDiagnosticEvidenceDoesNotEnterTheCorpusRefreshPath() {
+    let root = URL(fileURLWithPath: "/tmp/org2-corpus").standardizedFileURL
+    let diagnosticRoot = root.appendingPathComponent("raw/diagnostics/org2-workspace/incident-1")
+    let classification = WorkspaceStore.classifyCorpusFileEvents(
+      [
+        diagnosticRoot.appendingPathComponent("incident.json").path,
+        diagnosticRoot.appendingPathComponent("stacks.sample.txt").path,
+      ],
+      corpusRoot: root
+    )
+
+    XCTAssertTrue(classification.contentPaths.isEmpty)
+    XCTAssertFalse(classification.hasAgentRunStateChanges)
+    XCTAssertFalse(classification.hasConfigurationChanges)
+  }
+
   func testClassifiesWorkspaceConfigurationChangesForFullReconciliation() {
     let root = URL(fileURLWithPath: "/tmp/org2-corpus").standardizedFileURL
     let classification = WorkspaceStore.classifyCorpusFileEvents(

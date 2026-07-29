@@ -9,7 +9,7 @@ private var retainedInteractionWindows: [NSWindow] = []
 
 @MainActor
 final class OrgEditorInteractionTests: XCTestCase {
-  func testRenderedViewportReportsTheVisibleSourceLine() async throws {
+  func testRenderedViewportRestoresAndReportsTheVisibleSourceLine() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-rendered-viewport-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -24,6 +24,7 @@ final class OrgEditorInteractionTests: XCTestCase {
       text: text,
       isSubtree: false
     )
+    let targetLine = 250
     let html = try await Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()).renderAppHTML(
       source.text,
       sourcePath: source.file
@@ -37,6 +38,7 @@ final class OrgEditorInteractionTests: XCTestCase {
       searchOccurrenceIndex: nil,
       searchOccurrenceCount: 0,
       scrollRequest: nil,
+      restorationSourceLine: targetLine,
       layout: OrgHTMLDocumentLayout(width: .comfortable, margin: .standard),
       askAIAboutHeading: { _ in },
       reportStatus: { _ in },
@@ -59,7 +61,6 @@ final class OrgEditorInteractionTests: XCTestCase {
       return webView != nil
     }
     let renderedWebView = try XCTUnwrap(webView)
-    let targetLine = 250
     let readinessDeadline = Date().addingTimeInterval(5)
     var targetIsReady = false
     while Date() < readinessDeadline && !targetIsReady {
@@ -75,17 +76,6 @@ final class OrgEditorInteractionTests: XCTestCase {
       if !targetIsReady { try await pumpRunLoop() }
     }
     XCTAssertTrue(targetIsReady)
-    _ = try await renderedWebView.callAsyncJavaScript(
-      """
-      const target = Array.from(document.querySelectorAll('[data-org2-start-line]'))
-        .find((element) => Number(element.dataset.org2StartLine || 0) >= targetLine);
-      target?.scrollIntoView({ block: 'start', behavior: 'auto' });
-      return Boolean(target);
-      """,
-      arguments: ["targetLine": targetLine],
-      in: nil,
-      contentWorld: .page
-    )
 
     try await waitForCondition {
       guard let receivedLine else { return false }

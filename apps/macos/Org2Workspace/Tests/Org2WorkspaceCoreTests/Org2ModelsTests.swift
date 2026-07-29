@@ -1578,6 +1578,36 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testSettlingAThreadClearsAnOlderSettledSelection() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-chat-thread-stale-settled-selection-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json")
+    )
+
+    for title in ["First thread", "Second thread", "Third thread"] {
+      store.createOpenClawChatThread()
+      store.openClawMessages = [OpenClawChatMessage(role: .user, content: title)]
+    }
+
+    let previouslySettled = try XCTUnwrap(store.visibleOpenClawChatThreads.last)
+    store.settleOpenClawChatThread(previouslySettled.id)
+    store.selectOpenClawChatThread(previouslySettled.id)
+    XCTAssertEqual(store.selectedOpenClawChatThreadID, previouslySettled.id)
+
+    let newlySettled = try XCTUnwrap(store.visibleOpenClawChatThreads.first)
+    store.settleOpenClawChatThread(newlySettled.id)
+
+    let selectedID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
+    XCTAssertNotEqual(selectedID, previouslySettled.id)
+    XCTAssertFalse(
+      try XCTUnwrap(store.openClawChatThreads.first(where: { $0.id == selectedID })).isSettled
+    )
+  }
+
+  @MainActor
   func testSettlingAndReopeningOpenClawThreadPersistsDurableState() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-chat-thread-settle-\(UUID().uuidString)", isDirectory: true)
@@ -1857,7 +1887,7 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
-  func testOpenClawChatThreadsDoNotMarkActiveRepliesUnread() throws {
+  func testOpenClawChatThreadsSoundButDoNotMarkActiveRepliesUnread() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-chat-thread-active-unread-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -1869,20 +1899,22 @@ final class Org2ModelsTests: XCTestCase {
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: transcript
+      openClawTranscriptURL: transcript,
+      openClawSendHandler: { _, _, _, _ in
+        "Visible reply"
+      }
     )
     var soundCount = 0
     store.openClawIncomingMessageSoundPlayer = {
       soundCount += 1
     }
     store.makeSurfacePrimary(.openClaw)
-    store.openClawMessages = [
-      OpenClawChatMessage(role: .user, content: "Question in active chat"),
-      OpenClawChatMessage(role: .assistant, content: "Visible reply")
-    ]
+    store.openClawDraft = "Question in active chat"
+
+    await store.sendOpenClawMessage()
 
     XCTAssertEqual(store.openClawUnreadMessageCount, 0)
-    XCTAssertEqual(soundCount, 0)
+    XCTAssertEqual(soundCount, 1)
   }
 
   @MainActor
@@ -5221,6 +5253,67 @@ final class Org2ModelsTests: XCTestCase {
 
     XCTAssertEqual(scrollView.contentView.bounds.origin.x, targetOrigin.x, accuracy: 0.5)
     XCTAssertEqual(scrollView.contentView.bounds.origin.y, targetOrigin.y, accuracy: 0.5)
+  }
+
+  @MainActor
+  func testSyntaxEditorReportsTheSourceLineAtTheViewportAnchor() throws {
+    let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 320, height: 120))
+    scrollView.hasVerticalScroller = true
+    let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 320, height: 2_400))
+    textView.isVerticallyResizable = true
+    textView.textContainer?.containerSize = NSSize(
+      width: 320,
+      height: CGFloat.greatestFiniteMagnitude
+    )
+    textView.string = (1...120).map { "Line \($0)" }.joined(separator: "\n")
+    scrollView.documentView = textView
+    scrollView.contentView.scroll(to: NSPoint(x: 0, y: 900))
+    scrollView.reflectScrolledClipView(scrollView.contentView)
+
+    let visibleLine = try XCTUnwrap(
+      OrgSyntaxTextEditor.Coordinator.visibleSourceLine(of: textView)
+    )
+
+    XCTAssertGreaterThan(visibleLine, 20)
+    XCTAssertLessThanOrEqual(visibleLine, 120)
+  }
+
+  @MainActor
+  func testDocumentViewportPersistsPerFileAndSeedsSourceEditing() throws {
+    let suiteName = "org2-document-viewport-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let text = (1...120).map { "Line \($0)" }.joined(separator: "\n")
+    let source = EntrySource(
+      file: "/tmp/remembered-page.org2",
+      startLine: 1,
+      endLineExclusive: 121,
+      text: text,
+      isSubtree: false
+    )
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults
+    )
+    store.selectedEntrySource = source
+    store.recordDocumentViewportSourceLine(80)
+
+    let restored = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults
+    )
+    restored.selectedEntrySource = source
+
+    XCTAssertEqual(restored.currentDocumentViewportSourceLine, 80)
+    restored.beginEditingSelectedEntry()
+    let expectedOffset = text
+      .split(separator: "\n", omittingEmptySubsequences: false)
+      .prefix(79)
+      .reduce(0) { $0 + $1.utf16.count + 1 }
+    XCTAssertEqual(restored.sourceEditorSelection, NSRange(location: expectedOffset, length: 0))
+
+    restored.recordDocumentViewportSourceLine(10_000)
+    XCTAssertEqual(restored.currentDocumentViewportSourceLine, 120)
   }
 
   @MainActor

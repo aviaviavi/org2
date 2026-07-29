@@ -455,6 +455,12 @@ private struct SidebarView: View {
               showsCommandShortcut: showsCommandShortcuts,
               notificationCount: surface == .approvals ? store.approvalItems.count : 0
             )
+            .modifier(
+              ReadableListSelectionModifier(
+                isSelected: store.selectedSurface == surface,
+                verticalPadding: 4
+              )
+            )
             .contentShape(Rectangle())
             .onTapGesture {
               guard surface != store.selectedSurface else { return }
@@ -463,7 +469,6 @@ private struct SidebarView: View {
                 store.makeSurfacePrimary(surface)
               }
             }
-            .modifier(ReadableListSelectionModifier(isSelected: store.selectedSurface == surface))
             .listRowBackground(Color.clear)
             .help(surface.commandShortcutTitle.isEmpty ? surface.title : "\(surface.title) (\(surface.commandShortcutTitle))")
           }
@@ -822,12 +827,17 @@ private struct OpenClawSidebarThreadList: View {
               },
               rename: beginRenaming,
               togglePin: { store.toggleOpenClawChatThreadPin(contextThread.id) },
-              settle: { store.settleOpenClawChatThread(contextThread.id) },
-              reopen: { store.reopenOpenClawChatThread(contextThread.id) }
+              settle: {
+                contextualThreadID = nil
+                store.settleOpenClawChatThread(thread.id)
+              },
+              reopen: { store.reopenOpenClawChatThread(thread.id) }
             )
             .onHover { isHovered in
               if isHovered {
                 contextualThreadID = thread.id
+              } else if contextualThreadID == thread.id {
+                contextualThreadID = nil
               }
             }
           }
@@ -891,13 +901,18 @@ private struct OpenClawSidebarThreadList: View {
                 },
                 rename: beginRenaming,
                 togglePin: { store.toggleOpenClawChatThreadPin(contextThread.id) },
-                settle: { store.settleOpenClawChatThread(contextThread.id) },
-                reopen: { store.reopenOpenClawChatThread(contextThread.id) }
+                settle: { store.settleOpenClawChatThread(thread.id) },
+                reopen: {
+                  contextualThreadID = nil
+                  store.reopenOpenClawChatThread(thread.id)
+                }
               )
               .opacity(0.68)
               .onHover { isHovered in
                 if isHovered {
                   contextualThreadID = thread.id
+                } else if contextualThreadID == thread.id {
+                  contextualThreadID = nil
                 }
               }
             }
@@ -914,9 +929,12 @@ private struct OpenClawSidebarThreadList: View {
       store.autoSettleOpenClawChatThreads(now: now)
     }
     .onChange(of: store.settledOpenClawChatThreads.count) {
-      withAnimation(WorkspaceMotion.disclosure) {
-        showsSettledThreads = !store.settledOpenClawChatThreads.isEmpty
-      }
+      let nextValue = OpenClawSettledThreadDisclosure.updated(
+        isExpanded: showsSettledThreads,
+        settledThreadCount: store.settledOpenClawChatThreads.count
+      )
+      guard nextValue != showsSettledThreads else { return }
+      withAnimation(WorkspaceMotion.disclosure) { showsSettledThreads = nextValue }
     }
     .alert("Rename Thread", isPresented: $isRenamePresented) {
       TextField("Thread name", text: $renameDraft)
@@ -954,6 +972,12 @@ enum OpenClawSidebarContextTarget {
     fallbackThreadID: UUID
   ) -> UUID {
     hoveredThreadID ?? selectedThreadID ?? fallbackThreadID
+  }
+}
+
+enum OpenClawSettledThreadDisclosure {
+  static func updated(isExpanded: Bool, settledThreadCount: Int) -> Bool {
+    settledThreadCount > 0 && isExpanded
   }
 }
 
@@ -1240,10 +1264,12 @@ private struct CorpusFileRow: View {
 
 private struct ReadableListSelectionModifier: ViewModifier {
   let isSelected: Bool
+  var verticalPadding: CGFloat = 0
 
   func body(content: Content) -> some View {
     content
       .padding(.horizontal, 10)
+      .padding(.vertical, verticalPadding)
       .frame(maxWidth: .infinity, alignment: .leading)
       .background(
         isSelected ? WorkspaceDesign.selectedFill : Color.clear,
@@ -6500,7 +6526,6 @@ private struct AssignedWorkRow: View {
 
 private struct DetailView: View {
   @EnvironmentObject private var store: WorkspaceStore
-  @State private var renderedViewportSourceLine: Int?
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
@@ -6509,20 +6534,20 @@ private struct DetailView: View {
       } else if let location = store.selectedLocation {
         DetailHeader(
           location: location,
-          renderedViewportSourceLine: renderedViewportSourceLine
+          renderedViewportSourceLine: store.currentDocumentViewportSourceLine
         )
         Divider()
         VStack(spacing: 0) {
           if store.isLiveFileEditorSelected {
             LiveFileEditorBody(
               location: location,
-              reportViewportSourceLine: { renderedViewportSourceLine = $0 }
+              reportViewportSourceLine: { store.recordDocumentViewportSourceLine($0) }
             )
               .frame(minWidth: 420, idealWidth: 560, maxHeight: .infinity)
           } else {
             EntryBodyView(
               location: location,
-              reportViewportSourceLine: { renderedViewportSourceLine = $0 }
+              reportViewportSourceLine: { store.recordDocumentViewportSourceLine($0) }
             )
             .frame(minWidth: 420, idealWidth: 560, maxHeight: .infinity)
           }
@@ -6540,9 +6565,6 @@ private struct DetailView: View {
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    .onChange(of: store.selectedEntrySource?.id) {
-      renderedViewportSourceLine = nil
-    }
   }
 
 }
@@ -7309,6 +7331,7 @@ private struct OrgRenderedDocumentPreview: View {
           searchOccurrenceIndex: store.pageSearchSelectedOccurrenceIndex,
           searchOccurrenceCount: store.pageSearchOccurrenceCount,
           scrollRequest: store.detailScrollRequest,
+          restorationSourceLine: store.documentViewportSourceLine(for: source),
           layout: store.renderedDocumentLayout,
           askAIAboutHeading: { store.askOpenClawAboutSourceHeading(at: $0) },
           reportStatus: { store.statusText = $0 },
@@ -7562,6 +7585,13 @@ private struct OrgSourceEditorWithLinkTools: View {
           store.statusText = status
         },
         selection: $store.sourceEditorSelection,
+        onViewportSourceLine: { line in
+          guard let source = store.selectedEntrySource else { return }
+          store.recordDocumentViewportSourceLine(
+            source.startLine + line - 1,
+            for: source
+          )
+        },
         onGutterBacklinks: { line in
           store.showSourceEditorBacklinks(at: line)
         },
@@ -7666,9 +7696,11 @@ private struct OrgSourceEditorWithLinkTools: View {
             searchOccurrenceIndex: nil,
             searchOccurrenceCount: 0,
             scrollRequest: sourcePreviewScrollRequest,
+            restorationSourceLine: store.documentViewportSourceLine(for: source),
             layout: store.renderedDocumentLayout,
             askAIAboutHeading: { store.askOpenClawAboutSourceHeading(at: $0) },
-            reportStatus: { store.statusText = $0 }
+            reportStatus: { store.statusText = $0 },
+            reportViewportSourceLine: { store.recordDocumentViewportSourceLine($0, for: source) }
           )
         } else if let error = store.sourceEditorPreviewError {
           OrgHTMLRenderFailureView(message: error)

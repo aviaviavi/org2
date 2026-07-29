@@ -3,6 +3,7 @@
 Org2 is editor-agnostic. Editor docs are split by integration:
 
 - [[file:editors-macos.org][macOS Workspace]]
+  - [[file:macos-diagnostics.org][macOS diagnostics watchdog]]
 - [[file:editors-vscode.org][VS Code]]
 - [[file:editors-vim.org][Vim / Neovim]]
 - [[file:editors-emacs.org][Emacs]]

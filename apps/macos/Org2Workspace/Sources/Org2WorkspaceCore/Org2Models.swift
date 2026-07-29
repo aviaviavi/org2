@@ -2415,6 +2415,12 @@ public struct OrgRoamLinkResolver: Equatable, Sendable {
     signature = Self.makeSignature(nodes)
   }
 
+  public static func == (lhs: OrgRoamLinkResolver, rhs: OrgRoamLinkResolver) -> Bool {
+    // SwiftUI compares environment values frequently; walking the derived indexes
+    // here can otherwise stall the main thread for large corpora.
+    lhs.signature == rhs.signature
+  }
+
   public func resolve(target rawTarget: String) -> OrgRoamResolvedLink? {
     let target = rawTarget.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !target.isEmpty else { return nil }
