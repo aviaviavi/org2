@@ -486,7 +486,7 @@ private struct OpenClawAttachmentThumbnail: View {
             .resizable()
             .scaledToFill()
         } else {
-          Image(systemName: "photo")
+          Image(systemName: OpenClawAttachmentPresentation.systemImage(for: attachment.mimeType))
             .font(.title3)
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -641,7 +641,8 @@ struct OpenClawComposerView: View {
             text: visibleDraftBinding,
             focusOnAppear: focusOnAppear,
             onReturn: handleReturn,
-            onSuggestionCommand: handleSuggestionCommand
+            onSuggestionCommand: handleSuggestionCommand,
+            onDropAttachment: handleDropAttachment
           )
           .padding(4)
         }
@@ -709,13 +710,13 @@ struct OpenClawComposerView: View {
         }
         Spacer(minLength: 0)
         Button {
-          store.chooseOpenClawImageAttachments()
+          store.chooseOpenClawAttachments()
         } label: {
-          Label("Attach Image", systemImage: "photo.badge.plus")
+          Label("Attach File", systemImage: "paperclip")
         }
         .labelStyle(.iconOnly)
         .buttonStyle(WorkspaceActionButtonStyle())
-        .help("Attach image")
+        .help("Attach file or image")
 
         Button {
           flushDraftToStore()
@@ -840,6 +841,16 @@ struct OpenClawComposerView: View {
       lastStoreDraft = store.openClawDraft
     }
   }
+
+  private func handleDropAttachment(_ payload: OpenClawComposerDropPayload) -> Bool {
+    switch payload {
+    case .fileURLs(let urls):
+      store.attachOpenClawFiles(urls: urls)
+    case .image(let data, let fileName, let mimeType):
+      store.attachOpenClawAttachment(data: data, fileName: fileName, mimeType: mimeType)
+    }
+    return true
+  }
 }
 
 private struct OpenClawSlashCommandSuggestions: View {
@@ -956,7 +967,7 @@ private struct OpenClawPendingAttachmentChip: View {
           .frame(width: 30, height: 30)
           .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
       } else {
-        Image(systemName: "photo")
+        Image(systemName: OpenClawAttachmentPresentation.systemImage(for: attachment.mimeType))
           .font(.caption.weight(.semibold))
           .foregroundStyle(.secondary)
           .frame(width: 30, height: 30)
@@ -1055,6 +1066,44 @@ enum OpenClawComposerSuggestionKeyCommand: Equatable {
   case move(Int)
 }
 
+enum OpenClawComposerDropPayload: Equatable {
+  case fileURLs([URL])
+  case image(data: Data, fileName: String, mimeType: String)
+}
+
+enum OpenClawComposerDrop {
+  static func payload(from pasteboard: NSPasteboard) -> OpenClawComposerDropPayload? {
+    let urls = (pasteboard.readObjects(
+      forClasses: [NSURL.self],
+      options: [.urlReadingFileURLsOnly: true]
+    ) ?? []).compactMap { item -> URL? in
+      guard let url = item as? NSURL else { return nil }
+      return url as URL
+    }
+    if !urls.isEmpty {
+      return .fileURLs(urls)
+    }
+
+    if let data = pasteboard.data(forType: .png) {
+      return .image(data: data, fileName: "Dropped Image.png", mimeType: "image/png")
+    }
+    if let data = pasteboard.data(forType: .tiff) {
+      return .image(data: data, fileName: "Dropped Image.tiff", mimeType: "image/tiff")
+    }
+    return nil
+  }
+}
+
+private enum OpenClawAttachmentPresentation {
+  static func systemImage(for mimeType: String) -> String {
+    if mimeType.hasPrefix("image/") { return "photo" }
+    if mimeType.hasPrefix("audio/") { return "waveform" }
+    if mimeType == "application/pdf" { return "doc.richtext" }
+    if mimeType.hasPrefix("text/") { return "doc.text" }
+    return "doc"
+  }
+}
+
 enum OpenClawSlashCommandSelection {
   static func selectedCommand(
     in commands: [OpenClawSlashCommand],
@@ -1076,6 +1125,7 @@ private struct OpenClawComposerTextView: NSViewRepresentable {
   let focusOnAppear: Bool
   let onReturn: () -> Bool
   let onSuggestionCommand: (OpenClawComposerSuggestionKeyCommand) -> Bool
+  let onDropAttachment: (OpenClawComposerDropPayload) -> Bool
 
   func makeCoordinator() -> Coordinator {
     Coordinator(parent: self)
@@ -1097,6 +1147,10 @@ private struct OpenClawComposerTextView: NSViewRepresentable {
     textView.onSuggestionCommand = {
       context.coordinator.parent.onSuggestionCommand($0)
     }
+    textView.onDropAttachment = {
+      context.coordinator.parent.onDropAttachment($0)
+    }
+    textView.registerForDraggedTypes([.fileURL, .png, .tiff])
     textView.string = text
     textView.font = .systemFont(ofSize: NSFont.systemFontSize)
     textView.textColor = .labelColor
@@ -1130,6 +1184,9 @@ private struct OpenClawComposerTextView: NSViewRepresentable {
     textView.onSuggestionCommand = {
       context.coordinator.parent.onSuggestionCommand($0)
     }
+    textView.onDropAttachment = {
+      context.coordinator.parent.onDropAttachment($0)
+    }
     if textView.string != text {
       let selectedRange = textView.selectedRange()
       textView.string = text
@@ -1156,6 +1213,22 @@ private struct OpenClawComposerTextView: NSViewRepresentable {
   final class CommandSubmitTextView: NSTextView {
     var onReturn: (() -> Bool)?
     var onSuggestionCommand: ((OpenClawComposerSuggestionKeyCommand) -> Bool)?
+    var onDropAttachment: ((OpenClawComposerDropPayload) -> Bool)?
+
+    override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
+      if OpenClawComposerDrop.payload(from: sender.draggingPasteboard) != nil {
+        return .copy
+      }
+      return super.draggingEntered(sender)
+    }
+
+    override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+      if let payload = OpenClawComposerDrop.payload(from: sender.draggingPasteboard),
+         onDropAttachment?(payload) == true {
+        return true
+      }
+      return super.performDragOperation(sender)
+    }
 
     override func keyDown(with event: NSEvent) {
       if let command = OpenClawComposerKeyCommand.suggestionCommand(

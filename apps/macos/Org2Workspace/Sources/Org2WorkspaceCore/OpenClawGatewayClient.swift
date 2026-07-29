@@ -727,7 +727,7 @@ public actor OpenClawGatewayClient {
       if !attachments.isEmpty {
         params["attachments"] = attachments.map {
           [
-            "type": "image",
+            "type": $0.mimeType.hasPrefix("image/") ? "image" : "file",
             "fileName": $0.fileName,
             "mimeType": $0.mimeType,
             "content": $0.data.base64EncodedString()
