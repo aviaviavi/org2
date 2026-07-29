@@ -250,7 +250,7 @@ private struct OpenClawSnapshotFile: Sendable {
 
 private enum WorkspaceUndoAction: Equatable, Sendable {
   case openClawDraft(previous: String, next: String)
-  case fileSnapshot(file: String, previous: String, next: String)
+  case fileSnapshot(file: String, previous: String?, next: String?)
 }
 
 public enum QuickOpenSelectionDirection: Equatable, Sendable {
@@ -985,8 +985,14 @@ public final class WorkspaceStore: ObservableObject {
       defaults.set(openClawBriefsStartNewThread, forKey: openClawBriefsStartNewThreadKey)
     }
   }
+  @Published public private(set) var openClawLocalEditsEnabled = false
+  @Published public private(set) var openClawLocalEditNodeState: OpenClawLocalEditNodeState = .disabled
+  @Published public private(set) var openClawLocalEditNodeDetail = ""
   @Published public var openClawHasStoredToken = false
   @Published public var openClawStatusText = WorkspaceStore.defaultOpenClawStatusText()
+  @Published public private(set) var codexAccountState: CodexAccountState = .unknown
+  @Published public private(set) var isCodexSigningIn = false
+  @Published public private(set) var codexLoginURL: URL?
   @Published public var isRecordingOpenClawVoiceNote = false
   @Published public var isTranscribingOpenClawVoiceNote = false
   @Published public var openClawVoiceAverageLevel = 0.0
@@ -1179,6 +1185,7 @@ public final class WorkspaceStore: ObservableObject {
   private let openClawRemoteCorpusPathKey = "Org2Workspace.openClawRemoteCorpusPath"
   private let openClawRemoteCorpusPathsByCorpusKey = "Org2Workspace.openClawRemoteCorpusPathsByCorpus.v1"
   private let openClawBriefsStartNewThreadKey = "Org2Workspace.openClawBriefsStartNewThread"
+  private let openClawLocalEditsEnabledKey = "Org2Workspace.openClawLocalEditsEnabled.v1"
   private let renderedDocumentWidthKey = "Org2Workspace.renderedDocument.width"
   private let renderedDocumentMarginKey = "Org2Workspace.renderedDocument.margin"
   private let sourceEditorPresentationKey = "Org2Workspace.sourceEditor.presentation"
@@ -1222,7 +1229,7 @@ public final class WorkspaceStore: ObservableObject {
     1_200_000_000
   ]
   nonisolated private static let openClawInterruptedSendFailureText =
-    "Org2 Workspace restarted before this OpenClaw response was saved. The response may have completed outside the app, but this chat cannot recover it. Retry to send again."
+    "Org2 Workspace restarted before this AI response was saved. The response may have completed outside the app, but this chat cannot recover it. Retry to send again."
   private var openClawTranscriptURL: URL
   private let appOpenClawTranscriptURL: URL
   private let usesFixedOpenClawTranscriptURL: Bool
@@ -1238,7 +1245,13 @@ public final class WorkspaceStore: ObservableObject {
   private var drainingOpenClawThreadIDs: Set<UUID> = []
   private var openClawRequestStartedAtByThreadID: [UUID: Date] = [:]
   private var openClawGatewayClientsByThreadID: [UUID: OpenClawGatewayClient] = [:]
+  private var codexAppServerClient: CodexAppServerClient?
+  private var codexActiveTurnsByThreadID: [UUID: (runtimeThreadID: String, turnID: String)] = [:]
   private var openClawRecoveryRetryTask: Task<Void, Never>?
+  private var openClawLocalEditBroker: OpenClawLocalEditBroker?
+  private var openClawLocalEditCorpusRootsByTurnID: [String: URL] = [:]
+  private var openClawLocalEditNode: OpenClawLocalEditNode?
+  private var openClawLocalEditNodeTask: Task<Void, Never>?
   private var openClawCommandCache: [String: (commands: [OpenClawSlashCommand], refreshedAt: Date)] = [:]
   private var openClawActiveCommandDiscoveryID: String?
   private var openClawCommandDiscoveryGeneration = 0
@@ -1404,6 +1417,7 @@ public final class WorkspaceStore: ObservableObject {
     personalAssigneeNamesText = defaults.string(forKey: personalAssigneeNamesKey) ?? ""
     openClawRemoteCorpusPath = defaults.string(forKey: openClawRemoteCorpusPathKey) ?? ""
     openClawBriefsStartNewThread = defaults.object(forKey: openClawBriefsStartNewThreadKey) as? Bool ?? true
+    openClawLocalEditsEnabled = defaults.bool(forKey: openClawLocalEditsEnabledKey)
     renderedDocumentWidth = defaults.string(forKey: renderedDocumentWidthKey)
       .flatMap(RenderedDocumentWidth.init(rawValue:)) ?? .comfortable
     renderedDocumentMargin = defaults.string(forKey: renderedDocumentMarginKey)
@@ -1452,6 +1466,9 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     await recoverPendingOpenClawTurns()
+    if openClawLocalEditsEnabled {
+      startOpenClawLocalEditNode()
+    }
 
     if corpusRoot != nil {
       if selectedSurface == .home {
@@ -1900,6 +1917,9 @@ public final class WorkspaceStore: ObservableObject {
     errorText = nil
     rebuildCorpusFileWatchers()
     scheduleAgendaClockInvalidation()
+    if openClawLocalEditsEnabled, openClawLocalEditNodeTask == nil {
+      startOpenClawLocalEditNode()
+    }
     return cachedWorkspace != nil
   }
 
@@ -5256,14 +5276,15 @@ public final class WorkspaceStore: ObservableObject {
       pendingNodeBriefTitle = location.title
       setOpenClawAssistantPanelPresented(true)
       prepareOpenClawThreadForNodeBrief(title: location.title)
+      let runtimeTitle = selectedAIChatRuntime.title
       await sendOpenClawMessage(text: prompt)
       if await openNodeBriefArtifactWhenAvailable(url: artifactURL, relativePath: artifactRelativePath, title: location.title) {
         return
       }
-      if openClawStatusText == "OpenClaw replied" || openClawStatusText.hasPrefix("Edited ") {
+      if openClawStatusText == "\(runtimeTitle) replied" || openClawStatusText.hasPrefix("Edited ") {
         pendingNodeBriefArtifactRelativePath = nil
         pendingNodeBriefTitle = nil
-        openClawStatusText = "OpenClaw replied without writing the node brief artifact"
+        openClawStatusText = "\(runtimeTitle) replied without writing the node brief artifact"
         statusText = "Node brief artifact was not written"
       }
     } catch {
@@ -10508,7 +10529,7 @@ public final class WorkspaceStore: ObservableObject {
       try await openClawVoiceRecorder.startRecording(to: audioURL)
       activeOpenClawVoiceNoteURL = audioURL
       isRecordingOpenClawVoiceNote = true
-      openClawVoiceStatusText = "Recording OpenClaw dictation..."
+      openClawVoiceStatusText = "Recording \(selectedAIChatRuntime.title) dictation..."
       openClawStatusText = openClawVoiceStatusText
       startOpenClawVoiceMetering()
     } catch {
@@ -10523,7 +10544,7 @@ public final class WorkspaceStore: ObservableObject {
 
   public func stopOpenClawVoiceNoteRecording() async {
     guard let audioURL = activeOpenClawVoiceNoteURL else {
-      openClawVoiceStatusText = "No active OpenClaw dictation recording."
+      openClawVoiceStatusText = "No active AI chat dictation recording."
       openClawStatusText = openClawVoiceStatusText
       return
     }
@@ -10541,7 +10562,7 @@ public final class WorkspaceStore: ObservableObject {
       }
 
       isTranscribingOpenClawVoiceNote = true
-      openClawVoiceStatusText = "Transcribing OpenClaw dictation locally..."
+      openClawVoiceStatusText = "Transcribing \(selectedAIChatRuntime.title) dictation locally..."
       openClawStatusText = openClawVoiceStatusText
       startOpenClawVoiceTranscriptionProgress(audioDuration: duration)
       defer {
@@ -10560,7 +10581,7 @@ public final class WorkspaceStore: ObservableObject {
       }
 
       publishOpenClawComposerDraft(Self.openClawDraftByAppendingDictation(existing: openClawDraft, dictatedText: dictatedText))
-      openClawVoiceStatusText = "Sending dictated note to OpenClaw..."
+      openClawVoiceStatusText = "Sending dictated note to \(selectedAIChatRuntime.title)..."
       openClawStatusText = openClawVoiceStatusText
       await sendOpenClawMessage()
     } catch {
@@ -10662,10 +10683,68 @@ public final class WorkspaceStore: ObservableObject {
     return openClawRunActivitiesByThreadID[threadID] ?? []
   }
 
-  public func stopOpenClawRun() async {
-    guard let threadID = selectedOpenClawChatThreadID,
-          let gateway = openClawGatewayClientsByThreadID[threadID]
+  public var selectedAIChatRuntime: AIChatRuntime {
+    guard let selectedOpenClawChatThreadID,
+          let thread = openClawChatThreads.first(where: { $0.id == selectedOpenClawChatThreadID })
     else {
+      return .openClaw
+    }
+    return thread.runtime
+  }
+
+  public var canChangeSelectedAIChatRuntime: Bool {
+    guard let selectedOpenClawChatThread else { return false }
+    return selectedOpenClawChatThread.canChangeAIRuntime
+      && !isSendingOpenClawMessage
+  }
+
+  public func setSelectedAIChatRuntime(_ runtime: AIChatRuntime) {
+    guard canChangeSelectedAIChatRuntime,
+          let selectedOpenClawChatThreadID,
+          let index = openClawChatThreads.firstIndex(where: {
+            $0.id == selectedOpenClawChatThreadID
+          }),
+          openClawChatThreads[index].runtime != runtime
+    else {
+      return
+    }
+    openClawChatThreads[index] = openClawChatThreads[index]
+      .replacingOpenClawChatMetadata(
+        runtime: runtime,
+        runtimeThreadID: .some(nil)
+      )
+    openClawStatusText = runtime == .codex
+      ? "Ready for a Codex message"
+      : Self.openClawStatusText(settings: currentOpenClawSettings())
+    sortOpenClawChatThreadsForDisplay()
+    persistOpenClawTranscript()
+  }
+
+  public func createAIChatThread() {
+    createOpenClawChatThread(runtime: selectedAIChatRuntime)
+  }
+
+  public func stopOpenClawRun() async {
+    guard let threadID = selectedOpenClawChatThreadID else { return }
+    if selectedAIChatRuntime == .codex {
+      guard let active = codexActiveTurnsByThreadID[threadID],
+            let codexAppServerClient
+      else {
+        openClawStatusText = "No live Codex turn to stop"
+        return
+      }
+      do {
+        try await codexAppServerClient.interrupt(
+          threadID: active.runtimeThreadID,
+          turnID: active.turnID
+        )
+        openClawStatusText = "Stopping Codex…"
+      } catch {
+        openClawStatusText = "Could not stop Codex: \(error.localizedDescription)"
+      }
+      return
+    }
+    guard let gateway = openClawGatewayClientsByThreadID[threadID] else {
       openClawStatusText = "No live Gateway run to stop"
       return
     }
@@ -10695,7 +10774,7 @@ public final class WorkspaceStore: ObservableObject {
     let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty || !openClawPendingAttachments.isEmpty else { return }
 
-    switch OpenClawSlashCommands.parse(text, gatewayCommands: openClawGatewayCommands) {
+    switch OpenClawSlashCommands.parse(text, gatewayCommands: activeAIChatGatewayCommands) {
     case .message(let message):
       sendComposedOpenClawMessage(text: message)
     case .unknown(let name):
@@ -10710,14 +10789,14 @@ public final class WorkspaceStore: ObservableObject {
       guard openClawPendingAttachments.isEmpty else {
         appendLocalOpenClawCommand(
           text,
-          result: "OpenClaw slash commands must be sent without attachments. Remove the attachment and try again."
+          result: "Slash commands must be sent without attachments. Remove the attachment and try again."
         )
         return
       }
       ensureOpenClawChatThread()
       guard let threadID = selectedOpenClawChatThreadID else { return }
       clearOpenClawDraftForSelectedThread()
-      openClawStatusText = "Sending /\(name) to OpenClaw…"
+      openClawStatusText = "Sending /\(name) to \(selectedAIChatRuntime.title)…"
       Task { @MainActor [weak self] in
         guard let self,
               self.enqueueOpenClawMessage(text, attachments: [], in: threadID)
@@ -10758,7 +10837,7 @@ public final class WorkspaceStore: ObservableObject {
       let result: String
       switch command.name {
       case "help":
-        result = OpenClawSlashCommands.helpText(gatewayCommands: openClawGatewayCommands)
+        result = OpenClawSlashCommands.helpText(gatewayCommands: activeAIChatGatewayCommands)
       case "search":
         result = await executeOpenClawSearch(arguments)
       case "open":
@@ -10959,25 +11038,78 @@ public final class WorkspaceStore: ObservableObject {
         removeFirstPendingOpenClawUserMessage(in: threadID)
         continue
       }
+      guard let chatThread = openClawChatThreads.first(where: { $0.id == threadID }) else {
+        removeAllPendingOpenClawUserMessages(in: threadID)
+        return
+      }
       openClawStatusText = openClawQueuedStatusText()
 
+      var localEditTurnID: String?
+      let usesLocalEditBroker = chatThread.runtime == .codex
+        || (
+          openClawLocalEditsEnabled
+            && openClawLocalEditNodeState == .connected
+        )
+      if usesLocalEditBroker, let corpusRoot {
+        let turnID = UUID().uuidString.lowercased()
+        localEditTurnID = turnID
+        openClawLocalEditCorpusRootsByTurnID[turnID] = corpusRoot.standardizedFileURL
+        await localEditBroker().beginTurn(turnID)
+      }
       do {
         clearOpenClawSendFailure(for: userMessageID, in: threadID)
-        let changeObservation = await beginCorpusChangeObservation()
-        let sessionKey = openClawSessionKey(for: threadID) ?? openClawSessionKey
-        let reply = try await sendOpenClawRequest(
-          messages: requestMessages,
-          sessionKey: sessionKey,
-          threadID: threadID
-        )
+        let changeObservation: CorpusChangeObservation?
+        if localEditTurnID == nil {
+          changeObservation = await beginCorpusChangeObservation()
+        } else {
+          changeObservation = nil
+        }
+        let reply: String
+        switch chatThread.runtime {
+        case .openClaw:
+          let sessionKey = openClawSessionKey(for: threadID) ?? openClawSessionKey
+          reply = try await sendOpenClawRequest(
+            messages: requestMessages,
+            sessionKey: sessionKey,
+            threadID: threadID,
+            localEditTurnID: localEditTurnID
+          )
+        case .codex:
+          guard let localEditTurnID else {
+            throw CodexAppServerError.invalidResponse(
+              "choose an Org2 corpus before sending a Codex message"
+            )
+          }
+          reply = try await sendCodexRequest(
+            messages: requestMessages,
+            threadID: threadID,
+            localEditTurnID: localEditTurnID
+          )
+        }
+        codexActiveTurnsByThreadID.removeValue(forKey: threadID)
         let assistantMessageID = insertOpenClawReply(reply, after: userMessageID, in: threadID, changeSummary: nil)
         clearOpenClawCompletedRunPresentation(for: threadID)
         removeFirstPendingOpenClawUserMessage(in: threadID)
         openClawStatusText = openClawPendingUserMessageIDs(for: threadID).isEmpty
-          ? "OpenClaw replied"
+          ? "\(chatThread.runtime.title) replied"
           : openClawQueuedStatusText()
 
-        let changeSummary = await openClawChangeSummary(since: changeObservation, referencedIn: reply)
+        let exactLocalChangeSummary: OpenClawCorpusChangeSummary?
+        if let localEditTurnID {
+          exactLocalChangeSummary = await localEditBroker().consumeChangeSummary(for: localEditTurnID)
+          await localEditBroker().endTurn(localEditTurnID)
+          openClawLocalEditCorpusRootsByTurnID.removeValue(forKey: localEditTurnID)
+        } else {
+          exactLocalChangeSummary = nil
+        }
+        let changeSummary: OpenClawCorpusChangeSummary?
+        if localEditTurnID != nil {
+          changeSummary = exactLocalChangeSummary
+        } else if let changeObservation {
+          changeSummary = await openClawChangeSummary(since: changeObservation, referencedIn: reply)
+        } else {
+          changeSummary = nil
+        }
         if let changeSummary {
           replaceOpenClawChangeSummary(changeSummary, for: assistantMessageID, in: threadID)
           await refreshAfterOpenClawChanges(changeSummary)
@@ -10985,19 +11117,25 @@ public final class WorkspaceStore: ObservableObject {
           await refreshSelectedDetailFromDisk()
         }
         if openClawPendingUserMessageIDs(for: threadID).isEmpty {
-          if openClawGatewayStateByThreadID[threadID] == .fallbackHTTP {
+          if chatThread.runtime == .openClaw,
+             openClawGatewayStateByThreadID[threadID] == .fallbackHTTP {
             openClawStatusText = "OpenClaw replied via HTTP compatibility"
           } else {
             openClawStatusText = changeSummary.map {
               ($0.totalInsertions == 0 && $0.totalDeletions == 0)
                 ? $0.title
                 : "\($0.title): +\($0.totalInsertions) -\($0.totalDeletions)"
-            } ?? "OpenClaw replied"
+            } ?? "\(chatThread.runtime.title) replied"
           }
         } else {
           openClawStatusText = openClawQueuedStatusText()
         }
       } catch {
+        codexActiveTurnsByThreadID.removeValue(forKey: threadID)
+        if let localEditTurnID {
+          await localEditBroker().endTurn(localEditTurnID)
+          openClawLocalEditCorpusRootsByTurnID.removeValue(forKey: localEditTurnID)
+        }
         let failureText = Self.openClawSendFailureText(from: error)
         openClawStatusText = failureText
         if openClawChatThreads.first(where: { $0.id == threadID })?.pendingTurn != nil {
@@ -11016,7 +11154,7 @@ public final class WorkspaceStore: ObservableObject {
 
   func recoverPendingOpenClawTurns() async {
     let threadIDs = openClawChatThreads.compactMap { thread in
-      thread.pendingTurn == nil ? nil : thread.id
+      thread.runtime == .openClaw && thread.pendingTurn != nil ? thread.id : nil
     }
     for threadID in threadIDs {
       await recoverPendingOpenClawTurn(in: threadID)
@@ -11122,13 +11260,261 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
+  public func refreshCodexAccount() async {
+    do {
+      codexAccountState = try await localCodexClient().accountState()
+    } catch {
+      codexAccountState = .unavailable(error.localizedDescription)
+    }
+  }
+
+  public func beginCodexChatGPTLogin() async {
+    isCodexSigningIn = true
+    do {
+      let login = try await localCodexClient().beginChatGPTLogin()
+      codexLoginURL = login.authURL
+      guard NSWorkspace.shared.open(login.authURL) else {
+        throw CodexAppServerError.invalidResponse("macOS could not open the sign-in page")
+      }
+      openClawStatusText = "Finish signing in with ChatGPT in your browser"
+    } catch {
+      isCodexSigningIn = false
+      codexAccountState = .unavailable(error.localizedDescription)
+      openClawStatusText = error.localizedDescription
+    }
+  }
+
+  private func sendCodexRequest(
+    messages: [OpenClawChatMessage],
+    threadID: UUID,
+    localEditTurnID: String
+  ) async throws -> String {
+    guard let corpusRoot else {
+      throw CodexAppServerError.invalidResponse("choose an Org2 corpus before using Codex")
+    }
+    guard let userMessage = messages.last(where: { $0.role == .user }) else {
+      throw CodexAppServerError.invalidResponse("no user message was available")
+    }
+
+    let client = localCodexClient()
+    let account = try await client.accountState()
+    codexAccountState = account
+    guard case .chatGPT = account else {
+      if case .apiKey = account {
+        throw CodexAppServerError.invalidResponse(
+          "Codex is using an API key. Sign in with ChatGPT in Configure to use subscription access."
+        )
+      }
+      throw CodexAppServerError.notAuthenticated
+    }
+
+    guard let index = openClawChatThreads.firstIndex(where: { $0.id == threadID }),
+          openClawChatThreads[index].runtime == .codex
+    else {
+      throw CodexAppServerError.invalidResponse("the selected thread is not a Codex thread")
+    }
+    openClawGatewayStateByThreadID[threadID] = .connecting
+    openClawGatewayDetailByThreadID[threadID] = "Local Codex App Server"
+    if selectedOpenClawChatThreadID == threadID {
+      openClawStatusText = "Connecting to Codex"
+    }
+
+    let existingRuntimeThreadID = openClawChatThreads[index].runtimeThreadID
+    let runtimeThreadID = try await client.ensureThread(
+      existingThreadID: existingRuntimeThreadID,
+      cwd: corpusRoot
+    )
+    if runtimeThreadID != existingRuntimeThreadID,
+       let currentIndex = openClawChatThreads.firstIndex(where: { $0.id == threadID }) {
+      openClawChatThreads[currentIndex] = openClawChatThreads[currentIndex]
+        .replacingOpenClawChatMetadata(runtimeThreadID: .some(runtimeThreadID))
+      persistOpenClawTranscript()
+    }
+    openClawGatewayStateByThreadID[threadID] = .connected
+    openClawGatewayDetailByThreadID[threadID] = "Local Codex App Server"
+    if selectedOpenClawChatThreadID == threadID {
+      openClawStatusText = "Codex is working"
+    }
+
+    let result = try await client.runTurn(
+      threadID: runtimeThreadID,
+      turnID: localEditTurnID,
+      message: Self.expandingOpenClawAgentCommand(userMessage).content,
+      workspaceContext: currentOpenClawWorkspaceContext(localEditTurnID: nil)
+        .codexSystemPrompt(),
+      attachments: userMessage.attachments,
+      cwd: corpusRoot,
+      clientUserMessageID: userMessage.id
+    )
+    let reply = result.reply.trimmingCharacters(in: .whitespacesAndNewlines)
+    return reply.isEmpty
+      ? "Codex completed the turn without a text response."
+      : reply
+  }
+
+  private func localCodexClient() -> CodexAppServerClient {
+    if let codexAppServerClient {
+      return codexAppServerClient
+    }
+    let client = CodexAppServerClient(
+      eventHandler: { [weak self] event in
+        await self?.handleCodexAppServerEvent(event)
+      },
+      dynamicToolHandler: { [weak self] call in
+        guard let self else {
+          return CodexDynamicToolResult(success: false, text: "Org2 Workspace was closed.")
+        }
+        return await self.handleCodexDynamicToolCall(call)
+      }
+    )
+    codexAppServerClient = client
+    return client
+  }
+
+  private func handleCodexDynamicToolCall(
+    _ call: CodexDynamicToolCall
+  ) async -> CodexDynamicToolResult {
+    let command: String
+    switch call.tool {
+    case "org2_workspace_read":
+      command = OpenClawLocalEditBroker.readCommand
+    case "org2_workspace_patch_preview":
+      command = OpenClawLocalEditBroker.previewCommand
+    case "org2_workspace_patch_apply":
+      command = OpenClawLocalEditBroker.applyCommand
+    default:
+      return CodexDynamicToolResult(
+        success: false,
+        text: #"{"error":{"code":"UNSUPPORTED_COMMAND","message":"Unsupported Org2 workspace tool."}}"#
+      )
+    }
+
+    let paramsJSON: String?
+    if let data = try? JSONEncoder().encode(call.arguments) {
+      paramsJSON = String(data: data, encoding: .utf8)
+    } else {
+      paramsJSON = nil
+    }
+    let result = await localEditBroker().handle(command: command, paramsJSON: paramsJSON)
+    if result.ok {
+      return CodexDynamicToolResult(
+        success: true,
+        text: result.payloadJSON ?? #"{"ok":true}"#
+      )
+    }
+    let errorObject: JSONValue = .object([
+      "error": .object([
+        "code": .string(result.errorCode ?? "LOCAL_EDIT_FAILED"),
+        "message": .string(result.errorMessage ?? "Local Org2 edit failed.")
+      ])
+    ])
+    let errorText = (try? JSONEncoder().encode(errorObject))
+      .flatMap { String(data: $0, encoding: .utf8) }
+      ?? #"{"error":{"code":"LOCAL_EDIT_FAILED","message":"Local Org2 edit failed."}}"#
+    return CodexDynamicToolResult(success: false, text: errorText)
+  }
+
+  private func handleCodexAppServerEvent(_ event: CodexAppServerEvent) async {
+    switch event {
+    case .connectionChanged(let isConnected, let detail):
+      if !isConnected {
+        for threadID in openClawSendingThreadIDs where
+          openClawChatThreads.first(where: { $0.id == threadID })?.runtime == .codex {
+          openClawGatewayStateByThreadID[threadID] = .disconnected
+          openClawGatewayDetailByThreadID[threadID] = detail
+        }
+      }
+    case .accountUpdated(let authMode, let plan):
+      if authMode == "chatgpt" {
+        let currentEmail: String?
+        if case .chatGPT(let email, _) = codexAccountState {
+          currentEmail = email
+        } else {
+          currentEmail = nil
+        }
+        codexAccountState = .chatGPT(email: currentEmail, plan: plan)
+      } else if authMode == "apikey" {
+        codexAccountState = .apiKey
+      } else if let authMode {
+        codexAccountState = .other(authMode)
+      } else {
+        codexAccountState = .signedOut
+      }
+    case .loginCompleted(_, let success, let error):
+      isCodexSigningIn = false
+      if success {
+        await refreshCodexAccount()
+        openClawStatusText = "Signed in to Codex with ChatGPT"
+      } else {
+        codexAccountState = .unavailable(error ?? "ChatGPT sign-in failed")
+        openClawStatusText = error ?? "ChatGPT sign-in failed"
+      }
+    case .turnStarted(let runtimeThreadID, let turnID):
+      guard let threadID = localChatThreadID(forRuntimeThreadID: runtimeThreadID) else { return }
+      codexActiveTurnsByThreadID[threadID] = (runtimeThreadID, turnID)
+      openClawGatewayStateByThreadID[threadID] = .connected
+      openClawActiveRunIDByThreadID[threadID] = turnID
+      if selectedOpenClawChatThreadID == threadID {
+        openClawStatusText = "Codex is working"
+      }
+    case .agentMessageDelta(let runtimeThreadID, _, let delta):
+      guard let threadID = localChatThreadID(forRuntimeThreadID: runtimeThreadID) else { return }
+      openClawStreamingReplyByThreadID[threadID, default: ""] += delta
+      if selectedOpenClawChatThreadID == threadID {
+        openClawStatusText = "Codex is replying"
+      }
+    case .reasoningDelta(let runtimeThreadID, _, let delta):
+      guard let threadID = localChatThreadID(forRuntimeThreadID: runtimeThreadID) else { return }
+      openClawReasoningByThreadID[threadID, default: ""] += delta
+    case .activity(
+      let runtimeThreadID,
+      let turnID,
+      let itemID,
+      let title,
+      let detail,
+      let status
+    ):
+      guard let threadID = localChatThreadID(forRuntimeThreadID: runtimeThreadID) else { return }
+      let activity = OpenClawRunActivity(
+        id: itemID,
+        runID: turnID,
+        kind: .tool,
+        title: title,
+        detail: detail,
+        status: status
+      )
+      var activities = openClawRunActivitiesByThreadID[threadID] ?? []
+      if let index = activities.firstIndex(where: { $0.id == itemID }) {
+        activities[index] = activity
+      } else {
+        activities.append(activity)
+      }
+      openClawRunActivitiesByThreadID[threadID] = Array(activities.suffix(80))
+    case .warning(let runtimeThreadID, let message):
+      if let runtimeThreadID,
+         let threadID = localChatThreadID(forRuntimeThreadID: runtimeThreadID) {
+        openClawGatewayDetailByThreadID[threadID] = message
+        if selectedOpenClawChatThreadID == threadID {
+          openClawStatusText = message
+        }
+      }
+    }
+  }
+
+  private func localChatThreadID(forRuntimeThreadID runtimeThreadID: String) -> UUID? {
+    openClawChatThreads.first {
+      $0.runtime == .codex && $0.runtimeThreadID == runtimeThreadID
+    }?.id
+  }
+
   private func sendOpenClawRequest(
     messages: [OpenClawChatMessage],
     sessionKey: String,
-    threadID: UUID
+    threadID: UUID,
+    localEditTurnID: String?
   ) async throws -> String {
     let agentID = OpenClawChatClient.openClawAgentHeaderValue(for: openClawAgentID)
-    let workspaceContext = currentOpenClawWorkspaceContext()
+    let workspaceContext = currentOpenClawWorkspaceContext(localEditTurnID: localEditTurnID)
     let requestMessages = messages.map(Self.expandingOpenClawAgentCommand)
     guard let latestUserMessage = requestMessages.last(where: { $0.role == .user }) else {
       throw OpenClawGatewayError.protocolFailure("no user message was available")
@@ -11192,7 +11578,7 @@ public final class WorkspaceStore: ObservableObject {
         messages: requestMessages,
         agentID: agentID,
         sessionKey: sessionKey,
-        workspaceContext: workspaceContext
+        workspaceContext: currentOpenClawWorkspaceContext(localEditTurnID: nil)
       )
     } catch {
       if !Self.openClawRunMayStillBeWorking(after: error) {
@@ -11490,6 +11876,7 @@ public final class WorkspaceStore: ObservableObject {
   private func openClawSessionKey(for threadID: UUID) -> String? {
     guard let index = openClawChatThreads.firstIndex(where: { $0.id == threadID }) else { return nil }
     let thread = openClawChatThreads[index]
+    guard thread.runtime == .openClaw else { return thread.sessionKey }
     let sessionKey = Self.agentScopedOpenClawSessionKey(thread.sessionKey, agentID: openClawAgentID)
     if sessionKey != thread.sessionKey {
       openClawChatThreads[index] = thread.replacingOpenClawChatMetadata(sessionKey: sessionKey)
@@ -11561,7 +11948,7 @@ public final class WorkspaceStore: ObservableObject {
 
   nonisolated private static func openClawSendFailureText(from error: Error) -> String {
     let message = error.localizedDescription.trimmingCharacters(in: .whitespacesAndNewlines)
-    return message.isEmpty ? "OpenClaw message failed to send." : message
+    return message.isEmpty ? "AI chat message failed to send." : message
   }
 
   private func beginCorpusChangeObservation() async -> CorpusChangeObservation {
@@ -12151,10 +12538,13 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   private func openClawQueuedStatusText() -> String {
+    let runtime = selectedOpenClawChatThreadID
+      .flatMap { id in openClawChatThreads.first(where: { $0.id == id })?.runtime }
+      ?? .openClaw
     if openClawQueuedMessageCount > 1 {
-      return "Sending to OpenClaw... \(openClawQueuedMessageCount - 1) queued"
+      return "Sending to \(runtime.title)... \(openClawQueuedMessageCount - 1) queued"
     }
-    return "Sending to OpenClaw..."
+    return "Sending to \(runtime.title)..."
   }
 
   public func resetOpenClawChat() {
@@ -12164,6 +12554,13 @@ public final class WorkspaceStore: ObservableObject {
     clearOpenClawDraftForSelectedThread()
     openClawPendingAttachments = []
     if let threadID {
+      if let index = openClawChatThreads.firstIndex(where: { $0.id == threadID }),
+         openClawChatThreads[index].runtime == .codex {
+        openClawChatThreads[index] = openClawChatThreads[index]
+          .replacingOpenClawChatMetadata(runtimeThreadID: .some(nil))
+        codexActiveTurnsByThreadID.removeValue(forKey: threadID)
+        persistOpenClawTranscript()
+      }
       if let runID = openClawChatThreads.first(where: { $0.id == threadID })?.pendingTurn?.runID {
         clearOpenClawPendingTurn(runID, in: threadID, shouldPersist: true)
       }
@@ -12174,7 +12571,9 @@ public final class WorkspaceStore: ObservableObject {
     syncSelectedOpenClawSendState()
     openClawChatScrollPosition = nil
     openClawAssistantChatScrollPosition = nil
-    openClawStatusText = Self.openClawStatusText(settings: currentOpenClawSettings())
+    openClawStatusText = selectedAIChatRuntime == .codex
+      ? "Ready for a Codex message"
+      : Self.openClawStatusText(settings: currentOpenClawSettings())
   }
 
   public var selectedOpenClawChatThread: OpenClawChatThread? {
@@ -12244,8 +12643,12 @@ public final class WorkspaceStore: ObservableObject {
     statusText = "Created resource thread"
   }
 
-  public func createOpenClawChatThread() {
-    createOpenClawChatThread(title: "New Chat", statusText: "New OpenClaw chat")
+  public func createOpenClawChatThread(runtime: AIChatRuntime = .openClaw) {
+    createOpenClawChatThread(
+      title: "New Chat",
+      statusText: "New \(runtime.title) chat",
+      runtime: runtime
+    )
   }
 
   @discardableResult
@@ -12253,10 +12656,12 @@ public final class WorkspaceStore: ObservableObject {
     title: String,
     statusText: String,
     resource: OpenClawResourceReference? = nil,
-    sessionKey: String? = nil
+    sessionKey: String? = nil,
+    runtime: AIChatRuntime = .openClaw
   ) -> OpenClawChatThread {
     let thread = OpenClawChatThread(
       title: title,
+      runtime: runtime,
       sessionKey: sessionKey ?? Self.makeOpenClawSessionKey(agentID: openClawAgentID),
       resource: resource
     )
@@ -12272,7 +12677,12 @@ public final class WorkspaceStore: ObservableObject {
       ensureOpenClawChatThread()
       return
     }
-    createOpenClawChatThread(title: Self.normalizedOpenClawThreadTitle(title), statusText: statusText)
+    let runtime = selectedOpenClawChatThread?.runtime ?? .openClaw
+    createOpenClawChatThread(
+      title: Self.normalizedOpenClawThreadTitle(title),
+      statusText: statusText.replacingOccurrences(of: "OpenClaw", with: runtime.title),
+      runtime: runtime
+    )
   }
 
   private func prepareOpenClawThreadForNodeBrief(title: String) {
@@ -12340,7 +12750,7 @@ public final class WorkspaceStore: ObservableObject {
         let next = remainingThreads[replacementIndex]
         selectOpenClawChatThread(next.id, persistsSelection: true)
       } else {
-        createOpenClawChatThread()
+        createOpenClawChatThread(runtime: thread.runtime)
       }
     }
   }
@@ -12445,6 +12855,11 @@ public final class WorkspaceStore: ObservableObject {
     restoreOpenClawDraft(for: thread.id)
     openClawPendingAttachments = []
     syncSelectedOpenClawSendState()
+    openClawStatusText = isSendingOpenClawMessage
+      ? "\(thread.runtime.title) is working"
+      : thread.runtime == .codex
+        ? "Ready for a Codex message"
+        : Self.openClawStatusText(settings: currentOpenClawSettings())
     openClawChatScrollPosition = nil
     openClawAssistantChatScrollPosition = nil
     openClawChatSelectionGeneration &+= 1
@@ -12570,7 +12985,9 @@ public final class WorkspaceStore: ObservableObject {
       title: title,
       createdAt: current.createdAt,
       updatedAt: messages.last?.createdAt ?? Date(),
+      runtime: current.runtime,
       sessionKey: current.sessionKey,
+      runtimeThreadID: current.runtimeThreadID,
       messages: messages,
       isPinned: current.isPinned,
       isArchived: current.isArchived,
@@ -12906,6 +13323,7 @@ public final class WorkspaceStore: ObservableObject {
     remoteCorpusPath: String,
     briefsStartNewThread: Bool? = nil,
     autoSettleInterval: OpenClawAutoSettleInterval? = nil,
+    localEditsEnabled: Bool? = nil,
     token: String,
     clearToken: Bool
   ) -> Bool {
@@ -12923,6 +13341,7 @@ public final class WorkspaceStore: ObservableObject {
       .trimmingCharacters(in: .whitespacesAndNewlines)
     let remoteCorpusPath = remoteCorpusPath.trimmingCharacters(in: .whitespacesAndNewlines)
     let briefsStartNewThread = briefsStartNewThread ?? openClawBriefsStartNewThread
+    let localEditsEnabled = localEditsEnabled ?? openClawLocalEditsEnabled
     let normalizedToken = OpenClawGatewaySettings.normalizedBearerToken(token)
 
     do {
@@ -12943,6 +13362,8 @@ public final class WorkspaceStore: ObservableObject {
       personalAssigneeNamesText = personalAssigneeNames
       openClawRemoteCorpusPath = remoteCorpusPath
       openClawBriefsStartNewThread = briefsStartNewThread
+      openClawLocalEditsEnabled = localEditsEnabled
+      defaults.set(localEditsEnabled, forKey: openClawLocalEditsEnabledKey)
       if let autoSettleInterval {
         setOpenClawAutoSettleInterval(autoSettleInterval)
       }
@@ -12963,6 +13384,7 @@ public final class WorkspaceStore: ObservableObject {
       Task { @MainActor [weak self] in
         await self?.refreshOpenClawCommands(force: true)
       }
+      restartOpenClawLocalEditNode()
       return true
     } catch {
       openClawStatusText = error.localizedDescription
@@ -12975,7 +13397,12 @@ public final class WorkspaceStore: ObservableObject {
     do {
       let client = OpenClawGatewayClient(settings: currentOpenClawSettings(allowKeychainRead: true))
       try await client.prepare()
-      openClawStatusText = "OpenClaw Gateway device is paired and live"
+      if openClawLocalEditsEnabled {
+        startOpenClawLocalEditNode()
+        openClawStatusText = "OpenClaw operator access is live; local edit node pairing requested"
+      } else {
+        openClawStatusText = "OpenClaw Gateway device is paired and live"
+      }
       await refreshOpenClawCommands(force: true)
     } catch let error as OpenClawGatewayError {
       openClawStatusText = error.localizedDescription
@@ -12984,8 +13411,363 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
+  public var openClawLocalEditNodeDisplayName: String {
+    let bundleID = Bundle.main.bundleIdentifier ?? ""
+    return bundleID.hasSuffix(".codex")
+      ? "Org2 Workspace Local Edits (Codex)"
+      : "Org2 Workspace Local Edits"
+  }
+
+  private func localEditBroker() -> OpenClawLocalEditBroker {
+    if let openClawLocalEditBroker {
+      return openClawLocalEditBroker
+    }
+    let broker = OpenClawLocalEditBroker(
+      documentReader: { [weak self] turnID, path in
+        guard let self else { throw OpenClawLocalEditError.inactiveTurn }
+        try self.requireCurrentOpenClawLocalEditCorpus(for: turnID)
+        return try self.openClawLocalEditDocument(at: path)
+      },
+      replacementApplier: { [weak self] turnID, replacements in
+        guard let self else { throw OpenClawLocalEditError.inactiveTurn }
+        try self.requireCurrentOpenClawLocalEditCorpus(for: turnID)
+        return try await self.applyOpenClawLocalEditReplacements(replacements)
+      }
+    )
+    openClawLocalEditBroker = broker
+    return broker
+  }
+
+  private func requireCurrentOpenClawLocalEditCorpus(for turnID: String) throws {
+    guard let expectedRoot = openClawLocalEditCorpusRootsByTurnID[turnID],
+          corpusRoot?.standardizedFileURL == expectedRoot
+    else {
+      throw OpenClawLocalEditError.invalidRequest(
+        "the active corpus changed after this chat turn started"
+      )
+    }
+  }
+
+  private func startOpenClawLocalEditNode() {
+    guard openClawLocalEditsEnabled else {
+      openClawLocalEditNodeState = .disabled
+      openClawLocalEditNodeDetail = ""
+      return
+    }
+    guard corpusRoot != nil else {
+      openClawLocalEditNodeState = .stopped
+      openClawLocalEditNodeDetail = "Choose a corpus before starting local edits."
+      return
+    }
+    guard openClawLocalEditNodeTask == nil else { return }
+
+    let node = OpenClawLocalEditNode(
+      settings: currentOpenClawSettings(allowKeychainRead: true),
+      broker: localEditBroker(),
+      displayName: openClawLocalEditNodeDisplayName
+    ) { [weak self] state, detail in
+      guard let self else { return }
+      self.openClawLocalEditNodeState = state
+      self.openClawLocalEditNodeDetail = detail ?? ""
+    }
+    openClawLocalEditNode = node
+    openClawLocalEditNodeTask = Task { @MainActor [weak self, node] in
+      await node.run()
+      guard let self, self.openClawLocalEditNode === node else { return }
+      self.openClawLocalEditNodeTask = nil
+      self.openClawLocalEditNode = nil
+    }
+  }
+
+  private func restartOpenClawLocalEditNode() {
+    let previousNode = openClawLocalEditNode
+    openClawLocalEditNodeTask?.cancel()
+    openClawLocalEditNodeTask = nil
+    openClawLocalEditNode = nil
+    if !openClawLocalEditsEnabled {
+      openClawLocalEditNodeState = .disabled
+      openClawLocalEditNodeDetail = ""
+    }
+    Task { @MainActor [weak self] in
+      await previousNode?.stop()
+      guard let self, self.openClawLocalEditsEnabled else { return }
+      self.startOpenClawLocalEditNode()
+    }
+  }
+
+  func openClawLocalEditDocument(at rawPath: String) throws -> OpenClawLocalEditDocument {
+    let url = try openClawLocalEditURL(for: rawPath)
+    let relativePath = relativePath(url.path)
+    guard FileManager.default.fileExists(atPath: url.path) else {
+      return OpenClawLocalEditDocument(
+        relativePath: relativePath,
+        text: "",
+        origin: .missing
+      )
+    }
+    let diskText = try String(contentsOf: url, encoding: .utf8)
+    guard diskText.utf8.count <= Self.openClawChangeSnapshotMaxFileBytes else {
+      throw OpenClawLocalEditError.oversizedRequest
+    }
+
+    let selectedFile = selectedEntrySource?.file ?? selectedLocation?.file
+    guard selectedFile.map({
+      URL(fileURLWithPath: $0).standardizedFileURL.path == url.standardizedFileURL.path
+    }) == true else {
+      return OpenClawLocalEditDocument(
+        relativePath: relativePath,
+        text: diskText,
+        origin: .disk
+      )
+    }
+
+    if isLiveFileEditorSelected, let source = selectedEntrySource {
+      guard source.startLine == 1, !source.isSubtree else {
+        throw OpenClawLocalEditError.invalidRequest("the selected file editor is not a whole-file editor")
+      }
+      return OpenClawLocalEditDocument(
+        relativePath: relativePath,
+        text: editableEntryText,
+        origin: liveFileEditorHasUnsavedChanges ? .editor : .disk
+      )
+    }
+
+    if isEditingEntry, let source = selectedEntrySource {
+      let draft = sourceEditorLocalDraftText ?? editableEntryText
+      let effective = try Self.openClawEffectiveFileText(
+        diskText: diskText,
+        source: source,
+        replacement: draft
+      )
+      return OpenClawLocalEditDocument(
+        relativePath: relativePath,
+        text: effective,
+        origin: entryEditorHasUnsavedChanges ? .editor : .disk
+      )
+    }
+
+    if let block = activeEditingBlock,
+       let source = selectedEntrySource,
+       transientDraftBlock == nil {
+      let sourceBlock = activeBlockOriginals[block.id] ?? block
+      let effective = try Self.openClawEffectiveFileText(
+        diskText: diskText,
+        source: EntrySource(
+          file: source.file,
+          startLine: sourceBlock.startLine,
+          endLineExclusive: sourceBlock.endLineExclusive,
+          text: sourceBlock.rawText,
+          isSubtree: false
+        ),
+        replacement: saveReplacementText(for: block)
+      )
+      return OpenClawLocalEditDocument(
+        relativePath: relativePath,
+        text: effective,
+        origin: .editor
+      )
+    }
+
+    return OpenClawLocalEditDocument(
+      relativePath: relativePath,
+      text: diskText,
+      origin: .disk
+    )
+  }
+
+  func applyOpenClawLocalEditReplacements(
+    _ replacements: [OpenClawLocalEditReplacement]
+  ) async throws -> OpenClawLocalEditApplyResult {
+    guard let corpusRoot else {
+      throw OpenClawLocalEditError.invalidRequest("no active corpus")
+    }
+    var documents: [String: OpenClawLocalEditDocument] = [:]
+    var urls: [String: URL] = [:]
+    var changes: [OpenClawCorpusFileChange] = []
+
+    for replacement in replacements {
+      let url = try openClawLocalEditURL(for: replacement.relativePath)
+      let document = try openClawLocalEditDocument(at: replacement.relativePath)
+      if replacement.createsFile {
+        guard document.origin == .missing else {
+          throw OpenClawLocalEditError.staleDocument(document.relativePath)
+        }
+      } else {
+        guard document.origin != .missing,
+              document.sha256 == replacement.expectedSHA256
+        else {
+          throw OpenClawLocalEditError.staleDocument(document.relativePath)
+        }
+      }
+      documents[replacement.relativePath] = document
+      urls[replacement.relativePath] = url
+      if let change = OpenClawLocalEditBroker.fileChange(
+        path: document.relativePath,
+        before: replacement.createsFile ? nil : document.text,
+        after: replacement.replacementText
+      ) {
+        changes.append(change)
+      }
+    }
+
+    let selectedPath = selectedEntrySource.map {
+      URL(fileURLWithPath: $0.file).standardizedFileURL.path
+    }
+    if replacements.contains(where: { urls[$0.relativePath]?.standardizedFileURL.path == selectedPath }) {
+      cancelLiveFileEditorAutosave(resetStatus: false)
+    }
+
+    var writtenFiles: [(url: URL, diskText: String?, effectiveText: String)] = []
+    do {
+      for replacement in replacements {
+        guard let url = urls[replacement.relativePath],
+              let document = documents[replacement.relativePath]
+        else {
+          throw OpenClawLocalEditError.invalidRequest("missing prepared replacement")
+        }
+        let diskText = FileManager.default.fileExists(atPath: url.path)
+          ? try String(contentsOf: url, encoding: .utf8)
+          : nil
+        try Self.writeFileText(
+          replacement.replacementText,
+          to: url.path,
+          operation: "AI local edit"
+        )
+        writtenFiles.append((url, diskText, document.text))
+      }
+    } catch {
+      for written in writtenFiles.reversed() {
+        if let diskText = written.diskText {
+          try? Self.writeFileText(
+            diskText,
+            to: written.url.path,
+            allowDestructiveReplacement: true,
+            operation: "AI local edit rollback"
+          )
+        } else {
+          try? FileManager.default.removeItem(at: written.url)
+        }
+      }
+      throw error
+    }
+
+    for replacement in replacements {
+      guard let document = documents[replacement.relativePath],
+            let url = urls[replacement.relativePath]
+      else { continue }
+      recordWorkspaceUndo(
+        .fileSnapshot(
+          file: url.standardizedFileURL.path,
+          previous: replacement.createsFile ? nil : document.text,
+          next: replacement.replacementText
+        )
+      )
+      invalidateCanonicalDocumentCache(for: url.path)
+      upsertCorpusFile(corpusFile(for: url, corpusRoot: corpusRoot))
+    }
+
+    if let selectedLocation,
+       let selectedReplacement = replacements.first(where: {
+         urls[$0.relativePath]?.standardizedFileURL.path
+           == URL(fileURLWithPath: selectedLocation.file).standardizedFileURL.path
+       }) {
+      isEditingEntry = false
+      resetBlockState()
+      await loadEntrySource(for: selectedLocation)
+      if isLiveFileEditorSelected, selectedEntrySourceMode == .page {
+        if let selectedEntrySource {
+          self.selectedEntrySource = Self.entrySource(
+            selectedEntrySource,
+            replacingText: selectedReplacement.replacementText
+          )
+        }
+        editableEntryText = selectedReplacement.replacementText
+        liveFileEditorStatusText = "Saved by AI"
+      }
+    }
+    scheduleAgendaRefresh(preserveSelection: true)
+
+    return OpenClawLocalEditApplyResult(
+      summary: OpenClawCorpusChangeSummary(files: changes)
+    )
+  }
+
+  private func openClawLocalEditURL(for rawPath: String) throws -> URL {
+    guard let corpusRoot else {
+      throw OpenClawLocalEditError.invalidRequest("no active corpus")
+    }
+    let path = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !path.isEmpty,
+          !path.hasPrefix("/"),
+          !path.split(separator: "/").contains(where: { $0 == ".." })
+    else {
+      throw OpenClawLocalEditError.invalidRequest("path must be relative to the active corpus")
+    }
+    let root = corpusRoot.standardizedFileURL.resolvingSymlinksInPath()
+    let candidate = root.appendingPathComponent(path).standardizedFileURL
+    let resolvedParent = candidate.deletingLastPathComponent().resolvingSymlinksInPath()
+    guard resolvedParent.path == root.path || resolvedParent.path.hasPrefix(root.path + "/") else {
+      throw OpenClawLocalEditError.invalidRequest("path escapes the active corpus")
+    }
+    guard FileManager.default.fileExists(atPath: resolvedParent.path) else {
+      throw OpenClawLocalEditError.invalidRequest("parent directory does not exist")
+    }
+    if FileManager.default.fileExists(atPath: candidate.path) {
+      let resolved = candidate.resolvingSymlinksInPath()
+      guard resolved.path.hasPrefix(root.path + "/") else {
+        throw OpenClawLocalEditError.invalidRequest("path escapes the active corpus")
+      }
+    }
+    guard Self.openClawChangeSnapshotAllowedExtensions.contains(candidate.pathExtension.lowercased()) else {
+      throw OpenClawLocalEditError.invalidRequest("unsupported file type")
+    }
+    return candidate
+  }
+
+  nonisolated private static func openClawEffectiveFileText(
+    diskText: String,
+    source: EntrySource,
+    replacement: String
+  ) throws -> String {
+    let normalizedDisk = normalizeLineEndings(diskText)
+    var lines = normalizedDisk
+      .split(separator: "\n", omittingEmptySubsequences: false)
+      .map(String.init)
+    let startIndex = source.startLine - 1
+    let endIndex = source.endLineExclusive - 1
+    guard startIndex >= 0,
+          startIndex <= lines.count,
+          endIndex >= startIndex,
+          endIndex <= lines.count
+    else {
+      throw OpenClawLocalEditError.invalidRequest("the selected editor range is no longer valid")
+    }
+    let currentSource = lines[startIndex..<endIndex].joined(separator: "\n")
+    guard currentSource == normalizeLineEndings(source.text) else {
+      throw OpenClawLocalEditError.staleDocument(
+        URL(fileURLWithPath: source.file).lastPathComponent
+      )
+    }
+    let normalizedReplacement = normalizeLineEndings(replacement)
+    let replacementLines = normalizedReplacement.isEmpty
+      ? []
+      : normalizedReplacement
+        .split(separator: "\n", omittingEmptySubsequences: false)
+        .map(String.init)
+    lines.replaceSubrange(startIndex..<endIndex, with: replacementLines)
+    var output = lines.joined(separator: "\n")
+    if normalizedDisk.hasSuffix("\n"), !output.isEmpty, !output.hasSuffix("\n") {
+      output += "\n"
+    }
+    return output
+  }
+
   public var openClawAvailableSlashCommands: [OpenClawSlashCommand] {
     OpenClawSlashCommands.merged(with: openClawGatewayCommands)
+  }
+
+  public var activeAIChatGatewayCommands: [OpenClawSlashCommand] {
+    selectedAIChatRuntime == .openClaw ? openClawGatewayCommands : []
   }
 
   public var openClawCommandDiscoveryID: String {
@@ -15353,8 +16135,8 @@ public final class WorkspaceStore: ObservableObject {
 
   private func restoreFileSnapshot(
     file: String,
-    text: String,
-    expectedCurrent: String,
+    text: String?,
+    expectedCurrent: String?,
     direction: String
   ) async throws {
     let standardized = URL(fileURLWithPath: file).standardizedFileURL.path
@@ -15368,14 +16150,22 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     try await Task.detached(priority: .userInitiated) {
-      let current = try Self.fileText(file: standardized)
-      guard Self.normalizeLineEndings(current) == Self.normalizeLineEndings(expectedCurrent) else {
+      let current = FileManager.default.fileExists(atPath: standardized)
+        ? try Self.fileText(file: standardized)
+        : nil
+      guard current.map(Self.normalizeLineEndings)
+        == expectedCurrent.map(Self.normalizeLineEndings)
+      else {
         throw WorkspaceEditError.fileChanged(file: standardized)
       }
-      try Self.writeFileText(text, to: standardized, allowDestructiveReplacement: true)
+      if let text {
+        try Self.writeFileText(text, to: standardized, allowDestructiveReplacement: true)
+      } else if FileManager.default.fileExists(atPath: standardized) {
+        try FileManager.default.removeItem(atPath: standardized)
+      }
     }.value
 
-    if affectsSelectedFile {
+    if affectsSelectedFile, let text {
       isEditingEntry = false
       resetBlockState()
       if isLiveFileEditorSelected, selectedEntrySourceMode == .page {
@@ -15388,10 +16178,23 @@ public final class WorkspaceStore: ObservableObject {
 
     invalidateCanonicalDocumentCache(for: standardized)
     if let corpusRoot {
-      upsertCorpusFile(corpusFile(for: URL(fileURLWithPath: standardized), corpusRoot: corpusRoot))
+      if FileManager.default.fileExists(atPath: standardized) {
+        upsertCorpusFile(corpusFile(for: URL(fileURLWithPath: standardized), corpusRoot: corpusRoot))
+      } else {
+        corpusFiles.removeAll {
+          URL(fileURLWithPath: $0.path).standardizedFileURL.path == standardized
+        }
+      }
     }
 
-    if let selectedLocation,
+    if text == nil, affectsSelectedFile {
+      selectedLocation = nil
+      selectedEntrySource = nil
+      selectedEntryHTML = nil
+      editableEntryText = ""
+      isEditingEntry = false
+      resetBlockState()
+    } else if let selectedLocation,
        URL(fileURLWithPath: selectedLocation.file).standardizedFileURL.path == standardized {
       await loadEntrySource(for: selectedLocation)
     }
@@ -16236,8 +17039,9 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     setOpenClawAssistantPanelPresented(true)
-    openClawStatusText = "Added \(pointer.displayReference) to OpenClaw"
-    statusText = "Added \(pointer.displayReference) to OpenClaw"
+    let runtimeTitle = selectedAIChatRuntime.title
+    openClawStatusText = "Added \(pointer.displayReference) to \(runtimeTitle)"
+    statusText = "Added \(pointer.displayReference) to \(runtimeTitle)"
   }
 
   private func openClawContextDisplayTitle(
@@ -16581,6 +17385,7 @@ public final class WorkspaceStore: ObservableObject {
   private func applyOpenClawTranscript(_ transcript: OpenClawTranscriptState, shouldPersist: Bool) {
     openClawThreadSettlementSettings = transcript.settlementSettings
     let migratedThreads = transcript.threads.map { thread in
+      guard thread.runtime == .openClaw else { return thread }
       let sessionKey = Self.agentScopedOpenClawSessionKey(thread.sessionKey, agentID: openClawAgentID)
       return sessionKey == thread.sessionKey
         ? thread
@@ -16619,9 +17424,10 @@ public final class WorkspaceStore: ObservableObject {
       $0.role == .user && $0.deliveryStatus == .interrupted
     }.count
     guard interruptedCount > 0 else { return }
+    let runtime = selectedAIChatRuntime.title
     openClawStatusText = interruptedCount == 1
-      ? "OpenClaw response interrupted; retry the message"
-      : "\(interruptedCount) OpenClaw responses interrupted; retry the messages"
+      ? "\(runtime) response interrupted; retry the message"
+      : "\(interruptedCount) \(runtime) responses interrupted; retry the messages"
   }
 
   private func renderEntrySource(_ source: EntrySource, generation: Int) {
@@ -17147,7 +17953,9 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
-  private func currentOpenClawWorkspaceContext() -> OpenClawWorkspaceContext {
+  private func currentOpenClawWorkspaceContext(
+    localEditTurnID: String? = nil
+  ) -> OpenClawWorkspaceContext {
     let source: EntrySource?
     if (isEditingEntry || isLiveFileEditorAvailable), let selectedEntrySource {
       source = EntrySource(
@@ -17174,7 +17982,13 @@ public final class WorkspaceStore: ObservableObject {
       searchResults: searchResults,
       agentThreadDirectories: currentOpenClawAgentThreadDirectories(),
       sourceProfiles: sourceProfiles,
-      sourceRuntimeStatuses: sourceRuntimeStatuses
+      sourceRuntimeStatuses: sourceRuntimeStatuses,
+      localEdit: localEditTurnID.map {
+        OpenClawLocalEditWorkspaceContext(
+          nodeDisplayName: openClawLocalEditNodeDisplayName,
+          turnID: $0
+        )
+      }
     )
   }
 
@@ -17412,7 +18226,7 @@ public final class WorkspaceStore: ObservableObject {
   nonisolated private static func saveOpenClawTranscript(_ transcript: OpenClawTranscriptState, to url: URL) throws {
     try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
     let payload = OpenClawTranscriptPayload(
-      version: 5,
+      version: 6,
       messages: nil,
       threads: transcript.threads,
       selectedThreadID: transcript.selectedThreadID,
@@ -17882,7 +18696,8 @@ public final class WorkspaceStore: ObservableObject {
   nonisolated private static func writeFileText(
     _ text: String,
     to file: String,
-    allowDestructiveReplacement: Bool = false
+    allowDestructiveReplacement: Bool = false,
+    operation: String = "file snapshot restore"
   ) throws {
     let url = URL(fileURLWithPath: file)
     let previous = FileManager.default.fileExists(atPath: url.path)
@@ -17892,7 +18707,7 @@ public final class WorkspaceStore: ObservableObject {
       text,
       to: url,
       replacing: previous,
-      operation: "file snapshot restore",
+      operation: operation,
       allowDestructiveReplacement: allowDestructiveReplacement
     )
   }
@@ -19338,7 +20153,8 @@ public final class WorkspaceStore: ObservableObject {
     )
     openClawVoiceTranscriptionProgress = progress
     openClawVoiceTranscriptionElapsedText = Self.openClawVoiceTranscriptionElapsedText(elapsed: elapsed)
-    openClawVoiceStatusText = "Transcribing OpenClaw dictation locally... \(Int(progress * 100))%"
+    openClawVoiceStatusText =
+      "Transcribing \(selectedAIChatRuntime.title) dictation locally... \(Int(progress * 100))%"
     openClawStatusText = openClawVoiceStatusText
   }
 
@@ -22312,7 +23128,7 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
     case .search: "Search"
     case .meetings: "Meetings"
     case .sources: "Sources"
-    case .openClaw: "OpenClaw Chat"
+    case .openClaw: "AI Chat"
     }
   }
 

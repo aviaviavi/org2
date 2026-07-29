@@ -58,6 +58,7 @@ try {
       thread("pending", { pendingTurn: { runID: "run-1" } }),
       thread("recent", { updatedAt: appleReferenceDateSeconds(recent) }),
       thread("empty", { messages: [] }),
+      thread("codex", { runtime: "codex", runtimeThreadID: "thr-codex" }),
     ],
   }, null, 2)}\n`);
 
@@ -75,16 +76,19 @@ try {
   assert.equal(loadOpenClawThreadState(root).settlementSettings.autoSettleAfterSeconds, 86_400);
 
   const autoPreview = autoSettleOpenClawThreads(root, { now });
-  assert.deepEqual(autoPreview.affectedThreadIds, ["eligible", "recovered", "empty"]);
+  assert.deepEqual(autoPreview.affectedThreadIds, ["eligible", "recovered", "empty", "codex"]);
   assert.equal(isOpenClawThreadSettled(loadOpenClawThreadState(root).threads.find((item) => item.id === "eligible")), false);
 
   const autoApplied = autoSettleOpenClawThreads(root, { now, apply: true });
-  assert.deepEqual(autoApplied.affectedThreadIds, ["eligible", "recovered", "empty"]);
+  assert.deepEqual(autoApplied.affectedThreadIds, ["eligible", "recovered", "empty", "codex"]);
   const settled = loadOpenClawThreadState(root);
-  assert.equal(settled.version, 5);
-  for (const id of ["eligible", "recovered", "empty"]) {
+  assert.equal(settled.version, 6);
+  for (const id of ["eligible", "recovered", "empty", "codex"]) {
     assert.equal(isOpenClawThreadSettled(settled.threads.find((item) => item.id === id)), true, id);
   }
+  const codex = settled.threads.find((item) => item.id === "codex");
+  assert.equal(codex.runtime, "codex");
+  assert.equal(codex.runtimeThreadID, "thr-codex");
   for (const id of ["selected", "pinned", "unread", "failed", "pending", "recent"]) {
     assert.equal(isOpenClawThreadSettled(settled.threads.find((item) => item.id === id)), false, id);
   }

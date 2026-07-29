@@ -399,7 +399,7 @@ enum OpenClawGatewayIdentityStorage {
   }
 }
 
-private struct OpenClawDeviceIdentity: Sendable {
+struct OpenClawDeviceIdentity: Sendable {
   private static var account: String {
     OpenClawGatewayIdentityStorage.account(bundleIdentifier: Bundle.main.bundleIdentifier)
   }

@@ -45,7 +45,7 @@ public struct ContentView: View {
         Button {
           store.makeSurfacePrimary(.openClaw)
         } label: {
-          Label("Open OpenClaw", systemImage: "bubble.left")
+          Label("Open AI Chat", systemImage: "bubble.left")
         }
 
         Button {
@@ -754,7 +754,7 @@ private struct OpenClawSidebarSurfaceGroup: View {
         .help(surface.commandShortcutTitle.isEmpty ? surface.title : "\(surface.title) (\(surface.commandShortcutTitle))")
 
         Button {
-          store.createOpenClawChatThread()
+          store.createAIChatThread()
           store.makeSurfacePrimary(.openClaw)
           isThreadListExpanded = true
         } label: {
@@ -987,6 +987,8 @@ private struct OpenClawSidebarThreadRow: View {
             HStack(spacing: 5) {
               Text(thread.messageCount == 1 ? "1 message" : "\(thread.messageCount) messages")
               Text("·")
+              Text(thread.runtime.title)
+              Text("·")
               Text(Self.relativeDate(thread.updatedAt))
               if thread.isSettled {
                 Text("· Settled")
@@ -999,7 +1001,7 @@ private struct OpenClawSidebarThreadRow: View {
           Spacer(minLength: 4)
           if isSending {
             WorkspaceActivityIndicator(size: .mini)
-              .help("OpenClaw is thinking")
+              .help("\(thread.runtime.title) is thinking")
           }
           if thread.resource != nil {
             Image(systemName: "text.bubble.fill")
@@ -1311,7 +1313,7 @@ private struct CorpusFileContextMenu: View {
       store.askOpenClawAboutCurrentSelection()
       afterOpen?()
     } label: {
-      Label("Ask OpenClaw", systemImage: "sparkles")
+      Label("Ask AI", systemImage: "sparkles")
     }
 
     Button {
@@ -1374,7 +1376,7 @@ private struct WorkspaceLocationContextMenu<OpenLabel: View>: View {
       select()
       store.askOpenClawAboutCurrentSelection()
     } label: {
-      Label("Ask OpenClaw", systemImage: "sparkles")
+      Label("Ask AI", systemImage: "sparkles")
     }
 
     Button {
@@ -1830,7 +1832,7 @@ private struct KeyboardShortcutsView: View {
             ShortcutHelpItem(keys: "⌘4", action: "Agent Work"),
             ShortcutHelpItem(keys: "⌘⇧F", action: "Corpus search"),
             ShortcutHelpItem(keys: "⌘5 / ⌘M", action: "Meetings"),
-            ShortcutHelpItem(keys: "⌘6", action: "OpenClaw Chat"),
+            ShortcutHelpItem(keys: "⌘6", action: "AI Chat"),
             ShortcutHelpItem(keys: "⌘0", action: "Sources")
           ])
 
@@ -1898,7 +1900,7 @@ private struct KeyboardShortcutsView: View {
             ShortcutHelpItem(keys: "⌘R", action: "Run source block while editing source")
           ])
 
-          ShortcutSection(title: "OpenClaw Chat", shortcuts: [
+          ShortcutSection(title: "AI Chat", shortcuts: [
             ShortcutHelpItem(keys: "Return", action: "Send message"),
             ShortcutHelpItem(keys: "⌘Return", action: "Insert newline")
           ])
@@ -4612,7 +4614,7 @@ private struct NodeSearchContextMenu: View {
       store.selectSearchNode(node)
       store.askOpenClawAboutCurrentSelection()
     } label: {
-      Label("Ask OpenClaw", systemImage: "sparkles")
+      Label("Ask AI", systemImage: "sparkles")
     }
 
     Button {
@@ -5424,7 +5426,11 @@ private struct OpenClawChatView: View {
   private var header: some View {
     switch presentation {
     case .fullPage:
-      HeaderBar(title: "OpenClaw Chat", subtitle: store.openClawStatusText, surface: surface) {
+      HeaderBar(
+        title: "\(store.selectedAIChatRuntime.title) Chat",
+        subtitle: store.openClawStatusText,
+        surface: surface
+      ) {
         headerActions
       }
     case .homePane:
@@ -5434,7 +5440,7 @@ private struct OpenClawChatView: View {
     case .assistantPanel:
       HStack(spacing: 8) {
         VStack(alignment: .leading, spacing: 2) {
-          Text("OpenClaw")
+          Text(store.selectedAIChatRuntime.title)
             .font(.headline)
           Text(store.openClawStatusText)
             .font(.caption)
@@ -5449,7 +5455,7 @@ private struct OpenClawChatView: View {
           Label("Configure", systemImage: "slider.horizontal.3")
         }
         .labelStyle(.iconOnly)
-        .help("Configure OpenClaw")
+        .help("Configure AI Chat")
 
         Button {
           store.makeSurfacePrimary(.openClaw)
@@ -5457,7 +5463,7 @@ private struct OpenClawChatView: View {
           Label("Make Primary", systemImage: "rectangle.split.2x1")
         }
         .labelStyle(.iconOnly)
-        .help("Open OpenClaw Chat")
+        .help("Open AI Chat")
 
         Button {
           store.expandSurface(.openClaw)
@@ -5465,7 +5471,7 @@ private struct OpenClawChatView: View {
           Label("Expand", systemImage: "arrow.up.left.and.arrow.down.right")
         }
         .labelStyle(.iconOnly)
-        .help("Show only OpenClaw Chat")
+        .help("Show only AI Chat")
 
         Button {
           store.closeSurfacePane(.openClaw)
@@ -5473,7 +5479,7 @@ private struct OpenClawChatView: View {
           Label("Close", systemImage: "xmark")
         }
         .labelStyle(.iconOnly)
-        .help("Close OpenClaw Chat")
+        .help("Close AI Chat")
       }
       .padding(.horizontal, 12)
       .padding(.vertical, 10)
@@ -5486,11 +5492,7 @@ private struct OpenClawChatView: View {
 
   @ViewBuilder
   private var headerActions: some View {
-    Button {
-      store.createOpenClawChatThread()
-    } label: {
-      Label("New", systemImage: "plus")
-    }
+    newChatButton
 
     Button {
       store.resetOpenClawChat()
@@ -5506,13 +5508,17 @@ private struct OpenClawChatView: View {
     }
   }
 
-  @ViewBuilder
-  private var homeHeaderActions: some View {
+  private var newChatButton: some View {
     Button {
-      store.createOpenClawChatThread()
+      store.createAIChatThread()
     } label: {
       Label("New", systemImage: "plus")
     }
+  }
+
+  @ViewBuilder
+  private var homeHeaderActions: some View {
+    newChatButton
 
     Button {
       store.resetOpenClawChat()
@@ -5543,12 +5549,17 @@ private struct OpenClawChatView: View {
               .frame(maxWidth: .infinity, minHeight: presentation.isCompact ? 140 : 220)
           } else {
             ForEach(store.openClawMessages) { message in
-              ChatBubbleView(message: message, compact: presentation.isCompact)
+              ChatBubbleView(
+                message: message,
+                runtime: store.selectedAIChatRuntime,
+                compact: presentation.isCompact
+              )
                 .id(message.id)
             }
             if store.isSendingOpenClawMessage {
               OpenClawTypingIndicatorView(
                 startedAt: store.openClawRequestStartedAt,
+                runtime: store.selectedAIChatRuntime,
                 connectionState: store.openClawGatewayConnectionState,
                 connectionDetail: store.openClawGatewayConnectionDetail,
                 runID: store.openClawActiveRunID,
@@ -5876,6 +5887,7 @@ private struct OpenClawConfigurationSheet: View {
   @State private var handoffAssignee = ""
   @State private var personalAssigneeNames = ""
   @State private var remoteCorpusPath = ""
+  @State private var localEditsEnabled = false
   @State private var briefsStartNewThread = true
   @State private var autoSettleInterval = OpenClawAutoSettleInterval.never
   @State private var token = ""
@@ -5885,10 +5897,55 @@ private struct OpenClawConfigurationSheet: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 16) {
       VStack(alignment: .leading, spacing: 4) {
-        Text("OpenClaw Gateway")
+        Text("AI Chat")
           .font(.headline.weight(.semibold))
-        Text("Configure the local or network gateway used by OpenClaw Chat.")
+        Text("Use OpenClaw or local Codex with ChatGPT on a per-thread basis.")
           .font(.callout)
+          .foregroundStyle(.secondary)
+      }
+
+      GroupBox {
+        HStack(alignment: .center, spacing: 12) {
+          Image(systemName: AIChatRuntime.codex.systemImage)
+            .font(.title3)
+            .foregroundStyle(.secondary)
+          VStack(alignment: .leading, spacing: 3) {
+            Text("Codex")
+              .font(.callout.weight(.medium))
+            Text(store.codexAccountState.label)
+              .font(.caption)
+              .foregroundStyle(
+                store.codexAccountState.isReady ? Color.secondary : Color.orange
+              )
+              .lineLimit(2)
+          }
+          Spacer(minLength: 12)
+          Button {
+            Task {
+              await store.beginCodexChatGPTLogin()
+            }
+          } label: {
+            if store.isCodexSigningIn {
+              HStack(spacing: 6) {
+                WorkspaceActivityIndicator(size: .small, style: .signal)
+                Text("Signing In")
+              }
+            } else {
+              Text("Sign In with ChatGPT")
+            }
+          }
+          .disabled(store.isCodexSigningIn)
+        }
+        .padding(.vertical, 4)
+      } label: {
+        Text("Local Codex")
+      }
+
+      VStack(alignment: .leading, spacing: 3) {
+        Text("OpenClaw Gateway")
+          .font(.callout.weight(.semibold))
+        Text("Configure the local or network gateway used by OpenClaw threads.")
+          .font(.caption)
           .foregroundStyle(.secondary)
       }
 
@@ -5941,6 +5998,30 @@ private struct OpenClawConfigurationSheet: View {
           TextField("/path/openclaw/can/read", text: $remoteCorpusPath)
             .textFieldStyle(.roundedBorder)
             .frame(width: 430)
+        }
+
+        GridRow {
+          Text("Local Edits")
+            .font(.caption.weight(.medium))
+            .foregroundStyle(.secondary)
+          VStack(alignment: .leading, spacing: 4) {
+            Toggle("Read and apply Org2 edits on this Mac", isOn: $localEditsEnabled)
+            Text("Uses a paired, typed Org2 node with read → preview → apply. It does not expose a shell.")
+              .font(.caption2)
+              .foregroundStyle(.secondary)
+            if localEditsEnabled || store.openClawLocalEditsEnabled {
+              Text(
+                "\(store.openClawLocalEditNodeState.label)"
+                  + (store.openClawLocalEditNodeDetail.isEmpty ? "" : " — \(store.openClawLocalEditNodeDetail)")
+              )
+              .font(.caption2)
+              .foregroundStyle(
+                store.openClawLocalEditNodeState == .connected ? Color.green : Color.secondary
+              )
+              .lineLimit(3)
+            }
+          }
+          .frame(width: 430, alignment: .leading)
         }
 
         GridRow {
@@ -6020,13 +6101,17 @@ private struct OpenClawConfigurationSheet: View {
       }
     }
     .padding(22)
-    .frame(width: 620)
+    .frame(width: 640)
+    .task {
+      await store.refreshCodexAccount()
+    }
     .onAppear {
       endpoint = store.openClawEndpointText
       agent = store.openClawAgentID
       handoffAssignee = store.agentHandoffAssignee
       personalAssigneeNames = store.personalAssigneeNamesText
       remoteCorpusPath = store.openClawRemoteCorpusPath
+      localEditsEnabled = store.openClawLocalEditsEnabled
       briefsStartNewThread = store.openClawBriefsStartNewThread
       autoSettleInterval = store.openClawThreadSettlementSettings.interval
       token = ""
@@ -6043,6 +6128,7 @@ private struct OpenClawConfigurationSheet: View {
       remoteCorpusPath: remoteCorpusPath,
       briefsStartNewThread: briefsStartNewThread,
       autoSettleInterval: autoSettleInterval,
+      localEditsEnabled: localEditsEnabled,
       token: token,
       clearToken: clearToken
     )
@@ -8008,8 +8094,8 @@ private struct NodeContextOverview: View {
       .buttonStyle(WorkspaceActionButtonStyle())
       .disabled(!store.canBriefCurrentNodeInOpenClaw)
       .help(store.openClawBriefsStartNewThread
-        ? "Generate the brief in a new OpenClaw chat thread."
-        : "Generate the brief in the current OpenClaw chat thread.")
+        ? "Generate the brief in a new AI chat thread."
+        : "Generate the brief in the current AI chat thread.")
 
       if store.backlinkFileGroups.isEmpty {
         NodeContextEmptyText()
@@ -8167,8 +8253,8 @@ private struct NodeContextBrief: View {
         .buttonStyle(WorkspaceActionButtonStyle())
         .disabled(!store.canBriefCurrentNodeInOpenClaw)
         .help(store.openClawBriefsStartNewThread
-          ? "Generate the brief in a new OpenClaw chat thread."
-          : "Generate the brief in the current OpenClaw chat thread.")
+          ? "Generate the brief in a new AI chat thread."
+          : "Generate the brief in the current AI chat thread.")
 
         Text("Generated briefs live as review-required org2 view artifacts.")
           .font(.caption)

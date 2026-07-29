@@ -103,12 +103,18 @@ struct OpenClawContextPresentation: Equatable, Sendable {
 
 struct ChatBubbleView: View {
   let message: OpenClawChatMessage
+  let runtime: AIChatRuntime
   let compact: Bool
   @State private var isHovering = false
   @State private var didCopy = false
 
-  init(message: OpenClawChatMessage, compact: Bool = false) {
+  init(
+    message: OpenClawChatMessage,
+    runtime: AIChatRuntime = .openClaw,
+    compact: Bool = false
+  ) {
     self.message = message
+    self.runtime = runtime
     self.compact = compact
   }
 
@@ -129,7 +135,7 @@ struct ChatBubbleView: View {
 
       VStack(alignment: .leading, spacing: 6) {
         HStack(spacing: 6) {
-          Text(message.role == .user ? "You" : "OpenClaw")
+          Text(roleTitle)
             .font(.caption.weight(.semibold))
             .foregroundStyle(roleTint)
           if message.role == .system {
@@ -229,6 +235,17 @@ struct ChatBubbleView: View {
     .opacity(isHovering || didCopy ? 0.9 : 0.18)
     .help(didCopy ? "Copied" : "Copy message")
     .accessibilityLabel(didCopy ? "Message copied" : "Copy message")
+  }
+
+  private var roleTitle: String {
+    switch message.role {
+    case .user:
+      return "You"
+    case .assistant:
+      return runtime.title
+    case .system:
+      return "Org2"
+    }
   }
 
   private var background: Color {
@@ -630,7 +647,7 @@ struct OpenClawComposerView: View {
 
         ZStack(alignment: .topLeading) {
           if presentation.userText.isEmpty {
-            Text("Message OpenClaw")
+            Text("Message \(store.selectedAIChatRuntime.title)")
               .font(.body)
               .foregroundStyle(.tertiary)
               .padding(.horizontal, 10)
@@ -656,7 +673,7 @@ struct OpenClawComposerView: View {
 
       let slashSuggestions = OpenClawSlashCommands.suggestions(
         for: presentation.userText,
-        gatewayCommands: store.openClawGatewayCommands
+        gatewayCommands: store.activeAIChatGatewayCommands
       )
       if !slashSuggestions.isEmpty {
         OpenClawSlashCommandSuggestions(
@@ -686,7 +703,7 @@ struct OpenClawComposerView: View {
             )
             .frame(width: compact ? 72 : 110, height: 7)
           }
-          .help("Recording OpenClaw dictation")
+          .help("Recording \(store.selectedAIChatRuntime.title) dictation")
         } else if store.isTranscribingOpenClawVoiceNote {
           HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 3) {
@@ -708,6 +725,8 @@ struct OpenClawComposerView: View {
           .help("Estimated local dictation transcription progress")
         }
         Spacer(minLength: 0)
+        runtimePicker
+
         Button {
           store.chooseOpenClawImageAttachments()
         } label: {
@@ -751,7 +770,9 @@ struct OpenClawComposerView: View {
       selectedSlashSuggestionIndex = 0
       cacheDraftLocally()
       if OpenClawContextPresentation(localDraft).userText == "/" {
-        Task { await store.refreshOpenClawCommands() }
+        if store.selectedAIChatRuntime == .openClaw {
+          Task { await store.refreshOpenClawCommands() }
+        }
       }
     }
     .onChange(of: store.openClawDraft) { _, newValue in
@@ -764,6 +785,49 @@ struct OpenClawComposerView: View {
       guard mergedDraft != localDraft else { return }
       localDraft = mergedDraft
     }
+  }
+
+  private var runtimePicker: some View {
+    Menu {
+      ForEach(AIChatRuntime.allCases) { runtime in
+        Button {
+          store.setSelectedAIChatRuntime(runtime)
+        } label: {
+          HStack {
+            Label(runtime.title, systemImage: runtime.systemImage)
+            if runtime == store.selectedAIChatRuntime {
+              Image(systemName: "checkmark")
+            }
+          }
+        }
+      }
+    } label: {
+      HStack(spacing: 4) {
+        Image(systemName: store.selectedAIChatRuntime.systemImage)
+        Text(store.selectedAIChatRuntime.title)
+        Image(
+          systemName: store.canChangeSelectedAIChatRuntime
+            ? "chevron.up.chevron.down"
+            : "lock.fill"
+        )
+        .font(.caption2)
+        .foregroundStyle(.tertiary)
+      }
+      .font(.caption.weight(.medium))
+      .foregroundStyle(.secondary)
+      .padding(.horizontal, 5)
+      .padding(.vertical, 4)
+      .contentShape(Rectangle())
+    }
+    .menuStyle(.borderlessButton)
+    .menuIndicator(.hidden)
+    .fixedSize()
+    .disabled(!store.canChangeSelectedAIChatRuntime)
+    .help(
+      store.canChangeSelectedAIChatRuntime
+        ? "Choose the AI runtime for this new thread"
+        : "The AI runtime is locked after the conversation starts"
+    )
   }
 
   private var canSend: Bool {
@@ -798,7 +862,7 @@ struct OpenClawComposerView: View {
   private func handleSuggestionCommand(_ command: OpenClawComposerSuggestionKeyCommand) -> Bool {
     let suggestions = OpenClawSlashCommands.suggestions(
       for: OpenClawContextPresentation(localDraft).userText,
-      gatewayCommands: store.openClawGatewayCommands
+      gatewayCommands: store.activeAIChatGatewayCommands
     )
     guard !suggestions.isEmpty else { return false }
 
@@ -1179,6 +1243,7 @@ private struct OpenClawComposerTextView: NSViewRepresentable {
 
 struct OpenClawTypingIndicatorView: View {
   let startedAt: Date?
+  let runtime: AIChatRuntime
   let connectionState: OpenClawGatewayConnectionState
   let connectionDetail: String?
   let runID: String?
@@ -1187,6 +1252,30 @@ struct OpenClawTypingIndicatorView: View {
   let activities: [OpenClawRunActivity]
   let compact: Bool
   let onStop: () -> Void
+
+  init(
+    startedAt: Date?,
+    runtime: AIChatRuntime = .openClaw,
+    connectionState: OpenClawGatewayConnectionState,
+    connectionDetail: String?,
+    runID: String?,
+    streamingReply: String,
+    reasoning: String,
+    activities: [OpenClawRunActivity],
+    compact: Bool,
+    onStop: @escaping () -> Void
+  ) {
+    self.startedAt = startedAt
+    self.runtime = runtime
+    self.connectionState = connectionState
+    self.connectionDetail = connectionDetail
+    self.runID = runID
+    self.streamingReply = streamingReply
+    self.reasoning = reasoning
+    self.activities = activities
+    self.compact = compact
+    self.onStop = onStop
+  }
 
   var body: some View {
     HStack {
@@ -1212,8 +1301,8 @@ struct OpenClawTypingIndicatorView: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
-            .accessibilityLabel("Stop OpenClaw run")
-            .help("Stop this OpenClaw run")
+            .accessibilityLabel("Stop \(runtime.title) run")
+            .help("Stop this \(runtime.title) run")
           }
         }
         .frame(minHeight: 20)
@@ -1243,6 +1332,30 @@ struct OpenClawTypingIndicatorView: View {
   }
 
   var statusTitle: String {
+    if runtime == .codex {
+      switch connectionState {
+      case .connecting:
+        return "Connecting to Codex"
+      case .reconnecting:
+        return "Reconnecting to Codex"
+      case .fallbackHTTP:
+        return "Codex is working"
+      case .disconnected:
+        return "Codex connection interrupted"
+      case .connected:
+        if let latest = OpenClawActivityFeed.items(from: activities)
+          .last(where: { $0.status == .running }) {
+          return "Running \(latest.title.lowercased())"
+        }
+        if runID == nil {
+          return "Starting Codex"
+        }
+        if !trimmedReasoning.isEmpty {
+          return "Codex is thinking"
+        }
+        return "Codex is working"
+      }
+    }
     switch connectionState {
     case .connecting:
       return "Connecting to OpenClaw"

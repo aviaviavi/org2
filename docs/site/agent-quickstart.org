@@ -68,6 +68,8 @@ See [[file:tooling-reference.org][Tooling reference]] for commands, [[file:langu
 
 Install the checked-out integration with =openclaw plugins install --link ./integrations/openclaw=. The =org2-lifecycle= plugin must be enabled, permitted to use its typed conversation hooks, and configured with the target =corpusDir=. Verify the live Gateway surface with =openclaw plugins inspect org2-lifecycle --runtime --json= after restarting the Gateway. The adapter is a single-corpus write boundary: Mac workflow requests include the active portable corpus ID and fail before execution if it differs from the configured corpus. Ordinary conversation and personal TODOs stay out of Agent Work; substantial main-agent work, subagents, and cron executions receive correlated durable run records. Workflow turns that request approval remain open, and a Mac approval continues the same durable run in its correlated chat session.
 
+The same plugin registers the Mac app's optional local-edit node policy. When *Read and apply Org2 edits on this Mac* is enabled, approve the app's separate node-role pairing and enable the =nodes= tool for the selected agent. Corpus mutations must then use =org2.workspace.read=, =org2.workspace.patch.preview=, and =org2.workspace.patch.apply=. Read returns the effective local document, including an unsaved selected-editor draft; preview binds a whole-file replacement to SHA-256 inputs; apply rechecks that preview, remains inside the active corpus, and returns the exact per-turn change set. The Mac node does not expose a generic shell.
+
 * Durable delegation example
 
 #+begin_src sh
@@ -113,6 +115,8 @@ org2 lint --dir ~/notes --recursive --format json
 #+end_src
 
 Agents embedded in the macOS Workspace should still use shared CLI/parser semantics for IDs, links, source ranges, agenda behavior, data queries, and context. App presentation state is not the language implementation.
+
+New Mac AI-chat threads expose an OpenClaw/Codex runtime picker beside the composer controls. The choice remains editable while the thread is empty and locks after its first message. OpenClaw threads use the configured Gateway and lifecycle adapter. Codex threads launch one local =codex app-server= process, use Codex-managed *Sign in with ChatGPT* rather than an Org2-owned token, and store only the external Codex thread ID beside the local transcript. Codex runs read-only at the filesystem sandbox boundary; its client-provided =org2_workspace_read=, =org2_workspace_patch_preview=, and =org2_workspace_patch_apply= tools reuse the same active-corpus, unsaved-editor, SHA-bound preview/apply transaction as the OpenClaw local-edit node. A direct OpenAI API key is not used for this subscription-backed path.
 
 The Mac chat's user-facing slash commands follow that rule: local commands such as =/search=, =/related=, =/lint=, =/spellcheck=, =/export=, and =/publish= call shared compiler/runtime behavior, while =/brief= and =/summarize= hand the selected source context to the configured agent. With a live OpenClaw Gateway, the app also discovers the selected agent's runtime command inventory through =commands.list= and forwards those invocations unchanged to =chat.send=. Gateway commands are not routed through HTTP compatibility. The app does not expose a separate =/context= command; source selection and cited context assembly remain internal agent plumbing.
 

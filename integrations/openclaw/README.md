@@ -63,6 +63,15 @@ rejects a mismatch before creating, syncing, or continuing work. Stable
 OpenClaw keys are persisted for correlation and deduplication. Ordinary
 conversation and personal TODOs are not promoted into runs.
 
+The plugin also registers the safe-by-default macOS node policy for
+`org2.workspace.read`, `org2.workspace.patch.preview`, and
+`org2.workspace.patch.apply`. Those commands are implemented by the paired Org2
+Workspace app, not by the Gateway plugin. They provide an optional local edit
+transport with active-turn IDs, SHA-256 preconditions, preview tokens, and
+active-corpus path confinement; they do not expose `system.run`. Enabling the
+Mac setting requires a separate node-role pairing, and the selected agent must
+have its `nodes` tool enabled.
+
 Local development:
 
 ```sh

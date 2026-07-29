@@ -1946,12 +1946,35 @@ public struct OpenClawThreadSettlementSettings: Hashable, Codable, Sendable {
   }
 }
 
+public enum AIChatRuntime: String, CaseIterable, Codable, Identifiable, Sendable {
+  case openClaw
+  case codex
+
+  public var id: String { rawValue }
+
+  public var title: String {
+    switch self {
+    case .openClaw: "OpenClaw"
+    case .codex: "Codex"
+    }
+  }
+
+  public var systemImage: String {
+    switch self {
+    case .openClaw: "network"
+    case .codex: "chevron.left.forwardslash.chevron.right"
+    }
+  }
+}
+
 public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
   public let id: UUID
   public let title: String
   public let createdAt: Date
   public let updatedAt: Date
+  public let runtime: AIChatRuntime
   public let sessionKey: String
+  public let runtimeThreadID: String?
   public let messages: [OpenClawChatMessage]
   public let isPinned: Bool
   public let isArchived: Bool
@@ -1965,7 +1988,9 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
     title: String,
     createdAt: Date = Date(),
     updatedAt: Date = Date(),
+    runtime: AIChatRuntime = .openClaw,
     sessionKey: String,
+    runtimeThreadID: String? = nil,
     messages: [OpenClawChatMessage] = [],
     isPinned: Bool = false,
     isArchived: Bool = false,
@@ -1978,7 +2003,9 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
     self.title = title
     self.createdAt = createdAt
     self.updatedAt = updatedAt
+    self.runtime = runtime
     self.sessionKey = sessionKey
+    self.runtimeThreadID = runtimeThreadID
     self.messages = messages
     self.isPinned = isPinned
     self.isArchived = isArchived
@@ -1994,6 +2021,10 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
 
   public var isSettled: Bool {
     settledAt != nil || isArchived
+  }
+
+  public var canChangeAIRuntime: Bool {
+    messages.isEmpty && pendingTurn == nil
   }
 
   public var hasUnresolvedLatestDelivery: Bool {
@@ -2014,7 +2045,9 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
     case title
     case createdAt
     case updatedAt
+    case runtime
     case sessionKey
+    case runtimeThreadID
     case messages
     case isPinned
     case isArchived
@@ -2030,7 +2063,9 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
     title = try container.decode(String.self, forKey: .title)
     createdAt = try container.decode(Date.self, forKey: .createdAt)
     updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+    runtime = try container.decodeIfPresent(AIChatRuntime.self, forKey: .runtime) ?? .openClaw
     sessionKey = try container.decode(String.self, forKey: .sessionKey)
+    runtimeThreadID = try container.decodeIfPresent(String.self, forKey: .runtimeThreadID)
     messages = try container.decode([OpenClawChatMessage].self, forKey: .messages)
     isPinned = try container.decodeIfPresent(Bool.self, forKey: .isPinned) ?? false
     isArchived = try container.decodeIfPresent(Bool.self, forKey: .isArchived) ?? false
@@ -2042,7 +2077,9 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
 
   public func replacingOpenClawChatMetadata(
     title nextTitle: String? = nil,
+    runtime nextRuntime: AIChatRuntime? = nil,
     sessionKey nextSessionKey: String? = nil,
+    runtimeThreadID nextRuntimeThreadID: String?? = nil,
     isPinned nextIsPinned: Bool? = nil,
     isArchived nextIsArchived: Bool? = nil,
     settledAt nextSettledAt: Date?? = nil,
@@ -2055,7 +2092,9 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
       title: nextTitle ?? title,
       createdAt: createdAt,
       updatedAt: updatedAt,
+      runtime: nextRuntime ?? runtime,
       sessionKey: nextSessionKey ?? sessionKey,
+      runtimeThreadID: nextRuntimeThreadID ?? runtimeThreadID,
       messages: messages,
       isPinned: nextIsPinned ?? isPinned,
       isArchived: archived,
@@ -2072,7 +2111,9 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
       title: title,
       createdAt: createdAt,
       updatedAt: nextMessages.last?.createdAt ?? updatedAt,
+      runtime: runtime,
       sessionKey: sessionKey,
+      runtimeThreadID: runtimeThreadID,
       messages: nextMessages,
       isPinned: isPinned,
       isArchived: isArchived,
@@ -2089,7 +2130,9 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
       title: title,
       createdAt: createdAt,
       updatedAt: updatedAt,
+      runtime: runtime,
       sessionKey: sessionKey,
+      runtimeThreadID: runtimeThreadID,
       messages: messages,
       isPinned: isPinned,
       isArchived: isArchived,

@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 export const OPENCLAW_THREAD_STATE_SCHEMA = "org2:openclaw-thread-state:v1";
-export const OPENCLAW_TRANSCRIPT_VERSION = 5;
+export const OPENCLAW_TRANSCRIPT_VERSION = 6;
 const APPLE_REFERENCE_DATE_UNIX_SECONDS = 978_307_200;
 
 export interface OpenClawThreadSettlementSettings {

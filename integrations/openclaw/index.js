@@ -1,6 +1,7 @@
 import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 import { cronKey, durableRunMarker, executionSummary, Org2Lifecycle, shouldTrackMainTurn, workflowMarker } from "./lib/lifecycle.js";
 import { approvalAction, approvalContext, approvalTitle, draftCreatedEffect, draftSendEffect, hydrateGogDraftEffect } from "./lib/draft-approvals.js";
+import { registerOrg2WorkspaceNodePolicy } from "./lib/local-edit-node.js";
 
 export default definePluginEntry({
   id: "org2-lifecycle",
@@ -13,6 +14,8 @@ export default definePluginEntry({
     const trackCron = config.trackCron !== false;
     const trackSubagents = config.trackSubagents !== false;
     const trackDraftApprovals = config.trackDraftApprovals !== false;
+
+    registerOrg2WorkspaceNodePolicy(api);
 
     api.on("gateway_start", async (_event, ctx) => {
       lifecycle.setCron(ctx.getCron?.());

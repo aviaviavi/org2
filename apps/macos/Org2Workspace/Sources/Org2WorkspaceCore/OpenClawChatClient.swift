@@ -219,6 +219,7 @@ public struct OpenClawWorkspaceContext: Sendable {
   public let agentThreadDirectories: [String]
   public let sourceProfiles: [WorkspaceSourceProfileStatus]
   public let sourceRuntimeStatuses: [String: WorkspaceSourceRuntimeStatus]
+  public let localEdit: OpenClawLocalEditWorkspaceContext?
 
   public init(
     localCorpusRoot: String?,
@@ -232,7 +233,8 @@ public struct OpenClawWorkspaceContext: Sendable {
     searchResults: [SearchResult],
     agentThreadDirectories: [String] = [],
     sourceProfiles: [WorkspaceSourceProfileStatus] = [],
-    sourceRuntimeStatuses: [String: WorkspaceSourceRuntimeStatus] = [:]
+    sourceRuntimeStatuses: [String: WorkspaceSourceRuntimeStatus] = [:],
+    localEdit: OpenClawLocalEditWorkspaceContext? = nil
   ) {
     let localCorpusRoot = Self.cleanRoot(localCorpusRoot)
     let remoteCorpusRoot = Self.cleanRoot(remoteCorpusRoot)
@@ -251,6 +253,7 @@ public struct OpenClawWorkspaceContext: Sendable {
       .map { Self.mappedPath($0, localCorpusRoot: localCorpusRoot, remoteCorpusRoot: remoteCorpusRoot) }
     self.sourceProfiles = sourceProfiles
     self.sourceRuntimeStatuses = sourceRuntimeStatuses
+    self.localEdit = localEdit
   }
 
   public func systemPrompt() -> String {
@@ -279,6 +282,10 @@ public struct OpenClawWorkspaceContext: Sendable {
 
     Do not write generated Backlinks sections into note files. Treat backlinks as computed views. Preserve the org2 plaintext format and cite file paths plus line numbers for concrete claims.
     """)
+
+    if let localEdit {
+      sections.append(localEdit.systemPrompt())
+    }
 
     sections.append(formatExternalSourceRouting())
 
@@ -316,6 +323,44 @@ public struct OpenClawWorkspaceContext: Sendable {
       sections.append(formatAgenda(agenda))
     }
 
+    if !searchResults.isEmpty {
+      sections.append(formatSearchResults())
+    }
+
+    return sections.joined(separator: "\n\n---\n\n")
+  }
+
+  public func codexSystemPrompt() -> String {
+    var sections = [
+      """
+      Org2 workspace UI snapshot
+
+      Active local corpus root: \(localCorpusRoot ?? "not selected")
+      Current surface: \(selectedSurface)
+
+      This snapshot was supplied by Org2 Workspace. The selected source text may include unsaved editor changes and is authoritative for that visible draft. Use the client-provided Org2 workspace tools for any other corpus reads or writes.
+      """,
+      """
+      Org2 working rules
+
+      Org2 is a plain-text, org-mode-inspired knowledge workspace. Files are usually .org2 or .org. Headings use leading stars; TODO state, priority, and tags live on headings. Planning metadata uses SCHEDULED, DEADLINE, and CLOSED lines. Stable node identity lives in :PROPERTIES: drawers using :ID:. Links commonly use [[id:<uuid>][label]].
+
+      Preserve the Org2 plaintext format, make the smallest useful edit, and cite exact file paths plus line numbers for concrete claims. Do not write generated Backlinks sections into note files; backlinks are computed views.
+      """
+    ]
+
+    if let selectedLocation {
+      sections.append(formatSelectedLocation(selectedLocation))
+    }
+    if let selectedEntrySource {
+      sections.append(formatSelectedSource(selectedEntrySource))
+    }
+    if let backlinks, !backlinks.backlinks.isEmpty {
+      sections.append(formatBacklinks(backlinks))
+    }
+    if let agenda {
+      sections.append(formatAgenda(agenda))
+    }
     if !searchResults.isEmpty {
       sections.append(formatSearchResults())
     }
