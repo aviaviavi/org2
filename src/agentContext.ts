@@ -1,3 +1,4 @@
+import { parseIsoCalendarDate } from "./calendarDate.js";
 import type { CompiledCorpus, CompiledCorpusEntityProfile, CompiledCorpusNode } from "./corpusCompile.js";
 
 export type AgentInclude = "backlinks" | "neighbors" | "sources";
@@ -350,10 +351,9 @@ function parseSinceCutoff(raw: string | undefined, now = new Date()): Date | nul
 
 function dateForNode(node: CompiledCorpusNode): Date | null {
   const raw = propertyValue(node, ["UPDATED", "DATE", "CREATED", "CLOSED"]) || node.planning.find((p) => p.kind === "CLOSED")?.raw || node.planning[0]?.raw || "";
-  const match = String(raw).match(/(\d{4})-(\d{2})-(\d{2})/);
+  const match = String(raw).match(/\d{4}-\d{2}-\d{2}/);
   if (!match) return null;
-  const parsed = new Date(`${match[1]}-${match[2]}-${match[3]}T00:00:00Z`);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
+  return parseIsoCalendarDate(match[0])?.date ?? null;
 }
 
 function nodeMatchesFilters(node: CompiledCorpusNode, opts: AgentContextOptions): boolean {
@@ -392,19 +392,10 @@ function parseDateMs(raw: string | null | undefined): number | null {
   const match = dateOnly || dateTime;
   if (!match) return null;
 
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  const calendarDate = new Date(Date.UTC(year, month - 1, day));
-  if (
-    calendarDate.getUTCFullYear() !== year ||
-    calendarDate.getUTCMonth() !== month - 1 ||
-    calendarDate.getUTCDate() !== day
-  ) {
-    return null;
-  }
+  const calendarDate = parseIsoCalendarDate(`${match[1]}-${match[2]}-${match[3]}`);
+  if (!calendarDate) return null;
 
-  if (!dateTime) return calendarDate.getTime();
+  if (!dateTime) return calendarDate.date.getTime();
 
   const hour = Number(match[4]);
   const minute = Number(match[5]);

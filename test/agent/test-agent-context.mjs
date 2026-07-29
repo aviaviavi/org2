@@ -221,6 +221,13 @@ Copper launch retrieval note.
 :PINNED: true
 :END:
 This note is important but does not mention the query terms.
+
+* Invalid recency date
+:PROPERTIES:
+:ID: invalid-recency
+:UPDATED: 2026-02-30
+:END:
+Copper launch retrieval note.
 `, "utf8");
 const salienceFirst = runJson("agent", "search", "--query", "Copper launch retrieval", "--dir", rankingDir, "--limit", "2", "--recency-weight", "0", "--salience-weight", "1");
 assert.equal(salienceFirst.ranking.salienceWeight, 1);
@@ -229,10 +236,15 @@ assert.ok(!salienceFirst.results.some((result) => result.id === "unrelated-impor
 assert.ok(salienceFirst.results[0].selectionReason.some((reason) => reason.includes("explicit salience")));
 assert.ok(salienceFirst.results[0].selectionReason.some((reason) => reason.includes("pinned")));
 
-const recencyFirst = runJson("agent", "search", "--query", "Copper launch retrieval", "--dir", rankingDir, "--limit", "2", "--recency-weight", "8", "--salience-weight", "0");
+const recencyFirst = runJson("agent", "search", "--query", "Copper launch retrieval", "--dir", rankingDir, "--limit", "3", "--recency-weight", "8", "--salience-weight", "0");
 assert.equal(recencyFirst.ranking.recencyWeight, 8);
 assert.equal(recencyFirst.results[0].id, "recent-trivial");
 assert.ok(recencyFirst.results[0].selectionReason.some((reason) => reason.includes("recency weight 8")));
+const invalidRecency = recencyFirst.results.find((result) => result.id === "invalid-recency");
+assert.ok(invalidRecency);
+assert.ok(!invalidRecency.selectionReason.some((reason) => reason.includes("dated ")));
+const recentOnly = runJson("agent", "search", "--query", "Copper launch retrieval", "--dir", rankingDir, "--since", "365d", "--limit", "10");
+assert.ok(!recentOnly.results.some((result) => result.id === "invalid-recency"));
 
 const strictRankingDir = fs.mkdtempSync(path.join(os.tmpdir(), "org2-agent-strict-ranking-test-"));
 fs.writeFileSync(path.join(strictRankingDir, "strict-ranking.org2"), `#+title: Strict Ranking
