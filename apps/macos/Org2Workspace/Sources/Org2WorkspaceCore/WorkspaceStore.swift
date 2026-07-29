@@ -1331,6 +1331,7 @@ public final class WorkspaceStore: ObservableObject {
   private var workspaceRefreshWatchdogTask: Task<Void, Never>?
   var workspaceRefreshTimeoutNanoseconds = WorkspaceStore.defaultWorkspaceRefreshTimeoutNanoseconds
   var workspaceRefreshOperationForTesting: (@MainActor @Sendable () async -> Void)?
+  var approvalCandidateScanOperationForTesting: (@Sendable () -> Void)?
   private var liveFileEditorAutosaveTask: Task<Void, Never>?
   private var liveFileEditorAutosaveGeneration = 0
   private var sourceEditorCommandGeneration = 0
@@ -2848,13 +2849,20 @@ public final class WorkspaceStore: ObservableObject {
 
       let candidateSources: [ApprovalCandidateSource]
       if corpusFiles.isEmpty {
-        if let indexedCandidates = Self.approvalCandidateSourcesFromStoredIndex(corpusRoot: corpusRoot) {
+        let indexedCandidates = await Task.detached(priority: .utility) {
+          return Self.approvalCandidateSourcesFromStoredIndex(corpusRoot: corpusRoot)
+        }.value
+        guard !Task.isCancelled else { return }
+        if let indexedCandidates {
           candidateSources = indexedCandidates
         } else {
           if updatesStatus {
             statusText = "Scanning approval candidates..."
           }
-          let files = try Self.scanCorpusFiles(corpusRoot: corpusRoot)
+          let files = try await Task.detached(priority: .utility) {
+            try Self.scanCorpusFiles(corpusRoot: corpusRoot)
+          }.value
+          guard !Task.isCancelled else { return }
           corpusFiles = files
           candidateSources = await approvalCandidateSources(
             files: files,
@@ -3543,22 +3551,23 @@ public final class WorkspaceStore: ObservableObject {
     corpusRoot: URL,
     updatesStatus: Bool
   ) async -> [ApprovalCandidateSource] {
-    if let indexedCandidates = Self.approvalCandidateSourcesFromFreshIndex(files: files, corpusRoot: corpusRoot) {
-      return indexedCandidates
+    if updatesStatus {
+      statusText = searchIndexTask == nil
+        ? "Scanning approval candidates..."
+        : "Scanning approvals while search index updates..."
     }
 
-    if searchIndexTask != nil {
-      if updatesStatus {
-        statusText = "Scanning approvals while search index updates..."
+    let scanOperation = approvalCandidateScanOperationForTesting
+    return await Task.detached(priority: .utility) {
+      scanOperation?()
+      if let indexedCandidates = Self.approvalCandidateSourcesFromFreshIndex(
+        files: files,
+        corpusRoot: corpusRoot
+      ) {
+        return indexedCandidates
       }
       return Self.approvalCandidateSourcesByScanningFiles(files: files)
-    }
-
-    if updatesStatus {
-      statusText = "Scanning approval candidates..."
-    }
-
-    return Self.approvalCandidateSourcesByScanningFiles(files: files)
+    }.value
   }
 
   nonisolated private static func approvalCandidateSourcesFromFreshIndex(
@@ -3833,13 +3842,9 @@ public final class WorkspaceStore: ObservableObject {
 
     let hasHumanApprovalTitle = approvalTextHasHumanApprovalTitle(normalized)
     let hasPendingStatus = approvalStatusNeedles.contains { normalized.contains($0) }
-    let hasSpecificReviewStatusKey = [
-      ":org2_review_status:",
-      ":review_status:",
-      ":review:",
-      ":followup_status:",
-      ":reply_status:"
-    ].contains { normalized.contains($0) }
+    let hasSpecificReviewStatusKey = approvalSpecificReviewStatusKeys.contains {
+      normalized.contains($0)
+    }
     if hasSpecificReviewStatusKey && hasPendingStatus && hasHumanApprovalTitle {
       return true
     }
@@ -3850,26 +3855,38 @@ public final class WorkspaceStore: ObservableObject {
       return true
     }
 
-    let hasGateKey = [
-      ":waiting_on:",
-      ":blocked_by:",
-      ":org2_waiting_on:",
-      ":next_action:",
-      ":action_required:",
-      ":org2_next_action:",
-      ":handoff_summary:",
-      ":org2_handoff_summary:"
-    ].contains { normalized.contains($0) }
+    let hasGateKey = approvalGateKeys.contains { normalized.contains($0) }
     if hasGateKey && containsApprovalSignal(normalized) {
       return true
     }
 
-    let hasAccessPolicyKey = [
-      ":access_policy:",
-      ":review_policy:"
-    ].contains { normalized.contains($0) }
+    let hasAccessPolicyKey = approvalAccessPolicyKeys.contains { normalized.contains($0) }
     return hasAccessPolicyKey && (hasPendingStatus || containsApprovalSignal(normalized))
   }
+
+  nonisolated private static let approvalSpecificReviewStatusKeys = [
+    ":org2_review_status:",
+    ":review_status:",
+    ":review:",
+    ":followup_status:",
+    ":reply_status:"
+  ]
+
+  nonisolated private static let approvalGateKeys = [
+    ":waiting_on:",
+    ":blocked_by:",
+    ":org2_waiting_on:",
+    ":next_action:",
+    ":action_required:",
+    ":org2_next_action:",
+    ":handoff_summary:",
+    ":org2_handoff_summary:"
+  ]
+
+  nonisolated private static let approvalAccessPolicyKeys = [
+    ":access_policy:",
+    ":review_policy:"
+  ]
 
   nonisolated private static let approvalStatusNeedles = [
     "review-required",
@@ -3894,11 +3911,14 @@ public final class WorkspaceStore: ObservableObject {
     "draft"
   ]
 
+  nonisolated private static let humanApprovalTitleRegex = try? NSRegularExpression(
+    pattern: #"(?m)^\*+\s+(?:(?:todo|in_progress|prog|wait|hold|paused)\s+)?(?:\[#[a-z0-9]\]\s+)?(?:approve|review|review/|review-send|review and approve|review/approve)\b"#
+  )
+
   nonisolated private static func approvalTextHasHumanApprovalTitle(_ normalizedText: String) -> Bool {
-    normalizedText.range(
-      of: #"(?m)^\*+\s+(?:(?:todo|in_progress|prog|wait|hold|paused)\s+)?(?:\[#[a-z0-9]\]\s+)?(?:approve|review|review/|review-send|review and approve|review/approve)\b"#,
-      options: .regularExpression
-    ) != nil
+    guard let humanApprovalTitleRegex else { return false }
+    let range = NSRange(normalizedText.startIndex..<normalizedText.endIndex, in: normalizedText)
+    return humanApprovalTitleRegex.firstMatch(in: normalizedText, range: range) != nil
   }
 
   public func clearApprovalFilter() {

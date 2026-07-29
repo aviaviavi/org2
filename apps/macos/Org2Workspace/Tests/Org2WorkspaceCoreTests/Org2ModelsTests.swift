@@ -13,6 +13,23 @@ private struct DecodeThreadPayload: Decodable {
   }
 }
 
+private final class ThreadSafeTestFlag: @unchecked Sendable {
+  private let lock = NSLock()
+  private var isSet = false
+
+  var value: Bool {
+    lock.withLock { isSet }
+  }
+
+  func setIfUnset() -> Bool {
+    lock.withLock {
+      guard !isSet else { return false }
+      isSet = true
+      return true
+    }
+  }
+}
+
 private struct OpenClawTranscriptFixture: Encodable {
   let version: Int
   let messages: [OpenClawChatMessage]?
@@ -7030,6 +7047,59 @@ final class Org2ModelsTests: XCTestCase {
 
     XCTAssertFalse(store.isLoadingApprovals)
     XCTAssertTrue(store.approvalItems.isEmpty)
+  }
+
+  @MainActor
+  func testApprovalFallbackScanDoesNotBlockMainActor() async throws {
+    let workspace = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-approval-fallback-\(UUID().uuidString)", isDirectory: true)
+    let repoRoot = workspace.appendingPathComponent("repo", isDirectory: true)
+    let dist = repoRoot.appendingPathComponent("dist", isDirectory: true)
+    let corpus = workspace.appendingPathComponent("corpus", isDirectory: true)
+    try FileManager.default.createDirectory(at: dist, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: corpus, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: workspace) }
+
+    try "process.exit(1);\n".write(
+      to: dist.appendingPathComponent("cli.js"),
+      atomically: true,
+      encoding: .utf8
+    )
+    try """
+    * TODO Review fallback approval
+    :PROPERTIES:
+    :STATUS: review-required
+    :END:
+    """.write(
+      to: corpus.appendingPathComponent("approval.org2"),
+      atomically: true,
+      encoding: .utf8
+    )
+
+    let scanStarted = ThreadSafeTestFlag()
+    let releaseScan = DispatchSemaphore(value: 0)
+    let store = WorkspaceStore(cli: Org2CLI(repoRoot: repoRoot))
+    store.setCorpusRoot(corpus, persistsDefault: false)
+    store.approvalCandidateScanOperationForTesting = {
+      if scanStarted.setIfUnset() {
+        _ = releaseScan.wait(timeout: .now() + 2)
+      }
+    }
+
+    let refresh = Task { await store.refreshApprovals() }
+    let waitStartedAt = Date()
+    while !scanStarted.value, Date().timeIntervalSince(waitStartedAt) < 3 {
+      try await Task.sleep(nanoseconds: 10_000_000)
+    }
+    let mainActorResumeDelay = Date().timeIntervalSince(waitStartedAt)
+
+    XCTAssertTrue(scanStarted.value)
+    XCTAssertLessThan(mainActorResumeDelay, 0.5)
+    store.statusText = "Main actor remained responsive"
+    XCTAssertEqual(store.statusText, "Main actor remained responsive")
+
+    releaseScan.signal()
+    await refresh.value
   }
 
   @MainActor
