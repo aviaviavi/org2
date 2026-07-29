@@ -9,6 +9,90 @@ private var retainedInteractionWindows: [NSWindow] = []
 
 @MainActor
 final class OrgEditorInteractionTests: XCTestCase {
+  func testRenderedViewportReportsTheVisibleSourceLine() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-rendered-viewport-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let file = root.appendingPathComponent("long-page.org2")
+    let text = (1...120)
+      .map { "* Heading \($0)\nBody \($0)" }
+      .joined(separator: "\n\n")
+    let source = EntrySource(
+      file: file.path,
+      startLine: 1,
+      endLineExclusive: 361,
+      text: text,
+      isSubtree: false
+    )
+    let html = try await Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()).renderAppHTML(
+      source.text,
+      sourcePath: source.file
+    )
+    var receivedLine: Int?
+    let content = OrgHTMLDocumentView(
+      html: html,
+      source: source,
+      corpusRoot: root,
+      searchQuery: nil,
+      searchOccurrenceIndex: nil,
+      searchOccurrenceCount: 0,
+      scrollRequest: nil,
+      layout: OrgHTMLDocumentLayout(width: .comfortable, margin: .standard),
+      askAIAboutHeading: { _ in },
+      reportStatus: { _ in },
+      reportViewportSourceLine: { receivedLine = $0 }
+    )
+    let hostingView = NSHostingView(rootView: content)
+    let window = NSWindow(
+      contentRect: NSRect(x: 0, y: 0, width: 900, height: 700),
+      styleMask: [.titled, .closable, .resizable],
+      backing: .buffered,
+      defer: false
+    )
+    window.contentView = hostingView
+    window.makeKeyAndOrderFront(nil)
+    retainedInteractionWindows.append(window)
+
+    var webView: WKWebView?
+    try await waitForCondition {
+      webView = firstWebView(in: window.contentView)
+      return webView != nil
+    }
+    let renderedWebView = try XCTUnwrap(webView)
+    let targetLine = 250
+    let readinessDeadline = Date().addingTimeInterval(5)
+    var targetIsReady = false
+    while Date() < readinessDeadline && !targetIsReady {
+      targetIsReady = (try? await renderedWebView.callAsyncJavaScript(
+        """
+        return Array.from(document.querySelectorAll('[data-org2-start-line]'))
+          .some((element) => Number(element.dataset.org2StartLine || 0) >= targetLine);
+        """,
+        arguments: ["targetLine": targetLine],
+        in: nil,
+        contentWorld: .page
+      )) as? Bool == true
+      if !targetIsReady { try await pumpRunLoop() }
+    }
+    XCTAssertTrue(targetIsReady)
+    _ = try await renderedWebView.callAsyncJavaScript(
+      """
+      const target = Array.from(document.querySelectorAll('[data-org2-start-line]'))
+        .find((element) => Number(element.dataset.org2StartLine || 0) >= targetLine);
+      target?.scrollIntoView({ block: 'start', behavior: 'auto' });
+      return Boolean(target);
+      """,
+      arguments: ["targetLine": targetLine],
+      in: nil,
+      contentWorld: .page
+    )
+
+    try await waitForCondition {
+      guard let receivedLine else { return false }
+      return receivedLine >= targetLine - 3
+    }
+  }
+
   func testRenderedHeadingAskAIButtonRoutesProgrammaticNavigation() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-heading-ai-click-\(UUID().uuidString)", isDirectory: true)
@@ -905,6 +989,30 @@ final class OrgEditorInteractionTests: XCTestCase {
     let editorFrame = editorScrollView.convert(editorScrollView.bounds, to: nil)
     XCTAssertLessThan(editorFrame.minY, 40)
     XCTAssertGreaterThan(editorFrame.height, 500)
+  }
+
+  func testRenderedSourceLineOpensAndScrollsTheFullFileEditorAtThatLine() async throws {
+    let text = (1...220).map { "Line \($0)" }.joined(separator: "\n")
+    let harness = try await makeHarness(initialText: text)
+    let target = "Line 170"
+    let expectedLocation = (text as NSString).range(of: target).location
+
+    harness.store.beginEditingCurrentScope(atSourceLine: 170)
+    let textView = try await harness.focusedEditor()
+    try await waitForCondition {
+      textView.selectedRange().location == expectedLocation
+    }
+    let layoutManager = try XCTUnwrap(textView.layoutManager)
+    let textContainer = try XCTUnwrap(textView.textContainer)
+    let glyphIndex = layoutManager.glyphIndexForCharacter(at: expectedLocation)
+    let targetRect = layoutManager.boundingRect(
+      forGlyphRange: NSRange(location: glyphIndex, length: 1),
+      in: textContainer
+    )
+
+    try await waitForCondition {
+      textView.visibleRect.intersects(targetRect)
+    }
   }
 
   func testSourceEditorShowsParserBackedHeadingGutter() async throws {

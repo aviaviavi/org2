@@ -6395,6 +6395,7 @@ public final class WorkspaceStore: ObservableObject {
           pdf = try await self.cli.renderPresentationPDF(
             text,
             sourcePath: source.file,
+            sourceLineOffset: max(0, source.startLine - 1),
             passes: 1
           )
         }
@@ -6530,7 +6531,19 @@ public final class WorkspaceStore: ObservableObject {
       && !source.isSubtree
   }
 
-  public func beginEditingCurrentScope() {
+  public func beginEditingCurrentScope(atSourceLine sourceLine: Int? = nil) {
+    if let sourceLine,
+       let source = selectedEntrySource {
+      let sourceSelection = NSRange(
+        location: Self.sourceEditorUTF16Offset(
+          forAbsoluteLine: sourceLine,
+          in: source
+        ),
+        length: 0
+      )
+      beginEditingSelectedEntry(initialSelection: sourceSelection)
+      return
+    }
     if let selectedBlock {
       beginEditingSource(for: selectedBlock)
       return
@@ -10598,22 +10611,43 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func chooseOpenClawImageAttachments() {
+    chooseOpenClawAttachments(allowedContentTypes: [.image])
+  }
+
+  public func chooseOpenClawAttachments() {
+    chooseOpenClawAttachments(allowedContentTypes: nil)
+  }
+
+  private func chooseOpenClawAttachments(allowedContentTypes: [UTType]?) {
     let panel = NSOpenPanel()
     panel.allowsMultipleSelection = true
     panel.canChooseDirectories = false
     panel.canChooseFiles = true
-    panel.allowedContentTypes = [.image]
+    if let allowedContentTypes {
+      panel.allowedContentTypes = allowedContentTypes
+    }
     panel.prompt = "Attach"
     if panel.runModal() == .OK {
-      attachOpenClawImages(urls: panel.urls)
+      attachOpenClawFiles(urls: panel.urls)
     }
   }
 
   public func attachOpenClawImages(urls: [URL]) {
+    addOpenClawAttachments(urls: urls, makeAttachment: Self.openClawImageAttachment)
+  }
+
+  public func attachOpenClawFiles(urls: [URL]) {
+    addOpenClawAttachments(urls: urls, makeAttachment: Self.openClawAttachment)
+  }
+
+  private func addOpenClawAttachments(
+    urls: [URL],
+    makeAttachment: (URL) throws -> OpenClawChatAttachment
+  ) {
     var attachments = openClawPendingAttachments
     for url in urls {
       do {
-        let attachment = try Self.openClawImageAttachment(from: url)
+        let attachment = try makeAttachment(url)
         guard !attachments.contains(where: { $0.data == attachment.data && $0.fileName == attachment.fileName }) else {
           continue
         }
@@ -10625,7 +10659,25 @@ public final class WorkspaceStore: ObservableObject {
     }
     openClawPendingAttachments = attachments
     if !attachments.isEmpty {
-      openClawStatusText = "\(attachments.count) image attachment\(attachments.count == 1 ? "" : "s") ready"
+      openClawStatusText = "\(attachments.count) attachment\(attachments.count == 1 ? "" : "s") ready"
+    }
+  }
+
+  public func attachOpenClawAttachment(data: Data, fileName: String, mimeType: String) {
+    do {
+      let attachment = try Self.openClawAttachment(
+        data: data,
+        fileName: fileName,
+        mimeType: mimeType
+      )
+      guard !openClawPendingAttachments.contains(where: {
+        $0.data == attachment.data && $0.fileName == attachment.fileName
+      }) else { return }
+      openClawPendingAttachments.append(attachment)
+      openClawStatusText = "\(openClawPendingAttachments.count) attachment\(openClawPendingAttachments.count == 1 ? "" : "s") ready"
+    } catch {
+      errorText = error.localizedDescription
+      openClawStatusText = "Could not attach \(fileName)"
     }
   }
 
@@ -11565,6 +11617,14 @@ public final class WorkspaceStore: ObservableObject {
         throw OpenClawGatewayError.gateway(
           code: "LIVE_GATEWAY_REQUIRED",
           message: "OpenClaw slash commands require the live Gateway. \(error.localizedDescription)"
+        )
+      }
+      if latestUserMessage.attachments.contains(where: { !$0.mimeType.hasPrefix("image/") }) {
+        openClawGatewayStateByThreadID[threadID] = .disconnected
+        openClawGatewayDetailByThreadID[threadID] = error.localizedDescription
+        throw OpenClawGatewayError.gateway(
+          code: "LIVE_GATEWAY_REQUIRED",
+          message: "File attachments require the live OpenClaw Gateway. \(error.localizedDescription)"
         )
       }
       openClawGatewayStateByThreadID[threadID] = .fallbackHTTP
@@ -18108,26 +18168,60 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   nonisolated static func openClawImageAttachment(from url: URL) throws -> OpenClawChatAttachment {
+    let attachment = try openClawAttachment(from: url)
+    guard attachment.mimeType.hasPrefix("image/") else {
+      throw OpenClawAttachmentError.unsupportedImage(attachment.fileName)
+    }
+    return attachment
+  }
+
+  nonisolated static func openClawAttachment(from url: URL) throws -> OpenClawChatAttachment {
     let standardized = url.standardizedFileURL
-    let data = try Data(contentsOf: standardized)
-    guard data.count <= openClawImageAttachmentMaxBytes else {
-      throw OpenClawAttachmentError.imageTooLarge(
+    let resourceValues = try standardized.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+    guard resourceValues.isRegularFile == true else {
+      throw OpenClawAttachmentError.notRegularFile(standardized.lastPathComponent)
+    }
+    if let fileSize = resourceValues.fileSize, fileSize > openClawAttachmentMaxBytes {
+      throw OpenClawAttachmentError.tooLarge(
         standardized.lastPathComponent,
-        maxMegabytes: openClawImageAttachmentMaxBytes / 1_000_000
+        maxMegabytes: openClawAttachmentMaxBytes / 1_000_000
       )
     }
+    let data = try Data(contentsOf: standardized)
     let type = UTType(filenameExtension: standardized.pathExtension)
-    guard type?.conforms(to: .image) == true else {
-      throw OpenClawAttachmentError.unsupportedImage(standardized.lastPathComponent)
+    let mimeType = type?.preferredMIMEType ?? "application/octet-stream"
+    return try openClawAttachment(
+      data: data,
+      fileName: standardized.lastPathComponent,
+      mimeType: mimeType
+    )
+  }
+
+  nonisolated static func openClawAttachment(
+    data: Data,
+    fileName: String,
+    mimeType: String
+  ) throws -> OpenClawChatAttachment {
+    guard data.count <= openClawAttachmentMaxBytes else {
+      throw OpenClawAttachmentError.tooLarge(
+        fileName,
+        maxMegabytes: openClawAttachmentMaxBytes / 1_000_000
+      )
+    }
+    let normalizedMimeType = mimeType.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    let type = UTType(mimeType: normalizedMimeType)
+      ?? UTType(filenameExtension: URL(fileURLWithPath: fileName).pathExtension)
+    if normalizedMimeType.hasPrefix("video/") || type?.conforms(to: .movie) == true {
+      throw OpenClawAttachmentError.unsupportedVideo(fileName)
     }
     return OpenClawChatAttachment(
-      fileName: standardized.lastPathComponent,
-      mimeType: type?.preferredMIMEType ?? "image/png",
+      fileName: fileName,
+      mimeType: normalizedMimeType.isEmpty ? "application/octet-stream" : normalizedMimeType,
       data: data
     )
   }
 
-  nonisolated private static let openClawImageAttachmentMaxBytes = 20_000_000
+  nonisolated private static let openClawAttachmentMaxBytes = 20_000_000
 
   nonisolated static func openClawDraftByAppendingDictation(existing: String, dictatedText: String) -> String {
     let existing = existing.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -22997,14 +23091,20 @@ private enum AudioSettingsError: LocalizedError {
 
 private enum OpenClawAttachmentError: LocalizedError {
   case unsupportedImage(String)
-  case imageTooLarge(String, maxMegabytes: Int)
+  case unsupportedVideo(String)
+  case notRegularFile(String)
+  case tooLarge(String, maxMegabytes: Int)
 
   var errorDescription: String? {
     switch self {
     case .unsupportedImage(let name):
       return "\(name) is not a supported image attachment."
-    case .imageTooLarge(let name, let maxMegabytes):
-      return "\(name) is larger than the \(maxMegabytes) MB OpenClaw image attachment limit."
+    case .unsupportedVideo(let name):
+      return "\(name) is a video, which OpenClaw chat attachments do not support."
+    case .notRegularFile(let name):
+      return "\(name) is not a regular file."
+    case .tooLarge(let name, let maxMegabytes):
+      return "\(name) is larger than the \(maxMegabytes) MB OpenClaw attachment limit."
     }
   }
 }

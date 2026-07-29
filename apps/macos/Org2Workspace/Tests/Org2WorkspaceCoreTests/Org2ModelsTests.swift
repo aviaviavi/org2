@@ -2546,6 +2546,27 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testOpenClawComposerAcceptsDroppedFilesAndRejectsVideo() throws {
+    let temp = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-openclaw-file-attachments-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
+    let textURL = temp.appendingPathComponent("notes.txt")
+    let videoURL = temp.appendingPathComponent("clip.mp4")
+    try Data("hello".utf8).write(to: textURL)
+    try Data([0x00, 0x00, 0x00, 0x18]).write(to: videoURL)
+
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      openClawTranscriptURL: temp.appendingPathComponent("openclaw-chat.json")
+    )
+    store.attachOpenClawFiles(urls: [textURL, videoURL])
+
+    XCTAssertEqual(store.openClawPendingAttachments.map(\.fileName), ["notes.txt"])
+    XCTAssertEqual(store.openClawPendingAttachments.first?.mimeType, "text/plain")
+    XCTAssertEqual(store.errorText, "clip.mp4 is a video, which OpenClaw chat attachments do not support.")
+  }
+
+  @MainActor
   func testOpenClawReplyRecordsCorpusChangeSummary() async throws {
     let temp = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-chat-changes-\(UUID().uuidString)", isDirectory: true)
@@ -3560,6 +3581,31 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertNil(OpenClawComposerKeyCommand.suggestionCommand(keyCode: 48, modifiers: [.command]))
     XCTAssertNil(OpenClawComposerKeyCommand.suggestionCommand(keyCode: 125, modifiers: [.shift]))
     XCTAssertNil(OpenClawComposerKeyCommand.suggestionCommand(keyCode: 49, modifiers: []))
+  }
+
+  func testOpenClawComposerDropPrefersFileURLsOverTextInsertion() throws {
+    let pasteboard = NSPasteboard(name: NSPasteboard.Name("org2-drop-test-\(UUID().uuidString)"))
+    pasteboard.clearContents()
+    let first = URL(fileURLWithPath: "/tmp/first note.txt")
+    let second = URL(fileURLWithPath: "/tmp/image.png")
+    XCTAssertTrue(pasteboard.writeObjects([first as NSURL, second as NSURL]))
+
+    XCTAssertEqual(
+      OpenClawComposerDrop.payload(from: pasteboard),
+      .fileURLs([first, second])
+    )
+  }
+
+  func testOpenClawComposerDropAcceptsRawImageData() {
+    let pasteboard = NSPasteboard(name: NSPasteboard.Name("org2-image-drop-test-\(UUID().uuidString)"))
+    pasteboard.clearContents()
+    let png = Data([0x89, 0x50, 0x4e, 0x47])
+    pasteboard.setData(png, forType: .png)
+
+    XCTAssertEqual(
+      OpenClawComposerDrop.payload(from: pasteboard),
+      .image(data: png, fileName: "Dropped Image.png", mimeType: "image/png")
+    )
   }
 
   func testOpenClawSlashCommandSelectionWrapsAndClamps() {

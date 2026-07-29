@@ -447,7 +447,7 @@ private struct SidebarView: View {
     VStack(spacing: 0) {
       SidebarHeader(showsCommandShortcuts: showsCommandShortcuts)
 
-      List(selection: surfaceSelection) {
+      List {
         Section("Workspace") {
           ForEach(WorkspaceSurface.sidebarCases) { surface in
             SidebarSurfaceRow(
@@ -455,8 +455,16 @@ private struct SidebarView: View {
               showsCommandShortcut: showsCommandShortcuts,
               notificationCount: surface == .approvals ? store.approvalItems.count : 0
             )
-            .tag(surface)
             .contentShape(Rectangle())
+            .onTapGesture {
+              guard surface != store.selectedSurface else { return }
+              performAfterSwiftUIViewUpdate {
+                guard surface != store.selectedSurface else { return }
+                store.makeSurfacePrimary(surface)
+              }
+            }
+            .modifier(ReadableListSelectionModifier(isSelected: store.selectedSurface == surface))
+            .listRowBackground(Color.clear)
             .help(surface.commandShortcutTitle.isEmpty ? surface.title : "\(surface.title) (\(surface.commandShortcutTitle))")
           }
         }
@@ -512,19 +520,6 @@ private struct SidebarView: View {
     }
     .commandShortcutRevealMonitor($showsCommandShortcuts)
     .animation(WorkspaceMotion.quick, value: showsCommandShortcuts)
-  }
-
-  private var surfaceSelection: Binding<WorkspaceSurface> {
-    Binding(
-      get: { store.selectedSurface },
-      set: { surface in
-        guard surface != store.selectedSurface else { return }
-        performAfterSwiftUIViewUpdate {
-          guard surface != store.selectedSurface else { return }
-          store.makeSurfacePrimary(surface)
-        }
-      }
-    )
   }
 }
 
@@ -2259,11 +2254,19 @@ private struct WorkflowsView: View {
           detail: "Complete a run and choose Create Reusable Workflow. The resulting Org2 file will appear in workflows/."
         )
       } else {
-        List(selection: $store.selectedAgentWorkflowID) {
+        List {
           ForEach(store.agentWorkflows) { workflow in
             WorkflowRow(workflow: workflow)
-              .tag(workflow.id)
               .contentShape(Rectangle())
+              .onTapGesture {
+                if store.selectedAgentWorkflowID == workflow.id {
+                  store.selectAgentWorkflow(workflow)
+                } else {
+                  store.selectedAgentWorkflowID = workflow.id
+                }
+              }
+              .modifier(ReadableListSelectionModifier(isSelected: store.selectedAgentWorkflowID == workflow.id))
+              .listRowBackground(Color.clear)
               .contextMenu {
                 Button("Run Now") { runWorkflow = workflow }
                 Button("Edit Source") {
@@ -4991,7 +4994,7 @@ private struct MeetingsView: View {
           }
         }
       } else {
-        List(selection: $store.selectedMeetingID) {
+        List {
           if !store.pendingMeetingProcessingItems.isEmpty {
             Section("Processing") {
               ForEach(store.pendingMeetingProcessingItems) { item in
@@ -5008,8 +5011,16 @@ private struct MeetingsView: View {
                   isProcessing: store.isMeetingProcessing(meeting),
                   sourceReference: store.relativePath(meeting.file) + ":\(meeting.lineForEditor)"
                 )
-                  .tag(meeting.id)
                   .contentShape(Rectangle())
+                  .onTapGesture {
+                    if store.selectedMeetingID == meeting.id {
+                      store.selectMeeting(meeting)
+                    } else {
+                      store.selectedMeetingID = meeting.id
+                    }
+                  }
+                  .modifier(ReadableListSelectionModifier(isSelected: store.selectedMeetingID == meeting.id))
+                  .listRowBackground(Color.clear)
                   .contextMenu {
                     WorkspaceLocationContextMenu(
                       location: .meeting(meeting),
@@ -6489,20 +6500,30 @@ private struct AssignedWorkRow: View {
 
 private struct DetailView: View {
   @EnvironmentObject private var store: WorkspaceStore
+  @State private var renderedViewportSourceLine: Int?
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
       if let run = store.presentedAgentRun {
         RunCenterDetail(run: run)
       } else if let location = store.selectedLocation {
-        DetailHeader(location: location)
+        DetailHeader(
+          location: location,
+          renderedViewportSourceLine: renderedViewportSourceLine
+        )
         Divider()
         VStack(spacing: 0) {
           if store.isLiveFileEditorSelected {
-            LiveFileEditorBody(location: location)
+            LiveFileEditorBody(
+              location: location,
+              reportViewportSourceLine: { renderedViewportSourceLine = $0 }
+            )
               .frame(minWidth: 420, idealWidth: 560, maxHeight: .infinity)
           } else {
-            EntryBodyView(location: location)
+            EntryBodyView(
+              location: location,
+              reportViewportSourceLine: { renderedViewportSourceLine = $0 }
+            )
             .frame(minWidth: 420, idealWidth: 560, maxHeight: .infinity)
           }
 
@@ -6519,6 +6540,9 @@ private struct DetailView: View {
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    .onChange(of: store.selectedEntrySource?.id) {
+      renderedViewportSourceLine = nil
+    }
   }
 
 }
@@ -6568,6 +6592,7 @@ private struct DetailHeader: View {
   @EnvironmentObject private var store: WorkspaceStore
   @FocusState private var isPageSearchFocused: Bool
   let location: WorkspaceLocation
+  let renderedViewportSourceLine: Int?
 
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
@@ -7067,7 +7092,7 @@ private struct DetailHeader: View {
         .help(hasPendingEditorChanges ? "Save changes and close the editor" : "Close the editor")
       } else {
         Button {
-          store.beginEditingCurrentScope()
+          store.beginEditingCurrentScope(atSourceLine: renderedViewportSourceLine)
         } label: {
           Label("Edit", systemImage: "square.and.pencil")
         }
@@ -7226,6 +7251,7 @@ private struct DetailHeader: View {
 private struct LiveFileEditorBody: View {
   @EnvironmentObject private var store: WorkspaceStore
   let location: WorkspaceLocation
+  let reportViewportSourceLine: @MainActor (Int?) -> Void
 
   var body: some View {
     Group {
@@ -7242,7 +7268,11 @@ private struct LiveFileEditorBody: View {
               .padding(16)
           }
         } else {
-          OrgRenderedDocumentPreview(source: source, loadingLabel: "Rendering page")
+          OrgRenderedDocumentPreview(
+            source: source,
+            loadingLabel: "Rendering page",
+            reportViewportSourceLine: reportViewportSourceLine
+          )
         }
       } else if let error = store.selectedEntryRenderError {
         OrgHTMLRenderFailureView(message: error)
@@ -7261,11 +7291,12 @@ private struct OrgRenderedDocumentPreview: View {
   @EnvironmentObject private var store: WorkspaceStore
   let source: EntrySource
   let loadingLabel: String
+  let reportViewportSourceLine: @MainActor (Int?) -> Void
 
   var body: some View {
     Group {
       if store.documentPreviewKind == .slides {
-        OrgSlidePreviewPane()
+        OrgSlidePreviewPane(reportViewportSourceLine: reportViewportSourceLine)
           .task(id: source) {
             store.scheduleSlidePreview(text: source.text, source: source, immediate: true)
           }
@@ -7280,7 +7311,8 @@ private struct OrgRenderedDocumentPreview: View {
           scrollRequest: store.detailScrollRequest,
           layout: store.renderedDocumentLayout,
           askAIAboutHeading: { store.askOpenClawAboutSourceHeading(at: $0) },
-          reportStatus: { store.statusText = $0 }
+          reportStatus: { store.statusText = $0 },
+          reportViewportSourceLine: reportViewportSourceLine
         )
       } else if let error = store.selectedEntryRenderError {
         OrgHTMLRenderFailureView(message: error)
@@ -7337,11 +7369,15 @@ private struct OrgHTMLLoadingView: View {
 
 private struct OrgSlidePreviewPane: View {
   @EnvironmentObject private var store: WorkspaceStore
+  var reportViewportSourceLine: @MainActor (Int?) -> Void = { _ in }
 
   var body: some View {
     ZStack(alignment: .bottom) {
       if let pdf = store.slidePreviewPDF {
-        OrgPDFDocumentView(data: pdf)
+        OrgPDFDocumentView(
+          data: pdf,
+          reportViewportSourceLine: reportViewportSourceLine
+        )
       } else if store.isRenderingSlidePreview {
         OrgHTMLLoadingView(label: "Compiling slides", onCancel: store.cancelSlidePreview)
       } else {
@@ -7857,6 +7893,7 @@ private struct OrgSourceEditorWithLinkTools: View {
 private struct EntryBodyView: View {
   @EnvironmentObject private var store: WorkspaceStore
   let location: WorkspaceLocation
+  let reportViewportSourceLine: @MainActor (Int?) -> Void
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
@@ -7873,7 +7910,11 @@ private struct EntryBodyView: View {
               .padding(16)
           }
         } else {
-          OrgRenderedDocumentPreview(source: source, loadingLabel: "Rendering preview")
+          OrgRenderedDocumentPreview(
+            source: source,
+            loadingLabel: "Rendering preview",
+            reportViewportSourceLine: reportViewportSourceLine
+          )
         }
       } else if let error = store.selectedEntryRenderError {
         OrgHTMLRenderFailureView(message: error)

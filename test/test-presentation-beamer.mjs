@@ -34,6 +34,7 @@ assert.ok(rendered.tex.includes("\\usetheme{Madrid}"));
 assert.ok(rendered.tex.includes("\\begin{column}{0.45\\columnwidth}"));
 assert.ok(rendered.tex.includes("\\begin{block}<2->{Right}"));
 assert.ok(rendered.tex.includes("\\begin{frame}[label={org2:1-columns-and-source},fragile]"));
+assert.ok(rendered.tex.includes("\\href{org2-source-line://11}"));
 assert.ok(rendered.tex.includes("\\begin{verbatim}\nconst answer = 42;"));
 assert.equal(rendered.tex.includes("generated-result.png"), false);
 assert.ok(rendered.tex.includes("\\includegraphics[height=0.5\\textwidth]{\\detokenize{diagram.png}}"));
