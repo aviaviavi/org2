@@ -3,10 +3,16 @@ import SwiftUI
 
 struct OrgPDFDocumentView: NSViewRepresentable {
   let data: Data
+  var restorationSourceLine: Int? = nil
+  var restorationPageIndex: Int? = nil
   var reportViewportSourceLine: @MainActor (Int?) -> Void = { _ in }
+  var reportViewportPageIndex: @MainActor (Int?) -> Void = { _ in }
 
   func makeCoordinator() -> Coordinator {
-    Coordinator(reportViewportSourceLine: reportViewportSourceLine)
+    Coordinator(
+      reportViewportSourceLine: reportViewportSourceLine,
+      reportViewportPageIndex: reportViewportPageIndex
+    )
   }
 
   func makeNSView(context: Context) -> PDFView {
@@ -24,20 +30,30 @@ struct OrgPDFDocumentView: NSViewRepresentable {
 
   func updateNSView(_ view: PDFView, context: Context) {
     context.coordinator.reportViewportSourceLine = reportViewportSourceLine
+    context.coordinator.reportViewportPageIndex = reportViewportPageIndex
     update(view, coordinator: context.coordinator)
   }
 
-  private func update(_ view: PDFView, coordinator: Coordinator) {
+  func update(_ view: PDFView, coordinator: Coordinator) {
     guard coordinator.data != data else { return }
     let currentPageIndex = view.currentPage.flatMap { view.document?.index(for: $0) }
+    let currentSourceLine = view.currentPage.flatMap(Self.sourceLine(for:))
     guard let document = PDFDocument(data: data) else { return }
 
     coordinator.data = data
+    coordinator.isReplacingDocument = true
     view.document = document
-    if let currentPageIndex,
-       let page = document.page(at: min(currentPageIndex, max(0, document.pageCount - 1))) {
+    let restoredPageIndex = restorationPageIndex.map {
+      min(max(0, $0), max(0, document.pageCount - 1))
+    } ?? restorationSourceLine
+      .flatMap { Self.pageIndex(nearestSourceLine: $0, in: document) }
+      ?? currentPageIndex
+      ?? currentSourceLine.flatMap { Self.pageIndex(nearestSourceLine: $0, in: document) }
+    if let restoredPageIndex,
+       let page = document.page(at: min(restoredPageIndex, max(0, document.pageCount - 1))) {
       view.go(to: page)
     }
+    coordinator.isReplacingDocument = false
     coordinator.reportCurrentPage(in: view)
   }
 
@@ -53,14 +69,50 @@ struct OrgPDFDocumentView: NSViewRepresentable {
     return line
   }
 
+  nonisolated static func sourceLine(for page: PDFPage) -> Int? {
+    page.annotations
+      .lazy
+      .compactMap(\.url)
+      .compactMap(sourceLine(from:))
+      .first
+  }
+
+  nonisolated static func pageIndex(
+    nearestSourceLine sourceLine: Int,
+    in document: PDFDocument
+  ) -> Int? {
+    (0..<document.pageCount)
+      .compactMap { index -> (index: Int, distance: Int)? in
+        guard let page = document.page(at: index),
+              let markerLine = Self.sourceLine(for: page)
+        else {
+          return nil
+        }
+        return (index, abs(markerLine - sourceLine))
+      }
+      .min {
+        if $0.distance != $1.distance {
+          return $0.distance < $1.distance
+        }
+        return $0.index < $1.index
+      }?
+      .index
+  }
+
   @MainActor
   final class Coordinator {
     var data: Data?
     var reportViewportSourceLine: @MainActor (Int?) -> Void
+    var reportViewportPageIndex: @MainActor (Int?) -> Void
+    var isReplacingDocument = false
     nonisolated(unsafe) private var pageChangeObserver: NSObjectProtocol?
 
-    init(reportViewportSourceLine: @escaping @MainActor (Int?) -> Void) {
+    init(
+      reportViewportSourceLine: @escaping @MainActor (Int?) -> Void,
+      reportViewportPageIndex: @escaping @MainActor (Int?) -> Void
+    ) {
       self.reportViewportSourceLine = reportViewportSourceLine
+      self.reportViewportPageIndex = reportViewportPageIndex
     }
 
     deinit {
@@ -79,20 +131,16 @@ struct OrgPDFDocumentView: NSViewRepresentable {
         queue: .main
       ) { [weak self, weak view] _ in
         MainActor.assumeIsolated {
-          guard let self, let view else { return }
+          guard let self, let view, !self.isReplacingDocument else { return }
           self.reportCurrentPage(in: view)
         }
       }
     }
 
     func reportCurrentPage(in view: PDFView) {
-      let sourceLine = view.currentPage?
-        .annotations
-        .lazy
-        .compactMap(\.url)
-        .compactMap(OrgPDFDocumentView.sourceLine(from:))
-        .first
-      reportViewportSourceLine(sourceLine)
+      let pageIndex = view.currentPage.flatMap { view.document?.index(for: $0) }
+      reportViewportPageIndex(pageIndex)
+      reportViewportSourceLine(view.currentPage.flatMap(OrgPDFDocumentView.sourceLine(for:)))
     }
   }
 }

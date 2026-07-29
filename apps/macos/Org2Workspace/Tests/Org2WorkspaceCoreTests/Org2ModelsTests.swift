@@ -5297,6 +5297,7 @@ final class Org2ModelsTests: XCTestCase {
     )
     store.selectedEntrySource = source
     store.recordDocumentViewportSourceLine(80)
+    store.recordDocumentSlidePageIndex(4)
 
     let restored = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
@@ -5305,6 +5306,7 @@ final class Org2ModelsTests: XCTestCase {
     restored.selectedEntrySource = source
 
     XCTAssertEqual(restored.currentDocumentViewportSourceLine, 80)
+    XCTAssertEqual(restored.currentDocumentSlidePageIndex, 4)
     restored.beginEditingSelectedEntry()
     let expectedOffset = text
       .split(separator: "\n", omittingEmptySubsequences: false)

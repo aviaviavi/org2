@@ -1047,6 +1047,9 @@ public final class WorkspaceStore: ObservableObject {
         currentDocumentViewportSourceLine = selectedEntrySource.flatMap {
           documentViewportSourceLine(for: $0)
         }
+        currentDocumentSlidePageIndex = selectedEntrySource.flatMap {
+          documentSlidePageIndex(for: $0)
+        }
       }
     }
   }
@@ -1120,6 +1123,7 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var editableEntryText = ""
   @Published public var sourceEditorSelection = NSRange(location: 0, length: 0)
   @Published public private(set) var currentDocumentViewportSourceLine: Int?
+  @Published public private(set) var currentDocumentSlidePageIndex: Int?
   @Published public var sourceEditorCommandRequest: OrgSourceEditorCommandRequest?
   @Published public var sourceEditorDiagnostics: [Org2EditorDiagnostic] = []
   @Published public var selectedBlockID: OrgEditableBlock.ID?
@@ -1198,6 +1202,7 @@ public final class WorkspaceStore: ObservableObject {
   private let sourceEditorPresentationKey = "Org2Workspace.sourceEditor.presentation"
   private let documentPreviewKindKey = "Org2Workspace.documentPreview.kind"
   private let documentViewportSourceLinesKey = "Org2Workspace.documentViewportSourceLines.v1"
+  private let documentSlidePageIndexesKey = "Org2Workspace.documentSlidePageIndexes.v1"
   private let orgCryptEncryptOnSaveKey = "Org2Workspace.orgCrypt.encryptOnSave"
   private let orgCryptRecipientsKey = "Org2Workspace.orgCrypt.recipients"
   private let orgCryptRecipientFilesKey = "Org2Workspace.orgCrypt.recipientFiles"
@@ -1381,6 +1386,7 @@ public final class WorkspaceStore: ObservableObject {
   private var slidePreviewSourceID: String?
   private var sourceEditorLocalDraftText: String?
   private var documentViewportSourceLines: [String: Int] = [:]
+  private var documentSlidePageIndexes: [String: Int] = [:]
   private var editorSaveConflictSource: EntrySource?
   private var editorSaveConflictDraft: String?
 
@@ -1439,6 +1445,11 @@ public final class WorkspaceStore: ObservableObject {
     documentViewportSourceLines = Self.restoreDocumentViewportSourceLines(
       from: defaults,
       key: documentViewportSourceLinesKey
+    )
+    documentSlidePageIndexes = Self.restoreDocumentViewportSourceLines(
+      from: defaults,
+      key: documentSlidePageIndexesKey,
+      minimumValue: 0
     )
     orgCryptEncryptOnSave = defaults.object(forKey: orgCryptEncryptOnSaveKey) as? Bool ?? true
     orgCryptRecipientsText = OrgCryptSettings.listText(defaults.stringArray(forKey: orgCryptRecipientsKey) ?? [])
@@ -14448,6 +14459,35 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
+  public func recordDocumentSlidePageIndex(
+    _ pageIndex: Int?,
+    for source: EntrySource? = nil
+  ) {
+    guard let source = source ?? selectedEntrySource,
+          let pageIndex,
+          pageIndex >= 0
+    else {
+      return
+    }
+    let key = Self.documentViewportKey(for: source)
+    guard documentSlidePageIndexes[key] != pageIndex
+            || currentDocumentSlidePageIndex != pageIndex
+    else {
+      return
+    }
+    documentSlidePageIndexes[key] = pageIndex
+    currentDocumentSlidePageIndex = pageIndex
+    if documentSlidePageIndexes.count > Self.documentViewportSourceLinesLimit,
+       let discardedKey = documentSlidePageIndexes.keys.sorted().first(where: { $0 != key }) {
+      documentSlidePageIndexes.removeValue(forKey: discardedKey)
+    }
+    defaults.set(documentSlidePageIndexes, forKey: documentSlidePageIndexesKey)
+  }
+
+  public func documentSlidePageIndex(for source: EntrySource) -> Int? {
+    documentSlidePageIndexes[Self.documentViewportKey(for: source)]
+  }
+
   nonisolated static func documentViewportKey(for source: EntrySource) -> String {
     URL(fileURLWithPath: source.file).standardizedFileURL.path
   }
@@ -14461,13 +14501,14 @@ public final class WorkspaceStore: ObservableObject {
 
   nonisolated static func restoreDocumentViewportSourceLines(
     from defaults: UserDefaults,
-    key: String
+    key: String,
+    minimumValue: Int = 1
   ) -> [String: Int] {
     (defaults.dictionary(forKey: key) ?? [:]).reduce(into: [:]) { result, item in
-      if let line = item.value as? Int, line > 0 {
-        result[item.key] = line
-      } else if let line = item.value as? NSNumber, line.intValue > 0 {
-        result[item.key] = line.intValue
+      if let value = item.value as? Int, value >= minimumValue {
+        result[item.key] = value
+      } else if let value = item.value as? NSNumber, value.intValue >= minimumValue {
+        result[item.key] = value.intValue
       }
     }
   }

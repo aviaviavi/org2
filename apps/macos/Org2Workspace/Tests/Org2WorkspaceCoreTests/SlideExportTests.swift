@@ -1,4 +1,5 @@
-import Foundation
+import AppKit
+import PDFKit
 import XCTest
 @testable import Org2WorkspaceCore
 
@@ -24,6 +25,55 @@ final class SlideExportTests: XCTestCase {
     )
     XCTAssertNil(OrgPDFDocumentView.sourceLine(from: URL(string: "https://example.com/417")))
     XCTAssertNil(OrgPDFDocumentView.sourceLine(from: URL(string: "org2-source-line://0")))
+  }
+
+  @MainActor
+  func testSlidePreviewRestoresTheSavedPageAcrossPDFReplacementAndViewRecreation() throws {
+    let initialPDF = try makeSlideDeckPDF(sourceLines: [10, 20, 30, 40, 50, 60])
+    let refreshedPDF = try makeSlideDeckPDF(sourceLines: [10, 20, 30, 40, 50, 70])
+    var reportedLine: Int?
+    var reportedPageIndex: Int?
+    var reportedPageIndexes: [Int?] = []
+    let initialView = OrgPDFDocumentView(
+      data: initialPDF,
+      reportViewportSourceLine: { reportedLine = $0 },
+      reportViewportPageIndex: {
+        reportedPageIndex = $0
+        reportedPageIndexes.append($0)
+      }
+    )
+    let coordinator = initialView.makeCoordinator()
+    let pdfView = PDFView()
+    initialView.update(pdfView, coordinator: coordinator)
+    pdfView.go(to: try XCTUnwrap(pdfView.document?.page(at: 4)))
+    coordinator.reportCurrentPage(in: pdfView)
+
+    XCTAssertEqual(reportedLine, 50)
+    XCTAssertEqual(reportedPageIndex, 4)
+    reportedPageIndexes = []
+
+    let refreshedView = OrgPDFDocumentView(
+      data: refreshedPDF,
+      restorationSourceLine: 50,
+      restorationPageIndex: 4,
+      reportViewportSourceLine: { reportedLine = $0 },
+      reportViewportPageIndex: { reportedPageIndex = $0 }
+    )
+    refreshedView.update(pdfView, coordinator: coordinator)
+
+    XCTAssertEqual(pdfView.currentPage.flatMap { pdfView.document?.index(for: $0) }, 4)
+    XCTAssertEqual(reportedLine, 50)
+    XCTAssertEqual(reportedPageIndex, 4)
+    XCTAssertEqual(reportedPageIndexes, [4])
+
+    let recreatedCoordinator = refreshedView.makeCoordinator()
+    let recreatedPDFView = PDFView()
+    refreshedView.update(recreatedPDFView, coordinator: recreatedCoordinator)
+
+    XCTAssertEqual(
+      recreatedPDFView.currentPage.flatMap { recreatedPDFView.document?.index(for: $0) },
+      4
+    )
   }
 
   func testOrg2CLIIncludesMacTeXInChildProcessPath() {
@@ -295,6 +345,27 @@ final class SlideExportTests: XCTestCase {
     }
     XCTFail("Timed out waiting for slide preview")
   }
+}
+
+private func makeSlideDeckPDF(sourceLines: [Int]) throws -> Data {
+  let document = PDFDocument()
+  for (index, sourceLine) in sourceLines.enumerated() {
+    let image = NSImage(size: NSSize(width: 320, height: 180))
+    image.lockFocus()
+    NSColor(calibratedWhite: CGFloat(index + 1) / CGFloat(sourceLines.count + 1), alpha: 1).setFill()
+    NSRect(origin: .zero, size: image.size).fill()
+    image.unlockFocus()
+    let page = try XCTUnwrap(PDFPage(image: image))
+    let marker = PDFAnnotation(
+      bounds: NSRect(x: 0, y: 0, width: 1, height: 1),
+      forType: .link,
+      withProperties: nil
+    )
+    marker.url = URL(string: "org2-source-line://\(sourceLine)")
+    page.addAnnotation(marker)
+    document.insert(page, at: index)
+  }
+  return try XCTUnwrap(document.dataRepresentation())
 }
 
 private actor SlidePreviewRecorder {

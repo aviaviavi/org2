@@ -7399,7 +7399,10 @@ private struct OrgSlidePreviewPane: View {
       if let pdf = store.slidePreviewPDF {
         OrgPDFDocumentView(
           data: pdf,
-          reportViewportSourceLine: reportViewportSourceLine
+          restorationSourceLine: store.currentDocumentViewportSourceLine,
+          restorationPageIndex: store.currentDocumentSlidePageIndex,
+          reportViewportSourceLine: reportViewportSourceLine,
+          reportViewportPageIndex: { store.recordDocumentSlidePageIndex($0) }
         )
       } else if store.isRenderingSlidePreview {
         OrgHTMLLoadingView(label: "Compiling slides", onCancel: store.cancelSlidePreview)
