@@ -3269,6 +3269,24 @@ public final class WorkspaceStore: ObservableObject {
     if shouldDrain { await drainOpenClawSendQueue(for: thread.id) }
   }
 
+  private func continueOpenClawDraftAfterApproval(_ run: AgentRunItem) async throws {
+    let gateway = OpenClawGatewayClient(settings: currentOpenClawSettings(allowKeychainRead: true))
+    let continuation = try await gateway.resumeDraftRun(runID: run.id, corpusID: activeCorpusIdentity?.id)
+    let thread: OpenClawChatThread
+    if let existing = openClawChatThreads.first(where: { $0.sessionKey == continuation.sessionKey }) {
+      if existing.isSettled { reopenOpenClawChatThread(existing.id) }
+      thread = openClawChatThreads.first(where: { $0.id == existing.id }) ?? existing
+    } else {
+      thread = createOpenClawChatThread(
+        title: "Approved draft: \(run.goal)",
+        statusText: "Sending approved draft",
+        sessionKey: continuation.sessionKey
+      )
+    }
+    let shouldDrain = enqueueOpenClawMessage(continuation.prompt, attachments: [], in: thread.id)
+    if shouldDrain { await drainOpenClawSendQueue(for: thread.id) }
+  }
+
   private func continueOpenClawWorkflowAfterRevision(
     _ run: AgentRunItem,
     approval: AgentRunApprovalItem
@@ -3297,6 +3315,16 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   private func continueOpenClawAfterApprovalBoundary(_ run: AgentRunItem) async {
+    if run.isOpenClawExternalDraft, run.status == "running" {
+      do {
+        try await continueOpenClawDraftAfterApproval(run)
+        statusText = "Approved and continued \(run.goal)"
+      } catch {
+        errorText = error.localizedDescription
+        statusText = "Approved; OpenClaw draft continuation pending"
+      }
+      return
+    }
     guard run.workflowId != nil else { return }
     if run.status == "running" {
       do {
