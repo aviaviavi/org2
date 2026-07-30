@@ -354,6 +354,14 @@ public struct AgentRunItem: Identifiable, Decodable, Hashable, Sendable {
     }
     return nil
   }
+  public var isOpenClawExternalDraft: Bool {
+    comments.contains { comment in
+      comment.body.split(whereSeparator: \.isNewline).contains { line in
+        String(line).trimmingCharacters(in: .whitespacesAndNewlines)
+          .caseInsensitiveCompare("OPENCLAW_KIND: external-draft") == .orderedSame
+      }
+    }
+  }
   public var completedStepCount: Int { plan.filter { $0.status == "completed" }.count }
   public var skippedStepCount: Int { plan.filter { $0.status == "skipped" }.count }
   public var latestValidations: [AgentRunValidationItem] {
