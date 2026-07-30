@@ -2871,7 +2871,7 @@ private struct RunCenterDetail: View {
           }
         }
 
-        let pending = run.approvals.filter { $0.status == "pending" }
+        let pending = run.actionablePendingApprovals
         if !pending.isEmpty {
           runSection("Waiting for approval") {
             Text("\(pending.count) of \(run.approvals.count) approval\(run.approvals.count == 1 ? "" : "s") still need a decision. These are the same approvals shown in Review; deciding in either place updates this run record.")
@@ -2909,6 +2909,21 @@ private struct RunCenterDetail: View {
           }
         }
 
+        let retainedPending = run.retainedPendingApprovals
+        if !retainedPending.isEmpty {
+          runSection("Retained approval history") {
+            Text("This finished run retained \(retainedPending.count) unresolved approval\(retainedPending.count == 1 ? "" : "s") for audit history. No decision is required, and \(retainedPending.count == 1 ? "it is" : "they are") not shown in Review.")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+            ForEach(retainedPending) { approval in
+              VStack(alignment: .leading, spacing: 4) {
+                Text(approval.title).font(.body.weight(.semibold))
+                Text(approval.action).font(.callout).foregroundStyle(.secondary)
+              }
+            }
+          }
+        }
+
         if !run.artifacts.isEmpty {
           runSection("Outputs") {
             ForEach(run.artifacts) { artifact in
@@ -2930,8 +2945,14 @@ private struct RunCenterDetail: View {
           }
         }
 
-        if !run.attentionValidations.isEmpty || run.artifacts.contains(where: { $0.reviewStatus == "review-required" }) {
-          runSection("Needs attention") {
+        let reviewRequiredArtifacts = run.artifacts.filter { $0.reviewStatus == "review-required" }
+        if !run.attentionValidations.isEmpty || !reviewRequiredArtifacts.isEmpty {
+          runSection(run.isFinished ? "Retained workflow history" : "Needs attention") {
+            if run.isFinished {
+              Text("These signals were unresolved when the run finished. They are retained for audit history and do not put the run back in the review queue.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
             ForEach(run.attentionValidations) { validation in
               Label(
                 validation.detail ?? "\(validation.displayName): \(AgentRunItem.humanizedLabel(validation.status))",
@@ -2939,9 +2960,14 @@ private struct RunCenterDetail: View {
               )
               .foregroundStyle(validation.status == "failed" ? .red : .orange)
             }
-            ForEach(run.artifacts.filter { $0.reviewStatus == "review-required" }) { artifact in
+            ForEach(reviewRequiredArtifacts) { artifact in
               Button { store.openAgentRunArtifact(artifact) } label: {
-                Label("Review \(artifact.displayTitle)", systemImage: "doc.badge.ellipsis")
+                Label(
+                  run.isFinished
+                    ? "Review was still pending for \(artifact.displayTitle)"
+                    : "Review \(artifact.displayTitle)",
+                  systemImage: "doc.badge.ellipsis"
+                )
               }
               .buttonStyle(.link)
             }

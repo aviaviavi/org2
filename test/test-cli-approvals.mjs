@@ -52,6 +52,17 @@ Already closed.
 :STATUS: waiting-on-avi-approval
 :END:
 Approve before sending.
+
+* TODO Finish action outside Org2
+:PROPERTIES:
+:GMAIL_DRAFT_ID: r-completed-elsewhere
+:END:
+** TODO Approve obsolete action
+:PROPERTIES:
+:ID: completed-elsewhere-headline
+:STATUS: draft-needs-review
+:END:
+Legacy projection of a decision that was completed elsewhere.
 `, "utf8");
 
 fs.writeFileSync(versionedApproval, `* TODO Review outreach copy
@@ -73,6 +84,12 @@ cli(["run", "start", "release-run", "--dir", tmp, "--json"]);
 cli(["run", "approval-request", "release-run", "--title", "Approve recipients", "--action", "confirm recipient list", "--risk", "external-action", "--role", "owner", "--dir", tmp, "--json"]);
 cli(["run", "approval-request", "release-run", "--title", "Approve final copy", "--action", "send weekly brief", "--risk", "external-action", "--role", "owner", "--dir", tmp, "--json"]);
 
+cli(["run", "create", "--id", "completed-elsewhere-run", "--goal", "Finish outside Org2", "--dir", tmp, "--json"]);
+cli(["run", "start", "completed-elsewhere-run", "--dir", tmp, "--json"]);
+cli(["run", "approval-request", "completed-elsewhere-run", "--title", "Approve obsolete action", "--action", "perform obsolete action\nProvider draft: gmail:gog:r-completed-elsewhere", "--risk", "external-action", "--role", "owner", "--dir", tmp, "--json"]);
+cli(["run", "block", "completed-elsewhere-run", "--reason", "The action moved to another system.", "--dir", tmp, "--json"]);
+cli(["run", "complete-external", "completed-elsewhere-run", "--summary", "Completed in the other system.", "--actor", "Avi", "--dir", tmp, "--json"]);
+
 const staleIndex = JSON.parse(cli(["index", "--dir", tmp, "--files", note, conflict, "--format", "json"]));
 assert.equal(staleIndex.fileCount, 2);
 fs.unlinkSync(conflict);
@@ -85,6 +102,9 @@ assert.equal(payload.count, 4);
 assert.equal(payload.skippedCandidates ?? 0, 0);
 const runItems = payload.items.filter((item) => item.kind === "run");
 const headlineItems = payload.items.filter((item) => item.kind === "headline");
+assert.equal(payload.items.some((item) => item.runId === "completed-elsewhere-run"), false);
+assert.equal(payload.items.some((item) => item.idValue === "completed-elsewhere-headline"), false);
+assert.equal(loadAgentRun(tmp, "completed-elsewhere-run").approvals[0].status, "pending");
 assert.equal(runItems.length, 2);
 assert.equal(runItems[0].runId, "release-run");
 assert.equal(runItems[0].runGoal, "Release the weekly brief");

@@ -131,6 +131,46 @@ final class AgentRunModelsTests: XCTestCase {
     XCTAssertFalse(store.approvalItems.contains(where: { $0.id == queueItem.id }))
   }
 
+  @MainActor
+  func testFinishedRunQueueCleanupImmediatelyRemovesAllOfItsApprovalRows() throws {
+    let run = try makeRun(status: "completed", pendingApproval: true)
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.replaceAgentRunsForTesting([run])
+    let approval = try XCTUnwrap(run.approvals.first)
+    let queueItem = ApprovalItem(
+      title: approval.title,
+      status: approval.status,
+      todo: nil,
+      level: nil,
+      file: "/tmp/corpus/.org2/runs/\(run.id).org2",
+      line: 1,
+      idValue: approval.id,
+      properties: [:],
+      body: approval.action,
+      tags: [],
+      kind: "run",
+      approvalId: approval.id,
+      fingerprint: approval.fingerprint,
+      action: approval.action,
+      riskClass: approval.riskClass,
+      requestedRole: approval.requestedRole,
+      requestedFrom: approval.requestedFrom,
+      requestedAt: approval.requestedAt,
+      runId: run.id,
+      runGoal: run.goal,
+      runStatus: run.status,
+      runPendingApprovalCount: 1,
+      runApprovalCount: 1
+    )
+    store.replaceApprovalItemsForTesting([queueItem])
+    store.selectApprovalItem(queueItem)
+
+    store.removeFinishedRunApprovalsFromQueue(run.id)
+
+    XCTAssertFalse(store.approvalItems.contains(where: { $0.runId == run.id }))
+    XCTAssertNotEqual(store.selectedApprovalItemID, queueItem.id)
+  }
+
   func testRevisionFeedbackNormalizationAndResumableBoundary() throws {
     XCTAssertNil(WorkspaceStore.normalizedApprovalRevisionFeedback("   \n"))
     XCTAssertEqual(
@@ -506,12 +546,15 @@ final class AgentRunModelsTests: XCTestCase {
     let run = try makeRun(
       status: "completed",
       validationStatus: "warning",
-      reviewRequired: true
+      reviewRequired: true,
+      pendingApproval: true
     )
 
     XCTAssertFalse(run.needsAttention)
     XCTAssertTrue(run.isFinished)
     XCTAssertEqual(run.attentionValidations.map(\.status), ["warning"])
+    XCTAssertTrue(run.actionablePendingApprovals.isEmpty)
+    XCTAssertEqual(run.retainedPendingApprovals.map(\.id), ["approval-1"])
   }
 
   func testRunCenterScopeCountsUseTheSamePredicatesAsTheirLists() throws {
@@ -737,6 +780,7 @@ final class AgentRunModelsTests: XCTestCase {
     blockedReason: String? = nil,
     validationStatus: String? = nil,
     reviewRequired: Bool = false,
+    pendingApproval: Bool = false,
     updatedAt: String = "2026-07-14T00:01:00.000Z"
   ) throws -> AgentRunItem {
     var value: [String: Any] = [
@@ -755,7 +799,14 @@ final class AgentRunModelsTests: XCTestCase {
         "reviewStatus": "review-required",
         "createdAt": "2026-07-14T00:00:00.000Z"
       ]] : [],
-      "approvals": [],
+      "approvals": pendingApproval ? [[
+        "id": "approval-1",
+        "title": "Approve output",
+        "action": "publish output",
+        "riskClass": "external-action",
+        "status": "pending",
+        "requestedAt": "2026-07-14T00:00:00.000Z"
+      ]] : [],
       "validations": validationStatus.map { status in [[
         "id": "validation-1",
         "name": "output-check",

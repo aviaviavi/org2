@@ -2931,6 +2931,32 @@ public final class WorkspaceStore: ObservableObject {
     agentRuns = runs
   }
 
+  func replaceApprovalItemsForTesting(_ items: [ApprovalItem]) {
+    approvalItems = items
+  }
+
+  func removeFinishedRunApprovalsFromQueue(_ runID: String) {
+    let removedQueueItemIDs = Set(
+      approvalItems.lazy
+        .filter { $0.runId == runID }
+        .map(\.id)
+    )
+    let removedSelection = selectedApprovalItemID.flatMap { selectedID in
+      removedQueueItemIDs.contains(selectedID)
+        ? (selectedID, visibleApprovalItems.firstIndex(where: { $0.id == selectedID }))
+        : nil
+    }
+    if !removedQueueItemIDs.isEmpty {
+      approvalItems.removeAll { removedQueueItemIDs.contains($0.id) }
+    }
+    if let (selectedID, visibleIndex) = removedSelection {
+      preserveApprovalSelectionAfterMutation(
+        mutatedID: selectedID,
+        originalVisibleIndex: visibleIndex
+      )
+    }
+  }
+
   public func setRunReviewAutoRefreshActive(
     _ isActive: Bool,
     intervalNanoseconds: UInt64 = WorkspaceStore.runReviewAutoRefreshIntervalNanoseconds
@@ -3240,6 +3266,8 @@ public final class WorkspaceStore: ObservableObject {
       if let index = agentRuns.firstIndex(where: { $0.id == updated.id }) {
         agentRuns[index] = updated
       }
+      removeFinishedRunApprovalsFromQueue(updated.id)
+      scheduleApprovalsRefresh()
       statusText = "Recorded external completion for \(updated.goal)"
     } catch {
       errorText = error.localizedDescription

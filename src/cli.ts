@@ -1191,6 +1191,7 @@ function approvalItemFromHeadline(
 
 function approvalCandidatesFromRuns(rootDir: string, runs: AgentRun[]): ApprovalQueueCandidate[] {
   return runs.flatMap((run) => {
+    const emitsPendingDecisions = run.status !== "completed" && run.status !== "canceled";
     const pending = run.approvals.filter((approval) => approval.status === "pending");
     return run.approvals.map((approval) => {
       const remainingAfterThis = pending.length - 1;
@@ -1233,7 +1234,7 @@ function approvalCandidatesFromRuns(rootDir: string, runs: AgentRun[]): Approval
         },
         decisionKeys: agentRunApprovalDecisionKeys(approval),
         requestedAt: approval.requestedAt,
-        isPending: approval.status === "pending",
+        isPending: emitsPendingDecisions && approval.status === "pending",
       };
     });
   });

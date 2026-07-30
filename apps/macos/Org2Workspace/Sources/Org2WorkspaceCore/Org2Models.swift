@@ -308,7 +308,7 @@ public struct AgentRunItem: Identifiable, Decodable, Hashable, Sendable {
   public let blockedReason: String?
   public let failure: String?
 
-  public var pendingApprovalCount: Int { approvals.filter { $0.status == "pending" }.count }
+  public var pendingApprovalCount: Int { pendingApprovals.count }
   public var currentApprovalBoundary: [AgentRunApprovalItem] {
     guard let boundaryAt = events.reversed().first(where: {
       $0.type == "status-changed"
@@ -365,6 +365,15 @@ public struct AgentRunItem: Identifiable, Decodable, Hashable, Sendable {
   }
   public var isFinished: Bool {
     status == "completed" || status == "canceled"
+  }
+  public var pendingApprovals: [AgentRunApprovalItem] {
+    approvals.filter { $0.status == "pending" }
+  }
+  public var actionablePendingApprovals: [AgentRunApprovalItem] {
+    isFinished ? [] : pendingApprovals
+  }
+  public var retainedPendingApprovals: [AgentRunApprovalItem] {
+    isFinished ? pendingApprovals : []
   }
   public var needsAttention: Bool {
     guard !isFinished, !["queued", "running"].contains(status) else { return false }
