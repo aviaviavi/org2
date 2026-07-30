@@ -329,22 +329,51 @@ public actor CodexAppServerClient {
     return CodexLoginStart(loginID: loginID, authURL: authURL)
   }
 
+  public func listModels() async throws -> [AIChatModelOption] {
+    var models: [AIChatModelOption] = []
+    var cursor: String?
+    repeat {
+      var params: [String: JSONValue] = [
+        "limit": .integer(100),
+        "includeHidden": .bool(false)
+      ]
+      if let cursor {
+        params["cursor"] = .string(cursor)
+      }
+      let result = try await request(
+        method: "model/list",
+        params: .object(params)
+      )
+      guard let rows = result["data"]?.arrayValue else {
+        throw CodexAppServerError.invalidResponse("model/list omitted its model catalog")
+      }
+      models.append(contentsOf: rows.compactMap(Self.modelOption))
+      cursor = result["nextCursor"]?.stringValue
+    } while cursor != nil
+    return models
+  }
+
   public func ensureThread(
     existingThreadID: String?,
-    cwd: URL
+    cwd: URL,
+    model: String? = nil
   ) async throws -> String {
     try await connect()
     if let existingThreadID {
       if !loadedThreadIDs.contains(existingThreadID) {
+        var params: [String: JSONValue] = [
+          "threadId": .string(existingThreadID),
+          "cwd": .string(cwd.standardizedFileURL.path),
+          "approvalPolicy": .string("never"),
+          "sandbox": .string("read-only"),
+          "dynamicTools": .array(Self.localEditDynamicTools)
+        ]
+        if let model {
+          params["model"] = .string(model)
+        }
         let result = try await requestRaw(
           method: "thread/resume",
-          params: .object([
-            "threadId": .string(existingThreadID),
-            "cwd": .string(cwd.standardizedFileURL.path),
-            "approvalPolicy": .string("never"),
-            "sandbox": .string("read-only"),
-            "dynamicTools": .array(Self.localEditDynamicTools)
-          ])
+          params: .object(params)
         )
         guard result["thread"]?["id"]?.stringValue == existingThreadID else {
           throw CodexAppServerError.invalidResponse("thread/resume returned a different thread")
@@ -354,16 +383,20 @@ public actor CodexAppServerClient {
       return existingThreadID
     }
 
+    var params: [String: JSONValue] = [
+      "cwd": .string(cwd.standardizedFileURL.path),
+      "approvalPolicy": .string("never"),
+      "sandbox": .string("read-only"),
+      "serviceName": .string("org2_workspace"),
+      "developerInstructions": .string(Self.localEditDeveloperInstructions),
+      "dynamicTools": .array(Self.localEditDynamicTools)
+    ]
+    if let model {
+      params["model"] = .string(model)
+    }
     let result = try await requestRaw(
       method: "thread/start",
-      params: .object([
-        "cwd": .string(cwd.standardizedFileURL.path),
-        "approvalPolicy": .string("never"),
-        "sandbox": .string("read-only"),
-        "serviceName": .string("org2_workspace"),
-        "developerInstructions": .string(Self.localEditDeveloperInstructions),
-        "dynamicTools": .array(Self.localEditDynamicTools)
-      ])
+      params: .object(params)
     )
     guard let threadID = result["thread"]?["id"]?.stringValue else {
       throw CodexAppServerError.invalidResponse("thread/start omitted the thread id")
@@ -379,7 +412,9 @@ public actor CodexAppServerClient {
     workspaceContext: String? = nil,
     attachments: [OpenClawChatAttachment],
     cwd: URL,
-    clientUserMessageID: UUID
+    clientUserMessageID: UUID,
+    model: String? = nil,
+    reasoningEffort: String? = nil
   ) async throws -> CodexTurnResult {
     try await connect()
     var input: [JSONValue] = [
@@ -400,18 +435,21 @@ public actor CodexAppServerClient {
         "url": .string($0.dataURLString)
       ])
     })
+    var params: [String: JSONValue] = [
+      "threadId": .string(threadID),
+      "input": .array(input),
+      "cwd": .string(cwd.standardizedFileURL.path),
+      "approvalPolicy": .string("never"),
+      "sandboxPolicy": .object([
+        "type": .string("readOnly")
+      ]),
+      "clientUserMessageId": .string(clientUserMessageID.uuidString.lowercased())
+    ]
+    params["model"] = model.map(JSONValue.string) ?? .null
+    params["effort"] = reasoningEffort.map(JSONValue.string) ?? .null
     let result = try await requestRaw(
       method: "turn/start",
-      params: .object([
-        "threadId": .string(threadID),
-        "input": .array(input),
-        "cwd": .string(cwd.standardizedFileURL.path),
-        "approvalPolicy": .string("never"),
-        "sandboxPolicy": .object([
-          "type": .string("readOnly")
-        ]),
-        "clientUserMessageId": .string(clientUserMessageID.uuidString.lowercased())
-      ])
+      params: .object(params)
     )
     guard let turnID = result["turn"]?["id"]?.stringValue else {
       throw CodexAppServerError.invalidResponse("turn/start omitted the turn id")
@@ -472,6 +510,51 @@ public actor CodexAppServerClient {
     } catch {
       startupTask = nil
       throw error
+    }
+  }
+
+  nonisolated private static func modelOption(_ value: JSONValue) -> AIChatModelOption? {
+    guard let id = value["id"]?.stringValue,
+          !id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    else {
+      return nil
+    }
+    let reasoningOptions = value["supportedReasoningEfforts"]?.arrayValue?
+      .compactMap { option -> AIChatReasoningOption? in
+        guard let effort = option["reasoningEffort"]?.stringValue else { return nil }
+        return AIChatReasoningOption(
+          id: effort,
+          label: Self.reasoningLabel(effort),
+          detail: option["description"]?.stringValue
+        )
+      } ?? []
+    return AIChatModelOption(
+      id: id,
+      label: value["displayName"]?.stringValue ?? id,
+      detail: value["description"]?.stringValue,
+      supportsReasoning: !reasoningOptions.isEmpty,
+      reasoningOptions: reasoningOptions,
+      defaultReasoningEffort: value["defaultReasoningEffort"]?.stringValue,
+      isDefault: value["isDefault"]?.boolValue ?? false
+    )
+  }
+
+  nonisolated private static func reasoningLabel(_ value: String) -> String {
+    switch value.lowercased() {
+    case "off", "none": return "Off"
+    case "minimal": return "Minimal"
+    case "low": return "Low"
+    case "medium": return "Medium"
+    case "high": return "High"
+    case "xhigh": return "Extra high"
+    case "max": return "Maximum"
+    case "ultra": return "Ultra"
+    case "adaptive": return "Adaptive"
+    default:
+      return value
+        .replacingOccurrences(of: "_", with: " ")
+        .replacingOccurrences(of: "-", with: " ")
+        .capitalized
     }
   }
 

@@ -23,6 +23,8 @@ final class CodexAppServerClientTests: XCTestCase {
 
     XCTAssertEqual(thread.runtime, .openClaw)
     XCTAssertNil(thread.runtimeThreadID)
+    XCTAssertNil(thread.model)
+    XCTAssertNil(thread.reasoningEffort)
   }
 
   func testCodexChatThreadRuntimeRoundTrips() throws {
@@ -30,7 +32,9 @@ final class CodexAppServerClientTests: XCTestCase {
       title: "Local Codex",
       runtime: .codex,
       sessionKey: "unused-for-codex",
-      runtimeThreadID: "thr_codex"
+      runtimeThreadID: "thr_codex",
+      model: "gpt-test",
+      reasoningEffort: "high"
     )
 
     let data = try JSONEncoder().encode(thread)
@@ -38,6 +42,8 @@ final class CodexAppServerClientTests: XCTestCase {
 
     XCTAssertEqual(restored.runtime, .codex)
     XCTAssertEqual(restored.runtimeThreadID, "thr_codex")
+    XCTAssertEqual(restored.model, "gpt-test")
+    XCTAssertEqual(restored.reasoningEffort, "high")
   }
 
   func testChatRuntimeLocksAfterFirstMessage() {
@@ -98,7 +104,11 @@ final class CodexAppServerClientTests: XCTestCase {
     store.createOpenClawChatThread()
     XCTAssertTrue(store.canChangeSelectedAIChatRuntime)
     store.setSelectedAIChatRuntime(.codex)
+    store.setSelectedAIChatModel("gpt-test")
+    store.setSelectedAIChatReasoningEffort("high")
     XCTAssertEqual(store.selectedOpenClawChatThread?.runtime, .codex)
+    XCTAssertEqual(store.selectedOpenClawChatThread?.model, "gpt-test")
+    XCTAssertEqual(store.selectedOpenClawChatThread?.reasoningEffort, "high")
     XCTAssertEqual(
       store.visibleOpenClawChatThreads.first(where: {
         $0.id == store.selectedOpenClawChatThreadID
@@ -112,6 +122,8 @@ final class CodexAppServerClientTests: XCTestCase {
       legacyDefaultsDomains: []
     )
     XCTAssertEqual(restored.selectedOpenClawChatThread?.runtime, .codex)
+    XCTAssertEqual(restored.selectedOpenClawChatThread?.model, "gpt-test")
+    XCTAssertEqual(restored.selectedOpenClawChatThread?.reasoningEffort, "high")
   }
 
   func testClientRunsCodexTurnAndAnswersDynamicToolCall() async throws {
@@ -150,7 +162,8 @@ final class CodexAppServerClientTests: XCTestCase {
 
     let threadID = try await client.ensureThread(
       existingThreadID: nil,
-      cwd: temporaryDirectory
+      cwd: temporaryDirectory,
+      model: "gpt-test"
     )
     XCTAssertEqual(threadID, "thr-test")
 
@@ -161,16 +174,29 @@ final class CodexAppServerClientTests: XCTestCase {
       workspaceContext: "Selected source includes an unsaved draft.",
       attachments: [],
       cwd: temporaryDirectory,
-      clientUserMessageID: UUID()
+      clientUserMessageID: UUID(),
+      model: "gpt-test",
+      reasoningEffort: "high"
     )
     XCTAssertEqual(result.status, .completed)
     XCTAssertEqual(result.reply, "Final reply")
 
-    let toolCall = await recorder.toolCall
+    var toolCall = await recorder.toolCall
+    for _ in 0..<50 where toolCall == nil {
+      try await Task.sleep(for: .milliseconds(10))
+      toolCall = await recorder.toolCall
+    }
     XCTAssertEqual(toolCall?.tool, "org2_workspace_read")
     XCTAssertEqual(toolCall?.arguments["turnId"]?.stringValue, "local-turn")
     let streamedText = await recorder.streamedText
     XCTAssertEqual(streamedText, "Working…")
+
+    let models = try await client.listModels()
+    XCTAssertEqual(models.map(\.id), ["gpt-test"])
+    XCTAssertEqual(models.first?.label, "GPT Test")
+    XCTAssertEqual(models.first?.reasoningOptions.map(\.id), ["low", "high"])
+    XCTAssertEqual(models.first?.defaultReasoningEffort, "low")
+    XCTAssertTrue(models.first?.isDefault == true)
 
     await client.shutdown()
   }
@@ -188,15 +214,30 @@ final class CodexAppServerClientTests: XCTestCase {
         printf '%s\n' '{"id":2,"result":{"account":{"type":"chatgpt","email":"test@example.com","planType":"plus"},"requiresOpenaiAuth":true}}'
         ;;
       *'"method":"thread/start"'*)
+        case "$line" in
+          *'"model":"gpt-test"'*) ;;
+          *) printf '%s\n' '{"id":3,"error":{"message":"thread model missing"}}'; continue ;;
+        esac
         printf '%s\n' '{"id":3,"result":{"thread":{"id":"thr-test"}}}'
         ;;
       *'"method":"turn/start"'*)
+        case "$line" in
+          *'"model":"gpt-test"'*) ;;
+          *) printf '%s\n' '{"id":4,"error":{"message":"turn model missing"}}'; continue ;;
+        esac
+        case "$line" in
+          *'"effort":"high"'*) ;;
+          *) printf '%s\n' '{"id":4,"error":{"message":"turn effort missing"}}'; continue ;;
+        esac
         printf '%s\n' '{"id":4,"result":{"turn":{"id":"turn-test","status":"inProgress","items":[],"error":null}}}'
         printf '%s\n' '{"method":"turn/started","params":{"threadId":"thr-test","turn":{"id":"turn-test","status":"inProgress","items":[],"error":null}}}'
         printf '%s\n' '{"method":"item/agentMessage/delta","params":{"threadId":"thr-test","turnId":"turn-test","itemId":"msg-test","delta":"Working…"}}'
         printf '%s\n' '{"id":"tool-request","method":"item/tool/call","params":{"callId":"call-test","threadId":"thr-test","turnId":"turn-test","tool":"org2_workspace_read","arguments":{"turnId":"local-turn","path":"notes/example.org2"}}}'
         printf '%s\n' '{"method":"item/completed","params":{"threadId":"thr-test","turnId":"turn-test","completedAtMs":1,"item":{"type":"agentMessage","id":"msg-test","text":"Final reply","phase":"final_answer"}}}'
         printf '%s\n' '{"method":"turn/completed","params":{"threadId":"thr-test","turn":{"id":"turn-test","status":"completed","items":[],"error":null}}}'
+        ;;
+      *'"method":"model/list"'*)
+        printf '%s\n' '{"id":5,"result":{"data":[{"id":"gpt-test","model":"gpt-test","upgrade":null,"upgradeInfo":null,"availabilityNux":null,"displayName":"GPT Test","description":"Test model","hidden":false,"supportedReasoningEfforts":[{"reasoningEffort":"low","description":"Fast"},{"reasoningEffort":"high","description":"Thorough"}],"defaultReasoningEffort":"low","inputModalities":["text"],"supportsPersonality":false,"additionalSpeedTiers":[],"serviceTiers":[],"defaultServiceTier":null,"isDefault":true}],"nextCursor":null}}'
         ;;
     esac
   done

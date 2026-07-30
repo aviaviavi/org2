@@ -7598,13 +7598,15 @@ private struct OrgSourceEditorWithLinkTools: View {
         showsScrollers: true,
         textInset: NSSize(width: 12, height: 12),
         focusOnAppear: true,
-        textPublishing: .deferred(milliseconds: 180),
+        textPublishing: .deferred(milliseconds: 500),
         liveHighlighting: true,
         incrementalHighlighting: true,
+        incrementalHighlightingDelayMilliseconds: 120,
         concealsSyntax: false,
         orgWritingCommands: true,
         textChecking: .spellingAndGrammar,
         caretPublishingDelayMilliseconds: 180,
+        semanticAnalysisDelayMilliseconds: 900,
         commandRequest: store.sourceEditorCommandRequest,
         semanticAnalyzer: { text in
           await store.analyzeSourceEditorText(text)

@@ -58,7 +58,12 @@ try {
       thread("pending", { pendingTurn: { runID: "run-1" } }),
       thread("recent", { updatedAt: appleReferenceDateSeconds(recent) }),
       thread("empty", { messages: [] }),
-      thread("codex", { runtime: "codex", runtimeThreadID: "thr-codex" }),
+      thread("codex", {
+        runtime: "codex",
+        runtimeThreadID: "thr-codex",
+        model: "gpt-test",
+        reasoningEffort: "high",
+      }),
     ],
   }, null, 2)}\n`);
 
@@ -89,6 +94,8 @@ try {
   const codex = settled.threads.find((item) => item.id === "codex");
   assert.equal(codex.runtime, "codex");
   assert.equal(codex.runtimeThreadID, "thr-codex");
+  assert.equal(codex.model, "gpt-test");
+  assert.equal(codex.reasoningEffort, "high");
   for (const id of ["selected", "pinned", "unread", "failed", "pending", "recent"]) {
     assert.equal(isOpenClawThreadSettled(settled.threads.find((item) => item.id === id)), false, id);
   }

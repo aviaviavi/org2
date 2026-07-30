@@ -30,6 +30,21 @@ private final class ThreadSafeTestFlag: @unchecked Sendable {
   }
 }
 
+private final class ThreadSafeStringRecorder: @unchecked Sendable {
+  private let lock = NSLock()
+  private var storage: [String] = []
+
+  var values: [String] {
+    lock.withLock { storage }
+  }
+
+  func append(_ value: String) {
+    lock.withLock {
+      storage.append(value)
+    }
+  }
+}
+
 private struct OpenClawTranscriptFixture: Encodable {
   let version: Int
   let messages: [OpenClawChatMessage]?
@@ -104,9 +119,14 @@ private actor OpenClawRetrySendRecorder {
 private actor OpenClawSuspendedSendRecorder {
   private var started = false
   private var continuation: CheckedContinuation<String, Never>?
+  private var startedContinuations: [CheckedContinuation<Void, Never>] = []
 
   func send(messages: [OpenClawChatMessage]) async throws -> String {
     started = true
+    for startedContinuation in startedContinuations {
+      startedContinuation.resume()
+    }
+    startedContinuations = []
     return await withCheckedContinuation { continuation in
       self.continuation = continuation
     }
@@ -114,6 +134,13 @@ private actor OpenClawSuspendedSendRecorder {
 
   func hasStarted() -> Bool {
     started
+  }
+
+  func waitUntilStarted() async {
+    guard !started else { return }
+    await withCheckedContinuation { continuation in
+      startedContinuations.append(continuation)
+    }
   }
 
   func finish(reply: String) {
@@ -941,6 +968,56 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(params["agentId"] as? String, "org2")
     XCTAssertEqual(params["preserveSideRuns"] as? Bool, true)
     XCTAssertNil(params["runId"])
+  }
+
+  func testOpenClawGatewayPatchesModelAndReasoningAsSessionOverrides() {
+    let selected = OpenClawGatewayClient.sessionConfigurationPatchParams(
+      sessionKey: "agent:main:org2-workspace:test-thread",
+      agentID: "main",
+      model: "openai/gpt-test",
+      reasoningEffort: "high"
+    )
+
+    XCTAssertEqual(selected["key"] as? String, "agent:main:org2-workspace:test-thread")
+    XCTAssertEqual(selected["agentId"] as? String, "main")
+    XCTAssertEqual(selected["model"] as? String, "openai/gpt-test")
+    XCTAssertEqual(selected["thinkingLevel"] as? String, "high")
+
+    let inherited = OpenClawGatewayClient.sessionConfigurationPatchParams(
+      sessionKey: "agent:main:org2-workspace:test-thread",
+      agentID: "main",
+      model: nil,
+      reasoningEffort: nil
+    )
+    XCTAssertTrue(inherited["model"] is NSNull)
+    XCTAssertTrue(inherited["thinkingLevel"] is NSNull)
+  }
+
+  func testOpenClawGatewaySkipsSessionPatchForInheritedChatConfiguration() {
+    XCTAssertFalse(OpenClawGatewayClient.shouldPatchSessionConfiguration(
+      model: nil,
+      reasoningEffort: nil
+    ))
+    XCTAssertEqual(
+      OpenClawGatewayClient.chatSendScopes(model: nil, reasoningEffort: nil),
+      ["operator.read", "operator.write"]
+    )
+
+    XCTAssertTrue(OpenClawGatewayClient.shouldPatchSessionConfiguration(
+      model: "openai/gpt-test",
+      reasoningEffort: nil
+    ))
+    XCTAssertTrue(OpenClawGatewayClient.shouldPatchSessionConfiguration(
+      model: nil,
+      reasoningEffort: "high"
+    ))
+    XCTAssertEqual(
+      OpenClawGatewayClient.chatSendScopes(
+        model: "openai/gpt-test",
+        reasoningEffort: "high"
+      ),
+      ["operator.read", "operator.write", "operator.admin"]
+    )
   }
 
   func testOpenClawGatewayReconcilesReplyFromRestartReplacementRun() {
@@ -3482,7 +3559,7 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(store.meetings[0].transcriptArtifact?.hasSuffix(".transcript.org2") == true)
   }
 
-  func testScansRecoverableMeetingAudioWithoutCompletedNote() throws {
+  func testScansRecoverableMeetingAudioButExcludesActiveRecording() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-meeting-recovery-\(UUID().uuidString)", isDirectory: true)
     let meetings = root.appendingPathComponent("meetings", isDirectory: true)
@@ -3505,6 +3582,14 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(recoverable[0].paths.audioURL.standardizedFileURL, interruptedAudio.standardizedFileURL)
     XCTAssertEqual(recoverable[0].systemAudioURL?.standardizedFileURL, interruptedSystemAudio.standardizedFileURL)
     XCTAssertEqual(recoverable[0].captureSources, "recovered_audio, system_audio")
+    XCTAssertFalse(WorkspaceStore.shouldRecoverMeetingRecording(
+      recoverable[0].paths,
+      activeRecordingPaths: recoverable[0].paths
+    ))
+    XCTAssertTrue(WorkspaceStore.shouldRecoverMeetingRecording(
+      recoverable[0].paths,
+      activeRecordingPaths: nil
+    ))
   }
 
   @MainActor
@@ -4161,6 +4246,60 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertFalse(store.isSendingOpenClawMessage)
     XCTAssertEqual(store.openClawQueuedMessageCount, 0)
     XCTAssertTrue(store.openClawSendingThreadIDs.isEmpty)
+  }
+
+  @MainActor
+  func testAIChatTurnContinuesWhenSwitchingCorpora() async throws {
+    let firstRoot = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-ai-chat-origin-\(UUID().uuidString)", isDirectory: true)
+    let secondRoot = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-ai-chat-other-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: firstRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: secondRoot, withIntermediateDirectories: true)
+    defer {
+      try? FileManager.default.removeItem(at: firstRoot)
+      try? FileManager.default.removeItem(at: secondRoot)
+    }
+
+    let recorder = OpenClawSuspendedSendRecorder()
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      openClawSendHandler: { messages, _, _, _ in
+        try await recorder.send(messages: messages)
+      }
+    )
+    store.setCorpusRoot(firstRoot, persistsDefault: false)
+    store.openClawDraft = "keep working"
+    let send = Task { await store.sendOpenClawMessage() }
+    await recorder.waitUntilStarted()
+    let originatingThreadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
+
+    store.setCorpusRoot(secondRoot, persistsDefault: false)
+
+    XCTAssertTrue(store.openClawChatThreads.isEmpty)
+    XCTAssertFalse(store.isSendingOpenClawMessage)
+
+    store.setCorpusRoot(firstRoot, persistsDefault: false)
+
+    XCTAssertEqual(store.selectedOpenClawChatThreadID, originatingThreadID)
+    XCTAssertTrue(store.isSendingOpenClawMessage)
+    XCTAssertEqual(store.openClawMessages.first?.deliveryStatus, .sending)
+
+    store.setCorpusRoot(secondRoot, persistsDefault: false)
+
+    await recorder.finish(reply: "finished in the background")
+    await send.value
+    XCTAssertTrue(store.openClawChatThreads.isEmpty)
+
+    store.setCorpusRoot(firstRoot, persistsDefault: false)
+
+    XCTAssertEqual(store.selectedOpenClawChatThreadID, originatingThreadID)
+    XCTAssertEqual(store.openClawMessages.map { "\($0.role.rawValue):\($0.content)" }, [
+      "user:keep working",
+      "assistant:finished in the background"
+    ])
+    XCTAssertFalse(store.isSendingOpenClawMessage)
+    XCTAssertEqual(store.openClawQueuedMessageCount, 0)
   }
 
   @MainActor
@@ -5404,6 +5543,60 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testSyntaxEditorDefersIncrementalHighlightingUntilTypingIsIdle() async throws {
+    var boundText = "* Original"
+    let editor = OrgSyntaxTextEditor(
+      text: Binding(
+        get: { boundText },
+        set: { boundText = $0 }
+      ),
+      liveHighlighting: true,
+      incrementalHighlighting: true,
+      incrementalHighlightingDelayMilliseconds: 30
+    )
+    let coordinator = OrgSyntaxTextEditor.Coordinator(parent: editor)
+    let textView = NSTextView()
+    textView.string = "* Updated"
+
+    coordinator.textDidChange(Notification(name: NSText.didChangeNotification, object: textView))
+
+    XCTAssertTrue(coordinator.hasDeferredHighlighting(for: "* Updated"))
+    try await waitForCondition {
+      !coordinator.hasDeferredHighlighting(for: "* Updated")
+    }
+  }
+
+  @MainActor
+  func testSyntaxEditorSemanticAnalysisCoalescesRapidEditsAfterIdleDelay() async throws {
+    var boundText = "* Original"
+    let recorder = ThreadSafeStringRecorder()
+    let editor = OrgSyntaxTextEditor(
+      text: Binding(
+        get: { boundText },
+        set: { boundText = $0 }
+      ),
+      liveHighlighting: false,
+      semanticAnalysisDelayMilliseconds: 30,
+      semanticAnalyzer: { text in
+        recorder.append(text)
+        return OrgSourceEditorSemanticSnapshot(regions: [])
+      }
+    )
+    let coordinator = OrgSyntaxTextEditor.Coordinator(parent: editor)
+    let textView = NSTextView()
+
+    textView.string = "* First"
+    coordinator.textDidChange(Notification(name: NSText.didChangeNotification, object: textView))
+    textView.string = "* Latest"
+    coordinator.textDidChange(Notification(name: NSText.didChangeNotification, object: textView))
+
+    XCTAssertEqual(recorder.values, [])
+    try await waitForCondition {
+      recorder.values == ["* Latest"]
+    }
+  }
+
+  @MainActor
   func testSyntaxEditorDefersCaretOnlySelectionPublishing() async throws {
     var selection = NSRange(location: 0, length: 0)
     let editor = OrgSyntaxTextEditor(
@@ -5845,7 +6038,10 @@ final class Org2ModelsTests: XCTestCase {
 
   @MainActor
   func testSourceEditorLivePreviewRendersLatestInMemoryBuffer() async throws {
-    let store = WorkspaceStore(legacyDefaultsDomains: [])
+    let suiteName = "org2-source-editor-preview-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let store = WorkspaceStore(defaults: defaults, legacyDefaultsDomains: [])
     let source = EntrySource(
       file: "/tmp/source-preview.org2",
       startLine: 1,

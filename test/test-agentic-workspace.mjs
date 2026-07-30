@@ -193,7 +193,11 @@ try {
   gated = requestAgentRunApproval(gated, { id: "legal", title: "Legal review", action: "release", riskClass: "external-action", requestedRole: "legal" });
   gated = requestAgentRunApproval(gated, { id: "owner", title: "Owner review", action: "release", riskClass: "external-action", requestedRole: "owner" });
   assert.throws(() => decideAgentRunApproval(gated, "legal", "approved", { actor: "Avi", actorRole: "owner" }), /requires role legal/);
-  gated = decideAgentRunApproval(gated, "legal", "rejected", { actor: "Counsel", actorRole: "legal" });
+  gated = decideAgentRunApproval(gated, "legal", "revised", {
+    actor: "Counsel",
+    actorRole: "legal",
+    note: "Address the legal review before requesting approval again.",
+  });
   gated = decideAgentRunApproval(gated, "owner", "approved", { actor: "Avi", actorRole: "owner" });
   assert.equal(gated.status, "blocked");
 
@@ -207,8 +211,63 @@ try {
   assert.equal(gated.status, "waiting-approval");
   gated = decideAgentRunApproval(gated, "replacement", "approved", { actor: "Avi", actorRole: "owner" });
   assert.equal(gated.status, "running");
-  assert.equal(gated.approvals.find((approval) => approval.id === "legal").status, "rejected");
+  assert.equal(gated.approvals.find((approval) => approval.id === "legal").status, "revised");
   assert.equal(gated.approvals.find((approval) => approval.id === "replacement").status, "approved");
+
+  let rejected = transitionAgentRun(
+    createAgentRun({ id: "rejected-approval", goal: "Cancel after a rejected approval" }),
+    "running",
+  );
+  rejected = requestAgentRunApproval(rejected, {
+    id: "reject-action",
+    title: "Approve protected action",
+    action: "perform protected action",
+    riskClass: "external-action",
+  });
+  rejected = requestAgentRunApproval(rejected, {
+    id: "second-review",
+    title: "Second review",
+    action: "perform protected action",
+    riskClass: "external-action",
+  });
+  rejected = decideAgentRunApproval(rejected, "reject-action", "rejected", { actor: "Avi" });
+  assert.equal(rejected.status, "canceled");
+  assert.equal(rejected.approvals.find((approval) => approval.id === "second-review").status, "pending");
+  assert.match(rejected.events.at(-1).detail, /waiting-approval -> canceled/);
+
+  let canceledApproval = transitionAgentRun(
+    createAgentRun({ id: "canceled-approval", goal: "Cancel after a canceled approval" }),
+    "running",
+  );
+  canceledApproval = requestAgentRunApproval(canceledApproval, {
+    id: "cancel-action",
+    title: "Approve optional action",
+    action: "perform optional action",
+    riskClass: "external-action",
+  });
+  canceledApproval = decideAgentRunApproval(canceledApproval, "cancel-action", "canceled", { actor: "Avi" });
+  assert.equal(canceledApproval.status, "canceled");
+
+  let blockedPendingApproval = transitionAgentRun(
+    createAgentRun({ id: "blocked-pending-approval", goal: "Resolve an approval-blocked run" }),
+    "running",
+  );
+  blockedPendingApproval = requestAgentRunApproval(blockedPendingApproval, {
+    id: "blocked-action",
+    title: "Approve blocked action",
+    action: "perform blocked action",
+    riskClass: "external-action",
+  });
+  blockedPendingApproval = transitionAgentRun(blockedPendingApproval, "blocked", {
+    reason: "Waiting for the protected action decision.",
+  });
+  blockedPendingApproval = decideAgentRunApproval(
+    blockedPendingApproval,
+    "blocked-action",
+    "rejected",
+    { actor: "Avi" },
+  );
+  assert.equal(blockedPendingApproval.status, "canceled");
 
   let separatelyBlocked = transitionAgentRun(
     createAgentRun({ id: "separately-blocked", goal: "Keep separate blockers intact" }),

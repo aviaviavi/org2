@@ -281,6 +281,25 @@ public enum OpenClawGatewayRunEvent: Sendable {
   case activity(OpenClawRunActivity)
 }
 
+public struct OpenClawAIChatSessionConfiguration: Sendable {
+  public let model: String?
+  public let reasoningEffort: String?
+  public let reasoningOptions: [AIChatReasoningOption]
+  public let defaultReasoningEffort: String?
+
+  public init(
+    model: String?,
+    reasoningEffort: String?,
+    reasoningOptions: [AIChatReasoningOption],
+    defaultReasoningEffort: String?
+  ) {
+    self.model = model
+    self.reasoningEffort = reasoningEffort
+    self.reasoningOptions = reasoningOptions
+    self.defaultReasoningEffort = defaultReasoningEffort
+  }
+}
+
 public struct OpenClawPreparedWorkflowRun: Sendable {
   public let runID: String
   public let prompt: String
@@ -599,6 +618,66 @@ public actor OpenClawGatewayClient {
     }
   }
 
+  public func listModels() async throws -> [AIChatModelOption] {
+    let payload = try await requestPayload(
+      method: "models.list",
+      params: ["view": "configured"],
+      scopes: ["operator.read"]
+    )
+    let rows = payload["models"] as? [[String: Any]] ?? []
+    return rows.compactMap { row in
+      guard let id = Self.string(row["id"]),
+            let provider = Self.string(row["provider"]),
+            !id.isEmpty,
+            !provider.isEmpty
+      else {
+        return nil
+      }
+      let reference = id.contains("/") ? id : "\(provider)/\(id)"
+      return AIChatModelOption(
+        id: reference,
+        label: Self.string(row["name"]) ?? reference,
+        detail: Self.string(row["alias"]),
+        supportsReasoning: Self.bool(row["reasoning"]) ?? false
+      )
+    }
+  }
+
+  public func sessionConfiguration(
+    sessionKey: String
+  ) async throws -> OpenClawAIChatSessionConfiguration? {
+    let payload = try await requestPayload(
+      method: "sessions.describe",
+      params: ["key": sessionKey],
+      scopes: ["operator.read"]
+    )
+    guard let session = Self.dictionary(payload["session"]) else { return nil }
+    return Self.sessionConfiguration(from: session)
+  }
+
+  @discardableResult
+  public func patchSessionConfiguration(
+    sessionKey: String,
+    agentID: String,
+    model: String?,
+    reasoningEffort: String?
+  ) async throws -> OpenClawAIChatSessionConfiguration {
+    let payload = try await requestPayload(
+      method: "sessions.patch",
+      params: Self.sessionConfigurationPatchParams(
+        sessionKey: sessionKey,
+        agentID: agentID,
+        model: model,
+        reasoningEffort: reasoningEffort
+      ),
+      scopes: ["operator.admin"]
+    )
+    let resolved = Self.dictionary(payload["resolved"]) ?? [:]
+    let entry = Self.dictionary(payload["entry"]) ?? [:]
+    return try await sessionConfiguration(sessionKey: sessionKey)
+      ?? Self.sessionConfiguration(from: resolved.merging(entry) { current, _ in current })
+  }
+
   public func prepareWorkflowRun(
     workflowID: String,
     inputs: [String: String],
@@ -707,6 +786,8 @@ public actor OpenClawGatewayClient {
     attachments: [OpenClawChatAttachment],
     agentID: String,
     sessionKey: String,
+    model: String? = nil,
+    reasoningEffort: String? = nil,
     idempotencyKey: String? = nil,
     requestStartedAt: Date? = nil,
     onEvent: @escaping EventHandler
@@ -724,8 +805,22 @@ public actor OpenClawGatewayClient {
 
     do {
       let nonce = try await awaitChallenge(on: socket)
-      try await connect(on: socket, nonce: nonce)
+      try await connect(
+        on: socket,
+        nonce: nonce,
+        scopes: Self.chatSendScopes(model: model, reasoningEffort: reasoningEffort)
+      )
       await onEvent(.connection(.connected, nil))
+
+      if Self.shouldPatchSessionConfiguration(model: model, reasoningEffort: reasoningEffort) {
+        try await patchSessionConfiguration(
+          sessionKey: sessionKey,
+          agentID: agentID,
+          model: model,
+          reasoningEffort: reasoningEffort,
+          on: socket
+        )
+      }
 
       let proposedRunID = idempotencyKey ?? UUID().uuidString.lowercased()
       let sendID = UUID().uuidString.lowercased()
@@ -734,7 +829,6 @@ public actor OpenClawGatewayClient {
         "agentId": agentID,
         "message": message,
         "deliver": false,
-        "thinking": "medium",
         "timeoutMs": Int(OpenClawChatClient.requestTimeout * 1_000),
         "idempotencyKey": proposedRunID
       ]
@@ -913,6 +1007,71 @@ public actor OpenClawGatewayClient {
     return params
   }
 
+  nonisolated static func sessionConfigurationPatchParams(
+    sessionKey: String,
+    agentID: String,
+    model: String?,
+    reasoningEffort: String?
+  ) -> [String: Any] {
+    [
+      "key": sessionKey,
+      "agentId": agentID,
+      "model": model ?? NSNull(),
+      "thinkingLevel": reasoningEffort ?? NSNull()
+    ]
+  }
+
+  nonisolated static func shouldPatchSessionConfiguration(
+    model: String?,
+    reasoningEffort: String?
+  ) -> Bool {
+    model != nil || reasoningEffort != nil
+  }
+
+  nonisolated static func chatSendScopes(
+    model: String?,
+    reasoningEffort: String?
+  ) -> [String] {
+    var scopes = ["operator.read", "operator.write"]
+    if shouldPatchSessionConfiguration(model: model, reasoningEffort: reasoningEffort) {
+      scopes.append("operator.admin")
+    }
+    return scopes
+  }
+
+  private func patchSessionConfiguration(
+    sessionKey: String,
+    agentID: String,
+    model: String?,
+    reasoningEffort: String?,
+    on socket: URLSessionWebSocketTask
+  ) async throws {
+    let requestID = UUID().uuidString.lowercased()
+    try await sendRequest(
+      id: requestID,
+      method: "sessions.patch",
+      params: Self.sessionConfigurationPatchParams(
+        sessionKey: sessionKey,
+        agentID: agentID,
+        model: model,
+        reasoningEffort: reasoningEffort
+      ),
+      on: socket
+    )
+    while true {
+      let frame = try await receiveObject(on: socket)
+      guard Self.string(frame["type"]) == "res",
+            Self.string(frame["id"]) == requestID
+      else {
+        continue
+      }
+      guard Self.bool(frame["ok"]) == true else {
+        throw Self.gatewayError(from: frame)
+      }
+      return
+    }
+  }
+
   private func requestPayload(
     method: String,
     params: [String: Any],
@@ -940,6 +1099,46 @@ public actor OpenClawGatewayClient {
     } catch {
       socket.cancel(with: .goingAway, reason: nil)
       throw OpenClawGatewayError.connection(error.localizedDescription)
+    }
+  }
+
+  nonisolated private static func sessionConfiguration(
+    from value: [String: Any]
+  ) -> OpenClawAIChatSessionConfiguration {
+    let provider = string(value["modelProvider"])
+    let rawModel = string(value["model"])
+    let model = rawModel.map { raw in
+      guard !raw.contains("/"), let provider else { return raw }
+      return "\(provider)/\(raw)"
+    }
+    let reasoningOptions = (value["thinkingLevels"] as? [[String: Any]] ?? [])
+      .compactMap { option -> AIChatReasoningOption? in
+        guard let id = string(option["id"]) else { return nil }
+        return AIChatReasoningOption(
+          id: id,
+          label: string(option["label"]) ?? reasoningLabel(id)
+        )
+      }
+    return OpenClawAIChatSessionConfiguration(
+      model: model,
+      reasoningEffort: string(value["thinkingLevel"]),
+      reasoningOptions: reasoningOptions,
+      defaultReasoningEffort: string(value["thinkingDefault"])
+    )
+  }
+
+  nonisolated private static func reasoningLabel(_ value: String) -> String {
+    switch value.lowercased() {
+    case "off", "none": return "Off"
+    case "minimal": return "Minimal"
+    case "low": return "Low"
+    case "medium": return "Medium"
+    case "high": return "High"
+    case "xhigh": return "Extra high"
+    case "max": return "Maximum"
+    case "ultra": return "Ultra"
+    case "adaptive": return "Adaptive"
+    default: return value.capitalized
     }
   }
 

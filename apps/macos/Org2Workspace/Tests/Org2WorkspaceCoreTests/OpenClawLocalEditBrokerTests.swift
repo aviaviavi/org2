@@ -315,6 +315,49 @@ final class OpenClawLocalEditBrokerTests: XCTestCase {
     }
   }
 
+  func testWorkspaceLocalEditUsesExplicitOriginatingCorpusRoot() async throws {
+    let firstRoot = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-local-edit-origin-\(UUID().uuidString)", isDirectory: true)
+    let secondRoot = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-local-edit-other-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: firstRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: secondRoot, withIntermediateDirectories: true)
+    defer {
+      try? FileManager.default.removeItem(at: firstRoot)
+      try? FileManager.default.removeItem(at: secondRoot)
+    }
+    let firstNote = firstRoot.appendingPathComponent("shared-name.org2")
+    let secondNote = secondRoot.appendingPathComponent("shared-name.org2")
+    try "* First corpus\n".write(to: firstNote, atomically: true, encoding: .utf8)
+    try "* Second corpus\n".write(to: secondNote, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    let original = try store.openClawLocalEditDocument(
+      at: "shared-name.org2",
+      corpusRoot: firstRoot
+    )
+    _ = try await store.applyOpenClawLocalEditReplacements(
+      [
+        OpenClawLocalEditReplacement(
+          relativePath: "shared-name.org2",
+          expectedSHA256: original.sha256,
+          replacementText: "* First corpus updated\n",
+          createsFile: false
+        )
+      ],
+      corpusRoot: firstRoot
+    )
+
+    XCTAssertEqual(
+      try String(contentsOf: firstNote, encoding: .utf8),
+      "* First corpus updated\n"
+    )
+    XCTAssertEqual(
+      try String(contentsOf: secondNote, encoding: .utf8),
+      "* Second corpus\n"
+    )
+  }
+
   func testWorkspaceLocalEditCreateCanBeUndoneAndRedone() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-local-edit-create-\(UUID().uuidString)", isDirectory: true)

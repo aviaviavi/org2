@@ -314,6 +314,25 @@ revisionRun = JSON.parse(cli([
 assert.equal(revisionRun.status, "running");
 assert.deepEqual(revisionRun.approvals.map((approval) => approval.status), ["revised", "approved"]);
 
+for (const decision of ["rejected", "canceled"]) {
+  const runId = `${decision}-approval-run`;
+  cli(["run", "create", "--id", runId, "--goal", `Stop after ${decision} approval`, "--dir", tmp, "--json"]);
+  cli(["run", "start", runId, "--dir", tmp, "--json"]);
+  const pendingRun = JSON.parse(cli([
+    "run", "approval-request", runId,
+    "--title", "Approve protected action", "--action", "perform protected action",
+    "--risk", "external-action", "--role", "owner", "--dir", tmp, "--json",
+  ]));
+  const decidedRun = JSON.parse(cli([
+    "run", "approval-decide", runId, pendingRun.approvals.at(-1).id,
+    "--decision", decision, "--actor", "Avi", "--role", "owner",
+    "--note", `The approval was ${decision}.`, "--dir", tmp, "--json",
+  ]));
+  assert.equal(decidedRun.status, "canceled");
+  assert.equal(decidedRun.approvals.at(-1).status, decision);
+  assert.equal(loadAgentRun(tmp, runId).status, "canceled");
+}
+
 const scannedPayload = JSON.parse(cli(["approvals", "--dir", tmp, "--recursive", "--index", "never", "--format", "json"]));
 assert.equal(scannedPayload.index.used, false);
 assert.equal(scannedPayload.count, 4);

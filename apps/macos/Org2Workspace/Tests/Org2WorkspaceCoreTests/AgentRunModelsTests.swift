@@ -162,6 +162,155 @@ final class AgentRunModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testMacRunApprovalRejectionAndCancellationAlsoCancelOriginatingRuns() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-run-approval-terminal-decisions-\(UUID().uuidString)", isDirectory: true)
+
+    func run(id: String, status: String, approvalStatus: String) throws -> AgentRunItem {
+      var approval: [String: Any] = [
+        "id": "\(id)-approval",
+        "fingerprint": "sha256:\(id)",
+        "title": "Approve \(id)",
+        "action": "perform protected action",
+        "riskClass": "external-action",
+        "status": approvalStatus,
+        "requestedRole": "owner",
+        "requestedFrom": "Avi",
+        "requestedAt": "2026-07-30T18:00:01.000Z",
+      ]
+      if approvalStatus != "pending" {
+        approval["decidedAt"] = "2026-07-30T18:00:02.000Z"
+        approval["decidedBy"] = "Avi"
+      }
+      let object: [String: Any] = [
+        "id": id,
+        "goal": "Protect \(id)",
+        "acceptanceCriteria": [],
+        "status": status,
+        "riskClass": "external-action",
+        "capabilities": [],
+        "context": [],
+        "plan": [],
+        "artifacts": [],
+        "approvals": [approval],
+        "validations": [],
+        "comments": [],
+        "events": [[
+          "id": "\(id)-waiting",
+          "type": "status-changed",
+          "at": "2026-07-30T18:00:01.000Z",
+          "detail": "running -> waiting-approval",
+        ]],
+        "createdAt": "2026-07-30T18:00:00.000Z",
+        "updatedAt": "2026-07-30T18:00:02.000Z",
+      ]
+      return try JSONDecoder().decode(
+        AgentRunItem.self,
+        from: JSONSerialization.data(withJSONObject: object)
+      )
+    }
+
+    let rejectedRun = try run(
+      id: "rejected-run",
+      status: "waiting-approval",
+      approvalStatus: "pending"
+    )
+    let rejectedApproval = try XCTUnwrap(rejectedRun.approvals.first)
+    let canceledRun = try run(
+      id: "canceled-run",
+      status: "waiting-approval",
+      approvalStatus: "pending"
+    )
+    let canceledApproval = try XCTUnwrap(canceledRun.approvals.first)
+    let updatedRejectedRun = try run(
+      id: "rejected-run",
+      status: "canceled",
+      approvalStatus: "rejected"
+    )
+    let updatedCanceledRun = try run(
+      id: "canceled-run",
+      status: "canceled",
+      approvalStatus: "canceled"
+    )
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.corpusRoot = root
+    store.replaceAgentRunsForTesting([rejectedRun, canceledRun])
+    store.agentRunApprovalDecisionForTesting = { runID, approvalID, decision, note in
+      XCTAssertEqual(approvalID, "\(runID)-approval")
+      switch decision {
+      case "rejected":
+        XCTAssertEqual(note, "The protected action should not proceed.")
+        return updatedRejectedRun
+      case "canceled":
+        XCTAssertNil(note)
+        return updatedCanceledRun
+      default:
+        XCTFail("Unexpected decision \(decision)")
+        return rejectedRun
+      }
+    }
+
+    func queueItem(run: AgentRunItem, approval: AgentRunApprovalItem) -> ApprovalItem {
+      ApprovalItem(
+        title: approval.title,
+        status: approval.status,
+        todo: nil,
+        level: nil,
+        file: root.appendingPathComponent(".org2/runs/\(run.id).org2").path,
+        line: 1,
+        idValue: approval.id,
+        properties: [:],
+        body: approval.action,
+        tags: [],
+        kind: "run",
+        approvalId: approval.id,
+        fingerprint: approval.fingerprint,
+        action: approval.action,
+        riskClass: approval.riskClass,
+        requestedRole: approval.requestedRole,
+        requestedFrom: approval.requestedFrom,
+        requestedAt: approval.requestedAt,
+        runId: run.id,
+        runGoal: run.goal,
+        runStatus: run.status,
+        runPendingApprovalCount: run.pendingApprovalCount,
+        runApprovalCount: run.approvals.count
+      )
+    }
+
+    let rejectedItem = queueItem(run: rejectedRun, approval: rejectedApproval)
+    let canceledItem = queueItem(run: canceledRun, approval: canceledApproval)
+    store.replaceApprovalItemsForTesting([rejectedItem, canceledItem])
+    await store.rejectApproval(
+      rejectedItem,
+      endStatus: .canceled,
+      reason: "The protected action should not proceed."
+    )
+
+    await store.decideAgentRunApproval(
+      canceledRun,
+      approval: canceledApproval,
+      decision: "canceled"
+    )
+
+    let displayedRejectedRun = try XCTUnwrap(store.agentRuns.first(where: {
+      $0.id == "rejected-run"
+    }))
+    let displayedCanceledRun = try XCTUnwrap(store.agentRuns.first(where: {
+      $0.id == "canceled-run"
+    }))
+    XCTAssertEqual(displayedRejectedRun.status, "canceled")
+    XCTAssertEqual(displayedRejectedRun.approvals.first?.status, "rejected")
+    XCTAssertEqual(displayedRejectedRun.pendingApprovalCount, 0)
+    XCTAssertEqual(displayedCanceledRun.status, "canceled")
+    XCTAssertEqual(displayedCanceledRun.approvals.first?.status, "canceled")
+    XCTAssertFalse(store.approvalItems.contains(where: {
+      $0.runId == "rejected-run" || $0.runId == "canceled-run"
+    }))
+  }
+
+  @MainActor
   func testFinishedRunQueueCleanupImmediatelyRemovesAllOfItsApprovalRows() throws {
     let run = try makeRun(status: "completed", pendingApproval: true)
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))

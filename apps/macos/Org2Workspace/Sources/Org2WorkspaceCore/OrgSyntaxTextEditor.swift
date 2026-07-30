@@ -1658,10 +1658,12 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
   let textPublishing: OrgSyntaxTextEditorTextPublishing
   let liveHighlighting: Bool
   let incrementalHighlighting: Bool
+  let incrementalHighlightingDelayMilliseconds: Int
   let concealsSyntax: Bool
   let orgWritingCommands: Bool
   let textChecking: OrgSyntaxTextCheckingMode
   let caretPublishingDelayMilliseconds: Int
+  let semanticAnalysisDelayMilliseconds: Int
   let commandRequest: OrgSourceEditorCommandRequest?
   let semanticAnalyzer: ((String) async -> OrgSourceEditorSemanticSnapshot?)?
   let diagnostics: Binding<[Org2EditorDiagnostic]>?
@@ -1690,10 +1692,12 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     textPublishing: OrgSyntaxTextEditorTextPublishing = .immediate,
     liveHighlighting: Bool = true,
     incrementalHighlighting: Bool = false,
+    incrementalHighlightingDelayMilliseconds: Int = 0,
     concealsSyntax: Bool = true,
     orgWritingCommands: Bool = false,
     textChecking: OrgSyntaxTextCheckingMode = .disabled,
     caretPublishingDelayMilliseconds: Int = 0,
+    semanticAnalysisDelayMilliseconds: Int = 180,
     commandRequest: OrgSourceEditorCommandRequest? = nil,
     semanticAnalyzer: ((String) async -> OrgSourceEditorSemanticSnapshot?)? = nil,
     diagnostics: Binding<[Org2EditorDiagnostic]>? = nil,
@@ -1721,10 +1725,12 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     self.textPublishing = textPublishing
     self.liveHighlighting = liveHighlighting
     self.incrementalHighlighting = incrementalHighlighting
+    self.incrementalHighlightingDelayMilliseconds = incrementalHighlightingDelayMilliseconds
     self.concealsSyntax = concealsSyntax
     self.orgWritingCommands = orgWritingCommands
     self.textChecking = textChecking
     self.caretPublishingDelayMilliseconds = caretPublishingDelayMilliseconds
+    self.semanticAnalysisDelayMilliseconds = semanticAnalysisDelayMilliseconds
     self.commandRequest = commandRequest
     self.semanticAnalyzer = semanticAnalyzer
     self.diagnostics = diagnostics
@@ -1931,6 +1937,9 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     private var deferredHighlightText: String?
     private var deferredHighlightMonospaced: Bool?
     nonisolated(unsafe) private var deferredHighlightWorkItem: DispatchWorkItem?
+    private var deferredIncrementalHighlightText: String?
+    private var deferredIncrementalHighlightRange: NSRange?
+    nonisolated(unsafe) private var deferredIncrementalHighlightWorkItem: DispatchWorkItem?
     private var deferredTextPublishText: String?
     nonisolated(unsafe) private var deferredTextPublishWorkItem: DispatchWorkItem?
     private var deferredTextPublishGeneration = 0
@@ -1961,6 +1970,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
 
     deinit {
       deferredHighlightWorkItem?.cancel()
+      deferredIncrementalHighlightWorkItem?.cancel()
       deferredTextPublishWorkItem?.cancel()
       deferredCaretPublishWorkItem?.cancel()
       deferredViewportPublishWorkItem?.cancel()
@@ -1999,7 +2009,11 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
         publishTextChange(currentText)
       }
       publishSelectionIfNeeded(textView.selectedRange(), in: currentText)
-      scheduleSemanticAnalysis(for: textView, expectedText: currentText)
+      scheduleSemanticAnalysis(
+        for: textView,
+        expectedText: currentText,
+        delayMilliseconds: parent.semanticAnalysisDelayMilliseconds
+      )
       guard parent.liveHighlighting else {
         cancelDeferredHighlighting()
         textView.typingAttributes = OrgSyntaxHighlighter.baseTypingAttributes(monospaced: parent.monospaced)
@@ -2011,7 +2025,16 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
         let editedRange = pendingEditedRange
           ?? NSRange(location: textView.selectedRange().location, length: 0)
         pendingEditedRange = nil
-        applyIncrementalHighlighting(to: textView, editedRange: editedRange)
+        if parent.incrementalHighlightingDelayMilliseconds > 0 {
+          scheduleDeferredIncrementalHighlighting(
+            to: textView,
+            expectedText: currentText,
+            editedRange: editedRange,
+            milliseconds: parent.incrementalHighlightingDelayMilliseconds
+          )
+        } else {
+          applyIncrementalHighlighting(to: textView, editedRange: editedRange)
+        }
         publishContentHeight(for: textView)
         return
       }
@@ -2721,7 +2744,8 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       ) { [weak self, weak textView] _ in
         Task { @MainActor in
           guard let self, let textView else { return }
-          if self.parent.incrementalHighlighting {
+          if self.parent.incrementalHighlighting,
+             !self.hasDeferredHighlighting(for: textView.string) {
             self.highlightVisibleRange(in: textView)
           }
           self.gutterView?.needsDisplay = true
@@ -2798,6 +2822,44 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       )
       textView.typingAttributes = typingAttributes
       recordHighlightedState(for: textView)
+    }
+
+    private func scheduleDeferredIncrementalHighlighting(
+      to textView: NSTextView,
+      expectedText: String,
+      editedRange: NSRange,
+      milliseconds: Int
+    ) {
+      deferredIncrementalHighlightWorkItem?.cancel()
+      deferredIncrementalHighlightText = expectedText
+      if let pendingRange = deferredIncrementalHighlightRange {
+        deferredIncrementalHighlightRange = NSUnionRange(pendingRange, editedRange)
+      } else {
+        deferredIncrementalHighlightRange = editedRange
+      }
+
+      let workItem = DispatchWorkItem { [weak self, weak textView] in
+        Task { @MainActor in
+          guard let self,
+                let textView,
+                self.deferredIncrementalHighlightText == expectedText,
+                textView.string == expectedText
+          else {
+            return
+          }
+          let range = self.deferredIncrementalHighlightRange
+            ?? NSRange(location: textView.selectedRange().location, length: 0)
+          self.deferredIncrementalHighlightWorkItem = nil
+          self.deferredIncrementalHighlightText = nil
+          self.deferredIncrementalHighlightRange = nil
+          self.applyIncrementalHighlighting(to: textView, editedRange: range)
+        }
+      }
+      deferredIncrementalHighlightWorkItem = workItem
+      DispatchQueue.main.asyncAfter(
+        deadline: .now() + .milliseconds(max(0, milliseconds)),
+        execute: workItem
+      )
     }
 
     private func highlightVisibleRange(in textView: NSTextView) {
@@ -2928,6 +2990,10 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       deferredHighlightWorkItem = nil
       deferredHighlightText = nil
       deferredHighlightMonospaced = nil
+      deferredIncrementalHighlightWorkItem?.cancel()
+      deferredIncrementalHighlightWorkItem = nil
+      deferredIncrementalHighlightText = nil
+      deferredIncrementalHighlightRange = nil
     }
 
     func cancelDeferredTextPublishing() {
@@ -2942,9 +3008,11 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     }
 
     func hasDeferredHighlighting(for text: String) -> Bool {
-      deferredHighlightWorkItem != nil
+      (deferredHighlightWorkItem != nil
         && deferredHighlightText == text
-        && deferredHighlightMonospaced == parent.monospaced
+        && deferredHighlightMonospaced == parent.monospaced)
+        || (deferredIncrementalHighlightWorkItem != nil
+          && deferredIncrementalHighlightText == text)
     }
 
     func applyHighlightingIfNeeded(to textView: NSTextView, currentText: String? = nil) {

@@ -749,7 +749,16 @@ export function decideAgentRunApproval(run: AgentRun, approvalId: string, decisi
     ...(optional(input.receipt) ? { receipt: optional(input.receipt) } : {}),
   };
   let next: AgentRun = { ...run, approvals, updatedAt: now, events: [...run.events, event("approval-decided", now, input.actor, `${approvalId}: ${decision}`, { approvalId, fingerprint: expectedFingerprint, decision, ...(input.actorRole ? { actorRole: input.actorRole } : {}) })] };
-  if (run.status === "waiting-approval" && approvals.every((approval) => approval.status !== "pending")) {
+  if (
+    (decision === "rejected" || decision === "canceled")
+    && ["queued", "running", "waiting-approval", "blocked"].includes(run.status)
+  ) {
+    next = transitionAgentRun(next, "canceled", {
+      actor: input.actor,
+      reason: `Approval ${approvalId} was ${decision}.`,
+      now,
+    });
+  } else if (run.status === "waiting-approval" && approvals.every((approval) => approval.status !== "pending")) {
     const allApproved = currentAgentRunApprovalBoundary(next).every((approval) => approval.status === "approved");
     next = transitionAgentRun(next, allApproved ? "running" : "blocked", {
       actor: input.actor,

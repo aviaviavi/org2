@@ -1984,6 +1984,46 @@ public enum AIChatRuntime: String, CaseIterable, Codable, Identifiable, Sendable
   }
 }
 
+public struct AIChatReasoningOption: Identifiable, Hashable, Sendable {
+  public let id: String
+  public let label: String
+  public let detail: String?
+
+  public init(id: String, label: String, detail: String? = nil) {
+    self.id = id
+    self.label = label
+    self.detail = detail
+  }
+}
+
+public struct AIChatModelOption: Identifiable, Hashable, Sendable {
+  public let id: String
+  public let label: String
+  public let detail: String?
+  public let supportsReasoning: Bool
+  public let reasoningOptions: [AIChatReasoningOption]
+  public let defaultReasoningEffort: String?
+  public let isDefault: Bool
+
+  public init(
+    id: String,
+    label: String,
+    detail: String? = nil,
+    supportsReasoning: Bool = false,
+    reasoningOptions: [AIChatReasoningOption] = [],
+    defaultReasoningEffort: String? = nil,
+    isDefault: Bool = false
+  ) {
+    self.id = id
+    self.label = label
+    self.detail = detail
+    self.supportsReasoning = supportsReasoning
+    self.reasoningOptions = reasoningOptions
+    self.defaultReasoningEffort = defaultReasoningEffort
+    self.isDefault = isDefault
+  }
+}
+
 public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
   public let id: UUID
   public let title: String
@@ -1992,6 +2032,8 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
   public let runtime: AIChatRuntime
   public let sessionKey: String
   public let runtimeThreadID: String?
+  public let model: String?
+  public let reasoningEffort: String?
   public let messages: [OpenClawChatMessage]
   public let isPinned: Bool
   public let isArchived: Bool
@@ -2008,6 +2050,8 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
     runtime: AIChatRuntime = .openClaw,
     sessionKey: String,
     runtimeThreadID: String? = nil,
+    model: String? = nil,
+    reasoningEffort: String? = nil,
     messages: [OpenClawChatMessage] = [],
     isPinned: Bool = false,
     isArchived: Bool = false,
@@ -2023,6 +2067,8 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
     self.runtime = runtime
     self.sessionKey = sessionKey
     self.runtimeThreadID = runtimeThreadID
+    self.model = model
+    self.reasoningEffort = reasoningEffort
     self.messages = messages
     self.isPinned = isPinned
     self.isArchived = isArchived
@@ -2065,6 +2111,8 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
     case runtime
     case sessionKey
     case runtimeThreadID
+    case model
+    case reasoningEffort
     case messages
     case isPinned
     case isArchived
@@ -2083,6 +2131,8 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
     runtime = try container.decodeIfPresent(AIChatRuntime.self, forKey: .runtime) ?? .openClaw
     sessionKey = try container.decode(String.self, forKey: .sessionKey)
     runtimeThreadID = try container.decodeIfPresent(String.self, forKey: .runtimeThreadID)
+    model = try container.decodeIfPresent(String.self, forKey: .model)
+    reasoningEffort = try container.decodeIfPresent(String.self, forKey: .reasoningEffort)
     messages = try container.decode([OpenClawChatMessage].self, forKey: .messages)
     isPinned = try container.decodeIfPresent(Bool.self, forKey: .isPinned) ?? false
     isArchived = try container.decodeIfPresent(Bool.self, forKey: .isArchived) ?? false
@@ -2097,6 +2147,8 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
     runtime nextRuntime: AIChatRuntime? = nil,
     sessionKey nextSessionKey: String? = nil,
     runtimeThreadID nextRuntimeThreadID: String?? = nil,
+    model nextModel: String?? = nil,
+    reasoningEffort nextReasoningEffort: String?? = nil,
     isPinned nextIsPinned: Bool? = nil,
     isArchived nextIsArchived: Bool? = nil,
     settledAt nextSettledAt: Date?? = nil,
@@ -2112,6 +2164,8 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
       runtime: nextRuntime ?? runtime,
       sessionKey: nextSessionKey ?? sessionKey,
       runtimeThreadID: nextRuntimeThreadID ?? runtimeThreadID,
+      model: nextModel ?? model,
+      reasoningEffort: nextReasoningEffort ?? reasoningEffort,
       messages: messages,
       isPinned: nextIsPinned ?? isPinned,
       isArchived: archived,
@@ -2131,6 +2185,8 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
       runtime: runtime,
       sessionKey: sessionKey,
       runtimeThreadID: runtimeThreadID,
+      model: model,
+      reasoningEffort: reasoningEffort,
       messages: nextMessages,
       isPinned: isPinned,
       isArchived: isArchived,
@@ -2150,6 +2206,8 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
       runtime: runtime,
       sessionKey: sessionKey,
       runtimeThreadID: runtimeThreadID,
+      model: model,
+      reasoningEffort: reasoningEffort,
       messages: messages,
       isPinned: isPinned,
       isArchived: isArchived,

@@ -1203,7 +1203,7 @@ function approvalCandidatesFromRuns(rootDir: string, runs: AgentRun[]): Approval
           ? `Approving this leaves ${remainingAfterThis} other pending approval${remainingAfterThis === 1 ? "" : "s"} before the run can resume.`
           : otherDecisionsApproved
             ? "This is the last pending approval; approving it resumes the run."
-            : "This is the last pending approval, but another decision was not approved, so the run will remain blocked.";
+            : "This is the last pending approval, but another decision requested revision, so the run will remain blocked for replacement material.";
       return {
         item: {
           kind: "run" as const,

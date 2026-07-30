@@ -727,6 +727,8 @@ struct OpenClawComposerView: View {
         }
         Spacer(minLength: 0)
         runtimePicker
+        modelPicker
+        reasoningPicker
 
         Button {
           store.chooseOpenClawAttachments()
@@ -786,6 +788,9 @@ struct OpenClawComposerView: View {
       guard mergedDraft != localDraft else { return }
       localDraft = mergedDraft
     }
+    .task(id: store.openClawChatSelectionGeneration) {
+      await store.refreshAIChatConfiguration()
+    }
   }
 
   private var runtimePicker: some View {
@@ -829,6 +834,128 @@ struct OpenClawComposerView: View {
         ? "Choose the AI runtime for this new thread"
         : "The AI runtime is locked after the conversation starts"
     )
+  }
+
+  private var modelPicker: some View {
+    Menu {
+      Button {
+        store.setSelectedAIChatModel(nil)
+      } label: {
+        HStack {
+          Text("Default model")
+          if store.selectedAIChatModel == nil {
+            Image(systemName: "checkmark")
+          }
+        }
+      }
+
+      Divider()
+
+      if store.isRefreshingAIChatConfiguration && store.aiChatModelOptions.isEmpty {
+        Text("Loading models…")
+      } else if store.aiChatModelOptions.isEmpty {
+        Text("No models reported")
+      } else {
+        ForEach(store.aiChatModelOptions) { model in
+          Button {
+            store.setSelectedAIChatModel(model.id)
+          } label: {
+            HStack {
+              Text(model.label)
+              if model.id == store.selectedAIChatModel {
+                Image(systemName: "checkmark")
+              }
+            }
+          }
+          .help(model.detail ?? model.id)
+        }
+      }
+    } label: {
+      HStack(spacing: 4) {
+        Image(systemName: "cpu")
+        Text(store.selectedAIChatModelLabel)
+          .lineLimit(1)
+          .frame(maxWidth: compact ? 88 : 140)
+        Image(systemName: "chevron.up.chevron.down")
+          .font(.caption2)
+          .foregroundStyle(.tertiary)
+      }
+      .font(.caption.weight(.medium))
+      .foregroundStyle(.secondary)
+      .padding(.horizontal, 5)
+      .padding(.vertical, 4)
+      .contentShape(Rectangle())
+    }
+    .menuStyle(.borderlessButton)
+    .menuIndicator(.hidden)
+    .fixedSize()
+    .disabled(!store.canChangeSelectedAIChatConfiguration)
+    .help("Choose a model for this chat, or inherit the \(store.selectedAIChatRuntime.title) default")
+  }
+
+  private var reasoningPicker: some View {
+    Menu {
+      Button {
+        store.setSelectedAIChatReasoningEffort(nil)
+      } label: {
+        HStack {
+          Text(defaultReasoningLabel)
+          if store.selectedAIChatReasoningEffort == nil {
+            Image(systemName: "checkmark")
+          }
+        }
+      }
+
+      if !store.aiChatReasoningOptions.isEmpty {
+        Divider()
+        ForEach(store.aiChatReasoningOptions) { option in
+          Button {
+            store.setSelectedAIChatReasoningEffort(option.id)
+          } label: {
+            HStack {
+              Text(option.label)
+              if option.id == store.selectedAIChatReasoningEffort {
+                Image(systemName: "checkmark")
+              }
+            }
+          }
+          .help(option.detail ?? option.id)
+        }
+      } else if store.isRefreshingAIChatConfiguration {
+        Text("Loading reasoning options…")
+      } else {
+        Text("Choose a model to load supported levels")
+      }
+    } label: {
+      HStack(spacing: 4) {
+        Image(systemName: "brain")
+        Text(store.selectedAIChatReasoningLabel)
+          .lineLimit(1)
+        Image(systemName: "chevron.up.chevron.down")
+          .font(.caption2)
+          .foregroundStyle(.tertiary)
+      }
+      .font(.caption.weight(.medium))
+      .foregroundStyle(.secondary)
+      .padding(.horizontal, 5)
+      .padding(.vertical, 4)
+      .contentShape(Rectangle())
+    }
+    .menuStyle(.borderlessButton)
+    .menuIndicator(.hidden)
+    .fixedSize()
+    .disabled(!store.canChangeSelectedAIChatConfiguration)
+    .help("Choose the reasoning effort for this chat")
+  }
+
+  private var defaultReasoningLabel: String {
+    guard let effort = store.aiChatDefaultReasoningEffort else {
+      return "Default reasoning"
+    }
+    let label = store.aiChatReasoningOptions.first(where: {
+      $0.id == effort
+    })?.label ?? effort.capitalized
+    return "Default reasoning (\(label))"
   }
 
   private var canSend: Bool {
