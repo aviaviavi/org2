@@ -72,6 +72,18 @@ export function workflowContinuationPrompt(workflow, runId) {
   ].join("\n");
 }
 
+export function draftContinuationPrompt(runId) {
+  return [
+    `ORG2_RUN_ID: ${runId}`,
+    "ORG2_DRAFT_RESUME: approval-decided",
+    "",
+    "Continue the approved external-draft action using its existing durable run.",
+    "Re-read the run with the Org2 CLI and resolve the exact provider-draft authority through `org2 run approval-resolve --decision-key artifact:PROVIDER:TOOL:DRAFT_ID --json`.",
+    "Send only the exact provider draft covered by the approved review material. Do not substitute a new recipient, subject, body, command, or attachment.",
+    "After the provider confirms the send, record the sent evidence and complete the existing draft run.",
+  ].join("\n");
+}
+
 export function workflowRevisionPrompt(workflow, runId, approval) {
   return [
     `ORG2_WORKFLOW_ID: ${workflow.id}`,
@@ -477,6 +489,28 @@ export class Org2Lifecycle {
       workflow,
       sessionKey: mapping.sessionKey,
       prompt: workflowContinuationPrompt(workflow, runId),
+      corpus: corpus.identity,
+    };
+  }
+
+  async resumeDraftRun(runId, details = {}) {
+    const corpus = await this.assertCorpus(details.expectedCorpusId);
+    const run = JSON.parse(await this.exec(["run", "show", runId, "--json"]));
+    if (run.workflowId) throw new Error(`${runId} is a workflow run`);
+    if (run.status !== "running") throw new Error(`${runId} cannot continue while ${run.status}`);
+    if ((run.approvals || []).some((approval) => approval.status === "pending")) {
+      throw new Error(`${runId} still has pending approvals`);
+    }
+    const mapping = Object.values(this.state.mappings)
+      .filter((item) => item.org2RunId === runId && item.sessionKey && item.kind === "external-draft")
+      .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))[0];
+    if (!mapping?.sessionKey) throw new Error(`OpenClaw external-draft session correlation is missing for ${runId}`);
+    mapping.resumedAt = new Date().toISOString();
+    await this.#save();
+    return {
+      run,
+      sessionKey: mapping.sessionKey,
+      prompt: draftContinuationPrompt(runId),
       corpus: corpus.identity,
     };
   }

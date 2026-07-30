@@ -92,6 +92,36 @@ final class AgentRunModelsTests: XCTestCase {
     XCTAssertTrue(item.matchesApprovalFilter("prepare report external-action"))
   }
 
+  func testRecognizesOpenClawExternalDraftRunForApprovalContinuation() throws {
+    let data = Data(#"""
+    {
+      "id": "draft-run-1",
+      "goal": "Review provider draft",
+      "acceptanceCriteria": [],
+      "status": "running",
+      "riskClass": "external-action",
+      "capabilities": [],
+      "context": [],
+      "plan": [],
+      "artifacts": [],
+      "approvals": [],
+      "validations": [],
+      "comments": [{
+        "id": "comment-1",
+        "author": "org2-lifecycle",
+        "body": "OPENCLAW_KEY: draft:gmail:gog:default:r123\nOPENCLAW_KIND: external-draft",
+        "createdAt": "2026-07-30T16:56:25.154Z"
+      }],
+      "events": [],
+      "createdAt": "2026-07-30T16:56:25.154Z",
+      "updatedAt": "2026-07-30T18:08:14.385Z"
+    }
+    """#.utf8)
+
+    let run = try JSONDecoder().decode(AgentRunItem.self, from: data)
+    XCTAssertTrue(run.isOpenClawExternalDraft)
+  }
+
   @MainActor
   func testUnifiedQueueDecisionUpdatesTheCanonicalRunApproval() async throws {
     let root = FileManager.default.temporaryDirectory

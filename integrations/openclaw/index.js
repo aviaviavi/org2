@@ -56,6 +56,17 @@ export default definePluginEntry({
       }
     }, { scope: "operator.write" });
 
+    api.registerGatewayMethod("org2.draft.resume", async ({ params, respond }) => {
+      try {
+        const runId = String(params?.runId || "").trim();
+        if (!runId) return respond(false, undefined, { code: "INVALID_REQUEST", message: "runId is required" });
+        const expectedCorpusId = String(params?.corpusId || "").trim() || undefined;
+        respond(true, await lifecycle.serialize(() => lifecycle.resumeDraftRun(runId, { expectedCorpusId })));
+      } catch (error) {
+        respond(false, undefined, { code: "ORG2_DRAFT_ERROR", message: error.message });
+      }
+    }, { scope: "operator.write" });
+
     api.registerGatewayMethod("org2.workflow.resumeRevision", async ({ params, respond }) => {
       try {
         const runId = String(params?.runId || "").trim();
