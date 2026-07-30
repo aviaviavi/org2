@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { parseIsoCalendarDate } from "./calendarDate.js";
 
 export type AiJobManifestValidationIssue = {
   path: string;
@@ -92,8 +93,7 @@ function validateDateString(value: unknown, path: string, issues: AiJobManifestV
     return false;
   }
 
-  const date = new Date(`${value}T00:00:00.000Z`);
-  if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== value) {
+  if (!parseIsoCalendarDate(value)) {
     addIssue(issues, path, "must be a valid calendar date");
     return false;
   }
