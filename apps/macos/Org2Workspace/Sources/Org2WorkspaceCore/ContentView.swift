@@ -6769,7 +6769,7 @@ private struct DetailHeader: View {
     case .backlink:
       return "link"
     case .openClaw:
-      return "doc.text"
+      return store.selectedFileIsCSV ? "tablecells" : "doc.text"
     case .meeting:
       return "waveform.and.mic"
     }
@@ -6884,11 +6884,13 @@ private struct DetailHeader: View {
 
   private var viewAndResourceControls: some View {
     HStack(spacing: 7) {
-      if !store.isLiveFileEditorSelected && !store.hasActiveEdit {
-        scopePicker
-      }
-      if !store.hasActiveEdit {
-        documentLayoutMenu
+      if !store.selectedFileIsCSV {
+        if !store.isLiveFileEditorSelected && !store.hasActiveEdit {
+          scopePicker
+        }
+        if !store.hasActiveEdit {
+          documentLayoutMenu
+        }
       }
       sourceMenu
       intelligenceMenu
@@ -6914,7 +6916,9 @@ private struct DetailHeader: View {
         .help("Run every named data result in this notebook and update its generated tables")
       }
       editControls
-      organizeMenu
+      if !store.selectedFileIsCSV {
+        organizeMenu
+      }
     }
   }
 
@@ -7115,7 +7119,23 @@ private struct DetailHeader: View {
     HStack(spacing: 6) {
       editStatusIndicator
 
-      if store.hasActiveEdit {
+      if store.selectedFileIsCSV {
+        Button {
+          Task { await store.saveLiveFileEditor(explicit: true) }
+        } label: {
+          Label("Save", systemImage: "checkmark")
+        }
+        .disabled(!store.canSaveLiveFileEditor)
+        .help("Save CSV changes (Command-S)")
+
+        Button {
+          store.revertLiveFileEditor()
+        } label: {
+          Label("Revert", systemImage: "arrow.uturn.backward")
+        }
+        .disabled(!store.liveFileEditorHasUnsavedChanges || isPersistingEditorChanges)
+        .help("Discard unsaved CSV changes")
+      } else if store.hasActiveEdit {
         Button {
           Task { await store.saveActiveEdit() }
         } label: {
@@ -7306,7 +7326,9 @@ private struct LiveFileEditorBody: View {
       if store.isLoadingEntrySource && store.selectedEntrySource == nil {
         OrgHTMLLoadingView(label: "Loading source", onCancel: store.cancelSelectedEntryLoading)
       } else if let source = store.selectedEntrySource {
-        if store.isEditingEntry {
+        if store.selectedFileIsCSV {
+          CSVDocumentEditorView(source: source)
+        } else if store.isEditingEntry {
           OrgSourceEditorWithLinkTools()
             .padding(16)
             .frame(maxWidth: .infinity, maxHeight: .infinity)

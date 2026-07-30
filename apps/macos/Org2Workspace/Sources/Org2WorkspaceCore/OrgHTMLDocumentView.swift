@@ -457,8 +457,7 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
         return
       }
 
-      let fileExtension = fileTarget.url.pathExtension.lowercased()
-      if ["org", "org2", "md"].contains(fileExtension) {
+      if OrgHTMLDocumentLinkRouting.opensInWorkspace(fileTarget.url) {
         openOrgFileReference(OpenClawFileReference(path: fileTarget.url.path, line: fileTarget.line))
       } else if FileManager.default.fileExists(atPath: fileTarget.url.path) {
         NSWorkspace.shared.open(fileTarget.url)
@@ -466,6 +465,14 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
         reportStatus("Linked file not found: \(fileTarget.url.lastPathComponent)")
       }
     }
+  }
+}
+
+enum OrgHTMLDocumentLinkRouting {
+  private static let workspaceExtensions = Set(["org", "org2", "md", "csv"])
+
+  static func opensInWorkspace(_ url: URL) -> Bool {
+    workspaceExtensions.contains(url.pathExtension.lowercased())
   }
 }
 

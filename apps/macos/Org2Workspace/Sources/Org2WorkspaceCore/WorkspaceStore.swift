@@ -7009,9 +7009,15 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public var isLiveFileEditorSelected: Bool {
-    selectedSurface == .files
-      && selectedEntrySourceMode == .page
+    selectedEntrySourceMode == .page
       && selectedLocation != nil
+      && (selectedSurface == .files || selectedFileIsCSV)
+  }
+
+  public var selectedFileIsCSV: Bool {
+    let file = selectedLocation?.file ?? selectedEntrySource?.file
+    guard let file else { return false }
+    return URL(fileURLWithPath: file).pathExtension.lowercased() == "csv"
   }
 
   public var isLiveFileEditorAvailable: Bool {
@@ -12750,7 +12756,7 @@ public final class WorkspaceStore: ObservableObject {
   ) -> CorpusFileEventClassification {
     let root = corpusRoot.standardizedFileURL.path
     let rootPrefix = root + "/"
-    let contentExtensions = Set(["org", "org2", "md"])
+    let contentExtensions = Set(["org", "org2", "md", "csv"])
     var contentPaths: [String] = []
     var seenContentPaths = Set<String>()
     var hasAgentRunStateChanges = false
@@ -18324,6 +18330,21 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   private func renderEntrySource(_ source: EntrySource, generation: Int) {
+    if URL(fileURLWithPath: source.file).pathExtension.lowercased() == "csv" {
+      entryHTMLRenderGeneration += 1
+      entryHTMLRenderTask?.cancel()
+      entryHTMLRenderTask = nil
+      entryHTMLRenderWatchdogTask?.cancel()
+      entryHTMLRenderWatchdogTask = nil
+      selectedEntryHTML = nil
+      selectedEntryRenderError = nil
+      selectedEntryHTMLRenderKey = nil
+      selectedRenderedBlocks = []
+      selectedBlockID = nil
+      isRenderingEntrySource = false
+      return
+    }
+
     let renderKey = entryHTMLRenderKey(for: source)
     if selectedEntryHTMLRenderKey != renderKey {
       prepareEntryHTML(for: source)
@@ -22077,7 +22098,10 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   nonisolated private static func scanRoamNodes(file: CorpusFile) -> [OrgRoamNodeReference] {
-    guard let raw = try? String(contentsOf: URL(fileURLWithPath: file.path), encoding: .utf8) else {
+    guard Set(["org", "org2", "md"]).contains(
+      URL(fileURLWithPath: file.path).pathExtension.lowercased()
+    ),
+    let raw = try? String(contentsOf: URL(fileURLWithPath: file.path), encoding: .utf8) else {
       return []
     }
 
@@ -22538,7 +22562,7 @@ public final class WorkspaceStore: ObservableObject {
   nonisolated private static func scanCorpusFiles(corpusRoot: URL) throws -> [CorpusFile] {
     let root = corpusRoot.standardizedFileURL
     let resourceKeys: Set<URLResourceKey> = [.isRegularFileKey, .isDirectoryKey, .contentModificationDateKey, .fileSizeKey]
-    let allowedExtensions = Set(["org", "org2", "md"])
+    let allowedExtensions = Set(["org", "org2", "md", "csv"])
     guard let enumerator = FileManager.default.enumerator(
       at: root,
       includingPropertiesForKeys: Array(resourceKeys),
@@ -22585,7 +22609,7 @@ public final class WorkspaceStore: ObservableObject {
     let root = corpusRoot.standardizedFileURL
     let url = URL(fileURLWithPath: path).standardizedFileURL
     guard url.path.hasPrefix(root.path + "/"),
-          Set(["org", "org2", "md"]).contains(url.pathExtension.lowercased()),
+          Set(["org", "org2", "md", "csv"]).contains(url.pathExtension.lowercased()),
           !isDefaultIgnoredSyncArtifactPath(url.path),
           let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .contentModificationDateKey, .fileSizeKey]),
           values.isRegularFile == true

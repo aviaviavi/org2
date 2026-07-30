@@ -19,16 +19,17 @@ final class CorpusFileWatcherTests: XCTestCase {
     let root = URL(fileURLWithPath: "/tmp/org2-corpus").standardizedFileURL
     let note = root.appendingPathComponent("notes/visible.org2").path
     let markdown = root.appendingPathComponent("views/report.md").path
+    let csv = root.appendingPathComponent("views/sample.csv").path
     let run = root.appendingPathComponent(".org2/runs/run-1.org2").path
     let syncHistory = root.appendingPathComponent(".stversions/notes/visible~old.org2").path
     let temporary = root.appendingPathComponent("notes/.visible.org2.tmp").path
 
     let classification = WorkspaceStore.classifyCorpusFileEvents(
-      [note, run, syncHistory, temporary, markdown, note, "/tmp/outside.org2"],
+      [note, run, syncHistory, temporary, markdown, csv, note, "/tmp/outside.org2"],
       corpusRoot: root
     )
 
-    XCTAssertEqual(classification.contentPaths, [note, markdown])
+    XCTAssertEqual(classification.contentPaths, [note, markdown, csv])
     XCTAssertTrue(classification.hasAgentRunStateChanges)
     XCTAssertFalse(classification.hasConfigurationChanges)
   }
