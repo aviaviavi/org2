@@ -371,7 +371,7 @@ struct CSVDocumentEditorView: View {
   }
 }
 
-private struct CSVTableEditor: View {
+struct CSVTableEditor: View {
   @Binding var document: CSVDocument
   let publish: (CSVDocument) -> Void
 
@@ -380,18 +380,30 @@ private struct CSVTableEditor: View {
   private let rowHeight: CGFloat = 34
 
   var body: some View {
-    ScrollView([.horizontal, .vertical]) {
-      LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
-        Section {
-          ForEach(0..<max(1, document.rowCount), id: \.self) { row in
-            dataRow(row)
+    GeometryReader { geometry in
+      ScrollView([.horizontal, .vertical]) {
+        LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
+          Section {
+            ForEach(0..<max(1, document.rowCount), id: \.self) { row in
+              dataRow(row)
+            }
+          } header: {
+            columnHeader
           }
-        } header: {
-          columnHeader
         }
+        .frame(
+          width: max(geometry.size.width, tableContentWidth),
+          alignment: .topLeading
+        )
       }
+      .defaultScrollAnchor(.topLeading)
+      .scrollIndicators(.visible, axes: [.horizontal, .vertical])
     }
     .background(WorkspaceDesign.surfaceBackground)
+  }
+
+  private var tableContentWidth: CGFloat {
+    rowNumberWidth + CGFloat(max(1, document.columnCount)) * cellWidth
   }
 
   private var columnHeader: some View {
@@ -418,6 +430,7 @@ private struct CSVTableEditor: View {
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
+        .frame(width: cellWidth, height: rowHeight)
         .background(WorkspaceDesign.barBackground)
         .overlay(alignment: .trailing) {
           Divider()

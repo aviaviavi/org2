@@ -1,3 +1,5 @@
+import AppKit
+import SwiftUI
 import XCTest
 @testable import Org2WorkspaceCore
 
@@ -59,6 +61,51 @@ final class CSVDocumentTests: XCTestCase {
     XCTAssertTrue(OrgHTMLDocumentLinkRouting.opensInWorkspace(URL(fileURLWithPath: "/tmp/sample.CSV")))
     XCTAssertTrue(OrgHTMLDocumentLinkRouting.opensInWorkspace(URL(fileURLWithPath: "/tmp/note.org2")))
     XCTAssertFalse(OrgHTMLDocumentLinkRouting.opensInWorkspace(URL(fileURLWithPath: "/tmp/report.pdf")))
+  }
+
+  @MainActor
+  func testWideTableStartsAtLeadingEdgeAndProvidesHorizontalScrollRange() async throws {
+    var document = CSVDocument(rows: [
+      (0..<19).map { "column-\($0)" },
+      (0..<19).map { "value-\($0)" },
+    ])
+    let editor = CSVTableEditor(
+      document: Binding(
+        get: { document },
+        set: { document = $0 }
+      ),
+      publish: { document = $0 }
+    )
+    .frame(width: 800, height: 420)
+    let hostingView = NSHostingView(rootView: editor)
+    hostingView.frame = NSRect(x: 0, y: 0, width: 800, height: 420)
+    let window = NSWindow(
+      contentRect: hostingView.frame,
+      styleMask: [.borderless],
+      backing: .buffered,
+      defer: false
+    )
+    defer { window.orderOut(nil) }
+    window.contentView = hostingView
+    window.makeKeyAndOrderFront(nil)
+
+    for _ in 0..<5 {
+      try await Task.sleep(nanoseconds: 25_000_000)
+      window.layoutIfNeeded()
+      hostingView.layoutSubtreeIfNeeded()
+    }
+
+    let scrollView = try XCTUnwrap(allScrollViews(in: hostingView).first {
+      $0.hasHorizontalScroller
+    })
+    let documentView = try XCTUnwrap(scrollView.documentView)
+    XCTAssertGreaterThan(documentView.bounds.width, scrollView.contentView.bounds.width + 2_000)
+    XCTAssertEqual(scrollView.contentView.bounds.origin.x, 0, accuracy: 1)
+
+    let originalY = scrollView.contentView.bounds.origin.y
+    scrollView.contentView.scroll(to: NSPoint(x: 500, y: originalY))
+    scrollView.reflectScrolledClipView(scrollView.contentView)
+    XCTAssertGreaterThan(scrollView.contentView.bounds.origin.x, 400)
   }
 
   @MainActor
@@ -134,5 +181,11 @@ final class CSVDocumentTests: XCTestCase {
       defaults: defaults,
       legacyDefaultsDomains: []
     )
+  }
+
+  @MainActor
+  private func allScrollViews(in view: NSView) -> [NSScrollView] {
+    let current = (view as? NSScrollView).map { [$0] } ?? []
+    return current + view.subviews.flatMap(allScrollViews)
   }
 }
