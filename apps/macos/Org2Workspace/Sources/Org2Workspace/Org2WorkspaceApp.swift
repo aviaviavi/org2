@@ -12,6 +12,7 @@ struct Org2WorkspaceApp: App {
   private let globalCaptureHotKey = GlobalCaptureHotKey()
 
   init() {
+    NSWindow.allowsAutomaticWindowTabbing = false
     AppIconInstaller.install()
 
     if CommandLine.arguments.contains("--smoke-test") {
@@ -30,6 +31,7 @@ struct Org2WorkspaceApp: App {
       ContentView()
         .environmentObject(store)
         .frame(minWidth: 1080, minHeight: 680)
+        .background(WorkspaceWindowConfigurator())
         .onAppear {
           NSApplication.shared.setActivationPolicy(.regular)
           NSApplication.shared.activate(ignoringOtherApps: true)
@@ -56,6 +58,7 @@ struct Org2WorkspaceApp: App {
           store.setSourceAutoSyncActive(true)
         }
     }
+    .windowToolbarStyle(.unifiedCompact(showsTitle: false))
     .commands {
       CommandGroup(replacing: .undoRedo) {
         Button("Undo") {
@@ -368,20 +371,48 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     AppIconInstaller.install()
     NSApplication.shared.setActivationPolicy(.regular)
     NSApplication.shared.activate(ignoringOtherApps: true)
+    for window in NSApplication.shared.windows {
+      WorkspaceWindowConfigurator.configure(window)
+    }
   }
 
   func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
     guard !flag else { return true }
     sender.setActivationPolicy(.regular)
     sender.activate(ignoringOtherApps: true)
-    if !sender.sendAction(Selector(("newWindow:")), to: nil, from: nil) {
-      sender.sendAction(#selector(NSWindow.newWindowForTab(_:)), to: nil, from: nil)
-    }
+    sender.sendAction(Selector(("newWindow:")), to: nil, from: nil)
     return true
   }
 
   func applicationWillTerminate(_ notification: Notification) {
     diagnosticsHeartbeat.stop()
+  }
+}
+
+private struct WorkspaceWindowConfigurator: NSViewRepresentable {
+  func makeNSView(context: Context) -> NSView {
+    let view = NSView()
+    Task { @MainActor in
+      Self.configure(view.window)
+    }
+    return view
+  }
+
+  func updateNSView(_ view: NSView, context: Context) {
+    Task { @MainActor in
+      Self.configure(view.window)
+    }
+  }
+
+  @MainActor
+  static func configure(_ window: NSWindow?) {
+    guard let window else { return }
+    window.titleVisibility = .hidden
+    window.tabbingMode = .disallowed
+    if window.tabGroup?.windows.count == 1,
+       window.tabGroup?.isTabBarVisible == true {
+      window.toggleTabBar(nil)
+    }
   }
 }
 
