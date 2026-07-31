@@ -126,6 +126,14 @@ Old support context.
 :END:
 Old open Scarf support task.
 
+* TODO Invalid-date Scarf support triage :scarf:
+:PROPERTIES:
+:ID: invalid-date-scarf-followup
+:PROJECT: scarf
+:UPDATED: 2024-02-31
+:END:
+An impossible calendar date must not make this task look stale.
+
 * Thread: Scarf triage help
 :PROPERTIES:
 :ID: thread-scarf-triage
@@ -200,8 +208,12 @@ assert.match(md, /support\.org2:3-/);
 assert.match(md, /## Recent timeline entries/);
 assert.match(md, /## Active TODOs \/ scheduled items/);
 assert.match(md, /TODO Scarf support triage/);
+const activeTodos = md.match(/## Active TODOs \/ scheduled items\n([\s\S]*?)\n## Possible stale open TODOs/)?.[1] || "";
+assert.match(activeTodos, /TODO Invalid-date Scarf support triage/);
 assert.match(md, /## Possible stale open TODOs/);
 assert.match(md, /TODO Ancient Scarf follow-up/);
+const staleTodos = md.match(/## Possible stale open TODOs\n([\s\S]*?)\n## Collaboration state/)?.[1] || "";
+assert.doesNotMatch(staleTodos, /Invalid-date Scarf support triage/);
 assert.match(md, /## Collaboration state/);
 assert.match(md, /owner: Casey/);
 assert.match(md, /assignee: openclaw/);

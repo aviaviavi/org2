@@ -28,7 +28,7 @@ import { renderPresentationToBeamer } from "./presentation.js";
 import { compileBeamerPdf } from "./beamerCompile.js";
 import { compileCorpus, compileCorpusIncremental, extractCheckboxProgress, renderCompiledCorpus } from "./corpusCompile.js";
 import { extractClockReport } from "./clock.js";
-import { buildAgentContextPayload, renderAgentContextPack, type AgentInclude } from "./agentContext.js";
+import { buildAgentContextPayload, isStaleOpenAgentTodo, renderAgentContextPack, type AgentInclude } from "./agentContext.js";
 import { buildOrg2CapabilityManifest } from "./capabilities.js";
 import {
   agentRunApprovalDecisionKeys,
@@ -181,9 +181,9 @@ function renderBriefing(payload: ReturnType<typeof buildAgentContextPayload>, ti
   if (cited.length === 0) lines.push("- [review-required] Broaden the query/scope or add source notes before drawing conclusions.");
   else {
     lines.push("- [review-required] Treat this briefing as a navigational summary, not canonical truth.");
-    const active = cited.filter((node) => isActiveBriefTodo(node.todo) && !isStaleOpenBriefTodo(node)).slice(0, 5);
+    const active = cited.filter((node) => isActiveBriefTodo(node.todo) && !isStaleOpenAgentTodo(node)).slice(0, 5);
     if (active.length) lines.push(`- [review-required] Active work surfaced: ${active.map((node) => `${node.todo} ${node.title} [${node.citation}]`).join("; ")}.`);
-    const staleOpen = cited.filter((node) => isStaleOpenBriefTodo(node)).slice(0, 5);
+    const staleOpen = cited.filter((node) => isStaleOpenAgentTodo(node)).slice(0, 5);
     if (staleOpen.length) lines.push(`- [review-required] Possible stale open work: ${staleOpen.map((node) => `${node.todo} ${node.title} [${node.citation}]`).join("; ")}.`);
     const stale = cited.filter((node) => node.claimState.freshness === "stale" || node.claimState.freshness === "expired");
     if (stale.length) lines.push(`- [review-required] Refresh stale/expired sources before relying on: ${stale.map((node) => `${node.title} [${node.citation}]`).join("; ")}.`);
@@ -213,25 +213,6 @@ function isActiveBriefTodo(raw: string | null | undefined): boolean {
 
 function isTerminalBriefTodo(raw: string | null | undefined): boolean {
   return /^(DONE|CANCELLED|CANCELED)$/i.test(String(raw || ""));
-}
-
-function dateStringForBriefNode(node: ReturnType<typeof buildAgentContextPayload>["results"][number]): string {
-  const explicit = String(node.properties.UPDATED || node.properties.DATE || node.properties.CREATED || node.properties.CLOSED || node.claimState.validAsOf || node.claimState.observedAt || "");
-  const explicitMatch = explicit.match(/\d{4}-\d{2}-\d{2}/);
-  if (explicitMatch) return explicitMatch[0] || "";
-  const fileMatch = String(node.file || node.citation || "").match(/(\d{4})[-_](\d{2})[-_](\d{2})/);
-  if (fileMatch) return `${fileMatch[1]}-${fileMatch[2]}-${fileMatch[3]}`;
-  return "";
-}
-
-function isStaleOpenBriefTodo(node: ReturnType<typeof buildAgentContextPayload>["results"][number], nowMs = Date.now()): boolean {
-  if (!isActiveBriefTodo(node.todo)) return false;
-  const date = dateStringForBriefNode(node);
-  if (!date) return false;
-  const parsed = Date.parse(`${date}T00:00:00Z`);
-  if (!Number.isFinite(parsed)) return false;
-  const ageDays = Math.max(0, (nowMs - parsed) / (24 * 60 * 60 * 1000));
-  return ageDays > 365;
 }
 
 function renderNodeBriefing(payload: ReturnType<typeof buildAgentContextPayload>, title: string, format: "markdown" | "org" = "markdown"): string {

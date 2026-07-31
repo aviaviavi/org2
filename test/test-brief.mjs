@@ -18,7 +18,7 @@ Copper launch needs human-facing briefings generated from agent context.
 ** TODO Follow up on briefing UX :copper:
 :PROPERTIES:
 :ORG2_REVIEW_STATUS: review-required
-:DATE: 2026-06-07
+:DATE: 2024-02-31
 :END:
 Review terminal output and views storage for Copper launch.
 `, "utf8");
@@ -38,6 +38,8 @@ assert.match(projectBrief, /Source-backed notes/);
 assert.match(projectBrief, /notes\.org2:1-16/);
 assert.match(projectBrief, /review-required/i);
 assert.match(projectBrief, /Citations/);
+assert.match(projectBrief, /Active work surfaced: TODO Follow up on briefing UX/);
+assert.doesNotMatch(projectBrief, /Possible stale open work:.*Follow up on briefing UX/);
 
 const nodeBrief = execFileSync("node", ["dist/cli.js", "brief", "node", "--id", "copper-1", "--dir", tmp, "--recursive"], { encoding: "utf8", env: cliEnvironment });
 assert.match(nodeBrief, /# Org2 Briefing: Node Copper launch/);

@@ -1367,13 +1367,13 @@ function dateStringForAgentNode(node: AgentNode): string {
   return "";
 }
 
-function isStaleOpenAgentTodo(node: AgentNode, nowMs = Date.now()): boolean {
+export function isStaleOpenAgentTodo(node: AgentNode, nowMs = Date.now()): boolean {
   if (!isActiveTodoKeyword(node.todo)) return false;
   const date = dateStringForAgentNode(node);
   if (!date) return false;
-  const parsed = Date.parse(`${date}T00:00:00Z`);
-  if (!Number.isFinite(parsed)) return false;
-  const ageDays = Math.max(0, (nowMs - parsed) / (24 * 60 * 60 * 1000));
+  const parsed = parseIsoCalendarDate(date);
+  if (!parsed) return false;
+  const ageDays = Math.max(0, (nowMs - parsed.date.getTime()) / (24 * 60 * 60 * 1000));
   return ageDays > 365;
 }
 
