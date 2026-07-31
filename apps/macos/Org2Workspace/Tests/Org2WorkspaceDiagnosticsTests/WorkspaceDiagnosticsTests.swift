@@ -38,6 +38,45 @@ final class WorkspaceDiagnosticsTests: XCTestCase {
     XCTAssertEqual(probe.pid, ProcessInfo.processInfo.processIdentifier)
   }
 
+  func testHeartbeatPulseAcknowledgesWhileMainRunLoopTracksEvents() {
+    let acknowledgement = LockedHeartbeatAcknowledgement()
+    let pulse = WorkspaceDiagnosticsHeartbeatPulse(
+      intervalSeconds: 0.05,
+      leaseDurationSeconds: 2
+    ) { _, _ in
+      acknowledgement.record(onMainThread: Thread.isMainThread)
+    }
+    defer { pulse.stop() }
+    pulse.activate(targetPID: ProcessInfo.processInfo.processIdentifier, nonce: UUID().uuidString)
+
+    let deadline = Date().addingTimeInterval(2)
+    let eventTrackingMode = RunLoop.Mode("NSEventTrackingRunLoopMode")
+    while !acknowledgement.wasRecorded, Date() < deadline {
+      RunLoop.current.run(mode: eventTrackingMode, before: Date().addingTimeInterval(0.01))
+    }
+
+    XCTAssertTrue(acknowledgement.wasRecorded)
+    XCTAssertTrue(acknowledgement.wasRecordedOnMainThread)
+  }
+
+  func testHeartbeatPulseCanRepeatTheLastAcknowledgedNonce() {
+    XCTAssertTrue(WorkspaceDiagnosticsMonitor.acceptsHeartbeatAcknowledgement(
+      "pending",
+      pendingNonces: ["pending"],
+      lastAcknowledgedNonce: nil
+    ))
+    XCTAssertTrue(WorkspaceDiagnosticsMonitor.acceptsHeartbeatAcknowledgement(
+      "active-pulse",
+      pendingNonces: [],
+      lastAcknowledgedNonce: "active-pulse"
+    ))
+    XCTAssertFalse(WorkspaceDiagnosticsMonitor.acceptsHeartbeatAcknowledgement(
+      "stale",
+      pendingNonces: [],
+      lastAcknowledgedNonce: "active-pulse"
+    ))
+  }
+
   func testParsesConservativeRuntimeOptions() throws {
     let options = try WorkspaceDiagnosticsOptions.parse([
       "--corpus", "/tmp/corpus",
@@ -232,6 +271,27 @@ private final class HeartbeatAcknowledgementProbe: NSObject {
   @objc func receive(_ notification: Notification) {
     nonce = notification.userInfo?[WorkspaceDiagnosticsHeartbeat.nonceKey] as? String
     pid = (notification.userInfo?[WorkspaceDiagnosticsHeartbeat.responderPIDKey] as? NSNumber)?.int32Value
+  }
+}
+
+private final class LockedHeartbeatAcknowledgement: @unchecked Sendable {
+  private let lock = NSLock()
+  private var recorded = false
+  private var recordedOnMainThread = false
+
+  var wasRecorded: Bool {
+    lock.withLock { recorded }
+  }
+
+  var wasRecordedOnMainThread: Bool {
+    lock.withLock { recordedOnMainThread }
+  }
+
+  func record(onMainThread: Bool) {
+    lock.withLock {
+      recorded = true
+      recordedOnMainThread = recordedOnMainThread || onMainThread
+    }
   }
 }
 

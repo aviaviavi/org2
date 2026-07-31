@@ -10,11 +10,15 @@ public enum WorkspaceDiagnosticsHeartbeat {
   public static let responderPIDKey = "responderPID"
 }
 
-/// Responds only when the external diagnostics helper is running. There is no
-/// app-side timer or resource polling cost while diagnostics are idle.
+/// Responds only while the external diagnostics helper is pinging. A short-lived
+/// pulse keeps the main-queue liveness signal active through nested AppKit run
+/// loop modes, then stops after the helper's lease expires.
 public final class WorkspaceDiagnosticsHeartbeatResponder: NSObject, @unchecked Sendable {
   private let center: DistributedNotificationCenter
   private var isStarted = false
+  private lazy var pulse = WorkspaceDiagnosticsHeartbeatPulse { [weak self] targetPID, nonce in
+    self?.sendAcknowledgement(targetPID: targetPID, nonce: nonce)
+  }
 
   public init(center: DistributedNotificationCenter = .default()) {
     self.center = center
@@ -28,7 +32,8 @@ public final class WorkspaceDiagnosticsHeartbeatResponder: NSObject, @unchecked 
       self,
       selector: #selector(receivePing(_:)),
       name: WorkspaceDiagnosticsHeartbeat.ping,
-      object: nil
+      object: nil,
+      suspensionBehavior: .deliverImmediately
     )
   }
 
@@ -39,6 +44,7 @@ public final class WorkspaceDiagnosticsHeartbeatResponder: NSObject, @unchecked 
       name: WorkspaceDiagnosticsHeartbeat.ping,
       object: nil
     )
+    pulse.stop()
     isStarted = false
   }
 
@@ -54,13 +60,7 @@ public final class WorkspaceDiagnosticsHeartbeatResponder: NSObject, @unchecked 
     else {
       return
     }
-    guard Thread.isMainThread else {
-      DispatchQueue.main.async { [weak self] in
-        self?.sendAcknowledgement(targetPID: targetPID, nonce: nonce)
-      }
-      return
-    }
-    sendAcknowledgement(targetPID: targetPID, nonce: nonce)
+    pulse.activate(targetPID: targetPID, nonce: nonce)
   }
 
   private func sendAcknowledgement(targetPID: pid_t, nonce: String) {
@@ -73,6 +73,83 @@ public final class WorkspaceDiagnosticsHeartbeatResponder: NSObject, @unchecked 
       ],
       deliverImmediately: true
     )
+  }
+}
+
+final class WorkspaceDiagnosticsHeartbeatPulse: @unchecked Sendable {
+  private struct State {
+    let targetPID: pid_t
+    let nonce: String
+    let activatedAt: Date
+  }
+
+  private let intervalSeconds: TimeInterval
+  private let leaseDurationSeconds: TimeInterval
+  private let handler: @Sendable (pid_t, String) -> Void
+  private let queue = DispatchQueue(label: "org.org2.workspace.diagnostics-heartbeat")
+  private let lock = NSLock()
+  private var state: State?
+  private var timer: DispatchSourceTimer?
+
+  init(
+    intervalSeconds: TimeInterval = 1,
+    leaseDurationSeconds: TimeInterval = 60,
+    handler: @escaping @Sendable (pid_t, String) -> Void
+  ) {
+    self.intervalSeconds = intervalSeconds
+    self.leaseDurationSeconds = leaseDurationSeconds
+    self.handler = handler
+  }
+
+  func activate(targetPID: pid_t, nonce: String, at date: Date = Date()) {
+    lock.withLock {
+      state = State(targetPID: targetPID, nonce: nonce, activatedAt: date)
+      guard timer == nil else { return }
+      let timer = DispatchSource.makeTimerSource(queue: queue)
+      timer.schedule(
+        deadline: .now(),
+        repeating: intervalSeconds,
+        leeway: .milliseconds(100)
+      )
+      timer.setEventHandler { [weak self] in
+        self?.fire()
+      }
+      self.timer = timer
+      timer.resume()
+    }
+  }
+
+  func stop() {
+    lock.withLock {
+      timer?.cancel()
+      timer = nil
+      state = nil
+    }
+  }
+
+  private func fire(at date: Date = Date()) {
+    let currentState = lock.withLock { () -> State? in
+      guard let state,
+            date.timeIntervalSince(state.activatedAt) <= leaseDurationSeconds
+      else {
+        timer?.cancel()
+        timer = nil
+        self.state = nil
+        return nil
+      }
+      return state
+    }
+    guard let currentState else { return }
+    let mainRunLoopModes = [
+      RunLoop.Mode.default.rawValue,
+      RunLoop.Mode.common.rawValue,
+      RunLoop.Mode.eventTracking.rawValue,
+      RunLoop.Mode.modalPanel.rawValue,
+    ] as NSArray
+    CFRunLoopPerformBlock(CFRunLoopGetMain(), mainRunLoopModes) { [handler] in
+      handler(currentState.targetPID, currentState.nonce)
+    }
+    CFRunLoopWakeUp(CFRunLoopGetMain())
   }
 }
 
@@ -599,6 +676,7 @@ public final class WorkspaceDiagnosticsMonitor: NSObject, @unchecked Sendable {
   private var hasReceivedHeartbeat = false
   private var didReportMissingHeartbeatSupport = false
   private var pendingHeartbeatNonces: [String] = []
+  private var lastAcknowledgedHeartbeatNonce: String?
   private var previousCPUReading: (date: Date, nanoseconds: UInt64)?
   private var resourceSamples: [WorkspaceDiagnosticsResourceSample] = []
   private var timer: Timer?
@@ -675,6 +753,7 @@ public final class WorkspaceDiagnosticsMonitor: NSObject, @unchecked Sendable {
       // suspended, including during system sleep. Start a fresh sample window.
       lastAcknowledgementAt = now
       pendingHeartbeatNonces = []
+      lastAcknowledgedHeartbeatNonce = nil
       previousCPUReading = nil
       resourceSamples = []
       evaluator.resetTarget()
@@ -712,7 +791,11 @@ public final class WorkspaceDiagnosticsMonitor: NSObject, @unchecked Sendable {
     guard let pid = (notification.userInfo?[WorkspaceDiagnosticsHeartbeat.responderPIDKey] as? NSNumber)?.int32Value,
           pid == targetPID,
           let nonce = notification.userInfo?[WorkspaceDiagnosticsHeartbeat.nonceKey] as? String,
-          pendingHeartbeatNonces.contains(nonce)
+          Self.acceptsHeartbeatAcknowledgement(
+            nonce,
+            pendingNonces: pendingHeartbeatNonces,
+            lastAcknowledgedNonce: lastAcknowledgedHeartbeatNonce
+          )
     else {
       return
     }
@@ -727,8 +810,17 @@ public final class WorkspaceDiagnosticsMonitor: NSObject, @unchecked Sendable {
 
   private func recordAcknowledgement(nonce: String) {
     pendingHeartbeatNonces.removeAll { $0 == nonce }
+    lastAcknowledgedHeartbeatNonce = nonce
     hasReceivedHeartbeat = true
     lastAcknowledgementAt = Date()
+  }
+
+  static func acceptsHeartbeatAcknowledgement(
+    _ nonce: String,
+    pendingNonces: [String],
+    lastAcknowledgedNonce: String?
+  ) -> Bool {
+    pendingNonces.contains(nonce) || nonce == lastAcknowledgedNonce
   }
 
   private func resolveTargetApplication() -> NSRunningApplication? {
@@ -747,6 +839,7 @@ public final class WorkspaceDiagnosticsMonitor: NSObject, @unchecked Sendable {
     hasReceivedHeartbeat = false
     didReportMissingHeartbeatSupport = false
     pendingHeartbeatNonces = []
+    lastAcknowledgedHeartbeatNonce = nil
     previousCPUReading = nil
     resourceSamples = []
     pollContinuity.reset()
@@ -763,6 +856,7 @@ public final class WorkspaceDiagnosticsMonitor: NSObject, @unchecked Sendable {
     hasReceivedHeartbeat = false
     didReportMissingHeartbeatSupport = false
     pendingHeartbeatNonces = []
+    lastAcknowledgedHeartbeatNonce = nil
     previousCPUReading = nil
     resourceSamples = []
     pollContinuity.reset()
