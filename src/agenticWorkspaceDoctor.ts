@@ -3,6 +3,7 @@ import path from "node:path";
 import type { HeadlineNode, InlineNode, Node } from "./ast.js";
 import {
   AGENT_RUN_APPROVAL_BLOCK_REASON,
+  agentRunSourceConsistency,
   agentRunApprovalDecisionKeys,
   agentRunDirectory,
   parseAgentRunOrg,
@@ -107,16 +108,28 @@ function finding(
   findings.push(value);
 }
 
-function visibleRunProperty(raw: string, key: string): string | undefined {
-  const match = new RegExp(`^:${key}:\\s*(.*?)\\s*$`, "im").exec(raw);
-  return match?.[1]?.trim() || undefined;
-}
-
 function loadRuns(root: string, findings: AgenticDoctorFinding[]): LoadedRuns {
   const dir = agentRunDirectory(root);
-  const names = fs.existsSync(dir)
-    ? fs.readdirSync(dir).filter((name) => /\.org2$/i.test(name)).sort()
-    : [];
+  const entries = fs.existsSync(dir) ? fs.readdirSync(dir).sort() : [];
+  const names = entries.filter((name) => /\.org2$/i.test(name));
+  for (const name of entries.filter((entry) => /\.org2\.lock$/i.test(entry))) {
+    const file = path.join(dir, name);
+    let owner: Record<string, unknown> = {};
+    try { owner = JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, unknown>; } catch {}
+    const created = typeof owner.createdAt === "string" ? new Date(owner.createdAt).getTime() : Number.NaN;
+    const stale = !Number.isFinite(created) || Date.now() - created > 5 * 60_000;
+    finding(findings, {
+      rule: "run-write-lock-present",
+      severity: stale ? "warning" : "info",
+      category: "run",
+      message: `${stale ? "Stale or unreadable" : "Active"} guarded-write lock is present for a run file.`,
+      suggestion: stale
+        ? "Confirm no writer is active, then remove the abandoned lock before retrying the lifecycle mutation."
+        : "Retry after the current writer completes; do not bypass the revision check.",
+      file,
+      related: owner,
+    });
+  }
   const runs: AgentRun[] = [];
   const rawById = new Map<string, { file: string; raw: string }>();
   for (const name of names) {
@@ -383,12 +396,8 @@ function auditRuns(
     }
 
     const raw = rawById.get(run.id)?.raw || "";
-    const visibleStatus = visibleRunProperty(raw, "RUN_STATUS");
-    const visibleId = visibleRunProperty(raw, "ID");
-    const approvalSummary = /^\*\* Approvals \[(\d+)\/(\d+) pending\]\s*$/im.exec(raw);
-    if ((visibleStatus && visibleStatus !== run.status)
-      || (visibleId && visibleId !== run.id)
-      || (approvalSummary && (Number(approvalSummary[1]) !== pending.length || Number(approvalSummary[2]) !== run.approvals.length))) {
+    const sourceIssues = agentRunSourceConsistency(raw, run);
+    if (sourceIssues.length > 0) {
       finding(findings, {
         rule: "run-readable-state-diverged",
         severity: "warning",
@@ -397,7 +406,7 @@ function auditRuns(
         suggestion: "Inspect the direct edit, then normalize the file from the accepted canonical state before another client writes it.",
         runId: run.id,
         file: rawById.get(run.id)?.file,
-        related: { visibleStatus, machineStatus: run.status, visibleId, machineId: run.id },
+        related: { fields: sourceIssues },
       });
     }
 

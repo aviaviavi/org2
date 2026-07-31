@@ -7,11 +7,11 @@ import { PassThrough } from "node:stream";
 import {
   addAgentRunArtifact, addAgentRunComment, addAgentRunValidation, completeAgentRunExternally, createAgentRun,
   decideAgentRunApproval, forkAgentRun, listAgentRuns, loadAgentRun, normalizeLegacyAgentRuns,
-  parseAgentRunOrg, renderAgentRunOrg, requestAgentRunApproval, saveAgentRun, summarizeAgentRunAttempts,
+  loadAgentRunSnapshot, parseAgentRunOrg, renderAgentRunOrg, requestAgentRunApproval, saveAgentRun, summarizeAgentRunAttempts,
   transitionAgentRun, updateAgentRunAssignment, updateAgentRunRuntime, updateAgentRunStep, validateAgentRun,
   updateAgentRunArtifactReview,
 } from "../dist/agentRun.js";
-import { dueWorkflowTriggers, installBuiltinWorkflow, instantiateWorkflow, legacyWorkflowDirectory, loadWorkflow, markWorkflowTriggerAttempt, migrateLegacyWorkflows, packagedCorpusTemplate, parseWorkflowOrg, recordWorkflowSignal, renderWorkflowOrg, saveWorkflow, workflowFromRun, workflowPath, workflowTriggerEligibility } from "../dist/agentWorkflow.js";
+import { dueWorkflowTriggers, installBuiltinWorkflow, instantiateWorkflow, legacyWorkflowDirectory, loadWorkflow, loadWorkflowSnapshot, markWorkflowTriggerAttempt, migrateLegacyWorkflows, packagedCorpusTemplate, parseWorkflowOrg, recordWorkflowSignal, renderWorkflowOrg, saveWorkflow, updateWorkflow, workflowFromRun, workflowPath, workflowTriggerEligibility } from "../dist/agentWorkflow.js";
 import { artifactRebuildPlan, buildArtifactGraph, MEETING_TO_CONTROLLED_EXECUTION_WORKFLOW } from "../dist/artifactPipeline.js";
 import { discoverMcpClient, saveMcpClients, serveMcp, writeMcpSnapshot } from "../dist/mcpRuntime.js";
 import { defaultRuntimePolicy, selectRuntime, validateRuntimePaths } from "../dist/runtimePolicy.js";
@@ -29,6 +29,73 @@ try {
   assert.deepEqual(parseAgentRunOrg(renderAgentRunOrg(run)), run);
   saveAgentRun(root, run);
   assert.equal(loadAgentRun(root, run.id).goal, run.goal);
+
+  const guardedRun = createAgentRun({ id: "guarded-write", goal: "Preserve concurrent source changes" });
+  const guardedFile = saveAgentRun(root, guardedRun, { expectedRevision: null });
+  assert.throws(
+    () => saveAgentRun(root, guardedRun, { expectedRevision: null }),
+    /expected to be absent/,
+  );
+  const guardedSnapshot = loadAgentRunSnapshot(root, guardedRun.id);
+  assert.match(guardedSnapshot.revision, /^sha256:[a-f0-9]{64}$/);
+  const guardedUpdated = addAgentRunComment(guardedSnapshot.run, "test", "First guarded update");
+  saveAgentRun(root, guardedUpdated, {
+    expectedRevision: guardedSnapshot.revision,
+    rejectSourceDrift: true,
+  });
+  assert.throws(
+    () => saveAgentRun(root, addAgentRunComment(guardedSnapshot.run, "test", "Stale update"), {
+      expectedRevision: guardedSnapshot.revision,
+      rejectSourceDrift: true,
+    }),
+    /changed after it was read/,
+  );
+  const afterGuardedUpdate = loadAgentRunSnapshot(root, guardedRun.id);
+  assert.equal(afterGuardedUpdate.run.comments.length, 1);
+
+  const wrongRevision = spawnSync(process.execPath, [
+    path.resolve("dist/cli.js"), "run", "comment", guardedRun.id,
+    "--author", "test", "--body", "Must not overwrite", "--if-revision", "sha256:stale", "--dir", root,
+  ], { encoding: "utf8" });
+  assert.notEqual(wrongRevision.status, 0);
+  assert.match(wrongRevision.stderr, /run revision changed/);
+  assert.equal(loadAgentRun(root, guardedRun.id).comments.length, 1);
+
+  fs.writeFileSync(
+    guardedFile,
+    afterGuardedUpdate.raw.replace(":RUN_STATUS: queued", ":RUN_STATUS: running"),
+    "utf8",
+  );
+  const driftedSnapshot = loadAgentRunSnapshot(root, guardedRun.id);
+  assert.deepEqual(driftedSnapshot.sourceIssues.map((issue) => issue.field), ["status"]);
+  const driftedMutation = spawnSync(process.execPath, [
+    path.resolve("dist/cli.js"), "run", "comment", guardedRun.id,
+    "--author", "test", "--body", "Must respect direct edit", "--dir", root,
+  ], { encoding: "utf8" });
+  assert.notEqual(driftedMutation.status, 0);
+  assert.match(driftedMutation.stderr, /out-of-band readable-state changes/);
+  fs.writeFileSync(guardedFile, afterGuardedUpdate.raw, "utf8");
+
+  const lockedSnapshot = loadAgentRunSnapshot(root, guardedRun.id);
+  fs.writeFileSync(`${guardedFile}.lock`, "{}\n", "utf8");
+  assert.throws(
+    () => saveAgentRun(root, addAgentRunComment(lockedSnapshot.run, "test", "Locked update"), {
+      expectedRevision: lockedSnapshot.revision,
+      rejectSourceDrift: true,
+    }),
+    /already being updated/,
+  );
+  fs.unlinkSync(`${guardedFile}.lock`);
+
+  const showRevision = spawnSync(process.execPath, [
+    path.resolve("dist/cli.js"), "run", "show", guardedRun.id,
+    "--with-revision", "--json", "--dir", root,
+  ], { encoding: "utf8" });
+  assert.equal(showRevision.status, 0, showRevision.stderr || showRevision.stdout);
+  const shownSnapshot = JSON.parse(showRevision.stdout);
+  assert.equal(shownSnapshot.schema, "org2:run-snapshot:v1");
+  assert.equal(shownSnapshot.revision, lockedSnapshot.revision);
+  fs.unlinkSync(guardedFile);
 
   assert.throws(() => createAgentRun({ goal: "Reject an invalid plan", plan: [{ title: "Broken", kind: "unknown" }] }), /invalid run step kind/);
   assert.throws(() => updateAgentRunStep(run, "draft", "unknown"), /invalid run step status/);
@@ -316,6 +383,21 @@ try {
   assert.equal(workflowPath(root, workflow.id), path.join(root, "workflows", "board-briefing.org2"));
   assert.equal(fs.existsSync(workflowPath(root, workflow.id)), true);
   assert.equal(loadWorkflow(root, workflow.id).version, "1.0.0");
+  const guardedWorkflow = workflowFromRun(run, { id: "guarded-workflow", now: "2026-07-14T11:00:00Z" });
+  saveWorkflow(root, guardedWorkflow, { expectedRevision: null });
+  assert.throws(
+    () => saveWorkflow(root, guardedWorkflow, { expectedRevision: null }),
+    /expected to be absent/,
+  );
+  const guardedWorkflowSnapshot = loadWorkflowSnapshot(root, guardedWorkflow.id);
+  updateWorkflow(root, guardedWorkflow.id, (item) => ({ ...item, state: "active" }), "2026-07-14T11:01:00Z");
+  assert.equal(loadWorkflow(root, guardedWorkflow.id).state, "active");
+  assert.throws(
+    () => saveWorkflow(root, { ...guardedWorkflowSnapshot.workflow, state: "paused" }, {
+      expectedRevision: guardedWorkflowSnapshot.revision,
+    }),
+    /changed after it was read/,
+  );
   const editedWorkflowSource = renderWorkflowOrg(workflow)
     .replace("* Prepare a cited board briefing", "* Maintained board workflow")
     .replace("Prepare the {{quarter}} board briefing\n\n** Machine state", "Prepare a carefully cited {{quarter}} board briefing\n\n** Machine state")

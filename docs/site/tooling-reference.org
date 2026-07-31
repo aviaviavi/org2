@@ -386,6 +386,16 @@ org2 doctor --dir ~/notes --json
 
 The versioned =org2:agentic-doctor:v1= JSON report distinguishes errors, warnings, and informational migration findings. It detects terminal runs with pending decisions, waiting runs without a decision, duplicate provider keys, conflicting workflow attempt identities, ungrouped OpenClaw cron series, broken run/approval links, direct readable-header drift, and likely duplicate open projections. Hard contradictions produce a nonzero exit status. The command never repairs or normalizes files: review the cited evidence, then use the canonical lifecycle command or an explicit source edit to settle the underlying state.
 
+Every CLI and MCP run mutation uses a short local write lock, an atomic durable rename, and the SHA-256 revision read with the run. Workflow updates use the same guarded file primitive while retaining their documented visible-field authoring behavior. If another client or text editor changes a file first, the mutation fails rather than overwriting it. New run and workflow IDs also require the target to be absent. Long-lived clients can make the run boundary explicit:
+
+#+begin_src sh
+org2 run show RUN_ID --with-revision --dir ~/notes --json
+org2 run comment RUN_ID --author agent --body "Checked current state" \
+  --if-revision sha256:... --dir ~/notes
+#+end_src
+
+The snapshot envelope is =org2:run-snapshot:v1= and includes =revision=, =sourceIssues=, and the parsed =run=. A lifecycle write also refuses readable run headers that disagree with the machine state, directing the caller to =org2 doctor= instead of normalizing an ambiguous direct edit. An abandoned =.org2.lock= is reported by the doctor; confirm that no writer remains before removing it.
+
 * Reusable workflows and triggers
 
 =workflow save RUN_ID= converts a completed run into a draft =org2:workflow:v1= file under the visible top-level =workflows/=. Packages declare semantic version, compatibility, parameters and defaults, context rules, deterministic/agent/tool/approval steps, capabilities, risk, outputs, validation, approval boundaries, and manual/schedule/file-change/capture/meeting-import triggers. See [[file:workflows.org][Workflows]] for the plain-text ownership and OpenClaw execution contract.

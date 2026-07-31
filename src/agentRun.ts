@@ -1,6 +1,11 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import {
+  guardedWriteFile,
+  readGuardedFile,
+  type GuardedFileWriteOptions,
+} from "./guardedFile.js";
 
 export const ORG2_AGENT_RUN_SCHEMA = "org2:agent-run:v1" as const;
 
@@ -270,6 +275,24 @@ export interface AgentRunAttemptRollup {
   latestAttemptNumber: number;
   latestStatus: AgentRunStatus;
   updatedAt: string;
+}
+
+export interface AgentRunSourceConsistencyIssue {
+  field: "id" | "status" | "updatedAt" | "title" | "goal" | "approvals";
+  readable?: string;
+  canonical: string;
+}
+
+export interface AgentRunSnapshot {
+  file: string;
+  revision: string;
+  raw: string;
+  run: AgentRun;
+  sourceIssues: AgentRunSourceConsistencyIssue[];
+}
+
+export interface SaveAgentRunOptions extends GuardedFileWriteOptions {
+  rejectSourceDrift?: boolean;
 }
 
 const TRANSITIONS: Record<AgentRunStatus, readonly AgentRunStatus[]> = {
@@ -964,6 +987,38 @@ export function parseAgentRunOrg(raw: string): AgentRun {
   return value;
 }
 
+function readableRunProperty(raw: string, key: string): string | undefined {
+  return new RegExp(`^:${key}:\\s*(.*?)\\s*$`, "im").exec(raw)?.[1]?.trim() || undefined;
+}
+
+export function agentRunSourceConsistency(
+  raw: string,
+  run: AgentRun = parseAgentRunOrg(raw),
+): AgentRunSourceConsistencyIssue[] {
+  const issues: AgentRunSourceConsistencyIssue[] = [];
+  const compare = (
+    field: AgentRunSourceConsistencyIssue["field"],
+    readable: string | undefined,
+    canonical: string,
+  ): void => {
+    // Older generated run records do not contain every readable projection.
+    // Absence is compatible; a present value that disagrees is ambiguous.
+    if (readable !== undefined && readable !== canonical) issues.push({ field, readable, canonical });
+  };
+  compare("id", readableRunProperty(raw, "ID"), run.id);
+  compare("status", readableRunProperty(raw, "RUN_STATUS"), run.status);
+  compare("updatedAt", readableRunProperty(raw, "UPDATED_AT"), run.updatedAt);
+  compare("title", /^#\+TITLE:\s*Run:\s*(.*?)\s*$/im.exec(raw)?.[1]?.trim(), orgEscape(run.goal));
+  compare("goal", /^\*\* Goal\s*\r?\n([\s\S]*?)(?=\r?\n\*\* )/m.exec(raw)?.[1]?.trim(), run.goal.trim());
+  const approvalSummary = /^\*\* Approvals \[(\d+)\/(\d+) pending\]\s*$/im.exec(raw);
+  compare(
+    "approvals",
+    approvalSummary ? `${approvalSummary[1]}/${approvalSummary[2]}` : undefined,
+    `${run.approvals.filter((approval) => approval.status === "pending").length}/${run.approvals.length}`,
+  );
+  return issues;
+}
+
 export function agentRunDirectory(corpusRoot: string): string {
   return path.join(path.resolve(corpusRoot), ".org2", "runs");
 }
@@ -972,28 +1027,63 @@ export function agentRunPath(corpusRoot: string, id: string): string {
   return path.join(agentRunDirectory(corpusRoot), `${safeId(id)}.org2`);
 }
 
-export function saveAgentRun(corpusRoot: string, run: AgentRun): string {
+export function saveAgentRun(
+  corpusRoot: string,
+  run: AgentRun,
+  options: SaveAgentRunOptions = {},
+): string {
   const outputPath = agentRunPath(corpusRoot, run.id);
-  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-  const tempPath = `${outputPath}.${process.pid}.${crypto.randomUUID()}.tmp`;
-  fs.writeFileSync(tempPath, renderAgentRunOrg(run), "utf8");
-  fs.renameSync(tempPath, outputPath);
-  return outputPath;
+  if (options.rejectSourceDrift && fs.existsSync(outputPath)) {
+    const current = fs.readFileSync(outputPath, "utf8");
+    const issues = agentRunSourceConsistency(current);
+    if (issues.length > 0) {
+      throw new Error(
+        `run source has out-of-band readable-state changes (${issues.map((issue) => issue.field).join(", ")}); run org2 doctor and reconcile the source before writing: ${outputPath}`,
+      );
+    }
+  }
+  return guardedWriteFile(outputPath, renderAgentRunOrg(run), options).file;
 }
 
 export function loadAgentRun(corpusRoot: string, id: string): AgentRun {
+  return loadAgentRunSnapshot(corpusRoot, id).run;
+}
+
+export function loadAgentRunSnapshot(corpusRoot: string, id: string): AgentRunSnapshot {
   const file = agentRunPath(corpusRoot, id);
   if (!fs.existsSync(file)) throw new Error(`run not found: ${id}`);
-  return parseAgentRunOrg(fs.readFileSync(file, "utf8"));
+  const snapshot = readGuardedFile(file);
+  const run = parseAgentRunOrg(snapshot.content);
+  return {
+    file: snapshot.file,
+    revision: snapshot.revision,
+    raw: snapshot.content,
+    run,
+    sourceIssues: agentRunSourceConsistency(snapshot.content, run),
+  };
 }
 
 export function listAgentRuns(corpusRoot: string): AgentRun[] {
+  return listAgentRunSnapshots(corpusRoot).map((snapshot) => snapshot.run);
+}
+
+export function listAgentRunSnapshots(corpusRoot: string): AgentRunSnapshot[] {
   const dir = agentRunDirectory(corpusRoot);
   if (!fs.existsSync(dir)) return [];
   return fs.readdirSync(dir, { withFileTypes: true })
     .filter((entry) => entry.isFile() && entry.name.endsWith(".org2"))
-    .map((entry) => parseAgentRunOrg(fs.readFileSync(path.join(dir, entry.name), "utf8")))
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id));
+    .map((entry) => {
+      const snapshot = readGuardedFile(path.join(dir, entry.name));
+      const run = parseAgentRunOrg(snapshot.content);
+      return {
+        file: snapshot.file,
+        revision: snapshot.revision,
+        raw: snapshot.content,
+        run,
+        sourceIssues: agentRunSourceConsistency(snapshot.content, run),
+      };
+    })
+    .sort((a, b) => b.run.updatedAt.localeCompare(a.run.updatedAt) || a.run.id.localeCompare(b.run.id));
 }
 
 export function summarizeAgentRunAttempts(runs: AgentRun[]): AgentRunAttemptRollup[] {
@@ -1119,7 +1209,7 @@ export function normalizeLegacyAgentRuns(corpusRoot: string, nowRaw?: string): L
         }, "org2");
       }
       run.events.push(event("legacy-imported", run.createdAt, "org2", `Imported from ${path.relative(root, file)}:${headingIndex + 1}`));
-      const runFile = saveAgentRun(root, run);
+      const runFile = saveAgentRun(root, run, { expectedRevision: null });
       existing.add(id);
       result.created.push({ id, file, runFile });
     }

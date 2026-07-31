@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { guardedWriteFile, readGuardedFile, type GuardedFileWriteOptions } from "./guardedFile.js";
 import {
   createAgentRun,
   type AgentRun,
@@ -76,6 +77,13 @@ export interface AgentWorkflow {
   sourceRunId?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface AgentWorkflowSnapshot {
+  file: string;
+  revision: string;
+  raw: string;
+  workflow: AgentWorkflow;
 }
 
 export type AgentWorkflowTemplate = Omit<
@@ -275,13 +283,13 @@ export function parseWorkflowOrg(raw: string): AgentWorkflow {
   return workflow;
 }
 
-export function saveWorkflow(root: string, workflow: AgentWorkflow): string {
+export function saveWorkflow(
+  root: string,
+  workflow: AgentWorkflow,
+  options: GuardedFileWriteOptions = {},
+): string {
   const target = workflowPath(root, workflow.id);
-  fs.mkdirSync(path.dirname(target), { recursive: true });
-  const temporary = `${target}.${process.pid}.${crypto.randomUUID()}.tmp`;
-  fs.writeFileSync(temporary, renderWorkflowOrg(workflow), "utf8");
-  fs.renameSync(temporary, target);
-  return target;
+  return guardedWriteFile(target, renderWorkflowOrg(workflow), options).file;
 }
 
 export function installBuiltinWorkflow(root: string, template: AgentWorkflowTemplate): string {
@@ -293,11 +301,21 @@ export function installBuiltinWorkflow(root: string, template: AgentWorkflowTemp
     compatibility: { org2: ">=0.3.0 <1", schema: ORG2_WORKFLOW_SCHEMA },
     createdAt: now,
     updatedAt: now,
-  });
+  }, { expectedRevision: null });
 }
 
 export function loadWorkflow(root: string, id: string): AgentWorkflow {
-  return parseWorkflowOrg(fs.readFileSync(workflowSourcePath(root, id), "utf8"));
+  return loadWorkflowSnapshot(root, id).workflow;
+}
+
+export function loadWorkflowSnapshot(root: string, id: string): AgentWorkflowSnapshot {
+  const snapshot = readGuardedFile(workflowSourcePath(root, id));
+  return {
+    file: snapshot.file,
+    revision: snapshot.revision,
+    raw: snapshot.content,
+    workflow: parseWorkflowOrg(snapshot.content),
+  };
 }
 
 export function listWorkflows(root: string): AgentWorkflow[] {
@@ -322,9 +340,20 @@ export function updateWorkflow(
   update: (workflow: AgentWorkflow) => AgentWorkflow,
   now?: string,
 ): { workflow: AgentWorkflow; file: string } {
-  const workflow = update(loadWorkflow(root, id));
+  const snapshot = loadWorkflowSnapshot(root, id);
+  const workflow = update(snapshot.workflow);
   workflow.updatedAt = nowIso(now);
-  return { workflow, file: saveWorkflow(root, workflow) };
+  const target = workflowPath(root, workflow.id);
+  if (path.resolve(snapshot.file) !== path.resolve(target)) {
+    const current = readGuardedFile(snapshot.file);
+    if (current.revision !== snapshot.revision) throw new Error(`workflow changed after it was read: ${snapshot.file}`);
+  }
+  return {
+    workflow,
+    file: saveWorkflow(root, workflow, {
+      expectedRevision: path.resolve(snapshot.file) === path.resolve(target) ? snapshot.revision : null,
+    }),
+  };
 }
 
 export function migrateLegacyWorkflows(root: string): Array<{ id: string; from: string; to: string; skipped: boolean }> {

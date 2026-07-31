@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
 import { spawnSync } from "node:child_process";
-import { listAgentRuns, loadAgentRun, saveAgentRun, transitionAgentRun } from "./agentRun.js";
+import { listAgentRuns, loadAgentRunSnapshot, saveAgentRun, transitionAgentRun } from "./agentRun.js";
 import { instantiateWorkflow, listWorkflows, loadWorkflow } from "./agentWorkflow.js";
 
 type JsonObject = Record<string, unknown>;
@@ -224,15 +224,17 @@ async function handle(root: string, request: JsonRpcRequest): Promise<JsonRpcRes
     if (name === "org2_run_list") return result({ content: [{ type: "text", text: JSON.stringify(listAgentRuns(root), null, 2) }] });
     if (name === "org2_run_create") {
       const run = instantiateWorkflow(loadWorkflow(root, requiredString(args.workflow, "workflow")), workflowInputs(args.inputs), { owner: optionalString(args.owner, "owner") });
-      const file = saveAgentRun(root, run);
+      const file = saveAgentRun(root, run, { expectedRevision: null });
       return result({ content: [{ type: "text", text: JSON.stringify({ run, file }, null, 2) }] });
     }
     if (name === "org2_run_transition") {
-      const run = transitionAgentRun(loadAgentRun(root, requiredString(args.run, "run")), requiredString(args.status, "status") as Parameters<typeof transitionAgentRun>[1], {
+      const snapshot = loadAgentRunSnapshot(root, requiredString(args.run, "run"));
+      if (snapshot.sourceIssues.length > 0) throw new Error(`run source has out-of-band readable-state changes: ${snapshot.sourceIssues.map((issue) => issue.field).join(", ")}`);
+      const run = transitionAgentRun(snapshot.run, requiredString(args.status, "status") as Parameters<typeof transitionAgentRun>[1], {
         actor: optionalString(args.actor, "actor"), reason: optionalString(args.reason, "reason"), summary: optionalString(args.summary, "summary"),
         highlights: stringArray(args.highlights, "highlights"), nextActions: stringArray(args.nextActions, "nextActions"),
       });
-      saveAgentRun(root, run);
+      saveAgentRun(root, run, { expectedRevision: snapshot.revision, rejectSourceDrift: true });
       return result({ content: [{ type: "text", text: JSON.stringify(run, null, 2) }] });
     }
     throw new Error(`unknown tool: ${name}`);

@@ -18,7 +18,9 @@ import {
   decideAgentRunApproval,
   forkAgentRun,
   listAgentRuns,
+  listAgentRunSnapshots,
   loadAgentRun,
+  loadAgentRunSnapshot,
   normalizeLegacyAgentRuns,
   requestAgentRunApproval,
   saveAgentRun,
@@ -33,6 +35,7 @@ import {
   validateAgentRun,
   type AgentRun,
   type AgentRunApproval,
+  type AgentRunSnapshot,
   type AgentRunStatus,
 } from "./agentRun.js";
 import { updateArtifactReviewStatusInText } from "./artifactMetadata.js";
@@ -124,6 +127,7 @@ const HELP = `Agentic workspace commands:
   org2 thread list|show|settle|reopen|configure|auto-settle [--dir CORPUS] [--apply]
   org2 thread configure --auto-settle never|SECONDS [--dir CORPUS] [--apply]
   org2 run create --goal TEXT [--accept TEXT] [--risk CLASS] [--owner NAME] [--capability ID] [--dir CORPUS]
+  org2 run show ID --with-revision --json
   org2 run list|show|validate|start|resume|retry|cancel|complete|complete-external|fail|block|fork|normalize|artifact-review
   org2 run block ID --reason "Specific clarification needed"
   org2 run complete ID --summary "What happened" [--highlight TEXT] [--next-action TEXT]
@@ -137,7 +141,7 @@ const HELP = `Agentic workspace commands:
   org2 run artifact-review ID ARTIFACT --status reviewed|promoted|rejected [--actor NAME]
   org2 run validation ID --name NAME --status passed|failed|warning|skipped
   org2 run approval-request ID --title TEXT --action TEXT [--risk CLASS] [--role ROLE]
-  org2 run approval-decide ID APPROVAL --decision approved|rejected|revised|canceled --actor NAME [--fingerprint SHA256] [--note TEXT] [--receipt TEXT]
+  org2 run approval-decide ID APPROVAL --decision approved|rejected|revised|canceled --actor NAME [--fingerprint SHA256] [--if-revision SHA256] [--note TEXT] [--receipt TEXT]
   org2 run approval-resolve --decision-key PROVIDER_KEY [--json]
   org2 run approval-reconcile [--apply] [--json]
   org2 review list [--status pending] | org2 review show RUN
@@ -288,6 +292,38 @@ type AgentRunApprovalReference = {
   approval: AgentRunApproval;
 };
 
+function assertRequestedRunRevision(parsed: ParsedArgs, snapshot: AgentRunSnapshot): void {
+  const expected = flag(parsed, "if-revision");
+  if (expected && expected !== snapshot.revision) {
+    throw new Error(`run revision changed; expected ${expected}, found ${snapshot.revision}: ${snapshot.file}`);
+  }
+  if (snapshot.sourceIssues.length > 0) {
+    throw new Error(
+      `run source has out-of-band readable-state changes (${snapshot.sourceIssues.map((issue) => issue.field).join(", ")}); run org2 doctor and reconcile the source before writing: ${snapshot.file}`,
+    );
+  }
+}
+
+function runSnapshotMap(corpus: string, preferred?: AgentRunSnapshot): Map<string, AgentRunSnapshot> {
+  const snapshots = new Map(listAgentRunSnapshots(corpus).map((snapshot) => [snapshot.run.id, snapshot]));
+  if (preferred) snapshots.set(preferred.run.id, preferred);
+  return snapshots;
+}
+
+function saveRunFromSnapshot(
+  corpus: string,
+  run: AgentRun,
+  snapshots: Map<string, AgentRunSnapshot>,
+): string {
+  const snapshot = snapshots.get(run.id);
+  const file = saveAgentRun(corpus, run, {
+    expectedRevision: snapshot?.revision ?? null,
+    rejectSourceDrift: true,
+  });
+  snapshots.delete(run.id);
+  return file;
+}
+
 function approvalKeysOverlap(lhs: string[], rhs: string[]): boolean {
   const right = new Set(rhs);
   return lhs.some((key) => right.has(key));
@@ -346,8 +382,9 @@ function closeSupersededApprovalProjection(
 function correlatedApprovalRequest(
   parsed: ParsedArgs,
   corpus: string,
-  target: AgentRun,
+  targetSnapshot: AgentRunSnapshot,
 ): AgentRun | null {
+  const target = targetSnapshot.run;
   const input = {
     title: required(flag(parsed, "title"), "--title is required"),
     action: required(flag(parsed, "action"), "--action is required"),
@@ -359,7 +396,8 @@ function correlatedApprovalRequest(
   const keys = agentRunApprovalDecisionKeys(input);
   if (keys.length === 0) return null;
 
-  const runs = listAgentRuns(corpus);
+  const snapshots = runSnapshotMap(corpus, targetSnapshot);
+  const runs = [...snapshots.values()].map((snapshot) => snapshot.run);
   const references = approvalReferences(runs, keys);
   const targetOwnsDecision = target.approvals.some((approval) =>
     approvalKeysOverlap(agentRunApprovalDecisionKeys(approval), keys));
@@ -377,10 +415,10 @@ function correlatedApprovalRequest(
     || targetOwnsDecision
   )) {
     if (exactPending.run.id !== target.id && canCloseSupersededApprovalProjection(target, keys)) {
-      saveAgentRun(corpus, transitionAgentRun(target, "canceled", {
+      saveRunFromSnapshot(corpus, transitionAgentRun(target, "canceled", {
         actor: flag(parsed, "actor") || "org2-approval-reconciler",
         reason: `Duplicate approval request reused ${exactPending.run.id}:${exactPending.approval.id}.`,
-      }));
+      }), snapshots);
     }
     return exactPending.run;
   }
@@ -420,7 +458,7 @@ function correlatedApprovalRequest(
   }
   for (const [runId, candidate] of updatedRuns) {
     if (runId === updatedCanonical.id) continue;
-    saveAgentRun(
+    saveRunFromSnapshot(
       corpus,
       closeSupersededApprovalProjection(
         candidate,
@@ -429,24 +467,27 @@ function correlatedApprovalRequest(
         replacementApprovalId,
         actor,
       ),
+      snapshots,
     );
   }
-  saveAgentRun(corpus, updatedCanonical);
+  saveRunFromSnapshot(corpus, updatedCanonical, snapshots);
   return updatedCanonical;
 }
 
 function correlatedApprovalDecision(
   parsed: ParsedArgs,
   corpus: string,
-  target: AgentRun,
+  targetSnapshot: AgentRunSnapshot,
 ): AgentRun | null {
+  const target = targetSnapshot.run;
   const approvalId = required(parsed.positional[2], "approval id is required");
   const approval = target.approvals.find((candidate) => candidate.id === approvalId);
   if (!approval) throw new Error(`approval not found: ${approvalId}`);
   const keys = agentRunApprovalDecisionKeys(approval);
   if (keys.length === 0) return null;
 
-  const references = approvalReferences(listAgentRuns(corpus), keys);
+  const snapshots = runSnapshotMap(corpus, targetSnapshot);
+  const references = approvalReferences([...snapshots.values()].map((snapshot) => snapshot.run), keys);
   for (const key of keys) {
     const latest = references
       .filter((reference) => agentRunApprovalDecisionKeys(reference.approval).includes(key))
@@ -484,7 +525,7 @@ function correlatedApprovalDecision(
     }));
   }
   for (const candidate of updatedRuns.values()) {
-    saveAgentRun(
+    saveRunFromSnapshot(
       corpus,
       closeSupersededApprovalProjection(
         candidate,
@@ -492,9 +533,10 @@ function correlatedApprovalDecision(
         target.id,
         approval.id,
       ),
+      snapshots,
     );
   }
-  saveAgentRun(corpus, updated);
+  saveRunFromSnapshot(corpus, updated, snapshots);
   return updated;
 }
 
@@ -511,7 +553,8 @@ function reconcileCorrelatedApprovals(corpus: string, apply: boolean): {
     runClosed: boolean;
   }>;
 } {
-  const runs = listAgentRuns(corpus);
+  const snapshots = runSnapshotMap(corpus);
+  const runs = [...snapshots.values()].map((snapshot) => snapshot.run);
   const referencesByKey = new Map<string, AgentRunApprovalReference[]>();
   for (const run of runs) {
     for (const approval of run.approvals) {
@@ -572,7 +615,7 @@ function reconcileCorrelatedApprovals(corpus: string, apply: boolean): {
     }
   }
   if (apply) {
-    for (const run of updatedRuns.values()) saveAgentRun(corpus, run);
+    for (const run of updatedRuns.values()) saveRunFromSnapshot(corpus, run, snapshots);
   }
   return {
     schema: "org2:approval-reconciliation:v1",
@@ -635,7 +678,7 @@ async function runCommand(parsed: ParsedArgs): Promise<void> {
     const tokenLimit = flag(parsed, "token-limit"); const costLimit = flag(parsed, "cost-limit-usd"); const timeLimit = flag(parsed, "time-limit-seconds");
     const plan = flags(parsed, "step").map((raw, index) => { const colon = raw.indexOf(":"); const kind = colon > 0 ? raw.slice(0, colon) : "agent"; const title = colon > 0 ? raw.slice(colon + 1) : raw; if (!title.trim()) throw new Error(`--step ${index + 1} must be [${AGENT_RUN_STEP_KINDS.join("|")}]:TITLE`); return { id: `step-${index + 1}`, kind: choice(kind, AGENT_RUN_STEP_KINDS, `--step ${index + 1} kind`), title: title.trim() }; });
     const run = createAgentRun({ id: flag(parsed, "id"), goal: required(flag(parsed, "goal"), "--goal is required"), acceptanceCriteria: flags(parsed, "accept"), riskClass: risk, owner: flag(parsed, "owner"), assignee: flag(parsed, "assignee"), providerPolicy: flag(parsed, "policy"), provider: flag(parsed, "provider"), model: flag(parsed, "model"), capabilities: flags(parsed, "capability"), context: flags(parsed, "context").map((ref) => ({ ref })), plan, logicalWorkId: flag(parsed, "logical-work-id"), ...((tokenLimit || costLimit || timeLimit) ? { budget: { ...(tokenLimit ? { tokenLimit: Number(tokenLimit) } : {}), ...(costLimit ? { costLimitUsd: Number(costLimit) } : {}), ...(timeLimit ? { timeLimitSeconds: Number(timeLimit) } : {}) } } : {}) });
-    const file = saveAgentRun(corpus, run); output(parsed, { run, file }, `created ${run.id}\n${file}`); return;
+    const file = saveAgentRun(corpus, run, { expectedRevision: null }); output(parsed, { run, file }, `created ${run.id}\n${file}`); return;
   }
   if (action === "list") {
     const status = flag(parsed, "status");
@@ -667,9 +710,23 @@ async function runCommand(parsed: ParsedArgs): Promise<void> {
     return;
   }
   const id = required(parsed.positional[1], `run id is required for ${action}`);
-  if (action === "show") { const run = loadAgentRun(corpus, id); output(parsed, run, fs.readFileSync(path.join(corpus, ".org2", "runs", `${id}.org2`), "utf8")); return; }
-  if (action === "validate") { const result = validateAgentRun(loadAgentRun(corpus, id)); output(parsed, result, result.valid ? `${id}: valid` : result.issues.map((issue) => `${issue.path}: ${issue.message}`).join("\n")); if (!result.valid) process.exitCode = 1; return; }
-  const existing = loadAgentRun(corpus, id);
+  const existingSnapshot = loadAgentRunSnapshot(corpus, id);
+  if (action === "show") {
+    output(
+      parsed,
+      enabled(parsed, "with-revision") ? {
+        schema: "org2:run-snapshot:v1",
+        revision: existingSnapshot.revision,
+        sourceIssues: existingSnapshot.sourceIssues,
+        run: existingSnapshot.run,
+      } : existingSnapshot.run,
+      existingSnapshot.raw,
+    );
+    return;
+  }
+  if (action === "validate") { const result = validateAgentRun(existingSnapshot.run); output(parsed, result, result.valid ? `${id}: valid` : result.issues.map((issue) => `${issue.path}: ${issue.message}`).join("\n")); if (!result.valid) process.exitCode = 1; return; }
+  assertRequestedRunRevision(parsed, existingSnapshot);
+  const existing = existingSnapshot.run;
   let run = existing;
   const transitions: Record<string, AgentRunStatus> = { start: "running", resume: "running", retry: "queued", cancel: "canceled", complete: "completed", fail: "failed", block: "blocked" };
   if (action === "complete-external") run = completeAgentRunExternally(existing, {
@@ -708,11 +765,10 @@ async function runCommand(parsed: ParsedArgs): Promise<void> {
     const artifact = existing.artifacts.find((item) => item.id === artifactId);
     if (!artifact) throw new Error(`unknown artifact id: ${artifactId}`);
     run = updateAgentRunArtifactReview(existing, artifactId, reviewStatus, { actor: flag(parsed, "actor") });
-    syncLinkedArtifactReviewStatus(root(parsed), artifact.path, reviewStatus);
   }
   else if (action === "validation") run = addAgentRunValidation(existing, { name: required(flag(parsed, "name"), "--name is required"), status: choice(flag(parsed, "status"), AGENT_RUN_VALIDATION_STATUSES, "validation status"), detail: flag(parsed, "detail") }, flag(parsed, "actor"));
   else if (action === "approval-request") {
-    const correlated = correlatedApprovalRequest(parsed, corpus, existing);
+    const correlated = correlatedApprovalRequest(parsed, corpus, existingSnapshot);
     if (correlated) {
       output(parsed, correlated, `${correlated.id}: ${correlated.status}`);
       return;
@@ -720,16 +776,23 @@ async function runCommand(parsed: ParsedArgs): Promise<void> {
     run = requestAgentRunApproval(existing, { title: required(flag(parsed, "title"), "--title is required"), action: required(flag(parsed, "action"), "--action is required"), riskClass: choice(flag(parsed, "risk", existing.riskClass), AGENT_RUN_RISK_CLASSES, "approval risk class"), requestedRole: flag(parsed, "role"), requestedFrom: flag(parsed, "from"), note: flag(parsed, "note") }, flag(parsed, "actor"));
   }
   else if (action === "approval-decide") {
-    const correlated = correlatedApprovalDecision(parsed, corpus, existing);
+    const correlated = correlatedApprovalDecision(parsed, corpus, existingSnapshot);
     if (correlated) {
       output(parsed, correlated, `${correlated.id}: ${correlated.status}`);
       return;
     }
     run = decideAgentRunApproval(existing, required(parsed.positional[2], "approval id is required"), choice(flag(parsed, "decision"), AGENT_RUN_APPROVAL_DECISIONS, "approval decision"), { actor: required(flag(parsed, "actor"), "--actor is required"), actorRole: flag(parsed, "role"), fingerprint: flag(parsed, "fingerprint"), note: flag(parsed, "note"), receipt: flag(parsed, "receipt") });
   }
-  else if (action === "fork") { run = forkAgentRun(existing, { id: flag(parsed, "id"), actor: flag(parsed, "actor"), fromEventId: flag(parsed, "event") }); const file = saveAgentRun(corpus, run); output(parsed, { run, file }, `forked ${existing.id} -> ${run.id}`); return; }
+  else if (action === "fork") { run = forkAgentRun(existing, { id: flag(parsed, "id"), actor: flag(parsed, "actor"), fromEventId: flag(parsed, "event") }); const file = saveAgentRun(corpus, run, { expectedRevision: null }); output(parsed, { run, file }, `forked ${existing.id} -> ${run.id}`); return; }
   else throw new Error(`unknown run action: ${action}`);
-  saveAgentRun(corpus, run); output(parsed, run, `${run.id}: ${run.status}`);
+  saveAgentRun(corpus, run, { expectedRevision: existingSnapshot.revision, rejectSourceDrift: true });
+  if (action === "artifact-review") {
+    const artifactId = required(parsed.positional[2], "artifact id is required");
+    const artifact = existing.artifacts.find((item) => item.id === artifactId)!;
+    const reviewStatus = choice(flag(parsed, "status"), AGENT_RUN_ARTIFACT_REVIEW_STATUSES, "artifact review status");
+    syncLinkedArtifactReviewStatus(root(parsed), artifact.path, reviewStatus);
+  }
+  output(parsed, run, `${run.id}: ${run.status}`);
 }
 
 function reviewCommand(parsed: ParsedArgs): void {
@@ -767,7 +830,7 @@ function workflowCommand(parsed: ParsedArgs): void {
   }
   if (action === "install-builtin") { const name = parsed.positional[1] || "meeting-to-controlled-execution"; if (name !== "meeting-to-controlled-execution") throw new Error(`unknown built-in workflow: ${name}`); const file = installBuiltinWorkflow(corpus, MEETING_TO_CONTROLLED_EXECUTION_WORKFLOW); output(parsed, { id: name, file }, `installed ${name}\n${file}`); return; }
   const id = required(parsed.positional[1], `workflow id is required for ${action}`);
-  if (action === "save") { const run = loadAgentRun(corpus, id); const workflow = workflowFromRun(run, { id: flag(parsed, "id"), title: flag(parsed, "title"), version: flag(parsed, "version") }); const file = saveWorkflow(corpus, workflow); output(parsed, { workflow, file }, `saved ${workflow.id}@${workflow.version}`); return; }
+  if (action === "save") { const run = loadAgentRun(corpus, id); const workflow = workflowFromRun(run, { id: flag(parsed, "id"), title: flag(parsed, "title"), version: flag(parsed, "version") }); const file = saveWorkflow(corpus, workflow, { expectedRevision: null }); output(parsed, { workflow, file }, `saved ${workflow.id}@${workflow.version}`); return; }
   const workflow = loadWorkflow(corpus, id);
   if (action === "show") { output(parsed, workflow); return; }
   if (action === "validate") { const result = validateWorkflow(workflow); output(parsed, result, result.valid ? `${id}: valid` : result.issues.map((issue) => `${issue.path}: ${issue.message}`).join("\n")); if (!result.valid) process.exitCode = 1; return; }
@@ -859,7 +922,7 @@ function workflowCommand(parsed: ParsedArgs): void {
         signalIds: eligibility.signalIds,
       } : undefined,
     });
-    const file = saveAgentRun(corpus, run);
+    const file = saveAgentRun(corpus, run, { expectedRevision: null });
     if (triggerId) updateWorkflow(corpus, id, (item) => markWorkflowTriggerAttempt(item, triggerId, attemptAt));
     output(parsed, { run, file, eligibility }, `created run ${run.id} from ${id}@${workflow.version}${run.attempt ? ` attempt ${run.attempt.number}` : ""}`);
     return;

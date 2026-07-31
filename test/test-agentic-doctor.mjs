@@ -98,6 +98,7 @@ try {
     fs.readFileSync(readableDriftFile, "utf8").replace(":RUN_STATUS: queued", ":RUN_STATUS: running"),
     "utf8",
   );
+  fs.writeFileSync(`${readableDriftFile}.lock`, "{}\n", "utf8");
 
   fs.writeFileSync(path.join(root, "daily.org2"), `#+TITLE: Doctor fixture
 
@@ -157,6 +158,7 @@ try {
     "overlapping-active-attempts",
     "unmanaged-openclaw-cron-series",
     "run-readable-state-diverged",
+    "run-write-lock-present",
     "duplicate-headline-run-approval-projection",
     "headline-run-reference-missing",
     "approved-child-parent-still-waiting",
