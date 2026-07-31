@@ -472,12 +472,15 @@ export function validateAgentRun(value: unknown): AgentRunValidationResult {
 }
 
 export function transitionAgentRun(run: AgentRun, status: AgentRunStatus, options: { actor?: string; reason?: string; summary?: string; highlights?: string[]; nextActions?: string[]; now?: string; completionSource?: "external" } = {}): AgentRun {
-  if (run.status === status) return { ...run };
   const completedExternally = status === "completed" && options.completionSource === "external";
-  const allowedExternalCompletion = completedExternally && run.status === "blocked";
+  if (completedExternally && run.status === "completed") {
+    throw new Error("a completed run cannot be marked completed outside the workflow");
+  }
+  if (run.status === status) return { ...run };
+  const allowedExternalCompletion = completedExternally;
   if (!TRANSITIONS[run.status].includes(status) && !allowedExternalCompletion) throw new Error(`run cannot transition from ${run.status} to ${status}`);
   if (options.completionSource === "external" && !allowedExternalCompletion) {
-    throw new Error("external completion is only allowed for a blocked run");
+    throw new Error("external completion must transition an unfinished run to completed");
   }
   const blockedReason = status === "blocked" ? optional(options.reason) : undefined;
   if (status === "blocked" && !blockedReason) {
@@ -527,7 +530,7 @@ export function transitionAgentRun(run: AgentRun, status: AgentRunStatus, option
 }
 
 export function completeAgentRunExternally(run: AgentRun, input: { summary: string; actor: string; now?: string }): AgentRun {
-  if (run.status !== "blocked") throw new Error("only a blocked run can be marked completed outside the workflow");
+  if (run.status === "completed") throw new Error("a completed run cannot be marked completed outside the workflow");
   const actor = optional(input.actor);
   if (!actor) throw new Error("marking a run completed outside the workflow requires an actor");
   const now = isoNow(input.now);

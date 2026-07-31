@@ -374,6 +374,9 @@ public struct AgentRunItem: Identifiable, Decodable, Hashable, Sendable {
   public var isFinished: Bool {
     status == "completed" || status == "canceled"
   }
+  public var canMarkDoneElsewhere: Bool {
+    status != "completed"
+  }
   public var pendingApprovals: [AgentRunApprovalItem] {
     approvals.filter { $0.status == "pending" }
   }

@@ -52,6 +52,13 @@ final class AgentRunModelsTests: XCTestCase {
     XCTAssertTrue(try XCTUnwrap(run.artifacts.first).isPDF)
   }
 
+  func testEveryRunExceptCompletedCanBeMarkedDoneElsewhere() throws {
+    for status in ["queued", "running", "waiting-approval", "blocked", "failed", "canceled"] {
+      XCTAssertTrue(try makeRun(status: status).canMarkDoneElsewhere, status)
+    }
+    XCTAssertFalse(try makeRun(status: "completed").canMarkDoneElsewhere)
+  }
+
   func testDecodesRunApprovalAsUnifiedQueueItem() throws {
     let data = Data(#"""
     {
@@ -348,6 +355,68 @@ final class AgentRunModelsTests: XCTestCase {
 
     XCTAssertFalse(store.approvalItems.contains(where: { $0.runId == run.id }))
     XCTAssertNotEqual(store.selectedApprovalItemID, queueItem.id)
+  }
+
+  @MainActor
+  func testMarkingRunApprovalDoneElsewhereCompletesRunAndClearsItsQueueRows() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-run-approval-external-completion-\(UUID().uuidString)", isDirectory: true)
+    let waitingRun = try makeRun(
+      id: "external-run",
+      goal: "Publish the already-sent report",
+      status: "waiting-approval",
+      pendingApproval: true
+    )
+    let completedRun = try makeRun(
+      id: waitingRun.id,
+      goal: waitingRun.goal,
+      status: "completed",
+      pendingApproval: true
+    )
+    let approval = try XCTUnwrap(waitingRun.approvals.first)
+    let queueItem = ApprovalItem(
+      title: approval.title,
+      status: approval.status,
+      todo: nil,
+      level: nil,
+      file: root.appendingPathComponent(".org2/runs/\(waitingRun.id).org2").path,
+      line: 1,
+      idValue: approval.id,
+      properties: [:],
+      body: approval.action,
+      tags: [],
+      kind: "run",
+      approvalId: approval.id,
+      fingerprint: approval.fingerprint,
+      action: approval.action,
+      riskClass: approval.riskClass,
+      requestedRole: approval.requestedRole,
+      requestedFrom: approval.requestedFrom,
+      requestedAt: approval.requestedAt,
+      runId: waitingRun.id,
+      runGoal: waitingRun.goal,
+      runStatus: waitingRun.status,
+      runPendingApprovalCount: waitingRun.pendingApprovalCount,
+      runApprovalCount: waitingRun.approvals.count
+    )
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.corpusRoot = root
+    store.replaceAgentRunsForTesting([waitingRun])
+    store.replaceApprovalItemsForTesting([queueItem])
+    store.agentRunExternalCompletionForTesting = { runID, summary in
+      XCTAssertEqual(runID, waitingRun.id)
+      XCTAssertEqual(summary, "The report was sent from Gmail.")
+      return completedRun
+    }
+
+    await store.completeApprovalExternally(
+      queueItem,
+      summary: "The report was sent from Gmail."
+    )
+
+    XCTAssertEqual(store.agentRuns.first?.status, "completed")
+    XCTAssertFalse(store.approvalItems.contains(where: { $0.runId == waitingRun.id }))
+    XCTAssertNil(store.errorText, store.statusText)
   }
 
   func testRevisionFeedbackNormalizationAndResumableBoundary() throws {

@@ -2728,7 +2728,7 @@ private enum RunCompletionMode {
   var detail: String {
     switch self {
     case .run: "Describe what happened in plain language. This is the first thing people will see when they review the run."
-    case .external: "Describe where or how the outcome was completed. The blocked workflow will close, while its pending approvals and unreviewed artifacts remain in the durable history."
+    case .external: "Describe where or how the outcome was completed. This closes the Org2 item and retains unresolved approvals and review metadata as history. It does not stop work that may still be running in another system."
     }
   }
 
@@ -3181,6 +3181,8 @@ private struct RunCenterDetail: View {
       if run.status == "queued" { actionButton("Start", "play.fill", "start") }
       if run.status == "blocked" {
         actionButton("Resume", "play.fill", "resume")
+      }
+      if run.canMarkDoneElsewhere {
         Button {
           completionMode = .external
           isCompletionPresented = true
@@ -3381,6 +3383,8 @@ private struct ApprovalsView: View {
   @State private var discussionMessage = "I need to discuss this approval item before deciding."
   @State private var revisionItem: ApprovalItem?
   @State private var revisionFeedback = ""
+  @State private var externalCompletionItem: ApprovalItem?
+  @State private var externalCompletionSummary = ""
 
   var body: some View {
     VStack(spacing: 0) {
@@ -3422,6 +3426,15 @@ private struct ApprovalsView: View {
       ) { feedback in
         revisionItem = nil
         Task { await store.requestChanges(item, feedback: feedback) }
+      }
+    }
+    .sheet(item: $externalCompletionItem) { item in
+      RunCompletionSheet(
+        summary: $externalCompletionSummary,
+        mode: .external
+      ) { summary in
+        externalCompletionItem = nil
+        Task { await store.completeApprovalExternally(item, summary: summary) }
       }
     }
     .onAppear {
@@ -3472,7 +3485,12 @@ private struct ApprovalsView: View {
             isSelected: store.selectedApprovalItemID == item.id,
             isApproving: store.isApprovingApproval(item),
             isRejecting: store.isRejectingApproval(item),
+            isCompletingExternally: store.isCompletingApprovalExternally(item),
             approve: { Task { await store.approve(item) } },
+            markDoneElsewhere: {
+              externalCompletionSummary = ""
+              externalCompletionItem = item
+            },
             requestChanges: item.isRunApproval ? {
               revisionFeedback = ""
               revisionItem = item
@@ -3510,6 +3528,13 @@ private struct ApprovalsView: View {
               Task { await store.approve(item) }
             } label: {
               Label("Approve", systemImage: "checkmark")
+            }
+            .disabled(store.isApprovalActionInProgress(item))
+            Button {
+              externalCompletionSummary = ""
+              externalCompletionItem = item
+            } label: {
+              Label("Mark Done Elsewhere…", systemImage: "checkmark.circle")
             }
             .disabled(store.isApprovalActionInProgress(item))
             if item.isRunApproval {
@@ -3577,14 +3602,16 @@ private struct ApprovalRow: View {
   let isSelected: Bool
   let isApproving: Bool
   let isRejecting: Bool
+  let isCompletingExternally: Bool
   let approve: () -> Void
+  let markDoneElsewhere: () -> Void
   let requestChanges: (() -> Void)?
   let reject: () -> Void
   let copy: () -> Void
   let discuss: () -> Void
 
   private var isActionInProgress: Bool {
-    isApproving || isRejecting
+    isApproving || isRejecting || isCompletingExternally
   }
 
   var body: some View {
@@ -3643,6 +3670,22 @@ private struct ApprovalRow: View {
         }
         .buttonStyle(WorkspaceActionButtonStyle())
         .disabled(isActionInProgress)
+
+        Button {
+          markDoneElsewhere()
+        } label: {
+          if isCompletingExternally {
+            HStack(spacing: 6) {
+              WorkspaceActivityIndicator(size: .mini)
+              Text("Finishing")
+            }
+          } else {
+            Label("Done Elsewhere…", systemImage: "checkmark.circle")
+          }
+        }
+        .buttonStyle(WorkspaceActionButtonStyle())
+        .disabled(isActionInProgress)
+        .help("Record that this outcome was completed outside Org2")
 
         Button {
           discuss()
@@ -3849,6 +3892,7 @@ private struct AgendaItemListView: View {
               isPersonalAssigned: store.isPersonalAssignee(item.properties["ASSIGNEE"]),
               toggleBulkSelection: { store.toggleAgendaItemBulkSelection(item) }
             )
+              .equatable()
               .contentShape(Rectangle())
               .onTapGesture {
                 let modifiers = NSApp.currentEvent?.modifierFlags ?? []
@@ -3887,20 +3931,6 @@ private struct AgendaItemListView: View {
       }
     }
     .listStyle(.inset)
-    .onChange(of: store.selectedAgendaItemID) {
-      guard !store.consumeAgendaSelectionActivationSuppression() else {
-        return
-      }
-      guard let id = store.selectedAgendaItemID,
-            let item = store.visibleAgendaItems.first(where: { $0.id == id })
-      else {
-        return
-      }
-      performAfterSwiftUIViewUpdate {
-        guard store.selectedAgendaItemID == id else { return }
-        store.selectAgendaItem(item)
-      }
-    }
   }
 }
 
@@ -4046,7 +4076,7 @@ private struct AgendaBulkActionBar: View {
   }
 }
 
-private struct AgendaRow: View {
+private struct AgendaRow: View, Equatable {
   let item: AgendaItem
   let sourceReference: String
   let isSelected: Bool
@@ -4055,6 +4085,16 @@ private struct AgendaRow: View {
   let isAgentAssigned: Bool
   let isPersonalAssigned: Bool
   let toggleBulkSelection: () -> Void
+
+  nonisolated static func == (lhs: AgendaRow, rhs: AgendaRow) -> Bool {
+    lhs.item == rhs.item
+      && lhs.sourceReference == rhs.sourceReference
+      && lhs.isSelected == rhs.isSelected
+      && lhs.isBulkSelected == rhs.isBulkSelected
+      && lhs.isEditable == rhs.isEditable
+      && lhs.isAgentAssigned == rhs.isAgentAssigned
+      && lhs.isPersonalAssigned == rhs.isPersonalAssigned
+  }
 
   var body: some View {
     HStack(alignment: .top, spacing: 10) {

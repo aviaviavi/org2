@@ -645,6 +645,7 @@ private enum ApprovalRejectionError: LocalizedError {
 private enum ApprovalActionKind {
   case approve
   case reject
+  case externalCompletion
 }
 
 private struct AIChatSendOrigin {
@@ -820,6 +821,7 @@ public final class WorkspaceStore: ObservableObject {
   @Published public private(set) var mutatingAgentWorkflowIDs: Set<AgentWorkflowItem.ID> = []
   @Published public private(set) var approvingApprovalItemIDs: Set<ApprovalItem.ID> = []
   @Published public private(set) var rejectingApprovalItemIDs: Set<ApprovalItem.ID> = []
+  @Published public private(set) var externallyCompletingApprovalItemIDs: Set<ApprovalItem.ID> = []
   @Published public var corpusFiles: [CorpusFile] = [] {
     didSet {
       rebuildQuickOpenIndex()
@@ -1337,6 +1339,7 @@ public final class WorkspaceStore: ObservableObject {
   private var entryHTMLRenderWatchdogTask: Task<Void, Never>?
   var entrySourceLoadTimeoutNanoseconds: UInt64 = 3_000_000_000
   var entryHTMLRenderTimeoutNanoseconds = WorkspaceStore.defaultEntryRenderTimeoutNanoseconds
+  var agendaEntryRenderIdleDelayNanoseconds: UInt64 = 140_000_000
   var entrySourceLoaderForTesting: (@Sendable (String, Int, EntrySourceMode) async throws -> EntrySource)?
   var entryHTMLRendererForTesting: (@Sendable (String, String, Int, String?) async throws -> String)?
   var slideExportFileOpenerForTesting: ((URL) -> Bool)?
@@ -1353,10 +1356,22 @@ public final class WorkspaceStore: ObservableObject {
     _ decision: String,
     _ note: String?
   ) async throws -> AgentRunItem)?
+  var agentRunExternalCompletionForTesting: ((
+    _ runID: String,
+    _ summary: String
+  ) async throws -> AgentRunItem)?
+  var todoStatusMutationForTesting: ((
+    _ status: TodoEditStatus,
+    _ file: String,
+    _ line: Int
+  ) async throws -> String)?
   private var liveFileEditorAutosaveTask: Task<Void, Never>?
   private var liveFileEditorAutosaveGeneration = 0
   private var sourceEditorCommandGeneration = 0
   private var backlinksLoadGeneration = 0
+  private var backlinksLoadTask: Task<Void, Never>?
+  var backlinksSelectionIdleDelayNanoseconds: UInt64 = 250_000_000
+  var backlinksLoaderForTesting: (@Sendable (WorkspaceLocation) async throws -> BacklinksPayload?)?
   private var workspaceNavigationBackStack: [WorkspaceNavigationSnapshot] = [] {
     didSet {
       canNavigateBack = !workspaceNavigationBackStack.isEmpty
@@ -1958,6 +1973,10 @@ public final class WorkspaceStore: ObservableObject {
     entrySourceLoadGeneration += 1
     entryHTMLRenderGeneration += 1
     activeEntrySourceLoadingGeneration = nil
+    backlinksLoadTask?.cancel()
+    backlinksLoadTask = nil
+    backlinksLoadGeneration += 1
+    isLoadingBacklinks = false
     workspaceRefreshOperationTask?.cancel()
     workspaceRefreshOperationTask = nil
     workspaceRefreshWatchdogTask?.cancel()
@@ -3269,7 +3288,7 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func completeAgentRunExternally(_ run: AgentRunItem, summary: String) async {
-    guard let corpusRoot, run.status == "blocked", !mutatingAgentRunIDs.contains(run.id) else { return }
+    guard corpusRoot != nil, run.canMarkDoneElsewhere, !mutatingAgentRunIDs.contains(run.id) else { return }
     let normalizedSummary = summary.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !normalizedSummary.isEmpty else {
       errorText = "Describe where or how the work was completed."
@@ -3279,23 +3298,45 @@ public final class WorkspaceStore: ObservableObject {
     mutatingAgentRunIDs.insert(run.id)
     defer { mutatingAgentRunIDs.remove(run.id) }
     do {
-      let updated: AgentRunItem = try await cli.runJSON([
-        "run", "complete-external", run.id,
-        "--summary", normalizedSummary,
-        "--actor", "Org2Workspace",
-        "--dir", corpusRoot.path,
-        "--json"
-      ])
-      if let index = agentRuns.firstIndex(where: { $0.id == updated.id }) {
-        agentRuns[index] = updated
-      }
-      removeFinishedRunApprovalsFromQueue(updated.id)
-      scheduleApprovalsRefresh()
+      let updated = try await performAgentRunExternalCompletion(
+        runID: run.id,
+        summary: normalizedSummary
+      )
+      recordAgentRunExternalCompletion(updated)
       statusText = "Recorded external completion for \(updated.goal)"
     } catch {
       errorText = error.localizedDescription
       statusText = "External completion failed"
     }
+  }
+
+  private func performAgentRunExternalCompletion(
+    runID: String,
+    summary: String
+  ) async throws -> AgentRunItem {
+    guard let corpusRoot else {
+      throw CocoaError(.fileNoSuchFile, userInfo: [NSLocalizedDescriptionKey: "No corpus is selected."])
+    }
+    if let agentRunExternalCompletionForTesting {
+      return try await agentRunExternalCompletionForTesting(runID, summary)
+    }
+    return try await cli.runJSON([
+      "run", "complete-external", runID,
+      "--summary", summary,
+      "--actor", "Org2Workspace",
+      "--dir", corpusRoot.path,
+      "--json"
+    ])
+  }
+
+  private func recordAgentRunExternalCompletion(_ updated: AgentRunItem) {
+    if let index = agentRuns.firstIndex(where: { $0.id == updated.id }) {
+      agentRuns[index] = updated
+    } else {
+      agentRuns.insert(updated, at: 0)
+    }
+    removeFinishedRunApprovalsFromQueue(updated.id)
+    scheduleApprovalsRefresh()
   }
 
   public func decideAgentRunApproval(
@@ -4112,6 +4153,61 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
+  public func completeApprovalExternally(_ item: ApprovalItem, summary: String) async {
+    guard !isApprovalActionInProgress(item) else { return }
+    let normalizedSummary = summary.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !normalizedSummary.isEmpty else {
+      errorText = "Describe where or how the work was completed."
+      statusText = "External completion note required"
+      return
+    }
+    let originalVisibleIndex = visibleApprovalItems.firstIndex(where: { $0.id == item.id })
+    beginApprovalAction(item, kind: .externalCompletion)
+    defer { endApprovalAction(item, kind: .externalCompletion) }
+
+    do {
+      if item.isRunApproval {
+        guard let runID = item.runId else {
+          throw CocoaError(
+            .fileReadCorruptFile,
+            userInfo: [NSLocalizedDescriptionKey: "This run approval is missing its run identity."]
+          )
+        }
+        guard !mutatingAgentRunIDs.contains(runID) else {
+          throw CocoaError(
+            .fileWriteUnknown,
+            userInfo: [NSLocalizedDescriptionKey: "This run is already being updated."]
+          )
+        }
+        mutatingAgentRunIDs.insert(runID)
+        defer { mutatingAgentRunIDs.remove(runID) }
+        let updated = try await performAgentRunExternalCompletion(
+          runID: runID,
+          summary: normalizedSummary
+        )
+        recordAgentRunExternalCompletion(updated)
+        statusText = "Recorded external completion for \(updated.goal)"
+        return
+      }
+
+      try await completeStandaloneApprovalExternally(
+        HeadlineMutationTarget(
+          file: item.file,
+          line: item.line,
+          title: Org2Display.cleanInline(item.title),
+          agendaItemID: nil,
+          idValue: item.idValue
+        ),
+        summary: normalizedSummary
+      )
+      removeApprovalItemOptimistically(item.id, originalVisibleIndex: originalVisibleIndex)
+      scheduleApprovalsRefresh()
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "External completion failed"
+    }
+  }
+
   public func isApprovingApproval(_ item: ApprovalItem) -> Bool {
     approvingApprovalItemIDs.contains(item.id)
   }
@@ -4120,8 +4216,14 @@ public final class WorkspaceStore: ObservableObject {
     rejectingApprovalItemIDs.contains(item.id)
   }
 
+  public func isCompletingApprovalExternally(_ item: ApprovalItem) -> Bool {
+    externallyCompletingApprovalItemIDs.contains(item.id)
+  }
+
   public func isApprovalActionInProgress(_ item: ApprovalItem) -> Bool {
-    isApprovingApproval(item) || isRejectingApproval(item)
+    isApprovingApproval(item)
+      || isRejectingApproval(item)
+      || isCompletingApprovalExternally(item)
   }
 
   public func requestChanges(_ item: ApprovalItem, feedback: String) async {
@@ -4325,6 +4427,10 @@ public final class WorkspaceStore: ObservableObject {
       var ids = rejectingApprovalItemIDs
       ids.insert(item.id)
       rejectingApprovalItemIDs = ids
+    case .externalCompletion:
+      var ids = externallyCompletingApprovalItemIDs
+      ids.insert(item.id)
+      externallyCompletingApprovalItemIDs = ids
     }
   }
 
@@ -4338,6 +4444,10 @@ public final class WorkspaceStore: ObservableObject {
       var ids = rejectingApprovalItemIDs
       ids.remove(item.id)
       rejectingApprovalItemIDs = ids
+    case .externalCompletion:
+      var ids = externallyCompletingApprovalItemIDs
+      ids.remove(item.id)
+      externallyCompletingApprovalItemIDs = ids
     }
   }
 
@@ -4350,6 +4460,10 @@ public final class WorkspaceStore: ObservableObject {
     let nextRejectingIDs = rejectingApprovalItemIDs.intersection(itemIDs)
     if nextRejectingIDs != rejectingApprovalItemIDs {
       rejectingApprovalItemIDs = nextRejectingIDs
+    }
+    let nextExternalCompletionIDs = externallyCompletingApprovalItemIDs.intersection(itemIDs)
+    if nextExternalCompletionIDs != externallyCompletingApprovalItemIDs {
+      externallyCompletingApprovalItemIDs = nextExternalCompletionIDs
     }
   }
 
@@ -5782,7 +5896,7 @@ public final class WorkspaceStore: ObservableObject {
     entryHTMLRenderWatchdogTask = nil
     isRenderingEntrySource = false
     entryHTMLRenderGeneration += 1
-    Task { await loadBacklinks(for: location) }
+    scheduleBacklinksLoad(for: location)
     scheduleEntrySourceLoad(for: location)
   }
 
@@ -5892,6 +6006,11 @@ public final class WorkspaceStore: ObservableObject {
     isWorkspaceDetailPaneExpanded = snapshot.isWorkspaceDetailPaneExpanded
     isOpenClawAssistantPresented = snapshot.isOpenClawAssistantPresented
     isNodeContextPanePresented = snapshot.isNodeContextPanePresented
+    if snapshot.isNodeContextPanePresented, let selectedLocation {
+      scheduleBacklinksLoad(for: selectedLocation)
+    } else {
+      cancelBacklinksLoad(clearResults: false)
+    }
   }
 
   private func clearDetailForNavigation() {
@@ -5911,6 +6030,12 @@ public final class WorkspaceStore: ObservableObject {
     entryHTMLRenderWatchdogTask?.cancel()
     entryHTMLRenderWatchdogTask = nil
     isRenderingEntrySource = false
+    entrySourceLoadWatchdogTask?.cancel()
+    entrySourceLoadWatchdogTask = nil
+    activeEntrySourceLoadingGeneration = nil
+    isLoadingEntrySource = false
+    entrySourceLoadGeneration += 1
+    cancelBacklinksLoad(clearResults: true)
     isEditingEntry = false
     editableEntryText = ""
     sourceEditorSelection = NSRange(location: 0, length: 0)
@@ -6609,6 +6734,8 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   private func loadSourceEditorBacklinks(source: EntrySource, line: Int) async {
+    backlinksLoadTask?.cancel()
+    backlinksLoadTask = nil
     backlinksLoadGeneration += 1
     let generation = backlinksLoadGeneration
     guard let corpusRoot else {
@@ -15843,6 +15970,9 @@ public final class WorkspaceStore: ObservableObject {
 
   @discardableResult
   private func setTodoStatus(_ status: TodoEditStatus, for target: HeadlineMutationTarget) async throws -> String {
+    if let todoStatusMutationForTesting {
+      return try await todoStatusMutationForTesting(status, target.file, target.line)
+    }
     let payload: TodoMutationPayload = try await cli.runJSON([
       "todo", "set",
       "--file", target.file,
@@ -16205,6 +16335,33 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     return target
+  }
+
+  private func completeStandaloneApprovalExternally(
+    _ target: HeadlineMutationTarget,
+    summary: String
+  ) async throws {
+    let approvalIdentity = try approvalMutationIdentity(for: target)
+    let mutationTarget = try refreshedApprovalMutationTarget(
+      original: target,
+      identity: approvalIdentity
+    )
+    try await setTodoStatus(.done, for: mutationTarget)
+    let propertyTarget = try refreshedApprovalMutationTarget(
+      original: mutationTarget,
+      identity: approvalIdentity
+    )
+    try upsertHeadlineProperties(
+      file: propertyTarget.file,
+      line: propertyTarget.line,
+      properties: [
+        "STATUS": "completed-externally",
+        "COMPLETED_EXTERNALLY_AT": Self.orgTimestamp(Date()),
+        "EXTERNAL_COMPLETION_NOTE": Self.sanitizeOrgPropertyValue(summary)
+      ]
+    )
+    await refreshAfterHeadlineMutation(target)
+    statusText = "Recorded external completion -> \(target.title)"
   }
 
   private func rejectApproval(_ target: HeadlineMutationTarget, endStatus: TodoEditStatus, reason: String) async throws {
@@ -17349,13 +17506,76 @@ public final class WorkspaceStore: ObservableObject {
     return true
   }
 
-  public func loadBacklinks(for location: WorkspaceLocation) async {
+  private func scheduleBacklinksLoad(for location: WorkspaceLocation) {
+    backlinksLoadTask?.cancel()
+    backlinksLoadTask = nil
     backlinksLoadGeneration += 1
     let generation = backlinksLoadGeneration
+    isLoadingBacklinks = false
+    backlinks = nil
 
-    guard let corpusRoot else {
+    guard isNodeContextPanePresented else { return }
+    isLoadingBacklinks = true
+
+    let delay = backlinksSelectionIdleDelayNanoseconds
+    backlinksLoadTask = Task { @MainActor [weak self] in
+      guard let self else { return }
+      if delay > 0 {
+        do {
+          try await Task.sleep(nanoseconds: delay)
+        } catch {
+          return
+        }
+      }
+      guard !Task.isCancelled,
+            generation == self.backlinksLoadGeneration,
+            self.selectedLocationMatches(location)
+      else {
+        return
+      }
+      await self.loadBacklinks(for: location, generation: generation)
+      if generation == self.backlinksLoadGeneration {
+        self.backlinksLoadTask = nil
+      }
+    }
+  }
+
+  private func cancelBacklinksLoad(clearResults: Bool) {
+    backlinksLoadTask?.cancel()
+    backlinksLoadTask = nil
+    backlinksLoadGeneration += 1
+    isLoadingBacklinks = false
+    if clearResults {
+      backlinks = nil
+    }
+  }
+
+  public func loadBacklinks(for location: WorkspaceLocation) async {
+    backlinksLoadTask?.cancel()
+    backlinksLoadTask = nil
+    backlinksLoadGeneration += 1
+    let generation = backlinksLoadGeneration
+    await loadBacklinks(for: location, generation: generation)
+  }
+
+  private func loadBacklinks(for location: WorkspaceLocation, generation: Int) async {
+    let testLoader = backlinksLoaderForTesting
+
+    guard testLoader != nil || corpusRoot != nil else {
       backlinks = nil
       return
+    }
+
+    while isLoadingEntrySource || isRenderingEntrySource {
+      guard !Task.isCancelled,
+            generation == backlinksLoadGeneration,
+            selectedLocationMatches(location)
+      else { return }
+      do {
+        try await Task.sleep(nanoseconds: 20_000_000)
+      } catch {
+        return
+      }
     }
 
     isLoadingBacklinks = true
@@ -17366,23 +17586,37 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     do {
-      guard let id = try await backlinkTargetID(for: location), !id.isEmpty else {
-        guard generation == backlinksLoadGeneration, selectedLocationMatches(location) else { return }
-        backlinks = nil
-        return
+      let payload: BacklinksPayload?
+      if let testLoader {
+        payload = try await testLoader(location)
+      } else {
+        guard let corpusRoot else { return }
+        guard let id = try await backlinkTargetID(for: location), !id.isEmpty else {
+          guard generation == backlinksLoadGeneration, selectedLocationMatches(location) else { return }
+          backlinks = nil
+          return
+        }
+
+        let loadedPayload: BacklinksPayload = try await cli.runJSON([
+          "backlinks",
+          "--id", id,
+          "--dir", corpusRoot.path,
+          "--recursive",
+          "--format", "json"
+        ])
+        payload = loadedPayload
       }
 
-      let payload: BacklinksPayload = try await cli.runJSON([
-        "backlinks",
-        "--id", id,
-        "--dir", corpusRoot.path,
-        "--recursive",
-        "--format", "json"
-      ])
-      guard generation == backlinksLoadGeneration, selectedLocationMatches(location) else { return }
+      guard !Task.isCancelled,
+            generation == backlinksLoadGeneration,
+            selectedLocationMatches(location)
+      else { return }
       backlinks = payload
     } catch {
-      guard generation == backlinksLoadGeneration, selectedLocationMatches(location) else { return }
+      guard !Task.isCancelled,
+            generation == backlinksLoadGeneration,
+            selectedLocationMatches(location)
+      else { return }
       backlinks = nil
       errorText = error.localizedDescription
     }
@@ -17543,6 +17777,11 @@ public final class WorkspaceStore: ObservableObject {
   public func toggleNodeContextPane() {
     recordCurrentNavigationDestination()
     isNodeContextPanePresented.toggle()
+    if isNodeContextPanePresented, let selectedLocation {
+      scheduleBacklinksLoad(for: selectedLocation)
+    } else {
+      cancelBacklinksLoad(clearResults: false)
+    }
   }
 
   public func toggleBacklinkFileGroup(_ group: BacklinkFileGroup) {
@@ -18367,9 +18606,26 @@ public final class WorkspaceStore: ObservableObject {
       selectedEntryHTMLRenderKey = renderKey
     }
 
+    let renderIdleDelay = cachedHTML == nil && selectedSurface == .agenda
+      ? agendaEntryRenderIdleDelayNanoseconds
+      : 0
     entryHTMLRenderTask?.cancel()
     entryHTMLRenderTask = Task { @MainActor [weak self] in
       guard let self else { return }
+      if renderIdleDelay > 0 {
+        do {
+          try await Task.sleep(nanoseconds: renderIdleDelay)
+        } catch {
+          return
+        }
+        guard generation == self.entrySourceLoadGeneration,
+              renderGeneration == self.entryHTMLRenderGeneration,
+              self.selectedEntrySource?.id == source.id,
+              self.selectedEntryHTMLRenderKey == renderKey
+        else {
+          return
+        }
+      }
       if cachedHTML == nil {
         do {
           let sourceLineOffset = max(0, source.startLine - 1)

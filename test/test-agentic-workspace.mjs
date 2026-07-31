@@ -94,12 +94,34 @@ try {
   assert.equal(completedElsewhere.plan[0].status, "skipped");
   assert.match(completedElsewhere.plan[0].detail, /completed outside this workflow/);
   assert.equal(completedElsewhere.events.at(-1).type, "completed-externally");
+  for (const [status, prepare] of [
+    ["queued", (candidate) => candidate],
+    ["running", (candidate) => transitionAgentRun(candidate, "running")],
+    ["waiting-approval", (candidate) => transitionAgentRun(transitionAgentRun(candidate, "running"), "waiting-approval")],
+    ["blocked", (candidate) => transitionAgentRun(candidate, "blocked", { reason: "Waiting for external work." })],
+    ["failed", (candidate) => transitionAgentRun(transitionAgentRun(candidate, "running"), "failed", { reason: "Provider failed." })],
+    ["canceled", (candidate) => transitionAgentRun(candidate, "canceled")],
+  ]) {
+    const candidate = prepare(createAgentRun({
+      id: `external-${status}`,
+      goal: `Record external completion from ${status}`,
+      plan: [{ id: "remaining", title: "Remaining workflow step", kind: "agent" }],
+    }));
+    const externallyCompleted = completeAgentRunExternally(candidate, {
+      summary: `Completed elsewhere from ${status}.`,
+      actor: "Avi",
+      now: "2026-07-14T12:05:00Z",
+    });
+    assert.equal(externallyCompleted.status, "completed");
+    assert.equal(externallyCompleted.plan[0].status, "skipped");
+    assert.equal(externallyCompleted.events.at(-1).type, "completed-externally");
+  }
   assert.throws(
     () => completeAgentRunExternally(
-      createAgentRun({ id: "not-blocked", goal: "Reject invalid external completion" }),
-      { summary: "Done.", actor: "Avi" }
+      completedElsewhere,
+      { summary: "Done again.", actor: "Avi" }
     ),
-    /only a blocked run/
+    /completed run cannot/
   );
   saveAgentRun(root, transitionAgentRun(
     createAgentRun({ id: "external-cli", goal: "Record an externally completed outcome" }),

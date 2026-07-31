@@ -6729,7 +6729,7 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
-  func testBacklinksResolveSelectedFileLineIdThroughCLI() async throws {
+  func testBacklinksLoadWhenContextPaneOpens() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-cli-backlinks-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -6755,13 +6755,36 @@ final class Org2ModelsTests: XCTestCase {
 
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
     store.setCorpusRoot(root)
-    store.openChatFileReference(OpenClawFileReference(path: target.path, line: 3))
-
-    try await waitForCondition {
-      store.backlinks?.backlinks.count == 1
-        && store.selectedLocation?.idValue == "11111111-1111-4111-8111-111111111111"
+    store.backlinksSelectionIdleDelayNanoseconds = 0
+    store.backlinksLoaderForTesting = { location in
+      XCTAssertEqual(location.file, target.path)
+      XCTAssertEqual(location.lineForEditor, 3)
+      return try JSONDecoder().decode(BacklinksPayload.self, from: Data("""
+      {
+        "$schema": "org2:backlinks:v1",
+        "id": "11111111-1111-4111-8111-111111111111",
+        "backlinks": [
+          {
+            "srcId": "22222222-2222-4222-8222-222222222222",
+            "srcTitle": "Source",
+            "file": "\(source.path)",
+            "line": 5,
+            "context": "Target Heading"
+          }
+        ]
+      }
+      """.utf8))
     }
+    store.selectedLocation = .openClaw(OpenClawThread(
+      title: "Target Heading",
+      file: target.path,
+      line: 3,
+      zone: "test",
+      modifiedAt: nil
+    ))
+    store.toggleNodeContextPane()
 
+    try await waitForCondition { store.backlinks?.backlinks.count == 1 }
     XCTAssertEqual(store.backlinks?.backlinks.first?.file, source.path)
   }
 
@@ -6854,6 +6877,7 @@ final class Org2ModelsTests: XCTestCase {
       modifiedAt: nil,
       idValue: targetID
     )))
+    store.toggleNodeContextPane()
 
     try await waitForCondition {
       store.backlinks?.backlinks.count == 3
@@ -12276,6 +12300,78 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(updated.contains(":STATUS: rejected"))
     XCTAssertTrue(updated.contains(":REJECTION_END_STATUS: DONE"))
     XCTAssertTrue(updated.contains(":REJECTION_REASON: already responded"))
+  }
+
+  @MainActor
+  func testMarkStandaloneApprovalDoneElsewhereUsesStableIDAndRecordsAuditNote() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-external-approval-stale-line-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let note = root.appendingPathComponent("external-approval-stale-line.org2")
+    try """
+    * TODO Parent wrapper
+    :PROPERTIES:
+    :ID: parent-id
+    :STATUS: waiting
+    :END:
+
+    ** TODO Approve customer follow-up
+    :PROPERTIES:
+    :ID: approval-child-id
+    :STATUS: draft-needs-review
+    :ASSIGNEE: Avi
+    :END:
+
+    Draft body
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let staleLineItem = ApprovalItem(
+      title: "Approve customer follow-up",
+      status: "draft-needs-review",
+      todo: "TODO",
+      level: 2,
+      file: note.path,
+      line: 1,
+      idValue: "approval-child-id",
+      properties: [
+        "ID": "approval-child-id",
+        "STATUS": "draft-needs-review",
+        "ASSIGNEE": "Avi"
+      ],
+      body: "Draft body",
+      tags: []
+    )
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.replaceApprovalItemsForTesting([staleLineItem])
+    store.todoStatusMutationForTesting = { status, file, line in
+      let fileURL = URL(fileURLWithPath: file)
+      var lines = try String(contentsOf: fileURL, encoding: .utf8)
+        .split(separator: "\n", omittingEmptySubsequences: false)
+        .map(String.init)
+      lines[line - 1] = lines[line - 1].replacingOccurrences(
+        of: " TODO ",
+        with: " \(status.label) "
+      )
+      try lines.joined(separator: "\n").write(to: fileURL, atomically: true, encoding: .utf8)
+      return status.label
+    }
+
+    await store.completeApprovalExternally(
+      staleLineItem,
+      summary: "Handled in Gmail\nby Avi"
+    )
+
+    let updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertNil(store.errorText, store.statusText)
+    XCTAssertTrue(updated.contains("* TODO Parent wrapper"))
+    XCTAssertFalse(updated.contains("* DONE Parent wrapper"))
+    XCTAssertTrue(updated.contains("** DONE Approve customer follow-up"))
+    XCTAssertTrue(updated.contains(":STATUS: completed-externally"))
+    XCTAssertTrue(updated.contains(":COMPLETED_EXTERNALLY_AT: <"))
+    XCTAssertTrue(updated.contains(":EXTERNAL_COMPLETION_NOTE: Handled in Gmail by Avi"))
+    XCTAssertFalse(store.approvalItems.contains(where: { $0.id == staleLineItem.id }))
   }
 
   @MainActor
