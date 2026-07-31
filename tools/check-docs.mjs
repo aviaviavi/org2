@@ -67,12 +67,34 @@ for (const [id, relativePath] of requiredDocs) {
 const quickstart = fs.readFileSync(path.join(repoRoot, "docs/site/agent-quickstart.org"), "utf8");
 const llms = fs.readFileSync(path.join(repoRoot, "docs/site/llms.txt"), "utf8");
 const agents = fs.readFileSync(path.join(repoRoot, "AGENTS.md"), "utf8");
+const siteNavigation = fs.readFileSync(path.join(repoRoot, "docs/site/assets/nav.js"), "utf8");
+const siteStyles = fs.readFileSync(path.join(repoRoot, "docs/site/assets/site.css"), "utf8");
+const features = fs.readFileSync(path.join(repoRoot, "docs/site/features.org"), "utf8");
 for (const [label, text] of [["agent quickstart", quickstart], ["llms.txt", llms]]) {
   if (!text.includes("org2 agent capabilities")) fail(`${label} does not point agents to the installed capability manifest`);
 }
 if (!agents.includes("## Documentation contract")) fail("AGENTS.md is missing the documentation contract");
 
+try {
+  new Function(siteNavigation);
+} catch (error) {
+  fail(`site navigation JavaScript is invalid: ${error instanceof Error ? error.message : String(error)}`);
+}
+if (!siteNavigation.includes("setupHeadingAnchors") || !siteNavigation.includes("navigator.clipboard.writeText")) {
+  fail("site navigation is missing copyable heading anchors");
+}
+if (!siteStyles.includes(".org2-heading-anchor") || !siteStyles.includes("scroll-margin-top")) {
+  fail("site styles are missing heading-anchor layout and sticky-navigation offset");
+}
+if (!siteStyles.includes(".org2-features-page h2::before") || !siteStyles.includes('content: "**"')) {
+  fail("features page level-two headings are missing Org2 '**' styling");
+}
+if (!/<h2\s+id="[^"]+">/.test(features)) {
+  fail("features page sections must use addressable level-two headings");
+}
+
 if (!process.exitCode) {
   console.log(`OK: ${publicFamilies.size} CLI command families are represented in the agent capability manifest`);
   console.log(`OK: ${requiredDocs.size} canonical documentation entry points exist`);
+  console.log("OK: site headings expose consistent copyable anchors");
 }

@@ -1917,6 +1917,7 @@ export function renderOrgExportIndexToHtml(opts: {
   sourcePath?: string;
   items: OrgExportIndexItem[];
   stylesheets?: string[];
+  headIncludes?: string[];
   includeDefaultStyle?: boolean;
 }): { html: string; title: string } {
   const title = String(opts.title || "").trim() || (opts.sourcePath ? path.basename(opts.sourcePath) : "Org2 Export Index");
@@ -1938,8 +1939,10 @@ export function renderOrgExportIndexToHtml(opts: {
     includeDefaultStyle: opts.includeDefaultStyle,
     defaultStyle: DEFAULT_INDEX_STYLE,
   });
+  const headExtraSection = renderHeadExtraSection({}, opts.headIncludes, false);
+  const titleId = slugifyHeadlineTitle(title);
 
-  const html = `<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8" />\n<meta name="viewport" content="width=device-width, initial-scale=1" />\n<title>${escapeHtml(title)}</title>\n${headStyleSection}</head>\n<body>\n<main class="org2-export-index-document">\n<h1>${escapeHtml(title)}</h1>\n<ul class="org2-export-index">\n${body}\n</ul>\n</main>\n</body>\n</html>\n`;
+  const html = `<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8" />\n<meta name="viewport" content="width=device-width, initial-scale=1" />\n<title>${escapeHtml(title)}</title>\n${headExtraSection}${headStyleSection}</head>\n<body>\n<main id="content" class="content org2-export-index-document">\n<h1 id="${escapeAttr(titleId)}">${escapeHtml(title)}</h1>\n<ul class="org2-export-index">\n${body}\n</ul>\n</main>\n</body>\n</html>\n`;
 
   return { html, title };
 }

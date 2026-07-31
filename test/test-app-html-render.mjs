@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { renderOrgCharts } from "../dist/chartRender.js";
-import { renderOrgDocumentToAppHtml, renderOrgDocumentToHtml } from "../dist/export.js";
+import { renderOrgDocumentToAppHtml, renderOrgDocumentToHtml, renderOrgExportIndexToHtml } from "../dist/export.js";
 import { parseOrgToCanonicalAst } from "../dist/parser.js";
 import { printCanonicalAstToOrg } from "../dist/printer.js";
 
@@ -90,6 +90,15 @@ assert.doesNotMatch(published.html, /org2-table-scroll/);
 assert.doesNotMatch(published.html, /org2-app-document-script/);
 assert.match(published.html, /<section class="org2-headline level-1"/);
 assert.match(published.html, /<dl class="org2-properties">/);
+
+const publishedIndex = renderOrgExportIndexToHtml({
+  title: "Org2 docs sitemap",
+  items: [{ title: "Features", href: "features.html" }],
+  headIncludes: ['<script defer src="assets/nav.js"></script>'],
+});
+assert.match(publishedIndex.html, /<script defer src="assets\/nav\.js"><\/script>/);
+assert.match(publishedIndex.html, /<main id="content" class="content org2-export-index-document">/);
+assert.match(publishedIndex.html, /<h1 id="org2-docs-sitemap">Org2 docs sitemap<\/h1>/);
 
 const indentedDrawerSource = `* Section
 ** Slide one

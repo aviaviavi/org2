@@ -1690,6 +1690,106 @@ body #content {
   vertical-align: 0.18em;
 }
 
+/* Every published heading has a stable, copyable URL without crowding the reading view. */
+#content :is(h1, h2, h3, h4, h5, h6)[id] {
+  scroll-margin-top: 5.25rem;
+}
+
+#content .org2-heading-anchor {
+  position: relative;
+  display: inline-grid;
+  width: 1.55rem;
+  height: 1.55rem;
+  place-items: center;
+  margin: 0 0 0 0.42rem;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  opacity: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  vertical-align: 0.12em;
+  transition: opacity 120ms ease, color 120ms ease, background 120ms ease, border-color 120ms ease;
+}
+
+#content :is(h1, h2, h3, h4, h5, h6):hover > .org2-heading-anchor,
+#content .org2-heading-anchor:focus-visible,
+#content .org2-heading-anchor.is-copied {
+  opacity: 1;
+}
+
+#content .org2-heading-anchor:hover,
+#content .org2-heading-anchor:focus-visible,
+#content .org2-heading-anchor.is-copied {
+  border-color: color-mix(in srgb, var(--link) 28%, var(--border));
+  outline: none;
+  background: var(--blue-soft);
+  color: var(--link-strong);
+}
+
+#content .org2-heading-anchor-icon {
+  position: relative;
+  display: block;
+  width: 0.9rem;
+  height: 0.9rem;
+}
+
+#content .org2-heading-anchor-icon::before,
+#content .org2-heading-anchor-icon::after {
+  position: absolute;
+  width: 0.52rem;
+  height: 0.26rem;
+  border: 1.5px solid currentColor;
+  border-radius: 999px;
+  content: "";
+  transform: rotate(-42deg);
+}
+
+#content .org2-heading-anchor-icon::before {
+  top: 0.12rem;
+  right: 0.05rem;
+}
+
+#content .org2-heading-anchor-icon::after {
+  bottom: 0.12rem;
+  left: 0.05rem;
+}
+
+#content .org2-heading-anchor-feedback {
+  position: absolute;
+  bottom: calc(100% + 0.4rem);
+  left: 50%;
+  z-index: 8;
+  padding: 0.25rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  opacity: 0;
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-small);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 1;
+  pointer-events: none;
+  transform: translate(-50%, 0.2rem);
+  transition: opacity 120ms ease, transform 120ms ease;
+  white-space: nowrap;
+}
+
+#content .org2-heading-anchor.is-copied .org2-heading-anchor-feedback {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+@media (hover: none) {
+  #content .org2-heading-anchor {
+    opacity: 0.58;
+  }
+}
+
 #content p,
 #content li,
 #content td,
@@ -2026,6 +2126,18 @@ body #content {
   font-weight: 500;
   letter-spacing: -0.028em;
   line-height: 1.15;
+}
+
+#content .org2-features-page h2::before {
+  display: inline-block;
+  margin-right: 0.55rem;
+  color: var(--signal);
+  content: "**";
+  font-family: var(--font-mono);
+  font-size: 0.5em;
+  font-weight: 600;
+  letter-spacing: -0.2em;
+  vertical-align: 0.18em;
 }
 
 #content .org2-sample-file,
