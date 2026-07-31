@@ -78,6 +78,33 @@ final class OpenClawLocalEditBrokerTests: XCTestCase {
     )
   }
 
+  func testReadPassesAnExplicitAuthorizedCorpusRootToTheClient() async throws {
+    var receivedRoot: String?
+    let broker = OpenClawLocalEditBroker(
+      documentReader: { _, path, corpusRoot in
+        receivedRoot = corpusRoot
+        return OpenClawLocalEditDocument(
+          relativePath: path,
+          text: "* Shared context\n",
+          origin: .disk
+        )
+      },
+      replacementApplier: { _, _ in
+        OpenClawLocalEditApplyResult(summary: OpenClawCorpusChangeSummary(files: []))
+      }
+    )
+    await broker.beginTurn("turn-shared-read")
+
+    let result = await broker.handle(
+      command: OpenClawLocalEditBroker.readCommand,
+      paramsJSON: #"{"turnId":"turn-shared-read","path":"notes/shared.org2","corpusRoot":"/tmp/team"}"#
+    )
+
+    XCTAssertTrue(result.ok)
+    XCTAssertEqual(receivedRoot, "/tmp/team")
+    XCTAssertEqual(try jsonObject(result.payloadJSON)["text"] as? String, "* Shared context\n")
+  }
+
   func testPreviewRequiresHashAndApplyRejectsAChangedDocument() async throws {
     let initialText = "* Original\n"
     let store = DocumentStore(documents: [
@@ -390,7 +417,7 @@ final class OpenClawLocalEditBrokerTests: XCTestCase {
 
   private func makeBroker(_ store: DocumentStore) -> OpenClawLocalEditBroker {
     OpenClawLocalEditBroker(
-      documentReader: { _, path in try store.read(path) },
+      documentReader: { _, path, _ in try store.read(path) },
       replacementApplier: { _, replacements in try await store.apply(replacements) }
     )
   }

@@ -14,13 +14,14 @@ public struct OpenClawLocalEditWorkspaceContext: Equatable, Sendable {
     """
     Local Org2 edit node
 
-    This chat turn can read and edit the active Mac app corpus through the paired node named "\(nodeDisplayName)". Its turnId is "\(turnID)".
+    This chat turn can read and edit the active Mac app corpus through the paired node named "\(nodeDisplayName)". Its turnId is "\(turnID)". It may also read an additional corpus explicitly authorized in the workspace context, but writes remain scoped to the active corpus.
 
     For corpus reads and writes, use the OpenClaw `nodes` tool with action `invoke`, node `\(nodeDisplayName)`, and one of these typed commands. Do not edit corpus files with Gateway filesystem or shell tools during this turn.
 
     1. Read effective local text, including any unsaved editor draft:
        invokeCommand: \(OpenClawLocalEditBroker.readCommand)
        invokeParamsJson: {"turnId":"\(turnID)","path":"relative/path.org2"}
+       For an additional authorized corpus, include its exact local root from the workspace context as "corpusRoot".
     2. Preview one or more whole-file replacements. Existing files require the exact sha256 returned by read:
        invokeCommand: \(OpenClawLocalEditBroker.previewCommand)
        invokeParamsJson: {"turnId":"\(turnID)","edits":[{"path":"relative/path.org2","expectedSha256":"<read sha256>","replacementText":"<complete replacement text>"}]}
@@ -151,7 +152,7 @@ public actor OpenClawLocalEditBroker {
   public static let commands = [readCommand, previewCommand, applyCommand]
 
   public typealias DocumentReader =
-    @MainActor @Sendable (String, String) throws -> OpenClawLocalEditDocument
+    @MainActor @Sendable (String, String, String?) throws -> OpenClawLocalEditDocument
   public typealias ReplacementApplier =
     @MainActor @Sendable (
       String,
@@ -161,10 +162,12 @@ public actor OpenClawLocalEditBroker {
   private struct ReadRequest: Decodable {
     let turnID: String
     let path: String
+    let corpusRoot: String?
 
     enum CodingKeys: String, CodingKey {
       case turnID = "turnId"
       case path
+      case corpusRoot
     }
   }
 
@@ -323,7 +326,7 @@ public actor OpenClawLocalEditBroker {
   private func handleRead(_ paramsJSON: String?) async throws -> OpenClawLocalEditCommandResult {
     let request: ReadRequest = try decode(paramsJSON)
     try requireActiveTurn(request.turnID)
-    let document = try await documentReader(request.turnID, request.path)
+    let document = try await documentReader(request.turnID, request.path, request.corpusRoot)
     guard document.text.utf8.count <= Self.maximumDocumentBytes else {
       throw OpenClawLocalEditError.oversizedRequest
     }
@@ -352,7 +355,7 @@ public actor OpenClawLocalEditBroker {
     var seenPaths = Set<String>()
 
     for edit in request.edits {
-      let document = try await documentReader(request.turnID, edit.path)
+      let document = try await documentReader(request.turnID, edit.path, nil)
       guard seenPaths.insert(document.relativePath).inserted else {
         throw OpenClawLocalEditError.invalidRequest("duplicate path \(document.relativePath)")
       }
@@ -429,7 +432,7 @@ public actor OpenClawLocalEditBroker {
     }
 
     for replacement in preview.replacements {
-      let document = try await documentReader(request.turnID, replacement.relativePath)
+      let document = try await documentReader(request.turnID, replacement.relativePath, nil)
       if replacement.createsFile {
         guard document.origin == .missing else {
           throw OpenClawLocalEditError.staleDocument(replacement.relativePath)

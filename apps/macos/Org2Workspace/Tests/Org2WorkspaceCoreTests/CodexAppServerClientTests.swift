@@ -87,6 +87,106 @@ final class CodexAppServerClientTests: XCTestCase {
     XCTAssertTrue(snapshot.contains("Unsaved editor text"))
   }
 
+  func testWorkspaceSnapshotIncludesAuthorizedCorporaAndCustomInstructions() {
+    let context = OpenClawWorkspaceContext(
+      localCorpusRoot: "/tmp/personal",
+      remoteCorpusRoot: "/srv/personal",
+      selectedSurface: "AI Chat",
+      selectedLocation: nil,
+      selectedEntrySource: nil,
+      backlinks: nil,
+      agenda: nil,
+      searchQuery: "",
+      searchResults: [],
+      authorizedCorpora: [
+        AIChatCorpusContext(
+          name: "Personal",
+          kind: "personal",
+          localRoot: "/tmp/personal",
+          remoteRoot: "/srv/personal",
+          isActive: true
+        ),
+        AIChatCorpusContext(
+          name: "Team",
+          kind: "shared",
+          localRoot: "/tmp/team",
+          remoteRoot: "/srv/team",
+          isActive: false
+        )
+      ],
+      customInstructions: "Prefer concise answers and surface open TODOs."
+    )
+
+    for prompt in [context.systemPrompt(), context.codexSystemPrompt()] {
+      XCTAssertTrue(prompt.contains("Authorized Org2 corpora"))
+      XCTAssertTrue(prompt.contains("Personal (active; reads and reviewed writes; kind: personal)"))
+      XCTAssertTrue(prompt.contains("Team (additional; read-only; kind: shared)"))
+      XCTAssertTrue(prompt.contains("/tmp/team"))
+      XCTAssertTrue(prompt.contains("/srv/team"))
+      XCTAssertTrue(prompt.contains("User-configured AI chat instructions"))
+      XCTAssertTrue(prompt.contains("Prefer concise answers and surface open TODOs."))
+    }
+  }
+
+  @MainActor
+  func testAIChatContextSettingsPersist() throws {
+    let suiteName = "AIChatContextSettings.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+
+    let store = WorkspaceStore(defaults: defaults, legacyDefaultsDomains: [])
+    XCTAssertEqual(store.aiChatCorpusAccessScope, .activeCorpus)
+    XCTAssertEqual(store.aiChatCustomInstructions, "")
+
+    store.aiChatCorpusAccessScope = .allCorpora
+    store.aiChatCustomInstructions = "Always identify the source corpus."
+
+    let restored = WorkspaceStore(defaults: defaults, legacyDefaultsDomains: [])
+    XCTAssertEqual(restored.aiChatCorpusAccessScope, .allCorpora)
+    XCTAssertEqual(restored.aiChatCustomInstructions, "Always identify the source corpus.")
+  }
+
+  @MainActor
+  func testAllCorporaSettingIsCapturedInTheSentTurnContext() async throws {
+    let container = FileManager.default.temporaryDirectory
+      .appendingPathComponent("ai-chat-all-corpora-\(UUID().uuidString)", isDirectory: true)
+    let personal = container.appendingPathComponent("personal", isDirectory: true)
+    let team = container.appendingPathComponent("team", isDirectory: true)
+    try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: container) }
+    _ = try WorkspaceStore.initializeStarterCorpus(at: personal, kind: "personal")
+    _ = try WorkspaceStore.initializeStarterCorpus(at: team, kind: "shared")
+    let suiteName = "AIChatAllCorpora.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let recorder = AIChatContextRecorder()
+    let store = WorkspaceStore(
+      defaults: defaults,
+      openClawTranscriptURL: container.appendingPathComponent("chat.json"),
+      openClawSendHandler: { _, _, _, context in
+        await recorder.record(context)
+        return "Both corpora are available."
+      },
+      legacyDefaultsDomains: []
+    )
+
+    store.setCorpusRoot(personal)
+    await store.refreshActiveCorpusIdentity()
+    store.setCorpusRoot(team)
+    await store.refreshActiveCorpusIdentity()
+    store.setCorpusRoot(personal)
+    store.aiChatCorpusAccessScope = .allCorpora
+    store.aiChatCustomInstructions = "Name the corpus for every citation."
+
+    await store.sendOpenClawMessage(text: "What can you see?")
+
+    let recordedContext = await recorder.value()
+    let context = try XCTUnwrap(recordedContext)
+    XCTAssertEqual(Set(context.authorizedCorpora.map(\.localRoot)), Set([personal.path, team.path]))
+    XCTAssertEqual(context.authorizedCorpora.filter(\.isActive).map(\.localRoot), [personal.path])
+    XCTAssertEqual(context.customInstructions, "Name the corpus for every citation.")
+  }
+
   @MainActor
   func testWorkspaceCreatesAndRestoresCodexThread() throws {
     let suiteName = "CodexAppServerClientTests.\(UUID().uuidString)"
@@ -242,6 +342,18 @@ final class CodexAppServerClientTests: XCTestCase {
     esac
   done
   """#
+}
+
+private actor AIChatContextRecorder {
+  private var context: OpenClawWorkspaceContext?
+
+  func record(_ context: OpenClawWorkspaceContext?) {
+    self.context = context
+  }
+
+  func value() -> OpenClawWorkspaceContext? {
+    context
+  }
 }
 
 private actor CodexTestRecorder {

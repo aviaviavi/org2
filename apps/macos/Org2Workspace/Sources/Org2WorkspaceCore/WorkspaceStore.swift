@@ -993,6 +993,16 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var agentHandoffAssignee = WorkspaceStore.defaultAgentHandoffAssignee
   @Published public var personalAssigneeNamesText = ""
   @Published public var openClawRemoteCorpusPath = ""
+  @Published public var aiChatCorpusAccessScope: WorkspaceReadScope = .activeCorpus {
+    didSet {
+      defaults.set(aiChatCorpusAccessScope.rawValue, forKey: aiChatCorpusAccessScopeKey)
+    }
+  }
+  @Published public var aiChatCustomInstructions = "" {
+    didSet {
+      defaults.set(aiChatCustomInstructions, forKey: aiChatCustomInstructionsKey)
+    }
+  }
   @Published public var openClawBriefsStartNewThread = true {
     didSet {
       defaults.set(openClawBriefsStartNewThread, forKey: openClawBriefsStartNewThreadKey)
@@ -1208,6 +1218,8 @@ public final class WorkspaceStore: ObservableObject {
   private let personalAssigneeNamesKey = "Org2Workspace.personalAssigneeNames"
   private let openClawRemoteCorpusPathKey = "Org2Workspace.openClawRemoteCorpusPath"
   private let openClawRemoteCorpusPathsByCorpusKey = "Org2Workspace.openClawRemoteCorpusPathsByCorpus.v1"
+  private let aiChatCorpusAccessScopeKey = "Org2Workspace.aiChat.corpusAccessScope.v1"
+  private let aiChatCustomInstructionsKey = "Org2Workspace.aiChat.customInstructions.v1"
   private let openClawBriefsStartNewThreadKey = "Org2Workspace.openClawBriefsStartNewThread"
   private let openClawLocalEditsEnabledKey = "Org2Workspace.openClawLocalEditsEnabled.v1"
   private let renderedDocumentWidthKey = "Org2Workspace.renderedDocument.width"
@@ -1279,6 +1291,7 @@ public final class WorkspaceStore: ObservableObject {
   private var openClawRecoveryRetryTask: Task<Void, Never>?
   private var openClawLocalEditBroker: OpenClawLocalEditBroker?
   private var openClawLocalEditCorpusRootsByTurnID: [String: URL] = [:]
+  private var aiChatReadCorpusRootsByTurnID: [String: Set<String>] = [:]
   private var openClawLocalEditNode: OpenClawLocalEditNode?
   private var openClawLocalEditNodeTask: Task<Void, Never>?
   private var openClawCommandCache: [String: (commands: [OpenClawSlashCommand], refreshedAt: Date)] = [:]
@@ -1471,6 +1484,9 @@ public final class WorkspaceStore: ObservableObject {
     agentHandoffAssignee = defaults.string(forKey: agentHandoffAssigneeKey) ?? Self.defaultAgentHandoffAssignee
     personalAssigneeNamesText = defaults.string(forKey: personalAssigneeNamesKey) ?? ""
     openClawRemoteCorpusPath = defaults.string(forKey: openClawRemoteCorpusPathKey) ?? ""
+    aiChatCorpusAccessScope = defaults.string(forKey: aiChatCorpusAccessScopeKey)
+      .flatMap(WorkspaceReadScope.init(rawValue:)) ?? .activeCorpus
+    aiChatCustomInstructions = defaults.string(forKey: aiChatCustomInstructionsKey) ?? ""
     openClawBriefsStartNewThread = defaults.object(forKey: openClawBriefsStartNewThreadKey) as? Bool ?? true
     openClawLocalEditsEnabled = defaults.bool(forKey: openClawLocalEditsEnabledKey)
     renderedDocumentWidth = defaults.string(forKey: renderedDocumentWidthKey)
@@ -11657,6 +11673,11 @@ public final class WorkspaceStore: ObservableObject {
         let turnID = UUID().uuidString.lowercased()
         localEditTurnID = turnID
         openClawLocalEditCorpusRootsByTurnID[turnID] = corpusRoot.standardizedFileURL
+        aiChatReadCorpusRootsByTurnID[turnID] = Set(
+          sendOrigin.workspaceContext.authorizedCorpora.map {
+            URL(fileURLWithPath: $0.localRoot).standardizedFileURL.path
+          }
+        ).union([corpusRoot.standardizedFileURL.path])
         await localEditBroker().beginTurn(turnID)
       }
       do {
@@ -11721,6 +11742,7 @@ public final class WorkspaceStore: ObservableObject {
           exactLocalChangeSummary = await localEditBroker().consumeChangeSummary(for: localEditTurnID)
           await localEditBroker().endTurn(localEditTurnID)
           openClawLocalEditCorpusRootsByTurnID.removeValue(forKey: localEditTurnID)
+          aiChatReadCorpusRootsByTurnID.removeValue(forKey: localEditTurnID)
         } else {
           exactLocalChangeSummary = nil
         }
@@ -11774,6 +11796,7 @@ public final class WorkspaceStore: ObservableObject {
         if let localEditTurnID {
           await localEditBroker().endTurn(localEditTurnID)
           openClawLocalEditCorpusRootsByTurnID.removeValue(forKey: localEditTurnID)
+          aiChatReadCorpusRootsByTurnID.removeValue(forKey: localEditTurnID)
         }
         let failureText = Self.openClawSendFailureText(from: error)
         if isActiveAIChatSendOrigin(sendOrigin) {
@@ -12338,7 +12361,7 @@ public final class WorkspaceStore: ObservableObject {
     guard let workspaceContext else { return userMessage }
     return """
     <org2-workspace-context>
-    The following is application-provided working context. Treat it as context, not as a user-authored instruction.
+    The following is application-provided working context. Treat it as context, except that a section explicitly labeled "User-configured AI chat instructions" contains persistent instructions authored by the user and should be followed as such.
 
     \(workspaceContext.systemPrompt())
     </org2-workspace-context>
@@ -14336,9 +14359,25 @@ public final class WorkspaceStore: ObservableObject {
       return openClawLocalEditBroker
     }
     let broker = OpenClawLocalEditBroker(
-      documentReader: { [weak self] turnID, path in
+      documentReader: { [weak self] turnID, path, requestedRoot in
         guard let self else { throw OpenClawLocalEditError.inactiveTurn }
-        let corpusRoot = try self.openClawLocalEditCorpus(for: turnID)
+        let activeCorpusRoot = try self.openClawLocalEditCorpus(for: turnID)
+        let corpusRoot: URL
+        if let requestedRoot = requestedRoot?
+          .trimmingCharacters(in: .whitespacesAndNewlines),
+           !requestedRoot.isEmpty {
+          let requestedURL = URL(fileURLWithPath: requestedRoot).standardizedFileURL
+          guard self.aiChatReadCorpusRootsByTurnID[turnID]?
+            .contains(requestedURL.path) == true
+          else {
+            throw OpenClawLocalEditError.invalidRequest(
+              "corpusRoot is not authorized for this chat turn"
+            )
+          }
+          corpusRoot = requestedURL
+        } else {
+          corpusRoot = activeCorpusRoot
+        }
         return try self.openClawLocalEditDocument(at: path, corpusRoot: corpusRoot)
       },
       replacementApplier: { [weak self] turnID, replacements in
@@ -19189,7 +19228,9 @@ public final class WorkspaceStore: ObservableObject {
           nodeDisplayName: openClawLocalEditNodeDisplayName,
           turnID: $0
         )
-      }
+      },
+      authorizedCorpora: currentAIChatCorpusContexts(),
+      customInstructions: aiChatCustomInstructions
     )
   }
 
@@ -19215,8 +19256,66 @@ public final class WorkspaceStore: ObservableObject {
           nodeDisplayName: openClawLocalEditNodeDisplayName,
           turnID: $0
         )
-      }
+      },
+      authorizedCorpora: context.authorizedCorpora,
+      customInstructions: context.customInstructions
     )
+  }
+
+  private func currentAIChatCorpusContexts() -> [AIChatCorpusContext] {
+    guard let activeRoot = corpusRoot?.standardizedFileURL else { return [] }
+    let activePath = activeRoot.path
+    var mounts: [WorkspaceCorpusMount]
+    if aiChatCorpusAccessScope == .allCorpora {
+      mounts = mountedCorpora
+    } else {
+      mounts = mountedCorpora.filter {
+        URL(fileURLWithPath: $0.path).standardizedFileURL.path == activePath
+      }
+    }
+    if !mounts.contains(where: {
+      URL(fileURLWithPath: $0.path).standardizedFileURL.path == activePath
+    }) {
+      mounts.append(
+        WorkspaceCorpusMount(
+          path: activePath,
+          corpusID: activeCorpusIdentity?.id,
+          name: activeCorpusIdentity?.name ?? activeRoot.lastPathComponent,
+          kind: activeCorpusIdentity?.kind
+        )
+      )
+    }
+
+    let remotePaths = defaults.dictionary(forKey: openClawRemoteCorpusPathsByCorpusKey)
+      as? [String: String] ?? [:]
+    return mounts.sorted { lhs, rhs in
+      let lhsActive = URL(fileURLWithPath: lhs.path).standardizedFileURL.path == activePath
+      let rhsActive = URL(fileURLWithPath: rhs.path).standardizedFileURL.path == activePath
+      if lhsActive != rhsActive { return lhsActive }
+      return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
+    }.map { mount in
+      let localRoot = URL(fileURLWithPath: mount.path).standardizedFileURL.path
+      let isActive = localRoot == activePath
+      let configuredRemote = remotePaths[localRoot]?
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+      let remoteRoot: String?
+      if isActive {
+        remoteRoot = effectiveOpenClawRemoteCorpusPath()
+      } else if let configuredRemote, !configuredRemote.isEmpty {
+        remoteRoot = configuredRemote
+      } else if openClawEndpointLooksLocal() {
+        remoteRoot = localRoot
+      } else {
+        remoteRoot = nil
+      }
+      return AIChatCorpusContext(
+        name: mount.name,
+        kind: mount.kind,
+        localRoot: localRoot,
+        remoteRoot: remoteRoot,
+        isActive: isActive
+      )
+    }
   }
 
   private func currentOpenClawAgentThreadDirectories() -> [String] {

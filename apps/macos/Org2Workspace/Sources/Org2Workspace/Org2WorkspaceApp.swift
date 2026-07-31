@@ -348,6 +348,11 @@ struct Org2WorkspaceApp: App {
         }
       }
     }
+
+    Settings {
+      AIChatSettingsView()
+        .environmentObject(store)
+    }
   }
 }
 

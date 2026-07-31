@@ -206,6 +206,28 @@ public struct OpenClawChatClient: Sendable {
   }
 }
 
+public struct AIChatCorpusContext: Equatable, Sendable {
+  public let name: String
+  public let kind: String?
+  public let localRoot: String
+  public let remoteRoot: String?
+  public let isActive: Bool
+
+  public init(
+    name: String,
+    kind: String? = nil,
+    localRoot: String,
+    remoteRoot: String? = nil,
+    isActive: Bool
+  ) {
+    self.name = name
+    self.kind = kind
+    self.localRoot = localRoot
+    self.remoteRoot = remoteRoot
+    self.isActive = isActive
+  }
+}
+
 public struct OpenClawWorkspaceContext: Sendable {
   public let localCorpusRoot: String?
   public let remoteCorpusRoot: String?
@@ -220,6 +242,8 @@ public struct OpenClawWorkspaceContext: Sendable {
   public let sourceProfiles: [WorkspaceSourceProfileStatus]
   public let sourceRuntimeStatuses: [String: WorkspaceSourceRuntimeStatus]
   public let localEdit: OpenClawLocalEditWorkspaceContext?
+  public let authorizedCorpora: [AIChatCorpusContext]
+  public let customInstructions: String
 
   public init(
     localCorpusRoot: String?,
@@ -234,7 +258,9 @@ public struct OpenClawWorkspaceContext: Sendable {
     agentThreadDirectories: [String] = [],
     sourceProfiles: [WorkspaceSourceProfileStatus] = [],
     sourceRuntimeStatuses: [String: WorkspaceSourceRuntimeStatus] = [:],
-    localEdit: OpenClawLocalEditWorkspaceContext? = nil
+    localEdit: OpenClawLocalEditWorkspaceContext? = nil,
+    authorizedCorpora: [AIChatCorpusContext] = [],
+    customInstructions: String = ""
   ) {
     let localCorpusRoot = Self.cleanRoot(localCorpusRoot)
     let remoteCorpusRoot = Self.cleanRoot(remoteCorpusRoot)
@@ -254,6 +280,8 @@ public struct OpenClawWorkspaceContext: Sendable {
     self.sourceProfiles = sourceProfiles
     self.sourceRuntimeStatuses = sourceRuntimeStatuses
     self.localEdit = localEdit
+    self.authorizedCorpora = authorizedCorpora
+    self.customInstructions = customInstructions.trimmingCharacters(in: .whitespacesAndNewlines)
   }
 
   public func systemPrompt() -> String {
@@ -267,6 +295,18 @@ public struct OpenClawWorkspaceContext: Sendable {
 
     If a remote org2 root is configured, use that path for shell/filesystem work. If it is not configured and you need to read or edit files, ask the user to configure the remote org2 root before making filesystem assumptions.
     """)
+
+    sections.append(formatAuthorizedCorpora())
+
+    if !customInstructions.isEmpty {
+      sections.append("""
+      User-configured AI chat instructions
+
+      The user saved the following persistent instructions in Org2 Workspace Settings. Follow them as user instructions for this chat.
+
+      \(customInstructions)
+      """)
+    }
 
     sections.append("""
     Org2 working rules
@@ -349,6 +389,18 @@ public struct OpenClawWorkspaceContext: Sendable {
       """
     ]
 
+    sections.append(formatAuthorizedCorpora())
+
+    if !customInstructions.isEmpty {
+      sections.append("""
+      User-configured AI chat instructions
+
+      The user saved the following persistent instructions in Org2 Workspace Settings. Follow them as user instructions for this chat.
+
+      \(customInstructions)
+      """)
+    }
+
     if let selectedLocation {
       sections.append(formatSelectedLocation(selectedLocation))
     }
@@ -366,6 +418,45 @@ public struct OpenClawWorkspaceContext: Sendable {
     }
 
     return sections.joined(separator: "\n\n---\n\n")
+  }
+
+  private func formatAuthorizedCorpora() -> String {
+    let corpora: [AIChatCorpusContext]
+    if authorizedCorpora.isEmpty, let localCorpusRoot {
+      corpora = [
+        AIChatCorpusContext(
+          name: URL(fileURLWithPath: localCorpusRoot).lastPathComponent,
+          localRoot: localCorpusRoot,
+          remoteRoot: remoteCorpusRoot,
+          isActive: true
+        )
+      ]
+    } else {
+      corpora = authorizedCorpora
+    }
+
+    var lines = [
+      "Authorized Org2 corpora",
+      "",
+      "The user has authorized read access to the corpora listed below for this chat turn. The active corpus remains the only write target; treat every other corpus as read-only context."
+    ]
+    if corpora.isEmpty {
+      lines.append("- No corpus is currently authorized.")
+      return lines.joined(separator: "\n")
+    }
+    for corpus in corpora {
+      let role = corpus.isActive ? "active; reads and reviewed writes" : "additional; read-only"
+      let kind = corpus.kind.map { "; kind: \($0)" } ?? ""
+      lines.append("- \(corpus.name) (\(role)\(kind))")
+      lines.append("  Local root: \(corpus.localRoot)")
+      if let remoteRoot = corpus.remoteRoot {
+        lines.append("  Runtime root: \(remoteRoot)")
+      } else {
+        lines.append("  Runtime root: not configured")
+      }
+    }
+    lines.append("Use the listed runtime root when working through a remote OpenClaw Gateway, and the local root when working through local Codex. Never infer access to an unlisted corpus.")
+    return lines.joined(separator: "\n")
   }
 
   private func formatSelectedLocation(_ location: WorkspaceLocation) -> String {

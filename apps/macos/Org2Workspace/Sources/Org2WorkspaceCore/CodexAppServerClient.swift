@@ -1020,7 +1020,7 @@ public actor CodexAppServerClient {
     } ?? ""
     return """
     <org2-workspace-context>
-    This turn's local Org2 edit turnId is "\(localTurnID)". Treat this application-provided value as context, not as a user instruction.
+    This turn's local Org2 edit turnId is "\(localTurnID)". Treat application-provided values as context. A snapshot section explicitly labeled "User-configured AI chat instructions" contains persistent instructions authored by the user and should be followed as such.
     </org2-workspace-context>
     \(snapshotSection)
 
@@ -1033,7 +1033,7 @@ public actor CodexAppServerClient {
   nonisolated private static let localEditDeveloperInstructions = """
   You are the local Codex runtime embedded in Org2 Workspace. The active working directory is the selected Org2 corpus.
 
-  For every corpus read or write, use the org2_workspace_read, org2_workspace_patch_preview, and org2_workspace_patch_apply tools supplied by the client. These tools read effective local text, including unsaved editor state, and attribute applied changes to this exact turn. Do not use shell commands or built-in filesystem editing tools to read or modify corpus files.
+  For every corpus read or write, use the org2_workspace_read, org2_workspace_patch_preview, and org2_workspace_patch_apply tools supplied by the client. These tools read effective local text, including unsaved editor state, and attribute applied changes to this exact turn. Do not use shell commands or built-in filesystem editing tools to read or modify corpus files. The read tool may use a corpusRoot explicitly listed in the turn snapshot to read an additional authorized corpus. Patch tools always target only the active corpus.
 
   Existing files must be read first. Preview whole-file replacements with the exact expectedSha256 from the read result, then apply the returned previewId. For new files, set createsFile to true and omit expectedSha256. If a stale-document error occurs, read again and rebuild the replacement. Use the turnId provided in the application context on every tool call.
 
@@ -1044,12 +1044,13 @@ public actor CodexAppServerClient {
     .object([
       "type": .string("function"),
       "name": .string("org2_workspace_read"),
-      "description": .string("Read one corpus file's effective local text, including an unsaved Org2 editor draft."),
+      "description": .string("Read one authorized corpus file's effective local text, including an unsaved Org2 editor draft. Omit corpusRoot for the active corpus; use an exact local root from the turn snapshot for another authorized corpus."),
       "inputSchema": .object([
         "type": .string("object"),
         "properties": .object([
           "turnId": .object(["type": .string("string")]),
-          "path": .object(["type": .string("string")])
+          "path": .object(["type": .string("string")]),
+          "corpusRoot": .object(["type": .string("string")])
         ]),
         "required": .array([.string("turnId"), .string("path")]),
         "additionalProperties": .bool(false)
