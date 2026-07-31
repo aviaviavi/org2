@@ -448,7 +448,7 @@ private struct SidebarView: View {
       SidebarHeader(showsCommandShortcuts: showsCommandShortcuts)
 
       List {
-        Section("Workspace") {
+        Section {
           ForEach(WorkspaceSurface.sidebarCases) { surface in
             SidebarSurfaceRow(
               surface: surface,
@@ -472,10 +472,12 @@ private struct SidebarView: View {
             .listRowBackground(Color.clear)
             .help(surface.commandShortcutTitle.isEmpty ? surface.title : "\(surface.title) (\(surface.commandShortcutTitle))")
           }
+        } header: {
+          SidebarSectionLabel("Workspace")
         }
 
         if !pinnedCorpusFiles.isEmpty {
-          Section("Pinned") {
+          Section {
             ForEach(pinnedCorpusFiles) { file in
               Button {
                 store.openSidebarFile(file)
@@ -491,10 +493,12 @@ private struct SidebarView: View {
               }
               .help(file.relativePath)
             }
+          } header: {
+            SidebarSectionLabel("Pinned")
           }
         }
 
-        Section("Daily") {
+        Section {
           ForEach(DailyNoteTarget.allCases) { target in
             Button {
               store.openDailyNoteFromSidebar(target)
@@ -513,18 +517,40 @@ private struct SidebarView: View {
             .buttonStyle(.plain)
             .help("\(target.title) daily note (\(target.commandShortcutTitle))")
           }
+        } header: {
+          SidebarSectionLabel("Daily")
         }
 
-        Section("Chat") {
+        Section {
           OpenClawSidebarSurfaceGroup(showsCommandShortcut: showsCommandShortcuts)
+        } header: {
+          SidebarSectionLabel("Chat")
         }
       }
       .listStyle(.sidebar)
+      .scrollContentBackground(.hidden)
+      .background(WorkspaceDesign.appBackground)
 
       SidebarCorpusSwitcher()
     }
     .commandShortcutRevealMonitor($showsCommandShortcuts)
     .animation(WorkspaceMotion.quick, value: showsCommandShortcuts)
+    .background(WorkspaceDesign.appBackground)
+  }
+}
+
+private struct SidebarSectionLabel: View {
+  let title: String
+
+  init(_ title: String) {
+    self.title = title
+  }
+
+  var body: some View {
+    Text(title.uppercased())
+      .font(.system(size: 10, weight: .semibold, design: .monospaced))
+      .tracking(0.7)
+      .foregroundStyle(WorkspaceDesign.tertiaryText)
   }
 }
 
@@ -533,7 +559,8 @@ private struct SidebarHeader: View {
   let showsCommandShortcuts: Bool
 
   var body: some View {
-    HStack(spacing: 8) {
+    HStack(spacing: 7) {
+      WorkspaceAsteriskMarker(color: WorkspaceDesign.signalAccent, size: 10)
       Text("Org2")
         .font(.headline.weight(.semibold))
 
@@ -688,7 +715,7 @@ private struct SidebarPinnedFileRow: View {
           .truncationMode(.tail)
         if !file.directory.isEmpty {
           Text(file.directory)
-            .font(.caption2)
+            .font(.caption2.monospaced())
             .foregroundStyle(.tertiary)
             .lineLimit(1)
             .truncationMode(.middle)
@@ -1013,7 +1040,7 @@ private struct OpenClawSidebarThreadRow: View {
                 Text("· Settled")
               }
             }
-            .font(.caption2)
+            .font(.caption2.monospaced())
             .foregroundStyle(.secondary)
             .lineLimit(1)
           }
@@ -1076,10 +1103,7 @@ private struct OpenClawSidebarThreadRow: View {
     )
     .overlay(alignment: .leading) {
       if isSelected {
-        Capsule()
-          .fill(Color.accentColor.opacity(0.72))
-          .frame(width: 2, height: 22)
-          .padding(.leading, 4)
+        WorkspaceSelectionMarker()
       }
     }
     .contentShape(Rectangle())
@@ -1277,10 +1301,7 @@ private struct ReadableListSelectionModifier: ViewModifier {
       )
       .overlay(alignment: .leading) {
         if isSelected {
-          Capsule()
-            .fill(Color.accentColor)
-            .frame(width: 3)
-            .padding(.vertical, 8)
+          WorkspaceSelectionMarker()
         }
       }
       .accessibilityAddTraits(isSelected ? .isSelected : [])
@@ -2702,10 +2723,7 @@ private struct RunCenterRow: View {
     )
     .overlay(alignment: .leading) {
       if isSelected {
-        Capsule()
-          .fill(Color.accentColor)
-          .frame(width: 3)
-          .padding(.vertical, 8)
+        WorkspaceSelectionMarker()
       }
     }
     .contentShape(Rectangle())
@@ -3737,10 +3755,7 @@ private struct ApprovalRow: View {
     )
     .overlay(alignment: .leading) {
       if isSelected {
-        Capsule()
-          .fill(Color.accentColor)
-          .frame(width: 3)
-          .padding(.vertical, 8)
+        WorkspaceSelectionMarker()
       }
     }
     .accessibilityAddTraits(isSelected ? .isSelected : [])
@@ -4163,10 +4178,7 @@ private struct AgendaRow: View, Equatable {
     )
     .overlay(alignment: .leading) {
       if isSelected {
-        Capsule()
-          .fill(Color.accentColor)
-          .frame(width: 3)
-          .padding(.vertical, 8)
+        WorkspaceSelectionMarker()
       }
     }
     .accessibilityAddTraits(isSelected ? .isSelected : [])
@@ -6580,10 +6592,7 @@ private struct AssignedWorkRow: View {
     )
     .overlay(alignment: .leading) {
       if isSelected {
-        Capsule()
-          .fill(Color.accentColor)
-          .frame(width: 3)
-          .padding(.vertical, 8)
+        WorkspaceSelectionMarker()
       }
     }
     .accessibilityAddTraits(isSelected ? .isSelected : [])
@@ -6785,7 +6794,7 @@ private struct DetailHeader: View {
             .lineLimit(nil)
         }
         Text(store.relativePath(location.file) + ":\(location.lineForEditor)")
-          .font(.caption2)
+          .font(.caption2.monospaced())
           .foregroundStyle(WorkspaceDesign.tertiaryText)
           .textSelection(.enabled)
       }
@@ -8773,11 +8782,11 @@ private struct HeaderBar<Trailing: View>: View {
     HStack(alignment: .center, spacing: compact ? 8 : 12) {
       HStack(spacing: 9) {
         if let surface {
-          WorkspaceIconBadge(
-            systemImage: surface.systemImage,
-            tint: .accentColor,
-            fill: Color.accentColor.opacity(0.08)
+          WorkspaceAsteriskMarker(
+            color: surface == .approvals ? WorkspaceDesign.signalAccent : WorkspaceDesign.structuralAccent,
+            size: 11
           )
+          .frame(width: 16, height: 24)
         }
 
         VStack(alignment: .leading, spacing: 2) {

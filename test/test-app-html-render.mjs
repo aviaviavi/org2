@@ -40,6 +40,10 @@ const rendered = renderOrgDocumentToAppHtml(document, {
 assert.match(rendered.html, /id="org2-app-document-style"/);
 assert.match(rendered.html, /\.org2-headline-summary::before/);
 assert.match(rendered.html, /font-size: 0\.82rem/);
+assert.match(rendered.html, /--org2-font-mono:/);
+assert.match(rendered.html, /\.org2-document-title::before/);
+assert.match(rendered.html, /\.org2-headline-summary > h1::before/);
+assert.match(rendered.html, /content: "\*\*";/);
 assert.match(rendered.html, /class="org2-todo todo-todo"/);
 assert.match(rendered.html, /data-org2-start-line="23"/);
 assert.match(rendered.html, /<details class="org2-headline level-1" open/);

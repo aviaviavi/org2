@@ -8,6 +8,9 @@ enum WorkspaceDesign {
   static let rowVerticalPadding: CGFloat = 8
   static let headerHorizontalInset: CGFloat = 16
   static let headerVerticalInset: CGFloat = 11
+  static let selectionMarkerLeadingInset: CGFloat = 4
+  static let selectionMarkerWidth: CGFloat = 14
+  static let selectionMarkerVerticalOffset: CGFloat = -1
 
   // AppKit's semantic label colors can become extremely faint when a hosted
   // editor hierarchy is treated as inactive. Keep document chrome and source
@@ -24,24 +27,59 @@ enum WorkspaceDesign {
     isDark(appearance) ? NSColor(deviceWhite: 0.50, alpha: 1) : NSColor(deviceWhite: 0.58, alpha: 1)
   }
 
+  // These surfaces mirror the restrained, warm editorial palette used by the
+  // Org2 site. They keep the app recognizably native while avoiding a stack of
+  // indistinguishable system-gray panes.
+  static let canvasNSColor = NSColor(name: nil) { appearance in
+    isDark(appearance)
+      ? NSColor(srgbRed: 0.082, green: 0.102, blue: 0.094, alpha: 1)
+      : NSColor(srgbRed: 0.949, green: 0.941, blue: 0.914, alpha: 1)
+  }
+
+  static let documentNSColor = NSColor(name: nil) { appearance in
+    isDark(appearance)
+      ? NSColor(srgbRed: 0.106, green: 0.129, blue: 0.122, alpha: 1)
+      : NSColor(srgbRed: 0.988, green: 0.984, blue: 0.969, alpha: 1)
+  }
+
+  static let structuralNSColor = NSColor(name: nil) { appearance in
+    isDark(appearance)
+      ? NSColor(srgbRed: 0.525, green: 0.639, blue: 1.000, alpha: 1)
+      : NSColor(srgbRed: 0.157, green: 0.329, blue: 0.843, alpha: 1)
+  }
+
+  static let signalNSColor = NSColor(name: nil) { appearance in
+    isDark(appearance)
+      ? NSColor(srgbRed: 1.000, green: 0.525, blue: 0.408, alpha: 1)
+      : NSColor(srgbRed: 0.761, green: 0.278, blue: 0.173, alpha: 1)
+  }
+
+  static let hairlineNSColor = NSColor(name: nil) { appearance in
+    isDark(appearance)
+      ? NSColor(srgbRed: 0.212, green: 0.251, blue: 0.235, alpha: 1)
+      : NSColor(srgbRed: 0.843, green: 0.839, blue: 0.808, alpha: 1)
+  }
+
   static var primaryText: Color { Color(nsColor: stablePrimaryNSColor) }
   static var secondaryText: Color { Color(nsColor: stableSecondaryNSColor) }
   static var tertiaryText: Color { Color(nsColor: stableTertiaryNSColor) }
+  static var structuralAccent: Color { Color(nsColor: structuralNSColor) }
+  static var signalAccent: Color { Color(nsColor: signalNSColor) }
 
   private static func isDark(_ appearance: NSAppearance) -> Bool {
     appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
   }
 
   static var barBackground: Color {
-    Color(nsColor: .windowBackgroundColor)
+    Color(nsColor: documentNSColor)
   }
 
   static var surfaceBackground: Color {
-    Color(nsColor: .textBackgroundColor)
+    Color(nsColor: documentNSColor)
   }
 
   static var appBackground: Color {
-    Color(nsColor: .windowBackgroundColor)
+    Color(nsColor: canvasNSColor)
   }
 
   static var subtleFill: Color {
@@ -53,7 +91,7 @@ enum WorkspaceDesign {
   }
 
   static var hairline: Color {
-    Color.secondary.opacity(0.12)
+    Color(nsColor: hairlineNSColor)
   }
 
   static var controlFill: Color {
@@ -65,7 +103,7 @@ enum WorkspaceDesign {
   }
 
   static var controlGroupFill: Color {
-    Color.secondary.opacity(0.045)
+    structuralAccent.opacity(0.045)
   }
 
   static var controlPressedFill: Color {
@@ -73,7 +111,41 @@ enum WorkspaceDesign {
   }
 
   static var panelFill: Color {
-    Color.secondary.opacity(0.04)
+    structuralAccent.opacity(0.035)
+  }
+}
+
+enum WorkspaceSyntax {
+  static let selectionMarker = "*"
+
+  static func headingMarker(for level: Int) -> String {
+    String(repeating: "*", count: min(max(level, 1), 3))
+  }
+}
+
+struct WorkspaceAsteriskMarker: View {
+  var level = 1
+  var color: Color = WorkspaceDesign.structuralAccent
+  var size: CGFloat = 11
+
+  var body: some View {
+    Text(WorkspaceSyntax.headingMarker(for: level))
+      .font(.system(size: size, weight: .semibold, design: .monospaced))
+      .foregroundStyle(color)
+      .fixedSize()
+      .accessibilityHidden(true)
+  }
+}
+
+struct WorkspaceSelectionMarker: View {
+  var body: some View {
+    Text(WorkspaceSyntax.selectionMarker)
+      .font(.system(size: 12, weight: .bold, design: .monospaced))
+      .foregroundStyle(Color.accentColor)
+      .frame(width: WorkspaceDesign.selectionMarkerWidth, height: 20, alignment: .center)
+      .padding(.leading, WorkspaceDesign.selectionMarkerLeadingInset)
+      .offset(y: WorkspaceDesign.selectionMarkerVerticalOffset)
+      .accessibilityHidden(true)
   }
 }
 

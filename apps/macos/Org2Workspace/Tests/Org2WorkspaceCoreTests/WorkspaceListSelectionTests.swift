@@ -59,6 +59,18 @@ final class WorkspaceListSelectionTests: XCTestCase {
       )
     )
     XCTAssertTrue(source.contains("var verticalPadding: CGFloat = 0"))
+    XCTAssertTrue(source.contains("WorkspaceSelectionMarker()"))
+  }
+
+  func testOrgSyntaxMarkersStayCompact() {
+    XCTAssertEqual(WorkspaceSyntax.selectionMarker, "*")
+    XCTAssertEqual(WorkspaceSyntax.headingMarker(for: 0), "*")
+    XCTAssertEqual(WorkspaceSyntax.headingMarker(for: 1), "*")
+    XCTAssertEqual(WorkspaceSyntax.headingMarker(for: 2), "**")
+    XCTAssertEqual(WorkspaceSyntax.headingMarker(for: 8), "***")
+    XCTAssertEqual(WorkspaceDesign.selectionMarkerLeadingInset, 4)
+    XCTAssertEqual(WorkspaceDesign.selectionMarkerWidth, 14)
+    XCTAssertEqual(WorkspaceDesign.selectionMarkerVerticalOffset, -1)
   }
 
   func testSettledThreadDisclosurePreservesTheUsersChoice() {

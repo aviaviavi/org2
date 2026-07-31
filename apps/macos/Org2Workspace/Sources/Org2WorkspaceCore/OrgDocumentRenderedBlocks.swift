@@ -975,6 +975,12 @@ private struct RenderedHeadingView: View {
 
   var body: some View {
     HStack(alignment: headingAlignment, spacing: 7) {
+      WorkspaceAsteriskMarker(
+        level: heading.level,
+        color: markerColor,
+        size: markerSize
+      )
+      .frame(minWidth: 12, alignment: .leading)
       if let todo = heading.todo {
         RenderedHeadingTodoButton(todo: todo, inlineActions: inlineActions)
       }
@@ -1032,6 +1038,25 @@ private struct RenderedHeadingView: View {
       return .callout.weight(.semibold)
     default:
       return .body.weight(.semibold)
+    }
+  }
+
+  private var markerColor: Color {
+    switch heading.level {
+    case 1:
+      return WorkspaceDesign.structuralAccent
+    case 2:
+      return WorkspaceDesign.signalAccent
+    default:
+      return WorkspaceDesign.tertiaryText
+    }
+  }
+
+  private var markerSize: CGFloat {
+    switch heading.level {
+    case 1: 11
+    case 2: 10
+    default: 9
     }
   }
 

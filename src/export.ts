@@ -85,16 +85,17 @@ const DOCUMENT_TOC_STYLE = `.org2-toc { border: 1px solid rgba(127,127,127,0.35)
 
 const APP_DOCUMENT_STYLE = `:root {
   color-scheme: light dark;
-  --org2-text: #24262a;
-  --org2-muted: #6c7078;
-  --org2-faint: rgba(36, 38, 42, 0.08);
-  --org2-rule: rgba(36, 38, 42, 0.12);
-  --org2-code: rgba(36, 38, 42, 0.055);
-  --org2-surface: #ffffff;
-  --org2-elevated-surface: #fbfbfc;
-  --org2-shadow: rgba(24, 27, 33, 0.07);
-  --org2-link: #1769aa;
-  --org2-accent: #2f73b7;
+  --org2-text: #18201e;
+  --org2-muted: #5e6b66;
+  --org2-faint: rgba(40, 84, 215, 0.065);
+  --org2-rule: #d7d6ce;
+  --org2-code: #f1f3ef;
+  --org2-surface: #fcfbf7;
+  --org2-elevated-surface: #ffffff;
+  --org2-shadow: rgba(29, 43, 38, 0.065);
+  --org2-link: #2854d7;
+  --org2-accent: #2854d7;
+  --org2-signal: #c2472c;
   --org2-success: #20804a;
   --org2-danger: #b64238;
   --org2-warning: #966512;
@@ -104,21 +105,23 @@ const APP_DOCUMENT_STYLE = `:root {
   --org2-chart-label: #6c7078;
   --org2-chart-title: #24262a;
   --org2-chart-surface: #ffffff;
+  --org2-font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
   --org2-content-width: 960px;
   --org2-page-padding: 28px;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --org2-text: #e9eaed;
-    --org2-muted: #a4a8b0;
-    --org2-faint: rgba(233, 234, 237, 0.08);
-    --org2-rule: rgba(233, 234, 237, 0.13);
-    --org2-code: rgba(233, 234, 237, 0.07);
-    --org2-surface: #1f2125;
-    --org2-elevated-surface: #24262b;
+    --org2-text: #dce3de;
+    --org2-muted: #a2ada7;
+    --org2-faint: rgba(134, 163, 255, 0.09);
+    --org2-rule: #36403c;
+    --org2-code: #121715;
+    --org2-surface: #1b211f;
+    --org2-elevated-surface: #222927;
     --org2-shadow: rgba(0, 0, 0, 0.24);
-    --org2-link: #70b7f0;
-    --org2-accent: #79b8ed;
+    --org2-link: #86a3ff;
+    --org2-accent: #86a3ff;
+    --org2-signal: #ff8668;
     --org2-success: #6ac58c;
     --org2-danger: #ee8178;
     --org2-warning: #e0b361;
@@ -151,14 +154,25 @@ main.org2-document {
 .org2-document-title {
   margin: 0;
   font-size: clamp(1.9rem, 4vw, 2.45rem);
-  font-weight: 700;
+  font-weight: 650;
   line-height: 1.14;
   letter-spacing: -0.025em;
+}
+.org2-document-title::before {
+  display: inline-block;
+  margin-right: 0.48rem;
+  color: var(--org2-signal);
+  content: "*";
+  font-family: var(--org2-font-mono);
+  font-size: 0.38em;
+  font-weight: 650;
+  vertical-align: 0.72em;
 }
 .org2-document-subtitle { margin: 0.32rem 0 0; color: var(--org2-muted); font-size: 1rem; }
 .org2-file-properties {
   margin: 0 0 1rem;
   color: var(--org2-muted);
+  font-family: var(--org2-font-mono);
   font-size: 0.84rem;
 }
 .org2-file-properties > summary {
@@ -235,6 +249,36 @@ details[open] > summary::before { content: "▼"; }
 .org2-headline-summary > h4,
 .org2-headline-summary > h5,
 .org2-headline-summary > h6 { display: inline; margin: 0; }
+.org2-headline-summary > h1::before,
+.org2-headline-summary > h2::before,
+.org2-headline-summary > h3::before,
+.org2-headline-summary > h4::before,
+.org2-headline-summary > h5::before,
+.org2-headline-summary > h6::before {
+  display: inline-block;
+  margin-right: 0.44rem;
+  color: var(--org2-accent);
+  content: "*";
+  font-family: var(--org2-font-mono);
+  font-size: 0.64em;
+  font-weight: 650;
+  vertical-align: 0.08em;
+}
+.org2-headline-summary > h2::before {
+  color: var(--org2-signal);
+  content: "**";
+  font-size: 0.52em;
+  letter-spacing: -0.16em;
+}
+.org2-headline-summary > h3::before,
+.org2-headline-summary > h4::before,
+.org2-headline-summary > h5::before,
+.org2-headline-summary > h6::before {
+  color: var(--org2-muted);
+  content: "***";
+  font-size: 0.46em;
+  letter-spacing: -0.18em;
+}
 .org2-heading-ai-action {
   display: inline-flex;
   align-items: center;
@@ -290,7 +334,7 @@ a { color: var(--org2-link); text-decoration: none; border-bottom: 1px solid col
 a:hover { border-bottom-color: var(--org2-link); }
 strong { font-weight: 650; }
 code {
-  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  font-family: var(--org2-font-mono);
   font-size: 0.9em;
   background: var(--org2-code);
   border: 1px solid var(--org2-rule);
@@ -307,7 +351,7 @@ pre, .org2-src, .org2-example, .org2-verse, .org2-export, .org2-directive {
   background: var(--org2-code) !important;
   border: 1px solid var(--org2-rule) !important;
   border-radius: 10px !important;
-  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  font-family: var(--org2-font-mono);
   font-size: 0.88rem !important;
   line-height: 1.45 !important;
   white-space: pre;
@@ -335,7 +379,7 @@ input[type="checkbox"] { width: 0.95rem; height: 0.95rem; margin: 0 0.42rem 0 -0
 .org2-todo.todo-canceled, .org2-todo.todo-cancelled { color: var(--org2-danger); background: color-mix(in srgb, var(--org2-danger) 10%, transparent); }
 .org2-tags { display: inline-flex; flex-wrap: wrap; gap: 0.28rem; margin-left: 0.35rem; vertical-align: 0.1em; }
 .org2-tag { color: var(--org2-muted); background: var(--org2-faint); border-radius: 4px; padding: 0.08rem 0.34rem; font-size: 0.65em; font-weight: 550; }
-.org2-planning { color: var(--org2-muted); font-size: 0.88rem; font-variant-numeric: tabular-nums; }
+.org2-planning { color: var(--org2-muted); font-family: var(--org2-font-mono); font-size: 0.82rem; font-variant-numeric: tabular-nums; }
 .org2-planning-kind { color: var(--org2-warning); font-size: 0.78em; font-weight: 700; }
 .org2-timestamp, .org2-timestamp-range { font-variant-numeric: tabular-nums; }
 .org2-properties-drawer {
@@ -365,15 +409,15 @@ input[type="checkbox"] { width: 0.95rem; height: 0.95rem; margin: 0 0.42rem 0 -0
   padding: 0.5rem 0 0;
   border-top: 1px solid var(--org2-rule);
 }
-.org2-properties dt { color: var(--org2-muted); font-weight: 650; }
-.org2-properties dd { margin: 0; min-width: 0; overflow-wrap: anywhere; font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; }
+.org2-properties dt { color: var(--org2-muted); font-family: var(--org2-font-mono); font-weight: 650; }
+.org2-properties dd { margin: 0; min-width: 0; overflow-wrap: anywhere; font-family: var(--org2-font-mono); }
 .org2-drawer { margin: 0.75rem 0; color: var(--org2-muted); font-size: 0.9rem; }
 .org2-drawer summary { position: relative; padding-left: 1.15rem; cursor: pointer; font-weight: 600; list-style: none; }
 .org2-keyword { color: var(--org2-muted); font-size: 0.88rem; }
 .org2-keyword-name { font-weight: 650; }
 table { width: 100%; margin: 0.8rem 0 1.15rem; border-collapse: collapse; font-size: 0.9rem; font-variant-numeric: tabular-nums; }
 th, td { padding: 0.46rem 0.58rem; border-bottom: 1px solid var(--org2-rule); text-align: left; vertical-align: top; }
-th { color: var(--org2-muted); background: var(--org2-faint); font-size: 0.82rem; font-weight: 650; }
+th { color: var(--org2-muted); background: var(--org2-faint); font-family: var(--org2-font-mono); font-size: 0.78rem; font-weight: 650; }
 .org2-table-scroll { width: 100%; max-width: 100%; margin: 0.8rem 0 1.15rem; overflow-x: auto; overscroll-behavior-inline: contain; }
 .org2-table-scroll table { width: auto; min-width: 100%; margin: 0; }
 .org2-table-scroll th, .org2-table-scroll td { overflow-wrap: normal; word-break: normal; hyphens: none; }
