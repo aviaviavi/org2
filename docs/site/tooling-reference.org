@@ -377,6 +377,15 @@ An approval belongs to one canonical durable run and has an ID unique within tha
 
 =org2 approvals= returns the unified =org2:approvals:v2= decision queue. Its =kind= field distinguishes durable =run= approvals from standalone =headline= approvals; run items include =runId=, =approvalId=, =fingerprint=, =decisionKeys=, the run goal/status, and pending/total approval counts. OpenClaw and other producers use those keys to discover an existing provider boundary instead of inventing another authority. Deciding a run item must use =run approval-decide= so the queue and Agent Work's *Runs* tab are two projections of the same canonical =.org2/runs/*.org2= record. Standalone heading approvals remain ordinary corpus TODOs and keep their file/line/ID identity. A legacy heading nested under a Gmail provider-draft task and repeated durable approvals for that same draft collapse to the newest durable decision. Recording that decision automatically supersedes older pending copies and closes dedicated duplicate review runs; stale material remains inspectable in history but cannot return to either actionable surface. =org2 review list= returns the broader =org2:review-queue:v1= inspection feed, which also includes review-required artifacts, blocked clarification requests, and warning/failed validation.
 
+Before an agent acts on a large or long-lived workspace, =org2 doctor= performs a read-only consistency pass over run records, workflow definitions, approval identities, recurring attempt metadata, and linked corpus headings:
+
+#+begin_src sh
+org2 doctor --dir ~/notes
+org2 doctor --dir ~/notes --json
+#+end_src
+
+The versioned =org2:agentic-doctor:v1= JSON report distinguishes errors, warnings, and informational migration findings. It detects terminal runs with pending decisions, waiting runs without a decision, duplicate provider keys, conflicting workflow attempt identities, ungrouped OpenClaw cron series, broken run/approval links, direct readable-header drift, and likely duplicate open projections. Hard contradictions produce a nonzero exit status. The command never repairs or normalizes files: review the cited evidence, then use the canonical lifecycle command or an explicit source edit to settle the underlying state.
+
 * Reusable workflows and triggers
 
 =workflow save RUN_ID= converts a completed run into a draft =org2:workflow:v1= file under the visible top-level =workflows/=. Packages declare semantic version, compatibility, parameters and defaults, context rules, deterministic/agent/tool/approval steps, capabilities, risk, outputs, validation, approval boundaries, and manual/schedule/file-change/capture/meeting-import triggers. See [[file:workflows.org][Workflows]] for the plain-text ownership and OpenClaw execution contract.

@@ -45,7 +45,7 @@
     "docs:check": "npm run build && node tools/check-docs.mjs",
     "pretest": "npm run build && node test/test-source-runtime.mjs && npm run test:agentic && npm run test:corpus && npm run test:openclaw",
     "prepublishOnly": "npm run docs:check && npm test",
-    "test:agentic": "node test/test-agentic-workspace.mjs && node test/test-openclaw-thread-state.mjs",
+    "test:agentic": "node test/test-agentic-workspace.mjs && node test/test-agentic-doctor.mjs && node test/test-openclaw-thread-state.mjs",
     "test:corpus": "node test/test-corpus-identity.mjs",
     "test:sources": "npm run build && node test/test-source-runtime.mjs",
     "test:openclaw": "npm run build && npm --prefix integrations/openclaw test && node test/test-openclaw-lifecycle.mjs",

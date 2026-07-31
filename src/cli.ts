@@ -8185,7 +8185,7 @@ or {metadata:{...}, content:"..."}. Generated view artifacts are review-required
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
 
-  if (["corpus", "workspace", "thread", "run", "review", "workflow", "artifact", "runtime", "mcp", "eval"].includes(args[0] || "")) {
+  if (["doctor", "corpus", "workspace", "thread", "run", "review", "workflow", "artifact", "runtime", "mcp", "eval"].includes(args[0] || "")) {
     const { runAgenticWorkspaceCommand } = await import("./agenticWorkspaceCli.js");
     if (await runAgenticWorkspaceCommand(args)) return;
   }
@@ -10022,6 +10022,7 @@ Usage:
   org2 <command> [options]
 
 Core commands:
+  org2 doctor [--dir CORPUS] [--json]
   org2 corpus <show|validate|init> [--dir CORPUS] [--id ID --name NAME --kind KIND] [--apply]
   org2 workspace <agenda|search> [QUERY] --mount CORPUS [--mount CORPUS ...] [--json]
   org2 run <create|list|show|validate|start|resume|retry|cancel|complete|complete-external|fail|block|fork|normalize|assign|comment|outcome|runtime|step|artifact|artifact-review|validation|approval-request|approval-decide> [options]
@@ -10081,6 +10082,7 @@ Roam / IDs:
   org2 graph audit --dir DIR [--recursive] [--format report|json]
 
 Maintenance / health:
+  org2 doctor [--dir CORPUS] [--json]
   org2 index [--dir DIR] [--recursive] [--include-archives] [--file FILE|--files FILE ...] [--incremental] [--format text|json]
   org2 approvals [--dir DIR] [--recursive] [--include-archives] [--file FILE|--files FILE ...] [--index auto|never|rebuild] [--format text|json]
   org2 compile corpus [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--out FILE] [--format json|jsonl] [--incremental] [--cache FILE]
@@ -11707,6 +11709,7 @@ Flags:
         title: indexTitleRaw || undefined,
         sourcePath: indexPathRaw,
         stylesheets: project.stylesheets,
+        headIncludes: project.headIncludes,
         includeDefaultStyle: project.includeDefaultStyle,
         items: exported.map((item) => {
           const hrefRaw = path.relative(path.dirname(indexPathAbsolute), item.outputPathAbsolute);

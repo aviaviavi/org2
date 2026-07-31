@@ -70,6 +70,7 @@ import {
   reopenOpenClawThread,
   settleOpenClawThread,
 } from "./openClawThreadState.js";
+import { auditAgenticWorkspace, renderAgenticDoctorReport } from "./agenticWorkspaceDoctor.js";
 
 interface ParsedArgs { positional: string[]; flags: Map<string, string[]>; }
 function parseArgs(args: string[]): ParsedArgs {
@@ -116,6 +117,7 @@ function syncLinkedArtifactReviewStatus(corpus: string, artifactPath: string, re
 }
 
 const HELP = `Agentic workspace commands:
+  org2 doctor [--dir CORPUS] [--json]
   org2 corpus show|validate|init [--dir CORPUS] [--id ID --name NAME --kind personal|shared|project] [--apply]
   org2 workspace agenda --mount CORPUS [--mount CORPUS ...] [--from DATE --to DATE]
   org2 workspace search QUERY --mount CORPUS [--mount CORPUS ...] [--limit N]
@@ -146,6 +148,13 @@ const HELP = `Agentic workspace commands:
   org2 eval run RUN --expect FILE | org2 eval replay WORKFLOW --fixture FILE | org2 eval fixture RUN --output FILE
 
 Writes are local, inspectable files under .org2/ or reviewable corpus zones. Consequential actions remain approval-gated.`;
+
+function doctorCommand(parsed: ParsedArgs): void {
+  if (parsed.positional.length > 0) throw new Error(`unknown doctor arguments: ${parsed.positional.join(" ")}`);
+  const report = auditAgenticWorkspace(root(parsed));
+  output(parsed, report, renderAgenticDoctorReport(report));
+  if (!report.ok) process.exitCode = 1;
+}
 
 function forwardedArgs(parsed: ParsedArgs, excluded: Set<string>): string[] {
   const result: string[] = [];
@@ -896,10 +905,11 @@ function evalCommand(parsed: ParsedArgs): void {
 
 export async function runAgenticWorkspaceCommand(args: string[]): Promise<boolean> {
   const family = args[0];
-  if (!family || !["corpus", "workspace", "thread", "run", "review", "workflow", "artifact", "runtime", "mcp", "eval"].includes(family)) return false;
+  if (!family || !["doctor", "corpus", "workspace", "thread", "run", "review", "workflow", "artifact", "runtime", "mcp", "eval"].includes(family)) return false;
   const parsed = parseArgs(args.slice(1));
   if (enabled(parsed, "help") || parsed.positional[0] === "help") { output(parsed, HELP); return true; }
-  if (family === "corpus") corpusCommand(parsed);
+  if (family === "doctor") doctorCommand(parsed);
+  else if (family === "corpus") corpusCommand(parsed);
   else if (family === "workspace") await workspaceCommand(parsed);
   else if (family === "thread") threadCommand(parsed);
   else if (family === "run") await runCommand(parsed);

@@ -29,6 +29,7 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
       "Prefer JSON output for integrations (`--format json` or `--json` where supported).",
       "Use `org2 agent context|search|fetch|bundle` for bounded, cited corpus retrieval.",
       "Use `org2 run --help` for durable delegated work, `org2 workflow` for reusable recipes, and `org2 mcp serve` for MCP discovery.",
+      "Use read-only `org2 doctor --dir CORPUS --json` to find contradictory run, approval, workflow-attempt, and projected headline state before an agent acts.",
       "Use `org2 corpus show|validate|init` to inspect or establish portable corpus identity before team mounting.",
       "Use `org2 source list|doctor|status|bind|import|sync` to manage corpus-declared Slack and Notion crawler profiles and stage review packets without storing credentials in the corpus.",
       "Use `org2 workspace agenda|search` only with explicitly granted `--mount` paths for read-only multi-corpus projections.",
@@ -52,6 +53,7 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
       "Record observable runtime metadata with `org2 run runtime ID` when provider, model, token usage, cost, or elapsed time is available; never put credentials in a run record.",
       "Run targeted tests plus `org2 lint` around writes when practical; never put secrets in notes or generated artifacts.",
       "Never infer agent access from corpora remembered by a person's app; every federated CLI mount must be explicit.",
+      "Treat `org2 doctor` as a read-only consistency check. Review its evidence before repairing canonical state; the command never mutates files automatically.",
     ],
     workflows: [
       {
@@ -69,7 +71,7 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
       {
         id: "agentic-workspace",
         purpose: "Manage settled chat history, create and inspect durable agent runs, and package reusable workflows.",
-        commands: ["org2 thread", "org2 run", "org2 review", "org2 workflow", "org2 eval"],
+        commands: ["org2 doctor", "org2 thread", "org2 run", "org2 review", "org2 workflow", "org2 eval"],
         writes: "mixed",
       },
       {

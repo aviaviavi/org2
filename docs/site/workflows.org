@@ -64,6 +64,8 @@ The =org2-lifecycle= plugin is the current execution bridge:
 4. When execution requests approval or clarification, the turn may end while the durable run remains open. Approving in the Mac app continues the existing workflow in its correlated OpenClaw chat session; a pending approval or blocked run is never treated as successful completion.
 5. Outputs, validation, steps, and approvals remain visible in Agent Work as the agent records them through the shared CLI.
 
+Run =org2 doctor --dir CORPUS --json= before reconciliation or execution when a long-running workspace may contain stale or hand-edited state. The read-only report identifies contradictory run/approval state, duplicate provider identities, missing workflow definitions, conflicting attempt numbers, overlapping active attempts, unmanaged OpenClaw cron series, and broken or duplicate headline projections. It exits nonzero for hard contradictions but never rewrites the canonical records automatically.
+
 Opening a PDF output from Agent Work uses the system's default PDF application (Preview by default on macOS). Text outputs continue to open in the Org2 workspace, with raw source editing available when needed.
 
 For scheduled work, the schedule declaration stays in the workflow file while OpenClaw owns due checks and execution:
