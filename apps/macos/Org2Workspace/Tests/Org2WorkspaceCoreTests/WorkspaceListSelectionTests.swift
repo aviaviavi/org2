@@ -59,7 +59,12 @@ final class WorkspaceListSelectionTests: XCTestCase {
       )
     )
     XCTAssertTrue(source.contains("var verticalPadding: CGFloat = 0"))
-    XCTAssertTrue(source.contains("WorkspaceSelectionMarker()"))
+    XCTAssertEqual(
+      source.components(separatedBy: ".workspaceSelectableRow(").count - 1,
+      6,
+      "Every selected-row implementation should use the shared gutter and marker chrome"
+    )
+    XCTAssertFalse(source.contains("WorkspaceSelectionMarker()"))
   }
 
   func testOrgSyntaxMarkersStayCompact() {
@@ -68,8 +73,7 @@ final class WorkspaceListSelectionTests: XCTestCase {
     XCTAssertEqual(WorkspaceSyntax.headingMarker(for: 1), "*")
     XCTAssertEqual(WorkspaceSyntax.headingMarker(for: 2), "**")
     XCTAssertEqual(WorkspaceSyntax.headingMarker(for: 8), "***")
-    XCTAssertEqual(WorkspaceDesign.selectionMarkerLeadingInset, 4)
-    XCTAssertEqual(WorkspaceDesign.selectionMarkerWidth, 14)
+    XCTAssertEqual(WorkspaceDesign.selectionMarkerGutterWidth, 22)
     XCTAssertEqual(WorkspaceDesign.selectionMarkerVerticalOffset, -1)
   }
 

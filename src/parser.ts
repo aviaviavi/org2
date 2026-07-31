@@ -1354,15 +1354,11 @@ export function parseOrgToCanonicalAst(input: string, options: ParseOptions = {}
                 const nestedItem = parseListItemLine(nestedUnindentedLine);
                 
                 if (!nestedItem) {
-                  // Not a list item
-                  if (nestedLeadingSpaces >= listItem.indentColumn) {
-                    // Still within indentation, treat as continuation
-                    nestedItemParaLines.push(nestedLine.slice(listItem.indentColumn));
-                    i += 1;
-                    continue;
-                  } else {
-                    break;
-                  }
+                  // This line belongs to the parent item, not the nested list.
+                  // Leave it untouched so the outer continuation parser can
+                  // recognize blocks, tables, directives, or prose at the
+                  // parent item's indentation.
+                  break;
                 }
                 
                 const nestedItemIndentColumn = nestedLeadingSpaces + nestedItem.indentColumn;

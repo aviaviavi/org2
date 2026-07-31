@@ -179,6 +179,25 @@ const tabPreview = spawnSync(
 assert.equal(tabPreview.status, 0, tabPreview.stderr);
 assert.match(tabPreview.stdout, /<blockquote class="org2-quote"[^>]*>  Best,\n  Avi<\/blockquote>/);
 
+const nestedListQuoteSource = `1. Deepgram
+   - Gmail draft: draft-id
+   - Subject: SDK follow-up
+   #+begin_quote
+   Hi Greg,
+
+   A short readout would be useful.
+
+   Avi
+   #+end_quote
+`;
+const nestedListQuoteDocument = parseOrgToCanonicalAst(nestedListQuoteSource, { sourceRanges: true });
+const nestedListQuoteRendered = renderOrgDocumentToAppHtml(nestedListQuoteDocument);
+assert.match(
+  nestedListQuoteRendered.html,
+  /<blockquote class="org2-quote"[^>]*>Hi Greg,\n\nA short readout would be useful\.\n\nAvi<\/blockquote>/
+);
+assert.doesNotMatch(nestedListQuoteRendered.html, /#\+begin_quote|#\+end_quote/);
+
 const chartSource = `* Metrics
 
 #+name: package_fetches

@@ -1097,15 +1097,12 @@ private struct OpenClawSidebarThreadRow: View {
       }
     }
     .padding(.trailing, 6)
-    .background(
-      isSelected ? WorkspaceDesign.selectedFill : Color.clear,
-      in: RoundedRectangle(cornerRadius: WorkspaceDesign.controlRadius, style: .continuous)
+    .workspaceSelectableRow(
+      isSelected: isSelected,
+      leadingPadding: 0,
+      trailingPadding: 0,
+      cornerRadius: WorkspaceDesign.controlRadius
     )
-    .overlay(alignment: .leading) {
-      if isSelected {
-        WorkspaceSelectionMarker()
-      }
-    }
     .contentShape(Rectangle())
     .onHover { hovered in
       withAnimation(.easeOut(duration: 0.12)) {
@@ -1292,19 +1289,7 @@ private struct ReadableListSelectionModifier: ViewModifier {
 
   func body(content: Content) -> some View {
     content
-      .padding(.horizontal, 10)
-      .padding(.vertical, verticalPadding)
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .background(
-        isSelected ? WorkspaceDesign.selectedFill : Color.clear,
-        in: RoundedRectangle(cornerRadius: 8, style: .continuous)
-      )
-      .overlay(alignment: .leading) {
-        if isSelected {
-          WorkspaceSelectionMarker()
-        }
-      }
-      .accessibilityAddTraits(isSelected ? .isSelected : [])
+      .workspaceSelectableRow(isSelected: isSelected, verticalPadding: verticalPadding)
   }
 }
 
@@ -2714,20 +2699,8 @@ private struct RunCenterRow: View {
       }
       .font(.caption).foregroundStyle(.secondary).lineLimit(1)
     }
-    .padding(.horizontal, 10)
-    .padding(.vertical, 8)
-    .frame(maxWidth: .infinity, alignment: .leading)
-    .background(
-      isSelected ? Color.accentColor.opacity(0.09) : Color.clear,
-      in: RoundedRectangle(cornerRadius: 8, style: .continuous)
-    )
-    .overlay(alignment: .leading) {
-      if isSelected {
-        WorkspaceSelectionMarker()
-      }
-    }
+    .workspaceSelectableRow(isSelected: isSelected, verticalPadding: 8)
     .contentShape(Rectangle())
-    .accessibilityAddTraits(isSelected ? .isSelected : [])
     .accessibilityHint(sourceMeeting.map { "Meeting outcome from \($0.displayTitle)" } ?? "")
   }
 }
@@ -3746,19 +3719,7 @@ private struct ApprovalRow: View {
       }
       .controlSize(.small)
     }
-    .padding(.horizontal, 10)
-    .padding(.vertical, 8)
-    .frame(maxWidth: .infinity, alignment: .leading)
-    .background(
-      isSelected ? WorkspaceDesign.selectedFill : Color.clear,
-      in: RoundedRectangle(cornerRadius: 8, style: .continuous)
-    )
-    .overlay(alignment: .leading) {
-      if isSelected {
-        WorkspaceSelectionMarker()
-      }
-    }
-    .accessibilityAddTraits(isSelected ? .isSelected : [])
+    .workspaceSelectableRow(isSelected: isSelected, verticalPadding: 8)
   }
 }
 
@@ -4169,19 +4130,10 @@ private struct AgendaRow: View, Equatable {
         isPersonalAssigned: isPersonalAssigned
       )
     }
-    .padding(.horizontal, 10)
-    .padding(.vertical, WorkspaceDesign.rowVerticalPadding)
-    .frame(maxWidth: .infinity, alignment: .leading)
-    .background(
-      isSelected ? WorkspaceDesign.selectedFill : Color.clear,
-      in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+    .workspaceSelectableRow(
+      isSelected: isSelected,
+      verticalPadding: WorkspaceDesign.rowVerticalPadding
     )
-    .overlay(alignment: .leading) {
-      if isSelected {
-        WorkspaceSelectionMarker()
-      }
-    }
-    .accessibilityAddTraits(isSelected ? .isSelected : [])
   }
 }
 
@@ -6583,19 +6535,11 @@ private struct AssignedWorkRow: View {
       }
       Spacer(minLength: 0)
     }
-    .padding(.horizontal, WorkspaceDesign.contentInset)
-    .padding(.vertical, WorkspaceDesign.rowVerticalPadding)
-    .frame(maxWidth: .infinity, alignment: .leading)
-    .background(
-      isSelected ? WorkspaceDesign.selectedFill : Color.clear,
-      in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+    .workspaceSelectableRow(
+      isSelected: isSelected,
+      trailingPadding: WorkspaceDesign.contentInset,
+      verticalPadding: WorkspaceDesign.rowVerticalPadding
     )
-    .overlay(alignment: .leading) {
-      if isSelected {
-        WorkspaceSelectionMarker()
-      }
-    }
-    .accessibilityAddTraits(isSelected ? .isSelected : [])
   }
 }
 

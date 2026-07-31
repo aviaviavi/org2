@@ -65,4 +65,30 @@ assert.equal(block.terminated, true);
 
 assert.equal(printCanonicalAstToOrg(ast), input.replace("- [x] Lowercase checked", "- [X] Lowercase checked"));
 
+const nestedListThenQuoteInput = `1. Deepgram
+   - Gmail draft: draft-id
+   - Subject: SDK follow-up
+   #+begin_quote
+   Hi Greg,
+
+   A short readout would be useful.
+
+   Avi
+   #+end_quote
+`;
+const nestedListThenQuoteAst = parseOrgToCanonicalAst(nestedListThenQuoteInput);
+const orderedList = nestedListThenQuoteAst.children[0];
+assert.equal(orderedList.type, "List");
+assert.equal(orderedList.items.length, 1);
+const quotedItem = orderedList.items[0];
+assert.equal(quotedItem.children[1]?.type, "List");
+assert.equal(quotedItem.children[2]?.type, "Block");
+assert.equal(quotedItem.children[2]?.kind, "quote");
+assert.equal(quotedItem.children[2]?.terminated, true);
+assert.equal(
+  printCanonicalAstToOrg(nestedListThenQuoteAst),
+  nestedListThenQuoteInput.replaceAll("\n\n", "\n   \n"),
+  "printing should preserve the quote and normalize its blank lines to the containing list indentation"
+);
+
 console.log("✓ parser-list-items");

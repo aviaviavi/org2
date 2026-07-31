@@ -8,8 +8,7 @@ enum WorkspaceDesign {
   static let rowVerticalPadding: CGFloat = 8
   static let headerHorizontalInset: CGFloat = 16
   static let headerVerticalInset: CGFloat = 11
-  static let selectionMarkerLeadingInset: CGFloat = 4
-  static let selectionMarkerWidth: CGFloat = 14
+  static let selectionMarkerGutterWidth: CGFloat = 22
   static let selectionMarkerVerticalOffset: CGFloat = -1
 
   // AppKit's semantic label colors can become extremely faint when a hosted
@@ -142,10 +141,36 @@ struct WorkspaceSelectionMarker: View {
     Text(WorkspaceSyntax.selectionMarker)
       .font(.system(size: 12, weight: .bold, design: .monospaced))
       .foregroundStyle(Color.accentColor)
-      .frame(width: WorkspaceDesign.selectionMarkerWidth, height: 20, alignment: .center)
-      .padding(.leading, WorkspaceDesign.selectionMarkerLeadingInset)
+      .frame(width: WorkspaceDesign.selectionMarkerGutterWidth, height: 20, alignment: .center)
       .offset(y: WorkspaceDesign.selectionMarkerVerticalOffset)
       .accessibilityHidden(true)
+  }
+}
+
+struct WorkspaceSelectableRowModifier: ViewModifier {
+  let isSelected: Bool
+  var leadingPadding = WorkspaceDesign.selectionMarkerGutterWidth
+  var trailingPadding: CGFloat = 10
+  var verticalPadding: CGFloat = 0
+  var cornerRadius: CGFloat = 8
+  var selectedFill = WorkspaceDesign.selectedFill
+
+  func body(content: Content) -> some View {
+    content
+      .padding(.leading, leadingPadding)
+      .padding(.trailing, trailingPadding)
+      .padding(.vertical, verticalPadding)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .background(
+        isSelected ? selectedFill : Color.clear,
+        in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+      )
+      .overlay(alignment: .leading) {
+        if isSelected {
+          WorkspaceSelectionMarker()
+        }
+      }
+      .accessibilityAddTraits(isSelected ? .isSelected : [])
   }
 }
 
@@ -377,6 +402,24 @@ struct WorkspaceCardSurface: ViewModifier {
 }
 
 extension View {
+  func workspaceSelectableRow(
+    isSelected: Bool,
+    leadingPadding: CGFloat = WorkspaceDesign.selectionMarkerGutterWidth,
+    trailingPadding: CGFloat = 10,
+    verticalPadding: CGFloat = 0,
+    cornerRadius: CGFloat = 8,
+    selectedFill: Color = WorkspaceDesign.selectedFill
+  ) -> some View {
+    modifier(WorkspaceSelectableRowModifier(
+      isSelected: isSelected,
+      leadingPadding: leadingPadding,
+      trailingPadding: trailingPadding,
+      verticalPadding: verticalPadding,
+      cornerRadius: cornerRadius,
+      selectedFill: selectedFill
+    ))
+  }
+
   func workspaceCardSurface() -> some View {
     modifier(WorkspaceCardSurface())
   }

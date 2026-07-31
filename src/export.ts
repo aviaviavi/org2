@@ -1398,7 +1398,7 @@ function renderEmbeddedChart(chart: OrgEmbeddedChart, sourceAttributes = ""): st
 
 function renderBlock(node: BlockNode, context: RenderContext): string {
   const bodyRaw = node.bodyRaw.replace(/\n$/, "");
-  const body = escapeHtml(bodyRaw);
+  const body = escapeHtml(node.kind === "quote" ? dedentBlockBody(bodyRaw, node.begin.indent) : bodyRaw);
 
   if (node.kind === "quote") {
     const appClass = context.profile === "app" ? ' class="org2-quote"' : "";
@@ -1413,6 +1413,14 @@ function renderBlock(node: BlockNode, context: RenderContext): string {
     return `<pre class="org2-export">${body}</pre>`;
   }
   return `<pre class="org2-example">${body}</pre>`;
+}
+
+function dedentBlockBody(bodyRaw: string, indent: string): string {
+  if (!indent) return bodyRaw;
+  return bodyRaw
+    .split("\n")
+    .map((line) => line.startsWith(indent) ? line.slice(indent.length) : line)
+    .join("\n");
 }
 
 function renderTableRow(row: TableRowNode, asHeader: boolean, context: RenderContext): string {

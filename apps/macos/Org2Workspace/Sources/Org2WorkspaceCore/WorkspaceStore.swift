@@ -1609,6 +1609,16 @@ public final class WorkspaceStore: ObservableObject {
       }) ?? visibleAgendaItems.first {
         selectAgendaItem(item)
       }
+    case "assigned":
+      selectedSurface = .agenda
+      agendaMode = .assigned
+      if let item = visibleAssignedWorkItems.first(where: { item in
+        guard let target, !target.isEmpty else { return true }
+        return item.headline.lowercased().contains(target)
+          || item.status.lowercased().contains(target)
+      }) ?? visibleAssignedWorkItems.first {
+        selectAssignedWorkItem(item)
+      }
     case "approvals":
       selectedSurface = .approvals
       if let item = visibleApprovalItems.first(where: { item in
@@ -1618,6 +1628,27 @@ public final class WorkspaceStore: ObservableObject {
           || item.file.lowercased().contains(target)
       }) ?? visibleApprovalItems.first {
         selectApprovalItem(item)
+      }
+    case "review":
+      selectedSurface = .approvals
+      runsAndReviewPage = .review
+      if let item = visibleApprovalItems.first(where: { item in
+        guard let target, !target.isEmpty else { return true }
+        return item.title.lowercased().contains(target)
+          || item.status.lowercased().contains(target)
+          || item.file.lowercased().contains(target)
+      }) ?? visibleApprovalItems.first {
+        selectApprovalItem(item)
+      }
+    case "workflows":
+      selectedSurface = .approvals
+      runsAndReviewPage = .workflows
+      if let workflow = agentWorkflows.first(where: { workflow in
+        guard let target, !target.isEmpty else { return true }
+        return workflow.title.lowercased().contains(target)
+          || workflow.file.lowercased().contains(target)
+      }) ?? agentWorkflows.first {
+        selectAgentWorkflow(workflow)
       }
     case "openclaw", "chat":
       selectedSurface = .openClaw
