@@ -149,6 +149,7 @@ struct WorkspaceSelectionMarker: View {
 
 struct WorkspaceSelectableRowModifier: ViewModifier {
   let isSelected: Bool
+  var showsSelectionMarker = true
   var leadingPadding = WorkspaceDesign.selectionMarkerGutterWidth
   var trailingPadding: CGFloat = 10
   var verticalPadding: CGFloat = 0
@@ -166,7 +167,7 @@ struct WorkspaceSelectableRowModifier: ViewModifier {
         in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
       )
       .overlay(alignment: .leading) {
-        if isSelected {
+        if isSelected && showsSelectionMarker {
           WorkspaceSelectionMarker()
         }
       }
@@ -404,6 +405,7 @@ struct WorkspaceCardSurface: ViewModifier {
 extension View {
   func workspaceSelectableRow(
     isSelected: Bool,
+    showsSelectionMarker: Bool = true,
     leadingPadding: CGFloat = WorkspaceDesign.selectionMarkerGutterWidth,
     trailingPadding: CGFloat = 10,
     verticalPadding: CGFloat = 0,
@@ -412,6 +414,7 @@ extension View {
   ) -> some View {
     modifier(WorkspaceSelectableRowModifier(
       isSelected: isSelected,
+      showsSelectionMarker: showsSelectionMarker,
       leadingPadding: leadingPadding,
       trailingPadding: trailingPadding,
       verticalPadding: verticalPadding,

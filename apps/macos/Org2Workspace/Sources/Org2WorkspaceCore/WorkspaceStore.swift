@@ -1218,6 +1218,7 @@ public final class WorkspaceStore: ObservableObject {
   private let personalAssigneeNamesKey = "Org2Workspace.personalAssigneeNames"
   private let openClawRemoteCorpusPathKey = "Org2Workspace.openClawRemoteCorpusPath"
   private let openClawRemoteCorpusPathsByCorpusKey = "Org2Workspace.openClawRemoteCorpusPathsByCorpus.v1"
+  private let selectedAIChatThreadsByTranscriptKey = "Org2Workspace.aiChat.selectedThreadsByTranscript.v1"
   private let aiChatCorpusAccessScopeKey = "Org2Workspace.aiChat.corpusAccessScope.v1"
   private let aiChatCustomInstructionsKey = "Org2Workspace.aiChat.customInstructions.v1"
   private let openClawBriefsStartNewThreadKey = "Org2Workspace.openClawBriefsStartNewThread"
@@ -1289,6 +1290,10 @@ public final class WorkspaceStore: ObservableObject {
   private var codexActiveTurnsByThreadID: [UUID: (runtimeThreadID: String, turnID: String)] = [:]
   private var codexLocalThreadIDsByRuntimeThreadID: [String: UUID] = [:]
   private var openClawRecoveryRetryTask: Task<Void, Never>?
+  private var deferredOpenClawTranscriptPersistenceTask: Task<Void, Never>?
+  private var openClawTranscriptPersistenceGeneration: UInt64 = 0
+  var openClawTranscriptPersistenceDelayNanoseconds: UInt64 = 250_000_000
+  var openClawTranscriptSaverForTesting: (() throws -> Void)?
   private var openClawLocalEditBroker: OpenClawLocalEditBroker?
   private var openClawLocalEditCorpusRootsByTurnID: [String: URL] = [:]
   private var aiChatReadCorpusRootsByTurnID: [String: Set<String>] = [:]
@@ -13552,7 +13557,8 @@ public final class WorkspaceStore: ObservableObject {
     createOpenClawChatThread(
       title: "New Chat",
       statusText: "New \(runtime.title) chat",
-      runtime: runtime
+      runtime: runtime,
+      defersPersistence: true
     )
   }
 
@@ -13562,7 +13568,8 @@ public final class WorkspaceStore: ObservableObject {
     statusText: String,
     resource: OpenClawResourceReference? = nil,
     sessionKey: String? = nil,
-    runtime: AIChatRuntime = .openClaw
+    runtime: AIChatRuntime = .openClaw,
+    defersPersistence: Bool = false
   ) -> OpenClawChatThread {
     let thread = OpenClawChatThread(
       title: title,
@@ -13572,7 +13579,12 @@ public final class WorkspaceStore: ObservableObject {
     )
     openClawChatThreads.insert(thread, at: 0)
     selectOpenClawChatThread(thread.id, persistsSelection: false)
-    persistOpenClawTranscript()
+    persistSelectedAIChatThread()
+    if defersPersistence {
+      scheduleOpenClawTranscriptPersistenceAfterInteraction()
+    } else {
+      persistOpenClawTranscript()
+    }
     openClawStatusText = statusText
     return thread
   }
@@ -13778,7 +13790,8 @@ public final class WorkspaceStore: ObservableObject {
     openClawChatSelectionGeneration &+= 1
     replaceOpenClawMessages(thread.messages, shouldPersist: false)
     if persistsSelection {
-      persistOpenClawTranscript()
+      persistSelectedAIChatThread()
+      scheduleOpenClawTranscriptPersistenceAfterInteraction()
     }
   }
 
@@ -18509,7 +18522,18 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   private func persistOpenClawTranscript() {
+    openClawTranscriptPersistenceGeneration &+= 1
+    deferredOpenClawTranscriptPersistenceTask?.cancel()
+    deferredOpenClawTranscriptPersistenceTask = nil
+    persistOpenClawTranscriptNow()
+  }
+
+  private func persistOpenClawTranscriptNow() {
     do {
+      if let openClawTranscriptSaverForTesting {
+        try openClawTranscriptSaverForTesting()
+        return
+      }
       try Self.saveOpenClawTranscript(
         OpenClawTranscriptState(
           threads: openClawChatThreads,
@@ -18523,11 +18547,90 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
+  private func scheduleOpenClawTranscriptPersistenceAfterInteraction() {
+    openClawTranscriptPersistenceGeneration &+= 1
+    let generation = openClawTranscriptPersistenceGeneration
+    deferredOpenClawTranscriptPersistenceTask?.cancel()
+    deferredOpenClawTranscriptPersistenceTask = Task { @MainActor [weak self] in
+      guard let self else { return }
+      do {
+        try await Task.sleep(nanoseconds: self.openClawTranscriptPersistenceDelayNanoseconds)
+      } catch {
+        return
+      }
+      guard !Task.isCancelled else { return }
+      if let openClawTranscriptSaverForTesting = self.openClawTranscriptSaverForTesting {
+        do {
+          try openClawTranscriptSaverForTesting()
+        } catch {
+          self.errorText = "OpenClaw transcript save failed: \(error.localizedDescription)"
+        }
+        if generation == self.openClawTranscriptPersistenceGeneration {
+          self.deferredOpenClawTranscriptPersistenceTask = nil
+        }
+        return
+      }
+      let transcript = OpenClawTranscriptState(
+        threads: self.openClawChatThreads,
+        selectedThreadID: self.selectedOpenClawChatThreadID,
+        settlementSettings: self.openClawThreadSettlementSettings
+      )
+      let transcriptURL = self.openClawTranscriptURL
+      do {
+        let data = try await Task.detached(priority: .utility) {
+          try Self.encodedOpenClawTranscript(transcript)
+        }.value
+        guard !Task.isCancelled,
+              generation == self.openClawTranscriptPersistenceGeneration
+        else {
+          return
+        }
+        try Self.writeOpenClawTranscriptData(data, to: transcriptURL)
+        self.deferredOpenClawTranscriptPersistenceTask = nil
+      } catch is CancellationError {
+        return
+      } catch {
+        guard generation == self.openClawTranscriptPersistenceGeneration else { return }
+        self.deferredOpenClawTranscriptPersistenceTask = nil
+        self.errorText = "OpenClaw transcript save failed: \(error.localizedDescription)"
+      }
+    }
+  }
+
+  public func flushDeferredAIChatTranscriptPersistence() {
+    guard deferredOpenClawTranscriptPersistenceTask != nil else { return }
+    persistOpenClawTranscript()
+  }
+
+  private func persistSelectedAIChatThread() {
+    let transcriptPath = openClawTranscriptURL.standardizedFileURL.path
+    var selections = defaults.dictionary(forKey: selectedAIChatThreadsByTranscriptKey)
+      as? [String: String] ?? [:]
+    if let selectedOpenClawChatThreadID {
+      selections[transcriptPath] = selectedOpenClawChatThreadID.uuidString.lowercased()
+    } else {
+      selections.removeValue(forKey: transcriptPath)
+    }
+    defaults.set(selections, forKey: selectedAIChatThreadsByTranscriptKey)
+  }
+
+  private func restoredSelectedAIChatThreadID() -> UUID? {
+    let transcriptPath = openClawTranscriptURL.standardizedFileURL.path
+    guard let selections = defaults.dictionary(forKey: selectedAIChatThreadsByTranscriptKey)
+      as? [String: String],
+          let rawID = selections[transcriptPath]
+    else {
+      return nil
+    }
+    return UUID(uuidString: rawID)
+  }
+
   private func switchOpenClawTranscript(to url: URL, migrationSource: URL? = nil) {
     guard !usesFixedOpenClawTranscriptURL else { return }
     let targetURL = url.standardizedFileURL
     let previousURL = openClawTranscriptURL.standardizedFileURL
     guard targetURL.path != previousURL.path else { return }
+    flushDeferredAIChatTranscriptPersistence()
 
     let transcript: OpenClawTranscriptState
     let shouldPersistMigratedMessages: Bool
@@ -18591,8 +18694,9 @@ public final class WorkspaceStore: ObservableObject {
       pair.0.sessionKey != pair.1.sessionKey
     }
     openClawChatThreads = Self.sortedOpenClawChatThreadsForDisplay(migratedThreads)
-    let selectedID = transcript.selectedThreadID
-      .flatMap { id in openClawChatThreads.contains(where: { $0.id == id }) ? id : nil }
+    let selectedID = [restoredSelectedAIChatThreadID(), transcript.selectedThreadID]
+      .compactMap { $0 }
+      .first { id in openClawChatThreads.contains(where: { $0.id == id }) }
       ?? openClawChatThreads.first?.id
     selectedOpenClawChatThreadID = selectedID
     let autoSettledIDs = autoSettleOpenClawChatThreads(shouldPersist: false)
@@ -19588,8 +19692,9 @@ public final class WorkspaceStore: ObservableObject {
     )
   }
 
-  nonisolated private static func saveOpenClawTranscript(_ transcript: OpenClawTranscriptState, to url: URL) throws {
-    try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+  nonisolated private static func encodedOpenClawTranscript(
+    _ transcript: OpenClawTranscriptState
+  ) throws -> Data {
     let payload = OpenClawTranscriptPayload(
       version: 6,
       messages: nil,
@@ -19599,9 +19704,17 @@ public final class WorkspaceStore: ObservableObject {
     )
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-    let data = try encoder.encode(payload)
+    return try encoder.encode(payload)
+  }
+
+  nonisolated private static func writeOpenClawTranscriptData(_ data: Data, to url: URL) throws {
+    try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
     try data.write(to: url, options: [.atomic])
     try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+  }
+
+  nonisolated private static func saveOpenClawTranscript(_ transcript: OpenClawTranscriptState, to url: URL) throws {
+    try writeOpenClawTranscriptData(encodedOpenClawTranscript(transcript), to: url)
   }
 
   nonisolated private static func openClawTranscriptState(fromLegacyMessages messages: [OpenClawChatMessage]) -> OpenClawTranscriptState {
@@ -24423,7 +24536,7 @@ private enum OpenClawPendingTurnUpdate {
   case replace(OpenClawPendingTurn?)
 }
 
-private struct OpenClawTranscriptState {
+private struct OpenClawTranscriptState: Sendable {
   let threads: [OpenClawChatThread]
   let selectedThreadID: UUID?
   let settlementSettings: OpenClawThreadSettlementSettings

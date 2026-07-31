@@ -81,6 +81,9 @@ public struct ContentView: View {
         store.openChatFileReference(reference)
       }
       .environment(\.orgRoamLinkResolver, store.orgRoamLinkResolver)
+      .onDisappear {
+        store.flushDeferredAIChatTranscriptPersistence()
+      }
       .sheet(isPresented: $store.isQuickOpenPresented) {
         QuickOpenView()
           .environmentObject(store)
@@ -4077,14 +4080,14 @@ private struct AgendaRow: View, Equatable {
       Button {
         toggleBulkSelection()
       } label: {
-        Image(systemName: isBulkSelected ? "checkmark.square.fill" : "square")
-          .font(.body)
-          .foregroundStyle(isBulkSelected ? Color.accentColor : Color.secondary)
-          .frame(width: 18, height: 18)
-          .contentShape(Rectangle())
+        AgendaBulkSelectionCheckbox(
+          isChecked: isBulkSelected,
+          isEnabled: isEditable
+        )
       }
       .buttonStyle(.plain)
       .disabled(!isEditable)
+      .accessibilityLabel(isBulkSelected ? "Remove from bulk selection" : "Add to bulk selection")
       .help(isBulkSelected ? "Remove from bulk selection" : "Add to bulk selection")
       .padding(.top, 1)
 
@@ -4132,8 +4135,40 @@ private struct AgendaRow: View, Equatable {
     }
     .workspaceSelectableRow(
       isSelected: isSelected,
+      showsSelectionMarker: false,
+      leadingPadding: 10,
       verticalPadding: WorkspaceDesign.rowVerticalPadding
     )
+  }
+}
+
+private struct AgendaBulkSelectionCheckbox: View {
+  let isChecked: Bool
+  let isEnabled: Bool
+
+  var body: some View {
+    ZStack {
+      RoundedRectangle(cornerRadius: 4, style: .continuous)
+        .fill(isChecked ? Color.accentColor : WorkspaceDesign.controlFill)
+        .overlay {
+          RoundedRectangle(cornerRadius: 4, style: .continuous)
+            .stroke(
+              isChecked ? Color.accentColor : WorkspaceDesign.structuralAccent.opacity(0.48),
+              lineWidth: 1
+            )
+        }
+
+      if isChecked {
+        Image(systemName: "checkmark")
+          .font(.system(size: 9, weight: .bold))
+          .foregroundStyle(.white)
+      }
+    }
+    .frame(width: 16, height: 16)
+    .frame(width: 18, height: 18)
+    .contentShape(Rectangle())
+    .opacity(isEnabled ? 1 : 0.5)
+    .accessibilityHidden(true)
   }
 }
 

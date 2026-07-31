@@ -1400,6 +1400,75 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testSelectingChatThreadAvoidsFullTranscriptRewriteAndStillRestoresSelection() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-fast-chat-selection-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let transcript = root.appendingPathComponent("openclaw-chat.json")
+    let suiteName = "org2-workspace-fast-chat-selection-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: transcript
+    )
+    store.openClawMessages = [OpenClawChatMessage(role: .user, content: "First thread")]
+    let firstThreadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
+    store.createOpenClawChatThread()
+    store.openClawMessages = [OpenClawChatMessage(role: .user, content: "Second thread")]
+
+    var fullTranscriptSaveCount = 0
+    store.openClawTranscriptPersistenceDelayNanoseconds = 20_000_000
+    store.openClawTranscriptSaverForTesting = {
+      fullTranscriptSaveCount += 1
+    }
+    store.selectOpenClawChatThread(firstThreadID)
+
+    XCTAssertEqual(fullTranscriptSaveCount, 0)
+    XCTAssertEqual(store.selectedOpenClawChatThreadID, firstThreadID)
+    let restored = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: transcript
+    )
+    XCTAssertEqual(restored.selectedOpenClawChatThreadID, firstThreadID)
+    XCTAssertEqual(restored.openClawMessages.map(\.content), ["First thread"])
+    try await waitForCondition(timeout: 1) {
+      fullTranscriptSaveCount == 1
+    }
+    XCTAssertEqual(fullTranscriptSaveCount, 1)
+  }
+
+  @MainActor
+  func testCreatingEmptyChatDefersAndCoalescesTranscriptPersistence() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-deferred-chat-create-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json")
+    )
+    store.openClawTranscriptPersistenceDelayNanoseconds = 20_000_000
+    var fullTranscriptSaveCount = 0
+    store.openClawTranscriptSaverForTesting = {
+      fullTranscriptSaveCount += 1
+    }
+
+    store.createOpenClawChatThread()
+    store.createOpenClawChatThread()
+
+    XCTAssertEqual(fullTranscriptSaveCount, 0)
+    try await waitForCondition(timeout: 1) {
+      fullTranscriptSaveCount == 1
+    }
+    XCTAssertEqual(fullTranscriptSaveCount, 1)
+    XCTAssertEqual(store.openClawChatThreads.count, 2)
+  }
+
+  @MainActor
   func testCanonicalResourceThreadIsCreatedOnceAndPersists() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-resource-thread-\(UUID().uuidString)", isDirectory: true)
