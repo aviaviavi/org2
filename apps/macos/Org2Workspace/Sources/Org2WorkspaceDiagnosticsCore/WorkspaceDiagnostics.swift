@@ -280,6 +280,48 @@ public struct WorkspaceDiagnosticsResourceSample: Equatable, Codable, Sendable {
   }
 }
 
+struct WorkspaceDiagnosticsPollObservation: Equatable, Sendable {
+  let heartbeatGapSeconds: Double?
+  let resumedAfterInterruption: Bool
+}
+
+struct WorkspaceDiagnosticsPollContinuity: Sendable {
+  let expectedIntervalSeconds: Double
+  private var lastPollAt: Date?
+
+  init(expectedIntervalSeconds: Double) {
+    self.expectedIntervalSeconds = expectedIntervalSeconds
+  }
+
+  mutating func observe(
+    at date: Date,
+    lastAcknowledgementAt: Date?,
+    hasReceivedHeartbeat: Bool
+  ) -> WorkspaceDiagnosticsPollObservation {
+    let resumedAfterInterruption = lastPollAt.map {
+      date.timeIntervalSince($0) > interruptionThresholdSeconds
+    } ?? false
+    lastPollAt = date
+    let heartbeatGap = hasReceivedHeartbeat
+      ? lastAcknowledgementAt.map {
+        resumedAfterInterruption ? 0 : max(0, date.timeIntervalSince($0))
+      }
+      : nil
+    return WorkspaceDiagnosticsPollObservation(
+      heartbeatGapSeconds: heartbeatGap,
+      resumedAfterInterruption: resumedAfterInterruption
+    )
+  }
+
+  mutating func reset() {
+    lastPollAt = nil
+  }
+
+  private var interruptionThresholdSeconds: Double {
+    max(expectedIntervalSeconds * 3, expectedIntervalSeconds + 2)
+  }
+}
+
 public struct WorkspaceDiagnosticsTriggerEvaluator: Sendable {
   public var hangThresholdSeconds: Double
   public var cpuThresholdPercent: Double
@@ -550,6 +592,7 @@ public final class WorkspaceDiagnosticsMonitor: NSObject, @unchecked Sendable {
   private let corpus: WorkspaceDiagnosticsCorpus
   private let center: DistributedNotificationCenter
   private var evaluator: WorkspaceDiagnosticsTriggerEvaluator
+  private var pollContinuity: WorkspaceDiagnosticsPollContinuity
   private var targetApplication: NSRunningApplication?
   private var targetPID: pid_t?
   private var lastAcknowledgementAt: Date?
@@ -575,6 +618,9 @@ public final class WorkspaceDiagnosticsMonitor: NSObject, @unchecked Sendable {
       cpuThresholdDurationSeconds: options.cpuThresholdDurationSeconds,
       memoryThresholdBytes: UInt64(options.memoryThresholdMegabytes * 1_048_576),
       cooldownSeconds: options.cooldownSeconds
+    )
+    self.pollContinuity = WorkspaceDiagnosticsPollContinuity(
+      expectedIntervalSeconds: options.pollIntervalSeconds
     )
     super.init()
   }
@@ -619,15 +665,27 @@ public final class WorkspaceDiagnosticsMonitor: NSObject, @unchecked Sendable {
     }
 
     let now = Date()
+    let pollObservation = pollContinuity.observe(
+      at: now,
+      lastAcknowledgementAt: lastAcknowledgementAt,
+      hasReceivedHeartbeat: hasReceivedHeartbeat
+    )
+    if pollObservation.resumedAfterInterruption {
+      // The helper cannot observe target responsiveness while its own timer is
+      // suspended, including during system sleep. Start a fresh sample window.
+      lastAcknowledgementAt = now
+      pendingHeartbeatNonces = []
+      previousCPUReading = nil
+      resourceSamples = []
+      evaluator.resetTarget()
+    }
     sendHeartbeatPing(to: pid)
     guard let processReading = Self.readProcess(pid: pid, at: now) else {
       clearTargetIfNeeded()
       return
     }
     let cpuPercent = cpuPercent(for: processReading)
-    let heartbeatGap = hasReceivedHeartbeat
-      ? lastAcknowledgementAt.map { now.timeIntervalSince($0) }
-      : nil
+    let heartbeatGap = pollObservation.heartbeatGapSeconds
     if !hasReceivedHeartbeat,
        !didReportMissingHeartbeatSupport,
        let startedAt = lastAcknowledgementAt,
@@ -691,6 +749,7 @@ public final class WorkspaceDiagnosticsMonitor: NSObject, @unchecked Sendable {
     pendingHeartbeatNonces = []
     previousCPUReading = nil
     resourceSamples = []
+    pollContinuity.reset()
     evaluator.resetTarget()
     print("Monitoring \(application.localizedName ?? options.bundleIdentifier) (PID \(application.processIdentifier)); incidents → raw/diagnostics/org2-workspace in corpus \(corpus.id)")
   }
@@ -706,6 +765,7 @@ public final class WorkspaceDiagnosticsMonitor: NSObject, @unchecked Sendable {
     pendingHeartbeatNonces = []
     previousCPUReading = nil
     resourceSamples = []
+    pollContinuity.reset()
     evaluator.resetTarget()
   }
 

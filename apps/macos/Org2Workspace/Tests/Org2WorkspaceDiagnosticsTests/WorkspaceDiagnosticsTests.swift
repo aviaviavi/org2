@@ -88,6 +88,53 @@ final class WorkspaceDiagnosticsTests: XCTestCase {
     )))
   }
 
+  func testPollingInterruptionDoesNotBecomeAnUnresponsiveIncident() {
+    let start = Date(timeIntervalSince1970: 1_800_000_000)
+    var continuity = WorkspaceDiagnosticsPollContinuity(expectedIntervalSeconds: 1)
+    var evaluator = WorkspaceDiagnosticsTriggerEvaluator(
+      hangThresholdSeconds: 5,
+      cpuThresholdPercent: 0,
+      cpuThresholdDurationSeconds: 15,
+      memoryThresholdBytes: 0,
+      cooldownSeconds: 0
+    )
+
+    _ = continuity.observe(
+      at: start,
+      lastAcknowledgementAt: start,
+      hasReceivedHeartbeat: true
+    )
+    let continuousPoll = continuity.observe(
+      at: start.addingTimeInterval(1),
+      lastAcknowledgementAt: start,
+      hasReceivedHeartbeat: true
+    )
+    XCTAssertFalse(continuousPoll.resumedAfterInterruption)
+    XCTAssertEqual(continuousPoll.heartbeatGapSeconds, 1)
+
+    let afterSleep = start.addingTimeInterval(1_038.5)
+    let resumedPoll = continuity.observe(
+      at: afterSleep,
+      lastAcknowledgementAt: start,
+      hasReceivedHeartbeat: true
+    )
+    XCTAssertTrue(resumedPoll.resumedAfterInterruption)
+    XCTAssertEqual(resumedPoll.heartbeatGapSeconds, 0)
+    XCTAssertNil(evaluator.evaluate(sample(
+      at: afterSleep,
+      cpu: 0,
+      heartbeatGap: resumedPoll.heartbeatGapSeconds
+    )))
+
+    let nextPoll = continuity.observe(
+      at: afterSleep.addingTimeInterval(1),
+      lastAcknowledgementAt: afterSleep,
+      hasReceivedHeartbeat: true
+    )
+    XCTAssertFalse(nextPoll.resumedAfterInterruption)
+    XCTAssertEqual(nextPoll.heartbeatGapSeconds, 1)
+  }
+
   func testSustainedCPURequiresFullDuration() {
     let start = Date(timeIntervalSince1970: 1_800_000_000)
     var evaluator = WorkspaceDiagnosticsTriggerEvaluator(
