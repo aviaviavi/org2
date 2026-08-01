@@ -3,11 +3,13 @@ import SwiftUI
 @main
 struct Org2MobileApp: App {
   @StateObject private var store = CorpusStore()
+  @StateObject private var mobileRemote = MobileRemoteStore()
 
   var body: some Scene {
     WindowGroup {
       StartupHostView()
         .environmentObject(store)
+        .environmentObject(mobileRemote)
     }
   }
 }

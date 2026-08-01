@@ -5,13 +5,7 @@ struct ContentView: View {
   @EnvironmentObject private var store: CorpusStore
 
   var body: some View {
-    Group {
-      if store.rootURL == nil {
-        EmptyCorpusView()
-      } else {
-        WorkspaceTabs()
-      }
-    }
+    WorkspaceTabs()
     .sheet(isPresented: $store.isDocumentPickerPresented) {
       CorpusFolderPicker { url in
         Task { await store.selectCorpus(url) }
@@ -64,7 +58,7 @@ private struct WorkspaceTabs: View {
 
   var body: some View {
     TabView(selection: $selection) {
-      NewNoteView()
+      NewNoteTabView()
         .tabItem { Label("New Note", systemImage: "square.and.pencil") }
         .tag(WorkspaceTab.newNote)
 
@@ -75,6 +69,22 @@ private struct WorkspaceTabs: View {
       ApprovalsView()
         .tabItem { Label("Approvals", systemImage: "checkmark.seal") }
         .tag(WorkspaceTab.approvals)
+
+      MobileRemoteRootView()
+        .tabItem { Label("Remote", systemImage: "desktopcomputer") }
+        .tag(WorkspaceTab.remote)
+    }
+  }
+}
+
+private struct NewNoteTabView: View {
+  @EnvironmentObject private var store: CorpusStore
+
+  var body: some View {
+    if store.rootURL == nil {
+      EmptyCorpusView()
+    } else {
+      NewNoteView()
     }
   }
 }
@@ -83,6 +93,7 @@ private enum WorkspaceTab: Hashable {
   case newNote
   case agenda
   case approvals
+  case remote
 
   static var initialSelection: WorkspaceTab {
     #if DEBUG
@@ -91,6 +102,8 @@ private enum WorkspaceTab: Hashable {
       return .agenda
     case "approvals":
       return .approvals
+    case "remote":
+      return .remote
     default:
       return .newNote
     }

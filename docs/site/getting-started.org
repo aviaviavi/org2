@@ -115,6 +115,8 @@ To install it on a simulator or your own device:
 
 See =apps/ios/Org2Mobile/README.md= for the current sync shape and share-extension notes.
 
+Org2 Mobile can also control Mac-hosted AI chats without syncing the chat runtime to the phone. Install Tailscale on both devices, then open *Org2 Workspace → Settings… → Mobile Remote* on the Mac, enable the listener on its detected =100.x.y.z= address, create a one-time code, and scan it from the iOS *Remote* tab. The Mac stays responsible for model access and corpus context and must remain awake with Org2 Workspace running.
+
 * 2) Start with your existing Org files as compiler input
 
 You do *not* need to convert everything first.

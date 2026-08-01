@@ -106,19 +106,25 @@ org2 roam graph --dir ~/notes --recursive --format report</code></pre>
       <ul>
         <li>Bounded context packs carry file-and-line citations instead of an opaque prompt dump.</li>
         <li>Generated work lands in reviewable artifact zones before promotion into canonical notes.</li>
-        <li>One pending-decision queue combines run-bound approvals with standalone file-backed approvals while preserving each item's canonical identity.</li>
+        <li>One pending-decision queue combines run-bound approvals with standalone file-backed approvals; run decisions preserve one native ID and immutable review-material fingerprint across CLI, Mac, mobile, and OpenClaw, and rejecting or canceling a required approval cancels its originating run instead of leaving a stale blocker.</li>
+        <li>Recurring workflow executions roll up under stable logical work while retaining separate scheduler attempts, and event/fresh-path gates skip unchanged expensive work.</li>
+        <li>A read-only workspace doctor finds contradictory run and approval state, duplicate decision identities, broken projections, and unmanaged recurring work before another agent acts.</li>
+        <li>Atomic revision-checked run and workflow writes reject stale clients and ambiguous direct edits instead of silently replacing newer work.</li>
+        <li>Per-account work ledgers keep stable identity, curated context, linked approvals, contact receipts, and idempotent history queryable without one ever-growing agent file.</li>
         <li>OpenClaw is the first native end-to-end integration; CLI, MCP, and plain files keep the model provider-independent.</li>
       </ul>
       <div class="org2-command" aria-label="Agent context and review commands">
         <span>Context and review commands</span>
         <pre class="org2-src language-sh"><code class="language-sh">org2 agent context --query "launch risks" --dir ~/notes --recursive
+org2 doctor --dir ~/notes --json
+org2 ledger list account-outreach --eligible --dir ~/notes --json
 org2 approvals --dir ~/notes --recursive --format json
 org2 review list --status pending --dir ~/notes</code></pre>
       </div>
       <p class="org2-feature-links"><a href="agent-quickstart.html">Agent quickstart</a><a href="openclaw-knowledge-layer.html">OpenClaw integration</a></p>
     </div>
     <div class="org2-feature-media">
-      <figure><img src="assets/screenshots/macos-workspace-runs-review.png" alt="Org2 Workspace Run Center showing an approval-ready launch brief with outputs and review state" loading="lazy" /><figcaption>Runs &amp; Review keeps outcomes, artifacts, validation, and approval state together.</figcaption></figure>
+      <figure><img src="assets/screenshots/macos-workspace-runs-review.png" alt="Org2 Workspace Agent Work showing an approval-ready launch brief with outputs and review state" loading="lazy" /><figcaption>Agent Work keeps outcomes, artifacts, validation, and approval state together.</figcaption></figure>
     </div>
   </section>
 
@@ -174,13 +180,13 @@ org2 query-data --file notes/readiness.org2 --results weekly --apply</code></pre
   <section class="org2-feature-section" id="editors-publishing" aria-labelledby="editors-publishing-title">
     <div class="org2-feature-heading">
       <h2 id="editors-publishing-title">Editors and publishing use the same semantics</h2>
-      <p>Use the native Workspace for richer review flows, VS Code for the most complete editing experience, the CLI for automation, LSP where the protocol fits, HTML publishing for selected outputs, and Beamer-compatible export for talks.</p>
+      <p>Use the native Workspace for richer review flows and live in-app talk PDF preview, VS Code for the most complete editing experience, the CLI for automation, LSP where the protocol fits, HTML publishing for selected outputs, and Beamer-compatible export for talks.</p>
     </div>
     <div class="org2-editor-strip">
       <figure><img src="assets/screenshots/basic.png" alt="An Org2 project note open in Visual Studio Code with syntax highlighting, tasks, properties, and ID links" loading="lazy" /><figcaption><strong>VS Code.</strong> Syntax, folding, agenda, capture, refiling, formatting, links, search, and planning commands.</figcaption></figure>
       <div class="org2-editor-cards">
         <article><strong>Shared editor intelligence</strong><p>Definitions, references, hover, completion, rename, semantic tokens, table-aware formatting, and file-link updates come from shared semantics.</p></article>
-        <article><strong>Publishing</strong><p>Export one file, compile an Org/Org2 talk to Beamer TeX or PDF, or publish a recursive project with navigation, styles, rewritten links, and generated indexes. This documentation site is built by Org2.</p></article>
+        <article><strong>Publishing</strong><p>Preview an Org/Org2 talk as a live PDF in the Mac app, export it as Beamer TeX or PDF, export one HTML file, or publish a recursive project with navigation, styles, rewritten links, and generated indexes. This documentation site is built by Org2.</p></article>
         <div class="org2-command" aria-label="Formatting and publishing commands">
           <span>Check formatting or preview a site</span>
           <pre class="org2-src language-sh"><code class="language-sh">org2 fmt --dir ~/notes --recursive --check
@@ -200,9 +206,9 @@ org2 export beamer --file talk.org2 --pdf --apply</code></pre>
     <div class="org2-feature-card-grid">
       <article><h3>Plain-text core</h3><ul><li>Headings, drawers, properties, TODOs, planning, links, blocks, tables, timestamps</li><li>Capture, archive, refile, canonical formatting</li><li>HTML/site publishing plus Beamer-compatible presentation export</li><li>Source ranges and structured compiler output</li></ul></article>
       <article><h3>Knowledge + planning</h3><ul><li>Agenda CLI, JSON, TUI, VS Code, and Mac surfaces</li><li>IDs, backlinks, dailies, nodes, link insertion, graph reports</li><li>Cited search, query, entity pages, and context bundles</li><li>Linkify previews and review-only semantic suggestions</li></ul></article>
-      <article><h3>Agents + review</h3><ul><li>Durable runs, workflows, plans, steps, budgets, comments, retries</li><li>Artifacts, validation, approvals, review queues, outcome records</li><li>OpenClaw lifecycle and schedule integration</li><li>MCP resources, prompts, tools, client discovery, and snapshots</li></ul></article>
+      <article><h3>Agents + review</h3><ul><li>Durable runs, workflows, plans, steps, budgets, comments, retries</li><li>Per-thread OpenClaw or ChatGPT-authenticated local Codex chat in the Mac app, with runtime-backed model and reasoning selectors</li><li>Native AI context settings for persistent custom instructions and current- or all-loaded-corpora read access</li><li>In-flight chat stays bound to its originating write corpus and authorized read roots while the visible workspace switches</li><li>Reversible active/settled chat history with shared inactivity policy</li><li>Mac-local read, preview, and apply tools that preserve unsaved editor drafts and exact per-turn diffs</li><li>Artifacts, validation, approvals, review queues, outcome records</li><li>OpenClaw lifecycle and schedule integration</li><li>MCP resources, prompts, tools, client discovery, and snapshots</li></ul></article>
       <article><h3>Data + provenance</h3><ul><li>Datasets, SQL views, materialized results, deterministic charts</li><li>Artifact roles, dependency graphs, freshness, and rebuild plans</li><li>Meeting, event-stream, timeline, and data-link records</li><li>Evaluation fixtures and sanitized workflow replay</li></ul></article>
-      <article><h3>Editors + clients</h3><ul><li>Native macOS Workspace and mobile approval flows</li><li>VS Code commands plus shared LSP capabilities</li><li>Vim / Neovim and Emacs integration paths</li><li>CLI JSON for scripts and additional clients</li></ul></article>
+      <article><h3>Editors + clients</h3><ul><li>Native macOS Workspace and mobile approval flows</li><li>In-app CSV table and raw-text editing from corpus files or document links</li><li>VS Code commands plus shared LSP capabilities</li><li>Vim / Neovim and Emacs integration paths</li><li>CLI JSON for scripts and additional clients</li></ul></article>
       <article><h3>Safety + portability</h3><ul><li>Local files stay canonical and Git-reviewable</li><li>Preview-first mutations and explicit approval gates</li><li>GPG-backed per-subtree, multi-recipient encryption</li><li>Portable personal, shared, and project corpus identity</li></ul></article>
     </div>
   </section>

@@ -61,7 +61,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
     <div><strong>Add richer views gradually.</strong><span>Start with agenda and search, then add editors, agents, data, or publishing.</span></div>
   </div>
 </section>
-<p>The current end-to-end agent setup uses <strong>OpenClaw</strong>. The native lifecycle plugin feeds substantial OpenClaw work into Runs &amp; Review, and the Mac chat connects directly to an OpenClaw Gateway. This reflects the first adapter that has been implemented, while the underlying CLI, run files, workflows, context interfaces, and MCP surface remain available to Codex, local models, scripts, and future agent integrations.</p>
+<p>The current end-to-end agent setup uses <strong>OpenClaw</strong>. The native lifecycle plugin feeds substantial OpenClaw work into Agent Work, and the Mac chat connects directly to an OpenClaw Gateway. This reflects the first adapter that has been implemented, while the underlying CLI, run files, workflows, context interfaces, and MCP surface remain available to Codex, local models, scripts, and future agent integrations.</p>
 <section class="org2-headline level-1">
 <h1 id="1-install-org2">1) Install Org2</h1>
 <section class="org2-headline level-2">
@@ -112,14 +112,14 @@ open ~/Applications/Org2Workspace.app</code></pre>
 <p>There are two complementary OpenClaw connections:</p>
 <ol>
 <li><p>The <code>org2-lifecycle</code> plugin records substantial main-agent turns, subagent executions, and cron executions as durable Org2 runs. Stable OpenClaw keys correlate retries and lifecycle events without turning ordinary conversation or personal TODOs into runs.</p></li>
-<li><p>The Mac app's <strong>OpenClaw Chat</strong> surface connects to the Gateway for selected-agent chat, streamed progress, tool activity, runtime slash commands, and stop control.</p></li>
+<li><p>The Mac app's <strong>AI Chat</strong> surface supports per-thread OpenClaw or local Codex. OpenClaw connects to the Gateway for selected-agent chat, streamed progress, tool activity, runtime slash commands, and stop control.</p></li>
 </ol>
 <p>From an Org2 checkout, install and inspect the lifecycle plugin with:</p>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run test:openclaw
 openclaw plugins install --link ./integrations/openclaw
 openclaw plugins inspect org2-lifecycle --runtime --json</code></pre>
-<p>In OpenClaw configuration, explicitly enable <code>org2-lifecycle</code>, allow its typed conversation hooks, and set <code>corpusDir</code> to the Org2 corpus you want represented in Runs &amp; Review. Restart the Gateway after installing or changing plugin code. The plugin's <a href="https://github.com/aviaviavi/org2/tree/main/integrations/openclaw">integration README</a> carries the source-local setup notes.</p>
-<p>To connect Mac chat, open <strong>OpenClaw Chat → Configure</strong>, enter the Gateway endpoint and token, select the agent, and save. A remote Gateway normally requires device pairing: use <strong>Save &amp; Request Pairing</strong>, approve the displayed request on the Gateway host, and reconnect. The app can use the OpenAI-compatible endpoint as a reduced-observability fallback for ordinary chat, while Gateway-native commands and lifecycle features require the live protocol.</p>
+<p>In OpenClaw configuration, explicitly enable <code>org2-lifecycle</code>, allow its typed conversation hooks, and set <code>corpusDir</code> to the Org2 corpus you want represented in Agent Work. Restart the Gateway after installing or changing plugin code. The plugin's <a href="https://github.com/aviaviavi/org2/tree/main/integrations/openclaw">integration README</a> carries the source-local setup notes.</p>
+<p>To connect an OpenClaw thread, open <strong>AI Chat → Configure</strong>, enter the Gateway endpoint and token, select the agent, and save. A remote Gateway normally requires device pairing: use <strong>Save &amp; Request Pairing</strong>, approve the displayed request on the Gateway host, and reconnect. The app can use the OpenAI-compatible endpoint as a reduced-observability fallback for ordinary chat, while Gateway-native commands and lifecycle features require the live protocol.</p>
 </section>
 <section class="org2-headline level-2">
 <h2 id="ios-app">iOS app</h2>
@@ -133,6 +133,7 @@ openclaw plugins inspect org2-lifecycle --runtime --json</code></pre>
 <li><p>In the app, select an iOS Files-visible corpus folder, usually one synced with Syncthing-compatible tooling such as Möbius Sync.</p></li>
 </ol>
 <p>See <code>apps/ios/Org2Mobile/README.md</code> for the current sync shape and share-extension notes.</p>
+<p>Org2 Mobile can also control Mac-hosted AI chats without syncing the chat runtime to the phone. Install Tailscale on both devices, then open <strong>Org2 Workspace → Settings… → Mobile Remote</strong> on the Mac, enable the listener on its detected <code>100.x.y.z</code> address, create a one-time code, and scan it from the iOS <strong>Remote</strong> tab. The Mac stays responsible for model access and corpus context and must remain awake with Org2 Workspace running.</p>
 </section>
 </section>
 <section class="org2-headline level-1">

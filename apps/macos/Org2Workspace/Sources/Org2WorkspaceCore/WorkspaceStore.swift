@@ -11071,14 +11071,40 @@ public final class WorkspaceStore: ObservableObject {
     return openClawStreamingReplyByThreadID[threadID] ?? ""
   }
 
+  public func aiChatStreamingReply(for threadID: UUID) -> String {
+    openClawStreamingReplyByThreadID[threadID] ?? ""
+  }
+
   public var openClawExposedReasoning: String {
     guard let threadID = selectedOpenClawChatThreadID else { return "" }
     return openClawReasoningByThreadID[threadID] ?? ""
   }
 
+  public func aiChatReasoning(for threadID: UUID) -> String {
+    openClawReasoningByThreadID[threadID] ?? ""
+  }
+
   public var openClawRunActivities: [OpenClawRunActivity] {
     guard let threadID = selectedOpenClawChatThreadID else { return [] }
     return openClawRunActivitiesByThreadID[threadID] ?? []
+  }
+
+  public func aiChatRunActivities(for threadID: UUID) -> [OpenClawRunActivity] {
+    openClawRunActivitiesByThreadID[threadID] ?? []
+  }
+
+  public func isAIChatThreadRunning(_ threadID: UUID) -> Bool {
+    drainingOpenClawThreadIDs.contains(threadID)
+      || openClawSendingThreadIDs.contains(threadID)
+      || openClawChatThreads.first(where: { $0.id == threadID })?.pendingTurn != nil
+  }
+
+  public func aiChatConnectionState(for threadID: UUID) -> OpenClawGatewayConnectionState {
+    openClawGatewayStateByThreadID[threadID] ?? .disconnected
+  }
+
+  public func aiChatConnectionDetail(for threadID: UUID) -> String? {
+    openClawGatewayDetailByThreadID[threadID]
   }
 
   public var selectedAIChatRuntime: AIChatRuntime {
@@ -11319,34 +11345,75 @@ public final class WorkspaceStore: ObservableObject {
 
   public func stopOpenClawRun() async {
     guard let threadID = selectedOpenClawChatThreadID else { return }
-    if selectedAIChatRuntime == .codex {
+    _ = await stopAIChatRemoteRun(threadID: threadID)
+  }
+
+  @discardableResult
+  public func stopAIChatRemoteRun(threadID: UUID) async -> Bool {
+    guard let thread = openClawChatThreads.first(where: { $0.id == threadID }) else {
+      return false
+    }
+    if thread.runtime == .codex {
       guard let active = codexActiveTurnsByThreadID[threadID],
             let codexAppServerClient
       else {
-        openClawStatusText = "No live Codex turn to stop"
-        return
+        if selectedOpenClawChatThreadID == threadID {
+          openClawStatusText = "No live Codex turn to stop"
+        }
+        return false
       }
       do {
         try await codexAppServerClient.interrupt(
           threadID: active.runtimeThreadID,
           turnID: active.turnID
         )
-        openClawStatusText = "Stopping Codex…"
+        if selectedOpenClawChatThreadID == threadID {
+          openClawStatusText = "Stopping Codex…"
+        }
+        return true
       } catch {
-        openClawStatusText = "Could not stop Codex: \(error.localizedDescription)"
+        if selectedOpenClawChatThreadID == threadID {
+          openClawStatusText = "Could not stop Codex: \(error.localizedDescription)"
+        }
+        return false
       }
-      return
     }
     guard let gateway = openClawGatewayClientsByThreadID[threadID] else {
-      openClawStatusText = "No live Gateway run to stop"
-      return
+      if selectedOpenClawChatThreadID == threadID {
+        openClawStatusText = "No live Gateway run to stop"
+      }
+      return false
     }
     do {
       try await gateway.abort()
-      openClawStatusText = "Stopping OpenClaw…"
+      if selectedOpenClawChatThreadID == threadID {
+        openClawStatusText = "Stopping OpenClaw…"
+      }
+      return true
     } catch {
-      openClawStatusText = "Could not stop OpenClaw: \(error.localizedDescription)"
+      if selectedOpenClawChatThreadID == threadID {
+        openClawStatusText = "Could not stop OpenClaw: \(error.localizedDescription)"
+      }
+      return false
     }
+  }
+
+  @discardableResult
+  public func sendAIChatRemoteMessage(_ rawText: String, threadID: UUID) -> Bool {
+    let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !text.isEmpty,
+          let thread = openClawChatThreads.first(where: { $0.id == threadID }),
+          !thread.isSettled
+    else {
+      return false
+    }
+    let shouldDrain = enqueueOpenClawMessage(text, attachments: [], in: threadID)
+    if shouldDrain {
+      Task { @MainActor [weak self] in
+        await self?.drainOpenClawSendQueue(for: threadID)
+      }
+    }
+    return true
   }
 
   public func sendComposedOpenClawMessage(text rawText: String) {
@@ -13553,13 +13620,24 @@ public final class WorkspaceStore: ObservableObject {
     statusText = "Created resource thread"
   }
 
-  public func createOpenClawChatThread(runtime: AIChatRuntime = .openClaw) {
+  @discardableResult
+  public func createOpenClawChatThread(runtime: AIChatRuntime = .openClaw) -> UUID {
     createOpenClawChatThread(
       title: "New Chat",
       statusText: "New \(runtime.title) chat",
       runtime: runtime,
       defersPersistence: true
-    )
+    ).id
+  }
+
+  @discardableResult
+  public func createAIChatRemoteThread(runtime: AIChatRuntime) -> UUID {
+    createOpenClawChatThread(
+      title: "New Chat",
+      statusText: "",
+      runtime: runtime,
+      selectsThread: false
+    ).id
   }
 
   @discardableResult
@@ -13569,7 +13647,8 @@ public final class WorkspaceStore: ObservableObject {
     resource: OpenClawResourceReference? = nil,
     sessionKey: String? = nil,
     runtime: AIChatRuntime = .openClaw,
-    defersPersistence: Bool = false
+    defersPersistence: Bool = false,
+    selectsThread: Bool = true
   ) -> OpenClawChatThread {
     let thread = OpenClawChatThread(
       title: title,
@@ -13578,14 +13657,18 @@ public final class WorkspaceStore: ObservableObject {
       resource: resource
     )
     openClawChatThreads.insert(thread, at: 0)
-    selectOpenClawChatThread(thread.id, persistsSelection: false)
-    persistSelectedAIChatThread()
+    if selectsThread {
+      selectOpenClawChatThread(thread.id, persistsSelection: false)
+      persistSelectedAIChatThread()
+    }
     if defersPersistence {
       scheduleOpenClawTranscriptPersistenceAfterInteraction()
     } else {
       persistOpenClawTranscript()
     }
-    openClawStatusText = statusText
+    if selectsThread {
+      openClawStatusText = statusText
+    }
     return thread
   }
 

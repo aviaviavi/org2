@@ -89,6 +89,16 @@ if (!siteStyles.includes(".org2-heading-anchor") || !siteStyles.includes("scroll
 if (!siteStyles.includes(".org2-features-page h2::before") || !siteStyles.includes('content: "**"')) {
   fail("features page level-two headings are missing Org2 '**' styling");
 }
+const mobileStylesStart = siteStyles.lastIndexOf("@media (max-width: 759px)");
+const mobileStylesEnd = siteStyles.indexOf("@media (max-width: 520px)", mobileStylesStart);
+const mobileStyles = siteStyles.slice(mobileStylesStart, mobileStylesEnd);
+if (
+  !mobileStyles.includes("#content table > tbody") ||
+  !mobileStyles.includes("overflow-x: auto") ||
+  !mobileStyles.includes("#content table td:first-child")
+) {
+  fail("mobile documentation tables must retain readable columns inside a horizontal scroller");
+}
 if (!/<h2\s+id="[^"]+">/.test(features)) {
   fail("features page sections must use addressable level-two headings");
 }

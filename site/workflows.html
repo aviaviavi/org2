@@ -61,7 +61,8 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <h1 id="workflow-run-and-runtime">Workflow, run, and runtime</h1>
 <ul>
 <li><p>A <strong>workflow</strong> describes how a class of work should happen: inputs, context rules, instructions, steps, outputs, validation, approvals, and triggers.</p></li>
-<li><p>A <strong>run</strong> records one execution of one workflow version, including its concrete context, state, artifacts, approvals, validation, events, and outcome.</p></li>
+<li><p>A <strong>logical work item</strong> groups recurring executions without conflating scheduler ticks.</p></li>
+<li><p>An <strong>attempt run</strong> records one concrete execution of one workflow version, including its trigger, attempt number, context, state, artifacts, approvals, validation, events, and outcome.</p></li>
 <li><p>A <strong>runtime adapter</strong> executes the workflow. OpenClaw is the first native adapter; the workflow and run formats do not depend on one provider.</p></li>
 </ul>
 <p>Repeating a prompt is useful, but it does not by itself create a workflow. A workflow earns its durable form by making the process inspectable, editable, versionable, reviewable, and reliable across executions.</p>
@@ -80,7 +81,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <p>A completed one-off run can become a draft workflow:</p>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 workflow save RUN_ID --id weekly-review --dir ~/notes</code></pre>
 <p>The saved file is a proposal, not an automatic publication or rerun. Review the concrete context copied from the original run, replace one-off values with inputs where appropriate, and inspect outputs, validation, and approval boundaries before activation.</p>
-<p>The Mac <strong>Runs &amp; Review → Workflows</strong> surface lists the files and opens the selected workflow in the normal Org2 document editor. <strong>Edit Source</strong> uses the same full-fidelity source mode available to other corpus files. Structured controls such as <strong>Run Now</strong>, <strong>Validate</strong>, <strong>Schedule</strong>, <strong>Activate</strong>, and <strong>Pause</strong> are conveniences over the file and shared CLI.</p>
+<p>The Mac <strong>Agent Work → Workflows</strong> surface lists the files and opens the selected workflow in the normal Org2 document editor. <strong>Edit Source</strong> uses the same full-fidelity source mode available to other corpus files. Structured controls such as <strong>Run Now</strong>, <strong>Validate</strong>, <strong>Schedule</strong>, <strong>Activate</strong>, and <strong>Pause</strong> are conveniences over the file and shared CLI.</p>
 <p>Useful lifecycle commands include:</p>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 workflow list --dir ~/notes --json
 org2 workflow validate weekly-review --dir ~/notes
@@ -99,14 +100,18 @@ org2 workflow migrate --dir ~/notes</code></pre>
 <li><p>The plugin sends OpenClaw a workflow marker and a request to read the canonical workflow and run records.</p></li>
 <li><p>OpenClaw lifecycle events update that same run instead of creating a duplicate generic run. Available provider, model, token, and elapsed-time metadata is preserved on the run, and successful terminal turns record a concise outcome summary.</p></li>
 <li><p>When execution requests approval or clarification, the turn may end while the durable run remains open. Approving in the Mac app continues the existing workflow in its correlated OpenClaw chat session; a pending approval or blocked run is never treated as successful completion.</p></li>
-<li><p>Outputs, validation, steps, and approvals remain visible in Runs &amp; Review as the agent records them through the shared CLI.</p></li>
+<li><p>Outputs, validation, steps, and approvals remain visible in Agent Work as the agent records them through the shared CLI.</p></li>
 </ol>
-<p>Opening a PDF output from Runs &amp; Review uses the system's default PDF application (Preview by default on macOS). Text outputs continue to open in the Org2 workspace, with raw source editing available when needed.</p>
+<p>Run <code>org2 doctor --dir CORPUS --json</code> before reconciliation or execution when a long-running workspace may contain stale or hand-edited state. The read-only report identifies contradictory run/approval state, duplicate provider identities, missing workflow definitions, conflicting attempt numbers, overlapping active attempts, unmanaged OpenClaw cron series, and broken or duplicate headline projections. It exits nonzero for hard contradictions but never rewrites the canonical records automatically.</p>
+<p>Lifecycle mutations use atomic revision-checked writes. A client that holds a run across requests should read <code>run show ID --with-revision --json</code> and return that token through <code>--if-revision</code>; even without the explicit flag, one CLI invocation protects the revision it loaded. A concurrent mutation or ambiguous direct edit therefore produces a conflict for the caller to refresh and reconcile, not a last-writer-wins overwrite.</p>
+<p>High-volume account-oriented workflows should keep global selection state in <code>org2 ledger</code> accounts rather than in the workflow prompt or one append-only task heading. A workflow can query <code>ledger list LEDGER --eligible --json</code>, link the exact run approval through an idempotent account event, and record the provider receipt after the approved action completes. The workflow remains the recipe, each run remains one attempt, and the ledger remains durable cross-attempt subject history.</p>
+<p>Opening a PDF output from Agent Work uses the system's default PDF application (Preview by default on macOS). Text outputs continue to open in the Org2 workspace, with raw source editing available when needed.</p>
 <p>For scheduled work, the schedule declaration stays in the workflow file while OpenClaw owns due checks and execution:</p>
 <ol>
 <li><p>Activating or syncing workflows reconciles enabled schedule triggers into OpenClaw cron.</p></li>
-<li><p>The cron payload identifies the workflow and version; it does not maintain a separate copy of the process.</p></li>
-<li><p>Each cron execution instantiates a new correlated Org2 run.</p></li>
+<li><p>The cron payload identifies the workflow, version, and trigger; it does not maintain a separate copy of the process.</p></li>
+<li><p>Each eligible execution creates a distinct numbered attempt under the workflow's stable logical-work ID. <code>run list --json</code> includes a <code>logicalWork</code> roll-up without erasing per-attempt evidence.</p></li>
+<li><p>A schedule may declare <code>--gate-event</code> and/or <code>--gate-path</code>. <code>workflow signal</code> records event/fresh-work evidence, and the lifecycle adapter safely skips a tick when no matching signal is newer than the prior attempt.</p></li>
 <li><p>Pausing the workflow disables its managed OpenClaw job.</p></li>
 </ol>
 <p>OpenClaw job IDs and correlation mappings are adapter state. They are not part of the portable workflow definition. This boundary prevents scheduler details from leaking into authored corpus files and allows another runtime adapter to execute the same process later.</p>
@@ -115,7 +120,7 @@ org2 workflow migrate --dir ~/notes</code></pre>
 </section>
 <section class="org2-headline level-1">
 <h1 id="safety-and-review">Safety and review</h1>
-<p>A workflow declares capabilities and a risk class. Expected outputs should land in reviewable locations such as <code>views/</code> or <code>compiled/</code>, and consequential or external actions should carry an explicit approval requirement. An external-action or high-impact approval must expose the exact recipient, content, command, and attachments through an inspectable artifact, approval note, or live runtime detail; an opaque identifier or fingerprint is not enough to approve. The Mac Run Center retrieves linked OpenClaw exec details when they remain available and disables <strong>Approve</strong> when no reviewable material can be shown. Activating a schedule never weakens those boundaries.</p>
+<p>A workflow declares capabilities and a risk class. Expected outputs should land in reviewable locations such as <code>views/</code> or <code>compiled/</code>, and consequential or external actions should carry an explicit approval requirement. An external-action or high-impact approval must expose the exact recipient, content, command, and attachments through an inspectable artifact, approval note, or live runtime detail; a fingerprint is integrity evidence, not review material. Once requested, Org2 fingerprints that exact material and preserves the same native approval ID/fingerprint through CLI, Mac, mobile decision transport, and OpenClaw. A mismatched <code>--fingerprint</code> is rejected. The Mac Agent Work surface retrieves linked OpenClaw exec details when they remain available and disables <strong>Approve</strong> when no reviewable material can be shown. Activating a schedule never weakens those boundaries.</p>
 <p>Keep runtime credentials outside workflow files. A workflow may name a capability or symbolic runtime policy, but provider tokens, Gateway credentials, machine-local job IDs, and private scheduler state belong in runtime configuration.</p>
 </section>
 <section class="org2-headline level-1">

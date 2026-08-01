@@ -9,6 +9,7 @@ struct Org2WorkspaceApp: App {
   @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
   @Environment(\.scenePhase) private var scenePhase
   @StateObject private var store = WorkspaceStore()
+  @StateObject private var mobileRemote = MobileRemoteCoordinator()
   private let globalCaptureHotKey = GlobalCaptureHotKey()
 
   init() {
@@ -45,6 +46,8 @@ struct Org2WorkspaceApp: App {
           }
           store.setWorkspaceRealtimeRefreshActive(scenePhase == .active)
           store.setRunReviewAutoRefreshActive(scenePhase == .active)
+          mobileRemote.attach(to: store)
+          mobileRemote.startIfConfigured()
         }
         .onChange(of: scenePhase) { _, newPhase in
           store.setWorkspaceRealtimeRefreshActive(newPhase == .active)
@@ -353,8 +356,9 @@ struct Org2WorkspaceApp: App {
     }
 
     Settings {
-      AIChatSettingsView()
+      WorkspaceSettingsView()
         .environmentObject(store)
+        .environmentObject(mobileRemote)
     }
   }
 }

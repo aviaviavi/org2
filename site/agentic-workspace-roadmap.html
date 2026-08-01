@@ -60,8 +60,8 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <p>This roadmap extends the <a href="knowledge-compiler-roadmap.html">knowledge compiler roadmap</a>. Compilation remains the foundation. Agent runs turn compiled knowledge into controlled outcomes.</p>
 <section class="org2-headline level-1">
 <h1 id="implementation-status">Implementation status</h1>
-<p>The first complete vertical slice of all five phases is implemented in the early-alpha runtime. It includes the portable run and workflow schemas, CLI lifecycle and review commands, the native Mac Run Center, workflow triggers and packaging, artifact freshness graphs, the meeting-to-controlled-execution template, capability-based runtime selection, MCP server/client configuration and provenance snapshots, outcome evaluation, sanitized replay fixtures, assignments, role-based approvals, comments, and audit events.</p>
-<p>The roadmap remains active: each surface can become deeper, gain more production adapters, and improve its user experience without changing the ownership boundaries below. The versioned schemas are <code>org2:agent-run:v1</code> and <code>org2:workflow:v1</code>; workflow packages declare their compatible Org2 and schema ranges.</p>
+<p>The first complete vertical slice of all five phases is implemented in the early-alpha runtime. It includes the portable run and workflow schemas, CLI lifecycle and review commands, the native Mac Agent Work surface, workflow triggers and packaging, artifact freshness graphs, the meeting-to-controlled-execution template, capability-based runtime selection, MCP server/client configuration and provenance snapshots, outcome evaluation, sanitized replay fixtures, assignments, role-based approvals, comments, and audit events.</p>
+<p>The roadmap remains active: each surface can become deeper, gain more production adapters, and improve its user experience without changing the ownership boundaries below. The versioned execution schemas are <code>org2:agent-run:v1</code> and <code>org2:workflow:v1</code>; workflow packages declare their compatible Org2 and schema ranges. Account-oriented recurring work can additionally use <code>org2:work-ledger-account:v1</code> records so stable subject history does not have to live in a workflow prompt or one monolithic agent note.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="product-thesis">Product thesis</h1>
@@ -115,8 +115,8 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 </ul>
 <p>The model should be representable in normal Org2 text and consumable through the CLI. Apps may maintain derived indexes for responsiveness, but the run record and its durable outputs must remain inspectable outside the app.</p>
 <section class="org2-headline level-2">
-<h2 id="run-center">Run Center</h2>
-<p>Workspace clients should expose a Run Center or Activity surface that answers:</p>
+<h2 id="agent-work">Agent Work</h2>
+<p>Workspace clients should expose an Agent Work surface that answers:</p>
 <ul>
 <li><p>What is working now?</p></li>
 <li><p>What completed, and what did it produce?</p></li>
@@ -285,7 +285,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <ul>
 <li><p>Define the portable agent-run schema and state machine.</p></li>
 <li><p>Add CLI discovery, inspection, validation, and mutation commands.</p></li>
-<li><p>Build a Workspace Run Center with active, completed, blocked, and approval-needed states.</p></li>
+<li><p>Build a Workspace Agent Work surface with active, completed, blocked, and approval-needed states.</p></li>
 <li><p>Normalize existing agent-task, session, artifact, and approval metadata into the shared model.</p></li>
 </ul>
 </section>
