@@ -186,4 +186,65 @@ final class MobileRemoteHTTPServerTests: XCTestCase {
     XCTAssertEqual(store.openClawChatThreads.first(where: { $0.id == threadID })?.isPinned, false)
     XCTAssertEqual(store.openClawChatThreads.first(where: { $0.id == threadID })?.isSettled, false)
   }
+
+  @MainActor
+  func testRemoteSendDoesNotInheritTheMacNavigationContext() async throws {
+    let suiteName = "MobileRemoteHTTPServerTests.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-mobile-remote-context-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let unrelatedNote = root.appendingPathComponent("unrelated-meeting.org2")
+    try "#+TITLE: Unrelated Meeting\n".write(to: unrelatedNote, atomically: true, encoding: .utf8)
+    let recorder = MobileRemoteWorkspaceContextRecorder()
+    let store = WorkspaceStore(
+      cli: Org2CLI(repoRoot: try Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json"),
+      openClawSendHandler: { _, _, _, context in
+        await recorder.record(context)
+        return "Remote reply"
+      }
+    )
+    store.setCorpusRoot(root)
+    let threadID = store.createAIChatRemoteThread(runtime: .openClaw)
+    store.selectCorpusFile(CorpusFile(
+      path: unrelatedNote.path,
+      relativePath: unrelatedNote.lastPathComponent,
+      modifiedAt: nil,
+      byteCount: 0
+    ))
+    XCTAssertEqual(store.selectedLocation?.file, unrelatedNote.path)
+
+    XCTAssertTrue(store.sendAIChatRemoteMessage("Continue this thread", threadID: threadID))
+    let deadline = Date().addingTimeInterval(5)
+    while await recorder.context() == nil, Date() < deadline {
+      try await Task.sleep(nanoseconds: 20_000_000)
+    }
+
+    let recordedContext = await recorder.context()
+    let context = try XCTUnwrap(recordedContext)
+    XCTAssertEqual(context.selectedSurface, WorkspaceSurface.openClaw.title)
+    XCTAssertNil(context.selectedLocation)
+    XCTAssertNil(context.selectedEntrySource)
+    XCTAssertNil(context.backlinks)
+    XCTAssertNil(context.agenda)
+    XCTAssertTrue(context.searchQuery.isEmpty)
+    XCTAssertTrue(context.searchResults.isEmpty)
+    XCTAssertEqual(context.authorizedCorpora.first?.localRoot, root.standardizedFileURL.path)
+  }
+}
+
+private actor MobileRemoteWorkspaceContextRecorder {
+  private var recordedContext: OpenClawWorkspaceContext?
+
+  func record(_ context: OpenClawWorkspaceContext?) {
+    recordedContext = context
+  }
+
+  func context() -> OpenClawWorkspaceContext? {
+    recordedContext
+  }
 }

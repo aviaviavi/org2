@@ -11411,7 +11411,12 @@ public final class WorkspaceStore: ObservableObject {
     else {
       return false
     }
-    let shouldDrain = enqueueOpenClawMessage(text, attachments: attachments, in: threadID)
+    let shouldDrain = enqueueOpenClawMessage(
+      text,
+      attachments: attachments,
+      in: threadID,
+      workspaceContext: currentOpenClawWorkspaceContext(includesNavigationContext: false)
+    )
     if shouldDrain {
       Task { @MainActor [weak self] in
         await self?.drainOpenClawSendQueue(for: threadID)
@@ -11818,14 +11823,15 @@ public final class WorkspaceStore: ObservableObject {
   private func enqueueOpenClawMessage(
     _ text: String,
     attachments: [OpenClawChatAttachment],
-    in threadID: UUID
+    in threadID: UUID,
+    workspaceContext: OpenClawWorkspaceContext? = nil
   ) -> Bool {
     guard openClawChatThreads.contains(where: { $0.id == threadID }) else { return false }
     if aiChatSendOriginsByThreadID[threadID] == nil {
       aiChatSendOriginsByThreadID[threadID] = AIChatSendOrigin(
         corpusRoot: corpusRoot?.standardizedFileURL,
         transcriptURL: openClawTranscriptURL.standardizedFileURL,
-        workspaceContext: currentOpenClawWorkspaceContext()
+        workspaceContext: workspaceContext ?? currentOpenClawWorkspaceContext()
       )
     }
     let userMessage = OpenClawChatMessage(
@@ -19538,10 +19544,13 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   private func currentOpenClawWorkspaceContext(
-    localEditTurnID: String? = nil
+    localEditTurnID: String? = nil,
+    includesNavigationContext: Bool = true
   ) -> OpenClawWorkspaceContext {
     let source: EntrySource?
-    if (isEditingEntry || isLiveFileEditorAvailable), let selectedEntrySource {
+    if !includesNavigationContext {
+      source = nil
+    } else if (isEditingEntry || isLiveFileEditorAvailable), let selectedEntrySource {
       source = EntrySource(
         file: selectedEntrySource.file,
         startLine: selectedEntrySource.startLine,
@@ -19557,13 +19566,13 @@ public final class WorkspaceStore: ObservableObject {
     return OpenClawWorkspaceContext(
       localCorpusRoot: corpusRoot?.standardizedFileURL.path,
       remoteCorpusRoot: effectiveOpenClawRemoteCorpusPath(),
-      selectedSurface: selectedSurface.title,
-      selectedLocation: selectedLocation,
+      selectedSurface: includesNavigationContext ? selectedSurface.title : WorkspaceSurface.openClaw.title,
+      selectedLocation: includesNavigationContext ? selectedLocation : nil,
       selectedEntrySource: source,
-      backlinks: backlinks,
-      agenda: agenda,
-      searchQuery: searchQuery,
-      searchResults: searchResults,
+      backlinks: includesNavigationContext ? backlinks : nil,
+      agenda: includesNavigationContext ? agenda : nil,
+      searchQuery: includesNavigationContext ? searchQuery : "",
+      searchResults: includesNavigationContext ? searchResults : [],
       agentThreadDirectories: currentOpenClawAgentThreadDirectories(),
       sourceProfiles: sourceProfiles,
       sourceRuntimeStatuses: sourceRuntimeStatuses,
