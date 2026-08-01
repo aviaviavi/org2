@@ -31,7 +31,7 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
       "Use `org2 run --help` for durable delegated work, `org2 workflow` for reusable recipes, and `org2 mcp serve` for MCP discovery.",
       "Use read-only `org2 doctor --dir CORPUS --json` to find contradictory run, approval, workflow-attempt, and projected headline state before an agent acts.",
       "Use `org2 run show ID --with-revision --json` when a client needs a revision token for a later guarded mutation.",
-      "Use `org2 ledger` for stable per-account bookkeeping in recurring workflows; Account Outreach accounts live under `notes/account-outreach/accounts/`.",
+      "Use `org2 ledger` for stable per-account bookkeeping in recurring workflows; canonical accounts live under `notes/LEDGER/accounts/`.",
       "Use `org2 corpus show|validate|init` to inspect or establish portable corpus identity before team mounting.",
       "Use `org2 source list|doctor|status|bind|import|sync` to manage corpus-declared Slack and Notion crawler profiles and stage review packets without storing credentials in the corpus.",
       "Use `org2 workspace agenda|search` only with explicitly granted `--mount` paths for read-only multi-corpus projections.",
@@ -58,6 +58,7 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
       "Treat `org2 doctor` as a read-only consistency check. Review its evidence before repairing canonical state; the command never mutates files automatically.",
       "Run and workflow mutations use atomic guarded writes. Pass `--if-revision sha256:...` when carrying run state across requests; a stale revision, concurrent writer, duplicate create, or out-of-band readable-state edit fails instead of silently overwriting newer source.",
       "Keep curated account identity, aliases, commercial context, and idempotent work history in a ledger account under notes/. Keep immutable imports and provider payloads under raw/, and link approvals to their canonical run instead of copying decision state.",
+      "Resolve every available stable identity before creating recurring account work. Treat ambiguity or source drift as a blocker rather than guessing.",
     ],
     workflows: [
       {
@@ -81,7 +82,7 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
       {
         id: "work-ledger",
         purpose: "Maintain stable per-account identity and idempotent event history for high-volume recurring work without growing one monolithic agent note.",
-        commands: ["org2 ledger list", "org2 ledger show", "org2 ledger create", "org2 ledger update", "org2 ledger event", "org2 doctor"],
+        commands: ["org2 ledger list", "org2 ledger resolve", "org2 ledger show", "org2 ledger create", "org2 ledger update", "org2 ledger event", "org2 doctor"],
         writes: "preview-by-default",
       },
       {

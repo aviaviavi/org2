@@ -28,7 +28,7 @@ function ledger(args) {
 try {
   const preview = ledger([
     "create", "account-outreach", "acme",
-    "--title", "Acme Corp", "--alias", "Acme", "--identity", "domain:acme.example",
+    "--title", "Acme Corp", "--alias", "Acme", "--identity", "domain:acme.example", "--identity", "name:acme corp",
     "--field", "segment=enterprise", "--context", "Curated account context.",
   ]);
   assert.equal(preview.status, 0, preview.stderr || preview.stdout);
@@ -37,7 +37,7 @@ try {
 
   const created = ledger([
     "create", "account-outreach", "acme",
-    "--title", "Acme Corp", "--alias", "Acme", "--identity", "domain:acme.example",
+    "--title", "Acme Corp", "--alias", "Acme", "--identity", "domain:acme.example", "--identity", "name:acme corp",
     "--field", "segment=enterprise", "--context", "Curated account context.", "--apply",
   ]);
   assert.equal(created.status, 0, created.stderr || created.stdout);
@@ -45,6 +45,7 @@ try {
   assert.equal(createdResult.applied, true);
   assert.match(createdResult.file, /notes\/account-outreach\/accounts\/acme\.org2$/);
   assert.match(createdResult.revision, /^sha256:[a-f0-9]{64}$/);
+  assert.match(fs.readFileSync(createdResult.file, "utf8"), /:ORG2_ARTIFACT_ROLE: canonical/);
 
   const ledgerLock = workLedgerMutationLockPath(root, "account-outreach");
   fs.writeFileSync(ledgerLock, "{}\n", "utf8");
@@ -62,6 +63,13 @@ try {
   const shownResult = JSON.parse(shown.stdout);
   assert.equal(shownResult.schema, "org2:work-ledger-snapshot:v1");
   assert.equal(shownResult.account.context, "Curated account context.");
+
+  const resolvedByDomain = ledger(["resolve", "account-outreach", "--identity", "acme.example"]);
+  assert.equal(resolvedByDomain.status, 0, resolvedByDomain.stderr || resolvedByDomain.stdout);
+  assert.equal(JSON.parse(resolvedByDomain.stdout).matches[0].account.id, "acme");
+  const resolvedByName = ledger(["resolve", "account-outreach", "--identity", "Acme Corp"]);
+  assert.equal(resolvedByName.status, 0, resolvedByName.stderr || resolvedByName.stdout);
+  assert.equal(JSON.parse(resolvedByName.stdout).matches[0].account.id, "acme");
 
   const updated = ledger([
     "update", "account-outreach", "acme", "--alias", "Acme Incorporated",

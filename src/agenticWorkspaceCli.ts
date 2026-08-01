@@ -136,11 +136,12 @@ function syncLinkedArtifactReviewStatus(corpus: string, artifactPath: string, re
 
 const HELP = `Agentic workspace commands:
   org2 doctor [--dir CORPUS] [--json]
-  org2 ledger list LEDGER [--eligible] [--state STATE] [--field KEY=VALUE] [--json]
+  org2 ledger list LEDGER [--eligible] [--state STATE] [--field KEY=VALUE] [--as-of ISO] [--cooldown-days N] [--json]
+  org2 ledger resolve LEDGER --identity KEY [--identity KEY] [--json]
   org2 ledger show LEDGER ACCOUNT [--with-revision] [--json]
-  org2 ledger create LEDGER ACCOUNT --title TEXT [--identity KEY] [--alias NAME] [--field KEY=VALUE] [--context TEXT] [--apply]
+  org2 ledger create LEDGER ACCOUNT --title TEXT [--state STATE] [--identity KEY] [--alias NAME] [--field KEY=VALUE] [--context TEXT] [--apply]
   org2 ledger update LEDGER ACCOUNT [--state STATE] [--identity KEY] [--alias NAME] [--field KEY=VALUE] [--context TEXT] [--if-revision SHA256] [--apply]
-  org2 ledger event LEDGER ACCOUNT --type TYPE --key IDEMPOTENCY_KEY [--run RUN --approval APPROVAL] [--external-id ID] [--apply]
+  org2 ledger event LEDGER ACCOUNT --type TYPE --key IDEMPOTENCY_KEY [--run RUN --approval APPROVAL] [--decision-key KEY] [--external-id ID] [--source REF] [--data KEY=VALUE] [--actor NAME] [--note TEXT] [--if-revision SHA256] [--apply]
   org2 corpus show|validate|init [--dir CORPUS] [--id ID --name NAME --kind personal|shared|project] [--apply]
   org2 workspace agenda --mount CORPUS [--mount CORPUS ...] [--from DATE --to DATE]
   org2 workspace search QUERY --mount CORPUS [--mount CORPUS ...] [--limit N]
@@ -190,6 +191,41 @@ function keyValueFlags(parsed: ParsedArgs, name: string): Record<string, string>
     result[key] = raw.slice(equal + 1);
   }
   return result;
+}
+
+function uniqueLowercase(values: readonly string[]): string[] {
+  return [...new Set(values.map((value) => String(value || "").trim().toLowerCase()).filter(Boolean))];
+}
+
+function normalizedLedgerIdentityName(raw: string): string {
+  return raw.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/&/g, " and ").replace(/[^a-z0-9]+/g, " ").trim().replace(/\s+/g, " ");
+}
+
+function ledgerIdentityQueryKeys(values: readonly string[]): string[] {
+  const keys: string[] = [];
+  for (const original of values) {
+    const raw = String(original || "").trim().toLowerCase();
+    if (!raw) continue;
+    keys.push(raw);
+    const colon = raw.indexOf(":");
+    if (colon >= 0) {
+      const prefix = raw.slice(0, colon);
+      const value = raw.slice(colon + 1).trim();
+      if (prefix === "name") keys.push(`name:${normalizedLedgerIdentityName(value)}`);
+      continue;
+    }
+    const normalizedName = normalizedLedgerIdentityName(raw);
+    if (normalizedName) keys.push(`name:${normalizedName}`);
+    if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(raw)) {
+      keys.push(`email:${raw}`);
+      keys.push(`domain:${raw.split("@")[1]}`);
+    } else if (/^[a-z0-9.-]+\.[a-z]{2,}$/.test(raw)) {
+      keys.push(`domain:${raw}`);
+    } else if (/^\d+$/.test(raw)) {
+      keys.push(`scarf-org:${raw}`);
+    }
+  }
+  return uniqueLowercase(keys);
 }
 
 function assertLedgerIdentityUnique(
@@ -244,6 +280,21 @@ function ledgerCommand(parsed: ParsedArgs): void {
         ? summaries.map((summary) => `${summary.id}\t${summary.state}\t${summary.eligible ? "eligible" : summary.eligibilityReason}\t${summary.title}`).join("\n")
         : "No ledger accounts matched.",
     );
+    return;
+  }
+
+  if (action === "resolve") {
+    const identities = ledgerIdentityQueryKeys(flags(parsed, "identity"));
+    if (!identities.length) throw new Error("ledger resolve requires at least one --identity KEY");
+    const matches = listWorkLedgerAccounts(corpus, ledger)
+      .filter((snapshot) => identities.some((identity) => snapshot.account.identityKeys.includes(identity)))
+      .map((snapshot) => ({
+        matchedIdentities: identities.filter((identity) => snapshot.account.identityKeys.includes(identity)),
+        account: summarizeWorkLedgerAccount(snapshot, { cooldownDays: Number(flag(parsed, "cooldown-days", "36500")) }),
+      }));
+    const result = { schema: "org2:work-ledger-resolution:v1", ledger, identities, found: matches.length > 0, ambiguous: matches.length > 1, matches };
+    output(parsed, result, matches.length ? matches.map((match) => `${match.account.id}\t${match.matchedIdentities.join(",")}\t${match.account.title}`).join("\n") : "No ledger account matched.");
+    if (matches.length > 1) process.exitCode = 1;
     return;
   }
 

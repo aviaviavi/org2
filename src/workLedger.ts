@@ -235,6 +235,7 @@ export function renderWorkLedgerAccount(account: WorkLedgerAccount): string {
     `:ID: ${account.ledger}--${account.id}`,
     `:ORG2_LEDGER: ${account.ledger}`,
     `:ORG2_ACCOUNT_ID: ${account.id}`,
+    ":ORG2_ARTIFACT_ROLE: canonical",
     `:ACCOUNT_STATE: ${account.state}`,
     `:CREATED_AT: ${account.createdAt}`,
     `:UPDATED_AT: ${account.updatedAt}`,
