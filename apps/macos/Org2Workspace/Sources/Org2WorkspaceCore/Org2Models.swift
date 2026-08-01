@@ -2027,6 +2027,28 @@ public struct AIChatModelOption: Identifiable, Hashable, Sendable {
   }
 }
 
+public struct AIChatRemoteConfiguration: Sendable {
+  public let models: [AIChatModelOption]
+  public let effectiveModel: String?
+  public let reasoningEffort: String?
+  public let reasoningOptions: [AIChatReasoningOption]
+  public let defaultReasoningEffort: String?
+
+  public init(
+    models: [AIChatModelOption],
+    effectiveModel: String?,
+    reasoningEffort: String?,
+    reasoningOptions: [AIChatReasoningOption],
+    defaultReasoningEffort: String?
+  ) {
+    self.models = models
+    self.effectiveModel = effectiveModel
+    self.reasoningEffort = reasoningEffort
+    self.reasoningOptions = reasoningOptions
+    self.defaultReasoningEffort = defaultReasoningEffort
+  }
+}
+
 public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
   public let id: UUID
   public let title: String

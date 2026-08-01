@@ -103,7 +103,9 @@ public final class MobileRemoteHTTPServer: @unchecked Sendable {
 }
 
 final class MobileRemoteHTTPConnection: @unchecked Sendable {
-  private static let maximumRequestBytes = 1_048_576
+  // Mobile photos are resized before upload, but their base64 JSON envelope can
+  // still exceed the old text-only 1 MB ceiling.
+  private static let maximumRequestBytes = 12_000_000
 
   private let connection: NWConnection
   private let handler: MobileRemoteHTTPServer.Handler

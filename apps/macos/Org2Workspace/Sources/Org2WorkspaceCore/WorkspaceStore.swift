@@ -11399,21 +11399,178 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   @discardableResult
-  public func sendAIChatRemoteMessage(_ rawText: String, threadID: UUID) -> Bool {
+  public func sendAIChatRemoteMessage(
+    _ rawText: String,
+    attachments: [OpenClawChatAttachment] = [],
+    threadID: UUID
+  ) -> Bool {
     let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !text.isEmpty,
+    guard !text.isEmpty || !attachments.isEmpty,
           let thread = openClawChatThreads.first(where: { $0.id == threadID }),
           !thread.isSettled
     else {
       return false
     }
-    let shouldDrain = enqueueOpenClawMessage(text, attachments: [], in: threadID)
+    let shouldDrain = enqueueOpenClawMessage(text, attachments: attachments, in: threadID)
     if shouldDrain {
       Task { @MainActor [weak self] in
         await self?.drainOpenClawSendQueue(for: threadID)
       }
     }
     return true
+  }
+
+  public func updateAIChatRemoteThreadState(
+    threadID: UUID,
+    isPinned: Bool?,
+    isSettled: Bool?
+  ) -> Bool {
+    guard let thread = openClawChatThreads.first(where: { $0.id == threadID }) else {
+      return false
+    }
+    if let isPinned, thread.isPinned != isPinned {
+      toggleOpenClawChatThreadPin(threadID)
+    }
+    if let isSettled {
+      let current = openClawChatThreads.first(where: { $0.id == threadID }) ?? thread
+      if isSettled, !current.isSettled {
+        settleOpenClawChatThread(threadID)
+      } else if !isSettled, current.isSettled {
+        reopenOpenClawChatThread(threadID)
+      }
+    }
+    return true
+  }
+
+  public func aiChatRemoteModelOptions(for threadID: UUID) async throws -> [AIChatModelOption] {
+    guard let thread = openClawChatThreads.first(where: { $0.id == threadID }) else {
+      throw AIChatRemoteConfigurationError.threadNotFound
+    }
+    switch thread.runtime {
+    case .codex:
+      return try await localCodexClient().listModels()
+    case .openClaw:
+      let settings = currentOpenClawSettings(allowKeychainRead: true)
+      return try await OpenClawGatewayClient(settings: settings).listModels()
+    }
+  }
+
+  public func aiChatRemoteConfiguration(
+    for threadID: UUID
+  ) async throws -> AIChatRemoteConfiguration {
+    guard let thread = openClawChatThreads.first(where: { $0.id == threadID }) else {
+      throw AIChatRemoteConfigurationError.threadNotFound
+    }
+    switch thread.runtime {
+    case .codex:
+      let models = try await localCodexClient().listModels()
+      let selected = thread.model.flatMap { model in
+        models.first(where: { $0.id == model })
+      } ?? models.first(where: \.isDefault)
+      return AIChatRemoteConfiguration(
+        models: models,
+        effectiveModel: selected?.id,
+        reasoningEffort: thread.reasoningEffort,
+        reasoningOptions: selected?.reasoningOptions ?? [],
+        defaultReasoningEffort: selected?.defaultReasoningEffort
+      )
+    case .openClaw:
+      let settings = currentOpenClawSettings(allowKeychainRead: true)
+      let client = OpenClawGatewayClient(settings: settings)
+      let models = try await client.listModels()
+      let configuration = try await client.sessionConfiguration(sessionKey: thread.sessionKey)
+      return AIChatRemoteConfiguration(
+        models: models,
+        effectiveModel: configuration?.model ?? thread.model,
+        reasoningEffort: thread.reasoningEffort,
+        reasoningOptions: configuration?.reasoningOptions ?? [],
+        defaultReasoningEffort: configuration?.defaultReasoningEffort
+      )
+    }
+  }
+
+  public func setAIChatRemoteModel(
+    _ model: String?,
+    threadID: UUID
+  ) async throws -> [AIChatModelOption] {
+    guard let thread = openClawChatThreads.first(where: { $0.id == threadID }) else {
+      throw AIChatRemoteConfigurationError.threadNotFound
+    }
+    guard !isAIChatThreadRunning(threadID) else {
+      throw AIChatRemoteConfigurationError.turnInProgress
+    }
+
+    let options = try await aiChatRemoteModelOptions(for: threadID)
+    if let model, !options.contains(where: { $0.id == model }) {
+      throw AIChatRemoteConfigurationError.unknownModel(model)
+    }
+
+    if thread.runtime == .openClaw {
+      let settings = currentOpenClawSettings(allowKeychainRead: true)
+      _ = try await OpenClawGatewayClient(settings: settings).patchSessionConfiguration(
+        sessionKey: thread.sessionKey,
+        agentID: OpenClawChatClient.openClawAgentHeaderValue(for: openClawAgentID),
+        model: model,
+        reasoningEffort: nil
+      )
+    }
+
+    guard let index = openClawChatThreads.firstIndex(where: { $0.id == threadID }) else {
+      throw AIChatRemoteConfigurationError.threadNotFound
+    }
+    openClawChatThreads[index] = openClawChatThreads[index].replacingOpenClawChatMetadata(
+      model: .some(model),
+      reasoningEffort: .some(nil)
+    )
+    if selectedOpenClawChatThreadID == threadID {
+      aiChatModelOptions = options
+      aiChatReasoningOptions = []
+      aiChatEffectiveModel = model ?? options.first(where: \.isDefault)?.id
+      aiChatDefaultReasoningEffort = nil
+    }
+    persistOpenClawTranscript()
+    return options
+  }
+
+  public func setAIChatRemoteReasoningEffort(
+    _ reasoningEffort: String?,
+    threadID: UUID
+  ) async throws {
+    guard let thread = openClawChatThreads.first(where: { $0.id == threadID }) else {
+      throw AIChatRemoteConfigurationError.threadNotFound
+    }
+    guard !isAIChatThreadRunning(threadID) else {
+      throw AIChatRemoteConfigurationError.turnInProgress
+    }
+
+    let configuration = try await aiChatRemoteConfiguration(for: threadID)
+    if let reasoningEffort,
+       !configuration.reasoningOptions.contains(where: { $0.id == reasoningEffort }) {
+      throw AIChatRemoteConfigurationError.unknownReasoningEffort(reasoningEffort)
+    }
+    if thread.runtime == .openClaw {
+      let settings = currentOpenClawSettings(allowKeychainRead: true)
+      _ = try await OpenClawGatewayClient(settings: settings).patchSessionConfiguration(
+        sessionKey: thread.sessionKey,
+        agentID: OpenClawChatClient.openClawAgentHeaderValue(for: openClawAgentID),
+        model: thread.model,
+        reasoningEffort: reasoningEffort
+      )
+    }
+
+    guard let index = openClawChatThreads.firstIndex(where: { $0.id == threadID }) else {
+      throw AIChatRemoteConfigurationError.threadNotFound
+    }
+    openClawChatThreads[index] = openClawChatThreads[index].replacingOpenClawChatMetadata(
+      reasoningEffort: .some(reasoningEffort)
+    )
+    if selectedOpenClawChatThreadID == threadID {
+      aiChatModelOptions = configuration.models
+      aiChatReasoningOptions = configuration.reasoningOptions
+      aiChatEffectiveModel = configuration.effectiveModel
+      aiChatDefaultReasoningEffort = configuration.defaultReasoningEffort
+    }
+    persistOpenClawTranscript()
   }
 
   public func sendComposedOpenClawMessage(text rawText: String) {
@@ -24583,6 +24740,26 @@ private enum OpenClawAttachmentError: LocalizedError {
       return "\(name) is not a regular file."
     case .tooLarge(let name, let maxMegabytes):
       return "\(name) is larger than the \(maxMegabytes) MB OpenClaw attachment limit."
+    }
+  }
+}
+
+private enum AIChatRemoteConfigurationError: LocalizedError {
+  case threadNotFound
+  case turnInProgress
+  case unknownModel(String)
+  case unknownReasoningEffort(String)
+
+  var errorDescription: String? {
+    switch self {
+    case .threadNotFound:
+      "The remote chat no longer exists."
+    case .turnInProgress:
+      "Stop the current response before changing models."
+    case .unknownModel(let model):
+      "The selected runtime did not report the model ‘\(model)’."
+    case .unknownReasoningEffort(let effort):
+      "The selected model did not report the reasoning level ‘\(effort)’."
     }
   }
 }

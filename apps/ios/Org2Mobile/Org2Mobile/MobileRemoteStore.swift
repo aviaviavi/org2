@@ -10,9 +10,14 @@ final class MobileRemoteStore: ObservableObject {
   @Published private(set) var status: MobileRemoteServerStatus?
   @Published private(set) var threads: [MobileRemoteThreadSummary] = []
   @Published private(set) var threadDetail: MobileRemoteThreadDetail?
+  @Published private(set) var threadConfiguration: MobileRemoteThreadConfiguration?
   @Published private(set) var threadConnectionError: String?
+  @Published private(set) var configurationError: String?
   @Published private(set) var isRefreshing = false
   @Published private(set) var isPairing = false
+  @Published private(set) var isRefreshingConfiguration = false
+  @Published private(set) var isUpdatingConfiguration = false
+  @Published private(set) var mutatingThreadIDs: Set<UUID> = []
   @Published var endpointDraft = ""
   @Published var codeDraft = ""
   @Published var errorMessage: String?
@@ -27,6 +32,7 @@ final class MobileRemoteStore: ObservableObject {
   private var accessToken: String?
   private var pollingTask: Task<Void, Never>?
   private var pollingThreadID: UUID?
+  private var configurationRequestID: UUID?
 
   init(defaults: UserDefaults = .standard) {
     self.defaults = defaults
@@ -100,7 +106,9 @@ final class MobileRemoteStore: ObservableObject {
     status = nil
     threads = []
     threadDetail = nil
+    threadConfiguration = nil
     threadConnectionError = nil
+    configurationError = nil
     defaults.removeObject(forKey: Self.endpointKey)
     defaults.removeObject(forKey: Self.serverNameKey)
     defaults.removeObject(forKey: Self.deviceIDKey)
@@ -148,9 +156,14 @@ final class MobileRemoteStore: ObservableObject {
     pollingTask?.cancel()
     if pollingThreadID != threadID {
       threadDetail = nil
+      threadConfiguration = nil
       threadConnectionError = nil
+      configurationError = nil
     }
     pollingThreadID = threadID
+    Task { [weak self] in
+      await self?.refreshThreadConfiguration(threadID)
+    }
     pollingTask = Task { [weak self] in
       guard let self else { return }
       while !Task.isCancelled {
@@ -168,15 +181,23 @@ final class MobileRemoteStore: ObservableObject {
     if threadDetail?.thread.id == threadID {
       threadDetail = nil
     }
+    if threadConfiguration?.threadID == threadID {
+      threadConfiguration = nil
+    }
   }
 
-  func send(_ rawMessage: String, threadID: UUID) async -> Bool {
+  func send(
+    _ rawMessage: String,
+    attachments: [MobileRemoteAttachment],
+    threadID: UUID
+  ) async -> Bool {
     let message = rawMessage.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !message.isEmpty else { return false }
+    guard !message.isEmpty || !attachments.isEmpty else { return false }
     do {
       let _: MobileRemoteMutationResponse = try await pairedClient().post(
         "/v1/threads/\(threadID.uuidString)/messages",
-        payload: MobileRemoteSendMessageRequest(content: message),
+        payload: MobileRemoteSendMessageRequest(content: message, attachments: attachments),
+        timeout: attachments.isEmpty ? 15 : 45,
         as: MobileRemoteMutationResponse.self
       )
       await refreshThread(threadID)
@@ -185,6 +206,57 @@ final class MobileRemoteStore: ObservableObject {
       errorMessage = error.localizedDescription
       return false
     }
+  }
+
+  func setModel(_ model: String?, threadID: UUID) async {
+    await updateThreadConfiguration(
+      MobileRemoteUpdateThreadConfigurationRequest(model: model),
+      threadID: threadID
+    )
+  }
+
+  func setReasoningEffort(_ effort: String?, threadID: UUID) async {
+    await updateThreadConfiguration(
+      MobileRemoteUpdateThreadConfigurationRequest(reasoningEffort: effort),
+      threadID: threadID
+    )
+  }
+
+  private func updateThreadConfiguration(
+    _ request: MobileRemoteUpdateThreadConfigurationRequest,
+    threadID: UUID
+  ) async {
+    guard !isUpdatingConfiguration else { return }
+    isUpdatingConfiguration = true
+    defer { isUpdatingConfiguration = false }
+    do {
+      let configuration: MobileRemoteThreadConfiguration = try await pairedClient().post(
+        "/v1/threads/\(threadID.uuidString)/configuration",
+        payload: request,
+        as: MobileRemoteThreadConfiguration.self
+      )
+      guard pollingThreadID == threadID else { return }
+      threadConfiguration = configuration
+      configurationError = nil
+      await refreshThread(threadID)
+    } catch {
+      configurationError = error.localizedDescription
+      errorMessage = error.localizedDescription
+    }
+  }
+
+  func setPinned(_ isPinned: Bool, threadID: UUID) async {
+    await updateThreadState(
+      MobileRemoteUpdateThreadStateRequest(isPinned: isPinned, isSettled: nil),
+      threadID: threadID
+    )
+  }
+
+  func setSettled(_ isSettled: Bool, threadID: UUID) async {
+    await updateThreadState(
+      MobileRemoteUpdateThreadStateRequest(isPinned: nil, isSettled: isSettled),
+      threadID: threadID
+    )
   }
 
   func stop(threadID: UUID) async {
@@ -218,6 +290,72 @@ final class MobileRemoteStore: ObservableObject {
         isConnected = false
         threadConnectionError = error.localizedDescription
       }
+    }
+  }
+
+  private func refreshThreadConfiguration(_ threadID: UUID) async {
+    let requestID = UUID()
+    configurationRequestID = requestID
+    isRefreshingConfiguration = true
+    defer {
+      if configurationRequestID == requestID {
+        isRefreshingConfiguration = false
+      }
+    }
+    do {
+      let configuration = try await pairedClient().get(
+        "/v1/threads/\(threadID.uuidString)/configuration",
+        as: MobileRemoteThreadConfiguration.self
+      )
+      guard pollingThreadID == threadID else { return }
+      threadConfiguration = configuration
+      configurationError = nil
+    } catch {
+      guard !Task.isCancelled, pollingThreadID == threadID else { return }
+      configurationError = error.localizedDescription
+    }
+  }
+
+  private func updateThreadState(
+    _ request: MobileRemoteUpdateThreadStateRequest,
+    threadID: UUID
+  ) async {
+    guard !mutatingThreadIDs.contains(threadID) else { return }
+    mutatingThreadIDs.insert(threadID)
+    defer { mutatingThreadIDs.remove(threadID) }
+    do {
+      let summary: MobileRemoteThreadSummary = try await pairedClient().post(
+        "/v1/threads/\(threadID.uuidString)/state",
+        payload: request,
+        as: MobileRemoteThreadSummary.self
+      )
+      apply(summary)
+    } catch {
+      errorMessage = error.localizedDescription
+    }
+  }
+
+  private func apply(_ summary: MobileRemoteThreadSummary) {
+    if let index = threads.firstIndex(where: { $0.id == summary.id }) {
+      threads[index] = summary
+    } else {
+      threads.append(summary)
+    }
+    threads.sort {
+      if $0.isSettled != $1.isSettled { return !$0.isSettled }
+      if $0.isPinned != $1.isPinned { return $0.isPinned }
+      return $0.updatedAt > $1.updatedAt
+    }
+    if let detail = threadDetail, detail.thread.id == summary.id {
+      threadDetail = MobileRemoteThreadDetail(
+        thread: summary,
+        messages: detail.messages,
+        streamingReply: detail.streamingReply,
+        reasoning: detail.reasoning,
+        activities: detail.activities,
+        connectionState: detail.connectionState,
+        connectionDetail: detail.connectionDetail
+      )
     }
   }
 

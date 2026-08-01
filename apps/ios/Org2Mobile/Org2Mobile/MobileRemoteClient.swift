@@ -57,16 +57,18 @@ struct MobileRemoteClient: Sendable {
   func post<Payload: Encodable, Response: Decodable>(
     _ path: String,
     payload: Payload,
+    timeout: TimeInterval = 15,
     as type: Response.Type
   ) async throws -> Response {
     let body = try MobileRemoteWire.encoder().encode(payload)
-    return try await request(method: "POST", path: path, body: body, as: type)
+    return try await request(method: "POST", path: path, body: body, timeout: timeout, as: type)
   }
 
   private func request<Response: Decodable>(
     method: String,
     path: String,
     body: Data?,
+    timeout: TimeInterval = 15,
     as type: Response.Type
   ) async throws -> Response {
     guard let host = endpoint.host else {
@@ -101,7 +103,8 @@ struct MobileRemoteClient: Sendable {
     let response = try await MobileRemoteHTTPExchange(
       host: NWEndpoint.Host(host),
       port: port,
-      request: requestData
+      request: requestData,
+      timeout: timeout
     ).run()
 
     guard (200..<300).contains(response.statusCode) else {
@@ -126,6 +129,7 @@ private final class MobileRemoteHTTPExchange: @unchecked Sendable {
   private let host: NWEndpoint.Host
   private let port: NWEndpoint.Port
   private let request: Data
+  private let timeout: TimeInterval
   private let queue = DispatchQueue(label: "org.org2.mobile.remote-http", qos: .userInitiated)
   private let lock = NSLock()
   private var connection: NWConnection?
@@ -133,10 +137,11 @@ private final class MobileRemoteHTTPExchange: @unchecked Sendable {
   private var received = Data()
   private var isFinished = false
 
-  init(host: NWEndpoint.Host, port: NWEndpoint.Port, request: Data) {
+  init(host: NWEndpoint.Host, port: NWEndpoint.Port, request: Data, timeout: TimeInterval) {
     self.host = host
     self.port = port
     self.request = request
+    self.timeout = timeout
   }
 
   func run() async throws -> MobileRemoteRawResponse {
@@ -158,7 +163,7 @@ private final class MobileRemoteHTTPExchange: @unchecked Sendable {
         }
       }
       connection.start(queue: queue)
-      queue.asyncAfter(deadline: .now() + 15) { [weak self] in
+      queue.asyncAfter(deadline: .now() + timeout) { [weak self] in
         self?.finish(.failure(MobileRemoteClientError.connection("The request timed out.")))
       }
     }

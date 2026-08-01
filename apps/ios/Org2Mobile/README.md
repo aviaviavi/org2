@@ -28,7 +28,7 @@ Tailscale can help devices see each other, but iOS does not provide reliable alw
 
 ## Mobile Remote
 
-Mobile Remote is independent of corpus file sync. It keeps the Mac app as the AI runtime and lets the iOS app list chats, create a Codex or OpenClaw chat, send messages, follow streamed replies and activity, and stop a live turn.
+Mobile Remote is independent of corpus file sync. It keeps the Mac app as the AI runtime and lets the iOS app list chats, create a Codex or OpenClaw chat, pin and settle or reopen threads, choose a model and supported reasoning level, dictate into the composer, attach up to four photos, send messages, follow the live connection and work phase, stream replies and activity, copy any message, and stop a live turn. In the thread list, swipe right to pin or unpin and swipe left to settle or reopen. Dictation is handled by iOS and its audio is not sent to the Mac. Photos are resized before they cross the tailnet.
 
 1. Install and sign into Tailscale on the Mac and iPhone with access to the same tailnet.
 2. In Org2 Workspace on the Mac, open **Settings → Mobile Remote**.
@@ -36,5 +36,7 @@ Mobile Remote is independent of corpus file sync. It keeps the Mac app as the AI
 4. In Org2 Mobile, open **Remote** and scan the QR code. Manual URL and code entry is also available.
 
 The Mac listener binds only to its Tailscale IPv4 address on port `48922`; it is not exposed on Wi-Fi or the public internet. Tailscale encrypts the transport. Pairing issues a per-device bearer credential, stored in Keychain on both devices, which can be revoked from Mac settings. Pairing codes expire after ten minutes and work once. The Mac must be awake, Org2 Workspace must be running, and the selected AI runtime must already be configured there.
+
+Photo attachments and remote model selection require Mobile Remote protocol v2. Update both the Mac and iOS apps together; the apps reject a mismatched protocol instead of silently dropping attachments.
 
 The app and share extension use the `group.org.org2.mobile` app group so the extension can reuse the selected corpus bookmark. Enable that App Group for both targets in the Apple developer portal before device signing.

@@ -1,7 +1,7 @@
 import Foundation
 
 public enum MobileRemoteProtocol {
-  public static let version = 1
+  public static let version = 2
   public static let defaultPort: UInt16 = 48_922
 
   public static func encoder() -> JSONEncoder {
@@ -79,9 +79,99 @@ public struct MobileRemoteCreateThreadRequest: Codable, Hashable, Sendable {
 
 public struct MobileRemoteSendMessageRequest: Codable, Hashable, Sendable {
   public let content: String
+  public let attachments: [MobileRemoteAttachment]
 
-  public init(content: String) {
+  public init(content: String, attachments: [MobileRemoteAttachment] = []) {
     self.content = content
+    self.attachments = attachments
+  }
+}
+
+public struct MobileRemoteAttachment: Codable, Hashable, Sendable {
+  public let fileName: String
+  public let mimeType: String
+  public let data: Data
+
+  public init(fileName: String, mimeType: String, data: Data) {
+    self.fileName = fileName
+    self.mimeType = mimeType
+    self.data = data
+  }
+}
+
+public struct MobileRemoteModelOption: Codable, Hashable, Identifiable, Sendable {
+  public let id: String
+  public let label: String
+  public let detail: String?
+  public let isDefault: Bool
+
+  public init(id: String, label: String, detail: String?, isDefault: Bool) {
+    self.id = id
+    self.label = label
+    self.detail = detail
+    self.isDefault = isDefault
+  }
+}
+
+public struct MobileRemoteThreadConfiguration: Codable, Hashable, Sendable {
+  public let threadID: UUID
+  public let model: String?
+  public let models: [MobileRemoteModelOption]
+  public let reasoningEffort: String?
+  public let reasoningOptions: [MobileRemoteReasoningOption]
+  public let defaultReasoningEffort: String?
+
+  public init(
+    threadID: UUID,
+    model: String?,
+    models: [MobileRemoteModelOption],
+    reasoningEffort: String?,
+    reasoningOptions: [MobileRemoteReasoningOption],
+    defaultReasoningEffort: String?
+  ) {
+    self.threadID = threadID
+    self.model = model
+    self.models = models
+    self.reasoningEffort = reasoningEffort
+    self.reasoningOptions = reasoningOptions
+    self.defaultReasoningEffort = defaultReasoningEffort
+  }
+}
+
+public struct MobileRemoteUpdateThreadConfigurationRequest: Codable, Hashable, Sendable {
+  public let setting: String
+  public let value: String?
+
+  public init(model: String?) {
+    setting = "model"
+    value = model
+  }
+
+  public init(reasoningEffort: String?) {
+    setting = "reasoning"
+    value = reasoningEffort
+  }
+}
+
+public struct MobileRemoteReasoningOption: Codable, Hashable, Identifiable, Sendable {
+  public let id: String
+  public let label: String
+  public let detail: String?
+
+  public init(id: String, label: String, detail: String?) {
+    self.id = id
+    self.label = label
+    self.detail = detail
+  }
+}
+
+public struct MobileRemoteUpdateThreadStateRequest: Codable, Hashable, Sendable {
+  public let isPinned: Bool?
+  public let isSettled: Bool?
+
+  public init(isPinned: Bool? = nil, isSettled: Bool? = nil) {
+    self.isPinned = isPinned
+    self.isSettled = isSettled
   }
 }
 

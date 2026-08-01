@@ -240,10 +240,65 @@ final class MobileRemoteCoordinator: ObservableObject {
     if request.method == "GET", components.count == 3 {
       return .json(threadDetail(thread, store: store))
     }
-    if request.method == "POST", components.count == 4, components[3] == "messages" {
-      guard let payload = try? request.decode(MobileRemoteSendMessageRequest.self),
-            store.sendAIChatRemoteMessage(payload.content, threadID: threadID)
+    if request.method == "GET", components.count == 4, components[3] == "configuration" {
+      do {
+        let configuration = try await store.aiChatRemoteConfiguration(for: threadID)
+        let current = store.openClawChatThreads.first(where: { $0.id == threadID }) ?? thread
+        return .json(threadConfiguration(configuration, thread: current))
+      } catch {
+        return .error(error.localizedDescription, statusCode: 503)
+      }
+    }
+    if request.method == "POST", components.count == 4, components[3] == "configuration" {
+      guard let payload = try? request.decode(MobileRemoteUpdateThreadConfigurationRequest.self) else {
+        return .error("Choose a valid chat configuration.", statusCode: 400)
+      }
+      do {
+        switch payload.setting {
+        case "model":
+          _ = try await store.setAIChatRemoteModel(payload.value, threadID: threadID)
+        case "reasoning":
+          try await store.setAIChatRemoteReasoningEffort(payload.value, threadID: threadID)
+        default:
+          return .error("Choose either model or reasoning to update.", statusCode: 400)
+        }
+        let configuration = try await store.aiChatRemoteConfiguration(for: threadID)
+        let current = store.openClawChatThreads.first(where: { $0.id == threadID }) ?? thread
+        return .json(threadConfiguration(configuration, thread: current))
+      } catch {
+        return .error(error.localizedDescription, statusCode: 409)
+      }
+    }
+    if request.method == "POST", components.count == 4, components[3] == "state" {
+      guard let payload = try? request.decode(MobileRemoteUpdateThreadStateRequest.self),
+            payload.isPinned != nil || payload.isSettled != nil
       else {
+        return .error("Choose a pin or settlement state to update.", statusCode: 400)
+      }
+      guard store.updateAIChatRemoteThreadState(
+        threadID: threadID,
+        isPinned: payload.isPinned,
+        isSettled: payload.isSettled
+      ), let updated = store.openClawChatThreads.first(where: { $0.id == threadID }) else {
+        return .error("Thread not found.", statusCode: 404)
+      }
+      return .json(threadSummary(updated, store: store))
+    }
+    if request.method == "POST", components.count == 4, components[3] == "messages" {
+      guard let payload = try? request.decode(MobileRemoteSendMessageRequest.self) else {
+        return .error("The message could not be read.", statusCode: 400)
+      }
+      let attachments: [OpenClawChatAttachment]
+      do {
+        attachments = try Self.chatAttachments(from: payload.attachments)
+      } catch {
+        return .error(error.localizedDescription, statusCode: 400)
+      }
+      guard store.sendAIChatRemoteMessage(
+        payload.content,
+        attachments: attachments,
+        threadID: threadID
+      ) else {
         return .error("The message is empty or this thread is settled.", statusCode: 409)
       }
       return .json(MobileRemoteMutationResponse(accepted: true, threadID: threadID), statusCode: 202)
@@ -344,6 +399,60 @@ final class MobileRemoteCoordinator: ObservableObject {
     Host.current().localizedName ?? "Org2 on Mac"
   }
 
+  private func threadConfiguration(
+    _ configuration: AIChatRemoteConfiguration,
+    thread: OpenClawChatThread
+  ) -> MobileRemoteThreadConfiguration {
+    MobileRemoteThreadConfiguration(
+      threadID: thread.id,
+      model: thread.model,
+      models: configuration.models.map {
+        MobileRemoteModelOption(
+          id: $0.id,
+          label: $0.label,
+          detail: $0.detail,
+          isDefault: $0.isDefault
+        )
+      },
+      reasoningEffort: thread.reasoningEffort,
+      reasoningOptions: configuration.reasoningOptions.map {
+        MobileRemoteReasoningOption(id: $0.id, label: $0.label, detail: $0.detail)
+      },
+      defaultReasoningEffort: configuration.defaultReasoningEffort
+    )
+  }
+
+  private static func chatAttachments(
+    from payloads: [MobileRemoteAttachment]
+  ) throws -> [OpenClawChatAttachment] {
+    guard payloads.count <= 4 else {
+      throw MobileRemoteRequestError.tooManyPhotos
+    }
+    var totalBytes = 0
+    return try payloads.map { payload in
+      let mimeType = payload.mimeType.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+      guard mimeType.hasPrefix("image/") else {
+        throw MobileRemoteRequestError.unsupportedAttachment(payload.fileName)
+      }
+      guard !payload.data.isEmpty, payload.data.count <= 5_000_000 else {
+        throw MobileRemoteRequestError.photoTooLarge(payload.fileName)
+      }
+      totalBytes += payload.data.count
+      guard totalBytes <= 8_000_000 else {
+        throw MobileRemoteRequestError.photosTooLarge
+      }
+      let fileName = URL(fileURLWithPath: payload.fileName).lastPathComponent
+      guard !fileName.isEmpty else {
+        throw MobileRemoteRequestError.unsupportedAttachment("Photo")
+      }
+      return OpenClawChatAttachment(
+        fileName: fileName,
+        mimeType: mimeType,
+        data: payload.data
+      )
+    }
+  }
+
   static func isTailscaleIPv4(_ address: String) -> Bool {
     let parts = address.split(separator: ".").compactMap { UInt8($0) }
     guard parts.count == 4 else { return false }
@@ -376,6 +485,26 @@ final class MobileRemoteCoordinator: ObservableObject {
       }
     }
     return results.sorted()
+  }
+}
+
+private enum MobileRemoteRequestError: LocalizedError {
+  case tooManyPhotos
+  case photoTooLarge(String)
+  case photosTooLarge
+  case unsupportedAttachment(String)
+
+  var errorDescription: String? {
+    switch self {
+    case .tooManyPhotos:
+      "Attach no more than four photos at a time."
+    case .photoTooLarge(let name):
+      "\(name) is too large to send from Mobile Remote."
+    case .photosTooLarge:
+      "The selected photos are too large to send together."
+    case .unsupportedAttachment(let name):
+      "\(name) is not a supported photo attachment."
+    }
   }
 }
 
