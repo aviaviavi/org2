@@ -10,6 +10,12 @@ import {
   saveAgentRun,
   transitionAgentRun,
 } from "../dist/agentRun.js";
+import {
+  appendWorkLedgerEvent,
+  createWorkLedgerAccount,
+  saveWorkLedgerAccount,
+  workLedgerMutationLockPath,
+} from "../dist/workLedger.js";
 
 const cli = path.resolve("dist/cli.js");
 
@@ -137,6 +143,27 @@ try {
 :END:
 `, "utf8");
 
+  for (const [id, title] of [["duplicate-ledger-one", "Duplicate Ledger One"], ["duplicate-ledger-two", "Duplicate Ledger Two"]]) {
+    let account = createWorkLedgerAccount({
+      ledger: "account-outreach",
+      id,
+      title,
+      identityKeys: ["domain:duplicate.example"],
+    });
+    account = appendWorkLedgerEvent(account, {
+      idempotencyKey: "shared-event-key",
+      type: "outreach-sent",
+      externalId: `gmail:${id}`,
+      runId: "provider-missing",
+      approvalId: "provider-approval",
+    }).account;
+    const saved = saveWorkLedgerAccount(root, account, { expectedRevision: null });
+    if (id === "duplicate-ledger-one") {
+      fs.writeFileSync(saved.file, saved.raw.replace(" outreach-sent =", " outreach-sent-edited ="), "utf8");
+    }
+  }
+  fs.writeFileSync(workLedgerMutationLockPath(root, "account-outreach"), "{}\n", "utf8");
+
   const before = allFiles(root);
   const result = runDoctor(root);
   assert.equal(result.status, 1, result.stderr || result.stdout);
@@ -146,7 +173,9 @@ try {
   assert.equal(report.ok, false);
   assert.equal(report.summary.runFiles, 10);
   assert.equal(report.summary.validRuns, 10);
-  assert.equal(report.summary.corpusFiles, 1);
+  assert.equal(report.summary.ledgerFiles, 2);
+  assert.equal(report.summary.validLedgerAccounts, 2);
+  assert.equal(report.summary.corpusFiles, 3);
   assert.equal(report.summary.linkedHeadlines, 2);
   const rules = new Set(report.findings.map((finding) => finding.rule));
   for (const rule of [
@@ -164,6 +193,11 @@ try {
     "approved-child-parent-still-waiting",
     "duplicate-open-headline-title",
     "duplicate-open-provider-draft",
+    "duplicate-ledger-identity-key",
+    "duplicate-ledger-event-key",
+    "ledger-outreach-without-approved-decision",
+    "ledger-source-state-drift",
+    "ledger-write-lock-present",
   ]) assert.ok(rules.has(rule), `missing expected doctor rule: ${rule}`);
   assert.deepEqual(allFiles(root), before, "doctor must not mutate corpus files");
 

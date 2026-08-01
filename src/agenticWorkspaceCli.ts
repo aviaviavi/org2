@@ -74,6 +74,21 @@ import {
   settleOpenClawThread,
 } from "./openClawThreadState.js";
 import { auditAgenticWorkspace, renderAgenticDoctorReport } from "./agenticWorkspaceDoctor.js";
+import {
+  WORK_LEDGER_ACCOUNT_STATES,
+  acquireWorkLedgerMutationLock,
+  appendWorkLedgerEvent,
+  createWorkLedgerAccount,
+  listWorkLedgerAccounts,
+  loadWorkLedgerAccount,
+  renderWorkLedgerAccount,
+  saveWorkLedgerAccount,
+  summarizeWorkLedgerAccount,
+  updateWorkLedgerAccount,
+  validateWorkLedgerAccount,
+  workLedgerAccountPath,
+  type WorkLedgerAccount,
+} from "./workLedger.js";
 
 interface ParsedArgs { positional: string[]; flags: Map<string, string[]>; }
 function parseArgs(args: string[]): ParsedArgs {
@@ -121,6 +136,11 @@ function syncLinkedArtifactReviewStatus(corpus: string, artifactPath: string, re
 
 const HELP = `Agentic workspace commands:
   org2 doctor [--dir CORPUS] [--json]
+  org2 ledger list LEDGER [--eligible] [--state STATE] [--field KEY=VALUE] [--json]
+  org2 ledger show LEDGER ACCOUNT [--with-revision] [--json]
+  org2 ledger create LEDGER ACCOUNT --title TEXT [--identity KEY] [--alias NAME] [--field KEY=VALUE] [--context TEXT] [--apply]
+  org2 ledger update LEDGER ACCOUNT [--state STATE] [--identity KEY] [--alias NAME] [--field KEY=VALUE] [--context TEXT] [--if-revision SHA256] [--apply]
+  org2 ledger event LEDGER ACCOUNT --type TYPE --key IDEMPOTENCY_KEY [--run RUN --approval APPROVAL] [--external-id ID] [--apply]
   org2 corpus show|validate|init [--dir CORPUS] [--id ID --name NAME --kind personal|shared|project] [--apply]
   org2 workspace agenda --mount CORPUS [--mount CORPUS ...] [--from DATE --to DATE]
   org2 workspace search QUERY --mount CORPUS [--mount CORPUS ...] [--limit N]
@@ -158,6 +178,204 @@ function doctorCommand(parsed: ParsedArgs): void {
   const report = auditAgenticWorkspace(root(parsed));
   output(parsed, report, renderAgenticDoctorReport(report));
   if (!report.ok) process.exitCode = 1;
+}
+
+function keyValueFlags(parsed: ParsedArgs, name: string): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const raw of flags(parsed, name)) {
+    const equal = raw.indexOf("=");
+    if (equal <= 0) throw new Error(`--${name} must be KEY=VALUE`);
+    const key = raw.slice(0, equal).trim().toLowerCase();
+    if (!/^[a-z0-9][a-z0-9._-]*$/.test(key)) throw new Error(`--${name} key is invalid: ${key}`);
+    result[key] = raw.slice(equal + 1);
+  }
+  return result;
+}
+
+function assertLedgerIdentityUnique(
+  account: WorkLedgerAccount,
+  existing: ReturnType<typeof listWorkLedgerAccounts>,
+): void {
+  const claimed = new Set(account.identityKeys);
+  for (const snapshot of existing) {
+    if (snapshot.account.id === account.id) continue;
+    const collision = snapshot.account.identityKeys.find((key) => claimed.has(key));
+    if (collision) throw new Error(`identity key ${collision} is already claimed by ${snapshot.account.id}`);
+  }
+}
+
+function linkedPendingApprovalCount(account: WorkLedgerAccount, runs: Map<string, AgentRun>): number {
+  const identities = new Set<string>();
+  for (const event of account.events) {
+    if (!event.runId || !event.approvalId) continue;
+    const approval = runs.get(event.runId)?.approvals.find((candidate) => candidate.id === event.approvalId);
+    if (approval?.status === "pending") identities.add(`${event.runId}:${event.approvalId}`);
+  }
+  return identities.size;
+}
+
+function ledgerCommand(parsed: ParsedArgs): void {
+  const action = parsed.positional[0] || "list";
+  const corpus = root(parsed);
+  const ledger = required(parsed.positional[1], "ledger id is required");
+
+  if (action === "list") {
+    const existing = listWorkLedgerAccounts(corpus, ledger);
+    const referencedRunIds = new Set(existing.flatMap((snapshot) => snapshot.account.events.map((event) => event.runId).filter((id): id is string => Boolean(id))));
+    const runsById = new Map<string, AgentRun>();
+    for (const runId of referencedRunIds) {
+      try { runsById.set(runId, loadAgentRun(corpus, runId)); } catch {}
+    }
+    const state = optionalChoice(flag(parsed, "state"), WORK_LEDGER_ACCOUNT_STATES, "account state");
+    const fields = keyValueFlags(parsed, "field");
+    const summaries = existing
+      .map((snapshot) => summarizeWorkLedgerAccount(snapshot, {
+        asOf: flag(parsed, "as-of"),
+        cooldownDays: Number(flag(parsed, "cooldown-days", "90")),
+        openApprovalCount: linkedPendingApprovalCount(snapshot.account, runsById),
+      }))
+      .filter((summary) => !state || summary.state === state)
+      .filter((summary) => Object.entries(fields).every(([key, value]) => summary.fields[key] === value))
+      .filter((summary) => !enabled(parsed, "eligible") || summary.eligible);
+    output(
+      parsed,
+      { schema: "org2:work-ledger-list:v1", ledger, accounts: summaries },
+      summaries.length
+        ? summaries.map((summary) => `${summary.id}\t${summary.state}\t${summary.eligible ? "eligible" : summary.eligibilityReason}\t${summary.title}`).join("\n")
+        : "No ledger accounts matched.",
+    );
+    return;
+  }
+
+  const id = required(parsed.positional[2], `account id is required for ledger ${action}`);
+  if (action === "show") {
+    const snapshot = loadWorkLedgerAccount(corpus, ledger, id);
+    output(
+      parsed,
+      enabled(parsed, "with-revision") ? {
+        schema: "org2:work-ledger-snapshot:v1",
+        revision: snapshot.revision,
+        sourceIssues: snapshot.sourceIssues,
+        account: snapshot.account,
+      } : snapshot.account,
+      snapshot.raw,
+    );
+    return;
+  }
+
+  if (!["create", "update", "event"].includes(action)) throw new Error(`unknown ledger action: ${action}`);
+  const releaseLedgerLock = enabled(parsed, "apply")
+    ? acquireWorkLedgerMutationLock(corpus, ledger)
+    : () => {};
+  try {
+
+  if (action === "create") {
+    const existing = listWorkLedgerAccounts(corpus, ledger);
+    const account = createWorkLedgerAccount({
+      ledger,
+      id,
+      title: required(flag(parsed, "title"), "--title is required"),
+      state: optionalChoice(flag(parsed, "state"), WORK_LEDGER_ACCOUNT_STATES, "account state"),
+      aliases: flags(parsed, "alias"),
+      identityKeys: flags(parsed, "identity"),
+      fields: keyValueFlags(parsed, "field"),
+      context: flag(parsed, "context"),
+      now: flag(parsed, "at"),
+    });
+    assertLedgerIdentityUnique(account, existing);
+    const file = workLedgerAccountPath(corpus, ledger, id);
+    if (fs.existsSync(file)) throw new Error(`work-ledger account already exists: ${id}`);
+    const applied = enabled(parsed, "apply");
+    const saved = applied ? saveWorkLedgerAccount(corpus, account, { expectedRevision: null }) : undefined;
+    output(
+      parsed,
+      { schema: "org2:work-ledger-change:v1", applied, changed: true, file, account, ...(saved ? { revision: saved.revision } : {}), preview: renderWorkLedgerAccount(account) },
+      `${applied ? "created" : "would create"} ${ledger}/${id}\n${file}`,
+    );
+    return;
+  }
+
+  const snapshot = loadWorkLedgerAccount(corpus, ledger, id);
+  const existing = listWorkLedgerAccounts(corpus, ledger);
+  const expected = flag(parsed, "if-revision");
+  if (expected && expected !== snapshot.revision) throw new Error(`account revision changed; expected ${expected}, found ${snapshot.revision}: ${snapshot.file}`);
+
+  if (action === "update") {
+    const account = updateWorkLedgerAccount(snapshot.account, {
+      title: flag(parsed, "title"),
+      state: optionalChoice(flag(parsed, "state"), WORK_LEDGER_ACCOUNT_STATES, "account state"),
+      aliases: flags(parsed, "alias").length ? [...snapshot.account.aliases, ...flags(parsed, "alias")] : undefined,
+      identityKeys: flags(parsed, "identity").length ? [...snapshot.account.identityKeys, ...flags(parsed, "identity")] : undefined,
+      fields: parsed.flags.has("field") ? keyValueFlags(parsed, "field") : undefined,
+      context: flag(parsed, "context"),
+      now: flag(parsed, "at"),
+    });
+    assertLedgerIdentityUnique(account, existing);
+    const validation = validateWorkLedgerAccount(account);
+    if (!validation.valid) throw new Error(validation.issues.map((issue) => `${issue.path}: ${issue.message}`).join("\n"));
+    const applied = enabled(parsed, "apply");
+    const saved = applied ? saveWorkLedgerAccount(corpus, account, { expectedRevision: snapshot.revision, rejectSourceDrift: true }) : undefined;
+    output(
+      parsed,
+      { schema: "org2:work-ledger-change:v1", applied, changed: true, file: snapshot.file, account, ...(saved ? { revision: saved.revision } : {}), preview: renderWorkLedgerAccount(account) },
+      `${applied ? "updated" : "would update"} ${ledger}/${id}`,
+    );
+    return;
+  }
+
+  if (action === "event") {
+    const runId = flag(parsed, "run");
+    const approvalId = flag(parsed, "approval");
+    if (Boolean(runId) !== Boolean(approvalId)) throw new Error("--run and --approval must be supplied together");
+    if (runId && approvalId) {
+      let run: AgentRun;
+      try { run = loadAgentRun(corpus, runId); } catch { throw new Error(`linked run not found: ${runId}`); }
+      const approval = run.approvals.find((candidate) => candidate.id === approvalId);
+      if (!approval) throw new Error(`linked approval not found: ${runId}:${approvalId}`);
+      const decisionKey = flag(parsed, "decision-key")?.toLowerCase();
+      if (decisionKey) {
+        const normalized = decisionKey.startsWith("artifact:") ? decisionKey : `artifact:${decisionKey}`;
+        if (!agentRunApprovalDecisionKeys(approval).includes(normalized)) throw new Error(`decision key does not belong to ${runId}:${approvalId}`);
+      }
+      if (flag(parsed, "type")?.toLowerCase() === "outreach-sent" && approval.status !== "approved") {
+        throw new Error(`outreach-sent requires an approved linked decision; ${runId}:${approvalId} is ${approval.status}`);
+      }
+    }
+    const idempotencyKey = required(flag(parsed, "key"), "--key is required").toLowerCase();
+    for (const candidate of existing) {
+      if (candidate.account.id === id) continue;
+      if (candidate.account.events.some((event) => event.idempotencyKey === idempotencyKey)) {
+        throw new Error(`event idempotency key is already recorded on ${candidate.account.id}: ${idempotencyKey}`);
+      }
+    }
+    const result = appendWorkLedgerEvent(snapshot.account, {
+      id: flag(parsed, "event-id"),
+      idempotencyKey,
+      type: required(flag(parsed, "type"), "--type is required"),
+      at: flag(parsed, "at"),
+      actor: flag(parsed, "actor"),
+      note: flag(parsed, "note"),
+      runId,
+      approvalId,
+      decisionKey: flag(parsed, "decision-key"),
+      externalId: flag(parsed, "external-id"),
+      sourceRefs: flags(parsed, "source"),
+      data: keyValueFlags(parsed, "data"),
+    });
+    const applied = enabled(parsed, "apply");
+    const saved = applied && result.changed
+      ? saveWorkLedgerAccount(corpus, result.account, { expectedRevision: snapshot.revision, rejectSourceDrift: true })
+      : undefined;
+    output(
+      parsed,
+      { schema: "org2:work-ledger-event-result:v1", applied, changed: result.changed, file: snapshot.file, event: result.event, account: result.account, ...(saved ? { revision: saved.revision } : {}), preview: renderWorkLedgerAccount(result.account) },
+      `${result.changed ? (applied ? "recorded" : "would record") : "already recorded"} ${result.event.type} for ${ledger}/${id}`,
+    );
+    return;
+  }
+  } finally {
+    releaseLedgerLock();
+  }
 }
 
 function forwardedArgs(parsed: ParsedArgs, excluded: Set<string>): string[] {
@@ -968,10 +1186,11 @@ function evalCommand(parsed: ParsedArgs): void {
 
 export async function runAgenticWorkspaceCommand(args: string[]): Promise<boolean> {
   const family = args[0];
-  if (!family || !["doctor", "corpus", "workspace", "thread", "run", "review", "workflow", "artifact", "runtime", "mcp", "eval"].includes(family)) return false;
+  if (!family || !["doctor", "ledger", "corpus", "workspace", "thread", "run", "review", "workflow", "artifact", "runtime", "mcp", "eval"].includes(family)) return false;
   const parsed = parseArgs(args.slice(1));
   if (enabled(parsed, "help") || parsed.positional[0] === "help") { output(parsed, HELP); return true; }
   if (family === "doctor") doctorCommand(parsed);
+  else if (family === "ledger") ledgerCommand(parsed);
   else if (family === "corpus") corpusCommand(parsed);
   else if (family === "workspace") await workspaceCommand(parsed);
   else if (family === "thread") threadCommand(parsed);

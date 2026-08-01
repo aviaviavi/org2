@@ -58,12 +58,14 @@ org2 roam graph --dir ~/notes --recursive --format report</code></pre>
         <li>Recurring workflow executions roll up under stable logical work while retaining separate scheduler attempts, and event/fresh-path gates skip unchanged expensive work.</li>
         <li>A read-only workspace doctor finds contradictory run and approval state, duplicate decision identities, broken projections, and unmanaged recurring work before another agent acts.</li>
         <li>Atomic revision-checked run and workflow writes reject stale clients and ambiguous direct edits instead of silently replacing newer work.</li>
+        <li>Per-account work ledgers keep stable identity, curated context, linked approvals, contact receipts, and idempotent history queryable without one ever-growing agent file.</li>
         <li>OpenClaw is the first native end-to-end integration; CLI, MCP, and plain files keep the model provider-independent.</li>
       </ul>
       <div class="org2-command" aria-label="Agent context and review commands">
         <span>Context and review commands</span>
         <pre class="org2-src language-sh"><code class="language-sh">org2 agent context --query "launch risks" --dir ~/notes --recursive
 org2 doctor --dir ~/notes --json
+org2 ledger list account-outreach --eligible --dir ~/notes --json
 org2 approvals --dir ~/notes --recursive --format json
 org2 review list --status pending --dir ~/notes</code></pre>
       </div>

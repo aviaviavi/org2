@@ -23,6 +23,8 @@ Start with the zones your corpus needs. Once a corpus adopts these names, Org2 l
 
 Canonical authorship lives in =notes/=. Generated outputs may be useful and may be committed, but they should be reproducible from provenance whenever possible.
 
+Long-running account workflows follow the same boundary. For example, =notes/account-outreach/accounts/ACCOUNT_ID.org2= contains reviewed identity, aliases, commercial context, and durable work history because those facts are curated canonical knowledge. Imported CRM rows, email/provider responses, and collector payloads belong under =raw/account-outreach/=; generated rankings and next-account selections belong under =views/account-outreach/=. The account ledger links those sources and native run approvals rather than copying raw payloads or creating a second approval authority.
+
 * Trust boundaries
 
 The most important boundary is between canonical material and generated material:

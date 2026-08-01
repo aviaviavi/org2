@@ -396,6 +396,36 @@ org2 run comment RUN_ID --author agent --body "Checked current state" \
 
 The snapshot envelope is =org2:run-snapshot:v1= and includes =revision=, =sourceIssues=, and the parsed =run=. A lifecycle write also refuses readable run headers that disagree with the machine state, directing the caller to =org2 doctor= instead of normalizing an ambiguous direct edit. An abandoned =.org2.lock= is reported by the doctor; confirm that no writer remains before removing it.
 
+* Work ledgers for recurring account workflows
+
+=org2 ledger= keeps high-volume recurring bookkeeping out of a monolithic agent prompt or TODO file. One stable account becomes one canonical Org2 file. Account Outreach uses =notes/account-outreach/accounts/ACCOUNT_ID.org2=; the same command can use another ledger name for another account-oriented process.
+
+#+begin_src sh
+org2 ledger create account-outreach acme \
+  --title "Acme Corp" --identity domain:acme.example \
+  --alias Acme --field segment=enterprise \
+  --context "Reviewed commercial context." --apply --dir ~/notes
+
+org2 ledger event account-outreach acme \
+  --type approval-linked --key approval:acme:gmail-draft \
+  --run RUN_ID --approval APPROVAL_ID \
+  --decision-key gmail:gog:DRAFT_ID --apply --dir ~/notes
+
+org2 ledger event account-outreach acme \
+  --type outreach-sent --key send:acme:gmail-message \
+  --run RUN_ID --approval APPROVAL_ID \
+  --external-id gmail:message:MESSAGE_ID --apply --dir ~/notes
+
+org2 ledger list account-outreach --eligible \
+  --as-of 2026-07-31T12:00:00Z --cooldown-days 90 --dir ~/notes --json
+#+end_src
+
+Creates, updates, and events preview by default and require =--apply=. Account source uses the versioned =org2:work-ledger-account:v1= schema, readable aliases/identity/context fields, guarded SHA-256 revisions, arbitrary string =--field KEY=VALUE= metadata, and append-only events. Applied mutations also hold a ledger-wide lock while checking global uniqueness, so concurrent writers cannot claim the same identity or event key in two account files. Every event requires a ledger-wide idempotency key. Identity keys and event keys may not be claimed by two accounts. Repeating identical event material is a no-op; reusing its key for different material fails. Human edits to title, state, aliases, identity keys, and context are accepted as canonical authoring; disagreement between readable event history and structured event state is reported by =org2 doctor=, makes the account ineligible, and blocks a later structured write until explicitly reconciled.
+
+An =approval-linked= event points to the native =RUN_ID/APPROVAL_ID=; it does not copy approval status into the account. Recording =outreach-sent= with a linked approval requires that canonical decision to be approved and requires an external message/receipt ID. Eligibility excludes paused, suppressed, or closed accounts, accounts with linked pending approvals, approved/proposed outreach that has not yet reached a matching sent/canceled/skipped outcome, and accounts contacted inside the requested cooldown. Carry the same run/approval linkage on the settlement event; for work without a native approval, pass =--data= with the same named cycle value. This prevents the next scheduler tick from recommending the same account during the gap between approval and execution, including when an account has more than one outreach cycle. =org2 doctor= also checks ledger identity/event collisions, broken run or approval references, path/identity mismatches, and sent outreach linked to a non-approved decision.
+
+The account file is curated canonical knowledge, so aliases, stable identity, commercial history, and human context belong under =notes/=. Raw CRM exports, email/provider payloads, and collector results remain under =raw/= and should be referenced through event =--source= values. Generated rankings or candidate lists belong in =views/=.
+
 * Reusable workflows and triggers
 
 =workflow save RUN_ID= converts a completed run into a draft =org2:workflow:v1= file under the visible top-level =workflows/=. Packages declare semantic version, compatibility, parameters and defaults, context rules, deterministic/agent/tool/approval steps, capabilities, risk, outputs, validation, approval boundaries, and manual/schedule/file-change/capture/meeting-import triggers. See [[file:workflows.org][Workflows]] for the plain-text ownership and OpenClaw execution contract.

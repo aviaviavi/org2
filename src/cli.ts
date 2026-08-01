@@ -8185,7 +8185,7 @@ or {metadata:{...}, content:"..."}. Generated view artifacts are review-required
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
 
-  if (["doctor", "corpus", "workspace", "thread", "run", "review", "workflow", "artifact", "runtime", "mcp", "eval"].includes(args[0] || "")) {
+  if (["doctor", "ledger", "corpus", "workspace", "thread", "run", "review", "workflow", "artifact", "runtime", "mcp", "eval"].includes(args[0] || "")) {
     const { runAgenticWorkspaceCommand } = await import("./agenticWorkspaceCli.js");
     if (await runAgenticWorkspaceCommand(args)) return;
   }
@@ -10023,6 +10023,7 @@ Usage:
 
 Core commands:
   org2 doctor [--dir CORPUS] [--json]
+  org2 ledger <list|show|create|update|event> LEDGER [ACCOUNT] [options]
   org2 corpus <show|validate|init> [--dir CORPUS] [--id ID --name NAME --kind KIND] [--apply]
   org2 workspace <agenda|search> [QUERY] --mount CORPUS [--mount CORPUS ...] [--json]
   org2 run <create|list|show|validate|start|resume|retry|cancel|complete|complete-external|fail|block|fork|normalize|assign|comment|outcome|runtime|step|artifact|artifact-review|validation|approval-request|approval-decide> [options]

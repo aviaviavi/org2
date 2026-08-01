@@ -17,11 +17,18 @@ import {
   type AgentWorkflow,
 } from "./agentWorkflow.js";
 import { parseOrgToCanonicalAst } from "./parser.js";
+import {
+  parseWorkLedgerAccount,
+  workLedgerSourceConsistency,
+  workLedgerAccountFiles,
+  workLedgerMutationLockFiles,
+  type WorkLedgerAccountSnapshot,
+} from "./workLedger.js";
 
 export const ORG2_AGENTIC_DOCTOR_SCHEMA = "org2:agentic-doctor:v1" as const;
 
 export type AgenticDoctorSeverity = "error" | "warning" | "info";
-export type AgenticDoctorCategory = "run" | "approval" | "workflow" | "projection" | "source";
+export type AgenticDoctorCategory = "run" | "approval" | "workflow" | "ledger" | "projection" | "source";
 
 export interface AgenticDoctorFinding {
   rule: string;
@@ -48,6 +55,8 @@ export interface AgenticDoctorReport {
     validRuns: number;
     workflowFiles: number;
     validWorkflows: number;
+    ledgerFiles: number;
+    validLedgerAccounts: number;
     corpusFiles: number;
     linkedHeadlines: number;
     findingCount: number;
@@ -77,6 +86,11 @@ interface LoadedRuns {
 interface LoadedWorkflows {
   fileCount: number;
   workflows: AgentWorkflow[];
+}
+
+interface LoadedLedgerAccounts {
+  fileCount: number;
+  accounts: WorkLedgerAccountSnapshot[];
 }
 
 const TERMINAL_RUN_STATUSES = new Set(["completed", "failed", "canceled"]);
@@ -195,6 +209,62 @@ function loadWorkflows(root: string, findings: AgenticDoctorFinding[]): LoadedWo
     }
   }
   return { fileCount: entries.length, workflows: [...byId.values()].map((entry) => entry.workflow) };
+}
+
+function loadLedgerAccounts(root: string, findings: AgenticDoctorFinding[]): LoadedLedgerAccounts {
+  const files = workLedgerAccountFiles(root);
+  const accounts: WorkLedgerAccountSnapshot[] = [];
+  for (const lockFile of workLedgerMutationLockFiles(root)) {
+    finding(findings, {
+      rule: "ledger-write-lock-present",
+      severity: "error",
+      category: "ledger",
+      message: "A work-ledger mutation lock is present.",
+      suggestion: "Confirm that no ledger writer remains before removing an abandoned lock.",
+      file: lockFile,
+    });
+  }
+  for (const file of files) {
+    try {
+      const raw = fs.readFileSync(file, "utf8");
+      const account = parseWorkLedgerAccount(raw);
+      const expected = path.basename(file, path.extname(file)).toLowerCase();
+      const parentLedger = path.basename(path.dirname(path.dirname(file))).toLowerCase();
+      if (account.id !== expected || account.ledger !== parentLedger) {
+        finding(findings, {
+          rule: "ledger-account-path-mismatch",
+          severity: "error",
+          category: "ledger",
+          message: `Ledger account identity ${account.ledger}/${account.id} does not match its source path.`,
+          suggestion: "Move the file to its canonical ledger/account path or repair the stable identity before another write.",
+          file,
+        });
+      }
+      const sourceIssues = workLedgerSourceConsistency(raw, account);
+      if (sourceIssues.length > 0) {
+        finding(findings, {
+          rule: "ledger-source-state-drift",
+          severity: "error",
+          category: "ledger",
+          message: "Readable ledger event history disagrees with its canonical machine state.",
+          suggestion: "Reconcile the event history explicitly before another agent records work; do not let a structured write silently choose one copy.",
+          file,
+          related: { fields: sourceIssues.map((issue) => issue.field) },
+        });
+      }
+      accounts.push({ file, revision: "", raw, account, sourceIssues });
+    } catch (error) {
+      finding(findings, {
+        rule: "invalid-ledger-account",
+        severity: "error",
+        category: "ledger",
+        message: `Work-ledger account could not be parsed or validated: ${error instanceof Error ? error.message : String(error)}`,
+        suggestion: "Repair the account machine-state block and readable authoring fields before recording more work.",
+        file,
+      });
+    }
+  }
+  return { fileCount: files.length, accounts };
 }
 
 function inlineText(node: InlineNode): string {
@@ -492,6 +562,91 @@ function auditRuns(
   }
 }
 
+function auditLedgerAccounts(
+  accounts: WorkLedgerAccountSnapshot[],
+  runs: AgentRun[],
+  findings: AgenticDoctorFinding[],
+): void {
+  const identityKeys = new Map<string, WorkLedgerAccountSnapshot[]>();
+  const eventKeys = new Map<string, Array<{ snapshot: WorkLedgerAccountSnapshot; eventId: string }>>();
+  const runsById = new Map(runs.map((run) => [run.id, run]));
+  for (const snapshot of accounts) {
+    for (const key of snapshot.account.identityKeys) {
+      const scoped = `${snapshot.account.ledger}:${key}`;
+      identityKeys.set(scoped, [...(identityKeys.get(scoped) || []), snapshot]);
+    }
+    for (const event of snapshot.account.events) {
+      const scoped = `${snapshot.account.ledger}:${event.idempotencyKey}`;
+      eventKeys.set(scoped, [...(eventKeys.get(scoped) || []), { snapshot, eventId: event.id }]);
+      if (!event.runId || !event.approvalId) continue;
+      const run = runsById.get(event.runId);
+      if (!run) {
+        finding(findings, {
+          rule: "ledger-run-reference-missing",
+          severity: "warning",
+          category: "ledger",
+          message: `Ledger event ${event.id} references missing run ${event.runId}.`,
+          suggestion: "Restore the run or retain a source/receipt reference that makes the historical event independently inspectable.",
+          runId: event.runId,
+          file: snapshot.file,
+          key: event.idempotencyKey,
+        });
+        continue;
+      }
+      const approval = run.approvals.find((candidate) => candidate.id === event.approvalId);
+      if (!approval) {
+        finding(findings, {
+          rule: "ledger-approval-reference-missing",
+          severity: "warning",
+          category: "ledger",
+          message: `Ledger event ${event.id} references missing approval ${event.runId}:${event.approvalId}.`,
+          suggestion: "Relink the event to the canonical approval or preserve an external-completion receipt.",
+          runId: event.runId,
+          approvalId: event.approvalId,
+          file: snapshot.file,
+          key: event.idempotencyKey,
+        });
+      } else if (event.type === "outreach-sent" && approval.status !== "approved") {
+        finding(findings, {
+          rule: "ledger-outreach-without-approved-decision",
+          severity: "error",
+          category: "ledger",
+          message: `Outreach event ${event.id} links to an approval that is ${approval.status}.`,
+          suggestion: "Correct the linkage or record the action as explicitly completed elsewhere with its external receipt.",
+          runId: event.runId,
+          approvalId: event.approvalId,
+          file: snapshot.file,
+          key: event.idempotencyKey,
+        });
+      }
+    }
+  }
+  for (const [key, references] of identityKeys) {
+    if (references.length < 2) continue;
+    finding(findings, {
+      rule: "duplicate-ledger-identity-key",
+      severity: "error",
+      category: "ledger",
+      message: `${references.length} accounts in one ledger claim the same stable identity key.`,
+      suggestion: "Merge aliases into one stable account or correct the mistaken identity before selecting more work.",
+      key,
+      related: { accounts: references.map((snapshot) => snapshot.account.id), files: references.map((snapshot) => snapshot.file) },
+    });
+  }
+  for (const [key, references] of eventKeys) {
+    if (references.length < 2) continue;
+    finding(findings, {
+      rule: "duplicate-ledger-event-key",
+      severity: "error",
+      category: "ledger",
+      message: `${references.length} ledger events claim the same idempotency key.`,
+      suggestion: "Keep one canonical event and reconcile the duplicate account history without losing its source references.",
+      key,
+      related: { events: references.map(({ snapshot, eventId }) => ({ accountId: snapshot.account.id, eventId, file: snapshot.file })) },
+    });
+  }
+}
+
 function auditHeadlineProjections(
   headlines: HeadlineRecord[],
   runs: AgentRun[],
@@ -695,6 +850,8 @@ export function auditAgenticWorkspace(corpusRoot: string): AgenticDoctorReport {
         validRuns: 0,
         workflowFiles: 0,
         validWorkflows: 0,
+        ledgerFiles: 0,
+        validLedgerAccounts: 0,
         corpusFiles: 0,
         linkedHeadlines: 0,
         findingCount: 1,
@@ -707,7 +864,9 @@ export function auditAgenticWorkspace(corpusRoot: string): AgenticDoctorReport {
   }
   const loadedRuns = loadRuns(root, findings);
   const loadedWorkflows = loadWorkflows(root, findings);
+  const loadedLedgerAccounts = loadLedgerAccounts(root, findings);
   auditRuns(loadedRuns.runs, loadedRuns.rawById, loadedWorkflows.workflows, findings);
+  auditLedgerAccounts(loadedLedgerAccounts.accounts, loadedRuns.runs, findings);
   const corpus = loadCorpusHeadlines(root, findings);
   const linkedHeadlines = auditHeadlineProjections(corpus.headlines, loadedRuns.runs, findings);
   findings.sort(compareFindings);
@@ -724,6 +883,8 @@ export function auditAgenticWorkspace(corpusRoot: string): AgenticDoctorReport {
       validRuns: loadedRuns.runs.length,
       workflowFiles: loadedWorkflows.fileCount,
       validWorkflows: loadedWorkflows.workflows.length,
+      ledgerFiles: loadedLedgerAccounts.fileCount,
+      validLedgerAccounts: loadedLedgerAccounts.accounts.length,
       corpusFiles: corpus.files.length,
       linkedHeadlines,
       findingCount: findings.length,
@@ -739,7 +900,7 @@ export function renderAgenticDoctorReport(report: AgenticDoctorReport): string {
   const lines = [
     "Org2 agentic workspace doctor",
     `Root: ${report.root}`,
-    `Scanned ${report.summary.validRuns}/${report.summary.runFiles} runs, ${report.summary.validWorkflows}/${report.summary.workflowFiles} workflows, and ${report.summary.corpusFiles} corpus files (${report.summary.linkedHeadlines} linked headings).`,
+    `Scanned ${report.summary.validRuns}/${report.summary.runFiles} runs, ${report.summary.validWorkflows}/${report.summary.workflowFiles} workflows, ${report.summary.validLedgerAccounts}/${report.summary.ledgerFiles} ledger accounts, and ${report.summary.corpusFiles} corpus files (${report.summary.linkedHeadlines} linked headings).`,
     `Findings: ${report.summary.errorCount} error(s), ${report.summary.warningCount} warning(s), ${report.summary.infoCount} info.`,
   ];
   if (report.findings.length === 0) return `${lines.join("\n")}\nNo agentic workspace inconsistencies found.`;

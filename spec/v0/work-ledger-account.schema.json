@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://org2.avi.press/spec/v0/work-ledger-account.schema.json",
+  "title": "Org2 Work Ledger Account",
+  "type": "object",
+  "required": [
+    "schema",
+    "ledger",
+    "id",
+    "title",
+    "state",
+    "aliases",
+    "identityKeys",
+    "fields",
+    "context",
+    "events",
+    "createdAt",
+    "updatedAt"
+  ],
+  "properties": {
+    "schema": { "const": "org2:work-ledger-account:v1" },
+    "ledger": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$" },
+    "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$" },
+    "title": { "type": "string", "minLength": 1 },
+    "state": { "enum": ["active", "paused", "suppressed", "closed"] },
+    "aliases": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+    "identityKeys": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+    "fields": {
+      "type": "object",
+      "propertyNames": { "pattern": "^[a-z0-9][a-z0-9._-]*$" },
+      "additionalProperties": { "type": "string" }
+    },
+    "context": { "type": "string" },
+    "events": { "type": "array", "items": { "$ref": "#/$defs/event" } },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" }
+  },
+  "$defs": {
+    "event": {
+      "type": "object",
+      "required": ["id", "idempotencyKey", "type", "at", "sourceRefs", "data"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" },
+        "idempotencyKey": { "type": "string", "pattern": "^\\S+$" },
+        "type": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$" },
+        "at": { "type": "string", "format": "date-time" },
+        "actor": { "type": "string" },
+        "note": { "type": "string" },
+        "runId": { "type": "string" },
+        "approvalId": { "type": "string" },
+        "decisionKey": { "type": "string" },
+        "externalId": { "type": "string" },
+        "sourceRefs": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "data": {
+          "type": "object",
+          "propertyNames": { "pattern": "^[a-z0-9][a-z0-9._-]*$" },
+          "additionalProperties": { "type": "string" }
+        }
+      },
+      "dependentRequired": {
+        "runId": ["approvalId"],
+        "approvalId": ["runId"]
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "approval-linked" } }, "required": ["type"] },
+          "then": { "required": ["runId", "approvalId"] }
+        },
+        {
+          "if": { "properties": { "type": { "const": "outreach-sent" } }, "required": ["type"] },
+          "then": { "required": ["externalId"] }
+        }
+      ],
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
