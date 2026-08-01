@@ -17,6 +17,7 @@ import {
   type AgentWorkflow,
 } from "./agentWorkflow.js";
 import { parseOrgToCanonicalAst } from "./parser.js";
+import { isTerminalTodoKeyword } from "./todo.js";
 import {
   parseWorkLedgerAccount,
   workLedgerSourceConsistency,
@@ -94,7 +95,6 @@ interface LoadedLedgerAccounts {
 }
 
 const TERMINAL_RUN_STATUSES = new Set(["completed", "failed", "canceled"]);
-const TERMINAL_TODOS = new Set(["DONE", "CANCELED", "CANCELLED"]);
 const PENDING_HEADLINE_STATUS_PARTS = [
   "review-required",
   "requires-review",
@@ -343,10 +343,6 @@ function loadCorpusHeadlines(root: string, findings: AgenticDoctorFinding[]): { 
   return { files, headlines };
 }
 
-function isTerminalTodo(todo?: string): boolean {
-  return Boolean(todo && TERMINAL_TODOS.has(todo));
-}
-
 function headlineStatus(headline: HeadlineRecord): string {
   return String(
     headline.properties.ORG2_REVIEW_STATUS
@@ -359,7 +355,7 @@ function headlineStatus(headline: HeadlineRecord): string {
 }
 
 function isPendingHeadline(headline: HeadlineRecord): boolean {
-  if (isTerminalTodo(headline.todo)) return false;
+  if (isTerminalTodoKeyword(headline.todo)) return false;
   const status = headlineStatus(headline);
   return PENDING_HEADLINE_STATUS_PARTS.some((part) => status.includes(part));
 }
@@ -658,12 +654,12 @@ function auditHeadlineProjections(
   const openGmailDrafts = new Map<string, HeadlineRecord[]>();
 
   for (const headline of headlines) {
-    if (headline.todo && !isTerminalTodo(headline.todo)) {
+    if (headline.todo && !isTerminalTodoKeyword(headline.todo)) {
       const titleKey = `${headline.file}\n${headline.title.toLowerCase().replace(/\s+/g, " ")}`;
       openTitles.set(titleKey, [...(openTitles.get(titleKey) || []), headline]);
     }
     const draftId = headline.properties.GMAIL_DRAFT_ID;
-    if (draftId && !isTerminalTodo(headline.todo)) openGmailDrafts.set(draftId, [...(openGmailDrafts.get(draftId) || []), headline]);
+    if (draftId && !isTerminalTodoKeyword(headline.todo)) openGmailDrafts.set(draftId, [...(openGmailDrafts.get(draftId) || []), headline]);
 
     const runId = headline.properties.ORG2_RUN_ID;
     if (!runId) continue;
@@ -774,7 +770,7 @@ function auditHeadlineProjections(
         related: { childLine: headline.line, childTitle: headline.title },
       });
     }
-    if (isTerminalTodo(parent.todo) && isPendingHeadline(headline)) {
+    if (isTerminalTodoKeyword(parent.todo) && isPendingHeadline(headline)) {
       finding(findings, {
         rule: "terminal-parent-pending-child",
         severity: "error",

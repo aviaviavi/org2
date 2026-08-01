@@ -1,5 +1,6 @@
 import { parseIsoCalendarDate } from "./calendarDate.js";
 import type { CompiledCorpus, CompiledCorpusEntityProfile, CompiledCorpusNode } from "./corpusCompile.js";
+import { isActiveTodoKeyword, terminalTodoStatusFromKeyword } from "./todo.js";
 
 export type AgentInclude = "backlinks" | "neighbors" | "sources";
 export type AgentAction = "context" | "search" | "fetch" | "bundle";
@@ -308,16 +309,6 @@ function isOperationalContextFile(file: string): boolean {
     || normalized.includes("brief");
 }
 
-function isActiveTodoKeyword(raw: string | null | undefined): boolean {
-  return Boolean(raw) && !/^(DONE|CANCELLED|CANCELED)$/i.test(String(raw || ""));
-}
-
-function isTerminalTodoKeyword(raw: string | null | undefined): "done" | "canceled" | null {
-  if (/^(CANCELLED|CANCELED)$/i.test(String(raw || ""))) return "canceled";
-  if (/^DONE$/i.test(String(raw || ""))) return "done";
-  return null;
-}
-
 function titlePathFor(corpus: CompiledCorpus, node: CompiledCorpusNode): string[] {
   if (node.kind === "file") return [node.title];
   return corpus.nodes
@@ -506,7 +497,7 @@ function scoreNode(node: CompiledCorpusNode, terms: string[], opts: AgentContext
     score -= 5;
     selectionReason.push("downranked operational/generated file");
   }
-  const terminalTodo = isTerminalTodoKeyword(node.todo);
+  const terminalTodo = terminalTodoStatusFromKeyword(node.todo);
   if (terminalTodo === "canceled") {
     score -= 5;
     selectionReason.push("downranked canceled task");

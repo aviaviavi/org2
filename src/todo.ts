@@ -10,6 +10,7 @@ import {
 } from "./sourceLines.js";
 
 export type TodoStatus = "todo" | "in_progress" | "done" | "canceled";
+export type TerminalTodoStatus = Extract<TodoStatus, "done" | "canceled">;
 
 export const TODO_KEYWORDS = ["TODO", "IN_PROGRESS", "DONE", "CANCELED", "CANCELLED"] as const;
 
@@ -39,6 +40,19 @@ export function statusFromKeyword(keyword: string | undefined): TodoStatus {
   if (k === "DONE") return "done";
   if (k === "CANCELED" || k === "CANCELLED") return "canceled";
   return "todo";
+}
+
+export function terminalTodoStatusFromKeyword(keyword: string | null | undefined): TerminalTodoStatus | undefined {
+  const status = statusFromKeyword(normalizeTodoKeyword(keyword ?? undefined));
+  return status === "done" || status === "canceled" ? status : undefined;
+}
+
+export function isTerminalTodoKeyword(keyword: string | null | undefined): boolean {
+  return terminalTodoStatusFromKeyword(keyword) !== undefined;
+}
+
+export function isActiveTodoKeyword(keyword: string | null | undefined): boolean {
+  return Boolean(keyword) && !isTerminalTodoKeyword(keyword);
 }
 
 export function formatOrgTimestamp(now: Date): string {

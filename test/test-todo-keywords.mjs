@@ -5,7 +5,14 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const { TODO_KEYWORDS, isTodoKeyword, normalizeTodoKeyword } = await import(path.join(repo, "dist", "todo.js"));
+const {
+  TODO_KEYWORDS,
+  isActiveTodoKeyword,
+  isTerminalTodoKeyword,
+  isTodoKeyword,
+  normalizeTodoKeyword,
+  terminalTodoStatusFromKeyword,
+} = await import(path.join(repo, "dist", "todo.js"));
 const { parseOrgToCanonicalAst } = await import(path.join(repo, "dist", "parser.js"));
 const { extractClockReport } = await import(path.join(repo, "dist", "clock.js"));
 const { parseHeadlineTitleForRoam } = await import(path.join(repo, "dist", "headlineTitle.js"));
@@ -17,6 +24,15 @@ assert.equal(isTodoKeyword("NEXT"), false);
 assert.equal(normalizeTodoKeyword(" todo "), "TODO");
 assert.equal(normalizeTodoKeyword("cancelled"), "CANCELLED");
 assert.equal(normalizeTodoKeyword("NEXT"), undefined);
+assert.equal(terminalTodoStatusFromKeyword(" done "), "done");
+assert.equal(terminalTodoStatusFromKeyword("CANCELED"), "canceled");
+assert.equal(terminalTodoStatusFromKeyword("cancelled"), "canceled");
+assert.equal(terminalTodoStatusFromKeyword("IN_PROGRESS"), undefined);
+assert.equal(isTerminalTodoKeyword("done"), true);
+assert.equal(isTerminalTodoKeyword("TODO"), false);
+assert.equal(isActiveTodoKeyword("IN_PROGRESS"), true);
+assert.equal(isActiveTodoKeyword("cancelled"), false);
+assert.equal(isActiveTodoKeyword(undefined), false);
 
 assert.equal(parseHeadlineTitleForRoam("* TODO [#A] Shared task :work:"), "Shared task");
 assert.equal(parseHeadlineTitleForRoam("* in_progress Shared task"), "Shared task");

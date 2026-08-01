@@ -4,7 +4,7 @@ import v8 from "node:v8";
 import { parseHeadlineTitleForRoam } from "./headlineTitle.js";
 import { defaultSearchIndexPath } from "./indexPaths.js";
 import { computeSubtreeRange } from "./sourceLines.js";
-import { normalizeTodoKeyword } from "./todo.js";
+import { isActiveTodoKeyword, normalizeTodoKeyword } from "./todo.js";
 
 export { defaultSearchIndexPath };
 
@@ -477,7 +477,6 @@ function compareSearchRelevance(a: Org2SearchHit, b: Org2SearchHit, needle: stri
 
 function searchRelevanceRank(hit: Org2SearchHit, needle: string): number[] {
   const todo = (hit.todo || "").trim().toUpperCase();
-  const isActiveTodo = Boolean(todo) && !["DONE", "CANCELED", "CANCELLED"].includes(todo);
   const hasHeading = Boolean(hit.heading?.trim());
   const heading = (hit.heading || "").trim().toLowerCase();
   const headingMatch = heading === needle ? 0 : heading.includes(needle) ? 1 : 2;
@@ -485,7 +484,7 @@ function searchRelevanceRank(hit: Org2SearchHit, needle: string): number[] {
 
   // Keep the broad buckets deliberately small and deterministic. The caller's
   // scan order remains the tie-breaker because modern Array.sort is stable.
-  const resultKind = isActiveTodo ? 0 : hasHeading ? 1 : 2;
+  const resultKind = isActiveTodoKeyword(todo) ? 0 : hasHeading ? 1 : 2;
   return [resultKind, headingMatch, matchedHeadingLine];
 }
 

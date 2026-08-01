@@ -19,7 +19,7 @@ import {
   type Org2PublishProjectConfig,
 } from "./config.js";
 import { resolvePublishHeadIncludes } from "./publish-defaults.js";
-import { assignTodoInText, formatOrgTimestamp, normalizeTodoKeyword, TODO_KEYWORDS, updateTodoInText, type TodoStatus } from "./todo.js";
+import { assignTodoInText, formatOrgTimestamp, isActiveTodoKeyword, isTerminalTodoKeyword, normalizeTodoKeyword, TODO_KEYWORDS, updateTodoInText, type TodoStatus } from "./todo.js";
 import { planningKindFromArg, updatePlanningInText, type PlanningKindArg } from "./planning.js";
 import { computeSubtreeRange, findHeadingAtOrAbove, isHeadlineLine, upsertHeadlinePropertyInLines } from "./sourceLines.js";
 import { findBacklinksInText, type Backlink } from "./backlinks.js";
@@ -150,8 +150,8 @@ function renderBriefing(payload: ReturnType<typeof buildAgentContextPayload>, ti
   const reviewRequired = payload.results.some((node) => node.claimState.reviewStatus !== "reviewed" && node.claimState.reviewStatus !== "promoted");
   const cited = payload.results.slice(0, 8);
   const glanceNodes = [
-    ...cited.filter((node) => !isTerminalBriefTodo(node.todo)),
-    ...cited.filter((node) => isTerminalBriefTodo(node.todo)),
+    ...cited.filter((node) => !isTerminalTodoKeyword(node.todo)),
+    ...cited.filter((node) => isTerminalTodoKeyword(node.todo)),
   ].slice(0, 5);
 
   lines.push(`${h1} ${title}`);
@@ -181,7 +181,7 @@ function renderBriefing(payload: ReturnType<typeof buildAgentContextPayload>, ti
   if (cited.length === 0) lines.push("- [review-required] Broaden the query/scope or add source notes before drawing conclusions.");
   else {
     lines.push("- [review-required] Treat this briefing as a navigational summary, not canonical truth.");
-    const active = cited.filter((node) => isActiveBriefTodo(node.todo) && !isStaleOpenAgentTodo(node)).slice(0, 5);
+    const active = cited.filter((node) => isActiveTodoKeyword(node.todo) && !isStaleOpenAgentTodo(node)).slice(0, 5);
     if (active.length) lines.push(`- [review-required] Active work surfaced: ${active.map((node) => `${node.todo} ${node.title} [${node.citation}]`).join("; ")}.`);
     const staleOpen = cited.filter((node) => isStaleOpenAgentTodo(node)).slice(0, 5);
     if (staleOpen.length) lines.push(`- [review-required] Possible stale open work: ${staleOpen.map((node) => `${node.todo} ${node.title} [${node.citation}]`).join("; ")}.`);
@@ -205,14 +205,6 @@ function isOperationalNodeBriefFile(file: string): boolean {
     || normalized.includes("sync-conflict")
     || normalized.includes("generated")
     || normalized.includes("brief");
-}
-
-function isActiveBriefTodo(raw: string | null | undefined): boolean {
-  return Boolean(raw) && !/^(DONE|CANCELLED|CANCELED)$/i.test(String(raw || ""));
-}
-
-function isTerminalBriefTodo(raw: string | null | undefined): boolean {
-  return /^(DONE|CANCELLED|CANCELED)$/i.test(String(raw || ""));
 }
 
 function renderNodeBriefing(payload: ReturnType<typeof buildAgentContextPayload>, title: string, format: "markdown" | "org" = "markdown"): string {
@@ -1073,10 +1065,6 @@ function approvalHeadlinePropertiesFromSource(
   return properties;
 }
 
-function isTerminalTodo(todo: string | null | undefined): boolean {
-  return todo === "DONE" || todo === "CANCELED" || todo === "CANCELLED";
-}
-
 function approvalBody(sourceLines: string[], sourceRange: SourceRange, children: Node[]): string {
   const startLine = Math.max(1, sourceRange.startLine + 1);
   const endLine = Math.max(startLine, sourceRange.endLine);
@@ -1146,7 +1134,7 @@ function approvalItemFromHeadline(
   properties: Record<string, string>,
 ): ApprovalQueueItem | null {
   const todo = headline.todo?.toUpperCase() ?? null;
-  if (isTerminalTodo(todo)) return null;
+  if (isTerminalTodoKeyword(todo)) return null;
 
   const sourceRange = (headline as SourceRangedHeadlineNode).sourceRange;
   if (!sourceRange) return null;
@@ -5286,7 +5274,7 @@ function findScheduledItemsInText(
     if (!matchesAgendaLevelFilter(current.level, levelFilter)) continue;
     if (!matchesAgendaExcludeLevelFilter(current.level, excludeLevelFilter)) continue;
 
-    const isDoneLike = todo === "DONE" || todo === "CANCELLED" || todo === "CANCELED";
+    const isDoneLike = isTerminalTodoKeyword(todo);
     const isProgLike = todo === "PROG" || todo === "IN_PROGRESS";
 
     // Match multiple planning tokens on a single line.
