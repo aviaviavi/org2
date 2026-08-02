@@ -27,6 +27,7 @@ const appName = process.env.ORG2_WORKSPACE_APP_NAME ?? "Org2Workspace";
 const requestedSigningIdentity = process.env.ORG2_WORKSPACE_CODE_SIGN_IDENTITY?.trim();
 const executableName = "Org2Workspace";
 const swiftBuildArch = process.env.ORG2_WORKSPACE_SWIFT_ARCH ?? defaultSwiftBuildArch();
+const swiftBuildConfiguration = process.env.ORG2_WORKSPACE_SWIFT_CONFIGURATION?.trim();
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
@@ -55,7 +56,10 @@ function defaultSwiftBuildArch() {
 }
 
 function swiftBuildArgs(...args) {
-  return swiftBuildArch ? [...args, "--arch", swiftBuildArch] : args;
+  const architectureArgs = swiftBuildArch ? [...args, "--arch", swiftBuildArch] : args;
+  return swiftBuildConfiguration
+    ? [...architectureArgs, "--configuration", swiftBuildConfiguration]
+    : architectureArgs;
 }
 
 function availableCodeSigningIdentities() {

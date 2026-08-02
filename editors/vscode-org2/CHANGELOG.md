@@ -4,6 +4,11 @@ All notable changes to the Org2 VS Code extension are documented in this file.
 
 ## Unreleased
 
+## 0.4.1 - 2026-08-02
+
+- Coordinated the Marketplace package version with the Org2 CLI and macOS workspace 0.4.1 release.
+- Kept extension behavior compatible with the current Org2 language runtime; this patch contains no extension-specific command or UI changes.
+
 ## 0.4.0 - 2026-07-19
 
 - Added syntax highlighting for checkbox progress cookies (`[n/m]`, `[p%]`).
