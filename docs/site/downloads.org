@@ -44,6 +44,31 @@ The macOS disk image is built for Apple Silicon and is developer-signed but not 
 
 For registry-managed installation, use =npm install -g @aviaviavi/org2= or install [[https://marketplace.visualstudio.com/items?itemName=AviPress.org2-vscode][Org2 from the VS Code Marketplace]]. The paired iOS app is distributed separately through TestFlight.
 
+* iOS mobile app
+
+Org2 Mobile brings capture, agenda, approvals, and Mac-hosted AI chat to iPhone. The beta is currently invitation-only, or you can build the open-source app directly with Xcode.
+
+#+BEGIN_EXPORT html
+<section class="org2-download-grid org2-download-grid-mobile" aria-label="Org2 Mobile installation options">
+  <article class="org2-download-card org2-download-card-ios">
+    <p class="org2-download-kicker">TestFlight</p>
+    <h3>Join the private beta</h3>
+    <p>Get the current iPhone build and future beta updates through TestFlight. Email Avi to request an invitation; include the email address you use with TestFlight.</p>
+    <p class="org2-download-meta">Private beta · iPhone</p>
+    <a class="org2-download-button" href="mailto:avipress@gmail.com?subject=Org2%20Mobile%20TestFlight">Request TestFlight access <span aria-hidden="true">→</span></a>
+  </article>
+  <article class="org2-download-card org2-download-card-source">
+    <p class="org2-download-kicker">Open source</p>
+    <h3>Build it with Xcode</h3>
+    <p>Open the included Xcode project, select your Apple development team, configure the shared App Group, and install directly on your own iPhone.</p>
+    <p class="org2-download-meta">Source · Xcode</p>
+    <a class="org2-download-button" href="https://github.com/aviaviavi/org2/tree/main/apps/ios/Org2Mobile">View iOS source <span aria-hidden="true">↗</span></a>
+  </article>
+</section>
+#+END_EXPORT
+
+The [[file:getting-started.org::*iOS app][iOS setup guide]] covers source signing, the share extension, corpus sync, and pairing Mobile Remote with the Mac app over Tailscale.
+
 * All release artifacts
 
 These are the same files attached to each [[https://github.com/aviaviavi/org2/releases][GitHub Release]]. Scarf Gateway records the version and artifact variables before redirecting to GitHub.

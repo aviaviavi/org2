@@ -2406,6 +2406,23 @@ body #content {
   background: var(--mint);
 }
 
+#content .org2-download-grid-mobile {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  max-width: 52rem;
+}
+
+#content .org2-download-grid-mobile .org2-download-card {
+  min-height: 15rem;
+}
+
+#content .org2-download-card-ios::before {
+  background: var(--link);
+}
+
+#content .org2-download-card-source::before {
+  background: var(--mint);
+}
+
 #content .org2-download-kicker,
 #content .org2-download-meta {
   color: var(--quiet);
@@ -2584,6 +2601,10 @@ body > .org2-footer p {
   }
 
   #content .org2-download-card {
+    min-height: 0;
+  }
+
+  #content .org2-download-grid-mobile .org2-download-card {
     min-height: 0;
   }
 

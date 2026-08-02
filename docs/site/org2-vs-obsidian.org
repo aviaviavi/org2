@@ -11,7 +11,7 @@ Both can support serious knowledge work. The main difference is where each syste
 | Primary experience | Polished Markdown knowledge application | Shared knowledge runtime with Mac, VS Code, CLI, and other clients |
 | Source files | Local Markdown, properties, Bases files, and open JSON Canvas files | Local =.org= and =.org2= files plus explicit generated artifacts |
 | Runtime and license | Proprietary desktop/mobile app with public plugin APIs | Apache-2.0 parser, CLI, compiler, clients, and integrations |
-| Maturity | Established desktop and mobile products with a large community | Early alpha with working CLI, Mac app, VS Code integration, and source-distributed iOS app |
+| Maturity | Established desktop and mobile products with a large community | Early alpha with working CLI, Mac app, VS Code integration, and a private-TestFlight or source-built iOS app |
 | Linked knowledge | Backlinks, outgoing links, graph, local graph, Canvas | IDs, wiki/file links, backlinks, graph reports, cited queries, and link-health operations |
 | Structured views | Bases tables, lists, cards, maps, formulas, and community views | Agenda/query outputs, data notebooks, materialized SQL views, tables, and deterministic charts |
 | Planning | Markdown tasks, properties, Bases, core features, and plugins | Parser-defined TODO, planning, repeater, priority, effort, habit, clock, and agenda semantics |
@@ -71,7 +71,7 @@ This matters for teams that need to audit, fork, embed, or run the knowledge lay
 
 * Current tradeoffs
 
-Org2 is early alpha. Its Mac app is useful but still evolving, the iOS app is distributed as source, VS Code has the strongest general editor integration, and the plugin/theme ecosystem is small. Packaging, capture/refile depth, visual graph exploration, and cross-platform polish remain behind Obsidian.
+Org2 is early alpha. Its Mac app is useful but still evolving, the iOS app is available through a private TestFlight beta or as source, VS Code has the strongest general editor integration, and the plugin/theme ecosystem is small. Packaging, capture/refile depth, visual graph exploration, and cross-platform polish remain behind Obsidian.
 
 Obsidian's rich behavior often comes from the application, installed plugins, and vault configuration. Its files remain portable, but reproducing a complete workflow elsewhere may require reproducing those conventions and extensions as well.
 
