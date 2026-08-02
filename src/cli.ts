@@ -6,6 +6,7 @@ import process from "node:process";
 import crypto from "node:crypto";
 import os from "node:os";
 import { spawnSync } from "node:child_process";
+import { buildUnifiedDiff } from "./unifiedDiff.js";
 import { parseOrgToCanonicalAst } from "./parser.js";
 import { printCanonicalAstToOrg } from "./printer.js";
 import { normalizePgpArmorForDecrypt, protectPgpBlocks, restorePgpBlocks } from "./pgp.js";
@@ -12410,28 +12411,13 @@ Flags:
       fs.writeFileSync(targetFile, outText, "utf8");
     }
 
-    const unifiedDiff = (before: string, after: string): string => {
-      let tmpDir: string | null = null;
-      try {
-        tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "org2-capture-diff-"));
-        const aPath = path.join(tmpDir, "before.org2");
-        const bPath = path.join(tmpDir, "after.org2");
-        fs.writeFileSync(aPath, before, "utf8");
-        fs.writeFileSync(bPath, after, "utf8");
-
-        const res = spawnSync("diff", ["-u", aPath, bPath], { encoding: "utf8" });
-        if (res.status !== 0 && res.status !== 1) {
-          throw new Error(res.stderr || `diff exited with status ${res.status}`);
-        }
-
-        return (res.stdout || "").split(aPath).join(targetFile).split(bPath).join(targetFile);
-      } finally {
-        if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true });
-      }
-    };
-
     if (captureFormat === "diff") {
-      if (changed) process.stdout.write(unifiedDiff(beforeText, outText));
+      if (changed) {
+        process.stdout.write(buildUnifiedDiff(beforeText, outText, {
+          targetPath: targetFile,
+          temporaryDirectoryPrefix: "org2-capture-diff-",
+        }));
+      }
       return;
     }
 
@@ -12471,28 +12457,6 @@ Flags:
 
     const raw = fs.readFileSync(idFile, "utf8").replace(/\r\n/g, "\n");
     const lines = raw.split("\n");
-
-    const unifiedDiff = (before: string, after: string): string => {
-      let tmpDir: string | null = null;
-      try {
-        tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "org2-id-diff-"));
-        const aPath = path.join(tmpDir, "before.org2");
-        const bPath = path.join(tmpDir, "after.org2");
-        fs.writeFileSync(aPath, before, "utf8");
-        fs.writeFileSync(bPath, after, "utf8");
-
-        const res = spawnSync("diff", ["-u", aPath, bPath], { encoding: "utf8" });
-        // diff(1): 0=identical, 1=different, >1=error
-        if (res.status !== 0 && res.status !== 1) {
-          throw new Error(res.stderr || `diff exited with status ${res.status}`);
-        }
-
-        // Replace temp paths with the real filename for readability.
-        return (res.stdout || "").split(aPath).join(idFile).split(bPath).join(idFile);
-      } finally {
-        if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true });
-      }
-    };
 
     if (idAction === "get" && idFormat === "diff") {
       console.error("Error: org2 id get does not support --format diff");
@@ -12638,7 +12602,12 @@ Flags:
             ) + "\n",
           );
         } else if (idFormat === "diff") {
-          if (headlineRes.changed && !idApply) process.stdout.write(unifiedDiff(raw, headlineRes.outText));
+          if (headlineRes.changed && !idApply) {
+            process.stdout.write(buildUnifiedDiff(raw, headlineRes.outText, {
+              targetPath: idFile,
+              temporaryDirectoryPrefix: "org2-id-diff-",
+            }));
+          }
         } else if (idApply || !headlineRes.changed) {
           process.stdout.write(headlineRes.id + "\n");
         } else {
@@ -12765,7 +12734,12 @@ Flags:
         ) + "\n",
       );
     } else if (idFormat === "diff") {
-      if (!idApply) process.stdout.write(unifiedDiff(raw, out));
+      if (!idApply) {
+        process.stdout.write(buildUnifiedDiff(raw, out, {
+          targetPath: idFile,
+          temporaryDirectoryPrefix: "org2-id-diff-",
+        }));
+      }
     } else if (idApply) {
       process.stdout.write(newId + "\n");
     } else {
@@ -13964,26 +13938,10 @@ Flags:
 
     if (todoFormat === "diff") {
       if (!res.changed) return;
-
-      let tmpDir: string | null = null;
-      try {
-        tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "org2-todo-diff-"));
-        const aPath = path.join(tmpDir, "before.org2");
-        const bPath = path.join(tmpDir, "after.org2");
-        fs.writeFileSync(aPath, beforeRaw, "utf8");
-        fs.writeFileSync(bPath, res.text, "utf8");
-
-        const diffRes = spawnSync("diff", ["-u", aPath, bPath], { encoding: "utf8" });
-        // diff(1): 0=identical, 1=different, >1=error
-        if (diffRes.status !== 0 && diffRes.status !== 1) {
-          throw new Error(diffRes.stderr || `diff exited with status ${diffRes.status}`);
-        }
-
-        const out = (diffRes.stdout || "").split(aPath).join(todoFile).split(bPath).join(todoFile);
-        process.stdout.write(out);
-      } finally {
-        if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true });
-      }
+      process.stdout.write(buildUnifiedDiff(beforeRaw, res.text, {
+        targetPath: todoFile,
+        temporaryDirectoryPrefix: "org2-todo-diff-",
+      }));
       return;
     }
 
@@ -14056,26 +14014,10 @@ Flags:
 
     if (planFormat === "diff") {
       if (!res.changed) return;
-
-      let tmpDir: string | null = null;
-      try {
-        tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "org2-plan-diff-"));
-        const aPath = path.join(tmpDir, "before.org2");
-        const bPath = path.join(tmpDir, "after.org2");
-        fs.writeFileSync(aPath, beforeRaw, "utf8");
-        fs.writeFileSync(bPath, res.text, "utf8");
-
-        const diffRes = spawnSync("diff", ["-u", aPath, bPath], { encoding: "utf8" });
-        // diff(1): 0=identical, 1=different, >1=error
-        if (diffRes.status !== 0 && diffRes.status !== 1) {
-          throw new Error(diffRes.stderr || `diff exited with status ${diffRes.status}`);
-        }
-
-        const out = (diffRes.stdout || "").split(aPath).join(planFile).split(bPath).join(planFile);
-        process.stdout.write(out);
-      } finally {
-        if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true });
-      }
+      process.stdout.write(buildUnifiedDiff(beforeRaw, res.text, {
+        targetPath: planFile,
+        temporaryDirectoryPrefix: "org2-plan-diff-",
+      }));
       return;
     }
 
@@ -14296,24 +14238,6 @@ Flags:
       return noTrailing.split("\n");
     };
 
-    const buildDiff = (before: string, after: string): string => {
-      let tmpDir: string | null = null;
-      try {
-        tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "org2-crypt-diff-"));
-        const aPath = path.join(tmpDir, "before.org2");
-        const bPath = path.join(tmpDir, "after.org2");
-        fs.writeFileSync(aPath, before, "utf8");
-        fs.writeFileSync(bPath, after, "utf8");
-        const diffRes = spawnSync("diff", ["-u", aPath, bPath], { encoding: "utf8" });
-        if (diffRes.status !== 0 && diffRes.status !== 1) {
-          throw new Error(diffRes.stderr || `diff exited with status ${diffRes.status}`);
-        }
-        return (diffRes.stdout || "").split(aPath).join(cryptFile).split(bPath).join(cryptFile);
-      } finally {
-        if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true });
-      }
-    };
-
     let outText = beforeRaw;
     let changed = false;
 
@@ -14395,7 +14319,12 @@ Flags:
     }
 
     if (cryptFormat === "diff") {
-      if (changed) process.stdout.write(buildDiff(beforeRaw, outText));
+      if (changed) {
+        process.stdout.write(buildUnifiedDiff(beforeRaw, outText, {
+          targetPath: cryptFile,
+          temporaryDirectoryPrefix: "org2-crypt-diff-",
+        }));
+      }
       return;
     }
 
@@ -14677,32 +14606,6 @@ Flags:
       return text.length > 0 ? `${text}\n` : "";
     };
 
-    const buildUnifiedDiff = (before: string, after: string, targetPath: string, tmpPrefix: string): string => {
-      if (before === after) return "";
-
-      let tmpDir: string | null = null;
-      try {
-        tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), tmpPrefix));
-        const aPath = path.join(tmpDir, "before.org2");
-        const bPath = path.join(tmpDir, "after.org2");
-        fs.writeFileSync(aPath, before, "utf8");
-        fs.writeFileSync(bPath, after, "utf8");
-
-        const res = spawnSync(
-          "diff",
-          ["-u", "--label", targetPath, "--label", targetPath, aPath, bPath],
-          { encoding: "utf8" },
-        );
-        if (res.status !== 0 && res.status !== 1) {
-          throw new Error(res.stderr || `diff exited with status ${res.status}`);
-        }
-
-        return res.stdout || "";
-      } finally {
-        if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true });
-      }
-    };
-
     const sourcePathInput = refileFile;
     const destinationPathInput = refileToFile;
     const sourcePath = path.resolve(sourcePathInput);
@@ -14811,15 +14714,18 @@ Flags:
     const destinationChanged = sameFile ? destinationOutText !== sourceRaw : destinationOutText !== destinationRaw;
     const changed = sameFile ? sourceChanged : sourceChanged || destinationChanged;
 
-    const sourceDiff = buildUnifiedDiff(
-      sourceRaw,
-      sameFile ? destinationOutText : sourceOutText,
-      sourcePathInput,
-      "org2-refile-source-diff-",
-    );
+    const sourceDiff = buildUnifiedDiff(sourceRaw, sameFile ? destinationOutText : sourceOutText, {
+      targetPath: sourcePathInput,
+      temporaryDirectoryPrefix: "org2-refile-source-diff-",
+      useLabels: true,
+    });
     const destinationDiff = sameFile
       ? ""
-      : buildUnifiedDiff(destinationRaw, destinationOutText, destinationPathInput, "org2-refile-destination-diff-");
+      : buildUnifiedDiff(destinationRaw, destinationOutText, {
+          targetPath: destinationPathInput,
+          temporaryDirectoryPrefix: "org2-refile-destination-diff-",
+          useLabels: true,
+        });
     const combinedDiff = [sourceDiff, destinationDiff].filter((part) => part.length > 0).join("\n");
 
     if (refileFormat === "diff") {
