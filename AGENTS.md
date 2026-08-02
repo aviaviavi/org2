@@ -219,6 +219,15 @@ runtime suite, but it still requires the documentation checks below.
   `docs/site/features.org`, and the relevant reference/editor page aligned.
 - If no user-facing docs change is needed, say why in the change summary.
 
+## Coordinated releases
+
+Use the repository-owned `.codex/skills/org2-release/SKILL.md` workflow when
+cutting, repairing, or auditing a release. It covers npm, VS Code Marketplace,
+the macOS DMG, GitHub Releases, and the Scarf-tracked downloads surface. After
+all assets are attached, preview and apply `tools/sync-release-downloads.mjs`
+so `docs/site/downloads.org` and every GitHub release body use the permanent
+Scarf Gateway redirect while GitHub Releases remains the artifact host.
+
 ## macOS development safety
 
 The user's daily app is `/Users/avi/Applications/Org2Workspace.app` with bundle

@@ -52,9 +52,9 @@ The examples below use =org2=. If you are running from a checkout instead of a g
 
 ** macOS app
 
-Org2 Workspace is the native macOS app. The easiest install path is the downloadable disk image from GitHub Releases:
+Org2 Workspace is the native macOS app. The easiest install path is the downloadable disk image from the [[file:downloads.org][Org2 downloads page]]. Files remain hosted on GitHub Releases; the download links pass through Scarf Gateway for aggregate download measurement.
 
-1. Download the latest =Org2Workspace.dmg= from [[https://github.com/aviaviavi/org2/releases][GitHub Releases]].
+1. Download the latest =Org2Workspace.dmg= from the [[file:downloads.org][Org2 downloads page]].
 2. Open the disk image and drag =Org2Workspace.app= into =Applications=.
 3. Open the app from =Applications= and choose the folder that contains your Org2 or Org corpus.
 

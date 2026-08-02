@@ -2,7 +2,9 @@ node_modules/
 dist/
 .build/
 .DS_Store
-.codex/
+.codex/*
+!.codex/skills/
+!.codex/skills/**
 **/.org2/index/
 **/.org2/corpus-index-cache.json
 **/.org2/openclaw-chat.json

@@ -21,6 +21,16 @@ The check rebuilds `dist/`, validates spec fixtures end-to-end, republishes the 
 
 Disposable generated output should stay outside the repository, be ignored, or live in local corpus zones such as `compiled/` / `views/` unless it is intentionally promoted into a reviewed fixture or published artifact.
 
+## Release download synchronization
+
+`sync-release-downloads.mjs` reads GitHub Release assets, generates the canonical downloads page with Scarf Gateway links, and maintains an idempotent direct-download block in GitHub release notes. Its default mode is read-only:
+
+```bash
+node tools/sync-release-downloads.mjs
+```
+
+Use `--apply-page` to update `docs/site/downloads.org`, `--apply-release-notes` for the authorized GitHub write, or `--check` as a no-drift gate. GitHub Releases remains the underlying artifact host.
+
 ## Fixture runner (spec v0)
 
 Validates that each fixture pair exists and that the expected JSON conforms to the canonical AST schema.

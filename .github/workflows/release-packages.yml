@@ -108,6 +108,12 @@ jobs:
             editors/vscode-org2/*.vsix
           generate_release_notes: true
 
+      - name: Add Scarf Gateway download links to release notes
+        if: ${{ steps.version.outputs.dry_run != 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node tools/sync-release-downloads.mjs --release "${{ steps.version.outputs.version }}" --apply-release-notes
+
       - name: Upload dry-run artifacts
         if: ${{ steps.version.outputs.dry_run == 'true' }}
         uses: actions/upload-artifact@v4

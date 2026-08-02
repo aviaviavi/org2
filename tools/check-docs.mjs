@@ -70,10 +70,12 @@ const agents = fs.readFileSync(path.join(repoRoot, "AGENTS.md"), "utf8");
 const siteNavigation = fs.readFileSync(path.join(repoRoot, "docs/site/assets/nav.js"), "utf8");
 const siteStyles = fs.readFileSync(path.join(repoRoot, "docs/site/assets/site.css"), "utf8");
 const features = fs.readFileSync(path.join(repoRoot, "docs/site/features.org"), "utf8");
+const downloads = fs.readFileSync(path.join(repoRoot, "docs/site/downloads.org"), "utf8");
 for (const [label, text] of [["agent quickstart", quickstart], ["llms.txt", llms]]) {
   if (!text.includes("org2 agent capabilities")) fail(`${label} does not point agents to the installed capability manifest`);
 }
 if (!agents.includes("## Documentation contract")) fail("AGENTS.md is missing the documentation contract");
+if (!agents.includes(".codex/skills/org2-release/SKILL.md")) fail("AGENTS.md is missing the coordinated release skill");
 
 try {
   new Function(siteNavigation);
@@ -101,6 +103,18 @@ if (
 }
 if (!/<h2\s+id="[^"]+">/.test(features)) {
   fail("features page sections must use addressable level-two headings");
+}
+if (!downloads.includes("https://org2.gateway.scarf.sh/downloads/")) {
+  fail("downloads page is missing Scarf Gateway release links");
+}
+if (!downloads.includes("GitHub Releases remains the underlying host")) {
+  fail("downloads page must disclose that GitHub Releases hosts the artifacts");
+}
+if (!JSON.stringify(JSON.parse(fs.readFileSync(path.join(repoRoot, "org2.json"), "utf8"))).includes("downloads.html")) {
+  fail("site navigation is missing the downloads page");
+}
+if (!siteStyles.includes(".org2-download-grid") || !siteStyles.includes(".org2-download-button")) {
+  fail("site styles are missing the download card surface");
 }
 
 if (!process.exitCode) {

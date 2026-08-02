@@ -1,0 +1,71 @@
+#+TITLE: Downloads
+#+SUBTITLE: Install Org2 apps and tools from versioned GitHub release artifacts
+
+#+BEGIN_EXPORT html
+<section class="org2-page-intro org2-downloads-intro">
+  <p>Choose the Org2 surface you need. Every direct-download link passes through Scarf Gateway for aggregate download measurement, then redirects to the original artifact hosted on GitHub Releases.</p>
+  <div class="org2-page-summary" aria-label="Org2 download overview">
+    <div><strong>One stable route.</strong><span>Version and artifact names map directly to immutable GitHub release files.</span></div>
+    <div><strong>No mirror.</strong><span>GitHub Releases remains the underlying host for every binary and package archive.</span></div>
+    <div><strong>Inspectable releases.</strong><span>Checksums, notes, source tags, and attached artifacts stay together on GitHub.</span></div>
+  </div>
+</section>
+#+END_EXPORT
+
+* Current release 0.4.1
+
+#+BEGIN_EXPORT html
+<section class="org2-download-grid" aria-label="Org2 0.4.1 downloads">
+    <article class="org2-download-card org2-download-card-macos">
+      <p class="org2-download-kicker">macOS</p>
+      <h3>Org2 Workspace for macOS (Apple Silicon DMG)</h3>
+      <p>Native Apple Silicon workspace app. Developer-signed and currently not notarized.</p>
+      <p class="org2-download-meta">0.4.1 · 7.8 MB</p>
+      <a class="org2-download-button" href="https://org2.gateway.scarf.sh/downloads/0.4.1/Org2Workspace.dmg">Download <span aria-hidden="true">↓</span></a>
+    </article>
+    <article class="org2-download-card org2-download-card-vscode">
+      <p class="org2-download-kicker">VS Code</p>
+      <h3>Org2 for VS Code (VSIX)</h3>
+      <p>Editor integration with syntax, agenda, navigation, formatting, and Org2 commands.</p>
+      <p class="org2-download-meta">0.4.1 · 173 KB</p>
+      <a class="org2-download-button" href="https://org2.gateway.scarf.sh/downloads/0.4.1/org2-vscode-0.4.1.vsix">Download <span aria-hidden="true">↓</span></a>
+    </article>
+    <article class="org2-download-card org2-download-card-npm">
+      <p class="org2-download-kicker">npm / CLI</p>
+      <h3>Org2 npm package (TGZ)</h3>
+      <p>CLI, compiler, language server, publishing runtime, and agent-facing tools.</p>
+      <p class="org2-download-meta">0.4.1 · 309 KB</p>
+      <a class="org2-download-button" href="https://org2.gateway.scarf.sh/downloads/0.4.1/aviaviavi-org2-0.4.1.tgz">Download <span aria-hidden="true">↓</span></a>
+    </article>
+</section>
+#+END_EXPORT
+
+The macOS disk image is built for Apple Silicon and is developer-signed but not notarized. If macOS blocks its first launch, right-click the app and choose *Open*, or allow it under *System Settings → Privacy & Security*.
+
+For registry-managed installation, use =npm install -g @aviaviavi/org2= or install [[https://marketplace.visualstudio.com/items?itemName=AviPress.org2-vscode][Org2 from the VS Code Marketplace]]. The paired iOS app is distributed separately through TestFlight.
+
+* All release artifacts
+
+These are the same files attached to each [[https://github.com/aviaviavi/org2/releases][GitHub Release]]. Scarf Gateway records the version and artifact variables before redirecting to GitHub.
+
+| Version | macOS DMG | VS Code VSIX | npm TGZ |
+|---------+-----------+----------------+---------|
+| 0.4.1 | [[https://org2.gateway.scarf.sh/downloads/0.4.1/Org2Workspace.dmg][Download]] | [[https://org2.gateway.scarf.sh/downloads/0.4.1/org2-vscode-0.4.1.vsix][Download]] | [[https://org2.gateway.scarf.sh/downloads/0.4.1/aviaviavi-org2-0.4.1.tgz][Download]] |
+| 0.4.0 | [[https://org2.gateway.scarf.sh/downloads/0.4.0/Org2Workspace.dmg][Download]] | [[https://org2.gateway.scarf.sh/downloads/0.4.0/org2-vscode-0.4.0.vsix][Download]] | [[https://org2.gateway.scarf.sh/downloads/0.4.0/aviaviavi-org2-0.4.0.tgz][Download]] |
+| 0.3.0 | [[https://org2.gateway.scarf.sh/downloads/0.3.0/Org2Workspace.dmg][Download]] | — | — |
+
+* Stable download URL
+
+Release automation uses one permanent template:
+
+#+begin_src text
+https://org2.gateway.scarf.sh/downloads/{version}/{artifact}
+#+end_src
+
+For example, the current macOS build is:
+
+#+begin_src text
+https://org2.gateway.scarf.sh/downloads/0.4.1/Org2Workspace.dmg
+#+end_src
+
+Scarf redirects that request to the matching =github.com/aviaviavi/org2/releases/download/{version}/{artifact}= URL. No release files are hosted separately by Scarf.

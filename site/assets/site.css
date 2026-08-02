@@ -2369,6 +2369,95 @@ body #content {
   color: var(--muted);
 }
 
+#content .org2-download-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 1rem 0 1.5rem;
+}
+
+#content .org2-download-card {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 17rem;
+  flex-direction: column;
+  padding: 1.25rem;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  box-shadow: var(--shadow-small);
+}
+
+#content .org2-download-card::before {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--link);
+  content: "";
+}
+
+#content .org2-download-card-vscode::before {
+  background: var(--signal);
+}
+
+#content .org2-download-card-npm::before {
+  background: var(--mint);
+}
+
+#content .org2-download-kicker,
+#content .org2-download-meta {
+  color: var(--quiet);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+#content .org2-download-kicker {
+  margin: 0 0 1.25rem;
+}
+
+#content .org2-download-card h3 {
+  margin: 0 0 0.7rem;
+  font-size: 1.1rem;
+  letter-spacing: -0.02em;
+}
+
+#content .org2-download-card > p:not(.org2-download-kicker, .org2-download-meta) {
+  margin: 0;
+  color: var(--muted);
+}
+
+#content .org2-download-meta {
+  margin: auto 0 0.9rem;
+  padding-top: 1.5rem;
+}
+
+#content .org2-download-button {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 0.5rem;
+  padding: 0.62rem 0.8rem;
+  border: 1px solid var(--link);
+  border-radius: 5px;
+  background: var(--link);
+  color: white;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-decoration: none;
+}
+
+#content .org2-download-button:hover {
+  border-color: var(--link-strong);
+  background: var(--link-strong);
+  color: white;
+}
+
 body > .org2-footer {
   position: relative;
   width: min(100%, 78rem);
@@ -2397,6 +2486,10 @@ body > .org2-footer p {
 }
 
 @media (max-width: 920px) {
+  #content .org2-download-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   #content .org2-compiler-flow {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -2485,8 +2578,13 @@ body > .org2-footer p {
   #content .org2-feature-card-grid,
   #content .org2-feature-media-pair,
   #content .org2-editor-strip,
-  #content .org2-compiler-flow {
+  #content .org2-compiler-flow,
+  #content .org2-download-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  #content .org2-download-card {
+    min-height: 0;
   }
 
   #content .org2-compiler-flow article,

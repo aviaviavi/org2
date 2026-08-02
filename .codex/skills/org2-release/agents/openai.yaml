@@ -1,0 +1,4 @@
+interface:
+  display_name: "Org2 Release"
+  short_description: "Publish and verify coordinated Org2 releases"
+  default_prompt: "Use $org2-release to publish and verify a coordinated Org2 release."
