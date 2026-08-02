@@ -55,7 +55,7 @@ Org2 Mobile brings capture, agenda, approvals, and Mac-hosted AI chat to iPhone.
     <h3>Join the private beta</h3>
     <p>Get the current iPhone build and future beta updates through TestFlight. Email Avi to request an invitation; include the email address you use with TestFlight.</p>
     <p class="org2-download-meta">Private beta · iPhone</p>
-    <a class="org2-download-button" href="mailto:avipress@gmail.com?subject=Org2%20Mobile%20TestFlight">Request TestFlight access <span aria-hidden="true">→</span></a>
+    <a class="org2-download-button" href="mailto:mail@avi.press?subject=Org2%20Mobile%20TestFlight">Request TestFlight access <span aria-hidden="true">→</span></a>
   </article>
   <article class="org2-download-card org2-download-card-source">
     <p class="org2-download-kicker">Open source</p>

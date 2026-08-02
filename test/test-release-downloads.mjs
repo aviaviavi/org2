@@ -57,7 +57,7 @@ assert.match(page, /\| 0\.4\.1 \| \[\[https:\/\/org2\.gateway\.scarf\.sh/);
 assert.match(page, /\| 0\.3\.0 \|/);
 assert.match(page, /No release files are hosted separately by Scarf\./);
 assert.match(page, /\* iOS mobile app/);
-assert.match(page, /mailto:avipress@gmail\.com\?subject=Org2%20Mobile%20TestFlight/);
+assert.match(page, /mailto:mail@avi\.press\?subject=Org2%20Mobile%20TestFlight/);
 assert.match(page, /apps\/ios\/Org2Mobile/);
 
 const plan = planReleaseDownloadSync(releases, { currentPage: page });
