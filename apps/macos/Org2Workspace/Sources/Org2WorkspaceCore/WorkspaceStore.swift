@@ -31,6 +31,23 @@ public struct Org2EditorSaveConflict: Identifiable, Equatable, Sendable {
   }
 }
 
+public enum MobileRemoteFilePreviewError: LocalizedError, Equatable, Sendable {
+  case invalidPath
+  case unsupportedFile
+  case unavailable
+
+  public var errorDescription: String? {
+    switch self {
+    case .invalidPath:
+      "That citation is outside the Org2 corpora available to this workspace."
+    case .unsupportedFile:
+      "Mobile preview is currently available for .org2 and .org files."
+    case .unavailable:
+      "That cited file is no longer available on the Mac."
+    }
+  }
+}
+
 private enum StarterCorpusCreationError: LocalizedError {
   case notDirectory(String)
   case notEmpty(String)
@@ -792,6 +809,7 @@ public final class WorkspaceStore: ObservableObject {
   public private(set) var visibleApprovalItems: [ApprovalItem] = []
   private var approvalFilterTextByItemID: [ApprovalItem.ID: String] = [:]
   @Published public var selectedApprovalItemID: ApprovalItem.ID?
+  @Published public var selectedApprovalItemIDsForAIContext: Set<ApprovalItem.ID> = []
   @Published public var runsAndReviewPage: RunsAndReviewPage = .runs
   @Published public var isLoadingApprovals = false
   @Published public private(set) var agentRuns: [AgentRunItem] = [] {
@@ -811,6 +829,7 @@ public final class WorkspaceStore: ObservableObject {
   }
   @Published public var agentRunFilterFocusToken = 0
   @Published public var selectedAgentRunID: AgentRunItem.ID?
+  @Published public var selectedAgentRunIDsForAIContext: Set<AgentRunItem.ID> = []
   @Published public private(set) var presentedAgentRunID: AgentRunItem.ID?
   @Published public private(set) var isLoadingAgentRuns = false
   @Published public private(set) var isRefreshingWorkspace = false
@@ -836,6 +855,7 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
   @Published public var selectedCorpusFileID: String?
+  @Published public var selectedCorpusFileIDsForAIContext: Set<CorpusFile.ID> = []
   @Published public var corpusFileFilter = "" {
     didSet {
       guard oldValue != corpusFileFilter else { return }
@@ -1928,6 +1948,7 @@ public final class WorkspaceStore: ObservableObject {
     orgRoamLinkResolver = cachedWorkspace?.orgRoamLinkResolver ?? .empty
     orgRoamLinkResolverGeneration += 1
     selectedCorpusFileID = cachedWorkspace?.selectedCorpusFileID
+    selectedCorpusFileIDsForAIContext = []
     corpusFileFilter = ""
     quickOpenQuery = ""
     searchResults = []
@@ -1935,6 +1956,7 @@ public final class WorkspaceStore: ObservableObject {
     workspaceFileSearchResults = []
     workspacePageSearchResults = []
     bulkSelectedAgendaItemIDs = []
+    selectedApprovalItemIDsForAIContext = []
     assignedWorkItems = cachedWorkspace?.assignedWorkItems ?? []
     selectedAssignedWorkItemID = cachedWorkspace?.selectedAssignedWorkItemID
     meetings = cachedWorkspace?.meetings ?? []
@@ -1973,6 +1995,7 @@ public final class WorkspaceStore: ObservableObject {
     agentWorkflows = cachedWorkspace?.agentWorkflows ?? []
     selectedAgentWorkflowID = cachedWorkspace?.selectedAgentWorkflowID
     selectedAgentRunID = cachedWorkspace?.selectedAgentRunID
+    selectedAgentRunIDsForAIContext = []
     presentedAgentRunID = nil
     mutatingAgentRunIDs = []
     isLoadingAssignedWork = false
@@ -3589,29 +3612,8 @@ public final class WorkspaceStore: ObservableObject {
     _ run: AgentRunItem,
     threadMode: OpenClawThreadMode = .newThread
   ) {
-    guard let corpusRoot else {
-      statusText = "No corpus selected"
-      return
-    }
-    let relativePath = ".org2/runs/\(run.id).org2"
-    let recordURL = corpusRoot.appendingPathComponent(relativePath).standardizedFileURL
-    guard FileManager.default.fileExists(atPath: recordURL.path) else {
-      errorText = "The run record could not be found at \(relativePath)."
-      statusText = "Run record missing"
-      return
-    }
-
-    let title = Org2Display.cleanInline(run.goal)
-    addOpenClawContext(
-      OpenClawContextPointer(
-        kind: "agent run",
-        displayTitle: title,
-        reference: "\(mappedPathForOpenClaw(recordURL.path)):1",
-        displayReference: "\(relativePath):1",
-        threadTitle: "Run: \(title)"
-      ),
-      threadMode: threadMode
-    )
+    guard let pointer = openClawContextPointer(for: run, requiresExistingRecord: true) else { return }
+    addOpenClawContext(pointer, threadMode: threadMode)
   }
 
   public func respondToAgentRunClarification(_ run: AgentRunItem, response: String) async {
@@ -4119,6 +4121,30 @@ public final class WorkspaceStore: ObservableObject {
     }
     select(.agenda(item.agendaItem()), surface: .approvals)
     statusText = item.sourceLabel
+  }
+
+  public func handleApprovalItemClick(
+    _ item: ApprovalItem,
+    modifiers: NSEvent.ModifierFlags = []
+  ) {
+    selectedApprovalItemIDsForAIContext = Self.updatedAIContextSelection(
+      selectedApprovalItemIDsForAIContext,
+      activeID: selectedApprovalItemID,
+      clickedID: item.id,
+      visibleIDs: visibleApprovalItems.map(\.id),
+      modifiers: modifiers
+    )
+    selectApprovalItem(item)
+  }
+
+  public func isApprovalItemSelectedForAIContext(_ item: ApprovalItem) -> Bool {
+    selectedApprovalItemIDsForAIContext.isEmpty
+      ? selectedApprovalItemID == item.id
+      : selectedApprovalItemIDsForAIContext.contains(item.id)
+  }
+
+  public func reconcileApprovalAIContextSelection(visibleIDs: [ApprovalItem.ID]) {
+    selectedApprovalItemIDsForAIContext.formIntersection(visibleIDs)
   }
 
   public func showApprovalInQueue(run: AgentRunItem, approval: AgentRunApprovalItem) {
@@ -5475,6 +5501,54 @@ public final class WorkspaceStore: ObservableObject {
     corpusRoot != nil && (selectedEntrySource?.file != nil || selectedLocation?.file != nil)
   }
 
+  public func startNewAIThread(from location: WorkspaceLocation) {
+    if case .agenda(let item) = location {
+      startNewAIThreadFromAgendaSelection(including: item)
+      return
+    }
+    startNewAIThread(with: [openClawContextPointer(for: location)])
+  }
+
+  public func startNewAIThreadFromAgendaSelection(including item: AgendaItem) {
+    let items: [AgendaItem]
+    if bulkSelectedAgendaItemIDs.contains(item.id) {
+      items = visibleAgendaItems.filter { bulkSelectedAgendaItemIDs.contains($0.id) }
+    } else {
+      items = [item]
+    }
+    startNewAIThread(with: items.map { openClawContextPointer(for: WorkspaceLocation.agenda($0)) })
+  }
+
+  public func startNewAIThreadFromAgentRunSelection(including run: AgentRunItem) {
+    let runs: [AgentRunItem]
+    if selectedAgentRunIDsForAIContext.contains(run.id) {
+      runs = agentRuns.filter { selectedAgentRunIDsForAIContext.contains($0.id) }
+    } else {
+      runs = [run]
+    }
+    startNewAIThread(with: runs.compactMap { openClawContextPointer(for: $0, requiresExistingRecord: false) })
+  }
+
+  public func startNewAIThreadFromApprovalSelection(including item: ApprovalItem) {
+    let items: [ApprovalItem]
+    if selectedApprovalItemIDsForAIContext.contains(item.id) {
+      items = approvalItems.filter { selectedApprovalItemIDsForAIContext.contains($0.id) }
+    } else {
+      items = [item]
+    }
+    startNewAIThread(with: items.map(openClawContextPointer(for:)))
+  }
+
+  public func startNewAIThreadFromCorpusFileSelection(including file: CorpusFile) {
+    let files: [CorpusFile]
+    if selectedCorpusFileIDsForAIContext.contains(file.id) {
+      files = corpusFiles.filter { selectedCorpusFileIDsForAIContext.contains($0.id) }
+    } else {
+      files = [file]
+    }
+    startNewAIThread(with: files.map(openClawContextPointer(for:)))
+  }
+
   public func askOpenClawAboutCurrentSelection(threadMode: OpenClawThreadMode = .newThread) {
     guard let pointer = openClawContextPointerForCurrentSelection() else {
       statusText = "Select a page or entry first"
@@ -5737,6 +5811,63 @@ public final class WorkspaceStore: ObservableObject {
 
   public func selectAgentRun(_ run: AgentRunItem) {
     activateAgentRunDetail(run.id, recordsHistory: true)
+  }
+
+  public func handleAgentRunClick(
+    _ run: AgentRunItem,
+    visibleRunIDs: [AgentRunItem.ID],
+    modifiers: NSEvent.ModifierFlags = []
+  ) {
+    selectedAgentRunIDsForAIContext = Self.updatedAIContextSelection(
+      selectedAgentRunIDsForAIContext,
+      activeID: selectedAgentRunID,
+      clickedID: run.id,
+      visibleIDs: visibleRunIDs,
+      modifiers: modifiers
+    )
+    selectAgentRun(run)
+  }
+
+  public func isAgentRunSelectedForAIContext(_ run: AgentRunItem) -> Bool {
+    selectedAgentRunIDsForAIContext.isEmpty
+      ? selectedAgentRunID == run.id
+      : selectedAgentRunIDsForAIContext.contains(run.id)
+  }
+
+  public func reconcileAgentRunAIContextSelection(visibleIDs: [AgentRunItem.ID]) {
+    selectedAgentRunIDsForAIContext.formIntersection(visibleIDs)
+  }
+
+  private static func updatedAIContextSelection<ID: Hashable>(
+    _ selection: Set<ID>,
+    activeID: ID?,
+    clickedID: ID,
+    visibleIDs: [ID],
+    modifiers: NSEvent.ModifierFlags
+  ) -> Set<ID> {
+    let modifiers = modifiers.intersection([.command, .shift])
+    if modifiers.contains(.shift),
+       let activeID,
+       let anchorIndex = visibleIDs.firstIndex(of: activeID),
+       let clickedIndex = visibleIDs.firstIndex(of: clickedID) {
+      let bounds = min(anchorIndex, clickedIndex)...max(anchorIndex, clickedIndex)
+      return Set(bounds.map { visibleIDs[$0] })
+    }
+
+    if modifiers.contains(.command) {
+      var next = selection
+      if next.isEmpty, let activeID, activeID != clickedID {
+        next.insert(activeID)
+      }
+      if next.contains(clickedID) {
+        next.remove(clickedID)
+      } else {
+        next.insert(clickedID)
+      }
+      return next
+    }
+
+    return [clickedID]
   }
 
   private func activateAgentRunDetail(_ runID: AgentRunItem.ID, recordsHistory: Bool) {
@@ -6203,6 +6334,10 @@ public final class WorkspaceStore: ObservableObject {
       let previousSource = selectedEntrySource
       prepareEntryHTML(for: source)
       selectedEntrySource = source
+      if location.idValue?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false,
+         let id = Self.firstOrgID(in: source.text) {
+        applyResolvedID(id, to: location)
+      }
       updateEditableEntryTextFromLoadedSourceIfSafe(source, previousSource: previousSource)
       renderEntrySource(source, generation: generation)
     } catch {
@@ -6869,8 +7004,7 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func beginEditingCurrentScope(atSourceLine sourceLine: Int? = nil) {
-    let targetSourceLine = sourceLine ?? currentDocumentViewportSourceLine
-    if let sourceLine = targetSourceLine,
+    if let sourceLine,
        let source = selectedEntrySource {
       recordDocumentViewportSourceLine(sourceLine, for: source)
       let sourceSelection = NSRange(
@@ -6885,6 +7019,19 @@ public final class WorkspaceStore: ObservableObject {
     }
     if let selectedBlock {
       beginEditingSource(for: selectedBlock)
+      return
+    }
+    if let sourceLine = currentDocumentViewportSourceLine,
+       let source = selectedEntrySource {
+      recordDocumentViewportSourceLine(sourceLine, for: source)
+      let sourceSelection = NSRange(
+        location: Self.sourceEditorUTF16Offset(
+          forAbsoluteLine: sourceLine,
+          in: source
+        ),
+        length: 0
+      )
+      beginEditingSelectedEntry(initialSelection: sourceSelection)
       return
     }
     beginEditingSelectedEntry()
@@ -9362,6 +9509,34 @@ public final class WorkspaceStore: ObservableObject {
     statusText = "Opened \(file.relativePath)"
   }
 
+  public func handleCorpusFileClick(
+    _ file: CorpusFile,
+    modifiers: NSEvent.ModifierFlags = []
+  ) {
+    selectedCorpusFileIDsForAIContext = Self.updatedAIContextSelection(
+      selectedCorpusFileIDsForAIContext,
+      activeID: selectedCorpusFileID,
+      clickedID: file.id,
+      visibleIDs: filteredCorpusFiles.map(\.id),
+      modifiers: modifiers
+    )
+    if selectedCorpusFileID == file.id {
+      selectCorpusFile(file)
+    } else {
+      selectedCorpusFileID = file.id
+    }
+  }
+
+  public func isCorpusFileSelectedForAIContext(_ file: CorpusFile) -> Bool {
+    selectedCorpusFileIDsForAIContext.isEmpty
+      ? selectedCorpusFileID == file.id
+      : selectedCorpusFileIDsForAIContext.contains(file.id)
+  }
+
+  public func reconcileCorpusFileAIContextSelection(visibleIDs: [CorpusFile.ID]) {
+    selectedCorpusFileIDsForAIContext.formIntersection(visibleIDs)
+  }
+
   public func openSidebarFile(_ file: CorpusFile) {
     let keepsVisibleChatPane =
       !isWorkspaceSurfacePaneClosed
@@ -11415,7 +11590,10 @@ public final class WorkspaceStore: ObservableObject {
       text,
       attachments: attachments,
       in: threadID,
-      workspaceContext: currentOpenClawWorkspaceContext(includesNavigationContext: false)
+      workspaceContext: currentOpenClawWorkspaceContext(
+        includesNavigationContext: false,
+        threadContinuation: aiChatThreadContinuation(for: thread)
+      )
     )
     if shouldDrain {
       Task { @MainActor [weak self] in
@@ -11445,6 +11623,90 @@ public final class WorkspaceStore: ObservableObject {
       }
     }
     return true
+  }
+
+  public func mobileRemoteFilePreview(
+    path rawPath: String,
+    line requestedLine: Int?
+  ) throws -> MobileRemoteFilePreview {
+    let target = try mobileRemotePreviewTarget(for: rawPath)
+    guard ["org2", "org"].contains(target.url.pathExtension.lowercased()) else {
+      throw MobileRemoteFilePreviewError.unsupportedFile
+    }
+    let document = try openClawLocalEditDocument(
+      at: target.relativePath,
+      corpusRoot: target.root
+    )
+    guard document.origin != .missing else {
+      throw MobileRemoteFilePreviewError.unavailable
+    }
+
+    var lines = document.text
+      .split(separator: "\n", omittingEmptySubsequences: false)
+      .map(String.init)
+    if lines.isEmpty { lines = [""] }
+    let highlightedLine = requestedLine.flatMap { line in
+      (1...lines.count).contains(line) ? line : nil
+    }
+    let focusLine = highlightedLine ?? 1
+    let startLine = max(1, focusLine - 8)
+    let endLine = min(lines.count, focusLine + 14)
+    let content = lines[(startLine - 1)..<endLine].joined(separator: "\n")
+    return MobileRemoteFilePreview(
+      title: target.url.lastPathComponent,
+      relativePath: target.relativePath,
+      startLine: startLine,
+      highlightedLine: highlightedLine,
+      content: content
+    )
+  }
+
+  private func mobileRemotePreviewTarget(
+    for rawPath: String
+  ) throws -> (root: URL, url: URL, relativePath: String) {
+    var path = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
+    if path.hasPrefix("~/") {
+      path = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent(String(path.dropFirst(2)))
+        .path
+    }
+    guard !path.isEmpty else {
+      throw MobileRemoteFilePreviewError.invalidPath
+    }
+
+    let roots = workspaceMountPaths()
+      .map { URL(fileURLWithPath: $0).resolvingSymlinksInPath().standardizedFileURL }
+    let candidates: [(root: URL, url: URL)]
+    if path.hasPrefix("/") {
+      let url = URL(fileURLWithPath: path).resolvingSymlinksInPath().standardizedFileURL
+      candidates = roots.map { ($0, url) }
+    } else {
+      let relative = path.hasPrefix("./") ? String(path.dropFirst(2)) : path
+      candidates = roots.flatMap { root -> [(root: URL, url: URL)] in
+        var relativePaths = [relative]
+        let corpusPrefix = root.lastPathComponent + "/"
+        if relative.hasPrefix(corpusPrefix) {
+          relativePaths.append(String(relative.dropFirst(corpusPrefix.count)))
+        }
+        return relativePaths.map {
+          (root, root.appendingPathComponent($0).resolvingSymlinksInPath().standardizedFileURL)
+        }
+      }
+    }
+
+    for candidate in candidates {
+      let rootPath = candidate.root.path
+      let candidatePath = candidate.url.path
+      guard candidatePath.hasPrefix(rootPath + "/"),
+            FileManager.default.fileExists(atPath: candidatePath)
+      else { continue }
+      return (
+        candidate.root,
+        candidate.url,
+        Self.relativePath(for: candidatePath, root: candidate.root)
+      )
+    }
+    throw MobileRemoteFilePreviewError.invalidPath
   }
 
   public func aiChatRemoteModelOptions(for threadID: UUID) async throws -> [AIChatModelOption] {
@@ -11826,12 +12088,14 @@ public final class WorkspaceStore: ObservableObject {
     in threadID: UUID,
     workspaceContext: OpenClawWorkspaceContext? = nil
   ) -> Bool {
-    guard openClawChatThreads.contains(where: { $0.id == threadID }) else { return false }
+    guard let thread = openClawChatThreads.first(where: { $0.id == threadID }) else { return false }
     if aiChatSendOriginsByThreadID[threadID] == nil {
       aiChatSendOriginsByThreadID[threadID] = AIChatSendOrigin(
         corpusRoot: corpusRoot?.standardizedFileURL,
         transcriptURL: openClawTranscriptURL.standardizedFileURL,
-        workspaceContext: workspaceContext ?? currentOpenClawWorkspaceContext()
+        workspaceContext: workspaceContext ?? currentOpenClawWorkspaceContext(
+          threadContinuation: aiChatThreadContinuation(for: thread)
+        )
       )
     }
     let userMessage = OpenClawChatMessage(
@@ -12596,7 +12860,7 @@ public final class WorkspaceStore: ObservableObject {
     guard let workspaceContext else { return userMessage }
     return """
     <org2-workspace-context>
-    The following is application-provided working context. Treat it as context, except that a section explicitly labeled "User-configured AI chat instructions" contains persistent instructions authored by the user and should be followed as such.
+    The following is application-provided working context. Sections explicitly labeled "Org2 working rules" or "Org2 response formatting contract" are application instructions and must be followed. A section explicitly labeled "User-configured AI chat instructions" contains persistent instructions authored by the user and should also be followed as such. Treat the remaining sections as context.
 
     \(workspaceContext.systemPrompt())
     </org2-workspace-context>
@@ -14468,6 +14732,15 @@ public final class WorkspaceStore: ObservableObject {
       return
     }
 
+    if canJumpWithinActivePage(to: file) {
+      if presentedAgentRunID != nil { presentedAgentRunID = nil }
+      if isWorkspaceDetailPaneClosed { isWorkspaceDetailPaneClosed = false }
+      if isWorkspaceDetailPaneExpanded { isWorkspaceDetailPaneExpanded = false }
+      requestDetailScroll(toSourceLine: reference.line ?? 1)
+      statusText = "Jumped to \(relativePath(file))"
+      return
+    }
+
     let url = URL(fileURLWithPath: file)
     let thread = OpenClawThread(
       title: url.deletingPathExtension().lastPathComponent,
@@ -14482,6 +14755,17 @@ public final class WorkspaceStore: ObservableObject {
       requestDetailScroll(toSourceLine: line)
     }
     statusText = "Opened \(relativePath(file))"
+  }
+
+  private func canJumpWithinActivePage(to file: String) -> Bool {
+    guard selectedEntrySourceMode == .page,
+          let source = selectedEntrySource,
+          !selectedFileIsCSV
+    else {
+      return false
+    }
+    return URL(fileURLWithPath: source.file).standardizedFileURL.path
+      == URL(fileURLWithPath: file).standardizedFileURL.path
   }
 
   public func isPersonalAssignee(_ rawAssignee: String?) -> Bool {
@@ -18377,6 +18661,113 @@ public final class WorkspaceStore: ObservableObject {
     return originalPath
   }
 
+  private func startNewAIThread(with rawPointers: [OpenClawContextPointer]) {
+    var seen = Set<String>()
+    let pointers = rawPointers.filter {
+      seen.insert("\($0.kind)|\($0.reference)|\($0.displayTitle)").inserted
+    }
+    guard !pointers.isEmpty else {
+      statusText = "No selected items are available for AI context"
+      return
+    }
+
+    let runtime = selectedOpenClawChatThread?.runtime ?? .openClaw
+    let threadTitle = pointers.count == 1
+      ? pointers[0].threadTitle
+      : "Context: \(pointers.count) selected items"
+    createOpenClawChatThread(
+      title: Self.normalizedOpenClawThreadTitle(threadTitle),
+      statusText: "New \(runtime.title) context chat",
+      runtime: runtime
+    )
+    let draft = pointers.map(injectedOpenClawContext).joined()
+    publishOpenClawComposerDraft(draft)
+    recordWorkspaceUndo(.openClawDraft(previous: "", next: draft))
+    setOpenClawAssistantPanelPresented(true)
+
+    let countLabel = pointers.count == 1 ? "1 item" : "\(pointers.count) items"
+    openClawStatusText = "Added \(countLabel) to \(runtime.title)"
+    statusText = "Started a new AI thread with \(countLabel)"
+  }
+
+  private func openClawContextPointer(
+    for run: AgentRunItem,
+    requiresExistingRecord: Bool
+  ) -> OpenClawContextPointer? {
+    guard let corpusRoot else {
+      statusText = "No corpus selected"
+      return nil
+    }
+    let relativePath = ".org2/runs/\(run.id).org2"
+    let recordURL = corpusRoot.appendingPathComponent(relativePath).standardizedFileURL
+    if requiresExistingRecord, !FileManager.default.fileExists(atPath: recordURL.path) {
+      errorText = "The run record could not be found at \(relativePath)."
+      statusText = "Run record missing"
+      return nil
+    }
+
+    let title = Org2Display.cleanInline(run.goal)
+    return OpenClawContextPointer(
+      kind: "agent run",
+      displayTitle: title,
+      reference: "\(mappedPathForOpenClaw(recordURL.path)):1",
+      displayReference: "\(relativePath):1",
+      threadTitle: "Run: \(title)"
+    )
+  }
+
+  private func openClawContextPointer(for item: ApprovalItem) -> OpenClawContextPointer {
+    let title = Org2Display.cleanInline(item.title)
+    return OpenClawContextPointer(
+      kind: item.isRunApproval ? "run approval" : "approval item",
+      displayTitle: title,
+      reference: "\(mappedPathForOpenClaw(item.file)):\(item.line)",
+      displayReference: "\(relativePath(item.file)):\(item.line)",
+      threadTitle: "Approval: \(title)"
+    )
+  }
+
+  private func openClawContextPointer(for file: CorpusFile) -> OpenClawContextPointer {
+    let title = Self.titleFromFileStem(URL(fileURLWithPath: file.path).deletingPathExtension().lastPathComponent)
+    return OpenClawContextPointer(
+      kind: "selected file",
+      displayTitle: title,
+      reference: "\(mappedPathForOpenClaw(file.path)):1",
+      displayReference: "\(file.relativePath):1",
+      threadTitle: "File: \(title)"
+    )
+  }
+
+  private func openClawContextPointer(for location: WorkspaceLocation) -> OpenClawContextPointer {
+    let kind: String
+    switch location {
+    case .agenda:
+      kind = "agenda item"
+    case .assigned:
+      kind = "assigned agenda item"
+    case .search:
+      kind = "search result"
+    case .backlink:
+      kind = "backlink"
+    case .openClaw:
+      kind = "selected page"
+    case .meeting:
+      kind = "meeting"
+    }
+    let title = openClawReadableContextTitle(
+      location.title,
+      file: location.file,
+      generic: "Selected item"
+    )
+    return OpenClawContextPointer(
+      kind: kind,
+      displayTitle: title,
+      reference: "\(mappedPathForOpenClaw(location.file)):\(location.lineForEditor)",
+      displayReference: "\(relativePath(location.file)):\(location.lineForEditor)",
+      threadTitle: "Ask: \(title)"
+    )
+  }
+
   private func openClawContextPointerForCurrentSelection() -> OpenClawContextPointer? {
     if let selectedBlock,
        let pointer = openClawContextPointer(for: OpenClawBlockContextPointer(source: selectedEntrySource, block: selectedBlock)) {
@@ -18397,18 +18788,7 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     if let location = selectedLocation {
-      let title = openClawReadableContextTitle(
-        location.title,
-        file: location.file,
-        generic: "Current selection"
-      )
-      return OpenClawContextPointer(
-        kind: "current selection",
-        displayTitle: title,
-        reference: "\(mappedPathForOpenClaw(location.file)):\(location.lineForEditor)",
-        displayReference: "\(relativePath(location.file)):\(location.lineForEditor)",
-        threadTitle: "Ask: \(title)"
-      )
+      return openClawContextPointer(for: location)
     }
 
     return nil
@@ -18463,11 +18843,7 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   private func addOpenClawContext(_ pointer: OpenClawContextPointer, threadMode: OpenClawThreadMode) {
-    let displayTitle = pointer.displayTitle
-      .replacingOccurrences(of: "\n", with: " ")
-      .replacingOccurrences(of: "”", with: "'")
-      .trimmingCharacters(in: .whitespacesAndNewlines)
-    let injectedContext = "Use \(pointer.kind) “\(displayTitle)” at \(pointer.reference) as context.\n\n"
+    let injectedContext = injectedOpenClawContext(pointer)
     let hadSelectedThread = selectedOpenClawChatThreadID != nil
     let unthreadedDraft = hadSelectedThread ? "" : openClawDraft
     if !canReuseOpenClawContextDraftThread(mode: threadMode) {
@@ -18494,6 +18870,14 @@ public final class WorkspaceStore: ObservableObject {
     let runtimeTitle = selectedAIChatRuntime.title
     openClawStatusText = "Added \(pointer.displayReference) to \(runtimeTitle)"
     statusText = "Added \(pointer.displayReference) to \(runtimeTitle)"
+  }
+
+  private func injectedOpenClawContext(_ pointer: OpenClawContextPointer) -> String {
+    let displayTitle = pointer.displayTitle
+      .replacingOccurrences(of: "\n", with: " ")
+      .replacingOccurrences(of: "”", with: "'")
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    return "Use \(pointer.kind) “\(displayTitle)” at \(pointer.reference) as context.\n\n"
   }
 
   private func openClawContextDisplayTitle(
@@ -19545,7 +19929,8 @@ public final class WorkspaceStore: ObservableObject {
 
   private func currentOpenClawWorkspaceContext(
     localEditTurnID: String? = nil,
-    includesNavigationContext: Bool = true
+    includesNavigationContext: Bool = true,
+    threadContinuation: AIChatThreadContinuation? = nil
   ) -> OpenClawWorkspaceContext {
     let source: EntrySource?
     if !includesNavigationContext {
@@ -19583,7 +19968,60 @@ public final class WorkspaceStore: ObservableObject {
         )
       },
       authorizedCorpora: currentAIChatCorpusContexts(),
-      customInstructions: aiChatCustomInstructions
+      customInstructions: aiChatCustomInstructions,
+      threadContinuation: threadContinuation
+    )
+  }
+
+  private func aiChatThreadContinuation(
+    for thread: OpenClawChatThread
+  ) -> AIChatThreadContinuation {
+    let maxMessages = 24
+    let maxMessageCharacters = 4_000
+    var remainingCharacters = 24_000
+    var messages: [AIChatThreadContinuation.Message] = []
+
+    for message in thread.messages.reversed() {
+      guard messages.count < maxMessages, remainingCharacters > 0 else { break }
+      var content = message.content.trimmingCharacters(in: .whitespacesAndNewlines)
+      if !message.attachments.isEmpty {
+        let attachmentText = message.attachments
+          .map { "[Attachment: \($0.fileName)]" }
+          .joined(separator: "\n")
+        content = content.isEmpty ? attachmentText : "\(content)\n\(attachmentText)"
+      }
+      guard !content.isEmpty else { continue }
+      let allowedCharacters = min(maxMessageCharacters, remainingCharacters)
+      if content.count > allowedCharacters {
+        content = String(content.prefix(allowedCharacters)) + "…"
+      }
+      messages.append(.init(role: message.role.rawValue, content: content))
+      remainingCharacters -= content.count
+    }
+
+    var references: [String] = []
+    var seenPaths = Set<String>()
+    func appendReference(_ reference: OpenClawFileReference) {
+      guard references.count < 12 else { return }
+      let localPath = localPathForOpenClawReference(reference.path) ?? reference.path
+      let path = mappedPathForOpenClaw(localPath)
+      guard seenPaths.insert(path).inserted else { return }
+      references.append(reference.line.map { "\(path):\($0)" } ?? path)
+    }
+
+    if let resource = thread.resource {
+      appendReference(OpenClawFileReference(path: resource.file, line: resource.line))
+    }
+    for message in thread.messages.reversed() where references.count < 12 {
+      for reference in OpenClawFileReference.extract(from: message.content, limit: 12) {
+        appendReference(reference)
+      }
+    }
+
+    return AIChatThreadContinuation(
+      title: thread.title,
+      messages: Array(messages.reversed()),
+      org2References: references
     )
   }
 
@@ -19611,7 +20049,8 @@ public final class WorkspaceStore: ObservableObject {
         )
       },
       authorizedCorpora: context.authorizedCorpora,
-      customInstructions: context.customInstructions
+      customInstructions: context.customInstructions,
+      threadContinuation: context.threadContinuation
     )
   }
 

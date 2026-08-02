@@ -53,7 +53,9 @@ final class MobileVoiceTranscriber: ObservableObject {
       try audioEngine.start()
       isRecording = true
 
-      recognitionTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
+      // Speech invokes this callback on an arbitrary queue. Mark it Sendable so
+      // Swift does not inherit MobileVoiceTranscriber's main-actor isolation.
+      recognitionTask = recognizer.recognitionTask(with: request) { @Sendable [weak self] result, error in
         let nextTranscript = result?.bestTranscription.formattedString
         let isFinal = result?.isFinal == true
         let errorText = error?.localizedDescription
@@ -118,7 +120,9 @@ final class MobileVoiceTranscriber: ObservableObject {
 
   private func requestSpeechAuthorization() async -> SFSpeechRecognizerAuthorizationStatus {
     await withCheckedContinuation { continuation in
-      SFSpeechRecognizer.requestAuthorization { status in
+      // TCC also responds on an arbitrary queue. Without an explicitly
+      // nonisolated callback, Swift 6 traps while checking the main actor.
+      SFSpeechRecognizer.requestAuthorization { @Sendable status in
         continuation.resume(returning: status)
       }
     }

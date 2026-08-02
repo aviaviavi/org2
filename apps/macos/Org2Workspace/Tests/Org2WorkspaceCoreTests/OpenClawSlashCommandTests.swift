@@ -132,13 +132,15 @@ final class OpenClawSlashCommandTests: XCTestCase {
       ),
       "/triage all"
     )
-    XCTAssertTrue(
-      WorkspaceStore.openClawGatewayMessage(
-        userMessage: "Summarize this",
-        workspaceContext: context,
-        isGatewayCommand: false
-      ).hasPrefix("<org2-workspace-context>")
+    let wrappedMessage = WorkspaceStore.openClawGatewayMessage(
+      userMessage: "Summarize this",
+      workspaceContext: context,
+      isGatewayCommand: false
     )
+    XCTAssertTrue(wrappedMessage.hasPrefix("<org2-workspace-context>"))
+    XCTAssertTrue(wrappedMessage.contains("Org2 response formatting contract"))
+    XCTAssertTrue(wrappedMessage.contains("are application instructions and must be followed"))
+    XCTAssertTrue(wrappedMessage.contains("|-------+--------------|"))
   }
 
   @MainActor

@@ -937,6 +937,111 @@ final class AgentRunModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testSelectedRunsStartFreshAIThreadWithEveryRunAsContext() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-run-multi-context-\(UUID().uuidString)", isDirectory: true)
+    let runsDirectory = root.appendingPathComponent(".org2/runs", isDirectory: true)
+    try FileManager.default.createDirectory(at: runsDirectory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let first = try makeRun(id: "run-1", goal: "Prepare the launch brief")
+    let second = try makeRun(id: "run-2", goal: "Review the launch risks")
+    for run in [first, second] {
+      try "#+TITLE: \(run.goal)\n".write(
+        to: runsDirectory.appendingPathComponent("\(run.id).org2"),
+        atomically: true,
+        encoding: .utf8
+      )
+    }
+
+    let suiteName = "org2-run-multi-context-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json")
+    )
+    store.setCorpusRoot(root, persistsDefault: false)
+    store.openClawRemoteCorpusPath = "/remote/org2"
+    store.replaceAgentRunsForTesting([first, second])
+    store.createOpenClawChatThread(runtime: .codex)
+
+    let visibleIDs = [first.id, second.id]
+    store.handleAgentRunClick(first, visibleRunIDs: visibleIDs)
+    store.handleAgentRunClick(second, visibleRunIDs: visibleIDs, modifiers: [.command])
+    store.startNewAIThreadFromAgentRunSelection(including: second)
+
+    XCTAssertEqual(store.openClawChatThreads.count, 2)
+    XCTAssertEqual(store.selectedOpenClawChatThread?.runtime, .codex)
+    XCTAssertEqual(store.selectedOpenClawChatThread?.title, "Context: 2 selected items")
+    XCTAssertTrue(store.openClawMessages.isEmpty)
+    let presentation = OpenClawContextPresentation(store.openClawDraft)
+    XCTAssertEqual(presentation.contexts.map(\.title), [
+      "Prepare the launch brief",
+      "Review the launch risks"
+    ])
+    XCTAssertEqual(presentation.contexts.map(\.reference), [
+      "/remote/org2/.org2/runs/run-1.org2:1",
+      "/remote/org2/.org2/runs/run-2.org2:1"
+    ])
+  }
+
+  @MainActor
+  func testSelectedApprovalsStartFreshAIThreadWithEveryApprovalAsContext() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-approval-multi-context-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let note = root.appendingPathComponent("approvals.org2")
+    try "* TODO Approve launch\n\n* TODO Approve pricing\n".write(
+      to: note,
+      atomically: true,
+      encoding: .utf8
+    )
+    let first = ApprovalItem(
+      title: "Approve launch",
+      status: "pending",
+      todo: "TODO",
+      level: 1,
+      file: note.path,
+      line: 1,
+      idValue: "approval-launch",
+      properties: [:],
+      body: "Review launch material",
+      tags: []
+    )
+    let second = ApprovalItem(
+      title: "Approve pricing",
+      status: "pending",
+      todo: "TODO",
+      level: 1,
+      file: note.path,
+      line: 3,
+      idValue: "approval-pricing",
+      properties: [:],
+      body: "Review pricing material",
+      tags: []
+    )
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root, persistsDefault: false)
+    store.openClawRemoteCorpusPath = "/remote/org2"
+    store.replaceApprovalItemsForTesting([first, second])
+    store.selectedApprovalItemIDsForAIContext = [first.id, second.id]
+
+    store.startNewAIThreadFromApprovalSelection(including: second)
+
+    let presentation = OpenClawContextPresentation(store.openClawDraft)
+    XCTAssertEqual(presentation.contexts.map(\.title), ["Approve launch", "Approve pricing"])
+    XCTAssertEqual(presentation.contexts.map(\.reference), [
+      "/remote/org2/approvals.org2:1",
+      "/remote/org2/approvals.org2:3"
+    ])
+    XCTAssertEqual(store.selectedOpenClawChatThread?.title, "Context: 2 selected items")
+  }
+
+  @MainActor
   func testRunDetailUsesWorkspaceDetailAndArtifactNavigationReturnsWithBack() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-run-detail-navigation-\(UUID().uuidString)", isDirectory: true)

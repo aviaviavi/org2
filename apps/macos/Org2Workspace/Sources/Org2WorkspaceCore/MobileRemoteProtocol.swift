@@ -99,6 +99,38 @@ public struct MobileRemoteAttachment: Codable, Hashable, Sendable {
   }
 }
 
+public struct MobileRemoteFilePreviewRequest: Codable, Hashable, Sendable {
+  public let path: String
+  public let line: Int?
+
+  public init(path: String, line: Int? = nil) {
+    self.path = path
+    self.line = line
+  }
+}
+
+public struct MobileRemoteFilePreview: Codable, Hashable, Sendable {
+  public let title: String
+  public let relativePath: String
+  public let startLine: Int
+  public let highlightedLine: Int?
+  public let content: String
+
+  public init(
+    title: String,
+    relativePath: String,
+    startLine: Int,
+    highlightedLine: Int?,
+    content: String
+  ) {
+    self.title = title
+    self.relativePath = relativePath
+    self.startLine = startLine
+    self.highlightedLine = highlightedLine
+    self.content = content
+  }
+}
+
 public struct MobileRemoteModelOption: Codable, Hashable, Identifiable, Sendable {
   public let id: String
   public let label: String
@@ -289,6 +321,20 @@ public struct MobileRemoteActivity: Codable, Hashable, Identifiable, Sendable {
     self.detail = detail
     self.status = status
     self.updatedAt = updatedAt
+  }
+}
+
+public enum MobileRemoteActivityPresentation {
+  public static func items(from activities: [OpenClawRunActivity]) -> [MobileRemoteActivity] {
+    OpenClawActivityFeed.items(from: activities).map { item in
+      MobileRemoteActivity(
+        id: item.id,
+        title: item.title,
+        detail: item.detail,
+        status: item.status.rawValue,
+        updatedAt: item.updatedAt
+      )
+    }
   }
 }
 

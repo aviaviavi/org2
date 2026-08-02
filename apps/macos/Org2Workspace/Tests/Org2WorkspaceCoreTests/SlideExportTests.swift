@@ -76,6 +76,35 @@ final class SlideExportTests: XCTestCase {
     )
   }
 
+  @MainActor
+  func testSlidePreviewSourceLineJumpReusesCompiledPDF() throws {
+    let pdf = try makeSlideDeckPDF(sourceLines: [10, 30, 60])
+    var reportedLine: Int?
+    let initialView = OrgPDFDocumentView(
+      data: pdf,
+      scrollRequest: DetailScrollRequest(id: 1, target: .sourceLine(58)),
+      reportViewportSourceLine: { reportedLine = $0 }
+    )
+    let coordinator = initialView.makeCoordinator()
+    let pdfView = PDFView()
+    initialView.update(pdfView, coordinator: coordinator)
+    let compiledDocument = try XCTUnwrap(pdfView.document)
+
+    XCTAssertEqual(pdfView.currentPage.flatMap { pdfView.document?.index(for: $0) }, 2)
+    XCTAssertEqual(reportedLine, 60)
+
+    let jumpedView = OrgPDFDocumentView(
+      data: pdf,
+      scrollRequest: DetailScrollRequest(id: 2, target: .sourceLine(12)),
+      reportViewportSourceLine: { reportedLine = $0 }
+    )
+    jumpedView.update(pdfView, coordinator: coordinator)
+
+    XCTAssertTrue(pdfView.document === compiledDocument)
+    XCTAssertEqual(pdfView.currentPage.flatMap { pdfView.document?.index(for: $0) }, 0)
+    XCTAssertEqual(reportedLine, 10)
+  }
+
   func testOrg2CLIIncludesMacTeXInChildProcessPath() {
     let path = Org2CLI.processEnvironment()["PATH"] ?? ""
     XCTAssertTrue(path.split(separator: ":").contains("/Library/TeX/texbin"))

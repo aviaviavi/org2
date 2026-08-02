@@ -317,65 +317,73 @@ private struct MobileRemoteThreadView: View {
   @State private var dictationPrefix = ""
   @State private var selectedPhotoItems: [PhotosPickerItem] = []
   @State private var attachments: [MobileRemoteAttachment] = []
+  @State private var selectedFileCitation: MobileRemoteFileCitation?
+  @State private var isNearChatBottom = true
 
   var body: some View {
     Group {
       if let detail = remote.threadDetail, detail.thread.id == threadID {
         ScrollViewReader { proxy in
-          ScrollView {
-            LazyVStack(alignment: .leading, spacing: 12) {
-              if let connectionError = remote.threadConnectionError {
-                Label(connectionError, systemImage: "wifi.exclamationmark")
-                  .font(.caption)
-                  .foregroundStyle(.secondary)
-                  .padding(10)
-                  .frame(maxWidth: .infinity, alignment: .leading)
-                  .background(.quaternary, in: RoundedRectangle(cornerRadius: 10))
-              }
-
-              ForEach(detail.messages) { message in
-                MobileRemoteMessageBubble(message: message)
-                  .id(message.id)
-              }
-
-              if isSending || detail.thread.isRunning || !detail.streamingReply.isEmpty {
-                MobileRemoteInProgressBubble(
-                  detail: detail,
-                  isStarting: isSending
-                )
-                .id("in-progress")
-              }
-
-              if !detail.reasoning.isEmpty {
-                DisclosureGroup("Reasoning") {
-                  Text(detail.reasoning)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.top, 6)
+          Group {
+            if #available(iOS 18.0, *) {
+              chatScrollView(detail: detail)
+                .onScrollGeometryChange(for: Bool.self) { geometry in
+                  geometry.contentSize.height <= geometry.containerSize.height
+                    || geometry.visibleRect.maxY >= geometry.contentSize.height - 28
+                } action: { _, nextValue in
+                  if isNearChatBottom != nextValue {
+                    isNearChatBottom = nextValue
+                  }
                 }
-                .padding(12)
-                .background(.quaternary, in: RoundedRectangle(cornerRadius: 12))
-              }
-
-              if !detail.activities.isEmpty {
-                MobileRemoteActivityView(activities: detail.activities)
-              }
+            } else {
+              chatScrollView(detail: detail)
             }
-            .padding()
           }
           .onChange(of: detail.messages.count) { _, _ in
-            scrollToBottom(detail: detail, proxy: proxy)
+            scrollToBottomIfFollowing(proxy: proxy)
           }
           .onChange(of: detail.streamingReply) { _, _ in
-            scrollToBottom(detail: detail, proxy: proxy)
+            scrollToBottomIfFollowing(proxy: proxy)
           }
-          .onChange(of: isSending) { _, _ in
-            scrollToBottom(detail: detail, proxy: proxy)
+          .onChange(of: detail.reasoning) { _, _ in
+            scrollToBottomIfFollowing(proxy: proxy)
+          }
+          .onChange(of: detail.activities.count) { _, _ in
+            scrollToBottomIfFollowing(proxy: proxy)
+          }
+          .onChange(of: isSending) { _, sending in
+            if sending {
+              scrollToBottom(proxy: proxy)
+            } else {
+              scrollToBottomIfFollowing(proxy: proxy)
+            }
           }
           .onAppear {
-            scrollToBottom(detail: detail, proxy: proxy, animated: false)
+            isNearChatBottom = true
+            scrollToBottom(proxy: proxy, animated: false)
           }
+          .overlay(alignment: .bottomTrailing) {
+            if !isNearChatBottom {
+              Button {
+                scrollToBottom(proxy: proxy)
+              } label: {
+                Image(systemName: "arrow.down")
+                  .font(.system(size: 14, weight: .semibold))
+                  .frame(width: 36, height: 36)
+                  .background(.regularMaterial, in: Circle())
+                  .overlay {
+                    Circle().stroke(Color.primary.opacity(0.12), lineWidth: 1)
+                  }
+                  .shadow(color: .black.opacity(0.12), radius: 5, y: 2)
+              }
+              .buttonStyle(.plain)
+              .padding(.trailing, 14)
+              .padding(.bottom, 12)
+              .accessibilityLabel("Jump to latest message")
+              .transition(.scale.combined(with: .opacity))
+            }
+          }
+          .animation(.easeInOut(duration: 0.16), value: isNearChatBottom)
         }
       } else {
         if let message = remote.threadConnectionError {
@@ -442,6 +450,66 @@ private struct MobileRemoteThreadView: View {
       Button("OK", role: .cancel) {}
     } message: {
       Text(voiceTranscriber.errorMessage ?? "")
+    }
+    .sheet(item: $selectedFileCitation) { citation in
+      MobileRemoteFilePreviewSheet(citation: citation)
+        .environmentObject(remote)
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+    }
+  }
+
+  private func chatScrollView(detail: MobileRemoteThreadDetail) -> some View {
+    ScrollView {
+      VStack(alignment: .leading, spacing: 0) {
+        LazyVStack(alignment: .leading, spacing: 12) {
+          if let connectionError = remote.threadConnectionError {
+            Label(connectionError, systemImage: "wifi.exclamationmark")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+              .padding(10)
+              .frame(maxWidth: .infinity, alignment: .leading)
+              .background(.quaternary, in: RoundedRectangle(cornerRadius: 10))
+          }
+
+          ForEach(detail.messages) { message in
+            MobileRemoteMessageBubble(message: message) { citation in
+              selectedFileCitation = citation
+            }
+              .id(message.id)
+          }
+
+          if isSending || detail.thread.isRunning || !detail.streamingReply.isEmpty {
+            MobileRemoteInProgressBubble(
+              detail: detail,
+              isStarting: isSending
+            )
+            .id("in-progress")
+          }
+
+          if !detail.reasoning.isEmpty {
+            DisclosureGroup("Reasoning") {
+              Text(detail.reasoning)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, 6)
+            }
+            .padding(12)
+            .background(.quaternary, in: RoundedRectangle(cornerRadius: 12))
+          }
+
+          if !detail.activities.isEmpty {
+            MobileRemoteActivityView(activities: detail.activities)
+          }
+        }
+
+        Color.clear
+          .frame(height: 1)
+          .id(bottomAnchorID)
+          .accessibilityHidden(true)
+      }
+      .padding()
     }
   }
 
@@ -795,21 +863,26 @@ private struct MobileRemoteThreadView: View {
     return "\(prefix) \(transcript)"
   }
 
-  private func scrollToBottom(
-    detail: MobileRemoteThreadDetail,
-    proxy: ScrollViewProxy,
-    animated: Bool = true
-  ) {
-    let target: AnyHashable? = if isSending || detail.thread.isRunning || !detail.streamingReply.isEmpty {
-      AnyHashable("in-progress")
-    } else {
-      detail.messages.last?.id
-    }
-    guard let target else { return }
-    if animated {
-      withAnimation { proxy.scrollTo(target, anchor: .bottom) }
-    } else {
-      proxy.scrollTo(target, anchor: .bottom)
+  private var bottomAnchorID: String {
+    "mobile-remote-thread-bottom-\(threadID.uuidString)"
+  }
+
+  private func scrollToBottomIfFollowing(proxy: ScrollViewProxy) {
+    guard isNearChatBottom else { return }
+    scrollToBottom(proxy: proxy)
+  }
+
+  private func scrollToBottom(proxy: ScrollViewProxy, animated: Bool = true) {
+    let target = bottomAnchorID
+    Task { @MainActor in
+      await Task.yield()
+      if animated {
+        withAnimation(.easeOut(duration: 0.2)) {
+          proxy.scrollTo(target, anchor: .bottom)
+        }
+      } else {
+        proxy.scrollTo(target, anchor: .bottom)
+      }
     }
   }
 }
@@ -817,13 +890,14 @@ private struct MobileRemoteThreadView: View {
 private struct MobileRemoteMessageBubble: View {
   @Environment(\.colorScheme) private var colorScheme
   let message: MobileRemoteChatMessage
+  let openFileCitation: (MobileRemoteFileCitation) -> Void
   @State private var didCopy = false
 
   var body: some View {
     HStack {
       if message.role == "user" { Spacer(minLength: 44) }
       VStack(alignment: .leading, spacing: 5) {
-        Text(message.content)
+        Text(MobileRemoteMessageMarkup.attributedString(for: message.content))
           .textSelection(.enabled)
         if !message.attachmentNames.isEmpty {
           Label(message.attachmentNames.joined(separator: ", "), systemImage: "paperclip")
@@ -840,6 +914,7 @@ private struct MobileRemoteMessageBubble: View {
       .padding(.vertical, 10)
       .padding(.trailing, 22)
       .foregroundStyle(message.role == "user" ? Color.white : Color.primary)
+      .tint(message.role == "user" ? Color.white : Color.accentColor)
       .background(
         message.role == "user" ? Color.blue : Color(.secondarySystemGroupedBackground),
         in: RoundedRectangle(cornerRadius: 15)
@@ -872,6 +947,13 @@ private struct MobileRemoteMessageBubble: View {
         }
       }
       .sensoryFeedback(.success, trigger: didCopy)
+      .environment(\.openURL, OpenURLAction { url in
+        guard let citation = MobileRemoteMessageMarkup.fileCitation(from: url) else {
+          return .systemAction
+        }
+        openFileCitation(citation)
+        return .handled
+      })
       if message.role != "user" { Spacer(minLength: 44) }
     }
   }
@@ -883,6 +965,242 @@ private struct MobileRemoteMessageBubble: View {
 
   private var responseBorderColor: Color {
     Color.primary.opacity(colorScheme == .light ? 0.14 : 0.10)
+  }
+}
+
+private struct MobileRemoteFileCitation: Identifiable, Hashable {
+  let path: String
+  let line: Int?
+  let label: String
+
+  var id: String { "\(path)#\(line ?? 0)" }
+}
+
+private enum MobileRemoteMessageMarkup {
+  private static let markdownLinkPattern = try! NSRegularExpression(
+    pattern: #"\[([^\]\n]+)\]\(([^)\n]+)\)"#
+  )
+  private static let orgLinkPattern = try! NSRegularExpression(
+    pattern: #"\[\[([^\]\n]+)\]\[([^\]\n]+)\]\]"#
+  )
+  private static let fileTargetPattern = try! NSRegularExpression(
+    pattern: #"^(.+\.(?:org2|org))(?::([1-9][0-9]*))?$"#,
+    options: [.caseInsensitive]
+  )
+
+  private struct RenderedLink {
+    let range: NSRange
+    let label: String
+    let url: URL
+  }
+
+  static func attributedString(for content: String) -> AttributedString {
+    let source = content as NSString
+    let links = renderedLinks(in: content)
+    guard !links.isEmpty else { return AttributedString(content) }
+    var output = AttributedString()
+    var cursor = 0
+    for link in links where link.range.location >= cursor {
+      let prefixRange = NSRange(location: cursor, length: link.range.location - cursor)
+      output.append(AttributedString(source.substring(with: prefixRange)))
+      var chunk = AttributedString(link.label)
+      chunk.foregroundColor = .accentColor
+      chunk.link = link.url
+      output.append(chunk)
+      cursor = link.range.location + link.range.length
+    }
+    if cursor < source.length {
+      output.append(AttributedString(source.substring(from: cursor)))
+    }
+    return output
+  }
+
+  static func fileCitation(from url: URL) -> MobileRemoteFileCitation? {
+    guard url.scheme == "org2-mobile-file",
+          let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+          let path = components.queryItems?.first(where: { $0.name == "path" })?.value,
+          !path.isEmpty
+    else { return nil }
+    let line = components.queryItems?
+      .first(where: { $0.name == "line" })?
+      .value
+      .flatMap(Int.init)
+    let label = components.queryItems?
+      .first(where: { $0.name == "label" })?
+      .value ?? URL(fileURLWithPath: path).lastPathComponent
+    return MobileRemoteFileCitation(path: path, line: line, label: label)
+  }
+
+  private static func renderedLinks(in content: String) -> [RenderedLink] {
+    let fullRange = NSRange(content.startIndex..<content.endIndex, in: content)
+    var links: [RenderedLink] = markdownLinkPattern.matches(in: content, range: fullRange).compactMap { match -> RenderedLink? in
+      guard let labelRange = Range(match.range(at: 1), in: content),
+            let targetRange = Range(match.range(at: 2), in: content),
+            let rendered = renderedLink(
+              range: match.range,
+              target: String(content[targetRange]),
+              label: String(content[labelRange])
+            )
+      else { return nil }
+      return rendered
+    }
+    let orgLinks: [RenderedLink] = orgLinkPattern.matches(in: content, range: fullRange).compactMap { match -> RenderedLink? in
+      guard let targetRange = Range(match.range(at: 1), in: content),
+            let labelRange = Range(match.range(at: 2), in: content)
+      else { return nil }
+      return renderedLink(
+        range: match.range,
+        target: String(content[targetRange]),
+        label: String(content[labelRange])
+      )
+    }
+    links.append(contentsOf: orgLinks)
+    return links.sorted { $0.range.location < $1.range.location }
+  }
+
+  private static func renderedLink(
+    range: NSRange,
+    target rawTarget: String,
+    label: String
+  ) -> RenderedLink? {
+    if let citation = citation(target: rawTarget, label: label),
+       let url = citationURL(citation) {
+      let displayLabel = citation.line.map { "\(citation.label) · L\($0)" } ?? citation.label
+      return RenderedLink(range: range, label: displayLabel, url: url)
+    }
+    var target = rawTarget.trimmingCharacters(in: .whitespacesAndNewlines)
+    if target.hasPrefix("<"), target.hasSuffix(">") {
+      target = String(target.dropFirst().dropLast())
+    }
+    guard let url = URL(string: target),
+          ["http", "https"].contains(url.scheme?.lowercased() ?? "")
+    else { return nil }
+    return RenderedLink(range: range, label: label, url: url)
+  }
+
+  private static func citation(target rawTarget: String, label: String) -> MobileRemoteFileCitation? {
+    var target = rawTarget.trimmingCharacters(in: .whitespacesAndNewlines)
+    if target.hasPrefix("<"), target.hasSuffix(">") {
+      target = String(target.dropFirst().dropLast())
+    }
+    target = target.removingPercentEncoding ?? target
+    let range = NSRange(target.startIndex..<target.endIndex, in: target)
+    guard let match = fileTargetPattern.firstMatch(in: target, range: range),
+          let pathRange = Range(match.range(at: 1), in: target)
+    else { return nil }
+    let line: Int?
+    if match.range(at: 2).location != NSNotFound,
+       let lineRange = Range(match.range(at: 2), in: target) {
+      line = Int(target[lineRange])
+    } else {
+      line = nil
+    }
+    return MobileRemoteFileCitation(path: String(target[pathRange]), line: line, label: label)
+  }
+
+  private static func citationURL(_ citation: MobileRemoteFileCitation) -> URL? {
+    var components = URLComponents()
+    components.scheme = "org2-mobile-file"
+    components.host = "preview"
+    components.queryItems = [
+      URLQueryItem(name: "path", value: citation.path),
+      URLQueryItem(name: "label", value: citation.label)
+    ]
+    if let line = citation.line {
+      components.queryItems?.append(URLQueryItem(name: "line", value: String(line)))
+    }
+    return components.url
+  }
+}
+
+private struct MobileRemoteFilePreviewSheet: View {
+  @EnvironmentObject private var remote: MobileRemoteStore
+  @Environment(\.dismiss) private var dismiss
+  let citation: MobileRemoteFileCitation
+  @State private var preview: MobileRemoteFilePreview?
+  @State private var errorMessage: String?
+
+  var body: some View {
+    NavigationStack {
+      Group {
+        if let preview {
+          previewContent(preview)
+        } else if let errorMessage {
+          ContentUnavailableView(
+            "Preview Unavailable",
+            systemImage: "doc.text.magnifyingglass",
+            description: Text(errorMessage)
+          )
+        } else {
+          ProgressView("Loading preview…")
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+      }
+      .navigationTitle(preview?.title ?? citation.label)
+      .navigationBarTitleDisplayMode(.inline)
+      .toolbar {
+        ToolbarItem(placement: .confirmationAction) {
+          Button("Done") { dismiss() }
+        }
+      }
+    }
+    .task(id: citation.id) {
+      do {
+        preview = try await remote.filePreview(path: citation.path, line: citation.line)
+      } catch {
+        errorMessage = error.localizedDescription
+      }
+    }
+  }
+
+  private func previewContent(_ preview: MobileRemoteFilePreview) -> some View {
+    VStack(alignment: .leading, spacing: 0) {
+      Text(preview.relativePath)
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .lineLimit(2)
+        .padding(.horizontal)
+        .padding(.vertical, 10)
+      Divider()
+      GeometryReader { geometry in
+        ScrollView([.horizontal, .vertical]) {
+          LazyVStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(previewLines(preview).enumerated()), id: \.offset) { offset, line in
+              let lineNumber = preview.startLine + offset
+              HStack(alignment: .firstTextBaseline, spacing: 12) {
+                Text(String(lineNumber))
+                  .foregroundStyle(.tertiary)
+                  .frame(width: 34, alignment: .trailing)
+                Text(verbatim: line.isEmpty ? " " : line)
+                  .foregroundStyle(.primary)
+                  .fixedSize(horizontal: true, vertical: false)
+              }
+              .font(.system(.caption, design: .monospaced))
+              .padding(.horizontal, 12)
+              .padding(.vertical, 3)
+              .frame(minWidth: geometry.size.width, alignment: .leading)
+              .background(
+                lineNumber == preview.highlightedLine
+                  ? Color.accentColor.opacity(0.13)
+                  : Color.clear
+              )
+            }
+          }
+          .frame(minWidth: geometry.size.width, alignment: .topLeading)
+          .padding(.vertical, 8)
+        }
+        .defaultScrollAnchor(.topLeading)
+        .scrollIndicators(.visible, axes: [.horizontal, .vertical])
+        .textSelection(.enabled)
+      }
+    }
+  }
+
+  private func previewLines(_ preview: MobileRemoteFilePreview) -> [String] {
+    let lines = preview.content
+      .split(separator: "\n", omittingEmptySubsequences: false)
+      .map(String.init)
+    return lines.isEmpty ? [""] : lines
   }
 }
 
@@ -1086,17 +1404,17 @@ private struct MobileRemoteActivityView: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
-      Label("Activity", systemImage: "waveform.path.ecg")
-        .font(.caption.weight(.semibold))
-        .foregroundStyle(.secondary)
       ForEach(activities.suffix(6)) { activity in
         HStack(alignment: .top, spacing: 8) {
-          Image(systemName: activity.status == "completed" ? "checkmark.circle.fill" : "circle.dotted")
-            .foregroundStyle(activity.status == "completed" ? .green : .secondary)
+          Image(systemName: statusSymbol(for: activity.status))
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(statusColor(for: activity.status))
+            .frame(width: 14)
           VStack(alignment: .leading, spacing: 2) {
             Text(activity.title)
-              .font(.caption)
-            if let detail = activity.detail, !detail.isEmpty {
+              .font(.caption.weight(.medium))
+            if let detail = activity.detail,
+               !detail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
               Text(detail)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
@@ -1106,8 +1424,28 @@ private struct MobileRemoteActivityView: View {
         }
       }
     }
-    .padding(12)
-    .background(.quaternary, in: RoundedRectangle(cornerRadius: 12))
+    .padding(.horizontal, 13)
+    .padding(.vertical, 10)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(.quaternary, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel("Activity")
+  }
+
+  private func statusSymbol(for status: String) -> String {
+    switch status {
+    case "succeeded": "checkmark.circle.fill"
+    case "failed": "exclamationmark.circle.fill"
+    default: "circle.dotted"
+    }
+  }
+
+  private func statusColor(for status: String) -> Color {
+    switch status {
+    case "failed": .orange
+    case "succeeded": .secondary
+    default: .secondary
+    }
   }
 }
 

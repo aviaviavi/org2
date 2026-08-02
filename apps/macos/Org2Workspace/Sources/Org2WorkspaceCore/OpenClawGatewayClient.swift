@@ -66,6 +66,7 @@ struct OpenClawActivityFeedItem: Identifiable, Equatable, Sendable {
   let detail: String?
   let status: OpenClawRunActivity.Status
   let count: Int
+  let updatedAt: Date
 }
 
 enum OpenClawActivityFeed {
@@ -119,7 +120,8 @@ enum OpenClawActivityFeed {
         title: displayTitle(for: first.title, count: group.count),
         detail: detail,
         status: status,
-        count: group.count
+        count: group.count,
+        updatedAt: group.map(\.updatedAt).max() ?? first.updatedAt
       )
     }
   }

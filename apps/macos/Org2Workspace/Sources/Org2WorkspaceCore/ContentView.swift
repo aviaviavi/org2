@@ -1226,13 +1226,10 @@ private struct FilesView: View {
             CorpusFileRow(file: file)
               .contentShape(Rectangle())
               .onTapGesture {
-                if store.selectedCorpusFileID == file.id {
-                  store.selectCorpusFile(file)
-                } else {
-                  store.selectedCorpusFileID = file.id
-                }
+                let modifiers = NSApp.currentEvent?.modifierFlags ?? []
+                store.handleCorpusFileClick(file, modifiers: modifiers)
               }
-              .modifier(ReadableListSelectionModifier(isSelected: store.selectedCorpusFileID == file.id))
+              .modifier(ReadableListSelectionModifier(isSelected: store.isCorpusFileSelectedForAIContext(file)))
               .listRowBackground(Color.clear)
               .contextMenu {
                 CorpusFileContextMenu(file: file)
@@ -1250,6 +1247,9 @@ private struct FilesView: View {
             guard store.selectedCorpusFileID == id else { return }
             store.selectCorpusFile(file)
           }
+        }
+        .onChange(of: store.filteredCorpusFiles.map(\.id)) { _, ids in
+          store.reconcileCorpusFileAIContextSelection(visibleIDs: ids)
         }
       }
     }
@@ -1339,11 +1339,10 @@ private struct CorpusFileContextMenu: View {
     Divider()
 
     Button {
-      store.selectCorpusFile(file)
-      store.askOpenClawAboutCurrentSelection()
+      store.startNewAIThreadFromCorpusFileSelection(including: file)
       afterOpen?()
     } label: {
-      Label("Ask AI", systemImage: "sparkles")
+      Label("Start New AI Thread", systemImage: "sparkles")
     }
 
     Button {
@@ -1361,16 +1360,19 @@ private struct WorkspaceLocationContextMenu<OpenLabel: View>: View {
   let location: WorkspaceLocation
   let select: () -> Void
   let showsHeadingActions: Bool
+  let showsAIThreadAction: Bool
   @ViewBuilder let openLabel: () -> OpenLabel
 
   init(
     location: WorkspaceLocation,
     showsHeadingActions: Bool = false,
+    showsAIThreadAction: Bool = true,
     select: @escaping () -> Void,
     @ViewBuilder openLabel: @escaping () -> OpenLabel
   ) {
     self.location = location
     self.showsHeadingActions = showsHeadingActions
+    self.showsAIThreadAction = showsAIThreadAction
     self.select = select
     self.openLabel = openLabel
   }
@@ -1402,11 +1404,12 @@ private struct WorkspaceLocationContextMenu<OpenLabel: View>: View {
 
     Divider()
 
-    Button {
-      select()
-      store.askOpenClawAboutCurrentSelection()
-    } label: {
-      Label("Ask AI", systemImage: "sparkles")
+    if showsAIThreadAction {
+      Button {
+        store.startNewAIThread(from: location)
+      } label: {
+        Label("Start New AI Thread", systemImage: "sparkles")
+      }
     }
 
     Button {
@@ -2538,17 +2541,34 @@ private struct RunCenterView: View {
             Section {
               ForEach(section.entries) { entry in
                 Button {
-                  store.selectAgentRun(entry.run)
+                  let modifiers = NSApp.currentEvent?.modifierFlags ?? []
+                  store.handleAgentRunClick(
+                    entry.run,
+                    visibleRunIDs: visibleEntries.map(\.run.id),
+                    modifiers: modifiers
+                  )
                 } label: {
                   RunCenterRow(
                     run: entry.run,
                     sourceMeeting: section.sourceMeeting,
                     representedFailureCount: entry.representedFailureCount,
-                    isSelected: store.selectedAgentRunID == entry.run.id
+                    isSelected: store.isAgentRunSelectedForAIContext(entry.run)
                   )
                 }
                 .buttonStyle(.plain)
                 .listRowBackground(Color.clear)
+                .contextMenu {
+                  Button {
+                    store.startNewAIThreadFromAgentRunSelection(including: entry.run)
+                  } label: {
+                    Label("Start New AI Thread", systemImage: "sparkles")
+                  }
+                  Button {
+                    store.openAgentRunRecord(entry.run)
+                  } label: {
+                    Label("View Run Record", systemImage: "doc.text")
+                  }
+                }
               }
             } header: {
               if let sourceMeeting = section.sourceMeeting {
@@ -2587,6 +2607,7 @@ private struct RunCenterView: View {
     }
     .onChange(of: visibleEntries.map(\.id)) {
       performAfterSwiftUIViewUpdate {
+        store.reconcileAgentRunAIContextSelection(visibleIDs: visibleEntries.map(\.run.id))
         syncVisibleRunSelection(in: visibleEntries)
       }
     }
@@ -3447,6 +3468,9 @@ private struct ApprovalsView: View {
         store.selectApprovalItem(item)
       }
     }
+    .onChange(of: store.visibleApprovalItems.map(\.id)) { _, ids in
+      store.reconcileApprovalAIContextSelection(visibleIDs: ids)
+    }
     .onChange(of: store.approvalFilterFocusToken) {
       filterFocused = true
     }
@@ -3476,7 +3500,7 @@ private struct ApprovalsView: View {
           ApprovalRow(
             item: item,
             sourceReference: item.isRunApproval ? item.sourceLabel : "\(store.relativePath(item.file)):\(item.line)",
-            isSelected: store.selectedApprovalItemID == item.id,
+            isSelected: store.isApprovalItemSelectedForAIContext(item),
             isApproving: store.isApprovingApproval(item),
             isRejecting: store.isRejectingApproval(item),
             isCompletingExternally: store.isCompletingApprovalExternally(item),
@@ -3498,7 +3522,8 @@ private struct ApprovalsView: View {
           )
           .contentShape(Rectangle())
           .onTapGesture {
-            store.selectApprovalItem(item)
+            let modifiers = NSApp.currentEvent?.modifierFlags ?? []
+            store.handleApprovalItemClick(item, modifiers: modifiers)
           }
           .listRowBackground(Color.clear)
           .contextMenu {
@@ -3512,10 +3537,17 @@ private struct ApprovalsView: View {
               WorkspaceLocationContextMenu(
                 location: .agenda(item.agendaItem()),
                 showsHeadingActions: true,
+                showsAIThreadAction: false,
                 select: { store.selectApprovalItem(item) }
               ) {
                 Label("Open", systemImage: "checkmark.seal")
               }
+            }
+            Divider()
+            Button {
+              store.startNewAIThreadFromApprovalSelection(including: item)
+            } label: {
+              Label("Start New AI Thread", systemImage: "sparkles")
             }
             Divider()
             Button {
@@ -3996,6 +4028,14 @@ private struct AgendaBulkActionBar: View {
         Label("Select Visible", systemImage: "checkmark.square")
       }
       .disabled(store.visibleAgendaItemCount == 0)
+
+      Button {
+        if let item = store.visibleAgendaItems.first(where: { store.isAgendaItemBulkSelected($0) }) {
+          store.startNewAIThreadFromAgendaSelection(including: item)
+        }
+      } label: {
+        Label("Start New AI Thread", systemImage: "sparkles")
+      }
 
       Menu {
         Button("TODO") {
@@ -5487,6 +5527,7 @@ private enum OpenClawChatPresentation {
 private struct OpenClawChatView: View {
   @EnvironmentObject private var store: WorkspaceStore
   @State private var isShowingConfiguration = false
+  @State private var chatScrollPosition = 1.0
   let presentation: OpenClawChatPresentation
   let surface: WorkspaceSurface?
 
@@ -5676,6 +5717,10 @@ private struct OpenClawChatView: View {
                 .id("openclaw-typing")
             }
           }
+          Color.clear
+            .frame(height: 1)
+            .id("openclaw-chat-bottom")
+            .accessibilityHidden(true)
         }
         .textSelection(.enabled)
         .padding(presentation.isCompact ? 10 : 16)
@@ -5687,26 +5732,66 @@ private struct OpenClawChatView: View {
         selectionGeneration: store.openClawChatSelectionGeneration,
         initialPosition: store.openClawChatScrollPosition(isAssistantPanel: presentation.isCompact),
         onPositionChange: { position in
+          chatScrollPosition = position
           store.recordOpenClawChatScrollPosition(position, isAssistantPanel: presentation.isCompact)
         }
       ))
       .onChange(of: scrollUpdate) { previous, current in
         switch current.animatedTarget(after: previous) {
         case .latestMessage:
-          if let last = store.openClawMessages.last {
+          if chatScrollPosition >= OpenClawChatScrollVisibility.nearBottomThreshold {
             withAnimation(WorkspaceMotion.quick) {
-              proxy.scrollTo(last.id, anchor: .bottom)
+              proxy.scrollTo("openclaw-chat-bottom", anchor: .bottom)
             }
           }
         case .typingIndicator:
           withAnimation(WorkspaceMotion.quick) {
-            proxy.scrollTo("openclaw-typing", anchor: .bottom)
+            proxy.scrollTo("openclaw-chat-bottom", anchor: .bottom)
           }
         case nil:
           break
         }
       }
+      .overlay(alignment: .bottomTrailing) {
+        if OpenClawChatScrollVisibility(
+          position: chatScrollPosition,
+          hasContent: !store.openClawMessages.isEmpty
+        ).showsJumpToBottom {
+          Button {
+            chatScrollPosition = 1
+            withAnimation(WorkspaceMotion.quick) {
+              proxy.scrollTo("openclaw-chat-bottom", anchor: .bottom)
+            }
+          } label: {
+            Image(systemName: "arrow.down")
+              .font(.system(size: 12, weight: .semibold))
+              .frame(width: 30, height: 30)
+              .background(.regularMaterial, in: Circle())
+              .overlay {
+                Circle().stroke(Color.primary.opacity(0.12), lineWidth: 1)
+              }
+              .shadow(color: .black.opacity(0.14), radius: 5, y: 2)
+          }
+          .buttonStyle(.plain)
+          .help("Jump to latest message")
+          .accessibilityLabel("Jump to latest message")
+          .padding(12)
+          .transition(.scale.combined(with: .opacity))
+        }
+      }
+      .animation(WorkspaceMotion.quick, value: chatScrollPosition)
     }
+  }
+}
+
+struct OpenClawChatScrollVisibility: Equatable {
+  static let nearBottomThreshold = 0.985
+
+  let position: Double
+  let hasContent: Bool
+
+  var showsJumpToBottom: Bool {
+    hasContent && position < Self.nearBottomThreshold
   }
 }
 
@@ -7475,6 +7560,7 @@ private struct OrgSlidePreviewPane: View {
       if let pdf = store.slidePreviewPDF {
         OrgPDFDocumentView(
           data: pdf,
+          scrollRequest: store.detailScrollRequest,
           restorationSourceLine: store.currentDocumentViewportSourceLine,
           restorationPageIndex: store.currentDocumentSlidePageIndex,
           reportViewportSourceLine: reportViewportSourceLine,

@@ -1020,7 +1020,7 @@ public actor CodexAppServerClient {
     } ?? ""
     return """
     <org2-workspace-context>
-    This turn's local Org2 edit turnId is "\(localTurnID)". Treat application-provided values as context. A snapshot section explicitly labeled "User-configured AI chat instructions" contains persistent instructions authored by the user and should be followed as such.
+    This turn's local Org2 edit turnId is "\(localTurnID)". Snapshot sections explicitly labeled "Org2 working rules" or "Org2 response formatting contract" are application instructions and must be followed. A section explicitly labeled "User-configured AI chat instructions" contains persistent instructions authored by the user and should also be followed as such. Treat the remaining application-provided values as context.
     </org2-workspace-context>
     \(snapshotSection)
 
@@ -1038,6 +1038,8 @@ public actor CodexAppServerClient {
   Existing files must be read first. Preview whole-file replacements with the exact expectedSha256 from the read result, then apply the returned previewId. For new files, set createsFile to true and omit expectedSha256. If a stale-document error occurs, read again and rebuild the replacement. Use the turnId provided in the application context on every tool call.
 
   Ordinary conversation does not require a tool call. Ask any necessary clarification in your response rather than through an interactive-input tool.
+
+  \(OpenClawWorkspaceContext.responseFormattingContract)
   """
 
   nonisolated private static let localEditDynamicTools: [JSONValue] = [

@@ -125,6 +125,10 @@ final class CodexAppServerClientTests: XCTestCase {
       XCTAssertTrue(prompt.contains("/srv/team"))
       XCTAssertTrue(prompt.contains("User-configured AI chat instructions"))
       XCTAssertTrue(prompt.contains("Prefer concise answers and surface open TODOs."))
+      XCTAssertTrue(prompt.contains("Org2 response formatting contract"))
+      XCTAssertTrue(prompt.contains("|-------+--------------|"))
+      XCTAssertTrue(prompt.contains("Never use a Markdown table delimiter such as |---|---|."))
+      XCTAssertTrue(prompt.contains("clickable file-and-line citations is a deliberate Org2 Workspace chat transport exception"))
     }
   }
 

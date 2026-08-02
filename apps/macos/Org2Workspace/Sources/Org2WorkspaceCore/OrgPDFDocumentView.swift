@@ -3,6 +3,7 @@ import SwiftUI
 
 struct OrgPDFDocumentView: NSViewRepresentable {
   let data: Data
+  var scrollRequest: DetailScrollRequest? = nil
   var restorationSourceLine: Int? = nil
   var restorationPageIndex: Int? = nil
   var reportViewportSourceLine: @MainActor (Int?) -> Void = { _ in }
@@ -35,26 +36,50 @@ struct OrgPDFDocumentView: NSViewRepresentable {
   }
 
   func update(_ view: PDFView, coordinator: Coordinator) {
-    guard coordinator.data != data else { return }
-    let currentPageIndex = view.currentPage.flatMap { view.document?.index(for: $0) }
-    let currentSourceLine = view.currentPage.flatMap(Self.sourceLine(for:))
-    guard let document = PDFDocument(data: data) else { return }
+    if coordinator.data != data {
+      let currentPageIndex = view.currentPage.flatMap { view.document?.index(for: $0) }
+      let currentSourceLine = view.currentPage.flatMap(Self.sourceLine(for:))
+      guard let document = PDFDocument(data: data) else { return }
 
-    coordinator.data = data
-    coordinator.isReplacingDocument = true
-    view.document = document
-    let restoredPageIndex = restorationPageIndex.map {
-      min(max(0, $0), max(0, document.pageCount - 1))
-    } ?? restorationSourceLine
-      .flatMap { Self.pageIndex(nearestSourceLine: $0, in: document) }
-      ?? currentPageIndex
-      ?? currentSourceLine.flatMap { Self.pageIndex(nearestSourceLine: $0, in: document) }
-    if let restoredPageIndex,
-       let page = document.page(at: min(restoredPageIndex, max(0, document.pageCount - 1))) {
-      view.go(to: page)
+      coordinator.data = data
+      coordinator.scrollRequestID = scrollRequest?.id
+      coordinator.isReplacingDocument = true
+      view.document = document
+      let requestedSourceLine = scrollRequest.flatMap(Self.sourceLine(from:))
+      let restoredPageIndex = requestedSourceLine
+        .flatMap { Self.pageIndex(nearestSourceLine: $0, in: document) }
+        ?? restorationPageIndex.map {
+          min(max(0, $0), max(0, document.pageCount - 1))
+        }
+        ?? restorationSourceLine.flatMap { Self.pageIndex(nearestSourceLine: $0, in: document) }
+        ?? currentPageIndex
+        ?? currentSourceLine.flatMap { Self.pageIndex(nearestSourceLine: $0, in: document) }
+      if let restoredPageIndex,
+         let page = document.page(at: min(restoredPageIndex, max(0, document.pageCount - 1))) {
+        view.go(to: page)
+      }
+      coordinator.isReplacingDocument = false
+      coordinator.reportCurrentPage(in: view)
     }
+
+    guard coordinator.scrollRequestID != scrollRequest?.id else { return }
+    coordinator.scrollRequestID = scrollRequest?.id
+    guard let sourceLine = scrollRequest.flatMap(Self.sourceLine(from:)),
+          let document = view.document,
+          let pageIndex = Self.pageIndex(nearestSourceLine: sourceLine, in: document),
+          let page = document.page(at: pageIndex)
+    else {
+      return
+    }
+    coordinator.isReplacingDocument = true
+    view.go(to: page)
     coordinator.isReplacingDocument = false
     coordinator.reportCurrentPage(in: view)
+  }
+
+  nonisolated static func sourceLine(from request: DetailScrollRequest) -> Int? {
+    guard case .sourceLine(let line) = request.target else { return nil }
+    return line
   }
 
   nonisolated static func sourceLine(from url: URL?) -> Int? {
@@ -102,6 +127,7 @@ struct OrgPDFDocumentView: NSViewRepresentable {
   @MainActor
   final class Coordinator {
     var data: Data?
+    var scrollRequestID: Int?
     var reportViewportSourceLine: @MainActor (Int?) -> Void
     var reportViewportPageIndex: @MainActor (Int?) -> Void
     var isReplacingDocument = false

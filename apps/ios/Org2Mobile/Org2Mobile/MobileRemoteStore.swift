@@ -208,6 +208,14 @@ final class MobileRemoteStore: ObservableObject {
     }
   }
 
+  func filePreview(path: String, line: Int?) async throws -> MobileRemoteFilePreview {
+    try await pairedClient().post(
+      "/v1/files/preview",
+      payload: MobileRemoteFilePreviewRequest(path: path, line: line),
+      as: MobileRemoteFilePreview.self
+    )
+  }
+
   func setModel(_ model: String?, threadID: UUID) async {
     await updateThreadConfiguration(
       MobileRemoteUpdateThreadConfigurationRequest(model: model),

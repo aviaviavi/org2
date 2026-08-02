@@ -65,6 +65,19 @@ struct MobileRemoteAttachment: Codable, Hashable, Identifiable {
   }
 }
 
+struct MobileRemoteFilePreviewRequest: Codable, Hashable {
+  let path: String
+  let line: Int?
+}
+
+struct MobileRemoteFilePreview: Codable, Hashable {
+  let title: String
+  let relativePath: String
+  let startLine: Int
+  let highlightedLine: Int?
+  let content: String
+}
+
 struct MobileRemoteModelOption: Codable, Hashable, Identifiable {
   let id: String
   let label: String

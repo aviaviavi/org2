@@ -1610,6 +1610,7 @@ final class Org2ModelsTests: XCTestCase {
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json")
     )
+    let expectedEmptyThreadStatus = store.openClawStatusText
     store.createOpenClawChatThread()
     let firstThreadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
     store.createOpenClawChatThread()
@@ -1630,7 +1631,7 @@ final class Org2ModelsTests: XCTestCase {
     )
     XCTAssertEqual(store.selectedOpenClawChatThreadID, secondThreadID)
     XCTAssertTrue(store.openClawMessages.isEmpty)
-    XCTAssertEqual(store.openClawStatusText, "Ready for a message")
+    XCTAssertEqual(store.openClawStatusText, expectedEmptyThreadStatus)
   }
 
   @MainActor
@@ -4517,6 +4518,54 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testSelectedFilesStartFreshAIThreadWithEveryFileAsContext() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-file-multi-context-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let firstURL = root.appendingPathComponent("launch.org2")
+    let secondURL = root.appendingPathComponent("pricing.org2")
+    try "#+TITLE: Launch\n".write(to: firstURL, atomically: true, encoding: .utf8)
+    try "#+TITLE: Pricing\n".write(to: secondURL, atomically: true, encoding: .utf8)
+    let first = CorpusFile(
+      path: firstURL.path,
+      relativePath: "launch.org2",
+      modifiedAt: nil,
+      byteCount: nil
+    )
+    let second = CorpusFile(
+      path: secondURL.path,
+      relativePath: "pricing.org2",
+      modifiedAt: nil,
+      byteCount: nil
+    )
+
+    let suiteName = "org2-workspace-file-multi-context-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json")
+    )
+    store.setCorpusRoot(root, persistsDefault: false)
+    store.openClawRemoteCorpusPath = "/remote/org2"
+    store.corpusFiles = [first, second]
+    store.handleCorpusFileClick(first)
+    store.handleCorpusFileClick(second, modifiers: [.command])
+
+    store.startNewAIThreadFromCorpusFileSelection(including: second)
+
+    let presentation = OpenClawContextPresentation(store.openClawDraft)
+    XCTAssertEqual(presentation.contexts.map(\.title), ["launch", "pricing"])
+    XCTAssertEqual(presentation.contexts.map(\.reference), [
+      "/remote/org2/launch.org2:1",
+      "/remote/org2/pricing.org2:1"
+    ])
+    XCTAssertEqual(store.selectedOpenClawChatThread?.title, "Context: 2 selected items")
+  }
+
+  @MainActor
   func testAskOpenClawAboutCurrentSelectionPrefersSelectedRenderedBlock() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-ai-block-context-\(UUID().uuidString)", isDirectory: true)
@@ -6607,6 +6656,69 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testOpenClawReferenceWithinActivePageJumpsWithoutReloadingSource() async throws {
+    actor SourceLoads {
+      private var count = 0
+      private var modes: [EntrySourceMode] = []
+
+      func record(mode: EntrySourceMode) {
+        count += 1
+        modes.append(mode)
+      }
+
+      func value() -> Int {
+        count
+      }
+
+      func recordedModes() -> [EntrySourceMode] {
+        modes
+      }
+    }
+
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-same-page-link-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("talk.org2")
+    let text = (1...120).map { "* Slide \($0)" }.joined(separator: "\n") + "\n"
+    try text.write(to: note, atomically: true, encoding: .utf8)
+
+    let loads = SourceLoads()
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.entrySourceLoaderForTesting = { file, _, mode in
+      await loads.record(mode: mode)
+      return EntrySource(
+        file: file,
+        startLine: 1,
+        endLineExclusive: 121,
+        text: text,
+        isSubtree: false
+      )
+    }
+
+    store.openChatFileReference(OpenClawFileReference(path: note.path, line: 1))
+    try await waitForCondition(timeout: 8) {
+      store.selectedEntrySource?.file == note.path
+        && !store.isLoadingEntrySource
+    }
+    let loadedSource = try XCTUnwrap(store.selectedEntrySource)
+    let initialLoadCount = await loads.value()
+    let initialLoadModes = await loads.recordedModes()
+    XCTAssertEqual(initialLoadCount, 1)
+    XCTAssertEqual(initialLoadModes, [.page])
+
+    store.openChatFileReference(OpenClawFileReference(path: note.path, line: 80))
+    try await Task.sleep(nanoseconds: 100_000_000)
+
+    let finalLoadCount = await loads.value()
+    XCTAssertEqual(finalLoadCount, 1)
+    XCTAssertEqual(store.selectedEntrySource, loadedSource)
+    XCTAssertEqual(store.selectedLocation?.lineForEditor, 1)
+    XCTAssertEqual(store.detailScrollRequest?.target, .sourceLine(80))
+    XCTAssertFalse(store.isLoadingEntrySource)
+  }
+
+  @MainActor
   func testOpenClawFileReferenceRevealsDetailFromExpandedChat() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-chat-link-expanded-\(UUID().uuidString)", isDirectory: true)
@@ -8644,6 +8756,77 @@ final class Org2ModelsTests: XCTestCase {
     try await waitForCondition {
       store.selectedEntrySource?.file == note.path && !store.isLoadingEntrySource && !store.isLoadingBacklinks
     }
+  }
+
+  @MainActor
+  func testBulkSelectedAgendaItemsStartFreshAIThreadWithEveryItemAsContext() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-agenda-multi-context-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let note = root.appendingPathComponent("agenda.org2")
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.dateFormat = "yyyy-MM-dd"
+    let today = formatter.string(from: Date())
+    try """
+    * TODO Prepare launch
+    Details
+
+    * TODO Review pricing
+    Details
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let payloadData = try JSONSerialization.data(withJSONObject: [
+      "$schema": "org2:agenda:v1",
+      "range": ["start": today, "end": today, "days": 1],
+      "overdue": [],
+      "days": [[
+        "date": today,
+        "weekday": "Today",
+        "items": [
+          [
+            "todo": "TODO",
+            "headline": "Prepare launch",
+            "kind": "SCHEDULED",
+            "file": note.path,
+            "line": 0,
+            "tags": [],
+            "properties": [:]
+          ],
+          [
+            "todo": "TODO",
+            "headline": "Review pricing",
+            "kind": "SCHEDULED",
+            "file": note.path,
+            "line": 3,
+            "tags": [],
+            "properties": [:]
+          ]
+        ]
+      ]],
+      "skippedFiles": 0
+    ])
+    let payload = try JSONDecoder().decode(AgendaPayload.self, from: payloadData)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root, persistsDefault: false)
+    store.openClawRemoteCorpusPath = "/remote/org2"
+    store.agenda = payload
+    let first = try XCTUnwrap(store.visibleAgendaItems.first { $0.headline == "Prepare launch" })
+    let second = try XCTUnwrap(store.visibleAgendaItems.first { $0.headline == "Review pricing" })
+    store.toggleAgendaItemBulkSelection(first)
+    store.toggleAgendaItemBulkSelection(second)
+
+    store.startNewAIThreadFromAgendaSelection(including: second)
+
+    let presentation = OpenClawContextPresentation(store.openClawDraft)
+    XCTAssertEqual(presentation.contexts.map(\.title), ["Prepare launch", "Review pricing"])
+    XCTAssertEqual(presentation.contexts.map(\.reference), [
+      "/remote/org2/agenda.org2:1",
+      "/remote/org2/agenda.org2:4"
+    ])
+    XCTAssertEqual(store.selectedOpenClawChatThread?.title, "Context: 2 selected items")
   }
 
   @MainActor

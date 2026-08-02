@@ -227,6 +227,17 @@ final class MobileRemoteCoordinator: ObservableObject {
       return .json(MobileRemoteMutationResponse(accepted: true, threadID: id), statusCode: 201)
     }
 
+    if request.method == "POST", path == "/v1/files/preview" {
+      guard let payload = try? request.decode(MobileRemoteFilePreviewRequest.self) else {
+        return .error("The cited file reference could not be read.", statusCode: 400)
+      }
+      do {
+        return .json(try store.mobileRemoteFilePreview(path: payload.path, line: payload.line))
+      } catch {
+        return .error(error.localizedDescription, statusCode: 404)
+      }
+    }
+
     let components = path.split(separator: "/").map(String.init)
     guard components.count >= 3,
           components[0] == "v1",
@@ -381,15 +392,9 @@ final class MobileRemoteCoordinator: ObservableObject {
       },
       streamingReply: store.aiChatStreamingReply(for: thread.id),
       reasoning: store.aiChatReasoning(for: thread.id),
-      activities: store.aiChatRunActivities(for: thread.id).map {
-        MobileRemoteActivity(
-          id: $0.id,
-          title: $0.title,
-          detail: $0.detail,
-          status: $0.status.rawValue,
-          updatedAt: $0.updatedAt
-        )
-      },
+      activities: MobileRemoteActivityPresentation.items(
+        from: store.aiChatRunActivities(for: thread.id)
+      ),
       connectionState: store.aiChatConnectionState(for: thread.id).rawValue,
       connectionDetail: store.aiChatConnectionDetail(for: thread.id)
     )

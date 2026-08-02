@@ -7,7 +7,7 @@ struct OpenClawPresentedContext: Identifiable, Hashable, Sendable {
   let reference: String
   let sourceLine: String
 
-  var id: String { "\(kind)|\(reference)" }
+  var id: String { "\(kind)|\(reference)|\(title)" }
 
   var usesGenericTitle: Bool {
     let normalized = title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
