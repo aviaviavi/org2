@@ -541,6 +541,7 @@ public actor OpenClawGatewayClient {
   public typealias EventHandler = @Sendable (OpenClawGatewayRunEvent) async -> Void
 
   static let acceptedRunRecoveryPollTimeoutMilliseconds = 5_000
+  static let connectionAttemptTimeout: TimeInterval = 15
 
   private let settings: OpenClawGatewaySettings
   private let sessionDelegate: OpenClawWebSocketSessionDelegate
@@ -569,8 +570,7 @@ public actor OpenClawGatewayClient {
     self.socket = socket
     socket.resume()
     do {
-      let nonce = try await awaitChallenge(on: socket)
-      try await connect(on: socket, nonce: nonce)
+      try await establishConnection(on: socket)
       socket.cancel(with: .normalClosure, reason: nil)
     } catch let error as OpenClawGatewayError {
       socket.cancel(with: .goingAway, reason: nil)
@@ -586,8 +586,7 @@ public actor OpenClawGatewayClient {
     self.socket = socket
     socket.resume()
     do {
-      let nonce = try await awaitChallenge(on: socket)
-      try await connect(on: socket, nonce: nonce)
+      try await establishConnection(on: socket)
       let requestID = UUID().uuidString.lowercased()
       try await sendRequest(
         id: requestID,
@@ -806,10 +805,8 @@ public actor OpenClawGatewayClient {
     socket.resume()
 
     do {
-      let nonce = try await awaitChallenge(on: socket)
-      try await connect(
+      try await establishConnection(
         on: socket,
-        nonce: nonce,
         scopes: Self.chatSendScopes(model: model, reasoningEffort: reasoningEffort)
       )
       await onEvent(.connection(.connected, nil))
@@ -1083,8 +1080,7 @@ public actor OpenClawGatewayClient {
     self.socket = socket
     socket.resume()
     do {
-      let nonce = try await awaitChallenge(on: socket)
-      try await connect(on: socket, nonce: nonce, scopes: scopes)
+      try await establishConnection(on: socket, scopes: scopes)
       let requestID = UUID().uuidString.lowercased()
       try await sendRequest(id: requestID, method: method, params: params, on: socket)
       while true {
@@ -1173,6 +1169,25 @@ public actor OpenClawGatewayClient {
     return nonce
   }
 
+  private func establishConnection(
+    on socket: URLSessionWebSocketTask,
+    scopes: [String] = ["operator.read", "operator.write"]
+  ) async throws {
+    let timeoutTask = Task {
+      do {
+        try await Task.sleep(for: .seconds(Self.connectionAttemptTimeout))
+      } catch {
+        return
+      }
+      let reason = "OpenClaw Gateway connection timed out after \(Int(Self.connectionAttemptTimeout)) seconds."
+      socket.cancel(with: .goingAway, reason: Data(reason.utf8))
+    }
+    defer { timeoutTask.cancel() }
+
+    let nonce = try await awaitChallenge(on: socket)
+    try await connect(on: socket, nonce: nonce, scopes: scopes)
+  }
+
   private func connect(
     on socket: URLSessionWebSocketTask,
     nonce: String,
@@ -1252,8 +1267,7 @@ public actor OpenClawGatewayClient {
         let nextSocket = try makeSocket()
         socket = nextSocket
         nextSocket.resume()
-        let nonce = try await awaitChallenge(on: nextSocket)
-        try await connect(on: nextSocket, nonce: nonce)
+        try await establishConnection(on: nextSocket)
         await onEvent(.connection(.connected, "Reconnected to accepted run \(String(runID.prefix(8)))."))
         return try await waitAndReconcile(
           runID: runID,

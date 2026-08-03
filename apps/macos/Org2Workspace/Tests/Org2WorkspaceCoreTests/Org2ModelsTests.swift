@@ -2192,8 +2192,10 @@ final class Org2ModelsTests: XCTestCase {
     )
     store.createOpenClawChatThread()
     let threadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
+    let eventStartedAt = Date()
     store.handleOpenClawGatewayEvent(.text("Previous assistant reply", replace: true), threadID: threadID)
     XCTAssertEqual(store.openClawStreamingReply, "Previous assistant reply")
+    XCTAssertGreaterThanOrEqual(try XCTUnwrap(store.openClawLastEventAt), eventStartedAt)
 
     store.openClawDraft = "Follow-up question"
     let sendTask = Task { await store.sendOpenClawMessage() }
@@ -8492,6 +8494,55 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(updated.contains("* DONE Second task"))
     XCTAssertTrue(updated.contains("* DONE Third task"))
     XCTAssertFalse(updated.contains("ddd"))
+  }
+
+  @MainActor
+  func testAgendaDoneWhilePreviewRendersKeepsNextRowSelected() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-agenda-done-render-race-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let note = root.appendingPathComponent("agenda-done-render-race.org2")
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.dateFormat = "yyyy-MM-dd EEE"
+    let today = formatter.string(from: Date())
+
+    try """
+    * TODO First task
+    SCHEDULED: <\(today)>
+
+    * TODO Second task
+    SCHEDULED: <\(today)>
+
+    * TODO Third task
+    SCHEDULED: <\(today)>
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.agendaEntryRenderIdleDelayNanoseconds = 0
+    store.entryHTMLRendererForTesting = { _, _, _, _ in
+      try? await Task.sleep(nanoseconds: 400_000_000)
+      return "<html>Delayed agenda preview</html>"
+    }
+    await store.refreshAgenda()
+
+    let first = try XCTUnwrap(store.visibleAgendaItems.first { $0.headline == "First task" })
+    let second = try XCTUnwrap(store.visibleAgendaItems.first { $0.headline == "Second task" })
+    let third = try XCTUnwrap(store.visibleAgendaItems.first { $0.headline == "Third task" })
+    store.selectAgendaItem(first)
+    try await waitForCondition { store.isRenderingEntrySource }
+
+    XCTAssertTrue(store.handleWorkspaceKeyDown(keyDown(characters: "d", keyCode: 2)))
+    XCTAssertEqual(store.selectedAgendaItemID, second.id)
+    XCTAssertFalse(store.isRenderingEntrySource)
+
+    try await Task.sleep(nanoseconds: 600_000_000)
+    XCTAssertEqual(store.selectedAgendaItemID, second.id)
+    XCTAssertTrue(store.visibleAgendaItems.contains { $0.id == second.id })
+    XCTAssertTrue(store.handleWorkspaceKeyDown(keyDown(characters: "d", keyCode: 2)))
+    XCTAssertEqual(store.selectedAgendaItemID, third.id)
   }
 
   @MainActor

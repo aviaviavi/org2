@@ -1064,6 +1064,7 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var openClawRequestStartedAt: Date?
   @Published private var openClawGatewayStateByThreadID: [UUID: OpenClawGatewayConnectionState] = [:]
   @Published private var openClawGatewayDetailByThreadID: [UUID: String] = [:]
+  @Published private var openClawLastEventAtByThreadID: [UUID: Date] = [:]
   @Published private var openClawActiveRunIDByThreadID: [UUID: String] = [:]
   @Published private var openClawStreamingReplyByThreadID: [UUID: String] = [:]
   @Published private var openClawReasoningByThreadID: [UUID: String] = [:]
@@ -11236,6 +11237,11 @@ public final class WorkspaceStore: ObservableObject {
     return openClawGatewayDetailByThreadID[threadID]
   }
 
+  public var openClawLastEventAt: Date? {
+    guard let threadID = selectedOpenClawChatThreadID else { return nil }
+    return openClawLastEventAtByThreadID[threadID]
+  }
+
   public var openClawActiveRunID: String? {
     guard let threadID = selectedOpenClawChatThreadID else { return nil }
     return openClawActiveRunIDByThreadID[threadID]
@@ -12417,6 +12423,7 @@ public final class WorkspaceStore: ObservableObject {
       }
     } catch {
       openClawGatewayStateByThreadID[threadID] = .reconnecting
+      openClawLastEventAtByThreadID[threadID] = Date()
       openClawGatewayDetailByThreadID[threadID] =
         "This turn is saved and will reconnect without sending it twice."
       if isActiveAIChatSendOrigin(sendOrigin) {
@@ -12636,6 +12643,7 @@ public final class WorkspaceStore: ObservableObject {
           openClawChatThreads.first(where: { $0.id == threadID })?.runtime == .codex {
           openClawGatewayStateByThreadID[threadID] = .disconnected
           openClawGatewayDetailByThreadID[threadID] = detail
+          openClawLastEventAtByThreadID[threadID] = Date()
         }
       }
     case .accountUpdated(let authMode, let plan):
@@ -12665,6 +12673,7 @@ public final class WorkspaceStore: ObservableObject {
       }
     case .turnStarted(let runtimeThreadID, let turnID):
       guard let threadID = localChatThreadID(forRuntimeThreadID: runtimeThreadID) else { return }
+      openClawLastEventAtByThreadID[threadID] = Date()
       codexActiveTurnsByThreadID[threadID] = (runtimeThreadID, turnID)
       openClawGatewayStateByThreadID[threadID] = .connected
       openClawActiveRunIDByThreadID[threadID] = turnID
@@ -12673,12 +12682,14 @@ public final class WorkspaceStore: ObservableObject {
       }
     case .agentMessageDelta(let runtimeThreadID, _, let delta):
       guard let threadID = localChatThreadID(forRuntimeThreadID: runtimeThreadID) else { return }
+      openClawLastEventAtByThreadID[threadID] = Date()
       openClawStreamingReplyByThreadID[threadID, default: ""] += delta
       if selectedOpenClawChatThreadID == threadID {
         openClawStatusText = "Codex is replying"
       }
     case .reasoningDelta(let runtimeThreadID, _, let delta):
       guard let threadID = localChatThreadID(forRuntimeThreadID: runtimeThreadID) else { return }
+      openClawLastEventAtByThreadID[threadID] = Date()
       openClawReasoningByThreadID[threadID, default: ""] += delta
     case .activity(
       let runtimeThreadID,
@@ -12689,6 +12700,7 @@ public final class WorkspaceStore: ObservableObject {
       let status
     ):
       guard let threadID = localChatThreadID(forRuntimeThreadID: runtimeThreadID) else { return }
+      openClawLastEventAtByThreadID[threadID] = Date()
       let activity = OpenClawRunActivity(
         id: itemID,
         runID: turnID,
@@ -12707,6 +12719,7 @@ public final class WorkspaceStore: ObservableObject {
     case .warning(let runtimeThreadID, let message):
       if let runtimeThreadID,
          let threadID = localChatThreadID(forRuntimeThreadID: runtimeThreadID) {
+        openClawLastEventAtByThreadID[threadID] = Date()
         openClawGatewayDetailByThreadID[threadID] = message
         if selectedOpenClawChatThreadID == threadID {
           openClawStatusText = message
@@ -12875,6 +12888,7 @@ public final class WorkspaceStore: ObservableObject {
     _ event: OpenClawGatewayRunEvent,
     threadID: UUID
   ) {
+    openClawLastEventAtByThreadID[threadID] = Date()
     switch event {
     case .connection(let state, let detail):
       openClawGatewayStateByThreadID[threadID] = state
@@ -12920,10 +12934,12 @@ public final class WorkspaceStore: ObservableObject {
     openClawGatewayStateByThreadID[threadID] = .connecting
     openClawGatewayDetailByThreadID.removeValue(forKey: threadID)
     clearOpenClawCompletedRunPresentation(for: threadID)
+    openClawLastEventAtByThreadID[threadID] = Date()
   }
 
   private func clearOpenClawCompletedRunPresentation(for threadID: UUID) {
     openClawActiveRunIDByThreadID.removeValue(forKey: threadID)
+    openClawLastEventAtByThreadID.removeValue(forKey: threadID)
     openClawStreamingReplyByThreadID.removeValue(forKey: threadID)
     openClawReasoningByThreadID.removeValue(forKey: threadID)
     openClawRunActivitiesByThreadID[threadID] = []
@@ -16196,10 +16212,13 @@ public final class WorkspaceStore: ObservableObject {
 
   private func refreshAfterHeadlineMutation(
     _ target: HeadlineMutationTarget,
-    selectMutatedBlock: Bool = true
+    selectMutatedBlock: Bool = true,
+    reloadSelectedEntry: Bool = true
   ) async {
     invalidateCanonicalDocumentCache(for: target.file)
-    if selectedEntrySource?.file == target.file, let selectedLocation {
+    if reloadSelectedEntry,
+       selectedEntrySource?.file == target.file,
+       let selectedLocation {
       if selectMutatedBlock {
         pendingBlockSelection = PendingBlockSelection(
           file: target.file,
@@ -16210,6 +16229,21 @@ public final class WorkspaceStore: ObservableObject {
       scheduleEntrySourceLoad(for: selectedLocation)
     }
     scheduleAgendaRefresh(preserveSelection: true)
+  }
+
+  private func cancelEntryPreviewWorkForAgendaKeyboardAdvance() {
+    guard isLoadingEntrySource || isRenderingEntrySource else { return }
+    entrySourceLoadGeneration += 1
+    entryHTMLRenderGeneration += 1
+    entrySourceLoadWatchdogTask?.cancel()
+    entrySourceLoadWatchdogTask = nil
+    entryHTMLRenderWatchdogTask?.cancel()
+    entryHTMLRenderWatchdogTask = nil
+    entryHTMLRenderTask?.cancel()
+    entryHTMLRenderTask = nil
+    activeEntrySourceLoadingGeneration = nil
+    isLoadingEntrySource = false
+    isRenderingEntrySource = false
   }
 
   private func optimisticallyUpdateAgendaItem(id agendaItemID: AgendaItem.ID?, todo: String) {
@@ -16451,6 +16485,7 @@ public final class WorkspaceStore: ObservableObject {
     statusText = "\(status.label) -> \(target.title)"
     optimisticallyUpdateAgendaItem(id: target.agendaItemID, todo: status.label)
     if let nextSelection {
+      cancelEntryPreviewWorkForAgendaKeyboardAdvance()
       preserveAgendaItemSelectionWithoutActivatingEntry(nextSelection)
     } else {
       preserveAgendaSelectionAfterTodoMutation(
@@ -16492,7 +16527,11 @@ public final class WorkspaceStore: ObservableObject {
           if newStatus != mutation.status.label {
             optimisticallyUpdateAgendaItem(id: mutation.target.agendaItemID, todo: newStatus)
           }
-          await refreshAfterHeadlineMutation(mutation.target, selectMutatedBlock: false)
+          await refreshAfterHeadlineMutation(
+            mutation.target,
+            selectMutatedBlock: false,
+            reloadSelectedEntry: selectedAgendaItemID == mutation.target.agendaItemID
+          )
         } catch {
           errorText = error.localizedDescription
           statusText = "TODO update failed"

@@ -5702,6 +5702,7 @@ private struct OpenClawChatView: View {
             if store.isSendingOpenClawMessage {
               OpenClawTypingIndicatorView(
                 startedAt: store.openClawRequestStartedAt,
+                lastEventAt: store.openClawLastEventAt,
                 runtime: store.selectedAIChatRuntime,
                 connectionState: store.openClawGatewayConnectionState,
                 connectionDetail: store.openClawGatewayConnectionDetail,

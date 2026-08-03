@@ -190,6 +190,78 @@ final class OpenClawChatLayoutTests: XCTestCase {
     XCTAssertEqual(runningTool.statusTitle, "Running shell command")
   }
 
+  func testOpenClawStatusCardSurfacesQuietAndStalledRuns() {
+    let now = Date(timeIntervalSince1970: 1_000_000)
+    let recentlyActive = OpenClawTypingIndicatorView(
+      startedAt: now.addingTimeInterval(-30 * 60),
+      lastEventAt: now.addingTimeInterval(-30),
+      connectionState: .connected,
+      connectionDetail: nil,
+      runID: "run-123",
+      streamingReply: "",
+      reasoning: "",
+      activities: [],
+      compact: false,
+      onStop: {}
+    )
+    let quiet = OpenClawTypingIndicatorView(
+      startedAt: now.addingTimeInterval(-30 * 60),
+      lastEventAt: now.addingTimeInterval(-3 * 60),
+      connectionState: .connected,
+      connectionDetail: nil,
+      runID: "run-123",
+      streamingReply: "",
+      reasoning: "",
+      activities: [],
+      compact: false,
+      onStop: {}
+    )
+    let stalled = OpenClawTypingIndicatorView(
+      startedAt: now.addingTimeInterval(-30 * 60),
+      lastEventAt: now.addingTimeInterval(-12 * 60),
+      connectionState: .connected,
+      connectionDetail: nil,
+      runID: "run-123",
+      streamingReply: "",
+      reasoning: "",
+      activities: [],
+      compact: false,
+      onStop: {}
+    )
+
+    XCTAssertEqual(recentlyActive.statusTitle(now: now), "OpenClaw is working")
+    XCTAssertNil(recentlyActive.statusDetail(now: now))
+    XCTAssertEqual(quiet.statusTitle(now: now), "Waiting for OpenClaw")
+    XCTAssertEqual(quiet.statusDetail(now: now), "No new activity for 3m. It may still be working.")
+    XCTAssertEqual(stalled.statusTitle(now: now), "OpenClaw may be stalled")
+    XCTAssertEqual(
+      stalled.statusDetail(now: now),
+      "No new activity for 12m. The run is saved; the connection or agent may be stalled."
+    )
+  }
+
+  func testOpenClawStatusCardExplainsSavedRunWhileReconnecting() {
+    let now = Date(timeIntervalSince1970: 1_000_000)
+    let reconnecting = OpenClawTypingIndicatorView(
+      startedAt: now.addingTimeInterval(-30 * 60),
+      lastEventAt: now,
+      connectionState: .reconnecting,
+      connectionDetail: nil,
+      runID: "run-123",
+      streamingReply: "",
+      reasoning: "",
+      activities: [],
+      compact: false,
+      onStop: {}
+    )
+
+    XCTAssertEqual(reconnecting.statusTitle(now: now), "Reconnecting to OpenClaw")
+    XCTAssertEqual(
+      reconnecting.statusDetail(now: now),
+      "The run is saved and will reconnect without being sent twice."
+    )
+  }
+
   func testOpenClawStatusCardStaysBoundedWithStructuredToolOutput() {
     let result = #"{"content":[{"text":"{\"results\":[{\"path\":\"memory/2026-04-01.md\",\"text\":\""#
       + String(repeating: "unformatted result ", count: 100)

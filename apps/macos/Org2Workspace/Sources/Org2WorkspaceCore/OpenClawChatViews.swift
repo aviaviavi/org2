@@ -1442,7 +1442,11 @@ private struct OpenClawComposerTextView: NSViewRepresentable {
 }
 
 struct OpenClawTypingIndicatorView: View {
+  static let quietRunInterval: TimeInterval = 2 * 60
+  static let stalledRunInterval: TimeInterval = 10 * 60
+
   let startedAt: Date?
+  let lastEventAt: Date?
   let runtime: AIChatRuntime
   let connectionState: OpenClawGatewayConnectionState
   let connectionDetail: String?
@@ -1455,6 +1459,7 @@ struct OpenClawTypingIndicatorView: View {
 
   init(
     startedAt: Date?,
+    lastEventAt: Date? = nil,
     runtime: AIChatRuntime = .openClaw,
     connectionState: OpenClawGatewayConnectionState,
     connectionDetail: String?,
@@ -1466,6 +1471,7 @@ struct OpenClawTypingIndicatorView: View {
     onStop: @escaping () -> Void
   ) {
     self.startedAt = startedAt
+    self.lastEventAt = lastEventAt
     self.runtime = runtime
     self.connectionState = connectionState
     self.connectionDetail = connectionDetail
@@ -1480,33 +1486,42 @@ struct OpenClawTypingIndicatorView: View {
   var body: some View {
     HStack {
       VStack(alignment: .leading, spacing: 9) {
-        HStack(spacing: 8) {
-          OpenClawShimmeringStatusText(
-            statusTitle,
-            animates: connectionState != .disconnected
-          )
-          TimelineView(.periodic(from: startedAt ?? Date(), by: 1)) { context in
-            Text(elapsedText(now: context.date))
-              .font(.caption2.monospacedDigit())
-              .foregroundStyle(.tertiary)
-              .frame(minWidth: 42, alignment: .leading)
-          }
-          Spacer(minLength: 8)
-          if canStop {
-            Button(action: onStop) {
-              Image(systemName: "stop.fill")
-                .font(.caption.weight(.semibold))
-                .frame(width: 20, height: 20)
-                .contentShape(Circle())
+        TimelineView(.periodic(from: startedAt ?? Date(), by: 1)) { context in
+          VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+              OpenClawShimmeringStatusText(
+                statusTitle(now: context.date),
+                animates: statusAnimates(now: context.date)
+              )
+              Text(elapsedText(now: context.date))
+                .font(.caption2.monospacedDigit())
+                .foregroundStyle(.tertiary)
+                .frame(minWidth: 42, alignment: .leading)
+              Spacer(minLength: 8)
+              if canStop {
+                Button(action: onStop) {
+                  Image(systemName: "stop.fill")
+                    .font(.caption.weight(.semibold))
+                    .frame(width: 20, height: 20)
+                    .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .accessibilityLabel("Stop \(runtime.title) run")
+                .help("Stop this \(runtime.title) run")
+              }
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-            .accessibilityLabel("Stop \(runtime.title) run")
-            .help("Stop this \(runtime.title) run")
+            .frame(minHeight: 20)
+
+            if let statusDetail = statusDetail(now: context.date) {
+              Text(statusDetail)
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
+            }
           }
+          .help(connectionHelp(now: context.date))
         }
-        .frame(minHeight: 20)
-        .help(connectionHelp)
 
         if !streamingReply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
           OrgInlineText(streamingReply)
@@ -1532,6 +1547,18 @@ struct OpenClawTypingIndicatorView: View {
   }
 
   var statusTitle: String {
+    statusTitle(now: Date())
+  }
+
+  func statusTitle(now: Date) -> String {
+    if connectionState == .connected, runID != nil {
+      if runLivenessAge(now: now) >= Self.stalledRunInterval {
+        return "\(runtime.title) may be stalled"
+      }
+      if runLivenessAge(now: now) >= Self.quietRunInterval {
+        return "Waiting for \(runtime.title)"
+      }
+    }
     if runtime == .codex {
       switch connectionState {
       case .connecting:
@@ -1592,11 +1619,62 @@ struct OpenClawTypingIndicatorView: View {
     !OpenClawActivityFeed.items(from: activities).isEmpty || !trimmedReasoning.isEmpty
   }
 
-  private var connectionHelp: String {
+  func statusDetail(now: Date) -> String? {
+    switch connectionState {
+    case .reconnecting:
+      return normalizedConnectionDetail
+        ?? "The run is saved and will reconnect without being sent twice."
+    case .disconnected:
+      return normalizedConnectionDetail
+        ?? "The connection was interrupted; the run may still be working remotely."
+    case .connected where runID != nil:
+      let age = runLivenessAge(now: now)
+      if age >= Self.stalledRunInterval {
+        return "No new activity for \(durationText(age)). The run is saved; the connection or agent may be stalled."
+      }
+      if age >= Self.quietRunInterval {
+        return "No new activity for \(durationText(age)). It may still be working."
+      }
+      return nil
+    case .connecting, .connected, .fallbackHTTP:
+      return nil
+    }
+  }
+
+  private func statusAnimates(now: Date) -> Bool {
+    guard connectionState != .disconnected else { return false }
+    return connectionState != .connected
+      || runID == nil
+      || runLivenessAge(now: now) < Self.stalledRunInterval
+  }
+
+  private var normalizedConnectionDetail: String? {
+    let detail = connectionDetail?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    return detail.isEmpty ? nil : detail
+  }
+
+  private func runLivenessAge(now: Date) -> TimeInterval {
+    guard let reference = lastEventAt ?? startedAt else { return 0 }
+    return max(0, now.timeIntervalSince(reference))
+  }
+
+  private func connectionHelp(now: Date) -> String {
     var parts: [String] = []
-    if let connectionDetail, !connectionDetail.isEmpty { parts.append(connectionDetail) }
+    if let normalizedConnectionDetail { parts.append(normalizedConnectionDetail) }
+    if lastEventAt != nil || startedAt != nil {
+      parts.append("Last update \(durationText(runLivenessAge(now: now))) ago")
+    }
     if let runID { parts.append("Run \(runID)") }
     return parts.isEmpty ? connectionState.label : parts.joined(separator: "\n")
+  }
+
+  private func durationText(_ interval: TimeInterval) -> String {
+    let seconds = max(0, Int(interval))
+    if seconds < 60 { return "\(seconds)s" }
+    if seconds < 60 * 60 { return "\(seconds / 60)m" }
+    let hours = seconds / (60 * 60)
+    let minutes = (seconds % (60 * 60)) / 60
+    return minutes == 0 ? "\(hours)h" : "\(hours)h \(minutes)m"
   }
 
   private func elapsedText(now: Date) -> String {
