@@ -519,14 +519,23 @@ try {
 
   const snapshot = writeMcpSnapshot(root, { schema: "org2:mcp-snapshot:v1", id: "crm-account", source: "mcp://crm/account/1", retrievedAt: "2026-07-14T00:00:00Z", identity: "account:1", payload: { name: "Example" } });
   assert.equal(fs.existsSync(snapshot), true);
+  const linkedResource = path.join(root, "notes", "outside-corpus.org2");
+  fs.symlinkSync(path.resolve("package.json"), linkedResource);
   const input = new PassThrough(); const output = new PassThrough(); let response = "";
   output.setEncoding("utf8"); output.on("data", (chunk) => response += chunk);
   const serving = serveMcp(root, input, output);
-  input.end(`${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} })}\n${JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} })}\n`);
+  input.end(`${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} })}\n${JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} })}\n${JSON.stringify({ jsonrpc: "2.0", id: 3, method: "resources/list", params: {} })}\n${JSON.stringify({ jsonrpc: "2.0", id: 4, method: "resources/read", params: { uri: "org2://corpus/notes/outside-corpus.org2" } })}\n${JSON.stringify({ jsonrpc: "2.0", id: 5, method: "resources/read", params: { uri: "org2://corpus/notes/source.org2" } })}\n${JSON.stringify({ jsonrpc: "2.0", id: 6, method: "resources/read", params: { uri: "org2://corpus/package.json" } })}\n`);
   await serving;
   const messages = response.trim().split("\n").map((line) => JSON.parse(line));
   assert.equal(messages[0].result.serverInfo.name, "org2");
   assert.equal(messages[1].result.tools.some((tool) => tool.name === "org2_run_create"), true);
+  assert.equal(messages[2].result.resources.some((resource) => resource.name === "notes/outside-corpus.org2"), false);
+  assert.equal(messages[3].error.code, -32603);
+  assert.match(messages[3].error.message, /resource is a symbolic link/);
+  assert.equal(messages[4].result.contents[0].text, "changed\n");
+  assert.equal(messages[5].error.code, -32603);
+  assert.match(messages[5].error.message, /resource is not an Org2 source file/);
+  fs.unlinkSync(linkedResource);
 
   const invalidInput = new PassThrough(); const invalidOutput = new PassThrough(); let invalidResponse = "";
   invalidOutput.setEncoding("utf8"); invalidOutput.on("data", (chunk) => invalidResponse += chunk);

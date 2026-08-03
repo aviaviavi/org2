@@ -185,12 +185,33 @@ function resourceList(root: string) {
     for (const item of fs.readdirSync(dir, { withFileTypes: true })) {
       if ([".git", "node_modules", "dist", "site"].includes(item.name)) continue;
       const absolute = path.join(dir, item.name);
+      if (item.isSymbolicLink()) continue;
       if (item.isDirectory()) walk(absolute);
       else if (/\.org2?$/.test(item.name)) files.push(absolute);
     }
   };
   walk(root);
   return files.map((file) => ({ uri: `org2://corpus/${path.relative(root, file)}`, name: path.relative(root, file), mimeType: "text/org" }));
+}
+
+function corpusResourceFile(root: string, relative: string): string {
+  if (!/\.org2?$/.test(relative)) throw new Error("resource is not an Org2 source file");
+  const lexicalRoot = path.resolve(root);
+  const requested = path.resolve(lexicalRoot, relative);
+  const lexicalRelative = path.relative(lexicalRoot, requested);
+  if (!lexicalRelative || lexicalRelative === ".." || lexicalRelative.startsWith(`..${path.sep}`) || path.isAbsolute(lexicalRelative)) {
+    throw new Error("resource is outside the corpus");
+  }
+  if (fs.lstatSync(requested).isSymbolicLink()) throw new Error("resource is a symbolic link");
+
+  const canonicalRoot = fs.realpathSync(lexicalRoot);
+  const canonicalFile = fs.realpathSync(requested);
+  const canonicalRelative = path.relative(canonicalRoot, canonicalFile);
+  if (!canonicalRelative || canonicalRelative === ".." || canonicalRelative.startsWith(`..${path.sep}`) || path.isAbsolute(canonicalRelative)) {
+    throw new Error("resource resolves outside the corpus");
+  }
+  if (!fs.statSync(canonicalFile).isFile()) throw new Error("resource is not a file");
+  return canonicalFile;
 }
 
 async function handle(root: string, request: JsonRpcRequest): Promise<JsonRpcResponse | null> {
@@ -204,8 +225,7 @@ async function handle(root: string, request: JsonRpcRequest): Promise<JsonRpcRes
     const prefix = "org2://corpus/";
     if (!uri.startsWith(prefix)) throw new Error("unsupported resource URI");
     const relative = uri.slice(prefix.length);
-    const file = path.resolve(root, relative);
-    if (!(file === path.resolve(root) || file.startsWith(`${path.resolve(root)}${path.sep}`))) throw new Error("resource is outside the corpus");
+    const file = corpusResourceFile(root, relative);
     return result({ contents: [{ uri, mimeType: "text/org", text: fs.readFileSync(file, "utf8") }] });
   }
   if (request.method === "prompts/list") return result({ prompts: listWorkflows(root).map((workflow) => ({ name: workflow.id, description: workflow.description, arguments: workflow.inputs.map((input) => ({ name: input.id, description: input.description, required: input.required })) })) });
