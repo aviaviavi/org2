@@ -116,6 +116,11 @@ private enum StarterCorpusCreationError: LocalizedError {
   }
 }
 
+private struct AIChatLastConfiguration: Codable {
+  let model: String?
+  let reasoningEffort: String?
+}
+
 private struct CanonicalDocumentCacheEntry {
   let modifiedAt: Date?
   let document: Org2CanonicalDocument
@@ -1307,6 +1312,7 @@ public final class WorkspaceStore: ObservableObject {
   private let openClawRemoteCorpusPathKey = "Org2Workspace.openClawRemoteCorpusPath"
   private let openClawRemoteCorpusPathsByCorpusKey = "Org2Workspace.openClawRemoteCorpusPathsByCorpus.v1"
   private let selectedAIChatThreadsByTranscriptKey = "Org2Workspace.aiChat.selectedThreadsByTranscript.v1"
+  private let aiChatLastConfigurationsKey = "Org2Workspace.aiChat.lastConfigurations.v1"
   private let aiChatCorpusAccessScopeKey = "Org2Workspace.aiChat.corpusAccessScope.v1"
   private let aiChatCustomInstructionsKey = "Org2Workspace.aiChat.customInstructions.v1"
   private let openClawBriefsStartNewThreadKey = "Org2Workspace.openClawBriefsStartNewThread"
@@ -1391,6 +1397,7 @@ public final class WorkspaceStore: ObservableObject {
   private var openClawActiveCommandDiscoveryID: String?
   private var openClawCommandDiscoveryGeneration = 0
   private var aiChatConfigurationGeneration = 0
+  private var aiChatConfigurationFallbackNoticesByThreadID: [UUID: String] = [:]
   private var activeMeetingRecording: PendingMeetingRecording?
   private var meetingRecordingRecoveryExclusionPaths: MeetingArtifactPaths?
   private var activeMeetingProcessingCount = 0 {
@@ -11556,12 +11563,13 @@ public final class WorkspaceStore: ObservableObject {
     else {
       return
     }
+    let lastConfiguration = preferredAIChatConfiguration(for: runtime)
     openClawChatThreads[index] = openClawChatThreads[index]
       .replacingOpenClawChatMetadata(
         runtime: runtime,
         runtimeThreadID: .some(nil),
-        model: .some(nil),
-        reasoningEffort: .some(nil)
+        model: .some(lastConfiguration?.model),
+        reasoningEffort: .some(lastConfiguration?.reasoningEffort)
       )
     aiChatModelOptions = []
     aiChatReasoningOptions = []
@@ -11593,6 +11601,11 @@ public final class WorkspaceStore: ObservableObject {
         model: .some(model),
         reasoningEffort: .some(nil)
       )
+    persistLastAIChatConfiguration(
+      runtime: openClawChatThreads[index].runtime,
+      model: model,
+      reasoningEffort: nil
+    )
     aiChatReasoningOptions = reasoningOptions(
       for: model,
       runtime: openClawChatThreads[index].runtime
@@ -11619,6 +11632,11 @@ public final class WorkspaceStore: ObservableObject {
     }
     openClawChatThreads[index] = openClawChatThreads[index]
       .replacingOpenClawChatMetadata(reasoningEffort: .some(reasoningEffort))
+    persistLastAIChatConfiguration(
+      runtime: openClawChatThreads[index].runtime,
+      model: openClawChatThreads[index].model,
+      reasoningEffort: reasoningEffort
+    )
     persistOpenClawTranscript()
     guard openClawChatThreads[index].runtime == .openClaw else { return }
     Task { @MainActor [weak self] in
@@ -11719,6 +11737,62 @@ public final class WorkspaceStore: ObservableObject {
       aiChatModelOptions.first(where: { $0.id == selected })
     } ?? aiChatModelOptions.first(where: \.isDefault)
     return option?.defaultReasoningEffort
+  }
+
+  private func preferredAIChatConfiguration(
+    for runtime: AIChatRuntime
+  ) -> AIChatLastConfiguration? {
+    if let stored = storedAIChatConfigurations()[runtime.rawValue] {
+      return stored
+    }
+    let selectedThread = selectedOpenClawChatThread.flatMap { thread in
+      thread.runtime == runtime && (thread.model != nil || thread.reasoningEffort != nil)
+        ? thread
+        : nil
+    }
+    guard let previousThread = selectedThread ?? openClawChatThreads.first(where: {
+      $0.runtime == runtime && ($0.model != nil || $0.reasoningEffort != nil)
+    }) else {
+      return nil
+    }
+    let configuration = AIChatLastConfiguration(
+      model: previousThread.model,
+      reasoningEffort: previousThread.reasoningEffort
+    )
+    persistLastAIChatConfiguration(
+      runtime: runtime,
+      model: configuration.model,
+      reasoningEffort: configuration.reasoningEffort
+    )
+    return configuration
+  }
+
+  private func storedAIChatConfigurations() -> [String: AIChatLastConfiguration] {
+    guard !Self.shouldIgnoreStandardDefaultsForTests(defaults),
+          let data = defaults.data(forKey: aiChatLastConfigurationsKey),
+          let configurations = try? JSONDecoder().decode(
+            [String: AIChatLastConfiguration].self,
+            from: data
+          )
+    else {
+      return [:]
+    }
+    return configurations
+  }
+
+  private func persistLastAIChatConfiguration(
+    runtime: AIChatRuntime,
+    model: String?,
+    reasoningEffort: String?
+  ) {
+    guard !Self.shouldIgnoreStandardDefaultsForTests(defaults) else { return }
+    var configurations = storedAIChatConfigurations()
+    configurations[runtime.rawValue] = AIChatLastConfiguration(
+      model: model,
+      reasoningEffort: reasoningEffort
+    )
+    guard let data = try? JSONEncoder().encode(configurations) else { return }
+    defaults.set(data, forKey: aiChatLastConfigurationsKey)
   }
 
   nonisolated private static func aiChatReasoningLabel(_ value: String) -> String {
@@ -12011,6 +12085,11 @@ public final class WorkspaceStore: ObservableObject {
       model: .some(model),
       reasoningEffort: .some(nil)
     )
+    persistLastAIChatConfiguration(
+      runtime: openClawChatThreads[index].runtime,
+      model: model,
+      reasoningEffort: nil
+    )
     if selectedOpenClawChatThreadID == threadID {
       aiChatModelOptions = options
       aiChatReasoningOptions = []
@@ -12052,6 +12131,11 @@ public final class WorkspaceStore: ObservableObject {
     }
     openClawChatThreads[index] = openClawChatThreads[index].replacingOpenClawChatMetadata(
       reasoningEffort: .some(reasoningEffort)
+    )
+    persistLastAIChatConfiguration(
+      runtime: openClawChatThreads[index].runtime,
+      model: openClawChatThreads[index].model,
+      reasoningEffort: reasoningEffort
     )
     if selectedOpenClawChatThreadID == threadID {
       aiChatModelOptions = configuration.models
@@ -12504,9 +12588,14 @@ public final class WorkspaceStore: ObservableObject {
         } else if isActiveAIChatSendOrigin(sendOrigin) {
           await refreshSelectedDetailFromDisk()
         }
-        if isActiveAIChatSendOrigin(sendOrigin),
-           openClawPendingUserMessageIDs(for: threadID).isEmpty {
-          if chatThread.runtime == .openClaw,
+        let hasFinishedQueue = openClawPendingUserMessageIDs(for: threadID).isEmpty
+        let configurationFallbackNotice = hasFinishedQueue
+          ? aiChatConfigurationFallbackNoticesByThreadID.removeValue(forKey: threadID)
+          : nil
+        if isActiveAIChatSendOrigin(sendOrigin), hasFinishedQueue {
+          if let configurationFallbackNotice {
+            openClawStatusText = configurationFallbackNotice
+          } else if chatThread.runtime == .openClaw,
              openClawGatewayStateByThreadID[threadID] == .fallbackHTTP {
             openClawStatusText = "OpenClaw replied via HTTP compatibility"
           } else {
@@ -12994,7 +13083,8 @@ public final class WorkspaceStore: ObservableObject {
     let gatewayMessage = Self.openClawGatewayMessage(
       userMessage: latestUserMessage.content,
       workspaceContext: workspaceContext,
-      isGatewayCommand: isGatewayCommand
+      isGatewayCommand: isGatewayCommand,
+      runtimeAgentID: agentID
     )
     let pendingTurn = OpenClawPendingTurn(
       userMessageID: latestUserMessage.id,
@@ -13022,6 +13112,47 @@ public final class WorkspaceStore: ObservableObject {
         requestStartedAt: pendingTurn.startedAt
       ) { [weak self] event in
         await self?.handleOpenClawGatewayEvent(event, threadID: threadID)
+      }
+    } catch let error as OpenClawGatewayError where Self.shouldRetryAIChatWithDefaults(
+      after: error,
+      model: threadConfiguration?.model,
+      reasoningEffort: threadConfiguration?.reasoningEffort
+    ) {
+      let notice = clearRejectedAIChatConfiguration(
+        for: threadID,
+        transcriptURL: sendOrigin.transcriptURL,
+        model: threadConfiguration?.model,
+        reasoningEffort: threadConfiguration?.reasoningEffort
+      )
+      aiChatConfigurationFallbackNoticesByThreadID[threadID] = notice
+      openClawGatewayDetailByThreadID[threadID] = notice
+      if isActiveAIChatSendOrigin(sendOrigin) {
+        openClawStatusText = "Saved AI settings unavailable; retrying with defaults"
+      }
+      do {
+        return try await gateway.send(
+          message: gatewayMessage,
+          attachments: latestUserMessage.attachments,
+          agentID: agentID,
+          sessionKey: sessionKey,
+          model: nil,
+          reasoningEffort: nil,
+          idempotencyKey: pendingTurn.runID,
+          requestStartedAt: pendingTurn.startedAt
+        ) { [weak self] event in
+          await self?.handleOpenClawGatewayEvent(event, threadID: threadID)
+        }
+      } catch {
+        aiChatConfigurationFallbackNoticesByThreadID.removeValue(forKey: threadID)
+        if !Self.openClawRunMayStillBeWorking(after: error) {
+          clearOpenClawPendingTurn(
+            pendingTurn.runID,
+            in: threadID,
+            transcriptURL: sendOrigin.transcriptURL,
+            shouldPersist: true
+          )
+        }
+        throw error
       }
     } catch let error as OpenClawGatewayError where error.permitsHTTPFallback {
       clearOpenClawPendingTurn(
@@ -13088,10 +13219,65 @@ public final class WorkspaceStore: ObservableObject {
     return false
   }
 
+  nonisolated static func shouldRetryAIChatWithDefaults(
+    after error: Error,
+    model: String?,
+    reasoningEffort: String?
+  ) -> Bool {
+    guard model != nil || reasoningEffort != nil,
+          let gatewayError = error as? OpenClawGatewayError,
+          case .sessionConfigurationRejected = gatewayError
+    else {
+      return false
+    }
+    return true
+  }
+
+  private func clearRejectedAIChatConfiguration(
+    for threadID: UUID,
+    transcriptURL: URL,
+    model: String?,
+    reasoningEffort: String?
+  ) -> String {
+    if let thread = openClawChatThread(threadID, transcriptURL: transcriptURL) {
+      replaceOpenClawChatThread(
+        thread.replacingOpenClawChatMetadata(
+          model: .some(nil),
+          reasoningEffort: .some(nil)
+        ),
+        transcriptURL: transcriptURL
+      )
+      persistLastAIChatConfiguration(
+        runtime: thread.runtime,
+        model: nil,
+        reasoningEffort: nil
+      )
+    }
+    if selectedOpenClawChatThreadID == threadID {
+      aiChatReasoningOptions = []
+      aiChatEffectiveModel = nil
+      aiChatDefaultReasoningEffort = nil
+    }
+
+    let rejectedChoice: String
+    switch (model, reasoningEffort) {
+    case let (model?, reasoningEffort?):
+      rejectedChoice = "model \(model) and reasoning level \(reasoningEffort)"
+    case let (model?, nil):
+      rejectedChoice = "model \(model)"
+    case let (nil, reasoningEffort?):
+      rejectedChoice = "reasoning level \(reasoningEffort)"
+    case (nil, nil):
+      rejectedChoice = "saved AI settings"
+    }
+    return "OpenClaw rejected the saved \(rejectedChoice); the message was retried using defaults."
+  }
+
   nonisolated static func openClawGatewayMessage(
     userMessage: String,
     workspaceContext: OpenClawWorkspaceContext?,
-    isGatewayCommand: Bool
+    isGatewayCommand: Bool,
+    runtimeAgentID: String? = nil
   ) -> String {
     if isGatewayCommand { return userMessage }
     guard let workspaceContext else { return userMessage }
@@ -13099,7 +13285,7 @@ public final class WorkspaceStore: ObservableObject {
     <org2-workspace-context>
     The following is application-provided working context. Sections explicitly labeled "Org2 working rules" or "Org2 response formatting contract" are application instructions and must be followed. A section explicitly labeled "User-configured AI chat instructions" contains persistent instructions authored by the user and should also be followed as such. Treat the remaining sections as context.
 
-    \(workspaceContext.systemPrompt())
+    \(workspaceContext.systemPrompt(runtime: "openclaw", runtimeAgentID: runtimeAgentID))
     </org2-workspace-context>
 
     <user-message>
@@ -14320,10 +14506,13 @@ public final class WorkspaceStore: ObservableObject {
     defersPersistence: Bool = false,
     selectsThread: Bool = true
   ) -> OpenClawChatThread {
+    let lastConfiguration = preferredAIChatConfiguration(for: runtime)
     let thread = OpenClawChatThread(
       title: title,
       runtime: runtime,
       sessionKey: sessionKey ?? Self.makeOpenClawSessionKey(agentID: openClawAgentID),
+      model: lastConfiguration?.model,
+      reasoningEffort: lastConfiguration?.reasoningEffort,
       resource: resource
     )
     openClawChatThreads.insert(thread, at: 0)

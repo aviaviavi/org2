@@ -1020,6 +1020,29 @@ final class Org2ModelsTests: XCTestCase {
     )
   }
 
+  func testAIChatRetriesOnlyRejectedExplicitSessionConfigurationWithDefaults() {
+    let rejection = OpenClawGatewayError.sessionConfigurationRejected(
+      code: "INVALID_REQUEST",
+      message: "Unknown model openai/retired-model"
+    )
+
+    XCTAssertTrue(WorkspaceStore.shouldRetryAIChatWithDefaults(
+      after: rejection,
+      model: "openai/retired-model",
+      reasoningEffort: "xhigh"
+    ))
+    XCTAssertFalse(WorkspaceStore.shouldRetryAIChatWithDefaults(
+      after: rejection,
+      model: nil,
+      reasoningEffort: nil
+    ))
+    XCTAssertFalse(WorkspaceStore.shouldRetryAIChatWithDefaults(
+      after: OpenClawGatewayError.connection("offline"),
+      model: "openai/gpt-test",
+      reasoningEffort: "high"
+    ))
+  }
+
   func testOpenClawGatewayReconcilesReplyFromRestartReplacementRun() {
     let payload: [String: Any] = [
       "messages": [
@@ -1397,6 +1420,48 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(restored.openClawChatThreads.count, 2)
     XCTAssertEqual(restored.selectedOpenClawChatThreadID, secondThreadID)
     XCTAssertEqual(restored.openClawMessages.map(\.content), ["Second thread question"])
+  }
+
+  @MainActor
+  func testNewAIChatThreadsReuseLastSelectedModelAndReasoningAcrossStores() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-last-ai-settings-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let suiteName = "org2-workspace-last-ai-settings-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: root.appendingPathComponent("first-chat.json")
+    )
+    store.createOpenClawChatThread()
+    store.setSelectedAIChatModel("openai/gpt-5.6-sol")
+    store.setSelectedAIChatReasoningEffort("xhigh")
+
+    store.createOpenClawChatThread()
+
+    XCTAssertEqual(store.selectedAIChatModel, "openai/gpt-5.6-sol")
+    XCTAssertEqual(store.selectedAIChatReasoningEffort, "xhigh")
+    XCTAssertEqual(store.selectedAIChatModelLabel, "gpt-5.6-sol")
+    XCTAssertEqual(store.selectedAIChatReasoningLabel, "Extra high")
+
+    let restored = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: root.appendingPathComponent("second-chat.json")
+    )
+    restored.createOpenClawChatThread()
+
+    XCTAssertEqual(restored.selectedAIChatModel, "openai/gpt-5.6-sol")
+    XCTAssertEqual(restored.selectedAIChatReasoningEffort, "xhigh")
+
+    restored.setSelectedAIChatModel(nil)
+    restored.createOpenClawChatThread()
+    XCTAssertNil(restored.selectedAIChatModel)
+    XCTAssertNil(restored.selectedAIChatReasoningEffort)
   }
 
   @MainActor

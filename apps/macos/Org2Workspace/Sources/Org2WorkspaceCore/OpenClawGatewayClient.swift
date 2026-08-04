@@ -365,6 +365,7 @@ public enum OpenClawGatewayError: LocalizedError, Sendable {
   case connection(String)
   case protocolFailure(String)
   case gateway(code: String?, message: String)
+  case sessionConfigurationRejected(code: String?, message: String)
   case emptyResponse
   case aborted(String?)
   case acceptedRunRecovery(String)
@@ -378,6 +379,8 @@ public enum OpenClawGatewayError: LocalizedError, Sendable {
     case .protocolFailure(let message):
       return "The OpenClaw Gateway protocol failed: \(message)"
     case .gateway(_, let message):
+      return message
+    case .sessionConfigurationRejected(_, let message):
       return message
     case .emptyResponse:
       return "OpenClaw finished without a response."
@@ -395,7 +398,7 @@ public enum OpenClawGatewayError: LocalizedError, Sendable {
     case .gateway(let code, let message):
       return code == "NOT_PAIRED"
         || (code == "INVALID_REQUEST" && message.localizedCaseInsensitiveContains("missing scope"))
-    case .emptyResponse, .aborted, .acceptedRunRecovery:
+    case .sessionConfigurationRejected, .emptyResponse, .aborted, .acceptedRunRecovery:
       return false
     }
   }
@@ -812,13 +815,20 @@ public actor OpenClawGatewayClient {
       await onEvent(.connection(.connected, nil))
 
       if Self.shouldPatchSessionConfiguration(model: model, reasoningEffort: reasoningEffort) {
-        try await patchSessionConfiguration(
-          sessionKey: sessionKey,
-          agentID: agentID,
-          model: model,
-          reasoningEffort: reasoningEffort,
-          on: socket
-        )
+        do {
+          try await patchSessionConfiguration(
+            sessionKey: sessionKey,
+            agentID: agentID,
+            model: model,
+            reasoningEffort: reasoningEffort,
+            on: socket
+          )
+        } catch let OpenClawGatewayError.gateway(code, message) {
+          throw OpenClawGatewayError.sessionConfigurationRejected(
+            code: code,
+            message: message
+          )
+        }
       }
 
       let proposedRunID = idempotencyKey ?? UUID().uuidString.lowercased()
