@@ -30,6 +30,7 @@ import {
   type LinkAbbreviationRecord,
 } from "./link-abbrev.js";
 import { COMPAT_CONTENT_CLOSE, COMPAT_CONTENT_OPEN, COMPAT_CONTENT_STYLE_SECTION } from "./publish-defaults.js";
+import { isPresentationDocument } from "./presentation.js";
 
 function escapeHtml(value: string): string {
   return String(value)
@@ -1895,6 +1896,7 @@ export function renderOrgDocumentToAppHtml(
     includeDocumentHeader: true,
     rewriteFileLinks: false,
     headIncludes: [
+      `<meta name="org2-document-kind" content="${isPresentationDocument(doc) ? "slides" : "document"}" />`,
       `<style id="org2-app-document-style">\n${APP_DOCUMENT_STYLE}\n</style>`,
       `<script id="org2-app-document-script">\n${APP_DOCUMENT_SCRIPT}\n</script>`,
       customStyle,

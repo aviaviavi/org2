@@ -31,6 +31,60 @@ public struct Org2EditorSaveConflict: Identifiable, Equatable, Sendable {
   }
 }
 
+struct WorkspaceInputMeterLevels: Equatable, Sendable {
+  static let silent = WorkspaceInputMeterLevels(
+    averageLevel: 0,
+    peakLevel: 0,
+    secondaryAverageLevel: 0,
+    secondaryPeakLevel: 0
+  )
+
+  let averageLevel: Double
+  let peakLevel: Double
+  let secondaryAverageLevel: Double
+  let secondaryPeakLevel: Double
+}
+
+@MainActor
+final class WorkspaceInputMeterState: ObservableObject {
+  @Published private(set) var levels = WorkspaceInputMeterLevels.silent
+
+  func publish(
+    primary: MeetingInputMeterSnapshot,
+    secondary: MeetingInputMeterSnapshot = .silent,
+    force: Bool = false
+  ) {
+    let current = levels
+    let next = WorkspaceInputMeterLevels(
+      averageLevel: Self.publishedLevel(current.averageLevel, primary.averageLevel, force: force),
+      peakLevel: Self.publishedLevel(current.peakLevel, primary.peakLevel, force: force),
+      secondaryAverageLevel: Self.publishedLevel(
+        current.secondaryAverageLevel,
+        secondary.averageLevel,
+        force: force
+      ),
+      secondaryPeakLevel: Self.publishedLevel(
+        current.secondaryPeakLevel,
+        secondary.peakLevel,
+        force: force
+      )
+    )
+    guard next != current else { return }
+    levels = next
+  }
+
+  func reset() {
+    guard levels != .silent else { return }
+    levels = .silent
+  }
+
+  private static func publishedLevel(_ current: Double, _ next: Double, force: Bool) -> Double {
+    force || WorkspaceStore.shouldPublishMeetingMeterLevelChange(current: current, next: next)
+      ? next
+      : current
+  }
+}
+
 public enum MobileRemoteFilePreviewError: LocalizedError, Equatable, Sendable {
   case invalidPath
   case unsupportedFile
@@ -820,11 +874,13 @@ public final class WorkspaceStore: ObservableObject {
         index[item.id] = item.runFilterText
       }
       agentRunFilterTextByID = index
+      rebuildAgentRunDisplayCache()
     }
   }
   @Published public var agentRunFilter = "" {
     didSet {
       agentRunFilterTerms = Self.filterTerms(from: agentRunFilter)
+      rebuildAgentRunDisplayCache()
     }
   }
   @Published public var agentRunFilterFocusToken = 0
@@ -959,10 +1015,7 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var selectedMeetingID: String?
   @Published public var meetingTitleDraft = ""
   @Published public var meetingStatusText = WorkspaceStore.defaultMeetingStatusText()
-  @Published public var meetingInputAverageLevel = 0.0
-  @Published public var meetingInputPeakLevel = 0.0
-  @Published public var meetingSystemAudioAverageLevel = 0.0
-  @Published public var meetingSystemAudioPeakLevel = 0.0
+  let meetingInputMeterState = WorkspaceInputMeterState()
   @Published public var meetingTranscriptionProgress = 0.0
   @Published public var meetingTranscriptionElapsedText = ""
   @Published public var audioSettingsStatus = LocalWhisperTranscriber.installationStatus()
@@ -1004,6 +1057,7 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var openClawAgentID = "main"
   @Published public var openClawEndpointText = ""
   @Published public private(set) var openClawGatewayCommands: [OpenClawSlashCommand] = []
+  @Published public private(set) var corpusAgentSkillCommands: [OpenClawSlashCommand] = []
   @Published public private(set) var isRefreshingOpenClawCommands = false
   @Published public private(set) var aiChatModelOptions: [AIChatModelOption] = []
   @Published public private(set) var aiChatReasoningOptions: [AIChatReasoningOption] = []
@@ -1038,8 +1092,7 @@ public final class WorkspaceStore: ObservableObject {
   @Published public private(set) var codexLoginURL: URL?
   @Published public var isRecordingOpenClawVoiceNote = false
   @Published public var isTranscribingOpenClawVoiceNote = false
-  @Published public var openClawVoiceAverageLevel = 0.0
-  @Published public var openClawVoicePeakLevel = 0.0
+  let openClawVoiceMeterState = WorkspaceInputMeterState()
   @Published public var openClawVoiceTranscriptionProgress = 0.0
   @Published public var openClawVoiceTranscriptionElapsedText = ""
   @Published public var openClawVoiceStatusText = "Dictate with local transcription."
@@ -1088,17 +1141,28 @@ public final class WorkspaceStore: ObservableObject {
         updateSelectedFileDataNotebookState(for: file)
       }
       if oldValue?.id != selectedEntrySource?.id {
+        cancelSlidePreviewRender(clearStatus: true)
         currentDocumentViewportSourceLine = selectedEntrySource.flatMap {
           documentViewportSourceLine(for: $0)
         }
         currentDocumentSlidePageIndex = selectedEntrySource.flatMap {
           documentSlidePageIndex(for: $0)
         }
+        slidePreviewPageCount = 0
+        slidePreviewNavigationRequest = nil
+        slidePreviewZoomScale = selectedEntrySource.flatMap {
+          slidePreviewZoomScales[Self.documentViewportKey(for: $0)]
+        } ?? 1
       }
+      applyDocumentPreviewPreferenceForSelectedSource()
     }
   }
   public private(set) var selectedFileIsDataNotebook = false
-  @Published public private(set) var selectedEntryHTML: String?
+  @Published public private(set) var selectedEntryHTML: String? {
+    didSet {
+      updateInferredDocumentPreviewKind(from: selectedEntryHTML)
+    }
+  }
   @Published public private(set) var selectedEntryRenderError: String?
   @Published public var renderedDocumentWidth: RenderedDocumentWidth = .comfortable {
     didSet {
@@ -1118,9 +1182,9 @@ public final class WorkspaceStore: ObservableObject {
       }
     }
   }
-  @Published public var documentPreviewKind: OrgDocumentPreviewKind = .document {
+  @Published public private(set) var documentPreviewPreference: OrgDocumentPreviewPreference = .automatic
+  @Published public private(set) var documentPreviewKind: OrgDocumentPreviewKind = .document {
     didSet {
-      defaults.set(documentPreviewKind.rawValue, forKey: documentPreviewKindKey)
       if documentPreviewKind == .document {
         cancelSlidePreviewRender(clearStatus: false)
       } else {
@@ -1135,6 +1199,9 @@ public final class WorkspaceStore: ObservableObject {
   @Published public private(set) var slidePreviewPDF: Data?
   @Published public private(set) var slidePreviewError: String?
   @Published public private(set) var isRenderingSlidePreview = false
+  @Published public private(set) var slidePreviewZoomScale: CGFloat = 1
+  @Published public private(set) var slidePreviewPageCount = 0
+  @Published private(set) var slidePreviewNavigationRequest: OrgPDFPageNavigationRequest?
   @Published public var selectedRenderedBlocks: [OrgEditableBlock] = [] {
     didSet {
       defer {
@@ -1247,7 +1314,7 @@ public final class WorkspaceStore: ObservableObject {
   private let renderedDocumentWidthKey = "Org2Workspace.renderedDocument.width"
   private let renderedDocumentMarginKey = "Org2Workspace.renderedDocument.margin"
   private let sourceEditorPresentationKey = "Org2Workspace.sourceEditor.presentation"
-  private let documentPreviewKindKey = "Org2Workspace.documentPreview.kind"
+  private let documentPreviewOverridesKey = "Org2Workspace.documentPreview.overrides.v1"
   private let documentViewportSourceLinesKey = "Org2Workspace.documentViewportSourceLines.v1"
   private let documentSlidePageIndexesKey = "Org2Workspace.documentSlidePageIndexes.v1"
   private let orgCryptEncryptOnSaveKey = "Org2Workspace.orgCrypt.encryptOnSave"
@@ -1454,6 +1521,8 @@ public final class WorkspaceStore: ObservableObject {
   private var assignedWorkSearchRows: [AssignedWorkSearchRow] = []
   private var agentRunFilterTextByID: [AgentRunItem.ID: String] = [:]
   private var agentRunFilterTerms: [String] = []
+  private var agentRunScopeCounts: [AgentRunScope: Int] = [:]
+  private var filteredAgentRunScopeEntries: [AgentRunScope: [AgentRunScopeEntry]] = [:]
   private var searchNodeIndexRows: [SearchNodeIndexRow] = []
   private var sourceEditorPreviewTask: Task<Void, Never>?
   private var sourceEditorPreviewGeneration = 0
@@ -1465,6 +1534,10 @@ public final class WorkspaceStore: ObservableObject {
   private var sourceEditorLocalDraftText: String?
   private var documentViewportSourceLines: [String: Int] = [:]
   private var documentSlidePageIndexes: [String: Int] = [:]
+  private var documentPreviewOverrides: [String: String] = [:]
+  private var inferredDocumentPreviewKinds: [String: OrgDocumentPreviewKind] = [:]
+  private var slidePreviewZoomScales: [String: CGFloat] = [:]
+  private var slidePreviewNavigationGeneration = 0
   private var editorSaveConflictSource: EntrySource?
   private var editorSaveConflictDraft: String?
 
@@ -1521,8 +1594,10 @@ public final class WorkspaceStore: ObservableObject {
       .flatMap(RenderedDocumentMargin.init(rawValue:)) ?? .standard
     sourceEditorPresentation = defaults.string(forKey: sourceEditorPresentationKey)
       .flatMap(SourceEditorPresentation.init(rawValue:)) ?? .source
-    documentPreviewKind = defaults.string(forKey: documentPreviewKindKey)
-      .flatMap(OrgDocumentPreviewKind.init(rawValue:)) ?? .document
+    documentPreviewOverrides = Self.restoreDocumentPreviewOverrides(
+      from: defaults,
+      key: documentPreviewOverridesKey
+    )
     documentViewportSourceLines = Self.restoreDocumentViewportSourceLines(
       from: defaults,
       key: documentViewportSourceLinesKey
@@ -1928,6 +2003,7 @@ public final class WorkspaceStore: ObservableObject {
     cacheCurrentCorpusWorkspace()
     let cachedWorkspace = corpusWorkspaceCaches[standardized.path]
     corpusRoot = standardized
+    refreshCorpusAgentSkills()
     activeCorpusIdentity = cachedWorkspace?.identity
     upsertCorpusMount(path: standardized.path, identity: nil)
     openClawRemoteCorpusPath = restoreOpenClawRemoteCorpusPath(for: standardized)
@@ -2235,6 +2311,9 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     recordCorpusFileEvents(classified.contentPaths)
+    if classified.hasConfigurationChanges {
+      refreshOrgRoamLinkResolver(files: corpusFiles)
+    }
     if requiresFullScan || classified.hasConfigurationChanges {
       scheduleFullCorpusFileRefreshAfterEvents()
     } else if !classified.contentPaths.isEmpty {
@@ -6813,6 +6892,142 @@ public final class WorkspaceStore: ObservableObject {
   public var canPreviewSlides: Bool {
     guard let source = selectedEntrySource else { return false }
     return Self.canPreviewSlides(source: source)
+  }
+
+  public func setDocumentPreviewPreference(_ preference: OrgDocumentPreviewPreference) {
+    guard let source = selectedEntrySource else { return }
+    let key = Self.documentViewportKey(for: source)
+    documentPreviewPreference = preference
+    switch preference {
+    case .automatic:
+      documentPreviewOverrides.removeValue(forKey: key)
+    case .document, .slides:
+      documentPreviewOverrides[key] = preference.rawValue
+    }
+    defaults.set(documentPreviewOverrides, forKey: documentPreviewOverridesKey)
+    applyDocumentPreviewPreferenceForSelectedSource()
+
+    if documentPreviewKind == .slides {
+      let text = isEditingEntry ? editableEntryText : source.text
+      scheduleSlidePreview(text: text, source: source, immediate: true)
+    } else if isEditingEntry, sourceEditorPresentation == .split {
+      scheduleSourceEditorPreview(immediate: true)
+    }
+  }
+
+  public var inferredDocumentPreviewKind: OrgDocumentPreviewKind {
+    guard let source = selectedEntrySource else { return .document }
+    return inferredDocumentPreviewKinds[Self.documentViewportKey(for: source)] ?? .document
+  }
+
+  public var documentPreviewPreferenceLabel: String {
+    if documentPreviewPreference == .automatic {
+      return "Automatic (\(documentPreviewKind.title))"
+    }
+    return documentPreviewPreference.title
+  }
+
+  private func applyDocumentPreviewPreferenceForSelectedSource() {
+    guard let source = selectedEntrySource else {
+      documentPreviewPreference = .automatic
+      if documentPreviewKind != .document {
+        documentPreviewKind = .document
+      }
+      return
+    }
+    let key = Self.documentViewportKey(for: source)
+    let preference = documentPreviewOverrides[key]
+      .flatMap(OrgDocumentPreviewPreference.init(rawValue:)) ?? .automatic
+    documentPreviewPreference = preference
+
+    let preferredKind: OrgDocumentPreviewKind
+    switch preference {
+    case .automatic:
+      preferredKind = inferredDocumentPreviewKinds[key] ?? .document
+    case .document:
+      preferredKind = .document
+    case .slides:
+      preferredKind = .slides
+    }
+    let effectiveKind: OrgDocumentPreviewKind = preferredKind == .slides && Self.canPreviewSlides(source: source)
+      ? .slides
+      : .document
+    if documentPreviewKind != effectiveKind {
+      documentPreviewKind = effectiveKind
+    }
+  }
+
+  func updateInferredDocumentPreviewKind(from html: String?) {
+    guard let source = selectedEntrySource,
+          let kind = Self.documentPreviewKind(fromAppHTML: html)
+    else { return }
+    let key = Self.documentViewportKey(for: source)
+    inferredDocumentPreviewKinds[key] = kind
+    if documentPreviewPreference == .automatic {
+      let previousKind = documentPreviewKind
+      applyDocumentPreviewPreferenceForSelectedSource()
+      if previousKind != documentPreviewKind, documentPreviewKind == .slides {
+        let text = isEditingEntry ? editableEntryText : source.text
+        scheduleSlidePreview(text: text, source: source, immediate: true)
+      }
+    }
+  }
+
+  nonisolated static func documentPreviewKind(fromAppHTML html: String?) -> OrgDocumentPreviewKind? {
+    guard let html else { return nil }
+    if html.contains("<meta name=\"org2-document-kind\" content=\"slides\"") {
+      return .slides
+    }
+    if html.contains("<meta name=\"org2-document-kind\" content=\"document\"") {
+      return .document
+    }
+    return nil
+  }
+
+  public func zoomSlidePreviewIn() {
+    setSlidePreviewZoomScale(Self.nextSlidePreviewZoomScale(after: slidePreviewZoomScale))
+  }
+
+  public func zoomSlidePreviewOut() {
+    setSlidePreviewZoomScale(Self.previousSlidePreviewZoomScale(before: slidePreviewZoomScale))
+  }
+
+  public func resetSlidePreviewZoom() {
+    setSlidePreviewZoomScale(1)
+  }
+
+  public func setSlidePreviewPageCount(_ count: Int) {
+    slidePreviewPageCount = max(0, count)
+  }
+
+  func requestSlidePreviewNavigation(_ target: OrgPDFPageNavigationTarget) {
+    guard documentPreviewKind == .slides, slidePreviewPageCount > 0 else { return }
+    slidePreviewNavigationGeneration += 1
+    slidePreviewNavigationRequest = OrgPDFPageNavigationRequest(
+      id: slidePreviewNavigationGeneration,
+      target: target
+    )
+  }
+
+  private func setSlidePreviewZoomScale(_ scale: CGFloat) {
+    let normalized = min(max(0.25, scale), 4)
+    guard abs(normalized - slidePreviewZoomScale) > 0.001 else { return }
+    slidePreviewZoomScale = normalized
+    if let source = selectedEntrySource {
+      slidePreviewZoomScales[Self.documentViewportKey(for: source)] = normalized
+    }
+  }
+
+  nonisolated private static let slidePreviewZoomSteps: [CGFloat] = [
+    0.4, 0.5, 0.625, 0.75, 0.875, 1, 1.25, 1.5, 2, 3, 4,
+  ]
+
+  nonisolated static func nextSlidePreviewZoomScale(after scale: CGFloat) -> CGFloat {
+    slidePreviewZoomSteps.first(where: { $0 > scale + 0.001 }) ?? slidePreviewZoomSteps.last!
+  }
+
+  nonisolated static func previousSlidePreviewZoomScale(before scale: CGFloat) -> CGFloat {
+    slidePreviewZoomSteps.last(where: { $0 < scale - 0.001 }) ?? slidePreviewZoomSteps.first!
   }
 
   public func scheduleSlidePreview(
@@ -11412,6 +11627,7 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func refreshAIChatConfiguration(applySelection: Bool = false) async {
+    refreshCorpusAgentSkills()
     guard let thread = selectedOpenClawChatThread else {
       aiChatModelOptions = []
       aiChatReasoningOptions = []
@@ -11864,7 +12080,11 @@ public final class WorkspaceStore: ObservableObject {
     let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty || !openClawPendingAttachments.isEmpty else { return }
 
-    switch OpenClawSlashCommands.parse(text, gatewayCommands: activeAIChatGatewayCommands) {
+    switch OpenClawSlashCommands.parse(
+      text,
+      gatewayCommands: activeAIChatGatewayCommands,
+      corpusSkills: corpusAgentSkillCommands
+    ) {
     case .message(let message):
       sendComposedOpenClawMessage(text: message)
     case .unknown(let name):
@@ -11927,7 +12147,10 @@ public final class WorkspaceStore: ObservableObject {
       let result: String
       switch command.name {
       case "help":
-        result = OpenClawSlashCommands.helpText(gatewayCommands: activeAIChatGatewayCommands)
+        result = OpenClawSlashCommands.helpText(
+          gatewayCommands: activeAIChatGatewayCommands,
+          corpusSkills: corpusAgentSkillCommands
+        )
       case "search":
         result = await executeOpenClawSearch(arguments)
       case "open":
@@ -12756,7 +12979,8 @@ public final class WorkspaceStore: ObservableObject {
     }
     let isGatewayCommand = OpenClawSlashCommands.isGatewayCommand(
       latestUserMessage.content,
-      gatewayCommands: openClawGatewayCommands
+      gatewayCommands: openClawGatewayCommands,
+      corpusSkills: corpusAgentSkillCommands
     )
     if let openClawSendHandler {
       return try await openClawSendHandler(requestMessages, agentID, sessionKey, workspaceContext)
@@ -13954,7 +14178,10 @@ public final class WorkspaceStore: ObservableObject {
       refreshedFiles.flatMap(Self.scanRoamNodes)
     }.value
     guard generation == orgRoamLinkResolverGeneration else { return }
-    orgRoamLinkResolver = OrgRoamLinkResolver(nodes: unchangedNodes + changedNodes)
+    orgRoamLinkResolver = OrgRoamLinkResolver(
+      nodes: unchangedNodes + changedNodes,
+      linkAbbreviations: orgRoamLinkResolver.linkAbbreviations
+    )
   }
 
   private func openClawQueuedStatusText() -> String {
@@ -15310,11 +15537,18 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public var openClawAvailableSlashCommands: [OpenClawSlashCommand] {
-    OpenClawSlashCommands.merged(with: openClawGatewayCommands)
+    OpenClawSlashCommands.merged(
+      with: openClawGatewayCommands,
+      corpusSkills: corpusAgentSkillCommands
+    )
   }
 
   public var activeAIChatGatewayCommands: [OpenClawSlashCommand] {
     selectedAIChatRuntime == .openClaw ? openClawGatewayCommands : []
+  }
+
+  public func refreshCorpusAgentSkills() {
+    corpusAgentSkillCommands = corpusRoot.map(CorpusAgentSkillCatalog.commands(in:)) ?? []
   }
 
   public var openClawCommandDiscoveryID: String {
@@ -15631,6 +15865,24 @@ public final class WorkspaceStore: ObservableObject {
       filterTextByItemID: agendaFilterTextByItemID
     )
     visibleAgendaItems = agendaDisplaySections.flatMap(\.items)
+  }
+
+  private func rebuildAgentRunDisplayCache() {
+    var counts: [AgentRunScope: Int] = [:]
+    var filteredEntries: [AgentRunScope: [AgentRunScopeEntry]] = [:]
+    counts.reserveCapacity(AgentRunScope.allCases.count)
+    filteredEntries.reserveCapacity(AgentRunScope.allCases.count)
+
+    for scope in AgentRunScope.allCases {
+      let entries = scope.entries(in: agentRuns)
+      counts[scope] = entries.count
+      filteredEntries[scope] = agentRunFilterTerms.isEmpty
+        ? entries
+        : entries.filter { agentRunMatchesFilter($0.run) }
+    }
+
+    agentRunScopeCounts = counts
+    filteredAgentRunScopeEntries = filteredEntries
   }
 
   private func rebuildAgendaSearchIndex() {
@@ -15958,6 +16210,18 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
+  nonisolated static func restoreDocumentPreviewOverrides(
+    from defaults: UserDefaults,
+    key: String
+  ) -> [String: String] {
+    (defaults.dictionary(forKey: key) ?? [:]).reduce(into: [:]) { result, item in
+      guard let value = item.value as? String,
+            OrgDocumentPreviewPreference(rawValue: value).map({ $0 != .automatic }) == true
+      else { return }
+      result[item.key] = value
+    }
+  }
+
   public func selectFirstAgendaItem() {
     if agendaMode == .assigned {
       if let first = visibleAssignedWorkItems.first {
@@ -16071,6 +16335,14 @@ public final class WorkspaceStore: ObservableObject {
 
   public func clearAgentRunFilter() {
     agentRunFilter = ""
+  }
+
+  func agentRunEntries(for scope: AgentRunScope) -> [AgentRunScopeEntry] {
+    filteredAgentRunScopeEntries[scope] ?? []
+  }
+
+  func agentRunCount(for scope: AgentRunScope) -> Int {
+    agentRunScopeCounts[scope, default: 0]
   }
 
   func agentRunMatchesFilter(_ run: AgentRunItem) -> Bool {
@@ -17411,6 +17683,9 @@ public final class WorkspaceStore: ObservableObject {
     guard scope == .all else {
       return false
     }
+    if handleSlidePreviewKeyDown(event) {
+      return true
+    }
     if selectedSurface == .agenda {
       return handleAgendaKeyDown(event)
     }
@@ -17573,6 +17848,20 @@ public final class WorkspaceStore: ObservableObject {
     scope: WorkspaceKeyboardShortcutScope = .all
   ) -> Bool {
     let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
+
+    if scope == .all,
+       documentPreviewKind == .slides,
+       slidePreviewPDF != nil {
+      if modifiers == [.command], event.keyCode == 27 {
+        zoomSlidePreviewOut()
+        return true
+      }
+      if (modifiers == [.command] || modifiers == [.command, .shift]), event.keyCode == 24 {
+        zoomSlidePreviewIn()
+        return true
+      }
+    }
+
     guard modifiers == [.command] || modifiers == [.command, .shift] || modifiers == [.command, .option] else {
       return false
     }
@@ -17664,6 +17953,34 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     return false
+  }
+
+  private func handleSlidePreviewKeyDown(_ event: NSEvent) -> Bool {
+    guard documentPreviewKind == .slides,
+          slidePreviewPDF != nil,
+          slidePreviewPageCount > 0
+    else { return false }
+
+    let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
+    if modifiers == [.shift], event.keyCode == 49 {
+      requestSlidePreviewNavigation(.previous)
+      return true
+    }
+    guard modifiers.isEmpty else { return false }
+
+    switch event.keyCode {
+    case 123, 116:
+      requestSlidePreviewNavigation(.previous)
+    case 124, 121, 49:
+      requestSlidePreviewNavigation(.next)
+    case 115:
+      requestSlidePreviewNavigation(.first)
+    case 119:
+      requestSlidePreviewNavigation(.last)
+    default:
+      return false
+    }
+    return true
   }
 
   public func performUndoCommand() {
@@ -22195,10 +22512,7 @@ public final class WorkspaceStore: ObservableObject {
   private func stopMeetingInputMetering() {
     meetingMeterTask?.cancel()
     meetingMeterTask = nil
-    meetingInputAverageLevel = 0
-    meetingInputPeakLevel = 0
-    meetingSystemAudioAverageLevel = 0
-    meetingSystemAudioPeakLevel = 0
+    meetingInputMeterState.reset()
   }
 
   private func updateMeetingInputMeter(force: Bool = false) {
@@ -22212,15 +22526,11 @@ public final class WorkspaceStore: ObservableObject {
     systemAudio: MeetingInputMeterSnapshot,
     force: Bool
   ) {
-    publishMeetingMeterLevel(current: &meetingInputAverageLevel, next: microphone.averageLevel, force: force)
-    publishMeetingMeterLevel(current: &meetingInputPeakLevel, next: microphone.peakLevel, force: force)
-    publishMeetingMeterLevel(current: &meetingSystemAudioAverageLevel, next: systemAudio.averageLevel, force: force)
-    publishMeetingMeterLevel(current: &meetingSystemAudioPeakLevel, next: systemAudio.peakLevel, force: force)
-  }
-
-  private func publishMeetingMeterLevel(current: inout Double, next: Double, force: Bool) {
-    guard force || Self.shouldPublishMeetingMeterLevelChange(current: current, next: next) else { return }
-    current = next
+    meetingInputMeterState.publish(
+      primary: microphone,
+      secondary: systemAudio,
+      force: force
+    )
   }
 
   nonisolated static func shouldPublishMeetingMeterLevelChange(current: Double, next: Double) -> Bool {
@@ -22249,14 +22559,12 @@ public final class WorkspaceStore: ObservableObject {
   private func stopOpenClawVoiceMetering() {
     openClawVoiceMeterTask?.cancel()
     openClawVoiceMeterTask = nil
-    openClawVoiceAverageLevel = 0
-    openClawVoicePeakLevel = 0
+    openClawVoiceMeterState.reset()
   }
 
   private func updateOpenClawVoiceMeter() {
     let snapshot = openClawVoiceRecorder.inputMeterSnapshot
-    openClawVoiceAverageLevel = snapshot.averageLevel
-    openClawVoicePeakLevel = snapshot.peakLevel
+    openClawVoiceMeterState.publish(primary: snapshot)
   }
 
   private func startMeetingTranscriptionProgress(title: String, audioDuration: TimeInterval?) -> UUID {
@@ -23310,17 +23618,29 @@ public final class WorkspaceStore: ObservableObject {
   private func refreshOrgRoamLinkResolver(files: [CorpusFile]) {
     orgRoamLinkResolverGeneration += 1
     let generation = orgRoamLinkResolverGeneration
+    let corpusRoot = corpusRoot
     Task {
       let resolver = await Task.detached(priority: .utility) {
-        Self.buildOrgRoamLinkResolver(files: files)
+        Self.buildOrgRoamLinkResolver(files: files, corpusRoot: corpusRoot)
       }.value
       guard generation == orgRoamLinkResolverGeneration else { return }
       orgRoamLinkResolver = resolver
     }
   }
 
-  nonisolated static func buildOrgRoamLinkResolver(files: [CorpusFile]) -> OrgRoamLinkResolver {
-    OrgRoamLinkResolver(nodes: files.flatMap(scanRoamNodes))
+  nonisolated static func buildOrgRoamLinkResolver(
+    files: [CorpusFile],
+    corpusRoot: URL? = nil
+  ) -> OrgRoamLinkResolver {
+    let links = corpusRoot.flatMap(workspaceConfig(corpusRoot:))?.links
+    let abbreviations = OrgLinkAbbreviations(
+      linearTeam: links?.linearTeam,
+      configured: links?.abbreviations ?? [:]
+    )
+    return OrgRoamLinkResolver(
+      nodes: files.flatMap(scanRoamNodes),
+      linkAbbreviations: abbreviations
+    )
   }
 
   nonisolated private static func scanRoamNodes(file: CorpusFile) -> [OrgRoamNodeReference] {
@@ -25253,10 +25573,12 @@ private enum AIChatRemoteConfigurationError: LocalizedError {
 
 private struct WorkspaceOrg2Config: Decodable {
   let roam: Roam?
+  let links: Links?
   let openClaw: OpenClaw?
 
   enum CodingKeys: String, CodingKey {
     case roam
+    case links
     case openClaw
     case openclaw
   }
@@ -25264,6 +25586,7 @@ private struct WorkspaceOrg2Config: Decodable {
   init(from decoder: Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
     roam = try container.decodeIfPresent(Roam.self, forKey: .roam)
+    links = try container.decodeIfPresent(Links.self, forKey: .links)
     openClaw = try container.decodeIfPresent(OpenClaw.self, forKey: .openClaw)
       ?? container.decodeIfPresent(OpenClaw.self, forKey: .openclaw)
   }
@@ -25271,6 +25594,11 @@ private struct WorkspaceOrg2Config: Decodable {
   struct Roam: Decodable {
     let indexDir: String?
     let dailiesDir: String?
+  }
+
+  struct Links: Decodable {
+    let abbreviations: [String: String]?
+    let linearTeam: String?
   }
 
   struct OpenClaw: Decodable {

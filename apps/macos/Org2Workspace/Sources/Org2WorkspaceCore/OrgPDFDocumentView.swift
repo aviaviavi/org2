@@ -1,18 +1,35 @@
 import PDFKit
 import SwiftUI
 
+enum OrgPDFPageNavigationTarget: Equatable, Sendable {
+  case previous
+  case next
+  case first
+  case last
+  case page(Int)
+}
+
+struct OrgPDFPageNavigationRequest: Equatable, Sendable {
+  let id: Int
+  let target: OrgPDFPageNavigationTarget
+}
+
 struct OrgPDFDocumentView: NSViewRepresentable {
   let data: Data
   var scrollRequest: DetailScrollRequest? = nil
   var restorationSourceLine: Int? = nil
   var restorationPageIndex: Int? = nil
+  var zoomScale: CGFloat = 1
+  var navigationRequest: OrgPDFPageNavigationRequest? = nil
   var reportViewportSourceLine: @MainActor (Int?) -> Void = { _ in }
   var reportViewportPageIndex: @MainActor (Int?) -> Void = { _ in }
+  var reportPageCount: @MainActor (Int) -> Void = { _ in }
 
   func makeCoordinator() -> Coordinator {
     Coordinator(
       reportViewportSourceLine: reportViewportSourceLine,
-      reportViewportPageIndex: reportViewportPageIndex
+      reportViewportPageIndex: reportViewportPageIndex,
+      reportPageCount: reportPageCount
     )
   }
 
@@ -32,6 +49,7 @@ struct OrgPDFDocumentView: NSViewRepresentable {
   func updateNSView(_ view: PDFView, context: Context) {
     context.coordinator.reportViewportSourceLine = reportViewportSourceLine
     context.coordinator.reportViewportPageIndex = reportViewportPageIndex
+    context.coordinator.reportPageCount = reportPageCount
     update(view, coordinator: context.coordinator)
   }
 
@@ -43,8 +61,10 @@ struct OrgPDFDocumentView: NSViewRepresentable {
 
       coordinator.data = data
       coordinator.scrollRequestID = scrollRequest?.id
+      coordinator.zoomScale = nil
       coordinator.isReplacingDocument = true
       view.document = document
+      coordinator.reportPageCount(document.pageCount)
       let requestedSourceLine = scrollRequest.flatMap(Self.sourceLine(from:))
       let restoredPageIndex = requestedSourceLine
         .flatMap { Self.pageIndex(nearestSourceLine: $0, in: document) }
@@ -62,6 +82,15 @@ struct OrgPDFDocumentView: NSViewRepresentable {
       coordinator.reportCurrentPage(in: view)
     }
 
+    applyZoom(zoomScale, to: view, coordinator: coordinator)
+
+    if coordinator.navigationRequestID != navigationRequest?.id {
+      coordinator.navigationRequestID = navigationRequest?.id
+      if let navigationRequest {
+        navigate(to: navigationRequest.target, in: view, coordinator: coordinator)
+      }
+    }
+
     guard coordinator.scrollRequestID != scrollRequest?.id else { return }
     coordinator.scrollRequestID = scrollRequest?.id
     guard let sourceLine = scrollRequest.flatMap(Self.sourceLine(from:)),
@@ -71,6 +100,50 @@ struct OrgPDFDocumentView: NSViewRepresentable {
     else {
       return
     }
+    coordinator.isReplacingDocument = true
+    view.go(to: page)
+    coordinator.isReplacingDocument = false
+    coordinator.reportCurrentPage(in: view)
+  }
+
+  private func applyZoom(_ zoomScale: CGFloat, to view: PDFView, coordinator: Coordinator) {
+    let normalizedScale = min(max(0.25, zoomScale), 4)
+    guard coordinator.zoomScale != normalizedScale else { return }
+    coordinator.zoomScale = normalizedScale
+    if abs(normalizedScale - 1) < 0.001 {
+      view.autoScales = true
+      return
+    }
+
+    let fitScale = view.scaleFactorForSizeToFit
+    guard fitScale.isFinite, fitScale > 0 else { return }
+    view.autoScales = false
+    view.minScaleFactor = max(0.05, fitScale * 0.25)
+    view.maxScaleFactor = fitScale * 4
+    view.scaleFactor = fitScale * normalizedScale
+  }
+
+  private func navigate(
+    to target: OrgPDFPageNavigationTarget,
+    in view: PDFView,
+    coordinator: Coordinator
+  ) {
+    guard let document = view.document, document.pageCount > 0 else { return }
+    let currentIndex = view.currentPage.map(document.index(for:)) ?? 0
+    let targetIndex: Int
+    switch target {
+    case .previous:
+      targetIndex = currentIndex - 1
+    case .next:
+      targetIndex = currentIndex + 1
+    case .first:
+      targetIndex = 0
+    case .last:
+      targetIndex = document.pageCount - 1
+    case .page(let pageIndex):
+      targetIndex = pageIndex
+    }
+    guard let page = document.page(at: min(max(0, targetIndex), document.pageCount - 1)) else { return }
     coordinator.isReplacingDocument = true
     view.go(to: page)
     coordinator.isReplacingDocument = false
@@ -128,17 +201,22 @@ struct OrgPDFDocumentView: NSViewRepresentable {
   final class Coordinator {
     var data: Data?
     var scrollRequestID: Int?
+    var navigationRequestID: Int?
+    var zoomScale: CGFloat?
     var reportViewportSourceLine: @MainActor (Int?) -> Void
     var reportViewportPageIndex: @MainActor (Int?) -> Void
+    var reportPageCount: @MainActor (Int) -> Void
     var isReplacingDocument = false
     nonisolated(unsafe) private var pageChangeObserver: NSObjectProtocol?
 
     init(
       reportViewportSourceLine: @escaping @MainActor (Int?) -> Void,
-      reportViewportPageIndex: @escaping @MainActor (Int?) -> Void
+      reportViewportPageIndex: @escaping @MainActor (Int?) -> Void,
+      reportPageCount: @escaping @MainActor (Int) -> Void
     ) {
       self.reportViewportSourceLine = reportViewportSourceLine
       self.reportViewportPageIndex = reportViewportPageIndex
+      self.reportPageCount = reportPageCount
     }
 
     deinit {

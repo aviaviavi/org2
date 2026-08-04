@@ -293,6 +293,7 @@ public struct OpenClawWorkspaceContext: Sendable {
   Use Org2 syntax, not Markdown, whenever you structure an answer or show content that may be copied into an .org2 or .org file.
   - Headings use leading stars: * Heading, ** Subheading.
   - Emphasis uses *bold*, /italic/, =verbatim=, and ~code~ rather than Markdown **bold** or backticks.
+  - Inline emphasis does not nest in Org2 v0. Close one span before starting another: write *no duplicate in* =recipes.org2=, never *no duplicate in =recipes.org2=*.
   - Document links use [[target][label]].
   - Every tabular response uses an Org2 table. Separate the header from the body with an hline whose column joins are + characters, for example:
 

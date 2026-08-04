@@ -674,7 +674,8 @@ struct OpenClawComposerView: View {
 
       let slashSuggestions = OpenClawSlashCommands.suggestions(
         for: presentation.userText,
-        gatewayCommands: store.activeAIChatGatewayCommands
+        gatewayCommands: store.activeAIChatGatewayCommands,
+        corpusSkills: store.corpusAgentSkillCommands
       )
       if !slashSuggestions.isEmpty {
         OpenClawSlashCommandSuggestions(
@@ -693,16 +694,16 @@ struct OpenClawComposerView: View {
           Text(store.openClawQueuedMessageCount > 1 ? "\(store.openClawQueuedMessageCount - 1) queued" : "Sending")
             .font(.caption.weight(.medium))
             .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
+            .layoutPriority(2)
         }
         if store.isRecordingOpenClawVoiceNote {
           HStack(spacing: 6) {
             Image(systemName: "waveform")
               .foregroundStyle(.red)
-            WorkspaceInputMeterView(
-              averageLevel: store.openClawVoiceAverageLevel,
-              peakLevel: store.openClawVoicePeakLevel
-            )
-            .frame(width: compact ? 72 : 110, height: 7)
+            OpenClawVoiceInputMeterView(meterState: store.openClawVoiceMeterState)
+              .frame(width: compact ? 72 : 110, height: 7)
           }
           .help("Recording \(store.selectedAIChatRuntime.title) dictation")
         } else if store.isTranscribingOpenClawVoiceNote {
@@ -773,6 +774,7 @@ struct OpenClawComposerView: View {
       selectedSlashSuggestionIndex = 0
       cacheDraftLocally()
       if OpenClawContextPresentation(localDraft).userText == "/" {
+        store.refreshCorpusAgentSkills()
         if store.selectedAIChatRuntime == .openClaw {
           Task { await store.refreshOpenClawCommands() }
         }
@@ -990,7 +992,8 @@ struct OpenClawComposerView: View {
   private func handleSuggestionCommand(_ command: OpenClawComposerSuggestionKeyCommand) -> Bool {
     let suggestions = OpenClawSlashCommands.suggestions(
       for: OpenClawContextPresentation(localDraft).userText,
-      gatewayCommands: store.activeAIChatGatewayCommands
+      gatewayCommands: store.activeAIChatGatewayCommands,
+      corpusSkills: store.corpusAgentSkillCommands
     )
     guard !suggestions.isEmpty else { return false }
 
@@ -1044,6 +1047,17 @@ struct OpenClawComposerView: View {
   }
 }
 
+private struct OpenClawVoiceInputMeterView: View {
+  @ObservedObject var meterState: WorkspaceInputMeterState
+
+  var body: some View {
+    WorkspaceInputMeterView(
+      averageLevel: meterState.levels.averageLevel,
+      peakLevel: meterState.levels.peakLevel
+    )
+  }
+}
+
 private struct OpenClawSlashCommandSuggestions: View {
   let commands: [OpenClawSlashCommand]
   let selectedCommandID: OpenClawSlashCommand.ID?
@@ -1066,8 +1080,8 @@ private struct OpenClawSlashCommandSuggestions: View {
               .foregroundStyle(.secondary)
               .lineLimit(1)
             Spacer(minLength: 4)
-            if command.origin == .openClaw || command.isAgentAssisted {
-              Text(command.origin == .openClaw ? "OpenClaw" : "Agent")
+            if let badge = badge(for: command) {
+              Text(badge)
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(.secondary)
             }
@@ -1099,6 +1113,14 @@ private struct OpenClawSlashCommandSuggestions: View {
       RoundedRectangle(cornerRadius: WorkspaceDesign.cornerRadius)
         .stroke(WorkspaceDesign.hairline)
     )
+  }
+
+  private func badge(for command: OpenClawSlashCommand) -> String? {
+    switch command.origin {
+    case .openClaw: "OpenClaw"
+    case .corpusSkill: "Skill"
+    case .org2: command.isAgentAssisted ? "Agent" : nil
+    }
   }
 }
 

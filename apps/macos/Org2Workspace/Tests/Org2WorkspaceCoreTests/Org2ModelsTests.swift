@@ -3447,6 +3447,39 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(WorkspaceStore.shouldPublishMeetingMeterLevelChange(current: 0.94, next: 0.96))
   }
 
+  @MainActor
+  func testMeetingMeterPublishesOneIsolatedFrameWithoutInvalidatingWorkspaceStore() throws {
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    var workspaceUpdates = 0
+    var meterUpdates = 0
+    let workspaceCancellable = store.objectWillChange.sink { workspaceUpdates += 1 }
+    let meterCancellable = store.meetingInputMeterState.objectWillChange.sink { meterUpdates += 1 }
+
+    store.meetingInputMeterState.publish(
+      primary: MeetingInputMeterSnapshot(
+        averageLevel: 0.42,
+        peakLevel: 0.74,
+        averagePowerDecibels: -24,
+        peakPowerDecibels: -8
+      ),
+      secondary: MeetingInputMeterSnapshot(
+        averageLevel: 0.31,
+        peakLevel: 0.65,
+        averagePowerDecibels: -31,
+        peakPowerDecibels: -12
+      )
+    )
+
+    XCTAssertEqual(workspaceUpdates, 0)
+    XCTAssertEqual(meterUpdates, 1)
+    XCTAssertEqual(store.meetingInputMeterState.levels.averageLevel, 0.42)
+    XCTAssertEqual(store.meetingInputMeterState.levels.peakLevel, 0.74)
+    XCTAssertEqual(store.meetingInputMeterState.levels.secondaryAverageLevel, 0.31)
+    XCTAssertEqual(store.meetingInputMeterState.levels.secondaryPeakLevel, 0.65)
+
+    withExtendedLifetime((workspaceCancellable, meterCancellable)) {}
+  }
+
   func testMeetingCaptureSourceDisclosesSystemAudioPermission() {
     let source = WorkspaceStore.meetingCaptureSourceSummary.lowercased()
     XCTAssertTrue(source.contains("microphone"))
@@ -4869,6 +4902,57 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertNil(map.link(atDisplayUTF16Location: 3))
     XCTAssertNil(map.link(atDisplayUTF16Location: 43))
     XCTAssertEqual(map.link(atDisplayUTF16Location: 19)?.url, URL(string: "https://example.com/docs"))
+  }
+
+  func testOrgInlineParserExpandsCorpusLinearLinkAbbreviations() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-linear-links-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    try """
+    {
+      "links": {
+        "linearTeam": "scarf",
+        "abbreviations": {
+          "linear": "https://linear.app/scarf/issue/%s"
+        }
+      }
+    }
+    """.write(
+      to: root.appendingPathComponent("org2.json"),
+      atomically: true,
+      encoding: .utf8
+    )
+    let source = root.appendingPathComponent("ticket.org2")
+    try """
+    * APP-21273
+    - [[linear:APP-21273][APP-21273: Load document export history without waiting for per-export storage checks]]
+    """.write(to: source, atomically: true, encoding: .utf8)
+
+    let resolver = WorkspaceStore.buildOrgRoamLinkResolver(
+      files: [CorpusFile(
+        path: source.path,
+        relativePath: "ticket.org2",
+        modifiedAt: nil,
+        byteCount: nil
+      )],
+      corpusRoot: root
+    )
+    let raw = "[[linear:APP-21273][APP-21273: Load document export history without waiting for per-export storage checks]]"
+    let expectedURL = URL(string: "https://linear.app/scarf/issue/APP-21273")
+
+    XCTAssertEqual(OrgInlineParser.parse(raw, linkResolver: resolver), [
+      .link(
+        label: "APP-21273: Load document export history without waiting for per-export storage checks",
+        target: expectedURL!.absoluteString,
+        fileReference: nil
+      )
+    ])
+    XCTAssertEqual(
+      OrgInlineRenderedTextLinkMap.make(raw: raw, linkResolver: resolver).links.first?.url,
+      expectedURL
+    )
   }
 
   func testOrgRoamLinkResolverDoesNotGuessAmbiguousWikiLinks() {

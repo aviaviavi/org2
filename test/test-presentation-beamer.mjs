@@ -5,7 +5,7 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { parseOrgToCanonicalAst } from "../dist/parser.js";
-import { compilePresentation, renderPresentationToBeamer } from "../dist/presentation.js";
+import { compilePresentation, isPresentationDocument, renderPresentationToBeamer } from "../dist/presentation.js";
 import { compileBeamerPdf, summarizeLatexFailure } from "../dist/beamerCompile.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -14,6 +14,19 @@ const source = fs.readFileSync(fixture, "utf8");
 const document = parseOrgToCanonicalAst(source, { sourceRanges: true });
 const presentation = compilePresentation(document);
 
+assert.equal(isPresentationDocument(document), true);
+assert.equal(
+  isPresentationDocument(parseOrgToCanonicalAst("#+TITLE: Ordinary note\n* Heading\nBody.\n")),
+  false,
+);
+assert.equal(
+  isPresentationDocument(parseOrgToCanonicalAst("* Section\n** Slide\n*** Block\n:PROPERTIES:\n:SLIDE_ENV: block\n:END:\n")),
+  true,
+);
+assert.equal(
+  isPresentationDocument(parseOrgToCanonicalAst("#+LATEX_CLASS_OPTIONS: [presentation,aspectratio=169]\n* Slide\n")),
+  true,
+);
 assert.equal(presentation.metadata.title, "Org2 Presentation Compatibility");
 assert.equal(presentation.metadata.frameLevel, 2);
 assert.equal(presentation.metadata.toc, true);

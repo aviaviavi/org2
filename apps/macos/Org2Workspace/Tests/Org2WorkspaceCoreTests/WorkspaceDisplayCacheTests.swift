@@ -44,6 +44,26 @@ final class WorkspaceDisplayCacheTests: XCTestCase {
   }
 
   @MainActor
+  func testRunCenterDisplayCacheInvalidatesForRunsAndQueryChanges() throws {
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    let active = try agentRun(id: "run-active", goal: "Build alpha", status: "running")
+    let completed = try agentRun(id: "run-completed", goal: "Ship beta", status: "completed")
+
+    store.replaceAgentRunsForTesting([active, completed])
+
+    XCTAssertEqual(store.agentRunCount(for: .active), 1)
+    XCTAssertEqual(store.agentRunCount(for: .completed), 1)
+    XCTAssertEqual(store.agentRunCount(for: .all), 2)
+    XCTAssertEqual(store.agentRunEntries(for: .active).map(\.id), ["run-active"])
+
+    store.agentRunFilter = "beta"
+
+    XCTAssertTrue(store.agentRunEntries(for: .active).isEmpty)
+    XCTAssertEqual(store.agentRunEntries(for: .all).map(\.id), ["run-completed"])
+    XCTAssertEqual(store.agentRunCount(for: .all), 2)
+  }
+
+  @MainActor
   func testSwitchingBackToCorpusRestoresCachedAgendaFilesAndRuns() async throws {
     let container = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-corpus-workspace-cache-\(UUID().uuidString)", isDirectory: true)
@@ -120,13 +140,17 @@ final class WorkspaceDisplayCacheTests: XCTestCase {
     XCTAssertTrue(store.isWorkspaceSurfaceDirty(.files))
   }
 
-  private func agentRun() throws -> AgentRunItem {
+  private func agentRun(
+    id: String = "run-alpha",
+    goal: String = "Keep alpha warm",
+    status: String = "running"
+  ) throws -> AgentRunItem {
     let data = try JSONSerialization.data(withJSONObject: [
       "schema": "org2:agent-run:v1",
-      "id": "run-alpha",
-      "goal": "Keep alpha warm",
+      "id": id,
+      "goal": goal,
       "acceptanceCriteria": [],
-      "status": "running",
+      "status": status,
       "riskClass": "local-draft",
       "capabilities": [],
       "context": [],

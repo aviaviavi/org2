@@ -120,6 +120,58 @@ function firstKeywordValue(doc: DocumentNode, key: string): string | undefined {
   return undefined;
 }
 
+function presentationKeyword(keyRaw: string, valueRaw: string): boolean {
+  const key = keyRaw.trim().toUpperCase();
+  const value = valueRaw.trim().toLowerCase();
+  if (key === "LATEX_CLASS" && value.split(/\s+/)[0] === "beamer") return true;
+  if (key === "LATEX_CLASS_OPTIONS" && /(^|[^a-z0-9_-])presentation([^a-z0-9_-]|$)/.test(value)) return true;
+  if (["ORG2_DOCUMENT_KIND", "ORG2_PREVIEW", "ORG2_VIEW"].includes(key)) {
+    return ["slides", "presentation", "beamer"].includes(value);
+  }
+  return key.startsWith("BEAMER_") || key.startsWith("SLIDE_") || key.startsWith("ORG2_SLIDE_");
+}
+
+function presentationProperty(keyRaw: string): boolean {
+  const key = keyRaw.trim().toUpperCase();
+  return key.startsWith("BEAMER_") || key.startsWith("SLIDE_") || key.startsWith("ORG2_SLIDE_");
+}
+
+function nodeDeclaresPresentation(node: Node): boolean {
+  switch (node.type) {
+    case "KeywordLine":
+      return presentationKeyword(node.keyRaw, node.valueRaw);
+    case "PropertyDrawer":
+      return node.properties.some((property) => presentationProperty(property.key));
+    case "Drawer":
+      return node.nameRaw.trim().toUpperCase() === "PROPERTIES"
+        && node.bodyRaw.split("\n").some((line) => {
+          const match = /^\s*:([^:\s]+):/.exec(line);
+          return Boolean(match?.[1] && presentationProperty(match[1]));
+        });
+    case "Block": {
+      const exportBackend = node.kind === "export"
+        ? node.begin.afterKeywordRaw.trim().split(/\s+/)[0]?.toLowerCase()
+        : undefined;
+      return exportBackend === "beamer"
+        || (node.affiliatedKeywords || []).some((keyword) => presentationKeyword(keyword.keyRaw, keyword.valueRaw));
+    }
+    case "SrcBlock":
+    case "Table":
+      return (node.affiliatedKeywords || []).some((keyword) => presentationKeyword(keyword.keyRaw, keyword.valueRaw));
+    case "Headline":
+    case "ListItem":
+      return node.children.some(nodeDeclaresPresentation);
+    case "List":
+      return node.items.some(nodeDeclaresPresentation);
+    default:
+      return false;
+  }
+}
+
+export function isPresentationDocument(doc: DocumentNode): boolean {
+  return doc.children.some(nodeDeclaresPresentation);
+}
+
 function keywordValues(doc: DocumentNode, ...keys: string[]): string[] {
   const normalizedKeys = new Set(keys.map((key) => key.toUpperCase()));
   return doc.children

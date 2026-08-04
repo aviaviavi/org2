@@ -2477,17 +2477,66 @@ public struct OrgRoamResolvedLink: Equatable, Sendable {
   }
 }
 
+public struct OrgLinkAbbreviations: Equatable, Sendable {
+  public static let empty = OrgLinkAbbreviations()
+
+  public let templates: [String: String]
+
+  public init(linearTeam: String? = nil, configured: [String: String] = [:]) {
+    var templates = [
+      "gh": "https://github.com/%s",
+      "gl": "https://gitlab.com/%s",
+      "yt": "https://www.youtube.com/watch?v=%s",
+      "wiki": "https://en.wikipedia.org/wiki/%s",
+    ]
+    if let team = linearTeam?.trimmingCharacters(in: .whitespacesAndNewlines), !team.isEmpty {
+      templates["linear"] = "https://linear.app/\(team)/issue/%s"
+    }
+    for (rawPrefix, rawTemplate) in configured {
+      let prefix = rawPrefix.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+      let template = rawTemplate.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard Self.isValidPrefix(prefix), !template.isEmpty else { continue }
+      templates[prefix] = template
+    }
+    self.templates = templates
+  }
+
+  public func expand(_ rawTarget: String) -> String {
+    let target = rawTarget.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let colon = target.firstIndex(of: ":") else { return target }
+    let prefix = String(target[..<colon]).lowercased()
+    guard !Self.reservedPrefixes.contains(prefix),
+          let template = templates[prefix]
+    else {
+      return target
+    }
+    let suffix = String(target[target.index(after: colon)...])
+    if template.contains("%s") {
+      return template.replacingOccurrences(of: "%s", with: suffix)
+    }
+    return template + suffix
+  }
+
+  private static func isValidPrefix(_ prefix: String) -> Bool {
+    prefix.range(of: #"^[A-Za-z][A-Za-z0-9+.-]*$"#, options: .regularExpression) != nil
+  }
+
+  private static let reservedPrefixes = Set(["http", "https", "mailto", "file", "id"])
+}
+
 public struct OrgRoamLinkResolver: Equatable, Sendable {
   public static let empty = OrgRoamLinkResolver(nodes: [])
 
   public let nodes: [OrgRoamNodeReference]
+  public let linkAbbreviations: OrgLinkAbbreviations
   public let signature: String
   private let nodesByID: [String: OrgRoamNodeReference]
   private let nodesByTitle: [String: OrgRoamNodeReference]
   private let nodeCandidatesByTitle: [String: [OrgRoamNodeReference]]
 
-  public init(nodes: [OrgRoamNodeReference]) {
+  public init(nodes: [OrgRoamNodeReference], linkAbbreviations: OrgLinkAbbreviations = .empty) {
     self.nodes = nodes
+    self.linkAbbreviations = linkAbbreviations
 
     var idCandidates: [String: [OrgRoamNodeReference]] = [:]
     var titleCandidates: [String: [OrgRoamNodeReference]] = [:]
@@ -2512,7 +2561,7 @@ public struct OrgRoamLinkResolver: Equatable, Sendable {
       candidates.count == 1 ? candidates[0] : nil
     }
     nodeCandidatesByTitle = titleCandidates.mapValues(Self.rankedCandidates)
-    signature = Self.makeSignature(nodes)
+    signature = Self.makeSignature(nodes, linkAbbreviations: linkAbbreviations)
   }
 
   public static func == (lhs: OrgRoamLinkResolver, rhs: OrgRoamLinkResolver) -> Bool {
@@ -2535,6 +2584,10 @@ public struct OrgRoamLinkResolver: Equatable, Sendable {
 
     guard let node else { return nil }
     return OrgRoamResolvedLink(title: node.title, fileReference: node.fileReference)
+  }
+
+  public func expandedLinkTarget(_ rawTarget: String) -> String {
+    linkAbbreviations.expand(rawTarget)
   }
 
   public func exactCandidates(for rawTarget: String) -> [OrgRoamNodeReference] {
@@ -2586,7 +2639,10 @@ public struct OrgRoamLinkResolver: Equatable, Sendable {
     raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
   }
 
-  private static func makeSignature(_ nodes: [OrgRoamNodeReference]) -> String {
+  private static func makeSignature(
+    _ nodes: [OrgRoamNodeReference],
+    linkAbbreviations: OrgLinkAbbreviations
+  ) -> String {
     var hasher = Hasher()
     hasher.combine(nodes.count)
     for node in nodes.sorted(by: { $0.id < $1.id }) {
@@ -2597,7 +2653,11 @@ public struct OrgRoamLinkResolver: Equatable, Sendable {
       hasher.combine(node.line)
       hasher.combine(node.isPageNode)
     }
-    return "\(nodes.count):\(hasher.finalize())"
+    for (prefix, template) in linkAbbreviations.templates.sorted(by: { $0.key < $1.key }) {
+      hasher.combine(prefix)
+      hasher.combine(template)
+    }
+    return "\(nodes.count):\(linkAbbreviations.templates.count):\(hasher.finalize())"
   }
 
   private static func rankedCandidates(_ candidates: [OrgRoamNodeReference]) -> [OrgRoamNodeReference] {
@@ -3506,20 +3566,21 @@ public enum OrgInlineParser {
     guard let target = parts.first?.trimmingCharacters(in: .whitespacesAndNewlines), !target.isEmpty else {
       return nil
     }
+    let expandedTarget = linkResolver.expandedLinkTarget(target)
     let label = parts.dropFirst().joined(separator: "][").trimmingCharacters(in: .whitespacesAndNewlines)
-    let resolved = OpenClawFileReference.fromLinkTarget(target).map {
+    let resolved = OpenClawFileReference.fromLinkTarget(expandedTarget).map {
       OrgRoamResolvedLink(title: $0.displayTitle, fileReference: $0)
-    } ?? linkResolver.resolve(target: target)
+    } ?? linkResolver.resolve(target: expandedTarget)
     let display: String
     if !label.isEmpty {
       display = label
-    } else if target.lowercased().hasPrefix("id:") {
-      display = resolved?.title ?? target
+    } else if expandedTarget.lowercased().hasPrefix("id:") {
+      display = resolved?.title ?? expandedTarget
     } else {
       display = target
     }
     return (
-      .link(label: display, target: target, fileReference: resolved?.fileReference),
+      .link(label: display, target: expandedTarget, fileReference: resolved?.fileReference),
       closeRange.upperBound
     )
   }
@@ -3539,11 +3600,12 @@ public enum OrgInlineParser {
     let label = String(raw[labelStart..<labelEnd]).trimmingCharacters(in: .whitespacesAndNewlines)
     let target = String(raw[targetStart..<targetEnd]).trimmingCharacters(in: .whitespacesAndNewlines)
     guard !label.isEmpty, !target.isEmpty else { return nil }
-    let resolved = OpenClawFileReference.fromLinkTarget(target).map {
+    let expandedTarget = linkResolver.expandedLinkTarget(target)
+    let resolved = OpenClawFileReference.fromLinkTarget(expandedTarget).map {
       OrgRoamResolvedLink(title: $0.displayTitle, fileReference: $0)
-    } ?? linkResolver.resolve(target: target)
+    } ?? linkResolver.resolve(target: expandedTarget)
     return (
-      .link(label: label, target: target, fileReference: resolved?.fileReference),
+      .link(label: label, target: expandedTarget, fileReference: resolved?.fileReference),
       raw.index(after: targetEnd)
     )
   }

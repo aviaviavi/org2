@@ -95,6 +95,30 @@ public enum OrgDocumentPreviewKind: String, CaseIterable, Identifiable, Sendable
   }
 }
 
+public enum OrgDocumentPreviewPreference: String, CaseIterable, Identifiable, Sendable {
+  case automatic
+  case document
+  case slides
+
+  public var id: String { rawValue }
+
+  public var title: String {
+    switch self {
+    case .automatic: "Automatic"
+    case .document: "Document"
+    case .slides: "Slides"
+    }
+  }
+
+  public var systemImage: String {
+    switch self {
+    case .automatic: "wand.and.stars"
+    case .document: OrgDocumentPreviewKind.document.systemImage
+    case .slides: OrgDocumentPreviewKind.slides.systemImage
+    }
+  }
+}
+
 struct OrgHTMLDocumentLayout: Equatable {
   let width: RenderedDocumentWidth
   let margin: RenderedDocumentMargin

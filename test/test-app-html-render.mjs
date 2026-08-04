@@ -38,6 +38,7 @@ const rendered = renderOrgDocumentToAppHtml(document, {
 });
 
 assert.match(rendered.html, /id="org2-app-document-style"/);
+assert.match(rendered.html, /<meta name="org2-document-kind" content="document" \/>/);
 assert.match(rendered.html, /\.org2-headline-summary::before/);
 assert.match(rendered.html, /font-size: 0\.82rem/);
 assert.match(rendered.html, /--org2-font-mono:/);
@@ -128,6 +129,7 @@ assert.ok(section.children.some((node) =>
 ), "a sibling heading after an indented property drawer must remain outside the drawer");
 
 const indentedDrawerRendered = renderOrgDocumentToAppHtml(indentedDrawerDocument);
+assert.match(indentedDrawerRendered.html, /<meta name="org2-document-kind" content="slides" \/>/);
 assert.match(indentedDrawerRendered.html, /<details class="org2-properties-drawer" open/);
 assert.match(indentedDrawerRendered.html, /<h2[^>]*>Slide two<\/h2>/);
 assert.match(indentedDrawerRendered.html, /Sibling body\./);

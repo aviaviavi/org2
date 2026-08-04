@@ -105,6 +105,100 @@ final class OpenClawSlashCommandTests: XCTestCase {
     XCTAssertEqual(arguments, "all")
   }
 
+  func testCorpusSkillCatalogLoadsInvocableSkillsForAutocomplete() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-corpus-skills-\(UUID().uuidString)", isDirectory: true)
+    let skillRoot = root.appendingPathComponent(".agents/skills", isDirectory: true)
+    try FileManager.default.createDirectory(at: skillRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let setupSkill = skillRoot.appendingPathComponent("setup-scarf-slack-agent", isDirectory: true)
+    try FileManager.default.createDirectory(at: setupSkill, withIntermediateDirectories: true)
+    try """
+    ---
+    name: setup-scarf-slack-agent
+    description: "Set up a customer Scarf AI Slack agent channel."
+    user-invocable: true
+    ---
+    # Setup Scarf Slack Agent
+    """.write(to: setupSkill.appendingPathComponent("SKILL.md"), atomically: true, encoding: .utf8)
+
+    let hiddenSkill = skillRoot.appendingPathComponent("internal-maintenance", isDirectory: true)
+    try FileManager.default.createDirectory(at: hiddenSkill, withIntermediateDirectories: true)
+    try """
+    ---
+    name: internal-maintenance
+    description: Internal-only maintenance.
+    user-invocable: false
+    ---
+    """.write(to: hiddenSkill.appendingPathComponent("SKILL.md"), atomically: true, encoding: .utf8)
+
+    let skills = CorpusAgentSkillCatalog.commands(in: root)
+
+    XCTAssertEqual(skills.map(\.name), ["setup-scarf-slack-agent"])
+    XCTAssertEqual(skills.first?.origin, .corpusSkill)
+    XCTAssertEqual(skills.first?.arguments, "[ARGS]")
+    XCTAssertEqual(skills.first?.summary, "Set up a customer Scarf AI Slack agent channel.")
+    XCTAssertEqual(
+      OpenClawSlashCommands.suggestions(
+        for: "/setup",
+        gatewayCommands: [],
+        corpusSkills: skills
+      ).map(\.name),
+      ["setup-scarf-slack-agent"]
+    )
+    XCTAssertTrue(
+      OpenClawSlashCommands.isGatewayCommand(
+        "/setup-scarf-slack-agent C123 scarf",
+        gatewayCommands: [],
+        corpusSkills: skills
+      )
+    )
+    XCTAssertTrue(
+      OpenClawSlashCommands.helpText(
+        gatewayCommands: [],
+        corpusSkills: skills
+      ).contains("Corpus skills")
+    )
+  }
+
+  @MainActor
+  func testCorpusSkillInvocationIsForwardedToTheSelectedAgent() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-corpus-skill-send-\(UUID().uuidString)", isDirectory: true)
+    let skill = root.appendingPathComponent(
+      ".agents/skills/setup-scarf-slack-agent",
+      isDirectory: true
+    )
+    try FileManager.default.createDirectory(at: skill, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try """
+    ---
+    name: setup-scarf-slack-agent
+    description: Set up a customer Scarf AI Slack agent channel.
+    user-invocable: true
+    ---
+    """.write(to: skill.appendingPathComponent("SKILL.md"), atomically: true, encoding: .utf8)
+    let recorder = SlashCommandRequestRecorder()
+    let store = WorkspaceStore(
+      cli: Org2CLI(repoRoot: try Org2CLI.defaultRepoRoot()),
+      openClawTranscriptURL: root.appendingPathComponent("chat.json"),
+      openClawSendHandler: { messages, _, _, _ in await recorder.record(messages) }
+    )
+    store.setCorpusRoot(root, persistsDefault: false)
+
+    store.submitOpenClawComposerInput(text: "/setup-scarf-slack-agent C123 scarf")
+    let deadline = Date().addingTimeInterval(3)
+    while store.openClawMessages.count < 2, Date() < deadline {
+      try await Task.sleep(for: .milliseconds(20))
+    }
+
+    XCTAssertEqual(store.corpusAgentSkillCommands.map(\.name), ["setup-scarf-slack-agent"])
+    XCTAssertEqual(store.openClawMessages.first?.content, "/setup-scarf-slack-agent C123 scarf")
+    let request = await recorder.messages
+    XCTAssertEqual(request.first?.content, "/setup-scarf-slack-agent C123 scarf")
+  }
+
   func testUnknownSlashCommandRequiresTheGatewayButEscapedSlashDoesNot() {
     XCTAssertTrue(OpenClawSlashCommands.isGatewayCommand("/new-plugin-command", gatewayCommands: []))
     XCTAssertFalse(OpenClawSlashCommands.isGatewayCommand("//new-plugin-command", gatewayCommands: []))

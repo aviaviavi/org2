@@ -1925,6 +1925,13 @@ private struct KeyboardShortcutsView: View {
             ShortcutHelpItem(keys: "Esc", action: "Clear block selection")
           ])
 
+          ShortcutSection(title: "Slides", shortcuts: [
+            ShortcutHelpItem(keys: "← / Page Up / ⇧Space", action: "Previous slide"),
+            ShortcutHelpItem(keys: "→ / Page Down / Space", action: "Next slide"),
+            ShortcutHelpItem(keys: "Home / End", action: "First / last slide"),
+            ShortcutHelpItem(keys: "⌘+ / ⌘−", action: "Zoom in / out")
+          ])
+
           ShortcutSection(title: "Editing", shortcuts: [
             ShortcutHelpItem(keys: "⌘S", action: "Save active inline editor"),
             ShortcutHelpItem(keys: "Esc", action: "Cancel active inline editor"),
@@ -2485,17 +2492,11 @@ private struct RunCenterView: View {
 
   var body: some View {
     let allRuns = store.agentRuns
-    let visibleEntries = scope.entries(in: allRuns).filter { store.agentRunMatchesFilter($0.run) }
+    let visibleEntries = store.agentRunEntries(for: scope)
     let visibleSections = RunCenterPresentation.sections(for: visibleEntries, allRuns: allRuns)
     let selectedRun = store.selectedAgentRunID.flatMap { id in
       visibleEntries.first(where: { $0.run.id == id })?.run
     } ?? visibleEntries.first?.run
-    let scopeCounts = Dictionary(
-      uniqueKeysWithValues: AgentRunScope.allCases.map { candidate in
-        (candidate, candidate.count(in: allRuns))
-      }
-    )
-
     VStack(spacing: 0) {
       HeaderBar(title: "Runs", subtitle: "Durable delegated work", surface: .approvals) {
         if store.isLoadingAgentRuns { WorkspaceActivityIndicator(size: .small) }
@@ -2510,12 +2511,12 @@ private struct RunCenterView: View {
           } label: {
             RunCenterScopeMetric(
               title: candidate.rawValue,
-              count: scopeCounts[candidate, default: 0],
+              count: store.agentRunCount(for: candidate),
               isSelected: scope == candidate
             )
           }
           .buttonStyle(.plain)
-          .accessibilityLabel("\(candidate.rawValue), \(scopeCounts[candidate, default: 0]) runs")
+          .accessibilityLabel("\(candidate.rawValue), \(store.agentRunCount(for: candidate)) runs")
           .accessibilityValue(scope == candidate ? "Selected" : "")
         }
       }
@@ -5089,12 +5090,9 @@ private struct MeetingsView: View {
           Spacer(minLength: 0)
 
           MeetingInputStatusView(
+            meterState: store.meetingInputMeterState,
             isRecording: store.isRecordingMeeting,
             isPaused: store.isMeetingRecordingPaused,
-            averageLevel: store.meetingInputAverageLevel,
-            peakLevel: store.meetingInputPeakLevel,
-            systemAverageLevel: store.meetingSystemAudioAverageLevel,
-            systemPeakLevel: store.meetingSystemAudioPeakLevel,
             isCapturingSystemAudio: store.isCapturingSystemAudio,
             systemAudioStatusText: store.meetingSystemAudioStatusText,
             sourceText: store.meetingCaptureSourceText
@@ -5336,12 +5334,9 @@ private struct MeetingTranscriptionProgressView: View {
 }
 
 private struct MeetingInputStatusView: View {
+  @ObservedObject var meterState: WorkspaceInputMeterState
   let isRecording: Bool
   let isPaused: Bool
-  let averageLevel: Double
-  let peakLevel: Double
-  let systemAverageLevel: Double
-  let systemPeakLevel: Double
   let isCapturingSystemAudio: Bool
   let systemAudioStatusText: String
   let sourceText: String
@@ -5355,14 +5350,14 @@ private struct MeetingInputStatusView: View {
         VStack(alignment: .leading, spacing: 4) {
           MeetingInputMeterRow(
             label: isPaused ? "Paused" : "Mic",
-            averageLevel: isPaused ? 0 : averageLevel,
-            peakLevel: isPaused ? 0 : peakLevel
+            averageLevel: isPaused ? 0 : meterState.levels.averageLevel,
+            peakLevel: isPaused ? 0 : meterState.levels.peakLevel
           )
           if isCapturingSystemAudio {
             MeetingInputMeterRow(
               label: "System",
-              averageLevel: isPaused ? 0 : systemAverageLevel,
-              peakLevel: isPaused ? 0 : systemPeakLevel
+              averageLevel: isPaused ? 0 : meterState.levels.secondaryAverageLevel,
+              peakLevel: isPaused ? 0 : meterState.levels.secondaryPeakLevel
             )
           } else {
             Text(systemAudioStatusText)
@@ -7038,11 +7033,16 @@ private struct DetailHeader: View {
 
   private var documentLayoutMenu: some View {
     Menu {
-      Picker("Preview", selection: $store.documentPreviewKind) {
-        Label("Document", systemImage: "doc.richtext")
-          .tag(OrgDocumentPreviewKind.document)
-        Label("Slides", systemImage: "rectangle.on.rectangle")
-          .tag(OrgDocumentPreviewKind.slides)
+      Picker("Preview", selection: documentPreviewPreferenceBinding) {
+        Label(
+          "Automatic (\(store.inferredDocumentPreviewKind.title))",
+          systemImage: OrgDocumentPreviewPreference.automatic.systemImage
+        )
+          .tag(OrgDocumentPreviewPreference.automatic)
+        Label("Document", systemImage: OrgDocumentPreviewPreference.document.systemImage)
+          .tag(OrgDocumentPreviewPreference.document)
+        Label("Slides", systemImage: OrgDocumentPreviewPreference.slides.systemImage)
+          .tag(OrgDocumentPreviewPreference.slides)
           .disabled(!store.canPreviewSlides)
       }
 
@@ -7082,7 +7082,14 @@ private struct DetailHeader: View {
       Label("View", systemImage: store.documentPreviewKind.systemImage)
     }
     .fixedSize(horizontal: true, vertical: false)
-    .help("Document or slide preview, width, margins, and stylesheet")
+    .help("\(store.documentPreviewPreferenceLabel) preview, width, margins, and stylesheet")
+  }
+
+  private var documentPreviewPreferenceBinding: Binding<OrgDocumentPreviewPreference> {
+    Binding(
+      get: { store.documentPreviewPreference },
+      set: { store.setDocumentPreviewPreference($0) }
+    )
   }
 
   private var sourceMenu: some View {
@@ -7554,42 +7561,27 @@ private struct OrgHTMLLoadingView: View {
 
 private struct OrgSlidePreviewPane: View {
   @EnvironmentObject private var store: WorkspaceStore
+  @State private var pageNumberText = "1"
   var reportViewportSourceLine: @MainActor (Int?) -> Void = { _ in }
 
   var body: some View {
-    ZStack(alignment: .bottom) {
+    ZStack {
       if let pdf = store.slidePreviewPDF {
         OrgPDFDocumentView(
           data: pdf,
           scrollRequest: store.detailScrollRequest,
           restorationSourceLine: store.currentDocumentViewportSourceLine,
           restorationPageIndex: store.currentDocumentSlidePageIndex,
+          zoomScale: store.slidePreviewZoomScale,
+          navigationRequest: store.slidePreviewNavigationRequest,
           reportViewportSourceLine: reportViewportSourceLine,
-          reportViewportPageIndex: { store.recordDocumentSlidePageIndex($0) }
+          reportViewportPageIndex: { store.recordDocumentSlidePageIndex($0) },
+          reportPageCount: { store.setSlidePreviewPageCount($0) }
         )
       } else if store.isRenderingSlidePreview {
         OrgHTMLLoadingView(label: "Compiling slides", onCancel: store.cancelSlidePreview)
       } else {
         unavailableView
-      }
-
-      if store.slidePreviewPDF != nil,
-         let error = store.slidePreviewError {
-        HStack(spacing: 8) {
-          Image(systemName: "exclamationmark.triangle")
-            .foregroundStyle(.orange)
-          Text(error)
-            .font(.caption)
-            .lineLimit(2)
-          Spacer(minLength: 8)
-          Button("Retry") {
-            store.retrySlidePreview()
-          }
-          .controlSize(.small)
-        }
-        .padding(10)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
-        .padding(12)
       }
     }
     .overlay(alignment: .topTrailing) {
@@ -7607,7 +7599,116 @@ private struct OrgSlidePreviewPane: View {
         .padding(12)
       }
     }
+    .overlay(alignment: .topLeading) {
+      if store.slidePreviewPDF != nil,
+         let error = store.slidePreviewError {
+        HStack(spacing: 8) {
+          Image(systemName: "exclamationmark.triangle")
+            .foregroundStyle(.orange)
+          Text(error)
+            .font(.caption)
+            .lineLimit(2)
+          Button("Retry") {
+            store.retrySlidePreview()
+          }
+          .controlSize(.small)
+        }
+        .padding(10)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+        .padding(12)
+      }
+    }
+    .overlay(alignment: .bottom) {
+      if store.slidePreviewPDF != nil, store.slidePreviewPageCount > 0 {
+        slideControls
+          .padding(14)
+      }
+    }
+    .onAppear {
+      updatePageNumberText()
+    }
+    .onChange(of: store.currentDocumentSlidePageIndex) {
+      updatePageNumberText()
+    }
     .background(Color(nsColor: .textBackgroundColor))
+  }
+
+  private var slideControls: some View {
+    HStack(spacing: 8) {
+      Button {
+        store.requestSlidePreviewNavigation(.previous)
+      } label: {
+        Image(systemName: "chevron.left")
+      }
+      .disabled((store.currentDocumentSlidePageIndex ?? 0) <= 0)
+      .help("Previous slide (Left Arrow, Page Up, or Shift-Space)")
+
+      TextField("Page", text: $pageNumberText)
+        .textFieldStyle(.plain)
+        .multilineTextAlignment(.trailing)
+        .frame(width: 30)
+        .onSubmit(jumpToEnteredPage)
+        .accessibilityLabel("Slide number")
+
+      Text("of \(store.slidePreviewPageCount)")
+        .foregroundStyle(.secondary)
+        .monospacedDigit()
+
+      Button {
+        store.requestSlidePreviewNavigation(.next)
+      } label: {
+        Image(systemName: "chevron.right")
+      }
+      .disabled((store.currentDocumentSlidePageIndex ?? 0) >= store.slidePreviewPageCount - 1)
+      .help("Next slide (Right Arrow, Page Down, or Space)")
+
+      Divider()
+        .frame(height: 16)
+
+      Button {
+        store.zoomSlidePreviewOut()
+      } label: {
+        Image(systemName: "minus.magnifyingglass")
+      }
+      .help("Zoom out (Command-Minus)")
+
+      Button {
+        store.resetSlidePreviewZoom()
+      } label: {
+        Text("\(Int((store.slidePreviewZoomScale * 100).rounded()))%")
+          .monospacedDigit()
+          .frame(minWidth: 36)
+      }
+      .help("Fit slide to the window")
+
+      Button {
+        store.zoomSlidePreviewIn()
+      } label: {
+        Image(systemName: "plus.magnifyingglass")
+      }
+      .help("Zoom in (Command-Plus)")
+    }
+    .buttonStyle(.borderless)
+    .controlSize(.small)
+    .padding(.horizontal, 12)
+    .padding(.vertical, 8)
+    .background(.regularMaterial, in: Capsule())
+    .overlay(Capsule().stroke(WorkspaceDesign.hairline))
+    .shadow(color: .black.opacity(0.08), radius: 5, y: 2)
+  }
+
+  private func updatePageNumberText() {
+    pageNumberText = String((store.currentDocumentSlidePageIndex ?? 0) + 1)
+  }
+
+  private func jumpToEnteredPage() {
+    guard let pageNumber = Int(pageNumberText.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+      updatePageNumberText()
+      return
+    }
+    let clampedPage = min(max(1, pageNumber), store.slidePreviewPageCount)
+    pageNumberText = String(clampedPage)
+    store.requestSlidePreviewNavigation(.page(clampedPage - 1))
   }
 
   private var unavailableView: some View {
@@ -7822,19 +7923,25 @@ private struct OrgSourceEditorWithLinkTools: View {
             .help("Updating preview")
         }
 
-        Picker("Preview kind", selection: $store.documentPreviewKind) {
-          Image(systemName: OrgDocumentPreviewKind.document.systemImage)
-            .tag(OrgDocumentPreviewKind.document)
-            .help(OrgDocumentPreviewKind.document.title)
-          Image(systemName: OrgDocumentPreviewKind.slides.systemImage)
-            .tag(OrgDocumentPreviewKind.slides)
-            .help(OrgDocumentPreviewKind.slides.title)
-            .disabled(!store.canPreviewSlides)
+        Menu {
+          Picker("Preview kind", selection: documentPreviewPreferenceBinding) {
+            Label(
+              "Automatic (\(store.inferredDocumentPreviewKind.title))",
+              systemImage: OrgDocumentPreviewPreference.automatic.systemImage
+            )
+              .tag(OrgDocumentPreviewPreference.automatic)
+            Label("Document", systemImage: OrgDocumentPreviewPreference.document.systemImage)
+              .tag(OrgDocumentPreviewPreference.document)
+            Label("Slides", systemImage: OrgDocumentPreviewPreference.slides.systemImage)
+              .tag(OrgDocumentPreviewPreference.slides)
+              .disabled(!store.canPreviewSlides)
+          }
+        } label: {
+          Image(systemName: store.documentPreviewKind.systemImage)
         }
-        .pickerStyle(.segmented)
-        .labelsHidden()
-        .frame(width: 68)
-        .help("Rendered document or compiled slide PDF")
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help("\(store.documentPreviewPreferenceLabel) preview")
 
         Button {
           store.setSourceEditorPreviewPaused(!store.isSourceEditorPreviewPaused)
@@ -7883,6 +7990,13 @@ private struct OrgSourceEditorWithLinkTools: View {
         .fill(WorkspaceDesign.hairline)
         .frame(width: 1)
     }
+  }
+
+  private var documentPreviewPreferenceBinding: Binding<OrgDocumentPreviewPreference> {
+    Binding(
+      get: { store.documentPreviewPreference },
+      set: { store.setDocumentPreviewPreference($0) }
+    )
   }
 
   private var sourcePreviewScrollRequest: DetailScrollRequest? {

@@ -126,6 +126,8 @@ final class CodexAppServerClientTests: XCTestCase {
       XCTAssertTrue(prompt.contains("User-configured AI chat instructions"))
       XCTAssertTrue(prompt.contains("Prefer concise answers and surface open TODOs."))
       XCTAssertTrue(prompt.contains("Org2 response formatting contract"))
+      XCTAssertTrue(prompt.contains("Inline emphasis does not nest in Org2 v0."))
+      XCTAssertTrue(prompt.contains("*no duplicate in* =recipes.org2="))
       XCTAssertTrue(prompt.contains("|-------+--------------|"))
       XCTAssertTrue(prompt.contains("Never use a Markdown table delimiter such as |---|---|."))
       XCTAssertTrue(prompt.contains("clickable file-and-line citations is a deliberate Org2 Workspace chat transport exception"))

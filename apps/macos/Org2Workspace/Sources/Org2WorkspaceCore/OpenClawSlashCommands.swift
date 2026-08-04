@@ -4,6 +4,7 @@ import Foundation
 public struct OpenClawSlashCommand: Identifiable, Equatable, Sendable {
   public enum Origin: String, Sendable {
     case org2
+    case corpusSkill
     case openClaw
   }
 
@@ -69,7 +70,8 @@ public enum OpenClawSlashCommands {
 
   public static func parse(
     _ rawValue: String,
-    gatewayCommands: [OpenClawSlashCommand]
+    gatewayCommands: [OpenClawSlashCommand],
+    corpusSkills: [OpenClawSlashCommand] = []
   ) -> OpenClawSlashCommandParseResult {
     let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
     guard value.hasPrefix("/") else { return .message(value) }
@@ -79,7 +81,10 @@ public enum OpenClawSlashCommands {
     let split = body.split(maxSplits: 1, whereSeparator: { $0.isWhitespace })
     let name = split.first.map(String.init)?.lowercased() ?? ""
     guard !name.isEmpty else { return .unknown("") }
-    guard let command = merged(with: gatewayCommands).first(where: { $0.matches(name) }) else {
+    guard let command = merged(
+      with: gatewayCommands,
+      corpusSkills: corpusSkills
+    ).first(where: { $0.matches(name) }) else {
       return .unknown(name)
     }
     let arguments = split.count > 1 ? String(split[1]).trimmingCharacters(in: .whitespacesAndNewlines) : ""
@@ -93,12 +98,13 @@ public enum OpenClawSlashCommands {
   public static func suggestions(
     for rawValue: String,
     gatewayCommands: [OpenClawSlashCommand],
+    corpusSkills: [OpenClawSlashCommand] = [],
     limit: Int = 7
   ) -> [OpenClawSlashCommand] {
     guard rawValue.hasPrefix("/"), !rawValue.hasPrefix("//"), !rawValue.contains("\n") else { return [] }
     let fragment = rawValue.dropFirst().split(whereSeparator: { $0.isWhitespace }).first.map(String.init)?.lowercased() ?? ""
     guard !rawValue.dropFirst().contains(where: { $0.isWhitespace }) else { return [] }
-    return Array(merged(with: gatewayCommands).filter { command in
+    return Array(merged(with: gatewayCommands, corpusSkills: corpusSkills).filter { command in
       fragment.isEmpty
         || command.name.hasPrefix(fragment)
         || command.aliases.contains(where: { $0.hasPrefix(fragment) })
@@ -109,9 +115,24 @@ public enum OpenClawSlashCommands {
     helpText(gatewayCommands: [])
   }
 
-  public static func helpText(gatewayCommands: [OpenClawSlashCommand]) -> String {
+  public static func helpText(
+    gatewayCommands: [OpenClawSlashCommand],
+    corpusSkills: [OpenClawSlashCommand] = []
+  ) -> String {
     let localRows = all.map { "\($0.invocation) — \($0.summary)" }.joined(separator: "\n")
-    let remote = merged(with: gatewayCommands).filter { $0.origin == .openClaw }
+    let skills = merged(with: gatewayCommands, corpusSkills: corpusSkills).filter {
+      $0.origin == .corpusSkill
+    }
+    let skillSection: String
+    if skills.isEmpty {
+      skillSection = ""
+    } else {
+      let rows = skills.map { "\($0.invocation) — \($0.summary)" }.joined(separator: "\n")
+      skillSection = "\n\nCorpus skills\n\n\(rows)"
+    }
+    let remote = merged(with: gatewayCommands, corpusSkills: corpusSkills).filter {
+      $0.origin == .openClaw
+    }
     let remoteSection: String
     if remote.isEmpty {
       remoteSection = ""
@@ -119,27 +140,148 @@ public enum OpenClawSlashCommands {
       let rows = remote.map { "\($0.invocation) — \($0.summary)" }.joined(separator: "\n")
       remoteSection = "\n\nOpenClaw commands\n\n\(rows)"
     }
-    return "Org2 commands\n\n\(localRows)\(remoteSection)\n\nUse // at the beginning to send a literal slash message."
+    return "Org2 commands\n\n\(localRows)\(skillSection)\(remoteSection)\n\nUse // at the beginning to send a literal slash message."
   }
 
-  public static func merged(with gatewayCommands: [OpenClawSlashCommand]) -> [OpenClawSlashCommand] {
+  public static func merged(
+    with gatewayCommands: [OpenClawSlashCommand],
+    corpusSkills: [OpenClawSlashCommand] = []
+  ) -> [OpenClawSlashCommand] {
     let localNames = Set(all.map(\.name))
-    return all + gatewayCommands.filter { command in
-      command.origin == .openClaw && !localNames.contains(command.name)
+    let uniqueSkills = corpusSkills.filter { command in
+      command.origin == .corpusSkill && !localNames.contains(command.name)
+    }
+    let knownNames = localNames.union(uniqueSkills.map(\.name))
+    return all + uniqueSkills + gatewayCommands.filter { command in
+      command.origin == .openClaw && !knownNames.contains(command.name)
     }
   }
 
   public static func isGatewayCommand(
     _ rawValue: String,
-    gatewayCommands: [OpenClawSlashCommand]
+    gatewayCommands: [OpenClawSlashCommand],
+    corpusSkills: [OpenClawSlashCommand] = []
   ) -> Bool {
     let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
     guard value.hasPrefix("/"), !value.hasPrefix("//") else { return false }
-    switch parse(value, gatewayCommands: gatewayCommands) {
-    case .command(let command, _): return command.origin == .openClaw
+    switch parse(value, gatewayCommands: gatewayCommands, corpusSkills: corpusSkills) {
+    case .command(let command, _): return command.origin != .org2
     case .unknown(let name): return !name.isEmpty
     case .message: return false
     }
+  }
+}
+
+enum CorpusAgentSkillCatalog {
+  static func commands(in corpusRoot: URL) -> [OpenClawSlashCommand] {
+    let skillsRoot = corpusRoot
+      .appendingPathComponent(".agents", isDirectory: true)
+      .appendingPathComponent("skills", isDirectory: true)
+    guard let directories = try? FileManager.default.contentsOfDirectory(
+      at: skillsRoot,
+      includingPropertiesForKeys: [.isDirectoryKey],
+      options: [.skipsHiddenFiles]
+    ) else {
+      return []
+    }
+
+    var seenNames: Set<String> = []
+    return directories
+      .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+      .compactMap { directory in
+        guard (try? directory.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else {
+          return nil
+        }
+        let skillURL = directory.appendingPathComponent("SKILL.md")
+        guard let source = try? String(contentsOf: skillURL, encoding: .utf8),
+              let frontMatter = frontMatter(from: source),
+              frontMatter["user-invocable"]?.lowercased() != "false"
+        else {
+          return nil
+        }
+
+        let fallbackName = directory.lastPathComponent.lowercased()
+        let name = normalizedCommandName(frontMatter["name"] ?? fallbackName)
+        guard !name.isEmpty, seenNames.insert(name).inserted else { return nil }
+        let declaredSummary = frontMatter["description"]?
+          .trimmingCharacters(in: .whitespacesAndNewlines)
+        let summary = declaredSummary?.isEmpty == false
+          ? declaredSummary ?? ""
+          : "Use the \(name) corpus skill"
+        return OpenClawSlashCommand(
+          name: name,
+          arguments: "[ARGS]",
+          summary: summary,
+          systemImage: "wand.and.stars",
+          isAgentAssisted: true,
+          origin: .corpusSkill
+        )
+      }
+  }
+
+  private static func frontMatter(from source: String) -> [String: String]? {
+    let lines = source.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+    guard lines.first?.trimmingCharacters(in: .whitespacesAndNewlines) == "---",
+          let closingIndex = lines.dropFirst().firstIndex(where: {
+            $0.trimmingCharacters(in: .whitespacesAndNewlines) == "---"
+          })
+    else {
+      return nil
+    }
+
+    let frontMatterLines = Array(lines[1..<closingIndex])
+    var values: [String: String] = [:]
+    var index = 0
+    while index < frontMatterLines.count {
+      let line = frontMatterLines[index]
+      guard let separator = line.firstIndex(of: ":") else {
+        index += 1
+        continue
+      }
+      let key = line[..<separator].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+      var value = line[line.index(after: separator)...]
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+      if value.hasPrefix(">") || value.hasPrefix("|") {
+        var continuation: [String] = []
+        index += 1
+        while index < frontMatterLines.count,
+              frontMatterLines[index].first?.isWhitespace == true {
+          continuation.append(frontMatterLines[index].trimmingCharacters(in: .whitespacesAndNewlines))
+          index += 1
+        }
+        value = continuation.joined(separator: value.hasPrefix("|") ? "\n" : " ")
+        values[key] = value
+        continue
+      }
+      values[key] = unquoted(value)
+      index += 1
+    }
+    return values
+  }
+
+  private static func normalizedCommandName(_ rawValue: String) -> String {
+    let candidate = unquoted(rawValue).lowercased()
+    let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyz0123456789-")
+    guard !candidate.isEmpty,
+          candidate.unicodeScalars.allSatisfy(allowed.contains),
+          candidate.first != "-",
+          candidate.last != "-"
+    else {
+      return ""
+    }
+    return candidate
+  }
+
+  private static func unquoted(_ rawValue: String) -> String {
+    let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard value.count >= 2,
+          let first = value.first,
+          let last = value.last,
+          (first == "\"" && last == "\"") || (first == "'" && last == "'")
+    else {
+      return value
+    }
+    return String(value.dropFirst().dropLast())
   }
 }
 

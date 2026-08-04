@@ -16,6 +16,71 @@ final class SlideExportTests: XCTestCase {
     XCTAssertEqual(OrgDocumentPreviewKind.document.systemImage, "doc.richtext")
     XCTAssertEqual(OrgDocumentPreviewKind.slides.title, "Slides")
     XCTAssertEqual(OrgDocumentPreviewKind.slides.systemImage, "rectangle.on.rectangle")
+    XCTAssertEqual(OrgDocumentPreviewPreference.automatic.title, "Automatic")
+    XCTAssertEqual(OrgDocumentPreviewPreference.automatic.systemImage, "wand.and.stars")
+  }
+
+  @MainActor
+  func testAutomaticPreviewInferenceAndOverridesAreScopedPerDocument() {
+    let suiteName = "Org2SlidePreviewPreferenceTests.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let store = WorkspaceStore(
+      cli: Org2CLI(repoRoot: FileManager.default.temporaryDirectory),
+      defaults: defaults
+    )
+    let talk = EntrySource(
+      file: "/tmp/talk.org2",
+      startLine: 1,
+      endLineExclusive: 3,
+      text: "#+LATEX_CLASS: beamer\n* Slide\n",
+      isSubtree: false
+    )
+    let note = EntrySource(
+      file: "/tmp/note.org2",
+      startLine: 1,
+      endLineExclusive: 3,
+      text: "#+TITLE: Note\n* Heading\n",
+      isSubtree: false
+    )
+
+    store.selectedEntrySource = talk
+    store.updateInferredDocumentPreviewKind(
+      from: #"<meta name="org2-document-kind" content="slides" />"#
+    )
+    XCTAssertEqual(store.documentPreviewPreference, .automatic)
+    XCTAssertEqual(store.documentPreviewKind, .slides)
+
+    store.selectedEntrySource = note
+    store.updateInferredDocumentPreviewKind(
+      from: #"<meta name="org2-document-kind" content="document" />"#
+    )
+    XCTAssertEqual(store.documentPreviewKind, .document)
+
+    store.selectedEntrySource = talk
+    XCTAssertEqual(store.documentPreviewKind, .slides)
+    store.setDocumentPreviewPreference(.document)
+    XCTAssertEqual(store.documentPreviewKind, .document)
+
+    store.selectedEntrySource = note
+    XCTAssertEqual(store.documentPreviewPreference, .automatic)
+    store.selectedEntrySource = talk
+    XCTAssertEqual(store.documentPreviewPreference, .document)
+    XCTAssertEqual(store.documentPreviewKind, .document)
+
+    let restoredStore = WorkspaceStore(
+      cli: Org2CLI(repoRoot: FileManager.default.temporaryDirectory),
+      defaults: defaults
+    )
+    restoredStore.selectedEntrySource = talk
+    restoredStore.updateInferredDocumentPreviewKind(
+      from: #"<meta name="org2-document-kind" content="slides" />"#
+    )
+    XCTAssertEqual(restoredStore.documentPreviewPreference, .document)
+    XCTAssertEqual(restoredStore.documentPreviewKind, .document)
+
+    store.setDocumentPreviewPreference(.automatic)
+    XCTAssertEqual(store.documentPreviewKind, .slides)
   }
 
   func testSlideSourceLineMarkerURLParsing() {
@@ -103,6 +168,50 @@ final class SlideExportTests: XCTestCase {
     XCTAssertTrue(pdfView.document === compiledDocument)
     XCTAssertEqual(pdfView.currentPage.flatMap { pdfView.document?.index(for: $0) }, 0)
     XCTAssertEqual(reportedLine, 10)
+  }
+
+  @MainActor
+  func testSlidePreviewPageNavigationReusesCompiledPDF() throws {
+    let pdf = try makeSlideDeckPDF(sourceLines: [10, 20, 30])
+    var reportedPageCount = 0
+    var reportedPageIndex: Int?
+    let initialView = OrgPDFDocumentView(
+      data: pdf,
+      reportViewportPageIndex: { reportedPageIndex = $0 },
+      reportPageCount: { reportedPageCount = $0 }
+    )
+    let coordinator = initialView.makeCoordinator()
+    let pdfView = PDFView()
+    initialView.update(pdfView, coordinator: coordinator)
+    let compiledDocument = try XCTUnwrap(pdfView.document)
+
+    XCTAssertEqual(reportedPageCount, 3)
+    XCTAssertEqual(reportedPageIndex, 0)
+
+    let nextView = OrgPDFDocumentView(
+      data: pdf,
+      navigationRequest: OrgPDFPageNavigationRequest(id: 1, target: .next),
+      reportViewportPageIndex: { reportedPageIndex = $0 }
+    )
+    nextView.update(pdfView, coordinator: coordinator)
+
+    XCTAssertTrue(pdfView.document === compiledDocument)
+    XCTAssertEqual(reportedPageIndex, 1)
+
+    let exactView = OrgPDFDocumentView(
+      data: pdf,
+      navigationRequest: OrgPDFPageNavigationRequest(id: 2, target: .page(2)),
+      reportViewportPageIndex: { reportedPageIndex = $0 }
+    )
+    exactView.update(pdfView, coordinator: coordinator)
+    XCTAssertEqual(reportedPageIndex, 2)
+  }
+
+  func testSlidePreviewZoomStepsIncludeFitAndClampAtEnds() {
+    XCTAssertEqual(WorkspaceStore.previousSlidePreviewZoomScale(before: 1), 0.875)
+    XCTAssertEqual(WorkspaceStore.nextSlidePreviewZoomScale(after: 1), 1.25)
+    XCTAssertEqual(WorkspaceStore.previousSlidePreviewZoomScale(before: 0.4), 0.4)
+    XCTAssertEqual(WorkspaceStore.nextSlidePreviewZoomScale(after: 4), 4)
   }
 
   func testOrg2CLIIncludesMacTeXInChildProcessPath() {
@@ -202,7 +311,7 @@ final class SlideExportTests: XCTestCase {
     store.selectedEntrySource = source
     store.beginEditingSelectedEntry()
     store.sourceEditorPresentation = .split
-    store.documentPreviewKind = .slides
+    store.setDocumentPreviewPreference(.slides)
 
     let validDraft = "#+TITLE: Talk\n* Section\n** Live draft\n"
     store.editableEntryText = validDraft
@@ -239,11 +348,21 @@ final class SlideExportTests: XCTestCase {
       try await recorder.render(text: text, sourcePath: sourcePath, passes: passes)
     }
     store.selectedEntrySource = source
-    store.documentPreviewKind = .slides
+    store.setDocumentPreviewPreference(.slides)
 
     XCTAssertFalse(store.isEditingEntry)
     store.scheduleSlidePreview(text: source.text, source: source, immediate: true)
     try await waitForSlidePreview(store) { $0.slidePreviewPDF == expectedPDF }
+
+    store.setSlidePreviewPageCount(3)
+    XCTAssertTrue(store.handleGlobalKeyDown(slideKeyDown("-", keyCode: 27, modifiers: [.command])))
+    XCTAssertEqual(store.slidePreviewZoomScale, 0.875)
+    XCTAssertFalse(store.handleGlobalKeyDown(
+      slideKeyDown("-", keyCode: 27, modifiers: [.command]),
+      scope: .globalOnly
+    ))
+    XCTAssertTrue(store.handleWorkspaceKeyDown(slideKeyDown("→", keyCode: 124)))
+    XCTAssertEqual(store.slidePreviewNavigationRequest?.target, .next)
 
     let calls = await recorder.recordedCalls()
     XCTAssertEqual(calls.map(\.text), [source.text])
@@ -395,6 +514,25 @@ private func makeSlideDeckPDF(sourceLines: [Int]) throws -> Data {
     document.insert(page, at: index)
   }
   return try XCTUnwrap(document.dataRepresentation())
+}
+
+private func slideKeyDown(
+  _ characters: String,
+  keyCode: UInt16,
+  modifiers: NSEvent.ModifierFlags = []
+) -> NSEvent {
+  NSEvent.keyEvent(
+    with: .keyDown,
+    location: .zero,
+    modifierFlags: modifiers,
+    timestamp: 0,
+    windowNumber: 0,
+    context: nil,
+    characters: characters,
+    charactersIgnoringModifiers: characters,
+    isARepeat: false,
+    keyCode: keyCode
+  )!
 }
 
 private actor SlidePreviewRecorder {
