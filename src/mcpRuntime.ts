@@ -191,7 +191,10 @@ function resourceList(root: string) {
     }
   };
   walk(root);
-  return files.map((file) => ({ uri: `org2://corpus/${path.relative(root, file)}`, name: path.relative(root, file), mimeType: "text/org" }));
+  return files
+    .map((file) => path.relative(root, file))
+    .sort()
+    .map((name) => ({ uri: `org2://corpus/${name}`, name, mimeType: "text/org" }));
 }
 
 function corpusResourceFile(root: string, relative: string): string {

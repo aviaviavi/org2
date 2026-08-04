@@ -530,6 +530,8 @@ try {
   assert.equal(messages[0].result.serverInfo.name, "org2");
   assert.equal(messages[1].result.tools.some((tool) => tool.name === "org2_run_create"), true);
   assert.equal(messages[2].result.resources.some((resource) => resource.name === "notes/outside-corpus.org2"), false);
+  const resourceNames = messages[2].result.resources.map((resource) => resource.name);
+  assert.deepEqual(resourceNames, [...resourceNames].sort(), "MCP resources should use a stable lexical order");
   assert.equal(messages[3].error.code, -32603);
   assert.match(messages[3].error.message, /resource is a symbolic link/);
   assert.equal(messages[4].result.contents[0].text, "changed\n");
