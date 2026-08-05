@@ -737,6 +737,8 @@ private struct CorpusWorkspaceCache {
   var approvalItems: [ApprovalItem]
   var agentRuns: [AgentRunItem]
   var agentWorkflows: [AgentWorkflowItem]
+  var agentGoals: [AgentGoalItem]
+  var agentProfiles: [AgentProfileItem]
   var corpusFiles: [CorpusFile]
   var orgRoamLinkResolver: OrgRoamLinkResolver
   var assignedWorkItems: [AssignedWorkItem]
@@ -752,6 +754,8 @@ private struct CorpusWorkspaceCache {
   var selectedApprovalItemID: ApprovalItem.ID?
   var selectedAgentRunID: AgentRunItem.ID?
   var selectedAgentWorkflowID: AgentWorkflowItem.ID?
+  var selectedAgentGoalID: AgentGoalItem.ID?
+  var selectedAgentProfileID: AgentProfileItem.ID?
   var selectedCorpusFileID: String?
   var selectedAssignedWorkItemID: AssignedWorkItem.ID?
   var selectedMeetingID: String?
@@ -899,6 +903,14 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var selectedAgentWorkflowID: AgentWorkflowItem.ID?
   @Published public private(set) var isLoadingAgentWorkflows = false
   @Published public private(set) var mutatingAgentWorkflowIDs: Set<AgentWorkflowItem.ID> = []
+  @Published public private(set) var agentGoals: [AgentGoalItem] = []
+  @Published public var selectedAgentGoalID: AgentGoalItem.ID?
+  @Published public private(set) var isLoadingAgentGoals = false
+  @Published public private(set) var mutatingAgentGoalIDs: Set<AgentGoalItem.ID> = []
+  @Published public private(set) var agentProfiles: [AgentProfileItem] = []
+  @Published public var selectedAgentProfileID: AgentProfileItem.ID?
+  @Published public private(set) var isLoadingAgentProfiles = false
+  @Published public private(set) var mutatingAgentProfileIDs: Set<AgentProfileItem.ID> = []
   @Published public private(set) var approvingApprovalItemIDs: Set<ApprovalItem.ID> = []
   @Published public private(set) var rejectingApprovalItemIDs: Set<ApprovalItem.ID> = []
   @Published public private(set) var externallyCompletingApprovalItemIDs: Set<ApprovalItem.ID> = []
@@ -1513,6 +1525,8 @@ public final class WorkspaceStore: ObservableObject {
   private var isRefreshingApprovals = false
   private var isRefreshingAgentRuns = false
   private var isRefreshingAgentWorkflows = false
+  private var isRefreshingAgentGoals = false
+  private var isRefreshingAgentProfiles = false
   private var isRefreshingAssignedWork = false
   private var isRefreshingOpenClawThreads = false
   private var scheduledAgendaRefreshTask: Task<Void, Never>?
@@ -1774,6 +1788,26 @@ public final class WorkspaceStore: ObservableObject {
       }) ?? agentWorkflows.first {
         selectAgentWorkflow(workflow)
       }
+    case "goals":
+      selectedSurface = .approvals
+      runsAndReviewPage = .goals
+      if let goal = agentGoals.first(where: { goal in
+        guard let target, !target.isEmpty else { return true }
+        return goal.title.lowercased().contains(target)
+          || goal.id.lowercased().contains(target)
+      }) ?? agentGoals.first {
+        selectAgentGoal(goal)
+      }
+    case "agents":
+      selectedSurface = .approvals
+      runsAndReviewPage = .agents
+      if let profile = agentProfiles.first(where: { profile in
+        guard let target, !target.isEmpty else { return true }
+        return profile.name.lowercased().contains(target)
+          || profile.id.lowercased().contains(target)
+      }) ?? agentProfiles.first {
+        selectAgentProfile(profile)
+      }
     case "openclaw", "chat":
       selectedSurface = .openClaw
       publishOpenClawComposerDraft("Summarize the current launch plan and call out open risks.")
@@ -1968,6 +2002,8 @@ public final class WorkspaceStore: ObservableObject {
       approvalItems: approvalItems,
       agentRuns: agentRuns,
       agentWorkflows: agentWorkflows,
+      agentGoals: agentGoals,
+      agentProfiles: agentProfiles,
       corpusFiles: corpusFiles,
       orgRoamLinkResolver: orgRoamLinkResolver,
       assignedWorkItems: assignedWorkItems,
@@ -1983,6 +2019,8 @@ public final class WorkspaceStore: ObservableObject {
       selectedApprovalItemID: selectedApprovalItemID,
       selectedAgentRunID: selectedAgentRunID,
       selectedAgentWorkflowID: selectedAgentWorkflowID,
+      selectedAgentGoalID: selectedAgentGoalID,
+      selectedAgentProfileID: selectedAgentProfileID,
       selectedCorpusFileID: selectedCorpusFileID,
       selectedAssignedWorkItemID: selectedAssignedWorkItemID,
       selectedMeetingID: selectedMeetingID,
@@ -2069,6 +2107,8 @@ public final class WorkspaceStore: ObservableObject {
     isRefreshingApprovals = false
     isRefreshingAgentRuns = false
     isRefreshingAgentWorkflows = false
+    isRefreshingAgentGoals = false
+    isRefreshingAgentProfiles = false
     isRefreshingWorkspace = false
     isRefreshingAssignedWork = false
     isRefreshingOpenClawThreads = false
@@ -2077,11 +2117,19 @@ public final class WorkspaceStore: ObservableObject {
     isLoadingAgentRuns = false
     agentRuns = cachedWorkspace?.agentRuns ?? []
     agentWorkflows = cachedWorkspace?.agentWorkflows ?? []
+    agentGoals = cachedWorkspace?.agentGoals ?? []
+    agentProfiles = cachedWorkspace?.agentProfiles ?? []
     selectedAgentWorkflowID = cachedWorkspace?.selectedAgentWorkflowID
+    selectedAgentGoalID = cachedWorkspace?.selectedAgentGoalID
+    selectedAgentProfileID = cachedWorkspace?.selectedAgentProfileID
     selectedAgentRunID = cachedWorkspace?.selectedAgentRunID
     selectedAgentRunIDsForAIContext = []
     presentedAgentRunID = nil
     mutatingAgentRunIDs = []
+    mutatingAgentGoalIDs = []
+    mutatingAgentProfileIDs = []
+    isLoadingAgentGoals = false
+    isLoadingAgentProfiles = false
     isLoadingAssignedWork = false
     isLoadingOpenClawThreads = false
     scheduledAgendaRefreshTask?.cancel()
@@ -2446,6 +2494,10 @@ public final class WorkspaceStore: ObservableObject {
     await refreshAgentRuns()
     guard shouldContinueWorkspaceRefresh(generation) else { return }
     await refreshAgentWorkflows()
+    guard shouldContinueWorkspaceRefresh(generation) else { return }
+    await refreshAgentGoals()
+    guard shouldContinueWorkspaceRefresh(generation) else { return }
+    await refreshAgentProfiles()
     guard shouldContinueWorkspaceRefresh(generation) else { return }
     await refreshSelectedDetailFromDisk()
     guard shouldContinueWorkspaceRefresh(generation) else { return }
@@ -3128,6 +3180,8 @@ public final class WorkspaceStore: ObservableObject {
     await refreshApprovals()
     await refreshAgentRuns()
     await refreshAgentWorkflows()
+    await refreshAgentGoals()
+    await refreshAgentProfiles()
     markWorkspaceSurfaceCleanIfUnchanged(.approvals, generation: dirtyGeneration)
   }
 
@@ -3290,6 +3344,170 @@ public final class WorkspaceStore: ObservableObject {
       errorText = error.localizedDescription
       if updatesStatus { statusText = "Workflows failed" }
     }
+  }
+
+  public func refreshAgentGoals(updatesStatus: Bool = false) async {
+    guard !isRefreshingAgentGoals else { return }
+    guard let corpusRoot else {
+      agentGoals = []
+      selectedAgentGoalID = nil
+      if updatesStatus { statusText = "No corpus selected" }
+      return
+    }
+    isRefreshingAgentGoals = true
+    let showsLoading = updatesStatus || agentGoals.isEmpty
+    if showsLoading { isLoadingAgentGoals = true }
+    if updatesStatus { statusText = "Loading goals..." }
+    defer {
+      isRefreshingAgentGoals = false
+      if showsLoading { isLoadingAgentGoals = false }
+    }
+    do {
+      let payload: AgentGoalListPayload = try await cli.runJSON([
+        "goal", "list", "--dir", corpusRoot.path, "--json"
+      ])
+      agentGoals = payload.goals
+      if let selectedAgentGoalID,
+         !payload.goals.contains(where: { $0.id == selectedAgentGoalID }) {
+        self.selectedAgentGoalID = nil
+      }
+      if self.selectedAgentGoalID == nil { self.selectedAgentGoalID = payload.goals.first?.id }
+      if updatesStatus {
+        statusText = "\(payload.goals.count) goal\(payload.goals.count == 1 ? "" : "s")"
+      }
+    } catch {
+      errorText = error.localizedDescription
+      if updatesStatus { statusText = "Goals failed" }
+    }
+  }
+
+  public func refreshAgentProfiles(updatesStatus: Bool = false) async {
+    guard !isRefreshingAgentProfiles else { return }
+    guard let corpusRoot else {
+      agentProfiles = []
+      selectedAgentProfileID = nil
+      if updatesStatus { statusText = "No corpus selected" }
+      return
+    }
+    isRefreshingAgentProfiles = true
+    let showsLoading = updatesStatus || agentProfiles.isEmpty
+    if showsLoading { isLoadingAgentProfiles = true }
+    if updatesStatus { statusText = "Loading agents..." }
+    defer {
+      isRefreshingAgentProfiles = false
+      if showsLoading { isLoadingAgentProfiles = false }
+    }
+    do {
+      let payload: AgentProfileListPayload = try await cli.runJSON([
+        "agent-profile", "list", "--dir", corpusRoot.path, "--json"
+      ])
+      agentProfiles = payload.profiles
+      if let selectedAgentProfileID,
+         !payload.profiles.contains(where: { $0.id == selectedAgentProfileID }) {
+        self.selectedAgentProfileID = nil
+      }
+      if self.selectedAgentProfileID == nil { self.selectedAgentProfileID = payload.profiles.first?.id }
+      if updatesStatus {
+        statusText = "\(payload.profiles.count) agent\(payload.profiles.count == 1 ? "" : "s")"
+      }
+    } catch {
+      errorText = error.localizedDescription
+      if updatesStatus { statusText = "Agents failed" }
+    }
+  }
+
+  public func selectAgentGoal(_ goal: AgentGoalItem) {
+    selectedAgentGoalID = goal.id
+    selectCoordinationRecord(file: goal.file)
+  }
+
+  public func selectAgentProfile(_ profile: AgentProfileItem) {
+    selectedAgentProfileID = profile.id
+    selectCoordinationRecord(file: profile.file)
+  }
+
+  public func showAgentGoal(_ id: String) {
+    guard let goal = agentGoals.first(where: { $0.id == id }) else { return }
+    runsAndReviewPage = .goals
+    selectAgentGoal(goal)
+  }
+
+  public func showAgentProfile(_ id: String) {
+    guard let profile = agentProfiles.first(where: { $0.id == id }) else { return }
+    runsAndReviewPage = .agents
+    selectAgentProfile(profile)
+  }
+
+  public func showAgentRuns(goalRef: String? = nil, agentRef: String? = nil) {
+    runsAndReviewPage = .runs
+    agentRunFilter = goalRef ?? agentRef ?? ""
+    if let run = agentRuns.first(where: { candidate in
+      (goalRef == nil || candidate.goalRef == goalRef)
+        && (agentRef == nil || candidate.agentRef == agentRef)
+    }) {
+      selectAgentRun(run)
+    }
+  }
+
+  public func setAgentGoalStatus(_ goal: AgentGoalItem, status: String) async {
+    guard let corpusRoot,
+          ["planned", "active", "achieved", "canceled"].contains(status),
+          !mutatingAgentGoalIDs.contains(goal.id) else { return }
+    mutatingAgentGoalIDs.insert(goal.id)
+    defer { mutatingAgentGoalIDs.remove(goal.id) }
+    do {
+      _ = try await cli.run([
+        "goal", "update", goal.id,
+        "--status", status,
+        "--apply",
+        "--dir", corpusRoot.path,
+        "--json"
+      ])
+      await refreshAgentGoals()
+      if let refreshed = agentGoals.first(where: { $0.id == goal.id }) {
+        selectAgentGoal(refreshed)
+      }
+      statusText = "\(goal.title): \(status)"
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Goal update failed"
+    }
+  }
+
+  public func setAgentProfileStatus(_ profile: AgentProfileItem, status: String) async {
+    guard let corpusRoot,
+          ["active", "paused", "retired"].contains(status),
+          !mutatingAgentProfileIDs.contains(profile.id) else { return }
+    mutatingAgentProfileIDs.insert(profile.id)
+    defer { mutatingAgentProfileIDs.remove(profile.id) }
+    do {
+      _ = try await cli.run([
+        "agent-profile", "update", profile.id,
+        "--status", status,
+        "--apply",
+        "--dir", corpusRoot.path,
+        "--json"
+      ])
+      await refreshAgentProfiles()
+      if let refreshed = agentProfiles.first(where: { $0.id == profile.id }) {
+        selectAgentProfile(refreshed)
+      }
+      statusText = "\(profile.name): \(status)"
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Agent update failed"
+    }
+  }
+
+  private func selectCoordinationRecord(file path: String) {
+    let url = URL(fileURLWithPath: path)
+    let file = CorpusFile(
+      path: url.path,
+      relativePath: relativePath(url.path),
+      modifiedAt: (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate,
+      byteCount: (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize.map(Int64.init)
+    )
+    selectCorpusFile(file, surface: .approvals)
   }
 
   public func selectAgentWorkflow(_ workflow: AgentWorkflowItem) {
@@ -14223,7 +14441,11 @@ public final class WorkspaceStore: ObservableObject {
     case .agenda:
       agendaMode == .assigned ? isRefreshingAssignedWork : isRefreshingAgenda
     case .approvals:
-      isRefreshingApprovals || isRefreshingAgentRuns || isRefreshingAgentWorkflows
+      isRefreshingApprovals
+        || isRefreshingAgentRuns
+        || isRefreshingAgentWorkflows
+        || isRefreshingAgentGoals
+        || isRefreshingAgentProfiles
     case .files:
       isScanningCorpusFiles
     case .search:

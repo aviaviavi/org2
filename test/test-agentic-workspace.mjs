@@ -32,6 +32,14 @@ try {
   saveGoal(root, revenueGoal, { expectedRevision: null });
   assert.equal(loadGoalSnapshot(root, revenueGoal.id).value.title, revenueGoal.title);
   assert.equal(listGoals(root).length, 1);
+  const listedGoals = spawnSync(process.execPath, [
+    path.resolve("dist/cli.js"), "goal", "list", "--json", "--dir", root,
+  ], { encoding: "utf8" });
+  assert.equal(listedGoals.status, 0, listedGoals.stderr || listedGoals.stdout);
+  assert.equal(
+    JSON.parse(listedGoals.stdout).goals[0].file,
+    path.join(root, "goals", `${revenueGoal.id}.org2`),
+  );
 
   const supportAgent = createAgentProfile({
     id: "scarf-support",
@@ -43,6 +51,14 @@ try {
   saveAgentProfile(root, supportAgent, { expectedRevision: null });
   assert.equal(loadAgentProfileSnapshot(root, supportAgent.id).value.name, supportAgent.name);
   assert.equal(listAgentProfiles(root).length, 1);
+  const listedProfiles = spawnSync(process.execPath, [
+    path.resolve("dist/cli.js"), "agent-profile", "list", "--json", "--dir", root,
+  ], { encoding: "utf8" });
+  assert.equal(listedProfiles.status, 0, listedProfiles.stderr || listedProfiles.stdout);
+  assert.equal(
+    JSON.parse(listedProfiles.stdout).profiles[0].file,
+    path.join(root, "agent-profiles", `${supportAgent.id}.org2`),
+  );
   assert.deepEqual(resolveAgentProfile(root, "openclaw", "SCARF-SUPPORT"), {
     schema: "org2:agent-profile-resolution:v1",
     found: true,

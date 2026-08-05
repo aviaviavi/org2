@@ -7,6 +7,55 @@ final class AgentRunModelsTests: XCTestCase {
     XCTAssertEqual(WorkspaceStore.runReviewAutoRefreshIntervalNanoseconds, 60_000_000_000)
   }
 
+  func testDecodesGoalAndAgentProfileCatalogs() throws {
+    let goalPayload = try JSONDecoder().decode(AgentGoalListPayload.self, from: Data(#"""
+    {
+      "schema": "org2:goal-list:v1",
+      "goals": [{
+        "schema": "org2:goal:v1",
+        "id": "qualified-meetings",
+        "title": "Generate qualified meetings",
+        "description": "Turn strong signals into reviewable outreach.",
+        "status": "active",
+        "ownerAgentRef": "revenue-scout",
+        "measures": ["Qualified meetings"],
+        "file": "/tmp/corpus/goals/qualified-meetings.org2",
+        "createdAt": "2026-08-05T00:00:00.000Z",
+        "updatedAt": "2026-08-05T00:00:00.000Z"
+      }]
+    }
+    """#.utf8))
+    let goal = try XCTUnwrap(goalPayload.goals.first)
+    XCTAssertEqual(goal.ownerAgentRef, "revenue-scout")
+    XCTAssertEqual(goal.file, "/tmp/corpus/goals/qualified-meetings.org2")
+
+    let profilePayload = try JSONDecoder().decode(AgentProfileListPayload.self, from: Data(#"""
+    {
+      "schema": "org2:agent-profile-list:v1",
+      "profiles": [{
+        "schema": "org2:agent-profile:v1",
+        "id": "revenue-scout",
+        "name": "Revenue Scout",
+        "description": "",
+        "status": "active",
+        "responsibilities": ["Qualify accounts"],
+        "capabilities": ["agent-context"],
+        "skills": ["outreach"],
+        "runtimeBindings": [{"runtime":"openclaw","runtimeAgentId":"scarf-revenue-scout"}],
+        "goalRefs": ["qualified-meetings"],
+        "primaryGoalRef": "qualified-meetings",
+        "file": "/tmp/corpus/agent-profiles/revenue-scout.org2",
+        "createdAt": "2026-08-05T00:00:00.000Z",
+        "updatedAt": "2026-08-05T00:00:00.000Z"
+      }]
+    }
+    """#.utf8))
+    let profile = try XCTUnwrap(profilePayload.profiles.first)
+    XCTAssertEqual(profile.primaryGoalRef, goal.id)
+    XCTAssertEqual(profile.runtimeBindings.first?.id, "openclaw:scarf-revenue-scout")
+    XCTAssertEqual(RunsAndReviewPage.allCases, [.runs, .review, .goals, .agents, .workflows])
+  }
+
   func testDecodesDurableRunListPayload() throws {
     let data = Data(#"""
     {

@@ -974,7 +974,10 @@ function goalCommand(parsed: ParsedArgs): void {
   const corpus = root(parsed);
   if (action === "list") {
     const goals = listGoals(corpus).filter((goal) => !flag(parsed, "status") || goal.status === flag(parsed, "status"));
-    output(parsed, { schema: "org2:goal-list:v1", goals }, goals.length ? goals.map((goal) => `${goal.id}\t${goal.status}\t${goal.title}`).join("\n") : "No goals.");
+    output(parsed, {
+      schema: "org2:goal-list:v1",
+      goals: goals.map((goal) => ({ ...goal, file: goalPath(corpus, goal.id) })),
+    }, goals.length ? goals.map((goal) => `${goal.id}\t${goal.status}\t${goal.title}`).join("\n") : "No goals.");
     return;
   }
   const id = required(parsed.positional[1], `goal id is required for ${action}`);
@@ -1022,7 +1025,10 @@ function agentProfileCommand(parsed: ParsedArgs): void {
   const corpus = root(parsed);
   if (action === "list") {
     const profiles = listAgentProfiles(corpus).filter((profile) => !flag(parsed, "status") || profile.status === flag(parsed, "status"));
-    output(parsed, { schema: "org2:agent-profile-list:v1", profiles }, profiles.length ? profiles.map((profile) => `${profile.id}\t${profile.status}\t${profile.name}`).join("\n") : "No agent profiles.");
+    output(parsed, {
+      schema: "org2:agent-profile-list:v1",
+      profiles: profiles.map((profile) => ({ ...profile, file: agentProfilePath(corpus, profile.id) })),
+    }, profiles.length ? profiles.map((profile) => `${profile.id}\t${profile.status}\t${profile.name}`).join("\n") : "No agent profiles.");
     return;
   }
   if (action === "resolve") {

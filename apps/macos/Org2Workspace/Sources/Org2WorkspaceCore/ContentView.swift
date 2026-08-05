@@ -2240,7 +2240,7 @@ private struct RunsAndReviewView: View {
         }
         .labelsHidden()
         .pickerStyle(.segmented)
-        .frame(maxWidth: 340)
+        .frame(maxWidth: 520)
         Spacer(minLength: 0)
       }
       .padding(.horizontal, WorkspaceDesign.contentInset)
@@ -2256,9 +2256,277 @@ private struct RunsAndReviewView: View {
       switch store.runsAndReviewPage {
       case .runs: RunCenterView()
       case .review: ApprovalsView()
+      case .goals: GoalsView()
+      case .agents: AgentsView()
       case .workflows: WorkflowsView()
       }
     }
+  }
+}
+
+private struct GoalsView: View {
+  @EnvironmentObject private var store: WorkspaceStore
+
+  var body: some View {
+    VStack(spacing: 0) {
+      HeaderBar(
+        title: "Goals",
+        subtitle: "Durable outcomes in goals/",
+        surface: .approvals
+      ) {
+        if store.isLoadingAgentGoals { WorkspaceActivityIndicator(size: .small) }
+        Button {
+          Task { await store.refreshAgentGoals(updatesStatus: true) }
+        } label: {
+          Label("Refresh", systemImage: "arrow.clockwise")
+        }
+      }
+
+      if store.isLoadingAgentGoals && store.agentGoals.isEmpty {
+        Spacer(); WorkspaceLoadingStateView("Loading goals"); Spacer()
+      } else if store.agentGoals.isEmpty {
+        EmptyStateView(
+          title: "No Goals",
+          detail: "Goals created in this corpus appear here automatically. Agents can create one with org2 goal create."
+        )
+      } else {
+        List {
+          ForEach(store.agentGoals) { goal in
+            AgentGoalRow(goal: goal)
+              .contentShape(Rectangle())
+              .onTapGesture {
+                if store.selectedAgentGoalID == goal.id {
+                  store.selectAgentGoal(goal)
+                } else {
+                  store.selectedAgentGoalID = goal.id
+                }
+              }
+              .modifier(ReadableListSelectionModifier(isSelected: store.selectedAgentGoalID == goal.id))
+              .listRowBackground(Color.clear)
+              .contextMenu {
+                if let ownerAgentRef = goal.ownerAgentRef {
+                  Button("View Owner Agent") { store.showAgentProfile(ownerAgentRef) }
+                }
+                Button("Show Linked Runs") { store.showAgentRuns(goalRef: goal.id) }
+                Divider()
+                ForEach(["planned", "active", "achieved", "canceled"], id: \.self) { status in
+                  if goal.status != status {
+                    Button("Mark \(AgentRunItem.humanizedLabel(status))") {
+                      Task { await store.setAgentGoalStatus(goal, status: status) }
+                    }
+                  }
+                }
+              }
+          }
+        }
+        .listStyle(.inset)
+        .onChange(of: store.selectedAgentGoalID) {
+          guard let id = store.selectedAgentGoalID,
+                let goal = store.agentGoals.first(where: { $0.id == id }) else { return }
+          performAfterSwiftUIViewUpdate {
+            guard store.selectedAgentGoalID == id else { return }
+            store.selectAgentGoal(goal)
+          }
+        }
+      }
+    }
+    .task {
+      if store.agentGoals.isEmpty { await store.refreshAgentGoals() }
+    }
+    .onAppear {
+      guard let id = store.selectedAgentGoalID,
+            let goal = store.agentGoals.first(where: { $0.id == id }) else { return }
+      performAfterSwiftUIViewUpdate {
+        guard store.selectedAgentGoalID == id else { return }
+        store.selectAgentGoal(goal)
+      }
+    }
+  }
+}
+
+private struct AgentGoalRow: View {
+  @EnvironmentObject private var store: WorkspaceStore
+  let goal: AgentGoalItem
+
+  var body: some View {
+    let linkedRunCount = store.agentRuns.lazy.filter { $0.goalRef == goal.id }.count
+    VStack(alignment: .leading, spacing: 6) {
+      HStack(spacing: 8) {
+        Text(goal.title)
+          .font(.body.weight(.semibold))
+          .lineLimit(1)
+        Spacer(minLength: 8)
+        if store.mutatingAgentGoalIDs.contains(goal.id) {
+          WorkspaceActivityIndicator(size: .mini)
+        }
+        StatusPill(text: goal.status)
+      }
+      if !goal.description.isEmpty {
+        Text(goal.description)
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .lineLimit(2)
+      }
+      HStack(spacing: 10) {
+        if let ownerAgentRef = goal.ownerAgentRef {
+          Button {
+            store.showAgentProfile(ownerAgentRef)
+          } label: {
+            Label(ownerAgentRef, systemImage: "person.crop.circle")
+          }
+          .buttonStyle(.plain)
+          .help("Open the owning agent profile")
+        }
+        Button {
+          store.showAgentRuns(goalRef: goal.id)
+        } label: {
+          Label("\(linkedRunCount) run\(linkedRunCount == 1 ? "" : "s")", systemImage: "play.circle")
+        }
+        .buttonStyle(.plain)
+        if !goal.measures.isEmpty {
+          Label("\(goal.measures.count) measure\(goal.measures.count == 1 ? "" : "s")", systemImage: "chart.line.uptrend.xyaxis")
+        }
+      }
+      .font(.caption2.weight(.medium))
+      .foregroundStyle(.tertiary)
+      .lineLimit(1)
+    }
+    .padding(.vertical, WorkspaceDesign.rowVerticalPadding)
+  }
+}
+
+private struct AgentsView: View {
+  @EnvironmentObject private var store: WorkspaceStore
+
+  var body: some View {
+    VStack(spacing: 0) {
+      HeaderBar(
+        title: "Agents",
+        subtitle: "Portable worker profiles in agent-profiles/",
+        surface: .approvals
+      ) {
+        if store.isLoadingAgentProfiles { WorkspaceActivityIndicator(size: .small) }
+        Button {
+          Task { await store.refreshAgentProfiles(updatesStatus: true) }
+        } label: {
+          Label("Refresh", systemImage: "arrow.clockwise")
+        }
+      }
+
+      if store.isLoadingAgentProfiles && store.agentProfiles.isEmpty {
+        Spacer(); WorkspaceLoadingStateView("Loading agents"); Spacer()
+      } else if store.agentProfiles.isEmpty {
+        EmptyStateView(
+          title: "No Agents",
+          detail: "Named agent profiles created in this corpus appear here automatically. OpenClaw and Codex remain runtimes, not agent identities."
+        )
+      } else {
+        List {
+          ForEach(store.agentProfiles) { profile in
+            AgentProfileRow(profile: profile)
+              .contentShape(Rectangle())
+              .onTapGesture {
+                if store.selectedAgentProfileID == profile.id {
+                  store.selectAgentProfile(profile)
+                } else {
+                  store.selectedAgentProfileID = profile.id
+                }
+              }
+              .modifier(ReadableListSelectionModifier(isSelected: store.selectedAgentProfileID == profile.id))
+              .listRowBackground(Color.clear)
+              .contextMenu {
+                if let primaryGoalRef = profile.primaryGoalRef {
+                  Button("View Primary Goal") { store.showAgentGoal(primaryGoalRef) }
+                }
+                if let reportsToAgentRef = profile.reportsToAgentRef {
+                  Button("View Manager") { store.showAgentProfile(reportsToAgentRef) }
+                }
+                Button("Show Linked Runs") { store.showAgentRuns(agentRef: profile.id) }
+                Divider()
+                ForEach(["active", "paused", "retired"], id: \.self) { status in
+                  if profile.status != status {
+                    Button("Mark \(AgentRunItem.humanizedLabel(status))") {
+                      Task { await store.setAgentProfileStatus(profile, status: status) }
+                    }
+                  }
+                }
+              }
+          }
+        }
+        .listStyle(.inset)
+        .onChange(of: store.selectedAgentProfileID) {
+          guard let id = store.selectedAgentProfileID,
+                let profile = store.agentProfiles.first(where: { $0.id == id }) else { return }
+          performAfterSwiftUIViewUpdate {
+            guard store.selectedAgentProfileID == id else { return }
+            store.selectAgentProfile(profile)
+          }
+        }
+      }
+    }
+    .task {
+      if store.agentProfiles.isEmpty { await store.refreshAgentProfiles() }
+    }
+    .onAppear {
+      guard let id = store.selectedAgentProfileID,
+            let profile = store.agentProfiles.first(where: { $0.id == id }) else { return }
+      performAfterSwiftUIViewUpdate {
+        guard store.selectedAgentProfileID == id else { return }
+        store.selectAgentProfile(profile)
+      }
+    }
+  }
+}
+
+private struct AgentProfileRow: View {
+  @EnvironmentObject private var store: WorkspaceStore
+  let profile: AgentProfileItem
+
+  var body: some View {
+    let linkedRunCount = store.agentRuns.lazy.filter { $0.agentRef == profile.id }.count
+    VStack(alignment: .leading, spacing: 6) {
+      HStack(spacing: 8) {
+        Text(profile.name)
+          .font(.body.weight(.semibold))
+          .lineLimit(1)
+        Spacer(minLength: 8)
+        if store.mutatingAgentProfileIDs.contains(profile.id) {
+          WorkspaceActivityIndicator(size: .mini)
+        }
+        StatusPill(text: profile.status)
+      }
+      let summary = profile.description.isEmpty ? profile.responsibilities.first ?? "" : profile.description
+      if !summary.isEmpty {
+        Text(summary)
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .lineLimit(2)
+      }
+      HStack(spacing: 10) {
+        if let primaryGoalRef = profile.primaryGoalRef {
+          Button {
+            store.showAgentGoal(primaryGoalRef)
+          } label: {
+            Label(primaryGoalRef, systemImage: "scope")
+          }
+          .buttonStyle(.plain)
+          .help("Open the primary goal")
+        }
+        Button {
+          store.showAgentRuns(agentRef: profile.id)
+        } label: {
+          Label("\(linkedRunCount) run\(linkedRunCount == 1 ? "" : "s")", systemImage: "play.circle")
+        }
+        .buttonStyle(.plain)
+        if let binding = profile.runtimeBindings.first {
+          Label("\(binding.runtime):\(binding.runtimeAgentId)", systemImage: "link")
+        }
+      }
+      .font(.caption2.weight(.medium))
+      .foregroundStyle(.tertiary)
+      .lineLimit(1)
+    }
+    .padding(.vertical, WorkspaceDesign.rowVerticalPadding)
   }
 }
 
@@ -5735,7 +6003,9 @@ private struct OpenClawChatView: View {
             .id("openclaw-chat-bottom")
             .accessibilityHidden(true)
         }
-        .textSelection(.enabled)
+        // Native selection overlays become pathologically expensive for long lazy
+        // transcripts on macOS. Messages retain their explicit copy affordance.
+        .textSelection(.disabled)
         .padding(presentation.isCompact ? 10 : 16)
       }
       .defaultScrollAnchor(.bottom)

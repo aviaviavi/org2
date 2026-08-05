@@ -49,6 +49,8 @@ org2 agent-profile resolve --runtime openclaw \
 
 Durable runs and workflows accept =--agent-ref= and =--goal-ref=. =todo assign= accepts the same refs and writes =:AGENT_REF:= and =:GOAL_REF:= beside its readable =:ASSIGNEE:=. Do not replace the portable profile ID with =openclaw=, =codex=, a provider/model name, or a session ID. If resolution finds no active binding, omit the refs rather than guessing.
 
+The Mac app exposes the same records under *Agent Work → Goals* and *Agent Work → Agents*. Selecting a row opens its canonical plain-text record in the detail pane. Owner, primary-goal, manager, and linked-run controls navigate between related records; the row menu applies supported goal or agent lifecycle changes through the shared CLI.
+
 * Agent retrieval
 
 Use the agent namespace for bounded, cited context:

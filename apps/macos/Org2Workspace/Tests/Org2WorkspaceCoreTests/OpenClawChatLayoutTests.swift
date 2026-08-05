@@ -123,6 +123,33 @@ final class OpenClawChatLayoutTests: XCTestCase {
     XCTAssertGreaterThan(hostingView.fittingSize.height, 118)
   }
 
+  func testLongTranscriptLayoutRemainsResponsiveWithoutNativeSelectionOverlays() {
+    let messages = (0..<120).map { index in
+      OpenClawChatMessage(
+        role: index.isMultiple(of: 2) ? .user : .assistant,
+        content: "Message \(index) has enough text to wrap across multiple lines in a typical chat pane. It remains copyable through the message affordance."
+      )
+    }
+    let view = ScrollView {
+      LazyVStack(alignment: .leading, spacing: 10) {
+        ForEach(messages) { message in
+          ChatBubbleView(message: message)
+        }
+      }
+      .textSelection(.disabled)
+    }
+    .frame(width: 720, height: 600)
+    let hostingView = NSHostingView(rootView: view)
+    hostingView.frame = NSRect(x: 0, y: 0, width: 720, height: 600)
+
+    let startedAt = CFAbsoluteTimeGetCurrent()
+    hostingView.layoutSubtreeIfNeeded()
+    let elapsed = CFAbsoluteTimeGetCurrent() - startedAt
+
+    XCTAssertLessThan(elapsed, 2)
+    XCTAssertEqual(hostingView.fittingSize.width, 720, accuracy: 1)
+  }
+
   func testMessageClipboardCopiesContentWithoutRoleChrome() {
     let message = OpenClawChatMessage(
       role: .assistant,

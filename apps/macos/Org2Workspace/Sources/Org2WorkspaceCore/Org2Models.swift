@@ -233,6 +233,55 @@ public struct AgentWorkflowListPayload: Decodable, Sendable {
   public let workflows: [AgentWorkflowItem]
 }
 
+public struct AgentGoalListPayload: Decodable, Sendable {
+  public let schema: String
+  public let goals: [AgentGoalItem]
+}
+
+public struct AgentGoalItem: Identifiable, Decodable, Hashable, Sendable {
+  public let schema: String
+  public let id: String
+  public let title: String
+  public let description: String
+  public let status: String
+  public let parentGoalRef: String?
+  public let ownerAgentRef: String?
+  public let measures: [String]
+  public let file: String
+  public let createdAt: String
+  public let updatedAt: String
+}
+
+public struct AgentProfileListPayload: Decodable, Sendable {
+  public let schema: String
+  public let profiles: [AgentProfileItem]
+}
+
+public struct AgentRuntimeBindingItem: Decodable, Hashable, Sendable, Identifiable {
+  public let runtime: String
+  public let runtimeAgentId: String
+
+  public var id: String { "\(runtime):\(runtimeAgentId)" }
+}
+
+public struct AgentProfileItem: Identifiable, Decodable, Hashable, Sendable {
+  public let schema: String
+  public let id: String
+  public let name: String
+  public let description: String
+  public let status: String
+  public let responsibilities: [String]
+  public let capabilities: [String]
+  public let skills: [String]
+  public let runtimeBindings: [AgentRuntimeBindingItem]
+  public let goalRefs: [String]
+  public let primaryGoalRef: String?
+  public let reportsToAgentRef: String?
+  public let file: String
+  public let createdAt: String
+  public let updatedAt: String
+}
+
 public struct AgentWorkflowInputItem: Decodable, Hashable, Sendable, Identifiable {
   public let id: String
   public let description: String
@@ -1020,6 +1069,8 @@ public struct AssignedWorkItem: Identifiable, Hashable, Sendable {
 public enum RunsAndReviewPage: String, CaseIterable, Identifiable, Sendable {
   case runs = "Runs"
   case review = "Review"
+  case goals = "Goals"
+  case agents = "Agents"
   case workflows = "Workflows"
 
   public var id: String { rawValue }
