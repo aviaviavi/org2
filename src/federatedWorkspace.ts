@@ -36,6 +36,9 @@ export interface FederatedCommandOptions {
   limit?: number;
 }
 
+type FederatedPayload<T> = { corpus: WorkspaceCorpusRef; payload: T };
+type FederatedOutcome<T> = FederatedPayload<T> | { corpus: WorkspaceCorpusRef; error: unknown };
+
 function cliPath(): string {
   return path.join(path.dirname(fileURLToPath(import.meta.url)), "cli.js");
 }
@@ -86,6 +89,24 @@ function resolveCorpora(mounts: string[]): { corpora: WorkspaceCorpusRef[]; issu
   return { corpora, issues };
 }
 
+async function collectFederatedPayloads<T>(
+  mounts: string[],
+  load: (corpus: WorkspaceCorpusRef) => Promise<T>,
+): Promise<{ corpora: WorkspaceCorpusRef[]; issues: WorkspaceReadIssue[]; payloads: FederatedPayload<T>[] }> {
+  const { corpora, issues } = resolveCorpora(mounts);
+  const outcomes: FederatedOutcome<T>[] = await Promise.all(corpora.map(async (corpus) => {
+    try { return { corpus, payload: await load(corpus) }; }
+    catch (error) { return { corpus, error }; }
+  }));
+  const payloads: FederatedPayload<T>[] = [];
+  for (const outcome of outcomes) {
+    if ("error" in outcome) issues.push({ root: outcome.corpus.root, message: readErrorMessage(outcome.error) });
+    else payloads.push(outcome);
+  }
+  issues.sort((left, right) => left.root.localeCompare(right.root) || left.message.localeCompare(right.message));
+  return { corpora, issues, payloads };
+}
+
 function addCorpus<T extends Record<string, unknown>>(item: T, corpus: WorkspaceCorpusRef): T & { corpus: WorkspaceCorpusRef } {
   return { ...item, corpus };
 }
@@ -107,13 +128,10 @@ function addNumberMaps(target: Record<string, number>, source: Record<string, nu
 }
 
 export async function federatedAgenda(options: FederatedCommandOptions): Promise<Record<string, unknown>> {
-  const { corpora, issues } = resolveCorpora(options.mounts);
-  const outcomes = await Promise.all(corpora.map(async (corpus) => {
-    try { return { corpus, payload: await runCorpusJSON<AgendaPayload>("agenda", corpus.root, options.forwardedArgs) }; }
-    catch (error) { issues.push({ root: corpus.root, message: readErrorMessage(error) }); return undefined; }
-  }));
-  issues.sort((left, right) => left.root.localeCompare(right.root) || left.message.localeCompare(right.message));
-  const payloads = outcomes.filter((item): item is { corpus: WorkspaceCorpusRef; payload: AgendaPayload } => item !== undefined);
+  const { corpora, issues, payloads } = await collectFederatedPayloads(
+    options.mounts,
+    (corpus) => runCorpusJSON<AgendaPayload>("agenda", corpus.root, options.forwardedArgs),
+  );
   const first = payloads[0]?.payload;
   const workload = payloads.some(({ payload }) => payload.workload)
     ? { totalMinutes: 0, byDate: {} as Record<string, number>, byGroup: {} as Record<string, number>, byTag: {} as Record<string, number> }
@@ -140,13 +158,10 @@ export async function federatedAgenda(options: FederatedCommandOptions): Promise
 }
 
 export async function federatedSearch(query: string, options: FederatedCommandOptions): Promise<Record<string, unknown>> {
-  const { corpora, issues } = resolveCorpora(options.mounts);
-  const outcomes = await Promise.all(corpora.map(async (corpus) => {
-    try { return { corpus, payload: await runCorpusJSON<SearchPayload>("search", corpus.root, [query, ...options.forwardedArgs]) }; }
-    catch (error) { issues.push({ root: corpus.root, message: readErrorMessage(error) }); return undefined; }
-  }));
-  issues.sort((left, right) => left.root.localeCompare(right.root) || left.message.localeCompare(right.message));
-  const payloads = outcomes.filter((item): item is { corpus: WorkspaceCorpusRef; payload: SearchPayload } => item !== undefined);
+  const { corpora, issues, payloads } = await collectFederatedPayloads(
+    options.mounts,
+    (corpus) => runCorpusJSON<SearchPayload>("search", corpus.root, [query, ...options.forwardedArgs]),
+  );
   const first = payloads[0]?.payload;
   const qualifiedResults = payloads.map(({ corpus, payload }) => payload.results.map((item) => addCorpus(item, corpus)));
   const results: Array<Record<string, unknown>> = [];

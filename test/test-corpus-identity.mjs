@@ -60,6 +60,29 @@ try {
     assert.equal(searchPayload.$schema, "org2:workspace-search:v1");
     assert.equal(searchPayload.issues.length, 0, JSON.stringify(searchPayload, null, 2));
     assert.deepEqual(searchPayload.results.map((item) => item.corpus.id), ["avi-notes", "team-operations"]);
+
+    const duplicateRoot = fs.mkdtempSync(path.join(os.tmpdir(), "org2-corpus-duplicate-"));
+    const invalidMount = fs.mkdtempSync(path.join(os.tmpdir(), "org2-corpus-invalid-mount-"));
+    try {
+      fs.writeFileSync(path.join(duplicateRoot, "org2.json"), fs.readFileSync(path.join(root, "org2.json"), "utf8"));
+      const problematicMounts = spawnSync(process.execPath, [
+        "dist/cli.js", "workspace", "search", "roadmap phrase",
+        "--mount", root, "--mount", duplicateRoot, "--mount", invalidMount, "--recursive", "--json",
+      ], { encoding: "utf8" });
+      assert.equal(problematicMounts.status, 0, problematicMounts.stderr);
+      const problematicPayload = JSON.parse(problematicMounts.stdout);
+      assert.deepEqual(problematicPayload.corpora.map((corpus) => corpus.id), ["team-operations"]);
+      assert.equal(problematicPayload.issues.length, 2, JSON.stringify(problematicPayload, null, 2));
+      assert.ok(problematicPayload.issues.some((issue) => issue.root === path.resolve(duplicateRoot) && /duplicates corpus id team-operations/.test(issue.message)));
+      assert.ok(problematicPayload.issues.some((issue) => issue.root === path.resolve(invalidMount) && /org2\.json: is required/.test(issue.message)));
+      assert.deepEqual(
+        problematicPayload.issues,
+        [...problematicPayload.issues].sort((left, right) => left.root.localeCompare(right.root) || left.message.localeCompare(right.message)),
+      );
+    } finally {
+      fs.rmSync(duplicateRoot, { recursive: true, force: true });
+      fs.rmSync(invalidMount, { recursive: true, force: true });
+    }
   } finally {
     fs.rmSync(personalRoot, { recursive: true, force: true });
   }
