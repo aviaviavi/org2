@@ -5014,10 +5014,12 @@ final class Org2ModelsTests: XCTestCase {
         fileReference: nil
       )
     ])
+    let renderedLink = OrgInlineRenderedTextLinkMap.make(raw: raw, linkResolver: resolver)
     XCTAssertEqual(
-      OrgInlineRenderedTextLinkMap.make(raw: raw, linkResolver: resolver).links.first?.url,
-      expectedURL
+      renderedLink.displayText,
+      "APP-21273: Load document export history without waiting for per-export storage checks"
     )
+    XCTAssertEqual(renderedLink.links.first?.url, expectedURL)
   }
 
   func testOrgRoamLinkResolverDoesNotGuessAmbiguousWikiLinks() {
@@ -9832,6 +9834,7 @@ final class Org2ModelsTests: XCTestCase {
     :PROPERTIES:
     :ID: 11111111-1111-4111-8111-111111111111
     :Owner: Alice
+    :LINEAR_LINK: [[linear:APP-21221][APP-21221]]
     :END:
     """
     let key = OrgPropertyDrawerRawValueCache.CacheKey(rawText: raw)
@@ -9844,6 +9847,16 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(OrgPropertyDrawerRawValueCache.values(nil), [:])
     XCTAssertEqual(OrgPropertyDrawerRawValueCache.values(raw)["OWNER"], "Alice")
     XCTAssertEqual(OrgPropertyDrawerRawValueCache.values(raw)["ID"], "11111111-1111-4111-8111-111111111111")
+    XCTAssertEqual(
+      OrgPropertyDrawerRawValueCache.values(raw)["LINEAR_LINK"],
+      "[[linear:APP-21221][APP-21221]]"
+    )
+    XCTAssertEqual(
+      OrgInlineRenderedTextLinkMap.make(
+        raw: OrgPropertyDrawerRawValueCache.values(raw)["LINEAR_LINK"] ?? ""
+      ).displayText,
+      "APP-21221"
+    )
     XCTAssertEqual(OrgPropertyDrawerRawValueCache.values(raw)["PROPERTIES"], nil)
     XCTAssertEqual(OrgPropertyDrawerRawValueCache.values(raw)["END"], nil)
     XCTAssertEqual(OrgPropertyDrawerRawValueCache.values(raw), OrgPropertyDrawerRawValueCache.values(raw))

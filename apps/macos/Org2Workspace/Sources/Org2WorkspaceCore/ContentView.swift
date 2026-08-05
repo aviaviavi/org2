@@ -2759,6 +2759,7 @@ private enum RunCompletionMode {
 private struct RunCenterDetail: View {
   @EnvironmentObject private var store: WorkspaceStore
   @State private var clarificationResponse = ""
+  @State private var clarificationError: String?
   @State private var completionSummary = ""
   @State private var isCompletionPresented = false
   @State private var completionMode: RunCompletionMode = .run
@@ -2997,6 +2998,7 @@ private struct RunCenterDetail: View {
     }
     .onChange(of: run.id) {
       clarificationResponse = ""
+      clarificationError = nil
       completionSummary = ""
       isCompletionPresented = false
       completionMode = .run
@@ -3178,8 +3180,14 @@ private struct RunCenterDetail: View {
 
         Button {
           let response = clarificationResponse
-          clarificationResponse = ""
-          Task { await store.respondToAgentRunClarification(run, response: response) }
+          Task {
+            clarificationError = nil
+            if await store.respondToAgentRunClarification(run, response: response) {
+              clarificationResponse = ""
+            } else {
+              clarificationError = store.errorText ?? "The response could not be recorded or delivered."
+            }
+          }
         } label: {
           Label("Reply & Resume", systemImage: "paperplane.fill")
         }
@@ -3188,6 +3196,13 @@ private struct RunCenterDetail: View {
           isMutating
             || WorkspaceStore.normalizedAgentRunClarificationResponse(clarificationResponse) == nil
         )
+
+        if let clarificationError {
+          Label(clarificationError, systemImage: "exclamationmark.triangle.fill")
+            .font(.callout)
+            .foregroundStyle(.red)
+            .textSelection(.enabled)
+        }
       }
     }
   }
@@ -3313,6 +3328,8 @@ private struct RunCenterDetail: View {
         technicalGroup("Run details") {
           Text("Risk: \(AgentRunItem.humanizedLabel(run.riskClass))")
           if let assignee = run.assignee { Text("Assignee: \(assignee)") }
+          if let agentRef = run.agentRef { Text("Agent ref: \(agentRef)").textSelection(.enabled) }
+          if let goalRef = run.goalRef { Text("Goal ref: \(goalRef)").textSelection(.enabled) }
           Text("Run ID: \(run.id)").textSelection(.enabled)
         }
       }

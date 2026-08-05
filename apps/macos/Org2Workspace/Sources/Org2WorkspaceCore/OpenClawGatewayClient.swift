@@ -324,6 +324,18 @@ public struct OpenClawWorkflowContinuation: Sendable {
   }
 }
 
+public struct OpenClawRunContinuation: Sendable {
+  public let runID: String
+  public let sessionKey: String?
+  public let prompt: String
+
+  public init(runID: String, sessionKey: String?, prompt: String) {
+    self.runID = runID
+    self.sessionKey = sessionKey
+    self.prompt = prompt
+  }
+}
+
 public struct OpenClawExecApprovalDetails: Equatable, Sendable {
   public let id: String
   public let commandText: String
@@ -728,6 +740,28 @@ public actor OpenClawGatewayClient {
       throw OpenClawGatewayError.protocolFailure("org2.draft.resume returned an invalid payload")
     }
     return OpenClawWorkflowContinuation(runID: returnedRunID, sessionKey: sessionKey, prompt: prompt)
+  }
+
+  public func replyAndResumeRun(
+    runID: String,
+    response: String,
+    corpusID: String?
+  ) async throws -> OpenClawRunContinuation {
+    var params: [String: Any] = ["runId": runID, "response": response]
+    if let corpusID, !corpusID.isEmpty { params["corpusId"] = corpusID }
+    let payload = try await requestPayload(method: "org2.run.replyAndResume", params: params)
+    guard let run = Self.dictionary(payload["run"]),
+          let returnedRunID = Self.string(run["id"]), !returnedRunID.isEmpty,
+          let prompt = Self.string(payload["prompt"]), !prompt.isEmpty
+    else {
+      throw OpenClawGatewayError.protocolFailure("org2.run.replyAndResume returned an invalid payload")
+    }
+    let sessionKey = Self.string(payload["sessionKey"])?.trimmingCharacters(in: .whitespacesAndNewlines)
+    return OpenClawRunContinuation(
+      runID: returnedRunID,
+      sessionKey: sessionKey?.isEmpty == false ? sessionKey : nil,
+      prompt: prompt
+    )
   }
 
   public func resumeWorkflowRevision(

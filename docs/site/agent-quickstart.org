@@ -29,6 +29,26 @@ When working in a corpus, look for the nearest =org2.json=. It can define file s
 6. Never store credentials in Org2 notes. Config names environment variables or profiles; secret values remain external.
 7. Treat multi-corpus reads as an explicit grant. Pass every =--mount= yourself; do not infer agent access from corpora remembered by a person's app.
 
+* Goals, agent profiles, and runtimes
+
+Org2 separates the outcome, worker, and execution mechanism. A goal is a portable =org2:goal:v1= record under =goals/=. A named worker such as /Scarf Support/ or /Scarf Revenue Scout/ is an =org2:agent-profile:v1= record under =agent-profiles/=. OpenClaw and Codex are runtimes: they execute work, but they are not themselves =AGENT_REF= values.
+
+Profiles contain responsibilities, capabilities, skills, goal refs, and non-secret runtime bindings. A binding such as =openclaw:scarf-support= connects the configured OpenClaw agent ID to the portable =scarf-support= profile. =codex:default= may provide a default profile for a Codex chat, while a selected heading's existing =AGENT_REF= and =GOAL_REF= take precedence. Credentials, model selection, session IDs, and machine paths remain outside the profile.
+
+#+begin_src sh
+org2 goal create customer-trust --title "Earn customer trust" \
+  --measure "Support requests are resolved" --dir ~/notes          # preview
+org2 goal create customer-trust --title "Earn customer trust" \
+  --measure "Support requests are resolved" --dir ~/notes --apply
+org2 agent-profile create scarf-support --name "Scarf Support" \
+  --binding openclaw:scarf-support --primary-goal-ref customer-trust \
+  --responsibility "Resolve customer support requests" --dir ~/notes --apply
+org2 agent-profile resolve --runtime openclaw \
+  --runtime-agent-id scarf-support --dir ~/notes --json
+#+end_src
+
+Durable runs and workflows accept =--agent-ref= and =--goal-ref=. =todo assign= accepts the same refs and writes =:AGENT_REF:= and =:GOAL_REF:= beside its readable =:ASSIGNEE:=. Do not replace the portable profile ID with =openclaw=, =codex=, a provider/model name, or a session ID. If resolution finds no active binding, omit the refs rather than guessing.
+
 * Agent retrieval
 
 Use the agent namespace for bounded, cited context:
@@ -67,7 +87,7 @@ See [[file:tooling-reference.org][Tooling reference]] for commands, [[file:langu
 
 * Native OpenClaw lifecycle bridge
 
-Install the checked-out integration with =openclaw plugins install --link ./integrations/openclaw=. The =org2-lifecycle= plugin must be enabled, permitted to use its typed conversation hooks, and configured with the target =corpusDir=. Verify the live Gateway surface with =openclaw plugins inspect org2-lifecycle --runtime --json= after restarting the Gateway. The adapter is a single-corpus write boundary: Mac workflow requests include the active portable corpus ID and fail before execution if it differs from the configured corpus. Ordinary conversation and personal TODOs stay out of Agent Work; substantial main-agent work, subagents, and cron executions receive correlated durable run records. Workflow turns that request approval remain open, and a Mac approval continues the same durable run in its correlated chat session.
+Install the checked-out integration with =openclaw plugins install --link ./integrations/openclaw=. The =org2-lifecycle= plugin must be enabled, permitted to use its typed conversation hooks, and configured with the target =corpusDir=. Verify the live Gateway surface with =openclaw plugins inspect org2-lifecycle --runtime --json= after restarting the Gateway. The adapter is a single-corpus write boundary: Mac workflow requests include the active portable corpus ID and fail before execution if it differs from the configured corpus. Ordinary conversation and personal TODOs stay out of Agent Work; substantial main-agent work, subagents, and cron executions receive correlated durable run records. Workflow turns that request approval remain open, and a Mac approval continues the same durable run in its correlated chat session. Reply & Resume records the clarification through the Gateway and continues the correlated session; when a legacy run lacks session correlation, the app carries the same run ID and recorded answer into a fresh thread instead of only flipping its status.
 
 The same plugin registers the Mac app's optional local-edit node policy. When *Read and apply Org2 edits on this Mac* is enabled, approve the app's separate node-role pairing and enable the =nodes= tool for the selected agent. Corpus mutations must then use =org2.workspace.read=, =org2.workspace.patch.preview=, and =org2.workspace.patch.apply=. Read returns the effective local document, including an unsaved selected-editor draft; preview binds a whole-file replacement to SHA-256 inputs; apply rechecks that preview, remains inside the active corpus, and returns the exact per-turn change set. The Mac node does not expose a generic shell.
 

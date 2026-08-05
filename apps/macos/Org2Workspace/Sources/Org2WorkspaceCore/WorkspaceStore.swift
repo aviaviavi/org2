@@ -3703,47 +3703,126 @@ public final class WorkspaceStore: ObservableObject {
     addOpenClawContext(pointer, threadMode: threadMode)
   }
 
-  public func respondToAgentRunClarification(_ run: AgentRunItem, response: String) async {
-    guard let corpusRoot, run.status == "blocked", !mutatingAgentRunIDs.contains(run.id) else { return }
+  @discardableResult
+  public func respondToAgentRunClarification(_ run: AgentRunItem, response: String) async -> Bool {
+    guard let corpusRoot, run.status == "blocked", !mutatingAgentRunIDs.contains(run.id) else { return false }
     guard let response = Self.normalizedAgentRunClarificationResponse(response) else {
       errorText = "Enter a response before resuming this run."
       statusText = "Clarification response required"
-      return
+      return false
     }
 
     mutatingAgentRunIDs.insert(run.id)
     defer { mutatingAgentRunIDs.remove(run.id) }
     do {
-      let commented: AgentRunItem = try await cli.runJSON([
-        "run", "comment", run.id,
-        "--author", "Workspace user",
-        "--body", response,
-        "--dir", corpusRoot.path,
-        "--json"
-      ])
-      if let index = agentRuns.firstIndex(where: { $0.id == commented.id }) {
-        agentRuns[index] = commented
+      let gateway = OpenClawGatewayClient(settings: currentOpenClawSettings(allowKeychainRead: true))
+      let continuation: OpenClawRunContinuation
+      do {
+        continuation = try await gateway.replyAndResumeRun(
+          runID: run.id,
+          response: response,
+          corpusID: activeCorpusIdentity?.id
+        )
+      } catch {
+        guard Self.shouldUseLocalClarificationResumeFallback(for: error) else { throw error }
+        let commented: AgentRunItem = try await cli.runJSON([
+          "run", "comment", run.id,
+          "--author", "Workspace user",
+          "--body", response,
+          "--dir", corpusRoot.path,
+          "--json"
+        ])
+        let resumed: AgentRunItem = try await cli.runJSON([
+          "run", "resume", run.id,
+          "--actor", "Org2Workspace",
+          "--dir", corpusRoot.path,
+          "--json"
+        ])
+        if let index = agentRuns.firstIndex(where: { $0.id == resumed.id }) {
+          agentRuns[index] = resumed
+        }
+        continuation = OpenClawRunContinuation(
+          runID: resumed.id,
+          sessionKey: run.openClawSessionKey,
+          prompt: Self.agentRunClarificationContinuationPrompt(
+            run: commented,
+            response: response
+          )
+        )
       }
+      await refreshAgentRuns()
 
-      let resumed: AgentRunItem = try await cli.runJSON([
-        "run", "resume", run.id,
-        "--actor", "Org2Workspace",
-        "--dir", corpusRoot.path,
-        "--json"
-      ])
-      if let index = agentRuns.firstIndex(where: { $0.id == resumed.id }) {
-        agentRuns[index] = resumed
+      let thread: OpenClawChatThread
+      if let sessionKey = continuation.sessionKey,
+         let existing = openClawChatThreads.first(where: { $0.sessionKey == sessionKey }) {
+        if existing.isSettled { reopenOpenClawChatThread(existing.id) }
+        thread = openClawChatThreads.first(where: { $0.id == existing.id }) ?? existing
+      } else {
+        thread = createOpenClawChatThread(
+          title: "Resume: \(run.goal)",
+          statusText: continuation.sessionKey == nil
+            ? "Continuing in a new OpenClaw session"
+            : "Continuing after clarification",
+          sessionKey: continuation.sessionKey
+        )
       }
-      statusText = "Response recorded; \(run.goal) is ready to continue"
+      selectOpenClawChatThread(thread.id)
+      let shouldDrain = enqueueOpenClawMessage(continuation.prompt, attachments: [], in: thread.id)
+      if shouldDrain { await drainOpenClawSendQueue(for: thread.id) }
+      statusText = continuation.sessionKey == nil
+        ? "Response recorded; continuing \(run.goal) in a new OpenClaw session"
+        : "Response recorded and sent; continuing \(run.goal)"
+      return true
     } catch {
       errorText = error.localizedDescription
       statusText = "Clarification response failed"
+      return false
     }
   }
 
   nonisolated static func normalizedAgentRunClarificationResponse(_ value: String) -> String? {
     let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
     return normalized.isEmpty ? nil : normalized
+  }
+
+  nonisolated static func shouldUseLocalClarificationResumeFallback(for error: Error) -> Bool {
+    guard case let OpenClawGatewayError.gateway(code, message) = error else { return false }
+    let normalizedCode = (code ?? "").uppercased()
+    if normalizedCode.contains("METHOD")
+        && (normalizedCode.contains("UNKNOWN")
+          || normalizedCode.contains("NOT_FOUND")
+          || normalizedCode.contains("UNSUPPORTED")) {
+      return true
+    }
+    let normalizedMessage = message.lowercased()
+    if normalizedMessage.contains("missing scope")
+        && normalizedMessage.contains("operator.admin") {
+      return true
+    }
+    return normalizedMessage.contains("org2.run.replyandresume")
+      && (normalizedMessage.contains("unknown")
+        || normalizedMessage.contains("not found")
+        || normalizedMessage.contains("not registered")
+        || normalizedMessage.contains("unsupported"))
+  }
+
+  nonisolated static func agentRunClarificationContinuationPrompt(
+    run: AgentRunItem,
+    response: String
+  ) -> String {
+    [
+      "ORG2_RUN_ID: \(run.id)",
+      "ORG2_RUN_RESUME: clarification-answered",
+      "",
+      "Continue the existing Org2 run “\(run.goal)” after the user's clarification.",
+      "Clarification: \(run.blockedReason ?? "Clarification requested")",
+      "User response:",
+      response.trimmingCharacters(in: .whitespacesAndNewlines),
+      "",
+      "Re-read the durable run before acting. The response is already recorded on that run and the run is now running; do not create a replacement run.",
+      "If this lifecycle run coordinates a more specific child run carrying the same clarification, record the answer on that child and resume it rather than leaving the underlying work blocked.",
+      "Continue from the blocked step, preserve existing context and review boundaries, and update this durable run with the outcome or the next actionable blocker."
+    ].joined(separator: "\n")
   }
 
   public func openAgentRunArtifact(_ artifact: AgentRunArtifactItem) {

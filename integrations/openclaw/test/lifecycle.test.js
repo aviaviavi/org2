@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { conciseGoal, cronKey, durableRunMarker, executionSummary, outcomeCommand, shouldTrackMainTurn, workflowContinuationPrompt, workflowExecutionPrompt, workflowMarker, workflowRevisionPrompt } from "../lib/lifecycle.js";
+import { clarificationContinuationPrompt, conciseGoal, cronKey, cronSessionKey, durableRunMarker, executionSummary, outcomeCommand, shouldTrackMainTurn, workflowContinuationPrompt, workflowExecutionPrompt, workflowMarker, workflowRevisionPrompt } from "../lib/lifecycle.js";
 import { Org2Lifecycle } from "../lib/lifecycle.js";
 import { approvalAction, approvalContext, approvalTitle, draftCreatedEffect, draftSendEffect } from "../lib/draft-approvals.js";
 
@@ -41,6 +41,18 @@ test("uses the same cron key when finish adds run and session ids", () => {
   assert.equal(cronKey(started), cronKey(finished));
 });
 
+test("derives the agent-scoped OpenClaw session for cron continuations", () => {
+  assert.equal(
+    cronSessionKey({ jobId: "job-1" }, "scarf-support"),
+    "agent:scarf-support:cron:job-1",
+  );
+  assert.equal(
+    cronSessionKey({ jobId: "job-1", sessionKey: "agent:custom:cron:one" }, "scarf-support"),
+    "agent:custom:cron:one",
+  );
+  assert.equal(cronSessionKey({ jobId: "job-1" }, undefined), undefined);
+});
+
 test("recognizes prepared Org2 workflow runs", () => {
   const prompt = workflowExecutionPrompt({ id: "weekly-review", version: "1.2.0", title: "Weekly review" }, { week: "2026-W29" }, "run-42");
   assert.deepEqual(workflowMarker(prompt), {
@@ -53,6 +65,68 @@ test("recognizes prepared Org2 workflow runs", () => {
   assert.match(prompt, /Provider draft: PROVIDER:TOOL:DRAFT_ID/);
   assert.match(workflowContinuationPrompt({ id: "weekly-review", version: "1.2.0", title: "Weekly review" }, "run-42"), /artifact-review/);
   assert.match(workflowContinuationPrompt({ id: "weekly-review", version: "1.2.0", title: "Weekly review" }, "run-42"), /org2 run approval-resolve --decision-key/);
+});
+
+test("reply and resume persists the clarification and returns its correlated session", async () => {
+  const calls = [];
+  const dir = await mkdtemp(join(tmpdir(), "org2-clarification-resume-"));
+  const blocked = {
+    id: "run-clarification",
+    goal: "Prepare the customer proposal",
+    status: "blocked",
+    blockedReason: "Which commercial terms should we use?",
+  };
+  const lifecycle = new Org2Lifecycle({
+    stateFile: join(dir, "state.json"),
+    exec: async (args) => {
+      calls.push(args);
+      if (args[0] === "corpus") return JSON.stringify({ identity: { id: "personal" } });
+      if (args[0] === "run" && args[1] === "show") return JSON.stringify(blocked);
+      if (args[0] === "run" && args[1] === "comment") return JSON.stringify({ ...blocked, comments: [{ body: "Use the current plan." }] });
+      if (args[0] === "run" && args[1] === "resume") return JSON.stringify({ ...blocked, status: "running" });
+      throw new Error(`unexpected command: ${args.join(" ")}`);
+    },
+  });
+  lifecycle.state.mappings.clarification = {
+    org2RunId: blocked.id,
+    sessionKey: "agent:scarf-support:cron:job-1",
+    pausedAt: "2026-08-04T12:00:00.000Z",
+    pausedStatus: "blocked",
+    createdAt: "2026-08-04T11:00:00.000Z",
+  };
+
+  const result = await lifecycle.replyAndResumeRun(blocked.id, "  Use the current plan.  ", {
+    expectedCorpusId: "personal",
+  });
+
+  assert.equal(result.run.status, "running");
+  assert.equal(result.sessionKey, "agent:scarf-support:cron:job-1");
+  assert.equal(result.correlated, true);
+  assert.equal(durableRunMarker(result.prompt), blocked.id);
+  assert.match(result.prompt, /Use the current plan\./);
+  assert.match(result.prompt, /do not create a replacement run/);
+  assert.deepEqual(calls.find((args) => args[1] === "comment"), [
+    "run", "comment", blocked.id, "--author", "Workspace user", "--body", "Use the current plan.", "--json",
+  ]);
+  assert.equal(lifecycle.state.mappings.clarification.pausedAt, undefined);
+  assert.equal(lifecycle.state.mappings.clarification.pausedStatus, undefined);
+});
+
+test("reply and resume returns a usable fallback prompt without stale session correlation", async () => {
+  const blocked = { id: "run-unmapped", goal: "Continue work", status: "blocked", blockedReason: "What next?" };
+  const lifecycle = new Org2Lifecycle({
+    exec: async (args) => {
+      if (args[0] === "corpus") return JSON.stringify({ identity: { id: "personal" } });
+      if (args[1] === "show" || args[1] === "comment") return JSON.stringify(blocked);
+      if (args[1] === "resume") return JSON.stringify({ ...blocked, status: "running" });
+      throw new Error(`unexpected command: ${args.join(" ")}`);
+    },
+  });
+
+  const result = await lifecycle.replyAndResumeRun(blocked.id, "Proceed with option B.");
+  assert.equal(result.sessionKey, undefined);
+  assert.equal(result.correlated, false);
+  assert.match(clarificationContinuationPrompt(blocked, "Proceed with option B."), /ORG2_RUN_ID: run-unmapped/);
 });
 
 test("prepares a durable run before handing a workflow to OpenClaw", async () => {
@@ -72,6 +146,71 @@ test("prepares a durable run before handing a workflow to OpenClaw", async () =>
   assert.equal(prepared.run.id, "run-1");
   assert.equal(workflowMarker(prepared.prompt).workflowRunId, "run-1");
   assert.deepEqual(calls.find((args) => args[0] === "workflow" && args[1] === "run"), ["workflow", "run", "weekly-review", "--owner", "operator", "--json", "--input", "week=29"]);
+});
+
+test("resolves a named OpenClaw agent profile and stamps its goal on a durable run", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "org2-openclaw-agent-profile-"));
+  const calls = [];
+  const lifecycle = new Org2Lifecycle({
+    owner: "operator",
+    stateFile: join(dir, "state.json"),
+    exec: async (args) => {
+      calls.push(args);
+      if (args[0] === "agent-profile") return JSON.stringify({
+        found: true,
+        agentRef: "scarf-support",
+        goalRef: "customer-trust",
+      });
+      if (args[0] === "run" && args[1] === "create") return JSON.stringify({ run: { id: "run-identity" } });
+      return "";
+    },
+  });
+  await lifecycle.init();
+  await lifecycle.ensure("turn:agent:scarf-support:chat:1", {
+    kind: "agent-turn",
+    goal: "Resolve a support request",
+    sessionKey: "agent:scarf-support:chat:1",
+    runtimeAgentId: "scarf-support",
+    selectedAgentRef: "scarf-support",
+    selectedGoalRef: "urgent-support",
+  });
+  assert.deepEqual(calls[0], [
+    "agent-profile", "resolve",
+    "--runtime", "openclaw",
+    "--runtime-agent-id", "scarf-support",
+    "--json",
+  ]);
+  const create = calls.find((args) => args[0] === "run" && args[1] === "create");
+  assert.ok(create.includes("--agent-ref"));
+  assert.equal(create[create.indexOf("--agent-ref") + 1], "scarf-support");
+  assert.equal(create[create.indexOf("--goal-ref") + 1], "urgent-support");
+  const comment = calls.find((args) => args[0] === "run" && args[1] === "comment");
+  assert.match(comment.at(-1), /OPENCLAW_AGENT_ID: scarf-support/);
+  assert.match(comment.at(-1), /ORG2_AGENT_REF: scarf-support/);
+});
+
+test("keeps an explicit workflow goal ahead of an agent profile default", async () => {
+  const calls = [];
+  const lifecycle = new Org2Lifecycle({
+    exec: async (args) => {
+      calls.push(args);
+      if (args[0] === "corpus") return JSON.stringify({ identity: { id: "personal" } });
+      if (args[0] === "agent-profile") return JSON.stringify({ agentRef: "scarf-support", goalRef: "customer-trust" });
+      if (args[0] === "workflow" && args[1] === "show") return JSON.stringify({
+        id: "incident-response",
+        version: "1.0.0",
+        title: "Incident response",
+        agentRef: "scarf-support",
+        goalRef: "restore-production",
+      });
+      if (args[0] === "workflow" && args[1] === "run") return JSON.stringify({ run: { id: "run-incident" } });
+      return "";
+    },
+  });
+  await lifecycle.prepareWorkflowRun("incident-response", {}, { runtimeAgentId: "scarf-support" });
+  const create = calls.find((args) => args[0] === "workflow" && args[1] === "run");
+  assert.equal(create[create.indexOf("--agent-ref") + 1], "scarf-support");
+  assert.equal(create[create.indexOf("--goal-ref") + 1], "restore-production");
 });
 
 test("reconciles an active Org2 schedule into OpenClaw cron", async () => {

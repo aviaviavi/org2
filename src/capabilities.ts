@@ -29,6 +29,7 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
       "Prefer JSON output for integrations (`--format json` or `--json` where supported).",
       "Use `org2 agent context|search|fetch|bundle` for bounded, cited corpus retrieval.",
       "Use `org2 run --help` for durable delegated work, `org2 workflow` for reusable recipes, and `org2 mcp serve` for MCP discovery.",
+      "Use `org2 goal` for durable outcomes and `org2 agent-profile` for portable named workers plus runtime bindings; resolve a runtime agent ID before creating delegated work.",
       "Use read-only `org2 doctor --dir CORPUS --json` to find contradictory run, approval, workflow-attempt, and projected headline state before an agent acts.",
       "Use `org2 run show ID --with-revision --json` when a client needs a revision token for a later guarded mutation.",
       "Use `org2 ledger` for stable per-account bookkeeping in recurring workflows; canonical accounts live under `notes/LEDGER/accounts/`.",
@@ -53,6 +54,7 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
       "A run with a review-required artifact cannot be completed normally; after the human decision, use `org2 run artifact-review RUN_ID ARTIFACT_ID --status reviewed|rejected --actor NAME` to update both the durable run and linked Org artifact before completion.",
       "When a person confirms that an unfinished run's outcome was completed outside the workflow, `org2 run complete-external ID --summary TEXT --actor NAME` records that explicit resolution while preserving unresolved approvals and review metadata as history; agents must not infer this resolution on their own.",
       "Record observable runtime metadata with `org2 run runtime ID` when provider, model, token usage, cost, or elapsed time is available; never put credentials in a run record.",
+      "Treat OpenClaw and Codex as runtimes, not agent identities. Store named workers under agent-profiles/, bind non-secret runtime agent IDs there, and preserve resolved agentRef/goalRef on runs, workflows, and delegated headings.",
       "Run targeted tests plus `org2 lint` around writes when practical; never put secrets in notes or generated artifacts.",
       "Never infer agent access from corpora remembered by a person's app; every federated CLI mount must be explicit.",
       "Treat `org2 doctor` as a read-only consistency check. Review its evidence before repairing canonical state; the command never mutates files automatically.",
@@ -75,8 +77,8 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
       },
       {
         id: "agentic-workspace",
-        purpose: "Manage settled chat history, create and inspect durable agent runs, and package reusable workflows.",
-        commands: ["org2 doctor", "org2 thread", "org2 run", "org2 review", "org2 workflow", "org2 eval"],
+        purpose: "Manage goals and portable agent identities, settle chat history, create and inspect durable agent runs, and package reusable workflows.",
+        commands: ["org2 doctor", "org2 goal", "org2 agent-profile", "org2 thread", "org2 run", "org2 review", "org2 workflow", "org2 eval"],
         writes: "mixed",
       },
       {

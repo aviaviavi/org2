@@ -262,6 +262,8 @@ public struct AgentWorkflowItem: Identifiable, Decodable, Hashable, Sendable {
   public let file: String
   public let legacyLocation: Bool
   public let sourceRunId: String?
+  public let agentRef: String?
+  public let goalRef: String?
   public let createdAt: String
   public let updatedAt: String
 
@@ -286,6 +288,8 @@ public struct AgentRunItem: Identifiable, Decodable, Hashable, Sendable {
   public let riskClass: String
   public let owner: String?
   public let assignee: String?
+  public let agentRef: String?
+  public let goalRef: String?
   public let workflowId: String?
   public let workflowVersion: String?
   public let providerPolicy: String?
@@ -361,6 +365,21 @@ public struct AgentRunItem: Identifiable, Decodable, Hashable, Sendable {
           .caseInsensitiveCompare("OPENCLAW_KIND: external-draft") == .orderedSame
       }
     }
+  }
+  public var openClawSessionKey: String? {
+    for comment in comments.reversed() {
+      for line in comment.body.split(whereSeparator: \.isNewline) {
+        let rawLine = String(line).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard rawLine.lowercased().hasPrefix("openclaw_session:") else { continue }
+        let sessionKey = rawLine.dropFirst("OPENCLAW_SESSION:".count)
+          .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !sessionKey.isEmpty,
+              sessionKey.localizedCaseInsensitiveCompare("unknown") != .orderedSame
+        else { continue }
+        return sessionKey
+      }
+    }
+    return nil
   }
   public var completedStepCount: Int { plan.filter { $0.status == "completed" }.count }
   public var skippedStepCount: Int { plan.filter { $0.status == "skipped" }.count }
@@ -486,6 +505,8 @@ public struct AgentRunItem: Identifiable, Decodable, Hashable, Sendable {
       riskClass,
       owner,
       assignee,
+      agentRef,
+      goalRef,
       workflowId,
       workflowVersion,
       providerPolicy,

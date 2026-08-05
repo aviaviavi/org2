@@ -89,6 +89,24 @@ import {
   workLedgerAccountPath,
   type WorkLedgerAccount,
 } from "./workLedger.js";
+import {
+  AGENT_PROFILE_STATUSES,
+  GOAL_STATUSES,
+  agentProfilePath,
+  createAgentProfile,
+  createGoal,
+  goalPath,
+  listAgentProfiles,
+  listGoals,
+  loadAgentProfileSnapshot,
+  loadGoalSnapshot,
+  renderAgentProfileOrg,
+  renderGoalOrg,
+  resolveAgentProfile,
+  saveAgentProfile,
+  saveGoal,
+  type AgentRuntimeBinding,
+} from "./coordination.js";
 
 interface ParsedArgs { positional: string[]; flags: Map<string, string[]>; }
 function parseArgs(args: string[]): ParsedArgs {
@@ -147,7 +165,12 @@ const HELP = `Agentic workspace commands:
   org2 workspace search QUERY --mount CORPUS [--mount CORPUS ...] [--limit N]
   org2 thread list|show|settle|reopen|configure|auto-settle [--dir CORPUS] [--apply]
   org2 thread configure --auto-settle never|SECONDS [--dir CORPUS] [--apply]
-  org2 run create --goal TEXT [--accept TEXT] [--risk CLASS] [--owner NAME] [--capability ID] [--dir CORPUS]
+  org2 goal list|show|create|update [--dir CORPUS] [--apply]
+  org2 goal create ID --title TEXT [--description TEXT] [--status planned|active|achieved|canceled] [--parent-goal-ref ID] [--owner-agent-ref ID] [--measure TEXT]
+  org2 agent-profile list|show|create|update|resolve [--dir CORPUS] [--apply]
+  org2 agent-profile create ID --name TEXT [--binding RUNTIME:AGENT_ID] [--goal-ref ID] [--primary-goal-ref ID] [--responsibility TEXT] [--capability ID] [--skill ID]
+  org2 agent-profile resolve --runtime openclaw|codex --runtime-agent-id ID [--json]
+  org2 run create --goal TEXT [--goal-ref ID] [--agent-ref ID] [--accept TEXT] [--risk CLASS] [--owner NAME] [--capability ID] [--dir CORPUS]
   org2 run show ID --with-revision --json
   org2 run list|show|validate|start|resume|retry|cancel|complete|complete-external|fail|block|fork|normalize|artifact-review
   org2 run block ID --reason "Specific clarification needed"
@@ -155,7 +178,7 @@ const HELP = `Agentic workspace commands:
   org2 run complete-external ID --summary "Where or how it was completed" --actor NAME
   org2 run outcome ID --summary "What happened" [--highlight TEXT] [--next-action TEXT]
   org2 run runtime ID [--provider ID] [--model ID] [--tokens-used N] [--cost-used-usd N] [--elapsed-seconds N]
-  org2 run assign ID [--owner NAME] [--assignee NAME]
+  org2 run assign ID [--owner NAME] [--assignee NAME] [--agent-ref ID] [--goal-ref ID]
   org2 run comment ID --author NAME --body TEXT
   org2 run step ID STEP --status STATUS
   org2 run artifact ID --path FILE [--role ROLE] [--review-status STATUS]
@@ -938,6 +961,125 @@ function resolveCorrelatedApproval(corpus: string, rawDecisionKey: string): {
   };
 }
 
+function runtimeBindings(parsed: ParsedArgs): AgentRuntimeBinding[] {
+  return flags(parsed, "binding").map((raw) => {
+    const colon = raw.indexOf(":");
+    if (colon < 1 || colon === raw.length - 1) throw new Error("--binding must be RUNTIME:AGENT_ID");
+    return { runtime: raw.slice(0, colon).trim().toLowerCase(), runtimeAgentId: raw.slice(colon + 1).trim() };
+  });
+}
+
+function goalCommand(parsed: ParsedArgs): void {
+  const action = parsed.positional[0] || "list";
+  const corpus = root(parsed);
+  if (action === "list") {
+    const goals = listGoals(corpus).filter((goal) => !flag(parsed, "status") || goal.status === flag(parsed, "status"));
+    output(parsed, { schema: "org2:goal-list:v1", goals }, goals.length ? goals.map((goal) => `${goal.id}\t${goal.status}\t${goal.title}`).join("\n") : "No goals.");
+    return;
+  }
+  const id = required(parsed.positional[1], `goal id is required for ${action}`);
+  if (action === "show") {
+    const snapshot = loadGoalSnapshot(corpus, id);
+    output(parsed, snapshot.value, snapshot.raw);
+    return;
+  }
+  if (action === "create") {
+    const goal = createGoal({
+      id,
+      title: required(flag(parsed, "title"), "--title is required"),
+      description: flag(parsed, "description"),
+      status: optionalChoice(flag(parsed, "status"), GOAL_STATUSES, "goal status"),
+      parentGoalRef: flag(parsed, "parent-goal-ref"),
+      ownerAgentRef: flag(parsed, "owner-agent-ref"),
+      measures: flags(parsed, "measure"),
+    });
+    const file = goalPath(corpus, goal.id);
+    if (enabled(parsed, "apply")) saveGoal(corpus, goal, { expectedRevision: null });
+    output(parsed, { schema: "org2:goal-mutation:v1", applied: enabled(parsed, "apply"), file, goal, preview: renderGoalOrg(goal) }, `${enabled(parsed, "apply") ? "created" : "would create"} ${goal.id}\n${file}`);
+    return;
+  }
+  if (action === "update") {
+    const snapshot = loadGoalSnapshot(corpus, id);
+    const goal = {
+      ...snapshot.value,
+      ...(flag(parsed, "title") !== undefined ? { title: flag(parsed, "title")! } : {}),
+      ...(flag(parsed, "description") !== undefined ? { description: flag(parsed, "description")! } : {}),
+      ...(flag(parsed, "status") !== undefined ? { status: choice(flag(parsed, "status"), GOAL_STATUSES, "goal status") } : {}),
+      ...(flag(parsed, "parent-goal-ref") !== undefined ? { parentGoalRef: flag(parsed, "parent-goal-ref") } : {}),
+      ...(flag(parsed, "owner-agent-ref") !== undefined ? { ownerAgentRef: flag(parsed, "owner-agent-ref") } : {}),
+      ...(parsed.flags.has("measure") ? { measures: flags(parsed, "measure") } : {}),
+      updatedAt: new Date().toISOString(),
+    };
+    if (enabled(parsed, "apply")) saveGoal(corpus, goal, { expectedRevision: snapshot.revision });
+    output(parsed, { schema: "org2:goal-mutation:v1", applied: enabled(parsed, "apply"), file: snapshot.file, goal, preview: renderGoalOrg(goal) }, `${enabled(parsed, "apply") ? "updated" : "would update"} ${goal.id}\n${snapshot.file}`);
+    return;
+  }
+  throw new Error(`unknown goal action: ${action}`);
+}
+
+function agentProfileCommand(parsed: ParsedArgs): void {
+  const action = parsed.positional[0] || "list";
+  const corpus = root(parsed);
+  if (action === "list") {
+    const profiles = listAgentProfiles(corpus).filter((profile) => !flag(parsed, "status") || profile.status === flag(parsed, "status"));
+    output(parsed, { schema: "org2:agent-profile-list:v1", profiles }, profiles.length ? profiles.map((profile) => `${profile.id}\t${profile.status}\t${profile.name}`).join("\n") : "No agent profiles.");
+    return;
+  }
+  if (action === "resolve") {
+    const resolved = resolveAgentProfile(corpus, required(flag(parsed, "runtime"), "--runtime is required"), required(flag(parsed, "runtime-agent-id"), "--runtime-agent-id is required"));
+    output(parsed, resolved, resolved.found ? `${resolved.runtime}:${resolved.runtimeAgentId}\t${resolved.agentRef}${resolved.goalRef ? `\tgoal ${resolved.goalRef}` : ""}` : `${resolved.runtime}:${resolved.runtimeAgentId}\tnot bound`);
+    return;
+  }
+  const id = required(parsed.positional[1], `agent profile id is required for ${action}`);
+  if (action === "show") {
+    const snapshot = loadAgentProfileSnapshot(corpus, id);
+    output(parsed, snapshot.value, snapshot.raw);
+    return;
+  }
+  if (action === "create") {
+    const profile = createAgentProfile({
+      id,
+      name: required(flag(parsed, "name"), "--name is required"),
+      description: flag(parsed, "description"),
+      status: optionalChoice(flag(parsed, "status"), AGENT_PROFILE_STATUSES, "agent profile status"),
+      responsibilities: flags(parsed, "responsibility"),
+      capabilities: flags(parsed, "capability"),
+      skills: flags(parsed, "skill"),
+      runtimeBindings: runtimeBindings(parsed),
+      goalRefs: flags(parsed, "goal-ref"),
+      primaryGoalRef: flag(parsed, "primary-goal-ref"),
+      reportsToAgentRef: flag(parsed, "reports-to-agent-ref"),
+    });
+    const file = agentProfilePath(corpus, profile.id);
+    if (enabled(parsed, "apply")) saveAgentProfile(corpus, profile, { expectedRevision: null });
+    output(parsed, { schema: "org2:agent-profile-mutation:v1", applied: enabled(parsed, "apply"), file, profile, preview: renderAgentProfileOrg(profile) }, `${enabled(parsed, "apply") ? "created" : "would create"} ${profile.id}\n${file}`);
+    return;
+  }
+  if (action === "update") {
+    const snapshot = loadAgentProfileSnapshot(corpus, id);
+    const primaryGoalRef = flag(parsed, "primary-goal-ref");
+    const goalRefs = parsed.flags.has("goal-ref") ? flags(parsed, "goal-ref") : snapshot.value.goalRefs;
+    const profile = {
+      ...snapshot.value,
+      ...(flag(parsed, "name") !== undefined ? { name: flag(parsed, "name")! } : {}),
+      ...(flag(parsed, "description") !== undefined ? { description: flag(parsed, "description")! } : {}),
+      ...(flag(parsed, "status") !== undefined ? { status: choice(flag(parsed, "status"), AGENT_PROFILE_STATUSES, "agent profile status") } : {}),
+      ...(parsed.flags.has("responsibility") ? { responsibilities: flags(parsed, "responsibility") } : {}),
+      ...(parsed.flags.has("capability") ? { capabilities: flags(parsed, "capability") } : {}),
+      ...(parsed.flags.has("skill") ? { skills: flags(parsed, "skill") } : {}),
+      ...(parsed.flags.has("binding") ? { runtimeBindings: runtimeBindings(parsed) } : {}),
+      goalRefs: [...new Set([...goalRefs, ...(primaryGoalRef ? [primaryGoalRef] : [])])],
+      ...(primaryGoalRef !== undefined ? { primaryGoalRef } : {}),
+      ...(flag(parsed, "reports-to-agent-ref") !== undefined ? { reportsToAgentRef: flag(parsed, "reports-to-agent-ref") } : {}),
+      updatedAt: new Date().toISOString(),
+    };
+    if (enabled(parsed, "apply")) saveAgentProfile(corpus, profile, { expectedRevision: snapshot.revision });
+    output(parsed, { schema: "org2:agent-profile-mutation:v1", applied: enabled(parsed, "apply"), file: snapshot.file, profile, preview: renderAgentProfileOrg(profile) }, `${enabled(parsed, "apply") ? "updated" : "would update"} ${profile.id}\n${snapshot.file}`);
+    return;
+  }
+  throw new Error(`unknown agent-profile action: ${action}`);
+}
+
 async function runCommand(parsed: ParsedArgs): Promise<void> {
   const action = parsed.positional[0] || "help";
   const corpus = root(parsed);
@@ -946,7 +1088,7 @@ async function runCommand(parsed: ParsedArgs): Promise<void> {
     const risk = choice(flag(parsed, "risk", "local-draft"), AGENT_RUN_RISK_CLASSES, "risk class");
     const tokenLimit = flag(parsed, "token-limit"); const costLimit = flag(parsed, "cost-limit-usd"); const timeLimit = flag(parsed, "time-limit-seconds");
     const plan = flags(parsed, "step").map((raw, index) => { const colon = raw.indexOf(":"); const kind = colon > 0 ? raw.slice(0, colon) : "agent"; const title = colon > 0 ? raw.slice(colon + 1) : raw; if (!title.trim()) throw new Error(`--step ${index + 1} must be [${AGENT_RUN_STEP_KINDS.join("|")}]:TITLE`); return { id: `step-${index + 1}`, kind: choice(kind, AGENT_RUN_STEP_KINDS, `--step ${index + 1} kind`), title: title.trim() }; });
-    const run = createAgentRun({ id: flag(parsed, "id"), goal: required(flag(parsed, "goal"), "--goal is required"), acceptanceCriteria: flags(parsed, "accept"), riskClass: risk, owner: flag(parsed, "owner"), assignee: flag(parsed, "assignee"), providerPolicy: flag(parsed, "policy"), provider: flag(parsed, "provider"), model: flag(parsed, "model"), capabilities: flags(parsed, "capability"), context: flags(parsed, "context").map((ref) => ({ ref })), plan, logicalWorkId: flag(parsed, "logical-work-id"), ...((tokenLimit || costLimit || timeLimit) ? { budget: { ...(tokenLimit ? { tokenLimit: Number(tokenLimit) } : {}), ...(costLimit ? { costLimitUsd: Number(costLimit) } : {}), ...(timeLimit ? { timeLimitSeconds: Number(timeLimit) } : {}) } } : {}) });
+    const run = createAgentRun({ id: flag(parsed, "id"), goal: required(flag(parsed, "goal"), "--goal is required"), goalRef: flag(parsed, "goal-ref"), agentRef: flag(parsed, "agent-ref"), acceptanceCriteria: flags(parsed, "accept"), riskClass: risk, owner: flag(parsed, "owner"), assignee: flag(parsed, "assignee"), providerPolicy: flag(parsed, "policy"), provider: flag(parsed, "provider"), model: flag(parsed, "model"), capabilities: flags(parsed, "capability"), context: flags(parsed, "context").map((ref) => ({ ref })), plan, logicalWorkId: flag(parsed, "logical-work-id"), ...((tokenLimit || costLimit || timeLimit) ? { budget: { ...(tokenLimit ? { tokenLimit: Number(tokenLimit) } : {}), ...(costLimit ? { costLimitUsd: Number(costLimit) } : {}), ...(timeLimit ? { timeLimitSeconds: Number(timeLimit) } : {}) } } : {}) });
     const file = saveAgentRun(corpus, run, { expectedRevision: null }); output(parsed, { run, file }, `created ${run.id}\n${file}`); return;
   }
   if (action === "list") {
@@ -1006,7 +1148,7 @@ async function runCommand(parsed: ParsedArgs): Promise<void> {
     actor: flag(parsed, "actor"), reason: flag(parsed, "reason"), summary: flag(parsed, "summary"),
     highlights: flags(parsed, "highlight"), nextActions: flags(parsed, "next-action"),
   });
-  else if (action === "assign") run = updateAgentRunAssignment(existing, { owner: flag(parsed, "owner"), assignee: flag(parsed, "assignee"), actor: flag(parsed, "actor") });
+  else if (action === "assign") run = updateAgentRunAssignment(existing, { owner: flag(parsed, "owner"), assignee: flag(parsed, "assignee"), agentRef: flag(parsed, "agent-ref"), goalRef: flag(parsed, "goal-ref"), actor: flag(parsed, "actor") });
   else if (action === "outcome") run = updateAgentRunOutcome(existing, { summary: required(flag(parsed, "summary"), "--summary is required"), highlights: flags(parsed, "highlight"), nextActions: flags(parsed, "next-action"), actor: flag(parsed, "actor") });
   else if (action === "runtime") {
     const numberFlag = (name: string): number | undefined => {
@@ -1181,6 +1323,8 @@ function workflowCommand(parsed: ParsedArgs): void {
     const run = instantiateWorkflow(workflow, inputs, {
       owner: flag(parsed, "owner"),
       assignee: flag(parsed, "assignee"),
+      agentRef: flag(parsed, "agent-ref"),
+      goalRef: flag(parsed, "goal-ref"),
       logicalWorkId: flag(parsed, "logical-work-id") || (triggerId ? `workflow:${id}` : undefined),
       attempt: triggerId ? {
         id: flag(parsed, "attempt-id") || crypto.randomUUID(),
@@ -1237,7 +1381,7 @@ function evalCommand(parsed: ParsedArgs): void {
 
 export async function runAgenticWorkspaceCommand(args: string[]): Promise<boolean> {
   const family = args[0];
-  if (!family || !["doctor", "ledger", "corpus", "workspace", "thread", "run", "review", "workflow", "artifact", "runtime", "mcp", "eval"].includes(family)) return false;
+  if (!family || !["doctor", "ledger", "corpus", "workspace", "thread", "goal", "agent-profile", "run", "review", "workflow", "artifact", "runtime", "mcp", "eval"].includes(family)) return false;
   const parsed = parseArgs(args.slice(1));
   if (enabled(parsed, "help") || parsed.positional[0] === "help") { output(parsed, HELP); return true; }
   if (family === "doctor") doctorCommand(parsed);
@@ -1245,6 +1389,8 @@ export async function runAgenticWorkspaceCommand(args: string[]): Promise<boolea
   else if (family === "corpus") corpusCommand(parsed);
   else if (family === "workspace") await workspaceCommand(parsed);
   else if (family === "thread") threadCommand(parsed);
+  else if (family === "goal") goalCommand(parsed);
+  else if (family === "agent-profile") agentProfileCommand(parsed);
   else if (family === "run") await runCommand(parsed);
   else if (family === "review") reviewCommand(parsed);
   else if (family === "workflow") workflowCommand(parsed);

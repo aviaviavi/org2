@@ -19,6 +19,8 @@ final class AgentRunModelsTests: XCTestCase {
         "riskClass": "external-action",
         "owner": "Avi",
         "assignee": "writer",
+        "agentRef": "scarf-writer",
+        "goalRef": "trusted-launch",
         "parentRunId": "parent-run",
         "capabilities": ["publish"],
         "context": [{"ref":"notes/source.org2","citation":"notes/source.org2:1"}],
@@ -38,11 +40,13 @@ final class AgentRunModelsTests: XCTestCase {
     let run = try XCTUnwrap(payload.runs.first)
     XCTAssertEqual(run.id, "run-1")
     XCTAssertEqual(run.parentRunId, "parent-run")
+    XCTAssertEqual(run.agentRef, "scarf-writer")
+    XCTAssertEqual(run.goalRef, "trusted-launch")
     XCTAssertEqual(run.pendingApprovalCount, 1)
     XCTAssertEqual(run.progressText, "1/1 completed")
     XCTAssertTrue(run.needsAttention)
     XCTAssertTrue(run.matchesRunFilter("cited briefing"))
-    XCTAssertTrue(run.matchesRunFilter("writer publish"))
+    XCTAssertTrue(run.matchesRunFilter("scarf-writer trusted-launch"))
     XCTAssertTrue(run.matchesRunFilter("notes source"))
     XCTAssertTrue(run.matchesRunFilter("brief pdf"))
     XCTAssertTrue(run.matchesRunFilter("release pending"))
@@ -766,6 +770,57 @@ final class AgentRunModelsTests: XCTestCase {
     )
   }
 
+  func testAgentRunClarificationFallbackOnlyAcceptsAnUnavailableGatewayMethod() {
+    XCTAssertTrue(WorkspaceStore.shouldUseLocalClarificationResumeFallback(
+      for: OpenClawGatewayError.gateway(
+        code: "METHOD_NOT_FOUND",
+        message: "Unknown method: org2.run.replyAndResume"
+      )
+    ))
+    XCTAssertTrue(WorkspaceStore.shouldUseLocalClarificationResumeFallback(
+      for: OpenClawGatewayError.gateway(
+        code: "INVALID_REQUEST",
+        message: "Method org2.run.replyAndResume is not registered"
+      )
+    ))
+    XCTAssertTrue(WorkspaceStore.shouldUseLocalClarificationResumeFallback(
+      for: OpenClawGatewayError.gateway(
+        code: "INVALID_REQUEST",
+        message: "missing scope: operator.admin"
+      )
+    ))
+    XCTAssertFalse(WorkspaceStore.shouldUseLocalClarificationResumeFallback(
+      for: OpenClawGatewayError.gateway(
+        code: "ORG2_RUN_ERROR",
+        message: "Org2 corpus mismatch"
+      )
+    ))
+    XCTAssertFalse(WorkspaceStore.shouldUseLocalClarificationResumeFallback(
+      for: OpenClawGatewayError.connection("offline")
+    ))
+  }
+
+  func testAgentRunClarificationFallbackPreservesRunResponseAndKnownSession() throws {
+    let run = try makeRun(
+      status: "blocked",
+      blockedReason: "Which plan should we use?",
+      comments: [
+        "OPENCLAW_KEY: turn:one\nOPENCLAW_SESSION: unknown",
+        "OPENCLAW_KEY: turn:two\nOPENCLAW_SESSION: agent:scarf-support:cron:job-1"
+      ]
+    )
+
+    XCTAssertEqual(run.openClawSessionKey, "agent:scarf-support:cron:job-1")
+    let prompt = WorkspaceStore.agentRunClarificationContinuationPrompt(
+      run: run,
+      response: "  Use the current plan.  "
+    )
+    XCTAssertTrue(prompt.contains("ORG2_RUN_ID: run-1"))
+    XCTAssertTrue(prompt.contains("Clarification: Which plan should we use?"))
+    XCTAssertTrue(prompt.contains("User response:\nUse the current plan."))
+    XCTAssertTrue(prompt.contains("do not create a replacement run"))
+  }
+
   func testCanceledRunDoesNotNeedAttentionWhenOldReviewSignalsRemain() throws {
     let run = try makeRun(
       status: "canceled",
@@ -1131,6 +1186,7 @@ final class AgentRunModelsTests: XCTestCase {
     parentRunId: String? = nil,
     contextRefs: [String] = [],
     blockedReason: String? = nil,
+    comments: [String] = [],
     validationStatus: String? = nil,
     reviewRequired: Bool = false,
     pendingApproval: Bool = false,
@@ -1166,7 +1222,12 @@ final class AgentRunModelsTests: XCTestCase {
         "status": status,
         "checkedAt": "2026-07-14T00:00:00.000Z"
       ]] } ?? [],
-      "comments": [],
+      "comments": comments.enumerated().map { index, body in [
+        "id": "comment-\(index)",
+        "author": "org2-lifecycle",
+        "body": body,
+        "createdAt": "2026-07-14T00:00:00.000Z"
+      ] },
       "events": [],
       "createdAt": "2026-07-14T00:00:00.000Z",
       "updatedAt": updatedAt

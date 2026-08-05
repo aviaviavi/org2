@@ -16,17 +16,54 @@ import { artifactRebuildPlan, buildArtifactGraph, MEETING_TO_CONTROLLED_EXECUTIO
 import { discoverMcpClient, saveMcpClients, serveMcp, writeMcpSnapshot } from "../dist/mcpRuntime.js";
 import { defaultRuntimePolicy, selectRuntime, validateRuntimePaths } from "../dist/runtimePolicy.js";
 import { evaluateRun, replayWorkflowFixture, sanitizeRunFixture } from "../dist/workflowEval.js";
+import {
+  createAgentProfile, createGoal, listAgentProfiles, listGoals, loadAgentProfileSnapshot,
+  loadGoalSnapshot, resolveAgentProfile, saveAgentProfile, saveGoal,
+} from "../dist/coordination.js";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "org2-agentic-"));
 try {
+  const revenueGoal = createGoal({
+    id: "grow-revenue",
+    title: "Grow durable revenue",
+    description: "Turn qualified demand into retained customers.",
+    measures: ["Increase expansion revenue"],
+  });
+  saveGoal(root, revenueGoal, { expectedRevision: null });
+  assert.equal(loadGoalSnapshot(root, revenueGoal.id).value.title, revenueGoal.title);
+  assert.equal(listGoals(root).length, 1);
+
+  const supportAgent = createAgentProfile({
+    id: "scarf-support",
+    name: "Scarf Support",
+    responsibilities: ["Resolve customer support requests"],
+    runtimeBindings: [{ runtime: "openclaw", runtimeAgentId: "scarf-support" }],
+    primaryGoalRef: revenueGoal.id,
+  });
+  saveAgentProfile(root, supportAgent, { expectedRevision: null });
+  assert.equal(loadAgentProfileSnapshot(root, supportAgent.id).value.name, supportAgent.name);
+  assert.equal(listAgentProfiles(root).length, 1);
+  assert.deepEqual(resolveAgentProfile(root, "openclaw", "SCARF-SUPPORT"), {
+    schema: "org2:agent-profile-resolution:v1",
+    found: true,
+    runtime: "openclaw",
+    runtimeAgentId: "SCARF-SUPPORT",
+    agentRef: supportAgent.id,
+    goalRef: revenueGoal.id,
+    profile: supportAgent,
+  });
+
   let run = createAgentRun({
     id: "board-brief", goal: "Prepare a cited board briefing",
     acceptanceCriteria: ["A reviewed PDF exists"], owner: "Avi", assignee: "research-agent",
+    agentRef: supportAgent.id, goalRef: revenueGoal.id,
     capabilities: ["agent-context", "publish"], context: [{ ref: "notes/board.org2", citation: "notes/board.org2:1" }],
     plan: [{ id: "draft", title: "Draft briefing", kind: "agent" }, { id: "review", title: "Review release", kind: "approval" }],
   });
   assert.equal(validateAgentRun(run).valid, true);
   assert.deepEqual(parseAgentRunOrg(renderAgentRunOrg(run)), run);
+  assert.match(renderAgentRunOrg(run), /:AGENT_REF: scarf-support/);
+  assert.match(renderAgentRunOrg(run), /:GOAL_REF: grow-revenue/);
   saveAgentRun(root, run);
   assert.equal(loadAgentRun(root, run.id).goal, run.goal);
 
@@ -529,6 +566,7 @@ try {
   const messages = response.trim().split("\n").map((line) => JSON.parse(line));
   assert.equal(messages[0].result.serverInfo.name, "org2");
   assert.equal(messages[1].result.tools.some((tool) => tool.name === "org2_run_create"), true);
+  assert.equal(messages[1].result.tools.some((tool) => tool.name === "org2_agent_profile_resolve"), true);
   assert.equal(messages[2].result.resources.some((resource) => resource.name === "notes/outside-corpus.org2"), false);
   const resourceNames = messages[2].result.resources.map((resource) => resource.name);
   assert.deepEqual(resourceNames, [...resourceNames].sort(), "MCP resources should use a stable lexical order");

@@ -75,6 +75,8 @@ export interface AgentWorkflow {
   signals?: WorkflowSignal[];
   compatibility: { org2: string; schema: string };
   sourceRunId?: string;
+  agentRef?: string;
+  goalRef?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -150,6 +152,8 @@ export function workflowFromRun(run: AgentRun, options: { id?: string; title?: s
     triggers: [{ id: "manual", type: "manual", enabled: true }],
     compatibility: { org2: ">=0.3.0 <1", schema: ORG2_WORKFLOW_SCHEMA },
     sourceRunId: run.id,
+    ...(run.agentRef ? { agentRef: run.agentRef } : {}),
+    ...(run.goalRef ? { goalRef: run.goalRef } : {}),
     createdAt: now,
     updatedAt: now,
   };
@@ -194,6 +198,8 @@ function applyTemplate(value: string, inputs: Record<string, string>): string {
 export function instantiateWorkflow(workflow: AgentWorkflow, inputs: Record<string, string>, options: {
   owner?: string;
   assignee?: string;
+  agentRef?: string;
+  goalRef?: string;
   now?: string;
   logicalWorkId?: string;
   attempt?: AgentRun["attempt"];
@@ -207,6 +213,8 @@ export function instantiateWorkflow(workflow: AgentWorkflow, inputs: Record<stri
     riskClass: workflow.riskClass,
     owner: options.owner,
     assignee: options.assignee,
+    agentRef: options.agentRef || workflow.agentRef,
+    goalRef: options.goalRef || workflow.goalRef,
     workflowId: workflow.id,
     workflowVersion: workflow.version,
     capabilities: workflow.capabilities,
@@ -241,6 +249,8 @@ export function renderWorkflowOrg(workflow: AgentWorkflow): string {
     `:ORG2_WORKFLOW_VERSION: ${workflow.version}`,
     `:WORKFLOW_STATE: ${workflow.state}`,
     `:RISK_CLASS: ${workflow.riskClass}`,
+    ...(workflow.agentRef ? [`:AGENT_REF: ${workflow.agentRef}`] : []),
+    ...(workflow.goalRef ? [`:GOAL_REF: ${workflow.goalRef}`] : []),
     ":END:",
     workflow.description,
     "",
@@ -263,6 +273,8 @@ export function parseWorkflowOrg(raw: string): AgentWorkflow {
   const state = raw.match(/^:WORKFLOW_STATE:\s*(.+)\s*$/mi)?.[1]?.trim();
   const riskClass = raw.match(/^:RISK_CLASS:\s*(.+)\s*$/mi)?.[1]?.trim();
   const version = raw.match(/^:ORG2_WORKFLOW_VERSION:\s*(.+)\s*$/mi)?.[1]?.trim();
+  const agentRef = raw.match(/^:AGENT_REF:\s*(.+)\s*$/mi)?.[1]?.trim();
+  const goalRef = raw.match(/^:GOAL_REF:\s*(.+)\s*$/mi)?.[1]?.trim();
   const description = raw.match(/^:END:\s*\r?\n([\s\S]*?)\r?\n\*\* Instructions\s*$/m)?.[1]?.trim();
   const instructions = raw.match(/^\*\* Instructions\s*\r?\n([\s\S]*?)\r?\n\*\* Machine state\s*$/m)?.[1]?.trim();
   // The readable Org2 fields are authoring fields, not a decorative copy. The
@@ -275,6 +287,8 @@ export function parseWorkflowOrg(raw: string): AgentWorkflow {
     ...(description ? { description } : {}),
     ...(instructions ? { instructions } : {}),
     ...(version ? { version } : {}),
+    ...(agentRef ? { agentRef } : {}),
+    ...(goalRef ? { goalRef } : {}),
     ...(riskClass ? { riskClass: riskClass as AgentRunRiskClass } : {}),
     state: (state || parsed.state || "draft") as AgentWorkflowState,
   };

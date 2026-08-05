@@ -4,6 +4,7 @@ import readline from "node:readline";
 import { spawnSync } from "node:child_process";
 import { listAgentRuns, loadAgentRunSnapshot, saveAgentRun, transitionAgentRun } from "./agentRun.js";
 import { instantiateWorkflow, listWorkflows, loadWorkflow } from "./agentWorkflow.js";
+import { resolveAgentProfile } from "./coordination.js";
 
 type JsonObject = Record<string, unknown>;
 type JsonRpcId = string | number | null;
@@ -237,7 +238,8 @@ async function handle(root: string, request: JsonRpcRequest): Promise<JsonRpcRes
     return result({ description: workflow.description, messages: [{ role: "user", content: { type: "text", text: workflow.instructions } }] });
   }
   if (request.method === "tools/list") return result({ tools: [
-    { name: "org2_run_create", description: "Create a durable Org2 agent run from a reusable workflow", inputSchema: { type: "object", required: ["workflow"], properties: { workflow: { type: "string" }, inputs: { type: "object" }, owner: { type: "string" } } } },
+    { name: "org2_agent_profile_resolve", description: "Resolve a runtime agent ID to a portable Org2 agent profile and primary goal", inputSchema: { type: "object", required: ["runtime", "runtimeAgentId"], properties: { runtime: { type: "string" }, runtimeAgentId: { type: "string" } } } },
+    { name: "org2_run_create", description: "Create a durable Org2 agent run from a reusable workflow", inputSchema: { type: "object", required: ["workflow"], properties: { workflow: { type: "string" }, inputs: { type: "object" }, owner: { type: "string" }, agentRef: { type: "string" }, goalRef: { type: "string" } } } },
     { name: "org2_run_transition", description: "Transition a durable Org2 run. Completion requires a concise, human-readable summary.", inputSchema: { type: "object", required: ["run", "status"], properties: { run: { type: "string" }, status: { type: "string" }, actor: { type: "string" }, reason: { type: "string" }, summary: { type: "string" }, highlights: { type: "array", items: { type: "string" } }, nextActions: { type: "array", items: { type: "string" } } } } },
     { name: "org2_run_list", description: "List durable Org2 runs and review state", inputSchema: { type: "object", properties: {} } },
   ] });
@@ -245,8 +247,16 @@ async function handle(root: string, request: JsonRpcRequest): Promise<JsonRpcRes
     const name = request.params.name;
     const args = jsonObject(request.params.arguments) || {};
     if (name === "org2_run_list") return result({ content: [{ type: "text", text: JSON.stringify(listAgentRuns(root), null, 2) }] });
+    if (name === "org2_agent_profile_resolve") {
+      const resolved = resolveAgentProfile(root, requiredString(args.runtime, "runtime"), requiredString(args.runtimeAgentId, "runtimeAgentId"));
+      return result({ content: [{ type: "text", text: JSON.stringify(resolved, null, 2) }] });
+    }
     if (name === "org2_run_create") {
-      const run = instantiateWorkflow(loadWorkflow(root, requiredString(args.workflow, "workflow")), workflowInputs(args.inputs), { owner: optionalString(args.owner, "owner") });
+      const run = instantiateWorkflow(loadWorkflow(root, requiredString(args.workflow, "workflow")), workflowInputs(args.inputs), {
+        owner: optionalString(args.owner, "owner"),
+        agentRef: optionalString(args.agentRef, "agentRef"),
+        goalRef: optionalString(args.goalRef, "goalRef"),
+      });
       const file = saveAgentRun(root, run, { expectedRevision: null });
       return result({ content: [{ type: "text", text: JSON.stringify({ run, file }, null, 2) }] });
     }

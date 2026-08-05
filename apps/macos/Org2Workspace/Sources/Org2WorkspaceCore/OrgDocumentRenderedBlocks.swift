@@ -1378,7 +1378,7 @@ private struct RenderedPropertiesView: View {
                 .font(.callout)
                 .textSelection(.enabled)
             } else {
-              RenderedPropertyValueButton(
+              RenderedPropertyValueView(
                 row: row,
                 value: propertyValue(row, rawPropertyValues: rawPropertyValues),
                 inlineActions: inlineActions
@@ -1396,7 +1396,7 @@ private struct RenderedPropertiesView: View {
   }
 }
 
-private struct RenderedPropertyValueButton: View {
+private struct RenderedPropertyValueView: View {
   let row: OrgPropertyRow
   let value: String
   let inlineActions: RenderedBlockInlineActions
@@ -1404,16 +1404,23 @@ private struct RenderedPropertyValueButton: View {
   @State private var draftValue = ""
 
   var body: some View {
-    Button {
-      draftValue = value
-      isPresented = true
-    } label: {
+    HStack(alignment: .firstTextBaseline, spacing: 6) {
       OrgInlineText(value, font: .callout)
         .frame(maxWidth: .infinity, alignment: .leading)
+
+      if inlineActions.setPropertyValue != nil, inlineActions.isSourceEditable {
+        Button {
+          draftValue = value
+          isPresented = true
+        } label: {
+          Image(systemName: "pencil")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        .buttonStyle(.plain)
+        .help("Edit \(row.key)")
+      }
     }
-    .buttonStyle(.plain)
-    .disabled(inlineActions.setPropertyValue == nil || !inlineActions.isSourceEditable)
-    .help("Edit \(row.key)")
     .popover(isPresented: $isPresented, arrowEdge: .bottom) {
       VStack(alignment: .leading, spacing: 8) {
         Label(row.key, systemImage: "tag")

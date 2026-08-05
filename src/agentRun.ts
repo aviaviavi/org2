@@ -192,6 +192,8 @@ export interface AgentRun {
   riskClass: AgentRunRiskClass;
   owner?: string;
   assignee?: string;
+  agentRef?: string;
+  goalRef?: string;
   workflowId?: string;
   workflowVersion?: string;
   providerPolicy?: string;
@@ -227,6 +229,8 @@ export interface AgentRunCreateInput {
   riskClass?: AgentRunRiskClass;
   owner?: string;
   assignee?: string;
+  agentRef?: string;
+  goalRef?: string;
   workflowId?: string;
   workflowVersion?: string;
   providerPolicy?: string;
@@ -415,6 +419,8 @@ export function createAgentRun(input: AgentRunCreateInput): AgentRun {
     updatedAt: now,
     ...(optional(input.owner) ? { owner: optional(input.owner) } : {}),
     ...(optional(input.assignee) ? { assignee: optional(input.assignee) } : {}),
+    ...(optional(input.agentRef) ? { agentRef: optional(input.agentRef) } : {}),
+    ...(optional(input.goalRef) ? { goalRef: optional(input.goalRef) } : {}),
     ...(optional(input.workflowId) ? { workflowId: optional(input.workflowId) } : {}),
     ...(optional(input.workflowVersion) ? { workflowVersion: optional(input.workflowVersion) } : {}),
     ...(optional(input.providerPolicy) ? { providerPolicy: optional(input.providerPolicy) } : {}),
@@ -455,6 +461,8 @@ export function validateAgentRun(value: unknown): AgentRunValidationResult {
   if (run.schema !== ORG2_AGENT_RUN_SCHEMA) issues.push({ path: "$.schema", message: `must be ${ORG2_AGENT_RUN_SCHEMA}` });
   if (!run.id || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(run.id)) issues.push({ path: "$.id", message: "must be a safe non-empty id" });
   if (!String(run.goal || "").trim()) issues.push({ path: "$.goal", message: "must not be empty" });
+  if (run.agentRef !== undefined && !String(run.agentRef).trim()) issues.push({ path: "$.agentRef", message: "must not be empty when present" });
+  if (run.goalRef !== undefined && !String(run.goalRef).trim()) issues.push({ path: "$.goalRef", message: "must not be empty when present" });
   if (!run.status || !AGENT_RUN_STATUSES.includes(run.status)) issues.push({ path: "$.status", message: `must be one of: ${AGENT_RUN_STATUSES.join(", ")}` });
   if (!run.riskClass || !AGENT_RUN_RISK_CLASSES.includes(run.riskClass)) issues.push({ path: "$.riskClass", message: `must be one of: ${AGENT_RUN_RISK_CLASSES.join(", ")}` });
   for (const field of ["acceptanceCriteria", "capabilities", "context", "plan", "artifacts", "approvals", "validations", "comments", "events"] as const) {
@@ -621,14 +629,21 @@ export function updateAgentRunRuntime(run: AgentRun, input: AgentRunRuntimeUpdat
   };
 }
 
-export function updateAgentRunAssignment(run: AgentRun, input: { owner?: string; assignee?: string; actor?: string; now?: string }): AgentRun {
+export function updateAgentRunAssignment(run: AgentRun, input: { owner?: string; assignee?: string; agentRef?: string; goalRef?: string; actor?: string; now?: string }): AgentRun {
   const now = isoNow(input.now);
   return {
     ...run,
     ...(input.owner !== undefined ? { owner: optional(input.owner) } : {}),
     ...(input.assignee !== undefined ? { assignee: optional(input.assignee) } : {}),
+    ...(input.agentRef !== undefined ? { agentRef: optional(input.agentRef) } : {}),
+    ...(input.goalRef !== undefined ? { goalRef: optional(input.goalRef) } : {}),
     updatedAt: now,
-    events: [...run.events, event("assigned", now, input.actor, `owner=${optional(input.owner) || run.owner || ""}; assignee=${optional(input.assignee) || run.assignee || ""}`)],
+    events: [...run.events, event("assigned", now, input.actor, [
+      `owner=${optional(input.owner) || run.owner || ""}`,
+      `assignee=${optional(input.assignee) || run.assignee || ""}`,
+      `agentRef=${optional(input.agentRef) || run.agentRef || ""}`,
+      `goalRef=${optional(input.goalRef) || run.goalRef || ""}`,
+    ].join("; "))],
   };
 }
 
@@ -868,6 +883,8 @@ export function forkAgentRun(run: AgentRun, input: { id?: string; actor?: string
     riskClass: run.riskClass,
     owner: run.owner,
     assignee: run.assignee,
+    agentRef: run.agentRef,
+    goalRef: run.goalRef,
     workflowId: run.workflowId,
     workflowVersion: run.workflowVersion,
     providerPolicy: run.providerPolicy,
@@ -910,6 +927,8 @@ export function renderAgentRunOrg(run: AgentRun): string {
     `:RISK_CLASS: ${run.riskClass}`,
     ...(run.owner ? [`:OWNER: ${orgEscape(run.owner)}`] : []),
     ...(run.assignee ? [`:ASSIGNEE: ${orgEscape(run.assignee)}`] : []),
+    ...(run.agentRef ? [`:AGENT_REF: ${orgEscape(run.agentRef)}`] : []),
+    ...(run.goalRef ? [`:GOAL_REF: ${orgEscape(run.goalRef)}`] : []),
     ...(run.workflowId ? [`:WORKFLOW_ID: ${orgEscape(run.workflowId)}`] : []),
     ...(run.workflowVersion ? [`:WORKFLOW_VERSION: ${orgEscape(run.workflowVersion)}`] : []),
     ...(run.providerPolicy ? [`:PROVIDER_POLICY: ${orgEscape(run.providerPolicy)}`] : []),

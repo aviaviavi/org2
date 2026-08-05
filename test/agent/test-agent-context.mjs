@@ -21,6 +21,8 @@ fs.writeFileSync(a, `#+title: Alpha File
 :ORG2_STALE_AFTER: 2099-01-01
 :OWNER: Casey
 :ASSIGNEE: openclaw
+:AGENT_REF: scarf-support
+:GOAL_REF: customer-trust
 :NEXT_ACTION: Prepare implementation handoff
 :WAITING_ON: API review
 :REQUIRES_HUMAN_APPROVAL: yes
@@ -49,22 +51,24 @@ assert.equal(context.$schema, "org2:agent-context:v1");
 assert.equal(context.action, "context");
 assert.equal(context.results[0].id, "alpha-1");
 assert.equal(context.results[0].file, "alpha.org2");
-assert.deepEqual(context.results[0].sourceRange, { startLine: 3, endLine: 21 });
+assert.deepEqual(context.results[0].sourceRange, { startLine: 3, endLine: 23 });
 assert.equal(context.results[0].properties.CUSTOM, "value");
 assert.equal(context.results[0].claimState.reviewStatus, "reviewed");
 assert.equal(context.results[0].claimState.freshness, "fresh");
 assert.equal(context.results[0].collaboration.owner, "Casey");
 assert.equal(context.results[0].collaboration.assignee, "openclaw");
+assert.equal(context.results[0].collaboration.agentRef, "scarf-support");
+assert.equal(context.results[0].collaboration.goalRef, "customer-trust");
 assert.equal(context.results[0].collaboration.nextAction, "Prepare implementation handoff");
 assert.equal(context.results[0].collaboration.waitingOn, "API review");
 assert.equal(context.results[0].collaboration.policy.requiresHumanApproval, true);
 assert.equal(context.results[0].collaboration.policy.allowAgentEdit, true);
 assert.equal(context.results[0].collaboration.policy.allowExternalSend, false);
-assert.ok(context.results[0].citation.endsWith("alpha.org2:3-21"));
+assert.ok(context.results[0].citation.endsWith("alpha.org2:3-23"));
 assert.ok(context.results[0].neighbors.some((n) => n.id === "beta-1" && n.direction === "out"));
-assert.ok(context.context.text.includes("Source: alpha.org2:3-21"));
+assert.ok(context.context.text.includes("Source: alpha.org2:3-23"));
 assert.ok(context.context.text.includes("Review: reviewed; freshness: fresh"));
-assert.ok(context.context.citations[0].citation.endsWith("alpha.org2:3-21"));
+assert.ok(context.context.citations[0].citation.endsWith("alpha.org2:3-23"));
 
 const fetched = runJson("agent", "fetch", "--id", "beta-1", "--dir", tmp, "--include", "backlinks,neighbors");
 assert.equal(fetched.results.length, 1);

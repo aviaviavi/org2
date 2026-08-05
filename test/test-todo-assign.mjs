@@ -45,6 +45,16 @@ assert.equal(replaced.newAssignee, "OpenClaw");
 const replacedText = fs.readFileSync(note, "utf8");
 assert.match(replacedText, /^\* TODO Existing drawer/m);
 assert.match(replacedText, /:ASSIGNEE: OpenClaw/);
+
+const coordinatedPayload = JSON.parse(cli([
+  "todo", "assign", "--file", note, "--line", "1", "--assignee", "Scarf Support",
+  "--agent-ref", "scarf-support", "--goal-ref", "customer-trust", "--apply", "--format", "json",
+]));
+assert.equal(coordinatedPayload.agentRef, "scarf-support");
+assert.equal(coordinatedPayload.goalRef, "customer-trust");
+const coordinatedText = fs.readFileSync(note, "utf8");
+assert.match(coordinatedText, /:AGENT_REF: scarf-support/);
+assert.match(coordinatedText, /:GOAL_REF: customer-trust/);
 assert.match(replacedText, /:STATUS: draft-needs-review/);
 
 fs.writeFileSync(note, "* TODO Unterminated drawer\n:PROPERTIES:\n:STATUS: malformed\nBody\n", "utf8");

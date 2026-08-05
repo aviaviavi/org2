@@ -8174,7 +8174,7 @@ or {metadata:{...}, content:"..."}. Generated view artifacts are review-required
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
 
-  if (["doctor", "ledger", "corpus", "workspace", "thread", "run", "review", "workflow", "artifact", "runtime", "mcp", "eval"].includes(args[0] || "")) {
+  if (["doctor", "ledger", "corpus", "workspace", "thread", "goal", "agent-profile", "run", "review", "workflow", "artifact", "runtime", "mcp", "eval"].includes(args[0] || "")) {
     const { runAgenticWorkspaceCommand } = await import("./agenticWorkspaceCli.js");
     if (await runAgenticWorkspaceCommand(args)) return;
   }
@@ -8300,6 +8300,8 @@ async function main(): Promise<void> {
   let todoLine = 0;
   let todoStatus: TodoStatus | "" = "";
   let todoAssignee = "";
+  let todoAgentRef = "";
+  let todoGoalRef = "";
   let todoApply = false;
   let todoFormat: "text" | "json" | "diff" = "json";
   let todoNow = ""; // ISO string
@@ -8833,6 +8835,18 @@ async function main(): Promise<void> {
         if (command === "todo") {
           todoAssignee = args[i]!;
         }
+        i++;
+      }
+    } else if (arg === "--agent-ref") {
+      i++;
+      if (i < args.length) {
+        if (command === "todo") todoAgentRef = args[i]!;
+        i++;
+      }
+    } else if (arg === "--goal-ref") {
+      i++;
+      if (i < args.length) {
+        if (command === "todo") todoGoalRef = args[i]!;
         i++;
       }
     } else if (arg === "--exclude-status") {
@@ -10015,6 +10029,8 @@ Core commands:
   org2 ledger <list|show|create|update|event> LEDGER [ACCOUNT] [options]
   org2 corpus <show|validate|init> [--dir CORPUS] [--id ID --name NAME --kind KIND] [--apply]
   org2 workspace <agenda|search> [QUERY] --mount CORPUS [--mount CORPUS ...] [--json]
+  org2 goal <list|show|create|update> [options]
+  org2 agent-profile <list|show|create|update|resolve> [options]
   org2 run <create|list|show|validate|start|resume|retry|cancel|complete|complete-external|fail|block|fork|normalize|assign|comment|outcome|runtime|step|artifact|artifact-review|validation|approval-request|approval-decide> [options]
   org2 review <list|show> [options]
   org2 workflow <list|show|validate|save|run|triggers|package|corpus-template|install-builtin> [options]
@@ -10143,6 +10159,8 @@ Flags:
   --pos LINE[:COL]    Heading position
   --to TODO           Target TODO keyword for 'set'
   --assignee NAME     Assignee for 'assign'
+  --agent-ref ID      Portable agent profile ID for 'assign'
+  --goal-ref ID       Portable goal ID for 'assign'
   --now ISO           Override approval / closed timestamp
   --apply             Write changes instead of previewing`;
   } else if (command === "approvals") {
@@ -13916,6 +13934,8 @@ Flags:
           filePath: todoFile,
           lineNumber: todoLine,
           assignee: todoAssignee,
+          ...(todoAgentRef ? { agentRef: todoAgentRef } : {}),
+          ...(todoGoalRef ? { goalRef: todoGoalRef } : {}),
         })
       : updateTodoInText(beforeRaw, {
           filePath: todoFile,
@@ -13958,6 +13978,8 @@ Flags:
                   property: "ASSIGNEE",
                   ...("oldAssignee" in res && res.oldAssignee ? { oldAssignee: res.oldAssignee } : {}),
                   newAssignee: "newAssignee" in res ? res.newAssignee : todoAssignee,
+                  ...("newAgentRef" in res && res.newAgentRef ? { agentRef: res.newAgentRef } : {}),
+                  ...("newGoalRef" in res && res.newGoalRef ? { goalRef: res.newGoalRef } : {}),
                 }
               : {
                   oldStatus: "oldStatus" in res ? res.oldStatus : undefined,

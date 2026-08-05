@@ -1,7 +1,22 @@
 import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
-import { cronKey, durableRunMarker, executionSummary, Org2Lifecycle, shouldTrackMainTurn, workflowMarker } from "./lib/lifecycle.js";
+import { cronKey, cronSessionKey, durableRunMarker, executionSummary, Org2Lifecycle, shouldTrackMainTurn, workflowMarker } from "./lib/lifecycle.js";
 import { approvalAction, approvalContext, approvalTitle, draftCreatedEffect, draftSendEffect, hydrateGogDraftEffect } from "./lib/draft-approvals.js";
 import { registerOrg2WorkspaceNodePolicy } from "./lib/local-edit-node.js";
+
+function runtimeAgentId(event = {}, ctx = {}) {
+  const direct = ctx.agentId || ctx.agentID || event.agentId || event.agentID || event.runtimeAgentId || event.job?.agentId || event.job?.agentID;
+  if (String(direct || "").trim()) return String(direct).trim();
+  const sessionKey = String(ctx.sessionKey || event.sessionKey || event.childSessionKey || "");
+  return /^agent:([^:]+):/i.exec(sessionKey)?.[1];
+}
+
+function selectedCoordination(prompt) {
+  const text = String(prompt || "");
+  return {
+    selectedAgentRef: text.match(/^ORG2_SELECTED_AGENT_REF:[ \t]*(\S+)[ \t]*$/mi)?.[1],
+    selectedGoalRef: text.match(/^ORG2_SELECTED_GOAL_REF:[ \t]*(\S+)[ \t]*$/mi)?.[1],
+  };
+}
 
 export default definePluginEntry({
   id: "org2-lifecycle",
@@ -67,6 +82,19 @@ export default definePluginEntry({
       }
     }, { scope: "operator.write" });
 
+    api.registerGatewayMethod("org2.run.replyAndResume", async ({ params, respond }) => {
+      try {
+        const runId = String(params?.runId || "").trim();
+        const response = String(params?.response || "").trim();
+        if (!runId) return respond(false, undefined, { code: "INVALID_REQUEST", message: "runId is required" });
+        if (!response) return respond(false, undefined, { code: "INVALID_REQUEST", message: "response is required" });
+        const expectedCorpusId = String(params?.corpusId || "").trim() || undefined;
+        respond(true, await lifecycle.serialize(() => lifecycle.replyAndResumeRun(runId, response, { expectedCorpusId })));
+      } catch (error) {
+        respond(false, undefined, { code: "ORG2_RUN_ERROR", message: error.message });
+      }
+    }, { scope: "operator.write" });
+
     api.registerGatewayMethod("org2.workflow.resumeRevision", async ({ params, respond }) => {
       try {
         const runId = String(params?.runId || "").trim();
@@ -83,6 +111,7 @@ export default definePluginEntry({
     api.on("before_agent_run", async (event, ctx) => {
       if (!trackMainTurns || !shouldTrackMainTurn(event.prompt, ctx)) return;
       const key = `turn:${ctx.sessionKey || ctx.sessionId || "unknown"}:${ctx.runId || "unknown"}`;
+      const selected = selectedCoordination(event.prompt);
       const marker = workflowMarker(event.prompt);
       if (marker?.workflowRunId) {
         await lifecycle.serialize(() => lifecycle.attach(key, marker.workflowRunId, {
@@ -92,6 +121,8 @@ export default definePluginEntry({
           openclawRunId: ctx.runId,
           provider: ctx.modelProviderId,
           model: ctx.modelId,
+          runtimeAgentId: runtimeAgentId(event, ctx),
+          ...selected,
         }));
         return;
       }
@@ -103,6 +134,8 @@ export default definePluginEntry({
           openclawRunId: ctx.runId,
           provider: ctx.modelProviderId,
           model: ctx.modelId,
+          runtimeAgentId: runtimeAgentId(event, ctx),
+          ...selected,
         }));
         return;
       }
@@ -113,6 +146,8 @@ export default definePluginEntry({
         openclawRunId: ctx.runId,
         provider: ctx.modelProviderId,
         model: ctx.modelId,
+        runtimeAgentId: runtimeAgentId(event, ctx),
+        ...selected,
       }));
     });
 
@@ -174,6 +209,7 @@ export default definePluginEntry({
         openclawRunId: event.runId,
         provider: event.resolvedProvider,
         model: event.resolvedModel,
+        runtimeAgentId: runtimeAgentId(event),
       }));
     });
 
@@ -195,6 +231,8 @@ export default definePluginEntry({
     api.on("cron_changed", async (event) => {
       if (!trackCron) return;
       const key = cronKey(event);
+      const agentId = runtimeAgentId(event);
+      const sessionKey = cronSessionKey(event, agentId);
       if (event.action === "started") {
         const marker = workflowMarker(event.job?.payload?.text);
         if (marker) {
@@ -203,20 +241,22 @@ export default definePluginEntry({
             attemptId: key.replace(/[^A-Za-z0-9._-]+/g, "-"),
             scheduledFor: Number.isFinite(event.runAtMs) ? new Date(event.runAtMs).toISOString() : undefined,
             logicalWorkId: `workflow:${marker.workflowId}`,
-            sessionKey: event.sessionKey,
+            sessionKey,
             openclawRunId: event.runId,
             provider: event.provider,
             model: event.model,
+            runtimeAgentId: agentId,
           }));
           return;
         }
         await lifecycle.serialize(() => lifecycle.ensure(key, {
           kind: "cron",
           goal: event.job?.name || `Cron ${event.jobId}`,
-          sessionKey: event.sessionKey,
+          sessionKey,
           openclawRunId: event.runId,
           provider: event.provider,
           model: event.model,
+          runtimeAgentId: agentId,
         }));
       }
       if (event.action === "finished") {
@@ -226,6 +266,9 @@ export default definePluginEntry({
           durationMs: event.durationMs,
           provider: event.provider,
           model: event.model,
+          sessionKey,
+          openclawRunId: event.runId,
+          runtimeAgentId: agentId,
         }));
       }
     });

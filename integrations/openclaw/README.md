@@ -27,6 +27,26 @@ outcome summary; approval and clarification boundaries remain open instead of
 being mistaken for completion. Available provider, model, token, and
 elapsed-time metadata is copied into the durable run.
 
+The Mac app's **Reply & Resume** action uses the plugin's
+`org2.run.replyAndResume` gateway method. The method records the exact response,
+resumes the blocked run, and returns a continuation prompt for the correlated
+OpenClaw session. Cron mappings retain their agent-scoped session key for this
+purpose. A legacy or otherwise uncorrelated run still returns the same durable
+continuation prompt without inventing a session; the Mac app starts a fresh
+OpenClaw thread carrying the existing run ID instead of silently changing only
+the run status.
+
+OpenClaw is the runtime adapter, not the portable worker identity. Before it
+creates or attaches a run, the plugin derives the configured OpenClaw agent ID
+from the hook/session identity and calls `org2 agent-profile resolve --runtime
+openclaw --runtime-agent-id ID`. A matching active profile contributes its
+stable `agentRef` and optional primary `goalRef` to the run or workflow. The
+correlation comment retains the non-secret OpenClaw agent ID and resolved refs
+for inspection. An unbound identity remains unprofiled; ambiguous bindings or
+a missing primary goal fail instead of silently attributing work to the wrong
+agent. Credentials, session IDs, provider/model selection, and tokens do not
+belong in `agent-profiles/`.
+
 Delegated prompts may attach a worker to an existing run with an
 `ORG2_RUN_ID:` marker. If a tracked OpenClaw session ends without delivering a
 terminal agent event, the adapter fails that still-active run as interrupted

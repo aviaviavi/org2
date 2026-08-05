@@ -116,7 +116,7 @@ public struct OpenClawChatClient: Sendable {
     let requestBody = OpenAIChatCompletionRequest(
       model: Self.openClawModelName(for: agentID),
       user: sessionKey,
-      messages: requestMessages(from: messages, workspaceContext: workspaceContext)
+      messages: requestMessages(from: messages, workspaceContext: workspaceContext, agentID: agentHeaderValue)
     )
 
     var request = URLRequest(url: settings.endpoint)
@@ -179,7 +179,8 @@ public struct OpenClawChatClient: Sendable {
 
   private func requestMessages(
     from messages: [OpenClawChatMessage],
-    workspaceContext: OpenClawWorkspaceContext?
+    workspaceContext: OpenClawWorkspaceContext?,
+    agentID: String
   ) -> [OpenAIChatMessage] {
     var output = [
       OpenAIChatMessage(
@@ -189,7 +190,7 @@ public struct OpenClawChatClient: Sendable {
     ]
 
     if let workspaceContext {
-      output.append(OpenAIChatMessage(role: "system", content: .text(workspaceContext.systemPrompt())))
+      output.append(OpenAIChatMessage(role: "system", content: .text(workspaceContext.systemPrompt(runtime: "openclaw", runtimeAgentID: agentID))))
     }
 
     output += messages.suffix(16).map { message in
@@ -306,7 +307,50 @@ public struct OpenClawWorkspaceContext: Sendable {
   The Markdown-link form required below for clickable file-and-line citations is a deliberate Org2 Workspace chat transport exception; it does not change the syntax to use inside corpus content.
   """
 
-  public func systemPrompt() -> String {
+  private func coordinationPrompt(runtime: String?, runtimeAgentID: String?) -> String {
+    let runtime = runtime?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    let runtimeAgentID = runtimeAgentID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    let root = runtime == "openclaw" ? remoteCorpusRoot : localCorpusRoot
+    let resolution: String
+    if !runtime.isEmpty, !runtimeAgentID.isEmpty, let root {
+      resolution = "org2 agent-profile resolve --runtime \(runtime) --runtime-agent-id \(runtimeAgentID) --dir \(root) --json"
+    } else {
+      resolution = "Runtime identity or corpus root is not available; do not invent an agent or goal reference."
+    }
+    let selectedAgentRef = selectedCoordinationProperty("AGENT_REF")
+    let selectedGoalRef = selectedCoordinationProperty("GOAL_REF")
+    return """
+    Org2 goals and agent identity
+
+    Execution runtime: \(runtime.isEmpty ? "not specified" : runtime)
+    Runtime agent ID: \(runtimeAgentID.isEmpty ? "not specified" : runtimeAgentID)
+    ORG2_SELECTED_AGENT_REF: \(selectedAgentRef ?? "")
+    ORG2_SELECTED_GOAL_REF: \(selectedGoalRef ?? "")
+
+    OpenClaw and Codex are execution runtimes, not portable agent identities. Named workers such as Scarf Support or Scarf Revenue Scout are =org2:agent-profile:v1= records under =agent-profiles/=. Resolve this runtime identity before creating durable work:
+
+    \(resolution)
+
+    If the selected work already has =AGENT_REF= or =GOAL_REF=, preserve those refs; they take precedence over a runtime default. Otherwise, if resolution returns an =agentRef= or =goalRef=, preserve those exact stable IDs. Pass them to =org2 run create --agent-ref ID --goal-ref ID= and =org2 workflow run --agent-ref ID --goal-ref ID=. Use =org2 todo assign --agent-ref ID --goal-ref ID= for delegated TODOs, or the equivalent =:AGENT_REF:= and =:GOAL_REF:= properties when authoring a heading directly; =:ASSIGNEE:= remains only the readable human-facing label. Never use =openclaw=, =codex=, a model name, or a session ID as =AGENT_REF:=. If no selected ref or active profile binding is found, leave the refs unset rather than guessing.
+    """
+  }
+
+  private func selectedCoordinationProperty(_ name: String) -> String? {
+    guard let source = selectedEntrySource, source.isSubtree else { return nil }
+    let escaped = NSRegularExpression.escapedPattern(for: name)
+    guard let expression = try? NSRegularExpression(
+      pattern: "^:\(escaped):\\s*(.+?)\\s*$",
+      options: [.anchorsMatchLines, .caseInsensitive]
+    ) else { return nil }
+    let text = source.text as NSString
+    guard let match = expression.firstMatch(in: source.text, range: NSRange(location: 0, length: text.length)) else {
+      return nil
+    }
+    let value = text.substring(with: match.range(at: 1)).trimmingCharacters(in: .whitespacesAndNewlines)
+    return value.isEmpty ? nil : value
+  }
+
+  public func systemPrompt(runtime: String? = nil, runtimeAgentID: String? = nil) -> String {
     var sections: [String] = []
     sections.append("""
     Org2 workspace operating context
@@ -319,6 +363,8 @@ public struct OpenClawWorkspaceContext: Sendable {
     """)
 
     sections.append(formatAuthorizedCorpora())
+
+    sections.append(coordinationPrompt(runtime: runtime, runtimeAgentID: runtimeAgentID))
 
     if !customInstructions.isEmpty {
       sections.append("""
@@ -419,6 +465,7 @@ public struct OpenClawWorkspaceContext: Sendable {
     ]
 
     sections.append(formatAuthorizedCorpora())
+    sections.append(coordinationPrompt(runtime: "codex", runtimeAgentID: "default"))
 
     if !customInstructions.isEmpty {
       sections.append("""

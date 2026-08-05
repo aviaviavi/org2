@@ -223,6 +223,8 @@ type AgentCollaborationState = {
   owner?: string;
   assignee?: string;
   agent?: string;
+  agentRef?: string;
+  goalRef?: string;
   nextAction?: string;
   waitingOn?: string;
   lifecycle?: string;
@@ -1151,6 +1153,8 @@ function collaborationStateFor(corpus: CompiledCorpus, node: CompiledCorpusNode)
   const owner = stringDataProperty(props, ["OWNER", "ORG2_OWNER"]);
   const assignee = stringDataProperty(props, ["ASSIGNEE", "ASSIGNED_TO", "ORG2_ASSIGNEE"]);
   const agent = stringDataProperty(props, ["AGENT", "ORG2_AGENT"]);
+  const agentRef = stringDataProperty(props, ["AGENT_REF", "ORG2_AGENT_REF"]);
+  const goalRef = stringDataProperty(props, ["GOAL_REF", "ORG2_GOAL_REF"]);
   const nextAction = stringDataProperty(props, ["NEXT_ACTION", "NEXT", "ORG2_NEXT_ACTION"]);
   const waitingOn = stringDataProperty(props, ["WAITING_ON", "BLOCKED_BY", "ORG2_WAITING_ON"]);
   const lifecycle = stringDataProperty(props, ["LIFECYCLE", "WORKFLOW_STATE", "WORKFLOW_STATUS", "STATE", "ORG2_LIFECYCLE"]);
@@ -1198,6 +1202,8 @@ function collaborationStateFor(corpus: CompiledCorpus, node: CompiledCorpusNode)
     ...(owner ? { owner } : {}),
     ...(assignee ? { assignee } : {}),
     ...(agent ? { agent } : {}),
+    ...(agentRef ? { agentRef } : {}),
+    ...(goalRef ? { goalRef } : {}),
     ...(nextAction ? { nextAction } : {}),
     ...(waitingOn ? { waitingOn } : {}),
     ...(lifecycle ? { lifecycle } : {}),
@@ -1464,6 +1470,8 @@ export function renderAgentContextPack(payload: AgentPayload, format: "markdown"
       state.owner ? `owner: ${state.owner}` : "",
       state.assignee ? `assignee: ${state.assignee}` : "",
       state.agent ? `agent: ${state.agent}` : "",
+      state.agentRef ? `agent ref: ${state.agentRef}` : "",
+      state.goalRef ? `goal ref: ${state.goalRef}` : "",
       state.lifecycle ? `lifecycle: ${state.lifecycle}` : "",
       state.nextAction ? `next: ${state.nextAction}` : "",
       state.waitingOn ? `waiting on: ${state.waitingOn}` : "",

@@ -154,6 +154,10 @@ export type AssignTodoResult = {
   property: "ASSIGNEE";
   oldAssignee?: string;
   newAssignee: string;
+  oldAgentRef?: string;
+  newAgentRef?: string;
+  oldGoalRef?: string;
+  newGoalRef?: string;
   changed: boolean;
   text: string;
 };
@@ -162,6 +166,8 @@ export type AssignTodoOptions = {
   filePath: string;
   lineNumber: number; // 1-based cursor line
   assignee: string;
+  agentRef?: string;
+  goalRef?: string;
 };
 
 export function computeToggleStatus(current: TodoStatus): TodoStatus {
@@ -286,10 +292,18 @@ export function assignTodoInText(input: string, opts: AssignTodoOptions): Assign
 
   const props = findDrawerInLines(lines, afterPlanning, endExclusive, "PROPERTIES");
   const oldAssignee = props ? getDrawerPropertyValue(lines, props, "ASSIGNEE") : undefined;
-  const changed = oldAssignee !== assignee;
-  if (changed) {
+  const oldAgentRef = props ? getDrawerPropertyValue(lines, props, "AGENT_REF") : undefined;
+  const oldGoalRef = props ? getDrawerPropertyValue(lines, props, "GOAL_REF") : undefined;
+  const agentRef = opts.agentRef?.trim() || undefined;
+  const goalRef = opts.goalRef?.trim() || undefined;
+  const changed = oldAssignee !== assignee
+    || (opts.agentRef !== undefined && oldAgentRef !== agentRef)
+    || (opts.goalRef !== undefined && oldGoalRef !== goalRef);
+  if (oldAssignee !== assignee) {
     upsertHeadlinePropertyInLines(lines, headingIndex, "ASSIGNEE", assignee);
   }
+  if (agentRef && oldAgentRef !== agentRef) upsertHeadlinePropertyInLines(lines, headingIndex, "AGENT_REF", agentRef);
+  if (goalRef && oldGoalRef !== goalRef) upsertHeadlinePropertyInLines(lines, headingIndex, "GOAL_REF", goalRef);
 
   return {
     filePath: opts.filePath,
@@ -297,6 +311,10 @@ export function assignTodoInText(input: string, opts: AssignTodoOptions): Assign
     property: "ASSIGNEE",
     ...(oldAssignee ? { oldAssignee } : {}),
     newAssignee: assignee,
+    ...(oldAgentRef ? { oldAgentRef } : {}),
+    ...(agentRef ? { newAgentRef: agentRef } : {}),
+    ...(oldGoalRef ? { oldGoalRef } : {}),
+    ...(goalRef ? { newGoalRef: goalRef } : {}),
     changed,
     text: lines.join("\n"),
   };

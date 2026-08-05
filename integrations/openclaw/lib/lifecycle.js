@@ -149,6 +149,30 @@ export function cronKey(event) {
   return `cron:${event.jobId}:${String(event.runAtMs || event.runId || event.sessionId || "unknown")}`;
 }
 
+export function cronSessionKey(event, runtimeAgentId) {
+  const explicit = String(event?.sessionKey || "").trim();
+  if (explicit) return explicit;
+  const agentId = String(runtimeAgentId || "").trim();
+  const jobId = String(event?.jobId || "").trim();
+  return agentId && jobId ? `agent:${agentId}:cron:${jobId}` : undefined;
+}
+
+export function clarificationContinuationPrompt(run, response) {
+  return [
+    `ORG2_RUN_ID: ${run.id}`,
+    "ORG2_RUN_RESUME: clarification-answered",
+    "",
+    `Continue the existing Org2 run \"${run.goal}\" after the user's clarification.`,
+    `Clarification: ${String(run.blockedReason || "Clarification requested").trim()}`,
+    "User response:",
+    String(response || "").trim(),
+    "",
+    "Re-read the durable run before acting. The response is already recorded on that run and the run is now running; do not create a replacement run.",
+    "If this lifecycle run coordinates a more specific child run carrying the same clarification, record the answer on that child and resume it rather than leaving the underlying work blocked.",
+    "Continue from the blocked step, preserve existing context and review boundaries, and update this durable run with the outcome or the next actionable blocker.",
+  ].join("\n");
+}
+
 export class Org2Lifecycle {
   constructor(options = {}) {
     this.corpusDir = options.corpusDir;
@@ -252,15 +276,50 @@ export class Org2Lifecycle {
     if (args.length > 5) await this.exec(args);
   }
 
+  async #coordination(details = {}) {
+    const runtimeAgentId = String(details.runtimeAgentId || "").trim();
+    const selectedAgentRef = String(details.selectedAgentRef || "").trim() || undefined;
+    const selectedGoalRef = String(details.selectedGoalRef || "").trim() || undefined;
+    if (!runtimeAgentId) return {
+      ...(selectedAgentRef ? { agentRef: selectedAgentRef } : {}),
+      ...(selectedGoalRef ? { goalRef: selectedGoalRef } : {}),
+    };
+    const resolved = JSON.parse(await this.exec(["agent-profile", "resolve", "--runtime", "openclaw", "--runtime-agent-id", runtimeAgentId, "--json"]));
+    if (selectedAgentRef && resolved.agentRef && selectedAgentRef !== resolved.agentRef) {
+      throw new Error(`selected work is assigned to ${selectedAgentRef}, but OpenClaw agent ${runtimeAgentId} resolves to ${resolved.agentRef}`);
+    }
+    return {
+      runtimeAgentId,
+      ...((selectedAgentRef || resolved.agentRef) ? { agentRef: selectedAgentRef || resolved.agentRef } : {}),
+      ...((selectedGoalRef || resolved.goalRef) ? { goalRef: selectedGoalRef || resolved.goalRef } : {}),
+    };
+  }
+
+  #correlationComment(key, details = {}) {
+    return [
+      `OPENCLAW_KEY: ${key}`,
+      `OPENCLAW_KIND: ${details.kind}`,
+      `OPENCLAW_SESSION: ${details.sessionKey || "unknown"}`,
+      `OPENCLAW_RUN: ${details.openclawRunId || "unknown"}`,
+      ...(details.runtimeAgentId ? [`OPENCLAW_AGENT_ID: ${details.runtimeAgentId}`] : []),
+      ...(details.agentRef ? [`ORG2_AGENT_REF: ${details.agentRef}`] : []),
+      ...(details.goalRef ? [`ORG2_GOAL_REF: ${details.goalRef}`] : []),
+    ].join("\n");
+  }
+
   async ensure(key, details) {
     const existing = this.state.mappings[key];
     if (existing?.org2RunId) return existing.org2RunId;
+    const coordination = await this.#coordination(details);
+    details = { ...details, ...coordination };
     const created = JSON.parse(await this.exec([
       "run", "create",
       "--goal", conciseGoal(details.goal),
       "--accept", details.accept || "The OpenClaw execution reaches a terminal state with its outcome recorded.",
       "--risk", details.risk || "local-draft",
       "--owner", this.owner,
+      ...(details.agentRef ? ["--agent-ref", String(details.agentRef)] : []),
+      ...(details.goalRef ? ["--goal-ref", String(details.goalRef)] : []),
       "--capability", "agent-context",
       "--capability", "validation",
       ...(details.context || []).flatMap((ref) => ["--context", String(ref)]),
@@ -269,8 +328,7 @@ export class Org2Lifecycle {
       "--json",
     ]));
     const id = created.run.id;
-    await this.exec(["run", "comment", id, "--author", "org2-lifecycle", "--body",
-      `OPENCLAW_KEY: ${key}\nOPENCLAW_KIND: ${details.kind}\nOPENCLAW_SESSION: ${details.sessionKey || "unknown"}\nOPENCLAW_RUN: ${details.openclawRunId || "unknown"}`]);
+    await this.exec(["run", "comment", id, "--author", "org2-lifecycle", "--body", this.#correlationComment(key, details)]);
     await this.exec(["run", "start", id]);
     this.state.mappings[key] = {
       org2RunId: id,
@@ -279,6 +337,9 @@ export class Org2Lifecycle {
       openclawRunId: details.openclawRunId,
       provider: details.provider,
       model: details.model,
+      runtimeAgentId: details.runtimeAgentId,
+      agentRef: details.agentRef,
+      goalRef: details.goalRef,
       createdAt: new Date().toISOString(),
     };
     await this.#save();
@@ -288,8 +349,27 @@ export class Org2Lifecycle {
   async attach(key, runId, details = {}) {
     const existing = this.state.mappings[key];
     if (existing?.org2RunId) return existing.org2RunId;
-    await this.exec(["run", "comment", runId, "--author", "org2-lifecycle", "--body",
-      `OPENCLAW_KEY: ${key}\nOPENCLAW_KIND: ${details.kind || "workflow"}\nOPENCLAW_SESSION: ${details.sessionKey || "unknown"}\nOPENCLAW_RUN: ${details.openclawRunId || "unknown"}`]);
+    const coordination = await this.#coordination(details);
+    let agentRef = coordination.agentRef;
+    let goalRef = coordination.goalRef;
+    if (agentRef || goalRef) {
+      const run = JSON.parse(await this.exec(["run", "show", runId, "--json"]));
+      if (run.agentRef && agentRef && run.agentRef !== agentRef) {
+        throw new Error(`OpenClaw agent ${coordination.runtimeAgentId} resolves to ${agentRef}, but run ${runId} is assigned to ${run.agentRef}`);
+      }
+      agentRef = run.agentRef || agentRef;
+      goalRef = run.goalRef || goalRef;
+    }
+    details = { ...details, ...coordination, agentRef, goalRef, kind: details.kind || "workflow" };
+    if ((agentRef || goalRef)) {
+      await this.exec([
+        "run", "assign", runId,
+        ...(agentRef ? ["--agent-ref", String(agentRef)] : []),
+        ...(goalRef ? ["--goal-ref", String(goalRef)] : []),
+        "--actor", "org2-lifecycle",
+      ]);
+    }
+    await this.exec(["run", "comment", runId, "--author", "org2-lifecycle", "--body", this.#correlationComment(key, details)]);
     await this.exec(["run", "start", runId]);
     await this.#updateRuntime(runId, details);
     this.state.mappings[key] = {
@@ -300,6 +380,9 @@ export class Org2Lifecycle {
       openclawRunId: details.openclawRunId,
       provider: details.provider,
       model: details.model,
+      runtimeAgentId: details.runtimeAgentId,
+      agentRef: details.agentRef,
+      goalRef: details.goalRef,
       createdAt: new Date().toISOString(),
     };
     await this.#save();
@@ -308,14 +391,26 @@ export class Org2Lifecycle {
 
   async prepareWorkflowRun(workflowId, inputs = {}, details = {}) {
     const corpus = await this.assertCorpus(details.expectedCorpusId);
+    const coordination = await this.#coordination(details);
+    const workflow = await this.workflow(workflowId);
+    if (workflow.agentRef && coordination.agentRef && workflow.agentRef !== coordination.agentRef) {
+      throw new Error(`OpenClaw agent ${coordination.runtimeAgentId} resolves to ${coordination.agentRef}, but workflow ${workflowId} is assigned to ${workflow.agentRef}`);
+    }
+    details = {
+      ...details,
+      ...coordination,
+      agentRef: workflow.agentRef || coordination.agentRef,
+      goalRef: workflow.goalRef || coordination.goalRef,
+    };
     const args = ["workflow", "run", workflowId, "--owner", this.owner, "--json"];
+    if (details.agentRef) args.push("--agent-ref", String(details.agentRef));
+    if (details.goalRef) args.push("--goal-ref", String(details.goalRef));
     if (details.triggerId) args.push("--trigger", String(details.triggerId));
     if (details.attemptId) args.push("--attempt-id", String(details.attemptId));
     if (details.scheduledFor) args.push("--scheduled-for", String(details.scheduledFor));
     if (details.logicalWorkId) args.push("--logical-work-id", String(details.logicalWorkId));
     for (const [name, value] of Object.entries(inputs)) args.push("--input", `${name}=${value}`);
     const created = JSON.parse(await this.exec(args));
-    const workflow = await this.workflow(workflowId);
     return {
       run: created.run,
       skipped: created.schema === "org2:workflow-run-skipped:v1",
@@ -515,6 +610,43 @@ export class Org2Lifecycle {
     };
   }
 
+  async replyAndResumeRun(runId, responseRaw, details = {}) {
+    const corpus = await this.assertCorpus(details.expectedCorpusId);
+    const response = String(responseRaw || "").trim();
+    if (!response) throw new Error("a clarification response is required");
+    const run = JSON.parse(await this.exec(["run", "show", runId, "--json"]));
+    if (run.status !== "blocked") throw new Error(`${runId} cannot accept a clarification while ${run.status}`);
+
+    const mappings = Object.values(this.state.mappings)
+      .filter((item) => item.org2RunId === runId)
+      .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+    const mapping = mappings.find((item) => item.sessionKey) || mappings[0];
+    const commented = JSON.parse(await this.exec([
+      "run", "comment", runId,
+      "--author", "Workspace user",
+      "--body", response,
+      "--json",
+    ]));
+    const resumed = JSON.parse(await this.exec([
+      "run", "resume", runId,
+      "--actor", "Org2Workspace",
+      "--json",
+    ]));
+    if (mapping) {
+      mapping.resumedAt = new Date().toISOString();
+      delete mapping.pausedAt;
+      delete mapping.pausedStatus;
+      await this.#save();
+    }
+    return {
+      run: resumed,
+      ...(mapping?.sessionKey ? { sessionKey: mapping.sessionKey } : {}),
+      prompt: clarificationContinuationPrompt(commented, response),
+      correlated: Boolean(mapping?.sessionKey),
+      corpus: corpus.identity,
+    };
+  }
+
   async resumeWorkflowRevision(runId, approvalId, details = {}) {
     const corpus = await this.assertCorpus(details.expectedCorpusId);
     const run = JSON.parse(await this.exec(["run", "show", runId, "--json"]));
@@ -563,6 +695,9 @@ export class Org2Lifecycle {
     }
     const mapping = this.state.mappings[key];
     if (!mapping || mapping.finishedAt) return;
+    if (details.sessionKey && !mapping.sessionKey) mapping.sessionKey = details.sessionKey;
+    if (details.openclawRunId && !mapping.openclawRunId) mapping.openclawRunId = details.openclawRunId;
+    if (details.runtimeAgentId && !mapping.runtimeAgentId) mapping.runtimeAgentId = details.runtimeAgentId;
     await this.#updateRuntime(mapping.org2RunId, {
       provider: details.provider || mapping.provider,
       model: details.model || mapping.model,

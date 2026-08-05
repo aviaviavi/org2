@@ -87,6 +87,44 @@ final class CodexAppServerClientTests: XCTestCase {
     XCTAssertTrue(snapshot.contains("Unsaved editor text"))
   }
 
+  func testWorkspacePromptsDistinguishRuntimeFromPortableAgentIdentity() {
+    let context = OpenClawWorkspaceContext(
+      localCorpusRoot: "/tmp/example-corpus",
+      remoteCorpusRoot: "/srv/example-corpus",
+      selectedSurface: "AI Chat",
+      selectedLocation: nil,
+      selectedEntrySource: EntrySource(
+        file: "/tmp/example-corpus/notes/support.org2",
+        startLine: 4,
+        endLineExclusive: 10,
+        text: """
+        * TODO Resolve customer issue
+        :PROPERTIES:
+        :AGENT_REF: scarf-support
+        :GOAL_REF: customer-trust
+        :END:
+        """,
+        isSubtree: true
+      ),
+      backlinks: nil,
+      agenda: nil,
+      searchQuery: "",
+      searchResults: []
+    )
+
+    let openClaw = context.systemPrompt(runtime: "openclaw", runtimeAgentID: "scarf-support")
+    XCTAssertTrue(openClaw.contains("Execution runtime: openclaw"))
+    XCTAssertTrue(openClaw.contains("Runtime agent ID: scarf-support"))
+    XCTAssertTrue(openClaw.contains("ORG2_SELECTED_AGENT_REF: scarf-support"))
+    XCTAssertTrue(openClaw.contains("ORG2_SELECTED_GOAL_REF: customer-trust"))
+    XCTAssertTrue(openClaw.contains("org2 agent-profile resolve --runtime openclaw --runtime-agent-id scarf-support --dir /srv/example-corpus --json"))
+    XCTAssertTrue(openClaw.contains("Never use =openclaw=, =codex=, a model name, or a session ID as =AGENT_REF:="))
+
+    let codex = context.codexSystemPrompt()
+    XCTAssertTrue(codex.contains("Execution runtime: codex"))
+    XCTAssertTrue(codex.contains("org2 agent-profile resolve --runtime codex --runtime-agent-id default --dir /tmp/example-corpus --json"))
+  }
+
   func testWorkspaceSnapshotIncludesAuthorizedCorporaAndCustomInstructions() {
     let context = OpenClawWorkspaceContext(
       localCorpusRoot: "/tmp/personal",

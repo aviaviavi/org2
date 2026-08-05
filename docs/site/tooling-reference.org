@@ -19,7 +19,7 @@ Main workflows:
 - =search=, =id=, =query=, =backlinks=
 - =index=, =entity=, =approvals=, =clock=
 - =agent capabilities=, =agent context/search/fetch/bundle=, =context=, =brief=
-- =run=, =review=, =workflow=, =artifact=, =runtime=, =mcp=, =eval=
+- =goal=, =agent-profile=, =run=, =review=, =workflow=, =artifact=, =runtime=, =mcp=, =eval=
 - =corpus= identity inspection, validation, and preview-first initialization
 - =workspace agenda=, =workspace search= for read-only projections across explicitly mounted corpora
 - =source list=, =source doctor=, =source status=, =source bind=, =source import=, =source sync= for external source mirrors and staged review packets
@@ -338,6 +338,21 @@ org2 thread auto-settle --dir ~/notes --apply
 The transcript schema keeps the legacy =isArchived= field for older clients and adds =settledAt= plus =settlementSettings.autoSettleAfterSeconds=. Existing archived threads therefore load as settled, while older unclassified threads remain active. Auto-settlement excludes the selected thread, pinned or unread threads, pending turns, and a latest message that is still sending, failed, or interrupted. Empty threads and threads with a historical failure followed by a successful delivery remain eligible once inactive.
 
 * Durable agent runs and review
+
+Goals and named workers are portable corpus records, distinct from the runtime that executes them. =org2 goal create/update/list/show= manages =org2:goal:v1= files under =goals/=. =org2 agent-profile create/update/list/show= manages =org2:agent-profile:v1= files under =agent-profiles/=. Both create and update preview by default and require =--apply= to write.
+
+An agent profile may declare responsibilities, capabilities, skills, reporting and goal relationships, and repeatable non-secret runtime bindings such as =openclaw:scarf-support= or =codex:default=. Credentials, session IDs, provider/model choice, and machine paths do not belong in the profile. Resolve the active runtime identity before delegation:
+
+#+begin_src sh
+org2 agent-profile resolve --runtime openclaw \
+  --runtime-agent-id scarf-support --dir ~/notes --json
+org2 run create --goal "Resolve the customer issue" \
+  --agent-ref scarf-support --goal-ref customer-trust --dir ~/notes
+org2 todo assign --file notes/support.org2 --line 12 --assignee "Scarf Support" \
+  --agent-ref scarf-support --goal-ref customer-trust --apply
+#+end_src
+
+The resolved =agentRef= is the portable worker ID; OpenClaw and Codex are runtimes, not profile IDs. A profile's =primaryGoalRef= is returned as the default =goalRef=. Existing selected-work refs take precedence over a runtime default. =AGENT_REF= and =GOAL_REF= flow through agent context, durable runs, and authored workflows; =ASSIGNEE= remains the readable display label. Resolution fails on ambiguous active bindings or a missing primary goal and returns =found: false= for an unbound runtime identity, allowing clients to omit refs rather than guess.
 
 =org2 run= manages =org2:agent-run:v1= records under =.org2/runs/=. Each record contains readable Org sections plus a canonical JSON block; writes are atomic. The state machine supports queued, running, waiting-approval, blocked, completed, failed, and canceled states. Invalid transitions fail instead of silently rewriting history.
 
