@@ -95,6 +95,17 @@ final class OpenClawChatLayoutTests: XCTestCase {
     XCTAssertFalse(OpenClawChatScrollVisibility(position: 1, hasContent: true).showsJumpToBottom)
   }
 
+  func testScrollPositionOnlyUpdatesPresentationAcrossNearBottomBoundary() {
+    let aboveLatest = OpenClawChatScrollVisibility(position: 0.4, hasContent: true)
+    let stillAboveLatest = OpenClawChatScrollVisibility(position: 0.8, hasContent: true)
+    let nearLatest = OpenClawChatScrollVisibility(position: 0.99, hasContent: true)
+
+    XCTAssertNil(aboveLatest.updatedNearBottomState(after: false))
+    XCTAssertNil(stillAboveLatest.updatedNearBottomState(after: false))
+    XCTAssertEqual(nearLatest.updatedNearBottomState(after: false), true)
+    XCTAssertNil(nearLatest.updatedNearBottomState(after: true))
+  }
+
   func testAssistantBubbleExpandsVerticallyForWrappedText() throws {
     let message = OpenClawChatMessage(
       role: .assistant,

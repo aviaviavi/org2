@@ -5539,7 +5539,7 @@ private enum OpenClawChatPresentation {
 private struct OpenClawChatView: View {
   @EnvironmentObject private var store: WorkspaceStore
   @State private var isShowingConfiguration = false
-  @State private var chatScrollPosition = 1.0
+  @State private var isChatNearBottom = true
   let presentation: OpenClawChatPresentation
   let surface: WorkspaceSurface?
 
@@ -5745,14 +5745,20 @@ private struct OpenClawChatView: View {
         selectionGeneration: store.openClawChatSelectionGeneration,
         initialPosition: store.openClawChatScrollPosition(isAssistantPanel: presentation.isCompact),
         onPositionChange: { position in
-          chatScrollPosition = position
+          let visibility = OpenClawChatScrollVisibility(
+            position: position,
+            hasContent: !store.openClawMessages.isEmpty
+          )
+          if let nextIsNearBottom = visibility.updatedNearBottomState(after: isChatNearBottom) {
+            isChatNearBottom = nextIsNearBottom
+          }
           store.recordOpenClawChatScrollPosition(position, isAssistantPanel: presentation.isCompact)
         }
       ))
       .onChange(of: scrollUpdate) { previous, current in
         switch current.animatedTarget(after: previous) {
         case .latestMessage:
-          if chatScrollPosition >= OpenClawChatScrollVisibility.nearBottomThreshold {
+          if isChatNearBottom {
             withAnimation(WorkspaceMotion.quick) {
               proxy.scrollTo("openclaw-chat-bottom", anchor: .bottom)
             }
@@ -5766,12 +5772,9 @@ private struct OpenClawChatView: View {
         }
       }
       .overlay(alignment: .bottomTrailing) {
-        if OpenClawChatScrollVisibility(
-          position: chatScrollPosition,
-          hasContent: !store.openClawMessages.isEmpty
-        ).showsJumpToBottom {
+        if !isChatNearBottom && !store.openClawMessages.isEmpty {
           Button {
-            chatScrollPosition = 1
+            isChatNearBottom = true
             withAnimation(WorkspaceMotion.quick) {
               proxy.scrollTo("openclaw-chat-bottom", anchor: .bottom)
             }
@@ -5792,7 +5795,7 @@ private struct OpenClawChatView: View {
           .transition(.scale.combined(with: .opacity))
         }
       }
-      .animation(WorkspaceMotion.quick, value: chatScrollPosition)
+      .animation(WorkspaceMotion.quick, value: isChatNearBottom)
     }
   }
 }
@@ -5803,8 +5806,16 @@ struct OpenClawChatScrollVisibility: Equatable {
   let position: Double
   let hasContent: Bool
 
+  var isNearBottom: Bool {
+    position >= Self.nearBottomThreshold
+  }
+
   var showsJumpToBottom: Bool {
-    hasContent && position < Self.nearBottomThreshold
+    hasContent && !isNearBottom
+  }
+
+  func updatedNearBottomState(after current: Bool) -> Bool? {
+    isNearBottom == current ? nil : isNearBottom
   }
 }
 
