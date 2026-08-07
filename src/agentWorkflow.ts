@@ -12,10 +12,12 @@ import {
 
 export const ORG2_WORKFLOW_SCHEMA = "org2:workflow:v1" as const;
 export const WORKFLOW_EVENT_TRIGGER_TYPES = ["capture", "meeting-import"] as const;
+export const WORKFLOW_TRIGGER_TYPES = ["manual", "schedule", "file-change", ...WORKFLOW_EVENT_TRIGGER_TYPES] as const;
 
 export type AgentWorkflowState = "draft" | "active" | "paused";
 export type WorkflowEventTriggerType = typeof WORKFLOW_EVENT_TRIGGER_TYPES[number];
 export type WorkflowSignalType = WorkflowEventTriggerType | "file-change";
+export type WorkflowTriggerType = typeof WORKFLOW_TRIGGER_TYPES[number];
 
 export interface WorkflowSignal {
   id: string;
@@ -45,7 +47,7 @@ export interface WorkflowOutput {
 
 export interface WorkflowTrigger {
   id: string;
-  type: "manual" | "schedule" | "file-change" | WorkflowEventTriggerType;
+  type: WorkflowTriggerType;
   enabled: boolean;
   schedule?: string;
   timezone?: string;
@@ -171,8 +173,16 @@ export function validateWorkflow(workflow: AgentWorkflow): WorkflowValidationRes
     if (!step.id || ids.has(step.id)) issues.push({ path: `steps[${index}].id`, message: "must be present and unique" });
     ids.add(step.id);
   }
+  const triggerIds = new Set<string>();
   for (const [index, trigger] of (workflow.triggers || []).entries()) {
+    try { safeId(trigger.id); } catch (error) { issues.push({ path: `triggers[${index}].id`, message: (error as Error).message }); }
+    if (triggerIds.has(trigger.id)) issues.push({ path: `triggers[${index}].id`, message: "must be unique" });
+    triggerIds.add(trigger.id);
+    if (!WORKFLOW_TRIGGER_TYPES.includes(trigger.type)) issues.push({ path: `triggers[${index}].type`, message: "is not supported" });
     if (trigger.type === "schedule" && !trigger.schedule) issues.push({ path: `triggers[${index}].schedule`, message: "is required for schedule triggers" });
+    if (trigger.type === "schedule" && trigger.schedule && !parseEvery(trigger.schedule)) {
+      issues.push({ path: `triggers[${index}].schedule`, message: "must use a positive interval such as every 15m, every 4h, or every 1d" });
+    }
     if (trigger.type === "file-change" && !trigger.path) issues.push({ path: `triggers[${index}].path`, message: "is required for file-change triggers" });
     if (trigger.gate && !(trigger.gate.events?.length || trigger.gate.paths?.length)) {
       issues.push({ path: `triggers[${index}].gate`, message: "must declare at least one event or path" });
@@ -394,6 +404,7 @@ function parseEvery(raw: string): number | null {
   const match = raw.trim().match(/^every\s+(\d+)\s*(m|h|d)$/i);
   if (!match) return null;
   const amount = Number(match[1]);
+  if (!Number.isSafeInteger(amount) || amount < 1) return null;
   return amount * (match[2]?.toLowerCase() === "m" ? 60_000 : match[2]?.toLowerCase() === "h" ? 3_600_000 : 86_400_000);
 }
 

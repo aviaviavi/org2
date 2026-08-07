@@ -11,7 +11,7 @@ import {
   transitionAgentRun, updateAgentRunAssignment, updateAgentRunRuntime, updateAgentRunStep, validateAgentRun,
   updateAgentRunArtifactReview,
 } from "../dist/agentRun.js";
-import { dueWorkflowTriggers, installBuiltinWorkflow, instantiateWorkflow, legacyWorkflowDirectory, loadWorkflow, loadWorkflowSnapshot, markWorkflowTriggerAttempt, migrateLegacyWorkflows, packagedCorpusTemplate, parseWorkflowOrg, recordWorkflowSignal, renderWorkflowOrg, saveWorkflow, updateWorkflow, workflowFromRun, workflowPath, workflowTriggerEligibility } from "../dist/agentWorkflow.js";
+import { dueWorkflowTriggers, installBuiltinWorkflow, instantiateWorkflow, legacyWorkflowDirectory, loadWorkflow, loadWorkflowSnapshot, markWorkflowTriggerAttempt, migrateLegacyWorkflows, packagedCorpusTemplate, parseWorkflowOrg, recordWorkflowSignal, renderWorkflowOrg, saveWorkflow, updateWorkflow, validateWorkflow, workflowFromRun, workflowPath, workflowTriggerEligibility } from "../dist/agentWorkflow.js";
 import { artifactRebuildPlan, buildArtifactGraph, MEETING_TO_CONTROLLED_EXECUTION_WORKFLOW } from "../dist/artifactPipeline.js";
 import { discoverMcpClient, saveMcpClients, serveMcp, writeMcpSnapshot } from "../dist/mcpRuntime.js";
 import { defaultRuntimePolicy, selectRuntime, validateRuntimePaths } from "../dist/runtimePolicy.js";
@@ -510,6 +510,19 @@ try {
   workflow.instructions = "Prepare the {{quarter}} board briefing";
   workflow.triggers.push({ id: "daily", type: "schedule", enabled: true, schedule: "every 1d", lastRunAt: "2026-07-12T00:00:00Z" });
   workflow.triggers.push({ id: "after-capture", type: "capture", enabled: true });
+  const invalidTriggers = {
+    ...workflow,
+    triggers: [
+      { id: "repeated", type: "schedule", enabled: true, schedule: "every 0m" },
+      { id: "repeated", type: "unknown", enabled: true },
+    ],
+  };
+  const invalidTriggerValidation = validateWorkflow(invalidTriggers);
+  assert.equal(invalidTriggerValidation.valid, false);
+  assert.deepEqual(
+    invalidTriggerValidation.issues.map((issue) => issue.path),
+    ["triggers[0].schedule", "triggers[1].id", "triggers[1].type"],
+  );
   saveWorkflow(root, workflow);
   assert.equal(workflowPath(root, workflow.id), path.join(root, "workflows", "board-briefing.org2"));
   assert.equal(fs.existsSync(workflowPath(root, workflow.id)), true);
