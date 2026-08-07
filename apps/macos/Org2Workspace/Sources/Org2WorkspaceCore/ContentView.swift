@@ -114,7 +114,7 @@ public struct ContentView: View {
         EditorSaveConflictSheet(conflict: conflict)
           .environmentObject(store)
       }
-      .alert(item: $store.slideExportNotice) { notice in
+      .alert(item: $store.exportNotice) { notice in
         Alert(
           title: Text(notice.title),
           message: Text(notice.message),
@@ -829,7 +829,6 @@ private struct OpenClawSidebarThreadList: View {
   @State private var isRenamePresented = false
   @State private var renamingThreadID: UUID?
   @State private var renameDraft = ""
-  @State private var contextualThreadID: UUID?
 
   private let autoSettleTimer = Timer.publish(every: 300, on: .main, in: .common).autoconnect()
 
@@ -844,32 +843,19 @@ private struct OpenClawSidebarThreadList: View {
       } else {
         LazyVStack(alignment: .leading, spacing: 2) {
           ForEach(store.visibleOpenClawChatThreads) { thread in
-            let contextThread = resolvedContextThread(fallback: thread)
             OpenClawSidebarThreadRow(
               thread: thread,
               isSelected: store.selectedOpenClawChatThreadID == thread.id && store.selectedSurface == .openClaw,
               isSending: store.openClawSendingThreadIDs.contains(thread.id),
-              contextThread: contextThread,
               select: {
-                contextualThreadID = thread.id
                 store.makeSurfacePrimary(.openClaw)
                 store.selectOpenClawChatThread(thread.id)
               },
               rename: beginRenaming,
-              togglePin: { store.toggleOpenClawChatThreadPin(contextThread.id) },
-              settle: {
-                contextualThreadID = nil
-                store.settleOpenClawChatThread(thread.id)
-              },
+              togglePin: { store.toggleOpenClawChatThreadPin(thread.id) },
+              settle: { store.settleOpenClawChatThread(thread.id) },
               reopen: { store.reopenOpenClawChatThread(thread.id) }
             )
-            .onHover { isHovered in
-              if isHovered {
-                contextualThreadID = thread.id
-              } else if contextualThreadID == thread.id {
-                contextualThreadID = nil
-              }
-            }
           }
 
           if !store.settledOpenClawChatThreads.isEmpty {
@@ -898,9 +884,7 @@ private struct OpenClawSidebarThreadList: View {
 
               if store.canUndoOpenClawChatThreadArchive {
                 Button {
-                  withAnimation(WorkspaceMotion.disclosure) {
-                    store.undoLastOpenClawChatThreadArchive()
-                  }
+                  store.undoLastOpenClawChatThreadArchive()
                 } label: {
                   Image(systemName: "arrow.uturn.backward")
                     .font(.caption.weight(.semibold))
@@ -918,33 +902,20 @@ private struct OpenClawSidebarThreadList: View {
 
           if showsSettledThreads {
             ForEach(store.settledOpenClawChatThreads) { thread in
-              let contextThread = resolvedContextThread(fallback: thread)
               OpenClawSidebarThreadRow(
                 thread: thread,
                 isSelected: store.selectedOpenClawChatThreadID == thread.id && store.selectedSurface == .openClaw,
                 isSending: store.openClawSendingThreadIDs.contains(thread.id),
-                contextThread: contextThread,
                 select: {
-                  contextualThreadID = thread.id
                   store.makeSurfacePrimary(.openClaw)
                   store.selectOpenClawChatThread(thread.id)
                 },
                 rename: beginRenaming,
-                togglePin: { store.toggleOpenClawChatThreadPin(contextThread.id) },
+                togglePin: { store.toggleOpenClawChatThreadPin(thread.id) },
                 settle: { store.settleOpenClawChatThread(thread.id) },
-                reopen: {
-                  contextualThreadID = nil
-                  store.reopenOpenClawChatThread(thread.id)
-                }
+                reopen: { store.reopenOpenClawChatThread(thread.id) }
               )
               .opacity(0.68)
-              .onHover { isHovered in
-                if isHovered {
-                  contextualThreadID = thread.id
-                } else if contextualThreadID == thread.id {
-                  contextualThreadID = nil
-                }
-              }
             }
           }
         }
@@ -984,25 +955,6 @@ private struct OpenClawSidebarThreadList: View {
     renameDraft = thread.title
     isRenamePresented = true
   }
-
-  private func resolvedContextThread(fallback: OpenClawChatThread) -> OpenClawChatThread {
-    let id = OpenClawSidebarContextTarget.resolve(
-      hoveredThreadID: contextualThreadID,
-      selectedThreadID: store.selectedSurface == .openClaw ? store.selectedOpenClawChatThreadID : nil,
-      fallbackThreadID: fallback.id
-    )
-    return store.openClawChatThreads.first(where: { $0.id == id }) ?? fallback
-  }
-}
-
-enum OpenClawSidebarContextTarget {
-  static func resolve(
-    hoveredThreadID: UUID?,
-    selectedThreadID: UUID?,
-    fallbackThreadID: UUID
-  ) -> UUID {
-    hoveredThreadID ?? selectedThreadID ?? fallbackThreadID
-  }
 }
 
 enum OpenClawSettledThreadDisclosure {
@@ -1016,7 +968,6 @@ private struct OpenClawSidebarThreadRow: View {
   let thread: OpenClawChatThread
   let isSelected: Bool
   let isSending: Bool
-  let contextThread: OpenClawChatThread
   let select: () -> Void
   let rename: (OpenClawChatThread) -> Void
   let togglePin: () -> Void
@@ -1082,9 +1033,7 @@ private struct OpenClawSidebarThreadRow: View {
 
       if isHovered {
         Button {
-          withAnimation(WorkspaceMotion.disclosure) {
-            thread.isSettled ? reopen() : settle()
-          }
+          thread.isSettled ? reopen() : settle()
         } label: {
           Image(systemName: thread.isSettled ? "arrow.uturn.backward.circle" : "checkmark.circle")
             .font(.callout)
@@ -1114,7 +1063,7 @@ private struct OpenClawSidebarThreadRow: View {
     }
     .contextMenu {
       Button {
-        rename(contextThread)
+        rename(thread)
       } label: {
         Label("Rename Thread", systemImage: "pencil")
       }
@@ -1123,12 +1072,12 @@ private struct OpenClawSidebarThreadRow: View {
         togglePin()
       } label: {
         Label(
-          contextThread.isPinned ? "Unpin Thread" : "Pin Thread",
-          systemImage: contextThread.isPinned ? "pin.slash" : "pin"
+          thread.isPinned ? "Unpin Thread" : "Pin Thread",
+          systemImage: thread.isPinned ? "pin.slash" : "pin"
         )
       }
 
-      if contextThread.isSettled {
+      if thread.isSettled {
         Button {
           reopen()
         } label: {
@@ -6971,7 +6920,10 @@ private struct DetailView: View {
         )
         Divider()
         VStack(spacing: 0) {
-          if store.isLiveFileEditorSelected {
+          if store.selectedFileIsPDF {
+            LinkedPDFPreviewPane()
+              .frame(minWidth: 420, idealWidth: 560, maxHeight: .infinity)
+          } else if store.isLiveFileEditorSelected {
             LiveFileEditorBody(
               location: location,
               reportViewportSourceLine: { store.recordDocumentViewportSourceLine($0) }
@@ -7151,7 +7103,7 @@ private struct DetailHeader: View {
             .foregroundStyle(WorkspaceDesign.secondaryText)
             .lineLimit(nil)
         }
-        Text(store.relativePath(location.file) + ":\(location.lineForEditor)")
+        Text(store.relativePath(location.file) + (store.selectedFileIsPDF ? "" : ":\(location.lineForEditor)"))
           .font(.caption2.monospaced())
           .foregroundStyle(WorkspaceDesign.tertiaryText)
           .textSelection(.enabled)
@@ -7176,6 +7128,7 @@ private struct DetailHeader: View {
     case .backlink:
       return "link"
     case .openClaw:
+      if store.selectedFileIsPDF { return "doc.richtext" }
       return store.selectedFileIsCSV ? "tablecells" : "doc.text"
     case .meeting:
       return "waveform.and.mic"
@@ -7183,9 +7136,18 @@ private struct DetailHeader: View {
   }
 
   private var detailActionBar: some View {
-    ViewThatFits(in: .horizontal) {
-      fullDetailActionBar
-      compactDetailActionBar
+    Group {
+      if store.selectedFileIsPDF {
+        HStack {
+          WorkspaceControlStrip { sourceMenu }
+          Spacer(minLength: 0)
+        }
+      } else {
+        ViewThatFits(in: .horizontal) {
+          fullDetailActionBar
+          compactDetailActionBar
+        }
+      }
     }
     .controlSize(.small)
     .buttonStyle(WorkspaceActionButtonStyle())
@@ -7404,9 +7366,16 @@ private struct DetailHeader: View {
       Divider()
 
       Button {
-        store.open(location)
+        if store.selectedFileIsPDF {
+          NSWorkspace.shared.open(URL(fileURLWithPath: location.file))
+        } else {
+          store.open(location)
+        }
       } label: {
-        Label("Open Source", systemImage: "arrow.up.forward.square")
+        Label(
+          store.selectedFileIsPDF ? "Open in Default App" : "Open Source",
+          systemImage: "arrow.up.forward.square"
+        )
       }
 
       Button {
@@ -7415,30 +7384,41 @@ private struct DetailHeader: View {
         Label("Reveal in Finder", systemImage: "folder")
       }
 
-      Divider()
+      if !store.selectedFileIsPDF {
+        Divider()
 
-      Button {
-        Task { await store.exportSlides(format: .pdf) }
-      } label: {
-        Label("Export Slides as PDF…", systemImage: "rectangle.on.rectangle")
+        Button {
+          Task { await store.exportCurrentDocumentPDF() }
+        } label: {
+          Label("Export Current Document as PDF…", systemImage: "doc.richtext")
+        }
+        .disabled(!store.canExportCurrentDocumentPDF)
+
+        Divider()
+
+        Button {
+          Task { await store.exportSlides(format: .pdf) }
+        } label: {
+          Label("Export Slides as PDF…", systemImage: "rectangle.on.rectangle")
+        }
+        .disabled(!store.canExportSlides)
+
+        Button {
+          Task { await store.exportSlides(format: .latex) }
+        } label: {
+          Label("Export Slides as LaTeX…", systemImage: "doc.plaintext")
+        }
+        .disabled(!store.canExportSlides)
+
+        Divider()
+
+        Button {
+          Task { await store.linkifyCurrentFile() }
+        } label: {
+          Label("Linkify File", systemImage: "link.badge.plus")
+        }
+        .disabled(!store.canLinkifyCurrentFile)
       }
-      .disabled(!store.canExportSlides)
-
-      Button {
-        Task { await store.exportSlides(format: .latex) }
-      } label: {
-        Label("Export Slides as LaTeX…", systemImage: "doc.plaintext")
-      }
-      .disabled(!store.canExportSlides)
-
-      Divider()
-
-      Button {
-        Task { await store.linkifyCurrentFile() }
-      } label: {
-        Label("Linkify File", systemImage: "link.badge.plus")
-      }
-      .disabled(!store.canLinkifyCurrentFile)
 
       if store.selectedFileIsDataNotebook {
         Divider()
@@ -7453,7 +7433,7 @@ private struct DetailHeader: View {
       Label("File", systemImage: "doc.text.magnifyingglass")
     }
     .fixedSize(horizontal: true, vertical: false)
-    .help("Open, reveal, or linkify this file")
+    .help("Open, reveal, export, or linkify this file")
   }
 
   private var intelligenceMenu: some View {
@@ -7802,6 +7782,8 @@ private struct OrgRenderedDocumentPreview: View {
           layout: store.renderedDocumentLayout,
           askAIAboutHeading: { store.askOpenClawAboutSourceHeading(at: $0) },
           reportStatus: { store.statusText = $0 },
+          allowsTablePersistence: source.isEditable,
+          saveTableView: { store.requestSaveRenderedTableView($0) },
           reportViewportSourceLine: reportViewportSourceLine
         )
       } else if let error = store.selectedEntryRenderError {
@@ -7857,9 +7839,87 @@ private struct OrgHTMLLoadingView: View {
   }
 }
 
+private struct LinkedPDFPreviewPane: View {
+  @EnvironmentObject private var store: WorkspaceStore
+  @State private var zoomScale: CGFloat = 1
+  @State private var pageCount = 0
+  @State private var pageIndex: Int?
+  @State private var navigationGeneration = 0
+  @State private var navigationRequest: OrgPDFPageNavigationRequest?
+
+  var body: some View {
+    ZStack {
+      if let data = store.linkedPDFPreviewData {
+        OrgPDFDocumentView(
+          data: data,
+          zoomScale: zoomScale,
+          navigationRequest: navigationRequest,
+          reportViewportPageIndex: { pageIndex = $0 },
+          reportPageCount: { pageCount = $0 }
+        )
+      } else if store.isLoadingLinkedPDFPreview {
+        OrgHTMLLoadingView(label: "Loading PDF", onCancel: store.cancelLinkedPDFPreview)
+      } else {
+        unavailableView
+      }
+    }
+    .overlay(alignment: .bottom) {
+      if store.linkedPDFPreviewData != nil, pageCount > 0 {
+        OrgPDFPreviewControls(
+          pageIndex: pageIndex,
+          pageCount: pageCount,
+          zoomScale: zoomScale,
+          navigate: navigate,
+          zoomOut: {
+            zoomScale = WorkspaceStore.previousSlidePreviewZoomScale(before: zoomScale)
+          },
+          resetZoom: { zoomScale = 1 },
+          zoomIn: {
+            zoomScale = WorkspaceStore.nextSlidePreviewZoomScale(after: zoomScale)
+          }
+        )
+        .padding(14)
+      }
+    }
+    .task(id: store.selectedLocation?.file) {
+      zoomScale = 1
+      pageCount = 0
+      pageIndex = nil
+      navigationRequest = nil
+    }
+    .background(Color(nsColor: .textBackgroundColor))
+  }
+
+  private func navigate(_ target: OrgPDFPageNavigationTarget) {
+    navigationGeneration += 1
+    navigationRequest = OrgPDFPageNavigationRequest(id: navigationGeneration, target: target)
+  }
+
+  private var unavailableView: some View {
+    VStack(spacing: 12) {
+      Image(systemName: "doc.richtext")
+        .font(.system(size: 28, weight: .regular))
+        .foregroundStyle(.secondary)
+      Text("PDF preview unavailable")
+        .font(.headline)
+      Text(store.linkedPDFPreviewError ?? "Preparing the linked PDF.")
+        .font(.callout)
+        .foregroundStyle(.secondary)
+        .multilineTextAlignment(.center)
+        .frame(maxWidth: 440)
+      Button {
+        store.retryLinkedPDFPreview()
+      } label: {
+        Label("Retry", systemImage: "arrow.clockwise")
+      }
+    }
+    .padding(24)
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+  }
+}
+
 private struct OrgSlidePreviewPane: View {
   @EnvironmentObject private var store: WorkspaceStore
-  @State private var pageNumberText = "1"
   var reportViewportSourceLine: @MainActor (Int?) -> Void = { _ in }
 
   var body: some View {
@@ -7918,95 +7978,19 @@ private struct OrgSlidePreviewPane: View {
     }
     .overlay(alignment: .bottom) {
       if store.slidePreviewPDF != nil, store.slidePreviewPageCount > 0 {
-        slideControls
+        OrgPDFPreviewControls(
+          pageIndex: store.currentDocumentSlidePageIndex,
+          pageCount: store.slidePreviewPageCount,
+          zoomScale: store.slidePreviewZoomScale,
+          navigate: store.requestSlidePreviewNavigation,
+          zoomOut: store.zoomSlidePreviewOut,
+          resetZoom: store.resetSlidePreviewZoom,
+          zoomIn: store.zoomSlidePreviewIn
+        )
           .padding(14)
       }
     }
-    .onAppear {
-      updatePageNumberText()
-    }
-    .onChange(of: store.currentDocumentSlidePageIndex) {
-      updatePageNumberText()
-    }
     .background(Color(nsColor: .textBackgroundColor))
-  }
-
-  private var slideControls: some View {
-    HStack(spacing: 8) {
-      Button {
-        store.requestSlidePreviewNavigation(.previous)
-      } label: {
-        Image(systemName: "chevron.left")
-      }
-      .disabled((store.currentDocumentSlidePageIndex ?? 0) <= 0)
-      .help("Previous slide (Left Arrow, Page Up, or Shift-Space)")
-
-      TextField("Page", text: $pageNumberText)
-        .textFieldStyle(.plain)
-        .multilineTextAlignment(.trailing)
-        .frame(width: 30)
-        .onSubmit(jumpToEnteredPage)
-        .accessibilityLabel("Slide number")
-
-      Text("of \(store.slidePreviewPageCount)")
-        .foregroundStyle(.secondary)
-        .monospacedDigit()
-
-      Button {
-        store.requestSlidePreviewNavigation(.next)
-      } label: {
-        Image(systemName: "chevron.right")
-      }
-      .disabled((store.currentDocumentSlidePageIndex ?? 0) >= store.slidePreviewPageCount - 1)
-      .help("Next slide (Right Arrow, Page Down, or Space)")
-
-      Divider()
-        .frame(height: 16)
-
-      Button {
-        store.zoomSlidePreviewOut()
-      } label: {
-        Image(systemName: "minus.magnifyingglass")
-      }
-      .help("Zoom out (Command-Minus)")
-
-      Button {
-        store.resetSlidePreviewZoom()
-      } label: {
-        Text("\(Int((store.slidePreviewZoomScale * 100).rounded()))%")
-          .monospacedDigit()
-          .frame(minWidth: 36)
-      }
-      .help("Fit slide to the window")
-
-      Button {
-        store.zoomSlidePreviewIn()
-      } label: {
-        Image(systemName: "plus.magnifyingglass")
-      }
-      .help("Zoom in (Command-Plus)")
-    }
-    .buttonStyle(.borderless)
-    .controlSize(.small)
-    .padding(.horizontal, 12)
-    .padding(.vertical, 8)
-    .background(.regularMaterial, in: Capsule())
-    .overlay(Capsule().stroke(WorkspaceDesign.hairline))
-    .shadow(color: .black.opacity(0.08), radius: 5, y: 2)
-  }
-
-  private func updatePageNumberText() {
-    pageNumberText = String((store.currentDocumentSlidePageIndex ?? 0) + 1)
-  }
-
-  private func jumpToEnteredPage() {
-    guard let pageNumber = Int(pageNumberText.trimmingCharacters(in: .whitespacesAndNewlines)) else {
-      updatePageNumberText()
-      return
-    }
-    let clampedPage = min(max(1, pageNumber), store.slidePreviewPageCount)
-    pageNumberText = String(clampedPage)
-    store.requestSlidePreviewNavigation(.page(clampedPage - 1))
   }
 
   private var unavailableView: some View {
@@ -8038,6 +8022,97 @@ private struct OrgSlidePreviewPane: View {
       return "Open the full Org or Org2 page to compile its slide deck."
     }
     return store.slidePreviewError ?? "Preparing the compiled PDF."
+  }
+}
+
+private struct OrgPDFPreviewControls: View {
+  let pageIndex: Int?
+  let pageCount: Int
+  let zoomScale: CGFloat
+  let navigate: (OrgPDFPageNavigationTarget) -> Void
+  let zoomOut: () -> Void
+  let resetZoom: () -> Void
+  let zoomIn: () -> Void
+  @State private var pageNumberText = "1"
+
+  var body: some View {
+    HStack(spacing: 8) {
+      Button {
+        navigate(.previous)
+      } label: {
+        Image(systemName: "chevron.left")
+      }
+      .disabled((pageIndex ?? 0) <= 0)
+      .help("Previous page")
+
+      TextField("Page", text: $pageNumberText)
+        .textFieldStyle(.plain)
+        .multilineTextAlignment(.trailing)
+        .frame(width: 30)
+        .onSubmit(jumpToEnteredPage)
+        .accessibilityLabel("Page number")
+
+      Text("of \(pageCount)")
+        .foregroundStyle(.secondary)
+        .monospacedDigit()
+
+      Button {
+        navigate(.next)
+      } label: {
+        Image(systemName: "chevron.right")
+      }
+      .disabled((pageIndex ?? 0) >= pageCount - 1)
+      .help("Next page")
+
+      Divider()
+        .frame(height: 16)
+
+      Button {
+        zoomOut()
+      } label: {
+        Image(systemName: "minus.magnifyingglass")
+      }
+      .help("Zoom out (Command-Minus)")
+
+      Button {
+        resetZoom()
+      } label: {
+        Text("\(Int((zoomScale * 100).rounded()))%")
+          .monospacedDigit()
+          .frame(minWidth: 36)
+      }
+      .help("Fit PDF to the window")
+
+      Button {
+        zoomIn()
+      } label: {
+        Image(systemName: "plus.magnifyingglass")
+      }
+      .help("Zoom in (Command-Plus)")
+    }
+    .buttonStyle(.borderless)
+    .controlSize(.small)
+    .padding(.horizontal, 12)
+    .padding(.vertical, 8)
+    .background(.regularMaterial, in: Capsule())
+    .overlay(Capsule().stroke(WorkspaceDesign.hairline))
+    .shadow(color: .black.opacity(0.08), radius: 5, y: 2)
+    .onAppear(perform: updatePageNumberText)
+    .onChange(of: pageIndex) { updatePageNumberText() }
+  }
+
+  private func jumpToEnteredPage() {
+    guard let pageNumber = Int(pageNumberText.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+      updatePageNumberText()
+      return
+    }
+    let clampedPage = min(max(1, pageNumber), pageCount)
+    pageNumberText = String(clampedPage)
+    navigate(.page(clampedPage - 1))
+  }
+
+  private func updatePageNumberText() {
+    pageNumberText = String((pageIndex ?? 0) + 1)
   }
 }
 

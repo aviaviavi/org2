@@ -21,6 +21,32 @@ struct AIChatSettingsView: View {
       }
 
       Section {
+        HStack(spacing: 12) {
+          Picker("Message sound", selection: $store.aiChatMessageSound) {
+            ForEach(AIChatMessageSound.allCases) { sound in
+              Text(sound.displayName).tag(sound)
+            }
+          }
+          .onChange(of: store.aiChatMessageSound) {
+            store.previewAIChatMessageSound()
+          }
+
+          Button {
+            store.previewAIChatMessageSound()
+          } label: {
+            Label("Preview", systemImage: "speaker.wave.2")
+          }
+          .disabled(store.aiChatMessageSound == .off)
+        }
+
+        Text("Plays when an AI reply arrives, including for the thread currently open.")
+          .font(.callout)
+          .foregroundStyle(.secondary)
+      } header: {
+        Label("Notifications", systemImage: "bell")
+      }
+
+      Section {
         TextEditor(text: $store.aiChatCustomInstructions)
           .font(.body)
           .frame(minHeight: 150)
@@ -39,7 +65,7 @@ struct AIChatSettingsView: View {
     .formStyle(.grouped)
     .padding(8)
     .frame(width: 560)
-    .frame(minHeight: 390)
+    .frame(minHeight: 460)
   }
 
   private var corpusAccessHelp: String {

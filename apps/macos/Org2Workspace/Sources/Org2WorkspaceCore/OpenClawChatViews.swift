@@ -107,6 +107,7 @@ struct ChatBubbleView: View {
   let compact: Bool
   @State private var isHovering = false
   @State private var didCopy = false
+  @State private var previewedAttachment: OpenClawChatAttachment?
 
   init(
     message: OpenClawChatMessage,
@@ -158,7 +159,11 @@ struct ChatBubbleView: View {
             .fixedSize(horizontal: false, vertical: true)
         }
         if !message.attachments.isEmpty {
-          OpenClawMessageAttachmentsView(attachments: message.attachments, compact: compact)
+          OpenClawMessageAttachmentsView(
+            attachments: message.attachments,
+            compact: compact,
+            onPreview: { previewedAttachment = $0 }
+          )
         }
         if message.role == .user, let sendFailure = message.sendFailure {
           OpenClawSendFailureView(
@@ -218,6 +223,9 @@ struct ChatBubbleView: View {
     }
     .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
     .fixedSize(horizontal: false, vertical: true)
+    .sheet(item: $previewedAttachment) { attachment in
+      OpenClawAttachmentPreviewView(attachment: attachment)
+    }
   }
 
   private var copyButton: some View {
@@ -471,6 +479,7 @@ private struct OpenClawSendFailureView: View {
 private struct OpenClawMessageAttachmentsView: View {
   let attachments: [OpenClawChatAttachment]
   let compact: Bool
+  let onPreview: (OpenClawChatAttachment) -> Void
 
   private var imageSize: CGFloat {
     compact ? 76 : 104
@@ -483,7 +492,11 @@ private struct OpenClawMessageAttachmentsView: View {
       spacing: 8
     ) {
       ForEach(attachments) { attachment in
-        OpenClawAttachmentThumbnail(attachment: attachment, size: imageSize)
+        OpenClawAttachmentThumbnail(
+          attachment: attachment,
+          size: imageSize,
+          onPreview: { onPreview(attachment) }
+        )
       }
     }
     .frame(maxWidth: compact ? 360 : 640, alignment: .leading)
@@ -494,36 +507,42 @@ private struct OpenClawMessageAttachmentsView: View {
 private struct OpenClawAttachmentThumbnail: View {
   let attachment: OpenClawChatAttachment
   let size: CGFloat
+  let onPreview: () -> Void
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 4) {
-      Group {
-        if let image = NSImage(data: attachment.data) {
-          Image(nsImage: image)
-            .resizable()
-            .scaledToFill()
-        } else {
-          Image(systemName: OpenClawAttachmentPresentation.systemImage(for: attachment.mimeType))
-            .font(.title3)
-            .foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+    Button(action: onPreview) {
+      VStack(alignment: .leading, spacing: 4) {
+        Group {
+          if let image = NSImage(data: attachment.data) {
+            Image(nsImage: image)
+              .resizable()
+              .scaledToFill()
+          } else {
+            Image(systemName: OpenClawAttachmentPresentation.systemImage(for: attachment.mimeType))
+              .font(.title3)
+              .foregroundStyle(.secondary)
+              .frame(maxWidth: .infinity, maxHeight: .infinity)
+          }
         }
-      }
-      .frame(width: size, height: size)
-      .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-      .overlay(
-        RoundedRectangle(cornerRadius: 6, style: .continuous)
-          .stroke(WorkspaceDesign.hairline)
-      )
+        .frame(width: size, height: size)
+        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .overlay(
+          RoundedRectangle(cornerRadius: 6, style: .continuous)
+            .stroke(WorkspaceDesign.hairline)
+        )
 
-      Text(attachment.fileName)
-        .font(.caption2)
-        .foregroundStyle(.secondary)
-        .lineLimit(1)
-        .truncationMode(.middle)
-        .frame(width: size, alignment: .leading)
+        Text(attachment.fileName)
+          .font(.caption2)
+          .foregroundStyle(.secondary)
+          .lineLimit(1)
+          .truncationMode(.middle)
+          .frame(width: size, alignment: .leading)
+      }
     }
-    .help("\(attachment.fileName) · \(Self.byteCountText(attachment.byteCount))")
+    .buttonStyle(.plain)
+    .contentShape(Rectangle())
+    .help("Open \(attachment.fileName) · \(Self.byteCountText(attachment.byteCount))")
+    .accessibilityLabel("Open attachment \(attachment.fileName)")
   }
 
   private static func byteCountText(_ count: Int) -> String {
@@ -1307,7 +1326,7 @@ enum OpenClawComposerDrop {
   }
 }
 
-private enum OpenClawAttachmentPresentation {
+enum OpenClawAttachmentPresentation {
   static func systemImage(for mimeType: String) -> String {
     if mimeType.hasPrefix("image/") { return "photo" }
     if mimeType.hasPrefix("audio/") { return "waveform" }
@@ -1817,15 +1836,27 @@ private struct OpenClawProgressFeedView: View {
       if !visibleItems.isEmpty {
         VStack(alignment: .leading, spacing: 6) {
           ForEach(visibleItems) { item in
-            OpenClawActivityFeedRow(item: item, isExpanded: showsFullFeed)
+            OpenClawActivityFeedRow(
+              item: item,
+              isExpanded: showsFullFeed,
+              isLive: isLive
+            )
           }
         }
       }
 
       if !showsFullFeed, items.count > collapsedItemLimit {
-        Text("\(items.count - collapsedItemLimit) earlier update\(items.count - collapsedItemLimit == 1 ? "" : "s") hidden")
-          .font(.caption2)
-          .foregroundStyle(.tertiary)
+        Button {
+          withAnimation(WorkspaceMotion.disclosure) {
+            showsFullFeed = true
+          }
+        } label: {
+          Text("Show \(items.count - collapsedItemLimit) earlier update\(items.count - collapsedItemLimit == 1 ? "" : "s")")
+        }
+        .buttonStyle(.plain)
+        .font(.caption2.weight(.medium))
+        .foregroundStyle(.tertiary)
+        .help("Show the complete activity feed")
       }
     }
     .frame(maxWidth: compact ? 360 : 640, alignment: .leading)
@@ -1853,16 +1884,27 @@ private struct OpenClawProgressFeedView: View {
 private struct OpenClawActivityFeedRow: View {
   let item: OpenClawActivityFeedItem
   let isExpanded: Bool
+  let isLive: Bool
 
   var body: some View {
     HStack(alignment: .top, spacing: 7) {
-      Image(systemName: icon)
-        .font(.caption.weight(.semibold))
-        .foregroundStyle(.secondary)
-        .frame(width: 14)
+      activityIcon
       VStack(alignment: .leading, spacing: 2) {
-        Text(item.title)
-          .font(.caption.weight(.medium))
+        if isActive {
+          TimelineView(.periodic(from: item.updatedAt, by: 1)) { context in
+            HStack(spacing: 5) {
+              Text(item.title)
+                .font(.caption.weight(.medium))
+              Text("\u{00b7} \(freshnessText(now: context.date))")
+                .font(.caption2.monospacedDigit())
+                .foregroundStyle(.tertiary)
+                .contentTransition(.numericText())
+            }
+          }
+        } else {
+          Text(item.title)
+            .font(.caption.weight(.medium))
+        }
         if let detail = item.detail, !detail.isEmpty {
           Text(detail)
             .font(.caption2)
@@ -1871,9 +1913,45 @@ private struct OpenClawActivityFeedRow: View {
             .truncationMode(.middle)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        if isActive, let latestDetail = item.latestDetail, !latestDetail.isEmpty {
+          Text(latestDetail)
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+            .lineLimit(isExpanded ? 3 : 2)
+            .truncationMode(.middle)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
       }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
+    .animation(WorkspaceMotion.quick, value: item)
+  }
+
+  @ViewBuilder
+  private var activityIcon: some View {
+    if isActive {
+      WorkspaceActivityIndicator(size: .mini, tint: .secondary)
+        .frame(width: 14, height: 14)
+        .help("This operation is still running")
+    } else {
+      Image(systemName: icon)
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(.secondary)
+        .frame(width: 14)
+    }
+  }
+
+  private var isActive: Bool {
+    isLive && item.status == .running
+  }
+
+  private func freshnessText(now: Date) -> String {
+    let seconds = max(0, Int(now.timeIntervalSince(item.updatedAt)))
+    if seconds < 5 { return "live" }
+    if seconds < 60 { return "updated \(seconds)s ago" }
+    if seconds < 60 * 60 { return "updated \(seconds / 60)m ago" }
+    let hours = seconds / (60 * 60)
+    return "updated \(hours)h ago"
   }
 
   private var icon: String {

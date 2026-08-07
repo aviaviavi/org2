@@ -2341,7 +2341,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
           direction: command,
           snapshot: snapshot
         ) else {
-          NSSound.beep()
+          WorkspaceSound.beep()
           return true
         }
         textView.setSelectedRange(range)
@@ -2351,7 +2351,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       }
 
       guard let replacement else {
-        NSSound.beep()
+        WorkspaceSound.beep()
         reportCommandStatus("No applicable Org2 structure at the cursor")
         return true
       }
@@ -2457,7 +2457,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
               excludingFirstLine: true
             )?.length ?? 0 > 0
       else {
-        NSSound.beep()
+        WorkspaceSound.beep()
         reportCommandStatus("The current heading has no body to fold")
         return true
       }

@@ -53,6 +53,14 @@ Already closed.
 :END:
 Approve before sending.
 
+* TODO Approve final copy
+:PROPERTIES:
+:ID: duplicate-run-linked-approval
+:STATUS: waiting-on-approval
+:ORG2_RUN_ID: release-run
+:END:
+This is only a source projection of the canonical run approval.
+
 * TODO Finish action outside Org2
 :PROPERTIES:
 :GMAIL_DRAFT_ID: r-completed-elsewhere
@@ -83,11 +91,24 @@ cli(["run", "create", "--id", "release-run", "--goal", "Release the weekly brief
 cli(["run", "start", "release-run", "--dir", tmp, "--json"]);
 cli(["run", "approval-request", "release-run", "--title", "Approve recipients", "--action", "confirm recipient list", "--risk", "external-action", "--role", "owner", "--dir", tmp, "--json"]);
 cli(["run", "approval-request", "release-run", "--title", "Approve final copy", "--action", "send weekly brief", "--risk", "external-action", "--role", "owner", "--dir", tmp, "--json"]);
+assert.throws(
+  () => cli(["run", "block", "release-run", "--reason", "The mail service is unavailable.", "--dir", tmp, "--json"]),
+  (error) => String(error.stderr || error.message).includes("--separate-from-approval"),
+);
+assert.throws(
+  () => cli([
+    "run", "block", "release-run",
+    "--reason", "Avi: explicitly approve the final copy or provide edits before publication.",
+    "--separate-from-approval", "--dir", tmp, "--json",
+  ]),
+  (error) => String(error.stderr || error.message).includes("duplicates the pending approval boundary"),
+);
+assert.equal(loadAgentRun(tmp, "release-run").status, "waiting-approval");
 
 cli(["run", "create", "--id", "completed-elsewhere-run", "--goal", "Finish outside Org2", "--dir", tmp, "--json"]);
 cli(["run", "start", "completed-elsewhere-run", "--dir", tmp, "--json"]);
 cli(["run", "approval-request", "completed-elsewhere-run", "--title", "Approve obsolete action", "--action", "perform obsolete action\nProvider draft: gmail:gog:r-completed-elsewhere", "--risk", "external-action", "--role", "owner", "--dir", tmp, "--json"]);
-cli(["run", "block", "completed-elsewhere-run", "--reason", "The action moved to another system.", "--dir", tmp, "--json"]);
+cli(["run", "block", "completed-elsewhere-run", "--reason", "The action moved to another system.", "--separate-from-approval", "--dir", tmp, "--json"]);
 cli(["run", "complete-external", "completed-elsewhere-run", "--summary", "Completed in the other system.", "--actor", "Avi", "--dir", tmp, "--json"]);
 
 const staleIndex = JSON.parse(cli(["index", "--dir", tmp, "--files", note, conflict, "--format", "json"]));
@@ -125,6 +146,7 @@ assert.deepEqual(headlineItems[0].properties, {
 assert.equal(headlineItems[1].title, "Approve sending Mercor technographics data overview draft");
 assert.equal(headlineItems[1].idValue, "approval-priority");
 assert.equal(headlineItems[1].status, "waiting-on-avi-approval");
+assert.equal(payload.items.some((item) => item.idValue === "duplicate-run-linked-approval"), false);
 
 fs.appendFileSync(note, `
 

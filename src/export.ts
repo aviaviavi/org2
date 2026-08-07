@@ -422,6 +422,48 @@ th { color: var(--org2-muted); background: var(--org2-faint); font-family: var(-
 .org2-table-scroll { width: 100%; max-width: 100%; margin: 0.8rem 0 1.15rem; overflow-x: auto; overscroll-behavior-inline: contain; }
 .org2-table-scroll table { width: auto; min-width: 100%; margin: 0; }
 .org2-table-scroll th, .org2-table-scroll td { overflow-wrap: normal; word-break: normal; hyphens: none; }
+.org2-table-controls {
+  position: sticky;
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.48rem;
+  width: max-content;
+  min-width: min(100%, 420px);
+  margin: 0 0 0.42rem;
+  color: var(--org2-muted);
+  font-size: 0.76rem;
+}
+.org2-table-filter {
+  box-sizing: border-box;
+  width: clamp(150px, 34vw, 260px);
+  min-height: 28px;
+  padding: 0.25rem 0.55rem;
+  border: 1px solid color-mix(in srgb, var(--org2-text) 16%, transparent);
+  border-radius: 8px;
+  color: var(--org2-text);
+  background: color-mix(in srgb, var(--org2-surface) 96%, var(--org2-faint));
+  font: inherit;
+  outline: none;
+}
+.org2-table-filter:focus { border-color: var(--org2-accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--org2-accent) 16%, transparent); }
+.org2-table-row-count { min-width: 64px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.org2-table-control-button,
+.org2-table-sort-button {
+  border: 0;
+  border-radius: 7px;
+  color: var(--org2-muted);
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+.org2-table-control-button { min-height: 26px; padding: 0.22rem 0.45rem; white-space: nowrap; }
+.org2-table-control-button:hover,
+.org2-table-sort-button:hover { color: var(--org2-text); background: var(--org2-faint); }
+.org2-table-control-button:disabled { cursor: default; opacity: 0.44; }
+.org2-table-save-button { color: var(--org2-accent); font-weight: 650; }
+.org2-table-sort-button { margin-left: 0.28rem; padding: 0.06rem 0.22rem; font-size: 0.72rem; }
+.org2-table-sort-button[aria-pressed="true"] { color: var(--org2-accent); background: color-mix(in srgb, var(--org2-accent) 10%, transparent); }
 .org2-resizable-table th, .org2-resizable-table td { min-width: 72px; }
 .org2-table-resize-anchor { position: relative; }
 .org2-chart {
@@ -601,6 +643,161 @@ const APP_DOCUMENT_SCRIPT = `(() => {
     });
   }
 
+  function installInteractiveTables() {
+    const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+    document.querySelectorAll(".org2-table-scroll table").forEach((table) => {
+      if (table.dataset.org2Interactive === "true") return;
+      const body = table.tBodies && table.tBodies[0];
+      const originalRows = body ? Array.from(body.rows) : [];
+      if (!body || originalRows.length === 0) return;
+
+      table.dataset.org2Interactive = "true";
+      originalRows.forEach((row, index) => {
+        row.dataset.org2OriginalRowIndex = String(index);
+      });
+
+      const wrapper = table.closest(".org2-table-scroll");
+      if (!wrapper) return;
+      const controls = document.createElement("div");
+      controls.className = "org2-table-controls";
+      controls.setAttribute("role", "group");
+      controls.setAttribute("aria-label", "Table view controls");
+
+      const filter = document.createElement("input");
+      filter.type = "search";
+      filter.className = "org2-table-filter";
+      filter.placeholder = "Filter rows";
+      filter.setAttribute("aria-label", "Filter table rows");
+
+      const count = document.createElement("span");
+      count.className = "org2-table-row-count";
+      count.setAttribute("aria-live", "polite");
+
+      const reset = document.createElement("button");
+      reset.type = "button";
+      reset.className = "org2-table-control-button";
+      reset.textContent = "Reset";
+      reset.title = "Clear filtering and restore source order";
+
+      const save = document.createElement("button");
+      save.type = "button";
+      save.className = "org2-table-control-button org2-table-save-button";
+      save.textContent = "Save view to source";
+      save.title = "Replace source table rows with this filtered and sorted view";
+      save.hidden = !window.__org2TablePersistenceEnabled;
+      save.dataset.org2TableSave = "true";
+
+      controls.append(filter, count, reset, save);
+      wrapper.insertBefore(controls, table);
+
+      let sortColumn = null;
+      let sortDirection = null;
+      const headerRow = table.tHead && table.tHead.rows.length > 0
+        ? table.tHead.rows[table.tHead.rows.length - 1]
+        : null;
+      const sortButtons = [];
+
+      function cellText(row, column) {
+        return (row.cells[column]?.innerText || "").trim();
+      }
+
+      function refresh() {
+        const query = filter.value.trim().toLocaleLowerCase();
+        let rows = [...originalRows];
+        if (sortColumn !== null && sortDirection) {
+          rows.sort((lhs, rhs) => {
+            const comparison = collator.compare(cellText(lhs, sortColumn), cellText(rhs, sortColumn));
+            if (comparison !== 0) return sortDirection === "ascending" ? comparison : -comparison;
+            return Number(lhs.dataset.org2OriginalRowIndex) - Number(rhs.dataset.org2OriginalRowIndex);
+          });
+        } else {
+          rows.sort((lhs, rhs) =>
+            Number(lhs.dataset.org2OriginalRowIndex) - Number(rhs.dataset.org2OriginalRowIndex)
+          );
+        }
+        rows.forEach((row) => body.appendChild(row));
+
+        let visibleCount = 0;
+        rows.forEach((row) => {
+          const matches = !query || row.innerText.toLocaleLowerCase().includes(query);
+          row.hidden = !matches;
+          if (matches) visibleCount += 1;
+        });
+        count.textContent = visibleCount === originalRows.length
+          ? visibleCount + " rows"
+          : visibleCount + " of " + originalRows.length + " rows";
+        reset.disabled = !query && sortColumn === null;
+        save.disabled = visibleCount === 0;
+      }
+
+      if (headerRow) {
+        Array.from(headerRow.cells).forEach((cell, column) => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "org2-table-sort-button";
+          button.textContent = "↕";
+          button.title = "Sort by " + (cell.innerText.trim() || "column " + (column + 1));
+          button.setAttribute("aria-label", button.title);
+          button.setAttribute("aria-pressed", "false");
+          button.addEventListener("click", (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            sortDirection = sortColumn === column && sortDirection === "ascending"
+              ? "descending"
+              : "ascending";
+            sortColumn = column;
+            sortButtons.forEach((candidate, candidateColumn) => {
+              const active = candidateColumn === sortColumn;
+              candidate.textContent = active ? (sortDirection === "ascending" ? "↑" : "↓") : "↕";
+              candidate.setAttribute("aria-pressed", active ? "true" : "false");
+              candidate.parentElement?.setAttribute("aria-sort", active ? sortDirection : "none");
+            });
+            refresh();
+          });
+          sortButtons.push(button);
+          cell.appendChild(button);
+        });
+      }
+
+      filter.addEventListener("input", refresh);
+      reset.addEventListener("click", () => {
+        filter.value = "";
+        sortColumn = null;
+        sortDirection = null;
+        sortButtons.forEach((button) => {
+          button.textContent = "↕";
+          button.setAttribute("aria-pressed", "false");
+          button.parentElement?.setAttribute("aria-sort", "none");
+        });
+        refresh();
+        filter.focus();
+      });
+      save.addEventListener("click", () => {
+        const visibleRows = Array.from(body.rows).filter((row) => !row.hidden);
+        if (visibleRows.length === 0) return;
+        const handler = window.webkit?.messageHandlers?.org2TableView;
+        if (!handler) return;
+        handler.postMessage({
+          startLine: Number(table.dataset.org2StartLine || 0),
+          endLine: Number(table.dataset.org2EndLine || 0),
+          visibleBodyRowIndices: visibleRows.map((row) => Number(row.dataset.org2OriginalRowIndex)),
+          totalBodyRowCount: originalRows.length,
+          filterActive: Boolean(filter.value.trim()),
+          sortActive: sortColumn !== null
+        });
+      });
+
+      refresh();
+    });
+
+    window.__org2SetTablePersistenceEnabled = (enabled) => {
+      window.__org2TablePersistenceEnabled = Boolean(enabled);
+      document.querySelectorAll("[data-org2-table-save='true']").forEach((button) => {
+        button.hidden = !window.__org2TablePersistenceEnabled;
+      });
+    };
+  }
+
   function installInteractiveCharts() {
     document.querySelectorAll("figure.org2-chart[data-org2-chart-interactive='true']").forEach((figure, chartIndex) => {
       if (figure.dataset.org2ChartEnhanced === "true") return;
@@ -699,11 +896,13 @@ const APP_DOCUMENT_SCRIPT = `(() => {
     document.addEventListener("DOMContentLoaded", () => {
       installHeadingActions();
       installTableResizers();
+      installInteractiveTables();
       installInteractiveCharts();
     }, { once: true });
   } else {
     installHeadingActions();
     installTableResizers();
+    installInteractiveTables();
     installInteractiveCharts();
   }
 })();`;

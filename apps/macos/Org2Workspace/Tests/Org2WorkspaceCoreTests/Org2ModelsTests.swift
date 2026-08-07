@@ -150,6 +150,10 @@ private actor OpenClawSuspendedSendRecorder {
 }
 
 final class Org2ModelsTests: XCTestCase {
+  func testWorkspaceSoundPlaybackIsSuppressedUnderXCTest() {
+    XCTAssertTrue(WorkspaceSound.isPlaybackSuppressed)
+  }
+
   func testCorpusMountWithoutPortableIdentityUsesNeutralLocalLabel() {
     let mount = WorkspaceCorpusMount(
       path: "/tmp/notes",
@@ -1618,6 +1622,9 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(script.contains("event.clipboardData.setData('text/html'"))
     XCTAssertTrue(script.contains("event.clipboardData.setData('text/plain'"))
     XCTAssertTrue(script.contains("clone.style.borderCollapse = 'collapse'"))
+    XCTAssertTrue(script.contains(".org2-table-sort-button"))
+    XCTAssertTrue(script.contains("tr[hidden]"))
+    XCTAssertTrue(script.contains("Array.from(clone.rows)"))
     XCTAssertTrue(script.contains("join('\\t')"))
   }
 
@@ -1641,29 +1648,6 @@ final class Org2ModelsTests: XCTestCase {
     ])
 
     XCTAssertEqual(title, "Thread nav still bit clunky")
-  }
-
-  func testOpenClawSidebarContextTargetPrefersInteractedRowOverTopRowFallback() {
-    let topThreadID = UUID()
-    let selectedThreadID = UUID()
-    let hoveredThreadID = UUID()
-
-    XCTAssertEqual(
-      OpenClawSidebarContextTarget.resolve(
-        hoveredThreadID: hoveredThreadID,
-        selectedThreadID: selectedThreadID,
-        fallbackThreadID: topThreadID
-      ),
-      hoveredThreadID
-    )
-    XCTAssertEqual(
-      OpenClawSidebarContextTarget.resolve(
-        hoveredThreadID: nil,
-        selectedThreadID: selectedThreadID,
-        fallbackThreadID: topThreadID
-      ),
-      selectedThreadID
-    )
   }
 
   @MainActor
@@ -1857,6 +1841,7 @@ final class Org2ModelsTests: XCTestCase {
       store.openClawChatThreads.first(where: { $0.id == threadID })?.messages.first?.content,
       "Retain this history"
     )
+    store.flushDeferredAIChatTranscriptPersistence()
 
     let restored = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
@@ -1871,6 +1856,34 @@ final class Org2ModelsTests: XCTestCase {
     restored.reopenOpenClawChatThread(threadID)
     XCTAssertTrue(restored.visibleOpenClawChatThreads.contains(where: { $0.id == threadID }))
     XCTAssertFalse(restored.settledOpenClawChatThreads.contains(where: { $0.id == threadID }))
+  }
+
+  @MainActor
+  func testSettlingThreadUpdatesTheListBeforeDeferredPersistence() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-fast-thread-settle-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json")
+    )
+    store.createOpenClawChatThread()
+    store.openClawMessages = [OpenClawChatMessage(role: .user, content: "First")]
+    let targetID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
+    store.createOpenClawChatThread()
+    store.openClawMessages = [OpenClawChatMessage(role: .user, content: "Second")]
+
+    store.openClawTranscriptPersistenceDelayNanoseconds = 20_000_000
+    var saveCount = 0
+    store.openClawTranscriptSaverForTesting = { saveCount += 1 }
+
+    store.settleOpenClawChatThread(targetID)
+
+    XCTAssertFalse(store.visibleOpenClawChatThreads.contains(where: { $0.id == targetID }))
+    XCTAssertTrue(store.settledOpenClawChatThreads.contains(where: { $0.id == targetID }))
+    XCTAssertEqual(saveCount, 0)
+    try await waitForCondition(timeout: 1) { saveCount == 1 }
   }
 
   @MainActor
@@ -2080,6 +2093,39 @@ final class Org2ModelsTests: XCTestCase {
       openClawTranscriptURL: transcript
     )
     XCTAssertEqual(reopened.openClawChatThreads.first(where: { $0.id == threadID })?.unreadMessageCount, 0)
+  }
+
+  @MainActor
+  func testOpenClawChatThreadsCanMuteIncomingSound() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-chat-thread-muted-sound-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let transcript = root.appendingPathComponent("openclaw-chat.json")
+    let suiteName = "org2-workspace-chat-thread-muted-sound-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: transcript,
+      openClawSendHandler: { _, _, _, _ in
+        "Quiet background reply"
+      }
+    )
+    store.aiChatMessageSound = .off
+    var soundCount = 0
+    store.openClawIncomingMessageSoundPlayer = {
+      soundCount += 1
+    }
+    store.selectedSurface = .agenda
+
+    store.openClawDraft = "Question while muted"
+    await store.sendOpenClawMessage()
+
+    let threadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
+    XCTAssertEqual(store.openClawChatThreads.first(where: { $0.id == threadID })?.unreadMessageCount, 1)
+    XCTAssertEqual(soundCount, 0)
   }
 
   @MainActor
@@ -6676,6 +6722,17 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(restored.line, 12)
   }
 
+  func testOpenClawFileReferenceRecognizesRelativePDFLinks() throws {
+    let reference = try XCTUnwrap(OpenClawFileReference.fromLinkTarget("views/reports/brief.PDF"))
+
+    XCTAssertEqual(reference.path, "views/reports/brief.PDF")
+    XCTAssertNil(reference.line)
+    XCTAssertEqual(
+      OpenClawFileReference.extract(from: "Review views/reports/brief.PDF before the meeting."),
+      [reference]
+    )
+  }
+
   func testCorpusFileSplitsRelativePath() {
     let rootFile = CorpusFile(path: "/tmp/today.org2", relativePath: "today.org2", modifiedAt: nil, byteCount: 10)
     let nestedFile = CorpusFile(path: "/tmp/notes/people/alice.org2", relativePath: "notes/people/alice.org2", modifiedAt: nil, byteCount: 20)
@@ -9773,6 +9830,57 @@ final class Org2ModelsTests: XCTestCase {
     | Name | Value |
     | Alice | 42 |
     """).renderedBlock.headerRowIndex)
+  }
+
+  func testRenderedTableViewMutationPreservesRawRowsWhileFilteringAndSorting() throws {
+    let raw = """
+      | Name | Link |
+      |------+------|
+      | Zebra | [[id:zebra][Z]] |
+      | Ant | [[id:ant][A]] |
+      | Mouse | [[id:mouse][M]] |
+      """
+
+    let replacement = try XCTUnwrap(OrgRenderedTableViewMutation.replacement(
+      rawText: raw,
+      visibleBodyRowIndices: [2, 0],
+      expectedBodyRowCount: 3
+    ))
+
+    XCTAssertEqual(replacement, """
+      | Name | Link |
+      |------+------|
+      | Mouse | [[id:mouse][M]] |
+      | Zebra | [[id:zebra][Z]] |
+      """)
+  }
+
+  func testRenderedTableViewMutationRejectsAStaleRowMapping() {
+    XCTAssertNil(OrgRenderedTableViewMutation.replacement(
+      rawText: """
+      | Name |
+      |------|
+      | Ant  |
+      """,
+      visibleBodyRowIndices: [0],
+      expectedBodyRowCount: 2
+    ))
+  }
+
+  func testRenderedTableViewSnapshotValidatesWebMessagePayload() throws {
+    let snapshot = try XCTUnwrap(OrgHTMLTableViewSnapshot([
+      "startLine": NSNumber(value: 12),
+      "endLine": NSNumber(value: 16),
+      "visibleBodyRowIndices": [NSNumber(value: 2), NSNumber(value: 0)],
+      "totalBodyRowCount": NSNumber(value: 3),
+      "filterActive": NSNumber(value: true),
+      "sortActive": NSNumber(value: true),
+    ]))
+
+    XCTAssertEqual(snapshot.startLine, 12)
+    XCTAssertEqual(snapshot.visibleBodyRowIndices, [2, 0])
+    XCTAssertTrue(snapshot.filterActive)
+    XCTAssertTrue(snapshot.sortActive)
   }
 
   func testEditableTablePastesTabSeparatedGrid() {

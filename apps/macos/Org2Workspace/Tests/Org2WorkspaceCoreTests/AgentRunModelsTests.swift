@@ -180,6 +180,64 @@ final class AgentRunModelsTests: XCTestCase {
 
     let run = try JSONDecoder().decode(AgentRunItem.self, from: data)
     XCTAssertTrue(run.isOpenClawExternalDraft)
+    XCTAssertTrue(run.hasOpenClawApprovalContinuation)
+  }
+
+  func testRecognizesPlainCorrelatedOpenClawRunForApprovalContinuation() throws {
+    let run = try makeRun(
+      status: "running",
+      comments: ["OPENCLAW_KIND: agent-turn\nOPENCLAW_SESSION: agent:main:org2:thread-1"]
+    )
+    XCTAssertFalse(run.isOpenClawExternalDraft)
+    XCTAssertEqual(run.openClawSessionKey, "agent:main:org2:thread-1")
+    XCTAssertTrue(run.hasOpenClawApprovalContinuation)
+    XCTAssertFalse(try makeRun(status: "running").hasOpenClawApprovalContinuation)
+  }
+
+  @MainActor
+  func testApprovingCorrelatedPlainRunRequestsGenericContinuation() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-approved-run-continuation-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let correlation = "OPENCLAW_KIND: agent-turn\nOPENCLAW_SESSION: agent:main:org2:thread-1"
+    let waitingRun = try makeRun(
+      status: "waiting-approval",
+      comments: [correlation],
+      approvalStatus: "pending"
+    )
+    let runningRun = try makeRun(
+      status: "running",
+      comments: [correlation],
+      approvalStatus: "approved"
+    )
+    let approval = try XCTUnwrap(waitingRun.approvals.first)
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.corpusRoot = root
+    store.replaceAgentRunsForTesting([waitingRun])
+    store.agentRunApprovalDecisionForTesting = { _, _, _, _ in runningRun }
+    var continuedRunID: String?
+    store.agentRunApprovalContinuationForTesting = { run in
+      continuedRunID = run.id
+      return OpenClawApprovedRunContinuation(
+        runID: run.id,
+        sessionKey: run.openClawSessionKey,
+        prompt: "already sent",
+        kind: "run",
+        alreadyResumed: true
+      )
+    }
+
+    await store.decideAgentRunApproval(
+      waitingRun,
+      approval: approval,
+      decision: "approved"
+    )
+
+    XCTAssertEqual(continuedRunID, waitingRun.id)
+    XCTAssertEqual(store.agentRuns.first?.status, "running")
+    XCTAssertTrue(store.statusText.contains("already continuing"))
   }
 
   @MainActor
@@ -849,6 +907,41 @@ final class AgentRunModelsTests: XCTestCase {
     ))
   }
 
+  func testAgentRunApprovalContinuationFallbackOnlyAcceptsAnUnavailableGatewayMethod() {
+    XCTAssertTrue(WorkspaceStore.shouldUseLocalApprovalContinuationFallback(
+      for: OpenClawGatewayError.gateway(
+        code: "METHOD_NOT_FOUND",
+        message: "Unknown method: org2.run.resumeApproved"
+      )
+    ))
+    XCTAssertTrue(WorkspaceStore.shouldUseLocalApprovalContinuationFallback(
+      for: OpenClawGatewayError.gateway(
+        code: "INVALID_REQUEST",
+        message: "Method org2.run.resumeApproved is not registered"
+      )
+    ))
+    XCTAssertFalse(WorkspaceStore.shouldUseLocalApprovalContinuationFallback(
+      for: OpenClawGatewayError.gateway(
+        code: "ORG2_RUN_ERROR",
+        message: "Org2 corpus mismatch"
+      )
+    ))
+    XCTAssertFalse(WorkspaceStore.shouldUseLocalApprovalContinuationFallback(
+      for: OpenClawGatewayError.connection("offline")
+    ))
+  }
+
+  func testAgentRunApprovalFallbackPreservesRunAndApprovedBoundary() throws {
+    let run = try makeRun(
+      status: "running",
+      comments: ["OPENCLAW_SESSION: agent:scarf-support:cron:job-1"]
+    )
+    let prompt = WorkspaceStore.agentRunApprovalContinuationPrompt(run: run)
+    XCTAssertTrue(prompt.contains("ORG2_RUN_ID: run-1"))
+    XCTAssertTrue(prompt.contains("ORG2_RUN_RESUME: approval-decided"))
+    XCTAssertTrue(prompt.contains("Do not create a replacement run or request the same approval again"))
+  }
+
   func testAgentRunClarificationFallbackPreservesRunResponseAndKnownSession() throws {
     let run = try makeRun(
       status: "blocked",
@@ -1239,8 +1332,10 @@ final class AgentRunModelsTests: XCTestCase {
     validationStatus: String? = nil,
     reviewRequired: Bool = false,
     pendingApproval: Bool = false,
+    approvalStatus: String? = nil,
     updatedAt: String = "2026-07-14T00:01:00.000Z"
   ) throws -> AgentRunItem {
+    let resolvedApprovalStatus = approvalStatus ?? (pendingApproval ? "pending" : nil)
     var value: [String: Any] = [
       "id": id,
       "goal": goal,
@@ -1257,14 +1352,16 @@ final class AgentRunModelsTests: XCTestCase {
         "reviewStatus": "review-required",
         "createdAt": "2026-07-14T00:00:00.000Z"
       ]] : [],
-      "approvals": pendingApproval ? [[
+      "approvals": resolvedApprovalStatus.map { status in [[
         "id": "approval-1",
         "title": "Approve output",
         "action": "publish output",
         "riskClass": "external-action",
-        "status": "pending",
-        "requestedAt": "2026-07-14T00:00:00.000Z"
-      ]] : [],
+        "status": status,
+        "requestedAt": "2026-07-14T00:00:00.000Z",
+        "decidedAt": status == "pending" ? NSNull() : "2026-07-14T00:00:30.000Z",
+        "decidedBy": status == "pending" ? NSNull() : "Avi"
+      ]] } ?? [],
       "validations": validationStatus.map { status in [[
         "id": "validation-1",
         "name": "output-check",

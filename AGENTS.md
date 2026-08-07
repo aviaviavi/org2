@@ -122,7 +122,10 @@ Use the CLI contract for durable delegation:
 
 - `run create/list/show/start/resume/cancel/fork` manages the lifecycle.
 - `run block ID --reason "Specific clarification or next action"` records a
-  useful blocker; reasonless blocks are invalid.
+  useful blocker; reasonless blocks are invalid. If the run already has a
+  pending approval, leave it in `waiting-approval`. A genuinely independent
+  clarification or operational condition requires `--separate-from-approval`,
+  and Org2 rejects that override when the reason merely restates the approval.
 - `run approval-decide` is the only way to decide a run-backed approval.
   `org2 approvals` and Agent Work are projections of that same run record; do
   not create a duplicate heading for the decision.

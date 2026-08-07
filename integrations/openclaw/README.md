@@ -7,8 +7,10 @@ changes can be tested with the bridge that consumes them.
 The plugin tracks substantial main-agent turns, subagent executions, and cron
 executions. It also prepares manual Org2 workflow runs before agent execution,
 reconciles active schedule triggers from visible `workflows/*.org2` files into
-OpenClaw cron, and continues an existing run in its correlated chat session
-after an approval returns the run to `running`. A revision request must carry
+OpenClaw cron, and continues any correlated existing run in its chat session
+after its complete current approval boundary returns the run to `running`.
+Continuation does not require a reusable workflow and is keyed to the exact
+approval boundary so a repeated request does not enqueue the action twice. A revision request must carry
 concrete feedback; for an eligible revision-only boundary, the plugin resumes
 the correlated session with that durable decision note and instructs the agent
 to produce replacement review material on the same run without performing the
@@ -26,6 +28,13 @@ of inventing an empty durable run. Successful turns record a reviewer-facing
 outcome summary; approval and clarification boundaries remain open instead of
 being mistaken for completion. Available provider, model, token, and
 elapsed-time metadata is copied into the durable run.
+
+After requesting a run approval, leave the run in `waiting-approval`; do not
+also create a writable approval heading or block the run with another phrasing
+of the same decision. The CLI rejects that block transition. A genuinely
+independent clarification or operational condition requires
+`run block --separate-from-approval`, and approval-shaped reasons remain
+invalid even with the override.
 
 The Mac app's **Reply & Resume** action uses the plugin's
 `org2.run.replyAndResume` gateway method. The method records the exact response,

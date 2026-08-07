@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -84,6 +85,19 @@ export function draftContinuationPrompt(runId) {
   ].join("\n");
 }
 
+export function approvedRunContinuationPrompt(run) {
+  return [
+    `ORG2_RUN_ID: ${run.id}`,
+    "ORG2_RUN_RESUME: approval-decided",
+    "",
+    `Continue the existing Org2 run \"${run.goal}\" after its approval boundary was approved.`,
+    "Re-read the durable run with the Org2 CLI and continue from the first incomplete step. Do not create a replacement run or request the same approval again.",
+    "Perform only the exact action covered by the current approved review material. Do not substitute a new recipient, payload, command, or attachment.",
+    "For provider drafts, resolve the exact authority through `org2 run approval-resolve --decision-key artifact:PROVIDER:TOOL:DRAFT_ID --json` and verify provider state before any retry.",
+    "Record external receipts and the final outcome on this durable run, or record the next specific blocker if the work cannot continue.",
+  ].join("\n");
+}
+
 export function workflowRevisionPrompt(workflow, runId, approval) {
   return [
     `ORG2_WORKFLOW_ID: ${workflow.id}`,
@@ -119,6 +133,32 @@ function currentApprovalBoundary(run) {
   );
   if (boundaryIds.size === 0) return run.approvals || [];
   return (run.approvals || []).filter((approval) => boundaryIds.has(approval.id));
+}
+
+function runCorrelation(run, field) {
+  const prefix = `${String(field || "").trim().toUpperCase()}:`;
+  for (const comment of [...(run.comments || [])].reverse()) {
+    for (const line of String(comment?.body || "").split(/\r?\n/).reverse()) {
+      const trimmed = line.trim();
+      if (!trimmed.toUpperCase().startsWith(prefix)) continue;
+      const value = trimmed.slice(prefix.length).trim();
+      if (value && value.toLowerCase() !== "unknown") return value;
+    }
+  }
+  return undefined;
+}
+
+function approvedBoundaryKey(run, boundary) {
+  const material = [...boundary]
+    .map((approval) => ({
+      id: String(approval.id || ""),
+      fingerprint: String(approval.fingerprint || ""),
+      status: String(approval.status || ""),
+      decidedAt: String(approval.decidedAt || ""),
+    }))
+    .sort((a, b) => a.id.localeCompare(b.id));
+  const digest = createHash("sha256").update(JSON.stringify(material)).digest("hex");
+  return `${run.id}:${digest}`;
 }
 
 function messageText(content) {
@@ -180,7 +220,7 @@ export class Org2Lifecycle {
     this.log = options.log || console;
     this.owner = options.owner || "user";
     this.exec = options.exec || this.#exec.bind(this);
-    this.state = { version: 4, mappings: {}, workflowJobs: {}, drafts: {} };
+    this.state = { version: 4, mappings: {}, workflowJobs: {}, drafts: {}, approvalContinuations: {} };
     this.cron = options.cron;
     this.queue = Promise.resolve();
   }
@@ -191,6 +231,7 @@ export class Org2Lifecycle {
     this.state.mappings ||= {};
     this.state.workflowJobs ||= {};
     this.state.drafts ||= {};
+    this.state.approvalContinuations ||= {};
   }
 
   setCron(cron) { this.cron = cron; }
@@ -213,6 +254,10 @@ export class Org2Lifecycle {
     this.state.mappings = { ...(disk.mappings || {}), ...(this.state.mappings || {}) };
     this.state.workflowJobs = { ...(disk.workflowJobs || {}), ...(this.state.workflowJobs || {}) };
     this.state.drafts = { ...(disk.drafts || {}), ...(this.state.drafts || {}) };
+    this.state.approvalContinuations = {
+      ...(disk.approvalContinuations || {}),
+      ...(this.state.approvalContinuations || {}),
+    };
     await mkdir(dirname(this.stateFile), { recursive: true });
     const tmp = `${this.stateFile}.${process.pid}.tmp`;
     await writeFile(tmp, `${JSON.stringify(this.state, null, 2)}\n`);
@@ -606,6 +651,70 @@ export class Org2Lifecycle {
       run,
       sessionKey: mapping.sessionKey,
       prompt: draftContinuationPrompt(runId),
+      corpus: corpus.identity,
+    };
+  }
+
+  async resumeApprovedRun(runId, details = {}) {
+    const corpus = await this.assertCorpus(details.expectedCorpusId);
+    const run = JSON.parse(await this.exec(["run", "show", runId, "--json"]));
+    if (run.status !== "running") throw new Error(`${runId} cannot continue while ${run.status}`);
+    const boundary = currentApprovalBoundary(run);
+    if (boundary.length === 0) throw new Error(`${runId} has no approval boundary to continue`);
+    if (!boundary.every((approval) => approval.status === "approved")) {
+      throw new Error(`${runId} current approval boundary is not fully approved`);
+    }
+
+    const mappings = Object.values(this.state.mappings)
+      .filter((item) => item.org2RunId === runId)
+      .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+    const mapping = mappings.find((item) => item.sessionKey) || mappings[0];
+    const sessionKey = mapping?.sessionKey || runCorrelation(run, "OPENCLAW_SESSION");
+    const recordedKind = mapping?.kind || runCorrelation(run, "OPENCLAW_KIND");
+    const kind = run.workflowId
+      ? "workflow"
+      : recordedKind === "external-draft" ? "external-draft" : "run";
+    const workflow = run.workflowId ? await this.workflow(run.workflowId) : undefined;
+    const continuationKey = approvedBoundaryKey(run, boundary);
+    const basePrompt = workflow
+      ? workflowContinuationPrompt(workflow, runId)
+      : kind === "external-draft" ? draftContinuationPrompt(runId) : approvedRunContinuationPrompt(run);
+    const prompt = `${basePrompt}\nORG2_APPROVAL_CONTINUATION_KEY: ${continuationKey}`;
+    const prior = this.state.approvalContinuations[continuationKey];
+    if (prior) {
+      return {
+        run,
+        ...(workflow ? { workflow } : {}),
+        ...(prior.sessionKey ? { sessionKey: prior.sessionKey } : {}),
+        prompt,
+        kind: prior.kind || kind,
+        continuationKey,
+        alreadyResumed: true,
+        corpus: corpus.identity,
+      };
+    }
+
+    const resumedAt = new Date().toISOString();
+    if (mapping) {
+      mapping.resumedAt = resumedAt;
+      delete mapping.pausedAt;
+      delete mapping.pausedStatus;
+    }
+    this.state.approvalContinuations[continuationKey] = {
+      runId,
+      kind,
+      ...(sessionKey ? { sessionKey } : {}),
+      createdAt: resumedAt,
+    };
+    await this.#save();
+    return {
+      run,
+      ...(workflow ? { workflow } : {}),
+      ...(sessionKey ? { sessionKey } : {}),
+      prompt,
+      kind,
+      continuationKey,
+      alreadyResumed: false,
       corpus: corpus.identity,
     };
   }

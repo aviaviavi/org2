@@ -65,6 +65,22 @@ try {
   });
   saveAgentRun(root, providerMissing);
 
+  let approvalMisclassified = transitionAgentRun(
+    createAgentRun({ id: "approval-misclassified", goal: "Keep approval waiting state canonical" }),
+    "running",
+  );
+  approvalMisclassified = requestAgentRunApproval(approvalMisclassified, {
+    id: "approval-misclassified-decision",
+    title: "Approve exact daily update",
+    action: "Publish the exact reviewed daily update",
+    riskClass: "external-action",
+  });
+  saveAgentRun(root, {
+    ...approvalMisclassified,
+    status: "blocked",
+    blockedReason: "Avi: explicitly approve the exact daily update or provide edits before publication.",
+  });
+
   for (const id of ["duplicate-provider-one", "duplicate-provider-two"]) {
     let run = createAgentRun({ id, goal: "Review one representation of a provider draft" });
     run = requestAgentRunApproval(run, {
@@ -171,8 +187,8 @@ try {
   assert.equal(report.$schema, "org2:agentic-doctor:v1");
   assert.equal(report.readOnly, true);
   assert.equal(report.ok, false);
-  assert.equal(report.summary.runFiles, 10);
-  assert.equal(report.summary.validRuns, 10);
+  assert.equal(report.summary.runFiles, 11);
+  assert.equal(report.summary.validRuns, 11);
   assert.equal(report.summary.ledgerFiles, 2);
   assert.equal(report.summary.validLedgerAccounts, 2);
   assert.equal(report.summary.corpusFiles, 3);
@@ -189,6 +205,7 @@ try {
     "run-readable-state-diverged",
     "run-write-lock-present",
     "duplicate-headline-run-approval-projection",
+    "approval-boundary-misclassified-as-separate-block",
     "headline-run-reference-missing",
     "approved-child-parent-still-waiting",
     "duplicate-open-headline-title",
@@ -199,6 +216,10 @@ try {
     "ledger-source-state-drift",
     "ledger-write-lock-present",
   ]) assert.ok(rules.has(rule), `missing expected doctor rule: ${rule}`);
+  assert.equal(
+    report.findings.find((finding) => finding.rule === "duplicate-headline-run-approval-projection")?.severity,
+    "error",
+  );
   assert.deepEqual(allFiles(root), before, "doctor must not mutate corpus files");
 
   const textResult = runDoctor(root, false);

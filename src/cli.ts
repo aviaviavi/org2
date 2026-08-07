@@ -1230,8 +1230,15 @@ function latestApprovalCandidate(
 
 function unifiedPendingApprovalItems(candidates: ApprovalQueueCandidate[]): ApprovalQueueItem[] {
   const latestRunCandidateByDecisionKey = new Map<string, ApprovalQueueCandidate>();
+  const runCandidatesByRunId = new Map<string, ApprovalQueueCandidate[]>();
   for (const candidate of candidates) {
     if (candidate.item.kind !== "run") continue;
+    if (candidate.item.runId) {
+      runCandidatesByRunId.set(candidate.item.runId, [
+        ...(runCandidatesByRunId.get(candidate.item.runId) || []),
+        candidate,
+      ]);
+    }
     for (const key of candidate.decisionKeys) {
       const current = latestRunCandidateByDecisionKey.get(key);
       latestRunCandidateByDecisionKey.set(
@@ -1243,6 +1250,24 @@ function unifiedPendingApprovalItems(candidates: ApprovalQueueCandidate[]): Appr
 
   const items = candidates.flatMap((candidate): ApprovalQueueItem[] => {
     if (candidate.item.kind === "headline") {
+      const linkedRunId = String(candidate.item.properties.ORG2_RUN_ID || "").trim();
+      const linkedCandidates = linkedRunId ? runCandidatesByRunId.get(linkedRunId) || [] : [];
+      const linkedApprovalId = String(
+        candidate.item.properties.ORG2_APPROVAL_ID
+          || candidate.item.properties.APPROVAL_ID
+          || "",
+      ).trim();
+      const exactLinkedApproval = linkedApprovalId
+        ? linkedCandidates.find((runCandidate) => runCandidate.item.approvalId === linkedApprovalId)
+        : undefined;
+      const normalizedTitle = candidate.item.title.toLowerCase().replace(/\s+/g, " ").trim();
+      const titleMatches = linkedCandidates.filter((runCandidate) =>
+        runCandidate.item.title.toLowerCase().replace(/\s+/g, " ").trim() === normalizedTitle);
+      const pendingLinked = linkedCandidates.filter((runCandidate) => runCandidate.isPending);
+      const isCanonicalRunProjection = Boolean(exactLinkedApproval)
+        || titleMatches.length === 1
+        || (!linkedApprovalId && pendingLinked.length === 1);
+      if (isCanonicalRunProjection) return [];
       const hasCanonicalRunDecision = candidate.decisionKeys.some((key) =>
         latestRunCandidateByDecisionKey.has(key));
       return hasCanonicalRunDecision ? [] : [candidate.item];

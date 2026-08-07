@@ -88,4 +88,20 @@ final class WorkspaceListSelectionTests: XCTestCase {
       OpenClawSettledThreadDisclosure.updated(isExpanded: true, settledThreadCount: 0)
     )
   }
+
+  func testChatThreadContextMenusStayBoundToTheirOwnRow() throws {
+    let testFile = URL(fileURLWithPath: #filePath)
+    let packageRoot = testFile
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+    let contentView = packageRoot
+      .appendingPathComponent("Sources/Org2WorkspaceCore/ContentView.swift")
+    let source = try String(contentsOf: contentView, encoding: .utf8)
+
+    XCTAssertFalse(source.contains("contextualThreadID"))
+    XCTAssertFalse(source.contains("contextThread:"))
+    XCTAssertTrue(source.contains("rename(thread)"))
+    XCTAssertTrue(source.contains("if thread.isSettled"))
+  }
 }

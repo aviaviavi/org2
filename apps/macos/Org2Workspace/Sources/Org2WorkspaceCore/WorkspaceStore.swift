@@ -4,12 +4,53 @@ import Foundation
 import SwiftUI
 import UniformTypeIdentifiers
 
+public enum AIChatMessageSound: String, CaseIterable, Identifiable, Sendable {
+  case systemAlert = "system-alert"
+  case basso = "Basso"
+  case blow = "Blow"
+  case bottle = "Bottle"
+  case frog = "Frog"
+  case funk = "Funk"
+  case glass = "Glass"
+  case hero = "Hero"
+  case morse = "Morse"
+  case ping = "Ping"
+  case pop = "Pop"
+  case purr = "Purr"
+  case sosumi = "Sosumi"
+  case submarine = "Submarine"
+  case tink = "Tink"
+  case off = "off"
+
+  public var id: String { rawValue }
+
+  public var displayName: String {
+    switch self {
+    case .systemAlert:
+      return "System Alert"
+    case .off:
+      return "Off"
+    default:
+      return rawValue
+    }
+  }
+
+  fileprivate var appKitSoundName: NSSound.Name? {
+    switch self {
+    case .systemAlert, .off:
+      return nil
+    default:
+      return NSSound.Name(rawValue)
+    }
+  }
+}
+
 public enum WorkspaceKeyboardShortcutScope: Equatable, Sendable {
   case all
   case globalOnly
 }
 
-public struct Org2SlideExportNotice: Identifiable, Equatable, Sendable {
+public struct Org2ExportNotice: Identifiable, Equatable, Sendable {
   public let id = UUID()
   public let title: String
   public let message: String
@@ -1067,7 +1108,7 @@ public final class WorkspaceStore: ObservableObject {
   @Published public private(set) var openClawChatSelectionGeneration = 0
   @Published public private(set) var lastArchivedOpenClawChatThreadID: UUID?
   public var openClawIncomingMessageSoundPlayer: @MainActor () -> Void = {
-    NSSound(named: NSSound.Name("Glass"))?.play()
+    WorkspaceSound.play(named: NSSound.Name(AIChatMessageSound.glass.rawValue))
   }
   @Published public var openClawDraft = ""
   @Published public var openClawPendingAttachments: [OpenClawChatAttachment] = []
@@ -1092,6 +1133,12 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var aiChatCustomInstructions = "" {
     didSet {
       defaults.set(aiChatCustomInstructions, forKey: aiChatCustomInstructionsKey)
+    }
+  }
+  @Published public var aiChatMessageSound: AIChatMessageSound = .glass {
+    didSet {
+      defaults.set(aiChatMessageSound.rawValue, forKey: aiChatMessageSoundKey)
+      openClawIncomingMessageSoundPlayer = Self.messageSoundPlayer(for: aiChatMessageSound)
     }
   }
   @Published public var openClawBriefsStartNewThread = true {
@@ -1219,6 +1266,9 @@ public final class WorkspaceStore: ObservableObject {
   @Published public private(set) var slidePreviewZoomScale: CGFloat = 1
   @Published public private(set) var slidePreviewPageCount = 0
   @Published private(set) var slidePreviewNavigationRequest: OrgPDFPageNavigationRequest?
+  @Published public private(set) var linkedPDFPreviewData: Data?
+  @Published public private(set) var linkedPDFPreviewError: String?
+  @Published public private(set) var isLoadingLinkedPDFPreview = false
   @Published public var selectedRenderedBlocks: [OrgEditableBlock] = [] {
     didSet {
       defer {
@@ -1292,8 +1342,9 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var isEditingEntry = false
   @Published public var isSavingEntry = false
   @Published public var isSavingBlock = false
+  @Published public private(set) var isExportingCurrentDocumentPDF = false
   @Published public private(set) var isExportingSlides = false
-  @Published public var slideExportNotice: Org2SlideExportNotice?
+  @Published public var exportNotice: Org2ExportNotice?
   @Published public var editorSaveConflict: Org2EditorSaveConflict?
   @Published public private(set) var isLiveFileEditorAutosaving = false
   @Published public private(set) var liveFileEditorStatusText = ""
@@ -1327,6 +1378,7 @@ public final class WorkspaceStore: ObservableObject {
   private let aiChatLastConfigurationsKey = "Org2Workspace.aiChat.lastConfigurations.v1"
   private let aiChatCorpusAccessScopeKey = "Org2Workspace.aiChat.corpusAccessScope.v1"
   private let aiChatCustomInstructionsKey = "Org2Workspace.aiChat.customInstructions.v1"
+  private let aiChatMessageSoundKey = "Org2Workspace.aiChat.messageSound.v1"
   private let openClawBriefsStartNewThreadKey = "Org2Workspace.openClawBriefsStartNewThread"
   private let openClawLocalEditsEnabledKey = "Org2Workspace.openClawLocalEditsEnabled.v1"
   private let renderedDocumentWidthKey = "Org2Workspace.renderedDocument.width"
@@ -1467,8 +1519,13 @@ public final class WorkspaceStore: ObservableObject {
   var agendaEntryRenderIdleDelayNanoseconds: UInt64 = 140_000_000
   var entrySourceLoaderForTesting: (@Sendable (String, Int, EntrySourceMode) async throws -> EntrySource)?
   var entryHTMLRendererForTesting: (@Sendable (String, String, Int, String?) async throws -> String)?
+  var documentPDFRendererForTesting: ((String, URL?) async throws -> Data)?
+  var documentPDFExportFileOpenerForTesting: ((URL) -> Bool)?
   var slideExportFileOpenerForTesting: ((URL) -> Bool)?
   var slidePreviewRendererForTesting: (@Sendable (String, String, Int) async throws -> Data)?
+  var linkedPDFDataLoaderForTesting: (@Sendable (URL) async throws -> Data)?
+  private var linkedPDFLoadTask: Task<Void, Never>?
+  private var linkedPDFLoadGeneration = 0
   private var workspaceRefreshGeneration = 0
   private var workspaceRefreshOperationTask: Task<Void, Never>?
   private var workspaceRefreshWatchdogTask: Task<Void, Never>?
@@ -1481,6 +1538,9 @@ public final class WorkspaceStore: ObservableObject {
     _ decision: String,
     _ note: String?
   ) async throws -> AgentRunItem)?
+  var agentRunApprovalContinuationForTesting: ((
+    _ run: AgentRunItem
+  ) async throws -> OpenClawApprovedRunContinuation)?
   var agentRunExternalCompletionForTesting: ((
     _ runID: String,
     _ summary: String
@@ -1607,6 +1667,9 @@ public final class WorkspaceStore: ObservableObject {
     aiChatCorpusAccessScope = defaults.string(forKey: aiChatCorpusAccessScopeKey)
       .flatMap(WorkspaceReadScope.init(rawValue:)) ?? .activeCorpus
     aiChatCustomInstructions = defaults.string(forKey: aiChatCustomInstructionsKey) ?? ""
+    aiChatMessageSound = defaults.string(forKey: aiChatMessageSoundKey)
+      .flatMap(AIChatMessageSound.init(rawValue:)) ?? .glass
+    openClawIncomingMessageSoundPlayer = Self.messageSoundPlayer(for: aiChatMessageSound)
     openClawBriefsStartNewThread = defaults.object(forKey: openClawBriefsStartNewThreadKey) as? Bool ?? true
     openClawLocalEditsEnabled = defaults.bool(forKey: openClawLocalEditsEnabledKey)
     renderedDocumentWidth = defaults.string(forKey: renderedDocumentWidthKey)
@@ -3777,40 +3840,94 @@ public final class WorkspaceStore: ObservableObject {
     return try await gateway.execApprovalDetails(id: approvalID)
   }
 
-  private func continueOpenClawWorkflowAfterApproval(_ run: AgentRunItem) async throws {
+  private func approvedRunContinuation(
+    for run: AgentRunItem
+  ) async throws -> OpenClawApprovedRunContinuation {
+    if let agentRunApprovalContinuationForTesting {
+      return try await agentRunApprovalContinuationForTesting(run)
+    }
     let gateway = OpenClawGatewayClient(settings: currentOpenClawSettings(allowKeychainRead: true))
-    let continuation = try await gateway.resumeWorkflowRun(runID: run.id, corpusID: activeCorpusIdentity?.id)
-    let thread: OpenClawChatThread
-    if let existing = openClawChatThreads.first(where: { $0.sessionKey == continuation.sessionKey }) {
-      if existing.isSettled { reopenOpenClawChatThread(existing.id) }
-      thread = openClawChatThreads.first(where: { $0.id == existing.id }) ?? existing
-    } else {
-      thread = createOpenClawChatThread(
-        title: "Workflow: \(run.goal)",
-        statusText: "Continuing approved workflow",
-        sessionKey: continuation.sessionKey
+    do {
+      return try await gateway.resumeApprovedRun(
+        runID: run.id,
+        corpusID: activeCorpusIdentity?.id
+      )
+    } catch {
+      guard Self.shouldUseLocalApprovalContinuationFallback(for: error) else { throw error }
+      if run.workflowId != nil {
+        let continuation = try await gateway.resumeWorkflowRun(
+          runID: run.id,
+          corpusID: activeCorpusIdentity?.id
+        )
+        return OpenClawApprovedRunContinuation(
+          runID: continuation.runID,
+          sessionKey: continuation.sessionKey,
+          prompt: continuation.prompt,
+          kind: "workflow"
+        )
+      }
+      if run.isOpenClawExternalDraft {
+        let continuation = try await gateway.resumeDraftRun(
+          runID: run.id,
+          corpusID: activeCorpusIdentity?.id
+        )
+        return OpenClawApprovedRunContinuation(
+          runID: continuation.runID,
+          sessionKey: continuation.sessionKey,
+          prompt: continuation.prompt,
+          kind: "external-draft"
+        )
+      }
+      return OpenClawApprovedRunContinuation(
+        runID: run.id,
+        sessionKey: run.openClawSessionKey,
+        prompt: Self.agentRunApprovalContinuationPrompt(run: run),
+        kind: "run"
       )
     }
-    let shouldDrain = enqueueOpenClawMessage(continuation.prompt, attachments: [], in: thread.id)
-    if shouldDrain { await drainOpenClawSendQueue(for: thread.id) }
   }
 
-  private func continueOpenClawDraftAfterApproval(_ run: AgentRunItem) async throws {
-    let gateway = OpenClawGatewayClient(settings: currentOpenClawSettings(allowKeychainRead: true))
-    let continuation = try await gateway.resumeDraftRun(runID: run.id, corpusID: activeCorpusIdentity?.id)
+  private func continueOpenClawAfterApproval(_ run: AgentRunItem) async throws -> Bool {
+    let continuation = try await approvedRunContinuation(for: run)
+    if continuation.alreadyResumed, continuation.continuationKey == nil { return false }
+    if continuation.continuationKey != nil,
+       openClawChatThreads.contains(where: { thread in
+         openClawMessages(for: thread.id).contains(where: { message in
+           message.role == .user && message.content == continuation.prompt
+         })
+       }) {
+      return false
+    }
     let thread: OpenClawChatThread
-    if let existing = openClawChatThreads.first(where: { $0.sessionKey == continuation.sessionKey }) {
+    if let sessionKey = continuation.sessionKey,
+       let existing = openClawChatThreads.first(where: { $0.sessionKey == sessionKey }) {
       if existing.isSettled { reopenOpenClawChatThread(existing.id) }
       thread = openClawChatThreads.first(where: { $0.id == existing.id }) ?? existing
     } else {
+      let titlePrefix: String
+      let continuationStatus: String
+      switch continuation.kind {
+      case "workflow":
+        titlePrefix = "Workflow"
+        continuationStatus = "Continuing approved workflow"
+      case "external-draft":
+        titlePrefix = "Approved draft"
+        continuationStatus = "Sending approved draft"
+      default:
+        titlePrefix = "Approved run"
+        continuationStatus = continuation.sessionKey == nil
+          ? "Continuing approved run in a new OpenClaw session"
+          : "Continuing approved run"
+      }
       thread = createOpenClawChatThread(
-        title: "Approved draft: \(run.goal)",
-        statusText: "Sending approved draft",
+        title: "\(titlePrefix): \(run.goal)",
+        statusText: continuationStatus,
         sessionKey: continuation.sessionKey
       )
     }
     let shouldDrain = enqueueOpenClawMessage(continuation.prompt, attachments: [], in: thread.id)
     if shouldDrain { await drainOpenClawSendQueue(for: thread.id) }
+    return true
   }
 
   private func continueOpenClawWorkflowAfterRevision(
@@ -3841,27 +3958,21 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   private func continueOpenClawAfterApprovalBoundary(_ run: AgentRunItem) async {
-    if run.isOpenClawExternalDraft, run.status == "running" {
+    if run.status == "running",
+       run.pendingApprovalCount == 0,
+       run.hasOpenClawApprovalContinuation {
       do {
-        try await continueOpenClawDraftAfterApproval(run)
-        statusText = "Approved and continued \(run.goal)"
-      } catch {
-        errorText = error.localizedDescription
-        statusText = "Approved; OpenClaw draft continuation pending"
-      }
-      return
-    }
-    guard run.workflowId != nil else { return }
-    if run.status == "running" {
-      do {
-        try await continueOpenClawWorkflowAfterApproval(run)
-        statusText = "Approved and continued \(run.goal)"
+        let continued = try await continueOpenClawAfterApproval(run)
+        statusText = continued
+          ? "Approved and continued \(run.goal)"
+          : "Approved; \(run.goal) is already continuing"
       } catch {
         errorText = error.localizedDescription
         statusText = "Approved; OpenClaw continuation pending"
       }
       return
     }
+    guard run.workflowId != nil else { return }
     guard let revision = run.resumableRevisionApproval else { return }
     do {
       try await continueOpenClawWorkflowAfterRevision(run, approval: revision)
@@ -4022,6 +4133,36 @@ public final class WorkspaceStore: ObservableObject {
         || normalizedMessage.contains("not found")
         || normalizedMessage.contains("not registered")
         || normalizedMessage.contains("unsupported"))
+  }
+
+  nonisolated static func shouldUseLocalApprovalContinuationFallback(for error: Error) -> Bool {
+    guard case let OpenClawGatewayError.gateway(code, message) = error else { return false }
+    let normalizedCode = (code ?? "").uppercased()
+    if normalizedCode.contains("METHOD")
+        && (normalizedCode.contains("UNKNOWN")
+          || normalizedCode.contains("NOT_FOUND")
+          || normalizedCode.contains("UNSUPPORTED")) {
+      return true
+    }
+    let normalizedMessage = message.lowercased()
+    return normalizedMessage.contains("org2.run.resumeapproved")
+      && (normalizedMessage.contains("unknown")
+        || normalizedMessage.contains("not found")
+        || normalizedMessage.contains("not registered")
+        || normalizedMessage.contains("unsupported"))
+  }
+
+  nonisolated static func agentRunApprovalContinuationPrompt(run: AgentRunItem) -> String {
+    [
+      "ORG2_RUN_ID: \(run.id)",
+      "ORG2_RUN_RESUME: approval-decided",
+      "",
+      "Continue the existing Org2 run “\(run.goal)” after its approval boundary was approved.",
+      "Re-read the durable run with the Org2 CLI and continue from the first incomplete step. Do not create a replacement run or request the same approval again.",
+      "Perform only the exact action covered by the current approved review material. Do not substitute a new recipient, payload, command, or attachment.",
+      "For provider drafts, resolve the exact authority through `org2 run approval-resolve --decision-key artifact:PROVIDER:TOOL:DRAFT_ID --json` and verify provider state before any retry.",
+      "Record external receipts and the final outcome on this durable run, or record the next specific blocker if the work cannot continue."
+    ].joined(separator: "\n")
   }
 
   nonisolated static func agentRunClarificationContinuationPrompt(
@@ -6447,6 +6588,7 @@ public final class WorkspaceStore: ObservableObject {
     selectedLocation = location
     detailScrollRequest = nil
     cancelSourceEditorPreviewRender(clearStatus: true)
+    cancelLinkedPDFPreview(clearStatus: true)
     isEditingEntry = false
     editableEntryText = ""
     sourceEditorSelection = NSRange(location: 0, length: 0)
@@ -6463,8 +6605,13 @@ public final class WorkspaceStore: ObservableObject {
     entryHTMLRenderWatchdogTask = nil
     isRenderingEntrySource = false
     entryHTMLRenderGeneration += 1
-    scheduleBacklinksLoad(for: location)
-    scheduleEntrySourceLoad(for: location)
+    if Self.isPDFFile(location.file) {
+      cancelBacklinksLoad(clearResults: true)
+      scheduleLinkedPDFPreviewLoad(for: location)
+    } else {
+      scheduleBacklinksLoad(for: location)
+      scheduleEntrySourceLoad(for: location)
+    }
   }
 
   private func recordCurrentNavigationDestination() {
@@ -6586,6 +6733,7 @@ public final class WorkspaceStore: ObservableObject {
     selectedLocation = nil
     presentedAgentRunID = nil
     cancelSourceEditorPreviewRender(clearStatus: true)
+    cancelLinkedPDFPreview(clearStatus: true)
     selectedEntrySource = nil
     selectedEntryHTML = nil
     selectedEntryRenderError = nil
@@ -6630,6 +6778,9 @@ public final class WorkspaceStore: ObservableObject {
     else {
       return false
     }
+    if Self.isPDFFile(location.file) {
+      return linkedPDFPreviewData != nil || isLoadingLinkedPDFPreview
+    }
     return selectedEntrySource != nil || isRenderingEntrySource
   }
 
@@ -6657,6 +6808,11 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func loadEntrySource(for location: WorkspaceLocation) async {
+    if Self.isPDFFile(location.file) {
+      linkedPDFLoadGeneration += 1
+      await loadLinkedPDFPreview(for: location, generation: linkedPDFLoadGeneration)
+      return
+    }
     entrySourceLoadGeneration += 1
     let generation = entrySourceLoadGeneration
     await loadEntrySource(for: location, generation: generation, recoveryAttempt: 0)
@@ -6667,6 +6823,87 @@ public final class WorkspaceStore: ObservableObject {
     let generation = entrySourceLoadGeneration
     applyCachedEntrySourceIfAvailable(for: location, generation: generation)
     Task { await loadEntrySource(for: location, generation: generation, recoveryAttempt: 0) }
+  }
+
+  private func scheduleLinkedPDFPreviewLoad(for location: WorkspaceLocation) {
+    linkedPDFLoadTask?.cancel()
+    linkedPDFLoadGeneration += 1
+    let generation = linkedPDFLoadGeneration
+    linkedPDFLoadTask = Task { @MainActor [weak self] in
+      await self?.loadLinkedPDFPreview(for: location, generation: generation)
+    }
+  }
+
+  private func loadLinkedPDFPreview(
+    for location: WorkspaceLocation,
+    generation: Int
+  ) async {
+    guard generation == linkedPDFLoadGeneration,
+          selectedLocationMatches(location),
+          Self.isPDFFile(location.file)
+    else { return }
+
+    isLoadingLinkedPDFPreview = true
+    linkedPDFPreviewError = nil
+    defer {
+      if generation == linkedPDFLoadGeneration {
+        isLoadingLinkedPDFPreview = false
+        linkedPDFLoadTask = nil
+      }
+    }
+
+    do {
+      let url = URL(fileURLWithPath: location.file).standardizedFileURL
+      let loader = linkedPDFDataLoaderForTesting
+      let data = try await Task.detached(priority: .userInitiated) {
+        if let loader {
+          return try await loader(url)
+        }
+        return try Data(contentsOf: url, options: .mappedIfSafe)
+      }.value
+      guard data.starts(with: Data("%PDF".utf8)) else {
+        throw CocoaError(.fileReadCorruptFile)
+      }
+      guard generation == linkedPDFLoadGeneration,
+            selectedLocationMatches(location)
+      else { return }
+      linkedPDFPreviewData = data
+      linkedPDFPreviewError = nil
+      errorText = nil
+      statusText = "Opened \(relativePath(location.file))"
+    } catch is CancellationError {
+      return
+    } catch {
+      guard generation == linkedPDFLoadGeneration,
+            selectedLocationMatches(location)
+      else { return }
+      linkedPDFPreviewData = nil
+      linkedPDFPreviewError = "The linked PDF could not be loaded: \(error.localizedDescription)"
+      errorText = linkedPDFPreviewError
+      statusText = "PDF preview failed"
+    }
+  }
+
+  public func retryLinkedPDFPreview() {
+    guard let selectedLocation, Self.isPDFFile(selectedLocation.file) else { return }
+    scheduleLinkedPDFPreviewLoad(for: selectedLocation)
+  }
+
+  public func cancelLinkedPDFPreview() {
+    cancelLinkedPDFPreview(clearStatus: false)
+    linkedPDFPreviewError = "PDF loading stopped. The file is unchanged; retry the preview when ready."
+    statusText = "PDF loading stopped"
+  }
+
+  private func cancelLinkedPDFPreview(clearStatus: Bool) {
+    linkedPDFLoadTask?.cancel()
+    linkedPDFLoadTask = nil
+    linkedPDFLoadGeneration += 1
+    isLoadingLinkedPDFPreview = false
+    if clearStatus {
+      linkedPDFPreviewData = nil
+      linkedPDFPreviewError = nil
+    }
   }
 
   private func loadEntrySource(
@@ -7750,16 +7987,108 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public var canExportSlides: Bool {
-    slideExportSourceFile != nil && !isExportingSlides && !isSavingEntry && !isSavingBlock
+    currentOrgSourceFile != nil && !isExportingSlides && !isSavingEntry && !isSavingBlock
+  }
+
+  public var canExportCurrentDocumentPDF: Bool {
+    currentOrgSourceFile != nil
+      && !isExportingCurrentDocumentPDF
+      && !isSavingEntry
+      && !isSavingBlock
+  }
+
+  public func exportCurrentDocumentPDF() async {
+    guard let sourceFile = currentOrgSourceFile else {
+      statusText = "Open an Org or Org2 file first"
+      return
+    }
+    guard !isExportingCurrentDocumentPDF else { return }
+    guard await savePendingEditsBeforeExport(blockedStatus: "Save the current edit before exporting the document") else {
+      return
+    }
+
+    let panel = NSSavePanel()
+    panel.canCreateDirectories = true
+    panel.directoryURL = sourceFile.deletingLastPathComponent()
+    panel.nameFieldStringValue = sourceFile.deletingPathExtension().lastPathComponent + ".pdf"
+    panel.allowedContentTypes = [.pdf]
+    panel.title = "Export Current Document as PDF"
+    panel.prompt = "Export"
+
+    guard panel.runModal() == .OK, let destination = panel.url else {
+      statusText = "PDF export cancelled"
+      return
+    }
+
+    isExportingCurrentDocumentPDF = true
+    statusText = "Exporting document as PDF…"
+    defer { isExportingCurrentDocumentPDF = false }
+
+    do {
+      try await exportCurrentDocumentPDF(sourceFile: sourceFile, destination: destination)
+      finishSuccessfulDocumentPDFExport(destination: destination)
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "PDF export failed: \(error.localizedDescription)"
+      exportNotice = Org2ExportNotice(
+        title: "Couldn’t Export PDF",
+        message: error.localizedDescription
+      )
+    }
+  }
+
+  func exportCurrentDocumentPDF(sourceFile: URL, destination: URL) async throws {
+    let standardizedSource = sourceFile.standardizedFileURL
+    let html = try await renderedCurrentDocumentHTML(sourceFile: standardizedSource)
+    let baseURL = standardizedSource.deletingLastPathComponent()
+    let pdf: Data
+    if let documentPDFRendererForTesting {
+      pdf = try await documentPDFRendererForTesting(html, baseURL)
+    } else {
+      pdf = try await Org2PDFExporter().data(for: html, baseURL: baseURL)
+    }
+    try Org2PDFExporter.validated(pdf).write(to: destination, options: .atomic)
+  }
+
+  func renderedCurrentDocumentHTML(sourceFile: URL) async throws -> String {
+    let standardizedSource = sourceFile.standardizedFileURL
+    let text = try await Task.detached(priority: .userInitiated) {
+      try String(contentsOf: standardizedSource, encoding: .utf8)
+    }.value
+    return try await cli.renderAppHTML(
+      text,
+      sourcePath: standardizedSource.path,
+      sourceLineOffset: 0,
+      stylesheetPath: appHTMLStylesheetPath
+    )
+  }
+
+  func finishSuccessfulDocumentPDFExport(destination: URL) {
+    errorText = nil
+    let didOpen = documentPDFExportFileOpenerForTesting?(destination)
+      ?? NSWorkspace.shared.open(destination)
+    if didOpen {
+      statusText = "Exported and opened \(destination.lastPathComponent)"
+      exportNotice = nil
+      return
+    }
+
+    statusText = "Exported \(destination.lastPathComponent), but couldn’t open the PDF"
+    exportNotice = Org2ExportNotice(
+      title: "PDF Exported",
+      message: "\(destination.path)\n\nThe PDF was saved, but macOS couldn’t open it automatically."
+    )
   }
 
   public func exportSlides(format: Org2SlideExportFormat) async {
-    guard let sourceFile = slideExportSourceFile else {
+    guard let sourceFile = currentOrgSourceFile else {
       statusText = "Open an Org or Org2 file first"
       return
     }
     guard !isExportingSlides else { return }
-    guard await savePendingEditsBeforeSlideExport() else { return }
+    guard await savePendingEditsBeforeExport(blockedStatus: "Save the current edit before exporting slides") else {
+      return
+    }
 
     let panel = NSSavePanel()
     panel.canCreateDirectories = true
@@ -7788,7 +8117,7 @@ public final class WorkspaceStore: ObservableObject {
     } catch {
       errorText = error.localizedDescription
       statusText = "Slide export failed: \(error.localizedDescription)"
-      slideExportNotice = Org2SlideExportNotice(
+      exportNotice = Org2ExportNotice(
         title: "Couldn’t Export Slides",
         message: error.localizedDescription
       )
@@ -7806,12 +8135,12 @@ public final class WorkspaceStore: ObservableObject {
         ?? NSWorkspace.shared.open(destination)
       if didOpen {
         statusText = "Exported and opened \(destination.lastPathComponent)"
-        slideExportNotice = nil
+        exportNotice = nil
         return
       }
 
       statusText = "Exported slides to \(destination.lastPathComponent), but couldn’t open the PDF"
-      slideExportNotice = Org2SlideExportNotice(
+      exportNotice = Org2ExportNotice(
         title: "Slides Exported",
         message: "\(destination.path)\n\nThe PDF was saved, but macOS couldn’t open it automatically."
       )
@@ -7819,13 +8148,13 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     statusText = "Exported slides to \(destination.lastPathComponent)"
-    slideExportNotice = Org2SlideExportNotice(
+    exportNotice = Org2ExportNotice(
       title: "Slides Exported",
       message: destination.path
     )
   }
 
-  private var slideExportSourceFile: URL? {
+  private var currentOrgSourceFile: URL? {
     let path = selectedEntrySource?.file ?? selectedLocation?.file
     guard let path else { return nil }
     let sourceFile = URL(fileURLWithPath: path).standardizedFileURL
@@ -7833,7 +8162,7 @@ public final class WorkspaceStore: ObservableObject {
     return sourceFile
   }
 
-  private func savePendingEditsBeforeSlideExport() async -> Bool {
+  private func savePendingEditsBeforeExport(blockedStatus: String) async -> Bool {
     let hadPendingEdit = entryEditorHasUnsavedChanges
       || liveFileEditorHasUnsavedChanges
       || editingBlockID != nil
@@ -7844,7 +8173,7 @@ public final class WorkspaceStore: ObservableObject {
       || liveFileEditorHasUnsavedChanges
       || editingBlockID != nil
     if stillPending {
-      statusText = "Save the current edit before exporting slides"
+      statusText = blockedStatus
       return false
     }
     return true
@@ -7864,6 +8193,16 @@ public final class WorkspaceStore: ObservableObject {
     let file = selectedLocation?.file ?? selectedEntrySource?.file
     guard let file else { return false }
     return URL(fileURLWithPath: file).pathExtension.lowercased() == "csv"
+  }
+
+  public var selectedFileIsPDF: Bool {
+    let file = selectedLocation?.file ?? selectedEntrySource?.file
+    guard let file else { return false }
+    return Self.isPDFFile(file)
+  }
+
+  nonisolated static func isPDFFile(_ path: String) -> Bool {
+    URL(fileURLWithPath: path).pathExtension.lowercased() == "pdf"
   }
 
   public var isLiveFileEditorAvailable: Bool {
@@ -8521,6 +8860,110 @@ public final class WorkspaceStore: ObservableObject {
       return
     }
     statusText = [savedPrefix, "encryption failed"].compactMap(\.self).joined(separator: " ")
+  }
+
+  func requestSaveRenderedTableView(_ snapshot: OrgHTMLTableViewSnapshot) {
+    guard let source = selectedEntrySource, source.isEditable else {
+      statusText = "This table is read-only"
+      return
+    }
+    guard !isEditingEntry else {
+      statusText = "Save or close source editing before saving a table view"
+      return
+    }
+    let blocks = selectedRenderedBlocks.isEmpty
+      ? OrgEntryRenderer.parseEditable(source.text, baseLine: source.startLine)
+      : selectedRenderedBlocks
+    guard let block = blocks.first(where: { candidate in
+      guard candidate.startLine == snapshot.startLine,
+            candidate.endLineExclusive - 1 == snapshot.endLine
+      else { return false }
+      if case .table = candidate.rendered { return true }
+      return false
+    }) else {
+      statusText = "The table changed; refresh the file and try again"
+      return
+    }
+    guard let replacement = OrgRenderedTableViewMutation.replacement(
+      rawText: block.rawText,
+      visibleBodyRowIndices: snapshot.visibleBodyRowIndices,
+      expectedBodyRowCount: snapshot.totalBodyRowCount
+    ) else {
+      statusText = "Could not map this view back to the source table"
+      return
+    }
+    guard Self.normalizeLineEndings(replacement) != Self.normalizeLineEndings(block.rawText) else {
+      statusText = "The source table already matches this view"
+      return
+    }
+
+    let hiddenRowCount = max(0, snapshot.totalBodyRowCount - snapshot.visibleBodyRowIndices.count)
+    let alert = NSAlert()
+    alert.alertStyle = hiddenRowCount > 0 ? .warning : .informational
+    alert.messageText = "Save this table view to the source?"
+    var details: [String] = []
+    if snapshot.sortActive {
+      details.append("The source rows will use the current sort order.")
+    }
+    if hiddenRowCount > 0 {
+      details.append(
+        "The source will keep the \(snapshot.visibleBodyRowIndices.count) visible row\(snapshot.visibleBodyRowIndices.count == 1 ? "" : "s") and remove \(hiddenRowCount) filtered row\(hiddenRowCount == 1 ? "" : "s")."
+      )
+    }
+    details.append("The header is preserved, and the change can be undone from the Edit menu.")
+    alert.informativeText = details.joined(separator: " ")
+    alert.addButton(withTitle: "Save View")
+    alert.addButton(withTitle: "Cancel")
+    guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+    Task { @MainActor [weak self, source, block, replacement] in
+      await self?.saveRenderedTableView(replacement, replacing: block, in: source)
+    }
+  }
+
+  private func saveRenderedTableView(
+    _ replacement: String,
+    replacing block: OrgEditableBlock,
+    in source: EntrySource
+  ) async {
+    guard selectedEntrySource?.id == source.id else {
+      statusText = "The selected file changed before the table view could be saved"
+      return
+    }
+    isSavingBlock = true
+    defer { isSavingBlock = false }
+
+    do {
+      let normalizedReplacement = Self.normalizeLineEndings(replacement)
+      let updatedSource = try Self.replacingSourceBlock(block, in: source, with: normalizedReplacement)
+      let undoSnapshot = fileUndoSnapshot(for: source.file)
+      try await Task.detached(priority: .userInitiated) {
+        try Self.replaceSourceRange(
+          file: source.file,
+          startLine: block.startLine,
+          endLineExclusive: block.endLineExclusive,
+          replacement: normalizedReplacement,
+          expectedOriginal: block.rawText
+        )
+      }.value
+      recordFileUndo(from: undoSnapshot)
+      invalidateCanonicalDocumentCache(for: source.file)
+      let staleRenderKey = entryHTMLRenderKey(for: source)
+      renderedHTMLCache.removeValue(forKey: staleRenderKey)
+      renderedHTMLCacheOrder.removeAll { $0 == staleRenderKey }
+
+      if let selectedLocation {
+        await loadEntrySource(for: selectedLocation)
+      } else if selectedEntrySource?.id == source.id {
+        selectedEntrySource = updatedSource
+        renderEntrySource(updatedSource, generation: entrySourceLoadGeneration)
+      }
+      statusText = "Saved table view to \(relativePath(source.file)):\(block.displayRange)"
+      scheduleAgendaRefresh(preserveSelection: true)
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Could not save table view"
+    }
   }
 
   public func saveEditedBlock(_ block: OrgEditableBlock) async {
@@ -12645,24 +13088,21 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   private func executeOpenClawExport(_ arguments: String) async throws -> String {
-    guard let source = selectedEntrySource else { return "Open a document first. Usage: /export pdf|html" }
+    guard let sourceFile = currentOrgSourceFile else { return "Open a document first. Usage: /export pdf|html" }
     let format = arguments.lowercased()
     guard format == "pdf" || format == "html" else { return "Usage: /export pdf|html" }
-    let html = try await cli.renderAppHTML(
-      source.text,
-      sourcePath: source.file,
-      sourceLineOffset: max(0, source.startLine - 1)
-    )
+    guard await savePendingEditsBeforeExport(blockedStatus: "Save the current edit before exporting the document") else {
+      return "Save the current edit before exporting the document."
+    }
     let panel = NSSavePanel()
     panel.allowedContentTypes = format == "pdf" ? [.pdf] : [.html]
-    panel.nameFieldStringValue = URL(fileURLWithPath: source.file).deletingPathExtension().lastPathComponent + ".\(format)"
+    panel.nameFieldStringValue = sourceFile.deletingPathExtension().lastPathComponent + ".\(format)"
     guard panel.runModal() == .OK, let destination = panel.url else { return "Export cancelled." }
     if format == "html" {
+      let html = try await renderedCurrentDocumentHTML(sourceFile: sourceFile)
       try Data(html.utf8).write(to: destination, options: .atomic)
     } else {
-      let exporter = Org2PDFExporter()
-      let pdf = try await exporter.data(for: html, baseURL: URL(fileURLWithPath: source.file).deletingLastPathComponent())
-      try pdf.write(to: destination, options: .atomic)
+      try await exportCurrentDocumentPDF(sourceFile: sourceFile, destination: destination)
     }
     return "Exported \(destination.lastPathComponent)."
   }
@@ -14898,13 +15338,14 @@ public final class WorkspaceStore: ObservableObject {
           !openClawChatThreads[index].isSettled
     else { return }
     let thread = openClawChatThreads[index]
-    openClawChatThreads[index] = thread.replacingOpenClawChatMetadata(
+    var threads = openClawChatThreads
+    threads[index] = thread.replacingOpenClawChatMetadata(
       isArchived: true,
       settledAt: .some(settledAt)
     )
+    openClawChatThreads = Self.sortedOpenClawChatThreadsForDisplay(threads)
     lastArchivedOpenClawChatThreadID = id
-    sortOpenClawChatThreadsForDisplay()
-    persistOpenClawTranscript()
+    scheduleOpenClawTranscriptPersistenceAfterInteraction()
 
     if selectedOpenClawChatThreadID == id || selectedThreadWasSettled {
       let remainingThreads = visibleOpenClawChatThreads
@@ -14923,15 +15364,16 @@ public final class WorkspaceStore: ObservableObject {
           openClawChatThreads[index].isSettled
     else { return }
     let thread = openClawChatThreads[index]
-    openClawChatThreads[index] = thread.replacingOpenClawChatMetadata(
+    var threads = openClawChatThreads
+    threads[index] = thread.replacingOpenClawChatMetadata(
       isArchived: false,
       settledAt: .some(nil)
     )
+    openClawChatThreads = Self.sortedOpenClawChatThreadsForDisplay(threads)
     if lastArchivedOpenClawChatThreadID == id {
       lastArchivedOpenClawChatThreadID = nil
     }
-    sortOpenClawChatThreadsForDisplay()
-    persistOpenClawTranscript()
+    scheduleOpenClawTranscriptPersistenceAfterInteraction()
   }
 
   public func undoLastOpenClawChatThreadArchive() {
@@ -14962,7 +15404,7 @@ public final class WorkspaceStore: ObservableObject {
   ) -> [UUID] {
     let selectedID = selectedOpenClawChatThreadID
     var settledIDs: [UUID] = []
-    openClawChatThreads = openClawChatThreads.map { thread in
+    let updatedThreads = openClawChatThreads.map { thread in
       guard Self.canAutoSettleOpenClawChatThread(
         thread,
         settings: openClawThreadSettlementSettings,
@@ -14978,9 +15420,9 @@ public final class WorkspaceStore: ObservableObject {
       )
     }
     if !settledIDs.isEmpty {
-      sortOpenClawChatThreadsForDisplay()
+      openClawChatThreads = Self.sortedOpenClawChatThreadsForDisplay(updatedThreads)
       if shouldPersist {
-        persistOpenClawTranscript()
+        scheduleOpenClawTranscriptPersistenceAfterInteraction()
       }
     }
     return settledIDs
@@ -15104,6 +15546,11 @@ public final class WorkspaceStore: ObservableObject {
     markOpenClawChatThreadRead(selectedOpenClawChatThreadID, shouldPersist: true)
   }
 
+  public func previewAIChatMessageSound() {
+    guard aiChatMessageSound != .off else { return }
+    openClawIncomingMessageSoundPlayer()
+  }
+
   private func markOpenClawChatThreadRead(_ id: UUID, shouldPersist: Bool) {
     guard let index = openClawChatThreads.firstIndex(where: { $0.id == id }) else { return }
     let thread = openClawChatThreads[index]
@@ -15153,8 +15600,22 @@ public final class WorkspaceStore: ObservableObject {
       transcriptURL: targetTranscriptURL,
       shouldPersist: shouldPersist
     )
-    if newAssistantMessageCount > 0 {
+    if newAssistantMessageCount > 0, aiChatMessageSound != .off {
       openClawIncomingMessageSoundPlayer()
+    }
+  }
+
+  private static func messageSoundPlayer(
+    for sound: AIChatMessageSound
+  ) -> @MainActor () -> Void {
+    switch sound {
+    case .systemAlert:
+      return { WorkspaceSound.beep() }
+    case .off:
+      return {}
+    default:
+      guard let name = sound.appKitSoundName else { return {} }
+      return { WorkspaceSound.play(named: name) }
     }
   }
 
@@ -15461,7 +15922,9 @@ public final class WorkspaceStore: ObservableObject {
 
   public func openChatFileReference(_ reference: OpenClawFileReference) {
     guard let file = localPathForOpenClawReference(reference.path) else {
-      openClawStatusText = "Could not resolve file link: \(reference.path)"
+      let message = "Could not resolve file link: \(reference.path)"
+      openClawStatusText = message
+      statusText = message
       return
     }
 
@@ -23828,7 +24291,7 @@ public final class WorkspaceStore: ObservableObject {
       guard let reason = normalizedApprovalRejectionReason(reasonField.stringValue) else {
         alert.alertStyle = .warning
         alert.informativeText = "A rejection reason is required. Enter a reason below, or choose Cancel."
-        NSSound.beep()
+        WorkspaceSound.beep()
         continue
       }
       let status: TodoEditStatus = statusPopup.indexOfSelectedItem == 1 ? .done : .canceled
@@ -23856,7 +24319,7 @@ public final class WorkspaceStore: ObservableObject {
       guard let reason = normalizedApprovalRejectionReason(reasonField.stringValue) else {
         alert.alertStyle = .warning
         alert.informativeText = "A rejection reason is required. Enter a reason below, or choose Cancel."
-        NSSound.beep()
+        WorkspaceSound.beep()
         continue
       }
       return ApprovalRejectionChoice(endStatus: .canceled, reason: reason)

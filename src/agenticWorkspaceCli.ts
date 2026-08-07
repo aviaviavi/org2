@@ -173,7 +173,7 @@ const HELP = `Agentic workspace commands:
   org2 run create --goal TEXT [--goal-ref ID] [--agent-ref ID] [--accept TEXT] [--risk CLASS] [--owner NAME] [--capability ID] [--dir CORPUS]
   org2 run show ID --with-revision --json
   org2 run list|show|validate|start|resume|retry|cancel|complete|complete-external|fail|block|fork|normalize|artifact-review
-  org2 run block ID --reason "Specific clarification needed"
+  org2 run block ID --reason "Specific clarification needed" [--separate-from-approval]
   org2 run complete ID --summary "What happened" [--highlight TEXT] [--next-action TEXT]
   org2 run complete-external ID --summary "Where or how it was completed" --actor NAME
   org2 run outcome ID --summary "What happened" [--highlight TEXT] [--next-action TEXT]
@@ -1153,6 +1153,7 @@ async function runCommand(parsed: ParsedArgs): Promise<void> {
   else if (transitions[action]) run = transitionAgentRun(existing, transitions[action]!, {
     actor: flag(parsed, "actor"), reason: flag(parsed, "reason"), summary: flag(parsed, "summary"),
     highlights: flags(parsed, "highlight"), nextActions: flags(parsed, "next-action"),
+    separateFromApproval: enabled(parsed, "separate-from-approval"),
   });
   else if (action === "assign") run = updateAgentRunAssignment(existing, { owner: flag(parsed, "owner"), assignee: flag(parsed, "assignee"), agentRef: flag(parsed, "agent-ref"), goalRef: flag(parsed, "goal-ref"), actor: flag(parsed, "actor") });
   else if (action === "outcome") run = updateAgentRunOutcome(existing, { summary: required(flag(parsed, "summary"), "--summary is required"), highlights: flags(parsed, "highlight"), nextActions: flags(parsed, "next-action"), actor: flag(parsed, "actor") });

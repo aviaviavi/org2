@@ -181,13 +181,16 @@ final class CodexAppServerClientTests: XCTestCase {
     let store = WorkspaceStore(defaults: defaults, legacyDefaultsDomains: [])
     XCTAssertEqual(store.aiChatCorpusAccessScope, .activeCorpus)
     XCTAssertEqual(store.aiChatCustomInstructions, "")
+    XCTAssertEqual(store.aiChatMessageSound, .glass)
 
     store.aiChatCorpusAccessScope = .allCorpora
     store.aiChatCustomInstructions = "Always identify the source corpus."
+    store.aiChatMessageSound = .purr
 
     let restored = WorkspaceStore(defaults: defaults, legacyDefaultsDomains: [])
     XCTAssertEqual(restored.aiChatCorpusAccessScope, .allCorpora)
     XCTAssertEqual(restored.aiChatCustomInstructions, "Always identify the source corpus.")
+    XCTAssertEqual(restored.aiChatMessageSound, .purr)
   }
 
   @MainActor

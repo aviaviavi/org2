@@ -57,10 +57,11 @@ final class CSVDocumentTests: XCTestCase {
     }
   }
 
-  func testRenderedDocumentRoutesCSVLinksIntoWorkspace() {
+  func testRenderedDocumentRoutesStructuredAndPDFLinksIntoWorkspace() {
     XCTAssertTrue(OrgHTMLDocumentLinkRouting.opensInWorkspace(URL(fileURLWithPath: "/tmp/sample.CSV")))
     XCTAssertTrue(OrgHTMLDocumentLinkRouting.opensInWorkspace(URL(fileURLWithPath: "/tmp/note.org2")))
-    XCTAssertFalse(OrgHTMLDocumentLinkRouting.opensInWorkspace(URL(fileURLWithPath: "/tmp/report.pdf")))
+    XCTAssertTrue(OrgHTMLDocumentLinkRouting.opensInWorkspace(URL(fileURLWithPath: "/tmp/report.PDF")))
+    XCTAssertFalse(OrgHTMLDocumentLinkRouting.opensInWorkspace(URL(fileURLWithPath: "/tmp/report.png")))
   }
 
   @MainActor
@@ -156,6 +157,40 @@ final class CSVDocumentTests: XCTestCase {
 
     XCTAssertEqual(try String(contentsOf: csv, encoding: .utf8), "name,count\nAvi,2\n")
     XCTAssertFalse(store.liveFileEditorHasUnsavedChanges)
+  }
+
+  @MainActor
+  func testChatPDFLinkLoadsInTheNativePreviewWithoutOrgRendering() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-chat-pdf-\(UUID().uuidString)", isDirectory: true)
+    let reports = root.appendingPathComponent("reports", isDirectory: true)
+    try FileManager.default.createDirectory(at: reports, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let pdf = reports.appendingPathComponent("brief.pdf")
+    let expectedData = Data("%PDF-1.4\n% linked preview\n".utf8)
+    try expectedData.write(to: pdf)
+
+    let store = try makeStore()
+    store.setCorpusRoot(root, persistsDefault: false)
+    store.entrySourceLoaderForTesting = { _, _, _ in
+      throw CocoaError(.fileReadUnsupportedScheme)
+    }
+    store.linkedPDFDataLoaderForTesting = { url in
+      try Data(contentsOf: url)
+    }
+
+    store.openChatFileReference(OpenClawFileReference(path: "reports/brief.pdf", line: nil))
+
+    try await waitForCondition {
+      store.linkedPDFPreviewData != nil && !store.isLoadingLinkedPDFPreview
+    }
+
+    XCTAssertTrue(store.selectedFileIsPDF)
+    XCTAssertEqual(store.selectedLocation?.file, pdf.path)
+    XCTAssertEqual(store.linkedPDFPreviewData, expectedData)
+    XCTAssertNil(store.selectedEntrySource)
+    XCTAssertNil(store.selectedEntryRenderError)
+    XCTAssertNil(store.linkedPDFPreviewError)
   }
 
   @MainActor

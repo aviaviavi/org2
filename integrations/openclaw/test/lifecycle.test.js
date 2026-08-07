@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { clarificationContinuationPrompt, conciseGoal, cronKey, cronSessionKey, durableRunMarker, executionSummary, outcomeCommand, shouldTrackMainTurn, workflowContinuationPrompt, workflowExecutionPrompt, workflowMarker, workflowRevisionPrompt } from "../lib/lifecycle.js";
+import { approvedRunContinuationPrompt, clarificationContinuationPrompt, conciseGoal, cronKey, cronSessionKey, durableRunMarker, executionSummary, outcomeCommand, shouldTrackMainTurn, workflowContinuationPrompt, workflowExecutionPrompt, workflowMarker, workflowRevisionPrompt } from "../lib/lifecycle.js";
 import { Org2Lifecycle } from "../lib/lifecycle.js";
 import { approvalAction, approvalContext, approvalTitle, draftCreatedEffect, draftSendEffect } from "../lib/draft-approvals.js";
 
@@ -405,6 +405,75 @@ test("resumes an approved workflow in its correlated OpenClaw session", async ()
   assert.equal(resumed.sessionKey, "agent:main:org2:thread-1");
   assert.equal(workflowMarker(resumed.prompt).workflowRunId, "run-1");
   assert.match(workflowContinuationPrompt(workflow, "run-1"), /approval-decided/);
+});
+
+test("resumes a correlated approved plain run only once per approval boundary", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "org2-openclaw-approved-run-"));
+  const stateFile = join(dir, "state.json");
+  const approval = {
+    id: "send-report",
+    fingerprint: "sha256:report-v1",
+    status: "approved",
+    decidedAt: "2026-08-06T16:05:00.000Z",
+  };
+  const run = {
+    id: "run-plain-1",
+    goal: "Send the approved report",
+    status: "running",
+    approvals: [approval],
+    comments: [],
+    events: [
+      { type: "status-changed", data: { to: "waiting-approval" } },
+      { type: "approval-requested", data: { approvalId: approval.id } },
+    ],
+  };
+  const lifecycle = new Org2Lifecycle({ stateFile, exec: async (args) => {
+    if (args[0] === "corpus") return JSON.stringify({ identity: { id: "personal" } });
+    if (args[0] === "run" && args[1] === "show") return JSON.stringify(run);
+    throw new Error(`unexpected command: ${args.join(" ")}`);
+  } });
+  await lifecycle.init();
+  lifecycle.state.mappings.key = {
+    kind: "agent-turn",
+    org2RunId: run.id,
+    sessionKey: "agent:main:org2:thread-plain",
+    pausedAt: "2026-08-06T16:00:00.000Z",
+    pausedStatus: "waiting-approval",
+    createdAt: "2026-08-06T15:00:00.000Z",
+  };
+
+  const first = await lifecycle.resumeApprovedRun(run.id, { expectedCorpusId: "personal" });
+  const second = await lifecycle.resumeApprovedRun(run.id, { expectedCorpusId: "personal" });
+
+  assert.equal(first.kind, "run");
+  assert.equal(first.sessionKey, "agent:main:org2:thread-plain");
+  assert.equal(first.alreadyResumed, false);
+  assert.equal(second.alreadyResumed, true);
+  assert.equal(second.continuationKey, first.continuationKey);
+  assert.equal(second.prompt, first.prompt);
+  assert.match(first.prompt, new RegExp(`ORG2_APPROVAL_CONTINUATION_KEY: ${first.continuationKey}$`));
+  assert.equal(lifecycle.state.mappings.key.pausedAt, undefined);
+  assert.equal(lifecycle.state.mappings.key.pausedStatus, undefined);
+  assert.equal(durableRunMarker(first.prompt), run.id);
+  assert.match(approvedRunContinuationPrompt(run), /request the same approval again/);
+  const saved = JSON.parse(await readFile(stateFile, "utf8"));
+  assert.equal(Object.keys(saved.approvalContinuations).length, 1);
+});
+
+test("does not resume a run whose current approval boundary is incomplete", async () => {
+  const run = {
+    id: "run-pending",
+    goal: "Wait for both reviewers",
+    status: "running",
+    approvals: [{ id: "review-1", status: "approved" }, { id: "review-2", status: "pending" }],
+    events: [],
+  };
+  const lifecycle = new Org2Lifecycle({ exec: async (args) => {
+    if (args[0] === "corpus") return JSON.stringify({ identity: { id: "personal" } });
+    if (args[0] === "run" && args[1] === "show") return JSON.stringify(run);
+    throw new Error(`unexpected command: ${args.join(" ")}`);
+  } });
+  await assert.rejects(() => lifecycle.resumeApprovedRun(run.id), /not fully approved/);
 });
 
 test("resumes a requested workflow revision with the reviewer's durable feedback", async () => {

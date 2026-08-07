@@ -732,6 +732,45 @@ public enum OrgEditableTableRow: Equatable, Sendable {
   }
 }
 
+enum OrgRenderedTableViewMutation {
+  static func replacement(
+    rawText: String,
+    visibleBodyRowIndices: [Int],
+    expectedBodyRowCount: Int
+  ) -> String? {
+    guard expectedBodyRowCount > 0,
+          !visibleBodyRowIndices.isEmpty,
+          Set(visibleBodyRowIndices).count == visibleBodyRowIndices.count
+    else {
+      return nil
+    }
+
+    let normalized = rawText
+      .replacingOccurrences(of: "\r\n", with: "\n")
+      .replacingOccurrences(of: "\r", with: "\n")
+    let lines = normalized
+      .split(separator: "\n", omittingEmptySubsequences: false)
+      .map(String.init)
+    let table = OrgEditableTable(rawText: normalized)
+    guard lines.count == table.rows.count else { return nil }
+
+    let separatorIndex = table.rows.firstIndex(where: { !$0.isCellRow })
+    let bodyStartIndex = separatorIndex.map { table.rows.index(after: $0) } ?? table.rows.startIndex
+    let bodyLineIndices = table.rows.indices.filter { index in
+      index >= bodyStartIndex && table.rows[index].isCellRow
+    }
+    guard bodyLineIndices.count == expectedBodyRowCount,
+          visibleBodyRowIndices.allSatisfy({ bodyLineIndices.indices.contains($0) })
+    else {
+      return nil
+    }
+
+    let preservedPrefix = Array(lines[..<bodyStartIndex])
+    let visibleRows = visibleBodyRowIndices.map { lines[bodyLineIndices[$0]] }
+    return (preservedPrefix + visibleRows).joined(separator: "\n")
+  }
+}
+
 public enum OrgEntryRenderer {
   public static func parse(_ raw: String) -> [OrgRenderedBlock] {
     let lines = raw

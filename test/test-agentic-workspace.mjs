@@ -5,7 +5,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { PassThrough } from "node:stream";
 import {
-  addAgentRunArtifact, addAgentRunComment, addAgentRunValidation, completeAgentRunExternally, createAgentRun,
+  addAgentRunArtifact, addAgentRunComment, addAgentRunValidation, AGENT_RUN_APPROVAL_BLOCK_REASON, completeAgentRunExternally, createAgentRun,
   decideAgentRunApproval, forkAgentRun, listAgentRuns, loadAgentRun, normalizeLegacyAgentRuns,
   loadAgentRunSnapshot, parseAgentRunOrg, renderAgentRunOrg, requestAgentRunApproval, saveAgentRun, summarizeAgentRunAttempts,
   transitionAgentRun, updateAgentRunAssignment, updateAgentRunRuntime, updateAgentRunStep, validateAgentRun,
@@ -400,9 +400,11 @@ try {
     action: "perform blocked action",
     riskClass: "external-action",
   });
-  blockedPendingApproval = transitionAgentRun(blockedPendingApproval, "blocked", {
-    reason: "Waiting for the protected action decision.",
-  });
+  blockedPendingApproval = {
+    ...blockedPendingApproval,
+    status: "blocked",
+    blockedReason: "Waiting for the protected action decision.",
+  };
   blockedPendingApproval = decideAgentRunApproval(
     blockedPendingApproval,
     "blocked-action",
@@ -410,6 +412,82 @@ try {
     { actor: "Avi" },
   );
   assert.equal(blockedPendingApproval.status, "canceled");
+
+  let legacyApprovalBlocked = transitionAgentRun(
+    createAgentRun({ id: "legacy-approval-blocked", goal: "Resume after a legacy approval boundary" }),
+    "running",
+  );
+  legacyApprovalBlocked = requestAgentRunApproval(legacyApprovalBlocked, {
+    id: "legacy-action",
+    title: "Approve legacy action",
+    action: "perform the approved legacy action",
+    riskClass: "external-action",
+  });
+  legacyApprovalBlocked = {
+    ...legacyApprovalBlocked,
+    status: "blocked",
+    blockedReason: AGENT_RUN_APPROVAL_BLOCK_REASON,
+  };
+  legacyApprovalBlocked = decideAgentRunApproval(
+    legacyApprovalBlocked,
+    "legacy-action",
+    "approved",
+    { actor: "Avi" },
+  );
+  assert.equal(legacyApprovalBlocked.status, "running");
+  assert.equal(legacyApprovalBlocked.blockedReason, undefined);
+
+  let descriptiveApprovalBlocked = transitionAgentRun(
+    createAgentRun({ id: "descriptive-approval-blocked", goal: "Repair a descriptive approval blocker" }),
+    "running",
+  );
+  descriptiveApprovalBlocked = requestAgentRunApproval(descriptiveApprovalBlocked, {
+    id: "descriptive-action",
+    title: "Approve described action",
+    action: "perform the described action",
+    riskClass: "external-action",
+  });
+  descriptiveApprovalBlocked = {
+    ...descriptiveApprovalBlocked,
+    status: "blocked",
+    blockedReason: "Waiting for the protected action decision.",
+  };
+  descriptiveApprovalBlocked = decideAgentRunApproval(
+    descriptiveApprovalBlocked,
+    "descriptive-action",
+    "approved",
+    { actor: "Avi" },
+  );
+  assert.equal(descriptiveApprovalBlocked.status, "running");
+
+  let guardedApprovalBlock = transitionAgentRun(
+    createAgentRun({ id: "guarded-approval-block", goal: "Reject duplicate approval blockers" }),
+    "running",
+  );
+  guardedApprovalBlock = requestAgentRunApproval(guardedApprovalBlock, {
+    id: "guarded-action",
+    title: "Approve guarded action",
+    action: "perform guarded action",
+    riskClass: "external-action",
+  });
+  assert.throws(
+    () => transitionAgentRun(guardedApprovalBlock, "blocked", {
+      reason: "Avi: explicitly approve the exact draft or provide edits before publication.",
+      separateFromApproval: true,
+    }),
+    /duplicates the pending approval boundary/,
+  );
+  assert.throws(
+    () => transitionAgentRun(guardedApprovalBlock, "blocked", {
+      reason: "The publishing service is unavailable.",
+    }),
+    /pass --separate-from-approval/,
+  );
+  const explicitSeparateBlock = transitionAgentRun(guardedApprovalBlock, "blocked", {
+    reason: "The publishing service is unavailable.",
+    separateFromApproval: true,
+  });
+  assert.equal(explicitSeparateBlock.status, "blocked");
 
   let separatelyBlocked = transitionAgentRun(
     createAgentRun({ id: "separately-blocked", goal: "Keep separate blockers intact" }),

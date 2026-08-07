@@ -237,6 +237,107 @@ final class OrgEditorInteractionTests: XCTestCase {
     try await waitForCondition { receivedLine == 40 }
   }
 
+  func testRenderedTableFiltersSortsAndReportsTheVisibleViewWithoutEditingSource() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-interactive-table-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let file = root.appendingPathComponent("table.org2")
+    let text = """
+    | Name | Score |
+    |------+-------|
+    | Zebra | 2 |
+    | Ant | 10 |
+    | Mouse | 3 |
+    """
+    try text.write(to: file, atomically: true, encoding: .utf8)
+    let source = EntrySource(
+      file: file.path,
+      startLine: 1,
+      endLineExclusive: 6,
+      text: text,
+      isSubtree: false
+    )
+    let html = try await Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()).renderAppHTML(
+      source.text,
+      sourcePath: source.file
+    )
+    var receivedSnapshot: OrgHTMLTableViewSnapshot?
+    let content = OrgHTMLDocumentView(
+      html: html,
+      source: source,
+      corpusRoot: root,
+      searchQuery: nil,
+      searchOccurrenceIndex: nil,
+      searchOccurrenceCount: 0,
+      scrollRequest: nil,
+      layout: OrgHTMLDocumentLayout(width: .comfortable, margin: .standard),
+      askAIAboutHeading: { _ in },
+      reportStatus: { _ in },
+      allowsTablePersistence: true,
+      saveTableView: { receivedSnapshot = $0 }
+    )
+    let hostingView = NSHostingView(rootView: content)
+    let window = NSWindow(
+      contentRect: NSRect(x: 0, y: 0, width: 900, height: 700),
+      styleMask: [.titled, .closable, .resizable],
+      backing: .buffered,
+      defer: false
+    )
+    window.contentView = hostingView
+    window.makeKeyAndOrderFront(nil)
+    retainedInteractionWindows.append(window)
+
+    var webView: WKWebView?
+    try await waitForCondition {
+      webView = firstWebView(in: window.contentView)
+      return webView != nil
+    }
+    let renderedWebView = try XCTUnwrap(webView)
+    let controlsDeadline = Date().addingTimeInterval(5)
+    var controlsReady = false
+    while Date() < controlsDeadline && !controlsReady {
+      controlsReady = (try? await renderedWebView.callAsyncJavaScript(
+        "return Boolean(document.querySelector('.org2-table-filter') && !document.querySelector('[data-org2-table-save]').hidden);",
+        arguments: [:],
+        in: nil,
+        contentWorld: .page
+      )) as? Bool == true
+      if !controlsReady { try await pumpRunLoop() }
+    }
+    XCTAssertTrue(controlsReady)
+
+    let sourceTextBeforeInteraction = try String(contentsOf: file, encoding: .utf8)
+    let state = try await renderedWebView.callAsyncJavaScript(
+      """
+      const filter = document.querySelector('.org2-table-filter');
+      const sort = document.querySelector('.org2-table-sort-button');
+      filter.value = 'a';
+      filter.dispatchEvent(new Event('input', { bubbles: true }));
+      sort.click();
+      sort.click();
+      const visibleNames = Array.from(document.querySelectorAll('tbody tr:not([hidden]) td:first-child'))
+        .map((cell) => cell.innerText.trim());
+      document.querySelector('[data-org2-table-save]').click();
+      return {
+        visibleNames,
+        count: document.querySelector('.org2-table-row-count').innerText
+      };
+      """,
+      arguments: [:],
+      in: nil,
+      contentWorld: .page
+    ) as? [String: Any]
+
+    try await waitForCondition { receivedSnapshot != nil }
+    XCTAssertEqual(state?["visibleNames"] as? [String], ["Zebra", "Ant"])
+    XCTAssertEqual(state?["count"] as? String, "2 of 3 rows")
+    XCTAssertEqual(receivedSnapshot?.visibleBodyRowIndices, [0, 1])
+    XCTAssertEqual(receivedSnapshot?.totalBodyRowCount, 3)
+    XCTAssertTrue(receivedSnapshot?.filterActive == true)
+    XCTAssertTrue(receivedSnapshot?.sortActive == true)
+    XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), sourceTextBeforeInteraction)
+  }
+
   func testTypingHeadingReturnAndParagraphUsesFreshEditorState() async throws {
     try XCTSkipIf(true, "Rendered inline text editing is retired from normal UI entry points; source editing is primary.")
     let harness = try await makeHarness(initialText: "")

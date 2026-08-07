@@ -3,6 +3,7 @@ import path from "node:path";
 import type { HeadlineNode, InlineNode, Node } from "./ast.js";
 import {
   AGENT_RUN_APPROVAL_BLOCK_REASON,
+  agentRunBlockReasonLooksLikeApprovalBoundary,
   agentRunSourceConsistency,
   agentRunApprovalDecisionKeys,
   agentRunDirectory,
@@ -448,6 +449,19 @@ function auditRuns(
         file: rawById.get(run.id)?.file,
       });
     }
+    if (run.status === "blocked"
+      && pending.length > 0
+      && agentRunBlockReasonLooksLikeApprovalBoundary(run.blockedReason)) {
+      finding(findings, {
+        rule: "approval-boundary-misclassified-as-separate-block",
+        severity: "error",
+        category: "approval",
+        message: "Run has a pending approval but its separate blocker only restates that approval boundary.",
+        suggestion: "Return the run to waiting-approval and decide its canonical approval; use a separate block only for an independent clarification or operational condition.",
+        runId: run.id,
+        file: rawById.get(run.id)?.file,
+      });
+    }
     if (run.workflowId && !workflowIds.has(run.workflowId)) {
       finding(findings, {
         rule: "run-workflow-missing",
@@ -701,7 +715,7 @@ function auditHeadlineProjections(
         const canonical = approval || pendingApprovals[0]!;
         finding(findings, {
           rule: "duplicate-headline-run-approval-projection",
-          severity: "warning",
+          severity: "error",
           category: "projection",
           message: "Pending headline duplicates a canonical pending run approval.",
           suggestion: "Keep the run approval as the writable decision and render the heading only as a derived projection.",

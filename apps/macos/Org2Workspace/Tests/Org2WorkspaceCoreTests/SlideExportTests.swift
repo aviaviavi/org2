@@ -250,6 +250,94 @@ final class SlideExportTests: XCTestCase {
     XCTAssertFalse(store.canPreviewSlides)
   }
 
+  @MainActor
+  func testWorkspaceOffersCurrentDocumentPDFExportOnlyForOrgFiles() {
+    let store = WorkspaceStore(
+      cli: Org2CLI(repoRoot: FileManager.default.temporaryDirectory)
+    )
+
+    store.selectedEntrySource = EntrySource(
+      file: "/tmp/notes.org2",
+      startLine: 8,
+      endLineExclusive: 12,
+      text: "* Selected entry\n",
+      isSubtree: true
+    )
+    XCTAssertTrue(store.canExportCurrentDocumentPDF)
+
+    store.selectedEntrySource = EntrySource(
+      file: "/tmp/notes.md",
+      startLine: 1,
+      endLineExclusive: 2,
+      text: "# Notes\n",
+      isSubtree: false
+    )
+    XCTAssertFalse(store.canExportCurrentDocumentPDF)
+  }
+
+  @MainActor
+  func testCurrentDocumentPDFExportRendersTheEntireFile() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-document-pdf-export-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let source = root.appendingPathComponent("notes.org2")
+    let destination = root.appendingPathComponent("notes.pdf")
+    try """
+    #+TITLE: Full document
+    * First section
+    Content outside the selected entry.
+    * Selected entry
+    Export this too.
+    """.write(to: source, atomically: true, encoding: .utf8)
+
+    let store = WorkspaceStore(
+      cli: Org2CLI(repoRoot: try Org2CLI.defaultRepoRoot())
+    )
+    store.selectedEntrySource = EntrySource(
+      file: source.path,
+      startLine: 4,
+      endLineExclusive: 6,
+      text: "* Selected entry\nExport this too.\n",
+      isSubtree: true
+    )
+    var renderedHTML = ""
+    var renderedBaseURL: URL?
+    store.documentPDFRendererForTesting = { html, baseURL in
+      renderedHTML = html
+      renderedBaseURL = baseURL
+      return Data("%PDF-1.4\n% test\n".utf8)
+    }
+
+    try await store.exportCurrentDocumentPDF(sourceFile: source, destination: destination)
+
+    XCTAssertTrue(renderedHTML.contains("Full document"))
+    XCTAssertTrue(renderedHTML.contains("First section"))
+    XCTAssertTrue(renderedHTML.contains("Selected entry"))
+    XCTAssertEqual(renderedBaseURL, root)
+    XCTAssertTrue(try Data(contentsOf: destination).starts(with: Data("%PDF".utf8)))
+  }
+
+  @MainActor
+  func testSuccessfulDocumentPDFExportOpensTheFile() {
+    let store = WorkspaceStore(
+      cli: Org2CLI(repoRoot: FileManager.default.temporaryDirectory)
+    )
+    let destination = URL(fileURLWithPath: "/tmp/notes.pdf")
+    var openedURL: URL?
+    store.documentPDFExportFileOpenerForTesting = { url in
+      openedURL = url
+      return true
+    }
+
+    store.finishSuccessfulDocumentPDFExport(destination: destination)
+
+    XCTAssertEqual(openedURL, destination)
+    XCTAssertEqual(store.statusText, "Exported and opened notes.pdf")
+    XCTAssertNil(store.exportNotice)
+    XCTAssertNil(store.errorText)
+  }
+
   func testOrg2CLIRendersPresentationPDFFromStandardInput() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-slide-preview-cli-\(UUID().uuidString)", isDirectory: true)
@@ -399,7 +487,7 @@ final class SlideExportTests: XCTestCase {
 
     XCTAssertEqual(openedURL, destination)
     XCTAssertEqual(store.statusText, "Exported and opened talk.pdf")
-    XCTAssertNil(store.slideExportNotice)
+    XCTAssertNil(store.exportNotice)
     XCTAssertNil(store.errorText)
   }
 
@@ -419,7 +507,7 @@ final class SlideExportTests: XCTestCase {
 
     XCTAssertFalse(didAttemptOpen)
     XCTAssertEqual(store.statusText, "Exported slides to talk.tex")
-    XCTAssertEqual(store.slideExportNotice?.message, destination.path)
+    XCTAssertEqual(store.exportNotice?.message, destination.path)
   }
 
   @MainActor
@@ -433,8 +521,8 @@ final class SlideExportTests: XCTestCase {
     store.finishSuccessfulSlideExport(format: .pdf, destination: destination)
 
     XCTAssertTrue(store.statusText.contains("but couldn’t open the PDF"))
-    XCTAssertEqual(store.slideExportNotice?.title, "Slides Exported")
-    XCTAssertTrue(store.slideExportNotice?.message.contains("was saved") == true)
+    XCTAssertEqual(store.exportNotice?.title, "Slides Exported")
+    XCTAssertTrue(store.exportNotice?.message.contains("was saved") == true)
     XCTAssertNil(store.errorText)
   }
 

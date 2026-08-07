@@ -120,6 +120,13 @@ struct Org2WorkspaceApp: App {
 
         Divider()
 
+        Button("Export Current Document as PDF...") {
+          Task { await store.exportCurrentDocumentPDF() }
+        }
+        .disabled(!store.canExportCurrentDocumentPDF)
+
+        Divider()
+
         Button("Export Slides as PDF...") {
           Task { await store.exportSlides(format: .pdf) }
         }

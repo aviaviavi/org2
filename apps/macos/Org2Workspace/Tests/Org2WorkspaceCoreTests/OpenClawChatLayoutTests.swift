@@ -179,6 +179,35 @@ final class OpenClawChatLayoutTests: XCTestCase {
     XCTAssertEqual(OpenClawMessageClipboard.text(for: message), "[Attachment: diagram.png]")
   }
 
+  func testChatAttachmentPreviewClassifiesImagesPDFsAndTextDocuments() {
+    let image = OpenClawChatAttachment(
+      fileName: "diagram.png",
+      mimeType: "image/png",
+      data: Data([0x01])
+    )
+    let pdf = OpenClawChatAttachment(
+      fileName: "report.bin",
+      mimeType: "application/pdf",
+      data: Data("%PDF-1.4".utf8)
+    )
+    let text = OpenClawChatAttachment(
+      fileName: "results.csv",
+      mimeType: "application/octet-stream",
+      data: Data("name,value\nalpha,1".utf8)
+    )
+    let binary = OpenClawChatAttachment(
+      fileName: "archive.zip",
+      mimeType: "application/zip",
+      data: Data([0x50, 0x4b, 0x03, 0x04, 0xff])
+    )
+
+    XCTAssertEqual(OpenClawAttachmentPresentation.previewKind(for: image), .image)
+    XCTAssertEqual(OpenClawAttachmentPresentation.previewKind(for: pdf), .pdf)
+    XCTAssertEqual(OpenClawAttachmentPresentation.previewKind(for: text), .text)
+    XCTAssertEqual(OpenClawAttachmentPresentation.decodedText(for: text), "name,value\nalpha,1")
+    XCTAssertEqual(OpenClawAttachmentPresentation.previewKind(for: binary), .unsupported)
+  }
+
   func testOpenClawStatusCardUsesOneDynamicStatusLine() {
     let activeRun = OpenClawTypingIndicatorView(
       startedAt: Date(),
@@ -351,8 +380,69 @@ final class OpenClawChatLayoutTests: XCTestCase {
     let item = try XCTUnwrap(OpenClawActivityFeed.items(from: activities).first)
     XCTAssertEqual(item.title, "10 shell commands")
     XCTAssertEqual(item.detail, "9 completed · 1 failed")
+    XCTAssertNil(item.latestDetail)
     XCTAssertEqual(item.status, .succeeded)
     XCTAssertFalse(item.detail?.contains("durationMs") == true)
+  }
+
+  func testActivityFeedPreservesTheLatestRunningCommandInsideAGroup() throws {
+    let now = Date(timeIntervalSince1970: 1_000)
+    let activities = [
+      OpenClawRunActivity(
+        id: "tool-1",
+        runID: "run-1",
+        kind: .tool,
+        title: "bash",
+        detail: #"{"cmd":"npm run build"}"#,
+        status: .succeeded,
+        updatedAt: now.addingTimeInterval(-5)
+      ),
+      OpenClawRunActivity(
+        id: "tool-2",
+        runID: "run-1",
+        kind: .tool,
+        title: "bash",
+        detail: #"{"cmd":"swift test --filter OpenClawChatLayoutTests"}"#,
+        status: .running,
+        updatedAt: now
+      )
+    ]
+
+    let item = try XCTUnwrap(OpenClawActivityFeed.items(from: activities).first)
+    XCTAssertEqual(item.title, "2 shell commands")
+    XCTAssertEqual(item.detail, "1 completed · 1 running")
+    XCTAssertEqual(item.latestDetail, "swift test --filter OpenClawChatLayoutTests")
+    XCTAssertEqual(item.status, .running)
+    XCTAssertEqual(item.updatedAt, now)
+  }
+
+  func testActivityFeedPrefersRunningDetailOverANewerCompletedCommand() throws {
+    let now = Date(timeIntervalSince1970: 2_000)
+    let activities = [
+      OpenClawRunActivity(
+        id: "tool-1",
+        runID: "run-1",
+        kind: .tool,
+        title: "bash",
+        detail: #"{"cmd":"long-running verification"}"#,
+        status: .running,
+        updatedAt: now.addingTimeInterval(-10)
+      ),
+      OpenClawRunActivity(
+        id: "tool-2",
+        runID: "run-1",
+        kind: .tool,
+        title: "bash",
+        detail: #"{"cmd":"quick status check"}"#,
+        status: .succeeded,
+        updatedAt: now
+      )
+    ]
+
+    let item = try XCTUnwrap(OpenClawActivityFeed.items(from: activities).first)
+    XCTAssertEqual(item.latestDetail, "long-running verification")
+    XCTAssertEqual(item.status, .running)
+    XCTAssertEqual(item.updatedAt, now.addingTimeInterval(-10))
   }
 
   func testActivityFeedOnlyMarksAGroupFailedWhenFailuresAreTheMajority() throws {

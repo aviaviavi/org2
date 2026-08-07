@@ -430,6 +430,9 @@ public struct AgentRunItem: Identifiable, Decodable, Hashable, Sendable {
     }
     return nil
   }
+  public var hasOpenClawApprovalContinuation: Bool {
+    workflowId != nil || isOpenClawExternalDraft || openClawSessionKey != nil
+  }
   public var completedStepCount: Int { plan.filter { $0.status == "completed" }.count }
   public var skippedStepCount: Int { plan.filter { $0.status == "skipped" }.count }
   public var latestValidations: [AgentRunValidationItem] {
@@ -2414,8 +2417,8 @@ public struct OpenClawFileReference: Identifiable, Hashable, Sendable {
   }
 
   public static func extract(from text: String, limit: Int = 8) -> [OpenClawFileReference] {
-    let pattern = #"(?<![A-Za-z0-9_./~-])((?:file:(?://)?)?(?:~|/|[A-Za-z0-9_.-]+/)[^\s\]\)"'`<>]*\.(?:org2?|md))(?:(?::|#)[Ll]?(\d+)(?:-[Ll]?\d+)?)?"#
-    guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
+    let pattern = #"(?<![A-Za-z0-9_./~-])((?:file:(?://)?)?(?:~|/|[A-Za-z0-9_.-]+/)[^\s\]\)"'`<>]*\.(?:org2?|md|csv|pdf))(?:(?::|#)[Ll]?(\d+)(?:-[Ll]?\d+)?)?"#
+    guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) else { return [] }
     let nsText = text as NSString
     let matches = regex.matches(in: text, range: NSRange(location: 0, length: nsText.length))
     var references: [OpenClawFileReference] = []
@@ -2446,7 +2449,7 @@ public struct OpenClawFileReference: Identifiable, Hashable, Sendable {
     let lowercased = target.lowercased()
     let isFileTarget = lowercased.hasPrefix("file:")
       || lowercased.range(
-        of: #"\.(?:org2?|md)(?:(?::|#)l?\d+(?:-l?\d+)?)?$"#,
+        of: #"\.(?:org2?|md|csv|pdf)(?:(?::|#)l?\d+(?:-l?\d+)?)?$"#,
         options: .regularExpression
       ) != nil
     guard isFileTarget else { return nil }
@@ -2490,7 +2493,8 @@ public struct OpenClawFileReference: Identifiable, Hashable, Sendable {
     let nsPath = path as NSString
     let fullRange = NSRange(location: 0, length: nsPath.length)
     if let regex = try? NSRegularExpression(
-      pattern: #"^(.*\.(?:org2?|md))(?::|#)[Ll]?(\d+)(?:-[Ll]?\d+)?$"#
+      pattern: #"^(.*\.(?:org2?|md|csv|pdf))(?::|#)[Ll]?(\d+)(?:-[Ll]?\d+)?$"#,
+      options: .caseInsensitive
     ),
        let match = regex.firstMatch(in: path, range: fullRange),
        match.numberOfRanges == 3 {

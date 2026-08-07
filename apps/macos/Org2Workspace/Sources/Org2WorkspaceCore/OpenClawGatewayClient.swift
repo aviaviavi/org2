@@ -64,6 +64,7 @@ struct OpenClawActivityFeedItem: Identifiable, Equatable, Sendable {
   let id: String
   let title: String
   let detail: String?
+  let latestDetail: String?
   let status: OpenClawRunActivity.Status
   let count: Int
   let updatedAt: Date
@@ -115,13 +116,20 @@ enum OpenClawActivityFeed {
         if failures > 0 { parts.append("\(failures) failed") }
         detail = parts.joined(separator: " · ")
       }
+      let latestActivity = group
+        .filter { status == .running ? $0.status == .running : true }
+        .max { $0.updatedAt < $1.updatedAt }
+      let latestDetail = group.count > 1
+        ? latestActivity.flatMap { meaningfulDetail($0.detail, status: $0.status) }
+        : nil
       return OpenClawActivityFeedItem(
         id: "\(entry.key):\(index)",
         title: displayTitle(for: first.title, count: group.count),
         detail: detail,
+        latestDetail: latestDetail,
         status: status,
         count: group.count,
-        updatedAt: group.map(\.updatedAt).max() ?? first.updatedAt
+        updatedAt: latestActivity?.updatedAt ?? first.updatedAt
       )
     }
   }
@@ -333,6 +341,31 @@ public struct OpenClawRunContinuation: Sendable {
     self.runID = runID
     self.sessionKey = sessionKey
     self.prompt = prompt
+  }
+}
+
+public struct OpenClawApprovedRunContinuation: Sendable {
+  public let runID: String
+  public let sessionKey: String?
+  public let prompt: String
+  public let kind: String
+  public let continuationKey: String?
+  public let alreadyResumed: Bool
+
+  public init(
+    runID: String,
+    sessionKey: String?,
+    prompt: String,
+    kind: String,
+    continuationKey: String? = nil,
+    alreadyResumed: Bool = false
+  ) {
+    self.runID = runID
+    self.sessionKey = sessionKey
+    self.prompt = prompt
+    self.kind = kind
+    self.continuationKey = continuationKey
+    self.alreadyResumed = alreadyResumed
   }
 }
 
@@ -740,6 +773,31 @@ public actor OpenClawGatewayClient {
       throw OpenClawGatewayError.protocolFailure("org2.draft.resume returned an invalid payload")
     }
     return OpenClawWorkflowContinuation(runID: returnedRunID, sessionKey: sessionKey, prompt: prompt)
+  }
+
+  public func resumeApprovedRun(
+    runID: String,
+    corpusID: String?
+  ) async throws -> OpenClawApprovedRunContinuation {
+    var params: [String: Any] = ["runId": runID]
+    if let corpusID, !corpusID.isEmpty { params["corpusId"] = corpusID }
+    let payload = try await requestPayload(method: "org2.run.resumeApproved", params: params)
+    guard let run = Self.dictionary(payload["run"]),
+          let returnedRunID = Self.string(run["id"]), !returnedRunID.isEmpty,
+          let prompt = Self.string(payload["prompt"]), !prompt.isEmpty,
+          let kind = Self.string(payload["kind"]), !kind.isEmpty
+    else {
+      throw OpenClawGatewayError.protocolFailure("org2.run.resumeApproved returned an invalid payload")
+    }
+    let sessionKey = Self.string(payload["sessionKey"])?.trimmingCharacters(in: .whitespacesAndNewlines)
+    return OpenClawApprovedRunContinuation(
+      runID: returnedRunID,
+      sessionKey: sessionKey?.isEmpty == false ? sessionKey : nil,
+      prompt: prompt,
+      kind: kind,
+      continuationKey: Self.string(payload["continuationKey"]),
+      alreadyResumed: Self.bool(payload["alreadyResumed"]) ?? false
+    )
   }
 
   public func replyAndResumeRun(

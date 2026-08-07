@@ -318,6 +318,22 @@ function optional(raw: unknown): string | undefined {
   return value || undefined;
 }
 
+export function agentRunBlockReasonLooksLikeApprovalBoundary(reasonRaw: unknown): boolean {
+  const reason = String(reasonRaw || "").toLowerCase();
+  return reason === AGENT_RUN_APPROVAL_BLOCK_REASON.toLowerCase()
+    || /\b(?:awaiting|waiting|pending)\b.*\b(?:approval|review|decision)\b/.test(reason)
+    || /\b(?:approval|review)\b.*\b(?:required|needed|pending)\b/.test(reason)
+    || /\buntil\b.*\bapproved\b/.test(reason)
+    || /\bexplicitly\s+approve\b/.test(reason)
+    || /\bapprove\b.*\b(?:or|before)\b.*\b(?:edits?|publish|publication)\b/.test(reason);
+}
+
+function isApprovalBoundaryBlock(run: AgentRun): boolean {
+  if (run.status !== "blocked") return false;
+  if (run.blockedReason === AGENT_RUN_APPROVAL_BLOCK_REASON) return true;
+  return agentRunBlockReasonLooksLikeApprovalBoundary(run.blockedReason);
+}
+
 function safeId(raw: string): string {
   const value = String(raw || "").trim();
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(value)) {
@@ -502,7 +518,7 @@ export function validateAgentRun(value: unknown): AgentRunValidationResult {
   return { valid: issues.length === 0, issues };
 }
 
-export function transitionAgentRun(run: AgentRun, status: AgentRunStatus, options: { actor?: string; reason?: string; summary?: string; highlights?: string[]; nextActions?: string[]; now?: string; completionSource?: "external" } = {}): AgentRun {
+export function transitionAgentRun(run: AgentRun, status: AgentRunStatus, options: { actor?: string; reason?: string; summary?: string; highlights?: string[]; nextActions?: string[]; now?: string; completionSource?: "external"; separateFromApproval?: boolean } = {}): AgentRun {
   const completedExternally = status === "completed" && options.completionSource === "external";
   if (completedExternally && run.status === "completed") {
     throw new Error("a completed run cannot be marked completed outside the workflow");
@@ -516,6 +532,14 @@ export function transitionAgentRun(run: AgentRun, status: AgentRunStatus, option
   const blockedReason = status === "blocked" ? optional(options.reason) : undefined;
   if (status === "blocked" && !blockedReason) {
     throw new Error("blocking a run requires --reason with a specific clarification or next action");
+  }
+  if (status === "blocked" && run.approvals.some((approval) => approval.status === "pending")) {
+    if (agentRunBlockReasonLooksLikeApprovalBoundary(blockedReason)) {
+      throw new Error("blocking reason duplicates the pending approval boundary; leave the run waiting-approval and decide the canonical approval");
+    }
+    if (!options.separateFromApproval) {
+      throw new Error("run has a pending approval; pass --separate-from-approval only for an independent clarification or operational blocker");
+    }
   }
   const completionSummary = status === "completed" ? optional(options.summary) || optional(run.outcome?.summary) : undefined;
   if (status === "completed" && !completedExternally && run.approvals.some((approval) => approval.status === "pending")) {
@@ -740,7 +764,7 @@ export function requestAgentRunApproval(run: AgentRun, input: Omit<AgentRunAppro
   if (!approval.title || !approval.action) throw new Error("approval title and action are required");
   const opensApprovalBoundary = run.status === "running"
     || run.status === "queued"
-    || (run.status === "blocked" && run.blockedReason === AGENT_RUN_APPROVAL_BLOCK_REASON);
+    || isApprovalBoundaryBlock(run);
   const next = opensApprovalBoundary
     ? transitionAgentRun(run, "waiting-approval", { actor, now })
     : { ...run };
@@ -799,7 +823,11 @@ export function decideAgentRunApproval(run: AgentRun, approvalId: string, decisi
       reason: `Approval ${approvalId} was ${decision}.`,
       now,
     });
-  } else if (run.status === "waiting-approval" && approvals.every((approval) => approval.status !== "pending")) {
+  } else if (
+    (run.status === "waiting-approval"
+      || isApprovalBoundaryBlock(run))
+    && approvals.every((approval) => approval.status !== "pending")
+  ) {
     const allApproved = currentAgentRunApprovalBoundary(next).every((approval) => approval.status === "approved");
     next = transitionAgentRun(next, allApproved ? "running" : "blocked", {
       actor: input.actor,

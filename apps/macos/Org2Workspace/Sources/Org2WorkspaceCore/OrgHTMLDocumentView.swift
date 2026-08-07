@@ -124,6 +124,58 @@ struct OrgHTMLDocumentLayout: Equatable {
   let margin: RenderedDocumentMargin
 }
 
+struct OrgHTMLTableViewSnapshot: Equatable, Sendable {
+  let startLine: Int
+  let endLine: Int
+  let visibleBodyRowIndices: [Int]
+  let totalBodyRowCount: Int
+  let filterActive: Bool
+  let sortActive: Bool
+
+  init?(_ messageBody: Any) {
+    guard let body = messageBody as? [String: Any],
+          let startLine = (body["startLine"] as? NSNumber)?.intValue,
+          let endLine = (body["endLine"] as? NSNumber)?.intValue,
+          let indices = body["visibleBodyRowIndices"] as? [NSNumber],
+          let totalBodyRowCount = (body["totalBodyRowCount"] as? NSNumber)?.intValue,
+          startLine > 0,
+          endLine >= startLine,
+          totalBodyRowCount > 0
+    else {
+      return nil
+    }
+    let visibleBodyRowIndices = indices.map(\.intValue)
+    guard !visibleBodyRowIndices.isEmpty,
+          Set(visibleBodyRowIndices).count == visibleBodyRowIndices.count,
+          visibleBodyRowIndices.allSatisfy({ $0 >= 0 && $0 < totalBodyRowCount })
+    else {
+      return nil
+    }
+    self.startLine = startLine
+    self.endLine = endLine
+    self.visibleBodyRowIndices = visibleBodyRowIndices
+    self.totalBodyRowCount = totalBodyRowCount
+    self.filterActive = (body["filterActive"] as? NSNumber)?.boolValue ?? false
+    self.sortActive = (body["sortActive"] as? NSNumber)?.boolValue ?? false
+  }
+
+  init(
+    startLine: Int,
+    endLine: Int,
+    visibleBodyRowIndices: [Int],
+    totalBodyRowCount: Int,
+    filterActive: Bool,
+    sortActive: Bool
+  ) {
+    self.startLine = startLine
+    self.endLine = endLine
+    self.visibleBodyRowIndices = visibleBodyRowIndices
+    self.totalBodyRowCount = totalBodyRowCount
+    self.filterActive = filterActive
+    self.sortActive = sortActive
+  }
+}
+
 struct OrgHTMLDocumentView: NSViewRepresentable {
   @Environment(\.openOrgFileReference) private var openOrgFileReference
   @Environment(\.orgRoamLinkResolver) private var linkResolver
@@ -139,6 +191,8 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
   let layout: OrgHTMLDocumentLayout
   let askAIAboutHeading: @MainActor (Int) -> Void
   let reportStatus: @MainActor (String) -> Void
+  var allowsTablePersistence = false
+  var saveTableView: @MainActor (OrgHTMLTableViewSnapshot) -> Void = { _ in }
   var reportViewportSourceLine: @MainActor (Int?) -> Void = { _ in }
 
   func makeCoordinator() -> Coordinator {
@@ -152,6 +206,10 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
     configuration.userContentController.add(
       context.coordinator,
       name: Coordinator.viewportMessageHandlerName
+    )
+    configuration.userContentController.add(
+      context.coordinator,
+      name: Coordinator.tableViewMessageHandlerName
     )
 
     let webView = WKWebView(frame: .zero, configuration: configuration)
@@ -170,6 +228,9 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
     coordinator.corpusRoot = corpusRoot
     coordinator.askAIAboutHeading = askAIAboutHeading
     coordinator.reportStatus = reportStatus
+    let tablePersistenceChanged = coordinator.allowsTablePersistence != allowsTablePersistence
+    coordinator.allowsTablePersistence = allowsTablePersistence
+    coordinator.saveTableView = saveTableView
     coordinator.reportViewportSourceLine = reportViewportSourceLine
     coordinator.restorationSourceLine = restorationSourceLine
     let layoutChanged = coordinator.layout != layout
@@ -186,6 +247,8 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
       )
     } else if layoutChanged {
       coordinator.applyLayout(to: webView)
+    } else if tablePersistenceChanged {
+      coordinator.applyTablePersistence(to: webView)
     } else if coordinator.searchQuery != searchQuery {
       coordinator.searchQuery = searchQuery
       coordinator.searchOccurrenceIndex = searchOccurrenceIndex
@@ -211,6 +274,9 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
     webView.configuration.userContentController.removeScriptMessageHandler(
       forName: Coordinator.viewportMessageHandlerName
     )
+    webView.configuration.userContentController.removeScriptMessageHandler(
+      forName: Coordinator.tableViewMessageHandlerName
+    )
   }
 
   private static func movesSearchBackward(from previous: Int?, to next: Int?, count: Int) -> Bool {
@@ -223,6 +289,7 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
   @MainActor
   final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
     nonisolated static let viewportMessageHandlerName = "org2ViewportSourceLine"
+    nonisolated static let tableViewMessageHandlerName = "org2TableView"
     var renderID: String?
     var searchQuery: String?
     var searchOccurrenceIndex: Int?
@@ -236,10 +303,13 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
     var corpusRoot: URL?
     var askAIAboutHeading: @MainActor (Int) -> Void = { _ in }
     var reportStatus: @MainActor (String) -> Void = { _ in }
+    var allowsTablePersistence = false
+    var saveTableView: @MainActor (OrgHTMLTableViewSnapshot) -> Void = { _ in }
     var reportViewportSourceLine: @MainActor (Int?) -> Void = { _ in }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation?) {
       applyLayout(to: webView)
+      applyTablePersistence(to: webView)
       installRichCopyHandler(in: webView)
       installViewportSourceLineReporter(in: webView)
       applySearch(to: webView, backwards: false)
@@ -254,9 +324,18 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
       _ userContentController: WKUserContentController,
       didReceive message: WKScriptMessage
     ) {
-      guard message.name == Self.viewportMessageHandlerName else { return }
-      let line = (message.body as? NSNumber)?.intValue
-      reportViewportSourceLine(line.flatMap { $0 > 0 ? $0 : nil })
+      switch message.name {
+      case Self.viewportMessageHandlerName:
+        let line = (message.body as? NSNumber)?.intValue
+        reportViewportSourceLine(line.flatMap { $0 > 0 ? $0 : nil })
+      case Self.tableViewMessageHandlerName:
+        guard allowsTablePersistence,
+              let snapshot = OrgHTMLTableViewSnapshot(message.body)
+        else { return }
+        saveTableView(snapshot)
+      default:
+        return
+      }
     }
 
     func installViewportSourceLineReporter(in webView: WKWebView) {
@@ -324,6 +403,11 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
       document.documentElement.style.setProperty('--org2-page-padding', '\(layout.margin.cssValue)');
       """
       webView.evaluateJavaScript(script)
+    }
+
+    func applyTablePersistence(to webView: WKWebView) {
+      let enabled = allowsTablePersistence ? "true" : "false"
+      webView.evaluateJavaScript("window.__org2SetTablePersistenceEnabled?.(\(enabled));")
     }
 
     func webView(
@@ -493,7 +577,7 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
 }
 
 enum OrgHTMLDocumentLinkRouting {
-  private static let workspaceExtensions = Set(["org", "org2", "md", "csv"])
+  private static let workspaceExtensions = Set(["org", "org2", "md", "csv", "pdf"])
 
   static func opensInWorkspace(_ url: URL) -> Bool {
     workspaceExtensions.contains(url.pathExtension.lowercased())
@@ -526,6 +610,8 @@ enum OrgHTMLRichCopy {
     if (selectedTable) {
       const clone = selectedTable.cloneNode(true);
       clone.removeAttribute('id');
+      clone.querySelectorAll('.org2-column-resizer, .org2-table-sort-button').forEach((element) => element.remove());
+      clone.querySelectorAll('tr[hidden]').forEach((row) => row.remove());
       clone.style.borderCollapse = 'collapse';
       clone.style.borderSpacing = '0';
       clone.style.fontFamily = '-apple-system, BlinkMacSystemFont, sans-serif';
@@ -542,7 +628,7 @@ enum OrgHTMLRichCopy {
         cell.style.fontWeight = '600';
         cell.style.backgroundColor = '#f2f4f7';
       });
-      const text = Array.from(selectedTable.rows).map((row) =>
+      const text = Array.from(clone.rows).map((row) =>
         Array.from(row.cells).map((cell) => cell.innerText.trim()).join('\t')
       ).join('\n');
       return { html: clone.outerHTML, text };

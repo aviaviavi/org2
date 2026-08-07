@@ -1,3 +1,4 @@
+import PDFKit
 import XCTest
 @testable import Org2WorkspaceCore
 
@@ -264,9 +265,42 @@ final class OpenClawSlashCommandTests: XCTestCase {
   @MainActor
   func testPDFExporterProducesPDFData() async throws {
     let data = try await Org2PDFExporter().data(
-      for: "<html><body><h1>Org2 export</h1><p>Plain text stays canonical.</p></body></html>",
+      for: """
+      <html><head></head><body>
+      <details class="org2-properties-drawer" open><summary>Properties</summary><p>PRIVATE_METADATA</p></details>
+      <h1>Org2 export <button class="org2-heading-ai-action">Ask AI</button></h1>
+      <p>Plain text stays canonical.</p>
+      </body></html>
+      """,
       baseURL: nil
     )
     XCTAssertTrue(data.starts(with: Data("%PDF".utf8)))
+    let text = try XCTUnwrap(PDFDocument(data: data)?.string)
+    XCTAssertTrue(text.contains("Plain text stays canonical."))
+    XCTAssertFalse(text.contains("PRIVATE_METADATA"))
+    XCTAssertFalse(text.contains("Ask AI"))
+  }
+
+  func testPDFExporterAddsCleanDocumentStyleAfterAppStyles() throws {
+    let prepared = Org2PDFExporter.preparedHTML(
+      for: "<html><head><style>.org2-drawer { display: block; }</style></head><body>Document</body></html>"
+    )
+
+    XCTAssertTrue(prepared.contains(#"id="org2-pdf-document-style""#))
+    XCTAssertTrue(prepared.contains(".org2-properties-drawer"))
+    XCTAssertTrue(prepared.contains(".org2-heading-ai-action"))
+    XCTAssertTrue(prepared.contains(".org2-table-controls"))
+    XCTAssertTrue(prepared.contains(".org2-table-sort-button"))
+    XCTAssertTrue(prepared.contains("display: none !important"))
+    XCTAssertLessThan(
+      try XCTUnwrap(prepared.range(of: ".org2-drawer { display: block; }")?.lowerBound),
+      try XCTUnwrap(prepared.range(of: #"id="org2-pdf-document-style""#)?.lowerBound)
+    )
+  }
+
+  func testPDFExporterRejectsNonPDFData() {
+    XCTAssertThrowsError(try Org2PDFExporter.validated(Data("not a PDF".utf8))) { error in
+      XCTAssertEqual(error as? Org2PDFExporterError, .invalidPDF)
+    }
   }
 }
