@@ -181,6 +181,7 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
   @Environment(\.orgRoamLinkResolver) private var linkResolver
 
   let html: String
+  var renderIdentity: String? = nil
   let source: EntrySource
   let corpusRoot: URL?
   let searchQuery: String?
@@ -236,7 +237,7 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
     let layoutChanged = coordinator.layout != layout
     coordinator.layout = layout
 
-    let renderID = "\(source.id)|\(html.utf8.count)|\(html.hashValue)"
+    let renderID = renderIdentity ?? "\(source.id)|\(html.utf8.count)|\(html.hashValue)"
     if coordinator.renderID != renderID {
       coordinator.renderID = renderID
       coordinator.searchQuery = searchQuery
@@ -554,6 +555,14 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
         return
       }
 
+      if let externalURL = OrgHTMLDocumentLinkRouting.externalURL(
+        for: target,
+        linkResolver: linkResolver
+      ) {
+        NSWorkspace.shared.open(externalURL)
+        return
+      }
+
       guard let source,
             let fileTarget = OrgHTMLLinkTarget.resolve(
               target,
@@ -578,6 +587,20 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
 
 enum OrgHTMLDocumentLinkRouting {
   private static let workspaceExtensions = Set(["org", "org2", "md", "csv", "pdf"])
+
+  static func externalURL(
+    for rawTarget: String,
+    linkResolver: OrgRoamLinkResolver
+  ) -> URL? {
+    let expandedTarget = linkResolver.expandedLinkTarget(rawTarget)
+    guard let url = URL(string: expandedTarget),
+          let scheme = url.scheme?.lowercased(),
+          Set(["http", "https", "mailto"]).contains(scheme)
+    else {
+      return nil
+    }
+    return url
+  }
 
   static func opensInWorkspace(_ url: URL) -> Bool {
     workspaceExtensions.contains(url.pathExtension.lowercased())

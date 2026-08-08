@@ -23,6 +23,8 @@ const fakeDuckdb = path.join(tmp, "duckdb");
 const out = path.join(tmp, "fetches_by_state.org");
 const jsonOut = path.join(tmp, "fetches_by_state.json");
 const applyNote = path.join(tmp, "apply-report.org2");
+const batchApplyNote = path.join(tmp, "batch-apply-report.org2");
+const batchFailureNote = path.join(tmp, "batch-failure-report.org2");
 
 function regexEscape(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -51,6 +53,33 @@ y: fetches
 \`\`\`
 `, "utf8");
 fs.copyFileSync(note, applyNote);
+
+const batchSource = `* Batch package fetch report
+
+\`\`\`dataset fetches
+type: csv
+path: ./package-fetches.csv
+engine: duckdb
+\`\`\`
+
+\`\`\`sql results=fetches_by_state
+SELECT state, sum(fetches) AS fetches
+FROM fetches
+GROUP BY state
+\`\`\`
+
+\`\`\`sql results=positive_fetches_by_state
+SELECT state, sum(fetches) AS fetches
+FROM fetches
+WHERE fetches > 0
+GROUP BY state
+\`\`\`
+`;
+fs.writeFileSync(batchApplyNote, batchSource, "utf8");
+fs.writeFileSync(batchFailureNote, batchSource.replace(
+  "SELECT state, sum(fetches) AS fetches\nFROM fetches\nWHERE fetches > 0",
+  "SELECT broken_batch FROM fetches",
+), "utf8");
 
 fs.writeFileSync(tableNote, `* Package fetch report
 
@@ -289,6 +318,10 @@ if (input.includes('CREATE OR REPLACE VIEW "big_fetches" AS SELECT * FROM (SELEC
   process.stdout.write(JSON.stringify([{ state: "CA", fetches: 42 }]));
   process.exit(0);
 }
+if (input.includes("SELECT broken_batch FROM fetches")) {
+  console.error("intentional batch failure");
+  process.exit(9);
+}
 if (!input.includes('CREATE OR REPLACE VIEW "fetches" AS SELECT * FROM read_csv_auto(')) {
   console.error("missing csv dataset view");
   process.exit(2);
@@ -430,6 +463,37 @@ cli(["query-data", "--file", applyNote, "--results", "fetches_by_state", "--duck
 appliedText = fs.readFileSync(applyNote, "utf8");
 assert.equal((appliedText.match(/^#\+query-data: result=fetches_by_state/gm) || []).length, 1);
 assert.match(cli(["render-chart", "--file", applyNote]), /^<svg /);
+
+const batchJson = JSON.parse(cli([
+  "query-data", "--file", batchApplyNote, "--all-results", "--apply",
+  "--duckdb", fakeDuckdb, "--format", "json",
+]));
+assert.equal(batchJson.ok, true);
+assert.equal(batchJson.applied, true);
+assert.equal(batchJson.changed, true);
+assert.equal(batchJson.changedResultCount, 2);
+assert.equal(batchJson.resultCount, 2);
+assert.deepEqual(batchJson.results.map((result) => result.resultId), [
+  "fetches_by_state",
+  "positive_fetches_by_state",
+]);
+const batchAppliedText = fs.readFileSync(batchApplyNote, "utf8");
+assert.equal((batchAppliedText.match(/^#\+query-data: result=fetches_by_state\b/gm) || []).length, 1);
+assert.equal((batchAppliedText.match(/^#\+query-data: result=positive_fetches_by_state\b/gm) || []).length, 1);
+assert.ok(batchAppliedText.indexOf("#+query-data: result=fetches_by_state")
+  < batchAppliedText.indexOf("```sql results=positive_fetches_by_state"));
+
+const batchFailureBefore = fs.readFileSync(batchFailureNote, "utf8");
+const failedBatch = spawnSync("node", [
+  "dist/cli.js", "query-data", "--file", batchFailureNote, "--all-results", "--apply",
+  "--duckdb", fakeDuckdb, "--format", "json",
+], { cwd: repo, encoding: "utf8" });
+assert.notEqual(failedBatch.status, 0);
+const failedBatchJson = JSON.parse(failedBatch.stdout);
+assert.equal(failedBatchJson.ok, false);
+assert.equal(failedBatchJson.applied, false);
+assert.equal(failedBatchJson.changed, false);
+assert.equal(fs.readFileSync(batchFailureNote, "utf8"), batchFailureBefore);
 
 const tableJson = JSON.parse(cli(["query-data", "--file", tableNote, "--results", "fetches_total", "--duckdb", fakeDuckdb, "--format", "json", "--include-script"]));
 assert.equal(tableJson.ok, true);

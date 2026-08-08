@@ -1684,6 +1684,39 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testRenamingLowerThreadDoesNotRenamePinnedFirstThread() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-chat-thread-rename-pinned-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json")
+    )
+    store.createOpenClawChatThread()
+    let pinnedThreadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
+    store.renameOpenClawChatThread(pinnedThreadID, title: "Pinned thread")
+    store.toggleOpenClawChatThreadPin(pinnedThreadID)
+    store.renameOpenClawChatThread(pinnedThreadID, title: "Pinned thread renamed first")
+
+    store.createOpenClawChatThread()
+    let lowerThreadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
+    store.renameOpenClawChatThread(lowerThreadID, title: "Lower thread")
+    XCTAssertEqual(store.visibleOpenClawChatThreads.map(\.id), [pinnedThreadID, lowerThreadID])
+
+    store.renameOpenClawChatThread(lowerThreadID, title: "Renamed lower thread")
+
+    XCTAssertEqual(
+      store.openClawChatThreads.first(where: { $0.id == pinnedThreadID })?.title,
+      "Pinned thread renamed first"
+    )
+    XCTAssertEqual(
+      store.openClawChatThreads.first(where: { $0.id == lowerThreadID })?.title,
+      "Renamed lower thread"
+    )
+  }
+
+  @MainActor
   func testNamedOpenClawThreadKeepsTitleWhenPromptStartsWithPreamble() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-chat-thread-title-preamble-\(UUID().uuidString)", isDirectory: true)
@@ -2567,6 +2600,8 @@ final class Org2ModelsTests: XCTestCase {
 
     XCTAssertEqual(restored.openClawMessages.first?.deliveryStatus, .sending)
     XCTAssertEqual(restored.selectedOpenClawChatThread?.pendingTurn?.runID, "durable-run-id")
+    XCTAssertFalse(restored.isAIChatMessageQueued(userMessage.id))
+    XCTAssertTrue(restored.isAIChatMessageQueued(queuedMessage.id))
     await restored.bootstrap()
 
     XCTAssertEqual(restored.openClawMessages.map { "\($0.role.rawValue):\($0.content)" }, [
@@ -4185,7 +4220,7 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
-  func testSelectingSearchResultActivatesAndClearsRenderedHighlight() throws {
+  func testSelectingSearchResultActivatesAndClearsRenderedHighlight() async throws {
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
     let result = try JSONDecoder().decode(SearchResult.self, from: Data("""
     {
@@ -4207,6 +4242,9 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(store.isPageSearchPresented)
     XCTAssertEqual(store.pageSearchQuery, "needle")
     store.pageSearchQuery = "other"
+    try await waitForCondition {
+      store.renderedSearchHighlightQuery == "other"
+    }
     XCTAssertEqual(store.renderedSearchHighlightQuery, "other")
     XCTAssertEqual(store.pageSearchOccurrenceCount, 0)
     XCTAssertNil(store.pageSearchSelectedOccurrenceIndex)
@@ -4280,6 +4318,10 @@ final class Org2ModelsTests: XCTestCase {
 
     XCTAssertTrue(store.focusPageSearch())
     XCTAssertEqual(store.pageSearchQuery, "needle")
+    try await waitForCondition {
+      store.pageSearchOccurrenceCount == 3
+        && store.pageSearchSelectedOccurrenceIndex == 0
+    }
     XCTAssertEqual(store.pageSearchOccurrenceCount, 3)
     XCTAssertEqual(store.pageSearchSelectedOccurrenceIndex, 0)
     XCTAssertEqual(store.pageSearchOccurrenceSummary, "1 of 3")
@@ -4287,6 +4329,10 @@ final class Org2ModelsTests: XCTestCase {
     let firstScrollRequest = try XCTUnwrap(store.detailScrollRequest)
     XCTAssertEqual(firstScrollRequest.target, .block(firstSelectedBlockID))
     var previousScrollRequestID = firstScrollRequest.id
+
+    // Advancing through an established query must use the cached match list rather than
+    // rereading or rescanning the full document.
+    try FileManager.default.removeItem(at: note)
 
     store.selectNextPageSearchOccurrence()
     XCTAssertEqual(store.pageSearchSelectedOccurrenceIndex, 1)
@@ -4323,6 +4369,10 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(scrollRequest.target, .block(secondSelectedBlockID))
 
     store.pageSearchQuery = "missing"
+    try await waitForCondition {
+      store.renderedSearchHighlightQuery == "missing"
+        && store.pageSearchOccurrenceCount == 0
+    }
     XCTAssertEqual(store.pageSearchOccurrenceCount, 0)
     XCTAssertEqual(store.pageSearchOccurrenceSummary, "0 matches")
     XCTAssertNil(store.pageSearchSelectedOccurrenceIndex)
@@ -4366,6 +4416,87 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertFalse(store.isSendingOpenClawMessage)
     XCTAssertEqual(store.openClawQueuedMessageCount, 0)
     XCTAssertEqual(store.openClawStatusText, "OpenClaw replied")
+  }
+
+  @MainActor
+  func testDictationSendStaysBoundToItsOriginatingThread() async throws {
+    let transcriptURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-openclaw-dictation-origin-\(UUID().uuidString).json")
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      openClawTranscriptURL: transcriptURL,
+      openClawSendHandler: { messages, _, _, _ in
+        "reply to \(messages.last?.content ?? "")"
+      }
+    )
+
+    store.createOpenClawChatThread()
+    let originThreadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
+    store.publishOpenClawComposerDraft("Existing origin draft")
+
+    store.createOpenClawChatThread()
+    let otherThreadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
+    store.publishOpenClawComposerDraft("Unrelated other-thread draft")
+
+    let accepted = await store.sendOpenClawDictation("Dictated follow-up", to: originThreadID)
+    XCTAssertTrue(accepted)
+
+    XCTAssertEqual(store.selectedOpenClawChatThreadID, otherThreadID)
+    XCTAssertEqual(store.openClawDraft, "Unrelated other-thread draft")
+    XCTAssertTrue(
+      store.openClawChatThreads.first(where: { $0.id == otherThreadID })?.messages.isEmpty == true
+    )
+    XCTAssertEqual(
+      store.openClawChatThreads.first(where: { $0.id == originThreadID })?.messages.map(\.content),
+      [
+        "Existing origin draft\n\nDictated follow-up",
+        "reply to Existing origin draft\n\nDictated follow-up",
+      ]
+    )
+  }
+
+  @MainActor
+  func testQueuedMessagesCanReturnToComposerOrBeRemovedBeforeSending() async throws {
+    let recorder = OpenClawSuspendedSendRecorder()
+    let transcriptURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-openclaw-edit-queue-\(UUID().uuidString).json")
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      openClawTranscriptURL: transcriptURL,
+      openClawSendHandler: { messages, _, _, _ in
+        try await recorder.send(messages: messages)
+      }
+    )
+
+    store.openClawDraft = "first in flight"
+    let firstSend = Task { await store.sendOpenClawMessage() }
+    await recorder.waitUntilStarted()
+
+    store.openClawDraft = "edit this queued message"
+    await store.sendOpenClawMessage()
+    let editMessage = try XCTUnwrap(store.openClawMessages.last)
+    XCTAssertTrue(store.isAIChatMessageQueued(editMessage.id))
+    XCTAssertFalse(store.isAIChatMessageQueued(try XCTUnwrap(store.openClawMessages.first?.id)))
+
+    store.editQueuedAIChatMessage(editMessage.id)
+
+    XCTAssertEqual(store.openClawDraft, "edit this queued message")
+    XCTAssertFalse(store.openClawMessages.contains(where: { $0.id == editMessage.id }))
+    XCTAssertEqual(store.openClawQueuedMessageCount, 1)
+
+    store.openClawDraft = "delete this queued message"
+    await store.sendOpenClawMessage()
+    let deleteMessage = try XCTUnwrap(store.openClawMessages.last)
+    XCTAssertTrue(store.isAIChatMessageQueued(deleteMessage.id))
+
+    store.deleteQueuedAIChatMessage(deleteMessage.id)
+
+    XCTAssertFalse(store.openClawMessages.contains(where: { $0.id == deleteMessage.id }))
+    XCTAssertEqual(store.openClawQueuedMessageCount, 1)
+
+    await recorder.finish(reply: "first reply")
+    await firstSend.value
+    XCTAssertEqual(store.openClawMessages.map(\.content), ["first in flight", "first reply"])
   }
 
   @MainActor
@@ -5066,6 +5197,21 @@ final class Org2ModelsTests: XCTestCase {
       "APP-21273: Load document export history without waiting for per-export storage checks"
     )
     XCTAssertEqual(renderedLink.links.first?.url, expectedURL)
+  }
+
+  func testOrgHTMLDocumentLinkRoutingExpandsConfiguredExternalLinkAbbreviation() {
+    let resolver = OrgRoamLinkResolver(
+      nodes: [],
+      linkAbbreviations: OrgLinkAbbreviations(linearTeam: "scarf")
+    )
+
+    XCTAssertEqual(
+      OrgHTMLDocumentLinkRouting.externalURL(for: "linear:APP-21287", linkResolver: resolver),
+      URL(string: "https://linear.app/scarf/issue/APP-21287")
+    )
+    XCTAssertNil(
+      OrgHTMLDocumentLinkRouting.externalURL(for: "file:notes/ticket.org2", linkResolver: resolver)
+    )
   }
 
   func testOrgRoamLinkResolverDoesNotGuessAmbiguousWikiLinks() {
@@ -6777,6 +6923,27 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testQuickOpenKeepsCurrentResultsWhileDebouncedSearchRuns() async throws {
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.corpusFiles = [
+      CorpusFile(path: "/tmp/alpha.org2", relativePath: "alpha.org2", modifiedAt: nil, byteCount: nil),
+      CorpusFile(path: "/tmp/beta.org2", relativePath: "beta.org2", modifiedAt: nil, byteCount: nil),
+    ]
+    try await waitForCondition {
+      store.quickOpenItems.count == 2
+    }
+
+    store.quickOpenQuery = "no match"
+
+    XCTAssertEqual(store.quickOpenItems.count, 2)
+    XCTAssertTrue(store.isFilteringQuickOpenFiles)
+    try await waitForCondition {
+      !store.isFilteringQuickOpenFiles
+    }
+    XCTAssertTrue(store.quickOpenItems.isEmpty)
+  }
+
+  @MainActor
   func testQuickOpenSearchesAndOpensAIChatThreadsByTitle() async throws {
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
     store.createOpenClawChatThread()
@@ -6926,6 +7093,43 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(store.selectedLocation?.lineForEditor, 1)
     XCTAssertEqual(store.detailScrollRequest?.target, .sourceLine(80))
     XCTAssertFalse(store.isLoadingEntrySource)
+  }
+
+  @MainActor
+  func testOpenClawReferenceWithinActivePageReloadsTimestampPreservingSyncChange() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-same-page-sync-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let note = root.appendingPathComponent("talk.org2")
+    let original = "#+TITLE: Talk\n\n* Slide Alpha\n"
+    let updated = "#+TITLE: Talk\n\n* Slide Bravo\n"
+    XCTAssertEqual(original.utf8.count, updated.utf8.count)
+    try original.write(to: note, atomically: true, encoding: .utf8)
+    let originalModifiedAt = try XCTUnwrap(
+      note.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+    )
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.openChatFileReference(OpenClawFileReference(path: note.path, line: 1))
+    try await waitForCondition(timeout: 8) {
+      store.selectedEntrySource?.text.contains("Slide Alpha") == true
+        && !store.isLoadingEntrySource
+    }
+
+    try updated.write(to: note, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes(
+      [.modificationDate: originalModifiedAt],
+      ofItemAtPath: note.path
+    )
+    store.openChatFileReference(OpenClawFileReference(path: note.path, line: 3))
+
+    try await waitForCondition(timeout: 8) {
+      store.selectedEntrySource?.text.contains("Slide Bravo") == true
+        && !store.isLoadingEntrySource
+    }
+    XCTAssertEqual(store.detailScrollRequest?.target, .sourceLine(3))
   }
 
   @MainActor
@@ -8130,12 +8334,21 @@ final class Org2ModelsTests: XCTestCase {
 
     store.searchMode = .nodes
     store.searchQuery = "apollo"
+    try await waitForCondition {
+      store.searchNodes.first?.title == "Alpha Project"
+    }
     XCTAssertEqual(store.searchNodes.first?.title, "Alpha Project")
 
     store.searchQuery = "beta"
+    try await waitForCondition {
+      store.searchNodes.isEmpty
+    }
     XCTAssertTrue(store.searchNodes.isEmpty)
 
     store.searchQuery = "alpha"
+    try await waitForCondition {
+      store.searchNodes.first?.title == "Alpha Project"
+    }
     let alpha = try XCTUnwrap(store.searchNodes.first)
     store.selectSearchNode(alpha)
 
@@ -13474,71 +13687,14 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(store.statusText.contains("Linkified note.org2"))
   }
 
-  @MainActor
-  func testRefreshSelectedDataNotebookRunsEveryNamedResultThroughCLI() async throws {
-    let workspace = FileManager.default.temporaryDirectory
-      .appendingPathComponent("org2-workspace-data-refresh-\(UUID().uuidString)", isDirectory: true)
-    let repoRoot = workspace.appendingPathComponent("repo", isDirectory: true)
-    let dist = repoRoot.appendingPathComponent("dist", isDirectory: true)
-    let corpus = workspace.appendingPathComponent("corpus", isDirectory: true)
-    try FileManager.default.createDirectory(at: dist, withIntermediateDirectories: true)
-    try FileManager.default.createDirectory(at: corpus, withIntermediateDirectories: true)
-    let log = workspace.appendingPathComponent("commands.jsonl")
-    let encodedLog = String(data: try JSONEncoder().encode(log.path), encoding: .utf8)!
-    try """
-    const fs = require("fs");
-    const args = process.argv.slice(2);
-    fs.appendFileSync(\(encodedLog), JSON.stringify(args) + "\\n");
-    if (args.includes("--inspect")) {
-      process.stdout.write(JSON.stringify({
-        resultBlocks: [{ resultId: "first" }, { resultId: "second" }]
-      }));
-    } else if (args[0] === "query-data") {
-      process.stdout.write(JSON.stringify({ changed: true }));
-    } else {
-      process.stdout.write(JSON.stringify({}));
-    }
-    """.write(to: dist.appendingPathComponent("cli.js"), atomically: true, encoding: .utf8)
-
-    let notebook = corpus.appendingPathComponent("dashboard.org2")
-    try """
-    #+title: Dashboard
-
-    ```sql results=first
-    SELECT 1
-    ```
-
-    ```sql results=second
-    SELECT 2
-    ```
-    """.write(to: notebook, atomically: true, encoding: .utf8)
-
-    let store = WorkspaceStore(cli: Org2CLI(repoRoot: repoRoot))
-    store.setCorpusRoot(corpus)
-    store.selectedLocation = .openClaw(OpenClawThread(
-      title: "Dashboard",
-      file: notebook.path,
-      line: 1,
-      zone: "test",
-      modifiedAt: nil
-    ))
-
-    XCTAssertTrue(store.selectedFileIsDataNotebook)
-    await store.refreshSelectedDataNotebook()
-
-    let commands = try String(contentsOf: log, encoding: .utf8)
-      .split(separator: "\n")
-      .compactMap { try? JSONDecoder().decode([String].self, from: Data($0.utf8)) }
-      .filter { $0.first == "query-data" }
-    XCTAssertEqual(commands.count, 3)
-    XCTAssertTrue(commands[0].contains("--inspect"))
-    XCTAssertEqual(commands[1], [
-      "query-data", "--file", notebook.path, "--results", "first", "--apply", "--format", "json"
-    ])
-    XCTAssertEqual(commands[2], [
-      "query-data", "--file", notebook.path, "--results", "second", "--apply", "--format", "json"
-    ])
-    XCTAssertEqual(store.statusText, "Refreshed 2 data results")
+  func testRefreshSelectedDataNotebookUsesOneAtomicBatchCommand() {
+    XCTAssertEqual(
+      WorkspaceStore.dataNotebookRefreshArguments(for: "/tmp/dashboard.org2"),
+      [
+        "query-data", "--file", "/tmp/dashboard.org2",
+        "--all-results", "--apply", "--format", "json"
+      ]
+    )
   }
 
   @MainActor

@@ -102,9 +102,14 @@ struct OpenClawContextPresentation: Equatable, Sendable {
 }
 
 struct ChatBubbleView: View {
+  static let managesMessageTextSelection = true
+
   let message: OpenClawChatMessage
   let runtime: AIChatRuntime
   let compact: Bool
+  let isQueued: Bool
+  let editQueuedMessage: () -> Void
+  let deleteQueuedMessage: () -> Void
   @State private var isHovering = false
   @State private var didCopy = false
   @State private var previewedAttachment: OpenClawChatAttachment?
@@ -112,11 +117,17 @@ struct ChatBubbleView: View {
   init(
     message: OpenClawChatMessage,
     runtime: AIChatRuntime = .openClaw,
-    compact: Bool = false
+    compact: Bool = false,
+    isQueued: Bool = false,
+    editQueuedMessage: @escaping () -> Void = {},
+    deleteQueuedMessage: @escaping () -> Void = {}
   ) {
     self.message = message
     self.runtime = runtime
     self.compact = compact
+    self.isQueued = isQueued
+    self.editQueuedMessage = editQueuedMessage
+    self.deleteQueuedMessage = deleteQueuedMessage
   }
 
   var body: some View {
@@ -147,13 +158,21 @@ struct ChatBubbleView: View {
               .padding(.vertical, 2)
               .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
           }
+          if isQueued {
+            Label("Queued", systemImage: "clock")
+              .font(.caption2.weight(.semibold))
+              .foregroundStyle(.secondary)
+          }
         }
         .padding(.trailing, 22)
         if !presentation.contexts.isEmpty {
           OpenClawContextPillsView(contexts: presentation.contexts)
         }
         if !presentation.userText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-          OrgInlineText(presentation.userText, managesTextSelection: false)
+          OrgInlineText(
+            presentation.userText,
+            managesTextSelection: Self.managesMessageTextSelection
+          )
             .lineLimit(nil)
             .frame(maxWidth: compact ? 360 : 640, alignment: .leading)
             .fixedSize(horizontal: false, vertical: true)
@@ -163,6 +182,13 @@ struct ChatBubbleView: View {
             attachments: message.attachments,
             compact: compact,
             onPreview: { previewedAttachment = $0 }
+          )
+        }
+        if isQueued {
+          OpenClawQueuedMessageActions(
+            compact: compact,
+            edit: editQueuedMessage,
+            remove: deleteQueuedMessage
           )
         }
         if message.role == .user, let sendFailure = message.sendFailure {
@@ -287,6 +313,52 @@ struct ChatBubbleView: View {
     case .system:
       return .orange
     }
+  }
+}
+
+private struct OpenClawQueuedMessageActions: View {
+  let compact: Bool
+  let edit: () -> Void
+  let remove: () -> Void
+
+  var body: some View {
+    HStack(spacing: 8) {
+      Text("Waiting behind the current turn")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+      Spacer(minLength: 8)
+      Button {
+        edit()
+      } label: {
+        if compact {
+          Image(systemName: "pencil")
+        } else {
+          Label("Edit", systemImage: "pencil")
+        }
+      }
+      .buttonStyle(WorkspaceActionButtonStyle())
+      .help("Remove this message from the queue and put it back in the composer")
+
+      Button {
+        remove()
+      } label: {
+        if compact {
+          Image(systemName: "xmark")
+        } else {
+          Label("Remove", systemImage: "xmark")
+        }
+      }
+      .buttonStyle(WorkspaceActionButtonStyle())
+      .help("Remove this message before it is sent")
+    }
+    .padding(.horizontal, 8)
+    .padding(.vertical, 7)
+    .frame(maxWidth: compact ? 360 : 640, alignment: .leading)
+    .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+    .overlay(
+      RoundedRectangle(cornerRadius: 6, style: .continuous)
+        .stroke(WorkspaceDesign.hairline)
+    )
   }
 }
 

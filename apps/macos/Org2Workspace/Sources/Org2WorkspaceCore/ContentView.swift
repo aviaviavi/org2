@@ -826,8 +826,7 @@ private struct OpenClawSidebarSurfaceGroup: View {
 private struct OpenClawSidebarThreadList: View {
   @EnvironmentObject private var store: WorkspaceStore
   @State private var showsSettledThreads = false
-  @State private var isRenamePresented = false
-  @State private var renamingThreadID: UUID?
+  @State private var renameRequest: OpenClawThreadRenameRequest?
   @State private var renameDraft = ""
 
   private let autoSettleTimer = Timer.publish(every: 300, on: .main, in: .common).autoconnect()
@@ -851,7 +850,7 @@ private struct OpenClawSidebarThreadList: View {
                 store.makeSurfacePrimary(.openClaw)
                 store.selectOpenClawChatThread(thread.id)
               },
-              rename: beginRenaming,
+              rename: { beginRenaming(threadID: $0) },
               togglePin: { store.toggleOpenClawChatThreadPin(thread.id) },
               settle: { store.settleOpenClawChatThread(thread.id) },
               reopen: { store.reopenOpenClawChatThread(thread.id) }
@@ -910,7 +909,7 @@ private struct OpenClawSidebarThreadList: View {
                   store.makeSurfacePrimary(.openClaw)
                   store.selectOpenClawChatThread(thread.id)
                 },
-                rename: beginRenaming,
+                rename: { beginRenaming(threadID: $0) },
                 togglePin: { store.toggleOpenClawChatThreadPin(thread.id) },
                 settle: { store.settleOpenClawChatThread(thread.id) },
                 reopen: { store.reopenOpenClawChatThread(thread.id) }
@@ -937,24 +936,43 @@ private struct OpenClawSidebarThreadList: View {
       guard nextValue != showsSettledThreads else { return }
       withAnimation(WorkspaceMotion.disclosure) { showsSettledThreads = nextValue }
     }
-    .alert("Rename Thread", isPresented: $isRenamePresented) {
+    .alert(
+      "Rename Thread",
+      isPresented: renameAlertIsPresented,
+      presenting: renameRequest
+    ) { request in
       TextField("Thread name", text: $renameDraft)
       Button("Cancel", role: .cancel) {
-        renamingThreadID = nil
+        renameRequest = nil
       }
       Button("Rename") {
-        guard let renamingThreadID else { return }
-        store.renameOpenClawChatThread(renamingThreadID, title: renameDraft)
-        self.renamingThreadID = nil
+        let threadID = request.threadID
+        let title = renameDraft
+        renameRequest = nil
+        store.renameOpenClawChatThread(threadID, title: title)
       }
     }
   }
 
-  private func beginRenaming(_ thread: OpenClawChatThread) {
-    renamingThreadID = thread.id
-    renameDraft = thread.title
-    isRenamePresented = true
+  private var renameAlertIsPresented: Binding<Bool> {
+    Binding(
+      get: { renameRequest != nil },
+      set: { isPresented in
+        if !isPresented { renameRequest = nil }
+      }
+    )
   }
+
+  private func beginRenaming(threadID: UUID) {
+    guard let thread = store.openClawChatThreads.first(where: { $0.id == threadID }) else { return }
+    renameDraft = thread.title
+    renameRequest = OpenClawThreadRenameRequest(threadID: threadID)
+  }
+}
+
+private struct OpenClawThreadRenameRequest: Identifiable {
+  let threadID: UUID
+  var id: UUID { threadID }
 }
 
 enum OpenClawSettledThreadDisclosure {
@@ -969,7 +987,7 @@ private struct OpenClawSidebarThreadRow: View {
   let isSelected: Bool
   let isSending: Bool
   let select: () -> Void
-  let rename: (OpenClawChatThread) -> Void
+  let rename: (UUID) -> Void
   let togglePin: () -> Void
   let settle: () -> Void
   let reopen: () -> Void
@@ -1063,7 +1081,7 @@ private struct OpenClawSidebarThreadRow: View {
     }
     .contextMenu {
       Button {
-        rename(thread)
+        rename(thread.id)
       } label: {
         Label("Rename Thread", systemImage: "pencil")
       }
@@ -1091,6 +1109,21 @@ private struct OpenClawSidebarThreadRow: View {
         }
       }
     }
+    .overlay {
+      // SwiftUI can reuse the first row's context-menu action when this LazyVStack
+      // is opened with a physical right-click. A native hit target keeps the menu
+      // attached to the NSView that was actually clicked while the SwiftUI menu
+      // remains available to accessibility actions.
+      OpenClawSidebarThreadContextMenuTarget(
+        threadID: thread.id,
+        isPinned: thread.isPinned,
+        isSettled: thread.isSettled,
+        rename: rename,
+        togglePin: togglePin,
+        settle: settle,
+        reopen: reopen
+      )
+    }
   }
 
   private static func relativeDate(_ date: Date) -> String {
@@ -1102,6 +1135,87 @@ private struct OpenClawSidebarThreadRow: View {
     let formatter = DateFormatter()
     formatter.setLocalizedDateFormatFromTemplate("MMM d")
     return formatter.string(from: date)
+  }
+}
+
+private struct OpenClawSidebarThreadContextMenuTarget: NSViewRepresentable {
+  let threadID: UUID
+  let isPinned: Bool
+  let isSettled: Bool
+  let rename: (UUID) -> Void
+  let togglePin: () -> Void
+  let settle: () -> Void
+  let reopen: () -> Void
+
+  func makeNSView(context: Context) -> ContextMenuView {
+    ContextMenuView()
+  }
+
+  func updateNSView(_ view: ContextMenuView, context: Context) {
+    view.threadID = threadID
+    view.isPinned = isPinned
+    view.isSettled = isSettled
+    view.rename = rename
+    view.togglePin = togglePin
+    view.settle = settle
+    view.reopen = reopen
+  }
+
+  final class ContextMenuView: NSView {
+    var threadID: UUID?
+    var isPinned = false
+    var isSettled = false
+    var rename: ((UUID) -> Void)?
+    var togglePin: (() -> Void)?
+    var settle: (() -> Void)?
+    var reopen: (() -> Void)?
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+      guard bounds.contains(point), NSApp.currentEvent?.type == .rightMouseDown else { return nil }
+      return self
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+      let menu = NSMenu()
+      menu.autoenablesItems = false
+      menu.addItem(menuItem(
+        title: "Rename Thread",
+        systemImage: "pencil",
+        action: #selector(renameThread)
+      ))
+      menu.addItem(menuItem(
+        title: isPinned ? "Unpin Thread" : "Pin Thread",
+        systemImage: isPinned ? "pin.slash" : "pin",
+        action: #selector(toggleThreadPin)
+      ))
+      menu.addItem(menuItem(
+        title: isSettled ? "Reopen Thread" : "Settle Thread",
+        systemImage: isSettled ? "arrow.uturn.backward.circle" : "checkmark.circle",
+        action: #selector(toggleThreadSettlement)
+      ))
+      NSMenu.popUpContextMenu(menu, with: event, for: self)
+    }
+
+    private func menuItem(title: String, systemImage: String, action: Selector) -> NSMenuItem {
+      let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+      item.target = self
+      item.image = NSImage(systemSymbolName: systemImage, accessibilityDescription: title)
+      item.isEnabled = true
+      return item
+    }
+
+    @objc func renameThread() {
+      guard let threadID else { return }
+      rename?(threadID)
+    }
+
+    @objc func toggleThreadPin() {
+      togglePin?()
+    }
+
+    @objc func toggleThreadSettlement() {
+      isSettled ? reopen?() : settle?()
+    }
   }
 }
 
@@ -1473,13 +1587,14 @@ private struct QuickOpenView: View {
   @EnvironmentObject private var store: WorkspaceStore
   @Environment(\.dismiss) private var dismiss
   @FocusState private var queryFocused: Bool
+  @State private var query = ""
 
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
       HStack(spacing: 8) {
         Image(systemName: "magnifyingglass")
           .foregroundStyle(.secondary)
-        TextField("Quick open files and AI chats", text: $store.quickOpenQuery)
+        TextField("Quick open files and AI chats", text: $query)
           .textFieldStyle(.plain)
           .font(.title3)
           .focused($queryFocused)
@@ -1536,7 +1651,11 @@ private struct QuickOpenView: View {
     .padding(16)
     .frame(width: 720, height: 460)
     .modifier(QuickOpenKeyboardEventMonitor(handler: handleKeyDown))
+    .onChange(of: query) {
+      store.quickOpenQuery = query
+    }
     .onAppear {
+      query = store.quickOpenQuery
       queryFocused = true
       store.resetQuickOpenSelection()
     }
@@ -5924,7 +6043,14 @@ private struct OpenClawChatView: View {
               ChatBubbleView(
                 message: message,
                 runtime: store.selectedAIChatRuntime,
-                compact: presentation.isCompact
+                compact: presentation.isCompact,
+                isQueued: message.role == .user && store.isAIChatMessageQueued(message.id),
+                editQueuedMessage: {
+                  store.editQueuedAIChatMessage(message.id)
+                },
+                deleteQueuedMessage: {
+                  store.deleteQueuedAIChatMessage(message.id)
+                }
               )
                 .id(message.id)
             }
@@ -5952,8 +6078,8 @@ private struct OpenClawChatView: View {
             .id("openclaw-chat-bottom")
             .accessibilityHidden(true)
         }
-        // Native selection overlays become pathologically expensive for long lazy
-        // transcripts on macOS. Messages retain their explicit copy affordance.
+        // Keep the lazy transcript itself out of one native selection overlay;
+        // each realized message owns its smaller selectable-text region instead.
         .textSelection(.disabled)
         .padding(presentation.isCompact ? 10 : 16)
       }
@@ -6998,6 +7124,7 @@ private struct DetailScrollCommandBridge: NSViewRepresentable {
 private struct DetailHeader: View {
   @EnvironmentObject private var store: WorkspaceStore
   @FocusState private var isPageSearchFocused: Bool
+  @State private var pageSearchDraft = ""
   let location: WorkspaceLocation
   let renderedViewportSourceLine: Int?
 
@@ -7037,13 +7164,21 @@ private struct DetailHeader: View {
         HStack(spacing: 8) {
           Image(systemName: "magnifyingglass")
             .foregroundStyle(WorkspaceDesign.secondaryText)
-          TextField("Find in page", text: $store.pageSearchQuery)
+          TextField("Find in page", text: $pageSearchDraft)
             .textFieldStyle(.roundedBorder)
             .focused($isPageSearchFocused)
+            .task(id: pageSearchDraft) {
+              try? await Task.sleep(nanoseconds: 80_000_000)
+              guard !Task.isCancelled, store.pageSearchQuery != pageSearchDraft else { return }
+              store.pageSearchQuery = pageSearchDraft
+            }
             .onSubmit {
+              if store.pageSearchQuery != pageSearchDraft {
+                store.pageSearchQuery = pageSearchDraft
+              }
               store.selectNextPageSearchOccurrence()
             }
-          Text(store.pageSearchOccurrenceSummary)
+          Text(pageSearchDraft == store.pageSearchQuery ? store.pageSearchOccurrenceSummary : "Searching…")
             .font(.caption.monospacedDigit())
             .foregroundStyle(store.pageSearchOccurrenceCount == 0
               ? WorkspaceDesign.secondaryText
@@ -7056,7 +7191,7 @@ private struct DetailHeader: View {
           }
           .labelStyle(.iconOnly)
           .help("Previous occurrence")
-          .disabled(!store.canNavigatePageSearchOccurrences)
+          .disabled(pageSearchDraft != store.pageSearchQuery || !store.canNavigatePageSearchOccurrences)
           Button {
             store.selectNextPageSearchOccurrence()
           } label: {
@@ -7064,8 +7199,8 @@ private struct DetailHeader: View {
           }
           .labelStyle(.iconOnly)
           .help("Next occurrence")
-          .disabled(!store.canNavigatePageSearchOccurrences)
-          if !store.pageSearchQuery.isEmpty {
+          .disabled(pageSearchDraft != store.pageSearchQuery || !store.canNavigatePageSearchOccurrences)
+          if !pageSearchDraft.isEmpty {
             Button {
               store.clearRenderedSearchHighlight()
             } label: {
@@ -7077,6 +7212,7 @@ private struct DetailHeader: View {
         }
         .frame(maxWidth: 560)
         .onAppear {
+          pageSearchDraft = store.pageSearchQuery
           isPageSearchFocused = true
         }
       }
@@ -7086,6 +7222,7 @@ private struct DetailHeader: View {
     .frame(maxWidth: .infinity, alignment: .leading)
     .background(WorkspaceDesign.surfaceBackground)
     .onChange(of: store.pageSearchFocusToken) {
+      pageSearchDraft = store.pageSearchQuery
       isPageSearchFocused = true
     }
   }
@@ -7772,6 +7909,7 @@ private struct OrgRenderedDocumentPreview: View {
       } else if let html = store.selectedEntryHTML {
         OrgHTMLDocumentView(
           html: html,
+          renderIdentity: store.selectedEntryHTMLRenderIdentity,
           source: source,
           corpusRoot: store.corpusRoot,
           searchQuery: store.renderedSearchHighlightQuery,

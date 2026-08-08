@@ -163,20 +163,26 @@ private struct AIChatLastConfiguration: Codable {
 }
 
 private struct CanonicalDocumentCacheEntry {
-  let modifiedAt: Date?
+  let fileContentDigest: String?
   let document: Org2CanonicalDocument
 }
 
 private struct RenderedBlocksCacheEntry {
   let modifiedAt: Date?
   let sourceID: String
-  let textByteCount: Int
+  let textDigest: String
   let blocks: [OrgEditableBlock]
 }
 
 private struct EntrySourceCacheEntry {
   let modifiedAt: Date?
+  let fileContentDigest: String?
   let source: EntrySource
+}
+
+private struct EntrySourceLoadResult {
+  let source: EntrySource
+  let fileContentDigest: String?
 }
 
 private struct CorpusChangeObservation {
@@ -394,6 +400,17 @@ private struct QuickOpenIndexedFile: Sendable {
   let normalizedRelativePath: String
 }
 
+private struct QuickOpenIndexedChatThread: Sendable {
+  let id: UUID
+  let title: String
+  let normalizedTitle: String
+}
+
+private enum QuickOpenSearchMatch: Sendable {
+  case file(CorpusFile)
+  case chatThread(UUID)
+}
+
 private struct AssignedWorkSearchRow: Sendable {
   let item: AssignedWorkItem
   let searchText: String
@@ -410,6 +427,13 @@ private struct SearchNodeIndexRow: Sendable {
   let node: OrgRoamNodeReference
   let normalizedCandidates: [String]
   let normalizedLabels: [String]
+}
+
+private struct AIChatDictationOrigin: Sendable {
+  let threadID: UUID
+  let threadTitle: String
+  let runtime: AIChatRuntime
+  let workspaceContext: OpenClawWorkspaceContext
 }
 
 private struct OrgIDLookupPayload: Decodable {
@@ -439,16 +463,10 @@ private struct RoamLinkifyPayload: Decodable {
   let applied: Bool
 }
 
-private struct DataQueryInspectPayload: Decodable {
-  struct ResultBlock: Decodable {
-    let resultId: String
-  }
-
-  let resultBlocks: [ResultBlock]
-}
-
 private struct DataQueryApplyPayload: Decodable {
   let changed: Bool
+  let changedResultCount: Int
+  let resultCount: Int
 }
 
 public enum DataNotebookRefreshFailureKind: String, Equatable, Sendable {
@@ -524,6 +542,11 @@ private struct PageSearchRenderedMatch: Equatable, Sendable {
   let blockID: OrgEditableBlock.ID
   let blockIndex: Int
   let occurrenceOffsetInBlock: Int
+}
+
+private struct PageSearchComputation: Sendable {
+  let matches: [PageSearchRenderedMatch]
+  let occurrenceCount: Int
 }
 
 struct SourceBlockExecutionResult: Equatable, Sendable {
@@ -1002,9 +1025,11 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var selectedAssignedWorkItemID: AssignedWorkItem.ID?
   @Published public var isLoadingAssignedWork = false
   @Published public var detailScrollRequest: DetailScrollRequest?
-  @Published public var quickOpenQuery = "" {
+  public var quickOpenQuery = "" {
     didSet {
-      selectedQuickOpenFileID = nil
+      if selectedQuickOpenFileID != nil {
+        selectedQuickOpenFileID = nil
+      }
       scheduleQuickOpenSearch()
     }
   }
@@ -1022,7 +1047,7 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var searchQuery = "" {
     didSet {
       guard oldValue != searchQuery, searchMode == .nodes else { return }
-      rebuildSearchNodeDisplayCache()
+      scheduleSearchNodeDisplayRefresh()
     }
   }
   @Published public var searchFocusToken = 0
@@ -1046,8 +1071,7 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var pageSearchQuery = "" {
     didSet {
       guard isPageSearchPresented else { return }
-      renderedSearchHighlightQuery = Self.normalizedRenderedSearchHighlightQuery(pageSearchQuery)
-      refreshPageSearchMatches(selectFirst: true)
+      schedulePageSearchRefresh(selectFirst: true)
     }
   }
   @Published public var pageSearchFocusToken = 0
@@ -1094,6 +1118,7 @@ public final class WorkspaceStore: ObservableObject {
   @Published public private(set) var openClawChatThreads: [OpenClawChatThread] = [] {
     didSet {
       rebuildOpenClawThreadDisplayCache()
+      rebuildQuickOpenChatIndex()
       if isQuickOpenPresented,
          !quickOpenQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
         scheduleQuickOpenSearch(debounce: false)
@@ -1133,6 +1158,11 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var aiChatCustomInstructions = "" {
     didSet {
       defaults.set(aiChatCustomInstructions, forKey: aiChatCustomInstructionsKey)
+    }
+  }
+  @Published public var codexSandboxAccess: CodexSandboxAccess = .workspaceWrite {
+    didSet {
+      defaults.set(codexSandboxAccess.rawValue, forKey: codexSandboxAccessKey)
     }
   }
   @Published public var aiChatMessageSound: AIChatMessageSound = .glass {
@@ -1227,6 +1257,7 @@ public final class WorkspaceStore: ObservableObject {
       updateInferredDocumentPreviewKind(from: selectedEntryHTML)
     }
   }
+  public var selectedEntryHTMLRenderIdentity: String? { selectedEntryHTMLRenderKey }
   @Published public private(set) var selectedEntryRenderError: String?
   @Published public var renderedDocumentWidth: RenderedDocumentWidth = .comfortable {
     didSet {
@@ -1281,7 +1312,7 @@ public final class WorkspaceStore: ObservableObject {
         selectedRenderedBlocksRenderSignature = Self.renderedBlocksRenderSignature(for: selectedRenderedBlocks)
         preservesSelectedRenderedBlocksMetadataForNextAssignment = false
         if isPageSearchPresented {
-          refreshPageSearchMatches(selectFirst: false)
+          schedulePageSearchRefresh(selectFirst: false, debounce: false)
         }
         return
       }
@@ -1290,7 +1321,7 @@ public final class WorkspaceStore: ObservableObject {
       selectedRenderedBlocksSignature = metadata.structureSignature
       selectedRenderedBlockIndexes = metadata.indexes
       if isPageSearchPresented {
-        refreshPageSearchMatches(selectFirst: false)
+        schedulePageSearchRefresh(selectFirst: false, debounce: false)
       }
     }
   }
@@ -1378,6 +1409,7 @@ public final class WorkspaceStore: ObservableObject {
   private let aiChatLastConfigurationsKey = "Org2Workspace.aiChat.lastConfigurations.v1"
   private let aiChatCorpusAccessScopeKey = "Org2Workspace.aiChat.corpusAccessScope.v1"
   private let aiChatCustomInstructionsKey = "Org2Workspace.aiChat.customInstructions.v1"
+  private let codexSandboxAccessKey = "Org2Workspace.aiChat.codexSandboxAccess.v1"
   private let aiChatMessageSoundKey = "Org2Workspace.aiChat.messageSound.v1"
   private let openClawBriefsStartNewThreadKey = "Org2Workspace.openClawBriefsStartNewThread"
   private let openClawLocalEditsEnabledKey = "Org2Workspace.openClawLocalEditsEnabled.v1"
@@ -1440,6 +1472,7 @@ public final class WorkspaceStore: ObservableObject {
   private var openClawDraftsByThreadID: [UUID: String] = [:]
   private var openClawComposerCachedThreadIDs: Set<UUID> = []
   private var openClawPendingUserMessageIDsByThreadID: [UUID: [UUID]] = [:]
+  @Published private var activeOpenClawUserMessageIDByThreadID: [UUID: UUID] = [:]
   private var drainingOpenClawThreadIDs: Set<UUID> = []
   private var aiChatSendOriginsByThreadID: [UUID: AIChatSendOrigin] = [:]
   private var openClawRequestStartedAtByThreadID: [UUID: Date] = [:]
@@ -1472,6 +1505,7 @@ public final class WorkspaceStore: ObservableObject {
   private var activeMeetingProcessingIDs: Set<String> = []
   private var activeMeetingProcessingItems: [String: MeetingProcessingItem] = [:]
   private var activeOpenClawVoiceNoteURL: URL?
+  private var activeAIChatDictationOrigin: AIChatDictationOrigin?
   private var meetingMeterTask: Task<Void, Never>?
   nonisolated static let meetingMeterPublishIntervalNanoseconds: UInt64 = 250_000_000
   nonisolated static let meetingMeterPublishThreshold = 0.03
@@ -1504,14 +1538,21 @@ public final class WorkspaceStore: ObservableObject {
   private var pendingG = false
   private var orgRoamLinkResolverGeneration = 0
   private var quickOpenIndexedFiles: [QuickOpenIndexedFile] = []
+  private var quickOpenIndexedChatThreads: [QuickOpenIndexedChatThread] = []
+  private var quickOpenChatThreadIndexesByID: [UUID: Int] = [:]
   private var quickOpenSearchTask: Task<Void, Never>?
   private var quickOpenSearchGeneration = 0
+  private var searchNodeSearchTask: Task<Void, Never>?
+  private var searchNodeSearchGeneration = 0
+  private var pageSearchRefreshTask: Task<Void, Never>?
+  private var pageSearchRefreshGeneration = 0
   private var searchIndexTask: Task<Void, Never>?
   private var searchIndexGeneration = 0
   private var entrySourceLoadGeneration = 0
   private var entryHTMLRenderGeneration = 0
   private var activeEntrySourceLoadingGeneration: Int?
   private var entrySourceLoadWatchdogTask: Task<Void, Never>?
+  private var selectedDetailFreshnessTask: Task<Void, Never>?
   private var entryHTMLRenderTask: Task<Void, Never>?
   private var entryHTMLRenderWatchdogTask: Task<Void, Never>?
   var entrySourceLoadTimeoutNanoseconds: UInt64 = 3_000_000_000
@@ -1667,6 +1708,8 @@ public final class WorkspaceStore: ObservableObject {
     aiChatCorpusAccessScope = defaults.string(forKey: aiChatCorpusAccessScopeKey)
       .flatMap(WorkspaceReadScope.init(rawValue:)) ?? .activeCorpus
     aiChatCustomInstructions = defaults.string(forKey: aiChatCustomInstructionsKey) ?? ""
+    codexSandboxAccess = defaults.string(forKey: codexSandboxAccessKey)
+      .flatMap(CodexSandboxAccess.init(rawValue:)) ?? .workspaceWrite
     aiChatMessageSound = defaults.string(forKey: aiChatMessageSoundKey)
       .flatMap(AIChatMessageSound.init(rawValue:)) ?? .glass
     openClawIncomingMessageSoundPlayer = Self.messageSoundPlayer(for: aiChatMessageSound)
@@ -2234,6 +2277,8 @@ public final class WorkspaceStore: ObservableObject {
     isEditingEntry = false
     isLoadingEntrySource = false
     isRenderingEntrySource = false
+    selectedDetailFreshnessTask?.cancel()
+    selectedDetailFreshnessTask = nil
     entrySourceLoadWatchdogTask?.cancel()
     entrySourceLoadWatchdogTask = nil
     entryHTMLRenderWatchdogTask?.cancel()
@@ -2538,6 +2583,11 @@ public final class WorkspaceStore: ObservableObject {
     guard shouldContinueWorkspaceRefresh(generation) else { return }
 
     refreshAudioSettingsStatus(preserveStatusText: true)
+    // Refresh the document the user is looking at before reconciling every
+    // workspace projection. This keeps Cmd-R useful even when a later index,
+    // provider, or agent recovery refresh is slow.
+    await refreshSelectedDetailFromDisk()
+    guard shouldContinueWorkspaceRefresh(generation) else { return }
     await recoverPendingOpenClawTurns()
     guard shouldContinueWorkspaceRefresh(generation) else { return }
     await refreshActiveCorpusIdentity()
@@ -2561,8 +2611,6 @@ public final class WorkspaceStore: ObservableObject {
     await refreshAgentGoals()
     guard shouldContinueWorkspaceRefresh(generation) else { return }
     await refreshAgentProfiles()
-    guard shouldContinueWorkspaceRefresh(generation) else { return }
-    await refreshSelectedDetailFromDisk()
     guard shouldContinueWorkspaceRefresh(generation) else { return }
     refreshWorkspaceHealth()
     refreshOrgCryptManagedRecipientFiles()
@@ -6438,14 +6486,14 @@ public final class WorkspaceStore: ObservableObject {
     guard selectedLocation != nil else { return false }
     isPageSearchPresented = true
     pageSearchQuery = renderedSearchHighlightQuery ?? ""
-    renderedSearchHighlightQuery = Self.normalizedRenderedSearchHighlightQuery(pageSearchQuery)
-    refreshPageSearchMatches(selectFirst: true)
+    schedulePageSearchRefresh(selectFirst: true, debounce: false)
     pageSearchFocusToken += 1
     return true
   }
 
   public var pageSearchOccurrenceSummary: String {
-    guard renderedSearchHighlightQuery?.isEmpty == false else { return "" }
+    guard let query = Self.normalizedRenderedSearchHighlightQuery(pageSearchQuery) else { return "" }
+    guard query == renderedSearchHighlightQuery else { return "Searching…" }
     let total = max(pageSearchOccurrenceCount, pageSearchRenderedMatches.count)
     guard total > 0 else { return "0 matches" }
     if let pageSearchSelectedOccurrenceIndex {
@@ -6455,7 +6503,8 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public var canNavigatePageSearchOccurrences: Bool {
-    pageSearchRenderedMatches.count > 1
+    Self.normalizedRenderedSearchHighlightQuery(pageSearchQuery) == renderedSearchHighlightQuery
+      && pageSearchRenderedMatches.count > 1
   }
 
   public func selectNextPageSearchOccurrence() {
@@ -6467,7 +6516,10 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   private func selectAdjacentPageSearchOccurrence(delta: Int) {
-    refreshPageSearchMatches(selectFirst: false)
+    guard Self.normalizedRenderedSearchHighlightQuery(pageSearchQuery) == renderedSearchHighlightQuery else {
+      schedulePageSearchRefresh(selectFirst: true, debounce: false)
+      return
+    }
     guard !pageSearchRenderedMatches.isEmpty else { return }
     let current = pageSearchSelectedOccurrenceIndex ?? 0
     let count = pageSearchRenderedMatches.count
@@ -6475,35 +6527,72 @@ public final class WorkspaceStore: ObservableObject {
     selectPageSearchOccurrence(at: next)
   }
 
-  private func refreshPageSearchMatches(selectFirst: Bool) {
-    guard let query = renderedSearchHighlightQuery else {
+  private func schedulePageSearchRefresh(selectFirst: Bool, debounce: Bool = true) {
+    pageSearchRefreshGeneration += 1
+    let generation = pageSearchRefreshGeneration
+    pageSearchRefreshTask?.cancel()
+
+    guard let query = Self.normalizedRenderedSearchHighlightQuery(pageSearchQuery) else {
+      renderedSearchHighlightQuery = nil
       resetPageSearchMatches()
+      pageSearchRefreshTask = nil
       return
     }
 
-    let matches = Self.renderedPageSearchMatches(in: selectedRenderedBlocks, query: query)
-    pageSearchRenderedMatches = matches
-    pageSearchOccurrenceCount = Self.countSearchOccurrences(
-      in: pageSearchFullFileText() ?? selectedEntrySource?.text ?? "",
-      query: query
-    )
+    let blocks = selectedRenderedBlocks
+    let fallbackText = selectedEntrySource?.text ?? ""
+    let liveText = isLiveFileEditorSelected ? editableEntryText : nil
+    let filePath = isLiveFileEditorSelected ? nil : selectedEntrySource?.file
+    pageSearchRefreshTask = Task { [blocks, fallbackText, filePath, generation, liveText, query] in
+      if debounce {
+        try? await Task.sleep(nanoseconds: 80_000_000)
+      }
+      guard !Task.isCancelled else { return }
 
-    guard !matches.isEmpty else {
-      pageSearchSelectedOccurrenceIndex = nil
-      return
-    }
+      let result = await Task.detached(priority: .userInitiated) {
+        let text: String
+        if let liveText {
+          text = liveText
+        } else if let filePath,
+                  let fileText = try? String(contentsOf: URL(fileURLWithPath: filePath), encoding: .utf8) {
+          text = fileText
+        } else {
+          text = fallbackText
+        }
+        return PageSearchComputation(
+          matches: Self.renderedPageSearchMatches(in: blocks, query: query),
+          occurrenceCount: Self.countSearchOccurrences(in: text, query: query)
+        )
+      }.value
+      guard !Task.isCancelled else { return }
 
-    let selectedIndex = pageSearchSelectedOccurrenceIndex
-    let nextIndex: Int
-    if selectFirst || selectedIndex == nil {
-      nextIndex = 0
-    } else {
-      nextIndex = min(selectedIndex ?? 0, matches.count - 1)
+      await MainActor.run { [weak self] in
+        guard let self,
+              self.pageSearchRefreshGeneration == generation,
+              Self.normalizedRenderedSearchHighlightQuery(self.pageSearchQuery) == query,
+              self.isPageSearchPresented
+        else { return }
+        self.renderedSearchHighlightQuery = query
+        self.pageSearchRenderedMatches = result.matches
+        self.pageSearchOccurrenceCount = result.occurrenceCount
+        self.pageSearchRefreshTask = nil
+
+        guard !result.matches.isEmpty else {
+          self.pageSearchSelectedOccurrenceIndex = nil
+          return
+        }
+        let nextIndex = selectFirst
+          ? 0
+          : min(self.pageSearchSelectedOccurrenceIndex ?? 0, result.matches.count - 1)
+        self.selectPageSearchOccurrence(at: nextIndex)
+      }
     }
-    selectPageSearchOccurrence(at: nextIndex)
   }
 
   private func resetPageSearchMatches() {
+    pageSearchRefreshGeneration += 1
+    pageSearchRefreshTask?.cancel()
+    pageSearchRefreshTask = nil
     pageSearchRenderedMatches = []
     pageSearchOccurrenceCount = 0
     pageSearchSelectedOccurrenceIndex = nil
@@ -6515,14 +6604,6 @@ public final class WorkspaceStore: ObservableObject {
     pageSearchSelectedOccurrenceIndex = index
     selectedBlockID = match.blockID
     requestDetailScroll(toBlock: match.blockID)
-  }
-
-  private func pageSearchFullFileText() -> String? {
-    if isLiveFileEditorSelected {
-      return editableEntryText
-    }
-    guard let file = selectedEntrySource?.file else { return nil }
-    return try? String(contentsOf: URL(fileURLWithPath: file), encoding: .utf8)
   }
 
   public func navigateBack() {
@@ -6569,6 +6650,7 @@ public final class WorkspaceStore: ObservableObject {
     if canReuseActiveDetail(for: location, mode: nextMode) {
       applyDetailSelectionMetadata(for: location)
       selectedLocation = location
+      scheduleSelectedDetailFreshnessCheck(for: location, mode: nextMode)
       return
     }
 
@@ -6747,6 +6829,8 @@ public final class WorkspaceStore: ObservableObject {
     isRenderingEntrySource = false
     entrySourceLoadWatchdogTask?.cancel()
     entrySourceLoadWatchdogTask = nil
+    selectedDetailFreshnessTask?.cancel()
+    selectedDetailFreshnessTask = nil
     activeEntrySourceLoadingGeneration = nil
     isLoadingEntrySource = false
     entrySourceLoadGeneration += 1
@@ -6782,6 +6866,34 @@ public final class WorkspaceStore: ObservableObject {
       return linkedPDFPreviewData != nil || isLoadingLinkedPDFPreview
     }
     return selectedEntrySource != nil || isRenderingEntrySource
+  }
+
+  private func scheduleSelectedDetailFreshnessCheck(
+    for location: WorkspaceLocation,
+    mode: EntrySourceMode
+  ) {
+    guard !Self.isPDFFile(location.file),
+          editingBlockID == nil,
+          !isEditingEntry,
+          (!isLiveFileEditorSelected || !liveFileEditorHasUnsavedChanges)
+    else { return }
+
+    selectedDetailFreshnessTask?.cancel()
+    selectedDetailFreshnessTask = Task { @MainActor [weak self] in
+      guard let self else { return }
+      let isCurrent = await self.cachedEntrySourceMatchesCurrentFileContents(
+        for: location,
+        mode: mode
+      )
+      guard !Task.isCancelled,
+            self.selectedLocationMatches(location),
+            self.selectedEntrySourceMode == mode
+      else { return }
+      self.selectedDetailFreshnessTask = nil
+      guard !isCurrent else { return }
+      self.invalidateCanonicalDocumentCache(for: location.file)
+      await self.loadEntrySource(for: location)
+    }
   }
 
   private func applyDetailSelectionMetadata(for location: WorkspaceLocation) {
@@ -6932,23 +7044,40 @@ public final class WorkspaceStore: ObservableObject {
     do {
       let mode = selectedEntrySourceMode
       let testLoader = entrySourceLoaderForTesting
-      let source = try await Task.detached(priority: .userInitiated) {
+      let loaded = try await Task.detached(priority: .userInitiated) {
+        let source: EntrySource
         if let testLoader {
-          return try await testLoader(location.file, location.lineForEditor, mode)
+          source = try await testLoader(location.file, location.lineForEditor, mode)
+        } else {
+          switch mode {
+          case .entry:
+            source = try Self.entrySource(file: location.file, line: location.lineForEditor)
+          case .page:
+            source = try Self.pageSource(file: location.file)
+          }
         }
-        switch mode {
-        case .entry:
-          return try Self.entrySource(file: location.file, line: location.lineForEditor)
-        case .page:
-          return try Self.pageSource(file: location.file)
-        }
+        return EntrySourceLoadResult(
+          source: source,
+          fileContentDigest: Self.fileContentDigest(
+            for: URL(fileURLWithPath: source.file).standardizedFileURL
+          )
+        )
       }.value
+      let source = loaded.source
       guard generation == entrySourceLoadGeneration,
             selectedLocationMatches(location)
       else {
         return
       }
-      cacheEntrySource(source, for: location, mode: mode, modifiedAt: Self.modificationDate(for: URL(fileURLWithPath: source.file).standardizedFileURL))
+      cacheEntrySource(
+        source,
+        for: location,
+        mode: mode,
+        modifiedAt: Self.modificationDate(
+          for: URL(fileURLWithPath: source.file).standardizedFileURL
+        ),
+        fileContentDigest: loaded.fileContentDigest
+      )
       guard !shouldDeferEntrySourceApplicationDuringActiveEdit(for: location) else {
         return
       }
@@ -7111,6 +7240,16 @@ public final class WorkspaceStore: ObservableObject {
       && !isRefreshingDataNotebook
   }
 
+  nonisolated static func dataNotebookRefreshArguments(for file: String) -> [String] {
+    [
+      "query-data",
+      "--file", file,
+      "--all-results",
+      "--apply",
+      "--format", "json"
+    ]
+  }
+
   public func refreshSelectedDataNotebook() async {
     guard canRefreshSelectedDataNotebook,
           let file = selectedEntrySource?.file ?? selectedLocation?.file
@@ -7127,29 +7266,10 @@ public final class WorkspaceStore: ObservableObject {
 
     do {
       let environment = dataSourceEnvironment()
-      let inspect: DataQueryInspectPayload = try await cli.runJSON([
-        "query-data",
-        "--file", file,
-        "--inspect",
-        "--format", "json"
-      ], environment: environment)
-      guard !inspect.resultBlocks.isEmpty else {
-        statusText = "No named data results found"
-        return
-      }
-
-      var changedCount = 0
-      for (index, block) in inspect.resultBlocks.enumerated() {
-        statusText = "Refreshing data \(index + 1) of \(inspect.resultBlocks.count)…"
-        let result: DataQueryApplyPayload = try await cli.runJSON([
-          "query-data",
-          "--file", file,
-          "--results", block.resultId,
-          "--apply",
-          "--format", "json"
-        ], environment: environment)
-        if result.changed { changedCount += 1 }
-      }
+      let result: DataQueryApplyPayload = try await cli.runJSON(
+        Self.dataNotebookRefreshArguments(for: file),
+        environment: environment
+      )
 
       invalidateCanonicalDocumentCache(for: file)
       if let selectedLocation {
@@ -7157,9 +7277,9 @@ public final class WorkspaceStore: ObservableObject {
       }
       await refreshCorpusFiles()
       dataNotebookRefreshFailure = nil
-      statusText = changedCount == 0
+      statusText = result.changedResultCount == 0
         ? "Data is already current"
-        : "Refreshed \(changedCount) data result\(changedCount == 1 ? "" : "s")"
+        : "Refreshed \(result.changedResultCount) of \(result.resultCount) data results"
     } catch {
       let message = error.localizedDescription
       let failure = Self.dataNotebookRefreshFailure(for: message)
@@ -10869,6 +10989,19 @@ public final class WorkspaceStore: ObservableObject {
     quickOpenIndexedFiles = Self.indexQuickOpenFiles(corpusFiles)
   }
 
+  private func rebuildQuickOpenChatIndex() {
+    quickOpenIndexedChatThreads = openClawChatThreads.map { thread in
+      QuickOpenIndexedChatThread(
+        id: thread.id,
+        title: thread.title,
+        normalizedTitle: Self.normalizedQuickOpenCandidate(thread.title)
+      )
+    }
+    quickOpenChatThreadIndexesByID = Dictionary(
+      uniqueKeysWithValues: openClawChatThreads.enumerated().map { ($0.element.id, $0.offset) }
+    )
+  }
+
   private func rebuildCorpusFileDisplayCache() {
     filteredCorpusFiles = Self.filterIndexedQuickOpenFiles(
       quickOpenIndexedFiles,
@@ -10894,11 +11027,11 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     let indexedFiles = quickOpenIndexedFiles
-    let chatThreads = openClawChatThreads
-    isFilteringQuickOpenFiles = true
-    quickOpenFiles = []
-    quickOpenItems = []
-    quickOpenSearchTask = Task { [indexedFiles, chatThreads, query, generation, debounce] in
+    let indexedChatThreads = quickOpenIndexedChatThreads
+    if !isFilteringQuickOpenFiles {
+      isFilteringQuickOpenFiles = true
+    }
+    quickOpenSearchTask = Task { [indexedFiles, indexedChatThreads, query, generation, debounce] in
       if debounce {
         try? await Task.sleep(nanoseconds: 80_000_000)
       }
@@ -10907,7 +11040,7 @@ public final class WorkspaceStore: ObservableObject {
       let matches = await Task.detached(priority: .userInitiated) {
         Self.filterQuickOpenItems(
           files: indexedFiles,
-          chatThreads: chatThreads,
+          chatThreads: indexedChatThreads,
           query: query,
           limit: 80
         )
@@ -10916,8 +11049,20 @@ public final class WorkspaceStore: ObservableObject {
 
       await MainActor.run { [weak self] in
         guard let self, self.quickOpenSearchGeneration == generation else { return }
-        self.quickOpenItems = matches
-        self.quickOpenFiles = matches.compactMap { item in
+        let items = matches.compactMap { match -> WorkspaceQuickOpenItem? in
+          switch match {
+          case .file(let file):
+            return .file(file)
+          case .chatThread(let id):
+            guard let index = self.quickOpenChatThreadIndexesByID[id],
+                  self.openClawChatThreads.indices.contains(index),
+                  self.openClawChatThreads[index].id == id
+            else { return nil }
+            return .chatThread(self.openClawChatThreads[index])
+          }
+        }
+        self.quickOpenItems = items
+        self.quickOpenFiles = items.compactMap { item in
           guard case .file(let file) = item else { return nil }
           return file
         }
@@ -10970,18 +11115,18 @@ public final class WorkspaceStore: ObservableObject {
 
   nonisolated private static func filterQuickOpenItems(
     files: [QuickOpenIndexedFile],
-    chatThreads: [OpenClawChatThread],
+    chatThreads: [QuickOpenIndexedChatThread],
     query rawQuery: String,
     limit: Int
-  ) -> [WorkspaceQuickOpenItem] {
+  ) -> [QuickOpenSearchMatch] {
     let normalizedQuery = normalizedQuickOpenQuery(
       rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
     )
     guard !normalizedQuery.isEmpty else {
-      return Array(files.prefix(limit).map { WorkspaceQuickOpenItem.file($0.file) })
+      return Array(files.prefix(limit).map { QuickOpenSearchMatch.file($0.file) })
     }
 
-    let fileMatches = files.compactMap { indexedFile -> (WorkspaceQuickOpenItem, Int, String)? in
+    let fileMatches = files.compactMap { indexedFile -> (QuickOpenSearchMatch, Int, String)? in
       guard let score = fuzzyScore(
         normalizedQuery: normalizedQuery,
         normalizedCandidate: indexedFile.normalizedRelativePath
@@ -10990,14 +11135,14 @@ public final class WorkspaceStore: ObservableObject {
       }
       return (.file(indexedFile.file), score, indexedFile.file.relativePath)
     }
-    let chatMatches = chatThreads.compactMap { thread -> (WorkspaceQuickOpenItem, Int, String)? in
+    let chatMatches = chatThreads.compactMap { thread -> (QuickOpenSearchMatch, Int, String)? in
       guard let score = fuzzyScore(
         normalizedQuery: normalizedQuery,
-        normalizedCandidate: normalizedQuickOpenCandidate(thread.title)
+        normalizedCandidate: thread.normalizedTitle
       ) else {
         return nil
       }
-      return (.chatThread(thread), score, thread.title)
+      return (.chatThread(thread.id), score, thread.title)
     }
 
     return (fileMatches + chatMatches)
@@ -11029,15 +11174,52 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   private func rebuildSearchNodeDisplayCache(limit: Int = 100) {
-    let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !query.isEmpty else {
-      searchNodes = Array(searchNodeIndexRows.map(\.node).sorted(by: compareSearchNodes).prefix(limit))
-      return
-    }
+    searchNodeSearchGeneration += 1
+    searchNodeSearchTask?.cancel()
+    searchNodes = Self.filteredSearchNodes(
+      searchNodeIndexRows,
+      query: searchQuery,
+      limit: limit
+    )
+  }
 
+  private func scheduleSearchNodeDisplayRefresh(limit: Int = 100) {
+    searchNodeSearchGeneration += 1
+    let generation = searchNodeSearchGeneration
+    let rows = searchNodeIndexRows
+    let query = searchQuery
+    searchNodeSearchTask?.cancel()
+    searchNodeSearchTask = Task { [rows, query, generation, limit] in
+      try? await Task.sleep(nanoseconds: 70_000_000)
+      guard !Task.isCancelled else { return }
+      let matches = await Task.detached(priority: .userInitiated) {
+        Self.filteredSearchNodes(rows, query: query, limit: limit)
+      }.value
+      guard !Task.isCancelled else { return }
+      await MainActor.run { [weak self] in
+        guard let self,
+              self.searchNodeSearchGeneration == generation,
+              self.searchQuery == query,
+              self.searchMode == .nodes
+        else { return }
+        self.searchNodes = matches
+        self.searchNodeSearchTask = nil
+      }
+    }
+  }
+
+  nonisolated private static func filteredSearchNodes(
+    _ rows: [SearchNodeIndexRow],
+    query rawQuery: String,
+    limit: Int
+  ) -> [OrgRoamNodeReference] {
+    let query = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !query.isEmpty else {
+      return Array(rows.map(\.node).sorted(by: compareSearchNodes).prefix(limit))
+    }
     let normalizedQuery = Self.normalizedQuickOpenQuery(query)
     let normalizedLabelQuery = Self.normalizedQuickOpenCandidate(query)
-    searchNodes = searchNodeIndexRows
+    return rows
       .compactMap { row -> (OrgRoamNodeReference, Int)? in
         let bestScore = row.normalizedCandidates.compactMap {
           Self.fuzzyScore(normalizedQuery: normalizedQuery, normalizedCandidate: $0)
@@ -11054,10 +11236,13 @@ public final class WorkspaceStore: ObservableObject {
       .map(\.0)
   }
 
-  private func compareSearchNodes(_ lhs: OrgRoamNodeReference, _ rhs: OrgRoamNodeReference) -> Bool {
+  nonisolated private static func compareSearchNodes(
+    _ lhs: OrgRoamNodeReference,
+    _ rhs: OrgRoamNodeReference
+  ) -> Bool {
     let titleOrder = lhs.title.localizedCaseInsensitiveCompare(rhs.title)
     if titleOrder != .orderedSame { return titleOrder == .orderedAscending }
-    let pathOrder = relativePath(lhs.file).localizedStandardCompare(relativePath(rhs.file))
+    let pathOrder = lhs.file.localizedStandardCompare(rhs.file)
     if pathOrder != .orderedSame { return pathOrder == .orderedAscending }
     return lhs.line < rhs.line
   }
@@ -12021,16 +12206,35 @@ public final class WorkspaceStore: ObservableObject {
       return
     }
 
+    ensureOpenClawChatThread()
+    guard let threadID = selectedOpenClawChatThreadID,
+          let thread = openClawChatThreads.first(where: { $0.id == threadID })
+    else {
+      openClawVoiceStatusText = "Open an AI chat before dictating."
+      openClawStatusText = openClawVoiceStatusText
+      return
+    }
+    let origin = AIChatDictationOrigin(
+      threadID: threadID,
+      threadTitle: thread.title,
+      runtime: thread.runtime,
+      workspaceContext: currentOpenClawWorkspaceContext(
+        threadContinuation: aiChatThreadContinuation(for: thread)
+      )
+    )
+
     let audioURL = Self.openClawVoiceNoteURL()
     do {
+      activeAIChatDictationOrigin = origin
       try await openClawVoiceRecorder.startRecording(to: audioURL)
       activeOpenClawVoiceNoteURL = audioURL
       isRecordingOpenClawVoiceNote = true
-      openClawVoiceStatusText = "Recording \(selectedAIChatRuntime.title) dictation..."
+      openClawVoiceStatusText = "Recording dictation for \(origin.threadTitle)..."
       openClawStatusText = openClawVoiceStatusText
       startOpenClawVoiceMetering()
     } catch {
       activeOpenClawVoiceNoteURL = nil
+      activeAIChatDictationOrigin = nil
       isRecordingOpenClawVoiceNote = false
       stopOpenClawVoiceMetering()
       errorText = error.localizedDescription
@@ -12040,11 +12244,14 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func stopOpenClawVoiceNoteRecording() async {
-    guard let audioURL = activeOpenClawVoiceNoteURL else {
+    guard let audioURL = activeOpenClawVoiceNoteURL,
+          let origin = activeAIChatDictationOrigin
+    else {
       openClawVoiceStatusText = "No active AI chat dictation recording."
       openClawStatusText = openClawVoiceStatusText
       return
     }
+    defer { activeAIChatDictationOrigin = nil }
 
     do {
       let duration = try openClawVoiceRecorder.stopRecording()
@@ -12059,7 +12266,7 @@ public final class WorkspaceStore: ObservableObject {
       }
 
       isTranscribingOpenClawVoiceNote = true
-      openClawVoiceStatusText = "Transcribing \(selectedAIChatRuntime.title) dictation locally..."
+      openClawVoiceStatusText = "Transcribing dictation for \(origin.threadTitle) locally..."
       openClawStatusText = openClawVoiceStatusText
       startOpenClawVoiceTranscriptionProgress(audioDuration: duration)
       defer {
@@ -12077,12 +12284,20 @@ public final class WorkspaceStore: ObservableObject {
         return
       }
 
-      publishOpenClawComposerDraft(Self.openClawDraftByAppendingDictation(existing: openClawDraft, dictatedText: dictatedText))
-      openClawVoiceStatusText = "Sending dictated note to \(selectedAIChatRuntime.title)..."
+      openClawVoiceStatusText = "Sending dictated note in \(origin.threadTitle)..."
       openClawStatusText = openClawVoiceStatusText
-      await sendOpenClawMessage()
+      let accepted = await sendOpenClawDictation(
+        dictatedText,
+        to: origin.threadID,
+        workspaceContext: origin.workspaceContext
+      )
+      if !accepted {
+        openClawVoiceStatusText = "The original AI chat is no longer available. Dictation was not sent."
+        openClawStatusText = openClawVoiceStatusText
+      }
     } catch {
       activeOpenClawVoiceNoteURL = nil
+      activeAIChatDictationOrigin = nil
       isRecordingOpenClawVoiceNote = false
       isTranscribingOpenClawVoiceNote = false
       stopOpenClawVoiceMetering()
@@ -12187,6 +12402,39 @@ public final class WorkspaceStore: ObservableObject {
     guard !text.isEmpty else { return }
     clearOpenClawDraftForSelectedThread()
     await sendOpenClawMessage(text, attachments: [])
+  }
+
+  @discardableResult
+  func sendOpenClawDictation(
+    _ rawText: String,
+    to threadID: UUID,
+    workspaceContext: OpenClawWorkspaceContext? = nil
+  ) async -> Bool {
+    let dictatedText = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !dictatedText.isEmpty,
+          let thread = openClawChatThreads.first(where: { $0.id == threadID }),
+          !thread.isSettled
+    else { return false }
+
+    let existingDraft = openClawDraft(for: threadID)
+    let text = Self.openClawDraftByAppendingDictation(
+      existing: existingDraft,
+      dictatedText: dictatedText
+    )
+    clearOpenClawDraft(for: threadID)
+    let shouldDrain = enqueueOpenClawMessage(
+      text,
+      attachments: [],
+      in: threadID,
+      workspaceContext: workspaceContext ?? currentOpenClawWorkspaceContext(
+        includesNavigationContext: selectedOpenClawChatThreadID == threadID,
+        threadContinuation: aiChatThreadContinuation(for: thread)
+      )
+    )
+    if shouldDrain {
+      await drainOpenClawSendQueue(for: threadID)
+    }
+    return true
   }
 
   public var openClawGatewayConnectionState: OpenClawGatewayConnectionState {
@@ -13185,6 +13433,7 @@ public final class WorkspaceStore: ObservableObject {
     syncSelectedOpenClawSendState()
     defer {
       drainingOpenClawThreadIDs.remove(threadID)
+      activeOpenClawUserMessageIDByThreadID.removeValue(forKey: threadID)
       openClawRequestStartedAtByThreadID.removeValue(forKey: threadID)
       if openClawPendingUserMessageIDs(for: threadID).isEmpty {
         aiChatSendOriginsByThreadID.removeValue(forKey: threadID)
@@ -13229,6 +13478,7 @@ public final class WorkspaceStore: ObservableObject {
         ).union([corpusRoot.standardizedFileURL.path])
         await localEditBroker().beginTurn(turnID)
       }
+      activeOpenClawUserMessageIDByThreadID[threadID] = userMessageID
       do {
         clearOpenClawSendFailure(
           for: userMessageID,
@@ -13278,6 +13528,7 @@ public final class WorkspaceStore: ObservableObject {
           transcriptURL: sendOrigin.transcriptURL,
           changeSummary: nil
         )
+        activeOpenClawUserMessageIDByThreadID.removeValue(forKey: threadID)
         clearOpenClawCompletedRunPresentation(for: threadID)
         removeFirstPendingOpenClawUserMessage(in: threadID)
         if isActiveAIChatSendOrigin(sendOrigin) {
@@ -13346,6 +13597,7 @@ public final class WorkspaceStore: ObservableObject {
           openClawStatusText = openClawQueuedStatusText()
         }
       } catch {
+        activeOpenClawUserMessageIDByThreadID.removeValue(forKey: threadID)
         codexActiveTurnsByThreadID.removeValue(forKey: threadID)
         if let localEditTurnID {
           await localEditBroker().endTurn(localEditTurnID)
@@ -13424,6 +13676,7 @@ public final class WorkspaceStore: ObservableObject {
 
     prepareOpenClawRunPresentation(for: threadID)
     drainingOpenClawThreadIDs.insert(threadID)
+    activeOpenClawUserMessageIDByThreadID[threadID] = pendingUserMessage.id
     openClawRequestStartedAtByThreadID[threadID] = pendingTurn.startedAt
     openClawActiveRunIDByThreadID[threadID] = pendingTurn.runID
     syncSelectedOpenClawSendState()
@@ -13482,6 +13735,7 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     openClawGatewayClientsByThreadID.removeValue(forKey: threadID)
+    activeOpenClawUserMessageIDByThreadID.removeValue(forKey: threadID)
     drainingOpenClawThreadIDs.remove(threadID)
     openClawRequestStartedAtByThreadID.removeValue(forKey: threadID)
     syncSelectedOpenClawSendState()
@@ -13590,7 +13844,8 @@ public final class WorkspaceStore: ObservableObject {
     let runtimeThreadID = try await client.ensureThread(
       existingThreadID: existingRuntimeThreadID,
       cwd: corpusRoot,
-      model: selectedModel
+      model: selectedModel,
+      sandboxAccess: codexSandboxAccess
     )
     codexLocalThreadIDsByRuntimeThreadID[runtimeThreadID] = threadID
     if runtimeThreadID != existingRuntimeThreadID {
@@ -13614,7 +13869,8 @@ public final class WorkspaceStore: ObservableObject {
       cwd: corpusRoot,
       clientUserMessageID: userMessage.id,
       model: selectedModel,
-      reasoningEffort: selectedReasoningEffort
+      reasoningEffort: selectedReasoningEffort,
+      sandboxAccess: codexSandboxAccess
     )
     let reply = result.reply.trimmingCharacters(in: .whitespacesAndNewlines)
     return reply.isEmpty
@@ -14273,6 +14529,78 @@ public final class WorkspaceStore: ObservableObject {
     await drainOpenClawSendQueue(for: threadID)
   }
 
+  public func isAIChatMessageQueued(_ messageID: UUID) -> Bool {
+    let threadID: UUID?
+    if let selectedOpenClawChatThreadID,
+       openClawPendingUserMessageIDs(for: selectedOpenClawChatThreadID).contains(messageID) {
+      threadID = selectedOpenClawChatThreadID
+    } else {
+      threadID = openClawPendingUserMessageIDsByThreadID.first(where: {
+        $0.value.contains(messageID)
+      })?.key
+    }
+    guard let threadID else { return false }
+    return !isActiveAIChatMessage(messageID, in: threadID)
+  }
+
+  public func deleteQueuedAIChatMessage(_ messageID: UUID) {
+    guard dequeueAIChatMessage(messageID) != nil else { return }
+    openClawStatusText = "Removed queued message"
+  }
+
+  public func editQueuedAIChatMessage(_ messageID: UUID) {
+    guard let threadID = openClawThreadID(containing: messageID),
+          selectedOpenClawChatThreadID == threadID,
+          let message = dequeueAIChatMessage(messageID)
+    else { return }
+
+    let existingDraft = openClawDraft(for: threadID)
+    let restoredDraft = Self.openClawDraftByAppendingDictation(
+      existing: message.content,
+      dictatedText: existingDraft
+    )
+    cacheOpenClawDraft(restoredDraft, for: threadID)
+    openClawDraft = restoredDraft
+    for attachment in message.attachments where !openClawPendingAttachments.contains(where: {
+      $0.id == attachment.id
+    }) {
+      openClawPendingAttachments.append(attachment)
+    }
+    openClawStatusText = "Queued message moved back to the composer"
+  }
+
+  @discardableResult
+  private func dequeueAIChatMessage(_ messageID: UUID) -> OpenClawChatMessage? {
+    guard let threadID = openClawThreadID(containing: messageID),
+          !isActiveAIChatMessage(messageID, in: threadID),
+          var pendingIDs = openClawPendingUserMessageIDsByThreadID[threadID],
+          let pendingIndex = pendingIDs.firstIndex(of: messageID)
+    else { return nil }
+
+    var messages = openClawMessages(for: threadID)
+    guard let messageIndex = messages.firstIndex(where: { $0.id == messageID }) else {
+      return nil
+    }
+    let message = messages.remove(at: messageIndex)
+    pendingIDs.remove(at: pendingIndex)
+    if pendingIDs.isEmpty {
+      openClawPendingUserMessageIDsByThreadID.removeValue(forKey: threadID)
+    } else {
+      openClawPendingUserMessageIDsByThreadID[threadID] = pendingIDs
+    }
+    replaceOpenClawMessages(messages, for: threadID, shouldPersist: true)
+    syncSelectedOpenClawSendState()
+    return message
+  }
+
+  private func isActiveAIChatMessage(_ messageID: UUID, in threadID: UUID) -> Bool {
+    if activeOpenClawUserMessageIDByThreadID[threadID] == messageID {
+      return true
+    }
+    return openClawChatThreads.first(where: { $0.id == threadID })?
+      .pendingTurn?.userMessageID == messageID
+  }
+
   private func clearOpenClawSendFailure(
     for messageID: UUID,
     in threadID: UUID,
@@ -14776,6 +15104,16 @@ public final class WorkspaceStore: ObservableObject {
       return
     }
 
+    // The filesystem event may have arrived while the app was inactive, and
+    // sync software may preserve the original modification time. Verify the
+    // visible file by content whenever the workspace becomes active.
+    if let selectedLocation {
+      scheduleSelectedDetailFreshnessCheck(
+        for: selectedLocation,
+        mode: selectedEntrySourceMode
+      )
+    }
+
     if selectedSurface != .home {
       markWorkspaceSurfacesDirty([selectedSurface], refreshVisible: true)
     }
@@ -15052,8 +15390,18 @@ public final class WorkspaceStore: ObservableObject {
        editingBlockID == nil,
        !isEditingEntry,
        (!isLiveFileEditorSelected || !liveFileEditorHasUnsavedChanges) {
-      invalidateCanonicalDocumentCache(for: selectedLocation.file)
-      await loadEntrySource(for: selectedLocation)
+      // A user-initiated mutation may already have loaded and cached this exact
+      // file version before its filesystem event arrives. Compare contents,
+      // rather than modification time, so atomic sync replacements and tools
+      // that preserve timestamps cannot leave the visible document stale.
+      let cacheMatchesDisk = await cachedEntrySourceMatchesCurrentFileContents(
+        for: selectedLocation,
+        mode: selectedEntrySourceMode
+      )
+      if !cacheMatchesDisk {
+        invalidateCanonicalDocumentCache(for: selectedLocation.file)
+        await loadEntrySource(for: selectedLocation)
+      }
     }
 
     guard !Task.isCancelled else { return }
@@ -15140,6 +15488,7 @@ public final class WorkspaceStore: ObservableObject {
       }
       removeAllPendingOpenClawUserMessages(in: threadID)
       drainingOpenClawThreadIDs.remove(threadID)
+      activeOpenClawUserMessageIDByThreadID.removeValue(forKey: threadID)
       openClawRequestStartedAtByThreadID.removeValue(forKey: threadID)
     }
     syncSelectedOpenClawSendState()
@@ -15503,6 +15852,13 @@ public final class WorkspaceStore: ObservableObject {
     return openClawDraftsByThreadID[selectedOpenClawChatThreadID] ?? ""
   }
 
+  private func openClawDraft(for threadID: UUID) -> String {
+    if selectedOpenClawChatThreadID == threadID {
+      return currentOpenClawDraftForSelectedThread()
+    }
+    return openClawDraftsByThreadID[threadID] ?? ""
+  }
+
   private func cacheOpenClawDraft(_ draft: String, for threadID: UUID) {
     openClawComposerCachedThreadIDs.insert(threadID)
     let normalizedDraft = draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -15525,6 +15881,14 @@ public final class WorkspaceStore: ObservableObject {
       openClawComposerCachedThreadIDs.insert(selectedOpenClawChatThreadID)
     }
     openClawDraft = ""
+  }
+
+  private func clearOpenClawDraft(for threadID: UUID) {
+    openClawDraftsByThreadID.removeValue(forKey: threadID)
+    openClawComposerCachedThreadIDs.insert(threadID)
+    if selectedOpenClawChatThreadID == threadID {
+      openClawDraft = ""
+    }
   }
 
   private func ensureOpenClawChatThread() {
@@ -15932,6 +16296,12 @@ public final class WorkspaceStore: ObservableObject {
       if presentedAgentRunID != nil { presentedAgentRunID = nil }
       if isWorkspaceDetailPaneClosed { isWorkspaceDetailPaneClosed = false }
       if isWorkspaceDetailPaneExpanded { isWorkspaceDetailPaneExpanded = false }
+      if let selectedLocation {
+        scheduleSelectedDetailFreshnessCheck(
+          for: selectedLocation,
+          mode: selectedEntrySourceMode
+        )
+      }
       requestDetailScroll(toSourceLine: reference.line ?? 1)
       statusText = "Jumped to \(relativePath(file))"
       return
@@ -20984,15 +21354,19 @@ public final class WorkspaceStore: ObservableObject {
 
   private func canonicalDocument(for file: String) async throws -> Org2CanonicalDocument {
     let url = URL(fileURLWithPath: file).standardizedFileURL
-    let modifiedAt = Self.modificationDate(for: url)
+    let fileContentDigest = await Task.detached(priority: .utility) {
+      Self.fileContentDigest(for: url)
+    }.value
     let cacheKey = url.path
-    if let cached = canonicalDocumentCache[cacheKey], cached.modifiedAt == modifiedAt {
+    if let fileContentDigest,
+       let cached = canonicalDocumentCache[cacheKey],
+       cached.fileContentDigest == fileContentDigest {
       return cached.document
     }
 
     let document: Org2CanonicalDocument = try await cli.parseFileJSON(url, sourceRanges: true)
     canonicalDocumentCache[cacheKey] = CanonicalDocumentCacheEntry(
-      modifiedAt: Self.modificationDate(for: url),
+      fileContentDigest: fileContentDigest,
       document: document
     )
     return document
@@ -21013,10 +21387,15 @@ public final class WorkspaceStore: ObservableObject {
     _ source: EntrySource,
     for location: WorkspaceLocation,
     mode: EntrySourceMode,
-    modifiedAt: Date?
+    modifiedAt: Date?,
+    fileContentDigest: String?
   ) {
     let key = entrySourceCacheKey(for: location, mode: mode)
-    entrySourceCache[key] = EntrySourceCacheEntry(modifiedAt: modifiedAt, source: source)
+    entrySourceCache[key] = EntrySourceCacheEntry(
+      modifiedAt: modifiedAt,
+      fileContentDigest: fileContentDigest,
+      source: source
+    )
     entrySourceCacheOrder.removeAll { $0 == key }
     entrySourceCacheOrder.append(key)
 
@@ -21038,6 +21417,21 @@ public final class WorkspaceStore: ObservableObject {
     return cached.source
   }
 
+  private func cachedEntrySourceMatchesCurrentFileContents(
+    for location: WorkspaceLocation,
+    mode: EntrySourceMode
+  ) async -> Bool {
+    let key = entrySourceCacheKey(for: location, mode: mode)
+    guard let expectedDigest = entrySourceCache[key]?.fileContentDigest else {
+      return false
+    }
+    let url = URL(fileURLWithPath: location.file).standardizedFileURL
+    let currentDigest = await Task.detached(priority: .utility) {
+      Self.fileContentDigest(for: url)
+    }.value
+    return currentDigest == expectedDigest
+  }
+
   private func renderedBlocksCacheKey(for source: EntrySource) -> String {
     let path = URL(fileURLWithPath: source.file).standardizedFileURL.path
     return "\(path)|\(source.startLine)|\(source.endLineExclusive)"
@@ -21052,7 +21446,7 @@ public final class WorkspaceStore: ObservableObject {
     renderedBlocksCache[key] = RenderedBlocksCacheEntry(
       modifiedAt: modifiedAt,
       sourceID: source.id,
-      textByteCount: source.text.utf8.count,
+      textDigest: Self.contentDigest(for: Data(source.text.utf8)),
       blocks: blocks
     )
     renderedBlocksCacheOrder.removeAll { $0 == key }
@@ -21069,7 +21463,7 @@ public final class WorkspaceStore: ObservableObject {
     guard let cached = renderedBlocksCache[key],
           cached.modifiedAt == modifiedAt,
           cached.sourceID == source.id,
-          cached.textByteCount == source.text.utf8.count
+          cached.textDigest == Self.contentDigest(for: Data(source.text.utf8))
     else {
       return nil
     }
@@ -21740,6 +22134,19 @@ public final class WorkspaceStore: ObservableObject {
 
   nonisolated private static func modificationDate(for url: URL) -> Date? {
     try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+  }
+
+  nonisolated private static func fileContentDigest(for url: URL) -> String? {
+    guard let data = try? Data(contentsOf: url, options: .mappedIfSafe) else {
+      return nil
+    }
+    return contentDigest(for: data)
+  }
+
+  nonisolated private static func contentDigest(for data: Data) -> String {
+    SHA256.hash(data: data)
+      .map { String(format: "%02x", $0) }
+      .joined()
   }
 
   nonisolated static func executeSourceBlock(
@@ -23619,8 +24026,9 @@ public final class WorkspaceStore: ObservableObject {
     )
     openClawVoiceTranscriptionProgress = progress
     openClawVoiceTranscriptionElapsedText = Self.openClawVoiceTranscriptionElapsedText(elapsed: elapsed)
+    let target = activeAIChatDictationOrigin?.threadTitle ?? "the original AI chat"
     openClawVoiceStatusText =
-      "Transcribing \(selectedAIChatRuntime.title) dictation locally... \(Int(progress * 100))%"
+      "Transcribing dictation for \(target) locally... \(Int(progress * 100))%"
     openClawStatusText = openClawVoiceStatusText
   }
 

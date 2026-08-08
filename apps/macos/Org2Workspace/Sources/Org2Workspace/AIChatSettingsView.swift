@@ -21,6 +21,21 @@ struct AIChatSettingsView: View {
       }
 
       Section {
+        Picker("Filesystem access", selection: $store.codexSandboxAccess) {
+          ForEach(CodexSandboxAccess.allCases) { access in
+            Text(access.title).tag(access)
+          }
+        }
+        .pickerStyle(.radioGroup)
+
+        Text(codexAccessHelp)
+          .font(.callout)
+          .foregroundStyle(store.codexSandboxAccess == .fullAccess ? Color.orange : Color.secondary)
+      } header: {
+        Label("Codex Permissions", systemImage: "lock.shield")
+      }
+
+      Section {
         HStack(spacing: 12) {
           Picker("Message sound", selection: $store.aiChatMessageSound) {
             ForEach(AIChatMessageSound.allCases) { sound in
@@ -75,6 +90,17 @@ struct AIChatSettingsView: View {
     case .allCorpora:
       let count = max(store.mountedCorpora.count, store.corpusRoot == nil ? 0 : 1)
       return "Chat can read all \(count) loaded \(count == 1 ? "corpus" : "corpora"). Only the current corpus can be changed."
+    }
+  }
+
+  private var codexAccessHelp: String {
+    switch store.codexSandboxAccess {
+    case .readOnly:
+      return "Codex can inspect local files but must use Org2's reviewed edit tools for corpus changes."
+    case .workspaceWrite:
+      return "Codex can run commands and write inside the active corpus. Codex state such as ~/.codex lease files remains protected."
+    case .fullAccess:
+      return "Codex can write anywhere your Mac account can, including ~/.codex lease state and other repositories. Org2 does not show approval prompts in this mode; use it only for trusted threads. The change applies on the next turn, including in an existing thread."
     }
   }
 }

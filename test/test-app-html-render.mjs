@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { renderOrgCharts } from "../dist/chartRender.js";
 import { renderOrgDocumentToAppHtml, renderOrgDocumentToHtml, renderOrgExportIndexToHtml } from "../dist/export.js";
@@ -196,6 +199,24 @@ const tabPreview = spawnSync(
 );
 assert.equal(tabPreview.status, 0, tabPreview.stderr);
 assert.match(tabPreview.stdout, /<blockquote class="org2-quote"[^>]*>  Best,\n  Avi<\/blockquote>/);
+
+const configuredLinkRoot = fs.mkdtempSync(path.join(os.tmpdir(), "org2-app-link-config-"));
+try {
+  fs.writeFileSync(path.join(configuredLinkRoot, "org2.json"), JSON.stringify({
+    links: { linearTeam: "scarf" },
+  }));
+  const configuredLinkSource = path.join(configuredLinkRoot, "goals", "firebolt.org2");
+  fs.mkdirSync(path.dirname(configuredLinkSource), { recursive: true });
+  const configuredLinkPreview = spawnSync(
+    process.execPath,
+    [fileURLToPath(new URL("../dist/render-html.js", import.meta.url)), "--source-path", configuredLinkSource],
+    { input: "* Goal\nLinked Linear issue: [[linear:APP-21287][APP-21287]].\n", encoding: "utf8" },
+  );
+  assert.equal(configuredLinkPreview.status, 0, configuredLinkPreview.stderr);
+  assert.match(configuredLinkPreview.stdout, /href="https:\/\/linear\.app\/scarf\/issue\/APP-21287"/);
+} finally {
+  fs.rmSync(configuredLinkRoot, { recursive: true, force: true });
+}
 
 const nestedListQuoteSource = `1. Deepgram
    - Gmail draft: draft-id

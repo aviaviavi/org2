@@ -123,7 +123,11 @@ final class OpenClawChatLayoutTests: XCTestCase {
     XCTAssertGreaterThan(hostingView.fittingSize.height, 118)
   }
 
-  func testLongTranscriptLayoutRemainsResponsiveWithoutNativeSelectionOverlays() {
+  func testChatBubblesKeepPartialTextSelectionEnabled() {
+    XCTAssertTrue(ChatBubbleView.managesMessageTextSelection)
+  }
+
+  func testLongTranscriptLayoutRemainsResponsiveWithPerMessageSelection() {
     let messages = (0..<120).map { index in
       OpenClawChatMessage(
         role: index.isMultiple(of: 2) ? .user : .assistant,
@@ -136,6 +140,8 @@ final class OpenClawChatLayoutTests: XCTestCase {
           ChatBubbleView(message: message)
         }
       }
+      // Mirrors the production transcript: selection is disabled at the lazy
+      // stack boundary and re-enabled by each realized chat bubble.
       .textSelection(.disabled)
     }
     .frame(width: 720, height: 600)

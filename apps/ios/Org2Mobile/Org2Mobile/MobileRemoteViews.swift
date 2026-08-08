@@ -319,71 +319,23 @@ private struct MobileRemoteThreadView: View {
   @State private var attachments: [MobileRemoteAttachment] = []
   @State private var selectedFileCitation: MobileRemoteFileCitation?
   @State private var isNearChatBottom = true
+  @State private var hasPresentedInitialContent = false
 
   var body: some View {
     Group {
       if let detail = remote.threadDetail, detail.thread.id == threadID {
-        ScrollViewReader { proxy in
-          Group {
-            if #available(iOS 18.0, *) {
-              chatScrollView(detail: detail)
-                .onScrollGeometryChange(for: Bool.self) { geometry in
-                  geometry.contentSize.height <= geometry.containerSize.height
-                    || geometry.visibleRect.maxY >= geometry.contentSize.height - 28
-                } action: { _, nextValue in
-                  if isNearChatBottom != nextValue {
-                    isNearChatBottom = nextValue
-                  }
-                }
-            } else {
-              chatScrollView(detail: detail)
+        if hasPresentedInitialContent {
+          chatContent(detail: detail)
+        } else {
+          loadingView(detailIsAvailable: true)
+            .task(id: detail.thread.id) {
+              await Task.yield()
+              try? await Task.sleep(for: .milliseconds(40))
+              guard !Task.isCancelled,
+                    remote.threadDetail?.thread.id == threadID
+              else { return }
+              hasPresentedInitialContent = true
             }
-          }
-          .onChange(of: detail.messages.count) { _, _ in
-            scrollToBottomIfFollowing(proxy: proxy)
-          }
-          .onChange(of: detail.streamingReply) { _, _ in
-            scrollToBottomIfFollowing(proxy: proxy)
-          }
-          .onChange(of: detail.reasoning) { _, _ in
-            scrollToBottomIfFollowing(proxy: proxy)
-          }
-          .onChange(of: detail.activities.count) { _, _ in
-            scrollToBottomIfFollowing(proxy: proxy)
-          }
-          .onChange(of: isSending) { _, sending in
-            if sending {
-              scrollToBottom(proxy: proxy)
-            } else {
-              scrollToBottomIfFollowing(proxy: proxy)
-            }
-          }
-          .onAppear {
-            isNearChatBottom = true
-            scrollToBottom(proxy: proxy, animated: false)
-          }
-          .overlay(alignment: .bottomTrailing) {
-            if !isNearChatBottom {
-              Button {
-                scrollToBottom(proxy: proxy)
-              } label: {
-                Image(systemName: "arrow.down")
-                  .font(.system(size: 14, weight: .semibold))
-                  .frame(width: 36, height: 36)
-                  .background(.regularMaterial, in: Circle())
-                  .overlay {
-                    Circle().stroke(Color.primary.opacity(0.12), lineWidth: 1)
-                  }
-                  .shadow(color: .black.opacity(0.12), radius: 5, y: 2)
-              }
-              .buttonStyle(.plain)
-              .padding(.trailing, 14)
-              .padding(.bottom, 12)
-              .accessibilityLabel("Jump to latest message")
-              .transition(.scale.combined(with: .opacity))
-            }
-          }
-          .animation(.easeInOut(duration: 0.16), value: isNearChatBottom)
         }
       } else {
         if let message = remote.threadConnectionError {
@@ -393,7 +345,7 @@ private struct MobileRemoteThreadView: View {
             description: Text(message)
           )
         } else {
-          ProgressView("Loading chat…")
+          loadingView(detailIsAvailable: false)
         }
       }
     }
@@ -427,13 +379,18 @@ private struct MobileRemoteThreadView: View {
       }
     }
     .safeAreaInset(edge: .bottom) {
-      composer
+      if hasPresentedInitialContent,
+         remote.threadDetail?.thread.id == threadID {
+        composer
+      }
     }
     .onAppear {
+      hasPresentedInitialContent = false
       remote.beginPolling(threadID: threadID)
     }
     .onDisappear {
       voiceTranscriber.cancel()
+      hasPresentedInitialContent = false
       remote.endPolling(threadID: threadID)
     }
     .onChange(of: voiceTranscriber.transcript) { _, transcript in
@@ -457,6 +414,92 @@ private struct MobileRemoteThreadView: View {
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
     }
+  }
+
+  private func chatContent(detail: MobileRemoteThreadDetail) -> some View {
+    ScrollViewReader { proxy in
+      Group {
+        if #available(iOS 18.0, *) {
+          chatScrollView(detail: detail)
+            .onScrollGeometryChange(for: Bool.self) { geometry in
+              geometry.contentSize.height <= geometry.containerSize.height
+                || geometry.visibleRect.maxY >= geometry.contentSize.height - 28
+            } action: { _, nextValue in
+              if isNearChatBottom != nextValue {
+                isNearChatBottom = nextValue
+              }
+            }
+        } else {
+          chatScrollView(detail: detail)
+        }
+      }
+      .onChange(of: detail.messages.count) { _, _ in
+        scrollToBottomIfFollowing(proxy: proxy)
+      }
+      .onChange(of: detail.streamingReply) { _, _ in
+        scrollToBottomIfFollowing(proxy: proxy)
+      }
+      .onChange(of: detail.reasoning) { _, _ in
+        scrollToBottomIfFollowing(proxy: proxy)
+      }
+      .onChange(of: detail.activities.count) { _, _ in
+        scrollToBottomIfFollowing(proxy: proxy)
+      }
+      .onChange(of: isSending) { _, sending in
+        if sending {
+          scrollToBottom(proxy: proxy)
+        } else {
+          scrollToBottomIfFollowing(proxy: proxy)
+        }
+      }
+      .onAppear {
+        isNearChatBottom = true
+        scrollToBottom(proxy: proxy, animated: false)
+      }
+      .overlay(alignment: .bottomTrailing) {
+        if !isNearChatBottom {
+          Button {
+            scrollToBottom(proxy: proxy)
+          } label: {
+            Image(systemName: "arrow.down")
+              .font(.system(size: 14, weight: .semibold))
+              .frame(width: 36, height: 36)
+              .background(.regularMaterial, in: Circle())
+              .overlay {
+                Circle().stroke(Color.primary.opacity(0.12), lineWidth: 1)
+              }
+              .shadow(color: .black.opacity(0.12), radius: 5, y: 2)
+          }
+          .buttonStyle(.plain)
+          .padding(.trailing, 14)
+          .padding(.bottom, 12)
+          .accessibilityLabel("Jump to latest message")
+          .transition(.scale.combined(with: .opacity))
+        }
+      }
+      .animation(.easeInOut(duration: 0.16), value: isNearChatBottom)
+    }
+  }
+
+  private func loadingView(detailIsAvailable: Bool) -> some View {
+    VStack(spacing: 14) {
+      ProgressView()
+        .controlSize(.large)
+      Text(detailIsAvailable ? "Preparing conversation…" : "Loading chat…")
+        .font(.headline)
+      if let title = remote.threads.first(where: { $0.id == threadID })?.title {
+        Text(title)
+          .font(.callout)
+          .foregroundStyle(.secondary)
+          .lineLimit(2)
+          .multilineTextAlignment(.center)
+      }
+    }
+    .padding(28)
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .background(Color(.systemGroupedBackground))
+    .accessibilityElement(children: .combine)
+    .accessibilityLabel(detailIsAvailable ? "Preparing conversation" : "Loading chat")
   }
 
   private func chatScrollView(detail: MobileRemoteThreadDetail) -> some View {

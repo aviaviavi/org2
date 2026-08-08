@@ -699,6 +699,29 @@ export function applyDataQueryResult(input: string, result: DataQueryResult): { 
   return { text, changed: text !== normalized };
 }
 
+export function applyDataQueryResults(
+  input: string,
+  results: DataQueryResult[],
+): { text: string; changed: boolean; changedResultCount: number } {
+  const ordered = [...results].sort((left, right) => {
+    const leftLine = left.source?.endLine || left.source?.line || 0;
+    const rightLine = right.source?.endLine || right.source?.line || 0;
+    return rightLine - leftLine;
+  });
+  let text = input.replace(/\r\n/g, "\n");
+  let changedResultCount = 0;
+  for (const result of ordered) {
+    const applied = applyDataQueryResult(text, result);
+    text = applied.text;
+    if (applied.changed) changedResultCount++;
+  }
+  return {
+    text,
+    changed: text !== input.replace(/\r\n/g, "\n"),
+    changedResultCount,
+  };
+}
+
 function materializedResultTable(resultId: string, rows: Record<string, unknown>[], provenance: NonNullable<DataQueryResult["provenance"]>): string {
   const artifact = provenance.artifact ? ` artifact=${provenance.artifact}` : "";
   const freshness = provenance.freshness ? ` freshness=${provenance.freshness}` : "";

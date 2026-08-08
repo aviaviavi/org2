@@ -111,6 +111,45 @@ public enum CodexAccountState: Equatable, Sendable {
   }
 }
 
+public enum CodexSandboxAccess: String, CaseIterable, Identifiable, Sendable {
+  case readOnly
+  case workspaceWrite
+  case fullAccess
+
+  public var id: String { rawValue }
+
+  public var title: String {
+    switch self {
+    case .readOnly: "Read Only"
+    case .workspaceWrite: "Workspace Write"
+    case .fullAccess: "Full Access"
+    }
+  }
+
+  var threadSandboxValue: String {
+    switch self {
+    case .readOnly: "readOnly"
+    case .workspaceWrite: "workspaceWrite"
+    case .fullAccess: "dangerFullAccess"
+    }
+  }
+
+  func turnSandboxPolicy(cwd: URL) -> JSONValue {
+    switch self {
+    case .readOnly:
+      .object(["type": .string("readOnly")])
+    case .workspaceWrite:
+      .object([
+        "type": .string("workspaceWrite"),
+        "writableRoots": .array([.string(cwd.standardizedFileURL.path)]),
+        "networkAccess": .bool(false)
+      ])
+    case .fullAccess:
+      .object(["type": .string("dangerFullAccess")])
+    }
+  }
+}
+
 public struct CodexLoginStart: Equatable, Sendable {
   public let loginID: String
   public let authURL: URL
@@ -356,7 +395,8 @@ public actor CodexAppServerClient {
   public func ensureThread(
     existingThreadID: String?,
     cwd: URL,
-    model: String? = nil
+    model: String? = nil,
+    sandboxAccess: CodexSandboxAccess = .workspaceWrite
   ) async throws -> String {
     try await connect()
     if let existingThreadID {
@@ -365,7 +405,7 @@ public actor CodexAppServerClient {
           "threadId": .string(existingThreadID),
           "cwd": .string(cwd.standardizedFileURL.path),
           "approvalPolicy": .string("never"),
-          "sandbox": .string("read-only"),
+          "sandbox": .string(sandboxAccess.threadSandboxValue),
           "dynamicTools": .array(Self.localEditDynamicTools)
         ]
         if let model {
@@ -386,7 +426,7 @@ public actor CodexAppServerClient {
     var params: [String: JSONValue] = [
       "cwd": .string(cwd.standardizedFileURL.path),
       "approvalPolicy": .string("never"),
-      "sandbox": .string("read-only"),
+      "sandbox": .string(sandboxAccess.threadSandboxValue),
       "serviceName": .string("org2_workspace"),
       "developerInstructions": .string(Self.localEditDeveloperInstructions),
       "dynamicTools": .array(Self.localEditDynamicTools)
@@ -414,7 +454,8 @@ public actor CodexAppServerClient {
     cwd: URL,
     clientUserMessageID: UUID,
     model: String? = nil,
-    reasoningEffort: String? = nil
+    reasoningEffort: String? = nil,
+    sandboxAccess: CodexSandboxAccess = .workspaceWrite
   ) async throws -> CodexTurnResult {
     try await connect()
     var input: [JSONValue] = [
@@ -440,9 +481,7 @@ public actor CodexAppServerClient {
       "input": .array(input),
       "cwd": .string(cwd.standardizedFileURL.path),
       "approvalPolicy": .string("never"),
-      "sandboxPolicy": .object([
-        "type": .string("readOnly")
-      ]),
+      "sandboxPolicy": sandboxAccess.turnSandboxPolicy(cwd: cwd),
       "clientUserMessageId": .string(clientUserMessageID.uuidString.lowercased())
     ]
     params["model"] = model.map(JSONValue.string) ?? .null

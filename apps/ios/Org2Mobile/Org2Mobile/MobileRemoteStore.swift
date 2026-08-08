@@ -18,6 +18,7 @@ final class MobileRemoteStore: ObservableObject {
   @Published private(set) var isRefreshingConfiguration = false
   @Published private(set) var isUpdatingConfiguration = false
   @Published private(set) var mutatingThreadIDs: Set<UUID> = []
+  @Published private(set) var loadingThreadID: UUID?
   @Published var endpointDraft = ""
   @Published var codeDraft = ""
   @Published var errorMessage: String?
@@ -33,6 +34,9 @@ final class MobileRemoteStore: ObservableObject {
   private var pollingTask: Task<Void, Never>?
   private var pollingThreadID: UUID?
   private var configurationRequestID: UUID?
+  private var threadDetailCache: [UUID: MobileRemoteThreadDetail] = [:]
+  private var threadDetailCacheOrder: [UUID] = []
+  private static let threadDetailCacheLimit = 6
 
   init(defaults: UserDefaults = .standard) {
     self.defaults = defaults
@@ -106,6 +110,9 @@ final class MobileRemoteStore: ObservableObject {
     status = nil
     threads = []
     threadDetail = nil
+    loadingThreadID = nil
+    threadDetailCache.removeAll()
+    threadDetailCacheOrder.removeAll()
     threadConfiguration = nil
     threadConnectionError = nil
     configurationError = nil
@@ -130,6 +137,7 @@ final class MobileRemoteStore: ObservableObject {
       isConnected = true
       serverName = nextStatus.serverName
       threads = nextThreads.threads
+      pruneThreadDetailCache(keeping: Set(nextThreads.threads.map(\.id)))
       defaults.set(serverName, forKey: Self.serverNameKey)
     } catch {
       isConnected = false
@@ -155,12 +163,13 @@ final class MobileRemoteStore: ObservableObject {
   func beginPolling(threadID: UUID) {
     pollingTask?.cancel()
     if pollingThreadID != threadID {
-      threadDetail = nil
+      threadDetail = threadDetailCache[threadID]
       threadConfiguration = nil
       threadConnectionError = nil
       configurationError = nil
     }
     pollingThreadID = threadID
+    loadingThreadID = threadDetail?.thread.id == threadID ? nil : threadID
     Task { [weak self] in
       await self?.refreshThreadConfiguration(threadID)
     }
@@ -168,7 +177,10 @@ final class MobileRemoteStore: ObservableObject {
       guard let self else { return }
       while !Task.isCancelled {
         await self.refreshThread(threadID)
-        try? await Task.sleep(for: .seconds(1))
+        let isActivelyChanging = self.threadDetail?.thread.id == threadID
+          && (self.threadDetail?.thread.isRunning == true
+            || self.threadDetail?.streamingReply.isEmpty == false)
+        try? await Task.sleep(for: .seconds(isActivelyChanging ? 1 : 4))
       }
     }
   }
@@ -178,6 +190,9 @@ final class MobileRemoteStore: ObservableObject {
     pollingTask?.cancel()
     pollingTask = nil
     pollingThreadID = nil
+    if loadingThreadID == threadID {
+      loadingThreadID = nil
+    }
     if threadDetail?.thread.id == threadID {
       threadDetail = nil
     }
@@ -287,7 +302,11 @@ final class MobileRemoteStore: ObservableObject {
         as: MobileRemoteThreadDetail.self
       )
       guard pollingThreadID == threadID else { return }
-      threadDetail = detail
+      cacheThreadDetail(detail)
+      if threadDetail != detail {
+        threadDetail = detail
+      }
+      loadingThreadID = nil
       isConnected = true
       threadConnectionError = nil
       if let index = threads.firstIndex(where: { $0.id == threadID }) {
@@ -295,6 +314,7 @@ final class MobileRemoteStore: ObservableObject {
       }
     } catch {
       if !Task.isCancelled, pollingThreadID == threadID {
+        loadingThreadID = nil
         isConnected = false
         threadConnectionError = error.localizedDescription
       }
@@ -354,8 +374,8 @@ final class MobileRemoteStore: ObservableObject {
       if $0.isPinned != $1.isPinned { return $0.isPinned }
       return $0.updatedAt > $1.updatedAt
     }
-    if let detail = threadDetail, detail.thread.id == summary.id {
-      threadDetail = MobileRemoteThreadDetail(
+    if let detail = threadDetailCache[summary.id] {
+      let updatedDetail = MobileRemoteThreadDetail(
         thread: summary,
         messages: detail.messages,
         streamingReply: detail.streamingReply,
@@ -364,7 +384,27 @@ final class MobileRemoteStore: ObservableObject {
         connectionState: detail.connectionState,
         connectionDetail: detail.connectionDetail
       )
+      cacheThreadDetail(updatedDetail)
+      if threadDetail?.thread.id == summary.id {
+        threadDetail = updatedDetail
+      }
     }
+  }
+
+  private func cacheThreadDetail(_ detail: MobileRemoteThreadDetail) {
+    let id = detail.thread.id
+    threadDetailCache[id] = detail
+    threadDetailCacheOrder.removeAll { $0 == id }
+    threadDetailCacheOrder.append(id)
+    while threadDetailCacheOrder.count > Self.threadDetailCacheLimit {
+      let evictedID = threadDetailCacheOrder.removeFirst()
+      threadDetailCache.removeValue(forKey: evictedID)
+    }
+  }
+
+  private func pruneThreadDetailCache(keeping threadIDs: Set<UUID>) {
+    threadDetailCache = threadDetailCache.filter { threadIDs.contains($0.key) }
+    threadDetailCacheOrder.removeAll { !threadIDs.contains($0) }
   }
 
   private func pairedClient() throws -> MobileRemoteClient {

@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { renderOrgCharts } from "./chartRender.js";
+import { findConfigFile, loadConfig } from "./config.js";
 import { renderOrgDocumentToAppHtml } from "./export.js";
 import { parseOrgToCanonicalAst } from "./parser.js";
 
@@ -62,7 +63,28 @@ function main(): void {
   const charts = renderOrgCharts(renderInput, { file: sourcePath, sourceLineOffset })
     .filter((chart): chart is typeof chart & { svg: string; source: NonNullable<typeof chart.source> } => chart.ok && Boolean(chart.svg && chart.source))
     .map((chart) => ({ svg: chart.svg, source: chart.source, presentation: chart.presentation }));
-  const rendered = renderOrgDocumentToAppHtml(document, { title, sourcePath, customCss, charts });
+  let linkAbbreviations: Record<string, string> | undefined;
+  let linearTeam: string | undefined;
+  if (sourcePath) {
+    const configPath = findConfigFile(path.dirname(path.resolve(sourcePath)));
+    if (configPath) {
+      try {
+        const config = loadConfig(configPath);
+        linkAbbreviations = config.links?.abbreviations;
+        linearTeam = config.links?.linearTeam;
+      } catch {
+        // A malformed workspace config should not make the document preview unavailable.
+      }
+    }
+  }
+  const rendered = renderOrgDocumentToAppHtml(document, {
+    title,
+    sourcePath,
+    customCss,
+    charts,
+    linkAbbreviations,
+    linearTeam,
+  });
   process.stdout.write(rendered.html);
 }
 

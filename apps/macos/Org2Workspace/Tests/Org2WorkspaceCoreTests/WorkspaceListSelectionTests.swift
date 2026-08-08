@@ -101,7 +101,23 @@ final class WorkspaceListSelectionTests: XCTestCase {
 
     XCTAssertFalse(source.contains("contextualThreadID"))
     XCTAssertFalse(source.contains("contextThread:"))
-    XCTAssertTrue(source.contains("rename(thread)"))
+    XCTAssertTrue(source.contains("rename(thread.id)"))
+    XCTAssertTrue(source.contains("OpenClawSidebarThreadContextMenuTarget("))
+    XCTAssertTrue(source.contains("NSApp.currentEvent?.type == .rightMouseDown"))
+    XCTAssertTrue(source.contains("rename?(threadID)"))
+    XCTAssertTrue(source.contains("presenting: renameRequest"))
+    XCTAssertTrue(source.contains("let threadID = request.threadID"))
+    XCTAssertTrue(source.contains("store.renameOpenClawChatThread(threadID, title: title)"))
+    XCTAssertGreaterThanOrEqual(
+      source.components(separatedBy: "renameRequest = nil").count - 1,
+      2,
+      "Both cancel and commit must clear the previous rename request explicitly"
+    )
+    XCTAssertEqual(
+      source.components(separatedBy: #".alert("Rename Thread""#).count - 1,
+      0,
+      "Thread rows must not each install an alert; SwiftUI can hoist the first pinned row's alert"
+    )
     XCTAssertTrue(source.contains("if thread.isSettled"))
   }
 }

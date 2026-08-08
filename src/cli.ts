@@ -8459,6 +8459,7 @@ async function main(): Promise<void> {
   let dataQueryInspect = false;
   let dataQueryStdin = false;
   let dataQueryApply = false;
+  let dataQueryAllResults = false;
 
   // Clock reports
   let clockFormat: "text" | "json" = "text";
@@ -9979,6 +9980,9 @@ async function main(): Promise<void> {
     } else if (arg === "--inspect") {
       if (command === "query-data") dataQueryInspect = true;
       i++;
+    } else if (arg === "--all-results" && command === "query-data") {
+      dataQueryAllResults = true;
+      i++;
     } else if (arg === "--check") {
       if (command === "fmt") {
         fmtCheck = true;
@@ -10470,6 +10474,7 @@ Output:
 
 Usage:
   org2 query-data --file FILE [--results NAME|--line N] [--out FILE|--apply] [--format org|json]
+  org2 query-data --file FILE --all-results --apply [--format json]
   org2 query-data --stdin [--results NAME|--line N] [--out FILE] [--format org|json]
   org2 query-data --file FILE --inspect
 
@@ -10477,6 +10482,7 @@ Flags:
   --file FILE         Source Org/Org2 file containing dataset and SQL blocks
   --stdin             Read Org/Org2 input from standard input
   --results NAME      SQL result block to run; optional when the file has one SQL block
+  --all-results       Run every SQL result and apply them with one atomic file write
   --line N            Select the SQL result block containing or after line N
   --duckdb PATH       Override the bundled DuckDB engine with a CLI path
   --out FILE          Write materialized org table or JSON envelope to FILE
@@ -10756,7 +10762,7 @@ Flags:
   }
 
   if (command === "query-data") {
-    const { applyDataQueryResult, runOrg2DataQuery } = await import("./dataQuery.js");
+    const { applyDataQueryResult, applyDataQueryResults, runOrg2DataQuery } = await import("./dataQuery.js");
     if (dataQueryFile && dataQueryStdin) {
       console.error("Error: query-data accepts only one of --file or --stdin");
       process.exit(1);
@@ -10767,6 +10773,14 @@ Flags:
     }
     if (dataQueryResultId && dataQueryLine > 0) {
       console.error("Error: query-data accepts only one of --results or --line");
+      process.exit(1);
+    }
+    if (dataQueryAllResults && (dataQueryResultId || dataQueryLine > 0)) {
+      console.error("Error: query-data --all-results cannot be combined with --results or --line");
+      process.exit(1);
+    }
+    if (dataQueryAllResults && !dataQueryApply) {
+      console.error("Error: query-data --all-results requires --apply");
       process.exit(1);
     }
     if (dataQueryApply && dataQueryStdin) {
@@ -10785,6 +10799,75 @@ Flags:
     const input = dataQueryStdin
       ? fs.readFileSync(0, "utf8").replace(/\r\n/g, "\n")
       : fs.readFileSync(path.resolve(dataQueryFile), "utf8").replace(/\r\n/g, "\n");
+    if (dataQueryAllResults) {
+      const inspection = await runOrg2DataQuery(input, {
+        file: dataQueryFile,
+        ...(dataQueryDuckdb ? { duckdbPath: dataQueryDuckdb } : {}),
+        inspectOnly: true,
+      });
+      const results = [];
+      if (inspection.ok) {
+        for (const block of inspection.resultBlocks) {
+          const result = await runOrg2DataQuery(input, {
+            file: dataQueryFile,
+            resultId: block.resultId,
+            ...(dataQueryDuckdb ? { duckdbPath: dataQueryDuckdb } : {}),
+            includeScript: dataQueryIncludeScript,
+          });
+          results.push(result);
+          if (!result.ok) break;
+        }
+      }
+      const diagnostics = inspection.ok
+        ? results.flatMap((result) => result.diagnostics)
+        : inspection.diagnostics;
+      const ok = inspection.ok
+        && results.length === inspection.resultBlocks.length
+        && results.every((result) => result.ok);
+      const sourcePath = path.resolve(dataQueryFile);
+      if (!ok) {
+        const envelope = {
+          ok: false,
+          mode: "execute",
+          engine: "duckdb",
+          resultBlocks: inspection.resultBlocks,
+          results,
+          applied: false,
+          changed: false,
+          changedResultCount: 0,
+          resultCount: inspection.resultBlocks.length,
+          file: sourcePath,
+          diagnostics,
+        };
+        if (dataQueryFormat === "json") process.stdout.write(JSON.stringify(envelope, null, 2) + "\n");
+        else {
+          for (const item of diagnostics) {
+            const where = item.source?.line ? `:${item.source.line}` : "";
+            console.error(`${item.severity}: ${item.message}${where}`);
+          }
+        }
+        process.exit(1);
+      }
+
+      const applied = applyDataQueryResults(input, results);
+      if (applied.changed) fs.writeFileSync(sourcePath, applied.text, "utf8");
+      const envelope = {
+        ok: true,
+        mode: "execute",
+        engine: "duckdb",
+        resultBlocks: inspection.resultBlocks,
+        results,
+        applied: true,
+        changed: applied.changed,
+        changedResultCount: applied.changedResultCount,
+        resultCount: results.length,
+        file: sourcePath,
+        diagnostics,
+      };
+      if (dataQueryFormat === "json") process.stdout.write(JSON.stringify(envelope, null, 2) + "\n");
+      else process.stdout.write(`${applied.changed ? "Updated" : "Unchanged"} ${dataQueryFile} (${results.length} results)\n`);
+      return;
+    }
     const result = await runOrg2DataQuery(input, {
       ...(dataQueryFile ? { file: dataQueryFile } : {}),
       ...(dataQueryResultId ? { resultId: dataQueryResultId } : {}),

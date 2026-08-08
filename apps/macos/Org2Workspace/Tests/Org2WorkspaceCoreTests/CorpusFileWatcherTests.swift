@@ -178,6 +178,53 @@ final class CorpusFileWatcherTests: XCTestCase {
     XCTAssertFalse(store.isWorkspaceSurfaceDirty(.meetings))
   }
 
+  @MainActor
+  func testSelectedFileReloadsWhenSyncPreservesModificationDateAndSize() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-realtime-selected-sync-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let note = root.appendingPathComponent("synced.org2")
+    let original = "#+TITLE: Synced\n\n* Alpha\n"
+    let updated = "#+TITLE: Synced\n\n* Bravo\n"
+    XCTAssertEqual(original.utf8.count, updated.utf8.count)
+    try original.write(to: note, atomically: true, encoding: .utf8)
+    let originalModifiedAt = try XCTUnwrap(
+      note.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+    )
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root, persistsDefault: false)
+    store.setWorkspaceRealtimeRefreshActive(true)
+    defer { store.setWorkspaceRealtimeRefreshActive(false) }
+    store.openChatFileReference(OpenClawFileReference(path: note.path, line: 1))
+
+    var deadline = Date().addingTimeInterval(8)
+    while store.selectedEntrySource?.text.contains("* Alpha") != true,
+          Date() < deadline {
+      try await Task.sleep(nanoseconds: 20_000_000)
+    }
+    XCTAssertTrue(store.selectedEntrySource?.text.contains("* Alpha") == true)
+
+    try updated.write(to: note, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes(
+      [.modificationDate: originalModifiedAt],
+      ofItemAtPath: note.path
+    )
+    store.handleCorpusFileEvents(
+      [note.path],
+      corpusRoot: root,
+      requiresFullScan: false
+    )
+
+    deadline = Date().addingTimeInterval(10)
+    while store.selectedEntrySource?.text.contains("* Bravo") != true,
+          Date() < deadline {
+      try await Task.sleep(nanoseconds: 20_000_000)
+    }
+    XCTAssertTrue(store.selectedEntrySource?.text.contains("* Bravo") == true)
+  }
+
   func testReportsNestedFileWritesWithoutScanningTheCorpus() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-watcher-\(UUID().uuidString)", isDirectory: true)

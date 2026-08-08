@@ -181,16 +181,37 @@ final class CodexAppServerClientTests: XCTestCase {
     let store = WorkspaceStore(defaults: defaults, legacyDefaultsDomains: [])
     XCTAssertEqual(store.aiChatCorpusAccessScope, .activeCorpus)
     XCTAssertEqual(store.aiChatCustomInstructions, "")
+    XCTAssertEqual(store.codexSandboxAccess, .workspaceWrite)
     XCTAssertEqual(store.aiChatMessageSound, .glass)
 
     store.aiChatCorpusAccessScope = .allCorpora
     store.aiChatCustomInstructions = "Always identify the source corpus."
+    store.codexSandboxAccess = .fullAccess
     store.aiChatMessageSound = .purr
 
     let restored = WorkspaceStore(defaults: defaults, legacyDefaultsDomains: [])
     XCTAssertEqual(restored.aiChatCorpusAccessScope, .allCorpora)
     XCTAssertEqual(restored.aiChatCustomInstructions, "Always identify the source corpus.")
+    XCTAssertEqual(restored.codexSandboxAccess, .fullAccess)
     XCTAssertEqual(restored.aiChatMessageSound, .purr)
+  }
+
+  func testCodexSandboxAccessBuildsAppServerPolicies() {
+    let cwd = URL(fileURLWithPath: "/tmp/example-corpus", isDirectory: true)
+
+    XCTAssertEqual(CodexSandboxAccess.readOnly.threadSandboxValue, "readOnly")
+    XCTAssertEqual(
+      CodexSandboxAccess.workspaceWrite.turnSandboxPolicy(cwd: cwd),
+      .object([
+        "type": .string("workspaceWrite"),
+        "writableRoots": .array([.string("/tmp/example-corpus")]),
+        "networkAccess": .bool(false)
+      ])
+    )
+    XCTAssertEqual(
+      CodexSandboxAccess.fullAccess.turnSandboxPolicy(cwd: cwd),
+      .object(["type": .string("dangerFullAccess")])
+    )
   }
 
   @MainActor
@@ -310,7 +331,8 @@ final class CodexAppServerClientTests: XCTestCase {
     let threadID = try await client.ensureThread(
       existingThreadID: nil,
       cwd: temporaryDirectory,
-      model: "gpt-test"
+      model: "gpt-test",
+      sandboxAccess: .fullAccess
     )
     XCTAssertEqual(threadID, "thr-test")
 
@@ -323,7 +345,8 @@ final class CodexAppServerClientTests: XCTestCase {
       cwd: temporaryDirectory,
       clientUserMessageID: UUID(),
       model: "gpt-test",
-      reasoningEffort: "high"
+      reasoningEffort: "high",
+      sandboxAccess: .fullAccess
     )
     XCTAssertEqual(result.status, .completed)
     XCTAssertEqual(result.reply, "Final reply")
@@ -362,12 +385,20 @@ final class CodexAppServerClientTests: XCTestCase {
         ;;
       *'"method":"thread/start"'*)
         case "$line" in
+          *'"sandbox":"dangerFullAccess"'*) ;;
+          *) printf '%s\n' '{"id":3,"error":{"message":"thread sandbox missing"}}'; continue ;;
+        esac
+        case "$line" in
           *'"model":"gpt-test"'*) ;;
           *) printf '%s\n' '{"id":3,"error":{"message":"thread model missing"}}'; continue ;;
         esac
         printf '%s\n' '{"id":3,"result":{"thread":{"id":"thr-test"}}}'
         ;;
       *'"method":"turn/start"'*)
+        case "$line" in
+          *'"type":"dangerFullAccess"'*) ;;
+          *) printf '%s\n' '{"id":4,"error":{"message":"turn sandbox missing"}}'; continue ;;
+        esac
         case "$line" in
           *'"model":"gpt-test"'*) ;;
           *) printf '%s\n' '{"id":4,"error":{"message":"turn model missing"}}'; continue ;;
