@@ -111,6 +111,17 @@ export interface McpSnapshot {
   payload: unknown;
 }
 
+const MCP_DISCOVERY_BASE_ENVIRONMENT_VARIABLES = ["PATH", "Path", "ComSpec", "PATHEXT", "SystemRoot", "TEMP", "TMP", "TMPDIR", "WINDIR"] as const;
+
+function discoveryEnvironment(client: McpClientDefinition): NodeJS.ProcessEnv {
+  const environment: NodeJS.ProcessEnv = {};
+  for (const name of [...MCP_DISCOVERY_BASE_ENVIRONMENT_VARIABLES, ...(client.environmentVariables || [])]) {
+    const value = process.env[name];
+    if (value !== undefined) environment[name] = value;
+  }
+  return environment;
+}
+
 export function mcpClientConfigPath(root: string): string { return path.join(path.resolve(root), ".org2", "mcp-clients.json"); }
 export function loadMcpClients(root: string): McpClientDefinition[] {
   const file = mcpClientConfigPath(root);
@@ -144,7 +155,7 @@ export function discoverMcpClient(root: string, clientId: string, options: { tim
   ];
   const execution = spawnSync(client.command, client.args || [], {
     cwd: path.resolve(root),
-    env: process.env,
+    env: discoveryEnvironment(client),
     input: `${requests.map((item) => JSON.stringify(item)).join("\n")}\n`,
     encoding: "utf8",
     timeout: options.timeoutMs || 10_000,

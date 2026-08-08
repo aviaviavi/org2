@@ -710,6 +710,44 @@ try {
   assert.equal(discovery.capabilities.tools.some((tool) => tool.name === "org2_run_list"), true);
   assert.equal(fs.existsSync(discovery.snapshot), true);
 
+  const allowedEnvironmentVariable = "ORG2_MCP_DISCOVERY_ALLOWED_TEST";
+  const unselectedEnvironmentVariable = "ORG2_MCP_DISCOVERY_UNSELECTED_TEST";
+  const previousAllowedEnvironmentValue = process.env[allowedEnvironmentVariable];
+  const previousUnselectedEnvironmentValue = process.env[unselectedEnvironmentVariable];
+  process.env[allowedEnvironmentVariable] = "available";
+  process.env[unselectedEnvironmentVariable] = "must-not-leak";
+  try {
+    saveMcpClients(root, [{
+      id: "environment-filter",
+      command: process.execPath,
+      args: ["-e", `
+        let input = "";
+        process.stdin.setEncoding("utf8");
+        process.stdin.on("data", (chunk) => input += chunk);
+        process.stdin.on("end", () => {
+          const name = process.env.${allowedEnvironmentVariable} === "available" && process.env.${unselectedEnvironmentVariable} === undefined
+            ? "environment-filtered"
+            : "unexpected-environment";
+          const responses = [
+            { jsonrpc: "2.0", id: 1, result: { serverInfo: { name }, protocolVersion: "2025-03-26", capabilities: {} } },
+            { jsonrpc: "2.0", id: 2, result: { resources: [] } },
+            { jsonrpc: "2.0", id: 3, result: { tools: [] } },
+            { jsonrpc: "2.0", id: 4, result: { prompts: [] } },
+          ];
+          process.stdout.write(responses.map((response) => JSON.stringify(response)).join("\\n") + "\\n");
+        });
+      `],
+      environmentVariables: [allowedEnvironmentVariable],
+    }]);
+    const filteredDiscovery = discoverMcpClient(root, "environment-filter");
+    assert.equal(filteredDiscovery.capabilities.serverInfo.name, "environment-filtered");
+  } finally {
+    if (previousAllowedEnvironmentValue === undefined) delete process.env[allowedEnvironmentVariable];
+    else process.env[allowedEnvironmentVariable] = previousAllowedEnvironmentValue;
+    if (previousUnselectedEnvironmentValue === undefined) delete process.env[unselectedEnvironmentVariable];
+    else process.env[unselectedEnvironmentVariable] = previousUnselectedEnvironmentValue;
+  }
+
   fs.writeFileSync(path.join(root, "notes", "legacy.org2"), "* TODO Delegated research\n:PROPERTIES:\n:AGENT_RUN_ID: legacy-1\n:AGENT_SESSION_ID: session-42\n:STATUS: needs-review\n:ORG2_ARTIFACT_ROLE: draft\n:ORG2_REVIEW_STATUS: review-required\n:END:\n");
   const normalized = normalizeLegacyAgentRuns(root, "2026-07-14T00:00:00Z");
   assert.equal(normalized.created[0].id, "legacy-1");
