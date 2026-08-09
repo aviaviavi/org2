@@ -6,6 +6,7 @@ import {
   readGuardedFile,
   type GuardedFileWriteOptions,
 } from "./guardedFile.js";
+import { safeIdentifier } from "./safeIdentifier.js";
 
 export const ORG2_AGENT_RUN_SCHEMA = "org2:agent-run:v1" as const;
 
@@ -334,14 +335,6 @@ function isApprovalBoundaryBlock(run: AgentRun): boolean {
   return agentRunBlockReasonLooksLikeApprovalBoundary(run.blockedReason);
 }
 
-function safeId(raw: string): string {
-  const value = String(raw || "").trim();
-  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(value)) {
-    throw new Error("run id must start with an alphanumeric character and contain only letters, numbers, dots, underscores, or dashes");
-  }
-  return value;
-}
-
 function isoNow(raw?: string): string {
   const date = raw ? new Date(raw) : new Date();
   if (Number.isNaN(date.getTime())) throw new Error(`invalid timestamp: ${raw}`);
@@ -386,7 +379,7 @@ export function agentRunApprovalDecisionKeys(
 
 export function createAgentRun(input: AgentRunCreateInput): AgentRun {
   const now = isoNow(input.now);
-  const id = safeId(input.id || crypto.randomUUID());
+  const id = safeIdentifier(input.id || crypto.randomUUID(), { label: "run id" });
   const goal = String(input.goal || "").trim();
   if (!goal) throw new Error("run goal is required");
   const status = input.status || "queued";
@@ -418,7 +411,7 @@ export function createAgentRun(input: AgentRunCreateInput): AgentRun {
       const status = step.status || "pending";
       if (!AGENT_RUN_STEP_STATUSES.includes(status)) throw new Error(`invalid run step status: ${status}`);
       return {
-        id: safeId(step.id || `step-${index + 1}`),
+        id: safeIdentifier(step.id || `step-${index + 1}`, { label: "run id" }),
         title: String(step.title || "").trim(),
         kind: step.kind,
         status,
@@ -445,7 +438,7 @@ export function createAgentRun(input: AgentRunCreateInput): AgentRun {
     ...(input.budget ? { budget: { ...input.budget } } : {}),
     ...(optional(input.logicalWorkId) ? { logicalWorkId: optional(input.logicalWorkId) } : {}),
     ...(input.attempt ? { attempt: {
-      id: safeId(input.attempt.id),
+      id: safeIdentifier(input.attempt.id, { label: "run id" }),
       number: input.attempt.number,
       ...(optional(input.attempt.triggerId) ? { triggerId: optional(input.attempt.triggerId) } : {}),
       ...(optional(input.attempt.triggerType) ? { triggerType: optional(input.attempt.triggerType) } : {}),
@@ -687,7 +680,7 @@ export function addAgentRunArtifact(run: AgentRun, input: Omit<AgentRunArtifact,
   if (!AGENT_RUN_ARTIFACT_ROLES.includes(input.role)) throw new Error(`invalid artifact role: ${input.role}`);
   if (input.reviewStatus && !AGENT_RUN_ARTIFACT_REVIEW_STATUSES.includes(input.reviewStatus)) throw new Error(`invalid artifact review status: ${input.reviewStatus}`);
   const artifact: AgentRunArtifact = {
-    id: safeId(input.id || crypto.randomUUID()),
+    id: safeIdentifier(input.id || crypto.randomUUID(), { label: "run id" }),
     path: artifactPath,
     role: input.role,
     createdAt: now,
@@ -730,7 +723,7 @@ export function updateAgentRunArtifactReview(
 export function addAgentRunValidation(run: AgentRun, input: Omit<AgentRunValidation, "id" | "checkedAt"> & { id?: string; checkedAt?: string }, actor?: string): AgentRun {
   const now = isoNow(input.checkedAt);
   const validation: AgentRunValidation = {
-    id: safeId(input.id || crypto.randomUUID()),
+    id: safeIdentifier(input.id || crypto.randomUUID(), { label: "run id" }),
     name: String(input.name || "").trim(),
     status: input.status,
     checkedAt: now,
@@ -746,7 +739,7 @@ export function requestAgentRunApproval(run: AgentRun, input: Omit<AgentRunAppro
   if (!AGENT_RUN_RISK_CLASSES.includes(input.riskClass)) throw new Error(`invalid approval risk class: ${input.riskClass}`);
   const now = isoNow(input.requestedAt);
   const material = {
-    id: safeId(input.id || crypto.randomUUID()),
+    id: safeIdentifier(input.id || crypto.randomUUID(), { label: "run id" }),
     title: String(input.title || "").trim(),
     action: String(input.action || "").trim(),
     riskClass: input.riskClass,
@@ -1071,7 +1064,7 @@ export function agentRunDirectory(corpusRoot: string): string {
 }
 
 export function agentRunPath(corpusRoot: string, id: string): string {
-  return path.join(agentRunDirectory(corpusRoot), `${safeId(id)}.org2`);
+  return path.join(agentRunDirectory(corpusRoot), `${safeIdentifier(id, { label: "run id" })}.org2`);
 }
 
 export function saveAgentRun(

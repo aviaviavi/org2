@@ -14,6 +14,7 @@ import {
 import { dueWorkflowTriggers, installBuiltinWorkflow, instantiateWorkflow, legacyWorkflowDirectory, loadWorkflow, loadWorkflowSnapshot, markWorkflowTriggerAttempt, migrateLegacyWorkflows, packagedCorpusTemplate, parseWorkflowOrg, recordWorkflowSignal, renderWorkflowOrg, saveWorkflow, updateWorkflow, validateWorkflow, workflowFromRun, workflowPath, workflowTriggerEligibility } from "../dist/agentWorkflow.js";
 import { artifactRebuildPlan, buildArtifactGraph, MEETING_TO_CONTROLLED_EXECUTION_WORKFLOW } from "../dist/artifactPipeline.js";
 import { discoverMcpClient, saveMcpClients, serveMcp, writeMcpSnapshot } from "../dist/mcpRuntime.js";
+import { safeIdentifier } from "../dist/safeIdentifier.js";
 import { defaultRuntimePolicy, selectRuntime, validateRuntimePaths } from "../dist/runtimePolicy.js";
 import { evaluateRun, replayWorkflowFixture, sanitizeRunFixture } from "../dist/workflowEval.js";
 import {
@@ -23,6 +24,16 @@ import {
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "org2-agentic-"));
 try {
+  assert.equal(safeIdentifier(" workflow_1.0 "), "workflow_1.0");
+  assert.throws(
+    () => safeIdentifier("../outside", { label: "workflow id" }),
+    /workflow id must start with an alphanumeric character/,
+  );
+  assert.throws(
+    () => safeIdentifier("../outside", { invalidMessage: (raw) => `invalid workflow id: ${raw}` }),
+    /invalid workflow id: \.\.\/outside/,
+  );
+
   const revenueGoal = createGoal({
     id: "grow-revenue",
     title: "Grow durable revenue",

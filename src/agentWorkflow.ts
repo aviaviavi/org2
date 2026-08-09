@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { guardedWriteFile, readGuardedFile, type GuardedFileWriteOptions } from "./guardedFile.js";
+import { safeIdentifier } from "./safeIdentifier.js";
 import {
   createAgentRun,
   type AgentRun,
@@ -102,12 +103,6 @@ export interface WorkflowValidationResult {
   issues: Array<{ path: string; message: string }>;
 }
 
-function safeId(raw: string): string {
-  const value = String(raw || "").trim();
-  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(value)) throw new Error(`invalid workflow id: ${raw}`);
-  return value;
-}
-
 function nowIso(now?: string): string {
   const value = now ? new Date(now) : new Date();
   if (Number.isNaN(value.getTime())) throw new Error(`invalid timestamp: ${now}`);
@@ -137,7 +132,7 @@ export function workflowFromRun(run: AgentRun, options: { id?: string; title?: s
   });
   return {
     schema: ORG2_WORKFLOW_SCHEMA,
-    id: safeId(options.id || `workflow-${run.id}`),
+    id: safeIdentifier(options.id || `workflow-${run.id}`, { invalidMessage: (raw) => `invalid workflow id: ${raw}` }),
     version: options.version || "1.0.0",
     title: options.title || run.goal,
     description: `Reusable workflow captured from run ${run.id}.`,
@@ -164,7 +159,7 @@ export function workflowFromRun(run: AgentRun, options: { id?: string; title?: s
 export function validateWorkflow(workflow: AgentWorkflow): WorkflowValidationResult {
   const issues: WorkflowValidationResult["issues"] = [];
   if (workflow.schema !== ORG2_WORKFLOW_SCHEMA) issues.push({ path: "schema", message: `must equal ${ORG2_WORKFLOW_SCHEMA}` });
-  try { safeId(workflow.id); } catch (error) { issues.push({ path: "id", message: (error as Error).message }); }
+  try { safeIdentifier(workflow.id, { invalidMessage: (raw) => `invalid workflow id: ${raw}` }); } catch (error) { issues.push({ path: "id", message: (error as Error).message }); }
   if (!workflow.title?.trim()) issues.push({ path: "title", message: "is required" });
   if (!["draft", "active", "paused"].includes(workflow.state || "draft")) issues.push({ path: "state", message: "must be draft, active, or paused" });
   if (!/^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$/.test(workflow.version || "")) issues.push({ path: "version", message: "must be semantic version syntax" });
@@ -175,7 +170,7 @@ export function validateWorkflow(workflow: AgentWorkflow): WorkflowValidationRes
   }
   const triggerIds = new Set<string>();
   for (const [index, trigger] of (workflow.triggers || []).entries()) {
-    try { safeId(trigger.id); } catch (error) { issues.push({ path: `triggers[${index}].id`, message: (error as Error).message }); }
+    try { safeIdentifier(trigger.id, { invalidMessage: (raw) => `invalid workflow id: ${raw}` }); } catch (error) { issues.push({ path: `triggers[${index}].id`, message: (error as Error).message }); }
     if (triggerIds.has(trigger.id)) issues.push({ path: `triggers[${index}].id`, message: "must be unique" });
     triggerIds.add(trigger.id);
     if (!WORKFLOW_TRIGGER_TYPES.includes(trigger.type)) issues.push({ path: `triggers[${index}].type`, message: "is not supported" });
@@ -238,12 +233,12 @@ export function instantiateWorkflow(workflow: AgentWorkflow, inputs: Record<stri
 
 export function workflowDirectory(root: string): string { return path.join(path.resolve(root), "workflows"); }
 export function legacyWorkflowDirectory(root: string): string { return path.join(path.resolve(root), ".org2", "workflows"); }
-export function workflowPath(root: string, id: string): string { return path.join(workflowDirectory(root), `${safeId(id)}.org2`); }
+export function workflowPath(root: string, id: string): string { return path.join(workflowDirectory(root), `${safeIdentifier(id, { invalidMessage: (raw) => `invalid workflow id: ${raw}` })}.org2`); }
 
 export function workflowSourcePath(root: string, id: string): string {
   const primary = workflowPath(root, id);
   if (fs.existsSync(primary)) return primary;
-  const legacy = path.join(legacyWorkflowDirectory(root), `${safeId(id)}.org2`);
+  const legacy = path.join(legacyWorkflowDirectory(root), `${safeIdentifier(id, { invalidMessage: (raw) => `invalid workflow id: ${raw}` })}.org2`);
   if (fs.existsSync(legacy)) return legacy;
   return primary;
 }
@@ -431,7 +426,7 @@ export function recordWorkflowSignal(
   if (![...WORKFLOW_EVENT_TRIGGER_TYPES, "file-change"].includes(input.type)) throw new Error(`invalid workflow signal: ${input.type}`);
   const at = nowIso(input.at);
   const signal: WorkflowSignal = {
-    id: safeId(input.id || crypto.randomUUID()),
+    id: safeIdentifier(input.id || crypto.randomUUID(), { invalidMessage: (raw) => `invalid workflow id: ${raw}` }),
     type: input.type,
     at,
     paths: Array.from(new Set((input.paths || []).map((item) => item.trim()).filter(Boolean))),

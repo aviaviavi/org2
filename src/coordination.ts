@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { guardedWriteFile, readGuardedFile, type GuardedFileWriteOptions } from "./guardedFile.js";
+import { safeIdentifier } from "./safeIdentifier.js";
 
 export const ORG2_GOAL_SCHEMA = "org2:goal:v1" as const;
 export const ORG2_AGENT_PROFILE_SCHEMA = "org2:agent-profile:v1" as const;
@@ -70,14 +71,6 @@ function unique(values: readonly string[] | undefined): string[] {
   return [...new Set((values || []).map(clean).filter(Boolean))];
 }
 
-function safeId(raw: string, label: string): string {
-  const value = clean(raw);
-  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(value)) {
-    throw new Error(`${label} must start with an alphanumeric character and contain only letters, numbers, dots, underscores, or dashes`);
-  }
-  return value;
-}
-
 function iso(raw?: string): string {
   const value = raw ? new Date(raw) : new Date();
   if (Number.isNaN(value.getTime())) throw new Error(`invalid timestamp: ${raw}`);
@@ -97,7 +90,7 @@ function machineState<T>(raw: string, language: string): T {
 
 function assertGoal(goal: GoalRecord): GoalRecord {
   if (goal.schema !== ORG2_GOAL_SCHEMA) throw new Error(`goal schema must be ${ORG2_GOAL_SCHEMA}`);
-  safeId(goal.id, "goal id");
+  safeIdentifier(goal.id, { label: "goal id" });
   if (!clean(goal.title)) throw new Error("goal title is required");
   if (!GOAL_STATUSES.includes(goal.status)) throw new Error(`invalid goal status: ${goal.status}`);
   if (goal.parentGoalRef && goal.parentGoalRef === goal.id) throw new Error("a goal cannot be its own parent");
@@ -108,7 +101,7 @@ function assertGoal(goal: GoalRecord): GoalRecord {
 
 function assertAgentProfile(profile: AgentProfile): AgentProfile {
   if (profile.schema !== ORG2_AGENT_PROFILE_SCHEMA) throw new Error(`agent profile schema must be ${ORG2_AGENT_PROFILE_SCHEMA}`);
-  safeId(profile.id, "agent profile id");
+  safeIdentifier(profile.id, { label: "agent profile id" });
   if (!clean(profile.name)) throw new Error("agent profile name is required");
   if (!AGENT_PROFILE_STATUSES.includes(profile.status)) throw new Error(`invalid agent profile status: ${profile.status}`);
   if (profile.reportsToAgentRef && profile.reportsToAgentRef === profile.id) throw new Error("an agent profile cannot report to itself");
@@ -140,7 +133,7 @@ export function createGoal(input: {
   const now = iso(input.now);
   return assertGoal({
     schema: ORG2_GOAL_SCHEMA,
-    id: safeId(input.id, "goal id"),
+    id: safeIdentifier(input.id, { label: "goal id" }),
     title: clean(input.title),
     description: clean(input.description),
     status: input.status || "active",
@@ -171,7 +164,7 @@ export function createAgentProfile(input: {
   const goalRefs = unique([...(input.goalRefs || []), ...(primaryGoalRef ? [primaryGoalRef] : [])]);
   return assertAgentProfile({
     schema: ORG2_AGENT_PROFILE_SCHEMA,
-    id: safeId(input.id, "agent profile id"),
+    id: safeIdentifier(input.id, { label: "agent profile id" }),
     name: clean(input.name),
     description: clean(input.description),
     status: input.status || "active",
@@ -274,8 +267,8 @@ export function parseAgentProfileOrg(raw: string): AgentProfile {
 
 export function goalDirectory(root: string): string { return path.join(path.resolve(root), "goals"); }
 export function agentProfileDirectory(root: string): string { return path.join(path.resolve(root), "agent-profiles"); }
-export function goalPath(root: string, id: string): string { return path.join(goalDirectory(root), `${safeId(id, "goal id")}.org2`); }
-export function agentProfilePath(root: string, id: string): string { return path.join(agentProfileDirectory(root), `${safeId(id, "agent profile id")}.org2`); }
+export function goalPath(root: string, id: string): string { return path.join(goalDirectory(root), `${safeIdentifier(id, { label: "goal id" })}.org2`); }
+export function agentProfilePath(root: string, id: string): string { return path.join(agentProfileDirectory(root), `${safeIdentifier(id, { label: "agent profile id" })}.org2`); }
 
 export function saveGoal(root: string, goal: GoalRecord, options: GuardedFileWriteOptions = {}): string {
   return guardedWriteFile(goalPath(root, goal.id), renderGoalOrg(goal), options).file;
