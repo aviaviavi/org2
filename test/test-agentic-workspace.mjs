@@ -767,6 +767,11 @@ try {
   assert.equal(legacyRun.artifacts[0].reviewStatus, "review-required");
   assert.equal(legacyRun.approvals[0].status, "pending");
   assert.equal(legacyRun.context.some((item) => item.ref === "session:session-42"), true);
+
+  fs.writeFileSync(path.join(root, "notes", "legacy-headline.org2"), "* IN_PROGRESS [#A] Finish shared title parsing :migration:cleanup:\n:PROPERTIES:\n:AGENT_RUN_ID: legacy-headline\n:END:\n");
+  const normalizedHeadline = normalizeLegacyAgentRuns(root, "2026-07-14T00:00:00Z");
+  assert.equal(normalizedHeadline.created.find((item) => item.id === "legacy-headline")?.id, "legacy-headline");
+  assert.equal(loadAgentRun(root, "legacy-headline").goal, "Finish shared title parsing");
   console.log("agentic workspace tests passed");
 } finally {
   fs.rmSync(root, { recursive: true, force: true });

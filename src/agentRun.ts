@@ -6,6 +6,7 @@ import {
   readGuardedFile,
   type GuardedFileWriteOptions,
 } from "./guardedFile.js";
+import { parseHeadlineTitleForRoam } from "./headlineTitle.js";
 import { safeIdentifier } from "./safeIdentifier.js";
 
 export const ORG2_AGENT_RUN_SCHEMA = "org2:agent-run:v1" as const;
@@ -1202,7 +1203,7 @@ export function normalizeLegacyAgentRuns(corpusRoot: string, nowRaw?: string): L
       }
       let headingIndex = index;
       while (headingIndex >= 0 && !/^\*+\s+/.test(lines[headingIndex] || "")) headingIndex -= 1;
-      const heading = headingIndex >= 0 ? String(lines[headingIndex] || "").replace(/^\*+\s+(?:(?:TODO|DONE|CANCELED|CANCELLED|WAIT|HOLD|IN_PROGRESS|IN-PROGRESS)\s+)?/i, "").replace(/\s+:[^\s:]+(?::[^\s:]+)*:\s*$/, "").trim() : `Imported agent run ${id}`;
+      const heading = headingIndex >= 0 ? parseHeadlineTitleForRoam(lines[headingIndex] || "") : `Imported agent run ${id}`;
       const props = new Map<string, string>();
       let drawerStart = index;
       while (drawerStart >= headingIndex && !/^\s*:PROPERTIES:\s*$/i.test(lines[drawerStart] || "")) drawerStart -= 1;
