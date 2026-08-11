@@ -5,6 +5,7 @@ import { spawnSync } from "node:child_process";
 import { listAgentRuns, loadAgentRunSnapshot, saveAgentRun, transitionAgentRun } from "./agentRun.js";
 import { instantiateWorkflow, listWorkflows, loadWorkflow } from "./agentWorkflow.js";
 import { resolveAgentProfile } from "./coordination.js";
+import { safeIdentifier } from "./safeIdentifier.js";
 
 type JsonObject = Record<string, unknown>;
 type JsonRpcId = string | number | null;
@@ -136,8 +137,8 @@ export function saveMcpClients(root: string, clients: McpClientDefinition[]): st
   return file;
 }
 export function writeMcpSnapshot(root: string, snapshot: McpSnapshot): string {
-  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(snapshot.id)) throw new Error("invalid snapshot id");
-  const file = path.join(path.resolve(root), "raw", "connectors", "mcp", `${snapshot.id}.json`);
+  const id = safeIdentifier(snapshot.id, { label: "snapshot id" });
+  const file = path.join(path.resolve(root), "raw", "connectors", "mcp", `${id}.json`);
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, `${JSON.stringify(snapshot, null, 2)}\n`, "utf8");
   return file;

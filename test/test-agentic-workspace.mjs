@@ -674,6 +674,10 @@ try {
 
   const snapshot = writeMcpSnapshot(root, { schema: "org2:mcp-snapshot:v1", id: "crm-account", source: "mcp://crm/account/1", retrievedAt: "2026-07-14T00:00:00Z", identity: "account:1", payload: { name: "Example" } });
   assert.equal(fs.existsSync(snapshot), true);
+  assert.throws(
+    () => writeMcpSnapshot(root, { schema: "org2:mcp-snapshot:v1", id: "../outside", source: "mcp://crm/account/1", retrievedAt: "2026-07-14T00:00:00Z", payload: {} }),
+    /snapshot id must start with an alphanumeric character/,
+  );
   const linkedResource = path.join(root, "notes", "outside-corpus.org2");
   fs.symlinkSync(path.resolve("package.json"), linkedResource);
   const input = new PassThrough(); const output = new PassThrough(); let response = "";
