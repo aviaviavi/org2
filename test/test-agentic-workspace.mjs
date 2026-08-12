@@ -162,6 +162,24 @@ try {
   fs.unlinkSync(guardedFile);
 
   assert.throws(() => createAgentRun({ goal: "Reject an invalid plan", plan: [{ title: "Broken", kind: "unknown" }] }), /invalid run step kind/);
+  assert.throws(
+    () => createAgentRun({
+      goal: "Reject duplicate plan steps",
+      plan: [
+        { id: "draft", title: "Draft", kind: "agent" },
+        { id: "draft", title: "Review", kind: "approval" },
+      ],
+    }),
+    /run plan step ids must be unique: draft/,
+  );
+  assert.throws(
+    () => createAgentRun({ goal: "Reject an invalid plan step id", plan: [{ id: "../outside", title: "Broken", kind: "agent" }] }),
+    /run plan step id must start with an alphanumeric character/,
+  );
+  assert.throws(
+    () => createAgentRun({ goal: "Reject an invalid attempt id", attempt: { id: "../outside", number: 1 } }),
+    /run attempt id must start with an alphanumeric character/,
+  );
   assert.throws(() => updateAgentRunStep(run, "draft", "unknown"), /invalid run step status/);
   assert.throws(() => addAgentRunArtifact(run, { path: "views/broken.org2", role: "unknown" }), /invalid artifact role/);
   assert.throws(() => addAgentRunArtifact(run, { path: "views/broken.org2", role: "draft", reviewStatus: "unknown" }), /invalid artifact review status/);

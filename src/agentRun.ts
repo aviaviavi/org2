@@ -393,6 +393,25 @@ export function createAgentRun(input: AgentRunCreateInput): AgentRun {
     }
   }
 
+  const plan = (input.plan || []).map((step, index) => {
+    if (!AGENT_RUN_STEP_KINDS.includes(step.kind)) throw new Error(`invalid run step kind: ${step.kind}`);
+    const status = step.status || "pending";
+    if (!AGENT_RUN_STEP_STATUSES.includes(status)) throw new Error(`invalid run step status: ${status}`);
+    return {
+      id: safeIdentifier(step.id || `step-${index + 1}`, { label: "run plan step id" }),
+      title: String(step.title || "").trim(),
+      kind: step.kind,
+      status,
+      ...(optional(step.capability) ? { capability: optional(step.capability) } : {}),
+      ...(optional(step.detail) ? { detail: optional(step.detail) } : {}),
+    };
+  }).filter((step) => step.title);
+  const planIds = new Set<string>();
+  for (const step of plan) {
+    if (planIds.has(step.id)) throw new Error(`run plan step ids must be unique: ${step.id}`);
+    planIds.add(step.id);
+  }
+
   const run: AgentRun = {
     schema: ORG2_AGENT_RUN_SCHEMA,
     id,
@@ -407,19 +426,7 @@ export function createAgentRun(input: AgentRunCreateInput): AgentRun {
       ...(optional(item.citation) ? { citation: optional(item.citation) } : {}),
       ...(optional(item.sha256) ? { sha256: optional(item.sha256)?.toLowerCase() } : {}),
     })).filter((item) => item.ref),
-    plan: (input.plan || []).map((step, index) => {
-      if (!AGENT_RUN_STEP_KINDS.includes(step.kind)) throw new Error(`invalid run step kind: ${step.kind}`);
-      const status = step.status || "pending";
-      if (!AGENT_RUN_STEP_STATUSES.includes(status)) throw new Error(`invalid run step status: ${status}`);
-      return {
-        id: safeIdentifier(step.id || `step-${index + 1}`, { label: "run id" }),
-        title: String(step.title || "").trim(),
-        kind: step.kind,
-        status,
-        ...(optional(step.capability) ? { capability: optional(step.capability) } : {}),
-        ...(optional(step.detail) ? { detail: optional(step.detail) } : {}),
-      };
-    }).filter((step) => step.title),
+    plan,
     artifacts: [],
     approvals: [],
     validations: [],
@@ -439,7 +446,7 @@ export function createAgentRun(input: AgentRunCreateInput): AgentRun {
     ...(input.budget ? { budget: { ...input.budget } } : {}),
     ...(optional(input.logicalWorkId) ? { logicalWorkId: optional(input.logicalWorkId) } : {}),
     ...(input.attempt ? { attempt: {
-      id: safeIdentifier(input.attempt.id, { label: "run id" }),
+      id: safeIdentifier(input.attempt.id, { label: "run attempt id" }),
       number: input.attempt.number,
       ...(optional(input.attempt.triggerId) ? { triggerId: optional(input.attempt.triggerId) } : {}),
       ...(optional(input.attempt.triggerType) ? { triggerType: optional(input.attempt.triggerType) } : {}),
