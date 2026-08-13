@@ -106,10 +106,13 @@ struct ApprovalEntry: Identifiable, Hashable, Codable {
   }
 
   var sourceLabel: String {
+    if let runID {
+      return "Run \(runID)"
+    }
     if let line {
-      "\(file):\(line)"
+      return "\(file):\(line)"
     } else {
-      file
+      return file
     }
   }
 

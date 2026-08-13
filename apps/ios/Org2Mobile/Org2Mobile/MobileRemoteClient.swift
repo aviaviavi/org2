@@ -50,8 +50,12 @@ struct MobileRemoteClient: Sendable {
     self.accessToken = accessToken
   }
 
-  func get<Response: Decodable>(_ path: String, as type: Response.Type) async throws -> Response {
-    try await request(method: "GET", path: path, body: nil, as: type)
+  func get<Response: Decodable>(
+    _ path: String,
+    timeout: TimeInterval = 15,
+    as type: Response.Type
+  ) async throws -> Response {
+    try await request(method: "GET", path: path, body: nil, timeout: timeout, as: type)
   }
 
   func post<Payload: Encodable, Response: Decodable>(

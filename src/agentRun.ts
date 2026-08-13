@@ -816,23 +816,15 @@ export function decideAgentRunApproval(run: AgentRun, approvalId: string, decisi
   };
   let next: AgentRun = { ...run, approvals, updatedAt: now, events: [...run.events, event("approval-decided", now, input.actor, `${approvalId}: ${decision}`, { approvalId, fingerprint: expectedFingerprint, decision, ...(input.actorRole ? { actorRole: input.actorRole } : {}) })] };
   if (
-    (decision === "rejected" || decision === "canceled")
-    && ["queued", "running", "waiting-approval", "blocked"].includes(run.status)
-  ) {
-    next = transitionAgentRun(next, "canceled", {
-      actor: input.actor,
-      reason: `Approval ${approvalId} was ${decision}.`,
-      now,
-    });
-  } else if (
     (run.status === "waiting-approval"
       || isApprovalBoundaryBlock(run))
     && approvals.every((approval) => approval.status !== "pending")
   ) {
-    const allApproved = currentAgentRunApprovalBoundary(next).every((approval) => approval.status === "approved");
-    next = transitionAgentRun(next, allApproved ? "running" : "blocked", {
+    const boundary = currentAgentRunApprovalBoundary(next);
+    const needsRevision = boundary.some((approval) => approval.status === "revised");
+    next = transitionAgentRun(next, needsRevision ? "blocked" : "running", {
       actor: input.actor,
-      reason: allApproved ? undefined : AGENT_RUN_APPROVAL_BLOCK_REASON,
+      reason: needsRevision ? AGENT_RUN_APPROVAL_BLOCK_REASON : undefined,
       now,
     });
   }
@@ -1131,6 +1123,12 @@ export function listAgentRunSnapshots(corpusRoot: string): AgentRunSnapshot[] {
         sourceIssues: agentRunSourceConsistency(snapshot.content, run),
       };
     })
+    // Syncthing and similar tools may leave conflict copies beside the
+    // canonical run record. Those copies can contain the same durable run ID
+    // with older status or approval state, so treating every .org2 file in the
+    // directory as authoritative makes reads nondeterministic. A durable run is
+    // governed only by the path that save/load use: <run-id>.org2.
+    .filter((snapshot) => snapshot.file === agentRunPath(corpusRoot, snapshot.run.id))
     .sort((a, b) => b.run.updatedAt.localeCompare(a.run.updatedAt) || a.run.id.localeCompare(b.run.id));
 }
 

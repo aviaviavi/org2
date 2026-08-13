@@ -405,6 +405,8 @@ private struct WorkspaceSurfaceView: View {
           SourcesView()
         case .openClaw:
           OpenClawChatView()
+        case .externalThreads:
+          ExternalThreadsView()
         }
       }
       // Some surface controls and rows have a useful minimum content width.
@@ -432,6 +434,274 @@ private struct HomeView: View {
           store.ensureHomeDetailReady()
         }
       }
+  }
+}
+
+private struct ExternalThreadsView: View {
+  @EnvironmentObject private var store: WorkspaceStore
+
+  var body: some View {
+    VStack(spacing: 0) {
+      HeaderBar(
+        title: "External Threads",
+        subtitle: "Read-only tasks from Codex and other agent harnesses",
+        surface: .externalThreads
+      ) {
+        if store.isRefreshingExternalThreads {
+          WorkspaceActivityIndicator(size: .small)
+        }
+        Button {
+          Task { await store.refreshExternalThreads() }
+        } label: {
+          Label("Refresh", systemImage: "arrow.clockwise")
+        }
+        .disabled(store.isRefreshingExternalThreads)
+      }
+
+      HSplitView {
+        externalThreadList
+          .frame(minWidth: 250, idealWidth: 310)
+        externalThreadDetail
+          .frame(minWidth: 320, maxWidth: .infinity, maxHeight: .infinity)
+      }
+    }
+    .task {
+      if store.externalThreads.isEmpty {
+        await store.refreshExternalThreads()
+      }
+    }
+  }
+
+  private var externalThreadList: some View {
+    VStack(spacing: 0) {
+      HStack(spacing: 8) {
+        Image(systemName: "magnifyingglass")
+          .foregroundStyle(.secondary)
+        TextField("Filter external threads", text: $store.externalThreadSearchQuery)
+          .textFieldStyle(.plain)
+        if !store.externalThreadSearchQuery.isEmpty {
+          Button {
+            store.externalThreadSearchQuery = ""
+          } label: {
+            Label("Clear", systemImage: "xmark.circle.fill")
+          }
+          .labelStyle(.iconOnly)
+          .buttonStyle(.plain)
+          .foregroundStyle(.secondary)
+        }
+      }
+      .padding(.horizontal, 12)
+      .padding(.vertical, 9)
+      .background(WorkspaceDesign.controlFill, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+      .padding(12)
+
+      if store.filteredExternalThreads.isEmpty {
+        Spacer()
+        if store.isRefreshingExternalThreads {
+          WorkspaceLoadingStateView("Loading external threads")
+        } else {
+          ContentUnavailableView(
+            store.externalThreadSearchQuery.isEmpty ? "No External Threads" : "No Matching Threads",
+            systemImage: "rectangle.stack.badge.person.crop",
+            description: Text(store.externalThreadError ?? "Native Codex tasks will appear here without being modified.")
+          )
+        }
+        Spacer()
+      } else {
+        List(store.filteredExternalThreads) { thread in
+          Button {
+            Task { await store.selectExternalThread(thread.id) }
+          } label: {
+            ExternalThreadRow(
+              thread: thread,
+              isSelected: store.selectedExternalThreadID == thread.id
+            )
+          }
+          .buttonStyle(.plain)
+          .listRowBackground(Color.clear)
+        }
+        .listStyle(.inset)
+      }
+    }
+    .background(WorkspaceDesign.surfaceBackground)
+  }
+
+  @ViewBuilder
+  private var externalThreadDetail: some View {
+    if store.isLoadingExternalThread {
+      VStack(spacing: 12) {
+        WorkspaceActivityIndicator(size: .regular)
+        Text("Loading the full read-only transcript…")
+          .foregroundStyle(.secondary)
+      }
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
+    } else if let detail = store.selectedExternalThreadDetail {
+      VStack(spacing: 0) {
+        HStack(alignment: .top, spacing: 12) {
+          VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 7) {
+              Label(detail.thread.harness.title, systemImage: detail.thread.harness.systemImage)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+              Text("READ ONLY")
+                .font(.system(size: 9, weight: .bold, design: .rounded))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(WorkspaceDesign.controlFill, in: Capsule())
+            }
+            Text(detail.thread.title)
+              .font(.title3.weight(.semibold))
+              .textSelection(.enabled)
+            if let workspacePath = detail.thread.workspacePath {
+              Text(workspacePath)
+                .font(.caption.monospaced())
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            }
+          }
+          Spacer(minLength: 8)
+          Button {
+            Task {
+              do {
+                _ = try await store.saveExternalThreadToOrg2(detail)
+              } catch {
+                store.reportExternalThreadActionError(error)
+              }
+            }
+          } label: {
+            Label("Save to Org2", systemImage: "square.and.arrow.down")
+          }
+          Button {
+            Task {
+              do {
+                _ = try await store.continueExternalThreadInOrg2(detail)
+              } catch {
+                store.reportExternalThreadActionError(error)
+              }
+            }
+          } label: {
+            Label("Continue in New Org2 Thread", systemImage: "arrow.turn.down.right")
+          }
+          .buttonStyle(.borderedProminent)
+        }
+        .controlSize(.small)
+        .padding(14)
+        .background(WorkspaceDesign.barBackground)
+        .overlay(alignment: .bottom) { Divider() }
+
+        ScrollView {
+          LazyVStack(alignment: .leading, spacing: 12) {
+            if detail.messages.isEmpty {
+              ContentUnavailableView(
+                "No Text Messages",
+                systemImage: "text.bubble",
+                description: Text("This task contains no user or assistant text to display.")
+              )
+              .frame(maxWidth: .infinity, minHeight: 260)
+            } else {
+              ForEach(detail.messages) { message in
+                ExternalThreadMessageCard(message: message, harness: detail.thread.harness)
+              }
+            }
+          }
+          .padding(16)
+        }
+      }
+    } else {
+      ContentUnavailableView(
+        "Select an External Thread",
+        systemImage: "rectangle.stack.badge.person.crop",
+        description: Text(store.externalThreadError ?? "Open a native agent task without resuming or changing it.")
+      )
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+  }
+}
+
+private struct ExternalThreadRow: View {
+  let thread: ExternalThreadSummary
+  let isSelected: Bool
+
+  var body: some View {
+    HStack(alignment: .top, spacing: 9) {
+      WorkspaceIconBadge(
+        systemImage: thread.harness.systemImage,
+        tint: isSelected ? .accentColor : WorkspaceDesign.secondaryText,
+        fill: isSelected ? Color.accentColor.opacity(0.12) : WorkspaceDesign.controlFill
+      )
+      VStack(alignment: .leading, spacing: 4) {
+        Text(thread.title)
+          .font(.body.weight(.medium))
+          .lineLimit(2)
+        if let preview = thread.preview, preview != thread.title {
+          Text(preview)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .lineLimit(2)
+        }
+        HStack(spacing: 5) {
+          Text(thread.harness.title)
+          Text("·")
+          Text(thread.updatedAt, style: .relative)
+          if let source = thread.source {
+            Text("·")
+            Text(source)
+          }
+        }
+        .font(.caption2)
+        .foregroundStyle(.tertiary)
+        .lineLimit(1)
+      }
+      Spacer(minLength: 0)
+    }
+    .padding(.vertical, WorkspaceDesign.rowVerticalPadding)
+    .workspaceSelectableRow(isSelected: isSelected)
+  }
+}
+
+private struct ExternalThreadMessageCard: View {
+  let message: ExternalThreadMessage
+  let harness: ExternalThreadHarness
+  @State private var didCopy = false
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      HStack(spacing: 7) {
+        Image(systemName: message.role == .user ? "person.fill" : harness.systemImage)
+          .foregroundStyle(message.role == .user ? Color.accentColor : WorkspaceDesign.structuralAccent)
+        Text(message.role == .user ? "You" : harness.title)
+          .font(.caption.weight(.semibold))
+        Spacer(minLength: 0)
+        Text(message.createdAt, format: .dateTime.hour().minute())
+          .font(.caption2.monospacedDigit())
+          .foregroundStyle(.tertiary)
+          .help(message.createdAt.formatted(date: .abbreviated, time: .shortened))
+        Button {
+          didCopy = OpenClawMessageClipboard.write(message.content)
+        } label: {
+          Label(didCopy ? "Message Copied" : "Copy Message", systemImage: didCopy ? "checkmark" : "doc.on.doc")
+        }
+        .labelStyle(.iconOnly)
+        .buttonStyle(.plain)
+        .foregroundStyle(didCopy ? Color.green : Color.secondary)
+        .help(didCopy ? "Copied" : "Copy message")
+      }
+      Text(message.content)
+        .font(.body)
+        .textSelection(.enabled)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+    .padding(13)
+    .background(
+      message.role == .user ? Color.accentColor.opacity(0.08) : WorkspaceDesign.panelFill,
+      in: RoundedRectangle(cornerRadius: 13, style: .continuous)
+    )
+    .overlay {
+      RoundedRectangle(cornerRadius: 13, style: .continuous)
+        .stroke(WorkspaceDesign.hairline, lineWidth: 1)
+    }
   }
 }
 
@@ -819,6 +1089,7 @@ private struct OpenClawSidebarSurfaceGroup: View {
       if isThreadListExpanded {
         OpenClawSidebarThreadList()
       }
+
     }
   }
 }
@@ -855,6 +1126,10 @@ private struct OpenClawSidebarThreadList: View {
               settle: { store.settleOpenClawChatThread(thread.id) },
               reopen: { store.reopenOpenClawChatThread(thread.id) }
             )
+            .id(OpenClawSidebarThreadRowIdentity(
+              thread: thread,
+              isSending: store.openClawSendingThreadIDs.contains(thread.id)
+            ))
           }
 
           if !store.settledOpenClawChatThreads.isEmpty {
@@ -915,6 +1190,10 @@ private struct OpenClawSidebarThreadList: View {
                 reopen: { store.reopenOpenClawChatThread(thread.id) }
               )
               .opacity(0.68)
+              .id(OpenClawSidebarThreadRowIdentity(
+                thread: thread,
+                isSending: store.openClawSendingThreadIDs.contains(thread.id)
+              ))
             }
           }
         }
@@ -978,6 +1257,18 @@ private struct OpenClawThreadRenameRequest: Identifiable {
 enum OpenClawSettledThreadDisclosure {
   static func updated(isExpanded: Bool, settledThreadCount: Int) -> Bool {
     settledThreadCount > 0 && isExpanded
+  }
+}
+
+struct OpenClawSidebarThreadRowIdentity: Hashable {
+  let threadID: UUID
+  let isSettled: Bool
+  let isSending: Bool
+
+  init(thread: OpenClawChatThread, isSending: Bool) {
+    threadID = thread.id
+    isSettled = thread.isSettled
+    self.isSending = isSending
   }
 }
 
@@ -3121,8 +3412,9 @@ private struct RunCenterDetail: View {
       []
     }
 
-    ScrollView {
-      VStack(alignment: .leading, spacing: 18) {
+    ScrollViewReader { scrollProxy in
+      ScrollView {
+        VStack(alignment: .leading, spacing: 18) {
         VStack(alignment: .leading, spacing: 6) {
           HStack(spacing: 8) {
             StatusPill(text: run.status)
@@ -3258,6 +3550,7 @@ private struct RunCenterDetail: View {
                   .buttonStyle(.link)
                 }.buttonStyle(WorkspaceActionButtonStyle()).controlSize(.small)
               }
+              .id(approval.id)
             }
           }
         }
@@ -3327,10 +3620,17 @@ private struct RunCenterDetail: View {
           }
         }
 
-        technicalDetails
+          technicalDetails
+        }
+        .padding(WorkspaceDesign.contentInset)
+        .frame(maxWidth: .infinity, alignment: .leading)
       }
-      .padding(WorkspaceDesign.contentInset)
-      .frame(maxWidth: .infinity, alignment: .leading)
+      .onAppear {
+        scrollToSelectedApproval(using: scrollProxy, animated: false)
+      }
+      .onChange(of: store.selectedApprovalItemID) {
+        scrollToSelectedApproval(using: scrollProxy, animated: true)
+      }
     }
     .onChange(of: run.id) {
       clarificationResponse = ""
@@ -3477,6 +3777,31 @@ private struct RunCenterDetail: View {
     return !run.artifacts.isEmpty
   }
 
+  private func scrollToSelectedApproval(
+    using proxy: ScrollViewProxy,
+    animated: Bool
+  ) {
+    guard let approvalID = RunCenterPresentation.approvalID(
+      selectedApprovalItemID: store.selectedApprovalItemID,
+      runID: run.id
+    ), run.actionablePendingApprovals.contains(where: { $0.id == approvalID }) else {
+      return
+    }
+    performAfterSwiftUIViewUpdate {
+      guard RunCenterPresentation.approvalID(
+        selectedApprovalItemID: store.selectedApprovalItemID,
+        runID: run.id
+      ) == approvalID else { return }
+      if animated {
+        withAnimation(WorkspaceMotion.quick) {
+          proxy.scrollTo(approvalID, anchor: .top)
+        }
+      } else {
+        proxy.scrollTo(approvalID, anchor: .top)
+      }
+    }
+  }
+
   @MainActor
   private func loadOpenClawApprovalDetails() async {
     openClawApprovalDetails = nil
@@ -3548,6 +3873,19 @@ private struct RunCenterDetail: View {
       if run.status == "queued" { actionButton("Start", "play.fill", "start") }
       if run.status == "blocked" {
         actionButton("Resume", "play.fill", "resume")
+      }
+      if run.canContinueApprovedWork {
+        Button {
+          Task { await store.continueApprovedAgentRun(run) }
+        } label: {
+          Label(
+            run.hasApprovedProviderDraftBoundary ? "Send Approved Draft" : "Continue Approved Work",
+            systemImage: "paperplane.fill"
+          )
+        }
+        .buttonStyle(WorkspaceActionButtonStyle())
+        .disabled(isMutating)
+        .help("Continue this run using only the actions already approved in its current review boundary")
       }
       if run.canMarkDoneElsewhere {
         Button {
@@ -4871,6 +5209,12 @@ private struct SearchView: View {
         .onTapGesture {
           store.selectOpenClawChatSearchResult(result)
         }
+    case .agentWork(let result):
+      AgentWorkSearchRow(result: result)
+        .contentShape(Rectangle())
+        .onTapGesture {
+          store.selectAgentWorkSearchResult(result)
+        }
     case .page(let node):
       NodeSearchRow(
         node: node,
@@ -4904,6 +5248,65 @@ private struct SearchView: View {
           Label("Open", systemImage: "magnifyingglass")
         }
       }
+  }
+}
+
+private struct AgentWorkSearchRow: View {
+  let result: WorkspaceAgentWorkSearchResult
+
+  var body: some View {
+    HStack(alignment: .top, spacing: 8) {
+      WorkspaceIconBadge(
+        systemImage: systemImage,
+        tint: tint,
+        fill: tint.opacity(0.10)
+      )
+      VStack(alignment: .leading, spacing: 5) {
+        HStack(spacing: 8) {
+          Text(result.title)
+            .font(.body.weight(.medium))
+            .lineLimit(1)
+          Spacer(minLength: 0)
+          Text(result.status.replacingOccurrences(of: "-", with: " ").uppercased())
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(tint)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(tint.opacity(0.10), in: Capsule())
+        }
+        if !result.snippet.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+          Text(result.snippet)
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .lineLimit(2)
+        }
+        Text("\(result.kind.label) · \(result.sourceReference)")
+          .font(.caption)
+          .foregroundStyle(.tertiary)
+          .lineLimit(1)
+      }
+    }
+    .padding(.vertical, WorkspaceDesign.rowVerticalPadding)
+  }
+
+  private var systemImage: String {
+    switch result.kind {
+    case .approval: "checkmark.seal"
+    case .run: "play.circle"
+    case .workflow: "point.3.connected.trianglepath.dotted"
+    case .goal: "scope"
+    case .agent: "person.crop.circle.badge.checkmark"
+    }
+  }
+
+  private var tint: Color {
+    switch result.kind {
+    case .approval: .orange
+    case .run: .accentColor
+    case .workflow: .purple
+    case .goal: .green
+    case .agent: .blue
+    }
   }
 }
 

@@ -48,8 +48,19 @@ struct MobileRemoteRootView: View {
       .task {
         if remote.isPaired {
           await remote.refresh()
+          if let pendingThreadID = remote.consumePendingReplyThreadID() {
+            path = [pendingThreadID]
+          }
         }
       }
+    }
+    .onReceive(NotificationCenter.default.publisher(for: .org2OpenRemoteThread)) { notification in
+      guard remote.isPaired,
+            let rawThreadID = notification.userInfo?["threadID"] as? String,
+            let threadID = UUID(uuidString: rawThreadID)
+      else { return }
+      _ = remote.consumePendingReplyThreadID()
+      path = [threadID]
     }
     .alert("Mobile Remote", isPresented: Binding(
       get: { remote.errorMessage != nil },
@@ -87,6 +98,63 @@ struct MobileRemoteRootView: View {
           }
         }
         .padding(.vertical, 3)
+
+        Toggle(isOn: Binding(
+          get: { remote.threadNotificationsEnabled },
+          set: { remote.setThreadNotificationsEnabled($0) }
+        )) {
+          VStack(alignment: .leading, spacing: 2) {
+            Label("Reply notifications", systemImage: "bell")
+            Text(
+              remote.threadNotificationsUnavailable
+                ? "Notifications are disabled in iOS Settings"
+                : "Show a banner when an AI thread replies. No sound or badge."
+            )
+            .font(.caption)
+            .foregroundStyle(remote.threadNotificationsUnavailable ? Color.orange : Color.secondary)
+          }
+        }
+
+        if remote.threadNotificationsEnabled {
+          if remote.threadNotificationsUnavailable {
+            Button {
+              guard let settingsURL = URL(string: UIApplication.openSettingsURLString) else { return }
+              UIApplication.shared.open(settingsURL)
+            } label: {
+              Label("Open Notification Settings", systemImage: "gear")
+            }
+          } else {
+            Button {
+              Task { await remote.sendTestReplyNotification() }
+            } label: {
+              Label("Send Test Notification", systemImage: "bell.badge")
+            }
+          }
+        }
+
+        Text("Org2 checks for replies while open. After you leave the app, iOS may delay background checks.")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
+
+      Section("External") {
+        NavigationLink {
+          MobileExternalThreadListView { threadID in
+            path = [threadID]
+          }
+        } label: {
+          Label {
+            VStack(alignment: .leading, spacing: 2) {
+              Text("External Threads")
+              Text("Read native Codex tasks without changing them")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+          } icon: {
+            Image(systemName: "rectangle.stack.badge.person.crop")
+              .foregroundStyle(.blue)
+          }
+        }
       }
 
       if !activeThreads.isEmpty {
@@ -184,6 +252,225 @@ struct MobileRemoteRootView: View {
       if let id = await remote.createThread(runtime: runtime) {
         path = [id]
       }
+    }
+  }
+}
+
+private struct MobileExternalThreadListView: View {
+  @EnvironmentObject private var remote: MobileRemoteStore
+  @State private var query = ""
+  let continueInOrg2: (UUID) -> Void
+
+  var body: some View {
+    List {
+      if !filteredThreads.isEmpty {
+        Section {
+          ForEach(filteredThreads) { thread in
+            NavigationLink {
+              MobileExternalThreadDetailView(
+                thread: thread,
+                continueInOrg2: continueInOrg2
+              )
+            } label: {
+              MobileExternalThreadRow(thread: thread)
+            }
+          }
+        } footer: {
+          Text("External tasks are read-only. Opening one never resumes or changes it.")
+        }
+      }
+    }
+    .overlay {
+      if remote.externalThreads.isEmpty && !remote.isRefreshingExternalThreads {
+        ContentUnavailableView(
+          "No External Threads",
+          systemImage: "rectangle.stack.badge.person.crop",
+          description: Text("Recent native Codex tasks from your Mac will appear here.")
+        )
+      } else if filteredThreads.isEmpty && !query.isEmpty {
+        ContentUnavailableView.search(text: query)
+      }
+    }
+    .navigationTitle("External Threads")
+    .navigationBarTitleDisplayMode(.inline)
+    .searchable(text: $query, prompt: "Search external threads")
+    .refreshable { await remote.refreshExternalThreads() }
+    .task {
+      if remote.externalThreads.isEmpty {
+        await remote.refreshExternalThreads()
+      }
+    }
+  }
+
+  private var filteredThreads: [MobileExternalThreadSummary] {
+    let term = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    guard !term.isEmpty else { return remote.externalThreads }
+    return remote.externalThreads.filter { thread in
+      [thread.title, thread.preview, thread.workspacePath, thread.source]
+        .compactMap { $0?.lowercased() }
+        .contains { $0.contains(term) }
+    }
+  }
+}
+
+private struct MobileExternalThreadRow: View {
+  let thread: MobileExternalThreadSummary
+
+  var body: some View {
+    HStack(alignment: .top, spacing: 11) {
+      Image(systemName: thread.harness.systemImage)
+        .font(.body.weight(.semibold))
+        .foregroundStyle(.blue)
+        .frame(width: 28, height: 28)
+        .background(Color.blue.opacity(0.10), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+      VStack(alignment: .leading, spacing: 4) {
+        Text(thread.title)
+          .font(.body.weight(.semibold))
+          .lineLimit(2)
+        if let preview = thread.preview, preview != thread.title {
+          Text(preview)
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+            .lineLimit(2)
+        }
+        HStack(spacing: 5) {
+          Text(thread.harness.title)
+          Text("·")
+          Text(thread.updatedAt, style: .relative)
+        }
+        .font(.caption)
+        .foregroundStyle(.tertiary)
+      }
+    }
+    .padding(.vertical, 3)
+  }
+}
+
+private struct MobileExternalThreadDetailView: View {
+  @EnvironmentObject private var remote: MobileRemoteStore
+  let thread: MobileExternalThreadSummary
+  let continueInOrg2: (UUID) -> Void
+  @State private var isContinuing = false
+
+  var body: some View {
+    Group {
+      if remote.isLoadingExternalThread {
+        VStack(spacing: 12) {
+          ProgressView()
+          Text("Loading the full read-only transcript…")
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+      } else if let detail = remote.externalThreadDetail,
+                detail.thread.id == thread.id {
+        ScrollView {
+          LazyVStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 7) {
+              HStack(spacing: 6) {
+                Label(thread.harness.title, systemImage: thread.harness.systemImage)
+                Text("READ ONLY")
+                  .font(.caption2.weight(.bold))
+                  .padding(.horizontal, 6)
+                  .padding(.vertical, 2)
+                  .background(Color.secondary.opacity(0.12), in: Capsule())
+              }
+              .font(.caption.weight(.semibold))
+              .foregroundStyle(.secondary)
+              Text(thread.title)
+                .font(.title2.weight(.bold))
+              if let workspacePath = thread.workspacePath {
+                Text(workspacePath)
+                  .font(.caption.monospaced())
+                  .foregroundStyle(.secondary)
+                  .lineLimit(2)
+              }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.bottom, 4)
+
+            ForEach(detail.messages) { message in
+              MobileExternalThreadMessageCard(message: message, harness: thread.harness)
+            }
+          }
+          .padding(16)
+        }
+      } else {
+        ContentUnavailableView(
+          "Thread Unavailable",
+          systemImage: "exclamationmark.bubble",
+          description: Text("Pull to refresh the external thread list and try again.")
+        )
+      }
+    }
+    .navigationTitle(thread.title)
+    .navigationBarTitleDisplayMode(.inline)
+    .safeAreaInset(edge: .bottom) {
+      Button {
+        Task {
+          isContinuing = true
+          defer { isContinuing = false }
+          if let threadID = await remote.continueExternalThread(thread) {
+            continueInOrg2(threadID)
+          }
+        }
+      } label: {
+        HStack {
+          if isContinuing { ProgressView().tint(.white) }
+          Label("Continue in New Org2 Thread", systemImage: "arrow.turn.down.right")
+        }
+        .frame(maxWidth: .infinity)
+      }
+      .buttonStyle(.borderedProminent)
+      .controlSize(.large)
+      .disabled(isContinuing || remote.isLoadingExternalThread)
+      .padding(.horizontal, 16)
+      .padding(.vertical, 10)
+      .background(.bar)
+    }
+    .task(id: thread.id) {
+      await remote.loadExternalThread(thread)
+    }
+    .onDisappear {
+      remote.clearExternalThreadDetail()
+    }
+  }
+}
+
+private struct MobileExternalThreadMessageCard: View {
+  let message: MobileExternalThreadMessage
+  let harness: MobileExternalThreadHarness
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      HStack(spacing: 7) {
+        Image(systemName: message.role == .user ? "person.fill" : harness.systemImage)
+          .foregroundStyle(message.role == .user ? Color.blue : Color.secondary)
+        Text(message.role == .user ? "You" : harness.title)
+          .font(.caption.weight(.semibold))
+        Spacer()
+        Text(message.createdAt, style: .time)
+          .font(.caption2.monospacedDigit())
+          .foregroundStyle(.tertiary)
+        ShareLink(item: message.content) {
+          Image(systemName: "square.on.square")
+            .foregroundStyle(.secondary)
+        }
+        .accessibilityLabel("Copy or share message")
+      }
+      Text(message.content)
+        .font(.body)
+        .textSelection(.enabled)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+    .padding(13)
+    .background(
+      message.role == .user ? Color.blue.opacity(0.08) : Color(uiColor: .secondarySystemBackground),
+      in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+    )
+    .overlay {
+      RoundedRectangle(cornerRadius: 16, style: .continuous)
+        .stroke(Color.primary.opacity(0.12), lineWidth: 1)
     }
   }
 }
@@ -571,31 +858,64 @@ private struct MobileRemoteThreadView: View {
         }
       }
 
-      HStack(alignment: .bottom, spacing: 10) {
+      HStack(alignment: .bottom, spacing: 7) {
+        composerActionsMenu
+
         TextField("Talk to \(agentTitle)", text: $draft, axis: .vertical)
           .lineLimit(1...6)
           .textFieldStyle(.plain)
-          .padding(.horizontal, 14)
-          .padding(.vertical, 11)
-          .frame(minHeight: 44)
-          .background(
-            Color(.secondarySystemGroupedBackground),
-            in: RoundedRectangle(cornerRadius: 18, style: .continuous)
-          )
-          .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-              .stroke(
-                Color.primary.opacity(colorScheme == .light ? 0.11 : 0.09),
-                lineWidth: 1
-              )
-          }
-          .shadow(
-            color: Color.black.opacity(colorScheme == .light ? 0.055 : 0.025),
-            radius: 4,
-            x: 0,
-            y: 2
-          )
+          .padding(.vertical, 6)
+          .frame(minHeight: 32)
           .disabled(isSettled)
+
+        Button {
+          if voiceTranscriber.isRecording {
+            voiceTranscriber.stop()
+          } else {
+            dictationPrefix = draft
+            Task { await voiceTranscriber.start() }
+          }
+        } label: {
+          Image(systemName: voiceTranscriber.isRecording ? "stop.fill" : "mic.fill")
+            .font(.system(size: 14, weight: .semibold))
+            .foregroundStyle(voiceTranscriber.isRecording ? .white : .secondary)
+            .frame(width: 30, height: 30)
+            .background(
+              voiceTranscriber.isRecording ? Color.accentColor : Color.clear,
+              in: Circle()
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(isSettled || isSending)
+        .accessibilityLabel(voiceTranscriber.isRecording ? "Stop transcription" : "Transcribe voice")
+
+        Button {
+          sendMessage(delivery: isRunning ? "steer" : nil)
+        } label: {
+          if isSending {
+            ProgressView()
+              .frame(width: 30, height: 30)
+          } else {
+            Image(systemName: isRunning ? "arrow.turn.up.right" : "arrow.up.circle.fill")
+              .font(.system(size: isRunning ? 15 : 30, weight: .semibold))
+              .foregroundStyle(isRunning ? Color.white : Color.accentColor)
+              .frame(width: 30, height: 30)
+              .background(isRunning ? Color.accentColor : Color.clear, in: Circle())
+          }
+        }
+        .buttonStyle(.plain)
+        .disabled(!canSend)
+        .accessibilityLabel(isRunning ? "Steer active response" : "Send message")
+        .contextMenu {
+          if isRunning {
+            Button {
+              sendMessage(delivery: "followUp")
+            } label: {
+              Label("Queue as Follow-up", systemImage: "clock")
+            }
+            .disabled(!canSend)
+          }
+        }
 
         if isRunning || isStopping {
           Button {
@@ -619,130 +939,147 @@ private struct MobileRemoteThreadView: View {
           .buttonStyle(.plain)
           .disabled(isStopping)
           .accessibilityLabel("Stop response")
-        } else {
-          Button {
-            sendMessage()
-          } label: {
-            if isSending {
-              ProgressView()
-                .frame(width: 30, height: 30)
-            } else {
-              Image(systemName: "arrow.up.circle.fill")
-                .font(.system(size: 30))
-            }
-          }
-          .buttonStyle(.plain)
-          .disabled(!canSend)
-          .accessibilityLabel("Send message")
         }
       }
-
-      HStack(spacing: 8) {
-        modelPicker
-        reasoningPicker
-        Spacer(minLength: 4)
-        PhotosPicker(
-          selection: $selectedPhotoItems,
-          maxSelectionCount: 4,
-          matching: .images
-        ) {
-          Image(systemName: "photo.on.rectangle")
-            .frame(width: 28, height: 28)
-        }
-        .buttonStyle(.plain)
-        .disabled(isSettled || isSending || attachments.count >= 4)
-        .accessibilityLabel("Add photos")
-
-        Button {
-          if voiceTranscriber.isRecording {
-            voiceTranscriber.stop()
-          } else {
-            dictationPrefix = draft
-            Task { await voiceTranscriber.start() }
-          }
-        } label: {
-          Image(systemName: voiceTranscriber.isRecording ? "stop.fill" : "mic.fill")
-            .font(.system(size: 14, weight: .semibold))
-            .foregroundStyle(voiceTranscriber.isRecording ? .white : .primary)
-            .frame(width: 28, height: 28)
-            .background(
-              voiceTranscriber.isRecording ? Color.red : Color(.tertiarySystemFill),
-              in: Circle()
-            )
-        }
-        .buttonStyle(.plain)
-        .disabled(isSettled || isSending)
-        .accessibilityLabel(voiceTranscriber.isRecording ? "Stop transcription" : "Transcribe voice")
+      .padding(.horizontal, 7)
+      .padding(.vertical, 6)
+      .background(
+        Color(.secondarySystemGroupedBackground),
+        in: RoundedRectangle(cornerRadius: 20, style: .continuous)
+      )
+      .overlay {
+        RoundedRectangle(cornerRadius: 20, style: .continuous)
+          .stroke(
+            Color.primary.opacity(colorScheme == .light ? 0.11 : 0.09),
+            lineWidth: 1
+          )
       }
-      .font(.callout)
+      .shadow(
+        color: Color.black.opacity(colorScheme == .light ? 0.055 : 0.025),
+        radius: 4,
+        x: 0,
+        y: 2
+      )
     }
     .padding(.horizontal)
-    .padding(.vertical, 10)
+    .padding(.vertical, 8)
     .background(.bar)
   }
 
-  private var modelPicker: some View {
+  private var composerActionsMenu: some View {
     Menu {
-      Button {
-        Task { await remote.setModel(nil, threadID: threadID) }
+      PhotosPicker(
+        selection: $selectedPhotoItems,
+        maxSelectionCount: 4,
+        matching: .images
+      ) {
+        Label("Add Photos", systemImage: "photo.on.rectangle")
+      }
+      .disabled(isSettled || isSending || attachments.count >= 4)
+
+      Divider()
+
+      Menu {
+        modelMenuItems
       } label: {
-        HStack {
-          Text("Default model")
-          if remote.threadConfiguration?.model == nil {
-            Image(systemName: "checkmark")
-          }
+        Label("Model · \(modelLabel)", systemImage: "cpu")
+      }
+      .disabled(
+        isSettled || isRunning || isSending ||
+        remote.isRefreshingConfiguration || remote.isUpdatingConfiguration ||
+        remote.threadConfiguration == nil
+      )
+
+      Menu {
+        reasoningMenuItems
+      } label: {
+        Label("Reasoning · \(reasoningLabel)", systemImage: "brain")
+      }
+      .disabled(
+        isSettled || isRunning || isSending ||
+        remote.isRefreshingConfiguration || remote.isUpdatingConfiguration ||
+        !hasReasoningChoices
+      )
+    } label: {
+      Image(systemName: "plus")
+        .font(.system(size: 14, weight: .semibold))
+        .foregroundStyle(.secondary)
+        .frame(width: 30, height: 30)
+        .background(Color(.tertiarySystemFill), in: Circle())
+    }
+    .disabled(isSettled || isSending)
+    .accessibilityLabel("Chat options, model \(modelLabel), reasoning \(reasoningLabel)")
+  }
+
+  @ViewBuilder
+  private var modelMenuItems: some View {
+    Button {
+      Task { await remote.setModel(nil, threadID: threadID) }
+    } label: {
+      HStack {
+        Text("Default model")
+        if remote.threadConfiguration?.model == nil {
+          Image(systemName: "checkmark")
         }
       }
+    }
 
-      if remote.isRefreshingConfiguration {
-        Divider()
-        Text("Loading models…")
-      } else if let configuration = remote.threadConfiguration,
-                !configuration.models.isEmpty {
-        Divider()
-        ForEach(configuration.models) { model in
-          Button {
-            Task { await remote.setModel(model.id, threadID: threadID) }
-          } label: {
-            HStack {
-              Text(model.label)
-              if configuration.model == model.id {
-                Image(systemName: "checkmark")
-              }
+    if remote.isRefreshingConfiguration {
+      Divider()
+      Text("Loading models…")
+    } else if let configuration = remote.threadConfiguration,
+              !configuration.models.isEmpty {
+      Divider()
+      ForEach(configuration.models) { model in
+        Button {
+          Task { await remote.setModel(model.id, threadID: threadID) }
+        } label: {
+          HStack {
+            Text(model.label)
+            if configuration.model == model.id {
+              Image(systemName: "checkmark")
             }
           }
         }
-      } else {
-        Divider()
-        Text("Models unavailable")
       }
-    } label: {
-      HStack(spacing: 5) {
-        if remote.isRefreshingConfiguration || remote.isUpdatingConfiguration {
-          ProgressView()
-            .controlSize(.mini)
-        } else {
-          Image(systemName: "cpu")
-        }
-        Text(modelLabel)
-          .lineLimit(1)
-          .frame(maxWidth: 104)
-        Image(systemName: "chevron.up.chevron.down")
-          .font(.caption2)
-          .foregroundStyle(.tertiary)
-      }
-      .font(.caption.weight(.medium))
-      .foregroundStyle(.secondary)
-      .padding(.horizontal, 8)
-      .frame(height: 28)
-      .background(Color(.tertiarySystemFill), in: Capsule())
+    } else {
+      Divider()
+      Text("Models unavailable")
     }
-    .disabled(
-      isSettled || isRunning || isSending ||
-      remote.isRefreshingConfiguration || remote.isUpdatingConfiguration ||
-      remote.threadConfiguration == nil
-    )
-    .accessibilityLabel("Choose model, currently \(modelLabel)")
+  }
+
+  @ViewBuilder
+  private var reasoningMenuItems: some View {
+    Button {
+      Task { await remote.setReasoningEffort(nil, threadID: threadID) }
+    } label: {
+      HStack {
+        Text(defaultReasoningLabel)
+        if remote.threadConfiguration?.reasoningEffort == nil {
+          Image(systemName: "checkmark")
+        }
+      }
+    }
+
+    if let configuration = remote.threadConfiguration,
+       !configuration.reasoningOptions.isEmpty {
+      Divider()
+      ForEach(configuration.reasoningOptions) { option in
+        Button {
+          Task { await remote.setReasoningEffort(option.id, threadID: threadID) }
+        } label: {
+          HStack {
+            Text(option.label)
+            if configuration.reasoningEffort == option.id {
+              Image(systemName: "checkmark")
+            }
+          }
+        }
+      }
+    } else {
+      Divider()
+      Text("No reasoning levels reported")
+    }
   }
 
   private var modelLabel: String {
@@ -753,62 +1090,6 @@ private struct MobileRemoteThreadView: View {
       return configuration.models.first(where: { $0.id == model })?.label ?? model
     }
     return configuration.models.first(where: \.isDefault)?.label ?? "Default"
-  }
-
-  private var reasoningPicker: some View {
-    Menu {
-      Button {
-        Task { await remote.setReasoningEffort(nil, threadID: threadID) }
-      } label: {
-        HStack {
-          Text(defaultReasoningLabel)
-          if remote.threadConfiguration?.reasoningEffort == nil {
-            Image(systemName: "checkmark")
-          }
-        }
-      }
-
-      if let configuration = remote.threadConfiguration,
-         !configuration.reasoningOptions.isEmpty {
-        Divider()
-        ForEach(configuration.reasoningOptions) { option in
-          Button {
-            Task { await remote.setReasoningEffort(option.id, threadID: threadID) }
-          } label: {
-            HStack {
-              Text(option.label)
-              if configuration.reasoningEffort == option.id {
-                Image(systemName: "checkmark")
-              }
-            }
-          }
-        }
-      } else {
-        Divider()
-        Text("No reasoning levels reported")
-      }
-    } label: {
-      HStack(spacing: 5) {
-        Image(systemName: "brain")
-        Text(reasoningLabel)
-          .lineLimit(1)
-          .frame(maxWidth: 82)
-        Image(systemName: "chevron.up.chevron.down")
-          .font(.caption2)
-          .foregroundStyle(.tertiary)
-      }
-      .font(.caption.weight(.medium))
-      .foregroundStyle(.secondary)
-      .padding(.horizontal, 8)
-      .frame(height: 28)
-      .background(Color(.tertiarySystemFill), in: Capsule())
-    }
-    .disabled(
-      isSettled || isRunning || isSending ||
-      remote.isRefreshingConfiguration || remote.isUpdatingConfiguration ||
-      !hasReasoningChoices
-    )
-    .accessibilityLabel("Choose reasoning, currently \(reasoningLabel)")
   }
 
   private var hasReasoningChoices: Bool {
@@ -853,7 +1134,7 @@ private struct MobileRemoteThreadView: View {
     )
   }
 
-  private func sendMessage() {
+  private func sendMessage(delivery: String? = nil) {
     let message = draft
     let sentAttachments = attachments
     if voiceTranscriber.isRecording {
@@ -861,7 +1142,12 @@ private struct MobileRemoteThreadView: View {
     }
     isSending = true
     Task {
-      if await remote.send(message, attachments: sentAttachments, threadID: threadID) {
+      if await remote.send(
+        message,
+        attachments: sentAttachments,
+        threadID: threadID,
+        delivery: delivery
+      ) {
         draft = ""
         dictationPrefix = ""
         attachments = []
@@ -940,6 +1226,19 @@ private struct MobileRemoteMessageBubble: View {
     HStack {
       if message.role == "user" { Spacer(minLength: 44) }
       VStack(alignment: .leading, spacing: 5) {
+        if message.role == "user",
+           message.deliveryKind == "steer",
+           message.deliveryStatus == "sending" {
+          Label("Steering…", systemImage: "arrow.turn.up.right")
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(Color.white.opacity(0.82))
+        } else if message.role == "user",
+                  message.deliveryKind == "followUp",
+                  message.deliveryStatus == "sending" {
+          Label("Queued", systemImage: "clock")
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(Color.white.opacity(0.82))
+        }
         Text(MobileRemoteMessageMarkup.attributedString(for: message.content))
           .textSelection(.enabled)
         if !message.attachmentNames.isEmpty {
@@ -952,6 +1251,11 @@ private struct MobileRemoteMessageBubble: View {
             .font(.caption)
             .foregroundStyle(.red)
         }
+        Text(message.createdAt, style: .time)
+          .font(.caption2.monospacedDigit())
+          .foregroundStyle(
+            message.role == "user" ? Color.white.opacity(0.70) : Color.secondary
+          )
       }
       .padding(.horizontal, 13)
       .padding(.vertical, 10)

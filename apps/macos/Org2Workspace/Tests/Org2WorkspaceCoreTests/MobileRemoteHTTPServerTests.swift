@@ -13,7 +13,8 @@ final class MobileRemoteHTTPServerTests: XCTestCase {
             mimeType: "image/jpeg",
             data: Data([0x01, 0x02, 0x03])
           )
-        ]
+        ],
+        delivery: "steer"
       )
     )
     let header =
@@ -31,6 +32,7 @@ final class MobileRemoteHTTPServerTests: XCTestCase {
     XCTAssertEqual(request.bearerToken, "secret-token")
     let decoded = try request.decode(MobileRemoteSendMessageRequest.self)
     XCTAssertEqual(decoded.content, "Continue the review")
+    XCTAssertEqual(decoded.delivery, "steer")
     XCTAssertEqual(decoded.attachments.first?.fileName, "whiteboard.jpg")
     XCTAssertEqual(decoded.attachments.first?.data, Data([0x01, 0x02, 0x03]))
   }
@@ -46,6 +48,7 @@ final class MobileRemoteHTTPServerTests: XCTestCase {
   }
 
   func testWireDatesRoundTripWithSharedEncoding() throws {
+    let assistantMessageID = UUID()
     let expected = MobileRemoteThreadSummary(
       id: UUID(),
       title: "Remote chat",
@@ -56,7 +59,9 @@ final class MobileRemoteHTTPServerTests: XCTestCase {
       isPinned: true,
       isRunning: true,
       unreadMessageCount: 2,
-      preview: "Working"
+      preview: "Working",
+      latestAssistantMessageID: assistantMessageID,
+      latestAssistantPreview: "I finished the focused checks."
     )
 
     let data = try MobileRemoteProtocol.encoder().encode(expected)
@@ -78,6 +83,93 @@ final class MobileRemoteHTTPServerTests: XCTestCase {
     let restored = try MobileRemoteProtocol.decoder().decode(MobileRemoteFilePreview.self, from: data)
 
     XCTAssertEqual(restored, expected)
+  }
+
+  func testCanonicalWorkspaceSnapshotAndMutationsRoundTrip() throws {
+    let snapshot = MobileRemoteWorkspaceSnapshot(
+      updatedAt: Date(timeIntervalSince1970: 1_700_000_000),
+      agenda: [
+        MobileRemoteAgendaItem(
+          id: "notes/today.org2:4:Scheduled:Ship:",
+          title: "Ship the mobile review update",
+          todo: "TODO",
+          file: "notes/today.org2",
+          line: 5,
+          date: "2026-08-10",
+          kind: "Scheduled",
+          tags: ["mobile"],
+          body: "Use the canonical projection.",
+          priority: "A",
+          time: "10:00",
+          effort: "0:30"
+        )
+      ],
+      approvals: [
+        MobileRemoteApprovalItem(
+          id: "run:run-1:approval-1",
+          title: "Send the customer update",
+          status: "pending",
+          todo: nil,
+          level: nil,
+          file: ".org2/runs/run-1.org2",
+          line: 1,
+          sourceID: "approval-1",
+          properties: [:],
+          body: "Review the exact message.",
+          tags: [],
+          kind: "run",
+          runID: "run-1",
+          approvalID: "approval-1",
+          fingerprint: "sha256:example",
+          action: "send",
+          riskClass: "external-write",
+          requestedRole: "owner",
+          requestedFrom: "Avi",
+          requestedAt: "2026-08-10T12:00:00Z",
+          runGoal: "Close the loop",
+          runStatus: "waiting-approval",
+          runDecisionEffect: "Approval resumes the run."
+        )
+      ],
+      workflows: [
+        MobileRemoteWorkflowItem(
+          id: "daily-review",
+          title: "Daily review",
+          description: "Review new work.",
+          state: "active",
+          riskClass: "read-only",
+          scheduleSummary: "0 9 * * * · America/Los_Angeles",
+          file: "workflows/daily-review.org2",
+          agentRef: "agent:reviewer",
+          goalRef: "goal:inbox-zero",
+          inputs: [
+            MobileRemoteWorkflowInput(
+              id: "scope",
+              description: "Review scope",
+              required: true,
+              defaultValue: "today"
+            )
+          ]
+        )
+      ]
+    )
+
+    let data = try MobileRemoteProtocol.encoder().encode(snapshot)
+    XCTAssertEqual(
+      try MobileRemoteProtocol.decoder().decode(MobileRemoteWorkspaceSnapshot.self, from: data),
+      snapshot
+    )
+
+    let decision = MobileRemoteApprovalDecisionRequest(
+      decision: "rejected",
+      note: "Use the revised copy.",
+      endStatus: "canceled"
+    )
+    let decisionData = try MobileRemoteProtocol.encoder().encode(decision)
+    XCTAssertEqual(
+      try MobileRemoteProtocol.decoder().decode(MobileRemoteApprovalDecisionRequest.self, from: decisionData),
+      decision
+    )
   }
 
   func testModelConfigurationRoundTripsWithProtocolVersionTwo() throws {
@@ -108,6 +200,38 @@ final class MobileRemoteHTTPServerTests: XCTestCase {
     )
 
     XCTAssertEqual(MobileRemoteProtocol.version, 2)
+    XCTAssertEqual(restored, expected)
+  }
+
+  func testExternalThreadDetailRoundTripsOverMobileRemoteJSON() throws {
+    let summary = ExternalThreadSummary(
+      harness: .codex,
+      externalID: "019f-thread",
+      title: "Native task",
+      preview: "Inspect it",
+      workspacePath: "/tmp/org2",
+      source: "vscode",
+      modelProvider: "openai",
+      createdAt: Date(timeIntervalSince1970: 100),
+      updatedAt: Date(timeIntervalSince1970: 120),
+      status: "notLoaded",
+      isPinned: false
+    )
+    let expected = ExternalThreadDetail(
+      thread: summary,
+      messages: [
+        ExternalThreadMessage(
+          id: "message-1",
+          role: .assistant,
+          content: "Read-only response",
+          createdAt: Date(timeIntervalSince1970: 121)
+        )
+      ]
+    )
+
+    let data = try MobileRemoteProtocol.encoder().encode(expected)
+    let restored = try MobileRemoteProtocol.decoder().decode(ExternalThreadDetail.self, from: data)
+
     XCTAssertEqual(restored, expected)
   }
 
@@ -382,7 +506,7 @@ final class MobileRemoteHTTPServerTests: XCTestCase {
 
     let recordedMacContext = await recorder.contexts().last
     let macContext = try XCTUnwrap(recordedMacContext)
-    XCTAssertEqual(macContext.selectedLocation?.file, unrelatedNote.path)
+    XCTAssertNil(macContext.selectedLocation)
     XCTAssertEqual(macContext.threadContinuation?.title, context.threadContinuation?.title)
     XCTAssertEqual(
       macContext.threadContinuation?.org2References,
@@ -392,6 +516,7 @@ final class MobileRemoteHTTPServerTests: XCTestCase {
     XCTAssertTrue(macPrompt.contains("Thread title: Render Atlanta Talk"))
     XCTAssertTrue(macPrompt.contains("Continue this thread"))
     XCTAssertTrue(macPrompt.contains("notes/render-atlanta.org2:1"))
+    XCTAssertFalse(macPrompt.contains("unrelated-meeting.org2"))
   }
 }
 

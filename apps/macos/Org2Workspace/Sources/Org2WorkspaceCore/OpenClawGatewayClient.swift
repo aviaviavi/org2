@@ -450,7 +450,7 @@ public enum OpenClawGatewayError: LocalizedError, Sendable {
 }
 
 enum OpenClawChatHistoryReconciliation: Equatable {
-  case pending(hasActiveRun: Bool)
+  case pending(hasActiveRun: Bool, activeRunIDs: [String])
   case completed(String)
   case failed(String)
 }
@@ -601,6 +601,9 @@ public actor OpenClawGatewayClient {
   private var deviceID: String?
   private var awaitingHello = false
   private var stopRequested = false
+  private var outstandingSteerRequestIDs: Set<String> = []
+  private var pendingSteerAcknowledgements: [String: CheckedContinuation<Void, Error>] = [:]
+  private var earlySteerAcknowledgements: [String: [String: Any]] = [:]
 
   public init(settings: OpenClawGatewaySettings) {
     self.settings = settings
@@ -886,6 +889,7 @@ public actor OpenClawGatewayClient {
     reasoningEffort: String? = nil,
     idempotencyKey: String? = nil,
     requestStartedAt: Date? = nil,
+    reconnectingAcceptedRun: Bool = false,
     onEvent: @escaping EventHandler
   ) async throws -> String {
     let requestStartedAtMilliseconds = (requestStartedAt ?? Date()).timeIntervalSince1970 * 1_000
@@ -898,6 +902,11 @@ public actor OpenClawGatewayClient {
     let socket = try makeSocket()
     self.socket = socket
     socket.resume()
+    defer {
+      failPendingSteerAcknowledgements(
+        with: OpenClawGatewayError.protocolFailure("the active OpenClaw run ended before the steer was acknowledged")
+      )
+    }
 
     do {
       try await establishConnection(
@@ -952,6 +961,9 @@ public actor OpenClawGatewayClient {
       var accepted = false
       while true {
         let frame = try await receiveObject(on: socket)
+        if resolvePendingSteerAcknowledgement(from: frame) {
+          continue
+        }
         if Self.string(frame["type"]) == "res", Self.string(frame["id"]) == sendID {
           guard Self.bool(frame["ok"]) == true else { throw Self.gatewayError(from: frame) }
           let payload = Self.dictionary(frame["payload"])
@@ -959,7 +971,10 @@ public actor OpenClawGatewayClient {
           runID = acceptedRunID
           accepted = true
           await onEvent(.accepted(runID: acceptedRunID))
-          if Self.shouldReconcileAfterSendAcknowledgement(payload) {
+          if Self.shouldReconcileAfterSendAcknowledgement(
+            payload,
+            reconnectingAcceptedRun: reconnectingAcceptedRun
+          ) {
             return try await waitAndReconcile(
               runID: acceptedRunID,
               sessionKey: sessionKey,
@@ -1054,7 +1069,15 @@ public actor OpenClawGatewayClient {
     }
   }
 
-  static func shouldReconcileAfterSendAcknowledgement(_ payload: [String: Any]?) -> Bool {
+  static func shouldReconcileAfterSendAcknowledgement(
+    _ payload: [String: Any]?,
+    reconnectingAcceptedRun: Bool = false
+  ) -> Bool {
+    // A reconnect cannot rely on live chat events: the final frame may have
+    // been broadcast while the app was closed. Every successful acknowledgement
+    // therefore enters the durable agent.wait + chat.history reconciliation path,
+    // regardless of the Gateway's status spelling.
+    if reconnectingAcceptedRun { return true }
     guard let status = Self.string(payload?["status"])?.lowercased() else { return false }
     return status == "in_flight" || status == "ok"
   }
@@ -1081,6 +1104,172 @@ public actor OpenClawGatewayClient {
     } catch {
       throw OpenClawGatewayError.acceptedRunRecovery(error.localizedDescription)
     }
+  }
+
+  /// Injects guidance into the run already owned by this live Gateway client.
+  /// The main receive loop consumes the acknowledgement and subsequent run
+  /// events, so this method intentionally only writes the steer request.
+  public func steer(
+    message: String,
+    attachments: [OpenClawChatAttachment],
+    idempotencyKey: String = UUID().uuidString.lowercased()
+  ) async throws {
+    guard let socket, let sessionKey, let agentID, runID != nil, !stopRequested else {
+      throw OpenClawGatewayError.protocolFailure("there is no live OpenClaw run to steer")
+    }
+    let params = Self.steerRequestParams(
+      message: message,
+      attachments: attachments,
+      sessionKey: sessionKey,
+      agentID: agentID,
+      idempotencyKey: idempotencyKey
+    )
+    do {
+      try await sendSteerRequest(params, on: socket)
+    } catch let error as OpenClawGatewayError where Self.shouldRetrySteerWithCommand(after: error) {
+      // queueMode was added to chat.send after the explicit /steer command.
+      // Older Gateways reject the otherwise valid request before enqueueing it,
+      // so it is safe to retry that same guidance using the command form.
+      try await sendSteerRequest(
+        Self.commandSteerRequestParams(
+          message: message,
+          attachments: attachments,
+          sessionKey: sessionKey,
+          agentID: agentID,
+          idempotencyKey: idempotencyKey
+        ),
+        on: socket
+      )
+    }
+  }
+
+  private func sendSteerRequest(
+    _ params: [String: Any],
+    on socket: URLSessionWebSocketTask
+  ) async throws {
+    let requestID = UUID().uuidString.lowercased()
+    outstandingSteerRequestIDs.insert(requestID)
+    do {
+      try await sendRequest(id: requestID, method: "chat.send", params: params, on: socket)
+    } catch {
+      outstandingSteerRequestIDs.remove(requestID)
+      throw error
+    }
+    try await withCheckedThrowingContinuation { continuation in
+      if let frame = earlySteerAcknowledgements.removeValue(forKey: requestID) {
+        outstandingSteerRequestIDs.remove(requestID)
+        if Self.bool(frame["ok"]) == true {
+          continuation.resume()
+        } else {
+          continuation.resume(throwing: Self.gatewayError(from: frame))
+        }
+        return
+      }
+      pendingSteerAcknowledgements[requestID] = continuation
+    }
+  }
+
+  nonisolated static func shouldRetrySteerWithCommand(after error: OpenClawGatewayError) -> Bool {
+    guard case .gateway(let code, let message) = error else { return false }
+    let normalizedCode = code?.lowercased() ?? ""
+    let normalizedMessage = message.lowercased()
+    guard normalizedCode.isEmpty || normalizedCode == "invalid_request" else { return false }
+    return normalizedMessage.contains("queuemode")
+      && (normalizedMessage.contains("unexpected property")
+        || normalizedMessage.contains("unknown property")
+        || normalizedMessage.contains("invalid chat.send params"))
+  }
+
+  @discardableResult
+  private func resolvePendingSteerAcknowledgement(from frame: [String: Any]) -> Bool {
+    guard Self.string(frame["type"]) == "res",
+          let requestID = Self.string(frame["id"]),
+          outstandingSteerRequestIDs.contains(requestID)
+    else {
+      return false
+    }
+    guard let continuation = pendingSteerAcknowledgements.removeValue(forKey: requestID) else {
+      earlySteerAcknowledgements[requestID] = frame
+      return true
+    }
+    outstandingSteerRequestIDs.remove(requestID)
+    if Self.bool(frame["ok"]) == true {
+      continuation.resume()
+    } else {
+      continuation.resume(throwing: Self.gatewayError(from: frame))
+    }
+    return true
+  }
+
+  private func failPendingSteerAcknowledgements(with error: Error) {
+    let continuations = pendingSteerAcknowledgements.values
+    pendingSteerAcknowledgements.removeAll()
+    outstandingSteerRequestIDs.removeAll()
+    earlySteerAcknowledgements.removeAll()
+    for continuation in continuations {
+      continuation.resume(throwing: error)
+    }
+  }
+
+  nonisolated static func steerRequestParams(
+    message: String,
+    attachments: [OpenClawChatAttachment],
+    sessionKey: String,
+    agentID: String,
+    idempotencyKey: String
+  ) -> [String: Any] {
+    var params: [String: Any] = [
+      "sessionKey": sessionKey,
+      "agentId": agentID,
+      "message": message,
+      "deliver": false,
+      "timeoutMs": Int(OpenClawChatClient.requestTimeout * 1_000),
+      "idempotencyKey": idempotencyKey,
+      "queueMode": "steer"
+    ]
+    if !attachments.isEmpty {
+      params["attachments"] = attachments.map {
+        [
+          "type": $0.mimeType.hasPrefix("image/") ? "image" : "file",
+          "fileName": $0.fileName,
+          "mimeType": $0.mimeType,
+          "content": $0.data.base64EncodedString()
+        ]
+      }
+    }
+    return params
+  }
+
+  nonisolated static func commandSteerRequestParams(
+    message: String,
+    attachments: [OpenClawChatAttachment],
+    sessionKey: String,
+    agentID: String,
+    idempotencyKey: String
+  ) -> [String: Any] {
+    let trimmedMessage = message.trimmingCharacters(in: .whitespacesAndNewlines)
+    let command = trimmedMessage.isEmpty
+      ? "/steer Use the attached context to adjust the active run."
+      : "/steer \(message)"
+    var params: [String: Any] = [
+      "sessionKey": sessionKey,
+      "agentId": agentID,
+      "message": command,
+      "deliver": false,
+      "timeoutMs": Int(OpenClawChatClient.requestTimeout * 1_000),
+      "idempotencyKey": idempotencyKey
+    ]
+    if !attachments.isEmpty {
+      params["attachments"] = attachments.map {
+        [
+          "type": $0.mimeType.hasPrefix("image/") ? "image" : "file",
+          "fileName": $0.fileName,
+          "mimeType": $0.mimeType,
+          "content": $0.data.base64EncodedString()
+        ]
+      }
+    }
+    return params
   }
 
   public func abort() async throws {
@@ -1401,12 +1590,15 @@ public actor OpenClawGatewayClient {
     on socket: URLSessionWebSocketTask
   ) async throws -> String {
     let deadline = Date().addingTimeInterval(OpenClawChatClient.requestTimeout)
+    var waitRunID = runID
+    var observedRunIDs: Set<String> = [runID]
+    var terminalPollsWithoutReply = 0
     while Date() < deadline {
       let waitID = UUID().uuidString.lowercased()
       try await sendRequest(
         id: waitID,
         method: "agent.wait",
-        params: ["runId": runID, "timeoutMs": Self.acceptedRunRecoveryPollTimeoutMilliseconds],
+        params: ["runId": waitRunID, "timeoutMs": Self.acceptedRunRecoveryPollTimeoutMilliseconds],
         on: socket
       )
       while true {
@@ -1414,7 +1606,7 @@ public actor OpenClawGatewayClient {
         if Self.string(frame["type"]) == "event",
            Self.string(frame["event"]) == "agent",
            let activity = Self.activity(from: Self.dictionary(frame["payload"]) ?? [:]),
-           activity.runID == runID {
+           observedRunIDs.contains(activity.runID) {
           await onEvent(.activity(activity))
           continue
         }
@@ -1434,12 +1626,24 @@ public actor OpenClawGatewayClient {
           return reply
         case .failed(let message):
           throw OpenClawGatewayError.gateway(code: nil, message: message)
-        case .pending(let hasActiveRun):
+        case .pending(let hasActiveRun, let activeRunIDs):
+          observedRunIDs.formUnion(activeRunIDs)
+          if let activeRunID = activeRunIDs.last {
+            waitRunID = activeRunID
+          }
           if status == "error", !hasActiveRun {
             throw OpenClawGatewayError.gateway(
               code: nil,
               message: Self.string(payload["error"]) ?? "OpenClaw run failed after reconnecting."
             )
+          }
+          if status == "ok", !hasActiveRun {
+            terminalPollsWithoutReply += 1
+            if terminalPollsWithoutReply >= 3 {
+              throw OpenClawGatewayError.emptyResponse
+            }
+          } else {
+            terminalPollsWithoutReply = 0
           }
           break
         }
@@ -1509,7 +1713,8 @@ public actor OpenClawGatewayClient {
     }
 
     let sessionInfo = dictionary(payload["sessionInfo"]) ?? [:]
-    let activeRunIDs = sessionInfo["activeRunIds"] as? [Any] ?? []
+    let activeRunIDs = (sessionInfo["activeRunIds"] as? [Any] ?? [])
+      .compactMap(string)
     let hasActiveRun = bool(sessionInfo["hasActiveRun"]) ?? !activeRunIDs.isEmpty
     let status = string(sessionInfo["status"])?.lowercased() ?? ""
     let terminalStatuses = Set(["done", "completed", "succeeded", "failed", "error", "aborted", "cancelled", "canceled", "timed_out"])
@@ -1519,7 +1724,7 @@ public actor OpenClawGatewayClient {
     let belongsToRequest = requestIndex != nil || terminalTimestamp >= requestStartedAtMilliseconds
 
     guard !hasActiveRun, terminalStatuses.contains(status), belongsToRequest else {
-      return .pending(hasActiveRun: hasActiveRun)
+      return .pending(hasActiveRun: hasActiveRun, activeRunIDs: activeRunIDs)
     }
     if status == "done" || status == "completed" || status == "succeeded" {
       return .failed("OpenClaw finished without a response.")

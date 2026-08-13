@@ -3,6 +3,7 @@ import UIKit
 
 struct ContentView: View {
   @EnvironmentObject private var store: CorpusStore
+  @EnvironmentObject private var remote: MobileRemoteStore
 
   var body: some View {
     WorkspaceTabs()
@@ -11,10 +12,16 @@ struct ContentView: View {
         Task { await store.selectCorpus(url) }
       }
     }
-    .alert("Org2", isPresented: Binding(get: { store.errorMessage != nil }, set: { _ in store.errorMessage = nil })) {
+    .alert("Org2", isPresented: Binding(
+      get: { store.errorMessage != nil || remote.errorMessage != nil },
+      set: { _ in
+        store.errorMessage = nil
+        remote.errorMessage = nil
+      }
+    )) {
       Button("OK", role: .cancel) {}
     } message: {
-      Text(store.errorMessage ?? "")
+      Text(remote.errorMessage ?? store.errorMessage ?? "")
     }
   }
 }
@@ -70,9 +77,16 @@ private struct WorkspaceTabs: View {
         .tabItem { Label("Approvals", systemImage: "checkmark.seal") }
         .tag(WorkspaceTab.approvals)
 
+      WorkflowsView()
+        .tabItem { Label("Workflows", systemImage: "point.3.connected.trianglepath.dotted") }
+        .tag(WorkspaceTab.workflows)
+
       MobileRemoteRootView()
         .tabItem { Label("Remote", systemImage: "desktopcomputer") }
         .tag(WorkspaceTab.remote)
+    }
+    .onReceive(NotificationCenter.default.publisher(for: .org2OpenRemoteThread)) { _ in
+      selection = .remote
     }
   }
 }
@@ -93,6 +107,7 @@ private enum WorkspaceTab: Hashable {
   case newNote
   case agenda
   case approvals
+  case workflows
   case remote
 
   static var initialSelection: WorkspaceTab {
@@ -102,6 +117,8 @@ private enum WorkspaceTab: Hashable {
       return .agenda
     case "approvals":
       return .approvals
+    case "workflows":
+      return .workflows
     case "remote":
       return .remote
     default:
@@ -115,17 +132,22 @@ private enum WorkspaceTab: Hashable {
 
 private struct AgendaView: View {
   @EnvironmentObject private var store: CorpusStore
+  @EnvironmentObject private var remote: MobileRemoteStore
+
+  private var entries: [AgendaEntry] {
+    remote.isPaired ? remote.workspaceAgenda : store.agenda
+  }
 
   private var overdue: [AgendaEntry] {
-    store.agenda.filter(\.isOverdue)
+    entries.filter(\.isOverdue)
   }
 
   private var today: [AgendaEntry] {
-    store.agenda.filter { $0.date == Date.org2TodayString }
+    entries.filter { $0.date == Date.org2TodayString }
   }
 
   private var upcoming: [AgendaEntry] {
-    store.agenda.filter { !$0.isOverdue && $0.date != Date.org2TodayString }
+    entries.filter { !$0.isOverdue && $0.date != Date.org2TodayString }
   }
 
   var body: some View {
@@ -136,30 +158,70 @@ private struct AgendaView: View {
         AgendaSection(title: "Upcoming", entries: upcoming)
       }
       .overlay {
-        if store.agenda.isEmpty && (store.isPreparingCorpus || store.isLoading) {
+        if entries.isEmpty && isLoading {
           LoadingCorpusView()
-        } else if store.agenda.isEmpty {
+        } else if entries.isEmpty, let connectionError = remoteWorkspaceError {
+          ContentUnavailableView(
+            "Agenda Unavailable",
+            systemImage: "desktopcomputer.trianglebadge.exclamationmark",
+            description: Text(connectionError)
+          )
+        } else if entries.isEmpty {
           ContentUnavailableView("No Agenda Items", systemImage: "calendar")
         }
       }
       .navigationTitle("Agenda")
       .toolbar {
         ToolbarItem(placement: .topBarTrailing) {
-          RefreshButton()
+          Button {
+            Task { await refresh() }
+          } label: {
+            if isLoading {
+              ProgressView()
+            } else {
+              Image(systemName: "arrow.clockwise")
+            }
+          }
+          .disabled(isLoading)
         }
       }
       .refreshable {
-        await store.refresh()
+        await refresh()
       }
-      .onAppear {
-        store.prepareCorpusViews()
+      .task {
+        if remote.isPaired {
+          await remote.refreshWorkspace(reportsErrors: false)
+        } else {
+          store.prepareCorpusViews()
+        }
       }
+    }
+  }
+
+  private var isLoading: Bool {
+    remote.isPaired
+      ? remote.isRefreshingWorkspace
+      : (store.isPreparingCorpus || store.isLoading)
+  }
+
+  private var remoteWorkspaceError: String? {
+    guard remote.isPaired, remote.workspaceUpdatedAt == nil else { return nil }
+    return remote.workspaceConnectionError
+      ?? "Connect to the paired Mac to load the canonical agenda."
+  }
+
+  private func refresh() async {
+    if remote.isPaired {
+      await remote.refreshWorkspace()
+    } else {
+      await store.refresh()
     }
   }
 }
 
 private struct AgendaSection: View {
   @EnvironmentObject private var store: CorpusStore
+  @EnvironmentObject private var remote: MobileRemoteStore
   let title: String
   let entries: [AgendaEntry]
 
@@ -170,7 +232,7 @@ private struct AgendaSection: View {
           AgendaRow(entry: entry)
             .swipeActions(edge: .leading) {
               Button {
-                Task { await store.setTodoStatus(.done, for: entry) }
+                Task { await setStatus(.done, for: entry) }
               } label: {
                 Label("Done", systemImage: "checkmark")
               }
@@ -178,14 +240,14 @@ private struct AgendaSection: View {
             }
             .swipeActions(edge: .trailing) {
               Button {
-                Task { await store.setTodoStatus(.wait, for: entry) }
+                Task { await setStatus(.inProgress, for: entry) }
               } label: {
-                Label("Wait", systemImage: "pause")
+                Label("In Progress", systemImage: "play")
               }
               .tint(.yellow)
 
               Button {
-                Task { await store.setTodoStatus(.todo, for: entry) }
+                Task { await setStatus(.todo, for: entry) }
               } label: {
                 Label("TODO", systemImage: "circle")
               }
@@ -195,19 +257,34 @@ private struct AgendaSection: View {
       }
     }
   }
+
+  private func setStatus(_ status: OrgTodoStatus, for entry: AgendaEntry) async {
+    if remote.isPaired {
+      await remote.setAgendaStatus(status, for: entry)
+    } else {
+      await store.setTodoStatus(status, for: entry)
+    }
+  }
 }
 
 private struct AgendaRow: View {
   @EnvironmentObject private var store: CorpusStore
+  @EnvironmentObject private var remote: MobileRemoteStore
   let entry: AgendaEntry
 
   var body: some View {
     VStack(alignment: .leading, spacing: 6) {
       HStack(alignment: .firstTextBaseline, spacing: 8) {
         Menu {
-          ForEach(OrgTodoStatus.agendaChoices, id: \.rawValue) { status in
+          ForEach(statusChoices, id: \.rawValue) { status in
             Button {
-              Task { await store.setTodoStatus(status, for: entry) }
+              Task {
+                if remote.isPaired {
+                  await remote.setAgendaStatus(status, for: entry)
+                } else {
+                  await store.setTodoStatus(status, for: entry)
+                }
+              }
             } label: {
               Label(status.rawValue, systemImage: status.rawValue == entry.todo ? "checkmark" : "circle")
             }
@@ -232,18 +309,27 @@ private struct AgendaRow: View {
     }
     .padding(.vertical, 4)
   }
+
+  private var statusChoices: [OrgTodoStatus] {
+    remote.isPaired ? [.todo, .inProgress, .done, .canceled] : OrgTodoStatus.agendaChoices
+  }
 }
 
 private struct ApprovalsView: View {
   @EnvironmentObject private var store: CorpusStore
+  @EnvironmentObject private var remote: MobileRemoteStore
   @State private var selected: ApprovalEntry?
   @State private var shareText: String?
   @State private var approvingID: ApprovalEntry.ID?
   @State private var rejection: ApprovalEntry?
 
+  private var approvals: [ApprovalEntry] {
+    remote.isPaired ? remote.workspaceApprovals : store.approvals
+  }
+
   var body: some View {
     NavigationStack {
-      List(store.approvals) { item in
+      List(approvals) { item in
         Button {
           selected = item
         } label: {
@@ -285,33 +371,51 @@ private struct ApprovalsView: View {
         }
       }
       .overlay {
-        if store.approvals.isEmpty && (store.isPreparingCorpus || store.isLoading) {
+        if approvals.isEmpty && isLoading {
           LoadingCorpusView()
-        } else if store.approvals.isEmpty {
+        } else if approvals.isEmpty, let connectionError = remoteWorkspaceError {
+          ContentUnavailableView(
+            "Approvals Unavailable",
+            systemImage: "desktopcomputer.trianglebadge.exclamationmark",
+            description: Text(connectionError)
+          )
+        } else if approvals.isEmpty {
           ContentUnavailableView("No Approvals", systemImage: "checkmark.seal")
         }
       }
       .navigationTitle("Approvals")
       .toolbar {
         ToolbarItem(placement: .topBarTrailing) {
-          RefreshButton()
+          Button {
+            Task { await refresh() }
+          } label: {
+            if isLoading {
+              ProgressView()
+            } else {
+              Image(systemName: "arrow.clockwise")
+            }
+          }
+          .disabled(isLoading)
         }
       }
       .refreshable {
-        await store.refresh()
+        await refresh()
       }
       .sheet(item: $selected) { item in
         ApprovalDetailView(
           item: item,
           isApproving: approvingID == item.id,
           approve: { await approve(item) },
+          requestChanges: { feedback in await requestChanges(item, feedback: feedback) },
           onReject: { rejection = item }
         ) { text in
           shareText = text
         }
       }
       .sheet(item: $rejection) { item in
-        RejectApprovalView(item: item)
+        RejectApprovalView(item: item) { endStatus, reason in
+          await reject(item, endStatus: endStatus, reason: reason)
+        }
       }
       .sheet(item: Binding(
         get: { shareText.map(SharePayload.init(text:)) },
@@ -319,8 +423,12 @@ private struct ApprovalsView: View {
       )) { payload in
         ActivitySheet(items: [payload.text])
       }
-      .onAppear {
-        store.prepareCorpusViews()
+      .task {
+        if remote.isPaired {
+          await remote.refreshWorkspace(reportsErrors: false)
+        } else {
+          store.prepareCorpusViews()
+        }
       }
     }
   }
@@ -329,9 +437,276 @@ private struct ApprovalsView: View {
   private func approve(_ item: ApprovalEntry) async {
     guard approvingID == nil else { return }
     approvingID = item.id
-    await store.approve(item)
+    if remote.isPaired {
+      await remote.decideApproval(item, decision: "approved")
+    } else {
+      await store.approve(item)
+    }
     if approvingID == item.id {
       approvingID = nil
+    }
+  }
+
+  @MainActor
+  private func reject(_ item: ApprovalEntry, endStatus: OrgTodoStatus, reason: String) async {
+    if remote.isPaired {
+      await remote.decideApproval(
+        item,
+        decision: "rejected",
+        note: reason,
+        endStatus: endStatus
+      )
+    } else {
+      await store.reject(item, endStatus: endStatus, reason: reason)
+    }
+  }
+
+  @MainActor
+  private func requestChanges(_ item: ApprovalEntry, feedback: String) async {
+    guard remote.isPaired else {
+      await store.sendToOpenClaw(.discuss, approval: item, message: feedback)
+      return
+    }
+    await remote.decideApproval(item, decision: "revised", note: feedback)
+  }
+
+  private var isLoading: Bool {
+    remote.isPaired
+      ? remote.isRefreshingWorkspace
+      : (store.isPreparingCorpus || store.isLoading)
+  }
+
+  private var remoteWorkspaceError: String? {
+    guard remote.isPaired, remote.workspaceUpdatedAt == nil else { return nil }
+    return remote.workspaceConnectionError
+      ?? "Connect to the paired Mac to load canonical approvals."
+  }
+
+  private func refresh() async {
+    if remote.isPaired {
+      await remote.refreshWorkspace()
+    } else {
+      await store.refresh()
+    }
+  }
+}
+
+private struct WorkflowsView: View {
+  @EnvironmentObject private var remote: MobileRemoteStore
+  @State private var selected: MobileRemoteWorkflowItem?
+
+  var body: some View {
+    NavigationStack {
+      List(remote.workspaceWorkflows) { workflow in
+        Button {
+          selected = workflow
+        } label: {
+          WorkflowRow(workflow: workflow)
+        }
+        .buttonStyle(.plain)
+      }
+      .overlay {
+        if !remote.isPaired {
+          ContentUnavailableView(
+            "Pair With Your Mac",
+            systemImage: "desktopcomputer",
+            description: Text("Workflows use the canonical Org2 runtime on your Mac.")
+          )
+        } else if remote.workspaceWorkflows.isEmpty && remote.isRefreshingWorkspace {
+          LoadingCorpusView()
+        } else if remote.workspaceWorkflows.isEmpty, remote.workspaceUpdatedAt == nil {
+          ContentUnavailableView(
+            "Workflows Unavailable",
+            systemImage: "desktopcomputer.trianglebadge.exclamationmark",
+            description: Text(
+              remote.workspaceConnectionError
+                ?? "Connect to the paired Mac to load canonical workflows."
+            )
+          )
+        } else if remote.workspaceWorkflows.isEmpty {
+          ContentUnavailableView("No Workflows", systemImage: "point.3.connected.trianglepath.dotted")
+        }
+      }
+      .navigationTitle("Workflows")
+      .toolbar {
+        ToolbarItem(placement: .topBarTrailing) {
+          Button {
+            Task { await remote.refreshWorkspace() }
+          } label: {
+            if remote.isRefreshingWorkspace {
+              ProgressView()
+            } else {
+              Image(systemName: "arrow.clockwise")
+            }
+          }
+          .disabled(!remote.isPaired || remote.isRefreshingWorkspace)
+        }
+      }
+      .refreshable {
+        await remote.refreshWorkspace()
+      }
+      .sheet(item: $selected) { workflow in
+        WorkflowDetailView(workflow: workflow)
+      }
+      .task {
+        if remote.isPaired {
+          await remote.refreshWorkspace(reportsErrors: false)
+        }
+      }
+    }
+  }
+}
+
+private struct WorkflowRow: View {
+  let workflow: MobileRemoteWorkflowItem
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      HStack(alignment: .firstTextBaseline, spacing: 8) {
+        StatusPill(workflow.state)
+        Text(workflow.title.prettyPrintedOrgLinks())
+          .font(.body.weight(.semibold))
+          .foregroundStyle(.primary)
+          .lineLimit(2)
+      }
+      if !workflow.description.isEmpty {
+        Text(workflow.description.trimmedForDisplay(maxCharacters: 180))
+          .font(.callout)
+          .foregroundStyle(.secondary)
+          .lineLimit(3)
+      }
+      Label(workflow.scheduleSummary, systemImage: "clock")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+    }
+    .padding(.vertical, 6)
+  }
+}
+
+private struct WorkflowDetailView: View {
+  @Environment(\.dismiss) private var dismiss
+  @EnvironmentObject private var remote: MobileRemoteStore
+  let workflow: MobileRemoteWorkflowItem
+  @State private var selectedState: String
+  @State private var inputs: [String: String]
+
+  init(workflow: MobileRemoteWorkflowItem) {
+    self.workflow = workflow
+    _selectedState = State(initialValue: workflow.state)
+    _inputs = State(initialValue: Dictionary(uniqueKeysWithValues: workflow.inputs.map {
+      ($0.id, $0.defaultValue ?? "")
+    }))
+  }
+
+  var body: some View {
+    NavigationStack {
+      Form {
+        Section {
+          Text(workflow.title.prettyPrintedOrgLinks())
+            .font(.title3.weight(.semibold))
+          if !workflow.description.isEmpty {
+            Text(workflow.description.prettyPrintedOrgLinks())
+              .foregroundStyle(.secondary)
+          }
+          LabeledContent("Schedule", value: workflow.scheduleSummary)
+          LabeledContent("Risk", value: workflow.riskClass)
+          if let agentRef = workflow.agentRef {
+            LabeledContent("Agent", value: agentRef)
+          }
+          if let goalRef = workflow.goalRef {
+            LabeledContent("Goal", value: goalRef)
+          }
+        }
+
+        Section("State") {
+          Picker("State", selection: $selectedState) {
+            Text("Draft").tag("draft")
+            Text("Active").tag("active")
+            Text("Paused").tag("paused")
+          }
+          .pickerStyle(.segmented)
+
+          if selectedState != workflow.state {
+            Button("Save State") {
+              Task {
+                await remote.setWorkflowState(selectedState, for: workflow)
+                dismiss()
+              }
+            }
+            .disabled(isMutating)
+          }
+        }
+
+        if !workflow.inputs.isEmpty {
+          Section("Run Inputs") {
+            ForEach(workflow.inputs) { input in
+              VStack(alignment: .leading, spacing: 6) {
+                TextField(
+                  input.required ? "\(input.id) (required)" : input.id,
+                  text: Binding(
+                    get: { inputs[input.id, default: ""] },
+                    set: { inputs[input.id] = $0 }
+                  ),
+                  axis: .vertical
+                )
+                if !input.description.isEmpty {
+                  Text(input.description)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+              }
+            }
+          }
+        }
+
+        Section {
+          Button {
+            Task {
+              if let threadID = await remote.runWorkflow(workflow, inputs: inputs) {
+                dismiss()
+                NotificationCenter.default.post(
+                  name: .org2OpenRemoteThread,
+                  object: nil,
+                  userInfo: ["threadID": threadID.uuidString]
+                )
+              }
+            }
+          } label: {
+            if isMutating {
+              HStack(spacing: 8) {
+                ProgressView()
+                Text("Starting…")
+              }
+              .frame(maxWidth: .infinity)
+            } else {
+              Label("Run Workflow", systemImage: "play.fill")
+                .frame(maxWidth: .infinity)
+            }
+          }
+          .buttonStyle(.borderedProminent)
+          .disabled(isMutating || hasMissingRequiredInput)
+        }
+      }
+      .navigationTitle("Workflow")
+      .navigationBarTitleDisplayMode(.inline)
+      .toolbar {
+        ToolbarItem(placement: .topBarTrailing) {
+          Button("Done") { dismiss() }
+            .disabled(isMutating)
+        }
+      }
+      .interactiveDismissDisabled(isMutating)
+    }
+  }
+
+  private var isMutating: Bool {
+    remote.mutatingWorkspaceItemIDs.contains(workflow.id)
+  }
+
+  private var hasMissingRequiredInput: Bool {
+    workflow.inputs.contains { input in
+      input.required
+        && inputs[input.id, default: ""].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
   }
 }
@@ -382,6 +757,7 @@ private struct ApprovalDetailView: View {
   let item: ApprovalEntry
   let isApproving: Bool
   let approve: () async -> Void
+  let requestChanges: (String) async -> Void
   let onReject: () -> Void
   let fallbackShare: (String) -> Void
   @State private var message: String = ""
@@ -462,6 +838,22 @@ private struct ApprovalDetailView: View {
               .frame(maxWidth: .infinity)
           }
 
+          if item.isRunApproval {
+            Button {
+              Task {
+                await requestChanges(message)
+                dismiss()
+              }
+            } label: {
+              Label("Request Changes", systemImage: "arrow.uturn.backward.circle")
+                .frame(maxWidth: .infinity)
+            }
+            .disabled(
+              isApproving
+                || message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            )
+          }
+
           Button {
             openWhatsApp(text: item.whatsappText) {
               fallbackShare(item.whatsappText)
@@ -523,8 +915,8 @@ private struct ApprovalDetailView: View {
 
 private struct RejectApprovalView: View {
   @Environment(\.dismiss) private var dismiss
-  @EnvironmentObject private var store: CorpusStore
   let item: ApprovalEntry
+  let reject: (OrgTodoStatus, String) async -> Void
   @State private var endStatus: OrgTodoStatus = .canceled
   @State private var reason = ""
 
@@ -557,7 +949,7 @@ private struct RejectApprovalView: View {
         Section {
           Button(role: .destructive) {
             Task {
-              await store.reject(item, endStatus: endStatus, reason: reason)
+              await reject(endStatus, reason)
               dismiss()
             }
           } label: {

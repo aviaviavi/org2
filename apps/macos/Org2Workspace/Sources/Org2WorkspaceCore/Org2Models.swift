@@ -150,6 +150,17 @@ struct RunCenterSection: Identifiable {
 }
 
 enum RunCenterPresentation {
+  static func approvalID(
+    selectedApprovalItemID: ApprovalItem.ID?,
+    runID: AgentRunItem.ID
+  ) -> AgentRunApprovalItem.ID? {
+    guard let selectedApprovalItemID else { return nil }
+    let prefix = "run:\(runID):"
+    guard selectedApprovalItemID.hasPrefix(prefix) else { return nil }
+    let approvalID = selectedApprovalItemID.dropFirst(prefix.count)
+    return approvalID.isEmpty ? nil : String(approvalID)
+  }
+
   static func sourceMeetingContextsByRunID(
     in runs: [AgentRunItem]
   ) -> [AgentRunItem.ID: AgentRunContextItem] {
@@ -431,7 +442,26 @@ public struct AgentRunItem: Identifiable, Decodable, Hashable, Sendable {
     return nil
   }
   public var hasOpenClawApprovalContinuation: Bool {
-    workflowId != nil || isOpenClawExternalDraft || openClawSessionKey != nil
+    workflowId != nil
+      || isOpenClawExternalDraft
+      || openClawSessionKey != nil
+      || canContinueApprovedWork
+  }
+  public var approvedCurrentApprovalBoundary: [AgentRunApprovalItem] {
+    currentApprovalBoundary.filter { $0.status == "approved" }
+  }
+  public var hasApprovedProviderDraftBoundary: Bool {
+    approvedCurrentApprovalBoundary.contains { approval in
+      approval.action.range(
+        of: #"(?im)^\s*Provider draft:\s*\S+"#,
+        options: .regularExpression
+      ) != nil
+    }
+  }
+  public var canContinueApprovedWork: Bool {
+    status == "running"
+      && pendingApprovalCount == 0
+      && !approvedCurrentApprovalBoundary.isEmpty
   }
   public var completedStepCount: Int { plan.filter { $0.status == "completed" }.count }
   public var skippedStepCount: Int { plan.filter { $0.status == "skipped" }.count }
@@ -1438,6 +1468,11 @@ public enum WorkspaceTextSearchCategory: Int, CaseIterable, Identifiable, Hashab
   case activeTodos
   case files
   case chatThreads
+  case approvals
+  case agentRuns
+  case workflows
+  case goals
+  case agents
   case pages
   case entries
   case chatMessages
@@ -1450,6 +1485,11 @@ public enum WorkspaceTextSearchCategory: Int, CaseIterable, Identifiable, Hashab
     case .activeTodos: "Active TODOs"
     case .files: "Files"
     case .chatThreads: "Chat Threads"
+    case .approvals: "Approvals"
+    case .agentRuns: "Runs"
+    case .workflows: "Workflows"
+    case .goals: "Goals"
+    case .agents: "Agents"
     case .pages: "Pages"
     case .entries: "Entries"
     case .chatMessages: "Chat Messages"
@@ -1458,10 +1498,70 @@ public enum WorkspaceTextSearchCategory: Int, CaseIterable, Identifiable, Hashab
   }
 }
 
+public enum WorkspaceAgentWorkSearchKind: String, Hashable, Sendable {
+  case approval
+  case run
+  case workflow
+  case goal
+  case agent
+
+  public var category: WorkspaceTextSearchCategory {
+    switch self {
+    case .approval: .approvals
+    case .run: .agentRuns
+    case .workflow: .workflows
+    case .goal: .goals
+    case .agent: .agents
+    }
+  }
+
+  public var label: String {
+    switch self {
+    case .approval: "Approval"
+    case .run: "Run"
+    case .workflow: "Workflow"
+    case .goal: "Goal"
+    case .agent: "Agent"
+    }
+  }
+}
+
+public struct WorkspaceAgentWorkSearchResult: Identifiable, Hashable, Sendable {
+  public let id: String
+  public let kind: WorkspaceAgentWorkSearchKind
+  public let recordID: String
+  public let parentRunID: String?
+  public let title: String
+  public let snippet: String
+  public let status: String
+  public let sourceReference: String
+
+  public init(
+    id: String,
+    kind: WorkspaceAgentWorkSearchKind,
+    recordID: String,
+    parentRunID: String? = nil,
+    title: String,
+    snippet: String,
+    status: String,
+    sourceReference: String
+  ) {
+    self.id = id
+    self.kind = kind
+    self.recordID = recordID
+    self.parentRunID = parentRunID
+    self.title = title
+    self.snippet = snippet
+    self.status = status
+    self.sourceReference = sourceReference
+  }
+}
+
 public enum WorkspaceTextSearchItem: Identifiable, Hashable, Sendable {
   case activeTodo(SearchResult)
   case file(CorpusFile)
   case chatThread(OpenClawChatSearchResult)
+  case agentWork(WorkspaceAgentWorkSearchResult)
   case page(OrgRoamNodeReference)
   case entry(SearchResult)
   case chatMessage(OpenClawChatSearchResult)
@@ -1472,6 +1572,7 @@ public enum WorkspaceTextSearchItem: Identifiable, Hashable, Sendable {
     case .activeTodo(let result): "todo:\(result.id)"
     case .file(let file): "file:\(file.id)"
     case .chatThread(let result): "chat-thread:\(result.id)"
+    case .agentWork(let result): "agent-work:\(result.id)"
     case .page(let node): "page:\(node.id)"
     case .entry(let result): "entry:\(result.id)"
     case .chatMessage(let result): "chat-message:\(result.id)"
@@ -1484,6 +1585,7 @@ public enum WorkspaceTextSearchItem: Identifiable, Hashable, Sendable {
     case .activeTodo: .activeTodos
     case .file: .files
     case .chatThread: .chatThreads
+    case .agentWork(let result): result.kind.category
     case .page: .pages
     case .entry: .entries
     case .chatMessage: .chatMessages
@@ -1787,6 +1889,12 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
     case interrupted
   }
 
+  public enum DeliveryKind: String, Codable, Sendable {
+    case turn
+    case steer
+    case followUp
+  }
+
   public let id: UUID
   public let role: Role
   public let content: String
@@ -1796,6 +1904,7 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
   public let responseTrace: OpenClawResponseTrace?
   public let sendFailure: String?
   public let deliveryStatus: DeliveryStatus
+  public let deliveryKind: DeliveryKind
 
   public init(
     id: UUID = UUID(),
@@ -1806,7 +1915,8 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
     changeSummary: OpenClawCorpusChangeSummary? = nil,
     responseTrace: OpenClawResponseTrace? = nil,
     sendFailure: String? = nil,
-    deliveryStatus: DeliveryStatus = .sent
+    deliveryStatus: DeliveryStatus = .sent,
+    deliveryKind: DeliveryKind = .turn
   ) {
     self.id = id
     self.role = role
@@ -1817,6 +1927,7 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
     self.responseTrace = responseTrace
     self.sendFailure = sendFailure
     self.deliveryStatus = role == .user ? deliveryStatus : .sent
+    self.deliveryKind = role == .user ? deliveryKind : .turn
   }
 
   enum CodingKeys: String, CodingKey {
@@ -1829,6 +1940,7 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
     case responseTrace
     case sendFailure
     case deliveryStatus
+    case deliveryKind
   }
 
   public init(from decoder: Decoder) throws {
@@ -1844,6 +1956,9 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
     deliveryStatus = role == .user
       ? (try container.decodeIfPresent(DeliveryStatus.self, forKey: .deliveryStatus) ?? (sendFailure == nil ? .sent : .failed))
       : .sent
+    deliveryKind = role == .user
+      ? (try container.decodeIfPresent(DeliveryKind.self, forKey: .deliveryKind) ?? .turn)
+      : .turn
   }
 
   public func replacingSendFailure(_ nextSendFailure: String?) -> OpenClawChatMessage {
@@ -1856,7 +1971,8 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
       changeSummary: changeSummary,
       responseTrace: responseTrace,
       sendFailure: nextSendFailure,
-      deliveryStatus: nextSendFailure == nil ? .sent : .failed
+      deliveryStatus: nextSendFailure == nil ? .sent : .failed,
+      deliveryKind: deliveryKind
     )
   }
 
@@ -1873,7 +1989,8 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
       changeSummary: changeSummary,
       responseTrace: responseTrace,
       sendFailure: nextSendFailure,
-      deliveryStatus: nextDeliveryStatus
+      deliveryStatus: nextDeliveryStatus,
+      deliveryKind: deliveryKind
     )
   }
 
@@ -1887,7 +2004,8 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
       changeSummary: nextChangeSummary,
       responseTrace: responseTrace,
       sendFailure: sendFailure,
-      deliveryStatus: deliveryStatus
+      deliveryStatus: deliveryStatus,
+      deliveryKind: deliveryKind
     )
   }
 }
@@ -2060,6 +2178,12 @@ public enum AIChatRuntime: String, CaseIterable, Codable, Identifiable, Sendable
     case .codex: "chevron.left.forwardslash.chevron.right"
     }
   }
+}
+
+public enum AIChatMessageDeliveryPreference: String, Codable, Sendable {
+  case automatic
+  case steer
+  case followUp
 }
 
 public struct AIChatReasoningOption: Identifiable, Hashable, Sendable {

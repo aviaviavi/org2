@@ -199,7 +199,13 @@ final class CodexAppServerClientTests: XCTestCase {
   func testCodexSandboxAccessBuildsAppServerPolicies() {
     let cwd = URL(fileURLWithPath: "/tmp/example-corpus", isDirectory: true)
 
-    XCTAssertEqual(CodexSandboxAccess.readOnly.threadSandboxValue, "readOnly")
+    XCTAssertEqual(CodexSandboxAccess.readOnly.threadSandboxValue, "read-only")
+    XCTAssertEqual(CodexSandboxAccess.workspaceWrite.threadSandboxValue, "workspace-write")
+    XCTAssertEqual(CodexSandboxAccess.fullAccess.threadSandboxValue, "danger-full-access")
+    XCTAssertEqual(
+      CodexSandboxAccess.readOnly.turnSandboxPolicy(cwd: cwd),
+      .object(["type": .string("readOnly")])
+    )
     XCTAssertEqual(
       CodexSandboxAccess.workspaceWrite.turnSandboxPolicy(cwd: cwd),
       .object([
@@ -371,6 +377,120 @@ final class CodexAppServerClientTests: XCTestCase {
     await client.shutdown()
   }
 
+  func testClientSteersTheExpectedActiveTurn() async throws {
+    let temporaryDirectory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-codex-steer-test-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: temporaryDirectory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
+
+    let executable = temporaryDirectory.appendingPathComponent("fake-codex-steer")
+    try Self.fakeSteerAppServerScript.write(to: executable, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: executable.path)
+    let client = CodexAppServerClient(
+      executableURL: executable,
+      eventHandler: { _ in },
+      dynamicToolHandler: { _ in CodexDynamicToolResult(success: false, text: "unused") }
+    )
+
+    try await client.steer(
+      threadID: "thr-steer",
+      expectedTurnID: "turn-steer",
+      message: "Focus on the failing test first.",
+      attachments: [
+        OpenClawChatAttachment(fileName: "example.png", mimeType: "image/png", data: Data([1, 2, 3]))
+      ]
+    )
+
+    await client.shutdown()
+  }
+
+  func testExternalCodexThreadParsesAsHarnessNeutralSummaryAndTranscript() throws {
+    let raw: JSONValue = .object([
+      "id": .string("019f-thread"),
+      "name": .string("Inspect release state"),
+      "preview": .string("Check the release artifacts"),
+      "cwd": .string("/tmp/org2"),
+      "source": .string("vscode"),
+      "modelProvider": .string("openai"),
+      "createdAt": .integer(100),
+      "updatedAt": .integer(120),
+      "status": .object(["type": .string("notLoaded")]),
+      "turns": .array([
+        .object([
+          "startedAt": .integer(101),
+          "items": .array([
+            .object([
+              "type": .string("userMessage"),
+              "id": .string("user-1"),
+              "content": .array([
+                .object(["type": .string("text"), "text": .string("What shipped?")])
+              ])
+            ]),
+            .object([
+              "type": .string("commandExecution"),
+              "id": .string("tool-1")
+            ]),
+            .object([
+              "type": .string("agentMessage"),
+              "id": .string("agent-1"),
+              "text": .string("Version 0.4.1 shipped.")
+            ])
+          ])
+        ])
+      ])
+    ])
+
+    let summary = try XCTUnwrap(CodexAppServerClient.externalThreadSummary(raw))
+    XCTAssertEqual(summary.harness, .codex)
+    XCTAssertEqual(summary.externalID, "019f-thread")
+    XCTAssertEqual(summary.title, "Inspect release state")
+    XCTAssertEqual(summary.workspacePath, "/tmp/org2")
+    XCTAssertEqual(summary.source, "vscode")
+    XCTAssertEqual(summary.status, "notLoaded")
+
+    let messages = CodexAppServerClient.externalThreadMessages(raw)
+    XCTAssertEqual(messages.map(\.role), [.user, .assistant])
+    XCTAssertEqual(messages.map(\.content), ["What shipped?", "Version 0.4.1 shipped."])
+  }
+
+  func testExternalThreadSnapshotUsesOrg2StructureAndReadOnlyProvenance() {
+    let summary = ExternalThreadSummary(
+      harness: .codex,
+      externalID: "019f-thread",
+      title: "Inspect release state",
+      preview: nil,
+      workspacePath: "/tmp/org2",
+      source: "vscode",
+      modelProvider: "openai",
+      createdAt: Date(timeIntervalSince1970: 100),
+      updatedAt: Date(timeIntervalSince1970: 120),
+      status: "notLoaded",
+      isPinned: false
+    )
+    let detail = ExternalThreadDetail(
+      thread: summary,
+      messages: [
+        ExternalThreadMessage(
+          id: "user-1",
+          role: .user,
+          content: "A line\n* that must stay quoted",
+          createdAt: Date(timeIntervalSince1970: 101)
+        )
+      ]
+    )
+
+    let snapshot = WorkspaceStore.externalThreadSnapshotText(detail)
+    XCTAssertTrue(snapshot.contains("* External thread: Inspect release state"))
+    XCTAssertTrue(snapshot.contains(":EXTERNAL_HARNESS: codex"))
+    XCTAssertTrue(snapshot.contains("read-only snapshot imported from Codex"))
+    XCTAssertTrue(snapshot.contains("*** You"))
+    XCTAssertTrue(snapshot.contains(": * that must stay quoted"))
+    XCTAssertEqual(
+      WorkspaceStore.externalThreadSnapshotRelativePath(summary),
+      "views/external-threads/inspect-release-state-019f-thread.org2"
+    )
+  }
+
   private static let fakeAppServerScript = #"""
   #!/bin/sh
   while IFS= read -r line; do
@@ -385,7 +505,7 @@ final class CodexAppServerClientTests: XCTestCase {
         ;;
       *'"method":"thread/start"'*)
         case "$line" in
-          *'"sandbox":"dangerFullAccess"'*) ;;
+          *'"sandbox":"danger-full-access"'*) ;;
           *) printf '%s\n' '{"id":3,"error":{"message":"thread sandbox missing"}}'; continue ;;
         esac
         case "$line" in
@@ -416,6 +536,34 @@ final class CodexAppServerClientTests: XCTestCase {
         ;;
       *'"method":"model/list"'*)
         printf '%s\n' '{"id":5,"result":{"data":[{"id":"gpt-test","model":"gpt-test","upgrade":null,"upgradeInfo":null,"availabilityNux":null,"displayName":"GPT Test","description":"Test model","hidden":false,"supportedReasoningEfforts":[{"reasoningEffort":"low","description":"Fast"},{"reasoningEffort":"high","description":"Thorough"}],"defaultReasoningEffort":"low","inputModalities":["text"],"supportsPersonality":false,"additionalSpeedTiers":[],"serviceTiers":[],"defaultServiceTier":null,"isDefault":true}],"nextCursor":null}}'
+        ;;
+    esac
+  done
+  """#
+
+  private static let fakeSteerAppServerScript = #"""
+  #!/bin/sh
+  while IFS= read -r line; do
+    case "$line" in
+      *'"method":"initialize"'*)
+        printf '%s\n' '{"id":1,"result":{"userAgent":"fake-codex"}}'
+        ;;
+      *'"method":"initialized"'*)
+        ;;
+      *'"method":"turn/steer"'*)
+        case "$line" in
+          *'"threadId":"thr-steer"'*) ;;
+          *) printf '%s\n' '{"id":2,"error":{"message":"wrong steer target"}}'; continue ;;
+        esac
+        case "$line" in
+          *'"expectedTurnId":"turn-steer"'*) ;;
+          *) printf '%s\n' '{"id":2,"error":{"message":"wrong expected turn"}}'; continue ;;
+        esac
+        case "$line" in
+          *'Focus on the failing test first.'*'"type":"image"'*) ;;
+          *) printf '%s\n' '{"id":2,"error":{"message":"steer input missing"}}'; continue ;;
+        esac
+        printf '%s\n' '{"id":2,"result":{"turnId":"turn-steer"}}'
         ;;
     esac
   done

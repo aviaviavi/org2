@@ -61,7 +61,7 @@ final class WorkspaceListSelectionTests: XCTestCase {
     XCTAssertTrue(source.contains("var verticalPadding: CGFloat = 0"))
     XCTAssertEqual(
       source.components(separatedBy: ".workspaceSelectableRow(").count - 1,
-      6,
+      7,
       "Every selected-row implementation should use the shared gutter and marker chrome"
     )
     XCTAssertFalse(source.contains("WorkspaceSelectionMarker()"))
@@ -86,6 +86,38 @@ final class WorkspaceListSelectionTests: XCTestCase {
     )
     XCTAssertFalse(
       OpenClawSettledThreadDisclosure.updated(isExpanded: true, settledThreadCount: 0)
+    )
+  }
+
+  func testReopenedThreadGetsAFreshSidebarRowIdentity() {
+    let threadID = UUID()
+    let activeThread = OpenClawChatThread(
+      id: threadID,
+      title: "Thread",
+      sessionKey: "agent:main:thread"
+    )
+    let settledThread = activeThread.replacingOpenClawChatMetadata(
+      isArchived: true,
+      settledAt: .some(Date(timeIntervalSince1970: 1_700_000_000))
+    )
+
+    XCTAssertNotEqual(
+      OpenClawSidebarThreadRowIdentity(thread: activeThread, isSending: false),
+      OpenClawSidebarThreadRowIdentity(thread: settledThread, isSending: false)
+    )
+    XCTAssertFalse(OpenClawSidebarThreadRowIdentity(thread: activeThread, isSending: false).isSettled)
+    XCTAssertTrue(OpenClawSidebarThreadRowIdentity(thread: settledThread, isSending: false).isSettled)
+  }
+
+  func testFinishedThreadGetsAFreshSidebarRowIdentity() {
+    let thread = OpenClawChatThread(
+      title: "Thread",
+      sessionKey: "agent:main:thread"
+    )
+
+    XCTAssertNotEqual(
+      OpenClawSidebarThreadRowIdentity(thread: thread, isSending: true),
+      OpenClawSidebarThreadRowIdentity(thread: thread, isSending: false)
     )
   }
 

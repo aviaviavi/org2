@@ -81,6 +81,8 @@ assert.match(rendered.html, /Intl\.Collator/);
 assert.match(rendered.html, /\.org2-table-controls \{/);
 assert.match(rendered.html, /h1 \{ font-size: 1\.16rem;/);
 assert.match(rendered.html, /h2 \{ font-size: 1\.08rem;/);
+assert.match(rendered.html, /overflow-wrap: normal;\n  word-break: normal;\n  text-wrap: wrap;/);
+assert.doesNotMatch(rendered.html, /text-wrap: balance;/);
 assert.match(rendered.html, /\.org2-headline-body > \.org2-headline\.level-2 \{ margin-left: 0\.35rem;/);
 assert.match(rendered.html, /org2-workspace:\/\/open-link\?target=id%3Arender-target/);
 assert.match(rendered.html, /org2-workspace:\/\/open-link\?target=file%3Anotes%2Fother\.org2/);

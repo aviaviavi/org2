@@ -405,6 +405,7 @@ test("resumes an approved workflow in its correlated OpenClaw session", async ()
   assert.equal(resumed.sessionKey, "agent:main:org2:thread-1");
   assert.equal(workflowMarker(resumed.prompt).workflowRunId, "run-1");
   assert.match(workflowContinuationPrompt(workflow, "run-1"), /approval-decided/);
+  assert.match(approvedRunContinuationPrompt({ id: "run-1", goal: "Review drafts" }), /Skip every rejected or canceled action/);
 });
 
 test("resumes a correlated approved plain run only once per approval boundary", async () => {
@@ -473,7 +474,27 @@ test("does not resume a run whose current approval boundary is incomplete", asyn
     if (args[0] === "run" && args[1] === "show") return JSON.stringify(run);
     throw new Error(`unexpected command: ${args.join(" ")}`);
   } });
-  await assert.rejects(() => lifecycle.resumeApprovedRun(run.id), /not fully approved/);
+  await assert.rejects(() => lifecycle.resumeApprovedRun(run.id), /not fully decided/);
+});
+
+test("resumes a fully decided boundary while preserving rejected actions", async () => {
+  const run = {
+    id: "run-partial-batch",
+    goal: "Process independently reviewed drafts",
+    status: "running",
+    approvals: [{ id: "review-1", status: "approved" }, { id: "review-2", status: "rejected" }],
+    comments: [],
+    events: [],
+  };
+  const lifecycle = new Org2Lifecycle({ exec: async (args) => {
+    if (args[0] === "corpus") return JSON.stringify({ identity: { id: "personal" } });
+    if (args[0] === "run" && args[1] === "show") return JSON.stringify(run);
+    throw new Error(`unexpected command: ${args.join(" ")}`);
+  } });
+
+  const resumed = await lifecycle.resumeApprovedRun(run.id);
+
+  assert.match(resumed.prompt, /Skip every rejected or canceled action/);
 });
 
 test("resumes a requested workflow revision with the reviewer's durable feedback", async () => {

@@ -324,7 +324,9 @@ h1, h2, h3, h4, h5, h6 {
   line-height: 1.3;
   letter-spacing: 0;
   margin: 1rem 0 0.42rem;
-  text-wrap: balance;
+  overflow-wrap: normal;
+  word-break: normal;
+  text-wrap: wrap;
 }
 h1 { font-size: 1.16rem; margin-top: 0.1rem; }
 h2 { font-size: 1.08rem; color: color-mix(in srgb, var(--org2-text) 78%, var(--org2-accent)); }

@@ -128,9 +128,9 @@ public enum CodexSandboxAccess: String, CaseIterable, Identifiable, Sendable {
 
   var threadSandboxValue: String {
     switch self {
-    case .readOnly: "readOnly"
-    case .workspaceWrite: "workspaceWrite"
-    case .fullAccess: "dangerFullAccess"
+    case .readOnly: "read-only"
+    case .workspaceWrite: "workspace-write"
+    case .fullAccess: "danger-full-access"
     }
   }
 
@@ -392,6 +392,45 @@ public actor CodexAppServerClient {
     return models
   }
 
+  public func listExternalThreads(limit: Int = 100) async throws -> [ExternalThreadSummary] {
+    let result = try await request(
+      method: "thread/list",
+      params: .object([
+        "limit": .integer(Int64(max(1, min(limit, 200)))),
+        "sourceKinds": .array([
+          .string("cli"),
+          .string("vscode"),
+          .string("appServer"),
+          .string("exec"),
+          .string("unknown")
+        ])
+      ])
+    )
+    guard let rows = result["data"]?.arrayValue else {
+      throw CodexAppServerError.invalidResponse("thread/list omitted its thread catalog")
+    }
+    return rows.compactMap(Self.externalThreadSummary)
+  }
+
+  public func readExternalThread(_ externalID: String) async throws -> ExternalThreadDetail {
+    let result = try await request(
+      method: "thread/read",
+      params: .object([
+        "threadId": .string(externalID),
+        "includeTurns": .bool(true)
+      ])
+    )
+    guard let rawThread = result["thread"],
+          let summary = Self.externalThreadSummary(rawThread)
+    else {
+      throw CodexAppServerError.invalidResponse("thread/read omitted its thread")
+    }
+    return ExternalThreadDetail(
+      thread: summary,
+      messages: Self.externalThreadMessages(rawThread)
+    )
+  }
+
   public func ensureThread(
     existingThreadID: String?,
     cwd: URL,
@@ -514,6 +553,38 @@ public actor CodexAppServerClient {
     )
   }
 
+  public func steer(
+    threadID: String,
+    expectedTurnID: String,
+    message: String,
+    attachments: [OpenClawChatAttachment] = []
+  ) async throws {
+    try await connect()
+    var input: [JSONValue] = [
+      .object([
+        "type": .string("text"),
+        "text": .string(message)
+      ])
+    ]
+    input.append(contentsOf: attachments.map {
+      .object([
+        "type": .string("image"),
+        "url": .string($0.dataURLString)
+      ])
+    })
+    let result = try await requestRaw(
+      method: "turn/steer",
+      params: .object([
+        "threadId": .string(threadID),
+        "input": .array(input),
+        "expectedTurnId": .string(expectedTurnID)
+      ])
+    )
+    guard result["turnId"]?.stringValue == expectedTurnID else {
+      throw CodexAppServerError.invalidResponse("turn/steer returned a different turn id")
+    }
+  }
+
   public func shutdown() {
     standardOutput?.readabilityHandler = nil
     standardError?.readabilityHandler = nil
@@ -576,6 +647,77 @@ public actor CodexAppServerClient {
       defaultReasoningEffort: value["defaultReasoningEffort"]?.stringValue,
       isDefault: value["isDefault"]?.boolValue ?? false
     )
+  }
+
+  nonisolated static func externalThreadSummary(_ value: JSONValue) -> ExternalThreadSummary? {
+    guard let externalID = value["id"]?.stringValue else { return nil }
+    let preview = normalizedExternalText(value["preview"]?.stringValue)
+    let name = normalizedExternalText(value["name"]?.stringValue)
+    let fallbackTitle = preview?
+      .split(separator: "\n", omittingEmptySubsequences: true)
+      .first
+      .map(String.init)
+    let title = String((name ?? fallbackTitle ?? "Untitled Codex task").prefix(180))
+    let createdAt = Date(timeIntervalSince1970: externalTimestamp(value["createdAt"]) ?? 0)
+    let updatedAt = Date(timeIntervalSince1970: externalTimestamp(value["updatedAt"]) ?? createdAt.timeIntervalSince1970)
+    return ExternalThreadSummary(
+      harness: .codex,
+      externalID: externalID,
+      title: title,
+      preview: preview.map { String($0.prefix(500)) },
+      workspacePath: normalizedExternalText(value["cwd"]?.stringValue),
+      source: normalizedExternalText(value["source"]?.stringValue),
+      modelProvider: normalizedExternalText(value["modelProvider"]?.stringValue),
+      createdAt: createdAt,
+      updatedAt: updatedAt,
+      status: value["status"]?["type"]?.stringValue ?? "unknown",
+      isPinned: value["isPinned"]?.boolValue ?? false
+    )
+  }
+
+  nonisolated static func externalThreadMessages(_ thread: JSONValue) -> [ExternalThreadMessage] {
+    guard let turns = thread["turns"]?.arrayValue else { return [] }
+    return turns.enumerated().flatMap { turnIndex, turn in
+      let timestamp = Date(timeIntervalSince1970: externalTimestamp(turn["startedAt"]) ?? 0)
+      return (turn["items"]?.arrayValue ?? []).enumerated().compactMap { itemIndex, item -> ExternalThreadMessage? in
+        guard let type = item["type"]?.stringValue else { return nil }
+        let role: ExternalThreadMessage.Role
+        let content: String?
+        switch type {
+        case "userMessage":
+          role = .user
+          content = item["content"]?.arrayValue?
+            .compactMap { part in
+              guard part["type"]?.stringValue == "text" else { return nil }
+              return part["text"]?.stringValue
+            }
+            .joined(separator: "\n")
+        case "agentMessage":
+          role = .assistant
+          content = item["text"]?.stringValue
+        default:
+          return nil
+        }
+        guard let normalized = normalizedExternalText(content) else { return nil }
+        let id = item["id"]?.stringValue ?? "turn-\(turnIndex)-item-\(itemIndex)"
+        return ExternalThreadMessage(id: id, role: role, content: normalized, createdAt: timestamp)
+      }
+    }
+  }
+
+  nonisolated private static func normalizedExternalText(_ value: String?) -> String? {
+    guard let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+          !normalized.isEmpty
+    else { return nil }
+    return normalized
+  }
+
+  nonisolated private static func externalTimestamp(_ value: JSONValue?) -> TimeInterval? {
+    switch value {
+    case .integer(let seconds): Double(seconds)
+    case .number(let seconds): seconds
+    default: nil
+    }
   }
 
   nonisolated private static func reasoningLabel(_ value: String) -> String {

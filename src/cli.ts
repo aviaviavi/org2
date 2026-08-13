@@ -1165,15 +1165,21 @@ function approvalCandidatesFromRuns(rootDir: string, runs: AgentRun[]): Approval
     const pending = run.approvals.filter((approval) => approval.status === "pending");
     return run.approvals.map((approval) => {
       const remainingAfterThis = pending.length - 1;
-      const otherDecisionsApproved = currentAgentRunApprovalBoundary(run)
-        .every((candidate) => candidate.id === approval.id || candidate.status === "approved");
+      const otherBoundaryDecisions = currentAgentRunApprovalBoundary(run)
+        .filter((candidate) => candidate.id !== approval.id);
+      const hasRequestedRevision = otherBoundaryDecisions
+        .some((candidate) => candidate.status === "revised");
+      const hasDeclinedAction = otherBoundaryDecisions
+        .some((candidate) => candidate.status === "rejected" || candidate.status === "canceled");
       const runDecisionEffect = run.status !== "waiting-approval"
         ? `Deciding this approval does not clear the run's separate ${run.status} state.`
         : remainingAfterThis > 0
           ? `Approving this leaves ${remainingAfterThis} other pending approval${remainingAfterThis === 1 ? "" : "s"} before the run can resume.`
-          : otherDecisionsApproved
-            ? "This is the last pending approval; approving it resumes the run."
-            : "This is the last pending approval, but another decision requested revision, so the run will remain blocked for replacement material.";
+          : hasRequestedRevision
+            ? "This is the last pending approval, but another decision requested revision, so the run will remain blocked for replacement material."
+            : hasDeclinedAction
+              ? "This is the last pending approval; deciding it resumes the run with rejected or canceled actions excluded."
+              : "This is the last pending approval; approving it resumes the run.";
       return {
         item: {
           kind: "run" as const,

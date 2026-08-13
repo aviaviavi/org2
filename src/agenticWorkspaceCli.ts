@@ -1150,6 +1150,12 @@ async function runCommand(parsed: ParsedArgs): Promise<void> {
     summary: required(flag(parsed, "summary"), "--summary is required"),
     actor: required(flag(parsed, "actor"), "--actor is required"),
   });
+  else if (action === "retry") {
+    const retried = transitionAgentRun(existing, "queued", { actor: flag(parsed, "actor") });
+    run = existing.approvals.some((approval) => approval.status === "pending")
+      ? transitionAgentRun(retried, "waiting-approval", { actor: flag(parsed, "actor") })
+      : retried;
+  }
   else if (transitions[action]) run = transitionAgentRun(existing, transitions[action]!, {
     actor: flag(parsed, "actor"), reason: flag(parsed, "reason"), summary: flag(parsed, "summary"),
     highlights: flags(parsed, "highlight"), nextActions: flags(parsed, "next-action"),

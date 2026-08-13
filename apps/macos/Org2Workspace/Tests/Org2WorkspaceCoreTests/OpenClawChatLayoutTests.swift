@@ -164,7 +164,7 @@ final class OpenClawChatLayoutTests: XCTestCase {
     let pasteboard = NSPasteboard(name: NSPasteboard.Name("org2-chat-copy-\(UUID().uuidString)"))
     defer { pasteboard.releaseGlobally() }
 
-    OpenClawMessageClipboard.copy(message, to: pasteboard)
+    XCTAssertTrue(OpenClawMessageClipboard.copy(message, to: pasteboard))
 
     XCTAssertEqual(pasteboard.string(forType: .string), "First paragraph.\n\nSecond paragraph.")
   }

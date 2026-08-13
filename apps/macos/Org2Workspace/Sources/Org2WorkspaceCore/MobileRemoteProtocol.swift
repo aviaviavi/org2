@@ -80,10 +80,16 @@ public struct MobileRemoteCreateThreadRequest: Codable, Hashable, Sendable {
 public struct MobileRemoteSendMessageRequest: Codable, Hashable, Sendable {
   public let content: String
   public let attachments: [MobileRemoteAttachment]
+  public let delivery: String?
 
-  public init(content: String, attachments: [MobileRemoteAttachment] = []) {
+  public init(
+    content: String,
+    attachments: [MobileRemoteAttachment] = [],
+    delivery: String? = nil
+  ) {
     self.content = content
     self.attachments = attachments
+    self.delivery = delivery
   }
 }
 
@@ -226,6 +232,8 @@ public struct MobileRemoteThreadSummary: Codable, Hashable, Identifiable, Sendab
   public let isRunning: Bool
   public let unreadMessageCount: Int
   public let preview: String?
+  public let latestAssistantMessageID: UUID?
+  public let latestAssistantPreview: String?
 
   public init(
     id: UUID,
@@ -237,7 +245,9 @@ public struct MobileRemoteThreadSummary: Codable, Hashable, Identifiable, Sendab
     isPinned: Bool,
     isRunning: Bool,
     unreadMessageCount: Int,
-    preview: String?
+    preview: String?,
+    latestAssistantMessageID: UUID? = nil,
+    latestAssistantPreview: String? = nil
   ) {
     self.id = id
     self.title = title
@@ -249,6 +259,8 @@ public struct MobileRemoteThreadSummary: Codable, Hashable, Identifiable, Sendab
     self.isRunning = isRunning
     self.unreadMessageCount = unreadMessageCount
     self.preview = preview
+    self.latestAssistantMessageID = latestAssistantMessageID
+    self.latestAssistantPreview = latestAssistantPreview
   }
 }
 
@@ -287,6 +299,7 @@ public struct MobileRemoteChatMessage: Codable, Hashable, Identifiable, Sendable
   public let attachmentNames: [String]
   public let createdAt: Date
   public let deliveryStatus: String
+  public let deliveryKind: String?
   public let sendFailure: String?
 
   public init(
@@ -296,6 +309,7 @@ public struct MobileRemoteChatMessage: Codable, Hashable, Identifiable, Sendable
     attachmentNames: [String],
     createdAt: Date,
     deliveryStatus: String,
+    deliveryKind: String? = nil,
     sendFailure: String?
   ) {
     self.id = id
@@ -304,6 +318,7 @@ public struct MobileRemoteChatMessage: Codable, Hashable, Identifiable, Sendable
     self.attachmentNames = attachmentNames
     self.createdAt = createdAt
     self.deliveryStatus = deliveryStatus
+    self.deliveryKind = deliveryKind
     self.sendFailure = sendFailure
   }
 }
@@ -345,6 +360,231 @@ public struct MobileRemoteMutationResponse: Codable, Hashable, Sendable {
   public init(accepted: Bool, threadID: UUID? = nil) {
     self.accepted = accepted
     self.threadID = threadID
+  }
+}
+
+public struct MobileRemoteWorkspaceSnapshot: Codable, Hashable, Sendable {
+  public let updatedAt: Date
+  public let agenda: [MobileRemoteAgendaItem]
+  public let approvals: [MobileRemoteApprovalItem]
+  public let workflows: [MobileRemoteWorkflowItem]
+
+  public init(
+    updatedAt: Date = Date(),
+    agenda: [MobileRemoteAgendaItem],
+    approvals: [MobileRemoteApprovalItem],
+    workflows: [MobileRemoteWorkflowItem]
+  ) {
+    self.updatedAt = updatedAt
+    self.agenda = agenda
+    self.approvals = approvals
+    self.workflows = workflows
+  }
+}
+
+public struct MobileRemoteAgendaItem: Codable, Hashable, Identifiable, Sendable {
+  public let id: String
+  public let title: String
+  public let todo: String
+  public let file: String
+  public let line: Int
+  public let date: String
+  public let kind: String
+  public let tags: [String]
+  public let body: String
+  public let priority: String?
+  public let time: String?
+  public let effort: String?
+
+  public init(
+    id: String,
+    title: String,
+    todo: String,
+    file: String,
+    line: Int,
+    date: String,
+    kind: String,
+    tags: [String],
+    body: String,
+    priority: String?,
+    time: String?,
+    effort: String?
+  ) {
+    self.id = id
+    self.title = title
+    self.todo = todo
+    self.file = file
+    self.line = line
+    self.date = date
+    self.kind = kind
+    self.tags = tags
+    self.body = body
+    self.priority = priority
+    self.time = time
+    self.effort = effort
+  }
+}
+
+public struct MobileRemoteApprovalItem: Codable, Hashable, Identifiable, Sendable {
+  public let id: String
+  public let title: String
+  public let status: String
+  public let todo: String?
+  public let level: Int?
+  public let file: String
+  public let line: Int
+  public let sourceID: String?
+  public let properties: [String: String]
+  public let body: String
+  public let tags: [String]
+  public let kind: String?
+  public let runID: String?
+  public let approvalID: String?
+  public let fingerprint: String?
+  public let action: String?
+  public let riskClass: String?
+  public let requestedRole: String?
+  public let requestedFrom: String?
+  public let requestedAt: String?
+  public let runGoal: String?
+  public let runStatus: String?
+  public let runDecisionEffect: String?
+
+  public init(
+    id: String,
+    title: String,
+    status: String,
+    todo: String?,
+    level: Int?,
+    file: String,
+    line: Int,
+    sourceID: String?,
+    properties: [String: String],
+    body: String,
+    tags: [String],
+    kind: String?,
+    runID: String?,
+    approvalID: String?,
+    fingerprint: String?,
+    action: String?,
+    riskClass: String?,
+    requestedRole: String?,
+    requestedFrom: String?,
+    requestedAt: String?,
+    runGoal: String?,
+    runStatus: String?,
+    runDecisionEffect: String?
+  ) {
+    self.id = id
+    self.title = title
+    self.status = status
+    self.todo = todo
+    self.level = level
+    self.file = file
+    self.line = line
+    self.sourceID = sourceID
+    self.properties = properties
+    self.body = body
+    self.tags = tags
+    self.kind = kind
+    self.runID = runID
+    self.approvalID = approvalID
+    self.fingerprint = fingerprint
+    self.action = action
+    self.riskClass = riskClass
+    self.requestedRole = requestedRole
+    self.requestedFrom = requestedFrom
+    self.requestedAt = requestedAt
+    self.runGoal = runGoal
+    self.runStatus = runStatus
+    self.runDecisionEffect = runDecisionEffect
+  }
+}
+
+public struct MobileRemoteWorkflowInput: Codable, Hashable, Identifiable, Sendable {
+  public let id: String
+  public let description: String
+  public let required: Bool
+  public let defaultValue: String?
+
+  public init(id: String, description: String, required: Bool, defaultValue: String?) {
+    self.id = id
+    self.description = description
+    self.required = required
+    self.defaultValue = defaultValue
+  }
+}
+
+public struct MobileRemoteWorkflowItem: Codable, Hashable, Identifiable, Sendable {
+  public let id: String
+  public let title: String
+  public let description: String
+  public let state: String
+  public let riskClass: String
+  public let scheduleSummary: String
+  public let file: String
+  public let agentRef: String?
+  public let goalRef: String?
+  public let inputs: [MobileRemoteWorkflowInput]
+
+  public init(
+    id: String,
+    title: String,
+    description: String,
+    state: String,
+    riskClass: String,
+    scheduleSummary: String,
+    file: String,
+    agentRef: String?,
+    goalRef: String?,
+    inputs: [MobileRemoteWorkflowInput]
+  ) {
+    self.id = id
+    self.title = title
+    self.description = description
+    self.state = state
+    self.riskClass = riskClass
+    self.scheduleSummary = scheduleSummary
+    self.file = file
+    self.agentRef = agentRef
+    self.goalRef = goalRef
+    self.inputs = inputs
+  }
+}
+
+public struct MobileRemoteAgendaStatusRequest: Codable, Hashable, Sendable {
+  public let status: String
+
+  public init(status: String) {
+    self.status = status
+  }
+}
+
+public struct MobileRemoteApprovalDecisionRequest: Codable, Hashable, Sendable {
+  public let decision: String
+  public let note: String?
+  public let endStatus: String?
+
+  public init(decision: String, note: String? = nil, endStatus: String? = nil) {
+    self.decision = decision
+    self.note = note
+    self.endStatus = endStatus
+  }
+}
+
+public struct MobileRemoteWorkflowStateRequest: Codable, Hashable, Sendable {
+  public let state: String
+
+  public init(state: String) {
+    self.state = state
+  }
+}
+
+public struct MobileRemoteWorkflowRunRequest: Codable, Hashable, Sendable {
+  public let inputs: [String: String]
+
+  public init(inputs: [String: String]) {
+    self.inputs = inputs
   }
 }
 

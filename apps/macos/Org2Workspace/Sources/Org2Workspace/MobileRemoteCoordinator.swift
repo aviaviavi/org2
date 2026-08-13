@@ -227,6 +227,64 @@ final class MobileRemoteCoordinator: ObservableObject {
       return .json(MobileRemoteMutationResponse(accepted: true, threadID: id), statusCode: 201)
     }
 
+    if request.method == "GET", path == "/v1/workspace" {
+      return .json(await store.mobileRemoteWorkspaceSnapshot())
+    }
+
+    let workspaceComponents = path.split(separator: "/").map(String.init)
+    if workspaceComponents.count >= 5,
+       workspaceComponents[0] == "v1",
+       workspaceComponents[1] == "workspace",
+       let itemID = workspaceComponents[3].removingPercentEncoding {
+      do {
+        if request.method == "POST",
+           workspaceComponents[2] == "agenda",
+           workspaceComponents[4] == "status",
+           let payload = try? request.decode(MobileRemoteAgendaStatusRequest.self) {
+          return .json(try await store.setMobileRemoteAgendaStatus(
+            itemID: itemID,
+            status: payload.status
+          ))
+        }
+        if request.method == "POST",
+           workspaceComponents[2] == "approvals",
+           workspaceComponents[4] == "decision",
+           let payload = try? request.decode(MobileRemoteApprovalDecisionRequest.self) {
+          return .json(try await store.decideMobileRemoteApproval(
+            itemID: itemID,
+            decision: payload.decision,
+            note: payload.note,
+            endStatus: payload.endStatus
+          ))
+        }
+        if request.method == "POST",
+           workspaceComponents[2] == "workflows",
+           workspaceComponents[4] == "state",
+           let payload = try? request.decode(MobileRemoteWorkflowStateRequest.self) {
+          return .json(try await store.setMobileRemoteWorkflowState(
+            workflowID: itemID,
+            state: payload.state
+          ))
+        }
+        if request.method == "POST",
+           workspaceComponents[2] == "workflows",
+           workspaceComponents[4] == "run",
+           let payload = try? request.decode(MobileRemoteWorkflowRunRequest.self) {
+          let threadID = try await store.runMobileRemoteWorkflow(
+            workflowID: itemID,
+            inputs: payload.inputs
+          )
+          return .json(
+            MobileRemoteMutationResponse(accepted: true, threadID: threadID),
+            statusCode: 202
+          )
+        }
+      } catch {
+        return .error(error.localizedDescription, statusCode: 409)
+      }
+      return .error("Workspace action not found.", statusCode: 404)
+    }
+
     if request.method == "POST", path == "/v1/files/preview" {
       guard let payload = try? request.decode(MobileRemoteFilePreviewRequest.self) else {
         return .error("The cited file reference could not be read.", statusCode: 400)
@@ -236,6 +294,46 @@ final class MobileRemoteCoordinator: ObservableObject {
       } catch {
         return .error(error.localizedDescription, statusCode: 404)
       }
+    }
+
+    if request.method == "GET", path == "/v1/external-threads" {
+      do {
+        return .json(ExternalThreadList(threads: try await store.externalThreadSummaries()))
+      } catch {
+        return .error(error.localizedDescription, statusCode: 503)
+      }
+    }
+
+    let externalComponents = path.split(separator: "/").map(String.init)
+    if externalComponents.count >= 4,
+       externalComponents[0] == "v1",
+       externalComponents[1] == "external-threads",
+       let harness = ExternalThreadHarness(rawValue: externalComponents[2]),
+       let externalID = externalComponents[3].removingPercentEncoding {
+      do {
+        let detail = try await store.externalThreadDetail(
+          harness: harness,
+          externalID: externalID
+        )
+        if request.method == "GET", externalComponents.count == 4 {
+          return .json(detail)
+        }
+        if request.method == "POST",
+           externalComponents.count == 5,
+           externalComponents[4] == "continue" {
+          let threadID = try await store.continueExternalThreadInOrg2(
+            detail,
+            selectsThread: false
+          )
+          return .json(
+            MobileRemoteMutationResponse(accepted: true, threadID: threadID),
+            statusCode: 201
+          )
+        }
+      } catch {
+        return .error(error.localizedDescription, statusCode: 503)
+      }
+      return .error("External thread action not found.", statusCode: 404)
     }
 
     let components = path.split(separator: "/").map(String.init)
@@ -308,7 +406,9 @@ final class MobileRemoteCoordinator: ObservableObject {
       guard store.sendAIChatRemoteMessage(
         payload.content,
         attachments: attachments,
-        threadID: threadID
+        threadID: threadID,
+        delivery: payload.delivery.flatMap(AIChatMessageDeliveryPreference.init(rawValue:))
+          ?? .automatic
       ) else {
         return .error("The message is empty or this thread is settled.", statusCode: 409)
       }
@@ -362,6 +462,9 @@ final class MobileRemoteCoordinator: ObservableObject {
     let preview = thread.messages.last(where: { !$0.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })?
       .content
       .trimmingCharacters(in: .whitespacesAndNewlines)
+    let latestAssistantMessage = thread.messages.last(where: {
+      $0.role == .assistant && !$0.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    })
     return MobileRemoteThreadSummary(
       id: thread.id,
       title: thread.title,
@@ -372,7 +475,11 @@ final class MobileRemoteCoordinator: ObservableObject {
       isPinned: thread.isPinned,
       isRunning: store.isAIChatThreadRunning(thread.id),
       unreadMessageCount: thread.unreadMessageCount,
-      preview: preview.map { String($0.prefix(180)) }
+      preview: preview.map { String($0.prefix(180)) },
+      latestAssistantMessageID: latestAssistantMessage?.id,
+      latestAssistantPreview: latestAssistantMessage.map {
+        String($0.content.trimmingCharacters(in: .whitespacesAndNewlines).prefix(180))
+      }
     )
   }
 
@@ -387,6 +494,7 @@ final class MobileRemoteCoordinator: ObservableObject {
           attachmentNames: $0.attachments.compactMap(\.fileName),
           createdAt: $0.createdAt,
           deliveryStatus: $0.deliveryStatus.rawValue,
+          deliveryKind: $0.deliveryKind.rawValue,
           sendFailure: $0.sendFailure
         )
       },

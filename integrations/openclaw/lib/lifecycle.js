@@ -51,7 +51,7 @@ export function workflowExecutionPrompt(workflow, inputs = {}, runId, triggerId)
     `Execute the Org2 workflow \"${workflow.title}\" from its canonical plain-text workflow file.`,
     ...(triggerId ? ["This is a scheduled attempt. The Org2 lifecycle adapter checks its declared event/fresh-work gate before creating the durable attempt; if no run was created, stop without executing workflow steps."] : []),
     "Read the workflow and durable run with the Org2 CLI. Update run steps as they progress, record produced artifacts and validation results, and keep generated work in the declared reviewable locations.",
-    "At an approval boundary, request the approval on this run and end the turn without performing the protected action. Org2 will explicitly continue the same run after approval.",
+    "At an approval boundary, request the approval on this run and end the turn without performing the protected action. Org2 will explicitly continue the same run after every item in that boundary is decided.",
     "For a provider draft, keep the exact `Provider draft: PROVIDER:TOOL:DRAFT_ID` line in the approval action. Reuse this run for revisions; never create a second review run for the same provider draft.",
     "Before requesting an external-action or high-impact approval, record the exact recipient, content, command, and attachments in an inspectable run artifact or approval note. An opaque ID or content fingerprint is not review material.",
     "Do not bypass an approval, complete a run with a pending review boundary, or silently promote generated work into canonical notes. After a human review decision, record it with `org2 run artifact-review RUN_ID ARTIFACT_ID --status reviewed|rejected` before completing the run.",
@@ -78,10 +78,11 @@ export function draftContinuationPrompt(runId) {
     `ORG2_RUN_ID: ${runId}`,
     "ORG2_DRAFT_RESUME: approval-decided",
     "",
-    "Continue the approved external-draft action using its existing durable run.",
+    "Continue the decided external-draft action using its existing durable run.",
     "Re-read the run with the Org2 CLI and resolve the exact provider-draft authority through `org2 run approval-resolve --decision-key artifact:PROVIDER:TOOL:DRAFT_ID --json`.",
-    "Send only the exact provider draft covered by the approved review material. Do not substitute a new recipient, subject, body, command, or attachment.",
-    "After the provider confirms the send, record the sent evidence and complete the existing draft run.",
+    "If the draft approval was rejected or canceled, do not send it; record that exclusion and close the existing run without performing the protected action.",
+    "If it was approved, send only the exact provider draft covered by the approved review material. Do not substitute a new recipient, subject, body, command, or attachment.",
+    "Record either the provider send evidence or the declined-action outcome on the existing draft run.",
   ].join("\n");
 }
 
@@ -90,9 +91,9 @@ export function approvedRunContinuationPrompt(run) {
     `ORG2_RUN_ID: ${run.id}`,
     "ORG2_RUN_RESUME: approval-decided",
     "",
-    `Continue the existing Org2 run \"${run.goal}\" after its approval boundary was approved.`,
+    `Continue the existing Org2 run \"${run.goal}\" after every item in its approval boundary was decided.`,
     "Re-read the durable run with the Org2 CLI and continue from the first incomplete step. Do not create a replacement run or request the same approval again.",
-    "Perform only the exact action covered by the current approved review material. Do not substitute a new recipient, payload, command, or attachment.",
+    "Perform only exact actions whose review material is approved. Skip every rejected or canceled action, and do not substitute a new recipient, payload, command, or attachment.",
     "For provider drafts, resolve the exact authority through `org2 run approval-resolve --decision-key artifact:PROVIDER:TOOL:DRAFT_ID --json` and verify provider state before any retry.",
     "Record external receipts and the final outcome on this durable run, or record the next specific blocker if the work cannot continue.",
   ].join("\n");
@@ -661,8 +662,8 @@ export class Org2Lifecycle {
     if (run.status !== "running") throw new Error(`${runId} cannot continue while ${run.status}`);
     const boundary = currentApprovalBoundary(run);
     if (boundary.length === 0) throw new Error(`${runId} has no approval boundary to continue`);
-    if (!boundary.every((approval) => approval.status === "approved")) {
-      throw new Error(`${runId} current approval boundary is not fully approved`);
+    if (boundary.some((approval) => approval.status === "pending" || approval.status === "revised")) {
+      throw new Error(`${runId} current approval boundary is not fully decided`);
     }
 
     const mappings = Object.values(this.state.mappings)

@@ -386,7 +386,7 @@ try {
   assert.equal(gated.approvals.find((approval) => approval.id === "replacement").status, "approved");
 
   let rejected = transitionAgentRun(
-    createAgentRun({ id: "rejected-approval", goal: "Cancel after a rejected approval" }),
+    createAgentRun({ id: "rejected-approval", goal: "Continue after deciding independent approvals" }),
     "running",
   );
   rejected = requestAgentRunApproval(rejected, {
@@ -402,9 +402,12 @@ try {
     riskClass: "external-action",
   });
   rejected = decideAgentRunApproval(rejected, "reject-action", "rejected", { actor: "Avi" });
-  assert.equal(rejected.status, "canceled");
+  assert.equal(rejected.status, "waiting-approval");
   assert.equal(rejected.approvals.find((approval) => approval.id === "second-review").status, "pending");
-  assert.match(rejected.events.at(-1).detail, /waiting-approval -> canceled/);
+  assert.equal(rejected.events.at(-1).type, "approval-decided");
+  rejected = decideAgentRunApproval(rejected, "second-review", "approved", { actor: "Avi" });
+  assert.equal(rejected.status, "running");
+  assert.equal(rejected.approvals.find((approval) => approval.id === "reject-action").status, "rejected");
 
   let canceledApproval = transitionAgentRun(
     createAgentRun({ id: "canceled-approval", goal: "Cancel after a canceled approval" }),
@@ -417,7 +420,7 @@ try {
     riskClass: "external-action",
   });
   canceledApproval = decideAgentRunApproval(canceledApproval, "cancel-action", "canceled", { actor: "Avi" });
-  assert.equal(canceledApproval.status, "canceled");
+  assert.equal(canceledApproval.status, "running");
 
   let blockedPendingApproval = transitionAgentRun(
     createAgentRun({ id: "blocked-pending-approval", goal: "Resolve an approval-blocked run" }),
@@ -440,7 +443,7 @@ try {
     "rejected",
     { actor: "Avi" },
   );
-  assert.equal(blockedPendingApproval.status, "canceled");
+  assert.equal(blockedPendingApproval.status, "running");
 
   let legacyApprovalBlocked = transitionAgentRun(
     createAgentRun({ id: "legacy-approval-blocked", goal: "Resume after a legacy approval boundary" }),

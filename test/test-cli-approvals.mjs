@@ -7,6 +7,7 @@ import path from "node:path";
 import {
   addAgentRunComment,
   createAgentRun,
+  listAgentRuns,
   loadAgentRun,
   requestAgentRunApproval,
   saveAgentRun,
@@ -350,10 +351,87 @@ for (const decision of ["rejected", "canceled"]) {
     "--decision", decision, "--actor", "Avi", "--role", "owner",
     "--note", `The approval was ${decision}.`, "--dir", tmp, "--json",
   ]));
-  assert.equal(decidedRun.status, "canceled");
+  assert.equal(decidedRun.status, "running");
   assert.equal(decidedRun.approvals.at(-1).status, decision);
-  assert.equal(loadAgentRun(tmp, runId).status, "canceled");
+  assert.equal(loadAgentRun(tmp, runId).status, "running");
 }
+
+cli(["run", "create", "--id", "independent-batch-run", "--goal", "Review independent recipient drafts", "--dir", tmp, "--json"]);
+cli(["run", "start", "independent-batch-run", "--dir", tmp, "--json"]);
+const firstBatchBoundary = JSON.parse(cli([
+  "run", "approval-request", "independent-batch-run",
+  "--title", "Approve first recipient", "--action", "send first draft",
+  "--risk", "external-action", "--role", "owner", "--dir", tmp, "--json",
+]));
+const secondBatchBoundary = JSON.parse(cli([
+  "run", "approval-request", "independent-batch-run",
+  "--title", "Approve second recipient", "--action", "send second draft",
+  "--risk", "external-action", "--role", "owner", "--dir", tmp, "--json",
+]));
+const rejectedBatchBoundary = JSON.parse(cli([
+  "run", "approval-decide", "independent-batch-run", firstBatchBoundary.approvals.at(-1).id,
+  "--decision", "rejected", "--actor", "Avi", "--role", "owner",
+  "--note", "Skip only this recipient.", "--dir", tmp, "--json",
+]));
+assert.equal(rejectedBatchBoundary.status, "waiting-approval");
+assert.deepEqual(rejectedBatchBoundary.approvals.map((approval) => approval.status), ["rejected", "pending"]);
+const afterBatchRejection = JSON.parse(cli(["approvals", "--dir", tmp, "--recursive", "--index", "never", "--format", "json"]));
+assert.equal(afterBatchRejection.items.some((item) =>
+  item.runId === "independent-batch-run" && item.approvalId === secondBatchBoundary.approvals.at(-1).id), true);
+const completedBatchBoundary = JSON.parse(cli([
+  "run", "approval-decide", "independent-batch-run", secondBatchBoundary.approvals.at(-1).id,
+  "--decision", "approved", "--actor", "Avi", "--role", "owner", "--dir", tmp, "--json",
+]));
+assert.equal(completedBatchBoundary.status, "running");
+
+cli(["run", "create", "--id", "sync-conflict-run", "--goal", "Send one canonical provider draft", "--dir", tmp, "--json"]);
+cli(["run", "start", "sync-conflict-run", "--dir", tmp, "--json"]);
+const syncConflictPending = JSON.parse(cli([
+  "run", "approval-request", "sync-conflict-run",
+  "--title", "Approve canonical provider draft",
+  "--action", "Send exact reviewed content\nProvider draft: gmail:gog:r-sync-conflict-draft",
+  "--risk", "external-action", "--role", "owner", "--dir", tmp, "--json",
+]));
+const syncConflictCopy = path.join(
+  tmp,
+  ".org2",
+  "runs",
+  "sync-conflict-run.sync-conflict-20260812-122403-JWVPXCO.org2",
+);
+fs.copyFileSync(path.join(tmp, ".org2", "runs", "sync-conflict-run.org2"), syncConflictCopy);
+cli([
+  "run", "approval-decide", "sync-conflict-run", syncConflictPending.approvals.at(-1).id,
+  "--decision", "approved", "--actor", "Avi", "--role", "owner", "--dir", tmp, "--json",
+]);
+assert.equal(listAgentRuns(tmp).filter((run) => run.id === "sync-conflict-run").length, 1);
+assert.equal(listAgentRuns(tmp).find((run) => run.id === "sync-conflict-run").status, "running");
+const resolvedSyncConflictApproval = JSON.parse(cli([
+  "run", "approval-resolve",
+  "--decision-key", "gmail:gog:r-sync-conflict-draft",
+  "--dir", tmp, "--json",
+]));
+assert.equal(resolvedSyncConflictApproval.canonical.runId, "sync-conflict-run");
+assert.equal(resolvedSyncConflictApproval.canonical.runStatus, "running");
+assert.equal(resolvedSyncConflictApproval.canonical.approval.status, "approved");
+assert.equal(resolvedSyncConflictApproval.projections.length, 1);
+
+cli(["run", "create", "--id", "retry-pending-boundary", "--goal", "Recover a canceled review queue", "--dir", tmp, "--json"]);
+cli(["run", "start", "retry-pending-boundary", "--dir", tmp, "--json"]);
+const retryApprovalBoundary = JSON.parse(cli([
+  "run", "approval-request", "retry-pending-boundary",
+  "--title", "Approve recovered action", "--action", "perform recovered action",
+  "--risk", "external-action", "--role", "owner", "--dir", tmp, "--json",
+]));
+cli(["run", "cancel", "retry-pending-boundary", "--dir", tmp, "--json"]);
+const retriedPendingBoundary = JSON.parse(cli([
+  "run", "retry", "retry-pending-boundary", "--actor", "Avi", "--dir", tmp, "--json",
+]));
+assert.equal(retriedPendingBoundary.status, "waiting-approval");
+assert.equal(retriedPendingBoundary.approvals.at(-1).status, "pending");
+cli([
+  "run", "approval-decide", "retry-pending-boundary", retryApprovalBoundary.approvals.at(-1).id,
+  "--decision", "canceled", "--actor", "Avi", "--role", "owner", "--dir", tmp, "--json",
+]);
 
 const scannedPayload = JSON.parse(cli(["approvals", "--dir", tmp, "--recursive", "--index", "never", "--format", "json"]));
 assert.equal(scannedPayload.index.used, false);

@@ -2,7 +2,44 @@ import Combine
 import XCTest
 @testable import Org2WorkspaceCore
 
+private actor AgentRunListRefreshGate {
+  private var continuation: CheckedContinuation<[AgentRunItem], Never>?
+
+  func wait() async -> [AgentRunItem] {
+    await withCheckedContinuation { continuation in
+      self.continuation = continuation
+    }
+  }
+
+  func release(with runs: [AgentRunItem]) {
+    continuation?.resume(returning: runs)
+    continuation = nil
+  }
+}
+
 final class AgentRunModelsTests: XCTestCase {
+  func testRunCenterResolvesSelectedApprovalWithinPresentedRun() {
+    XCTAssertEqual(
+      RunCenterPresentation.approvalID(
+        selectedApprovalItemID: "run:run-1:approve-chrimle",
+        runID: "run-1"
+      ),
+      "approve-chrimle"
+    )
+    XCTAssertNil(
+      RunCenterPresentation.approvalID(
+        selectedApprovalItemID: "run:run-2:approve-neuw",
+        runID: "run-1"
+      )
+    )
+    XCTAssertNil(
+      RunCenterPresentation.approvalID(
+        selectedApprovalItemID: "meetings/example.org2:12:approval",
+        runID: "run-1"
+      )
+    )
+  }
+
   func testRunReviewAutoRefreshUsesOneMinuteInterval() {
     XCTAssertEqual(WorkspaceStore.runReviewAutoRefreshIntervalNanoseconds, 60_000_000_000)
   }
@@ -192,6 +229,22 @@ final class AgentRunModelsTests: XCTestCase {
     XCTAssertEqual(run.openClawSessionKey, "agent:main:org2:thread-1")
     XCTAssertTrue(run.hasOpenClawApprovalContinuation)
     XCTAssertFalse(try makeRun(status: "running").hasOpenClawApprovalContinuation)
+
+    let approvedUncorrelatedRun = try makeRun(
+      status: "running",
+      approvalStatus: "approved"
+    )
+    XCTAssertTrue(approvedUncorrelatedRun.canContinueApprovedWork)
+    XCTAssertTrue(approvedUncorrelatedRun.hasOpenClawApprovalContinuation)
+    XCTAssertFalse(approvedUncorrelatedRun.hasApprovedProviderDraftBoundary)
+
+    let approvedProviderDraft = try makeRun(
+      status: "running",
+      approvalStatus: "approved",
+      approvalAction: "Send exact reviewed content\nProvider draft: gmail:gog:r-123"
+    )
+    XCTAssertTrue(approvedProviderDraft.canContinueApprovedWork)
+    XCTAssertTrue(approvedProviderDraft.hasApprovedProviderDraftBoundary)
   }
 
   @MainActor
@@ -241,6 +294,36 @@ final class AgentRunModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testManualContinuationRecoversAnApprovedUncorrelatedRun() async throws {
+    let run = try makeRun(
+      id: "approved-orphan",
+      goal: "Send approved provider draft",
+      status: "running",
+      approvalStatus: "approved",
+      approvalAction: "Send exact reviewed content\nProvider draft: gmail:gog:r-123"
+    )
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.replaceAgentRunsForTesting([run])
+    var requestedRunID: String?
+    store.agentRunApprovalContinuationForTesting = { requestedRun in
+      requestedRunID = requestedRun.id
+      return OpenClawApprovedRunContinuation(
+        runID: requestedRun.id,
+        sessionKey: nil,
+        prompt: "already sent",
+        kind: "run",
+        alreadyResumed: true
+      )
+    }
+
+    await store.continueApprovedAgentRun(run)
+
+    XCTAssertEqual(requestedRunID, run.id)
+    XCTAssertTrue(store.statusText.contains("already continuing"))
+    XCTAssertFalse(store.mutatingAgentRunIDs.contains(run.id))
+  }
+
+  @MainActor
   func testUnifiedQueueDecisionUpdatesTheCanonicalRunApproval() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-run-approval-queue-\(UUID().uuidString)", isDirectory: true)
@@ -280,7 +363,76 @@ final class AgentRunModelsTests: XCTestCase {
   }
 
   @MainActor
-  func testMacRunApprovalRejectionAndCancellationAlsoCancelOriginatingRuns() async throws {
+  func testApprovalClearsBeforeDeferredRunArchiveReconciliationCompletes() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-run-approval-fast-path-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let waitingRun = try makeRun(
+      id: "fast-approval-run",
+      status: "waiting-approval",
+      pendingApproval: true
+    )
+    let updatedRun = try makeRun(
+      id: waitingRun.id,
+      status: "running",
+      approvalStatus: "approved"
+    )
+    let approval = try XCTUnwrap(waitingRun.approvals.first)
+    let queueItem = ApprovalItem(
+      title: approval.title,
+      status: approval.status,
+      todo: nil,
+      level: nil,
+      file: root.appendingPathComponent(".org2/runs/\(waitingRun.id).org2").path,
+      line: 1,
+      idValue: approval.id,
+      properties: [:],
+      body: approval.action,
+      tags: [],
+      kind: "run",
+      approvalId: approval.id,
+      fingerprint: approval.fingerprint,
+      action: approval.action,
+      riskClass: approval.riskClass,
+      requestedRole: approval.requestedRole,
+      requestedFrom: approval.requestedFrom,
+      requestedAt: approval.requestedAt,
+      runId: waitingRun.id,
+      runGoal: waitingRun.goal,
+      runStatus: waitingRun.status,
+      runPendingApprovalCount: waitingRun.pendingApprovalCount,
+      runApprovalCount: waitingRun.approvals.count
+    )
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.corpusRoot = root
+    store.replaceAgentRunsForTesting([waitingRun])
+    store.replaceApprovalItemsForTesting([queueItem])
+    store.agentRunApprovalDecisionForTesting = { _, _, _, _ in updatedRun }
+    store.deferredAgentRunsRefreshDelayNanoseconds = 0
+
+    let refreshGate = AgentRunListRefreshGate()
+    let refreshStarted = expectation(description: "Deferred run archive reconciliation started")
+    store.agentRunListLoaderForTesting = {
+      refreshStarted.fulfill()
+      return await refreshGate.wait()
+    }
+
+    let approvalTask = Task { @MainActor in
+      await store.approve(queueItem)
+    }
+    await fulfillment(of: [refreshStarted], timeout: 2)
+
+    XCTAssertFalse(store.approvalItems.contains(where: { $0.id == queueItem.id }))
+    XCTAssertEqual(store.agentRuns.first?.status, "running")
+
+    await refreshGate.release(with: [updatedRun])
+    await approvalTask.value
+  }
+
+  @MainActor
+  func testMacRunApprovalRejectionAndCancellationResolveTheirExactItems() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-run-approval-terminal-decisions-\(UUID().uuidString)", isDirectory: true)
 
@@ -342,12 +494,12 @@ final class AgentRunModelsTests: XCTestCase {
     let canceledApproval = try XCTUnwrap(canceledRun.approvals.first)
     let updatedRejectedRun = try run(
       id: "rejected-run",
-      status: "canceled",
+      status: "running",
       approvalStatus: "rejected"
     )
     let updatedCanceledRun = try run(
       id: "canceled-run",
-      status: "canceled",
+      status: "running",
       approvalStatus: "canceled"
     )
 
@@ -418,14 +570,109 @@ final class AgentRunModelsTests: XCTestCase {
     let displayedCanceledRun = try XCTUnwrap(store.agentRuns.first(where: {
       $0.id == "canceled-run"
     }))
-    XCTAssertEqual(displayedRejectedRun.status, "canceled")
+    XCTAssertEqual(displayedRejectedRun.status, "running")
     XCTAssertEqual(displayedRejectedRun.approvals.first?.status, "rejected")
     XCTAssertEqual(displayedRejectedRun.pendingApprovalCount, 0)
-    XCTAssertEqual(displayedCanceledRun.status, "canceled")
+    XCTAssertEqual(displayedCanceledRun.status, "running")
     XCTAssertEqual(displayedCanceledRun.approvals.first?.status, "canceled")
     XCTAssertFalse(store.approvalItems.contains(where: {
       $0.runId == "rejected-run" || $0.runId == "canceled-run"
     }))
+  }
+
+  @MainActor
+  func testRejectingOneRunApprovalLeavesItsSiblingInReview() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-run-approval-item-scoped-rejection-\(UUID().uuidString)", isDirectory: true)
+    let waitingRun = try JSONDecoder().decode(AgentRunItem.self, from: Data(#"""
+    {
+      "id": "batch-run",
+      "goal": "Review independent recipient drafts",
+      "acceptanceCriteria": [],
+      "status": "waiting-approval",
+      "riskClass": "external-action",
+      "capabilities": [],
+      "context": [],
+      "plan": [],
+      "artifacts": [],
+      "approvals": [
+        {"id":"dragonflyoss","title":"Approve dragonflyoss","action":"send dragonflyoss draft","riskClass":"external-action","status":"pending","requestedAt":"2026-08-12T18:00:00.000Z"},
+        {"id":"neuw","title":"Approve Neuw","action":"send Neuw draft","riskClass":"external-action","status":"pending","requestedAt":"2026-08-12T18:00:01.000Z"}
+      ],
+      "validations": [],
+      "comments": [],
+      "events": [{"id":"waiting","type":"status-changed","at":"2026-08-12T18:00:00.000Z","detail":"running -> waiting-approval","data":{"to":"waiting-approval"}}],
+      "createdAt": "2026-08-12T18:00:00.000Z",
+      "updatedAt": "2026-08-12T18:00:01.000Z"
+    }
+    """#.utf8))
+    let updatedRun = try JSONDecoder().decode(AgentRunItem.self, from: Data(#"""
+    {
+      "id": "batch-run",
+      "goal": "Review independent recipient drafts",
+      "acceptanceCriteria": [],
+      "status": "waiting-approval",
+      "riskClass": "external-action",
+      "capabilities": [],
+      "context": [],
+      "plan": [],
+      "artifacts": [],
+      "approvals": [
+        {"id":"dragonflyoss","title":"Approve dragonflyoss","action":"send dragonflyoss draft","riskClass":"external-action","status":"rejected","requestedAt":"2026-08-12T18:00:00.000Z","decidedAt":"2026-08-12T18:01:00.000Z","decidedBy":"Avi","decisionNote":"Already in touch"},
+        {"id":"neuw","title":"Approve Neuw","action":"send Neuw draft","riskClass":"external-action","status":"pending","requestedAt":"2026-08-12T18:00:01.000Z"}
+      ],
+      "validations": [],
+      "comments": [],
+      "events": [{"id":"waiting","type":"status-changed","at":"2026-08-12T18:00:00.000Z","detail":"running -> waiting-approval","data":{"to":"waiting-approval"}}],
+      "createdAt": "2026-08-12T18:00:00.000Z",
+      "updatedAt": "2026-08-12T18:01:00.000Z"
+    }
+    """#.utf8))
+
+    func queueItem(_ approval: AgentRunApprovalItem) -> ApprovalItem {
+      ApprovalItem(
+        title: approval.title,
+        status: approval.status,
+        todo: nil,
+        level: nil,
+        file: root.appendingPathComponent(".org2/runs/batch-run.org2").path,
+        line: 1,
+        idValue: approval.id,
+        properties: [:],
+        body: approval.action,
+        tags: [],
+        kind: "run",
+        approvalId: approval.id,
+        fingerprint: approval.fingerprint,
+        action: approval.action,
+        riskClass: approval.riskClass,
+        requestedRole: approval.requestedRole,
+        requestedFrom: approval.requestedFrom,
+        requestedAt: approval.requestedAt,
+        runId: waitingRun.id,
+        runGoal: waitingRun.goal,
+        runStatus: waitingRun.status,
+        runPendingApprovalCount: waitingRun.pendingApprovalCount,
+        runApprovalCount: waitingRun.approvals.count
+      )
+    }
+
+    let dragonflyoss = queueItem(try XCTUnwrap(waitingRun.approvals.first))
+    let neuw = queueItem(try XCTUnwrap(waitingRun.approvals.last))
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.corpusRoot = root
+    store.replaceAgentRunsForTesting([waitingRun])
+    store.replaceApprovalItemsForTesting([dragonflyoss, neuw])
+    store.agentRunApprovalDecisionForTesting = { _, approvalID, decision, _ in
+      XCTAssertEqual(approvalID, "dragonflyoss")
+      XCTAssertEqual(decision, "rejected")
+      return updatedRun
+    }
+
+    await store.rejectApproval(dragonflyoss, endStatus: .canceled, reason: "Already in touch")
+
+    XCTAssertEqual(store.agentRuns.first?.status, "waiting-approval")
+    XCTAssertEqual(store.approvalItems.map(\.id), [neuw.id])
   }
 
   @MainActor
@@ -940,6 +1187,7 @@ final class AgentRunModelsTests: XCTestCase {
     XCTAssertTrue(prompt.contains("ORG2_RUN_ID: run-1"))
     XCTAssertTrue(prompt.contains("ORG2_RUN_RESUME: approval-decided"))
     XCTAssertTrue(prompt.contains("Do not create a replacement run or request the same approval again"))
+    XCTAssertTrue(prompt.contains("Skip every rejected or canceled action"))
   }
 
   func testAgentRunClarificationFallbackPreservesRunResponseAndKnownSession() throws {
@@ -1333,6 +1581,7 @@ final class AgentRunModelsTests: XCTestCase {
     reviewRequired: Bool = false,
     pendingApproval: Bool = false,
     approvalStatus: String? = nil,
+    approvalAction: String = "publish output",
     updatedAt: String = "2026-07-14T00:01:00.000Z"
   ) throws -> AgentRunItem {
     let resolvedApprovalStatus = approvalStatus ?? (pendingApproval ? "pending" : nil)
@@ -1355,7 +1604,7 @@ final class AgentRunModelsTests: XCTestCase {
       "approvals": resolvedApprovalStatus.map { status in [[
         "id": "approval-1",
         "title": "Approve output",
-        "action": "publish output",
+        "action": approvalAction,
         "riskClass": "external-action",
         "status": status,
         "requestedAt": "2026-07-14T00:00:00.000Z",

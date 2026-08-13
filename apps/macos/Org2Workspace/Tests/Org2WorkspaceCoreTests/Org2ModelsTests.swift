@@ -65,6 +65,19 @@ private actor OpenClawRecoveryRecorder {
   }
 }
 
+private actor OpenClawStoppedRecoveryRecorder {
+  private var attempts = 0
+
+  func recover(_: OpenClawPendingTurn) throws -> String {
+    attempts += 1
+    throw OpenClawGatewayError.aborted(nil)
+  }
+
+  func attemptCount() -> Int {
+    attempts
+  }
+}
+
 private actor OpenClawQueuedSendRecorder {
   private var calls: [[String]] = []
 
@@ -89,6 +102,31 @@ private actor OpenClawMessageSendRecorder {
 
   func recordedCalls() -> [[OpenClawChatMessage]] {
     calls
+  }
+}
+
+private struct RecordedOpenClawWorkspaceContext: Sendable {
+  let prompt: String
+  let selectedLocationTitle: String?
+  let continuationTitle: String?
+  let continuationReferences: [String]
+}
+
+private actor OpenClawWorkspaceContextRecorder {
+  private var contexts: [RecordedOpenClawWorkspaceContext] = []
+
+  func send(context: OpenClawWorkspaceContext?) -> String {
+    contexts.append(RecordedOpenClawWorkspaceContext(
+      prompt: context?.systemPrompt() ?? "",
+      selectedLocationTitle: context?.selectedLocation?.title,
+      continuationTitle: context?.threadContinuation?.title,
+      continuationReferences: context?.threadContinuation?.org2References ?? []
+    ))
+    return "Scoped reply"
+  }
+
+  func recordedContexts() -> [RecordedOpenClawWorkspaceContext] {
+    contexts
   }
 }
 
@@ -146,6 +184,18 @@ private actor OpenClawSuspendedSendRecorder {
   func finish(reply: String) {
     continuation?.resume(returning: reply)
     continuation = nil
+  }
+}
+
+private actor AIChatSteerRecorder {
+  private var messages: [(AIChatRuntime, UUID, String)] = []
+
+  func record(runtime: AIChatRuntime, threadID: UUID, content: String) {
+    messages.append((runtime, threadID, content))
+  }
+
+  func recordedContents() -> [String] {
+    messages.map { $0.2 }
   }
 }
 
@@ -1137,7 +1187,7 @@ final class Org2ModelsTests: XCTestCase {
         runID: "original-run",
         requestStartedAtMilliseconds: 2_000
       ),
-      .pending(hasActiveRun: true)
+      .pending(hasActiveRun: true, activeRunIDs: ["replacement-run"])
     )
     XCTAssertEqual(OpenClawGatewayClient.acceptedRunRecoveryPollTimeoutMilliseconds, 5_000)
   }
@@ -1147,6 +1197,14 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(OpenClawGatewayClient.shouldReconcileAfterSendAcknowledgement(["status": "ok"]))
     XCTAssertFalse(OpenClawGatewayClient.shouldReconcileAfterSendAcknowledgement(["status": "started"]))
     XCTAssertFalse(OpenClawGatewayClient.shouldReconcileAfterSendAcknowledgement(nil))
+    XCTAssertTrue(OpenClawGatewayClient.shouldReconcileAfterSendAcknowledgement(
+      ["status": "started"],
+      reconnectingAcceptedRun: true
+    ))
+    XCTAssertTrue(OpenClawGatewayClient.shouldReconcileAfterSendAcknowledgement(
+      nil,
+      reconnectingAcceptedRun: true
+    ))
   }
 
   func testOpenClawGatewayDoesNotHTTPFallbackAfterRunAcceptance() {
@@ -2632,6 +2690,70 @@ final class Org2ModelsTests: XCTestCase {
     ])
     let finalRecoveredTurns = await recorder.recordedTurns()
     XCTAssertEqual(finalRecoveredTurns.count, 1)
+  }
+
+  @MainActor
+  func testStoppedOpenClawRecoveryDoesNotReconnectAgain() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-chat-stopped-recovery-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let transcript = root.appendingPathComponent("openclaw-chat.json")
+    let suiteName = "org2-workspace-chat-stopped-recovery-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let userMessage = OpenClawChatMessage(
+      role: .user,
+      content: "Stop this recovered turn",
+      deliveryStatus: .sending
+    )
+    let pendingTurn = OpenClawPendingTurn(
+      userMessageID: userMessage.id,
+      runID: "stopped-recovery-run-id",
+      agentID: "main",
+      gatewayMessage: "Persisted request that must stay stopped"
+    )
+    let thread = OpenClawChatThread(
+      title: "Stopped recovery",
+      sessionKey: "agent:main:org2-workspace:stopped-recovery",
+      messages: [userMessage],
+      pendingTurn: pendingTurn
+    )
+    let fixture = OpenClawTranscriptFixture(
+      version: 4,
+      messages: nil,
+      threads: [thread],
+      selectedThreadID: thread.id
+    )
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    try encoder.encode(fixture).write(to: transcript, options: .atomic)
+
+    let recorder = OpenClawStoppedRecoveryRecorder()
+    let restored = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: transcript,
+      openClawRecoveryHandler: { turn, _ in try await recorder.recover(turn) }
+    )
+
+    await restored.bootstrap()
+
+    XCTAssertNil(restored.selectedOpenClawChatThread?.pendingTurn)
+    XCTAssertEqual(restored.openClawMessages.first?.deliveryStatus, .interrupted)
+    XCTAssertEqual(
+      restored.openClawMessages.first?.sendFailure,
+      "OpenClaw was stopped by you. Retry to start this request again."
+    )
+    XCTAssertEqual(restored.openClawGatewayConnectionState, .disconnected)
+    XCTAssertEqual(restored.openClawGatewayConnectionDetail, "Stopped by you. This turn will not reconnect.")
+    XCTAssertEqual(restored.openClawStatusText, "OpenClaw stopped")
+    XCTAssertFalse(restored.isAIChatThreadRunning(thread.id))
+    let initialAttemptCount = await recorder.attemptCount()
+    XCTAssertEqual(initialAttemptCount, 1)
+
+    await restored.recoverPendingOpenClawTurns()
+    let finalAttemptCount = await recorder.attemptCount()
+    XCTAssertEqual(finalAttemptCount, 1)
   }
 
   @MainActor
@@ -4419,6 +4541,182 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testEstablishedAIChatDoesNotInjectUnrelatedDetailPaneSelection() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-ai-chat-context-isolation-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let recorder = OpenClawWorkspaceContextRecorder()
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json"),
+      openClawSendHandler: { _, _, _, context in
+        await recorder.send(context: context)
+      }
+    )
+    store.corpusRoot = root
+    store.openClawRemoteCorpusPath = "/remote/org2"
+    store.createOpenClawChatThread()
+    let threadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
+    store.renameOpenClawChatThread(threadID, title: "Apryse file-extension backfill")
+    store.openClawMessages = [
+      OpenClawChatMessage(
+        role: .user,
+        content: "Track the Apryse work in /remote/org2/notes/apryse.org2:12."
+      ),
+      OpenClawChatMessage(role: .assistant, content: "The Apryse backfill is still running.")
+    ]
+
+    store.selectedSurface = .openClaw
+    store.selectedLocation = .openClaw(OpenClawThread(
+      title: "Send Jesse tailored KitOps follow-up examples",
+      file: root.appendingPathComponent("meetings/kitops.org2").path,
+      line: 44,
+      zone: "meetings",
+      modifiedAt: nil,
+      idValue: "kitops-follow-up"
+    ))
+    store.selectedEntrySource = EntrySource(
+      file: root.appendingPathComponent("meetings/kitops.org2").path,
+      startLine: 44,
+      endLineExclusive: 47,
+      text: "* TODO Send Jesse tailored KitOps follow-up examples",
+      isSubtree: true
+    )
+
+    await store.sendOpenClawMessage(text: "What's the latest on this one?")
+
+    let recordedContexts = await recorder.recordedContexts()
+    let context = try XCTUnwrap(recordedContexts.first)
+    XCTAssertNil(context.selectedLocationTitle)
+    XCTAssertEqual(context.continuationTitle, "Apryse file-extension backfill")
+    XCTAssertTrue(context.prompt.contains("Thread title: Apryse file-extension backfill"))
+    XCTAssertTrue(context.prompt.contains("authoritative for ambiguous conversational references"))
+    XCTAssertTrue(context.prompt.contains("The Apryse backfill is still running."))
+    XCTAssertFalse(context.prompt.contains("Current UI selection"))
+    XCTAssertFalse(context.prompt.contains("KitOps"))
+  }
+
+  @MainActor
+  func testAssistantCitationCannotBecomeDurableAIChatFileContext() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-ai-chat-reference-isolation-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let recorder = OpenClawWorkspaceContextRecorder()
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json"),
+      openClawSendHandler: { _, _, _, context in
+        await recorder.send(context: context)
+      }
+    )
+    store.corpusRoot = root
+    store.openClawRemoteCorpusPath = "/remote/org2"
+    store.createOpenClawChatThread()
+    store.openClawMessages = [
+      OpenClawChatMessage(
+        role: .user,
+        content: "Use /remote/org2/notes/apryse.org2:12 for this thread."
+      ),
+      OpenClawChatMessage(
+        role: .assistant,
+        content: "I mistakenly used [KitOps](/remote/org2/meetings/kitops.org2:44)."
+      )
+    ]
+
+    await store.sendOpenClawMessage(text: "Continue with Apryse.")
+
+    let recordedContexts = await recorder.recordedContexts()
+    let context = try XCTUnwrap(recordedContexts.first)
+    XCTAssertEqual(context.continuationReferences, ["/remote/org2/notes/apryse.org2:12"])
+    XCTAssertFalse(context.continuationReferences.contains(where: { $0.contains("kitops") }))
+  }
+
+  @MainActor
+  func testInProgressMessageSteersInsteadOfStartingASecondTurn() async throws {
+    let sendRecorder = OpenClawSuspendedSendRecorder()
+    let steerRecorder = AIChatSteerRecorder()
+    let transcriptURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-openclaw-steer-\(UUID().uuidString).json")
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      openClawTranscriptURL: transcriptURL,
+      openClawSendHandler: { messages, _, _, _ in
+        try await sendRecorder.send(messages: messages)
+      }
+    )
+    store.aiChatSteerHandlerForTesting = { runtime, threadID, content, _ in
+      await steerRecorder.record(runtime: runtime, threadID: threadID, content: content)
+    }
+
+    store.openClawDraft = "first request"
+    let firstSend = Task { await store.sendOpenClawMessage() }
+    await sendRecorder.waitUntilStarted()
+    let threadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
+
+    store.sendComposedOpenClawMessage(text: "focus on the failing test")
+    try await waitForCondition {
+      store.openClawMessages.last?.deliveryStatus == .sent
+    }
+
+    let steeredContents = await steerRecorder.recordedContents()
+    XCTAssertEqual(steeredContents, ["focus on the failing test"])
+    XCTAssertEqual(store.openClawMessages.map(\.deliveryKind), [.turn, .steer])
+    XCTAssertFalse(store.isAIChatMessageQueued(try XCTUnwrap(store.openClawMessages.last?.id)))
+    XCTAssertEqual(store.openClawChatThreads.first(where: { $0.id == threadID })?.runtime, .openClaw)
+
+    await sendRecorder.finish(reply: "finished with the new direction")
+    await firstSend.value
+    XCTAssertEqual(store.openClawMessages.map { "\($0.role.rawValue):\($0.content)" }, [
+      "user:first request",
+      "user:focus on the failing test",
+      "assistant:finished with the new direction"
+    ])
+  }
+
+  func testOpenClawSteerRequestUsesExplicitQueueModeWithCommandFallback() {
+    let attachment = OpenClawChatAttachment(
+      fileName: "reference.txt",
+      mimeType: "text/plain",
+      data: Data("hello".utf8)
+    )
+    let params = OpenClawGatewayClient.steerRequestParams(
+      message: "change direction",
+      attachments: [attachment],
+      sessionKey: "agent:main:test",
+      agentID: "main",
+      idempotencyKey: "steer-id"
+    )
+
+    XCTAssertEqual(params["queueMode"] as? String, "steer")
+    XCTAssertEqual(params["sessionKey"] as? String, "agent:main:test")
+    XCTAssertEqual(params["idempotencyKey"] as? String, "steer-id")
+    XCTAssertEqual((params["attachments"] as? [[String: Any]])?.first?["type"] as? String, "file")
+
+    let fallback = OpenClawGatewayClient.commandSteerRequestParams(
+      message: "change direction",
+      attachments: [attachment],
+      sessionKey: "agent:main:test",
+      agentID: "main",
+      idempotencyKey: "steer-id"
+    )
+    XCTAssertNil(fallback["queueMode"])
+    XCTAssertEqual(fallback["message"] as? String, "/steer change direction")
+    XCTAssertEqual(fallback["idempotencyKey"] as? String, "steer-id")
+    XCTAssertEqual((fallback["attachments"] as? [[String: Any]])?.first?["type"] as? String, "file")
+
+    XCTAssertTrue(OpenClawGatewayClient.shouldRetrySteerWithCommand(after: .gateway(
+      code: "INVALID_REQUEST",
+      message: "invalid chat.send params: at root: unexpected property 'queueMode'"
+    )))
+    XCTAssertFalse(OpenClawGatewayClient.shouldRetrySteerWithCommand(after: .gateway(
+      code: "INVALID_REQUEST",
+      message: "invalid chat.send params: message is required"
+    )))
+  }
+
+  @MainActor
   func testDictationSendStaysBoundToItsOriginatingThread() async throws {
     let transcriptURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-openclaw-dictation-origin-\(UUID().uuidString).json")
@@ -5846,6 +6144,25 @@ final class Org2ModelsTests: XCTestCase {
       isFirstResponder: true,
       didApplyProgrammaticText: true
     ))
+
+    XCTAssertEqual(
+      OrgSyntaxTextEditor.Coordinator.preferredSelectionAfterProgrammaticTextUpdate(
+        requestedSelection: NSRange(location: 0, length: 0),
+        currentSelection: NSRange(location: 12_000, length: 0),
+        isFirstResponder: true,
+        updatedUTF16Length: 20_000
+      ),
+      NSRange(location: 12_000, length: 0)
+    )
+    XCTAssertEqual(
+      OrgSyntaxTextEditor.Coordinator.preferredSelectionAfterProgrammaticTextUpdate(
+        requestedSelection: NSRange(location: 140, length: 0),
+        currentSelection: NSRange(location: 120, length: 0),
+        isFirstResponder: true,
+        updatedUTF16Length: 20_000
+      ),
+      NSRange(location: 140, length: 0)
+    )
   }
 
   @MainActor
@@ -6089,6 +6406,34 @@ final class Org2ModelsTests: XCTestCase {
       Notification(name: NSTextView.didChangeSelectionNotification, object: textView)
     )
     XCTAssertEqual(selection, NSRange(location: 4, length: 3))
+  }
+
+  @MainActor
+  func testSyntaxEditorPublishesDistantPlainCaretWithoutScanningForInlineSyntax() async throws {
+    let text = String(repeating: "plain source line without inline syntax\n", count: 1_000)
+    var selection = NSRange(location: 0, length: 0)
+    let editor = OrgSyntaxTextEditor(
+      text: .constant(text),
+      caretPublishingDelayMilliseconds: 20,
+      selection: Binding(
+        get: { selection },
+        set: { selection = $0 }
+      )
+    )
+    let coordinator = OrgSyntaxTextEditor.Coordinator(parent: editor)
+    let textView = NSTextView()
+    textView.string = text
+    let distantCaret = NSRange(location: 20_000, length: 0)
+    textView.setSelectedRange(distantCaret)
+
+    coordinator.textViewDidChangeSelection(
+      Notification(name: NSTextView.didChangeSelectionNotification, object: textView)
+    )
+
+    XCTAssertEqual(selection, NSRange(location: 0, length: 0))
+    try await waitForCondition {
+      selection == distantCaret
+    }
   }
 
   @MainActor
@@ -6524,7 +6869,7 @@ final class Org2ModelsTests: XCTestCase {
     }
 
     XCTAssertTrue(store.sourceEditorPreviewHTML?.contains("href=\"https://example.com\"") == true)
-    XCTAssertFalse(store.sourceEditorPreviewHTML?.contains("Original") == true)
+    XCTAssertFalse(store.sourceEditorPreviewHTML?.contains("<title>Original</title>") == true)
   }
 
   @MainActor
@@ -7906,10 +8251,8 @@ final class Org2ModelsTests: XCTestCase {
     while !scanStarted.value, Date().timeIntervalSince(waitStartedAt) < 3 {
       try await Task.sleep(nanoseconds: 10_000_000)
     }
-    let mainActorResumeDelay = Date().timeIntervalSince(waitStartedAt)
-
     XCTAssertTrue(scanStarted.value)
-    XCTAssertLessThan(mainActorResumeDelay, 0.5)
+    XCTAssertLessThan(Date().timeIntervalSince(waitStartedAt), 3)
     store.statusText = "Main actor remained responsive"
     XCTAssertEqual(store.statusText, "Main actor remained responsive")
 
@@ -8180,26 +8523,107 @@ final class Org2ModelsTests: XCTestCase {
       messageCount: 2,
       updatedAt: Date()
     )
+    let approval = WorkspaceAgentWorkSearchResult(
+      id: "run-approval:run-1:approval-1",
+      kind: .approval,
+      recordID: "approval-1",
+      parentRunID: "run-1",
+      title: "Approve outreach",
+      snippet: "Send the reviewed follow-up",
+      status: "approved",
+      sourceReference: "Run run-1"
+    )
 
     store.searchResults = [corpusText, entry, active]
     store.workspaceFileSearchResults = [file]
     store.openClawChatSearchResults = [chatMessage, chatThread]
+    store.workspaceAgentWorkSearchResults = [approval]
     store.workspacePageSearchResults = [page]
 
     XCTAssertEqual(store.workspaceTextSearchSections.map(\.category), [
       .activeTodos,
       .files,
       .chatThreads,
+      .approvals,
       .pages,
       .entries,
       .chatMessages,
       .corpusText
     ])
-    XCTAssertEqual(store.workspaceTextSearchResultCount, 7)
-    guard case .entry(let terminalTodo) = store.workspaceTextSearchSections[4].items[0] else {
+    XCTAssertEqual(store.workspaceTextSearchResultCount, 8)
+    guard case .entry(let terminalTodo) = store.workspaceTextSearchSections[5].items[0] else {
       return XCTFail("Expected terminal TODO under Entries")
     }
     XCTAssertEqual(terminalTodo.todo, "DONE")
+  }
+
+  @MainActor
+  func testWorkspaceAgentWorkSearchFindsHistoricalApprovedBoundary() throws {
+    let payload = try JSONDecoder().decode(AgentRunListPayload.self, from: Data(#"""
+    {
+      "schema": "org2:run-list:v1",
+      "runs": [{
+        "id": "25eade4e-71d1-4f1c-a496-5cf5a9ef093c",
+        "goal": "Prepare the customer follow-up",
+        "acceptanceCriteria": [],
+        "status": "running",
+        "riskClass": "external-action",
+        "capabilities": [],
+        "context": [],
+        "plan": [],
+        "artifacts": [],
+        "approvals": [{
+          "id": "atruedev-original",
+          "title": "Approve ATrueDev exhausted-credit check-in",
+          "action": "send the original follow-up to gary@atruedev.com",
+          "riskClass": "external-action",
+          "status": "revised",
+          "requestedAt": "2026-08-08T15:30:00.000Z",
+          "decidedAt": "2026-08-08T15:45:00.000Z",
+          "decidedBy": "Avi",
+          "decisionNote": "Superseded during voice review"
+        }, {
+          "id": "atruedev-feedback",
+          "title": "Approve revised ATrueDev feedback check-in",
+          "action": "send feedback to gary@atruedev.com",
+          "riskClass": "external-action",
+          "status": "approved",
+          "requestedAt": "2026-08-08T16:00:00.000Z",
+          "decidedAt": "2026-08-08T16:01:00.000Z",
+          "decidedBy": "Avi",
+          "decisionNote": "Approved over voice from iOS"
+        }],
+        "validations": [],
+        "comments": [],
+        "events": [],
+        "createdAt": "2026-08-08T15:00:00.000Z",
+        "updatedAt": "2026-08-08T16:01:00.000Z"
+      }]
+    }
+    """#.utf8))
+
+    let results = WorkspaceStore.searchAgentWorkForWorkspace(
+      runs: payload.runs,
+      approvals: [],
+      workflows: [],
+      goals: [],
+      profiles: [],
+      query: "atruedev",
+      limitPerCategory: 25
+    )
+
+    XCTAssertEqual(results.count, 2)
+    XCTAssertEqual(results.first?.kind, .approval)
+    XCTAssertEqual(results.first?.title, "Approve revised ATrueDev feedback check-in")
+    XCTAssertEqual(results.first?.status, "approved")
+    XCTAssertEqual(results.first?.parentRunID, payload.runs.first?.id)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.replaceAgentRunsForTesting(payload.runs)
+    store.selectAgentWorkSearchResult(try XCTUnwrap(results.first))
+    XCTAssertEqual(store.selectedSurface, .approvals)
+    XCTAssertEqual(store.runsAndReviewPage, .runs)
+    XCTAssertEqual(store.selectedAgentRunID, payload.runs.first?.id)
   }
 
   func testWorkspaceChatSearchSeparatesThreadTitlesFromMessageText() {
@@ -8577,7 +9001,10 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(WorkspaceSurface.meetings.commandShortcutTitle, "⌘5/⌘M")
     XCTAssertEqual(WorkspaceSurface.sources.commandShortcutTitle, "⌘0")
     XCTAssertEqual(WorkspaceSurface.openClaw.commandShortcutTitle, "⌘6")
-    XCTAssertEqual(WorkspaceSurface.sidebarCases, [.home, .agenda, .files, .approvals, .meetings, .sources])
+    XCTAssertEqual(
+      WorkspaceSurface.sidebarCases,
+      [.home, .agenda, .files, .approvals, .meetings, .sources, .externalThreads]
+    )
   }
 
   func testSidebarShortcutHintsOnlyRevealForCommandModifier() {

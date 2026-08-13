@@ -55,7 +55,7 @@ org2 roam graph --dir ~/notes --recursive --format report</code></pre>
         <li>Bounded context packs carry file-and-line citations instead of an opaque prompt dump.</li>
         <li>Portable goals and named agent profiles separate why and who from OpenClaw or Codex runtime identity; resolved refs remain attached to delegated headings, runs, and workflows.</li>
         <li>Generated work lands in reviewable artifact zones before promotion into canonical notes.</li>
-        <li>One pending-decision queue combines run-bound approvals with standalone file-backed approvals; run decisions preserve one native ID and immutable review-material fingerprint across CLI, Mac, mobile, and OpenClaw, and rejecting or canceling a required approval cancels its originating run instead of leaving a stale blocker.</li>
+        <li>One pending-decision queue combines run-bound approvals with standalone file-backed approvals; run decisions preserve one native ID and immutable review-material fingerprint across CLI, Mac, mobile, and OpenClaw. Decisions are item-scoped, so rejecting one action does not discard sibling approvals from the same batch.</li>
         <li>Recurring workflow executions roll up under stable logical work while retaining separate scheduler attempts, and event/fresh-path gates skip unchanged expensive work.</li>
         <li>A read-only workspace doctor finds contradictory run and approval state, duplicate decision identities, broken projections, and unmanaged recurring work before another agent acts.</li>
         <li>Atomic revision-checked run and workflow writes reject stale clients and ambiguous direct edits instead of silently replacing newer work.</li>

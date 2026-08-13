@@ -8,50 +8,76 @@ final class MobileVoiceTranscriber: ObservableObject {
   @Published private(set) var transcript = ""
   @Published var errorMessage: String?
 
-  private let audioEngine = AVAudioEngine()
   private let recognizer = SFSpeechRecognizer(locale: .current)
+  private var audioEngine: AVAudioEngine?
+  private var tappedInputNode: AVAudioInputNode?
+  private var hasInstalledInputTap = false
   private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
   private var recognitionTask: SFSpeechRecognitionTask?
+  private var pendingStartID: UUID?
+  private var recognitionID: UUID?
 
   func start() async {
     guard !isRecording else { return }
+    let startID = UUID()
+    pendingStartID = startID
     guard await requestSpeechAuthorization() == .authorized else {
+      guard pendingStartID == startID else { return }
+      pendingStartID = nil
       errorMessage = "Allow Speech Recognition in Settings to transcribe a message."
       return
     }
     guard await AVAudioApplication.requestRecordPermission() else {
+      guard pendingStartID == startID else { return }
+      pendingStartID = nil
       errorMessage = "Allow Microphone access in Settings to transcribe a message."
       return
     }
+    guard pendingStartID == startID else { return }
+    pendingStartID = nil
     guard let recognizer, recognizer.isAvailable else {
       errorMessage = "Speech recognition is not currently available."
       return
     }
 
-    stop(cancelRecognition: true)
+    reset(cancelRecognition: true)
     transcript = ""
     errorMessage = nil
 
     do {
       let audioSession = AVAudioSession.sharedInstance()
-      try audioSession.setCategory(.record, mode: .measurement, options: .duckOthers)
-      try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+      try audioSession.setCategory(.record, mode: .measurement, options: [])
+      try audioSession.setActive(true)
 
       let request = SFSpeechAudioBufferRecognitionRequest()
       request.shouldReportPartialResults = true
       request.taskHint = .dictation
       recognitionRequest = request
 
-      let inputNode = audioEngine.inputNode
-      let format = inputNode.outputFormat(forBus: 0)
-      inputNode.removeTap(onBus: 0)
-      inputNode.installTap(onBus: 0, bufferSize: 1_024, format: format) { buffer, _ in
+      // Recreate the engine for every capture. A stale input graph after an
+      // interruption can retain a tap or expose an unavailable hardware
+      // format, both of which AVAudioEngine reports as an Objective-C exception
+      // instead of a catchable Swift error.
+      let engine = AVAudioEngine()
+      let inputNode = engine.inputNode
+      let hardwareFormat = inputNode.inputFormat(forBus: 0)
+      guard Self.isUsableInputFormat(hardwareFormat) else {
+        reset(cancelRecognition: true)
+        errorMessage = "The microphone is temporarily unavailable. Try again after ending any call or other audio session."
+        return
+      }
+      audioEngine = engine
+      tappedInputNode = inputNode
+      inputNode.installTap(onBus: 0, bufferSize: 1_024, format: nil) { buffer, _ in
         request.append(buffer)
       }
+      hasInstalledInputTap = true
 
-      audioEngine.prepare()
-      try audioEngine.start()
+      engine.prepare()
+      try engine.start()
       isRecording = true
+      let recognitionID = UUID()
+      self.recognitionID = recognitionID
 
       // Speech invokes this callback on an arbitrary queue. Mark it Sendable so
       // Swift does not inherit MobileVoiceTranscriber's main-actor isolation.
@@ -61,52 +87,53 @@ final class MobileVoiceTranscriber: ObservableObject {
         let errorText = error?.localizedDescription
         Task { @MainActor [weak self] in
           guard let self else { return }
+          guard self.recognitionID == recognitionID else { return }
           if let nextTranscript {
             self.transcript = nextTranscript
           }
           if isFinal || errorText != nil {
-            self.finishRecognition(errorText: isFinal ? nil : errorText)
+            self.finishRecognition(
+              id: recognitionID,
+              errorText: isFinal ? nil : errorText
+            )
           }
         }
       }
     } catch {
-      stop(cancelRecognition: true)
+      reset(cancelRecognition: true)
       errorMessage = "Could not start transcription: \(error.localizedDescription)"
     }
   }
 
   func stop() {
     guard isRecording else { return }
-    audioEngine.stop()
-    audioEngine.inputNode.removeTap(onBus: 0)
+    stopAudioCapture()
     recognitionRequest?.endAudio()
     isRecording = false
   }
 
   func cancel() {
-    stop(cancelRecognition: true)
+    pendingStartID = nil
+    reset(cancelRecognition: true)
     transcript = ""
   }
 
-  private func finishRecognition(errorText: String?) {
-    if audioEngine.isRunning {
-      audioEngine.stop()
-      audioEngine.inputNode.removeTap(onBus: 0)
-    }
+  private func finishRecognition(id: UUID, errorText: String?) {
+    guard recognitionID == id else { return }
+    stopAudioCapture()
     isRecording = false
     recognitionRequest = nil
     recognitionTask = nil
+    recognitionID = nil
     try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     if let errorText, transcript.isEmpty {
       errorMessage = "Transcription stopped: \(errorText)"
     }
   }
 
-  private func stop(cancelRecognition: Bool) {
-    if audioEngine.isRunning {
-      audioEngine.stop()
-      audioEngine.inputNode.removeTap(onBus: 0)
-    }
+  private func reset(cancelRecognition: Bool) {
+    recognitionID = nil
+    stopAudioCapture()
     if cancelRecognition {
       recognitionTask?.cancel()
     } else {
@@ -116,6 +143,22 @@ final class MobileVoiceTranscriber: ObservableObject {
     recognitionTask = nil
     isRecording = false
     try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+  }
+
+  private func stopAudioCapture() {
+    audioEngine?.stop()
+    if hasInstalledInputTap {
+      tappedInputNode?.removeTap(onBus: 0)
+    }
+    hasInstalledInputTap = false
+    tappedInputNode = nil
+    audioEngine = nil
+  }
+
+  nonisolated static func isUsableInputFormat(_ format: AVAudioFormat) -> Bool {
+    format.sampleRate.isFinite
+      && format.sampleRate > 0
+      && format.channelCount > 0
   }
 
   private func requestSpeechAuthorization() async -> SFSpeechRecognizerAuthorizationStatus {

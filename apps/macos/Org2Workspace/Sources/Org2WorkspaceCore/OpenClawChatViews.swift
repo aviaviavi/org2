@@ -162,9 +162,22 @@ struct ChatBubbleView: View {
             Label("Queued", systemImage: "clock")
               .font(.caption2.weight(.semibold))
               .foregroundStyle(.secondary)
+          } else if message.role == .user,
+                    message.deliveryKind == .steer,
+                    message.deliveryStatus == .sending {
+            Label("Steering…", systemImage: "arrow.turn.up.right")
+              .font(.caption2.weight(.semibold))
+              .foregroundStyle(.secondary)
           }
+          Text(message.createdAt, format: .dateTime.hour().minute())
+            .font(.caption2.monospacedDigit())
+            .foregroundStyle(.tertiary)
+            .help(message.createdAt.formatted(date: .abbreviated, time: .shortened))
+            .accessibilityLabel(
+              "Sent \(message.createdAt.formatted(date: .abbreviated, time: .shortened))"
+            )
+          copyButton
         }
-        .padding(.trailing, 22)
         if !presentation.contexts.isEmpty {
           OpenClawContextPillsView(contexts: presentation.contexts)
         }
@@ -227,11 +240,6 @@ struct ChatBubbleView: View {
         RoundedRectangle(cornerRadius: 8, style: .continuous)
           .stroke(borderColor)
       )
-      .overlay(alignment: .topTrailing) {
-        copyButton
-          .padding(.top, 6)
-          .padding(.trailing, 6)
-      }
       .fixedSize(horizontal: false, vertical: true)
       .onHover { isHovering in
         withAnimation(WorkspaceMotion.quick) {
@@ -256,17 +264,16 @@ struct ChatBubbleView: View {
 
   private var copyButton: some View {
     Button {
-      OpenClawMessageClipboard.copy(message)
-      didCopy = true
+      didCopy = OpenClawMessageClipboard.copy(message)
     } label: {
       Image(systemName: didCopy ? "checkmark" : "doc.on.doc")
         .font(.caption2.weight(.semibold))
-        .frame(width: 20, height: 20)
+        .frame(width: 24, height: 24)
         .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
     .foregroundStyle(didCopy ? Color.green : Color.secondary)
-    .opacity(isHovering || didCopy ? 0.9 : 0.18)
+    .opacity(isHovering || didCopy ? 1 : 0.48)
     .help(didCopy ? "Copied" : "Copy message")
     .accessibilityLabel(didCopy ? "Message copied" : "Copy message")
   }
@@ -374,9 +381,21 @@ enum OpenClawMessageClipboard {
   }
 
   @MainActor
-  static func copy(_ message: OpenClawChatMessage, to pasteboard: NSPasteboard = .general) {
+  @discardableResult
+  static func copy(
+    _ message: OpenClawChatMessage,
+    to pasteboard: NSPasteboard = .general
+  ) -> Bool {
+    write(text(for: message), to: pasteboard)
+  }
+
+  @MainActor
+  @discardableResult
+  static func write(_ text: String, to pasteboard: NSPasteboard = .general) -> Bool {
+    let item = NSPasteboardItem()
+    guard item.setString(text, forType: .string) else { return false }
     pasteboard.clearContents()
-    pasteboard.setString(text(for: message), forType: .string)
+    return pasteboard.writeObjects([item])
   }
 }
 
@@ -847,10 +866,31 @@ struct OpenClawComposerView: View {
         Button {
           _ = sendIfPossible()
         } label: {
-          Label("Send", systemImage: "paperplane.fill")
+          Label(
+            isRunning ? "Steer" : "Send",
+            systemImage: isRunning ? "arrow.turn.up.right" : "paperplane.fill"
+          )
         }
         .buttonStyle(WorkspaceActionButtonStyle())
         .disabled(!canSend)
+
+        if isRunning {
+          Menu {
+            Button {
+              _ = sendIfPossible(delivery: .followUp)
+            } label: {
+              Label("Queue as Follow-up", systemImage: "clock")
+            }
+            .disabled(!canSend)
+          } label: {
+            Label("More delivery options", systemImage: "chevron.down")
+          }
+          .labelStyle(.iconOnly)
+          .menuStyle(.borderlessButton)
+          .menuIndicator(.hidden)
+          .fixedSize()
+          .help("Queue this message until the current response finishes")
+        }
       }
     }
     .onAppear {
@@ -1056,6 +1096,11 @@ struct OpenClawComposerView: View {
       || !store.openClawPendingAttachments.isEmpty
   }
 
+  private var isRunning: Bool {
+    guard let threadID = store.selectedOpenClawChatThreadID else { return false }
+    return store.isAIChatThreadRunning(threadID)
+  }
+
   private var visibleDraftBinding: Binding<String> {
     Binding(
       get: { OpenClawContextPresentation(localDraft).userText },
@@ -1065,13 +1110,19 @@ struct OpenClawComposerView: View {
     )
   }
 
-  private func sendIfPossible() -> Bool {
+  private func sendIfPossible(
+    delivery: AIChatMessageDeliveryPreference = .automatic
+  ) -> Bool {
     guard canSend else { return false }
     let text = localDraft
     localDraft = ""
     lastStoreDraft = ""
     store.cacheOpenClawComposerDraft("")
-    store.submitOpenClawComposerInput(text: text)
+    if delivery == .followUp {
+      store.sendComposedOpenClawMessage(text: text, delivery: .followUp)
+    } else {
+      store.submitOpenClawComposerInput(text: text)
+    }
     return true
   }
 

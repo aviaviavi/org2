@@ -1063,6 +1063,9 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var workspacePageSearchResults: [OrgRoamNodeReference] = [] {
     didSet { rebuildWorkspaceTextSearchDisplayCache() }
   }
+  @Published public var workspaceAgentWorkSearchResults: [WorkspaceAgentWorkSearchResult] = [] {
+    didSet { rebuildWorkspaceTextSearchDisplayCache() }
+  }
   public private(set) var workspaceTextSearchSections: [WorkspaceTextSearchSection] = []
   public private(set) var corpusSearchResultGroups: [SearchResultGroup] = []
   public private(set) var searchNodes: [OrgRoamNodeReference] = []
@@ -1132,6 +1135,13 @@ public final class WorkspaceStore: ObservableObject {
   @Published public private(set) var selectedOpenClawChatThreadID: UUID?
   @Published public private(set) var openClawChatSelectionGeneration = 0
   @Published public private(set) var lastArchivedOpenClawChatThreadID: UUID?
+  @Published public private(set) var externalThreads: [ExternalThreadSummary] = []
+  @Published public private(set) var selectedExternalThreadID: String?
+  @Published public private(set) var selectedExternalThreadDetail: ExternalThreadDetail?
+  @Published public private(set) var isRefreshingExternalThreads = false
+  @Published public private(set) var isLoadingExternalThread = false
+  @Published public var externalThreadSearchQuery = ""
+  @Published public private(set) var externalThreadError: String?
   public var openClawIncomingMessageSoundPlayer: @MainActor () -> Void = {
     WorkspaceSound.play(named: NSSound.Name(AIChatMessageSound.glass.rawValue))
   }
@@ -1460,6 +1470,8 @@ public final class WorkspaceStore: ObservableObject {
   ]
   nonisolated private static let openClawInterruptedSendFailureText =
     "Org2 Workspace restarted before this AI response was saved. The response may have completed outside the app, but this chat cannot recover it. Retry to send again."
+  nonisolated private static let openClawStoppedSendFailureText =
+    "OpenClaw was stopped by you. Retry to start this request again."
   private var openClawTranscriptURL: URL
   private let appOpenClawTranscriptURL: URL
   private let usesFixedOpenClawTranscriptURL: Bool
@@ -1474,12 +1486,24 @@ public final class WorkspaceStore: ObservableObject {
   private var openClawPendingUserMessageIDsByThreadID: [UUID: [UUID]] = [:]
   @Published private var activeOpenClawUserMessageIDByThreadID: [UUID: UUID] = [:]
   private var drainingOpenClawThreadIDs: Set<UUID> = []
+  private var stoppedOpenClawThreadIDs: Set<UUID> = []
   private var aiChatSendOriginsByThreadID: [UUID: AIChatSendOrigin] = [:]
   private var openClawRequestStartedAtByThreadID: [UUID: Date] = [:]
   private var openClawGatewayClientsByThreadID: [UUID: OpenClawGatewayClient] = [:]
   private var codexAppServerClient: CodexAppServerClient?
+  private var externalCodexAppServerClient: CodexAppServerClient?
+  private var externalThreadLoadRequestID: UUID?
+  private var externalThreadDetailCache: [String: ExternalThreadDetail] = [:]
+  private var externalThreadDetailCacheOrder: [String] = []
+  private static let externalThreadDetailCacheLimit = 6
   private var codexActiveTurnsByThreadID: [UUID: (runtimeThreadID: String, turnID: String)] = [:]
   private var codexLocalThreadIDsByRuntimeThreadID: [String: UUID] = [:]
+  var aiChatSteerHandlerForTesting: ((
+    _ runtime: AIChatRuntime,
+    _ threadID: UUID,
+    _ content: String,
+    _ attachments: [OpenClawChatAttachment]
+  ) async throws -> Void)?
   private var openClawRecoveryRetryTask: Task<Void, Never>?
   private var deferredOpenClawTranscriptPersistenceTask: Task<Void, Never>?
   private var openClawTranscriptPersistenceGeneration: UInt64 = 0
@@ -1579,6 +1603,8 @@ public final class WorkspaceStore: ObservableObject {
     _ decision: String,
     _ note: String?
   ) async throws -> AgentRunItem)?
+  var agentRunListLoaderForTesting: (() async throws -> [AgentRunItem])?
+  var deferredAgentRunsRefreshDelayNanoseconds: UInt64 = 1_000_000_000
   var agentRunApprovalContinuationForTesting: ((
     _ run: AgentRunItem
   ) async throws -> OpenClawApprovedRunContinuation)?
@@ -1632,6 +1658,7 @@ public final class WorkspaceStore: ObservableObject {
   private var isRefreshingOpenClawThreads = false
   private var scheduledAgendaRefreshTask: Task<Void, Never>?
   private var scheduledApprovalsRefreshTask: Task<Void, Never>?
+  private var scheduledAgentRunsRefreshTask: Task<Void, Never>?
   private var approvalSelectionAnchor: ApprovalSelectionAnchor?
   private var runReviewAutoRefreshTask: Task<Void, Never>?
   private var isRunReviewAutoRefreshActive = false
@@ -1914,6 +1941,12 @@ public final class WorkspaceStore: ObservableObject {
       }) ?? agentProfiles.first {
         selectAgentProfile(profile)
       }
+    case "search":
+      selectedSurface = .search
+      searchQuery = target ?? ""
+      if !searchQuery.isEmpty {
+        await runSearch()
+      }
     case "openclaw", "chat":
       selectedSurface = .openClaw
       publishOpenClawComposerDraft("Summarize the current launch plan and call out open risks.")
@@ -2183,6 +2216,7 @@ public final class WorkspaceStore: ObservableObject {
     openClawChatSearchResults = []
     workspaceFileSearchResults = []
     workspacePageSearchResults = []
+    workspaceAgentWorkSearchResults = []
     bulkSelectedAgendaItemIDs = []
     selectedApprovalItemIDsForAIContext = []
     assignedWorkItems = cachedWorkspace?.assignedWorkItems ?? []
@@ -2242,6 +2276,8 @@ public final class WorkspaceStore: ObservableObject {
     scheduledAgendaRefreshTask = nil
     scheduledApprovalsRefreshTask?.cancel()
     scheduledApprovalsRefreshTask = nil
+    scheduledAgentRunsRefreshTask?.cancel()
+    scheduledAgentRunsRefreshTask = nil
     postOpenClawWorkspaceRefreshTask?.cancel()
     postOpenClawWorkspaceRefreshTask = nil
     corpusEventRefreshGeneration += 1
@@ -2490,7 +2526,7 @@ public final class WorkspaceStore: ObservableObject {
       scheduleIncrementalCorpusRefresh(classified.contentPaths)
     }
     if classified.hasAgentRunStateChanges {
-      markWorkspaceSurfacesDirty([.approvals], refreshVisible: false)
+      markWorkspaceSurfacesDirty([.approvals, .search], refreshVisible: false)
       scheduleRunReviewRefreshAfterEvents()
     }
   }
@@ -3382,11 +3418,16 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     do {
-      let payload: AgentRunListPayload = try await cli.runJSON([
-        "run", "list", "--dir", corpusRoot.path, "--json"
-      ])
+      let nextRuns: [AgentRunItem]
+      if let agentRunListLoaderForTesting {
+        nextRuns = try await agentRunListLoaderForTesting()
+      } else {
+        let payload: AgentRunListPayload = try await cli.runJSON([
+          "run", "list", "--dir", corpusRoot.path, "--json"
+        ])
+        nextRuns = payload.runs
+      }
       let currentRuns = agentRuns
-      let nextRuns = payload.runs
       let runsChanged = await Task.detached(priority: .utility) {
         currentRuns != nextRuns
       }.value
@@ -3935,7 +3976,10 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
-  private func continueOpenClawAfterApproval(_ run: AgentRunItem) async throws -> Bool {
+  private func continueOpenClawAfterApproval(
+    _ run: AgentRunItem,
+    presentThread: Bool = false
+  ) async throws -> Bool {
     let continuation = try await approvedRunContinuation(for: run)
     if continuation.alreadyResumed, continuation.continuationKey == nil { return false }
     if continuation.continuationKey != nil,
@@ -3973,9 +4017,28 @@ public final class WorkspaceStore: ObservableObject {
         sessionKey: continuation.sessionKey
       )
     }
+    if presentThread {
+      navigateToSurface(.openClaw)
+      selectOpenClawChatThread(thread.id)
+    }
     let shouldDrain = enqueueOpenClawMessage(continuation.prompt, attachments: [], in: thread.id)
     if shouldDrain { await drainOpenClawSendQueue(for: thread.id) }
     return true
+  }
+
+  public func continueApprovedAgentRun(_ run: AgentRunItem) async {
+    guard run.canContinueApprovedWork, !mutatingAgentRunIDs.contains(run.id) else { return }
+    mutatingAgentRunIDs.insert(run.id)
+    defer { mutatingAgentRunIDs.remove(run.id) }
+    do {
+      let continued = try await continueOpenClawAfterApproval(run, presentThread: true)
+      statusText = continued
+        ? "Continuing approved work for \(run.goal)"
+        : "\(run.goal) is already continuing"
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Approved work could not be continued"
+    }
   }
 
   private func continueOpenClawWorkflowAfterRevision(
@@ -4012,11 +4075,11 @@ public final class WorkspaceStore: ObservableObject {
       do {
         let continued = try await continueOpenClawAfterApproval(run)
         statusText = continued
-          ? "Approved and continued \(run.goal)"
-          : "Approved; \(run.goal) is already continuing"
+          ? "Review decisions recorded; continued \(run.goal)"
+          : "Review decisions recorded; \(run.goal) is already continuing"
       } catch {
         errorText = error.localizedDescription
-        statusText = "Approved; OpenClaw continuation pending"
+        statusText = "Review decisions recorded; OpenClaw continuation pending"
       }
       return
     }
@@ -4205,9 +4268,9 @@ public final class WorkspaceStore: ObservableObject {
       "ORG2_RUN_ID: \(run.id)",
       "ORG2_RUN_RESUME: approval-decided",
       "",
-      "Continue the existing Org2 run “\(run.goal)” after its approval boundary was approved.",
+      "Continue the existing Org2 run “\(run.goal)” after every item in its approval boundary was decided.",
       "Re-read the durable run with the Org2 CLI and continue from the first incomplete step. Do not create a replacement run or request the same approval again.",
-      "Perform only the exact action covered by the current approved review material. Do not substitute a new recipient, payload, command, or attachment.",
+      "Perform only exact actions whose review material is approved. Skip every rejected or canceled action, and do not substitute a new recipient, payload, command, or attachment.",
       "For provider drafts, resolve the exact authority through `org2 run approval-resolve --decision-key artifact:PROVIDER:TOOL:DRAFT_ID --json` and verify provider state before any retry.",
       "Record external receipts and the final outcome on this durable run, or record the next specific blocker if the work cannot continue."
     ].joined(separator: "\n")
@@ -4780,9 +4843,10 @@ public final class WorkspaceStore: ObservableObject {
 
     do {
       if item.isRunApproval {
-        _ = try await decideRunApprovalItem(item, decision: "rejected", note: reason)
+        let updated = try await decideRunApprovalItem(item, decision: "rejected", note: reason)
         removeApprovalItemOptimistically(item.id, originalVisibleIndex: originalVisibleIndex)
         scheduleApprovalsRefresh()
+        await continueOpenClawAfterApprovalBoundary(updated)
         return
       }
       try await rejectApproval(
@@ -4941,33 +5005,36 @@ public final class WorkspaceStore: ObservableObject {
     guard let corpusRoot else {
       throw CocoaError(.fileNoSuchFile, userInfo: [NSLocalizedDescriptionKey: "No corpus is selected."])
     }
+    let updated: AgentRunItem
     if let agentRunApprovalDecisionForTesting {
-      return try await agentRunApprovalDecisionForTesting(
+      updated = try await agentRunApprovalDecisionForTesting(
         runID,
         approvalID,
         decision,
         note
       )
+    } else {
+      var arguments = [
+        "run", "approval-decide", runID, approvalID,
+        "--decision", decision,
+        "--actor", Self.agentRunApprovalDecisionActor(requestedFrom: requestedFrom),
+        "--role", requestedRole ?? "owner",
+        "--dir", corpusRoot.path,
+        "--json"
+      ]
+      if let fingerprint = fingerprint?.trimmingCharacters(in: .whitespacesAndNewlines), !fingerprint.isEmpty {
+        arguments.append(contentsOf: ["--fingerprint", fingerprint])
+      }
+      if let note = note?.trimmingCharacters(in: .whitespacesAndNewlines), !note.isEmpty {
+        arguments.append(contentsOf: ["--note", note])
+      }
+      updated = try await cli.runJSON(arguments)
     }
-    var arguments = [
-      "run", "approval-decide", runID, approvalID,
-      "--decision", decision,
-      "--actor", Self.agentRunApprovalDecisionActor(requestedFrom: requestedFrom),
-      "--role", requestedRole ?? "owner",
-      "--dir", corpusRoot.path,
-      "--json"
-    ]
-    if let fingerprint = fingerprint?.trimmingCharacters(in: .whitespacesAndNewlines), !fingerprint.isEmpty {
-      arguments.append(contentsOf: ["--fingerprint", fingerprint])
-    }
-    if let note = note?.trimmingCharacters(in: .whitespacesAndNewlines), !note.isEmpty {
-      arguments.append(contentsOf: ["--note", note])
-    }
-    let updated: AgentRunItem = try await cli.runJSON(arguments)
     // A provider-backed decision can also supersede and close older run
-    // projections. Reload the run list now so Runs and Review clear together
-    // instead of waiting for the filesystem watcher or periodic reconciliation.
-    await refreshAgentRuns()
+    // projections. Reconcile those in the background so a large run archive
+    // never blocks the approval row from disappearing. Repeated decisions are
+    // coalesced into one scan, and the filesystem watcher remains a fallback.
+    scheduleAgentRunsRefresh()
     return updated
   }
 
@@ -5143,6 +5210,23 @@ public final class WorkspaceStore: ObservableObject {
       await self.refreshApprovals(updatesStatus: updatesStatus)
       if !Task.isCancelled {
         self.scheduledApprovalsRefreshTask = nil
+      }
+    }
+  }
+
+  private func scheduleAgentRunsRefresh() {
+    scheduledAgentRunsRefreshTask?.cancel()
+    scheduledAgentRunsRefreshTask = Task { @MainActor [weak self] in
+      guard let self else { return }
+      do {
+        try await Task.sleep(nanoseconds: self.deferredAgentRunsRefreshDelayNanoseconds)
+      } catch {
+        return
+      }
+      guard !Task.isCancelled else { return }
+      await self.refreshAgentRuns()
+      if !Task.isCancelled {
+        self.scheduledAgentRunsRefreshTask = nil
       }
     }
   }
@@ -5463,6 +5547,7 @@ public final class WorkspaceStore: ObservableObject {
       openClawChatSearchResults = []
       workspaceFileSearchResults = []
       workspacePageSearchResults = []
+      workspaceAgentWorkSearchResults = []
       markWorkspaceSurfaceCleanIfUnchanged(.search, generation: dirtyGeneration)
       return
     }
@@ -5478,6 +5563,7 @@ public final class WorkspaceStore: ObservableObject {
       openClawChatSearchResults = chatResults
       workspaceFileSearchResults = []
       workspacePageSearchResults = []
+      workspaceAgentWorkSearchResults = []
       selectedSurface = .search
       let elapsed = Date().timeIntervalSince(started)
       statusText = chatResults.isEmpty
@@ -5485,6 +5571,23 @@ public final class WorkspaceStore: ObservableObject {
         : "\(chatResults.count) chat result\(chatResults.count == 1 ? "" : "s") in \(String(format: "%.1f", elapsed))s"
       markWorkspaceSurfaceCleanIfUnchanged(.search, generation: dirtyGeneration)
       return
+    }
+
+    let runs = agentRuns
+    let approvals = approvalItems
+    let workflows = agentWorkflows
+    let goals = agentGoals
+    let profiles = agentProfiles
+    let agentWorkSearchTask = Task.detached(priority: .userInitiated) {
+      Self.searchAgentWorkForWorkspace(
+        runs: runs,
+        approvals: approvals,
+        workflows: workflows,
+        goals: goals,
+        profiles: profiles,
+        query: query,
+        limitPerCategory: 25
+      )
     }
 
     do {
@@ -5513,6 +5616,7 @@ public final class WorkspaceStore: ObservableObject {
       ]
       let payload: SearchPayload = try await cli.runJSON(arguments)
       let (fileResults, pageResults) = await supplementalResults
+      let agentWorkResults = await agentWorkSearchTask.value
       searchResults = Self.prioritizedSearchResultsForDisplay(
         payload.results,
         query: query,
@@ -5521,6 +5625,7 @@ public final class WorkspaceStore: ObservableObject {
       openClawChatSearchResults = chatResults
       workspaceFileSearchResults = fileResults
       workspacePageSearchResults = pageResults
+      workspaceAgentWorkSearchResults = agentWorkResults
       selectedSurface = .search
       let elapsed = Date().timeIntervalSince(started)
       let totalCount = workspaceTextSearchResultCount
@@ -5528,6 +5633,7 @@ public final class WorkspaceStore: ObservableObject {
       statusText = "\(totalCount) search result\(totalCount == 1 ? "" : "s") in \(String(format: "%.1f", elapsed))s\(issueSuffix)"
       markWorkspaceSurfaceCleanIfUnchanged(.search, generation: dirtyGeneration)
     } catch {
+      workspaceAgentWorkSearchResults = await agentWorkSearchTask.value
       errorText = error.localizedDescription
       statusText = "Search failed"
     }
@@ -6237,7 +6343,19 @@ public final class WorkspaceStore: ObservableObject {
       setOpenClawAssistantPanelPresented(true)
       prepareOpenClawThreadForNodeBrief(title: location.title)
       let runtimeTitle = selectedAIChatRuntime.title
-      await sendOpenClawMessage(text: prompt)
+      let briefContext: OpenClawWorkspaceContext?
+      if let thread = selectedOpenClawChatThread {
+        briefContext = currentOpenClawWorkspaceContext(
+          threadContinuation: aiChatThreadContinuation(for: thread)
+        )
+      } else {
+        briefContext = nil
+      }
+      await sendOpenClawMessage(
+        prompt,
+        attachments: [],
+        workspaceContext: briefContext
+      )
       if await openNodeBriefArtifactWhenAvailable(url: artifactURL, relativePath: artifactRelativePath, title: location.title) {
         return
       }
@@ -10737,7 +10855,7 @@ public final class WorkspaceStore: ObservableObject {
       focusRunsAndReviewFilter()
     case .files:
       focusCorpusFileFilter()
-    case .home, .meetings, .sources, .openClaw:
+    case .home, .meetings, .sources, .openClaw, .externalThreads:
       return focusPageSearch()
     case .search:
       if selectedLocation != nil {
@@ -10777,6 +10895,37 @@ public final class WorkspaceStore: ObservableObject {
     statusText = "Opened \(file.relativePath)"
   }
 
+  public func selectAgentWorkSearchResult(_ result: WorkspaceAgentWorkSearchResult) {
+    switch result.kind {
+    case .approval:
+      if let runID = result.parentRunID,
+         let run = agentRuns.first(where: { $0.id == runID }) {
+        runsAndReviewPage = .runs
+        selectAgentRun(run)
+        statusText = "Opened \(result.title) in its run"
+      } else if let approval = approvalItems.first(where: { $0.id == result.recordID }) {
+        runsAndReviewPage = .review
+        selectApprovalItem(approval)
+      }
+    case .run:
+      guard let run = agentRuns.first(where: { $0.id == result.recordID }) else { return }
+      runsAndReviewPage = .runs
+      selectAgentRun(run)
+    case .workflow:
+      guard let workflow = agentWorkflows.first(where: { $0.id == result.recordID }) else { return }
+      runsAndReviewPage = .workflows
+      selectAgentWorkflow(workflow)
+    case .goal:
+      guard let goal = agentGoals.first(where: { $0.id == result.recordID }) else { return }
+      runsAndReviewPage = .goals
+      selectAgentGoal(goal)
+    case .agent:
+      guard let profile = agentProfiles.first(where: { $0.id == result.recordID }) else { return }
+      runsAndReviewPage = .agents
+      selectAgentProfile(profile)
+    }
+  }
+
   private func rebuildWorkspaceTextSearchDisplayCache() {
     let categorizedItems: [WorkspaceTextSearchItem] =
       searchResults.filter(\.isActiveTodo).map(WorkspaceTextSearchItem.activeTodo)
@@ -10784,6 +10933,7 @@ public final class WorkspaceStore: ObservableObject {
       + openClawChatSearchResults
         .filter { $0.matchKind == .threadTitle }
         .map(WorkspaceTextSearchItem.chatThread)
+      + workspaceAgentWorkSearchResults.map(WorkspaceTextSearchItem.agentWork)
       + workspacePageSearchResults.map(WorkspaceTextSearchItem.page)
       + searchResults
         .filter { !$0.isActiveTodo && $0.heading?.isEmpty == false }
@@ -10805,6 +10955,216 @@ public final class WorkspaceStore: ObservableObject {
 
   public var workspaceTextSearchResultCount: Int {
     workspaceTextSearchSections.reduce(0) { $0 + $1.items.count }
+  }
+
+  nonisolated static func searchAgentWorkForWorkspace(
+    runs: [AgentRunItem],
+    approvals: [ApprovalItem],
+    workflows: [AgentWorkflowItem],
+    goals: [AgentGoalItem],
+    profiles: [AgentProfileItem],
+    query rawQuery: String,
+    limitPerCategory: Int
+  ) -> [WorkspaceAgentWorkSearchResult] {
+    let terms = rawQuery
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .lowercased()
+      .split(whereSeparator: \.isWhitespace)
+      .map(String.init)
+    guard !terms.isEmpty, limitPerCategory > 0 else { return [] }
+
+    func matches(_ values: [String?]) -> Bool {
+      let text = values.compactMap { $0 }.joined(separator: "\n").lowercased()
+      return terms.allSatisfy(text.contains)
+    }
+
+    func fileLabel(_ path: String) -> String {
+      URL(fileURLWithPath: path).lastPathComponent
+    }
+
+    var approvalResults: [WorkspaceAgentWorkSearchResult] = []
+    var runResults: [WorkspaceAgentWorkSearchResult] = []
+    var workflowResults: [WorkspaceAgentWorkSearchResult] = []
+    var goalResults: [WorkspaceAgentWorkSearchResult] = []
+    var profileResults: [WorkspaceAgentWorkSearchResult] = []
+    var indexedRunApprovalKeys = Set<String>()
+
+    for run in runs {
+      let matchingApprovals = run.approvals
+        .filter { approval in
+          matches([
+            approval.id,
+            approval.fingerprint,
+            approval.title,
+            approval.action,
+            approval.riskClass,
+            approval.status,
+            approval.requestedRole,
+            approval.requestedFrom,
+            approval.decidedBy,
+            approval.decisionNote,
+            approval.note,
+            approval.receipt,
+            run.id,
+            run.goal,
+            run.agentRef,
+            run.goalRef,
+            run.workflowId,
+          ])
+        }
+        .sorted { lhs, rhs in
+          (lhs.decidedAt ?? lhs.requestedAt) > (rhs.decidedAt ?? rhs.requestedAt)
+        }
+
+      for approval in matchingApprovals where approvalResults.count < limitPerCategory {
+        indexedRunApprovalKeys.insert("\(run.id):\(approval.id)")
+        let detail = approval.decisionNote?.nilIfBlank
+          ?? approval.note?.nilIfBlank
+          ?? approval.action
+        approvalResults.append(WorkspaceAgentWorkSearchResult(
+          id: "run-approval:\(run.id):\(approval.id)",
+          kind: .approval,
+          recordID: approval.id,
+          parentRunID: run.id,
+          title: approval.title,
+          snippet: "\(run.goal) · \(detail)",
+          status: approval.status,
+          sourceReference: "Run \(run.id.prefix(8))"
+        ))
+      }
+
+      if matchingApprovals.isEmpty,
+         runResults.count < limitPerCategory,
+         run.matchesRunFilter(rawQuery) {
+        runResults.append(WorkspaceAgentWorkSearchResult(
+          id: "run:\(run.id)",
+          kind: .run,
+          recordID: run.id,
+          title: run.goal,
+          snippet: run.outcome?.summary.nilIfBlank
+            ?? run.blockedReason?.nilIfBlank
+            ?? run.progressText,
+          status: run.status,
+          sourceReference: "Run \(run.id.prefix(8))"
+        ))
+      }
+    }
+
+    for approval in approvals where approvalResults.count < limitPerCategory {
+      if let runID = approval.runId,
+         let approvalID = approval.approvalId,
+         indexedRunApprovalKeys.contains("\(runID):\(approvalID)") {
+        continue
+      }
+      let propertyText = approval.properties
+        .sorted { $0.key < $1.key }
+        .flatMap { [$0.key, $0.value] }
+      guard matches([
+        approval.idValue,
+        approval.approvalId,
+        approval.title,
+        approval.status,
+        approval.todo,
+        approval.file,
+        approval.body,
+        approval.action,
+        approval.riskClass,
+        approval.requestedRole,
+        approval.requestedFrom,
+        approval.runId,
+        approval.runGoal,
+      ] + approval.tags.map(Optional.some) + propertyText.map(Optional.some)) else { continue }
+      approvalResults.append(WorkspaceAgentWorkSearchResult(
+        id: "approval:\(approval.id)",
+        kind: .approval,
+        recordID: approval.id,
+        parentRunID: approval.runId,
+        title: approval.title,
+        snippet: approval.runGoal?.nilIfBlank ?? approval.body,
+        status: approval.status,
+        sourceReference: approval.runId.map { "Run \($0.prefix(8))" }
+          ?? "\(fileLabel(approval.file)):\(max(1, approval.line))"
+      ))
+    }
+
+    for workflow in workflows where workflowResults.count < limitPerCategory {
+      let inputs = workflow.inputs.flatMap { [$0.id, $0.description, $0.default ?? ""] }
+      let triggers = workflow.triggers.flatMap {
+        [$0.id, $0.type, $0.schedule ?? "", $0.timezone ?? ""]
+      }
+      guard matches([
+        workflow.id,
+        workflow.version,
+        workflow.title,
+        workflow.description,
+        workflow.state,
+        workflow.instructions,
+        workflow.riskClass,
+        workflow.file,
+        workflow.agentRef,
+        workflow.goalRef,
+      ] + workflow.capabilities.map(Optional.some)
+        + inputs.map(Optional.some)
+        + triggers.map(Optional.some)) else { continue }
+      workflowResults.append(WorkspaceAgentWorkSearchResult(
+        id: "workflow:\(workflow.id)",
+        kind: .workflow,
+        recordID: workflow.id,
+        title: workflow.title,
+        snippet: workflow.description,
+        status: workflow.state,
+        sourceReference: fileLabel(workflow.file)
+      ))
+    }
+
+    for goal in goals where goalResults.count < limitPerCategory {
+      guard matches([
+        goal.id,
+        goal.title,
+        goal.description,
+        goal.status,
+        goal.parentGoalRef,
+        goal.ownerAgentRef,
+        goal.file,
+      ] + goal.measures.map(Optional.some)) else { continue }
+      goalResults.append(WorkspaceAgentWorkSearchResult(
+        id: "goal:\(goal.id)",
+        kind: .goal,
+        recordID: goal.id,
+        title: goal.title,
+        snippet: goal.description,
+        status: goal.status,
+        sourceReference: fileLabel(goal.file)
+      ))
+    }
+
+    for profile in profiles where profileResults.count < limitPerCategory {
+      let bindings = profile.runtimeBindings.flatMap { [$0.runtime, $0.runtimeAgentId] }
+      guard matches([
+        profile.id,
+        profile.name,
+        profile.description,
+        profile.status,
+        profile.primaryGoalRef,
+        profile.reportsToAgentRef,
+        profile.file,
+      ] + profile.responsibilities.map(Optional.some)
+        + profile.capabilities.map(Optional.some)
+        + profile.skills.map(Optional.some)
+        + profile.goalRefs.map(Optional.some)
+        + bindings.map(Optional.some)) else { continue }
+      profileResults.append(WorkspaceAgentWorkSearchResult(
+        id: "agent:\(profile.id)",
+        kind: .agent,
+        recordID: profile.id,
+        title: profile.name,
+        snippet: profile.description,
+        status: profile.status,
+        sourceReference: fileLabel(profile.file)
+      ))
+    }
+
+    return approvalResults + runResults + workflowResults + goalResults + profileResults
   }
 
   nonisolated static func searchCorpusFilesForWorkspace(
@@ -12218,9 +12578,7 @@ public final class WorkspaceStore: ObservableObject {
       threadID: threadID,
       threadTitle: thread.title,
       runtime: thread.runtime,
-      workspaceContext: currentOpenClawWorkspaceContext(
-        threadContinuation: aiChatThreadContinuation(for: thread)
-      )
+      workspaceContext: threadScopedOpenClawWorkspaceContext(for: thread)
     )
 
     let audioURL = Self.openClawVoiceNoteURL()
@@ -12422,14 +12780,21 @@ public final class WorkspaceStore: ObservableObject {
       dictatedText: dictatedText
     )
     clearOpenClawDraft(for: threadID)
+    let context = workspaceContext ?? threadScopedOpenClawWorkspaceContext(for: thread)
+    if isAIChatThreadRunning(threadID), canSteerAIChatThread(threadID) {
+      return submitAIChatMessage(
+        text,
+        attachments: [],
+        in: threadID,
+        workspaceContext: context
+      )
+    }
     let shouldDrain = enqueueOpenClawMessage(
       text,
       attachments: [],
       in: threadID,
-      workspaceContext: workspaceContext ?? currentOpenClawWorkspaceContext(
-        includesNavigationContext: selectedOpenClawChatThreadID == threadID,
-        threadContinuation: aiChatThreadContinuation(for: thread)
-      )
+      workspaceContext: context,
+      deliveryKind: isAIChatThreadRunning(threadID) ? .followUp : .turn
     )
     if shouldDrain {
       await drainOpenClawSendQueue(for: threadID)
@@ -12802,6 +13167,223 @@ public final class WorkspaceStore: ObservableObject {
     createOpenClawChatThread(runtime: selectedAIChatRuntime)
   }
 
+  public var filteredExternalThreads: [ExternalThreadSummary] {
+    let query = externalThreadSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    guard !query.isEmpty else { return externalThreads }
+    return externalThreads.filter { thread in
+      [thread.title, thread.preview, thread.workspacePath, thread.source]
+        .compactMap { $0?.lowercased() }
+        .contains { $0.contains(query) }
+    }
+  }
+
+  public func openExternalThreads() {
+    makeSurfacePrimary(.externalThreads)
+  }
+
+  public func refreshExternalThreads() async {
+    guard !isRefreshingExternalThreads else { return }
+    isRefreshingExternalThreads = true
+    externalThreadError = nil
+    defer { isRefreshingExternalThreads = false }
+    do {
+      externalThreads = try await externalThreadSummaries()
+      if let selectedExternalThreadID,
+         !externalThreads.contains(where: { $0.id == selectedExternalThreadID }) {
+        self.selectedExternalThreadID = nil
+        selectedExternalThreadDetail = nil
+      }
+    } catch {
+      externalThreadError = error.localizedDescription
+    }
+  }
+
+  public func externalThreadSummaries() async throws -> [ExternalThreadSummary] {
+    let localCodexThreadIDs = Set(openClawChatThreads.compactMap { thread in
+      thread.runtime == .codex ? thread.runtimeThreadID : nil
+    })
+    let summaries = try await externalCodexClient().listExternalThreads().filter {
+      !localCodexThreadIDs.contains($0.externalID)
+    }
+    let summariesByID = Dictionary(uniqueKeysWithValues: summaries.map { ($0.id, $0) })
+    externalThreadDetailCache = externalThreadDetailCache.filter { id, detail in
+      summariesByID[id]?.updatedAt == detail.thread.updatedAt
+    }
+    externalThreadDetailCacheOrder.removeAll { externalThreadDetailCache[$0] == nil }
+    return summaries
+  }
+
+  public func selectExternalThread(_ id: String) async {
+    guard let summary = externalThreads.first(where: { $0.id == id }) else { return }
+    selectedExternalThreadID = id
+    selectedExternalThreadDetail = nil
+    await loadExternalThread(harness: summary.harness, externalID: summary.externalID)
+  }
+
+  public func loadExternalThread(
+    harness: ExternalThreadHarness,
+    externalID: String
+  ) async {
+    let requestID = UUID()
+    externalThreadLoadRequestID = requestID
+    isLoadingExternalThread = true
+    externalThreadError = nil
+    defer {
+      if externalThreadLoadRequestID == requestID {
+        externalThreadLoadRequestID = nil
+        isLoadingExternalThread = false
+      }
+    }
+    do {
+      let detail = try await externalThreadDetail(harness: harness, externalID: externalID)
+      guard externalThreadLoadRequestID == requestID,
+            selectedExternalThreadID == detail.thread.id
+      else { return }
+      selectedExternalThreadDetail = detail
+    } catch {
+      if externalThreadLoadRequestID == requestID {
+        externalThreadError = error.localizedDescription
+      }
+    }
+  }
+
+  public func reportExternalThreadActionError(_ error: Error) {
+    externalThreadError = error.localizedDescription
+    statusText = "External thread action failed"
+  }
+
+  public func externalThreadDetail(
+    harness: ExternalThreadHarness,
+    externalID: String
+  ) async throws -> ExternalThreadDetail {
+    let cacheID = "\(harness.rawValue):\(externalID)"
+    if let cached = externalThreadDetailCache[cacheID] {
+      touchExternalThreadDetailCache(cacheID)
+      return cached
+    }
+    let detail: ExternalThreadDetail
+    switch harness {
+    case .codex:
+      detail = try await externalCodexClient().readExternalThread(externalID)
+    }
+    externalThreadDetailCache[cacheID] = detail
+    touchExternalThreadDetailCache(cacheID)
+    while externalThreadDetailCacheOrder.count > Self.externalThreadDetailCacheLimit {
+      externalThreadDetailCache.removeValue(forKey: externalThreadDetailCacheOrder.removeFirst())
+    }
+    return detail
+  }
+
+  private func touchExternalThreadDetailCache(_ id: String) {
+    externalThreadDetailCacheOrder.removeAll { $0 == id }
+    externalThreadDetailCacheOrder.append(id)
+  }
+
+  @discardableResult
+  public func saveExternalThreadToOrg2(
+    _ detail: ExternalThreadDetail,
+    opensDocument: Bool = true
+  ) async throws -> URL {
+    guard let corpusRoot else {
+      throw CodexAppServerError.invalidResponse("Open an Org2 corpus before importing a thread")
+    }
+    let relativePath = Self.externalThreadSnapshotRelativePath(detail.thread)
+    let destination = corpusRoot.appendingPathComponent(relativePath).standardizedFileURL
+    let content = Self.externalThreadSnapshotText(detail)
+    try await Task.detached(priority: .userInitiated) {
+      try FileManager.default.createDirectory(
+        at: destination.deletingLastPathComponent(),
+        withIntermediateDirectories: true
+      )
+      try content.write(to: destination, atomically: true, encoding: .utf8)
+    }.value
+    invalidateCanonicalDocumentCache(for: destination.path)
+    if opensDocument {
+      openFile(path: destination.path, line: 1)
+      statusText = "Saved external thread to \(relativePath)"
+    }
+    Task { @MainActor [weak self] in
+      await self?.refreshCorpusFiles()
+    }
+    return destination
+  }
+
+  @discardableResult
+  public func continueExternalThreadInOrg2(
+    _ detail: ExternalThreadDetail,
+    selectsThread: Bool = true
+  ) async throws -> UUID {
+    let snapshotURL = try await saveExternalThreadToOrg2(detail, opensDocument: false)
+    let relativePath = relativePath(snapshotURL.path)
+    let title = Self.normalizedOpenClawThreadTitle("Continue: \(detail.thread.title)")
+    let thread = createOpenClawChatThread(
+      title: title,
+      statusText: "External thread ready to continue",
+      runtime: .codex,
+      selectsThread: selectsThread
+    )
+    let reference = "\(mappedPathForOpenClaw(snapshotURL.path)):1"
+    let draft = "Use external \(detail.thread.harness.title) thread “\(detail.thread.title)” at \(reference) as context. Continue the conversation here.\n\n"
+    cacheOpenClawDraft(draft, for: thread.id)
+    if selectsThread {
+      publishOpenClawComposerDraft(draft)
+      makeSurfacePrimary(.openClaw)
+      openClawStatusText = "Imported \(relativePath) as read-only context"
+      statusText = "Started a new Org2 thread from \(detail.thread.harness.title)"
+    }
+    return thread.id
+  }
+
+  nonisolated static func externalThreadSnapshotRelativePath(
+    _ thread: ExternalThreadSummary
+  ) -> String {
+    let base = thread.title.lowercased().unicodeScalars.map { scalar -> Character in
+      CharacterSet.alphanumerics.contains(scalar) ? Character(String(scalar)) : "-"
+    }
+    let slug = String(base)
+      .split(separator: "-", omittingEmptySubsequences: true)
+      .prefix(10)
+      .joined(separator: "-")
+    let identifier = thread.externalID.prefix(12)
+    return "views/external-threads/\(slug.isEmpty ? "thread" : slug)-\(identifier).org2"
+  }
+
+  nonisolated static func externalThreadSnapshotText(_ detail: ExternalThreadDetail) -> String {
+    let formatter = ISO8601DateFormatter()
+    let thread = detail.thread
+    var lines = [
+      "* External thread: \(thread.title)",
+      ":PROPERTIES:",
+      ":ID: external-thread-\(thread.harness.rawValue)-\(thread.externalID)",
+      ":KIND: external-thread",
+      ":EXTERNAL_HARNESS: \(thread.harness.rawValue)",
+      ":EXTERNAL_THREAD_ID: \(thread.externalID)",
+      ":EXTERNAL_UPDATED_AT: \(formatter.string(from: thread.updatedAt))",
+      ":IMPORTED_AT: \(formatter.string(from: Date()))",
+      ":END:",
+      "",
+      "This is a read-only snapshot imported from \(thread.harness.title). The external task remains the source of truth.",
+      ""
+    ]
+    if let workspacePath = thread.workspacePath {
+      lines.append("Workspace: =\(workspacePath)=")
+      lines.append("")
+    }
+    lines.append("** Conversation")
+    for message in detail.messages {
+      lines.append("")
+      lines.append("*** \(message.role == .user ? "You" : thread.harness.title)")
+      lines.append(":PROPERTIES:")
+      lines.append(":MESSAGE_ID: \(message.id)")
+      lines.append(":CREATED_AT: \(formatter.string(from: message.createdAt))")
+      lines.append(":END:")
+      lines.append(contentsOf: message.content.split(separator: "\n", omittingEmptySubsequences: false).map {
+        ": \($0)"
+      })
+    }
+    return lines.joined(separator: "\n") + "\n"
+  }
+
   public func stopOpenClawRun() async {
     guard let threadID = selectedOpenClawChatThreadID else { return }
     _ = await stopAIChatRemoteRun(threadID: threadID)
@@ -12843,15 +13425,20 @@ public final class WorkspaceStore: ObservableObject {
       }
       return false
     }
+    // Make the stop durable before waiting on the Gateway. In particular, a
+    // recovered turn keeps a persisted pending-turn record; leaving it in
+    // place lets the recovery loop interpret the socket close as a transient
+    // disconnect and resurrect the run a few seconds later.
+    markOpenClawRunStopped(in: threadID)
     do {
       try await gateway.abort()
       if selectedOpenClawChatThreadID == threadID {
-        openClawStatusText = "Stopping OpenClaw…"
+        openClawStatusText = "OpenClaw stopped"
       }
       return true
     } catch {
       if selectedOpenClawChatThreadID == threadID {
-        openClawStatusText = "Could not stop OpenClaw: \(error.localizedDescription)"
+        openClawStatusText = "Stopped locally; Gateway abort failed: \(error.localizedDescription)"
       }
       return false
     }
@@ -12861,7 +13448,8 @@ public final class WorkspaceStore: ObservableObject {
   public func sendAIChatRemoteMessage(
     _ rawText: String,
     attachments: [OpenClawChatAttachment] = [],
-    threadID: UUID
+    threadID: UUID,
+    delivery: AIChatMessageDeliveryPreference = .automatic
   ) -> Bool {
     let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty || !attachments.isEmpty,
@@ -12870,21 +13458,13 @@ public final class WorkspaceStore: ObservableObject {
     else {
       return false
     }
-    let shouldDrain = enqueueOpenClawMessage(
+    return submitAIChatMessage(
       text,
       attachments: attachments,
       in: threadID,
-      workspaceContext: currentOpenClawWorkspaceContext(
-        includesNavigationContext: false,
-        threadContinuation: aiChatThreadContinuation(for: thread)
-      )
+      workspaceContext: threadScopedOpenClawWorkspaceContext(for: thread),
+      delivery: delivery
     )
-    if shouldDrain {
-      Task { @MainActor [weak self] in
-        await self?.drainOpenClawSendQueue(for: threadID)
-      }
-    }
-    return true
   }
 
   public func updateAIChatRemoteThreadState(
@@ -12907,6 +13487,270 @@ public final class WorkspaceStore: ObservableObject {
       }
     }
     return true
+  }
+
+  public func mobileRemoteWorkspaceSnapshot(refreshesCanonicalState: Bool = true) async -> MobileRemoteWorkspaceSnapshot {
+    if refreshesCanonicalState {
+      await refreshAgenda(updatesStatus: false)
+      await refreshApprovals(updatesStatus: false)
+      await refreshAgentWorkflows(updatesStatus: false)
+    }
+    return currentMobileRemoteWorkspaceSnapshot()
+  }
+
+  public func setMobileRemoteAgendaStatus(itemID: String, status rawStatus: String) async throws -> MobileRemoteWorkspaceSnapshot {
+    guard let status = TodoEditStatus(rawValue: rawStatus) else {
+      throw CocoaError(
+        .validationMissingMandatoryProperty,
+        userInfo: [NSLocalizedDescriptionKey: "Choose TODO, in progress, done, or canceled."]
+      )
+    }
+    await refreshAgenda(updatesStatus: false)
+    guard let item = currentAgendaItems().first(where: { $0.id == itemID }) else {
+      return currentMobileRemoteWorkspaceSnapshot()
+    }
+    let target = HeadlineMutationTarget(item: item)
+    let newStatus = try await setTodoStatus(status, for: target)
+    optimisticallyUpdateAgendaItem(id: item.id, todo: newStatus)
+    invalidateCanonicalDocumentCache(for: item.file)
+    await refreshAgenda(updatesStatus: false)
+    return currentMobileRemoteWorkspaceSnapshot()
+  }
+
+  public func decideMobileRemoteApproval(
+    itemID: String,
+    decision: String,
+    note rawNote: String?,
+    endStatus rawEndStatus: String?
+  ) async throws -> MobileRemoteWorkspaceSnapshot {
+    await refreshApprovals(updatesStatus: false)
+    guard let item = approvalItems.first(where: { $0.id == itemID }) else {
+      return currentMobileRemoteWorkspaceSnapshot()
+    }
+    guard !isApprovalActionInProgress(item) else {
+      throw CocoaError(
+        .fileWriteUnknown,
+        userInfo: [NSLocalizedDescriptionKey: "This approval is already being updated."]
+      )
+    }
+
+    let normalizedDecision = decision.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    let note = rawNote?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let actionKind: ApprovalActionKind = normalizedDecision == "approved" ? .approve : .reject
+    beginApprovalAction(item, kind: actionKind)
+    defer { endApprovalAction(item, kind: actionKind) }
+
+    var continuationRun: AgentRunItem?
+    switch normalizedDecision {
+    case "approved":
+      if item.isRunApproval {
+        continuationRun = try await decideRunApprovalItem(item, decision: "approved")
+      } else {
+        try await approveAndAgentHandoff(HeadlineMutationTarget(
+          file: item.file,
+          line: item.line,
+          title: Org2Display.cleanInline(item.title),
+          idValue: item.idValue
+        ))
+      }
+    case "rejected":
+      guard let note, !note.isEmpty else {
+        throw CocoaError(
+          .validationMissingMandatoryProperty,
+          userInfo: [NSLocalizedDescriptionKey: "Enter a reason before rejecting this approval."]
+        )
+      }
+      if item.isRunApproval {
+        continuationRun = try await decideRunApprovalItem(item, decision: "rejected", note: note)
+      } else {
+        let endStatus = rawEndStatus.flatMap(TodoEditStatus.init(rawValue:)) ?? .canceled
+        try await rejectApproval(
+          HeadlineMutationTarget(
+            file: item.file,
+            line: item.line,
+            title: Org2Display.cleanInline(item.title),
+            idValue: item.idValue
+          ),
+          endStatus: endStatus,
+          reason: note
+        )
+      }
+    case "revised":
+      guard item.isRunApproval else {
+        throw CocoaError(
+          .featureUnsupported,
+          userInfo: [NSLocalizedDescriptionKey: "Revision requests are available for run-backed approvals."]
+        )
+      }
+      guard let note, !note.isEmpty else {
+        throw CocoaError(
+          .validationMissingMandatoryProperty,
+          userInfo: [NSLocalizedDescriptionKey: "Describe what the agent should change."]
+        )
+      }
+      continuationRun = try await decideRunApprovalItem(item, decision: "revised", note: note)
+    default:
+      throw CocoaError(
+        .validationMissingMandatoryProperty,
+        userInfo: [NSLocalizedDescriptionKey: "Choose approve, reject, or request changes."]
+      )
+    }
+
+    await refreshApprovals(updatesStatus: false)
+    if !item.isRunApproval {
+      await refreshAgenda(preserveSelection: true, updatesStatus: false)
+    }
+    if let continuationRun {
+      await continueOpenClawAfterApprovalBoundary(continuationRun)
+    }
+    return currentMobileRemoteWorkspaceSnapshot()
+  }
+
+  public func setMobileRemoteWorkflowState(
+    workflowID: String,
+    state: String
+  ) async throws -> MobileRemoteWorkspaceSnapshot {
+    await refreshAgentWorkflows(updatesStatus: false)
+    guard let workflow = agentWorkflows.first(where: { $0.id == workflowID }) else {
+      return currentMobileRemoteWorkspaceSnapshot()
+    }
+    guard ["active", "paused", "draft"].contains(state) else {
+      throw CocoaError(
+        .validationMissingMandatoryProperty,
+        userInfo: [NSLocalizedDescriptionKey: "Choose active, paused, or draft."]
+      )
+    }
+    guard let corpusRoot, !mutatingAgentWorkflowIDs.contains(workflow.id) else {
+      throw CocoaError(
+        .fileWriteUnknown,
+        userInfo: [NSLocalizedDescriptionKey: "This workflow is already being updated."]
+      )
+    }
+    mutatingAgentWorkflowIDs.insert(workflow.id)
+    defer { mutatingAgentWorkflowIDs.remove(workflow.id) }
+    let action = state == "active" ? "activate" : state == "paused" ? "pause" : "draft"
+    _ = try await cli.run(["workflow", action, workflow.id, "--dir", corpusRoot.path, "--json"])
+    await refreshAgentWorkflows(updatesStatus: false)
+    try? await syncAgentWorkflowsWithOpenClaw()
+    return currentMobileRemoteWorkspaceSnapshot()
+  }
+
+  public func runMobileRemoteWorkflow(
+    workflowID: String,
+    inputs: [String: String]
+  ) async throws -> UUID {
+    await refreshAgentWorkflows(updatesStatus: false)
+    guard let workflow = agentWorkflows.first(where: { $0.id == workflowID }) else {
+      throw CocoaError(
+        .fileNoSuchFile,
+        userInfo: [NSLocalizedDescriptionKey: "That workflow is no longer available."]
+      )
+    }
+    let missingInputs = workflow.inputs.filter { input in
+      input.required && (inputs[input.id] ?? input.default ?? "")
+        .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+    guard missingInputs.isEmpty else {
+      throw CocoaError(
+        .validationMissingMandatoryProperty,
+        userInfo: [NSLocalizedDescriptionKey: "Fill in: \(missingInputs.map(\.id).joined(separator: ", "))."]
+      )
+    }
+
+    let gateway = OpenClawGatewayClient(settings: currentOpenClawSettings(allowKeychainRead: true))
+    let prepared = try await gateway.prepareWorkflowRun(
+      workflowID: workflow.id,
+      inputs: inputs,
+      corpusID: activeCorpusIdentity?.id
+    )
+    let threadID = createAIChatRemoteThread(runtime: .openClaw)
+    guard sendAIChatRemoteMessage(prepared.prompt, threadID: threadID) else {
+      throw CocoaError(
+        .fileWriteUnknown,
+        userInfo: [NSLocalizedDescriptionKey: "The workflow thread could not be started."]
+      )
+    }
+    return threadID
+  }
+
+  private func currentMobileRemoteWorkspaceSnapshot() -> MobileRemoteWorkspaceSnapshot {
+    let agendaItems = (agenda?.overdue ?? []).flatMap { day in
+      day.items.map { mobileRemoteAgendaItem($0, date: day.date) }
+    } + (agenda?.days ?? []).flatMap { day in
+      day.items.map { mobileRemoteAgendaItem($0, date: day.date) }
+    }
+    return MobileRemoteWorkspaceSnapshot(
+      agenda: agendaItems,
+      approvals: approvalItems.map { item in
+        MobileRemoteApprovalItem(
+          id: item.id,
+          title: item.title,
+          status: item.status,
+          todo: item.todo,
+          level: item.level,
+          file: item.file,
+          line: item.line,
+          sourceID: item.idValue,
+          properties: item.properties,
+          body: item.body,
+          tags: item.tags,
+          kind: item.kind,
+          runID: item.runId,
+          approvalID: item.approvalId,
+          fingerprint: item.fingerprint,
+          action: item.action,
+          riskClass: item.riskClass,
+          requestedRole: item.requestedRole,
+          requestedFrom: item.requestedFrom,
+          requestedAt: item.requestedAt,
+          runGoal: item.runGoal,
+          runStatus: item.runStatus,
+          runDecisionEffect: item.runDecisionEffect
+        )
+      },
+      workflows: agentWorkflows.map { workflow in
+        MobileRemoteWorkflowItem(
+          id: workflow.id,
+          title: workflow.title,
+          description: workflow.description,
+          state: workflow.state,
+          riskClass: workflow.riskClass,
+          scheduleSummary: workflow.scheduleSummary,
+          file: workflow.file,
+          agentRef: workflow.agentRef,
+          goalRef: workflow.goalRef,
+          inputs: workflow.inputs.map {
+            MobileRemoteWorkflowInput(
+              id: $0.id,
+              description: $0.description,
+              required: $0.required,
+              defaultValue: $0.default
+            )
+          }
+        )
+      }
+    )
+  }
+
+  private func currentAgendaItems() -> [AgendaItem] {
+    (agenda?.overdue ?? []).flatMap(\.items) + (agenda?.days ?? []).flatMap(\.items)
+  }
+
+  private func mobileRemoteAgendaItem(_ item: AgendaItem, date: String) -> MobileRemoteAgendaItem {
+    MobileRemoteAgendaItem(
+      id: item.id,
+      title: item.headline,
+      todo: item.todo ?? "TODO",
+      file: item.file,
+      line: item.lineForEditor,
+      date: date,
+      kind: item.kind,
+      tags: item.tags,
+      body: item.body ?? "",
+      priority: item.priority,
+      time: item.time,
+      effort: item.effort
+    )
   }
 
   public func mobileRemoteFilePreview(
@@ -13134,7 +13978,10 @@ public final class WorkspaceStore: ObservableObject {
     persistOpenClawTranscript()
   }
 
-  public func sendComposedOpenClawMessage(text rawText: String) {
+  public func sendComposedOpenClawMessage(
+    text rawText: String,
+    delivery: AIChatMessageDeliveryPreference = .automatic
+  ) {
     let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
     let attachments = openClawPendingAttachments
     guard !text.isEmpty || !attachments.isEmpty else { return }
@@ -13142,10 +13989,12 @@ public final class WorkspaceStore: ObservableObject {
     guard let threadID = selectedOpenClawChatThreadID else { return }
     clearOpenClawDraftForSelectedThread()
     openClawPendingAttachments = []
-    guard enqueueOpenClawMessage(text, attachments: attachments, in: threadID) else { return }
-    Task { @MainActor [weak self] in
-      await self?.drainOpenClawSendQueue(for: threadID)
-    }
+    submitAIChatMessage(
+      text,
+      attachments: attachments,
+      in: threadID,
+      delivery: delivery
+    )
   }
 
   public func submitOpenClawComposerInput(text rawText: String) {
@@ -13373,34 +14222,237 @@ public final class WorkspaceStore: ObservableObject {
     return output.isEmpty ? (preview ? "Publish preview passed." : "Publish completed.") : String(output.prefix(12_000))
   }
 
-  private func sendOpenClawMessage(_ text: String, attachments: [OpenClawChatAttachment]) async {
+  private func sendOpenClawMessage(
+    _ text: String,
+    attachments: [OpenClawChatAttachment],
+    workspaceContext: OpenClawWorkspaceContext? = nil
+  ) async {
     ensureOpenClawChatThread()
     guard let threadID = selectedOpenClawChatThreadID else { return }
-    guard enqueueOpenClawMessage(text, attachments: attachments, in: threadID) else { return }
+    if isAIChatThreadRunning(threadID), canSteerAIChatThread(threadID) {
+      submitAIChatMessage(text, attachments: attachments, in: threadID)
+      return
+    }
+    let deliveryKind: OpenClawChatMessage.DeliveryKind = isAIChatThreadRunning(threadID)
+      ? .followUp
+      : .turn
+    guard enqueueOpenClawMessage(
+      text,
+      attachments: attachments,
+      in: threadID,
+      workspaceContext: workspaceContext,
+      deliveryKind: deliveryKind
+    ) else { return }
     await drainOpenClawSendQueue(for: threadID)
+  }
+
+  @discardableResult
+  private func submitAIChatMessage(
+    _ text: String,
+    attachments: [OpenClawChatAttachment],
+    in threadID: UUID,
+    workspaceContext: OpenClawWorkspaceContext? = nil,
+    delivery: AIChatMessageDeliveryPreference = .automatic
+  ) -> Bool {
+    let shouldTrySteering = delivery != .followUp
+      && isAIChatThreadRunning(threadID)
+      && canSteerAIChatThread(threadID)
+    if shouldTrySteering {
+      let userMessage = OpenClawChatMessage(
+        role: .user,
+        content: text,
+        attachments: attachments,
+        deliveryStatus: .sending,
+        deliveryKind: .steer
+      )
+      var messages = openClawMessages(for: threadID)
+      messages.append(userMessage)
+      replaceOpenClawMessages(messages, for: threadID, shouldPersist: true)
+      if selectedOpenClawChatThreadID == threadID {
+        openClawStatusText = "Steering \(openClawChatThreads.first(where: { $0.id == threadID })?.runtime.title ?? "agent")…"
+      }
+      Task { @MainActor [weak self] in
+        await self?.deliverAIChatSteer(
+          userMessage,
+          in: threadID
+        )
+      }
+      return true
+    }
+
+    let kind: OpenClawChatMessage.DeliveryKind = isAIChatThreadRunning(threadID)
+      ? .followUp
+      : .turn
+    let shouldDrain = enqueueOpenClawMessage(
+      text,
+      attachments: attachments,
+      in: threadID,
+      workspaceContext: workspaceContext,
+      deliveryKind: kind
+    )
+    if shouldDrain {
+      Task { @MainActor [weak self] in
+        await self?.drainOpenClawSendQueue(for: threadID)
+      }
+    }
+    return true
+  }
+
+  private func canSteerAIChatThread(_ threadID: UUID) -> Bool {
+    guard let thread = openClawChatThreads.first(where: { $0.id == threadID }) else {
+      return false
+    }
+    if aiChatSteerHandlerForTesting != nil { return true }
+    switch thread.runtime {
+    case .codex:
+      return codexActiveTurnsByThreadID[threadID] != nil && codexAppServerClient != nil
+    case .openClaw:
+      return openClawGatewayClientsByThreadID[threadID] != nil
+        && openClawActiveRunIDByThreadID[threadID] != nil
+    }
+  }
+
+  private func deliverAIChatSteer(
+    _ message: OpenClawChatMessage,
+    in threadID: UUID
+  ) async {
+    guard let thread = openClawChatThreads.first(where: { $0.id == threadID }) else { return }
+    do {
+      if let aiChatSteerHandlerForTesting {
+        try await aiChatSteerHandlerForTesting(
+          thread.runtime,
+          threadID,
+          message.content,
+          message.attachments
+        )
+      } else {
+        switch thread.runtime {
+        case .codex:
+          guard let active = codexActiveTurnsByThreadID[threadID],
+                let codexAppServerClient
+          else {
+            throw CodexAppServerError.server(
+              code: nil,
+              message: "There is no active turn to steer."
+            )
+          }
+          try await codexAppServerClient.steer(
+            threadID: active.runtimeThreadID,
+            expectedTurnID: active.turnID,
+            message: message.content,
+            attachments: message.attachments
+          )
+        case .openClaw:
+          guard let gateway = openClawGatewayClientsByThreadID[threadID] else {
+            throw OpenClawGatewayError.protocolFailure("there is no live OpenClaw run to steer")
+          }
+          try await gateway.steer(
+            message: Self.expandingOpenClawAgentCommand(message).content,
+            attachments: message.attachments,
+            idempotencyKey: message.id.uuidString.lowercased()
+          )
+        }
+      }
+      replaceOpenClawDeliveryStatus(for: message.id, in: threadID, with: .sent)
+      if selectedOpenClawChatThreadID == threadID {
+        openClawStatusText = "Guidance sent to \(thread.runtime.title)"
+      }
+    } catch {
+      if shouldQueueAIChatSteerAsFollowUp(after: error, runtime: thread.runtime) {
+        enqueueExistingAIChatMessageAsFollowUp(message.id, in: threadID)
+        if selectedOpenClawChatThreadID == threadID {
+          openClawStatusText = "The run finished; queued as a follow-up"
+        }
+        if !drainingOpenClawThreadIDs.contains(threadID) {
+          await drainOpenClawSendQueue(for: threadID)
+        }
+        return
+      }
+      replaceOpenClawSendFailure(
+        for: message.id,
+        in: threadID,
+        with: "Could not steer \(thread.runtime.title): \(error.localizedDescription)"
+      )
+      if selectedOpenClawChatThreadID == threadID {
+        openClawStatusText = "Could not steer \(thread.runtime.title)"
+      }
+    }
+  }
+
+  private func shouldQueueAIChatSteerAsFollowUp(
+    after error: Error,
+    runtime: AIChatRuntime
+  ) -> Bool {
+    switch runtime {
+    case .codex:
+      guard let error = error as? CodexAppServerError else { return false }
+      switch error {
+      case .server(_, let message):
+        return message.localizedCaseInsensitiveContains("active turn")
+          || message.localizedCaseInsensitiveContains("in progress")
+      case .invalidResponse(let message):
+        return message.localizedCaseInsensitiveContains("turn/steer")
+      case .executableNotFound, .launchFailed, .disconnected, .notAuthenticated,
+           .turnFailed, .turnInterrupted:
+        return false
+      }
+    case .openClaw:
+      guard let error = error as? OpenClawGatewayError else { return false }
+      let message: String
+      switch error {
+      case .protocolFailure(let detail), .gateway(_, let detail):
+        message = detail
+      case .invalidEndpoint, .connection, .sessionConfigurationRejected,
+           .emptyResponse, .aborted, .acceptedRunRecovery:
+        return false
+      }
+      return message.localizedCaseInsensitiveContains("active run")
+        || message.localizedCaseInsensitiveContains("live run")
+        || message.localizedCaseInsensitiveContains("in progress")
+    }
+  }
+
+  private func enqueueExistingAIChatMessageAsFollowUp(_ messageID: UUID, in threadID: UUID) {
+    var messages = openClawMessages(for: threadID)
+    guard let index = messages.firstIndex(where: { $0.id == messageID }) else { return }
+    let message = messages[index]
+    messages[index] = OpenClawChatMessage(
+      id: message.id,
+      role: message.role,
+      content: message.content,
+      attachments: message.attachments,
+      createdAt: message.createdAt,
+      changeSummary: message.changeSummary,
+      responseTrace: message.responseTrace,
+      deliveryStatus: .sending,
+      deliveryKind: .followUp
+    )
+    replaceOpenClawMessages(messages, for: threadID, shouldPersist: true)
+    enqueueOpenClawUserMessage(messageID, in: threadID)
   }
 
   private func enqueueOpenClawMessage(
     _ text: String,
     attachments: [OpenClawChatAttachment],
     in threadID: UUID,
-    workspaceContext: OpenClawWorkspaceContext? = nil
+    workspaceContext: OpenClawWorkspaceContext? = nil,
+    deliveryKind: OpenClawChatMessage.DeliveryKind = .turn
   ) -> Bool {
     guard let thread = openClawChatThreads.first(where: { $0.id == threadID }) else { return false }
+    stoppedOpenClawThreadIDs.remove(threadID)
     if aiChatSendOriginsByThreadID[threadID] == nil {
       aiChatSendOriginsByThreadID[threadID] = AIChatSendOrigin(
         corpusRoot: corpusRoot?.standardizedFileURL,
         transcriptURL: openClawTranscriptURL.standardizedFileURL,
-        workspaceContext: workspaceContext ?? currentOpenClawWorkspaceContext(
-          threadContinuation: aiChatThreadContinuation(for: thread)
-        )
+        workspaceContext: workspaceContext ?? threadScopedOpenClawWorkspaceContext(for: thread)
       )
     }
     let userMessage = OpenClawChatMessage(
       role: .user,
       content: text,
       attachments: attachments,
-      deliveryStatus: .sending
+      deliveryStatus: .sending,
+      deliveryKind: deliveryKind
     )
     var messages = openClawMessages(for: threadID)
     messages.append(userMessage)
@@ -13419,10 +14471,14 @@ public final class WorkspaceStore: ObservableObject {
     if let existingOrigin = aiChatSendOriginsByThreadID[threadID] {
       sendOrigin = existingOrigin
     } else {
+      guard let thread = openClawChatThread(
+        threadID,
+        transcriptURL: openClawTranscriptURL.standardizedFileURL
+      ) else { return }
       let currentOrigin = AIChatSendOrigin(
         corpusRoot: corpusRoot?.standardizedFileURL,
         transcriptURL: openClawTranscriptURL.standardizedFileURL,
-        workspaceContext: currentOpenClawWorkspaceContext()
+        workspaceContext: threadScopedOpenClawWorkspaceContext(for: thread)
       )
       aiChatSendOriginsByThreadID[threadID] = currentOrigin
       sendOrigin = currentOrigin
@@ -13520,6 +14576,13 @@ public final class WorkspaceStore: ObservableObject {
             sendOrigin: sendOrigin
           )
         }
+        guard openClawPendingUserMessageIDs(for: threadID).contains(userMessageID) else {
+          // Stop/dequeue may race the final frame. Once the local request was
+          // canceled, a late reply must not put the thread back into a live
+          // presentation or append an answer to the stopped turn.
+          clearOpenClawCompletedRunPresentation(for: threadID)
+          return
+        }
         codexActiveTurnsByThreadID.removeValue(forKey: threadID)
         let assistantMessageID = insertOpenClawReply(
           reply,
@@ -13604,6 +14667,13 @@ public final class WorkspaceStore: ObservableObject {
           openClawLocalEditCorpusRootsByTurnID.removeValue(forKey: localEditTurnID)
           aiChatReadCorpusRootsByTurnID.removeValue(forKey: localEditTurnID)
         }
+        if Self.openClawRunWasStopped(after: error) {
+          markOpenClawRunStopped(
+            in: threadID,
+            transcriptURL: sendOrigin.transcriptURL
+          )
+          return
+        }
         let failureText = Self.openClawSendFailureText(from: error)
         if isActiveAIChatSendOrigin(sendOrigin) {
           openClawStatusText = failureText
@@ -13644,10 +14714,14 @@ public final class WorkspaceStore: ObservableObject {
     if let existingOrigin = aiChatSendOriginsByThreadID[threadID] {
       sendOrigin = existingOrigin
     } else {
+      guard let thread = openClawChatThread(
+        threadID,
+        transcriptURL: openClawTranscriptURL.standardizedFileURL
+      ) else { return }
       let currentOrigin = AIChatSendOrigin(
         corpusRoot: corpusRoot?.standardizedFileURL,
         transcriptURL: openClawTranscriptURL.standardizedFileURL,
-        workspaceContext: currentOpenClawWorkspaceContext()
+        workspaceContext: threadScopedOpenClawWorkspaceContext(for: thread)
       )
       aiChatSendOriginsByThreadID[threadID] = currentOrigin
       sendOrigin = currentOrigin
@@ -13700,38 +14774,56 @@ public final class WorkspaceStore: ObservableObject {
           model: thread.model,
           reasoningEffort: thread.reasoningEffort,
           idempotencyKey: pendingTurn.runID,
-          requestStartedAt: pendingTurn.startedAt
+          requestStartedAt: pendingTurn.startedAt,
+          reconnectingAcceptedRun: true
         ) { [weak self] event in
           await self?.handleOpenClawGatewayEvent(event, threadID: threadID)
         }
       }
-      _ = insertOpenClawReply(
-        reply,
-        after: pendingTurn.userMessageID,
-        in: threadID,
-        transcriptURL: sendOrigin.transcriptURL,
-        changeSummary: nil
-      )
-      removeFirstPendingOpenClawUserMessage(in: threadID)
-      clearOpenClawCompletedRunPresentation(for: threadID)
-      if isActiveAIChatSendOrigin(sendOrigin) {
-        openClawStatusText = openClawPendingUserMessageIDs(for: threadID).isEmpty
-          ? "OpenClaw reconnected and replied"
-          : openClawQueuedStatusText()
-      }
-      completed = true
-      if isActiveAIChatSendOrigin(sendOrigin) {
-        await refreshSelectedDetailFromDisk()
+      let stillPending = openClawChatThread(
+        threadID,
+        transcriptURL: sendOrigin.transcriptURL
+      )?.pendingTurn?.runID == pendingTurn.runID
+      if stillPending {
+        _ = insertOpenClawReply(
+          reply,
+          after: pendingTurn.userMessageID,
+          in: threadID,
+          transcriptURL: sendOrigin.transcriptURL,
+          changeSummary: nil
+        )
+        removeFirstPendingOpenClawUserMessage(in: threadID)
+        clearOpenClawCompletedRunPresentation(for: threadID)
+        if isActiveAIChatSendOrigin(sendOrigin) {
+          openClawStatusText = openClawPendingUserMessageIDs(for: threadID).isEmpty
+            ? "OpenClaw reconnected and replied"
+            : openClawQueuedStatusText()
+        }
+        completed = true
+        if isActiveAIChatSendOrigin(sendOrigin) {
+          await refreshSelectedDetailFromDisk()
+        }
       }
     } catch {
-      openClawGatewayStateByThreadID[threadID] = .reconnecting
-      openClawLastEventAtByThreadID[threadID] = Date()
-      openClawGatewayDetailByThreadID[threadID] =
-        "This turn is saved and will reconnect without sending it twice."
-      if isActiveAIChatSendOrigin(sendOrigin) {
-        openClawStatusText = "OpenClaw will reconnect to this saved turn"
+      let pendingTurnStillExists = openClawChatThread(
+        threadID,
+        transcriptURL: sendOrigin.transcriptURL
+      )?.pendingTurn?.runID == pendingTurn.runID
+      if Self.openClawRunWasStopped(after: error) || !pendingTurnStillExists {
+        markOpenClawRunStopped(
+          in: threadID,
+          transcriptURL: sendOrigin.transcriptURL
+        )
+      } else {
+        openClawGatewayStateByThreadID[threadID] = .reconnecting
+        openClawLastEventAtByThreadID[threadID] = Date()
+        openClawGatewayDetailByThreadID[threadID] =
+          "This turn is saved and will reconnect without sending it twice."
+        if isActiveAIChatSendOrigin(sendOrigin) {
+          openClawStatusText = "OpenClaw will reconnect to this saved turn"
+        }
+        scheduleOpenClawPendingTurnRecovery()
       }
-      scheduleOpenClawPendingTurnRecovery()
     }
 
     openClawGatewayClientsByThreadID.removeValue(forKey: threadID)
@@ -13894,6 +14986,25 @@ public final class WorkspaceStore: ObservableObject {
       }
     )
     codexAppServerClient = client
+    return client
+  }
+
+  private func externalCodexClient() -> CodexAppServerClient {
+    if let externalCodexAppServerClient {
+      return externalCodexAppServerClient
+    }
+    // Keep read-only history browsing independent from an active Org2 Codex
+    // turn. Some app-server versions serialize thread reads behind live turns.
+    let client = CodexAppServerClient(
+      eventHandler: { _ in },
+      dynamicToolHandler: { _ in
+        CodexDynamicToolResult(
+          success: false,
+          text: "External thread browsing is read-only."
+        )
+      }
+    )
+    externalCodexAppServerClient = client
     return client
   }
 
@@ -14212,6 +15323,12 @@ public final class WorkspaceStore: ObservableObject {
     return false
   }
 
+  nonisolated private static func openClawRunWasStopped(after error: Error) -> Bool {
+    guard let gatewayError = error as? OpenClawGatewayError else { return false }
+    if case .aborted = gatewayError { return true }
+    return false
+  }
+
   nonisolated static func shouldRetryAIChatWithDefaults(
     after error: Error,
     model: String?,
@@ -14291,6 +15408,12 @@ public final class WorkspaceStore: ObservableObject {
     _ event: OpenClawGatewayRunEvent,
     threadID: UUID
   ) {
+    guard !stoppedOpenClawThreadIDs.contains(threadID) else {
+      // Stop is intentionally optimistic: the pending turn and queue are
+      // cleared before chat.abort finishes. Ignore any connection, activity,
+      // or text event already in flight for that canceled turn.
+      return
+    }
     openClawLastEventAtByThreadID[threadID] = Date()
     switch event {
     case .connection(let state, let detail):
@@ -14480,7 +15603,13 @@ public final class WorkspaceStore: ObservableObject {
       return assistantMessage.id
     }
     messages[index] = messages[index].replacingDeliveryStatus(.sent, sendFailure: nil)
-    messages.insert(assistantMessage, at: messages.index(after: index))
+    var insertionIndex = messages.index(after: index)
+    while insertionIndex < messages.endIndex,
+          messages[insertionIndex].role == .user,
+          messages[insertionIndex].deliveryKind == .steer {
+      insertionIndex = messages.index(after: insertionIndex)
+    }
+    messages.insert(assistantMessage, at: insertionIndex)
     updateOpenClawChatThread(
       threadID,
       messages: messages,
@@ -14521,6 +15650,13 @@ public final class WorkspaceStore: ObservableObject {
     guard !openClawPendingUserMessageIDs(for: threadID).contains(messageID) else { return }
     clearOpenClawSendFailure(for: messageID, in: threadID)
     replaceOpenClawDeliveryStatus(for: messageID, in: threadID, with: .sending)
+    if message.deliveryKind == .steer,
+       isAIChatThreadRunning(threadID),
+       canSteerAIChatThread(threadID),
+       let retryMessage = openClawMessages(for: threadID).first(where: { $0.id == messageID }) {
+      await deliverAIChatSteer(retryMessage, in: threadID)
+      return
+    }
     enqueueOpenClawUserMessage(messageID, in: threadID)
     if drainingOpenClawThreadIDs.contains(threadID) {
       openClawStatusText = openClawQueuedStatusText()
@@ -14627,6 +15763,71 @@ public final class WorkspaceStore: ObservableObject {
         with: failureText
       )
     }
+  }
+
+  private func markOpenClawRunStopped(
+    in threadID: UUID,
+    transcriptURL: URL? = nil
+  ) {
+    let targetTranscriptURL = transcriptURL ?? openClawTranscriptURL
+    stoppedOpenClawThreadIDs.insert(threadID)
+    let pendingTurn = openClawChatThread(
+      threadID,
+      transcriptURL: targetTranscriptURL
+    )?.pendingTurn
+    var stoppedMessageIDs = Set(openClawPendingUserMessageIDs(for: threadID))
+    if let activeMessageID = activeOpenClawUserMessageIDByThreadID[threadID] {
+      stoppedMessageIDs.insert(activeMessageID)
+    }
+    if let pendingUserMessageID = pendingTurn?.userMessageID {
+      stoppedMessageIDs.insert(pendingUserMessageID)
+    }
+
+    var messages = openClawMessages(for: threadID, transcriptURL: targetTranscriptURL)
+    var changedMessages = false
+    for index in messages.indices where stoppedMessageIDs.contains(messages[index].id) {
+      let message = messages[index]
+      guard message.role == .user,
+            message.deliveryStatus == .sending
+              || message.sendFailure != Self.openClawStoppedSendFailureText
+      else {
+        continue
+      }
+      messages[index] = message.replacingDeliveryStatus(
+        .interrupted,
+        sendFailure: Self.openClawStoppedSendFailureText
+      )
+      changedMessages = true
+    }
+    if changedMessages {
+      updateOpenClawChatThread(
+        threadID,
+        messages: messages,
+        transcriptURL: targetTranscriptURL,
+        shouldPersist: true
+      )
+    }
+    if let pendingTurn {
+      clearOpenClawPendingTurn(
+        pendingTurn.runID,
+        in: threadID,
+        transcriptURL: targetTranscriptURL,
+        shouldPersist: true
+      )
+    }
+
+    removeAllPendingOpenClawUserMessages(in: threadID)
+    activeOpenClawUserMessageIDByThreadID.removeValue(forKey: threadID)
+    openClawRequestStartedAtByThreadID.removeValue(forKey: threadID)
+    clearOpenClawCompletedRunPresentation(for: threadID)
+    openClawGatewayStateByThreadID[threadID] = .disconnected
+    openClawGatewayDetailByThreadID[threadID] =
+      "Stopped by you. This turn will not reconnect."
+    if selectedOpenClawChatThreadID == threadID,
+       isActiveAIChatTranscript(targetTranscriptURL) {
+      openClawStatusText = "OpenClaw stopped"
+    }
+    syncSelectedOpenClawSendState()
   }
 
   private func replaceOpenClawSendFailure(
@@ -15200,6 +16401,9 @@ public final class WorkspaceStore: ObservableObject {
       await refreshCorpusFiles()
     case .search:
       if !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        if dirtyWorkspaceSurfaces.contains(.approvals) {
+          await refreshAgentRuns()
+        }
         await runSearch()
       }
     case .meetings:
@@ -15208,6 +16412,8 @@ public final class WorkspaceStore: ObservableObject {
       await refreshSourceConnections()
     case .openClaw:
       await refreshOpenClawThreads(showsLoading: false)
+    case .externalThreads:
+      await refreshExternalThreads()
     }
     markWorkspaceSurfaceCleanIfUnchanged(surface, generation: dirtyGeneration)
   }
@@ -15234,6 +16440,8 @@ public final class WorkspaceStore: ObservableObject {
       isLoadingSources
     case .openClaw:
       isRefreshingOpenClawThreads
+    case .externalThreads:
+      isRefreshingExternalThreads
     }
   }
 
@@ -15282,12 +16490,12 @@ public final class WorkspaceStore: ObservableObject {
         guard !Task.isCancelled else { return }
         guard generation == self.runReviewFileEventGeneration else { continue }
         guard self.isWorkspaceRealtimeRefreshActive,
-              self.selectedSurface == .approvals else {
+              self.selectedSurface == .approvals || self.selectedSurface == .search else {
           self.runReviewFileEventRefreshTask = nil
           return
         }
 
-        await self.refreshWorkspaceSurfaceIfDirty(.approvals)
+        await self.refreshWorkspaceSurfaceIfDirty(self.selectedSurface)
         if generation == self.runReviewFileEventGeneration {
           self.runReviewFileEventRefreshTask = nil
           return
@@ -21676,6 +22884,22 @@ public final class WorkspaceStore: ObservableObject {
     )
   }
 
+  /// A conversational turn is scoped to the Org2 chat thread that owns it.
+  /// The detail pane can continue showing a file, run, or approval while the
+  /// user chats, but that global UI selection must not silently become context
+  /// for an established (or unrelated) conversation. Explicit "Ask AI" and
+  /// multi-selection context is carried in the user message itself.
+  private func threadScopedOpenClawWorkspaceContext(
+    for thread: OpenClawChatThread,
+    localEditTurnID: String? = nil
+  ) -> OpenClawWorkspaceContext {
+    currentOpenClawWorkspaceContext(
+      localEditTurnID: localEditTurnID,
+      includesNavigationContext: false,
+      threadContinuation: aiChatThreadContinuation(for: thread)
+    )
+  }
+
   private func aiChatThreadContinuation(
     for thread: OpenClawChatThread
   ) -> AIChatThreadContinuation {
@@ -21715,7 +22939,11 @@ public final class WorkspaceStore: ObservableObject {
     if let resource = thread.resource {
       appendReference(OpenClawFileReference(path: resource.file, line: resource.line))
     }
-    for message in thread.messages.reversed() where references.count < 12 {
+    // Only a user's explicit references establish durable thread context.
+    // Assistant citations are useful in the transcript, but treating them as
+    // attachments lets one mistaken answer contaminate every later turn.
+    for message in thread.messages.reversed()
+      where message.role == .user && references.count < 12 {
       for reference in OpenClawFileReference.extract(from: message.content, limit: 12) {
         appendReference(reference)
       }
@@ -27043,11 +28271,12 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
   case meetings
   case sources
   case openClaw
+  case externalThreads
 
   public var id: String { rawValue }
 
   public static var sidebarCases: [WorkspaceSurface] {
-    [.home, .agenda, .files, .approvals, .meetings, .sources]
+    [.home, .agenda, .files, .approvals, .meetings, .sources, .externalThreads]
   }
 
   public var title: String {
@@ -27060,6 +28289,7 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
     case .meetings: "Meetings"
     case .sources: "Sources"
     case .openClaw: "AI Chat"
+    case .externalThreads: "External Threads"
     }
   }
 
@@ -27073,6 +28303,7 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
     case .meetings: "mic"
     case .sources: "arrow.triangle.2.circlepath.circle"
     case .openClaw: "sparkles"
+    case .externalThreads: "rectangle.stack.badge.person.crop"
     }
   }
 
@@ -27086,6 +28317,7 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
     case .meetings: "⌘5/⌘M"
     case .sources: "⌘0"
     case .openClaw: "⌘6"
+    case .externalThreads: ""
     }
   }
 }
@@ -27120,7 +28352,7 @@ public enum WorkspaceSearchMode: String, CaseIterable, Identifiable, Sendable {
   public var helpText: String {
     switch self {
     case .text:
-      "Search TODOs, files, chats, pages, entries, and corpus text."
+      "Search TODOs, files, chats, approvals, runs, workflows, goals, agents, pages, entries, and corpus text."
     case .nodes:
       "Live search over the local node index, including titles, aliases, IDs, and file paths."
     }

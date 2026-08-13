@@ -1844,17 +1844,32 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       context.coordinator.recordKnownText(editorText, utf16Length: currentUTF16Length)
     }
     var appliedProgrammaticText = false
+    var focusedVisibleOriginBeforeProgrammaticText: NSPoint?
+    var preferredSelectionAfterProgrammaticText: NSRange?
     if Self.shouldApplyProgrammaticText(
       editorText: editorText,
       boundText: text,
       hasPendingLocalText: context.coordinator.hasPendingTextPublishing(for: editorText)
     ) {
+      let wasFirstResponder = textView.window?.firstResponder === textView
+      if wasFirstResponder {
+        focusedVisibleOriginBeforeProgrammaticText = Coordinator.visibleOrigin(of: textView)
+      }
+      preferredSelectionAfterProgrammaticText = Coordinator.preferredSelectionAfterProgrammaticTextUpdate(
+        requestedSelection: selection?.wrappedValue,
+        currentSelection: textView.selectedRange(),
+        isFirstResponder: wasFirstResponder,
+        updatedUTF16Length: OrgSyntaxHighlighter.utf16Length(of: text)
+      )
       context.coordinator.cancelDeferredHighlighting()
       context.coordinator.cancelDeferredTextPublishing()
       context.coordinator.isApplyingProgrammaticChange = true
       textView.string = text
       context.coordinator.isApplyingProgrammaticChange = false
       currentUTF16Length = textView.textStorage?.length
+      if let preferredSelectionAfterProgrammaticText {
+        textView.setSelectedRange(preferredSelectionAfterProgrammaticText)
+      }
       context.coordinator.recordKnownText(text, utf16Length: currentUTF16Length)
       context.coordinator.invalidateHighlighting()
       context.coordinator.clearSemanticState()
@@ -1864,7 +1879,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     }
 
     if let selection {
-      let requestedSelection = Self.clampedRange(
+      let requestedSelection = preferredSelectionAfterProgrammaticText ?? Self.clampedRange(
         selection.wrappedValue,
         utf16Length: currentUTF16Length ?? OrgSyntaxHighlighter.utf16Length(of: editorText)
       )
@@ -1875,9 +1890,11 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
           currentSelection: currentSelection,
           isFirstResponder: textView.window?.firstResponder === textView,
           didApplyProgrammaticText: appliedProgrammaticText
-         ) {
+        ) {
         textView.setSelectedRange(requestedSelection)
-        textView.scrollRangeToVisible(requestedSelection)
+        if focusedVisibleOriginBeforeProgrammaticText == nil {
+          textView.scrollRangeToVisible(requestedSelection)
+        }
       }
     }
     context.coordinator.applyFocusRequestIfNeeded(to: textView, enabled: focusOnAppear)
@@ -1885,6 +1902,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     if appliedProgrammaticText || !context.coordinator.hasDeferredHighlighting(for: editorText) {
       context.coordinator.applyHighlightingIfNeeded(to: textView, currentText: editorText)
     }
+    Coordinator.restoreVisibleOrigin(focusedVisibleOriginBeforeProgrammaticText, of: textView)
     context.coordinator.performRequestedCommandIfNeeded(commandRequest, in: textView)
     context.coordinator.publishContentHeight(for: textView)
   }
@@ -2067,7 +2085,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       unfoldIfSelectionEntersHiddenText(selectedRange, in: textView)
       scheduleViewportSourceLinePublishing(for: textView)
       guard shouldReadTextForSelectionPublishing(selectedRange) else { return }
-      publishSelectionIfNeeded(selectedRange, in: textView.string)
+      publishSelectionIfNeeded(selectedRange, from: textView)
     }
 
     func textView(
@@ -3153,6 +3171,32 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       selection.wrappedValue = selectedRange
     }
 
+    private func publishSelectionIfNeeded(_ selectedRange: NSRange, from textView: NSTextView) {
+      guard let selection = parent.selection,
+            selection.wrappedValue != selectedRange
+      else {
+        return
+      }
+
+      // A caret-only move does not need the buffer contents. Publishing it
+      // after the existing debounce keeps restoration accurate without
+      // copying or scanning a large file on every arrow key or click.
+      if selectedRange.length == 0, selection.wrappedValue.length == 0 {
+        if parent.caretPublishingDelayMilliseconds > 0 {
+          scheduleDeferredCaretPublishing(
+            selectedRange,
+            milliseconds: parent.caretPublishingDelayMilliseconds
+          )
+        } else {
+          cancelDeferredCaretPublishing()
+          selection.wrappedValue = selectedRange
+        }
+        return
+      }
+
+      publishSelectionIfNeeded(selectedRange, in: textView.string)
+    }
+
     private func scheduleDeferredCaretPublishing(_ range: NSRange, milliseconds: Int) {
       cancelDeferredCaretPublishing()
       deferredCaretPublishGeneration += 1
@@ -3256,6 +3300,33 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
         return true
       }
       return requestedSelection.length > 0 || currentSelection.length > 0
+    }
+
+    static func preferredSelectionAfterProgrammaticTextUpdate(
+      requestedSelection: NSRange?,
+      currentSelection: NSRange,
+      isFirstResponder: Bool,
+      updatedUTF16Length: Int
+    ) -> NSRange? {
+      let current = OrgSyntaxTextEditor.clampedRange(
+        currentSelection,
+        utf16Length: updatedUTF16Length
+      )
+      guard let requestedSelection else {
+        return isFirstResponder ? current : nil
+      }
+      let requested = OrgSyntaxTextEditor.clampedRange(
+        requestedSelection,
+        utf16Length: updatedUTF16Length
+      )
+      guard isFirstResponder,
+            requested.length == 0,
+            current.length == 0,
+            abs(requested.location - current.location) > selectionInlineSyntaxRadius
+      else {
+        return requested
+      }
+      return current
     }
 
     static func shouldOfferDeleteBackwardCommand(selectedRange: NSRange) -> Bool {
