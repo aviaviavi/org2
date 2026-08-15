@@ -8,7 +8,8 @@ import { fileURLToPath } from "node:url";
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const packageDir = join(repoRoot, "apps", "macos", "Org2Workspace");
 const corpusRoot = join(repoRoot, "examples", "macos-workspace-demo");
-const renderCorpusRoot = "/tmp/org2-macos-workspace-demo";
+const renderCorpusContainer = "/tmp/org2-macos-workspace-demo";
+const renderCorpusRoot = join(renderCorpusContainer, "Org2 Demo");
 const screenshotDir = join(repoRoot, "docs", "site", "assets", "screenshots");
 
 const scenarios = [
@@ -33,8 +34,8 @@ const scenarios = [
     fileName: "macos-workspace-data.png",
   },
   {
-    mode: "openclaw",
-    fileName: "macos-workspace-openclaw.png",
+    mode: "ai-room",
+    fileName: "macos-workspace-ai-room.png",
   },
   {
     mode: "meetings",
@@ -86,7 +87,8 @@ function main() {
   }
 
   mkdirSync(screenshotDir, { recursive: true });
-  rmSync(renderCorpusRoot, { recursive: true, force: true });
+  rmSync(renderCorpusContainer, { recursive: true, force: true });
+  mkdirSync(renderCorpusContainer, { recursive: true });
   cpSync(corpusRoot, renderCorpusRoot, { recursive: true });
   run("npm", ["run", "build"]);
 

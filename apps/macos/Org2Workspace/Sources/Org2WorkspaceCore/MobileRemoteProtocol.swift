@@ -24,19 +24,36 @@ public struct MobileRemoteServerStatus: Codable, Hashable, Sendable {
   public let corpusName: String?
   public let threadCount: Int
   public let runningThreadCount: Int
+  public let aiChatDestinations: [MobileRemoteAIDestination]?
 
   public init(
     protocolVersion: Int = MobileRemoteProtocol.version,
     serverName: String,
     corpusName: String?,
     threadCount: Int,
-    runningThreadCount: Int
+    runningThreadCount: Int,
+    aiChatDestinations: [MobileRemoteAIDestination]? = nil
   ) {
     self.protocolVersion = protocolVersion
     self.serverName = serverName
     self.corpusName = corpusName
     self.threadCount = threadCount
     self.runningThreadCount = runningThreadCount
+    self.aiChatDestinations = aiChatDestinations
+  }
+}
+
+public struct MobileRemoteAIDestination: Codable, Hashable, Identifiable, Sendable {
+  public let id: String
+  public let name: String
+  public let mention: String
+  public let runtime: String
+
+  public init(id: String, name: String, mention: String, runtime: String) {
+    self.id = id
+    self.name = name
+    self.mention = mention
+    self.runtime = runtime
   }
 }
 
@@ -71,9 +88,11 @@ public struct MobileRemotePairResponse: Codable, Hashable, Sendable {
 
 public struct MobileRemoteCreateThreadRequest: Codable, Hashable, Sendable {
   public let runtime: String
+  public let destinationID: String?
 
-  public init(runtime: String) {
+  public init(runtime: String, destinationID: String? = nil) {
     self.runtime = runtime
+    self.destinationID = destinationID
   }
 }
 
@@ -225,6 +244,9 @@ public struct MobileRemoteThreadSummary: Codable, Hashable, Identifiable, Sendab
   public let id: UUID
   public let title: String
   public let runtime: String
+  public let destinationID: String?
+  public let destinationName: String?
+  public let isSharedRoom: Bool
   public let model: String?
   public let updatedAt: Date
   public let isSettled: Bool
@@ -239,6 +261,9 @@ public struct MobileRemoteThreadSummary: Codable, Hashable, Identifiable, Sendab
     id: UUID,
     title: String,
     runtime: String,
+    destinationID: String? = nil,
+    destinationName: String? = nil,
+    isSharedRoom: Bool = false,
     model: String?,
     updatedAt: Date,
     isSettled: Bool,
@@ -252,6 +277,9 @@ public struct MobileRemoteThreadSummary: Codable, Hashable, Identifiable, Sendab
     self.id = id
     self.title = title
     self.runtime = runtime
+    self.destinationID = destinationID
+    self.destinationName = destinationName
+    self.isSharedRoom = isSharedRoom
     self.model = model
     self.updatedAt = updatedAt
     self.isSettled = isSettled
@@ -301,6 +329,13 @@ public struct MobileRemoteChatMessage: Codable, Hashable, Identifiable, Sendable
   public let deliveryStatus: String
   public let deliveryKind: String?
   public let sendFailure: String?
+  public let authorRuntime: String?
+  public let authorDestinationID: String?
+  public let authorDestinationName: String?
+  public let audience: String?
+  public let audienceDestinationNames: [String]?
+  public let isRoomDispatchCopy: Bool
+  public let roomRoundID: UUID?
 
   public init(
     id: UUID,
@@ -310,7 +345,14 @@ public struct MobileRemoteChatMessage: Codable, Hashable, Identifiable, Sendable
     createdAt: Date,
     deliveryStatus: String,
     deliveryKind: String? = nil,
-    sendFailure: String?
+    sendFailure: String?,
+    authorRuntime: String? = nil,
+    authorDestinationID: String? = nil,
+    authorDestinationName: String? = nil,
+    audience: String? = nil,
+    audienceDestinationNames: [String]? = nil,
+    isRoomDispatchCopy: Bool = false,
+    roomRoundID: UUID? = nil
   ) {
     self.id = id
     self.role = role
@@ -320,6 +362,13 @@ public struct MobileRemoteChatMessage: Codable, Hashable, Identifiable, Sendable
     self.deliveryStatus = deliveryStatus
     self.deliveryKind = deliveryKind
     self.sendFailure = sendFailure
+    self.authorRuntime = authorRuntime
+    self.authorDestinationID = authorDestinationID
+    self.authorDestinationName = authorDestinationName
+    self.audience = audience
+    self.audienceDestinationNames = audienceDestinationNames
+    self.isRoomDispatchCopy = isRoomDispatchCopy
+    self.roomRoundID = roomRoundID
   }
 }
 

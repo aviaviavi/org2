@@ -2803,6 +2803,13 @@ final class Org2ModelsTests: XCTestCase {
     let discussionThreadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
     let discussionThread = try XCTUnwrap(store.openClawChatThreads.first(where: { $0.id == discussionThreadID }))
     XCTAssertEqual(discussionThread.title, "Discuss: Review and approve launch email")
+    let visibleDiscussion = OpenClawContextPresentation(
+      try XCTUnwrap(discussionThread.messages.last(where: { $0.role == .user })?.content)
+    )
+    XCTAssertEqual(visibleDiscussion.userText, "I need to discuss this approval item before deciding.")
+    XCTAssertEqual(visibleDiscussion.contexts.map(\.title), ["Review and approve launch email"])
+    XCTAssertTrue(visibleDiscussion.contexts[0].automaticPrompt?.contains("Please review the launch email") == true)
+    XCTAssertFalse(visibleDiscussion.clipboardText.contains("Please review the launch email"))
 
     await store.approve(approval)
 
@@ -3641,11 +3648,13 @@ final class Org2ModelsTests: XCTestCase {
     )
     XCTAssertEqual(store.renderedDocumentWidth, .comfortable)
     XCTAssertEqual(store.renderedDocumentMargin, .standard)
+    XCTAssertTrue(store.propertyDrawersExpandedByDefault)
     XCTAssertEqual(store.renderedDocumentLayout.width.cssValue, "960px")
     XCTAssertEqual(store.renderedDocumentLayout.margin.cssValue, "28px")
 
     store.renderedDocumentWidth = .full
     store.renderedDocumentMargin = .compact
+    store.propertyDrawersExpandedByDefault = false
 
     let restored = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
@@ -3653,6 +3662,41 @@ final class Org2ModelsTests: XCTestCase {
     )
     XCTAssertEqual(restored.renderedDocumentWidth, .full)
     XCTAssertEqual(restored.renderedDocumentMargin, .compact)
+    XCTAssertFalse(restored.propertyDrawersExpandedByDefault)
+  }
+
+  @MainActor
+  func testWorkspaceAppearanceDefaultsToSystemAndPersists() throws {
+    let suiteName = "org2-workspace-appearance-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults
+    )
+    XCTAssertEqual(store.appearanceMode, .system)
+    XCTAssertNil(store.appearanceMode.colorScheme)
+
+    store.appearanceMode = .dark
+    XCTAssertEqual(store.appearanceMode.colorScheme, .dark)
+
+    let restored = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults
+    )
+    XCTAssertEqual(restored.appearanceMode, .dark)
+  }
+
+  func testPropertyDrawerDefaultPresentationCanCollapseAndExpandRenderedHTML() {
+    let rendered = #"<details class="org2-properties-drawer" open data-org2-start-line="2"><summary>Properties</summary></details>"#
+
+    let collapsed = WorkspaceStore.applyingPropertyDrawerDefault(to: rendered, expanded: false)
+    XCTAssertTrue(collapsed.contains(#"<details class="org2-properties-drawer" data-org2-start-line="2">"#))
+    XCTAssertFalse(collapsed.contains(#"class="org2-properties-drawer" open"#))
+
+    let expanded = WorkspaceStore.applyingPropertyDrawerDefault(to: collapsed, expanded: true)
+    XCTAssertTrue(expanded.contains(#"<details class="org2-properties-drawer" open data-org2-start-line="2">"#))
   }
 
   func testMeetingArtifactWriterCreatesNoteAndTranscript() throws {
@@ -4082,12 +4126,33 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   func testOpenClawComposerSuggestionKeyboardCommands() {
+    XCTAssertEqual(OpenClawComposerKeyCommand.suggestionCommand(keyCode: 36, modifiers: []), .complete)
     XCTAssertEqual(OpenClawComposerKeyCommand.suggestionCommand(keyCode: 48, modifiers: []), .complete)
+    XCTAssertEqual(OpenClawComposerKeyCommand.suggestionCommand(keyCode: 76, modifiers: []), .complete)
     XCTAssertEqual(OpenClawComposerKeyCommand.suggestionCommand(keyCode: 125, modifiers: []), .move(1))
     XCTAssertEqual(OpenClawComposerKeyCommand.suggestionCommand(keyCode: 126, modifiers: []), .move(-1))
     XCTAssertNil(OpenClawComposerKeyCommand.suggestionCommand(keyCode: 48, modifiers: [.command]))
     XCTAssertNil(OpenClawComposerKeyCommand.suggestionCommand(keyCode: 125, modifiers: [.shift]))
     XCTAssertNil(OpenClawComposerKeyCommand.suggestionCommand(keyCode: 49, modifiers: []))
+  }
+
+  func testOpenClawComposerCompletionMovesInsertionPointToEnd() {
+    XCTAssertEqual(
+      OpenClawComposerSelection.updatedRange(
+        previous: NSRange(location: 2, length: 0),
+        textLength: 18,
+        movesToEnd: true
+      ),
+      NSRange(location: 18, length: 0)
+    )
+    XCTAssertEqual(
+      OpenClawComposerSelection.updatedRange(
+        previous: NSRange(location: 5, length: 2),
+        textLength: 18,
+        movesToEnd: false
+      ),
+      NSRange(location: 5, length: 2)
+    )
   }
 
   func testOpenClawComposerDropPrefersFileURLsOverTextInsertion() throws {
@@ -4164,6 +4229,46 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(presentation.contexts.map(\.title), ["Page"])
     XCTAssertEqual(presentation.userText, "Why did this fail?")
     XCTAssertEqual(presentation.clipboardText, "[Context: Page]\nWhy did this fail?")
+  }
+
+  func testOpenClawContextPresentationHidesAutomaticActionPromptBehindPill() throws {
+    let raw = OpenClawContextPresentation.automaticContext(
+      kind: "approval item",
+      title: "Approve Dashjoin first-touch draft",
+      reference: "/remote/org2/approvals.org2:27",
+      prompt: """
+      OpenClaw approval thread:
+
+      Account: Dashjoin
+      Review this exact unsent Gmail draft. Nothing in this approval sends it.
+      """,
+      userText: "Please remove the repeated company name and revise the open drafts."
+    )
+    let presentation = OpenClawContextPresentation(raw)
+
+    XCTAssertEqual(presentation.contexts.map(\.title), ["Approve Dashjoin first-touch draft"])
+    XCTAssertEqual(presentation.contexts.map(\.kind), ["approval item"])
+    XCTAssertEqual(presentation.contexts.first?.reference, "/remote/org2/approvals.org2:27")
+    XCTAssertTrue(try XCTUnwrap(presentation.contexts.first?.automaticPrompt).contains("Account: Dashjoin"))
+    XCTAssertEqual(
+      presentation.userText,
+      "Please remove the repeated company name and revise the open drafts."
+    )
+    XCTAssertEqual(
+      presentation.clipboardText,
+      "[Context: Approve Dashjoin first-touch draft]\nPlease remove the repeated company name and revise the open drafts."
+    )
+    XCTAssertFalse(presentation.clipboardText.contains("OpenClaw approval thread"))
+
+    let replacement = OpenClawContextPresentation(
+      presentation.replacingUserText("Use a warmer tone.")
+    )
+    XCTAssertEqual(replacement.contexts.first?.automaticPrompt, presentation.contexts.first?.automaticPrompt)
+    XCTAssertEqual(replacement.userText, "Use a warmer tone.")
+    XCTAssertEqual(
+      presentation.removing(try XCTUnwrap(presentation.contexts.first)),
+      "Please remove the repeated company name and revise the open drafts."
+    )
   }
 
   @MainActor
@@ -8649,6 +8754,42 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertNotNil(results[1].messageID)
   }
 
+  func testWorkspaceChatSearchDoesNotExposeHiddenAutomaticPromptText() {
+    let message = OpenClawChatMessage(
+      role: .user,
+      content: OpenClawContextPresentation.automaticContext(
+        kind: "approval item",
+        title: "Approve Dashjoin first-touch draft",
+        reference: ".org2/runs/run-123.org2:40",
+        prompt: "AUTOMATIC_INTERNAL_PAYLOAD Review the exact unsent Gmail draft.",
+        userText: "Please revise the repetitive phrasing."
+      )
+    )
+    let thread = OpenClawChatThread(
+      id: UUID(),
+      title: "Draft revision",
+      createdAt: Date(),
+      updatedAt: Date(),
+      sessionKey: "hidden-search-test",
+      messages: [message]
+    )
+
+    let visibleResults = WorkspaceStore.searchOpenClawChatThreads(
+      [thread],
+      query: "repetitive",
+      limit: 10
+    )
+    let hiddenResults = WorkspaceStore.searchOpenClawChatThreads(
+      [thread],
+      query: "AUTOMATIC_INTERNAL_PAYLOAD",
+      limit: 10
+    )
+
+    XCTAssertEqual(visibleResults.map(\.matchKind), [.messageText])
+    XCTAssertEqual(visibleResults.first?.snippet, "[Context: Approve Dashjoin first-touch draft] Please revise the repetitive phrasing.")
+    XCTAssertTrue(hiddenResults.isEmpty)
+  }
+
   func testWorkspaceFileAndPageSearchUseDistinctMatchSurfaces() {
     let projectFile = CorpusFile(
       path: "/tmp/projects/roadmap.org2",
@@ -9391,6 +9532,126 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(store.visibleAgendaItems.contains { $0.id == second.id })
     XCTAssertTrue(store.handleWorkspaceKeyDown(keyDown(characters: "d", keyCode: 2)))
     XCTAssertEqual(store.selectedAgendaItemID, third.id)
+  }
+
+  @MainActor
+  func testAgendaRefreshRemapsHighlightAcrossLineShiftWhilePreviewFinishes() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-agenda-refresh-selection-race-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let note = root.appendingPathComponent("agenda-refresh-selection-race.org2")
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.dateFormat = "yyyy-MM-dd EEE"
+    let today = formatter.string(from: Date())
+    let original = """
+    * TODO First task
+    SCHEDULED: <\(today)>
+
+    * TODO Second task
+    SCHEDULED: <\(today)>
+
+    * TODO Third task
+    SCHEDULED: <\(today)>
+    """
+    try original.write(to: note, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.agendaEntryRenderIdleDelayNanoseconds = 0
+    store.entryHTMLRendererForTesting = { _, _, _, _ in
+      try? await Task.sleep(nanoseconds: 400_000_000)
+      return "<html>Delayed agenda preview</html>"
+    }
+    await store.refreshAgenda()
+
+    let second = try XCTUnwrap(store.visibleAgendaItems.first { $0.headline == "Second task" })
+    store.selectAgendaItem(second)
+    try await waitForCondition { store.isRenderingEntrySource }
+
+    try ("Intro line\n" + original).write(to: note, atomically: true, encoding: .utf8)
+    await store.refreshAgenda()
+
+    let shiftedSecond = try XCTUnwrap(store.visibleAgendaItems.first { $0.headline == "Second task" })
+    XCTAssertNotEqual(second.id, shiftedSecond.id)
+    XCTAssertEqual(store.selectedAgendaItemID, shiftedSecond.id)
+
+    try await Task.sleep(nanoseconds: 600_000_000)
+    XCTAssertEqual(store.selectedAgendaItemID, shiftedSecond.id)
+  }
+
+  @MainActor
+  func testAgendaRefreshDoesNotReplaceHighlightWhenSelectedRowIsTemporarilyMissing() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-agenda-missing-selection-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let note = root.appendingPathComponent("agenda-missing-selection.org2")
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.dateFormat = "yyyy-MM-dd EEE"
+    let today = formatter.string(from: Date())
+    let firstOnly = """
+    * TODO First task
+    SCHEDULED: <\(today)>
+    """
+    let original = """
+    \(firstOnly)
+
+    * TODO Second task
+    SCHEDULED: <\(today)>
+    """
+    try original.write(to: note, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    await store.refreshAgenda()
+
+    let second = try XCTUnwrap(store.visibleAgendaItems.first { $0.headline == "Second task" })
+    store.selectAgendaItem(second)
+    try firstOnly.write(to: note, atomically: true, encoding: .utf8)
+    await store.refreshAgenda()
+
+    XCTAssertEqual(store.visibleAgendaItems.map(\.headline), ["First task"])
+    XCTAssertEqual(store.selectedAgendaItemID, second.id)
+  }
+
+  @MainActor
+  func testTransientEmptyAgendaRefreshDoesNotDiscardHighlightIntent() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-agenda-transient-empty-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let note = root.appendingPathComponent("agenda-transient-empty.org2")
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.dateFormat = "yyyy-MM-dd EEE"
+    let today = formatter.string(from: Date())
+    let original = """
+    * TODO First task
+    SCHEDULED: <\(today)>
+
+    * TODO Second task
+    SCHEDULED: <\(today)>
+    """
+    try original.write(to: note, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    await store.refreshAgenda()
+
+    let second = try XCTUnwrap(store.visibleAgendaItems.first { $0.headline == "Second task" })
+    store.selectAgendaItem(second)
+    try "Temporary sync placeholder\n".write(to: note, atomically: true, encoding: .utf8)
+    await store.refreshAgenda()
+    XCTAssertTrue(store.visibleAgendaItems.isEmpty)
+    XCTAssertEqual(store.selectedAgendaItemID, second.id)
+
+    try ("Intro line\n" + original).write(to: note, atomically: true, encoding: .utf8)
+    await store.refreshAgenda()
+    let restoredSecond = try XCTUnwrap(store.visibleAgendaItems.first { $0.headline == "Second task" })
+    XCTAssertEqual(store.selectedAgendaItemID, restoredSecond.id)
   }
 
   @MainActor

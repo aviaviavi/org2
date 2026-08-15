@@ -1051,6 +1051,12 @@ private struct NewNoteView: View {
             }
           }
 
+          NavigationLink {
+            CorpusFileBrowserView()
+          } label: {
+            Label("Browse Files", systemImage: "doc.text.magnifyingglass")
+          }
+
           if let status = store.statusMessage {
             HStack(spacing: 6) {
               if store.isPreparingCorpus || store.isLoading {
@@ -1172,6 +1178,14 @@ private struct NewNoteView: View {
       }
       .navigationTitle("New Note")
       .toolbar {
+        ToolbarItem(placement: .topBarLeading) {
+          NavigationLink {
+            CorpusFileBrowserView()
+          } label: {
+            Image(systemName: "doc.text.magnifyingglass")
+          }
+          .accessibilityLabel("Browse corpus files")
+        }
         ToolbarItem(placement: .topBarTrailing) {
           RefreshButton()
         }

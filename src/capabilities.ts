@@ -26,6 +26,7 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
     discovery: [
       "Run `org2 agent capabilities` for this machine-readable manifest.",
       "Run `org2 --help` for command families and `org2 COMMAND --help` for current flags.",
+      "Run `org2 version` or `org2 --version` to inspect the installed package version.",
       "Prefer JSON output for integrations (`--format json` or `--json` where supported).",
       "Use `org2 agent context|search|fetch|bundle` for bounded, cited corpus retrieval.",
       "Use `org2 run --help` for durable delegated work, `org2 workflow` for reusable recipes, and `org2 mcp serve` for MCP discovery.",
@@ -63,6 +64,12 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
       "Resolve every available stable identity before creating recurring account work. Treat ambiguity or source drift as a blocker rather than guessing.",
     ],
     workflows: [
+      {
+        id: "cli-discovery",
+        purpose: "Inspect the installed Org2 CLI version before relying on its command contract.",
+        commands: ["org2 version", "org2 --version"],
+        writes: "read-only",
+      },
       {
         id: "corpus-identity-and-mounting",
         purpose: "Inspect, validate, or initialize portable personal, shared, and project corpus identities.",

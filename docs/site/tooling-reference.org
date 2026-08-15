@@ -6,7 +6,7 @@ The CLI is the shared backend for editor integrations and automation. You can us
 
 * Core command families
 
-Run =org2 --help= for current top-level usage. AI architecture, job design, draft artifacts, and provider boundaries are documented separately in [[file:ai-processing-architecture.org][AI processing architecture]], [[file:ai-job-manifests.org][AI job manifests]], [[file:ai-draft-artifacts.org][AI draft artifacts]], and [[file:ai-adapters.org][AI adapter interface]] so the deterministic CLI surface stays clear.
+Run =org2 version= or =org2 --version= to inspect the installed package version, and =org2 --help= for current top-level usage. AI architecture, job design, draft artifacts, and provider boundaries are documented separately in [[file:ai-processing-architecture.org][AI processing architecture]], [[file:ai-job-manifests.org][AI job manifests]], [[file:ai-draft-artifacts.org][AI draft artifacts]], and [[file:ai-adapters.org][AI adapter interface]] so the deterministic CLI surface stays clear.
 
 Main workflows:
 

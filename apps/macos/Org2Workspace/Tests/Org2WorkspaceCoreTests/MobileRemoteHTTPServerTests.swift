@@ -53,6 +53,9 @@ final class MobileRemoteHTTPServerTests: XCTestCase {
       id: UUID(),
       title: "Remote chat",
       runtime: "codex",
+      destinationID: "remote.press-codex",
+      destinationName: "Codex Remote",
+      isSharedRoom: true,
       model: "gpt-test",
       updatedAt: Date(timeIntervalSince1970: 1_700_000_000),
       isSettled: false,
@@ -70,6 +73,32 @@ final class MobileRemoteHTTPServerTests: XCTestCase {
     XCTAssertEqual(restored, expected)
   }
 
+  func testNamedAIDestinationsRoundTripWithoutChangingTheWireVersion() throws {
+    let expected = MobileRemoteServerStatus(
+      serverName: "Org2 on Press",
+      corpusName: "avi.org2",
+      threadCount: 3,
+      runningThreadCount: 1,
+      aiChatDestinations: [
+        MobileRemoteAIDestination(
+          id: "remote.press-codex",
+          name: "Codex Remote",
+          mention: "codex-remote",
+          runtime: "codex"
+        )
+      ]
+    )
+
+    let data = try MobileRemoteProtocol.encoder().encode(expected)
+    let restored = try MobileRemoteProtocol.decoder().decode(
+      MobileRemoteServerStatus.self,
+      from: data
+    )
+
+    XCTAssertEqual(restored, expected)
+    XCTAssertEqual(restored.protocolVersion, 2)
+  }
+
   func testFilePreviewRoundTrips() throws {
     let expected = MobileRemoteFilePreview(
       title: "talk.org2",
@@ -83,6 +112,39 @@ final class MobileRemoteHTTPServerTests: XCTestCase {
     let restored = try MobileRemoteProtocol.decoder().decode(MobileRemoteFilePreview.self, from: data)
 
     XCTAssertEqual(restored, expected)
+  }
+
+  @MainActor
+  func testFilePreviewReturnsCompleteAuthorizedFile() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-mobile-complete-file-\(UUID().uuidString)", isDirectory: true)
+    let notes = root.appendingPathComponent("notes", isDirectory: true)
+    try FileManager.default.createDirectory(at: notes, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let documentURL = notes.appendingPathComponent("long.org2")
+    let markdownURL = notes.appendingPathComponent("readme.md")
+    let content = (1...80).map { "Line \($0) with a complete source row" }.joined(separator: "\n")
+    try content.write(to: documentURL, atomically: true, encoding: .utf8)
+    try "# Read me\nAll text is visible.".write(to: markdownURL, atomically: true, encoding: .utf8)
+
+    let suiteName = "org2-mobile-complete-file-defaults-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults
+    )
+    store.setCorpusRoot(root, persistsDefault: false)
+
+    let preview = try store.mobileRemoteFilePreview(path: "notes/long.org2", line: 60)
+    XCTAssertEqual(preview.startLine, 1)
+    XCTAssertEqual(preview.highlightedLine, 60)
+    XCTAssertEqual(preview.content, content)
+    XCTAssertTrue(preview.content.contains("Line 1 with"))
+    XCTAssertTrue(preview.content.contains("Line 80 with"))
+
+    let markdown = try store.mobileRemoteFilePreview(path: "notes/readme.md", line: nil)
+    XCTAssertEqual(markdown.content, "# Read me\nAll text is visible.")
   }
 
   func testCanonicalWorkspaceSnapshotAndMutationsRoundTrip() throws {
@@ -327,7 +389,37 @@ final class MobileRemoteHTTPServerTests: XCTestCase {
   }
 
   @MainActor
-  func testFilePreviewReadsOnlyOrgFilesInsideMountedCorpora() throws {
+  func testRemoteCrossAgentMentionReturnsForkWithoutChangingMacSelection() throws {
+    let suiteName = "MobileRemoteHTTPServerTests.MentionFork.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let transcriptURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-mobile-remote-mention-\(UUID().uuidString).json")
+    defer { try? FileManager.default.removeItem(at: transcriptURL) }
+    let store = WorkspaceStore(
+      cli: Org2CLI(repoRoot: try Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: transcriptURL
+    )
+    let selectedID = store.createOpenClawChatThread(runtime: .openClaw)
+    let remoteID = store.createAIChatRemoteThread(runtime: .openClaw)
+
+    let destinationID = try XCTUnwrap(store.sendAIChatRemoteMessageDestination(
+      "@Codex take a look",
+      threadID: remoteID
+    ))
+
+    XCTAssertNotEqual(destinationID, remoteID)
+    XCTAssertEqual(store.selectedOpenClawChatThreadID, selectedID)
+    XCTAssertTrue(store.openClawChatThreads.first(where: { $0.id == destinationID })?.isSharedRoom == true)
+    XCTAssertEqual(
+      store.openClawChatThreads.first(where: { $0.id == destinationID })?.messages.first?.audience,
+      .codex
+    )
+  }
+
+  @MainActor
+  func testFilePreviewReadsCompleteFilesOnlyInsideMountedCorpora() throws {
     let suiteName = "MobileRemoteHTTPServerTests.\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suiteName)!
     defer { defaults.removePersistentDomain(forName: suiteName) }
@@ -358,9 +450,9 @@ final class MobileRemoteHTTPServerTests: XCTestCase {
     )
     XCTAssertEqual(relativePreview.title, "talk.org2")
     XCTAssertEqual(relativePreview.relativePath, "notes/talk.org2")
-    XCTAssertEqual(relativePreview.startLine, 4)
+    XCTAssertEqual(relativePreview.startLine, 1)
     XCTAssertEqual(relativePreview.highlightedLine, 12)
-    XCTAssertTrue(relativePreview.content.contains("Line 12"))
+    XCTAssertEqual(relativePreview.content, sourceText)
 
     let absolutePreview = try store.mobileRemoteFilePreview(path: source.path, line: 1)
     XCTAssertEqual(absolutePreview.relativePath, "notes/talk.org2")

@@ -169,6 +169,53 @@ final class OpenClawChatLayoutTests: XCTestCase {
     XCTAssertEqual(pasteboard.string(forType: .string), "First paragraph.\n\nSecond paragraph.")
   }
 
+  func testAssistantMessagesRenderStructuredOrg2AndRepairCommonFormattingMistakes() {
+    let raw = """
+    * Does Codex have server mode?
+
+    | Mode | Best use | Recommendation |
+    |-------------------------------|
+    | Codex Remote | Interactive work | Best starting point |
+
+    ##+begin_src sh
+    codex app-server --listen ws://127.0.0.1:4500
+    ##+end_src
+    """
+    let presentation = OpenClawMessageOrgPresentation(raw)
+
+    XCTAssertTrue(presentation.usesStructuredRendering)
+    XCTAssertTrue(presentation.normalizedText.contains("#+begin_src sh"))
+    XCTAssertTrue(presentation.normalizedText.contains("#+end_src"))
+    XCTAssertFalse(presentation.normalizedText.contains("##+begin_src"))
+    let hline = presentation.normalizedText
+      .split(separator: "\n")
+      .map(String.init)
+      .first(where: { $0.contains("+") && $0.allSatisfy { $0 == "|" || $0 == "+" || $0 == "-" } })
+    XCTAssertEqual(hline?.filter { $0 == "+" }.count, 2)
+    XCTAssertTrue(presentation.blocks.contains { block in
+      if case .heading = block.rendered { return true }
+      return false
+    })
+    XCTAssertTrue(presentation.blocks.contains { block in
+      if case .table = block.rendered { return true }
+      return false
+    })
+    XCTAssertTrue(presentation.blocks.contains { block in
+      if case .source = block.rendered { return true }
+      return false
+    })
+
+    let message = OpenClawChatMessage(role: .assistant, content: raw)
+    XCTAssertEqual(OpenClawMessageClipboard.text(for: message), presentation.normalizedText)
+  }
+
+  func testPlainAssistantMessagesKeepLightweightInlineRendering() {
+    let presentation = OpenClawMessageOrgPresentation("A short answer with *emphasis* and [[recipes.org2][a link]].")
+
+    XCTAssertFalse(presentation.usesStructuredRendering)
+    XCTAssertEqual(presentation.blocks.count, 1)
+  }
+
   func testAttachmentOnlyMessageHasCopyableFallbackText() {
     let message = OpenClawChatMessage(
       role: .user,

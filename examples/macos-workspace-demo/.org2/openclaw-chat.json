@@ -1,0 +1,64 @@
+{
+  "selectedThreadID": "11111111-1111-4111-8111-111111111111",
+  "settlementSettings": {},
+  "threads": [
+    {
+      "createdAt": 803577600,
+      "destinationID": "builtin.openclaw",
+      "id": "11111111-1111-4111-8111-111111111111",
+      "isSharedRoom": true,
+      "messages": [
+        {
+          "audience": "everyone",
+          "audienceDestinationIDs": [
+            "builtin.codex",
+            "builtin.openclaw"
+          ],
+          "content": "@codex @openclaw We have one week before the Beacon launch. What should we prioritize, and where do your recommendations differ?",
+          "createdAt": 803577600,
+          "deliveryKind": "turn",
+          "deliveryStatus": "sent",
+          "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "role": "user",
+          "roomRoundID": "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+        },
+        {
+          "authorDestinationID": "builtin.codex",
+          "authorRuntime": "codex",
+          "content": "* Ship the smallest verifiable path\n\nPrioritize the offline import check, the private-beta readiness summary, and one end-to-end test of cited dashboard recommendations. Freeze new scope after those pass.\n\nI would defer presentation polish until the launch evidence in =views/launch-readiness-data.org2= is reproducible.",
+          "createdAt": 803577660,
+          "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          "role": "assistant",
+          "roomRoundID": "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+        },
+        {
+          "authorDestinationID": "builtin.openclaw",
+          "authorRuntime": "openClaw",
+          "content": "* Protect the feedback loop first\n\nI agree on the three checks, but I would invite the remaining beta reviewers before freezing polish. The meeting notes show that real-user feedback is the missing signal, while the technical blockers already have owners.\n\nMy order: invite reviewers, verify citations, then lock the launch checklist.",
+          "createdAt": 803577720,
+          "id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+          "role": "assistant",
+          "roomRoundID": "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+        }
+      ],
+      "roomAudience": "thread",
+      "roomDestinationIDs": [
+        "builtin.codex",
+        "builtin.openclaw"
+      ],
+      "roomModels": {
+        "codex": "gpt-5.6-sol",
+        "openClaw": "openai/gpt-5.6"
+      },
+      "roomModelsByDestination": {
+        "builtin.codex": "gpt-5.6-sol",
+        "builtin.openclaw": "openai/gpt-5.6"
+      },
+      "runtime": "openClaw",
+      "sessionKey": "agent:main:org2-site-shared-room",
+      "title": "Beacon launch council",
+      "updatedAt": 803577720
+    }
+  ],
+  "version": 6
+}

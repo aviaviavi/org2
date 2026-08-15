@@ -6,6 +6,7 @@ import Foundation
 final class CorpusStore: ObservableObject {
   @Published private(set) var rootURL: URL?
   @Published private(set) var documents: [OrgDocument] = []
+  @Published private(set) var corpusFiles: [CorpusFile] = []
   @Published private(set) var agenda: [AgendaEntry] = []
   @Published private(set) var approvals: [ApprovalEntry] = []
   @Published var isLoading = false
@@ -21,6 +22,9 @@ final class CorpusStore: ObservableObject {
   private let cacheFilename = "org2-mobile-corpus-cache.json"
   private let dueTodayNotificationIdentifierPrefix = "org2.due-today.daily"
   private let headingTodoKeywords = Set(OrgTodoStatus.allCases.map(\.rawValue))
+  nonisolated private static let viewableFileExtensions = Set([
+    "org2", "org", "txt", "md", "markdown", "csv", "tsv", "json", "yaml", "yml"
+  ])
   private var cachedFileCount: Int?
   private var refreshGeneration = 0
   private var cacheHydrationGeneration = 0
@@ -144,6 +148,7 @@ final class CorpusStore: ObservableObject {
       }
 
       cachedFileCount = snapshot.documents.count
+      corpusFiles = snapshot.files
       saveCachedCorpus(snapshot, for: rootURL)
       if hasOpenedCorpusViews {
         documents = snapshot.documents
@@ -233,6 +238,34 @@ final class CorpusStore: ObservableObject {
     }
   }
 
+  func filePreview(path rawPath: String, line requestedLine: Int?) async throws -> CorpusFilePreview {
+    guard let rootURL else { throw CorpusFileError.noCorpus }
+    return try await Task.detached(priority: .userInitiated) {
+      let hasSecurityAccess = rootURL.startAccessingSecurityScopedResource()
+      defer {
+        if hasSecurityAccess {
+          rootURL.stopAccessingSecurityScopedResource()
+        }
+      }
+      let baseURL = try Self.corpusBaseURL(for: rootURL)
+      let relativePath = try Self.canonicalCorpusRelativePath(rawPath, baseURL: baseURL)
+      let url = baseURL.appendingPathComponent(relativePath).standardizedFileURL
+      guard try Self.isRegularFile(url) else { throw CorpusFileError.unavailable }
+      let content = try String(contentsOf: url, encoding: .utf8)
+      let lineCount = max(1, content.utf8.reduce(into: 1) { count, byte in
+        if byte == 0x0A { count += 1 }
+      })
+      let highlightedLine = requestedLine.flatMap { (1...lineCount).contains($0) ? $0 : nil }
+      return CorpusFilePreview(
+        title: url.lastPathComponent,
+        relativePath: relativePath,
+        startLine: 1,
+        highlightedLine: highlightedLine,
+        content: content
+      )
+    }.value
+  }
+
   func clearNotificationBadge() {
     Task {
       try? await UNUserNotificationCenter.current().setBadgeCount(0)
@@ -288,6 +321,7 @@ final class CorpusStore: ObservableObject {
 
   private func restoreCachedCorpus(_ snapshot: CorpusCacheSnapshot) {
     documents = []
+    corpusFiles = snapshot.files
     agenda = snapshot.agenda
     approvals = snapshot.approvals
     cachedFileCount = snapshot.fileCount
@@ -297,6 +331,7 @@ final class CorpusStore: ObservableObject {
 
   private func clearCorpusViews() {
     documents = []
+    corpusFiles = []
     agenda = []
     approvals = []
     cachedFileCount = nil
@@ -323,6 +358,7 @@ final class CorpusStore: ObservableObject {
       rootPath: Self.cacheRootPath(for: rootURL),
       cachedAt: Date(),
       fileCount: refreshSnapshot.documents.count,
+      files: refreshSnapshot.files,
       agenda: refreshSnapshot.agenda,
       approvals: refreshSnapshot.approvals
     )
@@ -361,6 +397,7 @@ final class CorpusStore: ObservableObject {
 
     let baseURL = try corpusBaseURL(for: rootURL)
     let urls = try corpusFileURLs(in: rootURL)
+    let viewerURLs = try corpusViewerFileURLs(in: rootURL)
     var parsed: [OrgDocument] = []
     var skipped: [String] = []
 
@@ -374,6 +411,7 @@ final class CorpusStore: ObservableObject {
 
     return CorpusRefreshSnapshot(
       documents: parsed,
+      files: viewerURLs.compactMap { corpusFile($0, rootURL: baseURL) },
       agenda: OrgParser.agendaEntries(from: parsed),
       approvals: (OrgParser.approvalEntries(from: parsed) + runApprovalEntries(rootURL: baseURL)).sorted {
         if $0.status != $1.status { return $0.status < $1.status }
@@ -469,6 +507,85 @@ final class CorpusStore: ObservableObject {
       }
     }
     return urls.sorted { $0.path < $1.path }
+  }
+
+  nonisolated private static func corpusViewerFileURLs(in rootURL: URL) throws -> [URL] {
+    if try isRegularFile(rootURL) {
+      return [rootURL]
+    }
+
+    let baseURL = try corpusBaseURL(for: rootURL)
+    let config = mobileOrg2Config(in: baseURL)
+    let ignorePatterns = config?.ignorePatterns ?? []
+    let recursive = config?.recursive ?? true
+    guard let enumerator = FileManager.default.enumerator(
+      at: rootURL,
+      includingPropertiesForKeys: [.isRegularFileKey, .isDirectoryKey],
+      options: [.skipsHiddenFiles, .skipsPackageDescendants]
+    ) else {
+      return []
+    }
+
+    var urls: [URL] = []
+    for case let url as URL in enumerator {
+      let relativePath = OrgParser.relativePath(for: url, rootURL: baseURL)
+      if shouldSkipCorpusPath(relativePath, url: url, ignorePatterns: ignorePatterns) {
+        enumerator.skipDescendants()
+        continue
+      }
+      guard let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .isDirectoryKey]) else { continue }
+      if values.isDirectory == true, !recursive {
+        enumerator.skipDescendants()
+        continue
+      }
+      if values.isRegularFile == true {
+        if viewableFileExtensions.contains(url.pathExtension.lowercased()) {
+          urls.append(url)
+        }
+      }
+    }
+    return urls.sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
+  }
+
+  nonisolated private static func corpusFile(_ url: URL, rootURL: URL) -> CorpusFile? {
+    let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
+    return CorpusFile(
+      relativePath: OrgParser.relativePath(for: url, rootURL: rootURL),
+      modifiedAt: values?.contentModificationDate,
+      byteCount: values?.fileSize.map(Int64.init)
+    )
+  }
+
+  nonisolated private static func canonicalCorpusRelativePath(
+    _ rawPath: String,
+    baseURL: URL
+  ) throws -> String {
+    let trimmed = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { throw CorpusFileError.invalidPath }
+    let canonicalRoot = baseURL.standardizedFileURL.resolvingSymlinksInPath()
+    let rootPath = canonicalRoot.path.hasSuffix("/") ? canonicalRoot.path : canonicalRoot.path + "/"
+
+    let expanded = NSString(string: trimmed).expandingTildeInPath
+    let directCandidate = URL(fileURLWithPath: expanded)
+    let candidate: URL
+    if expanded.hasPrefix("/") {
+      let direct = directCandidate.standardizedFileURL.resolvingSymlinksInPath()
+      if direct.path.hasPrefix(rootPath) {
+        candidate = direct
+      } else {
+        let components = direct.pathComponents
+        guard let rootIndex = components.lastIndex(of: canonicalRoot.lastPathComponent),
+              rootIndex + 1 < components.count
+        else { throw CorpusFileError.invalidPath }
+        let suffix = components[(rootIndex + 1)...].joined(separator: "/")
+        candidate = canonicalRoot.appendingPathComponent(suffix).standardizedFileURL.resolvingSymlinksInPath()
+      }
+    } else {
+      candidate = canonicalRoot.appendingPathComponent(expanded).standardizedFileURL.resolvingSymlinksInPath()
+    }
+
+    guard candidate.path.hasPrefix(rootPath) else { throw CorpusFileError.invalidPath }
+    return String(candidate.path.dropFirst(rootPath.count))
   }
 
   nonisolated private static func mobileOrg2Config(in baseURL: URL) -> MobileOrg2Config? {
@@ -1067,6 +1184,11 @@ final class CorpusStore: ObservableObject {
   }
 
   private func scheduleDueTodayNotification(from agenda: [AgendaEntry]) {
+    #if DEBUG
+    if ProcessInfo.processInfo.environment["ORG2_DEBUG_SUPPRESS_NOTIFICATIONS"] == "1" {
+      return
+    }
+    #endif
     let identifierPrefix = dueTodayNotificationIdentifierPrefix
     let plans = Self.dueTodayNotificationPlans(from: agenda, identifierPrefix: identifierPrefix)
     Task {
@@ -1537,6 +1659,7 @@ private struct MobileAgentRunApproval: Decodable {
 
 private struct CorpusRefreshSnapshot {
   let documents: [OrgDocument]
+  let files: [CorpusFile]
   let agenda: [AgendaEntry]
   let approvals: [ApprovalEntry]
   let skipped: [String]
@@ -1555,14 +1678,32 @@ private struct ScopedLineReplacement {
 }
 
 private struct CorpusCacheSnapshot: Codable {
-  static let currentVersion = 1
+  static let currentVersion = 2
 
   let version: Int
   let rootPath: String
   let cachedAt: Date
   let fileCount: Int
+  let files: [CorpusFile]
   let agenda: [AgendaEntry]
   let approvals: [ApprovalEntry]
+}
+
+private enum CorpusFileError: LocalizedError {
+  case noCorpus
+  case invalidPath
+  case unavailable
+
+  var errorDescription: String? {
+    switch self {
+    case .noCorpus:
+      "Select a synced corpus folder first."
+    case .invalidPath:
+      "That file is outside the selected corpus."
+    case .unavailable:
+      "That file is no longer available on this phone."
+    }
+  }
 }
 
 private struct CorpusBookmarkResolution: Sendable {

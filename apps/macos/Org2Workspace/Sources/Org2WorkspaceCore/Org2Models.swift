@@ -1905,6 +1905,14 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
   public let sendFailure: String?
   public let deliveryStatus: DeliveryStatus
   public let deliveryKind: DeliveryKind
+  public let authorRuntime: AIChatRuntime?
+  public let audience: AIChatAudience?
+  public let targetRuntime: AIChatRuntime?
+  public let authorDestinationID: String?
+  public let audienceDestinationIDs: [String]
+  public let targetDestinationID: String?
+  public let isRoomDispatchCopy: Bool
+  public let roomRoundID: UUID?
 
   public init(
     id: UUID = UUID(),
@@ -1916,7 +1924,15 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
     responseTrace: OpenClawResponseTrace? = nil,
     sendFailure: String? = nil,
     deliveryStatus: DeliveryStatus = .sent,
-    deliveryKind: DeliveryKind = .turn
+    deliveryKind: DeliveryKind = .turn,
+    authorRuntime: AIChatRuntime? = nil,
+    audience: AIChatAudience? = nil,
+    targetRuntime: AIChatRuntime? = nil,
+    authorDestinationID: String? = nil,
+    audienceDestinationIDs: [String] = [],
+    targetDestinationID: String? = nil,
+    isRoomDispatchCopy: Bool = false,
+    roomRoundID: UUID? = nil
   ) {
     self.id = id
     self.role = role
@@ -1928,6 +1944,14 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
     self.sendFailure = sendFailure
     self.deliveryStatus = role == .user ? deliveryStatus : .sent
     self.deliveryKind = role == .user ? deliveryKind : .turn
+    self.authorRuntime = role == .user ? nil : authorRuntime
+    self.audience = role == .user ? audience : nil
+    self.targetRuntime = role == .user ? targetRuntime : nil
+    self.authorDestinationID = role == .user ? nil : authorDestinationID
+    self.audienceDestinationIDs = role == .user ? audienceDestinationIDs : []
+    self.targetDestinationID = role == .user ? targetDestinationID : nil
+    self.isRoomDispatchCopy = role == .user && isRoomDispatchCopy
+    self.roomRoundID = roomRoundID
   }
 
   enum CodingKeys: String, CodingKey {
@@ -1941,6 +1965,14 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
     case sendFailure
     case deliveryStatus
     case deliveryKind
+    case authorRuntime
+    case audience
+    case targetRuntime
+    case authorDestinationID
+    case audienceDestinationIDs
+    case targetDestinationID
+    case isRoomDispatchCopy
+    case roomRoundID
   }
 
   public init(from decoder: Decoder) throws {
@@ -1959,6 +1991,32 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
     deliveryKind = role == .user
       ? (try container.decodeIfPresent(DeliveryKind.self, forKey: .deliveryKind) ?? .turn)
       : .turn
+    authorRuntime = role == .user
+      ? nil
+      : try container.decodeIfPresent(AIChatRuntime.self, forKey: .authorRuntime)
+    audience = role == .user
+      ? try container.decodeIfPresent(AIChatAudience.self, forKey: .audience)
+      : nil
+    targetRuntime = role == .user
+      ? try container.decodeIfPresent(AIChatRuntime.self, forKey: .targetRuntime)
+      : nil
+    authorDestinationID = role == .user
+      ? nil
+      : (try container.decodeIfPresent(String.self, forKey: .authorDestinationID)
+          ?? authorRuntime.map(AIChatDestinationConfiguration.defaultID(for:)))
+    audienceDestinationIDs = role == .user
+      ? (try container.decodeIfPresent([String].self, forKey: .audienceDestinationIDs)
+          ?? audience?.runtimes.map(AIChatDestinationConfiguration.defaultID(for:))
+          ?? [])
+      : []
+    targetDestinationID = role == .user
+      ? (try container.decodeIfPresent(String.self, forKey: .targetDestinationID)
+          ?? targetRuntime.map(AIChatDestinationConfiguration.defaultID(for:)))
+      : nil
+    isRoomDispatchCopy = role == .user
+      ? (try container.decodeIfPresent(Bool.self, forKey: .isRoomDispatchCopy) ?? false)
+      : false
+    roomRoundID = try container.decodeIfPresent(UUID.self, forKey: .roomRoundID)
   }
 
   public func replacingSendFailure(_ nextSendFailure: String?) -> OpenClawChatMessage {
@@ -1972,7 +2030,15 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
       responseTrace: responseTrace,
       sendFailure: nextSendFailure,
       deliveryStatus: nextSendFailure == nil ? .sent : .failed,
-      deliveryKind: deliveryKind
+      deliveryKind: deliveryKind,
+      authorRuntime: authorRuntime,
+      audience: audience,
+      targetRuntime: targetRuntime,
+      authorDestinationID: authorDestinationID,
+      audienceDestinationIDs: audienceDestinationIDs,
+      targetDestinationID: targetDestinationID,
+      isRoomDispatchCopy: isRoomDispatchCopy,
+      roomRoundID: roomRoundID
     )
   }
 
@@ -1990,7 +2056,15 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
       responseTrace: responseTrace,
       sendFailure: nextSendFailure,
       deliveryStatus: nextDeliveryStatus,
-      deliveryKind: deliveryKind
+      deliveryKind: deliveryKind,
+      authorRuntime: authorRuntime,
+      audience: audience,
+      targetRuntime: targetRuntime,
+      authorDestinationID: authorDestinationID,
+      audienceDestinationIDs: audienceDestinationIDs,
+      targetDestinationID: targetDestinationID,
+      isRoomDispatchCopy: isRoomDispatchCopy,
+      roomRoundID: roomRoundID
     )
   }
 
@@ -2005,7 +2079,15 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
       responseTrace: responseTrace,
       sendFailure: sendFailure,
       deliveryStatus: deliveryStatus,
-      deliveryKind: deliveryKind
+      deliveryKind: deliveryKind,
+      authorRuntime: authorRuntime,
+      audience: audience,
+      targetRuntime: targetRuntime,
+      authorDestinationID: authorDestinationID,
+      audienceDestinationIDs: audienceDestinationIDs,
+      targetDestinationID: targetDestinationID,
+      isRoomDispatchCopy: isRoomDispatchCopy,
+      roomRoundID: roomRoundID
     )
   }
 }
@@ -2085,6 +2167,7 @@ public struct OpenClawPendingTurn: Hashable, Codable, Sendable {
   public let userMessageID: UUID
   public let runID: String
   public let agentID: String
+  public let destinationID: String?
   public let gatewayMessage: String
   public let startedAt: Date
 
@@ -2092,12 +2175,14 @@ public struct OpenClawPendingTurn: Hashable, Codable, Sendable {
     userMessageID: UUID,
     runID: String,
     agentID: String,
+    destinationID: String? = nil,
     gatewayMessage: String,
     startedAt: Date = Date()
   ) {
     self.userMessageID = userMessageID
     self.runID = runID
     self.agentID = agentID
+    self.destinationID = destinationID
     self.gatewayMessage = gatewayMessage
     self.startedAt = startedAt
   }
@@ -2180,6 +2265,305 @@ public enum AIChatRuntime: String, CaseIterable, Codable, Identifiable, Sendable
   }
 }
 
+public enum AIChatDestinationAdapter: String, CaseIterable, Codable, Identifiable, Sendable {
+  case codexLocal
+  case codexRemote
+  case openClaw
+
+  public var id: String { rawValue }
+
+  public var runtime: AIChatRuntime {
+    switch self {
+    case .codexLocal, .codexRemote: .codex
+    case .openClaw: .openClaw
+    }
+  }
+
+  public var title: String {
+    switch self {
+    case .codexLocal: "Local Codex"
+    case .codexRemote: "Remote Codex"
+    case .openClaw: "OpenClaw Gateway"
+    }
+  }
+
+  public var systemImage: String { runtime.systemImage }
+}
+
+public struct AIChatDestinationConfiguration: Identifiable, Hashable, Codable, Sendable {
+  public static let localCodexID = "builtin.codex"
+  public static let openClawID = "builtin.openclaw"
+
+  public let id: String
+  public var name: String
+  public var mention: String
+  public var adapter: AIChatDestinationAdapter
+  public var endpoint: String
+  public var agentID: String
+  public var workspaceRoot: String
+  public var isEnabled: Bool
+
+  public init(
+    id: String = UUID().uuidString.lowercased(),
+    name: String,
+    mention: String,
+    adapter: AIChatDestinationAdapter,
+    endpoint: String = "",
+    agentID: String = "",
+    workspaceRoot: String = "",
+    isEnabled: Bool = true
+  ) {
+    self.id = id
+    self.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+    self.mention = Self.normalizedMention(mention)
+    self.adapter = adapter
+    self.endpoint = endpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+    self.agentID = agentID.trimmingCharacters(in: .whitespacesAndNewlines)
+    self.workspaceRoot = workspaceRoot.trimmingCharacters(in: .whitespacesAndNewlines)
+    self.isEnabled = isEnabled
+  }
+
+  public var runtime: AIChatRuntime { adapter.runtime }
+  public var title: String { name.isEmpty ? mention : name }
+  public var systemImage: String { adapter.systemImage }
+  public var mentionText: String { "@\(mention)" }
+  public var requiresEndpoint: Bool { adapter != .codexLocal }
+  public var acceptsBearerToken: Bool { adapter != .codexLocal }
+
+  public static var defaults: [AIChatDestinationConfiguration] {
+    [
+      AIChatDestinationConfiguration(
+        id: localCodexID,
+        name: "Codex",
+        mention: "codex",
+        adapter: .codexLocal
+      ),
+      AIChatDestinationConfiguration(
+        id: openClawID,
+        name: "OpenClaw",
+        mention: "openclaw",
+        adapter: .openClaw,
+        agentID: "main"
+      )
+    ]
+  }
+
+  public static func defaultID(for runtime: AIChatRuntime) -> String {
+    runtime == .codex ? localCodexID : openClawID
+  }
+
+  public static func normalizedMention(_ raw: String) -> String {
+    let lowered = raw
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .trimmingCharacters(in: CharacterSet(charactersIn: "@"))
+      .lowercased()
+    let allowed = lowered.unicodeScalars.filter {
+      CharacterSet.alphanumerics.contains($0) || $0 == "-" || $0 == "_"
+    }
+    let normalized = String(String.UnicodeScalarView(allowed))
+      .trimmingCharacters(in: CharacterSet(charactersIn: "-_"))
+    return normalized.isEmpty ? "agent" : String(normalized.prefix(48))
+  }
+}
+
+public struct AIChatDestinationRouting: Equatable, Sendable {
+  public let destinationIDs: [String]
+  public let normalizedText: String
+  public let summary: String
+
+  public init(
+    _ rawText: String,
+    destinations: [AIChatDestinationConfiguration],
+    allDestinationIDs: [String]? = nil
+  ) {
+    let enabled = destinations.filter(\.isEnabled)
+    let byMention = Dictionary(uniqueKeysWithValues: enabled.map { ($0.mention.lowercased(), $0) })
+    let source = rawText as NSString
+    let matches = Self.mentionPattern.matches(
+      in: rawText,
+      range: NSRange(location: 0, length: source.length)
+    )
+    var selected: [String] = []
+    var normalized = rawText
+    var expandsAll = false
+
+    for match in matches {
+      guard match.numberOfRanges > 1 else { continue }
+      let mention = source.substring(with: match.range(at: 1)).lowercased()
+      if mention == "all" || mention == "both" {
+        expandsAll = true
+      } else if let destination = byMention[mention], !selected.contains(destination.id) {
+        selected.append(destination.id)
+      } else if mention == "codex",
+                let destination = enabled.first(where: { $0.id == AIChatDestinationConfiguration.localCodexID }),
+                !selected.contains(destination.id) {
+        selected.append(destination.id)
+      } else if mention == "openclaw",
+                let destination = enabled.first(where: { $0.id == AIChatDestinationConfiguration.openClawID }),
+                !selected.contains(destination.id) {
+        selected.append(destination.id)
+      }
+    }
+
+    if expandsAll {
+      let allowed = Set(allDestinationIDs ?? enabled.map(\.id))
+      for destination in enabled where allowed.contains(destination.id) && !selected.contains(destination.id) {
+        selected.append(destination.id)
+      }
+    }
+
+    for match in matches.reversed() {
+      guard match.numberOfRanges > 1 else { continue }
+      let mention = source.substring(with: match.range(at: 1)).lowercased()
+      let replacement: String
+      if mention == "all" || mention == "both" {
+        replacement = selected.compactMap { id in
+          enabled.first(where: { $0.id == id })?.mentionText
+        }.joined(separator: " ")
+      } else if let destination = byMention[mention] {
+        replacement = destination.mentionText
+      } else if mention == "codex",
+                let destination = enabled.first(where: { $0.id == AIChatDestinationConfiguration.localCodexID }) {
+        replacement = destination.mentionText
+      } else if mention == "openclaw",
+                let destination = enabled.first(where: { $0.id == AIChatDestinationConfiguration.openClawID }) {
+        replacement = destination.mentionText
+      } else {
+        continue
+      }
+      normalized = (normalized as NSString).replacingCharacters(in: match.range, with: replacement)
+    }
+
+    destinationIDs = selected
+    normalizedText = normalized
+    let names = selected.compactMap { id in enabled.first(where: { $0.id == id })?.title }
+    summary = names.isEmpty
+      ? "Posts to thread · no agents invoked"
+      : "Invokes \(names.joined(separator: " + "))"
+  }
+
+  private static let mentionPattern = try! NSRegularExpression(
+    pattern: #"(?i)(?<![A-Za-z0-9_])@([A-Za-z0-9][A-Za-z0-9_-]*)(?![A-Za-z0-9_-])"#
+  )
+}
+
+public enum AIChatAudience: String, CaseIterable, Codable, Identifiable, Sendable {
+  case thread
+  case openClaw
+  case codex
+  case everyone
+
+  public var id: String { rawValue }
+
+  public var title: String {
+    switch self {
+    case .thread: "Thread"
+    case .openClaw: "OpenClaw"
+    case .codex: "Codex"
+    case .everyone: "Codex + OpenClaw"
+    }
+  }
+
+  public var composerTitle: String {
+    switch self {
+    case .thread: "Post context"
+    case .openClaw: "Ask OpenClaw"
+    case .codex: "Ask Codex"
+    case .everyone: "Ask all"
+    }
+  }
+
+  public var systemImage: String {
+    switch self {
+    case .thread: "text.bubble"
+    case .openClaw: AIChatRuntime.openClaw.systemImage
+    case .codex: AIChatRuntime.codex.systemImage
+    case .everyone: "person.2.fill"
+    }
+  }
+
+  public var runtimes: [AIChatRuntime] {
+    switch self {
+    case .thread: []
+    case .openClaw: [.openClaw]
+    case .codex: [.codex]
+    case .everyone: [.codex, .openClaw]
+    }
+  }
+
+  public init(runtime: AIChatRuntime) {
+    self = runtime == .codex ? .codex : .openClaw
+  }
+}
+
+public struct AIChatRoomRouting: Equatable, Sendable {
+  public let audience: AIChatAudience
+  public let normalizedText: String
+
+  public init(_ rawText: String) {
+    let source = rawText as NSString
+    let matches = Self.mentionPattern.matches(
+      in: rawText,
+      range: NSRange(location: 0, length: source.length)
+    )
+    var invokesCodex = false
+    var invokesOpenClaw = false
+    var normalized = rawText
+
+    for match in matches {
+      guard match.numberOfRanges > 1 else { continue }
+      switch source.substring(with: match.range(at: 1)).lowercased() {
+      case "codex":
+        invokesCodex = true
+      case "openclaw":
+        invokesOpenClaw = true
+      case "all", "both":
+        invokesCodex = true
+        invokesOpenClaw = true
+      default:
+        break
+      }
+    }
+
+    for match in matches.reversed() {
+      guard match.numberOfRanges > 1 else { continue }
+      let mention = source.substring(with: match.range(at: 1)).lowercased()
+      let replacement: String
+      switch mention {
+      case "codex": replacement = "@Codex"
+      case "openclaw": replacement = "@OpenClaw"
+      case "all", "both": replacement = "@Codex @OpenClaw"
+      default: continue
+      }
+      normalized = (normalized as NSString).replacingCharacters(in: match.range, with: replacement)
+    }
+
+    if invokesCodex && invokesOpenClaw {
+      audience = .everyone
+    } else if invokesCodex {
+      audience = .codex
+    } else if invokesOpenClaw {
+      audience = .openClaw
+    } else {
+      audience = .thread
+    }
+    normalizedText = normalized
+  }
+
+  public var summary: String {
+    switch audience {
+    case .thread: "Posts to thread · no agents invoked"
+    case .codex: "Invokes Codex"
+    case .openClaw: "Invokes OpenClaw"
+    case .everyone: "Invokes Codex + OpenClaw"
+    }
+  }
+
+  private static let mentionPattern = try! NSRegularExpression(
+    pattern: #"(?i)(?<![A-Za-z0-9_])@(codex|openclaw|all|both)(?![A-Za-z0-9_])"#
+  )
+}
+
 public enum AIChatMessageDeliveryPreference: String, Codable, Sendable {
   case automatic
   case steer
@@ -2248,14 +2632,42 @@ public struct AIChatRemoteConfiguration: Sendable {
   }
 }
 
+public struct AIChatRoomModelSelection: Hashable, Codable, Sendable {
+  public let codex: String?
+  public let openClaw: String?
+
+  public init(codex: String? = nil, openClaw: String? = nil) {
+    self.codex = codex
+    self.openClaw = openClaw
+  }
+
+  public func model(for runtime: AIChatRuntime) -> String? {
+    switch runtime {
+    case .codex: codex
+    case .openClaw: openClaw
+    }
+  }
+
+  public func replacingModel(_ model: String?, for runtime: AIChatRuntime) -> AIChatRoomModelSelection {
+    switch runtime {
+    case .codex:
+      AIChatRoomModelSelection(codex: model, openClaw: openClaw)
+    case .openClaw:
+      AIChatRoomModelSelection(codex: codex, openClaw: model)
+    }
+  }
+}
+
 public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
   public let id: UUID
   public let title: String
   public let createdAt: Date
   public let updatedAt: Date
   public let runtime: AIChatRuntime
+  public let destinationID: String
   public let sessionKey: String
   public let runtimeThreadID: String?
+  public let runtimeThreadIDsByDestination: [String: String]
   public let model: String?
   public let reasoningEffort: String?
   public let messages: [OpenClawChatMessage]
@@ -2265,6 +2677,11 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
   public let unreadMessageCount: Int
   public let resource: OpenClawResourceReference?
   public let pendingTurn: OpenClawPendingTurn?
+  public let isSharedRoom: Bool
+  public let roomAudience: AIChatAudience
+  public let roomModels: AIChatRoomModelSelection
+  public let roomDestinationIDs: [String]
+  public let roomModelsByDestination: [String: String]
 
   public init(
     id: UUID = UUID(),
@@ -2272,8 +2689,10 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
     createdAt: Date = Date(),
     updatedAt: Date = Date(),
     runtime: AIChatRuntime = .openClaw,
+    destinationID: String? = nil,
     sessionKey: String,
     runtimeThreadID: String? = nil,
+    runtimeThreadIDsByDestination: [String: String] = [:],
     model: String? = nil,
     reasoningEffort: String? = nil,
     messages: [OpenClawChatMessage] = [],
@@ -2282,15 +2701,22 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
     settledAt: Date? = nil,
     unreadMessageCount: Int = 0,
     resource: OpenClawResourceReference? = nil,
-    pendingTurn: OpenClawPendingTurn? = nil
+    pendingTurn: OpenClawPendingTurn? = nil,
+    isSharedRoom: Bool = false,
+    roomAudience: AIChatAudience = .thread,
+    roomModels: AIChatRoomModelSelection = AIChatRoomModelSelection(),
+    roomDestinationIDs: [String] = [],
+    roomModelsByDestination: [String: String] = [:]
   ) {
     self.id = id
     self.title = title
     self.createdAt = createdAt
     self.updatedAt = updatedAt
     self.runtime = runtime
+    self.destinationID = destinationID ?? AIChatDestinationConfiguration.defaultID(for: runtime)
     self.sessionKey = sessionKey
     self.runtimeThreadID = runtimeThreadID
+    self.runtimeThreadIDsByDestination = runtimeThreadIDsByDestination
     self.model = model
     self.reasoningEffort = reasoningEffort
     self.messages = messages
@@ -2300,10 +2726,19 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
     self.unreadMessageCount = max(0, unreadMessageCount)
     self.resource = resource
     self.pendingTurn = pendingTurn
+    self.isSharedRoom = isSharedRoom
+    self.roomAudience = isSharedRoom ? roomAudience : AIChatAudience(runtime: runtime)
+    self.roomModels = isSharedRoom ? roomModels : AIChatRoomModelSelection()
+    self.roomDestinationIDs = isSharedRoom
+      ? (roomDestinationIDs.isEmpty
+          ? AIChatRuntime.allCases.map(AIChatDestinationConfiguration.defaultID(for:))
+          : roomDestinationIDs)
+      : []
+    self.roomModelsByDestination = isSharedRoom ? roomModelsByDestination : [:]
   }
 
   public var messageCount: Int {
-    messages.count
+    messages.lazy.filter { !$0.isRoomDispatchCopy }.count
   }
 
   public var isSettled: Bool {
@@ -2311,7 +2746,7 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
   }
 
   public var canChangeAIRuntime: Bool {
-    messages.isEmpty && pendingTurn == nil
+    !isSharedRoom && messages.isEmpty && pendingTurn == nil
   }
 
   public var hasUnresolvedLatestDelivery: Bool {
@@ -2333,8 +2768,10 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
     case createdAt
     case updatedAt
     case runtime
+    case destinationID
     case sessionKey
     case runtimeThreadID
+    case runtimeThreadIDsByDestination
     case model
     case reasoningEffort
     case messages
@@ -2344,6 +2781,11 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
     case unreadMessageCount
     case resource
     case pendingTurn
+    case isSharedRoom
+    case roomAudience
+    case roomModels
+    case roomDestinationIDs
+    case roomModelsByDestination
   }
 
   public init(from decoder: Decoder) throws {
@@ -2353,8 +2795,22 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
     createdAt = try container.decode(Date.self, forKey: .createdAt)
     updatedAt = try container.decode(Date.self, forKey: .updatedAt)
     runtime = try container.decodeIfPresent(AIChatRuntime.self, forKey: .runtime) ?? .openClaw
+    destinationID = try container.decodeIfPresent(String.self, forKey: .destinationID)
+      ?? AIChatDestinationConfiguration.defaultID(for: runtime)
     sessionKey = try container.decode(String.self, forKey: .sessionKey)
     runtimeThreadID = try container.decodeIfPresent(String.self, forKey: .runtimeThreadID)
+    let decodedRuntimeThreadIDsByDestination = try container.decodeIfPresent(
+      [String: String].self,
+      forKey: .runtimeThreadIDsByDestination
+    )
+    let legacyRuntimeThreadIDsByDestination: [String: String]
+    if let runtimeThreadID {
+      legacyRuntimeThreadIDsByDestination = [destinationID: runtimeThreadID]
+    } else {
+      legacyRuntimeThreadIDsByDestination = [:]
+    }
+    runtimeThreadIDsByDestination = decodedRuntimeThreadIDsByDestination
+      ?? legacyRuntimeThreadIDsByDestination
     model = try container.decodeIfPresent(String.self, forKey: .model)
     reasoningEffort = try container.decodeIfPresent(String.self, forKey: .reasoningEffort)
     messages = try container.decode([OpenClawChatMessage].self, forKey: .messages)
@@ -2364,19 +2820,54 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
     unreadMessageCount = max(0, try container.decodeIfPresent(Int.self, forKey: .unreadMessageCount) ?? 0)
     resource = try container.decodeIfPresent(OpenClawResourceReference.self, forKey: .resource)
     pendingTurn = try container.decodeIfPresent(OpenClawPendingTurn.self, forKey: .pendingTurn)
+    isSharedRoom = try container.decodeIfPresent(Bool.self, forKey: .isSharedRoom) ?? false
+    roomAudience = isSharedRoom
+      ? (try container.decodeIfPresent(AIChatAudience.self, forKey: .roomAudience) ?? .thread)
+      : AIChatAudience(runtime: runtime)
+    roomModels = isSharedRoom
+      ? (try container.decodeIfPresent(AIChatRoomModelSelection.self, forKey: .roomModels)
+          ?? AIChatRoomModelSelection())
+      : AIChatRoomModelSelection()
+    roomDestinationIDs = isSharedRoom
+      ? (try container.decodeIfPresent([String].self, forKey: .roomDestinationIDs)
+          ?? roomAudience.runtimes.map(AIChatDestinationConfiguration.defaultID(for:)))
+      : []
+    let decodedRoomModelsByDestination = try container.decodeIfPresent(
+      [String: String].self,
+      forKey: .roomModelsByDestination
+    )
+    var migratedRoomModelPairs: [(String, String)] = []
+    for id in roomDestinationIDs {
+        let legacyRuntime: AIChatRuntime = id == AIChatDestinationConfiguration.localCodexID
+          ? .codex
+          : .openClaw
+        if let legacyModel = roomModels.model(for: legacyRuntime) {
+          migratedRoomModelPairs.append((id, legacyModel))
+        }
+      }
+    let migratedRoomModelsByDestination = Dictionary(uniqueKeysWithValues: migratedRoomModelPairs)
+    roomModelsByDestination = isSharedRoom
+      ? (decodedRoomModelsByDestination ?? migratedRoomModelsByDestination)
+      : [:]
   }
 
   public func replacingOpenClawChatMetadata(
     title nextTitle: String? = nil,
     runtime nextRuntime: AIChatRuntime? = nil,
+    destinationID nextDestinationID: String? = nil,
     sessionKey nextSessionKey: String? = nil,
     runtimeThreadID nextRuntimeThreadID: String?? = nil,
+    runtimeThreadIDsByDestination nextRuntimeThreadIDsByDestination: [String: String]? = nil,
     model nextModel: String?? = nil,
     reasoningEffort nextReasoningEffort: String?? = nil,
     isPinned nextIsPinned: Bool? = nil,
     isArchived nextIsArchived: Bool? = nil,
     settledAt nextSettledAt: Date?? = nil,
-    unreadMessageCount nextUnreadMessageCount: Int? = nil
+    unreadMessageCount nextUnreadMessageCount: Int? = nil,
+    roomAudience nextRoomAudience: AIChatAudience? = nil,
+    roomModels nextRoomModels: AIChatRoomModelSelection? = nil,
+    roomDestinationIDs nextRoomDestinationIDs: [String]? = nil,
+    roomModelsByDestination nextRoomModelsByDestination: [String: String]? = nil
   ) -> OpenClawChatThread {
     let archived = nextIsArchived ?? isArchived
     let settlement = nextSettledAt ?? (archived ? settledAt : nil)
@@ -2386,8 +2877,10 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
       createdAt: createdAt,
       updatedAt: updatedAt,
       runtime: nextRuntime ?? runtime,
+      destinationID: nextDestinationID ?? destinationID,
       sessionKey: nextSessionKey ?? sessionKey,
       runtimeThreadID: nextRuntimeThreadID ?? runtimeThreadID,
+      runtimeThreadIDsByDestination: nextRuntimeThreadIDsByDestination ?? runtimeThreadIDsByDestination,
       model: nextModel ?? model,
       reasoningEffort: nextReasoningEffort ?? reasoningEffort,
       messages: messages,
@@ -2396,7 +2889,12 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
       settledAt: settlement,
       unreadMessageCount: nextUnreadMessageCount ?? unreadMessageCount,
       resource: resource,
-      pendingTurn: pendingTurn
+      pendingTurn: pendingTurn,
+      isSharedRoom: isSharedRoom,
+      roomAudience: nextRoomAudience ?? roomAudience,
+      roomModels: nextRoomModels ?? roomModels,
+      roomDestinationIDs: nextRoomDestinationIDs ?? roomDestinationIDs,
+      roomModelsByDestination: nextRoomModelsByDestination ?? roomModelsByDestination
     )
   }
 
@@ -2407,8 +2905,10 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
       createdAt: createdAt,
       updatedAt: nextMessages.last?.createdAt ?? updatedAt,
       runtime: runtime,
+      destinationID: destinationID,
       sessionKey: sessionKey,
       runtimeThreadID: runtimeThreadID,
+      runtimeThreadIDsByDestination: runtimeThreadIDsByDestination,
       model: model,
       reasoningEffort: reasoningEffort,
       messages: nextMessages,
@@ -2417,7 +2917,12 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
       settledAt: settledAt,
       unreadMessageCount: unreadMessageCount,
       resource: resource,
-      pendingTurn: pendingTurn
+      pendingTurn: pendingTurn,
+      isSharedRoom: isSharedRoom,
+      roomAudience: roomAudience,
+      roomModels: roomModels,
+      roomDestinationIDs: roomDestinationIDs,
+      roomModelsByDestination: roomModelsByDestination
     )
   }
 
@@ -2428,8 +2933,10 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
       createdAt: createdAt,
       updatedAt: updatedAt,
       runtime: runtime,
+      destinationID: destinationID,
       sessionKey: sessionKey,
       runtimeThreadID: runtimeThreadID,
+      runtimeThreadIDsByDestination: runtimeThreadIDsByDestination,
       model: model,
       reasoningEffort: reasoningEffort,
       messages: messages,
@@ -2438,8 +2945,26 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
       settledAt: settledAt,
       unreadMessageCount: unreadMessageCount,
       resource: resource,
-      pendingTurn: nextPendingTurn
+      pendingTurn: nextPendingTurn,
+      isSharedRoom: isSharedRoom,
+      roomAudience: roomAudience,
+      roomModels: roomModels,
+      roomDestinationIDs: roomDestinationIDs,
+      roomModelsByDestination: roomModelsByDestination
     )
+  }
+
+  public func model(for runtime: AIChatRuntime) -> String? {
+    isSharedRoom ? roomModels.model(for: runtime) : (self.runtime == runtime ? model : nil)
+  }
+
+  public func model(forDestinationID destinationID: String) -> String? {
+    isSharedRoom ? roomModelsByDestination[destinationID] : (self.destinationID == destinationID ? model : nil)
+  }
+
+  public func runtimeThreadID(forDestinationID destinationID: String) -> String? {
+    runtimeThreadIDsByDestination[destinationID]
+      ?? (self.destinationID == destinationID ? runtimeThreadID : nil)
   }
 }
 

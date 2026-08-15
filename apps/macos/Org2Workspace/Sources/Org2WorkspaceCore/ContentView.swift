@@ -582,7 +582,7 @@ private struct ExternalThreadsView: View {
               }
             }
           } label: {
-            Label("Continue in New Org2 Thread", systemImage: "arrow.turn.down.right")
+            Label("Fork into Org2", systemImage: "arrow.triangle.branch")
           }
           .buttonStyle(.borderedProminent)
         }
@@ -1113,22 +1113,24 @@ private struct OpenClawSidebarThreadList: View {
       } else {
         LazyVStack(alignment: .leading, spacing: 2) {
           ForEach(store.visibleOpenClawChatThreads) { thread in
+            let summary = OpenClawSidebarThreadSummary(thread: thread)
             OpenClawSidebarThreadRow(
-              thread: thread,
-              isSelected: store.selectedOpenClawChatThreadID == thread.id && store.selectedSurface == .openClaw,
-              isSending: store.openClawSendingThreadIDs.contains(thread.id),
+              summary: summary,
+              isSelected: store.selectedOpenClawChatThreadID == summary.id && store.selectedSurface == .openClaw,
+              isSending: store.openClawSendingThreadIDs.contains(summary.id),
               select: {
                 store.makeSurfacePrimary(.openClaw)
-                store.selectOpenClawChatThread(thread.id)
+                store.selectOpenClawChatThread(summary.id)
               },
               rename: { beginRenaming(threadID: $0) },
-              togglePin: { store.toggleOpenClawChatThreadPin(thread.id) },
-              settle: { store.settleOpenClawChatThread(thread.id) },
-              reopen: { store.reopenOpenClawChatThread(thread.id) }
+              fork: { store.forkAIChatThread(summary.id) },
+              togglePin: { store.toggleOpenClawChatThreadPin(summary.id) },
+              settle: { store.settleOpenClawChatThread(summary.id) },
+              reopen: { store.reopenOpenClawChatThread(summary.id) }
             )
             .id(OpenClawSidebarThreadRowIdentity(
-              thread: thread,
-              isSending: store.openClawSendingThreadIDs.contains(thread.id)
+              summary: summary,
+              isSending: store.openClawSendingThreadIDs.contains(summary.id)
             ))
           }
 
@@ -1176,23 +1178,25 @@ private struct OpenClawSidebarThreadList: View {
 
           if showsSettledThreads {
             ForEach(store.settledOpenClawChatThreads) { thread in
+              let summary = OpenClawSidebarThreadSummary(thread: thread)
               OpenClawSidebarThreadRow(
-                thread: thread,
-                isSelected: store.selectedOpenClawChatThreadID == thread.id && store.selectedSurface == .openClaw,
-                isSending: store.openClawSendingThreadIDs.contains(thread.id),
+                summary: summary,
+                isSelected: store.selectedOpenClawChatThreadID == summary.id && store.selectedSurface == .openClaw,
+                isSending: store.openClawSendingThreadIDs.contains(summary.id),
                 select: {
                   store.makeSurfacePrimary(.openClaw)
-                  store.selectOpenClawChatThread(thread.id)
+                  store.selectOpenClawChatThread(summary.id)
                 },
                 rename: { beginRenaming(threadID: $0) },
-                togglePin: { store.toggleOpenClawChatThreadPin(thread.id) },
-                settle: { store.settleOpenClawChatThread(thread.id) },
-                reopen: { store.reopenOpenClawChatThread(thread.id) }
+                fork: { store.forkAIChatThread(summary.id) },
+                togglePin: { store.toggleOpenClawChatThreadPin(summary.id) },
+                settle: { store.settleOpenClawChatThread(summary.id) },
+                reopen: { store.reopenOpenClawChatThread(summary.id) }
               )
               .opacity(0.68)
               .id(OpenClawSidebarThreadRowIdentity(
-                thread: thread,
-                isSending: store.openClawSendingThreadIDs.contains(thread.id)
+                summary: summary,
+                isSending: store.openClawSendingThreadIDs.contains(summary.id)
               ))
             }
           }
@@ -1266,19 +1270,55 @@ struct OpenClawSidebarThreadRowIdentity: Hashable {
   let isSending: Bool
 
   init(thread: OpenClawChatThread, isSending: Bool) {
-    threadID = thread.id
-    isSettled = thread.isSettled
+    self.init(summary: OpenClawSidebarThreadSummary(thread: thread), isSending: isSending)
+  }
+
+  init(summary: OpenClawSidebarThreadSummary, isSending: Bool) {
+    threadID = summary.id
+    isSettled = summary.isSettled
     self.isSending = isSending
   }
 }
 
+struct OpenClawSidebarThreadSummary: Identifiable, Hashable {
+  let id: UUID
+  let title: String
+  let updatedAt: Date
+  let runtime: AIChatRuntime
+  let destinationID: String
+  let isSharedRoom: Bool
+  let messageCount: Int
+  let isSettled: Bool
+  let hasResource: Bool
+  let latestDeliveryNeedsAttention: Bool
+  let isPinned: Bool
+  let unreadMessageCount: Int
+
+  init(thread: OpenClawChatThread) {
+    id = thread.id
+    title = thread.title
+    updatedAt = thread.updatedAt
+    runtime = thread.runtime
+    destinationID = thread.destinationID
+    isSharedRoom = thread.isSharedRoom
+    messageCount = thread.messageCount
+    isSettled = thread.isSettled
+    hasResource = thread.resource != nil
+    latestDeliveryNeedsAttention = thread.latestDeliveryNeedsAttention
+    isPinned = thread.isPinned
+    unreadMessageCount = thread.unreadMessageCount
+  }
+}
+
 private struct OpenClawSidebarThreadRow: View {
+  @EnvironmentObject private var store: WorkspaceStore
   @State private var isHovered = false
-  let thread: OpenClawChatThread
+  let summary: OpenClawSidebarThreadSummary
   let isSelected: Bool
   let isSending: Bool
   let select: () -> Void
   let rename: (UUID) -> Void
+  let fork: () -> Void
   let togglePin: () -> Void
   let settle: () -> Void
   let reopen: () -> Void
@@ -1288,18 +1328,18 @@ private struct OpenClawSidebarThreadRow: View {
       Button(action: select) {
         HStack(alignment: .center, spacing: 8) {
           VStack(alignment: .leading, spacing: 2) {
-            Text(thread.title)
+            Text(summary.title)
               .font(.callout.weight(isSelected ? .medium : .regular))
               .foregroundStyle(.primary)
               .lineLimit(1)
               .truncationMode(.tail)
             HStack(spacing: 5) {
-              Text(thread.messageCount == 1 ? "1 message" : "\(thread.messageCount) messages")
+              Text(summary.messageCount == 1 ? "1 message" : "\(summary.messageCount) messages")
               Text("·")
-              Text(thread.runtime.title)
+              Text(summary.isSharedRoom ? "Room" : store.aiChatDestinationTitle(summary.destinationID))
               Text("·")
-              Text(Self.relativeDate(thread.updatedAt))
-              if thread.isSettled {
+              Text(Self.relativeDate(summary.updatedAt))
+              if summary.isSettled {
                 Text("· Settled")
               }
             }
@@ -1310,27 +1350,27 @@ private struct OpenClawSidebarThreadRow: View {
           Spacer(minLength: 4)
           if isSending {
             WorkspaceActivityIndicator(size: .mini)
-              .help("\(thread.runtime.title) is thinking")
+              .help("\(store.aiChatDestinationTitle(summary.destinationID)) is thinking")
           }
-          if thread.resource != nil {
+          if summary.hasResource {
             Image(systemName: "text.bubble.fill")
               .font(.caption2.weight(.semibold))
               .foregroundStyle(.secondary)
               .help("Canonical resource thread")
           }
-          if thread.latestDeliveryNeedsAttention {
+          if summary.latestDeliveryNeedsAttention {
             Image(systemName: "exclamationmark.triangle.fill")
               .font(.caption2.weight(.semibold))
               .foregroundStyle(.orange)
               .help("Latest message needs attention")
           }
-          if thread.isPinned {
+          if summary.isPinned {
             Image(systemName: "pin.fill")
               .font(.caption2.weight(.semibold))
               .foregroundStyle(.secondary)
           }
-          if thread.unreadMessageCount > 0 {
-            OpenClawUnreadBadge(count: thread.unreadMessageCount)
+          if summary.unreadMessageCount > 0 {
+            OpenClawUnreadBadge(count: summary.unreadMessageCount)
           }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1342,16 +1382,16 @@ private struct OpenClawSidebarThreadRow: View {
 
       if isHovered {
         Button {
-          thread.isSettled ? reopen() : settle()
+          summary.isSettled ? reopen() : settle()
         } label: {
-          Image(systemName: thread.isSettled ? "arrow.uturn.backward.circle" : "checkmark.circle")
+          Image(systemName: summary.isSettled ? "arrow.uturn.backward.circle" : "checkmark.circle")
             .font(.callout)
             .frame(width: 24, height: 28)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .foregroundStyle(.secondary)
-        .help(thread.isSettled ? "Reopen thread" : "Settle thread")
+        .help(summary.isSettled ? "Reopen thread" : "Settle thread")
         .transition(.opacity)
       } else {
         Color.clear.frame(width: 24, height: 28)
@@ -1372,21 +1412,27 @@ private struct OpenClawSidebarThreadRow: View {
     }
     .contextMenu {
       Button {
-        rename(thread.id)
+        rename(summary.id)
       } label: {
         Label("Rename Thread", systemImage: "pencil")
+      }
+
+      Button {
+        fork()
+      } label: {
+        Label("Fork Thread", systemImage: "arrow.triangle.branch")
       }
 
       Button {
         togglePin()
       } label: {
         Label(
-          thread.isPinned ? "Unpin Thread" : "Pin Thread",
-          systemImage: thread.isPinned ? "pin.slash" : "pin"
+          summary.isPinned ? "Unpin Thread" : "Pin Thread",
+          systemImage: summary.isPinned ? "pin.slash" : "pin"
         )
       }
 
-      if thread.isSettled {
+      if summary.isSettled {
         Button {
           reopen()
         } label: {
@@ -1406,10 +1452,11 @@ private struct OpenClawSidebarThreadRow: View {
       // attached to the NSView that was actually clicked while the SwiftUI menu
       // remains available to accessibility actions.
       OpenClawSidebarThreadContextMenuTarget(
-        threadID: thread.id,
-        isPinned: thread.isPinned,
-        isSettled: thread.isSettled,
+        threadID: summary.id,
+        isPinned: summary.isPinned,
+        isSettled: summary.isSettled,
         rename: rename,
+        fork: fork,
         togglePin: togglePin,
         settle: settle,
         reopen: reopen
@@ -1423,10 +1470,14 @@ private struct OpenClawSidebarThreadRow: View {
     if elapsed < 3600 { return "\(Int(elapsed / 60))m" }
     if elapsed < 86_400 { return "\(Int(elapsed / 3600))h" }
     if elapsed < 604_800 { return "\(Int(elapsed / 86_400))d" }
+    return shortDateFormatter.string(from: date)
+  }
+
+  private static let shortDateFormatter: DateFormatter = {
     let formatter = DateFormatter()
     formatter.setLocalizedDateFormatFromTemplate("MMM d")
-    return formatter.string(from: date)
-  }
+    return formatter
+  }()
 }
 
 private struct OpenClawSidebarThreadContextMenuTarget: NSViewRepresentable {
@@ -1434,6 +1485,7 @@ private struct OpenClawSidebarThreadContextMenuTarget: NSViewRepresentable {
   let isPinned: Bool
   let isSettled: Bool
   let rename: (UUID) -> Void
+  let fork: () -> Void
   let togglePin: () -> Void
   let settle: () -> Void
   let reopen: () -> Void
@@ -1447,6 +1499,7 @@ private struct OpenClawSidebarThreadContextMenuTarget: NSViewRepresentable {
     view.isPinned = isPinned
     view.isSettled = isSettled
     view.rename = rename
+    view.fork = fork
     view.togglePin = togglePin
     view.settle = settle
     view.reopen = reopen
@@ -1457,6 +1510,7 @@ private struct OpenClawSidebarThreadContextMenuTarget: NSViewRepresentable {
     var isPinned = false
     var isSettled = false
     var rename: ((UUID) -> Void)?
+    var fork: (() -> Void)?
     var togglePin: (() -> Void)?
     var settle: (() -> Void)?
     var reopen: (() -> Void)?
@@ -1473,6 +1527,11 @@ private struct OpenClawSidebarThreadContextMenuTarget: NSViewRepresentable {
         title: "Rename Thread",
         systemImage: "pencil",
         action: #selector(renameThread)
+      ))
+      menu.addItem(menuItem(
+        title: "Fork Thread",
+        systemImage: "arrow.triangle.branch",
+        action: #selector(forkThread)
       ))
       menu.addItem(menuItem(
         title: isPinned ? "Unpin Thread" : "Pin Thread",
@@ -1502,6 +1561,10 @@ private struct OpenClawSidebarThreadContextMenuTarget: NSViewRepresentable {
 
     @objc func toggleThreadPin() {
       togglePin?()
+    }
+
+    @objc func forkThread() {
+      fork?()
     }
 
     @objc func toggleThreadSettlement() {
@@ -6321,7 +6384,9 @@ private struct OpenClawChatView: View {
     switch presentation {
     case .fullPage:
       HeaderBar(
-        title: "\(store.selectedAIChatRuntime.title) Chat",
+        title: store.selectedAIChatIsSharedRoom
+          ? "Shared AI Room · Experimental"
+          : "\(store.selectedAIChatDestination.title) Chat",
         subtitle: store.openClawStatusText,
         surface: surface
       ) {
@@ -6334,7 +6399,7 @@ private struct OpenClawChatView: View {
     case .assistantPanel:
       HStack(spacing: 8) {
         VStack(alignment: .leading, spacing: 2) {
-          Text(store.selectedAIChatRuntime.title)
+          Text(store.selectedAIChatDisplayTitle)
             .font(.headline)
           Text(store.openClawStatusText)
             .font(.caption)
@@ -6403,11 +6468,25 @@ private struct OpenClawChatView: View {
   }
 
   private var newChatButton: some View {
-    Button {
-      store.createAIChatThread()
+    Menu {
+      ForEach(store.enabledAIChatDestinations) { destination in
+        Button {
+          store.createAIChatThread(destinationID: destination.id)
+        } label: {
+          Label("New \(destination.title) Chat", systemImage: destination.systemImage)
+        }
+      }
+      Divider()
+      Button {
+        store.createAIChatSharedRoom()
+      } label: {
+        Label("New Shared Room (Experimental)", systemImage: "person.2.fill")
+      }
     } label: {
       Label("New", systemImage: "plus")
     }
+    .menuIndicator(.hidden)
+    .fixedSize()
   }
 
   @ViewBuilder
@@ -6434,6 +6513,10 @@ private struct OpenClawChatView: View {
       messageCount: store.openClawMessages.count,
       isSending: store.isSendingOpenClawMessage
     )
+    let transcriptItems = AIChatRoomTranscriptPresentation.items(
+      messages: store.openClawMessages,
+      isSharedRoom: store.selectedAIChatIsSharedRoom
+    )
 
     return ScrollViewReader { proxy in
       ScrollView {
@@ -6442,26 +6525,33 @@ private struct OpenClawChatView: View {
             EmptyChatView(statusText: store.openClawStatusText)
               .frame(maxWidth: .infinity, minHeight: presentation.isCompact ? 140 : 220)
           } else {
-            ForEach(store.openClawMessages) { message in
-              ChatBubbleView(
-                message: message,
-                runtime: store.selectedAIChatRuntime,
-                compact: presentation.isCompact,
-                isQueued: message.role == .user && store.isAIChatMessageQueued(message.id),
-                editQueuedMessage: {
-                  store.editQueuedAIChatMessage(message.id)
-                },
-                deleteQueuedMessage: {
-                  store.deleteQueuedAIChatMessage(message.id)
-                }
-              )
+            ForEach(transcriptItems) { item in
+              switch item {
+              case .message(let message):
+                ChatBubbleView(
+                  message: message,
+                  runtime: store.selectedAIChatRuntime,
+                  destinationTitlesByID: store.aiChatDestinationTitlesByID,
+                  compact: presentation.isCompact,
+                  isQueued: message.role == .user && store.isAIChatMessageQueued(message.id),
+                  editQueuedMessage: {
+                    store.editQueuedAIChatMessage(message.id)
+                  },
+                  deleteQueuedMessage: {
+                    store.deleteQueuedAIChatMessage(message.id)
+                  }
+                )
                 .id(message.id)
+              case .round(let round):
+                AIChatRoomRoundView(round: round, compact: presentation.isCompact)
+                  .id(round.id)
+              }
             }
-            if store.isSendingOpenClawMessage {
+            if store.isSendingOpenClawMessage && !store.selectedAIChatIsSharedRoom {
               OpenClawTypingIndicatorView(
                 startedAt: store.openClawRequestStartedAt,
                 lastEventAt: store.openClawLastEventAt,
-                runtime: store.selectedAIChatRuntime,
+                runtime: store.selectedAIChatActiveRuntime,
                 connectionState: store.openClawGatewayConnectionState,
                 connectionDetail: store.openClawGatewayConnectionDetail,
                 runID: store.openClawActiveRunID,
@@ -6858,7 +6948,7 @@ private struct OpenClawConfigurationSheet: View {
       VStack(alignment: .leading, spacing: 4) {
         Text("AI Chat")
           .font(.headline.weight(.semibold))
-        Text("Use OpenClaw or local Codex with ChatGPT on a per-thread basis.")
+        Text("Route each thread to a configured local or remote AI destination.")
           .font(.callout)
           .foregroundStyle(.secondary)
       }
@@ -6898,6 +6988,21 @@ private struct OpenClawConfigurationSheet: View {
         .padding(.vertical, 4)
       } label: {
         Text("Local Codex")
+      }
+
+      GroupBox {
+        HStack(spacing: 10) {
+          Text("\(store.enabledAIChatDestinations.count) enabled")
+            .font(.callout)
+            .foregroundStyle(.secondary)
+          Spacer()
+          SettingsLink {
+            Label("Manage Destinations…", systemImage: "gearshape")
+          }
+        }
+        .padding(.vertical, 2)
+      } label: {
+        Text("AI Destinations")
       }
 
       VStack(alignment: .leading, spacing: 3) {

@@ -242,6 +242,18 @@ public enum CodexAppServerError: LocalizedError, Sendable {
   }
 }
 
+public enum CodexAppServerTransport: Sendable, Equatable {
+  case local
+  case remote(endpoint: URL, bearerToken: String?)
+
+  var connectionDescription: String {
+    switch self {
+    case .local: "Local Codex App Server"
+    case .remote(let endpoint, _): endpoint.absoluteString
+    }
+  }
+}
+
 public actor CodexAppServerClient {
   public typealias EventHandler = @Sendable (CodexAppServerEvent) async -> Void
   public typealias DynamicToolHandler =
@@ -256,9 +268,12 @@ public actor CodexAppServerClient {
   }
 
   private let executableURL: URL?
+  private let transport: CodexAppServerTransport
   private let eventHandler: EventHandler
   private let dynamicToolHandler: DynamicToolHandler
   private var process: Process?
+  private var webSocketTask: URLSessionWebSocketTask?
+  private var webSocketReceiveTask: Task<Void, Never>?
   private var standardInput: FileHandle?
   private var standardOutput: FileHandle?
   private var standardError: FileHandle?
@@ -275,10 +290,12 @@ public actor CodexAppServerClient {
 
   public init(
     executableURL: URL? = CodexAppServerClient.resolveExecutableURL(),
+    transport: CodexAppServerTransport = .local,
     eventHandler: @escaping EventHandler,
     dynamicToolHandler: @escaping DynamicToolHandler
   ) {
     self.executableURL = executableURL
+    self.transport = transport
     self.eventHandler = eventHandler
     self.dynamicToolHandler = dynamicToolHandler
   }
@@ -289,6 +306,8 @@ public actor CodexAppServerClient {
     if process?.isRunning == true {
       process?.terminate()
     }
+    webSocketReceiveTask?.cancel()
+    webSocketTask?.cancel(with: .goingAway, reason: nil)
   }
 
   nonisolated public static func resolveExecutableURL(
@@ -392,11 +411,15 @@ public actor CodexAppServerClient {
     return models
   }
 
-  public func listExternalThreads(limit: Int = 100) async throws -> [ExternalThreadSummary] {
-    let result = try await request(
-      method: "thread/list",
-      params: .object([
-        "limit": .integer(Int64(max(1, min(limit, 200)))),
+  public func listExternalThreads(limit: Int = 1_000) async throws -> [ExternalThreadSummary] {
+    let requestedLimit = max(1, min(limit, 2_000))
+    var summaries: [ExternalThreadSummary] = []
+    var cursor: String?
+    repeat {
+      var params: [String: JSONValue] = [
+        "limit": .integer(Int64(min(200, requestedLimit - summaries.count))),
+        "sortKey": .string("recency_at"),
+        "sortDirection": .string("desc"),
         "sourceKinds": .array([
           .string("cli"),
           .string("vscode"),
@@ -404,12 +427,20 @@ public actor CodexAppServerClient {
           .string("exec"),
           .string("unknown")
         ])
-      ])
-    )
-    guard let rows = result["data"]?.arrayValue else {
-      throw CodexAppServerError.invalidResponse("thread/list omitted its thread catalog")
-    }
-    return rows.compactMap(Self.externalThreadSummary)
+      ]
+      if let cursor {
+        params["cursor"] = .string(cursor)
+      }
+      let result = try await request(method: "thread/list", params: .object(params))
+      guard let rows = result["data"]?.arrayValue else {
+        throw CodexAppServerError.invalidResponse("thread/list omitted its thread catalog")
+      }
+      summaries.append(contentsOf: rows.compactMap(Self.externalThreadSummary))
+      let nextCursor = result["nextCursor"]?.stringValue
+      guard nextCursor != cursor else { break }
+      cursor = nextCursor
+    } while cursor != nil && summaries.count < requestedLimit
+    return Array(summaries.prefix(requestedLimit))
   }
 
   public func readExternalThread(_ externalID: String) async throws -> ExternalThreadDetail {
@@ -597,11 +628,15 @@ public actor CodexAppServerClient {
       process?.terminate()
     }
     process = nil
+    webSocketReceiveTask?.cancel()
+    webSocketReceiveTask = nil
+    webSocketTask?.cancel(with: .goingAway, reason: nil)
+    webSocketTask = nil
     failPendingRequests(CodexAppServerError.disconnected("client shut down"))
   }
 
   private func connect() async throws {
-    if initialized, process?.isRunning == true {
+    if initialized, transportIsConnected {
       return
     }
     if let startupTask {
@@ -620,6 +655,13 @@ public actor CodexAppServerClient {
     } catch {
       startupTask = nil
       throw error
+    }
+  }
+
+  private var transportIsConnected: Bool {
+    switch transport {
+    case .local: process?.isRunning == true
+    case .remote: webSocketTask != nil
     }
   }
 
@@ -740,8 +782,13 @@ public actor CodexAppServerClient {
   }
 
   private func performConnect() async throws {
-    if process?.isRunning != true {
-      try launch()
+    if !transportIsConnected {
+      switch transport {
+      case .local:
+        try launch()
+      case .remote(let endpoint, let bearerToken):
+        try connectRemote(endpoint: endpoint, bearerToken: bearerToken)
+      }
     }
     _ = try await requestRaw(
       method: "initialize",
@@ -756,12 +803,40 @@ public actor CodexAppServerClient {
         ])
       ])
     )
-    try sendMessage(.object([
+    try await sendMessage(.object([
       "method": .string("initialized"),
       "params": .object([:])
     ]))
     initialized = true
-    await eventHandler(.connectionChanged(isConnected: true, detail: executableURL?.path))
+    await eventHandler(.connectionChanged(
+      isConnected: true,
+      detail: transport == .local ? executableURL?.path : transport.connectionDescription
+    ))
+  }
+
+  private func connectRemote(endpoint: URL, bearerToken: String?) throws {
+    guard endpoint.scheme?.lowercased() == "ws" || endpoint.scheme?.lowercased() == "wss" else {
+      throw CodexAppServerError.invalidResponse("remote Codex endpoint must use ws:// or wss://")
+    }
+    var request = URLRequest(url: endpoint)
+    if let bearerToken = bearerToken?.trimmingCharacters(in: .whitespacesAndNewlines),
+       !bearerToken.isEmpty {
+      request.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
+    }
+    let socket = URLSession.shared.webSocketTask(with: request)
+    webSocketTask = socket
+    socket.resume()
+    webSocketReceiveTask = Task { [weak self] in
+      do {
+        while !Task.isCancelled {
+          let message = try await socket.receive()
+          await self?.receiveWebSocketMessage(message)
+        }
+      } catch {
+        guard !Task.isCancelled else { return }
+        await self?.transportEnded(error.localizedDescription)
+      }
+    }
   }
 
   private func launch() throws {
@@ -794,6 +869,17 @@ public actor CodexAppServerClient {
     )
   }
 
+  private func receiveWebSocketMessage(_ message: URLSessionWebSocketTask.Message) async {
+    switch message {
+    case .string(let text):
+      await receiveLine(Data(text.utf8))
+    case .data(let data):
+      await receiveLine(data)
+    @unknown default:
+      await eventHandler(.warning(threadID: nil, message: "Ignored an unknown Codex WebSocket frame."))
+    }
+  }
+
   private func startReaders(stdout: FileHandle, stderr: FileHandle) {
     standardOutput = stdout
     standardError = stderr
@@ -820,7 +906,7 @@ public actor CodexAppServerClient {
         outputBuffer = Data()
         await receiveLine(finalLine)
       }
-      await processEnded()
+      await transportEnded()
       return
     }
     outputBuffer.append(data)
@@ -838,11 +924,15 @@ public actor CodexAppServerClient {
     latestStderr = String((latestStderr + text).suffix(4_000))
   }
 
-  private func processEnded(_ detail: String? = nil) async {
-    guard process != nil else { return }
+  private func transportEnded(_ detail: String? = nil) async {
+    guard process != nil || webSocketTask != nil else { return }
     let stderr = latestStderr.trimmingCharacters(in: .whitespacesAndNewlines)
-    let message = detail ?? (stderr.isEmpty ? "process exited" : stderr)
+    let message = detail ?? (stderr.isEmpty ? "connection closed" : stderr)
     process = nil
+    webSocketReceiveTask?.cancel()
+    webSocketReceiveTask = nil
+    webSocketTask?.cancel(with: .goingAway, reason: nil)
+    webSocketTask = nil
     standardInput = nil
     standardOutput?.readabilityHandler = nil
     standardError?.readabilityHandler = nil
@@ -884,31 +974,46 @@ public actor CodexAppServerClient {
     let key = String(requestID)
     return try await withCheckedThrowingContinuation { continuation in
       pendingRequests[key] = continuation
-      do {
-        try sendMessage(.object([
-          "id": .integer(requestID),
-          "method": .string(method),
-          "params": params
-        ]))
-      } catch {
-        pendingRequests.removeValue(forKey: key)
-        continuation.resume(throwing: error)
+      Task { [weak self] in
+        guard let self else { return }
+        do {
+          try await self.sendMessage(.object([
+            "id": .integer(requestID),
+            "method": .string(method),
+            "params": params
+          ]))
+        } catch {
+          await self.failPendingRequest(key: key, error: error)
+        }
       }
     }
   }
 
-  private func sendMessage(_ message: JSONValue) throws {
-    guard let standardInput, process?.isRunning == true else {
-      throw CodexAppServerError.disconnected("app server is not running")
-    }
+  private func failPendingRequest(key: String, error: Error) {
+    pendingRequests.removeValue(forKey: key)?.resume(throwing: error)
+  }
+
+  private func sendMessage(_ message: JSONValue) async throws {
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.withoutEscapingSlashes]
-    var data = try encoder.encode(message)
-    data.append(0x0A)
-    do {
-      try standardInput.write(contentsOf: data)
-    } catch {
-      throw CodexAppServerError.disconnected(error.localizedDescription)
+    let data = try encoder.encode(message)
+    switch transport {
+    case .local:
+      guard let standardInput, process?.isRunning == true else {
+        throw CodexAppServerError.disconnected("app server is not running")
+      }
+      var line = data
+      line.append(0x0A)
+      do {
+        try standardInput.write(contentsOf: line)
+      } catch {
+        throw CodexAppServerError.disconnected(error.localizedDescription)
+      }
+    case .remote:
+      guard let webSocketTask else {
+        throw CodexAppServerError.disconnected("remote app server is not connected")
+      }
+      try await webSocketTask.send(.string(String(decoding: data, as: UTF8.self)))
     }
   }
 
@@ -926,7 +1031,7 @@ public actor CodexAppServerClient {
     guard let object = message.objectValue else { return }
     if let method = object["method"]?.stringValue {
       if let id = object["id"] {
-        handleServerRequest(id: id, method: method, params: object["params"] ?? .object([:]))
+        await handleServerRequest(id: id, method: method, params: object["params"] ?? .object([:]))
       } else {
         await handleNotification(method: method, params: object["params"] ?? .object([:]))
       }
@@ -949,7 +1054,7 @@ public actor CodexAppServerClient {
     }
   }
 
-  private func handleServerRequest(id: JSONValue, method: String, params: JSONValue) {
+  private func handleServerRequest(id: JSONValue, method: String, params: JSONValue) async {
     guard method == "item/tool/call",
           let callID = params["callId"]?.stringValue,
           let threadID = params["threadId"]?.stringValue,
@@ -957,7 +1062,7 @@ public actor CodexAppServerClient {
           let tool = params["tool"]?.stringValue
     else {
       do {
-        try sendMessage(.object([
+        try await sendMessage(.object([
           "id": id,
           "error": .object([
             "code": .integer(-32601),
@@ -982,9 +1087,9 @@ public actor CodexAppServerClient {
     }
   }
 
-  private func sendDynamicToolResponse(id: JSONValue, result: CodexDynamicToolResult) {
+  private func sendDynamicToolResponse(id: JSONValue, result: CodexDynamicToolResult) async {
     do {
-      try sendMessage(.object([
+      try await sendMessage(.object([
         "id": id,
         "result": .object([
           "contentItems": .array([

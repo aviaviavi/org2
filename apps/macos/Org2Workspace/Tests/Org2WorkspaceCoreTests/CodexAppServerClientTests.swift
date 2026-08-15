@@ -168,6 +168,9 @@ final class CodexAppServerClientTests: XCTestCase {
       XCTAssertTrue(prompt.contains("*no duplicate in* =recipes.org2="))
       XCTAssertTrue(prompt.contains("|-------+--------------|"))
       XCTAssertTrue(prompt.contains("Never use a Markdown table delimiter such as |---|---|."))
+      XCTAssertTrue(prompt.contains("exactly one fewer + join than the number of columns"))
+      XCTAssertTrue(prompt.contains("#+begin_src sh"))
+      XCTAssertTrue(prompt.contains("Never write ##+begin_src or ##+end_src."))
       XCTAssertTrue(prompt.contains("clickable file-and-line citations is a deliberate Org2 Workspace chat transport exception"))
     }
   }
@@ -194,6 +197,60 @@ final class CodexAppServerClientTests: XCTestCase {
     XCTAssertEqual(restored.aiChatCustomInstructions, "Always identify the source corpus.")
     XCTAssertEqual(restored.codexSandboxAccess, .fullAccess)
     XCTAssertEqual(restored.aiChatMessageSound, .purr)
+  }
+
+  @MainActor
+  func testNamedAIDestinationsPersistIndependently() throws {
+    let suiteName = "AIChatDestinationSettings.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let transcript = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-destination-transcript-\(UUID().uuidString).json")
+    defer { try? FileManager.default.removeItem(at: transcript) }
+
+    let store = WorkspaceStore(
+      defaults: defaults,
+      openClawTranscriptURL: transcript,
+      legacyDefaultsDomains: []
+    )
+    let id = store.addAIChatDestination()
+    var destination = try XCTUnwrap(store.aiChatDestination(id: id))
+    destination.name = "Codex on Press"
+    destination.mention = "codex-remote"
+    destination.endpoint = "wss://press.example.test/codex"
+    destination.workspaceRoot = "~/dev/org2"
+    store.updateAIChatDestination(destination)
+
+    let restored = WorkspaceStore(
+      defaults: defaults,
+      openClawTranscriptURL: transcript,
+      legacyDefaultsDomains: []
+    )
+    let restoredDestination = try XCTUnwrap(restored.aiChatDestination(id: id))
+    XCTAssertEqual(restoredDestination.name, "Codex on Press")
+    XCTAssertEqual(restoredDestination.mention, "codex-remote")
+    XCTAssertEqual(restoredDestination.adapter, .codexRemote)
+    XCTAssertEqual(restoredDestination.endpoint, "wss://press.example.test/codex")
+    XCTAssertEqual(restoredDestination.workspaceRoot, "~/dev/org2")
+    XCTAssertTrue(restored.enabledAIChatDestinations.contains(where: { $0.id == id }))
+
+    restored.createAIChatThread(destinationID: AIChatDestinationConfiguration.localCodexID)
+    restored.setSelectedAIChatModel("local-model")
+    restored.createAIChatThread(destinationID: id)
+    XCTAssertNil(restored.selectedOpenClawChatThread?.model)
+    restored.setSelectedAIChatModel("remote-model")
+    restored.createAIChatThread(destinationID: id)
+    XCTAssertEqual(restored.selectedOpenClawChatThread?.model, "remote-model")
+  }
+
+  func testCodexRemoteTransportDescribesItsWebSocketEndpoint() throws {
+    let endpoint = try XCTUnwrap(URL(string: "wss://press.example.test/codex"))
+    XCTAssertEqual(
+      CodexAppServerTransport.remote(endpoint: endpoint, bearerToken: "secret")
+        .connectionDescription,
+      endpoint.absoluteString
+    )
+    XCTAssertEqual(CodexAppServerTransport.local.connectionDescription, "Local Codex App Server")
   }
 
   func testCodexSandboxAccessBuildsAppServerPolicies() {
@@ -453,6 +510,31 @@ final class CodexAppServerClientTests: XCTestCase {
     XCTAssertEqual(messages.map(\.content), ["What shipped?", "Version 0.4.1 shipped."])
   }
 
+  func testExternalCodexThreadListingUsesRecencyAndPaginates() async throws {
+    let temporaryDirectory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-codex-external-list-test-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: temporaryDirectory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
+
+    let executable = temporaryDirectory.appendingPathComponent("fake-codex-external-list")
+    try Self.fakeExternalThreadListAppServerScript.write(
+      to: executable,
+      atomically: true,
+      encoding: .utf8
+    )
+    try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: executable.path)
+    let client = CodexAppServerClient(
+      executableURL: executable,
+      eventHandler: { _ in },
+      dynamicToolHandler: { _ in CodexDynamicToolResult(success: false, text: "unused") }
+    )
+
+    let threads = try await client.listExternalThreads(limit: 3)
+
+    XCTAssertEqual(threads.map(\.externalID), ["thr-current", "thr-recent", "thr-older"])
+    await client.shutdown()
+  }
+
   func testExternalThreadSnapshotUsesOrg2StructureAndReadOnlyProvenance() {
     let summary = ExternalThreadSummary(
       harness: .codex,
@@ -564,6 +646,37 @@ final class CodexAppServerClientTests: XCTestCase {
           *) printf '%s\n' '{"id":2,"error":{"message":"steer input missing"}}'; continue ;;
         esac
         printf '%s\n' '{"id":2,"result":{"turnId":"turn-steer"}}'
+        ;;
+    esac
+  done
+  """#
+
+  private static let fakeExternalThreadListAppServerScript = #"""
+  #!/bin/sh
+  while IFS= read -r line; do
+    case "$line" in
+      *'"method":"initialize"'*)
+        printf '%s\n' '{"id":1,"result":{"userAgent":"fake-codex"}}'
+        ;;
+      *'"method":"initialized"'*)
+        ;;
+      *'"method":"thread/list"'*)
+        case "$line" in
+          *'"sortKey":"recency_at"'*) ;;
+          *) printf '%s\n' '{"id":2,"error":{"message":"recency sort missing"}}'; continue ;;
+        esac
+        case "$line" in
+          *'"sortDirection":"desc"'*) ;;
+          *) printf '%s\n' '{"id":2,"error":{"message":"sort direction missing"}}'; continue ;;
+        esac
+        case "$line" in
+          *'"cursor":"page-2"'*)
+            printf '%s\n' '{"id":3,"result":{"data":[{"id":"thr-older","name":"Older task","source":"vscode","createdAt":50,"updatedAt":100}],"nextCursor":null}}'
+            ;;
+          *)
+            printf '%s\n' '{"id":2,"result":{"data":[{"id":"thr-current","name":"Long-running current task","source":"appServer","createdAt":1,"updatedAt":300},{"id":"thr-recent","name":"Recent task","source":"cli","createdAt":200,"updatedAt":250}],"nextCursor":"page-2"}}'
+            ;;
+        esac
         ;;
     esac
   done

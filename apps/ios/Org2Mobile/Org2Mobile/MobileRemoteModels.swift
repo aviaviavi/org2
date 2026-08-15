@@ -28,6 +28,14 @@ struct MobileRemoteServerStatus: Codable, Hashable {
   let corpusName: String?
   let threadCount: Int
   let runningThreadCount: Int
+  let aiChatDestinations: [MobileRemoteAIDestination]?
+}
+
+struct MobileRemoteAIDestination: Codable, Hashable, Identifiable {
+  let id: String
+  let name: String
+  let mention: String
+  let runtime: String
 }
 
 struct MobileRemotePairRequest: Codable {
@@ -44,6 +52,7 @@ struct MobileRemotePairResponse: Codable {
 
 struct MobileRemoteCreateThreadRequest: Codable {
   let runtime: String
+  let destinationID: String?
 }
 
 struct MobileRemoteSendMessageRequest: Codable {
@@ -134,6 +143,9 @@ struct MobileRemoteThreadSummary: Codable, Hashable, Identifiable {
   let id: UUID
   let title: String
   let runtime: String
+  let destinationID: String?
+  let destinationName: String?
+  let isSharedRoom: Bool?
   let model: String?
   let updatedAt: Date
   let isSettled: Bool
@@ -164,6 +176,13 @@ struct MobileRemoteChatMessage: Codable, Hashable, Identifiable {
   let deliveryStatus: String
   let deliveryKind: String?
   let sendFailure: String?
+  let authorRuntime: String?
+  let authorDestinationID: String?
+  let authorDestinationName: String?
+  let audience: String?
+  let audienceDestinationNames: [String]?
+  let isRoomDispatchCopy: Bool?
+  let roomRoundID: UUID?
 }
 
 struct MobileRemoteActivity: Codable, Hashable, Identifiable {

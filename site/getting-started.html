@@ -68,6 +68,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <h2 id="cli">CLI</h2>
 <p>For normal command-line use, install the published package:</p>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm install -g @aviaviavi/org2
+org2 --version
 org2 --help
 org2 agenda --help
 org2 agent capabilities</code></pre>
@@ -79,7 +80,8 @@ cd org2
 npm ci
 npm run build</code></pre>
 <p>Sanity check the source-built CLI:</p>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- --help
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- --version
+npm run org2 -- --help
 npm run org2 -- agenda --help</code></pre>
 <p>The examples below use <code>org2</code>. If you are running from a checkout instead of a global install, replace <code>org2</code> with <code>npm run org2 --</code>.</p>
 </section>
@@ -112,7 +114,7 @@ open ~/Applications/Org2Workspace.app</code></pre>
 <p>There are two complementary OpenClaw connections:</p>
 <ol>
 <li><p>The <code>org2-lifecycle</code> plugin records substantial main-agent turns, subagent executions, and cron executions as durable Org2 runs. Stable OpenClaw keys correlate retries and lifecycle events without turning ordinary conversation or personal TODOs into runs.</p></li>
-<li><p>The Mac app's <strong>AI Chat</strong> surface supports per-thread OpenClaw or local Codex. OpenClaw connects to the Gateway for selected-agent chat, streamed progress, tool activity, runtime slash commands, and stop control.</p></li>
+<li><p>The Mac app's <strong>AI Chat</strong> surface supports named local Codex, remote Codex App Server, and OpenClaw destinations in single-agent threads or shared rooms. Explicit <code>@mentions</code> and <code>@all</code> can invoke multiple destinations in one attributed agent round; OpenClaw connects to the Gateway for selected-agent chat, streamed progress, tool activity, runtime slash commands, and stop control.</p></li>
 </ol>
 <p>From an Org2 checkout, install and inspect the lifecycle plugin with:</p>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run test:openclaw

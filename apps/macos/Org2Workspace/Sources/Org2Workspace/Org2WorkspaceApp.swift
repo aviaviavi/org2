@@ -7,7 +7,6 @@ import SwiftUI
 @main
 struct Org2WorkspaceApp: App {
   @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-  @Environment(\.scenePhase) private var scenePhase
   @StateObject private var store = WorkspaceStore()
   @StateObject private var mobileRemote = MobileRemoteCoordinator()
   private let globalCaptureHotKey = GlobalCaptureHotKey()
@@ -31,6 +30,7 @@ struct Org2WorkspaceApp: App {
     WindowGroup("Org2 Workspace") {
       ContentView()
         .environmentObject(store)
+        .preferredColorScheme(store.appearanceMode.colorScheme)
         .frame(minWidth: 1080, minHeight: 680)
         .background(WorkspaceWindowConfigurator())
         .onAppear {
@@ -44,17 +44,20 @@ struct Org2WorkspaceApp: App {
           if status != noErr {
             store.statusText = "Global capture shortcut unavailable (\(status))"
           }
-          store.setWorkspaceRealtimeRefreshActive(scenePhase == .active)
-          store.setRunReviewAutoRefreshActive(scenePhase == .active)
+          let isActive = NSApplication.shared.isActive
+          store.setWorkspaceRealtimeRefreshActive(isActive)
+          store.setRunReviewAutoRefreshActive(isActive, refreshImmediately: false)
           mobileRemote.attach(to: store)
           mobileRemote.startIfConfigured()
         }
-        .onChange(of: scenePhase) { _, newPhase in
-          store.setWorkspaceRealtimeRefreshActive(newPhase == .active)
-          store.setRunReviewAutoRefreshActive(newPhase == .active)
-          if newPhase == .active {
-            store.sourceAutoSyncDidBecomeActive()
-          }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+          store.setWorkspaceRealtimeRefreshActive(true)
+          store.setRunReviewAutoRefreshActive(true, refreshImmediately: false)
+          store.sourceAutoSyncDidBecomeActive()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
+          store.setWorkspaceRealtimeRefreshActive(false)
+          store.setRunReviewAutoRefreshActive(false, refreshImmediately: false)
         }
         .task {
           await store.bootstrap()
@@ -366,6 +369,7 @@ struct Org2WorkspaceApp: App {
       WorkspaceSettingsView()
         .environmentObject(store)
         .environmentObject(mobileRemote)
+        .preferredColorScheme(store.appearanceMode.colorScheme)
     }
   }
 }

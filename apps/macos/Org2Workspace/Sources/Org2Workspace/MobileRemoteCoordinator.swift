@@ -207,7 +207,15 @@ final class MobileRemoteCoordinator: ObservableObject {
         serverName: Self.serverName,
         corpusName: store.corpusRoot?.lastPathComponent,
         threadCount: threads.count,
-        runningThreadCount: threads.filter { store.isAIChatThreadRunning($0.id) }.count
+        runningThreadCount: threads.filter { store.isAIChatThreadRunning($0.id) }.count,
+        aiChatDestinations: store.enabledAIChatDestinations.map {
+          MobileRemoteAIDestination(
+            id: $0.id,
+            name: $0.name,
+            mention: $0.mention,
+            runtime: $0.runtime.rawValue
+          )
+        }
       ))
     }
 
@@ -218,12 +226,21 @@ final class MobileRemoteCoordinator: ObservableObject {
     }
 
     if request.method == "POST", path == "/v1/threads" {
-      guard let payload = try? request.decode(MobileRemoteCreateThreadRequest.self),
-            let runtime = AIChatRuntime(rawValue: payload.runtime)
-      else {
-        return .error("Choose either the codex or openClaw runtime.", statusCode: 400)
+      guard let payload = try? request.decode(MobileRemoteCreateThreadRequest.self) else {
+        return .error("Choose a configured AI destination.", statusCode: 400)
       }
-      let id = store.createAIChatRemoteThread(runtime: runtime)
+      let id: UUID
+      if let destinationID = payload.destinationID {
+        guard store.enabledAIChatDestinations.contains(where: { $0.id == destinationID }) else {
+          return .error("That AI destination is unavailable on the Mac.", statusCode: 400)
+        }
+        id = store.createAIChatRemoteThread(destinationID: destinationID)
+      } else {
+        guard let runtime = AIChatRuntime(rawValue: payload.runtime) else {
+          return .error("Choose either the codex or openClaw runtime.", statusCode: 400)
+        }
+        id = store.createAIChatRemoteThread(runtime: runtime)
+      }
       return .json(MobileRemoteMutationResponse(accepted: true, threadID: id), statusCode: 201)
     }
 
@@ -393,6 +410,15 @@ final class MobileRemoteCoordinator: ObservableObject {
       }
       return .json(threadSummary(updated, store: store))
     }
+    if request.method == "POST", components.count == 4, components[3] == "fork" {
+      guard let forkedThreadID = store.forkAIChatThread(threadID, selectsThread: false) else {
+        return .error("This thread could not be forked.", statusCode: 409)
+      }
+      return .json(
+        MobileRemoteMutationResponse(accepted: true, threadID: forkedThreadID),
+        statusCode: 201
+      )
+    }
     if request.method == "POST", components.count == 4, components[3] == "messages" {
       guard let payload = try? request.decode(MobileRemoteSendMessageRequest.self) else {
         return .error("The message could not be read.", statusCode: 400)
@@ -403,7 +429,7 @@ final class MobileRemoteCoordinator: ObservableObject {
       } catch {
         return .error(error.localizedDescription, statusCode: 400)
       }
-      guard store.sendAIChatRemoteMessage(
+      guard let destinationThreadID = store.sendAIChatRemoteMessageDestination(
         payload.content,
         attachments: attachments,
         threadID: threadID,
@@ -412,7 +438,10 @@ final class MobileRemoteCoordinator: ObservableObject {
       ) else {
         return .error("The message is empty or this thread is settled.", statusCode: 409)
       }
-      return .json(MobileRemoteMutationResponse(accepted: true, threadID: threadID), statusCode: 202)
+      return .json(
+        MobileRemoteMutationResponse(accepted: true, threadID: destinationThreadID),
+        statusCode: 202
+      )
     }
     if request.method == "POST", components.count == 4, components[3] == "stop" {
       let stopped = await store.stopAIChatRemoteRun(threadID: threadID)
@@ -459,8 +488,10 @@ final class MobileRemoteCoordinator: ObservableObject {
   }
 
   private func threadSummary(_ thread: OpenClawChatThread, store: WorkspaceStore) -> MobileRemoteThreadSummary {
-    let preview = thread.messages.last(where: { !$0.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })?
-      .content
+    let destination = store.aiChatDestination(id: thread.destinationID)
+    let preview = thread.messages
+      .last(where: { !$0.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
+      .map(WorkspaceStore.visibleAIChatMessageText)?
       .trimmingCharacters(in: .whitespacesAndNewlines)
     let latestAssistantMessage = thread.messages.last(where: {
       $0.role == .assistant && !$0.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -469,6 +500,9 @@ final class MobileRemoteCoordinator: ObservableObject {
       id: thread.id,
       title: thread.title,
       runtime: thread.runtime.rawValue,
+      destinationID: thread.destinationID,
+      destinationName: thread.isSharedRoom ? "Shared AI Room" : destination?.name,
+      isSharedRoom: thread.isSharedRoom,
       model: thread.model,
       updatedAt: thread.updatedAt,
       isSettled: thread.isSettled,
@@ -487,7 +521,11 @@ final class MobileRemoteCoordinator: ObservableObject {
     MobileRemoteThreadDetail(
       thread: threadSummary(thread, store: store),
       messages: thread.messages.map {
-        MobileRemoteChatMessage(
+        let authorDestination = $0.authorDestinationID.flatMap(store.aiChatDestination(id:))
+        let audienceDestinationIDs = $0.audienceDestinationIDs.isEmpty
+          ? [$0.targetDestinationID].compactMap { $0 }
+          : $0.audienceDestinationIDs
+        return MobileRemoteChatMessage(
           id: $0.id,
           role: $0.role.rawValue,
           content: $0.content,
@@ -495,7 +533,16 @@ final class MobileRemoteCoordinator: ObservableObject {
           createdAt: $0.createdAt,
           deliveryStatus: $0.deliveryStatus.rawValue,
           deliveryKind: $0.deliveryKind.rawValue,
-          sendFailure: $0.sendFailure
+          sendFailure: $0.sendFailure,
+          authorRuntime: $0.authorRuntime?.rawValue,
+          authorDestinationID: $0.authorDestinationID,
+          authorDestinationName: authorDestination?.name,
+          audience: $0.audience?.rawValue,
+          audienceDestinationNames: audienceDestinationIDs.compactMap {
+            store.aiChatDestination(id: $0)?.name
+          },
+          isRoomDispatchCopy: $0.isRoomDispatchCopy,
+          roomRoundID: $0.roomRoundID
         )
       },
       streamingReply: store.aiChatStreamingReply(for: thread.id),

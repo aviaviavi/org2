@@ -6,6 +6,16 @@ import SwiftUI
 struct WorkspaceSettingsView: View {
   var body: some View {
     TabView {
+      AppearanceSettingsView()
+        .tabItem {
+          Label("Appearance", systemImage: "circle.lefthalf.filled")
+        }
+
+      DocumentSettingsView()
+        .tabItem {
+          Label("Documents", systemImage: "doc.richtext")
+        }
+
       AIChatSettingsView()
         .tabItem {
           Label("AI Chat", systemImage: "text.bubble")
@@ -16,7 +26,59 @@ struct WorkspaceSettingsView: View {
           Label("Mobile Remote", systemImage: "iphone")
         }
     }
-    .frame(width: 600, height: 520)
+    .frame(width: 660, height: 620)
+  }
+}
+
+private struct AppearanceSettingsView: View {
+  @EnvironmentObject private var store: WorkspaceStore
+
+  var body: some View {
+    Form {
+      Section {
+        Picker("Theme", selection: $store.appearanceMode) {
+          ForEach(WorkspaceAppearanceMode.allCases) { mode in
+            Text(mode.displayName).tag(mode)
+          }
+        }
+        .pickerStyle(.segmented)
+
+        Text("System follows the appearance selected in macOS. Light and Dark keep Org2 in that theme regardless of the system setting.")
+          .font(.callout)
+          .foregroundStyle(.secondary)
+      } header: {
+        Label("App Theme", systemImage: "paintbrush")
+      }
+    }
+    .formStyle(.grouped)
+    .padding(8)
+    .frame(width: 560)
+    .frame(minHeight: 460)
+  }
+}
+
+private struct DocumentSettingsView: View {
+  @EnvironmentObject private var store: WorkspaceStore
+
+  var body: some View {
+    Form {
+      Section {
+        Toggle(
+          "Expand property drawers by default",
+          isOn: $store.propertyDrawersExpandedByDefault
+        )
+
+        Text("Controls the initial presentation of property drawers in rendered documents. You can still expand or collapse individual drawers while reading.")
+          .font(.callout)
+          .foregroundStyle(.secondary)
+      } header: {
+        Label("Rendered Documents", systemImage: "doc.text.magnifyingglass")
+      }
+    }
+    .formStyle(.grouped)
+    .padding(8)
+    .frame(width: 560)
+    .frame(minHeight: 460)
   }
 }
 

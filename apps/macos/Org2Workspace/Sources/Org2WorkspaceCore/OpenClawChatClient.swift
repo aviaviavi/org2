@@ -302,7 +302,14 @@ public struct OpenClawWorkspaceContext: Sendable {
     |-------+--------------|
     | Interest → Investigation | 3.3 |
 
-  Never use a Markdown table delimiter such as |---|---|. Do not use # headings or Markdown task-list syntax for Org2 content.
+  The hline must have one dash segment per column and exactly one fewer + join than the number of columns. Never collapse a multi-column hline into a single dash segment such as |----------------|. If you cannot confidently form the hline, use a list instead of a table.
+  - Source blocks use exactly one # before the + directive:
+
+    #+begin_src sh
+    org2 --help
+    #+end_src
+
+  Never write ##+begin_src or ##+end_src. Never use a Markdown table delimiter such as |---|---|. Do not use # headings, fenced Markdown code blocks, or Markdown task-list syntax for Org2 content. Before sending, check that every structured block is valid Org2 and correct it if necessary.
 
   The Markdown-link form required below for clickable file-and-line citations is a deliberate Org2 Workspace chat transport exception; it does not change the syntax to use inside corpus content.
   """

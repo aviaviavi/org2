@@ -81,6 +81,15 @@ import type {
   PropertyDrawerNode,
 } from "./ast.js";
 
+function org2PackageVersion(): string {
+  const packageUrl = new URL("../package.json", import.meta.url);
+  const metadata = JSON.parse(fs.readFileSync(packageUrl, "utf8")) as { version?: unknown };
+  if (typeof metadata.version !== "string" || !metadata.version.trim()) {
+    throw new Error(`package metadata at ${packageUrl.pathname} does not declare a version`);
+  }
+  return metadata.version;
+}
+
 function embeddedChartsForSource(raw: string, file?: string) {
   return renderOrgCharts(raw, { file })
     .filter((chart): chart is typeof chart & { svg: string; source: NonNullable<typeof chart.source> } => chart.ok && Boolean(chart.svg && chart.source))
@@ -8205,6 +8214,11 @@ or {metadata:{...}, content:"..."}. Generated view artifacts are review-required
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
 
+  if (args.length === 1 && ["version", "--version", "-v"].includes(args[0] || "")) {
+    process.stdout.write(`${org2PackageVersion()}\n`);
+    return;
+  }
+
   if (["doctor", "ledger", "corpus", "workspace", "thread", "goal", "agent-profile", "run", "review", "workflow", "artifact", "runtime", "mcp", "eval"].includes(args[0] || "")) {
     const { runAgenticWorkspaceCommand } = await import("./agenticWorkspaceCli.js");
     if (await runAgenticWorkspaceCommand(args)) return;
@@ -10139,6 +10153,8 @@ Maintenance / health:
   org2 fmt [--stdin] [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--check] [--apply]
 
 Other:
+  org2 version
+  org2 --version
   org2 lsp
 
 Tips:

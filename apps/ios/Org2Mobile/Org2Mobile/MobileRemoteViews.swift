@@ -18,21 +18,20 @@ struct MobileRemoteRootView: View {
       }
       .navigationTitle("Remote")
       .navigationDestination(for: UUID.self) { threadID in
-        MobileRemoteThreadView(threadID: threadID)
+        MobileRemoteThreadView(threadID: threadID) { destinationThreadID in
+          path = [destinationThreadID]
+        }
       }
       .toolbar {
         if remote.isPaired {
           ToolbarItem(placement: .topBarTrailing) {
             Menu {
-              Button {
-                createThread(runtime: "codex")
-              } label: {
-                Label("New Codex Chat", systemImage: "plus.bubble")
-              }
-              Button {
-                createThread(runtime: "openClaw")
-              } label: {
-                Label("New OpenClaw Chat", systemImage: "plus.bubble")
+              ForEach(aiChatDestinations) { destination in
+                Button {
+                  createThread(destination: destination)
+                } label: {
+                  Label("New \(destination.name) Chat", systemImage: "plus.bubble")
+                }
               }
               Divider()
               Button("Forget This Mac", role: .destructive) {
@@ -172,14 +171,24 @@ struct MobileRemoteRootView: View {
           }
         }
       }
-    }
-    .overlay {
-      if remote.threads.isEmpty && !remote.isRefreshing {
-        ContentUnavailableView(
-          "No Remote Chats",
-          systemImage: "bubble.left.and.bubble.right",
-          description: Text("Create a chat here or in Org2 on your Mac.")
-        )
+
+      if remote.isConnected && remote.threads.isEmpty && !remote.isRefreshing {
+        Section("Chats") {
+          VStack(spacing: 7) {
+            Image(systemName: "bubble.left.and.bubble.right")
+              .font(.title2)
+              .foregroundStyle(.secondary)
+            Text("No Remote Chats")
+              .font(.headline)
+            Text("Create a chat here or in Org2 on your Mac.")
+              .font(.subheadline)
+              .foregroundStyle(.secondary)
+              .multilineTextAlignment(.center)
+          }
+          .frame(maxWidth: .infinity)
+          .padding(.vertical, 18)
+          .accessibilityElement(children: .combine)
+        }
       }
     }
     .refreshable {
@@ -222,6 +231,15 @@ struct MobileRemoteRootView: View {
     }
     .contextMenu {
       Button {
+        Task {
+          if let forkedThreadID = await remote.forkThread(thread.id) {
+            path = [forkedThreadID]
+          }
+        }
+      } label: {
+        Label("Fork Thread", systemImage: "arrow.triangle.branch")
+      }
+      Button {
         Task { await remote.setPinned(!thread.isPinned, threadID: thread.id) }
       } label: {
         Label(thread.isPinned ? "Unpin Thread" : "Pin Thread", systemImage: thread.isPinned ? "pin.slash" : "pin")
@@ -247,9 +265,29 @@ struct MobileRemoteRootView: View {
     return "\(running)\(corpus)"
   }
 
-  private func createThread(runtime: String) {
+  private var aiChatDestinations: [MobileRemoteAIDestination] {
+    if let destinations = remote.status?.aiChatDestinations, !destinations.isEmpty {
+      return destinations
+    }
+    return [
+      MobileRemoteAIDestination(
+        id: "builtin.codex",
+        name: "Codex",
+        mention: "codex",
+        runtime: "codex"
+      ),
+      MobileRemoteAIDestination(
+        id: "builtin.openclaw",
+        name: "OpenClaw",
+        mention: "openclaw",
+        runtime: "openClaw"
+      )
+    ]
+  }
+
+  private func createThread(destination: MobileRemoteAIDestination) {
     Task {
-      if let id = await remote.createThread(runtime: runtime) {
+      if let id = await remote.createThread(destination: destination) {
         path = [id]
       }
     }
@@ -417,7 +455,7 @@ private struct MobileExternalThreadDetailView: View {
       } label: {
         HStack {
           if isContinuing { ProgressView().tint(.white) }
-          Label("Continue in New Org2 Thread", systemImage: "arrow.turn.down.right")
+          Label("Fork into Org2", systemImage: "arrow.triangle.branch")
         }
         .frame(maxWidth: .infinity)
       }
@@ -575,7 +613,9 @@ private struct MobileRemoteThreadRow: View {
           .font(.body.weight(.medium))
           .lineLimit(1)
         Spacer()
-        Text(thread.runtime == "codex" ? "Codex" : "OpenClaw")
+        Text(thread.isSharedRoom == true
+          ? "Room"
+          : (thread.destinationName ?? (thread.runtime == "codex" ? "Codex" : "OpenClaw")))
           .font(.caption2.weight(.medium))
           .foregroundStyle(.secondary)
       }
@@ -593,13 +633,92 @@ private struct MobileRemoteThreadRow: View {
   }
 }
 
+private struct MobileAIMentionSuggestion: Identifiable {
+  let id: String
+  let title: String
+  let systemImage: String
+  let insertion: String
+
+  static func all(destinations: [MobileRemoteAIDestination]) -> [MobileAIMentionSuggestion] {
+    destinations.map { destination in
+      MobileAIMentionSuggestion(
+        id: destination.id,
+        title: "@\(destination.mention)",
+        systemImage: destination.runtime == "codex"
+          ? "chevron.left.forwardslash.chevron.right"
+          : "network",
+        insertion: "@\(destination.mention) "
+      )
+    } + [MobileAIMentionSuggestion(
+      id: "all",
+      title: "@all",
+      systemImage: "person.2.fill",
+      insertion: "@all "
+    )]
+  }
+
+  static func suggestions(
+    for text: String,
+    destinations: [MobileRemoteAIDestination]
+  ) -> [MobileAIMentionSuggestion] {
+    guard let range = activeMentionRange(in: text) else { return [] }
+    let query = String(text[range]).dropFirst().lowercased()
+    return all(destinations: destinations).filter { suggestion in
+      suggestion.id.hasPrefix(query)
+        || suggestion.title.dropFirst().lowercased().hasPrefix(query)
+    }
+  }
+
+  static func mentionedDestinationIDs(
+    in text: String,
+    destinations: [MobileRemoteAIDestination]
+  ) -> Set<String> {
+    let mentionByName = Dictionary(uniqueKeysWithValues: destinations.map {
+      ($0.mention.lowercased(), $0.id)
+    })
+    let tokens = text.lowercased().split(whereSeparator: { character in
+      !(character.isLetter || character.isNumber || character == "@"
+        || character == "-" || character == "_")
+    })
+    var destinationIDs: Set<String> = []
+    for token in tokens where token.first == "@" {
+      let mention = String(token.dropFirst())
+      if mention == "all" || mention == "both" {
+        destinationIDs.formUnion(destinations.map(\.id))
+      } else if let destinationID = mentionByName[mention] {
+        destinationIDs.insert(destinationID)
+      }
+    }
+    return destinationIDs
+  }
+
+  func completingMention(in text: String) -> String {
+    guard let range = Self.activeMentionRange(in: text) else { return text }
+    return text.replacingCharacters(in: range, with: insertion)
+  }
+
+  private static func activeMentionRange(in text: String) -> Range<String.Index>? {
+    guard let atIndex = text.lastIndex(of: "@") else { return nil }
+    if atIndex != text.startIndex {
+      guard text[text.index(before: atIndex)].isWhitespace else { return nil }
+    }
+    let suffix = text[atIndex...]
+    guard suffix.dropFirst().allSatisfy({
+      $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_"
+    }) else { return nil }
+    return atIndex..<text.endIndex
+  }
+}
+
 private struct MobileRemoteThreadView: View {
   @EnvironmentObject private var remote: MobileRemoteStore
   @Environment(\.colorScheme) private var colorScheme
   let threadID: UUID
+  let openThread: (UUID) -> Void
   @StateObject private var voiceTranscriber = MobileVoiceTranscriber()
   @State private var draft = ""
   @State private var isSending = false
+  @State private var optimisticMessage: MobileRemoteChatMessage?
   @State private var isStopping = false
   @State private var dictationPrefix = ""
   @State private var selectedPhotoItems: [PhotosPickerItem] = []
@@ -642,6 +761,15 @@ private struct MobileRemoteThreadView: View {
       if let thread = remote.threadDetail?.thread, thread.id == threadID {
         ToolbarItem(placement: .topBarTrailing) {
           Menu {
+            Button {
+              Task {
+                if let forkedThreadID = await remote.forkThread(threadID) {
+                  openThread(forkedThreadID)
+                }
+              }
+            } label: {
+              Label("Fork Thread", systemImage: "arrow.triangle.branch")
+            }
             Button {
               Task { await remote.setPinned(!thread.isPinned, threadID: threadID) }
             } label: {
@@ -698,7 +826,7 @@ private struct MobileRemoteThreadView: View {
     .sheet(item: $selectedFileCitation) { citation in
       MobileRemoteFilePreviewSheet(citation: citation)
         .environmentObject(remote)
-        .presentationDetents([.medium, .large])
+        .presentationDetents([.large])
         .presentationDragIndicator(.visible)
     }
   }
@@ -802,11 +930,19 @@ private struct MobileRemoteThreadView: View {
               .background(.quaternary, in: RoundedRectangle(cornerRadius: 10))
           }
 
-          ForEach(detail.messages) { message in
+          ForEach(detail.messages.filter { $0.isRoomDispatchCopy != true }) { message in
             MobileRemoteMessageBubble(message: message) { citation in
               selectedFileCitation = citation
             }
               .id(message.id)
+          }
+
+          if let optimisticMessage,
+             !detailContainsAcknowledgement(of: optimisticMessage, detail: detail) {
+            MobileRemoteMessageBubble(message: optimisticMessage) { citation in
+              selectedFileCitation = citation
+            }
+            .id(optimisticMessage.id)
           }
 
           if isSending || detail.thread.isRunning || !detail.streamingReply.isEmpty {
@@ -845,6 +981,33 @@ private struct MobileRemoteThreadView: View {
 
   private var composer: some View {
     VStack(spacing: 9) {
+      if !mentionSuggestions.isEmpty {
+        ScrollView(.horizontal, showsIndicators: false) {
+          HStack(spacing: 7) {
+            ForEach(mentionSuggestions) { suggestion in
+              Button {
+                draft = suggestion.completingMention(in: draft)
+              } label: {
+                Label(suggestion.title, systemImage: suggestion.systemImage)
+                  .font(.caption.weight(.semibold))
+                  .padding(.horizontal, 10)
+                  .padding(.vertical, 7)
+                  .background(Color(.tertiarySystemFill), in: Capsule())
+              }
+              .buttonStyle(.plain)
+            }
+          }
+          .padding(.horizontal, 1)
+        }
+      }
+
+      if mentionForksIntoSharedRoom {
+        Label("Sends in a new shared room", systemImage: "arrow.triangle.branch")
+          .font(.caption.weight(.medium))
+          .foregroundStyle(Color.accentColor)
+          .frame(maxWidth: .infinity, alignment: .leading)
+      }
+
       if !attachments.isEmpty {
         ScrollView(.horizontal, showsIndicators: false) {
           HStack(spacing: 8) {
@@ -986,6 +1149,7 @@ private struct MobileRemoteThreadView: View {
       }
       .disabled(
         isSettled || isRunning || isSending ||
+        remote.threadDetail?.thread.isSharedRoom == true ||
         remote.isRefreshingConfiguration || remote.isUpdatingConfiguration ||
         remote.threadConfiguration == nil
       )
@@ -997,6 +1161,7 @@ private struct MobileRemoteThreadView: View {
       }
       .disabled(
         isSettled || isRunning || isSending ||
+        remote.threadDetail?.thread.isSharedRoom == true ||
         remote.isRefreshingConfiguration || remote.isUpdatingConfiguration ||
         !hasReasoningChoices
       )
@@ -1117,7 +1282,49 @@ private struct MobileRemoteThreadView: View {
   }
 
   private var agentTitle: String {
-    remote.threadDetail?.thread.runtime == "codex" ? "Codex" : "OpenClaw"
+    guard remote.threadDetail?.thread.isSharedRoom != true else { return "an agent" }
+    if let destinationName = remote.threadDetail?.thread.destinationName {
+      return destinationName
+    }
+    return remote.threadDetail?.thread.runtime == "codex" ? "Codex" : "OpenClaw"
+  }
+
+  private var aiChatDestinations: [MobileRemoteAIDestination] {
+    if let destinations = remote.status?.aiChatDestinations, !destinations.isEmpty {
+      return destinations
+    }
+    return [
+      MobileRemoteAIDestination(
+        id: "builtin.codex",
+        name: "Codex",
+        mention: "codex",
+        runtime: "codex"
+      ),
+      MobileRemoteAIDestination(
+        id: "builtin.openclaw",
+        name: "OpenClaw",
+        mention: "openclaw",
+        runtime: "openClaw"
+      )
+    ]
+  }
+
+  private var mentionSuggestions: [MobileAIMentionSuggestion] {
+    MobileAIMentionSuggestion.suggestions(for: draft, destinations: aiChatDestinations)
+  }
+
+  private var mentionForksIntoSharedRoom: Bool {
+    guard let thread = remote.threadDetail?.thread,
+          thread.id == threadID,
+          thread.isSharedRoom != true
+    else { return false }
+    let mentions = MobileAIMentionSuggestion.mentionedDestinationIDs(
+      in: draft,
+      destinations: aiChatDestinations
+    )
+    let currentDestinationID = thread.destinationID
+      ?? aiChatDestinations.first(where: { $0.runtime == thread.runtime })?.id
+    return mentions.contains(where: { $0 != currentDestinationID })
   }
 
   private var isRunning: Bool {
@@ -1135,26 +1342,82 @@ private struct MobileRemoteThreadView: View {
   }
 
   private func sendMessage(delivery: String? = nil) {
-    let message = draft
+    let message = draft.trimmingCharacters(in: .whitespacesAndNewlines)
     let sentAttachments = attachments
     if voiceTranscriber.isRecording {
       voiceTranscriber.stop()
     }
+    voiceTranscriber.cancel()
+    let pendingMessage = MobileRemoteChatMessage(
+      id: UUID(),
+      role: "user",
+      content: message,
+      attachmentNames: sentAttachments.map(\.fileName),
+      createdAt: Date(),
+      deliveryStatus: "sending",
+      deliveryKind: delivery,
+      sendFailure: nil,
+      authorRuntime: nil,
+      authorDestinationID: nil,
+      authorDestinationName: nil,
+      audience: nil,
+      audienceDestinationNames: nil,
+      isRoomDispatchCopy: false,
+      roomRoundID: nil
+    )
+
+    // Make send feel local even when the paired Mac is slow to acknowledge it.
+    // The field remains focused, so the next message can be typed immediately.
+    draft = ""
+    dictationPrefix = ""
+    attachments = []
+    selectedPhotoItems = []
+    optimisticMessage = pendingMessage
     isSending = true
     Task {
-      if await remote.send(
+      if let destinationThreadID = await remote.send(
         message,
         attachments: sentAttachments,
         threadID: threadID,
         delivery: delivery
       ) {
-        draft = ""
-        dictationPrefix = ""
-        attachments = []
-        selectedPhotoItems = []
-        voiceTranscriber.cancel()
+        optimisticMessage = nil
+        if destinationThreadID != threadID {
+          openThread(destinationThreadID)
+        }
+      } else {
+        optimisticMessage = nil
+        draft = Self.restoringFailedSend(message, before: draft)
+        attachments = Self.restoringFailedAttachments(sentAttachments, before: attachments)
       }
       isSending = false
+    }
+  }
+
+  private func detailContainsAcknowledgement(
+    of optimistic: MobileRemoteChatMessage,
+    detail: MobileRemoteThreadDetail
+  ) -> Bool {
+    detail.messages.contains { message in
+      message.role == "user"
+        && message.content == optimistic.content
+        && message.attachmentNames == optimistic.attachmentNames
+        && abs(message.createdAt.timeIntervalSince(optimistic.createdAt)) < 30
+    }
+  }
+
+  private static func restoringFailedSend(_ failed: String, before current: String) -> String {
+    guard !failed.isEmpty else { return current }
+    let current = current.trimmingCharacters(in: .whitespacesAndNewlines)
+    return current.isEmpty ? failed : "\(failed)\n\n\(current)"
+  }
+
+  private static func restoringFailedAttachments(
+    _ failed: [MobileRemoteAttachment],
+    before current: [MobileRemoteAttachment]
+  ) -> [MobileRemoteAttachment] {
+    failed + current.filter { attachment in
+      !failed.contains { $0.fileName == attachment.fileName && $0.data == attachment.data }
     }
   }
 
@@ -1223,9 +1486,20 @@ private struct MobileRemoteMessageBubble: View {
   @State private var didCopy = false
 
   var body: some View {
+    let presentation = MobileRemotePromptPresentation(
+      message.content,
+      extractsContexts: message.role == "user"
+    )
     HStack {
       if message.role == "user" { Spacer(minLength: 44) }
       VStack(alignment: .leading, spacing: 5) {
+        if let roleLabel {
+          Text(roleLabel)
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(
+              message.role == "user" ? Color.white.opacity(0.78) : Color.secondary
+            )
+        }
         if message.role == "user",
            message.deliveryKind == "steer",
            message.deliveryStatus == "sending" {
@@ -1239,8 +1513,37 @@ private struct MobileRemoteMessageBubble: View {
             .font(.caption2.weight(.semibold))
             .foregroundStyle(Color.white.opacity(0.82))
         }
-        Text(MobileRemoteMessageMarkup.attributedString(for: message.content))
-          .textSelection(.enabled)
+        if !presentation.contexts.isEmpty {
+          ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+              ForEach(presentation.contexts) { context in
+                Button {
+                  if let citation = context.fileCitation {
+                    openFileCitation(citation)
+                  }
+                } label: {
+                  Label(context.title, systemImage: context.isAutomatic ? "sparkles" : "scope")
+                    .font(.caption.weight(.medium))
+                    .lineLimit(1)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 6)
+                    .background(
+                      message.role == "user"
+                        ? Color.white.opacity(0.14)
+                        : Color.accentColor.opacity(0.10),
+                      in: Capsule()
+                    )
+                }
+                .buttonStyle(.plain)
+                .disabled(context.fileCitation == nil)
+              }
+            }
+          }
+        }
+        if !presentation.userText.isEmpty {
+          Text(MobileRemoteMessageMarkup.attributedString(for: presentation.userText))
+            .textSelection(.enabled)
+        }
         if !message.attachmentNames.isEmpty {
           Label(message.attachmentNames.joined(separator: ", "), systemImage: "paperclip")
             .font(.caption)
@@ -1307,11 +1610,166 @@ private struct MobileRemoteMessageBubble: View {
 
   private var clipboardText: String {
     let attachmentText = message.attachmentNames.map { "[Attachment: \($0)]" }
-    return ([message.content].filter { !$0.isEmpty } + attachmentText).joined(separator: "\n")
+    let content = MobileRemotePromptPresentation(
+      message.content,
+      extractsContexts: message.role == "user"
+    ).clipboardText
+    return ([content].filter { !$0.isEmpty } + attachmentText).joined(separator: "\n")
+  }
+
+  private var roleLabel: String? {
+    if message.role == "user" {
+      if let names = message.audienceDestinationNames, !names.isEmpty {
+        return "You → \(names.joined(separator: ", "))"
+      }
+      guard let audience = message.audience else { return nil }
+      let target: String
+      switch audience {
+      case "codex": target = "Codex"
+      case "openClaw": target = "OpenClaw"
+      case "everyone": target = "All agents"
+      default: return nil
+      }
+      return "You → \(target)"
+    }
+    if let destinationName = message.authorDestinationName {
+      return destinationName
+    }
+    guard let runtime = message.authorRuntime else { return nil }
+    return runtime == "codex" ? "Codex" : "OpenClaw"
   }
 
   private var responseBorderColor: Color {
     Color.primary.opacity(colorScheme == .light ? 0.14 : 0.10)
+  }
+}
+
+private struct MobileRemotePromptContext: Identifiable, Hashable {
+  private static let fileReferencePattern = try! NSRegularExpression(
+    pattern: #"^(.+\.(?:org2|org))(?::([1-9][0-9]*)(?:-[1-9][0-9]*)?)?$"#,
+    options: [.caseInsensitive]
+  )
+
+  let kind: String
+  let title: String
+  let reference: String
+  let isAutomatic: Bool
+
+  var id: String { "\(kind)|\(reference)|\(title)" }
+
+  var fileCitation: MobileRemoteFileCitation? {
+    let range = NSRange(reference.startIndex..<reference.endIndex, in: reference)
+    guard let match = Self.fileReferencePattern.firstMatch(in: reference, range: range),
+          let pathRange = Range(match.range(at: 1), in: reference)
+    else { return nil }
+    let line: Int?
+    if match.range(at: 2).location != NSNotFound,
+       let lineRange = Range(match.range(at: 2), in: reference) {
+      line = Int(reference[lineRange])
+    } else {
+      line = nil
+    }
+    return MobileRemoteFileCitation(
+      path: String(reference[pathRange]),
+      line: line,
+      label: title
+    )
+  }
+}
+
+private struct MobileRemotePromptPresentation {
+  private static let automaticBegin = "#+begin_org2_ai_context"
+  private static let automaticEnd = "#+end_org2_ai_context"
+
+  let contexts: [MobileRemotePromptContext]
+  let userText: String
+
+  init(_ rawText: String, extractsContexts: Bool) {
+    guard extractsContexts else {
+      contexts = []
+      userText = rawText
+      return
+    }
+    var remaining = rawText.replacingOccurrences(of: "\r\n", with: "\n")
+    var parsed: [MobileRemotePromptContext] = []
+    while let consumed = Self.consumeContext(from: remaining) {
+      parsed.append(consumed.context)
+      remaining = consumed.rest
+    }
+    contexts = parsed
+    userText = remaining.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  var clipboardText: String {
+    (contexts.map { "[Context: \($0.title)]" } + (userText.isEmpty ? [] : [userText]))
+      .joined(separator: "\n")
+  }
+
+  private static func consumeContext(
+    from source: String
+  ) -> (context: MobileRemotePromptContext, rest: String)? {
+    let firstNewline = source.firstIndex(of: "\n")
+    let header = firstNewline.map { String(source[..<$0]) } ?? source
+    guard let headerContext = parseHeader(header) else { return nil }
+    var sourceEnd = firstNewline ?? source.endIndex
+    var isAutomatic = false
+
+    if let firstNewline {
+      let prefix = "\n\(automaticBegin)\n"
+      if source[firstNewline...].hasPrefix(prefix) {
+        let promptStart = source.index(firstNewline, offsetBy: prefix.count)
+        guard let endRange = source.range(
+          of: "\n\(automaticEnd)",
+          range: promptStart..<source.endIndex
+        ) else { return nil }
+        sourceEnd = endRange.upperBound
+        isAutomatic = true
+      } else if let separator = source.range(of: "\n\n") {
+        sourceEnd = separator.lowerBound
+      }
+    }
+
+    var restStart = sourceEnd
+    var removedNewlines = 0
+    while restStart < source.endIndex,
+          source[restStart] == "\n",
+          removedNewlines < 2 {
+      restStart = source.index(after: restStart)
+      removedNewlines += 1
+    }
+    return (
+      MobileRemotePromptContext(
+        kind: headerContext.kind,
+        title: headerContext.title,
+        reference: headerContext.reference,
+        isAutomatic: isAutomatic
+      ),
+      String(source[restStart...])
+    )
+  }
+
+  private static func parseHeader(
+    _ line: String
+  ) -> (kind: String, title: String, reference: String)? {
+    guard line.hasPrefix("Use "), line.hasSuffix(" as context.") else { return nil }
+    let body = String(line.dropFirst(4).dropLast(" as context.".count))
+    if let quoteStart = body.range(of: " “"),
+       let separator = body.range(of: "” at ", range: quoteStart.upperBound..<body.endIndex) {
+      return (
+        String(body[..<quoteStart.lowerBound]),
+        String(body[quoteStart.upperBound..<separator.lowerBound]),
+        String(body[separator.upperBound...])
+      )
+    }
+    guard let separator = body.range(of: " at ") else { return nil }
+    let kind = String(body[..<separator.lowerBound])
+    return (
+      kind,
+      kind
+        .replacingOccurrences(of: "selected ", with: "", options: [.caseInsensitive, .anchored])
+        .capitalized,
+      String(body[separator.upperBound...])
+    )
   }
 }
 
@@ -1321,6 +1779,137 @@ private struct MobileRemoteFileCitation: Identifiable, Hashable {
   let label: String
 
   var id: String { "\(path)#\(line ?? 0)" }
+}
+
+struct CorpusFileBrowserView: View {
+  @EnvironmentObject private var store: CorpusStore
+  @State private var query = ""
+
+  var body: some View {
+    List {
+      Section(store.corpusName) {
+        ForEach(filteredFiles) { file in
+          NavigationLink {
+            CorpusFileDocumentView(
+              citation: MobileRemoteFileCitation(
+                path: file.relativePath,
+                line: nil,
+                label: file.name
+              ),
+              allowsRemoteFallback: false
+            )
+          } label: {
+            fileRow(file)
+          }
+        }
+      }
+    }
+    .overlay {
+      if (store.isPreparingCorpus || store.isLoading) && store.corpusFiles.isEmpty {
+        ProgressView("Loading corpus files…")
+      } else if filteredFiles.isEmpty {
+        ContentUnavailableView.search(text: query)
+      }
+    }
+    .navigationTitle("Files")
+    .navigationBarTitleDisplayMode(.large)
+    .searchable(text: $query, prompt: "Search file names and paths")
+    .toolbar {
+      ToolbarItem(placement: .topBarTrailing) {
+        Button {
+          Task { await store.refresh() }
+        } label: {
+          if store.isPreparingCorpus || store.isLoading {
+            ProgressView()
+          } else {
+            Image(systemName: "arrow.clockwise")
+          }
+        }
+        .disabled(store.isPreparingCorpus || store.isLoading)
+      }
+    }
+    .refreshable {
+      await store.refresh()
+    }
+    .task {
+      store.prepareCorpusViews()
+      if store.corpusFiles.isEmpty, !store.isLoading {
+        await store.refresh(showsLoading: false)
+      }
+    }
+  }
+
+  private var filteredFiles: [CorpusFile] {
+    let terms = query
+      .lowercased()
+      .split(whereSeparator: \.isWhitespace)
+      .map(String.init)
+    guard !terms.isEmpty else { return store.corpusFiles }
+    return store.corpusFiles
+      .compactMap { file -> (file: CorpusFile, score: Int)? in
+        let name = file.name.lowercased()
+        let path = file.relativePath.lowercased()
+        guard terms.allSatisfy({ name.contains($0) || path.contains($0) }) else {
+          return nil
+        }
+        let normalizedQuery = terms.joined(separator: " ")
+        let score = name == normalizedQuery ? 300
+          : name.hasPrefix(normalizedQuery) ? 200
+          : path.hasPrefix(normalizedQuery) ? 150
+          : name.contains(normalizedQuery) ? 100
+          : 0
+        return (file, score)
+      }
+      .sorted { lhs, rhs in
+        if lhs.score != rhs.score { return lhs.score > rhs.score }
+        return lhs.file.relativePath.localizedStandardCompare(rhs.file.relativePath) == .orderedAscending
+      }
+      .map(\.file)
+  }
+
+  private func fileRow(_ file: CorpusFile) -> some View {
+    HStack(spacing: 12) {
+      Image(systemName: fileIcon(file))
+        .foregroundStyle(.blue)
+        .frame(width: 22)
+      VStack(alignment: .leading, spacing: 3) {
+        Text(file.name)
+          .font(.body.weight(.medium))
+          .lineLimit(1)
+        Text(file.relativePath)
+          .font(.caption.monospaced())
+          .foregroundStyle(.secondary)
+          .lineLimit(1)
+          .truncationMode(.middle)
+        if let detail = fileDetail(file) {
+          Text(detail)
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
+        }
+      }
+    }
+    .padding(.vertical, 2)
+  }
+
+  private func fileIcon(_ file: CorpusFile) -> String {
+    switch URL(fileURLWithPath: file.relativePath).pathExtension.lowercased() {
+    case "csv": "tablecells"
+    case "md": "text.document"
+    default: "doc.text"
+    }
+  }
+
+  private func fileDetail(_ file: CorpusFile) -> String? {
+    var parts: [String] = []
+    if let byteCount = file.byteCount {
+      parts.append(ByteCountFormatter.string(fromByteCount: byteCount, countStyle: .file))
+    }
+    if let modifiedAt = file.modifiedAt {
+      parts.append("Modified \(modifiedAt.formatted(date: .abbreviated, time: .omitted))")
+    }
+    return parts.isEmpty ? nil : parts.joined(separator: " · ")
+  }
+
 }
 
 private enum MobileRemoteMessageMarkup {
@@ -1461,93 +2050,199 @@ private enum MobileRemoteMessageMarkup {
 }
 
 private struct MobileRemoteFilePreviewSheet: View {
-  @EnvironmentObject private var remote: MobileRemoteStore
   @Environment(\.dismiss) private var dismiss
   let citation: MobileRemoteFileCitation
-  @State private var preview: MobileRemoteFilePreview?
-  @State private var errorMessage: String?
 
   var body: some View {
     NavigationStack {
-      Group {
-        if let preview {
-          previewContent(preview)
-        } else if let errorMessage {
-          ContentUnavailableView(
-            "Preview Unavailable",
-            systemImage: "doc.text.magnifyingglass",
-            description: Text(errorMessage)
-          )
-        } else {
-          ProgressView("Loading preview…")
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-      }
-      .navigationTitle(preview?.title ?? citation.label)
-      .navigationBarTitleDisplayMode(.inline)
+      CorpusFileDocumentView(citation: citation, allowsRemoteFallback: true)
       .toolbar {
         ToolbarItem(placement: .confirmationAction) {
           Button("Done") { dismiss() }
         }
       }
     }
+  }
+}
+
+private struct CorpusFileDocumentView: View {
+  @EnvironmentObject private var store: CorpusStore
+  @EnvironmentObject private var remote: MobileRemoteStore
+  let citation: MobileRemoteFileCitation
+  let allowsRemoteFallback: Bool
+  @State private var preview: CorpusFilePreview?
+  @State private var errorMessage: String?
+
+  var body: some View {
+    Group {
+      if let preview {
+        previewContent(preview)
+      } else if let errorMessage {
+        ContentUnavailableView(
+          "File Unavailable",
+          systemImage: "doc.text.magnifyingglass",
+          description: Text(errorMessage)
+        )
+      } else {
+        ProgressView("Loading complete file…")
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+      }
+    }
+    .navigationTitle(preview?.title ?? citation.label)
+    .navigationBarTitleDisplayMode(.inline)
     .task(id: citation.id) {
+      preview = nil
+      errorMessage = nil
       do {
-        preview = try await remote.filePreview(path: citation.path, line: citation.line)
-      } catch {
-        errorMessage = error.localizedDescription
-      }
-    }
-  }
-
-  private func previewContent(_ preview: MobileRemoteFilePreview) -> some View {
-    VStack(alignment: .leading, spacing: 0) {
-      Text(preview.relativePath)
-        .font(.caption)
-        .foregroundStyle(.secondary)
-        .lineLimit(2)
-        .padding(.horizontal)
-        .padding(.vertical, 10)
-      Divider()
-      GeometryReader { geometry in
-        ScrollView([.horizontal, .vertical]) {
-          LazyVStack(alignment: .leading, spacing: 0) {
-            ForEach(Array(previewLines(preview).enumerated()), id: \.offset) { offset, line in
-              let lineNumber = preview.startLine + offset
-              HStack(alignment: .firstTextBaseline, spacing: 12) {
-                Text(String(lineNumber))
-                  .foregroundStyle(.tertiary)
-                  .frame(width: 34, alignment: .trailing)
-                Text(verbatim: line.isEmpty ? " " : line)
-                  .foregroundStyle(.primary)
-                  .fixedSize(horizontal: true, vertical: false)
-              }
-              .font(.system(.caption, design: .monospaced))
-              .padding(.horizontal, 12)
-              .padding(.vertical, 3)
-              .frame(minWidth: geometry.size.width, alignment: .leading)
-              .background(
-                lineNumber == preview.highlightedLine
-                  ? Color.accentColor.opacity(0.13)
-                  : Color.clear
-              )
-            }
-          }
-          .frame(minWidth: geometry.size.width, alignment: .topLeading)
-          .padding(.vertical, 8)
+        preview = try await store.filePreview(path: citation.path, line: citation.line)
+      } catch let localError {
+        guard allowsRemoteFallback, remote.isPaired else {
+          errorMessage = localError.localizedDescription
+          return
         }
-        .defaultScrollAnchor(.topLeading)
-        .scrollIndicators(.visible, axes: [.horizontal, .vertical])
-        .textSelection(.enabled)
+        do {
+          let fetched = try await remote.filePreview(path: citation.path, line: citation.line)
+          preview = CorpusFilePreview(
+            title: fetched.title,
+            relativePath: fetched.relativePath,
+            startLine: fetched.startLine,
+            highlightedLine: fetched.highlightedLine,
+            content: fetched.content
+          )
+        } catch {
+          errorMessage = error.localizedDescription
+        }
       }
     }
   }
 
-  private func previewLines(_ preview: MobileRemoteFilePreview) -> [String] {
-    let lines = preview.content
+  private func previewContent(_ preview: CorpusFilePreview) -> some View {
+    VStack(alignment: .leading, spacing: 0) {
+      HStack(alignment: .firstTextBaseline, spacing: 8) {
+        Text(preview.relativePath)
+          .lineLimit(1)
+          .truncationMode(.middle)
+        Spacer(minLength: 8)
+        Text("\(lineCount(preview.content)) lines")
+          .fixedSize()
+      }
+      .font(.caption)
+      .foregroundStyle(.secondary)
+      .padding(.horizontal)
+      .padding(.vertical, 10)
+      Divider()
+      MobileRemoteSourceTextView(preview: preview)
+    }
+  }
+
+  private func lineCount(_ content: String) -> Int {
+    content.utf8.reduce(into: 1) { count, byte in
+      if byte == 0x0A { count += 1 }
+    }
+  }
+}
+
+private struct MobileRemoteSourceTextView: UIViewRepresentable {
+  let preview: CorpusFilePreview
+
+  final class Coordinator {
+    var renderIdentity = ""
+  }
+
+  func makeCoordinator() -> Coordinator {
+    Coordinator()
+  }
+
+  func makeUIView(context _: Context) -> UITextView {
+    let textView = UITextView()
+    textView.isEditable = false
+    textView.isSelectable = true
+    textView.backgroundColor = .clear
+    textView.alwaysBounceHorizontal = true
+    textView.alwaysBounceVertical = true
+    textView.showsHorizontalScrollIndicator = true
+    textView.showsVerticalScrollIndicator = true
+    textView.keyboardDismissMode = .interactive
+    textView.textContainerInset = UIEdgeInsets(top: 12, left: 12, bottom: 20, right: 12)
+    textView.textContainer.lineFragmentPadding = 0
+    textView.textContainer.widthTracksTextView = false
+    textView.textContainer.size = CGSize(
+      width: CGFloat.greatestFiniteMagnitude,
+      height: CGFloat.greatestFiniteMagnitude
+    )
+    textView.layoutManager.allowsNonContiguousLayout = true
+    return textView
+  }
+
+  func updateUIView(_ textView: UITextView, context: Context) {
+    let identity = "\(preview.relativePath)|\(preview.highlightedLine ?? 0)|\(preview.content.hashValue)"
+    guard context.coordinator.renderIdentity != identity else { return }
+    context.coordinator.renderIdentity = identity
+
+    let presentation = Self.presentation(for: preview)
+    textView.attributedText = presentation.text
+    textView.setContentOffset(.zero, animated: false)
+
+    guard let highlightRange = presentation.highlightRange else { return }
+    DispatchQueue.main.async { [weak textView, weak coordinator = context.coordinator] in
+      guard let textView, coordinator?.renderIdentity == identity else { return }
+      textView.scrollRangeToVisible(NSRange(location: highlightRange.location, length: 0))
+      textView.setContentOffset(
+        CGPoint(x: 0, y: max(0, textView.contentOffset.y - 72)),
+        animated: false
+      )
+    }
+  }
+
+  private static func presentation(
+    for preview: CorpusFilePreview
+  ) -> (text: NSAttributedString, highlightRange: NSRange?) {
+    var lines = preview.content
       .split(separator: "\n", omittingEmptySubsequences: false)
       .map(String.init)
-    return lines.isEmpty ? [""] : lines
+    if lines.isEmpty { lines = [""] }
+
+    let font = UIFontMetrics(forTextStyle: .caption1).scaledFont(
+      for: UIFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+    )
+    let paragraph = NSMutableParagraphStyle()
+    paragraph.lineSpacing = 3
+    let sourceAttributes: [NSAttributedString.Key: Any] = [
+      .font: font,
+      .foregroundColor: UIColor.label,
+      .paragraphStyle: paragraph
+    ]
+    let gutterAttributes: [NSAttributedString.Key: Any] = [
+      .font: font,
+      .foregroundColor: UIColor.tertiaryLabel,
+      .paragraphStyle: paragraph
+    ]
+    let numberWidth = String(preview.startLine + max(0, lines.count - 1)).count
+    let output = NSMutableAttributedString()
+    var highlightRange: NSRange?
+
+    for (offset, line) in lines.enumerated() {
+      let lineNumber = preview.startLine + offset
+      let number = String(lineNumber)
+      let padding = String(repeating: " ", count: max(0, numberWidth - number.count))
+      let rowStart = output.length
+      output.append(NSAttributedString(string: "\(padding)\(number)  ", attributes: gutterAttributes))
+      output.append(NSAttributedString(string: line.isEmpty ? " " : line, attributes: sourceAttributes))
+      let rowLength = output.length - rowStart
+      if lineNumber == preview.highlightedLine {
+        highlightRange = NSRange(location: rowStart, length: rowLength)
+        output.addAttribute(
+          .backgroundColor,
+          value: UIColor.tintColor.withAlphaComponent(0.14),
+          range: NSRange(location: rowStart, length: rowLength)
+        )
+      }
+      if offset < lines.count - 1 {
+        output.append(NSAttributedString(string: "\n", attributes: sourceAttributes))
+      }
+    }
+
+    return (output, highlightRange)
   }
 }
 

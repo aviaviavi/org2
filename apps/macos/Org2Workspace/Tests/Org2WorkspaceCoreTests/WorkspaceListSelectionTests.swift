@@ -3,6 +3,21 @@ import XCTest
 @testable import Org2WorkspaceCore
 
 final class WorkspaceListSelectionTests: XCTestCase {
+  func testAppActivationDoesNotInvalidateTheEntireWorkspaceView() throws {
+    let testFile = URL(fileURLWithPath: #filePath)
+    let packageRoot = testFile
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+    let appSource = packageRoot
+      .appendingPathComponent("Sources/Org2Workspace/Org2WorkspaceApp.swift")
+    let source = try String(contentsOf: appSource, encoding: .utf8)
+
+    XCTAssertFalse(source.contains(#"@Environment(\.scenePhase)"#))
+    XCTAssertTrue(source.contains("NSApplication.didBecomeActiveNotification"))
+    XCTAssertTrue(source.contains("refreshImmediately: false"))
+  }
+
   func testMainWorkspaceAvoidsUnreadableNativeListSelection() throws {
     let testFile = URL(fileURLWithPath: #filePath)
     let packageRoot = testFile
@@ -121,6 +136,35 @@ final class WorkspaceListSelectionTests: XCTestCase {
     )
   }
 
+  func testChatSidebarSummaryDoesNotRetainTranscriptContent() {
+    let threadID = UUID()
+    let updatedAt = Date(timeIntervalSince1970: 1_800_000_000)
+    let firstThread = OpenClawChatThread(
+      id: threadID,
+      title: "Thread",
+      updatedAt: updatedAt,
+      sessionKey: "agent:main:thread",
+      messages: [
+        OpenClawChatMessage(role: .assistant, content: String(repeating: "a", count: 10_000))
+      ]
+    )
+    let secondThread = OpenClawChatThread(
+      id: threadID,
+      title: "Thread",
+      updatedAt: updatedAt,
+      sessionKey: "agent:main:thread",
+      messages: [
+        OpenClawChatMessage(role: .assistant, content: String(repeating: "b", count: 10_000))
+      ]
+    )
+
+    XCTAssertEqual(
+      OpenClawSidebarThreadSummary(thread: firstThread),
+      OpenClawSidebarThreadSummary(thread: secondThread),
+      "Sidebar redraws should compare compact row metadata instead of entire transcript payloads"
+    )
+  }
+
   func testChatThreadContextMenusStayBoundToTheirOwnRow() throws {
     let testFile = URL(fileURLWithPath: #filePath)
     let packageRoot = testFile
@@ -133,7 +177,7 @@ final class WorkspaceListSelectionTests: XCTestCase {
 
     XCTAssertFalse(source.contains("contextualThreadID"))
     XCTAssertFalse(source.contains("contextThread:"))
-    XCTAssertTrue(source.contains("rename(thread.id)"))
+    XCTAssertTrue(source.contains("rename(summary.id)"))
     XCTAssertTrue(source.contains("OpenClawSidebarThreadContextMenuTarget("))
     XCTAssertTrue(source.contains("NSApp.currentEvent?.type == .rightMouseDown"))
     XCTAssertTrue(source.contains("rename?(threadID)"))
@@ -150,6 +194,6 @@ final class WorkspaceListSelectionTests: XCTestCase {
       0,
       "Thread rows must not each install an alert; SwiftUI can hoist the first pinned row's alert"
     )
-    XCTAssertTrue(source.contains("if thread.isSettled"))
+    XCTAssertTrue(source.contains("if summary.isSettled"))
   }
 }

@@ -40,6 +40,23 @@ struct OrgDocument: Identifiable, Hashable {
   let nodes: [OrgNode]
 }
 
+struct CorpusFile: Identifiable, Hashable, Codable, Sendable {
+  let relativePath: String
+  let modifiedAt: Date?
+  let byteCount: Int64?
+
+  var id: String { relativePath }
+  var name: String { URL(fileURLWithPath: relativePath).lastPathComponent }
+}
+
+struct CorpusFilePreview: Hashable, Sendable {
+  let title: String
+  let relativePath: String
+  let startLine: Int
+  let highlightedLine: Int?
+  let content: String
+}
+
 struct OrgNode: Identifiable, Hashable {
   let id: String
   let title: String

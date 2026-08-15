@@ -21,6 +21,7 @@ For normal command-line use, install the published package:
 
 #+begin_src sh
 npm install -g @aviaviavi/org2
+org2 --version
 org2 --help
 org2 agenda --help
 org2 agent capabilities
@@ -44,6 +45,7 @@ npm run build
 Sanity check the source-built CLI:
 
 #+begin_src sh
+npm run org2 -- --version
 npm run org2 -- --help
 npm run org2 -- agenda --help
 #+end_src
@@ -87,7 +89,7 @@ See [[file:editors-macos.org][macOS Workspace]] for the current app surface.
 There are two complementary OpenClaw connections:
 
 1. The =org2-lifecycle= plugin records substantial main-agent turns, subagent executions, and cron executions as durable Org2 runs. Stable OpenClaw keys correlate retries and lifecycle events without turning ordinary conversation or personal TODOs into runs.
-2. The Mac app's *AI Chat* surface supports per-thread OpenClaw or local Codex. OpenClaw connects to the Gateway for selected-agent chat, streamed progress, tool activity, runtime slash commands, and stop control.
+2. The Mac app's *AI Chat* surface supports named local Codex, remote Codex App Server, and OpenClaw destinations in single-agent threads or shared rooms. Explicit =@mentions= and =@all= can invoke multiple destinations in one attributed agent round; OpenClaw connects to the Gateway for selected-agent chat, streamed progress, tool activity, runtime slash commands, and stop control.
 
 From an Org2 checkout, install and inspect the lifecycle plugin with:
 

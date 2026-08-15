@@ -3,6 +3,7 @@ import SwiftUI
 
 struct AIChatSettingsView: View {
   @EnvironmentObject private var store: WorkspaceStore
+  @State private var editedDestination: AIChatDestinationConfiguration?
 
   var body: some View {
     Form {
@@ -18,6 +19,50 @@ struct AIChatSettingsView: View {
           .foregroundStyle(.secondary)
       } header: {
         Label("AI Chat Context", systemImage: "text.bubble")
+      }
+
+      Section {
+        ForEach(store.aiChatDestinations) { destination in
+          HStack(spacing: 10) {
+            Image(systemName: destination.systemImage)
+              .frame(width: 22)
+              .foregroundStyle(destination.isEnabled ? Color.accentColor : Color.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+              Text(destination.title)
+                .font(.body.weight(.medium))
+              Text("@\(destination.mention) · \(destination.adapter.title)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Toggle("Enabled", isOn: destinationEnabledBinding(destination))
+              .labelsHidden()
+            Button("Edit") {
+              editedDestination = destination
+            }
+          }
+        }
+
+        HStack {
+          Button {
+            let id = store.addAIChatDestination()
+            editedDestination = store.aiChatDestination(id: id)
+          } label: {
+            Label("Add Destination", systemImage: "plus")
+          }
+          Spacer()
+          Text("Use names such as @codex-local, @codex-remote, or @revenue-scout.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+
+        if let error = store.aiChatDestinationSettingsError {
+          Label(error, systemImage: "exclamationmark.triangle.fill")
+            .font(.callout)
+            .foregroundStyle(.red)
+        }
+      } header: {
+        Label("AI Destinations", systemImage: "point.3.connected.trianglepath.dotted")
       }
 
       Section {
@@ -79,8 +124,27 @@ struct AIChatSettingsView: View {
     }
     .formStyle(.grouped)
     .padding(8)
-    .frame(width: 560)
-    .frame(minHeight: 460)
+    .frame(width: 620)
+    .frame(minHeight: 560)
+    .sheet(item: $editedDestination) { destination in
+      AIChatDestinationEditor(destination: destination)
+        .environmentObject(store)
+    }
+  }
+
+  private func destinationEnabledBinding(
+    _ destination: AIChatDestinationConfiguration
+  ) -> Binding<Bool> {
+    Binding(
+      get: {
+        store.aiChatDestination(id: destination.id)?.isEnabled ?? destination.isEnabled
+      },
+      set: { enabled in
+        var updated = store.aiChatDestination(id: destination.id) ?? destination
+        updated.isEnabled = enabled
+        store.updateAIChatDestination(updated)
+      }
+    )
   }
 
   private var corpusAccessHelp: String {
@@ -101,6 +165,130 @@ struct AIChatSettingsView: View {
       return "Codex can run commands and write inside the active corpus. Codex state such as ~/.codex lease files remains protected."
     case .fullAccess:
       return "Codex can write anywhere your Mac account can, including ~/.codex lease state and other repositories. Org2 does not show approval prompts in this mode; use it only for trusted threads. The change applies on the next turn, including in an existing thread."
+    }
+  }
+}
+
+private struct AIChatDestinationEditor: View {
+  @Environment(\.dismiss) private var dismiss
+  @EnvironmentObject private var store: WorkspaceStore
+  @State private var destination: AIChatDestinationConfiguration
+  @State private var token = ""
+  @State private var clearsSavedToken = false
+
+  init(destination: AIChatDestinationConfiguration) {
+    _destination = State(initialValue: destination)
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 16) {
+      HStack {
+        Label("AI Destination", systemImage: destination.systemImage)
+          .font(.title3.weight(.semibold))
+        Spacer()
+        Toggle("Enabled", isOn: $destination.isEnabled)
+      }
+
+      Form {
+        TextField("Name", text: $destination.name)
+        TextField("Mention", text: $destination.mention, prompt: Text("codex-remote"))
+          .textContentType(.username)
+
+        Picker("Adapter", selection: $destination.adapter) {
+          ForEach(AIChatDestinationAdapter.allCases) { adapter in
+            Text(adapter.title).tag(adapter)
+          }
+        }
+        .disabled(isBuiltIn)
+
+        if destination.adapter == .codexRemote {
+          TextField(
+            "WebSocket endpoint",
+            text: $destination.endpoint,
+            prompt: Text("wss://codex-host.example/ws")
+          )
+          TextField(
+            "Workspace on that machine",
+            text: $destination.workspaceRoot,
+            prompt: Text("~/dev/org2")
+          )
+        } else if destination.adapter == .openClaw && !isBuiltInOpenClaw {
+          TextField(
+            "Gateway endpoint",
+            text: $destination.endpoint,
+            prompt: Text("https://host/v1/chat/completions")
+          )
+          TextField("Agent ID", text: $destination.agentID, prompt: Text("main"))
+        }
+
+        if destination.acceptsBearerToken && !isBuiltInOpenClaw {
+          SecureField(
+            "Bearer token",
+            text: $token,
+            prompt: Text(hasSavedToken ? "Saved token unchanged" : "Optional")
+          )
+          if hasSavedToken {
+            Toggle("Clear saved token", isOn: $clearsSavedToken)
+          }
+        }
+      }
+      .formStyle(.grouped)
+
+      Text(helpText)
+        .font(.callout)
+        .foregroundStyle(.secondary)
+
+      HStack {
+        if !isBuiltIn {
+          Button("Delete", role: .destructive) {
+            store.removeAIChatDestination(destination.id)
+            dismiss()
+          }
+        }
+        Spacer()
+        Button("Cancel") { dismiss() }
+        Button("Save") {
+          store.updateAIChatDestination(destination)
+          if clearsSavedToken {
+            store.saveAIChatDestinationToken("", destinationID: destination.id)
+          } else if !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            store.saveAIChatDestinationToken(token, destinationID: destination.id)
+          }
+          if store.aiChatDestinationSettingsError == nil {
+            dismiss()
+          }
+        }
+        .buttonStyle(.borderedProminent)
+        .disabled(destination.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+      }
+    }
+    .padding(20)
+    .frame(width: 520)
+  }
+
+  private var isBuiltIn: Bool {
+    destination.id == AIChatDestinationConfiguration.localCodexID
+      || destination.id == AIChatDestinationConfiguration.openClawID
+  }
+
+  private var isBuiltInOpenClaw: Bool {
+    destination.id == AIChatDestinationConfiguration.openClawID
+  }
+
+  private var hasSavedToken: Bool {
+    store.aiChatDestinationHasToken(destination.id)
+  }
+
+  private var helpText: String {
+    switch destination.adapter {
+    case .codexLocal:
+      return "Starts a local Codex App Server process on this Mac."
+    case .codexRemote:
+      return "Connects to a Codex App Server over WebSocket. Use TLS and a bearer token outside localhost; the workspace path is resolved on the remote machine."
+    case .openClaw:
+      return isBuiltInOpenClaw
+        ? "This default destination uses the existing OpenClaw Gateway configuration."
+        : "Routes turns to this OpenClaw gateway and agent ID with its own saved token."
     }
   }
 }

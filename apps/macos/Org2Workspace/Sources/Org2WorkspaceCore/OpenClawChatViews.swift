@@ -6,6 +6,21 @@ struct OpenClawPresentedContext: Identifiable, Hashable, Sendable {
   let title: String
   let reference: String
   let sourceLine: String
+  let automaticPrompt: String?
+
+  init(
+    kind: String,
+    title: String,
+    reference: String,
+    sourceLine: String,
+    automaticPrompt: String? = nil
+  ) {
+    self.kind = kind
+    self.title = title
+    self.reference = reference
+    self.sourceLine = sourceLine
+    self.automaticPrompt = automaticPrompt
+  }
 
   var id: String { "\(kind)|\(reference)|\(title)" }
 
@@ -15,6 +30,7 @@ struct OpenClawPresentedContext: Identifiable, Hashable, Sendable {
   }
 
   var systemImage: String {
+    if automaticPrompt != nil { return "sparkles" }
     switch kind.lowercased() {
     case let value where value.contains("block"):
       return "text.quote"
@@ -29,6 +45,9 @@ struct OpenClawPresentedContext: Identifiable, Hashable, Sendable {
 }
 
 struct OpenClawContextPresentation: Equatable, Sendable {
+  static let automaticContextBegin = "#+begin_org2_ai_context"
+  static let automaticContextEnd = "#+end_org2_ai_context"
+
   let contexts: [OpenClawPresentedContext]
   let userText: String
 
@@ -42,15 +61,9 @@ struct OpenClawContextPresentation: Equatable, Sendable {
     var parsed: [OpenClawPresentedContext] = []
 
     while !remaining.isEmpty {
-      let separator = remaining.range(of: "\n\n")
-      let candidate = separator.map { String(remaining[..<$0.lowerBound]) } ?? remaining
-      guard let context = Self.parseContextLine(candidate) else { break }
+      guard let (context, rest) = Self.consumeContext(from: remaining) else { break }
       parsed.append(context)
-      if let separator {
-        remaining = String(remaining[separator.upperBound...])
-      } else {
-        remaining = ""
-      }
+      remaining = rest
     }
 
     contexts = parsed
@@ -73,6 +86,85 @@ struct OpenClawContextPresentation: Equatable, Sendable {
   private static func serialize(contexts: [OpenClawPresentedContext], userText: String) -> String {
     guard !contexts.isEmpty else { return userText }
     return contexts.map(\.sourceLine).joined(separator: "\n\n") + "\n\n" + userText
+  }
+
+  static func automaticContext(
+    kind: String,
+    title: String,
+    reference: String,
+    prompt: String,
+    userText: String = ""
+  ) -> String {
+    let safeTitle = title
+      .replacingOccurrences(of: "\n", with: " ")
+      .replacingOccurrences(of: "”", with: "'")
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    let normalizedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+    let normalizedUserText = userText.trimmingCharacters(in: .whitespacesAndNewlines)
+    let context = """
+    Use \(kind) “\(safeTitle)” at \(reference) as context.
+    \(automaticContextBegin)
+    \(normalizedPrompt)
+    \(automaticContextEnd)
+    """
+    return normalizedUserText.isEmpty ? context : "\(context)\n\n\(normalizedUserText)"
+  }
+
+  private static func consumeContext(
+    from remaining: String
+  ) -> (context: OpenClawPresentedContext, rest: String)? {
+    let firstNewline = remaining.firstIndex(of: "\n")
+    let header = firstNewline.map { String(remaining[..<$0]) } ?? remaining
+    guard var context = parseContextLine(header) else { return nil }
+
+    if let firstNewline {
+      let afterHeader = remaining[firstNewline...]
+      let automaticPrefix = "\n\(automaticContextBegin)\n"
+      if afterHeader.hasPrefix(automaticPrefix) {
+        let promptStart = remaining.index(firstNewline, offsetBy: automaticPrefix.count)
+        let endToken = "\n\(automaticContextEnd)"
+        guard let endRange = remaining.range(
+          of: endToken,
+          range: promptStart..<remaining.endIndex
+        ) else { return nil }
+        let prompt = String(remaining[promptStart..<endRange.lowerBound])
+        let sourceEnd = endRange.upperBound
+        context = OpenClawPresentedContext(
+          kind: context.kind,
+          title: context.title,
+          reference: context.reference,
+          sourceLine: String(remaining[..<sourceEnd]),
+          automaticPrompt: prompt
+        )
+        return (context, trimmingContextSeparator(from: remaining, after: sourceEnd))
+      }
+    }
+
+    let separator = remaining.range(of: "\n\n")
+    let sourceEnd = separator?.lowerBound ?? remaining.endIndex
+    context = OpenClawPresentedContext(
+      kind: context.kind,
+      title: context.title,
+      reference: context.reference,
+      sourceLine: String(remaining[..<sourceEnd])
+    )
+    let rest = separator.map { String(remaining[$0.upperBound...]) } ?? ""
+    return (context, rest)
+  }
+
+  private static func trimmingContextSeparator(
+    from source: String,
+    after sourceEnd: String.Index
+  ) -> String {
+    var next = sourceEnd
+    var removedNewlines = 0
+    while next < source.endIndex,
+          source[next] == "\n",
+          removedNewlines < 2 {
+      next = source.index(after: next)
+      removedNewlines += 1
+    }
+    return String(source[next...])
   }
 
   private static func parseContextLine(_ line: String) -> OpenClawPresentedContext? {
@@ -101,13 +193,143 @@ struct OpenClawContextPresentation: Equatable, Sendable {
   }
 }
 
+struct OpenClawMessageOrgPresentation: Equatable, Sendable {
+  let normalizedText: String
+  let blocks: [OrgEditableBlock]
+  let usesStructuredRendering: Bool
+
+  nonisolated init(_ rawText: String) {
+    normalizedText = OpenClawMessageOrgNormalizer.normalized(rawText)
+    blocks = OrgEntryRenderer.parseEditable(normalizedText)
+    usesStructuredRendering = blocks.contains { block in
+      switch block.rendered {
+      case .paragraph, .blank:
+        return false
+      case .heading, .planning, .properties, .quote, .source, .table,
+           .horizontalRule, .listItem, .keyword:
+        return true
+      }
+    }
+  }
+}
+
+enum OpenClawMessageOrgNormalizer {
+  private nonisolated static let blockDirectiveNames = [
+    "begin_src",
+    "end_src",
+    "begin_example",
+    "end_example",
+    "begin_quote",
+    "end_quote"
+  ]
+
+  nonisolated static func normalized(_ rawText: String) -> String {
+    var lines = rawText
+      .replacingOccurrences(of: "\r\n", with: "\n")
+      .replacingOccurrences(of: "\r", with: "\n")
+      .split(separator: "\n", omittingEmptySubsequences: false)
+      .map(String.init)
+
+    for index in lines.indices {
+      lines[index] = normalizedBlockDirective(lines[index])
+
+      guard index > lines.startIndex,
+            isTableSeparator(lines[index]),
+            let cells = tableCells(lines[lines.index(before: index)]),
+            cells.count > 1
+      else {
+        continue
+      }
+
+      let trimmedSeparator = lines[index].trimmingCharacters(in: .whitespaces)
+      let actualJoinCount = trimmedSeparator.filter { $0 == "+" }.count
+      guard actualJoinCount != cells.count - 1 else { continue }
+
+      let indentation = String(lines[index].prefix { $0 == " " || $0 == "\t" })
+      let hline = "|" + cells
+        .map { String(repeating: "-", count: max(3, $0.count + 2)) }
+        .joined(separator: "+") + "|"
+      lines[index] = indentation + hline
+    }
+
+    return lines.joined(separator: "\n")
+  }
+
+  private nonisolated static func normalizedBlockDirective(_ line: String) -> String {
+    let indentation = String(line.prefix { $0 == " " || $0 == "\t" })
+    let trimmed = line.dropFirst(indentation.count)
+    let hashCount = trimmed.prefix { $0 == "#" }.count
+    guard hashCount > 1 else { return line }
+    let suffix = trimmed.dropFirst(hashCount)
+    guard suffix.first == "+" else { return line }
+    let directive = suffix.dropFirst().lowercased()
+    guard blockDirectiveNames.contains(where: {
+      directive == $0 || directive.hasPrefix($0 + " ") || directive.hasPrefix($0 + "\t")
+    }) else { return line }
+    return indentation + "#" + suffix
+  }
+
+  private nonisolated static func isTableSeparator(_ line: String) -> Bool {
+    let trimmed = line.trimmingCharacters(in: .whitespaces)
+    guard trimmed.hasPrefix("|"), trimmed.hasSuffix("|") else { return false }
+    let inner = trimmed.dropFirst().dropLast()
+    return inner.contains("-") && inner.allSatisfy { $0 == "-" || $0 == "+" || $0.isWhitespace }
+  }
+
+  private nonisolated static func tableCells(_ line: String) -> [String]? {
+    let trimmed = line.trimmingCharacters(in: .whitespaces)
+    guard trimmed.hasPrefix("|"), trimmed.hasSuffix("|") else { return nil }
+    let cells = trimmed
+      .dropFirst()
+      .dropLast()
+      .split(separator: "|", omittingEmptySubsequences: false)
+      .map { $0.trimmingCharacters(in: .whitespaces) }
+    return cells.isEmpty ? nil : cells
+  }
+}
+
+private struct OpenClawMessageBodyView: View {
+  let rawText: String
+  let compact: Bool
+  let managesTextSelection: Bool
+  let rendersStructuredOrg2: Bool
+
+  var body: some View {
+    let presentation = rendersStructuredOrg2 ? OpenClawMessageOrgPresentation(rawText) : nil
+    Group {
+      if let presentation, presentation.usesStructuredRendering {
+        VStack(alignment: .leading, spacing: 0) {
+          ForEach(presentation.blocks) { block in
+            RenderedBlockView(
+              block: block.rendered,
+              rawText: block.rawText,
+              inlineActions: .readOnly
+            )
+          }
+        }
+        .environment(\.orgInlineTextSelectionEnabled, managesTextSelection)
+      } else {
+        OrgInlineText(
+          presentation?.normalizedText ?? rawText,
+          managesTextSelection: managesTextSelection
+        )
+      }
+    }
+    .lineLimit(nil)
+    .frame(maxWidth: compact ? 360 : 640, alignment: .leading)
+    .fixedSize(horizontal: false, vertical: true)
+  }
+}
+
 struct ChatBubbleView: View {
   static let managesMessageTextSelection = true
 
   let message: OpenClawChatMessage
   let runtime: AIChatRuntime
+  let destinationTitlesByID: [String: String]
   let compact: Bool
   let isQueued: Bool
+  let isRoomResponse: Bool
   let editQueuedMessage: () -> Void
   let deleteQueuedMessage: () -> Void
   @State private var isHovering = false
@@ -117,15 +339,19 @@ struct ChatBubbleView: View {
   init(
     message: OpenClawChatMessage,
     runtime: AIChatRuntime = .openClaw,
+    destinationTitlesByID: [String: String] = [:],
     compact: Bool = false,
     isQueued: Bool = false,
+    isRoomResponse: Bool = false,
     editQueuedMessage: @escaping () -> Void = {},
     deleteQueuedMessage: @escaping () -> Void = {}
   ) {
     self.message = message
     self.runtime = runtime
+    self.destinationTitlesByID = destinationTitlesByID
     self.compact = compact
     self.isQueued = isQueued
+    self.isRoomResponse = isRoomResponse
     self.editQueuedMessage = editQueuedMessage
     self.deleteQueuedMessage = deleteQueuedMessage
   }
@@ -140,7 +366,7 @@ struct ChatBubbleView: View {
         Spacer(minLength: compact ? 24 : 48)
       }
 
-      if message.role != .user {
+      if message.role != .user && !isRoomResponse {
         WorkspaceIconBadge(systemImage: message.role == .assistant ? "sparkles" : "gearshape", tint: roleTint, fill: background)
           .padding(.top, 1)
       }
@@ -182,13 +408,12 @@ struct ChatBubbleView: View {
           OpenClawContextPillsView(contexts: presentation.contexts)
         }
         if !presentation.userText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-          OrgInlineText(
-            presentation.userText,
-            managesTextSelection: Self.managesMessageTextSelection
+          OpenClawMessageBodyView(
+            rawText: presentation.userText,
+            compact: compact,
+            managesTextSelection: Self.managesMessageTextSelection,
+            rendersStructuredOrg2: message.role == .assistant
           )
-            .lineLimit(nil)
-            .frame(maxWidth: compact ? 360 : 640, alignment: .leading)
-            .fixedSize(horizontal: false, vertical: true)
         }
         if !message.attachments.isEmpty {
           OpenClawMessageAttachmentsView(
@@ -240,6 +465,7 @@ struct ChatBubbleView: View {
         RoundedRectangle(cornerRadius: 8, style: .continuous)
           .stroke(borderColor)
       )
+      .frame(maxWidth: isRoomResponse ? .infinity : nil, alignment: .leading)
       .fixedSize(horizontal: false, vertical: true)
       .onHover { isHovering in
         withAnimation(WorkspaceMotion.quick) {
@@ -248,7 +474,7 @@ struct ChatBubbleView: View {
         }
       }
 
-      if message.role != .user {
+      if message.role != .user && !isRoomResponse {
         Spacer(minLength: compact ? 24 : 48)
       } else {
         WorkspaceIconBadge(systemImage: "person.fill", tint: .accentColor, fill: Color.accentColor.opacity(0.12))
@@ -281,12 +507,27 @@ struct ChatBubbleView: View {
   private var roleTitle: String {
     switch message.role {
     case .user:
-      return "You"
+      if !message.audienceDestinationIDs.isEmpty {
+        return "You → " + message.audienceDestinationIDs
+          .map(destinationTitle)
+          .joined(separator: " + ")
+      }
+      return message.audience.map { "You → \($0.title)" } ?? "You"
     case .assistant:
-      return runtime.title
+      return message.authorDestinationID.map(destinationTitle)
+        ?? (message.authorRuntime ?? runtime).title
     case .system:
-      return "Org2"
+      return message.authorDestinationID.map(destinationTitle)
+        ?? message.authorRuntime?.title
+        ?? "Org2"
     }
+  }
+
+  private func destinationTitle(_ destinationID: String) -> String {
+    if let title = destinationTitlesByID[destinationID] { return title }
+    if destinationID == AIChatDestinationConfiguration.localCodexID { return "Codex" }
+    if destinationID == AIChatDestinationConfiguration.openClawID { return "OpenClaw" }
+    return destinationID
   }
 
   private var background: Color {
@@ -319,6 +560,306 @@ struct ChatBubbleView: View {
       return .secondary
     case .system:
       return .orange
+    }
+  }
+}
+
+struct AIChatRoomRound: Identifiable, Equatable {
+  let id: UUID
+  let trigger: OpenClawChatMessage
+  let expectedDestinationIDs: [String]
+  let dispatchesByDestinationID: [String: OpenClawChatMessage]
+  let responsesByDestinationID: [String: OpenClawChatMessage]
+
+  var expectedRuntimes: [AIChatRuntime] {
+    expectedDestinationIDs.compactMap { dispatchesByDestinationID[$0]?.targetRuntime }
+  }
+
+  var completedCount: Int {
+    expectedDestinationIDs.filter(isTerminal).count
+  }
+
+  var isComplete: Bool {
+    !expectedDestinationIDs.isEmpty && completedCount == expectedDestinationIDs.count
+  }
+
+  func dispatch(forDestinationID destinationID: String) -> OpenClawChatMessage? {
+    dispatchesByDestinationID[destinationID]
+  }
+
+  func response(forDestinationID destinationID: String) -> OpenClawChatMessage? {
+    responsesByDestinationID[destinationID]
+  }
+
+  func dispatch(for runtime: AIChatRuntime) -> OpenClawChatMessage? {
+    expectedDestinationIDs.compactMap { dispatchesByDestinationID[$0] }
+      .first(where: { $0.targetRuntime == runtime })
+  }
+
+  func response(for runtime: AIChatRuntime) -> OpenClawChatMessage? {
+    expectedDestinationIDs.compactMap { responsesByDestinationID[$0] }
+      .first(where: { $0.authorRuntime == runtime })
+  }
+
+  private func isTerminal(_ destinationID: String) -> Bool {
+    if responsesByDestinationID[destinationID] != nil { return true }
+    guard let dispatch = dispatchesByDestinationID[destinationID] else { return false }
+    return dispatch.deliveryStatus == .failed || dispatch.deliveryStatus == .interrupted
+  }
+}
+
+enum AIChatRoomTranscriptItem: Identifiable, Equatable {
+  case message(OpenClawChatMessage)
+  case round(AIChatRoomRound)
+
+  var id: UUID {
+    switch self {
+    case .message(let message): message.id
+    case .round(let round): round.id
+    }
+  }
+}
+
+enum AIChatRoomTranscriptPresentation {
+  static func items(
+    messages: [OpenClawChatMessage],
+    isSharedRoom: Bool
+  ) -> [AIChatRoomTranscriptItem] {
+    guard isSharedRoom else {
+      return messages
+        .filter { !$0.isRoomDispatchCopy }
+        .map(AIChatRoomTranscriptItem.message)
+    }
+
+    var items: [AIChatRoomTranscriptItem] = []
+    var consumed = Set<UUID>()
+
+    for (index, message) in messages.enumerated() {
+      guard !consumed.contains(message.id) else { continue }
+      guard !message.isRoomDispatchCopy else {
+        consumed.insert(message.id)
+        continue
+      }
+      let expectedDestinationIDs = !message.audienceDestinationIDs.isEmpty
+        ? message.audienceDestinationIDs
+        : (message.audience?.runtimes.map(AIChatDestinationConfiguration.defaultID(for:)) ?? [])
+      guard message.role == .user, !expectedDestinationIDs.isEmpty
+      else {
+        consumed.insert(message.id)
+        items.append(.message(message))
+        continue
+      }
+
+      let groupedMessages: [OpenClawChatMessage]
+      if let roomRoundID = message.roomRoundID {
+        groupedMessages = messages.filter { $0.roomRoundID == roomRoundID }
+      } else {
+        let nextVisibleUserIndex = messages.indices.dropFirst(index + 1).first { candidate in
+          messages[candidate].role == .user && !messages[candidate].isRoomDispatchCopy
+        } ?? messages.endIndex
+        groupedMessages = Array(messages[index..<nextVisibleUserIndex])
+      }
+      consumed.formUnion(groupedMessages.map(\.id))
+
+      let dispatches = groupedMessages.filter { $0.role == .user }
+      let responses = groupedMessages.filter { $0.role != .user }
+      var dispatchesByDestinationID: [String: OpenClawChatMessage] = [:]
+      dispatches.forEach { dispatch in
+        if let destinationID = dispatch.targetDestinationID
+          ?? dispatch.targetRuntime.map(AIChatDestinationConfiguration.defaultID(for:)) {
+          dispatchesByDestinationID[destinationID] = dispatch
+        }
+      }
+
+      var responsesByDestinationID: [String: OpenClawChatMessage] = [:]
+      var unattributedResponses: [OpenClawChatMessage] = []
+      for response in responses {
+        if let destinationID = response.authorDestinationID
+          ?? response.authorRuntime.map(AIChatDestinationConfiguration.defaultID(for:)) {
+          responsesByDestinationID[destinationID] = response
+        } else {
+          unattributedResponses.append(response)
+        }
+      }
+      let missingDestinationIDs = expectedDestinationIDs.filter {
+        responsesByDestinationID[$0] == nil
+      }
+      for (destinationID, response) in zip(missingDestinationIDs, unattributedResponses) {
+        responsesByDestinationID[destinationID] = response
+      }
+
+      items.append(.round(AIChatRoomRound(
+        id: message.roomRoundID ?? message.id,
+        trigger: message,
+        expectedDestinationIDs: expectedDestinationIDs,
+        dispatchesByDestinationID: dispatchesByDestinationID,
+        responsesByDestinationID: responsesByDestinationID
+      )))
+    }
+    return items
+  }
+}
+
+struct AIChatRoomRoundView: View {
+  @EnvironmentObject private var store: WorkspaceStore
+  let round: AIChatRoomRound
+  let compact: Bool
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      ChatBubbleView(
+        message: round.trigger,
+        runtime: store.selectedAIChatRuntime,
+        destinationTitlesByID: store.aiChatDestinationTitlesByID,
+        compact: compact,
+        isQueued: store.isAIChatMessageQueued(round.trigger.id),
+        editQueuedMessage: { store.editQueuedAIChatMessage(round.trigger.id) },
+        deleteQueuedMessage: { store.deleteQueuedAIChatMessage(round.trigger.id) }
+      )
+
+      VStack(alignment: .leading, spacing: 8) {
+        HStack(spacing: 7) {
+          Label("Agent round", systemImage: "person.2.fill")
+            .font(.caption.weight(.semibold))
+          Spacer(minLength: 8)
+          Text(roundStatus)
+            .font(.caption2.weight(.medium))
+            .foregroundStyle(round.isComplete ? .secondary : Color.accentColor)
+        }
+
+        ViewThatFits(in: .horizontal) {
+          HStack(alignment: .top, spacing: 8) {
+            ForEach(round.expectedDestinationIDs, id: \.self) { destinationID in
+              agentSlot(destinationID)
+                .frame(minWidth: 270, maxWidth: .infinity, alignment: .topLeading)
+            }
+          }
+          VStack(alignment: .leading, spacing: 8) {
+            ForEach(round.expectedDestinationIDs, id: \.self) { destinationID in
+              agentSlot(destinationID)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+            }
+          }
+        }
+      }
+      .padding(9)
+      .background(WorkspaceDesign.subtleFill, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+      .overlay(
+        RoundedRectangle(cornerRadius: 10, style: .continuous)
+          .stroke(WorkspaceDesign.hairline)
+      )
+      .padding(.leading, compact ? 0 : 38)
+    }
+  }
+
+  private func agentSlot(_ destinationID: String) -> some View {
+    AIChatRoomAgentSlot(
+      round: round,
+      destinationID: destinationID,
+      compact: compact,
+      isActive: store.selectedAIChatActiveRoomRoundID == round.id
+        && store.selectedAIChatActiveDestinationID == destinationID
+    )
+  }
+
+  private var roundStatus: String {
+    if round.isComplete { return "Complete" }
+    return "\(round.completedCount) of \(round.expectedDestinationIDs.count) complete"
+  }
+}
+
+private struct AIChatRoomAgentSlot: View {
+  @EnvironmentObject private var store: WorkspaceStore
+  let round: AIChatRoomRound
+  let destinationID: String
+  let compact: Bool
+  let isActive: Bool
+
+  private var runtime: AIChatRuntime { store.aiChatDestinationRuntime(destinationID) }
+  private var destinationTitle: String { store.aiChatDestinationTitle(destinationID) }
+
+  var body: some View {
+    Group {
+      if let response = round.response(forDestinationID: destinationID) {
+        ChatBubbleView(
+          message: response,
+          runtime: runtime,
+          destinationTitlesByID: store.aiChatDestinationTitlesByID,
+          compact: true,
+          isRoomResponse: true
+        )
+      } else if isActive {
+        VStack(alignment: .leading, spacing: 6) {
+          Label(destinationTitle, systemImage: runtime.systemImage)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.secondary)
+          OpenClawTypingIndicatorView(
+            startedAt: store.openClawRequestStartedAt,
+            lastEventAt: store.openClawLastEventAt,
+            runtime: runtime,
+            connectionState: store.openClawGatewayConnectionState,
+            connectionDetail: store.openClawGatewayConnectionDetail,
+            runID: store.openClawActiveRunID,
+            streamingReply: store.openClawStreamingReply,
+            reasoning: store.openClawExposedReasoning,
+            activities: store.openClawRunActivities,
+            compact: true,
+            onStop: { Task { await store.stopOpenClawRun() } }
+          )
+        }
+        .padding(9)
+        .background(WorkspaceDesign.surfaceBackground, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+      } else {
+        HStack(spacing: 8) {
+          if showsProgress {
+            ProgressView()
+              .controlSize(.small)
+          } else {
+            Image(systemName: statusImage)
+              .foregroundStyle(.secondary)
+          }
+          VStack(alignment: .leading, spacing: 2) {
+            Text(destinationTitle)
+              .font(.caption.weight(.semibold))
+            Text(statusText)
+              .font(.caption2)
+              .foregroundStyle(.secondary)
+          }
+        }
+        .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+        .padding(9)
+        .background(WorkspaceDesign.surfaceBackground, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+          RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .stroke(WorkspaceDesign.hairline)
+        )
+      }
+    }
+  }
+
+  private var deliveryStatus: OpenClawChatMessage.DeliveryStatus? {
+    round.dispatch(forDestinationID: destinationID)?.deliveryStatus
+  }
+
+  private var showsProgress: Bool {
+    deliveryStatus == .sending
+  }
+
+  private var statusImage: String {
+    switch deliveryStatus {
+    case .failed: "exclamationmark.triangle.fill"
+    case .interrupted: "stop.circle"
+    case .sent: "ellipsis"
+    case .sending, nil: "clock"
+    }
+  }
+
+  private var statusText: String {
+    switch deliveryStatus {
+    case .failed: "Could not respond"
+    case .interrupted: "Stopped"
+    case .sent: "Finishing response…"
+    case .sending, nil: "Waiting to respond"
     }
   }
 }
@@ -372,10 +913,13 @@ private struct OpenClawQueuedMessageActions: View {
 enum OpenClawMessageClipboard {
   nonisolated static func text(for message: OpenClawChatMessage) -> String {
     if !message.content.isEmpty {
-      return OpenClawContextPresentation(
+      let content = OpenClawContextPresentation(
         message.content,
         extractsContexts: message.role == .user
       ).clipboardText
+      return message.role == .assistant
+        ? OpenClawMessageOrgNormalizer.normalized(content)
+        : content
     }
     return message.attachments.map { "[Attachment: \($0.fileName)]" }.joined(separator: "\n")
   }
@@ -735,6 +1279,8 @@ struct OpenClawComposerView: View {
   @State private var localDraft = ""
   @State private var lastStoreDraft = ""
   @State private var selectedSlashSuggestionIndex = 0
+  @State private var selectedMentionSuggestionIndex = 0
+  @State private var moveComposerCursorToEndRequest = 0
   let focusOnAppear: Bool
   let compact: Bool
 
@@ -757,7 +1303,11 @@ struct OpenClawComposerView: View {
 
         ZStack(alignment: .topLeading) {
           if presentation.userText.isEmpty {
-            Text("Message \(store.selectedAIChatRuntime.title)")
+            Text(
+              store.selectedAIChatIsSharedRoom
+                ? "Add context, or @mention an agent…"
+                : "Message \(store.selectedAIChatDestination.title)"
+            )
               .font(.body)
               .foregroundStyle(.tertiary)
               .padding(.horizontal, 10)
@@ -767,6 +1317,7 @@ struct OpenClawComposerView: View {
           OpenClawComposerTextView(
             text: visibleDraftBinding,
             focusOnAppear: focusOnAppear,
+            moveCursorToEndRequest: moveComposerCursorToEndRequest,
             onReturn: handleReturn,
             onSuggestionCommand: handleSuggestionCommand,
             onDropAttachment: handleDropAttachment
@@ -787,7 +1338,14 @@ struct OpenClawComposerView: View {
         gatewayCommands: store.activeAIChatGatewayCommands,
         corpusSkills: store.corpusAgentSkillCommands
       )
-      if !slashSuggestions.isEmpty {
+      let mentionSuggestions = mentionSuggestions(for: presentation.userText)
+      if !mentionSuggestions.isEmpty {
+        AIChatMentionSuggestionsView(
+          suggestions: mentionSuggestions,
+          selectedSuggestionID: selectedMentionSuggestion(in: mentionSuggestions)?.id,
+          select: completeMention
+        )
+      } else if !slashSuggestions.isEmpty {
         OpenClawSlashCommandSuggestions(
           commands: slashSuggestions,
           selectedCommandID: selectedSlashSuggestion(in: slashSuggestions)?.id,
@@ -797,6 +1355,30 @@ struct OpenClawComposerView: View {
 
       if !store.openClawPendingAttachments.isEmpty {
         OpenClawPendingAttachmentsView(compact: compact)
+      }
+
+      if store.selectedAIChatIsSharedRoom {
+        let routing = destinationRouting(for: presentation.userText)
+        Label(
+          routing.summary,
+          systemImage: routing.destinationIDs.isEmpty ? "text.bubble" : "person.2.fill"
+        )
+          .font(.caption.weight(.medium))
+          .foregroundStyle(routing.destinationIDs.isEmpty ? .secondary : Color.accentColor)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .padding(.horizontal, 2)
+      } else {
+        let routing = destinationRouting(for: presentation.userText)
+        if routing.destinationIDs.contains(where: { $0 != store.selectedAIChatDestination.id }) {
+          Label(
+            "Forks into a shared room · \(routing.summary)",
+            systemImage: "arrow.triangle.branch"
+          )
+          .font(.caption.weight(.medium))
+          .foregroundStyle(Color.accentColor)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .padding(.horizontal, 2)
+        }
       }
 
       HStack(spacing: 8) {
@@ -815,7 +1397,7 @@ struct OpenClawComposerView: View {
             OpenClawVoiceInputMeterView(meterState: store.openClawVoiceMeterState)
               .frame(width: compact ? 72 : 110, height: 7)
           }
-          .help("Recording \(store.selectedAIChatRuntime.title) dictation")
+          .help("Recording \(store.selectedAIChatDisplayTitle) dictation")
         } else if store.isTranscribingOpenClawVoiceNote {
           HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 3) {
@@ -837,9 +1419,15 @@ struct OpenClawComposerView: View {
           .help("Estimated local dictation transcription progress")
         }
         Spacer(minLength: 0)
-        runtimePicker
-        modelPicker
-        reasoningPicker
+        if store.selectedAIChatIsSharedRoom {
+          ForEach(store.selectedAIChatRoomDestinationIDs, id: \.self) { destinationID in
+            roomModelPicker(forDestinationID: destinationID)
+          }
+        } else {
+          runtimePicker
+          modelPicker
+          reasoningPicker
+        }
 
         Button {
           store.chooseOpenClawAttachments()
@@ -867,14 +1455,14 @@ struct OpenClawComposerView: View {
           _ = sendIfPossible()
         } label: {
           Label(
-            isRunning ? "Steer" : "Send",
-            systemImage: isRunning ? "arrow.turn.up.right" : "paperplane.fill"
+            primaryActionTitle,
+            systemImage: primaryActionSystemImage
           )
         }
         .buttonStyle(WorkspaceActionButtonStyle())
         .disabled(!canSend)
 
-        if isRunning {
+        if isRunning && !store.selectedAIChatIsSharedRoom {
           Menu {
             Button {
               _ = sendIfPossible(delivery: .followUp)
@@ -903,10 +1491,11 @@ struct OpenClawComposerView: View {
     }
     .onChange(of: localDraft) {
       selectedSlashSuggestionIndex = 0
+      selectedMentionSuggestionIndex = 0
       cacheDraftLocally()
       if OpenClawContextPresentation(localDraft).userText == "/" {
         store.refreshCorpusAgentSkills()
-        if store.selectedAIChatRuntime == .openClaw {
+        if store.selectedAIChatDestination.runtime == .openClaw {
           Task { await store.refreshOpenClawCommands() }
         }
       }
@@ -928,13 +1517,13 @@ struct OpenClawComposerView: View {
 
   private var runtimePicker: some View {
     Menu {
-      ForEach(AIChatRuntime.allCases) { runtime in
+      ForEach(store.enabledAIChatDestinations) { destination in
         Button {
-          store.setSelectedAIChatRuntime(runtime)
+          store.setSelectedAIChatDestination(destination.id)
         } label: {
           HStack {
-            Label(runtime.title, systemImage: runtime.systemImage)
-            if runtime == store.selectedAIChatRuntime {
+            Label(destination.title, systemImage: destination.systemImage)
+            if destination.id == store.selectedAIChatDestination.id {
               Image(systemName: "checkmark")
             }
           }
@@ -942,8 +1531,8 @@ struct OpenClawComposerView: View {
       }
     } label: {
       HStack(spacing: 4) {
-        Image(systemName: store.selectedAIChatRuntime.systemImage)
-        Text(store.selectedAIChatRuntime.title)
+        Image(systemName: store.selectedAIChatDestination.systemImage)
+        Text(store.selectedAIChatDestination.title)
         Image(
           systemName: store.canChangeSelectedAIChatRuntime
             ? "chevron.up.chevron.down"
@@ -964,9 +1553,68 @@ struct OpenClawComposerView: View {
     .disabled(!store.canChangeSelectedAIChatRuntime)
     .help(
       store.canChangeSelectedAIChatRuntime
-        ? "Choose the AI runtime for this new thread"
-        : "The AI runtime is locked after the conversation starts"
+        ? "Choose the AI destination for this new thread"
+        : "The AI destination is locked after the conversation starts"
     )
+  }
+
+  private func roomModelPicker(forDestinationID destinationID: String) -> some View {
+    let options = store.aiChatDestinationModelOptions[destinationID] ?? []
+    let destination = store.aiChatDestination(id: destinationID)
+    let runtime = store.aiChatDestinationRuntime(destinationID)
+    return Menu {
+      Button {
+        store.setSelectedAIChatRoomModel(nil, forDestinationID: destinationID)
+      } label: {
+        HStack {
+          Text("Default model")
+          if store.selectedAIChatRoomModel(forDestinationID: destinationID) == nil {
+            Image(systemName: "checkmark")
+          }
+        }
+      }
+
+      if !options.isEmpty {
+        Divider()
+        ForEach(options) { model in
+          Button {
+            store.setSelectedAIChatRoomModel(model.id, forDestinationID: destinationID)
+          } label: {
+            HStack {
+              Text(model.label)
+              if store.selectedAIChatRoomModel(forDestinationID: destinationID) == model.id {
+                Image(systemName: "checkmark")
+              }
+            }
+          }
+          .help(model.detail ?? model.id)
+        }
+      } else if store.isRefreshingAIChatConfiguration {
+        Text("Loading models…")
+      } else {
+        Text("No models reported")
+      }
+    } label: {
+      HStack(spacing: 4) {
+        Image(systemName: runtime.systemImage)
+        Text("\(destination?.title ?? destinationID) · \(store.selectedAIChatRoomModelLabel(forDestinationID: destinationID))")
+          .lineLimit(1)
+          .frame(maxWidth: compact ? 125 : 165)
+        Image(systemName: "chevron.up.chevron.down")
+          .font(.caption2)
+          .foregroundStyle(.tertiary)
+      }
+      .font(.caption.weight(.medium))
+      .foregroundStyle(.secondary)
+      .padding(.horizontal, 5)
+      .padding(.vertical, 4)
+      .contentShape(Rectangle())
+    }
+    .menuStyle(.borderlessButton)
+    .menuIndicator(.hidden)
+    .fixedSize()
+    .disabled(isRunning)
+    .help("Choose the model for \(destination?.title ?? destinationID) in this shared room")
   }
 
   private var modelPicker: some View {
@@ -1023,7 +1671,7 @@ struct OpenClawComposerView: View {
     .menuIndicator(.hidden)
     .fixedSize()
     .disabled(!store.canChangeSelectedAIChatConfiguration)
-    .help("Choose a model for this chat, or inherit the \(store.selectedAIChatRuntime.title) default")
+    .help("Choose a model for this chat, or inherit the \(store.selectedAIChatDestination.title) default")
   }
 
   private var reasoningPicker: some View {
@@ -1101,6 +1749,30 @@ struct OpenClawComposerView: View {
     return store.isAIChatThreadRunning(threadID)
   }
 
+  private var primaryActionTitle: String {
+    if store.selectedAIChatIsSharedRoom,
+       destinationRouting(for: OpenClawContextPresentation(localDraft).userText)
+         .destinationIDs.isEmpty {
+      return "Post"
+    }
+    if isRunning {
+      return store.selectedAIChatIsSharedRoom ? "Queue" : "Steer"
+    }
+    return "Send"
+  }
+
+  private var primaryActionSystemImage: String {
+    if store.selectedAIChatIsSharedRoom,
+       destinationRouting(for: OpenClawContextPresentation(localDraft).userText)
+         .destinationIDs.isEmpty {
+      return "text.bubble.fill"
+    }
+    if isRunning {
+      return store.selectedAIChatIsSharedRoom ? "clock" : "arrow.turn.up.right"
+    }
+    return "paperplane.fill"
+  }
+
   private var visibleDraftBinding: Binding<String> {
     Binding(
       get: { OpenClawContextPresentation(localDraft).userText },
@@ -1132,8 +1804,25 @@ struct OpenClawComposerView: View {
   }
 
   private func handleSuggestionCommand(_ command: OpenClawComposerSuggestionKeyCommand) -> Bool {
+    let visibleText = OpenClawContextPresentation(localDraft).userText
+    let mentionSuggestions = mentionSuggestions(for: visibleText)
+    if !mentionSuggestions.isEmpty {
+      switch command {
+      case .complete:
+        guard let selected = selectedMentionSuggestion(in: mentionSuggestions) else { return false }
+        completeMention(selected)
+      case .move(let offset):
+        selectedMentionSuggestionIndex = OpenClawSlashCommandSelection.movedIndex(
+          selectedMentionSuggestionIndex,
+          by: offset,
+          count: mentionSuggestions.count
+        )
+      }
+      return true
+    }
+
     let suggestions = OpenClawSlashCommands.suggestions(
-      for: OpenClawContextPresentation(localDraft).userText,
+      for: visibleText,
       gatewayCommands: store.activeAIChatGatewayCommands,
       corpusSkills: store.corpusAgentSkillCommands
     )
@@ -1163,6 +1852,42 @@ struct OpenClawComposerView: View {
   private func completeSlashCommand(_ command: OpenClawSlashCommand) {
     let commandText = command.arguments.isEmpty ? "/\(command.name)" : "/\(command.name) "
     localDraft = OpenClawContextPresentation(localDraft).replacingUserText(commandText)
+    moveComposerCursorToEndRequest &+= 1
+  }
+
+  private func selectedMentionSuggestion(
+    in suggestions: [AIChatMentionSuggestion]
+  ) -> AIChatMentionSuggestion? {
+    guard !suggestions.isEmpty else { return nil }
+    return suggestions[min(max(0, selectedMentionSuggestionIndex), suggestions.count - 1)]
+  }
+
+  private func completeMention(_ suggestion: AIChatMentionSuggestion) {
+    let presentation = OpenClawContextPresentation(localDraft)
+    localDraft = presentation.replacingUserText(
+      suggestion.completingMention(in: presentation.userText)
+    )
+    moveComposerCursorToEndRequest &+= 1
+  }
+
+  private func destinationRouting(for text: String) -> AIChatDestinationRouting {
+    AIChatDestinationRouting(
+      text,
+      destinations: store.enabledAIChatDestinations,
+      allDestinationIDs: store.selectedAIChatIsSharedRoom
+        ? store.selectedAIChatRoomDestinationIDs
+        : store.enabledAIChatDestinations.map(\.id)
+    )
+  }
+
+  private func mentionSuggestions(for text: String) -> [AIChatMentionSuggestion] {
+    AIChatMentionSuggestion.suggestions(
+      for: text,
+      destinations: store.enabledAIChatDestinations,
+      allDestinationIDs: store.selectedAIChatIsSharedRoom
+        ? store.selectedAIChatRoomDestinationIDs
+        : store.enabledAIChatDestinations.map(\.id)
+    )
   }
 
   private func cacheDraftLocally() {
@@ -1263,6 +1988,131 @@ private struct OpenClawSlashCommandSuggestions: View {
     case .corpusSkill: "Skill"
     case .org2: command.isAgentAssisted ? "Agent" : nil
     }
+  }
+}
+
+struct AIChatMentionSuggestion: Identifiable, Equatable {
+  let id: String
+  let title: String
+  let detail: String
+  let systemImage: String
+  let insertion: String
+
+  static let all: [AIChatMentionSuggestion] = suggestions(
+    for: "@",
+    destinations: AIChatDestinationConfiguration.defaults,
+    allDestinationIDs: AIChatDestinationConfiguration.defaults.map(\.id)
+  )
+
+  static func suggestions(for text: String) -> [AIChatMentionSuggestion] {
+    suggestions(
+      for: text,
+      destinations: AIChatDestinationConfiguration.defaults,
+      allDestinationIDs: AIChatDestinationConfiguration.defaults.map(\.id)
+    )
+  }
+
+  static func suggestions(
+    for text: String,
+    destinations: [AIChatDestinationConfiguration],
+    allDestinationIDs: [String]
+  ) -> [AIChatMentionSuggestion] {
+    guard let activeRange = activeMentionRange(in: text) else { return [] }
+    let query = String(text[activeRange]).dropFirst().lowercased()
+    let enabled = destinations.filter(\.isEnabled)
+    let destinationSuggestions = enabled.map { destination in
+      AIChatMentionSuggestion(
+        id: destination.mention,
+        title: "@\(destination.mention)",
+        detail: "Request a response from \(destination.name)",
+        systemImage: destination.adapter.systemImage,
+        insertion: "@\(destination.mention) "
+      )
+    }
+    let destinationByID = Dictionary(uniqueKeysWithValues: enabled.map { ($0.id, $0) })
+    let allMentions = allDestinationIDs.compactMap { destinationByID[$0]?.mention }
+    let allSuggestion = AIChatMentionSuggestion(
+      id: "all",
+      title: "@all",
+      detail: "Request a response from every destination in this thread",
+      systemImage: "person.2.fill",
+      insertion: allMentions.map { "@\($0)" }.joined(separator: " ") + " "
+    )
+    return (destinationSuggestions + [allSuggestion]).filter { suggestion in
+      suggestion.id.hasPrefix(query)
+        || suggestion.title.dropFirst().lowercased().hasPrefix(query)
+    }
+  }
+
+  func completingMention(in text: String) -> String {
+    guard let range = Self.activeMentionRange(in: text) else { return text }
+    return text.replacingCharacters(in: range, with: insertion)
+  }
+
+  private static func activeMentionRange(in text: String) -> Range<String.Index>? {
+    guard let atIndex = text.lastIndex(of: "@") else { return nil }
+    if atIndex != text.startIndex {
+      let previous = text[text.index(before: atIndex)]
+      guard previous.isWhitespace else { return nil }
+    }
+    let suffix = text[atIndex...]
+    guard suffix.dropFirst().allSatisfy({ $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }) else {
+      return nil
+    }
+    return atIndex..<text.endIndex
+  }
+}
+
+private struct AIChatMentionSuggestionsView: View {
+  let suggestions: [AIChatMentionSuggestion]
+  let selectedSuggestionID: AIChatMentionSuggestion.ID?
+  let select: (AIChatMentionSuggestion) -> Void
+
+  var body: some View {
+    VStack(spacing: 2) {
+      ForEach(suggestions) { suggestion in
+        Button {
+          select(suggestion)
+        } label: {
+          HStack(spacing: 9) {
+            Image(systemName: suggestion.systemImage)
+              .frame(width: 18)
+              .foregroundStyle(.secondary)
+            Text(suggestion.title)
+              .font(.callout.monospaced().weight(.medium))
+            Text(suggestion.detail)
+              .font(.callout)
+              .foregroundStyle(.secondary)
+              .lineLimit(1)
+            Spacer(minLength: 4)
+          }
+          .contentShape(Rectangle())
+          .padding(.horizontal, 9)
+          .padding(.vertical, 6)
+          .background(
+            suggestion.id == selectedSuggestionID ? Color.accentColor.opacity(0.12) : Color.clear,
+            in: RoundedRectangle(cornerRadius: 5, style: .continuous)
+          )
+        }
+        .buttonStyle(.plain)
+      }
+
+      HStack(spacing: 10) {
+        Label("Navigate", systemImage: "arrow.up.arrow.down")
+        Text("Tab Complete")
+      }
+      .font(.caption2.weight(.medium))
+      .foregroundStyle(.tertiary)
+      .frame(maxWidth: .infinity, alignment: .trailing)
+      .padding(.horizontal, 8)
+      .padding(.vertical, 3)
+    }
+    .padding(4)
+    .background(WorkspaceDesign.surfaceBackground, in: RoundedRectangle(cornerRadius: WorkspaceDesign.cornerRadius))
+    .overlay(
+      RoundedRectangle(cornerRadius: WorkspaceDesign.cornerRadius)
+        .stroke(WorkspaceDesign.hairline)
+    )
   }
 }
 
@@ -1400,7 +2250,7 @@ enum OpenClawComposerKeyCommand {
     let relevantModifiers = modifiers.intersection([.command, .option, .control, .shift])
     guard relevantModifiers.isEmpty else { return nil }
     switch keyCode {
-    case 48:
+    case 36, 48, 76:
       return .complete
     case 125:
       return .move(1)
@@ -1478,6 +2328,7 @@ enum OpenClawSlashCommandSelection {
 private struct OpenClawComposerTextView: NSViewRepresentable {
   @Binding var text: String
   let focusOnAppear: Bool
+  let moveCursorToEndRequest: Int
   let onReturn: () -> Bool
   let onSuggestionCommand: (OpenClawComposerSuggestionKeyCommand) -> Bool
   let onDropAttachment: (OpenClawComposerDropPayload) -> Bool
@@ -1520,6 +2371,7 @@ private struct OpenClawComposerTextView: NSViewRepresentable {
     textView.textContainer?.containerSize = NSSize(width: scrollView.contentSize.width, height: .greatestFiniteMagnitude)
     textView.autoresizingMask = [.width]
     scrollView.documentView = textView
+    context.coordinator.lastMoveCursorToEndRequest = moveCursorToEndRequest
 
     if focusOnAppear {
       DispatchQueue.main.async {
@@ -1542,18 +2394,29 @@ private struct OpenClawComposerTextView: NSViewRepresentable {
     textView.onDropAttachment = {
       context.coordinator.parent.onDropAttachment($0)
     }
-    if textView.string != text {
-      let selectedRange = textView.selectedRange()
+    let movesCursorToEnd = context.coordinator.lastMoveCursorToEndRequest != moveCursorToEndRequest
+    let selectedRange = textView.selectedRange()
+    let textChanged = textView.string != text
+    if textChanged {
       textView.string = text
-      textView.setSelectedRange(NSRange(
-        location: min(selectedRange.location, (text as NSString).length),
-        length: 0
-      ))
     }
+    if textChanged || movesCursorToEnd {
+      let nextRange = OpenClawComposerSelection.updatedRange(
+        previous: selectedRange,
+        textLength: (text as NSString).length,
+        movesToEnd: movesCursorToEnd
+      )
+      if textView.selectedRange() != nextRange {
+        textView.setSelectedRange(nextRange)
+        textView.scrollRangeToVisible(nextRange)
+      }
+    }
+    context.coordinator.lastMoveCursorToEndRequest = moveCursorToEndRequest
   }
 
   final class Coordinator: NSObject, NSTextViewDelegate {
     var parent: OpenClawComposerTextView
+    var lastMoveCursorToEndRequest = 0
 
     init(parent: OpenClawComposerTextView) {
       self.parent = parent
@@ -1602,6 +2465,23 @@ private struct OpenClawComposerTextView: NSViewRepresentable {
       }
       super.keyDown(with: event)
     }
+  }
+}
+
+enum OpenClawComposerSelection {
+  static func updatedRange(
+    previous: NSRange,
+    textLength: Int,
+    movesToEnd: Bool
+  ) -> NSRange {
+    guard !movesToEnd else {
+      return NSRange(location: textLength, length: 0)
+    }
+    let location = min(previous.location, textLength)
+    return NSRange(
+      location: location,
+      length: min(previous.length, textLength - location)
+    )
   }
 }
 
@@ -1688,10 +2568,12 @@ struct OpenClawTypingIndicatorView: View {
         }
 
         if !streamingReply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-          OrgInlineText(streamingReply)
-            .lineLimit(nil)
-            .frame(maxWidth: compact ? 360 : 640, alignment: .leading)
-            .fixedSize(horizontal: false, vertical: true)
+          OpenClawMessageBodyView(
+            rawText: streamingReply,
+            compact: compact,
+            managesTextSelection: true,
+            rendersStructuredOrg2: true
+          )
         }
 
         if hasProgress {

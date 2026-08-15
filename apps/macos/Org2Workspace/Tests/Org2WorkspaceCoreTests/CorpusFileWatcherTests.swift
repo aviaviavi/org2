@@ -169,6 +169,13 @@ final class CorpusFileWatcherTests: XCTestCase {
     store.setWorkspaceRealtimeRefreshActive(true)
     defer { store.setWorkspaceRealtimeRefreshActive(false) }
 
+    XCTAssertEqual(
+      store.meetings.count,
+      1,
+      "App activation must not synchronously refresh a visible surface before the window is foregrounded"
+    )
+    XCTAssertTrue(store.isWorkspaceSurfaceDirty(.meetings))
+
     let deadline = Date().addingTimeInterval(10)
     while (store.meetings.count != 2 || store.isWorkspaceSurfaceDirty(.meetings)),
           Date() < deadline {

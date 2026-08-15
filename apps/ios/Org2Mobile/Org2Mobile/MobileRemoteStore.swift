@@ -365,6 +365,11 @@ final class MobileRemoteStore: ObservableObject {
   }
 
   private func prepareThreadNotifications() async {
+    #if DEBUG
+    if ProcessInfo.processInfo.environment["ORG2_DEBUG_SUPPRESS_NOTIFICATIONS"] == "1" {
+      return
+    }
+    #endif
     guard threadNotificationsEnabled else { return }
     let center = UNUserNotificationCenter.current()
     let settings = await center.notificationSettings()
@@ -472,11 +477,14 @@ final class MobileRemoteStore: ObservableObject {
     status == .authorized || status == .provisional || status == .ephemeral
   }
 
-  func createThread(runtime: String) async -> UUID? {
+  func createThread(destination: MobileRemoteAIDestination) async -> UUID? {
     do {
       let response: MobileRemoteMutationResponse = try await pairedClient().post(
         "/v1/threads",
-        payload: MobileRemoteCreateThreadRequest(runtime: runtime),
+        payload: MobileRemoteCreateThreadRequest(
+          runtime: destination.runtime,
+          destinationID: destination.id
+        ),
         as: MobileRemoteMutationResponse.self
       )
       await refresh()
@@ -573,6 +581,24 @@ final class MobileRemoteStore: ObservableObject {
     }
   }
 
+  func forkThread(_ threadID: UUID) async -> UUID? {
+    guard !mutatingThreadIDs.contains(threadID) else { return nil }
+    mutatingThreadIDs.insert(threadID)
+    defer { mutatingThreadIDs.remove(threadID) }
+    do {
+      let response: MobileRemoteMutationResponse = try await pairedClient().post(
+        "/v1/threads/\(threadID.uuidString)/fork",
+        payload: EmptyPayload(),
+        as: MobileRemoteMutationResponse.self
+      )
+      await refresh()
+      return response.threadID
+    } catch {
+      errorMessage = error.localizedDescription
+      return nil
+    }
+  }
+
   private func externalThreadPath(_ thread: MobileExternalThreadSummary) -> String {
     var allowed = CharacterSet.urlPathAllowed
     allowed.remove(charactersIn: "/")
@@ -627,11 +653,11 @@ final class MobileRemoteStore: ObservableObject {
     attachments: [MobileRemoteAttachment],
     threadID: UUID,
     delivery: String? = nil
-  ) async -> Bool {
+  ) async -> UUID? {
     let message = rawMessage.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !message.isEmpty || !attachments.isEmpty else { return false }
+    guard !message.isEmpty || !attachments.isEmpty else { return nil }
     do {
-      let _: MobileRemoteMutationResponse = try await pairedClient().post(
+      let response: MobileRemoteMutationResponse = try await pairedClient().post(
         "/v1/threads/\(threadID.uuidString)/messages",
         payload: MobileRemoteSendMessageRequest(
           content: message,
@@ -641,11 +667,16 @@ final class MobileRemoteStore: ObservableObject {
         timeout: attachments.isEmpty ? 15 : 45,
         as: MobileRemoteMutationResponse.self
       )
-      await refreshThread(threadID)
-      return true
+      let destinationThreadID = response.threadID ?? threadID
+      if destinationThreadID == threadID {
+        await refreshThread(threadID)
+      } else {
+        await refresh()
+      }
+      return destinationThreadID
     } catch {
       errorMessage = error.localizedDescription
-      return false
+      return nil
     }
   }
 
@@ -653,6 +684,7 @@ final class MobileRemoteStore: ObservableObject {
     try await pairedClient().post(
       "/v1/files/preview",
       payload: MobileRemoteFilePreviewRequest(path: path, line: line),
+      timeout: 60,
       as: MobileRemoteFilePreview.self
     )
   }
