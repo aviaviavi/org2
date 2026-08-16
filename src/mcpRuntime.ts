@@ -93,12 +93,22 @@ function mcpClientDefinition(value: unknown, index: number): McpClientDefinition
   const environmentVariables = stringArray(client.environmentVariables, `${label} environmentVariables`);
   const capabilities = stringArray(client.capabilities, `${label} capabilities`);
   return {
-    id: requiredString(client.id, `${label} id`),
+    id: safeIdentifier(requiredString(client.id, `${label} id`), { label: `${label} id` }),
     command: requiredString(client.command, `${label} command`),
     ...(args ? { args } : {}),
     ...(environmentVariables ? { environmentVariables } : {}),
     ...(capabilities ? { capabilities } : {}),
   };
+}
+
+function mcpClientDefinitions(value: unknown[]): McpClientDefinition[] {
+  const clients = value.map(mcpClientDefinition);
+  const ids = new Set<string>();
+  for (const client of clients) {
+    if (ids.has(client.id)) throw new Error(`duplicate MCP client id: ${client.id}`);
+    ids.add(client.id);
+  }
+  return clients;
 }
 
 function workflowInputs(value: unknown): Record<string, string> {
@@ -146,12 +156,13 @@ export function loadMcpClients(root: string): McpClientDefinition[] {
   const value: unknown = JSON.parse(fs.readFileSync(file, "utf8"));
   const clients = Array.isArray(value) ? value : jsonObject(value)?.clients;
   if (!Array.isArray(clients)) throw new Error("MCP client configuration must be an array or an object with a clients array");
-  return clients.map(mcpClientDefinition);
+  return mcpClientDefinitions(clients);
 }
 export function saveMcpClients(root: string, clients: McpClientDefinition[]): string {
+  const validatedClients = mcpClientDefinitions(clients);
   const file = mcpClientConfigPath(root);
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, `${JSON.stringify({ schema: "org2:mcp-clients:v1", clients }, null, 2)}\n`, "utf8");
+  fs.writeFileSync(file, `${JSON.stringify({ schema: "org2:mcp-clients:v1", clients: validatedClients }, null, 2)}\n`, "utf8");
   return file;
 }
 export function writeMcpSnapshot(root: string, snapshot: McpSnapshot): string {

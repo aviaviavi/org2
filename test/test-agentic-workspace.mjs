@@ -741,6 +741,14 @@ try {
   fs.mkdirSync(path.dirname(mcpClientConfig), { recursive: true });
   fs.writeFileSync(mcpClientConfig, JSON.stringify({ clients: [{ id: "malformed", command: process.execPath, args: [42] }] }));
   assert.throws(() => loadMcpClients(root), /MCP client 1 args must be an array of strings/);
+  fs.writeFileSync(mcpClientConfig, JSON.stringify({ clients: [{ id: "../malformed", command: process.execPath }] }));
+  assert.throws(() => loadMcpClients(root), /MCP client 1 id must start with an alphanumeric character/);
+  fs.writeFileSync(mcpClientConfig, JSON.stringify({ clients: [{ id: "duplicate", command: process.execPath }, { id: "duplicate", command: process.execPath }] }));
+  assert.throws(() => loadMcpClients(root), /duplicate MCP client id: duplicate/);
+  assert.throws(
+    () => saveMcpClients(root, [{ id: "invalid id", command: process.execPath }]),
+    /MCP client 1 id must start with an alphanumeric character/,
+  );
 
   saveMcpClients(root, [{
     id: "org2-self",
