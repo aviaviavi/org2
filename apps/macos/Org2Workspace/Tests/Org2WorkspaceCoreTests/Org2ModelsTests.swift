@@ -8452,6 +8452,38 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testEmptyAssignedWorkInitialLoadDoesNotRepeatOnAppearance() async throws {
+    let workspace = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-empty-assigned-\(UUID().uuidString)", isDirectory: true)
+    let corpus = workspace.appendingPathComponent("corpus", isDirectory: true)
+    try FileManager.default.createDirectory(at: corpus, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: workspace) }
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(corpus)
+
+    XCTAssertFalse(store.hasAttemptedAssignedWorkLoad)
+    await store.refreshAssignedWorkIfNeeded()
+    XCTAssertTrue(store.hasAttemptedAssignedWorkLoad)
+    XCTAssertTrue(store.assignedWorkItems.isEmpty)
+
+    let note = corpus.appendingPathComponent("assigned.org2")
+    try """
+    * TODO Review assigned work
+    :PROPERTIES:
+    :ASSIGNEE: Avi
+    :STATUS: ready
+    :END:
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    await store.refreshAssignedWorkIfNeeded()
+    XCTAssertTrue(store.assignedWorkItems.isEmpty)
+
+    await store.refreshAssignedWork(showsLoading: false)
+    XCTAssertEqual(store.assignedWorkItems.map(\.headline), ["Review assigned work"])
+  }
+
+  @MainActor
   func testBackgroundOpenClawThreadRefreshKeepsExistingListInteractive() async throws {
     let workspace = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-background-openclaw-\(UUID().uuidString)", isDirectory: true)

@@ -1071,6 +1071,7 @@ public final class WorkspaceStore: ObservableObject {
   public private(set) var assignedWorkSections: [AssignedWorkSection] = []
   @Published public var selectedAssignedWorkItemID: AssignedWorkItem.ID?
   @Published public var isLoadingAssignedWork = false
+  public private(set) var hasAttemptedAssignedWorkLoad = false
   @Published public var detailScrollRequest: DetailScrollRequest?
   public var quickOpenQuery = "" {
     didSet {
@@ -2360,6 +2361,7 @@ public final class WorkspaceStore: ObservableObject {
     isLoadingAgentGoals = false
     isLoadingAgentProfiles = false
     isLoadingAssignedWork = false
+    hasAttemptedAssignedWorkLoad = false
     isLoadingOpenClawThreads = false
     scheduledAgendaRefreshTask?.cancel()
     scheduledAgendaRefreshTask = nil
@@ -10739,6 +10741,7 @@ public final class WorkspaceStore: ObservableObject {
       return
     }
 
+    hasAttemptedAssignedWorkLoad = true
     let dirtyGeneration = workspaceSurfaceDirtyGenerations[.agenda, default: 0]
     isRefreshingAssignedWork = true
     let shouldShowLoading = showsLoading || assignedWorkItems.isEmpty
@@ -10778,6 +10781,11 @@ public final class WorkspaceStore: ObservableObject {
       errorText = error.localizedDescription
       statusText = "Assigned work scan failed"
     }
+  }
+
+  public func refreshAssignedWorkIfNeeded() async {
+    guard !hasAttemptedAssignedWorkLoad else { return }
+    await refreshAssignedWork(showsLoading: false)
   }
 
   private func rebuildAssignedWorkDisplayCache() {

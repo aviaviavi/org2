@@ -4754,11 +4754,9 @@ private struct AssignedAgendaListView: View {
         }
       }
       .onAppear {
-        if store.assignedWorkItems.isEmpty {
-          Task {
-            await store.refreshAssignedWork()
-            store.syncAssignedAgendaSelectionAfterDisplayOptionsChange()
-          }
+        Task {
+          await store.refreshAssignedWorkIfNeeded()
+          store.syncAssignedAgendaSelectionAfterDisplayOptionsChange()
         }
       }
     }
