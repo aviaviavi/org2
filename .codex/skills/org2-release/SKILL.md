@@ -28,7 +28,7 @@ Read [references/release-contract.md](references/release-contract.md) before mut
 1. Stamp root and VS Code manifests and lockfiles with `npm version VERSION --no-git-tag-version --allow-same-version` and the equivalent `npm --prefix editors/vscode-org2 version` command.
 2. Add a concise VS Code changelog entry. Avoid npm serialization noise unrelated to the version.
 3. Validate `npm pack --dry-run --json` and package the VSIX from `editors/vscode-org2`.
-4. Build the macOS app into a temporary staging directory with `ORG2_WORKSPACE_SWIFT_CONFIGURATION=release` and `ORG2_WORKSPACE_APP_PATH`. Never overwrite or relaunch `/Users/avi/Applications/Org2Workspace.app` during release packaging.
+4. Build the macOS app into a temporary staging directory with `ORG2_WORKSPACE_SWIFT_CONFIGURATION=release` and `ORG2_WORKSPACE_APP_PATH`. Supply the target-architecture Node binary through `ORG2_WORKSPACE_NODE_PATH`, the pinned native whisper.cpp executable through `ORG2_WORKSPACE_WHISPER_CPP_PATH`, and the verified `ggml-base.en.bin` model through `ORG2_WORKSPACE_WHISPER_MODEL_PATH`; release packaging fails closed when any self-contained runtime is missing. Never overwrite or relaunch `/Users/avi/Applications/Org2Workspace.app` during release packaging.
 5. Create an Apple Silicon DMG containing the app and an `Applications` symlink. Verify the app with `codesign --verify --deep --strict` and the image with `hdiutil verify`. Record its SHA-256.
 
 ## 4. Publish

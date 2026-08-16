@@ -32,6 +32,7 @@ Use `SCARF_API_TOKEN` only for authenticated API reads or an explicitly authoriz
 ## Signing and hosting constraints
 
 - Build `Org2Workspace.dmg` for Apple Silicon and `Org2Workspace-Intel.dmg` for Intel (`x86_64`).
+- Bundle a native whisper.cpp executable and the verified English `base.en` model so dictation does not require Homebrew, a model download, or runtime environment variables. Keep macOS Speech only as a fallback.
 - Current public DMGs are Apple developer-signed and not notarized; say so plainly.
 - Never build into or replace the daily app at `/Users/avi/Applications/Org2Workspace.app` as part of release packaging.
 - Attach all distributable files to the matching GitHub Release before synchronizing downloads.

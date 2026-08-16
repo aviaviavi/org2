@@ -30,6 +30,8 @@ const executableName = "Org2Workspace";
 const swiftBuildArch = process.env.ORG2_WORKSPACE_SWIFT_ARCH ?? defaultSwiftBuildArch();
 const swiftBuildConfiguration = process.env.ORG2_WORKSPACE_SWIFT_CONFIGURATION?.trim();
 const bundledNodePath = process.env.ORG2_WORKSPACE_NODE_PATH?.trim();
+const bundledWhisperCppPath = process.env.ORG2_WORKSPACE_WHISPER_CPP_PATH?.trim();
+const bundledWhisperModelPath = process.env.ORG2_WORKSPACE_WHISPER_MODEL_PATH?.trim();
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
@@ -162,7 +164,7 @@ function writeInfoPlist() {
   <key>NSScreenCaptureUsageDescription</key>
   <string>Org2Workspace uses ScreenCaptureKit to capture system and call audio for meeting notes.</string>
   <key>NSSpeechRecognitionUsageDescription</key>
-  <string>Org2Workspace uses macOS Speech recognition to transcribe dictation and meeting audio.</string>
+  <string>Org2Workspace may use macOS Speech recognition as a fallback when its bundled local transcriber cannot run.</string>
 </dict>
 </plist>
 `;
@@ -252,7 +254,55 @@ function copyOrg2Runtime(resourcesDir) {
     chmodSync(destination, 0o755);
     return destination;
   }
+  if (swiftBuildConfiguration === "release") {
+    throw new Error("Release builds require ORG2_WORKSPACE_NODE_PATH so the app is self-contained.");
+  }
   return "";
+}
+
+function copyWhisperRuntime(resourcesDir) {
+  if (!bundledWhisperCppPath || !bundledWhisperModelPath) {
+    if (swiftBuildConfiguration === "release") {
+      throw new Error(
+        "Release builds require ORG2_WORKSPACE_WHISPER_CPP_PATH and ORG2_WORKSPACE_WHISPER_MODEL_PATH so dictation works out of the box."
+      );
+    }
+    return "";
+  }
+  if (!existsSync(bundledWhisperCppPath)) {
+    throw new Error(`Bundled whisper.cpp executable not found at ${bundledWhisperCppPath}`);
+  }
+  if (!existsSync(bundledWhisperModelPath)) {
+    throw new Error(`Bundled whisper.cpp model not found at ${bundledWhisperModelPath}`);
+  }
+  if (process.platform === "darwin" && swiftBuildArch) {
+    const architectures = run("lipo", ["-archs", bundledWhisperCppPath], { capture: true }).split(/\s+/);
+    if (!architectures.includes(swiftBuildArch)) {
+      throw new Error(
+        `Bundled whisper.cpp executable must include ${swiftBuildArch}; found ${architectures.join(", ") || "no Mach-O architecture"}.`
+      );
+    }
+  }
+
+  const whisperDir = join(resourcesDir, "Whisper");
+  const binDir = join(whisperDir, "bin");
+  const modelsDir = join(whisperDir, "models");
+  mkdirSync(binDir, { recursive: true });
+  mkdirSync(modelsDir, { recursive: true });
+  const executableDestination = join(binDir, "whisper-cli");
+  copyFileSync(bundledWhisperCppPath, executableDestination);
+  chmodSync(executableDestination, 0o755);
+  copyFileSync(bundledWhisperModelPath, join(modelsDir, "ggml-base.en.bin"));
+
+  const noticesDir = join(repoRoot, "third_party", "whisper");
+  for (const noticeFile of ["LICENSE-whisper.cpp", "LICENSE-openai-whisper", "NOTICE.md"]) {
+    const source = join(noticesDir, noticeFile);
+    if (!existsSync(source)) {
+      throw new Error(`Bundled whisper attribution file not found at ${source}`);
+    }
+    copyFileSync(source, join(whisperDir, noticeFile));
+  }
+  return executableDestination;
 }
 
 function main() {
@@ -291,12 +341,16 @@ function main() {
   const iconPath = join(packageDir, "Sources", "Org2Workspace", "Resources", "AppIcon.png");
   writeIconSet(iconPath, resourcesDir);
   const runtimeNodePath = copyOrg2Runtime(resourcesDir);
+  const whisperCppPath = copyWhisperRuntime(resourcesDir);
 
   const signingIdentity = codeSigningIdentity();
   const signingLabel = signingIdentity === "-" ? "ad-hoc" : signingIdentity;
   console.log(`Signing ${appPath} as ${bundleIdentifier} with ${signingLabel}...`);
   if (runtimeNodePath) {
     run("codesign", ["--force", "--sign", signingIdentity, runtimeNodePath]);
+  }
+  if (whisperCppPath) {
+    run("codesign", ["--force", "--sign", signingIdentity, whisperCppPath]);
   }
   run("codesign", ["--force", "--sign", signingIdentity, "--identifier", bundleIdentifier, appPath]);
   if (signingIdentity === "-") {

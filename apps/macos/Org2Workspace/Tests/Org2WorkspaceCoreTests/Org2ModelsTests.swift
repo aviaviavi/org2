@@ -3839,6 +3839,33 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(status.statusLabel, "Fast local transcription ready")
   }
 
+  func testLocalWhisperInstallationStatusPrefersBundledRuntimeWithoutEnvironment() throws {
+    let resources = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-bundled-whisper-\(UUID().uuidString)", isDirectory: true)
+    let bin = resources.appendingPathComponent("Whisper/bin", isDirectory: true)
+    let model = resources.appendingPathComponent("Whisper/models/ggml-base.en.bin")
+    let executable = bin.appendingPathComponent("whisper-cli")
+    try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(
+      at: model.deletingLastPathComponent(),
+      withIntermediateDirectories: true
+    )
+    try "#!/bin/sh\nexit 0\n".write(to: executable, atomically: true, encoding: .utf8)
+    try Data("fake bundled model".utf8).write(to: model)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
+    defer { try? FileManager.default.removeItem(at: resources) }
+
+    let status = LocalWhisperTranscriber.installationStatus(configuration: LocalWhisperConfiguration(
+      environment: [:],
+      bundleResourceURL: resources
+    ))
+
+    XCTAssertTrue(status.isWhisperCppReady)
+    XCTAssertEqual(status.backendDescription, "whisper.cpp")
+    XCTAssertEqual(status.whisperCppExecutablePath, executable.path)
+    XCTAssertEqual(status.whisperCppModelPath, model.path)
+  }
+
   func testTranscriptionStatusUsesBuiltInMacOSFallbackWithoutWhisper() {
     let status = LocalWhisperInstallationStatus(
       backendDescription: "macOS Speech",

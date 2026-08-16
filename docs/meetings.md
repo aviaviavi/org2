@@ -76,14 +76,17 @@ Transcript text...
 
 ## Local transcription
 
-Transcription works without external setup. Org2 Workspace resolves transcribers in this order:
+Transcription works without external setup. Release builds include a native
+whisper.cpp v1.9.2 executable and the English `base.en` GGML model for the Mac's
+architecture. Org2 Workspace resolves transcribers in this order:
 
 1. `ORG2_WORKSPACE_WHISPER_COMMAND`, a custom local command. If it contains `{audio}`, the app substitutes the quoted audio path; otherwise it appends the audio path.
-2. `whisper-cli` or `whisper-cpp` from whisper.cpp, with `ORG2_WORKSPACE_WHISPER_MODEL` or a common local `ggml-base.en.bin` path.
-3. `whisper`, the OpenAI Whisper CLI, with `ORG2_WORKSPACE_WHISPER_MODEL` when set.
-4. The built-in macOS Speech framework, which requires only the standard Speech Recognition permission.
+2. The bundled `whisper-cli` and bundled `ggml-base.en.bin` model.
+3. `whisper-cli` or `whisper-cpp` from another local installation, with `ORG2_WORKSPACE_WHISPER_MODEL` or a common local model path.
+4. `whisper`, the OpenAI Whisper CLI, with `ORG2_WORKSPACE_WHISPER_MODEL` when set.
+5. The built-in macOS Speech framework as an emergency fallback.
 
-Whisper is optional; Homebrew, a separate model, and environment variables are not required for normal dictation or meeting transcription. If speech permission is denied or recognition is unavailable, the app still writes the audio, meeting note, and transcript artifact with `:transcription_status: unavailable` and the local setup error. That preserves provenance without silently uploading private audio itself.
+Homebrew, a separate model download, environment variables, and Speech Recognition permission are not required for normal dictation or meeting transcription. If whisper.cpp cannot run, the app tries macOS Speech and its standard permission boundary. If every local path is unavailable, the app still writes the audio, meeting note, and transcript artifact with `:transcription_status: unavailable` and the local error. That preserves provenance without silently uploading private audio itself.
 
 ## OpenClaw ingestion
 

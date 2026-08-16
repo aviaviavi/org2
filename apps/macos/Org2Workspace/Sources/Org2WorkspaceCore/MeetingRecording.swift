@@ -406,9 +406,14 @@ public enum MeetingArtifactWriter {
 
 public struct LocalWhisperConfiguration: Sendable {
   public let environment: [String: String]
+  public let bundleResourceURL: URL?
 
-  public init(environment: [String: String] = ProcessInfo.processInfo.environment) {
+  public init(
+    environment: [String: String] = ProcessInfo.processInfo.environment,
+    bundleResourceURL: URL? = Bundle.main.resourceURL
+  ) {
     self.environment = environment
+    self.bundleResourceURL = bundleResourceURL
   }
 
   public var requestedModel: String? {
@@ -587,11 +592,7 @@ public struct LocalWhisperTranscriber: Sendable {
     if let command = configuration.overrideCommand {
       return "custom local command: \(command)"
     }
-    if resolveExecutable(named: "whisper-cli", environment: configuration.environment) != nil,
-       resolveWhisperCppModel(configuration: configuration) != nil {
-      return "whisper.cpp"
-    }
-    if resolveExecutable(named: "whisper-cpp", environment: configuration.environment) != nil,
+    if resolveWhisperCppExecutable(configuration: configuration) != nil,
        resolveWhisperCppModel(configuration: configuration) != nil {
       return "whisper.cpp"
     }
@@ -604,8 +605,7 @@ public struct LocalWhisperTranscriber: Sendable {
   public static func installationStatus(
     configuration: LocalWhisperConfiguration = LocalWhisperConfiguration()
   ) -> LocalWhisperInstallationStatus {
-    let whisperCpp = resolveExecutable(named: "whisper-cli", environment: configuration.environment)
-      ?? resolveExecutable(named: "whisper-cpp", environment: configuration.environment)
+    let whisperCpp = resolveWhisperCppExecutable(configuration: configuration)
     let model = resolveWhisperCppModel(configuration: configuration)
     let openAIWhisper = resolveExecutable(named: "whisper", environment: configuration.environment)
     return LocalWhisperInstallationStatus(
@@ -626,8 +626,7 @@ public struct LocalWhisperTranscriber: Sendable {
       return MeetingTranscriptResult(text: result, status: .complete, engine: "local-whisper:custom")
     }
 
-    if let whisperCpp = resolveExecutable(named: "whisper-cli", environment: configuration.environment)
-      ?? resolveExecutable(named: "whisper-cpp", environment: configuration.environment),
+    if let whisperCpp = resolveWhisperCppExecutable(configuration: configuration),
       let model = resolveWhisperCppModel(configuration: configuration) {
       let result = try runWhisperCpp(
         executable: whisperCpp,
@@ -781,7 +780,13 @@ public struct LocalWhisperTranscriber: Sendable {
     }
 
     let home = FileManager.default.homeDirectoryForCurrentUser.path
-    let candidates = [
+    var candidates: [String] = []
+    if let bundledModel = configuration.bundleResourceURL?
+      .appendingPathComponent("Whisper/models/ggml-base.en.bin")
+      .path {
+      candidates.append(bundledModel)
+    }
+    candidates += [
       "\(home)/Library/Application Support/org2/whisper/ggml-tiny.en.bin",
       "\(home)/Library/Application Support/org2/whisper/ggml-base.en.bin",
       "\(home)/.cache/whisper/ggml-tiny.en.bin",
@@ -799,6 +804,16 @@ public struct LocalWhisperTranscriber: Sendable {
     ]
 
     return candidates.first { FileManager.default.fileExists(atPath: $0) }
+  }
+
+  private static func resolveWhisperCppExecutable(configuration: LocalWhisperConfiguration) -> URL? {
+    if let bundledExecutable = configuration.bundleResourceURL?
+      .appendingPathComponent("Whisper/bin/whisper-cli"),
+      FileManager.default.isExecutableFile(atPath: bundledExecutable.path) {
+      return bundledExecutable
+    }
+    return resolveExecutable(named: "whisper-cli", environment: configuration.environment)
+      ?? resolveExecutable(named: "whisper-cpp", environment: configuration.environment)
   }
 
   private static func resolveExecutable(named name: String, environment: [String: String]) -> URL? {
