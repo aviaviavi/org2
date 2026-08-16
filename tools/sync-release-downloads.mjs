@@ -47,7 +47,8 @@ export function scarfDownloadUrl(version, artifact) {
 
 export function artifactKind(name) {
   const lower = name.toLowerCase();
-  if (lower.endsWith(".dmg")) return "macos";
+  if (lower.endsWith(".dmg") && lower.includes("intel")) return "macos-intel";
+  if (lower.endsWith(".dmg")) return "macos-apple-silicon";
   if (lower.endsWith(".vsix")) return "vscode";
   if (lower.endsWith(".tgz")) return "npm";
   return "other";
@@ -55,8 +56,10 @@ export function artifactKind(name) {
 
 export function artifactLabel(asset) {
   switch (artifactKind(asset.name)) {
-    case "macos":
+    case "macos-apple-silicon":
       return "Org2 Workspace for macOS (Apple Silicon DMG)";
+    case "macos-intel":
+      return "Org2 Workspace for macOS (Intel DMG)";
     case "vscode":
       return "Org2 for VS Code (VSIX)";
     case "npm":
@@ -67,7 +70,13 @@ export function artifactLabel(asset) {
 }
 
 function artifactRank(asset) {
-  return { macos: 0, vscode: 1, npm: 2, other: 3 }[artifactKind(asset.name)];
+  return {
+    "macos-apple-silicon": 0,
+    "macos-intel": 1,
+    vscode: 2,
+    npm: 3,
+    other: 4,
+  }[artifactKind(asset.name)];
 }
 
 export function sortedAssets(release) {
@@ -112,14 +121,15 @@ export function mergeReleaseDownloadBlock(body, release) {
 function currentReleaseCard(asset, version) {
   const kind = artifactKind(asset.name);
   const descriptions = {
-    macos: "Native Apple Silicon workspace app. Developer-signed and currently not notarized.",
+    "macos-apple-silicon": "Native Apple Silicon workspace app. Developer-signed and currently not notarized.",
+    "macos-intel": "Native Intel workspace app. Developer-signed and currently not notarized.",
     vscode: "Editor integration with syntax, agenda, navigation, formatting, and Org2 commands.",
     npm: "CLI, compiler, language server, publishing runtime, and agent-facing tools.",
     other: "Additional release artifact.",
   };
   return [
     `    <article class="org2-download-card org2-download-card-${escapeHtml(kind)}">`,
-    `      <p class="org2-download-kicker">${escapeHtml(kind === "macos" ? "macOS" : kind === "vscode" ? "VS Code" : kind === "npm" ? "npm / CLI" : "Artifact")}</p>`,
+    `      <p class="org2-download-kicker">${escapeHtml(kind.startsWith("macos-") ? "macOS" : kind === "vscode" ? "VS Code" : kind === "npm" ? "npm / CLI" : "Artifact")}</p>`,
     `      <h3>${escapeHtml(artifactLabel(asset))}</h3>`,
     `      <p>${escapeHtml(descriptions[kind])}</p>`,
     `      <p class="org2-download-meta">${escapeHtml(version)} · ${escapeHtml(formatBytes(asset.size))}</p>`,
@@ -143,7 +153,7 @@ export function renderDownloadsPage(releases) {
   const cards = sortedAssets(current).map((asset) => currentReleaseCard(asset, current.tag_name)).join("\n");
   const rows = published.map((release) => {
     const byKind = new Map(sortedAssets(release).map((asset) => [artifactKind(asset.name), asset]));
-    return `| ${release.tag_name} | ${orgLink(release.tag_name, byKind.get("macos"))} | ${orgLink(release.tag_name, byKind.get("vscode"))} | ${orgLink(release.tag_name, byKind.get("npm"))} |`;
+    return `| ${release.tag_name} | ${orgLink(release.tag_name, byKind.get("macos-apple-silicon"))} | ${orgLink(release.tag_name, byKind.get("macos-intel"))} | ${orgLink(release.tag_name, byKind.get("vscode"))} | ${orgLink(release.tag_name, byKind.get("npm"))} |`;
   });
 
   return `#+TITLE: Downloads
@@ -168,7 +178,7 @@ ${cards}
 </section>
 #+END_EXPORT
 
-The macOS disk image is built for Apple Silicon and is developer-signed but not notarized. If macOS blocks its first launch, right-click the app and choose *Open*, or allow it under *System Settings → Privacy & Security*.
+The macOS disk images are available for Apple Silicon and Intel. Both are developer-signed but not notarized. If macOS blocks the first launch, right-click the app and choose *Open*, or allow it under *System Settings → Privacy & Security*.
 
 For registry-managed installation, use =npm install -g @aviaviavi/org2= or install [[https://marketplace.visualstudio.com/items?itemName=AviPress.org2-vscode][Org2 from the VS Code Marketplace]]. The paired iOS app is distributed separately through TestFlight.
 
@@ -201,8 +211,8 @@ The [[file:getting-started.org::*iOS app][iOS setup guide]] covers source signin
 
 These are the same files attached to each [[https://github.com/aviaviavi/org2/releases][GitHub Release]]. Scarf Gateway records the version and artifact variables before redirecting to GitHub.
 
-| Version | macOS DMG | VS Code VSIX | npm TGZ |
-|---------+-----------+----------------+---------|
+| Version | macOS Apple Silicon DMG | macOS Intel DMG | VS Code VSIX | npm TGZ |
+|---------+--------------------------+-----------------+----------------+---------|
 ${rows.join("\n")}
 
 * Stable download URL
@@ -213,10 +223,11 @@ Release automation uses one permanent template:
 https://org2.gateway.scarf.sh/downloads/{version}/{artifact}
 #+end_src
 
-For example, the current macOS build is:
+For example, the current macOS builds are:
 
 #+begin_src text
 ${scarfDownloadUrl(current.tag_name, "Org2Workspace.dmg")}
+${scarfDownloadUrl(current.tag_name, "Org2Workspace-Intel.dmg")}
 #+end_src
 
 Scarf redirects that request to the matching =github.com/aviaviavi/org2/releases/download/{version}/{artifact}= URL. No release files are hosted separately by Scarf.

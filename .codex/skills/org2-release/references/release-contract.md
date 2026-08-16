@@ -10,6 +10,7 @@
   - `aviaviavi-org2-{version}.tgz`
   - `org2-vscode-{version}.vsix`
   - `Org2Workspace.dmg`
+  - `Org2Workspace-Intel.dmg`
 
 The iOS client is distributed separately through TestFlight and does not share the desktop/CLI build number automatically.
 
@@ -30,7 +31,7 @@ Use `SCARF_API_TOKEN` only for authenticated API reads or an explicitly authoriz
 
 ## Signing and hosting constraints
 
-- Build the macOS release for Apple Silicon.
+- Build `Org2Workspace.dmg` for Apple Silicon and `Org2Workspace-Intel.dmg` for Intel (`x86_64`).
 - Current public DMGs are Apple developer-signed and not notarized; say so plainly.
 - Never build into or replace the daily app at `/Users/avi/Applications/Org2Workspace.app` as part of release packaging.
 - Attach all distributable files to the matching GitHub Release before synchronizing downloads.

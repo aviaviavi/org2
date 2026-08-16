@@ -20,6 +20,7 @@ const releases = [
     assets: [
       { name: "aviaviavi-org2-0.4.1.tgz", size: 315913 },
       { name: "Org2Workspace.dmg", size: 8184365 },
+      { name: "Org2Workspace-Intel.dmg", size: 8700000 },
       { name: "org2-vscode-0.4.1.vsix", size: 177345 },
     ],
   },
@@ -43,6 +44,7 @@ const block = releaseDownloadBlock(releases[0]);
 assert.ok(block.startsWith(managedBlockStart));
 assert.ok(block.endsWith(managedBlockEnd));
 assert.match(block, /Org2 Workspace for macOS/);
+assert.match(block, /Org2 Workspace for macOS \(Intel DMG\)/);
 assert.match(block, /org2-vscode-0\.4\.1\.vsix/);
 assert.match(block, /aviaviavi-org2-0\.4\.1\.tgz/);
 
@@ -54,6 +56,8 @@ assert.equal(mergeReleaseDownloadBlock(merged, releases[0]), merged);
 const page = renderDownloadsPage(releases);
 assert.match(page, /\* Current release 0\.4\.1/);
 assert.match(page, /\| 0\.4\.1 \| \[\[https:\/\/org2\.gateway\.scarf\.sh/);
+assert.match(page, /macOS Apple Silicon DMG \| macOS Intel DMG/);
+assert.match(page, /Org2Workspace-Intel\.dmg/);
 assert.match(page, /\| 0\.3\.0 \|/);
 assert.match(page, /No release files are hosted separately by Scarf\./);
 assert.match(page, /\* iOS mobile app/);
