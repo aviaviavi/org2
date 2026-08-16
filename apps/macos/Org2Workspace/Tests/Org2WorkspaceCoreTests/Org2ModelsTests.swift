@@ -9457,6 +9457,53 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testRangeAgendaLoadsItemsBeyondTheFirstWeek() throws {
+    let calendar = Calendar(identifier: .gregorian)
+    let start = Date(timeIntervalSince1970: 1_776_297_600) // 2026-04-16 00:00:00 UTC
+    let end = WorkspaceStore.agendaRefreshEndDate(from: start, calendar: calendar)
+    XCTAssertEqual(calendar.dateComponents([.day], from: start, to: end).day, 29)
+
+    let payload = try JSONDecoder().decode(AgendaPayload.self, from: Data("""
+    {
+      "$schema": "org2:agenda:v1",
+      "range": { "start": "2026-04-16", "end": "2026-05-15", "days": 30 },
+      "overdue": [],
+      "days": [
+        {
+          "date": "2026-04-16",
+          "weekday": "Thursday",
+          "items": [{ "todo": "TODO", "headline": "Today task", "kind": "SCHEDULED", "file": "/tmp/range.org2", "line": 1, "tags": [], "properties": {} }]
+        },
+        {
+          "date": "2026-04-22",
+          "weekday": "Wednesday",
+          "items": [{ "todo": "TODO", "headline": "First-week task", "kind": "SCHEDULED", "file": "/tmp/range.org2", "line": 4, "tags": [], "properties": {} }]
+        },
+        {
+          "date": "2026-04-26",
+          "weekday": "Sunday",
+          "items": [{ "todo": "TODO", "headline": "Later task", "kind": "DEADLINE", "file": "/tmp/range.org2", "line": 7, "tags": [], "properties": {} }]
+        }
+      ],
+      "skippedFiles": 0
+    }
+    """.utf8))
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.agenda = payload
+    store.agendaMode = .range
+
+    XCTAssertEqual(store.agenda?.range.days, 30)
+    XCTAssertEqual(store.agendaDisplaySections.map(\.label), ["Today", "Next 7 days", "Later"])
+    XCTAssertEqual(store.agendaDisplaySections.first { $0.label == "Next 7 days" }?.items.map(\.headline), [
+      "First-week task"
+    ])
+    XCTAssertEqual(store.agendaDisplaySections.first { $0.label == "Later" }?.items.map(\.headline), [
+      "Later task"
+    ])
+  }
+
+  @MainActor
   func testAgendaUppercaseJKScrollDetailPaneWithoutMovingSelection() throws {
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
     store.selectedSurface = .agenda

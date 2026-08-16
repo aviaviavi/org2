@@ -920,6 +920,7 @@ public final class WorkspaceStore: ObservableObject {
   nonisolated public static let applicationActivationRefreshDelayNanoseconds: UInt64 = 250_000_000
   nonisolated static let workspaceSearchCandidateLimit = 100
   nonisolated static let workspaceSearchDisplayLimit = 50
+  nonisolated static let agendaRangeDays = 30
 
   @Published public var selectedSurface: WorkspaceSurface = .home {
     didSet {
@@ -3263,8 +3264,11 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     do {
-      let today = Self.formatDate(Date())
-      let end = Self.formatDate(Calendar(identifier: .gregorian).date(byAdding: .day, value: 6, to: Date()) ?? Date())
+      let now = Date()
+      let today = Self.formatDate(now)
+      let end = Self.formatDate(
+        Self.agendaRefreshEndDate(from: now)
+      )
       let federates = agendaReadScope == .allCorpora && workspaceMountPaths().count > 1
       var arguments = federates
         ? ["workspace", "agenda"] + workspaceMountArguments()
@@ -29291,6 +29295,13 @@ public final class WorkspaceStore: ObservableObject {
     formatter.timeZone = TimeZone.current
     formatter.dateFormat = "yyyy-MM-dd"
     return formatter.string(from: date)
+  }
+
+  nonisolated static func agendaRefreshEndDate(
+    from start: Date,
+    calendar: Calendar = Calendar(identifier: .gregorian)
+  ) -> Date {
+    calendar.date(byAdding: .day, value: agendaRangeDays - 1, to: start) ?? start
   }
 
   private static func isoDate(_ date: Date) -> String {
