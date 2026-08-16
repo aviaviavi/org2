@@ -38,12 +38,22 @@ public struct Org2CLI: Sendable {
   public init(repoRoot: URL, nodePath: String? = nil) {
     self.repoRoot = repoRoot
     self.cliPath = repoRoot.appendingPathComponent("dist/cli.js")
+    let bundledNode = repoRoot.appendingPathComponent("bin/node")
     self.nodePath = nodePath
+      ?? (FileManager.default.isExecutableFile(atPath: bundledNode.path) ? bundledNode.path : nil)
   }
 
-  public static func defaultRepoRoot(filePath: String = #filePath) throws -> URL {
+  public static func defaultRepoRoot(
+    filePath: String = #filePath,
+    bundleResourceURL: URL? = Bundle.main.resourceURL
+  ) throws -> URL {
     if let override = ProcessInfo.processInfo.environment["ORG2_REPO_ROOT"], !override.isEmpty {
       return URL(fileURLWithPath: override).standardizedFileURL
+    }
+
+    if let bundledRoot = bundleResourceURL?.appendingPathComponent("Org2Runtime", isDirectory: true),
+       FileManager.default.fileExists(atPath: bundledRoot.appendingPathComponent("dist/cli.js").path) {
+      return bundledRoot.standardizedFileURL
     }
 
     var url = URL(fileURLWithPath: filePath).deletingLastPathComponent()

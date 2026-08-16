@@ -555,6 +555,23 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(payload.results[0].snippet.count, 160000)
   }
 
+  func testDefaultRepoRootPrefersBundledRuntime() throws {
+    let resources = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-bundled-runtime-\(UUID().uuidString)", isDirectory: true)
+    let runtime = resources.appendingPathComponent("Org2Runtime", isDirectory: true)
+    let dist = runtime.appendingPathComponent("dist", isDirectory: true)
+    try FileManager.default.createDirectory(at: dist, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: resources) }
+    try "".write(to: dist.appendingPathComponent("cli.js"), atomically: true, encoding: .utf8)
+
+    let root = try Org2CLI.defaultRepoRoot(
+      filePath: "/private/tmp/build/apps/macos/Org2Workspace/Sources/Org2WorkspaceCore/Org2CLI.swift",
+      bundleResourceURL: resources
+    )
+
+    XCTAssertEqual(root, runtime.standardizedFileURL)
+  }
+
   @MainActor
   func testOrg2CLIDecodesJSONAwayFromTheMainActor() async throws {
     let root = FileManager.default.temporaryDirectory

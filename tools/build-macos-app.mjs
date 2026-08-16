@@ -4,6 +4,7 @@ import { spawnSync } from "node:child_process";
 import {
   chmodSync,
   copyFileSync,
+  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -28,6 +29,7 @@ const requestedSigningIdentity = process.env.ORG2_WORKSPACE_CODE_SIGN_IDENTITY?.
 const executableName = "Org2Workspace";
 const swiftBuildArch = process.env.ORG2_WORKSPACE_SWIFT_ARCH ?? defaultSwiftBuildArch();
 const swiftBuildConfiguration = process.env.ORG2_WORKSPACE_SWIFT_CONFIGURATION?.trim();
+const bundledNodePath = process.env.ORG2_WORKSPACE_NODE_PATH?.trim();
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
@@ -205,6 +207,32 @@ function writeIconSet(sourcePngPath, resourcesDir) {
   }
 }
 
+function copyOrg2Runtime(resourcesDir) {
+  const distPath = join(repoRoot, "dist");
+  if (!existsSync(join(distPath, "cli.js")) || !existsSync(join(distPath, "render-html.js"))) {
+    throw new Error(`Org2 runtime not found in ${distPath}. Run npm run build first.`);
+  }
+
+  const runtimeDir = join(resourcesDir, "Org2Runtime");
+  rmSync(runtimeDir, { recursive: true, force: true });
+  mkdirSync(runtimeDir, { recursive: true });
+  cpSync(distPath, join(runtimeDir, "dist"), { recursive: true });
+  copyFileSync(join(repoRoot, "package.json"), join(runtimeDir, "package.json"));
+
+  if (bundledNodePath) {
+    if (!existsSync(bundledNodePath)) {
+      throw new Error(`Bundled Node.js runtime not found at ${bundledNodePath}`);
+    }
+    const binDir = join(runtimeDir, "bin");
+    mkdirSync(binDir, { recursive: true });
+    const destination = join(binDir, "node");
+    copyFileSync(bundledNodePath, destination);
+    chmodSync(destination, 0o755);
+    return destination;
+  }
+  return "";
+}
+
 function main() {
   console.log(`Building ${executableName}...`);
   run("swift", swiftBuildArgs("build"), { cwd: packageDir });
@@ -240,10 +268,14 @@ function main() {
 
   const iconPath = join(packageDir, "Sources", "Org2Workspace", "Resources", "AppIcon.png");
   writeIconSet(iconPath, resourcesDir);
+  const runtimeNodePath = copyOrg2Runtime(resourcesDir);
 
   const signingIdentity = codeSigningIdentity();
   const signingLabel = signingIdentity === "-" ? "ad-hoc" : signingIdentity;
   console.log(`Signing ${appPath} as ${bundleIdentifier} with ${signingLabel}...`);
+  if (runtimeNodePath) {
+    run("codesign", ["--force", "--sign", signingIdentity, runtimeNodePath]);
+  }
   run("codesign", ["--force", "--sign", signingIdentity, "--identifier", bundleIdentifier, appPath]);
   if (signingIdentity === "-") {
     console.warn(
