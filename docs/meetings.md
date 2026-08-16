@@ -76,13 +76,14 @@ Transcript text...
 
 ## Local transcription
 
-Transcription is local by default. Org2 Workspace resolves transcribers in this order:
+Transcription works without external setup. Org2 Workspace resolves transcribers in this order:
 
 1. `ORG2_WORKSPACE_WHISPER_COMMAND`, a custom local command. If it contains `{audio}`, the app substitutes the quoted audio path; otherwise it appends the audio path.
 2. `whisper-cli` or `whisper-cpp` from whisper.cpp, with `ORG2_WORKSPACE_WHISPER_MODEL` or a common local `ggml-base.en.bin` path.
 3. `whisper`, the OpenAI Whisper CLI, with `ORG2_WORKSPACE_WHISPER_MODEL` when set.
+4. The built-in macOS Speech framework, which requires only the standard Speech Recognition permission.
 
-If no local transcriber is found, the app still writes the audio, meeting note, and transcript artifact with `:transcription_status: unavailable` and the local setup error. That preserves provenance without silently sending private meeting data anywhere.
+Whisper is optional; Homebrew, a separate model, and environment variables are not required for normal dictation or meeting transcription. If speech permission is denied or recognition is unavailable, the app still writes the audio, meeting note, and transcript artifact with `:transcription_status: unavailable` and the local setup error. That preserves provenance without silently uploading private audio itself.
 
 ## OpenClaw ingestion
 

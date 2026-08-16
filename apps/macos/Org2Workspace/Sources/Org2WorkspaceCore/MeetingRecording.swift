@@ -2,6 +2,7 @@
 import CoreMedia
 import Foundation
 import ScreenCaptureKit
+@preconcurrency import Speech
 
 public enum MeetingTranscriptionStatus: String, Sendable {
   case complete
@@ -451,7 +452,7 @@ public struct LocalWhisperInstallationStatus: Equatable, Sendable {
   }
 
   public var isAnyLocalTranscriberAvailable: Bool {
-    isWhisperCppReady || openAIWhisperExecutablePath != nil || overrideCommand != nil
+    true
   }
 
   public var statusLabel: String {
@@ -459,7 +460,7 @@ public struct LocalWhisperInstallationStatus: Equatable, Sendable {
     if overrideCommand != nil { return "Custom transcriber configured" }
     if openAIWhisperExecutablePath != nil { return "Python Whisper available; whisper.cpp recommended" }
     if whisperCppExecutablePath != nil { return "whisper.cpp installed; model missing" }
-    return "No local transcriber found"
+    return "Built-in macOS transcription ready"
   }
 
   public var detailText: String {
@@ -475,7 +476,85 @@ public struct LocalWhisperInstallationStatus: Equatable, Sendable {
     if let overrideCommand {
       return "Using custom command: \(overrideCommand)"
     }
-    return "Install whisper.cpp and a GGML model before recording meetings."
+    return "Uses macOS Speech out of the box. whisper.cpp remains an optional faster local backend."
+  }
+}
+
+public enum NativeSpeechTranscriberError: LocalizedError {
+  case authorizationDenied
+  case recognizerUnavailable
+  case emptyTranscript
+
+  public var errorDescription: String? {
+    switch self {
+    case .authorizationDenied:
+      "Speech recognition permission is required for dictation. Allow Org2 Workspace under System Settings → Privacy & Security → Speech Recognition."
+    case .recognizerUnavailable:
+      "macOS Speech recognition is temporarily unavailable."
+    case .emptyTranscript:
+      "macOS Speech recognition completed without producing text."
+    }
+  }
+}
+
+private final class NativeSpeechRecognitionCompletion: @unchecked Sendable {
+  private let lock = NSLock()
+  private var continuation: CheckedContinuation<String, Error>?
+
+  init(_ continuation: CheckedContinuation<String, Error>) {
+    self.continuation = continuation
+  }
+
+  func finish(_ result: Result<String, Error>) {
+    let pending = lock.withLock { () -> CheckedContinuation<String, Error>? in
+      defer { continuation = nil }
+      return continuation
+    }
+    pending?.resume(with: result)
+  }
+}
+
+public struct NativeSpeechTranscriber: Sendable {
+  public init() {}
+
+  public func transcribe(audioURL: URL) async throws -> MeetingTranscriptResult {
+    let authorization = await authorizationStatus()
+    guard authorization == .authorized else {
+      throw NativeSpeechTranscriberError.authorizationDenied
+    }
+    guard let recognizer = SFSpeechRecognizer(locale: Locale.current), recognizer.isAvailable else {
+      throw NativeSpeechTranscriberError.recognizerUnavailable
+    }
+
+    let request = SFSpeechURLRecognitionRequest(url: audioURL)
+    request.shouldReportPartialResults = false
+    request.addsPunctuation = true
+    let text = try await withCheckedThrowingContinuation { continuation in
+      let completion = NativeSpeechRecognitionCompletion(continuation)
+      recognizer.recognitionTask(with: request) { result, error in
+        if let error {
+          completion.finish(.failure(error))
+          return
+        }
+        guard let result, result.isFinal else { return }
+        let transcript = result.bestTranscription.formattedString
+          .trimmingCharacters(in: .whitespacesAndNewlines)
+        completion.finish(transcript.isEmpty
+          ? .failure(NativeSpeechTranscriberError.emptyTranscript)
+          : .success(transcript))
+      }
+    }
+    return MeetingTranscriptResult(text: text, status: .complete, engine: "macOS Speech")
+  }
+
+  private func authorizationStatus() async -> SFSpeechRecognizerAuthorizationStatus {
+    let current = SFSpeechRecognizer.authorizationStatus()
+    guard current == .notDetermined else { return current }
+    return await withCheckedContinuation { continuation in
+      SFSpeechRecognizer.requestAuthorization { status in
+        continuation.resume(returning: status)
+      }
+    }
   }
 }
 
@@ -519,7 +598,7 @@ public struct LocalWhisperTranscriber: Sendable {
     if resolveExecutable(named: "whisper", environment: configuration.environment) != nil {
       return "OpenAI Whisper CLI"
     }
-    return "local Whisper CLI not found"
+    return "macOS Speech"
   }
 
   public static func installationStatus(

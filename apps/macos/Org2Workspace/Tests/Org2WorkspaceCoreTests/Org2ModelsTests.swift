@@ -3839,6 +3839,20 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(status.statusLabel, "Fast local transcription ready")
   }
 
+  func testTranscriptionStatusUsesBuiltInMacOSFallbackWithoutWhisper() {
+    let status = LocalWhisperInstallationStatus(
+      backendDescription: "macOS Speech",
+      whisperCppExecutablePath: nil,
+      whisperCppModelPath: nil,
+      openAIWhisperExecutablePath: nil,
+      overrideCommand: nil
+    )
+
+    XCTAssertTrue(status.isAnyLocalTranscriberAvailable)
+    XCTAssertEqual(status.statusLabel, "Built-in macOS transcription ready")
+    XCTAssertTrue(status.detailText.contains("out of the box"))
+  }
+
   func testWhisperCppConvertsM4AAudioToWAVBeforeTranscribing() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-whisper-m4a-\(UUID().uuidString)", isDirectory: true)

@@ -161,6 +161,8 @@ function writeInfoPlist() {
   <string>Org2Workspace records microphone audio for meeting notes.</string>
   <key>NSScreenCaptureUsageDescription</key>
   <string>Org2Workspace uses ScreenCaptureKit to capture system and call audio for meeting notes.</string>
+  <key>NSSpeechRecognitionUsageDescription</key>
+  <string>Org2Workspace uses macOS Speech recognition to transcribe dictation and meeting audio.</string>
 </dict>
 </plist>
 `;
@@ -218,6 +220,26 @@ function copyOrg2Runtime(resourcesDir) {
   mkdirSync(runtimeDir, { recursive: true });
   cpSync(distPath, join(runtimeDir, "dist"), { recursive: true });
   copyFileSync(join(repoRoot, "package.json"), join(runtimeDir, "package.json"));
+
+  const duckDBBindingPackage = swiftBuildArch === "arm64"
+    ? "@duckdb/node-bindings-darwin-arm64"
+    : "@duckdb/node-bindings-darwin-x64";
+  const runtimePackages = [
+    "@duckdb/node-api",
+    "@duckdb/node-bindings",
+    duckDBBindingPackage,
+    "detect-libc",
+  ];
+  for (const packageName of runtimePackages) {
+    const source = join(repoRoot, "node_modules", ...packageName.split("/"));
+    if (!existsSync(source)) {
+      if (swiftBuildConfiguration === "release") {
+        throw new Error(`Production runtime dependency ${packageName} is missing. Run npm ci for ${swiftBuildArch || "the target architecture"}.`);
+      }
+      continue;
+    }
+    cpSync(source, join(runtimeDir, "node_modules", ...packageName.split("/")), { recursive: true });
+  }
 
   if (bundledNodePath) {
     if (!existsSync(bundledNodePath)) {

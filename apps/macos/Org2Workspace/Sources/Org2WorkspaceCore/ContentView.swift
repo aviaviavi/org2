@@ -6040,8 +6040,12 @@ private struct AudioSettingsSection: View {
         VStack(alignment: .leading, spacing: 4) {
           audioSettingRow("Active", store.audioSettingsStatus.backendDescription)
           audioSettingRow("App path", store.workspaceRuntimeIdentity.bundlePath)
-          audioSettingRow("whisper.cpp", store.audioSettingsStatus.whisperCppExecutablePath ?? "Not installed")
-          audioSettingRow("GGML model", store.audioSettingsStatus.whisperCppModelPath ?? "Missing")
+          if let whisperCpp = store.audioSettingsStatus.whisperCppExecutablePath {
+            audioSettingRow("whisper.cpp", whisperCpp)
+          }
+          if let model = store.audioSettingsStatus.whisperCppModelPath {
+            audioSettingRow("GGML model", model)
+          }
           if let openAIWhisper = store.audioSettingsStatus.openAIWhisperExecutablePath {
             audioSettingRow("Python Whisper", openAIWhisper)
           }
@@ -6067,46 +6071,18 @@ private struct AudioSettingsSection: View {
   }
 
   private var audioSettingsHeader: some View {
-    ViewThatFits(in: .horizontal) {
-      HStack(spacing: 8) {
-        audioSettingsStatusLabel
-        Spacer(minLength: 8)
-        audioSettingsActions
-      }
-
-      VStack(alignment: .leading, spacing: 8) {
-        audioSettingsStatusLabel
-        audioSettingsActions
-      }
-    }
+    audioSettingsStatusLabel
   }
 
   private var audioSettingsStatusLabel: some View {
     HStack(spacing: 8) {
-      Image(systemName: store.audioSettingsStatus.isWhisperCppReady ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-        .foregroundStyle(store.audioSettingsStatus.isWhisperCppReady ? Color.green : Color.orange)
+      Image(systemName: store.audioSettingsStatus.isAnyLocalTranscriberAvailable ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+        .foregroundStyle(store.audioSettingsStatus.isAnyLocalTranscriberAvailable ? Color.green : Color.orange)
       Text(store.audioSettingsStatus.statusLabel)
         .font(.callout.weight(.semibold))
         .lineLimit(1)
         .truncationMode(.tail)
     }
-  }
-
-  private var audioSettingsActions: some View {
-    HStack(spacing: 8) {
-      Button {
-        Task { await store.installFastMeetingTranscriber() }
-      } label: {
-        if store.isInstallingFastTranscriber {
-          Label("Installing", systemImage: "arrow.down.circle")
-        } else {
-          Label("Install Fast Transcriber", systemImage: "bolt.fill")
-        }
-      }
-      .disabled(store.isInstallingFastTranscriber || store.audioSettingsStatus.isWhisperCppReady)
-    }
-    .controlSize(.small)
-    .buttonStyle(WorkspaceActionButtonStyle())
   }
 
   private func audioSettingRow(_ label: String, _ value: String) -> some View {

@@ -26694,17 +26694,22 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   private func transcribeAudioForMeeting(_ audioURL: URL) async -> MeetingTranscriptResult {
+    let whisperStatus = LocalWhisperTranscriber.installationStatus()
+    let hasConfiguredWhisper = whisperStatus.isWhisperCppReady
+      || whisperStatus.openAIWhisperExecutablePath != nil
+      || whisperStatus.overrideCommand != nil
+    if hasConfiguredWhisper,
+       let transcript = try? await LocalWhisperTranscriber().transcribe(audioURL: audioURL) {
+      return transcript
+    }
+
     do {
-      return try await LocalWhisperTranscriber().transcribe(audioURL: audioURL)
+      return try await NativeSpeechTranscriber().transcribe(audioURL: audioURL)
     } catch {
-      let localError = error as? LocalWhisperError
-      let status: MeetingTranscriptionStatus = localError == .notConfigured
-        ? .unavailable
-        : .failed
       return MeetingTranscriptResult(
         text: "",
-        status: status,
-        engine: LocalWhisperTranscriber.resolvedBackendDescription(),
+        status: error is NativeSpeechTranscriberError ? .unavailable : .failed,
+        engine: "macOS Speech",
         errorMessage: error.localizedDescription
       )
     }
