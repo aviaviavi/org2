@@ -2010,6 +2010,71 @@ body #content {
   line-height: 1.58;
 }
 
+#content .org2-home-hero {
+  max-width: 58rem;
+  margin-top: -0.5rem;
+  margin-bottom: clamp(2.5rem, 5vw, 4rem);
+  padding: 0;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+#content .org2-home-hero > p {
+  max-width: 45rem;
+  font-size: clamp(1.08rem, 1.8vw, 1.28rem);
+  line-height: 1.5;
+}
+
+#content .org2-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem;
+  margin-top: 1.5rem;
+}
+
+#content .org2-hero-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.62rem 0.82rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+#content .org2-hero-action:hover {
+  border-color: var(--link);
+  color: var(--link-strong);
+}
+
+#content .org2-hero-action-primary {
+  border-color: var(--link);
+  background: var(--link);
+  color: white;
+}
+
+#content .org2-hero-action-primary:hover {
+  border-color: var(--link-strong);
+  background: var(--link-strong);
+  color: white;
+}
+
+#content .org2-home-preview {
+  max-width: 70rem;
+  margin: 0 0 clamp(3rem, 6vw, 5rem);
+}
+
+#content .org2-home-preview .org2-shot-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 #content .org2-page-intro + p,
 #content .org2-page-intro + p + p {
   max-width: 70rem;
@@ -2595,6 +2660,7 @@ body > .org2-footer p {
   #content .org2-feature-card-grid,
   #content .org2-feature-media-pair,
   #content .org2-editor-strip,
+  #content .org2-home-preview .org2-shot-grid,
   #content .org2-compiler-flow,
   #content .org2-download-grid {
     grid-template-columns: minmax(0, 1fr);

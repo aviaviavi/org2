@@ -1,22 +1,29 @@
 #+TITLE: Org2
-#+SUBTITLE: An open-source second brain that remembers and acts
+#+SUBTITLE: A second brain that gets work done
 
 #+BEGIN_EXPORT html
-<section class="org2-page-intro">
-  <p>Org2 is a fully open-source second brain built from local, plain-text files. It remembers notes, tasks, meetings, sources, data, decisions, and agent work; turns that context into plans and action; and outlasts any model, agent, app, or vendor.</p>
-  <div class="org2-page-summary" aria-label="Org2 value summary">
-    <div><strong>Own your memory.</strong><span>Your files stay local, readable, versionable, and useful without Org2 or AI.</span></div>
-    <div><strong>Drive work from context.</strong><span>Plans, agendas, meetings, data, agents, and approvals operate on the same durable knowledge.</span></div>
-    <div><strong>Change tools without starting over.</strong><span>Use the models, agents, editors, and apps you choose while the corpus remains yours.</span></div>
+<section class="org2-page-intro org2-home-hero">
+  <p>Open-source and local-first, Org2 gives your apps and AI agents one durable context layer—stored in plain text and owned by you.</p>
+  <nav class="org2-hero-actions" aria-label="Start with Org2">
+    <a class="org2-hero-action org2-hero-action-primary" href="getting-started.html">Get started <span aria-hidden="true">→</span></a>
+    <a class="org2-hero-action" href="features.html">See what it can do <span aria-hidden="true">→</span></a>
+  </nav>
+</section>
+<section class="org2-home-preview" aria-labelledby="org2-home-preview-title">
+  <div class="org2-sample-intro">
+    <h2 id="org2-home-preview-title">See it at work.</h2>
+    <p>Plan your day, capture meetings, analyze data, and coordinate agents without splitting memory across tools.</p>
+  </div>
+  <div class="org2-shot-grid">
+    <figure><img src="assets/screenshots/macos-workspace-ai-room.png" alt="Org2 Workspace shared AI room showing Codex and OpenClaw answering the same launch question" loading="eager" /><figcaption>Multi-agent chat: ask named local or remote agents—or <code>@all</code>—and compare independently attributed answers in one shared thread.</figcaption></figure>
+    <figure><img src="assets/screenshots/macos-workspace-runs-review.png" alt="Org2 Workspace Agent Work showing an approval-ready delegated launch brief" loading="lazy" /><figcaption>Agent Work: follow delegated work from cited context through outputs and validation, then approve the consequential step.</figcaption></figure>
+    <figure><img src="assets/screenshots/macos-workspace-agenda.png" alt="Org2 Workspace agenda showing launch readiness tasks and linked context" loading="lazy" /><figcaption>Agenda: plan from tasks, deadlines, assignees, links, and source context in the same local corpus.</figcaption></figure>
+    <figure><img src="assets/screenshots/macos-workspace-meetings.png" alt="Org2 Workspace meeting surface with a beta review transcript and summary" loading="lazy" /><figcaption>Meetings: recordings, transcripts, decisions, and follow-ups become ordinary Org2 files.</figcaption></figure>
+    <figure><img src="assets/screenshots/macos-workspace-data.png" alt="Org2 Workspace rendering a launch-readiness data notebook with an interactive chart" loading="lazy" /><figcaption>Data notebooks: keep materialized results, freshness metadata, and interactive charts beside the notes that use them.</figcaption></figure>
+    <figure class="org2-shot-phone"><img src="assets/screenshots/ios-mobile-approvals.png" alt="Org2 Mobile approvals list on iPhone showing review-required corpus items" loading="lazy" /><figcaption>Mobile approvals: review generated drafts and approval-gated work from the phone.</figcaption></figure>
   </div>
 </section>
 #+END_EXPORT
-
-Most second-brain tools stop at storage and retrieval. Org2 is also a working system: the same corpus can shape today's agenda, ground a meeting, answer a cited question, delegate a goal, pause at an approval boundary, and preserve the outcome as tomorrow's context. Memory and execution stay connected instead of disappearing into separate apps and chat histories.
-
-Org2 is an early OSS project for turning folders of notes, transcripts, tasks, files, links, data records, and metadata into a corpus you can search, plan from, lint, refactor, hand to agents, and publish. Local files—not an application database or a model's memory—are the source of truth. Sensitive notes can stay end-to-end encrypted with keys you control, while selected subtrees can be encrypted to a particular person, device, or agent when you want help.
-
-The native Mac app brings those pieces into an early open-source workspace for AI-assisted work. It carries Org's tradition of keeping planning and knowledge in inspectable text into meetings, browser-grade document rendering, interactive data views, agent runs, and approval-gated execution. The CLI, compiler, and normal files remain useful on their own.
 
 #+BEGIN_EXPORT html
 <section class="org2-sample" aria-labelledby="org2-sample-title">
@@ -114,105 +121,34 @@ The native Mac app brings those pieces into an early open-source workspace for A
 </section>
 #+END_EXPORT
 
-* A second brain that remembers and acts
+* Memory that drives work
 
-Org2 treats knowledge and work as one durable system. Your notes do not merely document what happened: they can also produce agendas, supply cited context, define goals and workflows, coordinate named agents, gate consequential actions, and retain the results. The interface may be the Mac app today, a phone tomorrow, or a harness that does not exist yet; the underlying corpus remains ordinary, inspectable text.
+Most second brains stop at storage and retrieval. Org2 connects durable knowledge to the work it informs: agendas, meetings, cited answers, data, goals, agent runs, and approvals. Results flow back into the same corpus instead of disappearing into separate apps and chat histories.
 
-Org2 combines six useful traditions:
-
-- the portability and low friction of plain-text notes,
-- the structured programmability of Org-style TODOs, links, dates, tags, and properties,
-- the Zettelkasten habit of growing knowledge through small linked notes that compound into a graph,
-- the notebook/dashboard habit of keeping queries, tables, charts, and source artifacts near the claims they support,
-- the publishing habit of producing public docs and shareable reports from the same source,
-- the provenance and workflow boundaries agents need to work safely in a real knowledge base.
-
-The result is a shared working graph: notes, tasks, events, sources, entities, external records, generated drafts, and durable knowledge stay connected while still living in ordinary files. Raw imports can live in =raw/=, durable notes in the normal corpus, generated drafts in =views/=, and compiled indexes in =compiled/=. Agents can automate the pipeline, while humans still have natural places to inspect or steer when judgment matters.
+Your files remain the source of truth. Apps and agents share the context, humans keep clear review boundaries, and changing a model or tool does not mean starting over.
 
 * What you can do with it
 
-- *Plan from the same files you write in*: build agendas and work views from TODOs, deadlines, scheduled dates, tags, and metadata across a whole workspace.
-- *Track work without a separate app*: keep project notes, decisions, follow-ups, and next actions connected in the same graph.
-- *Build personal or team memory*: keep entity pages, meeting memory, customer notes, repo work, tickets, metrics, and project timelines in a form people can read and agents can cite.
-- *Ask better questions of your context*: query headings, links, tasks, IDs, dates, agent threads, data links, and provenance through structured corpus output.
-- *Bring multiple agents into one conversation*: mention one named Codex or OpenClaw destination—or =@all=—and compare their independently attributed answers in a shared, corpus-grounded thread.
-- *Use AI without losing the trail*: keep transcripts and imports as sources, generate drafts with citations, and promote outputs into lasting notes when they are ready.
-- *Connect reports to evidence*: describe warehouse queries, local datasets, tables, charts, and generated artifacts without storing secrets or warehouse-scale data in notes.
-- *Keep links from rotting*: generate IDs, inspect backlinks, linkify likely references, and lint graph health.
-- *Publish when useful*: turn the same source tree into HTML docs, a digital garden, or project documentation.
-
-* For individuals and organizations
-
-For an individual, Org2 can be a life/work memory system: daily notes, projects, meetings, tasks, source material, backlinks, AI drafts, and agenda views all live in the same local corpus.
-
-For an organization, the same format can hold operational context: customer reports, support narratives, repo and ticket trails, decision records, metrics snapshots, business event timelines, and durable agent outputs. Org2 can name, link, cite, and compile the context those apps produce, so the knowledge layer stays portable across clients and automations.
+- *Plan and track work* from TODOs, deadlines, meetings, decisions, and linked context.
+- *Build personal or team memory* that people can read and agents can cite.
+- *Ask grounded questions* across notes, sources, tasks, data, and prior agent work.
+- *Coordinate multiple agents* in one attributed, corpus-grounded conversation.
+- *Connect reports to evidence* with local data, queries, tables, charts, and provenance.
+- *Publish when useful* from the same source tree you use privately.
 
 * Private-by-default agent collaboration
 
-A useful agent workspace needs a precise sharing boundary. Org2's crypt workflow keeps encryption at the subtree boundary: one entry can be readable only by you, another can be encrypted to your phone and laptop, and a third can add an agent public key for a specific task.
-
-That gives you a practical local-first access model:
-
-- plaintext lives in your editor only when you decrypt it,
-- encrypted notes remain ordinary files that can sync through Git, iCloud, Syncthing, or any other file transport,
-- each subtree declares the recipients that should be able to open it,
-- agents only get access to the encrypted entries whose recipient list includes their key.
-
-That gives AI-assisted personal knowledge work a strong default: self-hosted, inspectable, GPG-based, and scoped per note.
-
-* Plain text, serious context
-
-Org2 keeps examples ergonomic by default: use concise headings, property drawers, tables, wiki links, ID links, and fenced source blocks where they make the document easier to read by hand. Verbose compatibility forms remain available, while the main user-facing path should feel like a modern plain-text application document with structure where it pays for itself.
-
-That matters because the corpus is more than prose. A file can describe:
-
-- entities, aliases, IDs, backlinks, and relationships,
-- tasks, schedules, decisions, and follow-up history,
-- meetings, transcripts, summaries, and action items,
-- agent threads, selected context, transcript references, and durable outputs,
-- datasets, query IDs, row counts, freshness, charts, and generated report artifacts.
-
-The goal is boring composability: plain files that are easy to inspect, easy to version, and rich enough for clients, CLIs, and agents to use without scraping rendered UI.
-
-* Screenshots
-
-#+BEGIN_EXPORT html
-<div class="org2-shot-grid">
-  <figure><img src="assets/screenshots/macos-workspace-runs-review.png" alt="Org2 Workspace Agent Work showing an approval-ready delegated launch brief" loading="lazy" /><figcaption>Agent Work: follow delegated work from cited context through outputs and validation, then approve the consequential step.</figcaption></figure>
-  <figure><img src="assets/screenshots/macos-workspace-data.png" alt="Org2 Workspace rendering a launch-readiness data notebook with an interactive chart" loading="lazy" /><figcaption>Data notebooks: keep materialized results, freshness metadata, and interactive charts beside the notes that use them.</figcaption></figure>
-  <figure><img src="assets/screenshots/macos-workspace-agenda.png" alt="Org2 Workspace agenda showing launch readiness tasks and linked context" loading="lazy" /><figcaption>Mac Workspace agenda: plan from tasks, deadlines, assignees, links, and source context in the same local corpus.</figcaption></figure>
-  <figure><img src="assets/screenshots/macos-workspace-meetings.png" alt="Org2 Workspace meeting surface with a beta review transcript and summary" loading="lazy" /><figcaption>Meeting capture: recordings, transcripts, decisions, and follow-ups become ordinary Org2 files.</figcaption></figure>
-  <figure><img src="assets/screenshots/macos-workspace-ai-room.png" alt="Org2 Workspace shared AI room showing Codex and OpenClaw answering the same launch question" loading="lazy" /><figcaption>Multi-agent chat: ask named local or remote agents—or <code>@all</code>—and compare independently attributed answers in one shared thread.</figcaption></figure>
-  <figure class="org2-shot-phone"><img src="assets/screenshots/ios-mobile-approvals.png" alt="Org2 Mobile approvals list on iPhone showing review-required corpus items" loading="lazy" /><figcaption>Mobile approvals: review generated drafts and approval-gated work from the phone.</figcaption></figure>
-</div>
-#+END_EXPORT
+A useful agent workspace needs precise sharing boundaries. Org2 keeps files local by default and can encrypt individual subtrees to you, a device, or a specific agent key. Encrypted notes remain ordinary files that can sync through Git, iCloud, Syncthing, or any transport you choose.
 
 * How it works
 
-Org2 is a compiler/runtime for plain-text knowledge:
+Org2 reads ordinary =.org= and =.org2= files and compiles their tasks, links, dates, properties, provenance, and agent boundaries into one shared semantic model. The Mac and iOS apps, CLI, VS Code, Codex, and OpenClaw all work from that same source-backed context.
 
-- *raw* captures source material,
-- *notes* hold reviewed knowledge in normal editable files,
-- *compiled* stores resolved semantics such as agenda state, graph edges, provenance, and artifact roles,
-- *views* hold derived artifacts like agendas, work plans, diagnostics, AI drafts, and backlinks,
-- *publish* turns selected material into websites or shareable reports.
-
-The practical payoff: one source tree can drive daily planning, work tracking, editor features, corpus-health checks, AI handoffs, and a public website without locking the work into one app.
-
-* Who it is for
-
-Org2 is a good fit if you want:
-
-- local notes that remain useful outside any single app,
-- planning and work tracking that live beside the notes,
-- AI workflows with citations and clear promotion paths,
-- a queryable personal or team knowledge base,
-- automation that can read and write structured notes safely,
-- publishing from the same corpus you use privately.
-
-It is early alpha, but already practical for CLI + VS Code workflows. Language behavior follows a clear Org2 standard informed by Org Mode's durable plain-text ideas, with portability and shared compiler semantics guiding compatibility decisions.
+The result is deliberately boring composability: inspectable files that can drive daily planning, agent workflows, data views, and publishing without locking the work into one application.
 
 * Start here
+
+Org2 is early alpha, but already practical for CLI, VS Code, and native Mac workflows.
 
 - [[file:getting-started.org][Getting started]]
 - [[file:features.org][Features]]
