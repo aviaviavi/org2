@@ -243,6 +243,60 @@ final class CodexAppServerClientTests: XCTestCase {
     XCTAssertEqual(restored.selectedOpenClawChatThread?.model, "remote-model")
   }
 
+  @MainActor
+  func testBuiltInOpenClawDestinationInheritsConfiguredAgentAfterMigration() async throws {
+    let suiteName = "AIChatDestinationAgentMigration.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let transcript = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-destination-agent-migration-\(UUID().uuidString).json")
+    defer { try? FileManager.default.removeItem(at: transcript) }
+
+    defaults.set("openclaw/org2", forKey: "Org2Workspace.openClawAgent")
+    let buggyDestinations = [
+      AIChatDestinationConfiguration(
+        id: AIChatDestinationConfiguration.localCodexID,
+        name: "Codex",
+        mention: "codex",
+        adapter: .codexLocal
+      ),
+      AIChatDestinationConfiguration(
+        id: AIChatDestinationConfiguration.openClawID,
+        name: "OpenClaw",
+        mention: "openclaw",
+        adapter: .openClaw,
+        agentID: "main"
+      )
+    ]
+    defaults.set(
+      try JSONEncoder().encode(buggyDestinations),
+      forKey: "Org2Workspace.aiChat.destinations.v1"
+    )
+    let recorder = OpenClawDestinationRoutingRecorder()
+    let store = WorkspaceStore(
+      defaults: defaults,
+      openClawTranscriptURL: transcript,
+      openClawSendHandler: { _, agentID, sessionKey, _ in
+        await recorder.record(agentID: agentID, sessionKey: sessionKey)
+        return "Routed reply"
+      },
+      legacyDefaultsDomains: []
+    )
+
+    XCTAssertEqual(store.openClawAgentID, "openclaw/org2")
+    XCTAssertEqual(
+      store.aiChatDestination(id: AIChatDestinationConfiguration.openClawID)?.agentID,
+      ""
+    )
+
+    store.createAIChatThread(destinationID: AIChatDestinationConfiguration.openClawID)
+    await store.sendOpenClawMessage(text: "Use the configured Org2 agent")
+
+    let routing = await recorder.value()
+    XCTAssertEqual(routing?.agentID, "org2")
+    XCTAssertTrue(routing?.sessionKey.hasPrefix("agent:org2:") == true)
+  }
+
   func testCodexRemoteTransportDescribesItsWebSocketEndpoint() throws {
     let endpoint = try XCTUnwrap(URL(string: "wss://press.example.test/codex"))
     XCTAssertEqual(
@@ -510,6 +564,81 @@ final class CodexAppServerClientTests: XCTestCase {
     XCTAssertEqual(messages.map(\.content), ["What shipped?", "Version 0.4.1 shipped."])
   }
 
+  func testCodexRolloutTranscriptReaderStreamsOnlyVisibleMessages() throws {
+    let transcript = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-codex-rollout-\(UUID().uuidString).jsonl")
+    defer { try? FileManager.default.removeItem(at: transcript) }
+    let ignoredPayload = String(repeating: "internal tool output ", count: 100_000)
+    let contents = [
+      #"{"timestamp":"2026-08-15T12:00:00.100Z","type":"session_meta","payload":{"id":"thread"}}"#,
+      #"{"timestamp":"2026-08-15T12:00:01.100Z","type":"event_msg","payload":{"type":"user_message","client_id":"user-visible","message":"What shipped?","images":[]}}"#,
+      #"{"timestamp":"2026-08-15T12:00:02.200Z","type":"response_item","payload":{"type":"function_call_output","output":"\#(ignoredPayload)"}}"#,
+      #"{"timestamp":"2026-08-15T12:00:03.300Z","type":"event_msg","payload":{"type":"agent_message","message":"I’m checking now.","phase":"commentary"}}"#,
+      #"{"timestamp":"2026-08-15T12:00:04.400Z","type":"event_msg","payload":{"type":"agent_message","message":"Version 0.4.1 shipped.","phase":"final_answer"}}"#,
+      #"{"timestamp":"2026-08-15T12:00:05.500Z","type":"event_msg","payload":{"type":"task_complete","last_agent_message":"Version 0.4.1 shipped."}}"#
+    ].joined(separator: "\n")
+    try contents.write(to: transcript, atomically: true, encoding: .utf8)
+
+    let messages = try CodexRolloutTranscriptReader.readMessages(at: transcript)
+
+    XCTAssertEqual(messages.map(\.role), [.user, .assistant, .assistant])
+    XCTAssertEqual(
+      messages.map(\.content),
+      ["What shipped?", "I’m checking now.", "Version 0.4.1 shipped."]
+    )
+    XCTAssertEqual(messages.map(\.id), ["user-visible", "rollout-line-4", "rollout-line-5"])
+    XCTAssertEqual(messages[0].createdAt.timeIntervalSince1970, 1_786_795_201.1, accuracy: 0.001)
+    XCTAssertEqual(messages[1].createdAt.timeIntervalSince1970, 1_786_795_203.3, accuracy: 0.001)
+    XCTAssertEqual(messages[2].createdAt.timeIntervalSince1970, 1_786_795_204.4, accuracy: 0.001)
+  }
+
+  func testExternalThreadReadUsesTheRolloutInsteadOfMaterializingTurns() async throws {
+    let temporaryDirectory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-codex-external-read-test-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: temporaryDirectory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
+
+    let transcript = temporaryDirectory.appendingPathComponent("rollout-thr-readable.jsonl")
+    try [
+      #"{"timestamp":"2026-08-15T12:00:01.100Z","type":"event_msg","payload":{"type":"user_message","message":"Load this without tool history."}}"#,
+      #"{"timestamp":"2026-08-15T12:00:02.200Z","type":"event_msg","payload":{"type":"agent_message","message":"Loaded.","phase":"final_answer"}}"#
+    ].joined(separator: "\n").write(to: transcript, atomically: true, encoding: .utf8)
+
+    let executable = temporaryDirectory.appendingPathComponent("fake-codex-external-read")
+    let script = #"""
+    #!/bin/sh
+    while IFS= read -r line; do
+      case "$line" in
+        *'"method":"initialize"'*)
+          printf '%s\n' '{"id":1,"result":{"userAgent":"fake-codex"}}'
+          ;;
+        *'"method":"initialized"'*)
+          ;;
+        *'"method":"thread/read"'*)
+          case "$line" in
+            *'"includeTurns":false'*) ;;
+            *) printf '%s\n' '{"id":2,"error":{"message":"turn history must stay excluded"}}'; continue ;;
+          esac
+          printf '%s\n' '{"id":2,"result":{"thread":{"id":"thr-readable","name":"Readable thread","source":"cli","createdAt":100,"updatedAt":120,"path":"\#(transcript.path)","turns":[]}}}'
+          ;;
+      esac
+    done
+    """#
+    try script.write(to: executable, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: executable.path)
+    let client = CodexAppServerClient(
+      executableURL: executable,
+      eventHandler: { _ in },
+      dynamicToolHandler: { _ in CodexDynamicToolResult(success: false, text: "unused") }
+    )
+
+    let detail = try await client.readExternalThread("thr-readable")
+
+    XCTAssertEqual(detail.thread.title, "Readable thread")
+    XCTAssertEqual(detail.messages.map(\.content), ["Load this without tool history.", "Loaded."])
+    await client.shutdown()
+  }
+
   func testExternalCodexThreadListingUsesRecencyAndPaginates() async throws {
     let temporaryDirectory = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-codex-external-list-test-\(UUID().uuidString)", isDirectory: true)
@@ -692,6 +821,18 @@ private actor AIChatContextRecorder {
 
   func value() -> OpenClawWorkspaceContext? {
     context
+  }
+}
+
+private actor OpenClawDestinationRoutingRecorder {
+  private var routing: (agentID: String, sessionKey: String)?
+
+  func record(agentID: String, sessionKey: String) {
+    routing = (agentID, sessionKey)
+  }
+
+  func value() -> (agentID: String, sessionKey: String)? {
+    routing
   }
 }
 

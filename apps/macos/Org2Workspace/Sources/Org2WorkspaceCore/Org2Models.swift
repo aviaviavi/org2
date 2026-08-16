@@ -2342,8 +2342,7 @@ public struct AIChatDestinationConfiguration: Identifiable, Hashable, Codable, S
         id: openClawID,
         name: "OpenClaw",
         mention: "openclaw",
-        adapter: .openClaw,
-        agentID: "main"
+        adapter: .openClaw
       )
     ]
   }

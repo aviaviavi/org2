@@ -4,6 +4,8 @@ import SwiftUI
 
 extension Notification.Name {
   static let org2OpenRemoteThread = Notification.Name("org2.openRemoteThread")
+  static let org2RemotePushTokenUpdated = Notification.Name("org2.remotePushTokenUpdated")
+  static let org2RemotePushRegistrationFailed = Notification.Name("org2.remotePushRegistrationFailed")
 }
 
 final class Org2MobileAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
@@ -35,6 +37,37 @@ final class Org2MobileAppDelegate: NSObject, UIApplicationDelegate, UNUserNotifi
     return true
   }
 
+  func application(
+    _ application: UIApplication,
+    didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
+  ) {
+    let token = deviceToken.map { String(format: "%02x", $0) }.joined()
+    let environment: String
+    #if DEBUG
+    environment = "sandbox"
+    #else
+    environment = "production"
+    #endif
+    UserDefaults.standard.set(token, forKey: MobileRemoteNotification.deviceTokenKey)
+    UserDefaults.standard.set(environment, forKey: MobileRemoteNotification.pushEnvironmentKey)
+    NotificationCenter.default.post(
+      name: .org2RemotePushTokenUpdated,
+      object: nil,
+      userInfo: ["deviceToken": token, "environment": environment]
+    )
+  }
+
+  func application(
+    _ application: UIApplication,
+    didFailToRegisterForRemoteNotificationsWithError error: Error
+  ) {
+    NotificationCenter.default.post(
+      name: .org2RemotePushRegistrationFailed,
+      object: nil,
+      userInfo: ["error": error.localizedDescription]
+    )
+  }
+
   func applicationDidEnterBackground(_ application: UIApplication) {
     Self.scheduleReplyRefresh()
   }
@@ -55,6 +88,7 @@ final class Org2MobileAppDelegate: NSObject, UIApplicationDelegate, UNUserNotifi
       completionHandler([])
       return
     }
+    Self.recordDeliveredReply(notification.request.content.userInfo)
     completionHandler([.banner, .list])
   }
 
@@ -71,6 +105,7 @@ final class Org2MobileAppDelegate: NSObject, UIApplicationDelegate, UNUserNotifi
       return
     }
     UserDefaults.standard.set(rawThreadID, forKey: MobileRemoteNotification.pendingReplyThreadIDKey)
+    Self.recordDeliveredReply(response.notification.request.content.userInfo)
     completionHandler()
     DispatchQueue.main.async {
       NotificationCenter.default.post(
@@ -78,6 +113,22 @@ final class Org2MobileAppDelegate: NSObject, UIApplicationDelegate, UNUserNotifi
         object: nil,
         userInfo: ["threadID": rawThreadID]
       )
+    }
+  }
+
+  private nonisolated static func recordDeliveredReply(_ userInfo: [AnyHashable: Any]) {
+    guard let threadID = userInfo["threadID"] as? String,
+          let messageID = userInfo["messageID"] as? String
+    else { return }
+    let defaults = UserDefaults.standard
+    var baseline: [String: String] = [:]
+    if let data = defaults.data(forKey: MobileRemoteNotification.replyBaselineKey),
+       let saved = try? JSONDecoder().decode([String: String].self, from: data) {
+      baseline = saved
+    }
+    baseline[threadID] = messageID
+    if let data = try? JSONEncoder().encode(baseline) {
+      defaults.set(data, forKey: MobileRemoteNotification.replyBaselineKey)
     }
   }
 }

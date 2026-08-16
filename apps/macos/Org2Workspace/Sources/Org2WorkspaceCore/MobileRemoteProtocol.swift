@@ -25,6 +25,8 @@ public struct MobileRemoteServerStatus: Codable, Hashable, Sendable {
   public let threadCount: Int
   public let runningThreadCount: Int
   public let aiChatDestinations: [MobileRemoteAIDestination]?
+  public let pushNotificationsSupported: Bool?
+  public let pushNotificationsConfigured: Bool?
 
   public init(
     protocolVersion: Int = MobileRemoteProtocol.version,
@@ -32,7 +34,9 @@ public struct MobileRemoteServerStatus: Codable, Hashable, Sendable {
     corpusName: String?,
     threadCount: Int,
     runningThreadCount: Int,
-    aiChatDestinations: [MobileRemoteAIDestination]? = nil
+    aiChatDestinations: [MobileRemoteAIDestination]? = nil,
+    pushNotificationsSupported: Bool? = nil,
+    pushNotificationsConfigured: Bool? = nil
   ) {
     self.protocolVersion = protocolVersion
     self.serverName = serverName
@@ -40,6 +44,30 @@ public struct MobileRemoteServerStatus: Codable, Hashable, Sendable {
     self.threadCount = threadCount
     self.runningThreadCount = runningThreadCount
     self.aiChatDestinations = aiChatDestinations
+    self.pushNotificationsSupported = pushNotificationsSupported
+    self.pushNotificationsConfigured = pushNotificationsConfigured
+  }
+}
+
+public struct MobileRemotePushRegistrationRequest: Codable, Hashable, Sendable {
+  public let deviceToken: String?
+  public let environment: String?
+  public let enabled: Bool
+
+  public init(deviceToken: String?, environment: String?, enabled: Bool) {
+    self.deviceToken = deviceToken
+    self.environment = environment
+    self.enabled = enabled
+  }
+}
+
+public struct MobileRemotePushRegistrationResponse: Codable, Hashable, Sendable {
+  public let enabled: Bool
+  public let providerConfigured: Bool
+
+  public init(enabled: Bool, providerConfigured: Bool) {
+    self.enabled = enabled
+    self.providerConfigured = providerConfigured
   }
 }
 

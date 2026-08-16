@@ -1,4 +1,4 @@
-import Foundation
+@preconcurrency import Foundation
 import Security
 import UIKit
 @preconcurrency import UserNotifications
@@ -33,6 +33,8 @@ final class MobileRemoteStore: ObservableObject {
   @Published private(set) var mutatingWorkspaceItemIDs: Set<String> = []
   @Published private(set) var threadNotificationsEnabled: Bool
   @Published private(set) var threadNotificationsUnavailable = false
+  @Published private(set) var realTimeNotificationsActive = false
+  @Published private(set) var pushNotificationStatusText = "Waiting for Apple Push Notifications"
   @Published var endpointDraft = ""
   @Published var codeDraft = ""
   @Published var errorMessage: String?
@@ -41,16 +43,20 @@ final class MobileRemoteStore: ObservableObject {
   private static let serverNameKey = "Org2Mobile.remote.serverName.v1"
   private static let deviceIDKey = "Org2Mobile.remote.deviceID.v1"
   private static let threadNotificationsEnabledKey = "Org2Mobile.remote.threadNotificationsEnabled.v1"
-  private static let replyNotificationBaselineKey = "Org2Mobile.remote.replyNotificationBaseline.v1"
+  private static let replyNotificationBaselineKey = MobileRemoteNotification.replyBaselineKey
   private static let tokenService = "org.org2.mobile.remote"
   private static let tokenAccount = "mac-access-token"
 
   private let defaults: UserDefaults
   private var accessToken: String?
+  private var pushRegistrationFingerprint: String?
+  private var isSyncingPushRegistration = false
+  private var notificationObservers: [NSObjectProtocol] = []
   private var pollingTask: Task<Void, Never>?
   private var foregroundReplyPollingTask: Task<Void, Never>?
   private var appIsActive = false
   private var pollingThreadID: UUID?
+  private var pollingLeaseID: UUID?
   private var configurationRequestID: UUID?
   private var threadDetailCache: [UUID: MobileRemoteThreadDetail] = [:]
   private var threadDetailCacheOrder: [UUID] = []
@@ -67,11 +73,36 @@ final class MobileRemoteStore: ObservableObject {
     serverName = defaults.string(forKey: Self.serverNameKey) ?? "Org2 on Mac"
     accessToken = Self.loadToken()
     isPaired = !endpointDraft.isEmpty && accessToken != nil
+    notificationObservers = [
+      NotificationCenter.default.addObserver(
+        forName: .org2RemotePushTokenUpdated,
+        object: nil,
+        queue: .main
+      ) { [weak self] _ in
+        Task { @MainActor [weak self] in
+          self?.pushNotificationStatusText = "Connecting real-time notifications"
+          await self?.syncPushRegistrationIfNeeded(force: true)
+        }
+      },
+      NotificationCenter.default.addObserver(
+        forName: .org2RemotePushRegistrationFailed,
+        object: nil,
+        queue: .main
+      ) { [weak self] notification in
+        let detail = notification.userInfo?["error"] as? String
+        Task { @MainActor [weak self] in
+          self?.realTimeNotificationsActive = false
+          self?.pushNotificationStatusText = detail.map { "Push registration failed: \($0)" }
+            ?? "Push registration failed"
+        }
+      }
+    ]
   }
 
   deinit {
     pollingTask?.cancel()
     foregroundReplyPollingTask?.cancel()
+    notificationObservers.forEach(NotificationCenter.default.removeObserver)
   }
 
   func applyPairingPayload(_ payload: String) -> Bool {
@@ -119,21 +150,39 @@ final class MobileRemoteStore: ObservableObject {
       isPaired = true
       await prepareThreadNotifications()
       await refresh()
+      await syncPushRegistrationIfNeeded(force: true)
     } catch {
       errorMessage = error.localizedDescription
     }
   }
 
   func disconnect() {
+    if isPaired, accessToken != nil, let client = try? pairedClient() {
+      Task {
+        _ = try? await client.post(
+          "/v1/push-registration",
+          payload: MobileRemotePushRegistrationRequest(
+            deviceToken: nil,
+            environment: nil,
+            enabled: false
+          ),
+          as: MobileRemotePushRegistrationResponse.self
+        )
+      }
+    }
     pollingTask?.cancel()
     pollingTask = nil
     pollingThreadID = nil
+    pollingLeaseID = nil
     foregroundReplyPollingTask?.cancel()
     foregroundReplyPollingTask = nil
     Self.deleteToken()
     accessToken = nil
     isPaired = false
     isConnected = false
+    realTimeNotificationsActive = false
+    pushNotificationStatusText = "Pair with a Mac for real-time notifications"
+    pushRegistrationFingerprint = nil
     status = nil
     threads = []
     threadDetail = nil
@@ -177,6 +226,7 @@ final class MobileRemoteStore: ObservableObject {
       status = nextStatus
       isConnected = true
       serverName = nextStatus.serverName
+      await syncPushRegistrationIfNeeded(force: false)
       await reconcileReplyNotifications(with: nextThreads.threads)
       threads = nextThreads.threads
       pruneThreadDetailCache(keeping: Set(nextThreads.threads.map(\.id)))
@@ -338,10 +388,17 @@ final class MobileRemoteStore: ObservableObject {
     guard threadNotificationsEnabled != enabled else { return }
     threadNotificationsEnabled = enabled
     defaults.set(enabled, forKey: Self.threadNotificationsEnabledKey)
+    if !enabled {
+      realTimeNotificationsActive = false
+      pushNotificationStatusText = "Reply notifications are off"
+      pushRegistrationFingerprint = nil
+      Task { await syncPushRegistrationIfNeeded(force: true, enabled: false) }
+    }
     if enabled, appIsActive {
       // Establish a fresh baseline before alerting so enabling the option does
       // not replay replies that arrived while notifications were disabled.
       defaults.removeObject(forKey: Self.replyNotificationBaselineKey)
+      pushNotificationStatusText = "Connecting real-time notifications"
       setAppActive(true)
     } else {
       foregroundReplyPollingTask?.cancel()
@@ -380,6 +437,68 @@ final class MobileRemoteStore: ObservableObject {
     threadNotificationsUnavailable = !Self.notificationAuthorizationAllowsAlerts(
       refreshedSettings.authorizationStatus
     )
+    if !threadNotificationsUnavailable {
+      UIApplication.shared.registerForRemoteNotifications()
+      await syncPushRegistrationIfNeeded(force: false)
+    } else {
+      realTimeNotificationsActive = false
+      pushNotificationStatusText = "Notifications are disabled in iOS Settings"
+    }
+  }
+
+  private func syncPushRegistrationIfNeeded(
+    force: Bool,
+    enabled requestedEnabled: Bool? = nil
+  ) async {
+    guard isPaired, !isSyncingPushRegistration else { return }
+    let enabled = requestedEnabled ?? threadNotificationsEnabled
+    let token = enabled
+      ? defaults.string(forKey: MobileRemoteNotification.deviceTokenKey)
+      : nil
+    let environment = enabled
+      ? defaults.string(forKey: MobileRemoteNotification.pushEnvironmentKey)
+      : nil
+    if enabled, token == nil {
+      realTimeNotificationsActive = false
+      pushNotificationStatusText = "Waiting for Apple Push Notifications"
+      return
+    }
+    if enabled, status?.pushNotificationsSupported == false {
+      realTimeNotificationsActive = false
+      pushNotificationStatusText = "Update Org2 on the Mac to enable real-time notifications"
+      return
+    }
+    let fingerprint = "\(enabled):\(environment ?? "none"):\(token ?? "none")"
+    guard force || fingerprint != pushRegistrationFingerprint else { return }
+    isSyncingPushRegistration = true
+    defer { isSyncingPushRegistration = false }
+    do {
+      let response: MobileRemotePushRegistrationResponse = try await pairedClient().post(
+        "/v1/push-registration",
+        payload: MobileRemotePushRegistrationRequest(
+          deviceToken: token,
+          environment: environment,
+          enabled: enabled
+        ),
+        as: MobileRemotePushRegistrationResponse.self
+      )
+      pushRegistrationFingerprint = fingerprint
+      realTimeNotificationsActive = response.enabled && response.providerConfigured
+      if !enabled {
+        pushNotificationStatusText = "Reply notifications are off"
+      } else if response.providerConfigured {
+        pushNotificationStatusText = "Real-time notifications are active"
+      } else {
+        pushNotificationStatusText = "Finish push setup in Org2 on the Mac"
+      }
+    } catch {
+      realTimeNotificationsActive = false
+      if status?.pushNotificationsSupported == true {
+        pushNotificationStatusText = "Could not sync push notifications: \(error.localizedDescription)"
+      } else {
+        pushNotificationStatusText = "Update Org2 on the Mac to enable real-time notifications"
+      }
+    }
   }
 
   private func reconcileReplyNotifications(
@@ -442,7 +561,10 @@ final class MobileRemoteStore: ObservableObject {
     }
     content.categoryIdentifier = MobileRemoteNotification.replyCategory
     content.threadIdentifier = thread.id.uuidString
-    content.userInfo = ["threadID": thread.id.uuidString]
+    content.userInfo = [
+      "threadID": thread.id.uuidString,
+      "messageID": messageID.uuidString
+    ]
     // Show a normal banner without adding sound or a badge. `.passive` often
     // deposits the reply directly in Notification Center with no visible cue.
     content.interruptionLevel = .active
@@ -457,18 +579,24 @@ final class MobileRemoteStore: ObservableObject {
   func sendTestReplyNotification() async {
     await prepareThreadNotifications()
     guard !threadNotificationsUnavailable else { return }
-
-    let content = UNMutableNotificationContent()
-    content.title = "Org2 reply notifications"
-    content.body = "Notifications are working on this iPhone."
-    content.categoryIdentifier = MobileRemoteNotification.replyCategory
-    content.interruptionLevel = .active
-    let request = UNNotificationRequest(
-      identifier: "org2.thread.reply.test",
-      content: content,
-      trigger: nil
-    )
-    try? await UNUserNotificationCenter.current().add(request)
+    await syncPushRegistrationIfNeeded(force: true)
+    guard realTimeNotificationsActive else { return }
+    do {
+      let response: MobileRemoteMutationResponse = try await pairedClient().post(
+        "/v1/push-test",
+        payload: MobileRemotePushRegistrationRequest(
+          deviceToken: nil,
+          environment: nil,
+          enabled: true
+        ),
+        as: MobileRemoteMutationResponse.self
+      )
+      if !response.accepted {
+        pushNotificationStatusText = "The Mac did not accept the test push"
+      }
+    } catch {
+      pushNotificationStatusText = "Test push failed: \(error.localizedDescription)"
+    }
   }
 
   nonisolated private static func notificationAuthorizationAllowsAlerts(
@@ -607,8 +735,10 @@ final class MobileRemoteStore: ObservableObject {
     return "/v1/external-threads/\(thread.harness.rawValue)/\(externalID)"
   }
 
-  func beginPolling(threadID: UUID) {
+  @discardableResult
+  func beginPolling(threadID: UUID) -> UUID {
     pollingTask?.cancel()
+    let leaseID = UUID()
     if pollingThreadID != threadID {
       threadDetail = threadDetailCache[threadID]
       threadConfiguration = nil
@@ -616,27 +746,31 @@ final class MobileRemoteStore: ObservableObject {
       configurationError = nil
     }
     pollingThreadID = threadID
+    pollingLeaseID = leaseID
     loadingThreadID = threadDetail?.thread.id == threadID ? nil : threadID
     Task { [weak self] in
-      await self?.refreshThreadConfiguration(threadID)
+      await self?.refreshThreadConfiguration(threadID, pollingLeaseID: leaseID)
     }
     pollingTask = Task { [weak self] in
       guard let self else { return }
       while !Task.isCancelled {
-        await self.refreshThread(threadID)
+        await self.refreshThread(threadID, pollingLeaseID: leaseID)
+        guard self.pollingLeaseID == leaseID else { return }
         let isActivelyChanging = self.threadDetail?.thread.id == threadID
           && (self.threadDetail?.thread.isRunning == true
             || self.threadDetail?.streamingReply.isEmpty == false)
         try? await Task.sleep(for: .seconds(isActivelyChanging ? 1 : 4))
       }
     }
+    return leaseID
   }
 
-  func endPolling(threadID: UUID) {
-    guard pollingThreadID == threadID else { return }
+  func endPolling(threadID: UUID, leaseID: UUID) {
+    guard pollingThreadID == threadID, pollingLeaseID == leaseID else { return }
     pollingTask?.cancel()
     pollingTask = nil
     pollingThreadID = nil
+    pollingLeaseID = nil
     if loadingThreadID == threadID {
       loadingThreadID = nil
     }
@@ -753,13 +887,15 @@ final class MobileRemoteStore: ObservableObject {
     }
   }
 
-  private func refreshThread(_ threadID: UUID) async {
+  private func refreshThread(_ threadID: UUID, pollingLeaseID expectedLeaseID: UUID? = nil) async {
     do {
       let detail = try await pairedClient().get(
         "/v1/threads/\(threadID.uuidString)",
         as: MobileRemoteThreadDetail.self
       )
-      guard pollingThreadID == threadID else { return }
+      guard pollingThreadID == threadID,
+            expectedLeaseID == nil || pollingLeaseID == expectedLeaseID
+      else { return }
       recordReplyNotificationBaseline(for: detail.thread)
       cacheThreadDetail(detail)
       if threadDetail != detail {
@@ -772,7 +908,9 @@ final class MobileRemoteStore: ObservableObject {
         threads[index] = detail.thread
       }
     } catch {
-      if !Task.isCancelled, pollingThreadID == threadID {
+      if !Task.isCancelled,
+         pollingThreadID == threadID,
+         expectedLeaseID == nil || pollingLeaseID == expectedLeaseID {
         loadingThreadID = nil
         isConnected = false
         threadConnectionError = error.localizedDescription
@@ -780,7 +918,10 @@ final class MobileRemoteStore: ObservableObject {
     }
   }
 
-  private func refreshThreadConfiguration(_ threadID: UUID) async {
+  private func refreshThreadConfiguration(
+    _ threadID: UUID,
+    pollingLeaseID expectedLeaseID: UUID? = nil
+  ) async {
     let requestID = UUID()
     configurationRequestID = requestID
     isRefreshingConfiguration = true
@@ -794,11 +935,16 @@ final class MobileRemoteStore: ObservableObject {
         "/v1/threads/\(threadID.uuidString)/configuration",
         as: MobileRemoteThreadConfiguration.self
       )
-      guard pollingThreadID == threadID else { return }
+      guard pollingThreadID == threadID,
+            expectedLeaseID == nil || pollingLeaseID == expectedLeaseID
+      else { return }
       threadConfiguration = configuration
       configurationError = nil
     } catch {
-      guard !Task.isCancelled, pollingThreadID == threadID else { return }
+      guard !Task.isCancelled,
+            pollingThreadID == threadID,
+            expectedLeaseID == nil || pollingLeaseID == expectedLeaseID
+      else { return }
       configurationError = error.localizedDescription
     }
   }

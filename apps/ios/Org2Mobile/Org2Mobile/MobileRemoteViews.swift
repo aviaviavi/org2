@@ -19,7 +19,7 @@ struct MobileRemoteRootView: View {
       .navigationTitle("Remote")
       .navigationDestination(for: UUID.self) { threadID in
         MobileRemoteThreadView(threadID: threadID) { destinationThreadID in
-          path = [destinationThreadID]
+          navigate(to: destinationThreadID)
         }
       }
       .toolbar {
@@ -48,7 +48,7 @@ struct MobileRemoteRootView: View {
         if remote.isPaired {
           await remote.refresh()
           if let pendingThreadID = remote.consumePendingReplyThreadID() {
-            path = [pendingThreadID]
+            navigate(to: pendingThreadID)
           }
         }
       }
@@ -59,7 +59,7 @@ struct MobileRemoteRootView: View {
             let threadID = UUID(uuidString: rawThreadID)
       else { return }
       _ = remote.consumePendingReplyThreadID()
-      path = [threadID]
+      navigate(to: threadID)
     }
     .alert("Mobile Remote", isPresented: Binding(
       get: { remote.errorMessage != nil },
@@ -69,6 +69,12 @@ struct MobileRemoteRootView: View {
     } message: {
       Text(remote.errorMessage ?? "")
     }
+  }
+
+  private func navigate(to threadID: UUID) {
+    let destination = [threadID]
+    guard path != destination else { return }
+    path = destination
   }
 
   private var threadList: some View {
@@ -107,10 +113,14 @@ struct MobileRemoteRootView: View {
             Text(
               remote.threadNotificationsUnavailable
                 ? "Notifications are disabled in iOS Settings"
-                : "Show a banner when an AI thread replies. No sound or badge."
+                : remote.pushNotificationStatusText
             )
             .font(.caption)
-            .foregroundStyle(remote.threadNotificationsUnavailable ? Color.orange : Color.secondary)
+            .foregroundStyle(
+              remote.threadNotificationsUnavailable
+                ? Color.orange
+                : remote.realTimeNotificationsActive ? Color.green : Color.secondary
+            )
           }
         }
 
@@ -126,12 +136,13 @@ struct MobileRemoteRootView: View {
             Button {
               Task { await remote.sendTestReplyNotification() }
             } label: {
-              Label("Send Test Notification", systemImage: "bell.badge")
+              Label("Send Test Push", systemImage: "bell.badge")
             }
+            .disabled(!remote.realTimeNotificationsActive)
           }
         }
 
-        Text("Org2 checks for replies while open. After you leave the app, iOS may delay background checks.")
+        Text("Real-time alerts arrive through Apple Push Notifications. Background checks remain as a fallback when push is unavailable. Alerts have no sound or badge.")
           .font(.caption)
           .foregroundStyle(.secondary)
       }
@@ -496,7 +507,7 @@ private struct MobileExternalThreadMessageCard: View {
         }
         .accessibilityLabel("Copy or share message")
       }
-      Text(message.content)
+      Text(MobileRemoteMessageMarkup.attributedString(for: message.content))
         .font(.body)
         .textSelection(.enabled)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -726,6 +737,7 @@ private struct MobileRemoteThreadView: View {
   @State private var selectedFileCitation: MobileRemoteFileCitation?
   @State private var isNearChatBottom = true
   @State private var hasPresentedInitialContent = false
+  @State private var pollingLeaseID: UUID?
 
   var body: some View {
     Group {
@@ -801,12 +813,15 @@ private struct MobileRemoteThreadView: View {
     }
     .onAppear {
       hasPresentedInitialContent = false
-      remote.beginPolling(threadID: threadID)
+      pollingLeaseID = remote.beginPolling(threadID: threadID)
     }
     .onDisappear {
       voiceTranscriber.cancel()
       hasPresentedInitialContent = false
-      remote.endPolling(threadID: threadID)
+      if let pollingLeaseID {
+        remote.endPolling(threadID: threadID, leaseID: pollingLeaseID)
+      }
+      pollingLeaseID = nil
     }
     .onChange(of: voiceTranscriber.transcript) { _, transcript in
       draft = Self.appendingDictation(transcript, to: dictationPrefix)
@@ -1923,6 +1938,31 @@ private enum MobileRemoteMessageMarkup {
     pattern: #"^(.+\.(?:org2|org))(?::([1-9][0-9]*))?$"#,
     options: [.caseInsensitive]
   )
+  private static let orderedListPattern = try! NSRegularExpression(
+    pattern: #"^([0-9]+)[.)]\s+(.+)$"#
+  )
+  private static let inlinePatterns: [(pattern: NSRegularExpression, style: InlineStyle)] = [
+    (try! NSRegularExpression(pattern: #"(?<![\p{L}\p{N}])\*([^\s*](?:[^*\n]*[^\s*])?)\*(?![\p{L}\p{N}])"#), .bold),
+    (try! NSRegularExpression(pattern: #"(?<![\p{L}\p{N}])/([^\s/](?:[^/\n]*[^\s/])?)/(?![\p{L}\p{N}])"#), .italic),
+    (try! NSRegularExpression(pattern: #"(?<![\p{L}\p{N}])_([^\s_](?:[^_\n]*[^\s_])?)_(?![\p{L}\p{N}])"#), .underline),
+    (try! NSRegularExpression(pattern: #"(?<![\p{L}\p{N}])=([^\s=](?:[^=\n]*[^\s=])?)=(?![\p{L}\p{N}])"#), .code),
+    (try! NSRegularExpression(pattern: #"(?<![\p{L}\p{N}])~([^\s~](?:[^~\n]*[^\s~])?)~(?![\p{L}\p{N}])"#), .code),
+    (try! NSRegularExpression(pattern: #"(?<![\p{L}\p{N}])\+([^\s+](?:[^+\n]*[^\s+])?)\+(?![\p{L}\p{N}])"#), .strike)
+  ]
+
+  private enum InlineStyle {
+    case bold
+    case italic
+    case underline
+    case code
+    case strike
+  }
+
+  private struct InlineToken {
+    let range: NSRange
+    let contentRange: NSRange
+    let style: InlineStyle
+  }
 
   private struct RenderedLink {
     let range: NSRange
@@ -1930,25 +1970,241 @@ private enum MobileRemoteMessageMarkup {
     let url: URL
   }
 
+  private final class CachedMarkup {
+    let value: AttributedString
+
+    init(_ value: AttributedString) {
+      self.value = value
+    }
+  }
+
+  @MainActor private static let cache: NSCache<NSString, CachedMarkup> = {
+    let cache = NSCache<NSString, CachedMarkup>()
+    cache.countLimit = 512
+    return cache
+  }()
+
+  @MainActor
   static func attributedString(for content: String) -> AttributedString {
+    let key = content as NSString
+    if let cached = cache.object(forKey: key) {
+      return cached.value
+    }
+
+    let value = makeAttributedString(for: content)
+    cache.setObject(CachedMarkup(value), forKey: key)
+    return value
+  }
+
+  private static func makeAttributedString(for content: String) -> AttributedString {
+    let lines = content
+      .replacingOccurrences(of: "\r\n", with: "\n")
+      .replacingOccurrences(of: "\r", with: "\n")
+      .split(separator: "\n", omittingEmptySubsequences: false)
+      .map(String.init)
+    var output = AttributedString()
+    var isInsideSourceBlock = false
+    var isInsideQuoteBlock = false
+
+    for (index, rawLine) in lines.enumerated() {
+      if index > 0 {
+        output.append(AttributedString("\n"))
+      }
+
+      let line = normalizedBlockDirective(rawLine)
+      let trimmed = line.trimmingCharacters(in: .whitespaces)
+      let directive = trimmed.lowercased()
+      if directive.hasPrefix("#+begin_src") || directive.hasPrefix("#+begin_example") {
+        isInsideSourceBlock = true
+        let language = trimmed.split(whereSeparator: \.isWhitespace).dropFirst().first.map(String.init)
+        var label = AttributedString(language.map { "Code · \($0)" } ?? "Code")
+        label.font = .caption.monospaced().weight(.semibold)
+        label.foregroundColor = .secondary
+        output.append(label)
+        continue
+      }
+      if directive == "#+end_src" || directive == "#+end_example" {
+        isInsideSourceBlock = false
+        continue
+      }
+      if directive == "#+begin_quote" {
+        isInsideQuoteBlock = true
+        continue
+      }
+      if directive == "#+end_quote" {
+        isInsideQuoteBlock = false
+        continue
+      }
+
+      if isInsideSourceBlock {
+        var source = AttributedString(line)
+        source.font = .system(.body, design: .monospaced)
+        source.backgroundColor = Color.secondary.opacity(0.10)
+        output.append(source)
+      } else if isInsideQuoteBlock {
+        var marker = AttributedString("│ ")
+        marker.foregroundColor = .accentColor
+        output.append(marker)
+        var quote = inlineAttributedString(for: line)
+        quote.font = .body.italic()
+        quote.foregroundColor = .secondary
+        output.append(quote)
+      } else if let heading = heading(in: line) {
+        var marker = AttributedString("* ")
+        marker.font = headingFont(level: heading.level)
+        marker.foregroundColor = .accentColor
+        output.append(marker)
+        var title = inlineAttributedString(for: heading.title)
+        title.font = headingFont(level: heading.level)
+        output.append(title)
+      } else if let listItem = listItem(in: line) {
+        var marker = AttributedString(listItem.marker)
+        marker.foregroundColor = .accentColor
+        output.append(marker)
+        output.append(descriptionListAttributedString(for: listItem.body))
+      } else if isHorizontalRule(trimmed) {
+        var rule = AttributedString("────────────────")
+        rule.foregroundColor = .secondary
+        output.append(rule)
+      } else if trimmed.hasPrefix("|") && trimmed.hasSuffix("|") {
+        var table = AttributedString(line)
+        table.font = .system(.body, design: .monospaced)
+        output.append(table)
+      } else if directive.hasPrefix("#+") {
+        var keyword = AttributedString(trimmed)
+        keyword.font = .caption.monospaced()
+        keyword.foregroundColor = .secondary
+        output.append(keyword)
+      } else {
+        output.append(inlineAttributedString(for: line))
+      }
+    }
+    return output
+  }
+
+  private static func inlineAttributedString(for content: String) -> AttributedString {
     let source = content as NSString
     let links = renderedLinks(in: content)
-    guard !links.isEmpty else { return AttributedString(content) }
+    guard !links.isEmpty else { return styledInlineAttributedString(for: content) }
     var output = AttributedString()
     var cursor = 0
     for link in links where link.range.location >= cursor {
       let prefixRange = NSRange(location: cursor, length: link.range.location - cursor)
-      output.append(AttributedString(source.substring(with: prefixRange)))
-      var chunk = AttributedString(link.label)
+      output.append(styledInlineAttributedString(for: source.substring(with: prefixRange)))
+      var chunk = styledInlineAttributedString(for: link.label)
       chunk.foregroundColor = .accentColor
       chunk.link = link.url
       output.append(chunk)
       cursor = link.range.location + link.range.length
     }
     if cursor < source.length {
+      output.append(styledInlineAttributedString(for: source.substring(from: cursor)))
+    }
+    return output
+  }
+
+  private static func styledInlineAttributedString(for content: String) -> AttributedString {
+    let source = content as NSString
+    let fullRange = NSRange(location: 0, length: source.length)
+    let tokens = inlinePatterns.flatMap { pattern, style in
+      pattern.matches(in: content, range: fullRange).compactMap { match -> InlineToken? in
+        guard match.numberOfRanges > 1, match.range(at: 1).location != NSNotFound else { return nil }
+        return InlineToken(range: match.range, contentRange: match.range(at: 1), style: style)
+      }
+    }
+    .sorted {
+      if $0.range.location == $1.range.location { return $0.range.length > $1.range.length }
+      return $0.range.location < $1.range.location
+    }
+    guard !tokens.isEmpty else { return AttributedString(content) }
+
+    var output = AttributedString()
+    var cursor = 0
+    for token in tokens where token.range.location >= cursor {
+      let prefix = NSRange(location: cursor, length: token.range.location - cursor)
+      output.append(AttributedString(source.substring(with: prefix)))
+      var chunk = AttributedString(source.substring(with: token.contentRange))
+      switch token.style {
+      case .bold:
+        chunk.font = .body.weight(.semibold)
+      case .italic:
+        chunk.font = .body.italic()
+      case .underline:
+        chunk.underlineStyle = .single
+      case .code:
+        chunk.font = .system(.body, design: .monospaced)
+        chunk.backgroundColor = Color.secondary.opacity(0.13)
+      case .strike:
+        chunk.strikethroughStyle = .single
+      }
+      output.append(chunk)
+      cursor = token.range.location + token.range.length
+    }
+    if cursor < source.length {
       output.append(AttributedString(source.substring(from: cursor)))
     }
     return output
+  }
+
+  private static func heading(in line: String) -> (level: Int, title: String)? {
+    let trimmed = line.trimmingCharacters(in: .whitespaces)
+    let stars = trimmed.prefix { $0 == "*" }
+    guard (1...6).contains(stars.count) else { return nil }
+    let remainder = trimmed.dropFirst(stars.count)
+    guard let first = remainder.first, first.isWhitespace else { return nil }
+    let title = remainder.trimmingCharacters(in: .whitespaces)
+    return title.isEmpty ? nil : (stars.count, title)
+  }
+
+  private static func headingFont(level: Int) -> Font {
+    switch level {
+    case 1: return .title3.weight(.bold)
+    case 2: return .headline
+    default: return .subheadline.weight(.semibold)
+    }
+  }
+
+  private static func listItem(in line: String) -> (marker: String, body: String)? {
+    let trimmed = line.trimmingCharacters(in: .whitespaces)
+    for prefix in ["- ", "+ "] where trimmed.hasPrefix(prefix) {
+      return ("• ", String(trimmed.dropFirst(prefix.count)))
+    }
+    let source = trimmed as NSString
+    let range = NSRange(location: 0, length: source.length)
+    guard let match = orderedListPattern.firstMatch(in: trimmed, range: range),
+          let numberRange = Range(match.range(at: 1), in: trimmed),
+          let bodyRange = Range(match.range(at: 2), in: trimmed)
+    else { return nil }
+    return ("\(trimmed[numberRange]). ", String(trimmed[bodyRange]))
+  }
+
+  private static func descriptionListAttributedString(for body: String) -> AttributedString {
+    guard let separator = body.range(of: " :: ") else {
+      return inlineAttributedString(for: body)
+    }
+    var term = inlineAttributedString(for: String(body[..<separator.lowerBound]))
+    term.font = .body.weight(.semibold)
+    var output = term
+    var separatorChunk = AttributedString(" — ")
+    separatorChunk.foregroundColor = .secondary
+    output.append(separatorChunk)
+    output.append(inlineAttributedString(for: String(body[separator.upperBound...])))
+    return output
+  }
+
+  private static func normalizedBlockDirective(_ line: String) -> String {
+    let indentation = String(line.prefix { $0 == " " || $0 == "\t" })
+    let trimmed = line.dropFirst(indentation.count)
+    let hashes = trimmed.prefix { $0 == "#" }
+    guard hashes.count > 1 else { return line }
+    let suffix = trimmed.dropFirst(hashes.count)
+    guard suffix.first == "+" else { return line }
+    return indentation + "#" + suffix
+  }
+
+  private static func isHorizontalRule(_ line: String) -> Bool {
+    guard line.count >= 5 else { return false }
+    return line.allSatisfy { $0 == "-" }
   }
 
   static func fileCitation(from url: URL) -> MobileRemoteFileCitation? {

@@ -2,6 +2,7 @@ import AppKit
 import CoreImage
 import Org2WorkspaceCore
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct WorkspaceSettingsView: View {
   var body: some View {
@@ -85,6 +86,9 @@ private struct DocumentSettingsView: View {
 private struct MobileRemoteSettingsView: View {
   @EnvironmentObject private var remote: MobileRemoteCoordinator
   @State private var hostDraft = ""
+  @State private var pushTeamIDDraft = ""
+  @State private var pushKeyIDDraft = ""
+  @State private var isImportingPushKey = false
 
   var body: some View {
     Form {
@@ -161,6 +165,37 @@ private struct MobileRemoteSettingsView: View {
       }
 
       Section {
+        TextField("Apple Team ID", text: $pushTeamIDDraft)
+          .textFieldStyle(.roundedBorder)
+          .onSubmit { remote.setPushTeamID(pushTeamIDDraft) }
+        TextField("APNs Key ID", text: $pushKeyIDDraft)
+          .textFieldStyle(.roundedBorder)
+          .onSubmit { remote.setPushKeyID(pushKeyIDDraft) }
+
+        HStack {
+          Button("Apply IDs") {
+            remote.setPushTeamID(pushTeamIDDraft)
+            remote.setPushKeyID(pushKeyIDDraft)
+          }
+          Button("Import APNs Key…") {
+            isImportingPushKey = true
+          }
+          if remote.pushProviderConfigured {
+            Button("Remove Key", role: .destructive) {
+              remote.clearPushPrivateKey()
+            }
+          }
+        }
+
+        LabeledContent("Status", value: remote.pushStatusText)
+        Text("The APNs authentication key is stored only in this Mac’s Keychain. Org2 sends a quiet push directly to Apple when an AI reply completes; the key and device token are never written to the corpus.")
+          .font(.callout)
+          .foregroundStyle(.secondary)
+      } header: {
+        Label("Real-time Reply Notifications", systemImage: "bell.badge")
+      }
+
+      Section {
         if remote.pairedDevices.isEmpty {
           Text("No paired mobile devices")
             .foregroundStyle(.secondary)
@@ -172,6 +207,11 @@ private struct MobileRemoteSettingsView: View {
                 Text("Paired \(device.pairedAt.formatted(date: .abbreviated, time: .shortened))")
                   .font(.caption)
                   .foregroundStyle(.secondary)
+                if let registeredAt = device.pushRegisteredAt {
+                  Text("Push active · registered \(registeredAt.formatted(date: .abbreviated, time: .shortened))")
+                    .font(.caption)
+                    .foregroundStyle(.green)
+                }
               }
               Spacer()
               Button("Revoke", role: .destructive) {
@@ -191,9 +231,28 @@ private struct MobileRemoteSettingsView: View {
     .padding(8)
     .onAppear {
       hostDraft = remote.bindHost
+      pushTeamIDDraft = remote.pushTeamID
+      pushKeyIDDraft = remote.pushKeyID
     }
     .onChange(of: remote.bindHost) { _, value in
       hostDraft = value
+    }
+    .onChange(of: remote.pushTeamID) { _, value in
+      pushTeamIDDraft = value
+    }
+    .onChange(of: remote.pushKeyID) { _, value in
+      pushKeyIDDraft = value
+    }
+    .fileImporter(
+      isPresented: $isImportingPushKey,
+      allowedContentTypes: [.data],
+      allowsMultipleSelection: false
+    ) { result in
+      guard case .success(let urls) = result, let url = urls.first else { return }
+      let accessed = url.startAccessingSecurityScopedResource()
+      defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+      guard let data = try? Data(contentsOf: url) else { return }
+      remote.importPushPrivateKey(data)
     }
   }
 

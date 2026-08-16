@@ -3,6 +3,9 @@ import Foundation
 enum MobileRemoteNotification {
   static let replyCategory = "org2.thread.reply"
   static let pendingReplyThreadIDKey = "Org2Mobile.remote.pendingReplyThreadID.v1"
+  static let replyBaselineKey = "Org2Mobile.remote.replyNotificationBaseline.v1"
+  static let deviceTokenKey = "Org2Mobile.remote.apnsDeviceToken.v1"
+  static let pushEnvironmentKey = "Org2Mobile.remote.apnsEnvironment.v1"
 }
 
 enum MobileRemoteWire {
@@ -29,6 +32,19 @@ struct MobileRemoteServerStatus: Codable, Hashable {
   let threadCount: Int
   let runningThreadCount: Int
   let aiChatDestinations: [MobileRemoteAIDestination]?
+  let pushNotificationsSupported: Bool?
+  let pushNotificationsConfigured: Bool?
+}
+
+struct MobileRemotePushRegistrationRequest: Codable {
+  let deviceToken: String?
+  let environment: String?
+  let enabled: Bool
+}
+
+struct MobileRemotePushRegistrationResponse: Codable {
+  let enabled: Bool
+  let providerConfigured: Bool
 }
 
 struct MobileRemoteAIDestination: Codable, Hashable, Identifiable {

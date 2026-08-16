@@ -8,6 +8,14 @@ struct MobileRemotePairedDevice: Codable, Identifiable, Hashable {
   let id: UUID
   let name: String
   let pairedAt: Date
+  let pushRegisteredAt: Date?
+
+  init(id: UUID, name: String, pairedAt: Date, pushRegisteredAt: Date? = nil) {
+    self.id = id
+    self.name = name
+    self.pairedAt = pairedAt
+    self.pushRegisteredAt = pushRegisteredAt
+  }
 }
 
 @MainActor
@@ -19,6 +27,10 @@ final class MobileRemoteCoordinator: ObservableObject {
   @Published private(set) var pairingCode: String?
   @Published private(set) var pairingExpiresAt: Date?
   @Published private(set) var pairedDevices: [MobileRemotePairedDevice]
+  @Published private(set) var pushTeamID: String
+  @Published private(set) var pushKeyID: String
+  @Published private(set) var pushProviderConfigured: Bool
+  @Published private(set) var pushStatusText: String
 
   private static let enabledKey = "Org2Workspace.mobileRemote.enabled.v1"
   private static let bindHostKey = "Org2Workspace.mobileRemote.bindHost.v1"
@@ -26,6 +38,8 @@ final class MobileRemoteCoordinator: ObservableObject {
 
   private let defaults: UserDefaults
   private let credentialVault: MobileRemoteCredentialVault
+  private let pushCredentialStore: MobileRemotePushCredentialStore
+  private let pushSender: MobileRemotePushSender
   private weak var store: WorkspaceStore?
   private var server: MobileRemoteHTTPServer?
   private var failedPairingAttempts = 0
@@ -33,11 +47,19 @@ final class MobileRemoteCoordinator: ObservableObject {
 
   init(defaults: UserDefaults = .standard) {
     self.defaults = defaults
+    pushCredentialStore = MobileRemotePushCredentialStore(defaults: defaults)
+    pushSender = MobileRemotePushSender()
     credentialVault = MobileRemoteCredentialVault()
     isEnabled = defaults.bool(forKey: Self.enabledKey)
     let savedHost = defaults.string(forKey: Self.bindHostKey) ?? ""
     bindHost = savedHost.isEmpty ? (Self.tailscaleIPv4Addresses().first ?? "") : savedHost
     pairedDevices = credentialVault.devices
+    pushTeamID = pushCredentialStore.teamID
+    pushKeyID = pushCredentialStore.keyID
+    pushProviderConfigured = pushCredentialStore.isConfigured
+    pushStatusText = pushCredentialStore.isConfigured
+      ? "Ready for real-time iPhone alerts"
+      : "Import an APNs authentication key to enable real-time alerts"
   }
 
   var endpoint: String? {
@@ -65,6 +87,39 @@ final class MobileRemoteCoordinator: ObservableObject {
 
   func attach(to store: WorkspaceStore) {
     self.store = store
+    store.openClawIncomingMessageHandler = { [weak self] thread, messages in
+      self?.enqueuePushNotifications(for: thread, messages: messages)
+    }
+  }
+
+  func setPushTeamID(_ value: String) {
+    pushCredentialStore.setTeamID(value)
+    refreshPushProviderState()
+  }
+
+  func setPushKeyID(_ value: String) {
+    pushCredentialStore.setKeyID(value)
+    refreshPushProviderState()
+  }
+
+  func importPushPrivateKey(_ data: Data) {
+    do {
+      try pushCredentialStore.importPrivateKey(data)
+      refreshPushProviderState()
+      pushStatusText = "APNs key saved securely in Keychain"
+    } catch {
+      pushStatusText = error.localizedDescription
+    }
+  }
+
+  func clearPushPrivateKey() {
+    do {
+      try pushCredentialStore.clearPrivateKey()
+      refreshPushProviderState()
+      pushStatusText = "APNs key removed"
+    } catch {
+      pushStatusText = error.localizedDescription
+    }
   }
 
   func startIfConfigured() {
@@ -215,8 +270,51 @@ final class MobileRemoteCoordinator: ObservableObject {
             mention: $0.mention,
             runtime: $0.runtime.rawValue
           )
-        }
+        },
+        pushNotificationsSupported: true,
+        pushNotificationsConfigured: pushProviderConfigured
       ))
+    }
+
+    if request.method == "POST", path == "/v1/push-registration" {
+      guard let payload = try? request.decode(MobileRemotePushRegistrationRequest.self) else {
+        return .error("The push registration could not be read.", statusCode: 400)
+      }
+      do {
+        let enabled = try credentialVault.setPushRegistration(payload, forAccessToken: token)
+        pairedDevices = credentialVault.devices
+        return .json(MobileRemotePushRegistrationResponse(
+          enabled: enabled,
+          providerConfigured: pushProviderConfigured
+        ))
+      } catch {
+        return .error(error.localizedDescription, statusCode: 400)
+      }
+    }
+
+    if request.method == "POST", path == "/v1/push-test" {
+      guard pushProviderConfigured else {
+        return .error("Finish push notification setup in the Mac app.", statusCode: 503)
+      }
+      guard let registration = credentialVault.pushRegistration(forAccessToken: token) else {
+        return .error("This iPhone has not registered for push notifications.", statusCode: 409)
+      }
+      let threadID = store.openClawChatThreads.first?.id ?? UUID()
+      do {
+        try await deliverPush(
+          MobileRemotePushEnvelope(
+            messageID: UUID(),
+            threadID: threadID,
+            title: "Org2 reply notifications",
+            body: "Real-time notifications are working on this iPhone."
+          ),
+          to: registration.registration
+        )
+        return .json(MobileRemoteMutationResponse(accepted: true, threadID: threadID), statusCode: 202)
+      } catch {
+        pushStatusText = error.localizedDescription
+        return .error(error.localizedDescription, statusCode: 502)
+      }
     }
 
     if request.method == "GET", path == "/v1/threads" {
@@ -487,6 +585,71 @@ final class MobileRemoteCoordinator: ObservableObject {
     }
   }
 
+  private func refreshPushProviderState() {
+    pushTeamID = pushCredentialStore.teamID
+    pushKeyID = pushCredentialStore.keyID
+    pushProviderConfigured = pushCredentialStore.isConfigured
+    if pushProviderConfigured {
+      pushStatusText = "Ready for real-time iPhone alerts"
+    } else if pushTeamID.isEmpty || pushKeyID.isEmpty {
+      pushStatusText = "Enter the Apple Team ID and APNs Key ID"
+    } else {
+      pushStatusText = "Import the APNs authentication key"
+    }
+  }
+
+  private func enqueuePushNotifications(
+    for thread: OpenClawChatThread,
+    messages: [OpenClawChatMessage]
+  ) {
+    guard pushProviderConfigured, !messages.isEmpty else { return }
+    let registrations = credentialVault.pushRegistrations
+    guard !registrations.isEmpty else { return }
+    for message in messages {
+      let visibleText = WorkspaceStore.visibleAIChatMessageText(message)
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+      let envelope = MobileRemotePushEnvelope(
+        messageID: message.id,
+        threadID: thread.id,
+        title: thread.title,
+        body: visibleText.isEmpty
+          ? "An AI agent replied."
+          : String(visibleText.prefix(220))
+      )
+      for registration in registrations {
+        Task { [weak self] in
+          guard let self else { return }
+          do {
+            try await self.deliverPush(envelope, to: registration.registration)
+            self.pushStatusText = "Last push delivered at \(Date().formatted(date: .omitted, time: .shortened))"
+          } catch let error as MobileRemotePushError {
+            self.pushStatusText = error.localizedDescription
+            if error.invalidatesDeviceToken {
+              try? self.credentialVault.clearPushRegistration(deviceID: registration.deviceID)
+              self.pairedDevices = self.credentialVault.devices
+            }
+          } catch {
+            self.pushStatusText = error.localizedDescription
+          }
+        }
+      }
+    }
+  }
+
+  private func deliverPush(
+    _ envelope: MobileRemotePushEnvelope,
+    to registration: MobileRemoteStoredPushRegistration
+  ) async throws {
+    let credentialStore = pushCredentialStore
+    let credentials = await Task.detached(priority: .userInitiated) {
+      credentialStore.credentials
+    }.value
+    guard let credentials else {
+      throw MobileRemotePushError.deliveryFailed("APNs credentials are not configured.")
+    }
+    try await pushSender.send(envelope, to: registration, credentials: credentials)
+  }
+
   private func threadSummary(_ thread: OpenClawChatThread, store: WorkspaceStore) -> MobileRemoteThreadSummary {
     let destination = store.aiChatDestination(id: thread.destinationID)
     let preview = thread.messages
@@ -669,9 +832,15 @@ private enum MobileRemoteRequestError: LocalizedError {
 }
 
 private final class MobileRemoteCredentialVault {
+  struct PushTarget: Sendable {
+    let deviceID: UUID
+    let registration: MobileRemoteStoredPushRegistration
+  }
+
   private struct Record: Codable {
     let device: MobileRemotePairedDevice
     let token: String
+    var pushRegistration: MobileRemoteStoredPushRegistration?
   }
 
   private let service = (Bundle.main.bundleIdentifier ?? "org.org2.workspace") + ".mobile-remote"
@@ -684,7 +853,22 @@ private final class MobileRemoteCredentialVault {
   }
 
   var devices: [MobileRemotePairedDevice] {
-    records.map(\.device).sorted { $0.pairedAt > $1.pairedAt }
+    records.map { record in
+      MobileRemotePairedDevice(
+        id: record.device.id,
+        name: record.device.name,
+        pairedAt: record.device.pairedAt,
+        pushRegisteredAt: record.pushRegistration?.registeredAt
+      )
+    }.sorted { $0.pairedAt > $1.pairedAt }
+  }
+
+  var pushRegistrations: [PushTarget] {
+    records.compactMap { record in
+      record.pushRegistration.map {
+        PushTarget(deviceID: record.device.id, registration: $0)
+      }
+    }
   }
 
   func contains(token: String) -> Bool {
@@ -699,7 +883,7 @@ private final class MobileRemoteCredentialVault {
       pairedAt: Date()
     )
     let token = try Self.randomToken()
-    records.append(Record(device: device, token: token))
+    records.append(Record(device: device, token: token, pushRegistration: nil))
     do {
       try save()
     } catch {
@@ -707,6 +891,60 @@ private final class MobileRemoteCredentialVault {
       throw error
     }
     return (device, token)
+  }
+
+  func setPushRegistration(
+    _ request: MobileRemotePushRegistrationRequest,
+    forAccessToken accessToken: String
+  ) throws -> Bool {
+    guard let index = records.firstIndex(where: { Self.securelyEqual($0.token, accessToken) }) else {
+      throw MobileRemoteCredentialError.unknownDevice
+    }
+    let previous = records[index].pushRegistration
+    if request.enabled {
+      guard let deviceToken = request.deviceToken?.lowercased(),
+            !deviceToken.isEmpty,
+            deviceToken.count <= 512,
+            deviceToken.allSatisfy(\.isHexDigit),
+            let environment = request.environment,
+            environment == "production" || environment == "sandbox"
+      else {
+        throw MobileRemoteCredentialError.invalidPushRegistration
+      }
+      records[index].pushRegistration = MobileRemoteStoredPushRegistration(
+        deviceToken: deviceToken,
+        environment: environment
+      )
+    } else {
+      records[index].pushRegistration = nil
+    }
+    do {
+      try save()
+    } catch {
+      records[index].pushRegistration = previous
+      throw error
+    }
+    return records[index].pushRegistration != nil
+  }
+
+  func pushRegistration(forAccessToken accessToken: String) -> PushTarget? {
+    records.first(where: { Self.securelyEqual($0.token, accessToken) }).flatMap { record in
+      record.pushRegistration.map {
+        PushTarget(deviceID: record.device.id, registration: $0)
+      }
+    }
+  }
+
+  func clearPushRegistration(deviceID: UUID) throws {
+    guard let index = records.firstIndex(where: { $0.device.id == deviceID }) else { return }
+    let previous = records[index].pushRegistration
+    records[index].pushRegistration = nil
+    do {
+      try save()
+    } catch {
+      records[index].pushRegistration = previous
+      throw error
+    }
   }
 
   func revoke(_ id: UUID) throws {
@@ -792,11 +1030,17 @@ private final class MobileRemoteCredentialVault {
 
 private enum MobileRemoteCredentialError: LocalizedError {
   case keychain(OSStatus)
+  case invalidPushRegistration
+  case unknownDevice
 
   var errorDescription: String? {
     switch self {
     case .keychain(let status):
       "Keychain error \(status)"
+    case .invalidPushRegistration:
+      "The iPhone supplied an invalid push registration."
+    case .unknownDevice:
+      "Pair this device with the Mac again."
     }
   }
 }

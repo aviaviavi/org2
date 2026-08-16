@@ -448,7 +448,7 @@ public actor CodexAppServerClient {
       method: "thread/read",
       params: .object([
         "threadId": .string(externalID),
-        "includeTurns": .bool(true)
+        "includeTurns": .bool(false)
       ])
     )
     guard let rawThread = result["thread"],
@@ -456,9 +456,18 @@ public actor CodexAppServerClient {
     else {
       throw CodexAppServerError.invalidResponse("thread/read omitted its thread")
     }
+    guard let transcriptPath = rawThread["path"]?.stringValue,
+          !transcriptPath.isEmpty
+    else {
+      throw CodexRolloutTranscriptError.pathUnavailable
+    }
+    let transcriptURL = URL(fileURLWithPath: transcriptPath).standardizedFileURL
+    guard FileManager.default.isReadableFile(atPath: transcriptURL.path) else {
+      throw CodexRolloutTranscriptError.pathUnavailable
+    }
     return ExternalThreadDetail(
       thread: summary,
-      messages: Self.externalThreadMessages(rawThread)
+      messages: try await CodexRolloutTranscriptReader.messages(at: transcriptURL)
     )
   }
 

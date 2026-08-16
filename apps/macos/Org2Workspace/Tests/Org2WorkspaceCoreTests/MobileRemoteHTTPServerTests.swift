@@ -86,7 +86,9 @@ final class MobileRemoteHTTPServerTests: XCTestCase {
           mention: "codex-remote",
           runtime: "codex"
         )
-      ]
+      ],
+      pushNotificationsSupported: true,
+      pushNotificationsConfigured: true
     )
 
     let data = try MobileRemoteProtocol.encoder().encode(expected)
@@ -97,6 +99,36 @@ final class MobileRemoteHTTPServerTests: XCTestCase {
 
     XCTAssertEqual(restored, expected)
     XCTAssertEqual(restored.protocolVersion, 2)
+  }
+
+  func testPushRegistrationRoundTripsWithoutChangingTheWireVersion() throws {
+    let request = MobileRemotePushRegistrationRequest(
+      deviceToken: String(repeating: "a1", count: 32),
+      environment: "sandbox",
+      enabled: true
+    )
+    let requestData = try MobileRemoteProtocol.encoder().encode(request)
+    XCTAssertEqual(
+      try MobileRemoteProtocol.decoder().decode(
+        MobileRemotePushRegistrationRequest.self,
+        from: requestData
+      ),
+      request
+    )
+
+    let response = MobileRemotePushRegistrationResponse(
+      enabled: true,
+      providerConfigured: true
+    )
+    let responseData = try MobileRemoteProtocol.encoder().encode(response)
+    XCTAssertEqual(
+      try MobileRemoteProtocol.decoder().decode(
+        MobileRemotePushRegistrationResponse.self,
+        from: responseData
+      ),
+      response
+    )
+    XCTAssertEqual(MobileRemoteProtocol.version, 2)
   }
 
   func testFilePreviewRoundTrips() throws {

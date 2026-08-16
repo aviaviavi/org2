@@ -1194,6 +1194,10 @@ public final class WorkspaceStore: ObservableObject {
   public var openClawIncomingMessageSoundPlayer: @MainActor () -> Void = {
     WorkspaceSound.play(named: NSSound.Name(AIChatMessageSound.glass.rawValue))
   }
+  public var openClawIncomingMessageHandler: @MainActor (
+    _ thread: OpenClawChatThread,
+    _ messages: [OpenClawChatMessage]
+  ) -> Void = { _, _ in }
   @Published public var openClawDraft = ""
   @Published public var openClawPendingAttachments: [OpenClawChatAttachment] = []
   @Published public var openClawAgentID = "main"
@@ -13101,6 +13105,12 @@ public final class WorkspaceStore: ObservableObject {
     normalized.endpoint = destination.endpoint.trimmingCharacters(in: .whitespacesAndNewlines)
     normalized.agentID = destination.agentID.trimmingCharacters(in: .whitespacesAndNewlines)
     normalized.workspaceRoot = destination.workspaceRoot.trimmingCharacters(in: .whitespacesAndNewlines)
+    // The built-in OpenClaw destination is the configurable default gateway.
+    // Keep its agent inherited from OpenClaw Chat settings; explicit agent
+    // targets belong in separate named destinations.
+    if normalized.id == AIChatDestinationConfiguration.openClawID {
+      normalized.agentID = ""
+    }
     guard !aiChatDestinations.contains(where: {
       $0.id != normalized.id && $0.mention.caseInsensitiveCompare(normalized.mention) == .orderedSame
     }) else {
@@ -13177,6 +13187,12 @@ public final class WorkspaceStore: ObservableObject {
     return destinations.map { destination in
       var normalized = destination
       normalized.mention = AIChatDestinationConfiguration.normalizedMention(destination.mention)
+      // Early destination builds persisted `main` here, which silently
+      // overrode the user's configured OpenClaw Chat Agent. Treat the built-in
+      // destination as inherited and migrate that value away on restore.
+      if normalized.id == AIChatDestinationConfiguration.openClawID {
+        normalized.agentID = ""
+      }
       if seen.contains(normalized.mention) {
         normalized.mention += "-\(seen.count + 1)"
       }
@@ -18423,9 +18439,10 @@ public final class WorkspaceStore: ObservableObject {
       threadID,
       transcriptURL: targetTranscriptURL
     ) else { return }
-    let newAssistantMessageCount = notifiesForNewAssistantMessages
-      ? Self.newAssistantMessageCount(previousMessages: current.messages, currentMessages: messages)
-      : 0
+    let newAssistantMessages = notifiesForNewAssistantMessages
+      ? Self.newAssistantMessages(previousMessages: current.messages, currentMessages: messages)
+      : []
+    let newAssistantMessageCount = newAssistantMessages.count
     let isThreadOpen = isActiveAIChatTranscript(targetTranscriptURL)
       && selectedSurface == .openClaw
       && selectedOpenClawChatThreadID == current.id
@@ -18441,8 +18458,11 @@ public final class WorkspaceStore: ObservableObject {
       transcriptURL: targetTranscriptURL,
       shouldPersist: shouldPersist
     )
-    if newAssistantMessageCount > 0, aiChatMessageSound != .off {
-      openClawIncomingMessageSoundPlayer()
+    if newAssistantMessageCount > 0 {
+      if aiChatMessageSound != .off {
+        openClawIncomingMessageSoundPlayer()
+      }
+      openClawIncomingMessageHandler(updated, newAssistantMessages)
     }
   }
 
@@ -18500,14 +18520,13 @@ public final class WorkspaceStore: ObservableObject {
     )
   }
 
-  nonisolated private static func newAssistantMessageCount(
+  nonisolated private static func newAssistantMessages(
     previousMessages: [OpenClawChatMessage],
     currentMessages: [OpenClawChatMessage]
-  ) -> Int {
+  ) -> [OpenClawChatMessage] {
     let previousIDs = Set(previousMessages.map(\.id))
     return currentMessages
       .filter { $0.role == .assistant && !previousIDs.contains($0.id) }
-      .count
   }
 
   private func sortOpenClawChatThreadsForDisplay() {

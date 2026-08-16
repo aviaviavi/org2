@@ -4,6 +4,23 @@ import Speech
 
 @MainActor
 final class MobileVoiceTranscriber: ObservableObject {
+  /// `AVAudioEngine` invokes input taps on its real-time audio queue. Keeping
+  /// the request behind an explicitly Sendable, nonisolated boundary prevents
+  /// Swift from inheriting `MobileVoiceTranscriber`'s main-actor isolation for
+  /// that callback. An inherited actor check traps the process before the first
+  /// audio buffer can be appended.
+  private final class AudioBufferSink: @unchecked Sendable {
+    private let request: SFSpeechAudioBufferRecognitionRequest
+
+    init(request: SFSpeechAudioBufferRecognitionRequest) {
+      self.request = request
+    }
+
+    nonisolated func append(_ buffer: AVAudioPCMBuffer) {
+      request.append(buffer)
+    }
+  }
+
   @Published private(set) var isRecording = false
   @Published private(set) var transcript = ""
   @Published var errorMessage: String?
@@ -53,6 +70,7 @@ final class MobileVoiceTranscriber: ObservableObject {
       request.shouldReportPartialResults = true
       request.taskHint = .dictation
       recognitionRequest = request
+      let bufferSink = AudioBufferSink(request: request)
 
       // Recreate the engine for every capture. A stale input graph after an
       // interruption can retain a tap or expose an unavailable hardware
@@ -68,8 +86,12 @@ final class MobileVoiceTranscriber: ObservableObject {
       }
       audioEngine = engine
       tappedInputNode = inputNode
-      inputNode.installTap(onBus: 0, bufferSize: 1_024, format: nil) { buffer, _ in
-        request.append(buffer)
+      inputNode.installTap(
+        onBus: 0,
+        bufferSize: 1_024,
+        format: hardwareFormat
+      ) { @Sendable buffer, _ in
+        bufferSink.append(buffer)
       }
       hasInstalledInputTap = true
 
