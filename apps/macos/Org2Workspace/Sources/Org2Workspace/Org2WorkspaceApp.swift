@@ -434,8 +434,7 @@ private struct WorkspaceWindowConfigurator: NSViewRepresentable {
 private enum AppIconInstaller {
   @MainActor
   static func install() {
-    let url = Bundle.module.url(forResource: "AppIcon", withExtension: "png")
-      ?? Bundle.main.url(forResource: "AppIcon", withExtension: "png")
+    let url = Bundle.main.url(forResource: "AppIcon", withExtension: "png")
     guard let url,
           let image = NSImage(contentsOf: url)
     else {
