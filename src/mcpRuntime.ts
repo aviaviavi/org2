@@ -85,6 +85,22 @@ function stringArray(value: unknown, label: string): string[] | undefined {
   return value;
 }
 
+function mcpClientDefinition(value: unknown, index: number): McpClientDefinition {
+  const client = jsonObject(value);
+  const label = `MCP client ${index + 1}`;
+  if (!client) throw new Error(`${label} must be an object`);
+  const args = stringArray(client.args, `${label} args`);
+  const environmentVariables = stringArray(client.environmentVariables, `${label} environmentVariables`);
+  const capabilities = stringArray(client.capabilities, `${label} capabilities`);
+  return {
+    id: requiredString(client.id, `${label} id`),
+    command: requiredString(client.command, `${label} command`),
+    ...(args ? { args } : {}),
+    ...(environmentVariables ? { environmentVariables } : {}),
+    ...(capabilities ? { capabilities } : {}),
+  };
+}
+
 function workflowInputs(value: unknown): Record<string, string> {
   if (value === undefined) return {};
   const inputs = jsonObject(value);
@@ -127,8 +143,10 @@ export function mcpClientConfigPath(root: string): string { return path.join(pat
 export function loadMcpClients(root: string): McpClientDefinition[] {
   const file = mcpClientConfigPath(root);
   if (!fs.existsSync(file)) return [];
-  const value = JSON.parse(fs.readFileSync(file, "utf8")) as { clients?: McpClientDefinition[] } | McpClientDefinition[];
-  return Array.isArray(value) ? value : value.clients || [];
+  const value: unknown = JSON.parse(fs.readFileSync(file, "utf8"));
+  const clients = Array.isArray(value) ? value : jsonObject(value)?.clients;
+  if (!Array.isArray(clients)) throw new Error("MCP client configuration must be an array or an object with a clients array");
+  return clients.map(mcpClientDefinition);
 }
 export function saveMcpClients(root: string, clients: McpClientDefinition[]): string {
   const file = mcpClientConfigPath(root);

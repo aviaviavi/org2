@@ -13,7 +13,7 @@ import {
 } from "../dist/agentRun.js";
 import { dueWorkflowTriggers, installBuiltinWorkflow, instantiateWorkflow, legacyWorkflowDirectory, loadWorkflow, loadWorkflowSnapshot, markWorkflowTriggerAttempt, migrateLegacyWorkflows, packagedCorpusTemplate, parseWorkflowOrg, recordWorkflowSignal, renderWorkflowOrg, saveWorkflow, updateWorkflow, validateWorkflow, workflowFromRun, workflowPath, workflowTriggerEligibility } from "../dist/agentWorkflow.js";
 import { artifactRebuildPlan, buildArtifactGraph, MEETING_TO_CONTROLLED_EXECUTION_WORKFLOW } from "../dist/artifactPipeline.js";
-import { discoverMcpClient, saveMcpClients, serveMcp, writeMcpSnapshot } from "../dist/mcpRuntime.js";
+import { discoverMcpClient, loadMcpClients, saveMcpClients, serveMcp, writeMcpSnapshot } from "../dist/mcpRuntime.js";
 import { safeIdentifier } from "../dist/safeIdentifier.js";
 import { defaultRuntimePolicy, selectRuntime, validateRuntimePaths } from "../dist/runtimePolicy.js";
 import { evaluateRun, replayWorkflowFixture, sanitizeRunFixture } from "../dist/workflowEval.js";
@@ -736,6 +736,11 @@ try {
   await transitionServing;
   assert.equal(JSON.parse(transitionResponse.trim()).result.content[0].type, "text");
   assert.equal(loadAgentRun(root, "mcp-transition").status, "running");
+
+  const mcpClientConfig = path.join(root, ".org2", "mcp-clients.json");
+  fs.mkdirSync(path.dirname(mcpClientConfig), { recursive: true });
+  fs.writeFileSync(mcpClientConfig, JSON.stringify({ clients: [{ id: "malformed", command: process.execPath, args: [42] }] }));
+  assert.throws(() => loadMcpClients(root), /MCP client 1 args must be an array of strings/);
 
   saveMcpClients(root, [{
     id: "org2-self",
