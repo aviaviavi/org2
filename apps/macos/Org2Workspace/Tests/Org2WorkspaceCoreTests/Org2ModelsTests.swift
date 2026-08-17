@@ -6225,6 +6225,22 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testSyntaxEditorSkipsCrossEditorHierarchyTraversalDuringNormalTyping() {
+    XCTAssertFalse(OrgSyntaxTextSelectionBridge.shouldTraverseForCrossEditorSelectionCleanup(
+      hasActiveSelection: false,
+      selectedFragmentCount: 0
+    ))
+    XCTAssertTrue(OrgSyntaxTextSelectionBridge.shouldTraverseForCrossEditorSelectionCleanup(
+      hasActiveSelection: true,
+      selectedFragmentCount: 0
+    ))
+    XCTAssertTrue(OrgSyntaxTextSelectionBridge.shouldTraverseForCrossEditorSelectionCleanup(
+      hasActiveSelection: false,
+      selectedFragmentCount: 1
+    ))
+  }
+
+  @MainActor
   func testSyntaxEditorSkipsSelectionTextReadWhenUnboundOrUnchanged() {
     var boundText = "Plain paragraph text"
     var selectionRange = NSRange(location: 4, length: 0)

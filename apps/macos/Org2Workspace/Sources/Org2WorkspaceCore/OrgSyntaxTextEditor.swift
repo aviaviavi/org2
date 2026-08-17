@@ -1369,6 +1369,15 @@ enum OrgSyntaxTextSelectionBridge {
   }
 
   static func clearCrossEditorSelection(containing textView: OrgSyntaxTextView, preserving preservedView: OrgSyntaxTextView? = nil) {
+    // Normal typing has no cross-editor selection to clear. Avoid walking and
+    // sorting the entire AppKit view hierarchy for every key event; that work
+    // is especially visible as input latency on Intel Macs.
+    guard shouldTraverseForCrossEditorSelectionCleanup(
+      hasActiveSelection: activeSelection != nil,
+      selectedFragmentCount: selectedFragments.count
+    ) else {
+      return
+    }
     for candidate in orderedTextViews(in: textView.window) {
       candidate.clearCrossEditorHighlight()
       guard candidate !== preservedView else { continue }
@@ -1378,6 +1387,13 @@ enum OrgSyntaxTextSelectionBridge {
     }
     selectedFragments = []
     activeSelection = nil
+  }
+
+  static func shouldTraverseForCrossEditorSelectionCleanup(
+    hasActiveSelection: Bool,
+    selectedFragmentCount: Int
+  ) -> Bool {
+    hasActiveSelection || selectedFragmentCount > 0
   }
 
   static func selectAllDocumentText(containing textView: OrgSyntaxTextView) -> Bool {
