@@ -204,6 +204,21 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(WorkspaceSound.isPlaybackSuppressed)
   }
 
+  func testWorkspaceCacheRecencyRefreshesEntriesAndBoundsMemory() {
+    var order = ["alpha", "beta", "gamma"]
+
+    XCTAssertEqual(
+      WorkspaceCacheRecency.recordAccess("beta", order: &order, limit: 3),
+      []
+    )
+    XCTAssertEqual(order, ["alpha", "gamma", "beta"])
+    XCTAssertEqual(
+      WorkspaceCacheRecency.recordAccess("delta", order: &order, limit: 3),
+      ["alpha"]
+    )
+    XCTAssertEqual(order, ["gamma", "beta", "delta"])
+  }
+
   func testCorpusMountWithoutPortableIdentityUsesNeutralLocalLabel() {
     let mount = WorkspaceCorpusMount(
       path: "/tmp/notes",
@@ -6473,6 +6488,34 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testSyntaxEditorDefersAndCoalescesContentHeightMeasurement() async throws {
+    var measuredHeight: CGFloat = 0
+    var updateCount = 0
+    let editor = OrgSyntaxTextEditor(
+      text: .constant("A paragraph that needs layout"),
+      contentHeight: Binding(
+        get: { measuredHeight },
+        set: {
+          measuredHeight = $0
+          updateCount += 1
+        }
+      )
+    )
+    let coordinator = OrgSyntaxTextEditor.Coordinator(parent: editor)
+    let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 240, height: 30))
+    textView.string = "A paragraph that needs layout"
+
+    coordinator.publishContentHeight(for: textView)
+    coordinator.publishContentHeight(for: textView)
+
+    XCTAssertEqual(measuredHeight, 0)
+    try await waitForCondition {
+      measuredHeight > 0
+    }
+    XCTAssertEqual(updateCount, 1)
+  }
+
+  @MainActor
   func testSyntaxEditorPublishesLatestDeferredTextAfterRapidEdits() async throws {
     var boundText = "old"
     let editor = OrgSyntaxTextEditor(
@@ -7328,9 +7371,20 @@ final class Org2ModelsTests: XCTestCase {
 
   func testParagraphInlineDetailsAvailabilityMatchesEditableInlineSyntax() {
     XCTAssertFalse(ParagraphInlineDetailsAvailability.hasDetails(in: "Plain paragraph without inline fields."))
+    XCTAssertFalse(ParagraphInlineDetailsAvailability.hasDetails(in: "A long ordinary note with no rich text markers"))
     XCTAssertTrue(ParagraphInlineDetailsAvailability.hasDetails(in: "Review [[id:abc][Alice]]."))
     XCTAssertTrue(ParagraphInlineDetailsAvailability.hasDetails(in: "Use `code` here."))
     XCTAssertTrue(ParagraphInlineDetailsAvailability.hasDetails(in: "Meet on <2026-06-13 Sat>."))
+  }
+
+  func testSyntaxEditorDraftBufferIdentifiesDeferredBindingEchoes() {
+    let liveText = OrgSyntaxTextEditorDraftBuffer()
+    XCTAssertFalse(liveText.isCurrent("Draft"))
+
+    liveText.update("Draft")
+
+    XCTAssertTrue(liveText.isCurrent("Draft"))
+    XCTAssertFalse(liveText.isCurrent("Externally updated"))
   }
 
   func testParagraphSlashCommandUsesBoundedPrefixScan() {
@@ -12944,6 +12998,9 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(OrgMediaAttachment.mayContainStandaloneMedia("https://youtu.be/dQw4w9WgXcQ"))
     XCTAssertTrue(OrgMediaAttachment.mayContainStandaloneMedia("[Clip](clip.mov)"))
     XCTAssertTrue(OrgMediaAttachment.mayContainStandaloneMedia("assets/diagram.png"))
+    XCTAssertFalse(OrgMediaAttachment.mayContainMediaTarget("A long ordinary paragraph with punctuation."))
+    XCTAssertTrue(OrgMediaAttachment.mayContainMediaTarget("See IMAGE.JPEG for the latest diagram"))
+    XCTAssertTrue(OrgMediaAttachment.mayContainMediaTarget("Watch https://YOUTU.BE/example"))
 
     let bracket = try XCTUnwrap(OrgMediaAttachment.standalone(
       raw: "[[file:../assets/diagram.png][System Diagram]]",

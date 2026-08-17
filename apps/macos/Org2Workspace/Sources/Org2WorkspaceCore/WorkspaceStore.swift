@@ -197,6 +197,22 @@ private struct CanonicalDocumentCacheEntry {
   let document: Org2CanonicalDocument
 }
 
+enum WorkspaceCacheRecency {
+  nonisolated static func recordAccess(
+    _ key: String,
+    order: inout [String],
+    limit: Int
+  ) -> [String] {
+    order.removeAll { $0 == key }
+    order.append(key)
+    let excess = max(0, order.count - max(0, limit))
+    guard excess > 0 else { return [] }
+    let evicted = Array(order.prefix(excess))
+    order.removeFirst(excess)
+    return evicted
+  }
+}
+
 private struct RenderedBlocksCacheEntry {
   let modifiedAt: Date?
   let sourceID: String
@@ -1514,6 +1530,7 @@ public final class WorkspaceStore: ObservableObject {
   ]
   private static let orgCryptPublicKeysDirectoryName = "public-keys"
   private static let canonicalParserLineLimit = 2_000
+  private static let canonicalDocumentCacheLimit = 12
   private static let renderedBlocksCacheLimit = 12
   private static let renderedHTMLCacheLimit = 24
   private static let entrySourceCacheLimit = 24
@@ -1710,6 +1727,7 @@ public final class WorkspaceStore: ObservableObject {
   private var workspaceRedoStack: [WorkspaceUndoAction] = []
   private var corpusWorkspaceCaches: [String: CorpusWorkspaceCache] = [:]
   private var canonicalDocumentCache: [String: CanonicalDocumentCacheEntry] = [:]
+  private var canonicalDocumentCacheOrder: [String] = []
   private var entrySourceCache: [String: EntrySourceCacheEntry] = [:]
   private var entrySourceCacheOrder: [String] = []
   private var renderedBlocksCache: [String: RenderedBlocksCacheEntry] = [:]
@@ -23969,6 +23987,7 @@ public final class WorkspaceStore: ObservableObject {
     if let fileContentDigest,
        let cached = canonicalDocumentCache[cacheKey],
        cached.fileContentDigest == fileContentDigest {
+      touchCanonicalDocumentCacheKey(cacheKey)
       return cached.document
     }
 
@@ -23977,14 +23996,27 @@ public final class WorkspaceStore: ObservableObject {
       fileContentDigest: fileContentDigest,
       document: document
     )
+    touchCanonicalDocumentCacheKey(cacheKey)
     return document
   }
 
   private func invalidateCanonicalDocumentCache(for file: String) {
-    canonicalDocumentCache.removeValue(forKey: URL(fileURLWithPath: file).standardizedFileURL.path)
+    let cacheKey = URL(fileURLWithPath: file).standardizedFileURL.path
+    canonicalDocumentCache.removeValue(forKey: cacheKey)
+    canonicalDocumentCacheOrder.removeAll { $0 == cacheKey }
     invalidateEntrySourceCache(for: file)
     invalidateRenderedBlocksCache(for: file)
     invalidateRenderedHTMLCache(for: file)
+  }
+
+  private func touchCanonicalDocumentCacheKey(_ key: String) {
+    for evicted in WorkspaceCacheRecency.recordAccess(
+      key,
+      order: &canonicalDocumentCacheOrder,
+      limit: Self.canonicalDocumentCacheLimit
+    ) {
+      canonicalDocumentCache.removeValue(forKey: evicted)
+    }
   }
 
   private func entrySourceCacheKey(for location: WorkspaceLocation, mode: EntrySourceMode) -> String {

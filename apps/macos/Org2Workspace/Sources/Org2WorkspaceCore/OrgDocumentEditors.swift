@@ -1509,7 +1509,8 @@ private struct PropertyDrawerBlockEditor: View {
 
 enum ParagraphInlineDetailsAvailability {
   nonisolated static func hasDetails(in text: String) -> Bool {
-    !OrgEditableInlineMarkupSet(rawText: text).markups.isEmpty
+    guard OrgInlineParser.hasInlineSyntaxCandidate(text) else { return false }
+    return !OrgEditableInlineMarkupSet(rawText: text).markups.isEmpty
       || !OrgEditableInlineLinkSet(rawText: text).links.isEmpty
       || !OrgEditableInlineTimestampSet(rawText: text).timestamps.isEmpty
   }
@@ -1621,7 +1622,7 @@ private struct ParagraphBlockEditor: View {
       }
 
       if InlineEditorChrome.rendersControls(showsControls) {
-        paragraphControls
+        paragraphControls(hasInlineDetails: hasInlineDetails)
           .opacity(InlineEditorChrome.controlsOpacity(showsControls))
           .allowsHitTesting(InlineEditorChrome.allowsHitTesting(showsControls))
       }
@@ -1671,6 +1672,11 @@ private struct ParagraphBlockEditor: View {
     )
     .onHover { isHovered = $0 }
     .onChange(of: draftText) {
+      // AppKit reports local edits immediately, then the deferred binding
+      // publishes the same text. The immediate callback already updated the
+      // draft and scheduled autosave, so do not repeat that work for its echo.
+      guard !liveText.isCurrent(draftText) else { return }
+      liveText.update(draftText)
       if presentationText != draftText {
         presentationText = draftText
       }
@@ -1729,7 +1735,6 @@ private struct ParagraphBlockEditor: View {
     if presentationText != text {
       presentationText = text
     }
-    store.updateEditingBlockDraft(block, draft: text)
     if showsInlineDetails && !ParagraphInlineDetailsAvailability.hasDetails(in: text) {
       showsInlineDetails = false
     }
@@ -1761,11 +1766,11 @@ private struct ParagraphBlockEditor: View {
     return store.beginRenderedTextSelectionReplacement(fragments, replacementText: replacement)
   }
 
-  private var paragraphControls: some View {
+  private func paragraphControls(hasInlineDetails: Bool) -> some View {
     HStack(spacing: 4) {
       InlineEditorSavingIndicator(isSaving: store.isSavingBlock)
 
-      if ParagraphInlineDetailsAvailability.hasDetails(in: presentationText) {
+      if hasInlineDetails {
         Button {
           showsInlineDetails.toggle()
         } label: {
@@ -1996,6 +2001,8 @@ struct LiveRenderedTextBlockEditor: View {
     }
     .onChange(of: draftText) {
       guard isTextFocused || store.editingBlockID == block.id else { return }
+      guard !liveText.isCurrent(draftText) else { return }
+      liveText.update(draftText)
       if presentationText != draftText {
         presentationText = draftText
       }
@@ -2174,7 +2181,6 @@ struct LiveRenderedTextBlockEditor: View {
       presentationText = text
     }
     reserveEditorLines(for: text)
-    store.updateEditingBlockDraft(block, draft: Self.sourceText(for: block, editableText: text))
     scheduleAutosave()
   }
 

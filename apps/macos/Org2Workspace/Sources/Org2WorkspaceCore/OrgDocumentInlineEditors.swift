@@ -96,6 +96,8 @@ struct ParagraphWikiLinkCompletionMatch: Equatable, Sendable {
 enum ParagraphWikiLinkCompletion {
   static func match(in text: String, selectedRange: NSRange) -> ParagraphWikiLinkCompletionMatch? {
     guard selectedRange.length == 0 else { return nil }
+    // Avoid bridging and copying the entire prefix for ordinary paragraphs.
+    guard text.contains("[[") else { return nil }
     let ns = text as NSString
     let cursor = min(max(0, selectedRange.location), ns.length)
     guard cursor >= 2 else { return nil }

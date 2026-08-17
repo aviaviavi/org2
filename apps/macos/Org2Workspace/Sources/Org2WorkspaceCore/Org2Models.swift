@@ -4753,19 +4753,8 @@ public struct OrgMediaAttachment: Equatable, Sendable {
   }
 
   public static func mayContainMediaTarget(_ raw: String) -> Bool {
-    let lowercased = raw.lowercased()
-    if lowercased.contains("youtube.com")
-      || lowercased.contains("youtu.be")
-      || lowercased.contains("vimeo.com") {
-      return true
-    }
-
-    for ext in imageExtensions.union(videoExtensions) {
-      if lowercased.contains(".\(ext)") {
-        return true
-      }
-    }
-    return false
+    let range = NSRange(location: 0, length: (raw as NSString).length)
+    return mediaTargetCandidateRegex.firstMatch(in: raw, range: range) != nil
   }
 
   private static func standaloneLink(_ raw: String) -> (label: String, target: String)? {
@@ -4989,6 +4978,10 @@ public struct OrgMediaAttachment: Equatable, Sendable {
 
   private static let imageExtensions = Set(["png", "jpg", "jpeg", "gif", "tiff", "tif", "bmp", "heic", "heif", "webp"])
   private static let videoExtensions = Set(["mov", "mp4", "m4v", "avi", "webm"])
+  private static let mediaTargetCandidateRegex = try! NSRegularExpression(
+    pattern: #"(?:youtube\.com|youtu\.be|vimeo\.com|\.(?:png|jpg|jpeg|gif|tiff|tif|bmp|heic|heif|webp|mov|mp4|m4v|avi|webm))"#,
+    options: [.caseInsensitive]
+  )
 }
 
 public struct OrgEditableMediaLink: Equatable, Sendable {

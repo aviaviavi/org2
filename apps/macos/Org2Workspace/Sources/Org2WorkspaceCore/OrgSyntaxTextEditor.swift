@@ -911,6 +911,10 @@ final class OrgSyntaxTextEditorDraftBuffer {
   func current(fallback: String) -> String {
     text ?? fallback
   }
+
+  func isCurrent(_ candidate: String) -> Bool {
+    text == candidate
+  }
 }
 
 struct OrgSyntaxTextSelectionContext: Equatable {
@@ -1981,6 +1985,8 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     nonisolated(unsafe) private var deferredCaretPublishWorkItem: DispatchWorkItem?
     private var deferredCaretPublishGeneration = 0
     nonisolated(unsafe) private var deferredViewportPublishWorkItem: DispatchWorkItem?
+    nonisolated(unsafe) private var deferredContentHeightPublishWorkItem: DispatchWorkItem?
+    private var deferredContentHeightPublishGeneration = 0
     private var lastPublishedViewportSourceLine: Int?
     private var lastKnownText: String?
     private var lastKnownTextUTF16Length: Int?
@@ -2008,6 +2014,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       deferredTextPublishWorkItem?.cancel()
       deferredCaretPublishWorkItem?.cancel()
       deferredViewportPublishWorkItem?.cancel()
+      deferredContentHeightPublishWorkItem?.cancel()
       semanticAnalysisTask?.cancel()
       if let scrollObserver {
         NotificationCenter.default.removeObserver(scrollObserver)
@@ -3404,13 +3411,25 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     }
 
     func publishContentHeight(for textView: NSTextView) {
-      guard let contentHeight = parent.contentHeight else { return }
-      let nextHeight = Self.measuredContentHeight(for: textView)
-      guard abs(contentHeight.wrappedValue - nextHeight) > 0.5 else { return }
-      DispatchQueue.main.async {
-        guard abs(contentHeight.wrappedValue - nextHeight) > 0.5 else { return }
-        contentHeight.wrappedValue = nextHeight
+      guard parent.contentHeight != nil else { return }
+      deferredContentHeightPublishWorkItem?.cancel()
+      deferredContentHeightPublishGeneration += 1
+      let generation = deferredContentHeightPublishGeneration
+      let workItem = DispatchWorkItem { [weak self, weak textView] in
+        Task { @MainActor in
+          guard let self,
+                self.deferredContentHeightPublishGeneration == generation,
+                let textView,
+                let contentHeight = self.parent.contentHeight
+          else { return }
+          self.deferredContentHeightPublishWorkItem = nil
+          let nextHeight = Self.measuredContentHeight(for: textView)
+          guard abs(contentHeight.wrappedValue - nextHeight) > 0.5 else { return }
+          contentHeight.wrappedValue = nextHeight
+        }
       }
+      deferredContentHeightPublishWorkItem = workItem
+      DispatchQueue.main.async(execute: workItem)
     }
 
     static func measuredContentHeight(for textView: NSTextView) -> CGFloat {
