@@ -3,26 +3,26 @@
 #+BEGIN_EXPORT html
 <div class="org2-features-page">
   <section class="org2-page-intro">
-    <p>Org2 is a fully open-source second brain for both memory and action. Notes, tasks, meetings, data, goals, and agent work stay in local plain-text files, while agendas, graphs, cited context, review queues, editor behavior, and published artifacts come from one shared semantic model.</p>
+    <p>Org2 is an open-source follow-through system for people who work with AI agents. It keeps the source behind a decision, delegates work with bounded context, brings back the decisions that need you, and records the finished result in local plain-text files you own.</p>
     <div class="org2-page-summary" aria-label="Org2 feature summary">
-      <div><strong>Memory stays yours.</strong><span>Readable Org and Org2 files work in editors, Git, scripts, and normal sync tools.</span></div>
-      <div><strong>Knowledge drives work.</strong><span>Planning state, goals, links, provenance, and review boundaries feed people and agents from the same corpus.</span></div>
-      <div><strong>The corpus outlasts the client.</strong><span>Change models, harnesses, editors, or apps without abandoning your history or rebuilding context.</span></div>
+      <div><strong>Decisions keep their source.</strong><span>Meetings, notes, tasks, links, and data stay attached to the work they create.</span></div>
+      <div><strong>Work can move.</strong><span>People and named agents can act from the same context without hiding ownership or review boundaries.</span></div>
+      <div><strong>Results come back.</strong><span>Finished artifacts and evidence return to a corpus that outlasts any model, harness, editor, or app.</span></div>
     </div>
   </section>
 
   <section class="org2-feature-section" id="compiler-loop" aria-labelledby="compiler-loop-title">
     <div class="org2-feature-heading">
-      <h2 id="compiler-loop-title">How Org2 works</h2>
-      <p>The parser turns plain files into a corpus model that each editor, app, agent, and publishing tool can use.</p>
+      <h2 id="compiler-loop-title">The follow-through loop</h2>
+      <p>Org2 carries a decision from its source through delegated work, human review, and a verifiable outcome.</p>
     </div>
     <div class="org2-compiler-flow" aria-label="Org2 compiler workflow">
-      <article><strong>Capture</strong><p>Write notes, TODOs, meetings, links, data records, and agent handoffs as ordinary text.</p></article>
-      <article><strong>Parse</strong><p>Org2 reads headings, properties, timestamps, blocks, tables, and source ranges.</p></article>
-      <article><strong>Connect</strong><p>IDs, backlinks, planning state, provenance, approvals, and freshness become shared semantics.</p></article>
-      <article><strong>Use</strong><p>Build agendas, diagnostics, graphs, context packs, editor features, reports, and sites.</p></article>
+      <article><strong>Capture</strong><p>Keep the commitment and its exact meeting, note, message, task, or dataset together.</p></article>
+      <article><strong>Delegate</strong><p>Give a person or agent the bounded context and outcome they need.</p></article>
+      <article><strong>Review</strong><p>Collect clarifications and consequential actions in one decision queue.</p></article>
+      <article><strong>Verify</strong><p>Return outputs, validation, and evidence to the durable source record.</p></article>
     </div>
-    <p class="org2-feature-note">Those semantics are shared by the Mac app, VS Code, CLI tools, agent integrations, and publishing. Each client reads the same corpus instead of inventing its own interpretation of the files.</p>
+    <p class="org2-feature-note">Underneath, one parser turns ordinary files into shared semantics for the Mac app, VS Code, CLI tools, agent integrations, and publishing. Each client reads the same corpus instead of inventing its own interpretation.</p>
   </section>
 
   <section class="org2-feature-story" id="planning-knowledge" aria-labelledby="planning-knowledge-title">
@@ -49,8 +49,8 @@ org2 roam graph --dir ~/notes --recursive --format report</code></pre>
 
   <section class="org2-feature-story org2-feature-story-reverse" id="agent-work" aria-labelledby="agent-work-title">
     <div class="org2-feature-copy">
-      <h2 id="agent-work-title">Agent work stays reviewable</h2>
-      <p>Selected context, citations, plans, budgets, outputs, validation, clarifications, and approvals live in durable run and workflow records. People can inspect what happened before approving a consequential action.</p>
+      <h2 id="agent-work-title">Decisions become durable work</h2>
+      <p>Selected context, citations, plans, outputs, validation, clarifications, and approvals stay together while the work moves. People can see what happened before approving a consequential action—and what evidence proves it finished.</p>
       <ul>
         <li>Bounded context packs carry file-and-line citations instead of an opaque prompt dump.</li>
         <li>Portable goals and named agent profiles separate why and who from OpenClaw or Codex runtime identity; resolved refs remain attached to delegated headings, runs, and workflows.</li>
@@ -133,28 +133,29 @@ org2 query-data --file notes/readiness.org2 --results weekly --apply</code></pre
 
   <section class="org2-feature-section" id="external-sources" aria-labelledby="external-sources-title">
     <div class="org2-feature-heading">
-      <h2 id="external-sources-title">Slack and Notion arrive through a review boundary</h2>
-      <p>Corpus-declared source profiles orchestrate Peter Steinberger's <code>slacrawl</code> and <code>notcrawl</code> archives. The CLI and macOS Sources surface can inspect health, preview a bounded import, or sync and stage raw captures plus review-required Org2 packets on manual, interval, or daily schedules.</p>
+      <h2 id="external-sources-title">Bring in context without surrendering control</h2>
+      <p>Source profiles stage external material as inspectable captures with stable identity and provenance. The boundary is designed for ingestion plugins, so messages, documents, issues, mail, datasets, and future sources can enter the same reviewable flow.</p>
     </div>
     <div class="org2-feature-grid">
-      <article><h3>Local and inspectable</h3><p>Crawler databases, machine bindings, and credentials stay outside canonical notes. Staged JSON and Org2 files retain stable source IDs, timestamps, hashes, URLs, and provenance.</p></article>
+      <article><h3>Pluggable by design</h3><p>A source adapter supplies bounded records and provenance; Org2 supplies the shared staging, review, linking, and promotion semantics.</p></article>
+      <article><h3>Local and inspectable</h3><p>Machine bindings and credentials stay outside canonical notes. Staged files retain stable source IDs, timestamps, hashes, URLs, and provenance.</p></article>
       <article><h3>Review before promotion</h3><p>Imported material lands under configured raw and views zones. People and agents can redact, verify, and promote selected knowledge without treating an external mirror as canonical truth.</p></article>
-      <article><h3>One shared runtime</h3><p>The Mac app calls the same <code>org2 source</code> commands available to scripts and agents, keeps optional Notion credentials in macOS Keychain, and catches up missed scheduled runs after wake or launch.</p></article>
     </div>
   </section>
 
   <section class="org2-feature-section" id="editors-publishing" aria-labelledby="editors-publishing-title">
     <div class="org2-feature-heading">
-      <h2 id="editors-publishing-title">Editors and publishing use the same semantics</h2>
-      <p>Use the native Workspace for richer review flows and live in-app talk PDF preview, VS Code for the most complete editing experience, the CLI for automation, LSP where the protocol fits, HTML publishing for selected outputs, and Beamer-compatible export for talks.</p>
+      <h2 id="editors-publishing-title">Useful outputs, not just answers</h2>
+      <p>Agent work can finish as a talk, an evidence-backed analysis, a customer quote, marketing collateral, or a published site. The artifact stays connected to the source material and approvals that produced it.</p>
     </div>
     <div class="org2-editor-strip">
-      <figure><img src="assets/screenshots/basic.png" alt="An Org2 project note open in Visual Studio Code with syntax highlighting, tasks, properties, and ID links" loading="lazy" /><figcaption><strong>VS Code.</strong> Syntax, folding, agenda, capture, refiling, formatting, links, search, and planning commands.</figcaption></figure>
+      <figure><img src="assets/screenshots/macos-workspace-data.png" alt="Org2 Workspace rendering an evidence-backed data notebook with an interactive chart" loading="lazy" /><figcaption><strong>Analytics.</strong> Materialized results and visualizations remain connected to their query, freshness, and source context.</figcaption></figure>
       <div class="org2-editor-cards">
-        <article><strong>Shared editor intelligence</strong><p>Definitions, references, hover, completion, rename, semantic tokens, table-aware formatting, and file-link updates come from shared semantics.</p></article>
-        <article><strong>Publishing</strong><p>Filter, sort, and resize rendered tables ephemerally in the Mac app, with an explicit confirmed action to save the visible row order back to the source; export any open Org/Org2 file as a basic reading-layout PDF; preview a talk as a live PDF with automatic per-file presentation detection, slide navigation, and zoom controls; export it as Beamer TeX or PDF, export one HTML file, or publish a recursive project with navigation, styles, rewritten links, and generated indexes. This documentation site is built by Org2.</p></article>
+        <article><strong>Talks and slides</strong><p>Develop the narrative beside its research, preview the deck in the Mac app, and export Beamer-compatible TeX or a presentation-ready PDF.</p></article>
+        <article><strong>Customer-ready documents</strong><p>Turn approved source material into quotes, reports, and marketing collateral, then export a clean reading-layout PDF.</p></article>
+        <article><strong>Publishing</strong><p>Publish one document or a complete project with navigation, styles, rewritten links, and generated indexes. This documentation site is built by Org2.</p></article>
         <div class="org2-command" aria-label="Formatting and publishing commands">
-          <span>Check formatting or preview a site</span>
+          <span>Render a talk, document, or site</span>
           <pre class="org2-src language-sh"><code class="language-sh">org2 fmt --dir ~/notes --recursive --check
 org2 publish docs-site --config org2.json --preview
 org2 export beamer --file talk.org2 --pdf --apply</code></pre>

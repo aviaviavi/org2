@@ -2071,6 +2071,19 @@ body #content {
   margin: 0 0 clamp(3rem, 6vw, 5rem);
 }
 
+#content .org2-home-follow-through,
+#content .org2-home-outputs {
+  max-width: 70rem;
+  margin: 0 0 clamp(3rem, 6vw, 5rem);
+}
+
+#content .org2-home-outputs .org2-feature-card-grid article p {
+  margin-bottom: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.52;
+}
+
 #content .org2-home-preview .org2-shot-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
