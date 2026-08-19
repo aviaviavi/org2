@@ -3,6 +3,23 @@ import XCTest
 @testable import Org2WorkspaceCore
 
 final class WorkspaceListSelectionTests: XCTestCase {
+  func testCommandNStartsANewAIThreadInsteadOfOpeningAnotherWindow() throws {
+    let testFile = URL(fileURLWithPath: #filePath)
+    let packageRoot = testFile
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+    let appSource = packageRoot
+      .appendingPathComponent("Sources/Org2Workspace/Org2WorkspaceApp.swift")
+    let source = try String(contentsOf: appSource, encoding: .utf8)
+
+    XCTAssertTrue(source.contains("CommandGroup(replacing: .newItem)"))
+    XCTAssertTrue(source.contains("Button(\"New AI Thread\")"))
+    XCTAssertTrue(source.contains("store.createAIChatThread()"))
+    XCTAssertTrue(source.contains("store.makeSurfacePrimary(.openClaw)"))
+    XCTAssertTrue(source.contains(#".keyboardShortcut("n", modifiers: [.command])"#))
+  }
+
   func testAppActivationDoesNotInvalidateTheEntireWorkspaceView() throws {
     let testFile = URL(fileURLWithPath: #filePath)
     let packageRoot = testFile
@@ -16,6 +33,34 @@ final class WorkspaceListSelectionTests: XCTestCase {
     XCTAssertFalse(source.contains(#"@Environment(\.scenePhase)"#))
     XCTAssertTrue(source.contains("NSApplication.didBecomeActiveNotification"))
     XCTAssertTrue(source.contains("refreshImmediately: false"))
+  }
+
+  func testPerpetualActivityMotionDoesNotDriveTheSwiftUIFrameClock() throws {
+    let testFile = URL(fileURLWithPath: #filePath)
+    let packageRoot = testFile
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+    let sourcesRoot = packageRoot.appendingPathComponent("Sources", isDirectory: true)
+    let sourceFiles = try XCTUnwrap(
+      FileManager.default.enumerator(
+        at: sourcesRoot,
+        includingPropertiesForKeys: nil
+      )?.allObjects as? [URL]
+    )
+    var offenders: [String] = []
+
+    for sourceFile in sourceFiles where sourceFile.pathExtension == "swift" {
+      let source = try String(contentsOf: sourceFile, encoding: .utf8)
+      if source.contains("TimelineView(") || source.contains(".repeatForever(") {
+        offenders.append(sourceFile.path.replacingOccurrences(of: packageRoot.path + "/", with: ""))
+      }
+    }
+
+    XCTAssertTrue(
+      offenders.isEmpty,
+      "SwiftUI clocks and perpetual animations relayout the full workspace and delay app activation; use compositor-backed Core Animation or a local AppKit timer instead: \(offenders.joined(separator: ", "))"
+    )
   }
 
   func testMainWorkspaceAvoidsUnreadableNativeListSelection() throws {
@@ -104,6 +149,26 @@ final class WorkspaceListSelectionTests: XCTestCase {
     )
   }
 
+  func testSettledThreadPaginationLoadsBoundedBatches() {
+    XCTAssertEqual(OpenClawSettledThreadPagination.pageSize, 30)
+    XCTAssertEqual(
+      OpenClawSettledThreadPagination.nextLimit(currentLimit: 30, totalCount: 253),
+      60
+    )
+    XCTAssertEqual(
+      OpenClawSettledThreadPagination.nextLimit(currentLimit: 240, totalCount: 253),
+      253
+    )
+    XCTAssertEqual(
+      OpenClawSettledThreadPagination.clampedLimit(currentLimit: 90, totalCount: 25),
+      25
+    )
+    XCTAssertEqual(
+      OpenClawSettledThreadPagination.moreTitle(currentLimit: 240, totalCount: 253),
+      "Show 13 more · 13 remaining"
+    )
+  }
+
   func testReopenedThreadGetsAFreshSidebarRowIdentity() {
     let threadID = UUID()
     let activeThread = OpenClawChatThread(
@@ -133,6 +198,26 @@ final class WorkspaceListSelectionTests: XCTestCase {
     XCTAssertNotEqual(
       OpenClawSidebarThreadRowIdentity(thread: thread, isSending: true),
       OpenClawSidebarThreadRowIdentity(thread: thread, isSending: false)
+    )
+  }
+
+  func testSelectingAnotherWorkingThreadTransfersTheActivityAnimationHost() {
+    let thread = OpenClawChatThread(
+      title: "Thread",
+      sessionKey: "agent:main:thread"
+    )
+
+    XCTAssertNotEqual(
+      OpenClawSidebarThreadRowIdentity(
+        thread: thread,
+        isSending: true,
+        isSelected: true
+      ),
+      OpenClawSidebarThreadRowIdentity(
+        thread: thread,
+        isSending: true,
+        isSelected: false
+      )
     )
   }
 

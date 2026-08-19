@@ -38,6 +38,27 @@ Default triggers are intentionally conservative:
 
 The stack capture lasts 5 seconds at a 10-millisecond sampling interval. Thresholds and sampling duration are configurable from the command line. Setting =--hang-seconds=, =--cpu-percent=, or =--memory-mb= to zero disables that trigger.
 
+* Interaction latency
+
+The app separately instruments ordinary UI responsiveness at frame scale. It
+records pointer-event-to-window-update, source-editor-key-to-draw, and AI
+composer-key-to-draw intervals in the =org.org2.workspace/InteractionLatency=
+unified-log category and as Instruments points of interest. A sample over the
+60 Hz frame budget (16.7 ms) is logged immediately; every 120 samples the app
+also reports rolling p95. This is deliberately distinct from the watchdog:
+the watchdog captures multi-second hangs, while these intervals expose visible
+jank that never becomes a hang.
+
+Run the optimized regression boundary with:
+
+#+begin_src sh
+npm run test:macos-performance
+#+end_src
+
+On Apple Silicon the test launcher runs Swift natively even when npm itself is
+running through Rosetta, so the optimized test bundle matches the app's target
+architecture.
+
 * Incident storage
 
 Captured evidence is primary input, so it belongs under =raw/= rather than =compiled/=:

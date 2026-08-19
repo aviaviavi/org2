@@ -52,7 +52,7 @@ The following rules ensure deterministic, round-trippable printing:
 
 #### List Printing
 - **List**: unordered uses `-` or `+`, ordered uses `<N>.` or `<N>)`
-- **ListItem**: checkbox (if present) as `[ ]` or `[X]`, then space, then content
+- **ListItem**: explicit `ordinal` when present, checkbox (if present) as `[ ]` or `[X]`, then space, then content
 
 #### Drawer and Property Printing
 - **PropertyDrawer**: `:PROPERTIES:` + property lines + `:END:`

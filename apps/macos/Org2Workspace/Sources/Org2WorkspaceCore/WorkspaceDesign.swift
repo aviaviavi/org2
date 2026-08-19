@@ -148,6 +148,7 @@ struct WorkspaceSelectionMarker: View {
 }
 
 struct WorkspaceSelectableRowModifier: ViewModifier {
+  @State private var isHovered = false
   let isSelected: Bool
   var showsSelectionMarker = true
   var leadingPadding = WorkspaceDesign.selectionMarkerGutterWidth
@@ -163,7 +164,9 @@ struct WorkspaceSelectableRowModifier: ViewModifier {
       .padding(.vertical, verticalPadding)
       .frame(maxWidth: .infinity, alignment: .leading)
       .background(
-        isSelected ? selectedFill : Color.clear,
+        isSelected
+          ? selectedFill
+          : isHovered ? Color.primary.opacity(0.035) : Color.clear,
         in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
       )
       .overlay(alignment: .leading) {
@@ -172,6 +175,11 @@ struct WorkspaceSelectableRowModifier: ViewModifier {
         }
       }
       .accessibilityAddTraits(isSelected ? .isSelected : [])
+      .onHover { hovering in
+        withAnimation(.easeOut(duration: 0.08)) {
+          isHovered = hovering
+        }
+      }
   }
 }
 

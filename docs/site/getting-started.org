@@ -82,6 +82,14 @@ npm run build:macos-app
 open ~/Applications/Org2Workspace.app
 #+end_src
 
+=npm run build:macos-app= and =npm run build:macos-app:release= create an
+optimized daily app. Use =npm run build:macos-app:debug= only when intentionally
+testing the daily bundle without optimization. Safer side-by-side development
+uses =npm run build:macos-app:codex= for debug or
+=npm run build:macos-app:codex:release= for optimized behavior; both target the
+isolated =Org2Workspace Codex.app=. The active app identifies itself as *Debug*
+or *Optimized release* in its audio/runtime settings.
+
 See [[file:editors-macos.org][macOS Workspace]] for the current app surface.
 
 ** Current agent setup: OpenClaw

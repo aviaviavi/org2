@@ -57,7 +57,21 @@ Build or update the local macOS app bundle with:
 make macos-app
 #+end_src
 
-The equivalent npm script is =npm run build:macos-app=.
+The equivalent npm script is =npm run build:macos-app=. The daily-app command
+builds an optimized release binary by default. Use the explicit variants when
+switching modes during development:
+
+#+begin_src sh
+npm run build:macos-app:release
+npm run build:macos-app:debug
+npm run build:macos-app:codex          # isolated debug app
+npm run build:macos-app:codex:release  # isolated optimized app
+#+end_src
+
+The build refuses to place an implicit debug binary at the daily app's bundle
+identifier; only the explicit =:debug= command authorizes that. The app reports
+*Debug* or *Optimized release* under its audio/runtime settings, and the bundle
+records the same mode as =Org2BuildConfiguration= in =Info.plist=.
 
 By default this writes to =~/Applications/Org2Workspace.app=, signs it with
 bundle id =org.org2.workspace=, and uses the first available stable code-signing

@@ -2266,6 +2266,7 @@ private struct RenderedTableView: View {
   let expansionKey: String
   @State private var visibleRowLimit: Int
   @State private var visibleColumnLimit: Int
+  @State private var availableWidth: CGFloat = RenderedTableColumnWidths.preferredTotal
 
   init(table: OrgTableBlock, expansionKey: String) {
     self.table = table
@@ -2290,6 +2291,15 @@ private struct RenderedTableView: View {
       columnCount: columnCount,
       visibleLimit: visibleColumnLimit
     )
+    let columnWidths = RenderedTableColumnWidths.make(
+      rows: rowWindow.visibleRows.map(\.row),
+      visibleColumns: columnWindow.visibleColumns,
+      availableWidth: availableWidth
+    )
+    let renderedTableWidth = min(
+      availableWidth,
+      columnWidths.values.reduce(0, +)
+    )
     VStack(alignment: .leading, spacing: 6) {
       ScrollView(.horizontal) {
         Grid(alignment: .topLeading, horizontalSpacing: 0, verticalSpacing: 0) {
@@ -2303,12 +2313,15 @@ private struct RenderedTableView: View {
                     columnIndex: columnIndex,
                     rowIndex: visibleRow.index
                   )
-                    .lineLimit(table.headerRowIndex == visibleRow.index ? 2 : 5)
+                    .lineLimit(table.headerRowIndex == visibleRow.index ? 3 : nil)
                     .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 10)
                     .padding(.vertical, table.headerRowIndex == visibleRow.index ? 7 : 6)
-                    .frame(minWidth: 112, maxWidth: 260, alignment: .topLeading)
+                    .frame(
+                      width: columnWidths[columnIndex] ?? RenderedTableColumnWidths.minimum,
+                      alignment: .topLeading
+                    )
+                    .fixedSize(horizontal: false, vertical: true)
                     .background(cellBackground(
                       cells: cells,
                       columnIndex: columnIndex,
@@ -2317,11 +2330,11 @@ private struct RenderedTableView: View {
                     .overlay(alignment: .trailing) {
                       Divider()
                     }
-                    .overlay(alignment: .bottom) {
-                      Divider()
-                        .opacity(table.headerRowIndex == visibleRow.index ? 0 : 0.65)
-                  }
                 }
+              }
+              .overlay(alignment: .bottom) {
+                Divider()
+                  .opacity(table.headerRowIndex == visibleRow.index ? 0 : 0.65)
               }
             case .separator:
               Rectangle()
@@ -2332,6 +2345,7 @@ private struct RenderedTableView: View {
           }
         }
       }
+      .frame(maxWidth: renderedTableWidth, alignment: .leading)
       .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
       .overlay(
         RoundedRectangle(cornerRadius: 6, style: .continuous)
@@ -2383,6 +2397,19 @@ private struct RenderedTableView: View {
       }
     }
     .padding(.vertical, 4)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background {
+      GeometryReader { proxy in
+        Color.clear.preference(
+          key: RenderedTableAvailableWidthKey.self,
+          value: proxy.size.width
+        )
+      }
+    }
+    .onPreferenceChange(RenderedTableAvailableWidthKey.self) { width in
+      guard width.isFinite, width > 1, abs(availableWidth - width) > 0.5 else { return }
+      availableWidth = width
+    }
   }
 
   private var columnCount: Int {
@@ -2458,6 +2485,52 @@ private struct RenderedTableView: View {
 
   private func isHeaderSeparator(rowIndex: Int) -> Bool {
     table.headerRowIndex.map { $0 + 1 } == Optional(rowIndex)
+  }
+}
+
+private struct RenderedTableAvailableWidthKey: PreferenceKey {
+  static let defaultValue: CGFloat = 0
+
+  static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+    value = max(value, nextValue())
+  }
+}
+
+struct RenderedTableColumnWidths {
+  static let minimum: CGFloat = 112
+  static let maximum: CGFloat = 420
+  static let preferredTotal: CGFloat = 640
+  private static let horizontalPadding: CGFloat = 20
+
+  static func make(
+    rows: [OrgTableRow],
+    visibleColumns: [Int],
+    availableWidth: CGFloat = preferredTotal
+  ) -> [Int: CGFloat] {
+    let font = NSFont.systemFont(ofSize: NSFont.systemFontSize, weight: .semibold)
+    let attributes: [NSAttributedString.Key: Any] = [.font: font]
+    var widths = Dictionary(uniqueKeysWithValues: visibleColumns.map { columnIndex in
+      let widestCell = rows.compactMap { row -> CGFloat? in
+        guard case .cells(let cells) = row, cells.indices.contains(columnIndex) else { return nil }
+        return ceil((cells[columnIndex] as NSString).size(withAttributes: attributes).width)
+      }.max() ?? 0
+      let width = min(maximum, max(minimum, widestCell + horizontalPadding))
+      return (columnIndex, width)
+    })
+
+    let naturalTotal = widths.values.reduce(0, +)
+    let minimumTotal = minimum * CGFloat(visibleColumns.count)
+    let fittedTotal = max(minimumTotal, availableWidth)
+    guard naturalTotal > fittedTotal, naturalTotal > minimumTotal else { return widths }
+
+    let reduction = naturalTotal - fittedTotal
+    let reducibleTotal = naturalTotal - minimumTotal
+    for columnIndex in visibleColumns {
+      guard let width = widths[columnIndex] else { continue }
+      let reducibleWidth = width - minimum
+      widths[columnIndex] = width - (reduction * reducibleWidth / reducibleTotal)
+    }
+    return widths
   }
 }
 

@@ -1,0 +1,53 @@
+{
+  "type": "Document",
+  "version": "0",
+  "children": [
+    {
+      "type": "List",
+      "ordered": true,
+      "items": [
+        {
+          "type": "ListItem",
+          "children": [
+            {
+              "type": "Paragraph",
+              "children": [{ "type": "Text", "value": "First" }]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "List",
+      "ordered": true,
+      "items": [
+        {
+          "type": "ListItem",
+          "ordinal": 2,
+          "children": [
+            {
+              "type": "Paragraph",
+              "children": [{ "type": "Text", "value": "Second" }]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "List",
+      "ordered": true,
+      "items": [
+        {
+          "type": "ListItem",
+          "ordinal": 7,
+          "children": [
+            {
+              "type": "Paragraph",
+              "children": [{ "type": "Text", "value": "Seventh" }]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

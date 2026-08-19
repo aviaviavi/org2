@@ -5,6 +5,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 public enum AIChatMessageSound: String, CaseIterable, Identifiable, Sendable {
+  case org2 = "org2"
   case systemAlert = "system-alert"
   case basso = "Basso"
   case blow = "Blow"
@@ -26,6 +27,8 @@ public enum AIChatMessageSound: String, CaseIterable, Identifiable, Sendable {
 
   public var displayName: String {
     switch self {
+    case .org2:
+      return "Org2 (Default)"
     case .systemAlert:
       return "System Alert"
     case .off:
@@ -37,7 +40,7 @@ public enum AIChatMessageSound: String, CaseIterable, Identifiable, Sendable {
 
   fileprivate var appKitSoundName: NSSound.Name? {
     switch self {
-    case .systemAlert, .off:
+    case .org2, .systemAlert, .off:
       return nil
     default:
       return NSSound.Name(rawValue)
@@ -78,6 +81,11 @@ public enum WorkspaceAppearanceMode: String, CaseIterable, Identifiable, Sendabl
 public enum WorkspaceKeyboardShortcutScope: Equatable, Sendable {
   case all
   case globalOnly
+}
+
+public enum AIChatDictationCompletionAction: Sendable {
+  case insertIntoComposer
+  case send
 }
 
 public struct Org2ExportNotice: Identifiable, Equatable, Sendable {
@@ -153,6 +161,217 @@ final class WorkspaceInputMeterState: ObservableObject {
     force || WorkspaceStore.shouldPublishMeetingMeterLevelChange(current: current, next: next)
       ? next
       : current
+  }
+}
+
+@MainActor
+final class WorkspaceTranscriptionProgressState: ObservableObject {
+  @Published private(set) var progress = 0.0
+  @Published private(set) var elapsedText = ""
+
+  func publish(progress: Double, elapsedText: String) {
+    if self.progress != progress {
+      self.progress = progress
+    }
+    if self.elapsedText != elapsedText {
+      self.elapsedText = elapsedText
+    }
+  }
+
+  func reset() {
+    publish(progress: 0, elapsedText: "")
+  }
+}
+
+/// High-frequency state for a live AI turn. Keeping it off `WorkspaceStore`
+/// prevents every streamed token from invalidating unrelated workspace views.
+@MainActor
+final class OpenClawChatLiveState: ObservableObject {
+  nonisolated static let streamPublishIntervalNanoseconds: UInt64 = 33_000_000
+
+  @Published fileprivate var gatewayStateByThreadID: [UUID: OpenClawGatewayConnectionState] = [:]
+  @Published fileprivate var gatewayDetailByThreadID: [UUID: String] = [:]
+  @Published fileprivate var activeRunIDByThreadID: [UUID: String] = [:]
+  @Published fileprivate var runActivitiesByThreadID: [UUID: [OpenClawRunActivity]] = [:]
+
+  private var lastEventAtByThreadID: [UUID: Date] = [:]
+  private var streamingReplyByThreadID: [UUID: String] = [:]
+  private var reasoningByThreadID: [UUID: String] = [:]
+  private var pendingLastEventAtByThreadID: [UUID: Date] = [:]
+  private var pendingStreamingReplacementByThreadID: [UUID: String] = [:]
+  private var pendingStreamingDeltaByThreadID: [UUID: String] = [:]
+  private var pendingReasoningDeltaByThreadID: [UUID: String] = [:]
+  private var streamPublishTask: Task<Void, Never>?
+
+  func connectionState(for threadID: UUID) -> OpenClawGatewayConnectionState {
+    gatewayStateByThreadID[threadID] ?? .disconnected
+  }
+
+  func connectionDetail(for threadID: UUID) -> String? {
+    gatewayDetailByThreadID[threadID]
+  }
+
+  func lastEventAt(for threadID: UUID) -> Date? {
+    pendingLastEventAtByThreadID[threadID] ?? lastEventAtByThreadID[threadID]
+  }
+
+  func activeRunID(for threadID: UUID) -> String? {
+    activeRunIDByThreadID[threadID]
+  }
+
+  func streamingReply(for threadID: UUID) -> String {
+    if let replacement = pendingStreamingReplacementByThreadID[threadID] {
+      return replacement
+    }
+    return (streamingReplyByThreadID[threadID] ?? "")
+      + (pendingStreamingDeltaByThreadID[threadID] ?? "")
+  }
+
+  func reasoning(for threadID: UUID) -> String {
+    (reasoningByThreadID[threadID] ?? "")
+      + (pendingReasoningDeltaByThreadID[threadID] ?? "")
+  }
+
+  func runActivities(for threadID: UUID) -> [OpenClawRunActivity] {
+    runActivitiesByThreadID[threadID] ?? []
+  }
+
+  func appendStreamingDelta(_ delta: String, for threadID: UUID) {
+    guard !delta.isEmpty else { return }
+    if pendingStreamingReplacementByThreadID[threadID] != nil {
+      pendingStreamingReplacementByThreadID[threadID, default: ""] += delta
+    } else {
+      pendingStreamingDeltaByThreadID[threadID, default: ""] += delta
+    }
+    scheduleStreamPublish()
+  }
+
+  func replaceStreamingReply(_ reply: String, for threadID: UUID, coalesced: Bool) {
+    pendingStreamingDeltaByThreadID.removeValue(forKey: threadID)
+    guard coalesced else {
+      pendingStreamingReplacementByThreadID.removeValue(forKey: threadID)
+      publishStreamMutation {
+        streamingReplyByThreadID[threadID] = reply
+      }
+      return
+    }
+    pendingStreamingReplacementByThreadID[threadID] = reply
+    scheduleStreamPublish()
+  }
+
+  func appendReasoningDelta(_ delta: String, for threadID: UUID) {
+    guard !delta.isEmpty else { return }
+    pendingReasoningDeltaByThreadID[threadID, default: ""] += delta
+    scheduleStreamPublish()
+  }
+
+  func noteEvent(at date: Date = Date(), for threadID: UUID, coalesced: Bool) {
+    guard coalesced else {
+      publishStreamMutation {
+        lastEventAtByThreadID[threadID] = date
+      }
+      return
+    }
+    pendingLastEventAtByThreadID[threadID] = date
+    scheduleStreamPublish()
+  }
+
+  fileprivate var currentLastEventDates: [UUID: Date] {
+    lastEventAtByThreadID.merging(pendingLastEventAtByThreadID) { _, pending in pending }
+  }
+
+  fileprivate var currentStreamingReplies: [UUID: String] {
+    var replies = merged(base: streamingReplyByThreadID, pending: pendingStreamingDeltaByThreadID)
+    for (threadID, replacement) in pendingStreamingReplacementByThreadID {
+      replies[threadID] = replacement
+    }
+    return replies
+  }
+
+  fileprivate var currentReasoning: [UUID: String] {
+    merged(base: reasoningByThreadID, pending: pendingReasoningDeltaByThreadID)
+  }
+
+  fileprivate func replaceStreamingReplies(_ replies: [UUID: String]) {
+    pendingStreamingReplacementByThreadID = [:]
+    pendingStreamingDeltaByThreadID = [:]
+    publishStreamMutation {
+      streamingReplyByThreadID = replies
+    }
+  }
+
+  fileprivate func replaceReasoning(_ reasoning: [UUID: String]) {
+    pendingReasoningDeltaByThreadID = [:]
+    publishStreamMutation {
+      reasoningByThreadID = reasoning
+    }
+  }
+
+  fileprivate func replaceLastEventDates(_ dates: [UUID: Date]) {
+    pendingLastEventAtByThreadID = [:]
+    publishStreamMutation {
+      lastEventAtByThreadID = dates
+    }
+  }
+
+  func flushPendingStreamUpdates() {
+    streamPublishTask?.cancel()
+    streamPublishTask = nil
+    guard !pendingLastEventAtByThreadID.isEmpty
+      || !pendingStreamingReplacementByThreadID.isEmpty
+      || !pendingStreamingDeltaByThreadID.isEmpty
+      || !pendingReasoningDeltaByThreadID.isEmpty
+    else {
+      return
+    }
+    let eventDates = pendingLastEventAtByThreadID
+    let streamingReplacements = pendingStreamingReplacementByThreadID
+    let streamingDeltas = pendingStreamingDeltaByThreadID
+    let reasoningDeltas = pendingReasoningDeltaByThreadID
+    pendingLastEventAtByThreadID = [:]
+    pendingStreamingReplacementByThreadID = [:]
+    pendingStreamingDeltaByThreadID = [:]
+    pendingReasoningDeltaByThreadID = [:]
+    publishStreamMutation {
+      for (threadID, date) in eventDates {
+        lastEventAtByThreadID[threadID] = date
+      }
+      for (threadID, replacement) in streamingReplacements {
+        streamingReplyByThreadID[threadID] = replacement
+      }
+      for (threadID, delta) in streamingDeltas {
+        streamingReplyByThreadID[threadID, default: ""] += delta
+      }
+      for (threadID, delta) in reasoningDeltas {
+        reasoningByThreadID[threadID, default: ""] += delta
+      }
+    }
+  }
+
+  private func scheduleStreamPublish() {
+    guard streamPublishTask == nil else { return }
+    streamPublishTask = Task { @MainActor [weak self] in
+      try? await Task.sleep(nanoseconds: Self.streamPublishIntervalNanoseconds)
+      guard !Task.isCancelled else { return }
+      self?.streamPublishTask = nil
+      self?.flushPendingStreamUpdates()
+    }
+  }
+
+  private func publishStreamMutation(_ mutation: () -> Void) {
+    objectWillChange.send()
+    mutation()
+  }
+
+  private func merged(
+    base: [UUID: String],
+    pending: [UUID: String]
+  ) -> [UUID: String] {
+    var result = base
+    for (threadID, delta) in pending {
+      result[threadID, default: ""] += delta
+    }
+    return result
   }
 }
 
@@ -355,10 +574,20 @@ public enum OpenClawThreadMode: String, CaseIterable, Identifiable, Sendable {
 
   public var id: String { rawValue }
 
-  public var title: String {
+  func discussionDestinationTitle(selectedThreadTitle: String?) -> String? {
     switch self {
-    case .newThread: "New thread"
-    case .currentThread: "Current thread"
+    case .newThread: return "New thread"
+    case .currentThread:
+      guard let selectedThreadTitle = selectedThreadTitle?
+        .split(whereSeparator: \.isNewline)
+        .first?
+        .trimmingCharacters(in: .whitespacesAndNewlines),
+        !selectedThreadTitle.isEmpty
+      else { return nil }
+      let displayTitle = selectedThreadTitle.count > 52
+        ? String(selectedThreadTitle.prefix(49)) + "…"
+        : selectedThreadTitle
+      return "Continue in \u{201c}\(displayTitle)\u{201d}"
     }
   }
 }
@@ -914,6 +1143,26 @@ public struct WorkspaceRuntimeIdentity: Equatable, Sendable {
   public let bundleIdentifier: String?
   public let isAppBundle: Bool
 
+  public static var compiledBuildConfiguration: String {
+#if DEBUG
+    "debug"
+#else
+    "release"
+#endif
+  }
+
+  public var buildConfiguration: String {
+    Self.compiledBuildConfiguration
+  }
+
+  public var buildConfigurationLabel: String {
+    buildConfiguration == "release" ? "Optimized release" : "Debug"
+  }
+
+  public var isOptimizedBuild: Bool {
+    buildConfiguration == "release"
+  }
+
   public var audioPermissionStatusLabel: String {
     isAppBundle ? "Stable app bundle" : "Debug executable"
   }
@@ -969,6 +1218,13 @@ public final class WorkspaceStore: ObservableObject {
       rebuildAgendaDisplayCache()
     }
   }
+  @Published public var agendaOverdueOrder: AgendaOverdueOrder = .priority {
+    didSet {
+      guard oldValue != agendaOverdueOrder else { return }
+      defaults.set(agendaOverdueOrder.rawValue, forKey: agendaOverdueOrderKey)
+      rebuildAgendaDisplayCache()
+    }
+  }
   @Published public var agendaFilter = "" {
     didSet {
       guard oldValue != agendaFilter else { return }
@@ -1015,15 +1271,33 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var selectedApprovalItemIDsForAIContext: Set<ApprovalItem.ID> = []
   @Published public var runsAndReviewPage: RunsAndReviewPage = .runs
   @Published public var isLoadingApprovals = false
+  @Published public private(set) var hasCompletedApprovalsLoad = false
+  public var shouldShowInitialApprovalsLoadingState: Bool {
+    isLoadingApprovals && approvalItems.isEmpty && !hasCompletedApprovalsLoad
+  }
   @Published public private(set) var agentRuns: [AgentRunItem] = [] {
     didSet {
       var index: [AgentRunItem.ID: String] = [:]
+      var runsByID: [AgentRunItem.ID: AgentRunItem] = [:]
+      var countsByGoalRef: [String: Int] = [:]
+      var countsByAgentRef: [String: Int] = [:]
       index.reserveCapacity(agentRuns.count)
+      runsByID.reserveCapacity(agentRuns.count)
       for item in agentRuns {
         index[item.id] = item.runFilterText
+        runsByID[item.id] = item
+        if let goalRef = item.goalRef {
+          countsByGoalRef[goalRef, default: 0] += 1
+        }
+        if let agentRef = item.agentRef {
+          countsByAgentRef[agentRef, default: 0] += 1
+        }
       }
       agentRunFilterTextByID = index
-      rebuildAgentRunDisplayCache()
+      agentRunsByID = runsByID
+      agentRunCountByGoalRef = countsByGoalRef
+      agentRunCountByAgentRef = countsByAgentRef
+      rebuildAgentRunDisplayCache(rebuildSourceIndexes: true)
     }
   }
   @Published public var agentRunFilter = "" {
@@ -1033,6 +1307,7 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
   @Published public var agentRunFilterFocusToken = 0
+  public private(set) var agentRunDisplayRevision = 0
   @Published public var selectedAgentRunID: AgentRunItem.ID?
   @Published public var selectedAgentRunIDsForAIContext: Set<AgentRunItem.ID> = []
   @Published public private(set) var presentedAgentRunID: AgentRunItem.ID?
@@ -1178,8 +1453,9 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var meetingTitleDraft = ""
   @Published public var meetingStatusText = WorkspaceStore.defaultMeetingStatusText()
   let meetingInputMeterState = WorkspaceInputMeterState()
-  @Published public var meetingTranscriptionProgress = 0.0
-  @Published public var meetingTranscriptionElapsedText = ""
+  let meetingTranscriptionProgressState = WorkspaceTranscriptionProgressState()
+  public var meetingTranscriptionProgress: Double { meetingTranscriptionProgressState.progress }
+  public var meetingTranscriptionElapsedText: String { meetingTranscriptionProgressState.elapsedText }
   @Published public var audioSettingsStatus = LocalWhisperTranscriber.installationStatus()
   @Published public var isAudioSettingsExpanded = false
   @Published public var isInstallingFastTranscriber = false
@@ -1210,17 +1486,26 @@ public final class WorkspaceStore: ObservableObject {
   @Published public private(set) var openClawThreadSettlementSettings = OpenClawThreadSettlementSettings()
   public private(set) var openClawUnreadMessageCount = 0
   @Published public private(set) var selectedOpenClawChatThreadID: UUID?
+  @Published public private(set) var sidebarPromotedOpenClawChatThreadID: UUID?
   @Published public private(set) var openClawChatSelectionGeneration = 0
   @Published public private(set) var lastArchivedOpenClawChatThreadID: UUID?
-  @Published public private(set) var externalThreads: [ExternalThreadSummary] = []
+  @Published public private(set) var externalThreads: [ExternalThreadSummary] = [] {
+    didSet { rebuildExternalThreadDisplayCache() }
+  }
+  public private(set) var filteredExternalThreads: [ExternalThreadSummary] = []
   @Published public private(set) var selectedExternalThreadID: String?
   @Published public private(set) var selectedExternalThreadDetail: ExternalThreadDetail?
   @Published public private(set) var isRefreshingExternalThreads = false
   @Published public private(set) var isLoadingExternalThread = false
-  @Published public var externalThreadSearchQuery = ""
+  @Published public var externalThreadSearchQuery = "" {
+    didSet {
+      guard oldValue != externalThreadSearchQuery else { return }
+      rebuildExternalThreadDisplayCache()
+    }
+  }
   @Published public private(set) var externalThreadError: String?
   public var openClawIncomingMessageSoundPlayer: @MainActor () -> Void = {
-    WorkspaceSound.play(named: NSSound.Name(AIChatMessageSound.glass.rawValue))
+    WorkspaceSound.playBundledNewMessageSound()
   }
   public var openClawIncomingMessageHandler: @MainActor (
     _ thread: OpenClawChatThread,
@@ -1260,7 +1545,7 @@ public final class WorkspaceStore: ObservableObject {
       defaults.set(codexSandboxAccess.rawValue, forKey: codexSandboxAccessKey)
     }
   }
-  @Published public var aiChatMessageSound: AIChatMessageSound = .glass {
+  @Published public var aiChatMessageSound: AIChatMessageSound = .org2 {
     didSet {
       defaults.set(aiChatMessageSound.rawValue, forKey: aiChatMessageSoundKey)
       openClawIncomingMessageSoundPlayer = Self.messageSoundPlayer(for: aiChatMessageSound)
@@ -1309,14 +1594,36 @@ public final class WorkspaceStore: ObservableObject {
   @Published public private(set) var openClawQueuedMessageCount = 0
   @Published public private(set) var openClawSendingThreadIDs: Set<UUID> = []
   @Published public var openClawRequestStartedAt: Date?
-  @Published private var openClawGatewayStateByThreadID: [UUID: OpenClawGatewayConnectionState] = [:]
-  @Published private var openClawGatewayDetailByThreadID: [UUID: String] = [:]
-  @Published private var openClawLastEventAtByThreadID: [UUID: Date] = [:]
-  @Published private var openClawActiveRunIDByThreadID: [UUID: String] = [:]
-  @Published private var openClawStreamingReplyByThreadID: [UUID: String] = [:]
+  let openClawLiveState = OpenClawChatLiveState()
+  private var openClawGatewayStateByThreadID: [UUID: OpenClawGatewayConnectionState] {
+    get { openClawLiveState.gatewayStateByThreadID }
+    set { openClawLiveState.gatewayStateByThreadID = newValue }
+  }
+  private var openClawGatewayDetailByThreadID: [UUID: String] {
+    get { openClawLiveState.gatewayDetailByThreadID }
+    set { openClawLiveState.gatewayDetailByThreadID = newValue }
+  }
+  private var openClawLastEventAtByThreadID: [UUID: Date] {
+    get { openClawLiveState.currentLastEventDates }
+    set { openClawLiveState.replaceLastEventDates(newValue) }
+  }
+  private var openClawActiveRunIDByThreadID: [UUID: String] {
+    get { openClawLiveState.activeRunIDByThreadID }
+    set { openClawLiveState.activeRunIDByThreadID = newValue }
+  }
+  private var openClawStreamingReplyByThreadID: [UUID: String] {
+    get { openClawLiveState.currentStreamingReplies }
+    set { openClawLiveState.replaceStreamingReplies(newValue) }
+  }
+  private var openClawReasoningByThreadID: [UUID: String] {
+    get { openClawLiveState.currentReasoning }
+    set { openClawLiveState.replaceReasoning(newValue) }
+  }
+  private var openClawRunActivitiesByThreadID: [UUID: [OpenClawRunActivity]] {
+    get { openClawLiveState.runActivitiesByThreadID }
+    set { openClawLiveState.runActivitiesByThreadID = newValue }
+  }
   private var codexStreamingItemIDByThreadID: [UUID: String] = [:]
-  @Published private var openClawReasoningByThreadID: [UUID: String] = [:]
-  @Published private var openClawRunActivitiesByThreadID: [UUID: [OpenClawRunActivity]] = [:]
   @Published public var isOpenClawAssistantPresented = false
   public private(set) var openClawChatScrollPosition: Double?
   public private(set) var openClawAssistantChatScrollPosition: Double?
@@ -1507,6 +1814,7 @@ public final class WorkspaceStore: ObservableObject {
   private let corpusMountsKey = "Org2Workspace.corpusMounts.v1"
   private let pinnedFilesByCorpusKey = "Org2Workspace.pinnedFilePathsByCorpus.v1"
   private let agendaModeKey = "Org2Workspace.agendaMode"
+  private let agendaOverdueOrderKey = "Org2Workspace.agendaOverdueOrder.v1"
   private let openClawEndpointKey = "Org2Workspace.openClawEndpoint"
   private let openClawAgentKey = "Org2Workspace.openClawAgent"
   private let agentHandoffAssigneeKey = "Org2Workspace.agentHandoffAssignee"
@@ -1610,7 +1918,8 @@ public final class WorkspaceStore: ObservableObject {
     _ content: String,
     _ attachments: [OpenClawChatAttachment]
   ) async throws -> Void)?
-  private var openClawRecoveryRetryTask: Task<Void, Never>?
+  private var openClawRecoveryTasksByThreadID: [UUID: Task<Void, Never>] = [:]
+  private var openClawRecoveryTaskTokensByThreadID: [UUID: UUID] = [:]
   private var deferredOpenClawTranscriptPersistenceTask: Task<Void, Never>?
   private var openClawTranscriptPersistenceGeneration: UInt64 = 0
   var openClawTranscriptPersistenceDelayNanoseconds: UInt64 = 250_000_000
@@ -1639,6 +1948,7 @@ public final class WorkspaceStore: ObservableObject {
   private var meetingMeterTask: Task<Void, Never>?
   nonisolated static let meetingMeterPublishIntervalNanoseconds: UInt64 = 250_000_000
   nonisolated static let meetingMeterPublishThreshold = 0.03
+  nonisolated static let meetingTranscriptionProgressPublishIntervalNanoseconds: UInt64 = 500_000_000
   private var meetingTranscriptionProgressTask: Task<Void, Never>?
   private var meetingTranscriptionProgressID: UUID?
   private var meetingTranscriptionProgressTitle = ""
@@ -1780,9 +2090,18 @@ public final class WorkspaceStore: ObservableObject {
   private var pendingAgendaRefreshAfterBlockEditing = false
   private var assignedWorkSearchRows: [AssignedWorkSearchRow] = []
   private var agentRunFilterTextByID: [AgentRunItem.ID: String] = [:]
+  private var agentRunsByID: [AgentRunItem.ID: AgentRunItem] = [:]
   private var agentRunFilterTerms: [String] = []
   private var agentRunScopeCounts: [AgentRunScope: Int] = [:]
+  private var agentRunScopeEntriesByScope: [AgentRunScope: [AgentRunScopeEntry]] = [:]
   private var filteredAgentRunScopeEntries: [AgentRunScope: [AgentRunScopeEntry]] = [:]
+  private var filteredAgentRunScopeIDs: [AgentRunScope: [AgentRunItem.ID]] = [:]
+  private var filteredAgentRunScopeIDSets: [AgentRunScope: Set<AgentRunItem.ID>] = [:]
+  private var agentRunSectionsByScope: [AgentRunScope: [RunCenterSection]] = [:]
+  private var agentRunSourceMeetingContextsByID: [AgentRunItem.ID: AgentRunContextItem] = [:]
+  private var agentRunIDsBySourceMeetingReference: [String: [AgentRunItem.ID]] = [:]
+  private var agentRunCountByGoalRef: [String: Int] = [:]
+  private var agentRunCountByAgentRef: [String: Int] = [:]
   private var searchNodeIndexRows: [SearchNodeIndexRow] = []
   private var sourceEditorPreviewTask: Task<Void, Never>?
   private var sourceEditorPreviewGeneration = 0
@@ -1840,6 +2159,8 @@ public final class WorkspaceStore: ObservableObject {
     agendaMode = Self.shouldIgnoreStandardDefaultsForTests(defaults)
       ? .focus
       : Self.restoreAgendaMode(from: defaults, key: agendaModeKey)
+    agendaOverdueOrder = defaults.string(forKey: agendaOverdueOrderKey)
+      .flatMap(AgendaOverdueOrder.init(rawValue:)) ?? .priority
     openClawEndpointText = defaults.string(forKey: openClawEndpointKey) ?? settings.endpoint.absoluteString
     openClawAgentID = defaults.string(forKey: openClawAgentKey) ?? "main"
     agentHandoffAssignee = defaults.string(forKey: agentHandoffAssigneeKey) ?? Self.defaultAgentHandoffAssignee
@@ -1855,7 +2176,7 @@ public final class WorkspaceStore: ObservableObject {
     codexSandboxAccess = defaults.string(forKey: codexSandboxAccessKey)
       .flatMap(CodexSandboxAccess.init(rawValue:)) ?? .workspaceWrite
     aiChatMessageSound = defaults.string(forKey: aiChatMessageSoundKey)
-      .flatMap(AIChatMessageSound.init(rawValue:)) ?? .glass
+      .flatMap(AIChatMessageSound.init(rawValue:)) ?? .org2
     openClawIncomingMessageSoundPlayer = Self.messageSoundPlayer(for: aiChatMessageSound)
     appearanceMode = defaults.string(forKey: appearanceModeKey)
       .flatMap(WorkspaceAppearanceMode.init(rawValue:)) ?? .system
@@ -1920,7 +2241,7 @@ public final class WorkspaceStore: ObservableObject {
       }
     }
 
-    await recoverPendingOpenClawTurns()
+    startPendingOpenClawTurnRecovery()
     if openClawLocalEditsEnabled {
       startOpenClawLocalEditNode()
     }
@@ -2380,6 +2701,7 @@ public final class WorkspaceStore: ObservableObject {
     isRefreshingOpenClawThreads = false
     isLoadingAgenda = false
     isLoadingApprovals = false
+    hasCompletedApprovalsLoad = false
     isLoadingAgentRuns = false
     agentRuns = cachedWorkspace?.agentRuns ?? []
     agentWorkflows = cachedWorkspace?.agentWorkflows ?? []
@@ -2755,7 +3077,7 @@ public final class WorkspaceStore: ObservableObject {
     // provider, or agent recovery refresh is slow.
     await refreshSelectedDetailFromDisk()
     guard shouldContinueWorkspaceRefresh(generation) else { return }
-    await recoverPendingOpenClawTurns()
+    startPendingOpenClawTurnRecovery()
     guard shouldContinueWorkspaceRefresh(generation) else { return }
     await refreshActiveCorpusIdentity()
     guard shouldContinueWorkspaceRefresh(generation) else { return }
@@ -3358,6 +3680,7 @@ public final class WorkspaceStore: ObservableObject {
     errorText = nil
     defer {
       isRefreshingApprovals = false
+      hasCompletedApprovalsLoad = true
       if showsLoading {
         isLoadingApprovals = false
       }
@@ -3478,6 +3801,10 @@ public final class WorkspaceStore: ObservableObject {
 
   func replaceAgentRunsForTesting(_ runs: [AgentRunItem]) {
     agentRuns = runs
+  }
+
+  func replaceExternalThreadsForTesting(_ threads: [ExternalThreadSummary]) {
+    externalThreads = threads
   }
 
   func replaceApprovalItemsForTesting(_ items: [ApprovalItem]) {
@@ -11549,10 +11876,11 @@ public final class WorkspaceStore: ObservableObject {
   public func selectQuickOpenItem(_ item: WorkspaceQuickOpenItem) {
     switch item {
     case .file(let file):
-      selectCorpusFile(file)
+      selectCorpusFile(file, surface: selectedSurface)
     case .chatThread(let thread):
       navigateToSurface(.openClaw)
       selectOpenClawChatThread(thread.id)
+      sidebarPromotedOpenClawChatThreadID = thread.id
       statusText = "Opened \(thread.title)"
     }
   }
@@ -12759,7 +13087,7 @@ public final class WorkspaceStore: ObservableObject {
 
   public func toggleOpenClawVoiceNoteRecording() async {
     if isRecordingOpenClawVoiceNote {
-      await stopOpenClawVoiceNoteRecording()
+      await stopOpenClawVoiceNoteRecording(action: .insertIntoComposer)
     } else {
       await startOpenClawVoiceNoteRecording()
     }
@@ -12813,7 +13141,9 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
-  public func stopOpenClawVoiceNoteRecording() async {
+  public func stopOpenClawVoiceNoteRecording(
+    action: AIChatDictationCompletionAction = .insertIntoComposer
+  ) async {
     guard let audioURL = activeOpenClawVoiceNoteURL,
           let origin = activeAIChatDictationOrigin
     else {
@@ -12854,16 +13184,26 @@ public final class WorkspaceStore: ObservableObject {
         return
       }
 
-      openClawVoiceStatusText = "Sending dictated note in \(origin.threadTitle)..."
-      openClawStatusText = openClawVoiceStatusText
-      let accepted = await sendOpenClawDictation(
-        dictatedText,
-        to: origin.threadID,
-        workspaceContext: origin.workspaceContext
-      )
-      if !accepted {
-        openClawVoiceStatusText = "The original AI chat is no longer available. Dictation was not sent."
+      switch action {
+      case .insertIntoComposer:
+        let inserted = insertOpenClawDictationIntoDraft(dictatedText, in: origin.threadID)
+        openClawVoiceStatusText = inserted
+          ? "Dictation added to \(origin.threadTitle)."
+          : "The original AI chat is no longer available. Dictation was not added."
         openClawStatusText = openClawVoiceStatusText
+      case .send:
+        openClawVoiceStatusText = "Sending dictated note in \(origin.threadTitle)..."
+        openClawStatusText = openClawVoiceStatusText
+        let accepted = await sendOpenClawDictation(
+          dictatedText,
+          to: origin.threadID,
+          workspaceContext: origin.workspaceContext
+        )
+        if !accepted {
+          _ = insertOpenClawDictationIntoDraft(dictatedText, in: origin.threadID)
+          openClawVoiceStatusText = "Dictation could not be sent and was returned to \(origin.threadTitle)'s composer."
+          openClawStatusText = openClawVoiceStatusText
+        }
       }
     } catch {
       activeOpenClawVoiceNoteURL = nil
@@ -12975,6 +13315,24 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   @discardableResult
+  func insertOpenClawDictationIntoDraft(_ rawText: String, in threadID: UUID) -> Bool {
+    let dictatedText = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !dictatedText.isEmpty,
+          openClawChatThreads.contains(where: { $0.id == threadID })
+    else { return false }
+
+    let updatedDraft = Self.openClawDraftByAppendingDictation(
+      existing: openClawDraft(for: threadID),
+      dictatedText: dictatedText
+    )
+    cacheOpenClawDraft(updatedDraft, for: threadID)
+    if selectedOpenClawChatThreadID == threadID {
+      openClawDraft = updatedDraft
+    }
+    return true
+  }
+
+  @discardableResult
   func sendOpenClawDictation(
     _ rawText: String,
     to threadID: UUID,
@@ -12993,14 +13351,6 @@ public final class WorkspaceStore: ObservableObject {
     )
     clearOpenClawDraft(for: threadID)
     let context = workspaceContext ?? threadScopedOpenClawWorkspaceContext(for: thread)
-    if isAIChatThreadRunning(threadID), canSteerAIChatThread(threadID) {
-      return submitAIChatMessage(
-        text,
-        attachments: [],
-        in: threadID,
-        workspaceContext: context
-      )
-    }
     let shouldDrain = enqueueOpenClawMessage(
       text,
       attachments: [],
@@ -13729,10 +14079,13 @@ public final class WorkspaceStore: ObservableObject {
     )
   }
 
-  public var filteredExternalThreads: [ExternalThreadSummary] {
+  private func rebuildExternalThreadDisplayCache() {
     let query = externalThreadSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-    guard !query.isEmpty else { return externalThreads }
-    return externalThreads.filter { thread in
+    guard !query.isEmpty else {
+      filteredExternalThreads = externalThreads
+      return
+    }
+    filteredExternalThreads = externalThreads.filter { thread in
       [thread.title, thread.preview, thread.workspacePath, thread.source]
         .compactMap { $0?.lowercased() }
         .contains { $0.contains(query) }
@@ -13996,10 +14349,18 @@ public final class WorkspaceStore: ObservableObject {
       }
     }
     guard let gateway = openClawGatewayClientsByThreadID[threadID] else {
-      if selectedOpenClawChatThreadID == threadID {
-        openClawStatusText = "No live Gateway run to stop"
+      // A recovered run spends time between Gateway connections while its
+      // pending turn remains durable. That is still an active run from the
+      // user's perspective, and clearing the pending turn is what prevents
+      // the recovery loop from immediately resurrecting it.
+      guard isAIChatThreadRunning(threadID) else {
+        if selectedOpenClawChatThreadID == threadID {
+          openClawStatusText = "No active OpenClaw run to stop"
+        }
+        return false
       }
-      return false
+      markOpenClawRunStopped(in: threadID)
+      return true
     }
     // Make the stop durable before waiting on the Gateway. In particular, a
     // recovered turn keeps a persisted pending-turn record; leaving it in
@@ -14941,10 +15302,6 @@ public final class WorkspaceStore: ObservableObject {
       sourceThreadID: sourceThreadID,
       selectsFork: true
     )
-    if isAIChatThreadRunning(threadID), canSteerAIChatThread(threadID) {
-      submitAIChatMessage(text, attachments: attachments, in: threadID)
-      return
-    }
     let deliveryKind: OpenClawChatMessage.DeliveryKind = isAIChatThreadRunning(threadID)
       ? .followUp
       : .turn
@@ -14982,7 +15339,7 @@ public final class WorkspaceStore: ObservableObject {
         delivery: delivery
       )
     }
-    let shouldTrySteering = delivery != .followUp
+    let shouldTrySteering = delivery == .steer
       && isAIChatThreadRunning(threadID)
       && canSteerAIChatThread(threadID)
     if shouldTrySteering {
@@ -15530,7 +15887,7 @@ public final class WorkspaceStore: ObservableObject {
           openClawGatewayStateByThreadID[threadID] = .reconnecting
           openClawGatewayDetailByThreadID[threadID] =
             "This turn is saved and will reconnect without sending it twice."
-          scheduleOpenClawPendingTurnRecovery()
+          scheduleOpenClawPendingTurnRecovery(for: threadID)
           return
         }
         if chatThread.isSharedRoom {
@@ -15562,13 +15919,37 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   func recoverPendingOpenClawTurns() async {
-    let threadIDs: [UUID] = openClawChatThreads.compactMap { thread -> UUID? in
+    let tasks = pendingOpenClawRecoveryThreadIDs().map { threadID in
+      Task { @MainActor [weak self] in
+        await self?.recoverPendingOpenClawTurn(in: threadID)
+      }
+    }
+    for task in tasks {
+      await task.value
+    }
+  }
+
+  private func pendingOpenClawRecoveryThreadIDs() -> [UUID] {
+    openClawChatThreads.compactMap { thread -> UUID? in
       guard let pendingTurn = thread.pendingTurn else { return nil }
       let destinationID = pendingTurn.destinationID ?? thread.destinationID
       return aiChatDestinationRuntime(destinationID) == .openClaw ? thread.id : nil
     }
-    for threadID in threadIDs {
-      await recoverPendingOpenClawTurn(in: threadID)
+  }
+
+  private func hasPendingOpenClawRecovery(in threadID: UUID) -> Bool {
+    guard let thread = openClawChatThreads.first(where: { $0.id == threadID }),
+          let pendingTurn = thread.pendingTurn
+    else {
+      return false
+    }
+    let destinationID = pendingTurn.destinationID ?? thread.destinationID
+    return aiChatDestinationRuntime(destinationID) == .openClaw
+  }
+
+  private func startPendingOpenClawTurnRecovery() {
+    for threadID in pendingOpenClawRecoveryThreadIDs() {
+      scheduleOpenClawPendingTurnRecovery(for: threadID, initialDelaySeconds: 0)
     }
   }
 
@@ -15698,7 +16079,7 @@ public final class WorkspaceStore: ObservableObject {
         if isActiveAIChatSendOrigin(sendOrigin) {
           openClawStatusText = "OpenClaw will reconnect to this saved turn"
         }
-        scheduleOpenClawPendingTurnRecovery()
+        scheduleOpenClawPendingTurnRecovery(for: threadID)
       }
     }
 
@@ -15714,33 +16095,52 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
-  private func scheduleOpenClawPendingTurnRecovery() {
-    guard openClawRecoveryRetryTask == nil,
-          openClawChatThreads.contains(where: { $0.pendingTurn != nil })
-    else {
-      return
-    }
-    openClawRecoveryRetryTask = Task { @MainActor [weak self] in
-      var delaySeconds: UInt64 = 5
+  private func scheduleOpenClawPendingTurnRecovery(
+    for threadID: UUID,
+    initialDelaySeconds: UInt64 = 5
+  ) {
+    guard openClawRecoveryTasksByThreadID[threadID] == nil,
+          hasPendingOpenClawRecovery(in: threadID)
+    else { return }
+
+    let token = UUID()
+    openClawRecoveryTaskTokensByThreadID[threadID] = token
+    openClawRecoveryTasksByThreadID[threadID] = Task { @MainActor [weak self] in
+      var delaySeconds = initialDelaySeconds
       while !Task.isCancelled {
-        do {
-          try await Task.sleep(nanoseconds: delaySeconds * 1_000_000_000)
-        } catch {
-          break
+        if delaySeconds > 0 {
+          do {
+            try await Task.sleep(nanoseconds: delaySeconds * 1_000_000_000)
+          } catch {
+            break
+          }
         }
-        guard let self,
-              self.openClawChatThreads.contains(where: { $0.pendingTurn != nil })
-        else {
-          break
-        }
-        await self.recoverPendingOpenClawTurns()
-        guard self.openClawChatThreads.contains(where: { $0.pendingTurn != nil }) else {
-          break
-        }
-        delaySeconds = min(delaySeconds * 2, 60)
+        guard let self, self.hasPendingOpenClawRecovery(in: threadID) else { break }
+        await self.recoverPendingOpenClawTurn(in: threadID)
+        guard !Task.isCancelled,
+              self.hasPendingOpenClawRecovery(in: threadID)
+        else { break }
+        delaySeconds = delaySeconds == 0 ? 5 : min(delaySeconds * 2, 60)
       }
-      self?.openClawRecoveryRetryTask = nil
+      guard let self,
+            self.openClawRecoveryTaskTokensByThreadID[threadID] == token
+      else { return }
+      self.openClawRecoveryTasksByThreadID.removeValue(forKey: threadID)
+      self.openClawRecoveryTaskTokensByThreadID.removeValue(forKey: threadID)
     }
+  }
+
+  private func cancelOpenClawPendingTurnRecovery(for threadID: UUID) {
+    openClawRecoveryTasksByThreadID.removeValue(forKey: threadID)?.cancel()
+    openClawRecoveryTaskTokensByThreadID.removeValue(forKey: threadID)
+  }
+
+  private func cancelAllOpenClawPendingTurnRecovery() {
+    for task in openClawRecoveryTasksByThreadID.values {
+      task.cancel()
+    }
+    openClawRecoveryTasksByThreadID.removeAll()
+    openClawRecoveryTaskTokensByThreadID.removeAll()
   }
 
   public func refreshCodexAccount() async {
@@ -16148,24 +16548,28 @@ public final class WorkspaceStore: ObservableObject {
         forRuntimeThreadID: runtimeThreadID,
         destinationID: destinationID
       ) else { return }
-      openClawLastEventAtByThreadID[threadID] = Date()
-      openClawStreamingReplyByThreadID[threadID] = CodexStreamingText.appending(
+      openClawLiveState.noteEvent(for: threadID, coalesced: true)
+      let streamingReply = CodexStreamingText.appending(
         delta,
         itemID: itemID,
         after: codexStreamingItemIDByThreadID[threadID],
-        to: openClawStreamingReplyByThreadID[threadID] ?? ""
+        to: openClawLiveState.streamingReply(for: threadID)
       )
+      openClawLiveState.replaceStreamingReply(streamingReply, for: threadID, coalesced: true)
       codexStreamingItemIDByThreadID[threadID] = itemID
       if selectedOpenClawChatThreadID == threadID {
-        openClawStatusText = "\(destinationName) is replying"
+        let nextStatus = "\(destinationName) is replying"
+        if openClawStatusText != nextStatus {
+          openClawStatusText = nextStatus
+        }
       }
     case .reasoningDelta(let runtimeThreadID, _, let delta):
       guard let threadID = localChatThreadID(
         forRuntimeThreadID: runtimeThreadID,
         destinationID: destinationID
       ) else { return }
-      openClawLastEventAtByThreadID[threadID] = Date()
-      openClawReasoningByThreadID[threadID, default: ""] += delta
+      openClawLiveState.noteEvent(for: threadID, coalesced: true)
+      openClawLiveState.appendReasoningDelta(delta, for: threadID)
     case .activity(
       let runtimeThreadID,
       let turnID,
@@ -16542,7 +16946,14 @@ public final class WorkspaceStore: ObservableObject {
       ?? openClawChatThreads.first(where: { $0.id == threadID })?.destinationID
       ?? AIChatDestinationConfiguration.openClawID
     let destinationName = aiChatDestination(id: resolvedDestinationID)?.name ?? "OpenClaw"
-    openClawLastEventAtByThreadID[threadID] = Date()
+    let coalescesEventTimestamp: Bool
+    switch event {
+    case .text(_, _), .reasoning(_, _):
+      coalescesEventTimestamp = true
+    default:
+      coalescesEventTimestamp = false
+    }
+    openClawLiveState.noteEvent(for: threadID, coalesced: coalescesEventTimestamp)
     switch event {
     case .connection(let state, let detail):
       openClawGatewayStateByThreadID[threadID] = state
@@ -16559,16 +16970,19 @@ public final class WorkspaceStore: ObservableObject {
       if replace {
         openClawStreamingReplyByThreadID[threadID] = text
       } else {
-        openClawStreamingReplyByThreadID[threadID, default: ""] += text
+        openClawLiveState.appendStreamingDelta(text, for: threadID)
       }
       if selectedOpenClawChatThreadID == threadID {
-        openClawStatusText = "\(destinationName) is replying"
+        let nextStatus = "\(destinationName) is replying"
+        if openClawStatusText != nextStatus {
+          openClawStatusText = nextStatus
+        }
       }
     case .reasoning(let text, let replace):
       if replace {
         openClawReasoningByThreadID[threadID] = text
       } else {
-        openClawReasoningByThreadID[threadID, default: ""] += text
+        openClawLiveState.appendReasoningDelta(text, for: threadID)
       }
     case .activity(let activity):
       var activities = openClawRunActivitiesByThreadID[threadID] ?? []
@@ -16949,6 +17363,59 @@ public final class WorkspaceStore: ObservableObject {
     return !isActiveAIChatMessage(messageID, in: threadID)
   }
 
+  public func canSteerQueuedAIChatMessage(_ messageID: UUID) -> Bool {
+    guard let threadID = openClawThreadID(containing: messageID),
+          isAIChatMessageQueued(messageID),
+          isAIChatThreadRunning(threadID)
+    else { return false }
+    return canSteerAIChatThread(threadID)
+  }
+
+  public func steerQueuedAIChatMessage(_ messageID: UUID) async {
+    guard let threadID = openClawThreadID(containing: messageID),
+          canSteerQueuedAIChatMessage(messageID),
+          var pendingIDs = openClawPendingUserMessageIDsByThreadID[threadID],
+          let pendingIndex = pendingIDs.firstIndex(of: messageID)
+    else { return }
+
+    var messages = openClawMessages(for: threadID)
+    guard let messageIndex = messages.firstIndex(where: { $0.id == messageID }) else {
+      return
+    }
+    let message = messages[messageIndex]
+    pendingIDs.remove(at: pendingIndex)
+    if pendingIDs.isEmpty {
+      openClawPendingUserMessageIDsByThreadID.removeValue(forKey: threadID)
+    } else {
+      openClawPendingUserMessageIDsByThreadID[threadID] = pendingIDs
+    }
+    messages[messageIndex] = OpenClawChatMessage(
+      id: message.id,
+      role: message.role,
+      content: message.content,
+      attachments: message.attachments,
+      createdAt: message.createdAt,
+      changeSummary: message.changeSummary,
+      responseTrace: message.responseTrace,
+      deliveryStatus: .sending,
+      deliveryKind: .steer,
+      audience: message.audience,
+      targetRuntime: message.targetRuntime,
+      audienceDestinationIDs: message.audienceDestinationIDs,
+      targetDestinationID: message.targetDestinationID,
+      isRoomDispatchCopy: message.isRoomDispatchCopy,
+      roomRoundID: message.roomRoundID
+    )
+    replaceOpenClawMessages(messages, for: threadID, shouldPersist: true)
+    syncSelectedOpenClawSendState()
+    if selectedOpenClawChatThreadID == threadID {
+      let destinationID = openClawChatThreads.first(where: { $0.id == threadID })?.destinationID
+        ?? AIChatDestinationConfiguration.openClawID
+      openClawStatusText = "Steering \(aiChatDestinationTitle(destinationID))…"
+    }
+    await deliverAIChatSteer(messages[messageIndex], in: threadID)
+  }
+
   public func deleteQueuedAIChatMessage(_ messageID: UUID) {
     guard dequeueAIChatMessage(messageID) != nil else { return }
     openClawStatusText = "Removed queued message"
@@ -17039,6 +17506,7 @@ public final class WorkspaceStore: ObservableObject {
     in threadID: UUID,
     transcriptURL: URL? = nil
   ) {
+    cancelOpenClawPendingTurnRecovery(for: threadID)
     let targetTranscriptURL = transcriptURL ?? openClawTranscriptURL
     stoppedOpenClawThreadIDs.insert(threadID)
     let pendingTurn = openClawChatThread(
@@ -17604,9 +18072,10 @@ public final class WorkspaceStore: ObservableObject {
       )
     }
 
-    if selectedSurface != .home {
-      markWorkspaceSurfacesDirty([selectedSurface], refreshVisible: true)
-    }
+    // Activation itself is not a data change. File events, the selected-file
+    // freshness check above, source sync, and run-review polling invalidate the
+    // relevant surfaces. Unconditionally invalidating the visible surface here
+    // made every Cmd-Tab launch a potentially corpus-wide refresh.
   }
 
   public func isWorkspaceSurfaceDirty(_ surface: WorkspaceSurface) -> Bool {
@@ -17978,6 +18447,7 @@ public final class WorkspaceStore: ObservableObject {
     clearOpenClawDraftForSelectedThread()
     openClawPendingAttachments = []
     if let threadID {
+      cancelOpenClawPendingTurnRecovery(for: threadID)
       if let index = openClawChatThreads.firstIndex(where: { $0.id == threadID }),
          openClawChatThreads[index].runtime == .codex || openClawChatThreads[index].isSharedRoom {
         openClawChatThreads[index] = openClawChatThreads[index]
@@ -18013,6 +18483,31 @@ public final class WorkspaceStore: ObservableObject {
 
   public var settledOpenClawChatThreads: [OpenClawChatThread] {
     archivedOpenClawChatThreads
+  }
+
+  public var sidebarOpenClawChatThreads: [OpenClawChatThread] {
+    guard let promotedThread = sidebarPromotedOpenClawChatThread else {
+      return visibleOpenClawChatThreads
+    }
+    return [promotedThread] + visibleOpenClawChatThreads.filter { $0.id != promotedThread.id }
+  }
+
+  public var sidebarSettledOpenClawChatThreads: [OpenClawChatThread] {
+    guard let promotedThread = sidebarPromotedOpenClawChatThread,
+          promotedThread.isSettled
+    else {
+      return settledOpenClawChatThreads
+    }
+    return settledOpenClawChatThreads.filter { $0.id != promotedThread.id }
+  }
+
+  private var sidebarPromotedOpenClawChatThread: OpenClawChatThread? {
+    guard let sidebarPromotedOpenClawChatThreadID,
+          selectedOpenClawChatThreadID == sidebarPromotedOpenClawChatThreadID
+    else {
+      return nil
+    }
+    return openClawChatThreads.first { $0.id == sidebarPromotedOpenClawChatThreadID }
   }
 
   private func rebuildOpenClawThreadDisplayCache() {
@@ -18329,6 +18824,7 @@ public final class WorkspaceStore: ObservableObject {
 
   public func selectOpenClawChatThread(_ id: UUID) {
     guard openClawChatThreads.contains(where: { $0.id == id }) else { return }
+    sidebarPromotedOpenClawChatThreadID = nil
     if selectedOpenClawChatThreadID != id {
       recordCurrentNavigationDestination()
     }
@@ -18338,6 +18834,7 @@ public final class WorkspaceStore: ObservableObject {
   public func selectOpenClawChatSearchResult(_ result: OpenClawChatSearchResult) {
     navigateToSurface(.openClaw)
     selectOpenClawChatThread(result.threadID)
+    sidebarPromotedOpenClawChatThreadID = result.threadID
     statusText = "Opened chat thread"
   }
 
@@ -18486,6 +18983,7 @@ public final class WorkspaceStore: ObservableObject {
     guard let thread = openClawChatThreads.first(where: { $0.id == id }) else {
       return
     }
+    let clearsUnreadMessages = thread.unreadMessageCount != 0
     saveOpenClawDraftForSelectedThread()
     selectedOpenClawChatThreadID = thread.id
     openClawSessionKey = thread.sessionKey
@@ -18509,7 +19007,9 @@ public final class WorkspaceStore: ObservableObject {
     replaceOpenClawMessages(thread.messages, shouldPersist: false)
     if persistsSelection {
       persistSelectedAIChatThread()
-      scheduleOpenClawTranscriptPersistenceAfterInteraction()
+      if clearsUnreadMessages {
+        scheduleOpenClawTranscriptPersistenceAfterInteraction()
+      }
     }
   }
 
@@ -18661,6 +19161,8 @@ public final class WorkspaceStore: ObservableObject {
     for sound: AIChatMessageSound
   ) -> @MainActor () -> Void {
     switch sound {
+    case .org2:
+      return { WorkspaceSound.playBundledNewMessageSound() }
     case .systemAlert:
       return { WorkspaceSound.beep() }
     case .off:
@@ -19897,6 +20399,7 @@ public final class WorkspaceStore: ObservableObject {
     agendaDisplaySections = Self.makeAgendaDisplaySections(
       agenda: agenda,
       mode: agendaMode,
+      overdueOrder: agendaOverdueOrder,
       filter: agendaFilter,
       buckets: agendaDisplayBuckets,
       filterTextByItemID: agendaFilterTextByItemID
@@ -19904,22 +20407,61 @@ public final class WorkspaceStore: ObservableObject {
     visibleAgendaItems = agendaDisplaySections.flatMap(\.items)
   }
 
-  private func rebuildAgentRunDisplayCache() {
-    var counts: [AgentRunScope: Int] = [:]
-    var filteredEntries: [AgentRunScope: [AgentRunScopeEntry]] = [:]
-    counts.reserveCapacity(AgentRunScope.allCases.count)
-    filteredEntries.reserveCapacity(AgentRunScope.allCases.count)
+  private func rebuildAgentRunDisplayCache(rebuildSourceIndexes: Bool = false) {
+    if rebuildSourceIndexes {
+      var counts: [AgentRunScope: Int] = [:]
+      var entriesByScope: [AgentRunScope: [AgentRunScopeEntry]] = [:]
+      counts.reserveCapacity(AgentRunScope.allCases.count)
+      entriesByScope.reserveCapacity(AgentRunScope.allCases.count)
+      for scope in AgentRunScope.allCases {
+        let entries = scope.entries(in: agentRuns)
+        entriesByScope[scope] = entries
+        counts[scope] = entries.count
+      }
+      agentRunScopeCounts = counts
+      agentRunScopeEntriesByScope = entriesByScope
 
-    for scope in AgentRunScope.allCases {
-      let entries = scope.entries(in: agentRuns)
-      counts[scope] = entries.count
-      filteredEntries[scope] = agentRunFilterTerms.isEmpty
-        ? entries
-        : entries.filter { agentRunMatchesFilter($0.run) }
+      let sourceMeetingContexts = RunCenterPresentation.sourceMeetingContextsByRunID(in: agentRuns)
+      var runIDsBySourceMeetingReference: [String: [AgentRunItem.ID]] = [:]
+      runIDsBySourceMeetingReference.reserveCapacity(min(sourceMeetingContexts.count, 32))
+      for run in agentRuns {
+        guard let context = sourceMeetingContexts[run.id] else { continue }
+        let reference = context.fileReference ?? context.ref
+        runIDsBySourceMeetingReference[reference, default: []].append(run.id)
+      }
+      agentRunSourceMeetingContextsByID = sourceMeetingContexts
+      agentRunIDsBySourceMeetingReference = runIDsBySourceMeetingReference
     }
 
-    agentRunScopeCounts = counts
+    var filteredEntries: [AgentRunScope: [AgentRunScopeEntry]] = [:]
+    var filteredIDs: [AgentRunScope: [AgentRunItem.ID]] = [:]
+    var filteredIDSets: [AgentRunScope: Set<AgentRunItem.ID>] = [:]
+    var sectionsByScope: [AgentRunScope: [RunCenterSection]] = [:]
+    filteredEntries.reserveCapacity(AgentRunScope.allCases.count)
+    filteredIDs.reserveCapacity(AgentRunScope.allCases.count)
+    filteredIDSets.reserveCapacity(AgentRunScope.allCases.count)
+    sectionsByScope.reserveCapacity(AgentRunScope.allCases.count)
+
+    for scope in AgentRunScope.allCases {
+      let entries = agentRunScopeEntriesByScope[scope] ?? []
+      let visibleEntries = agentRunFilterTerms.isEmpty
+        ? entries
+        : entries.filter { agentRunMatchesFilter($0.run) }
+      filteredEntries[scope] = visibleEntries
+      let visibleIDs = visibleEntries.map(\.id)
+      filteredIDs[scope] = visibleIDs
+      filteredIDSets[scope] = Set(visibleIDs)
+      sectionsByScope[scope] = RunCenterPresentation.sections(
+        for: visibleEntries,
+        sourceMeetingContexts: agentRunSourceMeetingContextsByID
+      )
+    }
+
     filteredAgentRunScopeEntries = filteredEntries
+    filteredAgentRunScopeIDs = filteredIDs
+    filteredAgentRunScopeIDSets = filteredIDSets
+    agentRunSectionsByScope = sectionsByScope
+    agentRunDisplayRevision &+= 1
   }
 
   private func rebuildAgendaSearchIndex() {
@@ -19960,6 +20502,7 @@ public final class WorkspaceStore: ObservableObject {
   private static func makeAgendaDisplaySections(
     agenda: AgendaPayload?,
     mode: AgendaMode,
+    overdueOrder: AgendaOverdueOrder,
     filter: String,
     buckets: AgendaDisplayBuckets,
     filterTextByItemID: [AgendaItem.ID: String]
@@ -19971,7 +20514,10 @@ public final class WorkspaceStore: ObservableObject {
       let searchText = filterTextByItemID[item.id] ?? item.agendaFilterText
       return terms.allSatisfy { searchText.contains($0) }
     }
-    let overdue = buckets.overdue.filter(matchesFilter)
+    let overdue = sortedOverdueItems(
+      buckets.overdue.filter(matchesFilter),
+      order: overdueOrder
+    )
     let today = buckets.today.filter(matchesFilter)
     let next7 = buckets.next7.filter(matchesFilter)
     let later = buckets.later.filter(matchesFilter)
@@ -20000,6 +20546,46 @@ public final class WorkspaceStore: ObservableObject {
       ].filter { !$0.items.isEmpty }
     case .assigned:
       return []
+    }
+  }
+
+  nonisolated static func sortedOverdueItems(
+    _ items: [AgendaItem],
+    order: AgendaOverdueOrder
+  ) -> [AgendaItem] {
+    guard order == .priority else { return items }
+
+    return items.enumerated().sorted { left, right in
+      let leftRank = agendaPriorityRank(left.element.priority)
+      let rightRank = agendaPriorityRank(right.element.priority)
+      if leftRank != rightRank {
+        return leftRank < rightRank
+      }
+      return left.offset < right.offset
+    }.map(\.element)
+  }
+
+  nonisolated private static func agendaPriorityRank(_ rawPriority: String?) -> Int {
+    guard var priority = rawPriority?.trimmingCharacters(in: .whitespacesAndNewlines),
+          !priority.isEmpty
+    else {
+      return Int.max
+    }
+    if priority.hasPrefix("[#"), priority.hasSuffix("]"), priority.count == 4 {
+      priority = String(priority.dropFirst(2).dropLast())
+    }
+    guard let scalar = priority.uppercased().unicodeScalars.first,
+          priority.unicodeScalars.count == 1
+    else {
+      return Int.max - 1
+    }
+    switch scalar.value {
+    case 65...90:
+      return Int(scalar.value - 65)
+    case 48...57:
+      return 26 + Int(scalar.value - 48)
+    default:
+      return Int.max - 1
     }
   }
 
@@ -20380,6 +20966,42 @@ public final class WorkspaceStore: ObservableObject {
 
   func agentRunEntries(for scope: AgentRunScope) -> [AgentRunScopeEntry] {
     filteredAgentRunScopeEntries[scope] ?? []
+  }
+
+  func agentRunIDs(for scope: AgentRunScope) -> [AgentRunItem.ID] {
+    filteredAgentRunScopeIDs[scope] ?? []
+  }
+
+  func isAgentRunVisible(_ id: AgentRunItem.ID, in scope: AgentRunScope) -> Bool {
+    filteredAgentRunScopeIDSets[scope]?.contains(id) == true
+  }
+
+  func agentRunSections(for scope: AgentRunScope) -> [RunCenterSection] {
+    agentRunSectionsByScope[scope] ?? []
+  }
+
+  func agentRun(for id: AgentRunItem.ID) -> AgentRunItem? {
+    agentRunsByID[id]
+  }
+
+  func agentRunCount(goalRef: String) -> Int {
+    agentRunCountByGoalRef[goalRef, default: 0]
+  }
+
+  func agentRunCount(agentRef: String) -> Int {
+    agentRunCountByAgentRef[agentRef, default: 0]
+  }
+
+  func agentRunSourceMeetingContext(for runID: AgentRunItem.ID) -> AgentRunContextItem? {
+    agentRunSourceMeetingContextsByID[runID]
+  }
+
+  func relatedAgentRuns(for runID: AgentRunItem.ID) -> [AgentRunItem] {
+    guard let context = agentRunSourceMeetingContextsByID[runID] else { return [] }
+    let reference = context.fileReference ?? context.ref
+    return agentRunIDsBySourceMeetingReference[reference, default: []].compactMap { candidateID in
+      candidateID == runID ? nil : agentRunsByID[candidateID]
+    }
   }
 
   func agentRunCount(for scope: AgentRunScope) -> Int {
@@ -23744,8 +24366,7 @@ public final class WorkspaceStore: ObservableObject {
 
     openClawTranscriptURL = targetURL
     openClawSessionKey = Self.makeOpenClawSessionKey(agentID: openClawAgentID)
-    openClawRecoveryRetryTask?.cancel()
-    openClawRecoveryRetryTask = nil
+    cancelAllOpenClawPendingTurnRecovery()
     syncSelectedOpenClawSendState()
     applyOpenClawTranscript(transcript, shouldPersist: shouldPersistMigratedMessages)
   }
@@ -26821,7 +27442,9 @@ public final class WorkspaceStore: ObservableObject {
           return true
         }
         guard shouldContinue else { return }
-        try? await Task.sleep(nanoseconds: 200_000_000)
+        try? await Task.sleep(
+          nanoseconds: Self.meetingTranscriptionProgressPublishIntervalNanoseconds
+        )
       }
     }
     return id
@@ -26837,8 +27460,7 @@ public final class WorkspaceStore: ObservableObject {
     meetingTranscriptionProgressTitle = ""
     meetingTranscriptionStartedAt = nil
     meetingTranscriptionEstimatedDuration = 120
-    meetingTranscriptionProgress = 0
-    meetingTranscriptionElapsedText = ""
+    meetingTranscriptionProgressState.reset()
   }
 
   private func updateMeetingTranscriptionProgress() {
@@ -26847,10 +27469,13 @@ public final class WorkspaceStore: ObservableObject {
       elapsed: elapsed,
       estimatedDuration: meetingTranscriptionEstimatedDuration
     )
-    meetingTranscriptionProgress = progress
-    meetingTranscriptionElapsedText = Self.openClawVoiceTranscriptionElapsedText(elapsed: elapsed)
-    guard !meetingTranscriptionProgressTitle.isEmpty, !isRecordingMeeting else { return }
-    meetingStatusText = "Transcribing \(meetingTranscriptionProgressTitle) locally... \(Int(progress * 100))%"
+    meetingTranscriptionProgressState.publish(
+      progress: progress,
+      elapsedText: Self.openClawVoiceTranscriptionElapsedText(elapsed: elapsed)
+    )
+    // The dedicated progress view observes the isolated state above. Keep the
+    // workspace-wide status static while transcription runs so a changing
+    // percentage does not invalidate every surface in the app.
   }
 
   nonisolated static func estimatedMeetingTranscriptionDuration(for audioDuration: TimeInterval?) -> TimeInterval {
@@ -26941,9 +27566,13 @@ public final class WorkspaceStore: ObservableObject {
       )
     }
 
-    async let microphone = transcribeAudioForMeeting(microphoneAudioURL)
-    async let systemAudio = transcribeAudioForMeeting(systemAudioURL)
-    return await MeetingTranscriptResult.combined(
+    // Both local transcribers are compute-heavy. Running them concurrently can
+    // oversubscribe every core (each whisper.cpp process has its own thread
+    // pool), starving input, scrolling, and window activation. Preserve the
+    // two-source transcript while using one background lane at a time.
+    let microphone = await transcribeAudioForMeeting(microphoneAudioURL)
+    let systemAudio = await transcribeAudioForMeeting(systemAudioURL)
+    return MeetingTranscriptResult.combined(
       microphone: microphone,
       systemAudio: systemAudio,
       systemAudioCaptureError: systemAudioCaptureError
@@ -26977,15 +27606,16 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   private func refreshAfterMeetingWrite(selecting item: MeetingWorkspaceItem) async {
-    await refreshMeetings()
-    if let refreshed = meetings.first(where: { $0.file == item.file }) {
-      selectMeeting(refreshed)
+    if let existingIndex = meetings.firstIndex(where: { $0.file == item.file }) {
+      meetings[existingIndex] = item
     } else {
       meetings.insert(item, at: 0)
-      selectMeeting(item)
     }
-    await refreshAgenda()
-    Task { await refreshOpenClawThreads(showsLoading: false) }
+    selectMeeting(item)
+    // The file watcher incrementally updates indexes and marks dependent
+    // surfaces dirty. Avoid immediately repeating full meeting, agenda, and
+    // chat scans after the artifact writer has already produced the item.
+    markWorkspaceSurfacesDirty([.agenda, .files, .search], refreshVisible: false)
   }
 
   private func beginMeetingProcessing(paths: MeetingArtifactPaths, status: String) {

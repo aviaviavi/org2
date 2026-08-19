@@ -571,6 +571,7 @@ function getChildrenArray(node: DocumentNode | HeadlineNode): Node[] {
 
 type ParsedListItem = {
   ordered: boolean;
+  ordinal?: number;
   content: string;
   indentColumn: number;
   checkbox?: "unchecked" | "checked";
@@ -730,6 +731,7 @@ function parseListItemLine(line: string): ParsedListItem | null {
 
     return {
       ordered: true,
+      ordinal: Number.parseInt(ordered[1], 10),
       indentColumn: ordered[1].length + ordered[2].length + ws.length,
       ...parsedContent,
     };
@@ -738,9 +740,15 @@ function parseListItemLine(line: string): ParsedListItem | null {
   return null;
 }
 
-function listItemNode(content: string, checkbox?: "unchecked" | "checked", progressCookie?: ProgressCookieNode): ListItemNode {
+function listItemNode(
+  content: string,
+  checkbox?: "unchecked" | "checked",
+  progressCookie?: ProgressCookieNode,
+  ordinal?: number,
+): ListItemNode {
   return {
     type: "ListItem",
+    ...(ordinal !== undefined ? { ordinal } : {}),
     ...(checkbox ? { checkbox } : {}),
     ...(progressCookie ? { progressCookie } : {}),
     children: [paragraphFromText(content)],
@@ -1097,9 +1105,16 @@ export function parseOrgToCanonicalAst(input: string, options: ParseOptions = {}
     return list;
   }
 
-  function addListItem(ordered: boolean, content: string, checkbox?: "unchecked" | "checked", itemProgressCookie?: ProgressCookieNode): ListItemNode {
+  function addListItem(
+    ordered: boolean,
+    content: string,
+    checkbox?: "unchecked" | "checked",
+    itemProgressCookie?: ProgressCookieNode,
+    sourceOrdinal?: number,
+  ): ListItemNode {
     const list = ensureList(ordered);
-    const item = listItemNode(content, checkbox, itemProgressCookie);
+    const ordinal = ordered && sourceOrdinal !== list.items.length + 1 ? sourceOrdinal : undefined;
+    const item = listItemNode(content, checkbox, itemProgressCookie, ordinal);
     list.items.push(item);
     return item;
   }
@@ -1281,7 +1296,13 @@ export function parseOrgToCanonicalAst(input: string, options: ParseOptions = {}
     if (listItem) {
       flushParagraph();
       flushAffiliatedKeywords();
-      const item = addListItem(listItem.ordered, listItem.content, listItem.checkbox, listItem.progressCookie);
+      const item = addListItem(
+        listItem.ordered,
+        listItem.content,
+        listItem.checkbox,
+        listItem.progressCookie,
+        listItem.ordinal,
+      );
       i += 1;
 
       let itemParagraphLines: string[] = [];
@@ -1388,7 +1409,16 @@ export function parseOrgToCanonicalAst(input: string, options: ParseOptions = {}
                   nestedItemParaLines = [];
                 }
                 
-                const nestedListItem = listItemNode(nestedItem.content, nestedItem.checkbox, nestedItem.progressCookie);
+                const nestedOrdinal = nestedItem.ordered
+                  && nestedItem.ordinal !== nestedList.items.length + 1
+                  ? nestedItem.ordinal
+                  : undefined;
+                const nestedListItem = listItemNode(
+                  nestedItem.content,
+                  nestedItem.checkbox,
+                  nestedItem.progressCookie,
+                  nestedOrdinal,
+                );
                 nestedList.items.push(nestedListItem);
                 i += 1;
                 
@@ -1446,7 +1476,16 @@ export function parseOrgToCanonicalAst(input: string, options: ParseOptions = {}
                           if (deeperItemIndentColumn < nextNestedItemIndentColumn) break;
                           if (deeperList.ordered != deeperItem.ordered) break;
 
-                          const deeperListItem = listItemNode(deeperItem.content, deeperItem.checkbox, deeperItem.progressCookie);
+                          const deeperOrdinal = deeperItem.ordered
+                            && deeperItem.ordinal !== deeperList.items.length + 1
+                            ? deeperItem.ordinal
+                            : undefined;
+                          const deeperListItem = listItemNode(
+                            deeperItem.content,
+                            deeperItem.checkbox,
+                            deeperItem.progressCookie,
+                            deeperOrdinal,
+                          );
                           deeperList.items.push(deeperListItem);
                           i += 1;
                         }

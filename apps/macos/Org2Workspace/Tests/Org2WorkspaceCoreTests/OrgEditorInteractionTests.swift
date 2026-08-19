@@ -9,6 +9,93 @@ private var retainedInteractionWindows: [NSWindow] = []
 
 @MainActor
 final class OrgEditorInteractionTests: XCTestCase {
+  func testRenderedDocumentLoadsLocalImageBesideSourceFile() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-rendered-local-image-\(UUID().uuidString)", isDirectory: true)
+    let images = root.appendingPathComponent("images", isDirectory: true)
+    try FileManager.default.createDirectory(at: images, withIntermediateDirectories: true)
+    try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: root.path)
+    try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: images.path)
+    let sourceFile = root.appendingPathComponent("page.org2")
+    let sourceText = "* Page\n[[file:images/pixel.png]]"
+    try sourceText.write(to: sourceFile, atomically: true, encoding: .utf8)
+    let imageData = try XCTUnwrap(Data(base64Encoded:
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+    ))
+    try imageData.write(to: images.appendingPathComponent("pixel.png"))
+    try FileManager.default.setAttributes(
+      [.posixPermissions: 0o600],
+      ofItemAtPath: images.appendingPathComponent("pixel.png").path
+    )
+
+    let source = EntrySource(
+      file: "page.org2",
+      startLine: 1,
+      endLineExclusive: 3,
+      text: sourceText,
+      isSubtree: false
+    )
+    let html = try await Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()).renderAppHTML(
+      source.text,
+      sourcePath: source.file
+    )
+    let content = OrgHTMLDocumentView(
+      html: html,
+      source: source,
+      corpusRoot: root,
+      searchQuery: nil,
+      searchOccurrenceIndex: nil,
+      searchOccurrenceCount: 0,
+      scrollRequest: nil,
+      layout: OrgHTMLDocumentLayout(width: .comfortable, margin: .standard),
+      askAIAboutHeading: { _ in },
+      reportStatus: { _ in }
+    )
+    let hostingView = NSHostingView(rootView: content)
+    let window = NSWindow(
+      contentRect: NSRect(x: 0, y: 0, width: 600, height: 400),
+      styleMask: [.titled, .closable],
+      backing: .buffered,
+      defer: false
+    )
+    window.contentView = hostingView
+    window.makeKeyAndOrderFront(nil)
+    retainedInteractionWindows.append(window)
+
+    var webView: WKWebView?
+    try await waitForCondition {
+      webView = firstWebView(in: window.contentView)
+      return webView != nil
+    }
+    let renderedWebView = try XCTUnwrap(webView)
+    let readinessDeadline = Date().addingTimeInterval(5)
+    var imageIsComplete = false
+    while Date() < readinessDeadline && !imageIsComplete {
+      imageIsComplete = (try? await renderedWebView.callAsyncJavaScript(
+        "return document.querySelector('.org2-image')?.complete === true;",
+        arguments: [:],
+        in: nil,
+        contentWorld: .page
+      )) as? Bool == true
+      if !imageIsComplete { try await pumpRunLoop() }
+    }
+    XCTAssertTrue(imageIsComplete)
+    let naturalWidth = try await renderedWebView.callAsyncJavaScript(
+      "return document.querySelector('.org2-image')?.naturalWidth || 0;",
+      arguments: [:],
+      in: nil,
+      contentWorld: .page
+    ) as? Int
+    XCTAssertEqual(naturalWidth, 1)
+    let currentSource = try await renderedWebView.callAsyncJavaScript(
+      "return document.querySelector('.org2-image')?.currentSrc || '';",
+      arguments: [:],
+      in: nil,
+      contentWorld: .page
+    ) as? String
+    XCTAssertTrue(try XCTUnwrap(currentSource).hasPrefix("org2-resource://local?target="))
+  }
+
   func testRenderedViewportRestoresAndReportsTheVisibleSourceLine() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-rendered-viewport-\(UUID().uuidString)", isDirectory: true)
@@ -242,18 +329,20 @@ final class OrgEditorInteractionTests: XCTestCase {
       .appendingPathComponent("org2-workspace-interactive-table-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     let file = root.appendingPathComponent("table.org2")
-    let text = """
-    | Name | Score |
-    |------+-------|
-    | Zebra | 2 |
-    | Ant | 10 |
-    | Mouse | 3 |
-    """
+    let tableRows = [
+      "| Zebra | 2 |",
+      "| Ant | 10 |",
+      "| Mouse | 3 |",
+    ] + (0..<202).map { "| Row \($0) | \($0) |" }
+    let text = ([
+      "| Name | Score |",
+      "|------+-------|",
+    ] + tableRows).joined(separator: "\n")
     try text.write(to: file, atomically: true, encoding: .utf8)
     let source = EntrySource(
       file: file.path,
       startLine: 1,
-      endLineExclusive: 6,
+      endLineExclusive: text.components(separatedBy: "\n").count + 1,
       text: text,
       isSubtree: false
     )
@@ -311,6 +400,10 @@ final class OrgEditorInteractionTests: XCTestCase {
       """
       const filter = document.querySelector('.org2-table-filter');
       const sort = document.querySelector('.org2-table-sort-button');
+      const initialRowCount = document.querySelectorAll('tbody tr').length;
+      const initialCount = document.querySelector('.org2-table-row-count').innerText;
+      document.querySelector('[data-org2-table-show-more]').click();
+      const expandedRowCount = document.querySelectorAll('tbody tr').length;
       filter.value = 'a';
       filter.dispatchEvent(new Event('input', { bubbles: true }));
       sort.click();
@@ -320,7 +413,10 @@ final class OrgEditorInteractionTests: XCTestCase {
       document.querySelector('[data-org2-table-save]').click();
       return {
         visibleNames,
-        count: document.querySelector('.org2-table-row-count').innerText
+        count: document.querySelector('.org2-table-row-count').innerText,
+        initialCount,
+        initialRowCount,
+        expandedRowCount
       };
       """,
       arguments: [:],
@@ -329,10 +425,13 @@ final class OrgEditorInteractionTests: XCTestCase {
     ) as? [String: Any]
 
     try await waitForCondition { receivedSnapshot != nil }
+    XCTAssertEqual(state?["initialRowCount"] as? Int, 100)
+    XCTAssertEqual(state?["expandedRowCount"] as? Int, 200)
+    XCTAssertEqual(state?["initialCount"] as? String, "100 of 205 rows shown")
     XCTAssertEqual(state?["visibleNames"] as? [String], ["Zebra", "Ant"])
-    XCTAssertEqual(state?["count"] as? String, "2 of 3 rows")
+    XCTAssertEqual(state?["count"] as? String, "2 of 2 matching · 205 total")
     XCTAssertEqual(receivedSnapshot?.visibleBodyRowIndices, [0, 1])
-    XCTAssertEqual(receivedSnapshot?.totalBodyRowCount, 3)
+    XCTAssertEqual(receivedSnapshot?.totalBodyRowCount, 205)
     XCTAssertTrue(receivedSnapshot?.filterActive == true)
     XCTAssertTrue(receivedSnapshot?.sortActive == true)
     XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), sourceTextBeforeInteraction)
@@ -1367,30 +1466,24 @@ private struct EditorInteractionHarness {
     window.makeFirstResponder(textView)
     let start = CACurrentMediaTime()
     textView.doCommand(by: #selector(NSResponder.insertNewline(_:)))
-    try await pumpRunLoop()
     let elapsed = CACurrentMediaTime() - start
-    XCTAssertLessThan(elapsed, 0.35, "Return handling should not visibly stall")
+    XCTAssertLessThan(elapsed, 1.0 / 60.0, "Return handling must fit within one 60 Hz frame")
+    try await pumpRunLoop()
   }
 
   func pressReturnKey() async throws {
-    let start = CACurrentMediaTime()
-    try await sendKey("\r", keyCode: 36)
-    let elapsed = CACurrentMediaTime() - start
-    XCTAssertLessThan(elapsed, 0.35, "Return handling should not visibly stall")
+    let elapsed = try await sendKey("\r", keyCode: 36)
+    XCTAssertLessThan(elapsed, 1.0 / 60.0, "Return handling must fit within one 60 Hz frame")
   }
 
   func pressTab() async throws {
-    let start = CACurrentMediaTime()
-    try await sendCommand(#selector(NSResponder.insertTab(_:)))
-    let elapsed = CACurrentMediaTime() - start
-    XCTAssertLessThan(elapsed, 0.35, "Tab handling should not visibly stall")
+    let elapsed = try await sendCommand(#selector(NSResponder.insertTab(_:)))
+    XCTAssertLessThan(elapsed, 1.0 / 60.0, "Tab handling must fit within one 60 Hz frame")
   }
 
   func pressBacktab() async throws {
-    let start = CACurrentMediaTime()
-    try await sendCommand(#selector(NSResponder.insertBacktab(_:)))
-    let elapsed = CACurrentMediaTime() - start
-    XCTAssertLessThan(elapsed, 0.35, "Shift-Tab handling should not visibly stall")
+    let elapsed = try await sendCommand(#selector(NSResponder.insertBacktab(_:)))
+    XCTAssertLessThan(elapsed, 1.0 / 60.0, "Shift-Tab handling must fit within one 60 Hz frame")
   }
 
   func pressMoveUp() async throws {
@@ -1642,21 +1735,30 @@ private struct EditorInteractionHarness {
     return result
   }
 
-  private func sendKey(_ characters: String, keyCode: UInt16) async throws {
+  @discardableResult
+  private func sendKey(_ characters: String, keyCode: UInt16) async throws -> TimeInterval {
     let textView = try await focusedEditor()
     window.makeFirstResponder(textView)
     guard let event = Self.keyEvent(characters, keyCode: keyCode, windowNumber: window.windowNumber) else {
-      return XCTFail("Expected key event for \(characters)")
+      XCTFail("Expected key event for \(characters)")
+      return .infinity
     }
+    let startedAt = CACurrentMediaTime()
     textView.keyDown(with: event)
+    let elapsed = CACurrentMediaTime() - startedAt
     try await pumpRunLoop()
+    return elapsed
   }
 
-  private func sendCommand(_ selector: Selector) async throws {
+  @discardableResult
+  private func sendCommand(_ selector: Selector) async throws -> TimeInterval {
     let textView = try await focusedEditor()
     window.makeFirstResponder(textView)
+    let startedAt = CACurrentMediaTime()
     textView.doCommand(by: selector)
+    let elapsed = CACurrentMediaTime() - startedAt
     try await pumpRunLoop()
+    return elapsed
   }
 
   private static func keyEvent(

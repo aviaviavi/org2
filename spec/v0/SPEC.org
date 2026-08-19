@@ -328,6 +328,11 @@ Examples:
 - =1. first= → ordered list item with content "first"
 - =1) [x] done= → ordered list item with checked checkbox
 
+The canonical AST records =ordinal= on a =ListItem= when the written number
+differs from its implicit one-based position in that =List=. This preserves
+explicit starting numbers and discontinuous numbering when blank lines or rich
+child blocks split an ordered list into multiple AST fragments.
+
 ** Checkbox syntax
 
 A *checkbox* is an optional marker that appears at the start of list item content:

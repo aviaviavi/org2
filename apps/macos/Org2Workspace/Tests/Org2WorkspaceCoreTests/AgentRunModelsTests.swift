@@ -1071,6 +1071,58 @@ final class AgentRunModelsTests: XCTestCase {
     XCTAssertEqual(contexts["child-999"]?.ref, meetingRef)
   }
 
+  func testRunCenterBuildsLargeUngroupedSectionWithinInteractiveBudget() throws {
+    let runs = try (0..<4_205).map { index in
+      try makeRun(
+        id: "completed-\(index)",
+        goal: "Completed outcome \(index)",
+        status: "completed"
+      )
+    }
+    let entries = AgentRunScope.all.entries(in: runs)
+    let clock = ContinuousClock()
+    let startedAt = clock.now
+
+    let sections = RunCenterPresentation.sections(for: entries, allRuns: runs)
+
+    let elapsed = startedAt.duration(to: clock.now)
+    XCTAssertEqual(sections.count, 1)
+    XCTAssertEqual(sections[0].entries.count, runs.count)
+    XCTAssertLessThan(elapsed, .milliseconds(80), "Run scope switching must stay within an interactive frame budget")
+  }
+
+  func testRunCenterBoundsInitialRowsWithoutLosingSectionOrder() throws {
+    let meetingRef = "meetings/2026-08-17-performance.org2"
+    let meetingRuns = try (0..<200).map { index in
+      try makeRun(
+        id: "meeting-\(index)",
+        goal: "Meeting outcome \(index)",
+        status: "completed",
+        contextRefs: [meetingRef]
+      )
+    }
+    let ungroupedRuns = try (0..<200).map { index in
+      try makeRun(
+        id: "other-\(index)",
+        goal: "Other outcome \(index)",
+        status: "completed"
+      )
+    }
+    let runs = meetingRuns + ungroupedRuns
+    let sections = RunCenterPresentation.sections(
+      for: AgentRunScope.all.entries(in: runs),
+      allRuns: runs
+    )
+
+    let initialSections = RunCenterPresentation.prefixSections(sections, limit: 250)
+
+    XCTAssertEqual(initialSections.flatMap(\.entries).count, 250)
+    XCTAssertEqual(initialSections.map(\.id), ["meeting:\(meetingRef)", "other"])
+    XCTAssertEqual(initialSections[0].entries.count, 200)
+    XCTAssertEqual(initialSections[1].entries.count, 50)
+    XCTAssertEqual(initialSections[1].entries.last?.id, "other-49")
+  }
+
   func testAgentRunTimestampUsesLocalReadableTime() throws {
     let timeZone = try XCTUnwrap(TimeZone(identifier: "America/Los_Angeles"))
     let locale = Locale(identifier: "en_US")

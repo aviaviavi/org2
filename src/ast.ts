@@ -170,6 +170,8 @@ export type TableNode = {
 
 export type ListItemNode = {
   type: "ListItem";
+  /** Written ordinal when it differs from the item's implicit one-based position. */
+  ordinal?: number;
   checkbox?: "unchecked" | "checked";
   progressCookie?: ProgressCookieNode;
   children: Node[];

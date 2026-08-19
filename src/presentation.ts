@@ -605,7 +605,8 @@ function renderParagraph(node: ParagraphNode, latexAttributes?: string): string 
 function renderListItem(item: ListItemNode): string {
   const checkbox = item.checkbox === "checked" ? "[x] " : item.checkbox === "unchecked" ? "[ ] " : "";
   const body = renderAstNodes(item.children).trim();
-  return `\\item ${escapeLatexText(checkbox)}${body}`;
+  const ordinal = item.ordinal !== undefined ? `[${item.ordinal}.]` : "";
+  return `\\item${ordinal} ${escapeLatexText(checkbox)}${body}`;
 }
 
 function renderList(node: ListNode): string {

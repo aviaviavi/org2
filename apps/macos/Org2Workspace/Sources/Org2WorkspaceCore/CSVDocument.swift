@@ -245,7 +245,10 @@ struct CSVDocumentEditorView: View {
           showsScrollers: true,
           textInset: NSSize(width: 14, height: 14),
           focusOnAppear: false,
-          textPublishing: .immediate,
+          // Keep a large CSV draft local to NSTextView during a typing burst.
+          // Publishing every key through WorkspaceStore invalidates the whole
+          // workspace hierarchy and is especially visible in raw-file mode.
+          textPublishing: .deferred(milliseconds: 250),
           liveHighlighting: false,
           incrementalHighlighting: false,
           concealsSyntax: false,

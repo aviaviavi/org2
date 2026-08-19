@@ -439,6 +439,8 @@ private struct HomeView: View {
 
 private struct ExternalThreadsView: View {
   @EnvironmentObject private var store: WorkspaceStore
+  @State private var searchDraft = ""
+  @State private var pendingSearchUpdate: Task<Void, Never>?
 
   var body: some View {
     VStack(spacing: 0) {
@@ -465,6 +467,13 @@ private struct ExternalThreadsView: View {
           .frame(minWidth: 320, maxWidth: .infinity, maxHeight: .infinity)
       }
     }
+    .onAppear { searchDraft = store.externalThreadSearchQuery }
+    .onChange(of: store.externalThreadSearchQuery) {
+      if searchDraft != store.externalThreadSearchQuery {
+        searchDraft = store.externalThreadSearchQuery
+      }
+    }
+    .onDisappear { pendingSearchUpdate?.cancel() }
     .task {
       if store.externalThreads.isEmpty {
         await store.refreshExternalThreads()
@@ -477,10 +486,13 @@ private struct ExternalThreadsView: View {
       HStack(spacing: 8) {
         Image(systemName: "magnifyingglass")
           .foregroundStyle(.secondary)
-        TextField("Filter external threads", text: $store.externalThreadSearchQuery)
+        TextField("Filter external threads", text: $searchDraft)
           .textFieldStyle(.plain)
-        if !store.externalThreadSearchQuery.isEmpty {
+          .onChange(of: searchDraft) { scheduleSearchUpdate() }
+          .onSubmit { applySearchImmediately() }
+        if !searchDraft.isEmpty {
           Button {
+            searchDraft = ""
             store.externalThreadSearchQuery = ""
           } label: {
             Label("Clear", systemImage: "xmark.circle.fill")
@@ -618,6 +630,25 @@ private struct ExternalThreadsView: View {
       .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
   }
+
+  private func scheduleSearchUpdate() {
+    pendingSearchUpdate?.cancel()
+    let nextQuery = searchDraft
+    guard nextQuery != store.externalThreadSearchQuery else { return }
+    pendingSearchUpdate = Task { @MainActor in
+      do { try await Task.sleep(nanoseconds: 120_000_000) } catch { return }
+      guard !Task.isCancelled else { return }
+      store.externalThreadSearchQuery = nextQuery
+    }
+  }
+
+  private func applySearchImmediately() {
+    pendingSearchUpdate?.cancel()
+    pendingSearchUpdate = nil
+    if store.externalThreadSearchQuery != searchDraft {
+      store.externalThreadSearchQuery = searchDraft
+    }
+  }
 }
 
 private struct ExternalThreadRow: View {
@@ -674,10 +705,13 @@ private struct ExternalThreadMessageCard: View {
         Text(message.role == .user ? "You" : harness.title)
           .font(.caption.weight(.semibold))
         Spacer(minLength: 0)
-        Text(message.createdAt, format: .dateTime.hour().minute())
+        Text(AIChatMessageTimestampPresentation.displayText(for: message.createdAt))
           .font(.caption2.monospacedDigit())
           .foregroundStyle(.tertiary)
-          .help(message.createdAt.formatted(date: .abbreviated, time: .shortened))
+          .help(AIChatMessageTimestampPresentation.fullText(for: message.createdAt))
+          .accessibilityLabel(
+            "Sent \(AIChatMessageTimestampPresentation.fullText(for: message.createdAt))"
+          )
         Button {
           didCopy = OpenClawMessageClipboard.write(message.content)
         } label: {
@@ -1097,6 +1131,7 @@ private struct OpenClawSidebarSurfaceGroup: View {
 private struct OpenClawSidebarThreadList: View {
   @EnvironmentObject private var store: WorkspaceStore
   @State private var showsSettledThreads = false
+  @State private var settledThreadDisplayLimit = OpenClawSettledThreadPagination.pageSize
   @State private var renameRequest: OpenClawThreadRenameRequest?
   @State private var renameDraft = ""
 
@@ -1104,7 +1139,7 @@ private struct OpenClawSidebarThreadList: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 2) {
-      if store.visibleOpenClawChatThreads.isEmpty && store.settledOpenClawChatThreads.isEmpty {
+      if store.sidebarOpenClawChatThreads.isEmpty && store.settledOpenClawChatThreads.isEmpty {
         Text("No chat threads")
           .font(.caption)
           .foregroundStyle(.tertiary)
@@ -1112,7 +1147,7 @@ private struct OpenClawSidebarThreadList: View {
           .padding(.vertical, 3)
       } else {
         LazyVStack(alignment: .leading, spacing: 2) {
-          ForEach(store.visibleOpenClawChatThreads) { thread in
+          ForEach(store.sidebarOpenClawChatThreads) { thread in
             let summary = OpenClawSidebarThreadSummary(thread: thread)
             OpenClawSidebarThreadRow(
               summary: summary,
@@ -1130,7 +1165,9 @@ private struct OpenClawSidebarThreadList: View {
             )
             .id(OpenClawSidebarThreadRowIdentity(
               summary: summary,
-              isSending: store.openClawSendingThreadIDs.contains(summary.id)
+              isSending: store.openClawSendingThreadIDs.contains(summary.id),
+              isSelected: store.selectedOpenClawChatThreadID == summary.id
+                && store.selectedSurface == .openClaw
             ))
           }
 
@@ -1139,6 +1176,9 @@ private struct OpenClawSidebarThreadList: View {
               Button {
                 withAnimation(WorkspaceMotion.disclosure) {
                   showsSettledThreads.toggle()
+                }
+                if !showsSettledThreads {
+                  settledThreadDisplayLimit = OpenClawSettledThreadPagination.pageSize
                 }
               } label: {
                 HStack(spacing: 5) {
@@ -1177,7 +1217,7 @@ private struct OpenClawSidebarThreadList: View {
           }
 
           if showsSettledThreads {
-            ForEach(store.settledOpenClawChatThreads) { thread in
+            ForEach(Array(store.sidebarSettledOpenClawChatThreads.prefix(settledThreadDisplayLimit))) { thread in
               let summary = OpenClawSidebarThreadSummary(thread: thread)
               OpenClawSidebarThreadRow(
                 summary: summary,
@@ -1196,8 +1236,34 @@ private struct OpenClawSidebarThreadList: View {
               .opacity(0.68)
               .id(OpenClawSidebarThreadRowIdentity(
                 summary: summary,
-                isSending: store.openClawSendingThreadIDs.contains(summary.id)
+                isSending: store.openClawSendingThreadIDs.contains(summary.id),
+                isSelected: store.selectedOpenClawChatThreadID == summary.id
+                  && store.selectedSurface == .openClaw
               ))
+            }
+
+            if settledThreadDisplayLimit < store.sidebarSettledOpenClawChatThreads.count {
+              Button {
+                settledThreadDisplayLimit = OpenClawSettledThreadPagination.nextLimit(
+                  currentLimit: settledThreadDisplayLimit,
+                  totalCount: store.sidebarSettledOpenClawChatThreads.count
+                )
+              } label: {
+                HStack(spacing: 6) {
+                  Image(systemName: "ellipsis.circle")
+                  Text(OpenClawSettledThreadPagination.moreTitle(
+                    currentLimit: settledThreadDisplayLimit,
+                    totalCount: store.sidebarSettledOpenClawChatThreads.count
+                  ))
+                  Spacer(minLength: 0)
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.leading, 42)
+                .padding(.vertical, 6)
+              }
+              .buttonStyle(.plain)
+              .help("Load more settled chat threads")
             }
           }
         }
@@ -1212,6 +1278,10 @@ private struct OpenClawSidebarThreadList: View {
       store.autoSettleOpenClawChatThreads(now: now)
     }
     .onChange(of: store.settledOpenClawChatThreads.count) {
+      settledThreadDisplayLimit = OpenClawSettledThreadPagination.clampedLimit(
+        currentLimit: settledThreadDisplayLimit,
+        totalCount: store.sidebarSettledOpenClawChatThreads.count
+      )
       let nextValue = OpenClawSettledThreadDisclosure.updated(
         isExpanded: showsSettledThreads,
         settledThreadCount: store.settledOpenClawChatThreads.count
@@ -1264,19 +1334,48 @@ enum OpenClawSettledThreadDisclosure {
   }
 }
 
+enum OpenClawSettledThreadPagination {
+  static let pageSize = 30
+
+  static func nextLimit(currentLimit: Int, totalCount: Int) -> Int {
+    min(max(0, totalCount), max(pageSize, currentLimit + pageSize))
+  }
+
+  static func clampedLimit(currentLimit: Int, totalCount: Int) -> Int {
+    guard totalCount > 0 else { return pageSize }
+    return min(totalCount, max(pageSize, currentLimit))
+  }
+
+  static func moreTitle(currentLimit: Int, totalCount: Int) -> String {
+    let remaining = max(0, totalCount - currentLimit)
+    let nextCount = min(pageSize, remaining)
+    return "Show \(nextCount) more · \(remaining) remaining"
+  }
+}
+
 struct OpenClawSidebarThreadRowIdentity: Hashable {
   let threadID: UUID
   let isSettled: Bool
   let isSending: Bool
+  let isSelected: Bool
 
-  init(thread: OpenClawChatThread, isSending: Bool) {
-    self.init(summary: OpenClawSidebarThreadSummary(thread: thread), isSending: isSending)
+  init(thread: OpenClawChatThread, isSending: Bool, isSelected: Bool = false) {
+    self.init(
+      summary: OpenClawSidebarThreadSummary(thread: thread),
+      isSending: isSending,
+      isSelected: isSelected
+    )
   }
 
-  init(summary: OpenClawSidebarThreadSummary, isSending: Bool) {
+  init(
+    summary: OpenClawSidebarThreadSummary,
+    isSending: Bool,
+    isSelected: Bool = false
+  ) {
     threadID = summary.id
     isSettled = summary.isSettled
     self.isSending = isSending
+    self.isSelected = isSelected
   }
 }
 
@@ -1349,7 +1448,7 @@ private struct OpenClawSidebarThreadRow: View {
           }
           Spacer(minLength: 4)
           if isSending {
-            WorkspaceActivityIndicator(size: .mini)
+            OpenClawSidebarThreadActivityView(isSelected: isSelected)
               .help("\(store.aiChatDestinationTitle(summary.destinationID)) is thinking")
           }
           if summary.hasResource {
@@ -1480,6 +1579,46 @@ private struct OpenClawSidebarThreadRow: View {
   }()
 }
 
+struct OpenClawSidebarThreadActivityView: View {
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  let isSelected: Bool
+
+  init(isSelected: Bool = true) {
+    self.isSelected = isSelected
+  }
+
+  var statusTitle: String { "Working" }
+  var shouldAnimate: Bool { isSelected && !reduceMotion }
+
+  var body: some View {
+    HStack(spacing: 4) {
+      ZStack {
+        Circle()
+          .fill(Color.accentColor.opacity(0.14))
+          .frame(width: 12, height: 12)
+        CoreAnimationActivityDot(animates: shouldAnimate)
+          .frame(width: 5, height: 5)
+          .id(shouldAnimate)
+      }
+      .accessibilityHidden(true)
+
+      Text(statusTitle)
+        .font(.caption2.weight(.semibold))
+        .foregroundStyle(Color.accentColor)
+    }
+    .fixedSize()
+    .padding(.horizontal, 6)
+    .padding(.vertical, 3)
+    .background(Color.accentColor.opacity(0.07), in: Capsule())
+    .overlay {
+      Capsule()
+        .stroke(Color.accentColor.opacity(0.14), lineWidth: 0.5)
+    }
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(statusTitle)
+  }
+}
+
 private struct OpenClawSidebarThreadContextMenuTarget: NSViewRepresentable {
   let threadID: UUID
   let isPinned: Bool
@@ -1596,6 +1735,8 @@ private struct OpenClawUnreadBadge: View {
 private struct FilesView: View {
   @EnvironmentObject private var store: WorkspaceStore
   @FocusState private var filterFocused: Bool
+  @State private var filterDraft = ""
+  @State private var pendingFilterUpdate: Task<Void, Never>?
 
   var body: some View {
     VStack(spacing: 0) {
@@ -1612,11 +1753,14 @@ private struct FilesView: View {
       }
 
       HStack(spacing: 8) {
-        TextField("Filter files", text: $store.corpusFileFilter)
+        TextField("Filter files", text: $filterDraft)
           .textFieldStyle(.roundedBorder)
           .focused($filterFocused)
-        if !store.corpusFileFilter.isEmpty {
+          .onChange(of: filterDraft) { scheduleFilterUpdate() }
+          .onSubmit { applyFilterImmediately() }
+        if !filterDraft.isEmpty {
           Button {
+            filterDraft = ""
             store.corpusFileFilter = ""
           } label: {
             Label("Clear", systemImage: "xmark.circle.fill")
@@ -1672,6 +1816,32 @@ private struct FilesView: View {
     }
     .onChange(of: store.corpusFileFilterFocusToken) {
       filterFocused = true
+    }
+    .onAppear { filterDraft = store.corpusFileFilter }
+    .onChange(of: store.corpusFileFilter) {
+      if filterDraft != store.corpusFileFilter {
+        filterDraft = store.corpusFileFilter
+      }
+    }
+    .onDisappear { pendingFilterUpdate?.cancel() }
+  }
+
+  private func scheduleFilterUpdate() {
+    pendingFilterUpdate?.cancel()
+    let nextFilter = filterDraft
+    guard nextFilter != store.corpusFileFilter else { return }
+    pendingFilterUpdate = Task { @MainActor in
+      do { try await Task.sleep(nanoseconds: 120_000_000) } catch { return }
+      guard !Task.isCancelled else { return }
+      store.corpusFileFilter = nextFilter
+    }
+  }
+
+  private func applyFilterImmediately() {
+    pendingFilterUpdate?.cancel()
+    pendingFilterUpdate = nil
+    if store.corpusFileFilter != filterDraft {
+      store.corpusFileFilter = filterDraft
     }
   }
 }
@@ -2507,6 +2677,8 @@ private struct AgendaView: View {
 private struct AgendaControls: View {
   @EnvironmentObject private var store: WorkspaceStore
   @State private var isShowingOpenClawConfiguration = false
+  @State private var filterDraft = ""
+  @State private var pendingFilterUpdate: Task<Void, Never>?
   var agendaFilterFocused: FocusState<Bool>.Binding
 
   var body: some View {
@@ -2528,6 +2700,25 @@ private struct AgendaControls: View {
           }
           .frame(width: 135)
           .help("Read agenda items from the active corpus or every mounted corpus")
+
+          Menu {
+            ForEach(AgendaOverdueOrder.allCases) { order in
+              Button {
+                store.agendaOverdueOrder = order
+                store.syncAgendaSelectionAfterDisplayOptionsChange()
+              } label: {
+                if store.agendaOverdueOrder == order {
+                  Label(order.title, systemImage: "checkmark")
+                } else {
+                  Text(order.title)
+                }
+              }
+            }
+          } label: {
+            Label(store.agendaOverdueOrder.title, systemImage: "arrow.up.arrow.down")
+          }
+          .buttonStyle(WorkspaceActionButtonStyle())
+          .help("Choose how overdue items are ordered. Priority changes are saved in the Org2 source file.")
         }
 
         Spacer(minLength: 0)
@@ -2554,15 +2745,18 @@ private struct AgendaControls: View {
         Image(systemName: "line.3.horizontal.decrease.circle")
           .font(.caption)
           .foregroundStyle(.tertiary)
-        TextField("Filter agenda", text: $store.agendaFilter)
+        TextField("Filter agenda", text: $filterDraft)
           .textFieldStyle(.roundedBorder)
           .focused(agendaFilterFocused)
+          .onChange(of: filterDraft) { scheduleFilterUpdate() }
           .onSubmit {
+            applyFilterImmediately()
             agendaFilterFocused.wrappedValue = false
           }
 
-        if !store.agendaFilter.isEmpty {
+        if !filterDraft.isEmpty {
           Button {
+            filterDraft = ""
             store.clearAgendaFilter()
           } label: {
             Label("Clear", systemImage: "xmark.circle.fill")
@@ -2578,6 +2772,32 @@ private struct AgendaControls: View {
     .sheet(isPresented: $isShowingOpenClawConfiguration) {
       OpenClawConfigurationSheet()
         .environmentObject(store)
+    }
+    .onAppear { filterDraft = store.agendaFilter }
+    .onChange(of: store.agendaFilter) {
+      if filterDraft != store.agendaFilter {
+        filterDraft = store.agendaFilter
+      }
+    }
+    .onDisappear { pendingFilterUpdate?.cancel() }
+  }
+
+  private func scheduleFilterUpdate() {
+    pendingFilterUpdate?.cancel()
+    let nextFilter = filterDraft
+    guard nextFilter != store.agendaFilter else { return }
+    pendingFilterUpdate = Task { @MainActor in
+      do { try await Task.sleep(nanoseconds: 120_000_000) } catch { return }
+      guard !Task.isCancelled else { return }
+      store.agendaFilter = nextFilter
+    }
+  }
+
+  private func applyFilterImmediately() {
+    pendingFilterUpdate?.cancel()
+    pendingFilterUpdate = nil
+    if store.agendaFilter != filterDraft {
+      store.agendaFilter = filterDraft
     }
   }
 }
@@ -2771,7 +2991,7 @@ private struct AgentGoalRow: View {
   let goal: AgentGoalItem
 
   var body: some View {
-    let linkedRunCount = store.agentRuns.lazy.filter { $0.goalRef == goal.id }.count
+    let linkedRunCount = store.agentRunCount(goalRef: goal.id)
     VStack(alignment: .leading, spacing: 6) {
       HStack(spacing: 8) {
         Text(goal.title)
@@ -2905,7 +3125,7 @@ private struct AgentProfileRow: View {
   let profile: AgentProfileItem
 
   var body: some View {
-    let linkedRunCount = store.agentRuns.lazy.filter { $0.agentRef == profile.id }.count
+    let linkedRunCount = store.agentRunCount(agentRef: profile.id)
     VStack(alignment: .leading, spacing: 6) {
       HStack(spacing: 8) {
         Text(profile.name)
@@ -3176,17 +3396,24 @@ private struct WorkflowScheduleSheet: View {
 }
 
 private struct RunCenterView: View {
+  private static let initialVisibleRunLimit = 250
+  private static let visibleRunBatchSize = 250
+
   @EnvironmentObject private var store: WorkspaceStore
   @State private var scope: AgentRunScope = .active
+  @State private var visibleRunLimit = Self.initialVisibleRunLimit
   @FocusState private var filterFocused: Bool
 
   var body: some View {
-    let allRuns = store.agentRuns
     let visibleEntries = store.agentRunEntries(for: scope)
-    let visibleSections = RunCenterPresentation.sections(for: visibleEntries, allRuns: allRuns)
+    let visibleRunIDs = store.agentRunIDs(for: scope)
+    let visibleSections = RunCenterPresentation.prefixSections(
+      store.agentRunSections(for: scope),
+      limit: visibleRunLimit
+    )
     let selectedRun = store.selectedAgentRunID.flatMap { id in
-      visibleEntries.first(where: { $0.run.id == id })?.run
-    } ?? visibleEntries.first?.run
+      store.isAgentRunVisible(id, in: scope) ? store.agentRun(for: id) : nil
+    } ?? visibleSections.first?.entries.first?.run
     VStack(spacing: 0) {
       HeaderBar(title: "Runs", subtitle: "Durable delegated work", surface: .approvals) {
         if store.isLoadingAgentRuns { WorkspaceActivityIndicator(size: .small) }
@@ -3195,9 +3422,7 @@ private struct RunCenterView: View {
       HStack(spacing: 10) {
         ForEach(AgentRunScope.allCases) { candidate in
           Button {
-            withAnimation(WorkspaceMotion.quick) {
-              scope = candidate
-            }
+            scope = candidate
           } label: {
             RunCenterScopeMetric(
               title: candidate.rawValue,
@@ -3235,7 +3460,7 @@ private struct RunCenterView: View {
                   let modifiers = NSApp.currentEvent?.modifierFlags ?? []
                   store.handleAgentRunClick(
                     entry.run,
-                    visibleRunIDs: visibleEntries.map(\.run.id),
+                    visibleRunIDs: visibleRunIDs,
                     modifiers: modifiers
                   )
                 } label: {
@@ -3270,6 +3495,21 @@ private struct RunCenterView: View {
               }
             }
           }
+          if visibleEntries.count > visibleRunLimit {
+            Button {
+              visibleRunLimit += Self.visibleRunBatchSize
+            } label: {
+              let remaining = visibleEntries.count - visibleRunLimit
+              Label(
+                "Show \(min(Self.visibleRunBatchSize, remaining)) more · \(remaining) remaining",
+                systemImage: "ellipsis.circle"
+              )
+              .frame(maxWidth: .infinity, alignment: .center)
+              .padding(.vertical, 6)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+          }
         }
         .listStyle(.inset)
       }
@@ -3292,13 +3532,15 @@ private struct RunCenterView: View {
       }
     }
     .onChange(of: scope) {
+      visibleRunLimit = Self.initialVisibleRunLimit
       performAfterSwiftUIViewUpdate {
         syncVisibleRunSelection(in: visibleEntries)
       }
     }
-    .onChange(of: visibleEntries.map(\.id)) {
+    .onChange(of: store.agentRunDisplayRevision) {
+      visibleRunLimit = Self.initialVisibleRunLimit
       performAfterSwiftUIViewUpdate {
-        store.reconcileAgentRunAIContextSelection(visibleIDs: visibleEntries.map(\.run.id))
+        store.reconcileAgentRunAIContextSelection(visibleIDs: visibleRunIDs)
         syncVisibleRunSelection(in: visibleEntries)
       }
     }
@@ -3317,6 +3559,8 @@ private struct RunCenterView: View {
 
 private struct RunCenterSearch: View {
   @EnvironmentObject private var store: WorkspaceStore
+  @State private var draftFilter = ""
+  @State private var pendingFilterUpdate: Task<Void, Never>?
   var filterFocused: FocusState<Bool>.Binding
 
   var body: some View {
@@ -3324,15 +3568,20 @@ private struct RunCenterSearch: View {
       Image(systemName: "magnifyingglass")
         .font(.caption)
         .foregroundStyle(.tertiary)
-      TextField("Search runs", text: $store.agentRunFilter)
+      TextField("Search runs", text: $draftFilter)
         .textFieldStyle(.roundedBorder)
         .focused(filterFocused)
+        .onChange(of: draftFilter) {
+          scheduleFilterUpdate()
+        }
         .onSubmit {
+          applyFilterImmediately()
           filterFocused.wrappedValue = false
         }
-      if !store.agentRunFilter.isEmpty {
+      if !draftFilter.isEmpty {
         Button {
-          store.clearAgentRunFilter()
+          draftFilter = ""
+          applyFilterImmediately()
         } label: {
           Label("Clear", systemImage: "xmark.circle.fill")
         }
@@ -3343,6 +3592,41 @@ private struct RunCenterSearch: View {
     .controlSize(.small)
     .padding(.horizontal, WorkspaceDesign.contentInset)
     .padding(.bottom, 12)
+    .onAppear {
+      draftFilter = store.agentRunFilter
+    }
+    .onChange(of: store.agentRunFilter) {
+      if draftFilter != store.agentRunFilter {
+        draftFilter = store.agentRunFilter
+      }
+    }
+    .onDisappear {
+      pendingFilterUpdate?.cancel()
+      pendingFilterUpdate = nil
+    }
+  }
+
+  private func scheduleFilterUpdate() {
+    pendingFilterUpdate?.cancel()
+    let nextFilter = draftFilter
+    guard nextFilter != store.agentRunFilter else { return }
+    pendingFilterUpdate = Task { @MainActor in
+      do {
+        try await Task.sleep(nanoseconds: 120_000_000)
+      } catch {
+        return
+      }
+      guard !Task.isCancelled else { return }
+      store.agentRunFilter = nextFilter
+    }
+  }
+
+  private func applyFilterImmediately() {
+    pendingFilterUpdate?.cancel()
+    pendingFilterUpdate = nil
+    if store.agentRunFilter != draftFilter {
+      store.agentRunFilter = draftFilter
+    }
   }
 }
 
@@ -3350,6 +3634,7 @@ private struct RunCenterScopeMetric: View {
   let title: String
   let count: Int
   let isSelected: Bool
+  @State private var isHovered = false
 
   var body: some View {
     VStack(alignment: .leading, spacing: 2) {
@@ -3367,14 +3652,25 @@ private struct RunCenterScopeMetric: View {
     .padding(.horizontal, 12)
     .padding(.vertical, 9)
     .background(
-      isSelected ? Color.accentColor.opacity(0.10) : WorkspaceDesign.panelFill,
+      isSelected
+        ? Color.accentColor.opacity(0.10)
+        : isHovered ? Color.accentColor.opacity(0.045) : WorkspaceDesign.panelFill,
       in: RoundedRectangle(cornerRadius: WorkspaceDesign.cornerRadius, style: .continuous)
     )
     .overlay {
       RoundedRectangle(cornerRadius: WorkspaceDesign.cornerRadius, style: .continuous)
-        .stroke(isSelected ? Color.accentColor.opacity(0.45) : WorkspaceDesign.hairline)
+        .stroke(
+          isSelected
+            ? Color.accentColor.opacity(0.45)
+            : isHovered ? Color.accentColor.opacity(0.20) : WorkspaceDesign.hairline
+        )
     }
     .contentShape(Rectangle())
+    .onHover { hovering in
+      withAnimation(.easeOut(duration: 0.08)) {
+        isHovered = hovering
+      }
+    }
   }
 }
 
@@ -3464,16 +3760,8 @@ private struct RunCenterDetail: View {
   private var isMutating: Bool { store.mutatingAgentRunIDs.contains(run.id) }
 
   var body: some View {
-    let sourceMeetingContexts = RunCenterPresentation.sourceMeetingContextsByRunID(in: store.agentRuns)
-    let sourceMeeting = sourceMeetingContexts[run.id]
-    let relatedRuns: [AgentRunItem] = if let sourceRef = sourceMeeting?.fileReference {
-      store.agentRuns.filter { candidate in
-        candidate.id != run.id
-          && sourceMeetingContexts[candidate.id]?.fileReference == sourceRef
-      }
-    } else {
-      []
-    }
+    let sourceMeeting = store.agentRunSourceMeetingContext(for: run.id)
+    let relatedRuns = store.relatedAgentRuns(for: run.id)
 
     ScrollViewReader { scrollProxy in
       ScrollView {
@@ -4239,7 +4527,7 @@ private struct ApprovalsView: View {
   private var approvalList: some View {
     if let error = store.errorText, store.approvalItems.isEmpty {
       EmptyStateView(title: "Approvals Failed", detail: "\(error)\n\nUse the toolbar Refresh to retry.")
-    } else if store.isLoadingApprovals && store.approvalItems.isEmpty {
+    } else if store.shouldShowInitialApprovalsLoadingState {
       Spacer()
       WorkspaceLoadingStateView("Loading approvals")
       Spacer()
@@ -4328,12 +4616,6 @@ private struct ApprovalsView: View {
               .disabled(store.isApprovalActionInProgress(item))
             }
             Button {
-              discussionMessage = "I need to discuss this approval item before deciding."
-              discussionItem = item
-            } label: {
-              Label("Discuss via OpenClaw", systemImage: "paperplane")
-            }
-            Button {
               store.copyApprovalDiscussionText(item)
             } label: {
               Label("Copy Discussion Text", systemImage: "doc.on.doc")
@@ -4348,6 +4630,8 @@ private struct ApprovalsView: View {
 
 private struct ApprovalControls: View {
   @EnvironmentObject private var store: WorkspaceStore
+  @State private var filterDraft = ""
+  @State private var pendingFilterUpdate: Task<Void, Never>?
   var filterFocused: FocusState<Bool>.Binding
 
   var body: some View {
@@ -4355,14 +4639,17 @@ private struct ApprovalControls: View {
       Image(systemName: "magnifyingglass")
         .font(.caption)
         .foregroundStyle(.tertiary)
-      TextField("Search approvals", text: $store.approvalFilter)
+      TextField("Search approvals", text: $filterDraft)
         .textFieldStyle(.roundedBorder)
         .focused(filterFocused)
+        .onChange(of: filterDraft) { scheduleFilterUpdate() }
         .onSubmit {
+          applyFilterImmediately()
           filterFocused.wrappedValue = false
         }
-      if !store.approvalFilter.isEmpty {
+      if !filterDraft.isEmpty {
         Button {
+          filterDraft = ""
           store.clearApprovalFilter()
         } label: {
           Label("Clear", systemImage: "xmark.circle.fill")
@@ -4374,6 +4661,32 @@ private struct ApprovalControls: View {
     .controlSize(.small)
     .padding(.horizontal, WorkspaceDesign.contentInset)
     .padding(.bottom, 12)
+    .onAppear { filterDraft = store.approvalFilter }
+    .onChange(of: store.approvalFilter) {
+      if filterDraft != store.approvalFilter {
+        filterDraft = store.approvalFilter
+      }
+    }
+    .onDisappear { pendingFilterUpdate?.cancel() }
+  }
+
+  private func scheduleFilterUpdate() {
+    pendingFilterUpdate?.cancel()
+    let nextFilter = filterDraft
+    guard nextFilter != store.approvalFilter else { return }
+    pendingFilterUpdate = Task { @MainActor in
+      do { try await Task.sleep(nanoseconds: 120_000_000) } catch { return }
+      guard !Task.isCancelled else { return }
+      store.approvalFilter = nextFilter
+    }
+  }
+
+  private func applyFilterImmediately() {
+    pendingFilterUpdate?.cancel()
+    pendingFilterUpdate = nil
+    if store.approvalFilter != filterDraft {
+      store.approvalFilter = filterDraft
+    }
   }
 }
 
@@ -4596,7 +4909,7 @@ private struct ApprovalDiscussionSheet: View {
           .truncationMode(.middle)
       }
 
-      Text("Message to OpenClaw")
+      Text("Discussion prompt")
         .font(.caption.weight(.semibold))
         .foregroundStyle(.secondary)
       TextEditor(text: $message)
@@ -4607,14 +4920,18 @@ private struct ApprovalDiscussionSheet: View {
             .stroke(WorkspaceDesign.hairline)
         )
 
-      Picker("Thread", selection: $threadMode) {
+      Picker("Destination", selection: $threadMode) {
         ForEach(OpenClawThreadMode.allCases) { mode in
-          Text(mode.title).tag(mode)
+          if let title = mode.discussionDestinationTitle(
+            selectedThreadTitle: store.selectedOpenClawChatThread?.title
+          ) {
+            Text(title).tag(mode)
+          }
         }
       }
       .pickerStyle(.radioGroup)
       .horizontalRadioGroupLayout()
-      .help("Choose whether this approval discussion starts a fresh OpenClaw chat or continues the selected chat.")
+      .help("Start a new AI thread or continue the specifically named selected thread.")
 
       HStack {
         Spacer()
@@ -4637,6 +4954,11 @@ private struct ApprovalDiscussionSheet: View {
     .onAppear {
       threadMode = .newThread
     }
+    .onChange(of: store.selectedOpenClawChatThreadID) {
+      if threadMode == .currentThread, store.selectedOpenClawChatThread == nil {
+        threadMode = .newThread
+      }
+    }
   }
 }
 
@@ -4656,7 +4978,10 @@ private struct AgendaItemListView: View {
               isEditable: store.isResultInActiveCorpus(item.corpus),
               isAgentAssigned: store.isAgentAssignee(item.properties["ASSIGNEE"]),
               isPersonalAssigned: store.isPersonalAssignee(item.properties["ASSIGNEE"]),
-              toggleBulkSelection: { store.toggleAgendaItemBulkSelection(item) }
+              toggleBulkSelection: { store.toggleAgendaItemBulkSelection(item) },
+              setPriority: { priority in
+                Task { await store.applyPriorityShortcut(priority, to: .agenda(item)) }
+              }
             )
               .equatable()
               .contentShape(Rectangle())
@@ -4857,6 +5182,7 @@ private struct AgendaRow: View, Equatable {
   let isAgentAssigned: Bool
   let isPersonalAssigned: Bool
   let toggleBulkSelection: () -> Void
+  let setPriority: (String?) -> Void
 
   nonisolated static func == (lhs: AgendaRow, rhs: AgendaRow) -> Bool {
     lhs.item == rhs.item
@@ -4886,7 +5212,11 @@ private struct AgendaRow: View, Equatable {
 
       HStack(spacing: 4) {
         StatusPill(text: item.todo ?? "TASK")
-        AgendaPriorityPill(priority: item.priority)
+        AgendaPriorityControl(
+          priority: item.priority,
+          isEditable: isEditable,
+          setPriority: setPriority
+        )
       }
       VStack(alignment: .leading, spacing: 4) {
         HStack(spacing: 6) {
@@ -4932,6 +5262,52 @@ private struct AgendaRow: View, Equatable {
       leadingPadding: 10,
       verticalPadding: WorkspaceDesign.rowVerticalPadding
     )
+  }
+}
+
+private struct AgendaPriorityControl: View {
+  let priority: String?
+  let isEditable: Bool
+  let setPriority: (String?) -> Void
+
+  var body: some View {
+    if isEditable {
+      Menu {
+        priorityButton("A", priority: "A")
+        priorityButton("B", priority: "B")
+        priorityButton("C", priority: "C")
+        Divider()
+        priorityButton("No priority", priority: nil)
+      } label: {
+        if AgendaPriorityPill.normalizedPriority(priority) != nil {
+          AgendaPriorityPill(priority: priority)
+        } else {
+          Image(systemName: "flag")
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
+            .frame(width: 18, height: 18)
+            .contentShape(Rectangle())
+        }
+      }
+      .menuStyle(.borderlessButton)
+      .menuIndicator(.hidden)
+      .fixedSize()
+      .help("Change priority. The change is saved in the Org2 source file.")
+    } else {
+      AgendaPriorityPill(priority: priority)
+    }
+  }
+
+  private func priorityButton(_ title: String, priority candidate: String?) -> some View {
+    Button {
+      setPriority(candidate)
+    } label: {
+      if AgendaPriorityPill.normalizedPriority(priority) == candidate {
+        Label(title, systemImage: "checkmark")
+      } else {
+        Text(title)
+      }
+    }
   }
 }
 
@@ -5101,6 +5477,8 @@ private struct AgendaAssignmentIndicator: View {
 private struct SearchView: View {
   @EnvironmentObject private var store: WorkspaceStore
   @FocusState private var isSearchFocused: Bool
+  @State private var searchDraft = ""
+  @State private var pendingSearchUpdate: Task<Void, Never>?
 
   var body: some View {
     VStack(spacing: 0) {
@@ -5135,20 +5513,23 @@ private struct SearchView: View {
           .help("Search the active corpus or every mounted corpus")
         }
 
-        TextField(store.searchMode.placeholder, text: $store.searchQuery)
+        TextField(store.searchMode.placeholder, text: $searchDraft)
           .textFieldStyle(.roundedBorder)
           .focused($isSearchFocused)
+          .onChange(of: searchDraft) {
+            if store.searchMode == .nodes { scheduleSearchUpdate() }
+          }
           .onSubmit {
             runSearchIfNeeded()
           }
 
         if store.searchMode == .text {
           Button {
-            Task { await store.runSearch() }
+            runSearchIfNeeded()
           } label: {
             Label("Search", systemImage: "magnifyingglass")
           }
-          .disabled(store.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || store.isSearching)
+          .disabled(searchDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || store.isSearching)
         }
       }
       .padding(.horizontal, WorkspaceDesign.contentInset)
@@ -5164,6 +5545,7 @@ private struct SearchView: View {
       searchResultsBody
     }
     .onAppear {
+      searchDraft = store.searchQuery
       if store.selectedSurface == .search {
         isSearchFocused = true
       }
@@ -5171,12 +5553,21 @@ private struct SearchView: View {
     .onChange(of: store.searchFocusToken) {
       isSearchFocused = true
     }
+    .onChange(of: store.searchQuery) {
+      if searchDraft != store.searchQuery {
+        searchDraft = store.searchQuery
+      }
+    }
+    .onChange(of: store.searchMode) {
+      applySearchImmediately()
+    }
     .onChange(of: store.searchReadScope) {
       guard store.searchMode == .text,
             !store.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
       else { return }
       Task { await store.runSearch() }
     }
+    .onDisappear { pendingSearchUpdate?.cancel() }
   }
 
   @ViewBuilder
@@ -5190,7 +5581,7 @@ private struct SearchView: View {
           Spacer()
         } else {
           EmptyStateView(title: "No Results", detail: searchEmptyStateDetail, action: "Search") {
-            Task { await store.runSearch() }
+            runSearchIfNeeded()
           }
         }
       } else {
@@ -5230,7 +5621,7 @@ private struct SearchView: View {
 
   private var searchEmptyStateDetail: String {
     if store.corpusRoot == nil { return "Open a corpus to search its org files." }
-    if store.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+    if searchDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
       return "Enter text to search the corpus."
     }
     return store.statusText
@@ -5245,8 +5636,28 @@ private struct SearchView: View {
   }
 
   private func runSearchIfNeeded() {
+    applySearchImmediately()
     guard store.searchMode == .text else { return }
     Task { await store.runSearch() }
+  }
+
+  private func scheduleSearchUpdate() {
+    pendingSearchUpdate?.cancel()
+    let nextQuery = searchDraft
+    guard nextQuery != store.searchQuery else { return }
+    pendingSearchUpdate = Task { @MainActor in
+      do { try await Task.sleep(nanoseconds: 120_000_000) } catch { return }
+      guard !Task.isCancelled else { return }
+      store.searchQuery = nextQuery
+    }
+  }
+
+  private func applySearchImmediately() {
+    pendingSearchUpdate?.cancel()
+    pendingSearchUpdate = nil
+    if store.searchQuery != searchDraft {
+      store.searchQuery = searchDraft
+    }
   }
 
   @ViewBuilder
@@ -5918,8 +6329,7 @@ private struct MeetingsView: View {
 
         if store.isProcessingMeeting {
           MeetingTranscriptionProgressView(
-            progress: store.meetingTranscriptionProgress,
-            elapsedText: store.meetingTranscriptionElapsedText,
+            progressState: store.meetingTranscriptionProgressState,
             backendText: LocalWhisperTranscriber.resolvedBackendDescription()
           )
         }
@@ -6037,6 +6447,7 @@ private struct AudioSettingsSection: View {
 
         VStack(alignment: .leading, spacing: 4) {
           audioSettingRow("Active", store.audioSettingsStatus.backendDescription)
+          audioSettingRow("App build", store.workspaceRuntimeIdentity.buildConfigurationLabel)
           audioSettingRow("App path", store.workspaceRuntimeIdentity.bundlePath)
           if let whisperCpp = store.audioSettingsStatus.whisperCppExecutablePath {
             audioSettingRow("whisper.cpp", whisperCpp)
@@ -6099,9 +6510,11 @@ private struct AudioSettingsSection: View {
 }
 
 private struct MeetingTranscriptionProgressView: View {
-  let progress: Double
-  let elapsedText: String
+  @ObservedObject var progressState: WorkspaceTranscriptionProgressState
   let backendText: String
+
+  private var progress: Double { progressState.progress }
+  private var elapsedText: String { progressState.elapsedText }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 4) {
@@ -6508,6 +6921,10 @@ private struct OpenClawChatView: View {
                   destinationTitlesByID: store.aiChatDestinationTitlesByID,
                   compact: presentation.isCompact,
                   isQueued: message.role == .user && store.isAIChatMessageQueued(message.id),
+                  canSteerQueuedMessage: store.canSteerQueuedAIChatMessage(message.id),
+                  steerQueuedMessage: {
+                    Task { await store.steerQueuedAIChatMessage(message.id) }
+                  },
                   editQueuedMessage: {
                     store.editQueuedAIChatMessage(message.id)
                   },
@@ -6522,16 +6939,11 @@ private struct OpenClawChatView: View {
               }
             }
             if store.isSendingOpenClawMessage && !store.selectedAIChatIsSharedRoom {
-              OpenClawTypingIndicatorView(
+              OpenClawLiveTypingIndicatorView(
+                liveState: store.openClawLiveState,
+                threadID: store.selectedOpenClawChatThreadID,
                 startedAt: store.openClawRequestStartedAt,
-                lastEventAt: store.openClawLastEventAt,
                 runtime: store.selectedAIChatActiveRuntime,
-                connectionState: store.openClawGatewayConnectionState,
-                connectionDetail: store.openClawGatewayConnectionDetail,
-                runID: store.openClawActiveRunID,
-                streamingReply: store.openClawStreamingReply,
-                reasoning: store.openClawExposedReasoning,
-                activities: store.openClawRunActivities,
                 compact: presentation.isCompact,
                 onStop: {
                   Task { await store.stopOpenClawRun() }

@@ -731,7 +731,10 @@ private struct MobileRemoteThreadView: View {
   @State private var isSending = false
   @State private var optimisticMessage: MobileRemoteChatMessage?
   @State private var isStopping = false
+  @State private var isFinishingDictation = false
   @State private var dictationPrefix = ""
+  @State private var isPhotoPickerPresented = false
+  @State private var isPreparingPhotos = false
   @State private var selectedPhotoItems: [PhotosPickerItem] = []
   @State private var attachments: [MobileRemoteAttachment] = []
   @State private var selectedFileCitation: MobileRemoteFileCitation?
@@ -826,6 +829,13 @@ private struct MobileRemoteThreadView: View {
     .onChange(of: voiceTranscriber.transcript) { _, transcript in
       draft = Self.appendingDictation(transcript, to: dictationPrefix)
     }
+    .photosPicker(
+      isPresented: $isPhotoPickerPresented,
+      selection: $selectedPhotoItems,
+      maxSelectionCount: max(1, 4 - attachments.count),
+      matching: .images,
+      preferredItemEncoding: .compatible
+    )
     .onChange(of: selectedPhotoItems) { _, items in
       guard !items.isEmpty else { return }
       loadPhotos(items)
@@ -1036,6 +1046,17 @@ private struct MobileRemoteThreadView: View {
         }
       }
 
+      if isPreparingPhotos {
+        HStack(spacing: 7) {
+          ProgressView()
+            .controlSize(.small)
+          Text("Preparing selected photos…")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+      }
+
       HStack(alignment: .bottom, spacing: 7) {
         composerActionsMenu
 
@@ -1064,28 +1085,55 @@ private struct MobileRemoteThreadView: View {
             )
         }
         .buttonStyle(.plain)
-        .disabled(isSettled || isSending)
+        .disabled(isSettled || isSending || isFinishingDictation)
         .accessibilityLabel(voiceTranscriber.isRecording ? "Stop transcription" : "Transcribe voice")
+        .accessibilityHint(
+          voiceTranscriber.isRecording
+            ? "Places the transcript in the message field without sending"
+            : "Starts voice transcription"
+        )
 
         Button {
-          sendMessage(delivery: isRunning ? "steer" : nil)
+          if voiceTranscriber.isRecording {
+            finishDictationAndSend(delivery: isRunning ? "steer" : nil)
+          } else {
+            sendMessage(delivery: isRunning ? "steer" : nil)
+          }
         } label: {
-          if isSending {
+          if isSending || isFinishingDictation {
             ProgressView()
               .frame(width: 30, height: 30)
           } else {
-            Image(systemName: isRunning ? "arrow.turn.up.right" : "arrow.up.circle.fill")
-              .font(.system(size: isRunning ? 15 : 30, weight: .semibold))
-              .foregroundStyle(isRunning ? Color.white : Color.accentColor)
+            Image(
+              systemName: voiceTranscriber.isRecording
+                ? "arrow.up.circle.fill"
+                : isRunning ? "arrow.turn.up.right" : "arrow.up.circle.fill"
+            )
+              .font(
+                .system(
+                  size: voiceTranscriber.isRecording || !isRunning ? 30 : 15,
+                  weight: .semibold
+                )
+              )
+              .foregroundStyle(
+                voiceTranscriber.isRecording || !isRunning ? Color.accentColor : Color.white
+              )
               .frame(width: 30, height: 30)
-              .background(isRunning ? Color.accentColor : Color.clear, in: Circle())
+              .background(
+                isRunning && !voiceTranscriber.isRecording ? Color.accentColor : Color.clear,
+                in: Circle()
+              )
           }
         }
         .buttonStyle(.plain)
         .disabled(!canSend)
-        .accessibilityLabel(isRunning ? "Steer active response" : "Send message")
+        .accessibilityLabel(
+          voiceTranscriber.isRecording
+            ? "Finish transcription and send"
+            : isRunning ? "Steer active response" : "Send message"
+        )
         .contextMenu {
-          if isRunning {
+          if isRunning && !voiceTranscriber.isRecording {
             Button {
               sendMessage(delivery: "followUp")
             } label: {
@@ -1146,14 +1194,12 @@ private struct MobileRemoteThreadView: View {
 
   private var composerActionsMenu: some View {
     Menu {
-      PhotosPicker(
-        selection: $selectedPhotoItems,
-        maxSelectionCount: 4,
-        matching: .images
-      ) {
+      Button {
+        isPhotoPickerPresented = true
+      } label: {
         Label("Add Photos", systemImage: "photo.on.rectangle")
       }
-      .disabled(isSettled || isSending || attachments.count >= 4)
+      .disabled(isSettled || isSending || isPreparingPhotos || attachments.count >= 4)
 
       Divider()
 
@@ -1187,7 +1233,7 @@ private struct MobileRemoteThreadView: View {
         .frame(width: 30, height: 30)
         .background(Color(.tertiarySystemFill), in: Circle())
     }
-    .disabled(isSettled || isSending)
+    .disabled(isSettled || isSending || isPreparingPhotos)
     .accessibilityLabel("Chat options, model \(modelLabel), reasoning \(reasoningLabel)")
   }
 
@@ -1351,9 +1397,23 @@ private struct MobileRemoteThreadView: View {
   }
 
   private var canSend: Bool {
-    !isSending && !isSettled && (
+    !isSending && !isFinishingDictation && !isPreparingPhotos && !isSettled && (
+      voiceTranscriber.isRecording
+        ||
       !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty
     )
+  }
+
+  private func finishDictationAndSend(delivery: String?) {
+    guard voiceTranscriber.isRecording, !isFinishingDictation else { return }
+    isFinishingDictation = true
+    Task {
+      let transcript = await voiceTranscriber.finish()
+      draft = Self.appendingDictation(transcript, to: dictationPrefix)
+      isFinishingDictation = false
+      guard canSend else { return }
+      sendMessage(delivery: delivery)
+    }
   }
 
   private func sendMessage(delivery: String? = nil) {
@@ -1437,13 +1497,20 @@ private struct MobileRemoteThreadView: View {
   }
 
   private func loadPhotos(_ items: [PhotosPickerItem]) {
-    selectedPhotoItems = []
+    guard !isPreparingPhotos else { return }
+    isPreparingPhotos = true
     Task {
+      defer {
+        selectedPhotoItems = []
+        isPreparingPhotos = false
+      }
       do {
         var next = attachments
         let initialCount = next.count
         for (index, item) in items.prefix(4 - next.count).enumerated() {
-          guard let data = try await item.loadTransferable(type: Data.self) else { continue }
+          guard let data = try await item.loadTransferable(type: Data.self) else {
+            throw MobileRemotePhotoError.unreadable
+          }
           let attachment = try MobileRemotePhotoPreparation.attachment(
             from: data,
             sequence: initialCount + index + 1

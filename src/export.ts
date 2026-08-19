@@ -71,6 +71,12 @@ th, td { border: 1px solid rgba(127,127,127,0.35); padding: 0.35rem 0.5rem; text
 thead th { background: rgba(127,127,127,0.16); }
 a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }`;
 
+const DOCUMENT_IMAGE_STYLE = `
+.org2-image-figure { max-width: 100%; margin: 0.75rem 0 1rem; }
+.org2-image-link { display: block; border: 0; }
+.org2-image { display: block; width: auto; max-width: 100%; height: auto; border-radius: 0.5rem; }
+li > .org2-image-figure { margin-top: 0.55rem; }`;
+
 const DOCUMENT_CHART_STYLE = `.org2-chart { width: min(100%, 800px); margin: 1rem 0 1.35rem; overflow-x: auto; }
 .org2-chart-compact { width: min(100%, 680px); }
 .org2-chart-wide { width: 100%; }
@@ -367,6 +373,26 @@ ul, ol { margin: 0.55rem 0 0.9rem; padding-left: 1.55rem; }
 li { min-width: 0; margin: 0.24rem 0; padding-left: 0.12rem; overflow-wrap: anywhere; }
 li > p { display: inline; }
 input[type="checkbox"] { width: 0.95rem; height: 0.95rem; margin: 0 0.42rem 0 -0.05rem; accent-color: var(--org2-accent); vertical-align: -0.11rem; }
+.org2-image-figure {
+  width: fit-content;
+  max-width: 100%;
+  margin: 0.8rem 0 1.1rem;
+}
+.org2-image-link { display: block; max-width: 100%; border: 0; }
+.org2-image-link:hover { border: 0; }
+.org2-image {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  max-height: 72vh;
+  border: 1px solid color-mix(in srgb, var(--org2-text) 10%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--org2-elevated-surface) 96%, var(--org2-faint));
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--org2-text) 8%, transparent);
+  object-fit: contain;
+}
+li > .org2-image-figure { margin-top: 0.65rem; }
 .org2-todo {
   display: inline-block;
   margin-right: 0.35rem;
@@ -647,6 +673,7 @@ const APP_DOCUMENT_SCRIPT = `(() => {
   }
 
   function installInteractiveTables() {
+    const initialVisibleRowLimit = 100;
     const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
     document.querySelectorAll(".org2-table-scroll table").forEach((table) => {
       if (table.dataset.org2Interactive === "true") return;
@@ -655,9 +682,14 @@ const APP_DOCUMENT_SCRIPT = `(() => {
       if (!body || originalRows.length === 0) return;
 
       table.dataset.org2Interactive = "true";
-      originalRows.forEach((row, index) => {
-        row.dataset.org2OriginalRowIndex = String(index);
-      });
+      const rowRecords = originalRows.map((row, index) => ({
+        originalIndex: index,
+        searchText: row.innerText.toLocaleLowerCase(),
+        cellTexts: Array.from(row.cells, (cell) => cell.innerText.trim()),
+        html: row.innerHTML,
+        attributes: Array.from(row.attributes, (attribute) => [attribute.name, attribute.value])
+      }));
+      body.replaceChildren();
 
       const wrapper = table.closest(".org2-table-scroll");
       if (!wrapper) return;
@@ -682,6 +714,11 @@ const APP_DOCUMENT_SCRIPT = `(() => {
       reset.textContent = "Reset";
       reset.title = "Clear filtering and restore source order";
 
+      const showMore = document.createElement("button");
+      showMore.type = "button";
+      showMore.className = "org2-table-control-button";
+      showMore.dataset.org2TableShowMore = "true";
+
       const save = document.createElement("button");
       save.type = "button";
       save.className = "org2-table-control-button org2-table-save-button";
@@ -690,47 +727,57 @@ const APP_DOCUMENT_SCRIPT = `(() => {
       save.hidden = !window.__org2TablePersistenceEnabled;
       save.dataset.org2TableSave = "true";
 
-      controls.append(filter, count, reset, save);
+      controls.append(filter, count, showMore, reset, save);
       wrapper.insertBefore(controls, table);
 
       let sortColumn = null;
       let sortDirection = null;
+      let visibleRowLimit = initialVisibleRowLimit;
+      let currentRows = [...rowRecords];
       const headerRow = table.tHead && table.tHead.rows.length > 0
         ? table.tHead.rows[table.tHead.rows.length - 1]
         : null;
       const sortButtons = [];
 
-      function cellText(row, column) {
-        return (row.cells[column]?.innerText || "").trim();
+      function renderedRow(record) {
+        const row = document.createElement("tr");
+        record.attributes.forEach(([name, value]) => row.setAttribute(name, value));
+        row.dataset.org2OriginalRowIndex = String(record.originalIndex);
+        row.innerHTML = record.html;
+        return row;
       }
 
-      function refresh() {
+      function cellText(record, column) {
+        return record.cellTexts[column] || "";
+      }
+
+      function refresh(resetVisibleLimit = false) {
+        if (resetVisibleLimit) visibleRowLimit = initialVisibleRowLimit;
         const query = filter.value.trim().toLocaleLowerCase();
-        let rows = [...originalRows];
+        let rows = [...rowRecords];
         if (sortColumn !== null && sortDirection) {
           rows.sort((lhs, rhs) => {
             const comparison = collator.compare(cellText(lhs, sortColumn), cellText(rhs, sortColumn));
             if (comparison !== 0) return sortDirection === "ascending" ? comparison : -comparison;
-            return Number(lhs.dataset.org2OriginalRowIndex) - Number(rhs.dataset.org2OriginalRowIndex);
+            return lhs.originalIndex - rhs.originalIndex;
           });
         } else {
-          rows.sort((lhs, rhs) =>
-            Number(lhs.dataset.org2OriginalRowIndex) - Number(rhs.dataset.org2OriginalRowIndex)
-          );
+          rows.sort((lhs, rhs) => lhs.originalIndex - rhs.originalIndex);
         }
-        rows.forEach((row) => body.appendChild(row));
+        currentRows = rows.filter((row) => !query || row.searchText.includes(query));
+        const renderedCount = Math.min(currentRows.length, visibleRowLimit);
+        body.replaceChildren(...currentRows.slice(0, renderedCount).map(renderedRow));
 
-        let visibleCount = 0;
-        rows.forEach((row) => {
-          const matches = !query || row.innerText.toLocaleLowerCase().includes(query);
-          row.hidden = !matches;
-          if (matches) visibleCount += 1;
-        });
-        count.textContent = visibleCount === originalRows.length
-          ? visibleCount + " rows"
-          : visibleCount + " of " + originalRows.length + " rows";
+        count.textContent = currentRows.length === rowRecords.length
+          ? renderedCount + " of " + rowRecords.length + " rows shown"
+          : renderedCount + " of " + currentRows.length + " matching · " + rowRecords.length + " total";
+        const remainingCount = Math.max(0, currentRows.length - renderedCount);
+        showMore.hidden = remainingCount === 0;
+        showMore.textContent = remainingCount > 0
+          ? "Show " + Math.min(initialVisibleRowLimit, remainingCount) + " more"
+          : "";
         reset.disabled = !query && sortColumn === null;
-        save.disabled = visibleCount === 0;
+        save.disabled = currentRows.length === 0;
       }
 
       if (headerRow) {
@@ -755,14 +802,18 @@ const APP_DOCUMENT_SCRIPT = `(() => {
               candidate.setAttribute("aria-pressed", active ? "true" : "false");
               candidate.parentElement?.setAttribute("aria-sort", active ? sortDirection : "none");
             });
-            refresh();
+            refresh(true);
           });
           sortButtons.push(button);
           cell.appendChild(button);
         });
       }
 
-      filter.addEventListener("input", refresh);
+      filter.addEventListener("input", () => refresh(true));
+      showMore.addEventListener("click", () => {
+        visibleRowLimit += initialVisibleRowLimit;
+        refresh();
+      });
       reset.addEventListener("click", () => {
         filter.value = "";
         sortColumn = null;
@@ -772,19 +823,18 @@ const APP_DOCUMENT_SCRIPT = `(() => {
           button.setAttribute("aria-pressed", "false");
           button.parentElement?.setAttribute("aria-sort", "none");
         });
-        refresh();
+        refresh(true);
         filter.focus();
       });
       save.addEventListener("click", () => {
-        const visibleRows = Array.from(body.rows).filter((row) => !row.hidden);
-        if (visibleRows.length === 0) return;
+        if (currentRows.length === 0) return;
         const handler = window.webkit?.messageHandlers?.org2TableView;
         if (!handler) return;
         handler.postMessage({
           startLine: Number(table.dataset.org2StartLine || 0),
           endLine: Number(table.dataset.org2EndLine || 0),
-          visibleBodyRowIndices: visibleRows.map((row) => Number(row.dataset.org2OriginalRowIndex)),
-          totalBodyRowCount: originalRows.length,
+          visibleBodyRowIndices: currentRows.map((row) => row.originalIndex),
+          totalBodyRowCount: rowRecords.length,
           filterActive: Boolean(filter.value.trim()),
           sortActive: sortColumn !== null
         });
@@ -1542,6 +1592,62 @@ function renderColorBinding(label: string, binding: OrgColorBinding, wholeCell: 
   return `<span class="org2-color-binding" style="${style}">${escapeHtml(label)}</span>`;
 }
 
+const IMAGE_LINK_EXTENSION = /\.(?:avif|bmp|gif|heic|heif|jpe?g|png|svg|webp)$/i;
+
+function resolveImageLinkSource(rawTarget: string, context: RenderContext): string | null {
+  const expandedTarget = expandLinkAbbreviationTarget(
+    String(rawTarget || "").trim(),
+    context.linkAbbreviations,
+  );
+  if (!expandedTarget) return null;
+
+  const targetWithoutSearch = expandedTarget.split("::", 1)[0] || "";
+  const match = targetWithoutSearch.match(/^([^?#]*)([?#].*)?$/);
+  const pathPart = match?.[1] || "";
+  const suffix = match?.[2] || "";
+  if (!IMAGE_LINK_EXTENSION.test(pathPart)) return null;
+
+  if (/^https?:/i.test(pathPart)) return `${pathPart}${suffix}`;
+  if (/^file:/i.test(pathPart)) {
+    const fileTarget = pathPart.slice(5);
+    if (fileTarget.startsWith("//")) return `file:${fileTarget}${suffix}`;
+    if (fileTarget.startsWith("/")) return `file://${fileTarget}${suffix}`;
+    return `${fileTarget}${suffix}`;
+  }
+
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(pathPart)) return null;
+  return `${pathPart}${suffix}`;
+}
+
+function imageAltText(source: string): string {
+  const pathPart = source.split(/[?#]/, 1)[0] || "";
+  const filename = path.basename(pathPart).replace(/\.[^.]+$/, "");
+  try {
+    return decodeURIComponent(filename).replace(/[-_]+/g, " ").trim() || "Image";
+  } catch {
+    return filename.replace(/[-_]+/g, " ").trim() || "Image";
+  }
+}
+
+function renderStandaloneImageParagraph(node: ParagraphNode, context: RenderContext): string | null {
+  const meaningfulChildren = node.children.filter(
+    (child) => child.type !== "Text" || child.value.trim().length > 0,
+  );
+  if (meaningfulChildren.length !== 1 || meaningfulChildren[0]?.type !== "Link") return null;
+
+  const link = meaningfulChildren[0];
+  if (String(link.descriptionRaw || "").trim()) return null;
+  const source = resolveImageLinkSource(link.targetRaw, context);
+  if (!source) return null;
+
+  const expandedTarget = expandLinkAbbreviationTarget(link.targetRaw, context.linkAbbreviations);
+  const href = context.profile === "app"
+    ? appLinkHref(link.targetRaw, expandedTarget, context)
+    : source;
+  const sourceAttributes = renderSourceAttributes(node, context);
+  return `<figure class="org2-image-figure"${sourceAttributes}><a class="org2-image-link" href="${escapeAttr(href)}"><img class="org2-image" src="${escapeAttr(source)}" alt="${escapeAttr(imageAltText(source))}" loading="lazy" decoding="async" /></a></figure>`;
+}
+
 function renderInline(node: InlineNode, context: RenderContext): string {
   if (node.type === "Text") return escapeHtml(node.value);
   if (node.type === "Timestamp") return renderTimestamp(node);
@@ -1565,6 +1671,9 @@ function renderSourceAttributes(node: Node, context: RenderContext): string {
 }
 
 function renderParagraph(node: ParagraphNode, context: RenderContext): string {
+  const image = renderStandaloneImageParagraph(node, context);
+  if (image) return image;
+
   const sourceAttributes = renderSourceAttributes(node, context);
   if (node.children.length === 1 && node.children[0]?.type === "Text") {
     const raw = String(node.children[0].value || "").trim();
@@ -1701,6 +1810,7 @@ function renderTable(node: TableNode, context: RenderContext): string {
 function renderListItem(node: ListItemNode, context: RenderContext): string {
   const body = renderNodes(node.children, context);
   const sourceAttributes = renderSourceAttributes(node, context);
+  const ordinalAttribute = node.ordinal !== undefined ? ` value="${node.ordinal}"` : "";
   const checkbox =
     node.checkbox === "checked"
       ? '<input type="checkbox" checked disabled /> '
@@ -1708,9 +1818,9 @@ function renderListItem(node: ListItemNode, context: RenderContext): string {
         ? '<input type="checkbox" disabled /> '
         : "";
 
-  if (!body.trim()) return `<li${sourceAttributes}>${checkbox}</li>`;
-  if (body.includes("\n")) return `<li${sourceAttributes}>${checkbox}\n${body}\n</li>`;
-  return `<li${sourceAttributes}>${checkbox}${body}</li>`;
+  if (!body.trim()) return `<li${ordinalAttribute}${sourceAttributes}>${checkbox}</li>`;
+  if (body.includes("\n")) return `<li${ordinalAttribute}${sourceAttributes}>${checkbox}\n${body}\n</li>`;
+  return `<li${ordinalAttribute}${sourceAttributes}>${checkbox}${body}</li>`;
 }
 
 function renderList(node: ListNode, context: RenderContext): string {
@@ -2010,8 +2120,11 @@ function renderDocumentHtml(opts: {
   const headStyleSection = renderHeadStyleSection({
     stylesheets: opts.stylesheets,
     includeDefaultStyle: opts.includeDefaultStyle,
-    defaultStyle: opts.includeToc ? `${DEFAULT_DOCUMENT_STYLE}
-${DOCUMENT_TOC_STYLE}` : DEFAULT_DOCUMENT_STYLE,
+    defaultStyle: [
+      DEFAULT_DOCUMENT_STYLE,
+      opts.mainBody.includes('class="org2-image-figure"') ? DOCUMENT_IMAGE_STYLE : "",
+      opts.includeToc ? DOCUMENT_TOC_STYLE : "",
+    ].filter(Boolean).join("\n"),
   });
 
   const preambleSection = opts.preambleHtml ? `${opts.preambleHtml}

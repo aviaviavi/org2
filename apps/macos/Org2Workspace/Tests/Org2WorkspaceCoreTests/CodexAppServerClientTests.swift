@@ -239,7 +239,7 @@ final class CodexAppServerClientTests: XCTestCase {
     XCTAssertEqual(store.aiChatCorpusAccessScope, .activeCorpus)
     XCTAssertEqual(store.aiChatCustomInstructions, "")
     XCTAssertEqual(store.codexSandboxAccess, .workspaceWrite)
-    XCTAssertEqual(store.aiChatMessageSound, .glass)
+    XCTAssertEqual(store.aiChatMessageSound, .org2)
 
     store.aiChatCorpusAccessScope = .allCorpora
     store.aiChatCustomInstructions = "Always identify the source corpus."

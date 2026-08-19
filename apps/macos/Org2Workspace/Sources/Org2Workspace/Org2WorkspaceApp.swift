@@ -78,6 +78,14 @@ struct Org2WorkspaceApp: App {
         .keyboardShortcut("z", modifiers: [.command, .shift])
       }
 
+      CommandGroup(replacing: .newItem) {
+        Button("New AI Thread") {
+          store.createAIChatThread()
+          store.makeSurfacePrimary(.openClaw)
+        }
+        .keyboardShortcut("n", modifiers: [.command])
+      }
+
       CommandGroup(after: .newItem) {
         Button("Open Corpus...") {
           store.chooseCorpus()
@@ -380,6 +388,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
   func applicationWillFinishLaunching(_ notification: Notification) {
     AppIconInstaller.install()
     diagnosticsHeartbeat.start()
+    WorkspacePointerLatencyMonitor.shared.start()
   }
 
   func applicationDidFinishLaunching(_ notification: Notification) {
@@ -401,6 +410,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
 
   func applicationWillTerminate(_ notification: Notification) {
     diagnosticsHeartbeat.stop()
+    WorkspacePointerLatencyMonitor.shared.stop()
   }
 }
 

@@ -4,7 +4,279 @@ import XCTest
 @testable import Org2WorkspaceCore
 
 @MainActor
+private final class ActivitySelectionModel: ObservableObject {
+  @Published var selectedIndex = 0
+}
+
+private struct ActivitySelectionHarness: View {
+  @ObservedObject var model: ActivitySelectionModel
+
+  var body: some View {
+    VStack {
+      OpenClawSidebarThreadActivityView(isSelected: model.selectedIndex == 0)
+      OpenClawSidebarThreadActivityView(isSelected: model.selectedIndex == 1)
+    }
+  }
+}
+
+@MainActor
 final class OpenClawChatLayoutTests: XCTestCase {
+  func testLiveProgressFeedShowsOnlyCurrentActivityUntilExpanded() {
+    let completed = OpenClawActivityFeedItem(
+      id: "completed",
+      title: "17 shell commands",
+      detail: "17 completed",
+      latestDetail: nil,
+      status: .succeeded,
+      count: 17,
+      updatedAt: Date()
+    )
+    let failed = OpenClawActivityFeedItem(
+      id: "failed",
+      title: "Memory search",
+      detail: "Tool call failed",
+      latestDetail: nil,
+      status: .failed,
+      count: 1,
+      updatedAt: Date()
+    )
+    let items = [completed, failed]
+
+    XCTAssertEqual(
+      OpenClawProgressFeedPresentation.visibleItems(
+        items,
+        isLive: true,
+        isExpanded: false,
+        collapsedItemLimit: 3
+      ),
+      [failed]
+    )
+    XCTAssertFalse(OpenClawProgressFeedPresentation.showsReasoning(isLive: true, isExpanded: false))
+    XCTAssertTrue(OpenClawProgressFeedPresentation.canExpand(
+      itemCount: items.count,
+      reasoningLength: 0,
+      isLive: true,
+      collapsedItemLimit: 3
+    ))
+    XCTAssertEqual(
+      OpenClawProgressFeedPresentation.disclosureTitle(isLive: true, isExpanded: false),
+      "Show activity"
+    )
+    XCTAssertEqual(
+      OpenClawProgressFeedPresentation.visibleItems(
+        items,
+        isLive: true,
+        isExpanded: true,
+        collapsedItemLimit: 3
+      ),
+      items
+    )
+    XCTAssertTrue(OpenClawProgressFeedPresentation.showsReasoning(isLive: true, isExpanded: true))
+
+    let running = OpenClawActivityFeedItem(
+      id: "running",
+      title: "Editing file",
+      detail: "Updating the selected document",
+      latestDetail: nil,
+      status: .running,
+      count: 1,
+      updatedAt: Date()
+    )
+    XCTAssertEqual(
+      OpenClawProgressFeedPresentation.visibleItems(
+        [running, completed, failed],
+        isLive: true,
+        isExpanded: false,
+        collapsedItemLimit: 3
+      ),
+      [running]
+    )
+  }
+
+  func testMessagePresentationCacheReusesParsedContentAndInvalidatesEdits() {
+    OpenClawMessagePresentationCache.removeAllForTesting()
+    let messageID = UUID()
+    let original = OpenClawChatMessage(
+      id: messageID,
+      role: .assistant,
+      content: "* Result\n| Name | Value |\n|------+-------|\n| Alpha | 1 |",
+      responseTrace: OpenClawResponseTrace(activities: [
+        OpenClawRunActivity(
+          id: "tool-1",
+          runID: "run-1",
+          kind: .tool,
+          title: "Shell command",
+          status: .succeeded
+        )
+      ])
+    )
+
+    let first = OpenClawMessagePresentationCache.presentation(for: original)
+    let second = OpenClawMessagePresentationCache.presentation(for: original)
+    XCTAssertTrue(first === second)
+    XCTAssertTrue(first.org?.usesStructuredRendering == true)
+    XCTAssertEqual(first.activityFeedItems.count, 1)
+
+    let edited = OpenClawChatMessage(
+      id: messageID,
+      role: .assistant,
+      content: "* Changed result"
+    )
+    let editedPresentation = OpenClawMessagePresentationCache.presentation(for: edited)
+    XCTAssertFalse(first === editedPresentation)
+    XCTAssertEqual(editedPresentation.context.userText, "* Changed result")
+  }
+
+  func testChatTimestampsIncludeUsefulDateContext() throws {
+    let timeZone = try XCTUnwrap(TimeZone(identifier: "America/Los_Angeles"))
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = timeZone
+    let locale = Locale(identifier: "en_US_POSIX")
+    func date(_ year: Int, _ month: Int, _ day: Int, _ hour: Int, _ minute: Int) throws -> Date {
+      try XCTUnwrap(calendar.date(from: DateComponents(
+        year: year,
+        month: month,
+        day: day,
+        hour: hour,
+        minute: minute
+      )))
+    }
+    let now = try date(2026, 8, 17, 15, 0)
+
+    XCTAssertEqual(
+      AIChatMessageTimestampPresentation.displayText(
+        for: try date(2026, 8, 17, 9, 15),
+        relativeTo: now,
+        calendar: calendar,
+        locale: locale,
+        timeZone: timeZone
+      ),
+      "Today at 9:15\u{202F}AM"
+    )
+    XCTAssertEqual(
+      AIChatMessageTimestampPresentation.displayText(
+        for: try date(2026, 8, 16, 21, 5),
+        relativeTo: now,
+        calendar: calendar,
+        locale: locale,
+        timeZone: timeZone
+      ),
+      "Yesterday at 9:05\u{202F}PM"
+    )
+    XCTAssertEqual(
+      AIChatMessageTimestampPresentation.displayText(
+        for: try date(2026, 7, 4, 12, 30),
+        relativeTo: now,
+        calendar: calendar,
+        locale: locale,
+        timeZone: timeZone
+      ),
+      "Jul 4 at 12:30\u{202F}PM"
+    )
+    XCTAssertEqual(
+      AIChatMessageTimestampPresentation.displayText(
+        for: try date(2025, 12, 31, 23, 59),
+        relativeTo: now,
+        calendar: calendar,
+        locale: locale,
+        timeZone: timeZone
+      ),
+      "Dec 31, 2025 at 11:59\u{202F}PM"
+    )
+  }
+
+  func testSidebarThreadActivityIndicatorIsExplicitWithoutDominatingTheRow() {
+    let view = OpenClawSidebarThreadActivityView()
+    XCTAssertEqual(view.statusTitle, "Working")
+
+    let hostingView = NSHostingView(rootView: view)
+    hostingView.layoutSubtreeIfNeeded()
+    let size = hostingView.fittingSize
+
+    XCTAssertGreaterThan(size.width, 40, "The indicator should include a visible status label")
+    XCTAssertLessThan(size.width, 80, "The status should remain compact in the sidebar")
+    XCTAssertLessThan(size.height, 28)
+  }
+
+  func testSidebarThreadActivityAnimationFollowsSelection() {
+    XCTAssertTrue(OpenClawSidebarThreadActivityView(isSelected: true).shouldAnimate)
+    XCTAssertFalse(OpenClawSidebarThreadActivityView(isSelected: false).shouldAnimate)
+  }
+
+  func testSidebarThreadActivityAnimationTransfersBetweenHostedRows() {
+    let model = ActivitySelectionModel()
+    let hostingView = NSHostingView(rootView: ActivitySelectionHarness(model: model))
+    let window = NSWindow(
+      contentRect: NSRect(x: 0, y: 0, width: 180, height: 80),
+      styleMask: [.borderless],
+      backing: .buffered,
+      defer: false
+    )
+    window.contentView = hostingView
+    hostingView.layoutSubtreeIfNeeded()
+
+    var dots = hostedActivityDots(in: hostingView)
+    XCTAssertEqual(dots.count, 2)
+    XCTAssertEqual(dots.filter(\.isAnimatingForTesting).count, 1)
+    let initiallyAnimatedDot = dots.first(where: \.isAnimatingForTesting)
+
+    model.selectedIndex = 1
+    RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+    hostingView.layoutSubtreeIfNeeded()
+
+    dots = hostedActivityDots(in: hostingView)
+    XCTAssertEqual(dots.count, 2)
+    XCTAssertEqual(dots.filter(\.isAnimatingForTesting).count, 1)
+    XCTAssertFalse(
+      dots.first(where: \.isAnimatingForTesting) === initiallyAnimatedDot,
+      "Selecting another thread must move the native animation to its row"
+    )
+  }
+
+  func testActivityPulseRunsOnCoreAnimationInsteadOfSwiftUIFrameClock() {
+    let view = CoreAnimationActivityDotNSView(frame: NSRect(x: 0, y: 0, width: 5, height: 5))
+
+    view.configure(animates: true, color: .controlAccentColor)
+    XCTAssertTrue(view.isAnimatingForTesting)
+
+    view.configure(animates: false, color: .controlAccentColor)
+    XCTAssertFalse(view.isAnimatingForTesting)
+  }
+
+  private func hostedActivityDots(in view: NSView) -> [CoreAnimationActivityDotNSView] {
+    var result = view is CoreAnimationActivityDotNSView
+      ? [view as! CoreAnimationActivityDotNSView]
+      : []
+    for subview in view.subviews {
+      result.append(contentsOf: hostedActivityDots(in: subview))
+    }
+    return result
+  }
+
+  func testPeriodicStatusTextUsesAnAppKitLocalTimer() {
+    let window = NSWindow(
+      contentRect: NSRect(x: 0, y: 0, width: 160, height: 40),
+      styleMask: [.borderless],
+      backing: .buffered,
+      defer: false
+    )
+    let view = AppKitPeriodicTextField(frame: NSRect(x: 0, y: 0, width: 150, height: 20))
+    window.contentView = view
+
+    view.configure(
+      interval: 1,
+      font: .systemFont(ofSize: 11),
+      color: .secondaryLabelColor,
+      textProvider: { _ in "Working locally" }
+    )
+
+    XCTAssertEqual(view.stringValue, "Working locally")
+    XCTAssertTrue(view.isUpdatingForTesting)
+
+    view.stopUpdating()
+    XCTAssertFalse(view.isUpdatingForTesting)
+  }
+
   func testChatThreadSwitchDoesNotRequestAnimatedScrolling() {
     let previous = OpenClawChatScrollUpdate(
       threadID: UUID(),
@@ -209,6 +481,100 @@ final class OpenClawChatLayoutTests: XCTestCase {
     XCTAssertEqual(OpenClawMessageClipboard.text(for: message), presentation.normalizedText)
   }
 
+  func testAssistantTableRowsExpandForWrappedCells() {
+    let wrappedMessage = OpenClawChatMessage(
+      role: .assistant,
+      content: """
+      | Issue | Why |
+      |-------+-----|
+      | APP-21298 | PR #10422 is contained in the current production revision, whose deployment succeeded August 15, but no post-deployment verification was recorded. |
+      | APP-21299 | PR #10434 merged after the current production revision and has not reached production yet. |
+      | APP-21174 | PR #10424 is contained in the deployed production revision, but the durable run was not reconciled afterward. |
+      """
+    )
+    let singleLineMessage = OpenClawChatMessage(
+      role: .assistant,
+      content: """
+      | Issue | Why |
+      |-------+-----|
+      | APP-21298 | Deployed. |
+      | APP-21299 | Not deployed. |
+      | APP-21174 | Deployed. |
+      """
+    )
+
+    func fittingHeight(for message: OpenClawChatMessage) -> CGFloat {
+      let view = ChatBubbleView(message: message, compact: false)
+        .frame(width: 640, alignment: .leading)
+      let hostingView = NSHostingView(rootView: view)
+      hostingView.frame = NSRect(x: 0, y: 0, width: 640, height: 1)
+      hostingView.layoutSubtreeIfNeeded()
+      return hostingView.fittingSize.height
+    }
+
+    XCTAssertGreaterThan(
+      fittingHeight(for: wrappedMessage),
+      fittingHeight(for: singleLineMessage) + 40
+    )
+  }
+
+  func testAssistantTableColumnsFitOrdinaryFourColumnChatTables() {
+    let rows: [OrgTableRow] = [
+      .cells(["Line item", "Monthly quantity", "Unit price", "Annual reference"]),
+      .cells([
+        "Additional Company Unlocks, units 1,001–2,500",
+        "1,500",
+        "$0.96/unlock-month",
+        "$17,280",
+      ]),
+    ]
+    let widths = RenderedTableColumnWidths.make(
+      rows: rows,
+      visibleColumns: [0, 1, 2, 3]
+    )
+
+    XCTAssertEqual(widths.values.reduce(0, +), RenderedTableColumnWidths.preferredTotal, accuracy: 0.01)
+    XCTAssertTrue(widths.values.allSatisfy { $0 >= RenderedTableColumnWidths.minimum })
+    XCTAssertTrue(widths.values.allSatisfy { $0 <= RenderedTableColumnWidths.maximum })
+  }
+
+  func testAssistantTableKeepsCompactNaturalWidths() {
+    let rows: [OrgTableRow] = [
+      .cells(["Issue", "State"]),
+      .cells(["APP-21298", "Deployed"]),
+    ]
+    let widths = RenderedTableColumnWidths.make(rows: rows, visibleColumns: [0, 1])
+
+    XCTAssertEqual(widths[0], RenderedTableColumnWidths.minimum)
+    XCTAssertEqual(widths[1], RenderedTableColumnWidths.minimum)
+  }
+
+  func testAssistantTableUsesWiderAvailableSpaceBeforeScrolling() {
+    let rows: [OrgTableRow] = [
+      .cells(["", "Annual quantity", "Unit price"]),
+      .cells([
+        "Company Unlocks with the corrected annual allowance and renewal reference",
+        "26,400",
+        "$1.1636/unlock-month",
+      ]),
+    ]
+    let narrowWidths = RenderedTableColumnWidths.make(
+      rows: rows,
+      visibleColumns: [0, 1, 2],
+      availableWidth: 360
+    )
+    let wideWidths = RenderedTableColumnWidths.make(
+      rows: rows,
+      visibleColumns: [0, 1, 2],
+      availableWidth: 900
+    )
+
+    XCTAssertEqual(narrowWidths.values.reduce(0, +), 360, accuracy: 0.01)
+    XCTAssertGreaterThan(wideWidths.values.reduce(0, +), 360)
+    XCTAssertLessThanOrEqual(wideWidths.values.reduce(0, +), 900)
+    XCTAssertGreaterThan(wideWidths[0] ?? 0, 260)
+  }
+
   func testPlainAssistantMessagesKeepLightweightInlineRendering() {
     let presentation = OpenClawMessageOrgPresentation("A short answer with *emphasis* and [[recipes.org2][a link]].")
 
@@ -380,6 +746,23 @@ final class OpenClawChatLayoutTests: XCTestCase {
       reconnecting.statusDetail(now: now),
       "The run is saved and will reconnect without being sent twice."
     )
+    XCTAssertTrue(reconnecting.canStop)
+  }
+
+  func testOpenClawStatusCardAllowsStoppingBeforeAConnectionOrRunIDExists() {
+    let connecting = OpenClawTypingIndicatorView(
+      startedAt: Date(),
+      connectionState: .connecting,
+      connectionDetail: nil,
+      runID: nil,
+      streamingReply: "",
+      reasoning: "",
+      activities: [],
+      compact: false,
+      onStop: {}
+    )
+
+    XCTAssertTrue(connecting.canStop)
   }
 
   func testOpenClawStatusCardStaysBoundedWithStructuredToolOutput() {

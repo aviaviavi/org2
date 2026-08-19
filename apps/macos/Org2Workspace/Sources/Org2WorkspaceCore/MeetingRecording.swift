@@ -441,7 +441,13 @@ public struct LocalWhisperConfiguration: Sendable {
       parsed > 0 {
       return parsed
     }
-    return max(1, ProcessInfo.processInfo.activeProcessorCount - 1)
+    return Self.defaultThreadCount(
+      activeProcessorCount: ProcessInfo.processInfo.activeProcessorCount
+    )
+  }
+
+  public static func defaultThreadCount(activeProcessorCount: Int) -> Int {
+    min(4, max(1, activeProcessorCount / 2))
   }
 }
 
@@ -581,7 +587,7 @@ public struct LocalWhisperTranscriber: Sendable {
 
   public func transcribe(audioURL: URL) async throws -> MeetingTranscriptResult {
     let configuration = configuration
-    return try await Task.detached(priority: .userInitiated) {
+    return try await Task.detached(priority: .utility) {
       try Self.transcribeSync(audioURL: audioURL, configuration: configuration)
     }.value
   }
@@ -844,8 +850,14 @@ public struct LocalWhisperTranscriber: Sendable {
     currentDirectoryURL: URL
   ) throws -> ProcessTextResult {
     let process = Process()
-    process.executableURL = executableURL
-    process.arguments = arguments
+    let niceURL = URL(fileURLWithPath: "/usr/bin/nice")
+    if FileManager.default.isExecutableFile(atPath: niceURL.path) {
+      process.executableURL = niceURL
+      process.arguments = ["-n", "10", executableURL.path] + arguments
+    } else {
+      process.executableURL = executableURL
+      process.arguments = arguments
+    }
     process.currentDirectoryURL = currentDirectoryURL
 
     var environment = ProcessInfo.processInfo.environment
@@ -854,6 +866,13 @@ public struct LocalWhisperTranscriber: Sendable {
       environment["PATH"] = "\(defaultPath):\(existing)"
     } else {
       environment["PATH"] = defaultPath
+    }
+    let backgroundThreadLimit = String(LocalWhisperConfiguration.defaultThreadCount(
+      activeProcessorCount: ProcessInfo.processInfo.activeProcessorCount
+    ))
+    for key in ["OMP_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"]
+      where environment[key]?.isEmpty != false {
+      environment[key] = backgroundThreadLimit
     }
     process.environment = environment
 
@@ -869,12 +888,12 @@ public struct LocalWhisperTranscriber: Sendable {
     try process.run()
 
     readGroup.enter()
-    DispatchQueue.global(qos: .userInitiated).async {
+    DispatchQueue.global(qos: .utility).async {
       stdoutCollector.set(stdout.fileHandleForReading.readDataToEndOfFile())
       readGroup.leave()
     }
     readGroup.enter()
-    DispatchQueue.global(qos: .userInitiated).async {
+    DispatchQueue.global(qos: .utility).async {
       stderrCollector.set(stderr.fileHandleForReading.readDataToEndOfFile())
       readGroup.leave()
     }

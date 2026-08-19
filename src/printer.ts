@@ -201,7 +201,7 @@ function printListItem(node: ListItemNode, continuationIndent: string, nestedLis
 
 function printList(node: ListNode, indent: string = ""): string {
   const items = node.items.map((item, index) => {
-    const marker = node.ordered ? `${index + 1}.` : "-";
+    const marker = node.ordered ? `${item.ordinal ?? index + 1}.` : "-";
 
     let checkboxStr = "";
     if (item.checkbox === "unchecked") checkboxStr = " [ ]";

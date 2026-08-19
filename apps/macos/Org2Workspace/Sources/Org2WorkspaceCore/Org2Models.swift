@@ -150,6 +150,30 @@ struct RunCenterSection: Identifiable {
 }
 
 enum RunCenterPresentation {
+  static func prefixSections(
+    _ sections: [RunCenterSection],
+    limit: Int
+  ) -> [RunCenterSection] {
+    guard limit > 0 else { return [] }
+    var remaining = limit
+    var result: [RunCenterSection] = []
+    result.reserveCapacity(sections.count)
+
+    for section in sections where remaining > 0 {
+      let entries = Array(section.entries.prefix(remaining))
+      guard !entries.isEmpty else { continue }
+      result.append(
+        RunCenterSection(
+          id: section.id,
+          sourceMeeting: section.sourceMeeting,
+          entries: entries
+        )
+      )
+      remaining -= entries.count
+    }
+    return result
+  }
+
   static func approvalID(
     selectedApprovalItemID: ApprovalItem.ID?,
     runID: AgentRunItem.ID
@@ -212,30 +236,39 @@ enum RunCenterPresentation {
     for entries: [AgentRunScopeEntry],
     allRuns: [AgentRunItem]
   ) -> [RunCenterSection] {
-    var sections: [RunCenterSection] = []
-    var sectionIndexByID: [String: Int] = [:]
     let sourceMeetingContexts = sourceMeetingContextsByRunID(in: allRuns)
+    return sections(for: entries, sourceMeetingContexts: sourceMeetingContexts)
+  }
+
+  static func sections(
+    for entries: [AgentRunScopeEntry],
+    sourceMeetingContexts: [AgentRunItem.ID: AgentRunContextItem]
+  ) -> [RunCenterSection] {
+    var sectionOrder: [String] = []
+    var sourceMeetingsBySectionID: [String: AgentRunContextItem] = [:]
+    var entriesBySectionID: [String: [AgentRunScopeEntry]] = [:]
+    sectionOrder.reserveCapacity(min(entries.count, 16))
+    entriesBySectionID.reserveCapacity(min(entries.count, 16))
 
     for entry in entries {
       let sourceMeeting = sourceMeetingContexts[entry.run.id]
       let sectionID = sourceMeeting.map { "meeting:\($0.fileReference ?? $0.ref)" } ?? "other"
-      if let index = sectionIndexByID[sectionID] {
-        let existing = sections[index]
-        sections[index] = RunCenterSection(
-          id: existing.id,
-          sourceMeeting: existing.sourceMeeting,
-          entries: existing.entries + [entry]
-        )
-      } else {
-        sectionIndexByID[sectionID] = sections.count
-        sections.append(RunCenterSection(
-          id: sectionID,
-          sourceMeeting: sourceMeeting,
-          entries: [entry]
-        ))
+      if entriesBySectionID[sectionID] == nil {
+        sectionOrder.append(sectionID)
+        if let sourceMeeting {
+          sourceMeetingsBySectionID[sectionID] = sourceMeeting
+        }
       }
+      entriesBySectionID[sectionID, default: []].append(entry)
     }
-    return sections
+
+    return sectionOrder.map { sectionID in
+      RunCenterSection(
+        id: sectionID,
+        sourceMeeting: sourceMeetingsBySectionID[sectionID],
+        entries: entriesBySectionID[sectionID] ?? []
+      )
+    }
   }
 }
 
@@ -5775,6 +5808,20 @@ public enum AgendaMode: String, CaseIterable, Identifiable, Sendable {
     case .today: "Today"
     case .range: "Range"
     case .assigned: "All Time"
+    }
+  }
+}
+
+public enum AgendaOverdueOrder: String, CaseIterable, Identifiable, Sendable {
+  case priority
+  case dueDate
+
+  public var id: String { rawValue }
+
+  public var title: String {
+    switch self {
+    case .priority: "Priority first"
+    case .dueDate: "Due date"
     }
   }
 }

@@ -65,6 +65,38 @@ private actor OpenClawRecoveryRecorder {
   }
 }
 
+private actor OpenClawRelaunchRecoveryRecorder {
+  private var slowRecoveryStarted = false
+  private var slowRecoveryContinuation: CheckedContinuation<String, Never>?
+  private var startWaiters: [CheckedContinuation<Void, Never>] = []
+
+  func recover(_ turn: OpenClawPendingTurn) async -> String {
+    guard turn.runID == "slow-recovery" else {
+      return "Recovered fast turn"
+    }
+    slowRecoveryStarted = true
+    for waiter in startWaiters {
+      waiter.resume()
+    }
+    startWaiters = []
+    return await withCheckedContinuation { continuation in
+      slowRecoveryContinuation = continuation
+    }
+  }
+
+  func waitUntilSlowRecoveryStarts() async {
+    guard !slowRecoveryStarted else { return }
+    await withCheckedContinuation { continuation in
+      startWaiters.append(continuation)
+    }
+  }
+
+  func finishSlowRecovery() {
+    slowRecoveryContinuation?.resume(returning: "Recovered slow turn")
+    slowRecoveryContinuation = nil
+  }
+}
+
 private actor OpenClawStoppedRecoveryRecorder {
   private var attempts = 0
 
@@ -202,6 +234,7 @@ private actor AIChatSteerRecorder {
 final class Org2ModelsTests: XCTestCase {
   func testWorkspaceSoundPlaybackIsSuppressedUnderXCTest() {
     XCTAssertTrue(WorkspaceSound.isPlaybackSuppressed)
+    XCTAssertNotNil(WorkspaceSound.bundledNewMessageSoundURL)
   }
 
   func testWorkspaceCacheRecencyRefreshesEntriesAndBoundsMemory() {
@@ -1559,7 +1592,7 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
-  func testSelectingChatThreadAvoidsFullTranscriptRewriteAndStillRestoresSelection() async throws {
+  func testSelectingChatThreadNeverRewritesFullTranscriptAndStillRestoresSelection() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-fast-chat-selection-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -1594,10 +1627,8 @@ final class Org2ModelsTests: XCTestCase {
     )
     XCTAssertEqual(restored.selectedOpenClawChatThreadID, firstThreadID)
     XCTAssertEqual(restored.openClawMessages.map(\.content), ["First thread"])
-    try await waitForCondition(timeout: 1) {
-      fullTranscriptSaveCount == 1
-    }
-    XCTAssertEqual(fullTranscriptSaveCount, 1)
+    try await Task.sleep(nanoseconds: 80_000_000)
+    XCTAssertEqual(fullTranscriptSaveCount, 0)
   }
 
   @MainActor
@@ -2693,6 +2724,10 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertFalse(restored.isAIChatMessageQueued(userMessage.id))
     XCTAssertTrue(restored.isAIChatMessageQueued(queuedMessage.id))
     await restored.bootstrap()
+    try await waitForCondition {
+      restored.openClawMessages.count == 4
+        && restored.selectedOpenClawChatThread?.pendingTurn == nil
+    }
 
     XCTAssertEqual(restored.openClawMessages.map { "\($0.role.rawValue):\($0.content)" }, [
       "user:Finish this even if I quit",
@@ -2722,6 +2757,91 @@ final class Org2ModelsTests: XCTestCase {
     ])
     let finalRecoveredTurns = await recorder.recordedTurns()
     XCTAssertEqual(finalRecoveredTurns.count, 1)
+  }
+
+  @MainActor
+  func testRelaunchRecoveryDoesNotBlockBootstrapOrOtherThreads() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-chat-parallel-recovery-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let transcript = root.appendingPathComponent("openclaw-chat.json")
+    let suiteName = "org2-workspace-chat-parallel-recovery-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+
+    let slowMessage = OpenClawChatMessage(
+      role: .user,
+      content: "Keep working on the slow turn",
+      deliveryStatus: .sending
+    )
+    let fastMessage = OpenClawChatMessage(
+      role: .user,
+      content: "Recover this completed turn too",
+      deliveryStatus: .sending
+    )
+    let slowThread = OpenClawChatThread(
+      title: "Slow recovery",
+      sessionKey: "agent:main:org2-workspace:slow-recovery",
+      messages: [slowMessage],
+      pendingTurn: OpenClawPendingTurn(
+        userMessageID: slowMessage.id,
+        runID: "slow-recovery",
+        agentID: "main",
+        gatewayMessage: "Persisted slow request"
+      )
+    )
+    let fastThread = OpenClawChatThread(
+      title: "Fast recovery",
+      sessionKey: "agent:main:org2-workspace:fast-recovery",
+      messages: [fastMessage],
+      pendingTurn: OpenClawPendingTurn(
+        userMessageID: fastMessage.id,
+        runID: "fast-recovery",
+        agentID: "main",
+        gatewayMessage: "Persisted fast request"
+      )
+    )
+    let fixture = OpenClawTranscriptFixture(
+      version: 6,
+      messages: nil,
+      threads: [slowThread, fastThread],
+      selectedThreadID: slowThread.id
+    )
+    try JSONEncoder().encode(fixture).write(to: transcript, options: .atomic)
+
+    let recorder = OpenClawRelaunchRecoveryRecorder()
+    let restored = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: transcript,
+      openClawRecoveryHandler: { turn, _ in await recorder.recover(turn) }
+    )
+
+    let bootstrapFinished = expectation(description: "bootstrap is not blocked by a recovered turn")
+    Task { @MainActor in
+      await restored.bootstrap()
+      bootstrapFinished.fulfill()
+    }
+    await fulfillment(of: [bootstrapFinished], timeout: 1)
+    await recorder.waitUntilSlowRecoveryStarts()
+
+    try await waitForCondition(timeout: 1) {
+      restored.openClawChatThreads
+        .first(where: { $0.id == fastThread.id })?
+        .messages.contains(where: { $0.content == "Recovered fast turn" }) == true
+    }
+    XCTAssertNotNil(
+      restored.openClawChatThreads.first(where: { $0.id == slowThread.id })?.pendingTurn,
+      "A still-running recovery remains durable while other threads finish"
+    )
+
+    await recorder.finishSlowRecovery()
+    try await waitForCondition(timeout: 1) {
+      restored.openClawChatThreads
+        .first(where: { $0.id == slowThread.id })?
+        .messages.contains(where: { $0.content == "Recovered slow turn" }) == true
+    }
   }
 
   @MainActor
@@ -2769,6 +2889,9 @@ final class Org2ModelsTests: XCTestCase {
     )
 
     await restored.bootstrap()
+    try await waitForCondition {
+      restored.selectedOpenClawChatThread?.pendingTurn == nil
+    }
 
     XCTAssertNil(restored.selectedOpenClawChatThread?.pendingTurn)
     XCTAssertEqual(restored.openClawMessages.first?.deliveryStatus, .interrupted)
@@ -2786,6 +2909,66 @@ final class Org2ModelsTests: XCTestCase {
     await restored.recoverPendingOpenClawTurns()
     let finalAttemptCount = await recorder.attemptCount()
     XCTAssertEqual(finalAttemptCount, 1)
+  }
+
+  @MainActor
+  func testPendingOpenClawTurnCanStopWithoutLiveGatewayConnection() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-chat-stop-offline-recovery-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let transcript = root.appendingPathComponent("openclaw-chat.json")
+    let userMessage = OpenClawChatMessage(
+      role: .user,
+      content: "Do not reconnect this stale request",
+      deliveryStatus: .sending
+    )
+    let pendingTurn = OpenClawPendingTurn(
+      userMessageID: userMessage.id,
+      runID: "offline-recovery-run-id",
+      agentID: "main",
+      gatewayMessage: "Persisted request"
+    )
+    let thread = OpenClawChatThread(
+      title: "Offline recovered turn",
+      sessionKey: "agent:main:org2-workspace:offline-recovery",
+      messages: [userMessage],
+      pendingTurn: pendingTurn
+    )
+    let fixture = OpenClawTranscriptFixture(
+      version: 4,
+      messages: nil,
+      threads: [thread],
+      selectedThreadID: thread.id
+    )
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    try encoder.encode(fixture).write(to: transcript, options: .atomic)
+
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      openClawTranscriptURL: transcript
+    )
+
+    XCTAssertTrue(store.isAIChatThreadRunning(thread.id))
+    let didStop = await store.stopAIChatRemoteRun(threadID: thread.id)
+    XCTAssertTrue(didStop)
+    XCTAssertNil(store.selectedOpenClawChatThread?.pendingTurn)
+    XCTAssertEqual(store.openClawMessages.first?.deliveryStatus, .interrupted)
+    XCTAssertEqual(
+      store.openClawMessages.first?.sendFailure,
+      "OpenClaw was stopped by you. Retry to start this request again."
+    )
+    XCTAssertEqual(store.openClawStatusText, "OpenClaw stopped")
+    XCTAssertFalse(store.isAIChatThreadRunning(thread.id))
+
+    let relaunched = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      openClawTranscriptURL: transcript
+    )
+    XCTAssertNil(relaunched.selectedOpenClawChatThread?.pendingTurn)
+    XCTAssertEqual(relaunched.openClawMessages.first?.deliveryStatus, .interrupted)
+    XCTAssertFalse(relaunched.isAIChatThreadRunning(thread.id))
   }
 
   @MainActor
@@ -2954,6 +3137,22 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(store.openClawChatThreads.count, 1)
     XCTAssertEqual(store.openClawMessages.first?.content, "Existing approval context")
     XCTAssertTrue(store.openClawMessages.map(\.content).contains { $0.contains("Check this before sending.") })
+  }
+
+  func testApprovalDiscussionDestinationNamesOnlyOfferAnExistingSelectedThread() {
+    XCTAssertEqual(
+      OpenClawThreadMode.newThread.discussionDestinationTitle(selectedThreadTitle: nil),
+      "New thread"
+    )
+    XCTAssertNil(
+      OpenClawThreadMode.currentThread.discussionDestinationTitle(selectedThreadTitle: nil)
+    )
+    XCTAssertEqual(
+      OpenClawThreadMode.currentThread.discussionDestinationTitle(
+        selectedThreadTitle: "Revenue Scout review"
+      ),
+      "Continue in \u{201c}Revenue Scout review\u{201d}"
+    )
   }
 
   @MainActor
@@ -3824,6 +4023,26 @@ final class Org2ModelsTests: XCTestCase {
     withExtendedLifetime((workspaceCancellable, meterCancellable)) {}
   }
 
+  @MainActor
+  func testMeetingTranscriptionProgressDoesNotInvalidateWorkspaceStore() throws {
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    var workspaceUpdates = 0
+    var progressUpdates = 0
+    let workspaceCancellable = store.objectWillChange.sink { workspaceUpdates += 1 }
+    let progressCancellable = store.meetingTranscriptionProgressState.objectWillChange.sink {
+      progressUpdates += 1
+    }
+
+    store.meetingTranscriptionProgressState.publish(progress: 0.42, elapsedText: "12s")
+
+    XCTAssertEqual(workspaceUpdates, 0)
+    XCTAssertEqual(progressUpdates, 2)
+    XCTAssertEqual(store.meetingTranscriptionProgress, 0.42)
+    XCTAssertEqual(store.meetingTranscriptionElapsedText, "12s")
+
+    withExtendedLifetime((workspaceCancellable, progressCancellable)) {}
+  }
+
   func testMeetingCaptureSourceDisclosesSystemAudioPermission() {
     let source = WorkspaceStore.meetingCaptureSourceSummary.lowercased()
     XCTAssertTrue(source.contains("microphone"))
@@ -3852,6 +4071,19 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(status.whisperCppExecutablePath?.hasSuffix("whisper-cli") == true)
     XCTAssertEqual(status.whisperCppModelPath, model.path)
     XCTAssertEqual(status.statusLabel, "Fast local transcription ready")
+  }
+
+  func testLocalWhisperDefaultThreadCountLeavesCapacityForForegroundWork() {
+    XCTAssertEqual(LocalWhisperConfiguration.defaultThreadCount(activeProcessorCount: 1), 1)
+    XCTAssertEqual(LocalWhisperConfiguration.defaultThreadCount(activeProcessorCount: 2), 1)
+    XCTAssertEqual(LocalWhisperConfiguration.defaultThreadCount(activeProcessorCount: 8), 4)
+    XCTAssertEqual(LocalWhisperConfiguration.defaultThreadCount(activeProcessorCount: 16), 4)
+
+    let configured = LocalWhisperConfiguration(
+      environment: ["ORG2_WORKSPACE_WHISPER_THREADS": "6"],
+      bundleResourceURL: nil
+    )
+    XCTAssertEqual(configured.requestedThreadCount, 6)
   }
 
   func testLocalWhisperInstallationStatusPrefersBundledRuntimeWithoutEnvironment() throws {
@@ -4185,12 +4417,18 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(compactLongHeight, 150)
   }
 
-  func testOpenClawComposerReturnSendsAndCommandReturnAddsNewline() {
+  func testOpenClawComposerReturnSendsCommandShiftReturnSteersAndCommandReturnAddsNewline() {
     XCTAssertTrue(OpenClawComposerKeyCommand.isSendCommand(keyCode: 36, modifiers: []))
     XCTAssertTrue(OpenClawComposerKeyCommand.isSendCommand(keyCode: 76, modifiers: []))
     XCTAssertFalse(OpenClawComposerKeyCommand.isSendCommand(keyCode: 36, modifiers: [.command]))
     XCTAssertFalse(OpenClawComposerKeyCommand.isSendCommand(keyCode: 36, modifiers: [.command, .shift]))
     XCTAssertFalse(OpenClawComposerKeyCommand.isSendCommand(keyCode: 49, modifiers: [.command]))
+
+    XCTAssertTrue(OpenClawComposerKeyCommand.isSteerCommand(keyCode: 36, modifiers: [.command, .shift]))
+    XCTAssertTrue(OpenClawComposerKeyCommand.isSteerCommand(keyCode: 76, modifiers: [.command, .shift]))
+    XCTAssertFalse(OpenClawComposerKeyCommand.isSteerCommand(keyCode: 36, modifiers: []))
+    XCTAssertFalse(OpenClawComposerKeyCommand.isSteerCommand(keyCode: 36, modifiers: [.command]))
+    XCTAssertFalse(OpenClawComposerKeyCommand.isSteerCommand(keyCode: 36, modifiers: [.shift]))
 
     XCTAssertTrue(OpenClawComposerKeyCommand.isNewlineCommand(keyCode: 36, modifiers: [.command]))
     XCTAssertTrue(OpenClawComposerKeyCommand.isNewlineCommand(keyCode: 76, modifiers: [.command]))
@@ -4812,7 +5050,7 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
-  func testInProgressMessageSteersInsteadOfStartingASecondTurn() async throws {
+  func testInProgressMessageQueuesByDefaultAndCanSteerNow() async throws {
     let sendRecorder = OpenClawSuspendedSendRecorder()
     let steerRecorder = AIChatSteerRecorder()
     let transcriptURL = FileManager.default.temporaryDirectory
@@ -4834,6 +5072,14 @@ final class Org2ModelsTests: XCTestCase {
     let threadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
 
     store.sendComposedOpenClawMessage(text: "focus on the failing test")
+    let queuedMessage = try XCTUnwrap(store.openClawMessages.last)
+    XCTAssertTrue(store.isAIChatMessageQueued(queuedMessage.id))
+    XCTAssertTrue(store.canSteerQueuedAIChatMessage(queuedMessage.id))
+    XCTAssertEqual(queuedMessage.deliveryKind, .followUp)
+    let preSteerContents = await steerRecorder.recordedContents()
+    XCTAssertTrue(preSteerContents.isEmpty)
+
+    await store.steerQueuedAIChatMessage(queuedMessage.id)
     try await waitForCondition {
       store.openClawMessages.last?.deliveryStatus == .sent
     }
@@ -4841,7 +5087,7 @@ final class Org2ModelsTests: XCTestCase {
     let steeredContents = await steerRecorder.recordedContents()
     XCTAssertEqual(steeredContents, ["focus on the failing test"])
     XCTAssertEqual(store.openClawMessages.map(\.deliveryKind), [.turn, .steer])
-    XCTAssertFalse(store.isAIChatMessageQueued(try XCTUnwrap(store.openClawMessages.last?.id)))
+    XCTAssertFalse(store.isAIChatMessageQueued(queuedMessage.id))
     XCTAssertEqual(store.openClawChatThreads.first(where: { $0.id == threadID })?.runtime, .openClaw)
 
     await sendRecorder.finish(reply: "finished with the new direction")
@@ -4851,6 +5097,45 @@ final class Org2ModelsTests: XCTestCase {
       "user:focus on the failing test",
       "assistant:finished with the new direction"
     ])
+  }
+
+  @MainActor
+  func testExplicitInProgressSteerBypassesQueue() async throws {
+    let sendRecorder = OpenClawSuspendedSendRecorder()
+    let steerRecorder = AIChatSteerRecorder()
+    let transcriptURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-openclaw-explicit-steer-\(UUID().uuidString).json")
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      openClawTranscriptURL: transcriptURL,
+      openClawSendHandler: { messages, _, _, _ in
+        try await sendRecorder.send(messages: messages)
+      }
+    )
+    store.aiChatSteerHandlerForTesting = { runtime, threadID, content, _ in
+      await steerRecorder.record(runtime: runtime, threadID: threadID, content: content)
+    }
+
+    store.openClawDraft = "first request"
+    let firstSend = Task { await store.sendOpenClawMessage() }
+    await sendRecorder.waitUntilStarted()
+
+    store.sendComposedOpenClawMessage(
+      text: "change direction immediately",
+      delivery: .steer
+    )
+    try await waitForCondition {
+      store.openClawMessages.last?.deliveryStatus == .sent
+    }
+
+    let steeredContents = await steerRecorder.recordedContents()
+    XCTAssertEqual(steeredContents, ["change direction immediately"])
+    let steerMessage = try XCTUnwrap(store.openClawMessages.last)
+    XCTAssertEqual(steerMessage.deliveryKind, .steer)
+    XCTAssertFalse(store.isAIChatMessageQueued(steerMessage.id))
+
+    await sendRecorder.finish(reply: "finished after steering")
+    await firstSend.value
   }
 
   func testOpenClawSteerRequestUsesExplicitQueueModeWithCommandFallback() {
@@ -4929,6 +5214,32 @@ final class Org2ModelsTests: XCTestCase {
         "reply to Existing origin draft\n\nDictated follow-up",
       ]
     )
+  }
+
+  @MainActor
+  func testDictationStopReturnsTranscriptToOriginatingThreadComposer() throws {
+    let transcriptURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-openclaw-dictation-draft-origin-\(UUID().uuidString).json")
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      openClawTranscriptURL: transcriptURL
+    )
+
+    store.createOpenClawChatThread()
+    let originThreadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
+    store.publishOpenClawComposerDraft("Existing origin draft")
+
+    store.createOpenClawChatThread()
+    let otherThreadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
+    store.publishOpenClawComposerDraft("Unrelated other-thread draft")
+
+    XCTAssertTrue(store.insertOpenClawDictationIntoDraft("Dictated follow-up", in: originThreadID))
+    XCTAssertEqual(store.selectedOpenClawChatThreadID, otherThreadID)
+    XCTAssertEqual(store.openClawDraft, "Unrelated other-thread draft")
+
+    store.selectOpenClawChatThread(originThreadID)
+    XCTAssertEqual(store.openClawDraft, "Existing origin draft\n\nDictated follow-up")
+    XCTAssertTrue(store.openClawMessages.isEmpty)
   }
 
   @MainActor
@@ -6871,6 +7182,44 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(textView.enabledTextCheckingTypes, 0)
   }
 
+  @MainActor
+  func testSyntaxEditorDisablesContinuousTextCheckingForLargeBuffers() {
+    let textView = NSTextView()
+
+    OrgSyntaxTextEditor.configureTextChecking(
+      .spellingAndGrammar,
+      in: textView,
+      utf16Length: OrgSyntaxTextEditor.continuousTextCheckingUTF16Limit
+    )
+    XCTAssertTrue(textView.isContinuousSpellCheckingEnabled)
+    XCTAssertTrue(textView.isGrammarCheckingEnabled)
+
+    OrgSyntaxTextEditor.configureTextChecking(
+      .spellingAndGrammar,
+      in: textView,
+      utf16Length: OrgSyntaxTextEditor.continuousTextCheckingUTF16Limit + 1
+    )
+    XCTAssertFalse(textView.isContinuousSpellCheckingEnabled)
+    XCTAssertFalse(textView.isGrammarCheckingEnabled)
+    XCTAssertEqual(textView.enabledTextCheckingTypes, 0)
+  }
+
+  @MainActor
+  func testSyntaxEditorUsesNoncontiguousLayoutOnlyForScrollingEditors() {
+    XCTAssertTrue(OrgSyntaxTextEditor.shouldAllowNonContiguousLayout(
+      showsScrollers: true,
+      measuresContentHeight: false
+    ))
+    XCTAssertFalse(OrgSyntaxTextEditor.shouldAllowNonContiguousLayout(
+      showsScrollers: false,
+      measuresContentHeight: false
+    ))
+    XCTAssertFalse(OrgSyntaxTextEditor.shouldAllowNonContiguousLayout(
+      showsScrollers: true,
+      measuresContentHeight: true
+    ))
+  }
+
   func testSourceTextCheckingExcludesOrgSyntaxAndChecksProse() throws {
     let text = """
     * TODO Review writting
@@ -7572,6 +7921,27 @@ final class Org2ModelsTests: XCTestCase {
       guard case .chatThread = $0 else { return false }
       return true
     })
+  }
+
+  @MainActor
+  func testQuickOpenFilePreservesCurrentWorkspaceSurface() throws {
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    let file = CorpusFile(
+      path: "/tmp/quick-open-note.org2",
+      relativePath: "quick-open-note.org2",
+      modifiedAt: nil,
+      byteCount: nil
+    )
+    store.selectedSurface = .agenda
+
+    store.selectQuickOpenItem(.file(file))
+
+    XCTAssertEqual(store.selectedSurface, .agenda)
+    XCTAssertEqual(store.selectedCorpusFileID, file.id)
+    XCTAssertEqual(store.selectedLocation?.file, file.path)
+
+    store.selectCorpusFile(file)
+    XCTAssertEqual(store.selectedSurface, .files)
   }
 
   @MainActor
@@ -8456,6 +8826,39 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testKnownEmptyApprovalQueueDoesNotReturnToInitialLoadingState() async throws {
+    let workspace = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-empty-approvals-\(UUID().uuidString)", isDirectory: true)
+    let repoRoot = workspace.appendingPathComponent("repo", isDirectory: true)
+    let dist = repoRoot.appendingPathComponent("dist", isDirectory: true)
+    let corpus = workspace.appendingPathComponent("corpus", isDirectory: true)
+    try FileManager.default.createDirectory(at: dist, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: corpus, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: workspace) }
+
+    try """
+    setTimeout(() => {
+      process.stdout.write(JSON.stringify({ count: 0, items: [] }));
+    }, 250);
+    """.write(to: dist.appendingPathComponent("cli.js"), atomically: true, encoding: .utf8)
+
+    let store = WorkspaceStore(cli: Org2CLI(repoRoot: repoRoot))
+    store.setCorpusRoot(corpus, persistsDefault: false)
+
+    XCTAssertFalse(store.hasCompletedApprovalsLoad)
+    store.isLoadingApprovals = true
+    XCTAssertTrue(store.shouldShowInitialApprovalsLoadingState)
+    store.isLoadingApprovals = false
+    await store.refreshApprovals()
+    XCTAssertTrue(store.hasCompletedApprovalsLoad)
+    XCTAssertTrue(store.approvalItems.isEmpty)
+
+    store.isLoadingApprovals = true
+    XCTAssertFalse(store.shouldShowInitialApprovalsLoadingState)
+    store.isLoadingApprovals = false
+  }
+
+  @MainActor
   func testApprovalFallbackScanDoesNotBlockMainActor() async throws {
     let workspace = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-approval-fallback-\(UUID().uuidString)", isDirectory: true)
@@ -9041,6 +9444,50 @@ final class Org2ModelsTests: XCTestCase {
 
     XCTAssertEqual(store.selectedSurface, .openClaw)
     XCTAssertEqual(store.selectedOpenClawChatThreadID, threadID)
+  }
+
+  @MainActor
+  func testWorkspaceSearchPromotesMatchedThreadAtTopOfSidebarUntilAnotherThreadIsSelected() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-search-promoted-thread-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json")
+    )
+
+    let matchedThreadID = store.createOpenClawChatThread()
+    store.renameOpenClawChatThread(matchedThreadID, title: "Older matched thread")
+    let otherThreadID = store.createOpenClawChatThread()
+    store.renameOpenClawChatThread(otherThreadID, title: "Newer active thread")
+    store.settleOpenClawChatThread(matchedThreadID)
+
+    let result = OpenClawChatSearchResult(
+      threadID: matchedThreadID,
+      messageID: nil,
+      matchKind: .threadTitle,
+      title: "Older matched thread",
+      snippet: "Thread title match",
+      messageCount: 0,
+      updatedAt: Date()
+    )
+    store.selectOpenClawChatSearchResult(result)
+
+    XCTAssertEqual(store.sidebarPromotedOpenClawChatThreadID, matchedThreadID)
+    XCTAssertEqual(store.sidebarOpenClawChatThreads.first?.id, matchedThreadID)
+    XCTAssertTrue(try XCTUnwrap(store.sidebarOpenClawChatThreads.first).isSettled)
+    XCTAssertFalse(store.sidebarSettledOpenClawChatThreads.contains(where: { $0.id == matchedThreadID }))
+
+    store.reopenOpenClawChatThread(matchedThreadID)
+
+    XCTAssertEqual(store.sidebarOpenClawChatThreads.first?.id, matchedThreadID)
+    XCTAssertFalse(try XCTUnwrap(store.sidebarOpenClawChatThreads.first).isSettled)
+
+    store.selectOpenClawChatThread(otherThreadID)
+
+    XCTAssertNil(store.sidebarPromotedOpenClawChatThreadID)
+    XCTAssertEqual(store.sidebarOpenClawChatThreads.map(\.id), store.visibleOpenClawChatThreads.map(\.id))
   }
 
   @MainActor

@@ -105,6 +105,9 @@ assert.match(rendered.html, /className = "org2-table-filter"/);
 assert.match(rendered.html, /Save view to source/);
 assert.match(rendered.html, /visibleBodyRowIndices/);
 assert.match(rendered.html, /Intl\.Collator/);
+assert.match(rendered.html, /initialVisibleRowLimit = 100/);
+assert.match(rendered.html, /body\.replaceChildren\(\.\.\.currentRows\.slice\(0, renderedCount\)\.map\(renderedRow\)\)/);
+assert.match(rendered.html, /org2TableShowMore/);
 assert.match(rendered.html, /\.org2-table-controls \{/);
 assert.match(rendered.html, /h1 \{ font-size: 1\.16rem;/);
 assert.match(rendered.html, /h2 \{ font-size: 1\.08rem;/);
@@ -134,6 +137,30 @@ assert.doesNotMatch(published.html, /Save view to source/);
 assert.doesNotMatch(published.html, /org2-app-document-script/);
 assert.match(published.html, /<section class="org2-headline level-1"/);
 assert.match(published.html, /<dl class="org2-properties">/);
+
+const imageSource = `* Chess
+1. [ ] Alapin Sicilian
+   - Position to study
+   [[file:images/chess-opening-study-2026/01-alapin-sicilian.png]]
+`;
+const imageDocument = parseOrgToCanonicalAst(imageSource, { sourceRanges: true });
+const imageRendered = renderOrgDocumentToAppHtml(imageDocument, {
+  sourcePath: "20211211101554-chess.org",
+});
+assert.match(
+  imageRendered.html,
+  /<figure class="org2-image-figure"[^>]*><a class="org2-image-link" href="org2-workspace:\/\/open-link\?target=file%3Aimages%2Fchess-opening-study-2026%2F01-alapin-sicilian\.png"><img class="org2-image" src="images\/chess-opening-study-2026\/01-alapin-sicilian\.png" alt="01 alapin sicilian" loading="lazy" decoding="async" \/><\/a><\/figure>/,
+);
+assert.match(imageRendered.html, /\.org2-image \{[^}]*max-width: 100%;[^}]*height: auto;/);
+assert.doesNotMatch(imageRendered.html, />file:images\/chess-opening-study-2026\/01-alapin-sicilian\.png</);
+
+const publishedImage = renderOrgDocumentToHtml(imageDocument, {
+  sourcePath: "20211211101554-chess.org",
+});
+assert.match(
+  publishedImage.html,
+  /<a class="org2-image-link" href="images\/chess-opening-study-2026\/01-alapin-sicilian\.png"><img class="org2-image" src="images\/chess-opening-study-2026\/01-alapin-sicilian\.png"/,
+);
 
 const publishedIndex = renderOrgExportIndexToHtml({
   title: "Org2 docs sitemap",
@@ -269,6 +296,18 @@ assert.match(
   /<blockquote class="org2-quote"[^>]*>Hi Greg,\n\nA short readout would be useful\.\n\nAvi<\/blockquote>/
 );
 assert.doesNotMatch(nestedListQuoteRendered.html, /#\+begin_quote|#\+end_quote/);
+
+const explicitOrdinalSource = `1. First study item
+
+2. Second study item
+
+7. Seventh study item
+`;
+const explicitOrdinalDocument = parseOrgToCanonicalAst(explicitOrdinalSource, { sourceRanges: true });
+const explicitOrdinalRendered = renderOrgDocumentToAppHtml(explicitOrdinalDocument);
+assert.match(explicitOrdinalRendered.html, /<li value="2"[^>]*><p>Second study item<\/p><\/li>/);
+assert.match(explicitOrdinalRendered.html, /<li value="7"[^>]*><p>Seventh study item<\/p><\/li>/);
+assert.equal(printCanonicalAstToOrg(explicitOrdinalDocument), explicitOrdinalSource);
 
 const chartSource = `* Metrics
 

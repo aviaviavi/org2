@@ -91,4 +91,16 @@ assert.equal(
   "printing should preserve the quote and normalize its blank lines to the containing list indentation"
 );
 
+const explicitOrdinalInput = `1. First
+
+2. Second
+
+7. Seventh
+`;
+const explicitOrdinalAst = parseOrgToCanonicalAst(explicitOrdinalInput);
+assert.equal(explicitOrdinalAst.children[0].items[0].ordinal, undefined);
+assert.equal(explicitOrdinalAst.children[1].items[0].ordinal, 2);
+assert.equal(explicitOrdinalAst.children[2].items[0].ordinal, 7);
+assert.equal(printCanonicalAstToOrg(explicitOrdinalAst), explicitOrdinalInput);
+
 console.log("✓ parser-list-items");

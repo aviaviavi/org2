@@ -21,7 +21,10 @@ let package = Package(
       ]
     ),
     .target(
-      name: "Org2WorkspaceCore"
+      name: "Org2WorkspaceCore",
+      resources: [
+        .process("Resources")
+      ]
     ),
     .target(
       name: "Org2WorkspaceDiagnosticsCore"

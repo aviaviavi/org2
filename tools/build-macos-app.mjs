@@ -16,10 +16,15 @@ import {
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  detectNodeArchitecture,
+  duckDBBindingPackagesForRuntime,
+} from "./macos-runtime-node.mjs";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const packageVersion = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8")).version;
 const packageDir = join(repoRoot, "apps", "macos", "Org2Workspace");
+const buildOptions = parseBuildOptions(process.argv.slice(2));
 const appPath = resolve(
   process.env.ORG2_WORKSPACE_APP_PATH ?? join(homedir(), "Applications", "Org2Workspace.app")
 );
@@ -28,10 +33,92 @@ const appName = process.env.ORG2_WORKSPACE_APP_NAME ?? "Org2Workspace";
 const requestedSigningIdentity = process.env.ORG2_WORKSPACE_CODE_SIGN_IDENTITY?.trim();
 const executableName = "Org2Workspace";
 const swiftBuildArch = process.env.ORG2_WORKSPACE_SWIFT_ARCH ?? defaultSwiftBuildArch();
-const swiftBuildConfiguration = process.env.ORG2_WORKSPACE_SWIFT_CONFIGURATION?.trim();
-const bundledNodePath = process.env.ORG2_WORKSPACE_NODE_PATH?.trim();
-const bundledWhisperCppPath = process.env.ORG2_WORKSPACE_WHISPER_CPP_PATH?.trim();
-const bundledWhisperModelPath = process.env.ORG2_WORKSPACE_WHISPER_MODEL_PATH?.trim();
+const swiftBuildConfiguration = resolveBuildConfiguration();
+const bundledNodePath = process.env.ORG2_WORKSPACE_NODE_PATH?.trim()
+  || (swiftBuildConfiguration === "release" ? discoverNodePath() : "");
+const bundledWhisperCppPath = process.env.ORG2_WORKSPACE_WHISPER_CPP_PATH?.trim()
+  || (swiftBuildConfiguration === "release" ? discoverWhisperCppPath() : "");
+const bundledWhisperModelPath = process.env.ORG2_WORKSPACE_WHISPER_MODEL_PATH?.trim()
+  || (swiftBuildConfiguration === "release" ? discoverWhisperModelPath() : "");
+
+function parseBuildOptions(arguments_) {
+  const options = {
+    allowDailyDebug: false,
+    configuration: "",
+    help: false,
+    printConfiguration: false,
+  };
+  for (let index = 0; index < arguments_.length; index += 1) {
+    const argument = arguments_[index];
+    switch (argument) {
+      case "--allow-daily-debug":
+        options.allowDailyDebug = true;
+        break;
+      case "--configuration":
+        index += 1;
+        if (index >= arguments_.length) {
+          throw new Error("--configuration requires debug or release");
+        }
+        options.configuration = arguments_[index];
+        break;
+      case "--print-configuration":
+        options.printConfiguration = true;
+        break;
+      case "--help":
+      case "-h":
+        options.help = true;
+        break;
+      default:
+        throw new Error(`Unknown build option: ${argument}`);
+    }
+  }
+  return options;
+}
+
+function resolveBuildConfiguration() {
+  const configured = buildOptions.configuration
+    || process.env.ORG2_WORKSPACE_SWIFT_CONFIGURATION?.trim()
+    || (bundleIdentifier === "org.org2.workspace" ? "release" : "debug");
+  if (configured !== "debug" && configured !== "release") {
+    throw new Error(`Unsupported Swift build configuration: ${configured}. Use debug or release.`);
+  }
+  return configured;
+}
+
+function firstExistingPath(candidates) {
+  return candidates.find((candidate) => candidate && existsSync(candidate)) ?? "";
+}
+
+function discoverNodePath() {
+  return firstExistingPath([
+    "/opt/homebrew/bin/node",
+    "/usr/local/bin/node",
+    process.execPath,
+  ]);
+}
+
+function discoverWhisperCppPath() {
+  return firstExistingPath([
+    "/opt/homebrew/bin/whisper-cli",
+    "/usr/local/bin/whisper-cli",
+  ]);
+}
+
+function discoverWhisperModelPath() {
+  return firstExistingPath([
+    join(homedir(), "Library", "Application Support", "org2", "whisper", "ggml-base.en.bin"),
+  ]);
+}
+
+function buildUsage() {
+  return `Usage: node tools/build-macos-app.mjs [options]
+
+Options:
+  --configuration MODE    Build debug or release (daily app default: release)
+  --allow-daily-debug     Explicitly allow a debug build at org.org2.workspace
+  --print-configuration   Print the resolved mode and paths without building
+  --help                  Show this help`;
+}
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
@@ -155,6 +242,8 @@ function writeInfoPlist() {
   <string>${xmlEscape(packageVersion)}</string>
   <key>CFBundleVersion</key>
   <string>1</string>
+  <key>Org2BuildConfiguration</key>
+  <string>${xmlEscape(swiftBuildConfiguration)}</string>
   <key>LSMinimumSystemVersion</key>
   <string>14.0</string>
   <key>NSHighResolutionCapable</key>
@@ -223,48 +312,79 @@ function copyOrg2Runtime(resourcesDir) {
   cpSync(distPath, join(runtimeDir, "dist"), { recursive: true });
   copyFileSync(join(repoRoot, "package.json"), join(runtimeDir, "package.json"));
 
-  const duckDBBindingPackage = swiftBuildArch === "arm64"
-    ? "@duckdb/node-bindings-darwin-arm64"
-    : "@duckdb/node-bindings-darwin-x64";
+  if (bundledNodePath && !existsSync(bundledNodePath)) {
+    throw new Error(`Bundled Node.js runtime not found at ${bundledNodePath}`);
+  }
+  if (!bundledNodePath && swiftBuildConfiguration === "release") {
+    throw new Error(
+      "Release builds require Node.js so the app is self-contained. Install Node.js or set ORG2_WORKSPACE_NODE_PATH."
+    );
+  }
+
+  const fallbackNodePath = [
+    "/opt/homebrew/bin/node",
+    "/usr/local/bin/node",
+    "/usr/bin/node",
+  ].find((candidate) => existsSync(candidate));
+  const runtimeNodeSourcePath = bundledNodePath || fallbackNodePath;
+  const runtimeNodeArchitecture = runtimeNodeSourcePath
+    ? detectNodeArchitecture(runtimeNodeSourcePath)
+    : null;
+  const duckDBBindingPackages = duckDBBindingPackagesForRuntime({
+    bundledNodePath,
+    nodeArchitecture: runtimeNodeArchitecture,
+  });
   const runtimePackages = [
     "@duckdb/node-api",
     "@duckdb/node-bindings",
-    duckDBBindingPackage,
+    ...duckDBBindingPackages,
     "detect-libc",
   ];
   for (const packageName of runtimePackages) {
     const source = join(repoRoot, "node_modules", ...packageName.split("/"));
     if (!existsSync(source)) {
       if (swiftBuildConfiguration === "release") {
-        throw new Error(`Production runtime dependency ${packageName} is missing. Run npm ci for ${swiftBuildArch || "the target architecture"}.`);
+        throw new Error(`Production runtime dependency ${packageName} is missing. Run npm ci for the target Node.js architecture.`);
       }
       continue;
     }
-    cpSync(source, join(runtimeDir, "node_modules", ...packageName.split("/")), { recursive: true });
+    const destination = join(runtimeDir, "node_modules", ...packageName.split("/"));
+    mkdirSync(dirname(destination), { recursive: true });
+    cpSync(source, destination, { recursive: true });
   }
 
+  let runtimeNodePath = runtimeNodeSourcePath;
   if (bundledNodePath) {
-    if (!existsSync(bundledNodePath)) {
-      throw new Error(`Bundled Node.js runtime not found at ${bundledNodePath}`);
-    }
     const binDir = join(runtimeDir, "bin");
     mkdirSync(binDir, { recursive: true });
     const destination = join(binDir, "node");
     copyFileSync(bundledNodePath, destination);
     chmodSync(destination, 0o755);
-    return destination;
+    runtimeNodePath = destination;
   }
-  if (swiftBuildConfiguration === "release") {
-    throw new Error("Release builds require ORG2_WORKSPACE_NODE_PATH so the app is self-contained.");
+
+  if (runtimeNodePath) {
+    const bindingEntry = join(runtimeDir, "node_modules", "@duckdb", "node-bindings");
+    const verification = spawnSync(runtimeNodePath, ["-e", `require(${JSON.stringify(bindingEntry)})`], {
+      cwd: runtimeDir,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    if (verification.status !== 0) {
+      const detail = [verification.stdout, verification.stderr].filter(Boolean).join("\n").trim();
+      throw new Error(
+        `Bundled DuckDB failed to load with ${runtimeNodeArchitecture || "the selected"} Node.js runtime${detail ? `:\n${detail}` : "."}`
+      );
+    }
   }
-  return "";
+  return bundledNodePath ? runtimeNodePath : "";
 }
 
 function copyWhisperRuntime(resourcesDir) {
   if (!bundledWhisperCppPath || !bundledWhisperModelPath) {
     if (swiftBuildConfiguration === "release") {
       throw new Error(
-        "Release builds require ORG2_WORKSPACE_WHISPER_CPP_PATH and ORG2_WORKSPACE_WHISPER_MODEL_PATH so dictation works out of the box."
+        "Release builds require whisper.cpp and its base English model. Install whisper-cpp and the Org2 model, or set ORG2_WORKSPACE_WHISPER_CPP_PATH and ORG2_WORKSPACE_WHISPER_MODEL_PATH."
       );
     }
     return "";
@@ -306,7 +426,32 @@ function copyWhisperRuntime(resourcesDir) {
 }
 
 function main() {
-  console.log(`Building ${executableName}...`);
+  if (buildOptions.help) {
+    console.log(buildUsage());
+    return;
+  }
+  if (
+    bundleIdentifier === "org.org2.workspace"
+    && swiftBuildConfiguration === "debug"
+    && !buildOptions.allowDailyDebug
+  ) {
+    throw new Error(
+      "Refusing to install an implicit debug build as the daily app. Use npm run build:macos-app:debug when that is intentional."
+    );
+  }
+  if (buildOptions.printConfiguration) {
+    console.log(JSON.stringify({
+      appPath,
+      bundleIdentifier,
+      configuration: swiftBuildConfiguration,
+      nodePath: bundledNodePath || null,
+      whisperCppPath: bundledWhisperCppPath || null,
+      whisperModelPath: bundledWhisperModelPath || null,
+    }, null, 2));
+    return;
+  }
+
+  console.log(`Building ${executableName} (${swiftBuildConfiguration})...`);
   run("swift", swiftBuildArgs("build"), { cwd: packageDir });
   const buildProductsDir = run("swift", swiftBuildArgs("build", "--show-bin-path"), {
     cwd: packageDir,
@@ -340,6 +485,10 @@ function main() {
 
   const iconPath = join(packageDir, "Sources", "Org2Workspace", "Resources", "AppIcon.png");
   writeIconSet(iconPath, resourcesDir);
+  copyFileSync(
+    join(packageDir, "Sources", "Org2WorkspaceCore", "Resources", "NewMessage.mp3"),
+    join(resourcesDir, "NewMessage.mp3")
+  );
   const runtimeNodePath = copyOrg2Runtime(resourcesDir);
   const whisperCppPath = copyWhisperRuntime(resourcesDir);
 

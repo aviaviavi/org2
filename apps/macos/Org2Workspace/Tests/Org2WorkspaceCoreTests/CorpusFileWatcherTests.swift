@@ -186,6 +186,29 @@ final class CorpusFileWatcherTests: XCTestCase {
   }
 
   @MainActor
+  func testCleanWorkspaceActivationDoesNotInvalidateVisibleSurface() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-clean-activation-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root, persistsDefault: false)
+    store.selectedSurface = .meetings
+    await store.refreshMeetings()
+    XCTAssertFalse(store.isWorkspaceSurfaceDirty(.meetings))
+
+    store.setWorkspaceRealtimeRefreshActive(true)
+    defer { store.setWorkspaceRealtimeRefreshActive(false) }
+    store.workspaceDidBecomeActive()
+
+    XCTAssertFalse(
+      store.isWorkspaceSurfaceDirty(.meetings),
+      "Foregrounding an unchanged workspace must not trigger a corpus-wide meeting refresh"
+    )
+  }
+
+  @MainActor
   func testSelectedFileReloadsWhenSyncPreservesModificationDateAndSize() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-realtime-selected-sync-\(UUID().uuidString)", isDirectory: true)

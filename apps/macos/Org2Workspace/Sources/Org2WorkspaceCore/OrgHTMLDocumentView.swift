@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 import WebKit
 
 public enum RenderedDocumentWidth: String, CaseIterable, Identifiable, Sendable {
@@ -176,6 +177,140 @@ struct OrgHTMLTableViewSnapshot: Equatable, Sendable {
   }
 }
 
+final class OrgHTMLLocalResourceSchemeHandler: NSObject, WKURLSchemeHandler, @unchecked Sendable {
+  nonisolated static let scheme = "org2-resource"
+
+  private let lock = NSLock()
+  private var sourceDirectory: URL?
+  private var corpusRoot: URL?
+
+  func configure(source: EntrySource, corpusRoot: URL?) {
+    let sourceURL = OrgHTMLDocumentView.sourceFileURL(source, corpusRoot: corpusRoot)
+    lock.withLock {
+      sourceDirectory = sourceURL.deletingLastPathComponent().standardizedFileURL
+      self.corpusRoot = corpusRoot?.standardizedFileURL
+    }
+  }
+
+  nonisolated static func rewritingLocalImageSources(in html: String) -> String {
+    guard let expression = try? NSRegularExpression(
+      pattern: #"(<img\b[^>]*\bsrc\s*=\s*")([^"]+)(")"#,
+      options: [.caseInsensitive]
+    ) else { return html }
+
+    let source = html as NSString
+    let matches = expression.matches(
+      in: html,
+      range: NSRange(location: 0, length: source.length)
+    )
+    guard !matches.isEmpty else { return html }
+
+    let rewritten = NSMutableString(string: html)
+    for match in matches.reversed() {
+      guard match.numberOfRanges == 4 else { continue }
+      let rawTarget = source.substring(with: match.range(at: 2))
+      let target = decodeHTMLAttribute(rawTarget)
+      guard isLocalResourceTarget(target),
+            let resourceURL = resourceURL(for: target)
+      else { continue }
+      rewritten.replaceCharacters(in: match.range(at: 2), with: resourceURL.absoluteString)
+    }
+    return rewritten as String
+  }
+
+  func webView(_ webView: WKWebView, start urlSchemeTask: any WKURLSchemeTask) {
+    guard let requestURL = urlSchemeTask.request.url,
+          let fileURL = fileURL(for: requestURL),
+          let contentType = UTType(filenameExtension: fileURL.pathExtension),
+          contentType.conforms(to: .image),
+          let mimeType = contentType.preferredMIMEType
+    else {
+      urlSchemeTask.didFailWithError(resourceError(.fileReadNoPermission))
+      return
+    }
+
+    do {
+      let data = try Data(contentsOf: fileURL, options: .mappedIfSafe)
+      let response = URLResponse(
+        url: requestURL,
+        mimeType: mimeType,
+        expectedContentLength: data.count,
+        textEncodingName: nil
+      )
+      urlSchemeTask.didReceive(response)
+      urlSchemeTask.didReceive(data)
+      urlSchemeTask.didFinish()
+    } catch {
+      urlSchemeTask.didFailWithError(error)
+    }
+  }
+
+  func webView(_ webView: WKWebView, stop urlSchemeTask: any WKURLSchemeTask) {}
+
+  private func fileURL(for requestURL: URL) -> URL? {
+    guard requestURL.scheme?.lowercased() == Self.scheme,
+          requestURL.host == "local",
+          let target = URLComponents(url: requestURL, resolvingAgainstBaseURL: false)?
+            .queryItems?
+            .first(where: { $0.name == "target" })?
+            .value,
+          !target.isEmpty
+    else { return nil }
+
+    let roots = lock.withLock { (sourceDirectory, corpusRoot) }
+    guard let sourceDirectory = roots.0 else { return nil }
+    let expandedTarget = NSString(string: target).expandingTildeInPath
+    let candidate: URL
+    if let explicitURL = URL(string: expandedTarget), explicitURL.isFileURL {
+      candidate = explicitURL
+    } else if NSString(string: expandedTarget).isAbsolutePath {
+      candidate = URL(fileURLWithPath: expandedTarget)
+    } else {
+      candidate = sourceDirectory.appendingPathComponent(expandedTarget)
+    }
+
+    let resolved = candidate.standardizedFileURL.resolvingSymlinksInPath()
+    let allowedRoots = [roots.1, roots.0]
+      .compactMap { $0?.standardizedFileURL.resolvingSymlinksInPath() }
+    guard allowedRoots.contains(where: { Self.contains(resolved, within: $0) }) else {
+      return nil
+    }
+    return resolved
+  }
+
+  private nonisolated static func contains(_ file: URL, within root: URL) -> Bool {
+    let rootPath = root.path.hasSuffix("/") ? root.path : root.path + "/"
+    return file.path == root.path || file.path.hasPrefix(rootPath)
+  }
+
+  private nonisolated static func isLocalResourceTarget(_ target: String) -> Bool {
+    if target.hasPrefix("//") { return false }
+    guard let scheme = URL(string: target)?.scheme?.lowercased() else { return true }
+    return scheme == "file"
+  }
+
+  private nonisolated static func resourceURL(for target: String) -> URL? {
+    var components = URLComponents()
+    components.scheme = scheme
+    components.host = "local"
+    components.queryItems = [URLQueryItem(name: "target", value: target)]
+    return components.url
+  }
+
+  private nonisolated static func decodeHTMLAttribute(_ value: String) -> String {
+    value
+      .replacingOccurrences(of: "&quot;", with: "\"")
+      .replacingOccurrences(of: "&#39;", with: "'")
+      .replacingOccurrences(of: "&lt;", with: "<")
+      .replacingOccurrences(of: "&gt;", with: ">")
+      .replacingOccurrences(of: "&amp;", with: "&")
+  }
+
+  private func resourceError(_ code: CocoaError.Code) -> Error {
+    CocoaError(code, userInfo: [NSLocalizedDescriptionKey: "The local Org2 image could not be loaded."])
+  }
+}
+
 struct OrgHTMLDocumentView: NSViewRepresentable {
   @Environment(\.openOrgFileReference) private var openOrgFileReference
   @Environment(\.orgRoamLinkResolver) private var linkResolver
@@ -212,6 +347,10 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
       context.coordinator,
       name: Coordinator.tableViewMessageHandlerName
     )
+    configuration.setURLSchemeHandler(
+      context.coordinator.localResourceHandler,
+      forURLScheme: OrgHTMLLocalResourceSchemeHandler.scheme
+    )
 
     let webView = WKWebView(frame: .zero, configuration: configuration)
     webView.navigationDelegate = context.coordinator
@@ -227,6 +366,7 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
     coordinator.linkResolver = linkResolver
     coordinator.source = source
     coordinator.corpusRoot = corpusRoot
+    coordinator.localResourceHandler.configure(source: source, corpusRoot: corpusRoot)
     coordinator.askAIAboutHeading = askAIAboutHeading
     coordinator.reportStatus = reportStatus
     let tablePersistenceChanged = coordinator.allowsTablePersistence != allowsTablePersistence
@@ -243,8 +383,8 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
       coordinator.searchQuery = searchQuery
       coordinator.searchOccurrenceIndex = searchOccurrenceIndex
       webView.loadHTMLString(
-        html,
-        baseURL: URL(fileURLWithPath: source.file).deletingLastPathComponent()
+        OrgHTMLLocalResourceSchemeHandler.rewritingLocalImageSources(in: html),
+        baseURL: Self.sourceFileURL(source, corpusRoot: corpusRoot).deletingLastPathComponent()
       )
     } else if layoutChanged {
       coordinator.applyLayout(to: webView)
@@ -287,6 +427,17 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
     return next < previous
   }
 
+  nonisolated static func sourceFileURL(_ source: EntrySource, corpusRoot: URL?) -> URL {
+    let expandedPath = NSString(string: source.file).expandingTildeInPath
+    if NSString(string: expandedPath).isAbsolutePath {
+      return URL(fileURLWithPath: expandedPath).standardizedFileURL
+    }
+    if let corpusRoot {
+      return corpusRoot.appendingPathComponent(expandedPath).standardizedFileURL
+    }
+    return URL(fileURLWithPath: expandedPath).standardizedFileURL
+  }
+
   @MainActor
   final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
     nonisolated static let viewportMessageHandlerName = "org2ViewportSourceLine"
@@ -307,6 +458,7 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
     var allowsTablePersistence = false
     var saveTableView: @MainActor (OrgHTMLTableViewSnapshot) -> Void = { _ in }
     var reportViewportSourceLine: @MainActor (Int?) -> Void = { _ in }
+    let localResourceHandler = OrgHTMLLocalResourceSchemeHandler()
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation?) {
       applyLayout(to: webView)

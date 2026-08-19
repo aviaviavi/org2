@@ -134,6 +134,29 @@ final class MobileVoiceTranscriber: ObservableObject {
     isRecording = false
   }
 
+  func finish() async -> String {
+    let finishingID = recognitionID
+    if isRecording {
+      stop()
+    }
+    guard let finishingID else { return transcript }
+
+    // Give Speech a bounded window to turn the final buffered audio into its
+    // final result. Sending the latest partial result immediately can clip the
+    // last few words, while waiting without a bound can leave the composer
+    // stuck indefinitely if the recognizer never delivers a terminal event.
+    for _ in 0..<40 {
+      guard recognitionID == finishingID else { return transcript }
+      try? await Task.sleep(for: .milliseconds(50))
+    }
+
+    if recognitionID == finishingID {
+      recognitionTask?.cancel()
+      finishRecognition(id: finishingID, errorText: nil)
+    }
+    return transcript
+  }
+
   func cancel() {
     pendingStartID = nil
     reset(cancelRecognition: true)

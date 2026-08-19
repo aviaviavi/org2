@@ -1,6 +1,63 @@
 import AppKit
 import SwiftUI
 
+enum AIChatMessageTimestampPresentation {
+  static func displayText(
+    for date: Date,
+    relativeTo now: Date = Date(),
+    calendar: Calendar = .current,
+    locale: Locale = .current,
+    timeZone: TimeZone = .current
+  ) -> String {
+    var calendar = calendar
+    calendar.timeZone = timeZone
+    let time = date.formatted(
+      Date.FormatStyle(
+        date: .omitted,
+        time: .shortened,
+        locale: locale,
+        calendar: calendar,
+        timeZone: timeZone
+      )
+    )
+
+    if calendar.isDate(date, inSameDayAs: now) {
+      return "Today at \(time)"
+    }
+    if let yesterday = calendar.date(byAdding: .day, value: -1, to: now),
+       calendar.isDate(date, inSameDayAs: yesterday) {
+      return "Yesterday at \(time)"
+    }
+
+    let style = Date.FormatStyle(locale: locale, calendar: calendar, timeZone: timeZone)
+    let day: String
+    if calendar.component(.year, from: date) == calendar.component(.year, from: now) {
+      day = date.formatted(style.month(.abbreviated).day())
+    } else {
+      day = date.formatted(style.month(.abbreviated).day().year())
+    }
+    return "\(day) at \(time)"
+  }
+
+  static func fullText(
+    for date: Date,
+    locale: Locale = .current,
+    timeZone: TimeZone = .current
+  ) -> String {
+    var calendar = Calendar.current
+    calendar.timeZone = timeZone
+    return date.formatted(
+      Date.FormatStyle(
+        date: .complete,
+        time: .shortened,
+        locale: locale,
+        calendar: calendar,
+        timeZone: timeZone
+      )
+    )
+  }
+}
+
 struct OpenClawPresentedContext: Identifiable, Hashable, Sendable {
   let kind: String
   let title: String
@@ -213,6 +270,96 @@ struct OpenClawMessageOrgPresentation: Equatable, Sendable {
   }
 }
 
+final class OpenClawCachedMessagePresentation {
+  let role: OpenClawChatMessage.Role
+  let rawText: String
+  let responseTrace: OpenClawResponseTrace?
+  let context: OpenClawContextPresentation
+  let org: OpenClawMessageOrgPresentation?
+  let activityFeedItems: [OpenClawActivityFeedItem]
+
+  init(
+    role: OpenClawChatMessage.Role,
+    rawText: String,
+    responseTrace: OpenClawResponseTrace?,
+    context: OpenClawContextPresentation,
+    org: OpenClawMessageOrgPresentation?,
+    activityFeedItems: [OpenClawActivityFeedItem]
+  ) {
+    self.role = role
+    self.rawText = rawText
+    self.responseTrace = responseTrace
+    self.context = context
+    self.org = org
+    self.activityFeedItems = activityFeedItems
+  }
+
+  func matches(_ message: OpenClawChatMessage) -> Bool {
+    role == message.role
+      && rawText == message.content
+      && responseTrace == message.responseTrace
+  }
+}
+
+@MainActor
+enum OpenClawMessagePresentationCache {
+  private final class CacheKey: NSObject {
+    let messageID: UUID
+
+    init(messageID: UUID) {
+      self.messageID = messageID
+    }
+
+    override var hash: Int { messageID.hashValue }
+
+    override func isEqual(_ object: Any?) -> Bool {
+      guard let other = object as? CacheKey else { return false }
+      return messageID == other.messageID
+    }
+  }
+
+  private static let cache: NSCache<CacheKey, OpenClawCachedMessagePresentation> = {
+    let cache = NSCache<CacheKey, OpenClawCachedMessagePresentation>()
+    cache.countLimit = 1_024
+    cache.totalCostLimit = 32 * 1_024 * 1_024
+    return cache
+  }()
+
+  static func presentation(for message: OpenClawChatMessage) -> OpenClawCachedMessagePresentation {
+    let key = CacheKey(messageID: message.id)
+    if let cached = cache.object(forKey: key), cached.matches(message) {
+      return cached
+    }
+
+    let context = OpenClawContextPresentation(
+      message.content,
+      extractsContexts: message.role == .user
+    )
+    let org = message.role == .assistant
+      ? OpenClawMessageOrgPresentation(context.userText)
+      : nil
+    let activityFeedItems = message.responseTrace.map {
+      OpenClawActivityFeed.items(from: $0.activities)
+    } ?? []
+    let value = OpenClawCachedMessagePresentation(
+      role: message.role,
+      rawText: message.content,
+      responseTrace: message.responseTrace,
+      context: context,
+      org: org,
+      activityFeedItems: activityFeedItems
+    )
+    let cost = message.content.utf8.count
+      + (message.responseTrace?.activities.count ?? 0) * 256
+    cache.setObject(value, forKey: key, cost: cost)
+    return value
+  }
+
+  static func removeAllForTesting() {
+    cache.removeAllObjects()
+  }
+}
+
 enum OpenClawMessageOrgNormalizer {
   private nonisolated static let blockDirectiveNames = [
     "begin_src",
@@ -293,11 +440,32 @@ private struct OpenClawMessageBodyView: View {
   let compact: Bool
   let managesTextSelection: Bool
   let rendersStructuredOrg2: Bool
+  let structuredPresentation: OpenClawMessageOrgPresentation?
+
+  init(
+    rawText: String,
+    compact: Bool,
+    managesTextSelection: Bool,
+    rendersStructuredOrg2: Bool,
+    structuredPresentation: OpenClawMessageOrgPresentation? = nil
+  ) {
+    self.rawText = rawText
+    self.compact = compact
+    self.managesTextSelection = managesTextSelection
+    self.rendersStructuredOrg2 = rendersStructuredOrg2
+    self.structuredPresentation = structuredPresentation
+  }
 
   var body: some View {
-    let presentation = rendersStructuredOrg2 ? OpenClawMessageOrgPresentation(rawText) : nil
+    let presentation = rendersStructuredOrg2
+      ? (structuredPresentation ?? OpenClawMessageOrgPresentation(rawText))
+      : nil
     Group {
       if let presentation, presentation.usesStructuredRendering {
+        let containsTable = presentation.blocks.contains { block in
+          if case .table = block.rendered { return true }
+          return false
+        }
         VStack(alignment: .leading, spacing: 0) {
           ForEach(presentation.blocks) { block in
             RenderedBlockView(
@@ -305,19 +473,34 @@ private struct OpenClawMessageBodyView: View {
               rawText: block.rawText,
               inlineActions: .readOnly
             )
+            .frame(
+              maxWidth: compact || !block.isRenderedTable ? (compact ? 360 : 640) : .infinity,
+              alignment: .leading
+            )
           }
         }
         .environment(\.orgInlineTextSelectionEnabled, managesTextSelection)
+        .frame(
+          maxWidth: compact || !containsTable ? (compact ? 360 : 640) : .infinity,
+          alignment: .leading
+        )
       } else {
         OrgInlineText(
           presentation?.normalizedText ?? rawText,
           managesTextSelection: managesTextSelection
         )
+        .frame(maxWidth: compact ? 360 : 640, alignment: .leading)
       }
     }
     .lineLimit(nil)
-    .frame(maxWidth: compact ? 360 : 640, alignment: .leading)
     .fixedSize(horizontal: false, vertical: true)
+  }
+}
+
+private extension OrgEditableBlock {
+  var isRenderedTable: Bool {
+    if case .table = rendered { return true }
+    return false
   }
 }
 
@@ -330,6 +513,8 @@ struct ChatBubbleView: View {
   let compact: Bool
   let isQueued: Bool
   let isRoomResponse: Bool
+  let canSteerQueuedMessage: Bool
+  let steerQueuedMessage: () -> Void
   let editQueuedMessage: () -> Void
   let deleteQueuedMessage: () -> Void
   @State private var isHovering = false
@@ -343,6 +528,8 @@ struct ChatBubbleView: View {
     compact: Bool = false,
     isQueued: Bool = false,
     isRoomResponse: Bool = false,
+    canSteerQueuedMessage: Bool = false,
+    steerQueuedMessage: @escaping () -> Void = {},
     editQueuedMessage: @escaping () -> Void = {},
     deleteQueuedMessage: @escaping () -> Void = {}
   ) {
@@ -352,15 +539,15 @@ struct ChatBubbleView: View {
     self.compact = compact
     self.isQueued = isQueued
     self.isRoomResponse = isRoomResponse
+    self.canSteerQueuedMessage = canSteerQueuedMessage
+    self.steerQueuedMessage = steerQueuedMessage
     self.editQueuedMessage = editQueuedMessage
     self.deleteQueuedMessage = deleteQueuedMessage
   }
 
   var body: some View {
-    let presentation = OpenClawContextPresentation(
-      message.content,
-      extractsContexts: message.role == .user
-    )
+    let cachedPresentation = OpenClawMessagePresentationCache.presentation(for: message)
+    let presentation = cachedPresentation.context
     HStack(alignment: .top, spacing: 10) {
       if message.role == .user {
         Spacer(minLength: compact ? 24 : 48)
@@ -395,12 +582,12 @@ struct ChatBubbleView: View {
               .font(.caption2.weight(.semibold))
               .foregroundStyle(.secondary)
           }
-          Text(message.createdAt, format: .dateTime.hour().minute())
+          Text(AIChatMessageTimestampPresentation.displayText(for: message.createdAt))
             .font(.caption2.monospacedDigit())
             .foregroundStyle(.tertiary)
-            .help(message.createdAt.formatted(date: .abbreviated, time: .shortened))
+            .help(AIChatMessageTimestampPresentation.fullText(for: message.createdAt))
             .accessibilityLabel(
-              "Sent \(message.createdAt.formatted(date: .abbreviated, time: .shortened))"
+              "Sent \(AIChatMessageTimestampPresentation.fullText(for: message.createdAt))"
             )
           copyButton
         }
@@ -412,7 +599,8 @@ struct ChatBubbleView: View {
             rawText: presentation.userText,
             compact: compact,
             managesTextSelection: Self.managesMessageTextSelection,
-            rendersStructuredOrg2: message.role == .assistant
+            rendersStructuredOrg2: message.role == .assistant,
+            structuredPresentation: cachedPresentation.org
           )
         }
         if !message.attachments.isEmpty {
@@ -425,6 +613,8 @@ struct ChatBubbleView: View {
         if isQueued {
           OpenClawQueuedMessageActions(
             compact: compact,
+            canSteer: canSteerQueuedMessage,
+            steer: steerQueuedMessage,
             edit: editQueuedMessage,
             remove: deleteQueuedMessage
           )
@@ -447,7 +637,8 @@ struct ChatBubbleView: View {
             reasoning: responseTrace.reasoning,
             activities: responseTrace.activities,
             compact: compact,
-            isLive: false
+            isLive: false,
+            presentedItems: cachedPresentation.activityFeedItems
           )
         }
         if message.role == .assistant, let changeSummary = message.changeSummary {
@@ -795,16 +986,11 @@ private struct AIChatRoomAgentSlot: View {
           Label(destinationTitle, systemImage: runtime.systemImage)
             .font(.caption.weight(.semibold))
             .foregroundStyle(.secondary)
-          OpenClawTypingIndicatorView(
+          OpenClawLiveTypingIndicatorView(
+            liveState: store.openClawLiveState,
+            threadID: store.selectedOpenClawChatThreadID,
             startedAt: store.openClawRequestStartedAt,
-            lastEventAt: store.openClawLastEventAt,
             runtime: runtime,
-            connectionState: store.openClawGatewayConnectionState,
-            connectionDetail: store.openClawGatewayConnectionDetail,
-            runID: store.openClawActiveRunID,
-            streamingReply: store.openClawStreamingReply,
-            reasoning: store.openClawExposedReasoning,
-            activities: store.openClawRunActivities,
             compact: true,
             onStop: { Task { await store.stopOpenClawRun() } }
           )
@@ -868,6 +1054,8 @@ private struct AIChatRoomAgentSlot: View {
 
 private struct OpenClawQueuedMessageActions: View {
   let compact: Bool
+  let canSteer: Bool
+  let steer: () -> Void
   let edit: () -> Void
   let remove: () -> Void
 
@@ -877,6 +1065,20 @@ private struct OpenClawQueuedMessageActions: View {
         .font(.caption)
         .foregroundStyle(.secondary)
       Spacer(minLength: 8)
+      if canSteer {
+        Button {
+          steer()
+        } label: {
+          if compact {
+            Image(systemName: "arrow.turn.up.right")
+          } else {
+            Label("Steer Now", systemImage: "arrow.turn.up.right")
+          }
+        }
+        .buttonStyle(WorkspaceActionButtonStyle())
+        .help("Send this queued message to the current turn now")
+      }
+
       Button {
         edit()
       } label: {
@@ -1442,7 +1644,13 @@ struct OpenClawComposerView: View {
 
         Button {
           flushDraftToStore()
-          Task { await store.toggleOpenClawVoiceNoteRecording() }
+          if store.isRecordingOpenClawVoiceNote {
+            Task {
+              await store.stopOpenClawVoiceNoteRecording(action: .insertIntoComposer)
+            }
+          } else {
+            Task { await store.startOpenClawVoiceNoteRecording() }
+          }
         } label: {
           Label(
             store.isRecordingOpenClawVoiceNote ? "Stop Dictation" : "Dictate",
@@ -1451,10 +1659,14 @@ struct OpenClawComposerView: View {
         }
         .buttonStyle(WorkspaceActionButtonStyle())
         .disabled(!store.isRecordingOpenClawVoiceNote && !store.canStartOpenClawVoiceNoteRecording)
-        .help(store.isRecordingOpenClawVoiceNote ? "Stop, transcribe, and send" : "Record a local voice note and send the transcript")
+        .help(
+          store.isRecordingOpenClawVoiceNote
+            ? "Stop dictating and place the transcript in the composer without sending"
+            : "Start local voice dictation"
+        )
 
         Button {
-          _ = sendIfPossible()
+          performPrimaryAction(delivery: .automatic)
         } label: {
           Label(
             primaryActionTitle,
@@ -1462,14 +1674,18 @@ struct OpenClawComposerView: View {
           )
         }
         .buttonStyle(WorkspaceActionButtonStyle())
-        .disabled(!canSend)
+        .disabled(!store.isRecordingOpenClawVoiceNote && !canSend)
+        .help(primaryActionHelp)
 
-        if isRunning && !store.selectedAIChatIsSharedRoom {
+        if isRunning
+          && !store.selectedAIChatIsSharedRoom
+          && !store.isRecordingOpenClawVoiceNote
+        {
           Menu {
             Button {
-              _ = sendIfPossible(delivery: .followUp)
+              _ = sendIfPossible(delivery: .steer)
             } label: {
-              Label("Queue as Follow-up", systemImage: "clock")
+              Label("Steer Now", systemImage: "arrow.turn.up.right")
             }
             .disabled(!canSend)
           } label: {
@@ -1479,7 +1695,7 @@ struct OpenClawComposerView: View {
           .menuStyle(.borderlessButton)
           .menuIndicator(.hidden)
           .fixedSize()
-          .help("Queue this message until the current response finishes")
+          .help("Steer the current turn now (⌘⇧Return)")
         }
       }
     }
@@ -1752,27 +1968,43 @@ struct OpenClawComposerView: View {
   }
 
   private var primaryActionTitle: String {
+    if store.isRecordingOpenClawVoiceNote {
+      return "Finish & Send"
+    }
     if store.selectedAIChatIsSharedRoom,
        destinationRouting(for: OpenClawContextPresentation(localDraft).userText)
          .destinationIDs.isEmpty {
       return "Post"
     }
     if isRunning {
-      return store.selectedAIChatIsSharedRoom ? "Queue" : "Steer"
+      return "Queue"
     }
     return "Send"
   }
 
   private var primaryActionSystemImage: String {
+    if store.isRecordingOpenClawVoiceNote {
+      return "arrow.up.circle.fill"
+    }
     if store.selectedAIChatIsSharedRoom,
        destinationRouting(for: OpenClawContextPresentation(localDraft).userText)
          .destinationIDs.isEmpty {
       return "text.bubble.fill"
     }
     if isRunning {
-      return store.selectedAIChatIsSharedRoom ? "clock" : "arrow.turn.up.right"
+      return "clock"
     }
     return "paperplane.fill"
+  }
+
+  private var primaryActionHelp: String {
+    if store.isRecordingOpenClawVoiceNote {
+      return "Finish dictating and send the transcript"
+    }
+    if isRunning {
+      return "Queue behind the current turn. Press Command-Shift-Return to steer now."
+    }
+    return "Send message"
   }
 
   private var visibleDraftBinding: Binding<String> {
@@ -1792,17 +2024,30 @@ struct OpenClawComposerView: View {
     localDraft = ""
     lastStoreDraft = ""
     store.cacheOpenClawComposerDraft("")
-    if delivery == .followUp {
-      store.sendComposedOpenClawMessage(text: text, delivery: .followUp)
-    } else {
+    if delivery == .automatic {
       store.submitOpenClawComposerInput(text: text)
+    } else {
+      store.sendComposedOpenClawMessage(text: text, delivery: delivery)
     }
     return true
   }
 
-  private func handleReturn() -> Bool {
-    _ = sendIfPossible()
+  private func handleReturn(_ delivery: AIChatMessageDeliveryPreference) -> Bool {
+    performPrimaryAction(delivery: delivery)
     return true
+  }
+
+  private func performPrimaryAction(
+    delivery: AIChatMessageDeliveryPreference = .automatic
+  ) {
+    if store.isRecordingOpenClawVoiceNote {
+      flushDraftToStore()
+      Task {
+        await store.stopOpenClawVoiceNoteRecording(action: .send)
+      }
+      return
+    }
+    _ = sendIfPossible(delivery: delivery)
   }
 
   private func handleSuggestionCommand(_ command: OpenClawComposerSuggestionKeyCommand) -> Bool {
@@ -2240,6 +2485,11 @@ enum OpenClawComposerKeyCommand {
     return isReturnKey(keyCode) && relevantModifiers.isEmpty
   }
 
+  static func isSteerCommand(keyCode: UInt16, modifiers: NSEvent.ModifierFlags) -> Bool {
+    let relevantModifiers = modifiers.intersection([.command, .option, .control, .shift])
+    return isReturnKey(keyCode) && relevantModifiers == [.command, .shift]
+  }
+
   static func isNewlineCommand(keyCode: UInt16, modifiers: NSEvent.ModifierFlags) -> Bool {
     let relevantModifiers = modifiers.intersection([.command, .option, .control, .shift])
     return isReturnKey(keyCode) && relevantModifiers == [.command]
@@ -2331,7 +2581,7 @@ private struct OpenClawComposerTextView: NSViewRepresentable {
   @Binding var text: String
   let focusOnAppear: Bool
   let moveCursorToEndRequest: Int
-  let onReturn: () -> Bool
+  let onReturn: (AIChatMessageDeliveryPreference) -> Bool
   let onSuggestionCommand: (OpenClawComposerSuggestionKeyCommand) -> Bool
   let onDropAttachment: (OpenClawComposerDropPayload) -> Bool
 
@@ -2350,7 +2600,7 @@ private struct OpenClawComposerTextView: NSViewRepresentable {
     let textView = CommandSubmitTextView()
     textView.delegate = context.coordinator
     textView.onReturn = {
-      context.coordinator.parent.onReturn()
+      context.coordinator.parent.onReturn($0)
     }
     textView.onSuggestionCommand = {
       context.coordinator.parent.onSuggestionCommand($0)
@@ -2388,7 +2638,7 @@ private struct OpenClawComposerTextView: NSViewRepresentable {
     guard let textView = scrollView.documentView as? CommandSubmitTextView else { return }
     context.coordinator.parent = self
     textView.onReturn = {
-      context.coordinator.parent.onReturn()
+      context.coordinator.parent.onReturn($0)
     }
     textView.onSuggestionCommand = {
       context.coordinator.parent.onSuggestionCommand($0)
@@ -2431,9 +2681,19 @@ private struct OpenClawComposerTextView: NSViewRepresentable {
   }
 
   final class CommandSubmitTextView: NSTextView {
-    var onReturn: (() -> Bool)?
+    var onReturn: ((AIChatMessageDeliveryPreference) -> Bool)?
     var onSuggestionCommand: ((OpenClawComposerSuggestionKeyCommand) -> Bool)?
     var onDropAttachment: ((OpenClawComposerDropPayload) -> Bool)?
+    private var pendingLatencyTokens: [WorkspaceInteractionLatency.Token] = []
+
+    override func draw(_ dirtyRect: NSRect) {
+      super.draw(dirtyRect)
+      let tokens = pendingLatencyTokens
+      pendingLatencyTokens.removeAll(keepingCapacity: true)
+      for token in tokens {
+        WorkspaceInteractionLatency.finish(token)
+      }
+    }
 
     override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
       if OpenClawComposerDrop.payload(from: sender.draggingPasteboard) != nil {
@@ -2451,14 +2711,23 @@ private struct OpenClawComposerTextView: NSViewRepresentable {
     }
 
     override func keyDown(with event: NSEvent) {
+      let latencyToken = WorkspaceInteractionLatency.begin(.composerKeyToDraw)
+      defer {
+        pendingLatencyTokens.append(latencyToken)
+        needsDisplay = true
+      }
       if let command = OpenClawComposerKeyCommand.suggestionCommand(
         keyCode: event.keyCode,
         modifiers: event.modifierFlags
       ), onSuggestionCommand?(command) == true {
         return
       }
+      if OpenClawComposerKeyCommand.isSteerCommand(keyCode: event.keyCode, modifiers: event.modifierFlags),
+         onReturn?(.steer) == true {
+        return
+      }
       if OpenClawComposerKeyCommand.isSendCommand(keyCode: event.keyCode, modifiers: event.modifierFlags),
-         onReturn?() == true {
+         onReturn?(.automatic) == true {
         return
       }
       if OpenClawComposerKeyCommand.isNewlineCommand(keyCode: event.keyCode, modifiers: event.modifierFlags) {
@@ -2487,6 +2756,33 @@ enum OpenClawComposerSelection {
   }
 }
 
+/// Observes only the high-frequency live-turn model, so token streaming does
+/// not rebuild the transcript, composer, sidebar, or unrelated workspace UI.
+struct OpenClawLiveTypingIndicatorView: View {
+  @ObservedObject var liveState: OpenClawChatLiveState
+  let threadID: UUID?
+  let startedAt: Date?
+  let runtime: AIChatRuntime
+  let compact: Bool
+  let onStop: () -> Void
+
+  var body: some View {
+    OpenClawTypingIndicatorView(
+      startedAt: startedAt,
+      lastEventAt: threadID.flatMap(liveState.lastEventAt(for:)),
+      runtime: runtime,
+      connectionState: threadID.map(liveState.connectionState(for:)) ?? .disconnected,
+      connectionDetail: threadID.flatMap(liveState.connectionDetail(for:)),
+      runID: threadID.flatMap(liveState.activeRunID(for:)),
+      streamingReply: threadID.map(liveState.streamingReply(for:)) ?? "",
+      reasoning: threadID.map(liveState.reasoning(for:)) ?? "",
+      activities: threadID.map(liveState.runActivities(for:)) ?? [],
+      compact: compact,
+      onStop: onStop
+    )
+  }
+}
+
 struct OpenClawTypingIndicatorView: View {
   static let quietRunInterval: TimeInterval = 2 * 60
   static let stalledRunInterval: TimeInterval = 10 * 60
@@ -2504,6 +2800,7 @@ struct OpenClawTypingIndicatorView: View {
   let onStop: () -> Void
 
   @State private var showsAllStreamingProgress = false
+  @State private var statusEvaluationDate = Date()
 
   init(
     startedAt: Date?,
@@ -2534,42 +2831,43 @@ struct OpenClawTypingIndicatorView: View {
   var body: some View {
     HStack {
       VStack(alignment: .leading, spacing: 9) {
-        TimelineView(.periodic(from: startedAt ?? Date(), by: 1)) { context in
-          VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 8) {
-              OpenClawShimmeringStatusText(
-                statusTitle(now: context.date),
-                animates: statusAnimates(now: context.date)
-              )
-              Text(elapsedText(now: context.date))
-                .font(.caption2.monospacedDigit())
-                .foregroundStyle(.tertiary)
-                .frame(minWidth: 42, alignment: .leading)
-              Spacer(minLength: 8)
-              if canStop {
-                Button(action: onStop) {
-                  Image(systemName: "stop.fill")
-                    .font(.caption.weight(.semibold))
-                    .frame(width: 20, height: 20)
-                    .contentShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-                .accessibilityLabel("Stop \(runtime.title) run")
-                .help("Stop this \(runtime.title) run")
+        VStack(alignment: .leading, spacing: 4) {
+          HStack(spacing: 8) {
+            OpenClawShimmeringStatusText(
+              titleProvider: { statusTitle(now: $0) },
+              animates: statusAnimates(now: statusEvaluationDate)
+            )
+            .fixedSize(horizontal: true, vertical: false)
+            AppKitPeriodicLabel(
+              font: .monospacedDigitSystemFont(ofSize: 10, weight: .regular),
+              color: .tertiaryLabelColor,
+              textProvider: { elapsedText(now: $0) }
+            )
+            .frame(minWidth: 36, idealWidth: 48, maxWidth: 58, minHeight: 14, alignment: .leading)
+            if canStop {
+              Button(action: onStop) {
+                Image(systemName: "stop.fill")
+                  .font(.system(size: 7, weight: .bold))
+                  .frame(width: 22, height: 22)
+                  .background(Color.secondary.opacity(0.11), in: Circle())
+                  .contentShape(Circle())
               }
-            }
-            .frame(minHeight: 20)
-
-            if let statusDetail = statusDetail(now: context.date) {
-              Text(statusDetail)
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-                .fixedSize(horizontal: false, vertical: true)
+              .buttonStyle(.plain)
+              .foregroundStyle(.secondary)
+              .accessibilityLabel("Stop \(runtime.title) run")
+              .help("Stop this \(runtime.title) run")
             }
           }
-          .help(connectionHelp(now: context.date))
+          .frame(minHeight: 20)
+
+          if let statusDetail = statusDetail(now: statusEvaluationDate) {
+            Text(statusDetail)
+              .font(.caption2)
+              .foregroundStyle(.tertiary)
+              .fixedSize(horizontal: false, vertical: true)
+          }
         }
+        .help(connectionHelp(now: statusEvaluationDate))
 
         if let liveText = OpenClawProgressPresentation.liveText(
           from: streamingReply,
@@ -2613,6 +2911,27 @@ struct OpenClawTypingIndicatorView: View {
       Spacer(minLength: compact ? 24 : 48)
     }
     .frame(maxWidth: .infinity, alignment: .leading)
+    .task(id: nextStatusTransition) {
+      guard let nextStatusTransition else { return }
+      let delay = max(0, nextStatusTransition.timeIntervalSinceNow)
+      do {
+        try await Task.sleep(for: .seconds(delay))
+      } catch {
+        return
+      }
+      guard !Task.isCancelled else { return }
+      statusEvaluationDate = Date()
+    }
+  }
+
+  private var nextStatusTransition: Date? {
+    guard connectionState == .connected,
+          runID != nil,
+          let reference = lastEventAt ?? startedAt else { return nil }
+    let now = Date()
+    return [Self.quietRunInterval, Self.stalledRunInterval]
+      .map { reference.addingTimeInterval($0) }
+      .first(where: { $0 > now })
   }
 
   var statusTitle: String {
@@ -2676,8 +2995,11 @@ struct OpenClawTypingIndicatorView: View {
     }
   }
 
-  private var canStop: Bool {
-    connectionState == .connected && runID != nil
+  var canStop: Bool {
+    // This view is only rendered for a locally active send. Connecting,
+    // reconnecting, and disconnected recovered turns need Stop most: their
+    // durable pending turn otherwise has no way to leave the recovery loop.
+    true
   }
 
   private var trimmedReasoning: String {
@@ -2757,46 +3079,34 @@ struct OpenClawTypingIndicatorView: View {
 private struct OpenClawShimmeringStatusText: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-  let title: String
+  let titleProvider: (Date) -> String
   let animates: Bool
 
-  init(_ title: String, animates: Bool = true) {
-    self.title = title
+  init(
+    titleProvider: @escaping (Date) -> String,
+    animates: Bool = true
+  ) {
+    self.titleProvider = titleProvider
     self.animates = animates
   }
 
   var body: some View {
-    Text(title)
-      .font(.caption.weight(.medium))
-      .foregroundStyle(.secondary)
-      .lineLimit(1)
-      .overlay {
-        if animates && !reduceMotion {
-          TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
-            GeometryReader { geometry in
-              let width = geometry.size.width
-              let bandWidth = min(90, max(40, width * 0.5))
-              let progress = context.date.timeIntervalSinceReferenceDate
-                .truncatingRemainder(dividingBy: 2.2) / 2.2
-
-              LinearGradient(
-                colors: [.clear, Color.primary.opacity(0.55), .clear],
-                startPoint: .leading,
-                endPoint: .trailing
-              )
-              .frame(width: bandWidth)
-              .offset(x: -bandWidth + ((width + bandWidth) * progress))
-            }
-            .mask(alignment: .leading) {
-              Text(title)
-                .font(.caption.weight(.medium))
-                .lineLimit(1)
-            }
-          }
-        }
+    HStack(spacing: 5) {
+      if animates {
+        CoreAnimationActivityDot(
+          animates: !reduceMotion,
+          colorStyle: .secondary
+        )
+        .frame(width: 5, height: 5)
       }
-      .contentTransition(.opacity)
-      .animation(WorkspaceMotion.quick, value: title)
+
+      AppKitPeriodicLabel(
+        font: .systemFont(ofSize: 11, weight: .medium),
+        color: .secondaryLabelColor,
+        textProvider: titleProvider
+      )
+      .frame(minWidth: 96, idealWidth: 140, maxWidth: 180, minHeight: 14, alignment: .leading)
+    }
   }
 }
 
@@ -2805,11 +3115,26 @@ private struct OpenClawProgressFeedView: View {
   let activities: [OpenClawRunActivity]
   let compact: Bool
   let isLive: Bool
+  let presentedItems: [OpenClawActivityFeedItem]?
 
   @State private var showsFullFeed = false
 
+  init(
+    reasoning: String,
+    activities: [OpenClawRunActivity],
+    compact: Bool,
+    isLive: Bool,
+    presentedItems: [OpenClawActivityFeedItem]? = nil
+  ) {
+    self.reasoning = reasoning
+    self.activities = activities
+    self.compact = compact
+    self.isLive = isLive
+    self.presentedItems = presentedItems
+  }
+
   private var items: [OpenClawActivityFeedItem] {
-    OpenClawActivityFeed.items(from: activities)
+    presentedItems ?? OpenClawActivityFeed.items(from: activities)
   }
 
   private var presentedReasoning: String? {
@@ -2818,23 +3143,38 @@ private struct OpenClawProgressFeedView: View {
 
   private var collapsedItemLimit: Int { compact ? 2 : 3 }
 
-  private var visibleItems: ArraySlice<OpenClawActivityFeedItem> {
-    showsFullFeed ? items[...] : items.suffix(collapsedItemLimit)
+  private var visibleItems: [OpenClawActivityFeedItem] {
+    OpenClawProgressFeedPresentation.visibleItems(
+      items,
+      isLive: isLive,
+      isExpanded: showsFullFeed,
+      collapsedItemLimit: collapsedItemLimit
+    )
+  }
+
+  private var showsReasoning: Bool {
+    OpenClawProgressFeedPresentation.showsReasoning(
+      isLive: isLive,
+      isExpanded: showsFullFeed
+    )
   }
 
   private var canExpand: Bool {
-    items.count > collapsedItemLimit || (presentedReasoning?.count ?? 0) > 240
+    OpenClawProgressFeedPresentation.canExpand(
+      itemCount: items.count,
+      reasoningLength: presentedReasoning?.count ?? 0,
+      isLive: isLive,
+      collapsedItemLimit: collapsedItemLimit
+    )
   }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 7) {
-      if !isLive || canExpand {
+      if !isLive {
         HStack(spacing: 7) {
-          if !isLive {
-            Label("How it worked", systemImage: "clock.arrow.circlepath")
-              .font(.caption.weight(.semibold))
-              .foregroundStyle(.secondary)
-          }
+          Label("How it worked", systemImage: "clock.arrow.circlepath")
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.secondary)
           Spacer(minLength: 8)
           if canExpand {
             expansionButton
@@ -2842,7 +3182,12 @@ private struct OpenClawProgressFeedView: View {
         }
       }
 
-      if let presentedReasoning {
+      if isLive, showsFullFeed, canExpand {
+        expansionButton
+          .frame(maxWidth: .infinity, alignment: .leading)
+      }
+
+      if showsReasoning, let presentedReasoning {
         HStack(alignment: .top, spacing: 7) {
           Image(systemName: "sparkles")
             .font(.caption.weight(.semibold))
@@ -2854,7 +3199,7 @@ private struct OpenClawProgressFeedView: View {
             Text(presentedReasoning)
               .font(.caption2)
               .foregroundStyle(.secondary)
-              .lineLimit(showsFullFeed ? 8 : (isLive ? 3 : 2))
+              .lineLimit(showsFullFeed ? 8 : 2)
               .truncationMode(.tail)
           }
         }
@@ -2873,7 +3218,12 @@ private struct OpenClawProgressFeedView: View {
         }
       }
 
-      if !showsFullFeed, items.count > collapsedItemLimit {
+      if isLive, !showsFullFeed, canExpand {
+        expansionButton
+          .frame(maxWidth: .infinity, alignment: .leading)
+      }
+
+      if !isLive, !showsFullFeed, items.count > collapsedItemLimit {
         Button {
           withAnimation(WorkspaceMotion.disclosure) {
             showsFullFeed = true
@@ -2898,14 +3248,57 @@ private struct OpenClawProgressFeedView: View {
       }
     } label: {
       Label(
-        showsFullFeed ? "Show less" : "Show full feed",
-        systemImage: showsFullFeed ? "chevron.up" : "chevron.down"
+        OpenClawProgressFeedPresentation.disclosureTitle(
+          isLive: isLive,
+          isExpanded: showsFullFeed
+        ),
+        systemImage: showsFullFeed ? "chevron.down" : "chevron.right"
       )
     }
     .labelStyle(.titleAndIcon)
     .buttonStyle(.plain)
     .font(.caption2.weight(.medium))
     .foregroundStyle(.secondary)
+  }
+}
+
+enum OpenClawProgressFeedPresentation {
+  static func visibleItems(
+    _ items: [OpenClawActivityFeedItem],
+    isLive: Bool,
+    isExpanded: Bool,
+    collapsedItemLimit: Int
+  ) -> [OpenClawActivityFeedItem] {
+    if isLive {
+      guard !isExpanded else { return items }
+      return items.last(where: { $0.status == .running }).map { [$0] }
+        ?? items.last.map { [$0] }
+        ?? []
+    }
+    return isExpanded ? items : Array(items.suffix(collapsedItemLimit))
+  }
+
+  static func showsReasoning(isLive: Bool, isExpanded: Bool) -> Bool {
+    !isLive || isExpanded
+  }
+
+  static func canExpand(
+    itemCount: Int,
+    reasoningLength: Int,
+    isLive: Bool,
+    collapsedItemLimit: Int
+  ) -> Bool {
+    if isLive {
+      return itemCount > 0 || reasoningLength > 0
+    }
+    return itemCount > collapsedItemLimit || reasoningLength > 240
+  }
+
+  static func disclosureTitle(isLive: Bool, isExpanded: Bool) -> String {
+    if isLive {
+      return isExpanded ? "Hide activity" : "Show activity"
+    }
+    return isExpanded ? "Show less" : "Show full feed"
   }
 }
 
@@ -2919,15 +3312,15 @@ private struct OpenClawActivityFeedRow: View {
       activityIcon
       VStack(alignment: .leading, spacing: 2) {
         if isActive {
-          TimelineView(.periodic(from: item.updatedAt, by: 1)) { context in
-            HStack(spacing: 5) {
-              Text(item.title)
-                .font(.caption.weight(.medium))
-              Text("\u{00b7} \(freshnessText(now: context.date))")
-                .font(.caption2.monospacedDigit())
-                .foregroundStyle(.tertiary)
-                .contentTransition(.numericText())
-            }
+          HStack(spacing: 5) {
+            Text(item.title)
+              .font(.caption.weight(.medium))
+            AppKitPeriodicLabel(
+              font: .monospacedDigitSystemFont(ofSize: 10, weight: .regular),
+              color: .tertiaryLabelColor,
+              textProvider: { "\u{00b7} \(freshnessText(now: $0))" }
+            )
+            .frame(minWidth: 48, idealWidth: 92, maxWidth: 112, minHeight: 14, alignment: .leading)
           }
         } else {
           Text(item.title)

@@ -91,6 +91,10 @@
       "required": ["type", "children"],
       "properties": {
         "type": { "const": "ListItem" },
+        "ordinal": {
+          "type": "integer",
+          "minimum": 0
+        },
         "checkbox": {
           "type": "string",
           "enum": ["unchecked", "checked"]

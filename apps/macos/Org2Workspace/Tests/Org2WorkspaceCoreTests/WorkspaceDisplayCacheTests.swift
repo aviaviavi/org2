@@ -44,6 +44,47 @@ final class WorkspaceDisplayCacheTests: XCTestCase {
   }
 
   @MainActor
+  func testOverdueItemsDefaultToStablePriorityOrder() throws {
+    let items = try [
+      agendaItem(headline: "Unprioritized old", priority: nil, line: 1),
+      agendaItem(headline: "Priority C", priority: "C", line: 2),
+      agendaItem(headline: "Priority A old", priority: "A", line: 3),
+      agendaItem(headline: "Priority B", priority: "B", line: 4),
+      agendaItem(headline: "Priority A new", priority: "A", line: 5),
+      agendaItem(headline: "Unprioritized new", priority: nil, line: 6)
+    ]
+
+    XCTAssertEqual(
+      WorkspaceStore.sortedOverdueItems(items, order: .priority).map(\.headline),
+      ["Priority A old", "Priority A new", "Priority B", "Priority C", "Unprioritized old", "Unprioritized new"]
+    )
+    XCTAssertEqual(
+      WorkspaceStore.sortedOverdueItems(items, order: .dueDate).map(\.headline),
+      items.map(\.headline)
+    )
+  }
+
+  @MainActor
+  func testOverdueOrderPreferencePersists() throws {
+    let suiteName = "Org2WorkspaceTests.agenda-overdue-order.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+
+    let first = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults
+    )
+    XCTAssertEqual(first.agendaOverdueOrder, .priority)
+    first.agendaOverdueOrder = .dueDate
+
+    let restored = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults
+    )
+    XCTAssertEqual(restored.agendaOverdueOrder, .dueDate)
+  }
+
+  @MainActor
   func testRunCenterDisplayCacheInvalidatesForRunsAndQueryChanges() throws {
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
     let active = try agentRun(id: "run-active", goal: "Build alpha", status: "running")
@@ -55,12 +96,100 @@ final class WorkspaceDisplayCacheTests: XCTestCase {
     XCTAssertEqual(store.agentRunCount(for: .completed), 1)
     XCTAssertEqual(store.agentRunCount(for: .all), 2)
     XCTAssertEqual(store.agentRunEntries(for: .active).map(\.id), ["run-active"])
+    XCTAssertEqual(store.agentRunIDs(for: .active), ["run-active"])
+    XCTAssertEqual(store.agentRunSections(for: .active).flatMap(\.entries).map(\.id), ["run-active"])
 
     store.agentRunFilter = "beta"
 
     XCTAssertTrue(store.agentRunEntries(for: .active).isEmpty)
     XCTAssertEqual(store.agentRunEntries(for: .all).map(\.id), ["run-completed"])
     XCTAssertEqual(store.agentRunCount(for: .all), 2)
+  }
+
+  @MainActor
+  func testRunCenterIndexesGoalAndAgentCountsOncePerRunRefresh() throws {
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    let first = try agentRun(
+      id: "run-1",
+      goal: "First",
+      status: "running",
+      goalRef: "revenue",
+      agentRef: "scout"
+    )
+    let second = try agentRun(
+      id: "run-2",
+      goal: "Second",
+      status: "completed",
+      goalRef: "revenue",
+      agentRef: "writer"
+    )
+
+    store.replaceAgentRunsForTesting([first, second])
+
+    XCTAssertEqual(store.agentRunCount(goalRef: "revenue"), 2)
+    XCTAssertEqual(store.agentRunCount(agentRef: "scout"), 1)
+    XCTAssertEqual(store.agentRunCount(agentRef: "writer"), 1)
+    XCTAssertEqual(store.agentRun(for: "run-2")?.goal, "Second")
+    XCTAssertTrue(store.isAgentRunVisible("run-2", in: .completed))
+    XCTAssertFalse(store.isAgentRunVisible("run-2", in: .active))
+  }
+
+  @MainActor
+  func testRunCenterRebuildsLargeDisplayCacheWithinRefreshBudget() throws {
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    let runs = try (0..<4_205).map { index in
+      try agentRun(
+        id: "completed-\(index)",
+        goal: "Completed outcome \(index)",
+        status: "completed",
+        goalRef: "goal-\(index % 20)",
+        agentRef: "agent-\(index % 12)"
+      )
+    }
+    let clock = ContinuousClock()
+    let startedAt = clock.now
+
+    store.replaceAgentRunsForTesting(runs)
+
+    let elapsed = startedAt.duration(to: clock.now)
+    XCTAssertEqual(store.agentRunCount(for: .all), runs.count)
+    XCTAssertEqual(store.agentRunSections(for: .all).flatMap(\.entries).count, runs.count)
+    XCTAssertLessThan(elapsed, .milliseconds(250), "Refreshing 4,205 runs must not monopolize the main actor")
+  }
+
+  @MainActor
+  func testRunCenterFiltersLargeCachedCatalogWithinInteractiveBudget() throws {
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    let runs = try (0..<4_205).map { index in
+      try agentRun(
+        id: "completed-\(index)",
+        goal: "Completed outcome \(index)",
+        status: "completed"
+      )
+    }
+    store.replaceAgentRunsForTesting(runs)
+    let clock = ContinuousClock()
+    let startedAt = clock.now
+
+    store.agentRunFilter = "outcome 4204"
+
+    let elapsed = startedAt.duration(to: clock.now)
+    XCTAssertEqual(store.agentRunEntries(for: .all).map(\.id), ["completed-4204"])
+    XCTAssertLessThan(elapsed, .milliseconds(80), "Filtering cached runs must stay within an interactive frame budget")
+  }
+
+  @MainActor
+  func testExternalThreadDisplayCacheInvalidatesForThreadsAndQueryChanges() throws {
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    let alpha = try externalThread(id: "alpha", title: "Alpha rollout")
+    let beta = try externalThread(id: "beta", title: "Beta follow-up")
+
+    store.replaceExternalThreadsForTesting([alpha, beta])
+    store.externalThreadSearchQuery = "beta"
+    XCTAssertEqual(store.filteredExternalThreads.map(\.id), ["codex:beta"])
+
+    store.replaceExternalThreadsForTesting([alpha])
+    XCTAssertTrue(store.filteredExternalThreads.isEmpty)
   }
 
   @MainActor
@@ -143,9 +272,11 @@ final class WorkspaceDisplayCacheTests: XCTestCase {
   private func agentRun(
     id: String = "run-alpha",
     goal: String = "Keep alpha warm",
-    status: String = "running"
+    status: String = "running",
+    goalRef: String? = nil,
+    agentRef: String? = nil
   ) throws -> AgentRunItem {
-    let data = try JSONSerialization.data(withJSONObject: [
+    var object: [String: Any] = [
       "schema": "org2:agent-run:v1",
       "id": id,
       "goal": goal,
@@ -162,8 +293,27 @@ final class WorkspaceDisplayCacheTests: XCTestCase {
       "events": [],
       "createdAt": "2026-07-28T00:00:00.000Z",
       "updatedAt": "2026-07-28T00:01:00.000Z"
-    ])
+    ]
+    object["goalRef"] = goalRef
+    object["agentRef"] = agentRef
+    let data = try JSONSerialization.data(withJSONObject: object)
     return try JSONDecoder().decode(AgentRunItem.self, from: data)
+  }
+
+  private func externalThread(id: String, title: String) throws -> ExternalThreadSummary {
+    ExternalThreadSummary(
+      harness: .codex,
+      externalID: id,
+      title: title,
+      preview: "Read-only transcript",
+      workspacePath: "/tmp/org2",
+      source: "codex",
+      modelProvider: "openai",
+      createdAt: Date(timeIntervalSince1970: 1_776_556_800),
+      updatedAt: Date(timeIntervalSince1970: 1_776_556_800),
+      status: "active",
+      isPinned: false
+    )
   }
 
   private func agenda(headline: String, file: String) throws -> AgendaPayload {
@@ -187,5 +337,21 @@ final class WorkspaceDisplayCacheTests: XCTestCase {
       ]]
     ])
     return try JSONDecoder().decode(AgendaPayload.self, from: data)
+  }
+
+  private func agendaItem(headline: String, priority: String?, line: Int) throws -> AgendaItem {
+    var object: [String: Any] = [
+      "todo": "TODO",
+      "headline": headline,
+      "kind": "SCHEDULED",
+      "file": "/tmp/overdue.org2",
+      "line": line,
+      "body": "",
+      "tags": [],
+      "properties": [:]
+    ]
+    object["priority"] = priority
+    let data = try JSONSerialization.data(withJSONObject: object)
+    return try JSONDecoder().decode(AgendaItem.self, from: data)
   }
 }
