@@ -14,6 +14,7 @@ import type {
   TableNode,
 } from "./ast.js";
 import { parseInlinesFromText, parseOrgToCanonicalAst } from "./parser.js";
+import { parseOrgColorBindingTarget } from "./colorBinding.js";
 
 export type PresentationDiagnostic = {
   severity: "warning" | "error";
@@ -539,6 +540,20 @@ function renderInline(node: InlineNode): string {
     return `\\texttt{${body}}`;
   }
 
+  const colorBinding = node.descriptionRaw !== undefined
+    ? parseOrgColorBindingTarget(node.targetRaw)
+    : null;
+  if (colorBinding) {
+    let body = renderText(node.descriptionRaw || "");
+    if (colorBinding.foreground) {
+      body = `\\textcolor[HTML]{${colorBinding.foreground.hex.toUpperCase()}}{${body}}`;
+    }
+    if (colorBinding.background) {
+      body = `\\colorbox[HTML]{${colorBinding.background.hex.toUpperCase()}}{${body}}`;
+    }
+    return body;
+  }
+
   const target = node.targetRaw.replace(/^file:/i, "");
   const url = escapeLatexUrl(target);
   if (node.descriptionRaw !== undefined) {
@@ -855,6 +870,7 @@ export function renderPresentationToBeamer(doc: DocumentNode): BeamerRenderResul
     "\\usepackage[normalem]{ulem}",
     "\\usepackage{amsmath}",
     "\\usepackage{amssymb}",
+    "\\usepackage{xcolor}",
     "\\usepackage{hyperref}",
     "\\usepackage{listings}",
     ...metadata.latexHeaders,

@@ -12,6 +12,8 @@ The first command emits the machine-readable `org2:capabilities:v1` manifest. Mu
 
 Publishing includes single-file HTML, multi-file HTML projects, and Beamer-compatible presentations. Use `org2 export beamer --file TALK.org2` to preview TeX generation, add `--apply` to write it, and add `--pdf` to compile through `pdflatex` (or the command selected by `--latex-engine`). Presentation structure is compiled from the shared Org2 AST; legacy `BEAMER_*` properties and backend-neutral `SLIDE_*` properties map into the same presentation model.
 
+Explicit color presentation uses preserved custom links rather than inferred column names: `[[color:red][urgent]]` binds foreground, `[[color:bg=yellow][review]]` binds background, and `[[color:fg=white;bg=#b42318][blocked]]` binds both. These non-navigating spans work in ordinary inline content and AI chat; a sole binding in a table cell applies to the whole cell. Invalid or arbitrary CSS remains an ordinary link.
+
 The native macOS Workspace consumes that shared presentation classification to select document or slide preview automatically per file, while retaining an explicit per-file override. Its compiled-PDF view supports slide-number navigation, previous/next and first/last keyboard movement, and fit-relative zoom without recompiling the deck.
 
 Portable corpus identity lives in the root `org2.json`. Use `org2 corpus show|validate|init` before mounting a corpus for team or agent use. `org2 workspace agenda|search` can combine read-only results from repeatable, explicitly named `--mount` paths and attaches corpus identity to every result. Writes remain scoped to the active corpus; an agent must not inherit all human-visible mounts by convenience.

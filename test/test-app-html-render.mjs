@@ -5,6 +5,8 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { renderOrgCharts } from "../dist/chartRender.js";
+import { findBacklinksInText } from "../dist/backlinks.js";
+import { parseOrgColorBindingTarget } from "../dist/colorBinding.js";
 import { renderOrgDocumentToAppHtml, renderOrgDocumentToHtml, renderOrgExportIndexToHtml } from "../dist/export.js";
 import { parseOrgToCanonicalAst } from "../dist/parser.js";
 import { printCanonicalAstToOrg } from "../dist/printer.js";
@@ -17,13 +19,17 @@ SCHEDULED: <2026-07-09 Thu>
 :ID: render-target
 :END:
 A [[id:render-target][linked note]], [[file:notes/other.org2][file]], and [[https://example.com][website]].
+This is [[color:red][urgent]], [[color:bg=yellow][highlighted]], and [[color:fg=white;bg=#b42318][blocked]].
 #+begin_quote
 First line
 Second line
 #+end_quote
-| Scarf org | Stripe email | Q2 paid | Color | Basis |
+| Scarf org | Stripe email | Q2 paid | Status | Basis |
 |---+---+---+---+---|
-| jasperreports | michelle.rudd@jaspersoft.com | $10,480.00 | Green | Paid Stripe invoices on 2026-06-15 and 2026-06-26 |
+| jasperreports | michelle.rudd@jaspersoft.com | $10,480.00 | [[color:fg=white;bg=#b42318][Blocked]] | Paid Stripe invoices on 2026-06-15 and 2026-06-26 |
+| Color |
+|---|
+| Green |
 ** Child heading
 Child body.
 #+begin_export html
@@ -31,10 +37,26 @@ Child body.
 #+end_export
 `;
 
+assert.deepEqual(parseOrgColorBindingTarget("color:red"), {
+  foreground: { source: "red", css: "#ff3b30", hex: "ff3b30" },
+});
+assert.equal(parseOrgColorBindingTarget("color:chartreuse-ish"), null);
+assert.equal(parseOrgColorBindingTarget("color:fg=red;evil=url(javascript:alert(1))"), null);
+assert.deepEqual(
+  findBacklinksInText("[[color:red][Urgent]]", "notes/status.org2", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", {
+    resolveWikiLinkIds: (label) =>
+      label === "color:red" ? ["aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"] : [],
+  }),
+  [],
+);
+
 const document = parseOrgToCanonicalAst(source, {
   sourceRanges: true,
   sourceLineOffset: 20,
 });
+const colorRoundTrip = printCanonicalAstToOrg(document);
+assert.match(colorRoundTrip, /\[\[color:red\]\[urgent\]\]/);
+assert.match(colorRoundTrip, /\[\[color:fg=white;bg=#b42318\]\[Blocked\]\]/);
 const rendered = renderOrgDocumentToAppHtml(document, {
   sourcePath: "notes/render.org2",
   customCss: ":root { --org2-accent: hotpink; } </style><script>unsafe()</script>",
@@ -60,9 +82,11 @@ assert.match(rendered.html, /\.org2-quote \{ white-space: pre-wrap;/);
 assert.match(rendered.html, /<div class="org2-table-scroll">\s*<table/);
 assert.match(rendered.html, /\.org2-table-scroll \{[^}]*overflow-x: auto;/);
 assert.match(rendered.html, /\.org2-table-scroll th, \.org2-table-scroll td \{ overflow-wrap: normal;/);
-assert.match(rendered.html, /class="org2-color-token" style="--org2-color-value: #34c759; display: inline-flex/);
-assert.match(rendered.html, /class="org2-color-swatch" style="[^"]*background: var\(--org2-color-value\);" aria-hidden="true"/);
-assert.match(rendered.html, />Green<\/span><\/span><\/td>/);
+assert.match(rendered.html, /class="org2-color-binding" style="color: #ff3b30;">urgent<\/span>/);
+assert.match(rendered.html, /class="org2-color-binding" style="background-color: #ffcc00;[^>]+>highlighted<\/span>/);
+assert.match(rendered.html, /<td class="org2-color-cell" style="color: #f2f2f7; background-color: #b42318;">Blocked<\/td>/);
+assert.match(rendered.html, /<td>Green<\/td>/);
+assert.doesNotMatch(rendered.html, /org2-color-token|org2-color-swatch/);
 assert.match(rendered.html, /--org2-content-width: 960px;/);
 assert.match(rendered.html, /--org2-page-padding: 28px;/);
 assert.match(rendered.html, /id="org2-app-document-script"/);
@@ -102,7 +126,10 @@ assert.doesNotMatch(published.html, /org2-properties-drawer/);
 assert.doesNotMatch(published.html, /org2-quote/);
 assert.doesNotMatch(published.html, /org2-table-scroll/);
 assert.doesNotMatch(published.html, /org2-table-filter/);
-assert.match(published.html, /class="org2-color-token" style="--org2-color-value: #34c759;/);
+assert.match(published.html, /class="org2-color-binding" style="color: #ff3b30;">urgent<\/span>/);
+assert.match(published.html, /<td class="org2-color-cell" style="color: #f2f2f7; background-color: #b42318;">Blocked<\/td>/);
+assert.match(published.html, /<td>Green<\/td>/);
+assert.doesNotMatch(published.html, /org2-color-token|org2-color-swatch/);
 assert.doesNotMatch(published.html, /Save view to source/);
 assert.doesNotMatch(published.html, /org2-app-document-script/);
 assert.match(published.html, /<section class="org2-headline level-1"/);

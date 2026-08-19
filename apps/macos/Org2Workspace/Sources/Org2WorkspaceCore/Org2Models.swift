@@ -3441,8 +3441,87 @@ public enum OrgInlineSpan: Equatable, Sendable {
   case italic(String)
   case underline(String)
   case strike(String)
+  case color(OrgColorBinding)
   case timestamp(OrgInlineTimestamp)
   case link(label: String, target: String, fileReference: OpenClawFileReference?)
+}
+
+public struct OrgColorValue: Equatable, Sendable {
+  public let source: String
+  public let rgb: UInt32
+
+  public static func parse(_ raw: String) -> OrgColorValue? {
+    let source = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !source.isEmpty else { return nil }
+    if let rgb = namedColors[source.lowercased()] {
+      return OrgColorValue(source: source, rgb: rgb)
+    }
+
+    guard source.first == "#" else { return nil }
+    let digits = String(source.dropFirst())
+    if digits.count == 3, let compact = UInt32(digits, radix: 16) {
+      let red = (compact >> 8) & 0xf
+      let green = (compact >> 4) & 0xf
+      let blue = compact & 0xf
+      return OrgColorValue(source: source, rgb: (red * 17 << 16) | (green * 17 << 8) | (blue * 17))
+    }
+    guard digits.count == 6, let rgb = UInt32(digits, radix: 16) else { return nil }
+    return OrgColorValue(source: source, rgb: rgb)
+  }
+
+  private static let namedColors: [String: UInt32] = [
+    "black": 0x1c1c1e, "blue": 0x007aff, "brown": 0xa2845e,
+    "gray": 0x8e8e93, "green": 0x34c759, "grey": 0x8e8e93,
+    "indigo": 0x5856d6, "mint": 0x00c7be, "orange": 0xff9500,
+    "pink": 0xff2d55, "purple": 0xaf52de, "red": 0xff3b30,
+    "teal": 0x30b0c7, "white": 0xf2f2f7, "yellow": 0xffcc00,
+  ]
+}
+
+public struct OrgColorBinding: Equatable, Sendable {
+  public let label: String
+  public let foreground: OrgColorValue?
+  public let background: OrgColorValue?
+
+  public static func parse(target rawTarget: String, label rawLabel: String) -> OrgColorBinding? {
+    let target = rawTarget.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard target.lowercased().hasPrefix("color:") else { return nil }
+    let label = rawLabel.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !label.isEmpty else { return nil }
+    guard let colon = target.firstIndex(of: ":") else { return nil }
+    let body = String(target[target.index(after: colon)...])
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !body.isEmpty else { return nil }
+
+    let declarations = body.split(separator: ";", omittingEmptySubsequences: true)
+      .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+    var foreground: OrgColorValue?
+    var background: OrgColorValue?
+    for declaration in declarations {
+      guard let equals = declaration.firstIndex(of: "=") else {
+        guard declarations.count == 1, foreground == nil,
+              let color = OrgColorValue.parse(declaration)
+        else { return nil }
+        foreground = color
+        continue
+      }
+      let key = String(declaration[..<equals]).trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+      let valueStart = declaration.index(after: equals)
+      guard let color = OrgColorValue.parse(String(declaration[valueStart...])) else { return nil }
+      switch key {
+      case "fg", "foreground", "text":
+        guard foreground == nil else { return nil }
+        foreground = color
+      case "bg", "background":
+        guard background == nil else { return nil }
+        background = color
+      default:
+        return nil
+      }
+    }
+    guard foreground != nil || background != nil else { return nil }
+    return OrgColorBinding(label: label, foreground: foreground, background: background)
+  }
 }
 
 public struct OrgInlineTimestamp: Equatable, Sendable {
@@ -4332,6 +4411,9 @@ public enum OrgInlineParser {
       display = resolved?.title ?? expandedTarget
     } else {
       display = target
+    }
+    if let colorBinding = OrgColorBinding.parse(target: target, label: display) {
+      return (.color(colorBinding), closeRange.upperBound)
     }
     return (
       .link(label: display, target: expandedTarget, fileReference: resolved?.fileReference),

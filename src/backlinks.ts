@@ -81,6 +81,7 @@ function isWikiLinkTargetCandidate(targetRaw: string): boolean {
   if (lower.startsWith("file:")) return false;
   if (lower.startsWith("http://") || lower.startsWith("https://")) return false;
   if (lower.startsWith("mailto:")) return false;
+  if (lower.startsWith("color:")) return false;
   if (target.startsWith("#") || target.startsWith("*")) return false;
   if (target.startsWith("/") || target.startsWith("./") || target.startsWith("../")) return false;
 

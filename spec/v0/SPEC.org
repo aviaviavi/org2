@@ -481,6 +481,21 @@ A *plain URL* is recognized when it begins with =http://= or =https://= and exte
 
 To reduce accidental captures, the reference parser trims common trailing punctuation characters from the URL.
 
+** Color bindings
+
+Org2 reserves the custom bracket-link type =color:= for explicit, non-navigating color presentation. This is additive Org2 behavior over the ordinary =Link= node; the canonical AST and printer preserve the original bracket-link bytes.
+
+Supported forms are:
+
+- =[[color:VALUE][LABEL]]= for foreground shorthand
+- =[[color:fg=VALUE][LABEL]]= or =[[color:foreground=VALUE][LABEL]]=
+- =[[color:bg=VALUE][LABEL]]= or =[[color:background=VALUE][LABEL]]=
+- =[[color:fg=VALUE;bg=VALUE][LABEL]]= for both
+
+=text= is an alias for =fg=. Values are restricted to the portable Org2 named palette or =#RGB=/=#RRGGBB= literals. Empty labels, unknown keys, duplicate keys, unsupported values, and arbitrary CSS are not color bindings and retain ordinary link behavior.
+
+Renderers apply a binding to its label wherever inline links are supported. When a binding is the sole content of a table cell, foreground and background apply to the whole cell. No meaning is inferred from table headers or unmarked color words.
+
 ** Parsing order (deterministic disambiguation)
 
 When parsing inline content, the parser applies transformations in a deterministic order to avoid ambiguities:

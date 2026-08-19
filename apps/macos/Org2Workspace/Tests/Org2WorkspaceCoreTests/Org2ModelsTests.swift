@@ -5951,6 +5951,19 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(highlighted[lower..<upper].link, URL(string: "https://example.com"))
   }
 
+  func testOrgInlineAttributedStringRendersColorBindingsAsNonNavigatingText() throws {
+    let raw = "[[color:fg=white;bg=#b42318][Blocked]]"
+    let attributed = OrgInlineAttributedString.make(OrgInlineParser.parse(raw), baseFont: .body)
+    let display = String(attributed.characters)
+    XCTAssertEqual(display, "Blocked")
+    let lower = try XCTUnwrap(AttributedString.Index(display.startIndex, within: attributed))
+    let upper = try XCTUnwrap(AttributedString.Index(display.endIndex, within: attributed))
+
+    XCTAssertNotNil(attributed[lower..<upper].foregroundColor)
+    XCTAssertNotNil(attributed[lower..<upper].backgroundColor)
+    XCTAssertNil(attributed[lower..<upper].link)
+  }
+
   func testOrgSyntaxHighlighterFindsEditableDocumentTokens() {
     let raw = """
     * TODO [#A] Review [[id:11111111-1111-4111-8111-111111111111][Alice]] :work:
@@ -10963,20 +10976,34 @@ final class Org2ModelsTests: XCTestCase {
       """)
   }
 
-  func testTableColorTokensRequireAColorHeaderAndRecognizeNamedOrHexValues() throws {
-    XCTAssertTrue(OrgTableColorToken.isColorHeader(" Color "))
-    XCTAssertTrue(OrgTableColorToken.isColorHeader("Colour"))
-    XCTAssertFalse(OrgTableColorToken.isColorHeader("Status"))
+  func testExplicitColorBindingsSupportForegroundBackgroundAndWholeCellMarkup() throws {
+    let foreground = try XCTUnwrap(OrgColorBinding.parse(target: "color:red", label: "Urgent"))
+    XCTAssertEqual(foreground.foreground?.rgb, 0xff3b30)
+    XCTAssertNil(foreground.background)
 
-    XCTAssertEqual(
-      OrgTableColorToken.parse("Green"),
-      OrgTableColorToken(label: "Green", rgb: 0x34c759)
-    )
-    XCTAssertEqual(
-      OrgTableColorToken.parse("#fc0"),
-      OrgTableColorToken(label: "#fc0", rgb: 0xffcc00)
-    )
-    XCTAssertNil(OrgTableColorToken.parse("chartreuse-ish"))
+    let combined = try XCTUnwrap(OrgColorBinding.parse(
+      target: "color:fg=white;bg=#b42318",
+      label: "Blocked"
+    ))
+    XCTAssertEqual(combined.foreground?.rgb, 0xf2f2f7)
+    XCTAssertEqual(combined.background?.rgb, 0xb42318)
+    XCTAssertNil(OrgColorBinding.parse(target: "color:chartreuse-ish", label: "Nope"))
+    XCTAssertNil(OrgColorBinding.parse(target: "https://example.com", label: "Link"))
+
+    let spans = OrgInlineParser.parse("State: [[color:bg=#fc0][Review]]")
+    XCTAssertEqual(spans, [.text("State: "), .color(try XCTUnwrap(
+      OrgColorBinding.parse(target: "color:bg=#fc0", label: "Review")
+    ))])
+
+    let table = OrgEditableTable(rawText: """
+      | State |
+      |-------|
+      | [[color:fg=white;bg=#b42318][Blocked]] |
+      """).renderedBlock
+    guard table.rows.count == 3, case .cells(let cells) = table.rows[2] else {
+      return XCTFail("Expected a rendered color-binding cell")
+    }
+    XCTAssertEqual(cells, ["[[color:fg=white;bg=#b42318][Blocked]]"])
   }
 
   func testRenderedTableViewMutationRejectsAStaleRowMapping() {

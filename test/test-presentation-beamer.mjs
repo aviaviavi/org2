@@ -55,12 +55,20 @@ assert.ok(rendered.tex.includes("\\note{Remember this\n\nMention the source rang
 assert.ok(rendered.tex.includes("\\begin{block}<3->{Native block}"));
 assert.ok(rendered.tex.includes("southeast path \\ensuremath{\\searrow} and verify x \\ensuremath{\\geq} 2."));
 assert.ok(rendered.tex.includes("\\usepackage{listings}"));
+assert.ok(rendered.tex.includes("\\usepackage{xcolor}"));
 assert.ok(rendered.tex.includes("literate={↘}{{\\ensuremath{\\searrow}}}1"));
 assert.ok(rendered.tex.includes("flow ↘ target"));
 assert.ok(rendered.tex.includes("\\pause"));
 assert.ok(rendered.tex.includes("\\begin{quote}"));
 assert.ok(rendered.tex.includes("\\begin{tabular}{ll}"));
 assert.ok(rendered.tex.includes("\\vfill"));
+
+const colorRendered = renderPresentationToBeamer(parseOrgToCanonicalAst(`#+LATEX_CLASS: beamer
+* Section
+** Status
+[[color:fg=white;bg=#b42318][Blocked]]
+`));
+assert.ok(colorRendered.tex.includes("\\colorbox[HTML]{B42318}{\\textcolor[HTML]{F2F2F7}{Blocked}}"));
 
 const topLevelList = document.children
   .flatMap((node) => node.type === "Headline" ? node.children : [])

@@ -262,6 +262,8 @@ struct OrgInlineRenderedTextLinkMap: Equatable {
            .underline(let text),
            .strike(let text):
         displayText += text
+      case .color(let binding):
+        displayText += binding.label
       case .timestamp(let timestamp):
         displayText += timestampDisplayText(timestamp)
       case .link(let label, let target, let fileReference):
@@ -659,6 +661,15 @@ enum OrgInlineAttributedString {
       var chunk = styledText(text, font: baseFont)
       chunk.strikethroughStyle = .single
       return chunk
+    case .color(let binding):
+      var chunk = styledText(binding.label, font: baseFont)
+      if let foreground = binding.foreground {
+        chunk.foregroundColor = color(foreground)
+      }
+      if let background = binding.background {
+        chunk.backgroundColor = color(background)
+      }
+      return chunk
     case .timestamp(let timestamp):
       var label = timestamp.dateLabel
       if let timeLabel = timestamp.timeLabel {
@@ -687,6 +698,14 @@ enum OrgInlineAttributedString {
       chunk.backgroundColor = background
     }
     return chunk
+  }
+
+  private static func color(_ value: OrgColorValue) -> Color {
+    Color(
+      red: Double((value.rgb >> 16) & 0xff) / 255,
+      green: Double((value.rgb >> 8) & 0xff) / 255,
+      blue: Double(value.rgb & 0xff) / 255
+    )
   }
 
   private static let searchHighlightColor = Color.yellow.opacity(0.45)
