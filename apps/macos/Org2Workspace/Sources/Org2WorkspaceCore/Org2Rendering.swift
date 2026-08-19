@@ -442,6 +442,58 @@ public enum OrgTableRow: Equatable, Sendable {
   case separator
 }
 
+struct OrgTableColorToken: Equatable, Sendable {
+  let label: String
+  let rgb: UInt32
+
+  static func isColorHeader(_ raw: String) -> Bool {
+    switch raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+    case "color", "colour": true
+    default: false
+    }
+  }
+
+  static func parse(_ raw: String) -> OrgTableColorToken? {
+    let label = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !label.isEmpty else { return nil }
+    if let rgb = namedColors[label.lowercased()] {
+      return OrgTableColorToken(label: label, rgb: rgb)
+    }
+
+    guard label.first == "#" else { return nil }
+    let digits = String(label.dropFirst())
+    if digits.count == 3, let compact = UInt32(digits, radix: 16) {
+      let red = (compact >> 8) & 0xf
+      let green = (compact >> 4) & 0xf
+      let blue = compact & 0xf
+      return OrgTableColorToken(
+        label: label,
+        rgb: (red * 17 << 16) | (green * 17 << 8) | (blue * 17)
+      )
+    }
+    guard digits.count == 6, let rgb = UInt32(digits, radix: 16) else { return nil }
+    return OrgTableColorToken(label: label, rgb: rgb)
+  }
+
+  private static let namedColors: [String: UInt32] = [
+    "black": 0x1c1c1e,
+    "blue": 0x007aff,
+    "brown": 0xa2845e,
+    "gray": 0x8e8e93,
+    "green": 0x34c759,
+    "grey": 0x8e8e93,
+    "indigo": 0x5856d6,
+    "mint": 0x00c7be,
+    "orange": 0xff9500,
+    "pink": 0xff2d55,
+    "purple": 0xaf52de,
+    "red": 0xff3b30,
+    "teal": 0x30b0c7,
+    "white": 0xf2f2f7,
+    "yellow": 0xffcc00,
+  ]
+}
+
 public struct OrgEditableTable: Equatable, Sendable {
   public var rows: [OrgEditableTableRow]
 

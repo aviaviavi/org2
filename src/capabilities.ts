@@ -33,6 +33,7 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
       "Use `org2 goal` for durable outcomes and `org2 agent-profile` for portable named workers plus runtime bindings; resolve a runtime agent ID before creating delegated work.",
       "Use read-only `org2 doctor --dir CORPUS --json` to find contradictory run, approval, workflow-attempt, and projected headline state before an agent acts.",
       "Use `org2 run show ID --with-revision --json` when a client needs a revision token for a later guarded mutation.",
+      "Use `org2 thread post THREAD_ID ... --apply` or the MCP tool `org2_thread_post` when an explicitly asynchronous worker must report into a named AI chat without starting or steering a turn; pass the target thread ID and a stable idempotency key into delegated work.",
       "Use `org2 ledger` for stable per-account bookkeeping in recurring workflows; canonical accounts live under `notes/LEDGER/accounts/`.",
       "Use `org2 corpus show|validate|init` to inspect or establish portable corpus identity before team mounting.",
       "Use `org2 source list|doctor|status|bind|import|sync` to manage corpus-declared Slack and Notion crawler profiles and stage review packets without storing credentials in the corpus.",
@@ -84,7 +85,7 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
       },
       {
         id: "agentic-workspace",
-        purpose: "Manage goals and portable agent identities, settle chat history, create and inspect durable agent runs, and package reusable workflows.",
+        purpose: "Manage goals and portable agent identities, post idempotent background results into AI chat, settle chat history, create and inspect durable agent runs, and package reusable workflows.",
         commands: ["org2 doctor", "org2 goal", "org2 agent-profile", "org2 thread", "org2 run", "org2 review", "org2 workflow", "org2 eval"],
         writes: "mixed",
       },

@@ -320,13 +320,19 @@ The capability command emits =org2:capabilities:v1= JSON covering workflows, saf
 
 See [[file:agent-quickstart.org][Agent quickstart]] for the operating contract and common recipes.
 
-* Chat thread settlement
+* Chat thread automation
 
-=org2 thread= reads the corpus-owned OpenClaw transcript at =.org2/openclaw-chat.json=. Active and settled threads retain the same stable ID, messages, session key, context, and timestamps; settlement is a reversible work-state transition, not deletion.
+=org2 thread= reads the corpus-owned AI chat transcript at =.org2/openclaw-chat.json=. Active and settled threads retain the same stable ID, messages, session key, context, and timestamps; settlement is a reversible work-state transition, not deletion.
 
 #+begin_src sh
 org2 thread list --dir ~/notes --state all --json
 org2 thread show THREAD_ID --dir ~/notes --json
+org2 thread post THREAD_ID --message "The export is ready" \
+  --author "Revenue Scout" --agent-ref AGENT_REF \
+  --source run:RUN_ID --idempotency-key RUN_ID:complete --dir ~/notes
+org2 thread post THREAD_ID --message "The export is ready" \
+  --author "Revenue Scout" --agent-ref AGENT_REF \
+  --source run:RUN_ID --idempotency-key RUN_ID:complete --dir ~/notes --apply
 org2 thread settle THREAD_ID --dir ~/notes          # preview
 org2 thread settle THREAD_ID --dir ~/notes --apply
 org2 thread reopen THREAD_ID --dir ~/notes --apply
@@ -335,6 +341,10 @@ org2 thread configure --auto-settle never --dir ~/notes --apply
 org2 thread auto-settle --dir ~/notes                # preview eligible IDs
 org2 thread auto-settle --dir ~/notes --apply
 #+end_src
+
+=thread post= is a no-turn background delivery surface for agents and automations. Preview is the default; =--apply= atomically queues an =org2:ai-chat-inbox-message:v1= envelope under =.org2/ai-chat-inbox/=. MCP clients can perform the same delivery with =org2_thread_post=. The running Mac app watches that append-only inbox, merges the attributed assistant message on its main actor, reopens a settled destination, marks the post unread when the thread is not visible, runs the normal sound/push notification path, persists the transcript, and only then removes the envelope. If the app is offline, it drains queued envelopes when that corpus is opened. =--idempotency-key= is scoped to the destination thread and prevents retries from duplicating a delivered post. =--agent-ref= preserves the portable agent identity; =--author= supplies its readable chat label; =--source= can retain a run or provider reference. The post does not invoke, steer, or enqueue either AI runtime.
+
+The selected Mac chat is identified in both Codex and OpenClaw workspace prompts by =ORG2_AI_CHAT_THREAD_ID=. Pass that marker into a subagent, cron task, or other background worker only when it is explicitly expected to report after its parent turn ends; also pass the active corpus root, readable author, source/run reference, and a stable idempotency key. Embedded Codex advertises =org2_thread_post= as a native dynamic tool, while =org2 mcp serve= exposes the same tool through MCP =tools/list=. The OpenClaw lifecycle plugin adds the conditional CLI guidance to workflow and continuation prompts. It deliberately does not mirror every foreground completion because the ordinary assistant reply already reaches the thread.
 
 The transcript schema keeps the legacy =isArchived= field for older clients and adds =settledAt= plus =settlementSettings.autoSettleAfterSeconds=. Existing archived threads therefore load as settled, while older unclassified threads remain active. Auto-settlement excludes the selected thread, pinned or unread threads, pending turns, and a latest message that is still sending, failed, or interrupted. Empty threads and threads with a historical failure followed by a successful delivery remain eligible once inactive.
 

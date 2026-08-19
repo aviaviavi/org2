@@ -14,9 +14,14 @@ export interface OpenClawChatThreadRecord {
   title?: string;
   updatedAt: number | string;
   messages?: Array<{
+    id?: string;
     role?: string;
+    content?: string;
     deliveryStatus?: string;
     sendFailure?: string | null;
+    authorLabel?: string;
+    authorAgentRef?: string;
+    source?: string;
     [key: string]: unknown;
   }>;
   isPinned?: boolean;

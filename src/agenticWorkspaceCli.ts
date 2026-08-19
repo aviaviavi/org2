@@ -73,6 +73,7 @@ import {
   reopenOpenClawThread,
   settleOpenClawThread,
 } from "./openClawThreadState.js";
+import { queueAIChatInboxMessage } from "./aiChatInbox.js";
 import { auditAgenticWorkspace, renderAgenticDoctorReport } from "./agenticWorkspaceDoctor.js";
 import {
   WORK_LEDGER_ACCOUNT_STATES,
@@ -163,7 +164,8 @@ const HELP = `Agentic workspace commands:
   org2 corpus show|validate|init [--dir CORPUS] [--id ID --name NAME --kind personal|shared|project] [--apply]
   org2 workspace agenda --mount CORPUS [--mount CORPUS ...] [--from DATE --to DATE]
   org2 workspace search QUERY --mount CORPUS [--mount CORPUS ...] [--limit N]
-  org2 thread list|show|settle|reopen|configure|auto-settle [--dir CORPUS] [--apply]
+  org2 thread list|show|post|settle|reopen|configure|auto-settle [--dir CORPUS] [--apply]
+  org2 thread post THREAD --message TEXT --author NAME [--agent-ref ID] [--source REF] [--idempotency-key KEY] [--dir CORPUS] [--apply]
   org2 thread configure --auto-settle never|SECONDS [--dir CORPUS] [--apply]
   org2 goal list|show|create|update [--dir CORPUS] [--apply]
   org2 goal create ID --title TEXT [--description TEXT] [--status planned|active|achieved|canceled] [--parent-goal-ref ID] [--owner-agent-ref ID] [--measure TEXT]
@@ -546,6 +548,27 @@ function threadCommand(parsed: ParsedArgs): void {
     return;
   }
   const apply = enabled(parsed, "apply");
+  if (action === "post") {
+    const id = required(parsed.positional[1], "thread id is required");
+    const result = queueAIChatInboxMessage(
+      corpus,
+      id,
+      required(flag(parsed, "message"), "--message is required"),
+      {
+        authorLabel: flag(parsed, "author"),
+        authorAgentRef: flag(parsed, "agent-ref"),
+        source: flag(parsed, "source"),
+        idempotencyKey: flag(parsed, "idempotency-key"),
+        apply,
+      },
+    );
+    output(
+      parsed,
+      result,
+      `${result.applied ? "queued" : result.changed ? "would queue" : "already queued"} message for ${id}\n${result.file}`,
+    );
+    return;
+  }
   if (action === "settle") {
     const id = required(parsed.positional[1], "thread id is required");
     const result = settleOpenClawThread(corpus, id, { apply });

@@ -21,9 +21,9 @@ A [[id:render-target][linked note]], [[file:notes/other.org2][file]], and [[http
 First line
 Second line
 #+end_quote
-| Scarf org | Stripe email | Q2 paid | Basis |
-|---+---+---+---|
-| jasperreports | michelle.rudd@jaspersoft.com | $10,480.00 | Paid Stripe invoices on 2026-06-15 and 2026-06-26 |
+| Scarf org | Stripe email | Q2 paid | Color | Basis |
+|---+---+---+---+---|
+| jasperreports | michelle.rudd@jaspersoft.com | $10,480.00 | Green | Paid Stripe invoices on 2026-06-15 and 2026-06-26 |
 ** Child heading
 Child body.
 #+begin_export html
@@ -60,6 +60,9 @@ assert.match(rendered.html, /\.org2-quote \{ white-space: pre-wrap;/);
 assert.match(rendered.html, /<div class="org2-table-scroll">\s*<table/);
 assert.match(rendered.html, /\.org2-table-scroll \{[^}]*overflow-x: auto;/);
 assert.match(rendered.html, /\.org2-table-scroll th, \.org2-table-scroll td \{ overflow-wrap: normal;/);
+assert.match(rendered.html, /class="org2-color-token" style="--org2-color-value: #34c759; display: inline-flex/);
+assert.match(rendered.html, /class="org2-color-swatch" style="[^"]*background: var\(--org2-color-value\);" aria-hidden="true"/);
+assert.match(rendered.html, />Green<\/span><\/span><\/td>/);
 assert.match(rendered.html, /--org2-content-width: 960px;/);
 assert.match(rendered.html, /--org2-page-padding: 28px;/);
 assert.match(rendered.html, /id="org2-app-document-script"/);
@@ -99,6 +102,7 @@ assert.doesNotMatch(published.html, /org2-properties-drawer/);
 assert.doesNotMatch(published.html, /org2-quote/);
 assert.doesNotMatch(published.html, /org2-table-scroll/);
 assert.doesNotMatch(published.html, /org2-table-filter/);
+assert.match(published.html, /class="org2-color-token" style="--org2-color-value: #34c759;/);
 assert.doesNotMatch(published.html, /Save view to source/);
 assert.doesNotMatch(published.html, /org2-app-document-script/);
 assert.match(published.html, /<section class="org2-headline level-1"/);

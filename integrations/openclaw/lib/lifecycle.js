@@ -7,6 +7,8 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 
+const backgroundThreadDeliveryInstruction = "If this prompt includes ORG2_AI_CHAT_THREAD_ID and this execution is expected to report after its parent turn ends, post the durable outcome once with `org2 thread post THREAD_ID --message TEXT --author NAME --source run:RUN_ID --idempotency-key KEY --apply`. Do not duplicate a normal foreground reply, and do not post before the reported run state or artifact is durable.";
+
 export function conciseGoal(prompt, fallback = "OpenClaw agent execution") {
   const clean = String(prompt || "").replace(/\s+/g, " ").trim();
   return (clean || fallback).slice(0, 240);
@@ -54,6 +56,7 @@ export function workflowExecutionPrompt(workflow, inputs = {}, runId, triggerId)
     "At an approval boundary, request the approval on this run and end the turn without performing the protected action. Org2 will explicitly continue the same run after every item in that boundary is decided.",
     "For a provider draft, keep the exact `Provider draft: PROVIDER:TOOL:DRAFT_ID` line in the approval action. Reuse this run for revisions; never create a second review run for the same provider draft.",
     "Before requesting an external-action or high-impact approval, record the exact recipient, content, command, and attachments in an inspectable run artifact or approval note. An opaque ID or content fingerprint is not review material.",
+    backgroundThreadDeliveryInstruction,
     "Do not bypass an approval, complete a run with a pending review boundary, or silently promote generated work into canonical notes. After a human review decision, record it with `org2 run artifact-review RUN_ID ARTIFACT_ID --status reviewed|rejected` before completing the run.",
   ].join("\n");
 }
@@ -70,6 +73,7 @@ export function workflowContinuationPrompt(workflow, runId) {
     "Use this run for every replacement approval. Resolve provider authority, including decided approvals, through `org2 run approval-resolve --decision-key artifact:PROVIDER:TOOL:DRAFT_ID --json`; do not create a separate review run for a draft already represented here.",
     "Treat an approval as valid only for the exact review material recorded with it; do not substitute a new recipient, payload, command, or attachment after approval.",
     "When an approval resolves an artifact review boundary, record the artifact decision with `org2 run artifact-review RUN_ID ARTIFACT_ID --status reviewed|rejected` before completing the run.",
+    backgroundThreadDeliveryInstruction,
   ].join("\n");
 }
 
@@ -83,6 +87,7 @@ export function draftContinuationPrompt(runId) {
     "If the draft approval was rejected or canceled, do not send it; record that exclusion and close the existing run without performing the protected action.",
     "If it was approved, send only the exact provider draft covered by the approved review material. Do not substitute a new recipient, subject, body, command, or attachment.",
     "Record either the provider send evidence or the declined-action outcome on the existing draft run.",
+    backgroundThreadDeliveryInstruction,
   ].join("\n");
 }
 
@@ -96,6 +101,7 @@ export function approvedRunContinuationPrompt(run) {
     "Perform only exact actions whose review material is approved. Skip every rejected or canceled action, and do not substitute a new recipient, payload, command, or attachment.",
     "For provider drafts, resolve the exact authority through `org2 run approval-resolve --decision-key artifact:PROVIDER:TOOL:DRAFT_ID --json` and verify provider state before any retry.",
     "Record external receipts and the final outcome on this durable run, or record the next specific blocker if the work cannot continue.",
+    backgroundThreadDeliveryInstruction,
   ].join("\n");
 }
 
@@ -113,6 +119,7 @@ export function workflowRevisionPrompt(workflow, runId, approval) {
     "Apply that feedback to new review material, preserve the prior artifact and decision as history, and request a replacement approval for the revised action.",
     "Request the replacement on ORG2_WORKFLOW_RUN_ID. Preserve the exact `Provider draft: PROVIDER:TOOL:DRAFT_ID` line so the CLI can supersede the prior version and reconcile both Review and Runs.",
     "Do not perform the protected action. A revision request is not approval, and only a later approval of the replacement material may authorize it.",
+    backgroundThreadDeliveryInstruction,
   ].join("\n");
 }
 
@@ -211,6 +218,7 @@ export function clarificationContinuationPrompt(run, response) {
     "Re-read the durable run before acting. The response is already recorded on that run and the run is now running; do not create a replacement run.",
     "If this lifecycle run coordinates a more specific child run carrying the same clarification, record the answer on that child and resume it rather than leaving the underlying work blocked.",
     "Continue from the blocked step, preserve existing context and review boundaries, and update this durable run with the outcome or the next actionable blocker.",
+    backgroundThreadDeliveryInstruction,
   ].join("\n");
 }
 

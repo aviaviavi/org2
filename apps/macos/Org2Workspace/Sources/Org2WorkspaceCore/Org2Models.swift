@@ -1906,6 +1906,9 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
   public let deliveryStatus: DeliveryStatus
   public let deliveryKind: DeliveryKind
   public let authorRuntime: AIChatRuntime?
+  public let authorLabel: String?
+  public let authorAgentRef: String?
+  public let source: String?
   public let audience: AIChatAudience?
   public let targetRuntime: AIChatRuntime?
   public let authorDestinationID: String?
@@ -1926,6 +1929,9 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
     deliveryStatus: DeliveryStatus = .sent,
     deliveryKind: DeliveryKind = .turn,
     authorRuntime: AIChatRuntime? = nil,
+    authorLabel: String? = nil,
+    authorAgentRef: String? = nil,
+    source: String? = nil,
     audience: AIChatAudience? = nil,
     targetRuntime: AIChatRuntime? = nil,
     authorDestinationID: String? = nil,
@@ -1945,6 +1951,9 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
     self.deliveryStatus = role == .user ? deliveryStatus : .sent
     self.deliveryKind = role == .user ? deliveryKind : .turn
     self.authorRuntime = role == .user ? nil : authorRuntime
+    self.authorLabel = role == .user ? nil : authorLabel
+    self.authorAgentRef = role == .user ? nil : authorAgentRef
+    self.source = role == .user ? nil : source
     self.audience = role == .user ? audience : nil
     self.targetRuntime = role == .user ? targetRuntime : nil
     self.authorDestinationID = role == .user ? nil : authorDestinationID
@@ -1966,6 +1975,9 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
     case deliveryStatus
     case deliveryKind
     case authorRuntime
+    case authorLabel
+    case authorAgentRef
+    case source
     case audience
     case targetRuntime
     case authorDestinationID
@@ -1994,6 +2006,15 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
     authorRuntime = role == .user
       ? nil
       : try container.decodeIfPresent(AIChatRuntime.self, forKey: .authorRuntime)
+    authorLabel = role == .user
+      ? nil
+      : try container.decodeIfPresent(String.self, forKey: .authorLabel)
+    authorAgentRef = role == .user
+      ? nil
+      : try container.decodeIfPresent(String.self, forKey: .authorAgentRef)
+    source = role == .user
+      ? nil
+      : try container.decodeIfPresent(String.self, forKey: .source)
     audience = role == .user
       ? try container.decodeIfPresent(AIChatAudience.self, forKey: .audience)
       : nil
@@ -2032,6 +2053,9 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
       deliveryStatus: nextSendFailure == nil ? .sent : .failed,
       deliveryKind: deliveryKind,
       authorRuntime: authorRuntime,
+      authorLabel: authorLabel,
+      authorAgentRef: authorAgentRef,
+      source: source,
       audience: audience,
       targetRuntime: targetRuntime,
       authorDestinationID: authorDestinationID,
@@ -2058,6 +2082,9 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
       deliveryStatus: nextDeliveryStatus,
       deliveryKind: deliveryKind,
       authorRuntime: authorRuntime,
+      authorLabel: authorLabel,
+      authorAgentRef: authorAgentRef,
+      source: source,
       audience: audience,
       targetRuntime: targetRuntime,
       authorDestinationID: authorDestinationID,
@@ -2081,6 +2108,9 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
       deliveryStatus: deliveryStatus,
       deliveryKind: deliveryKind,
       authorRuntime: authorRuntime,
+      authorLabel: authorLabel,
+      authorAgentRef: authorAgentRef,
+      source: source,
       audience: audience,
       targetRuntime: targetRuntime,
       authorDestinationID: authorDestinationID,

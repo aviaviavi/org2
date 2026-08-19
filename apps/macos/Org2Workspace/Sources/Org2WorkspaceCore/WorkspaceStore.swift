@@ -240,6 +240,18 @@ struct CorpusFileEventClassification: Equatable, Sendable {
   let contentPaths: [String]
   let hasAgentRunStateChanges: Bool
   let hasConfigurationChanges: Bool
+  let hasAIChatInboxChanges: Bool
+}
+
+private struct AIChatInboxMessage: Decodable {
+  let schema: String
+  let id: UUID
+  let threadID: UUID
+  let content: String
+  let createdAt: String
+  let authorLabel: String
+  let authorAgentRef: String?
+  let source: String?
 }
 
 private struct RenderedHTMLCacheEntry {
@@ -1302,6 +1314,7 @@ public final class WorkspaceStore: ObservableObject {
   @Published private var openClawLastEventAtByThreadID: [UUID: Date] = [:]
   @Published private var openClawActiveRunIDByThreadID: [UUID: String] = [:]
   @Published private var openClawStreamingReplyByThreadID: [UUID: String] = [:]
+  private var codexStreamingItemIDByThreadID: [UUID: String] = [:]
   @Published private var openClawReasoningByThreadID: [UUID: String] = [:]
   @Published private var openClawRunActivitiesByThreadID: [UUID: [OpenClawRunActivity]] = [:]
   @Published public var isOpenClawAssistantPresented = false
@@ -2450,6 +2463,7 @@ public final class WorkspaceStore: ObservableObject {
     backlinks = nil
     errorText = nil
     rebuildCorpusFileWatchers()
+    drainAIChatInbox()
     scheduleAgendaClockInvalidation()
     if openClawLocalEditsEnabled, openClawLocalEditNodeTask == nil {
       startOpenClawLocalEditNode()
@@ -2642,6 +2656,9 @@ public final class WorkspaceStore: ObservableObject {
     if classified.hasAgentRunStateChanges {
       markWorkspaceSurfacesDirty([.approvals, .search], refreshVisible: false)
       scheduleRunReviewRefreshAfterEvents()
+    }
+    if requiresFullScan || classified.hasAIChatInboxChanges {
+      drainAIChatInbox()
     }
   }
 
@@ -14051,6 +14068,95 @@ public final class WorkspaceStore: ObservableObject {
     return destinationThreadID
   }
 
+  func drainAIChatInbox() {
+    guard let corpusRoot else { return }
+    let directory = Self.aiChatInboxDirectory(corpusRoot: corpusRoot)
+    guard let files = try? FileManager.default.contentsOfDirectory(
+      at: directory,
+      includingPropertiesForKeys: nil,
+      options: [.skipsHiddenFiles]
+    ) else { return }
+
+    for file in files
+      .filter({ $0.pathExtension.lowercased() == "json" })
+      .sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
+      do {
+        let values = try file.resourceValues(forKeys: [.fileSizeKey, .isSymbolicLinkKey])
+        guard values.isSymbolicLink != true, (values.fileSize ?? 0) <= 512_000 else {
+          throw CocoaError(
+            .fileReadTooLarge,
+            userInfo: [NSLocalizedDescriptionKey: "AI chat inbox envelope is too large or is a symbolic link."]
+          )
+        }
+        let envelope = try JSONDecoder().decode(
+          AIChatInboxMessage.self,
+          from: Data(contentsOf: file)
+        )
+        guard envelope.schema == "org2:ai-chat-inbox-message:v1" else {
+          throw CocoaError(
+            .fileReadCorruptFile,
+            userInfo: [NSLocalizedDescriptionKey: "Unsupported AI chat inbox schema in \(file.lastPathComponent)."]
+          )
+        }
+        let content = envelope.content.trimmingCharacters(in: .whitespacesAndNewlines)
+        let authorLabel = envelope.authorLabel.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !content.isEmpty, content.count <= 200_000,
+              !authorLabel.isEmpty, authorLabel.count <= 200,
+              (envelope.authorAgentRef?.count ?? 0) <= 1_000,
+              (envelope.source?.count ?? 0) <= 2_000
+        else {
+          throw CocoaError(
+            .validationMissingMandatoryProperty,
+            userInfo: [NSLocalizedDescriptionKey: "AI chat inbox message fields are missing or exceed their limits."]
+          )
+        }
+        guard let thread = openClawChatThreads.first(where: { $0.id == envelope.threadID }) else {
+          throw CocoaError(
+            .fileNoSuchFile,
+            userInfo: [NSLocalizedDescriptionKey: "AI chat thread \(envelope.threadID) no longer exists."]
+          )
+        }
+
+        if thread.messages.contains(where: { $0.id == envelope.id }) {
+          if persistOpenClawTranscript() {
+            try FileManager.default.removeItem(at: file)
+          }
+          continue
+        }
+        if thread.isSettled {
+          reopenOpenClawChatThread(thread.id)
+        }
+        let createdAt = Self.aiChatInboxDate(envelope.createdAt) ?? Date()
+        let message = OpenClawChatMessage(
+          id: envelope.id,
+          role: .assistant,
+          content: content,
+          createdAt: createdAt,
+          authorRuntime: thread.runtime,
+          authorLabel: authorLabel,
+          authorAgentRef: envelope.authorAgentRef,
+          source: envelope.source
+        )
+        let current = openClawChatThreads.first(where: { $0.id == envelope.threadID }) ?? thread
+        let messages = (current.messages + [message]).sorted {
+          if $0.createdAt != $1.createdAt { return $0.createdAt < $1.createdAt }
+          return $0.id.uuidString < $1.id.uuidString
+        }
+        updateOpenClawChatThread(
+          current.id,
+          messages: messages,
+          notifiesForNewAssistantMessages: true,
+          shouldPersist: false
+        )
+        guard persistOpenClawTranscript() else { continue }
+        try FileManager.default.removeItem(at: file)
+        openClawStatusText = "Background message from \(authorLabel)"
+      } catch {
+        errorText = "AI chat background delivery failed: \(error.localizedDescription)"
+      }
+    }
+  }
+
   public func updateAIChatRemoteThreadState(
     threadID: UUID,
     isPinned: Bool?,
@@ -15896,6 +16002,9 @@ public final class WorkspaceStore: ObservableObject {
   private func handleCodexDynamicToolCall(
     _ call: CodexDynamicToolCall
   ) async -> CodexDynamicToolResult {
+    if call.tool == "org2_thread_post" {
+      return await handleCodexThreadPostTool(call.arguments)
+    }
     let command: String
     switch call.tool {
     case "org2_workspace_read":
@@ -15934,6 +16043,47 @@ public final class WorkspaceStore: ObservableObject {
       .flatMap { String(data: $0, encoding: .utf8) }
       ?? #"{"error":{"code":"LOCAL_EDIT_FAILED","message":"Local Org2 edit failed."}}"#
     return CodexDynamicToolResult(success: false, text: errorText)
+  }
+
+  func handleCodexThreadPostTool(_ arguments: JSONValue) async -> CodexDynamicToolResult {
+    guard let corpusRoot else {
+      return CodexDynamicToolResult(success: false, text: "No active Org2 corpus is selected.")
+    }
+    let values = arguments.objectValue ?? [:]
+    let threadID = values["threadId"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    let message = values["message"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    let author = values["author"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    guard !threadID.isEmpty, !message.isEmpty, !author.isEmpty else {
+      return CodexDynamicToolResult(
+        success: false,
+        text: "threadId, message, and author are required for org2_thread_post."
+      )
+    }
+
+    var cliArguments = [
+      "thread", "post", threadID,
+      "--message", message,
+      "--author", author,
+      "--dir", corpusRoot.standardizedFileURL.path,
+      "--apply",
+      "--json",
+    ]
+    for (name, flag) in [
+      ("agentRef", "--agent-ref"),
+      ("source", "--source"),
+      ("idempotencyKey", "--idempotency-key"),
+    ] {
+      let value = values[name]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+      if !value.isEmpty { cliArguments.append(contentsOf: [flag, value]) }
+    }
+
+    do {
+      let output = try await cli.run(cliArguments)
+      drainAIChatInbox()
+      return CodexDynamicToolResult(success: true, text: String(decoding: output, as: UTF8.self))
+    } catch {
+      return CodexDynamicToolResult(success: false, text: error.localizedDescription)
+    }
   }
 
   private func handleCodexAppServerEvent(
@@ -15993,13 +16143,19 @@ public final class WorkspaceStore: ObservableObject {
       if selectedOpenClawChatThreadID == threadID {
         openClawStatusText = "\(destinationName) is working"
       }
-    case .agentMessageDelta(let runtimeThreadID, _, let delta):
+    case .agentMessageDelta(let runtimeThreadID, _, let itemID, let delta):
       guard let threadID = localChatThreadID(
         forRuntimeThreadID: runtimeThreadID,
         destinationID: destinationID
       ) else { return }
       openClawLastEventAtByThreadID[threadID] = Date()
-      openClawStreamingReplyByThreadID[threadID, default: ""] += delta
+      openClawStreamingReplyByThreadID[threadID] = CodexStreamingText.appending(
+        delta,
+        itemID: itemID,
+        after: codexStreamingItemIDByThreadID[threadID],
+        to: openClawStreamingReplyByThreadID[threadID] ?? ""
+      )
+      codexStreamingItemIDByThreadID[threadID] = itemID
       if selectedOpenClawChatThreadID == threadID {
         openClawStatusText = "\(destinationName) is replying"
       }
@@ -16439,6 +16595,7 @@ public final class WorkspaceStore: ObservableObject {
     openClawActiveRunIDByThreadID.removeValue(forKey: threadID)
     openClawLastEventAtByThreadID.removeValue(forKey: threadID)
     openClawStreamingReplyByThreadID.removeValue(forKey: threadID)
+    codexStreamingItemIDByThreadID.removeValue(forKey: threadID)
     openClawReasoningByThreadID.removeValue(forKey: threadID)
     openClawRunActivitiesByThreadID[threadID] = []
   }
@@ -16467,6 +16624,9 @@ public final class WorkspaceStore: ObservableObject {
       deliveryStatus: message.deliveryStatus,
       deliveryKind: message.deliveryKind,
       authorRuntime: message.authorRuntime,
+      authorLabel: message.authorLabel,
+      authorAgentRef: message.authorAgentRef,
+      source: message.source,
       audience: message.audience,
       targetRuntime: message.targetRuntime,
       authorDestinationID: message.authorDestinationID,
@@ -16512,7 +16672,8 @@ public final class WorkspaceStore: ObservableObject {
       case .user:
         speaker = "Avi → \(message.audience?.title ?? "room")"
       case .assistant:
-        speaker = message.authorDestinationID.flatMap { destinationNamesByID[$0] }
+        speaker = message.authorLabel
+          ?? message.authorDestinationID.flatMap { destinationNamesByID[$0] }
           ?? message.authorRuntime?.title
           ?? "Assistant"
       case .system:
@@ -16548,6 +16709,9 @@ public final class WorkspaceStore: ObservableObject {
       deliveryStatus: message.deliveryStatus,
       deliveryKind: message.deliveryKind,
       authorRuntime: message.authorRuntime,
+      authorLabel: message.authorLabel,
+      authorAgentRef: message.authorAgentRef,
+      source: message.source,
       audience: message.audience,
       targetRuntime: message.targetRuntime,
       authorDestinationID: message.authorDestinationID,
@@ -17239,6 +17403,7 @@ public final class WorkspaceStore: ObservableObject {
     var seenContentPaths = Set<String>()
     var hasAgentRunStateChanges = false
     var hasConfigurationChanges = false
+    var hasAIChatInboxChanges = false
 
     for rawPath in paths {
       let path = URL(fileURLWithPath: rawPath).standardizedFileURL.path
@@ -17253,6 +17418,10 @@ public final class WorkspaceStore: ObservableObject {
         hasAgentRunStateChanges = true
         continue
       }
+      if relativePath.hasPrefix(".org2/ai-chat-inbox/") {
+        hasAIChatInboxChanges = true
+        continue
+      }
       guard contentExtensions.contains(URL(fileURLWithPath: path).pathExtension.lowercased()),
             !isDefaultIgnoredSyncArtifactPath(path),
             seenContentPaths.insert(path).inserted
@@ -17265,7 +17434,8 @@ public final class WorkspaceStore: ObservableObject {
     return CorpusFileEventClassification(
       contentPaths: contentPaths,
       hasAgentRunStateChanges: hasAgentRunStateChanges,
-      hasConfigurationChanges: hasConfigurationChanges
+      hasConfigurationChanges: hasConfigurationChanges,
+      hasAIChatInboxChanges: hasAIChatInboxChanges
     )
   }
 
@@ -18038,6 +18208,9 @@ public final class WorkspaceStore: ObservableObject {
         authorRuntime: message.role == .user
           ? nil
           : (message.authorRuntime ?? sourceRuntime),
+        authorLabel: message.authorLabel,
+        authorAgentRef: message.authorAgentRef,
+        source: message.source,
         audience: preservesRoomMetadata ? message.audience : nil,
         targetRuntime: preservesRoomMetadata ? message.targetRuntime : nil,
         authorDestinationID: message.authorDestinationID,
@@ -23426,18 +23599,20 @@ public final class WorkspaceStore: ObservableObject {
     }.value
   }
 
-  private func persistOpenClawTranscript() {
+  @discardableResult
+  private func persistOpenClawTranscript() -> Bool {
     openClawTranscriptPersistenceGeneration &+= 1
     deferredOpenClawTranscriptPersistenceTask?.cancel()
     deferredOpenClawTranscriptPersistenceTask = nil
-    persistOpenClawTranscriptNow()
+    return persistOpenClawTranscriptNow()
   }
 
-  private func persistOpenClawTranscriptNow() {
+  @discardableResult
+  private func persistOpenClawTranscriptNow() -> Bool {
     do {
       if let openClawTranscriptSaverForTesting {
         try openClawTranscriptSaverForTesting()
-        return
+        return true
       }
       try Self.saveOpenClawTranscript(
         OpenClawTranscriptState(
@@ -23447,8 +23622,10 @@ public final class WorkspaceStore: ObservableObject {
         ),
         to: openClawTranscriptURL
       )
+      return true
     } catch {
       errorText = "OpenClaw transcript save failed: \(error.localizedDescription)"
+      return false
     }
   }
 
@@ -24354,7 +24531,11 @@ public final class WorkspaceStore: ObservableObject {
       if content.count > allowedCharacters {
         content = String(content.prefix(allowedCharacters)) + "…"
       }
-      messages.append(.init(role: message.role.rawValue, content: content))
+      messages.append(.init(
+        role: message.role.rawValue,
+        content: content,
+        authorLabel: message.authorLabel
+      ))
       remainingCharacters -= content.count
     }
 
@@ -24382,6 +24563,7 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     return AIChatThreadContinuation(
+      id: thread.id,
       title: thread.title,
       messages: Array(messages.reversed()),
       org2References: references
@@ -24664,6 +24846,18 @@ public final class WorkspaceStore: ObservableObject {
     corpusRoot.standardizedFileURL
       .appendingPathComponent(".org2", isDirectory: true)
       .appendingPathComponent("openclaw-chat.json")
+  }
+
+  nonisolated private static func aiChatInboxDirectory(corpusRoot: URL) -> URL {
+    corpusRoot.standardizedFileURL
+      .appendingPathComponent(".org2", isDirectory: true)
+      .appendingPathComponent("ai-chat-inbox", isDirectory: true)
+  }
+
+  nonisolated private static func aiChatInboxDate(_ value: String) -> Date? {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return formatter.date(from: value) ?? ISO8601DateFormatter().date(from: value)
   }
 
   nonisolated private static func loadOpenClawMessages(from url: URL) -> [OpenClawChatMessage] {

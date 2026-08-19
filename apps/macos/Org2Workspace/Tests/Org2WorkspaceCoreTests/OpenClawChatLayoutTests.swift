@@ -593,6 +593,37 @@ final class OpenClawChatLayoutTests: XCTestCase {
     XCTAssertLessThanOrEqual(presented?.count ?? .max, 1_200)
   }
 
+  func testLiveProgressShowsLatestReadableUpdateByDefault() throws {
+    let progress = """
+      I’ll inspect the current delivery model and locate the relevant code.
+
+      The source repository is available. I’m checking the Mac app package now.
+
+      The implementation is taking shape as an append-only inbox.
+      """
+
+    XCTAssertEqual(
+      OpenClawProgressPresentation.liveText(from: progress, showsAll: false),
+      "The implementation is taking shape as an append-only inbox."
+    )
+    XCTAssertEqual(
+      OpenClawProgressPresentation.liveText(from: progress, showsAll: true),
+      progress
+    )
+    XCTAssertTrue(OpenClawProgressPresentation.hasEarlierLiveText(progress))
+  }
+
+  func testLiveProgressBoundsOneOversizedUpdate() throws {
+    let progress = String(repeating: "Validating the implementation. ", count: 40)
+    let collapsed = try XCTUnwrap(
+      OpenClawProgressPresentation.liveText(from: progress, showsAll: false)
+    )
+
+    XCTAssertLessThanOrEqual(collapsed.count, 320)
+    XCTAssertTrue(collapsed.hasSuffix("\u{2026}"))
+    XCTAssertTrue(OpenClawProgressPresentation.hasEarlierLiveText(progress))
+  }
+
   func testAssistantResponseTraceRoundTripsWithTranscriptMessage() throws {
     let trace = OpenClawResponseTrace(
       reasoning: "Checking the relevant files.",

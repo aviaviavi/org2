@@ -514,10 +514,12 @@ struct ChatBubbleView: View {
       }
       return message.audience.map { "You → \($0.title)" } ?? "You"
     case .assistant:
-      return message.authorDestinationID.map(destinationTitle)
+      return message.authorLabel
+        ?? message.authorDestinationID.map(destinationTitle)
         ?? (message.authorRuntime ?? runtime).title
     case .system:
-      return message.authorDestinationID.map(destinationTitle)
+      return message.authorLabel
+        ?? message.authorDestinationID.map(destinationTitle)
         ?? message.authorRuntime?.title
         ?? "Org2"
     }
@@ -2501,6 +2503,8 @@ struct OpenClawTypingIndicatorView: View {
   let compact: Bool
   let onStop: () -> Void
 
+  @State private var showsAllStreamingProgress = false
+
   init(
     startedAt: Date?,
     lastEventAt: Date? = nil,
@@ -2567,13 +2571,32 @@ struct OpenClawTypingIndicatorView: View {
           .help(connectionHelp(now: context.date))
         }
 
-        if !streamingReply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        if let liveText = OpenClawProgressPresentation.liveText(
+          from: streamingReply,
+          showsAll: showsAllStreamingProgress
+        ) {
           OpenClawMessageBodyView(
-            rawText: streamingReply,
+            rawText: liveText,
             compact: compact,
             managesTextSelection: true,
             rendersStructuredOrg2: true
           )
+
+          if OpenClawProgressPresentation.hasEarlierLiveText(streamingReply) {
+            Button {
+              withAnimation(WorkspaceMotion.disclosure) {
+                showsAllStreamingProgress.toggle()
+              }
+            } label: {
+              Label(
+                showsAllStreamingProgress ? "Show latest update" : "Show all progress",
+                systemImage: showsAllStreamingProgress ? "chevron.up" : "chevron.down"
+              )
+            }
+            .buttonStyle(.plain)
+            .font(.caption2.weight(.medium))
+            .foregroundStyle(.secondary)
+          }
         }
 
         if hasProgress {
@@ -2970,6 +2993,28 @@ private struct OpenClawActivityFeedRow: View {
 
 enum OpenClawProgressPresentation {
   private static let maximumReasoningLength = 1_200
+  private static let maximumCollapsedLiveLength = 320
+
+  static func liveText(from raw: String, showsAll: Bool) -> String? {
+    let readable = normalizedReadableText(raw)
+    guard !readable.isEmpty else { return nil }
+    guard !showsAll else { return readable }
+
+    let paragraphs = readable.components(separatedBy: "\n\n")
+      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .filter { !$0.isEmpty }
+    let latest = paragraphs.last ?? readable
+    guard latest.count > maximumCollapsedLiveLength else { return latest }
+    return String(latest.prefix(maximumCollapsedLiveLength - 1))
+      .trimmingCharacters(in: .whitespacesAndNewlines) + "\u{2026}"
+  }
+
+  static func hasEarlierLiveText(_ raw: String) -> Bool {
+    guard let collapsed = liveText(from: raw, showsAll: false),
+          let expanded = liveText(from: raw, showsAll: true)
+    else { return false }
+    return collapsed != expanded
+  }
 
   static func reasoningText(from raw: String) -> String? {
     let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2986,10 +3031,14 @@ enum OpenClawProgressPresentation {
       || trimmed.hasPrefix("[\\n")
     guard !looksLikeEncodedPayload else { return nil }
 
-    let readable = trimmed
-      .replacingOccurrences(of: "[ \\t]+", with: " ", options: .regularExpression)
-      .replacingOccurrences(of: "\\n{3,}", with: "\n\n", options: .regularExpression)
+    let readable = normalizedReadableText(trimmed)
     guard readable.count > maximumReasoningLength else { return readable }
     return String(readable.prefix(maximumReasoningLength - 1)).trimmingCharacters(in: .whitespacesAndNewlines) + "\u{2026}"
+  }
+
+  private static func normalizedReadableText(_ raw: String) -> String {
+    raw.trimmingCharacters(in: .whitespacesAndNewlines)
+      .replacingOccurrences(of: "[ \\t]+", with: " ", options: .regularExpression)
+      .replacingOccurrences(of: "\\n[ \\t]*\\n(?:[ \\t]*\\n)+", with: "\n\n", options: .regularExpression)
   }
 }

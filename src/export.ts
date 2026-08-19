@@ -1625,10 +1625,70 @@ function dedentBlockBody(bodyRaw: string, indent: string): string {
     .join("\n");
 }
 
-function renderTableRow(row: TableRowNode, asHeader: boolean, context: RenderContext): string {
+type SemanticTableColor = {
+  label: string;
+  cssColor: string;
+};
+
+const SEMANTIC_TABLE_NAMED_COLORS: Readonly<Record<string, string>> = {
+  black: "#1c1c1e",
+  blue: "#007aff",
+  brown: "#a2845e",
+  gray: "#8e8e93",
+  green: "#34c759",
+  grey: "#8e8e93",
+  indigo: "#5856d6",
+  mint: "#00c7be",
+  orange: "#ff9500",
+  pink: "#ff2d55",
+  purple: "#af52de",
+  red: "#ff3b30",
+  teal: "#30b0c7",
+  white: "#f2f2f7",
+  yellow: "#ffcc00",
+};
+
+function semanticTableColor(raw: string): SemanticTableColor | null {
+  const label = String(raw || "").trim();
+  if (!label) return null;
+  const named = SEMANTIC_TABLE_NAMED_COLORS[label.toLowerCase()];
+  if (named) return { label, cssColor: named };
+
+  const hex = label.match(/^#(?:[a-f\d]{3}|[a-f\d]{6})$/i)?.[0];
+  return hex ? { label, cssColor: hex.toLowerCase() } : null;
+}
+
+function semanticColorColumnIndices(headerRows: TableRowNode[]): Set<number> {
+  const header = headerRows.at(-1);
+  const indices = new Set<number>();
+  if (!header) return indices;
+  header.cells.forEach((cell, index) => {
+    const normalized = String(cell || "").trim().toLowerCase();
+    if (normalized === "color" || normalized === "colour") indices.add(index);
+  });
+  return indices;
+}
+
+function renderSemanticTableColor(color: SemanticTableColor): string {
+  const value = escapeAttr(color.cssColor);
+  const tokenStyle = `--org2-color-value: ${value}; display: inline-flex; align-items: center; gap: 0.38em; width: max-content; max-width: 100%; padding: 0.12em 0.48em 0.14em; border: 1px solid color-mix(in srgb, var(--org2-color-value) 55%, rgba(127,127,127,0.3)); border-radius: 999px; background: color-mix(in srgb, var(--org2-color-value) 13%, transparent); line-height: 1.25; white-space: nowrap;`;
+  const swatchStyle = "width: 0.68em; height: 0.68em; flex: 0 0 auto; border: 1px solid color-mix(in srgb, var(--org2-color-value) 78%, rgba(127,127,127,0.45)); border-radius: 50%; background: var(--org2-color-value);";
+  return `<span class="org2-color-token" style="${tokenStyle}"><span class="org2-color-swatch" style="${swatchStyle}" aria-hidden="true"></span><span>${escapeHtml(color.label)}</span></span>`;
+}
+
+function renderTableRow(
+  row: TableRowNode,
+  asHeader: boolean,
+  context: RenderContext,
+  colorColumnIndices: ReadonlySet<number>,
+): string {
   const cellTag = asHeader ? "th" : "td";
   const cells = row.cells
-    .map((cell) => {
+    .map((cell, index) => {
+      const color = !asHeader && colorColumnIndices.has(index)
+        ? semanticTableColor(String(cell || ""))
+        : null;
+      if (color) return `<${cellTag}>${renderSemanticTableColor(color)}</${cellTag}>`;
       const parsed = parseInlinesFromText(String(cell || "").trim());
       const rendered = renderInlineChildren(parsed, context);
       return `<${cellTag}>${rendered}</${cellTag}>`;
@@ -1652,9 +1712,10 @@ function renderTable(node: TableNode, context: RenderContext): string {
       : rows.filter((row): row is TableRowNode => row.type === "TableRow");
 
   const resolvedBodyRows = bodyRows.length > 0 ? bodyRows : headerRows;
+  const colorColumnIndices = semanticColorColumnIndices(headerRows);
   const renderedHead =
-    headerRows.length > 0 ? `<thead>\n${headerRows.map((row) => renderTableRow(row, true, context)).join("\n")}\n</thead>` : "";
-  const renderedBody = `<tbody>\n${resolvedBodyRows.map((row) => renderTableRow(row, false, context)).join("\n")}\n</tbody>`;
+    headerRows.length > 0 ? `<thead>\n${headerRows.map((row) => renderTableRow(row, true, context, colorColumnIndices)).join("\n")}\n</thead>` : "";
+  const renderedBody = `<tbody>\n${resolvedBodyRows.map((row) => renderTableRow(row, false, context, colorColumnIndices)).join("\n")}\n</tbody>`;
 
   const sourceAttributes = renderSourceAttributes(node, context);
   const table = `<table${sourceAttributes}>\n${[renderedHead, renderedBody].filter(Boolean).join("\n")}\n</table>`;

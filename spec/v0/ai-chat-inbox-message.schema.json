@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "org2:ai-chat-inbox-message:v1",
+  "title": "Org2 AI Chat Inbox Message",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "id",
+    "threadID",
+    "content",
+    "createdAt",
+    "authorLabel"
+  ],
+  "properties": {
+    "schema": {
+      "const": "org2:ai-chat-inbox-message:v1"
+    },
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "threadID": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "content": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200000
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "authorLabel": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "authorAgentRef": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1000
+    },
+    "source": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000
+    }
+  }
+}

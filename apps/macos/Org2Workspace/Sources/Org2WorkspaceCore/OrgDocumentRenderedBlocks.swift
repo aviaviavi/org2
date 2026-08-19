@@ -2298,7 +2298,11 @@ private struct RenderedTableView: View {
             case .cells(let cells):
               GridRow {
                 ForEach(columnWindow.visibleColumns, id: \.self) { columnIndex in
-                  OrgInlineText(cellText(cells, at: columnIndex), font: cellFont(rowIndex: visibleRow.index))
+                  tableCell(
+                    cells: cells,
+                    columnIndex: columnIndex,
+                    rowIndex: visibleRow.index
+                  )
                     .lineLimit(table.headerRowIndex == visibleRow.index ? 2 : 5)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
@@ -2394,6 +2398,48 @@ private struct RenderedTableView: View {
   private func cellText(_ cells: [String], at index: Int) -> String {
     guard cells.indices.contains(index) else { return "" }
     return cells[index]
+  }
+
+  @ViewBuilder
+  private func tableCell(cells: [String], columnIndex: Int, rowIndex: Int) -> some View {
+    let raw = cellText(cells, at: columnIndex)
+    if table.headerRowIndex != rowIndex,
+       colorColumnIndices.contains(columnIndex),
+       let token = OrgTableColorToken.parse(raw) {
+      let color = color(for: token)
+      HStack(spacing: 5) {
+        Circle()
+          .fill(color)
+          .overlay(Circle().stroke(color.opacity(0.78), lineWidth: 1))
+          .frame(width: 9, height: 9)
+          .accessibilityHidden(true)
+        Text(token.label)
+          .font(cellFont(rowIndex: rowIndex))
+      }
+      .padding(.horizontal, 7)
+      .padding(.vertical, 2)
+      .background(color.opacity(0.13), in: Capsule())
+      .overlay(Capsule().stroke(color.opacity(0.55), lineWidth: 1))
+      .accessibilityLabel("Color: \(token.label)")
+    } else {
+      OrgInlineText(raw, font: cellFont(rowIndex: rowIndex))
+    }
+  }
+
+  private var colorColumnIndices: Set<Int> {
+    guard let headerRowIndex = table.headerRowIndex,
+          table.rows.indices.contains(headerRowIndex),
+          case .cells(let cells) = table.rows[headerRowIndex]
+    else { return [] }
+    return Set(cells.indices.filter { OrgTableColorToken.isColorHeader(cells[$0]) })
+  }
+
+  private func color(for token: OrgTableColorToken) -> Color {
+    Color(
+      red: Double((token.rgb >> 16) & 0xff) / 255,
+      green: Double((token.rgb >> 8) & 0xff) / 255,
+      blue: Double(token.rgb & 0xff) / 255
+    )
   }
 
   private func cellFont(rowIndex: Int) -> Font {

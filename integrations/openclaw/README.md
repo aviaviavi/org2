@@ -29,6 +29,17 @@ outcome summary; approval and clarification boundaries remain open instead of
 being mistaken for completion. Available provider, model, token, and
 elapsed-time metadata is copied into the durable run.
 
+An Org2 AI chat prompt can carry =ORG2_AI_CHAT_THREAD_ID=. When a parent
+explicitly delegates asynchronous reporting, it should copy that exact marker,
+the active corpus root, readable author identity, source/run reference, and a
+stable idempotency key into the subagent or cron prompt. Lifecycle-generated
+workflow and continuation prompts teach workers to use =org2 thread post ...
+--apply= only after the reported run state or artifact is durable. The plugin
+does not automatically mirror every completion into chat: foreground turns
+already have a normal reply path, and automatic mirroring would create
+duplicates. Agents using the Org2 MCP surface discover the equivalent
+=org2_thread_post= tool through =tools/list=.
+
 After requesting a run approval, leave the run in `waiting-approval`; do not
 also create a writable approval heading or block the run with another phrasing
 of the same decision. The CLI rejects that block transition. A genuinely

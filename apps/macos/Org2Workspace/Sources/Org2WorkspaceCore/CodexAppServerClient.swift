@@ -197,7 +197,7 @@ public enum CodexAppServerEvent: Sendable {
   case accountUpdated(authMode: String?, plan: String?)
   case loginCompleted(loginID: String?, success: Bool, error: String?)
   case turnStarted(threadID: String, turnID: String)
-  case agentMessageDelta(threadID: String, turnID: String, delta: String)
+  case agentMessageDelta(threadID: String, turnID: String, itemID: String, delta: String)
   case reasoningDelta(threadID: String, turnID: String, delta: String)
   case activity(
     threadID: String,
@@ -208,6 +208,21 @@ public enum CodexAppServerEvent: Sendable {
     status: OpenClawRunActivity.Status
   )
   case warning(threadID: String?, message: String)
+}
+
+enum CodexStreamingText {
+  static func appending(
+    _ delta: String,
+    itemID: String,
+    after previousItemID: String?,
+    to existing: String
+  ) -> String {
+    guard let previousItemID,
+          previousItemID != itemID,
+          !existing.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    else { return existing + delta }
+    return existing + "\n\n" + delta
+  }
 }
 
 public enum CodexAppServerError: LocalizedError, Sendable {
@@ -262,6 +277,7 @@ public actor CodexAppServerClient {
   private struct PendingTurn {
     var finalReply = ""
     var streamedReply = ""
+    var streamedItemID: String?
     var errorMessage: String?
     var continuation: CheckedContinuation<CodexTurnResult, Never>?
     var completedResult: CodexTurnResult?
@@ -1139,12 +1155,20 @@ public actor CodexAppServerClient {
             let turnID = params["turnId"]?.stringValue,
             let delta = params["delta"]?.stringValue
       else { return }
+      let itemID = params["itemId"]?.stringValue ?? "\(turnID):legacy-agent-message"
       var pending = pendingTurns[turnID] ?? PendingTurn()
-      pending.streamedReply += delta
+      pending.streamedReply = CodexStreamingText.appending(
+        delta,
+        itemID: itemID,
+        after: pending.streamedItemID,
+        to: pending.streamedReply
+      )
+      pending.streamedItemID = itemID
       pendingTurns[turnID] = pending
       await eventHandler(.agentMessageDelta(
         threadID: threadID,
         turnID: turnID,
+        itemID: itemID,
         delta: delta
       ))
     case "item/reasoning/summaryTextDelta":
@@ -1328,16 +1352,36 @@ public actor CodexAppServerClient {
   nonisolated private static let localEditDeveloperInstructions = """
   You are the local Codex runtime embedded in Org2 Workspace. The active working directory is the selected Org2 corpus.
 
-  For every corpus read or write, use the org2_workspace_read, org2_workspace_patch_preview, and org2_workspace_patch_apply tools supplied by the client. These tools read effective local text, including unsaved editor state, and attribute applied changes to this exact turn. Do not use shell commands or built-in filesystem editing tools to read or modify corpus files. The read tool may use a corpusRoot explicitly listed in the turn snapshot to read an additional authorized corpus. Patch tools always target only the active corpus.
+  For every corpus read or write, use the org2_workspace_read, org2_workspace_patch_preview, org2_workspace_patch_apply, and org2_thread_post tools supplied by the client. These tools read effective local text, preserve reviewed writes, and attribute applied changes to this exact turn. Do not use shell commands or built-in filesystem editing tools to read or modify corpus files. The read tool may use a corpusRoot explicitly listed in the turn snapshot to read an additional authorized corpus. Patch and thread-post tools always target only the active corpus.
 
   Existing files must be read first. Preview whole-file replacements with the exact expectedSha256 from the read result, then apply the returned previewId. For new files, set createsFile to true and omit expectedSha256. If a stale-document error occurs, read again and rebuild the replacement. Use the turnId provided in the application context on every tool call.
 
   Ordinary conversation does not require a tool call. Ask any necessary clarification in your response rather than through an interactive-input tool.
 
+  Use org2_thread_post only for an explicitly asynchronous worker reporting into a named Org2 AI chat. Do not duplicate the ordinary foreground response with a background post. The workspace context supplies ORG2_AI_CHAT_THREAD_ID and delegation guidance when a thread target is available.
+
   \(OpenClawWorkspaceContext.responseFormattingContract)
   """
 
   nonisolated private static let localEditDynamicTools: [JSONValue] = [
+    .object([
+      "type": .string("function"),
+      "name": .string("org2_thread_post"),
+      "description": .string("Post one attributed background update to an existing Org2 AI chat without starting or steering a model turn. Use only for explicitly asynchronous reporting, not as a duplicate foreground reply."),
+      "inputSchema": .object([
+        "type": .string("object"),
+        "properties": .object([
+          "threadId": .object(["type": .string("string")]),
+          "message": .object(["type": .string("string")]),
+          "author": .object(["type": .string("string")]),
+          "agentRef": .object(["type": .string("string")]),
+          "source": .object(["type": .string("string")]),
+          "idempotencyKey": .object(["type": .string("string")])
+        ]),
+        "required": .array([.string("threadId"), .string("message"), .string("author")]),
+        "additionalProperties": .bool(false)
+      ])
+    ]),
     .object([
       "type": .string("function"),
       "name": .string("org2_workspace_read"),

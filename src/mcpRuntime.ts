@@ -6,6 +6,7 @@ import { listAgentRuns, loadAgentRunSnapshot, saveAgentRun, transitionAgentRun }
 import { instantiateWorkflow, listWorkflows, loadWorkflow } from "./agentWorkflow.js";
 import { resolveAgentProfile } from "./coordination.js";
 import { safeIdentifier } from "./safeIdentifier.js";
+import { queueAIChatInboxMessage } from "./aiChatInbox.js";
 
 type JsonObject = Record<string, unknown>;
 type JsonRpcId = string | number | null;
@@ -283,6 +284,7 @@ async function handle(root: string, request: JsonRpcRequest): Promise<JsonRpcRes
     { name: "org2_run_create", description: "Create a durable Org2 agent run from a reusable workflow", inputSchema: { type: "object", required: ["workflow"], properties: { workflow: { type: "string" }, inputs: { type: "object" }, owner: { type: "string" }, agentRef: { type: "string" }, goalRef: { type: "string" } } } },
     { name: "org2_run_transition", description: "Transition a durable Org2 run. Completion requires a concise, human-readable summary.", inputSchema: { type: "object", required: ["run", "status"], properties: { run: { type: "string" }, status: { type: "string" }, actor: { type: "string" }, reason: { type: "string" }, summary: { type: "string" }, highlights: { type: "array", items: { type: "string" } }, nextActions: { type: "array", items: { type: "string" } } } } },
     { name: "org2_run_list", description: "List durable Org2 runs and review state", inputSchema: { type: "object", properties: {} } },
+    { name: "org2_thread_post", description: "Post an attributed background message to an existing Org2 AI chat without starting or steering a model turn", inputSchema: { type: "object", required: ["threadId", "message", "author"], properties: { threadId: { type: "string" }, message: { type: "string" }, author: { type: "string" }, agentRef: { type: "string" }, source: { type: "string" }, idempotencyKey: { type: "string" } } } },
   ] });
   if (request.method === "tools/call") {
     const name = request.params.name;
@@ -291,6 +293,21 @@ async function handle(root: string, request: JsonRpcRequest): Promise<JsonRpcRes
     if (name === "org2_agent_profile_resolve") {
       const resolved = resolveAgentProfile(root, requiredString(args.runtime, "runtime"), requiredString(args.runtimeAgentId, "runtimeAgentId"));
       return result({ content: [{ type: "text", text: JSON.stringify(resolved, null, 2) }] });
+    }
+    if (name === "org2_thread_post") {
+      const queued = queueAIChatInboxMessage(
+        root,
+        requiredString(args.threadId, "threadId"),
+        requiredString(args.message, "message"),
+        {
+          authorLabel: requiredString(args.author, "author"),
+          authorAgentRef: optionalString(args.agentRef, "agentRef"),
+          source: optionalString(args.source, "source"),
+          idempotencyKey: optionalString(args.idempotencyKey, "idempotencyKey"),
+          apply: true,
+        },
+      );
+      return result({ content: [{ type: "text", text: JSON.stringify(queued, null, 2) }] });
     }
     if (name === "org2_run_create") {
       const run = instantiateWorkflow(loadWorkflow(root, requiredString(args.workflow, "workflow")), workflowInputs(args.inputs), {

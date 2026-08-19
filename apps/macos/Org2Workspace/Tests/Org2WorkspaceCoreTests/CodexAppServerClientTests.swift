@@ -61,6 +61,33 @@ final class CodexAppServerClientTests: XCTestCase {
     )
   }
 
+  func testCodexStreamingTextPreservesAgentMessageBoundaries() {
+    var text = CodexStreamingText.appending(
+      "I’ll inspect the current delivery model.",
+      itemID: "commentary-1",
+      after: nil,
+      to: ""
+    )
+    text = CodexStreamingText.appending(
+      " I found the relevant package.",
+      itemID: "commentary-1",
+      after: "commentary-1",
+      to: text
+    )
+    text = CodexStreamingText.appending(
+      "The implementation is now taking shape.",
+      itemID: "commentary-2",
+      after: "commentary-1",
+      to: text
+    )
+
+    XCTAssertEqual(
+      text,
+      "I’ll inspect the current delivery model. I found the relevant package.\n\n"
+        + "The implementation is now taking shape."
+    )
+  }
+
   func testCodexWorkspaceSnapshotIncludesUnsavedSelectedSource() {
     let context = OpenClawWorkspaceContext(
       localCorpusRoot: "/tmp/example-corpus",
@@ -172,6 +199,33 @@ final class CodexAppServerClientTests: XCTestCase {
       XCTAssertTrue(prompt.contains("#+begin_src sh"))
       XCTAssertTrue(prompt.contains("Never write ##+begin_src or ##+end_src."))
       XCTAssertTrue(prompt.contains("clickable file-and-line citations is a deliberate Org2 Workspace chat transport exception"))
+    }
+  }
+
+  func testThreadContinuationTeachesExplicitAsynchronousReporting() {
+    let threadID = UUID(uuidString: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")!
+    let context = OpenClawWorkspaceContext(
+      localCorpusRoot: "/tmp/personal",
+      remoteCorpusRoot: "/srv/personal",
+      selectedSurface: "AI Chat",
+      selectedLocation: nil,
+      selectedEntrySource: nil,
+      backlinks: nil,
+      agenda: nil,
+      searchQuery: "",
+      searchResults: [],
+      threadContinuation: AIChatThreadContinuation(
+        id: threadID,
+        title: "Async reporting",
+        messages: [],
+        org2References: []
+      )
+    )
+
+    for prompt in [context.systemPrompt(), context.codexSystemPrompt()] {
+      XCTAssertTrue(prompt.contains("ORG2_AI_CHAT_THREAD_ID: aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"))
+      XCTAssertTrue(prompt.contains("org2_thread_post"))
+      XCTAssertTrue(prompt.contains("Do not post a duplicate background message"))
     }
   }
 
@@ -716,6 +770,10 @@ final class CodexAppServerClientTests: XCTestCase {
         ;;
       *'"method":"thread/start"'*)
         case "$line" in
+          *'"name":"org2_thread_post"'*) ;;
+          *) printf '%s\n' '{"id":3,"error":{"message":"background thread-post tool missing"}}'; continue ;;
+        esac
+        case "$line" in
           *'"sandbox":"danger-full-access"'*) ;;
           *) printf '%s\n' '{"id":3,"error":{"message":"thread sandbox missing"}}'; continue ;;
         esac
@@ -841,7 +899,7 @@ private actor CodexTestRecorder {
   private(set) var streamedText = ""
 
   func record(_ event: CodexAppServerEvent) {
-    if case .agentMessageDelta(_, _, let delta) = event {
+    if case .agentMessageDelta(_, _, _, let delta) = event {
       streamedText += delta
     }
   }

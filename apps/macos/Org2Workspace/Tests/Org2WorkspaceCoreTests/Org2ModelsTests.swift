@@ -10963,6 +10963,22 @@ final class Org2ModelsTests: XCTestCase {
       """)
   }
 
+  func testTableColorTokensRequireAColorHeaderAndRecognizeNamedOrHexValues() throws {
+    XCTAssertTrue(OrgTableColorToken.isColorHeader(" Color "))
+    XCTAssertTrue(OrgTableColorToken.isColorHeader("Colour"))
+    XCTAssertFalse(OrgTableColorToken.isColorHeader("Status"))
+
+    XCTAssertEqual(
+      OrgTableColorToken.parse("Green"),
+      OrgTableColorToken(label: "Green", rgb: 0x34c759)
+    )
+    XCTAssertEqual(
+      OrgTableColorToken.parse("#fc0"),
+      OrgTableColorToken(label: "#fc0", rgb: 0xffcc00)
+    )
+    XCTAssertNil(OrgTableColorToken.parse("chartreuse-ish"))
+  }
+
   func testRenderedTableViewMutationRejectsAStaleRowMapping() {
     XCTAssertNil(OrgRenderedTableViewMutation.replacement(
       rawText: """

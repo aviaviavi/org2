@@ -270,6 +270,9 @@ const x = 1</code></pre>
 <h1 id="tables">Tables</h1>
 <ul>
 <li><p>Pipe table rows: <code>| a | b |</code></p></li>
+</ul>
+<p>Rendered clients treat an explicit <code>Color</code> or <code>Colour</code> table column as semantic presentation metadata. A whole-cell common color name or three/six-digit hex literal can be shown as a labeled swatch while the canonical cell remains ordinary text. The header opt-in is required: the same word in prose or another column has no color semantics. This is a rendering convention rather than new parser syntax, so source round-trips and non-visual clients retain the exact value.</p>
+<ul>
 <li><p>Horizontal separator rows: <code>|---+---|</code></p></li>
 <li><p>Table content is parsed and preserved.</p></li>
 </ul>
