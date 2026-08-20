@@ -80,17 +80,17 @@ org2 agent --help</code></pre>
 </section>
 <section class="org2-headline level-1">
 <h1 id="goals-agent-profiles-and-runtimes">Goals, agent profiles, and runtimes</h1>
-<p>Org2 separates the outcome, worker, and execution mechanism. A goal is a portable <code>org2:goal:v1</code> record under <code>goals/</code>. A named worker such as <em>Scarf Support</em> or <em>Scarf Revenue Scout</em> is an <code>org2:agent-profile:v1</code> record under <code>agent-profiles/</code>. OpenClaw and Codex are runtimes: they execute work, but they are not themselves <code>AGENT_REF</code> values.</p>
-<p>Profiles contain responsibilities, capabilities, skills, goal refs, and non-secret runtime bindings. A binding such as <code>openclaw:scarf-support</code> connects the configured OpenClaw agent ID to the portable <code>scarf-support</code> profile. <code>codex:default</code> may provide a default profile for a Codex chat, while a selected heading's existing <code>AGENT_REF</code> and <code>GOAL_REF</code> take precedence. Credentials, model selection, session IDs, and machine paths remain outside the profile.</p>
+<p>Org2 separates the outcome, worker, and execution mechanism. A goal is a portable <code>org2:goal:v1</code> record under <code>goals/</code>. A named worker such as <em>Customer Support</em> or <em>Product Research</em> is an <code>org2:agent-profile:v1</code> record under <code>agent-profiles/</code>. OpenClaw and Codex are runtimes: they execute work, but they are not themselves <code>AGENT_REF</code> values.</p>
+<p>Profiles contain responsibilities, capabilities, skills, goal refs, and non-secret runtime bindings. A binding such as <code>openclaw:customer-support</code> connects the configured OpenClaw agent ID to the portable <code>customer-support</code> profile. <code>codex:default</code> may provide a default profile for a Codex chat, while a selected heading's existing <code>AGENT_REF</code> and <code>GOAL_REF</code> take precedence. Credentials, model selection, session IDs, and machine paths remain outside the profile.</p>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 goal create customer-trust --title &quot;Earn customer trust&quot; \
   --measure &quot;Support requests are resolved&quot; --dir ~/notes          # preview
 org2 goal create customer-trust --title &quot;Earn customer trust&quot; \
   --measure &quot;Support requests are resolved&quot; --dir ~/notes --apply
-org2 agent-profile create scarf-support --name &quot;Scarf Support&quot; \
-  --binding openclaw:scarf-support --primary-goal-ref customer-trust \
+org2 agent-profile create customer-support --name &quot;Customer Support&quot; \
+  --binding openclaw:customer-support --primary-goal-ref customer-trust \
   --responsibility &quot;Resolve customer support requests&quot; --dir ~/notes --apply
 org2 agent-profile resolve --runtime openclaw \
-  --runtime-agent-id scarf-support --dir ~/notes --json</code></pre>
+  --runtime-agent-id customer-support --dir ~/notes --json</code></pre>
 <p>Durable runs and workflows accept <code>--agent-ref</code> and <code>--goal-ref</code>. <code>todo assign</code> accepts the same refs and writes <code>:AGENT_REF:</code> and <code>:GOAL_REF:</code> beside its readable <code>:ASSIGNEE:</code>. Do not replace the portable profile ID with <code>openclaw</code>, <code>codex</code>, a provider/model name, or a session ID. If resolution finds no active binding, omit the refs rather than guessing.</p>
 <p>The Mac app exposes the same records under <strong>Agent Work → Goals</strong> and <strong>Agent Work → Agents</strong>. Selecting a row opens its canonical plain-text record in the detail pane. Owner, primary-goal, manager, and linked-run controls navigate between related records; the row menu applies supported goal or agent lifecycle changes through the shared CLI.</p>
 </section>

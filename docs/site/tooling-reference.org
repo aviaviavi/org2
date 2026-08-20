@@ -328,10 +328,10 @@ See [[file:agent-quickstart.org][Agent quickstart]] for the operating contract a
 org2 thread list --dir ~/notes --state all --json
 org2 thread show THREAD_ID --dir ~/notes --json
 org2 thread post THREAD_ID --message "The export is ready" \
-  --author "Revenue Scout" --agent-ref AGENT_REF \
+  --author "Research Agent" --agent-ref AGENT_REF \
   --source run:RUN_ID --idempotency-key RUN_ID:complete --dir ~/notes
 org2 thread post THREAD_ID --message "The export is ready" \
-  --author "Revenue Scout" --agent-ref AGENT_REF \
+  --author "Research Agent" --agent-ref AGENT_REF \
   --source run:RUN_ID --idempotency-key RUN_ID:complete --dir ~/notes --apply
 org2 thread settle THREAD_ID --dir ~/notes          # preview
 org2 thread settle THREAD_ID --dir ~/notes --apply
@@ -354,15 +354,15 @@ Goals and named workers are portable corpus records, distinct from the runtime t
 
 The Mac workspace projects these records into *Agent Work → Goals* and *Agent Work → Agents*. The catalogs show status, ownership or primary-goal relationships, runtime bindings, measures, and linked-run counts while the detail pane renders the canonical file. Relationship controls navigate between goals, profiles, and filtered runs. Lifecycle status changes use the same =goal update= and =agent-profile update= commands instead of app-private state.
 
-An agent profile may declare responsibilities, capabilities, skills, reporting and goal relationships, and repeatable non-secret runtime bindings such as =openclaw:scarf-support= or =codex:default=. Credentials, session IDs, provider/model choice, and machine paths do not belong in the profile. Resolve the active runtime identity before delegation:
+An agent profile may declare responsibilities, capabilities, skills, reporting and goal relationships, and repeatable non-secret runtime bindings such as =openclaw:customer-support= or =codex:default=. Credentials, session IDs, provider/model choice, and machine paths do not belong in the profile. Resolve the active runtime identity before delegation:
 
 #+begin_src sh
 org2 agent-profile resolve --runtime openclaw \
-  --runtime-agent-id scarf-support --dir ~/notes --json
+  --runtime-agent-id customer-support --dir ~/notes --json
 org2 run create --goal "Resolve the customer issue" \
-  --agent-ref scarf-support --goal-ref customer-trust --dir ~/notes
-org2 todo assign --file notes/support.org2 --line 12 --assignee "Scarf Support" \
-  --agent-ref scarf-support --goal-ref customer-trust --apply
+  --agent-ref customer-support --goal-ref customer-trust --dir ~/notes
+org2 todo assign --file notes/support.org2 --line 12 --assignee "Customer Support" \
+  --agent-ref customer-support --goal-ref customer-trust --apply
 #+end_src
 
 The resolved =agentRef= is the portable worker ID; OpenClaw and Codex are runtimes, not profile IDs. A profile's =primaryGoalRef= is returned as the default =goalRef=. Existing selected-work refs take precedence over a runtime default. =AGENT_REF= and =GOAL_REF= flow through agent context, durable runs, and authored workflows; =ASSIGNEE= remains the readable display label. Resolution fails on ambiguous active bindings or a missing primary goal and returns =found: false= for an unbound runtime identity, allowing clients to omit refs rather than guess.

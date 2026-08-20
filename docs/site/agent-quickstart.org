@@ -31,20 +31,20 @@ When working in a corpus, look for the nearest =org2.json=. It can define file s
 
 * Goals, agent profiles, and runtimes
 
-Org2 separates the outcome, worker, and execution mechanism. A goal is a portable =org2:goal:v1= record under =goals/=. A named worker such as /Scarf Support/ or /Scarf Revenue Scout/ is an =org2:agent-profile:v1= record under =agent-profiles/=. OpenClaw and Codex are runtimes: they execute work, but they are not themselves =AGENT_REF= values.
+Org2 separates the outcome, worker, and execution mechanism. A goal is a portable =org2:goal:v1= record under =goals/=. A named worker such as /Customer Support/ or /Product Research/ is an =org2:agent-profile:v1= record under =agent-profiles/=. OpenClaw and Codex are runtimes: they execute work, but they are not themselves =AGENT_REF= values.
 
-Profiles contain responsibilities, capabilities, skills, goal refs, and non-secret runtime bindings. A binding such as =openclaw:scarf-support= connects the configured OpenClaw agent ID to the portable =scarf-support= profile. =codex:default= may provide a default profile for a Codex chat, while a selected heading's existing =AGENT_REF= and =GOAL_REF= take precedence. Credentials, model selection, session IDs, and machine paths remain outside the profile.
+Profiles contain responsibilities, capabilities, skills, goal refs, and non-secret runtime bindings. A binding such as =openclaw:customer-support= connects the configured OpenClaw agent ID to the portable =customer-support= profile. =codex:default= may provide a default profile for a Codex chat, while a selected heading's existing =AGENT_REF= and =GOAL_REF= take precedence. Credentials, model selection, session IDs, and machine paths remain outside the profile.
 
 #+begin_src sh
 org2 goal create customer-trust --title "Earn customer trust" \
   --measure "Support requests are resolved" --dir ~/notes          # preview
 org2 goal create customer-trust --title "Earn customer trust" \
   --measure "Support requests are resolved" --dir ~/notes --apply
-org2 agent-profile create scarf-support --name "Scarf Support" \
-  --binding openclaw:scarf-support --primary-goal-ref customer-trust \
+org2 agent-profile create customer-support --name "Customer Support" \
+  --binding openclaw:customer-support --primary-goal-ref customer-trust \
   --responsibility "Resolve customer support requests" --dir ~/notes --apply
 org2 agent-profile resolve --runtime openclaw \
-  --runtime-agent-id scarf-support --dir ~/notes --json
+  --runtime-agent-id customer-support --dir ~/notes --json
 #+end_src
 
 Durable runs and workflows accept =--agent-ref= and =--goal-ref=. =todo assign= accepts the same refs and writes =:AGENT_REF:= and =:GOAL_REF:= beside its readable =:ASSIGNEE:=. Do not replace the portable profile ID with =openclaw=, =codex=, a provider/model name, or a session ID. If resolution finds no active binding, omit the refs rather than guessing.

@@ -334,7 +334,7 @@ public struct OpenClawWorkspaceContext: Sendable {
     ORG2_SELECTED_AGENT_REF: \(selectedAgentRef ?? "")
     ORG2_SELECTED_GOAL_REF: \(selectedGoalRef ?? "")
 
-    OpenClaw and Codex are execution runtimes, not portable agent identities. Named workers such as Scarf Support or Scarf Revenue Scout are =org2:agent-profile:v1= records under =agent-profiles/=. Resolve this runtime identity before creating durable work:
+    OpenClaw and Codex are execution runtimes, not portable agent identities. Named workers such as Customer Support or Product Research are =org2:agent-profile:v1= records under =agent-profiles/=. Resolve this runtime identity before creating durable work:
 
     \(resolution)
 

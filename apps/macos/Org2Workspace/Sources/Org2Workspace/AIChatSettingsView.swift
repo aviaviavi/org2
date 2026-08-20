@@ -51,7 +51,7 @@ struct AIChatSettingsView: View {
             Label("Add Destination", systemImage: "plus")
           }
           Spacer()
-          Text("Use names such as @codex-local, @codex-remote, or @revenue-scout.")
+          Text("Use names such as @codex-local, @codex-remote, or @research-agent.")
             .font(.caption)
             .foregroundStyle(.secondary)
         }

@@ -267,7 +267,7 @@ Review-gated AI or external side effects require a human approval boundary:
 
 Rule of thumb: deterministic Org2 transforms can build and check the map; AI and external tools can propose changes; reviewed promotion decides what becomes territory.
 
-* MeetingBot-style flow
+* Meeting processing flow
 
 Example flow from transcript to curated note:
 

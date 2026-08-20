@@ -314,10 +314,10 @@ org2 agent --help</code></pre>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 thread list --dir ~/notes --state all --json
 org2 thread show THREAD_ID --dir ~/notes --json
 org2 thread post THREAD_ID --message &quot;The export is ready&quot; \
-  --author &quot;Revenue Scout&quot; --agent-ref AGENT_REF \
+  --author &quot;Research Agent&quot; --agent-ref AGENT_REF \
   --source run:RUN_ID --idempotency-key RUN_ID:complete --dir ~/notes
 org2 thread post THREAD_ID --message &quot;The export is ready&quot; \
-  --author &quot;Revenue Scout&quot; --agent-ref AGENT_REF \
+  --author &quot;Research Agent&quot; --agent-ref AGENT_REF \
   --source run:RUN_ID --idempotency-key RUN_ID:complete --dir ~/notes --apply
 org2 thread settle THREAD_ID --dir ~/notes          # preview
 org2 thread settle THREAD_ID --dir ~/notes --apply
@@ -334,13 +334,13 @@ org2 thread auto-settle --dir ~/notes --apply</code></pre>
 <h1 id="durable-agent-runs-and-review">Durable agent runs and review</h1>
 <p>Goals and named workers are portable corpus records, distinct from the runtime that executes them. <code>org2 goal create/update/list/show</code> manages <code>org2:goal:v1</code> files under <code>goals/</code>. <code>org2 agent-profile create/update/list/show</code> manages <code>org2:agent-profile:v1</code> files under <code>agent-profiles/</code>. Both create and update preview by default and require <code>--apply</code> to write.</p>
 <p>The Mac workspace projects these records into <strong>Agent Work → Goals</strong> and <strong>Agent Work → Agents</strong>. The catalogs show status, ownership or primary-goal relationships, runtime bindings, measures, and linked-run counts while the detail pane renders the canonical file. Relationship controls navigate between goals, profiles, and filtered runs. Lifecycle status changes use the same <code>goal update</code> and <code>agent-profile update</code> commands instead of app-private state.</p>
-<p>An agent profile may declare responsibilities, capabilities, skills, reporting and goal relationships, and repeatable non-secret runtime bindings such as <code>openclaw:scarf-support</code> or <code>codex:default</code>. Credentials, session IDs, provider/model choice, and machine paths do not belong in the profile. Resolve the active runtime identity before delegation:</p>
+<p>An agent profile may declare responsibilities, capabilities, skills, reporting and goal relationships, and repeatable non-secret runtime bindings such as <code>openclaw:customer-support</code> or <code>codex:default</code>. Credentials, session IDs, provider/model choice, and machine paths do not belong in the profile. Resolve the active runtime identity before delegation:</p>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 agent-profile resolve --runtime openclaw \
-  --runtime-agent-id scarf-support --dir ~/notes --json
+  --runtime-agent-id customer-support --dir ~/notes --json
 org2 run create --goal &quot;Resolve the customer issue&quot; \
-  --agent-ref scarf-support --goal-ref customer-trust --dir ~/notes
-org2 todo assign --file notes/support.org2 --line 12 --assignee &quot;Scarf Support&quot; \
-  --agent-ref scarf-support --goal-ref customer-trust --apply</code></pre>
+  --agent-ref customer-support --goal-ref customer-trust --dir ~/notes
+org2 todo assign --file notes/support.org2 --line 12 --assignee &quot;Customer Support&quot; \
+  --agent-ref customer-support --goal-ref customer-trust --apply</code></pre>
 <p>The resolved <code>agentRef</code> is the portable worker ID; OpenClaw and Codex are runtimes, not profile IDs. A profile's <code>primaryGoalRef</code> is returned as the default <code>goalRef</code>. Existing selected-work refs take precedence over a runtime default. <code>AGENT_REF</code> and <code>GOAL_REF</code> flow through agent context, durable runs, and authored workflows; <code>ASSIGNEE</code> remains the readable display label. Resolution fails on ambiguous active bindings or a missing primary goal and returns <code>found: false</code> for an unbound runtime identity, allowing clients to omit refs rather than guess.</p>
 <p><code>org2 run</code> manages <code>org2:agent-run:v1</code> records under <code>.org2/runs/</code>. Each record contains readable Org sections plus a canonical JSON block; writes are atomic. The state machine supports queued, running, waiting-approval, blocked, completed, failed, and canceled states. Invalid transitions fail instead of silently rewriting history.</p>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 run create --goal &quot;Prepare the weekly operating review&quot; \
