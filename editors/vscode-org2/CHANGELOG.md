@@ -4,6 +4,12 @@ All notable changes to the Org2 VS Code extension are documented in this file.
 
 ## Unreleased
 
+## 0.4.2 - 2026-08-19
+
+- Coordinated the Marketplace package version with the Org2 CLI and macOS workspace 0.4.2 release.
+- Prioritized overdue agenda items by Org priority while preserving configurable agenda ordering.
+- Expanded status-filter normalization and kept editor commands aligned with the current Org2 runtime.
+
 ## 0.4.1 - 2026-08-02
 
 - Coordinated the Marketplace package version with the Org2 CLI and macOS workspace 0.4.1 release.
