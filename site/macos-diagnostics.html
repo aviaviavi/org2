@@ -80,6 +80,22 @@ npm run diagnostics:macos -- \
 <p>The stack capture lasts 5 seconds at a 10-millisecond sampling interval. Thresholds and sampling duration are configurable from the command line. Setting <code>--hang-seconds</code>, <code>--cpu-percent</code>, or <code>--memory-mb</code> to zero disables that trigger.</p>
 </section>
 <section class="org2-headline level-1">
+<h1 id="interaction-latency">Interaction latency</h1>
+<p>The app separately instruments ordinary UI responsiveness at frame scale. It
+records pointer-event-to-window-update, source-editor-key-to-draw, and AI
+composer-key-to-draw intervals in the <code>org.org2.workspace/InteractionLatency</code>
+unified-log category and as Instruments points of interest. A sample over the
+60 Hz frame budget (16.7 ms) is logged immediately; every 120 samples the app
+also reports rolling p95. This is deliberately distinct from the watchdog:
+the watchdog captures multi-second hangs, while these intervals expose visible
+jank that never becomes a hang.</p>
+<p>Run the optimized regression boundary with:</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run test:macos-performance</code></pre>
+<p>On Apple Silicon the test launcher runs Swift natively even when npm itself is
+running through Rosetta, so the optimized test bundle matches the app's target
+architecture.</p>
+</section>
+<section class="org2-headline level-1">
 <h1 id="incident-storage">Incident storage</h1>
 <p>Captured evidence is primary input, so it belongs under <code>raw/</code> rather than <code>compiled/</code>:</p>
 <pre class="org2-example">raw/diagnostics/org2-workspace/YYYY/MM/DD/

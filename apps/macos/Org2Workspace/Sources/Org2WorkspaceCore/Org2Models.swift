@@ -1908,6 +1908,46 @@ public struct MeetingProcessingItem: Identifiable, Hashable, Sendable {
   }
 }
 
+public enum MeetingReadyAutomationThreadMode: String, CaseIterable, Codable, Identifiable, Sendable {
+  case newThread
+  case existingThread
+
+  public var id: String { rawValue }
+
+  public var title: String {
+    switch self {
+    case .newThread: "New thread for each meeting"
+    case .existingThread: "Existing thread"
+    }
+  }
+}
+
+public struct MeetingReadyAutomationSettings: Hashable, Codable, Sendable {
+  public static let defaultPrompt = """
+  Process this completed meeting. Extract decisions, follow-ups, and durable context; update the relevant Org2 records; and create review or approval boundaries for any external action. Do not duplicate work if this meeting was already processed. Cite the Org2 files you use.
+  """
+
+  public var isEnabled: Bool
+  public var destinationID: String
+  public var threadMode: MeetingReadyAutomationThreadMode
+  public var threadID: UUID?
+  public var prompt: String
+
+  public init(
+    isEnabled: Bool = false,
+    destinationID: String = AIChatDestinationConfiguration.openClawID,
+    threadMode: MeetingReadyAutomationThreadMode = .newThread,
+    threadID: UUID? = nil,
+    prompt: String = Self.defaultPrompt
+  ) {
+    self.isEnabled = isEnabled
+    self.destinationID = destinationID
+    self.threadMode = threadMode
+    self.threadID = threadID
+    self.prompt = prompt
+  }
+}
+
 public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
   public enum Role: String, Codable, Sendable {
     case user

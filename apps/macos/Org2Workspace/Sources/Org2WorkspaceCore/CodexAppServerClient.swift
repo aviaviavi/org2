@@ -231,6 +231,7 @@ public enum CodexAppServerError: LocalizedError, Sendable {
   case disconnected(String)
   case server(code: Int?, message: String)
   case invalidResponse(String)
+  case requestTimedOut(String)
   case notAuthenticated
   case turnFailed(String)
   case turnInterrupted
@@ -247,6 +248,8 @@ public enum CodexAppServerError: LocalizedError, Sendable {
       "Codex: \(message)"
     case .invalidResponse(let detail):
       "Codex returned an invalid response: \(detail)"
+    case .requestTimedOut(let method):
+      "Codex did not respond to \(method) within 30 seconds."
     case .notAuthenticated:
       "Sign in with ChatGPT before using a Codex thread."
     case .turnFailed(let detail):
@@ -300,7 +303,11 @@ public actor CodexAppServerClient {
   private var pendingRequests: [
     String: CheckedContinuation<JSONValue, Error>
   ] = [:]
+  private var pendingRequestTimeoutTasks: [String: Task<Void, Never>] = [:]
+  private var cancelledRequestKeys = Set<String>()
   private var pendingTurns: [String: PendingTurn] = [:]
+  private var cancelledTurnIDs = Set<String>()
+  private var ignoredCompletedTurnIDs = Set<String>()
   private var loadedThreadIDs = Set<String>()
   private var latestStderr = ""
 
@@ -997,25 +1004,56 @@ public actor CodexAppServerClient {
     requestCounter &+= 1
     let requestID = requestCounter
     let key = String(requestID)
-    return try await withCheckedThrowingContinuation { continuation in
-      pendingRequests[key] = continuation
-      Task { [weak self] in
-        guard let self else { return }
-        do {
-          try await self.sendMessage(.object([
-            "id": .integer(requestID),
-            "method": .string(method),
-            "params": params
-          ]))
-        } catch {
-          await self.failPendingRequest(key: key, error: error)
+    return try await withTaskCancellationHandler {
+      try Task.checkCancellation()
+      return try await withCheckedThrowingContinuation { continuation in
+        if cancelledRequestKeys.remove(key) != nil || Task.isCancelled {
+          continuation.resume(throwing: CancellationError())
+          return
         }
+        pendingRequests[key] = continuation
+        pendingRequestTimeoutTasks[key] = Task { [weak self] in
+          do {
+            try await Task.sleep(nanoseconds: 30_000_000_000)
+          } catch {
+            return
+          }
+          await self?.failPendingRequest(
+            key: key,
+            error: CodexAppServerError.requestTimedOut(method)
+          )
+        }
+        Task { [weak self] in
+          guard let self else { return }
+          do {
+            try await self.sendMessage(.object([
+              "id": .integer(requestID),
+              "method": .string(method),
+              "params": params
+            ]))
+          } catch {
+            await self.failPendingRequest(key: key, error: error)
+          }
+        }
+      }
+    } onCancel: {
+      Task { [weak self] in
+        await self?.cancelPendingRequest(key: key)
       }
     }
   }
 
   private func failPendingRequest(key: String, error: Error) {
+    pendingRequestTimeoutTasks.removeValue(forKey: key)?.cancel()
     pendingRequests.removeValue(forKey: key)?.resume(throwing: error)
+  }
+
+  private func cancelPendingRequest(key: String) {
+    if pendingRequests[key] == nil {
+      cancelledRequestKeys.insert(key)
+      return
+    }
+    failPendingRequest(key: key, error: CancellationError())
   }
 
   private func sendMessage(_ message: JSONValue) async throws {
@@ -1067,6 +1105,7 @@ public actor CodexAppServerClient {
     else {
       return
     }
+    pendingRequestTimeoutTasks.removeValue(forKey: key)?.cancel()
     if let error = object["error"], error != .null {
       continuation.resume(throwing: CodexAppServerError.server(
         code: error["code"].flatMap(Self.integer),
@@ -1252,6 +1291,10 @@ public actor CodexAppServerClient {
     else {
       return
     }
+    if ignoredCompletedTurnIDs.remove(turnID) != nil {
+      pendingTurns.removeValue(forKey: turnID)
+      return
+    }
     var pending = pendingTurns[turnID] ?? PendingTurn()
     let status = CodexTurnResult.Status(rawValue: turn["status"]?.stringValue ?? "")
       ?? .failed
@@ -1273,25 +1316,76 @@ public actor CodexAppServerClient {
   }
 
   private func waitForTurn(threadID: String, turnID: String) async -> CodexTurnResult {
+    if Task.isCancelled {
+      return CodexTurnResult(
+        threadID: threadID,
+        turnID: turnID,
+        status: .interrupted,
+        reply: "",
+        errorMessage: nil
+      )
+    }
     if let completed = pendingTurns[turnID]?.completedResult {
       pendingTurns.removeValue(forKey: turnID)
       return completed
     }
-    return await withCheckedContinuation { continuation in
-      var pending = pendingTurns[turnID] ?? PendingTurn()
-      if let completed = pending.completedResult {
-        pendingTurns.removeValue(forKey: turnID)
-        continuation.resume(returning: completed)
-      } else {
-        pending.continuation = continuation
-        pendingTurns[turnID] = pending
+    return await withTaskCancellationHandler {
+      await withCheckedContinuation { continuation in
+        if cancelledTurnIDs.remove(turnID) != nil || Task.isCancelled {
+          continuation.resume(returning: CodexTurnResult(
+            threadID: threadID,
+            turnID: turnID,
+            status: .interrupted,
+            reply: "",
+            errorMessage: nil
+          ))
+          return
+        }
+        var pending = pendingTurns[turnID] ?? PendingTurn()
+        if let completed = pending.completedResult {
+          pendingTurns.removeValue(forKey: turnID)
+          continuation.resume(returning: completed)
+        } else {
+          pending.continuation = continuation
+          pendingTurns[turnID] = pending
+        }
+      }
+    } onCancel: {
+      Task { [weak self] in
+        await self?.cancelPendingTurn(threadID: threadID, turnID: turnID)
       }
     }
   }
 
+  private func cancelPendingTurn(threadID: String, turnID: String) {
+    ignoredCompletedTurnIDs.insert(turnID)
+    guard var pending = pendingTurns[turnID] else {
+      cancelledTurnIDs.insert(turnID)
+      return
+    }
+    let result = CodexTurnResult(
+      threadID: threadID,
+      turnID: turnID,
+      status: .interrupted,
+      reply: pending.finalReply.isEmpty ? pending.streamedReply : pending.finalReply,
+      errorMessage: nil
+    )
+    if let continuation = pending.continuation {
+      pendingTurns.removeValue(forKey: turnID)
+      continuation.resume(returning: result)
+    } else {
+      pending.completedResult = result
+      pendingTurns[turnID] = pending
+    }
+  }
+
   private func failPendingRequests(_ error: Error) {
+    let timeoutTasks = pendingRequestTimeoutTasks.values
+    pendingRequestTimeoutTasks.removeAll()
+    timeoutTasks.forEach { $0.cancel() }
     let requests = pendingRequests.values
     pendingRequests.removeAll()
+    cancelledRequestKeys.removeAll()
     for continuation in requests {
       continuation.resume(throwing: error)
     }

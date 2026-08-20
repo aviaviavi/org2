@@ -18,6 +18,52 @@ private actor AIChatSharedRoomRecorder {
 
 final class AIChatSharedRoomTests: XCTestCase {
   @MainActor
+  func testConnectingCodexRequestCanStopBeforeRuntimeTurnStarts() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-codex-connecting-stop-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let suiteName = "AIChatCodexConnectingStop.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let store = WorkspaceStore(
+      defaults: defaults,
+      openClawTranscriptURL: root.appendingPathComponent("chat.json"),
+      codexSendHandlerForTesting: { _, _, _ in
+        try await Task.sleep(nanoseconds: 60_000_000_000)
+        return "This reply must never be appended."
+      },
+      legacyDefaultsDomains: []
+    )
+    store.setCorpusRoot(root, persistsDefault: false)
+    let threadID = store.createOpenClawChatThread(runtime: .codex)
+
+    let sendTask = Task { @MainActor in
+      await store.sendOpenClawMessage(text: "Please start connecting")
+    }
+    for _ in 0..<100 where !store.isAIChatThreadRunning(threadID) {
+      try await Task.sleep(nanoseconds: 10_000_000)
+    }
+    XCTAssertTrue(store.isAIChatThreadRunning(threadID))
+
+    let didStop = await store.stopAIChatRemoteRun(threadID: threadID)
+    XCTAssertTrue(didStop)
+    await sendTask.value
+
+    XCTAssertFalse(store.isAIChatThreadRunning(threadID))
+    XCTAssertEqual(store.openClawStatusText, "Codex stopped")
+    let messages = try XCTUnwrap(
+      store.openClawChatThreads.first(where: { $0.id == threadID })?.messages
+    )
+    XCTAssertEqual(messages.count, 1)
+    XCTAssertEqual(messages[0].deliveryStatus, .interrupted)
+    XCTAssertEqual(
+      messages[0].sendFailure,
+      "OpenClaw was stopped by you. Retry to start this request again."
+    )
+  }
+
+  @MainActor
   func testAskAllUsesOneVisibleQuestionAndTwoAttributedReplies() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-shared-room-\(UUID().uuidString)", isDirectory: true)

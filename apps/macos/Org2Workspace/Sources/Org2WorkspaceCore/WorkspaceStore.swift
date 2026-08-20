@@ -568,6 +568,22 @@ private struct OpenClawContextPointer: Equatable, Sendable {
   let threadTitle: String
 }
 
+private enum MeetingReadyAutomationDeliveryStatus: String, Codable, Sendable {
+  case baseline
+  case queued
+  case failed
+}
+
+private struct MeetingReadyAutomationDeliveryRecord: Hashable, Codable, Sendable {
+  let eventID: String
+  let meetingFile: String
+  let destinationID: String
+  let threadID: UUID?
+  let status: MeetingReadyAutomationDeliveryStatus
+  let updatedAt: Date
+  let error: String?
+}
+
 public enum OpenClawThreadMode: String, CaseIterable, Identifiable, Sendable {
   case newThread
   case currentThread
@@ -1452,6 +1468,8 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var selectedMeetingID: String?
   @Published public var meetingTitleDraft = ""
   @Published public var meetingStatusText = WorkspaceStore.defaultMeetingStatusText()
+  @Published public private(set) var meetingReadyAutomationSettings = MeetingReadyAutomationSettings()
+  @Published public private(set) var meetingReadyAutomationStatusText = "Meeting automation is off"
   let meetingInputMeterState = WorkspaceInputMeterState()
   let meetingTranscriptionProgressState = WorkspaceTranscriptionProgressState()
   public var meetingTranscriptionProgress: Double { meetingTranscriptionProgressState.progress }
@@ -1831,6 +1849,9 @@ public final class WorkspaceStore: ObservableObject {
   private let appearanceModeKey = "Org2Workspace.appearance.mode.v1"
   private let openClawBriefsStartNewThreadKey = "Org2Workspace.openClawBriefsStartNewThread"
   private let openClawLocalEditsEnabledKey = "Org2Workspace.openClawLocalEditsEnabled.v1"
+  private let meetingReadyAutomationSettingsByCorpusKey = "Org2Workspace.meetingReadyAutomation.settingsByCorpus.v1"
+  private let meetingReadyAutomationDeliveriesByCorpusKey = "Org2Workspace.meetingReadyAutomation.deliveriesByCorpus.v1"
+  private let meetingReadyAutomationInitializedCorporaKey = "Org2Workspace.meetingReadyAutomation.initializedCorpora.v1"
   private let renderedDocumentWidthKey = "Org2Workspace.renderedDocument.width"
   private let renderedDocumentMarginKey = "Org2Workspace.renderedDocument.margin"
   private let propertyDrawersExpandedByDefaultKey = "Org2Workspace.renderedDocument.propertyDrawersExpandedByDefault.v1"
@@ -1897,6 +1918,7 @@ public final class WorkspaceStore: ObservableObject {
   private var openClawPendingUserMessageIDsByThreadID: [UUID: [UUID]] = [:]
   @Published private var activeOpenClawUserMessageIDByThreadID: [UUID: UUID] = [:]
   private var drainingOpenClawThreadIDs: Set<UUID> = []
+  private var aiChatDrainTasksByThreadID: [UUID: (token: UUID, task: Task<Void, Never>)] = [:]
   private var stoppedOpenClawThreadIDs: Set<UUID> = []
   private var aiChatSendOriginsByThreadID: [UUID: AIChatSendOrigin] = [:]
   private var openClawRequestStartedAtByThreadID: [UUID: Date] = [:]
@@ -1943,6 +1965,8 @@ public final class WorkspaceStore: ObservableObject {
   }
   private var activeMeetingProcessingIDs: Set<String> = []
   private var activeMeetingProcessingItems: [String: MeetingProcessingItem] = [:]
+  private var meetingReadyAutomationDeliveries: [String: MeetingReadyAutomationDeliveryRecord] = [:]
+  private var meetingReadyAutomationDispatchingEventIDs: Set<String> = []
   private var activeOpenClawVoiceNoteURL: URL?
   private var activeAIChatDictationOrigin: AIChatDictationOrigin?
   private var meetingMeterTask: Task<Void, Never>?
@@ -2132,7 +2156,9 @@ public final class WorkspaceStore: ObservableObject {
   ) {
     self.defaults = defaults
     sourceScheduleStateStore = WorkspaceSourceScheduleStateStore(defaults: defaults)
-    mountedCorpora = Self.restoreCorpusMounts(from: defaults, key: corpusMountsKey)
+    mountedCorpora = Self.shouldIgnoreStandardDefaultsForTests(defaults)
+      ? []
+      : Self.restoreCorpusMounts(from: defaults, key: corpusMountsKey)
     let fallbackTranscriptURL = openClawFallbackTranscriptURL ?? Self.defaultOpenClawTranscriptURL()
     usesFixedOpenClawTranscriptURL = openClawTranscriptURL != nil
     appOpenClawTranscriptURL = fallbackTranscriptURL
@@ -2222,7 +2248,6 @@ public final class WorkspaceStore: ObservableObject {
     openClawStatusText = Self.openClawStatusText(settings: currentOpenClawSettings())
     restoreInterruptedOpenClawSendStatusIfNeeded()
     refreshAudioSettingsStatus()
-    restoreStartupHomeDetailIfPossible()
   }
 
   public func bootstrap() async {
@@ -2266,23 +2291,6 @@ public final class WorkspaceStore: ObservableObject {
     } else {
       statusText = "No corpus selected"
     }
-  }
-
-  private func restoreStartupHomeDetailIfPossible() {
-    guard corpusRoot == nil,
-          selectedSurface == .home,
-          !Self.shouldIgnoreStandardDefaultsForTests(defaults),
-          let restoredRoot = restoreSavedCorpusRoot()
-    else {
-      return
-    }
-
-    setCorpusRoot(
-      restoredRoot,
-      persistsDefault: false,
-      openClawMigrationSource: appOpenClawTranscriptURL
-    )
-    openHome()
   }
 
   private func screenshotCorpusRootFromEnvironment() -> URL? {
@@ -2635,6 +2643,7 @@ public final class WorkspaceStore: ObservableObject {
     activeCorpusIdentity = cachedWorkspace?.identity
     upsertCorpusMount(path: standardized.path, identity: nil)
     openClawRemoteCorpusPath = restoreOpenClawRemoteCorpusPath(for: standardized)
+    restoreMeetingReadyAutomationState(for: standardized)
     restorePinnedFiles(for: standardized)
     if persistsDefault {
       defaults.set(standardized.path, forKey: corpusKey)
@@ -2893,6 +2902,10 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   private func rebuildCorpusFileWatchers() {
+    guard !Self.shouldIgnoreStandardDefaultsForTests(defaults) else {
+      corpusFileWatchers = [:]
+      return
+    }
     guard corpusRoot != nil else {
       corpusFileWatchers = [:]
       return
@@ -6177,6 +6190,7 @@ public final class WorkspaceStore: ObservableObject {
         statusText = "\(items.count) meeting\(items.count == 1 ? "" : "s")"
       }
       reconcileMeetingProcessingState(with: items)
+      reconcileMeetingReadyAutomation(with: items)
       syncMeetingSelectionAfterRefresh()
       recoverInterruptedMeetingTranscriptions(knownItems: items)
       markWorkspaceSurfaceCleanIfUnchanged(.meetings, generation: dirtyGeneration)
@@ -14321,13 +14335,26 @@ public final class WorkspaceStore: ObservableObject {
     if activeRuntime == .codex {
       let activeDestinationID = activeSharedRoomDestinationByThreadID[threadID]
         ?? thread.destinationID
+      let destinationName = aiChatDestinationTitle(activeDestinationID)
       guard let active = codexActiveTurnsByThreadID[threadID],
             let codexClient = try? codexClient(forDestinationID: activeDestinationID)
       else {
-        if selectedOpenClawChatThreadID == threadID {
-          openClawStatusText = "No live Codex turn to stop"
+        guard isAIChatThreadRunning(threadID) else {
+          if selectedOpenClawChatThreadID == threadID {
+            openClawStatusText = "No active \(destinationName) request to stop"
+          }
+          return false
         }
-        return false
+        // Codex may still be connecting, authenticating, or creating its
+        // runtime thread. Those phases do not have a turn ID yet, but they
+        // are still user-cancellable work. Cancel the local drain task; the
+        // app-server request cancellation handler releases the pending RPC.
+        markOpenClawRunStopped(
+          in: threadID,
+          statusText: "\(destinationName) stopped"
+        )
+        aiChatDrainTasksByThreadID[threadID]?.task.cancel()
+        return true
       }
       do {
         if thread.isSharedRoom {
@@ -15486,7 +15513,7 @@ public final class WorkspaceStore: ObservableObject {
       case .invalidResponse(let message):
         return message.localizedCaseInsensitiveContains("turn/steer")
       case .executableNotFound, .launchFailed, .disconnected, .notAuthenticated,
-           .turnFailed, .turnInterrupted:
+           .requestTimedOut, .turnFailed, .turnInterrupted:
         return false
       }
     case .openClaw:
@@ -15633,6 +15660,23 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   private func drainOpenClawSendQueue(for threadID: UUID) async {
+    if let activeTask = aiChatDrainTasksByThreadID[threadID] {
+      await activeTask.task.value
+      return
+    }
+    let token = UUID()
+    let task = Task { @MainActor [weak self] in
+      guard let self else { return }
+      await self.performOpenClawSendQueueDrain(for: threadID)
+    }
+    aiChatDrainTasksByThreadID[threadID] = (token, task)
+    await task.value
+    if aiChatDrainTasksByThreadID[threadID]?.token == token {
+      aiChatDrainTasksByThreadID.removeValue(forKey: threadID)
+    }
+  }
+
+  private func performOpenClawSendQueueDrain(for threadID: UUID) async {
     guard !drainingOpenClawThreadIDs.contains(threadID) else { return }
     let sendOrigin: AIChatSendOrigin
     if let existingOrigin = aiChatSendOriginsByThreadID[threadID] {
@@ -15869,10 +15913,13 @@ public final class WorkspaceStore: ObservableObject {
           openClawLocalEditCorpusRootsByTurnID.removeValue(forKey: localEditTurnID)
           aiChatReadCorpusRootsByTurnID.removeValue(forKey: localEditTurnID)
         }
-        if Self.openClawRunWasStopped(after: error) {
+        if stoppedOpenClawThreadIDs.contains(threadID)
+          || error is CancellationError
+          || Self.openClawRunWasStopped(after: error) {
           markOpenClawRunStopped(
             in: threadID,
-            transcriptURL: sendOrigin.transcriptURL
+            transcriptURL: sendOrigin.transcriptURL,
+            statusText: "\(dispatchDestination.name) stopped"
           )
           return
         }
@@ -16536,6 +16583,15 @@ public final class WorkspaceStore: ObservableObject {
         forRuntimeThreadID: runtimeThreadID,
         destinationID: destinationID
       ) else { return }
+      if stoppedOpenClawThreadIDs.contains(threadID) {
+        // Stop can race a successful turn/start response. The local request
+        // has already been cleared, so immediately interrupt the late remote
+        // turn instead of allowing invisible work to continue.
+        if let client = try? codexClient(forDestinationID: destinationID) {
+          try? await client.interrupt(threadID: runtimeThreadID, turnID: turnID)
+        }
+        return
+      }
       openClawLastEventAtByThreadID[threadID] = Date()
       codexActiveTurnsByThreadID[threadID] = (runtimeThreadID, turnID)
       openClawGatewayStateByThreadID[threadID] = .connected
@@ -17504,7 +17560,8 @@ public final class WorkspaceStore: ObservableObject {
 
   private func markOpenClawRunStopped(
     in threadID: UUID,
-    transcriptURL: URL? = nil
+    transcriptURL: URL? = nil,
+    statusText: String = "OpenClaw stopped"
   ) {
     cancelOpenClawPendingTurnRecovery(for: threadID)
     let targetTranscriptURL = transcriptURL ?? openClawTranscriptURL
@@ -17563,7 +17620,7 @@ public final class WorkspaceStore: ObservableObject {
       "Stopped by you. This turn will not reconnect."
     if selectedOpenClawChatThreadID == threadID,
        isActiveAIChatTranscript(targetTranscriptURL) {
-      openClawStatusText = "OpenClaw stopped"
+      openClawStatusText = statusText
     }
     syncSelectedOpenClawSendState()
   }
@@ -19638,6 +19695,328 @@ public final class WorkspaceStore: ObservableObject {
       openClawStatusText = error.localizedDescription
       return false
     }
+  }
+
+  public func meetingReadyAutomationThreads(
+    destinationID: String
+  ) -> [OpenClawChatThread] {
+    openClawChatThreads
+      .filter { !$0.isSharedRoom && $0.destinationID == destinationID }
+      .sorted { lhs, rhs in
+        if lhs.isPinned != rhs.isPinned { return lhs.isPinned }
+        if lhs.isSettled != rhs.isSettled { return !lhs.isSettled }
+        return lhs.updatedAt > rhs.updatedAt
+      }
+  }
+
+  @discardableResult
+  public func saveMeetingReadyAutomationConfiguration(
+    isEnabled: Bool,
+    destinationID: String,
+    threadMode: MeetingReadyAutomationThreadMode,
+    threadID: UUID?,
+    prompt: String
+  ) -> Bool {
+    guard let corpusRoot else {
+      meetingReadyAutomationStatusText = "Choose a corpus before enabling meeting automation"
+      return false
+    }
+    let prompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+    if isEnabled {
+      guard enabledAIChatDestinations.contains(where: { $0.id == destinationID }) else {
+        meetingReadyAutomationStatusText = "Choose an enabled AI destination"
+        return false
+      }
+      guard !prompt.isEmpty else {
+        meetingReadyAutomationStatusText = "Enter a meeting-processing prompt"
+        return false
+      }
+      if threadMode == .existingThread {
+        guard let threadID,
+              openClawChatThreads.contains(where: {
+                $0.id == threadID && !$0.isSharedRoom && $0.destinationID == destinationID
+              })
+        else {
+          meetingReadyAutomationStatusText = "Choose an existing thread for this destination"
+          return false
+        }
+      }
+    }
+
+    let corpusKey = corpusRoot.standardizedFileURL.path
+    var initializedCorpora = Set(defaults.stringArray(forKey: meetingReadyAutomationInitializedCorporaKey) ?? [])
+    if isEnabled, !initializedCorpora.contains(corpusKey) {
+      establishMeetingReadyAutomationBaseline(for: meetings, destinationID: destinationID)
+      initializedCorpora.insert(corpusKey)
+      defaults.set(Array(initializedCorpora).sorted(), forKey: meetingReadyAutomationInitializedCorporaKey)
+    }
+
+    meetingReadyAutomationSettings = MeetingReadyAutomationSettings(
+      isEnabled: isEnabled,
+      destinationID: destinationID,
+      threadMode: threadMode,
+      threadID: threadMode == .existingThread ? threadID : nil,
+      prompt: prompt.isEmpty ? MeetingReadyAutomationSettings.defaultPrompt : prompt
+    )
+    persistMeetingReadyAutomationSettings()
+    if isEnabled {
+      meetingReadyAutomationStatusText = "Watching for completed meetings"
+      reconcileMeetingReadyAutomation(with: meetings)
+    } else {
+      meetingReadyAutomationStatusText = "Meeting automation is off"
+    }
+    return true
+  }
+
+  private func restoreMeetingReadyAutomationState(for corpusRoot: URL) {
+    let corpusKey = corpusRoot.standardizedFileURL.path
+    let settingsByCorpus = Self.decodeDefaultsValue(
+      [String: MeetingReadyAutomationSettings].self,
+      defaults: defaults,
+      key: meetingReadyAutomationSettingsByCorpusKey
+    ) ?? [:]
+    let deliveriesByCorpus = Self.decodeDefaultsValue(
+      [String: [String: MeetingReadyAutomationDeliveryRecord]].self,
+      defaults: defaults,
+      key: meetingReadyAutomationDeliveriesByCorpusKey
+    ) ?? [:]
+    meetingReadyAutomationSettings = settingsByCorpus[corpusKey] ?? MeetingReadyAutomationSettings()
+    meetingReadyAutomationDeliveries = deliveriesByCorpus[corpusKey] ?? [:]
+    meetingReadyAutomationDispatchingEventIDs = []
+    meetingReadyAutomationStatusText = meetingReadyAutomationSettings.isEnabled
+      ? "Watching for completed meetings"
+      : "Meeting automation is off"
+  }
+
+  private static func decodeDefaultsValue<T: Decodable>(
+    _ type: T.Type,
+    defaults: UserDefaults,
+    key: String
+  ) -> T? {
+    guard let data = defaults.data(forKey: key) else { return nil }
+    return try? JSONDecoder().decode(type, from: data)
+  }
+
+  private func persistMeetingReadyAutomationSettings() {
+    guard let corpusRoot else { return }
+    let corpusKey = corpusRoot.standardizedFileURL.path
+    var settingsByCorpus = Self.decodeDefaultsValue(
+      [String: MeetingReadyAutomationSettings].self,
+      defaults: defaults,
+      key: meetingReadyAutomationSettingsByCorpusKey
+    ) ?? [:]
+    settingsByCorpus[corpusKey] = meetingReadyAutomationSettings
+    if let data = try? JSONEncoder().encode(settingsByCorpus) {
+      defaults.set(data, forKey: meetingReadyAutomationSettingsByCorpusKey)
+    }
+  }
+
+  private func persistMeetingReadyAutomationDeliveries() {
+    guard let corpusRoot else { return }
+    let corpusKey = corpusRoot.standardizedFileURL.path
+    var deliveriesByCorpus = Self.decodeDefaultsValue(
+      [String: [String: MeetingReadyAutomationDeliveryRecord]].self,
+      defaults: defaults,
+      key: meetingReadyAutomationDeliveriesByCorpusKey
+    ) ?? [:]
+    deliveriesByCorpus[corpusKey] = meetingReadyAutomationDeliveries
+    if let data = try? JSONEncoder().encode(deliveriesByCorpus) {
+      defaults.set(data, forKey: meetingReadyAutomationDeliveriesByCorpusKey)
+    }
+  }
+
+  private func establishMeetingReadyAutomationBaseline(
+    for items: [MeetingWorkspaceItem],
+    destinationID: String
+  ) {
+    let now = Date()
+    for item in items where item.transcriptionStatus != nil {
+      let eventID = meetingReadyAutomationEventID(for: item)
+      meetingReadyAutomationDeliveries[eventID] = MeetingReadyAutomationDeliveryRecord(
+        eventID: eventID,
+        meetingFile: item.file,
+        destinationID: destinationID,
+        threadID: nil,
+        status: .baseline,
+        updatedAt: now,
+        error: nil
+      )
+    }
+    persistMeetingReadyAutomationDeliveries()
+  }
+
+  private func meetingReadyAutomationEventID(for item: MeetingWorkspaceItem) -> String {
+    if let idValue = item.idValue?.trimmingCharacters(in: .whitespacesAndNewlines),
+       !idValue.isEmpty {
+      return "meeting-id:\(idValue)"
+    }
+    return "meeting-file:\(relativePath(item.file))"
+  }
+
+  private func meetingReadyAutomationMessageMarker(eventID: String) -> String {
+    "#+org2_automation_event_id: meeting-ready:\(eventID)"
+  }
+
+  private func reconcileMeetingReadyAutomation(with items: [MeetingWorkspaceItem]) {
+    guard meetingReadyAutomationSettings.isEnabled else { return }
+    let readyItems = items
+      .filter { $0.transcriptionStatus != nil }
+      .sorted { ($0.modifiedAt ?? .distantPast) < ($1.modifiedAt ?? .distantPast) }
+    for item in readyItems {
+      dispatchMeetingReadyAutomationIfNeeded(for: item)
+    }
+  }
+
+  func reconcileMeetingReadyAutomationForTesting(with items: [MeetingWorkspaceItem]) {
+    reconcileMeetingReadyAutomation(with: items)
+  }
+
+  private func dispatchMeetingReadyAutomationIfNeeded(for item: MeetingWorkspaceItem) {
+    let eventID = meetingReadyAutomationEventID(for: item)
+    if meetingReadyAutomationDeliveries[eventID]?.status == .baseline {
+      return
+    }
+    guard !meetingReadyAutomationDispatchingEventIDs.contains(eventID) else { return }
+
+    let marker = meetingReadyAutomationMessageMarker(eventID: eventID)
+    if let existingDelivery = openClawChatThreads.lazy.compactMap({ thread in
+      thread.messages.first(where: { $0.role == .user && $0.content.contains(marker) })
+        .map { (thread, $0) }
+    }).first {
+      meetingReadyAutomationDeliveries[eventID] = MeetingReadyAutomationDeliveryRecord(
+        eventID: eventID,
+        meetingFile: item.file,
+        destinationID: existingDelivery.0.destinationID,
+        threadID: existingDelivery.0.id,
+        status: .queued,
+        updatedAt: Date(),
+        error: nil
+      )
+      persistMeetingReadyAutomationDeliveries()
+      if existingDelivery.1.deliveryStatus == .failed
+        || existingDelivery.1.deliveryStatus == .interrupted {
+        meetingReadyAutomationStatusText = "Meeting delivery needs attention: \(item.title)"
+      }
+      return
+    }
+
+    meetingReadyAutomationDispatchingEventIDs.insert(eventID)
+    defer { meetingReadyAutomationDispatchingEventIDs.remove(eventID) }
+    let settings = meetingReadyAutomationSettings
+    guard enabledAIChatDestinations.contains(where: { $0.id == settings.destinationID }) else {
+      recordMeetingReadyAutomationFailure(
+        eventID: eventID,
+        item: item,
+        threadID: nil,
+        error: "The configured AI destination is unavailable"
+      )
+      return
+    }
+
+    let targetThread: OpenClawChatThread?
+    switch settings.threadMode {
+    case .newThread:
+      if let retryThreadID = meetingReadyAutomationDeliveries[eventID]?.threadID,
+         let retryThread = openClawChatThreads.first(where: { $0.id == retryThreadID }) {
+        targetThread = retryThread
+      } else {
+        targetThread = createOpenClawChatThread(
+          title: Self.normalizedOpenClawThreadTitle("Meeting: \(item.title)"),
+          statusText: "Queued completed meeting",
+          runtime: aiChatDestinationRuntime(settings.destinationID),
+          destinationID: settings.destinationID,
+          selectsThread: false
+        )
+      }
+    case .existingThread:
+      targetThread = settings.threadID.flatMap { targetID in
+        openClawChatThreads.first(where: {
+          $0.id == targetID && !$0.isSharedRoom && $0.destinationID == settings.destinationID
+        })
+      }
+    }
+
+    guard let targetThread else {
+      recordMeetingReadyAutomationFailure(
+        eventID: eventID,
+        item: item,
+        threadID: settings.threadID,
+        error: "The configured meeting thread could not be found"
+      )
+      return
+    }
+    if targetThread.isSettled {
+      reopenOpenClawChatThread(targetThread.id)
+    }
+
+    let pointer = openClawContextPointer(for: .meeting(item))
+    let text = automaticOpenClawActionText(
+      pointer,
+      prompt: settings.prompt + "\n\n" + marker
+    )
+    guard queueAIChatAutomationMessage(
+      text,
+      threadID: targetThread.id
+    ) else {
+      recordMeetingReadyAutomationFailure(
+        eventID: eventID,
+        item: item,
+        threadID: targetThread.id,
+        error: "The meeting message could not be queued"
+      )
+      return
+    }
+
+    meetingReadyAutomationDeliveries[eventID] = MeetingReadyAutomationDeliveryRecord(
+      eventID: eventID,
+      meetingFile: item.file,
+      destinationID: settings.destinationID,
+      threadID: targetThread.id,
+      status: .queued,
+      updatedAt: Date(),
+      error: nil
+    )
+    persistMeetingReadyAutomationDeliveries()
+    meetingReadyAutomationStatusText = "Queued \(item.title) to \(aiChatDestinationTitle(settings.destinationID))"
+  }
+
+  private func recordMeetingReadyAutomationFailure(
+    eventID: String,
+    item: MeetingWorkspaceItem,
+    threadID: UUID?,
+    error: String
+  ) {
+    meetingReadyAutomationDeliveries[eventID] = MeetingReadyAutomationDeliveryRecord(
+      eventID: eventID,
+      meetingFile: item.file,
+      destinationID: meetingReadyAutomationSettings.destinationID,
+      threadID: threadID,
+      status: .failed,
+      updatedAt: Date(),
+      error: error
+    )
+    persistMeetingReadyAutomationDeliveries()
+    meetingReadyAutomationStatusText = "Meeting delivery pending: \(error)"
+  }
+
+  private func queueAIChatAutomationMessage(
+    _ text: String,
+    threadID: UUID
+  ) -> Bool {
+    let beforeCount = openClawMessages(for: threadID).count
+    let shouldDrain = enqueueOpenClawMessage(
+      text,
+      attachments: [],
+      in: threadID,
+      deliveryKind: isAIChatThreadRunning(threadID) ? .followUp : .turn
+    )
+    guard openClawMessages(for: threadID).count > beforeCount else { return false }
+    if shouldDrain {
+      Task { @MainActor [weak self] in
+        await self?.drainOpenClawSendQueue(for: threadID)
+      }
+    }
+    return true
   }
 
   public func requestOpenClawGatewayPairing() async {
@@ -27611,6 +27990,7 @@ public final class WorkspaceStore: ObservableObject {
     } else {
       meetings.insert(item, at: 0)
     }
+    reconcileMeetingReadyAutomation(with: [item])
     selectMeeting(item)
     // The file watcher incrementally updates indexes and marks dependent
     // surfaces dirty. Avoid immediately repeating full meeting, agenda, and

@@ -107,6 +107,13 @@ npm run org2 -- agenda --help</code></pre>
 npm run build
 npm run build:macos-app
 open ~/Applications/Org2Workspace.app</code></pre>
+<p><code>npm run build:macos-app</code> and <code>npm run build:macos-app:release</code> create an
+optimized daily app. Use <code>npm run build:macos-app:debug</code> only when intentionally
+testing the daily bundle without optimization. Safer side-by-side development
+uses <code>npm run build:macos-app:codex</code> for debug or
+<code>npm run build:macos-app:codex:release</code> for optimized behavior; both target the
+isolated <code>Org2Workspace Codex.app</code>. The active app identifies itself as <strong>Debug</strong>
+or <strong>Optimized release</strong> in its audio/runtime settings.</p>
 <p>See <a href="editors-macos.html">macOS Workspace</a> for the current app surface.</p>
 </section>
 <section class="org2-headline level-2">

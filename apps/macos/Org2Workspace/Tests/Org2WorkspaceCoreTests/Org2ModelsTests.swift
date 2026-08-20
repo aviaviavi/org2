@@ -11139,7 +11139,7 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
-  func testStoreInitializationRestoresHomeDailyNoteDetailForSavedCorpus() throws {
+  func testBootstrapRestoresAndRendersHomeDailyNoteForSavedCorpus() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-startup-home-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -11151,6 +11151,13 @@ final class Org2ModelsTests: XCTestCase {
     defer { defaults.removePersistentDomain(forName: suiteName) }
 
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()), defaults: defaults)
+    XCTAssertNil(store.corpusRoot)
+    XCTAssertNil(store.selectedLocation)
+    store.entryHTMLRendererForTesting = { _, _, _, _ in
+      "<html><body>Startup home rendered</body></html>"
+    }
+
+    await store.bootstrap()
 
     let formatter = DateFormatter()
     formatter.locale = Locale(identifier: "en_US_POSIX")
@@ -11170,6 +11177,12 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(store.selectedEntrySourceMode, .page)
     XCTAssertEqual(store.selectedLocation?.file, daily.path)
     XCTAssertEqual(store.selectedLocation?.lineForEditor, 1)
+    try await waitForCondition {
+      store.selectedEntryHTML?.contains("Startup home rendered") == true
+        && !store.isLoadingEntrySource
+        && !store.isRenderingEntrySource
+    }
+    XCTAssertNil(store.selectedEntryRenderError)
   }
 
   func testOpenClawWorkspaceContextMapsRemotePathsAndIncludesGraphSlice() throws {
