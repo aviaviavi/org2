@@ -12,37 +12,37 @@
 </section>
 #+END_EXPORT
 
-* Current release 0.4.1
+* Current release 0.4.2
 
 #+BEGIN_EXPORT html
-<section class="org2-download-grid" aria-label="Org2 0.4.1 downloads">
+<section class="org2-download-grid" aria-label="Org2 0.4.2 downloads">
     <article class="org2-download-card org2-download-card-macos-apple-silicon">
       <p class="org2-download-kicker">macOS</p>
       <h3>Org2 Workspace for macOS (Apple Silicon DMG)</h3>
       <p>Native Apple Silicon workspace app. Developer-signed and currently not notarized.</p>
-      <p class="org2-download-meta">0.4.1 · 217.2 MB</p>
-      <a class="org2-download-button" href="https://org2.gateway.scarf.sh/downloads/0.4.1/Org2Workspace.dmg">Download <span aria-hidden="true">↓</span></a>
+      <p class="org2-download-meta">0.4.2 · 222.0 MB</p>
+      <a class="org2-download-button" href="https://org2.gateway.scarf.sh/downloads/0.4.2/Org2Workspace.dmg">Download <span aria-hidden="true">↓</span></a>
     </article>
     <article class="org2-download-card org2-download-card-macos-intel">
       <p class="org2-download-kicker">macOS</p>
       <h3>Org2 Workspace for macOS (Intel DMG)</h3>
       <p>Native Intel workspace app. Developer-signed and currently not notarized.</p>
-      <p class="org2-download-meta">0.4.1 · 220.1 MB</p>
-      <a class="org2-download-button" href="https://org2.gateway.scarf.sh/downloads/0.4.1/Org2Workspace-Intel.dmg">Download <span aria-hidden="true">↓</span></a>
+      <p class="org2-download-meta">0.4.2 · 225.6 MB</p>
+      <a class="org2-download-button" href="https://org2.gateway.scarf.sh/downloads/0.4.2/Org2Workspace-Intel.dmg">Download <span aria-hidden="true">↓</span></a>
     </article>
     <article class="org2-download-card org2-download-card-vscode">
       <p class="org2-download-kicker">VS Code</p>
       <h3>Org2 for VS Code (VSIX)</h3>
       <p>Editor integration with syntax, agenda, navigation, formatting, and Org2 commands.</p>
-      <p class="org2-download-meta">0.4.1 · 173 KB</p>
-      <a class="org2-download-button" href="https://org2.gateway.scarf.sh/downloads/0.4.1/org2-vscode-0.4.1.vsix">Download <span aria-hidden="true">↓</span></a>
+      <p class="org2-download-meta">0.4.2 · 173 KB</p>
+      <a class="org2-download-button" href="https://org2.gateway.scarf.sh/downloads/0.4.2/org2-vscode-0.4.2.vsix">Download <span aria-hidden="true">↓</span></a>
     </article>
     <article class="org2-download-card org2-download-card-npm">
       <p class="org2-download-kicker">npm / CLI</p>
       <h3>Org2 npm package (TGZ)</h3>
       <p>CLI, compiler, language server, publishing runtime, and agent-facing tools.</p>
-      <p class="org2-download-meta">0.4.1 · 309 KB</p>
-      <a class="org2-download-button" href="https://org2.gateway.scarf.sh/downloads/0.4.1/aviaviavi-org2-0.4.1.tgz">Download <span aria-hidden="true">↓</span></a>
+      <p class="org2-download-meta">0.4.2 · 324 KB</p>
+      <a class="org2-download-button" href="https://org2.gateway.scarf.sh/downloads/0.4.2/aviaviavi-org2-0.4.2.tgz">Download <span aria-hidden="true">↓</span></a>
     </article>
 </section>
 #+END_EXPORT
@@ -82,6 +82,7 @@ These are the same files attached to each [[https://github.com/aviaviavi/org2/re
 
 | Version | macOS Apple Silicon DMG | macOS Intel DMG | VS Code VSIX | npm TGZ |
 |---------+--------------------------+-----------------+----------------+---------|
+| 0.4.2 | [[https://org2.gateway.scarf.sh/downloads/0.4.2/Org2Workspace.dmg][Download]] | [[https://org2.gateway.scarf.sh/downloads/0.4.2/Org2Workspace-Intel.dmg][Download]] | [[https://org2.gateway.scarf.sh/downloads/0.4.2/org2-vscode-0.4.2.vsix][Download]] | [[https://org2.gateway.scarf.sh/downloads/0.4.2/aviaviavi-org2-0.4.2.tgz][Download]] |
 | 0.4.1 | [[https://org2.gateway.scarf.sh/downloads/0.4.1/Org2Workspace.dmg][Download]] | [[https://org2.gateway.scarf.sh/downloads/0.4.1/Org2Workspace-Intel.dmg][Download]] | [[https://org2.gateway.scarf.sh/downloads/0.4.1/org2-vscode-0.4.1.vsix][Download]] | [[https://org2.gateway.scarf.sh/downloads/0.4.1/aviaviavi-org2-0.4.1.tgz][Download]] |
 | 0.4.0 | [[https://org2.gateway.scarf.sh/downloads/0.4.0/Org2Workspace.dmg][Download]] | — | [[https://org2.gateway.scarf.sh/downloads/0.4.0/org2-vscode-0.4.0.vsix][Download]] | [[https://org2.gateway.scarf.sh/downloads/0.4.0/aviaviavi-org2-0.4.0.tgz][Download]] |
 | 0.3.0 | [[https://org2.gateway.scarf.sh/downloads/0.3.0/Org2Workspace.dmg][Download]] | — | — | — |
@@ -97,8 +98,8 @@ https://org2.gateway.scarf.sh/downloads/{version}/{artifact}
 For example, the current macOS builds are:
 
 #+begin_src text
-https://org2.gateway.scarf.sh/downloads/0.4.1/Org2Workspace.dmg
-https://org2.gateway.scarf.sh/downloads/0.4.1/Org2Workspace-Intel.dmg
+https://org2.gateway.scarf.sh/downloads/0.4.2/Org2Workspace.dmg
+https://org2.gateway.scarf.sh/downloads/0.4.2/Org2Workspace-Intel.dmg
 #+end_src
 
 Scarf redirects that request to the matching =github.com/aviaviavi/org2/releases/download/{version}/{artifact}= URL. No release files are hosted separately by Scarf.
