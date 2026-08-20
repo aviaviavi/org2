@@ -3,7 +3,7 @@
 
 #+BEGIN_EXPORT html
 <section class="org2-page-intro org2-home-hero">
-  <p>Org2 turns meetings, notes, and decisions into durable work for people and AI agents—then brings back the approvals, evidence, and finished outputs. It is open-source, local-first, and stored in plain text you own.</p>
+  <p>Org2 turns your meetings, decisions, notes, and AI sessions into a powerful plain-text workspace that helps you get more done. It's open-source, fully local, and built to outlast the models &amp; harnesses you use today.</p>
   <nav class="org2-hero-actions" aria-label="Start with Org2">
     <a class="org2-hero-action org2-hero-action-primary" href="getting-started.html">Get started <span aria-hidden="true">→</span></a>
     <a class="org2-hero-action" href="features.html">Explore features <span aria-hidden="true">→</span></a>
