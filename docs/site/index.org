@@ -1,5 +1,5 @@
 #+TITLE: Org2
-#+SUBTITLE: Make sure what you decide actually happens
+#+SUBTITLE: Build your knowledge locally and put it to work.
 
 #+BEGIN_EXPORT html
 <section class="org2-page-intro org2-home-hero">

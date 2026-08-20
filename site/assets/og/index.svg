@@ -9,6 +9,6 @@
   <circle cx="1120" cy="88" r="190" fill="#1f2937" opacity="0.45"/>
   <text x="80" y="110" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="42" font-weight="700" fill="#5eead4">Org2</text>
   <text x="80" y="250" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="64" font-weight="700" fill="#e5e7eb">Org2</text>
-  <text x="80" y="320" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="34" fill="#9ca3af">Make sure what you decide actually happens</text>
-  <text x="80" y="560" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="28" fill="#9ca3af">Make sure what you decide actually happens</text>
+  <text x="80" y="320" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="34" fill="#9ca3af">Build your knowledge locally and put it to work.</text>
+  <text x="80" y="560" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="28" fill="#9ca3af">Build your knowledge locally and put it to work.</text>
 </svg>
