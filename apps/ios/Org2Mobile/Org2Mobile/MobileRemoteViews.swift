@@ -46,10 +46,13 @@ struct MobileRemoteRootView: View {
       }
       .task {
         if remote.isPaired {
+          // A notification may have launched the app before the Remote tab's
+          // initial refresh begins. Route it immediately so opening a reply is
+          // never blocked on the unrelated thread-list request, then check
+          // once more in case a notification arrived while that request ran.
+          openPendingReplyIfNeeded()
           await remote.refresh()
-          if let pendingThreadID = remote.consumePendingReplyThreadID() {
-            navigate(to: pendingThreadID)
-          }
+          openPendingReplyIfNeeded()
         }
       }
     }
@@ -75,6 +78,11 @@ struct MobileRemoteRootView: View {
     let destination = [threadID]
     guard path != destination else { return }
     path = destination
+  }
+
+  private func openPendingReplyIfNeeded() {
+    guard let pendingThreadID = remote.consumePendingReplyThreadID() else { return }
+    navigate(to: pendingThreadID)
   }
 
   private var threadList: some View {
@@ -749,14 +757,6 @@ private struct MobileRemoteThreadView: View {
           chatContent(detail: detail)
         } else {
           loadingView(detailIsAvailable: true)
-            .task(id: detail.thread.id) {
-              await Task.yield()
-              try? await Task.sleep(for: .milliseconds(40))
-              guard !Task.isCancelled,
-                    remote.threadDetail?.thread.id == threadID
-              else { return }
-              hasPresentedInitialContent = true
-            }
         }
       } else {
         if let message = remote.threadConnectionError {
@@ -769,6 +769,22 @@ private struct MobileRemoteThreadView: View {
           loadingView(detailIsAvailable: false)
         }
       }
+    }
+    // Keep transcript presentation attached to the stable destination view.
+    // A task attached to the temporary loading subtree can be cancelled while
+    // a notification switches tabs or restores the navigation path, leaving
+    // an already-loaded transcript behind a permanent spinner.
+    .task(id: remote.threadDetail?.thread.id) {
+      guard remote.threadDetail?.thread.id == threadID else {
+        hasPresentedInitialContent = false
+        return
+      }
+      await Task.yield()
+      try? await Task.sleep(for: .milliseconds(40))
+      guard !Task.isCancelled,
+            remote.threadDetail?.thread.id == threadID
+      else { return }
+      hasPresentedInitialContent = true
     }
     .navigationTitle(remote.threadDetail?.thread.id == threadID ? remote.threadDetail?.thread.title ?? "Chat" : "Chat")
     .navigationBarTitleDisplayMode(.inline)

@@ -3,6 +3,42 @@ import XCTest
 @testable import Org2WorkspaceCore
 
 final class WorkspaceListSelectionTests: XCTestCase {
+  func testIOSNotificationOpenUsesStableTranscriptPresentationLifecycle() throws {
+    let testFile = URL(fileURLWithPath: #filePath)
+    let packageRoot = testFile
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+    let mobileRemoteViews = packageRoot
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .appendingPathComponent("ios/Org2Mobile/Org2Mobile/MobileRemoteViews.swift")
+    let source = try String(contentsOf: mobileRemoteViews, encoding: .utf8)
+
+    XCTAssertTrue(source.contains(".task(id: remote.threadDetail?.thread.id)"))
+    XCTAssertFalse(source.contains("loadingView(detailIsAvailable: true)\n            .task"))
+    XCTAssertTrue(
+      source.contains(
+        "openPendingReplyIfNeeded()\n          await remote.refresh()\n          openPendingReplyIfNeeded()"
+      )
+    )
+  }
+
+  func testMeetingAutomationIsDiscoverableInAIChatSettings() throws {
+    let testFile = URL(fileURLWithPath: #filePath)
+    let packageRoot = testFile
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+    let settingsSource = packageRoot
+      .appendingPathComponent("Sources/Org2Workspace/AIChatSettingsView.swift")
+    let source = try String(contentsOf: settingsSource, encoding: .utf8)
+
+    XCTAssertTrue(source.contains(#"Label("Meeting Automation", systemImage: "calendar.badge.clock")"#))
+    XCTAssertTrue(source.contains("Process every completed meeting"))
+    XCTAssertTrue(source.contains("saveMeetingReadyAutomationConfiguration"))
+  }
+
   func testCommandNStartsANewAIThreadInsteadOfOpeningAnotherWindow() throws {
     let testFile = URL(fileURLWithPath: #filePath)
     let packageRoot = testFile

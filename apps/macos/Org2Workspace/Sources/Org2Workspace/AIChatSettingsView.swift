@@ -4,6 +4,11 @@ import SwiftUI
 struct AIChatSettingsView: View {
   @EnvironmentObject private var store: WorkspaceStore
   @State private var editedDestination: AIChatDestinationConfiguration?
+  @State private var meetingAutomationEnabled = false
+  @State private var meetingAutomationDestinationID = AIChatDestinationConfiguration.openClawID
+  @State private var meetingAutomationThreadMode = MeetingReadyAutomationThreadMode.newThread
+  @State private var meetingAutomationThreadID: UUID?
+  @State private var meetingAutomationPrompt = MeetingReadyAutomationSettings.defaultPrompt
 
   var body: some View {
     Form {
@@ -63,6 +68,65 @@ struct AIChatSettingsView: View {
         }
       } header: {
         Label("AI Destinations", systemImage: "point.3.connected.trianglepath.dotted")
+      }
+
+      Section {
+        Toggle("Process every completed meeting", isOn: $meetingAutomationEnabled)
+
+        if meetingAutomationEnabled {
+          Picker("Send to", selection: $meetingAutomationDestinationID) {
+            ForEach(store.enabledAIChatDestinations) { destination in
+              Text(destination.title).tag(destination.id)
+            }
+          }
+
+          Picker("Thread", selection: $meetingAutomationThreadMode) {
+            ForEach(MeetingReadyAutomationThreadMode.allCases) { mode in
+              Text(mode.title).tag(mode)
+            }
+          }
+
+          if meetingAutomationThreadMode == .existingThread {
+            Picker("Target thread", selection: $meetingAutomationThreadID) {
+              Text("Choose a thread").tag(UUID?.none)
+              ForEach(store.meetingReadyAutomationThreads(destinationID: meetingAutomationDestinationID)) { thread in
+                Text(thread.title + (thread.isSettled ? " (settled)" : ""))
+                  .tag(Optional(thread.id))
+              }
+            }
+          }
+
+          VStack(alignment: .leading, spacing: 6) {
+            Text("Processing prompt")
+              .font(.callout.weight(.medium))
+            TextEditor(text: $meetingAutomationPrompt)
+              .font(.body)
+              .frame(minHeight: 90)
+              .overlay {
+                RoundedRectangle(cornerRadius: 6)
+                  .stroke(.separator, lineWidth: 1)
+              }
+          }
+        }
+
+        HStack(alignment: .center, spacing: 12) {
+          VStack(alignment: .leading, spacing: 3) {
+            Text(store.meetingReadyAutomationStatusText)
+              .font(.callout)
+              .foregroundStyle(meetingAutomationStatusColor)
+            Text("The first enable starts from now; later completed meetings are queued once and reconciled after relaunch.")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+          Spacer(minLength: 12)
+          Button("Save Automation") {
+            saveMeetingAutomation()
+          }
+          .buttonStyle(.borderedProminent)
+          .disabled(store.corpusRoot == nil)
+        }
+      } header: {
+        Label("Meeting Automation", systemImage: "calendar.badge.clock")
       }
 
       Section {
@@ -126,6 +190,19 @@ struct AIChatSettingsView: View {
     .padding(8)
     .frame(width: 620)
     .frame(minHeight: 560)
+    .onAppear {
+      loadMeetingAutomation()
+    }
+    .onChange(of: store.corpusRoot?.standardizedFileURL.path) {
+      loadMeetingAutomation()
+    }
+    .onChange(of: meetingAutomationDestinationID) { _, destinationID in
+      guard meetingAutomationThreadMode == .existingThread else { return }
+      if !store.meetingReadyAutomationThreads(destinationID: destinationID)
+        .contains(where: { $0.id == meetingAutomationThreadID }) {
+        meetingAutomationThreadID = nil
+      }
+    }
     .sheet(item: $editedDestination) { destination in
       AIChatDestinationEditor(destination: destination)
         .environmentObject(store)
@@ -166,6 +243,33 @@ struct AIChatSettingsView: View {
     case .fullAccess:
       return "Codex can write anywhere your Mac account can, including ~/.codex lease state and other repositories. Org2 does not show approval prompts in this mode; use it only for trusted threads. The change applies on the next turn, including in an existing thread."
     }
+  }
+
+  private var meetingAutomationStatusColor: Color {
+    if store.meetingReadyAutomationStatusText.hasPrefix("Meeting delivery pending")
+      || store.meetingReadyAutomationStatusText.hasPrefix("Meeting delivery needs attention") {
+      return .orange
+    }
+    return .secondary
+  }
+
+  private func loadMeetingAutomation() {
+    let settings = store.meetingReadyAutomationSettings
+    meetingAutomationEnabled = settings.isEnabled
+    meetingAutomationDestinationID = settings.destinationID
+    meetingAutomationThreadMode = settings.threadMode
+    meetingAutomationThreadID = settings.threadID
+    meetingAutomationPrompt = settings.prompt
+  }
+
+  private func saveMeetingAutomation() {
+    _ = store.saveMeetingReadyAutomationConfiguration(
+      isEnabled: meetingAutomationEnabled,
+      destinationID: meetingAutomationDestinationID,
+      threadMode: meetingAutomationThreadMode,
+      threadID: meetingAutomationThreadID,
+      prompt: meetingAutomationPrompt
+    )
   }
 }
 

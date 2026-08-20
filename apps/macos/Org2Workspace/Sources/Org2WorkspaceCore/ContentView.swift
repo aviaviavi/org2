@@ -7373,11 +7373,6 @@ private struct OpenClawConfigurationSheet: View {
   @State private var token = ""
   @State private var clearToken = false
   @State private var isRequestingPairing = false
-  @State private var meetingAutomationEnabled = false
-  @State private var meetingAutomationDestinationID = AIChatDestinationConfiguration.openClawID
-  @State private var meetingAutomationThreadMode = MeetingReadyAutomationThreadMode.newThread
-  @State private var meetingAutomationThreadID: UUID?
-  @State private var meetingAutomationPrompt = MeetingReadyAutomationSettings.defaultPrompt
 
   var body: some View {
     ScrollView {
@@ -7440,93 +7435,6 @@ private struct OpenClawConfigurationSheet: View {
         .padding(.vertical, 2)
       } label: {
         Text("AI Destinations")
-      }
-
-      GroupBox {
-        VStack(alignment: .leading, spacing: 10) {
-          Toggle("Process every completed meeting", isOn: $meetingAutomationEnabled)
-            .font(.callout.weight(.medium))
-
-          if meetingAutomationEnabled {
-            Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 12, verticalSpacing: 8) {
-              GridRow {
-                Text("Send to")
-                  .font(.caption.weight(.medium))
-                  .foregroundStyle(.secondary)
-                Picker("Send to", selection: $meetingAutomationDestinationID) {
-                  ForEach(store.enabledAIChatDestinations) { destination in
-                    Text(destination.title).tag(destination.id)
-                  }
-                }
-                .labelsHidden()
-                .frame(width: 260)
-              }
-
-              GridRow {
-                Text("Thread")
-                  .font(.caption.weight(.medium))
-                  .foregroundStyle(.secondary)
-                Picker("Thread", selection: $meetingAutomationThreadMode) {
-                  ForEach(MeetingReadyAutomationThreadMode.allCases) { mode in
-                    Text(mode.title).tag(mode)
-                  }
-                }
-                .labelsHidden()
-                .frame(width: 260)
-              }
-
-              if meetingAutomationThreadMode == .existingThread {
-                GridRow {
-                  Text("Target")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
-                  Picker("Target", selection: $meetingAutomationThreadID) {
-                    Text("Choose a thread").tag(UUID?.none)
-                    ForEach(store.meetingReadyAutomationThreads(destinationID: meetingAutomationDestinationID)) { thread in
-                      Text(thread.title + (thread.isSettled ? " (settled)" : ""))
-                        .tag(Optional(thread.id))
-                    }
-                  }
-                  .labelsHidden()
-                  .frame(width: 430)
-                }
-              }
-            }
-
-            VStack(alignment: .leading, spacing: 4) {
-              Text("Prompt")
-                .font(.caption.weight(.medium))
-                .foregroundStyle(.secondary)
-              TextEditor(text: $meetingAutomationPrompt)
-                .font(.callout)
-                .frame(minHeight: 72, maxHeight: 96)
-                .padding(5)
-                .background(
-                  RoundedRectangle(cornerRadius: 7)
-                    .fill(Color(nsColor: .textBackgroundColor))
-                )
-                .overlay(
-                  RoundedRectangle(cornerRadius: 7)
-                    .stroke(Color.secondary.opacity(0.25), lineWidth: 1)
-                )
-            }
-          }
-
-          Text(store.meetingReadyAutomationStatusText)
-            .font(.caption2)
-            .foregroundStyle(
-              store.meetingReadyAutomationStatusText.hasPrefix("Meeting delivery pending")
-                || store.meetingReadyAutomationStatusText.hasPrefix("Meeting delivery needs attention")
-                ? Color.orange
-                : Color.secondary
-            )
-          Text("The first enable starts from now; completed meetings are then durably queued and reconciled after relaunch.")
-            .font(.caption2)
-            .foregroundStyle(.secondary)
-        }
-        .padding(.vertical, 2)
-      } label: {
-        Text("Meeting Automation")
       }
 
       VStack(alignment: .leading, spacing: 3) {
@@ -7704,26 +7612,13 @@ private struct OpenClawConfigurationSheet: View {
       localEditsEnabled = store.openClawLocalEditsEnabled
       briefsStartNewThread = store.openClawBriefsStartNewThread
       autoSettleInterval = store.openClawThreadSettlementSettings.interval
-      let meetingSettings = store.meetingReadyAutomationSettings
-      meetingAutomationEnabled = meetingSettings.isEnabled
-      meetingAutomationDestinationID = meetingSettings.destinationID
-      meetingAutomationThreadMode = meetingSettings.threadMode
-      meetingAutomationThreadID = meetingSettings.threadID
-      meetingAutomationPrompt = meetingSettings.prompt
       token = ""
       clearToken = false
-    }
-    .onChange(of: meetingAutomationDestinationID) { _, destinationID in
-      guard meetingAutomationThreadMode == .existingThread else { return }
-      if !store.meetingReadyAutomationThreads(destinationID: destinationID)
-        .contains(where: { $0.id == meetingAutomationThreadID }) {
-        meetingAutomationThreadID = nil
-      }
     }
   }
 
   private func saveConfiguration() -> Bool {
-    guard store.saveOpenClawConfiguration(
+    return store.saveOpenClawConfiguration(
       endpoint: endpoint,
       agent: agent,
       handoffAssignee: handoffAssignee,
@@ -7734,13 +7629,6 @@ private struct OpenClawConfigurationSheet: View {
       localEditsEnabled: localEditsEnabled,
       token: token,
       clearToken: clearToken
-    ) else { return false }
-    return store.saveMeetingReadyAutomationConfiguration(
-      isEnabled: meetingAutomationEnabled,
-      destinationID: meetingAutomationDestinationID,
-      threadMode: meetingAutomationThreadMode,
-      threadID: meetingAutomationThreadID,
-      prompt: meetingAutomationPrompt
     )
   }
 }
