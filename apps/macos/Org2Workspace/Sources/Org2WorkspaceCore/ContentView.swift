@@ -6334,7 +6334,6 @@ private struct MeetingsView: View {
           )
         }
 
-        AudioSettingsSection()
       }
       .padding(.horizontal, WorkspaceDesign.contentInset)
       .padding(.bottom, 12)
@@ -6417,80 +6416,126 @@ private struct MeetingsView: View {
   }
 }
 
-private struct AudioSettingsSection: View {
+public struct MeetingTranscriptionSettingsView: View {
   @EnvironmentObject private var store: WorkspaceStore
 
-  var body: some View {
-    DisclosureGroup(isExpanded: $store.isAudioSettingsExpanded) {
-      VStack(alignment: .leading, spacing: 8) {
-        audioSettingsHeader
+  public init() {}
 
-        Text(store.audioSettingsStatusText.isEmpty ? store.audioSettingsStatus.detailText : store.audioSettingsStatusText)
-          .font(.caption)
-          .foregroundStyle(.secondary)
-          .lineLimit(2)
-          .fixedSize(horizontal: false, vertical: true)
-
-        HStack(alignment: .top, spacing: 8) {
-          Image(systemName: store.workspaceRuntimeIdentity.isAppBundle ? "checkmark.shield.fill" : "exclamationmark.triangle.fill")
-            .foregroundStyle(store.workspaceRuntimeIdentity.isAppBundle ? Color.green : Color.orange)
-          VStack(alignment: .leading, spacing: 2) {
-            Text(store.workspaceRuntimeIdentity.audioPermissionStatusLabel)
-              .font(.caption.weight(.semibold))
-            Text(store.workspaceRuntimeIdentity.audioPermissionDetailText)
-              .font(.caption)
-              .foregroundStyle(.secondary)
-              .lineLimit(2)
-              .fixedSize(horizontal: false, vertical: true)
-          }
+  public var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      Picker("Provider", selection: $store.meetingTranscriptionProvider) {
+        ForEach(MeetingTranscriptionProvider.allCases) { provider in
+          Text(provider.label).tag(provider)
         }
+      }
+      .pickerStyle(.menu)
 
-        VStack(alignment: .leading, spacing: 4) {
-          audioSettingRow("Active", store.audioSettingsStatus.backendDescription)
-          audioSettingRow("App build", store.workspaceRuntimeIdentity.buildConfigurationLabel)
-          audioSettingRow("App path", store.workspaceRuntimeIdentity.bundlePath)
-          if let whisperCpp = store.audioSettingsStatus.whisperCppExecutablePath {
-            audioSettingRow("whisper.cpp", whisperCpp)
-          }
-          if let model = store.audioSettingsStatus.whisperCppModelPath {
-            audioSettingRow("GGML model", model)
-          }
-          if let openAIWhisper = store.audioSettingsStatus.openAIWhisperExecutablePath {
-            audioSettingRow("Python Whisper", openAIWhisper)
-          }
-          if let overrideCommand = store.audioSettingsStatus.overrideCommand {
-            audioSettingRow("Override", overrideCommand)
-          }
-        }
+      Text(store.meetingTranscriptionProviderDetailText)
         .font(.caption)
-        .frame(maxWidth: .infinity, alignment: .leading)
-      }
-      .padding(.top, 6)
-      .frame(maxWidth: .infinity, alignment: .leading)
-    } label: {
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
+
+      providerSettings
+
       HStack(spacing: 8) {
-        Label("Audio Settings", systemImage: "waveform")
-        Text(store.audioSettingsStatus.statusLabel)
-          .font(.caption)
-          .foregroundStyle(.secondary)
-          .lineLimit(1)
-          .truncationMode(.middle)
+        Button {
+          Task { await store.testMeetingTranscriptionProvider() }
+        } label: {
+          if store.isTestingTranscriptionProvider {
+            ProgressView()
+              .controlSize(.small)
+          } else {
+            Label("Test Provider", systemImage: "stethoscope")
+          }
+        }
+        .disabled(store.isTestingTranscriptionProvider)
+
+        Button {
+          store.refreshAudioSettingsStatus()
+        } label: {
+          Label("Refresh", systemImage: "arrow.clockwise")
+        }
+        .disabled(store.isTestingTranscriptionProvider)
       }
+
+      Text(store.audioSettingsStatusText.isEmpty ? store.audioSettingsStatus.detailText : store.audioSettingsStatusText)
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
+
+      HStack(alignment: .top, spacing: 8) {
+        Image(systemName: store.workspaceRuntimeIdentity.isAppBundle ? "checkmark.shield.fill" : "exclamationmark.triangle.fill")
+          .foregroundStyle(store.workspaceRuntimeIdentity.isAppBundle ? Color.green : Color.orange)
+        VStack(alignment: .leading, spacing: 2) {
+          Text(store.workspaceRuntimeIdentity.audioPermissionStatusLabel)
+            .font(.caption.weight(.semibold))
+          Text(store.workspaceRuntimeIdentity.audioPermissionDetailText)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .lineLimit(2)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+      }
+
+      VStack(alignment: .leading, spacing: 4) {
+        audioSettingRow("Local fallback", store.audioSettingsStatus.backendDescription)
+        audioSettingRow("App build", store.workspaceRuntimeIdentity.buildConfigurationLabel)
+        audioSettingRow("App path", store.workspaceRuntimeIdentity.bundlePath)
+        if let whisperCpp = store.audioSettingsStatus.whisperCppExecutablePath {
+          audioSettingRow("whisper.cpp", whisperCpp)
+        }
+        if let model = store.audioSettingsStatus.whisperCppModelPath {
+          audioSettingRow("GGML model", model)
+        }
+        if let openAIWhisper = store.audioSettingsStatus.openAIWhisperExecutablePath {
+          audioSettingRow("Python Whisper", openAIWhisper)
+        }
+        if let overrideCommand = store.audioSettingsStatus.overrideCommand {
+          audioSettingRow("Override", overrideCommand)
+        }
+      }
+      .font(.caption)
+      .frame(maxWidth: .infinity, alignment: .leading)
     }
+    .frame(maxWidth: .infinity, alignment: .leading)
   }
 
-  private var audioSettingsHeader: some View {
-    audioSettingsStatusLabel
-  }
-
-  private var audioSettingsStatusLabel: some View {
-    HStack(spacing: 8) {
-      Image(systemName: store.audioSettingsStatus.isAnyLocalTranscriberAvailable ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-        .foregroundStyle(store.audioSettingsStatus.isAnyLocalTranscriberAvailable ? Color.green : Color.orange)
-      Text(store.audioSettingsStatus.statusLabel)
-        .font(.callout.weight(.semibold))
-        .lineLimit(1)
-        .truncationMode(.tail)
+  @ViewBuilder
+  private var providerSettings: some View {
+    switch store.meetingTranscriptionProvider {
+    case .automatic, .localWhisper:
+      VStack(alignment: .leading, spacing: 6) {
+        TextField("Bundled default model", text: $store.whisperModelPathText)
+          .textFieldStyle(.roundedBorder)
+        TextField("Language", text: $store.transcriptionLanguageText)
+          .textFieldStyle(.roundedBorder)
+        Text("Leave the model path empty to use the bundled model. Language defaults to en.")
+          .font(.caption2)
+          .foregroundStyle(.secondary)
+      }
+    case .fluidVoice:
+      VStack(alignment: .leading, spacing: 6) {
+        TextField("http://127.0.0.1:47733", text: $store.fluidVoiceEndpointText)
+          .textFieldStyle(.roundedBorder)
+        Button {
+          Task { await store.enableFluidVoiceLocalAPI() }
+        } label: {
+          Label("Enable Fluid Voice Local API", systemImage: "bolt.horizontal.circle")
+        }
+        Text("Enable Fluid Voice's Local API first. Long meetings are chunked locally; audio is sent only to the loopback endpoint.")
+          .font(.caption2)
+          .foregroundStyle(.secondary)
+      }
+    case .macOSSpeech:
+      EmptyView()
+    case .customCommand:
+      VStack(alignment: .leading, spacing: 6) {
+        TextField("Command using {audio}", text: $store.customTranscriptionCommandText)
+          .textFieldStyle(.roundedBorder)
+        Text("Use {audio} where the quoted file path belongs. The command must emit transcript text on standard output.")
+          .font(.caption2)
+          .foregroundStyle(.secondary)
+      }
     }
   }
 

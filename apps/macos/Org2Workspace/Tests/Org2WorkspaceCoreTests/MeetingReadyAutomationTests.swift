@@ -130,6 +130,67 @@ final class MeetingReadyAutomationTests: XCTestCase {
     )
   }
 
+  @MainActor
+  func testLinkifiedFileLevelIDDoesNotQueueMeetingTwiceAfterRefresh() async throws {
+    let fixture = try makeFixture()
+    defer { fixture.cleanup() }
+    let store = WorkspaceStore(
+      defaults: fixture.defaults,
+      openClawTranscriptURL: fixture.transcript,
+      openClawSendHandler: { _, _, _, _ in "Meeting processed" },
+      legacyDefaultsDomains: []
+    )
+    store.setCorpusRoot(fixture.root, persistsDefault: false)
+    XCTAssertTrue(store.saveMeetingReadyAutomationConfiguration(
+      isEnabled: true,
+      destinationID: AIChatDestinationConfiguration.openClawID,
+      threadMode: .newThread,
+      threadID: nil,
+      prompt: "Process the completed meeting."
+    ))
+
+    let meetingsDirectory = fixture.root.appendingPathComponent("meetings", isDirectory: true)
+    try FileManager.default.createDirectory(at: meetingsDirectory, withIntermediateDirectories: true)
+    let file = meetingsDirectory.appendingPathComponent("customer-sync.org2")
+    let canonicalMeetingID = "048c73c3-b253-4964-9aee-3f3e625d55cc"
+    let initialItem = meeting(
+      title: "Customer sync",
+      file: file.path,
+      idValue: canonicalMeetingID
+    )
+    store.reconcileMeetingReadyAutomationForTesting(with: [initialItem])
+
+    try """
+    :PROPERTIES:
+    :ID: 3494fc49-0103-40bc-b35c-ec696a09ab8e
+    :END:
+
+    #+TITLE: Meeting: Customer sync
+    #+ORG2_KIND: meeting
+
+    * Meeting: Customer sync
+    :PROPERTIES:
+    :ID: \(canonicalMeetingID)
+    :kind: meeting
+    :recorded_at: 2026-08-20T12:00:00-07:00
+    :audio_artifact: meetings/customer-sync.wav
+    :transcript_artifact: meetings/customer-sync.transcript.org2
+    :transcription_status: complete
+    :END:
+    """.write(to: file, atomically: true, encoding: .utf8)
+
+    await store.refreshMeetings()
+
+    XCTAssertEqual(store.meetings.first?.idValue, canonicalMeetingID)
+    let automationMessages = store.openClawChatThreads
+      .flatMap(\.messages)
+      .filter { $0.role == .user && $0.content.contains("#+org2_automation_event_id:") }
+    XCTAssertEqual(automationMessages.count, 1)
+    XCTAssertTrue(automationMessages[0].content.contains(
+      "meeting-ready:meeting-id:\(canonicalMeetingID)"
+    ))
+  }
+
   private func meeting(
     title: String,
     file: String,

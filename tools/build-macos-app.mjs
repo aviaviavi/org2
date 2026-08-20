@@ -9,6 +9,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   readdirSync,
   rmSync,
   writeFileSync,
@@ -387,7 +388,7 @@ function copyWhisperRuntime(resourcesDir) {
         "Release builds require whisper.cpp and its base English model. Install whisper-cpp and the Org2 model, or set ORG2_WORKSPACE_WHISPER_CPP_PATH and ORG2_WORKSPACE_WHISPER_MODEL_PATH."
       );
     }
-    return "";
+    return { executable: "", libraries: [] };
   }
   if (!existsSync(bundledWhisperCppPath)) {
     throw new Error(`Bundled whisper.cpp executable not found at ${bundledWhisperCppPath}`);
@@ -406,13 +407,19 @@ function copyWhisperRuntime(resourcesDir) {
 
   const whisperDir = join(resourcesDir, "Whisper");
   const binDir = join(whisperDir, "bin");
+  const libDir = join(whisperDir, "lib");
   const modelsDir = join(whisperDir, "models");
   mkdirSync(binDir, { recursive: true });
+  mkdirSync(libDir, { recursive: true });
   mkdirSync(modelsDir, { recursive: true });
   const executableDestination = join(binDir, "whisper-cli");
   copyFileSync(bundledWhisperCppPath, executableDestination);
   chmodSync(executableDestination, 0o755);
   copyFileSync(bundledWhisperModelPath, join(modelsDir, "ggml-base.en.bin"));
+
+  const libraries = process.platform === "darwin"
+    ? copyMachODependencies(bundledWhisperCppPath, executableDestination, libDir)
+    : [];
 
   const noticesDir = join(repoRoot, "third_party", "whisper");
   for (const noticeFile of ["LICENSE-whisper.cpp", "LICENSE-openai-whisper", "NOTICE.md"]) {
@@ -422,7 +429,92 @@ function copyWhisperRuntime(resourcesDir) {
     }
     copyFileSync(source, join(whisperDir, noticeFile));
   }
-  return executableDestination;
+  return { executable: executableDestination, libraries };
+}
+
+function machODependencies(path) {
+  const installNameResult = spawnSync("otool", ["-D", path], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "ignore"],
+  });
+  const installName = installNameResult.status === 0
+    ? installNameResult.stdout.split(/\n/).slice(1).map((line) => line.trim()).find(Boolean)
+    : "";
+  return run("otool", ["-L", path], { capture: true })
+    .split(/\n/)
+    .slice(1)
+    .map((line) => line.trim().split(/\s+/)[0])
+    .filter((dependency) => dependency && dependency !== installName);
+}
+
+function copyMachODependencies(sourceExecutable, destinationExecutable, destinationLibDir) {
+  const resolvedExecutable = realpathSync(sourceExecutable);
+  const sourceLibDirs = [
+    resolve(dirname(resolvedExecutable), "../lib"),
+    resolve(dirname(sourceExecutable), "../lib"),
+  ];
+  const pending = [{ source: resolvedExecutable, destination: destinationExecutable }];
+  const copiedByName = new Map();
+
+  while (pending.length > 0) {
+    const owner = pending.shift();
+    for (const dependency of machODependencies(owner.source)) {
+      if (dependency.startsWith("/usr/lib/") || dependency.startsWith("/System/Library/")) {
+        continue;
+      }
+      const name = dependency.split("/").at(-1);
+      const source = resolveMachODependency(dependency, owner.source, sourceLibDirs);
+      if (!source) {
+        throw new Error(`Could not resolve Whisper dependency ${dependency} for ${owner.source}`);
+      }
+      let destination = copiedByName.get(name);
+      if (!destination) {
+        destination = join(destinationLibDir, name);
+        copyFileSync(source, destination);
+        chmodSync(destination, 0o755);
+        copiedByName.set(name, destination);
+        pending.push({ source, destination });
+      }
+      if (dependency !== `@rpath/${name}`) {
+        run("install_name_tool", ["-change", dependency, `@rpath/${name}`, owner.destination]);
+      }
+    }
+  }
+
+  for (const [name, destination] of copiedByName) {
+    run("install_name_tool", ["-id", `@rpath/${name}`, destination]);
+  }
+  return [...copiedByName.values()];
+}
+
+function resolveMachODependency(dependency, ownerPath, sourceLibDirs) {
+  const candidates = [];
+  if (dependency.startsWith("@rpath/")) {
+    const name = dependency.slice("@rpath/".length);
+    candidates.push(...sourceLibDirs.map((directory) => join(directory, name)));
+    candidates.push(resolve(dirname(ownerPath), "../lib", name));
+  } else if (dependency.startsWith("@loader_path/")) {
+    candidates.push(resolve(dirname(ownerPath), dependency.slice("@loader_path/".length)));
+  } else if (dependency.startsWith("/")) {
+    candidates.push(dependency);
+  }
+  const existing = candidates.find((candidate) => existsSync(candidate));
+  return existing ? realpathSync(existing) : "";
+}
+
+function verifyWhisperRuntime(executable) {
+  if (!executable) return;
+  const verification = spawnSync(executable, ["--help"], {
+    cwd: dirname(executable),
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  if (verification.status !== 0) {
+    const detail = [verification.stdout, verification.stderr].filter(Boolean).join("\n").trim();
+    throw new Error(
+      `Bundled whisper.cpp failed its launch check${detail ? `:\n${detail}` : "."}`
+    );
+  }
 }
 
 function main() {
@@ -490,7 +582,7 @@ function main() {
     join(resourcesDir, "NewMessage.mp3")
   );
   const runtimeNodePath = copyOrg2Runtime(resourcesDir);
-  const whisperCppPath = copyWhisperRuntime(resourcesDir);
+  const whisperRuntime = copyWhisperRuntime(resourcesDir);
 
   const signingIdentity = codeSigningIdentity();
   const signingLabel = signingIdentity === "-" ? "ad-hoc" : signingIdentity;
@@ -498,8 +590,12 @@ function main() {
   if (runtimeNodePath) {
     run("codesign", ["--force", "--sign", signingIdentity, runtimeNodePath]);
   }
-  if (whisperCppPath) {
-    run("codesign", ["--force", "--sign", signingIdentity, whisperCppPath]);
+  for (const library of whisperRuntime.libraries) {
+    run("codesign", ["--force", "--sign", signingIdentity, library]);
+  }
+  if (whisperRuntime.executable) {
+    run("codesign", ["--force", "--sign", signingIdentity, whisperRuntime.executable]);
+    verifyWhisperRuntime(whisperRuntime.executable);
   }
   run("codesign", ["--force", "--sign", signingIdentity, "--identifier", bundleIdentifier, appPath]);
   if (signingIdentity === "-") {

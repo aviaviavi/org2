@@ -34,12 +34,6 @@ struct Org2WorkspaceScreenshotRenderer {
         }
         try? await Task.sleep(nanoseconds: 100_000_000)
       }
-      if ProcessInfo.processInfo.environment["ORG2_WORKSPACE_SCREENSHOT_EXPAND_AUDIO_SETTINGS"] != nil {
-        await MainActor.run {
-          store.selectedSurface = .meetings
-          store.isAudioSettingsExpanded = true
-        }
-      }
       try? await Task.sleep(nanoseconds: 1_000_000_000)
       if ProcessInfo.processInfo.environment["ORG2_WORKSPACE_SCREENSHOT_EDIT_SOURCE"] != nil {
         await MainActor.run {

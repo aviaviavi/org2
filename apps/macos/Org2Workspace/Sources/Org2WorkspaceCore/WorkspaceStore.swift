@@ -1475,8 +1475,23 @@ public final class WorkspaceStore: ObservableObject {
   public var meetingTranscriptionProgress: Double { meetingTranscriptionProgressState.progress }
   public var meetingTranscriptionElapsedText: String { meetingTranscriptionProgressState.elapsedText }
   @Published public var audioSettingsStatus = LocalWhisperTranscriber.installationStatus()
-  @Published public var isAudioSettingsExpanded = false
+  @Published public var meetingTranscriptionProvider: MeetingTranscriptionProvider = .automatic {
+    didSet { persistMeetingTranscriptionValue(meetingTranscriptionProvider.rawValue, key: meetingTranscriptionProviderKey) }
+  }
+  @Published public var fluidVoiceEndpointText = MeetingTranscriptionConfiguration.defaultFluidVoiceEndpoint {
+    didSet { persistMeetingTranscriptionValue(fluidVoiceEndpointText, key: fluidVoiceEndpointKey) }
+  }
+  @Published public var customTranscriptionCommandText = "" {
+    didSet { persistMeetingTranscriptionValue(customTranscriptionCommandText, key: customTranscriptionCommandKey) }
+  }
+  @Published public var whisperModelPathText = "" {
+    didSet { persistMeetingTranscriptionValue(whisperModelPathText, key: whisperModelPathKey) }
+  }
+  @Published public var transcriptionLanguageText = "en" {
+    didSet { persistMeetingTranscriptionValue(transcriptionLanguageText, key: transcriptionLanguageKey) }
+  }
   @Published public var isInstallingFastTranscriber = false
+  @Published public var isTestingTranscriptionProvider = false
   @Published public var audioSettingsStatusText = ""
   @Published public var workspaceRuntimeIdentity = WorkspaceRuntimeIdentity.current()
   @Published public var isCapturingSystemAudio = false
@@ -1854,6 +1869,11 @@ public final class WorkspaceStore: ObservableObject {
   private let meetingReadyAutomationSettingsByCorpusKey = "Org2Workspace.meetingReadyAutomation.settingsByCorpus.v1"
   private let meetingReadyAutomationDeliveriesByCorpusKey = "Org2Workspace.meetingReadyAutomation.deliveriesByCorpus.v1"
   private let meetingReadyAutomationInitializedCorporaKey = "Org2Workspace.meetingReadyAutomation.initializedCorpora.v1"
+  private let meetingTranscriptionProviderKey = "Org2Workspace.meetingTranscription.provider.v1"
+  private let fluidVoiceEndpointKey = "Org2Workspace.meetingTranscription.fluidVoiceEndpoint.v1"
+  private let customTranscriptionCommandKey = "Org2Workspace.meetingTranscription.customCommand.v1"
+  private let whisperModelPathKey = "Org2Workspace.meetingTranscription.whisperModelPath.v1"
+  private let transcriptionLanguageKey = "Org2Workspace.meetingTranscription.language.v1"
   private let renderedDocumentWidthKey = "Org2Workspace.renderedDocument.width"
   private let renderedDocumentMarginKey = "Org2Workspace.renderedDocument.margin"
   private let propertyDrawersExpandedByDefaultKey = "Org2Workspace.renderedDocument.propertyDrawersExpandedByDefault.v1"
@@ -2216,6 +2236,13 @@ public final class WorkspaceStore: ObservableObject {
       .flatMap(RenderedDocumentWidth.init(rawValue:)) ?? .comfortable
     renderedDocumentMargin = defaults.string(forKey: renderedDocumentMarginKey)
       .flatMap(RenderedDocumentMargin.init(rawValue:)) ?? .standard
+    meetingTranscriptionProvider = defaults.string(forKey: meetingTranscriptionProviderKey)
+      .flatMap(MeetingTranscriptionProvider.init(rawValue:)) ?? .automatic
+    fluidVoiceEndpointText = defaults.string(forKey: fluidVoiceEndpointKey)
+      ?? MeetingTranscriptionConfiguration.defaultFluidVoiceEndpoint
+    customTranscriptionCommandText = defaults.string(forKey: customTranscriptionCommandKey) ?? ""
+    whisperModelPathText = defaults.string(forKey: whisperModelPathKey) ?? ""
+    transcriptionLanguageText = defaults.string(forKey: transcriptionLanguageKey) ?? "en"
     propertyDrawersExpandedByDefault = defaults.object(forKey: propertyDrawersExpandedByDefaultKey) as? Bool ?? true
     sourceEditorPresentation = defaults.string(forKey: sourceEditorPresentationKey)
       .flatMap(SourceEditorPresentation.init(rawValue:)) ?? .source
@@ -3526,11 +3553,115 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func refreshAudioSettingsStatus(preserveStatusText: Bool = false) {
-    audioSettingsStatus = LocalWhisperTranscriber.installationStatus()
+    audioSettingsStatus = LocalWhisperTranscriber.installationStatus(
+      configuration: localWhisperConfiguration(includeCustomCommand: false)
+    )
     workspaceRuntimeIdentity = WorkspaceRuntimeIdentity.current()
     if !preserveStatusText && (audioSettingsStatusText.isEmpty || !isInstallingFastTranscriber) {
       audioSettingsStatusText = audioSettingsStatus.detailText
     }
+  }
+
+  public var meetingTranscriptionProviderDetailText: String {
+    switch meetingTranscriptionProvider {
+    case .automatic:
+      if audioSettingsStatus.isWhisperCppReady {
+        return "Automatic will use \(audioSettingsStatus.backendDescription)."
+      }
+      return "Automatic will use macOS Speech. \(audioSettingsStatus.detailText)"
+    case .fluidVoice:
+      return "Fluid Voice uses its selected model. Its Local API must be enabled and running."
+    default:
+      return meetingTranscriptionProvider.detailText
+    }
+  }
+
+  public func testMeetingTranscriptionProvider() async {
+    guard !isTestingTranscriptionProvider else { return }
+    isTestingTranscriptionProvider = true
+    audioSettingsStatusText = "Testing \(meetingTranscriptionProvider.label)..."
+    defer { isTestingTranscriptionProvider = false }
+
+    do {
+      switch meetingTranscriptionProvider {
+      case .automatic:
+        refreshAudioSettingsStatus(preserveStatusText: true)
+        audioSettingsStatusText = audioSettingsStatus.isWhisperCppReady
+          ? "Automatic is ready: \(audioSettingsStatus.backendDescription)"
+          : "Automatic is ready with macOS Speech. \(audioSettingsStatus.detailText)"
+      case .localWhisper:
+        let status = LocalWhisperTranscriber.installationStatus(
+          configuration: localWhisperConfiguration(includeCustomCommand: false)
+        )
+        guard status.isWhisperCppReady || status.openAIWhisperExecutablePath != nil else {
+          throw AudioSettingsError.providerUnavailable(status.detailText)
+        }
+        audioSettingsStatusText = "Local Whisper is ready: \(status.backendDescription)"
+      case .fluidVoice:
+        let transcriber = try FluidVoiceTranscriber(endpoint: fluidVoiceEndpointText)
+        audioSettingsStatusText = try await transcriber.healthDescription()
+      case .macOSSpeech:
+        audioSettingsStatusText = "macOS Speech is available; permission is requested when first used."
+      case .customCommand:
+        guard !customTranscriptionCommandText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+          throw AudioSettingsError.providerUnavailable("Enter a custom transcription command first.")
+        }
+        audioSettingsStatusText = "Custom command is configured. It will be tested with the next recording."
+      }
+    } catch {
+      audioSettingsStatusText = error.localizedDescription
+    }
+  }
+
+  public func enableFluidVoiceLocalAPI() async {
+    do {
+      let transcriber = try FluidVoiceTranscriber(endpoint: fluidVoiceEndpointText)
+      let port = transcriber.endpoint.port ?? 47_733
+      let result = await Task.detached(priority: .userInitiated) {
+        Self.runAudioSettingsProcess(
+          executable: "/usr/bin/defaults",
+          arguments: ["write", "com.FluidApp.app", "LocalAPIEnabled", "-bool", "true"]
+        )
+      }.value
+      guard result.exitCode == 0 else {
+        throw AudioSettingsError.providerUnavailable(result.stderr)
+      }
+      let portResult = await Task.detached(priority: .userInitiated) {
+        Self.runAudioSettingsProcess(
+          executable: "/usr/bin/defaults",
+          arguments: ["write", "com.FluidApp.app", "LocalAPIPort", "-int", "\(port)"]
+        )
+      }.value
+      guard portResult.exitCode == 0 else {
+        throw AudioSettingsError.providerUnavailable(portResult.stderr)
+      }
+      audioSettingsStatusText = "Fluid Voice Local API enabled on port \(port). Quit and reopen Fluid Voice, then test the provider."
+    } catch {
+      audioSettingsStatusText = error.localizedDescription
+    }
+  }
+
+  private func persistMeetingTranscriptionValue(_ value: String, key: String) {
+    guard !Self.shouldIgnoreStandardDefaultsForTests(defaults) else { return }
+    defaults.set(value, forKey: key)
+  }
+
+  private func meetingTranscriptionConfiguration() -> MeetingTranscriptionConfiguration {
+    MeetingTranscriptionConfiguration(
+      provider: meetingTranscriptionProvider,
+      fluidVoiceEndpoint: fluidVoiceEndpointText,
+      customCommand: customTranscriptionCommandText,
+      whisperModelPath: whisperModelPathText,
+      language: transcriptionLanguageText
+    )
+  }
+
+  private func localWhisperConfiguration(includeCustomCommand: Bool) -> LocalWhisperConfiguration {
+    LocalWhisperConfiguration(
+      modelOverride: whisperModelPathText,
+      commandOverride: includeCustomCommand ? customTranscriptionCommandText : nil,
+      languageOverride: transcriptionLanguageText
+    )
   }
 
   public func installFastMeetingTranscriber() async {
@@ -26289,6 +26420,35 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
+  nonisolated private static func runAudioSettingsProcess(
+    executable: String,
+    arguments: [String]
+  ) -> AudioSettingsProcessResult {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: executable)
+    process.arguments = arguments
+    let output = Pipe()
+    process.standardOutput = output
+    process.standardError = output
+    do {
+      try process.run()
+      let outputData = output.fileHandleForReading.readDataToEndOfFile()
+      process.waitUntilExit()
+      let text = String(data: outputData, encoding: .utf8) ?? ""
+      try? output.fileHandleForReading.close()
+      try? output.fileHandleForWriting.close()
+      return AudioSettingsProcessResult(
+        exitCode: process.terminationStatus,
+        stdout: text,
+        stderr: text
+      )
+    } catch {
+      try? output.fileHandleForReading.close()
+      try? output.fileHandleForWriting.close()
+      return AudioSettingsProcessResult(exitCode: 1, stdout: "", stderr: error.localizedDescription)
+    }
+  }
+
   nonisolated private static func shellQuote(_ raw: String) -> String {
     "'\(raw.replacingOccurrences(of: "'", with: "'\\''"))'"
   }
@@ -28053,8 +28213,12 @@ public final class WorkspaceStore: ObservableObject {
     systemAudioURL: URL?,
     systemAudioCaptureError: String?
   ) async -> MeetingTranscriptResult {
+    let configuration = meetingTranscriptionConfiguration()
     guard let systemAudioURL else {
-      let microphone = await transcribeAudioForMeeting(microphoneAudioURL)
+      let microphone = await transcribeAudioForMeeting(
+        microphoneAudioURL,
+        configuration: configuration
+      )
       return MeetingTranscriptResult.combined(
         microphone: microphone,
         systemAudio: nil,
@@ -28062,12 +28226,43 @@ public final class WorkspaceStore: ObservableObject {
       )
     }
 
-    // Both local transcribers are compute-heavy. Running them concurrently can
-    // oversubscribe every core (each whisper.cpp process has its own thread
-    // pool), starving input, scrolling, and window activation. Preserve the
-    // two-source transcript while using one background lane at a time.
-    let microphone = await transcribeAudioForMeeting(microphoneAudioURL)
-    let systemAudio = await transcribeAudioForMeeting(systemAudioURL)
+    let serializesSources: Bool
+    if configuration.provider == .automatic {
+      let localConfiguration = localWhisperConfiguration(includeCustomCommand: false)
+      let whisperStatus = await Task.detached(priority: .utility) {
+        LocalWhisperTranscriber.installationStatus(configuration: localConfiguration)
+      }.value
+      serializesSources = whisperStatus.isWhisperCppReady
+        || whisperStatus.openAIWhisperExecutablePath != nil
+        || whisperStatus.overrideCommand != nil
+    } else {
+      serializesSources = configuration.provider.serializesMeetingSources
+    }
+
+    let microphone: MeetingTranscriptResult
+    let systemAudio: MeetingTranscriptResult
+    if serializesSources {
+      // Two Whisper processes can each create their own CPU thread pool. Keep
+      // those providers on one background lane so the app stays responsive.
+      microphone = await transcribeAudioForMeeting(
+        microphoneAudioURL,
+        configuration: configuration
+      )
+      systemAudio = await transcribeAudioForMeeting(
+        systemAudioURL,
+        configuration: configuration
+      )
+    } else {
+      async let microphoneResult = transcribeAudioForMeeting(
+        microphoneAudioURL,
+        configuration: configuration
+      )
+      async let systemAudioResult = transcribeAudioForMeeting(
+        systemAudioURL,
+        configuration: configuration
+      )
+      (microphone, systemAudio) = await (microphoneResult, systemAudioResult)
+    }
     return MeetingTranscriptResult.combined(
       microphone: microphone,
       systemAudio: systemAudio,
@@ -28075,26 +28270,97 @@ public final class WorkspaceStore: ObservableObject {
     )
   }
 
-  private func transcribeAudioForMeeting(_ audioURL: URL) async -> MeetingTranscriptResult {
-    let whisperStatus = LocalWhisperTranscriber.installationStatus()
-    let hasConfiguredWhisper = whisperStatus.isWhisperCppReady
-      || whisperStatus.openAIWhisperExecutablePath != nil
-      || whisperStatus.overrideCommand != nil
-    if hasConfiguredWhisper,
-       let transcript = try? await LocalWhisperTranscriber().transcribe(audioURL: audioURL) {
-      return transcript
-    }
-
-    do {
-      return try await NativeSpeechTranscriber().transcribe(audioURL: audioURL)
-    } catch {
-      return MeetingTranscriptResult(
-        text: "",
-        status: error is NativeSpeechTranscriberError ? .unavailable : .failed,
-        engine: "macOS Speech",
-        errorMessage: error.localizedDescription
+  private func transcribeAudioForMeeting(
+    _ audioURL: URL,
+    configuration: MeetingTranscriptionConfiguration? = nil
+  ) async -> MeetingTranscriptResult {
+    let configuration = configuration ?? meetingTranscriptionConfiguration()
+    switch configuration.provider {
+    case .automatic:
+      let whisperConfiguration = LocalWhisperConfiguration(
+        modelOverride: configuration.whisperModelPath,
+        commandOverride: nil,
+        languageOverride: configuration.language
       )
+      let whisperFailure: Error
+      do {
+        return try await LocalWhisperTranscriber(configuration: whisperConfiguration)
+          .transcribe(audioURL: audioURL)
+      } catch {
+        whisperFailure = error
+      }
+      do {
+        let transcript = try await NativeSpeechTranscriber().transcribe(audioURL: audioURL)
+        return MeetingTranscriptResult(
+          text: transcript.text,
+          status: transcript.status,
+          engine: "macOS Speech (automatic fallback)",
+          errorMessage: "Local Whisper failed: \(whisperFailure.localizedDescription)"
+        )
+      } catch {
+        let messages = [
+          "Local Whisper: \(whisperFailure.localizedDescription)",
+          "macOS Speech: \(error.localizedDescription)"
+        ].joined(separator: "; ")
+        return failedTranscriptionResult(engine: "Automatic", error: messages)
+      }
+    case .localWhisper:
+      let whisperConfiguration = LocalWhisperConfiguration(
+        modelOverride: configuration.whisperModelPath,
+        languageOverride: configuration.language
+      )
+      do {
+        return try await LocalWhisperTranscriber(configuration: whisperConfiguration)
+          .transcribe(audioURL: audioURL)
+      } catch {
+        return failedTranscriptionResult(engine: "Local Whisper", error: error.localizedDescription)
+      }
+    case .fluidVoice:
+      do {
+        return try await FluidVoiceTranscriber(endpoint: configuration.fluidVoiceEndpoint)
+          .transcribe(audioURL: audioURL)
+      } catch {
+        return failedTranscriptionResult(engine: "Fluid Voice", error: error.localizedDescription)
+      }
+    case .macOSSpeech:
+      do {
+        return try await NativeSpeechTranscriber().transcribe(audioURL: audioURL)
+      } catch {
+        return MeetingTranscriptResult(
+          text: "",
+          status: error is NativeSpeechTranscriberError ? .unavailable : .failed,
+          engine: "macOS Speech",
+          errorMessage: error.localizedDescription
+        )
+      }
+    case .customCommand:
+      guard !configuration.customCommand.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        return failedTranscriptionResult(
+          engine: "Custom Command",
+          error: "No custom transcription command is configured."
+        )
+      }
+      do {
+        let whisperConfiguration = LocalWhisperConfiguration(
+          modelOverride: configuration.whisperModelPath,
+          commandOverride: configuration.customCommand,
+          languageOverride: configuration.language
+        )
+        return try await LocalWhisperTranscriber(configuration: whisperConfiguration)
+          .transcribe(audioURL: audioURL)
+      } catch {
+        return failedTranscriptionResult(engine: "Custom Command", error: error.localizedDescription)
+      }
     }
+  }
+
+  private func failedTranscriptionResult(engine: String, error: String) -> MeetingTranscriptResult {
+    MeetingTranscriptResult(
+      text: "",
+      status: .failed,
+      engine: engine,
+      errorMessage: error
+    )
   }
 
   private func transcribeAudioForOpenClawVoiceNote(_ audioURL: URL) async -> MeetingTranscriptResult {
@@ -28859,7 +29125,7 @@ public final class WorkspaceStore: ObservableObject {
         systemAudioArtifact: meetingProperty("system_audio_artifact", in: prefix),
         transcriptArtifact: meetingProperty("transcript_artifact", in: prefix),
         transcriptionStatus: meetingProperty("transcription_status", in: prefix),
-        idValue: firstOrgID(in: prefix)
+        idValue: meetingNodeID(in: prefix)
       ))
     }
 
@@ -29800,6 +30066,22 @@ public final class WorkspaceStore: ObservableObject {
       return nil
     }
     return nsText.substring(with: match.range(at: 1))
+  }
+
+  nonisolated private static func meetingNodeID(in prefix: String) -> String? {
+    let lines = prefix.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+    for (index, line) in lines.enumerated() {
+      guard line.range(of: #"^\*+\s+"#, options: .regularExpression) != nil else { continue }
+      let properties = scanPropertyDrawer(lines: lines, afterHeadingIndex: index)
+      guard properties["KIND"]?.lowercased() == "meeting",
+            let id = properties["ID"]?.trimmingCharacters(in: .whitespacesAndNewlines),
+            !id.isEmpty
+      else {
+        continue
+      }
+      return id
+    }
+    return firstOrgID(in: prefix)
   }
 
   nonisolated private static func meetingProperty(_ key: String, in prefix: String) -> String? {
@@ -30893,6 +31175,7 @@ private struct AudioSettingsProcessResult {
 private enum AudioSettingsError: LocalizedError {
   case homebrewNotFound
   case installFailed(String)
+  case providerUnavailable(String)
 
   var errorDescription: String? {
     switch self {
@@ -30902,6 +31185,8 @@ private enum AudioSettingsError: LocalizedError {
       output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         ? "Audio transcription install failed."
         : "Audio transcription install failed: \(output.trimmingCharacters(in: .whitespacesAndNewlines))"
+    case .providerUnavailable(let message):
+      message
     }
   }
 }

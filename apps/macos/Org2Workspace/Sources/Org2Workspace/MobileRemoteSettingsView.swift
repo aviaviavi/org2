@@ -17,6 +17,11 @@ struct WorkspaceSettingsView: View {
           Label("Documents", systemImage: "doc.richtext")
         }
 
+      MeetingSettingsView()
+        .tabItem {
+          Label("Meetings", systemImage: "waveform")
+        }
+
       AIChatSettingsView()
         .tabItem {
           Label("AI Chat", systemImage: "text.bubble")
@@ -28,6 +33,29 @@ struct WorkspaceSettingsView: View {
         }
     }
     .frame(width: 660, height: 620)
+  }
+}
+
+private struct MeetingSettingsView: View {
+  @EnvironmentObject private var store: WorkspaceStore
+
+  var body: some View {
+    Form {
+      Section {
+        MeetingTranscriptionSettingsView()
+      } header: {
+        Label("Meeting Transcription", systemImage: "waveform.badge.mic")
+      } footer: {
+        Text("These settings apply to recorded and imported meetings. Automatic prefers local Whisper and falls back to macOS Speech when necessary.")
+      }
+    }
+    .formStyle(.grouped)
+    .padding(8)
+    .frame(width: 560)
+    .frame(minHeight: 460)
+    .onAppear {
+      store.refreshAudioSettingsStatus()
+    }
   }
 }
 

@@ -45,6 +45,37 @@ private final class ThreadSafeStringRecorder: @unchecked Sendable {
   }
 }
 
+private final class FluidVoiceTestURLProtocol: URLProtocol, @unchecked Sendable {
+  private static let lock = NSLock()
+  nonisolated(unsafe) private static var requestHandler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
+
+  static func setRequestHandler(_ handler: @escaping (URLRequest) throws -> (HTTPURLResponse, Data)) {
+    lock.withLock { requestHandler = handler }
+  }
+
+  static func reset() {
+    lock.withLock { requestHandler = nil }
+  }
+
+  override class func canInit(with request: URLRequest) -> Bool { true }
+
+  override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+  override func startLoading() {
+    do {
+      let handler = Self.lock.withLock { Self.requestHandler }
+      let (response, data) = try XCTUnwrap(handler)(request)
+      client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+      client?.urlProtocol(self, didLoad: data)
+      client?.urlProtocolDidFinishLoading(self)
+    } catch {
+      client?.urlProtocol(self, didFailWithError: error)
+    }
+  }
+
+  override func stopLoading() {}
+}
+
 private struct OpenClawTranscriptFixture: Encodable {
   let version: Int
   let messages: [OpenClawChatMessage]?
@@ -4200,6 +4231,140 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(status.backendDescription, "whisper.cpp")
     XCTAssertEqual(status.whisperCppExecutablePath, executable.path)
     XCTAssertEqual(status.whisperCppModelPath, model.path)
+  }
+
+  func testLocalWhisperStatusSkipsBundledExecutableThatCannotLaunch() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-whisper-launch-check-\(UUID().uuidString)", isDirectory: true)
+    let resourcesBin = root.appendingPathComponent("resources/Whisper/bin", isDirectory: true)
+    let resourcesModel = root.appendingPathComponent("resources/Whisper/models/ggml-base.en.bin")
+    let pathBin = root.appendingPathComponent("path-bin", isDirectory: true)
+    try FileManager.default.createDirectory(at: resourcesBin, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: resourcesModel.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: pathBin, withIntermediateDirectories: true)
+    let broken = resourcesBin.appendingPathComponent("whisper-cli")
+    let working = pathBin.appendingPathComponent("whisper-cli")
+    try "#!/bin/sh\necho missing-library >&2\nexit 134\n".write(to: broken, atomically: true, encoding: .utf8)
+    try "#!/bin/sh\nexit 0\n".write(to: working, atomically: true, encoding: .utf8)
+    try Data("fake model".utf8).write(to: resourcesModel)
+    for executable in [broken, working] {
+      try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
+    }
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let status = LocalWhisperTranscriber.installationStatus(
+      configuration: LocalWhisperConfiguration(
+        environment: ["PATH": pathBin.path],
+        bundleResourceURL: root.appendingPathComponent("resources")
+      )
+    )
+
+    XCTAssertTrue(status.isWhisperCppReady)
+    XCTAssertEqual(status.whisperCppExecutablePath, working.path)
+    XCTAssertNotNil(status.whisperCppLaunchError)
+  }
+
+  func testFluidVoiceRejectsNonLoopbackEndpoint() {
+    XCTAssertThrowsError(try FluidVoiceTranscriber(endpoint: "http://example.com")) { error in
+      XCTAssertEqual(
+        error.localizedDescription,
+        FluidVoiceTranscriberError.nonLocalEndpoint.localizedDescription
+      )
+    }
+  }
+
+  func testFluidVoiceMergesOverlappingChunkText() {
+    XCTAssertEqual(
+      FluidVoiceTranscriber.mergedTranscriptSegments([
+        "We should ship this on Friday.",
+        "this on Friday. Then notify Gabi."
+      ]),
+      "We should ship this on Friday. Then notify Gabi."
+    )
+  }
+
+  func testFluidVoiceChunksLongAudioAndRemovesTemporaryFiles() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-fluid-voice-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let audioURL = root.appendingPathComponent("meeting.m4a")
+    try writeSilentM4A(to: audioURL)
+    defer {
+      FluidVoiceTestURLProtocol.reset()
+      try? FileManager.default.removeItem(at: root)
+    }
+
+    let requestedPaths = ThreadSafeStringRecorder()
+    FluidVoiceTestURLProtocol.setRequestHandler { request in
+      let body: Data
+      if let requestBody = request.httpBody {
+        body = requestBody
+      } else {
+        let stream = try XCTUnwrap(request.httpBodyStream)
+        stream.open()
+        defer { stream.close() }
+        var collected = Data()
+        let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: 4_096)
+        defer { buffer.deallocate() }
+        while true {
+          let count = stream.read(buffer, maxLength: 4_096)
+          guard count >= 0 else { throw stream.streamError ?? CocoaError(.fileReadUnknown) }
+          if count == 0 { break }
+          collected.append(buffer, count: count)
+        }
+        body = collected
+      }
+      let payload = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: String])
+      requestedPaths.append(try XCTUnwrap(payload["path"]))
+      let response = try XCTUnwrap(HTTPURLResponse(
+        url: request.url!,
+        statusCode: 200,
+        httpVersion: nil,
+        headerFields: ["Content-Type": "application/json"]
+      ))
+      let data = try JSONSerialization.data(withJSONObject: [
+        "text": "hello meeting",
+        "confidence": 0.9,
+        "sampleCount": 640,
+        "provider": "Parakeet"
+      ])
+      return (response, data)
+    }
+    let sessionConfiguration = URLSessionConfiguration.ephemeral
+    sessionConfiguration.protocolClasses = [FluidVoiceTestURLProtocol.self]
+    let session = URLSession(configuration: sessionConfiguration)
+    let transcriber = try FluidVoiceTranscriber(
+      session: session,
+      maximumChunkDuration: 0.04,
+      chunkOverlap: 0.005
+    )
+
+    let result = try await transcriber.transcribe(audioURL: audioURL)
+
+    XCTAssertEqual(result.text, "hello meeting")
+    XCTAssertTrue(result.engine.contains("Fluid Voice (Parakeet"))
+    XCTAssertGreaterThan(requestedPaths.values.count, 1)
+    XCTAssertTrue(requestedPaths.values.allSatisfy { !FileManager.default.fileExists(atPath: $0) })
+  }
+
+  @MainActor
+  func testMeetingTranscriptionProviderSettingsPersist() throws {
+    let suiteName = "org2-transcription-settings-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let cli = try Org2CLI(repoRoot: Org2CLI.defaultRepoRoot())
+    let store = WorkspaceStore(cli: cli, defaults: defaults)
+    store.meetingTranscriptionProvider = .fluidVoice
+    store.fluidVoiceEndpointText = "http://localhost:47733"
+    store.whisperModelPathText = "/tmp/custom-model.bin"
+    store.transcriptionLanguageText = "es"
+
+    let restored = WorkspaceStore(cli: cli, defaults: defaults)
+
+    XCTAssertEqual(restored.meetingTranscriptionProvider, .fluidVoice)
+    XCTAssertEqual(restored.fluidVoiceEndpointText, "http://localhost:47733")
+    XCTAssertEqual(restored.whisperModelPathText, "/tmp/custom-model.bin")
+    XCTAssertEqual(restored.transcriptionLanguageText, "es")
   }
 
   func testTranscriptionStatusUsesBuiltInMacOSFallbackWithoutWhisper() {

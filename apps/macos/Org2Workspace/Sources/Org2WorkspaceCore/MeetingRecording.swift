@@ -404,32 +404,109 @@ public enum MeetingArtifactWriter {
   }
 }
 
+public enum MeetingTranscriptionProvider: String, CaseIterable, Identifiable, Sendable {
+  case automatic
+  case localWhisper = "local-whisper"
+  case fluidVoice = "fluid-voice"
+  case macOSSpeech = "macos-speech"
+  case customCommand = "custom-command"
+
+  public var id: String { rawValue }
+
+  public var label: String {
+    switch self {
+    case .automatic: "Automatic"
+    case .localWhisper: "Local Whisper"
+    case .fluidVoice: "Fluid Voice"
+    case .macOSSpeech: "macOS Speech"
+    case .customCommand: "Custom Command"
+    }
+  }
+
+  public var detailText: String {
+    switch self {
+    case .automatic:
+      "Uses local Whisper when available, then falls back to macOS Speech with a visible diagnostic."
+    case .localWhisper:
+      "Uses the bundled or installed whisper.cpp runtime without silently changing providers."
+    case .fluidVoice:
+      "Uses Fluid Voice's selected speech model through its local API."
+    case .macOSSpeech:
+      "Uses Apple's built-in Speech recognizer."
+    case .customCommand:
+      "Runs a local command that writes the transcript to standard output."
+    }
+  }
+
+  public var serializesMeetingSources: Bool {
+    switch self {
+    case .localWhisper, .customCommand:
+      true
+    case .automatic, .fluidVoice, .macOSSpeech:
+      false
+    }
+  }
+}
+
+public struct MeetingTranscriptionConfiguration: Equatable, Sendable {
+  public static let defaultFluidVoiceEndpoint = "http://127.0.0.1:47733"
+
+  public let provider: MeetingTranscriptionProvider
+  public let fluidVoiceEndpoint: String
+  public let customCommand: String
+  public let whisperModelPath: String
+  public let language: String
+
+  public init(
+    provider: MeetingTranscriptionProvider = .automatic,
+    fluidVoiceEndpoint: String = Self.defaultFluidVoiceEndpoint,
+    customCommand: String = "",
+    whisperModelPath: String = "",
+    language: String = "en"
+  ) {
+    self.provider = provider
+    self.fluidVoiceEndpoint = fluidVoiceEndpoint
+    self.customCommand = customCommand
+    self.whisperModelPath = whisperModelPath
+    self.language = language
+  }
+}
+
 public struct LocalWhisperConfiguration: Sendable {
   public let environment: [String: String]
   public let bundleResourceURL: URL?
+  public let modelOverride: String?
+  public let commandOverride: String?
+  public let languageOverride: String?
 
   public init(
     environment: [String: String] = ProcessInfo.processInfo.environment,
-    bundleResourceURL: URL? = Bundle.main.resourceURL
+    bundleResourceURL: URL? = Bundle.main.resourceURL,
+    modelOverride: String? = nil,
+    commandOverride: String? = nil,
+    languageOverride: String? = nil
   ) {
     self.environment = environment
     self.bundleResourceURL = bundleResourceURL
+    self.modelOverride = modelOverride?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+    self.commandOverride = commandOverride?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+    self.languageOverride = languageOverride?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
   }
 
   public var requestedModel: String? {
-    environment["ORG2_WORKSPACE_WHISPER_MODEL"]?
+    modelOverride ?? environment["ORG2_WORKSPACE_WHISPER_MODEL"]?
       .trimmingCharacters(in: .whitespacesAndNewlines)
       .nilIfEmpty
   }
 
   public var overrideCommand: String? {
-    environment["ORG2_WORKSPACE_WHISPER_COMMAND"]?
+    commandOverride ?? environment["ORG2_WORKSPACE_WHISPER_COMMAND"]?
       .trimmingCharacters(in: .whitespacesAndNewlines)
       .nilIfEmpty
   }
 
   public var requestedLanguage: String {
-    environment["ORG2_WORKSPACE_WHISPER_LANGUAGE"]?
+    languageOverride ?? environment["ORG2_WORKSPACE_WHISPER_LANGUAGE"]?
       .trimmingCharacters(in: .whitespacesAndNewlines)
       .nilIfEmpty ?? "en"
   }
@@ -457,6 +534,23 @@ public struct LocalWhisperInstallationStatus: Equatable, Sendable {
   public let whisperCppModelPath: String?
   public let openAIWhisperExecutablePath: String?
   public let overrideCommand: String?
+  public let whisperCppLaunchError: String?
+
+  public init(
+    backendDescription: String,
+    whisperCppExecutablePath: String?,
+    whisperCppModelPath: String?,
+    openAIWhisperExecutablePath: String?,
+    overrideCommand: String?,
+    whisperCppLaunchError: String? = nil
+  ) {
+    self.backendDescription = backendDescription
+    self.whisperCppExecutablePath = whisperCppExecutablePath
+    self.whisperCppModelPath = whisperCppModelPath
+    self.openAIWhisperExecutablePath = openAIWhisperExecutablePath
+    self.overrideCommand = overrideCommand
+    self.whisperCppLaunchError = whisperCppLaunchError
+  }
 
   public var isWhisperCppReady: Bool {
     whisperCppExecutablePath != nil && whisperCppModelPath != nil
@@ -487,7 +581,269 @@ public struct LocalWhisperInstallationStatus: Equatable, Sendable {
     if let overrideCommand {
       return "Using custom command: \(overrideCommand)"
     }
+    if let whisperCppLaunchError {
+      return "whisper.cpp could not launch: \(whisperCppLaunchError)"
+    }
     return "Uses macOS Speech out of the box. whisper.cpp remains an optional faster local backend."
+  }
+}
+
+public enum FluidVoiceTranscriberError: LocalizedError {
+  case invalidEndpoint
+  case nonLocalEndpoint
+  case unavailable(String)
+  case rejected(String)
+  case invalidResponse
+  case emptyTranscript
+  case audioPreparationFailed(String)
+
+  public var errorDescription: String? {
+    switch self {
+    case .invalidEndpoint:
+      "Enter a valid Fluid Voice endpoint, such as http://127.0.0.1:47733."
+    case .nonLocalEndpoint:
+      "Fluid Voice must use a loopback endpoint on localhost."
+    case let .unavailable(message):
+      "Fluid Voice Local API is unavailable\(message.isEmpty ? "." : ": \(message)")"
+    case let .rejected(message):
+      "Fluid Voice rejected the transcription\(message.isEmpty ? "." : ": \(message)")"
+    case .invalidResponse:
+      "Fluid Voice returned an invalid response."
+    case .emptyTranscript:
+      "Fluid Voice completed without producing text."
+    case let .audioPreparationFailed(message):
+      "Could not prepare meeting audio for Fluid Voice: \(message)"
+    }
+  }
+}
+
+public struct FluidVoiceTranscriber: Sendable {
+  public static let maximumChunkDuration: TimeInterval = 285
+  public static let chunkOverlap: TimeInterval = 1
+
+  public let endpoint: URL
+  private let session: URLSession
+  private let maximumChunkDuration: TimeInterval
+  private let chunkOverlap: TimeInterval
+
+  public init(
+    endpoint rawEndpoint: String = MeetingTranscriptionConfiguration.defaultFluidVoiceEndpoint,
+    session: URLSession = .shared,
+    maximumChunkDuration: TimeInterval = Self.maximumChunkDuration,
+    chunkOverlap: TimeInterval = Self.chunkOverlap
+  ) throws {
+    guard let endpoint = Self.normalizedEndpoint(rawEndpoint) else {
+      throw FluidVoiceTranscriberError.invalidEndpoint
+    }
+    guard Self.isLoopback(endpoint) else {
+      throw FluidVoiceTranscriberError.nonLocalEndpoint
+    }
+    self.endpoint = endpoint
+    self.session = session
+    self.maximumChunkDuration = maximumChunkDuration
+    self.chunkOverlap = max(0, min(chunkOverlap, maximumChunkDuration / 4))
+  }
+
+  public func healthDescription() async throws -> String {
+    let healthURL = endpoint.appendingPathComponent("v1/health")
+    var request = URLRequest(url: healthURL)
+    request.timeoutInterval = 3
+    do {
+      let (data, response) = try await session.data(for: request)
+      guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+        throw FluidVoiceTranscriberError.unavailable(Self.responseMessage(data))
+      }
+      let payload = try JSONDecoder().decode(HealthResponse.self, from: data)
+      return "Fluid Voice \(payload.version) is ready"
+    } catch let error as FluidVoiceTranscriberError {
+      throw error
+    } catch {
+      throw FluidVoiceTranscriberError.unavailable(error.localizedDescription)
+    }
+  }
+
+  public func transcribe(audioURL: URL) async throws -> MeetingTranscriptResult {
+    let prepared = try await Self.preparedChunks(
+      audioURL: audioURL,
+      maximumDuration: maximumChunkDuration,
+      overlap: chunkOverlap
+    )
+    defer {
+      for url in prepared.temporaryURLs {
+        try? FileManager.default.removeItem(at: url)
+      }
+    }
+
+    var segments: [String] = []
+    var providerNames: [String] = []
+    for url in prepared.urls {
+      let response = try await transcribeFile(at: url)
+      segments.append(response.text)
+      providerNames.append(response.provider)
+    }
+    let text = Self.mergedTranscriptSegments(segments)
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !text.isEmpty else { throw FluidVoiceTranscriberError.emptyTranscript }
+    let provider = providerNames.first(where: { !$0.isEmpty }) ?? "selected model"
+    let chunkSuffix = prepared.urls.count > 1 ? ", \(prepared.urls.count) chunks" : ""
+    return MeetingTranscriptResult(
+      text: text,
+      status: .complete,
+      engine: "Fluid Voice (\(provider)\(chunkSuffix))"
+    )
+  }
+
+  public static func mergedTranscriptSegments(_ segments: [String]) -> String {
+    var mergedWords: [String] = []
+    for segment in segments {
+      let words = segment.split(whereSeparator: { $0.isWhitespace }).map(String.init)
+      guard !words.isEmpty else { continue }
+      let maximumOverlap = min(24, mergedWords.count, words.count)
+      var overlap = 0
+      if maximumOverlap > 0 {
+        for count in stride(from: maximumOverlap, through: 1, by: -1) {
+          let tail = mergedWords.suffix(count).map(Self.normalizedWord)
+          let head = words.prefix(count).map(Self.normalizedWord)
+          if tail == head {
+            overlap = count
+            break
+          }
+        }
+      }
+      mergedWords.append(contentsOf: words.dropFirst(overlap))
+    }
+    return mergedWords.joined(separator: " ")
+  }
+
+  private func transcribeFile(at audioURL: URL) async throws -> TranscriptionResponse {
+    let url = endpoint.appendingPathComponent("v1/transcribe")
+    var request = URLRequest(url: url)
+    request.httpMethod = "POST"
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    request.timeoutInterval = 300
+    request.httpBody = try JSONEncoder().encode(TranscriptionRequest(path: audioURL.path))
+    do {
+      let (data, response) = try await session.data(for: request)
+      guard let http = response as? HTTPURLResponse else {
+        throw FluidVoiceTranscriberError.invalidResponse
+      }
+      guard (200..<300).contains(http.statusCode) else {
+        throw FluidVoiceTranscriberError.rejected(Self.responseMessage(data))
+      }
+      return try JSONDecoder().decode(TranscriptionResponse.self, from: data)
+    } catch let error as FluidVoiceTranscriberError {
+      throw error
+    } catch is DecodingError {
+      throw FluidVoiceTranscriberError.invalidResponse
+    } catch {
+      throw FluidVoiceTranscriberError.unavailable(error.localizedDescription)
+    }
+  }
+
+  private static func preparedChunks(
+    audioURL: URL,
+    maximumDuration: TimeInterval,
+    overlap: TimeInterval
+  ) async throws -> (urls: [URL], temporaryURLs: [URL]) {
+    guard let duration = MeetingArtifactWriter.audioDuration(at: audioURL), duration > maximumDuration else {
+      return ([audioURL], [])
+    }
+    return try await Task.detached(priority: .utility) {
+      let normalizedURL = FileManager.default.temporaryDirectory
+        .appendingPathComponent("org2-fluid-voice-input-\(UUID().uuidString).wav")
+      var temporaryURLs = [normalizedURL]
+      do {
+        try LocalWhisperTranscriber.convertAudioToWhisperWAV(sourceURL: audioURL, outputURL: normalizedURL)
+        let source = try AVAudioFile(forReading: normalizedURL)
+        let sampleRate = source.processingFormat.sampleRate
+        guard sampleRate > 0 else {
+          throw FluidVoiceTranscriberError.audioPreparationFailed("The audio sample rate is invalid.")
+        }
+        let framesPerChunk = AVAudioFramePosition(maximumDuration * sampleRate)
+        let overlapFrames = AVAudioFramePosition(overlap * sampleRate)
+        guard framesPerChunk > overlapFrames else {
+          throw FluidVoiceTranscriberError.audioPreparationFailed("The chunk duration is too small.")
+        }
+        var start: AVAudioFramePosition = 0
+        var chunks: [URL] = []
+        while start < source.length {
+          let frameCount = min(framesPerChunk, source.length - start)
+          guard let buffer = AVAudioPCMBuffer(
+            pcmFormat: source.processingFormat,
+            frameCapacity: AVAudioFrameCount(frameCount)
+          ) else {
+            throw FluidVoiceTranscriberError.audioPreparationFailed("Could not allocate an audio chunk buffer.")
+          }
+          source.framePosition = start
+          try source.read(into: buffer, frameCount: AVAudioFrameCount(frameCount))
+          let chunkURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("org2-fluid-voice-chunk-\(UUID().uuidString).wav")
+          let output = try AVAudioFile(forWriting: chunkURL, settings: source.fileFormat.settings)
+          try output.write(from: buffer)
+          chunks.append(chunkURL)
+          temporaryURLs.append(chunkURL)
+          if start + frameCount >= source.length { break }
+          start += frameCount - overlapFrames
+        }
+        return (chunks, temporaryURLs)
+      } catch let error as FluidVoiceTranscriberError {
+        for url in temporaryURLs { try? FileManager.default.removeItem(at: url) }
+        throw error
+      } catch {
+        for url in temporaryURLs { try? FileManager.default.removeItem(at: url) }
+        throw FluidVoiceTranscriberError.audioPreparationFailed(error.localizedDescription)
+      }
+    }.value
+  }
+
+  private static func normalizedEndpoint(_ raw: String) -> URL? {
+    let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard var components = URLComponents(string: trimmed),
+          components.scheme?.lowercased() == "http",
+          components.host != nil,
+          components.path.trimmingCharacters(in: CharacterSet(charactersIn: "/")).isEmpty
+    else { return nil }
+    components.path = ""
+    components.query = nil
+    components.fragment = nil
+    return components.url
+  }
+
+  private static func isLoopback(_ url: URL) -> Bool {
+    guard let host = url.host?.lowercased() else { return false }
+    return host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "[::1]"
+  }
+
+  private static func normalizedWord(_ raw: String) -> String {
+    raw.trimmingCharacters(in: .punctuationCharacters).lowercased()
+  }
+
+  private static func responseMessage(_ data: Data) -> String {
+    if let payload = try? JSONDecoder().decode(ErrorResponse.self, from: data) {
+      return payload.error
+    }
+    return String(data: data, encoding: .utf8)?
+      .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+  }
+
+  private struct HealthResponse: Decodable {
+    let status: String
+    let version: String
+  }
+
+  private struct TranscriptionRequest: Encodable {
+    let path: String
+  }
+
+  private struct TranscriptionResponse: Decodable {
+    let text: String
+    let confidence: Float
+    let sampleCount: Int
+    let provider: String
+  }
+
+  private struct ErrorResponse: Decodable {
+    let error: String
   }
 }
 
@@ -598,7 +954,7 @@ public struct LocalWhisperTranscriber: Sendable {
     if let command = configuration.overrideCommand {
       return "custom local command: \(command)"
     }
-    if resolveWhisperCppExecutable(configuration: configuration) != nil,
+    if resolveLaunchableWhisperCppExecutable(configuration: configuration).executable != nil,
        resolveWhisperCppModel(configuration: configuration) != nil {
       return "whisper.cpp"
     }
@@ -611,7 +967,8 @@ public struct LocalWhisperTranscriber: Sendable {
   public static func installationStatus(
     configuration: LocalWhisperConfiguration = LocalWhisperConfiguration()
   ) -> LocalWhisperInstallationStatus {
-    let whisperCpp = resolveWhisperCppExecutable(configuration: configuration)
+    let whisperCppResolution = resolveLaunchableWhisperCppExecutable(configuration: configuration)
+    let whisperCpp = whisperCppResolution.executable
     let model = resolveWhisperCppModel(configuration: configuration)
     let openAIWhisper = resolveExecutable(named: "whisper", environment: configuration.environment)
     return LocalWhisperInstallationStatus(
@@ -619,7 +976,8 @@ public struct LocalWhisperTranscriber: Sendable {
       whisperCppExecutablePath: whisperCpp?.path,
       whisperCppModelPath: model,
       openAIWhisperExecutablePath: openAIWhisper?.path,
-      overrideCommand: configuration.overrideCommand
+      overrideCommand: configuration.overrideCommand,
+      whisperCppLaunchError: whisperCppResolution.error
     )
   }
 
@@ -632,16 +990,22 @@ public struct LocalWhisperTranscriber: Sendable {
       return MeetingTranscriptResult(text: result, status: .complete, engine: "local-whisper:custom")
     }
 
-    if let whisperCpp = resolveWhisperCppExecutable(configuration: configuration),
-      let model = resolveWhisperCppModel(configuration: configuration) {
-      let result = try runWhisperCpp(
-        executable: whisperCpp,
-        model: model,
-        audioURL: audioURL,
-        language: configuration.requestedLanguage,
-        threadCount: configuration.requestedThreadCount
-      )
-      return MeetingTranscriptResult(text: result, status: .complete, engine: "whisper.cpp")
+    var whisperCppErrors: [String] = []
+    if let model = resolveWhisperCppModel(configuration: configuration) {
+      for whisperCpp in resolveWhisperCppExecutables(configuration: configuration) {
+        do {
+          let result = try runWhisperCpp(
+            executable: whisperCpp,
+            model: model,
+            audioURL: audioURL,
+            language: configuration.requestedLanguage,
+            threadCount: configuration.requestedThreadCount
+          )
+          return MeetingTranscriptResult(text: result, status: .complete, engine: "whisper.cpp")
+        } catch {
+          whisperCppErrors.append("\(whisperCpp.path): \(error.localizedDescription)")
+        }
+      }
     }
 
     if let whisper = resolveExecutable(named: "whisper", environment: configuration.environment) {
@@ -654,6 +1018,13 @@ public struct LocalWhisperTranscriber: Sendable {
       return MeetingTranscriptResult(text: result, status: .complete, engine: "openai-whisper")
     }
 
+    if !whisperCppErrors.isEmpty {
+      throw LocalWhisperError.commandFailed(
+        "whisper.cpp",
+        -1,
+        whisperCppErrors.joined(separator: "; ")
+      )
+    }
     throw LocalWhisperError.notConfigured
   }
 
@@ -720,7 +1091,7 @@ public struct LocalWhisperTranscriber: Sendable {
     }
   }
 
-  private static func convertAudioToWhisperWAV(sourceURL: URL, outputURL: URL) throws {
+  static func convertAudioToWhisperWAV(sourceURL: URL, outputURL: URL) throws {
     if FileManager.default.fileExists(atPath: outputURL.path) {
       try FileManager.default.removeItem(at: outputURL)
     }
@@ -812,14 +1183,40 @@ public struct LocalWhisperTranscriber: Sendable {
     return candidates.first { FileManager.default.fileExists(atPath: $0) }
   }
 
-  private static func resolveWhisperCppExecutable(configuration: LocalWhisperConfiguration) -> URL? {
+  private static func resolveWhisperCppExecutables(configuration: LocalWhisperConfiguration) -> [URL] {
+    var candidates: [URL] = []
     if let bundledExecutable = configuration.bundleResourceURL?
       .appendingPathComponent("Whisper/bin/whisper-cli"),
       FileManager.default.isExecutableFile(atPath: bundledExecutable.path) {
-      return bundledExecutable
+      candidates.append(bundledExecutable)
     }
-    return resolveExecutable(named: "whisper-cli", environment: configuration.environment)
-      ?? resolveExecutable(named: "whisper-cpp", environment: configuration.environment)
+    if let executable = resolveExecutable(named: "whisper-cli", environment: configuration.environment) {
+      candidates.append(executable)
+    }
+    if let executable = resolveExecutable(named: "whisper-cpp", environment: configuration.environment) {
+      candidates.append(executable)
+    }
+    var seen = Set<String>()
+    return candidates.filter { seen.insert($0.standardizedFileURL.path).inserted }
+  }
+
+  private static func resolveLaunchableWhisperCppExecutable(
+    configuration: LocalWhisperConfiguration
+  ) -> (executable: URL?, error: String?) {
+    var errors: [String] = []
+    for executable in resolveWhisperCppExecutables(configuration: configuration) {
+      do {
+        _ = try runProcess(
+          executableURL: executable,
+          arguments: ["--help"],
+          currentDirectoryURL: executable.deletingLastPathComponent()
+        )
+        return (executable, errors.isEmpty ? nil : errors.joined(separator: "; "))
+      } catch {
+        errors.append("\(executable.lastPathComponent): \(error.localizedDescription)")
+      }
+    }
+    return (nil, errors.joined(separator: "; ").nilIfEmpty)
   }
 
   private static func resolveExecutable(named name: String, environment: [String: String]) -> URL? {
