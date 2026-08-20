@@ -114,7 +114,7 @@ struct AIChatSettingsView: View {
             Text(store.meetingReadyAutomationStatusText)
               .font(.callout)
               .foregroundStyle(meetingAutomationStatusColor)
-            Text("The first enable starts from now; later completed meetings are queued once and reconciled after relaunch.")
+            Text("Only successful transcriptions completed by this Mac after automation is enabled are queued. Opening, refreshing, or relaunching with existing meetings never triggers it.")
               .font(.caption)
               .foregroundStyle(.secondary)
           }

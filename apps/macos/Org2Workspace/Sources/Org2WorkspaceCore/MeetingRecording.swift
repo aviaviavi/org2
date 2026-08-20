@@ -965,14 +965,27 @@ public struct LocalWhisperTranscriber: Sendable {
   }
 
   public static func installationStatus(
-    configuration: LocalWhisperConfiguration = LocalWhisperConfiguration()
+    configuration: LocalWhisperConfiguration = LocalWhisperConfiguration(),
+    verifyExecutableLaunch: Bool = true
   ) -> LocalWhisperInstallationStatus {
-    let whisperCppResolution = resolveLaunchableWhisperCppExecutable(configuration: configuration)
+    let whisperCppResolution: (executable: URL?, error: String?) = verifyExecutableLaunch
+      ? resolveLaunchableWhisperCppExecutable(configuration: configuration)
+      : (resolveWhisperCppExecutables(configuration: configuration).first, nil)
     let whisperCpp = whisperCppResolution.executable
     let model = resolveWhisperCppModel(configuration: configuration)
     let openAIWhisper = resolveExecutable(named: "whisper", environment: configuration.environment)
+    let backendDescription: String
+    if let command = configuration.overrideCommand {
+      backendDescription = "custom local command: \(command)"
+    } else if whisperCpp != nil, model != nil {
+      backendDescription = "whisper.cpp"
+    } else if openAIWhisper != nil {
+      backendDescription = "OpenAI Whisper CLI"
+    } else {
+      backendDescription = "macOS Speech"
+    }
     return LocalWhisperInstallationStatus(
-      backendDescription: resolvedBackendDescription(configuration: configuration),
+      backendDescription: backendDescription,
       whisperCppExecutablePath: whisperCpp?.path,
       whisperCppModelPath: model,
       openAIWhisperExecutablePath: openAIWhisper?.path,

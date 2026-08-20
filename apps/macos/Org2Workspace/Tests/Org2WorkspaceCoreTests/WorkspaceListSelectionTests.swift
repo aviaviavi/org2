@@ -39,6 +39,23 @@ final class WorkspaceListSelectionTests: XCTestCase {
     XCTAssertTrue(source.contains("saveMeetingReadyAutomationConfiguration"))
   }
 
+  func testOpeningSettingsDoesNotSynchronouslyProbeTheTranscriptionRuntime() throws {
+    let testFile = URL(fileURLWithPath: #filePath)
+    let packageRoot = testFile
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+    let settingsSource = packageRoot
+      .appendingPathComponent("Sources/Org2Workspace/MobileRemoteSettingsView.swift")
+    let settings = try String(contentsOf: settingsSource, encoding: .utf8)
+    let contentViewSource = packageRoot
+      .appendingPathComponent("Sources/Org2WorkspaceCore/ContentView.swift")
+    let contentView = try String(contentsOf: contentViewSource, encoding: .utf8)
+
+    XCTAssertFalse(settings.contains(".onAppear {\n      store.refreshAudioSettingsStatus()"))
+    XCTAssertTrue(contentView.contains("Task { await store.refreshAudioSettingsStatusAsync() }"))
+  }
+
   func testCommandNStartsANewAIThreadInsteadOfOpeningAnotherWindow() throws {
     let testFile = URL(fileURLWithPath: #filePath)
     let packageRoot = testFile

@@ -6451,7 +6451,7 @@ public struct MeetingTranscriptionSettingsView: View {
         .disabled(store.isTestingTranscriptionProvider)
 
         Button {
-          store.refreshAudioSettingsStatus()
+          Task { await store.refreshAudioSettingsStatusAsync() }
         } label: {
           Label("Refresh", systemImage: "arrow.clockwise")
         }

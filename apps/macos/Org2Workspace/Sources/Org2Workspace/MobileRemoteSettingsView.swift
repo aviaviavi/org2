@@ -53,9 +53,6 @@ private struct MeetingSettingsView: View {
     .padding(8)
     .frame(width: 560)
     .frame(minHeight: 460)
-    .onAppear {
-      store.refreshAudioSettingsStatus()
-    }
   }
 }
 

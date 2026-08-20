@@ -17,7 +17,7 @@ private actor MeetingAutomationSendRecorder {
 
 final class MeetingReadyAutomationTests: XCTestCase {
   @MainActor
-  func testFirstEnableBaselinesExistingMeetingsAndQueuesEachNewMeetingOnce() async throws {
+  func testOnlySuccessfulCompletionEventsQueueEachNewMeetingOnce() async throws {
     let fixture = try makeFixture()
     defer { fixture.cleanup() }
     let recorder = MeetingAutomationSendRecorder()
@@ -57,8 +57,16 @@ final class MeetingReadyAutomationTests: XCTestCase {
       idValue: "transcript-needs-attention",
       transcriptionStatus: "unavailable"
     )
-    store.reconcileMeetingReadyAutomationForTesting(with: [oldMeeting, newMeeting, unavailableMeeting])
-    store.reconcileMeetingReadyAutomationForTesting(with: [oldMeeting, newMeeting, unavailableMeeting])
+    let failedMeeting = meeting(
+      title: "Transcript failed",
+      file: fixture.root.appendingPathComponent("meetings/transcript-failed.org2").path,
+      idValue: "transcript-failed",
+      transcriptionStatus: "failed"
+    )
+    store.meetingTranscriptionDidCompleteForTesting(newMeeting)
+    store.meetingTranscriptionDidCompleteForTesting(newMeeting)
+    store.meetingTranscriptionDidCompleteForTesting(unavailableMeeting)
+    store.meetingTranscriptionDidCompleteForTesting(failedMeeting)
 
     let thread = try XCTUnwrap(
       store.openClawChatThreads.first(where: { $0.title.contains("Launch review") })
@@ -70,14 +78,13 @@ final class MeetingReadyAutomationTests: XCTestCase {
     ))
     XCTAssertTrue(userMessages[0].content.contains("Extract the follow-ups."))
 
-    let unavailableThread = try XCTUnwrap(
-      store.openClawChatThreads.first(where: { $0.title.contains("Transcript needs attention") })
-    )
-    XCTAssertEqual(unavailableThread.messages.filter { $0.role == .user }.count, 1)
+    XCTAssertFalse(store.openClawChatThreads.contains(where: {
+      $0.title.contains("Transcript needs attention") || $0.title.contains("Transcript failed")
+    }))
   }
 
   @MainActor
-  func testRelaunchReconcilesAnUndeliveredMeetingIntoTheConfiguredThread() async throws {
+  func testRelaunchAndRefreshDoNotQueueHistoricalCompletedMeetings() async throws {
     let fixture = try makeFixture()
     defer { fixture.cleanup() }
     let firstStore = WorkspaceStore(
@@ -97,37 +104,44 @@ final class MeetingReadyAutomationTests: XCTestCase {
     ))
     firstStore.flushDeferredAIChatTranscriptPersistence()
 
-    let recorder = MeetingAutomationSendRecorder()
     let relaunchedStore = WorkspaceStore(
       defaults: fixture.defaults,
       openClawTranscriptURL: fixture.transcript,
-      openClawSendHandler: { messages, _, _, _ in
-        await recorder.send(messages)
-      },
       legacyDefaultsDomains: []
     )
     relaunchedStore.setCorpusRoot(fixture.root, persistsDefault: false)
     XCTAssertTrue(relaunchedStore.meetingReadyAutomationSettings.isEnabled)
     XCTAssertEqual(relaunchedStore.meetingReadyAutomationSettings.threadID, threadID)
 
-    let missedMeeting = meeting(
-      title: "Customer sync",
-      file: fixture.root.appendingPathComponent("meetings/customer-sync.org2").path,
-      idValue: "customer-sync"
-    )
-    relaunchedStore.reconcileMeetingReadyAutomationForTesting(with: [missedMeeting])
-    relaunchedStore.reconcileMeetingReadyAutomationForTesting(with: [missedMeeting])
+    let meetingsDirectory = fixture.root.appendingPathComponent("meetings", isDirectory: true)
+    try FileManager.default.createDirectory(at: meetingsDirectory, withIntermediateDirectories: true)
+    let file = meetingsDirectory.appendingPathComponent("customer-sync.org2")
+    try """
+    #+TITLE: Meeting: Customer sync
+    #+ORG2_KIND: meeting
+
+    * Meeting: Customer sync
+    :PROPERTIES:
+    :ID: customer-sync
+    :kind: meeting
+    :recorded_at: 2026-08-19T12:00:00-07:00
+    :audio_artifact: meetings/customer-sync.wav
+    :transcript_artifact: meetings/customer-sync.transcript.org2
+    :transcription_status: complete
+    :END:
+    """.write(to: file, atomically: true, encoding: .utf8)
+
+    await relaunchedStore.refreshMeetings()
+    await relaunchedStore.refreshMeetings()
 
     let target = try XCTUnwrap(
       relaunchedStore.openClawChatThreads.first(where: { $0.id == threadID })
     )
-    XCTAssertFalse(target.isSettled)
-    XCTAssertEqual(target.messages.filter { $0.role == .user }.count, 1)
-    XCTAssertTrue(
-      target.messages.first(where: { $0.role == .user })?.content.contains(
-        "#+org2_automation_event_id: meeting-ready:meeting-id:customer-sync"
-      ) == true
-    )
+    XCTAssertTrue(target.isSettled)
+    XCTAssertEqual(target.messages.filter { $0.role == .user }.count, 0)
+    XCTAssertFalse(relaunchedStore.openClawChatThreads.contains(where: {
+      $0.messages.contains(where: { $0.content.contains("meeting-ready:meeting-id:customer-sync") })
+    }))
   }
 
   @MainActor
@@ -158,7 +172,7 @@ final class MeetingReadyAutomationTests: XCTestCase {
       file: file.path,
       idValue: canonicalMeetingID
     )
-    store.reconcileMeetingReadyAutomationForTesting(with: [initialItem])
+    store.meetingTranscriptionDidCompleteForTesting(initialItem)
 
     try """
     :PROPERTIES:

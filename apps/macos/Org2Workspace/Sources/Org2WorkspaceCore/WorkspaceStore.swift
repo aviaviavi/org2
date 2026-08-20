@@ -1474,7 +1474,9 @@ public final class WorkspaceStore: ObservableObject {
   let meetingTranscriptionProgressState = WorkspaceTranscriptionProgressState()
   public var meetingTranscriptionProgress: Double { meetingTranscriptionProgressState.progress }
   public var meetingTranscriptionElapsedText: String { meetingTranscriptionProgressState.elapsedText }
-  @Published public var audioSettingsStatus = LocalWhisperTranscriber.installationStatus()
+  @Published public var audioSettingsStatus = LocalWhisperTranscriber.installationStatus(
+    verifyExecutableLaunch: false
+  )
   @Published public var meetingTranscriptionProvider: MeetingTranscriptionProvider = .automatic {
     didSet { persistMeetingTranscriptionValue(meetingTranscriptionProvider.rawValue, key: meetingTranscriptionProviderKey) }
   }
@@ -1868,7 +1870,6 @@ public final class WorkspaceStore: ObservableObject {
   private let openClawLocalEditsEnabledKey = "Org2Workspace.openClawLocalEditsEnabled.v1"
   private let meetingReadyAutomationSettingsByCorpusKey = "Org2Workspace.meetingReadyAutomation.settingsByCorpus.v1"
   private let meetingReadyAutomationDeliveriesByCorpusKey = "Org2Workspace.meetingReadyAutomation.deliveriesByCorpus.v1"
-  private let meetingReadyAutomationInitializedCorporaKey = "Org2Workspace.meetingReadyAutomation.initializedCorpora.v1"
   private let meetingTranscriptionProviderKey = "Org2Workspace.meetingTranscription.provider.v1"
   private let fluidVoiceEndpointKey = "Org2Workspace.meetingTranscription.fluidVoiceEndpoint.v1"
   private let customTranscriptionCommandKey = "Org2Workspace.meetingTranscription.customCommand.v1"
@@ -2278,11 +2279,10 @@ public final class WorkspaceStore: ObservableObject {
     scarfMetabaseHasStoredAPIKey = DataSourceCredentialsKeychain.containsScarfMetabaseAPIKey()
     openClawStatusText = Self.openClawStatusText(settings: currentOpenClawSettings())
     restoreInterruptedOpenClawSendStatusIfNeeded()
-    refreshAudioSettingsStatus()
   }
 
   public func bootstrap() async {
-    refreshAudioSettingsStatus()
+    await refreshAudioSettingsStatusAsync()
     if corpusRoot == nil {
       if let screenshotCorpusRoot = screenshotCorpusRootFromEnvironment() {
         setCorpusRoot(screenshotCorpusRoot, persistsDefault: false)
@@ -3118,7 +3118,7 @@ public final class WorkspaceStore: ObservableObject {
   private func performWorkspaceRefresh(generation: Int) async {
     guard shouldContinueWorkspaceRefresh(generation) else { return }
 
-    refreshAudioSettingsStatus(preserveStatusText: true)
+    await refreshAudioSettingsStatusAsync(preserveStatusText: true)
     // Refresh the document the user is looking at before reconciling every
     // workspace projection. This keeps Cmd-R useful even when a later index,
     // provider, or agent recovery refresh is slow.
@@ -3552,13 +3552,15 @@ public final class WorkspaceStore: ObservableObject {
     await loadEntrySource(for: selectedLocation)
   }
 
-  public func refreshAudioSettingsStatus(preserveStatusText: Bool = false) {
-    audioSettingsStatus = LocalWhisperTranscriber.installationStatus(
-      configuration: localWhisperConfiguration(includeCustomCommand: false)
-    )
+  public func refreshAudioSettingsStatusAsync(preserveStatusText: Bool = false) async {
+    let configuration = localWhisperConfiguration(includeCustomCommand: false)
+    let status = await Task.detached(priority: .utility) {
+      LocalWhisperTranscriber.installationStatus(configuration: configuration)
+    }.value
+    audioSettingsStatus = status
     workspaceRuntimeIdentity = WorkspaceRuntimeIdentity.current()
     if !preserveStatusText && (audioSettingsStatusText.isEmpty || !isInstallingFastTranscriber) {
-      audioSettingsStatusText = audioSettingsStatus.detailText
+      audioSettingsStatusText = status.detailText
     }
   }
 
@@ -3585,7 +3587,7 @@ public final class WorkspaceStore: ObservableObject {
     do {
       switch meetingTranscriptionProvider {
       case .automatic:
-        refreshAudioSettingsStatus(preserveStatusText: true)
+        await refreshAudioSettingsStatusAsync(preserveStatusText: true)
         audioSettingsStatusText = audioSettingsStatus.isWhisperCppReady
           ? "Automatic is ready: \(audioSettingsStatus.backendDescription)"
           : "Automatic is ready with macOS Speech. \(audioSettingsStatus.detailText)"
@@ -3668,10 +3670,6 @@ public final class WorkspaceStore: ObservableObject {
     guard !isInstallingFastTranscriber else { return }
     isInstallingFastTranscriber = true
     audioSettingsStatusText = "Installing whisper.cpp and base English model..."
-    defer {
-      isInstallingFastTranscriber = false
-      refreshAudioSettingsStatus(preserveStatusText: true)
-    }
 
     do {
       try await Task.detached(priority: .userInitiated) {
@@ -3684,6 +3682,8 @@ public final class WorkspaceStore: ObservableObject {
       errorText = error.localizedDescription
       statusText = "Audio transcription install failed"
     }
+    isInstallingFastTranscriber = false
+    await refreshAudioSettingsStatusAsync(preserveStatusText: true)
   }
 
   public func refreshWorkspaceHealth() {
@@ -6328,7 +6328,6 @@ public final class WorkspaceStore: ObservableObject {
         statusText = "\(items.count) meeting\(items.count == 1 ? "" : "s")"
       }
       reconcileMeetingProcessingState(with: items)
-      reconcileMeetingReadyAutomation(with: items)
       syncMeetingSelectionAfterRefresh()
       recoverInterruptedMeetingTranscriptions(knownItems: items)
       markWorkspaceSurfaceCleanIfUnchanged(.meetings, generation: dirtyGeneration)
@@ -19858,7 +19857,7 @@ public final class WorkspaceStore: ObservableObject {
     threadID: UUID?,
     prompt: String
   ) -> Bool {
-    guard let corpusRoot else {
+    guard corpusRoot != nil else {
       meetingReadyAutomationStatusText = "Choose a corpus before enabling meeting automation"
       return false
     }
@@ -19884,14 +19883,6 @@ public final class WorkspaceStore: ObservableObject {
       }
     }
 
-    let corpusKey = corpusRoot.standardizedFileURL.path
-    var initializedCorpora = Set(defaults.stringArray(forKey: meetingReadyAutomationInitializedCorporaKey) ?? [])
-    if isEnabled, !initializedCorpora.contains(corpusKey) {
-      establishMeetingReadyAutomationBaseline(for: meetings, destinationID: destinationID)
-      initializedCorpora.insert(corpusKey)
-      defaults.set(Array(initializedCorpora).sorted(), forKey: meetingReadyAutomationInitializedCorporaKey)
-    }
-
     meetingReadyAutomationSettings = MeetingReadyAutomationSettings(
       isEnabled: isEnabled,
       destinationID: destinationID,
@@ -19902,7 +19893,6 @@ public final class WorkspaceStore: ObservableObject {
     persistMeetingReadyAutomationSettings()
     if isEnabled {
       meetingReadyAutomationStatusText = "Watching for completed meetings"
-      reconcileMeetingReadyAutomation(with: meetings)
     } else {
       meetingReadyAutomationStatusText = "Meeting automation is off"
     }
@@ -19966,26 +19956,6 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
-  private func establishMeetingReadyAutomationBaseline(
-    for items: [MeetingWorkspaceItem],
-    destinationID: String
-  ) {
-    let now = Date()
-    for item in items where item.transcriptionStatus != nil {
-      let eventID = meetingReadyAutomationEventID(for: item)
-      meetingReadyAutomationDeliveries[eventID] = MeetingReadyAutomationDeliveryRecord(
-        eventID: eventID,
-        meetingFile: item.file,
-        destinationID: destinationID,
-        threadID: nil,
-        status: .baseline,
-        updatedAt: now,
-        error: nil
-      )
-    }
-    persistMeetingReadyAutomationDeliveries()
-  }
-
   private func meetingReadyAutomationEventID(for item: MeetingWorkspaceItem) -> String {
     if let idValue = item.idValue?.trimmingCharacters(in: .whitespacesAndNewlines),
        !idValue.isEmpty {
@@ -19998,23 +19968,25 @@ public final class WorkspaceStore: ObservableObject {
     "#+org2_automation_event_id: meeting-ready:\(eventID)"
   }
 
-  private func reconcileMeetingReadyAutomation(with items: [MeetingWorkspaceItem]) {
+  private func meetingTranscriptionDidComplete(_ item: MeetingWorkspaceItem) {
+    // This is an event boundary, not a projection reconciliation. Never call it
+    // while scanning corpus history: an existing completed meeting is not a new
+    // local transcription-completed event.
     guard meetingReadyAutomationSettings.isEnabled else { return }
-    let readyItems = items
-      .filter { $0.transcriptionStatus != nil }
-      .sorted { ($0.modifiedAt ?? .distantPast) < ($1.modifiedAt ?? .distantPast) }
-    for item in readyItems {
-      dispatchMeetingReadyAutomationIfNeeded(for: item)
+    guard item.transcriptionStatus?.lowercased() == MeetingTranscriptionStatus.complete.rawValue else {
+      return
     }
+    dispatchMeetingReadyAutomationIfNeeded(for: item)
   }
 
-  func reconcileMeetingReadyAutomationForTesting(with items: [MeetingWorkspaceItem]) {
-    reconcileMeetingReadyAutomation(with: items)
+  func meetingTranscriptionDidCompleteForTesting(_ item: MeetingWorkspaceItem) {
+    meetingTranscriptionDidComplete(item)
   }
 
   private func dispatchMeetingReadyAutomationIfNeeded(for item: MeetingWorkspaceItem) {
     let eventID = meetingReadyAutomationEventID(for: item)
-    if meetingReadyAutomationDeliveries[eventID]?.status == .baseline {
+    if let status = meetingReadyAutomationDeliveries[eventID]?.status,
+       status == .baseline || status == .queued {
       return
     }
     guard !meetingReadyAutomationDispatchingEventIDs.contains(eventID) else { return }
@@ -28373,7 +28345,7 @@ public final class WorkspaceStore: ObservableObject {
     } else {
       meetings.insert(item, at: 0)
     }
-    reconcileMeetingReadyAutomation(with: [item])
+    meetingTranscriptionDidComplete(item)
     selectMeeting(item)
     // The file watcher incrementally updates indexes and marks dependent
     // surfaces dirty. Avoid immediately repeating full meeting, agenda, and

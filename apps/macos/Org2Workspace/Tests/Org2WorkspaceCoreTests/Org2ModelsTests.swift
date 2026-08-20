@@ -4193,6 +4193,30 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(status.statusLabel, "Fast local transcription ready")
   }
 
+  func testLocalWhisperInstallationStatusCanSkipExecutableProbeForImmediateUIState() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-whisper-quick-status-\(UUID().uuidString)", isDirectory: true)
+    let bin = root.appendingPathComponent("bin", isDirectory: true)
+    let executable = bin.appendingPathComponent("whisper-cli")
+    let marker = root.appendingPathComponent("launched")
+    try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
+    try "#!/bin/sh\ntouch '\(marker.path)'\nexit 0\n".write(
+      to: executable,
+      atomically: true,
+      encoding: .utf8
+    )
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let status = LocalWhisperTranscriber.installationStatus(
+      configuration: LocalWhisperConfiguration(environment: ["PATH": bin.path]),
+      verifyExecutableLaunch: false
+    )
+
+    XCTAssertEqual(status.whisperCppExecutablePath, executable.path)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path))
+  }
+
   func testLocalWhisperDefaultThreadCountLeavesCapacityForForegroundWork() {
     XCTAssertEqual(LocalWhisperConfiguration.defaultThreadCount(activeProcessorCount: 1), 1)
     XCTAssertEqual(LocalWhisperConfiguration.defaultThreadCount(activeProcessorCount: 2), 1)
