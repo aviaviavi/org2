@@ -1679,6 +1679,64 @@ public struct BacklinkItem: Decodable, Identifiable, Hashable, Sendable {
   }
 }
 
+public struct NodeActionItemsPayload: Decodable, Hashable, Sendable {
+  public let schema: String
+  public let target: NodeActionTarget
+  public let policy: NodeActionPolicy
+  public let counts: NodeActionCounts
+  public let open: [NodeActionItem]
+  public let recentlyCompleted: [NodeActionItem]
+
+  enum CodingKeys: String, CodingKey {
+    case schema = "$schema"
+    case target
+    case policy
+    case counts
+    case open
+    case recentlyCompleted
+  }
+}
+
+public struct NodeActionTarget: Decodable, Hashable, Sendable {
+  public let id: String?
+  public let title: String
+  public let entityType: String?
+  public let file: String
+  public let line: Int
+}
+
+public struct NodeActionPolicy: Decodable, Hashable, Sendable {
+  public let recentDays: Int
+  public let openLimit: Int
+  public let completedLimit: Int
+}
+
+public struct NodeActionCounts: Decodable, Hashable, Sendable {
+  public let open: Int
+  public let recentlyCompleted: Int
+}
+
+public struct NodeActionMeeting: Decodable, Hashable, Sendable {
+  public let id: String?
+  public let title: String
+  public let file: String
+  public let line: Int
+}
+
+public struct NodeActionItem: Decodable, Identifiable, Hashable, Sendable {
+  public let id: String
+  public let title: String
+  public let todo: String
+  public let file: String
+  public let line: Int
+  public let lineEnd: Int
+  public let relationship: String
+  public let meeting: NodeActionMeeting?
+  public let date: String?
+  public let dateKind: String?
+  public let snippet: String?
+}
+
 public struct EntrySource: Identifiable, Hashable, Sendable {
   public let file: String
   public let startLine: Int

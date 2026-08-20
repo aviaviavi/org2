@@ -523,7 +523,8 @@ org2 compile corpus --dir ~/notes --recursive --incremental --out compiled/corpu
 org2 search &quot;Mercor&quot; --dir ~/notes --recursive --sort relevance
 org2 index --dir ~/notes --recursive --file ~/notes/inbox.org2 --incremental --format json
 org2 query &quot;Chris Martin&quot; --dir ~/notes --recursive --subtree --sort date-desc --format json
-org2 query &quot;Sentra&quot; --dir ~/notes --recursive --format json</code></pre>
+org2 query &quot;Sentra&quot; --dir ~/notes --recursive --format json
+org2 query actions --object 'id:PERSON-ID' --dir ~/notes --recursive --recent-days 30 --format json</code></pre>
 <p>Useful flags:</p>
 <ul>
 <li><p><code>--context N</code> includes surrounding source lines.</p></li>
@@ -535,6 +536,7 @@ org2 query &quot;Sentra&quot; --dir ~/notes --recursive --format json</code></pr
 <li><p><code>--date-from</code> / <code>--date-to</code> and <code>--file-zone</code> narrow results by local corpus zones and source dates.</p></li>
 <li><p><code>--format json</code> returns machine-readable file, line, heading, snippet, source range, and context fields.</p></li>
 </ul>
+<p><code>org2 query actions</code> is the bounded, deterministic action-item projection for a person or other node. It resolves the target by stable ID or unique title, returns active TODOs directly linked or assigned to that node, and also inherits TODOs from a containing meeting that links to the node. Recently completed items require a completion or meeting date inside <code>--recent-days</code>. <code>--open-limit</code> and <code>--completed-limit</code> bound the displayed arrays while <code>counts</code> retains the complete totals. The command uses the incremental corpus cache and performs no model call or brief generation.</p>
 <p><code>org2 index</code> builds disposable machine-local search data. Its JSON artifact remains inspectable, and Org2 also maintains a versioned binary sidecar for faster repeat loads; an absent, stale, or unreadable sidecar safely falls back to JSON. After an initial build, <code>org2 index --incremental --file FILE</code> replaces or removes only that file's index entry; if no compatible base index exists, it safely falls back to a complete build. Watcher-backed clients may search that maintained index with <code>--index current</code>, avoiding a directory walk and per-file freshness check on every query. The macOS app uses both paths for filesystem events so frequent agent edits and live searches do not repeatedly scan the corpus. <code>auto</code> remains the conservative CLI default for callers without a watcher.</p>
 </section>
 <section class="org2-headline level-1">

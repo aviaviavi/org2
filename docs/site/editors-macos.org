@@ -220,6 +220,8 @@ The Search surface calls =org2 search= for one corpus or =org2 workspace search=
 
 The same surface includes a =New Node= action for creating an ID-backed Org2 note in the configured roam/index directory. It belongs with search and backlinks because node creation is part of navigating and extending the knowledge graph. =Cmd-P= / =Cmd-K= opens the faster Quick Open sheet, which fuzzy-matches both corpus file paths and AI chat thread titles; selecting a chat result opens that conversation directly.
 
+Opening a person page through Quick Open or normal navigation adds a compact *Action items* panel above the document. It shows a bounded list of active items and recent completions that are directly linked or assigned to the person, plus otherwise-unlinked TODOs inside meetings that link to that person. Rows open the cited source entry. This is a cached corpus query, not an AI brief, so it appears without waiting for a model turn and does not rewrite the person page.
+
 The next knowledge-browser work should make this more useful by adding graph-neighborhood views, link insertion, backlink-driven navigation, and broken-link repair.
 
 * Keyboard model

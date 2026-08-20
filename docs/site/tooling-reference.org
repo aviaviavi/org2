@@ -627,6 +627,7 @@ org2 search "Mercor" --dir ~/notes --recursive --sort relevance
 org2 index --dir ~/notes --recursive --file ~/notes/inbox.org2 --incremental --format json
 org2 query "Chris Martin" --dir ~/notes --recursive --subtree --sort date-desc --format json
 org2 query "Sentra" --dir ~/notes --recursive --format json
+org2 query actions --object 'id:PERSON-ID' --dir ~/notes --recursive --recent-days 30 --format json
 #+end_src
 
 Useful flags:
@@ -639,6 +640,8 @@ Useful flags:
 - =--answer-context= adds a plain subtree text block for downstream local LLM prompts.
 - =--date-from= / =--date-to= and =--file-zone= narrow results by local corpus zones and source dates.
 - =--format json= returns machine-readable file, line, heading, snippet, source range, and context fields.
+
+=org2 query actions= is the bounded, deterministic action-item projection for a person or other node. It resolves the target by stable ID or unique title, returns active TODOs directly linked or assigned to that node, and also inherits TODOs from a containing meeting that links to the node. Recently completed items require a completion or meeting date inside =--recent-days=. =--open-limit= and =--completed-limit= bound the displayed arrays while =counts= retains the complete totals. The command uses the incremental corpus cache and performs no model call or brief generation.
 
 =org2 index= builds disposable machine-local search data. Its JSON artifact remains inspectable, and Org2 also maintains a versioned binary sidecar for faster repeat loads; an absent, stale, or unreadable sidecar safely falls back to JSON. After an initial build, =org2 index --incremental --file FILE= replaces or removes only that file's index entry; if no compatible base index exists, it safely falls back to a complete build. Watcher-backed clients may search that maintained index with =--index current=, avoiding a directory walk and per-file freshness check on every query. The macOS app uses both paths for filesystem events so frequent agent edits and live searches do not repeatedly scan the corpus. =auto= remains the conservative CLI default for callers without a watcher.
 

@@ -307,6 +307,11 @@ public struct Org2CLI: Sendable {
     // exits, leaving refresh tasks permanently stuck in readGroup.wait().
     try? stdout.fileHandleForWriting.close()
     try? stderr.fileHandleForWriting.close()
+    if let stdin {
+      // The child inherited the read end during launch. The parent never reads
+      // from stdin, so retaining this handle leaks one descriptor per command.
+      try? stdin.fileHandleForReading.close()
+    }
 
     if let standardInput, let stdin {
       readGroup.enter()
@@ -321,13 +326,19 @@ public struct Org2CLI: Sendable {
 
     readGroup.enter()
     DispatchQueue.global(qos: .userInitiated).async {
+      defer {
+        try? stdout.fileHandleForReading.close()
+        readGroup.leave()
+      }
       stdoutCollector.set(stdout.fileHandleForReading.readDataToEndOfFile())
-      readGroup.leave()
     }
     readGroup.enter()
     DispatchQueue.global(qos: .userInitiated).async {
+      defer {
+        try? stderr.fileHandleForReading.close()
+        readGroup.leave()
+      }
       stderrCollector.set(stderr.fileHandleForReading.readDataToEndOfFile())
-      readGroup.leave()
     }
 
     let deadline = timeout.map { Date().addingTimeInterval(max(0.01, $0)) }

@@ -28,6 +28,7 @@ import { renderOrgDocumentToHtml, renderOrgExportIndexToHtml } from "./export.js
 import { renderPresentationToBeamer } from "./presentation.js";
 import { compileBeamerPdf } from "./beamerCompile.js";
 import { compileCorpus, compileCorpusIncremental, extractCheckboxProgress, renderCompiledCorpus } from "./corpusCompile.js";
+import { queryNodeActions } from "./nodeActions.js";
 import { extractClockReport } from "./clock.js";
 import { buildAgentContextPayload, isStaleOpenAgentTodo, renderAgentContextPack, type AgentInclude } from "./agentContext.js";
 import { buildOrg2CapabilityManifest } from "./capabilities.js";
@@ -8421,9 +8422,13 @@ async function main(): Promise<void> {
   let queryText = "";
   let queryFormat: "text" | "json" = "text";
   let queryRelations = false;
+  let queryActions = false;
   let queryClocks = false;
   let queryRelationObject = "";
   let queryRelationPredicate = "";
+  let queryRecentDaysRaw = "30";
+  let queryOpenLimitRaw = "8";
+  let queryCompletedLimitRaw = "4";
 
   // Cited search
   let searchTerm = "";
@@ -8647,6 +8652,8 @@ async function main(): Promise<void> {
       if (i < args.length && !args[i]!.startsWith("--")) {
         if (args[i] === "relations") {
           queryRelations = true;
+        } else if (args[i] === "actions") {
+          queryActions = true;
         } else if (args[i] === "clocks" || args[i] === "clock") {
           queryClocks = true;
         } else {
@@ -9584,6 +9591,24 @@ async function main(): Promise<void> {
         queryRelationPredicate = args[i]!;
         i++;
       }
+    } else if (arg === "--recent-days" && command === "query") {
+      i++;
+      if (i < args.length) {
+        queryRecentDaysRaw = args[i]!;
+        i++;
+      }
+    } else if (arg === "--open-limit" && command === "query") {
+      i++;
+      if (i < args.length) {
+        queryOpenLimitRaw = args[i]!;
+        i++;
+      }
+    } else if (arg === "--completed-limit" && command === "query") {
+      i++;
+      if (i < args.length) {
+        queryCompletedLimitRaw = args[i]!;
+        i++;
+      }
     } else if (arg === "--text" || arg === "--contains") {
       i++;
       if (i < args.length) {
@@ -9765,6 +9790,7 @@ async function main(): Promise<void> {
         if (command === "search") searchTerm = args[i]!;
         else if (command === "query") {
           if (args[i] === "relations") queryRelations = true;
+          else if (args[i] === "actions") queryActions = true;
           else if (args[i] === "clocks" || args[i] === "clock") queryClocks = true;
           else { queryTerm = args[i]!; searchTerm = args[i]!; }
         }
@@ -10109,6 +10135,7 @@ Roam / IDs:
   org2 index --dir DIR [--recursive] [--include-archives] [--format text|json]
   org2 search QUERY [--dir DIR] [--recursive] [--include-archives] [--format text|json]
   org2 query QUERY [--dir DIR] [--recursive] [--include-archives] [--format text|json]
+  org2 query actions --object ID|TITLE|LINK [--recent-days N] [--dir DIR] [--recursive] [--format text|json]
   org2 entity show NAME [--dir DIR] [--recursive] [--format text|json]
   org2 query (--id UUID|--text TEXT) [--dir DIR] [--recursive] [--include-archives]
   org2 query clocks --dir DIR [--recursive] [--format text|json]
@@ -10429,10 +10456,15 @@ Usage:
   org2 query --id UUID [--dir DIR] [--recursive] [--include-archives] [--file FILE|--files FILE ...] [--format text|json]
   org2 query --text TEXT [--dir DIR] [--recursive] [--include-archives] [--file FILE|--files FILE ...] [--format text|json]
   org2 query relations --object ID|TITLE|LINK [--predicate PREDICATE] [--dir DIR] [--recursive] [--include-archives] [--format text|json]
+  org2 query actions --object ID|TITLE|LINK [--recent-days N] [--open-limit N] [--completed-limit N] [--dir DIR] [--recursive] [--format text|json]
 
 Flags:
   --id UUID         Target ID lookup (legacy)
   --text TEXT       Text to search for; returns cited file/line snippets
+  --object TARGET   Target node for relations or actions
+  --recent-days N   Completed-action lookback for actions (default 30)
+  --open-limit N    Maximum open actions returned (default 8)
+  --completed-limit N Maximum completed actions returned (default 4)
   --dir DIR         Root directory to scan
   --recursive       Recurse into subdirectories
   --include-archives Include archive files/directories in query scans
@@ -13226,6 +13258,90 @@ Flags:
     clockFormat = queryFormat;
   }
 
+  if (command === "query" && queryActions) {
+    if (!queryRelationObject) {
+      console.error("Error: org2 query actions requires --object ID|TITLE|LINK");
+      process.exit(1);
+    }
+
+    const parseNonnegativeInteger = (raw: string, flag: string): number => {
+      if (!/^\d+$/.test(String(raw || "").trim())) {
+        console.error(`Error: ${flag} requires a nonnegative integer`);
+        process.exit(1);
+      }
+      return Number.parseInt(raw, 10);
+    };
+    const recentDays = parseNonnegativeInteger(queryRecentDaysRaw, "--recent-days");
+    const openLimit = parseNonnegativeInteger(queryOpenLimitRaw, "--open-limit");
+    const completedLimit = parseNonnegativeInteger(queryCompletedLimitRaw, "--completed-limit");
+
+    if (!dir && files.length === 0) {
+      const configPath = findConfigFile(process.cwd());
+      if (configPath) {
+        try {
+          const config = loadConfig(configPath);
+          files = resolveFilesFromConfig(config, path.dirname(configPath));
+          if (files.length === 0) {
+            console.error(`Error: config found at ${configPath} but no matching files for patterns: ${config.agendaFiles?.join(", ") || "*.org"}`);
+            process.exit(1);
+          }
+          dir = path.dirname(configPath);
+        } catch (err) {
+          console.error(`Error loading config: ${err instanceof Error ? err.message : String(err)}`);
+          process.exit(1);
+        }
+      } else {
+        console.error("Error: provide either --dir, --files, or org2.json config");
+        process.exit(1);
+      }
+    }
+    if (dir && files.length === 0) files = listOrgLikeFiles(dir, recursive, includeArchives);
+    files = Array.from(new Set(files)).sort((a, b) => a.localeCompare(b));
+    if (files.length === 0) {
+      console.error("Error: no Org files found for org2 query actions");
+      process.exit(1);
+    }
+
+    const rootDir = dir ? path.resolve(dir) : path.dirname(path.resolve(files[0]!));
+    const corpus = compileCorpusIncremental(files, {
+      rootDir,
+      cacheFile: defaultCorpusCachePath(rootDir),
+    });
+    let payload: ReturnType<typeof queryNodeActions>;
+    try {
+      payload = queryNodeActions(corpus, {
+        object: queryRelationObject,
+        today: process.env.ORG2_TODAY,
+        recentDays,
+        openLimit,
+        completedLimit,
+      });
+    } catch (err) {
+      console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
+      process.exit(1);
+    }
+
+    if (queryFormat === "json") {
+      process.stdout.write(JSON.stringify(payload, null, 2) + "\n");
+      return;
+    }
+
+    process.stdout.write(`${payload.target.title}: ${payload.counts.open} open, ${payload.counts.recentlyCompleted} recently completed\n`);
+    for (const item of payload.open) {
+      const origin = item.meeting ? ` · from ${item.meeting.title}` : "";
+      const date = item.date ? ` · ${item.dateKind}: ${item.date}` : "";
+      process.stdout.write(`- ${item.todo} ${item.title}${date}${origin} (${item.file}:${item.line})\n`);
+    }
+    if (payload.recentlyCompleted.length > 0) {
+      process.stdout.write("Recently completed:\n");
+      for (const item of payload.recentlyCompleted) {
+        const origin = item.meeting ? ` · from ${item.meeting.title}` : "";
+        process.stdout.write(`- DONE ${item.title} · ${item.date}${origin} (${item.file}:${item.line})\n`);
+      }
+    }
+    return;
+  }
+
   if (command === "query" && queryRelations) {
     if (!queryRelationObject) {
       console.error("Error: org2 query relations requires --object ID|TITLE|LINK");
@@ -13436,7 +13552,7 @@ Flags:
   }
 
   if (command === "query") {
-    if (queryRelations) return;
+    if (queryRelations || queryActions) return;
     if (!queryId && !queryText) {
       console.error("Error: query requires --id UUID or --text TEXT");
       process.exit(1);

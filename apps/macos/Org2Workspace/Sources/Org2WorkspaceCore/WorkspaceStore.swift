@@ -1783,6 +1783,8 @@ public final class WorkspaceStore: ObservableObject {
       rebuildBacklinkDisplayCache()
     }
   }
+  @Published public private(set) var personActionItems: NodeActionItemsPayload?
+  @Published public private(set) var isLoadingPersonActionItems = false
   public private(set) var backlinkFileGroups: [BacklinkFileGroup] = []
   public private(set) var relatedBacklinkNodes: [RelatedBacklinkNode] = []
   @Published public var isNodeContextPanePresented = false
@@ -2014,6 +2016,7 @@ public final class WorkspaceStore: ObservableObject {
   private var searchIndexTask: Task<Void, Never>?
   private var searchIndexGeneration = 0
   private var entrySourceLoadGeneration = 0
+  private var personActionItemsLoadGeneration = 0
   private var entryHTMLRenderGeneration = 0
   private var activeEntrySourceLoadingGeneration: Int?
   private var entrySourceLoadWatchdogTask: Task<Void, Never>?
@@ -2024,6 +2027,7 @@ public final class WorkspaceStore: ObservableObject {
   var entryHTMLRenderTimeoutNanoseconds = WorkspaceStore.defaultEntryRenderTimeoutNanoseconds
   var agendaEntryRenderIdleDelayNanoseconds: UInt64 = 140_000_000
   var entrySourceLoaderForTesting: (@Sendable (String, Int, EntrySourceMode) async throws -> EntrySource)?
+  var nodeActionItemsLoaderForTesting: (@Sendable (String, URL) async throws -> NodeActionItemsPayload)?
   var entryHTMLRendererForTesting: (@Sendable (String, String, Int, String?) async throws -> String)?
   var documentPDFRendererForTesting: ((String, URL?) async throws -> Data)?
   var documentPDFExportFileOpenerForTesting: ((URL) -> Bool)?
@@ -2692,6 +2696,9 @@ public final class WorkspaceStore: ObservableObject {
     selectedEntrySource = nil
     selectedEntryHTML = nil
     selectedEntryRenderError = nil
+    personActionItemsLoadGeneration += 1
+    personActionItems = nil
+    isLoadingPersonActionItems = false
     selectedEntryHTMLRenderKey = nil
     selectedRenderedBlocks = []
     detailScrollRequest = nil
@@ -7337,6 +7344,9 @@ public final class WorkspaceStore: ObservableObject {
     selectedEntrySource = nil
     selectedEntryHTML = nil
     selectedEntryRenderError = nil
+    personActionItemsLoadGeneration += 1
+    personActionItems = nil
+    isLoadingPersonActionItems = false
     selectedEntryHTMLRenderKey = nil
     selectedRenderedBlocks = []
     entryHTMLRenderTask?.cancel()
@@ -23819,6 +23829,113 @@ public final class WorkspaceStore: ObservableObject {
 
   public func selectBacklink(_ backlink: BacklinkItem) {
     select(.backlink(backlink))
+  }
+
+  nonisolated static func isPersonPageSource(_ source: EntrySource) -> Bool {
+    guard !source.isSubtree else { return false }
+    let pathComponents = URL(fileURLWithPath: source.file).pathComponents
+      .map { $0.lowercased() }
+    if pathComponents.contains(where: { ["people", "persons", "contacts"].contains($0) }) {
+      return true
+    }
+
+    let patterns = [
+      #"(?im)^\s*:(?:ORG2_ENTITY_TYPE|ENTITY_TYPE|KIND):\s*person\s*$"#,
+      #"(?im)^\s*#\+(?:ORG2_ENTITY_TYPE|ENTITY_TYPE|ORG2_KIND|KIND):\s*person\s*$"#,
+      #"(?im)^\*+\s+.*(?:^|\s):person:(?:\s|$)"#,
+      #"(?im)^\s*#\+(?:FILETAGS|ROAM_TAGS):.*(?:^|:)person(?::|\s|$)"#,
+    ]
+    return patterns.contains { pattern in
+      source.text.range(of: pattern, options: .regularExpression) != nil
+    }
+  }
+
+  public func loadPersonActionItems(for source: EntrySource) async {
+    personActionItemsLoadGeneration += 1
+    let generation = personActionItemsLoadGeneration
+
+    guard Self.isPersonPageSource(source),
+          let corpusRoot
+    else {
+      personActionItems = nil
+      isLoadingPersonActionItems = false
+      return
+    }
+
+    let fallbackTitle = URL(fileURLWithPath: source.file)
+      .deletingPathExtension()
+      .lastPathComponent
+      .replacingOccurrences(of: "-", with: " ")
+    let object: String
+    if let id = Self.firstOrgID(in: source.text) {
+      object = "id:\(id)"
+    } else {
+      object = Self.openClawTitle(from: source.text, fallback: fallbackTitle).title
+    }
+    guard !object.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+      personActionItems = nil
+      isLoadingPersonActionItems = false
+      return
+    }
+
+    personActionItems = nil
+    isLoadingPersonActionItems = true
+    defer {
+      if generation == personActionItemsLoadGeneration {
+        isLoadingPersonActionItems = false
+      }
+    }
+
+    do {
+      let payload: NodeActionItemsPayload
+      if let loader = nodeActionItemsLoaderForTesting {
+        payload = try await loader(object, corpusRoot)
+      } else {
+        payload = try await cli.runJSON([
+          "query", "actions",
+          "--object", object,
+          "--dir", corpusRoot.path,
+          "--recursive",
+          "--recent-days", "30",
+          "--open-limit", "5",
+          "--completed-limit", "2",
+          "--format", "json",
+        ])
+      }
+      guard generation == personActionItemsLoadGeneration,
+            selectedEntrySource?.id == source.id
+      else { return }
+      personActionItems = payload
+    } catch is CancellationError {
+      return
+    } catch {
+      guard generation == personActionItemsLoadGeneration,
+            selectedEntrySource?.id == source.id
+      else { return }
+      personActionItems = nil
+    }
+  }
+
+  public func selectPersonActionItem(_ item: NodeActionItem) {
+    guard let corpusRoot else { return }
+    let root = corpusRoot.resolvingSymlinksInPath().standardizedFileURL
+    let candidate = (item.file.hasPrefix("/")
+      ? URL(fileURLWithPath: item.file)
+      : root.appendingPathComponent(item.file))
+      .resolvingSymlinksInPath()
+      .standardizedFileURL
+    guard candidate.path.hasPrefix(root.path + "/") else {
+      statusText = "Action item is outside the active corpus"
+      return
+    }
+    let backlink = BacklinkItem(
+      srcId: item.id,
+      srcTitle: item.title,
+      file: candidate.path,
+      line: max(0, item.line - 1),
+      context: item.snippet ?? item.title
+    )
+    select(.backlink(backlink), surface: selectedSurface)
   }
 
   private func openNodeBriefArtifact(url: URL, relativePath: String, title: String) {

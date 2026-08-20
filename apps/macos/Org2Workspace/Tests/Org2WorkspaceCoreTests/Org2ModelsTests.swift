@@ -232,6 +232,83 @@ private actor AIChatSteerRecorder {
 }
 
 final class Org2ModelsTests: XCTestCase {
+  func testNodeActionItemsPayloadDecodesBoundedQueryResult() throws {
+    let data = Data(#"{"$schema":"org2:node-actions:v1","target":{"id":"11111111-1111-4111-8111-111111111111","title":"Gabby","entityType":"person","file":"people/gabby.org2","line":1},"policy":{"recentDays":30,"openLimit":6,"completedLimit":3},"counts":{"open":2,"recentlyCompleted":1},"open":[{"id":"action-1","title":"Gate OSS popularity leaderboard","todo":"TODO","file":"meetings/gabby.org2","line":8,"lineEnd":10,"relationship":"meeting","meeting":{"id":"meeting-1","title":"Gabby sync","file":"meetings/gabby.org2","line":1}}],"recentlyCompleted":[]}"#.utf8)
+
+    let payload = try JSONDecoder().decode(NodeActionItemsPayload.self, from: data)
+
+    XCTAssertEqual(payload.schema, "org2:node-actions:v1")
+    XCTAssertEqual(payload.target.title, "Gabby")
+    XCTAssertEqual(payload.counts.open, 2)
+    XCTAssertEqual(payload.open.first?.relationship, "meeting")
+    XCTAssertEqual(payload.open.first?.meeting?.title, "Gabby sync")
+  }
+
+  func testPersonPageDetectionUsesExplicitMetadataOrPeopleDirectory() {
+    let metadataSource = EntrySource(
+      file: "/corpus/notes/gabby.org2",
+      startLine: 1,
+      endLineExclusive: 5,
+      text: "#+title: Gabby\n#+ORG2_ENTITY_TYPE: person\n",
+      isSubtree: false
+    )
+    let directorySource = EntrySource(
+      file: "/corpus/people/gabby.org2",
+      startLine: 1,
+      endLineExclusive: 3,
+      text: "#+title: Gabby\n",
+      isSubtree: false
+    )
+    let ordinarySource = EntrySource(
+      file: "/corpus/notes/strategy.org2",
+      startLine: 1,
+      endLineExclusive: 3,
+      text: "#+title: Strategy\n",
+      isSubtree: false
+    )
+    let personSubtree = EntrySource(
+      file: "/corpus/people/gabby.org2",
+      startLine: 8,
+      endLineExclusive: 12,
+      text: "* Notes\n",
+      isSubtree: true
+    )
+
+    XCTAssertTrue(WorkspaceStore.isPersonPageSource(metadataSource))
+    XCTAssertTrue(WorkspaceStore.isPersonPageSource(directorySource))
+    XCTAssertFalse(WorkspaceStore.isPersonPageSource(ordinarySource))
+    XCTAssertFalse(WorkspaceStore.isPersonPageSource(personSubtree))
+  }
+
+  @MainActor
+  func testPersonPageLoadsActionItemsByStableNodeID() async throws {
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: "NodeActionItems-\(UUID().uuidString)"))
+    let store = WorkspaceStore(defaults: defaults)
+    let root = URL(fileURLWithPath: "/tmp/org2-person-actions")
+    let source = EntrySource(
+      file: root.appendingPathComponent("people/gabby.org2").path,
+      startLine: 1,
+      endLineExclusive: 6,
+      text: "#+title: Gabby\n:PROPERTIES:\n:ID: 11111111-1111-4111-8111-111111111111\n:END:\n",
+      isSubtree: false
+    )
+    let payloadData = Data(#"{"$schema":"org2:node-actions:v1","target":{"id":"11111111-1111-4111-8111-111111111111","title":"Gabby","entityType":"person","file":"people/gabby.org2","line":1},"policy":{"recentDays":30,"openLimit":6,"completedLimit":3},"counts":{"open":0,"recentlyCompleted":0},"open":[],"recentlyCompleted":[]}"#.utf8)
+    let payload = try JSONDecoder().decode(NodeActionItemsPayload.self, from: payloadData)
+    let recorder = ThreadSafeStringRecorder()
+    store.corpusRoot = root
+    store.selectedEntrySource = source
+    store.nodeActionItemsLoaderForTesting = { object, loadedRoot in
+      recorder.append("\(object)|\(loadedRoot.path)")
+      return payload
+    }
+
+    await store.loadPersonActionItems(for: source)
+
+    XCTAssertEqual(recorder.values, ["id:11111111-1111-4111-8111-111111111111|/tmp/org2-person-actions"])
+    XCTAssertEqual(store.personActionItems?.target.title, "Gabby")
+    XCTAssertFalse(store.isLoadingPersonActionItems)
+  }
+
   func testWorkspaceSoundPlaybackIsSuppressedUnderXCTest() {
     XCTAssertTrue(WorkspaceSound.isPlaybackSuppressed)
     XCTAssertNotNil(WorkspaceSound.bundledNewMessageSoundURL)
@@ -835,6 +912,18 @@ final class Org2ModelsTests: XCTestCase {
     let output = try await cli.renderAppHTML(input, sourcePath: "/tmp/broken-pipe.org2")
 
     XCTAssertEqual(output, "")
+  }
+
+  func testOrg2CLIRepeatedRunsReleasePipeDescriptors() throws {
+    let cli = try Org2CLI(repoRoot: Org2CLI.defaultRepoRoot())
+    let baseline = try FileManager.default.contentsOfDirectory(atPath: "/dev/fd").count
+
+    for _ in 0..<24 {
+      _ = try cli.runSync(["version"])
+    }
+
+    let after = try FileManager.default.contentsOfDirectory(atPath: "/dev/fd").count
+    XCTAssertLessThanOrEqual(after, baseline + 4, "Repeated CLI runs leaked \(after - baseline) descriptors")
   }
 
   func testOrgHTMLLinkTargetResolvesRelativeFileAndHeading() throws {

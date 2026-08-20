@@ -8916,28 +8916,176 @@ private struct OrgRenderedDocumentPreview: View {
             store.scheduleSlidePreview(text: source.text, source: source, immediate: true)
           }
       } else if let html = store.selectedEntryHTML {
-        OrgHTMLDocumentView(
-          html: html,
-          renderIdentity: store.selectedEntryHTMLRenderIdentity,
-          source: source,
-          corpusRoot: store.corpusRoot,
-          searchQuery: store.renderedSearchHighlightQuery,
-          searchOccurrenceIndex: store.pageSearchSelectedOccurrenceIndex,
-          searchOccurrenceCount: store.pageSearchOccurrenceCount,
-          scrollRequest: store.detailScrollRequest,
-          restorationSourceLine: store.documentViewportSourceLine(for: source),
-          layout: store.renderedDocumentLayout,
-          askAIAboutHeading: { store.askOpenClawAboutSourceHeading(at: $0) },
-          reportStatus: { store.statusText = $0 },
-          allowsTablePersistence: source.isEditable,
-          saveTableView: { store.requestSaveRenderedTableView($0) },
-          reportViewportSourceLine: reportViewportSourceLine
-        )
+        VStack(spacing: 0) {
+          if WorkspaceStore.isPersonPageSource(source) {
+            PersonActionItemsPanel(
+              payload: store.personActionItems,
+              isLoading: store.isLoadingPersonActionItems,
+              selectItem: store.selectPersonActionItem
+            )
+            .padding(.horizontal, 18)
+            .padding(.top, 12)
+            .padding(.bottom, 8)
+          }
+          OrgHTMLDocumentView(
+            html: html,
+            renderIdentity: store.selectedEntryHTMLRenderIdentity,
+            source: source,
+            corpusRoot: store.corpusRoot,
+            searchQuery: store.renderedSearchHighlightQuery,
+            searchOccurrenceIndex: store.pageSearchSelectedOccurrenceIndex,
+            searchOccurrenceCount: store.pageSearchOccurrenceCount,
+            scrollRequest: store.detailScrollRequest,
+            restorationSourceLine: store.documentViewportSourceLine(for: source),
+            layout: store.renderedDocumentLayout,
+            askAIAboutHeading: { store.askOpenClawAboutSourceHeading(at: $0) },
+            reportStatus: { store.statusText = $0 },
+            allowsTablePersistence: source.isEditable,
+            saveTableView: { store.requestSaveRenderedTableView($0) },
+            reportViewportSourceLine: reportViewportSourceLine
+          )
+          .frame(maxHeight: .infinity)
+        }
       } else if let error = store.selectedEntryRenderError {
         OrgHTMLRenderFailureView(message: error)
       } else {
         OrgHTMLLoadingView(label: loadingLabel, onCancel: store.cancelSelectedEntryLoading)
       }
+    }
+    .task(id: source.id) {
+      await store.loadPersonActionItems(for: source)
+    }
+  }
+}
+
+private struct PersonActionItemsPanel: View {
+  let payload: NodeActionItemsPayload?
+  let isLoading: Bool
+  let selectItem: (NodeActionItem) -> Void
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      HStack(spacing: 7) {
+        Image(systemName: "checklist")
+          .foregroundStyle(.secondary)
+        Text("Action items")
+          .font(.callout.weight(.semibold))
+        if let payload {
+          Text(summary(payload))
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        Spacer(minLength: 8)
+        if isLoading {
+          ProgressView()
+            .controlSize(.small)
+        }
+      }
+
+      if let payload {
+        if payload.open.isEmpty {
+          Text("No open action items")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        } else {
+          ForEach(payload.open) { item in
+            actionRow(item, completed: false)
+          }
+        }
+
+        if !payload.recentlyCompleted.isEmpty {
+          Divider()
+          Text("Recently completed")
+            .font(.caption.weight(.medium))
+            .foregroundStyle(.secondary)
+          ForEach(payload.recentlyCompleted) { item in
+            actionRow(item, completed: true)
+          }
+        }
+      } else if !isLoading {
+        Text("Action items are unavailable")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
+    }
+    .padding(10)
+    .background(
+      RoundedRectangle(cornerRadius: 10, style: .continuous)
+        .fill(Color(nsColor: .controlBackgroundColor).opacity(0.72))
+    )
+    .overlay(
+      RoundedRectangle(cornerRadius: 10, style: .continuous)
+        .stroke(Color.primary.opacity(0.09), lineWidth: 1)
+    )
+  }
+
+  private func actionRow(_ item: NodeActionItem, completed: Bool) -> some View {
+    Button {
+      selectItem(item)
+    } label: {
+      HStack(spacing: 8) {
+        Image(systemName: completed ? "checkmark.circle.fill" : "circle")
+          .font(.caption)
+          .foregroundStyle(completed ? Color.green : Color.secondary)
+        if !completed {
+          Text(statusLabel(item.todo))
+            .font(.caption2.weight(.medium))
+            .foregroundStyle(item.todo.uppercased() == "IN_PROGRESS" ? Color.accentColor : Color.secondary)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 2)
+            .background(
+              Capsule()
+                .fill(Color.primary.opacity(0.05))
+            )
+        }
+        Text(Org2Display.cleanInline(item.title))
+          .font(.caption)
+          .foregroundStyle(completed ? .secondary : .primary)
+          .strikethrough(completed, color: .secondary)
+          .lineLimit(1)
+        Spacer(minLength: 8)
+        if let metadata = metadata(item, completed: completed) {
+          Text(metadata)
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
+            .lineLimit(1)
+        }
+        Image(systemName: "chevron.right")
+          .font(.caption2)
+          .foregroundStyle(.tertiary)
+      }
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+  }
+
+  private func summary(_ payload: NodeActionItemsPayload) -> String {
+    var parts = ["\(payload.counts.open) open"]
+    if payload.counts.recentlyCompleted > 0 {
+      parts.append("\(payload.counts.recentlyCompleted) recent")
+    }
+    return parts.joined(separator: " · ")
+  }
+
+  private func metadata(_ item: NodeActionItem, completed: Bool) -> String? {
+    if let date = item.date {
+      if completed { return date }
+      if item.dateKind == "deadline" { return "Due \(date)" }
+      return date
+    }
+    if let meeting = item.meeting {
+      return "From \(Org2Display.cleanInline(meeting.title))"
+    }
+    return nil
+  }
+
+  private func statusLabel(_ raw: String) -> String {
+    switch raw.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() {
+    case "IN_PROGRESS": return "In progress"
+    case "WAITING": return "Waiting"
+    case "BLOCKED": return "Blocked"
+    case "NEXT": return "Next"
+    default: return "Open"
     }
   }
 }
