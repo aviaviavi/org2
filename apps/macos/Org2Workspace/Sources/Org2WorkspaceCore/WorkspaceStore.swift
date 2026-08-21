@@ -1524,6 +1524,7 @@ public final class WorkspaceStore: ObservableObject {
   @Published public private(set) var selectedOpenClawChatThreadID: UUID?
   @Published public private(set) var sidebarPromotedOpenClawChatThreadID: UUID?
   @Published public private(set) var openClawChatSelectionGeneration = 0
+  @Published public private(set) var aiChatFindRequestGeneration = 0
   @Published public private(set) var lastArchivedOpenClawChatThreadID: UUID?
   @Published public private(set) var externalThreads: [ExternalThreadSummary] = [] {
     didSet { rebuildExternalThreadDisplayCache() }
@@ -11619,6 +11620,11 @@ public final class WorkspaceStore: ObservableObject {
     searchFocusToken += 1
   }
 
+  public func presentAIChatThreadFind() {
+    guard selectedSurface == .home || selectedSurface == .openClaw else { return }
+    aiChatFindRequestGeneration &+= 1
+  }
+
   @discardableResult
   public func focusCurrentSearchField() -> Bool {
     if isWorkspaceSurfacePaneClosed {
@@ -11632,7 +11638,9 @@ public final class WorkspaceStore: ObservableObject {
       focusRunsAndReviewFilter()
     case .files:
       focusCorpusFileFilter()
-    case .home, .meetings, .sources, .openClaw, .externalThreads:
+    case .home, .openClaw:
+      presentAIChatThreadFind()
+    case .meetings, .sources, .externalThreads:
       return focusPageSearch()
     case .search:
       if selectedLocation != nil {
@@ -16372,16 +16380,11 @@ public final class WorkspaceStore: ObservableObject {
           )
         )
         openClawGatewayClientsByThreadID[threadID] = gateway
-        reply = try await gateway.send(
-          message: pendingTurn.gatewayMessage,
-          attachments: pendingUserMessage.attachments,
-          agentID: pendingTurn.agentID,
+        reply = try await gateway.reconnectAcceptedRun(
+          runID: pendingTurn.runID,
           sessionKey: thread.sessionKey,
-          model: thread.model(forDestinationID: pendingDestinationID),
-          reasoningEffort: thread.isSharedRoom ? nil : thread.reasoningEffort,
-          idempotencyKey: pendingTurn.runID,
-          requestStartedAt: pendingTurn.startedAt,
-          reconnectingAcceptedRun: true
+          agentID: pendingTurn.agentID,
+          requestStartedAt: pendingTurn.startedAt
         ) { [weak self] event in
           await self?.handleOpenClawGatewayEvent(
             event,
@@ -17374,7 +17377,7 @@ public final class WorkspaceStore: ObservableObject {
     let destinationName = aiChatDestination(id: resolvedDestinationID)?.name ?? "OpenClaw"
     let coalescesEventTimestamp: Bool
     switch event {
-    case .text(_, _), .reasoning(_, _):
+    case .text(_, _), .reasoning(_, _), .reconciliationHeartbeat:
       coalescesEventTimestamp = true
     default:
       coalescesEventTimestamp = false
@@ -17392,6 +17395,8 @@ public final class WorkspaceStore: ObservableObject {
       if selectedOpenClawChatThreadID == threadID {
         openClawStatusText = "\(destinationName) is working"
       }
+    case .reconciliationHeartbeat:
+      break
     case .text(let text, let replace):
       if replace {
         openClawStreamingReplyByThreadID[threadID] = text
@@ -17758,6 +17763,10 @@ public final class WorkspaceStore: ObservableObject {
       return
     }
     guard !openClawPendingUserMessageIDs(for: threadID).contains(messageID) else { return }
+    // A user-initiated retry is a new attempt. Stop guards intentionally ignore
+    // late events from the canceled attempt, but must not suppress the retry's
+    // gateway events or turn its errors back into another stopped result.
+    stoppedOpenClawThreadIDs.remove(threadID)
     clearOpenClawSendFailure(for: messageID, in: threadID)
     replaceOpenClawDeliveryStatus(for: messageID, in: threadID, with: .sending)
     if message.deliveryKind == .steer,

@@ -513,6 +513,8 @@ struct ChatBubbleView: View {
   let compact: Bool
   let isQueued: Bool
   let isRoomResponse: Bool
+  let isSearchMatch: Bool
+  let isSelectedSearchMatch: Bool
   let canSteerQueuedMessage: Bool
   let steerQueuedMessage: () -> Void
   let editQueuedMessage: () -> Void
@@ -528,6 +530,8 @@ struct ChatBubbleView: View {
     compact: Bool = false,
     isQueued: Bool = false,
     isRoomResponse: Bool = false,
+    isSearchMatch: Bool = false,
+    isSelectedSearchMatch: Bool = false,
     canSteerQueuedMessage: Bool = false,
     steerQueuedMessage: @escaping () -> Void = {},
     editQueuedMessage: @escaping () -> Void = {},
@@ -539,6 +543,8 @@ struct ChatBubbleView: View {
     self.compact = compact
     self.isQueued = isQueued
     self.isRoomResponse = isRoomResponse
+    self.isSearchMatch = isSearchMatch
+    self.isSelectedSearchMatch = isSelectedSearchMatch
     self.canSteerQueuedMessage = canSteerQueuedMessage
     self.steerQueuedMessage = steerQueuedMessage
     self.editQueuedMessage = editQueuedMessage
@@ -654,7 +660,7 @@ struct ChatBubbleView: View {
       .background(background, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
       .overlay(
         RoundedRectangle(cornerRadius: 8, style: .continuous)
-          .stroke(borderColor)
+          .stroke(effectiveBorderColor, lineWidth: searchBorderWidth)
       )
       .frame(maxWidth: isRoomResponse ? .infinity : nil, alignment: .leading)
       .fixedSize(horizontal: false, vertical: true)
@@ -743,6 +749,16 @@ struct ChatBubbleView: View {
     case .system:
       return Color.orange.opacity(0.20)
     }
+  }
+
+  private var effectiveBorderColor: Color {
+    if isSelectedSearchMatch { return Color.accentColor.opacity(0.82) }
+    if isSearchMatch { return Color.accentColor.opacity(0.34) }
+    return borderColor
+  }
+
+  private var searchBorderWidth: CGFloat {
+    isSelectedSearchMatch ? 2 : 1
   }
 
   private var roleTint: Color {
@@ -893,10 +909,176 @@ enum AIChatRoomTranscriptPresentation {
   }
 }
 
+struct AIChatThreadSearchMatch: Identifiable, Equatable {
+  let messageID: UUID
+  let scrollTargetID: UUID
+
+  var id: UUID { messageID }
+}
+
+struct AIChatThreadSearchCandidate: Equatable {
+  let messageID: UUID
+  let scrollTargetID: UUID
+  let searchableText: String
+}
+
+enum AIChatThreadSearch {
+  static func candidates(
+    in items: [AIChatRoomTranscriptItem]
+  ) -> [AIChatThreadSearchCandidate] {
+    items.flatMap { item -> [AIChatThreadSearchCandidate] in
+      switch item {
+      case .message(let message):
+        return [candidate(for: message, scrollTargetID: message.id)]
+      case .round(let round):
+        let visibleMessages = [round.trigger] + round.expectedDestinationIDs.compactMap {
+          round.response(forDestinationID: $0)
+        }
+        return visibleMessages.map { message in
+          candidate(for: message, scrollTargetID: round.id)
+        }
+      }
+    }
+  }
+
+  static func matches(
+    query rawQuery: String,
+    in items: [AIChatRoomTranscriptItem]
+  ) -> [AIChatThreadSearchMatch] {
+    matches(query: rawQuery, in: candidates(in: items))
+  }
+
+  static func matches(
+    query rawQuery: String,
+    in candidates: [AIChatThreadSearchCandidate]
+  ) -> [AIChatThreadSearchMatch] {
+    let query = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !query.isEmpty else { return [] }
+
+    return candidates.compactMap { candidate in
+      guard candidate.searchableText.range(
+        of: query,
+        options: [.caseInsensitive, .diacriticInsensitive]
+      ) != nil else {
+        return nil
+      }
+      return AIChatThreadSearchMatch(
+        messageID: candidate.messageID,
+        scrollTargetID: candidate.scrollTargetID
+      )
+    }
+  }
+
+  private static func candidate(
+    for message: OpenClawChatMessage,
+    scrollTargetID: UUID
+  ) -> AIChatThreadSearchCandidate {
+    let searchableText = ([OpenClawMessageClipboard.text(for: message)]
+      + message.attachments.map(\.fileName))
+      .joined(separator: "\n")
+    return AIChatThreadSearchCandidate(
+      messageID: message.id,
+      scrollTargetID: scrollTargetID,
+      searchableText: searchableText
+    )
+  }
+}
+
+struct AIChatThreadFindBar: View {
+  @Binding var query: String
+  let selectedMatchIndex: Int?
+  let matchCount: Int
+  let focusRequest: Int
+  let compact: Bool
+  let onPrevious: () -> Void
+  let onNext: () -> Void
+  let onClose: () -> Void
+  @FocusState private var isSearchFieldFocused: Bool
+
+  var body: some View {
+    HStack(spacing: 8) {
+      Image(systemName: "magnifyingglass")
+        .foregroundStyle(.secondary)
+
+      TextField("Find in this thread", text: $query)
+        .textFieldStyle(.plain)
+        .focused($isSearchFieldFocused)
+        .onSubmit {
+          onNext()
+        }
+        .accessibilityLabel("Find in current AI chat thread")
+
+      Text(resultSummary)
+        .font(.caption.monospacedDigit())
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
+        .frame(minWidth: compact ? 58 : 72, alignment: .trailing)
+
+      Button(action: onPrevious) {
+        Image(systemName: "chevron.up")
+      }
+      .buttonStyle(.plain)
+      .disabled(matchCount == 0)
+      .help("Previous match")
+      .accessibilityLabel("Previous match")
+
+      Button(action: onNext) {
+        Image(systemName: "chevron.down")
+      }
+      .buttonStyle(.plain)
+      .disabled(matchCount == 0)
+      .help("Next match")
+      .accessibilityLabel("Next match")
+
+      Button(action: onClose) {
+        Image(systemName: "xmark")
+      }
+      .buttonStyle(.plain)
+      .help("Close find")
+      .accessibilityLabel("Close find")
+    }
+    .padding(.horizontal, compact ? 10 : 16)
+    .padding(.vertical, 8)
+    .background(WorkspaceDesign.barBackground)
+    .onAppear(perform: focusSearchField)
+    .onChange(of: focusRequest) { _, _ in
+      focusSearchField()
+    }
+    .onExitCommand(perform: onClose)
+  }
+
+  private var resultSummary: String {
+    let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmedQuery.isEmpty else { return "" }
+    guard let selectedMatchIndex, matchCount > 0 else { return "No matches" }
+    return "\(selectedMatchIndex + 1) of \(matchCount)"
+  }
+
+  private func focusSearchField() {
+    Task { @MainActor in
+      isSearchFieldFocused = true
+    }
+  }
+}
+
 struct AIChatRoomRoundView: View {
   @EnvironmentObject private var store: WorkspaceStore
   let round: AIChatRoomRound
   let compact: Bool
+  let searchMatchMessageIDs: Set<UUID>
+  let selectedSearchMatchMessageID: UUID?
+
+  init(
+    round: AIChatRoomRound,
+    compact: Bool,
+    searchMatchMessageIDs: Set<UUID> = [],
+    selectedSearchMatchMessageID: UUID? = nil
+  ) {
+    self.round = round
+    self.compact = compact
+    self.searchMatchMessageIDs = searchMatchMessageIDs
+    self.selectedSearchMatchMessageID = selectedSearchMatchMessageID
+  }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
@@ -906,6 +1088,8 @@ struct AIChatRoomRoundView: View {
         destinationTitlesByID: store.aiChatDestinationTitlesByID,
         compact: compact,
         isQueued: store.isAIChatMessageQueued(round.trigger.id),
+        isSearchMatch: searchMatchMessageIDs.contains(round.trigger.id),
+        isSelectedSearchMatch: selectedSearchMatchMessageID == round.trigger.id,
         editQueuedMessage: { store.editQueuedAIChatMessage(round.trigger.id) },
         deleteQueuedMessage: { store.deleteQueuedAIChatMessage(round.trigger.id) }
       )
@@ -950,6 +1134,8 @@ struct AIChatRoomRoundView: View {
       round: round,
       destinationID: destinationID,
       compact: compact,
+      searchMatchMessageIDs: searchMatchMessageIDs,
+      selectedSearchMatchMessageID: selectedSearchMatchMessageID,
       isActive: store.selectedAIChatActiveRoomRoundID == round.id
         && store.selectedAIChatActiveDestinationID == destinationID
     )
@@ -966,6 +1152,8 @@ private struct AIChatRoomAgentSlot: View {
   let round: AIChatRoomRound
   let destinationID: String
   let compact: Bool
+  let searchMatchMessageIDs: Set<UUID>
+  let selectedSearchMatchMessageID: UUID?
   let isActive: Bool
 
   private var runtime: AIChatRuntime { store.aiChatDestinationRuntime(destinationID) }
@@ -982,7 +1170,9 @@ private struct AIChatRoomAgentSlot: View {
           runtime: runtime,
           destinationTitlesByID: store.aiChatDestinationTitlesByID,
           compact: true,
-          isRoomResponse: true
+          isRoomResponse: true,
+          isSearchMatch: searchMatchMessageIDs.contains(response.id),
+          isSelectedSearchMatch: selectedSearchMatchMessageID == response.id
         )
       } else if isActive {
         VStack(alignment: .leading, spacing: 6) {

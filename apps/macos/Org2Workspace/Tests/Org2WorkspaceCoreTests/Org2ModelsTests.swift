@@ -2594,6 +2594,9 @@ final class Org2ModelsTests: XCTestCase {
 
     store.handleOpenClawGatewayEvent(.text("Fresh assistant reply", replace: true), threadID: threadID)
     XCTAssertEqual(store.openClawStreamingReply, "Fresh assistant reply")
+    let heartbeatStartedAt = Date()
+    store.handleOpenClawGatewayEvent(.reconciliationHeartbeat, threadID: threadID)
+    XCTAssertGreaterThanOrEqual(try XCTUnwrap(store.openClawLastEventAt), heartbeatStartedAt)
     await recorder.finish(reply: "Fresh assistant reply")
     await sendTask.value
     XCTAssertEqual(store.openClawStreamingReply, "")
@@ -3065,9 +3068,13 @@ final class Org2ModelsTests: XCTestCase {
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
     try encoder.encode(fixture).write(to: transcript, options: .atomic)
 
+    let recorder = OpenClawRetrySendRecorder()
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
-      openClawTranscriptURL: transcript
+      openClawTranscriptURL: transcript,
+      openClawSendHandler: { messages, _, _, _ in
+        try await recorder.send(messages: messages)
+      }
     )
 
     XCTAssertTrue(store.isAIChatThreadRunning(thread.id))
@@ -3089,6 +3096,22 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertNil(relaunched.selectedOpenClawChatThread?.pendingTurn)
     XCTAssertEqual(relaunched.openClawMessages.first?.deliveryStatus, .interrupted)
     XCTAssertFalse(relaunched.isAIChatThreadRunning(thread.id))
+
+    await store.retryOpenClawMessage(userMessage.id)
+    let firstRetryAttemptCount = await recorder.attemptCount()
+    XCTAssertEqual(firstRetryAttemptCount, 1)
+    XCTAssertEqual(store.openClawMessages.first?.deliveryStatus, .failed)
+    XCTAssertEqual(store.openClawMessages.first?.sendFailure, "VPN disconnected")
+
+    await store.retryOpenClawMessage(userMessage.id)
+    let secondRetryAttemptCount = await recorder.attemptCount()
+    XCTAssertEqual(secondRetryAttemptCount, 2)
+    XCTAssertEqual(store.openClawMessages.map { "\($0.role.rawValue):\($0.content)" }, [
+      "user:Do not reconnect this stale request",
+      "assistant:reply after reconnect"
+    ])
+    XCTAssertEqual(store.openClawMessages.first?.deliveryStatus, .sent)
+    XCTAssertNil(store.openClawMessages.first?.sendFailure)
   }
 
   @MainActor
@@ -9933,6 +9956,9 @@ final class Org2ModelsTests: XCTestCase {
 
     XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "6", keyCode: 22, modifiers: [.command])))
     XCTAssertEqual(store.selectedSurface, .openClaw)
+    let threadFindGeneration = store.aiChatFindRequestGeneration
+    XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "f", keyCode: 3, modifiers: [.command])))
+    XCTAssertEqual(store.aiChatFindRequestGeneration, threadFindGeneration + 1)
 
     XCTAssertFalse(store.handleGlobalKeyDown(keyDown(characters: "f", keyCode: 3, modifiers: [.command, .option])))
     XCTAssertFalse(store.handleGlobalKeyDown(keyDown(characters: "w", keyCode: 13, modifiers: [.command, .option])))

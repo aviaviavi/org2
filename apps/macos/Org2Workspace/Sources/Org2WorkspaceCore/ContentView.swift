@@ -2476,7 +2476,7 @@ private struct KeyboardShortcutsView: View {
           ])
 
           ShortcutSection(title: "Page", shortcuts: [
-            ShortcutHelpItem(keys: "⌘F", action: "Find in current document"),
+            ShortcutHelpItem(keys: "⌘F", action: "Find in current document or AI thread"),
             ShortcutHelpItem(keys: "Esc", action: "Clear selected block")
           ])
 
@@ -6800,6 +6800,12 @@ private struct OpenClawChatView: View {
   @EnvironmentObject private var store: WorkspaceStore
   @State private var isShowingConfiguration = false
   @State private var isChatNearBottom = true
+  @State private var isShowingThreadFind = false
+  @State private var threadFindQuery = ""
+  @State private var threadFindCandidates: [AIChatThreadSearchCandidate] = []
+  @State private var threadFindMatches: [AIChatThreadSearchMatch] = []
+  @State private var selectedThreadFindMessageID: UUID?
+  @State private var threadFindNavigationGeneration = 0
   let presentation: OpenClawChatPresentation
   let surface: WorkspaceSurface?
 
@@ -6821,10 +6827,41 @@ private struct OpenClawChatView: View {
     .task {
       await store.refreshOpenClawCommands()
     }
+    .onChange(of: store.aiChatFindRequestGeneration) { _, _ in
+      guard surface == store.selectedSurface else { return }
+      isShowingThreadFind = true
+      rebuildThreadFindIndex()
+    }
+    .onChange(of: threadFindQuery) { _, _ in
+      guard isShowingThreadFind else { return }
+      refreshThreadFindMatches()
+    }
+    .onChange(of: store.selectedOpenClawChatThreadID) { _, _ in
+      guard isShowingThreadFind else { return }
+      rebuildThreadFindIndex()
+    }
+    .onChange(of: store.openClawMessages.count) { _, _ in
+      guard isShowingThreadFind else { return }
+      rebuildThreadFindIndex()
+    }
   }
 
   private var chatColumn: some View {
     VStack(spacing: 0) {
+      if isShowingThreadFind {
+        AIChatThreadFindBar(
+          query: $threadFindQuery,
+          selectedMatchIndex: selectedThreadFindMatchIndex,
+          matchCount: threadFindMatches.count,
+          focusRequest: store.aiChatFindRequestGeneration,
+          compact: presentation.isCompact,
+          onPrevious: { selectAdjacentThreadFindMatch(offset: -1) },
+          onNext: { selectAdjacentThreadFindMatch(offset: 1) },
+          onClose: closeThreadFind
+        )
+        Divider()
+      }
+
       chatTranscript
 
       Divider()
@@ -6975,6 +7012,7 @@ private struct OpenClawChatView: View {
       messages: store.openClawMessages,
       isSharedRoom: store.selectedAIChatIsSharedRoom
     )
+    let searchMatchMessageIDs = Set(threadFindMatches.map(\.messageID))
 
     return ScrollViewReader { proxy in
       ScrollView {
@@ -6992,6 +7030,8 @@ private struct OpenClawChatView: View {
                   destinationTitlesByID: store.aiChatDestinationTitlesByID,
                   compact: presentation.isCompact,
                   isQueued: message.role == .user && store.isAIChatMessageQueued(message.id),
+                  isSearchMatch: searchMatchMessageIDs.contains(message.id),
+                  isSelectedSearchMatch: selectedThreadFindMessageID == message.id,
                   canSteerQueuedMessage: store.canSteerQueuedAIChatMessage(message.id),
                   steerQueuedMessage: {
                     Task { await store.steerQueuedAIChatMessage(message.id) }
@@ -7005,7 +7045,12 @@ private struct OpenClawChatView: View {
                 )
                 .id(message.id)
               case .round(let round):
-                AIChatRoomRoundView(round: round, compact: presentation.isCompact)
+                AIChatRoomRoundView(
+                  round: round,
+                  compact: presentation.isCompact,
+                  searchMatchMessageIDs: searchMatchMessageIDs,
+                  selectedSearchMatchMessageID: selectedThreadFindMessageID
+                )
                   .id(round.id)
               }
             }
@@ -7067,6 +7112,16 @@ private struct OpenClawChatView: View {
           break
         }
       }
+      .onChange(of: threadFindNavigationGeneration) { _, _ in
+        guard let selectedThreadFindMessageID,
+              let match = threadFindMatches.first(where: {
+                $0.messageID == selectedThreadFindMessageID
+              })
+        else { return }
+        withAnimation(WorkspaceMotion.quick) {
+          proxy.scrollTo(match.scrollTargetID, anchor: .center)
+        }
+      }
       .overlay(alignment: .bottomTrailing) {
         if !isChatNearBottom && !store.openClawMessages.isEmpty {
           Button {
@@ -7093,6 +7148,62 @@ private struct OpenClawChatView: View {
       }
       .animation(WorkspaceMotion.quick, value: isChatNearBottom)
     }
+  }
+
+  private var threadFindTranscriptItems: [AIChatRoomTranscriptItem] {
+    AIChatRoomTranscriptPresentation.items(
+      messages: store.openClawMessages,
+      isSharedRoom: store.selectedAIChatIsSharedRoom
+    )
+  }
+
+  private var selectedThreadFindMatchIndex: Int? {
+    guard let selectedThreadFindMessageID else { return nil }
+    return threadFindMatches.firstIndex(where: {
+      $0.messageID == selectedThreadFindMessageID
+    })
+  }
+
+  private func refreshThreadFindMatches() {
+    let previousSelection = selectedThreadFindMessageID
+    let matches = AIChatThreadSearch.matches(
+      query: threadFindQuery,
+      in: threadFindCandidates
+    )
+    threadFindMatches = matches
+    if let previousSelection,
+       matches.contains(where: { $0.messageID == previousSelection }) {
+      selectedThreadFindMessageID = previousSelection
+    } else {
+      selectedThreadFindMessageID = matches.first?.messageID
+    }
+    requestThreadFindScroll()
+  }
+
+  private func rebuildThreadFindIndex() {
+    threadFindCandidates = AIChatThreadSearch.candidates(in: threadFindTranscriptItems)
+    refreshThreadFindMatches()
+  }
+
+  private func selectAdjacentThreadFindMatch(offset: Int) {
+    guard !threadFindMatches.isEmpty else { return }
+    let currentIndex = selectedThreadFindMatchIndex ?? (offset > 0 ? -1 : 0)
+    let nextIndex = (currentIndex + offset + threadFindMatches.count) % threadFindMatches.count
+    selectedThreadFindMessageID = threadFindMatches[nextIndex].messageID
+    requestThreadFindScroll()
+  }
+
+  private func requestThreadFindScroll() {
+    guard selectedThreadFindMessageID != nil else { return }
+    threadFindNavigationGeneration &+= 1
+  }
+
+  private func closeThreadFind() {
+    isShowingThreadFind = false
+    threadFindQuery = ""
+    threadFindCandidates = []
+    threadFindMatches = []
+    selectedThreadFindMessageID = nil
   }
 }
 

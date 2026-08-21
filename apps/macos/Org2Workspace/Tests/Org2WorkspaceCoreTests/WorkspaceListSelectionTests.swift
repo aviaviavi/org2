@@ -24,19 +24,24 @@ final class WorkspaceListSelectionTests: XCTestCase {
     )
   }
 
-  func testMeetingAutomationIsDiscoverableInAIChatSettings() throws {
+  func testMeetingAutomationIsDiscoverableOnlyInMeetingSettings() throws {
     let testFile = URL(fileURLWithPath: #filePath)
     let packageRoot = testFile
       .deletingLastPathComponent()
       .deletingLastPathComponent()
       .deletingLastPathComponent()
-    let settingsSource = packageRoot
+    let meetingSettingsSource = packageRoot
+      .appendingPathComponent("Sources/Org2Workspace/MobileRemoteSettingsView.swift")
+    let aiChatSettingsSource = packageRoot
       .appendingPathComponent("Sources/Org2Workspace/AIChatSettingsView.swift")
-    let source = try String(contentsOf: settingsSource, encoding: .utf8)
+    let meetingSettings = try String(contentsOf: meetingSettingsSource, encoding: .utf8)
+    let aiChatSettings = try String(contentsOf: aiChatSettingsSource, encoding: .utf8)
 
-    XCTAssertTrue(source.contains(#"Label("Meeting Automation", systemImage: "calendar.badge.clock")"#))
-    XCTAssertTrue(source.contains("Process every completed meeting"))
-    XCTAssertTrue(source.contains("saveMeetingReadyAutomationConfiguration"))
+    XCTAssertTrue(meetingSettings.contains(#"Label("Meeting Automation", systemImage: "calendar.badge.clock")"#))
+    XCTAssertTrue(meetingSettings.contains("Process every completed meeting"))
+    XCTAssertTrue(meetingSettings.contains("saveMeetingReadyAutomationConfiguration"))
+    XCTAssertFalse(aiChatSettings.contains("Meeting Automation"))
+    XCTAssertFalse(aiChatSettings.contains("Process every completed meeting"))
   }
 
   func testOpeningSettingsDoesNotSynchronouslyProbeTheTranscriptionRuntime() throws {

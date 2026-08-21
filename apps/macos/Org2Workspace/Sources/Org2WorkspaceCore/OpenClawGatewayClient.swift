@@ -314,6 +314,7 @@ enum OpenClawActivityFeed {
 public enum OpenClawGatewayRunEvent: Sendable {
   case connection(OpenClawGatewayConnectionState, String?)
   case accepted(runID: String)
+  case reconciliationHeartbeat
   case text(String, replace: Bool)
   case reasoning(String, replace: Bool)
   case activity(OpenClawRunActivity)
@@ -1097,6 +1098,29 @@ public actor OpenClawGatewayClient {
     }
   }
 
+  /// Reattaches to a turn whose `chat.send` request was already accepted.
+  /// Relaunch recovery must not submit the prompt again, even with the same
+  /// idempotency key: the Gateway already gave us the durable run identifier.
+  public func reconnectAcceptedRun(
+    runID: String,
+    sessionKey: String,
+    agentID: String,
+    requestStartedAt: Date,
+    onEvent: @escaping EventHandler
+  ) async throws -> String {
+    stopRequested = false
+    self.runID = runID
+    self.sessionKey = sessionKey
+    self.agentID = agentID
+    return try await recoverAcceptedRunWithoutResending(
+      runID: runID,
+      sessionKey: sessionKey,
+      agentID: agentID,
+      requestStartedAtMilliseconds: requestStartedAt.timeIntervalSince1970 * 1_000,
+      onEvent: onEvent
+    )
+  }
+
   static func shouldReconcileAfterSendAcknowledgement(
     _ payload: [String: Any]?,
     reconnectingAcceptedRun: Bool = false
@@ -1649,6 +1673,7 @@ public actor OpenClawGatewayClient {
           requestStartedAtMilliseconds: requestStartedAtMilliseconds,
           on: socket
         )
+        await onEvent(.reconciliationHeartbeat)
         switch reconciliation {
         case .completed(let reply):
           return reply

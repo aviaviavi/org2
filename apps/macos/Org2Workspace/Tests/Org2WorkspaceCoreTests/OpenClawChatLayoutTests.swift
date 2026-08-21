@@ -314,6 +314,56 @@ final class OpenClawChatLayoutTests: XCTestCase {
     XCTAssertEqual(sending.animatedTarget(after: appended), .typingIndicator)
   }
 
+  func testThreadFindMatchesVisibleMessageTextCaseInsensitively() {
+    let first = OpenClawChatMessage(role: .user, content: "Review the launch checklist")
+    let second = OpenClawChatMessage(role: .assistant, content: "The LAUNCH is ready.")
+    let unrelated = OpenClawChatMessage(role: .assistant, content: "No blockers remain.")
+    let items = AIChatRoomTranscriptPresentation.items(
+      messages: [first, second, unrelated],
+      isSharedRoom: false
+    )
+
+    XCTAssertEqual(
+      AIChatThreadSearch.matches(query: "launch", in: items),
+      [
+        AIChatThreadSearchMatch(messageID: first.id, scrollTargetID: first.id),
+        AIChatThreadSearchMatch(messageID: second.id, scrollTargetID: second.id),
+      ]
+    )
+    XCTAssertTrue(AIChatThreadSearch.matches(query: "   ", in: items).isEmpty)
+  }
+
+  func testThreadFindTargetsTheContainingSharedRoomRound() {
+    let roundID = UUID()
+    let trigger = OpenClawChatMessage(
+      role: .user,
+      content: "Ask both agents",
+      audienceDestinationIDs: ["codex", "openclaw"],
+      roomRoundID: roundID
+    )
+    let codex = OpenClawChatMessage(
+      role: .assistant,
+      content: "Codex found the migration detail.",
+      authorDestinationID: "codex",
+      roomRoundID: roundID
+    )
+    let openClaw = OpenClawChatMessage(
+      role: .assistant,
+      content: "OpenClaw found another detail.",
+      authorDestinationID: "openclaw",
+      roomRoundID: roundID
+    )
+    let items = AIChatRoomTranscriptPresentation.items(
+      messages: [trigger, codex, openClaw],
+      isSharedRoom: true
+    )
+
+    XCTAssertEqual(
+      AIChatThreadSearch.matches(query: "migration", in: items),
+      [AIChatThreadSearchMatch(messageID: codex.id, scrollTargetID: roundID)]
+    )
+  }
+
   func testChatScrollRestorationDefaultsUnsavedThreadsToMostRecentMessage() {
     let threadID = UUID()
     let unsaved = OpenClawChatScrollRestoration(
