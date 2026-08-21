@@ -62,12 +62,33 @@ public struct OpenClawRunActivity: Identifiable, Hashable, Codable, Sendable {
 
 struct OpenClawActivityFeedItem: Identifiable, Equatable, Sendable {
   let id: String
+  let kind: OpenClawRunActivity.Kind
   let title: String
   let detail: String?
   let latestDetail: String?
   let status: OpenClawRunActivity.Status
   let count: Int
   let updatedAt: Date
+
+  init(
+    id: String,
+    kind: OpenClawRunActivity.Kind = .tool,
+    title: String,
+    detail: String?,
+    latestDetail: String?,
+    status: OpenClawRunActivity.Status,
+    count: Int,
+    updatedAt: Date
+  ) {
+    self.id = id
+    self.kind = kind
+    self.title = title
+    self.detail = detail
+    self.latestDetail = latestDetail
+    self.status = status
+    self.count = count
+    self.updatedAt = updatedAt
+  }
 }
 
 enum OpenClawActivityFeed {
@@ -83,6 +104,12 @@ enum OpenClawActivityFeed {
         }
         let key = "lifecycle:\(activity.id)"
         grouped.append((key, [activity]))
+        continue
+      }
+
+      if activity.kind == .reasoning {
+        guard meaningfulDetail(activity.detail, status: activity.status) != nil else { continue }
+        grouped.append(("reasoning:\(activity.id)", [activity]))
         continue
       }
 
@@ -124,6 +151,7 @@ enum OpenClawActivityFeed {
         : nil
       return OpenClawActivityFeedItem(
         id: "\(entry.key):\(index)",
+        kind: first.kind,
         title: displayTitle(for: first.title, count: group.count),
         detail: detail,
         latestDetail: latestDetail,
@@ -1841,7 +1869,7 @@ public actor OpenClawGatewayClient {
     return String(text[range])
   }
 
-  private static func activity(from payload: [String: Any]) -> OpenClawRunActivity? {
+  static func activity(from payload: [String: Any]) -> OpenClawRunActivity? {
     let runID = string(payload["runId"]) ?? ""
     let stream = string(payload["stream"]) ?? ""
     let data = dictionary(payload["data"]) ?? [:]
@@ -1865,6 +1893,18 @@ public actor OpenClawGatewayClient {
       return OpenClawRunActivity(
         id: "lifecycle:\(runID)", runID: runID, kind: .lifecycle, title: title,
         detail: string(data["error"]) ?? string(data["errorMessage"]), status: status
+      )
+    }
+    if stream == "item", string(data["kind"]) == "preamble" {
+      let itemID = (string(data["itemId"]) ?? string(data["id"]) ?? "latest")
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+      let progressText = (string(data["progressText"]) ?? "")
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !progressText.isEmpty else { return nil }
+      return OpenClawRunActivity(
+        id: "preamble:\(itemID.isEmpty ? "latest" : itemID)",
+        runID: runID, kind: .reasoning, title: "Progress update",
+        detail: progressText, status: .succeeded
       )
     }
     return nil

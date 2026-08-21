@@ -3376,6 +3376,7 @@ private struct OpenClawActivityFeedRow: View {
   }
 
   private var icon: String {
+    if item.kind == .reasoning { return "sparkles" }
     switch item.status {
     case .running: return "wrench.and.screwdriver"
     case .succeeded: return "checkmark.circle.fill"

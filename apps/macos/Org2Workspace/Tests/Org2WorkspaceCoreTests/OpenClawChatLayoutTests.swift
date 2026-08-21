@@ -920,6 +920,54 @@ final class OpenClawChatLayoutTests: XCTestCase {
     XCTAssertEqual(merged.status, .succeeded)
   }
 
+  func testGatewayPreambleItemsBecomeReplaceableProgressActivities() throws {
+    let initial = try XCTUnwrap(OpenClawGatewayClient.activity(from: [
+      "runId": "run-1",
+      "stream": "item",
+      "data": [
+        "kind": "preamble",
+        "itemId": "item-1",
+        "progressText": "Checking the relevant files."
+      ]
+    ]))
+    let update = try XCTUnwrap(OpenClawGatewayClient.activity(from: [
+      "runId": "run-1",
+      "stream": "item",
+      "data": [
+        "kind": "preamble",
+        "itemId": "item-1",
+        "progressText": "Checking the relevant files and tests."
+      ]
+    ]))
+
+    XCTAssertEqual(initial.id, "preamble:item-1")
+    XCTAssertEqual(initial.kind, .reasoning)
+    XCTAssertEqual(initial.title, "Progress update")
+    XCTAssertEqual(initial.detail, "Checking the relevant files.")
+    XCTAssertEqual(initial.status, .succeeded)
+    XCTAssertEqual(update.id, initial.id)
+
+    let merged = OpenClawActivityFeed.merging(initial, with: update)
+    XCTAssertEqual(merged.detail, "Checking the relevant files and tests.")
+
+    let item = try XCTUnwrap(OpenClawActivityFeed.items(from: [merged]).first)
+    XCTAssertEqual(item.kind, .reasoning)
+    XCTAssertEqual(item.title, "Progress update")
+    XCTAssertEqual(item.detail, "Checking the relevant files and tests.")
+  }
+
+  func testGatewayIgnoresNonPreambleItemEvents() {
+    XCTAssertNil(OpenClawGatewayClient.activity(from: [
+      "runId": "run-1",
+      "stream": "item",
+      "data": [
+        "kind": "message",
+        "itemId": "item-1",
+        "progressText": "Do not present this as progress."
+      ]
+    ]))
+  }
+
   func testActivityFeedHidesOversizedStructuredToolResults() throws {
     let payload = """
       {"content":[{"text":"\(String(repeating: "Fetched page content. ", count: 30))"}],"status":200,"contentType":"text/html"}
