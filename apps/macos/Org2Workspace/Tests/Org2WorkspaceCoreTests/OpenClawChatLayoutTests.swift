@@ -568,6 +568,28 @@ final class OpenClawChatLayoutTests: XCTestCase {
     )
   }
 
+  func testAssistantTableCellsFillTheTallestWrappedCellInEachRow() throws {
+    let testFile = URL(fileURLWithPath: #filePath)
+    let packageRoot = testFile
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+    let tableSource = packageRoot
+      .appendingPathComponent("Sources/Org2WorkspaceCore/OrgDocumentRenderedBlocks.swift")
+    let source = try String(contentsOf: tableSource, encoding: .utf8)
+
+    XCTAssertTrue(
+      source.contains(
+        """
+        .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxHeight: .infinity, alignment: .topLeading)
+                            .background(cellBackground(
+        """
+      ),
+      "Every cell background and divider must fill the GridRow height when a neighboring cell wraps"
+    )
+  }
+
   func testAssistantTableColumnsFitOrdinaryFourColumnChatTables() {
     let rows: [OrgTableRow] = [
       .cells(["Line item", "Monthly quantity", "Unit price", "Annual reference"]),

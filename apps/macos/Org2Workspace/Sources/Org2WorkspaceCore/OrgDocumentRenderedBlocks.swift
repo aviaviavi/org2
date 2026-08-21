@@ -2322,6 +2322,7 @@ private struct RenderedTableView: View {
                       alignment: .topLeading
                     )
                     .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxHeight: .infinity, alignment: .topLeading)
                     .background(cellBackground(
                       cells: cells,
                       columnIndex: columnIndex,
