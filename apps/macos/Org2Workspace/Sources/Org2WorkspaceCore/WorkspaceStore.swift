@@ -11824,6 +11824,9 @@ public final class WorkspaceStore: ObservableObject {
     case .agenda:
       focusAgendaFilter(clearsFilter: false)
     case .approvals:
+      if selectedLocation != nil, !isWorkspaceDetailPaneClosed {
+        return focusPageSearch()
+      }
       focusRunsAndReviewFilter()
     case .files:
       focusCorpusFileFilter()

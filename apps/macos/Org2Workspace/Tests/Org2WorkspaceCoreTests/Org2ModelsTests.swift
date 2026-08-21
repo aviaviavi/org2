@@ -9951,6 +9951,40 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testCommandFFindsWithinRenderedApprovalInsteadOfFilteringReviewList() throws {
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data("""
+    {
+      "todo": "TODO",
+      "headline": "Review rendered proposal",
+      "kind": "SCHEDULED",
+      "file": "/tmp/rendered-approval.org2",
+      "line": 12,
+      "body": "Needle inside the approval document",
+      "level": 1,
+      "tags": [],
+      "properties": {}
+    }
+    """.utf8))
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.select(.agenda(item), surface: .approvals)
+
+    XCTAssertEqual(store.selectedSurface, .approvals)
+    XCTAssertNotNil(store.selectedLocation)
+    XCTAssertTrue(store.handleGlobalKeyDown(
+      keyDown(characters: "f", keyCode: 3, modifiers: [.command])
+    ))
+    XCTAssertTrue(store.isPageSearchPresented)
+    XCTAssertEqual(store.pageSearchFocusToken, 1)
+    XCTAssertEqual(store.approvalFilterFocusToken, 0)
+
+    store.closeDetailPane()
+    XCTAssertTrue(store.handleGlobalKeyDown(
+      keyDown(characters: "f", keyCode: 3, modifiers: [.command])
+    ))
+    XCTAssertEqual(store.approvalFilterFocusToken, 1)
+  }
+
+  @MainActor
   func testGlobalKeyboardShortcutsIncludeRefreshAndSave() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-global-menu-keys-\(UUID().uuidString)", isDirectory: true)
