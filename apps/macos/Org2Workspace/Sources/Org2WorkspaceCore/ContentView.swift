@@ -3884,8 +3884,13 @@ private struct RunCenterDetail: View {
             ForEach(pending) { approval in
               VStack(alignment: .leading, spacing: 10) {
                 VStack(alignment: .leading, spacing: 4) {
-                  Text(approval.title).font(.body.weight(.semibold))
-                  Text(approval.action).font(.callout).foregroundStyle(.secondary)
+                  Text(approval.title)
+                    .font(.body.weight(.semibold))
+                    .textSelection(.enabled)
+                  Text(approval.action)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
                 }
 
                 approvalReviewMaterial(approval)

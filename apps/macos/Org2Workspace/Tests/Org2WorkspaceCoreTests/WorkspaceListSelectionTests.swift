@@ -78,6 +78,38 @@ final class WorkspaceListSelectionTests: XCTestCase {
     XCTAssertFalse(source.contains("Enable Fluid Voice Local API"))
   }
 
+  func testRenderedApprovalTitleAndActionRemainSelectable() throws {
+    let testFile = URL(fileURLWithPath: #filePath)
+    let packageRoot = testFile
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+    let contentViewSource = packageRoot
+      .appendingPathComponent("Sources/Org2WorkspaceCore/ContentView.swift")
+    let source = try String(contentsOf: contentViewSource, encoding: .utf8)
+
+    XCTAssertTrue(
+      source.contains(
+        """
+        Text(approval.title)
+                            .font(.body.weight(.semibold))
+                            .textSelection(.enabled)
+        """
+      )
+    )
+    XCTAssertTrue(
+      source.contains(
+        """
+        Text(approval.action)
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+        """
+      ),
+      "The full rendered approval body must support drag selection and standard Copy"
+    )
+  }
+
   func testCommandNStartsANewAIThreadInsteadOfOpeningAnotherWindow() throws {
     let testFile = URL(fileURLWithPath: #filePath)
     let packageRoot = testFile
