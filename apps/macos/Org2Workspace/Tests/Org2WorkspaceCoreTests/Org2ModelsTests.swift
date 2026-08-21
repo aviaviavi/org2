@@ -2,6 +2,7 @@ import AppKit
 @preconcurrency import AVFoundation
 import Combine
 import SwiftUI
+import WebKit
 import XCTest
 @testable import Org2WorkspaceCore
 
@@ -19494,6 +19495,48 @@ final class Org2ModelsTests: XCTestCase {
       coordinator.performEntryContextMenuAction(tag: copyItem.tag)
     }
     XCTAssertEqual(copiedLine, 1)
+  }
+
+  @MainActor
+  func testRenderedEntryContextMenuUsesNativeClickLocation() throws {
+    let window = NSWindow(
+      contentRect: NSRect(x: 0, y: 0, width: 600, height: 400),
+      styleMask: .borderless,
+      backing: .buffered,
+      defer: false
+    )
+    let webView = OrgHTMLDocumentWebView(
+      frame: NSRect(x: 40, y: 50, width: 500, height: 300),
+      configuration: WKWebViewConfiguration()
+    )
+    window.contentView?.addSubview(webView)
+    let clickLocation = NSPoint(x: 90, y: 125)
+    webView.recordContextMenuLocationInWindow(clickLocation)
+
+    let resolvedLocation = try XCTUnwrap(webView.consumeContextMenuLocation())
+    XCTAssertEqual(webView.convert(resolvedLocation, to: nil), clickLocation)
+    XCTAssertNil(webView.consumeContextMenuLocation())
+  }
+
+  func testRenderedEntryContextMenuFallbackRespectsViewOrientation() {
+    XCTAssertEqual(
+      OrgHTMLDocumentView.Coordinator.fallbackEntryContextMenuPoint(
+        x: 30,
+        y: 45,
+        viewHeight: 400,
+        isFlipped: true
+      ),
+      NSPoint(x: 30, y: 45)
+    )
+    XCTAssertEqual(
+      OrgHTMLDocumentView.Coordinator.fallbackEntryContextMenuPoint(
+        x: 30,
+        y: 45,
+        viewHeight: 400,
+        isFlipped: false
+      ),
+      NSPoint(x: 30, y: 355)
+    )
   }
 
   func testRenderedEntrySubtreeCopyIncludesChildrenButNotNextSibling() throws {

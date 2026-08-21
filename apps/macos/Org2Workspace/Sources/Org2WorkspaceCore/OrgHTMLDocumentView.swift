@@ -177,6 +177,26 @@ struct OrgHTMLTableViewSnapshot: Equatable, Sendable {
   }
 }
 
+@MainActor
+final class OrgHTMLDocumentWebView: WKWebView {
+  private var pendingContextMenuLocationInWindow: NSPoint?
+
+  override func rightMouseDown(with event: NSEvent) {
+    pendingContextMenuLocationInWindow = event.locationInWindow
+    super.rightMouseDown(with: event)
+  }
+
+  func recordContextMenuLocationInWindow(_ point: NSPoint) {
+    pendingContextMenuLocationInWindow = point
+  }
+
+  func consumeContextMenuLocation() -> NSPoint? {
+    guard let point = pendingContextMenuLocationInWindow else { return nil }
+    pendingContextMenuLocationInWindow = nil
+    return convert(point, from: nil)
+  }
+}
+
 final class OrgHTMLLocalResourceSchemeHandler: NSObject, WKURLSchemeHandler, @unchecked Sendable {
   nonisolated static let scheme = "org2-resource"
 
@@ -451,7 +471,7 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
       forURLScheme: OrgHTMLLocalResourceSchemeHandler.scheme
     )
 
-    let webView = WKWebView(frame: .zero, configuration: configuration)
+    let webView = OrgHTMLDocumentWebView(frame: .zero, configuration: configuration)
     context.coordinator.webView = webView
     webView.navigationDelegate = context.coordinator
     webView.underPageBackgroundColor = .clear
@@ -645,8 +665,23 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
       guard let webView else { return }
       entryContextMenuLine = line
       let menu = makeEntryContextMenu()
-      let point = NSPoint(x: x, y: Double(webView.bounds.height) - y)
+      let point = (webView as? OrgHTMLDocumentWebView)?.consumeContextMenuLocation()
+        ?? Self.fallbackEntryContextMenuPoint(
+          x: x,
+          y: y,
+          viewHeight: Double(webView.bounds.height),
+          isFlipped: webView.isFlipped
+        )
       menu.popUp(positioning: nil, at: point, in: webView)
+    }
+
+    nonisolated static func fallbackEntryContextMenuPoint(
+      x: Double,
+      y: Double,
+      viewHeight: Double,
+      isFlipped: Bool
+    ) -> NSPoint {
+      NSPoint(x: x, y: isFlipped ? y : viewHeight - y)
     }
 
     func makeEntryContextMenu() -> NSMenu {
