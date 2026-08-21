@@ -419,7 +419,7 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
   var restorationSourceLine: Int? = nil
   let layout: OrgHTMLDocumentLayout
   let askAIAboutHeading: @MainActor (Int) -> Void
-  var performEntryAction: @MainActor (OrgHTMLRenderedEntryAction, Int) -> Void = { _, _ in }
+  let performEntryAction: @MainActor (OrgHTMLRenderedEntryAction, Int) -> Void
   var allowsEntryContextMenu = true
   let reportStatus: @MainActor (String) -> Void
   var allowsTablePersistence = false
@@ -750,8 +750,12 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
     }
 
     @objc private func performEntryContextMenuAction(_ sender: NSMenuItem) {
+      performEntryContextMenuAction(tag: sender.tag)
+    }
+
+    func performEntryContextMenuAction(tag rawTag: Int) {
       guard let line = entryContextMenuLine,
-            let tag = EntryContextMenuTag(rawValue: sender.tag),
+            let tag = EntryContextMenuTag(rawValue: rawTag),
             let action = tag.action
       else { return }
       performEntryAction(action, line)

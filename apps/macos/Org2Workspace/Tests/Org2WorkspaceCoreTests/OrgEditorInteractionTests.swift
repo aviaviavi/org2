@@ -49,6 +49,7 @@ final class OrgEditorInteractionTests: XCTestCase {
       scrollRequest: nil,
       layout: OrgHTMLDocumentLayout(width: .comfortable, margin: .standard),
       askAIAboutHeading: { _ in },
+      performEntryAction: { _, _ in },
       reportStatus: { _ in }
     )
     let hostingView = NSHostingView(rootView: content)
@@ -128,6 +129,7 @@ final class OrgEditorInteractionTests: XCTestCase {
       restorationSourceLine: targetLine,
       layout: OrgHTMLDocumentLayout(width: .comfortable, margin: .standard),
       askAIAboutHeading: { _ in },
+      performEntryAction: { _, _ in },
       reportStatus: { _ in },
       reportViewportSourceLine: { receivedLine = $0 }
     )
@@ -198,6 +200,7 @@ final class OrgEditorInteractionTests: XCTestCase {
       scrollRequest: nil,
       layout: OrgHTMLDocumentLayout(width: .comfortable, margin: .standard),
       askAIAboutHeading: { receivedLine = $0 },
+      performEntryAction: { _, _ in },
       reportStatus: { _ in }
     )
     let hostingView = NSHostingView(rootView: content)
@@ -239,6 +242,72 @@ final class OrgEditorInteractionTests: XCTestCase {
     try await waitForCondition { receivedLine == 40 }
   }
 
+  func testRenderedHeadingInstallsEntryContextMenuBridge() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-entry-context-menu-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let file = root.appendingPathComponent("project.org2")
+    let source = EntrySource(
+      file: file.path,
+      startLine: 40,
+      endLineExclusive: 42,
+      text: "* Target heading\nBody",
+      isSubtree: true
+    )
+    let html = try await Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()).renderAppHTML(
+      source.text,
+      sourcePath: source.file,
+      sourceLineOffset: source.startLine - 1
+    )
+    let content = OrgHTMLDocumentView(
+      html: html,
+      source: source,
+      corpusRoot: root,
+      searchQuery: nil,
+      searchOccurrenceIndex: nil,
+      searchOccurrenceCount: 0,
+      scrollRequest: nil,
+      layout: OrgHTMLDocumentLayout(width: .comfortable, margin: .standard),
+      askAIAboutHeading: { _ in },
+      performEntryAction: { _, _ in },
+      reportStatus: { _ in }
+    )
+    let hostingView = NSHostingView(rootView: content)
+    let window = NSWindow(
+      contentRect: NSRect(x: 0, y: 0, width: 900, height: 700),
+      styleMask: [.titled, .closable, .resizable],
+      backing: .buffered,
+      defer: false
+    )
+    window.contentView = hostingView
+    window.makeKeyAndOrderFront(nil)
+    retainedInteractionWindows.append(window)
+
+    var webView: WKWebView?
+    try await waitForCondition {
+      webView = firstWebView(in: window.contentView)
+      return webView != nil
+    }
+    let renderedWebView = try XCTUnwrap(webView)
+    let deadline = Date().addingTimeInterval(5)
+    var bridgeIsReady = false
+    while Date() < deadline && !bridgeIsReady {
+      bridgeIsReady = (try? await renderedWebView.callAsyncJavaScript(
+        """
+        return Boolean(
+          window.__org2EntryContextMenuInstalled &&
+          document.querySelector('details.org2-headline[data-org2-start-line="40"]')
+        );
+        """,
+        arguments: [:],
+        in: nil,
+        contentWorld: .page
+      )) as? Bool == true
+      if !bridgeIsReady { try await pumpRunLoop() }
+    }
+    XCTAssertTrue(bridgeIsReady)
+  }
+
   func testRenderedBoldSectionShowsAndRoutesAskAIButton() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-section-ai-click-\(UUID().uuidString)", isDirectory: true)
@@ -267,6 +336,7 @@ final class OrgEditorInteractionTests: XCTestCase {
       scrollRequest: nil,
       layout: OrgHTMLDocumentLayout(width: .comfortable, margin: .standard),
       askAIAboutHeading: { receivedLine = $0 },
+      performEntryAction: { _, _ in },
       reportStatus: { _ in }
     )
     let hostingView = NSHostingView(rootView: content)
@@ -361,6 +431,7 @@ final class OrgEditorInteractionTests: XCTestCase {
       scrollRequest: nil,
       layout: OrgHTMLDocumentLayout(width: .comfortable, margin: .standard),
       askAIAboutHeading: { _ in },
+      performEntryAction: { _, _ in },
       reportStatus: { _ in },
       allowsTablePersistence: true,
       saveTableView: { receivedSnapshot = $0 }

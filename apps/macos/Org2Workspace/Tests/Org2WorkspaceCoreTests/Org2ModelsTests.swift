@@ -19453,6 +19453,114 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testRenderedEntryContextMenuContainsAndDispatchesEntryActions() {
+    let coordinator = OrgHTMLDocumentView.Coordinator()
+    coordinator.source = EntrySource(
+      file: "/tmp/context-menu.org2",
+      startLine: 1,
+      endLineExclusive: 3,
+      text: "* Entry\nBody",
+      isSubtree: false
+    )
+    coordinator.entryContextMenuLine = 1
+    var copiedLine: Int?
+    coordinator.performEntryAction = { action, line in
+      if case .copy = action {
+        copiedLine = line
+      }
+    }
+    let menu = coordinator.makeEntryContextMenu()
+    let titles = menu.items.map(\.title)
+
+    XCTAssertTrue(titles.contains("Entry View"))
+    XCTAssertTrue(titles.contains("Edit Entry"))
+    XCTAssertTrue(titles.contains("Ask AI"))
+    XCTAssertTrue(titles.contains("Move / Refile…"))
+    XCTAssertTrue(titles.contains("Schedule"))
+    XCTAssertTrue(titles.contains("Todo Status"))
+    XCTAssertTrue(titles.contains("Encrypt / Decrypt"))
+    XCTAssertTrue(titles.contains("Copy"))
+    XCTAssertTrue(titles.contains("Cut"))
+    XCTAssertTrue(titles.contains("Delete"))
+    XCTAssertEqual(menu.items.first(where: { $0.title == "Todo Status" })?.submenu?.items.map(\.title), [
+      "TODO", "In Progress", "Done", "Canceled", "", "Toggle"
+    ])
+    XCTAssertTrue(
+      OrgHTMLDocumentView.Coordinator.entryContextMenuInstallationScript
+        .contains("messageHandlers.org2EntryContextMenu.postMessage")
+    )
+
+    if let copyItem = menu.items.first(where: { $0.title == "Copy" }) {
+      coordinator.performEntryContextMenuAction(tag: copyItem.tag)
+    }
+    XCTAssertEqual(copiedLine, 1)
+  }
+
+  func testRenderedEntrySubtreeCopyIncludesChildrenButNotNextSibling() throws {
+    let text = """
+    #+TITLE: Context menu
+
+    * Parent
+    Parent body
+    ** Child
+    Child body
+    * Sibling
+    Sibling body
+    """
+    let source = EntrySource(
+      file: "/tmp/context-menu.org2",
+      startLine: 1,
+      endLineExclusive: 9,
+      text: text,
+      isSubtree: false
+    )
+    let blocks = OrgEntryRenderer.parseEditable(text, baseLine: 1)
+    let parent = try XCTUnwrap(blocks.first { block in
+      block.startLine == 3 && {
+        if case .heading = block.rendered { return true }
+        return false
+      }()
+    })
+
+    let copied = try WorkspaceStore.renderedEntrySubtreeText(for: parent, in: source)
+
+    XCTAssertTrue(copied.hasPrefix("* Parent\n"))
+    XCTAssertTrue(copied.contains("** Child\nChild body"))
+    XCTAssertFalse(copied.contains("* Sibling"))
+    XCTAssertTrue(copied.hasSuffix("\n"))
+  }
+
+  @MainActor
+  func testRenderedEntryTodoActionTargetsRightClickedHeadingLine() async throws {
+    let text = """
+    #+TITLE: Context menu
+
+    * TODO First
+    * TODO Second
+    """
+    let source = EntrySource(
+      file: "/tmp/context-menu.org2",
+      startLine: 1,
+      endLineExclusive: 5,
+      text: text,
+      isSubtree: false
+    )
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.selectedEntrySource = source
+    store.selectedRenderedBlocks = OrgEntryRenderer.parseEditable(text, baseLine: 1)
+    var mutatedLine: Int?
+    store.todoStatusMutationForTesting = { status, _, line in
+      mutatedLine = line
+      return status.label
+    }
+
+    store.performRenderedEntryAction(.todo(.done), at: 4)
+    try await waitForCondition { mutatedLine != nil }
+
+    XCTAssertEqual(mutatedLine, 4)
+  }
+
+  @MainActor
   private func waitForEntryRender(_ store: WorkspaceStore, timeout: TimeInterval = 10) async throws {
     let deadline = Date().addingTimeInterval(timeout)
     while store.isRenderingEntrySource && Date() < deadline {
