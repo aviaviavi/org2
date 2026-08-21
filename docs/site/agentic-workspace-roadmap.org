@@ -5,7 +5,7 @@ Org2 is growing from a knowledge compiler into an agentic workspace: a system wh
 
 The technical description is a provider-agnostic agent harness for knowledge work. The product experience should be simpler: people give Org2 an outcome, Org2 assembles the relevant local context, performs bounded work, produces reviewable artifacts, and asks for judgment when a consequential decision or external action is required.
 
-This roadmap extends the [[file:knowledge-compiler-roadmap.org][knowledge compiler roadmap]]. Compilation remains the foundation. Agent runs turn compiled knowledge into controlled outcomes.
+This roadmap builds on the concrete [[file:corpus-flow.org][corpus flow and trust boundaries]]. Compilation remains the foundation. Agent runs turn compiled knowledge into controlled outcomes.
 
 * Implementation status
 

@@ -49,196 +49,139 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <body>
 <div id="content" class="content">
 <main class="org2-document">
-<div class="org2-nav"><details class="org2-nav-menu" open><summary>Menu</summary><nav aria-label="Docs"><a href="index.html">Home</a><a href="features.html">Features</a><a href="getting-started.html">Getting started</a><a href="downloads.html">Downloads</a><details class="org2-nav-dropdown"><summary>Reference</summary><div class="org2-nav-dropdown-menu"><a href="reference.html">Overview</a><a href="corpus-flow.html">Corpus flow</a><a href="language-reference.html">Language reference</a><a href="tooling-reference.html">Tooling reference</a><a href="maintenance-workflows.html">Maintenance and health</a><a href="openclaw-knowledge-layer.html">OpenClaw knowledge layer</a><a href="knowledge-compiler-roadmap.html">Knowledge compiler roadmap</a><a href="semantics-status.html">Semantics and status</a><a href="migration.html">Practical migration</a></div></details><details class="org2-nav-dropdown"><summary>Editors</summary><div class="org2-nav-dropdown-menu"><a href="editors.html">Overview</a><a href="editors-macos.html">macOS Workspace</a><a href="editors-vscode.html">VS Code</a><a href="editors-vim.html">Vim / Neovim</a><a href="editors-emacs.html">Emacs</a></div></details><details class="org2-nav-dropdown"><summary>Comparisons</summary><div class="org2-nav-dropdown-menu"><a href="org2-vs-org-mode.html">Org2 vs Org Mode</a><a href="org2-vs-markdown.html">Org2 vs Markdown</a><a href="org2-vs-obsidian.html">Org2 vs Obsidian</a></div></details><a class="org2-nav-github" href="https://github.com/aviaviavi/org2" target="_blank" rel="noopener noreferrer"><svg class="org2-nav-github-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8a8.013 8.013 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.57 7.57 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.19 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg> GitHub</a><form class="org2-site-search" role="search"><button class="org2-site-search-toggle" type="button" aria-label="Open docs search" aria-expanded="false">⌕</button><label class="sr-only" for="org2-site-search-input">Search docs</label><input id="org2-site-search-input" type="search" placeholder="Search docs" autocomplete="off" aria-label="Search docs" aria-expanded="false"/><div class="org2-site-search-results" hidden></div></form></nav></details></div>
+<div class="org2-nav"><details class="org2-nav-menu" open><summary>Menu</summary><nav aria-label="Docs"><a href="index.html">Home</a><a href="features.html">Features</a><a href="getting-started.html">Getting started</a><a href="downloads.html">Downloads</a><details class="org2-nav-dropdown"><summary>Reference</summary><div class="org2-nav-dropdown-menu"><a href="reference.html">Overview</a><a href="corpus-flow.html">Corpus flow</a><a href="language-reference.html">Language reference</a><a href="tooling-reference.html">Tooling reference</a><a href="maintenance-workflows.html">Maintenance and health</a><a href="openclaw-knowledge-layer.html">OpenClaw knowledge layer</a><a href="semantics-status.html">Semantics and status</a><a href="migration.html">Practical migration</a></div></details><details class="org2-nav-dropdown"><summary>Editors</summary><div class="org2-nav-dropdown-menu"><a href="editors.html">Overview</a><a href="editors-macos.html">macOS Workspace</a><a href="editors-vscode.html">VS Code</a><a href="editors-vim.html">Vim / Neovim</a><a href="editors-emacs.html">Emacs</a></div></details><details class="org2-nav-dropdown"><summary>Comparisons</summary><div class="org2-nav-dropdown-menu"><a href="org2-vs-org-mode.html">Org2 vs Org Mode</a><a href="org2-vs-markdown.html">Org2 vs Markdown</a><a href="org2-vs-obsidian.html">Org2 vs Obsidian</a></div></details><a class="org2-nav-github" href="https://github.com/aviaviavi/org2" target="_blank" rel="noopener noreferrer"><svg class="org2-nav-github-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8a8.013 8.013 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.57 7.57 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.19 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg> GitHub</a><form class="org2-site-search" role="search"><button class="org2-site-search-toggle" type="button" aria-label="Open docs search" aria-expanded="false">⌕</button><label class="sr-only" for="org2-site-search-input">Search docs</label><input id="org2-site-search-input" type="search" placeholder="Search docs" autocomplete="off" aria-label="Search docs" aria-expanded="false"/><div class="org2-site-search-results" hidden></div></form></nav></details></div>
 <header class="org2-document-header">
 <h1 class="org2-document-title">Getting started</h1>
 </header>
 <section class="org2-page-intro">
-  <p>Point Org2 at notes you already own, then start deriving agendas, graph views, editor features, agent workflows, and published artifacts from the same corpus.</p>
+  <p>The best way to start is with the Mac app: create a local second brain in a folder you own, add a few notes and tasks, then let Org2 help you find, plan, and act on what you know. You do not need Emacs or any prior Org mode experience.</p>
   <div class="org2-page-summary" aria-label="Getting started overview">
-    <div><strong>Install what you need.</strong><span>Use the CLI, the native Mac app, or both.</span></div>
-    <div><strong>Keep your existing files.</strong><span>Ordinary Org files work as compiler input; new files can use <code>.org2</code>.</span></div>
-    <div><strong>Add richer views gradually.</strong><span>Start with agenda and search, then add editors, agents, data, or publishing.</span></div>
+    <div><strong>Create a local corpus.</strong><span>It is an ordinary folder of readable text files, not an app-owned database.</span></div>
+    <div><strong>Add what matters.</strong><span>Begin with notes, tasks, and dates. Add links, data, and automation only when useful.</span></div>
+    <div><strong>Put it to work.</strong><span>Use Agenda, search, AI threads, and exports from the same durable knowledge.</span></div>
   </div>
 </section>
-<p>The current end-to-end agent setup uses <strong>OpenClaw</strong>. The native lifecycle plugin feeds substantial OpenClaw work into Agent Work, and the Mac chat connects directly to an OpenClaw Gateway. This reflects the first adapter that has been implemented, while the underlying CLI, run files, workflows, context interfaces, and MCP surface remain available to Codex, local models, scripts, and future agent integrations.</p>
 <section class="org2-headline level-1">
-<h1 id="1-install-org2">1) Install Org2</h1>
-<section class="org2-headline level-2">
-<h2 id="cli">CLI</h2>
-<p>For normal command-line use, install the published package:</p>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm install -g @aviaviavi/org2
-org2 --version
-org2 --help
-org2 agenda --help
-org2 agent capabilities</code></pre>
-<p>You can also try it without a global install:</p>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npx @aviaviavi/org2 --help</code></pre>
-<p>For source builds and contribution work, use the repository:</p>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">git clone https://github.com/aviaviavi/org2.git
-cd org2
-npm ci
-npm run build</code></pre>
-<p>Sanity check the source-built CLI:</p>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- --version
-npm run org2 -- --help
-npm run org2 -- agenda --help</code></pre>
-<p>The examples below use <code>org2</code>. If you are running from a checkout instead of a global install, replace <code>org2</code> with <code>npm run org2 --</code>.</p>
-</section>
-<section class="org2-headline level-2">
-<h2 id="macos-app">macOS app</h2>
-<p>Org2 Workspace is the native macOS app. The easiest install path is the downloadable disk image from the <a href="downloads.html">Org2 downloads page</a>. Files remain hosted on GitHub Releases; the download links pass through Scarf Gateway for aggregate download measurement.</p>
+<h1 id="1-install-the-mac-app">1) Install the Mac app</h1>
+<p>Org2 Workspace is the recommended starting point. It gives you capture, daily notes, Agenda, search, rendered files, AI threads, and agent review without requiring you to learn the file format first.</p>
 <ol>
 <li><p>Download the latest <code>Org2Workspace.dmg</code> from the <a href="downloads.html">Org2 downloads page</a>.</p></li>
 <li><p>Open the disk image and drag <code>Org2Workspace.app</code> into <code>Applications</code>.</p></li>
-<li><p>Open the app from <code>Applications</code> and choose the folder that contains your Org2 or Org corpus.</p></li>
+<li><p>Open the app and choose <strong>Create a new corpus</strong>.</p></li>
+<li><p>Pick a folder that you can easily find and back up.</p></li>
 </ol>
-<p>On first launch, the Workspace offers two paths:</p>
-<ul>
-<li><p><strong>Open an existing corpus</strong> to point Org2 at any folder of <code>.org</code> or <code>.org2</code> files. No migration is required.</p></li>
-<li><p><strong>Create a new corpus</strong> to choose an empty folder and add a small starter layout: <code>org2.json</code>, an optional transport inbox, a welcome note, <code>daily/</code>, <code>notes/</code>, <code>views/</code>, <code>compiled/</code>, and <code>workflows/</code>. Mac quick capture appends to today's daily note; a sync-constrained client may use the inbox as an isolated intake buffer.</p></li>
-</ul>
-<p>The starter is ordinary plain text and directories, not an app-owned database. You can immediately inspect or edit every generated file in Finder, Git, or another editor.</p>
-<p>To publish a talk, open an <code>.org</code> or <code>.org2</code> file and choose <strong>File → Export Slides as PDF…</strong> or <strong>Export Slides as LaTeX…</strong>. The PDF path uses the shared Beamer compiler and requires a TeX installation such as MacTeX. See <a href="editors-macos.html">macOS Workspace → Slide export</a> for slide structure, compatibility, and troubleshooting.</p>
-<p>For a team pilot, create or identify a separate shared corpus rather than exposing a personal corpus. The Mac app remembers multiple mounts and keeps writes scoped to the active corpus. See <a href="collaboration.html">Shared corpora and collaboration</a>.</p>
+<p>Org2 creates a small starter workspace with a welcome note and folders for daily notes, ordinary notes, generated views, and workflows. Everything is plain text that you can inspect in Finder, Git, or another editor. Org2 never requires you to maintain an app-specific database.</p>
+<p>If you already keep notes in a folder, choose <strong>Open an existing corpus</strong> instead. Markdown and other plain-text material can remain alongside Org2 files while you adopt Org2 gradually.</p>
 <p>The initial downloadable disk image is built for Apple Silicon Macs. Current release builds are developer-signed, not notarized. If macOS blocks the first launch, open <strong>System Settings → Privacy &amp; Security</strong> and allow Org2Workspace, or right-click the app in Finder and choose <strong>Open</strong>.</p>
-<p>For source builds and local dogfooding, build the app from the repository:</p>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm ci
-npm run build
-npm run build:macos-app
-open ~/Applications/Org2Workspace.app</code></pre>
-<p><code>npm run build:macos-app</code> and <code>npm run build:macos-app:release</code> create an
-optimized daily app. Use <code>npm run build:macos-app:debug</code> only when intentionally
-testing the daily bundle without optimization. Safer side-by-side development
-uses <code>npm run build:macos-app:codex</code> for debug or
-<code>npm run build:macos-app:codex:release</code> for optimized behavior; both target the
-isolated <code>Org2Workspace Codex.app</code>. The active app identifies itself as <strong>Debug</strong>
-or <strong>Optimized release</strong> in its audio/runtime settings.</p>
-<p>See <a href="editors-macos.html">macOS Workspace</a> for the current app surface.</p>
 </section>
-<section class="org2-headline level-2">
-<h2 id="current-agent-setup-openclaw">Current agent setup: OpenClaw</h2>
-<p>There are two complementary OpenClaw connections:</p>
-<ol>
-<li><p>The <code>org2-lifecycle</code> plugin records substantial main-agent turns, subagent executions, and cron executions as durable Org2 runs. Stable OpenClaw keys correlate retries and lifecycle events without turning ordinary conversation or personal TODOs into runs.</p></li>
-<li><p>The Mac app's <strong>AI Chat</strong> surface supports named local Codex, remote Codex App Server, and OpenClaw destinations in single-agent threads or shared rooms. Explicit <code>@mentions</code> and <code>@all</code> can invoke multiple destinations in one attributed agent round; OpenClaw connects to the Gateway for selected-agent chat, streamed progress, tool activity, runtime slash commands, and stop control.</p></li>
-</ol>
-<p>From an Org2 checkout, install and inspect the lifecycle plugin with:</p>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run test:openclaw
-openclaw plugins install --link ./integrations/openclaw
-openclaw plugins inspect org2-lifecycle --runtime --json</code></pre>
-<p>In OpenClaw configuration, explicitly enable <code>org2-lifecycle</code>, allow its typed conversation hooks, and set <code>corpusDir</code> to the Org2 corpus you want represented in Agent Work. Restart the Gateway after installing or changing plugin code. The plugin's <a href="https://github.com/aviaviavi/org2/tree/main/integrations/openclaw">integration README</a> carries the source-local setup notes.</p>
-<p>To connect an OpenClaw thread, open <strong>AI Chat → Configure</strong>, enter the Gateway endpoint and token, select the agent, and save. A remote Gateway normally requires device pairing: use <strong>Save &amp; Request Pairing</strong>, approve the displayed request on the Gateway host, and reconnect. The app can use the OpenAI-compatible endpoint as a reduced-observability fallback for ordinary chat, while Gateway-native commands and lifecycle features require the live protocol.</p>
+<section class="org2-headline level-1">
+<h1 id="2-make-your-first-note">2) Make your first note</h1>
+<p>Click <strong>New Note</strong>, give the note a useful name, and write normally. A note might be a project, meeting, person, recipe, decision, or anything else you want to remember.</p>
+<p>Under the rendered view, Org2 stores a simple outline. The same note in source form can look like this:</p>
+<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">* Plan the launch
+
+The goal is to publish a clear announcement and onboarding guide.
+
+** TODO Draft the announcement
+SCHEDULED: &lt;2030-01-15 Tue&gt;
+
+** Decisions
+
+- Start with a small private beta.
+- Collect feedback after the first week.</code></pre>
+<p>Only a few conventions matter at first:</p>
+<ul>
+<li><p>A line beginning with <code>*</code> is a title; <code>**</code> is a section inside it.</p></li>
+<li><p><code>TODO</code> makes a heading actionable.</p></li>
+<li><p><code>SCHEDULED:</code> gives the task a date so it appears in Agenda.</p></li>
+<li><p>Ordinary paragraphs and lists are just text.</p></li>
+</ul>
+<p>You can use the app's controls instead of editing this syntax directly. The readable source remains available whenever you want it.</p>
 </section>
-<section class="org2-headline level-2">
-<h2 id="ios-app">iOS app</h2>
+<section class="org2-headline level-1">
+<h1 id="3-use-today-and-agenda">3) Use Today and Agenda</h1>
+<p>Open <strong>Today</strong> for a lightweight daily note. Use it for quick thoughts, a running log, or tasks that do not yet need their own file.</p>
+<p>Open <strong>Agenda</strong> to see actionable items collected across the entire corpus. Mark an item done, reschedule it, assign a priority, or open its source note. You do not need to manually copy tasks into a separate task manager.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="4-find-and-connect-what-you-know">4) Find and connect what you know</h1>
+<p>Use <code>Command-K</code> to quickly open any file or heading. Global search finds text, tasks, agent work, and other indexed workspace records.</p>
+<p>When two ideas belong together, add a link rather than duplicating the information. Org2 keeps source locations and backlinks, so a person, project, meeting, or decision can remain connected to the work that came from it.</p>
+<p>Do not try to design the perfect folder structure on day one. A few notes plus daily capture are enough; reorganize later as useful patterns emerge.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="5-put-the-corpus-to-work-with-ai">5) Put the corpus to work with AI</h1>
+<p>AI is optional. Your files remain useful without a model or agent.</p>
+<p>To connect one, open <strong>Org2 Workspace → Settings… → AI Chat</strong>. Enable or add a destination such as local Codex, remote Codex, or OpenClaw. An AI thread can then search the corpus, cite the files it used, and—within the permissions you choose—preview or apply edits.</p>
+<p>You can also create a shared room and explicitly mention multiple destinations with <code>@mentions</code> or <code>@all</code>. Each response stays attributed to the agent that produced it. The corpus, not any one model or chat provider, remains the durable context.</p>
+<p>Start with a concrete request such as:</p>
+<blockquote>What open tasks are connected to this project? Cite the source of each one.</blockquote>
+<p>or:</p>
+<blockquote>Turn these notes into a one-page proposal, but show me the changes before writing them.</blockquote>
+<p>See <a href="agent-quickstart.html">Agent quickstart</a> when you are ready for permissions, durable runs, workflows, approvals, and deeper agent integration.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="6-create-useful-outputs">6) Create useful outputs</h1>
+<p>The same corpus can produce more than notes and task lists. As your work grows, Org2 can render or export:</p>
+<ul>
+<li><p>filtered and sortable data tables,</p></li>
+<li><p>charts backed by explicit datasets and queries,</p></li>
+<li><p>slide decks and presentation PDFs,</p></li>
+<li><p>ordinary PDFs for proposals, quotes, and other documents,</p></li>
+<li><p>published HTML and documentation sites.</p></li>
+</ul>
+<p>These outputs stay connected to inspectable source and provenance instead of becoming isolated files with no explanation of where they came from.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="prefer-an-editor-start-there-instead">Prefer an editor? Start there instead</h1>
+<p>The Mac app is the easiest onramp, but it is not required. If you already live in VS Code, install the Org2 extension and open or create a corpus folder there. VS Code provides a strong source-editing workflow with Agenda, TODO and planning edits, capture, backlinks, formatting, navigation, and export commands.</p>
+<p>The CLI also works well beside VS Code, Vim/Neovim, Emacs, or another editor:</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm install -g @aviaviavi/org2
+org2 --version
+org2 agenda --dir /path/to/your/corpus --recursive
+org2 agenda --dir /path/to/your/corpus --recursive --tui</code></pre>
+<p>You can try the CLI without a global install:</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npx @aviaviavi/org2 --help</code></pre>
+<p>See <a href="editors.html">Editor integrations</a> and <a href="editors-vscode.html">VS Code</a> for setup details.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="ios-app">iOS app</h1>
 <p>Org2 Mobile is available as a private TestFlight beta and as source. To join the beta, <a href="mailto:mail@avi.press?subject=Org2%20Mobile%20TestFlight">email Avi for an invitation</a> and include the email address you use with TestFlight. It is not currently distributed through the public App Store.</p>
-<p>To build it yourself for a simulator or your own device:</p>
-<ol>
-<li><p>Open <code>apps/ios/Org2Mobile/Org2Mobile.xcodeproj</code> in Xcode.</p></li>
-<li><p>Select the <code>Org2Mobile</code> app target and choose your Apple development team.</p></li>
-<li><p>For device builds, enable the <code>group.org.org2.mobile</code> App Group for both the app and share extension in the Apple developer portal.</p></li>
-<li><p>Build and run from Xcode.</p></li>
-<li><p>In the app, select an iOS Files-visible corpus folder, usually one synced with Syncthing-compatible tooling such as Möbius Sync.</p></li>
-</ol>
-<p>See <code>apps/ios/Org2Mobile/README.md</code> for the current sync shape and share-extension notes.</p>
-<p>Org2 Mobile can also control Mac-hosted AI chats without syncing the chat runtime to the phone. Install Tailscale on both devices, then open <strong>Org2 Workspace → Settings… → Mobile Remote</strong> on the Mac, enable the listener on its detected <code>100.x.y.z</code> address, create a one-time code, and scan it from the iOS <strong>Remote</strong> tab. The Mac stays responsible for model access and corpus context and must remain awake with Org2 Workspace running.</p>
-</section>
+<p>The iOS app can open a Files-visible local corpus for capture, Agenda, approvals, workflows, and file viewing. It can also control Mac-hosted AI chats over Tailscale: enable <strong>Mobile Remote</strong> in the Mac app's settings, create a one-time pairing code, and scan it from the iOS <strong>Remote</strong> tab. The Mac remains responsible for model access and corpus context and must be awake with Org2 Workspace running.</p>
+<p>To build it yourself, open <code>apps/ios/Org2Mobile/Org2Mobile.xcodeproj</code> in Xcode, select your Apple development team, configure the <code>group.org.org2.mobile</code> App Group for the app and share extension, and run it on a simulator or device. See <code>apps/ios/Org2Mobile/README.md</code> for details.</p>
 </section>
 <section class="org2-headline level-1">
-<h1 id="2-start-with-your-existing-org-files-as-compiler-input">2) Start with your existing Org files as compiler input</h1>
-<p>You do <strong>not</strong> need to convert everything first.</p>
-<p>Org2 is designed to work with existing <code>.org</code> files right away.</p>
-<p>Example:</p>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 agenda --dir /path/to/your/notes --recursive</code></pre>
-<p>For a keyboard-driven planning view, add the agenda TUI:</p>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 agenda --dir /path/to/your/notes --recursive --tui</code></pre>
-<p>That means you can start by pointing Org2 at your current notes directory and treating it as input to the compiler pipeline: raw files → structured notes → compiled semantics → views and published outputs. Adopt <code>.org2</code> for new files when you want to.</p>
+<h1 id="coming-from-emacs-org-mode">Coming from Emacs Org mode?</h1>
+<p>You can use your existing Org directory directly. <code>.org</code> remains a first-class input format, so there is no required bulk conversion and no need to rename files before trying Org2.</p>
+<p>Point the Mac app at the existing folder with <strong>Open an existing corpus</strong>, or try the CLI without changing anything:</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 agenda --dir /path/to/your/org-directory --recursive</code></pre>
+<p>For new Org2-specific files, <code>.org2</code> makes intent clearer. To edit them with Org mode, add this association:</p>
+<pre class="org2-src language-emacs-lisp" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-emacs-lisp">(add-to-list 'auto-mode-alist '(&quot;\\.org2\\'&quot; . org-mode))</code></pre>
+<p>Org2 carries forward outlines, TODO states, planning lines, properties, links, tables, source blocks, agendas, and publishing, but it is not a bug-for-bug clone of every Org mode behavior. Keep complex Babel setups, custom Emacs Lisp, specialized export backends, and heavily customized agenda behavior in Org mode until their Org2 behavior has been verified. Both tools can work over the same readable source where their semantics overlap.</p>
+<p>See <a href="editors-emacs.html">Using Org2 from Emacs</a>, <a href="org2-vs-org-mode.html">Org2 vs Org Mode</a>, and <a href="migration.html">Migration guidance</a>.</p>
 </section>
 <section class="org2-headline level-1">
-<h1 id="3-use-vs-code-if-you-want-the-best-editor-experience-today">3) Use VS Code if you want the best editor experience today</h1>
-<p>VS Code is currently the strongest Org2 editor target.</p>
-<p>High-value workflows already available there:</p>
+<h1 id="build-from-source">Build from source</h1>
+<p>For contribution work or local dogfooding:</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">git clone https://github.com/aviaviavi/org2.git
+cd org2
+npm ci
+npm run build
+npm run org2 -- --version</code></pre>
+<p>Build the optimized daily Mac app with:</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run build:macos-app
+open ~/Applications/Org2Workspace.app</code></pre>
+<p>Safer side-by-side development uses <code>npm run build:macos-app:codex</code> for debug or <code>npm run build:macos-app:codex:release</code> for optimized behavior. Both target the isolated <code>Org2Workspace Codex.app</code> rather than replacing the daily app.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="next-steps">Next steps</h1>
 <ul>
-<li><p>agenda UI</p></li>
-<li><p>TODO / planning edits</p></li>
-<li><p>capture / archive / refile</p></li>
-<li><p>formatter preview + apply flows</p></li>
-<li><p>roam backlinks / IDs / dailies</p></li>
-<li><p>HTML export</p></li>
-<li><p>shared navigation and editing features</p></li>
-</ul>
-<p>See <a href="editors-vscode.html">VS Code</a> for the current command/keybinding surface.</p>
-</section>
-<section class="org2-headline level-1">
-<h1 id="4-prefer-org2-for-new-files">4) Prefer <code>.org2</code> for new files</h1>
-<p>For new files, using <code>.org2</code> is a good default.</p>
-<p>Why:</p>
-<ul>
-<li><p>clearer intent,</p></li>
-<li><p>easier editor/tool targeting,</p></li>
-<li><p>cleaner long-term migration path.</p></li>
-</ul>
-<p>But <code>.org</code> remains a first-class input format for current workflows.</p>
-</section>
-<section class="org2-headline level-1">
-<h1 id="5-learn-the-core-cli-workflows">5) Learn the core CLI workflows</h1>
-<p>The most useful commands to know first are:</p>
-<ul>
-<li><p><code>agenda</code>: inspect scheduled/deadline items across files; add <code>--tui</code> for the interactive terminal agenda</p></li>
-<li><p><code>todo</code> / <code>plan</code>: edit task state and planning metadata</p></li>
-<li><p><code>capture</code>: append quick entries</p></li>
-<li><p><code>archive</code> / <code>refile</code>: reorganize trees</p></li>
-<li><p><code>fmt</code>: canonical formatting</p></li>
-<li><p><code>roam ...</code> / <code>id</code> / <code>query</code> / <code>backlinks</code>: linked-note workflows</p></li>
-<li><p><code>agent capabilities</code> / <code>agent context</code> / <code>context</code> / <code>brief</code>: discover functionality and retrieve cited, bounded context for agents</p></li>
-<li><p><code>query-data</code> / <code>render-chart</code>: materialize explicit datasets/SQL and render deterministic charts</p></li>
-<li><p><code>export html</code> / <code>publish</code>: produce docs and sites</p></li>
-<li><p><code>export beamer</code>: produce Beamer LaTeX or compile a presentation PDF</p></li>
-<li><p><code>lsp</code>: optional shared editor backend for clients that use the protocol</p></li>
-</ul>
-</section>
-<section class="org2-headline level-1">
-<h1 id="6-generate-the-docs-site-locally">6) Generate the docs site locally</h1>
-<p>The repository includes a docs site authored in Org files under <code>docs/site/</code> and published with Org2 itself.</p>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 publish docs-site --config org2.json</code></pre>
-</section>
-<section class="org2-headline level-1">
-<h1 id="7-what-to-expect-right-now">7) What to expect right now</h1>
-<section class="org2-headline level-2">
-<h2 id="strong-today">Strong today</h2>
-<ul>
-<li><p>core Org language support</p></li>
-<li><p>practical planning workflows</p></li>
-<li><p>strong VS Code support</p></li>
-<li><p>roam-style linked-note workflows</p></li>
-<li><p>HTML export + publish pipeline</p></li>
-<li><p>Beamer-compatible presentation export to TeX/PDF</p></li>
-<li><p>useful editor backend support</p></li>
-<li><p>cited agent retrieval and a machine-readable installed capability manifest</p></li>
-<li><p>local/remote data notebooks with explicit refresh and chart rendering</p></li>
-<li><p>OpenClaw lifecycle capture into durable runs plus native Gateway chat in the Mac app</p></li>
-</ul>
-</section>
-<section class="org2-headline level-2">
-<h2 id="still-evolving">Still evolving</h2>
-<ul>
-<li><p>final CLI/API stability</p></li>
-<li><p>broader editor parity beyond VS Code</p></li>
-<li><p>full long-tail Org ecosystem depth (habits, clocking, etc.)</p></li>
-</ul>
-</section>
-</section>
-<section class="org2-headline level-1">
-<h1 id="8-next-docs">8) Next docs</h1>
-<ul>
-<li><p><a href="features.html">Features</a></p></li>
-<li><p><a href="agent-quickstart.html">Agent quickstart</a></p></li>
-<li><p><a href="tooling-reference.html">Tooling reference</a></p></li>
-<li><p><a href="editors.html">Editor integrations</a></p></li>
-<li><p><a href="language-reference.html">Language reference</a></p></li>
-<li><p><a href="semantics-status.html">Semantics and status</a></p></li>
-<li><p><a href="migration.html">Migration guidance</a></p></li>
+<li><p><a href="features.html">See what Org2 can do</a></p></li>
+<li><p><a href="editors-macos.html">Learn the macOS Workspace</a></p></li>
+<li><p><a href="agent-quickstart.html">Connect agents safely</a></p></li>
+<li><p><a href="language-reference.html">Learn more of the file format</a></p></li>
+<li><p><a href="tooling-reference.html">Explore the CLI</a></p></li>
+<li><p><a href="semantics-status.html">Check current semantics and maturity</a></p></li>
 </ul>
 </section>
 </main>

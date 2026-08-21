@@ -493,7 +493,10 @@ private struct ExternalThreadsView: View {
         if !searchDraft.isEmpty {
           Button {
             searchDraft = ""
-            store.externalThreadSearchQuery = ""
+            pendingSearchUpdate?.cancel()
+            pendingSearchUpdate = Task { @MainActor in
+              await store.updateExternalThreadSearchQuery("")
+            }
           } label: {
             Label("Clear", systemImage: "xmark.circle.fill")
           }
@@ -635,18 +638,23 @@ private struct ExternalThreadsView: View {
     pendingSearchUpdate?.cancel()
     let nextQuery = searchDraft
     guard nextQuery != store.externalThreadSearchQuery else { return }
+    store.externalThreadSearchQuery = nextQuery
     pendingSearchUpdate = Task { @MainActor in
-      do { try await Task.sleep(nanoseconds: 120_000_000) } catch { return }
+      do { try await Task.sleep(nanoseconds: 400_000_000) } catch { return }
       guard !Task.isCancelled else { return }
-      store.externalThreadSearchQuery = nextQuery
+      await store.refreshExternalThreads()
     }
   }
 
   private func applySearchImmediately() {
     pendingSearchUpdate?.cancel()
-    pendingSearchUpdate = nil
     if store.externalThreadSearchQuery != searchDraft {
-      store.externalThreadSearchQuery = searchDraft
+      let nextQuery = searchDraft
+      pendingSearchUpdate = Task { @MainActor in
+        await store.updateExternalThreadSearchQuery(nextQuery)
+      }
+    } else {
+      pendingSearchUpdate = nil
     }
   }
 }
@@ -6448,14 +6456,14 @@ public struct MeetingTranscriptionSettingsView: View {
             Label("Test Provider", systemImage: "stethoscope")
           }
         }
-        .disabled(store.isTestingTranscriptionProvider)
+        .disabled(store.isTestingTranscriptionProvider || store.isConnectingFluidVoice)
 
         Button {
           Task { await store.refreshAudioSettingsStatusAsync() }
         } label: {
           Label("Refresh", systemImage: "arrow.clockwise")
         }
-        .disabled(store.isTestingTranscriptionProvider)
+        .disabled(store.isTestingTranscriptionProvider || store.isConnectingFluidVoice)
       }
 
       Text(store.audioSettingsStatusText.isEmpty ? store.audioSettingsStatus.detailText : store.audioSettingsStatusText)
@@ -6498,6 +6506,10 @@ public struct MeetingTranscriptionSettingsView: View {
       .frame(maxWidth: .infinity, alignment: .leading)
     }
     .frame(maxWidth: .infinity, alignment: .leading)
+    .task(id: store.meetingTranscriptionProvider) {
+      guard store.meetingTranscriptionProvider == .fluidVoice else { return }
+      await store.connectFluidVoice()
+    }
   }
 
   @ViewBuilder
@@ -6515,16 +6527,30 @@ public struct MeetingTranscriptionSettingsView: View {
       }
     case .fluidVoice:
       VStack(alignment: .leading, spacing: 6) {
-        TextField("http://127.0.0.1:47733", text: $store.fluidVoiceEndpointText)
-          .textFieldStyle(.roundedBorder)
         Button {
-          Task { await store.enableFluidVoiceLocalAPI() }
+          Task { await store.connectFluidVoice() }
         } label: {
-          Label("Enable Fluid Voice Local API", systemImage: "bolt.horizontal.circle")
+          if store.isConnectingFluidVoice {
+            HStack(spacing: 6) {
+              ProgressView()
+                .controlSize(.small)
+              Text("Connecting Fluid Voice…")
+            }
+          } else {
+            Label("Connect Fluid Voice", systemImage: "bolt.horizontal.circle")
+          }
         }
-        Text("Enable Fluid Voice's Local API first. Long meetings are chunked locally; audio is sent only to the loopback endpoint.")
+        .disabled(store.isConnectingFluidVoice)
+        Text("Org2 detects Fluid Voice, enables its Local API, briefly relaunches it when needed, and verifies the connection. Long meetings remain local and are sent only to this Mac's loopback endpoint.")
           .font(.caption2)
           .foregroundStyle(.secondary)
+        DisclosureGroup("Advanced") {
+          TextField("http://127.0.0.1:47733", text: $store.fluidVoiceEndpointText)
+            .textFieldStyle(.roundedBorder)
+          Text("Change this only if Fluid Voice is configured to use a different local port.")
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+        }
       }
     case .macOSSpeech:
       EmptyView()
@@ -8873,7 +8899,6 @@ private struct OrgRenderedDocumentPreview: View {
             restorationSourceLine: store.documentViewportSourceLine(for: source),
             layout: store.renderedDocumentLayout,
             askAIAboutHeading: { store.askOpenClawAboutSourceHeading(at: $0) },
-            performEntryAction: { store.performRenderedEntryAction($0, at: $1) },
             reportStatus: { store.statusText = $0 },
             allowsTablePersistence: source.isEditable,
             saveTableView: { store.requestSaveRenderedTableView($0) },
@@ -9471,7 +9496,7 @@ private struct OrgSourceEditorWithLinkTools: View {
           store.noteSourceEditorLocalTextChanged(text)
         },
         onSaveCommand: { context in
-          store.prepareSourceEditorSave(text: context.text, selection: context.selectedRange)
+          store.editableEntryText = context.text
           Task { await store.saveEditedEntry() }
           return true
         }
@@ -9577,7 +9602,6 @@ private struct OrgSourceEditorWithLinkTools: View {
             restorationSourceLine: store.documentViewportSourceLine(for: source),
             layout: store.renderedDocumentLayout,
             askAIAboutHeading: { store.askOpenClawAboutSourceHeading(at: $0) },
-            allowsEntryContextMenu: false,
             reportStatus: { store.statusText = $0 },
             reportViewportSourceLine: { store.recordDocumentViewportSourceLine($0, for: source) }
           )
@@ -9803,7 +9827,8 @@ private struct OrgSourceEditorWithLinkTools: View {
   }
 
   private func applyInlineEdit(_ edit: InlineSelectionReplacement) {
-    store.applySourceEditorReplacement(edit)
+    store.editableEntryText = edit.text
+    store.sourceEditorSelection = edit.selectedRange
   }
 }
 

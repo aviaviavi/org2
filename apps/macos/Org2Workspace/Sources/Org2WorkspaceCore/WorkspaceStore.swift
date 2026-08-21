@@ -758,13 +758,6 @@ private struct OrgCryptCLIPayload: Decodable {
   let recipientFiles: [String]
 }
 
-private struct RefileMutationPayload: Decodable {
-  let changed: Bool
-  let sourcePath: String
-  let destinationPath: String
-  let sourceHeadlineLine1: Int
-}
-
 private struct RoamLinkifyPayload: Decodable {
   let changedFileCount: Int
   let replacementCount: Int
@@ -1501,6 +1494,7 @@ public final class WorkspaceStore: ObservableObject {
   }
   @Published public var isInstallingFastTranscriber = false
   @Published public var isTestingTranscriptionProvider = false
+  @Published public private(set) var isConnectingFluidVoice = false
   @Published public var audioSettingsStatusText = ""
   @Published public var workspaceRuntimeIdentity = WorkspaceRuntimeIdentity.current()
   @Published public var isCapturingSystemAudio = false
@@ -1956,6 +1950,7 @@ public final class WorkspaceStore: ObservableObject {
   private var codexAppServerClient: CodexAppServerClient?
   private var codexAppServerClientsByDestinationID: [String: CodexAppServerClient] = [:]
   private var externalCodexAppServerClient: CodexAppServerClient?
+  private var externalThreadRefreshRequestID: UUID?
   private var externalThreadLoadRequestID: UUID?
   private var externalThreadDetailCache: [String: ExternalThreadDetail] = [:]
   private var externalThreadDetailCacheOrder: [String] = []
@@ -2070,6 +2065,7 @@ public final class WorkspaceStore: ObservableObject {
   var workspaceRefreshTimeoutNanoseconds = WorkspaceStore.defaultWorkspaceRefreshTimeoutNanoseconds
   var workspaceRefreshOperationForTesting: (@MainActor @Sendable () async -> Void)?
   var approvalCandidateScanOperationForTesting: (@Sendable () -> Void)?
+  var fluidVoiceConnectionOperationForTesting: (() async throws -> String)?
   var agentRunApprovalDecisionForTesting: ((
     _ runID: String,
     _ approvalID: String,
@@ -3622,14 +3618,39 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
-  public func enableFluidVoiceLocalAPI() async {
+  public func connectFluidVoice() async {
+    guard !isConnectingFluidVoice else { return }
+    isConnectingFluidVoice = true
+    audioSettingsStatusText = "Connecting Fluid Voice…"
+    defer { isConnectingFluidVoice = false }
+
     do {
+      if let operation = fluidVoiceConnectionOperationForTesting {
+        audioSettingsStatusText = try await operation()
+        return
+      }
+
       let transcriber = try FluidVoiceTranscriber(endpoint: fluidVoiceEndpointText)
+      if let ready = try? await transcriber.healthDescription() {
+        audioSettingsStatusText = ready
+        return
+      }
+
+      guard let applicationURL = NSWorkspace.shared.urlForApplication(
+        withBundleIdentifier: Self.fluidVoiceBundleIdentifier
+      ) else {
+        throw AudioSettingsError.providerUnavailable(
+          "Install Fluid Voice, then return here. Org2 will configure and connect its Local API automatically."
+        )
+      }
+
       let port = transcriber.endpoint.port ?? 47_733
+      try await stopFluidVoiceBeforeConfiguration()
+
       let result = await Task.detached(priority: .userInitiated) {
         Self.runAudioSettingsProcess(
           executable: "/usr/bin/defaults",
-          arguments: ["write", "com.FluidApp.app", "LocalAPIEnabled", "-bool", "true"]
+          arguments: ["write", Self.fluidVoiceBundleIdentifier, "LocalAPIEnabled", "-bool", "true"]
         )
       }.value
       guard result.exitCode == 0 else {
@@ -3638,16 +3659,72 @@ public final class WorkspaceStore: ObservableObject {
       let portResult = await Task.detached(priority: .userInitiated) {
         Self.runAudioSettingsProcess(
           executable: "/usr/bin/defaults",
-          arguments: ["write", "com.FluidApp.app", "LocalAPIPort", "-int", "\(port)"]
+          arguments: ["write", Self.fluidVoiceBundleIdentifier, "LocalAPIPort", "-int", "\(port)"]
         )
       }.value
       guard portResult.exitCode == 0 else {
         throw AudioSettingsError.providerUnavailable(portResult.stderr)
       }
-      audioSettingsStatusText = "Fluid Voice Local API enabled on port \(port). Quit and reopen Fluid Voice, then test the provider."
+
+      audioSettingsStatusText = "Starting Fluid Voice Local API…"
+      try await openFluidVoiceApplication(at: applicationURL)
+      audioSettingsStatusText = try await waitForFluidVoiceHealth(transcriber)
     } catch {
       audioSettingsStatusText = error.localizedDescription
     }
+  }
+
+  nonisolated private static let fluidVoiceBundleIdentifier = "com.FluidApp.app"
+
+  private func stopFluidVoiceBeforeConfiguration() async throws {
+    let applications = NSRunningApplication.runningApplications(
+      withBundleIdentifier: Self.fluidVoiceBundleIdentifier
+    )
+    guard !applications.isEmpty else { return }
+
+    for application in applications where !application.isTerminated {
+      _ = application.terminate()
+    }
+    let deadline = Date().addingTimeInterval(5)
+    while applications.contains(where: { !$0.isTerminated }), Date() < deadline {
+      try await Task.sleep(nanoseconds: 100_000_000)
+    }
+    guard applications.allSatisfy(\.isTerminated) else {
+      throw AudioSettingsError.providerUnavailable(
+        "Fluid Voice must restart once to enable its Local API. Quit Fluid Voice, then click Connect Fluid Voice again."
+      )
+    }
+  }
+
+  private func openFluidVoiceApplication(at applicationURL: URL) async throws {
+    let configuration = NSWorkspace.OpenConfiguration()
+    configuration.activates = false
+    configuration.addsToRecentItems = false
+    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+      NSWorkspace.shared.openApplication(at: applicationURL, configuration: configuration) { _, error in
+        if let error {
+          continuation.resume(throwing: error)
+        } else {
+          continuation.resume()
+        }
+      }
+    }
+  }
+
+  private func waitForFluidVoiceHealth(_ transcriber: FluidVoiceTranscriber) async throws -> String {
+    var lastError: Error?
+    for _ in 0..<40 {
+      do {
+        return try await transcriber.healthDescription()
+      } catch {
+        lastError = error
+        try await Task.sleep(nanoseconds: 250_000_000)
+      }
+    }
+    let diagnostic = lastError?.localizedDescription ?? "The Local API did not start."
+    throw AudioSettingsError.providerUnavailable(
+      "Fluid Voice was configured and reopened, but Org2 could not connect. \(diagnostic)"
+    )
   }
 
   private func persistMeetingTranscriptionValue(_ value: String, key: String) {
@@ -6954,235 +7031,6 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
-  func performRenderedEntryAction(_ action: OrgHTMLRenderedEntryAction, at line: Int) {
-    guard let block = renderedHeadingBlock(at: line) else {
-      statusText = "Could not resolve that entry"
-      return
-    }
-
-    switch action {
-    case .entryView:
-      openRenderedEntryView(block)
-    case .edit:
-      beginEditingSource(for: block)
-    case .askAI:
-      askOpenClawAboutBlock(block)
-    case .refile:
-      presentRenderedEntryRefile(block)
-    case .schedule(let target):
-      guard let mutationTarget = renderedHeadlineMutationTarget(for: block) else { return }
-      Task { await applyPlanningShortcut(kind: .scheduled, target: target, to: mutationTarget) }
-    case .todo(let status):
-      guard let mutationTarget = renderedHeadlineMutationTarget(for: block) else { return }
-      Task { await applyTodoShortcut(status, to: mutationTarget) }
-    case .deadline(let target):
-      guard let mutationTarget = renderedHeadlineMutationTarget(for: block) else { return }
-      Task { await applyPlanningShortcut(kind: .deadline, target: target, to: mutationTarget) }
-    case .priority(let priority):
-      guard let mutationTarget = renderedHeadlineMutationTarget(for: block) else { return }
-      Task { await applyPriorityShortcut(priority, to: mutationTarget) }
-    case .encrypt:
-      Task { await runOrgCrypt(.encrypt, line: block.startLine) }
-    case .decrypt:
-      Task { await runOrgCrypt(.decrypt, line: block.startLine) }
-    case .copy:
-      copyRenderedEntry(block)
-    case .cut:
-      Task { await cutRenderedEntry(block) }
-    case .copyReference:
-      guard let source = selectedEntrySource else { return }
-      copyFileReference(path: source.file, line: block.startLine)
-    case .delete:
-      confirmAndDeleteRenderedEntry(block)
-    }
-  }
-
-  private func renderedHeadingBlock(at line: Int) -> OrgEditableBlock? {
-    let blocks: [OrgEditableBlock]
-    if !selectedRenderedBlocks.isEmpty {
-      blocks = selectedRenderedBlocks
-    } else if let source = selectedEntrySource {
-      blocks = OrgEntryRenderer.parseEditable(source.text, baseLine: source.startLine)
-    } else {
-      return nil
-    }
-    return blocks.first { block in
-      block.startLine == line && {
-        if case .heading = block.rendered { return true }
-        return false
-      }()
-    }
-  }
-
-  private func renderedHeadlineMutationTarget(for block: OrgEditableBlock) -> HeadlineMutationTarget? {
-    guard let source = selectedEntrySource,
-          source.isEditable,
-          case .heading(let heading) = block.rendered
-    else {
-      statusText = "This entry is read-only"
-      return nil
-    }
-    let title = Org2Display.cleanInline(heading.title).trimmingCharacters(in: .whitespacesAndNewlines)
-    return HeadlineMutationTarget(
-      file: source.file,
-      line: block.startLine,
-      title: title.isEmpty ? relativePath(source.file) : title,
-      agendaItemID: nil
-    )
-  }
-
-  private func openRenderedEntryView(_ block: OrgEditableBlock) {
-    guard let source = selectedEntrySource,
-          case .heading(let heading) = block.rendered
-    else { return }
-    let title = Org2Display.cleanInline(heading.title).trimmingCharacters(in: .whitespacesAndNewlines)
-    let location = OpenClawThread(
-      title: title.isEmpty ? URL(fileURLWithPath: source.file).lastPathComponent : title,
-      file: source.file,
-      line: block.startLine,
-      zone: "entry",
-      modifiedAt: nil,
-      idValue: nil
-    )
-    activateDetailLocation(.openClaw(location), mode: .entry, surface: nil, recordsHistory: true)
-    statusText = "Opened entry view"
-  }
-
-  private func copyRenderedEntry(_ block: OrgEditableBlock) {
-    guard let source = selectedEntrySource else {
-      statusText = "No source loaded"
-      return
-    }
-    do {
-      let text = try Self.renderedEntrySubtreeText(for: block, in: source)
-      NSPasteboard.general.clearContents()
-      NSPasteboard.general.setString(text, forType: .string)
-      statusText = "Copied entry"
-    } catch {
-      errorText = error.localizedDescription
-      statusText = "Copy failed"
-    }
-  }
-
-  private func cutRenderedEntry(_ block: OrgEditableBlock) async {
-    guard let source = selectedEntrySource, source.isEditable else {
-      statusText = "This entry is read-only"
-      return
-    }
-    do {
-      let text = try Self.renderedEntrySubtreeText(for: block, in: source)
-      NSPasteboard.general.clearContents()
-      NSPasteboard.general.setString(text, forType: .string)
-      if await deleteBlock(block) {
-        statusText = "Cut entry"
-      }
-    } catch {
-      errorText = error.localizedDescription
-      statusText = "Cut failed"
-    }
-  }
-
-  private func confirmAndDeleteRenderedEntry(_ block: OrgEditableBlock) {
-    guard let source = selectedEntrySource, source.isEditable else {
-      statusText = "This entry is read-only"
-      return
-    }
-    let title: String
-    if case .heading(let heading) = block.rendered {
-      title = Org2Display.cleanInline(heading.title)
-    } else {
-      title = "this entry"
-    }
-    let alert = NSAlert()
-    alert.alertStyle = .warning
-    alert.messageText = "Delete \(title.isEmpty ? "this entry" : "“\(title)”")?"
-    alert.informativeText = "This deletes the heading and its entire subtree. You can undo the change from the Edit menu."
-    alert.addButton(withTitle: "Delete")
-    alert.addButton(withTitle: "Cancel")
-    guard alert.runModal() == .alertFirstButtonReturn else {
-      statusText = "Delete canceled"
-      return
-    }
-    Task { await deleteBlock(block) }
-  }
-
-  private func presentRenderedEntryRefile(_ block: OrgEditableBlock) {
-    guard let source = selectedEntrySource, source.isEditable else {
-      statusText = "This entry is read-only"
-      return
-    }
-    let panel = NSOpenPanel()
-    panel.title = "Move / Refile Entry"
-    panel.message = "Choose the Org2 file where this entry should be appended."
-    panel.prompt = "Refile"
-    panel.canChooseDirectories = false
-    panel.canChooseFiles = true
-    panel.allowsMultipleSelection = false
-    panel.directoryURL = corpusRoot
-    panel.allowedContentTypes = [
-      UTType(filenameExtension: "org2") ?? .plainText,
-      UTType(filenameExtension: "org") ?? .plainText,
-    ]
-    guard panel.runModal() == .OK, let destination = panel.url else {
-      statusText = "Refile canceled"
-      return
-    }
-    guard destination.standardizedFileURL.path != URL(fileURLWithPath: source.file).standardizedFileURL.path else {
-      statusText = "Choose a different file when refiling from the context menu"
-      return
-    }
-    Task { await refileRenderedEntry(block, from: source, to: destination) }
-  }
-
-  private func refileRenderedEntry(
-    _ block: OrgEditableBlock,
-    from source: EntrySource,
-    to destination: URL
-  ) async {
-    do {
-      let payload: RefileMutationPayload = try await cli.runJSON([
-        "refile",
-        "--file", source.file,
-        "--pos", "\(block.startLine)",
-        "--to-file", destination.path,
-        "--format", "json",
-        "--apply",
-      ])
-      invalidateCanonicalDocumentCache(for: source.file)
-      invalidateCanonicalDocumentCache(for: destination.path)
-      if let selectedLocation, selectedEntrySource?.file == source.file {
-        scheduleEntrySourceLoad(for: selectedLocation)
-      }
-      scheduleAgendaRefresh(preserveSelection: true)
-      Task { await refreshCorpusFiles() }
-      statusText = payload.changed
-        ? "Refiled entry to \(relativePath(destination.path))"
-        : "Entry was already in place"
-    } catch {
-      errorText = error.localizedDescription
-      statusText = "Refile failed"
-    }
-  }
-
-  nonisolated static func renderedEntrySubtreeText(
-    for block: OrgEditableBlock,
-    in source: EntrySource
-  ) throws -> String {
-    let range = try deletionRange(for: block, in: source)
-    let lines = normalizeLineEndings(source.text)
-      .split(separator: "\n", omittingEmptySubsequences: false)
-      .map(String.init)
-    let startIndex = range.startLine - source.startLine
-    let endIndex = range.endLineExclusive - source.startLine
-    guard startIndex >= 0,
-          endIndex >= startIndex,
-          endIndex <= lines.count
-    else {
-      throw WorkspaceEditError.invalidRange(file: source.file, line: block.startLine)
-    }
-    return lines[startIndex..<endIndex].joined(separator: "\n").trimmingCharacters(in: .newlines) + "\n"
-  }
-
   nonisolated static func sourceAIContextBlock(
     at line: Int,
     in blocks: [OrgEditableBlock]
@@ -9390,23 +9238,6 @@ public final class WorkspaceStore: ObservableObject {
     sourceEditorLocalDraftText = text
   }
 
-  public func applySourceEditorReplacement(_ replacement: InlineSelectionReplacement) {
-    guard isEditingEntry else { return }
-    editableEntryText = replacement.text
-    sourceEditorLocalDraftText = replacement.text
-    sourceEditorSelection = Self.clampedSourceEditorSelection(
-      replacement.selectedRange,
-      in: replacement.text
-    )
-  }
-
-  public func prepareSourceEditorSave(text: String, selection: NSRange) {
-    applySourceEditorReplacement(InlineSelectionReplacement(
-      text: text,
-      selectedRange: selection
-    ))
-  }
-
   public func cancelActiveEdit() {
     if editingBlockID != nil {
       cancelEditingBlock()
@@ -11060,18 +10891,21 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
-  @discardableResult
-  public func deleteBlock(_ block: OrgEditableBlock) async -> Bool {
+  public func deleteBlock(_ block: OrgEditableBlock) async {
     guard let source = selectedEntrySource, source.isEditable else {
       statusText = "No editable source loaded"
-      return false
+      return
     }
     guard block.isEditable,
           block.startLine >= source.startLine,
           block.endLineExclusive <= source.endLineExclusive
     else {
       statusText = "Block cannot be deleted"
-      return false
+      return
+    }
+    if source.isSubtree, block.startLine == source.startLine {
+      statusText = "Open the page to delete the entry heading"
+      return
     }
 
     isSavingBlock = true
@@ -11080,33 +10914,6 @@ public final class WorkspaceStore: ObservableObject {
     do {
       let undoSnapshot = fileUndoSnapshot(for: source.file)
       let deletionRange = try Self.deletionRange(for: block, in: source)
-      if source.isSubtree, block.startLine == source.startLine {
-        try await Task.detached(priority: .userInitiated) {
-          try Self.deleteSourceRangeCleaningAdjacentBlank(
-            file: source.file,
-            startLine: deletionRange.startLine,
-            endLineExclusive: deletionRange.endLineExclusive,
-            allowDestructiveReplacement: true
-          )
-        }.value
-        recordFileUndo(from: undoSnapshot)
-        invalidateCanonicalDocumentCache(for: source.file)
-        transientDraftBlock = nil
-        resetBlockEditing()
-        isEditingEntry = false
-        selectedEntrySourceMode = .page
-        if selectedLocation != nil {
-          await reloadSelectedEntrySource()
-        } else {
-          selectedEntrySource = nil
-          selectedRenderedBlocks = []
-          selectedEntryHTML = nil
-        }
-        statusText = "Deleted entry in \(relativePath(source.file))"
-        scheduleAgendaRefresh(preserveSelection: true)
-        return true
-      }
-
       let deletion = try Self.deletingSourceRangeCleaningAdjacentBlank(
         in: source,
         startLine: deletionRange.startLine,
@@ -11133,7 +10940,7 @@ public final class WorkspaceStore: ObservableObject {
 
       guard selectedEntrySource?.id == source.id else {
         recordFileUndo(from: undoSnapshot)
-        return true
+        return
       }
 
       recordFileUndo(from: undoSnapshot)
@@ -11157,11 +10964,9 @@ public final class WorkspaceStore: ObservableObject {
       )?.id
       statusText = "Deleted block in \(relativePath(source.file))"
       scheduleAgendaRefresh(preserveSelection: true)
-      return true
     } catch {
       errorText = error.localizedDescription
       statusText = "Delete failed"
-      return false
     }
   }
 
@@ -11824,9 +11629,6 @@ public final class WorkspaceStore: ObservableObject {
     case .agenda:
       focusAgendaFilter(clearsFilter: false)
     case .approvals:
-      if selectedLocation != nil, !isWorkspaceDetailPaneClosed {
-        return focusPageSearch()
-      }
       focusRunsAndReviewFilter()
     case .files:
       focusCorpusFileFilter()
@@ -14548,35 +14350,66 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func refreshExternalThreads() async {
-    guard !isRefreshingExternalThreads else { return }
+    let requestID = UUID()
+    let searchQuery = externalThreadSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+    externalThreadRefreshRequestID = requestID
     isRefreshingExternalThreads = true
     externalThreadError = nil
-    defer { isRefreshingExternalThreads = false }
+    defer {
+      if externalThreadRefreshRequestID == requestID {
+        externalThreadRefreshRequestID = nil
+        isRefreshingExternalThreads = false
+      }
+    }
     do {
-      externalThreads = try await externalThreadSummaries()
+      let summaries = try await externalThreadSummaries(searchQuery: searchQuery)
+      guard externalThreadRefreshRequestID == requestID,
+            externalThreadSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines) == searchQuery
+      else { return }
+      externalThreads = summaries
       if let selectedExternalThreadID,
          !externalThreads.contains(where: { $0.id == selectedExternalThreadID }) {
         self.selectedExternalThreadID = nil
         selectedExternalThreadDetail = nil
       }
+    } catch is CancellationError {
+      return
     } catch {
+      guard externalThreadRefreshRequestID == requestID else { return }
       externalThreadError = error.localizedDescription
     }
   }
 
-  public func externalThreadSummaries() async throws -> [ExternalThreadSummary] {
+  public func updateExternalThreadSearchQuery(_ searchQuery: String) async {
+    externalThreadSearchQuery = searchQuery
+    await refreshExternalThreads()
+  }
+
+  public func externalThreadSummaries(
+    searchQuery: String = ""
+  ) async throws -> [ExternalThreadSummary] {
     let localCodexThreadIDs = Set(openClawChatThreads.compactMap { thread in
       thread.runtime == .codex || thread.isSharedRoom ? thread.runtimeThreadID : nil
     })
-    let summaries = try await externalCodexClient().listExternalThreads().filter {
+    let normalizedSearchQuery = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+    let summaries: [ExternalThreadSummary]
+    if normalizedSearchQuery.isEmpty {
+      summaries = try await externalCodexClient().listExternalThreads(limit: 100)
+    } else {
+      summaries = try await externalCodexClient().searchExternalThreads(
+        normalizedSearchQuery,
+        limit: 100
+      )
+    }
+    let filteredSummaries = summaries.filter {
       !localCodexThreadIDs.contains($0.externalID)
     }
-    let summariesByID = Dictionary(uniqueKeysWithValues: summaries.map { ($0.id, $0) })
+    let summariesByID = Dictionary(uniqueKeysWithValues: filteredSummaries.map { ($0.id, $0) })
     externalThreadDetailCache = externalThreadDetailCache.filter { id, detail in
       summariesByID[id]?.updatedAt == detail.thread.updatedAt
     }
     externalThreadDetailCacheOrder.removeAll { externalThreadDetailCache[$0] == nil }
-    return summaries
+    return filteredSummaries
   }
 
   public func selectExternalThread(_ id: String) async {
@@ -22425,27 +22258,6 @@ public final class WorkspaceStore: ObservableObject {
       if originatingSurface == .approvals, selectedSurface == .approvals {
         scheduleApprovalsRefresh()
       }
-    } catch {
-      errorText = error.localizedDescription
-      statusText = "TODO update failed"
-    }
-  }
-
-  private func applyTodoShortcut(
-    _ status: TodoEditStatus?,
-    to target: HeadlineMutationTarget
-  ) async {
-    do {
-      let newStatus: String
-      if let status {
-        newStatus = try await setTodoStatus(status, for: target)
-        statusText = "\(status.label) -> \(target.title)"
-      } else {
-        newStatus = try await toggleTodoStatus(for: target)
-        statusText = "\(newStatus) -> \(target.title)"
-      }
-      optimisticallyUpdateAgendaItem(id: target.agendaItemID, todo: newStatus)
-      await refreshAfterHeadlineMutation(target)
     } catch {
       errorText = error.localizedDescription
       statusText = "TODO update failed"

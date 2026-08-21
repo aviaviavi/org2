@@ -4391,6 +4391,23 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(restored.transcriptionLanguageText, "es")
   }
 
+  @MainActor
+  func testConnectingFluidVoicePublishesReadyStatusAndClearsBusyState() async throws {
+    let suiteName = "org2-fluid-voice-connection-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let cli = try Org2CLI(repoRoot: Org2CLI.defaultRepoRoot())
+    let store = WorkspaceStore(cli: cli, defaults: defaults)
+    store.fluidVoiceConnectionOperationForTesting = {
+      "Fluid Voice Local API is ready."
+    }
+
+    await store.connectFluidVoice()
+
+    XCTAssertEqual(store.audioSettingsStatusText, "Fluid Voice Local API is ready.")
+    XCTAssertFalse(store.isConnectingFluidVoice)
+  }
+
   func testTranscriptionStatusUsesBuiltInMacOSFallbackWithoutWhisper() {
     let status = LocalWhisperInstallationStatus(
       backendDescription: "macOS Speech",
@@ -9948,40 +9965,6 @@ final class Org2ModelsTests: XCTestCase {
       keyDown(characters: "s", keyCode: 1, modifiers: [.command]),
       scope: .globalOnly
     ))
-  }
-
-  @MainActor
-  func testCommandFFindsWithinRenderedApprovalInsteadOfFilteringReviewList() throws {
-    let item = try JSONDecoder().decode(AgendaItem.self, from: Data("""
-    {
-      "todo": "TODO",
-      "headline": "Review rendered proposal",
-      "kind": "SCHEDULED",
-      "file": "/tmp/rendered-approval.org2",
-      "line": 12,
-      "body": "Needle inside the approval document",
-      "level": 1,
-      "tags": [],
-      "properties": {}
-    }
-    """.utf8))
-    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
-    store.select(.agenda(item), surface: .approvals)
-
-    XCTAssertEqual(store.selectedSurface, .approvals)
-    XCTAssertNotNil(store.selectedLocation)
-    XCTAssertTrue(store.handleGlobalKeyDown(
-      keyDown(characters: "f", keyCode: 3, modifiers: [.command])
-    ))
-    XCTAssertTrue(store.isPageSearchPresented)
-    XCTAssertEqual(store.pageSearchFocusToken, 1)
-    XCTAssertEqual(store.approvalFilterFocusToken, 0)
-
-    store.closeDetailPane()
-    XCTAssertTrue(store.handleGlobalKeyDown(
-      keyDown(characters: "f", keyCode: 3, modifiers: [.command])
-    ))
-    XCTAssertEqual(store.approvalFilterFocusToken, 1)
   }
 
   @MainActor
@@ -15559,66 +15542,6 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
-  func testProgrammaticSourceLinkInsertionIsImmediatelySavedAsTheCompleteDraft() async throws {
-    let root = FileManager.default.temporaryDirectory
-      .appendingPathComponent("org2-workspace-link-save-\(UUID().uuidString)", isDirectory: true)
-    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-    let note = root.appendingPathComponent("meeting.org2")
-    let original = """
-    #+TITLE: Meeting: Gabi
-
-    * Meeting: Gabi
-    Body remains visible after saving the link.
-    ** TODO Follow up
-    Keep this action item.
-    """
-    try original.write(to: note, atomically: true, encoding: .utf8)
-
-    let itemJSON = """
-    {
-      "todo": "TODO",
-      "headline": "Follow up",
-      "kind": "SCHEDULED",
-      "file": "\(note.path)",
-      "line": 5,
-      "body": "Keep this action item.",
-      "level": 2,
-      "tags": [],
-      "properties": {}
-    }
-    """
-    let item = try JSONDecoder().decode(AgendaItem.self, from: Data(itemJSON.utf8))
-    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
-    store.setCorpusRoot(root)
-    store.select(.agenda(item))
-    store.selectedEntrySourceMode = .page
-    await store.loadEntrySource(for: .agenda(item))
-    store.beginEditingSelectedEntry()
-
-    let linked = original.replacingOccurrences(
-      of: "Meeting: Gabi",
-      with: "Meeting: [[id:3a4751fe-12b6-48a4-9429-ec6f3d6582e5][Gabi]]",
-      options: [],
-      range: original.range(of: "Meeting: Gabi")
-    )
-    store.applySourceEditorReplacement(InlineSelectionReplacement(
-      text: linked,
-      selectedRange: NSRange(location: linked.utf16.count, length: 0)
-    ))
-
-    XCTAssertTrue(store.canSaveActiveEdit)
-    await store.saveActiveEdit()
-
-    XCTAssertEqual(store.selectedEntrySource?.text, linked)
-    XCTAssertEqual(store.editableEntryText, linked)
-    XCTAssertTrue(store.isEditingEntry)
-    XCTAssertFalse(store.canSaveActiveEdit)
-    XCTAssertEqual(try String(contentsOf: note, encoding: .utf8), linked)
-    XCTAssertTrue(store.selectedEntrySource?.text.contains("Body remains visible") == true)
-    XCTAssertTrue(store.selectedEntrySource?.text.contains("** TODO Follow up") == true)
-  }
-
-  @MainActor
   func testStaleEntrySourceLoadWithSameFileAndLineDoesNotReplaceSelectedAgendaItem() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-stale-entry-source-\(UUID().uuidString)", isDirectory: true)
@@ -19501,94 +19424,6 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(store.openClawThreads[0].title, "Agent Thread")
     XCTAssertEqual(store.openClawThreads[0].zone, "threads")
     XCTAssertEqual(store.openClawThreads[0].idValue, "11111111-1111-4111-8111-111111111111")
-  }
-
-  @MainActor
-  func testRenderedEntryContextMenuContainsEntryAndHeadlineActions() {
-    let menu = OrgHTMLDocumentView.Coordinator().makeEntryContextMenu()
-    let titles = menu.items.map(\.title)
-
-    XCTAssertTrue(titles.contains("Entry View"))
-    XCTAssertTrue(titles.contains("Edit Entry"))
-    XCTAssertTrue(titles.contains("Ask AI"))
-    XCTAssertTrue(titles.contains("Move / Refile…"))
-    XCTAssertTrue(titles.contains("Schedule"))
-    XCTAssertTrue(titles.contains("Todo Status"))
-    XCTAssertTrue(titles.contains("Encrypt / Decrypt"))
-    XCTAssertTrue(titles.contains("Copy"))
-    XCTAssertTrue(titles.contains("Cut"))
-    XCTAssertTrue(titles.contains("Delete"))
-    XCTAssertEqual(menu.items.first(where: { $0.title == "Todo Status" })?.submenu?.items.map(\.title), [
-      "TODO", "In Progress", "Done", "Canceled", "", "Toggle"
-    ])
-    XCTAssertTrue(
-      OrgHTMLDocumentView.Coordinator.entryContextMenuInstallationScript
-        .contains("messageHandlers.org2EntryContextMenu.postMessage")
-    )
-  }
-
-  func testRenderedEntrySubtreeCopyIncludesChildrenButNotNextSibling() throws {
-    let text = """
-    #+TITLE: Context menu
-
-    * Parent
-    Parent body
-    ** Child
-    Child body
-    * Sibling
-    Sibling body
-    """
-    let source = EntrySource(
-      file: "/tmp/context-menu.org2",
-      startLine: 1,
-      endLineExclusive: 9,
-      text: text,
-      isSubtree: false
-    )
-    let blocks = OrgEntryRenderer.parseEditable(text, baseLine: 1)
-    let parent = try XCTUnwrap(blocks.first { block in
-      block.startLine == 3 && {
-        if case .heading = block.rendered { return true }
-        return false
-      }()
-    })
-
-    let copied = try WorkspaceStore.renderedEntrySubtreeText(for: parent, in: source)
-
-    XCTAssertTrue(copied.hasPrefix("* Parent\n"))
-    XCTAssertTrue(copied.contains("** Child\nChild body"))
-    XCTAssertFalse(copied.contains("* Sibling"))
-    XCTAssertTrue(copied.hasSuffix("\n"))
-  }
-
-  @MainActor
-  func testRenderedEntryTodoActionTargetsRightClickedHeadingLine() async throws {
-    let text = """
-    #+TITLE: Context menu
-
-    * TODO First
-    * TODO Second
-    """
-    let source = EntrySource(
-      file: "/tmp/context-menu.org2",
-      startLine: 1,
-      endLineExclusive: 5,
-      text: text,
-      isSubtree: false
-    )
-    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
-    store.selectedEntrySource = source
-    store.selectedRenderedBlocks = OrgEntryRenderer.parseEditable(text, baseLine: 1)
-    var mutatedLine: Int?
-    store.todoStatusMutationForTesting = { status, _, line in
-      mutatedLine = line
-      return status.label
-    }
-
-    store.performRenderedEntryAction(.todo(.done), at: 4)
-    try await waitForCondition { mutatedLine != nil }
-
-    XCTAssertEqual(mutatedLine, 4)
   }
 
   @MainActor

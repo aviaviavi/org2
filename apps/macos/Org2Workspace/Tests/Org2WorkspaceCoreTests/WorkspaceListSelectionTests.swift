@@ -56,6 +56,23 @@ final class WorkspaceListSelectionTests: XCTestCase {
     XCTAssertTrue(contentView.contains("Task { await store.refreshAudioSettingsStatusAsync() }"))
   }
 
+  func testFluidVoiceSetupConnectsAutomaticallyAndKeepsTheEndpointAdvanced() throws {
+    let testFile = URL(fileURLWithPath: #filePath)
+    let packageRoot = testFile
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+    let contentViewSource = packageRoot
+      .appendingPathComponent("Sources/Org2WorkspaceCore/ContentView.swift")
+    let source = try String(contentsOf: contentViewSource, encoding: .utf8)
+
+    XCTAssertTrue(source.contains(".task(id: store.meetingTranscriptionProvider)"))
+    XCTAssertTrue(source.contains("await store.connectFluidVoice()"))
+    XCTAssertTrue(source.contains(#"Label("Connect Fluid Voice", systemImage: "bolt.horizontal.circle")"#))
+    XCTAssertTrue(source.contains(#"DisclosureGroup("Advanced")"#))
+    XCTAssertFalse(source.contains("Enable Fluid Voice Local API"))
+  }
+
   func testCommandNStartsANewAIThreadInsteadOfOpeningAnotherWindow() throws {
     let testFile = URL(fileURLWithPath: #filePath)
     let packageRoot = testFile

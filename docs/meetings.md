@@ -85,14 +85,15 @@ The Mac app's **Settings → Meetings** tab selects and tests one of these provi
 
 1. **Automatic** uses local Whisper when it can actually launch, then macOS Speech. A fallback is recorded in `:transcription_error:` instead of being silently hidden.
 2. **Local Whisper** uses the bundled or installed `whisper.cpp` runtime and does not change providers on failure. The model path and language can be overridden in the UI.
-3. **Fluid Voice** calls its loopback-only Local API and uses the speech model selected in Fluid Voice. Org2 can enable that API explicitly, tests `/v1/health`, and splits recordings into overlapping chunks below Fluid Voice's five-minute request ceiling.
+3. **Fluid Voice** calls its loopback-only Local API and uses the speech model selected in Fluid Voice. Selecting it makes Org2 detect the installed app, enable and briefly relaunch its Local API when needed, and verify `/v1/health`; an already healthy connection is left running. Org2 splits recordings into overlapping chunks below Fluid Voice's five-minute request ceiling.
 4. **macOS Speech** uses Apple's built-in Speech recognizer directly.
 5. **Custom Command** substitutes `{audio}` with the quoted local audio path, or appends the path, and reads transcript text from standard output.
 
 The provider, endpoint, model path, language, and custom command are stored in
-the Mac app's local preferences rather than the corpus. Fluid Voice endpoints
-are restricted to `localhost`, `127.0.0.1`, or `::1`; long-audio chunks remain
-temporary local files and are removed after transcription.
+the Mac app's local preferences rather than the corpus. The Fluid Voice endpoint
+is an advanced setting for installations using a non-default local port and is
+restricted to `localhost`, `127.0.0.1`, or `::1`; long-audio chunks remain temporary
+local files and are removed after transcription.
 
 For compatibility with headless launches, Automatic and Local Whisper still
 recognize the existing environment configuration:

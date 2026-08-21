@@ -434,7 +434,7 @@ public actor CodexAppServerClient {
     return models
   }
 
-  public func listExternalThreads(limit: Int = 1_000) async throws -> [ExternalThreadSummary] {
+  public func listExternalThreads(limit: Int = 100) async throws -> [ExternalThreadSummary] {
     let requestedLimit = max(1, min(limit, 2_000))
     var summaries: [ExternalThreadSummary] = []
     var cursor: String?
@@ -443,6 +443,7 @@ public actor CodexAppServerClient {
         "limit": .integer(Int64(min(200, requestedLimit - summaries.count))),
         "sortKey": .string("recency_at"),
         "sortDirection": .string("desc"),
+        "useStateDbOnly": .bool(true),
         "sourceKinds": .array([
           .string("cli"),
           .string("vscode"),
@@ -458,7 +459,47 @@ public actor CodexAppServerClient {
       guard let rows = result["data"]?.arrayValue else {
         throw CodexAppServerError.invalidResponse("thread/list omitted its thread catalog")
       }
-      summaries.append(contentsOf: rows.compactMap(Self.externalThreadSummary))
+      summaries.append(contentsOf: rows.compactMap { Self.externalThreadSummary($0) })
+      let nextCursor = result["nextCursor"]?.stringValue
+      guard nextCursor != cursor else { break }
+      cursor = nextCursor
+    } while cursor != nil && summaries.count < requestedLimit
+    return Array(summaries.prefix(requestedLimit))
+  }
+
+  public func searchExternalThreads(
+    _ searchTerm: String,
+    limit: Int = 100
+  ) async throws -> [ExternalThreadSummary] {
+    let normalizedSearchTerm = searchTerm.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !normalizedSearchTerm.isEmpty else {
+      return try await listExternalThreads(limit: limit)
+    }
+    let requestedLimit = max(1, min(limit, 2_000))
+    var summaries: [ExternalThreadSummary] = []
+    var cursor: String?
+    repeat {
+      var params: [String: JSONValue] = [
+        "searchTerm": .string(normalizedSearchTerm),
+        "limit": .integer(Int64(min(200, requestedLimit - summaries.count))),
+        "sortKey": .string("recency_at"),
+        "sortDirection": .string("desc"),
+        "sourceKinds": .array([
+          .string("cli"),
+          .string("vscode"),
+          .string("appServer"),
+          .string("exec"),
+          .string("unknown")
+        ])
+      ]
+      if let cursor {
+        params["cursor"] = .string(cursor)
+      }
+      let result = try await request(method: "thread/search", params: .object(params))
+      guard let rows = result["data"]?.arrayValue else {
+        throw CodexAppServerError.invalidResponse("thread/search omitted its thread catalog")
+      }
+      summaries.append(contentsOf: rows.compactMap(Self.externalThreadSearchSummary))
       let nextCursor = result["nextCursor"]?.stringValue
       guard nextCursor != cursor else { break }
       cursor = nextCursor
@@ -723,9 +764,13 @@ public actor CodexAppServerClient {
     )
   }
 
-  nonisolated static func externalThreadSummary(_ value: JSONValue) -> ExternalThreadSummary? {
+  nonisolated static func externalThreadSummary(
+    _ value: JSONValue,
+    previewOverride: String? = nil
+  ) -> ExternalThreadSummary? {
     guard let externalID = value["id"]?.stringValue else { return nil }
-    let preview = normalizedExternalText(value["preview"]?.stringValue)
+    let preview = normalizedExternalText(previewOverride)
+      ?? normalizedExternalText(value["preview"]?.stringValue)
     let name = normalizedExternalText(value["name"]?.stringValue)
     let fallbackTitle = preview?
       .split(separator: "\n", omittingEmptySubsequences: true)
@@ -747,6 +792,11 @@ public actor CodexAppServerClient {
       status: value["status"]?["type"]?.stringValue ?? "unknown",
       isPinned: value["isPinned"]?.boolValue ?? false
     )
+  }
+
+  nonisolated static func externalThreadSearchSummary(_ value: JSONValue) -> ExternalThreadSummary? {
+    guard let thread = value["thread"] else { return nil }
+    return externalThreadSummary(thread, previewOverride: value["snippet"]?.stringValue)
   }
 
   nonisolated static func externalThreadMessages(_ thread: JSONValue) -> [ExternalThreadMessage] {

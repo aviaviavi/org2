@@ -754,6 +754,32 @@ final class CodexAppServerClientTests: XCTestCase {
     await client.shutdown()
   }
 
+  func testExternalCodexThreadSearchUsesFullHistorySearchAndSnippet() async throws {
+    let temporaryDirectory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-codex-external-search-test-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: temporaryDirectory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
+
+    let executable = temporaryDirectory.appendingPathComponent("fake-codex-external-search")
+    try Self.fakeExternalThreadListAppServerScript.write(
+      to: executable,
+      atomically: true,
+      encoding: .utf8
+    )
+    try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: executable.path)
+    let client = CodexAppServerClient(
+      executableURL: executable,
+      eventHandler: { _ in },
+      dynamicToolHandler: { _ in CodexDynamicToolResult(success: false, text: "unused") }
+    )
+
+    let threads = try await client.searchExternalThreads("meeting automation", limit: 5)
+
+    XCTAssertEqual(threads.map(\.externalID), ["thr-search-result"])
+    XCTAssertEqual(threads.first?.preview, "Matched text from an older transcript")
+    await client.shutdown()
+  }
+
   func testExternalThreadSnapshotUsesOrg2StructureAndReadOnlyProvenance() {
     let summary = ExternalThreadSummary(
       harness: .codex,
@@ -893,6 +919,10 @@ final class CodexAppServerClientTests: XCTestCase {
           *) printf '%s\n' '{"id":2,"error":{"message":"sort direction missing"}}'; continue ;;
         esac
         case "$line" in
+          *'"useStateDbOnly":true'*) ;;
+          *) printf '%s\n' '{"id":2,"error":{"message":"state database mode missing"}}'; continue ;;
+        esac
+        case "$line" in
           *'"cursor":"page-2"'*)
             printf '%s\n' '{"id":3,"result":{"data":[{"id":"thr-older","name":"Older task","source":"vscode","createdAt":50,"updatedAt":100}],"nextCursor":null}}'
             ;;
@@ -900,6 +930,13 @@ final class CodexAppServerClientTests: XCTestCase {
             printf '%s\n' '{"id":2,"result":{"data":[{"id":"thr-current","name":"Long-running current task","source":"appServer","createdAt":1,"updatedAt":300},{"id":"thr-recent","name":"Recent task","source":"cli","createdAt":200,"updatedAt":250}],"nextCursor":"page-2"}}'
             ;;
         esac
+        ;;
+      *'"method":"thread/search"'*)
+        case "$line" in
+          *'"searchTerm":"meeting automation"'*) ;;
+          *) printf '%s\n' '{"id":2,"error":{"message":"search term missing"}}'; continue ;;
+        esac
+        printf '%s\n' '{"id":2,"result":{"data":[{"snippet":"Matched text from an older transcript","thread":{"id":"thr-search-result","name":"Older matching task","source":"cli","createdAt":10,"updatedAt":20}}],"nextCursor":null}}'
         ;;
     esac
   done
