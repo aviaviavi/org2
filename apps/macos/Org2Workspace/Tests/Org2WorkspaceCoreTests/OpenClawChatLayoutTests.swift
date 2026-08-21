@@ -988,6 +988,116 @@ final class OpenClawChatLayoutTests: XCTestCase {
     XCTAssertEqual(merged.status, .succeeded)
   }
 
+  func testGatewayPreambleItemsBecomeReplaceableProgressActivities() throws {
+    let initial = try XCTUnwrap(OpenClawGatewayClient.activity(from: [
+      "runId": "run-1",
+      "stream": "item",
+      "data": [
+        "kind": "preamble",
+        "itemId": "item-1",
+        "progressText": "Checking the relevant files."
+      ]
+    ]))
+    let update = try XCTUnwrap(OpenClawGatewayClient.activity(from: [
+      "runId": "run-1",
+      "stream": "item",
+      "data": [
+        "kind": "preamble",
+        "itemId": "item-1",
+        "progressText": "Checking the relevant files and tests."
+      ]
+    ]))
+
+    XCTAssertEqual(initial.id, "preamble:item-1")
+    XCTAssertEqual(initial.kind, .reasoning)
+    XCTAssertEqual(initial.title, "Progress update")
+    XCTAssertEqual(initial.detail, "Checking the relevant files.")
+    XCTAssertEqual(initial.status, .succeeded)
+    XCTAssertEqual(update.id, initial.id)
+
+    let merged = OpenClawActivityFeed.merging(initial, with: update)
+    XCTAssertEqual(merged.detail, "Checking the relevant files and tests.")
+
+    let item = try XCTUnwrap(OpenClawActivityFeed.items(from: [merged]).first)
+    XCTAssertEqual(item.kind, .reasoning)
+    XCTAssertEqual(item.title, "Progress update")
+    XCTAssertEqual(item.detail, "Checking the relevant files and tests.")
+  }
+
+  func testGatewayAssistantCommentaryAccumulatesAsPreambleProgress() throws {
+    var accumulatedTextByItemID: [String: String] = [:]
+    let first = try XCTUnwrap(OpenClawGatewayClient.commentaryActivity(
+      from: [
+        "runId": "run-1",
+        "stream": "assistant",
+        "data": [
+          "phase": "commentary",
+          "itemId": "item-1",
+          "text": "",
+          "delta": "Checking the relevant "
+        ]
+      ],
+      accumulatedTextByItemID: &accumulatedTextByItemID
+    ))
+    let second = try XCTUnwrap(OpenClawGatewayClient.commentaryActivity(
+      from: [
+        "runId": "run-1",
+        "stream": "assistant",
+        "data": [
+          "phase": "commentary",
+          "itemId": "item-1",
+          "text": "",
+          "delta": "files and tests."
+        ]
+      ],
+      accumulatedTextByItemID: &accumulatedTextByItemID
+    ))
+
+    XCTAssertEqual(first.id, "preamble:item-1")
+    XCTAssertEqual(first.kind, .reasoning)
+    XCTAssertEqual(first.detail, "Checking the relevant")
+    XCTAssertEqual(second.id, first.id)
+    XCTAssertEqual(second.detail, "Checking the relevant files and tests.")
+  }
+
+  func testGatewayAssistantCommentaryAcceptsCumulativeReplacementSnapshots() throws {
+    var accumulatedTextByItemID = ["run-1:item-1": "Old progress"]
+    let replacement = try XCTUnwrap(OpenClawGatewayClient.commentaryActivity(
+      from: [
+        "runId": "run-1",
+        "stream": "assistant",
+        "data": [
+          "phase": "commentary",
+          "itemId": "item-1",
+          "text": "A corrected progress update.",
+          "delta": "",
+          "replace": true
+        ]
+      ],
+      accumulatedTextByItemID: &accumulatedTextByItemID
+    ))
+
+    XCTAssertEqual(replacement.detail, "A corrected progress update.")
+    XCTAssertEqual(accumulatedTextByItemID["run-1:item-1"], "A corrected progress update.")
+  }
+
+  func testGatewayIgnoresNonProgressAssistantText() {
+    var accumulatedTextByItemID: [String: String] = [:]
+    XCTAssertNil(OpenClawGatewayClient.commentaryActivity(
+      from: [
+        "runId": "run-1",
+        "stream": "assistant",
+        "data": [
+          "phase": "final_answer",
+          "itemId": "item-1",
+          "delta": "This belongs in the final answer."
+        ]
+      ],
+      accumulatedTextByItemID: &accumulatedTextByItemID
+    ))
+    XCTAssertTrue(accumulatedTextByItemID.isEmpty)
+  }
+
   func testActivityFeedHidesOversizedStructuredToolResults() throws {
     let payload = """
       {"content":[{"text":"\(String(repeating: "Fetched page content. ", count: 30))"}],"status":200,"contentType":"text/html"}

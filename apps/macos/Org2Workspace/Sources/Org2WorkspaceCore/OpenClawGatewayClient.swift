@@ -633,6 +633,7 @@ public actor OpenClawGatewayClient {
   private var outstandingSteerRequestIDs: Set<String> = []
   private var pendingSteerAcknowledgements: [String: CheckedContinuation<Void, Error>] = [:]
   private var earlySteerAcknowledgements: [String: [String: Any]] = [:]
+  private var commentaryTextByItemID: [String: String] = [:]
 
   public init(settings: OpenClawGatewaySettings) {
     self.settings = settings
@@ -924,6 +925,7 @@ public actor OpenClawGatewayClient {
     let requestStartedAtMilliseconds = (requestStartedAt ?? Date()).timeIntervalSince1970 * 1_000
     stopRequested = false
     runID = nil
+    commentaryTextByItemID.removeAll(keepingCapacity: true)
     self.sessionKey = sessionKey
     self.agentID = agentID
     await onEvent(.connection(.connecting, nil))
@@ -1058,6 +1060,12 @@ public actor OpenClawGatewayClient {
             await onEvent(.accepted(runID: eventRunID))
           }
           if let event = Self.activity(from: payload) {
+            await onEvent(.activity(event))
+          }
+          if let event = Self.commentaryActivity(
+            from: payload,
+            accumulatedTextByItemID: &commentaryTextByItemID
+          ) {
             await onEvent(.activity(event))
           }
           if let reasoning = Self.reasoning(from: payload), !reasoning.text.isEmpty {
@@ -1656,10 +1664,22 @@ public actor OpenClawGatewayClient {
       while true {
         let frame = try await receiveObject(on: socket)
         if Self.string(frame["type"]) == "event",
-           Self.string(frame["event"]) == "agent",
-           let activity = Self.activity(from: Self.dictionary(frame["payload"]) ?? [:]),
-           observedRunIDs.contains(activity.runID) {
-          await onEvent(.activity(activity))
+           Self.string(frame["event"]) == "agent" {
+          let eventPayload = Self.dictionary(frame["payload"]) ?? [:]
+          let eventRunID = Self.string(eventPayload["runId"]) ?? ""
+          guard observedRunIDs.contains(eventRunID) else { continue }
+          if let activity = Self.activity(from: eventPayload) {
+            await onEvent(.activity(activity))
+          }
+          if let commentary = Self.commentaryActivity(
+            from: eventPayload,
+            accumulatedTextByItemID: &commentaryTextByItemID
+          ) {
+            await onEvent(.activity(commentary))
+          }
+          if let reasoning = Self.reasoning(from: eventPayload), !reasoning.text.isEmpty {
+            await onEvent(.reasoning(reasoning.text, replace: reasoning.replace))
+          }
           continue
         }
         guard Self.string(frame["type"]) == "res", Self.string(frame["id"]) == waitID else { continue }
@@ -1933,6 +1953,46 @@ public actor OpenClawGatewayClient {
       )
     }
     return nil
+  }
+
+  static func commentaryActivity(
+    from payload: [String: Any],
+    accumulatedTextByItemID: inout [String: String]
+  ) -> OpenClawRunActivity? {
+    let stream = string(payload["stream"]) ?? ""
+    let data = dictionary(payload["data"]) ?? [:]
+    guard stream == "assistant", string(data["phase"]) == "commentary" else { return nil }
+
+    let runID = string(payload["runId"]) ?? ""
+    let itemID = (string(data["itemId"]) ?? string(data["id"]) ?? "latest")
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    let normalizedItemID = itemID.isEmpty ? "latest" : itemID
+    let accumulationKey = "\(runID):\(normalizedItemID)"
+    let previous = accumulatedTextByItemID[accumulationKey] ?? ""
+    let snapshot = string(data["text"]) ?? ""
+    let delta = string(data["delta"]) ?? ""
+    let next: String
+    if bool(data["replace"]) == true {
+      next = snapshot.isEmpty ? delta : snapshot
+    } else if !snapshot.isEmpty, delta.isEmpty || snapshot.hasPrefix(previous) {
+      next = snapshot
+    } else if !delta.isEmpty {
+      next = previous + delta
+    } else {
+      next = snapshot
+    }
+    accumulatedTextByItemID[accumulationKey] = next
+
+    let progressText = next.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !progressText.isEmpty else { return nil }
+    return OpenClawRunActivity(
+      id: "preamble:\(normalizedItemID)",
+      runID: runID,
+      kind: .reasoning,
+      title: "Progress update",
+      detail: progressText,
+      status: .succeeded
+    )
   }
 
   private static func reasoning(from payload: [String: Any]) -> (text: String, replace: Bool)? {
