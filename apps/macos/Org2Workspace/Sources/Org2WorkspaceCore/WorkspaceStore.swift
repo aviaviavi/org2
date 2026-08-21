@@ -9154,6 +9154,23 @@ public final class WorkspaceStore: ObservableObject {
     sourceEditorLocalDraftText = text
   }
 
+  public func applySourceEditorReplacement(_ replacement: InlineSelectionReplacement) {
+    guard isEditingEntry else { return }
+    editableEntryText = replacement.text
+    sourceEditorLocalDraftText = replacement.text
+    sourceEditorSelection = Self.clampedSourceEditorSelection(
+      replacement.selectedRange,
+      in: replacement.text
+    )
+  }
+
+  public func prepareSourceEditorSave(text: String, selection: NSRange) {
+    applySourceEditorReplacement(InlineSelectionReplacement(
+      text: text,
+      selectedRange: selection
+    ))
+  }
+
   public func cancelActiveEdit() {
     if editingBlockID != nil {
       cancelEditingBlock()

@@ -9469,7 +9469,7 @@ private struct OrgSourceEditorWithLinkTools: View {
           store.noteSourceEditorLocalTextChanged(text)
         },
         onSaveCommand: { context in
-          store.editableEntryText = context.text
+          store.prepareSourceEditorSave(text: context.text, selection: context.selectedRange)
           Task { await store.saveEditedEntry() }
           return true
         }
@@ -9800,8 +9800,7 @@ private struct OrgSourceEditorWithLinkTools: View {
   }
 
   private func applyInlineEdit(_ edit: InlineSelectionReplacement) {
-    store.editableEntryText = edit.text
-    store.sourceEditorSelection = edit.selectedRange
+    store.applySourceEditorReplacement(edit)
   }
 }
 

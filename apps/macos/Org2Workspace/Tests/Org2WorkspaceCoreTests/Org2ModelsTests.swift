@@ -15525,6 +15525,66 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testProgrammaticSourceLinkInsertionIsImmediatelySavedAsTheCompleteDraft() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-link-save-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("meeting.org2")
+    let original = """
+    #+TITLE: Meeting: Gabi
+
+    * Meeting: Gabi
+    Body remains visible after saving the link.
+    ** TODO Follow up
+    Keep this action item.
+    """
+    try original.write(to: note, atomically: true, encoding: .utf8)
+
+    let itemJSON = """
+    {
+      "todo": "TODO",
+      "headline": "Follow up",
+      "kind": "SCHEDULED",
+      "file": "\(note.path)",
+      "line": 5,
+      "body": "Keep this action item.",
+      "level": 2,
+      "tags": [],
+      "properties": {}
+    }
+    """
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data(itemJSON.utf8))
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.select(.agenda(item))
+    store.selectedEntrySourceMode = .page
+    await store.loadEntrySource(for: .agenda(item))
+    store.beginEditingSelectedEntry()
+
+    let linked = original.replacingOccurrences(
+      of: "Meeting: Gabi",
+      with: "Meeting: [[id:3a4751fe-12b6-48a4-9429-ec6f3d6582e5][Gabi]]",
+      options: [],
+      range: original.range(of: "Meeting: Gabi")
+    )
+    store.applySourceEditorReplacement(InlineSelectionReplacement(
+      text: linked,
+      selectedRange: NSRange(location: linked.utf16.count, length: 0)
+    ))
+
+    XCTAssertTrue(store.canSaveActiveEdit)
+    await store.saveActiveEdit()
+
+    XCTAssertEqual(store.selectedEntrySource?.text, linked)
+    XCTAssertEqual(store.editableEntryText, linked)
+    XCTAssertTrue(store.isEditingEntry)
+    XCTAssertFalse(store.canSaveActiveEdit)
+    XCTAssertEqual(try String(contentsOf: note, encoding: .utf8), linked)
+    XCTAssertTrue(store.selectedEntrySource?.text.contains("Body remains visible") == true)
+    XCTAssertTrue(store.selectedEntrySource?.text.contains("** TODO Follow up") == true)
+  }
+
+  @MainActor
   func testStaleEntrySourceLoadWithSameFileAndLineDoesNotReplaceSelectedAgendaItem() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-stale-entry-source-\(UUID().uuidString)", isDirectory: true)
