@@ -676,6 +676,24 @@ final class OpenClawChatLayoutTests: XCTestCase {
     XCTAssertEqual(runningTool.statusTitle, "Running shell command")
   }
 
+  func testStatusCardUsesConfiguredDirectProviderName() {
+    let view = OpenClawTypingIndicatorView(
+      startedAt: Date(),
+      runtime: .openClaw,
+      destinationTitle: "Anthropic",
+      connectionState: .connected,
+      connectionDetail: nil,
+      runID: nil,
+      streamingReply: "",
+      reasoning: "",
+      activities: [],
+      compact: false,
+      onStop: {}
+    )
+
+    XCTAssertEqual(view.statusTitle, "Starting Anthropic")
+  }
+
   func testOpenClawStatusCardSurfacesQuietAndStalledRuns() {
     let now = Date(timeIntervalSince1970: 1_000_000)
     let recentlyActive = OpenClawTypingIndicatorView(

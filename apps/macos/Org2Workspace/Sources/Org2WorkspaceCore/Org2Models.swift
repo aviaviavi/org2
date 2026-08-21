@@ -2430,13 +2430,17 @@ public enum AIChatDestinationAdapter: String, CaseIterable, Codable, Identifiabl
   case codexLocal
   case codexRemote
   case openClaw
+  case openAI
+  case anthropic
+  case openRouter
+  case ollama
 
   public var id: String { rawValue }
 
   public var runtime: AIChatRuntime {
     switch self {
     case .codexLocal, .codexRemote: .codex
-    case .openClaw: .openClaw
+    case .openClaw, .openAI, .anthropic, .openRouter, .ollama: .openClaw
     }
   }
 
@@ -2445,10 +2449,71 @@ public enum AIChatDestinationAdapter: String, CaseIterable, Codable, Identifiabl
     case .codexLocal: "Local Codex"
     case .codexRemote: "Remote Codex"
     case .openClaw: "OpenClaw Gateway"
+    case .openAI: "OpenAI API"
+    case .anthropic: "Anthropic API"
+    case .openRouter: "OpenRouter"
+    case .ollama: "Ollama"
     }
   }
 
-  public var systemImage: String { runtime.systemImage }
+  public var systemImage: String {
+    switch self {
+    case .codexLocal, .codexRemote: AIChatRuntime.codex.systemImage
+    case .openClaw: AIChatRuntime.openClaw.systemImage
+    case .openAI: "sparkles"
+    case .anthropic: "a.circle"
+    case .openRouter: "arrow.triangle.branch"
+    case .ollama: "desktopcomputer"
+    }
+  }
+
+  public var isDirectProvider: Bool {
+    switch self {
+    case .openAI, .anthropic, .openRouter, .ollama: true
+    case .codexLocal, .codexRemote, .openClaw: false
+    }
+  }
+
+  public var requiresAPIKey: Bool {
+    switch self {
+    case .openAI, .anthropic, .openRouter: true
+    case .codexLocal, .codexRemote, .openClaw, .ollama: false
+    }
+  }
+
+  public var defaultEndpoint: String {
+    switch self {
+    case .openAI: "https://api.openai.com/v1"
+    case .anthropic: "https://api.anthropic.com/v1"
+    case .openRouter: "https://openrouter.ai/api/v1"
+    case .ollama: "http://127.0.0.1:11434/api"
+    case .codexLocal, .codexRemote, .openClaw: ""
+    }
+  }
+
+  public var defaultName: String {
+    switch self {
+    case .codexLocal: "Codex"
+    case .codexRemote: "Remote Codex"
+    case .openClaw: "OpenClaw"
+    case .openAI: "OpenAI"
+    case .anthropic: "Anthropic"
+    case .openRouter: "OpenRouter"
+    case .ollama: "Ollama"
+    }
+  }
+
+  public var defaultMention: String {
+    switch self {
+    case .codexLocal: "codex"
+    case .codexRemote: "codex-remote"
+    case .openClaw: "openclaw"
+    case .openAI: "openai"
+    case .anthropic: "anthropic"
+    case .openRouter: "openrouter"
+    case .ollama: "ollama"
+    }
+  }
 }
 
 public struct AIChatDestinationConfiguration: Identifiable, Hashable, Codable, Sendable {
@@ -2462,6 +2527,7 @@ public struct AIChatDestinationConfiguration: Identifiable, Hashable, Codable, S
   public var endpoint: String
   public var agentID: String
   public var workspaceRoot: String
+  public var model: String?
   public var isEnabled: Bool
 
   public init(
@@ -2472,6 +2538,7 @@ public struct AIChatDestinationConfiguration: Identifiable, Hashable, Codable, S
     endpoint: String = "",
     agentID: String = "",
     workspaceRoot: String = "",
+    model: String? = nil,
     isEnabled: Bool = true
   ) {
     self.id = id
@@ -2481,6 +2548,8 @@ public struct AIChatDestinationConfiguration: Identifiable, Hashable, Codable, S
     self.endpoint = endpoint.trimmingCharacters(in: .whitespacesAndNewlines)
     self.agentID = agentID.trimmingCharacters(in: .whitespacesAndNewlines)
     self.workspaceRoot = workspaceRoot.trimmingCharacters(in: .whitespacesAndNewlines)
+    let normalizedModel = model?.trimmingCharacters(in: .whitespacesAndNewlines)
+    self.model = normalizedModel?.isEmpty == false ? normalizedModel : nil
     self.isEnabled = isEnabled
   }
 

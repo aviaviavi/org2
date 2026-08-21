@@ -298,6 +298,42 @@ final class CodexAppServerClientTests: XCTestCase {
   }
 
   @MainActor
+  func testDirectProviderDestinationPersistsEndpointAndModel() throws {
+    let suiteName = "AIChatDirectProviderSettings.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let transcript = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-direct-provider-transcript-\(UUID().uuidString).json")
+    defer { try? FileManager.default.removeItem(at: transcript) }
+
+    let store = WorkspaceStore(
+      defaults: defaults,
+      openClawTranscriptURL: transcript,
+      legacyDefaultsDomains: []
+    )
+    let id = store.addAIChatDestination(adapter: .openRouter)
+    var destination = try XCTUnwrap(store.aiChatDestination(id: id))
+    XCTAssertFalse(destination.isEnabled)
+    XCTAssertEqual(destination.endpoint, "https://openrouter.ai/api/v1")
+    destination.model = "anthropic/claude-test"
+    destination.isEnabled = true
+    store.updateAIChatDestination(destination)
+
+    let restored = WorkspaceStore(
+      defaults: defaults,
+      openClawTranscriptURL: transcript,
+      legacyDefaultsDomains: []
+    )
+    let restoredDestination = try XCTUnwrap(restored.aiChatDestination(id: id))
+    XCTAssertEqual(restoredDestination.adapter, .openRouter)
+    XCTAssertEqual(restoredDestination.model, "anthropic/claude-test")
+    XCTAssertTrue(restoredDestination.isEnabled)
+
+    restored.createAIChatThread(destinationID: id)
+    XCTAssertEqual(restored.selectedOpenClawChatThread?.model, "anthropic/claude-test")
+  }
+
+  @MainActor
   func testBuiltInOpenClawDestinationInheritsConfiguredAgentAfterMigration() async throws {
     let suiteName = "AIChatDestinationAgentMigration.\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))

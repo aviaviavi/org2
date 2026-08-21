@@ -6989,6 +6989,7 @@ private struct OpenClawChatView: View {
                 threadID: store.selectedOpenClawChatThreadID,
                 startedAt: store.openClawRequestStartedAt,
                 runtime: store.selectedAIChatActiveRuntime,
+                destinationTitle: store.aiChatDestinationTitle(store.selectedAIChatActiveDestinationID),
                 compact: presentation.isCompact,
                 onStop: {
                   Task { await store.stopOpenClawRun() }

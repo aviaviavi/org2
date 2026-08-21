@@ -49,9 +49,15 @@ struct AIChatSettingsView: View {
         }
 
         HStack {
-          Button {
-            let id = store.addAIChatDestination()
-            editedDestination = store.aiChatDestination(id: id)
+          Menu {
+            ForEach(addableDestinationAdapters) { adapter in
+              Button {
+                let id = store.addAIChatDestination(adapter: adapter)
+                editedDestination = store.aiChatDestination(id: id)
+              } label: {
+                Label(adapter.title, systemImage: adapter.systemImage)
+              }
+            }
           } label: {
             Label("Add Destination", systemImage: "plus")
           }
@@ -234,6 +240,10 @@ struct AIChatSettingsView: View {
     }
   }
 
+  private var addableDestinationAdapters: [AIChatDestinationAdapter] {
+    AIChatDestinationAdapter.allCases.filter { $0 != .codexLocal }
+  }
+
   private var codexAccessHelp: String {
     switch store.codexSandboxAccess {
     case .readOnly:
@@ -279,6 +289,8 @@ private struct AIChatDestinationEditor: View {
   @State private var destination: AIChatDestinationConfiguration
   @State private var token = ""
   @State private var clearsSavedToken = false
+  @State private var isTestingConnection = false
+  @State private var connectionStatus: String?
 
   init(destination: AIChatDestinationConfiguration) {
     _destination = State(initialValue: destination)
@@ -304,6 +316,13 @@ private struct AIChatDestinationEditor: View {
           }
         }
         .disabled(isBuiltIn)
+        .onChange(of: destination.adapter) { oldAdapter, newAdapter in
+          if destination.endpoint.isEmpty || destination.endpoint == oldAdapter.defaultEndpoint {
+            destination.endpoint = newAdapter.defaultEndpoint
+          }
+          destination.model = nil
+          connectionStatus = nil
+        }
 
         if destination.adapter == .codexRemote {
           TextField(
@@ -323,16 +342,48 @@ private struct AIChatDestinationEditor: View {
             prompt: Text("https://host/v1/chat/completions")
           )
           TextField("Agent ID", text: $destination.agentID, prompt: Text("main"))
+        } else if destination.adapter.isDirectProvider {
+          TextField(
+            "API base URL",
+            text: $destination.endpoint,
+            prompt: Text(destination.adapter.defaultEndpoint)
+          )
+          TextField(
+            "Model",
+            text: Binding(
+              get: { destination.model ?? "" },
+              set: { destination.model = $0 }
+            ),
+            prompt: Text("Provider model ID")
+          )
         }
 
         if destination.acceptsBearerToken && !isBuiltInOpenClaw {
           SecureField(
-            "Bearer token",
+            credentialLabel,
             text: $token,
-            prompt: Text(hasSavedToken ? "Saved token unchanged" : "Optional")
+            prompt: Text(credentialPrompt)
           )
           if hasSavedToken {
             Toggle("Clear saved token", isOn: $clearsSavedToken)
+          }
+        }
+
+        if destination.adapter.isDirectProvider {
+          HStack(spacing: 10) {
+            Button("Test Connection") {
+              testConnection()
+            }
+            .disabled(isTestingConnection || missingRequiredCredential)
+            if isTestingConnection {
+              ProgressView()
+                .controlSize(.small)
+            }
+            if let connectionStatus {
+              Text(connectionStatus)
+                .font(.caption)
+                .foregroundStyle(connectionStatus.hasPrefix("Connected") ? Color.secondary : Color.red)
+            }
           }
         }
       }
@@ -363,7 +414,7 @@ private struct AIChatDestinationEditor: View {
           }
         }
         .buttonStyle(.borderedProminent)
-        .disabled(destination.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        .disabled(saveIsDisabled)
       }
     }
     .padding(20)
@@ -383,6 +434,61 @@ private struct AIChatDestinationEditor: View {
     store.aiChatDestinationHasToken(destination.id)
   }
 
+  private var missingRequiredCredential: Bool {
+    destination.adapter.requiresAPIKey
+      && token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      && (!hasSavedToken || clearsSavedToken)
+  }
+
+  private var saveIsDisabled: Bool {
+    if destination.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      return true
+    }
+    if destination.isEnabled,
+       destination.adapter.isDirectProvider,
+       destination.model?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
+      return true
+    }
+    return destination.isEnabled && missingRequiredCredential
+  }
+
+  private var credentialLabel: String {
+    destination.adapter.isDirectProvider ? "API key" : "Bearer token"
+  }
+
+  private var credentialPrompt: String {
+    if hasSavedToken && !clearsSavedToken { return "Saved credential unchanged" }
+    return destination.adapter.requiresAPIKey ? "Required" : "Optional"
+  }
+
+  private func testConnection() {
+    isTestingConnection = true
+    connectionStatus = nil
+    let enteredToken = token.trimmingCharacters(in: .whitespacesAndNewlines)
+    let apiKey = enteredToken.isEmpty
+      ? AIChatDestinationCredentials.readToken(
+          destinationID: destination.id,
+          allowUserInteraction: true
+        )
+      : enteredToken
+    Task {
+      do {
+        let settings = try AIProviderChatSettings(
+          adapter: destination.adapter,
+          endpoint: destination.endpoint,
+          apiKey: apiKey
+        )
+        let models = try await AIProviderChatClient(settings: settings).listModels()
+        connectionStatus = models.isEmpty
+          ? "Connected · no models reported"
+          : "Connected · \(models.count) \(models.count == 1 ? "model" : "models")"
+      } catch {
+        connectionStatus = error.localizedDescription
+      }
+      isTestingConnection = false
+    }
+  }
+
   private var helpText: String {
     switch destination.adapter {
     case .codexLocal:
@@ -393,6 +499,14 @@ private struct AIChatDestinationEditor: View {
       return isBuiltInOpenClaw
         ? "This default destination uses the existing OpenClaw Gateway configuration."
         : "Routes turns to this OpenClaw gateway and agent ID with its own saved token."
+    case .openAI:
+      return "Connects directly to OpenAI with your API key. Direct model destinations can discuss Org2 context and images, but they do not receive filesystem or tool access."
+    case .anthropic:
+      return "Connects directly to Anthropic with your API key. Direct model destinations can discuss Org2 context and images, but they do not receive filesystem or tool access."
+    case .openRouter:
+      return "Connects directly to any OpenRouter model available to your API key. Enter the exact OpenRouter model ID."
+    case .ollama:
+      return "Connects to a local or network Ollama server. The default local endpoint needs no API key; enter the model already installed in Ollama."
     }
   }
 }

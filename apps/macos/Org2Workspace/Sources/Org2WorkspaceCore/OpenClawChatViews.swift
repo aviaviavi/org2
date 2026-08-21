@@ -970,6 +970,9 @@ private struct AIChatRoomAgentSlot: View {
 
   private var runtime: AIChatRuntime { store.aiChatDestinationRuntime(destinationID) }
   private var destinationTitle: String { store.aiChatDestinationTitle(destinationID) }
+  private var destinationSystemImage: String {
+    store.aiChatDestination(id: destinationID)?.systemImage ?? runtime.systemImage
+  }
 
   var body: some View {
     Group {
@@ -983,7 +986,7 @@ private struct AIChatRoomAgentSlot: View {
         )
       } else if isActive {
         VStack(alignment: .leading, spacing: 6) {
-          Label(destinationTitle, systemImage: runtime.systemImage)
+          Label(destinationTitle, systemImage: destinationSystemImage)
             .font(.caption.weight(.semibold))
             .foregroundStyle(.secondary)
           OpenClawLiveTypingIndicatorView(
@@ -991,6 +994,7 @@ private struct AIChatRoomAgentSlot: View {
             threadID: store.selectedOpenClawChatThreadID,
             startedAt: store.openClawRequestStartedAt,
             runtime: runtime,
+            destinationTitle: destinationTitle,
             compact: true,
             onStop: { Task { await store.stopOpenClawRun() } }
           )
@@ -1630,7 +1634,9 @@ struct OpenClawComposerView: View {
         } else {
           runtimePicker
           modelPicker
-          reasoningPicker
+          if !store.selectedAIChatDestination.adapter.isDirectProvider {
+            reasoningPicker
+          }
         }
 
         Button {
@@ -1713,7 +1719,7 @@ struct OpenClawComposerView: View {
       cacheDraftLocally()
       if OpenClawContextPresentation(localDraft).userText == "/" {
         store.refreshCorpusAgentSkills()
-        if store.selectedAIChatDestination.runtime == .openClaw {
+        if store.selectedAIChatDestination.adapter == .openClaw {
           Task { await store.refreshOpenClawCommands() }
         }
       }
@@ -1814,7 +1820,7 @@ struct OpenClawComposerView: View {
       }
     } label: {
       HStack(spacing: 4) {
-        Image(systemName: runtime.systemImage)
+        Image(systemName: destination?.systemImage ?? runtime.systemImage)
         Text("\(destination?.title ?? destinationID) · \(store.selectedAIChatRoomModelLabel(forDestinationID: destinationID))")
           .lineLimit(1)
           .frame(maxWidth: compact ? 125 : 165)
@@ -2763,6 +2769,7 @@ struct OpenClawLiveTypingIndicatorView: View {
   let threadID: UUID?
   let startedAt: Date?
   let runtime: AIChatRuntime
+  let destinationTitle: String?
   let compact: Bool
   let onStop: () -> Void
 
@@ -2771,6 +2778,7 @@ struct OpenClawLiveTypingIndicatorView: View {
       startedAt: startedAt,
       lastEventAt: threadID.flatMap(liveState.lastEventAt(for:)),
       runtime: runtime,
+      destinationTitle: destinationTitle,
       connectionState: threadID.map(liveState.connectionState(for:)) ?? .disconnected,
       connectionDetail: threadID.flatMap(liveState.connectionDetail(for:)),
       runID: threadID.flatMap(liveState.activeRunID(for:)),
@@ -2790,6 +2798,7 @@ struct OpenClawTypingIndicatorView: View {
   let startedAt: Date?
   let lastEventAt: Date?
   let runtime: AIChatRuntime
+  let destinationTitle: String?
   let connectionState: OpenClawGatewayConnectionState
   let connectionDetail: String?
   let runID: String?
@@ -2806,6 +2815,7 @@ struct OpenClawTypingIndicatorView: View {
     startedAt: Date?,
     lastEventAt: Date? = nil,
     runtime: AIChatRuntime = .openClaw,
+    destinationTitle: String? = nil,
     connectionState: OpenClawGatewayConnectionState,
     connectionDetail: String?,
     runID: String?,
@@ -2818,6 +2828,7 @@ struct OpenClawTypingIndicatorView: View {
     self.startedAt = startedAt
     self.lastEventAt = lastEventAt
     self.runtime = runtime
+    self.destinationTitle = destinationTitle
     self.connectionState = connectionState
     self.connectionDetail = connectionDetail
     self.runID = runID
@@ -2854,8 +2865,8 @@ struct OpenClawTypingIndicatorView: View {
               }
               .buttonStyle(.plain)
               .foregroundStyle(.secondary)
-              .accessibilityLabel("Stop \(runtime.title) run")
-              .help("Stop this \(runtime.title) run")
+              .accessibilityLabel("Stop \(displayTitle) run")
+              .help("Stop this \(displayTitle) run")
             }
           }
           .frame(minHeight: 20)
@@ -2941,10 +2952,34 @@ struct OpenClawTypingIndicatorView: View {
   func statusTitle(now: Date) -> String {
     if connectionState == .connected, runID != nil {
       if runLivenessAge(now: now) >= Self.stalledRunInterval {
-        return "\(runtime.title) may be stalled"
+        return "\(displayTitle) may be stalled"
       }
       if runLivenessAge(now: now) >= Self.quietRunInterval {
-        return "Waiting for \(runtime.title)"
+        return "Waiting for \(displayTitle)"
+      }
+    }
+    if destinationTitle != nil {
+      switch connectionState {
+      case .connecting:
+        return "Connecting to \(displayTitle)"
+      case .reconnecting:
+        return "Reconnecting to \(displayTitle)"
+      case .fallbackHTTP:
+        return "\(displayTitle) is working over HTTP"
+      case .disconnected:
+        return "\(displayTitle) connection interrupted"
+      case .connected:
+        if let latest = OpenClawActivityFeed.items(from: activities)
+          .last(where: { $0.status == .running }) {
+          return "Running \(latest.title.lowercased())"
+        }
+        if runID == nil {
+          return "Starting \(displayTitle)"
+        }
+        if !trimmedReasoning.isEmpty {
+          return "\(displayTitle) is thinking"
+        }
+        return "\(displayTitle) is working"
       }
     }
     if runtime == .codex {
@@ -3000,6 +3035,11 @@ struct OpenClawTypingIndicatorView: View {
     // reconnecting, and disconnected recovered turns need Stop most: their
     // durable pending turn otherwise has no way to leave the recovery loop.
     true
+  }
+
+  private var displayTitle: String {
+    let normalized = destinationTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    return normalized.isEmpty ? runtime.title : normalized
   }
 
   private var trimmedReasoning: String {
