@@ -758,6 +758,13 @@ private struct OrgCryptCLIPayload: Decodable {
   let recipientFiles: [String]
 }
 
+private struct RefileMutationPayload: Decodable {
+  let changed: Bool
+  let sourcePath: String
+  let destinationPath: String
+  let sourceHeadlineLine1: Int
+}
+
 private struct RoamLinkifyPayload: Decodable {
   let changedFileCount: Int
   let replacementCount: Int
@@ -6947,6 +6954,235 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
+  func performRenderedEntryAction(_ action: OrgHTMLRenderedEntryAction, at line: Int) {
+    guard let block = renderedHeadingBlock(at: line) else {
+      statusText = "Could not resolve that entry"
+      return
+    }
+
+    switch action {
+    case .entryView:
+      openRenderedEntryView(block)
+    case .edit:
+      beginEditingSource(for: block)
+    case .askAI:
+      askOpenClawAboutBlock(block)
+    case .refile:
+      presentRenderedEntryRefile(block)
+    case .schedule(let target):
+      guard let mutationTarget = renderedHeadlineMutationTarget(for: block) else { return }
+      Task { await applyPlanningShortcut(kind: .scheduled, target: target, to: mutationTarget) }
+    case .todo(let status):
+      guard let mutationTarget = renderedHeadlineMutationTarget(for: block) else { return }
+      Task { await applyTodoShortcut(status, to: mutationTarget) }
+    case .deadline(let target):
+      guard let mutationTarget = renderedHeadlineMutationTarget(for: block) else { return }
+      Task { await applyPlanningShortcut(kind: .deadline, target: target, to: mutationTarget) }
+    case .priority(let priority):
+      guard let mutationTarget = renderedHeadlineMutationTarget(for: block) else { return }
+      Task { await applyPriorityShortcut(priority, to: mutationTarget) }
+    case .encrypt:
+      Task { await runOrgCrypt(.encrypt, line: block.startLine) }
+    case .decrypt:
+      Task { await runOrgCrypt(.decrypt, line: block.startLine) }
+    case .copy:
+      copyRenderedEntry(block)
+    case .cut:
+      Task { await cutRenderedEntry(block) }
+    case .copyReference:
+      guard let source = selectedEntrySource else { return }
+      copyFileReference(path: source.file, line: block.startLine)
+    case .delete:
+      confirmAndDeleteRenderedEntry(block)
+    }
+  }
+
+  private func renderedHeadingBlock(at line: Int) -> OrgEditableBlock? {
+    let blocks: [OrgEditableBlock]
+    if !selectedRenderedBlocks.isEmpty {
+      blocks = selectedRenderedBlocks
+    } else if let source = selectedEntrySource {
+      blocks = OrgEntryRenderer.parseEditable(source.text, baseLine: source.startLine)
+    } else {
+      return nil
+    }
+    return blocks.first { block in
+      block.startLine == line && {
+        if case .heading = block.rendered { return true }
+        return false
+      }()
+    }
+  }
+
+  private func renderedHeadlineMutationTarget(for block: OrgEditableBlock) -> HeadlineMutationTarget? {
+    guard let source = selectedEntrySource,
+          source.isEditable,
+          case .heading(let heading) = block.rendered
+    else {
+      statusText = "This entry is read-only"
+      return nil
+    }
+    let title = Org2Display.cleanInline(heading.title).trimmingCharacters(in: .whitespacesAndNewlines)
+    return HeadlineMutationTarget(
+      file: source.file,
+      line: block.startLine,
+      title: title.isEmpty ? relativePath(source.file) : title,
+      agendaItemID: nil
+    )
+  }
+
+  private func openRenderedEntryView(_ block: OrgEditableBlock) {
+    guard let source = selectedEntrySource,
+          case .heading(let heading) = block.rendered
+    else { return }
+    let title = Org2Display.cleanInline(heading.title).trimmingCharacters(in: .whitespacesAndNewlines)
+    let location = OpenClawThread(
+      title: title.isEmpty ? URL(fileURLWithPath: source.file).lastPathComponent : title,
+      file: source.file,
+      line: block.startLine,
+      zone: "entry",
+      modifiedAt: nil,
+      idValue: nil
+    )
+    activateDetailLocation(.openClaw(location), mode: .entry, surface: nil, recordsHistory: true)
+    statusText = "Opened entry view"
+  }
+
+  private func copyRenderedEntry(_ block: OrgEditableBlock) {
+    guard let source = selectedEntrySource else {
+      statusText = "No source loaded"
+      return
+    }
+    do {
+      let text = try Self.renderedEntrySubtreeText(for: block, in: source)
+      NSPasteboard.general.clearContents()
+      NSPasteboard.general.setString(text, forType: .string)
+      statusText = "Copied entry"
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Copy failed"
+    }
+  }
+
+  private func cutRenderedEntry(_ block: OrgEditableBlock) async {
+    guard let source = selectedEntrySource, source.isEditable else {
+      statusText = "This entry is read-only"
+      return
+    }
+    do {
+      let text = try Self.renderedEntrySubtreeText(for: block, in: source)
+      NSPasteboard.general.clearContents()
+      NSPasteboard.general.setString(text, forType: .string)
+      if await deleteBlock(block) {
+        statusText = "Cut entry"
+      }
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Cut failed"
+    }
+  }
+
+  private func confirmAndDeleteRenderedEntry(_ block: OrgEditableBlock) {
+    guard let source = selectedEntrySource, source.isEditable else {
+      statusText = "This entry is read-only"
+      return
+    }
+    let title: String
+    if case .heading(let heading) = block.rendered {
+      title = Org2Display.cleanInline(heading.title)
+    } else {
+      title = "this entry"
+    }
+    let alert = NSAlert()
+    alert.alertStyle = .warning
+    alert.messageText = "Delete \(title.isEmpty ? "this entry" : "“\(title)”")?"
+    alert.informativeText = "This deletes the heading and its entire subtree. You can undo the change from the Edit menu."
+    alert.addButton(withTitle: "Delete")
+    alert.addButton(withTitle: "Cancel")
+    guard alert.runModal() == .alertFirstButtonReturn else {
+      statusText = "Delete canceled"
+      return
+    }
+    Task { await deleteBlock(block) }
+  }
+
+  private func presentRenderedEntryRefile(_ block: OrgEditableBlock) {
+    guard let source = selectedEntrySource, source.isEditable else {
+      statusText = "This entry is read-only"
+      return
+    }
+    let panel = NSOpenPanel()
+    panel.title = "Move / Refile Entry"
+    panel.message = "Choose the Org2 file where this entry should be appended."
+    panel.prompt = "Refile"
+    panel.canChooseDirectories = false
+    panel.canChooseFiles = true
+    panel.allowsMultipleSelection = false
+    panel.directoryURL = corpusRoot
+    panel.allowedContentTypes = [
+      UTType(filenameExtension: "org2") ?? .plainText,
+      UTType(filenameExtension: "org") ?? .plainText,
+    ]
+    guard panel.runModal() == .OK, let destination = panel.url else {
+      statusText = "Refile canceled"
+      return
+    }
+    guard destination.standardizedFileURL.path != URL(fileURLWithPath: source.file).standardizedFileURL.path else {
+      statusText = "Choose a different file when refiling from the context menu"
+      return
+    }
+    Task { await refileRenderedEntry(block, from: source, to: destination) }
+  }
+
+  private func refileRenderedEntry(
+    _ block: OrgEditableBlock,
+    from source: EntrySource,
+    to destination: URL
+  ) async {
+    do {
+      let payload: RefileMutationPayload = try await cli.runJSON([
+        "refile",
+        "--file", source.file,
+        "--pos", "\(block.startLine)",
+        "--to-file", destination.path,
+        "--format", "json",
+        "--apply",
+      ])
+      invalidateCanonicalDocumentCache(for: source.file)
+      invalidateCanonicalDocumentCache(for: destination.path)
+      if let selectedLocation, selectedEntrySource?.file == source.file {
+        scheduleEntrySourceLoad(for: selectedLocation)
+      }
+      scheduleAgendaRefresh(preserveSelection: true)
+      Task { await refreshCorpusFiles() }
+      statusText = payload.changed
+        ? "Refiled entry to \(relativePath(destination.path))"
+        : "Entry was already in place"
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Refile failed"
+    }
+  }
+
+  nonisolated static func renderedEntrySubtreeText(
+    for block: OrgEditableBlock,
+    in source: EntrySource
+  ) throws -> String {
+    let range = try deletionRange(for: block, in: source)
+    let lines = normalizeLineEndings(source.text)
+      .split(separator: "\n", omittingEmptySubsequences: false)
+      .map(String.init)
+    let startIndex = range.startLine - source.startLine
+    let endIndex = range.endLineExclusive - source.startLine
+    guard startIndex >= 0,
+          endIndex >= startIndex,
+          endIndex <= lines.count
+    else {
+      throw WorkspaceEditError.invalidRange(file: source.file, line: block.startLine)
+    }
+    return lines[startIndex..<endIndex].joined(separator: "\n").trimmingCharacters(in: .newlines) + "\n"
+  }
+
   nonisolated static func sourceAIContextBlock(
     at line: Int,
     in blocks: [OrgEditableBlock]
@@ -10824,21 +11060,18 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
-  public func deleteBlock(_ block: OrgEditableBlock) async {
+  @discardableResult
+  public func deleteBlock(_ block: OrgEditableBlock) async -> Bool {
     guard let source = selectedEntrySource, source.isEditable else {
       statusText = "No editable source loaded"
-      return
+      return false
     }
     guard block.isEditable,
           block.startLine >= source.startLine,
           block.endLineExclusive <= source.endLineExclusive
     else {
       statusText = "Block cannot be deleted"
-      return
-    }
-    if source.isSubtree, block.startLine == source.startLine {
-      statusText = "Open the page to delete the entry heading"
-      return
+      return false
     }
 
     isSavingBlock = true
@@ -10847,6 +11080,33 @@ public final class WorkspaceStore: ObservableObject {
     do {
       let undoSnapshot = fileUndoSnapshot(for: source.file)
       let deletionRange = try Self.deletionRange(for: block, in: source)
+      if source.isSubtree, block.startLine == source.startLine {
+        try await Task.detached(priority: .userInitiated) {
+          try Self.deleteSourceRangeCleaningAdjacentBlank(
+            file: source.file,
+            startLine: deletionRange.startLine,
+            endLineExclusive: deletionRange.endLineExclusive,
+            allowDestructiveReplacement: true
+          )
+        }.value
+        recordFileUndo(from: undoSnapshot)
+        invalidateCanonicalDocumentCache(for: source.file)
+        transientDraftBlock = nil
+        resetBlockEditing()
+        isEditingEntry = false
+        selectedEntrySourceMode = .page
+        if selectedLocation != nil {
+          await reloadSelectedEntrySource()
+        } else {
+          selectedEntrySource = nil
+          selectedRenderedBlocks = []
+          selectedEntryHTML = nil
+        }
+        statusText = "Deleted entry in \(relativePath(source.file))"
+        scheduleAgendaRefresh(preserveSelection: true)
+        return true
+      }
+
       let deletion = try Self.deletingSourceRangeCleaningAdjacentBlank(
         in: source,
         startLine: deletionRange.startLine,
@@ -10873,7 +11133,7 @@ public final class WorkspaceStore: ObservableObject {
 
       guard selectedEntrySource?.id == source.id else {
         recordFileUndo(from: undoSnapshot)
-        return
+        return true
       }
 
       recordFileUndo(from: undoSnapshot)
@@ -10897,9 +11157,11 @@ public final class WorkspaceStore: ObservableObject {
       )?.id
       statusText = "Deleted block in \(relativePath(source.file))"
       scheduleAgendaRefresh(preserveSelection: true)
+      return true
     } catch {
       errorText = error.localizedDescription
       statusText = "Delete failed"
+      return false
     }
   }
 
@@ -22045,6 +22307,27 @@ public final class WorkspaceStore: ObservableObject {
       if originatingSurface == .approvals, selectedSurface == .approvals {
         scheduleApprovalsRefresh()
       }
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "TODO update failed"
+    }
+  }
+
+  private func applyTodoShortcut(
+    _ status: TodoEditStatus?,
+    to target: HeadlineMutationTarget
+  ) async {
+    do {
+      let newStatus: String
+      if let status {
+        newStatus = try await setTodoStatus(status, for: target)
+        statusText = "\(status.label) -> \(target.title)"
+      } else {
+        newStatus = try await toggleTodoStatus(for: target)
+        statusText = "\(newStatus) -> \(target.title)"
+      }
+      optimisticallyUpdateAgendaItem(id: target.agendaItemID, todo: newStatus)
+      await refreshAfterHeadlineMutation(target)
     } catch {
       errorText = error.localizedDescription
       statusText = "TODO update failed"

@@ -8872,6 +8872,7 @@ private struct OrgRenderedDocumentPreview: View {
             restorationSourceLine: store.documentViewportSourceLine(for: source),
             layout: store.renderedDocumentLayout,
             askAIAboutHeading: { store.askOpenClawAboutSourceHeading(at: $0) },
+            performEntryAction: { store.performRenderedEntryAction($0, at: $1) },
             reportStatus: { store.statusText = $0 },
             allowsTablePersistence: source.isEditable,
             saveTableView: { store.requestSaveRenderedTableView($0) },
@@ -9575,6 +9576,7 @@ private struct OrgSourceEditorWithLinkTools: View {
             restorationSourceLine: store.documentViewportSourceLine(for: source),
             layout: store.renderedDocumentLayout,
             askAIAboutHeading: { store.askOpenClawAboutSourceHeading(at: $0) },
+            allowsEntryContextMenu: false,
             reportStatus: { store.statusText = $0 },
             reportViewportSourceLine: { store.recordDocumentViewportSourceLine($0, for: source) }
           )

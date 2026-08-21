@@ -311,6 +311,99 @@ final class OrgHTMLLocalResourceSchemeHandler: NSObject, WKURLSchemeHandler, @un
   }
 }
 
+enum OrgHTMLRenderedEntryAction: Sendable {
+  case entryView
+  case edit
+  case askAI
+  case refile
+  case schedule(PlanningDateTarget)
+  case todo(TodoEditStatus?)
+  case deadline(PlanningDateTarget)
+  case priority(String?)
+  case encrypt
+  case decrypt
+  case copy
+  case cut
+  case copyReference
+  case delete
+}
+
+private enum EntryContextMenuTag: Int {
+  case entryView = 1
+  case edit
+  case askAI
+  case refile
+  case scheduleToday
+  case scheduleTomorrow
+  case scheduleNextMonday
+  case scheduleNextMonth
+  case todo
+  case todoInProgress
+  case todoDone
+  case todoCanceled
+  case todoToggle
+  case deadlineToday
+  case deadlineTomorrow
+  case deadlineNextMonday
+  case deadlineNextMonth
+  case priorityA
+  case priorityB
+  case priorityC
+  case priorityClear
+  case encrypt
+  case decrypt
+  case copy
+  case cut
+  case copyReference
+  case delete
+
+  var action: OrgHTMLRenderedEntryAction? {
+    switch self {
+    case .entryView: .entryView
+    case .edit: .edit
+    case .askAI: .askAI
+    case .refile: .refile
+    case .scheduleToday: .schedule(.today)
+    case .scheduleTomorrow: .schedule(.tomorrow)
+    case .scheduleNextMonday: .schedule(.upcomingMonday)
+    case .scheduleNextMonth: .schedule(.nextMonth)
+    case .todo: .todo(.todo)
+    case .todoInProgress: .todo(.inProgress)
+    case .todoDone: .todo(.done)
+    case .todoCanceled: .todo(.canceled)
+    case .todoToggle: .todo(nil)
+    case .deadlineToday: .deadline(.today)
+    case .deadlineTomorrow: .deadline(.tomorrow)
+    case .deadlineNextMonday: .deadline(.upcomingMonday)
+    case .deadlineNextMonth: .deadline(.nextMonth)
+    case .priorityA: .priority("A")
+    case .priorityB: .priority("B")
+    case .priorityC: .priority("C")
+    case .priorityClear: .priority(nil)
+    case .encrypt: .encrypt
+    case .decrypt: .decrypt
+    case .copy: .copy
+    case .cut: .cut
+    case .copyReference: .copyReference
+    case .delete: .delete
+    }
+  }
+
+  var requiresEditableSource: Bool {
+    switch self {
+    case .entryView, .askAI, .copy, .copyReference:
+      false
+    case .edit, .refile,
+         .scheduleToday, .scheduleTomorrow, .scheduleNextMonday, .scheduleNextMonth,
+         .todo, .todoInProgress, .todoDone, .todoCanceled, .todoToggle,
+         .deadlineToday, .deadlineTomorrow, .deadlineNextMonday, .deadlineNextMonth,
+         .priorityA, .priorityB, .priorityC, .priorityClear,
+         .encrypt, .decrypt, .cut, .delete:
+      true
+    }
+  }
+}
+
 struct OrgHTMLDocumentView: NSViewRepresentable {
   @Environment(\.openOrgFileReference) private var openOrgFileReference
   @Environment(\.orgRoamLinkResolver) private var linkResolver
@@ -326,6 +419,8 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
   var restorationSourceLine: Int? = nil
   let layout: OrgHTMLDocumentLayout
   let askAIAboutHeading: @MainActor (Int) -> Void
+  var performEntryAction: @MainActor (OrgHTMLRenderedEntryAction, Int) -> Void = { _, _ in }
+  var allowsEntryContextMenu = true
   let reportStatus: @MainActor (String) -> Void
   var allowsTablePersistence = false
   var saveTableView: @MainActor (OrgHTMLTableViewSnapshot) -> Void = { _ in }
@@ -347,12 +442,17 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
       context.coordinator,
       name: Coordinator.tableViewMessageHandlerName
     )
+    configuration.userContentController.add(
+      context.coordinator,
+      name: Coordinator.entryContextMenuMessageHandlerName
+    )
     configuration.setURLSchemeHandler(
       context.coordinator.localResourceHandler,
       forURLScheme: OrgHTMLLocalResourceSchemeHandler.scheme
     )
 
     let webView = WKWebView(frame: .zero, configuration: configuration)
+    context.coordinator.webView = webView
     webView.navigationDelegate = context.coordinator
     webView.underPageBackgroundColor = .clear
     webView.allowsMagnification = true
@@ -368,6 +468,8 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
     coordinator.corpusRoot = corpusRoot
     coordinator.localResourceHandler.configure(source: source, corpusRoot: corpusRoot)
     coordinator.askAIAboutHeading = askAIAboutHeading
+    coordinator.performEntryAction = performEntryAction
+    coordinator.allowsEntryContextMenu = allowsEntryContextMenu
     coordinator.reportStatus = reportStatus
     let tablePersistenceChanged = coordinator.allowsTablePersistence != allowsTablePersistence
     coordinator.allowsTablePersistence = allowsTablePersistence
@@ -418,6 +520,9 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
     webView.configuration.userContentController.removeScriptMessageHandler(
       forName: Coordinator.tableViewMessageHandlerName
     )
+    webView.configuration.userContentController.removeScriptMessageHandler(
+      forName: Coordinator.entryContextMenuMessageHandlerName
+    )
   }
 
   private static func movesSearchBackward(from previous: Int?, to next: Int?, count: Int) -> Bool {
@@ -442,6 +547,8 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
   final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
     nonisolated static let viewportMessageHandlerName = "org2ViewportSourceLine"
     nonisolated static let tableViewMessageHandlerName = "org2TableView"
+    nonisolated static let entryContextMenuMessageHandlerName = "org2EntryContextMenu"
+    weak var webView: WKWebView?
     var renderID: String?
     var searchQuery: String?
     var searchOccurrenceIndex: Int?
@@ -454,6 +561,9 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
     var source: EntrySource?
     var corpusRoot: URL?
     var askAIAboutHeading: @MainActor (Int) -> Void = { _ in }
+    var performEntryAction: @MainActor (OrgHTMLRenderedEntryAction, Int) -> Void = { _, _ in }
+    var allowsEntryContextMenu = true
+    var entryContextMenuLine: Int?
     var reportStatus: @MainActor (String) -> Void = { _ in }
     var allowsTablePersistence = false
     var saveTableView: @MainActor (OrgHTMLTableViewSnapshot) -> Void = { _ in }
@@ -464,6 +574,9 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
       applyLayout(to: webView)
       applyTablePersistence(to: webView)
       installRichCopyHandler(in: webView)
+      if allowsEntryContextMenu {
+        installEntryContextMenuHandler(in: webView)
+      }
       installViewportSourceLineReporter(in: webView)
       applySearch(to: webView, backwards: false)
       if let scrollRequest {
@@ -486,9 +599,162 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
               let snapshot = OrgHTMLTableViewSnapshot(message.body)
         else { return }
         saveTableView(snapshot)
+      case Self.entryContextMenuMessageHandlerName:
+        guard let payload = message.body as? [String: Any],
+              let line = (payload["line"] as? NSNumber)?.intValue,
+              line > 0,
+              let x = (payload["x"] as? NSNumber)?.doubleValue,
+              let y = (payload["y"] as? NSNumber)?.doubleValue
+        else { return }
+        presentEntryContextMenu(line: line, x: x, y: y)
       default:
         return
       }
+    }
+
+    func installEntryContextMenuHandler(in webView: WKWebView) {
+      webView.evaluateJavaScript(Self.entryContextMenuInstallationScript)
+    }
+
+    nonisolated static var entryContextMenuInstallationScript: String {
+      """
+      (() => {
+        if (window.__org2EntryContextMenuInstalled) return;
+        window.__org2EntryContextMenuInstalled = true;
+        document.addEventListener('contextmenu', (event) => {
+          const selection = window.getSelection();
+          if (selection && !selection.isCollapsed && selection.toString().trim()) return;
+          const target = event.target instanceof Element ? event.target : event.target?.parentElement;
+          const entry = target?.closest('details.org2-headline[data-org2-start-line]');
+          if (!entry) return;
+          const line = Number(entry.dataset.org2StartLine || 0);
+          if (!line) return;
+          event.preventDefault();
+          event.stopPropagation();
+          window.webkit.messageHandlers.\(Self.entryContextMenuMessageHandlerName).postMessage({
+            line,
+            x: event.clientX,
+            y: event.clientY
+          });
+        }, true);
+      })();
+      """
+    }
+
+    func presentEntryContextMenu(line: Int, x: Double, y: Double) {
+      guard let webView else { return }
+      entryContextMenuLine = line
+      let menu = makeEntryContextMenu()
+      let point = NSPoint(x: x, y: Double(webView.bounds.height) - y)
+      menu.popUp(positioning: nil, at: point, in: webView)
+    }
+
+    func makeEntryContextMenu() -> NSMenu {
+      let menu = NSMenu(title: "Entry")
+      menu.autoenablesItems = false
+
+      menu.addItem(contextMenuItem("Entry View", symbol: "doc.text.magnifyingglass", tag: .entryView))
+      menu.addItem(contextMenuItem("Edit Entry", symbol: "square.and.pencil", tag: .edit))
+      menu.addItem(contextMenuItem("Ask AI", symbol: "sparkles", tag: .askAI))
+      menu.addItem(.separator())
+      menu.addItem(contextMenuItem("Move / Refile…", symbol: "arrowshape.turn.up.right", tag: .refile))
+
+      menu.addItem(submenuItem(
+        "Schedule",
+        symbol: "calendar",
+        items: [
+          contextMenuItem("Today", tag: .scheduleToday),
+          contextMenuItem("Tomorrow", tag: .scheduleTomorrow),
+          contextMenuItem("Next Monday", tag: .scheduleNextMonday),
+          contextMenuItem("Next Month", tag: .scheduleNextMonth),
+        ]
+      ))
+      menu.addItem(submenuItem(
+        "Todo Status",
+        symbol: "checkmark.circle",
+        items: [
+          contextMenuItem("TODO", tag: .todo),
+          contextMenuItem("In Progress", tag: .todoInProgress),
+          contextMenuItem("Done", tag: .todoDone),
+          contextMenuItem("Canceled", tag: .todoCanceled),
+          .separator(),
+          contextMenuItem("Toggle", tag: .todoToggle),
+        ]
+      ))
+      menu.addItem(submenuItem(
+        "Deadline",
+        symbol: "calendar.badge.exclamationmark",
+        items: [
+          contextMenuItem("Today", tag: .deadlineToday),
+          contextMenuItem("Tomorrow", tag: .deadlineTomorrow),
+          contextMenuItem("Next Monday", tag: .deadlineNextMonday),
+          contextMenuItem("Next Month", tag: .deadlineNextMonth),
+        ]
+      ))
+      menu.addItem(submenuItem(
+        "Priority",
+        symbol: "flag",
+        items: [
+          contextMenuItem("A", tag: .priorityA),
+          contextMenuItem("B", tag: .priorityB),
+          contextMenuItem("C", tag: .priorityC),
+          .separator(),
+          contextMenuItem("Clear", tag: .priorityClear),
+        ]
+      ))
+      menu.addItem(submenuItem(
+        "Encrypt / Decrypt",
+        symbol: "lock",
+        items: [
+          contextMenuItem("Encrypt", tag: .encrypt),
+          contextMenuItem("Decrypt", tag: .decrypt),
+        ]
+      ))
+
+      menu.addItem(.separator())
+      menu.addItem(contextMenuItem("Copy", symbol: "doc.on.doc", tag: .copy))
+      menu.addItem(contextMenuItem("Cut", symbol: "scissors", tag: .cut))
+      menu.addItem(contextMenuItem("Copy Reference", symbol: "link", tag: .copyReference))
+      menu.addItem(.separator())
+      menu.addItem(contextMenuItem("Delete", symbol: "trash", tag: .delete))
+      return menu
+    }
+
+    private func submenuItem(_ title: String, symbol: String, items: [NSMenuItem]) -> NSMenuItem {
+      let parent = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+      parent.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
+      let submenu = NSMenu(title: title)
+      submenu.autoenablesItems = false
+      items.forEach(submenu.addItem)
+      parent.submenu = submenu
+      return parent
+    }
+
+    private func contextMenuItem(
+      _ title: String,
+      symbol: String? = nil,
+      tag: EntryContextMenuTag
+    ) -> NSMenuItem {
+      let item = NSMenuItem(
+        title: title,
+        action: #selector(performEntryContextMenuAction(_:)),
+        keyEquivalent: ""
+      )
+      item.target = self
+      item.tag = tag.rawValue
+      item.isEnabled = !tag.requiresEditableSource || source?.isEditable == true
+      if let symbol {
+        item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
+      }
+      return item
+    }
+
+    @objc private func performEntryContextMenuAction(_ sender: NSMenuItem) {
+      guard let line = entryContextMenuLine,
+            let tag = EntryContextMenuTag(rawValue: sender.tag),
+            let action = tag.action
+      else { return }
+      performEntryAction(action, line)
     }
 
     func installViewportSourceLineReporter(in webView: WKWebView) {
