@@ -3,12 +3,7 @@
 
 #+BEGIN_EXPORT html
 <section class="org2-page-intro org2-downloads-intro">
-  <p>Choose the Org2 surface you need. Every direct-download link passes through Scarf Gateway for aggregate download measurement, then redirects to the original artifact hosted on GitHub Releases.</p>
-  <div class="org2-page-summary" aria-label="Org2 download overview">
-    <div><strong>One stable route.</strong><span>Version and artifact names map directly to immutable GitHub release files.</span></div>
-    <div><strong>No mirror.</strong><span>GitHub Releases remains the underlying host for every binary and package archive.</span></div>
-    <div><strong>Inspectable releases.</strong><span>Checksums, notes, source tags, and attached artifacts stay together on GitHub.</span></div>
-  </div>
+  <p>Choose the Org2 surface you need. GitHub Releases remains the underlying host; direct-download links pass through Scarf Gateway for aggregate measurement before redirecting to the original artifact.</p>
 </section>
 #+END_EXPORT
 

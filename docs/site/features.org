@@ -4,11 +4,6 @@
 <div class="org2-features-page">
   <section class="org2-page-intro">
     <p>Org2 is an open-source follow-through system for people who work with AI agents. It keeps the source behind a decision, delegates work with bounded context, brings back the decisions that need you, and records the finished result in local plain-text files you own.</p>
-    <div class="org2-page-summary" aria-label="Org2 feature summary">
-      <div><strong>Decisions keep their source.</strong><span>Meetings, notes, tasks, links, and data stay attached to the work they create.</span></div>
-      <div><strong>Work can move.</strong><span>People and named agents can act from the same context without hiding ownership or review boundaries.</span></div>
-      <div><strong>Results come back.</strong><span>Finished artifacts and evidence return to a corpus that outlasts any model, harness, editor, or app.</span></div>
-    </div>
   </section>
 
   <section class="org2-feature-section" id="compiler-loop" aria-labelledby="compiler-loop-title">

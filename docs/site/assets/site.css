@@ -2096,19 +2096,26 @@ body #content {
 #content .org2-page-summary {
   position: relative;
   z-index: 1;
-  counter-reset: org2-summary;
   gap: clamp(0.9rem, 3vw, 2rem);
   margin-top: clamp(1.8rem, 4vw, 3rem);
 }
 
 #content .org2-page-summary > div {
   position: relative;
-  padding: 1rem 0 0 2.15rem;
+  padding: 1rem 0 0;
   border-top: 2px solid var(--fg);
+}
+
+#content .org2-page-summary-sequence {
+  counter-reset: org2-summary;
+}
+
+#content .org2-page-summary-sequence > div {
+  padding-left: 2.15rem;
   counter-increment: org2-summary;
 }
 
-#content .org2-page-summary > div::before {
+#content .org2-page-summary-sequence > div::before {
   position: absolute;
   top: 1.05rem;
   left: 0;
