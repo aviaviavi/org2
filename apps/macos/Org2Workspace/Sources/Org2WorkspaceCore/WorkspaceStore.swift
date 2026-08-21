@@ -2144,6 +2144,7 @@ public final class WorkspaceStore: ObservableObject {
   private var isSourceAutoSyncActive = false
   private var agendaTodoShortcutMutationTask: Task<Void, Never>?
   private var pendingAgendaTodoShortcutMutations: [AgendaTodoShortcutMutation] = []
+  private var agendaRefreshDeferredForTodoShortcutBurst = false
   private var pendingAgendaRefreshAfterBlockEditing = false
   private var assignedWorkSearchRows: [AssignedWorkSearchRow] = []
   private var agentRunFilterTextByID: [AgentRunItem.ID: String] = [:]
@@ -2804,6 +2805,7 @@ public final class WorkspaceStore: ObservableObject {
     agendaTodoShortcutMutationTask?.cancel()
     agendaTodoShortcutMutationTask = nil
     pendingAgendaTodoShortcutMutations = []
+    agendaRefreshDeferredForTodoShortcutBurst = false
     searchIndexTask?.cancel()
     searchIndexTask = nil
     searchIndexGeneration += 1
@@ -3836,6 +3838,17 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func refreshAgenda(preserveSelection: Bool = false, updatesStatus: Bool = true) async {
+    guard agendaTodoShortcutMutationTask == nil,
+          pendingAgendaTodoShortcutMutations.isEmpty
+    else {
+      // Keyboard TODO shortcuts remove rows optimistically. Replacing that
+      // coherent local snapshot with a partially-written disk snapshot makes
+      // completed rows briefly reappear and moves the cursor underneath the
+      // user. Reconcile once the entire key burst has settled instead.
+      agendaRefreshDeferredForTodoShortcutBurst = true
+      return
+    }
+
     guard !isRefreshingAgenda else {
       if updatesStatus {
         statusText = "Agenda already refreshing"
@@ -3882,6 +3895,12 @@ public final class WorkspaceStore: ObservableObject {
         "--workload"
       ]
       let payload: AgendaPayload = try await cli.runJSON(arguments)
+      guard agendaTodoShortcutMutationTask == nil,
+            pendingAgendaTodoShortcutMutations.isEmpty
+      else {
+        agendaRefreshDeferredForTodoShortcutBurst = true
+        return
+      }
       agenda = payload
       syncAgendaSelectionAfterRefresh(preserveSelection: preserveSelection)
       markWorkspaceSurfaceCleanIfUnchanged(.agenda, generation: dirtyGeneration)
@@ -22174,9 +22193,11 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     var updatedSelectedItem: AgendaItem?
+    let removesItem = Self.isTerminalTodoStatus(todo)
     let transformItems: ([AgendaItem]) -> [AgendaItem] = { items in
-      items.map { item in
+      items.compactMap { item in
         guard item.id == agendaItemID else { return item }
+        if removesItem { return nil }
         let updated = item.replacing(todo: todo)
         updatedSelectedItem = updated
         return updated
@@ -22441,34 +22462,91 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   private func drainAgendaTodoShortcutMutations() async {
+    var needsReconciliation = false
     while !Task.isCancelled {
       guard !pendingAgendaTodoShortcutMutations.isEmpty else {
         agendaTodoShortcutMutationTask = nil
+        let shouldReconcile = needsReconciliation || agendaRefreshDeferredForTodoShortcutBurst
+        agendaRefreshDeferredForTodoShortcutBurst = false
+        if shouldReconcile {
+          if isRefreshingAgenda {
+            agendaRefreshDeferredForTodoShortcutBurst = true
+            scheduleAgendaRefresh(preserveSelection: true, updatesStatus: false)
+          } else {
+            await refreshAgenda(preserveSelection: true, updatesStatus: false)
+          }
+        }
         return
       }
 
       let batch = Self.orderedAgendaTodoShortcutMutations(pendingAgendaTodoShortcutMutations)
       pendingAgendaTodoShortcutMutations = []
+      needsReconciliation = true
 
       for mutation in batch {
         guard !Task.isCancelled else { return }
         do {
-          let newStatus = try await setTodoStatus(mutation.status, for: mutation.target)
+          let resolvedTarget = try refreshedAgendaTodoShortcutTarget(mutation.target)
+          let newStatus = try await setTodoStatus(mutation.status, for: resolvedTarget)
           if newStatus != mutation.status.label {
             optimisticallyUpdateAgendaItem(id: mutation.target.agendaItemID, todo: newStatus)
           }
-          await refreshAfterHeadlineMutation(
-            mutation.target,
-            selectMutatedBlock: false,
-            reloadSelectedEntry: selectedAgendaItemID == mutation.target.agendaItemID
-          )
+          invalidateCanonicalDocumentCache(for: resolvedTarget.file)
         } catch {
           errorText = error.localizedDescription
           statusText = "TODO update failed"
-          await refreshAgenda(preserveSelection: true, updatesStatus: false)
+        }
+      }
+
+      // Keep the optimistic list stable across a natural run of repeated key
+      // presses. More shortcuts append to this same task; only a quiet period
+      // permits the single authoritative agenda reconciliation above.
+      try? await Task.sleep(nanoseconds: 160_000_000)
+    }
+  }
+
+  private func refreshedAgendaTodoShortcutTarget(
+    _ target: HeadlineMutationTarget
+  ) throws -> HeadlineMutationTarget {
+    let url = URL(fileURLWithPath: target.file)
+    let raw = try String(contentsOf: url, encoding: .utf8)
+    let lines = Self.normalizeLineEndings(raw)
+      .split(separator: "\n", omittingEmptySubsequences: false)
+      .map(String.init)
+
+    if let idValue = target.idValue {
+      for index in lines.indices where Self.parseTodoHeading(lines[index]) != nil {
+        let properties = Self.scanPropertyDrawer(lines: lines, afterHeadingIndex: index)
+        if properties["ID"]?.trimmingCharacters(in: .whitespacesAndNewlines) == idValue {
+          return HeadlineMutationTarget(
+            file: target.file,
+            line: index + 1,
+            title: target.title,
+            agendaItemID: target.agendaItemID,
+            idValue: idValue
+          )
         }
       }
     }
+
+    let normalizedTitle = Self.normalizedApprovalActionTitle(target.title)
+    let matchingIndexes = lines.indices.filter { index in
+      guard let heading = Self.parseTodoHeading(lines[index]) else { return false }
+      return Self.normalizedApprovalActionTitle(heading.title) == normalizedTitle
+    }
+    if let index = matchingIndexes.min(by: {
+      abs(($0 + 1) - target.line) < abs(($1 + 1) - target.line)
+    }), let heading = Self.parseTodoHeading(lines[index]) {
+      return HeadlineMutationTarget(
+        file: target.file,
+        line: index + 1,
+        title: heading.title,
+        agendaItemID: target.agendaItemID,
+        idValue: target.idValue
+      )
+    }
+
+    return target
   }
 
   nonisolated private static func orderedAgendaTodoShortcutMutations(

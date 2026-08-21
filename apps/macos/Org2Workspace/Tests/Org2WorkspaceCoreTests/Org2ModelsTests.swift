@@ -10432,17 +10432,23 @@ final class Org2ModelsTests: XCTestCase {
 
     * TODO Third task
     SCHEDULED: <\(today)>
+
+    * TODO Fourth task
+    SCHEDULED: <\(today)>
+
+    * TODO Fifth task
+    SCHEDULED: <\(today)>
     """.write(to: note, atomically: true, encoding: .utf8)
 
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
     store.setCorpusRoot(root)
     await store.refreshAgenda()
 
-    let first = try XCTUnwrap(store.visibleAgendaItems.first { $0.headline == "First task" })
-    store.selectAgendaItem(first)
+    let third = try XCTUnwrap(store.visibleAgendaItems.first { $0.headline == "Third task" })
+    store.selectAgendaItem(third)
     try await waitForCondition {
       store.selectedEntrySource?.file == note.path
-        && store.selectedEntryHTML?.contains("First task") == true
+        && store.selectedEntryHTML?.contains("Third task") == true
         && !store.isLoadingEntrySource
         && !store.isRenderingEntrySource
         && !store.selectedRenderedBlocks.isEmpty
@@ -10450,7 +10456,7 @@ final class Org2ModelsTests: XCTestCase {
 
     let heading = try XCTUnwrap(store.selectedRenderedBlocks.first {
       if case .heading(let heading) = $0.rendered {
-        return heading.title == "First task"
+        return heading.title == "Third task"
       }
       return false
     })
@@ -10468,10 +10474,72 @@ final class Org2ModelsTests: XCTestCase {
     }
 
     let updated = try String(contentsOf: note, encoding: .utf8)
-    XCTAssertTrue(updated.contains("* DONE First task"))
-    XCTAssertTrue(updated.contains("* DONE Second task"))
     XCTAssertTrue(updated.contains("* DONE Third task"))
+    XCTAssertTrue(updated.contains("* DONE Fourth task"))
+    XCTAssertTrue(updated.contains("* DONE Fifth task"))
+    XCTAssertTrue(updated.contains("* TODO First task"))
+    XCTAssertTrue(updated.contains("* TODO Second task"))
     XCTAssertFalse(updated.contains("ddd"))
+  }
+
+  @MainActor
+  func testAgendaRefreshCannotRestoreRowsDuringRepeatedDoneBurst() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-agenda-done-refresh-barrier-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let note = root.appendingPathComponent("agenda-done-refresh-barrier.org2")
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.dateFormat = "yyyy-MM-dd EEE"
+    let today = formatter.string(from: Date())
+
+    try """
+    * TODO First task
+    SCHEDULED: <\(today)>
+
+    * TODO Second task
+    SCHEDULED: <\(today)>
+
+    * TODO Third task
+    SCHEDULED: <\(today)>
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    await store.refreshAgenda()
+    store.todoStatusMutationForTesting = { status, file, line in
+      try await Task.sleep(nanoseconds: 250_000_000)
+      let fileURL = URL(fileURLWithPath: file)
+      var lines = try String(contentsOf: fileURL, encoding: .utf8)
+        .split(separator: "\n", omittingEmptySubsequences: false)
+        .map(String.init)
+      lines[line - 1] = lines[line - 1].replacingOccurrences(
+        of: " TODO ",
+        with: " \(status.label) "
+      )
+      try lines.joined(separator: "\n").write(to: fileURL, atomically: true, encoding: .utf8)
+      return status.label
+    }
+
+    let first = try XCTUnwrap(store.visibleAgendaItems.first { $0.headline == "First task" })
+    let second = try XCTUnwrap(store.visibleAgendaItems.first { $0.headline == "Second task" })
+    store.selectAgendaItem(first)
+
+    XCTAssertTrue(store.handleWorkspaceKeyDown(keyDown(characters: "d", keyCode: 2)))
+    XCTAssertEqual(store.visibleAgendaItems.map(\.headline), ["Second task", "Third task"])
+    XCTAssertEqual(store.selectedAgendaItemID, second.id)
+
+    // This models the filesystem watcher completing an agenda query while the
+    // mutation is still in flight. The stale disk row must not reappear.
+    await store.refreshAgenda(preserveSelection: true, updatesStatus: false)
+    XCTAssertEqual(store.visibleAgendaItems.map(\.headline), ["Second task", "Third task"])
+    XCTAssertEqual(store.selectedAgendaItemID, second.id)
+
+    try await waitForCondition(timeout: 10) {
+      ((try? String(contentsOf: note, encoding: .utf8)) ?? "").contains("* DONE First task")
+        && store.visibleAgendaItems.map(\.headline) == ["Second task", "Third task"]
+    }
   }
 
   @MainActor
