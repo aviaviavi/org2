@@ -2461,6 +2461,24 @@ body #content {
   margin: 1rem 0 1.5rem;
 }
 
+#content .org2-downloads-intro ~ .org2-headline {
+  width: 100%;
+  max-width: 70rem;
+}
+
+#content .org2-downloads-intro ~ .org2-headline > p,
+#content .org2-downloads-intro ~ .org2-headline > ul,
+#content .org2-downloads-intro ~ .org2-headline > ol,
+#content .org2-downloads-intro ~ .org2-headline > pre,
+#content .org2-downloads-intro ~ .org2-headline > .org2-src {
+  max-width: 52rem;
+}
+
+#content .org2-downloads-intro ~ .org2-headline .org2-download-grid {
+  width: 100%;
+  max-width: none;
+}
+
 #content .org2-download-card {
   position: relative;
   display: flex;
@@ -2493,7 +2511,6 @@ body #content {
 
 #content .org2-download-grid-mobile {
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  max-width: 52rem;
 }
 
 #content .org2-download-grid-mobile .org2-download-card {
