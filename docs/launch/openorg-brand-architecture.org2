@@ -1,0 +1,103 @@
+#+title: OpenOrg / Org2 launch architecture
+#+subtitle: Product boundary, compatibility contract, and launch gates
+#+date: 2026-08-22
+
+* Decision state
+
+=OpenOrg= is the proposed user-facing product name. =Org2= remains the open substrate.
+
+The public rename is *provisional and blocked on name clearance*. A preliminary screen found an active company and product using =Open Org Workspace= for an AI-assisted document workspace. Owning =openorg.so= does not resolve that conflict. Do not publish the product site, rename the release app, commission final identity assets, or announce the name until counsel reviews the overlap or a more distinctive name is selected.
+
+* Proposed architecture
+
+- *OpenOrg* :: The native workspace, product website, onboarding, integrations, and user experience.
+- *Org2* :: The =.org2= format, compiler/runtime, CLI, npm package, schemas, repository, and editor tooling.
+- *Product line* :: “OpenOrg is a local-first workspace for people and agents, built on the open Org2 format.”
+- *Primary promise* :: “Run your work with people and agents from local files you control.”
+- *Initial audience* :: Technical founders, operators, and knowledge workers who want agents working over files they own.
+
+The boundary is architectural, not cosmetic: ordinary files remain canonical, the shared compiler owns semantics, and product clients consume that substrate without creating a private source of truth.
+
+* Rename and compatibility matrix
+
+| Surface | Proposed 0.5 presentation | Compatibility identifier | Initial action |
+|---------+---------------------------+--------------------------+----------------|
+| macOS Finder and menu-bar name | OpenOrg | =org.org2.workspace= | Change display name only after clearance; preserve the bundle identifier. |
+| macOS executable and Swift package | Internal implementation detail | =Org2Workspace= | Preserve for 0.5 to avoid packaging and diagnostics churn. |
+| macOS preferences | Invisible implementation detail | =Org2Workspace.*= keys in =org.org2.workspace= | Preserve; do not migrate or reset existing settings. |
+| macOS Keychain services | Invisible implementation detail | Existing =Org2Workspace.*= and =org.org2.workspace.*= service names | Preserve so tokens, source credentials, encryption settings, and pairings remain available. |
+| macOS permissions | OpenOrg in user-facing permission copy | Existing TCC identity through =org.org2.workspace= | Preserve bundle identity; validate microphone, screen recording, speech, notifications, and accessibility after the display rename. |
+| macOS release artifacts | OpenOrg Alpha | Existing =Org2Workspace= artifact aliases during transition | Add OpenOrg-named assets without breaking historical download URLs. |
+| iOS display name | OpenOrg | =org.org2.mobile= and existing app-group/push identifiers | Defer from primary onboarding; preserve identifiers and TestFlight continuity. |
+| Corpus files | Org2 files | =.org2= and =.org= | Preserve permanently. |
+| Corpus configuration | Org2 configuration | =org2.json= | Preserve permanently. |
+| CLI and LSP | Org2 developer tooling | =org2= and =org2-lsp= | Preserve permanently. |
+| npm package | Org2 developer package | =@aviaviavi/org2= | Preserve permanently. |
+| Schemas and wire formats | Org2 contracts | Existing schema names and versions | Preserve; version only for semantic changes. |
+| GitHub repository | Org2 source repository | =aviaviavi/org2= | Preserve for launch. |
+| VS Code and editor extensions | Org2 developer tooling | Existing extension identifiers | Preserve; explain that OpenOrg is built on Org2. |
+| Product website | OpenOrg | Proposed =openorg.so= | Hold DNS and public launch until name clearance. |
+| Developer documentation | Org2 developer documentation | Existing technical URLs may redirect later | Keep accessible and clearly subordinate to the product story. |
+
+* Compatibility invariants
+
+The first product-name release must prove all of the following before shipping:
+
+1. Installing the renamed app over the current app retains the selected corpus and mounted corpora.
+2. Preferences, AI destinations, transcription settings, and appearance settings remain intact.
+3. Existing Keychain credentials remain readable without re-entry.
+4. Existing TCC permissions continue to apply or the app explains exactly which permission must be renewed.
+5. Global capture, meeting recording, mobile pairing, push notifications, and deep links still reach the same app.
+6. Existing =.org2= files, =org2.json= configuration, runs, workflows, agent profiles, and goals require no migration.
+7. The =org2= CLI, npm package, schemas, LSP, and editor integrations remain backwards compatible.
+8. Historical release and download URLs remain available.
+
+These invariants are partially guarded by =npm run check:openorg-compat=. UI migration and TCC behavior still require installed-app tests on a signed candidate.
+
+* Launch shape after clearance
+
+- Release name :: =OpenOrg Alpha=
+- Target version :: =0.5.0=
+- Product site :: =openorg.so=
+- Developer substrate :: Org2, linked from an “OpenOrg is built on Org2” architecture page
+- Primary demonstration :: Open files → inspect Agenda → delegate bounded work → review citations and durable output → approve or revise → open the same =.org2= file elsewhere
+
+Keep iOS, data notebooks, publishing, encryption, and source connectors available but outside the five-minute first-run story.
+
+* Gates
+
+** Name gate
+
+- Obtain a professional clearance opinion covering exact and confusingly similar marks in the relevant software, SaaS, productivity, and AI-assistant classes and common-law use.
+- Resolve the existing =Open Org Workspace= overlap through counsel, coexistence/consent, or a different product name.
+- Only then point =openorg.so= at the product site or rename distributed binaries.
+
+** Product gates
+
+- Notarized Mac build that installs normally.
+- Existing users retain settings, permissions, credentials, and corpus access.
+- Fresh users reach the cited review loop within ten minutes.
+- At least five outside users complete the core flow and at least three return within seven days.
+- Release, docs, macOS, corpus, and lifecycle checks pass.
+- Backup, privacy, agent-action, and known-alpha boundaries are documented.
+
+* Preliminary name screen
+
+This is a pragmatic knockout screen, not legal advice or a comprehensive clearance search.
+
+- Checked 2026-08-22: the exact concatenated =OpenOrg= and exact spaced =Open Org= searches returned no exact record in the USPTO federal trademark search interface.
+- [[https://www.uspto.gov/trademarks/search/federal-trademark-searching][USPTO guidance]] says a federal database lookup is only one step and that confusing similarity and related goods/services matter.
+- [[https://find-and-update.company-information.service.gov.uk/company/15030370][Open Org Group Ltd]] is an active UK company incorporated in 2023.
+- [[https://www.openorg.fyi/][Open Org]] currently markets an =Open Org Workspace= with AI document creation, search, saved chat, files, and “second brain” positioning. That is close enough in name and commercial impression to be a material launch risk even without an exact U.S. registration.
+- The UK IPO register blocked automated access during this screen, and WIPO's official Global Brand Database could not be reached from the test environment. Those searches, state registrations, common-law use, app stores, domains, and phonetic/similar marks remain outstanding.
+
+* Immediate safe work
+
+While the name gate is unresolved, continue work that is useful under any final product name:
+
+1. Preserve and automatically check compatibility identifiers.
+2. Design the five-minute first-run flow without branding it.
+3. Complete signing and notarization automation.
+4. Document privacy, backups, agent actions, and known alpha limitations.
+5. Prepare a product-site information architecture and demo script using a replaceable brand token.
+
