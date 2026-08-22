@@ -1,13 +1,20 @@
 #+TITLE: Downloads
-#+SUBTITLE: Install Org2 apps and tools from versioned GitHub release artifacts
+#+SUBTITLE: Install OpenOrg and the Org2 developer tools from versioned GitHub release artifacts
 
 #+BEGIN_EXPORT html
 <section class="org2-page-intro org2-downloads-intro">
-  <p>Choose the Org2 surface you need. GitHub Releases remains the underlying host; direct-download links pass through Scarf Gateway for aggregate measurement before redirecting to the original artifact.</p>
+  <p>OpenOrg is the workspace product; Org2 is its open format and developer toolkit. GitHub Releases remains the underlying host, and direct-download links pass through Scarf Gateway for aggregate measurement before redirecting to the original artifact.</p>
 </section>
 #+END_EXPORT
 
-* Current release 0.4.2
+* OpenOrg Alpha
+
+OpenOrg =0.5.0= is being prepared as the first product-named alpha. It will use the same bundle identifier, preferences, Keychain services, executable name, and Org2 corpus format as the current Mac app so existing users keep their settings and workspace access. The public download will appear here only after both Apple Silicon and Intel packages are Developer ID signed, notarized, stapled, and pass Gatekeeper verification.
+
+The Org2 CLI, npm package, VS Code extension, schemas, and =.org2= format keep their existing names. See [[file:openorg-and-org2.org][OpenOrg and Org2]] and [[file:known-limitations.org][Known limitations]].
+
+
+* Current legacy release 0.4.2
 
 #+BEGIN_EXPORT html
 <section class="org2-download-grid" aria-label="Org2 0.4.2 downloads">
@@ -42,7 +49,7 @@
 </section>
 #+END_EXPORT
 
-The macOS disk images are available for Apple Silicon and Intel. Both are developer-signed but not notarized. If macOS blocks the first launch, right-click the app and choose *Open*, or allow it under *System Settings → Privacy & Security*.
+These historical Org2 Workspace disk images are available for Apple Silicon and Intel. Both are developer-signed but not notarized. If macOS blocks the first launch, right-click the app and choose *Open*, or allow it under *System Settings → Privacy & Security*.
 
 For registry-managed installation, use =npm install -g @aviaviavi/org2= or install [[https://marketplace.visualstudio.com/items?itemName=AviPress.org2-vscode][Org2 from the VS Code Marketplace]]. The paired iOS app is distributed separately through TestFlight.
 

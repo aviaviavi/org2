@@ -255,7 +255,7 @@ final class OpenClawLocalEditBrokerTests: XCTestCase {
 
   func testWorkspacePromptDocumentsTheTypedNodeContract() {
     let context = OpenClawLocalEditWorkspaceContext(
-      nodeDisplayName: "Org2 Workspace Local Edits (Codex)",
+      nodeDisplayName: "OpenOrg Local Edits (Codex)",
       turnID: "turn-3"
     )
     let prompt = context.systemPrompt()
@@ -267,7 +267,7 @@ final class OpenClawLocalEditBrokerTests: XCTestCase {
   }
 
   func testNodeClaimsOnlyTypedOrg2Commands() throws {
-    let claims = OpenClawLocalEditNode.connectionClaims(displayName: "Org2 Workspace Local Edits")
+    let claims = OpenClawLocalEditNode.connectionClaims(displayName: "OpenOrg Local Edits")
     XCTAssertEqual(claims["role"] as? String, "node")
     XCTAssertEqual(claims["caps"] as? [String], ["org2"])
     XCTAssertEqual(

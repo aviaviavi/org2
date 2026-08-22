@@ -198,7 +198,7 @@ final class CodexAppServerClientTests: XCTestCase {
       XCTAssertTrue(prompt.contains("exactly one fewer + join than the number of columns"))
       XCTAssertTrue(prompt.contains("#+begin_src sh"))
       XCTAssertTrue(prompt.contains("Never write ##+begin_src or ##+end_src."))
-      XCTAssertTrue(prompt.contains("clickable file-and-line citations is a deliberate Org2 Workspace chat transport exception"))
+      XCTAssertTrue(prompt.contains("clickable file-and-line citations is a deliberate OpenOrg chat transport exception"))
     }
   }
 

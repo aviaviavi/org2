@@ -45,6 +45,16 @@ assert.ok(block.startsWith(managedBlockStart));
 assert.ok(block.endsWith(managedBlockEnd));
 assert.match(block, /Org2 Workspace for macOS/);
 assert.match(block, /Org2 Workspace for macOS \(Intel DMG\)/);
+
+const openOrgBlock = releaseDownloadBlock({
+  tag_name: "0.5.0",
+  assets: [
+    { name: "OpenOrg.dmg", size: 8184365 },
+    { name: "OpenOrg-Intel.dmg", size: 8284365 },
+  ],
+});
+assert.match(openOrgBlock, /OpenOrg for macOS \(Apple Silicon DMG\)/);
+assert.match(openOrgBlock, /OpenOrg for macOS \(Intel DMG\)/);
 assert.match(block, /org2-vscode-0\.4\.1\.vsix/);
 assert.match(block, /aviaviavi-org2-0\.4\.1\.tgz/);
 
@@ -54,7 +64,8 @@ assert.match(merged, /## Highlights\n\nCurrent release\./);
 assert.equal(mergeReleaseDownloadBlock(merged, releases[0]), merged);
 
 const page = renderDownloadsPage(releases);
-assert.match(page, /\* Current release 0\.4\.1/);
+assert.match(page, /\* OpenOrg Alpha/);
+assert.match(page, /\* Current legacy release 0\.4\.1/);
 assert.match(page, /\| 0\.4\.1 \| \[\[https:\/\/org2\.gateway\.scarf\.sh/);
 assert.match(page, /macOS Apple Silicon DMG \| macOS Intel DMG/);
 assert.match(page, /Org2Workspace-Intel\.dmg/);
@@ -63,6 +74,23 @@ assert.match(page, /No release files are hosted separately by Scarf\./);
 assert.match(page, /\* iOS mobile app/);
 assert.match(page, /mailto:mail@avi\.press\?subject=Org2%20Mobile%20TestFlight/);
 assert.match(page, /apps\/ios\/Org2Mobile/);
+
+const openOrgPage = renderDownloadsPage([{
+  id: 3,
+  tag_name: "0.5.0",
+  published_at: "2026-08-22T16:02:07Z",
+  draft: false,
+  prerelease: false,
+  body: "OpenOrg Alpha.\n",
+  assets: [
+    { name: "OpenOrg.dmg", size: 8184365 },
+    { name: "OpenOrg-Intel.dmg", size: 8700000 },
+  ],
+}]);
+assert.match(openOrgPage, /\* Current release 0\.5\.0/);
+assert.doesNotMatch(openOrgPage, /\* OpenOrg Alpha\n/);
+assert.match(openOrgPage, /Developer ID signed, notarized, and stapled/);
+assert.match(openOrgPage, /OpenOrg-Intel\.dmg/);
 
 const plan = planReleaseDownloadSync(releases, { currentPage: page });
 assert.equal(plan.pageChanged, false);

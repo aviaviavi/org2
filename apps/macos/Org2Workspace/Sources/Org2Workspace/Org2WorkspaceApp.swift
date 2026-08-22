@@ -27,7 +27,7 @@ struct Org2WorkspaceApp: App {
   }
 
   var body: some Scene {
-    WindowGroup("Org2 Workspace") {
+    WindowGroup(WorkspaceProductIdentity.displayName) {
       ContentView()
         .environmentObject(store)
         .preferredColorScheme(store.appearanceMode.colorScheme)
@@ -66,6 +66,13 @@ struct Org2WorkspaceApp: App {
     }
     .windowToolbarStyle(.unifiedCompact(showsTitle: false))
     .commands {
+      CommandGroup(after: .appInfo) {
+        Divider()
+        Button("Getting Started") {
+          store.presentLaunchGuide()
+        }
+      }
+
       CommandGroup(replacing: .undoRedo) {
         Button("Undo") {
           store.performUndoCommand()

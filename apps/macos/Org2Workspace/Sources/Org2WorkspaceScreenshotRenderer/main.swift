@@ -201,7 +201,7 @@ private enum ScreenshotRenderError: LocalizedError {
     case .missingOutputPath:
       return "Usage: Org2WorkspaceScreenshotRenderer --out PATH"
     case .renderFailed:
-      return "Could not render Org2 Workspace screenshot"
+      return "Could not render OpenOrg screenshot"
     }
   }
 }

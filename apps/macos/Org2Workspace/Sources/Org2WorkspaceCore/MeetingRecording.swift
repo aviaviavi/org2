@@ -855,7 +855,7 @@ public enum NativeSpeechTranscriberError: LocalizedError {
   public var errorDescription: String? {
     switch self {
     case .authorizationDenied:
-      "Speech recognition permission is required for dictation. Allow Org2 Workspace under System Settings → Privacy & Security → Speech Recognition."
+      "Speech recognition permission is required for dictation. Allow OpenOrg under System Settings → Privacy & Security → Speech Recognition."
     case .recognizerUnavailable:
       "macOS Speech recognition is temporarily unavailable."
     case .emptyTranscript:

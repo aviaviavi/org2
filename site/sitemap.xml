@@ -1,99 +1,111 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
-    <loc>https://org2.avi.press/</loc>
+    <loc>https://openorg.so/</loc>
   </url>
   <url>
-    <loc>https://org2.avi.press/agent-quickstart.html</loc>
+    <loc>https://openorg.so/agent-quickstart.html</loc>
   </url>
   <url>
-    <loc>https://org2.avi.press/agentic-workspace-roadmap.html</loc>
+    <loc>https://openorg.so/agentic-workspace-roadmap.html</loc>
   </url>
   <url>
-    <loc>https://org2.avi.press/ai-adapters.html</loc>
+    <loc>https://openorg.so/ai-adapters.html</loc>
   </url>
   <url>
-    <loc>https://org2.avi.press/ai-draft-artifacts.html</loc>
+    <loc>https://openorg.so/ai-draft-artifacts.html</loc>
   </url>
   <url>
-    <loc>https://org2.avi.press/ai-job-manifests.html</loc>
+    <loc>https://openorg.so/ai-job-manifests.html</loc>
   </url>
   <url>
-    <loc>https://org2.avi.press/ai-processing-architecture.html</loc>
+    <loc>https://openorg.so/ai-processing-architecture.html</loc>
   </url>
   <url>
-    <loc>https://org2.avi.press/collaboration.html</loc>
+    <loc>https://openorg.so/collaboration.html</loc>
   </url>
   <url>
-    <loc>https://org2.avi.press/corpus-flow.html</loc>
+    <loc>https://openorg.so/corpus-flow.html</loc>
   </url>
   <url>
-    <loc>https://org2.avi.press/downloads.html</loc>
+    <loc>https://openorg.so/downloads.html</loc>
   </url>
   <url>
-    <loc>https://org2.avi.press/editors-emacs.html</loc>
+    <loc>https://openorg.so/editors-emacs.html</loc>
   </url>
   <url>
-    <loc>https://org2.avi.press/editors-macos.html</loc>
+    <loc>https://openorg.so/editors-macos.html</loc>
   </url>
   <url>
-    <loc>https://org2.avi.press/editors-vim.html</loc>
+    <loc>https://openorg.so/editors-vim.html</loc>
   </url>
   <url>
-    <loc>https://org2.avi.press/editors-vscode.html</loc>
+    <loc>https://openorg.so/editors-vscode.html</loc>
   </url>
   <url>
-    <loc>https://org2.avi.press/editors.html</loc>
+    <loc>https://openorg.so/editors.html</loc>
   </url>
   <url>
-    <loc>https://org2.avi.press/features.html</loc>
+    <loc>https://openorg.so/features.html</loc>
   </url>
   <url>
-    <loc>https://org2.avi.press/getting-started.html</loc>
+    <loc>https://openorg.so/getting-started.html</loc>
   </url>
   <url>
-    <loc>https://org2.avi.press/ingestion-pipeline.html</loc>
+    <loc>https://openorg.so/ingestion-pipeline.html</loc>
   </url>
   <url>
-    <loc>https://org2.avi.press/knowledge-compiler-roadmap.html</loc>
+    <loc>https://openorg.so/knowledge-compiler-roadmap.html</loc>
   </url>
   <url>
-    <loc>https://org2.avi.press/language-reference.html</loc>
+    <loc>https://openorg.so/known-limitations.html</loc>
   </url>
   <url>
-    <loc>https://org2.avi.press/llm-consumers.html</loc>
+    <loc>https://openorg.so/language-reference.html</loc>
   </url>
   <url>
-    <loc>https://org2.avi.press/macos-diagnostics.html</loc>
+    <loc>https://openorg.so/launch-demo.html</loc>
   </url>
   <url>
-    <loc>https://org2.avi.press/maintenance-workflows.html</loc>
+    <loc>https://openorg.so/llm-consumers.html</loc>
   </url>
   <url>
-    <loc>https://org2.avi.press/migration.html</loc>
+    <loc>https://openorg.so/macos-diagnostics.html</loc>
   </url>
   <url>
-    <loc>https://org2.avi.press/openclaw-knowledge-layer.html</loc>
+    <loc>https://openorg.so/maintenance-workflows.html</loc>
   </url>
   <url>
-    <loc>https://org2.avi.press/org2-vs-markdown.html</loc>
+    <loc>https://openorg.so/migration.html</loc>
   </url>
   <url>
-    <loc>https://org2.avi.press/org2-vs-obsidian.html</loc>
+    <loc>https://openorg.so/openclaw-knowledge-layer.html</loc>
   </url>
   <url>
-    <loc>https://org2.avi.press/org2-vs-org-mode.html</loc>
+    <loc>https://openorg.so/openorg-and-org2.html</loc>
   </url>
   <url>
-    <loc>https://org2.avi.press/reference.html</loc>
+    <loc>https://openorg.so/org2-vs-markdown.html</loc>
   </url>
   <url>
-    <loc>https://org2.avi.press/semantics-status.html</loc>
+    <loc>https://openorg.so/org2-vs-obsidian.html</loc>
   </url>
   <url>
-    <loc>https://org2.avi.press/tooling-reference.html</loc>
+    <loc>https://openorg.so/org2-vs-org-mode.html</loc>
   </url>
   <url>
-    <loc>https://org2.avi.press/workflows.html</loc>
+    <loc>https://openorg.so/privacy-and-data.html</loc>
+  </url>
+  <url>
+    <loc>https://openorg.so/reference.html</loc>
+  </url>
+  <url>
+    <loc>https://openorg.so/semantics-status.html</loc>
+  </url>
+  <url>
+    <loc>https://openorg.so/tooling-reference.html</loc>
+  </url>
+  <url>
+    <loc>https://openorg.so/workflows.html</loc>
   </url>
 </urlset>

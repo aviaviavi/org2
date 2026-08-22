@@ -1,0 +1,42 @@
+#+title: OpenOrg Alpha 0.5.0 launch checklist
+#+subtitle: Merge, private-alpha, and public-launch gates
+#+date: 2026-08-22
+
+* Review-branch gate
+
+- [ ] Name-clearance decision recorded.
+- [ ] OpenOrg/Org2 architecture and compatibility matrix approved.
+- [ ] User-facing Mac name, icon, onboarding, site, and release copy reviewed.
+- [ ] Existing bundle identifier, preferences, Keychain services, executable, corpus format, CLI, npm package, schemas, and editor identifiers unchanged.
+- [ ] Apple Silicon and Intel packaging plans produce canonical OpenOrg artifact names.
+- [ ] Privacy, backups, agent actions, support, and known limitations are plainly documented.
+- [ ] No production DNS, tag, registry, release, or distribution mutation occurred from the review branch.
+
+* Release-candidate gate
+
+- [ ] All repository, docs, generated-site, Swift, corpus, lifecycle, packaging, and compatibility checks pass.
+- [ ] =OpenOrg.dmg= is Developer ID signed, notarized, stapled, and accepted by Gatekeeper.
+- [ ] =OpenOrg-Intel.dmg= is Developer ID signed, notarized, stapled, and accepted by Gatekeeper.
+- [ ] Both artifact checksums and manifests are recorded.
+- [ ] Upgrade smoke test preserves settings, credentials, permissions, corpus access, pairing, capture, meetings, notifications, and deep links.
+- [ ] Fresh install reaches the cited review loop in under ten minutes.
+- [ ] Known-alpha boundaries and support route are visible from the product site.
+
+* Private-alpha gate
+
+- [ ] =8–12= target users invited.
+- [ ] At least five users install and complete the core flow.
+- [ ] At least three users return voluntarily within seven days.
+- [ ] No unresolved data-loss, unintended-action, credential, permission, installation, or migration blocker remains.
+- [ ] Observed onboarding failures are fixed and retested.
+
+* Public-launch gate
+
+- [ ] Name cleared and product rename approved for merge.
+- [ ] =openorg.so= cutover plan approved and executed only after the site artifact passes checks.
+- [ ] OpenOrg =0.5.0= release notes, screenshots, downloads, npm, VS Code, GitHub, and developer-doc relationships are consistent.
+- [ ] 60–90 second demonstration recorded from the approved candidate.
+- [ ] GitHub, Hacker News, local-first community, and Avi-audience launch drafts reviewed.
+- [ ] Final release artifacts downloaded through both GitHub and Scarf paths and verified against recorded checksums.
+
+Do not convert an unchecked gate into launch copy. A gate becomes complete only when its evidence is attached to the release or alpha record.

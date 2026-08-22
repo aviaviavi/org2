@@ -1,0 +1,27 @@
+#+TITLE: OpenOrg launch demonstration
+#+SUBTITLE: One complete 60–90 second workflow, not a feature inventory.
+
+* The story
+
+The agent is replaceable; the work, context, provenance, and control remain yours.
+
+* Shot list
+
+1. *Open ordinary files* — Open an existing folder and briefly reveal the same =.org2= files in Finder.
+2. *See today's commitments* — Open Agenda and select a scheduled launch task with its source context visible.
+3. *Delegate bounded work* — Ask any configured agent to prepare one concrete outcome using the selected local context.
+4. *Inspect the durable run* — Open Agent Work and show status, cited inputs, validation, and the generated artifact.
+5. *Approve or revise* — Make one consequential decision at the explicit review boundary.
+6. *Leave with portable work* — Open the resulting =.org2= file in another editor and show the readable provenance.
+
+* Suggested narration
+
+“OpenOrg runs your work with people and agents from local files you control. This folder is ordinary text. Agenda shows what is due without separating a commitment from its source. I can ask any configured agent for a bounded outcome, then inspect the durable run, citations, and artifact before approving anything consequential. The result is still an Org2 file I can open anywhere. I can change the agent or the app; the work and its history remain mine.”
+
+* Recording constraints
+
+- Keep the desktop clean and use synthetic launch data.
+- Show one configured agent destination; do not turn the demo into a provider comparison.
+- Avoid advanced notebooks, publishing, encryption, source connectors, mobile, and meetings in the primary cut.
+- Record at a readable cursor speed and keep every text frame on screen long enough to scan.
+- End on =openorg.so= and “Built on the open Org2 format.”

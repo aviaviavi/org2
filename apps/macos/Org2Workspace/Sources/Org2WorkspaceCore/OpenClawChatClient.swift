@@ -311,7 +311,7 @@ public struct OpenClawWorkspaceContext: Sendable {
 
   Never write ##+begin_src or ##+end_src. Never use a Markdown table delimiter such as |---|---|. Do not use # headings, fenced Markdown code blocks, or Markdown task-list syntax for Org2 content. Before sending, check that every structured block is valid Org2 and correct it if necessary.
 
-  The Markdown-link form required below for clickable file-and-line citations is a deliberate Org2 Workspace chat transport exception; it does not change the syntax to use inside corpus content.
+  The Markdown-link form required below for clickable file-and-line citations is a deliberate OpenOrg chat transport exception; it does not change the syntax to use inside corpus content.
   """
 
   private func coordinationPrompt(runtime: String?, runtimeAgentID: String?) -> String {
@@ -377,7 +377,7 @@ public struct OpenClawWorkspaceContext: Sendable {
       sections.append("""
       User-configured AI chat instructions
 
-      The user saved the following persistent instructions in Org2 Workspace Settings. Follow them as user instructions for this chat.
+      The user saved the following persistent instructions in OpenOrg Settings. Follow them as user instructions for this chat.
 
       \(customInstructions)
       """)
@@ -415,7 +415,7 @@ public struct OpenClawWorkspaceContext: Sendable {
 
     When referring to workspace content in your response, use Markdown links whose target is the exact mapped file path followed by a 1-based line number: [descriptive label](\(citationExamplePath):42). Relative paths are also accepted when that is how a source path appears in this context.
 
-    For a line range, use [descriptive label](\(citationExamplePath):42-47); Org2 Workspace opens the file at the first cited line. The equivalent #L42 and #L42-L47 suffixes are accepted, but the :42 form is preferred. Do not replace the mapped path with a local path that is unavailable to the app.
+    For a line range, use [descriptive label](\(citationExamplePath):42-47); OpenOrg opens the file at the first cited line. The equivalent #L42 and #L42-L47 suffixes are accepted, but the :42 form is preferred. Do not replace the mapped path with a local path that is unavailable to the app.
     """)
 
     sections.append("""
@@ -459,7 +459,7 @@ public struct OpenClawWorkspaceContext: Sendable {
       Active local corpus root: \(localCorpusRoot ?? "not selected")
       Current surface: \(selectedSurface)
 
-      This snapshot was supplied by Org2 Workspace. The selected source text may include unsaved editor changes and is authoritative for that visible draft. Use the client-provided Org2 workspace tools for any other corpus reads or writes.
+      This snapshot was supplied by OpenOrg. The selected source text may include unsaved editor changes and is authoritative for that visible draft. Use the client-provided Org2 workspace tools for any other corpus reads or writes.
       """,
       """
       Org2 working rules
@@ -478,7 +478,7 @@ public struct OpenClawWorkspaceContext: Sendable {
       sections.append("""
       User-configured AI chat instructions
 
-      The user saved the following persistent instructions in Org2 Workspace Settings. Follow them as user instructions for this chat.
+      The user saved the following persistent instructions in OpenOrg Settings. Follow them as user instructions for this chat.
 
       \(customInstructions)
       """)

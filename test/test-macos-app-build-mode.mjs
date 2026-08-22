@@ -19,6 +19,9 @@ const defaultDaily = JSON.parse(
 );
 assert.equal(defaultDaily.bundleIdentifier, "org.org2.workspace");
 assert.equal(defaultDaily.configuration, "release");
+assert.equal(defaultDaily.appName, "OpenOrg");
+assert.match(defaultDaily.appPath, /OpenOrg\.app$/);
+assert.match(defaultDaily.iconPath, /OpenOrgAppIcon\.png$/);
 
 const refusedDebug = run(
   "tools/build-macos-app.mjs",
@@ -41,6 +44,8 @@ const codexDebug = JSON.parse(
 );
 assert.equal(codexDebug.bundleIdentifier, "org.org2.workspace.codex");
 assert.equal(codexDebug.configuration, "debug");
+assert.equal(codexDebug.appName, "OpenOrg Preview");
+assert.match(codexDebug.appPath, /OpenOrg Preview\.app$/);
 
 const codexRelease = JSON.parse(
   run("tools/build-macos-app-codex.mjs", [

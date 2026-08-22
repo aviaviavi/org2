@@ -26,13 +26,17 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const packageVersion = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8")).version;
 const packageDir = join(repoRoot, "apps", "macos", "Org2Workspace");
 const buildOptions = parseBuildOptions(process.argv.slice(2));
+const appName = process.env.ORG2_WORKSPACE_APP_NAME ?? "OpenOrg";
 const appPath = resolve(
-  process.env.ORG2_WORKSPACE_APP_PATH ?? join(homedir(), "Applications", "Org2Workspace.app")
+  process.env.ORG2_WORKSPACE_APP_PATH ?? join(homedir(), "Applications", `${appName}.app`)
 );
 const bundleIdentifier = process.env.ORG2_WORKSPACE_BUNDLE_ID ?? "org.org2.workspace";
-const appName = process.env.ORG2_WORKSPACE_APP_NAME ?? "Org2Workspace";
 const requestedSigningIdentity = process.env.ORG2_WORKSPACE_CODE_SIGN_IDENTITY?.trim();
 const executableName = "Org2Workspace";
+const iconPath = resolve(
+  process.env.ORG2_WORKSPACE_ICON_PATH
+    ?? join(packageDir, "Sources", "Org2Workspace", "Resources", "OpenOrgAppIcon.png")
+);
 const swiftBuildArch = process.env.ORG2_WORKSPACE_SWIFT_ARCH ?? defaultSwiftBuildArch();
 const swiftBuildConfiguration = resolveBuildConfiguration();
 const bundledNodePath = process.env.ORG2_WORKSPACE_NODE_PATH?.trim()
@@ -41,6 +45,14 @@ const bundledWhisperCppPath = process.env.ORG2_WORKSPACE_WHISPER_CPP_PATH?.trim(
   || (swiftBuildConfiguration === "release" ? discoverWhisperCppPath() : "");
 const bundledWhisperModelPath = process.env.ORG2_WORKSPACE_WHISPER_MODEL_PATH?.trim()
   || (swiftBuildConfiguration === "release" ? discoverWhisperModelPath() : "");
+const appEntitlementsPath = resolve(
+  process.env.ORG2_WORKSPACE_APP_ENTITLEMENTS
+    ?? join(packageDir, "OpenOrg.entitlements")
+);
+const nodeEntitlementsPath = resolve(
+  process.env.ORG2_WORKSPACE_NODE_ENTITLEMENTS
+    ?? join(packageDir, "OpenOrgNode.entitlements")
+);
 
 function parseBuildOptions(arguments_) {
   const options = {
@@ -194,6 +206,48 @@ function codeSigningIdentity() {
   return requestedSigningIdentity;
 }
 
+function usesHardenedRuntime(identity) {
+  return identity.startsWith("Developer ID Application:");
+}
+
+function codesignArgs(identity, path, options = {}) {
+  const args = ["--force", "--sign", identity];
+  if (usesHardenedRuntime(identity)) {
+    args.push("--timestamp", "--options", "runtime");
+    if (options.entitlements) {
+      args.push("--entitlements", options.entitlements);
+    }
+  }
+  if (options.identifier) {
+    args.push("--identifier", options.identifier);
+  }
+  args.push(path);
+  return args;
+}
+
+function nestedMachOPaths(root) {
+  const paths = [];
+  function visit(directory) {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) {
+        visit(path);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      const result = spawnSync("file", ["-b", path], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+      });
+      if (result.status === 0 && result.stdout.includes("Mach-O")) {
+        paths.push(path);
+      }
+    }
+  }
+  visit(root);
+  return paths.sort((left, right) => right.length - left.length || left.localeCompare(right));
+}
+
 function xmlEscape(value) {
   return value
     .replaceAll("&", "&amp;")
@@ -250,11 +304,11 @@ function writeInfoPlist() {
   <key>NSHighResolutionCapable</key>
   <true/>
   <key>NSMicrophoneUsageDescription</key>
-  <string>Org2Workspace records microphone audio for meeting notes.</string>
+  <string>${xmlEscape(appName)} records microphone audio for meeting notes.</string>
   <key>NSScreenCaptureUsageDescription</key>
-  <string>Org2Workspace uses ScreenCaptureKit to capture system and call audio for meeting notes.</string>
+  <string>${xmlEscape(appName)} uses ScreenCaptureKit to capture system and call audio for meeting notes.</string>
   <key>NSSpeechRecognitionUsageDescription</key>
-  <string>Org2Workspace may use macOS Speech recognition as a fallback when its bundled local transcriber cannot run.</string>
+  <string>${xmlEscape(appName)} may use macOS Speech recognition as a fallback when its bundled local transcriber cannot run.</string>
 </dict>
 </plist>
 `;
@@ -534,8 +588,11 @@ function main() {
   if (buildOptions.printConfiguration) {
     console.log(JSON.stringify({
       appPath,
+      appName,
       bundleIdentifier,
       configuration: swiftBuildConfiguration,
+      iconPath,
+      hardenedRuntime: requestedSigningIdentity?.startsWith("Developer ID Application:") ?? false,
       nodePath: bundledNodePath || null,
       whisperCppPath: bundledWhisperCppPath || null,
       whisperModelPath: bundledWhisperModelPath || null,
@@ -570,12 +627,14 @@ function main() {
   const appBinaryPath = join(macOSDir, executableName);
   const runningPids = runningProcessesForBinary(appBinaryPath);
   if (runningPids.length > 0) {
-    throw new Error(`Org2Workspace is running from ${appPath}. Quit it and rerun this command.`);
+    throw new Error(`${appName} is running from ${appPath}. Quit it and rerun this command.`);
   }
   copyFileSync(binaryPath, appBinaryPath);
   chmodSync(appBinaryPath, 0o755);
 
-  const iconPath = join(packageDir, "Sources", "Org2Workspace", "Resources", "AppIcon.png");
+  if (!existsSync(iconPath)) {
+    throw new Error(`App icon not found at ${iconPath}`);
+  }
   writeIconSet(iconPath, resourcesDir);
   copyFileSync(
     join(packageDir, "Sources", "Org2WorkspaceCore", "Resources", "NewMessage.mp3"),
@@ -587,17 +646,38 @@ function main() {
   const signingIdentity = codeSigningIdentity();
   const signingLabel = signingIdentity === "-" ? "ad-hoc" : signingIdentity;
   console.log(`Signing ${appPath} as ${bundleIdentifier} with ${signingLabel}...`);
+  if (usesHardenedRuntime(signingIdentity)) {
+    for (const entitlementsPath of [appEntitlementsPath, nodeEntitlementsPath]) {
+      if (!existsSync(entitlementsPath)) {
+        throw new Error(`Hardened-runtime entitlements not found at ${entitlementsPath}`);
+      }
+    }
+  }
   if (runtimeNodePath) {
-    run("codesign", ["--force", "--sign", signingIdentity, runtimeNodePath]);
+    run("codesign", codesignArgs(signingIdentity, runtimeNodePath, {
+      entitlements: nodeEntitlementsPath,
+    }));
   }
   for (const library of whisperRuntime.libraries) {
-    run("codesign", ["--force", "--sign", signingIdentity, library]);
+    run("codesign", codesignArgs(signingIdentity, library));
   }
   if (whisperRuntime.executable) {
-    run("codesign", ["--force", "--sign", signingIdentity, whisperRuntime.executable]);
+    run("codesign", codesignArgs(signingIdentity, whisperRuntime.executable));
     verifyWhisperRuntime(whisperRuntime.executable);
   }
-  run("codesign", ["--force", "--sign", signingIdentity, "--identifier", bundleIdentifier, appPath]);
+  for (const nestedPath of nestedMachOPaths(resourcesDir)) {
+    if (nestedPath === runtimeNodePath
+        || nestedPath === whisperRuntime.executable
+        || whisperRuntime.libraries.includes(nestedPath)) {
+      continue;
+    }
+    run("codesign", codesignArgs(signingIdentity, nestedPath));
+  }
+  run("codesign", codesignArgs(signingIdentity, appPath, {
+    entitlements: appEntitlementsPath,
+    identifier: bundleIdentifier,
+  }));
+  run("codesign", ["--verify", "--deep", "--strict", appPath]);
   if (signingIdentity === "-") {
     console.warn(
       "Warning: ad-hoc signing gives the app a cdhash-based TCC identity. macOS Screen/System Audio permission may reset after rebuilds. Set ORG2_WORKSPACE_CODE_SIGN_IDENTITY to a stable signing identity to avoid that."

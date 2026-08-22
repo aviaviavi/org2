@@ -6,7 +6,7 @@
 
 =OpenOrg= is the proposed user-facing product name. =Org2= remains the open substrate.
 
-The public rename is *provisional and blocked on name clearance*. A preliminary screen found an active company and product using =Open Org Workspace= for an AI-assisted document workspace. Owning =openorg.so= does not resolve that conflict. Do not publish the product site, rename the release app, commission final identity assets, or announce the name until counsel reviews the overlap or a more distinctive name is selected.
+The public rename is *provisional and blocked on name clearance*. A preliminary screen found an active company and product using =Open Org Workspace= for an AI-assisted document workspace. Owning =openorg.so= does not resolve that conflict. A review branch may prototype the name, onboarding, packaging, and site, but do not merge the public rename, point production DNS, distribute a release app, or announce the name until counsel reviews the overlap or a more distinctive name is selected.
 
 * Proposed architecture
 
@@ -22,12 +22,12 @@ The boundary is architectural, not cosmetic: ordinary files remain canonical, th
 
 | Surface | Proposed 0.5 presentation | Compatibility identifier | Initial action |
 |---------+---------------------------+--------------------------+----------------|
-| macOS Finder and menu-bar name | OpenOrg | =org.org2.workspace= | Change display name only after clearance; preserve the bundle identifier. |
+| macOS Finder and menu-bar name | OpenOrg | =org.org2.workspace= | Prototype on the review branch; merge and distribute only after clearance. Preserve the bundle identifier. |
 | macOS executable and Swift package | Internal implementation detail | =Org2Workspace= | Preserve for 0.5 to avoid packaging and diagnostics churn. |
 | macOS preferences | Invisible implementation detail | =Org2Workspace.*= keys in =org.org2.workspace= | Preserve; do not migrate or reset existing settings. |
 | macOS Keychain services | Invisible implementation detail | Existing =Org2Workspace.*= and =org.org2.workspace.*= service names | Preserve so tokens, source credentials, encryption settings, and pairings remain available. |
 | macOS permissions | OpenOrg in user-facing permission copy | Existing TCC identity through =org.org2.workspace= | Preserve bundle identity; validate microphone, screen recording, speech, notifications, and accessibility after the display rename. |
-| macOS release artifacts | OpenOrg Alpha | Existing =Org2Workspace= artifact aliases during transition | Add OpenOrg-named assets without breaking historical download URLs. |
+| macOS release artifacts | OpenOrg Alpha | Historical =Org2Workspace= artifacts remain available | Publish =OpenOrg.dmg= and =OpenOrg-Intel.dmg= for =0.5.0+= without breaking historical download URLs. |
 | iOS display name | OpenOrg | =org.org2.mobile= and existing app-group/push identifiers | Defer from primary onboarding; preserve identifiers and TestFlight continuity. |
 | Corpus files | Org2 files | =.org2= and =.org= | Preserve permanently. |
 | Corpus configuration | Org2 configuration | =org2.json= | Preserve permanently. |
@@ -100,4 +100,3 @@ While the name gate is unresolved, continue work that is useful under any final 
 3. Complete signing and notarization automation.
 4. Document privacy, backups, agent actions, and known alpha limitations.
 5. Prepare a product-site information architecture and demo script using a replaceable brand token.
-

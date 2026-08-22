@@ -1567,7 +1567,7 @@ public actor OpenClawGatewayClient {
       "maxProtocol": 4,
       "client": [
         "id": "openclaw-macos",
-        "displayName": "Org2 Workspace",
+        "displayName": "OpenOrg",
         "version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev",
         "platform": "darwin",
         "deviceFamily": "Mac",
@@ -1865,7 +1865,7 @@ public actor OpenClawGatewayClient {
     let requestID = string(details?["requestId"])
     var message = string(error?["message"]) ?? "The OpenClaw Gateway rejected the request."
     if code == "NOT_PAIRED", let requestID {
-      message += " Approve Org2 Workspace device request \(requestID) on the Gateway, then send again."
+      message += " Approve OpenOrg device request \(requestID) on the Gateway, then send again."
     }
     return .gateway(
       code: code,
@@ -1880,9 +1880,9 @@ public actor OpenClawGatewayClient {
       let requestID = firstMatch(in: normalized, pattern: #"\(requestId:\s*([^\s\)]+)\)"#)
       var message = normalized
       if let requestID {
-        message += " Approve Org2 Workspace request \(requestID) on the Gateway"
+        message += " Approve OpenOrg request \(requestID) on the Gateway"
       } else {
-        message += " Approve the pending Org2 Workspace device request on the Gateway"
+        message += " Approve the pending OpenOrg device request on the Gateway"
       }
       if let deviceID, !deviceID.isEmpty {
         message += " (device \(deviceID.prefix(12)))"
@@ -1897,7 +1897,7 @@ public actor OpenClawGatewayClient {
     .gateway(
       code: "NOT_PAIRED",
       message: "OpenClaw closed the signed device handshake before macOS delivered its final reason. "
-        + "Approve the pending Org2 Workspace request for device \(deviceID.prefix(12)) on the Gateway, "
+        + "Approve the pending OpenOrg request for device \(deviceID.prefix(12)) on the Gateway, "
         + "then click Save & Request Pairing again."
     )
   }

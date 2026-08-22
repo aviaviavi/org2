@@ -1,0 +1,37 @@
+#+TITLE: Privacy, backups, and agent actions
+#+SUBTITLE: Know what stays local, what leaves the Mac, and what still needs your approval.
+
+* Local source of truth
+
+OpenOrg works over folders you choose. Ordinary =.org2= and =.org= files are canonical; indexes, previews, search data, and application state are derived and can be rebuilt.
+
+OpenOrg does not require uploading a corpus to an OpenOrg-hosted cloud. Files leave the Mac only when you explicitly sync them through a service you choose or send authorized context to a configured agent, model, or data source.
+
+* Agent context
+
+Each chat turn names an active writable corpus and any additional read-only corpora authorized for that turn. The destination receives the selected message, visible thread context, and the bounded workspace context shown by the client. Different providers have different retention and training policies; check the provider you configure.
+
+OpenOrg does not expose a hidden chain of thought. It can display provider-exposed progress and commentary, tool activity, citations, and final results.
+
+* Actions and approvals
+
+Reading local context and drafting reviewable output are different from consequential external actions. Messages, tickets, calendar changes, publication, deletion, and other third-party writes should remain behind an explicit approval boundary. Agent Work shows runs, artifacts, validation, pending decisions, and failure state in one place.
+
+* Credentials and permissions
+
+- Provider tokens, source credentials, mobile-pairing secrets, and encryption passphrases stay in macOS Keychain or another machine-local protected store.
+- Credentials must not be written into corpus files, runs, workflows, fixtures, or generated artifacts.
+- Microphone, Screen/System Audio, Speech, notifications, and similar permissions remain controlled by macOS.
+- The 0.5 display rename preserves the existing bundle identifier so existing permission and Keychain continuity can be validated without an unnecessary identity migration.
+
+* Backups
+
+Back up the corpus folder with a tool you understand: Git, Time Machine, iCloud Drive, Syncthing, or another file-oriented backup system. Before enabling a sync provider, confirm how it handles concurrent edits, file history, encrypted subtrees, and deletions.
+
+Derived =views/= and =compiled/= output can often be regenerated, but include it when it contains reviewed artifacts you want to preserve. Machine-local credentials require a separate secure backup strategy.
+
+* Encryption
+
+OpenOrg can encrypt selected Org subtrees with Org Crypt while leaving the surrounding file readable. Encryption protects content at rest and in file sync, but decrypted text can still be shared with an agent when you explicitly authorize it for a turn.
+
+Report a safety or privacy concern through [[https://github.com/aviaviavi/org2/issues][GitHub issues]]. Do not include private corpus content or credentials in a public report.

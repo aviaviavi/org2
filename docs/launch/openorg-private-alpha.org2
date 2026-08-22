@@ -1,0 +1,59 @@
+#+title: OpenOrg private alpha plan
+#+subtitle: Recruitment, observation, activation, and feedback for the first 8–12 users
+#+date: 2026-08-22
+
+* Purpose
+
+The private alpha tests whether someone other than Avi can reach OpenOrg's useful loop safely and without live coaching. It is not a feature referendum. The goal is to identify installation, product-comprehension, onboarding, trust, and data-safety failures before a public announcement.
+
+* Cohort
+
+Invite =8–12= people who already understand at least one of local-first software, agents, Org mode, Obsidian, developer tools, or operations workflows. Aim for variation in technical depth without widening the target audience beyond technical founders, operators, and knowledge workers who want agents working over files they own.
+
+Do not invite the next person until the current candidate can receive a notarized build, a five-minute start guide, the privacy page, known limitations, and one obvious support link.
+
+* Core session
+
+Ask each participant to share their screen and narrate naturally. Avoid explaining controls until they are genuinely blocked.
+
+1. Install OpenOrg from the release DMG without bypassing Gatekeeper.
+2. Explain what OpenOrg is and how Org2 relates to it.
+3. Open an existing folder or create the starter workspace.
+4. Capture one real commitment and find it in Agenda.
+5. Ask one configured agent to produce a bounded outcome from local context.
+6. Inspect the cited inputs, durable run, artifact, and approval boundary in Agent Work.
+7. Reveal the workspace and open the resulting =.org2= file outside OpenOrg.
+
+Stop the clock at the first useful, cited, portable result. Record the elapsed time, every hesitation, every question, and every moment where the user expected a destructive or remote action that did not occur.
+
+* Measures
+
+- Installation succeeded without help :: yes/no
+- OpenOrg versus Org2 explained accurately :: yes/no
+- Corpus opened or created without help :: yes/no
+- First useful result reached in under ten minutes :: yes/no and elapsed time
+- Agent changes and approval boundaries understood :: yes/no
+- Backup and local-file ownership understood :: yes/no
+- Returned voluntarily within seven days :: yes/no
+- Qualitative blockers :: verbatim observation, not an inferred feature request
+
+The activation gate requires at least five participants to complete the core flow and at least three to return within seven days.
+
+* Feedback path
+
+Use one public path for alpha feedback: [[https://github.com/aviaviavi/org2/issues][GitHub Issues]]. Ask participants to include the OpenOrg version, macOS version, whether they used an existing or starter workspace, the step where they became blocked, and screenshots or logs with private corpus content removed.
+
+For security or sensitive data-loss concerns, ask for a private report to =mail@avi.press= instead of a public issue.
+
+* Triage order
+
+1. Data loss, unintended external action, credential exposure, or permission confusion.
+2. Installation, signing, migration, or corpus-access failure.
+3. Inability to understand OpenOrg versus Org2 or reach first value.
+4. Missing evidence, unclear approval boundaries, or misleading completion state.
+5. Performance and visual polish.
+6. New feature requests.
+
+* Exit criteria
+
+Proceed to public-alpha preparation only when the launch checklist is green, five outside users complete the core flow, three return within seven days, and no unresolved data-safety or installation blocker remains.

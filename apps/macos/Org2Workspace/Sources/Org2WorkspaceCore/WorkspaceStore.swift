@@ -1191,7 +1191,7 @@ public struct WorkspaceRuntimeIdentity: Equatable, Sendable {
     if isAppBundle {
       return "Screen/System Audio permission should apply to this app bundle after relaunch."
     }
-    return "Screen/System Audio permission may not apply reliably to a rebuilt SwiftPM debug executable. Launch an installed Org2Workspace.app bundle for stable TCC permissions."
+    return "Screen/System Audio permission may not apply reliably to a rebuilt SwiftPM debug executable. Launch an installed OpenOrg.app bundle for stable TCC permissions."
   }
 
   public static func current(
@@ -1376,6 +1376,7 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var isQuickOpenPresented = false
   @Published public var isKeyboardShortcutsPresented = false
   @Published public var isCapturePanelPresented = false
+  @Published public var isLaunchGuidePresented = false
   @Published public var captureDraft = WorkspaceCaptureDraft()
   @Published public var isSimilarTodoAssignmentPresented = false
   @Published public var similarTodoCandidates: [SimilarTodoCandidate] = []
@@ -1872,6 +1873,7 @@ public final class WorkspaceStore: ObservableObject {
   private let codexSandboxAccessKey = "Org2Workspace.aiChat.codexSandboxAccess.v1"
   private let aiChatMessageSoundKey = "Org2Workspace.aiChat.messageSound.v1"
   private let appearanceModeKey = "Org2Workspace.appearance.mode.v1"
+  private let launchGuideCompletedKey = "Org2Workspace.openOrgLaunchGuideCompleted.v1"
   private let openClawBriefsStartNewThreadKey = "Org2Workspace.openClawBriefsStartNewThread"
   private let openClawLocalEditsEnabledKey = "Org2Workspace.openClawLocalEditsEnabled.v1"
   private let meetingReadyAutomationSettingsByCorpusKey = "Org2Workspace.meetingReadyAutomation.settingsByCorpus.v1"
@@ -1929,7 +1931,7 @@ public final class WorkspaceStore: ObservableObject {
     1_200_000_000
   ]
   nonisolated private static let openClawInterruptedSendFailureText =
-    "Org2 Workspace restarted before this AI response was saved. The response may have completed outside the app, but this chat cannot recover it. Retry to send again."
+    "OpenOrg restarted before this AI response was saved. The response may have completed outside the app, but this chat cannot recover it. Retry to send again."
   nonisolated private static let openClawStoppedSendFailureText =
     "OpenClaw was stopped by you. Retry to start this request again."
   private var openClawTranscriptURL: URL
@@ -2490,8 +2492,59 @@ public final class WorkspaceStore: ObservableObject {
 
     if panel.runModal() == .OK, let url = panel.url {
       setCorpusRoot(url)
-      Task { await refreshWorkspace() }
+      Task {
+        await refreshWorkspace()
+        presentLaunchGuideIfNeeded()
+      }
     }
+  }
+
+  public func presentLaunchGuide() {
+    isLaunchGuidePresented = true
+  }
+
+  public func dismissLaunchGuide() {
+    isLaunchGuidePresented = false
+  }
+
+  public func completeLaunchGuide() {
+    defaults.set(true, forKey: launchGuideCompletedKey)
+    isLaunchGuidePresented = false
+  }
+
+  public func launchGuideCaptureItem() {
+    isLaunchGuidePresented = false
+    Task { @MainActor in
+      await Task.yield()
+      isCapturePanelPresented = true
+    }
+  }
+
+  public func launchGuideOpenAgenda() {
+    isLaunchGuidePresented = false
+    selectedSurface = .agenda
+  }
+
+  public func launchGuideAskAgent() {
+    isLaunchGuidePresented = false
+    makeSurfacePrimary(.openClaw)
+  }
+
+  public func launchGuideOpenAgentWork() {
+    isLaunchGuidePresented = false
+    runsAndReviewPage = .review
+    selectedSurface = .approvals
+  }
+
+  public func launchGuideRevealWorkspace() {
+    isLaunchGuidePresented = false
+    guard let corpusRoot else { return }
+    NSWorkspace.shared.activateFileViewerSelecting([corpusRoot])
+  }
+
+  private func presentLaunchGuideIfNeeded() {
+    guard !defaults.bool(forKey: launchGuideCompletedKey) else { return }
+    isLaunchGuidePresented = true
   }
 
   public func createCorpus() {
@@ -2525,6 +2578,7 @@ public final class WorkspaceStore: ObservableObject {
         if let welcome = corpusFiles.filter({ $0.path == welcomeURL.path }).first {
           selectCorpusFile(welcome)
         }
+        presentLaunchGuideIfNeeded()
       }
     } catch {
       statusText = error.localizedDescription
@@ -2597,18 +2651,27 @@ public final class WorkspaceStore: ObservableObject {
 
     let welcomeURL = root.appendingPathComponent("notes/welcome.org2")
     let welcome = """
-    #+TITLE: Welcome to Org2
+    #+TITLE: Welcome to OpenOrg
 
     * Start here
 
-    This folder is an Org2 corpus. The plain-text files are the source of truth; agenda, search, graph, agent context, and published views are derived from them.
+    OpenOrg is a local-first workspace built on the open Org2 format. This folder is an Org2 corpus: its plain-text files are the source of truth, while Agenda, search, graph, agent context, and published views are derived from them.
 
-    * TODO Add your first task
+    * TODO Capture your first real commitment
 
-    Give it a scheduled date or deadline, then open Agenda to see it appear.
+    Use Capture to add a scheduled task, then open Agenda to see it appear with the context that created it.
+
+    * Five-minute path
+
+    1. Capture one scheduled commitment.
+    2. Open Agenda and select it.
+    3. Ask a configured agent to perform one bounded task using the local context.
+    4. Open Agent Work to inspect citations, output, and anything awaiting approval.
+    5. Open this file in another editor to confirm the work remains ordinary text you control.
 
     * Next steps
 
+    - Open =Help → Getting Started= whenever you want the guided path again.
     - Use Capture to append a note or TODO to today's daily note.
     - Use daily notes for quick capture and =notes/= for durable knowledge.
     - Keep =inbox.org2= as an optional transport/import buffer when a sync client cannot safely append to the active daily note.
@@ -17008,7 +17071,7 @@ public final class WorkspaceStore: ObservableObject {
       },
       dynamicToolHandler: { [weak self] call in
         guard let self else {
-          return CodexDynamicToolResult(success: false, text: "Org2 Workspace was closed.")
+          return CodexDynamicToolResult(success: false, text: "OpenOrg was closed.")
         }
         return await self.handleCodexDynamicToolCall(call)
       }
@@ -17058,7 +17121,7 @@ public final class WorkspaceStore: ObservableObject {
       },
       dynamicToolHandler: { [weak self] call in
         guard let self else {
-          return CodexDynamicToolResult(success: false, text: "Org2 Workspace was closed.")
+          return CodexDynamicToolResult(success: false, text: "OpenOrg was closed.")
         }
         return await self.handleCodexDynamicToolCall(call)
       }
@@ -20679,8 +20742,8 @@ public final class WorkspaceStore: ObservableObject {
   public var openClawLocalEditNodeDisplayName: String {
     let bundleID = Bundle.main.bundleIdentifier ?? ""
     return bundleID.hasSuffix(".codex")
-      ? "Org2 Workspace Local Edits (Codex)"
-      : "Org2 Workspace Local Edits"
+      ? "OpenOrg Local Edits (Codex)"
+      : "OpenOrg Local Edits"
   }
 
   private func localEditBroker() -> OpenClawLocalEditBroker {
@@ -25818,7 +25881,7 @@ public final class WorkspaceStore: ObservableObject {
       )
       if !FileManager.default.fileExists(atPath: stylesheetURL.path) {
         let template = """
-        /* Org2 Workspace document overrides. This file only affects HTML read and preview views. */
+        /* OpenOrg document overrides. This file only affects HTML read and preview views. */
         :root {
           /* --org2-content-width: 960px; */
           /* --org2-page-padding: 28px; */
@@ -31679,7 +31742,7 @@ public final class WorkspaceStore: ObservableObject {
     Workflow:
     1. Inspect the repeated task shape and figure out how to complete one representative item.
     2. Apply that approach across the selected backlog items.
-    3. Update each org heading as you work so progress is visible in Org2 Workspace.
+    3. Update each org heading as you work so progress is visible in OpenOrg.
 
     Update convention:
     - Keep ASSIGNEE: \(assignee)

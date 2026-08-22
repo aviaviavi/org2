@@ -9,8 +9,8 @@
 - GitHub Release assets:
   - `aviaviavi-org2-{version}.tgz`
   - `org2-vscode-{version}.vsix`
-  - `Org2Workspace.dmg`
-  - `Org2Workspace-Intel.dmg`
+  - OpenOrg `0.5.0+`: `OpenOrg.dmg` and `OpenOrg-Intel.dmg`
+  - Historical Org2 Workspace releases: `Org2Workspace.dmg` and `Org2Workspace-Intel.dmg`
 
 The iOS client is distributed separately through TestFlight and does not share the desktop/CLI build number automatically.
 
@@ -31,9 +31,10 @@ Use `SCARF_API_TOKEN` only for authenticated API reads or an explicitly authoriz
 
 ## Signing and hosting constraints
 
-- Build `Org2Workspace.dmg` for Apple Silicon and `Org2Workspace-Intel.dmg` for Intel (`x86_64`).
+- Build `OpenOrg.dmg` for Apple Silicon and `OpenOrg-Intel.dmg` for Intel (`x86_64`) with `tools/package-openorg-macos.mjs`.
 - Bundle a native whisper.cpp executable and the verified English `base.en` model so dictation does not require Homebrew, a model download, or runtime environment variables. Keep macOS Speech only as a fallback.
-- Current public DMGs are Apple developer-signed and not notarized; say so plainly.
+- Require Developer ID signing, hardened runtime, Apple notarization, ticket stapling, and Gatekeeper verification for every OpenOrg DMG. The package command fails closed without a configured notarytool Keychain profile.
+- Historical Org2 Workspace DMGs remain developer-signed but not notarized; say so plainly on their download page.
 - Never build into or replace the daily app at `/Users/avi/Applications/Org2Workspace.app` as part of release packaging.
 - Attach all distributable files to the matching GitHub Release before synchronizing downloads.
 
