@@ -149,11 +149,11 @@ function main() {
     printPlan();
     return;
   }
-  if (process.platform !== "darwin") {
-    throw new Error("OpenOrg DMG packaging requires macOS");
-  }
   if (options.requireNotarization && !options.notaryProfile) {
     throw new Error("--require-notarization needs --notary-profile or OPENORG_NOTARY_KEYCHAIN_PROFILE");
+  }
+  if (process.platform !== "darwin") {
+    throw new Error("OpenOrg DMG packaging requires macOS");
   }
   if (existsSync(options.output) && !options.force) {
     throw new Error(`Refusing to replace existing artifact: ${options.output}`);
