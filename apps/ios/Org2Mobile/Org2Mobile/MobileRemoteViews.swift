@@ -2700,7 +2700,12 @@ private struct MobileRemoteInProgressBubble: View {
   }
 
   private var runtimeTitle: String {
-    detail.thread.runtime == "codex" ? "Codex" : "OpenClaw"
+    if let activeDestinationName = detail.activeDestinationName?
+      .trimmingCharacters(in: .whitespacesAndNewlines),
+       !activeDestinationName.isEmpty {
+      return activeDestinationName
+    }
+    return detail.thread.runtime == "codex" ? "Codex" : "OpenClaw"
   }
 
   private var trimmedReply: String {

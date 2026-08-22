@@ -24,6 +24,22 @@ final class WorkspaceListSelectionTests: XCTestCase {
     )
   }
 
+  func testIOSSharedRoomProgressUsesTheActiveDestinationName() throws {
+    let testFile = URL(fileURLWithPath: #filePath)
+    let packageRoot = testFile
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+    let mobileRemoteViews = packageRoot
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .appendingPathComponent("ios/Org2Mobile/Org2Mobile/MobileRemoteViews.swift")
+    let source = try String(contentsOf: mobileRemoteViews, encoding: .utf8)
+
+    XCTAssertTrue(source.contains("detail.activeDestinationName"))
+    XCTAssertTrue(source.contains("return activeDestinationName"))
+  }
+
   func testMeetingAutomationIsDiscoverableOnlyInMeetingSettings() throws {
     let testFile = URL(fileURLWithPath: #filePath)
     let packageRoot = testFile

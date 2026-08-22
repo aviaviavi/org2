@@ -13926,6 +13926,23 @@ public final class WorkspaceStore: ObservableObject {
     openClawRunActivitiesByThreadID[threadID] ?? []
   }
 
+  public func aiChatActiveDestinationID(for threadID: UUID) -> String? {
+    if let activeDestinationID = activeSharedRoomDestinationByThreadID[threadID] {
+      return activeDestinationID
+    }
+    guard let thread = openClawChatThreads.first(where: { $0.id == threadID }) else {
+      return nil
+    }
+    guard thread.isSharedRoom else { return thread.destinationID }
+    return openClawMessages(for: threadID)
+      .first(where: {
+        $0.role == .user
+          && $0.deliveryStatus == .sending
+          && !$0.isRoomDispatchCopy
+      })?
+      .targetDestinationID
+  }
+
   public func isAIChatThreadRunning(_ threadID: UUID) -> Bool {
     drainingOpenClawThreadIDs.contains(threadID)
       || openClawSendingThreadIDs.contains(threadID)

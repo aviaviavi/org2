@@ -323,6 +323,7 @@ public struct MobileRemoteThreadSummary: Codable, Hashable, Identifiable, Sendab
 public struct MobileRemoteThreadDetail: Codable, Hashable, Sendable {
   public let thread: MobileRemoteThreadSummary
   public let messages: [MobileRemoteChatMessage]
+  public let activeDestinationName: String?
   public let streamingReply: String
   public let reasoning: String
   public let activities: [MobileRemoteActivity]
@@ -332,6 +333,7 @@ public struct MobileRemoteThreadDetail: Codable, Hashable, Sendable {
   public init(
     thread: MobileRemoteThreadSummary,
     messages: [MobileRemoteChatMessage],
+    activeDestinationName: String? = nil,
     streamingReply: String,
     reasoning: String,
     activities: [MobileRemoteActivity],
@@ -340,6 +342,7 @@ public struct MobileRemoteThreadDetail: Codable, Hashable, Sendable {
   ) {
     self.thread = thread
     self.messages = messages
+    self.activeDestinationName = activeDestinationName
     self.streamingReply = streamingReply
     self.reasoning = reasoning
     self.activities = activities

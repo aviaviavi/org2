@@ -176,6 +176,7 @@ struct MobileRemoteThreadSummary: Codable, Hashable, Identifiable {
 struct MobileRemoteThreadDetail: Codable, Hashable {
   let thread: MobileRemoteThreadSummary
   let messages: [MobileRemoteChatMessage]
+  let activeDestinationName: String?
   let streamingReply: String
   let reasoning: String
   let activities: [MobileRemoteActivity]

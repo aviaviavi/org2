@@ -16,7 +16,68 @@ private actor AIChatSharedRoomRecorder {
   }
 }
 
+private actor AIChatSharedRoomGate {
+  private var isOpen = false
+  private var continuations: [CheckedContinuation<Void, Never>] = []
+
+  func wait() async {
+    if isOpen { return }
+    await withCheckedContinuation { continuation in
+      continuations.append(continuation)
+    }
+  }
+
+  func open() {
+    isOpen = true
+    let waiting = continuations
+    continuations.removeAll()
+    for continuation in waiting {
+      continuation.resume()
+    }
+  }
+}
+
 final class AIChatSharedRoomTests: XCTestCase {
+  @MainActor
+  func testSharedRoomExposesTheCurrentlyDispatchedDestinationToMobileClients() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-shared-active-destination-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let suiteName = "AIChatSharedRoom.ActiveDestination.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let gate = AIChatSharedRoomGate()
+    let store = WorkspaceStore(
+      defaults: defaults,
+      openClawTranscriptURL: root.appendingPathComponent("chat.json"),
+      codexSendHandlerForTesting: { _, _, _ in
+        await gate.wait()
+        return "Codex answer"
+      },
+      legacyDefaultsDomains: []
+    )
+    store.setCorpusRoot(root, persistsDefault: false)
+    store.createAIChatSharedRoom()
+    let threadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
+
+    let sendTask = Task { @MainActor in
+      await store.sendOpenClawMessage(text: "@codex Check the mobile status")
+    }
+    for _ in 0..<100 where store.aiChatActiveDestinationID(for: threadID) == nil {
+      try await Task.sleep(nanoseconds: 10_000_000)
+    }
+
+    XCTAssertEqual(
+      store.aiChatActiveDestinationID(for: threadID),
+      AIChatDestinationConfiguration.localCodexID
+    )
+
+    await gate.open()
+    await sendTask.value
+    XCTAssertNil(store.aiChatActiveDestinationID(for: threadID))
+  }
+
   @MainActor
   func testConnectingCodexRequestCanStopBeforeRuntimeTurnStarts() async throws {
     let root = FileManager.default.temporaryDirectory

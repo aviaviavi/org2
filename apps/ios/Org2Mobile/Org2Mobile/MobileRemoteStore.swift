@@ -983,6 +983,7 @@ final class MobileRemoteStore: ObservableObject {
       let updatedDetail = MobileRemoteThreadDetail(
         thread: summary,
         messages: detail.messages,
+        activeDestinationName: detail.activeDestinationName,
         streamingReply: detail.streamingReply,
         reasoning: detail.reasoning,
         activities: detail.activities,

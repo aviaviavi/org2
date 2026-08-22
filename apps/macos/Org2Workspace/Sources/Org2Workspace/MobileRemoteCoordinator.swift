@@ -681,7 +681,9 @@ final class MobileRemoteCoordinator: ObservableObject {
   }
 
   private func threadDetail(_ thread: OpenClawChatThread, store: WorkspaceStore) -> MobileRemoteThreadDetail {
-    MobileRemoteThreadDetail(
+    let activeDestinationName = store.aiChatActiveDestinationID(for: thread.id)
+      .map(store.aiChatDestinationTitle)
+    return MobileRemoteThreadDetail(
       thread: threadSummary(thread, store: store),
       messages: thread.messages.map {
         let authorDestination = $0.authorDestinationID.flatMap(store.aiChatDestination(id:))
@@ -708,6 +710,7 @@ final class MobileRemoteCoordinator: ObservableObject {
           roomRoundID: $0.roomRoundID
         )
       },
+      activeDestinationName: activeDestinationName,
       streamingReply: store.aiChatStreamingReply(for: thread.id),
       reasoning: store.aiChatReasoning(for: thread.id),
       activities: MobileRemoteActivityPresentation.items(

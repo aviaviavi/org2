@@ -73,6 +73,42 @@ final class MobileRemoteHTTPServerTests: XCTestCase {
     XCTAssertEqual(restored, expected)
   }
 
+  func testActiveDestinationNameRoundTripsInThreadDetail() throws {
+    let summary = MobileRemoteThreadSummary(
+      id: UUID(),
+      title: "Shared room",
+      runtime: "openClaw",
+      destinationID: "openclaw",
+      destinationName: "Shared AI Room",
+      isSharedRoom: true,
+      model: nil,
+      updatedAt: Date(timeIntervalSince1970: 1_700_000_000),
+      isSettled: false,
+      isPinned: false,
+      isRunning: true,
+      unreadMessageCount: 0,
+      preview: "You → Codex",
+      latestAssistantMessageID: nil,
+      latestAssistantPreview: nil
+    )
+    let expected = MobileRemoteThreadDetail(
+      thread: summary,
+      messages: [],
+      activeDestinationName: "Codex",
+      streamingReply: "",
+      reasoning: "",
+      activities: [],
+      connectionState: "connected",
+      connectionDetail: nil
+    )
+
+    let data = try MobileRemoteProtocol.encoder().encode(expected)
+    let restored = try MobileRemoteProtocol.decoder().decode(MobileRemoteThreadDetail.self, from: data)
+
+    XCTAssertEqual(restored, expected)
+    XCTAssertEqual(restored.activeDestinationName, "Codex")
+  }
+
   func testNamedAIDestinationsRoundTripWithoutChangingTheWireVersion() throws {
     let expected = MobileRemoteServerStatus(
       serverName: "Org2 on Press",
