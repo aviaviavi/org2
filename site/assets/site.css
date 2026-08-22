@@ -2713,9 +2713,36 @@ body > .org2-footer p {
 
   #content .org2-compiler-flow article,
   #content .org2-compiler-flow article:nth-child(2) {
+    display: grid;
+    grid-template-columns: 2rem minmax(0, 1fr);
+    gap: 0.35rem 0.65rem;
     min-height: 0;
+    padding: 1rem;
     border-right: 0;
     border-bottom: 1px solid var(--border);
+  }
+
+  #content .org2-compiler-flow article::before {
+    position: static;
+    grid-column: 1;
+    grid-row: 1;
+    align-self: center;
+  }
+
+  #content .org2-compiler-flow article::after {
+    display: none;
+  }
+
+  #content .org2-compiler-flow strong {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: center;
+  }
+
+  #content .org2-compiler-flow p {
+    grid-column: 2;
+    grid-row: 2;
+    margin: 0;
   }
 
   #content .org2-compiler-flow article:last-child {

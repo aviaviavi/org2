@@ -101,6 +101,13 @@ if (
 ) {
   fail("mobile documentation tables must retain readable columns inside a horizontal scroller");
 }
+if (
+  !mobileStyles.includes("#content .org2-compiler-flow article::after") ||
+  !mobileStyles.includes("grid-template-columns: 2rem minmax(0, 1fr)") ||
+  !mobileStyles.includes("#content .org2-compiler-flow p")
+) {
+  fail("mobile follow-through steps must hide desktop connectors and use the compact numbered layout");
+}
 if (!/<h2\s+id="[^"]+">/.test(features)) {
   fail("features page sections must use addressable level-two headings");
 }
