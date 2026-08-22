@@ -3,7 +3,7 @@
 
 #+BEGIN_EXPORT html
 <section class="org2-page-intro org2-home-hero">
-  <p>Org2 turns your meetings, decisions, notes, and AI sessions into a powerful plain-text workspace that helps you get more done. It's open-source, fully local, and built to outlast the models &amp; harnesses you use today.</p>
+  <p>Org2 turns your meetings, decisions, notes, and AI sessions into a powerful plain-text workspace that helps you get more done. It's open-source, fully local, and designed to work with the agent, model, or provider you choose—without making any of them the owner of your knowledge.</p>
   <nav class="org2-hero-actions" aria-label="Start with Org2">
     <a class="org2-hero-action org2-hero-action-primary" href="getting-started.html">Get started <span aria-hidden="true">→</span></a>
     <a class="org2-hero-action" href="features.html">Explore features <span aria-hidden="true">→</span></a>
@@ -16,7 +16,7 @@
   </div>
   <div class="org2-compiler-flow" aria-label="Org2 follow-through workflow">
     <article><strong>Capture</strong><p>Keep the decision, commitment, and exact source together.</p></article>
-    <article><strong>Delegate</strong><p>Send bounded work to a person, Codex, OpenClaw, or another configured agent.</p></article>
+    <article><strong>Delegate</strong><p>Send bounded work to a person or any configured agent, local or remote.</p></article>
     <article><strong>Review</strong><p>Bring consequential actions and uncertain results back for approval.</p></article>
     <article><strong>Verify</strong><p>Record the outcome and its evidence where the work began.</p></article>
   </div>
@@ -31,7 +31,7 @@
     <figure><img src="assets/screenshots/macos-workspace-runs-review.png" alt="Org2 Workspace Agent Work showing an approval-ready delegated launch brief" loading="lazy" /><figcaption>See what agents are doing, what needs you, and what finished with evidence.</figcaption></figure>
     <figure><img src="assets/screenshots/macos-workspace-meetings.png" alt="Org2 Workspace meeting surface with a beta review transcript and summary" loading="lazy" /><figcaption>Turn conversations into source-backed decisions and follow-through.</figcaption></figure>
     <figure><img src="assets/screenshots/macos-workspace-data.png" alt="Org2 Workspace rendering a launch-readiness data notebook with an interactive chart" loading="lazy" /><figcaption>Data notebooks: keep materialized results, freshness metadata, and interactive charts beside the notes that use them.</figcaption></figure>
-    <figure><img src="assets/screenshots/macos-workspace-ai-room.png" alt="Org2 Workspace shared AI room showing Codex and OpenClaw answering the same launch question" loading="lazy" /><figcaption>Multi-agent chat: ask named local or remote agents—or <code>@all</code>—and compare independently attributed answers in one shared thread.</figcaption></figure>
+    <figure><img src="assets/screenshots/macos-workspace-ai-room.png" alt="Org2 Workspace shared AI room showing two configured agents answering the same launch question" loading="lazy" /><figcaption>Multi-agent chat: ask named local or remote agents—or <code>@all</code>—and compare independently attributed answers in one shared thread.</figcaption></figure>
     <figure class="org2-shot-phone"><img src="assets/screenshots/ios-mobile-approvals.png" alt="Org2 Mobile approvals list on iPhone showing review-required corpus items" loading="lazy" /><figcaption>Mobile approvals: review generated drafts and approval-gated work from the phone.</figcaption></figure>
   </div>
 </section>
@@ -116,7 +116,7 @@
 <span class="org2-syntax-heading">**</span> <span class="org2-syntax-todo">TODO</span> Summarize launch blockers
   <span class="org2-syntax-drawer">:PROPERTIES:</span>
   <span class="org2-syntax-prop">:ID:</span> launch-blocker-summary
-  <span class="org2-syntax-prop">:ASSIGNEE:</span> codex
+  <span class="org2-syntax-prop">:ASSIGNEE:</span> research-agent
   <span class="org2-syntax-prop">:STATUS:</span> ready
   <span class="org2-syntax-prop">:CONTEXT:</span> id:launch-beta-checklist, id:launch-readiness-data
   <span class="org2-syntax-drawer">:END:</span>
@@ -164,7 +164,7 @@ A useful agent workspace needs precise sharing boundaries. Org2 keeps files loca
 
 * How it works
 
-Org2 reads ordinary =.org= and =.org2= files and compiles their tasks, links, dates, properties, provenance, and agent boundaries into one shared semantic model. The Mac and iOS apps, CLI, VS Code, Codex, and OpenClaw all work from that same source-backed context.
+Org2 reads ordinary =.org= and =.org2= files and compiles their tasks, links, dates, properties, provenance, and agent boundaries into one shared semantic model. Native apps, editors, CLI and MCP clients, runtime adapters, and configured models all work from that same source-backed context.
 
 The result is deliberately boring composability: inspectable files that can drive daily planning, agent workflows, data views, and publishing without locking the work into one application.
 
@@ -179,7 +179,7 @@ Org2 is early alpha, but already practical for CLI, VS Code, and native Mac work
 - [[file:workflows.org][Workflows]]
 - [[file:collaboration.org][Shared corpora and collaboration]]
 - [[file:ai-processing-architecture.org][AI processing architecture]]
-- [[file:openclaw-knowledge-layer.org][OpenClaw knowledge layer]]
+- [[file:agent-quickstart.org][Agent and model integration]]
 - [[file:org2-vs-markdown.org][Org2 vs Markdown]]
 - [[file:org2-vs-obsidian.org][Org2 vs Obsidian]]
 - [[file:org2-vs-org-mode.org][Org2 vs Org Mode]]

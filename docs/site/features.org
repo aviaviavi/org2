@@ -48,14 +48,14 @@ org2 roam graph --dir ~/notes --recursive --format report</code></pre>
       <p>Selected context, citations, plans, outputs, validation, clarifications, and approvals stay together while the work moves. People can see what happened before approving a consequential action—and what evidence proves it finished.</p>
       <ul>
         <li>Bounded context packs carry file-and-line citations instead of an opaque prompt dump.</li>
-        <li>Portable goals and named agent profiles separate why and who from OpenClaw or Codex runtime identity; resolved refs remain attached to delegated headings, runs, and workflows.</li>
+        <li>Portable goals and named agent profiles separate why and who from runtime, provider, and model identity; resolved refs remain attached to delegated headings, runs, and workflows.</li>
         <li>Generated work lands in reviewable artifact zones before promotion into canonical notes.</li>
-        <li>One pending-decision queue combines run-bound approvals with standalone file-backed approvals; run decisions preserve one native ID and immutable review-material fingerprint across CLI, Mac, mobile, and OpenClaw. Decisions are item-scoped, so rejecting one action does not discard sibling approvals from the same batch.</li>
+        <li>One pending-decision queue combines run-bound approvals with standalone file-backed approvals; run decisions preserve one native ID and immutable review-material fingerprint across CLI, Mac, mobile, and runtime adapters. Decisions are item-scoped, so rejecting one action does not discard sibling approvals from the same batch.</li>
         <li>Recurring workflow executions roll up under stable logical work while retaining separate scheduler attempts, and event/fresh-path gates skip unchanged expensive work.</li>
         <li>A read-only workspace doctor finds contradictory run and approval state, duplicate decision identities, broken projections, and unmanaged recurring work before another agent acts.</li>
         <li>Atomic revision-checked run and workflow writes reject stale clients and ambiguous direct edits instead of silently replacing newer work.</li>
         <li>Per-account work ledgers keep stable identity, curated context, linked approvals, contact receipts, and idempotent history queryable without one ever-growing agent file.</li>
-        <li>OpenClaw is the first native end-to-end integration; CLI, MCP, and plain files keep the model provider-independent.</li>
+        <li>Runtime adapters can add native lifecycle and scheduling behavior, while CLI, MCP, and plain files keep the underlying work portable across agents and models.</li>
       </ul>
       <div class="org2-command" aria-label="Agent context and review commands">
         <span>Context and review commands</span>
@@ -65,7 +65,7 @@ org2 ledger list account-outreach --eligible --dir ~/notes --json
 org2 approvals --dir ~/notes --recursive --format json
 org2 review list --status pending --dir ~/notes</code></pre>
       </div>
-      <p class="org2-feature-links"><a href="agent-quickstart.html">Agent quickstart</a><a href="openclaw-knowledge-layer.html">OpenClaw integration</a></p>
+      <p class="org2-feature-links"><a href="agent-quickstart.html">Agent quickstart</a><a href="ai-adapters.html">Provider-neutral adapters</a></p>
     </div>
     <div class="org2-feature-media">
       <figure><img src="assets/screenshots/macos-workspace-runs-review.png" alt="Org2 Workspace Agent Work showing an approval-ready launch brief with outputs and review state" loading="lazy" /><figcaption>Agent Work keeps outcomes, artifacts, validation, and approval state together.</figcaption></figure>
@@ -75,17 +75,17 @@ org2 review list --status pending --dir ~/notes</code></pre>
   <section class="org2-feature-story" id="multi-agent-chat" aria-labelledby="multi-agent-chat-title">
     <div class="org2-feature-copy">
       <h2 id="multi-agent-chat-title">One conversation, many agents</h2>
-      <p>A shared AI room lets you bring Codex, OpenClaw, and any named local or remote destination into one corpus-grounded conversation. Every participant sees the same bounded transcript, keeps its own identity and model, and answers inside one visible agent round.</p>
+      <p>A shared AI room lets you bring any named local, remote, hosted, or self-hosted destination into one corpus-grounded conversation. Every participant sees the same bounded transcript, keeps its own identity and model, and answers inside one visible agent round.</p>
       <ul>
-        <li>Mention <code>@codex-local</code>, <code>@codex-remote</code>, <code>@research-agent</code>, or any destination you configure; <code>@all</code> asks every participant.</li>
+        <li>Mention <code>@research</code>, <code>@writer</code>, <code>@local-model</code>, or any destination you configure; <code>@all</code> asks every participant.</li>
         <li>Responses stay grouped beneath the question that invoked them, with separate progress, model selection, and failure state for each agent.</li>
         <li>Mentioning another agent from a single-agent thread automatically forks it into a shared room, leaving the original conversation untouched.</li>
         <li>Agents can disagree, compare approaches, or propose explicit handoffs without Org2 hiding an autonomous loop behind the interface.</li>
       </ul>
-      <p class="org2-feature-links"><a href="editors-macos.html#ai-chat-and-agents">Shared AI rooms</a><a href="getting-started.html#current-agent-setup-openclaw">Connect an agent</a></p>
+      <p class="org2-feature-links"><a href="editors-macos.html#ai-chat-and-agents">Shared AI rooms</a><a href="agent-quickstart.html">Connect an agent</a></p>
     </div>
     <div class="org2-feature-media">
-      <figure><img src="assets/screenshots/macos-workspace-ai-room.png" alt="Org2 Workspace shared AI room showing one question answered side by side by Codex and OpenClaw" loading="lazy" /><figcaption>One agent round, two independently attributed answers, and a shared corpus-backed conversation.</figcaption></figure>
+      <figure><img src="assets/screenshots/macos-workspace-ai-room.png" alt="Org2 Workspace shared AI room showing one question answered side by side by two configured agents" loading="lazy" /><figcaption>One agent round, two independently attributed answers, and a shared corpus-backed conversation.</figcaption></figure>
     </div>
   </section>
 
@@ -170,7 +170,7 @@ org2 export beamer --file talk.org2 --pdf --apply</code></pre>
     <div class="org2-feature-card-grid">
       <article><h3>Plain-text core</h3><ul><li>Headings, drawers, properties, TODOs, planning, links, blocks, tables, timestamps</li><li>Explicit portable foreground/background bindings for inline text and whole table cells</li><li>Capture, archive, refile, canonical formatting</li><li>HTML/site publishing plus Beamer-compatible presentation export</li><li>Source ranges and structured compiler output</li></ul></article>
       <article><h3>Knowledge + planning</h3><ul><li>Agenda CLI, JSON, TUI, VS Code, and Mac surfaces</li><li>IDs, backlinks, dailies, nodes, link insertion, graph reports</li><li>Cited search, query, entity pages, and context bundles</li><li>Linkify previews and review-only semantic suggestions</li></ul></article>
-      <article><h3>Agents + review</h3><ul><li>Durable runs, workflows, plans, steps, budgets, comments, retries</li><li>Single-agent threads or shared rooms spanning arbitrary named Codex, OpenClaw, OpenAI, Anthropic, OpenRouter, and Ollama destinations, with explicit <code>@mentions</code>, <code>@all</code>, per-agent models, and independent progress</li><li>Idempotent, agent-attributed background posts can reach any named AI chat without starting or steering a turn</li><li>A fresh successful meeting transcription can automatically queue a configurable prompt to a named agent and thread exactly once, without historical replay</li><li>Active-corpus <code>.agents/skills</code> discovery and autocomplete for user-invocable AI skills</li><li>Native AI context settings for persistent custom instructions and current- or all-loaded-corpora read access</li><li>In-flight chat stays bound to its originating write corpus and authorized read roots while the visible workspace switches</li><li>Reversible active/settled chat history with shared inactivity policy</li><li>Mac-local read, preview, and apply tools that preserve unsaved editor drafts and exact per-turn diffs</li><li>Artifacts, validation, approvals, review queues, outcome records</li><li>OpenClaw lifecycle and schedule integration</li><li>MCP resources, prompts, tools, client discovery, and snapshots</li></ul></article>
+      <article><h3>Agents + review</h3><ul><li>Durable runs, workflows, plans, steps, budgets, comments, retries</li><li>Single-agent threads or shared rooms spanning arbitrary named local, remote, hosted, and self-hosted destinations, with explicit <code>@mentions</code>, <code>@all</code>, per-agent models, and independent progress</li><li>Idempotent, agent-attributed background posts can reach any named AI chat without starting or steering a turn</li><li>A fresh successful meeting transcription can automatically queue a configurable prompt to a named agent and thread exactly once, without historical replay</li><li>Active-corpus <code>.agents/skills</code> discovery and autocomplete for user-invocable AI skills</li><li>Native AI context settings for persistent custom instructions and current- or all-loaded-corpora read access</li><li>In-flight chat stays bound to its originating write corpus and authorized read roots while the visible workspace switches</li><li>Reversible active/settled chat history with shared inactivity policy</li><li>Mac-local read, preview, and apply tools that preserve unsaved editor drafts and exact per-turn diffs</li><li>Artifacts, validation, approvals, review queues, outcome records</li><li>Pluggable runtime lifecycle and schedule integration</li><li>MCP resources, prompts, tools, client discovery, and snapshots</li></ul></article>
       <article><h3>Data + provenance</h3><ul><li>Datasets, SQL views, materialized results, deterministic charts</li><li>Artifact roles, dependency graphs, freshness, and rebuild plans</li><li>Meeting, event-stream, timeline, and data-link records</li><li>Evaluation fixtures and sanitized workflow replay</li></ul></article>
       <article><h3>Editors + clients</h3><ul><li>Native macOS Workspace and mobile approval flows</li><li>Ephemeral filtering, sorting, and resizing for rendered Org tables, with confirmed persistence of the visible view</li><li>In-app CSV table and raw-text editing from corpus files or document links</li><li>VS Code commands plus shared LSP capabilities</li><li>Vim / Neovim and Emacs integration paths</li><li>CLI JSON for scripts and additional clients</li></ul></article>
       <article><h3>Safety + portability</h3><ul><li>Local files stay canonical and Git-reviewable</li><li>Preview-first mutations and explicit approval gates</li><li>GPG-backed per-subtree, multi-recipient encryption</li><li>Portable personal, shared, and project corpus identity</li></ul></article>

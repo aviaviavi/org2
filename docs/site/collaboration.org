@@ -53,7 +53,7 @@ Org2 Workspace remembers every corpus you open. The compact switcher at the bott
 
 The Agenda and text Search surfaces can read either the active corpus or all mounted corpora. Federated rows carry the portable corpus identity and show the corpus name beside the source path. Opening a row from another corpus activates that corpus before loading the entry.
 
-Writes remain scoped to the explicitly active corpus. Capture, bulk agenda changes, source edits, OpenClaw context, workflows, runs, approvals, and meetings do not acquire a workspace-wide destination. A cross-corpus agenda row must be opened, and its corpus therefore activated, before it can be edited. The local mount registry stores paths on that Mac; it is app configuration, not portable corpus content.
+Writes remain scoped to the explicitly active corpus. Capture, bulk agenda changes, source edits, AI-chat context, workflows, runs, approvals, and meetings do not acquire a workspace-wide destination. A cross-corpus agenda row must be opened, and its corpus therefore activated, before it can be edited. The local mount registry stores paths on that Mac; it is app configuration, not portable corpus content.
 
 This does not merge corpora into one database. The shared CLI runs the canonical agenda or search engine against each explicitly supplied corpus, then combines the deterministic JSON results and attaches identity. Agenda semantics remain in the same compiler/runtime path used for a single corpus.
 

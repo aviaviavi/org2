@@ -69,8 +69,11 @@ const llms = fs.readFileSync(path.join(repoRoot, "docs/site/llms.txt"), "utf8");
 const agents = fs.readFileSync(path.join(repoRoot, "AGENTS.md"), "utf8");
 const siteNavigation = fs.readFileSync(path.join(repoRoot, "docs/site/assets/nav.js"), "utf8");
 const siteStyles = fs.readFileSync(path.join(repoRoot, "docs/site/assets/site.css"), "utf8");
+const homepage = fs.readFileSync(path.join(repoRoot, "docs/site/index.org"), "utf8");
 const features = fs.readFileSync(path.join(repoRoot, "docs/site/features.org"), "utf8");
+const gettingStarted = fs.readFileSync(path.join(repoRoot, "docs/site/getting-started.org"), "utf8");
 const downloads = fs.readFileSync(path.join(repoRoot, "docs/site/downloads.org"), "utf8");
+const publishConfig = fs.readFileSync(path.join(repoRoot, "org2.json"), "utf8");
 for (const [label, text] of [["agent quickstart", quickstart], ["llms.txt", llms]]) {
   if (!text.includes("org2 agent capabilities")) fail(`${label} does not point agents to the installed capability manifest`);
 }
@@ -110,6 +113,24 @@ if (
 }
 if (!/<h2\s+id="[^"]+">/.test(features)) {
   fail("features page sections must use addressable level-two headings");
+}
+if (/\b(?:Codex|OpenClaw)\b/.test(homepage) || /\b(?:Codex|OpenClaw)\b/.test(features)) {
+  fail("homepage and feature positioning must remain agent- and model-neutral");
+}
+if (
+  !homepage.includes("agent, model, or provider you choose")
+  || !features.includes("local, remote, hosted, or self-hosted destination")
+  || !gettingStarted.includes("CLI JSON and MCP")
+  || !quickstart.includes("any local, remote, hosted, or self-hosted agent or model")
+  || !quickstart.includes("implementations, not requirements")
+) {
+  fail("public onboarding must explain the provider-neutral agent boundary");
+}
+if (
+  !publishConfig.includes('href=\\"agent-quickstart.html\\">Agents and models')
+  || publishConfig.includes('href=\\"openclaw-knowledge-layer.html\\">OpenClaw knowledge layer')
+) {
+  fail("primary site navigation must lead with portable agent and model integration");
 }
 if (!downloads.includes("https://org2.gateway.scarf.sh/downloads/")) {
   fail("downloads page is missing Scarf Gateway release links");

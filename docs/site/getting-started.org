@@ -73,7 +73,7 @@ Do not try to design the perfect folder structure on day one. A few notes plus d
 
 AI is optional. Your files remain useful without a model or agent.
 
-To connect one, open *Org2 Workspace → Settings… → AI Chat*. Enable or add a destination such as local Codex, remote Codex, or OpenClaw. An AI thread can then search the corpus, cite the files it used, and—within the permissions you choose—preview or apply edits.
+To connect one, open *Org2 Workspace → Settings… → AI Chat*. Add or enable a named destination backed by the local or remote runtime, hosted provider, self-hosted model, or compatible endpoint you prefer. Agents outside the native app can use the same corpus through CLI JSON and MCP. An AI thread can then search the corpus, cite the files it used, and—within the permissions you choose—preview or apply edits.
 
 You can also create a shared room and explicitly mention multiple destinations with =@mentions= or =@all=. Each response stays attributed to the agent that produced it. The corpus, not any one model or chat provider, remains the durable context.
 

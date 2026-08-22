@@ -1,9 +1,9 @@
 #+TITLE: Agent quickstart
 #+SUBTITLE: Discover and use Org2 safely in a few commands
 
-This page is the shortest path for Codex, OpenClaw, local models, scripts, and other agents to understand an Org2 installation. Org2 is a local-first knowledge compiler: ordinary =.org2= and =.org= files are canonical, while indexes, agendas, graph data, context packets, reports, apps, and published pages are derived from the shared compiler/runtime.
+This page is the shortest path for any local, remote, hosted, or self-hosted agent or model to understand an Org2 installation. Org2 is a local-first knowledge compiler: ordinary =.org2= and =.org= files are canonical, while indexes, agendas, graph data, context packets, reports, apps, and published pages are derived from the shared compiler/runtime.
 
-OpenClaw currently has the deepest native integration. The repository's =org2-lifecycle= plugin maps substantial OpenClaw turns, subagents, and cron executions into durable runs; the Mac app also speaks the OpenClaw Gateway protocol. Other agents can use the same cited retrieval, run/workflow files, CLI JSON, and MCP interfaces without adopting OpenClaw.
+Every client can use the same cited retrieval, run/workflow files, CLI JSON, and MCP interfaces. Optional runtime adapters add native chat, lifecycle, scheduling, and gateway behavior without making a particular agent, provider, or model the owner of the workspace. The currently shipped adapters are documented below as implementations, not requirements.
 
 * First minute
 
