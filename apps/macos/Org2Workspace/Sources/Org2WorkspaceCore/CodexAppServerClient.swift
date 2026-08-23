@@ -263,11 +263,13 @@ public enum CodexAppServerError: LocalizedError, Sendable {
 public enum CodexAppServerTransport: Sendable, Equatable {
   case local
   case remote(endpoint: URL, bearerToken: String?)
+  case managedRemote(sshHost: String)
 
   var connectionDescription: String {
     switch self {
     case .local: "Local Codex App Server"
     case .remote(let endpoint, _): endpoint.absoluteString
+    case .managedRemote(let sshHost): "Managed remote Codex via \(sshHost)"
     }
   }
 }
@@ -287,6 +289,7 @@ public actor CodexAppServerClient {
   }
 
   private let executableURL: URL?
+  private let sshExecutableURL: URL
   private let transport: CodexAppServerTransport
   private let eventHandler: EventHandler
   private let dynamicToolHandler: DynamicToolHandler
@@ -313,11 +316,13 @@ public actor CodexAppServerClient {
 
   public init(
     executableURL: URL? = CodexAppServerClient.resolveExecutableURL(),
+    sshExecutableURL: URL = URL(fileURLWithPath: "/usr/bin/ssh"),
     transport: CodexAppServerTransport = .local,
     eventHandler: @escaping EventHandler,
     dynamicToolHandler: @escaping DynamicToolHandler
   ) {
     self.executableURL = executableURL
+    self.sshExecutableURL = sshExecutableURL
     self.transport = transport
     self.eventHandler = eventHandler
     self.dynamicToolHandler = dynamicToolHandler
@@ -364,6 +369,33 @@ public actor CodexAppServerClient {
           && (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) != false
       }
   }
+
+  nonisolated static func managedRemoteSSHArguments(sshHost rawSSHHost: String) throws -> [String] {
+    let sshHost = rawSSHHost.trimmingCharacters(in: .whitespacesAndNewlines)
+    let allowed = CharacterSet.alphanumerics.union(
+      CharacterSet(charactersIn: ".-_@:%[]+")
+    )
+    guard !sshHost.isEmpty,
+          !sshHost.hasPrefix("-"),
+          sshHost.unicodeScalars.allSatisfy({ allowed.contains($0) })
+    else {
+      throw CodexAppServerError.invalidResponse(
+        "managed remote Codex needs a valid SSH host or ~/.ssh/config alias"
+      )
+    }
+    return [
+      "-T",
+      "-o", "BatchMode=yes",
+      "-o", "ConnectTimeout=15",
+      "-o", "ServerAliveInterval=15",
+      "-o", "ServerAliveCountMax=12",
+      sshHost,
+      Self.managedRemoteCommand
+    ]
+  }
+
+  private nonisolated static let managedRemoteCommand =
+    #"exec /bin/sh -lc 'PATH="${CODEX_INSTALL_DIR:-$HOME/.local/bin}:/opt/homebrew/bin:/usr/local/bin:$PATH"; export PATH; exec codex app-server proxy'"#
 
   public func accountState() async throws -> CodexAccountState {
     let result = try await request(
@@ -733,7 +765,7 @@ public actor CodexAppServerClient {
 
   private var transportIsConnected: Bool {
     switch transport {
-    case .local: process?.isRunning == true
+    case .local, .managedRemote: process?.isRunning == true
     case .remote: webSocketTask != nil
     }
   }
@@ -866,7 +898,7 @@ public actor CodexAppServerClient {
   private func performConnect() async throws {
     if !transportIsConnected {
       switch transport {
-      case .local:
+      case .local, .managedRemote:
         try launch()
       case .remote(let endpoint, let bearerToken):
         try connectRemote(endpoint: endpoint, bearerToken: bearerToken)
@@ -922,12 +954,26 @@ public actor CodexAppServerClient {
   }
 
   private func launch() throws {
-    guard let executableURL else {
-      throw CodexAppServerError.executableNotFound
+    let launchURL: URL
+    let arguments: [String]
+    switch transport {
+    case .local:
+      guard let executableURL else {
+        throw CodexAppServerError.executableNotFound
+      }
+      launchURL = executableURL
+      arguments = ["app-server", "--listen", "stdio://"]
+    case .managedRemote(let sshHost):
+      launchURL = sshExecutableURL
+      arguments = try Self.managedRemoteSSHArguments(sshHost: sshHost)
+    case .remote:
+      throw CodexAppServerError.invalidResponse(
+        "WebSocket Codex destinations cannot launch a subprocess transport"
+      )
     }
     let process = Process()
-    process.executableURL = executableURL
-    process.arguments = ["app-server", "--listen", "stdio://"]
+    process.executableURL = launchURL
+    process.arguments = arguments
     process.currentDirectoryURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
     process.environment = ProcessInfo.processInfo.environment
 
@@ -1111,7 +1157,7 @@ public actor CodexAppServerClient {
     encoder.outputFormatting = [.withoutEscapingSlashes]
     let data = try encoder.encode(message)
     switch transport {
-    case .local:
+    case .local, .managedRemote:
       guard let standardInput, process?.isRunning == true else {
         throw CodexAppServerError.disconnected("app server is not running")
       }

@@ -103,7 +103,7 @@ public struct AIProviderChatClient: Sendable {
       }.joined(separator: "\n")
     case .ollama:
       reply = (object["message"] as? [String: Any])?["content"] as? String
-    case .codexLocal, .codexRemote, .openClaw:
+    case .codexLocal, .codexRemote, .codexManagedRemote, .openClaw:
       throw AIProviderChatError.unsupportedAdapter(settings.adapter.rawValue)
     }
     let normalizedReply = reply?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -116,7 +116,7 @@ public struct AIProviderChatClient: Sendable {
     case .openAI, .openRouter: "chat/completions"
     case .anthropic: "messages"
     case .ollama: "chat"
-    case .codexLocal, .codexRemote, .openClaw: ""
+    case .codexLocal, .codexRemote, .codexManagedRemote, .openClaw: ""
     }
   }
 
@@ -139,7 +139,7 @@ public struct AIProviderChatClient: Sendable {
       if let apiKey = settings.apiKey {
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
       }
-    case .codexLocal, .codexRemote, .openClaw:
+    case .codexLocal, .codexRemote, .codexManagedRemote, .openClaw:
       break
     }
   }
@@ -169,7 +169,7 @@ public struct AIProviderChatClient: Sendable {
         "messages": [["role": "system", "content": system]] + messages.map(ollamaMessage),
         "stream": false,
       ]
-    case .codexLocal, .codexRemote, .openClaw:
+    case .codexLocal, .codexRemote, .codexManagedRemote, .openClaw:
       return [:]
     }
   }

@@ -14452,7 +14452,7 @@ public final class WorkspaceStore: ObservableObject {
       let reasoningOptions: [AIChatReasoningOption]
       let defaultReasoningEffort: String?
       switch selectedAIChatDestination.adapter {
-      case .codexLocal, .codexRemote:
+      case .codexLocal, .codexRemote, .codexManagedRemote:
         models = try await modelsForAIChatDestination(thread.destinationID)
         let selectedModel = thread.model.flatMap { selected in
           models.first(where: { $0.id == selected })
@@ -15506,7 +15506,7 @@ public final class WorkspaceStore: ObservableObject {
     let adapter = aiChatDestination(id: thread.destinationID)?.adapter
       ?? (thread.runtime == .codex ? .codexLocal : .openClaw)
     switch adapter {
-    case .codexLocal, .codexRemote:
+    case .codexLocal, .codexRemote, .codexManagedRemote:
       let models = try await codexClient(forDestinationID: thread.destinationID).listModels()
       let selected = thread.model.flatMap { model in
         models.first(where: { $0.id == model })
@@ -16352,6 +16352,7 @@ public final class WorkspaceStore: ObservableObject {
       var localEditTurnID: String?
       let usesLocalEditBroker = dispatchDestination.adapter == .codexLocal
         || dispatchDestination.adapter == .codexRemote
+        || dispatchDestination.adapter == .codexManagedRemote
         || (
           dispatchDestination.adapter == .openClaw
             &&
@@ -16401,7 +16402,7 @@ public final class WorkspaceStore: ObservableObject {
             localEditTurnID: localEditTurnID,
             sendOrigin: sendOrigin
           )
-        case .codexLocal, .codexRemote:
+        case .codexLocal, .codexRemote, .codexManagedRemote:
           guard let localEditTurnID else {
             throw CodexAppServerError.invalidResponse(
               "choose an Org2 corpus before sending a Codex message"
@@ -16940,7 +16941,8 @@ public final class WorkspaceStore: ObservableObject {
     let selectedModel = thread.model(forDestinationID: destinationID)
     let selectedReasoningEffort = thread.isSharedRoom ? nil : thread.reasoningEffort
     let destinationRoot: URL
-    if destination.adapter == .codexRemote,
+    if (destination.adapter == .codexRemote
+        || destination.adapter == .codexManagedRemote),
        !destination.workspaceRoot.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
       destinationRoot = URL(fileURLWithPath: NSString(string: destination.workspaceRoot)
         .expandingTildeInPath)
@@ -16972,7 +16974,8 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     var workspacePrompt = sendOrigin.workspaceContext.codexSystemPrompt()
-    if destination.adapter == .codexRemote {
+    if destination.adapter == .codexRemote
+        || destination.adapter == .codexManagedRemote {
       workspacePrompt += """
 
 
@@ -17048,6 +17051,13 @@ public final class WorkspaceStore: ObservableObject {
           allowUserInteraction: true
         )
       )
+    case .codexManagedRemote:
+      guard !destination.endpoint.isEmpty else {
+        throw CodexAppServerError.invalidResponse(
+          "\(destination.title) needs a Codex SSH host or ~/.ssh/config alias"
+        )
+      }
+      transport = .managedRemote(sshHost: destination.endpoint)
     case .openClaw, .openAI, .anthropic, .openRouter, .ollama:
       throw CodexAppServerError.invalidResponse("the configured AI destination is not a Codex target")
     }
@@ -17074,7 +17084,7 @@ public final class WorkspaceStore: ObservableObject {
       throw CodexAppServerError.invalidResponse("AI destination \(destinationID) is not configured")
     }
     switch destination.adapter {
-    case .codexLocal, .codexRemote:
+    case .codexLocal, .codexRemote, .codexManagedRemote:
       return try await codexClient(forDestinationID: destinationID).listModels()
     case .openClaw:
       return try await OpenClawGatewayClient(

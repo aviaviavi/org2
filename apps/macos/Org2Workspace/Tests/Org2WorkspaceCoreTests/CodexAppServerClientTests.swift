@@ -298,6 +298,39 @@ final class CodexAppServerClientTests: XCTestCase {
   }
 
   @MainActor
+  func testManagedRemoteCodexDestinationPersistsSSHHostAndWorkspace() throws {
+    let suiteName = "AIChatManagedRemoteDestination.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let transcript = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-managed-remote-transcript-\(UUID().uuidString).json")
+    defer { try? FileManager.default.removeItem(at: transcript) }
+
+    let store = WorkspaceStore(
+      defaults: defaults,
+      openClawTranscriptURL: transcript,
+      legacyDefaultsDomains: []
+    )
+    let id = store.addAIChatDestination(adapter: .codexManagedRemote)
+    var destination = try XCTUnwrap(store.aiChatDestination(id: id))
+    destination.name = "Codex on Scarf"
+    destination.endpoint = "scarfs-macbook-air"
+    destination.workspaceRoot = "/Users/avi/avi.org2"
+    store.updateAIChatDestination(destination)
+
+    let restored = WorkspaceStore(
+      defaults: defaults,
+      openClawTranscriptURL: transcript,
+      legacyDefaultsDomains: []
+    )
+    let restoredDestination = try XCTUnwrap(restored.aiChatDestination(id: id))
+    XCTAssertEqual(restoredDestination.adapter, .codexManagedRemote)
+    XCTAssertEqual(restoredDestination.endpoint, "scarfs-macbook-air")
+    XCTAssertEqual(restoredDestination.workspaceRoot, "/Users/avi/avi.org2")
+    XCTAssertFalse(restoredDestination.acceptsBearerToken)
+  }
+
+  @MainActor
   func testDirectProviderDestinationPersistsEndpointAndModel() throws {
     let suiteName = "AIChatDirectProviderSettings.\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
@@ -395,6 +428,29 @@ final class CodexAppServerClientTests: XCTestCase {
       endpoint.absoluteString
     )
     XCTAssertEqual(CodexAppServerTransport.local.connectionDescription, "Local Codex App Server")
+    XCTAssertEqual(
+      CodexAppServerTransport.managedRemote(sshHost: "scarfs-macbook-air")
+        .connectionDescription,
+      "Managed remote Codex via scarfs-macbook-air"
+    )
+  }
+
+  func testManagedRemoteCodexBuildsSafeKeepaliveSSHArguments() throws {
+    let arguments = try CodexAppServerClient.managedRemoteSSHArguments(
+      sshHost: " avi@scarfs-macbook-air "
+    )
+
+    XCTAssertEqual(arguments.prefix(2), ["-T", "-o"])
+    XCTAssertTrue(arguments.contains("BatchMode=yes"))
+    XCTAssertTrue(arguments.contains("ServerAliveInterval=15"))
+    XCTAssertTrue(arguments.contains("ServerAliveCountMax=12"))
+    XCTAssertEqual(arguments[arguments.count - 2], "avi@scarfs-macbook-air")
+    XCTAssertTrue(arguments.last?.contains("codex app-server proxy") == true)
+    XCTAssertThrowsError(
+      try CodexAppServerClient.managedRemoteSSHArguments(
+        sshHost: "-oProxyCommand=touch /tmp/unsafe"
+      )
+    )
   }
 
   func testCodexSandboxAccessBuildsAppServerPolicies() {
@@ -575,6 +631,37 @@ final class CodexAppServerClientTests: XCTestCase {
     XCTAssertEqual(models.first?.defaultReasoningEffort, "low")
     XCTAssertTrue(models.first?.isDefault == true)
 
+    await client.shutdown()
+  }
+
+  func testManagedRemoteClientUsesTheAppServerProxyJSONLTransport() async throws {
+    let temporaryDirectory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-managed-remote-client-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(
+      at: temporaryDirectory,
+      withIntermediateDirectories: true
+    )
+    defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
+
+    let fakeSSH = temporaryDirectory.appendingPathComponent("fake-ssh")
+    try Self.fakeAppServerScript.write(to: fakeSSH, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes(
+      [.posixPermissions: 0o700],
+      ofItemAtPath: fakeSSH.path
+    )
+    let client = CodexAppServerClient(
+      executableURL: nil,
+      sshExecutableURL: fakeSSH,
+      transport: .managedRemote(sshHost: "scarfs-macbook-air"),
+      eventHandler: { _ in },
+      dynamicToolHandler: { _ in
+        CodexDynamicToolResult(success: false, text: "unused")
+      }
+    )
+
+    let account = try await client.accountState()
+
+    XCTAssertEqual(account, .chatGPT(email: "test@example.com", plan: "plus"))
     await client.shutdown()
   }
 
