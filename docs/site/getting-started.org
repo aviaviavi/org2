@@ -23,15 +23,15 @@ OpenOrg is the recommended starting point. It gives you capture, daily notes, Ag
 
 OpenOrg creates a small Org2 workspace with a welcome note and folders for daily notes, ordinary notes, generated views, and workflows. Everything is plain text that you can inspect in Finder, Git, or another editor. OpenOrg never requires an app-specific canonical database.
 
-If you already keep notes in a folder, choose *Open an existing corpus* instead. Markdown and other plain-text material can remain alongside Org2 files while you adopt Org2 gradually.
+If you already keep notes in a folder, choose *Open an existing corpus* instead. Markdown and other plain-text material can live alongside Org2 files while you adopt Org2 gradually.
 
-The existing =0.4.2= Org2 Workspace downloads are developer-signed but not notarized. OpenOrg Alpha will not be published until its Developer ID build passes Apple notarization, has a stapled ticket, and opens normally through Gatekeeper.
+The public =0.4.2= Org2 Workspace downloads are developer-signed but not notarized. OpenOrg Alpha ships after its Developer ID build passes Apple notarization, has a stapled ticket, and opens normally through Gatekeeper.
 
 * 2) Capture one scheduled commitment
 
 Open *Capture*, keep *Task* selected, give the commitment a concrete title, and leave *Scheduled* enabled for today. OpenOrg appends the task to today's daily note and refreshes Agenda.
 
-Open *Agenda* and select the task. The task remains connected to the source file and any surrounding decision, meeting, or project context.
+Open *Agenda* and select the task. The task stays connected to the source file and any surrounding decision, meeting, or project context.
 
 You can also click *New Note* and write normally. A note might be a project, meeting, person, recipe, decision, or anything else you want to remember.
 
@@ -68,7 +68,7 @@ Open *Agenda* to see actionable items collected across the entire corpus. Mark a
 
 * 4) Ask an agent for bounded work
 
-AI is optional. Your files remain useful without a model or agent.
+AI is optional. Your files work without a model or agent.
 
 To connect one, open *OpenOrg → Settings… → AI Chat*. Add or enable a named local, remote, hosted, or self-hosted destination. Agents outside the native app can use the same corpus through CLI JSON and MCP.
 
@@ -78,13 +78,23 @@ With the captured task selected, open *AI Chat* and ask for one concrete outcome
 Prepare a one-page launch brief using this task and its linked context. Cite every input and leave the result for review; do not publish or message anyone.
 #+end_quote
 
-The destination is replaceable. The selected files, thread, run, citations, and resulting artifact remain durable workspace context.
+The destination is replaceable. OpenOrg records the selected files, thread, run, citations, and resulting artifact as durable workspace context.
 
 * 5) Review the cited result
 
 Open *Agent Work*. Inspect the run status, cited inputs, artifact, validation, and anything awaiting approval. Approve, revise, or reject consequential work based on that evidence.
 
 Finally, reveal the workspace in Finder and open the resulting =.org2= file in another editor. The first useful loop ends with portable work you control.
+
+* Know what leaves your Mac
+
+Your workspace is an ordinary folder on your Mac. OpenOrg does not require a hosted corpus account. Context leaves the Mac when you send it to an agent, model, or source provider you configured, so choose destinations whose retention and data-use policies fit your work.
+
+- Provider tokens and other credentials belong in macOS Keychain or another machine-local protected store.
+- External messages, publication, deletion, and other consequential actions require an explicit approval.
+- Back up the workspace folder with Git, Time Machine, iCloud Drive, Syncthing, or another file-oriented system you understand.
+
+Open *Agent Work* to inspect cited inputs, artifacts, validation, pending decisions, and failures. For help with a reproducible issue, use [[https://github.com/aviaviavi/org2/issues][GitHub issues]] with sanitized diagnostics; never attach credentials or private corpus content.
 
 * Find and connect what you know
 
@@ -126,7 +136,7 @@ These outputs stay connected to inspectable source and provenance, including whe
 
 * Prefer an editor? Start there instead
 
-The Mac app is the easiest onramp, but it is not required. If you already live in VS Code, install the Org2 extension and open or create a corpus folder there. VS Code provides a strong source-editing workflow with Agenda, TODO and planning edits, capture, backlinks, formatting, navigation, and export commands.
+The Mac app is the easiest onramp. You can also install the Org2 extension in VS Code and open or create a corpus folder there. VS Code provides a strong source-editing workflow with Agenda, TODO and planning edits, capture, backlinks, formatting, navigation, and export commands.
 
 The CLI also works well beside VS Code, Vim/Neovim, Emacs, or another editor:
 
@@ -149,13 +159,13 @@ See [[file:editors.org][Editor integrations]] and [[file:editors-vscode.org][VS 
 
 Org2 Mobile is available as a private TestFlight beta and as source. To join the beta, [[mailto:mail@avi.press?subject=Org2%20Mobile%20TestFlight][email Avi for an invitation]] and include the email address you use with TestFlight. It is not currently distributed through the public App Store.
 
-The iOS app can open a Files-visible local corpus for capture, Agenda, approvals, workflows, and file viewing. It can also control Mac-hosted AI chats over Tailscale: enable *Mobile Remote* in the Mac app's settings, create a one-time pairing code, and scan it from the iOS *Remote* tab. The Mac remains responsible for model access and corpus context and must be awake with OpenOrg running.
+The iOS app can open a Files-visible local corpus for capture, Agenda, approvals, workflows, and file viewing. It can also control Mac-hosted AI chats over Tailscale: enable *Mobile Remote* in the Mac app's settings, create a one-time pairing code, and scan it from the iOS *Remote* tab. The Mac provides model access and corpus context and must be awake with OpenOrg running.
 
 To build it yourself, open =apps/ios/Org2Mobile/Org2Mobile.xcodeproj= in Xcode, select your Apple development team, configure the =group.org.org2.mobile= App Group for the app and share extension, and run it on a simulator or device. See =apps/ios/Org2Mobile/README.md= for details.
 
 * Coming from Emacs Org mode?
 
-You can use your existing Org directory directly. =.org= remains a first-class input format, so there is no required bulk conversion and no need to rename files before trying Org2.
+You can use your existing Org directory directly. Org2 accepts =.org= as a first-class input format, so there is no required bulk conversion and no need to rename files before trying Org2.
 
 Point the Mac app at the existing folder with *Open an existing corpus*, or try the CLI without changing anything:
 
@@ -169,7 +179,7 @@ For new Org2-specific files, =.org2= makes intent clearer. To edit them with Org
 (add-to-list 'auto-mode-alist '("\\.org2\\'" . org-mode))
 #+end_src
 
-Org2 carries forward outlines, TODO states, planning lines, properties, links, tables, source blocks, agendas, and publishing, but it is not a bug-for-bug clone of every Org mode behavior. Keep complex Babel setups, custom Emacs Lisp, specialized export backends, and heavily customized agenda behavior in Org mode until their Org2 behavior has been verified. Both tools can work over the same readable source where their semantics overlap.
+Org2 supports outlines, TODO states, planning lines, properties, links, tables, source blocks, agendas, and publishing. Keep complex Babel setups, custom Emacs Lisp, specialized export backends, and heavily customized agenda behavior in Org mode until their Org2 behavior has been verified. Both tools can work over the same readable source where their semantics overlap.
 
 See [[file:editors-emacs.org][Using Org2 from Emacs]], [[file:org2-vs-org-mode.org][Org2 vs Org Mode]], and [[file:migration.org][Migration guidance]].
 
@@ -192,15 +202,13 @@ npm run build:macos-app
 open ~/Applications/OpenOrg.app
 #+end_src
 
-Safer side-by-side development uses =npm run build:macos-app:codex= for debug or =npm run build:macos-app:codex:release= for optimized behavior. Both target the isolated =OpenOrg Preview.app= rather than replacing the daily app.
+Side-by-side development uses =npm run build:macos-app:codex= for debug or =npm run build:macos-app:codex:release= for optimized behavior. Both target the isolated =OpenOrg Preview.app= and leave the daily app untouched.
 
 * Next steps
 
 - [[file:features.org][See what OpenOrg can do]]
 - [[file:editors-macos.org][Learn OpenOrg for macOS]]
-- [[file:agent-quickstart.org][Connect agents safely]]
-- [[file:privacy-and-data.org][Understand privacy, backups, and agent actions]]
-- [[file:known-limitations.org][Review alpha limitations]]
+- [[file:agent-quickstart.org][Connect agents and models]]
 - [[file:language-reference.org][Learn more of the file format]]
 - [[file:tooling-reference.org][Explore the CLI]]
 - [[file:semantics-status.org][Check current semantics and maturity]]

@@ -74,11 +74,9 @@ const features = fs.readFileSync(path.join(repoRoot, "docs/site/features.org"), 
 const gettingStarted = fs.readFileSync(path.join(repoRoot, "docs/site/getting-started.org"), "utf8");
 const downloads = fs.readFileSync(path.join(repoRoot, "docs/site/downloads.org"), "utf8");
 const productArchitecture = fs.readFileSync(path.join(repoRoot, "docs/site/openorg-and-org2.org"), "utf8");
-const privacyAndData = fs.readFileSync(path.join(repoRoot, "docs/site/privacy-and-data.org"), "utf8");
-const knownLimitations = fs.readFileSync(path.join(repoRoot, "docs/site/known-limitations.org"), "utf8");
-const launchDemo = fs.readFileSync(path.join(repoRoot, "docs/site/launch-demo.org"), "utf8");
 const macosWorkspace = fs.readFileSync(path.join(repoRoot, "docs/site/editors-macos.org"), "utf8");
 const publishConfig = fs.readFileSync(path.join(repoRoot, "org2.json"), "utf8");
+const retiredPublicPages = ["privacy-and-data.org", "known-limitations.org", "launch-demo.org"];
 for (const [label, text] of [["agent quickstart", quickstart], ["llms.txt", llms]]) {
   if (!text.includes("org2 agent capabilities")) fail(`${label} does not point agents to the installed capability manifest`);
 }
@@ -140,15 +138,18 @@ if (
   fail("product site must distinguish OpenOrg from the Org2 substrate");
 }
 if (
-  !privacyAndData.includes("* Agent context")
-  || !privacyAndData.includes("* Actions and approvals")
-  || !privacyAndData.includes("* Backups")
-  || !knownLimitations.includes("* Getting help")
-  || !knownLimitations.includes("notarization and Gatekeeper verification")
-  || !launchDemo.includes("* Shot list")
-  || !launchDemo.includes("The agent is replaceable")
+  !gettingStarted.includes("* Know what leaves your Mac")
+  || !gettingStarted.includes("macOS Keychain")
+  || !gettingStarted.includes("require an explicit approval")
+  || !gettingStarted.includes("Back up the workspace folder")
+  || !gettingStarted.includes("GitHub issues")
 ) {
-  fail("OpenOrg launch safety, limitations, support, and demo pages are incomplete");
+  fail("getting-started guidance must explain data sharing, credentials, approvals, backups, and support");
+}
+for (const page of retiredPublicPages) {
+  if (fs.existsSync(path.join(repoRoot, "docs/site", page))) {
+    fail(`internal launch material must stay out of the public site: ${page}`);
+  }
 }
 if ((macosWorkspace.match(/class="org2-section-shot"/g) || []).length < 6) {
   fail("OpenOrg for macOS must place screenshots beside the sections they illustrate");
@@ -156,9 +157,11 @@ if ((macosWorkspace.match(/class="org2-section-shot"/g) || []).length < 6) {
 if (
   !publishConfig.includes('href=\\"agent-quickstart.html\\">Agents and models')
   || !publishConfig.includes('href=\\"openorg-and-org2.html\\">Architecture')
-  || !publishConfig.includes('href=\\"privacy-and-data.html\\">Privacy and data')
-  || !publishConfig.includes('<summary>About</summary>')
+  || publishConfig.includes('<summary>About</summary>')
   || publishConfig.includes('<summary>Safety</summary>')
+  || publishConfig.includes('href=\\"privacy-and-data.html\\"')
+  || publishConfig.includes('href=\\"known-limitations.html\\"')
+  || publishConfig.includes('href=\\"launch-demo.html\\"')
   || !publishConfig.includes('"baseUrl": "https://openorg.so"')
   || publishConfig.includes('href=\\"openclaw-knowledge-layer.html\\">OpenClaw knowledge layer')
 ) {

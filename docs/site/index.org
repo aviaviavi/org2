@@ -161,7 +161,7 @@ Your files are the source of truth. Apps and agents share the context, people ke
 
 * Private-by-default agent collaboration
 
-A useful agent workspace needs precise sharing boundaries. OpenOrg keeps files local by default and can encrypt individual subtrees to you, a device, or a specific agent key. Encrypted notes remain ordinary files that can sync through Git, iCloud, Syncthing, or any transport you choose.
+A useful agent workspace needs precise sharing boundaries. OpenOrg keeps files local by default and can encrypt individual subtrees to you, a device, or a specific agent key. Encrypted notes are ordinary files that can sync through Git, iCloud, Syncthing, or any transport you choose.
 
 * How it works
 
@@ -175,8 +175,6 @@ OpenOrg Alpha is for technical founders, operators, and knowledge workers who wa
 
 - [[file:getting-started.org][Getting started]]
 - [[file:openorg-and-org2.org][OpenOrg and Org2 architecture]]
-- [[file:privacy-and-data.org][Privacy, backups, and agent actions]]
-- [[file:known-limitations.org][Known alpha limitations]]
 - [[file:features.org][Features]]
 - [[file:editors-macos.org][OpenOrg for macOS]]
 - [[file:corpus-flow.org][Corpus flow]]

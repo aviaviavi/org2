@@ -79,7 +79,7 @@ Keep iOS, data notebooks, publishing, encryption, and source connectors availabl
 - Fresh users reach the cited review loop within ten minutes.
 - At least five outside users complete the core flow and at least three return within seven days.
 - Release, docs, macOS, corpus, and lifecycle checks pass.
-- Backup, privacy, agent-action, and known-alpha boundaries are documented.
+- Backup, data-sharing, agent-action, and current-alpha boundaries are documented where users install and start the product.
 
 * Preliminary name screen
 
@@ -98,5 +98,5 @@ While the name gate is unresolved, continue work that is useful under any final 
 1. Preserve and automatically check compatibility identifiers.
 2. Design the five-minute first-run flow without branding it.
 3. Complete signing and notarization automation.
-4. Document privacy, backups, agent actions, and known alpha limitations.
+4. Document data handling, backups, agent actions, and current alpha limitations in the installation and onboarding flow.
 5. Prepare a product-site information architecture and demo script using a replaceable brand token.

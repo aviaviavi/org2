@@ -9,7 +9,7 @@
 - [ ] User-facing Mac name, icon, onboarding, site, and release copy reviewed.
 - [ ] Existing bundle identifier, preferences, Keychain services, executable, corpus format, CLI, npm package, schemas, and editor identifiers unchanged.
 - [ ] Apple Silicon and Intel packaging plans produce canonical OpenOrg artifact names.
-- [ ] Privacy, backups, agent actions, support, and known limitations are plainly documented.
+- [ ] Getting-started and download guidance plainly covers data handling, backups, agent actions, support, and current limitations.
 - [ ] No production DNS, tag, registry, release, or distribution mutation occurred from the review branch.
 
 * Release-candidate gate
@@ -20,7 +20,7 @@
 - [ ] Both artifact checksums and manifests are recorded.
 - [ ] Upgrade smoke test preserves settings, credentials, permissions, corpus access, pairing, capture, meetings, notifications, and deep links.
 - [ ] Fresh install reaches the cited review loop in under ten minutes.
-- [ ] Known-alpha boundaries and support route are visible from the product site.
+- [ ] Current alpha boundaries and the support route are visible where users install and start the product.
 
 * Private-alpha gate
 

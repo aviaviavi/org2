@@ -65,7 +65,7 @@ assert.equal(mergeReleaseDownloadBlock(merged, releases[0]), merged);
 
 const page = renderDownloadsPage(releases);
 assert.match(page, /\* OpenOrg Alpha/);
-assert.match(page, /\* Current legacy release 0\.4\.1/);
+assert.match(page, /\* Org2 Workspace release 0\.4\.1/);
 assert.match(page, /\| 0\.4\.1 \| \[\[https:\/\/org2\.gateway\.scarf\.sh/);
 assert.match(page, /macOS Apple Silicon DMG \| macOS Intel DMG/);
 assert.match(page, /Org2Workspace-Intel\.dmg/);

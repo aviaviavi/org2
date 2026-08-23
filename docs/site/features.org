@@ -23,7 +23,7 @@
   <section class="org2-feature-story" id="planning-knowledge" aria-labelledby="planning-knowledge-title">
     <div class="org2-feature-copy">
       <h2 id="planning-knowledge-title">Planning and linked notes</h2>
-      <p>TODO state, schedules, deadlines, priorities, effort, tags, IDs, aliases, and links remain readable in the note. Org2 turns them into focused agenda views and a navigable knowledge graph.</p>
+      <p>TODO state, schedules, deadlines, priorities, effort, tags, IDs, aliases, and links are readable in the note. Org2 turns them into focused agenda views and a navigable knowledge graph.</p>
       <ul>
         <li>Agenda across many files, with date windows, filters, grouping, and real-world TODO vocabularies.</li>
         <li>Stable IDs, backlinks, dailies, node creation, link previews, and graph-health checks.</li>
@@ -48,7 +48,7 @@ org2 roam graph --dir ~/notes --recursive --format report</code></pre>
       <p>Selected context, citations, plans, outputs, validation, clarifications, and approvals stay together while the work moves. People can see what happened before approving a consequential action—and what evidence proves it finished.</p>
       <ul>
         <li>Bounded context packs carry explicit file-and-line citations.</li>
-        <li>Portable goals and named agent profiles separate why and who from runtime, provider, and model identity; resolved refs remain attached to delegated headings, runs, and workflows.</li>
+        <li>Portable goals and named agent profiles separate why and who from runtime, provider, and model identity; resolved refs stay attached to delegated headings, runs, and workflows.</li>
         <li>Generated work lands in reviewable artifact zones before promotion into canonical notes.</li>
         <li>One pending-decision queue combines run-bound approvals with standalone file-backed approvals; run decisions preserve one native ID and immutable review-material fingerprint across CLI, Mac, mobile, and runtime adapters. Decisions are item-scoped, so rejecting one action does not discard sibling approvals from the same batch.</li>
         <li>Recurring workflow executions roll up under stable logical work while retaining separate scheduler attempts, and event/fresh-path gates skip unchanged expensive work.</li>
@@ -106,7 +106,7 @@ org2 query-data --file notes/readiness.org2 --results weekly --apply</code></pre
       <p class="org2-feature-links"><a href="language-reference.html#local-datasets-and-sql-views">Notebook syntax</a><a href="tooling-reference.html">Query-data options</a></p>
     </div>
     <div class="org2-feature-media">
-      <figure><img src="assets/screenshots/macos-workspace-data.png" alt="OpenOrg rendering a launch readiness data notebook with a materialized table and chart" loading="lazy" /><figcaption>Materialized rows, freshness metadata, and visualization remain connected to the source note.</figcaption></figure>
+      <figure><img src="assets/screenshots/macos-workspace-data.png" alt="OpenOrg rendering a launch readiness data notebook with a materialized table and chart" loading="lazy" /><figcaption>Materialized rows, freshness metadata, and visualization stay connected to the source note.</figcaption></figure>
     </div>
   </section>
 

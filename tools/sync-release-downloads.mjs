@@ -173,18 +173,18 @@ export function renderDownloadsPage(releases) {
   const alphaPreamble = isOpenOrgRelease ? "" : `
 * OpenOrg Alpha
 
-OpenOrg =0.5.0= is being prepared as the first product-named alpha. It will use the same bundle identifier, preferences, Keychain services, executable name, and Org2 corpus format as the current Mac app so existing users keep their settings and workspace access. The public download will appear here only after both Apple Silicon and Intel packages are Developer ID signed, notarized, stapled, and pass Gatekeeper verification.
+OpenOrg =0.5.0= is being prepared as an alpha for Apple Silicon and Intel Macs. The public download will appear here after both packages are Developer ID signed, notarized, stapled, and pass Gatekeeper verification.
 
-The Org2 CLI, npm package, VS Code extension, schemas, and =.org2= format keep their existing names. See [[file:openorg-and-org2.org][OpenOrg and Org2]] and [[file:known-limitations.org][Known limitations]].
+The Org2 CLI, npm package, VS Code extension, schemas, and =.org2= format are available as the developer toolkit. See [[file:openorg-and-org2.org][OpenOrg and Org2]] for the relationship between the workspace and its open foundation.
 `;
-  const currentReleaseHeading = isOpenOrgRelease ? "Current release" : "Current legacy release";
+  const currentReleaseHeading = isOpenOrgRelease ? "Current release" : "Org2 Workspace release";
 
   return `#+TITLE: Downloads
 #+SUBTITLE: Install OpenOrg and the Org2 developer tools from versioned GitHub release artifacts
 
 #+BEGIN_EXPORT html
 <section class="org2-page-intro org2-downloads-intro">
-  <p>OpenOrg is the workspace product; Org2 is its open format and developer toolkit. GitHub Releases remains the underlying host, and direct-download links pass through Scarf Gateway for aggregate measurement before redirecting to the original artifact.</p>
+  <p>OpenOrg is the workspace product; Org2 is its open format and developer toolkit. GitHub Releases hosts the artifacts, and direct-download links pass through Scarf Gateway for aggregate measurement before redirecting to the original file.</p>
 </section>
 #+END_EXPORT
 ${alphaPreamble}
