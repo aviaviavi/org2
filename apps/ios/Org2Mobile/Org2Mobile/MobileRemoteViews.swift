@@ -3,6 +3,297 @@ import SwiftUI
 import UIKit
 import VisionKit
 
+struct MobileAISidebarView: View {
+  @EnvironmentObject private var remote: MobileRemoteStore
+  let selectedThreadID: UUID?
+  let openWorkspace: () -> Void
+  let openFiles: () -> Void
+  let openThread: (UUID) -> Void
+  let openExternalThreads: () -> Void
+  let openSettings: () -> Void
+  let close: () -> Void
+
+  var body: some View {
+    VStack(spacing: 0) {
+      HStack(spacing: 12) {
+        VStack(alignment: .leading, spacing: 2) {
+          Text("AI Chat")
+            .font(.title2.weight(.bold))
+          Text(remote.isPaired ? statusSubtitle : "Connect a Mac to start chatting")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+        }
+        Spacer()
+        if remote.isPaired {
+          Menu {
+            ForEach(aiChatDestinations) { destination in
+              Button {
+                createThread(destination: destination)
+              } label: {
+                Label("New (destination.name) Chat", systemImage: "plus.bubble")
+              }
+            }
+          } label: {
+            Image(systemName: "square.and.pencil")
+          }
+          .accessibilityLabel("New AI chat")
+        }
+        Button(action: close) {
+          Image(systemName: "xmark")
+        }
+        .accessibilityLabel("Close sidebar")
+      }
+      .padding(.horizontal, 18)
+      .padding(.top, 18)
+      .padding(.bottom, 10)
+
+      List {
+        Section {
+          sidebarButton("Workspace", systemImage: "square.grid.2x2", action: openWorkspace)
+          sidebarButton("Files", systemImage: "folder", action: openFiles)
+          sidebarButton(
+            "External Threads",
+            systemImage: "rectangle.stack.badge.person.crop",
+            action: openExternalThreads
+          )
+          .disabled(!remote.isPaired)
+        }
+
+        if !activeThreads.isEmpty {
+          Section("Threads") {
+            ForEach(activeThreads) { thread in
+              threadButton(thread)
+            }
+          }
+        }
+
+        if !settledThreads.isEmpty {
+          Section("Settled") {
+            ForEach(settledThreads) { thread in
+              threadButton(thread)
+            }
+          }
+        }
+
+        if remote.isPaired && remote.threads.isEmpty && !remote.isRefreshing {
+          Section {
+            Text("No AI chats yet")
+              .foregroundStyle(.secondary)
+          }
+        }
+
+        Section {
+          sidebarButton("Settings", systemImage: "gearshape", action: openSettings)
+        }
+      }
+      .listStyle(.sidebar)
+      .refreshable {
+        if remote.isPaired { await remote.refresh() }
+      }
+    }
+    .background(.regularMaterial)
+    .shadow(color: .black.opacity(0.18), radius: 18, x: 8)
+    .task {
+      if remote.isPaired && remote.threads.isEmpty {
+        await remote.refresh(reportsErrors: false)
+      }
+    }
+  }
+
+  private var activeThreads: [MobileRemoteThreadSummary] {
+    remote.threads.filter { !$0.isSettled }
+  }
+
+  private var settledThreads: [MobileRemoteThreadSummary] {
+    remote.threads.filter(\.isSettled)
+  }
+
+  private func sidebarButton(
+    _ title: String,
+    systemImage: String,
+    action: @escaping () -> Void
+  ) -> some View {
+    Button(action: action) {
+      Label(title, systemImage: systemImage)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+  }
+
+  private func threadButton(_ thread: MobileRemoteThreadSummary) -> some View {
+    Button {
+      openThread(thread.id)
+    } label: {
+      MobileRemoteThreadRow(thread: thread)
+        .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .listRowBackground(
+      selectedThreadID == thread.id ? Color.accentColor.opacity(0.12) : Color.clear
+    )
+    .swipeActions(edge: .leading, allowsFullSwipe: true) {
+      Button {
+        Task { await remote.setPinned(!thread.isPinned, threadID: thread.id) }
+      } label: {
+        Label(thread.isPinned ? "Unpin" : "Pin", systemImage: thread.isPinned ? "pin.slash" : "pin")
+      }
+      .tint(.orange)
+    }
+    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+      Button {
+        Task { await remote.setSettled(!thread.isSettled, threadID: thread.id) }
+      } label: {
+        Label(
+          thread.isSettled ? "Reopen" : "Settle",
+          systemImage: thread.isSettled ? "arrow.uturn.backward.circle" : "checkmark.circle"
+        )
+      }
+      .tint(thread.isSettled ? .blue : .green)
+    }
+    .contextMenu {
+      Button {
+        Task {
+          if let forkedThreadID = await remote.forkThread(thread.id) {
+            openThread(forkedThreadID)
+          }
+        }
+      } label: {
+        Label("Fork Thread", systemImage: "arrow.triangle.branch")
+      }
+      Button {
+        Task { await remote.setPinned(!thread.isPinned, threadID: thread.id) }
+      } label: {
+        Label(thread.isPinned ? "Unpin Thread" : "Pin Thread", systemImage: thread.isPinned ? "pin.slash" : "pin")
+      }
+      Button {
+        Task { await remote.setSettled(!thread.isSettled, threadID: thread.id) }
+      } label: {
+        Label(
+          thread.isSettled ? "Reopen Thread" : "Settle Thread",
+          systemImage: thread.isSettled ? "arrow.uturn.backward.circle" : "checkmark.circle"
+        )
+      }
+    }
+  }
+
+  private var statusSubtitle: String {
+    guard remote.isConnected else { return "Waiting for (remote.serverName)" }
+    let running = remote.status?.runningThreadCount ?? 0
+    return running == 1 ? "1 chat running" : "(running) chats running"
+  }
+
+  private var aiChatDestinations: [MobileRemoteAIDestination] {
+    if let destinations = remote.status?.aiChatDestinations, !destinations.isEmpty {
+      return destinations
+    }
+    return [
+      MobileRemoteAIDestination(id: "builtin.codex", name: "Codex", mention: "codex", runtime: "codex"),
+      MobileRemoteAIDestination(id: "builtin.openclaw", name: "OpenClaw", mention: "openclaw", runtime: "openClaw")
+    ]
+  }
+
+  private func createThread(destination: MobileRemoteAIDestination) {
+    Task {
+      if let threadID = await remote.createThread(destination: destination) {
+        openThread(threadID)
+      }
+    }
+  }
+}
+
+struct MobileSettingsView: View {
+  @EnvironmentObject private var store: CorpusStore
+  @EnvironmentObject private var remote: MobileRemoteStore
+
+  var body: some View {
+    Form {
+      Section("Corpus") {
+        LabeledContent("Current corpus", value: store.rootURL == nil ? "Not selected" : store.corpusName)
+        Button {
+          store.isDocumentPickerPresented = true
+        } label: {
+          Label(store.rootURL == nil ? "Select Corpus" : "Change Corpus", systemImage: "folder")
+        }
+      }
+
+      Section("Mac Connection") {
+        if remote.isPaired {
+          LabeledContent("Mac", value: remote.serverName)
+          LabeledContent("Status", value: remote.isConnected ? "Connected" : "Unavailable")
+          Button {
+            Task { await remote.refresh() }
+          } label: {
+            Label("Refresh Connection", systemImage: "arrow.clockwise")
+          }
+          Button("Forget This Mac", role: .destructive) {
+            remote.disconnect()
+          }
+        } else {
+          NavigationLink {
+            MobileRemotePairingView()
+              .navigationTitle("Connect Mac")
+              .navigationBarTitleDisplayMode(.inline)
+          } label: {
+            Label("Connect a Mac", systemImage: "desktopcomputer")
+          }
+          Text("Pair over Tailscale to use AI chat, external tasks, and canonical approvals from your Mac.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+      }
+
+      if remote.isPaired {
+        Section {
+          Toggle(isOn: Binding(
+            get: { remote.threadNotificationsEnabled },
+            set: { remote.setThreadNotificationsEnabled($0) }
+          )) {
+            Label("Notify me about replies", systemImage: "bell")
+          }
+
+          Text(remote.pushNotificationStatusText)
+            .font(.caption)
+            .foregroundStyle(notificationStatusColor)
+
+          if remote.threadNotificationsUnavailable {
+            Button {
+              guard let settingsURL = URL(string: UIApplication.openSettingsURLString) else { return }
+              UIApplication.shared.open(settingsURL)
+            } label: {
+              Label("Open Notification Settings", systemImage: "gear")
+            }
+          } else if remote.threadNotificationsEnabled {
+            Button {
+              Task { await remote.sendTestReplyNotification() }
+            } label: {
+              Label("Send Test Notification", systemImage: "bell.badge")
+            }
+            .disabled(!remote.realTimeNotificationsActive)
+          }
+        } header: {
+          Text("Reply Notifications")
+        } footer: {
+          Text("Reply alerts use Apple Push Notifications when available, with background checks as a fallback.")
+        }
+      }
+    }
+    .navigationTitle("Settings")
+    .toolbar {
+      ToolbarItem(placement: .topBarLeading) {
+        MobileSidebarToolbarButton()
+      }
+    }
+  }
+
+  private var notificationStatusColor: Color {
+    if remote.threadNotificationsUnavailable { return .orange }
+    if remote.realTimeNotificationsActive { return .green }
+    return .secondary
+  }
+}
+
 struct MobileRemoteRootView: View {
   @EnvironmentObject private var remote: MobileRemoteStore
   @State private var path: [UUID] = []
@@ -313,7 +604,7 @@ struct MobileRemoteRootView: View {
   }
 }
 
-private struct MobileExternalThreadListView: View {
+struct MobileExternalThreadListView: View {
   @EnvironmentObject private var remote: MobileRemoteStore
   @State private var query = ""
   let continueInOrg2: (UUID) -> Void
@@ -350,6 +641,11 @@ private struct MobileExternalThreadListView: View {
     }
     .navigationTitle("External Threads")
     .navigationBarTitleDisplayMode(.inline)
+    .toolbar {
+      ToolbarItem(placement: .topBarLeading) {
+        MobileSidebarToolbarButton()
+      }
+    }
     .searchable(text: $query, prompt: "Search external threads")
     .refreshable { await remote.refreshExternalThreads() }
     .task {
@@ -729,7 +1025,7 @@ private struct MobileAIMentionSuggestion: Identifiable {
   }
 }
 
-private struct MobileRemoteThreadView: View {
+struct MobileRemoteThreadView: View {
   @EnvironmentObject private var remote: MobileRemoteStore
   @Environment(\.colorScheme) private var colorScheme
   let threadID: UUID
@@ -789,6 +1085,9 @@ private struct MobileRemoteThreadView: View {
     .navigationTitle(remote.threadDetail?.thread.id == threadID ? remote.threadDetail?.thread.title ?? "Chat" : "Chat")
     .navigationBarTitleDisplayMode(.inline)
     .toolbar {
+      ToolbarItem(placement: .topBarLeading) {
+        MobileSidebarToolbarButton()
+      }
       if let thread = remote.threadDetail?.thread, thread.id == threadID {
         ToolbarItem(placement: .topBarTrailing) {
           Menu {
@@ -1913,6 +2212,9 @@ struct CorpusFileBrowserView: View {
     .navigationBarTitleDisplayMode(.large)
     .searchable(text: $query, prompt: "Search file names and paths")
     .toolbar {
+      ToolbarItem(placement: .topBarLeading) {
+        MobileSidebarToolbarButton()
+      }
       ToolbarItem(placement: .topBarTrailing) {
         Button {
           Task { await store.refresh() }
