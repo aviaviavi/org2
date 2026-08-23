@@ -1,5 +1,5 @@
 #+TITLE: Privacy, backups, and agent actions
-#+SUBTITLE: Know what stays local, what leaves the Mac, and what still needs your approval.
+#+SUBTITLE: Know what stays local, what leaves the Mac, and which actions need your approval.
 
 * Local source of truth
 
@@ -15,14 +15,14 @@ OpenOrg does not expose a hidden chain of thought. It can display provider-expos
 
 * Actions and approvals
 
-Reading local context and drafting reviewable output are different from consequential external actions. Messages, tickets, calendar changes, publication, deletion, and other third-party writes should remain behind an explicit approval boundary. Agent Work shows runs, artifacts, validation, pending decisions, and failure state in one place.
+Reading local context and drafting reviewable output are different from consequential external actions. Messages, tickets, calendar changes, publication, deletion, and other third-party writes belong behind an explicit approval boundary. Agent Work shows runs, artifacts, validation, pending decisions, and failure state in one place.
 
 * Credentials and permissions
 
 - Provider tokens, source credentials, mobile-pairing secrets, and encryption passphrases stay in macOS Keychain or another machine-local protected store.
 - Credentials must not be written into corpus files, runs, workflows, fixtures, or generated artifacts.
-- Microphone, Screen/System Audio, Speech, notifications, and similar permissions remain controlled by macOS.
-- The 0.5 display rename preserves the existing bundle identifier so existing permission and Keychain continuity can be validated without an unnecessary identity migration.
+- Microphone, Screen/System Audio, Speech, notifications, and similar permissions are controlled by macOS.
+- OpenOrg uses a stable bundle identifier for permissions and Keychain access.
 
 * Backups
 

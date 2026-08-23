@@ -50,5 +50,6 @@ for (const preferenceKey of [
 const productIdentity = read("apps/macos/Org2Workspace/Sources/Org2WorkspaceCore/WorkspaceProductIdentity.swift");
 assert.match(productIdentity, /displayName = "OpenOrg"/, "keep the user-facing product name centralized");
 assert.match(productIdentity, /substrateName = "Org2"/, "keep Org2 named as the open substrate");
+assert.match(productIdentity, /primaryPromise = "Build your knowledge locally and put it to work\."/, "keep the launch tagline centralized");
 
 console.log("OK: OpenOrg/Org2 launch compatibility identifiers are unchanged");

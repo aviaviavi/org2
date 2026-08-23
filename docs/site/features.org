@@ -17,7 +17,7 @@
       <article><strong>Review</strong><p>Collect clarifications and consequential actions in one decision queue.</p></article>
       <article><strong>Verify</strong><p>Return outputs, validation, and evidence to the durable source record.</p></article>
     </div>
-    <p class="org2-feature-note">Underneath, one parser turns ordinary files into shared semantics for the Mac app, VS Code, CLI tools, agent integrations, and publishing. Each client reads the same corpus instead of inventing its own interpretation.</p>
+    <p class="org2-feature-note">Underneath, one parser turns ordinary files into shared semantics for the Mac app, VS Code, CLI tools, agent integrations, and publishing. Every client reads the same corpus and semantic model.</p>
   </section>
 
   <section class="org2-feature-story" id="planning-knowledge" aria-labelledby="planning-knowledge-title">
@@ -47,13 +47,13 @@ org2 roam graph --dir ~/notes --recursive --format report</code></pre>
       <h2 id="agent-work-title">Decisions become durable work</h2>
       <p>Selected context, citations, plans, outputs, validation, clarifications, and approvals stay together while the work moves. People can see what happened before approving a consequential action—and what evidence proves it finished.</p>
       <ul>
-        <li>Bounded context packs carry file-and-line citations instead of an opaque prompt dump.</li>
+        <li>Bounded context packs carry explicit file-and-line citations.</li>
         <li>Portable goals and named agent profiles separate why and who from runtime, provider, and model identity; resolved refs remain attached to delegated headings, runs, and workflows.</li>
         <li>Generated work lands in reviewable artifact zones before promotion into canonical notes.</li>
         <li>One pending-decision queue combines run-bound approvals with standalone file-backed approvals; run decisions preserve one native ID and immutable review-material fingerprint across CLI, Mac, mobile, and runtime adapters. Decisions are item-scoped, so rejecting one action does not discard sibling approvals from the same batch.</li>
         <li>Recurring workflow executions roll up under stable logical work while retaining separate scheduler attempts, and event/fresh-path gates skip unchanged expensive work.</li>
         <li>A read-only workspace doctor finds contradictory run and approval state, duplicate decision identities, broken projections, and unmanaged recurring work before another agent acts.</li>
-        <li>Atomic revision-checked run and workflow writes reject stale clients and ambiguous direct edits instead of silently replacing newer work.</li>
+        <li>Atomic revision-checked run and workflow writes reject stale clients and ambiguous direct edits, protecting newer work.</li>
         <li>Per-account work ledgers keep stable identity, curated context, linked approvals, contact receipts, and idempotent history queryable without one ever-growing agent file.</li>
         <li>Runtime adapters can add native lifecycle and scheduling behavior, while CLI, MCP, and plain files keep the underlying work portable across agents and models.</li>
       </ul>
@@ -142,11 +142,11 @@ org2 query-data --file notes/readiness.org2 --results weekly --apply</code></pre
 
   <section class="org2-feature-section" id="editors-publishing" aria-labelledby="editors-publishing-title">
     <div class="org2-feature-heading">
-      <h2 id="editors-publishing-title">Useful outputs, not just answers</h2>
+      <h2 id="editors-publishing-title">Useful outputs with their context</h2>
       <p>Agent work can finish as a talk, an evidence-backed analysis, a customer quote, marketing collateral, or a published site. The artifact stays connected to the source material and approvals that produced it.</p>
     </div>
     <div class="org2-editor-strip">
-      <figure><img src="assets/screenshots/macos-workspace-data.png" alt="OpenOrg rendering an evidence-backed data notebook with an interactive chart" loading="lazy" /><figcaption><strong>Analytics.</strong> Materialized results and visualizations remain connected to their query, freshness, and source context.</figcaption></figure>
+      <figure><img src="assets/screenshots/macos-workspace-data.png" alt="OpenOrg rendering an evidence-backed data notebook with an interactive chart" loading="lazy" /><figcaption><strong>Analytics.</strong> Materialized results and visualizations stay connected to their query, freshness, and source context.</figcaption></figure>
       <div class="org2-editor-cards">
         <article><strong>Talks and slides</strong><p>Develop the narrative beside its research, preview the deck in the Mac app, and export Beamer-compatible TeX or a presentation-ready PDF.</p></article>
         <article><strong>Customer-ready documents</strong><p>Turn approved source material into quotes, reports, and marketing collateral, then export a clean reading-layout PDF.</p></article>
@@ -179,7 +179,7 @@ org2 export beamer --file talk.org2 --pdf --apply</code></pre>
 
   <section class="org2-feature-cta" aria-labelledby="feature-cta-title">
     <h2 id="feature-cta-title">Where to start</h2>
-    <p>OpenOrg for macOS is the primary product experience. The Org2 CLI, VS Code extension, language server, and file format remain independent developer surfaces for the same local corpus.</p>
+    <p>OpenOrg for macOS is the primary product experience. The Org2 CLI, VS Code extension, language server, and file format provide independent developer surfaces for the same local corpus.</p>
     <p class="org2-feature-links"><a href="getting-started.html">Getting started</a><a href="reference.html">Reference</a><a href="https://github.com/aviaviavi/org2">GitHub</a></p>
   </section>
 </div>

@@ -1,9 +1,9 @@
 #+TITLE: OpenOrg launch demonstration
-#+SUBTITLE: One complete 60–90 second workflow, not a feature inventory.
+#+SUBTITLE: A 60–90 second tour from local files to a reviewed result.
 
 * The story
 
-The agent is replaceable; the work, context, provenance, and control remain yours.
+The agent is replaceable; the work, context, provenance, and control are yours.
 
 * Shot list
 
@@ -16,12 +16,12 @@ The agent is replaceable; the work, context, provenance, and control remain your
 
 * Suggested narration
 
-“OpenOrg runs your work with people and agents from local files you control. This folder is ordinary text. Agenda shows what is due without separating a commitment from its source. I can ask any configured agent for a bounded outcome, then inspect the durable run, citations, and artifact before approving anything consequential. The result is still an Org2 file I can open anywhere. I can change the agent or the app; the work and its history remain mine.”
+“OpenOrg helps me build knowledge locally and put it to work. This folder is ordinary text. Agenda shows what is due together with the source behind each commitment. I can ask any configured agent for a bounded outcome, then inspect the durable run, citations, and artifact before approving anything consequential. The result is an Org2 file I can open anywhere. The work and its history are mine across agents and apps.”
 
 * Recording constraints
 
 - Keep the desktop clean and use synthetic launch data.
-- Show one configured agent destination; do not turn the demo into a provider comparison.
+- Show one configured agent destination and keep the story focused on the workflow.
 - Avoid advanced notebooks, publishing, encryption, source connectors, mobile, and meetings in the primary cut.
 - Record at a readable cursor speed and keep every text frame on screen long enough to scan.
-- End on =openorg.so= and “Built on the open Org2 format.”
+- End on =openorg.so= and “Build your knowledge locally and put it to work.”

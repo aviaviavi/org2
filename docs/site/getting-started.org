@@ -5,7 +5,7 @@
 <section class="org2-page-intro">
   <p>Start with the OpenOrg Mac app: open a folder you own, capture one commitment, see it in Agenda, ask an agent for one bounded outcome, and review the cited result. You do not need Emacs or prior Org mode experience.</p>
   <div class="org2-page-summary org2-page-summary-sequence" aria-label="Getting started overview">
-    <div><strong>Open local files.</strong><span>Your workspace is an ordinary folder of readable text, not an app-owned database.</span></div>
+    <div><strong>Open local files.</strong><span>Your workspace is an ordinary folder of readable text that you control.</span></div>
     <div><strong>Capture and delegate.</strong><span>Schedule one real commitment, then ask any configured agent for bounded work.</span></div>
     <div><strong>Review and keep control.</strong><span>Inspect citations and approvals while the durable result stays in your files.</span></div>
   </div>
@@ -58,7 +58,7 @@ Only a few conventions matter at first:
 - =SCHEDULED:= gives the task a date so it appears in Agenda.
 - Ordinary paragraphs and lists are just text.
 
-You can use the app's controls instead of editing this syntax directly. The readable source remains available whenever you want it.
+You can use the app's controls for everyday work and open the readable source whenever you want it.
 
 * 3) Use Today and Agenda
 
@@ -82,7 +82,7 @@ The destination is replaceable. The selected files, thread, run, citations, and 
 
 * 5) Review the cited result
 
-Open *Agent Work*. Inspect the run status, cited inputs, artifact, validation, and anything awaiting approval. Approve, revise, or reject consequential work rather than treating a plausible chat response as proof of completion.
+Open *Agent Work*. Inspect the run status, cited inputs, artifact, validation, and anything awaiting approval. Approve, revise, or reject consequential work based on that evidence.
 
 Finally, reveal the workspace in Finder and open the resulting =.org2= file in another editor. The first useful loop ends with portable work you control.
 
@@ -90,13 +90,13 @@ Finally, reveal the workspace in Finder and open the resulting =.org2= file in a
 
 Use =Command-K= to quickly open any file or heading. Global search finds text, tasks, agent work, and other indexed workspace records.
 
-When two ideas belong together, add a link rather than duplicating the information. Org2 keeps source locations and backlinks, so a person, project, meeting, or decision can remain connected to the work that came from it.
+When two ideas belong together, add a link. Org2 keeps source locations and backlinks, so a person, project, meeting, or decision stays connected to the work that came from it.
 
 Do not try to design the perfect folder structure on day one. A few notes plus daily capture are enough; reorganize later as useful patterns emerge.
 
 * Configure more agent workflows
 
-You can create a shared room and explicitly mention multiple destinations with =@mentions= or =@all=. Each response stays attributed to the agent that produced it. The corpus, not any one model or chat provider, remains the durable context.
+You can create a shared room and explicitly mention multiple destinations with =@mentions= or =@all=. Each response stays attributed to the agent that produced it, and the corpus provides durable context across every destination.
 
 Try a source-finding request such as:
 
@@ -122,7 +122,7 @@ The same corpus can produce more than notes and task lists. As your work grows, 
 - ordinary PDFs for proposals, quotes, and other documents,
 - published HTML and documentation sites.
 
-These outputs stay connected to inspectable source and provenance instead of becoming isolated files with no explanation of where they came from.
+These outputs stay connected to inspectable source and provenance, including where they came from and which decisions shaped them.
 
 * Prefer an editor? Start there instead
 

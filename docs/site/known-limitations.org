@@ -4,13 +4,13 @@
 * Before installing
 
 - OpenOrg Alpha targets macOS 14 or newer.
-- Apple Silicon is the primary development and validation platform; Intel packaging remains a separate release artifact.
+- Apple Silicon is the primary development and validation platform; Intel uses a separate release artifact.
 - The public =0.4.2= Org2 Workspace downloads are signed but not notarized. OpenOrg =0.5.0= must not ship until its Developer ID build passes notarization and Gatekeeper verification.
-- The OpenOrg name remains provisional until the documented name-clearance gate is resolved.
+- The OpenOrg name is provisional while name clearance is in progress.
 
 * Data and editing
 
-- Ordinary files remain canonical, but any sync tool can still create conflicts. Keep file history or backups.
+- Ordinary files are canonical. Sync tools can create conflicts, so keep file history or backups.
 - The rendered editor covers common structured workflows; source mode is the full-fidelity escape hatch.
 - Derived indexes and previews can be stale until refresh completes after large external changes.
 - Cross-corpus writes are intentionally restricted to one active corpus per operation.
@@ -18,13 +18,13 @@
 * Agents and integrations
 
 - Agent quality, latency, availability, context limits, retention, and cost depend on the destination you configure.
-- A destination may expose progress commentary, but OpenOrg cannot and should not expose private hidden reasoning.
+- OpenOrg shows only progress commentary that a destination intentionally exposes; private hidden reasoning is unavailable.
 - External side effects require both a working integration and the appropriate approval; a successful draft is not proof that an external action occurred.
 - Some source connectors require separate local tools or credentials and fail closed when those bindings are absent.
 
 * Meetings and mobile
 
-- Live recording and MeetingBot automation require the Mac to remain awake with OpenOrg running.
+- Live recording and MeetingBot automation require the Mac to stay awake with OpenOrg running.
 - Transcription quality depends on audio quality, the local model, and any configured provider.
 - The iOS app is a companion for capture, chat control, notifications, and review; it is not part of the primary five-minute Mac onboarding path.
 

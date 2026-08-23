@@ -493,6 +493,28 @@ blockquote {
   font-size: 0.94rem;
 }
 
+.org2-section-shot {
+  margin: 1.5rem 0 2.25rem;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-raised);
+  box-shadow: var(--shadow);
+}
+
+.org2-section-shot img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.org2-section-shot figcaption {
+  padding: 0.8rem 1rem 0.95rem;
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
 .org2-sample {
   margin: 2.25rem 0 2.75rem;
 }

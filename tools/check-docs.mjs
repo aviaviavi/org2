@@ -77,6 +77,7 @@ const productArchitecture = fs.readFileSync(path.join(repoRoot, "docs/site/openo
 const privacyAndData = fs.readFileSync(path.join(repoRoot, "docs/site/privacy-and-data.org"), "utf8");
 const knownLimitations = fs.readFileSync(path.join(repoRoot, "docs/site/known-limitations.org"), "utf8");
 const launchDemo = fs.readFileSync(path.join(repoRoot, "docs/site/launch-demo.org"), "utf8");
+const macosWorkspace = fs.readFileSync(path.join(repoRoot, "docs/site/editors-macos.org"), "utf8");
 const publishConfig = fs.readFileSync(path.join(repoRoot, "org2.json"), "utf8");
 for (const [label, text] of [["agent quickstart", quickstart], ["llms.txt", llms]]) {
   if (!text.includes("org2 agent capabilities")) fail(`${label} does not point agents to the installed capability manifest`);
@@ -132,8 +133,8 @@ if (
 }
 if (
   !homepage.includes("#+TITLE: OpenOrg")
-  || !homepage.includes("built on the open Org2 format")
-  || !productArchitecture.includes("The product is OpenOrg. The open substrate is Org2.")
+  || !homepage.includes("Build your knowledge locally and put it to work.")
+  || !productArchitecture.includes("A local-first workspace built on an open format and toolkit.")
   || !productArchitecture.includes("=@aviaviavi/org2=")
 ) {
   fail("product site must distinguish OpenOrg from the Org2 substrate");
@@ -149,10 +150,15 @@ if (
 ) {
   fail("OpenOrg launch safety, limitations, support, and demo pages are incomplete");
 }
+if ((macosWorkspace.match(/class="org2-section-shot"/g) || []).length < 6) {
+  fail("OpenOrg for macOS must place screenshots beside the sections they illustrate");
+}
 if (
   !publishConfig.includes('href=\\"agent-quickstart.html\\">Agents and models')
   || !publishConfig.includes('href=\\"openorg-and-org2.html\\">Architecture')
   || !publishConfig.includes('href=\\"privacy-and-data.html\\">Privacy and data')
+  || !publishConfig.includes('<summary>About</summary>')
+  || publishConfig.includes('<summary>Safety</summary>')
   || !publishConfig.includes('"baseUrl": "https://openorg.so"')
   || publishConfig.includes('href=\\"openclaw-knowledge-layer.html\\">OpenClaw knowledge layer')
 ) {
@@ -161,7 +167,7 @@ if (
 if (!downloads.includes("https://org2.gateway.scarf.sh/downloads/")) {
   fail("downloads page is missing Scarf Gateway release links");
 }
-if (!downloads.includes("GitHub Releases remains the underlying host")) {
+if (!downloads.includes("GitHub Releases hosts the artifacts")) {
   fail("downloads page must disclose that GitHub Releases hosts the artifacts");
 }
 if (!downloads.includes("* iOS mobile app") || !downloads.includes("Request TestFlight access")) {

@@ -1,10 +1,10 @@
 #+TITLE: OpenOrg
-#+SUBTITLE: Run your work with people and agents from local files you control.
+#+SUBTITLE: Build your knowledge locally and put it to work.
 
 #+BEGIN_EXPORT html
 <section class="org2-page-intro org2-home-hero">
-  <div class="org2-product-mark"><img src="assets/openorg-app-icon.png" alt="" /><span>Built on the open Org2 format</span></div>
-  <p>OpenOrg is a local-first workspace for people and agents, built on the open Org2 format. It turns meetings, decisions, notes, and agent work into durable follow-through with the agent, model, or provider you choose—without making any of them the owner of your knowledge.</p>
+  <div class="org2-product-mark"><img src="assets/openorg-app-icon.png" alt="" /></div>
+  <p>OpenOrg is a local-first workspace where your notes, decisions, commitments, and agent work become durable follow-through. Use the agent, model, or provider you choose while your knowledge stays in files you control.</p>
   <nav class="org2-hero-actions" aria-label="Start with OpenOrg">
     <a class="org2-hero-action org2-hero-action-primary" href="getting-started.html">Get started <span aria-hidden="true">→</span></a>
     <a class="org2-hero-action" href="openorg-and-org2.html">How OpenOrg and Org2 fit <span aria-hidden="true">→</span></a>
@@ -39,7 +39,7 @@
 <section class="org2-home-outputs" aria-labelledby="org2-home-outputs-title">
   <div class="org2-sample-intro">
     <h2 id="org2-home-outputs-title">Work ends in something useful.</h2>
-    <p>OpenOrg keeps finished artifacts connected to the decisions, data, and source material that produced them—not stranded in a chat transcript.</p>
+    <p>OpenOrg keeps finished artifacts connected to the decisions, data, and source material that produced them.</p>
   </div>
   <div class="org2-feature-card-grid">
     <article><h3>Talks and slides</h3><p>Develop a talk beside its research, preview it as slides, and export a presentation-ready PDF.</p></article>
@@ -149,13 +149,13 @@
 
 Most second brains help you find what you knew. OpenOrg also tracks what you decided, who or what is acting on it, which decisions still need you, and what evidence proves the work finished.
 
-Your files remain the source of truth. Apps and agents share the context, people keep clear review boundaries, and changing a model, agent, or client does not mean starting over.
+Your files are the source of truth. Apps and agents share the context, people keep clear review boundaries, and your work stays portable across models, agents, and clients.
 
 * What you can do with it
 
 - *Turn commitments into follow-through* without separating them from the conversation or document that created them.
 - *Delegate across people and agents* while keeping responsibility, progress, and context visible.
-- *Review the decisions that matter* in one approval queue instead of watching every agent step.
+- *Review the decisions that matter* in one approval queue while routine agent steps continue in the background.
 - *Produce useful artifacts* including talks, analytics, visualizations, reports, PDFs, and published sites.
 - *Keep durable memory* that people can read, agents can cite, and no single model or application owns.
 
@@ -171,7 +171,7 @@ The result is deliberately boring composability: inspectable files that can driv
 
 * Start here
 
-OpenOrg Alpha is being prepared for technical founders, operators, and knowledge workers who want agents working over files they own. Org2 remains the open format, compiler, CLI, and editor tooling underneath it.
+OpenOrg Alpha is for technical founders, operators, and knowledge workers who want agents working over files they own. Org2 provides the open format, compiler, CLI, and editor tooling underneath the workspace.
 
 - [[file:getting-started.org][Getting started]]
 - [[file:openorg-and-org2.org][OpenOrg and Org2 architecture]]

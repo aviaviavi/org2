@@ -1,19 +1,19 @@
 #+TITLE: OpenOrg and Org2
-#+SUBTITLE: The product is OpenOrg. The open substrate is Org2.
+#+SUBTITLE: A local-first workspace built on an open format and toolkit.
 
 * The boundary
 
-OpenOrg is the native workspace, onboarding, integrations, and overall experience for running work with people and agents from local files you control.
+OpenOrg is the native workspace, onboarding, integrations, and overall experience for building knowledge locally and putting it to work with people and agents.
 
-Org2 is the open =.org2= format, compiler/runtime, CLI, npm package, schemas, and editor tooling underneath it. Org2 remains useful without OpenOrg, and OpenOrg does not replace the ordinary files with a private canonical database.
+Org2 is the open =.org2= format, compiler/runtime, CLI, npm package, schemas, and editor tooling underneath it. OpenOrg reads the same ordinary files as other Org2-compatible tools.
 
-* What remains portable
+* Portability
 
-- Ordinary =.org2= and =.org= files remain the source of truth.
-- The =org2= CLI and =org2-lsp= keep their names and contracts.
-- The npm package remains =@aviaviavi/org2=.
+- Ordinary =.org2= and =.org= files are the source of truth.
+- The command-line tools are =org2= and =org2-lsp=.
+- The npm package is =@aviaviavi/org2=.
 - VS Code, Vim, Neovim, Emacs, CLI JSON, and MCP clients can work with the same corpus.
-- Agent runs, workflows, approvals, citations, and provenance remain inspectable corpus records.
+- Agent runs, workflows, approvals, citations, and provenance are inspectable corpus records.
 - Any configured local, remote, hosted, or self-hosted agent can participate above the deterministic Org2 compiler.
 
 * What OpenOrg adds
@@ -24,8 +24,8 @@ Org2 is the open =.org2= format, compiler/runtime, CLI, npm package, schemas, an
 - Local configuration of agent destinations and explicitly authorized context.
 - Packaging, updates, diagnostics, and a coherent product experience.
 
-* Compatibility promise for the alpha rename
+* Stable technical identifiers
 
-The display name changes without changing the existing macOS bundle identifier, preferences domain, Keychain service names, corpus format, CLI names, package names, or schema identities. Existing users should retain corpus access, settings, credentials, pairings, and permissions when moving from Org2 Workspace to OpenOrg.
+OpenOrg uses stable bundle, preference, Keychain, executable, corpus, CLI, package, and schema identifiers. These technical contracts let the app, developer tools, and corpus work together consistently.
 
 See [[file:language-reference.org][Org2 language reference]] for the format and [[file:editors-macos.org][OpenOrg for macOS]] for the product client.
