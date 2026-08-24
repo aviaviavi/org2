@@ -157,7 +157,7 @@ See [[file:editors.org][Editor integrations]] and [[file:editors-vscode.org][VS 
 
 * iOS app
 
-Org2 Mobile is available as a private TestFlight beta and as source. To join the beta, [[mailto:mail@avi.press?subject=Org2%20Mobile%20TestFlight][email Avi for an invitation]] and include the email address you use with TestFlight. It is not currently distributed through the public App Store.
+OpenOrg for iOS is available as a private TestFlight beta and as source. To join the beta, [[mailto:mail@avi.press?subject=OpenOrg%20for%20iOS%20TestFlight][email Avi for an invitation]] and include the email address you use with TestFlight. It is not currently distributed through the public App Store.
 
 The iOS app can open a Files-visible local corpus for capture, Agenda, approvals, and file viewing. Its AI sidebar can also control Mac-hosted chats over Tailscale: enable *Mobile Remote* in the Mac app's settings, create a one-time pairing code, then open *Settings → Connect a Mac* from the iOS sidebar and scan it. The Mac remains responsible for model access and corpus context and must be awake with OpenOrg running. Workflow controls are intentionally desktop-only for now.
 

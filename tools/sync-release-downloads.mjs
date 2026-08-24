@@ -174,7 +174,7 @@ export function renderDownloadsPage(releases) {
   });
 
   const installStatus = isOpenOrgRelease
-    ? "The OpenOrg disk images are available for Apple Silicon and Intel. Both are Developer ID signed, notarized, and stapled, and must pass Gatekeeper verification before release."
+    ? "The OpenOrg disk images are available for Apple Silicon and Intel. Both are Developer ID signed, notarized, stapled, and accepted by Gatekeeper."
     : "";
   const examples = isOpenOrgRelease
     ? currentMacAssets.slice(0, 2).map((asset) => asset.name)
@@ -211,18 +211,18 @@ ${cards}
 
 ${installStatus ? `${installStatus}\n\n` : ""}For registry-managed installation, use =npm install -g @aviaviavi/org2= or install [[https://marketplace.visualstudio.com/items?itemName=AviPress.org2-vscode][Org2 from the VS Code Marketplace]]. The paired iOS app is distributed separately through TestFlight.
 
-* iOS mobile app
+* OpenOrg for iOS
 
-Org2 Mobile brings capture, agenda, approvals, and Mac-hosted AI chat to iPhone. The beta is currently invitation-only, or you can build the open-source app directly with Xcode.
+OpenOrg brings capture, agenda, approvals, and Mac-hosted AI chat to iPhone. The beta is currently invitation-only, or you can build the open-source app directly with Xcode.
 
 #+BEGIN_EXPORT html
-<section class="org2-download-grid org2-download-grid-mobile" aria-label="Org2 Mobile installation options">
+<section class="org2-download-grid org2-download-grid-mobile" aria-label="OpenOrg for iOS installation options">
   <article class="org2-download-card org2-download-card-ios">
     <p class="org2-download-kicker">TestFlight</p>
     <h3>Join the private beta</h3>
     <p>Get the current iPhone build and future beta updates through TestFlight. Email Avi to request an invitation; include the email address you use with TestFlight.</p>
     <p class="org2-download-meta">Private beta · iPhone</p>
-    <a class="org2-download-button" href="mailto:mail@avi.press?subject=Org2%20Mobile%20TestFlight">Request TestFlight access <span aria-hidden="true">→</span></a>
+    <a class="org2-download-button" href="mailto:mail@avi.press?subject=OpenOrg%20for%20iOS%20TestFlight">Request TestFlight access <span aria-hidden="true">→</span></a>
   </article>
   <article class="org2-download-card org2-download-card-source">
     <p class="org2-download-kicker">Open source</p>

@@ -72,8 +72,9 @@ assert.doesNotMatch(page, /Org2 Workspace/);
 assert.doesNotMatch(page, /Org2Workspace(?:-Intel)?\.dmg/);
 assert.doesNotMatch(page, /\| 0\.3\.0 \|/);
 assert.match(page, /No release files are hosted separately by Scarf\./);
-assert.match(page, /\* iOS mobile app/);
-assert.match(page, /mailto:mail@avi\.press\?subject=Org2%20Mobile%20TestFlight/);
+assert.match(page, /\* OpenOrg for iOS/);
+assert.match(page, /OpenOrg brings capture/);
+assert.match(page, /mailto:mail@avi\.press\?subject=OpenOrg%20for%20iOS%20TestFlight/);
 assert.match(page, /apps\/ios\/Org2Mobile/);
 
 const openOrgPage = renderDownloadsPage([{

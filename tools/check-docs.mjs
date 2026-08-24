@@ -173,7 +173,7 @@ if (!downloads.includes("https://org2.gateway.scarf.sh/downloads/")) {
 if (!downloads.includes("GitHub Releases hosts the artifacts")) {
   fail("downloads page must disclose that GitHub Releases hosts the artifacts");
 }
-if (!downloads.includes("* iOS mobile app") || !downloads.includes("Request TestFlight access")) {
+if (!downloads.includes("* OpenOrg for iOS") || !downloads.includes("Request TestFlight access")) {
   fail("downloads page is missing the iOS TestFlight and source-install surface");
 }
 if (!JSON.stringify(JSON.parse(fs.readFileSync(path.join(repoRoot, "org2.json"), "utf8"))).includes("downloads.html")) {
