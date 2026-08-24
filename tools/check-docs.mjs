@@ -121,9 +121,8 @@ if (/\b(?:Codex|OpenClaw)\b/.test(homepage) || /\b(?:Codex|OpenClaw)\b/.test(fea
   fail("homepage and feature positioning must remain agent- and model-neutral");
 }
 if (
-  !homepage.includes("models and agent harnesses you already use")
+  !homepage.includes("agent, model, or provider you choose")
   || !features.includes("models and agent harnesses you already use")
-  || !homepage.includes("Slack and Notion")
   || !features.includes("Slack and Notion")
   || !features.includes("local, remote, hosted, or self-hosted destination")
   || !gettingStarted.includes("CLI JSON and MCP")
