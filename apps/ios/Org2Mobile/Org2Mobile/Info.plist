@@ -9,7 +9,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Org2</string>
+	<string>OpenOrg</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -31,15 +31,15 @@
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>Scan Mac pairing codes and attach photos to Org2 notes.</string>
+	<string>Scan Mac pairing codes and attach photos to OpenOrg notes.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Connect to your paired OpenOrg workspace over Tailscale.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Transcribe voice messages into Org2 AI chat drafts.</string>
+	<string>Transcribe voice messages into OpenOrg AI chat drafts.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Attach photos to Org2 notes.</string>
+	<string>Attach photos to OpenOrg notes.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Transcribe voice messages into Org2 AI chat drafts.</string>
+	<string>Transcribe voice messages into OpenOrg AI chat drafts.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>

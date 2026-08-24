@@ -403,18 +403,18 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = Org2Mobile/Org2Mobile.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 19;
+				CURRENT_PROJECT_VERSION = 20;
 				DEVELOPMENT_TEAM = 9MW3N969TR;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Org2Mobile/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Org2;
+				INFOPLIST_KEY_CFBundleDisplayName = OpenOrg;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
-				INFOPLIST_KEY_NSCameraUsageDescription = "Scan Mac pairing codes and attach photos to Org2 notes.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Scan Mac pairing codes and attach photos to OpenOrg notes.";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Connect to your paired OpenOrg workspace over Tailscale.";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Transcribe voice messages into Org2 AI chat drafts.";
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Attach photos to Org2 notes.";
-				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Transcribe voice messages into Org2 AI chat drafts.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Transcribe voice messages into OpenOrg AI chat drafts.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Attach photos to OpenOrg notes.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Transcribe voice messages into OpenOrg AI chat drafts.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
@@ -426,7 +426,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.4.0;
+				MARKETING_VERSION = 0.5.0;
 				PRODUCT_BUNDLE_IDENTIFIER = org.org2.mobile;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -445,18 +445,18 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = Org2Mobile/Org2Mobile.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 19;
+				CURRENT_PROJECT_VERSION = 20;
 				DEVELOPMENT_TEAM = 9MW3N969TR;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Org2Mobile/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Org2;
+				INFOPLIST_KEY_CFBundleDisplayName = OpenOrg;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
-				INFOPLIST_KEY_NSCameraUsageDescription = "Scan Mac pairing codes and attach photos to Org2 notes.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Scan Mac pairing codes and attach photos to OpenOrg notes.";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Connect to your paired OpenOrg workspace over Tailscale.";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Transcribe voice messages into Org2 AI chat drafts.";
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Attach photos to Org2 notes.";
-				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Transcribe voice messages into Org2 AI chat drafts.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Transcribe voice messages into OpenOrg AI chat drafts.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Attach photos to OpenOrg notes.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Transcribe voice messages into OpenOrg AI chat drafts.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
@@ -468,7 +468,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.4.0;
+				MARKETING_VERSION = 0.5.0;
 				PRODUCT_BUNDLE_IDENTIFIER = org.org2.mobile;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -486,7 +486,7 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = Org2ShareExtension/Org2ShareExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 19;
+				CURRENT_PROJECT_VERSION = 20;
 				DEVELOPMENT_TEAM = 9MW3N969TR;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Org2ShareExtension/Info.plist;
@@ -496,7 +496,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 0.4.0;
+				MARKETING_VERSION = 0.5.0;
 				PRODUCT_BUNDLE_IDENTIFIER = org.org2.mobile.ShareExtension;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -515,7 +515,7 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = Org2ShareExtension/Org2ShareExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 19;
+				CURRENT_PROJECT_VERSION = 20;
 				DEVELOPMENT_TEAM = 9MW3N969TR;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Org2ShareExtension/Info.plist;
@@ -525,7 +525,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 0.4.0;
+				MARKETING_VERSION = 0.5.0;
 				PRODUCT_BUNDLE_IDENTIFIER = org.org2.mobile.ShareExtension;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;

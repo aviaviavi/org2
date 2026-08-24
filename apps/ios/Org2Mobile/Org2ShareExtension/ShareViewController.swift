@@ -252,7 +252,7 @@ private struct ShareCaptureView: View {
           }
         }
       }
-      .navigationTitle("Capture to Org2")
+      .navigationTitle("Capture to OpenOrg")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {

@@ -1,6 +1,6 @@
-# Org2 Mobile
+# OpenOrg for iOS
 
-This is a bare-minimum iOS SwiftUI app for phone-side Org2 review:
+This is the OpenOrg iOS app for phone-side Org2 review:
 
 - reads a Files-accessible org2 corpus folder;
 - searches and opens complete files directly from that local synced corpus;
@@ -9,7 +9,7 @@ This is a bare-minimum iOS SwiftUI app for phone-side Org2 review:
 - falls back to corpus-local agenda and approval discovery only when no Mac is paired;
 - queues new notes in `mobile-inbox.org2` so desktop sync can merge/refile them safely;
 - lets new notes become scheduled TODOs with Today, Tomorrow, Next Week, Next Month, or a picked date;
-- installs a Share extension named "Capture to Org2" for OS-level capture from apps such as X;
+- installs a Share extension named "Capture to OpenOrg" for OS-level capture from apps such as X;
 - appends approval/discussion actions to `mobile-inbox.org2` in the selected corpus;
 - opens a WhatsApp share URL for approval discussion fallback.
 - pairs directly with OpenOrg on a Mac over Tailscale for live AI chat control.
@@ -21,7 +21,7 @@ New-note capture remains a durable outbound request that can sync back to a desk
 Recommended first setup:
 
 1. Sync the corpus into an iOS Files-visible folder with Möbius Sync or another Syncthing-compatible app.
-2. Open Org2 Mobile and select that folder.
+2. Open OpenOrg and select that folder.
 3. Capture notes and approval/discussion actions into `mobile-inbox.org2` in the synced corpus root.
 4. Let the desktop side consume queued headings and apply review status changes.
 5. Refile mobile notes into daily files after sync has settled.
@@ -34,12 +34,12 @@ Mobile Remote is independent of corpus file sync. It keeps the Mac app as the AI
 
 The paired Mac also owns the phone's canonical Agenda and Approvals views. Pulling to refresh asks the Mac to rebuild each projection through the shared CLI. TODO transitions and approval decisions are applied on the Mac before the refreshed result is returned; the phone no longer hides a pending approval while merely queuing an inbox instruction. Run-backed approvals support approve, reject, and request-changes boundaries. Workflow controls are intentionally omitted from the mobile navigation for now. If the paired Mac is sleeping, unreachable, or too old to expose these endpoints, the app keeps its last canonical snapshot and labels the connection problem instead of substituting independently parsed state.
 
-The AI sidebar's **Settings → Reply Notifications** option registers the paired phone for Apple Push Notification service (APNs). When the Mac receives a new assistant reply, it sends a quiet banner immediately through APNs; tapping it opens the matching thread. The app's foreground polling and best-effort iOS background refresh remain as a duplicate-safe fallback. **Send Test Notification** exercises the real Mac-to-APNs-to-phone path instead of showing a local test banner. The Mac must be awake with OpenOrg running to originate a push, but the phone does not need the Org2 app open or Tailscale active when APNs delivers it.
+The AI sidebar's **Settings → Reply Notifications** option registers the paired phone for Apple Push Notification service (APNs). When the Mac receives a new assistant reply, it sends a quiet banner immediately through APNs; tapping it opens the matching thread. The app's foreground polling and best-effort iOS background refresh remain as a duplicate-safe fallback. **Send Test Notification** exercises the real Mac-to-APNs-to-phone path instead of showing a local test banner. The Mac must be awake with OpenOrg running to originate a push, but the phone does not need the OpenOrg app open or Tailscale active when APNs delivers it.
 
 1. Install and sign into Tailscale on the Mac and iPhone with access to the same tailnet.
 2. In OpenOrg on the Mac, open **Settings → Mobile Remote**.
 3. Turn on Mobile Remote, select the detected `100.x.y.z` Tailscale address, and create a one-time pairing code.
-4. In Org2 Mobile, open the AI sidebar, choose **Settings → Connect a Mac**, and scan the QR code. Manual URL and code entry is also available.
+4. In OpenOrg, open the AI sidebar, choose **Settings → Connect a Mac**, and scan the QR code. Manual URL and code entry is also available.
 5. For real-time reply notifications, add the Apple Developer Team ID and APNs key ID under **Settings → Mobile Remote → Real-time Reply Notifications**, then import the downloaded `.p8` APNs authentication key. Org2 stores the private key only in the Mac Keychain; it is never written into the corpus or sent to the phone.
 
 The Mac listener binds only to its Tailscale IPv4 address on port `48922`; it is not exposed on Wi-Fi or the public internet. Tailscale encrypts the transport. Pairing issues a per-device bearer credential, stored in Keychain on both devices, which can be revoked from Mac settings. Pairing codes expire after ten minutes and work once. The Mac must be awake, OpenOrg must be running, and the selected AI runtime must already be configured there.

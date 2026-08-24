@@ -170,7 +170,7 @@ enum MobileCaptureWriter {
 
     if !FileManager.default.fileExists(atPath: inboxURL.path) {
       let header = """
-      #+TITLE: Org2 Mobile Inbox
+      #+TITLE: OpenOrg Mobile Inbox
 
       """
       try header.write(to: inboxURL, atomically: true, encoding: .utf8)

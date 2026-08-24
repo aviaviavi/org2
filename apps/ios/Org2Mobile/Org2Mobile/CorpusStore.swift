@@ -913,7 +913,7 @@ final class CorpusStore: ObservableObject {
 
     if !FileManager.default.fileExists(atPath: inboxURL.path) {
       let header = """
-      #+TITLE: Org2 Mobile Inbox
+      #+TITLE: OpenOrg Mobile Inbox
 
       """
       try header.write(to: inboxURL, atomically: true, encoding: .utf8)
@@ -1724,13 +1724,13 @@ private enum CorpusMutationError: LocalizedError {
     case .approvalChanged:
       "This approval changed on disk. Refresh and review the current entry before approving."
     case .fileChanged:
-      "The file changed while Org2 Mobile was applying the approval. Refresh and try again."
+      "The file changed while OpenOrg was applying the approval. Refresh and try again."
     case .pairedSendAlreadyClosed:
-      "The paired send task is already closed. Org2 Mobile will not reopen it from an approval."
+      "The paired send task is already closed. OpenOrg will not reopen it from an approval."
     case .pairedSendAlreadySent(let evidence):
-      "The paired send task already has sent evidence (\(evidence)). Org2 Mobile will not reopen it."
+      "The paired send task already has sent evidence (\(evidence)). OpenOrg will not reopen it."
     case .invalidScopedPatch:
-      "Org2 Mobile could not build a safe scoped patch for this approval."
+      "OpenOrg could not build a safe scoped patch for this approval."
     }
   }
 }

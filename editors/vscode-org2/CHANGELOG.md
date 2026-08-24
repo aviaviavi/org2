@@ -4,6 +4,12 @@ All notable changes to the Org2 VS Code extension are documented in this file.
 
 ## Unreleased
 
+## 0.5.0 - 2026-08-24
+
+- Coordinated the extension with the OpenOrg 0.5.0 product launch while preserving the Org2 developer-tooling name and extension identifier.
+- Added corpus-aware node actions, richer AI review workflows, and compatibility with the redesigned OpenOrg desktop and mobile clients.
+- Improved agenda ordering, editor reliability, formatter commands, and the shared Org2 runtime integration.
+
 ## 0.4.2 - 2026-08-19
 
 - Coordinated the Marketplace package version with the Org2 CLI and macOS workspace 0.4.2 release.

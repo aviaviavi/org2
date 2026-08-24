@@ -17,7 +17,7 @@
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Capture to Org2</string>
+	<string>Capture to OpenOrg</string>
 	<key>NSExtension</key>
 	<dict>
 		<key>NSExtensionAttributes</key>

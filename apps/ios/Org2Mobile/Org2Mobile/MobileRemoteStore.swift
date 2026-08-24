@@ -113,7 +113,7 @@ final class MobileRemoteStore: ObservableObject {
           let endpoint = components.queryItems?.first(where: { $0.name == "endpoint" })?.value,
           let code = components.queryItems?.first(where: { $0.name == "code" })?.value
     else {
-      errorMessage = "That QR code is not an Org2 Mobile Remote pairing code."
+      errorMessage = "That QR code is not an OpenOrg pairing code."
       return false
     }
     endpointDraft = endpoint
