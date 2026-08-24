@@ -2429,6 +2429,7 @@ public enum AIChatRuntime: String, CaseIterable, Codable, Identifiable, Sendable
 public enum AIChatDestinationAdapter: String, CaseIterable, Codable, Identifiable, Sendable {
   case codexLocal
   case codexRemote
+  case codexManagedRemote
   case openClaw
   case openAI
   case anthropic
@@ -2439,7 +2440,7 @@ public enum AIChatDestinationAdapter: String, CaseIterable, Codable, Identifiabl
 
   public var runtime: AIChatRuntime {
     switch self {
-    case .codexLocal, .codexRemote: .codex
+    case .codexLocal, .codexRemote, .codexManagedRemote: .codex
     case .openClaw, .openAI, .anthropic, .openRouter, .ollama: .openClaw
     }
   }
@@ -2448,6 +2449,7 @@ public enum AIChatDestinationAdapter: String, CaseIterable, Codable, Identifiabl
     switch self {
     case .codexLocal: "Local Codex"
     case .codexRemote: "Remote Codex"
+    case .codexManagedRemote: "Managed Remote Codex"
     case .openClaw: "OpenClaw Gateway"
     case .openAI: "OpenAI API"
     case .anthropic: "Anthropic API"
@@ -2458,7 +2460,7 @@ public enum AIChatDestinationAdapter: String, CaseIterable, Codable, Identifiabl
 
   public var systemImage: String {
     switch self {
-    case .codexLocal, .codexRemote: AIChatRuntime.codex.systemImage
+    case .codexLocal, .codexRemote, .codexManagedRemote: AIChatRuntime.codex.systemImage
     case .openClaw: AIChatRuntime.openClaw.systemImage
     case .openAI: "sparkles"
     case .anthropic: "a.circle"
@@ -2470,14 +2472,14 @@ public enum AIChatDestinationAdapter: String, CaseIterable, Codable, Identifiabl
   public var isDirectProvider: Bool {
     switch self {
     case .openAI, .anthropic, .openRouter, .ollama: true
-    case .codexLocal, .codexRemote, .openClaw: false
+    case .codexLocal, .codexRemote, .codexManagedRemote, .openClaw: false
     }
   }
 
   public var requiresAPIKey: Bool {
     switch self {
     case .openAI, .anthropic, .openRouter: true
-    case .codexLocal, .codexRemote, .openClaw, .ollama: false
+    case .codexLocal, .codexRemote, .codexManagedRemote, .openClaw, .ollama: false
     }
   }
 
@@ -2487,7 +2489,7 @@ public enum AIChatDestinationAdapter: String, CaseIterable, Codable, Identifiabl
     case .anthropic: "https://api.anthropic.com/v1"
     case .openRouter: "https://openrouter.ai/api/v1"
     case .ollama: "http://127.0.0.1:11434/api"
-    case .codexLocal, .codexRemote, .openClaw: ""
+    case .codexLocal, .codexRemote, .codexManagedRemote, .openClaw: ""
     }
   }
 
@@ -2495,6 +2497,7 @@ public enum AIChatDestinationAdapter: String, CaseIterable, Codable, Identifiabl
     switch self {
     case .codexLocal: "Codex"
     case .codexRemote: "Remote Codex"
+    case .codexManagedRemote: "Managed Remote Codex"
     case .openClaw: "OpenClaw"
     case .openAI: "OpenAI"
     case .anthropic: "Anthropic"
@@ -2507,6 +2510,7 @@ public enum AIChatDestinationAdapter: String, CaseIterable, Codable, Identifiabl
     switch self {
     case .codexLocal: "codex"
     case .codexRemote: "codex-remote"
+    case .codexManagedRemote: "codex-managed"
     case .openClaw: "openclaw"
     case .openAI: "openai"
     case .anthropic: "anthropic"
@@ -2558,7 +2562,9 @@ public struct AIChatDestinationConfiguration: Identifiable, Hashable, Codable, S
   public var systemImage: String { adapter.systemImage }
   public var mentionText: String { "@\(mention)" }
   public var requiresEndpoint: Bool { adapter != .codexLocal }
-  public var acceptsBearerToken: Bool { adapter != .codexLocal }
+  public var acceptsBearerToken: Bool {
+    adapter != .codexLocal && adapter != .codexManagedRemote
+  }
 
   public static var defaults: [AIChatDestinationConfiguration] {
     [

@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 public enum JSONValue: Hashable, Codable, Sendable {
@@ -249,7 +250,11 @@ public enum CodexAppServerError: LocalizedError, Sendable {
     case .invalidResponse(let detail):
       "Codex returned an invalid response: \(detail)"
     case .requestTimedOut(let method):
-      "Codex did not respond to \(method) within 30 seconds."
+      if method == "thread/resume" {
+        "Codex took too long to reopen this task. Its connection was reset; retry once to reconnect."
+      } else {
+        "Codex did not respond to \(method) before the request timed out."
+      }
     case .notAuthenticated:
       "Sign in with ChatGPT before using a Codex thread."
     case .turnFailed(let detail):
@@ -263,11 +268,13 @@ public enum CodexAppServerError: LocalizedError, Sendable {
 public enum CodexAppServerTransport: Sendable, Equatable {
   case local
   case remote(endpoint: URL, bearerToken: String?)
+  case managedRemote(sshHost: String)
 
   var connectionDescription: String {
     switch self {
     case .local: "Local Codex App Server"
     case .remote(let endpoint, _): endpoint.absoluteString
+    case .managedRemote(let sshHost): "Managed remote Codex via \(sshHost)"
     }
   }
 }
@@ -287,9 +294,12 @@ public actor CodexAppServerClient {
   }
 
   private let executableURL: URL?
+  private let sshExecutableURL: URL
   private let transport: CodexAppServerTransport
   private let eventHandler: EventHandler
   private let dynamicToolHandler: DynamicToolHandler
+  private let requestTimeoutNanoseconds: UInt64
+  private let threadResumeRequestTimeoutNanoseconds: UInt64
   private var process: Process?
   private var webSocketTask: URLSessionWebSocketTask?
   private var webSocketReceiveTask: Task<Void, Never>?
@@ -313,12 +323,18 @@ public actor CodexAppServerClient {
 
   public init(
     executableURL: URL? = CodexAppServerClient.resolveExecutableURL(),
+    sshExecutableURL: URL = URL(fileURLWithPath: "/usr/bin/ssh"),
     transport: CodexAppServerTransport = .local,
+    requestTimeoutNanoseconds: UInt64 = 30_000_000_000,
+    threadResumeRequestTimeoutNanoseconds: UInt64 = 120_000_000_000,
     eventHandler: @escaping EventHandler,
     dynamicToolHandler: @escaping DynamicToolHandler
   ) {
     self.executableURL = executableURL
+    self.sshExecutableURL = sshExecutableURL
     self.transport = transport
+    self.requestTimeoutNanoseconds = requestTimeoutNanoseconds
+    self.threadResumeRequestTimeoutNanoseconds = threadResumeRequestTimeoutNanoseconds
     self.eventHandler = eventHandler
     self.dynamicToolHandler = dynamicToolHandler
   }
@@ -364,6 +380,33 @@ public actor CodexAppServerClient {
           && (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) != false
       }
   }
+
+  nonisolated static func managedRemoteSSHArguments(sshHost rawSSHHost: String) throws -> [String] {
+    let sshHost = rawSSHHost.trimmingCharacters(in: .whitespacesAndNewlines)
+    let allowed = CharacterSet.alphanumerics.union(
+      CharacterSet(charactersIn: ".-_@:%[]+")
+    )
+    guard !sshHost.isEmpty,
+          !sshHost.hasPrefix("-"),
+          sshHost.unicodeScalars.allSatisfy({ allowed.contains($0) })
+    else {
+      throw CodexAppServerError.invalidResponse(
+        "managed remote Codex needs a valid SSH host or ~/.ssh/config alias"
+      )
+    }
+    return [
+      "-T",
+      "-o", "BatchMode=yes",
+      "-o", "ConnectTimeout=15",
+      "-o", "ServerAliveInterval=15",
+      "-o", "ServerAliveCountMax=12",
+      sshHost,
+      Self.managedRemoteCommand
+    ]
+  }
+
+  private nonisolated static let managedRemoteCommand =
+    #"exec /bin/sh -lc 'PATH="${CODEX_INSTALL_DIR:-$HOME/.local/bin}:/opt/homebrew/bin:/usr/local/bin:$PATH"; export PATH; exec codex app-server proxy'"#
 
   public func accountState() async throws -> CodexAccountState {
     let result = try await request(
@@ -554,10 +597,24 @@ public actor CodexAppServerClient {
         if let model {
           params["model"] = .string(model)
         }
-        let result = try await requestRaw(
-          method: "thread/resume",
-          params: .object(params)
-        )
+        let result: JSONValue
+        do {
+          result = try await requestRaw(
+            method: "thread/resume",
+            params: .object(params),
+            timeoutNanoseconds: threadResumeRequestTimeoutNanoseconds
+          )
+        } catch let error as CodexAppServerError {
+          if case .requestTimedOut("thread/resume") = error {
+            // A large rollout can finish loading after the caller's deadline.
+            // If that late response is ignored while this process keeps its
+            // writer lock, every later retry attempts to resume an already
+            // resumed thread and can never recover. Tear down the transport so
+            // the next Retry starts from a clean app-server process.
+            shutdown()
+          }
+          throw error
+        }
         guard result["thread"]?["id"]?.stringValue == existingThreadID else {
           throw CodexAppServerError.invalidResponse("thread/resume returned a different thread")
         }
@@ -690,17 +747,27 @@ public actor CodexAppServerClient {
   }
 
   public func shutdown() {
+    let processToStop = process
+    process = nil
     standardOutput?.readabilityHandler = nil
     standardError?.readabilityHandler = nil
     standardOutput = nil
     standardError = nil
     standardInput = nil
     initialized = false
+    startupTask = nil
+    outputBuffer = Data()
     loadedThreadIDs.removeAll()
-    if process?.isRunning == true {
-      process?.terminate()
+    if let processToStop, processToStop.isRunning {
+      processToStop.terminate()
+      // A wedged app-server can ignore SIGTERM while retaining Codex's
+      // advisory task-writer lock. This client has already discarded its
+      // transport, so leaving that orphan alive only makes every later Retry
+      // fail. Force the abandoned child down before another connection starts.
+      if processToStop.isRunning {
+        _ = Darwin.kill(processToStop.processIdentifier, SIGKILL)
+      }
     }
-    process = nil
     webSocketReceiveTask?.cancel()
     webSocketReceiveTask = nil
     webSocketTask?.cancel(with: .goingAway, reason: nil)
@@ -733,7 +800,7 @@ public actor CodexAppServerClient {
 
   private var transportIsConnected: Bool {
     switch transport {
-    case .local: process?.isRunning == true
+    case .local, .managedRemote: process?.isRunning == true
     case .remote: webSocketTask != nil
     }
   }
@@ -866,7 +933,7 @@ public actor CodexAppServerClient {
   private func performConnect() async throws {
     if !transportIsConnected {
       switch transport {
-      case .local:
+      case .local, .managedRemote:
         try launch()
       case .remote(let endpoint, let bearerToken):
         try connectRemote(endpoint: endpoint, bearerToken: bearerToken)
@@ -922,12 +989,26 @@ public actor CodexAppServerClient {
   }
 
   private func launch() throws {
-    guard let executableURL else {
-      throw CodexAppServerError.executableNotFound
+    let launchURL: URL
+    let arguments: [String]
+    switch transport {
+    case .local:
+      guard let executableURL else {
+        throw CodexAppServerError.executableNotFound
+      }
+      launchURL = executableURL
+      arguments = ["app-server", "--listen", "stdio://"]
+    case .managedRemote(let sshHost):
+      launchURL = sshExecutableURL
+      arguments = try Self.managedRemoteSSHArguments(sshHost: sshHost)
+    case .remote:
+      throw CodexAppServerError.invalidResponse(
+        "WebSocket Codex destinations cannot launch a subprocess transport"
+      )
     }
     let process = Process()
-    process.executableURL = executableURL
-    process.arguments = ["app-server", "--listen", "stdio://"]
+    process.executableURL = launchURL
+    process.arguments = arguments
     process.currentDirectoryURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
     process.environment = ProcessInfo.processInfo.environment
 
@@ -1050,10 +1131,15 @@ public actor CodexAppServerClient {
     return try await requestRaw(method: method, params: params)
   }
 
-  private func requestRaw(method: String, params: JSONValue) async throws -> JSONValue {
+  private func requestRaw(
+    method: String,
+    params: JSONValue,
+    timeoutNanoseconds: UInt64? = nil
+  ) async throws -> JSONValue {
     requestCounter &+= 1
     let requestID = requestCounter
     let key = String(requestID)
+    let effectiveTimeoutNanoseconds = timeoutNanoseconds ?? requestTimeoutNanoseconds
     return try await withTaskCancellationHandler {
       try Task.checkCancellation()
       return try await withCheckedThrowingContinuation { continuation in
@@ -1064,7 +1150,7 @@ public actor CodexAppServerClient {
         pendingRequests[key] = continuation
         pendingRequestTimeoutTasks[key] = Task { [weak self] in
           do {
-            try await Task.sleep(nanoseconds: 30_000_000_000)
+            try await Task.sleep(nanoseconds: effectiveTimeoutNanoseconds)
           } catch {
             return
           }
@@ -1111,7 +1197,7 @@ public actor CodexAppServerClient {
     encoder.outputFormatting = [.withoutEscapingSlashes]
     let data = try encoder.encode(message)
     switch transport {
-    case .local:
+    case .local, .managedRemote:
       guard let standardInput, process?.isRunning == true else {
         throw CodexAppServerError.disconnected("app server is not running")
       }

@@ -1,0 +1,95 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
+const contentView = readFileSync(
+  resolve("apps/ios/Org2Mobile/Org2Mobile/ContentView.swift"),
+  "utf8",
+);
+const remoteViews = readFileSync(
+  resolve("apps/ios/Org2Mobile/Org2Mobile/MobileRemoteViews.swift"),
+  "utf8",
+);
+const remoteStore = readFileSync(
+  resolve("apps/ios/Org2Mobile/Org2Mobile/MobileRemoteStore.swift"),
+  "utf8",
+);
+
+const workspaceTabs = contentView.slice(
+  contentView.indexOf("private struct WorkspaceTabs"),
+  contentView.indexOf("private struct AgendaView"),
+);
+assert.match(workspaceTabs, /Label\("Files", systemImage: "folder"\)/);
+assert.doesNotMatch(workspaceTabs, /Label\("Remote"/);
+assert.doesNotMatch(workspaceTabs, /Label\("Workflows"/);
+assert.match(workspaceTabs, /case \.thread\(let threadID\):[\s\S]*MobileRemoteThreadView/);
+assert.match(
+  workspaceTabs,
+  /MobileRemoteThreadView\(threadID: threadID\)[\s\S]*?\.id\(threadID\)/,
+  "Each sidebar-selected chat should have a distinct SwiftUI view identity",
+);
+assert.match(
+  workspaceTabs,
+  /openWorkspace: \{\s*selection = \.newNote\s*route = \.workspace/,
+);
+
+const newNote = contentView.slice(
+  contentView.indexOf("private struct NewNoteView"),
+  contentView.indexOf("private enum NewNoteFocusedField"),
+);
+assert.doesNotMatch(newNote, /Section\("Corpus"\)/);
+assert.match(newNote, /Menu \{[\s\S]*Photo Library[\s\S]*Camera/);
+assert.match(newNote, /Button\("Save"\)/);
+
+assert.match(remoteViews, /struct MobileAISidebarView/);
+assert.match(remoteViews, /sidebarButton\([\s\S]*?"External Threads"/);
+const mobileSidebar = remoteViews.slice(
+  remoteViews.indexOf("struct MobileAISidebarView"),
+  remoteViews.indexOf("struct MobileSettingsView"),
+);
+assert.ok(
+  mobileSidebar.indexOf('sidebarButton("Settings"') < mobileSidebar.indexOf('Section("Threads")'),
+  "Settings should stay in the sidebar's fixed navigation group above chat threads",
+);
+assert.equal(
+  mobileSidebar.match(/sidebarButton\("Settings"/g)?.length,
+  1,
+  "Settings should appear once in the mobile sidebar",
+);
+assert.match(
+  remoteViews,
+  /Label\("New \\\(destination\.name\) Chat", systemImage: "plus\.bubble"\)/,
+);
+assert.doesNotMatch(remoteViews, /New \(destination\.name\) Chat/);
+assert.match(remoteViews, /struct MobileSettingsView/);
+assert.match(remoteViews, /Text\("Reply Notifications"\)/);
+assert.match(remoteViews, /Label\("Send Test Notification"/);
+assert.match(remoteViews, /LabeledContent\("Endpoint", value: remote\.pairedEndpoint\)/);
+assert.match(remoteViews, /Label\("Reconnect", systemImage: "arrow\.clockwise"\)/);
+assert.match(remoteViews, /Button\("Pair Again", role: \.destructive\)/);
+
+const mobileThreadView = remoteViews.slice(
+  remoteViews.indexOf("struct MobileRemoteThreadView"),
+  remoteViews.indexOf("private struct MobileRemotePhotoThumbnail"),
+);
+assert.match(
+  mobileThreadView,
+  /\.task\(id: threadID\) \{[\s\S]*remote\.beginPolling\(threadID: threadID\)/,
+  "Changing the selected chat should restart transcript polling",
+);
+assert.doesNotMatch(
+  mobileThreadView,
+  /\.onAppear \{[\s\S]{0,180}remote\.beginPolling/,
+  "Transcript polling must not depend only on onAppear",
+);
+
+const createThread = remoteStore.slice(
+  remoteStore.indexOf("func createThread(destination:"),
+  remoteStore.indexOf("func refreshExternalThreads()"),
+);
+assert.match(createThread, /guard let threadID = response\.threadID/);
+assert.match(createThread, /guard isConnected else/);
+assert.doesNotMatch(createThread, /await refresh\(\)/);
+assert.match(createThread, /Task \{ \[weak self\][\s\S]*refresh\(reportsErrors: false\)/);
+
+console.log("iOS mobile navigation tests passed");

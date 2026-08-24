@@ -171,7 +171,7 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
     clients: [
       { id: "cli", role: "Canonical automation and integration surface over the shared TypeScript compiler/runtime." },
       { id: "vscode", role: "Best-supported general editing workflow, backed by shared CLI/LSP semantics." },
-      { id: "macos-workspace", role: "Native alpha workspace shell with personal/shared corpus mounts, corpus-qualified federated agenda/search, explicit write-corpus switching, capture, reading/editing, meetings, data notebooks, workflow/run/review controls, agent handoffs, and per-thread OpenClaw or ChatGPT-authenticated local Codex chat backed by shared compiler semantics." },
+      { id: "macos-workspace", role: "Native alpha workspace shell with personal/shared corpus mounts, corpus-qualified federated agenda/search, explicit write-corpus switching, capture, reading/editing, meetings, data notebooks, workflow/run/review controls, agent handoffs, and named per-thread OpenClaw plus ChatGPT-authenticated local, WebSocket, or managed-SSH Codex chat backed by shared compiler semantics." },
       { id: "ios-mobile", role: "Source-distributed mobile corpus and approval client; run decisions retain the native run, approval, and fingerprint identity when queued through the mobile inbox." },
       { id: "openclaw", role: "First native agent-runtime adapter: Gateway chat plus a lifecycle plugin that maps substantial work into durable runs, prepares workflow attempts, event-gates scheduled work, and reconciles active workflow schedules into OpenClaw cron." },
     ],

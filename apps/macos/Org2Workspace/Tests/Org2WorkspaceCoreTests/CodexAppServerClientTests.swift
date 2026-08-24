@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import XCTest
 @testable import Org2WorkspaceCore
@@ -298,6 +299,39 @@ final class CodexAppServerClientTests: XCTestCase {
   }
 
   @MainActor
+  func testManagedRemoteCodexDestinationPersistsSSHHostAndWorkspace() throws {
+    let suiteName = "AIChatManagedRemoteDestination.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let transcript = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-managed-remote-transcript-\(UUID().uuidString).json")
+    defer { try? FileManager.default.removeItem(at: transcript) }
+
+    let store = WorkspaceStore(
+      defaults: defaults,
+      openClawTranscriptURL: transcript,
+      legacyDefaultsDomains: []
+    )
+    let id = store.addAIChatDestination(adapter: .codexManagedRemote)
+    var destination = try XCTUnwrap(store.aiChatDestination(id: id))
+    destination.name = "Codex on Scarf"
+    destination.endpoint = "scarfs-macbook-air"
+    destination.workspaceRoot = "/Users/avi/avi.org2"
+    store.updateAIChatDestination(destination)
+
+    let restored = WorkspaceStore(
+      defaults: defaults,
+      openClawTranscriptURL: transcript,
+      legacyDefaultsDomains: []
+    )
+    let restoredDestination = try XCTUnwrap(restored.aiChatDestination(id: id))
+    XCTAssertEqual(restoredDestination.adapter, .codexManagedRemote)
+    XCTAssertEqual(restoredDestination.endpoint, "scarfs-macbook-air")
+    XCTAssertEqual(restoredDestination.workspaceRoot, "/Users/avi/avi.org2")
+    XCTAssertFalse(restoredDestination.acceptsBearerToken)
+  }
+
+  @MainActor
   func testDirectProviderDestinationPersistsEndpointAndModel() throws {
     let suiteName = "AIChatDirectProviderSettings.\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
@@ -395,6 +429,29 @@ final class CodexAppServerClientTests: XCTestCase {
       endpoint.absoluteString
     )
     XCTAssertEqual(CodexAppServerTransport.local.connectionDescription, "Local Codex App Server")
+    XCTAssertEqual(
+      CodexAppServerTransport.managedRemote(sshHost: "scarfs-macbook-air")
+        .connectionDescription,
+      "Managed remote Codex via scarfs-macbook-air"
+    )
+  }
+
+  func testManagedRemoteCodexBuildsSafeKeepaliveSSHArguments() throws {
+    let arguments = try CodexAppServerClient.managedRemoteSSHArguments(
+      sshHost: " avi@scarfs-macbook-air "
+    )
+
+    XCTAssertEqual(arguments.prefix(2), ["-T", "-o"])
+    XCTAssertTrue(arguments.contains("BatchMode=yes"))
+    XCTAssertTrue(arguments.contains("ServerAliveInterval=15"))
+    XCTAssertTrue(arguments.contains("ServerAliveCountMax=12"))
+    XCTAssertEqual(arguments[arguments.count - 2], "avi@scarfs-macbook-air")
+    XCTAssertTrue(arguments.last?.contains("codex app-server proxy") == true)
+    XCTAssertThrowsError(
+      try CodexAppServerClient.managedRemoteSSHArguments(
+        sshHost: "-oProxyCommand=touch /tmp/unsafe"
+      )
+    )
   }
 
   func testCodexSandboxAccessBuildsAppServerPolicies() {
@@ -575,6 +632,159 @@ final class CodexAppServerClientTests: XCTestCase {
     XCTAssertEqual(models.first?.defaultReasoningEffort, "low")
     XCTAssertTrue(models.first?.isDefault == true)
 
+    await client.shutdown()
+  }
+
+  func testSlowThreadResumeUsesDedicatedRecoveryTimeout() async throws {
+    let temporaryDirectory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-codex-slow-resume-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: temporaryDirectory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
+
+    let executable = temporaryDirectory.appendingPathComponent("fake-codex-slow-resume")
+    let script = #"""
+    #!/bin/sh
+    while IFS= read -r line; do
+      case "$line" in
+        *'"method":"initialize"'*)
+          printf '%s\n' '{"id":1,"result":{"userAgent":"fake-codex"}}'
+          ;;
+        *'"method":"initialized"'*)
+          ;;
+        *'"method":"thread/resume"'*)
+          sleep 1.2
+          printf '%s\n' '{"id":2,"result":{"thread":{"id":"thr-slow"}}}'
+          ;;
+      esac
+    done
+    """#
+    try script.write(to: executable, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: executable.path)
+    let client = CodexAppServerClient(
+      executableURL: executable,
+      requestTimeoutNanoseconds: 1_000_000_000,
+      threadResumeRequestTimeoutNanoseconds: 3_000_000_000,
+      eventHandler: { _ in },
+      dynamicToolHandler: { _ in CodexDynamicToolResult(success: false, text: "unused") }
+    )
+
+    let threadID = try await client.ensureThread(
+      existingThreadID: "thr-slow",
+      cwd: temporaryDirectory
+    )
+
+    XCTAssertEqual(threadID, "thr-slow")
+    await client.shutdown()
+  }
+
+  func testTimedOutThreadResumeResetsTransportForRetry() async throws {
+    let temporaryDirectory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-codex-resume-reset-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: temporaryDirectory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
+
+    let marker = temporaryDirectory.appendingPathComponent("first-resume-started")
+    let firstProcessID = temporaryDirectory.appendingPathComponent("first-process-id")
+    let executable = temporaryDirectory.appendingPathComponent("fake-codex-resume-reset")
+    let script = #"""
+    #!/bin/sh
+    marker='\#(marker.path)'
+    first_process_id='\#(firstProcessID.path)'
+    trap '' TERM
+    if [ ! -f "$first_process_id" ]; then
+      printf '%s\n' "$$" > "$first_process_id"
+    fi
+    while IFS= read -r line; do
+      request_id=$(printf '%s\n' "$line" | /usr/bin/sed -E 's/.*"id":([0-9]+).*/\1/')
+      case "$line" in
+        *'"method":"initialize"'*)
+          printf '{"id":%s,"result":{"userAgent":"fake-codex"}}\n' "$request_id"
+          ;;
+        *'"method":"initialized"'*)
+          ;;
+        *'"method":"thread/resume"'*)
+          if [ ! -f "$marker" ]; then
+            : > "$marker"
+            sleep 1
+          fi
+          printf '{"id":%s,"result":{"thread":{"id":"thr-retry"}}}\n' "$request_id"
+          ;;
+      esac
+    done
+    """#
+    try script.write(to: executable, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: executable.path)
+    let client = CodexAppServerClient(
+      executableURL: executable,
+      requestTimeoutNanoseconds: 5_000_000_000,
+      threadResumeRequestTimeoutNanoseconds: 100_000_000,
+      eventHandler: { _ in },
+      dynamicToolHandler: { _ in CodexDynamicToolResult(success: false, text: "unused") }
+    )
+
+    do {
+      _ = try await client.ensureThread(
+        existingThreadID: "thr-retry",
+        cwd: temporaryDirectory
+      )
+      XCTFail("The first slow resume should time out")
+    } catch {
+      XCTAssertEqual(
+        error.localizedDescription,
+        "Codex took too long to reopen this task. Its connection was reset; retry once to reconnect."
+      )
+    }
+    XCTAssertTrue(FileManager.default.fileExists(atPath: marker.path))
+    let abandonedProcessID = try XCTUnwrap(
+      Int(String(contentsOf: firstProcessID, encoding: .utf8)
+        .trimmingCharacters(in: .whitespacesAndNewlines))
+    )
+    for _ in 0..<50 where Darwin.kill(Int32(abandonedProcessID), 0) == 0 {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    XCTAssertNotEqual(
+      Darwin.kill(Int32(abandonedProcessID), 0),
+      0,
+      "A timed-out app-server must not retain its task-writer lock"
+    )
+
+    let threadID = try await client.ensureThread(
+      existingThreadID: "thr-retry",
+      cwd: temporaryDirectory
+    )
+
+    XCTAssertEqual(threadID, "thr-retry")
+    await client.shutdown()
+  }
+
+  func testManagedRemoteClientUsesTheAppServerProxyJSONLTransport() async throws {
+    let temporaryDirectory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-managed-remote-client-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(
+      at: temporaryDirectory,
+      withIntermediateDirectories: true
+    )
+    defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
+
+    let fakeSSH = temporaryDirectory.appendingPathComponent("fake-ssh")
+    try Self.fakeAppServerScript.write(to: fakeSSH, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes(
+      [.posixPermissions: 0o700],
+      ofItemAtPath: fakeSSH.path
+    )
+    let client = CodexAppServerClient(
+      executableURL: nil,
+      sshExecutableURL: fakeSSH,
+      transport: .managedRemote(sshHost: "scarfs-macbook-air"),
+      eventHandler: { _ in },
+      dynamicToolHandler: { _ in
+        CodexDynamicToolResult(success: false, text: "unused")
+      }
+    )
+
+    let account = try await client.accountState()
+
+    XCTAssertEqual(account, .chatGPT(email: "test@example.com", plan: "plus"))
     await client.shutdown()
   }
 

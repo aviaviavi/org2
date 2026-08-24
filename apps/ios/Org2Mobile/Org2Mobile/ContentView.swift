@@ -26,6 +26,17 @@ struct ContentView: View {
   }
 }
 
+struct MobileSidebarToolbarButton: View {
+  var body: some View {
+    Button {
+      NotificationCenter.default.post(name: .org2OpenMobileSidebar, object: nil)
+    } label: {
+      Image(systemName: "line.3.horizontal")
+    }
+    .accessibilityLabel("Open AI chat sidebar")
+  }
+}
+
 private struct EmptyCorpusView: View {
   @EnvironmentObject private var store: CorpusStore
 
@@ -56,14 +67,105 @@ private struct EmptyCorpusView: View {
       }
       .padding(24)
       .navigationTitle("Org2")
+      .toolbar {
+        ToolbarItem(placement: .topBarLeading) {
+          MobileSidebarToolbarButton()
+        }
+      }
     }
   }
 }
 
 private struct WorkspaceTabs: View {
   @State private var selection: WorkspaceTab = .initialSelection
+  @State private var route: MobileWorkspaceRoute = .workspace
+  @State private var isSidebarPresented = ProcessInfo.processInfo.environment["ORG2_DEBUG_SHOW_SIDEBAR"] == "1"
 
   var body: some View {
+    ZStack(alignment: .leading) {
+      destinationView
+        .allowsHitTesting(!isSidebarPresented)
+
+      if isSidebarPresented {
+        Color.black.opacity(0.22)
+          .ignoresSafeArea()
+          .contentShape(Rectangle())
+          .onTapGesture { closeSidebar() }
+          .transition(.opacity)
+
+        MobileAISidebarView(
+          selectedThreadID: selectedThreadID,
+          openWorkspace: {
+            selection = .newNote
+            route = .workspace
+            closeSidebar()
+          },
+          openFiles: {
+            route = .workspace
+            selection = .files
+            closeSidebar()
+          },
+          openThread: { threadID in
+            route = .thread(threadID)
+            closeSidebar()
+          },
+          openExternalThreads: {
+            route = .externalThreads
+            closeSidebar()
+          },
+          openSettings: {
+            route = .settings
+            closeSidebar()
+          },
+          close: closeSidebar
+        )
+        .frame(width: min(UIScreen.main.bounds.width * 0.88, 360))
+        .transition(.move(edge: .leading).combined(with: .opacity))
+        .zIndex(1)
+      }
+    }
+    .animation(.snappy(duration: 0.24), value: isSidebarPresented)
+    .onReceive(NotificationCenter.default.publisher(for: .org2OpenMobileSidebar)) { _ in
+      isSidebarPresented = true
+    }
+    .onReceive(NotificationCenter.default.publisher(for: .org2OpenRemoteThread)) { notification in
+      guard let rawThreadID = notification.userInfo?["threadID"] as? String,
+            let threadID = UUID(uuidString: rawThreadID)
+      else { return }
+      route = .thread(threadID)
+      closeSidebar()
+    }
+  }
+
+  @ViewBuilder
+  private var destinationView: some View {
+    switch route {
+    case .workspace:
+      workspaceTabView
+    case .thread(let threadID):
+      NavigationStack {
+        MobileRemoteThreadView(threadID: threadID) { destinationThreadID in
+          route = .thread(destinationThreadID)
+        }
+        // The sidebar swaps the associated thread ID in place. Give each
+        // destination its own identity so SwiftUI tears down the old polling
+        // lease before presenting the newly selected conversation.
+        .id(threadID)
+      }
+    case .externalThreads:
+      NavigationStack {
+        MobileExternalThreadListView { threadID in
+          route = .thread(threadID)
+        }
+      }
+    case .settings:
+      NavigationStack {
+        MobileSettingsView()
+      }
+    }
+  }
+
+  private var workspaceTabView: some View {
     TabView(selection: $selection) {
       NewNoteTabView()
         .tabItem { Label("New Note", systemImage: "square.and.pencil") }
@@ -77,18 +179,27 @@ private struct WorkspaceTabs: View {
         .tabItem { Label("Approvals", systemImage: "checkmark.seal") }
         .tag(WorkspaceTab.approvals)
 
-      WorkflowsView()
-        .tabItem { Label("Workflows", systemImage: "point.3.connected.trianglepath.dotted") }
-        .tag(WorkspaceTab.workflows)
-
-      MobileRemoteRootView()
-        .tabItem { Label("Remote", systemImage: "desktopcomputer") }
-        .tag(WorkspaceTab.remote)
-    }
-    .onReceive(NotificationCenter.default.publisher(for: .org2OpenRemoteThread)) { _ in
-      selection = .remote
+      FilesTabView()
+        .tabItem { Label("Files", systemImage: "folder") }
+        .tag(WorkspaceTab.files)
     }
   }
+
+  private var selectedThreadID: UUID? {
+    guard case .thread(let threadID) = route else { return nil }
+    return threadID
+  }
+
+  private func closeSidebar() {
+    isSidebarPresented = false
+  }
+}
+
+private enum MobileWorkspaceRoute: Equatable {
+  case workspace
+  case thread(UUID)
+  case externalThreads
+  case settings
 }
 
 private struct NewNoteTabView: View {
@@ -103,12 +214,25 @@ private struct NewNoteTabView: View {
   }
 }
 
+private struct FilesTabView: View {
+  @EnvironmentObject private var store: CorpusStore
+
+  var body: some View {
+    if store.rootURL == nil {
+      EmptyCorpusView()
+    } else {
+      NavigationStack {
+        CorpusFileBrowserView()
+      }
+    }
+  }
+}
+
 private enum WorkspaceTab: Hashable {
   case newNote
   case agenda
   case approvals
-  case workflows
-  case remote
+  case files
 
   static var initialSelection: WorkspaceTab {
     #if DEBUG
@@ -117,10 +241,8 @@ private enum WorkspaceTab: Hashable {
       return .agenda
     case "approvals":
       return .approvals
-    case "workflows":
-      return .workflows
-    case "remote":
-      return .remote
+    case "files":
+      return .files
     default:
       return .newNote
     }
@@ -172,6 +294,9 @@ private struct AgendaView: View {
       }
       .navigationTitle("Agenda")
       .toolbar {
+        ToolbarItem(placement: .topBarLeading) {
+          MobileSidebarToolbarButton()
+        }
         ToolbarItem(placement: .topBarTrailing) {
           Button {
             Task { await refresh() }
@@ -385,6 +510,9 @@ private struct ApprovalsView: View {
       }
       .navigationTitle("Approvals")
       .toolbar {
+        ToolbarItem(placement: .topBarLeading) {
+          MobileSidebarToolbarButton()
+        }
         ToolbarItem(placement: .topBarTrailing) {
           Button {
             Task { await refresh() }
@@ -1041,74 +1169,14 @@ private struct NewNoteView: View {
 
   var body: some View {
     NavigationStack {
-      List {
-        Section("Corpus") {
-          HStack {
-            Label(store.corpusName, systemImage: "folder")
-            Spacer()
-            Button("Change") {
-              store.isDocumentPickerPresented = true
-            }
-          }
-
-          NavigationLink {
-            CorpusFileBrowserView()
-          } label: {
-            Label("Browse Files", systemImage: "doc.text.magnifyingglass")
-          }
-
-          if let status = store.statusMessage {
-            HStack(spacing: 6) {
-              if store.isPreparingCorpus || store.isLoading {
-                MobileActivityIndicator(style: .sync, label: "Updating corpus")
-              }
-              Text(status)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            }
-          }
-        }
-
-        Section("New Note") {
+      Form {
+        Section {
           TextField("Title", text: $title)
+            .font(.title3.weight(.semibold))
             .focused($focusedField, equals: .title)
           TextEditor(text: $bodyText)
-            .frame(minHeight: 120)
+            .frame(minHeight: 260)
             .focused($focusedField, equals: .body)
-
-          VStack(alignment: .leading, spacing: 10) {
-            Text("Schedule TODO")
-              .font(.caption.weight(.semibold))
-              .foregroundStyle(.secondary)
-
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 132), spacing: 8)], alignment: .leading, spacing: 8) {
-              ForEach(MobileNoteSchedule.allCases) { option in
-                Button {
-                  schedule = option
-                } label: {
-                  Label(option.title, systemImage: option.systemImage)
-                    .lineLimit(1)
-                    .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .tint(schedule == option ? .accentColor : .secondary)
-              }
-            }
-
-            if schedule == .custom {
-              DatePicker(
-                "Date",
-                selection: $customScheduledDate,
-                displayedComponents: .date
-              )
-            } else if let date = scheduledDate {
-              Label(MobileCaptureWriter.orgDayTimestamp(date), systemImage: "calendar")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            }
-          }
-          .padding(.vertical, 4)
 
           if !attachments.isEmpty {
             ForEach(attachments) { attachment in
@@ -1127,67 +1195,68 @@ private struct NewNoteView: View {
               }
             }
           }
+        } footer: {
+          Text("Saved to mobile-inbox.org2 for safe desktop sync.")
+        }
 
-          HStack {
-            Button {
-              isPhotoLibraryPresented = true
+        Section {
+          HStack(spacing: 16) {
+            Menu {
+              ForEach(MobileNoteSchedule.allCases) { option in
+                Button {
+                  schedule = option
+                } label: {
+                  Label(option.title, systemImage: schedule == option ? "checkmark" : option.systemImage)
+                }
+              }
             } label: {
-              Label("Photo", systemImage: "photo")
+              Label(schedule.title, systemImage: schedule.systemImage)
             }
 
             Spacer()
 
-            Button {
-              isCameraPresented = true
+            Menu {
+              Button {
+                isPhotoLibraryPresented = true
+              } label: {
+                Label("Photo Library", systemImage: "photo")
+              }
+              Button {
+                isCameraPresented = true
+              } label: {
+                Label("Camera", systemImage: "camera")
+              }
+              .disabled(!UIImagePickerController.isSourceTypeAvailable(.camera))
             } label: {
-              Label("Camera", systemImage: "camera")
+              Label("Attach", systemImage: "paperclip")
             }
-            .disabled(!UIImagePickerController.isSourceTypeAvailable(.camera))
           }
 
-          Button {
-            Task {
-              await store.saveMobileNote(
-                title: title,
-                body: bodyText,
-                attachments: attachments,
-                scheduledDate: scheduledDate
-              )
-              title = ""
-              bodyText = ""
-              schedule = .none
-              customScheduledDate = Date()
-              attachments = []
-              focusedField = nil
-            }
-          } label: {
-            Label("Save Note", systemImage: "square.and.arrow.down")
-              .frame(maxWidth: .infinity)
+          if schedule == .custom {
+            DatePicker(
+              "Schedule date",
+              selection: $customScheduledDate,
+              displayedComponents: .date
+            )
+          } else if let date = scheduledDate {
+            LabeledContent(
+              "Scheduled",
+              value: MobileCaptureWriter.orgDayTimestamp(date)
+            )
           }
-          .buttonStyle(.borderedProminent)
-          .disabled(
-            title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-              && bodyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-              && attachments.isEmpty
-          )
-
-          Text("Queues this note in mobile-inbox.org2 so desktop sync can merge it safely.")
-            .font(.caption)
-            .foregroundStyle(.secondary)
         }
       }
       .navigationTitle("New Note")
       .toolbar {
         ToolbarItem(placement: .topBarLeading) {
-          NavigationLink {
-            CorpusFileBrowserView()
-          } label: {
-            Image(systemName: "doc.text.magnifyingglass")
-          }
-          .accessibilityLabel("Browse corpus files")
+          MobileSidebarToolbarButton()
         }
         ToolbarItem(placement: .topBarTrailing) {
-          RefreshButton()
+          Button("Save") {
+            saveNote()
+          }
+          .fontWeight(.semibold)
+          .disabled(isSaveDisabled)
         }
         ToolbarItemGroup(placement: .keyboard) {
           Spacer()
@@ -1195,9 +1264,6 @@ private struct NewNoteView: View {
             focusedField = nil
           }
         }
-      }
-      .refreshable {
-        await store.refresh()
       }
       .sheet(isPresented: $isCameraPresented) {
         ImagePicker(sourceType: .camera) { image in
@@ -1209,6 +1275,30 @@ private struct NewNoteView: View {
           addImage(image)
         }
       }
+    }
+  }
+
+  private var isSaveDisabled: Bool {
+    title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      && bodyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      && attachments.isEmpty
+  }
+
+  private func saveNote() {
+    guard !isSaveDisabled else { return }
+    Task {
+      await store.saveMobileNote(
+        title: title,
+        body: bodyText,
+        attachments: attachments,
+        scheduledDate: scheduledDate
+      )
+      title = ""
+      bodyText = ""
+      schedule = .none
+      customScheduledDate = Date()
+      attachments = []
+      focusedField = nil
     }
   }
 
