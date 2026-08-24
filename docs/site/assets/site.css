@@ -2299,6 +2299,7 @@ body #content {
 }
 
 #content .org2-sample-callouts div::before {
+  display: block;
   position: absolute;
   top: 0.88rem;
   left: 0;

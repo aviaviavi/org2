@@ -113,7 +113,7 @@ org2 review list --status pending --dir ~/notes</code></pre>
   <section class="org2-feature-story" id="multi-agent-chat" aria-labelledby="multi-agent-chat-title">
     <div class="org2-feature-copy">
       <h2 id="multi-agent-chat-title">One conversation, many agents</h2>
-      <p>A shared AI room lets you bring any named local, remote, hosted, or self-hosted destination into one corpus-grounded conversation. Every participant sees the same bounded transcript, keeps its own identity and model, and answers inside one visible agent round.</p>
+      <p>OpenOrg works with the models and agent harnesses you already use. A shared AI room lets you bring any named local, remote, hosted, or self-hosted destination into one corpus-grounded conversation. Every participant sees the same bounded transcript, keeps its own identity and model, and answers inside one visible agent round.</p>
       <ul>
         <li>Mention <code>@research</code>, <code>@writer</code>, <code>@local-model</code>, or any destination you configure; <code>@all</code> asks every participant.</li>
         <li>Responses stay grouped beneath the question that invoked them, with separate progress, model selection, and failure state for each agent.</li>
@@ -169,11 +169,11 @@ org2 query-data --file notes/readiness.org2 --results weekly --apply</code></pre
   <section class="org2-feature-section" id="external-sources" aria-labelledby="external-sources-title">
     <div class="org2-feature-heading">
       <h2 id="external-sources-title">Bring in context without surrendering control</h2>
-      <p>Source profiles stage external material as inspectable captures with stable identity and provenance. The boundary is designed for ingestion plugins, so messages, documents, issues, mail, datasets, and future sources can enter the same reviewable flow.</p>
+      <p>Configured source profiles can crawl systems such as Slack and Notion into inspectable local <code>.org2</code> captures you own, with stable identity and provenance. The ingestion boundary is pluggable, so messages, documents, issues, mail, datasets, and future sources can enter the same reviewable flow.</p>
     </div>
     <div class="org2-feature-grid">
       <article><h3>Pluggable by design</h3><p>A source adapter supplies bounded records and provenance; Org2 supplies the shared staging, review, linking, and promotion semantics.</p></article>
-      <article><h3>Local and inspectable</h3><p>Machine bindings and credentials stay outside canonical notes. Staged files retain stable source IDs, timestamps, hashes, URLs, and provenance.</p></article>
+      <article><h3>Local files you own</h3><p>Each crawl writes inspectable captures while machine bindings and credentials stay outside canonical notes. Staged files retain stable source IDs, timestamps, hashes, URLs, and provenance.</p></article>
       <article><h3>Review before promotion</h3><p>Imported material lands under configured raw and views zones. People and agents can redact, verify, and promote selected knowledge without treating an external mirror as canonical truth.</p></article>
     </div>
   </section>

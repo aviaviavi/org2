@@ -3,7 +3,7 @@
 
 #+BEGIN_EXPORT html
 <section class="org2-page-intro org2-home-hero">
-  <p>OpenOrg is a local-first workspace where your notes, decisions, commitments, and agent work become durable follow-through. Use the agent, model, or provider you choose while your knowledge stays in files you control.</p>
+  <p>OpenOrg is a local-first workspace where your notes, decisions, commitments, and agent work become durable follow-through. It works with the models and agent harnesses you already use, crawls systems such as Slack and Notion into local <code>.org2</code> files you own, and keeps your knowledge portable.</p>
   <nav class="org2-hero-actions" aria-label="Start with OpenOrg">
     <a class="org2-hero-action org2-hero-action-primary" href="getting-started.html">Get started <span aria-hidden="true">→</span></a>
     <a class="org2-hero-action" href="openorg-and-org2.html">How OpenOrg and Org2 fit <span aria-hidden="true">→</span></a>
@@ -12,11 +12,11 @@
 <section class="org2-home-follow-through" aria-labelledby="org2-follow-through-title">
   <div class="org2-sample-intro">
     <h2 id="org2-follow-through-title">From decision to done.</h2>
-    <p>Start with a meeting, note, message, or TODO. OpenOrg keeps the source context attached while the work moves, and interrupts you only when a decision needs you.</p>
+    <p>Start with a meeting, note, Slack thread, Notion page, or TODO. OpenOrg keeps the source context attached while the work moves, and interrupts you only when a decision needs you.</p>
   </div>
   <div class="org2-compiler-flow" aria-label="OpenOrg follow-through workflow">
-    <article><strong>Capture</strong><p>Keep the decision, commitment, and exact source together.</p></article>
-    <article><strong>Delegate</strong><p>Send bounded work to a person or any configured agent, local or remote.</p></article>
+    <article><strong>Capture</strong><p>Keep decisions, commitments, and imported source context together in local files.</p></article>
+    <article><strong>Delegate</strong><p>Send bounded work to a person or through any configured model or harness, local or remote.</p></article>
     <article><strong>Review</strong><p>Bring consequential actions and uncertain results back for approval.</p></article>
     <article><strong>Verify</strong><p>Record the outcome and its evidence where the work began.</p></article>
   </div>
@@ -148,11 +148,12 @@
 
 Most second brains help you find what you knew. OpenOrg also tracks what you decided, who or what is acting on it, which decisions still need you, and what evidence proves the work finished.
 
-Your files are the source of truth. Apps and agents share the context, people keep clear review boundaries, and your work stays portable across models, agents, and clients.
+Your files are the source of truth. Apps and agents share the context, people keep clear review boundaries, and your work stays portable across models, harnesses, agents, and clients.
 
 * What you can do with it
 
 - *Turn commitments into follow-through* without separating them from the conversation or document that created them.
+- *Bring outside context home* by crawling systems such as Slack and Notion into provenance-preserving local =.org2= files.
 - *Delegate across people and agents* while keeping responsibility, progress, and context visible.
 - *Review the decisions that matter* in one approval queue while routine agent steps continue in the background.
 - *Produce useful artifacts* including talks, analytics, visualizations, reports, PDFs, and published sites.
