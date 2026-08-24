@@ -7,6 +7,7 @@ import UIKit
 final class MobileRemoteStore: ObservableObject {
   @Published private(set) var isPaired = false
   @Published private(set) var isConnected = false
+  @Published private(set) var connectionError: String?
   @Published private(set) var serverName = "Org2 on Mac"
   @Published private(set) var status: MobileRemoteServerStatus?
   @Published private(set) var threads: [MobileRemoteThreadSummary] = []
@@ -180,6 +181,7 @@ final class MobileRemoteStore: ObservableObject {
     accessToken = nil
     isPaired = false
     isConnected = false
+    connectionError = nil
     realTimeNotificationsActive = false
     pushNotificationStatusText = "Pair with a Mac for real-time notifications"
     pushRegistrationFingerprint = nil
@@ -225,6 +227,7 @@ final class MobileRemoteStore: ObservableObject {
       }
       status = nextStatus
       isConnected = true
+      connectionError = nil
       serverName = nextStatus.serverName
       await syncPushRegistrationIfNeeded(force: false)
       await reconcileReplyNotifications(with: nextThreads.threads)
@@ -233,6 +236,7 @@ final class MobileRemoteStore: ObservableObject {
       defaults.set(serverName, forKey: Self.serverNameKey)
     } catch {
       isConnected = false
+      connectionError = error.localizedDescription
       if reportsErrors {
         errorMessage = error.localizedDescription
       }
@@ -606,6 +610,12 @@ final class MobileRemoteStore: ObservableObject {
   }
 
   func createThread(destination: MobileRemoteAIDestination) async -> UUID? {
+    guard isConnected else {
+      errorMessage = connectionError.map {
+        "Reconnect to the Mac before creating a chat. \($0)"
+      } ?? "Reconnect to the Mac before creating a chat."
+      return nil
+    }
     do {
       let response: MobileRemoteMutationResponse = try await pairedClient().post(
         "/v1/threads",
@@ -615,8 +625,17 @@ final class MobileRemoteStore: ObservableObject {
         ),
         as: MobileRemoteMutationResponse.self
       )
-      await refresh()
-      return response.threadID
+      guard let threadID = response.threadID else {
+        throw MobileRemoteClientError.malformedResponse
+      }
+      // The thread detail endpoint can serve this new in-memory thread
+      // immediately. Do not hold navigation behind a complete status and
+      // thread-list refresh, which can be noticeably slower on a large chat
+      // history or a weak Tailscale connection.
+      Task { [weak self] in
+        await self?.refresh(reportsErrors: false)
+      }
+      return threadID
     } catch {
       errorMessage = error.localizedDescription
       return nil
@@ -1016,6 +1035,10 @@ final class MobileRemoteStore: ObservableObject {
   private func pairedClient() throws -> MobileRemoteClient {
     guard let accessToken else { throw MobileRemoteClientError.server("Pair this phone with the Mac again.") }
     return try MobileRemoteClient(endpoint: endpointDraft, accessToken: accessToken)
+  }
+
+  var pairedEndpoint: String {
+    endpointDraft
   }
 
   private static func saveToken(_ token: String) throws {

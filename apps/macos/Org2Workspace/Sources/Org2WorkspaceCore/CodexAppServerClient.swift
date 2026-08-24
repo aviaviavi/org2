@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 public enum JSONValue: Hashable, Codable, Sendable {
@@ -249,7 +250,11 @@ public enum CodexAppServerError: LocalizedError, Sendable {
     case .invalidResponse(let detail):
       "Codex returned an invalid response: \(detail)"
     case .requestTimedOut(let method):
-      "Codex did not respond to \(method) within 30 seconds."
+      if method == "thread/resume" {
+        "Codex took too long to reopen this task. Its connection was reset; retry once to reconnect."
+      } else {
+        "Codex did not respond to \(method) before the request timed out."
+      }
     case .notAuthenticated:
       "Sign in with ChatGPT before using a Codex thread."
     case .turnFailed(let detail):
@@ -293,6 +298,8 @@ public actor CodexAppServerClient {
   private let transport: CodexAppServerTransport
   private let eventHandler: EventHandler
   private let dynamicToolHandler: DynamicToolHandler
+  private let requestTimeoutNanoseconds: UInt64
+  private let threadResumeRequestTimeoutNanoseconds: UInt64
   private var process: Process?
   private var webSocketTask: URLSessionWebSocketTask?
   private var webSocketReceiveTask: Task<Void, Never>?
@@ -318,12 +325,16 @@ public actor CodexAppServerClient {
     executableURL: URL? = CodexAppServerClient.resolveExecutableURL(),
     sshExecutableURL: URL = URL(fileURLWithPath: "/usr/bin/ssh"),
     transport: CodexAppServerTransport = .local,
+    requestTimeoutNanoseconds: UInt64 = 30_000_000_000,
+    threadResumeRequestTimeoutNanoseconds: UInt64 = 120_000_000_000,
     eventHandler: @escaping EventHandler,
     dynamicToolHandler: @escaping DynamicToolHandler
   ) {
     self.executableURL = executableURL
     self.sshExecutableURL = sshExecutableURL
     self.transport = transport
+    self.requestTimeoutNanoseconds = requestTimeoutNanoseconds
+    self.threadResumeRequestTimeoutNanoseconds = threadResumeRequestTimeoutNanoseconds
     self.eventHandler = eventHandler
     self.dynamicToolHandler = dynamicToolHandler
   }
@@ -586,10 +597,24 @@ public actor CodexAppServerClient {
         if let model {
           params["model"] = .string(model)
         }
-        let result = try await requestRaw(
-          method: "thread/resume",
-          params: .object(params)
-        )
+        let result: JSONValue
+        do {
+          result = try await requestRaw(
+            method: "thread/resume",
+            params: .object(params),
+            timeoutNanoseconds: threadResumeRequestTimeoutNanoseconds
+          )
+        } catch let error as CodexAppServerError {
+          if case .requestTimedOut("thread/resume") = error {
+            // A large rollout can finish loading after the caller's deadline.
+            // If that late response is ignored while this process keeps its
+            // writer lock, every later retry attempts to resume an already
+            // resumed thread and can never recover. Tear down the transport so
+            // the next Retry starts from a clean app-server process.
+            shutdown()
+          }
+          throw error
+        }
         guard result["thread"]?["id"]?.stringValue == existingThreadID else {
           throw CodexAppServerError.invalidResponse("thread/resume returned a different thread")
         }
@@ -722,17 +747,27 @@ public actor CodexAppServerClient {
   }
 
   public func shutdown() {
+    let processToStop = process
+    process = nil
     standardOutput?.readabilityHandler = nil
     standardError?.readabilityHandler = nil
     standardOutput = nil
     standardError = nil
     standardInput = nil
     initialized = false
+    startupTask = nil
+    outputBuffer = Data()
     loadedThreadIDs.removeAll()
-    if process?.isRunning == true {
-      process?.terminate()
+    if let processToStop, processToStop.isRunning {
+      processToStop.terminate()
+      // A wedged app-server can ignore SIGTERM while retaining Codex's
+      // advisory task-writer lock. This client has already discarded its
+      // transport, so leaving that orphan alive only makes every later Retry
+      // fail. Force the abandoned child down before another connection starts.
+      if processToStop.isRunning {
+        _ = Darwin.kill(processToStop.processIdentifier, SIGKILL)
+      }
     }
-    process = nil
     webSocketReceiveTask?.cancel()
     webSocketReceiveTask = nil
     webSocketTask?.cancel(with: .goingAway, reason: nil)
@@ -1096,10 +1131,15 @@ public actor CodexAppServerClient {
     return try await requestRaw(method: method, params: params)
   }
 
-  private func requestRaw(method: String, params: JSONValue) async throws -> JSONValue {
+  private func requestRaw(
+    method: String,
+    params: JSONValue,
+    timeoutNanoseconds: UInt64? = nil
+  ) async throws -> JSONValue {
     requestCounter &+= 1
     let requestID = requestCounter
     let key = String(requestID)
+    let effectiveTimeoutNanoseconds = timeoutNanoseconds ?? requestTimeoutNanoseconds
     return try await withTaskCancellationHandler {
       try Task.checkCancellation()
       return try await withCheckedThrowingContinuation { continuation in
@@ -1110,7 +1150,7 @@ public actor CodexAppServerClient {
         pendingRequests[key] = continuation
         pendingRequestTimeoutTasks[key] = Task { [weak self] in
           do {
-            try await Task.sleep(nanoseconds: 30_000_000_000)
+            try await Task.sleep(nanoseconds: effectiveTimeoutNanoseconds)
           } catch {
             return
           }

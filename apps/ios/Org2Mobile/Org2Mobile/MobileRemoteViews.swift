@@ -31,12 +31,13 @@ struct MobileAISidebarView: View {
               Button {
                 createThread(destination: destination)
               } label: {
-                Label("New (destination.name) Chat", systemImage: "plus.bubble")
+                Label("New \(destination.name) Chat", systemImage: "plus.bubble")
               }
             }
           } label: {
             Image(systemName: "square.and.pencil")
           }
+          .disabled(!remote.isConnected)
           .accessibilityLabel("New AI chat")
         }
         Button(action: close) {
@@ -58,6 +59,7 @@ struct MobileAISidebarView: View {
             action: openExternalThreads
           )
           .disabled(!remote.isPaired)
+          sidebarButton("Settings", systemImage: "gearshape", action: openSettings)
         }
 
         if !activeThreads.isEmpty {
@@ -81,10 +83,6 @@ struct MobileAISidebarView: View {
             Text("No AI chats yet")
               .foregroundStyle(.secondary)
           }
-        }
-
-        Section {
-          sidebarButton("Settings", systemImage: "gearshape", action: openSettings)
         }
       }
       .listStyle(.sidebar)
@@ -179,9 +177,9 @@ struct MobileAISidebarView: View {
   }
 
   private var statusSubtitle: String {
-    guard remote.isConnected else { return "Waiting for (remote.serverName)" }
+    guard remote.isConnected else { return "Waiting for \(remote.serverName)" }
     let running = remote.status?.runningThreadCount ?? 0
-    return running == 1 ? "1 chat running" : "(running) chats running"
+    return running == 1 ? "1 chat running" : "\(running) chats running"
   }
 
   private var aiChatDestinations: [MobileRemoteAIDestination] {
@@ -222,11 +220,18 @@ struct MobileSettingsView: View {
         if remote.isPaired {
           LabeledContent("Mac", value: remote.serverName)
           LabeledContent("Status", value: remote.isConnected ? "Connected" : "Unavailable")
+          LabeledContent("Endpoint", value: remote.pairedEndpoint)
+          if let connectionError = remote.connectionError, !remote.isConnected {
+            Text(connectionError)
+              .font(.caption)
+              .foregroundStyle(.orange)
+          }
           Button {
             Task { await remote.refresh() }
           } label: {
-            Label("Refresh Connection", systemImage: "arrow.clockwise")
+            Label("Reconnect", systemImage: "arrow.clockwise")
           }
+          .disabled(remote.isRefreshing)
           Button("Forget This Mac", role: .destructive) {
             remote.disconnect()
           }
@@ -332,6 +337,7 @@ struct MobileRemoteRootView: View {
             } label: {
               Image(systemName: "ellipsis.circle")
             }
+            .disabled(!remote.isConnected)
           }
         }
       }
@@ -402,6 +408,25 @@ struct MobileRemoteRootView: View {
           }
         }
         .padding(.vertical, 3)
+
+        if !remote.isConnected, !remote.isRefreshing {
+          VStack(alignment: .leading, spacing: 8) {
+            Text(remote.connectionError ?? "This phone cannot currently reach the paired Mac.")
+              .font(.caption)
+              .foregroundStyle(.orange)
+            HStack {
+              Button {
+                Task { await remote.refresh() }
+              } label: {
+                Label("Reconnect", systemImage: "arrow.clockwise")
+              }
+              Button("Pair Again", role: .destructive) {
+                path = []
+                remote.disconnect()
+              }
+            }
+          }
+        }
 
         Toggle(isOn: Binding(
           get: { remote.threadNotificationsEnabled },
@@ -1129,7 +1154,10 @@ struct MobileRemoteThreadView: View {
         composer
       }
     }
-    .onAppear {
+    // A MobileRemoteThreadView can be reused when its parent changes only the
+    // selected thread ID. Key the polling startup to that ID instead of relying
+    // on onAppear, which does not run again for an in-place destination swap.
+    .task(id: threadID) {
       hasPresentedInitialContent = false
       pollingLeaseID = remote.beginPolling(threadID: threadID)
     }

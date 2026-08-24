@@ -1930,8 +1930,6 @@ public final class WorkspaceStore: ObservableObject {
   ]
   nonisolated private static let openClawInterruptedSendFailureText =
     "Org2 Workspace restarted before this AI response was saved. The response may have completed outside the app, but this chat cannot recover it. Retry to send again."
-  nonisolated private static let openClawStoppedSendFailureText =
-    "OpenClaw was stopped by you. Retry to start this request again."
   private var openClawTranscriptURL: URL
   private let appOpenClawTranscriptURL: URL
   private let usesFixedOpenClawTranscriptURL: Bool
@@ -18255,17 +18253,18 @@ public final class WorkspaceStore: ObservableObject {
 
     var messages = openClawMessages(for: threadID, transcriptURL: targetTranscriptURL)
     var changedMessages = false
+    let stoppedSendFailureText = aiChatStoppedSendFailureText(for: threadID)
     for index in messages.indices where stoppedMessageIDs.contains(messages[index].id) {
       let message = messages[index]
       guard message.role == .user,
             message.deliveryStatus == .sending
-              || message.sendFailure != Self.openClawStoppedSendFailureText
+              || message.sendFailure != stoppedSendFailureText
       else {
         continue
       }
       messages[index] = message.replacingDeliveryStatus(
         .interrupted,
-        sendFailure: Self.openClawStoppedSendFailureText
+        sendFailure: stoppedSendFailureText
       )
       changedMessages = true
     }
@@ -18298,6 +18297,15 @@ public final class WorkspaceStore: ObservableObject {
       openClawStatusText = statusText
     }
     syncSelectedOpenClawSendState()
+  }
+
+  private func aiChatStoppedSendFailureText(for threadID: UUID) -> String {
+    guard let thread = openClawChatThreads.first(where: { $0.id == threadID }) else {
+      return "The AI request was stopped by you. Retry to start this request again."
+    }
+    let destinationID = activeSharedRoomDestinationByThreadID[threadID]
+      ?? thread.destinationID
+    return "\(aiChatDestinationTitle(destinationID)) was stopped by you. Retry to start this request again."
   }
 
   private func replaceOpenClawSendFailure(
@@ -19342,6 +19350,7 @@ public final class WorkspaceStore: ObservableObject {
       statusText: "",
       runtime: destination.runtime,
       destinationID: destination.id,
+      defersPersistence: true,
       selectsThread: false
     ).id
   }

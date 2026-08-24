@@ -96,6 +96,7 @@ private struct WorkspaceTabs: View {
         MobileAISidebarView(
           selectedThreadID: selectedThreadID,
           openWorkspace: {
+            selection = .newNote
             route = .workspace
             closeSidebar()
           },
@@ -146,6 +147,10 @@ private struct WorkspaceTabs: View {
         MobileRemoteThreadView(threadID: threadID) { destinationThreadID in
           route = .thread(destinationThreadID)
         }
+        // The sidebar swaps the associated thread ID in place. Give each
+        // destination its own identity so SwiftUI tears down the old polling
+        // lease before presenting the newly selected conversation.
+        .id(threadID)
       }
     case .externalThreads:
       NavigationStack {

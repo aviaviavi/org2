@@ -120,7 +120,7 @@ final class AIChatSharedRoomTests: XCTestCase {
     XCTAssertEqual(messages[0].deliveryStatus, .interrupted)
     XCTAssertEqual(
       messages[0].sendFailure,
-      "OpenClaw was stopped by you. Retry to start this request again."
+      "Codex was stopped by you. Retry to start this request again."
     )
   }
 

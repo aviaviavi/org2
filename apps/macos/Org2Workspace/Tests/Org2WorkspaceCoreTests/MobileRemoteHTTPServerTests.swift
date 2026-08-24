@@ -457,6 +457,31 @@ final class MobileRemoteHTTPServerTests: XCTestCase {
   }
 
   @MainActor
+  func testRemoteThreadCreationDefersTranscriptPersistence() throws {
+    let suiteName = "MobileRemoteHTTPServerTests.DeferredCreate.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let transcriptURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-mobile-remote-deferred-\(UUID().uuidString).json")
+    defer { try? FileManager.default.removeItem(at: transcriptURL) }
+    let store = WorkspaceStore(
+      cli: Org2CLI(repoRoot: try Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: transcriptURL
+    )
+    var saveCount = 0
+    store.openClawTranscriptPersistenceDelayNanoseconds = 5_000_000_000
+    store.openClawTranscriptSaverForTesting = { saveCount += 1 }
+
+    let remoteID = store.createAIChatRemoteThread(runtime: .codex)
+
+    XCTAssertNotNil(store.openClawChatThreads.first(where: { $0.id == remoteID }))
+    XCTAssertEqual(saveCount, 0)
+    store.flushDeferredAIChatTranscriptPersistence()
+    XCTAssertEqual(saveCount, 1)
+  }
+
+  @MainActor
   func testRemoteCrossAgentMentionReturnsForkWithoutChangingMacSelection() throws {
     let suiteName = "MobileRemoteHTTPServerTests.MentionFork.\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
