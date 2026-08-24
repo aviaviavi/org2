@@ -279,6 +279,16 @@ public enum CodexAppServerTransport: Sendable, Equatable {
   }
 }
 
+public struct CodexThreadResolution: Equatable, Sendable {
+  public let threadID: String
+  public let replacedStaleThread: Bool
+
+  public init(threadID: String, replacedStaleThread: Bool) {
+    self.threadID = threadID
+    self.replacedStaleThread = replacedStaleThread
+  }
+}
+
 public actor CodexAppServerClient {
   public typealias EventHandler = @Sendable (CodexAppServerEvent) async -> Void
   public typealias DynamicToolHandler =
@@ -643,6 +653,72 @@ public actor CodexAppServerClient {
     }
     loadedThreadIDs.insert(threadID)
     return threadID
+  }
+
+  public func ensureThreadRecoveringStaleSession(
+    existingThreadID: String?,
+    cwd: URL,
+    model: String? = nil,
+    sandboxAccess: CodexSandboxAccess = .workspaceWrite
+  ) async throws -> CodexThreadResolution {
+    guard let existingThreadID else {
+      return CodexThreadResolution(
+        threadID: try await ensureThread(
+          existingThreadID: nil,
+          cwd: cwd,
+          model: model,
+          sandboxAccess: sandboxAccess
+        ),
+        replacedStaleThread: false
+      )
+    }
+    do {
+      return CodexThreadResolution(
+        threadID: try await ensureThread(
+          existingThreadID: existingThreadID,
+          cwd: cwd,
+          model: model,
+          sandboxAccess: sandboxAccess
+        ),
+        replacedStaleThread: false
+      )
+    } catch let error as CodexAppServerError {
+      guard Self.canRecoverByStartingFresh(after: error) else { throw error }
+      // Reopening an old Codex task can fail when a previous OpenOrg process
+      // died while holding its writer lease, or when the task can no longer be
+      // resumed by this app-server. The user message has not been submitted at
+      // this point, so it is safe to replace the stale task with a fresh one.
+      shutdown()
+      return CodexThreadResolution(
+        threadID: try await ensureThread(
+          existingThreadID: nil,
+          cwd: cwd,
+          model: model,
+          sandboxAccess: sandboxAccess
+        ),
+        replacedStaleThread: true
+      )
+    }
+  }
+
+  nonisolated private static func canRecoverByStartingFresh(
+    after error: CodexAppServerError
+  ) -> Bool {
+    switch error {
+    case .requestTimedOut("thread/resume"), .disconnected:
+      true
+    case .server(_, let message):
+      message.localizedCaseInsensitiveContains("active writer")
+        || message.localizedCaseInsensitiveContains("writer lock")
+        || message.localizedCaseInsensitiveContains("not found")
+        || message.localizedCaseInsensitiveContains("does not exist")
+        || message.localizedCaseInsensitiveContains("unknown thread")
+    case .invalidResponse(let detail):
+      detail.localizedCaseInsensitiveContains("thread/resume returned a different thread")
+    case .executableNotFound, .launchFailed, .notAuthenticated,
+         .requestTimedOut, .turnFailed, .turnInterrupted:
+      false
+    }
   }
 
   public func runTurn(

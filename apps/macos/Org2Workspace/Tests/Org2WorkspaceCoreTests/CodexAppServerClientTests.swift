@@ -62,6 +62,71 @@ final class CodexAppServerClientTests: XCTestCase {
     )
   }
 
+  func testReplacingThreadMessagesPreservesNamedDestinationRouting() {
+    let destinationID = "managed-remote-codex"
+    let thread = OpenClawChatThread(
+      title: "Remote Codex",
+      runtime: .codex,
+      destinationID: destinationID,
+      sessionKey: "unused-for-codex",
+      runtimeThreadID: "thr-remote",
+      runtimeThreadIDsByDestination: [destinationID: "thr-remote"],
+      model: "gpt-remote",
+      messages: [OpenClawChatMessage(role: .user, content: "Work remotely")]
+    )
+    let messages = thread.messages + [
+      OpenClawChatMessage(role: .assistant, content: "Remote work completed")
+    ]
+
+    let updated = WorkspaceStore.updatedOpenClawChatThread(
+      thread,
+      messages: messages,
+      newAssistantMessageCount: 1,
+      isThreadOpen: true,
+      pendingTurnUpdate: .preserve
+    )
+
+    XCTAssertEqual(updated.destinationID, destinationID)
+    XCTAssertEqual(updated.runtimeThreadID, "thr-remote")
+    XCTAssertEqual(updated.runtimeThreadIDsByDestination, [destinationID: "thr-remote"])
+    XCTAssertEqual(updated.model, "gpt-remote")
+    XCTAssertEqual(updated.messages, messages)
+  }
+
+  func testRepairsThreadsWhoseNamedRemoteDestinationWasResetToLocal() {
+    let destination = AIChatDestinationConfiguration(
+      id: "managed-remote-codex",
+      name: "Remote Codex",
+      mention: "codex-remote",
+      adapter: .codexManagedRemote,
+      endpoint: "remote-mac"
+    )
+    let damagedThread = OpenClawChatThread(
+      title: "Remote work",
+      runtime: .codex,
+      destinationID: AIChatDestinationConfiguration.localCodexID,
+      sessionKey: "unused-for-codex",
+      runtimeThreadID: "thr-remote",
+      messages: [
+        OpenClawChatMessage(
+          role: .user,
+          content: "Run this remotely",
+          targetRuntime: .codex,
+          targetDestinationID: destination.id
+        ),
+        OpenClawChatMessage(role: .assistant, content: "Done remotely")
+      ]
+    )
+
+    XCTAssertEqual(
+      WorkspaceStore.recoveredNamedCodexDestinationID(
+        for: damagedThread,
+        destinations: AIChatDestinationConfiguration.defaults + [destination]
+      ),
+      destination.id
+    )
+  }
+
   func testCodexStreamingTextPreservesAgentMessageBoundaries() {
     var text = CodexStreamingText.appending(
       "I’ll inspect the current delivery model.",
@@ -782,6 +847,59 @@ final class CodexAppServerClientTests: XCTestCase {
     )
 
     XCTAssertEqual(threadID, "thr-retry")
+    await client.shutdown()
+  }
+
+  func testTimedOutThreadResumeAutomaticallyStartsAReplacementTask() async throws {
+    let temporaryDirectory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-codex-auto-rebind-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: temporaryDirectory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
+
+    let marker = temporaryDirectory.appendingPathComponent("resume-started")
+    let executable = temporaryDirectory.appendingPathComponent("fake-codex-auto-rebind")
+    let script = #"""
+    #!/bin/sh
+    marker='\#(marker.path)'
+    trap '' TERM
+    while IFS= read -r line; do
+      request_id=$(printf '%s\n' "$line" | /usr/bin/sed -E 's/.*"id":([0-9]+).*/\1/')
+      case "$line" in
+        *'"method":"initialize"'*)
+          printf '{"id":%s,"result":{"userAgent":"fake-codex"}}\n' "$request_id"
+          ;;
+        *'"method":"initialized"'*)
+          ;;
+        *'"method":"thread/resume"'*)
+          : > "$marker"
+          sleep 1
+          ;;
+        *'"method":"thread/start"'*)
+          printf '{"id":%s,"result":{"thread":{"id":"thr-replacement"}}}\n' "$request_id"
+          ;;
+      esac
+    done
+    """#
+    try script.write(to: executable, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: executable.path)
+    let client = CodexAppServerClient(
+      executableURL: executable,
+      requestTimeoutNanoseconds: 5_000_000_000,
+      threadResumeRequestTimeoutNanoseconds: 100_000_000,
+      eventHandler: { _ in },
+      dynamicToolHandler: { _ in CodexDynamicToolResult(success: false, text: "unused") }
+    )
+
+    let resolution = try await client.ensureThreadRecoveringStaleSession(
+      existingThreadID: "thr-stale",
+      cwd: temporaryDirectory
+    )
+
+    XCTAssertTrue(FileManager.default.fileExists(atPath: marker.path))
+    XCTAssertEqual(
+      resolution,
+      CodexThreadResolution(threadID: "thr-replacement", replacedStaleThread: true)
+    )
     await client.shutdown()
   }
 

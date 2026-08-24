@@ -34,6 +34,9 @@ struct Org2WorkspaceApp: App {
         .frame(minWidth: 1080, minHeight: 680)
         .background(WorkspaceWindowConfigurator())
         .onAppear {
+          appDelegate.prepareForTermination = { [store] in
+            await store.shutdownAIChatTransports()
+          }
           NSApplication.shared.setActivationPolicy(.regular)
           NSApplication.shared.activate(ignoringOtherApps: true)
           AppIconInstaller.install()
@@ -389,8 +392,11 @@ struct Org2WorkspaceApp: App {
   }
 }
 
+@MainActor
 private final class AppDelegate: NSObject, NSApplicationDelegate {
   private let diagnosticsHeartbeat = WorkspaceDiagnosticsHeartbeatResponder()
+  var prepareForTermination: (() async -> Void)?
+  private var isPreparingForTermination = false
 
   func applicationWillFinishLaunching(_ notification: Notification) {
     AppIconInstaller.install()
@@ -415,7 +421,26 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     return true
   }
 
+  func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+    guard !isPreparingForTermination else { return .terminateLater }
+    guard let prepareForTermination else {
+      stopAppServices()
+      return .terminateNow
+    }
+    isPreparingForTermination = true
+    Task { @MainActor in
+      await prepareForTermination()
+      stopAppServices()
+      sender.reply(toApplicationShouldTerminate: true)
+    }
+    return .terminateLater
+  }
+
   func applicationWillTerminate(_ notification: Notification) {
+    stopAppServices()
+  }
+
+  private func stopAppServices() {
     diagnosticsHeartbeat.stop()
     WorkspacePointerLatencyMonitor.shared.stop()
   }

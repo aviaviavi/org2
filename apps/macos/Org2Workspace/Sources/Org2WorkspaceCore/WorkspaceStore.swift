@@ -14141,7 +14141,7 @@ public final class WorkspaceStore: ObservableObject {
     }
     aiChatDestinations[index] = normalized
     aiChatDestinationSettingsError = nil
-    codexAppServerClientsByDestinationID.removeValue(forKey: normalized.id)
+    invalidateCodexClient(forDestinationID: normalized.id)
     persistAIChatDestinations()
   }
 
@@ -14159,7 +14159,7 @@ public final class WorkspaceStore: ObservableObject {
       return
     }
     aiChatDestinations.removeAll(where: { $0.id == destinationID })
-    codexAppServerClientsByDestinationID.removeValue(forKey: destinationID)
+    invalidateCodexClient(forDestinationID: destinationID)
     try? AIChatDestinationCredentials.deleteToken(destinationID: destinationID)
     persistAIChatDestinations()
   }
@@ -14176,7 +14176,7 @@ public final class WorkspaceStore: ObservableObject {
       } else {
         try AIChatDestinationCredentials.saveToken(normalized, destinationID: destinationID)
       }
-      codexAppServerClientsByDestinationID.removeValue(forKey: destinationID)
+      invalidateCodexClient(forDestinationID: destinationID)
       aiChatDestinationSettingsError = nil
     } catch {
       aiChatDestinationSettingsError = error.localizedDescription
@@ -17029,7 +17029,7 @@ public final class WorkspaceStore: ObservableObject {
     openClawGatewayStateByThreadID[threadID] = .connecting
     openClawGatewayDetailByThreadID[threadID] = destination.name
     if selectedOpenClawChatThreadID == threadID {
-      openClawStatusText = "Connecting to Codex"
+      openClawStatusText = "Connecting to \(destination.name)"
     }
 
     let existingRuntimeThreadID = thread.runtimeThreadID(forDestinationID: destinationID)
@@ -17044,12 +17044,13 @@ public final class WorkspaceStore: ObservableObject {
     } else {
       destinationRoot = corpusRoot
     }
-    let runtimeThreadID = try await client.ensureThread(
+    let threadResolution = try await client.ensureThreadRecoveringStaleSession(
       existingThreadID: existingRuntimeThreadID,
       cwd: destinationRoot,
       model: selectedModel,
       sandboxAccess: codexSandboxAccess
     )
+    let runtimeThreadID = threadResolution.threadID
     codexLocalThreadIDsByRuntimeThreadID["\(destinationID)\u{0}\(runtimeThreadID)"] = threadID
     if runtimeThreadID != existingRuntimeThreadID {
       var runtimeThreadIDs = thread.runtimeThreadIDsByDestination
@@ -17069,6 +17070,18 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     var workspacePrompt = sendOrigin.workspaceContext.codexSystemPrompt()
+    if threadResolution.replacedStaleThread {
+      workspacePrompt += """
+
+
+      OpenOrg could not safely reopen the previous Codex task, so it created a replacement task for this same chat. Continue from the conversation context below. Do not repeat already completed work unless the latest user message asks you to.
+
+      \(Self.codexRecoveryConversationContext(
+        requestMessages,
+        excludingMessageID: requestUserMessage.id
+      ))
+      """
+    }
     if destination.adapter == .codexRemote
         || destination.adapter == .codexManagedRemote {
       workspacePrompt += """
@@ -17096,6 +17109,24 @@ public final class WorkspaceStore: ObservableObject {
       : reply
   }
 
+  nonisolated private static func codexRecoveryConversationContext(
+    _ messages: [OpenClawChatMessage],
+    excludingMessageID: UUID
+  ) -> String {
+    let transcript = messages.compactMap { message -> String? in
+      guard message.id != excludingMessageID,
+            !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            message.role == .user || message.role == .assistant
+      else { return nil }
+      let speaker = message.role == .user ? "User" : "Assistant"
+      return "\(speaker): \(message.content)"
+    }.joined(separator: "\n\n")
+    guard !transcript.isEmpty else { return "No earlier chat messages were available." }
+    let limit = 32_000
+    guard transcript.count > limit else { return transcript }
+    return "[Earlier messages omitted]\n\n" + String(transcript.suffix(limit))
+  }
+
   private func localCodexClient() -> CodexAppServerClient {
     if let codexAppServerClient {
       return codexAppServerClient
@@ -17113,6 +17144,26 @@ public final class WorkspaceStore: ObservableObject {
     )
     codexAppServerClient = client
     return client
+  }
+
+  private func invalidateCodexClient(forDestinationID destinationID: String) {
+    guard let client = codexAppServerClientsByDestinationID.removeValue(
+      forKey: destinationID
+    ) else { return }
+    Task { await client.shutdown() }
+  }
+
+  public func shutdownAIChatTransports() async {
+    let clients = [codexAppServerClient, externalCodexAppServerClient]
+      .compactMap { $0 } + Array(codexAppServerClientsByDestinationID.values)
+    codexAppServerClient = nil
+    externalCodexAppServerClient = nil
+    codexAppServerClientsByDestinationID.removeAll()
+    codexActiveTurnsByThreadID.removeAll()
+    var stoppedClients = Set<ObjectIdentifier>()
+    for client in clients where stoppedClients.insert(ObjectIdentifier(client)).inserted {
+      await client.shutdown()
+    }
   }
 
   private func codexClient(forDestinationID destinationID: String) throws -> CodexAppServerClient {
@@ -20011,7 +20062,7 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
-  private static func updatedOpenClawChatThread(
+  nonisolated static func updatedOpenClawChatThread(
     _ current: OpenClawChatThread,
     messages: [OpenClawChatMessage],
     newAssistantMessageCount: Int,
@@ -20034,8 +20085,10 @@ public final class WorkspaceStore: ObservableObject {
       createdAt: current.createdAt,
       updatedAt: messages.last?.createdAt ?? Date(),
       runtime: current.runtime,
+      destinationID: current.destinationID,
       sessionKey: current.sessionKey,
       runtimeThreadID: current.runtimeThreadID,
+      runtimeThreadIDsByDestination: current.runtimeThreadIDsByDestination,
       model: current.model,
       reasoningEffort: current.reasoningEffort,
       messages: messages,
@@ -20047,7 +20100,9 @@ public final class WorkspaceStore: ObservableObject {
       pendingTurn: pendingTurn,
       isSharedRoom: current.isSharedRoom,
       roomAudience: current.roomAudience,
-      roomModels: current.roomModels
+      roomModels: current.roomModels,
+      roomDestinationIDs: current.roomDestinationIDs,
+      roomModelsByDestination: current.roomModelsByDestination
     )
   }
 
@@ -25686,14 +25741,27 @@ public final class WorkspaceStore: ObservableObject {
   private func applyOpenClawTranscript(_ transcript: OpenClawTranscriptState, shouldPersist: Bool) {
     openClawThreadSettlementSettings = transcript.settlementSettings
     let migratedThreads = transcript.threads.map { thread in
-      guard aiChatDestination(id: thread.destinationID)?.adapter == .openClaw else { return thread }
-      let sessionKey = Self.agentScopedOpenClawSessionKey(thread.sessionKey, agentID: openClawAgentID)
-      return sessionKey == thread.sessionKey
-        ? thread
-        : thread.replacingOpenClawChatMetadata(sessionKey: sessionKey)
+      var migrated = thread
+      if let destinationID = Self.recoveredNamedCodexDestinationID(
+        for: thread,
+        destinations: aiChatDestinations
+      ) {
+        migrated = migrated.replacingOpenClawChatMetadata(destinationID: destinationID)
+      }
+      if aiChatDestination(id: migrated.destinationID)?.adapter == .openClaw {
+        let sessionKey = Self.agentScopedOpenClawSessionKey(
+          migrated.sessionKey,
+          agentID: openClawAgentID
+        )
+        if sessionKey != migrated.sessionKey {
+          migrated = migrated.replacingOpenClawChatMetadata(sessionKey: sessionKey)
+        }
+      }
+      return migrated
     }
-    let migratedSessionKeys = zip(transcript.threads, migratedThreads).contains { pair in
+    let migratedThreadMetadata = zip(transcript.threads, migratedThreads).contains { pair in
       pair.0.sessionKey != pair.1.sessionKey
+        || pair.0.destinationID != pair.1.destinationID
     }
     openClawChatThreads = Self.sortedOpenClawChatThreadsForDisplay(migratedThreads)
     let selectedID = [restoredSelectedAIChatThreadID(), transcript.selectedThreadID]
@@ -25730,9 +25798,33 @@ public final class WorkspaceStore: ObservableObject {
     } else {
       openClawStatusText = Self.openClawStatusText(settings: currentOpenClawSettings())
     }
-    if shouldPersist || migratedSessionKeys || !autoSettledIDs.isEmpty {
+    if shouldPersist || migratedThreadMetadata || !autoSettledIDs.isEmpty {
       persistOpenClawTranscript()
     }
+  }
+
+  nonisolated static func recoveredNamedCodexDestinationID(
+    for thread: OpenClawChatThread,
+    destinations: [AIChatDestinationConfiguration]
+  ) -> String? {
+    guard !thread.isSharedRoom,
+          thread.runtime == .codex,
+          thread.destinationID == AIChatDestinationConfiguration.localCodexID
+    else { return nil }
+    let namedCodexIDs = Set<String>(destinations.compactMap { destination -> String? in
+      guard destination.isEnabled,
+            destination.runtime == .codex,
+            destination.id != AIChatDestinationConfiguration.localCodexID
+      else { return nil }
+      return destination.id
+    })
+    return thread.messages.lazy.compactMap { message in
+      guard message.role == .user,
+            let targetDestinationID = message.targetDestinationID,
+            namedCodexIDs.contains(targetDestinationID)
+      else { return nil }
+      return targetDestinationID
+    }.first
   }
 
   private func restoreInterruptedOpenClawSendStatusIfNeeded() {
@@ -31940,7 +32032,7 @@ private struct WorkspaceOrg2Config: Decodable {
   }
 }
 
-private enum OpenClawPendingTurnUpdate {
+enum OpenClawPendingTurnUpdate {
   case preserve
   case replace(OpenClawPendingTurn?)
 }
