@@ -14675,7 +14675,7 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func createAIChatThread() {
-    createOpenClawChatThread(runtime: selectedAIChatRuntime)
+    createAIChatThread(destinationID: selectedAIChatDestination.id)
   }
 
   public func createAIChatSharedRoom() {

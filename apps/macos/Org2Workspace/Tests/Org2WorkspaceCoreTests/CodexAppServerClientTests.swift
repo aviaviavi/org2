@@ -332,6 +332,34 @@ final class CodexAppServerClientTests: XCTestCase {
   }
 
   @MainActor
+  func testNewAIChatThreadPreservesSelectedManagedRemoteDestination() throws {
+    let suiteName = "AIChatManagedRemoteNewThread.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let transcript = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-managed-remote-new-thread-\(UUID().uuidString).json")
+    defer { try? FileManager.default.removeItem(at: transcript) }
+
+    let store = WorkspaceStore(
+      defaults: defaults,
+      openClawTranscriptURL: transcript,
+      legacyDefaultsDomains: []
+    )
+    let destinationID = store.addAIChatDestination(adapter: .codexManagedRemote)
+    var destination = try XCTUnwrap(store.aiChatDestination(id: destinationID))
+    destination.name = "Codex on Scarf"
+    destination.endpoint = "scarfs-macbook-air"
+    destination.workspaceRoot = "/Users/avi/avi.org2"
+    store.updateAIChatDestination(destination)
+
+    store.createAIChatThread(destinationID: destinationID)
+    store.createAIChatThread()
+
+    XCTAssertEqual(store.selectedOpenClawChatThread?.destinationID, destinationID)
+    XCTAssertEqual(store.selectedAIChatDestination.adapter, .codexManagedRemote)
+  }
+
+  @MainActor
   func testDirectProviderDestinationPersistsEndpointAndModel() throws {
     let suiteName = "AIChatDirectProviderSettings.\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
