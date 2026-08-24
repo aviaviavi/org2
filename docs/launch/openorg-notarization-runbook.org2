@@ -1,0 +1,87 @@
+#+title: OpenOrg macOS signing and notarization runbook
+#+subtitle: Reproducible release-candidate packaging without touching the daily app
+#+date: 2026-08-22
+
+* Safety boundary
+
+Release packaging must build in temporary staging and must never replace or relaunch =/Users/avi/Applications/Org2Workspace.app=. The product display name changes to OpenOrg, but the bundle identifier remains =org.org2.workspace= and the executable remains =Org2Workspace= for compatibility.
+
+Do not put Apple credentials in source, shell history, logs, CI output, or this document. Store a notarization credential with =xcrun notarytool store-credentials= and reference only its Keychain profile name through =OPENORG_NOTARY_KEYCHAIN_PROFILE=.
+
+* Prerequisites
+
+- Apple Developer ID Application certificate available to =codesign=.
+- notarytool Keychain profile already configured.
+- Native Node and whisper.cpp binaries for the target architecture.
+- Verified =ggml-base.en.bin= model.
+- Clean release worktree on the approved release commit.
+- Passing npm, documentation, Swift, lifecycle, and compatibility checks.
+
+* Preview
+
+Run the deterministic plan before any build:
+
+#+begin_src sh
+npm run package:macos:openorg:plan
+#+end_src
+
+The plan must show =OpenOrg.app=, preserved =org.org2.workspace= identity, hardened runtime, isolated temporary staging, the requested architecture, and whether a notary profile is configured. It must not mutate the daily app.
+
+* Package Apple Silicon
+
+#+begin_src sh
+OPENORG_NOTARY_KEYCHAIN_PROFILE=PROFILE \
+ORG2_WORKSPACE_CODE_SIGN_IDENTITY='Developer ID Application: …' \
+ORG2_WORKSPACE_NODE_PATH=/path/to/arm64/node \
+ORG2_WORKSPACE_WHISPER_CPP_PATH=/path/to/arm64/whisper-cli \
+ORG2_WORKSPACE_WHISPER_MODEL_PATH=/path/to/ggml-base.en.bin \
+node tools/package-openorg-macos.mjs \
+  --architecture arm64 \
+  --output artifacts/OpenOrg.dmg \
+  --require-notarization
+#+end_src
+
+* Package Intel
+
+Repeat from an =x86_64= toolchain and native runtime inputs:
+
+#+begin_src sh
+OPENORG_NOTARY_KEYCHAIN_PROFILE=PROFILE \
+ORG2_WORKSPACE_CODE_SIGN_IDENTITY='Developer ID Application: …' \
+ORG2_WORKSPACE_NODE_PATH=/path/to/x86_64/node \
+ORG2_WORKSPACE_WHISPER_CPP_PATH=/path/to/x86_64/whisper-cli \
+ORG2_WORKSPACE_WHISPER_MODEL_PATH=/path/to/ggml-base.en.bin \
+node tools/package-openorg-macos.mjs \
+  --architecture x86_64 \
+  --output artifacts/OpenOrg-Intel.dmg \
+  --require-notarization
+#+end_src
+
+* Required evidence
+
+The package command must complete all of these before returning success:
+
+1. Sign nested executables and libraries before signing the app.
+2. Apply hardened runtime and timestamping to Developer ID signatures.
+3. Verify the app using =codesign --verify --deep --strict=.
+4. Create and sign the DMG and verify it with =hdiutil verify=.
+5. Submit the DMG with =notarytool --wait=.
+6. Staple and validate the notarization ticket.
+7. Assess the final DMG with Gatekeeper using =spctl=.
+8. Write a sidecar manifest containing version, architecture, bundle identity, checksum, and notarization state.
+
+Keep the notary submission ID and Apple log outside source control. A failed notarization is a release blocker, not a documentation caveat.
+
+* Migration smoke test
+
+On a Mac with the current public Org2 Workspace installed:
+
+1. Record selected and mounted corpus paths, AI destination names, appearance/transcription settings, mobile pairings, and relevant permissions.
+2. Quit the daily app.
+3. Install the notarized OpenOrg candidate over the existing application location.
+4. Open OpenOrg normally from Finder.
+5. Confirm the same corpus opens, settings remain, existing Keychain-backed destinations connect, and no corpus migration is requested.
+6. Exercise Capture, Agenda, AI Chat, Agent Work, meeting microphone access, Mobile Remote, notifications, and deep links.
+7. Reopen several existing =.org2= and =.org= files and verify no source rewrite occurred.
+
+Record results against the exact candidate checksum. Do not ship on a partial migration result.

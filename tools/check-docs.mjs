@@ -73,7 +73,10 @@ const homepage = fs.readFileSync(path.join(repoRoot, "docs/site/index.org"), "ut
 const features = fs.readFileSync(path.join(repoRoot, "docs/site/features.org"), "utf8");
 const gettingStarted = fs.readFileSync(path.join(repoRoot, "docs/site/getting-started.org"), "utf8");
 const downloads = fs.readFileSync(path.join(repoRoot, "docs/site/downloads.org"), "utf8");
+const productArchitecture = fs.readFileSync(path.join(repoRoot, "docs/site/openorg-and-org2.org"), "utf8");
+const macosWorkspace = fs.readFileSync(path.join(repoRoot, "docs/site/editors-macos.org"), "utf8");
 const publishConfig = fs.readFileSync(path.join(repoRoot, "org2.json"), "utf8");
+const retiredPublicPages = ["privacy-and-data.org", "known-limitations.org", "launch-demo.org"];
 for (const [label, text] of [["agent quickstart", quickstart], ["llms.txt", llms]]) {
   if (!text.includes("org2 agent capabilities")) fail(`${label} does not point agents to the installed capability manifest`);
 }
@@ -127,15 +130,47 @@ if (
   fail("public onboarding must explain the provider-neutral agent boundary");
 }
 if (
+  !homepage.includes("#+TITLE: OpenOrg")
+  || !homepage.includes("Build your knowledge locally and put it to work.")
+  || !productArchitecture.includes("A local-first workspace built on an open format and toolkit.")
+  || !productArchitecture.includes("=@aviaviavi/org2=")
+) {
+  fail("product site must distinguish OpenOrg from the Org2 substrate");
+}
+if (
+  !gettingStarted.includes("* Know what leaves your Mac")
+  || !gettingStarted.includes("macOS Keychain")
+  || !gettingStarted.includes("require an explicit approval")
+  || !gettingStarted.includes("Back up the workspace folder")
+  || !gettingStarted.includes("GitHub issues")
+) {
+  fail("getting-started guidance must explain data sharing, credentials, approvals, backups, and support");
+}
+for (const page of retiredPublicPages) {
+  if (fs.existsSync(path.join(repoRoot, "docs/site", page))) {
+    fail(`internal launch material must stay out of the public site: ${page}`);
+  }
+}
+if ((macosWorkspace.match(/class="org2-section-shot"/g) || []).length < 6) {
+  fail("OpenOrg for macOS must place screenshots beside the sections they illustrate");
+}
+if (
   !publishConfig.includes('href=\\"agent-quickstart.html\\">Agents and models')
+  || !publishConfig.includes('href=\\"openorg-and-org2.html\\">Architecture')
+  || publishConfig.includes('<summary>About</summary>')
+  || publishConfig.includes('<summary>Safety</summary>')
+  || publishConfig.includes('href=\\"privacy-and-data.html\\"')
+  || publishConfig.includes('href=\\"known-limitations.html\\"')
+  || publishConfig.includes('href=\\"launch-demo.html\\"')
+  || !publishConfig.includes('"baseUrl": "https://openorg.so"')
   || publishConfig.includes('href=\\"openclaw-knowledge-layer.html\\">OpenClaw knowledge layer')
 ) {
-  fail("primary site navigation must lead with portable agent and model integration");
+  fail("primary site navigation must expose the OpenOrg product boundary and portable agent integration");
 }
 if (!downloads.includes("https://org2.gateway.scarf.sh/downloads/")) {
   fail("downloads page is missing Scarf Gateway release links");
 }
-if (!downloads.includes("GitHub Releases remains the underlying host")) {
+if (!downloads.includes("GitHub Releases hosts the artifacts")) {
   fail("downloads page must disclose that GitHub Releases hosts the artifacts");
 }
 if (!downloads.includes("* iOS mobile app") || !downloads.includes("Request TestFlight access")) {

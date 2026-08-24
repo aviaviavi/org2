@@ -1,6 +1,11 @@
 * Org2
 
-Docs website: https://org2.avi.press/
+Org2 is the open =.org2= format, compiler/runtime, CLI, npm package, schemas,
+and editor tooling underneath *OpenOrg*, the local-first workspace product.
+The repository and developer identifiers remain Org2.
+
+Product site under review: https://openorg.so/
+Current developer docs: https://org2.avi.press/
 
 For now, the canonical project docs live on the website.
 
@@ -73,7 +78,7 @@ identifier; only the explicit =:debug= command authorizes that. The app reports
 *Debug* or *Optimized release* under its audio/runtime settings, and the bundle
 records the same mode as =Org2BuildConfiguration= in =Info.plist=.
 
-By default this writes to =~/Applications/Org2Workspace.app=, signs it with
+By default this writes to =~/Applications/OpenOrg.app=, signs it with
 bundle id =org.org2.workspace=, and uses the first available stable code-signing
 identity. Stable signing matters for macOS Screen/System Audio permissions;
 ad-hoc signing changes the app's TCC identity on each rebuild. Override the
@@ -82,6 +87,11 @@ to force ad-hoc signing. Override the app path or bundle id with
 =ORG2_WORKSPACE_APP_PATH= or =ORG2_WORKSPACE_BUNDLE_ID= when needed. On Apple
 Silicon it builds arm64 by default; override with =ORG2_WORKSPACE_SWIFT_ARCH= if
 needed.
+
+The isolated development commands write =OpenOrg Preview.app=. Release packaging
+uses =tools/package-openorg-macos.mjs= to build in temporary staging, preserve
+the compatibility identifiers, apply hardened runtime, notarize and staple the
+DMG, and verify it with Gatekeeper. It never writes to the daily app path.
 
 The canonical test layout is =test/= for Node test scripts, with feature
 subdirectories for nearby fixtures when useful. Agent/context-pack coverage

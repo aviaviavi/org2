@@ -1,34 +1,39 @@
 #+TITLE: Getting started
+#+SUBTITLE: Reach the first useful OpenOrg loop in about five minutes.
 
 #+BEGIN_EXPORT html
 <section class="org2-page-intro">
-  <p>The best way to start is with the Mac app: create a local second brain in a folder you own, add a few notes and tasks, then let Org2 help you find, plan, and act on what you know. You do not need Emacs or any prior Org mode experience.</p>
+  <p>Start with the OpenOrg Mac app: open a folder you own, capture one commitment, see it in Agenda, ask an agent for one bounded outcome, and review the cited result. You do not need Emacs or prior Org mode experience.</p>
   <div class="org2-page-summary org2-page-summary-sequence" aria-label="Getting started overview">
-    <div><strong>Create a local corpus.</strong><span>It is an ordinary folder of readable text files, not an app-owned database.</span></div>
-    <div><strong>Add what matters.</strong><span>Begin with notes, tasks, and dates. Add links, data, and automation only when useful.</span></div>
-    <div><strong>Put it to work.</strong><span>Use Agenda, search, AI threads, and exports from the same durable knowledge.</span></div>
+    <div><strong>Open local files.</strong><span>Your workspace is an ordinary folder of readable text that you control.</span></div>
+    <div><strong>Capture and delegate.</strong><span>Schedule one real commitment, then ask any configured agent for bounded work.</span></div>
+    <div><strong>Review and keep control.</strong><span>Inspect citations and approvals while the durable result stays in your files.</span></div>
   </div>
 </section>
 #+END_EXPORT
 
 * 1) Install the Mac app
 
-Org2 Workspace is the recommended starting point. It gives you capture, daily notes, Agenda, search, rendered files, AI threads, and agent review without requiring you to learn the file format first.
+OpenOrg is the recommended starting point. It gives you capture, daily notes, Agenda, search, rendered files, agent threads, and Agent Work without requiring you to learn the Org2 format first.
 
-1. Download the latest =Org2Workspace.dmg= from the [[file:downloads.org][Org2 downloads page]].
-2. Open the disk image and drag =Org2Workspace.app= into =Applications=.
+1. Download the latest =OpenOrg.dmg= from the [[file:downloads.org][downloads page]].
+2. Open the disk image and drag =OpenOrg.app= into =Applications=.
 3. Open the app and choose *Create a new corpus*.
 4. Pick a folder that you can easily find and back up.
 
-Org2 creates a small starter workspace with a welcome note and folders for daily notes, ordinary notes, generated views, and workflows. Everything is plain text that you can inspect in Finder, Git, or another editor. Org2 never requires you to maintain an app-specific database.
+OpenOrg creates a small Org2 workspace with a welcome note and folders for daily notes, ordinary notes, generated views, and workflows. Everything is plain text that you can inspect in Finder, Git, or another editor. OpenOrg never requires an app-specific canonical database.
 
-If you already keep notes in a folder, choose *Open an existing corpus* instead. Markdown and other plain-text material can remain alongside Org2 files while you adopt Org2 gradually.
+If you already keep notes in a folder, choose *Open an existing corpus* instead. Markdown and other plain-text material can live alongside Org2 files while you adopt Org2 gradually.
 
-The initial downloadable disk image is built for Apple Silicon Macs. Current release builds are developer-signed, not notarized. If macOS blocks the first launch, open *System Settings → Privacy & Security* and allow Org2Workspace, or right-click the app in Finder and choose *Open*.
+The public =0.4.2= Org2 Workspace downloads are developer-signed but not notarized. OpenOrg Alpha ships after its Developer ID build passes Apple notarization, has a stapled ticket, and opens normally through Gatekeeper.
 
-* 2) Make your first note
+* 2) Capture one scheduled commitment
 
-Click *New Note*, give the note a useful name, and write normally. A note might be a project, meeting, person, recipe, decision, or anything else you want to remember.
+Open *Capture*, keep *Task* selected, give the commitment a concrete title, and leave *Scheduled* enabled for today. OpenOrg appends the task to today's daily note and refreshes Agenda.
+
+Open *Agenda* and select the task. The task stays connected to the source file and any surrounding decision, meeting, or project context.
+
+You can also click *New Note* and write normally. A note might be a project, meeting, person, recipe, decision, or anything else you want to remember.
 
 Under the rendered view, Org2 stores a simple outline. The same note in source form can look like this:
 
@@ -53,7 +58,7 @@ Only a few conventions matter at first:
 - =SCHEDULED:= gives the task a date so it appears in Agenda.
 - Ordinary paragraphs and lists are just text.
 
-You can use the app's controls instead of editing this syntax directly. The readable source remains available whenever you want it.
+You can use the app's controls for everyday work and open the readable source whenever you want it.
 
 * 3) Use Today and Agenda
 
@@ -61,23 +66,49 @@ Open *Today* for a lightweight daily note. Use it for quick thoughts, a running 
 
 Open *Agenda* to see actionable items collected across the entire corpus. Mark an item done, reschedule it, assign a priority, or open its source note. You do not need to manually copy tasks into a separate task manager.
 
-* 4) Find and connect what you know
+* 4) Ask an agent for bounded work
+
+AI is optional. Your files work without a model or agent.
+
+To connect one, open *OpenOrg → Settings… → AI Chat*. Add or enable a named local, remote, hosted, or self-hosted destination. Agents outside the native app can use the same corpus through CLI JSON and MCP.
+
+With the captured task selected, open *AI Chat* and ask for one concrete outcome with a clear boundary:
+
+#+begin_quote
+Prepare a one-page launch brief using this task and its linked context. Cite every input and leave the result for review; do not publish or message anyone.
+#+end_quote
+
+The destination is replaceable. OpenOrg records the selected files, thread, run, citations, and resulting artifact as durable workspace context.
+
+* 5) Review the cited result
+
+Open *Agent Work*. Inspect the run status, cited inputs, artifact, validation, and anything awaiting approval. Approve, revise, or reject consequential work based on that evidence.
+
+Finally, reveal the workspace in Finder and open the resulting =.org2= file in another editor. The first useful loop ends with portable work you control.
+
+* Know what leaves your Mac
+
+Your workspace is an ordinary folder on your Mac. OpenOrg does not require a hosted corpus account. Context leaves the Mac when you send it to an agent, model, or source provider you configured, so choose destinations whose retention and data-use policies fit your work.
+
+- Provider tokens and other credentials belong in macOS Keychain or another machine-local protected store.
+- External messages, publication, deletion, and other consequential actions require an explicit approval.
+- Back up the workspace folder with Git, Time Machine, iCloud Drive, Syncthing, or another file-oriented system you understand.
+
+Open *Agent Work* to inspect cited inputs, artifacts, validation, pending decisions, and failures. For help with a reproducible issue, use [[https://github.com/aviaviavi/org2/issues][GitHub issues]] with sanitized diagnostics; never attach credentials or private corpus content.
+
+* Find and connect what you know
 
 Use =Command-K= to quickly open any file or heading. Global search finds text, tasks, agent work, and other indexed workspace records.
 
-When two ideas belong together, add a link rather than duplicating the information. Org2 keeps source locations and backlinks, so a person, project, meeting, or decision can remain connected to the work that came from it.
+When two ideas belong together, add a link. Org2 keeps source locations and backlinks, so a person, project, meeting, or decision stays connected to the work that came from it.
 
 Do not try to design the perfect folder structure on day one. A few notes plus daily capture are enough; reorganize later as useful patterns emerge.
 
-* 5) Put the corpus to work with AI
+* Configure more agent workflows
 
-AI is optional. Your files remain useful without a model or agent.
+You can create a shared room and explicitly mention multiple destinations with =@mentions= or =@all=. Each response stays attributed to the agent that produced it, and the corpus provides durable context across every destination.
 
-To connect one, open *Org2 Workspace → Settings… → AI Chat*. Add or enable a named destination backed by the local or remote runtime, hosted provider, self-hosted model, or compatible endpoint you prefer. Agents outside the native app can use the same corpus through CLI JSON and MCP. An AI thread can then search the corpus, cite the files it used, and—within the permissions you choose—preview or apply edits.
-
-You can also create a shared room and explicitly mention multiple destinations with =@mentions= or =@all=. Each response stays attributed to the agent that produced it. The corpus, not any one model or chat provider, remains the durable context.
-
-Start with a concrete request such as:
+Try a source-finding request such as:
 
 #+begin_quote
 What open tasks are connected to this project? Cite the source of each one.
@@ -91,7 +122,7 @@ Turn these notes into a one-page proposal, but show me the changes before writin
 
 See [[file:agent-quickstart.org][Agent quickstart]] when you are ready for permissions, durable runs, workflows, approvals, and deeper agent integration.
 
-* 6) Create useful outputs
+* Create useful outputs
 
 The same corpus can produce more than notes and task lists. As your work grows, Org2 can render or export:
 
@@ -101,11 +132,11 @@ The same corpus can produce more than notes and task lists. As your work grows, 
 - ordinary PDFs for proposals, quotes, and other documents,
 - published HTML and documentation sites.
 
-These outputs stay connected to inspectable source and provenance instead of becoming isolated files with no explanation of where they came from.
+These outputs stay connected to inspectable source and provenance, including where they came from and which decisions shaped them.
 
 * Prefer an editor? Start there instead
 
-The Mac app is the easiest onramp, but it is not required. If you already live in VS Code, install the Org2 extension and open or create a corpus folder there. VS Code provides a strong source-editing workflow with Agenda, TODO and planning edits, capture, backlinks, formatting, navigation, and export commands.
+The Mac app is the easiest onramp. You can also install the Org2 extension in VS Code and open or create a corpus folder there. VS Code provides a strong source-editing workflow with Agenda, TODO and planning edits, capture, backlinks, formatting, navigation, and export commands.
 
 The CLI also works well beside VS Code, Vim/Neovim, Emacs, or another editor:
 
@@ -128,13 +159,13 @@ See [[file:editors.org][Editor integrations]] and [[file:editors-vscode.org][VS 
 
 Org2 Mobile is available as a private TestFlight beta and as source. To join the beta, [[mailto:mail@avi.press?subject=Org2%20Mobile%20TestFlight][email Avi for an invitation]] and include the email address you use with TestFlight. It is not currently distributed through the public App Store.
 
-The iOS app can open a Files-visible local corpus for capture, Agenda, approvals, and file viewing. Its AI sidebar can also control Mac-hosted chats over Tailscale: enable *Mobile Remote* in the Mac app's settings, create a one-time pairing code, then open *Settings → Connect a Mac* from the iOS sidebar and scan it. The Mac remains responsible for model access and corpus context and must be awake with Org2 Workspace running. Workflow controls are intentionally desktop-only for now.
+The iOS app can open a Files-visible local corpus for capture, Agenda, approvals, and file viewing. Its AI sidebar can also control Mac-hosted chats over Tailscale: enable *Mobile Remote* in the Mac app's settings, create a one-time pairing code, then open *Settings → Connect a Mac* from the iOS sidebar and scan it. The Mac remains responsible for model access and corpus context and must be awake with OpenOrg running. Workflow controls are intentionally desktop-only for now.
 
 To build it yourself, open =apps/ios/Org2Mobile/Org2Mobile.xcodeproj= in Xcode, select your Apple development team, configure the =group.org.org2.mobile= App Group for the app and share extension, and run it on a simulator or device. See =apps/ios/Org2Mobile/README.md= for details.
 
 * Coming from Emacs Org mode?
 
-You can use your existing Org directory directly. =.org= remains a first-class input format, so there is no required bulk conversion and no need to rename files before trying Org2.
+You can use your existing Org directory directly. Org2 accepts =.org= as a first-class input format, so there is no required bulk conversion and no need to rename files before trying Org2.
 
 Point the Mac app at the existing folder with *Open an existing corpus*, or try the CLI without changing anything:
 
@@ -148,7 +179,7 @@ For new Org2-specific files, =.org2= makes intent clearer. To edit them with Org
 (add-to-list 'auto-mode-alist '("\\.org2\\'" . org-mode))
 #+end_src
 
-Org2 carries forward outlines, TODO states, planning lines, properties, links, tables, source blocks, agendas, and publishing, but it is not a bug-for-bug clone of every Org mode behavior. Keep complex Babel setups, custom Emacs Lisp, specialized export backends, and heavily customized agenda behavior in Org mode until their Org2 behavior has been verified. Both tools can work over the same readable source where their semantics overlap.
+Org2 supports outlines, TODO states, planning lines, properties, links, tables, source blocks, agendas, and publishing. Keep complex Babel setups, custom Emacs Lisp, specialized export backends, and heavily customized agenda behavior in Org mode until their Org2 behavior has been verified. Both tools can work over the same readable source where their semantics overlap.
 
 See [[file:editors-emacs.org][Using Org2 from Emacs]], [[file:org2-vs-org-mode.org][Org2 vs Org Mode]], and [[file:migration.org][Migration guidance]].
 
@@ -168,16 +199,16 @@ Build the optimized daily Mac app with:
 
 #+begin_src sh
 npm run build:macos-app
-open ~/Applications/Org2Workspace.app
+open ~/Applications/OpenOrg.app
 #+end_src
 
-Safer side-by-side development uses =npm run build:macos-app:codex= for debug or =npm run build:macos-app:codex:release= for optimized behavior. Both target the isolated =Org2Workspace Codex.app= rather than replacing the daily app.
+Side-by-side development uses =npm run build:macos-app:codex= for debug or =npm run build:macos-app:codex:release= for optimized behavior. Both target the isolated =OpenOrg Preview.app= and leave the daily app untouched.
 
 * Next steps
 
-- [[file:features.org][See what Org2 can do]]
-- [[file:editors-macos.org][Learn the macOS Workspace]]
-- [[file:agent-quickstart.org][Connect agents safely]]
+- [[file:features.org][See what OpenOrg can do]]
+- [[file:editors-macos.org][Learn OpenOrg for macOS]]
+- [[file:agent-quickstart.org][Connect agents and models]]
 - [[file:language-reference.org][Learn more of the file format]]
 - [[file:tooling-reference.org][Explore the CLI]]
 - [[file:semantics-status.org][Check current semantics and maturity]]

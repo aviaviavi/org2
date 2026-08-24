@@ -493,6 +493,28 @@ blockquote {
   font-size: 0.94rem;
 }
 
+.org2-section-shot {
+  margin: 1.5rem 0 2.25rem;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-raised);
+  box-shadow: var(--shadow);
+}
+
+.org2-section-shot img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.org2-section-shot figcaption {
+  padding: 0.8rem 1rem 0.95rem;
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
 .org2-sample {
   margin: 2.25rem 0 2.75rem;
 }
@@ -1510,7 +1532,7 @@ body #content {
 
 #content .org2-nav-menu nav > a:first-child {
   display: inline-flex;
-  min-width: 7rem;
+  min-width: 8.2rem;
   align-items: center;
   margin-right: 0.6rem;
   padding: 0.18rem 0.62rem 0.18rem 0.32rem;
@@ -1533,7 +1555,7 @@ body #content {
 
 #content .org2-nav-menu nav > a:first-child::after {
   color: var(--fg);
-  content: "Org2";
+  content: "OpenOrg";
   font-size: 0.95rem;
   font-weight: 600;
   letter-spacing: -0.02em;
@@ -2020,6 +2042,26 @@ body #content {
   border-radius: 0;
   background: transparent;
   box-shadow: none;
+}
+
+#content .org2-product-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin-bottom: 0.9rem;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.035em;
+  text-transform: uppercase;
+}
+
+#content .org2-product-mark img {
+  width: 2.4rem;
+  height: 2.4rem;
+  border-radius: 0.55rem;
+  box-shadow: var(--shadow-small);
 }
 
 #content .org2-home-hero > p {

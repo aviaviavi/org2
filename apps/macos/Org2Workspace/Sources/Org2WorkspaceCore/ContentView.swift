@@ -96,6 +96,10 @@ public struct ContentView: View {
         OrgCryptConfigurationSheet()
           .environmentObject(store)
       }
+      .sheet(isPresented: $store.isLaunchGuidePresented) {
+        OpenOrgLaunchGuideView()
+          .environmentObject(store)
+      }
       .sheet(isPresented: $store.isDataSourceConfigurationPresented) {
         DataSourceConfigurationSheet()
           .environmentObject(store)
@@ -122,6 +126,125 @@ public struct ContentView: View {
         )
       }
     }
+  }
+}
+
+private struct OpenOrgLaunchGuideView: View {
+  @EnvironmentObject private var store: WorkspaceStore
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 18) {
+      HStack(alignment: .top, spacing: 14) {
+        WorkspaceIconBadge(
+          systemImage: "door.left.hand.open",
+          tint: .accentColor,
+          fill: Color.accentColor.opacity(0.12)
+        )
+        VStack(alignment: .leading, spacing: 5) {
+          Text("Get useful in five minutes")
+            .font(.title2.weight(.semibold))
+          Text(WorkspaceProductIdentity.primaryPromise)
+            .font(.callout)
+            .foregroundStyle(.secondary)
+        }
+        Spacer()
+      }
+
+      VStack(spacing: 0) {
+        guideStep(
+          number: 1,
+          title: "Connect your files",
+          detail: "This workspace is an ordinary folder. OpenOrg derives views without moving your source of truth into a private database.",
+          actionTitle: nil,
+          action: nil
+        )
+        Divider()
+        guideStep(
+          number: 2,
+          title: "Capture one commitment",
+          detail: "Add a scheduled task to today's daily note so it has a concrete place in your work.",
+          actionTitle: "Open Capture",
+          action: store.launchGuideCaptureItem
+        )
+        Divider()
+        guideStep(
+          number: 3,
+          title: "See it in Agenda",
+          detail: "Select the commitment and keep its surrounding file context one click away.",
+          actionTitle: "Open Agenda",
+          action: store.launchGuideOpenAgenda
+        )
+        Divider()
+        guideStep(
+          number: 4,
+          title: "Ask an agent for bounded work",
+          detail: "Choose any configured destination. The agent can use authorized local context while the durable result remains in your workspace.",
+          actionTitle: "Ask an Agent",
+          action: store.launchGuideAskAgent
+        )
+        Divider()
+        guideStep(
+          number: 5,
+          title: "Review the result and keep the files",
+          detail: "Inspect citations, artifacts, and approvals in Agent Work, then open the same Org2 files in any editor.",
+          actionTitle: "Open Agent Work",
+          action: store.launchGuideOpenAgentWork
+        )
+      }
+      .background(
+        RoundedRectangle(cornerRadius: 14, style: .continuous)
+          .fill(WorkspaceDesign.panelFill)
+          .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+              .stroke(WorkspaceDesign.hairline, lineWidth: 1)
+          }
+      )
+
+      HStack {
+        Button("Reveal Workspace in Finder") {
+          store.launchGuideRevealWorkspace()
+        }
+        Spacer()
+        Button("Later") {
+          store.dismissLaunchGuide()
+        }
+        Button("Done") {
+          store.completeLaunchGuide()
+        }
+        .buttonStyle(.borderedProminent)
+      }
+    }
+    .padding(24)
+    .frame(width: 720)
+  }
+
+  private func guideStep(
+    number: Int,
+    title: String,
+    detail: String,
+    actionTitle: String?,
+    action: (() -> Void)?
+  ) -> some View {
+    HStack(alignment: .top, spacing: 14) {
+      Text(String(number))
+        .font(.caption.monospacedDigit().weight(.bold))
+        .foregroundStyle(.tint)
+        .frame(width: 24, height: 24)
+        .background(Color.accentColor.opacity(0.12), in: Circle())
+      VStack(alignment: .leading, spacing: 4) {
+        Text(title)
+          .font(.body.weight(.semibold))
+        Text(detail)
+          .font(.callout)
+          .foregroundStyle(.secondary)
+          .fixedSize(horizontal: false, vertical: true)
+      }
+      Spacer(minLength: 12)
+      if let actionTitle, let action {
+        Button(actionTitle, action: action)
+      }
+    }
+    .padding(14)
   }
 }
 
@@ -207,10 +330,15 @@ private struct CorpusOnboardingView: View {
           WorkspaceIconBadge(systemImage: "text.book.closed", tint: .accentColor, fill: Color.accentColor.opacity(0.12))
             .scaleEffect(1.45)
             .padding(.bottom, 4)
-          Text("Welcome to Org2")
+          Text("Welcome to OpenOrg")
             .font(.largeTitle.weight(.semibold))
-          Text("Connect a folder of Org or Org2 files, or create a small starter corpus. Your files stay ordinary plain text on disk.")
+          Text(WorkspaceProductIdentity.productLine)
             .font(.title3)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: 650)
+          Text("Open an existing folder or create a starter workspace. Your files remain ordinary plain text on disk.")
+            .font(.callout)
             .foregroundStyle(.secondary)
             .multilineTextAlignment(.center)
             .frame(maxWidth: 650)
@@ -219,7 +347,7 @@ private struct CorpusOnboardingView: View {
         HStack(alignment: .top, spacing: 18) {
           onboardingCard(
             title: "Open an existing corpus",
-            detail: "Choose any folder containing .org2 or .org files. Org2 will scan it and derive agenda, search, graph, and workspace views.",
+            detail: "Choose any folder containing .org2 or .org files. OpenOrg will scan it and derive Agenda, search, graph, and workspace views.",
             systemImage: "folder",
             actionTitle: "Choose Folder"
           ) {
@@ -228,7 +356,7 @@ private struct CorpusOnboardingView: View {
 
           onboardingCard(
             title: "Create a new corpus",
-            detail: "Choose or create an empty folder. Org2 will add a starter config, inbox, welcome note, daily notes folder, and reviewable output zones.",
+            detail: "Choose or create an empty folder. OpenOrg will add an Org2 config, inbox, welcome note, daily notes folder, and reviewable output zones.",
             systemImage: "sparkles.rectangle.stack",
             actionTitle: "Create Starter Corpus"
           ) {
@@ -876,7 +1004,7 @@ private struct SidebarHeader: View {
   var body: some View {
     HStack(spacing: 7) {
       WorkspaceAsteriskMarker(color: WorkspaceDesign.signalAccent, size: 10)
-      Text("Org2")
+      Text(WorkspaceProductIdentity.displayName)
         .font(.headline.weight(.semibold))
 
       Spacer(minLength: 0)
@@ -6043,7 +6171,7 @@ private struct SourcesView: View {
       } else {
         ScrollView {
           LazyVStack(alignment: .leading, spacing: 14) {
-            Text("Sync updates each crawler’s private local archive. Stage writes bounded raw captures and review-required Org2 packets into this corpus; it never promotes them into canonical notes. Configured schedules run while Org2 Workspace is open and catch up after sleep or on the next launch.")
+            Text("Sync updates each crawler’s private local archive. Stage writes bounded raw captures and review-required Org2 packets into this corpus; it never promotes them into canonical notes. Configured schedules run while OpenOrg is open and catch up after sleep or on the next launch.")
               .font(.callout)
               .foregroundStyle(.secondary)
               .fixedSize(horizontal: false, vertical: true)
@@ -7728,7 +7856,7 @@ private struct OpenClawConfigurationSheet: View {
           }
         }
         .disabled(isRequestingPairing)
-        .help("Create a stable Org2 Workspace device identity and request Gateway operator access")
+        .help("Create a stable OpenOrg device identity and request Gateway operator access")
         Spacer()
         Button("Cancel") {
           dismiss()

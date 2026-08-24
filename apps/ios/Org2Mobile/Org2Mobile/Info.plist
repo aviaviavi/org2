@@ -33,7 +33,7 @@
 	<key>NSCameraUsageDescription</key>
 	<string>Scan Mac pairing codes and attach photos to Org2 notes.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Connect to your paired Org2 Workspace over Tailscale.</string>
+	<string>Connect to your paired OpenOrg workspace over Tailscale.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Transcribe voice messages into Org2 AI chat drafts.</string>
 	<key>NSPhotoLibraryUsageDescription</key>

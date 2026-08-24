@@ -114,7 +114,7 @@ final class AIProviderChatClientTests: XCTestCase {
       XCTAssertEqual(request.url?.absoluteString, "https://api.example.test/v1/chat/completions")
       XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer router-secret")
       XCTAssertEqual(request.value(forHTTPHeaderField: "HTTP-Referer"), "https://org2.avi.press")
-      XCTAssertEqual(request.value(forHTTPHeaderField: "X-Title"), "Org2 Workspace")
+      XCTAssertEqual(request.value(forHTTPHeaderField: "X-Title"), "OpenOrg")
       return (200, ["choices": [["message": ["content": "Router reply"]]]])
     }
 

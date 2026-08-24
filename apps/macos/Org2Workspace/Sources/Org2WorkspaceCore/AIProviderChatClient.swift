@@ -76,7 +76,7 @@ public struct AIProviderChatClient: Sendable {
     try validateAttachments(in: messages)
 
     let system = """
-    You are connected directly to Org2 Workspace as \(destinationName). You can discuss the supplied context, but this direct model connection has no tools, filesystem access, or permission to perform side effects. Never claim that you changed a file or external service. When the user asks for an action, explain that they should use a harness destination such as Codex or OpenClaw.
+    You are connected directly to OpenOrg as \(destinationName). You can discuss the supplied context, but this direct model connection has no tools, filesystem access, or permission to perform side effects. Never claim that you changed a file or external service. When the user asks for an action, explain that they should use a harness destination such as Codex or OpenClaw.
 
     \(workspaceContext.systemPrompt(runtime: settings.adapter.rawValue, runtimeAgentID: destinationName))
     """
@@ -134,7 +134,7 @@ public struct AIProviderChatClient: Sendable {
     case .openRouter:
       request.setValue("Bearer \(settings.apiKey ?? "")", forHTTPHeaderField: "Authorization")
       request.setValue("https://org2.avi.press", forHTTPHeaderField: "HTTP-Referer")
-      request.setValue("Org2 Workspace", forHTTPHeaderField: "X-Title")
+      request.setValue("OpenOrg", forHTTPHeaderField: "X-Title")
     case .ollama:
       if let apiKey = settings.apiKey {
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")

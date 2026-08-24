@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>OpenOrg and Org2</title>
+<meta name="subtitle" content="A local-first workspace built on an open format and toolkit." />
+<link rel="icon" type="image/png" href="assets/favicon.png" />
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
+<script type="module" src="assets/shiki-vscode.js"></script>
+<script defer src="assets/nav.js"></script>
+<meta property="og:type" content="website" />
+<meta property="og:title" content="OpenOrg and Org2" />
+<meta property="og:description" content="A local-first workspace built on an open format and toolkit." />
+<meta property="og:url" content="https://openorg.so/openorg-and-org2.html" />
+<meta property="og:image" content="https://openorg.so/assets/og/openorg-and-org2.svg" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="OpenOrg and Org2" />
+<meta name="twitter:description" content="A local-first workspace built on an open format and toolkit." />
+<meta name="twitter:image" content="https://openorg.so/assets/og/openorg-and-org2.svg" />
+<link rel="stylesheet" href="assets/site.css" />
+<style>
+:root { color-scheme: light dark; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 2rem auto; max-width: 860px; padding: 0 1rem; line-height: 1.5; }
+main { display: grid; gap: 0.75rem; }
+section.org2-headline { margin: 0.5rem 0 1rem; }
+h1,h2,h3,h4,h5,h6 { margin: 1rem 0 0.5rem; line-height: 1.25; }
+.org2-todo { font-size: 0.8em; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; opacity: 0.9; }
+.org2-tags { font-size: 0.8em; opacity: 0.8; }
+.org2-tag { border: 1px solid currentColor; border-radius: 999px; padding: 0 0.35em; }
+.org2-planning { font-size: 0.95em; opacity: 0.9; }
+.org2-planning-kind { font-weight: 600; }
+.org2-properties { display: grid; grid-template-columns: max-content 1fr; gap: 0.15rem 0.75rem; margin: 0.5rem 0; }
+.org2-properties dt { font-weight: 600; }
+.org2-properties dd { margin: 0; }
+.org2-src, .org2-example, .org2-verse, .org2-comment, .org2-directive, pre { overflow-x: auto; padding: 0.75rem; border-radius: 0.5rem; background: rgba(127,127,127,0.12); }
+.org2-center { text-align: center; }
+.org2-underline { text-decoration: underline; }
+table { border-collapse: collapse; width: 100%; margin: 0.5rem 0 1rem; }
+th, td { border: 1px solid rgba(127,127,127,0.35); padding: 0.35rem 0.5rem; text-align: left; }
+thead th { background: rgba(127,127,127,0.16); }
+a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
+</style>
+<style>
+#content { max-width: 60em; margin: auto; line-height: 1.35; }
+#content li > p { margin: 0; }
+#content li + li { margin-top: 0.2rem; }
+</style>
+</head>
+<body>
+<div id="content" class="content">
+<main class="org2-document">
+<div class="org2-nav"><details class="org2-nav-menu" open><summary>Menu</summary><nav aria-label="OpenOrg"><a href="index.html">OpenOrg</a><a href="features.html">How it works</a><a href="getting-started.html">Getting started</a><a href="downloads.html">Downloads</a><a href="openorg-and-org2.html">Architecture</a><details class="org2-nav-dropdown"><summary>Org2 developer docs</summary><div class="org2-nav-dropdown-menu"><a href="reference.html">Overview</a><a href="corpus-flow.html">Corpus flow</a><a href="language-reference.html">Language reference</a><a href="tooling-reference.html">Tooling reference</a><a href="maintenance-workflows.html">Maintenance and health</a><a href="agent-quickstart.html">Agents and models</a><a href="semantics-status.html">Semantics and status</a><a href="migration.html">Practical migration</a></div></details><details class="org2-nav-dropdown"><summary>Editors</summary><div class="org2-nav-dropdown-menu"><a href="editors.html">Overview</a><a href="editors-macos.html">OpenOrg for macOS</a><a href="editors-vscode.html">VS Code</a><a href="editors-vim.html">Vim / Neovim</a><a href="editors-emacs.html">Emacs</a></div></details><a class="org2-nav-github" href="https://github.com/aviaviavi/org2" target="_blank" rel="noopener noreferrer"><svg class="org2-nav-github-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8a8.013 8.013 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.57 7.57 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.19 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg> GitHub</a><form class="org2-site-search" role="search"><button class="org2-site-search-toggle" type="button" aria-label="Open site search" aria-expanded="false">⌕</button><label class="sr-only" for="org2-site-search-input">Search OpenOrg and Org2 docs</label><input id="org2-site-search-input" type="search" placeholder="Search docs" autocomplete="off" aria-label="Search OpenOrg and Org2 docs" aria-expanded="false"/><div class="org2-site-search-results" hidden></div></form></nav></details></div>
+<header class="org2-document-header">
+<h1 class="org2-document-title">OpenOrg and Org2</h1>
+<p class="org2-document-subtitle" role="doc-subtitle">A local-first workspace built on an open format and toolkit.</p>
+</header>
+<section class="org2-headline level-1">
+<h1 id="the-boundary">The boundary</h1>
+<p>OpenOrg is the native workspace, onboarding, integrations, and overall experience for building knowledge locally and putting it to work with people and agents.</p>
+<p>Org2 is the open <code>.org2</code> format, compiler/runtime, CLI, npm package, schemas, and editor tooling underneath it. OpenOrg reads the same ordinary files as other Org2-compatible tools.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="portability">Portability</h1>
+<ul>
+<li><p>Ordinary <code>.org2</code> and <code>.org</code> files are the source of truth.</p></li>
+<li><p>The command-line tools are <code>org2</code> and <code>org2-lsp</code>.</p></li>
+<li><p>The npm package is <code>@aviaviavi/org2</code>.</p></li>
+<li><p>VS Code, Vim, Neovim, Emacs, CLI JSON, and MCP clients can work with the same corpus.</p></li>
+<li><p>Agent runs, workflows, approvals, citations, and provenance are inspectable corpus records.</p></li>
+<li><p>Any configured local, remote, hosted, or self-hosted agent can participate above the deterministic Org2 compiler.</p></li>
+</ul>
+</section>
+<section class="org2-headline level-1">
+<h1 id="what-openorg-adds">What OpenOrg adds</h1>
+<ul>
+<li><p>A native Mac workspace for capture, Agenda, files, meetings, agents, and review.</p></li>
+<li><p>A five-minute first-run path from a folder to a cited agent result.</p></li>
+<li><p>Clear approval boundaries for consequential actions.</p></li>
+<li><p>Local configuration of agent destinations and explicitly authorized context.</p></li>
+<li><p>Packaging, updates, diagnostics, and a coherent product experience.</p></li>
+</ul>
+</section>
+<section class="org2-headline level-1">
+<h1 id="stable-technical-identifiers">Stable technical identifiers</h1>
+<p>OpenOrg uses stable bundle, preference, Keychain, executable, corpus, CLI, package, and schema identifiers. These technical contracts let the app, developer tools, and corpus work together consistently.</p>
+<p>See <a href="language-reference.html">Org2 language reference</a> for the format and <a href="editors-macos.html">OpenOrg for macOS</a> for the product client.</p>
+</section>
+</main>
+</div>
+<footer class="org2-footer"><p>Build your knowledge locally and put it to work.</p><img referrerpolicy="no-referrer-when-downgrade" src="https://static.scarf.sh/a.png?x-pxid=e39e0a38-773e-4446-b8b0-804f923e3dc3" alt="" /></footer>
+</body>
+</html>

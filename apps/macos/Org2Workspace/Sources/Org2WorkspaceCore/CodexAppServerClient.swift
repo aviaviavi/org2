@@ -944,7 +944,7 @@ public actor CodexAppServerClient {
       params: .object([
         "clientInfo": .object([
           "name": .string("org2_workspace"),
-          "title": .string("Org2 Workspace"),
+          "title": .string("OpenOrg"),
           "version": .string(Self.clientVersion)
         ]),
         "capabilities": .object([
@@ -1266,7 +1266,7 @@ public actor CodexAppServerClient {
           "id": id,
           "error": .object([
             "code": .integer(-32601),
-            "message": .string("Org2 Workspace does not support \(method)")
+            "message": .string("OpenOrg does not support \(method)")
           ])
         ]))
       } catch {
@@ -1580,7 +1580,7 @@ public actor CodexAppServerClient {
   }
 
   nonisolated private static let localEditDeveloperInstructions = """
-  You are the local Codex runtime embedded in Org2 Workspace. The active working directory is the selected Org2 corpus.
+  You are the local Codex runtime embedded in OpenOrg. The active working directory is the selected Org2 corpus.
 
   For every corpus read or write, use the org2_workspace_read, org2_workspace_patch_preview, org2_workspace_patch_apply, and org2_thread_post tools supplied by the client. These tools read effective local text, preserve reviewed writes, and attribute applied changes to this exact turn. Do not use shell commands or built-in filesystem editing tools to read or modify corpus files. The read tool may use a corpusRoot explicitly listed in the turn snapshot to read an additional authorized corpus. Patch and thread-post tools always target only the active corpus.
 

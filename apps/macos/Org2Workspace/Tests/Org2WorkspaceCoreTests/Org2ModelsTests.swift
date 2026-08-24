@@ -413,8 +413,10 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("workflows").path))
 
     let welcome = try String(contentsOf: welcomeURL, encoding: .utf8)
-    XCTAssertTrue(welcome.contains("#+TITLE: Welcome to Org2"))
-    XCTAssertTrue(welcome.contains("* TODO Add your first task"))
+    XCTAssertTrue(welcome.contains("#+TITLE: Welcome to OpenOrg"))
+    XCTAssertTrue(welcome.contains("* TODO Capture your first real commitment"))
+    XCTAssertTrue(welcome.contains("* Five-minute path"))
+    XCTAssertTrue(welcome.contains("Open =Help → Getting Started="))
 
     let configData = try Data(contentsOf: root.appendingPathComponent("org2.json"))
     let config = try XCTUnwrap(JSONSerialization.jsonObject(with: configData) as? [String: Any])
@@ -424,6 +426,24 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(identity["schema"] as? String, "org2:corpus:v1")
     XCTAssertEqual(identity["kind"] as? String, "personal")
     XCTAssertFalse((identity["id"] as? String ?? "").isEmpty)
+  }
+
+  @MainActor
+  func testLaunchGuideCanBeReopenedAndCompletedWithoutChangingCompatibilityDomain() throws {
+    let suiteName = "openorg-launch-guide-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()), defaults: defaults)
+
+    store.presentLaunchGuide()
+    XCTAssertTrue(store.isLaunchGuidePresented)
+    store.dismissLaunchGuide()
+    XCTAssertFalse(store.isLaunchGuidePresented)
+
+    store.presentLaunchGuide()
+    store.completeLaunchGuide()
+    XCTAssertFalse(store.isLaunchGuidePresented)
+    XCTAssertTrue(defaults.bool(forKey: "Org2Workspace.openOrgLaunchGuideCompleted.v1"))
   }
 
   func testInitializeSharedStarterCorpusRecordsPortableIdentity() throws {
@@ -1431,7 +1451,7 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(
       error.localizedDescription,
       "pairing required: device is not approved yet (requestId: req-123) "
-        + "Approve Org2 Workspace request req-123 on the Gateway (device abcdef012345), "
+        + "Approve OpenOrg request req-123 on the Gateway (device abcdef012345), "
         + "then click Save & Request Pairing again."
     )
     XCTAssertTrue(error.permitsHTTPFallback)
@@ -1445,7 +1465,7 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(
       error.localizedDescription,
       "OpenClaw closed the signed device handshake before macOS delivered its final reason. "
-        + "Approve the pending Org2 Workspace request for device abcdef012345 on the Gateway, "
+        + "Approve the pending OpenOrg request for device abcdef012345 on the Gateway, "
         + "then click Save & Request Pairing again."
     )
     XCTAssertTrue(error.permitsHTTPFallback)

@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const node = process.execPath;
 const appPath = resolve(
-  process.env.ORG2_WORKSPACE_APP_PATH ?? join(homedir(), "Applications", "Org2Workspace Codex.app")
+  process.env.ORG2_WORKSPACE_APP_PATH ?? join(homedir(), "Applications", "OpenOrg Preview.app")
 );
 
 function run(command, args, options = {}) {

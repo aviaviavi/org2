@@ -28,15 +28,15 @@ Read [references/release-contract.md](references/release-contract.md) before mut
 1. Stamp root and VS Code manifests and lockfiles with `npm version VERSION --no-git-tag-version --allow-same-version` and the equivalent `npm --prefix editors/vscode-org2 version` command.
 2. Add a concise VS Code changelog entry. Avoid npm serialization noise unrelated to the version.
 3. Validate `npm pack --dry-run --json` and package the VSIX from `editors/vscode-org2`.
-4. Build the macOS app into a temporary staging directory with `ORG2_WORKSPACE_SWIFT_CONFIGURATION=release` and `ORG2_WORKSPACE_APP_PATH`. Supply the target-architecture Node binary through `ORG2_WORKSPACE_NODE_PATH`, the pinned native whisper.cpp executable through `ORG2_WORKSPACE_WHISPER_CPP_PATH`, and the verified `ggml-base.en.bin` model through `ORG2_WORKSPACE_WHISPER_MODEL_PATH`; release packaging fails closed when any self-contained runtime is missing. Never overwrite or relaunch `/Users/avi/Applications/Org2Workspace.app` during release packaging.
-5. Create an Apple Silicon DMG containing the app and an `Applications` symlink. Verify the app with `codesign --verify --deep --strict` and the image with `hdiutil verify`. Record its SHA-256.
+4. Run `npm run package:macos:openorg:plan`, then package each architecture with `tools/package-openorg-macos.mjs`. Supply the target-architecture Node binary, pinned native whisper.cpp executable, verified `ggml-base.en.bin` model, Developer ID identity, and notarytool Keychain profile through the documented environment variables. The command builds in temporary staging, fails closed when a runtime or notarization credential is missing, signs nested code with hardened runtime, submits the DMG for notarization, staples it, runs Gatekeeper verification, and records a sidecar manifest and SHA-256. Never overwrite or relaunch `/Users/avi/Applications/Org2Workspace.app` during release packaging.
+5. Require `OpenOrg.dmg` for Apple Silicon and `OpenOrg-Intel.dmg` for Intel. Verify the app with `codesign --verify --deep --strict`, the image with `hdiutil verify`, and the stapled artifact with `xcrun stapler validate` and `spctl`.
 
 ## 4. Publish
 
 1. Commit release metadata, push `main`, create an annotated version tag, and push the tag.
 2. Watch `.github/workflows/release-packages.yml` to completion. It publishes npm through Trusted Publishing, publishes the VS Code extension, creates the GitHub Release, and attaches the npm and VSIX artifacts.
 3. If the workflow fails, inspect its logs before using a local fallback. Never republish a version already visible in a registry.
-4. Upload the verified DMG as `Org2Workspace.dmg` and replace generated notes with reviewer-facing highlights, install constraints, the DMG checksum, and the full changelog.
+4. Upload the verified OpenOrg DMGs with their canonical architecture names and replace generated notes with reviewer-facing highlights, installation requirements, notarization status, checksums, and the full changelog.
 
 ## 5. Synchronize tracked downloads
 
