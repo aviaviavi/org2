@@ -129,7 +129,20 @@ struct Org2WorkspaceScreenshotRenderer {
         bitmap = composedBitmap
       }
     }
-    bitmap.size = NSSize(width: width / scale, height: height / scale)
+    let expectedPixelWidth = max(1, Int(width * scale))
+    let expectedPixelHeight = max(1, Int(height * scale))
+    if bitmap.pixelsWide != expectedPixelWidth || bitmap.pixelsHigh != expectedPixelHeight {
+      guard let normalizedBitmap = normalize(
+        base: bitmap,
+        size: bounds.size,
+        pixelWidth: expectedPixelWidth,
+        pixelHeight: expectedPixelHeight
+      ) else {
+        throw ScreenshotRenderError.renderFailed
+      }
+      bitmap = normalizedBitmap
+    }
+    bitmap.size = bounds.size
     guard let png = bitmap.representation(using: .png, properties: [:]) else {
       throw ScreenshotRenderError.renderFailed
     }
@@ -185,6 +198,39 @@ struct Org2WorkspaceScreenshotRenderer {
       height: webFrame.height
     )
     webSnapshot.draw(in: bitmapWebFrame)
+    context.flushGraphics()
+    NSGraphicsContext.restoreGraphicsState()
+    return bitmap
+  }
+
+  @MainActor
+  private static func normalize(
+    base: NSBitmapImageRep,
+    size: NSSize,
+    pixelWidth: Int,
+    pixelHeight: Int
+  ) -> NSBitmapImageRep? {
+    guard let bitmap = NSBitmapImageRep(
+      bitmapDataPlanes: nil,
+      pixelsWide: pixelWidth,
+      pixelsHigh: pixelHeight,
+      bitsPerSample: 8,
+      samplesPerPixel: 4,
+      hasAlpha: true,
+      isPlanar: false,
+      colorSpaceName: .deviceRGB,
+      bytesPerRow: 0,
+      bitsPerPixel: 0
+    ), let context = NSGraphicsContext(bitmapImageRep: bitmap) else {
+      return nil
+    }
+
+    bitmap.size = size
+    let baseImage = NSImage(size: size)
+    baseImage.addRepresentation(base)
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = context
+    baseImage.draw(in: NSRect(origin: .zero, size: size))
     context.flushGraphics()
     NSGraphicsContext.restoreGraphicsState()
     return bitmap

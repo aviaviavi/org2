@@ -1004,7 +1004,7 @@ private struct SidebarHeader: View {
   var body: some View {
     HStack(spacing: 7) {
       WorkspaceAsteriskMarker(color: WorkspaceDesign.signalAccent, size: 10)
-      Text("Org2")
+      Text(WorkspaceProductIdentity.displayName)
         .font(.headline.weight(.semibold))
 
       Spacer(minLength: 0)
