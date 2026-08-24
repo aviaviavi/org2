@@ -1,10 +1,13 @@
-* Org2
+* OpenOrg and Org2
 
-Org2 is the open =.org2= format, compiler/runtime, CLI, npm package, schemas,
-and editor tooling underneath *OpenOrg*, the local-first workspace product.
-The repository and developer identifiers remain Org2.
+*OpenOrg* is a local-first suite of apps for building knowledge locally and
+putting it to work with people and AI agents. *Org2* is the open =.org2= file
+format and toolchain that powers those apps: the compiler/runtime, CLI, npm
+package, schemas, and editor tooling. This repository contains both the shared
+Org2 foundation and the OpenOrg apps built on it; repository and developer
+identifiers remain Org2 for compatibility.
 
-Product site under review: https://openorg.so/
+OpenOrg product site: https://openorg.so/
 Current developer docs: https://org2.avi.press/
 
 For now, the canonical project docs live on the website.
