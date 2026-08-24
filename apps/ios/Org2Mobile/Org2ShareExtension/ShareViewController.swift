@@ -94,7 +94,7 @@ final class ShareViewController: UIViewController {
           title: title,
           body: body,
           isLoading: false,
-          errorMessage: "Open Org2 and select a corpus folder before using the share extension."
+          errorMessage: "Open OpenOrg and select a corpus folder before using the share extension."
         )
         return
       }
@@ -111,7 +111,7 @@ final class ShareViewController: UIViewController {
         title: title,
         body: body,
         isLoading: false,
-        errorMessage: "Could not capture this item. Re-select the corpus folder in Org2 and try again."
+        errorMessage: "Could not capture this item. Re-select the corpus folder in OpenOrg and try again."
       )
     }
   }

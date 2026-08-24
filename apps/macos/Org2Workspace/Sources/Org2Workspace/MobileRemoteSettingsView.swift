@@ -173,7 +173,7 @@ private struct AppearanceSettingsView: View {
         }
         .pickerStyle(.segmented)
 
-        Text("System follows the appearance selected in macOS. Light and Dark keep Org2 in that theme regardless of the system setting.")
+        Text("System follows the appearance selected in macOS. Light and Dark keep OpenOrg in that theme regardless of the system setting.")
           .font(.callout)
           .foregroundStyle(.secondary)
       } header: {
@@ -222,7 +222,7 @@ private struct MobileRemoteSettingsView: View {
   var body: some View {
     Form {
       Section {
-        Toggle("Allow Org2 Mobile to connect", isOn: Binding(
+        Toggle("Allow OpenOrg for iOS to connect", isOn: Binding(
           get: { remote.isEnabled },
           set: { remote.setEnabled($0) }
         ))
@@ -317,7 +317,7 @@ private struct MobileRemoteSettingsView: View {
         }
 
         LabeledContent("Status", value: remote.pushStatusText)
-        Text("The APNs authentication key is stored only in this Mac’s Keychain. Org2 sends a quiet push directly to Apple when an AI reply completes; the key and device token are never written to the corpus.")
+        Text("The APNs authentication key is stored only in this Mac’s Keychain. OpenOrg sends a real-time push directly to Apple when an AI reply completes; the key and device token are never written to the corpus.")
           .font(.callout)
           .foregroundStyle(.secondary)
       } header: {

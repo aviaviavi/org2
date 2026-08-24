@@ -19,7 +19,7 @@ enum MobileRemoteClientError: LocalizedError {
     case .server(let message):
       message
     case .incompatibleProtocol:
-      "This Mac uses a different Mobile Remote protocol version. Update both Org2 apps."
+      "This Mac uses a different Mobile Remote protocol version. Update OpenOrg on both devices."
     }
   }
 }

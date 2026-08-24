@@ -14,6 +14,14 @@ const remoteStore = readFileSync(
   resolve("apps/ios/Org2Mobile/Org2Mobile/MobileRemoteStore.swift"),
   "utf8",
 );
+const corpusStore = readFileSync(
+  resolve("apps/ios/Org2Mobile/Org2Mobile/CorpusStore.swift"),
+  "utf8",
+);
+const remoteCoordinator = readFileSync(
+  resolve("apps/macos/Org2Workspace/Sources/Org2Workspace/MobileRemoteCoordinator.swift"),
+  "utf8",
+);
 
 const workspaceTabs = contentView.slice(
   contentView.indexOf("private struct WorkspaceTabs"),
@@ -91,5 +99,12 @@ assert.match(createThread, /guard let threadID = response\.threadID/);
 assert.match(createThread, /guard isConnected else/);
 assert.doesNotMatch(createThread, /await refresh\(\)/);
 assert.match(createThread, /Task \{ \[weak self\][\s\S]*refresh\(reportsErrors: false\)/);
+
+assert.match(corpusStore, /content\.title = "OpenOrg due today"/);
+assert.match(remoteCoordinator, /title: "OpenOrg reply notifications"/);
+assert.doesNotMatch(corpusStore, /content\.title = "Org2/);
+assert.doesNotMatch(remoteCoordinator, /title: "Org2 reply notifications"/);
+assert.match(remoteStore, /serverName = "OpenOrg on Mac"/);
+assert.match(remoteStore, /storedServerName == "Org2 on Mac"/);
 
 console.log("iOS mobile navigation tests passed");

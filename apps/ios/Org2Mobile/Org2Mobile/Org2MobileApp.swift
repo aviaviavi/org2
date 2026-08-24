@@ -188,7 +188,7 @@ private struct StartupShellView: View {
     ZStack {
       Color(.systemGroupedBackground)
         .ignoresSafeArea()
-      Text("Org2")
+      Text("OpenOrg")
         .font(.largeTitle.weight(.semibold))
         .foregroundStyle(.primary)
     }

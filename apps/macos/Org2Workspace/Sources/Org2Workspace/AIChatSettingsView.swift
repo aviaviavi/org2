@@ -170,11 +170,11 @@ struct AIChatSettingsView: View {
   private var codexAccessHelp: String {
     switch store.codexSandboxAccess {
     case .readOnly:
-      return "Codex can inspect local files but must use Org2's reviewed edit tools for corpus changes."
+      return "Codex can inspect local files but must use OpenOrg's reviewed edit tools for corpus changes."
     case .workspaceWrite:
       return "Codex can run commands and write inside the active corpus. Codex state such as ~/.codex lease files remains protected."
     case .fullAccess:
-      return "Codex can write anywhere your Mac account can, including ~/.codex lease state and other repositories. Org2 does not show approval prompts in this mode; use it only for trusted threads. The change applies on the next turn, including in an existing thread."
+      return "Codex can write anywhere your Mac account can, including ~/.codex lease state and other repositories. OpenOrg does not show approval prompts in this mode; use it only for trusted threads. The change applies on the next turn, including in an existing thread."
     }
   }
 

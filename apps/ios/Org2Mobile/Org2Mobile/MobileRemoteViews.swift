@@ -515,7 +515,7 @@ struct MobileRemoteRootView: View {
               .foregroundStyle(.secondary)
             Text("No Remote Chats")
               .font(.headline)
-            Text("Create a chat here or in Org2 on your Mac.")
+            Text("Create a chat here or in OpenOrg on your Mac.")
               .font(.subheadline)
               .foregroundStyle(.secondary)
               .multilineTextAlignment(.center)
@@ -795,7 +795,7 @@ private struct MobileExternalThreadDetailView: View {
       } label: {
         HStack {
           if isContinuing { ProgressView().tint(.white) }
-          Label("Fork into Org2", systemImage: "arrow.triangle.branch")
+          Label("Fork into OpenOrg", systemImage: "arrow.triangle.branch")
         }
         .frame(maxWidth: .infinity)
       }
@@ -866,12 +866,12 @@ private struct MobileRemotePairingView: View {
             .foregroundStyle(.blue)
           Text("Your Mac, from your phone")
             .font(.title2.weight(.semibold))
-          Text("Continue Org2 AI chats while you’re away from your desk. Your Mac stays the executor and source of context.")
+          Text("Continue OpenOrg AI chats while you’re away from your desk. Your Mac stays the executor and source of context.")
             .foregroundStyle(.secondary)
         }
 
         VStack(alignment: .leading, spacing: 12) {
-          Label("On the Mac, open Org2 Settings → Mobile Remote.", systemImage: "1.circle.fill")
+          Label("On the Mac, open OpenOrg Settings → Mobile Remote.", systemImage: "1.circle.fill")
           Label("Turn it on and create a one-time pairing code.", systemImage: "2.circle.fill")
           Label("Scan the QR code below, or enter its details.", systemImage: "3.circle.fill")
         }

@@ -8,7 +8,7 @@ final class MobileRemoteStore: ObservableObject {
   @Published private(set) var isPaired = false
   @Published private(set) var isConnected = false
   @Published private(set) var connectionError: String?
-  @Published private(set) var serverName = "Org2 on Mac"
+  @Published private(set) var serverName = "OpenOrg on Mac"
   @Published private(set) var status: MobileRemoteServerStatus?
   @Published private(set) var threads: [MobileRemoteThreadSummary] = []
   @Published private(set) var threadDetail: MobileRemoteThreadDetail?
@@ -71,7 +71,10 @@ final class MobileRemoteStore: ObservableObject {
     self.defaults = defaults
     threadNotificationsEnabled = defaults.object(forKey: Self.threadNotificationsEnabledKey) as? Bool ?? true
     endpointDraft = defaults.string(forKey: Self.endpointKey) ?? ""
-    serverName = defaults.string(forKey: Self.serverNameKey) ?? "Org2 on Mac"
+    let storedServerName = defaults.string(forKey: Self.serverNameKey)
+    serverName = storedServerName == "Org2 on Mac"
+      ? "OpenOrg on Mac"
+      : storedServerName ?? "OpenOrg on Mac"
     accessToken = Self.loadToken()
     isPaired = !endpointDraft.isEmpty && accessToken != nil
     notificationObservers = [
@@ -469,7 +472,7 @@ final class MobileRemoteStore: ObservableObject {
     }
     if enabled, status?.pushNotificationsSupported == false {
       realTimeNotificationsActive = false
-      pushNotificationStatusText = "Update Org2 on the Mac to enable real-time notifications"
+      pushNotificationStatusText = "Update OpenOrg on the Mac to enable real-time notifications"
       return
     }
     let fingerprint = "\(enabled):\(environment ?? "none"):\(token ?? "none")"
@@ -493,14 +496,14 @@ final class MobileRemoteStore: ObservableObject {
       } else if response.providerConfigured {
         pushNotificationStatusText = "Real-time notifications are active"
       } else {
-        pushNotificationStatusText = "Finish push setup in Org2 on the Mac"
+        pushNotificationStatusText = "Finish push setup in OpenOrg on the Mac"
       }
     } catch {
       realTimeNotificationsActive = false
       if status?.pushNotificationsSupported == true {
         pushNotificationStatusText = "Could not sync push notifications: \(error.localizedDescription)"
       } else {
-        pushNotificationStatusText = "Update Org2 on the Mac to enable real-time notifications"
+        pushNotificationStatusText = "Update OpenOrg on the Mac to enable real-time notifications"
       }
     }
   }

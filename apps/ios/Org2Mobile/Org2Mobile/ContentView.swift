@@ -12,7 +12,7 @@ struct ContentView: View {
         Task { await store.selectCorpus(url) }
       }
     }
-    .alert("Org2", isPresented: Binding(
+    .alert("OpenOrg", isPresented: Binding(
       get: { store.errorMessage != nil || remote.errorMessage != nil },
       set: { _ in
         store.errorMessage = nil
@@ -48,7 +48,7 @@ private struct EmptyCorpusView: View {
           .foregroundStyle(.secondary)
 
         VStack(spacing: 8) {
-          Text("Org2")
+          Text("OpenOrg")
             .font(.largeTitle.weight(.semibold))
           Text("Select a synced corpus folder from Files.")
             .font(.body)
@@ -66,7 +66,7 @@ private struct EmptyCorpusView: View {
         .controlSize(.large)
       }
       .padding(24)
-      .navigationTitle("Org2")
+      .navigationTitle("OpenOrg")
       .toolbar {
         ToolbarItem(placement: .topBarLeading) {
           MobileSidebarToolbarButton()

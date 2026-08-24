@@ -99,7 +99,7 @@ final class CorpusStore: ObservableObject {
         rootURL = nil
         clearCorpusViews()
       }
-      errorMessage = "Could not reopen the corpus folder. Please select it again once to refresh Org2's saved access."
+      errorMessage = "Could not reopen the corpus folder. Please select it again once to refresh OpenOrg's saved access."
     }
   }
 
@@ -1214,7 +1214,7 @@ final class CorpusStore: ObservableObject {
 
       for plan in plans {
         let content = UNMutableNotificationContent()
-        content.title = "Org2 due today"
+        content.title = "OpenOrg due today"
         content.body = Self.dueTodayNotificationBody(for: plan.entries)
         content.sound = .default
         content.badge = NSNumber(value: plan.entries.count)
