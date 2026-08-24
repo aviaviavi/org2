@@ -7,31 +7,16 @@
 </section>
 #+END_EXPORT
 
-* OpenOrg Alpha
+* OpenOrg 0.5.0
 
 OpenOrg =0.5.0= is being prepared as an alpha for Apple Silicon and Intel Macs. The public download will appear here after both packages are Developer ID signed, notarized, stapled, and pass Gatekeeper verification.
 
 The Org2 CLI, npm package, VS Code extension, schemas, and =.org2= format are available as the developer toolkit. See [[file:openorg-and-org2.org][OpenOrg and Org2]] for the relationship between the workspace and its open foundation.
 
-
-* Org2 Workspace release 0.4.2
+* Org2 developer tools 0.4.2
 
 #+BEGIN_EXPORT html
-<section class="org2-download-grid" aria-label="Org2 0.4.2 downloads">
-    <article class="org2-download-card org2-download-card-macos-apple-silicon">
-      <p class="org2-download-kicker">macOS</p>
-      <h3>Org2 Workspace for macOS (Apple Silicon DMG)</h3>
-      <p>Native Apple Silicon workspace app. Developer-signed and currently not notarized.</p>
-      <p class="org2-download-meta">0.4.2 · 222.0 MB</p>
-      <a class="org2-download-button" href="https://org2.gateway.scarf.sh/downloads/0.4.2/Org2Workspace.dmg">Download <span aria-hidden="true">↓</span></a>
-    </article>
-    <article class="org2-download-card org2-download-card-macos-intel">
-      <p class="org2-download-kicker">macOS</p>
-      <h3>Org2 Workspace for macOS (Intel DMG)</h3>
-      <p>Native Intel workspace app. Developer-signed and currently not notarized.</p>
-      <p class="org2-download-meta">0.4.2 · 225.6 MB</p>
-      <a class="org2-download-button" href="https://org2.gateway.scarf.sh/downloads/0.4.2/Org2Workspace-Intel.dmg">Download <span aria-hidden="true">↓</span></a>
-    </article>
+<section class="org2-download-grid" aria-label="Org2 0.4.2 developer tool downloads">
     <article class="org2-download-card org2-download-card-vscode">
       <p class="org2-download-kicker">VS Code</p>
       <h3>Org2 for VS Code (VSIX)</h3>
@@ -48,8 +33,6 @@ The Org2 CLI, npm package, VS Code extension, schemas, and =.org2= format are av
     </article>
 </section>
 #+END_EXPORT
-
-These historical Org2 Workspace disk images are available for Apple Silicon and Intel. Both are developer-signed but not notarized. If macOS blocks the first launch, right-click the app and choose *Open*, or allow it under *System Settings → Privacy & Security*.
 
 For registry-managed installation, use =npm install -g @aviaviavi/org2= or install [[https://marketplace.visualstudio.com/items?itemName=AviPress.org2-vscode][Org2 from the VS Code Marketplace]]. The paired iOS app is distributed separately through TestFlight.
 
@@ -78,16 +61,15 @@ Org2 Mobile brings capture, agenda, approvals, and Mac-hosted AI chat to iPhone.
 
 The [[file:getting-started.org::*iOS app][iOS setup guide]] covers source signing, the share extension, corpus sync, and pairing Mobile Remote with the Mac app over Tailscale.
 
-* All release artifacts
+* Org2 developer tool releases
 
 These are the same files attached to each [[https://github.com/aviaviavi/org2/releases][GitHub Release]]. Scarf Gateway records the version and artifact variables before redirecting to GitHub.
 
-| Version | macOS Apple Silicon DMG | macOS Intel DMG | VS Code VSIX | npm TGZ |
-|---------+--------------------------+-----------------+----------------+---------|
-| 0.4.2 | [[https://org2.gateway.scarf.sh/downloads/0.4.2/Org2Workspace.dmg][Download]] | [[https://org2.gateway.scarf.sh/downloads/0.4.2/Org2Workspace-Intel.dmg][Download]] | [[https://org2.gateway.scarf.sh/downloads/0.4.2/org2-vscode-0.4.2.vsix][Download]] | [[https://org2.gateway.scarf.sh/downloads/0.4.2/aviaviavi-org2-0.4.2.tgz][Download]] |
-| 0.4.1 | [[https://org2.gateway.scarf.sh/downloads/0.4.1/Org2Workspace.dmg][Download]] | [[https://org2.gateway.scarf.sh/downloads/0.4.1/Org2Workspace-Intel.dmg][Download]] | [[https://org2.gateway.scarf.sh/downloads/0.4.1/org2-vscode-0.4.1.vsix][Download]] | [[https://org2.gateway.scarf.sh/downloads/0.4.1/aviaviavi-org2-0.4.1.tgz][Download]] |
-| 0.4.0 | [[https://org2.gateway.scarf.sh/downloads/0.4.0/Org2Workspace.dmg][Download]] | — | [[https://org2.gateway.scarf.sh/downloads/0.4.0/org2-vscode-0.4.0.vsix][Download]] | [[https://org2.gateway.scarf.sh/downloads/0.4.0/aviaviavi-org2-0.4.0.tgz][Download]] |
-| 0.3.0 | [[https://org2.gateway.scarf.sh/downloads/0.3.0/Org2Workspace.dmg][Download]] | — | — | — |
+| Version | VS Code VSIX | npm TGZ |
+|---------+--------------+---------|
+| 0.4.2 | [[https://org2.gateway.scarf.sh/downloads/0.4.2/org2-vscode-0.4.2.vsix][Download]] | [[https://org2.gateway.scarf.sh/downloads/0.4.2/aviaviavi-org2-0.4.2.tgz][Download]] |
+| 0.4.1 | [[https://org2.gateway.scarf.sh/downloads/0.4.1/org2-vscode-0.4.1.vsix][Download]] | [[https://org2.gateway.scarf.sh/downloads/0.4.1/aviaviavi-org2-0.4.1.tgz][Download]] |
+| 0.4.0 | [[https://org2.gateway.scarf.sh/downloads/0.4.0/org2-vscode-0.4.0.vsix][Download]] | [[https://org2.gateway.scarf.sh/downloads/0.4.0/aviaviavi-org2-0.4.0.tgz][Download]] |
 
 * Stable download URL
 
@@ -97,11 +79,11 @@ Release automation uses one permanent template:
 https://org2.gateway.scarf.sh/downloads/{version}/{artifact}
 #+end_src
 
-For example, the current macOS builds are:
+For example, the current developer tools are:
 
 #+begin_src text
-https://org2.gateway.scarf.sh/downloads/0.4.2/Org2Workspace.dmg
-https://org2.gateway.scarf.sh/downloads/0.4.2/Org2Workspace-Intel.dmg
+https://org2.gateway.scarf.sh/downloads/0.4.2/org2-vscode-0.4.2.vsix
+https://org2.gateway.scarf.sh/downloads/0.4.2/aviaviavi-org2-0.4.2.tgz
 #+end_src
 
 Scarf redirects that request to the matching =github.com/aviaviavi/org2/releases/download/{version}/{artifact}= URL. No release files are hosted separately by Scarf.

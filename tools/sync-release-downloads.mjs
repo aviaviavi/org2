@@ -156,28 +156,41 @@ export function renderDownloadsPage(releases) {
   if (!published.length) throw new Error("No published releases with assets were found");
 
   const current = published[0];
-  const cards = sortedAssets(current).map((asset) => currentReleaseCard(asset, current.tag_name)).join("\n");
-  const rows = published.map((release) => {
+  const currentAssets = sortedAssets(current);
+  const currentMacAssets = currentAssets.filter((asset) => artifactKind(asset.name).startsWith("macos-"));
+  const isOpenOrgRelease = currentMacAssets.some((asset) => asset.name.toLowerCase().startsWith("openorg"));
+  const visibleCurrentAssets = isOpenOrgRelease
+    ? currentAssets
+    : currentAssets.filter((asset) => ["vscode", "npm"].includes(artifactKind(asset.name)));
+  const cards = visibleCurrentAssets
+    .map((asset) => currentReleaseCard(asset, current.tag_name))
+    .join("\n");
+  const toolReleases = published.filter((release) =>
+    sortedAssets(release).some((asset) => ["vscode", "npm"].includes(artifactKind(asset.name))),
+  );
+  const rows = toolReleases.map((release) => {
     const byKind = new Map(sortedAssets(release).map((asset) => [artifactKind(asset.name), asset]));
-    return `| ${release.tag_name} | ${orgLink(release.tag_name, byKind.get("macos-apple-silicon"))} | ${orgLink(release.tag_name, byKind.get("macos-intel"))} | ${orgLink(release.tag_name, byKind.get("vscode"))} | ${orgLink(release.tag_name, byKind.get("npm"))} |`;
+    return `| ${release.tag_name} | ${orgLink(release.tag_name, byKind.get("vscode"))} | ${orgLink(release.tag_name, byKind.get("npm"))} |`;
   });
 
-  const currentMacAssets = sortedAssets(current).filter((asset) => artifactKind(asset.name).startsWith("macos-"));
-  const isOpenOrgRelease = currentMacAssets.some((asset) => asset.name.toLowerCase().startsWith("openorg"));
   const installStatus = isOpenOrgRelease
     ? "The OpenOrg disk images are available for Apple Silicon and Intel. Both are Developer ID signed, notarized, and stapled, and must pass Gatekeeper verification before release."
-    : "These historical Org2 Workspace disk images are available for Apple Silicon and Intel. Both are developer-signed but not notarized. If macOS blocks the first launch, right-click the app and choose *Open*, or allow it under *System Settings → Privacy & Security*.";
+    : "";
   const examples = isOpenOrgRelease
-    ? ["OpenOrg.dmg", "OpenOrg-Intel.dmg"]
-    : ["Org2Workspace.dmg", "Org2Workspace-Intel.dmg"];
+    ? currentMacAssets.slice(0, 2).map((asset) => asset.name)
+    : visibleCurrentAssets.slice(0, 2).map((asset) => asset.name);
   const alphaPreamble = isOpenOrgRelease ? "" : `
-* OpenOrg Alpha
+
+* OpenOrg 0.5.0
 
 OpenOrg =0.5.0= is being prepared as an alpha for Apple Silicon and Intel Macs. The public download will appear here after both packages are Developer ID signed, notarized, stapled, and pass Gatekeeper verification.
 
-The Org2 CLI, npm package, VS Code extension, schemas, and =.org2= format are available as the developer toolkit. See [[file:openorg-and-org2.org][OpenOrg and Org2]] for the relationship between the workspace and its open foundation.
-`;
-  const currentReleaseHeading = isOpenOrgRelease ? "Current release" : "Org2 Workspace release";
+The Org2 CLI, npm package, VS Code extension, schemas, and =.org2= format are available as the developer toolkit. See [[file:openorg-and-org2.org][OpenOrg and Org2]] for the relationship between the workspace and its open foundation.`;
+  const currentReleaseHeading = isOpenOrgRelease ? "OpenOrg" : "Org2 developer tools";
+  const currentReleaseLabel = isOpenOrgRelease
+    ? `OpenOrg ${current.tag_name} downloads`
+    : `Org2 ${current.tag_name} developer tool downloads`;
+  const exampleLabel = isOpenOrgRelease ? "current OpenOrg builds" : "current developer tools";
 
   return `#+TITLE: Downloads
 #+SUBTITLE: Install OpenOrg and the Org2 developer tools from versioned GitHub release artifacts
@@ -186,20 +199,17 @@ The Org2 CLI, npm package, VS Code extension, schemas, and =.org2= format are av
 <section class="org2-page-intro org2-downloads-intro">
   <p>OpenOrg is the workspace product; Org2 is its open format and developer toolkit. GitHub Releases hosts the artifacts, and direct-download links pass through Scarf Gateway for aggregate measurement before redirecting to the original file.</p>
 </section>
-#+END_EXPORT
-${alphaPreamble}
+#+END_EXPORT${alphaPreamble}
 
 * ${currentReleaseHeading} ${current.tag_name}
 
 #+BEGIN_EXPORT html
-<section class="org2-download-grid" aria-label="Org2 ${escapeHtml(current.tag_name)} downloads">
+<section class="org2-download-grid" aria-label="${escapeHtml(currentReleaseLabel)}">
 ${cards}
 </section>
 #+END_EXPORT
 
-${installStatus}
-
-For registry-managed installation, use =npm install -g @aviaviavi/org2= or install [[https://marketplace.visualstudio.com/items?itemName=AviPress.org2-vscode][Org2 from the VS Code Marketplace]]. The paired iOS app is distributed separately through TestFlight.
+${installStatus ? `${installStatus}\n\n` : ""}For registry-managed installation, use =npm install -g @aviaviavi/org2= or install [[https://marketplace.visualstudio.com/items?itemName=AviPress.org2-vscode][Org2 from the VS Code Marketplace]]. The paired iOS app is distributed separately through TestFlight.
 
 * iOS mobile app
 
@@ -226,12 +236,12 @@ Org2 Mobile brings capture, agenda, approvals, and Mac-hosted AI chat to iPhone.
 
 The [[file:getting-started.org::*iOS app][iOS setup guide]] covers source signing, the share extension, corpus sync, and pairing Mobile Remote with the Mac app over Tailscale.
 
-* All release artifacts
+* Org2 developer tool releases
 
 These are the same files attached to each [[https://github.com/aviaviavi/org2/releases][GitHub Release]]. Scarf Gateway records the version and artifact variables before redirecting to GitHub.
 
-| Version | macOS Apple Silicon DMG | macOS Intel DMG | VS Code VSIX | npm TGZ |
-|---------+--------------------------+-----------------+----------------+---------|
+| Version | VS Code VSIX | npm TGZ |
+|---------+--------------+---------|
 ${rows.join("\n")}
 
 * Stable download URL
@@ -242,11 +252,10 @@ Release automation uses one permanent template:
 https://org2.gateway.scarf.sh/downloads/{version}/{artifact}
 #+end_src
 
-For example, the current macOS builds are:
+For example, the ${exampleLabel} are:
 
 #+begin_src text
-${scarfDownloadUrl(current.tag_name, examples[0])}
-${scarfDownloadUrl(current.tag_name, examples[1])}
+${examples.map((asset) => scarfDownloadUrl(current.tag_name, asset)).join("\n")}
 #+end_src
 
 Scarf redirects that request to the matching =github.com/aviaviavi/org2/releases/download/{version}/{artifact}= URL. No release files are hosted separately by Scarf.

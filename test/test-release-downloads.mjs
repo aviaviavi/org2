@@ -64,12 +64,13 @@ assert.match(merged, /## Highlights\n\nCurrent release\./);
 assert.equal(mergeReleaseDownloadBlock(merged, releases[0]), merged);
 
 const page = renderDownloadsPage(releases);
-assert.match(page, /\* OpenOrg Alpha/);
-assert.match(page, /\* Org2 Workspace release 0\.4\.1/);
+assert.match(page, /\* OpenOrg 0\.5\.0/);
+assert.match(page, /\* Org2 developer tools 0\.4\.1/);
+assert.match(page, /\| Version \| VS Code VSIX \| npm TGZ \|/);
 assert.match(page, /\| 0\.4\.1 \| \[\[https:\/\/org2\.gateway\.scarf\.sh/);
-assert.match(page, /macOS Apple Silicon DMG \| macOS Intel DMG/);
-assert.match(page, /Org2Workspace-Intel\.dmg/);
-assert.match(page, /\| 0\.3\.0 \|/);
+assert.doesNotMatch(page, /Org2 Workspace/);
+assert.doesNotMatch(page, /Org2Workspace(?:-Intel)?\.dmg/);
+assert.doesNotMatch(page, /\| 0\.3\.0 \|/);
 assert.match(page, /No release files are hosted separately by Scarf\./);
 assert.match(page, /\* iOS mobile app/);
 assert.match(page, /mailto:mail@avi\.press\?subject=Org2%20Mobile%20TestFlight/);
@@ -87,8 +88,8 @@ const openOrgPage = renderDownloadsPage([{
     { name: "OpenOrg-Intel.dmg", size: 8700000 },
   ],
 }]);
-assert.match(openOrgPage, /\* Current release 0\.5\.0/);
-assert.doesNotMatch(openOrgPage, /\* OpenOrg Alpha\n/);
+assert.match(openOrgPage, /\* OpenOrg 0\.5\.0/);
+assert.doesNotMatch(openOrgPage, /\* Org2 developer tools 0\.5\.0/);
 assert.match(openOrgPage, /Developer ID signed, notarized, and stapled/);
 assert.match(openOrgPage, /OpenOrg-Intel\.dmg/);
 

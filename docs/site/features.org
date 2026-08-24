@@ -6,20 +6,6 @@
     <p>OpenOrg is a local-first workspace for running work with people and agents from files you control. It keeps the source behind a decision, delegates work with bounded context, brings back the decisions that need you, and records the finished result in the open Org2 format.</p>
   </section>
 
-  <section class="org2-feature-section" id="compiler-loop" aria-labelledby="compiler-loop-title">
-    <div class="org2-feature-heading">
-      <h2 id="compiler-loop-title">The follow-through loop</h2>
-      <p>OpenOrg carries a decision from its source through delegated work, human review, and a verifiable outcome.</p>
-    </div>
-    <div class="org2-compiler-flow" aria-label="Org2 compiler workflow">
-      <article><strong>Capture</strong><p>Keep the commitment and its exact meeting, note, message, task, or dataset together.</p></article>
-      <article><strong>Delegate</strong><p>Give a person or agent the bounded context and outcome they need.</p></article>
-      <article><strong>Review</strong><p>Collect clarifications and consequential actions in one decision queue.</p></article>
-      <article><strong>Verify</strong><p>Return outputs, validation, and evidence to the durable source record.</p></article>
-    </div>
-    <p class="org2-feature-note">Underneath, one parser turns ordinary files into shared semantics for the Mac app, VS Code, CLI tools, agent integrations, and publishing. Every client reads the same corpus and semantic model.</p>
-  </section>
-
   <section class="org2-feature-story" id="planning-knowledge" aria-labelledby="planning-knowledge-title">
     <div class="org2-feature-copy">
       <h2 id="planning-knowledge-title">Planning and linked notes</h2>

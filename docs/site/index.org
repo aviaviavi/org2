@@ -3,7 +3,6 @@
 
 #+BEGIN_EXPORT html
 <section class="org2-page-intro org2-home-hero">
-  <div class="org2-product-mark"><img src="assets/openorg-app-icon.png" alt="" /></div>
   <p>OpenOrg is a local-first workspace where your notes, decisions, commitments, and agent work become durable follow-through. Use the agent, model, or provider you choose while your knowledge stays in files you control.</p>
   <nav class="org2-hero-actions" aria-label="Start with OpenOrg">
     <a class="org2-hero-action org2-hero-action-primary" href="getting-started.html">Get started <span aria-hidden="true">→</span></a>
