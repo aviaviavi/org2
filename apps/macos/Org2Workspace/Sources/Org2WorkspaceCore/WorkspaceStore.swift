@@ -1064,6 +1064,11 @@ private struct ApprovalCandidateSource: Sendable {
   let sourceLineOffset: Int
 }
 
+struct ApprovalCandidateSourceSlice: Equatable, Sendable {
+  let sourceText: String
+  let sourceLineOffset: Int
+}
+
 private struct AgendaTodoShortcutMutation: Sendable {
   let status: TodoEditStatus
   let target: HeadlineMutationTarget
@@ -4087,7 +4092,8 @@ public final class WorkspaceStore: ObservableObject {
         items.append(contentsOf: Self.approvalItems(
           in: document,
           file: candidate.file.path,
-          sourceText: candidate.sourceText
+          sourceText: candidate.sourceText,
+          sourceLineOffset: candidate.sourceLineOffset
         ))
       }
       let nextApprovalItems = Self.sortedApprovalItems(items)
@@ -5289,7 +5295,19 @@ public final class WorkspaceStore: ObservableObject {
     file: CorpusFile,
     sourceLines: [String]
   ) -> [ApprovalCandidateSource] {
-    let sourceText = sourceLines.joined(separator: "\n")
+    approvalCandidateSourceSlices(sourceLines).map { slice in
+      ApprovalCandidateSource(
+        file: file,
+        sourceText: slice.sourceText,
+        parseText: slice.sourceText,
+        sourceLineOffset: slice.sourceLineOffset
+      )
+    }
+  }
+
+  nonisolated static func approvalCandidateSourceSlices(
+    _ sourceLines: [String]
+  ) -> [ApprovalCandidateSourceSlice] {
     var ranges: [Range<Int>] = []
     for index in sourceLines.indices {
       guard let level = approvalHeadingLevel(sourceLines[index]) else { continue }
@@ -5303,22 +5321,12 @@ public final class WorkspaceStore: ObservableObject {
     }
     guard !ranges.isEmpty else { return [] }
 
-    var parseLines = sourceLines.map { line in
-      approvalHeadingLevel(line) == nil ? "" : line
-    }
-    for range in mergedApprovalCandidateRanges(ranges) {
-      for index in range {
-        parseLines[index] = sourceLines[index]
-      }
-    }
-    return [
-      ApprovalCandidateSource(
-        file: file,
-        sourceText: sourceText,
-        parseText: parseLines.joined(separator: "\n"),
-        sourceLineOffset: 0
+    return mergedApprovalCandidateRanges(ranges).map { range in
+      ApprovalCandidateSourceSlice(
+        sourceText: sourceLines[range].joined(separator: "\n"),
+        sourceLineOffset: range.lowerBound
       )
-    ]
+    }
   }
 
   nonisolated private static func mergedApprovalCandidateRanges(_ ranges: [Range<Int>]) -> [Range<Int>] {
@@ -6096,13 +6104,20 @@ public final class WorkspaceStore: ObservableObject {
   nonisolated static func approvalItems(
     in document: Org2CanonicalDocument,
     file: String,
-    sourceText: String
+    sourceText: String,
+    sourceLineOffset: Int = 0
   ) -> [ApprovalItem] {
     let lines = normalizeLineEndings(sourceText)
       .split(separator: "\n", omittingEmptySubsequences: false)
       .map(String.init)
     var items: [ApprovalItem] = []
-    appendApprovalItems(from: document.children, file: file, sourceLines: lines, into: &items)
+    appendApprovalItems(
+      from: document.children,
+      file: file,
+      sourceLines: lines,
+      sourceLineOffset: sourceLineOffset,
+      into: &items
+    )
     return sortedApprovalItems(items)
   }
 
@@ -6110,12 +6125,25 @@ public final class WorkspaceStore: ObservableObject {
     from nodes: [Org2CanonicalNode],
     file: String,
     sourceLines: [String],
+    sourceLineOffset: Int,
     into items: inout [ApprovalItem]
   ) {
     for node in nodes {
       guard case .headline(let headline) = node else { continue }
-      appendApprovalItem(from: headline, file: file, sourceLines: sourceLines, into: &items)
-      appendApprovalItems(from: headline.children, file: file, sourceLines: sourceLines, into: &items)
+      appendApprovalItem(
+        from: headline,
+        file: file,
+        sourceLines: sourceLines,
+        sourceLineOffset: sourceLineOffset,
+        into: &items
+      )
+      appendApprovalItems(
+        from: headline.children,
+        file: file,
+        sourceLines: sourceLines,
+        sourceLineOffset: sourceLineOffset,
+        into: &items
+      )
     }
   }
 
@@ -6123,6 +6151,7 @@ public final class WorkspaceStore: ObservableObject {
     from headline: Org2CanonicalHeadline,
     file: String,
     sourceLines: [String],
+    sourceLineOffset: Int,
     into items: inout [ApprovalItem]
   ) {
     let todo = headline.todo?.uppercased()
@@ -6147,6 +6176,7 @@ public final class WorkspaceStore: ObservableObject {
       properties: properties,
       body: approvalBody(
         sourceLines: sourceLines,
+        sourceLineOffset: sourceLineOffset,
         sourceRange: sourceRange,
         children: headline.children
       ),
@@ -6164,6 +6194,7 @@ public final class WorkspaceStore: ObservableObject {
 
   nonisolated private static func approvalBody(
     sourceLines: [String],
+    sourceLineOffset: Int,
     sourceRange: Org2CanonicalSourceRange,
     children: [Org2CanonicalNode]
   ) -> String {
@@ -6186,12 +6217,13 @@ public final class WorkspaceStore: ObservableObject {
 
     var bodyLines: [String] = []
     for lineNumber in startLine...endLine {
-      guard sourceLines.indices.contains(lineNumber - 1),
+      let sourceIndex = lineNumber - sourceLineOffset - 1
+      guard sourceLines.indices.contains(sourceIndex),
             !hiddenRanges.contains(where: { $0.contains(lineNumber) })
       else {
         continue
       }
-      bodyLines.append(sourceLines[lineNumber - 1])
+      bodyLines.append(sourceLines[sourceIndex])
     }
     return bodyLines
       .joined(separator: "\n")

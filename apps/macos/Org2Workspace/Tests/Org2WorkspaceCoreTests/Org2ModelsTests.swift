@@ -1077,6 +1077,64 @@ final class Org2ModelsTests: XCTestCase {
     """))
   }
 
+  func testApprovalCandidateSlicesPreserveOriginalLinesWithoutWholeFileBuffers() async throws {
+    let source = """
+    #+TITLE: Approval slicing
+
+    * TODO Ordinary work
+    :PROPERTIES:
+    :STATUS: ready
+    :END:
+    Unrelated prefix.
+
+    * TODO Review launch email
+    :PROPERTIES:
+    :ID: approval-slice
+    :REVIEW_STATUS: review-required
+    :END:
+    Review this exact body.
+
+    ** TODO Child context
+    Keep this with the approval subtree.
+
+    * TODO Unrelated suffix
+    :PROPERTIES:
+    :STATUS: ready
+    :END:
+    """
+    let lines = source.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+
+    let slices = WorkspaceStore.approvalCandidateSourceSlices(lines)
+
+    let slice = try XCTUnwrap(slices.first)
+    XCTAssertEqual(slices.count, 1)
+    XCTAssertEqual(slice.sourceLineOffset, 8)
+    XCTAssertTrue(slice.sourceText.hasPrefix("* TODO Review launch email"))
+    XCTAssertTrue(slice.sourceText.contains("Keep this with the approval subtree."))
+    XCTAssertFalse(slice.sourceText.contains("Unrelated prefix."))
+    XCTAssertFalse(slice.sourceText.contains("Unrelated suffix"))
+
+    let cli = Org2CLI(repoRoot: try Org2CLI.defaultRepoRoot())
+    let document: Org2CanonicalDocument = try await cli.parseTextJSON(
+      slice.sourceText,
+      sourceRanges: true,
+      sourceLineOffset: slice.sourceLineOffset
+    )
+    let approvals = WorkspaceStore.approvalItems(
+      in: document,
+      file: "/tmp/approval-slice.org2",
+      sourceText: slice.sourceText,
+      sourceLineOffset: slice.sourceLineOffset
+    )
+
+    let approval = try XCTUnwrap(approvals.first)
+    XCTAssertEqual(approvals.count, 1)
+    XCTAssertEqual(approval.idValue, "approval-slice")
+    XCTAssertEqual(approval.line, 9)
+    XCTAssertTrue(approval.body.contains("Review this exact body."))
+    XCTAssertTrue(approval.body.contains("Keep this with the approval subtree."))
+  }
+
   func testCanonicalAstRendersEditableBlocksWithFallbackGaps() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-canonical-render-\(UUID().uuidString)", isDirectory: true)
