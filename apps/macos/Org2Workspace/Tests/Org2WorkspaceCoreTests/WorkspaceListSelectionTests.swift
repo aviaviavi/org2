@@ -3,6 +3,27 @@ import XCTest
 @testable import Org2WorkspaceCore
 
 final class WorkspaceListSelectionTests: XCTestCase {
+  func testVerticallyStackedNodeContextPaneHasNoLeadingDividerOverlay() throws {
+    let testFile = URL(fileURLWithPath: #filePath)
+    let packageRoot = testFile
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+    let contentViewSource = packageRoot
+      .appendingPathComponent("Sources/Org2WorkspaceCore/ContentView.swift")
+    let source = try String(contentsOf: contentViewSource, encoding: .utf8)
+    let contextPaneStart = try XCTUnwrap(source.range(of: "private struct NodeContextPane: View"))
+    let overviewStart = try XCTUnwrap(
+      source.range(of: "private struct NodeContextOverview: View", range: contextPaneStart.upperBound..<source.endIndex)
+    )
+    let contextPane = source[contextPaneStart.lowerBound..<overviewStart.lowerBound]
+
+    XCTAssertFalse(
+      contextPane.contains(".overlay(alignment: .leading)"),
+      "The Context pane is stacked below the document; an unconstrained leading Divider resolves horizontally and draws a line through the pane"
+    )
+  }
+
   func testIOSNotificationOpenUsesStableTranscriptPresentationLifecycle() throws {
     let testFile = URL(fileURLWithPath: #filePath)
     let packageRoot = testFile

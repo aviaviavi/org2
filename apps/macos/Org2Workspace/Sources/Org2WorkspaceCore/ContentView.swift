@@ -10308,9 +10308,6 @@ private struct NodeContextPane: View {
       }
     }
     .background(WorkspaceDesign.barBackground)
-    .overlay(alignment: .leading) {
-      Divider()
-    }
   }
 }
 
