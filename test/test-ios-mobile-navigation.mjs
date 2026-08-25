@@ -40,6 +40,33 @@ assert.match(
   workspaceTabs,
   /openWorkspace: \{\s*selection = \.newNote\s*route = \.workspace/,
 );
+assert.match(
+  workspaceTabs,
+  /\.simultaneousGesture\([\s\S]*DragGesture\([\s\S]*coordinateSpace: \.global[\s\S]*MobileSidebarEdgeSwipe\.shouldOpen/,
+  "The workspace should recognize the sidebar reveal without replacing child gestures",
+);
+assert.match(
+  workspaceTabs,
+  /guard !isSidebarPresented,[\s\S]*startLocation: value\.startLocation,[\s\S]*translation: value\.translation/,
+  "The edge swipe should only reveal a closed sidebar",
+);
+
+const sidebarEdgeSwipe = contentView.slice(
+  contentView.indexOf("private enum MobileSidebarEdgeSwipe"),
+  contentView.indexOf("private enum MobileWorkspaceRoute"),
+);
+assert.match(sidebarEdgeSwipe, /activationWidth: CGFloat = 24/);
+assert.match(sidebarEdgeSwipe, /minimumHorizontalTravel: CGFloat = 44/);
+assert.match(
+  sidebarEdgeSwipe,
+  /\(0\.\.\.activationWidth\)\.contains\(startLocation\.x\)/,
+  "Sidebar reveal gestures must begin at the physical left edge",
+);
+assert.match(
+  sidebarEdgeSwipe,
+  /translation\.width >= abs\(translation\.height\) \* horizontalDominance/,
+  "Vertical scrolling should not open the sidebar",
+);
 
 const newNote = contentView.slice(
   contentView.indexOf("private struct NewNoteView"),

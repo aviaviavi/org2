@@ -125,6 +125,21 @@ private struct WorkspaceTabs: View {
       }
     }
     .animation(.snappy(duration: 0.24), value: isSidebarPresented)
+    .simultaneousGesture(
+      DragGesture(
+        minimumDistance: MobileSidebarEdgeSwipe.minimumDistance,
+        coordinateSpace: .global
+      )
+      .onEnded { value in
+        guard !isSidebarPresented,
+              MobileSidebarEdgeSwipe.shouldOpen(
+                startLocation: value.startLocation,
+                translation: value.translation
+              )
+        else { return }
+        isSidebarPresented = true
+      }
+    )
     .onReceive(NotificationCenter.default.publisher(for: .org2OpenMobileSidebar)) { _ in
       isSidebarPresented = true
     }
@@ -192,6 +207,22 @@ private struct WorkspaceTabs: View {
 
   private func closeSidebar() {
     isSidebarPresented = false
+  }
+}
+
+private enum MobileSidebarEdgeSwipe {
+  static let minimumDistance: CGFloat = 12
+
+  private static let activationWidth: CGFloat = 24
+  private static let minimumHorizontalTravel: CGFloat = 44
+  private static let horizontalDominance: CGFloat = 1.25
+
+  static func shouldOpen(startLocation: CGPoint, translation: CGSize) -> Bool {
+    guard (0...activationWidth).contains(startLocation.x),
+          translation.width >= minimumHorizontalTravel
+    else { return false }
+
+    return translation.width >= abs(translation.height) * horizontalDominance
   }
 }
 
