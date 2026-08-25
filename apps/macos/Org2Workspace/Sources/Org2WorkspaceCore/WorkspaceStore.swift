@@ -1843,8 +1843,8 @@ public final class WorkspaceStore: ObservableObject {
       rebuildBacklinkDisplayCache()
     }
   }
-  @Published public private(set) var personActionItems: NodeActionItemsPayload?
-  @Published public private(set) var isLoadingPersonActionItems = false
+  @Published public private(set) var entityActionItems: NodeActionItemsPayload?
+  @Published public private(set) var isLoadingEntityActionItems = false
   public private(set) var backlinkFileGroups: [BacklinkFileGroup] = []
   public private(set) var relatedBacklinkNodes: [RelatedBacklinkNode] = []
   @Published public var isNodeContextPanePresented = false
@@ -2082,7 +2082,7 @@ public final class WorkspaceStore: ObservableObject {
   private var searchIndexTask: Task<Void, Never>?
   private var searchIndexGeneration = 0
   private var entrySourceLoadGeneration = 0
-  private var personActionItemsLoadGeneration = 0
+  private var entityActionItemsLoadGeneration = 0
   private var entryHTMLRenderGeneration = 0
   private var activeEntrySourceLoadingGeneration: Int?
   private var entrySourceLoadWatchdogTask: Task<Void, Never>?
@@ -2831,9 +2831,9 @@ public final class WorkspaceStore: ObservableObject {
     selectedEntrySource = nil
     selectedEntryHTML = nil
     selectedEntryRenderError = nil
-    personActionItemsLoadGeneration += 1
-    personActionItems = nil
-    isLoadingPersonActionItems = false
+    entityActionItemsLoadGeneration += 1
+    entityActionItems = nil
+    isLoadingEntityActionItems = false
     selectedEntryHTMLRenderKey = nil
     selectedRenderedBlocks = []
     detailScrollRequest = nil
@@ -7928,9 +7928,9 @@ public final class WorkspaceStore: ObservableObject {
     selectedEntrySource = nil
     selectedEntryHTML = nil
     selectedEntryRenderError = nil
-    personActionItemsLoadGeneration += 1
-    personActionItems = nil
-    isLoadingPersonActionItems = false
+    entityActionItemsLoadGeneration += 1
+    entityActionItems = nil
+    isLoadingEntityActionItems = false
     selectedEntryHTMLRenderKey = nil
     selectedRenderedBlocks = []
     entryHTMLRenderTask?.cancel()
@@ -24738,34 +24738,72 @@ public final class WorkspaceStore: ObservableObject {
     select(.backlink(backlink))
   }
 
-  nonisolated static func isPersonPageSource(_ source: EntrySource) -> Bool {
-    guard !source.isSubtree else { return false }
-    let pathComponents = URL(fileURLWithPath: source.file).pathComponents
-      .map { $0.lowercased() }
-    if pathComponents.contains(where: { ["people", "persons", "contacts"].contains($0) }) {
-      return true
-    }
-
-    let patterns = [
-      #"(?im)^\s*:(?:ORG2_ENTITY_TYPE|ENTITY_TYPE|KIND):\s*person\s*$"#,
-      #"(?im)^\s*#\+(?:ORG2_ENTITY_TYPE|ENTITY_TYPE|ORG2_KIND|KIND):\s*person\s*$"#,
-      #"(?im)^\*+\s+.*(?:^|\s):person:(?:\s|$)"#,
-      #"(?im)^\s*#\+(?:FILETAGS|ROAM_TAGS):.*(?:^|:)person(?::|\s|$)"#,
-    ]
-    return patterns.contains { pattern in
-      source.text.range(of: pattern, options: .regularExpression) != nil
-    }
+  public var selectedNodeEntityType: Org2EntityType? {
+    selectedEntrySource.flatMap(Self.entityType)
   }
 
-  public func loadPersonActionItems(for source: EntrySource) async {
-    personActionItemsLoadGeneration += 1
-    let generation = personActionItemsLoadGeneration
+  public var selectedNodeHasExplicitEntityType: Bool {
+    selectedEntrySource.map(Self.hasExplicitEntityType) == true
+  }
 
-    guard Self.isPersonPageSource(source),
+  public var canSetSelectedNodeEntityType: Bool {
+    guard let source = selectedEntrySource,
+          source.isEditable,
+          Self.isEntityTypeTarget(source)
+    else {
+      return false
+    }
+    return !isSavingEntry
+      && !isSavingBlock
+      && !isEditingEntry
+      && editingBlockID == nil
+      && !liveFileEditorHasUnsavedChanges
+  }
+
+  nonisolated static func entityType(for source: EntrySource) -> Org2EntityType? {
+    if let explicit = explicitEntityType(for: source) {
+      return explicit
+    }
+
+    let metadata = entityMetadataText(for: source)
+    if let legacyKind = firstRegularExpressionCapture(
+      in: metadata,
+      pattern: #"(?im)^\s*(?:#\+(?:ORG2_KIND|KIND)|:KIND):\s*(person)\s*$"#
+    ).flatMap(Org2EntityType.init) {
+      return legacyKind
+    }
+    if hasLegacyPersonTag(in: metadata) {
+      return Org2EntityType("person")
+    }
+
+    guard !source.isSubtree, source.startLine == 1 else { return nil }
+    let components = URL(fileURLWithPath: source.file).pathComponents.map { $0.lowercased() }
+    if components.contains(where: { ["people", "persons", "contacts"].contains($0) }) {
+      return Org2EntityType("person")
+    }
+    if components.contains(where: { ["company", "companies", "accounts", "organizations", "orgs"].contains($0) }) {
+      return Org2EntityType("company")
+    }
+    if components.contains(where: { ["project", "projects"].contains($0) }) {
+      return Org2EntityType("project")
+    }
+    return nil
+  }
+
+  nonisolated static func showsEntityActionItems(for source: EntrySource) -> Bool {
+    guard !source.isSubtree else { return false }
+    return entityType(for: source)?.supportsActionItems == true
+  }
+
+  public func loadEntityActionItems(for source: EntrySource) async {
+    entityActionItemsLoadGeneration += 1
+    let generation = entityActionItemsLoadGeneration
+
+    guard Self.showsEntityActionItems(for: source),
           let corpusRoot
     else {
-      personActionItems = nil
-      isLoadingPersonActionItems = false
+      entityActionItems = nil
+      isLoadingEntityActionItems = false
       return
     }
 
@@ -24780,16 +24818,16 @@ public final class WorkspaceStore: ObservableObject {
       object = Self.openClawTitle(from: source.text, fallback: fallbackTitle).title
     }
     guard !object.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-      personActionItems = nil
-      isLoadingPersonActionItems = false
+      entityActionItems = nil
+      isLoadingEntityActionItems = false
       return
     }
 
-    personActionItems = nil
-    isLoadingPersonActionItems = true
+    entityActionItems = nil
+    isLoadingEntityActionItems = true
     defer {
-      if generation == personActionItemsLoadGeneration {
-        isLoadingPersonActionItems = false
+      if generation == entityActionItemsLoadGeneration {
+        isLoadingEntityActionItems = false
       }
     }
 
@@ -24809,21 +24847,21 @@ public final class WorkspaceStore: ObservableObject {
           "--format", "json",
         ])
       }
-      guard generation == personActionItemsLoadGeneration,
+      guard generation == entityActionItemsLoadGeneration,
             selectedEntrySource?.id == source.id
       else { return }
-      personActionItems = payload
+      entityActionItems = payload
     } catch is CancellationError {
       return
     } catch {
-      guard generation == personActionItemsLoadGeneration,
+      guard generation == entityActionItemsLoadGeneration,
             selectedEntrySource?.id == source.id
       else { return }
-      personActionItems = nil
+      entityActionItems = nil
     }
   }
 
-  public func selectPersonActionItem(_ item: NodeActionItem) {
+  public func selectEntityActionItem(_ item: NodeActionItem) {
     guard let corpusRoot else { return }
     let root = corpusRoot.resolvingSymlinksInPath().standardizedFileURL
     let candidate = (item.file.hasPrefix("/")
@@ -24843,6 +24881,347 @@ public final class WorkspaceStore: ObservableObject {
       context: item.snippet ?? item.title
     )
     select(.backlink(backlink), surface: selectedSurface)
+  }
+
+  public func setSelectedNodeEntityType(_ entityType: Org2EntityType?) async {
+    guard let source = selectedEntrySource,
+          source.isEditable,
+          Self.isEntityTypeTarget(source),
+          canSetSelectedNodeEntityType
+    else {
+      statusText = "No editable node loaded"
+      return
+    }
+    guard let replacement = Self.sourceTextSettingEntityType(source, entityType: entityType) else {
+      statusText = "Node type update failed"
+      return
+    }
+    guard Self.normalizeLineEndings(replacement) != Self.normalizeLineEndings(source.text) else {
+      statusText = entityType.map { "Type is already \($0.title)" } ?? "Node has no explicit type"
+      return
+    }
+
+    let undoSnapshot = fileUndoSnapshot(for: source.file)
+    isSavingEntry = true
+    defer { isSavingEntry = false }
+    do {
+      try await Task.detached(priority: .userInitiated) {
+        try Self.replaceEntrySource(source, with: replacement)
+      }.value
+      guard selectedEntrySource?.id == source.id else {
+        recordFileUndo(from: undoSnapshot)
+        return
+      }
+      recordFileUndo(from: undoSnapshot)
+      await finishSavedEntry(source: source, savedText: replacement, keepEditing: false)
+      statusText = entityType.map { "Type -> \($0.title)" } ?? "Explicit node type removed"
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Node type update failed"
+    }
+  }
+
+  public func promptAndSetSelectedNodeEntityType() {
+    guard canSetSelectedNodeEntityType else {
+      statusText = "No editable node loaded"
+      return
+    }
+
+    let alert = NSAlert()
+    alert.messageText = "Set Node Type"
+    alert.informativeText = "Use a short type such as person, company, project, decision, or topic."
+    alert.addButton(withTitle: "Set")
+    alert.addButton(withTitle: "Cancel")
+    let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
+    field.placeholderString = "entity type"
+    field.stringValue = selectedNodeEntityType?.rawValue ?? ""
+    alert.accessoryView = field
+    alert.window.initialFirstResponder = field
+
+    guard alert.runModal() == .alertFirstButtonReturn else { return }
+    guard let entityType = Org2EntityType(field.stringValue) else {
+      statusText = "Node type must contain a letter or number"
+      return
+    }
+    Task { await setSelectedNodeEntityType(entityType) }
+  }
+
+  nonisolated static func sourceTextSettingEntityType(
+    _ source: EntrySource,
+    entityType: Org2EntityType?
+  ) -> String? {
+    guard isEntityTypeTarget(source) else { return nil }
+    var lines = normalizeLineEndings(source.text)
+      .split(separator: "\n", omittingEmptySubsequences: false)
+      .map(String.init)
+    guard !lines.isEmpty else { return nil }
+
+    if source.isSubtree {
+      lines[0] = removingEntityTypeTags(from: lines[0])
+      removeDirectEntityTypeProperties(from: &lines)
+      if let entityType {
+        upsertDirectEntityTypeProperty(entityType.rawValue, in: &lines)
+      }
+    } else {
+      removeFileEntityTypeMetadata(from: &lines)
+      if let entityType {
+        upsertFileEntityTypeProperty(entityType.rawValue, in: &lines)
+      }
+    }
+    return lines.joined(separator: "\n")
+  }
+
+  nonisolated private static func isEntityTypeTarget(_ source: EntrySource) -> Bool {
+    if source.isSubtree {
+      return source.text.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
+        .first.map { $0.range(of: #"^\*+\s+"#, options: .regularExpression) != nil } == true
+    }
+    return source.startLine == 1
+  }
+
+  nonisolated private static func explicitEntityType(for source: EntrySource) -> Org2EntityType? {
+    let metadata = entityMetadataText(for: source)
+    if let propertyType = firstRegularExpressionCapture(
+      in: metadata,
+      pattern: #"(?im)^\s*(?:#\+(?:ORG2_ENTITY_TYPE|ENTITY_TYPE)|:(?:ORG2_ENTITY_TYPE|ENTITY_TYPE)):\s*(.+?)\s*$"#
+    ).flatMap(Org2EntityType.init) {
+      return propertyType
+    }
+    return entityTagTokens(in: metadata).compactMap(Org2EntityType.init).first
+  }
+
+  nonisolated private static func hasExplicitEntityType(_ source: EntrySource) -> Bool {
+    explicitEntityType(for: source) != nil
+  }
+
+  nonisolated private static func entityMetadataText(for source: EntrySource) -> String {
+    let lines = normalizeLineEndings(source.text)
+      .split(separator: "\n", omittingEmptySubsequences: false)
+      .map(String.init)
+    guard source.isSubtree else {
+      return lines.prefix { !isHeadingLine($0) }.joined(separator: "\n")
+    }
+    guard !lines.isEmpty else { return "" }
+    var end = 1
+    while end < lines.count,
+          lines[end].trimmingCharacters(in: .whitespaces).range(
+            of: #"^(?:SCHEDULED|DEADLINE|CLOSED):"#,
+            options: [.regularExpression, .caseInsensitive]
+          ) != nil {
+      end += 1
+    }
+    if end < lines.count,
+       lines[end].trimmingCharacters(in: .whitespaces).uppercased() == ":PROPERTIES:" {
+      end += 1
+      while end < lines.count {
+        let isEnd = lines[end].trimmingCharacters(in: .whitespaces).uppercased() == ":END:"
+        end += 1
+        if isEnd { break }
+      }
+    }
+    return lines[..<end].joined(separator: "\n")
+  }
+
+  nonisolated private static func entityTagTokens(in metadata: String) -> [String] {
+    metadata
+      .split(separator: "\n", omittingEmptySubsequences: false)
+      .filter { line in
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        return trimmed.hasPrefix("*")
+          || trimmed.lowercased().hasPrefix("#+filetags:")
+          || trimmed.lowercased().hasPrefix("#+roam_tags:")
+      }
+      .flatMap { line in
+        line.split(separator: ":").compactMap { rawToken -> String? in
+          let token = rawToken.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+          if token.hasPrefix("type_") { return String(token.dropFirst("type_".count)) }
+          if token.hasPrefix("type-") { return String(token.dropFirst("type-".count)) }
+          return nil
+        }
+      }
+  }
+
+  nonisolated private static func hasLegacyPersonTag(in metadata: String) -> Bool {
+    metadata
+      .split(separator: "\n", omittingEmptySubsequences: false)
+      .filter { line in
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        return trimmed.hasPrefix("*")
+          || trimmed.lowercased().hasPrefix("#+filetags:")
+          || trimmed.lowercased().hasPrefix("#+roam_tags:")
+      }
+      .contains { line in
+        line.split(separator: ":").contains { rawToken in
+          rawToken.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "person"
+        }
+      }
+  }
+
+  nonisolated private static func firstRegularExpressionCapture(
+    in text: String,
+    pattern: String
+  ) -> String? {
+    guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+    let source = text as NSString
+    guard let match = regex.firstMatch(
+      in: text,
+      range: NSRange(location: 0, length: source.length)
+    ), match.numberOfRanges > 1, match.range(at: 1).location != NSNotFound else {
+      return nil
+    }
+    return source.substring(with: match.range(at: 1))
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  nonisolated private static func removingEntityTypeTags(from line: String) -> String {
+    line
+      .replacingOccurrences(
+        of: #"(?i):type[-_][A-Za-z0-9_-]+(?=:)"#,
+        with: "",
+        options: .regularExpression
+      )
+      .trimmingCharacters(in: .whitespaces)
+  }
+
+  nonisolated private static func removeFileEntityTypeMetadata(from lines: inout [String]) {
+    let preambleEnd = lines.firstIndex(where: isHeadingLine) ?? lines.count
+    for index in (0..<preambleEnd).reversed() {
+      let trimmed = lines[index].trimmingCharacters(in: .whitespaces)
+      if trimmed.range(
+        of: #"^(?:#\+(?:ORG2_ENTITY_TYPE|ENTITY_TYPE)|:(?:ORG2_ENTITY_TYPE|ENTITY_TYPE)):"#,
+        options: [.regularExpression, .caseInsensitive]
+      ) != nil {
+        lines.remove(at: index)
+        continue
+      }
+      if trimmed.range(
+        of: #"^#\+(?:FILETAGS|ROAM_TAGS):"#,
+        options: [.regularExpression, .caseInsensitive]
+      ) != nil {
+        lines[index] = removingEntityTypeTags(from: lines[index])
+      }
+    }
+    removeEmptyFilePropertyDrawers(from: &lines)
+  }
+
+  nonisolated private static func removeEmptyFilePropertyDrawers(from lines: inout [String]) {
+    var index = 0
+    while index < (lines.firstIndex(where: isHeadingLine) ?? lines.count) {
+      guard lines[index].trimmingCharacters(in: .whitespaces).uppercased() == ":PROPERTIES:" else {
+        index += 1
+        continue
+      }
+      guard let end = lines[(index + 1)...].firstIndex(where: {
+        $0.trimmingCharacters(in: .whitespaces).uppercased() == ":END:"
+      }) else { return }
+      if lines[(index + 1)..<end].allSatisfy({ $0.trimmingCharacters(in: .whitespaces).isEmpty }) {
+        lines.removeSubrange(index...end)
+      } else {
+        index = end + 1
+      }
+    }
+  }
+
+  nonisolated private static func filePropertyDrawerRange(in lines: [String]) -> ClosedRange<Int>? {
+    let preambleEnd = lines.firstIndex(where: isHeadingLine) ?? lines.count
+    guard preambleEnd > 0 else { return nil }
+    for start in 0..<preambleEnd where
+      lines[start].trimmingCharacters(in: .whitespaces).uppercased() == ":PROPERTIES:"
+    {
+      guard start + 1 < preambleEnd,
+            let end = lines[(start + 1)..<preambleEnd].firstIndex(where: {
+              $0.trimmingCharacters(in: .whitespaces).uppercased() == ":END:"
+            })
+      else { return nil }
+      return start...end
+    }
+    return nil
+  }
+
+  nonisolated private static func upsertFileEntityTypeProperty(
+    _ rawValue: String,
+    in lines: inout [String]
+  ) {
+    if let drawer = filePropertyDrawerRange(in: lines) {
+      lines.insert(":ORG2_ENTITY_TYPE: \(rawValue)", at: drawer.upperBound)
+      return
+    }
+    let preambleEnd = lines.firstIndex(where: isHeadingLine) ?? lines.count
+    let lastKeyword = (0..<preambleEnd).last(where: {
+      lines[$0].trimmingCharacters(in: .whitespaces).hasPrefix("#+")
+    })
+    lines.insert(contentsOf: [
+      ":PROPERTIES:",
+      ":ORG2_ENTITY_TYPE: \(rawValue)",
+      ":END:",
+    ], at: lastKeyword.map { $0 + 1 } ?? 0)
+  }
+
+  nonisolated private static func directPropertyDrawerRange(in lines: [String]) -> ClosedRange<Int>? {
+    guard !lines.isEmpty, lines[0].range(of: #"^\*+\s+"#, options: .regularExpression) != nil else {
+      return nil
+    }
+    var start = 1
+    while start < lines.count,
+          lines[start].trimmingCharacters(in: .whitespaces).range(
+            of: #"^(?:SCHEDULED|DEADLINE|CLOSED):"#,
+            options: [.regularExpression, .caseInsensitive]
+          ) != nil {
+      start += 1
+    }
+    guard start < lines.count,
+          lines[start].trimmingCharacters(in: .whitespaces).uppercased() == ":PROPERTIES:",
+          let end = lines[(start + 1)...].firstIndex(where: {
+            $0.trimmingCharacters(in: .whitespaces).uppercased() == ":END:"
+          })
+    else {
+      return nil
+    }
+    return start...end
+  }
+
+  nonisolated private static func isHeadingLine(_ line: String) -> Bool {
+    line.range(of: #"^\*+\s+"#, options: .regularExpression) != nil
+  }
+
+  nonisolated private static func removeDirectEntityTypeProperties(from lines: inout [String]) {
+    guard let drawer = directPropertyDrawerRange(in: lines) else { return }
+    for index in drawer.reversed() where index > drawer.lowerBound && index < drawer.upperBound {
+      if lines[index].trimmingCharacters(in: .whitespaces).range(
+        of: #"^:(?:ORG2_ENTITY_TYPE|ENTITY_TYPE):"#,
+        options: [.regularExpression, .caseInsensitive]
+      ) != nil {
+        lines.remove(at: index)
+      }
+    }
+    if let updated = directPropertyDrawerRange(in: lines),
+       lines[(updated.lowerBound + 1)..<updated.upperBound]
+         .allSatisfy({ $0.trimmingCharacters(in: .whitespaces).isEmpty }) {
+      lines.removeSubrange(updated)
+    }
+  }
+
+  nonisolated private static func upsertDirectEntityTypeProperty(
+    _ rawValue: String,
+    in lines: inout [String]
+  ) {
+    if let drawer = directPropertyDrawerRange(in: lines) {
+      lines.insert(":ORG2_ENTITY_TYPE: \(rawValue)", at: drawer.upperBound)
+      return
+    }
+    var insertionIndex = 1
+    while insertionIndex < lines.count,
+          lines[insertionIndex].trimmingCharacters(in: .whitespaces).range(
+            of: #"^(?:SCHEDULED|DEADLINE|CLOSED):"#,
+            options: [.regularExpression, .caseInsensitive]
+          ) != nil {
+      insertionIndex += 1
+    }
+    lines.insert(contentsOf: [
+      ":PROPERTIES:",
+      ":ORG2_ENTITY_TYPE: \(rawValue)",
+      ":END:",
+    ], at: insertionIndex)
   }
 
   private func openNodeBriefArtifact(url: URL, relativePath: String, title: String) {

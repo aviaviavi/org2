@@ -109,7 +109,12 @@ function titleTargetsNode(title: string, target: CompiledCorpusNode): boolean {
 }
 
 function relationshipPropertyTargetsNode(node: CompiledCorpusNode, target: CompiledCorpusNode): boolean {
-  const keys = ["PERSON", "PEOPLE", "ASSIGNEE", "OWNER", "ATTENDEES", "PARTICIPANTS"];
+  const keys = [
+    "PERSON", "PEOPLE",
+    "COMPANY", "COMPANIES", "ORGANIZATION", "ORGANIZATIONS", "ACCOUNT", "ACCOUNTS",
+    "PROJECT", "PROJECTS", "ENTITY", "ENTITIES",
+    "ASSIGNEE", "OWNER", "ATTENDEES", "PARTICIPANTS",
+  ];
   const values = keys.map((key) => node.effectiveProperties[key]).filter(Boolean) as string[];
   const labels = [target.title, ...target.aliases].map(normalizedLabel).filter(Boolean);
   const targetID = target.id?.toLowerCase();

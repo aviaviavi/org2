@@ -276,19 +276,33 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(payload.open.first?.meeting?.title, "Gabby sync")
   }
 
-  func testPersonPageDetectionUsesExplicitMetadataOrPeopleDirectory() {
-    let metadataSource = EntrySource(
+  func testEntityPageDetectionUsesExplicitMetadataTagsOrKnownDirectories() {
+    let personSource = EntrySource(
       file: "/corpus/notes/gabby.org2",
       startLine: 1,
       endLineExclusive: 5,
       text: "#+title: Gabby\n#+ORG2_ENTITY_TYPE: person\n",
       isSubtree: false
     )
-    let directorySource = EntrySource(
-      file: "/corpus/people/gabby.org2",
+    let companySource = EntrySource(
+      file: "/corpus/notes/acme.org2",
       startLine: 1,
       endLineExclusive: 3,
-      text: "#+title: Gabby\n",
+      text: "#+title: Acme\n#+ENTITY_TYPE: company\n",
+      isSubtree: false
+    )
+    let projectTagSource = EntrySource(
+      file: "/corpus/notes/launch.org2",
+      startLine: 1,
+      endLineExclusive: 3,
+      text: "#+title: Launch\n#+FILETAGS: :active:type_project:\n",
+      isSubtree: false
+    )
+    let directorySource = EntrySource(
+      file: "/corpus/companies/acme.org2",
+      startLine: 1,
+      endLineExclusive: 2,
+      text: "#+title: Acme\n",
       isSubtree: false
     )
     let ordinarySource = EntrySource(
@@ -298,33 +312,42 @@ final class Org2ModelsTests: XCTestCase {
       text: "#+title: Strategy\n",
       isSubtree: false
     )
-    let personSubtree = EntrySource(
+    let typedSubtree = EntrySource(
       file: "/corpus/people/gabby.org2",
       startLine: 8,
       endLineExclusive: 12,
-      text: "* Notes\n",
+      text: "* Notes :type_person:\n",
       isSubtree: true
     )
 
-    XCTAssertTrue(WorkspaceStore.isPersonPageSource(metadataSource))
-    XCTAssertTrue(WorkspaceStore.isPersonPageSource(directorySource))
-    XCTAssertFalse(WorkspaceStore.isPersonPageSource(ordinarySource))
-    XCTAssertFalse(WorkspaceStore.isPersonPageSource(personSubtree))
+    XCTAssertEqual(WorkspaceStore.entityType(for: personSource)?.rawValue, "person")
+    XCTAssertEqual(WorkspaceStore.entityType(for: companySource)?.rawValue, "company")
+    XCTAssertEqual(WorkspaceStore.entityType(for: projectTagSource)?.rawValue, "project")
+    XCTAssertEqual(WorkspaceStore.entityType(for: directorySource)?.rawValue, "company")
+    XCTAssertNil(WorkspaceStore.entityType(for: ordinarySource))
+    XCTAssertEqual(WorkspaceStore.entityType(for: typedSubtree)?.rawValue, "person")
+
+    XCTAssertTrue(WorkspaceStore.showsEntityActionItems(for: personSource))
+    XCTAssertTrue(WorkspaceStore.showsEntityActionItems(for: companySource))
+    XCTAssertTrue(WorkspaceStore.showsEntityActionItems(for: projectTagSource))
+    XCTAssertTrue(WorkspaceStore.showsEntityActionItems(for: directorySource))
+    XCTAssertFalse(WorkspaceStore.showsEntityActionItems(for: ordinarySource))
+    XCTAssertFalse(WorkspaceStore.showsEntityActionItems(for: typedSubtree))
   }
 
   @MainActor
-  func testPersonPageLoadsActionItemsByStableNodeID() async throws {
+  func testEntityPageLoadsActionItemsByStableNodeID() async throws {
     let defaults = try XCTUnwrap(UserDefaults(suiteName: "NodeActionItems-\(UUID().uuidString)"))
     let store = WorkspaceStore(defaults: defaults)
-    let root = URL(fileURLWithPath: "/tmp/org2-person-actions")
+    let root = URL(fileURLWithPath: "/tmp/org2-entity-actions")
     let source = EntrySource(
-      file: root.appendingPathComponent("people/gabby.org2").path,
+      file: root.appendingPathComponent("companies/acme.org2").path,
       startLine: 1,
       endLineExclusive: 6,
-      text: "#+title: Gabby\n:PROPERTIES:\n:ID: 11111111-1111-4111-8111-111111111111\n:END:\n",
+      text: "#+title: Acme\n#+ORG2_ENTITY_TYPE: company\n:PROPERTIES:\n:ID: 11111111-1111-4111-8111-111111111111\n:END:\n",
       isSubtree: false
     )
-    let payloadData = Data(#"{"$schema":"org2:node-actions:v1","target":{"id":"11111111-1111-4111-8111-111111111111","title":"Gabby","entityType":"person","file":"people/gabby.org2","line":1},"policy":{"recentDays":30,"openLimit":6,"completedLimit":3},"counts":{"open":0,"recentlyCompleted":0},"open":[],"recentlyCompleted":[]}"#.utf8)
+    let payloadData = Data(#"{"$schema":"org2:node-actions:v1","target":{"id":"11111111-1111-4111-8111-111111111111","title":"Acme","entityType":"company","file":"companies/acme.org2","line":1},"policy":{"recentDays":30,"openLimit":6,"completedLimit":3},"counts":{"open":0,"recentlyCompleted":0},"open":[],"recentlyCompleted":[]}"#.utf8)
     let payload = try JSONDecoder().decode(NodeActionItemsPayload.self, from: payloadData)
     let recorder = ThreadSafeStringRecorder()
     store.corpusRoot = root
@@ -334,11 +357,88 @@ final class Org2ModelsTests: XCTestCase {
       return payload
     }
 
-    await store.loadPersonActionItems(for: source)
+    await store.loadEntityActionItems(for: source)
 
-    XCTAssertEqual(recorder.values, ["id:11111111-1111-4111-8111-111111111111|/tmp/org2-person-actions"])
-    XCTAssertEqual(store.personActionItems?.target.title, "Gabby")
-    XCTAssertFalse(store.isLoadingPersonActionItems)
+    XCTAssertEqual(recorder.values, ["id:11111111-1111-4111-8111-111111111111|/tmp/org2-entity-actions"])
+    XCTAssertEqual(store.entityActionItems?.target.title, "Acme")
+    XCTAssertFalse(store.isLoadingEntityActionItems)
+  }
+
+  func testSettingFileEntityTypeCanonicalizesMetadataWithoutDisturbingOtherTags() throws {
+    let source = EntrySource(
+      file: "/corpus/notes/acme.org2",
+      startLine: 1,
+      endLineExclusive: 7,
+      text: "#+title: Acme\n#+FILETAGS: :customer:type_person:\n#+ENTITY_TYPE: person\n\nNotes\n",
+      isSubtree: false
+    )
+
+    let updated = try XCTUnwrap(
+      WorkspaceStore.sourceTextSettingEntityType(source, entityType: Org2EntityType("company"))
+    )
+    XCTAssertTrue(updated.contains(":ORG2_ENTITY_TYPE: company"))
+    XCTAssertTrue(updated.contains("#+FILETAGS: :customer:"))
+    XCTAssertFalse(updated.contains("type_person"))
+    XCTAssertFalse(updated.contains("#+ENTITY_TYPE:"))
+
+    let updatedSource = EntrySource(
+      file: source.file,
+      startLine: 1,
+      endLineExclusive: 6,
+      text: updated,
+      isSubtree: false
+    )
+    XCTAssertEqual(WorkspaceStore.entityType(for: updatedSource)?.rawValue, "company")
+
+    let cleared = try XCTUnwrap(
+      WorkspaceStore.sourceTextSettingEntityType(updatedSource, entityType: nil)
+    )
+    XCTAssertFalse(cleared.contains("ORG2_ENTITY_TYPE"))
+    XCTAssertTrue(cleared.contains("#+FILETAGS: :customer:"))
+  }
+
+  func testSettingSubtreeEntityTypePreservesItsDirectProperties() throws {
+    let source = EntrySource(
+      file: "/corpus/projects.org2",
+      startLine: 8,
+      endLineExclusive: 16,
+      text: "* Launch :active:type_person:\nSCHEDULED: <2026-08-25 Tue>\n:PROPERTIES:\n:ID: 22222222-2222-4222-8222-222222222222\n:END:\nNotes\n",
+      isSubtree: true
+    )
+
+    let updated = try XCTUnwrap(
+      WorkspaceStore.sourceTextSettingEntityType(source, entityType: Org2EntityType("project"))
+    )
+    XCTAssertTrue(updated.hasPrefix("* Launch :active:\n"))
+    XCTAssertTrue(updated.contains(":ID: 22222222-2222-4222-8222-222222222222"))
+    XCTAssertTrue(updated.contains(":ORG2_ENTITY_TYPE: project"))
+    XCTAssertLessThan(
+      try XCTUnwrap(updated.range(of: ":ORG2_ENTITY_TYPE: project")?.lowerBound),
+      try XCTUnwrap(updated.range(of: ":END:")?.lowerBound)
+    )
+
+    let updatedSource = EntrySource(
+      file: source.file,
+      startLine: source.startLine,
+      endLineExclusive: source.endLineExclusive,
+      text: updated,
+      isSubtree: true
+    )
+    XCTAssertEqual(WorkspaceStore.entityType(for: updatedSource)?.rawValue, "project")
+
+    let cleared = try XCTUnwrap(
+      WorkspaceStore.sourceTextSettingEntityType(updatedSource, entityType: nil)
+    )
+    XCTAssertFalse(cleared.contains("ORG2_ENTITY_TYPE"))
+    XCTAssertTrue(cleared.contains(":ID: 22222222-2222-4222-8222-222222222222"))
+  }
+
+  func testEntityTypeNormalizesCustomValuesForStorageAndDisplay() throws {
+    let entityType = try XCTUnwrap(Org2EntityType(" Customer Segment "))
+
+    XCTAssertEqual(entityType.rawValue, "customer_segment")
+    XCTAssertEqual(entityType.title, "Customer Segment")
+    XCTAssertFalse(entityType.supportsActionItems)
   }
 
   func testWorkspaceSoundPlaybackIsSuppressedUnderXCTest() {

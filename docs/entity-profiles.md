@@ -9,6 +9,8 @@ An entity is any file or heading with either:
 
 Aliases come from `#+ROAM_ALIASES:` and `:ROAM_ALIASES:`. Wiki links such as `[[Sonatype Inc]]` resolve through the canonical title and aliases when the alias maps to exactly one entity.
 
+In OpenOrg for macOS, the badge beside a loaded node's title shows this type and opens a picker for common or custom values. The picker writes the canonical `ORG2_ENTITY_TYPE` property to the file or heading. Full-page `person`, `company`, and `project` entities also show a bounded action-item panel backed by `org2 query actions`.
+
 ## CLI
 
 ```sh

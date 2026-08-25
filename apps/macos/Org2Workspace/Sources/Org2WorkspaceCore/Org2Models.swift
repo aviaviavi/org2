@@ -1705,6 +1705,62 @@ public struct NodeActionTarget: Decodable, Hashable, Sendable {
   public let line: Int
 }
 
+public struct Org2EntityType: Identifiable, Hashable, Sendable {
+  public let rawValue: String
+
+  public init?(_ rawValue: String) {
+    let normalized = rawValue
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .lowercased()
+      .replacingOccurrences(
+        of: #"[^a-z0-9_-]+"#,
+        with: "_",
+        options: .regularExpression
+      )
+      .trimmingCharacters(in: CharacterSet(charactersIn: "_"))
+    guard !normalized.isEmpty else { return nil }
+    self.rawValue = normalized
+  }
+
+  public var id: String { rawValue }
+
+  public var title: String {
+    rawValue
+      .replacingOccurrences(of: "_", with: " ")
+      .replacingOccurrences(of: "-", with: " ")
+      .split(whereSeparator: { $0.isWhitespace })
+      .map { $0.prefix(1).uppercased() + $0.dropFirst() }
+      .joined(separator: " ")
+  }
+
+  public var systemImage: String {
+    switch rawValue {
+    case "person": "person.fill"
+    case "company", "organization", "account": "building.2.fill"
+    case "project": "folder.fill"
+    case "meeting": "calendar"
+    case "decision": "checkmark.seal.fill"
+    case "topic": "tag.fill"
+    default: "tag.fill"
+    }
+  }
+
+  public var supportsActionItems: Bool {
+    Self.actionItemTypes.contains(rawValue)
+  }
+
+  public static let common: [Org2EntityType] = [
+    Org2EntityType("person")!,
+    Org2EntityType("company")!,
+    Org2EntityType("project")!,
+    Org2EntityType("meeting")!,
+    Org2EntityType("decision")!,
+    Org2EntityType("topic")!,
+  ]
+
+  private static let actionItemTypes = Set(["person", "company", "project"])
+}
+
 public struct NodeActionPolicy: Decodable, Hashable, Sendable {
   public let recentDays: Int
   public let openLimit: Int

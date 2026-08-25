@@ -8294,6 +8294,56 @@ private struct DetailView: View {
 
 }
 
+private struct NodeEntityTypeMenu: View {
+  @EnvironmentObject private var store: WorkspaceStore
+
+  var body: some View {
+    Menu {
+      ForEach(Org2EntityType.common) { entityType in
+        Button {
+          Task { await store.setSelectedNodeEntityType(entityType) }
+        } label: {
+          Label(entityType.title, systemImage: entityType.systemImage)
+        }
+      }
+
+      Divider()
+
+      Button {
+        store.promptAndSetSelectedNodeEntityType()
+      } label: {
+        Label("Custom Type…", systemImage: "text.cursor")
+      }
+
+      if store.selectedNodeHasExplicitEntityType {
+        Divider()
+        Button(role: .destructive) {
+          Task { await store.setSelectedNodeEntityType(nil) }
+        } label: {
+          Label("Remove Explicit Type", systemImage: "tag.slash")
+        }
+      }
+    } label: {
+      let entityType = store.selectedNodeEntityType
+      Label(entityType?.title ?? "Set type", systemImage: entityType?.systemImage ?? "tag")
+        .font(.caption.weight(.medium))
+        .foregroundStyle(entityType == nil ? WorkspaceDesign.secondaryText : Color.accentColor)
+        .padding(.horizontal, 7)
+        .padding(.vertical, 3)
+        .background(
+          (entityType == nil ? Color.secondary : Color.accentColor).opacity(0.09),
+          in: Capsule()
+        )
+    }
+    .menuStyle(.borderlessButton)
+    .fixedSize()
+    .disabled(!store.canSetSelectedNodeEntityType)
+    .help(store.canSetSelectedNodeEntityType
+      ? "Change this node's Org2 entity type"
+      : "Node type is read-only while this document is unavailable or being edited")
+  }
+}
+
 private struct DetailScrollCommandBridge: NSViewRepresentable {
   let request: DetailScrollRequest?
 
@@ -8446,9 +8496,16 @@ private struct DetailHeader: View {
     HStack(alignment: .top, spacing: 9) {
       WorkspaceIconBadge(systemImage: locationIcon, tint: .accentColor, fill: Color.accentColor.opacity(0.09))
       VStack(alignment: .leading, spacing: 3) {
-        Text(location.title)
-          .font(.title3.weight(.semibold))
-          .lineLimit(nil)
+        HStack(alignment: .firstTextBaseline, spacing: 7) {
+          Text(location.title)
+            .font(.title3.weight(.semibold))
+            .lineLimit(nil)
+          if !store.selectedFileIsPDF,
+             !store.selectedFileIsCSV,
+             store.selectedEntrySource != nil {
+            NodeEntityTypeMenu()
+          }
+        }
         if !location.subtitle.isEmpty {
           Text(location.subtitle)
             .font(.caption)
@@ -9123,11 +9180,11 @@ private struct OrgRenderedDocumentPreview: View {
           }
       } else if let html = store.selectedEntryHTML {
         VStack(spacing: 0) {
-          if WorkspaceStore.isPersonPageSource(source) {
-            PersonActionItemsPanel(
-              payload: store.personActionItems,
-              isLoading: store.isLoadingPersonActionItems,
-              selectItem: store.selectPersonActionItem
+          if WorkspaceStore.showsEntityActionItems(for: source) {
+            EntityActionItemsPanel(
+              payload: store.entityActionItems,
+              isLoading: store.isLoadingEntityActionItems,
+              selectItem: store.selectEntityActionItem
             )
             .padding(.horizontal, 18)
             .padding(.top, 12)
@@ -9159,13 +9216,13 @@ private struct OrgRenderedDocumentPreview: View {
         OrgHTMLLoadingView(label: loadingLabel, onCancel: store.cancelSelectedEntryLoading)
       }
     }
-    .task(id: source.id) {
-      await store.loadPersonActionItems(for: source)
+    .task(id: "\(source.id):\(WorkspaceStore.entityType(for: source)?.rawValue ?? "untyped")") {
+      await store.loadEntityActionItems(for: source)
     }
   }
 }
 
-private struct PersonActionItemsPanel: View {
+private struct EntityActionItemsPanel: View {
   let payload: NodeActionItemsPayload?
   let isLoading: Bool
   let selectItem: (NodeActionItem) -> Void

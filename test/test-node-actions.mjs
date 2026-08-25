@@ -14,6 +14,8 @@ const write = (relative, text) => {
 };
 
 const gabbyID = "11111111-1111-4111-8111-111111111111";
+const acmeID = "22222222-2222-4222-8222-222222222222";
+const launchID = "33333333-3333-4333-8333-333333333333";
 const files = [
   write("gabby.org2", `#+title: Gabby
 #+ORG2_ENTITY_TYPE: person
@@ -57,6 +59,39 @@ CLOSED: [2026-08-10 Mon]
 * Meeting: Other planning
 ** TODO Must not leak from sibling meeting
 `),
+  write("acme.org2", `#+title: Acme
+:PROPERTIES:
+:ID: ${acmeID}
+:ORG2_ENTITY_TYPE: company
+:END:
+`),
+  write("launch.org2", `#+title: Launch
+:PROPERTIES:
+:ID: ${launchID}
+:ORG2_ENTITY_TYPE: project
+:END:
+`),
+  write("entity-actions.org2", `#+title: Entity actions
+
+* TODO Renew Acme contract
+:PROPERTIES:
+:COMPANY: Acme
+:END:
+* TODO Prepare launch checklist
+:PROPERTIES:
+:PROJECT: [[id:${launchID}][Launch]]
+:END:
+* TODO Different customer action
+:PROPERTIES:
+:COMPANY: Other Co
+:END:
+`),
+  write("2026-08-19-acme-sync.org2", `#+title: Meeting: Acme sync
+#+ORG2_KIND: meeting
+[[id:${acmeID}][Acme]]
+
+* TODO Send Acme rollout dates
+`),
 ];
 
 const corpus = compileCorpus(files, { rootDir: root });
@@ -90,6 +125,35 @@ assert.ok(!payload.open.some((item) => item.title === "Unrelated task"));
 assert.ok(!payload.open.some((item) => item.title === "Must not leak from sibling meeting"));
 assert.ok(!payload.recentlyCompleted.some((item) => item.title === "Old completed item"));
 assert.ok(!payload.recentlyCompleted.some((item) => item.title === "Abandoned item"));
+
+const companyPayload = queryNodeActions(corpus, {
+  object: `id:${acmeID}`,
+  today: "2026-08-19",
+  recentDays: 30,
+  openLimit: 8,
+  completedLimit: 4,
+});
+assert.equal(companyPayload.target.entityType, "company");
+assert.deepEqual(companyPayload.open.map((item) => item.title), [
+  "Renew Acme contract",
+  "Send Acme rollout dates",
+]);
+assert.equal(companyPayload.open[0].relationship, "direct");
+assert.equal(companyPayload.open[1].relationship, "meeting");
+assert.ok(!companyPayload.open.some((item) => item.title === "Different customer action"));
+
+const projectPayload = queryNodeActions(corpus, {
+  object: `id:${launchID}`,
+  today: "2026-08-19",
+  recentDays: 30,
+  openLimit: 8,
+  completedLimit: 4,
+});
+assert.equal(projectPayload.target.entityType, "project");
+assert.deepEqual(projectPayload.open.map((item) => item.title), [
+  "Prepare launch checklist",
+]);
+assert.equal(projectPayload.open[0].relationship, "direct");
 
 const cli = spawnSync(process.execPath, [
   path.resolve("dist/cli.js"),
