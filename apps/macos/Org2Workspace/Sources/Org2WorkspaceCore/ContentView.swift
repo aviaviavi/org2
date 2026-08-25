@@ -8254,6 +8254,7 @@ private struct DetailView: View {
         RunCenterDetail(run: run)
       } else if let location = store.selectedLocation {
         DetailHeader(
+          sourceEditorInteraction: store.sourceEditorInteraction,
           location: location,
           renderedViewportSourceLine: store.currentDocumentViewportSourceLine
         )
@@ -8336,6 +8337,7 @@ private struct DetailScrollCommandBridge: NSViewRepresentable {
 
 private struct DetailHeader: View {
   @EnvironmentObject private var store: WorkspaceStore
+  @ObservedObject var sourceEditorInteraction: SourceEditorInteractionModel
   @FocusState private var isPageSearchFocused: Bool
   @State private var pageSearchDraft = ""
   let location: WorkspaceLocation
@@ -9078,7 +9080,7 @@ private struct LiveFileEditorBody: View {
         if store.selectedFileIsCSV {
           CSVDocumentEditorView(source: source)
         } else if store.isEditingEntry {
-          OrgSourceEditorWithLinkTools()
+          OrgSourceEditorWithLinkTools(interaction: store.sourceEditorInteraction)
             .padding(16)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if store.editingBlockID != nil {
@@ -9655,6 +9657,7 @@ private struct OrgHTMLRenderFailureView: View {
 private struct OrgSourceEditorWithLinkTools: View {
   @EnvironmentObject private var store: WorkspaceStore
   @Environment(\.orgRoamLinkResolver) private var orgRoamLinkResolver
+  @ObservedObject var interaction: SourceEditorInteractionModel
   @State private var sourcePreviewLine: Int?
   @State private var sourcePreviewScrollTask: Task<Void, Never>?
 
@@ -9679,11 +9682,12 @@ private struct OrgSourceEditorWithLinkTools: View {
         store.scheduleSourceEditorPreview(immediate: true)
       }
     }
-    .onChange(of: store.editableEntryText) {
+    .onChange(of: interaction.text) {
+      store.noteSourceEditorLocalTextChanged(interaction.text)
       scheduleSourcePreviewScroll()
-      store.scheduleSourceEditorPreview()
+      store.scheduleSourceEditorPreview(text: interaction.text)
     }
-    .onChange(of: store.sourceEditorSelection) {
+    .onChange(of: interaction.selection) {
       scheduleSourcePreviewScroll()
     }
     .onChange(of: store.sourceEditorPresentation) { _, presentation in
@@ -9704,7 +9708,7 @@ private struct OrgSourceEditorWithLinkTools: View {
   private var sourceColumn: some View {
     VStack(alignment: .leading, spacing: 8) {
       OrgSyntaxTextEditor(
-        text: $store.editableEntryText,
+        text: $interaction.text,
         monospaced: true,
         showsScrollers: true,
         textInset: NSSize(width: 12, height: 12),
@@ -9726,7 +9730,7 @@ private struct OrgSourceEditorWithLinkTools: View {
         onCommandStatus: { status in
           store.statusText = status
         },
-        selection: $store.sourceEditorSelection,
+        selection: $interaction.selection,
         onViewportSourceLine: { line in
           guard let source = store.selectedEntrySource else { return }
           store.recordDocumentViewportSourceLine(
@@ -9739,9 +9743,13 @@ private struct OrgSourceEditorWithLinkTools: View {
         },
         onLocalTextChange: { text in
           store.noteSourceEditorLocalTextChanged(text)
+          if store.sourceEditorPresentation == .split {
+            store.scheduleSourceEditorPreview(text: text)
+          }
         },
         onSaveCommand: { context in
-          store.editableEntryText = context.text
+          interaction.text = context.text
+          store.noteSourceEditorLocalTextChanged(context.text)
           Task { await store.saveEditedEntry() }
           return true
         }
@@ -9757,8 +9765,8 @@ private struct OrgSourceEditorWithLinkTools: View {
 
       if hasSelection {
         ParagraphInlineFormatBar(
-          text: $store.editableEntryText,
-          selectedRange: $store.sourceEditorSelection,
+          text: $interaction.text,
+          selectedRange: $interaction.selection,
           insertBacklink: insertBacklinkForSelection,
           createNodeFromSelection: createNodeFromSelection
         )
@@ -9886,8 +9894,8 @@ private struct OrgSourceEditorWithLinkTools: View {
       sourcePreviewLine = nil
       return
     }
-    let text = store.editableEntryText
-    let offset = min(max(0, store.sourceEditorSelection.location), text.utf16.count)
+    let text = interaction.text
+    let offset = min(max(0, interaction.selection.location), text.utf16.count)
     sourcePreviewScrollTask = Task { @MainActor in
       do {
         try await Task.sleep(nanoseconds: 90_000_000)
@@ -10017,20 +10025,20 @@ private struct OrgSourceEditorWithLinkTools: View {
   }
 
   private var hasSelection: Bool {
-    store.sourceEditorSelection.length > 0
+    interaction.selection.length > 0
   }
 
   private var wikiLinkCompletionMatch: ParagraphWikiLinkCompletionMatch? {
     ParagraphWikiLinkCompletion.match(
-      in: store.editableEntryText,
-      selectedRange: store.sourceEditorSelection
+      in: interaction.text,
+      selectedRange: interaction.selection
     )
   }
 
   private func insertBacklinkForSelection() {
     guard let edit = WorkspaceStore.backlinkReplacementForSelectedText(
-      in: store.editableEntryText,
-      range: store.sourceEditorSelection
+      in: interaction.text,
+      range: interaction.selection
     ) else {
       store.statusText = "Select text first"
       return
@@ -10039,8 +10047,8 @@ private struct OrgSourceEditorWithLinkTools: View {
   }
 
   private func createNodeFromSelection() {
-    let text = store.editableEntryText
-    let range = store.sourceEditorSelection
+    let text = interaction.text
+    let range = interaction.selection
     Task {
       guard let edit = await store.createKnowledgeNodeFromSelection(text: text, range: range) else {
         return
@@ -10054,7 +10062,7 @@ private struct OrgSourceEditorWithLinkTools: View {
     to node: OrgRoamNodeReference
   ) {
     guard let edit = ParagraphWikiLinkCompletion.replacement(
-      in: store.editableEntryText,
+      in: interaction.text,
       match: match,
       node: node
     ) else {
@@ -10064,7 +10072,7 @@ private struct OrgSourceEditorWithLinkTools: View {
   }
 
   private func createNodeFromWikiLinkCompletion(_ match: ParagraphWikiLinkCompletionMatch) {
-    let text = store.editableEntryText
+    let text = interaction.text
     Task {
       guard let edit = await store.createKnowledgeNodeFromWikiLinkCompletion(text: text, match: match) else {
         return
@@ -10074,8 +10082,9 @@ private struct OrgSourceEditorWithLinkTools: View {
   }
 
   private func applyInlineEdit(_ edit: InlineSelectionReplacement) {
-    store.editableEntryText = edit.text
-    store.sourceEditorSelection = edit.selectedRange
+    interaction.text = edit.text
+    interaction.selection = edit.selectedRange
+    store.noteSourceEditorLocalTextChanged(edit.text)
   }
 }
 
@@ -10090,7 +10099,7 @@ private struct EntryBodyView: View {
         OrgHTMLLoadingView(label: "Loading source", onCancel: store.cancelSelectedEntryLoading)
       } else if let source = store.selectedEntrySource {
         if store.isEditingEntry {
-          OrgSourceEditorWithLinkTools()
+          OrgSourceEditorWithLinkTools(interaction: store.sourceEditorInteraction)
             .padding(16)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if store.editingBlockID != nil {

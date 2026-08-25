@@ -7008,6 +7008,34 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testSyntaxEditorPublishesMouseSelectionOnlyAfterTrackingEnds() {
+    var selectionRange = NSRange(location: 0, length: 0)
+    let editor = OrgSyntaxTextEditor(
+      text: .constant("Select this text"),
+      selection: Binding(
+        get: { selectionRange },
+        set: { selectionRange = $0 }
+      )
+    )
+    let coordinator = OrgSyntaxTextEditor.Coordinator(parent: editor)
+    let textView = OrgSyntaxTextView()
+    textView.string = "Select this text"
+    textView.isTrackingMouseSelection = true
+    textView.setSelectedRange(NSRange(location: 0, length: 6))
+
+    coordinator.textViewDidChangeSelection(
+      Notification(name: NSTextView.didChangeSelectionNotification, object: textView)
+    )
+
+    XCTAssertEqual(selectionRange, NSRange(location: 0, length: 0))
+
+    textView.isTrackingMouseSelection = false
+    coordinator.mouseSelectionDidEnd(in: textView)
+
+    XCTAssertEqual(selectionRange, NSRange(location: 0, length: 6))
+  }
+
+  @MainActor
   func testSyntaxEditorKnownTextCacheUsesStorageLength() {
     let editor = OrgSyntaxTextEditor(text: .constant("Initial text"))
     let coordinator = OrgSyntaxTextEditor.Coordinator(parent: editor)
@@ -7349,6 +7377,19 @@ final class Org2ModelsTests: XCTestCase {
       Notification(name: NSTextView.didChangeSelectionNotification, object: textView)
     )
     XCTAssertEqual(selection, NSRange(location: 4, length: 3))
+
+    textView.setSelectedRange(NSRange(location: 7, length: 0))
+    coordinator.textViewDidChangeSelection(
+      Notification(name: NSTextView.didChangeSelectionNotification, object: textView)
+    )
+    XCTAssertEqual(
+      selection,
+      NSRange(location: 4, length: 3),
+      "Replacing a selection must not synchronously invalidate the source-editor view tree"
+    )
+    try await waitForCondition {
+      selection == NSRange(location: 7, length: 0)
+    }
   }
 
   @MainActor
@@ -7841,8 +7882,10 @@ final class Org2ModelsTests: XCTestCase {
     store.selectedEntrySource = source
     store.beginEditingSelectedEntry()
     store.sourceEditorPresentation = .split
-    store.editableEntryText = "* Latest preview\nA [[https://example.com][link]]."
-    store.scheduleSourceEditorPreview(immediate: true)
+    let liveDraft = "* Latest preview\nA [[https://example.com][link]]."
+    store.noteSourceEditorLocalTextChanged(liveDraft)
+    store.sourceEditorInteraction.text = liveDraft
+    store.scheduleSourceEditorPreview(text: liveDraft, immediate: true)
 
     try await waitForCondition(timeout: 10) {
       store.sourceEditorPreviewHTML?.contains("Latest preview") == true

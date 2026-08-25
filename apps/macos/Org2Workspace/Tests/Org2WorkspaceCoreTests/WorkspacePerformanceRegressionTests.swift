@@ -38,6 +38,26 @@ final class WorkspacePerformanceRegressionTests: XCTestCase {
     XCTAssertEqual(WorkspaceInteractionLatency.percentile95([]), 0)
   }
 
+  func testSourceEditorInteractionChangesStayScopedToTheEditor() {
+    let store = WorkspaceStore()
+    var workspacePublicationCount = 0
+    let observation = store.objectWillChange.sink {
+      workspacePublicationCount += 1
+    }
+    defer { observation.cancel() }
+
+    store.sourceEditorInteraction.text = "Fast local draft"
+    store.sourceEditorSelection = NSRange(location: 4, length: 6)
+
+    XCTAssertEqual(store.sourceEditorInteraction.text, "Fast local draft")
+    XCTAssertEqual(store.sourceEditorSelection, NSRange(location: 4, length: 6))
+    XCTAssertEqual(
+      workspacePublicationCount,
+      0,
+      "Typing and selection must not invalidate the workspace-wide view tree"
+    )
+  }
+
   func testRuntimeIdentityReportsTheCompiledOptimizationMode() {
 #if DEBUG
     XCTAssertEqual(WorkspaceRuntimeIdentity.compiledBuildConfiguration, "debug")

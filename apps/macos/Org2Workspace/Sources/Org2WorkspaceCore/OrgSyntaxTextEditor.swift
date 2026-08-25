@@ -958,7 +958,9 @@ final class OrgSyntaxTextView: NSTextView {
   var onDeleteDocumentSelection: (([OrgSyntaxTextSelectionDocumentFragment]) -> Bool)?
   var onReplaceDocumentSelection: (([OrgSyntaxTextSelectionDocumentFragment], String) -> Bool)?
   var onSourceEditorCommand: ((OrgSourceEditorCommand, OrgSyntaxTextView) -> Bool)?
+  var onMouseSelectionEnded: ((OrgSyntaxTextView) -> Void)?
   var isApplyingCrossEditorSelection = false
+  var isTrackingMouseSelection = false
   private var crossEditorHighlightedRange: NSRange?
   private var pendingLatencyTokens: [WorkspaceInteractionLatency.Token] = []
 
@@ -986,23 +988,32 @@ final class OrgSyntaxTextView: NSTextView {
 
   override func mouseDown(with event: NSEvent) {
     if event.clickCount == 1,
-       OrgSyntaxTextSelectionBridge.trackMouseSelection(from: self, event: event) {
+       OrgSyntaxTextSelectionBridge.beginSelection(in: self, event: event) {
+      isTrackingMouseSelection = true
       return
     }
     super.mouseDown(with: event)
   }
 
   override func mouseDragged(with event: NSEvent) {
+    let latencyToken = WorkspaceInteractionLatency.begin(.sourceEditorDragToDraw)
     if OrgSyntaxTextSelectionBridge.updateSelection(from: self, event: event) {
+      pendingLatencyTokens.append(latencyToken)
+      needsDisplay = true
       return
     }
+    WorkspaceInteractionLatency.finish(latencyToken)
     super.mouseDragged(with: event)
   }
 
   override func mouseUp(with event: NSEvent) {
     if OrgSyntaxTextSelectionBridge.endSelection(from: self) {
+      isTrackingMouseSelection = false
+      onMouseSelectionEnded?(self)
+      needsDisplay = true
       return
     }
+    isTrackingMouseSelection = false
     super.mouseUp(with: event)
   }
 
@@ -1280,6 +1291,8 @@ enum OrgSyntaxTextSelectionBridge {
   private struct ActiveSelection {
     weak var anchorView: OrgSyntaxTextView?
     let anchorLocation: Int
+    let initialPoint: NSPoint
+    var didDrag: Bool
     var crossedEditorBoundary: Bool
   }
 
@@ -1291,83 +1304,60 @@ enum OrgSyntaxTextSelectionBridge {
   private static var activeSelection: ActiveSelection?
   private static var selectedFragments: [SelectionFragment] = []
 
-  static func beginSelection(in textView: OrgSyntaxTextView, event: NSEvent) {
-    clearCrossEditorSelection(containing: textView)
-    activeSelection = ActiveSelection(
-      anchorView: textView,
-      anchorLocation: characterLocation(in: textView, event: event),
-      crossedEditorBoundary: false
-    )
-  }
-
-  static func trackMouseSelection(from textView: OrgSyntaxTextView, event: NSEvent) -> Bool {
+  static func beginSelection(in textView: OrgSyntaxTextView, event: NSEvent) -> Bool {
     guard let window = textView.window else { return false }
     clearCrossEditorSelection(containing: textView)
     window.makeFirstResponder(textView)
-
-    let anchorLocation = characterLocation(in: textView, event: event)
-    let initialPoint = event.locationInWindow
     activeSelection = ActiveSelection(
       anchorView: textView,
-      anchorLocation: anchorLocation,
+      anchorLocation: characterLocation(in: textView, event: event),
+      initialPoint: event.locationInWindow,
+      didDrag: false,
       crossedEditorBoundary: false
     )
-
-    var didDrag = false
-    var handledCrossEditorSelection = false
-    while let nextEvent = window.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) {
-      switch nextEvent.type {
-      case .leftMouseDragged:
-        let deltaX = nextEvent.locationInWindow.x - initialPoint.x
-        let deltaY = nextEvent.locationInWindow.y - initialPoint.y
-        if hypot(deltaX, deltaY) > 2 {
-          didDrag = true
-        }
-
-        guard didDrag else { continue }
-        let targetView = targetTextView(in: window, at: nextEvent.locationInWindow)
-        if let targetView,
-           targetView !== textView || handledCrossEditorSelection {
-          handledCrossEditorSelection = true
-          activeSelection?.crossedEditorBoundary = true
-          selectTextAcrossEditors(
-            anchorView: textView,
-            anchorLocation: anchorLocation,
-            targetView: targetView,
-            targetLocation: characterLocation(in: targetView, windowPoint: nextEvent.locationInWindow)
-          )
-        } else if !handledCrossEditorSelection {
-          let targetLocation = characterLocation(in: textView, windowPoint: nextEvent.locationInWindow)
-          let location = min(anchorLocation, targetLocation)
-          let length = abs(targetLocation - anchorLocation)
-          textView.setSelectedRange(NSRange(location: location, length: length))
-        }
-      case .leftMouseUp:
-        activeSelection = nil
-        if !didDrag {
-          textView.setSelectedRange(NSRange(location: anchorLocation, length: 0))
-        }
-        return true
-      default:
-        continue
-      }
-    }
-
-    activeSelection = nil
     return true
   }
 
   static func updateSelection(from textView: OrgSyntaxTextView, event: NSEvent) -> Bool {
     guard var activeSelection,
-          let anchorView = activeSelection.anchorView,
-          let targetView = targetTextView(in: anchorView.window, at: event.locationInWindow)
+          let anchorView = activeSelection.anchorView
     else {
       return false
     }
 
-    let crossedEditorBoundary = targetView !== anchorView || activeSelection.crossedEditorBoundary
-    guard crossedEditorBoundary else {
-      return false
+    let deltaX = event.locationInWindow.x - activeSelection.initialPoint.x
+    let deltaY = event.locationInWindow.y - activeSelection.initialPoint.y
+    if !activeSelection.didDrag, hypot(deltaX, deltaY) > 2 {
+      activeSelection.didDrag = true
+    }
+    guard activeSelection.didDrag else {
+      self.activeSelection = activeSelection
+      return true
+    }
+
+    let anchorFrame = anchorView.convert(anchorView.bounds, to: nil).insetBy(dx: -12, dy: -6)
+    let targetView: OrgSyntaxTextView?
+    if !activeSelection.crossedEditorBoundary,
+       anchorFrame.contains(event.locationInWindow) {
+      targetView = anchorView
+    } else {
+      targetView = targetTextView(in: anchorView.window, at: event.locationInWindow)
+    }
+    guard let targetView else {
+      self.activeSelection = activeSelection
+      return true
+    }
+
+    if targetView === anchorView, !activeSelection.crossedEditorBoundary {
+      let targetLocation = characterLocation(
+        in: anchorView,
+        windowPoint: event.locationInWindow
+      )
+      let location = min(activeSelection.anchorLocation, targetLocation)
+      let length = abs(targetLocation - activeSelection.anchorLocation)
+      anchorView.setSelectedRange(NSRange(location: location, length: length))
+      self.activeSelection = activeSelection
+      return true
     }
 
     activeSelection.crossedEditorBoundary = true
@@ -1382,9 +1372,18 @@ enum OrgSyntaxTextSelectionBridge {
   }
 
   static func endSelection(from textView: OrgSyntaxTextView) -> Bool {
-    let handled = activeSelection?.crossedEditorBoundary == true
+    guard let selectionState = activeSelection,
+          let anchorView = selectionState.anchorView,
+          anchorView === textView
+    else {
+      self.activeSelection = nil
+      return false
+    }
     activeSelection = nil
-    return handled
+    if !selectionState.didDrag {
+      textView.setSelectedRange(NSRange(location: selectionState.anchorLocation, length: 0))
+    }
+    return true
   }
 
   static func clearCrossEditorSelection(containing textView: OrgSyntaxTextView, preserving preservedView: OrgSyntaxTextView? = nil) {
@@ -1807,6 +1806,9 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     textView.onSourceEditorCommand = { [weak coordinator = context.coordinator] command, textView in
       coordinator?.performSourceEditorCommand(command, in: textView) == true
     }
+    textView.onMouseSelectionEnded = { [weak coordinator = context.coordinator] textView in
+      coordinator?.mouseSelectionDidEnd(in: textView)
+    }
     textView.string = text
     textView.drawsBackground = false
     textView.isRichText = false
@@ -1881,6 +1883,9 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     textView.onReplaceDocumentSelection = onReplaceDocumentSelection
     textView.onSourceEditorCommand = { [weak coordinator = context.coordinator] command, textView in
       coordinator?.performSourceEditorCommand(command, in: textView) == true
+    }
+    textView.onMouseSelectionEnded = { [weak coordinator = context.coordinator] textView in
+      coordinator?.mouseSelectionDidEnd(in: textView)
     }
 
     var currentUTF16Length = textView.textStorage?.length
@@ -2164,7 +2169,8 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
 
     func textViewDidChangeSelection(_ notification: Notification) {
       guard let textView = notification.object as? NSTextView else { return }
-      if (textView as? OrgSyntaxTextView)?.isApplyingCrossEditorSelection == true {
+      if let syntaxTextView = textView as? OrgSyntaxTextView,
+         syntaxTextView.isApplyingCrossEditorSelection || syntaxTextView.isTrackingMouseSelection {
         return
       }
       let selectedRange = textView.selectedRange()
@@ -2172,6 +2178,13 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       scheduleViewportSourceLinePublishing(for: textView)
       guard shouldReadTextForSelectionPublishing(selectedRange) else { return }
       publishSelectionIfNeeded(selectedRange, from: textView)
+    }
+
+    func mouseSelectionDidEnd(in textView: OrgSyntaxTextView) {
+      textViewDidChangeSelection(Notification(
+        name: NSTextView.didChangeSelectionNotification,
+        object: textView
+      ))
     }
 
     func textView(
@@ -3253,7 +3266,6 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
         return
       }
       if selectedRange.length == 0,
-         selection.wrappedValue.length == 0,
          parent.caretPublishingDelayMilliseconds > 0 {
         scheduleDeferredCaretPublishing(
           selectedRange,

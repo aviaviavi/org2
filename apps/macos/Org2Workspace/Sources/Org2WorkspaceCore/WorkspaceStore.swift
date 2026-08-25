@@ -1212,6 +1212,29 @@ public struct WorkspaceRuntimeIdentity: Equatable, Sendable {
 }
 
 @MainActor
+public final class SourceEditorInteractionModel: ObservableObject {
+  @Published public var text: String
+  @Published public var selection: NSRange
+
+  public init(
+    text: String = "",
+    selection: NSRange = NSRange(location: 0, length: 0)
+  ) {
+    self.text = text
+    self.selection = selection
+  }
+
+  func reset(text: String, selection: NSRange) {
+    if self.text != text {
+      self.text = text
+    }
+    if self.selection != selection {
+      self.selection = selection
+    }
+  }
+}
+
+@MainActor
 public final class WorkspaceStore: ObservableObject {
   nonisolated public static let meetingCaptureSourceSummary = "Captures microphone and system/call audio. System audio uses macOS ScreenCaptureKit permission; Org2 records audio only."
   nonisolated public static let defaultAgentHandoffAssignee = "OpenClaw"
@@ -1791,8 +1814,16 @@ public final class WorkspaceStore: ObservableObject {
   public private(set) var selectedRenderedBlocksSignature = WorkspaceStore.renderedBlocksSignature(for: [])
   public private(set) var selectedRenderedBlockIndexes: [OrgEditableBlock.ID: Int] = [:]
   @Published public var selectedEntrySourceMode: EntrySourceMode = .entry
+  public let sourceEditorInteraction = SourceEditorInteractionModel()
   @Published public var editableEntryText = ""
-  @Published public var sourceEditorSelection = NSRange(location: 0, length: 0)
+  public var sourceEditorSelection: NSRange {
+    get { sourceEditorInteraction.selection }
+    set {
+      if sourceEditorInteraction.selection != newValue {
+        sourceEditorInteraction.selection = newValue
+      }
+    }
+  }
   @Published public private(set) var currentDocumentViewportSourceLine: Int?
   @Published public private(set) var currentDocumentSlidePageIndex: Int?
   @Published public var sourceEditorCommandRequest: OrgSourceEditorCommandRequest?
@@ -8670,10 +8701,11 @@ public final class WorkspaceStore: ObservableObject {
         length: 0
       )
     }
-    sourceEditorSelection = Self.clampedSourceEditorSelection(
+    let initialEditorSelection = Self.clampedSourceEditorSelection(
       initialSelection ?? restoredSelection ?? NSRange(location: 0, length: 0),
       in: source.text
     )
+    sourceEditorInteraction.reset(text: source.text, selection: initialEditorSelection)
     resetBlockState()
     sourceEditorDiagnostics = []
     sourceEditorPreviewHTML = selectedEntryHTML
@@ -8704,6 +8736,10 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func scheduleSourceEditorPreview(immediate: Bool = false) {
+    scheduleSourceEditorPreview(text: editableEntryText, immediate: immediate)
+  }
+
+  public func scheduleSourceEditorPreview(text: String, immediate: Bool = false) {
     guard isEditingEntry,
           sourceEditorPresentation == .split,
           !isSourceEditorPreviewPaused,
@@ -8714,16 +8750,17 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     if documentPreviewKind == .slides {
-      scheduleSlidePreview(text: editableEntryText, source: source, immediate: immediate)
+      scheduleSlidePreview(text: text, source: source, immediate: immediate)
       return
     }
 
     cancelSlidePreviewRender(clearStatus: false)
     sourceEditorPreviewTask?.cancel()
-    isRenderingSourceEditorPreview = false
+    if isRenderingSourceEditorPreview {
+      isRenderingSourceEditorPreview = false
+    }
     sourceEditorPreviewGeneration += 1
     let generation = sourceEditorPreviewGeneration
-    let text = editableEntryText
     sourceEditorPreviewTask = Task { @MainActor [weak self] in
       guard let self else { return }
       if !immediate {
@@ -8734,11 +8771,12 @@ public final class WorkspaceStore: ObservableObject {
         }
       }
       guard !Task.isCancelled,
+            generation == self.sourceEditorPreviewGeneration,
             self.isEditingEntry,
             self.sourceEditorPresentation == .split,
             !self.isSourceEditorPreviewPaused,
             self.selectedEntrySource?.id == source.id,
-            self.editableEntryText == text
+            self.sourceEditorLocalDraftText == text || self.editableEntryText == text
       else { return }
 
       self.isRenderingSourceEditorPreview = true
@@ -8756,7 +8794,7 @@ public final class WorkspaceStore: ObservableObject {
               self.sourceEditorPresentation == .split,
               !self.isSourceEditorPreviewPaused,
               self.selectedEntrySource?.id == source.id,
-              self.editableEntryText == text
+              self.sourceEditorLocalDraftText == text || self.editableEntryText == text
         else { return }
         self.sourceEditorPreviewHTML = Self.applyingPropertyDrawerDefault(
           to: html,
@@ -8794,10 +8832,10 @@ public final class WorkspaceStore: ObservableObject {
       documentPreviewOverrides[key] = preference.rawValue
     }
     defaults.set(documentPreviewOverrides, forKey: documentPreviewOverridesKey)
-    applyDocumentPreviewPreferenceForSelectedSource()
+      applyDocumentPreviewPreferenceForSelectedSource()
 
     if documentPreviewKind == .slides {
-      let text = isEditingEntry ? editableEntryText : source.text
+      let text = isEditingEntry ? (sourceEditorLocalDraftText ?? editableEntryText) : source.text
       scheduleSlidePreview(text: text, source: source, immediate: true)
     } else if isEditingEntry, sourceEditorPresentation == .split {
       scheduleSourceEditorPreview(immediate: true)
@@ -8856,7 +8894,7 @@ public final class WorkspaceStore: ObservableObject {
       let previousKind = documentPreviewKind
       applyDocumentPreviewPreferenceForSelectedSource()
       if previousKind != documentPreviewKind, documentPreviewKind == .slides {
-        let text = isEditingEntry ? editableEntryText : source.text
+        let text = isEditingEntry ? (sourceEditorLocalDraftText ?? editableEntryText) : source.text
         scheduleSlidePreview(text: text, source: source, immediate: true)
       }
     }
@@ -8955,7 +8993,7 @@ public final class WorkspaceStore: ObservableObject {
             self.selectedEntrySource?.id == source.id
       else { return }
       if self.isEditingEntry {
-        guard self.editableEntryText == text else { return }
+        guard self.sourceEditorLocalDraftText == text || self.editableEntryText == text else { return }
       } else {
         guard self.selectedEntrySource?.text == text else { return }
       }
@@ -8980,7 +9018,7 @@ public final class WorkspaceStore: ObservableObject {
               self.selectedEntrySource?.id == source.id
         else { return }
         if self.isEditingEntry {
-          guard self.editableEntryText == text else { return }
+          guard self.sourceEditorLocalDraftText == text || self.editableEntryText == text else { return }
         } else {
           guard self.selectedEntrySource?.text == text else { return }
         }
@@ -9003,7 +9041,7 @@ public final class WorkspaceStore: ObservableObject {
 
   public func retrySlidePreview() {
     guard let source = selectedEntrySource else { return }
-    let text = isEditingEntry ? editableEntryText : source.text
+    let text = isEditingEntry ? (sourceEditorLocalDraftText ?? editableEntryText) : source.text
     scheduleSlidePreview(text: text, source: source, immediate: true)
   }
 
@@ -9162,9 +9200,13 @@ public final class WorkspaceStore: ObservableObject {
 
   public func cancelEditingSelectedEntry() {
     cancelSourceEditorPreviewRender(clearStatus: true)
-    editableEntryText = selectedEntrySource?.text ?? ""
+    let selectedText = selectedEntrySource?.text ?? ""
+    editableEntryText = selectedText
     sourceEditorLocalDraftText = nil
-    sourceEditorSelection = NSRange(location: 0, length: 0)
+    sourceEditorInteraction.reset(
+      text: selectedText,
+      selection: NSRange(location: 0, length: 0)
+    )
     sourceEditorDiagnostics = []
     sourceEditorCommandRequest = nil
     isEditingEntry = false
@@ -9719,10 +9761,13 @@ public final class WorkspaceStore: ObservableObject {
 
   private func insertTextInSourceEditor(_ text: String) {
     guard isEditingEntry, !text.isEmpty else { return }
-    let range = Self.clampedSourceEditorSelection(sourceEditorSelection, in: editableEntryText)
-    editableEntryText = (editableEntryText as NSString).replacingCharacters(in: range, with: text)
-    sourceEditorLocalDraftText = editableEntryText
-    sourceEditorSelection = NSRange(location: range.location + text.utf16.count, length: 0)
+    let currentText = sourceEditorLocalDraftText ?? sourceEditorInteraction.text
+    let range = Self.clampedSourceEditorSelection(sourceEditorSelection, in: currentText)
+    let updatedText = (currentText as NSString).replacingCharacters(in: range, with: text)
+    let updatedSelection = NSRange(location: range.location + text.utf16.count, length: 0)
+    editableEntryText = updatedText
+    sourceEditorLocalDraftText = updatedText
+    sourceEditorInteraction.reset(text: updatedText, selection: updatedSelection)
   }
 
   public func duplicateSelectedBlock() async {
@@ -10128,6 +10173,10 @@ public final class WorkspaceStore: ObservableObject {
     selectedEntrySource = savedSource
     editableEntryText = savedSource.text
     sourceEditorLocalDraftText = keepEditing ? savedSource.text : nil
+    sourceEditorInteraction.reset(
+      text: savedSource.text,
+      selection: Self.clampedSourceEditorSelection(sourceEditorSelection, in: savedSource.text)
+    )
     isEditingEntry = keepEditing
     if !keepEditing, let selectedLocation {
       cancelSourceEditorPreviewRender(clearStatus: true)

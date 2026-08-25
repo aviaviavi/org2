@@ -7,6 +7,7 @@ enum WorkspaceInteractionLatency {
   enum Kind: String, CaseIterable {
     case pointerToWindowUpdate = "pointer-to-window-update"
     case sourceEditorKeyToDraw = "source-editor-key-to-draw"
+    case sourceEditorDragToDraw = "source-editor-drag-to-draw"
     case composerKeyToDraw = "composer-key-to-draw"
 
     var budgetMilliseconds: Double { 16.7 }
