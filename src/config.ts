@@ -20,6 +20,11 @@ export type Org2PublishProjectConfig = {
   postambleHtml?: string;
   headIncludes?: string[];
   syntaxHighlighting?: boolean;
+  openGraph?: {
+    imageFormat?: "svg" | "png";
+    siteName?: string;
+    locale?: string;
+  };
   assets?: {
     include?: string[];
     ignore?: string[];

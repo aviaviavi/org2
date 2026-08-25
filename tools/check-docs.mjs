@@ -76,6 +76,7 @@ const downloads = fs.readFileSync(path.join(repoRoot, "docs/site/downloads.org")
 const productArchitecture = fs.readFileSync(path.join(repoRoot, "docs/site/openorg-and-org2.org"), "utf8");
 const macosWorkspace = fs.readFileSync(path.join(repoRoot, "docs/site/editors-macos.org"), "utf8");
 const publishConfig = fs.readFileSync(path.join(repoRoot, "org2.json"), "utf8");
+const parsedPublishConfig = JSON.parse(publishConfig);
 const retiredPublicPages = ["privacy-and-data.org", "known-limitations.org", "launch-demo.org"];
 for (const [label, text] of [["agent quickstart", quickstart], ["llms.txt", llms]]) {
   if (!text.includes("org2 agent capabilities")) fail(`${label} does not point agents to the installed capability manifest`);
@@ -185,8 +186,62 @@ if (!siteStyles.includes(".org2-download-grid") || !siteStyles.includes(".org2-d
   fail("site styles are missing the download card surface");
 }
 
+const siteProject = parsedPublishConfig.publish?.projects?.["docs-site"];
+if (
+  siteProject?.openGraph?.imageFormat !== "png"
+  || siteProject?.openGraph?.siteName !== "OpenOrg"
+  || siteProject?.openGraph?.locale !== "en_US"
+) {
+  fail("docs-site publishing must retain branded PNG Open Graph output");
+}
+
+const publicSourcePages = fs.readdirSync(path.join(repoRoot, "docs", "site"))
+  .filter((name) => /\.org2?$/i.test(name))
+  .sort();
+for (const sourcePage of publicSourcePages) {
+  const slug = sourcePage.replace(/\.org2?$/i, "");
+  const htmlPath = path.join(repoRoot, "site", `${slug}.html`);
+  const pngPath = path.join(repoRoot, "site", "assets", "og", `${slug}.png`);
+  if (!fs.existsSync(htmlPath)) {
+    fail(`published site page is missing: site/${slug}.html`);
+    continue;
+  }
+  const html = fs.readFileSync(htmlPath, "utf8");
+  const expectedPageUrl = slug === "index" ? "https://openorg.so/" : `https://openorg.so/${slug}.html`;
+  const expectedImageUrl = `https://openorg.so/assets/og/${slug}.png`;
+  const requiredHeadEntries = [
+    `<meta name="description"`,
+    `<link rel="canonical" href="${expectedPageUrl}" />`,
+    `<meta property="og:site_name" content="OpenOrg" />`,
+    `<meta property="og:locale" content="en_US" />`,
+    `<meta property="og:url" content="${expectedPageUrl}" />`,
+    `<meta property="og:image" content="${expectedImageUrl}" />`,
+    `<meta property="og:image:type" content="image/png" />`,
+    `<meta property="og:image:width" content="1200" />`,
+    `<meta property="og:image:height" content="630" />`,
+    `<meta property="og:image:alt"`,
+    `<meta name="twitter:card" content="summary_large_image" />`,
+    `<meta name="twitter:image" content="${expectedImageUrl}" />`,
+    `<meta name="twitter:image:alt"`,
+  ];
+  for (const entry of requiredHeadEntries) {
+    if (!html.includes(entry)) fail(`site/${slug}.html is missing required social metadata: ${entry}`);
+  }
+  if (!fs.existsSync(pngPath)) {
+    fail(`Open Graph image is missing: site/assets/og/${slug}.png`);
+    continue;
+  }
+  const png = fs.readFileSync(pngPath);
+  const hasPngSignature = png.length >= 24
+    && png.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+  if (!hasPngSignature || png.readUInt32BE(16) !== 1200 || png.readUInt32BE(20) !== 630) {
+    fail(`Open Graph image must be a 1200x630 PNG: site/assets/og/${slug}.png`);
+  }
+}
+
 if (!process.exitCode) {
   console.log(`OK: ${publicFamilies.size} CLI command families are represented in the agent capability manifest`);
   console.log(`OK: ${requiredDocs.size} canonical documentation entry points exist`);
   console.log("OK: site headings expose consistent copyable anchors");
+  console.log(`OK: ${publicSourcePages.length} published pages have complete Open Graph metadata and 1200x630 PNG cards`);
 }

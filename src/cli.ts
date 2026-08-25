@@ -11727,6 +11727,76 @@ Flags:
         .replace(/"/g, "&quot;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;");
+    const htmlToPlainText = (value: string): string =>
+      String(value || "")
+        .replace(/<[^>]*>/g, " ")
+        .replace(/&#(\d+);/g, (_match, rawCodePoint: string) => {
+          const codePoint = Number.parseInt(rawCodePoint, 10);
+          return Number.isFinite(codePoint) ? String.fromCodePoint(codePoint) : " ";
+        })
+        .replace(/&#x([0-9a-f]+);/gi, (_match, rawCodePoint: string) => {
+          const codePoint = Number.parseInt(rawCodePoint, 16);
+          return Number.isFinite(codePoint) ? String.fromCodePoint(codePoint) : " ";
+        })
+        .replace(/&(amp|quot|apos|lt|gt|nbsp);/g, (entity) => ({
+          "&amp;": "&",
+          "&quot;": '"',
+          "&apos;": "'",
+          "&lt;": "<",
+          "&gt;": ">",
+          "&nbsp;": " ",
+        })[entity] || " ")
+        .replace(/\s+/g, " ")
+        .replace(/\s+([,.;:!?])/g, "$1")
+        .trim();
+    const firstParagraphText = (html: string): string => {
+      const match = html.match(/<p(?:\s[^>]*)?>([\s\S]*?)<\/p>/i);
+      return match ? htmlToPlainText(match[1] || "") : "";
+    };
+    const truncateMetadataText = (value: string, maxLength: number): string => {
+      const normalized = String(value || "").replace(/\s+/g, " ").trim();
+      if (normalized.length <= maxLength) return normalized;
+      const shortened = normalized.slice(0, Math.max(0, maxLength - 1));
+      const lastSpace = shortened.lastIndexOf(" ");
+      return `${(lastSpace > maxLength * 0.6 ? shortened.slice(0, lastSpace) : shortened).trim()}…`;
+    };
+    const wrapOpenGraphText = (value: string, maxCharacters: number, maxLines: number): string[] => {
+      const words = String(value || "").replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
+      const lines: string[] = [];
+      for (const word of words) {
+        const current = lines.at(-1);
+        if (!current || (current.length + 1 + word.length > maxCharacters && lines.length < maxLines)) {
+          lines.push(word);
+        } else {
+          lines[lines.length - 1] = `${current} ${word}`;
+        }
+      }
+      if (lines.length > maxLines) {
+        const overflow = lines.splice(maxLines - 1).join(" ");
+        lines[maxLines - 1] = truncateMetadataText(overflow, maxCharacters);
+      } else if (lines.length === maxLines && lines[maxLines - 1]!.length > maxCharacters) {
+        lines[maxLines - 1] = truncateMetadataText(lines[maxLines - 1]!, maxCharacters);
+      }
+      return lines.length > 0 ? lines : [""];
+    };
+    const ogImageFormatRaw = String(project.openGraph?.imageFormat || "svg").trim().toLowerCase();
+    if (ogImageFormatRaw !== "svg" && ogImageFormatRaw !== "png") {
+      console.error(`Error: publish project "${publishProject}" openGraph.imageFormat must be "svg" or "png"`);
+      process.exit(1);
+    }
+    const ogImageFormat = ogImageFormatRaw as "svg" | "png";
+    const ogSiteName = String(project.openGraph?.siteName || "").trim();
+    const ogLocale = String(project.openGraph?.locale || "").trim();
+    let resvgModulePromise: Promise<typeof import("@resvg/resvg-js")> | null = null;
+    const renderOpenGraphPng = async (svg: string): Promise<Buffer> => {
+      resvgModulePromise ||= import("@resvg/resvg-js");
+      const { Resvg } = await resvgModulePromise;
+      const renderer = new Resvg(svg, {
+        fitTo: { mode: "width", value: 1200 },
+        font: { loadSystemFonts: true, defaultFontFamily: "Arial" },
+      });
+      return Buffer.from(renderer.render().asPng());
+    };
 
     const exported: Array<{ sourcePath: string; outputPath: string; outputPathAbsolute: string; title: string; changed: boolean; metadata?: ExportMetadataPayload; }> = [];
     for (const sourcePath of sourceFiles) {
@@ -11766,53 +11836,93 @@ Flags:
         .replace(/^\//, "")
         .replace(/\.html$/i, "")
         .replace(/\//g, "-") || "index";
-      const ogRelPath = `assets/og/${ogSlug}.svg`;
+      const ogRelPath = `assets/og/${ogSlug}.${ogImageFormat}`;
       const ogAbsPath = path.resolve(outputRoot, ogRelPath);
       const ogTitle = firstPass.title;
-      const ogSubtitle = String(firstPass.metadata?.subtitle || "").trim();
-      const ogDescRaw = String(firstPass.metadata?.description || firstPass.metadata?.subtitle || firstPass.title || "Org2 docs").trim();
-      const ogDesc = ogDescRaw.length > 220 ? `${ogDescRaw.slice(0, 217)}...` : ogDescRaw;
+      const ogDescRaw = String(
+        firstPass.metadata?.description
+          || firstPass.metadata?.subtitle
+          || firstParagraphText(firstPass.html)
+          || firstPass.title
+          || "Org2 docs",
+      ).trim();
+      const ogDesc = truncateMetadataText(ogDescRaw, 200);
+      const titleLines = wrapOpenGraphText(ogTitle, 30, 2);
+      const descriptionLines = wrapOpenGraphText(ogDesc, 62, 2);
+      const titleStartY = titleLines.length === 1 ? 248 : 210;
+      const descriptionStartY = titleStartY + titleLines.length * 76 + 34;
+      const titleSvg = titleLines.map((line, index) =>
+        `  <text x="80" y="${titleStartY + index * 76}" font-family="Arial,Helvetica,sans-serif" font-size="64" font-weight="700" letter-spacing="-1.5" fill="#f8fafc">${escapeHeadAttr(line)}</text>`,
+      );
+      const descriptionSvg = descriptionLines.map((line, index) =>
+        `  <text x="80" y="${descriptionStartY + index * 42}" font-family="Arial,Helvetica,sans-serif" font-size="30" fill="#aebaca">${escapeHeadAttr(line)}</text>`,
+      );
 
       const ogSvg = [
         '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">',
         '  <defs>',
         '    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">',
-        '      <stop offset="0%" stop-color="#0b1020" />',
-        '      <stop offset="100%" stop-color="#111827" />',
+        '      <stop offset="0%" stop-color="#09111e" />',
+        '      <stop offset="100%" stop-color="#111d2d" />',
         '    </linearGradient>',
+        '    <radialGradient id="glow" cx="50%" cy="50%" r="50%">',
+        '      <stop offset="0%" stop-color="#2dd4bf" stop-opacity="0.22" />',
+        '      <stop offset="100%" stop-color="#2dd4bf" stop-opacity="0" />',
+        '    </radialGradient>',
         '  </defs>',
         '  <rect width="1200" height="630" fill="url(#bg)"/>',
-        '  <circle cx="1120" cy="88" r="190" fill="#1f2937" opacity="0.45"/>',
-        '  <text x="80" y="110" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="42" font-weight="700" fill="#5eead4">Org2</text>',
-        `  <text x="80" y="250" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="64" font-weight="700" fill="#e5e7eb">${escapeHeadAttr(ogTitle)}</text>`,
-        ogSubtitle
-          ? `  <text x="80" y="320" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="34" fill="#9ca3af">${escapeHeadAttr(ogSubtitle)}</text>`
-          : "",
-        `  <text x="80" y="560" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="28" fill="#9ca3af">${escapeHeadAttr(ogDesc)}</text>`,
+        '  <circle cx="1100" cy="98" r="270" fill="url(#glow)"/>',
+        '  <path d="M914 76h184M944 128h128M984 180h76" stroke="#5eead4" stroke-width="3" stroke-linecap="round" opacity="0.28"/>',
+        '  <circle cx="914" cy="76" r="7" fill="#5eead4" opacity="0.72"/>',
+        '  <circle cx="944" cy="128" r="7" fill="#5eead4" opacity="0.5"/>',
+        '  <circle cx="984" cy="180" r="7" fill="#5eead4" opacity="0.34"/>',
+        '  <text x="80" y="98" font-family="Arial,Helvetica,sans-serif" font-size="28" font-weight="700" letter-spacing="5" fill="#5eead4">OPENORG</text>',
+        '  <rect x="80" y="126" width="54" height="5" rx="2.5" fill="#5eead4"/>',
+        ...titleSvg,
+        ...descriptionSvg,
+        '  <line x1="80" y1="548" x2="1120" y2="548" stroke="#334155" stroke-width="1"/>',
+        '  <text x="80" y="588" font-family="Arial,Helvetica,sans-serif" font-size="23" font-weight="700" fill="#5eead4">openorg.so</text>',
+        '  <text x="1120" y="588" text-anchor="end" font-family="Arial,Helvetica,sans-serif" font-size="21" fill="#8290a3">local-first · plain text · agent-ready</text>',
         '</svg>',
         '',
       ].filter(Boolean).join("\n");
 
-      const existingOg = fs.existsSync(ogAbsPath)
-        ? fs.readFileSync(ogAbsPath, "utf8").replace(/\r\n/g, "\n")
-        : "";
-      if (!publishPreview && existingOg !== ogSvg) {
+      const ogImageBytes = ogImageFormat === "png"
+        ? await renderOpenGraphPng(ogSvg)
+        : Buffer.from(ogSvg, "utf8");
+      const existingOg = fs.existsSync(ogAbsPath) ? fs.readFileSync(ogAbsPath) : null;
+      if (!publishPreview && (!existingOg || !existingOg.equals(ogImageBytes))) {
         fs.mkdirSync(path.dirname(ogAbsPath), { recursive: true });
-        fs.writeFileSync(ogAbsPath, ogSvg, "utf8");
+        fs.writeFileSync(ogAbsPath, ogImageBytes);
       }
 
-      const pageUrl = ogBaseUrl ? `${ogBaseUrl}/${outputRelativePathPosix}` : "";
+      const pageUrl = ogBaseUrl
+        ? outputRelativePathPosix === "index.html" ? `${ogBaseUrl}/` : `${ogBaseUrl}/${outputRelativePathPosix}`
+        : "";
       const ogImageUrl = ogBaseUrl ? `${ogBaseUrl}/${ogRelPath}` : ogRelPath;
+      const ogImageType = ogImageFormat === "png" ? "image/png" : "image/svg+xml";
+      const ogImageAlt = truncateMetadataText(`${ogTitle} — ${ogDesc}`, 300);
       const ogHeadIncludes = [
+        !firstPass.metadata?.description ? `<meta name="description" content="${escapeHeadAttr(ogDesc)}" />` : "",
+        pageUrl ? `<link rel="canonical" href="${escapeHeadAttr(pageUrl)}" />` : "",
         '<meta property="og:type" content="website" />',
+        ogSiteName ? `<meta property="og:site_name" content="${escapeHeadAttr(ogSiteName)}" />` : "",
+        ogLocale ? `<meta property="og:locale" content="${escapeHeadAttr(ogLocale)}" />` : "",
         `<meta property="og:title" content="${escapeHeadAttr(ogTitle)}" />`,
         `<meta property="og:description" content="${escapeHeadAttr(ogDesc)}" />`,
         pageUrl ? `<meta property="og:url" content="${escapeHeadAttr(pageUrl)}" />` : "",
         `<meta property="og:image" content="${escapeHeadAttr(ogImageUrl)}" />`,
+        ogImageUrl.startsWith("https://") ? `<meta property="og:image:secure_url" content="${escapeHeadAttr(ogImageUrl)}" />` : "",
+        `<meta property="og:image:type" content="${ogImageType}" />`,
+        '<meta property="og:image:width" content="1200" />',
+        '<meta property="og:image:height" content="630" />',
+        `<meta property="og:image:alt" content="${escapeHeadAttr(ogImageAlt)}" />`,
         '<meta name="twitter:card" content="summary_large_image" />',
         `<meta name="twitter:title" content="${escapeHeadAttr(ogTitle)}" />`,
         `<meta name="twitter:description" content="${escapeHeadAttr(ogDesc)}" />`,
+        pageUrl ? `<meta name="twitter:url" content="${escapeHeadAttr(pageUrl)}" />` : "",
         `<meta name="twitter:image" content="${escapeHeadAttr(ogImageUrl)}" />`,
+        `<meta name="twitter:image:alt" content="${escapeHeadAttr(ogImageAlt)}" />`,
       ].filter((item) => String(item || "").trim().length > 0);
 
       const rendered = renderOrgDocumentToHtml(sourceAst, {
