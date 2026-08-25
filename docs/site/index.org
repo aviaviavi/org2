@@ -61,10 +61,10 @@
   </div>
   <div class="org2-sample-layout">
     <aside class="org2-sample-callouts org2-sample-callouts-left" aria-label="Document structure notes">
-      <div style="--callout-top: 1.1rem"><strong>Metadata</strong><span>Title, file tags, and stable IDs make the file queryable.</span></div>
-      <div style="--callout-top: 7.8rem"><strong>Agenda</strong><span>TODO state, schedule, deadline, effort, and tags feed planning views.</span></div>
-      <div style="--callout-top: 36.5rem"><strong>Data</strong><span>Dataset blocks name the local source, engine, result, and freshness policy.</span></div>
-      <div style="--callout-top: 56.4rem"><strong>Assigned Work</strong><span>ASSIGNEE and STATUS turn normal TODOs into an agent-readable work queue.</span></div>
+      <div style="--callout-top: 4.5rem"><strong>Metadata</strong><span>Title, file tags, and stable IDs make the file queryable.</span></div>
+      <div style="--callout-top: 10.1rem"><strong>Agenda</strong><span>TODO state, schedule, deadline, effort, and tags feed planning views.</span></div>
+      <div style="--callout-top: 44.7rem"><strong>Data</strong><span>Dataset blocks name the local source, engine, result, and freshness policy.</span></div>
+      <div style="--callout-top: 69.8rem"><strong>Assigned Work</strong><span>ASSIGNEE and STATUS turn normal TODOs into an agent-readable work queue.</span></div>
     </aside>
     <figure class="org2-sample-file">
       <figcaption>notes/product-launch.org2</figcaption>
@@ -135,10 +135,10 @@
   and source-backed AI summaries.</code></pre>
     </figure>
     <aside class="org2-sample-callouts org2-sample-callouts-right" aria-label="Document feature notes">
-      <div style="--callout-top: 11.8rem"><strong>Properties</strong><span>IDs, effort, and roles give tools stable fields.</span></div>
-      <div style="--callout-top: 18.6rem"><strong>Links</strong><span>File links and ID links stay plain text but resolve through the corpus graph.</span></div>
-      <div style="--callout-top: 30.9rem"><strong>Code</strong><span>Commands and examples live beside the notes they explain.</span></div>
-      <div style="--callout-top: 64.8rem"><strong>Review</strong><span>Generated work stays marked until a person accepts or promotes it.</span></div>
+      <div style="--callout-top: 14.3rem"><strong>Properties</strong><span>IDs, effort, and roles give tools stable fields.</span></div>
+      <div style="--callout-top: 25.1rem"><strong>Links</strong><span>File links and ID links stay plain text but resolve through the corpus graph.</span></div>
+      <div style="--callout-top: 37.7rem"><strong>Code</strong><span>Commands and examples live beside the notes they explain.</span></div>
+      <div style="--callout-top: 83.7rem"><strong>Review</strong><span>Generated work stays marked until a person accepts or promotes it.</span></div>
     </aside>
   </div>
 </section>

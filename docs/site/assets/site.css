@@ -2327,6 +2327,77 @@ body #content {
   line-height: 1.5;
 }
 
+@media (min-width: 960px) {
+  #content .org2-sample-layout {
+    grid-template-columns: 11.5rem minmax(0, 1fr) 11.5rem;
+    gap: 1rem;
+    align-items: stretch;
+  }
+
+  #content .org2-sample-file {
+    order: 2;
+    min-width: 0;
+  }
+
+  #content .org2-sample-callouts-left {
+    order: 1;
+  }
+
+  #content .org2-sample-callouts-right {
+    order: 3;
+  }
+
+  #content .org2-sample-callouts {
+    position: relative;
+    display: block;
+  }
+
+  #content .org2-sample-callouts div {
+    position: absolute;
+    top: var(--callout-top);
+    width: 100%;
+    padding: 0;
+    border: 0;
+    background: transparent;
+  }
+
+  #content .org2-sample-callouts-left div {
+    padding-right: 0.75rem;
+    text-align: right;
+  }
+
+  #content .org2-sample-callouts-right div {
+    padding-left: 0.75rem;
+    text-align: left;
+  }
+
+  #content .org2-sample-callouts div::before {
+    display: none;
+  }
+
+  #content .org2-sample-callouts-left div::after,
+  #content .org2-sample-callouts-right div::before {
+    display: block;
+    position: absolute;
+    top: 0.85rem;
+    width: 1rem;
+    height: 0;
+    border: 0;
+    border-top: 1px solid color-mix(in srgb, var(--muted) 45%, transparent);
+    border-radius: 0;
+    background: transparent;
+    content: "";
+  }
+
+  #content .org2-sample-callouts-left div::after {
+    right: -1rem;
+  }
+
+  #content .org2-sample-callouts-right div::before {
+    left: -1rem;
+  }
+}
+
 #content .org2-shot-grid {
   gap: clamp(1.2rem, 3vw, 2.25rem);
 }
