@@ -45,6 +45,7 @@ assert.ok(block.startsWith(managedBlockStart));
 assert.ok(block.endsWith(managedBlockEnd));
 assert.match(block, /Org2 Workspace for macOS/);
 assert.match(block, /Org2 Workspace for macOS \(Intel DMG\)/);
+assert.doesNotMatch(block, /measured by Scarf Gateway/);
 
 const openOrgBlock = releaseDownloadBlock({
   tag_name: "0.5.0",

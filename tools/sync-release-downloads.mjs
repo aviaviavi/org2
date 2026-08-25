@@ -99,8 +99,6 @@ export function releaseDownloadBlock(release) {
     managedBlockStart,
     "## Direct downloads",
     "",
-    "These links are measured by Scarf Gateway and redirect to the original files hosted on GitHub Releases.",
-    "",
     ...assets.map(
       (asset) => `- [${artifactLabel(asset)}](${scarfDownloadUrl(release.tag_name, asset.name)})`,
     ),
