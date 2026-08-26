@@ -10318,10 +10318,18 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertFalse(CommandShortcutReveal.isActive(for: []))
   }
 
-  func testSidebarCanResizeToOneQuarterOfWorkspaceWidth() {
+  func testSidebarStartsAtItsOneQuarterMaximumWidth() {
     XCTAssertEqual(WorkspaceSidebarLayout.maximumWidth(for: 1_400), 350)
     XCTAssertEqual(WorkspaceSidebarLayout.maximumWidth(for: 800), 200)
     XCTAssertEqual(WorkspaceSidebarLayout.maximumWidth(for: 600), WorkspaceSidebarLayout.minimumWidth)
+    XCTAssertEqual(
+      WorkspaceSidebarLayout.defaultWidth(for: 1_400),
+      WorkspaceSidebarLayout.maximumWidth(for: 1_400)
+    )
+    XCTAssertEqual(
+      WorkspaceSidebarLayout.defaultWidth(for: 800),
+      WorkspaceSidebarLayout.maximumWidth(for: 800)
+    )
   }
 
   @MainActor

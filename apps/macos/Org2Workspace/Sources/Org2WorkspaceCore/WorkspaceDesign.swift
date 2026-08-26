@@ -190,7 +190,10 @@ enum WorkspaceMotion {
 
 enum WorkspaceSidebarLayout {
   static let minimumWidth: CGFloat = 180
-  static let idealWidth: CGFloat = 232
+
+  static func defaultWidth(for containerWidth: CGFloat) -> CGFloat {
+    maximumWidth(for: containerWidth)
+  }
 
   static func maximumWidth(for containerWidth: CGFloat) -> CGFloat {
     max(minimumWidth, containerWidth * 0.25)

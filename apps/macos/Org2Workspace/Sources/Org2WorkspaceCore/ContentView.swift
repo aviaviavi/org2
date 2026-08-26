@@ -23,7 +23,7 @@ public struct ContentView: View {
         SidebarView()
           .navigationSplitViewColumnWidth(
             min: WorkspaceSidebarLayout.minimumWidth,
-            ideal: WorkspaceSidebarLayout.idealWidth,
+            ideal: WorkspaceSidebarLayout.defaultWidth(for: proxy.size.width),
             max: WorkspaceSidebarLayout.maximumWidth(for: proxy.size.width)
           )
       } detail: {
