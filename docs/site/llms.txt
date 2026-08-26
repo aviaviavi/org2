@@ -1,6 +1,6 @@
 # Org2
 
-Managed Remote Codex destinations reuse an existing Codex or `~/.ssh/config` host alias and attach to that machine's managed App Server daemon through `codex app-server proxy` over SSH stdio. They require no separately maintained WebSocket tunnel, listener, TLS certificate, or bearer token. The active turn fails visibly if the transport exits, and a later operation creates a fresh proxy attachment rather than replaying work.
+Managed Remote Codex destinations reuse an existing Codex or `~/.ssh/config` host alias and launch `codex app-server --listen stdio://` on that machine over SSH. They require no separately maintained WebSocket tunnel, listener, TLS certificate, or bearer token. The active turn fails visibly if the transport exits, and a later operation starts a fresh remote App Server process rather than replaying work.
 
 > Org2 is a local-first knowledge compiler and runtime for Org-shaped plain text. Ordinary .org2 and .org files are canonical; agendas, graph data, context packets, reports, editor behavior, apps, and websites derive from the shared compiler/runtime.
 

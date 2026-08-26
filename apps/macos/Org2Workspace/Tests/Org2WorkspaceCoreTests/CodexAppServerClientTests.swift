@@ -539,7 +539,8 @@ final class CodexAppServerClientTests: XCTestCase {
     XCTAssertTrue(arguments.contains("ServerAliveInterval=15"))
     XCTAssertTrue(arguments.contains("ServerAliveCountMax=12"))
     XCTAssertEqual(arguments[arguments.count - 2], "avi@scarfs-macbook-air")
-    XCTAssertTrue(arguments.last?.contains("codex app-server proxy") == true)
+    XCTAssertTrue(arguments.last?.contains("codex app-server --listen stdio://") == true)
+    XCTAssertFalse(arguments.last?.contains("codex app-server proxy") == true)
     XCTAssertThrowsError(
       try CodexAppServerClient.managedRemoteSSHArguments(
         sshHost: "-oProxyCommand=touch /tmp/unsafe"
@@ -903,7 +904,7 @@ final class CodexAppServerClientTests: XCTestCase {
     await client.shutdown()
   }
 
-  func testManagedRemoteClientUsesTheAppServerProxyJSONLTransport() async throws {
+  func testManagedRemoteClientUsesSSHStdioJSONLTransport() async throws {
     let temporaryDirectory = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-managed-remote-client-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(

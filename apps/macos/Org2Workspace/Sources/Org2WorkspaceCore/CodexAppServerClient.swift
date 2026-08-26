@@ -415,8 +415,10 @@ public actor CodexAppServerClient {
     ]
   }
 
+  // This client consumes newline-delimited JSON over stdio. The app-server
+  // proxy command relays the Unix-socket transport and is not a JSONL adapter.
   private nonisolated static let managedRemoteCommand =
-    #"exec /bin/sh -lc 'PATH="${CODEX_INSTALL_DIR:-$HOME/.local/bin}:/opt/homebrew/bin:/usr/local/bin:$PATH"; export PATH; exec codex app-server proxy'"#
+    #"exec /bin/sh -lc 'PATH="${CODEX_INSTALL_DIR:-$HOME/.local/bin}:/opt/homebrew/bin:/usr/local/bin:$PATH"; export PATH; exec codex app-server --listen stdio://'"#
 
   public func accountState() async throws -> CodexAccountState {
     let result = try await request(
