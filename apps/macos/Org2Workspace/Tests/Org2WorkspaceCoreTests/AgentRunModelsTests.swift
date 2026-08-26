@@ -17,6 +17,34 @@ private actor AgentRunListRefreshGate {
   }
 }
 
+private actor ApprovalDecisionGate {
+  private var startedApprovalIDs: [String] = []
+  private var waiters: [String: CheckedContinuation<Void, Never>] = [:]
+  private var releasedApprovalIDs: Set<String> = []
+
+  func wait(for approvalID: String) async {
+    startedApprovalIDs.append(approvalID)
+    if releasedApprovalIDs.remove(approvalID) != nil {
+      return
+    }
+    await withCheckedContinuation { continuation in
+      waiters[approvalID] = continuation
+    }
+  }
+
+  func release(_ approvalID: String) {
+    if let continuation = waiters.removeValue(forKey: approvalID) {
+      continuation.resume()
+    } else {
+      releasedApprovalIDs.insert(approvalID)
+    }
+  }
+
+  func started() -> [String] {
+    startedApprovalIDs
+  }
+}
+
 final class AgentRunModelsTests: XCTestCase {
   func testRunCenterResolvesSelectedApprovalWithinPresentedRun() {
     XCTAssertEqual(
@@ -578,6 +606,137 @@ final class AgentRunModelsTests: XCTestCase {
     XCTAssertFalse(store.approvalItems.contains(where: {
       $0.runId == "rejected-run" || $0.runId == "canceled-run"
     }))
+  }
+
+  @MainActor
+  func testRapidSiblingApprovalClicksQueueWithoutBlockingEitherRow() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-run-approval-queued-siblings-\(UUID().uuidString)", isDirectory: true)
+    let waitingRun = try makeRun(
+      id: "shared-run",
+      status: "waiting-approval",
+      approvalStatuses: ["pending", "pending"]
+    )
+    let afterFirstDecision = try makeRun(
+      id: waitingRun.id,
+      status: "waiting-approval",
+      approvalStatuses: ["approved", "pending"]
+    )
+    let afterSecondDecision = try makeRun(
+      id: waitingRun.id,
+      status: "running",
+      approvalStatuses: ["approved", "approved"]
+    )
+    let firstApproval = try XCTUnwrap(waitingRun.approvals.first)
+    let secondApproval = try XCTUnwrap(waitingRun.approvals.last)
+    let firstItem = approvalQueueItem(run: waitingRun, approval: firstApproval, root: root)
+    let secondItem = approvalQueueItem(run: waitingRun, approval: secondApproval, root: root)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.corpusRoot = root
+    store.replaceAgentRunsForTesting([waitingRun])
+    store.replaceApprovalItemsForTesting([firstItem, secondItem])
+    let gate = ApprovalDecisionGate()
+    let firstStarted = expectation(description: "First approval write started")
+    let secondStarted = expectation(description: "Queued sibling approval write started")
+    store.agentRunApprovalDecisionForTesting = { _, approvalID, decision, _ in
+      XCTAssertEqual(decision, "approved")
+      if approvalID == "approval-1" {
+        firstStarted.fulfill()
+        await gate.wait(for: approvalID)
+        return afterFirstDecision
+      }
+      secondStarted.fulfill()
+      await gate.wait(for: approvalID)
+      return afterSecondDecision
+    }
+
+    let firstTask = Task { @MainActor in
+      await store.decideAgentRunApproval(waitingRun, approval: firstApproval, decision: "approved")
+    }
+    await fulfillment(of: [firstStarted], timeout: 2)
+    let secondTask = Task { @MainActor in
+      await store.decideAgentRunApproval(waitingRun, approval: secondApproval, decision: "approved")
+    }
+    for _ in 0..<20 where !store.isAgentRunApprovalActionInProgress(
+      runID: waitingRun.id,
+      approvalID: secondApproval.id
+    ) {
+      await Task.yield()
+    }
+
+    XCTAssertTrue(store.isAgentRunApprovalActionInProgress(
+      runID: waitingRun.id,
+      approvalID: firstApproval.id
+    ))
+    XCTAssertTrue(store.isAgentRunApprovalActionInProgress(
+      runID: waitingRun.id,
+      approvalID: secondApproval.id
+    ))
+    let startedBeforeRelease = await gate.started()
+    XCTAssertEqual(startedBeforeRelease, ["approval-1"])
+    XCTAssertNil(store.approvalActionError(secondItem))
+
+    await gate.release("approval-1")
+    await fulfillment(of: [secondStarted], timeout: 2)
+    await gate.release("approval-2")
+    await firstTask.value
+    await secondTask.value
+
+    XCTAssertTrue(store.approvalItems.isEmpty)
+    XCTAssertTrue(store.approvalActionErrorsByItemID.isEmpty)
+  }
+
+  @MainActor
+  func testBulkApproveRunsIndependentApprovalWritesConcurrently() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-run-approval-bulk-concurrent-\(UUID().uuidString)", isDirectory: true)
+    let firstRun = try makeRun(id: "run-a", status: "waiting-approval", pendingApproval: true)
+    let secondRun = try makeRun(id: "run-b", status: "waiting-approval", pendingApproval: true)
+    let updatedFirstRun = try makeRun(id: firstRun.id, status: "running", approvalStatus: "approved")
+    let updatedSecondRun = try makeRun(id: secondRun.id, status: "running", approvalStatus: "approved")
+    let firstItem = approvalQueueItem(
+      run: firstRun,
+      approval: try XCTUnwrap(firstRun.approvals.first),
+      root: root
+    )
+    let secondItem = approvalQueueItem(
+      run: secondRun,
+      approval: try XCTUnwrap(secondRun.approvals.first),
+      root: root
+    )
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.corpusRoot = root
+    store.replaceAgentRunsForTesting([firstRun, secondRun])
+    store.replaceApprovalItemsForTesting([firstItem, secondItem])
+    store.bulkSelectedApprovalItemIDs = [firstItem.id, secondItem.id]
+    let gate = ApprovalDecisionGate()
+    let bothStarted = expectation(description: "Independent approval writes overlapped")
+    bothStarted.expectedFulfillmentCount = 2
+    store.agentRunApprovalDecisionForTesting = { runID, approvalID, decision, _ in
+      XCTAssertEqual(decision, "approved")
+      let key = "\(runID):\(approvalID)"
+      bothStarted.fulfill()
+      await gate.wait(for: key)
+      return runID == firstRun.id ? updatedFirstRun : updatedSecondRun
+    }
+
+    let bulkTask = Task { @MainActor in await store.approveSelectedApprovals() }
+    await fulfillment(of: [bothStarted], timeout: 2)
+
+    XCTAssertTrue(store.isApprovingApproval(firstItem))
+    XCTAssertTrue(store.isApprovingApproval(secondItem))
+    let startedApprovalIDs = await gate.started()
+    XCTAssertEqual(Set(startedApprovalIDs), ["run-a:approval-1", "run-b:approval-1"])
+
+    await gate.release("run-a:approval-1")
+    await gate.release("run-b:approval-1")
+    await bulkTask.value
+
+    XCTAssertTrue(store.approvalItems.isEmpty)
+    XCTAssertEqual(store.bulkApprovalSelectionCount, 0)
+    XCTAssertTrue(store.approvalActionErrorsByItemID.isEmpty)
   }
 
   @MainActor
@@ -1630,6 +1789,38 @@ final class AgentRunModelsTests: XCTestCase {
     store.navigateBack()
     XCTAssertEqual(store.presentedAgentRun?.id, run.id)
     XCTAssertEqual(store.selectedSurface, .approvals)
+  }
+
+  private func approvalQueueItem(
+    run: AgentRunItem,
+    approval: AgentRunApprovalItem,
+    root: URL
+  ) -> ApprovalItem {
+    ApprovalItem(
+      title: approval.title,
+      status: approval.status,
+      todo: nil,
+      level: nil,
+      file: root.appendingPathComponent(".org2/runs/\(run.id).org2").path,
+      line: 1,
+      idValue: approval.id,
+      properties: [:],
+      body: approval.action,
+      tags: [],
+      kind: "run",
+      approvalId: approval.id,
+      fingerprint: approval.fingerprint,
+      action: approval.action,
+      riskClass: approval.riskClass,
+      requestedRole: approval.requestedRole,
+      requestedFrom: approval.requestedFrom,
+      requestedAt: approval.requestedAt,
+      runId: run.id,
+      runGoal: run.goal,
+      runStatus: run.status,
+      runPendingApprovalCount: run.pendingApprovalCount,
+      runApprovalCount: run.approvals.count
+    )
   }
 
   private func makeRun(

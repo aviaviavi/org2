@@ -3856,12 +3856,14 @@ private enum RunCompletionMode {
   case run
   case external
   case approvalExternal
+  case approvalExternalBulk(Int)
 
   var title: String {
     switch self {
     case .run: "Complete Run"
     case .external: "Mark Done Elsewhere"
     case .approvalExternal: "Mark Approval Done Elsewhere"
+    case .approvalExternalBulk(let count): "Mark \(count) Approvals Done Elsewhere"
     }
   }
 
@@ -3870,6 +3872,7 @@ private enum RunCompletionMode {
     case .run: "Describe what happened in plain language. This is the first thing people will see when they review the run."
     case .external: "Describe where or how the outcome was completed. This closes the Org2 item and retains unresolved approvals and review metadata as history. It does not stop work that may still be running in another system."
     case .approvalExternal: "Describe where or how this exact approval action was completed. Only this approval is closed; sibling approvals and the containing run remain open."
+    case .approvalExternalBulk(let count): "Describe where or how these \(count) approval actions were completed. Each selected approval is closed independently; sibling approvals and containing runs remain open."
     }
   }
 
@@ -3878,6 +3881,7 @@ private enum RunCompletionMode {
     case .run: "Complete Run"
     case .external: "Mark Done Elsewhere"
     case .approvalExternal: "Mark Approval Done Elsewhere"
+    case .approvalExternalBulk: "Mark Selected Done Elsewhere"
     }
   }
 }
@@ -4014,6 +4018,10 @@ private struct RunCenterDetail: View {
               .font(.caption)
               .foregroundStyle(.secondary)
             ForEach(pending) { approval in
+              let approvalIsMutating = store.isAgentRunApprovalActionInProgress(
+                runID: run.id,
+                approvalID: approval.id
+              )
               VStack(alignment: .leading, spacing: 10) {
                 VStack(alignment: .leading, spacing: 4) {
                   Text(approval.title)
@@ -4028,17 +4036,28 @@ private struct RunCenterDetail: View {
                 approvalReviewMaterial(approval)
 
                 HStack {
-                  Button("Approve") { Task { await store.decideAgentRunApproval(run, approval: approval, decision: "approved") } }
-                    .disabled(isMutating || !canApprove(approval))
+                  Button {
+                    Task { await store.decideAgentRunApproval(run, approval: approval, decision: "approved") }
+                  } label: {
+                    if approvalIsMutating {
+                      HStack(spacing: 6) {
+                        WorkspaceActivityIndicator(size: .mini)
+                        Text("Working")
+                      }
+                    } else {
+                      Text("Approve")
+                    }
+                  }
+                    .disabled(approvalIsMutating || !canApprove(approval))
                     .help(canApprove(approval) ? "Approve the displayed action" : "Reviewable action details are required before approval")
                   Button("Request Changes…") {
                     revisionFeedback = ""
                     revisionApproval = approval
                   }
-                  .disabled(isMutating)
+                  .disabled(approvalIsMutating)
                   .help("Describe the changes required and return the work to the agent")
                   Button("Reject") { Task { await store.decideAgentRunApproval(run, approval: approval, decision: "rejected") } }
-                    .disabled(isMutating)
+                    .disabled(approvalIsMutating)
                   Spacer()
                   Button("Show in Review") {
                     store.showApprovalInQueue(run: run, approval: approval)
@@ -4150,7 +4169,7 @@ private struct RunCenterDetail: View {
           switch completionMode {
           case .run: await store.completeAgentRun(run, summary: summary)
           case .external: await store.completeAgentRunExternally(run, summary: summary)
-          case .approvalExternal: return
+          case .approvalExternal, .approvalExternalBulk: return
           }
         }
       }
@@ -4589,6 +4608,11 @@ private struct ApprovalsView: View {
   @State private var revisionFeedback = ""
   @State private var externalCompletionItem: ApprovalItem?
   @State private var externalCompletionSummary = ""
+  @State private var bulkExternalCompletionPresented = false
+  @State private var bulkExternalCompletionSummary = ""
+  @State private var bulkRejectionPresented = false
+  @State private var bulkRejectionReason = ""
+  @State private var bulkRejectionEndStatus: TodoEditStatus = .canceled
 
   var body: some View {
     VStack(spacing: 0) {
@@ -4599,6 +4623,20 @@ private struct ApprovalsView: View {
       }
 
       ApprovalControls(filterFocused: $filterFocused)
+
+      if store.hasBulkApprovalSelection {
+        ApprovalBulkActionBar(
+          markDoneElsewhere: {
+            bulkExternalCompletionSummary = ""
+            bulkExternalCompletionPresented = true
+          },
+          reject: {
+            bulkRejectionReason = ""
+            bulkRejectionEndStatus = .canceled
+            bulkRejectionPresented = true
+          }
+        )
+      }
 
       HStack(spacing: 10) {
         MetricView(title: "Visible", value: "\(store.visibleApprovalItems.count)")
@@ -4639,6 +4677,25 @@ private struct ApprovalsView: View {
       ) { summary in
         externalCompletionItem = nil
         Task { await store.completeApprovalExternally(item, summary: summary) }
+      }
+    }
+    .sheet(isPresented: $bulkExternalCompletionPresented) {
+      RunCompletionSheet(
+        summary: $bulkExternalCompletionSummary,
+        mode: .approvalExternalBulk(store.bulkApprovalSelectionCount)
+      ) { summary in
+        bulkExternalCompletionPresented = false
+        Task { await store.completeSelectedApprovalsExternally(summary: summary) }
+      }
+    }
+    .sheet(isPresented: $bulkRejectionPresented) {
+      BulkApprovalRejectionSheet(
+        count: store.bulkApprovalSelectionCount,
+        reason: $bulkRejectionReason,
+        endStatus: $bulkRejectionEndStatus
+      ) { endStatus, reason in
+        bulkRejectionPresented = false
+        Task { await store.rejectSelectedApprovals(endStatus: endStatus, reason: reason) }
       }
     }
     .onAppear {
@@ -4690,9 +4747,12 @@ private struct ApprovalsView: View {
             item: item,
             sourceReference: item.isRunApproval ? item.sourceLabel : "\(store.relativePath(item.file)):\(item.line)",
             isSelected: store.isApprovalItemSelectedForAIContext(item),
+            isBulkSelected: store.isApprovalItemBulkSelected(item),
             isApproving: store.isApprovingApproval(item),
             isRejecting: store.isRejectingApproval(item),
             isCompletingExternally: store.isCompletingApprovalExternally(item),
+            actionError: store.approvalActionError(item),
+            toggleBulkSelection: { store.toggleApprovalItemBulkSelection(item) },
             approve: { Task { await store.approve(item) } },
             markDoneElsewhere: {
               externalCompletionSummary = ""
@@ -4739,6 +4799,14 @@ private struct ApprovalsView: View {
               Label("Start New AI Thread", systemImage: "sparkles")
             }
             Divider()
+            Button {
+              store.toggleApprovalItemBulkSelection(item)
+            } label: {
+              Label(
+                store.isApprovalItemBulkSelected(item) ? "Remove from Selection" : "Add to Selection",
+                systemImage: store.isApprovalItemBulkSelected(item) ? "checkmark.square.fill" : "square"
+              )
+            }
             Button {
               Task { await store.approve(item) }
             } label: {
@@ -4836,13 +4904,109 @@ private struct ApprovalControls: View {
   }
 }
 
+private struct ApprovalBulkActionBar: View {
+  @EnvironmentObject private var store: WorkspaceStore
+  let markDoneElsewhere: () -> Void
+  let reject: () -> Void
+
+  var body: some View {
+    HStack(spacing: 8) {
+      Label("\(store.bulkApprovalSelectionCount) selected", systemImage: "checkmark.square")
+        .font(.callout.weight(.semibold))
+        .monospacedDigit()
+
+      Spacer(minLength: 0)
+
+      Button {
+        store.selectAllVisibleApprovalItemsForBulkAction()
+      } label: {
+        Label("Select Visible", systemImage: "checkmark.square")
+      }
+      .disabled(store.visibleApprovalItems.isEmpty)
+
+      Button {
+        Task { await store.approveSelectedApprovals() }
+      } label: {
+        Label("Approve", systemImage: "checkmark.seal")
+      }
+
+      Button {
+        markDoneElsewhere()
+      } label: {
+        Label("Done Elsewhere…", systemImage: "checkmark.circle")
+      }
+
+      Button {
+        reject()
+      } label: {
+        Label("Reject…", systemImage: "xmark.octagon")
+      }
+
+      Button {
+        store.clearApprovalBulkSelection()
+      } label: {
+        Label("Clear", systemImage: "xmark.circle")
+      }
+    }
+    .controlSize(.small)
+    .buttonStyle(WorkspaceActionButtonStyle())
+    .padding(.horizontal, WorkspaceDesign.contentInset)
+    .padding(.vertical, 8)
+    .background(WorkspaceDesign.panelFill)
+    .overlay(alignment: .bottom) {
+      Divider()
+    }
+  }
+}
+
+private struct BulkApprovalRejectionSheet: View {
+  @Environment(\.dismiss) private var dismiss
+  let count: Int
+  @Binding var reason: String
+  @Binding var endStatus: TodoEditStatus
+  let reject: (TodoEditStatus, String) -> Void
+
+  private var normalizedReason: String {
+    reason.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 16) {
+      Text("Reject \(count) Approvals").font(.title2.weight(.semibold))
+      Text("The reason is recorded on every selected approval. Standalone approval headings use the chosen final TODO state; run-backed approvals are rejected through their canonical run records.")
+        .foregroundStyle(.secondary)
+
+      Picker("Final standalone TODO state", selection: $endStatus) {
+        Text("Canceled").tag(TodoEditStatus.canceled)
+        Text("Done").tag(TodoEditStatus.done)
+      }
+
+      TextField("Rejection reason", text: $reason, axis: .vertical)
+        .lineLimit(3...7)
+
+      HStack {
+        Spacer()
+        Button("Cancel") { dismiss() }
+        Button("Reject Selected") { reject(endStatus, normalizedReason) }
+          .keyboardShortcut(.defaultAction)
+          .disabled(normalizedReason.isEmpty)
+      }
+    }
+    .padding(22)
+    .frame(width: 560)
+  }
+}
+
 private struct ApprovalRow: View {
   let item: ApprovalItem
   let sourceReference: String
   let isSelected: Bool
+  let isBulkSelected: Bool
   let isApproving: Bool
   let isRejecting: Bool
   let isCompletingExternally: Bool
+  let actionError: String?
+  let toggleBulkSelection: () -> Void
   let approve: () -> Void
   let markDoneElsewhere: () -> Void
   let requestChanges: (() -> Void)?
@@ -4856,7 +5020,16 @@ private struct ApprovalRow: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
-      HStack(alignment: .firstTextBaseline, spacing: 8) {
+      HStack(alignment: .center, spacing: 8) {
+        Button {
+          toggleBulkSelection()
+        } label: {
+          AgendaBulkSelectionCheckbox(isChecked: isBulkSelected, isEnabled: true)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(isBulkSelected ? "Remove from bulk selection" : "Add to bulk selection")
+        .help(isBulkSelected ? "Remove from bulk selection" : "Add to bulk selection")
+
         StatusPill(text: item.status)
         Text(Org2Display.cleanInline(item.title))
           .font(.body.weight(.semibold))
@@ -4967,6 +5140,13 @@ private struct ApprovalRow: View {
         .buttonStyle(WorkspaceActionButtonStyle())
       }
       .controlSize(.small)
+
+      if let actionError {
+        Label(actionError, systemImage: "exclamationmark.triangle.fill")
+          .font(.caption)
+          .foregroundStyle(.red)
+          .textSelection(.enabled)
+      }
     }
     .workspaceSelectableRow(isSelected: isSelected, verticalPadding: 8)
   }

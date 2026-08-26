@@ -1317,6 +1317,7 @@ public final class WorkspaceStore: ObservableObject {
   private var approvalFilterTextByItemID: [ApprovalItem.ID: String] = [:]
   @Published public var selectedApprovalItemID: ApprovalItem.ID?
   @Published public var selectedApprovalItemIDsForAIContext: Set<ApprovalItem.ID> = []
+  @Published public var bulkSelectedApprovalItemIDs: Set<ApprovalItem.ID> = []
   @Published public var runsAndReviewPage: RunsAndReviewPage = .runs
   @Published public var isLoadingApprovals = false
   @Published public private(set) var hasCompletedApprovalsLoad = false
@@ -1377,6 +1378,8 @@ public final class WorkspaceStore: ObservableObject {
   @Published public private(set) var approvingApprovalItemIDs: Set<ApprovalItem.ID> = []
   @Published public private(set) var rejectingApprovalItemIDs: Set<ApprovalItem.ID> = []
   @Published public private(set) var externallyCompletingApprovalItemIDs: Set<ApprovalItem.ID> = []
+  @Published public private(set) var approvalActionErrorsByItemID: [ApprovalItem.ID: String] = [:]
+  private var mutatingStandaloneApprovalFiles: Set<String> = []
   @Published public var corpusFiles: [CorpusFile] = [] {
     didSet {
       rebuildQuickOpenIndex()
@@ -2814,6 +2817,7 @@ public final class WorkspaceStore: ObservableObject {
     workspaceAgentWorkSearchResults = []
     bulkSelectedAgendaItemIDs = []
     selectedApprovalItemIDsForAIContext = []
+    bulkSelectedApprovalItemIDs = []
     assignedWorkItems = cachedWorkspace?.assignedWorkItems ?? []
     selectedAssignedWorkItemID = cachedWorkspace?.selectedAssignedWorkItemID
     meetings = cachedWorkspace?.meetings ?? []
@@ -2865,6 +2869,11 @@ public final class WorkspaceStore: ObservableObject {
     selectedAgentRunIDsForAIContext = []
     presentedAgentRunID = nil
     mutatingAgentRunIDs = []
+    mutatingStandaloneApprovalFiles = []
+    approvingApprovalItemIDs = []
+    rejectingApprovalItemIDs = []
+    externallyCompletingApprovalItemIDs = []
+    approvalActionErrorsByItemID = [:]
     mutatingAgentGoalIDs = []
     mutatingAgentProfileIDs = []
     isLoadingAgentGoals = false
@@ -4735,10 +4744,15 @@ public final class WorkspaceStore: ObservableObject {
     decision: String,
     note: String? = nil
   ) async {
-    guard corpusRoot != nil, !mutatingAgentRunIDs.contains(run.id) else { return }
-    mutatingAgentRunIDs.insert(run.id)
-    defer { mutatingAgentRunIDs.remove(run.id) }
+    guard corpusRoot != nil else { return }
+    let queueItemID = Self.runApprovalQueueItemID(runID: run.id, approvalID: approval.id)
+    guard !isApprovalActionInProgress(queueItemID) else { return }
+    let actionKind: ApprovalActionKind = decision == "approved" ? .approve : .reject
+    beginApprovalAction(queueItemID, kind: actionKind)
+    defer { endApprovalAction(queueItemID, kind: actionKind) }
     do {
+      try await waitForAgentRunMutationAvailability(run.id)
+      defer { mutatingAgentRunIDs.remove(run.id) }
       let updated = try await performAgentRunApprovalDecision(
         runID: run.id,
         approvalID: approval.id,
@@ -4753,7 +4767,6 @@ public final class WorkspaceStore: ObservableObject {
       } else {
         agentRuns.insert(updated, at: 0)
       }
-      let queueItemID = ApprovalItem.ID("run:\(run.id):\(approval.id)")
       approvalItems.removeAll { $0.id == queueItemID }
       if selectedApprovalItemID == queueItemID {
         selectedApprovalItemID = nil
@@ -4763,6 +4776,9 @@ public final class WorkspaceStore: ObservableObject {
       statusText = "\(approval.title): \(decision) · \(updated.pendingApprovalCount) pending"
       await continueOpenClawAfterApprovalBoundary(updated)
     } catch {
+      var errors = approvalActionErrorsByItemID
+      errors[queueItemID] = error.localizedDescription
+      approvalActionErrorsByItemID = errors
       errorText = error.localizedDescription
       statusText = "Approval update failed"
     }
@@ -5665,6 +5681,106 @@ public final class WorkspaceStore: ObservableObject {
 
   public func reconcileApprovalAIContextSelection(visibleIDs: [ApprovalItem.ID]) {
     selectedApprovalItemIDsForAIContext.formIntersection(visibleIDs)
+    bulkSelectedApprovalItemIDs.formIntersection(visibleIDs)
+  }
+
+  public var bulkApprovalSelectionCount: Int {
+    let visibleIDs = Set(visibleApprovalItems.map(\.id))
+    return bulkSelectedApprovalItemIDs.intersection(visibleIDs).count
+  }
+
+  public var hasBulkApprovalSelection: Bool {
+    bulkApprovalSelectionCount > 0
+  }
+
+  public func isApprovalItemBulkSelected(_ item: ApprovalItem) -> Bool {
+    bulkSelectedApprovalItemIDs.contains(item.id)
+  }
+
+  public func toggleApprovalItemBulkSelection(_ item: ApprovalItem) {
+    var ids = bulkSelectedApprovalItemIDs
+    if ids.contains(item.id) {
+      ids.remove(item.id)
+    } else {
+      ids.insert(item.id)
+    }
+    bulkSelectedApprovalItemIDs = ids
+    updateApprovalBulkSelectionStatusText()
+  }
+
+  public func selectAllVisibleApprovalItemsForBulkAction() {
+    bulkSelectedApprovalItemIDs = Set(visibleApprovalItems.map(\.id))
+    updateApprovalBulkSelectionStatusText()
+  }
+
+  public func clearApprovalBulkSelection() {
+    guard !bulkSelectedApprovalItemIDs.isEmpty else { return }
+    bulkSelectedApprovalItemIDs = []
+    statusText = "Approval selection cleared"
+  }
+
+  private func updateApprovalBulkSelectionStatusText() {
+    let count = bulkApprovalSelectionCount
+    if count == 0 {
+      statusText = "No approvals selected"
+    } else {
+      statusText = count == 1 ? "1 approval selected" : "\(count) approvals selected"
+    }
+  }
+
+  private func selectedApprovalItemsForBulkMutation() -> [ApprovalItem] {
+    guard !bulkSelectedApprovalItemIDs.isEmpty else { return [] }
+    return visibleApprovalItems.filter { bulkSelectedApprovalItemIDs.contains($0.id) }
+  }
+
+  public func approveSelectedApprovals() async {
+    let items = selectedApprovalItemsForBulkMutation()
+    guard !items.isEmpty else { return }
+    await performBulkApprovalAction(items) { store, item in
+      await store.approve(item)
+    }
+  }
+
+  public func rejectSelectedApprovals(endStatus: TodoEditStatus, reason: String) async {
+    let items = selectedApprovalItemsForBulkMutation()
+    guard !items.isEmpty else { return }
+    await performBulkApprovalAction(items) { store, item in
+      await store.rejectApproval(item, endStatus: endStatus, reason: reason)
+    }
+  }
+
+  public func completeSelectedApprovalsExternally(summary: String) async {
+    let items = selectedApprovalItemsForBulkMutation()
+    guard !items.isEmpty else { return }
+    await performBulkApprovalAction(items) { store, item in
+      await store.completeApprovalExternally(item, summary: summary)
+    }
+  }
+
+  private func performBulkApprovalAction(
+    _ items: [ApprovalItem],
+    action: @escaping @MainActor @Sendable (WorkspaceStore, ApprovalItem) async -> Void
+  ) async {
+    let selectedIDs = Set(items.map(\.id))
+    await withTaskGroup(of: Void.self) { group in
+      for item in items {
+        group.addTask { [weak self] in
+          guard let self else { return }
+          await action(self, item)
+        }
+      }
+    }
+
+    let failedIDs = selectedIDs.filter { approvalActionErrorsByItemID[$0] != nil }
+    bulkSelectedApprovalItemIDs = Set(failedIDs)
+    let completedCount = items.count - failedIDs.count
+    if failedIDs.isEmpty {
+      statusText = items.count == 1
+        ? "Approval action completed"
+        : "Approval actions completed for \(items.count) items"
+    } else {
+      statusText = "Approval actions completed: \(completedCount) succeeded, \(failedIDs.count) failed"
+    }
   }
 
   public func showApprovalInQueue(run: AgentRunItem, approval: AgentRunApprovalItem) {
@@ -5688,18 +5804,19 @@ public final class WorkspaceStore: ObservableObject {
         await continueOpenClawAfterApprovalBoundary(updated)
         return
       }
-      try await approveAndAgentHandoff(HeadlineMutationTarget(
-        file: item.file,
-        line: item.line,
-        title: Org2Display.cleanInline(item.title),
-        agendaItemID: nil,
-        idValue: item.idValue
-      ))
+      try await performStandaloneApprovalMutation(in: item.file) {
+        try await approveAndAgentHandoff(HeadlineMutationTarget(
+          file: item.file,
+          line: item.line,
+          title: Org2Display.cleanInline(item.title),
+          agendaItemID: nil,
+          idValue: item.idValue
+        ))
+      }
       removeApprovalItemOptimistically(item.id, originalVisibleIndex: originalVisibleIndex)
       scheduleApprovalsRefresh()
     } catch {
-      errorText = error.localizedDescription
-      statusText = "Approve handoff failed"
+      recordApprovalActionFailure(item, error: error, status: "Approve handoff failed")
     }
   }
 
@@ -5733,22 +5850,23 @@ public final class WorkspaceStore: ObservableObject {
         await continueOpenClawAfterApprovalBoundary(updated)
         return
       }
-      try await rejectApproval(
-        HeadlineMutationTarget(
-          file: item.file,
-          line: item.line,
-          title: Org2Display.cleanInline(item.title),
-          agendaItemID: nil,
-          idValue: item.idValue
-        ),
-        endStatus: endStatus,
-        reason: reason
-      )
+      try await performStandaloneApprovalMutation(in: item.file) {
+        try await rejectApproval(
+          HeadlineMutationTarget(
+            file: item.file,
+            line: item.line,
+            title: Org2Display.cleanInline(item.title),
+            agendaItemID: nil,
+            idValue: item.idValue
+          ),
+          endStatus: endStatus,
+          reason: reason
+        )
+      }
       removeApprovalItemOptimistically(item.id, originalVisibleIndex: originalVisibleIndex)
       scheduleApprovalsRefresh()
     } catch {
-      errorText = error.localizedDescription
-      statusText = "Reject approval failed"
+      recordApprovalActionFailure(item, error: error, status: "Reject approval failed")
     }
   }
 
@@ -5778,21 +5896,22 @@ public final class WorkspaceStore: ObservableObject {
         return
       }
 
-      try await completeStandaloneApprovalExternally(
-        HeadlineMutationTarget(
-          file: item.file,
-          line: item.line,
-          title: Org2Display.cleanInline(item.title),
-          agendaItemID: nil,
-          idValue: item.idValue
-        ),
-        summary: normalizedSummary
-      )
+      try await performStandaloneApprovalMutation(in: item.file) {
+        try await completeStandaloneApprovalExternally(
+          HeadlineMutationTarget(
+            file: item.file,
+            line: item.line,
+            title: Org2Display.cleanInline(item.title),
+            agendaItemID: nil,
+            idValue: item.idValue
+          ),
+          summary: normalizedSummary
+        )
+      }
       removeApprovalItemOptimistically(item.id, originalVisibleIndex: originalVisibleIndex)
       scheduleApprovalsRefresh()
     } catch {
-      errorText = error.localizedDescription
-      statusText = "External completion failed"
+      recordApprovalActionFailure(item, error: error, status: "External completion failed")
     }
   }
 
@@ -5809,9 +5928,28 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func isApprovalActionInProgress(_ item: ApprovalItem) -> Bool {
-    isApprovingApproval(item)
-      || isRejectingApproval(item)
-      || isCompletingApprovalExternally(item)
+    isApprovalActionInProgress(item.id)
+  }
+
+  public func isAgentRunApprovalActionInProgress(runID: String, approvalID: String) -> Bool {
+    isApprovalActionInProgress(Self.runApprovalQueueItemID(runID: runID, approvalID: approvalID))
+  }
+
+  nonisolated private static func runApprovalQueueItemID(
+    runID: String,
+    approvalID: String
+  ) -> ApprovalItem.ID {
+    ApprovalItem.ID("run:\(runID):\(approvalID)")
+  }
+
+  private func isApprovalActionInProgress(_ itemID: ApprovalItem.ID) -> Bool {
+    approvingApprovalItemIDs.contains(itemID)
+      || rejectingApprovalItemIDs.contains(itemID)
+      || externallyCompletingApprovalItemIDs.contains(itemID)
+  }
+
+  public func approvalActionError(_ item: ApprovalItem) -> String? {
+    approvalActionErrorsByItemID[item.id]
   }
 
   public func requestChanges(_ item: ApprovalItem, feedback: String) async {
@@ -5830,8 +5968,7 @@ public final class WorkspaceStore: ObservableObject {
       scheduleApprovalsRefresh()
       await continueOpenClawAfterApprovalBoundary(updated)
     } catch {
-      errorText = error.localizedDescription
-      statusText = "Revision request failed"
+      recordApprovalActionFailure(item, error: error, status: "Revision request failed")
     }
   }
 
@@ -5844,13 +5981,7 @@ public final class WorkspaceStore: ObservableObject {
     guard corpusRoot != nil, let runID = item.runId, let approvalID = item.approvalId else {
       throw CocoaError(.fileReadCorruptFile, userInfo: [NSLocalizedDescriptionKey: "This run approval is missing its run or approval identity."])
     }
-    guard !mutatingAgentRunIDs.contains(runID) else {
-      throw CocoaError(
-        .fileWriteUnknown,
-        userInfo: [NSLocalizedDescriptionKey: "This run is already being updated."]
-      )
-    }
-    mutatingAgentRunIDs.insert(runID)
+    try await waitForAgentRunMutationAvailability(runID)
     defer { mutatingAgentRunIDs.remove(runID) }
 
     let updated = try await performAgentRunApprovalDecision(
@@ -6025,52 +6156,95 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   private func beginApprovalAction(_ item: ApprovalItem, kind: ApprovalActionKind) {
+    beginApprovalAction(item.id, kind: kind)
+  }
+
+  private func beginApprovalAction(_ itemID: ApprovalItem.ID, kind: ApprovalActionKind) {
+    if approvalActionErrorsByItemID[itemID] != nil {
+      var errors = approvalActionErrorsByItemID
+      errors.removeValue(forKey: itemID)
+      approvalActionErrorsByItemID = errors
+    }
     switch kind {
     case .approve:
       var ids = approvingApprovalItemIDs
-      ids.insert(item.id)
+      ids.insert(itemID)
       approvingApprovalItemIDs = ids
     case .reject:
       var ids = rejectingApprovalItemIDs
-      ids.insert(item.id)
+      ids.insert(itemID)
       rejectingApprovalItemIDs = ids
     case .externalCompletion:
       var ids = externallyCompletingApprovalItemIDs
-      ids.insert(item.id)
+      ids.insert(itemID)
       externallyCompletingApprovalItemIDs = ids
     }
   }
 
+  private func recordApprovalActionFailure(
+    _ item: ApprovalItem,
+    error: Error,
+    status: String
+  ) {
+    var errors = approvalActionErrorsByItemID
+    errors[item.id] = error.localizedDescription
+    approvalActionErrorsByItemID = errors
+    errorText = error.localizedDescription
+    statusText = status
+  }
+
+  private func waitForAgentRunMutationAvailability(_ runID: AgentRunItem.ID) async throws {
+    while mutatingAgentRunIDs.contains(runID) {
+      try Task.checkCancellation()
+      try await Task.sleep(nanoseconds: 15_000_000)
+    }
+    mutatingAgentRunIDs.insert(runID)
+  }
+
+  private func performStandaloneApprovalMutation<T>(
+    in file: String,
+    operation: () async throws -> T
+  ) async throws -> T {
+    let key = URL(fileURLWithPath: file).standardizedFileURL.path
+    while mutatingStandaloneApprovalFiles.contains(key) {
+      try Task.checkCancellation()
+      try await Task.sleep(nanoseconds: 15_000_000)
+    }
+    mutatingStandaloneApprovalFiles.insert(key)
+    defer { mutatingStandaloneApprovalFiles.remove(key) }
+    return try await operation()
+  }
+
   private func endApprovalAction(_ item: ApprovalItem, kind: ApprovalActionKind) {
+    endApprovalAction(item.id, kind: kind)
+  }
+
+  private func endApprovalAction(_ itemID: ApprovalItem.ID, kind: ApprovalActionKind) {
     switch kind {
     case .approve:
       var ids = approvingApprovalItemIDs
-      ids.remove(item.id)
+      ids.remove(itemID)
       approvingApprovalItemIDs = ids
     case .reject:
       var ids = rejectingApprovalItemIDs
-      ids.remove(item.id)
+      ids.remove(itemID)
       rejectingApprovalItemIDs = ids
     case .externalCompletion:
       var ids = externallyCompletingApprovalItemIDs
-      ids.remove(item.id)
+      ids.remove(itemID)
       externallyCompletingApprovalItemIDs = ids
     }
   }
 
   private func pruneApprovalActionState() {
     let itemIDs = Set(approvalItems.map(\.id))
-    let nextApprovingIDs = approvingApprovalItemIDs.intersection(itemIDs)
-    if nextApprovingIDs != approvingApprovalItemIDs {
-      approvingApprovalItemIDs = nextApprovingIDs
+    let nextBulkSelectedIDs = bulkSelectedApprovalItemIDs.intersection(itemIDs)
+    if nextBulkSelectedIDs != bulkSelectedApprovalItemIDs {
+      bulkSelectedApprovalItemIDs = nextBulkSelectedIDs
     }
-    let nextRejectingIDs = rejectingApprovalItemIDs.intersection(itemIDs)
-    if nextRejectingIDs != rejectingApprovalItemIDs {
-      rejectingApprovalItemIDs = nextRejectingIDs
-    }
-    let nextExternalCompletionIDs = externallyCompletingApprovalItemIDs.intersection(itemIDs)
-    if nextExternalCompletionIDs != externallyCompletingApprovalItemIDs {
-      externallyCompletingApprovalItemIDs = nextExternalCompletionIDs
+    let nextErrors = approvalActionErrorsByItemID.filter { itemIDs.contains($0.key) }
+    if nextErrors != approvalActionErrorsByItemID {
+      approvalActionErrorsByItemID = nextErrors
     }
   }
 
@@ -6086,6 +6260,7 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   private func removeApprovalItemOptimistically(_ id: ApprovalItem.ID, originalVisibleIndex: Int?) {
+    bulkSelectedApprovalItemIDs.remove(id)
     approvalItems.removeAll { $0.id == id }
     preserveApprovalSelectionAfterMutation(mutatedID: id, originalVisibleIndex: originalVisibleIndex)
   }
