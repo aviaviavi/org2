@@ -52,9 +52,10 @@ The Mac app's **Reply & Resume** action uses the plugin's
 resumes the blocked run, and returns a continuation prompt for the correlated
 OpenClaw session. Cron mappings retain their agent-scoped session key for this
 purpose. A legacy or otherwise uncorrelated run still returns the same durable
-continuation prompt without inventing a session; the Mac app starts a fresh
-OpenClaw thread carrying the existing run ID instead of silently changing only
-the run status.
+continuation prompt without inventing a session; the Mac app starts a
+deterministic run-scoped OpenClaw thread carrying the existing run ID. If the
+app cannot attach or dispatch the continuation, it durably blocks the same run
+with a retry instruction instead of leaving a misleading `running` status.
 
 OpenClaw is the runtime adapter, not the portable worker identity. Before it
 creates or attaches a run, the plugin derives the configured OpenClaw agent ID

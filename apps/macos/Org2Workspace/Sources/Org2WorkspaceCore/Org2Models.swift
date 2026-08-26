@@ -494,7 +494,10 @@ public struct AgentRunItem: Identifiable, Decodable, Hashable, Sendable {
   public var canContinueApprovedWork: Bool {
     status == "running"
       && pendingApprovalCount == 0
-      && !approvedCurrentApprovalBoundary.isEmpty
+      && !currentApprovalBoundary.isEmpty
+      && !currentApprovalBoundary.contains(where: {
+        $0.status == "pending" || $0.status == "revised"
+      })
   }
   public var completedStepCount: Int { plan.filter { $0.status == "completed" }.count }
   public var skippedStepCount: Int { plan.filter { $0.status == "skipped" }.count }

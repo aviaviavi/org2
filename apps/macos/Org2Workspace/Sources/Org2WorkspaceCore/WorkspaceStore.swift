@@ -2129,6 +2129,10 @@ public final class WorkspaceStore: ObservableObject {
   var agentRunApprovalContinuationForTesting: ((
     _ run: AgentRunItem
   ) async throws -> OpenClawApprovedRunContinuation)?
+  var agentRunApprovalContinuationFailureForTesting: ((
+    _ run: AgentRunItem,
+    _ reason: String
+  ) async throws -> AgentRunItem)?
   var agentRunExternalCompletionForTesting: ((
     _ runID: String,
     _ summary: String
@@ -4897,7 +4901,10 @@ public final class WorkspaceStore: ObservableObject {
       thread = createOpenClawChatThread(
         title: "\(titlePrefix): \(run.goal)",
         statusText: continuationStatus,
-        sessionKey: continuation.sessionKey
+        sessionKey: continuation.sessionKey ?? Self.approvedRunContinuationSessionKey(
+          runID: run.id,
+          agentID: openClawAgentID
+        )
       )
     }
     if presentThread {
@@ -4905,7 +4912,9 @@ public final class WorkspaceStore: ObservableObject {
       selectOpenClawChatThread(thread.id)
     }
     guard let pointer = openClawContextPointer(for: run, requiresExistingRecord: false) else {
-      return false
+      throw CocoaError(.fileReadCorruptFile, userInfo: [
+        NSLocalizedDescriptionKey: "The approved run could not be attached to its continuation thread."
+      ])
     }
     let actionText = automaticOpenClawActionText(
       pointer,
@@ -4927,8 +4936,41 @@ public final class WorkspaceStore: ObservableObject {
         : "\(run.goal) is already continuing"
     } catch {
       errorText = error.localizedDescription
-      statusText = "Approved work could not be continued"
+      do {
+        let blocked = try await recordAgentRunApprovalContinuationFailure(run)
+        statusText = "Approved work could not be continued; \(blocked.goal) is blocked"
+      } catch {
+        statusText = "Approved work could not be continued or durably blocked"
+      }
     }
+  }
+
+  private func recordAgentRunApprovalContinuationFailure(
+    _ run: AgentRunItem
+  ) async throws -> AgentRunItem {
+    guard let corpusRoot else {
+      throw CocoaError(.fileNoSuchFile, userInfo: [NSLocalizedDescriptionKey: "No corpus is selected."])
+    }
+    let reason = Self.agentRunApprovalContinuationFailureReason
+    let updated: AgentRunItem
+    if let agentRunApprovalContinuationFailureForTesting {
+      updated = try await agentRunApprovalContinuationFailureForTesting(run, reason)
+    } else {
+      updated = try await cli.runJSON([
+        "run", "block", run.id,
+        "--reason", reason,
+        "--actor", "Org2Workspace",
+        "--dir", corpusRoot.path,
+        "--json"
+      ])
+    }
+    if let index = agentRuns.firstIndex(where: { $0.id == updated.id }) {
+      agentRuns[index] = updated
+    } else {
+      agentRuns.insert(updated, at: 0)
+    }
+    scheduleApprovalsRefresh()
+    return updated
   }
 
   private func continueOpenClawWorkflowAfterRevision(
@@ -4974,7 +5016,12 @@ public final class WorkspaceStore: ObservableObject {
           : "Review decisions recorded; \(run.goal) is already continuing"
       } catch {
         errorText = error.localizedDescription
-        statusText = "Review decisions recorded; OpenClaw continuation pending"
+        do {
+          let blocked = try await recordAgentRunApprovalContinuationFailure(run)
+          statusText = "Review decisions recorded; \(blocked.goal) is blocked because continuation failed"
+        } catch {
+          statusText = "Review decisions recorded; continuation failed and the run could not be durably blocked"
+        }
       }
       return
     }
@@ -5178,6 +5225,16 @@ public final class WorkspaceStore: ObservableObject {
       "For provider drafts, resolve the exact authority through `org2 run approval-resolve --decision-key artifact:PROVIDER:TOOL:DRAFT_ID --json` and verify provider state before any retry.",
       "Record external receipts and the final outcome on this durable run, or record the next specific blocker if the work cannot continue."
     ].joined(separator: "\n")
+  }
+
+  nonisolated static let agentRunApprovalContinuationFailureReason =
+    "Approved actions are recorded, but OpenClaw did not accept the continuation. After restoring the OpenClaw connection, choose Resume and then Continue approved work; do not repeat the approval or create a replacement run."
+
+  nonisolated static func approvedRunContinuationSessionKey(
+    runID: String,
+    agentID: String
+  ) -> String {
+    agentScopedOpenClawSessionKey("org2-run:\(runID)", agentID: agentID)
   }
 
   nonisolated static func agentRunClarificationContinuationPrompt(

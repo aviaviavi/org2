@@ -273,6 +273,14 @@ final class AgentRunModelsTests: XCTestCase {
     )
     XCTAssertTrue(approvedProviderDraft.canContinueApprovedWork)
     XCTAssertTrue(approvedProviderDraft.hasApprovedProviderDraftBoundary)
+
+    let rejectedBoundary = try makeRun(
+      status: "running",
+      approvalStatus: "rejected"
+    )
+    XCTAssertTrue(rejectedBoundary.canContinueApprovedWork)
+    XCTAssertTrue(rejectedBoundary.hasOpenClawApprovalContinuation)
+    XCTAssertTrue(rejectedBoundary.approvedCurrentApprovalBoundary.isEmpty)
   }
 
   @MainActor
@@ -319,6 +327,110 @@ final class AgentRunModelsTests: XCTestCase {
     XCTAssertEqual(continuedRunID, waitingRun.id)
     XCTAssertEqual(store.agentRuns.first?.status, "running")
     XCTAssertTrue(store.statusText.contains("already continuing"))
+  }
+
+  @MainActor
+  func testApprovingUncorrelatedPlainRunRequestsGenericContinuation() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-approved-uncorrelated-run-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let waitingRun = try makeRun(
+      id: "plain-run",
+      status: "waiting-approval",
+      approvalStatus: "pending"
+    )
+    let runningRun = try makeRun(
+      id: "plain-run",
+      status: "running",
+      approvalStatus: "approved"
+    )
+    let approval = try XCTUnwrap(waitingRun.approvals.first)
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.corpusRoot = root
+    store.replaceAgentRunsForTesting([waitingRun])
+    store.agentRunApprovalDecisionForTesting = { _, _, _, _ in runningRun }
+    var continuedRunID: String?
+    store.agentRunApprovalContinuationForTesting = { run in
+      continuedRunID = run.id
+      return OpenClawApprovedRunContinuation(
+        runID: run.id,
+        sessionKey: nil,
+        prompt: "already sent",
+        kind: "run",
+        alreadyResumed: true
+      )
+    }
+
+    await store.decideAgentRunApproval(
+      waitingRun,
+      approval: approval,
+      decision: "approved"
+    )
+
+    XCTAssertEqual(continuedRunID, "plain-run")
+    XCTAssertTrue(store.statusText.contains("already continuing"))
+  }
+
+  @MainActor
+  func testFailedAutomaticApprovalContinuationDurablyBlocksRun() async throws {
+    struct DispatchFailure: LocalizedError {
+      var errorDescription: String? { "OpenClaw gateway is unavailable" }
+    }
+
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-approved-run-dispatch-failure-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let waitingRun = try makeRun(status: "waiting-approval", approvalStatus: "pending")
+    let runningRun = try makeRun(status: "running", approvalStatus: "approved")
+    let blockedRun = try makeRun(
+      status: "blocked",
+      blockedReason: WorkspaceStore.agentRunApprovalContinuationFailureReason,
+      approvalStatus: "approved"
+    )
+    let approval = try XCTUnwrap(waitingRun.approvals.first)
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.corpusRoot = root
+    store.replaceAgentRunsForTesting([waitingRun])
+    store.agentRunApprovalDecisionForTesting = { _, _, _, _ in runningRun }
+    store.agentRunApprovalContinuationForTesting = { _ in throw DispatchFailure() }
+    var recordedReason: String?
+    store.agentRunApprovalContinuationFailureForTesting = { _, reason in
+      recordedReason = reason
+      return blockedRun
+    }
+
+    await store.decideAgentRunApproval(
+      waitingRun,
+      approval: approval,
+      decision: "approved"
+    )
+
+    XCTAssertEqual(recordedReason, WorkspaceStore.agentRunApprovalContinuationFailureReason)
+    XCTAssertEqual(store.agentRuns.first?.status, "blocked")
+    XCTAssertEqual(store.agentRuns.first?.blockedReason, recordedReason)
+    XCTAssertEqual(store.errorText, "OpenClaw gateway is unavailable")
+    XCTAssertTrue(store.statusText.contains("blocked because continuation failed"))
+  }
+
+  func testApprovedRunContinuationSessionIsDeterministic() {
+    let first = WorkspaceStore.approvedRunContinuationSessionKey(
+      runID: "342be84b-4bb4-4a0d-b36c-a31414f4b5c4",
+      agentID: "meetingbot"
+    )
+    let second = WorkspaceStore.approvedRunContinuationSessionKey(
+      runID: "342be84b-4bb4-4a0d-b36c-a31414f4b5c4",
+      agentID: "meetingbot"
+    )
+
+    XCTAssertEqual(first, second)
+    XCTAssertEqual(
+      first,
+      "agent:meetingbot:org2-run:342be84b-4bb4-4a0d-b36c-a31414f4b5c4"
+    )
   }
 
   @MainActor
@@ -373,6 +485,15 @@ final class AgentRunModelsTests: XCTestCase {
 
     let store = WorkspaceStore(cli: cli)
     store.setCorpusRoot(root, persistsDefault: false)
+    store.agentRunApprovalContinuationForTesting = { run in
+      OpenClawApprovedRunContinuation(
+        runID: run.id,
+        sessionKey: nil,
+        prompt: "already sent",
+        kind: "run",
+        alreadyResumed: true
+      )
+    }
     await store.refreshAgentRuns()
     await store.refreshApprovals()
 
