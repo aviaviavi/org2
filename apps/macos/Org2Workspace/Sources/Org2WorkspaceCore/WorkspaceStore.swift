@@ -5766,26 +5766,15 @@ public final class WorkspaceStore: ObservableObject {
 
     do {
       if item.isRunApproval {
-        guard let runID = item.runId else {
-          throw CocoaError(
-            .fileReadCorruptFile,
-            userInfo: [NSLocalizedDescriptionKey: "This run approval is missing its run identity."]
-          )
-        }
-        guard !mutatingAgentRunIDs.contains(runID) else {
-          throw CocoaError(
-            .fileWriteUnknown,
-            userInfo: [NSLocalizedDescriptionKey: "This run is already being updated."]
-          )
-        }
-        mutatingAgentRunIDs.insert(runID)
-        defer { mutatingAgentRunIDs.remove(runID) }
-        let updated = try await performAgentRunExternalCompletion(
-          runID: runID,
-          summary: normalizedSummary
+        let updated = try await decideRunApprovalItem(
+          item,
+          decision: "canceled",
+          receipt: "Completed externally: \(normalizedSummary)"
         )
-        recordAgentRunExternalCompletion(updated)
-        statusText = "Recorded external completion for \(updated.goal)"
+        removeApprovalItemOptimistically(item.id, originalVisibleIndex: originalVisibleIndex)
+        scheduleApprovalsRefresh()
+        statusText = "Recorded external completion for \(item.title) · \(updated.pendingApprovalCount) pending"
+        await continueOpenClawAfterApprovalBoundary(updated)
         return
       }
 
@@ -5846,7 +5835,12 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
-  private func decideRunApprovalItem(_ item: ApprovalItem, decision: String, note: String? = nil) async throws -> AgentRunItem {
+  private func decideRunApprovalItem(
+    _ item: ApprovalItem,
+    decision: String,
+    note: String? = nil,
+    receipt: String? = nil
+  ) async throws -> AgentRunItem {
     guard corpusRoot != nil, let runID = item.runId, let approvalID = item.approvalId else {
       throw CocoaError(.fileReadCorruptFile, userInfo: [NSLocalizedDescriptionKey: "This run approval is missing its run or approval identity."])
     }
@@ -5866,7 +5860,8 @@ public final class WorkspaceStore: ObservableObject {
       decision: decision,
       requestedRole: item.requestedRole,
       requestedFrom: item.requestedFrom,
-      note: note
+      note: note,
+      receipt: receipt
     )
     if let index = agentRuns.firstIndex(where: { $0.id == updated.id }) {
       agentRuns[index] = updated
@@ -5884,7 +5879,8 @@ public final class WorkspaceStore: ObservableObject {
     decision: String,
     requestedRole: String?,
     requestedFrom: String?,
-    note: String? = nil
+    note: String? = nil,
+    receipt: String? = nil
   ) async throws -> AgentRunItem {
     guard let corpusRoot else {
       throw CocoaError(.fileNoSuchFile, userInfo: [NSLocalizedDescriptionKey: "No corpus is selected."])
@@ -5911,6 +5907,9 @@ public final class WorkspaceStore: ObservableObject {
       }
       if let note = note?.trimmingCharacters(in: .whitespacesAndNewlines), !note.isEmpty {
         arguments.append(contentsOf: ["--note", note])
+      }
+      if let receipt = receipt?.trimmingCharacters(in: .whitespacesAndNewlines), !receipt.isEmpty {
+        arguments.append(contentsOf: ["--receipt", receipt])
       }
       updated = try await cli.runJSON(arguments)
     }

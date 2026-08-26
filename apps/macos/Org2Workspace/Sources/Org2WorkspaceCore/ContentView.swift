@@ -3855,11 +3855,13 @@ private struct RunCenterRow: View {
 private enum RunCompletionMode {
   case run
   case external
+  case approvalExternal
 
   var title: String {
     switch self {
     case .run: "Complete Run"
     case .external: "Mark Done Elsewhere"
+    case .approvalExternal: "Mark Approval Done Elsewhere"
     }
   }
 
@@ -3867,6 +3869,7 @@ private enum RunCompletionMode {
     switch self {
     case .run: "Describe what happened in plain language. This is the first thing people will see when they review the run."
     case .external: "Describe where or how the outcome was completed. This closes the Org2 item and retains unresolved approvals and review metadata as history. It does not stop work that may still be running in another system."
+    case .approvalExternal: "Describe where or how this exact approval action was completed. Only this approval is closed; sibling approvals and the containing run remain open."
     }
   }
 
@@ -3874,6 +3877,7 @@ private enum RunCompletionMode {
     switch self {
     case .run: "Complete Run"
     case .external: "Mark Done Elsewhere"
+    case .approvalExternal: "Mark Approval Done Elsewhere"
     }
   }
 }
@@ -4146,6 +4150,7 @@ private struct RunCenterDetail: View {
           switch completionMode {
           case .run: await store.completeAgentRun(run, summary: summary)
           case .external: await store.completeAgentRunExternally(run, summary: summary)
+          case .approvalExternal: return
           }
         }
       }
@@ -4630,7 +4635,7 @@ private struct ApprovalsView: View {
     .sheet(item: $externalCompletionItem) { item in
       RunCompletionSheet(
         summary: $externalCompletionSummary,
-        mode: .external
+        mode: .approvalExternal
       ) { summary in
         externalCompletionItem = nil
         Task { await store.completeApprovalExternally(item, summary: summary) }

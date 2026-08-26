@@ -716,64 +716,76 @@ final class AgentRunModelsTests: XCTestCase {
   }
 
   @MainActor
-  func testMarkingRunApprovalDoneElsewhereCompletesRunAndClearsItsQueueRows() async throws {
+  func testMarkingRunApprovalDoneElsewhereCancelsOnlyThatApproval() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-run-approval-external-completion-\(UUID().uuidString)", isDirectory: true)
     let waitingRun = try makeRun(
       id: "external-run",
       goal: "Publish the already-sent report",
       status: "waiting-approval",
-      pendingApproval: true
+      approvalStatuses: ["pending", "pending"]
     )
-    let completedRun = try makeRun(
+    let updatedRun = try makeRun(
       id: waitingRun.id,
       goal: waitingRun.goal,
-      status: "completed",
-      pendingApproval: true
+      status: "waiting-approval",
+      approvalStatuses: ["canceled", "pending"]
     )
     let approval = try XCTUnwrap(waitingRun.approvals.first)
-    let queueItem = ApprovalItem(
-      title: approval.title,
-      status: approval.status,
-      todo: nil,
-      level: nil,
-      file: root.appendingPathComponent(".org2/runs/\(waitingRun.id).org2").path,
-      line: 1,
-      idValue: approval.id,
-      properties: [:],
-      body: approval.action,
-      tags: [],
-      kind: "run",
-      approvalId: approval.id,
-      fingerprint: approval.fingerprint,
-      action: approval.action,
-      riskClass: approval.riskClass,
-      requestedRole: approval.requestedRole,
-      requestedFrom: approval.requestedFrom,
-      requestedAt: approval.requestedAt,
-      runId: waitingRun.id,
-      runGoal: waitingRun.goal,
-      runStatus: waitingRun.status,
-      runPendingApprovalCount: waitingRun.pendingApprovalCount,
-      runApprovalCount: waitingRun.approvals.count
-    )
+    let sibling = try XCTUnwrap(waitingRun.approvals.last)
+    func queueItem(_ candidate: AgentRunApprovalItem) -> ApprovalItem {
+      ApprovalItem(
+        title: candidate.title,
+        status: candidate.status,
+        todo: nil,
+        level: nil,
+        file: root.appendingPathComponent(".org2/runs/\(waitingRun.id).org2").path,
+        line: 1,
+        idValue: candidate.id,
+        properties: [:],
+        body: candidate.action,
+        tags: [],
+        kind: "run",
+        approvalId: candidate.id,
+        fingerprint: candidate.fingerprint,
+        action: candidate.action,
+        riskClass: candidate.riskClass,
+        requestedRole: candidate.requestedRole,
+        requestedFrom: candidate.requestedFrom,
+        requestedAt: candidate.requestedAt,
+        runId: waitingRun.id,
+        runGoal: waitingRun.goal,
+        runStatus: waitingRun.status,
+        runPendingApprovalCount: waitingRun.pendingApprovalCount,
+        runApprovalCount: waitingRun.approvals.count
+      )
+    }
+    let selectedItem = queueItem(approval)
+    let siblingItem = queueItem(sibling)
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
     store.corpusRoot = root
     store.replaceAgentRunsForTesting([waitingRun])
-    store.replaceApprovalItemsForTesting([queueItem])
-    store.agentRunExternalCompletionForTesting = { runID, summary in
+    store.replaceApprovalItemsForTesting([selectedItem, siblingItem])
+    store.agentRunExternalCompletionForTesting = { _, _ in
+      XCTFail("An item-scoped external completion must not complete the containing run")
+      return updatedRun
+    }
+    store.agentRunApprovalDecisionForTesting = { runID, approvalID, decision, note in
       XCTAssertEqual(runID, waitingRun.id)
-      XCTAssertEqual(summary, "The report was sent from Gmail.")
-      return completedRun
+      XCTAssertEqual(approvalID, approval.id)
+      XCTAssertEqual(decision, "canceled")
+      XCTAssertNil(note)
+      return updatedRun
     }
 
     await store.completeApprovalExternally(
-      queueItem,
+      selectedItem,
       summary: "The report was sent from Gmail."
     )
 
-    XCTAssertEqual(store.agentRuns.first?.status, "completed")
-    XCTAssertFalse(store.approvalItems.contains(where: { $0.runId == waitingRun.id }))
+    XCTAssertEqual(store.agentRuns.first?.status, "waiting-approval")
+    XCTAssertFalse(store.approvalItems.contains(where: { $0.id == selectedItem.id }))
+    XCTAssertTrue(store.approvalItems.contains(where: { $0.id == siblingItem.id }))
     XCTAssertNil(store.errorText, store.statusText)
   }
 
@@ -1633,10 +1645,12 @@ final class AgentRunModelsTests: XCTestCase {
     reviewRequired: Bool = false,
     pendingApproval: Bool = false,
     approvalStatus: String? = nil,
+    approvalStatuses: [String]? = nil,
     approvalAction: String = "publish output",
     updatedAt: String = "2026-07-14T00:01:00.000Z"
   ) throws -> AgentRunItem {
-    let resolvedApprovalStatus = approvalStatus ?? (pendingApproval ? "pending" : nil)
+    let resolvedApprovalStatuses = approvalStatuses
+      ?? (approvalStatus ?? (pendingApproval ? "pending" : nil)).map { [$0] }
     var value: [String: Any] = [
       "id": id,
       "goal": goal,
@@ -1653,16 +1667,16 @@ final class AgentRunModelsTests: XCTestCase {
         "reviewStatus": "review-required",
         "createdAt": "2026-07-14T00:00:00.000Z"
       ]] : [],
-      "approvals": resolvedApprovalStatus.map { status in [[
-        "id": "approval-1",
-        "title": "Approve output",
+      "approvals": resolvedApprovalStatuses?.enumerated().map { index, status in [
+        "id": "approval-\(index + 1)",
+        "title": index == 0 ? "Approve output" : "Approve output \(index + 1)",
         "action": approvalAction,
         "riskClass": "external-action",
         "status": status,
         "requestedAt": "2026-07-14T00:00:00.000Z",
         "decidedAt": status == "pending" ? NSNull() : "2026-07-14T00:00:30.000Z",
         "decidedBy": status == "pending" ? NSNull() : "Avi"
-      ]] } ?? [],
+      ] } ?? [],
       "validations": validationStatus.map { status in [[
         "id": "validation-1",
         "name": "output-check",

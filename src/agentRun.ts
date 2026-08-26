@@ -607,6 +607,64 @@ export function completeAgentRunExternally(run: AgentRun, input: { summary: stri
   });
 }
 
+export function reopenExternallyCompletedApprovalRun(
+  run: AgentRun,
+  input: { summary: string; actor: string; now?: string },
+): AgentRun {
+  const actor = optional(input.actor);
+  if (!actor) throw new Error("reopening an externally completed approval run requires an actor");
+  const summary = optional(input.summary);
+  if (!summary) throw new Error("reopening an externally completed approval run requires a replacement summary");
+  if (run.status !== "completed") throw new Error("only a completed run can be reopened after external completion");
+  if (!run.approvals.some((approval) => approval.status === "pending")) {
+    throw new Error("reopening external completion requires at least one retained pending approval");
+  }
+  let completionIndex = -1;
+  for (let index = run.events.length - 1; index >= 0; index -= 1) {
+    if (run.events[index]?.type === "completed-externally") {
+      completionIndex = index;
+      break;
+    }
+  }
+  let transitionIndex = -1;
+  for (let index = completionIndex - 1; index >= 0; index -= 1) {
+    const candidate = run.events[index];
+    if (
+      candidate?.type === "status-changed"
+      && candidate.data?.to === "completed"
+      && candidate.data?.completionSource === "external"
+    ) {
+      transitionIndex = index;
+      break;
+    }
+  }
+  const previousStatus = transitionIndex >= 0 ? optional(run.events[transitionIndex]?.data?.from) : undefined;
+  if (completionIndex < 0 || previousStatus !== "waiting-approval") {
+    throw new Error("only a run externally completed from waiting-approval can be reopened this way");
+  }
+  const now = isoNow(input.now);
+  const next: AgentRun = {
+    ...run,
+    status: "waiting-approval",
+    updatedAt: now,
+    outcome: {
+      summary,
+      highlights: unique(run.outcome?.highlights),
+      nextActions: unique(run.outcome?.nextActions),
+    },
+    events: [
+      ...run.events,
+      event("external-completion-reopened", now, actor, summary, {
+        from: "completed",
+        to: "waiting-approval",
+        completionEventId: run.events[completionIndex]?.id,
+      }),
+    ],
+  };
+  delete next.completedAt;
+  return next;
+}
+
 export function updateAgentRunOutcome(run: AgentRun, input: { summary: string; highlights?: string[]; nextActions?: string[]; actor?: string; now?: string }): AgentRun {
   const summary = optional(input.summary);
   if (!summary) throw new Error("run outcome summary is required");

@@ -22,6 +22,7 @@ import {
   loadAgentRun,
   loadAgentRunSnapshot,
   normalizeLegacyAgentRuns,
+  reopenExternallyCompletedApprovalRun,
   requestAgentRunApproval,
   saveAgentRun,
   summarizeAgentRunAttempts,
@@ -174,10 +175,11 @@ const HELP = `Agentic workspace commands:
   org2 agent-profile resolve --runtime openclaw|codex --runtime-agent-id ID [--json]
   org2 run create --goal TEXT [--goal-ref ID] [--agent-ref ID] [--accept TEXT] [--risk CLASS] [--owner NAME] [--capability ID] [--dir CORPUS]
   org2 run show ID --with-revision --json
-  org2 run list|show|validate|start|resume|retry|cancel|complete|complete-external|fail|block|fork|normalize|artifact-review
+  org2 run list|show|validate|start|resume|retry|cancel|complete|complete-external|reopen-external|fail|block|fork|normalize|artifact-review
   org2 run block ID --reason "Specific clarification needed" [--separate-from-approval]
   org2 run complete ID --summary "What happened" [--highlight TEXT] [--next-action TEXT]
   org2 run complete-external ID --summary "Where or how it was completed" --actor NAME
+  org2 run reopen-external ID --summary "Corrected open-run outcome" --actor NAME
   org2 run outcome ID --summary "What happened" [--highlight TEXT] [--next-action TEXT]
   org2 run runtime ID [--provider ID] [--model ID] [--tokens-used N] [--cost-used-usd N] [--elapsed-seconds N]
   org2 run assign ID [--owner NAME] [--assignee NAME] [--agent-ref ID] [--goal-ref ID]
@@ -1170,6 +1172,10 @@ async function runCommand(parsed: ParsedArgs): Promise<void> {
   let run = existing;
   const transitions: Record<string, AgentRunStatus> = { start: "running", resume: "running", retry: "queued", cancel: "canceled", complete: "completed", fail: "failed", block: "blocked" };
   if (action === "complete-external") run = completeAgentRunExternally(existing, {
+    summary: required(flag(parsed, "summary"), "--summary is required"),
+    actor: required(flag(parsed, "actor"), "--actor is required"),
+  });
+  else if (action === "reopen-external") run = reopenExternallyCompletedApprovalRun(existing, {
     summary: required(flag(parsed, "summary"), "--summary is required"),
     actor: required(flag(parsed, "actor"), "--actor is required"),
   });

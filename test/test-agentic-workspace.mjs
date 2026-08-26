@@ -7,7 +7,7 @@ import { PassThrough } from "node:stream";
 import {
   addAgentRunArtifact, addAgentRunComment, addAgentRunValidation, AGENT_RUN_APPROVAL_BLOCK_REASON, completeAgentRunExternally, createAgentRun,
   decideAgentRunApproval, forkAgentRun, listAgentRuns, loadAgentRun, normalizeLegacyAgentRuns,
-  loadAgentRunSnapshot, parseAgentRunOrg, renderAgentRunOrg, requestAgentRunApproval, saveAgentRun, summarizeAgentRunAttempts,
+  loadAgentRunSnapshot, parseAgentRunOrg, renderAgentRunOrg, reopenExternallyCompletedApprovalRun, requestAgentRunApproval, saveAgentRun, summarizeAgentRunAttempts,
   transitionAgentRun, updateAgentRunAssignment, updateAgentRunRuntime, updateAgentRunStep, validateAgentRun,
   updateAgentRunArtifactReview,
 } from "../dist/agentRun.js";
@@ -243,6 +243,38 @@ try {
   assert.equal(completedElsewhere.plan[0].status, "skipped");
   assert.match(completedElsewhere.plan[0].detail, /completed outside this workflow/);
   assert.equal(completedElsewhere.events.at(-1).type, "completed-externally");
+  let externallyCompletedApprovalRun = transitionAgentRun(
+    createAgentRun({ id: "mistaken-approval-completion", goal: "Review two outreach drafts" }),
+    "running",
+  );
+  externallyCompletedApprovalRun = requestAgentRunApproval(externallyCompletedApprovalRun, {
+    id: "still-pending",
+    title: "Send outreach",
+    action: "send",
+    riskClass: "external-action",
+  });
+  externallyCompletedApprovalRun = completeAgentRunExternally(externallyCompletedApprovalRun, {
+    summary: "One draft was sent by hand.",
+    actor: "Avi",
+    now: "2026-07-14T12:00:30Z",
+  });
+  const reopenedExternalApprovalRun = reopenExternallyCompletedApprovalRun(externallyCompletedApprovalRun, {
+    summary: "The release-note approval remains pending; only one action was completed externally.",
+    actor: "Avi",
+    now: "2026-07-14T12:01:00Z",
+  });
+  assert.equal(reopenedExternalApprovalRun.status, "waiting-approval");
+  assert.equal(reopenedExternalApprovalRun.completedAt, undefined);
+  assert.equal(reopenedExternalApprovalRun.approvals[0].status, "pending");
+  assert.equal(reopenedExternalApprovalRun.events.at(-1).type, "external-completion-reopened");
+  assert.match(reopenedExternalApprovalRun.outcome.summary, /approval remains pending/);
+  assert.throws(
+    () => reopenExternallyCompletedApprovalRun(
+      transitionAgentRun(createAgentRun({ goal: "Ordinary completion" }), "running"),
+      { summary: "Not completed.", actor: "Avi" }
+    ),
+    /only a completed run/
+  );
   for (const [status, prepare] of [
     ["queued", (candidate) => candidate],
     ["running", (candidate) => transitionAgentRun(candidate, "running")],
@@ -283,7 +315,30 @@ try {
   ], { encoding: "utf8" });
   assert.equal(externalCompletion.status, 0, externalCompletion.stderr || externalCompletion.stdout);
   assert.equal(loadAgentRun(root, "external-cli").events.at(-1).type, "completed-externally");
+  let reopenExternalCLI = transitionAgentRun(
+    createAgentRun({ id: "reopen-external-cli", goal: "Review an external action" }),
+    "running",
+  );
+  reopenExternalCLI = requestAgentRunApproval(reopenExternalCLI, {
+    id: "external-action",
+    title: "Perform action",
+    action: "perform",
+    riskClass: "external-action",
+  });
+  reopenExternalCLI = completeAgentRunExternally(reopenExternalCLI, {
+    summary: "The action was handled elsewhere.",
+    actor: "Avi",
+  });
+  saveAgentRun(root, reopenExternalCLI);
+  const reopenExternal = spawnSync(process.execPath, [
+    path.resolve("dist/cli.js"), "run", "reopen-external", "reopen-external-cli",
+    "--summary", "The retained approval still needs review.", "--actor", "Avi", "--dir", root, "--json",
+  ], { encoding: "utf8" });
+  assert.equal(reopenExternal.status, 0, reopenExternal.stderr || reopenExternal.stdout);
+  assert.equal(loadAgentRun(root, "reopen-external-cli").status, "waiting-approval");
+  assert.equal(loadAgentRun(root, "reopen-external-cli").events.at(-1).type, "external-completion-reopened");
   fs.unlinkSync(path.join(root, ".org2", "runs", "external-cli.org2"));
+  fs.unlinkSync(path.join(root, ".org2", "runs", "reopen-external-cli.org2"));
   assert.throws(
     () => transitionAgentRun(transitionAgentRun(createAgentRun({ id: "missing-outcome", goal: "Explain the result" }), "running"), "completed"),
     /requires --summary/

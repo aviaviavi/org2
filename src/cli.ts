@@ -10106,7 +10106,7 @@ Core commands:
   org2 workspace <agenda|search> [QUERY] --mount CORPUS [--mount CORPUS ...] [--json]
   org2 goal <list|show|create|update> [options]
   org2 agent-profile <list|show|create|update|resolve> [options]
-  org2 run <create|list|show|validate|start|resume|retry|cancel|complete|complete-external|fail|block|fork|normalize|assign|comment|outcome|runtime|step|artifact|artifact-review|validation|approval-request|approval-decide> [options]
+  org2 run <create|list|show|validate|start|resume|retry|cancel|complete|complete-external|reopen-external|fail|block|fork|normalize|assign|comment|outcome|runtime|step|artifact|artifact-review|validation|approval-request|approval-decide> [options]
   org2 review <list|show> [options]
   org2 workflow <list|show|validate|save|run|triggers|package|corpus-template|install-builtin> [options]
   org2 artifact <graph|rebuild> --manifest FILE [--apply]

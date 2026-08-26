@@ -120,7 +120,7 @@ live in `integrations/openclaw/README.md`.
 
 Use the CLI contract for durable delegation:
 
-- `run create/list/show/start/resume/cancel/fork` manages the lifecycle.
+- `run create/list/show/start/resume/cancel/fork/reopen-external` manages the lifecycle.
 - `run block ID --reason "Specific clarification or next action"` records a
   useful blocker; reasonless blocks are invalid. If the run already has a
   pending approval, leave it in `waiting-approval`. A genuinely independent
@@ -135,6 +135,8 @@ Use the CLI contract for durable delegation:
   criteria are met and no review-required artifact remains open.
 - `run complete-external` is for a person-confirmed outcome completed elsewhere;
   an agent must not infer that resolution.
+- `run reopen-external` repairs a mistaken whole-run external completion from
+  `waiting-approval` without replacing the run or its retained approval IDs.
 - `run runtime` records observable execution metadata.
 
 Authored workflows under `workflows/` are reviewable recipes. They declare
