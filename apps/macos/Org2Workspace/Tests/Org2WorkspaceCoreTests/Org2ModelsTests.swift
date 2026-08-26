@@ -10216,6 +10216,32 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testCommandFFollowsClickedPaneInSplitChatAndRenderedDocument() throws {
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.makeSurfacePrimary(.openClaw)
+    store.select(.openClaw(OpenClawThread(
+      title: "Rendered page",
+      file: "/tmp/rendered-page.org2",
+      line: 1,
+      zone: "test",
+      modifiedAt: nil
+    )))
+    let commandF = keyDown(characters: "f", keyCode: 3, modifiers: [.command])
+
+    store.activateWorkspacePane(.detail)
+    let chatFindGeneration = store.aiChatFindRequestGeneration
+    XCTAssertTrue(store.handleGlobalKeyDown(commandF))
+    XCTAssertTrue(store.isPageSearchPresented)
+    XCTAssertEqual(store.pageSearchFocusToken, 1)
+    XCTAssertEqual(store.aiChatFindRequestGeneration, chatFindGeneration)
+
+    store.activateWorkspacePane(.surface)
+    XCTAssertTrue(store.handleGlobalKeyDown(commandF))
+    XCTAssertEqual(store.aiChatFindRequestGeneration, chatFindGeneration + 1)
+    XCTAssertEqual(store.pageSearchFocusToken, 1)
+  }
+
+  @MainActor
   func testGlobalKeyboardShortcutsIncludeRefreshAndSave() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-global-menu-keys-\(UUID().uuidString)", isDirectory: true)

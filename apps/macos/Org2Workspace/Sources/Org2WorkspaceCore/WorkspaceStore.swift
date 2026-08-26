@@ -83,6 +83,11 @@ public enum WorkspaceKeyboardShortcutScope: Equatable, Sendable {
   case globalOnly
 }
 
+enum WorkspacePaneFocus: Equatable, Sendable {
+  case surface
+  case detail
+}
+
 public enum AIChatDictationCompletionAction: Sendable {
   case insertIntoComposer
   case send
@@ -1260,6 +1265,7 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var isWorkspaceSurfacePaneClosed = false
   @Published public var isWorkspaceDetailPaneClosed = false
   @Published public var isWorkspaceDetailPaneExpanded = false
+  private(set) var activeWorkspacePane: WorkspacePaneFocus = .surface
   @Published public var agendaMode: AgendaMode = .focus {
     didSet {
       defaults.set(agendaMode.rawValue, forKey: agendaModeKey)
@@ -12214,8 +12220,11 @@ public final class WorkspaceStore: ObservableObject {
 
   @discardableResult
   public func focusCurrentSearchField() -> Bool {
-    if isWorkspaceSurfacePaneClosed {
-      return focusPageSearch()
+    let detailIsSearchTarget = hasWorkspaceDetailContent
+      && !isWorkspaceDetailPaneClosed
+      && (isWorkspaceSurfacePaneClosed || activeWorkspacePane == .detail)
+    if detailIsSearchTarget, focusPageSearch() {
+      return true
     }
 
     switch selectedSurface {
@@ -23843,6 +23852,7 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func makeSurfacePrimary(_ surface: WorkspaceSurface) {
+    activeWorkspacePane = .surface
     if surface == .home {
       openHome()
       return
@@ -23870,6 +23880,7 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func expandSurface(_ surface: WorkspaceSurface) {
+    activeWorkspacePane = .surface
     if surface == .home {
       openHome()
       return
@@ -23917,6 +23928,7 @@ public final class WorkspaceStore: ObservableObject {
     if selectedSurface == surface, hasWorkspaceDetailContent {
       isWorkspaceSurfacePaneClosed = true
       isWorkspaceDetailPaneClosed = false
+      activeWorkspacePane = .detail
     }
     isOpenClawAssistantPresented = false
     statusText = "\(surface.title) closed"
@@ -23943,6 +23955,7 @@ public final class WorkspaceStore: ObservableObject {
     isWorkspaceDetailPaneClosed = false
     isWorkspaceDetailPaneExpanded = false
     isOpenClawAssistantPresented = false
+    activeWorkspacePane = .detail
     statusText = "Document is primary"
   }
 
@@ -23956,6 +23969,7 @@ public final class WorkspaceStore: ObservableObject {
     isWorkspaceDetailPaneExpanded = false
     isWorkspaceDetailPaneClosed = false
     isOpenClawAssistantPresented = false
+    activeWorkspacePane = .detail
     if isWorkspaceSurfacePaneClosed {
       isWorkspaceSurfacePaneClosed = false
       statusText = "Document restored"
@@ -23976,7 +23990,18 @@ public final class WorkspaceStore: ObservableObject {
     isWorkspaceDetailPaneExpanded = false
     isWorkspaceSurfacePaneClosed = false
     expandedWorkspaceSurface = nil
+    activeWorkspacePane = .surface
     statusText = "Detail closed"
+  }
+
+  func activateWorkspacePane(_ pane: WorkspacePaneFocus) {
+    switch pane {
+    case .surface:
+      guard !isWorkspaceSurfacePaneClosed else { return }
+    case .detail:
+      guard hasWorkspaceDetailContent, !isWorkspaceDetailPaneClosed else { return }
+    }
+    activeWorkspacePane = pane
   }
 
   public func toggleOpenClawAssistantPanel() {

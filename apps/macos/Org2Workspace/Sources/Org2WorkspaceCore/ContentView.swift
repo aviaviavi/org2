@@ -511,6 +511,7 @@ private struct WorkspaceSurfaceCacheView: NSViewRepresentable {
 }
 
 private struct WorkspaceSurfaceView: View {
+  @EnvironmentObject private var store: WorkspaceStore
   let surface: WorkspaceSurface
 
   var body: some View {
@@ -549,6 +550,11 @@ private struct WorkspaceSurfaceView: View {
       .clipped()
     }
     .foregroundStyle(WorkspaceDesign.primaryText)
+    .simultaneousGesture(
+      TapGesture().onEnded {
+        store.activateWorkspacePane(.surface)
+      }
+    )
   }
 }
 
@@ -876,8 +882,15 @@ private struct ExternalThreadMessageCard: View {
 }
 
 private struct WorkspaceDetailArea: View {
+  @EnvironmentObject private var store: WorkspaceStore
+
   var body: some View {
     DetailView()
+      .simultaneousGesture(
+        TapGesture().onEnded {
+          store.activateWorkspacePane(.detail)
+        }
+      )
   }
 }
 
@@ -9386,6 +9399,7 @@ private struct OrgRenderedDocumentPreview: View {
             scrollRequest: store.detailScrollRequest,
             restorationSourceLine: store.documentViewportSourceLine(for: source),
             layout: store.renderedDocumentLayout,
+            activateWorkspacePane: { store.activateWorkspacePane(.detail) },
             askAIAboutHeading: { store.askOpenClawAboutSourceHeading(at: $0) },
             performEntryAction: { store.performRenderedEntryAction($0, at: $1) },
             reportStatus: { store.statusText = $0 },
@@ -10096,6 +10110,7 @@ private struct OrgSourceEditorWithLinkTools: View {
             scrollRequest: sourcePreviewScrollRequest,
             restorationSourceLine: store.documentViewportSourceLine(for: source),
             layout: store.renderedDocumentLayout,
+            activateWorkspacePane: { store.activateWorkspacePane(.detail) },
             askAIAboutHeading: { store.askOpenClawAboutSourceHeading(at: $0) },
             performEntryAction: { _, _ in },
             allowsEntryContextMenu: false,

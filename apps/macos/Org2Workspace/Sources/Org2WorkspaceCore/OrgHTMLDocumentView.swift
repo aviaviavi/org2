@@ -438,6 +438,7 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
   let scrollRequest: DetailScrollRequest?
   var restorationSourceLine: Int? = nil
   let layout: OrgHTMLDocumentLayout
+  var activateWorkspacePane: @MainActor () -> Void = {}
   let askAIAboutHeading: @MainActor (Int) -> Void
   let performEntryAction: @MainActor (OrgHTMLRenderedEntryAction, Int) -> Void
   var allowsEntryContextMenu = true
@@ -466,6 +467,15 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
       context.coordinator,
       name: Coordinator.entryContextMenuMessageHandlerName
     )
+    configuration.userContentController.add(
+      context.coordinator,
+      name: Coordinator.paneActivationMessageHandlerName
+    )
+    configuration.userContentController.addUserScript(WKUserScript(
+      source: Coordinator.paneActivationInstallationScript,
+      injectionTime: .atDocumentStart,
+      forMainFrameOnly: true
+    ))
     configuration.setURLSchemeHandler(
       context.coordinator.localResourceHandler,
       forURLScheme: OrgHTMLLocalResourceSchemeHandler.scheme
@@ -482,6 +492,7 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
 
   func updateNSView(_ webView: WKWebView, context: Context) {
     let coordinator = context.coordinator
+    coordinator.activateWorkspacePane = activateWorkspacePane
     coordinator.openOrgFileReference = openOrgFileReference
     coordinator.linkResolver = linkResolver
     coordinator.source = source
@@ -543,6 +554,9 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
     webView.configuration.userContentController.removeScriptMessageHandler(
       forName: Coordinator.entryContextMenuMessageHandlerName
     )
+    webView.configuration.userContentController.removeScriptMessageHandler(
+      forName: Coordinator.paneActivationMessageHandlerName
+    )
   }
 
   private static func movesSearchBackward(from previous: Int?, to next: Int?, count: Int) -> Bool {
@@ -568,6 +582,7 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
     nonisolated static let viewportMessageHandlerName = "org2ViewportSourceLine"
     nonisolated static let tableViewMessageHandlerName = "org2TableView"
     nonisolated static let entryContextMenuMessageHandlerName = "org2EntryContextMenu"
+    nonisolated static let paneActivationMessageHandlerName = "org2PaneActivation"
     weak var webView: WKWebView?
     var renderID: String?
     var searchQuery: String?
@@ -580,6 +595,7 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
     var linkResolver = OrgRoamLinkResolver.empty
     var source: EntrySource?
     var corpusRoot: URL?
+    var activateWorkspacePane: @MainActor () -> Void = {}
     var askAIAboutHeading: @MainActor (Int) -> Void = { _ in }
     var performEntryAction: @MainActor (OrgHTMLRenderedEntryAction, Int) -> Void = { _, _ in }
     var allowsEntryContextMenu = true
@@ -611,6 +627,8 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
       didReceive message: WKScriptMessage
     ) {
       switch message.name {
+      case Self.paneActivationMessageHandlerName:
+        activateWorkspacePane()
       case Self.viewportMessageHandlerName:
         let line = (message.body as? NSNumber)?.intValue
         reportViewportSourceLine(line.flatMap { $0 > 0 ? $0 : nil })
@@ -635,6 +653,9 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
     func installEntryContextMenuHandler(in webView: WKWebView) {
       webView.evaluateJavaScript(Self.entryContextMenuInstallationScript)
     }
+
+    nonisolated static let paneActivationInstallationScript =
+      "window.addEventListener('mousedown', () => window.webkit.messageHandlers.org2PaneActivation.postMessage(true), true);"
 
     nonisolated static var entryContextMenuInstallationScript: String {
       """

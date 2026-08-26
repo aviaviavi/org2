@@ -36,7 +36,7 @@ The Agent Work *Review* lane shows one writable decision per approval boundary. 
 
 Global capture is available while the app is running. =Cmd-Ctrl-Return= opens a capture modal from anywhere on macOS, and the in-app =Capture= command uses the same path. Captures append to today's daily note, using =roam.dailiesDir= from =org2.json= when configured. The modal can write notes or TODOs, set TODO state, priority, tags, scheduled/deadline dates, and mark a capture ready for agent handoff. The paste control accepts text, URLs, local files, and pasted image data; local files and images are copied into =attachments/= and linked from the capture.
 
-The detail pane can render a selected file, agenda item, approval item, search result, backlink, meeting note, or agent thread. Read mode uses compiler-generated HTML; the Edit command opens the same entry or page in a native source editor.
+The detail pane can render a selected file, agenda item, approval item, search result, backlink, meeting note, or agent thread. Read mode uses compiler-generated HTML; the Edit command opens the same entry or page in a native source editor. When the surface and detail panes are both visible, clicking either pane makes it active and =Command-F= searches that pane: chat find or the surface filter on the left, and find-in-page on the rendered document on the right.
 
 CSV files use a dedicated detail surface instead of the Org renderer. The table view supports direct cell editing and adding or removing rows and columns, while Raw view preserves full-fidelity access to quoting and multiline values. Links to local CSV files stay inside the workspace rather than opening a separate application.
 
