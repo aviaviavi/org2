@@ -832,6 +832,28 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(payload.results[0].snippet.count, 160000)
   }
 
+  func testOrg2CLIExtractsNestedStructuredFailureMessage() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-nested-cli-error-\(UUID().uuidString)", isDirectory: true)
+    let dist = root.appendingPathComponent("dist", isDirectory: true)
+    try FileManager.default.createDirectory(at: dist, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try """
+    process.stdout.write(JSON.stringify({
+      schema: "org2:source-sync:v1",
+      results: [{ id: "slack", ok: false, error: "Slack sync failed cleanly." }]
+    }));
+    process.exitCode = 1;
+    """.write(to: dist.appendingPathComponent("cli.js"), atomically: true, encoding: .utf8)
+
+    do {
+      _ = try await Org2CLI(repoRoot: root).run(["source", "sync", "slack", "--json"])
+      XCTFail("Expected command failure")
+    } catch let error as Org2CLIError {
+      XCTAssertEqual(error, .commandFailed(status: 1, message: "Slack sync failed cleanly."))
+    }
+  }
+
   func testDefaultRepoRootPrefersBundledRuntime() throws {
     let resources = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-bundled-runtime-\(UUID().uuidString)", isDirectory: true)

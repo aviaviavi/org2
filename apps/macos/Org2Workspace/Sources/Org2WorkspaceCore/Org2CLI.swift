@@ -413,6 +413,16 @@ public struct Org2CLI: Sendable {
           return message
         })
       }
+      if let results = value["results"] as? [[String: Any]] {
+        for result in results {
+          for key in ["error", "message"] {
+            if let message = result[key] as? String,
+               !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+              messages.append(message)
+            }
+          }
+        }
+      }
       for key in ["error", "message"] {
         if let message = value[key] as? String,
            !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {

@@ -217,8 +217,16 @@ public struct WorkspaceSourceImportSummary: Codable, Equatable, Sendable {
 public struct WorkspaceSourceOperationResult: Codable, Identifiable, Equatable, Sendable {
   public var id: String
   public var ok: Bool
+  public var skipped: Bool?
+  public var reason: String?
+  public var message: String?
+  public var recoveredStaleLock: Bool?
   public var imported: WorkspaceSourceImportSummary?
   public var error: String?
+
+  public var isSyncInProgress: Bool {
+    ok && skipped == true && reason == "sync-in-progress"
+  }
 }
 
 public struct WorkspaceSourceOperationEnvelope: Codable, Equatable, Sendable {
@@ -226,6 +234,65 @@ public struct WorkspaceSourceOperationEnvelope: Codable, Equatable, Sendable {
   public var root: String
   public var applied: Bool?
   public var results: [WorkspaceSourceOperationResult]
+}
+
+public struct WorkspaceSourceNotice: Equatable, Sendable {
+  public var text: String
+  public var isError: Bool
+}
+
+public enum WorkspaceSourcePresentationState: Equatable, Sendable {
+  case syncing
+  case needsToken
+  case needsSetup
+  case needsAttention
+  case configured
+
+  public var title: String {
+    switch self {
+    case .syncing: "Syncing"
+    case .needsToken: "Needs token"
+    case .needsSetup: "Needs setup"
+    case .needsAttention: "Needs attention"
+    case .configured: "Configured"
+    }
+  }
+}
+
+public enum WorkspaceSourcePresentation {
+  public static func notice(
+    scheduleError: String?,
+    operationMessage: String?,
+    operationFailed: Bool
+  ) -> WorkspaceSourceNotice? {
+    if let operationMessage = normalized(operationMessage) {
+      return WorkspaceSourceNotice(text: operationMessage, isError: operationFailed)
+    }
+    if let scheduleError = normalized(scheduleError) {
+      return WorkspaceSourceNotice(text: scheduleError, isError: true)
+    }
+    return nil
+  }
+
+  public static func state(
+    isRunning: Bool,
+    needsToken: Bool,
+    isReady: Bool,
+    runtimeOK: Bool?,
+    notice: WorkspaceSourceNotice?
+  ) -> WorkspaceSourcePresentationState {
+    if isRunning { return .syncing }
+    if needsToken { return .needsToken }
+    if !isReady { return .needsSetup }
+    if runtimeOK == false || notice?.isError == true { return .needsAttention }
+    return .configured
+  }
+
+  private static func normalized(_ value: String?) -> String? {
+    guard let value else { return nil }
+    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    return trimmed.isEmpty ? nil : trimmed
+  }
 }
 
 /// An extensible identifier for a source connector. Known kinds are conveniences rather than

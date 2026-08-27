@@ -160,6 +160,48 @@ if (args.includes("messages")) {
   assert.match(result.stdout, /sync/);
   assert.match(result.stdout, /--latest-only/);
 
+  const sourceLockDir = path.join(path.dirname(bindingPath), "source-slack.lock");
+  fs.mkdirSync(sourceLockDir);
+  const concurrentSync = run("sync", "slack");
+  assert.equal(concurrentSync.status, 0, concurrentSync.stderr);
+  assert.deepEqual(JSON.parse(concurrentSync.stdout).results[0], {
+    id: "slack",
+    ok: true,
+    skipped: true,
+    reason: "sync-in-progress",
+    message: "Sync already in progress on this machine.",
+  });
+  assert.equal(fs.existsSync(sourceLockDir), true, "a fresh lock must not be stolen during owner metadata startup");
+
+  const lockOwnerPath = path.join(sourceLockDir, "owner.json");
+  const lockOwner = {
+    schema: "org2:source-sync-lock:v1",
+    token: "test-owner",
+    pid: process.pid,
+    sourceId: "slack",
+    corpusRoot: corpus,
+    hostname: os.hostname(),
+    startedAt: new Date().toISOString(),
+    timeoutMs: 30 * 60_000,
+  };
+  fs.writeFileSync(lockOwnerPath, JSON.stringify(lockOwner));
+  const staleLockTime = new Date(Date.now() - 60_000);
+  fs.utimesSync(sourceLockDir, staleLockTime, staleLockTime);
+  const liveOwnerSync = run("sync", "slack");
+  assert.equal(liveOwnerSync.status, 0, liveOwnerSync.stderr);
+  assert.equal(JSON.parse(liveOwnerSync.stdout).results[0].reason, "sync-in-progress");
+  assert.equal(fs.existsSync(sourceLockDir), true, "a live owner must retain its lock");
+
+  lockOwner.pid = 2_147_483_647;
+  fs.writeFileSync(lockOwnerPath, JSON.stringify(lockOwner));
+  fs.utimesSync(sourceLockDir, staleLockTime, staleLockTime);
+  const recoveredSync = run("sync", "slack");
+  assert.equal(recoveredSync.status, 0, recoveredSync.stderr);
+  const recoveredResult = JSON.parse(recoveredSync.stdout).results[0];
+  assert.equal(recoveredResult.ok, true);
+  assert.equal(recoveredResult.recoveredStaleLock, true);
+  assert.equal(fs.existsSync(sourceLockDir), false, "a recovered sync must release its owned lock");
+
   const timeoutConfig = JSON.parse(fs.readFileSync(path.join(corpus, "org2.json"), "utf8"));
   timeoutConfig.externalSources.slack.syncArgs = ["--hang"];
   fs.writeFileSync(path.join(corpus, "org2.json"), JSON.stringify(timeoutConfig, null, 2));

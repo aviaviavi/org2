@@ -1501,6 +1501,7 @@ public final class WorkspaceStore: ObservableObject {
   @Published public private(set) var sourceRuntimeStatuses: [String: WorkspaceSourceRuntimeStatus] = [:]
   @Published public private(set) var sourceScheduleStates: [String: WorkspaceSourceScheduleState] = [:]
   @Published public private(set) var sourceOperationMessages: [String: String] = [:]
+  @Published public private(set) var sourceOperationFailureIDs: Set<String> = []
   @Published public private(set) var activeSourceOperationIDs: Set<String> = []
   @Published public private(set) var isLoadingSources = false
   @Published public var isSourceCredentialPresented = false
@@ -2835,6 +2836,8 @@ public final class WorkspaceStore: ObservableObject {
     sourceProfiles = cachedWorkspace?.sourceProfiles ?? []
     sourceRuntimeStatuses = cachedWorkspace?.sourceRuntimeStatuses ?? [:]
     sourceScheduleStates = cachedWorkspace?.sourceScheduleStates ?? [:]
+    sourceOperationMessages = [:]
+    sourceOperationFailureIDs = []
     openClawThreads = cachedWorkspace?.openClawThreads ?? []
     selectedOpenClawThreadID = cachedWorkspace?.selectedOpenClawThreadID
     workspaceHealthChecks = cachedWorkspace?.workspaceHealthChecks ?? []
@@ -3350,6 +3353,7 @@ public final class WorkspaceStore: ObservableObject {
     let dirtyGeneration = workspaceSurfaceDirtyGenerations[.sources, default: 0]
     isLoadingSources = true
     defer { isLoadingSources = false }
+    setSourceOperationMessage(nil, profileID: "workspace")
     do {
       let profiles: [WorkspaceSourceProfileStatus] = try await cli.runJSON(
         ["source", "list", "--dir", corpusRoot.path, "--json"]
@@ -3367,8 +3371,10 @@ public final class WorkspaceStore: ObservableObject {
       sourceRuntimeStatuses = Dictionary(uniqueKeysWithValues: envelope.sources.map { ($0.id, $0) })
       refreshSourceScheduleStates()
       markWorkspaceSurfaceCleanIfUnchanged(.sources, generation: dirtyGeneration)
+    } catch is CancellationError {
+      return
     } catch {
-      sourceOperationMessages["workspace"] = error.localizedDescription
+      setSourceOperationMessage(error.localizedDescription, profileID: "workspace", failed: true)
     }
   }
 
@@ -3376,14 +3382,17 @@ public final class WorkspaceStore: ObservableObject {
     guard let corpusRoot, !activeSourceOperationIDs.contains(profile.id) else { return }
     activeSourceOperationIDs.insert(profile.id)
     defer { activeSourceOperationIDs.remove(profile.id) }
+    setSourceOperationMessage(nil, profileID: profile.id)
     do {
       _ = try await cli.run(
         ["source", "doctor", profile.id, "--dir", corpusRoot.path, "--json"],
         environment: sourceEnvironment(for: profile)
       )
-      sourceOperationMessages[profile.id] = "Setup check passed."
+      setSourceOperationMessage("Setup check passed.", profileID: profile.id)
+    } catch is CancellationError {
+      return
     } catch {
-      sourceOperationMessages[profile.id] = error.localizedDescription
+      setSourceOperationMessage(error.localizedDescription, profileID: profile.id, failed: true)
     }
   }
 
@@ -3391,18 +3400,29 @@ public final class WorkspaceStore: ObservableObject {
     guard let corpusRoot, !activeSourceOperationIDs.contains(profile.id) else { return }
     activeSourceOperationIDs.insert(profile.id)
     defer { activeSourceOperationIDs.remove(profile.id) }
+    setSourceOperationMessage(nil, profileID: profile.id)
     do {
       let envelope: WorkspaceSourceOperationEnvelope = try await cli.runJSON(
         ["source", "import", profile.id, "--dir", corpusRoot.path, "--json"],
         environment: sourceEnvironment(for: profile)
       )
       if let summary = envelope.results.first?.imported {
-        sourceOperationMessages[profile.id] = "Preview: \(summary.acceptedCount) records across \(summary.groupCount) review packets."
+        setSourceOperationMessage(
+          "Preview: \(summary.acceptedCount) records across \(summary.groupCount) review packets.",
+          profileID: profile.id
+        )
       } else {
-        sourceOperationMessages[profile.id] = envelope.results.first?.error ?? "Preview finished."
+        let result = envelope.results.first
+        setSourceOperationMessage(
+          result?.error ?? result?.message ?? "Preview finished.",
+          profileID: profile.id,
+          failed: result?.ok == false
+        )
       }
+    } catch is CancellationError {
+      return
     } catch {
-      sourceOperationMessages[profile.id] = error.localizedDescription
+      setSourceOperationMessage(error.localizedDescription, profileID: profile.id, failed: true)
     }
   }
 
@@ -3418,29 +3438,54 @@ public final class WorkspaceStore: ObservableObject {
     guard let corpusRoot, !activeSourceOperationIDs.contains(profile.id) else { return false }
     activeSourceOperationIDs.insert(profile.id)
     defer { activeSourceOperationIDs.remove(profile.id) }
+    setSourceOperationMessage(nil, profileID: profile.id)
     do {
       let envelope: WorkspaceSourceOperationEnvelope = try await cli.runJSON(
         ["source", "sync", profile.id, "--ingest", "--apply", "--dir", corpusRoot.path, "--json"],
         environment: sourceEnvironment(for: profile)
       )
-      guard let result = envelope.results.first, result.ok else {
+      guard let result = envelope.results.first else {
         throw NSError(
           domain: "Org2Workspace.SourceSync",
           code: 1,
-          userInfo: [NSLocalizedDescriptionKey: envelope.results.first?.error ?? "Source sync failed."]
+          userInfo: [NSLocalizedDescriptionKey: "Source sync returned no result."]
         )
       }
+      if result.isSyncInProgress {
+        setSourceOperationMessage(
+          result.message ?? "Sync already in progress on this machine.",
+          profileID: profile.id
+        )
+        recordSourceScheduleDeferred(profile, trigger: trigger)
+        return true
+      }
+      guard result.ok else {
+        throw NSError(
+          domain: "Org2Workspace.SourceSync",
+          code: 1,
+          userInfo: [NSLocalizedDescriptionKey: result.error ?? result.message ?? "Source sync failed."]
+        )
+      }
+      let recoveredSuffix = result.recoveredStaleLock == true
+        ? " Recovered an abandoned sync lock."
+        : ""
       if let summary = result.imported {
-        sourceOperationMessages[profile.id] = "Staged \(summary.acceptedCount) records in \(summary.groupCount) review packets."
+        setSourceOperationMessage(
+          "Staged \(summary.acceptedCount) records in \(summary.groupCount) review packets.\(recoveredSuffix)",
+          profileID: profile.id
+        )
       } else {
-        sourceOperationMessages[profile.id] = "Sync finished."
+        setSourceOperationMessage("Sync finished.\(recoveredSuffix)", profileID: profile.id)
       }
       recordSourceScheduleResult(profile, trigger: trigger, succeeded: true, error: nil)
       await refreshCorpusFiles()
       await refreshSourceConnections()
       return true
+    } catch is CancellationError {
+      setSourceOperationMessage(nil, profileID: profile.id)
+      return false
     } catch {
-      sourceOperationMessages[profile.id] = error.localizedDescription
+      setSourceOperationMessage(error.localizedDescription, profileID: profile.id, failed: true)
       recordSourceScheduleResult(
         profile,
         trigger: trigger,
@@ -3448,6 +3493,25 @@ public final class WorkspaceStore: ObservableObject {
         error: error.localizedDescription
       )
       return false
+    }
+  }
+
+  private func setSourceOperationMessage(
+    _ message: String?,
+    profileID: String,
+    failed: Bool = false
+  ) {
+    let trimmed = message?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    if trimmed.isEmpty {
+      sourceOperationMessages.removeValue(forKey: profileID)
+      sourceOperationFailureIDs.remove(profileID)
+      return
+    }
+    sourceOperationMessages[profileID] = trimmed
+    if failed {
+      sourceOperationFailureIDs.insert(profileID)
+    } else {
+      sourceOperationFailureIDs.remove(profileID)
     }
   }
 
@@ -3472,25 +3536,25 @@ public final class WorkspaceStore: ObservableObject {
     guard let profileID = sourceCredentialProfileID else { return }
     let token = sourceCredentialDraft.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !token.isEmpty else {
-      sourceOperationMessages[profileID] = "Enter a token before saving."
+      setSourceOperationMessage("Enter a token before saving.", profileID: profileID, failed: true)
       return
     }
     do {
       try SourceCredentialsKeychain.saveToken(token, profileID: profileID)
-      sourceOperationMessages[profileID] = "Credential saved securely in Keychain."
+      setSourceOperationMessage("Credential saved securely in Keychain.", profileID: profileID)
       sourceCredentialDraft = ""
       isSourceCredentialPresented = false
     } catch {
-      sourceOperationMessages[profileID] = error.localizedDescription
+      setSourceOperationMessage(error.localizedDescription, profileID: profileID, failed: true)
     }
   }
 
   public func deleteSourceCredential(_ profile: WorkspaceSourceProfileStatus) {
     do {
       try SourceCredentialsKeychain.deleteToken(profileID: profile.id)
-      sourceOperationMessages[profile.id] = "Stored credential removed."
+      setSourceOperationMessage("Stored credential removed.", profileID: profile.id)
     } catch {
-      sourceOperationMessages[profile.id] = error.localizedDescription
+      setSourceOperationMessage(error.localizedDescription, profileID: profile.id, failed: true)
     }
   }
 
@@ -3563,7 +3627,7 @@ public final class WorkspaceStore: ObservableObject {
     for profile in dueProfiles {
       if !profile.ready {
         let message = "Automatic sync is waiting for source setup to be completed."
-        sourceOperationMessages[profile.id] = message
+        setSourceOperationMessage(message, profileID: profile.id, failed: true)
         recordSourceScheduleResult(
           profile,
           trigger: .scheduled,
@@ -3575,7 +3639,7 @@ public final class WorkspaceStore: ObservableObject {
       }
       if profile.type == "notion" && !sourceHasStoredCredential(profile) {
         let message = "Automatic sync is waiting for a Notion token in Keychain."
-        sourceOperationMessages[profile.id] = message
+        setSourceOperationMessage(message, profileID: profile.id, failed: true)
         recordSourceScheduleResult(
           profile,
           trigger: .scheduled,
@@ -3652,6 +3716,35 @@ public final class WorkspaceStore: ObservableObject {
       } else if state.nextRunAt == nil {
         state.nextRunAt = WorkspaceSourceSchedulePlanner.nextRun(after: date, schedule: schedule)
       }
+    }
+    sourceScheduleStateStore.setState(
+      state,
+      corpusPath: corpusRoot.path,
+      profileID: profile.id
+    )
+    sourceScheduleStates[profile.id] = state
+  }
+
+  private func recordSourceScheduleDeferred(
+    _ profile: WorkspaceSourceProfileStatus,
+    trigger: SourceSyncTrigger,
+    at date: Date = Date()
+  ) {
+    guard let corpusRoot, let schedule = profile.schedule, schedule.enabled else { return }
+    var state = sourceScheduleStateStore.state(
+      corpusPath: corpusRoot.path,
+      profileID: profile.id
+    ) ?? WorkspaceSourceScheduleState(
+      scheduleFingerprint: schedule.fingerprint,
+      initializedAt: date
+    )
+    state.scheduleFingerprint = schedule.fingerprint
+    state.lastAttemptAt = date
+    state.lastError = nil
+    if case .scheduled = trigger {
+      state.nextRunAt = date.addingTimeInterval(15 * 60)
+    } else if state.nextRunAt == nil {
+      state.nextRunAt = WorkspaceSourceSchedulePlanner.nextRun(after: date, schedule: schedule)
     }
     sourceScheduleStateStore.setState(
       state,

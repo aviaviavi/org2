@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { findConfigFile, loadConfig, type Org2ExternalSourceConfig } from "./config.js";
 import { org2CorpusIndexDir } from "./indexPaths.js";
 import { importCrawlerArchive } from "./sourceIngestion.js";
@@ -46,6 +47,136 @@ type SourceStatus = {
 
 const DEFAULT_CRAWLER_TIMEOUT_MS = 30 * 60_000;
 const MAX_CRAWLER_TIMEOUT_SECONDS = 24 * 60 * 60;
+const SOURCE_SYNC_LOCK_SCHEMA = "org2:source-sync-lock:v1";
+const SOURCE_SYNC_LOCK_OWNER_FILE = "owner.json";
+const SOURCE_SYNC_LOCK_STARTUP_GRACE_MS = 30_000;
+const SOURCE_SYNC_LOCK_EXPIRY_GRACE_MS = 5 * 60_000;
+
+type SourceSyncLockOwner = {
+  schema: typeof SOURCE_SYNC_LOCK_SCHEMA;
+  token: string;
+  pid: number;
+  sourceId: string;
+  corpusRoot: string;
+  hostname: string;
+  startedAt: string;
+  timeoutMs: number;
+};
+
+type AcquiredSourceSyncLock = {
+  owner: SourceSyncLockOwner;
+  recoveredStaleLock: boolean;
+};
+
+function sourceSyncLockOwnerPath(lockDir: string): string {
+  return path.join(lockDir, SOURCE_SYNC_LOCK_OWNER_FILE);
+}
+
+function readSourceSyncLockOwner(lockDir: string): SourceSyncLockOwner | null {
+  try {
+    const value = JSON.parse(fs.readFileSync(sourceSyncLockOwnerPath(lockDir), "utf8")) as Partial<SourceSyncLockOwner>;
+    if (value.schema !== SOURCE_SYNC_LOCK_SCHEMA
+        || typeof value.token !== "string"
+        || !Number.isInteger(value.pid)
+        || typeof value.sourceId !== "string"
+        || typeof value.corpusRoot !== "string"
+        || typeof value.hostname !== "string"
+        || typeof value.startedAt !== "string"
+        || !Number.isFinite(value.timeoutMs)) return null;
+    return value as SourceSyncLockOwner;
+  } catch {
+    return null;
+  }
+}
+
+function processIsAlive(pid: number): boolean {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+function sourceSyncLockIsStale(lockDir: string, sourceId: string, corpusRoot: string, now = Date.now()): boolean {
+  let modifiedAt = 0;
+  try {
+    modifiedAt = fs.statSync(lockDir).mtimeMs;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return true;
+    throw error;
+  }
+  if (now - modifiedAt < SOURCE_SYNC_LOCK_STARTUP_GRACE_MS) return false;
+
+  const owner = readSourceSyncLockOwner(lockDir);
+  if (!owner) return true;
+  if (owner.sourceId !== sourceId || path.resolve(owner.corpusRoot) !== path.resolve(corpusRoot)) return true;
+  if (!processIsAlive(owner.pid)) return true;
+
+  const startedAt = Date.parse(owner.startedAt);
+  if (!Number.isFinite(startedAt)) return false;
+  // A sync can spend one timeout in the crawler and another in ingestion.
+  // The grace keeps PID reuse or a wedged parent from blocking the source forever.
+  const maximumOwnerAge = Math.max(
+    SOURCE_SYNC_LOCK_STARTUP_GRACE_MS,
+    owner.timeoutMs * 2 + SOURCE_SYNC_LOCK_EXPIRY_GRACE_MS,
+  );
+  return now - startedAt > maximumOwnerAge;
+}
+
+function acquireSourceSyncLock(
+  lockDir: string,
+  sourceId: string,
+  corpusRoot: string,
+  timeoutMs: number,
+): AcquiredSourceSyncLock | null {
+  const owner: SourceSyncLockOwner = {
+    schema: SOURCE_SYNC_LOCK_SCHEMA,
+    token: randomUUID(),
+    pid: process.pid,
+    sourceId,
+    corpusRoot: path.resolve(corpusRoot),
+    hostname: os.hostname(),
+    startedAt: new Date().toISOString(),
+    timeoutMs,
+  };
+  let recoveredStaleLock = false;
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      fs.mkdirSync(lockDir);
+      try {
+        fs.writeFileSync(sourceSyncLockOwnerPath(lockDir), JSON.stringify(owner, null, 2) + "\n", { mode: 0o600 });
+      } catch (error) {
+        fs.rmSync(lockDir, { recursive: true, force: true });
+        throw error;
+      }
+      return { owner, recoveredStaleLock };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      if (!sourceSyncLockIsStale(lockDir, sourceId, corpusRoot)) return null;
+
+      const abandonedDir = `${lockDir}.abandoned-${process.pid}-${randomUUID()}`;
+      try {
+        fs.renameSync(lockDir, abandonedDir);
+      } catch (renameError) {
+        const code = (renameError as NodeJS.ErrnoException).code;
+        if (code === "ENOENT" || code === "EEXIST") continue;
+        throw renameError;
+      }
+      fs.rmSync(abandonedDir, { recursive: true, force: true });
+      recoveredStaleLock = true;
+    }
+  }
+  throw new Error(`could not acquire source sync lock after recovering stale ownership: ${lockDir}`);
+}
+
+function releaseSourceSyncLock(lockDir: string, owner: SourceSyncLockOwner): void {
+  const current = readSourceSyncLockOwner(lockDir);
+  if (current?.token !== owner.token) return;
+  fs.rmSync(lockDir, { recursive: true, force: true });
+}
 
 function normalizedSchedule(id: string, profile: Org2ExternalSourceConfig): SourceStatus["schedule"] {
   const schedule = profile.schedule;
@@ -380,14 +511,16 @@ export async function runSourceCommand(args: string[]): Promise<boolean> {
         ...(profile.syncArgs || (profile.type === "slack" ? ["--source", "api", "--latest-only"] : ["--source", "api"])),
       ];
       const lockDir = path.join(org2CorpusIndexDir(root), `source-${status.id}.lock`);
-      try {
-        fs.mkdirSync(lockDir);
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === "EEXIST") {
-          results.push({ id: status.id, ok: false, skipped: true, error: "sync already running on this machine" });
-          continue;
-        }
-        throw error;
+      const syncLock = acquireSourceSyncLock(lockDir, status.id, root, parsed.timeoutMs);
+      if (!syncLock) {
+        results.push({
+          id: status.id,
+          ok: true,
+          skipped: true,
+          reason: "sync-in-progress",
+          message: "Sync already in progress on this machine.",
+        });
+        continue;
       }
       try {
         const child = spawnSync(status.binary, crawlerArgs, {
@@ -430,12 +563,13 @@ export async function runSourceCommand(args: string[]): Promise<boolean> {
           ok,
           status: child.status,
           signal: child.signal,
+          ...(syncLock.recoveredStaleLock ? { recoveredStaleLock: true } : {}),
           ...(processError ? { error: processError } : {}),
           ...(imported ? { imported } : {}),
           ...(parsed.json ? { stdout: truncateOutput(child.stdout), stderr: truncateOutput(child.stderr) } : {}),
         });
       } finally {
-        fs.rmdirSync(lockDir);
+        releaseSourceSyncLock(lockDir, syncLock.owner);
       }
     }
     if (parsed.json) emit({ schema: "org2:source-sync:v1", root, results }, true);

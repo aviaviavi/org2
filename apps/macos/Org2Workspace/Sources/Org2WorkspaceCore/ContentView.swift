@@ -6416,7 +6416,36 @@ private struct SourceProfileCard: View {
     profile.type == "notion" && profile.syncArgs.contains("api") && !store.sourceHasStoredCredential(profile)
   }
   private var canSync: Bool { profile.ready && !needsToken }
-  private var statusColor: Color { canSync && runtime?.ok != false ? .green : .orange }
+  private var notice: WorkspaceSourceNotice? {
+    WorkspaceSourcePresentation.notice(
+      scheduleError: store.sourceScheduleStates[profile.id]?.lastError,
+      operationMessage: store.sourceOperationMessages[profile.id],
+      operationFailed: store.sourceOperationFailureIDs.contains(profile.id)
+    )
+  }
+  private var presentationState: WorkspaceSourcePresentationState {
+    WorkspaceSourcePresentation.state(
+      isRunning: isRunning,
+      needsToken: needsToken,
+      isReady: profile.ready,
+      runtimeOK: runtime?.ok,
+      notice: notice
+    )
+  }
+  private var statusColor: Color {
+    switch presentationState {
+    case .configured: .green
+    case .syncing: .accentColor
+    case .needsToken, .needsSetup, .needsAttention: .orange
+    }
+  }
+  private var statusSystemImage: String {
+    switch presentationState {
+    case .configured: "checkmark.circle.fill"
+    case .syncing: "arrow.triangle.2.circlepath"
+    case .needsToken, .needsSetup, .needsAttention: "exclamationmark.triangle.fill"
+    }
+  }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
@@ -6432,8 +6461,8 @@ private struct SourceProfileCard: View {
         }
         Spacer(minLength: 12)
         Label(
-          needsToken ? "Needs token" : profile.ready ? "Ready" : "Needs setup",
-          systemImage: canSync ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
+          presentationState.title,
+          systemImage: statusSystemImage
         )
           .font(.caption.weight(.semibold))
           .foregroundStyle(statusColor)
@@ -6499,17 +6528,13 @@ private struct SourceProfileCard: View {
       }
       .font(.caption)
 
-      if let scheduleError = store.sourceScheduleStates[profile.id]?.lastError {
-        Label(scheduleError, systemImage: "exclamationmark.triangle.fill")
+      if let notice {
+        Label(
+          notice.text,
+          systemImage: notice.isError ? "exclamationmark.triangle.fill" : "info.circle.fill"
+        )
           .font(.caption)
-          .foregroundStyle(.red)
-          .textSelection(.enabled)
-      }
-
-      if let message = store.sourceOperationMessages[profile.id] {
-        Text(message)
-          .font(.caption)
-          .foregroundStyle(message.localizedCaseInsensitiveContains("failed") || message.localizedCaseInsensitiveContains("error") ? Color.red : Color.secondary)
+          .foregroundStyle(notice.isError ? Color.red : Color.secondary)
           .textSelection(.enabled)
       }
 

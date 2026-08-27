@@ -34,6 +34,47 @@ final class SourceConnectionsTests: XCTestCase {
     XCTAssertEqual(envelope.results.first?.imported?.groupCount, 2)
   }
 
+  func testDecodesBenignConcurrentSyncResult() throws {
+    let data = Data(#"""
+    {"schema":"org2:source-sync:v1","root":"/tmp/corpus","results":[{"id":"slack","ok":true,"skipped":true,"reason":"sync-in-progress","message":"Sync already in progress on this machine."}]}
+    """#.utf8)
+    let envelope = try JSONDecoder().decode(WorkspaceSourceOperationEnvelope.self, from: data)
+
+    XCTAssertTrue(envelope.results[0].isSyncInProgress)
+    XCTAssertEqual(envelope.results[0].message, "Sync already in progress on this machine.")
+  }
+
+  func testSourcePresentationCollapsesDuplicateErrorsAndUsesHonestStatus() {
+    let error = "Slack sync failed."
+    let notice = WorkspaceSourcePresentation.notice(
+      scheduleError: error,
+      operationMessage: error,
+      operationFailed: true
+    )
+
+    XCTAssertEqual(notice, WorkspaceSourceNotice(text: error, isError: true))
+    XCTAssertEqual(
+      WorkspaceSourcePresentation.state(
+        isRunning: false,
+        needsToken: false,
+        isReady: true,
+        runtimeOK: true,
+        notice: notice
+      ),
+      .needsAttention
+    )
+    XCTAssertEqual(
+      WorkspaceSourcePresentation.state(
+        isRunning: false,
+        needsToken: false,
+        isReady: true,
+        runtimeOK: true,
+        notice: WorkspaceSourceNotice(text: "Sync already in progress on this machine.", isError: false)
+      ),
+      .configured
+    )
+  }
+
   func testDefaultsToEmptyRegistryAndInternalStorage() {
     let (defaults, key) = isolatedDefaults()
     let registry = WorkspaceSourceConnectionRegistry(defaults: defaults, persistenceKey: key)
