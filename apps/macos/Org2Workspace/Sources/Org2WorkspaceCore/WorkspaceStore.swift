@@ -1327,6 +1327,7 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var runsAndReviewPage: RunsAndReviewPage = .runs
   @Published public var isLoadingApprovals = false
   @Published public private(set) var hasCompletedApprovalsLoad = false
+  @Published public private(set) var approvalLoadErrorText: String?
   public var shouldShowInitialApprovalsLoadingState: Bool {
     isLoadingApprovals && approvalItems.isEmpty && !hasCompletedApprovalsLoad
   }
@@ -4143,6 +4144,7 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     isRefreshingApprovals = true
+    approvalLoadErrorText = nil
     let showsLoading = updatesStatus || approvalItems.isEmpty
     if showsLoading {
       isLoadingApprovals = true
@@ -4253,6 +4255,7 @@ public final class WorkspaceStore: ObservableObject {
         statusText = "\(approvalItems.count) approval\(approvalItems.count == 1 ? "" : "s")"
       }
     } catch {
+      approvalLoadErrorText = error.localizedDescription
       errorText = error.localizedDescription
       if updatesStatus {
         statusText = "Approvals failed"
@@ -4267,6 +4270,23 @@ public final class WorkspaceStore: ObservableObject {
     await refreshAgentWorkflows()
     await refreshAgentGoals()
     await refreshAgentProfiles()
+    markWorkspaceSurfaceCleanIfUnchanged(.approvals, generation: dirtyGeneration)
+  }
+
+  public func refreshSelectedRunReviewPage(updatesStatus: Bool = false) async {
+    let dirtyGeneration = workspaceSurfaceDirtyGenerations[.approvals, default: 0]
+    switch runsAndReviewPage {
+    case .runs:
+      await refreshAgentRuns(updatesStatus: updatesStatus)
+    case .review:
+      await refreshApprovals(updatesStatus: updatesStatus)
+    case .goals:
+      await refreshAgentGoals(updatesStatus: updatesStatus)
+    case .agents:
+      await refreshAgentProfiles(updatesStatus: updatesStatus)
+    case .workflows:
+      await refreshAgentWorkflows(updatesStatus: updatesStatus)
+    }
     markWorkspaceSurfaceCleanIfUnchanged(.approvals, generation: dirtyGeneration)
   }
 
@@ -19424,7 +19444,7 @@ public final class WorkspaceStore: ObservableObject {
         await refreshAgenda(preserveSelection: true, updatesStatus: false)
       }
     case .approvals:
-      await refreshRunReviewData()
+      await refreshSelectedRunReviewPage()
     case .files:
       await refreshCorpusFiles()
     case .search:
@@ -19453,11 +19473,13 @@ public final class WorkspaceStore: ObservableObject {
     case .agenda:
       agendaMode == .assigned ? isRefreshingAssignedWork : isRefreshingAgenda
     case .approvals:
-      isRefreshingApprovals
-        || isRefreshingAgentRuns
-        || isRefreshingAgentWorkflows
-        || isRefreshingAgentGoals
-        || isRefreshingAgentProfiles
+      switch runsAndReviewPage {
+      case .runs: isRefreshingAgentRuns
+      case .review: isRefreshingApprovals
+      case .goals: isRefreshingAgentGoals
+      case .agents: isRefreshingAgentProfiles
+      case .workflows: isRefreshingAgentWorkflows
+      }
     case .files:
       isScanningCorpusFiles
     case .search:

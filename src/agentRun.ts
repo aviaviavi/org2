@@ -1165,6 +1165,36 @@ export function listAgentRuns(corpusRoot: string): AgentRun[] {
   return listAgentRunSnapshots(corpusRoot).map((snapshot) => snapshot.run);
 }
 
+/**
+ * Loads only durable runs that can affect the unified approval queue.
+ *
+ * Run records carry a readable approval-count projection before the canonical
+ * JSON block. Most automated runs never request approval, so parsing and
+ * validating every machine-state block makes `org2 approvals` scale with the
+ * entire run history instead of the much smaller decision history. Older
+ * records without the projection still fall back to a full parse.
+ */
+export function listAgentRunsWithApprovals(corpusRoot: string): AgentRun[] {
+  const dir = agentRunDirectory(corpusRoot);
+  if (!fs.existsSync(dir)) return [];
+
+  return fs.readdirSync(dir, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".org2"))
+    .flatMap((entry): AgentRun[] => {
+      const file = path.join(dir, entry.name);
+      const raw = fs.readFileSync(file, "utf8");
+      const summary = /^\*\* Approvals \[\d+\/(\d+) pending\]\s*$/im.exec(raw);
+      if (summary && Number(summary[1]) === 0) return [];
+
+      const run = parseAgentRunOrg(raw);
+      if (run.approvals.length === 0) return [];
+      // Ignore Syncthing conflict copies and other non-canonical projections.
+      if (file !== agentRunPath(corpusRoot, run.id)) return [];
+      return [run];
+    })
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id));
+}
+
 export function listAgentRunSnapshots(corpusRoot: string): AgentRunSnapshot[] {
   const dir = agentRunDirectory(corpusRoot);
   if (!fs.existsSync(dir)) return [];

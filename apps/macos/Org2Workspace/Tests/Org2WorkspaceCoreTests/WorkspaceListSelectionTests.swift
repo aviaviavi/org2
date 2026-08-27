@@ -3,6 +3,26 @@ import XCTest
 @testable import Org2WorkspaceCore
 
 final class WorkspaceListSelectionTests: XCTestCase {
+  func testPrimaryWorkspaceViewsKeepPaneLocalRefreshActions() throws {
+    let testFile = URL(fileURLWithPath: #filePath)
+    let packageRoot = testFile
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+    let contentViewSource = packageRoot
+      .appendingPathComponent("Sources/Org2WorkspaceCore/ContentView.swift")
+    let source = try String(contentsOf: contentViewSource, encoding: .utf8)
+
+    XCTAssertTrue(source.contains(#"Label("Refresh All", systemImage: "arrow.clockwise")"#))
+    XCTAssertTrue(source.contains("Task { await store.refreshCorpusFiles() }"))
+    XCTAssertTrue(source.contains("Task { await store.refreshAgentRuns(updatesStatus: true) }"))
+    XCTAssertTrue(source.contains("Task { await store.refreshApprovals(updatesStatus: true) }"))
+    XCTAssertTrue(source.contains("Task { await store.refreshAgentWorkflows(updatesStatus: true) }"))
+    XCTAssertTrue(source.contains("Task { await store.refreshMeetings() }"))
+    XCTAssertTrue(source.contains("if let error = store.approvalLoadErrorText"))
+    XCTAssertFalse(source.contains("Use the toolbar Refresh to retry."))
+  }
+
   func testVerticallyStackedNodeContextPaneHasNoLeadingDividerOverlay() throws {
     let testFile = URL(fileURLWithPath: #filePath)
     let packageRoot = testFile

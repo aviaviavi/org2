@@ -36,7 +36,7 @@ import {
   agentRunApprovalDecisionKeys,
   agentRunPath,
   currentAgentRunApprovalBoundary,
-  listAgentRuns,
+  listAgentRunsWithApprovals,
   type AgentRun,
 } from "./agentRun.js";
 import { renderOrgChart, renderOrgCharts } from "./chartRender.js";
@@ -13148,7 +13148,7 @@ Flags:
     }
 
     if (!rootDir) rootDir = files.length ? path.dirname(path.resolve(files[0]!)) : process.cwd();
-    const runs = listAgentRuns(rootDir);
+    const runs = listAgentRunsWithApprovals(rootDir);
     if (dir && files.length === 0) files = listOrgLikeFiles(rootDir, recursive, includeArchives);
     files = Array.from(
       new Set(

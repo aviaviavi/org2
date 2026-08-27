@@ -64,14 +64,14 @@ public struct ContentView: View {
           if store.isRefreshingWorkspace {
             HStack(spacing: 6) {
               WorkspaceActivityIndicator(size: .small)
-              Text("Cancel Refresh")
+              Text("Cancel Refresh All")
             }
           } else {
-            Label("Refresh", systemImage: "arrow.clockwise")
+            Label("Refresh All", systemImage: "arrow.clockwise")
           }
         }
         .disabled(store.corpusRoot == nil && !store.isRefreshingWorkspace)
-        .help(store.isRefreshingWorkspace ? "Stop the current workspace refresh (⌘R)" : "Refresh the entire workspace (⌘R)")
+        .help(store.isRefreshingWorkspace ? "Stop the current workspace refresh (⌘R)" : "Refresh every workspace view (⌘R)")
       }
     }
       .keyboardEventMonitor { event, scope in
@@ -1895,6 +1895,13 @@ private struct FilesView: View {
         }
 
         Button {
+          Task { await store.refreshCorpusFiles() }
+        } label: {
+          Label("Refresh", systemImage: "arrow.clockwise")
+        }
+        .disabled(store.isScanningCorpusFiles)
+
+        Button {
           store.presentQuickOpen()
         } label: {
           Label("Quick Open", systemImage: "command")
@@ -1929,7 +1936,9 @@ private struct FilesView: View {
         WorkspaceLoadingStateView("Scanning files")
         Spacer()
       } else if store.filteredCorpusFiles.isEmpty {
-        EmptyStateView(title: "No Files", detail: "No org2, org, or markdown files matched. Use the toolbar Refresh after adding files.")
+        EmptyStateView(title: "No Files", detail: "No org2, org, or markdown files matched.", action: "Refresh") {
+          Task { await store.refreshCorpusFiles() }
+        }
       } else {
         List {
           ForEach(store.filteredCorpusFiles) { file in
@@ -2751,10 +2760,18 @@ private struct AgendaView: View {
         if store.agendaMode == .assigned ? store.isLoadingAssignedWork : store.isLoadingAgenda {
           WorkspaceActivityIndicator(size: .small)
         }
+        Button {
+          Task { await refreshVisibleAgenda() }
+        } label: {
+          Label("Refresh", systemImage: "arrow.clockwise")
+        }
+        .disabled(store.agendaMode == .assigned ? store.isLoadingAssignedWork : store.isLoadingAgenda)
       }
 
       if let error = store.errorText, store.agenda == nil {
-        EmptyStateView(title: "Agenda Failed", detail: "\(error)\n\nUse the toolbar Refresh to retry.")
+        EmptyStateView(title: "Agenda Failed", detail: error, action: "Refresh") {
+          Task { await refreshVisibleAgenda() }
+        }
       } else if let agenda = store.agenda {
         AgendaControls(agendaFilterFocused: $agendaFilterFocused)
 
@@ -2812,6 +2829,14 @@ private struct AgendaView: View {
     }
     .onDisappear {
       store.isAgendaFilterFocused = false
+    }
+  }
+
+  private func refreshVisibleAgenda() async {
+    if store.agendaMode == .assigned {
+      await store.refreshAssignedWork()
+    } else {
+      await store.refreshAgenda(updatesStatus: true)
     }
   }
 
@@ -3051,6 +3076,9 @@ private struct RunsAndReviewView: View {
       case .agents: AgentsView()
       case .workflows: WorkflowsView()
       }
+    }
+    .onChange(of: store.runsAndReviewPage) {
+      Task { await store.refreshSelectedRunReviewPage() }
     }
   }
 }
@@ -3335,6 +3363,12 @@ private struct WorkflowsView: View {
       ) {
         if store.isLoadingAgentWorkflows { WorkspaceActivityIndicator(size: .small) }
         Button {
+          Task { await store.refreshAgentWorkflows(updatesStatus: true) }
+        } label: {
+          Label("Refresh", systemImage: "arrow.clockwise")
+        }
+        .disabled(store.isLoadingAgentWorkflows)
+        Button {
           Task {
             do {
               await store.refreshAgentWorkflows()
@@ -3566,6 +3600,12 @@ private struct RunCenterView: View {
     VStack(spacing: 0) {
       HeaderBar(title: "Runs", subtitle: "Durable delegated work", surface: .approvals) {
         if store.isLoadingAgentRuns { WorkspaceActivityIndicator(size: .small) }
+        Button {
+          Task { await store.refreshAgentRuns(updatesStatus: true) }
+        } label: {
+          Label("Refresh", systemImage: "arrow.clockwise")
+        }
+        .disabled(store.isLoadingAgentRuns)
       }
 
       HStack(spacing: 10) {
@@ -4633,6 +4673,12 @@ private struct ApprovalsView: View {
         if store.isLoadingApprovals {
           WorkspaceActivityIndicator(size: .small)
         }
+        Button {
+          Task { await store.refreshApprovals(updatesStatus: true) }
+        } label: {
+          Label("Refresh", systemImage: "arrow.clockwise")
+        }
+        .disabled(store.isLoadingApprovals)
       }
 
       ApprovalControls(filterFocused: $filterFocused)
@@ -4741,15 +4787,19 @@ private struct ApprovalsView: View {
 
   @ViewBuilder
   private var approvalList: some View {
-    if let error = store.errorText, store.approvalItems.isEmpty {
-      EmptyStateView(title: "Approvals Failed", detail: "\(error)\n\nUse the toolbar Refresh to retry.")
+    if let error = store.approvalLoadErrorText, store.approvalItems.isEmpty {
+      EmptyStateView(title: "Approvals Failed", detail: error, action: "Refresh") {
+        Task { await store.refreshApprovals(updatesStatus: true) }
+      }
     } else if store.shouldShowInitialApprovalsLoadingState {
       Spacer()
       WorkspaceLoadingStateView("Loading approvals")
       Spacer()
     } else if store.visibleApprovalItems.isEmpty {
       if store.approvalFilter.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-        EmptyStateView(title: "No Approvals", detail: "No pending approval candidates matched.")
+        EmptyStateView(title: "No Approvals", detail: "No pending approval candidates matched.", action: "Refresh") {
+          Task { await store.refreshApprovals(updatesStatus: true) }
+        }
       } else {
         EmptyStateView(title: "No Matching Approvals", detail: "No pending approvals match this search.")
       }
@@ -6629,6 +6679,13 @@ private struct MeetingsView: View {
         if store.isLoadingMeetings || store.isProcessingMeeting {
           WorkspaceActivityIndicator(size: .small)
         }
+
+        Button {
+          Task { await store.refreshMeetings() }
+        } label: {
+          Label("Refresh", systemImage: "arrow.clockwise")
+        }
+        .disabled(store.isLoadingMeetings)
 
         if store.isRecordingMeeting {
           Button {

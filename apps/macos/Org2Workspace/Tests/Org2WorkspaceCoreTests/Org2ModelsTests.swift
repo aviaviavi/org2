@@ -9399,6 +9399,38 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testReviewPageRefreshLoadsOnlyApprovals() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-local-approval-refresh-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try """
+    * TODO Review the new draft
+    :PROPERTIES:
+    :STATUS: waiting-on-approval
+    :END:
+    """.write(to: root.appendingPathComponent("approval.org2"), atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root, persistsDefault: false)
+    store.runsAndReviewPage = .review
+    var agentRunRefreshCount = 0
+    store.agentRunListLoaderForTesting = {
+      agentRunRefreshCount += 1
+      return []
+    }
+
+    await store.refreshSelectedRunReviewPage(updatesStatus: true)
+
+    XCTAssertEqual(store.approvalItems.map(\.title), ["Review the new draft"])
+    XCTAssertEqual(agentRunRefreshCount, 0)
+    XCTAssertTrue(store.agentRuns.isEmpty)
+    XCTAssertTrue(store.agentGoals.isEmpty)
+    XCTAssertTrue(store.agentProfiles.isEmpty)
+    XCTAssertTrue(store.agentWorkflows.isEmpty)
+  }
+
+  @MainActor
   func testKnownEmptyApprovalQueueDoesNotReturnToInitialLoadingState() async throws {
     let workspace = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-empty-approvals-\(UUID().uuidString)", isDirectory: true)
@@ -17169,6 +17201,7 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertFalse(store.isRefreshingWorkspace)
     XCTAssertTrue(store.statusText.localizedCaseInsensitiveContains("timed out"))
     XCTAssertTrue(store.errorText?.localizedCaseInsensitiveContains("timed out") == true)
+    XCTAssertNil(store.approvalLoadErrorText)
   }
 
   @MainActor

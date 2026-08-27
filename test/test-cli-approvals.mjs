@@ -8,6 +8,7 @@ import {
   addAgentRunComment,
   createAgentRun,
   listAgentRuns,
+  listAgentRunsWithApprovals,
   loadAgentRun,
   requestAgentRunApproval,
   saveAgentRun,
@@ -127,6 +128,10 @@ const headlineItems = payload.items.filter((item) => item.kind === "headline");
 assert.equal(payload.items.some((item) => item.runId === "completed-elsewhere-run"), false);
 assert.equal(payload.items.some((item) => item.idValue === "completed-elsewhere-headline"), false);
 assert.equal(loadAgentRun(tmp, "completed-elsewhere-run").approvals[0].status, "pending");
+assert.deepEqual(
+  listAgentRunsWithApprovals(tmp).map((run) => run.id).sort(),
+  ["completed-elsewhere-run", "release-run"],
+);
 assert.equal(runItems.length, 2);
 assert.equal(runItems[0].runId, "release-run");
 assert.equal(runItems[0].runGoal, "Release the weekly brief");
