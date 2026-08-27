@@ -1,50 +1,50 @@
 #+TITLE: Downloads
-#+SUBTITLE: Install OpenOrg and the Org2 developer tools from versioned GitHub release artifacts
+#+SUBTITLE: Install OpenOrg and its developer tools
 
 #+BEGIN_EXPORT html
 <section class="org2-page-intro org2-downloads-intro">
-  <p>OpenOrg is the workspace product; Org2 is its open format and developer toolkit. GitHub Releases hosts the artifacts, and direct-download links pass through Scarf Gateway for aggregate measurement before redirecting to the original file.</p>
+  <p>OpenOrg is the workspace product; Org2 is its open format and developer toolkit. OpenOrg disk images are hosted by GitHub Releases, while the VS Code extension and npm package link to their canonical registry pages.</p>
 </section>
 #+END_EXPORT
 
-* OpenOrg 0.5.0
+* OpenOrg 0.5.1
 
 #+BEGIN_EXPORT html
-<section class="org2-download-grid" aria-label="OpenOrg 0.5.0 downloads">
+<section class="org2-download-grid" aria-label="OpenOrg 0.5.1 downloads">
     <article class="org2-download-card org2-download-card-macos-apple-silicon">
       <p class="org2-download-kicker">macOS</p>
       <h3>OpenOrg for macOS (Apple Silicon DMG)</h3>
       <p>Native Apple Silicon workspace app. Developer ID signed, notarized, and stapled.</p>
-      <p class="org2-download-meta">0.5.0 · 220.9 MB</p>
-      <a class="org2-download-button" href="https://org2.gateway.scarf.sh/downloads/0.5.0/OpenOrg.dmg">Download <span aria-hidden="true">↓</span></a>
+      <p class="org2-download-meta">0.5.1 · 219.3 MB</p>
+      <a class="org2-download-button" href="https://org2.gateway.scarf.sh/downloads/0.5.1/OpenOrg.dmg">Download <span aria-hidden="true">↓</span></a>
     </article>
     <article class="org2-download-card org2-download-card-macos-intel">
       <p class="org2-download-kicker">macOS</p>
       <h3>OpenOrg for macOS (Intel DMG)</h3>
       <p>Native Intel workspace app. Developer ID signed, notarized, and stapled.</p>
-      <p class="org2-download-meta">0.5.0 · 223.1 MB</p>
-      <a class="org2-download-button" href="https://org2.gateway.scarf.sh/downloads/0.5.0/OpenOrg-Intel.dmg">Download <span aria-hidden="true">↓</span></a>
+      <p class="org2-download-meta">0.5.1 · 223.3 MB</p>
+      <a class="org2-download-button" href="https://org2.gateway.scarf.sh/downloads/0.5.1/OpenOrg-Intel.dmg">Download <span aria-hidden="true">↓</span></a>
     </article>
     <article class="org2-download-card org2-download-card-vscode">
       <p class="org2-download-kicker">VS Code</p>
-      <h3>Org2 for VS Code (VSIX)</h3>
+      <h3>Org2 for VS Code</h3>
       <p>Editor integration with syntax, agenda, navigation, formatting, and Org2 commands.</p>
-      <p class="org2-download-meta">0.5.0 · 173 KB</p>
-      <a class="org2-download-button" href="https://org2.gateway.scarf.sh/downloads/0.5.0/org2-vscode-0.5.0.vsix">Download <span aria-hidden="true">↓</span></a>
+      <p class="org2-download-meta">VS Code Marketplace</p>
+      <a class="org2-download-button" href="https://marketplace.visualstudio.com/items?itemName=AviPress.org2-vscode">View in Marketplace <span aria-hidden="true">↗</span></a>
     </article>
     <article class="org2-download-card org2-download-card-npm">
       <p class="org2-download-kicker">npm / CLI</p>
-      <h3>Org2 npm package (TGZ)</h3>
+      <h3>Org2 npm package</h3>
       <p>CLI, compiler, language server, publishing runtime, and agent-facing tools.</p>
-      <p class="org2-download-meta">0.5.0 · 328 KB</p>
-      <a class="org2-download-button" href="https://org2.gateway.scarf.sh/downloads/0.5.0/aviaviavi-org2-0.5.0.tgz">Download <span aria-hidden="true">↓</span></a>
+      <p class="org2-download-meta">npm registry</p>
+      <a class="org2-download-button" href="https://www.npmjs.com/package/@aviaviavi/org2">View on npm <span aria-hidden="true">↗</span></a>
     </article>
 </section>
 #+END_EXPORT
 
 The OpenOrg disk images are available for Apple Silicon and Intel. Both are Developer ID signed, notarized, stapled, and accepted by Gatekeeper.
 
-For registry-managed installation, use =npm install -g @aviaviavi/org2= or install [[https://marketplace.visualstudio.com/items?itemName=AviPress.org2-vscode][Org2 from the VS Code Marketplace]]. The paired iOS app is distributed separately through TestFlight.
+For registry-managed installation, use [[https://www.npmjs.com/package/@aviaviavi/org2][the Org2 package on npm]] or install [[https://marketplace.visualstudio.com/items?itemName=AviPress.org2-vscode][Org2 from the VS Code Marketplace]]. The paired iOS app is distributed separately through TestFlight.
 
 * OpenOrg for iOS
 
@@ -71,20 +71,9 @@ OpenOrg brings capture, agenda, approvals, and Mac-hosted AI chat to iPhone. The
 
 The [[file:getting-started.org::*iOS app][iOS setup guide]] covers source signing, the share extension, corpus sync, and pairing Mobile Remote with the Mac app over Tailscale.
 
-* Org2 developer tool releases
+* Stable OpenOrg download URL
 
-These are the same files attached to each [[https://github.com/aviaviavi/org2/releases][GitHub Release]]. Scarf Gateway records the version and artifact variables before redirecting to GitHub.
-
-| Version | VS Code VSIX | npm TGZ |
-|---------+--------------+---------|
-| 0.5.0 | [[https://org2.gateway.scarf.sh/downloads/0.5.0/org2-vscode-0.5.0.vsix][Download]] | [[https://org2.gateway.scarf.sh/downloads/0.5.0/aviaviavi-org2-0.5.0.tgz][Download]] |
-| 0.4.2 | [[https://org2.gateway.scarf.sh/downloads/0.4.2/org2-vscode-0.4.2.vsix][Download]] | [[https://org2.gateway.scarf.sh/downloads/0.4.2/aviaviavi-org2-0.4.2.tgz][Download]] |
-| 0.4.1 | [[https://org2.gateway.scarf.sh/downloads/0.4.1/org2-vscode-0.4.1.vsix][Download]] | [[https://org2.gateway.scarf.sh/downloads/0.4.1/aviaviavi-org2-0.4.1.tgz][Download]] |
-| 0.4.0 | [[https://org2.gateway.scarf.sh/downloads/0.4.0/org2-vscode-0.4.0.vsix][Download]] | [[https://org2.gateway.scarf.sh/downloads/0.4.0/aviaviavi-org2-0.4.0.tgz][Download]] |
-
-* Stable download URL
-
-Release automation uses one permanent template:
+OpenOrg release automation uses one permanent template for versioned disk images:
 
 #+begin_src text
 https://org2.gateway.scarf.sh/downloads/{version}/{artifact}
@@ -93,8 +82,8 @@ https://org2.gateway.scarf.sh/downloads/{version}/{artifact}
 For example, the current OpenOrg builds are:
 
 #+begin_src text
-https://org2.gateway.scarf.sh/downloads/0.5.0/OpenOrg.dmg
-https://org2.gateway.scarf.sh/downloads/0.5.0/OpenOrg-Intel.dmg
+https://org2.gateway.scarf.sh/downloads/0.5.1/OpenOrg.dmg
+https://org2.gateway.scarf.sh/downloads/0.5.1/OpenOrg-Intel.dmg
 #+end_src
 
-Scarf redirects that request to the matching =github.com/aviaviavi/org2/releases/download/{version}/{artifact}= URL. No release files are hosted separately by Scarf.
+Scarf redirects those requests to the matching =github.com/aviaviavi/org2/releases/download/{version}/{artifact}= files. No release files are hosted separately by Scarf.

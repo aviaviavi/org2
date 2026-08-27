@@ -7,6 +7,8 @@ import {
   releaseDownloadBlock,
   renderDownloadsPage,
   scarfDownloadUrl,
+  npmPackageUrl,
+  vscodeMarketplaceUrl,
 } from "../tools/sync-release-downloads.mjs";
 
 const releases = [
@@ -67,12 +69,17 @@ assert.equal(mergeReleaseDownloadBlock(merged, releases[0]), merged);
 const page = renderDownloadsPage(releases);
 assert.match(page, /\* OpenOrg 0\.5\.0/);
 assert.match(page, /\* Org2 developer tools 0\.4\.1/);
-assert.match(page, /\| Version \| VS Code VSIX \| npm TGZ \|/);
-assert.match(page, /\| 0\.4\.1 \| \[\[https:\/\/org2\.gateway\.scarf\.sh/);
+assert.match(page, new RegExp(vscodeMarketplaceUrl.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+assert.match(page, new RegExp(npmPackageUrl.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+assert.match(page, /View in Marketplace/);
+assert.match(page, /View on npm/);
+assert.doesNotMatch(page, /Org2 for VS Code \(VSIX\)<\/h3>/);
+assert.doesNotMatch(page, /Org2 npm package \(TGZ\)<\/h3>/);
+assert.doesNotMatch(page, /\| Version \| VS Code VSIX \| npm TGZ \|/);
+assert.doesNotMatch(page, /org2\.gateway\.scarf\.sh\/downloads\/0\.4\.1\/(?:org2-vscode|aviaviavi-org2)/);
 assert.doesNotMatch(page, /Org2 Workspace/);
 assert.doesNotMatch(page, /Org2Workspace(?:-Intel)?\.dmg/);
 assert.doesNotMatch(page, /\| 0\.3\.0 \|/);
-assert.match(page, /No release files are hosted separately by Scarf\./);
 assert.match(page, /\* OpenOrg for iOS/);
 assert.match(page, /OpenOrg brings capture/);
 assert.match(page, /mailto:mail@avi\.press\?subject=OpenOrg%20for%20iOS%20TestFlight/);
@@ -88,12 +95,19 @@ const openOrgPage = renderDownloadsPage([{
   assets: [
     { name: "OpenOrg.dmg", size: 8184365 },
     { name: "OpenOrg-Intel.dmg", size: 8700000 },
+    { name: "org2-vscode-0.5.0.vsix", size: 177345 },
+    { name: "aviaviavi-org2-0.5.0.tgz", size: 315913 },
   ],
 }]);
 assert.match(openOrgPage, /\* OpenOrg 0\.5\.0/);
 assert.doesNotMatch(openOrgPage, /\* Org2 developer tools 0\.5\.0/);
 assert.match(openOrgPage, /Developer ID signed, notarized, and stapled/);
 assert.match(openOrgPage, /OpenOrg-Intel\.dmg/);
+assert.match(openOrgPage, /href="https:\/\/marketplace\.visualstudio\.com\/items\?itemName=AviPress\.org2-vscode">View in Marketplace/);
+assert.match(openOrgPage, /href="https:\/\/www\.npmjs\.com\/package\/@aviaviavi\/org2">View on npm/);
+assert.doesNotMatch(openOrgPage, /href="https:\/\/org2\.gateway\.scarf\.sh\/downloads\/0\.5\.0\/org2-vscode/);
+assert.doesNotMatch(openOrgPage, /href="https:\/\/org2\.gateway\.scarf\.sh\/downloads\/0\.5\.0\/aviaviavi-org2/);
+assert.match(openOrgPage, /No release files are hosted separately by Scarf\./);
 
 const plan = planReleaseDownloadSync(releases, { currentPage: page });
 assert.equal(plan.pageChanged, false);

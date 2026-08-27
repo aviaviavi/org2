@@ -23,7 +23,7 @@ Disposable generated output should stay outside the repository, be ignored, or l
 
 ## Release download synchronization
 
-`sync-release-downloads.mjs` reads GitHub Release assets, generates the canonical downloads page with Scarf Gateway links, and maintains an idempotent direct-download block in GitHub release notes. Its default mode is read-only:
+`sync-release-downloads.mjs` reads GitHub Release assets, generates the canonical downloads page with Scarf Gateway links for OpenOrg disk images and registry links for the VS Code and npm packages, and maintains an idempotent direct-download block in GitHub release notes. Its default mode is read-only:
 
 ```bash
 node tools/sync-release-downloads.mjs

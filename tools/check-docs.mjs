@@ -173,8 +173,17 @@ if (
 if (!downloads.includes("https://org2.gateway.scarf.sh/downloads/")) {
   fail("downloads page is missing Scarf Gateway release links");
 }
-if (!downloads.includes("GitHub Releases hosts the artifacts")) {
+if (!downloads.includes("OpenOrg disk images are hosted by GitHub Releases")) {
   fail("downloads page must disclose that GitHub Releases hosts the artifacts");
+}
+if (
+  !downloads.includes("https://marketplace.visualstudio.com/items?itemName=AviPress.org2-vscode")
+  || !downloads.includes("https://www.npmjs.com/package/@aviaviavi/org2")
+) {
+  fail("downloads page must link developer tools to their canonical registry pages");
+}
+if (/org2\.gateway\.scarf\.sh\/downloads\/[^\s\]]+\.(?:vsix|tgz)/i.test(downloads)) {
+  fail("downloads page must not link VS Code or npm cards to release artifacts");
 }
 if (!downloads.includes("* OpenOrg for iOS") || !downloads.includes("Request TestFlight access")) {
   fail("downloads page is missing the iOS TestFlight and source-install surface");

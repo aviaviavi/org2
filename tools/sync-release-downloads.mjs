@@ -8,6 +8,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 export const repository = "aviaviavi/org2";
 export const scarfGatewayBase = "https://org2.gateway.scarf.sh/downloads";
+export const vscodeMarketplaceUrl = "https://marketplace.visualstudio.com/items?itemName=AviPress.org2-vscode";
+export const npmPackageUrl = "https://www.npmjs.com/package/@aviaviavi/org2";
 export const managedBlockStart = "<!-- org2-scarf-downloads:start -->";
 export const managedBlockEnd = "<!-- org2-scarf-downloads:end -->";
 
@@ -120,6 +122,20 @@ export function mergeReleaseDownloadBlock(body, release) {
 function currentReleaseCard(asset, version) {
   const kind = artifactKind(asset.name);
   const isOpenOrg = asset.name.toLowerCase().startsWith("openorg");
+  const registry = {
+    vscode: {
+      title: "Org2 for VS Code",
+      meta: "VS Code Marketplace",
+      url: vscodeMarketplaceUrl,
+      action: "View in Marketplace",
+    },
+    npm: {
+      title: "Org2 npm package",
+      meta: "npm registry",
+      url: npmPackageUrl,
+      action: "View on npm",
+    },
+  }[kind];
   const descriptions = {
     "macos-apple-silicon": isOpenOrg
       ? "Native Apple Silicon workspace app. Developer ID signed, notarized, and stapled."
@@ -134,17 +150,14 @@ function currentReleaseCard(asset, version) {
   return [
     `    <article class="org2-download-card org2-download-card-${escapeHtml(kind)}">`,
     `      <p class="org2-download-kicker">${escapeHtml(kind.startsWith("macos-") ? "macOS" : kind === "vscode" ? "VS Code" : kind === "npm" ? "npm / CLI" : "Artifact")}</p>`,
-    `      <h3>${escapeHtml(artifactLabel(asset))}</h3>`,
+    `      <h3>${escapeHtml(registry?.title ?? artifactLabel(asset))}</h3>`,
     `      <p>${escapeHtml(descriptions[kind])}</p>`,
-    `      <p class="org2-download-meta">${escapeHtml(version)} · ${escapeHtml(formatBytes(asset.size))}</p>`,
-    `      <a class="org2-download-button" href="${escapeHtml(scarfDownloadUrl(version, asset.name))}">Download <span aria-hidden="true">↓</span></a>`,
+    `      <p class="org2-download-meta">${escapeHtml(registry?.meta ?? `${version} · ${formatBytes(asset.size)}`)}</p>`,
+    registry
+      ? `      <a class="org2-download-button" href="${escapeHtml(registry.url)}">${escapeHtml(registry.action)} <span aria-hidden="true">↗</span></a>`
+      : `      <a class="org2-download-button" href="${escapeHtml(scarfDownloadUrl(version, asset.name))}">Download <span aria-hidden="true">↓</span></a>`,
     "    </article>",
   ].join("\n");
-}
-
-function orgLink(version, asset) {
-  if (!asset) return "—";
-  return `[[${scarfDownloadUrl(version, asset.name)}][Download]]`;
 }
 
 export function renderDownloadsPage(releases) {
@@ -163,20 +176,10 @@ export function renderDownloadsPage(releases) {
   const cards = visibleCurrentAssets
     .map((asset) => currentReleaseCard(asset, current.tag_name))
     .join("\n");
-  const toolReleases = published.filter((release) =>
-    sortedAssets(release).some((asset) => ["vscode", "npm"].includes(artifactKind(asset.name))),
-  );
-  const rows = toolReleases.map((release) => {
-    const byKind = new Map(sortedAssets(release).map((asset) => [artifactKind(asset.name), asset]));
-    return `| ${release.tag_name} | ${orgLink(release.tag_name, byKind.get("vscode"))} | ${orgLink(release.tag_name, byKind.get("npm"))} |`;
-  });
 
   const installStatus = isOpenOrgRelease
     ? "The OpenOrg disk images are available for Apple Silicon and Intel. Both are Developer ID signed, notarized, stapled, and accepted by Gatekeeper."
     : "";
-  const examples = isOpenOrgRelease
-    ? currentMacAssets.slice(0, 2).map((asset) => asset.name)
-    : visibleCurrentAssets.slice(0, 2).map((asset) => asset.name);
   const alphaPreamble = isOpenOrgRelease ? "" : `
 
 * OpenOrg 0.5.0
@@ -188,14 +191,30 @@ The Org2 CLI, npm package, VS Code extension, schemas, and =.org2= format are av
   const currentReleaseLabel = isOpenOrgRelease
     ? `OpenOrg ${current.tag_name} downloads`
     : `Org2 ${current.tag_name} developer tool downloads`;
-  const exampleLabel = isOpenOrgRelease ? "current OpenOrg builds" : "current developer tools";
+  const stableDownloadSection = isOpenOrgRelease ? `
+
+* Stable OpenOrg download URL
+
+OpenOrg release automation uses one permanent template for versioned disk images:
+
+#+begin_src text
+https://org2.gateway.scarf.sh/downloads/{version}/{artifact}
+#+end_src
+
+For example, the current OpenOrg builds are:
+
+#+begin_src text
+${currentMacAssets.slice(0, 2).map((asset) => scarfDownloadUrl(current.tag_name, asset.name)).join("\n")}
+#+end_src
+
+Scarf redirects those requests to the matching =github.com/aviaviavi/org2/releases/download/{version}/{artifact}= files. No release files are hosted separately by Scarf.` : "";
 
   return `#+TITLE: Downloads
-#+SUBTITLE: Install OpenOrg and the Org2 developer tools from versioned GitHub release artifacts
+#+SUBTITLE: Install OpenOrg and its developer tools
 
 #+BEGIN_EXPORT html
 <section class="org2-page-intro org2-downloads-intro">
-  <p>OpenOrg is the workspace product; Org2 is its open format and developer toolkit. GitHub Releases hosts the artifacts, and direct-download links pass through Scarf Gateway for aggregate measurement before redirecting to the original file.</p>
+  <p>OpenOrg is the workspace product; Org2 is its open format and developer toolkit. OpenOrg disk images are hosted by GitHub Releases, while the VS Code extension and npm package link to their canonical registry pages.</p>
 </section>
 #+END_EXPORT${alphaPreamble}
 
@@ -207,7 +226,7 @@ ${cards}
 </section>
 #+END_EXPORT
 
-${installStatus ? `${installStatus}\n\n` : ""}For registry-managed installation, use =npm install -g @aviaviavi/org2= or install [[https://marketplace.visualstudio.com/items?itemName=AviPress.org2-vscode][Org2 from the VS Code Marketplace]]. The paired iOS app is distributed separately through TestFlight.
+${installStatus ? `${installStatus}\n\n` : ""}For registry-managed installation, use [[${npmPackageUrl}][the Org2 package on npm]] or install [[${vscodeMarketplaceUrl}][Org2 from the VS Code Marketplace]]. The paired iOS app is distributed separately through TestFlight.
 
 * OpenOrg for iOS
 
@@ -232,31 +251,7 @@ OpenOrg brings capture, agenda, approvals, and Mac-hosted AI chat to iPhone. The
 </section>
 #+END_EXPORT
 
-The [[file:getting-started.org::*iOS app][iOS setup guide]] covers source signing, the share extension, corpus sync, and pairing Mobile Remote with the Mac app over Tailscale.
-
-* Org2 developer tool releases
-
-These are the same files attached to each [[https://github.com/aviaviavi/org2/releases][GitHub Release]]. Scarf Gateway records the version and artifact variables before redirecting to GitHub.
-
-| Version | VS Code VSIX | npm TGZ |
-|---------+--------------+---------|
-${rows.join("\n")}
-
-* Stable download URL
-
-Release automation uses one permanent template:
-
-#+begin_src text
-https://org2.gateway.scarf.sh/downloads/{version}/{artifact}
-#+end_src
-
-For example, the ${exampleLabel} are:
-
-#+begin_src text
-${examples.map((asset) => scarfDownloadUrl(current.tag_name, asset)).join("\n")}
-#+end_src
-
-Scarf redirects that request to the matching =github.com/aviaviavi/org2/releases/download/{version}/{artifact}= URL. No release files are hosted separately by Scarf.
+The [[file:getting-started.org::*iOS app][iOS setup guide]] covers source signing, the share extension, corpus sync, and pairing Mobile Remote with the Mac app over Tailscale.${stableDownloadSection}
 `;
 }
 
