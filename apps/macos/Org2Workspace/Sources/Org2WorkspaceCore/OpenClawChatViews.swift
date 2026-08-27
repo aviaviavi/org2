@@ -1891,7 +1891,7 @@ struct OpenClawComposerView: View {
           .menuStyle(.borderlessButton)
           .menuIndicator(.hidden)
           .fixedSize()
-          .help("Steer the current turn now (⌘⇧Return)")
+          .help("Steer the current turn now (⌘Return)")
         }
       }
     }
@@ -2198,7 +2198,7 @@ struct OpenClawComposerView: View {
       return "Finish dictating and send the transcript"
     }
     if isRunning {
-      return "Queue behind the current turn. Press Command-Shift-Return to steer now."
+      return "Queue behind the current turn. Press Command-Return to steer now."
     }
     return "Send message"
   }
@@ -2229,7 +2229,12 @@ struct OpenClawComposerView: View {
   }
 
   private func handleReturn(_ delivery: AIChatMessageDeliveryPreference) -> Bool {
-    performPrimaryAction(delivery: delivery)
+    performPrimaryAction(
+      delivery: OpenClawComposerKeyCommand.resolvedDelivery(
+        requested: delivery,
+        isRunning: isRunning
+      )
+    )
     return true
   }
 
@@ -2683,12 +2688,23 @@ enum OpenClawComposerKeyCommand {
 
   static func isSteerCommand(keyCode: UInt16, modifiers: NSEvent.ModifierFlags) -> Bool {
     let relevantModifiers = modifiers.intersection([.command, .option, .control, .shift])
-    return isReturnKey(keyCode) && relevantModifiers == [.command, .shift]
+    return isReturnKey(keyCode)
+      && (relevantModifiers == [.command] || relevantModifiers == [.command, .shift])
   }
 
   static func isNewlineCommand(keyCode: UInt16, modifiers: NSEvent.ModifierFlags) -> Bool {
     let relevantModifiers = modifiers.intersection([.command, .option, .control, .shift])
-    return isReturnKey(keyCode) && relevantModifiers == [.command]
+    return isReturnKey(keyCode) && relevantModifiers == [.shift]
+  }
+
+  static func resolvedDelivery(
+    requested: AIChatMessageDeliveryPreference,
+    isRunning: Bool
+  ) -> AIChatMessageDeliveryPreference {
+    if requested == .steer && !isRunning {
+      return .automatic
+    }
+    return requested
   }
 
   static func suggestionCommand(

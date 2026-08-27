@@ -4936,23 +4936,34 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(compactLongHeight, 150)
   }
 
-  func testOpenClawComposerReturnSendsCommandShiftReturnSteersAndCommandReturnAddsNewline() {
+  func testOpenClawComposerReturnSendsCommandReturnSteersAndShiftReturnAddsNewline() {
     XCTAssertTrue(OpenClawComposerKeyCommand.isSendCommand(keyCode: 36, modifiers: []))
     XCTAssertTrue(OpenClawComposerKeyCommand.isSendCommand(keyCode: 76, modifiers: []))
     XCTAssertFalse(OpenClawComposerKeyCommand.isSendCommand(keyCode: 36, modifiers: [.command]))
     XCTAssertFalse(OpenClawComposerKeyCommand.isSendCommand(keyCode: 36, modifiers: [.command, .shift]))
     XCTAssertFalse(OpenClawComposerKeyCommand.isSendCommand(keyCode: 49, modifiers: [.command]))
 
+    XCTAssertTrue(OpenClawComposerKeyCommand.isSteerCommand(keyCode: 36, modifiers: [.command]))
+    XCTAssertTrue(OpenClawComposerKeyCommand.isSteerCommand(keyCode: 76, modifiers: [.command]))
     XCTAssertTrue(OpenClawComposerKeyCommand.isSteerCommand(keyCode: 36, modifiers: [.command, .shift]))
     XCTAssertTrue(OpenClawComposerKeyCommand.isSteerCommand(keyCode: 76, modifiers: [.command, .shift]))
     XCTAssertFalse(OpenClawComposerKeyCommand.isSteerCommand(keyCode: 36, modifiers: []))
-    XCTAssertFalse(OpenClawComposerKeyCommand.isSteerCommand(keyCode: 36, modifiers: [.command]))
     XCTAssertFalse(OpenClawComposerKeyCommand.isSteerCommand(keyCode: 36, modifiers: [.shift]))
 
-    XCTAssertTrue(OpenClawComposerKeyCommand.isNewlineCommand(keyCode: 36, modifiers: [.command]))
-    XCTAssertTrue(OpenClawComposerKeyCommand.isNewlineCommand(keyCode: 76, modifiers: [.command]))
+    XCTAssertTrue(OpenClawComposerKeyCommand.isNewlineCommand(keyCode: 36, modifiers: [.shift]))
+    XCTAssertTrue(OpenClawComposerKeyCommand.isNewlineCommand(keyCode: 76, modifiers: [.shift]))
     XCTAssertFalse(OpenClawComposerKeyCommand.isNewlineCommand(keyCode: 36, modifiers: []))
+    XCTAssertFalse(OpenClawComposerKeyCommand.isNewlineCommand(keyCode: 36, modifiers: [.command]))
     XCTAssertFalse(OpenClawComposerKeyCommand.isNewlineCommand(keyCode: 36, modifiers: [.command, .shift]))
+
+    XCTAssertEqual(
+      OpenClawComposerKeyCommand.resolvedDelivery(requested: .steer, isRunning: true),
+      .steer
+    )
+    XCTAssertEqual(
+      OpenClawComposerKeyCommand.resolvedDelivery(requested: .steer, isRunning: false),
+      .automatic
+    )
   }
 
   func testOpenClawComposerSuggestionKeyboardCommands() {
