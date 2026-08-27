@@ -11849,40 +11849,47 @@ Flags:
       const ogDesc = truncateMetadataText(ogDescRaw, 200);
       const titleLines = wrapOpenGraphText(ogTitle, 30, 2);
       const descriptionLines = wrapOpenGraphText(ogDesc, 62, 2);
-      const titleStartY = titleLines.length === 1 ? 248 : 210;
-      const descriptionStartY = titleStartY + titleLines.length * 76 + 34;
+      const titleStartY = titleLines.length === 1 ? 248 : 207;
+      const descriptionStartY = titleStartY + titleLines.length * 68 + 29;
       const titleSvg = titleLines.map((line, index) =>
-        `  <text x="80" y="${titleStartY + index * 76}" font-family="Arial,Helvetica,sans-serif" font-size="64" font-weight="700" letter-spacing="-1.5" fill="#f8fafc">${escapeHeadAttr(line)}</text>`,
+        `  <text x="104" y="${titleStartY + index * 68}" font-family="Helvetica Neue,Helvetica,Arial,sans-serif" font-size="60" font-weight="500" letter-spacing="-2.7" fill="#18201e">${escapeHeadAttr(line)}</text>`,
       );
       const descriptionSvg = descriptionLines.map((line, index) =>
-        `  <text x="80" y="${descriptionStartY + index * 42}" font-family="Arial,Helvetica,sans-serif" font-size="30" fill="#aebaca">${escapeHeadAttr(line)}</text>`,
+        `  <text x="104" y="${descriptionStartY + index * 38}" font-family="Helvetica Neue,Helvetica,Arial,sans-serif" font-size="27" font-weight="400" letter-spacing="-0.3" fill="#5e6b66">${escapeHeadAttr(line)}</text>`,
       );
 
+      // Keep social cards in the public site's "compiled paper" visual system.
+      // These colors, type roles, and workflow cells mirror docs/site/assets/site.css.
       const ogSvg = [
         '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">',
         '  <defs>',
-        '    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">',
-        '      <stop offset="0%" stop-color="#09111e" />',
-        '      <stop offset="100%" stop-color="#111d2d" />',
-        '    </linearGradient>',
-        '    <radialGradient id="glow" cx="50%" cy="50%" r="50%">',
-        '      <stop offset="0%" stop-color="#2dd4bf" stop-opacity="0.22" />',
-        '      <stop offset="100%" stop-color="#2dd4bf" stop-opacity="0" />',
-        '    </radialGradient>',
+        '    <filter id="paper-shadow" x="-10%" y="-10%" width="120%" height="125%">',
+        '      <feDropShadow dx="0" dy="12" stdDeviation="18" flood-color="#1d2b26" flood-opacity="0.075" />',
+        '    </filter>',
         '  </defs>',
-        '  <rect width="1200" height="630" fill="url(#bg)"/>',
-        '  <circle cx="1100" cy="98" r="270" fill="url(#glow)"/>',
-        '  <path d="M914 76h184M944 128h128M984 180h76" stroke="#5eead4" stroke-width="3" stroke-linecap="round" opacity="0.28"/>',
-        '  <circle cx="914" cy="76" r="7" fill="#5eead4" opacity="0.72"/>',
-        '  <circle cx="944" cy="128" r="7" fill="#5eead4" opacity="0.5"/>',
-        '  <circle cx="984" cy="180" r="7" fill="#5eead4" opacity="0.34"/>',
-        '  <text x="80" y="98" font-family="Arial,Helvetica,sans-serif" font-size="28" font-weight="700" letter-spacing="5" fill="#5eead4">OPENORG</text>',
-        '  <rect x="80" y="126" width="54" height="5" rx="2.5" fill="#5eead4"/>',
+        '  <rect width="1200" height="630" fill="#f2f0e9" />',
+        '  <rect x="35" y="31" width="1130" height="568" rx="10" fill="#fcfbf7" stroke="#d7d6ce" filter="url(#paper-shadow)" />',
+        '  <text x="75" y="83" font-family="Helvetica Neue,Helvetica,Arial,sans-serif" font-size="22" font-weight="600" letter-spacing="-0.35" fill="#18201e">OpenOrg</text>',
+        '  <text x="1125" y="82" text-anchor="end" font-family="SFMono-Regular,Menlo,Consolas,monospace" font-size="15" font-weight="600" letter-spacing="0.7" fill="#2854d7">OPENORG.SO</text>',
+        '  <line x1="75" y1="111" x2="1125" y2="111" stroke="#d7d6ce" />',
+        `  <text x="75" y="${titleStartY - 29}" font-family="SFMono-Regular,Menlo,Consolas,monospace" font-size="24" font-weight="600" fill="#c2472c">*</text>`,
         ...titleSvg,
         ...descriptionSvg,
-        '  <line x1="80" y1="548" x2="1120" y2="548" stroke="#334155" stroke-width="1"/>',
-        '  <text x="80" y="588" font-family="Arial,Helvetica,sans-serif" font-size="23" font-weight="700" fill="#5eead4">openorg.so</text>',
-        '  <text x="1120" y="588" text-anchor="end" font-family="Arial,Helvetica,sans-serif" font-size="21" fill="#8290a3">local-first · plain text · agent-ready</text>',
+        '  <rect x="75" y="469" width="1050" height="88" rx="8" fill="#fcfbf7" stroke="#d7d6ce" />',
+        '  <line x1="337.5" y1="469" x2="337.5" y2="557" stroke="#d7d6ce" />',
+        '  <line x1="600" y1="469" x2="600" y2="557" stroke="#d7d6ce" />',
+        '  <line x1="862.5" y1="469" x2="862.5" y2="557" stroke="#d7d6ce" />',
+        '  <circle cx="337.5" cy="490" r="4.5" fill="#2854d7" />',
+        '  <circle cx="600" cy="490" r="4.5" fill="#2854d7" />',
+        '  <circle cx="862.5" cy="490" r="4.5" fill="#2854d7" />',
+        '  <text x="96" y="497" font-family="SFMono-Regular,Menlo,Consolas,monospace" font-size="14" font-weight="600" fill="#c2472c">01</text>',
+        '  <text x="96" y="535" font-family="Helvetica Neue,Helvetica,Arial,sans-serif" font-size="22" font-weight="500" letter-spacing="-0.35" fill="#18201e">Capture</text>',
+        '  <text x="359" y="497" font-family="SFMono-Regular,Menlo,Consolas,monospace" font-size="14" font-weight="600" fill="#c2472c">02</text>',
+        '  <text x="359" y="535" font-family="Helvetica Neue,Helvetica,Arial,sans-serif" font-size="22" font-weight="500" letter-spacing="-0.35" fill="#18201e">Delegate</text>',
+        '  <text x="621" y="497" font-family="SFMono-Regular,Menlo,Consolas,monospace" font-size="14" font-weight="600" fill="#c2472c">03</text>',
+        '  <text x="621" y="535" font-family="Helvetica Neue,Helvetica,Arial,sans-serif" font-size="22" font-weight="500" letter-spacing="-0.35" fill="#18201e">Review</text>',
+        '  <text x="884" y="497" font-family="SFMono-Regular,Menlo,Consolas,monospace" font-size="14" font-weight="600" fill="#c2472c">04</text>',
+        '  <text x="884" y="535" font-family="Helvetica Neue,Helvetica,Arial,sans-serif" font-size="22" font-weight="500" letter-spacing="-0.35" fill="#18201e">Verify</text>',
         '</svg>',
         '',
       ].filter(Boolean).join("\n");

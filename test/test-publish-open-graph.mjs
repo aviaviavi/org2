@@ -24,16 +24,7 @@ function assertPng(filePath) {
   return png;
 }
 
-try {
-  fs.mkdirSync(path.join(fixtureRoot, "docs"), { recursive: true });
-  fs.writeFileSync(
-    path.join(fixtureRoot, "docs", "index.org"),
-    "#+TITLE: OpenOrg Test\n\nLocal-first *knowledge* & durable work for people and agents.\n",
-  );
-  fs.writeFileSync(
-    path.join(fixtureRoot, "docs", "guide.org"),
-    "#+TITLE: A deliberately long guide title that must wrap cleanly\n#+DESCRIPTION: A dedicated description for the guide page.\n\nGuide body.\n",
-  );
+function writeProjectConfig(imageFormat, outDir) {
   fs.writeFileSync(
     path.join(fixtureRoot, "org2.json"),
     `${JSON.stringify({
@@ -41,12 +32,12 @@ try {
         projects: {
           website: {
             baseDir: "docs",
-            outDir: "site",
+            outDir,
             include: ["*.org"],
             recursive: true,
             includeDefaultStyle: false,
             openGraph: {
-              imageFormat: "png",
+              imageFormat,
               siteName: "OpenOrg",
               locale: "en_US",
             },
@@ -59,6 +50,19 @@ try {
       },
     }, null, 2)}\n`,
   );
+}
+
+try {
+  fs.mkdirSync(path.join(fixtureRoot, "docs"), { recursive: true });
+  fs.writeFileSync(
+    path.join(fixtureRoot, "docs", "index.org"),
+    "#+TITLE: OpenOrg Test\n\nLocal-first *knowledge* & durable work for people and agents.\n",
+  );
+  fs.writeFileSync(
+    path.join(fixtureRoot, "docs", "guide.org"),
+    "#+TITLE: A deliberately long guide title that must wrap cleanly\n#+DESCRIPTION: A dedicated description for the guide page.\n\nGuide body.\n",
+  );
+  writeProjectConfig("png", "site");
 
   const firstRun = publish();
   assert.equal(firstRun.status, 0, firstRun.stderr || firstRun.stdout);
@@ -91,6 +95,20 @@ try {
   const secondRun = publish();
   assert.equal(secondRun.status, 0, secondRun.stderr || secondRun.stdout);
   assert.deepEqual(fs.readFileSync(homePngPath), firstHomePng, "Open Graph raster output should be deterministic");
+
+  writeProjectConfig("svg", "site-svg");
+  const svgRun = publish();
+  assert.equal(svgRun.status, 0, svgRun.stderr || svgRun.stdout);
+  const homeSvg = fs.readFileSync(path.join(fixtureRoot, "site-svg", "assets", "og", "index.svg"), "utf8");
+  assert.match(homeSvg, /fill="#f2f0e9"/, "social cards should use the site's warm canvas");
+  assert.match(homeSvg, /fill="#fcfbf7"/, "social cards should use the site's paper surface");
+  assert.match(homeSvg, /fill="#18201e"/, "social cards should use the site's ink color");
+  assert.match(homeSvg, /fill="#c2472c">\*<\/text>/, "social cards should use the site's coral Org heading mark");
+  assert.match(homeSvg, />Capture<\/text>/);
+  assert.match(homeSvg, />Delegate<\/text>/);
+  assert.match(homeSvg, />Review<\/text>/);
+  assert.match(homeSvg, />Verify<\/text>/);
+  assert.doesNotMatch(homeSvg, /#09111e|#111d2d|#5eead4/, "social cards must not regress to the old dark tech-card palette");
 } finally {
   fs.rmSync(fixtureRoot, { recursive: true, force: true });
 }
