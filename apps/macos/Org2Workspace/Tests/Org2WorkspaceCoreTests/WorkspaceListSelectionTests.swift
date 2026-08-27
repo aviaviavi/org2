@@ -164,6 +164,27 @@ final class WorkspaceListSelectionTests: XCTestCase {
     XCTAssertTrue(source.contains(#".keyboardShortcut("n", modifiers: [.command])"#))
   }
 
+  func testGlobalSearchFocusWaitsForTheCachedSurfaceToAttach() throws {
+    let testFile = URL(fileURLWithPath: #filePath)
+    let packageRoot = testFile
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+    let contentViewSource = packageRoot
+      .appendingPathComponent("Sources/Org2WorkspaceCore/ContentView.swift")
+    let source = try String(contentsOf: contentViewSource, encoding: .utf8)
+
+    XCTAssertTrue(source.contains(".task(id: store.searchFocusToken)"))
+    XCTAssertTrue(source.contains(
+      """
+      isSearchFocused = false
+            await Task.yield()
+            guard !Task.isCancelled, store.selectedSurface == .search else { return }
+            isSearchFocused = true
+      """
+    ))
+  }
+
   func testAppActivationDoesNotInvalidateTheEntireWorkspaceView() throws {
     let testFile = URL(fileURLWithPath: #filePath)
     let packageRoot = testFile

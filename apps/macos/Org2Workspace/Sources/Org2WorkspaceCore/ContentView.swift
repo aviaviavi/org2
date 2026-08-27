@@ -5885,11 +5885,12 @@ private struct SearchView: View {
     }
     .onAppear {
       searchDraft = store.searchQuery
-      if store.selectedSurface == .search {
-        isSearchFocused = true
-      }
     }
-    .onChange(of: store.searchFocusToken) {
+    .task(id: store.searchFocusToken) {
+      guard store.selectedSurface == .search else { return }
+      isSearchFocused = false
+      await Task.yield()
+      guard !Task.isCancelled, store.selectedSurface == .search else { return }
       isSearchFocused = true
     }
     .onChange(of: store.searchQuery) {
