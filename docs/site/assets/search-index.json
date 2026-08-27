@@ -16,7 +16,7 @@
   {"title":"VS Code","url":"editors-vscode.html","description":"Org2 VS Code extension features and setup."},
   {"title":"Vim / Neovim","url":"editors-vim.html","description":"Org2 Vim and Neovim integration notes."},
   {"title":"Emacs","url":"editors-emacs.html","description":"Using Org2 files from Emacs."},
-  {"title":"Org2 vs Org Mode","url":"org2-vs-org-mode.html","description":"How Org2 compares with GNU Org Mode."},
+  {"title":"Org2 vs Org Mode","url":"org2-vs-org-mode.html","description":"Org Mode and OpenOrg compared: what carries over, where Org remains stronger, and why Org2 exists."},
   {"title":"Org2 vs Markdown","url":"org2-vs-markdown.html","description":"Why Org2 is the obvious choice when Markdown notes become a planning, graph, publishing, and automation corpus."},
   {"title":"Org2 vs Obsidian","url":"org2-vs-obsidian.html","description":"How open-source Org2 compares with Obsidian as a portable compiler/runtime for local knowledge work."},
   {"title":"AI adapters","url":"ai-adapters.html","description":"Provider-agnostic AI adapter concepts for Org2."},
