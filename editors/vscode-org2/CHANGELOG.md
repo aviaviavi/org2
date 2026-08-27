@@ -4,6 +4,12 @@ All notable changes to the Org2 VS Code extension are documented in this file.
 
 ## Unreleased
 
+## 0.5.1 - 2026-08-27
+
+- Coordinated the extension with the OpenOrg 0.5.1 alpha release and current Org2 runtime.
+- Improved node actions, search routing, and approval workflows shared with the OpenOrg apps.
+- Included the latest parser, editor responsiveness, remote-agent, and generated-site reliability fixes.
+
 ## 0.5.0 - 2026-08-24
 
 - Coordinated the extension with the OpenOrg 0.5.0 product launch while preserving the Org2 developer-tooling name and extension identifier.
