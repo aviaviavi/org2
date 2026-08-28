@@ -3,6 +3,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import crypto from "node:crypto";
 import { spawnSync } from "node:child_process";
 
 const repoRoot = path.resolve(import.meta.dirname, "..");
@@ -206,11 +207,18 @@ if (
 if (
   !siteProject?.postambleHtml?.includes("Incubated at")
   || !siteProject?.postambleHtml?.includes('href="https://scarf.sh"')
-  || !siteProject?.postambleHtml?.includes('src="assets/scarf-mark.svg"')
+  || !siteProject?.postambleHtml?.includes('src="assets/scarf-logo.svg"')
   || !siteStyles.includes(".org2-footer-incubator")
-  || !fs.existsSync(path.join(repoRoot, "docs", "site", "assets", "scarf-mark.svg"))
+  || !fs.existsSync(path.join(repoRoot, "docs", "site", "assets", "scarf-logo.svg"))
 ) {
   fail("OpenOrg site footer must retain the styled Scarf incubation credit");
+}
+const scarfLogoPath = path.join(repoRoot, "docs", "site", "assets", "scarf-logo.svg");
+if (fs.existsSync(scarfLogoPath)) {
+  const scarfLogoDigest = crypto.createHash("sha256").update(fs.readFileSync(scarfLogoPath)).digest("hex");
+  if (scarfLogoDigest !== "d31bcbd3fbd1a8c96addc55a86f4c454eff3744837e4357aa247b4ef4fe7eb00") {
+    fail("OpenOrg site footer must use Scarf's official full-color wordmark");
+  }
 }
 
 const publicSourcePages = fs.readdirSync(path.join(repoRoot, "docs", "site"))
@@ -248,7 +256,7 @@ for (const sourcePage of publicSourcePages) {
   if (
     !html.includes('<span>Incubated at</span>')
     || !html.includes('href="https://scarf.sh"')
-    || !html.includes('src="assets/scarf-mark.svg"')
+    || !html.includes('src="assets/scarf-logo.svg"')
   ) {
     fail(`site/${slug}.html is missing the Scarf incubation credit`);
   }

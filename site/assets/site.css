@@ -2736,26 +2736,18 @@ body > .org2-footer .org2-footer-incubator {
 body > .org2-footer .org2-footer-incubator a {
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
-  color: var(--fg);
-  font-size: 1rem;
-  letter-spacing: -0.025em;
   line-height: 1;
   text-decoration: none;
 }
 
 body > .org2-footer .org2-footer-incubator a:hover {
-  color: var(--syntax-keyword);
+  opacity: 0.78;
 }
 
-body > .org2-footer .org2-footer-incubator strong {
-  font-weight: 650;
-}
-
-body > .org2-footer img.org2-footer-scarf-mark {
+body > .org2-footer img.org2-footer-scarf-logo {
   position: static;
-  width: 1.15rem;
-  height: 1.15rem;
+  width: 4.5rem;
+  height: auto;
   opacity: 1;
   pointer-events: none;
 }
