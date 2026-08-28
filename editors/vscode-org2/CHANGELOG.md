@@ -4,6 +4,12 @@ All notable changes to the Org2 VS Code extension are documented in this file.
 
 ## Unreleased
 
+## 0.5.2 - 2026-08-28
+
+- Coordinated the extension with the OpenOrg 0.5.2 alpha release and current Org2 runtime.
+- Added format-on-save defaults and pane-aware list selection shortcuts.
+- Included the latest approval-state, source-sync, AI chat rendering, and local Codex recovery fixes.
+
 ## 0.5.1 - 2026-08-27
 
 - Coordinated the extension with the OpenOrg 0.5.1 alpha release and current Org2 runtime.
