@@ -336,7 +336,12 @@ public actor CodexAppServerClient {
     sshExecutableURL: URL = URL(fileURLWithPath: "/usr/bin/ssh"),
     transport: CodexAppServerTransport = .local,
     requestTimeoutNanoseconds: UInt64 = 30_000_000_000,
-    threadResumeRequestTimeoutNanoseconds: UInt64 = 120_000_000_000,
+    // Codex serializes writers for a native task. When that task is still open
+    // in Codex (or a prior app-server retained its writer), thread/resume does
+    // not currently fail with a lock error; it simply waits. Keep this bound
+    // short so OpenOrg can rebind the chat to a fresh task and carry its own
+    // transcript context forward instead of looking disconnected for minutes.
+    threadResumeRequestTimeoutNanoseconds: UInt64 = 8_000_000_000,
     eventHandler: @escaping EventHandler,
     dynamicToolHandler: @escaping DynamicToolHandler
   ) {
