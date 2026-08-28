@@ -188,6 +188,7 @@ export interface AgentRunOutcome {
 export interface AgentRun {
   schema: typeof ORG2_AGENT_RUN_SCHEMA;
   id: string;
+  title?: string;
   goal: string;
   acceptanceCriteria: string[];
   status: AgentRunStatus;
@@ -225,6 +226,7 @@ export interface AgentRun {
 
 export interface AgentRunCreateInput {
   id?: string;
+  title?: string;
   goal: string;
   acceptanceCriteria?: string[];
   status?: AgentRunStatus;
@@ -415,6 +417,7 @@ export function createAgentRun(input: AgentRunCreateInput): AgentRun {
   const run: AgentRun = {
     schema: ORG2_AGENT_RUN_SCHEMA,
     id,
+    ...(optional(input.title) ? { title: optional(input.title) } : {}),
     goal,
     acceptanceCriteria: unique(input.acceptanceCriteria),
     status,
@@ -477,6 +480,7 @@ export function validateAgentRun(value: unknown): AgentRunValidationResult {
   const run = value as Partial<AgentRun>;
   if (run.schema !== ORG2_AGENT_RUN_SCHEMA) issues.push({ path: "$.schema", message: `must be ${ORG2_AGENT_RUN_SCHEMA}` });
   if (!run.id || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(run.id)) issues.push({ path: "$.id", message: "must be a safe non-empty id" });
+  if (run.title !== undefined && !String(run.title).trim()) issues.push({ path: "$.title", message: "must not be empty when present" });
   if (!String(run.goal || "").trim()) issues.push({ path: "$.goal", message: "must not be empty" });
   if (run.agentRef !== undefined && !String(run.agentRef).trim()) issues.push({ path: "$.agentRef", message: "must not be empty when present" });
   if (run.goalRef !== undefined && !String(run.goalRef).trim()) issues.push({ path: "$.goalRef", message: "must not be empty when present" });
@@ -993,14 +997,16 @@ function todoKeyword(status: AgentRunStatus): string {
 export function renderAgentRunOrg(run: AgentRun): string {
   const validation = validateAgentRun(run);
   if (!validation.valid) throw new Error(`invalid run: ${validation.issues.map((issue) => `${issue.path} ${issue.message}`).join("; ")}`);
+  const title = orgEscape(run.title || run.goal);
   const lines = [
-    `#+TITLE: Run: ${orgEscape(run.goal)}`,
+    `#+TITLE: Run: ${title}`,
     "#+ORG2_KIND: agent-run",
     "",
-    `* ${todoKeyword(run.status)} ${orgEscape(run.goal)} :agent-run:`,
+    `* ${todoKeyword(run.status)} ${title} :agent-run:`,
     ":PROPERTIES:",
     `:ID: ${run.id}`,
     `:KIND: agent-run`,
+    ...(run.title ? [`:RUN_TITLE: ${title}`] : []),
     `:RUN_SCHEMA: ${run.schema}`,
     `:RUN_STATUS: ${run.status}`,
     `:RISK_CLASS: ${run.riskClass}`,
@@ -1106,7 +1112,15 @@ export function agentRunSourceConsistency(
   compare("id", readableRunProperty(raw, "ID"), run.id);
   compare("status", readableRunProperty(raw, "RUN_STATUS"), run.status);
   compare("updatedAt", readableRunProperty(raw, "UPDATED_AT"), run.updatedAt);
-  compare("title", /^#\+TITLE:\s*Run:\s*(.*?)\s*$/im.exec(raw)?.[1]?.trim(), orgEscape(run.goal));
+  const canonicalTitle = orgEscape(run.title || run.goal);
+  const projectedTitles = [
+    /^#\+TITLE:\s*Run:\s*(.*?)\s*$/im.exec(raw)?.[1]?.trim(),
+    readableRunProperty(raw, "RUN_TITLE"),
+  ].filter((value): value is string => value !== undefined);
+  const mismatchedTitle = projectedTitles.find((value) => value !== canonicalTitle);
+  if (mismatchedTitle !== undefined) {
+    issues.push({ field: "title", readable: mismatchedTitle, canonical: canonicalTitle });
+  }
   compare("goal", /^\*\* Goal\s*\r?\n([\s\S]*?)(?=\r?\n\*\* )/m.exec(raw)?.[1]?.trim(), run.goal.trim());
   const approvalSummary = /^\*\* Approvals \[(\d+)\/(\d+) pending\]\s*$/im.exec(raw);
   compare(

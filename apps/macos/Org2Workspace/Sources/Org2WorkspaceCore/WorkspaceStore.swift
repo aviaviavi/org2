@@ -2129,6 +2129,7 @@ public final class WorkspaceStore: ObservableObject {
     _ note: String?
   ) async throws -> AgentRunItem)?
   var agentRunListLoaderForTesting: (() async throws -> [AgentRunItem])?
+  var agentRunDetailLoaderForTesting: ((_ runID: String) async throws -> AgentRunItem)?
   var deferredAgentRunsRefreshDelayNanoseconds: UInt64 = 1_000_000_000
   var agentRunApprovalContinuationForTesting: ((
     _ run: AgentRunItem
@@ -4212,6 +4213,7 @@ public final class WorkspaceStore: ObservableObject {
     if updatesStatus {
       statusText = "Scanning approvals..."
     }
+    let runDetailIDsBeforeRefresh = approvalRunDetailIDsForRefresh()
 
     do {
       do {
@@ -4231,6 +4233,17 @@ public final class WorkspaceStore: ObservableObject {
           approvalItems = nextApprovalItems
         }
         syncApprovalSelectionAfterRefresh()
+        let detailError = await refreshApprovalRunDetails(
+          runDetailIDsBeforeRefresh.union(approvalRunDetailIDsForRefresh())
+        )
+        if let detailError {
+          approvalLoadErrorText = detailError
+          errorText = detailError
+          if updatesStatus {
+            statusText = "Approval details failed to refresh"
+          }
+          return
+        }
         if updatesStatus {
           statusText = "\(payload.count) approval\(payload.count == 1 ? "" : "s")"
         }
@@ -4303,6 +4316,17 @@ public final class WorkspaceStore: ObservableObject {
         approvalItems = nextApprovalItems
       }
       syncApprovalSelectionAfterRefresh()
+      let detailError = await refreshApprovalRunDetails(
+        runDetailIDsBeforeRefresh.union(approvalRunDetailIDsForRefresh())
+      )
+      if let detailError {
+        approvalLoadErrorText = detailError
+        errorText = detailError
+        if updatesStatus {
+          statusText = "Approval details failed to refresh"
+        }
+        return
+      }
       if updatesStatus {
         statusText = "\(approvalItems.count) approval\(approvalItems.count == 1 ? "" : "s")"
       }
@@ -4313,6 +4337,70 @@ public final class WorkspaceStore: ObservableObject {
         statusText = "Approvals failed"
       }
     }
+  }
+
+  private func approvalRunDetailIDsForRefresh() -> Set<AgentRunItem.ID> {
+    var runIDs = Set<AgentRunItem.ID>()
+    if let presentedAgentRunID {
+      runIDs.insert(presentedAgentRunID)
+    }
+    if let selectedApprovalItemID,
+       let selectedItem = approvalItems.first(where: { $0.id == selectedApprovalItemID }),
+       let runID = selectedItem.runId {
+      runIDs.insert(runID)
+    }
+    return runIDs
+  }
+
+  private func refreshApprovalRunDetails(
+    _ runIDs: Set<AgentRunItem.ID>
+  ) async -> String? {
+    guard !runIDs.isEmpty, let corpusRoot else { return nil }
+
+    var refreshedRuns: [AgentRunItem] = []
+    refreshedRuns.reserveCapacity(runIDs.count)
+    for runID in runIDs.sorted() {
+      guard !mutatingAgentRunIDs.contains(runID) else { continue }
+      do {
+        let run: AgentRunItem
+        if let agentRunDetailLoaderForTesting {
+          run = try await agentRunDetailLoaderForTesting(runID)
+        } else {
+          run = try await cli.runJSON([
+            "run", "show", runID,
+            "--dir", corpusRoot.path,
+            "--json"
+          ])
+        }
+        refreshedRuns.append(run)
+      } catch {
+        return "The approval list refreshed, but run \(runID) did not: \(error.localizedDescription)"
+      }
+    }
+    guard !Task.isCancelled, !refreshedRuns.isEmpty else { return nil }
+
+    var nextRuns = agentRuns
+    for refreshedRun in refreshedRuns {
+      if let index = nextRuns.firstIndex(where: { $0.id == refreshedRun.id }) {
+        nextRuns[index] = refreshedRun
+      } else {
+        nextRuns.insert(refreshedRun, at: 0)
+      }
+    }
+    if nextRuns != agentRuns {
+      agentRuns = nextRuns
+    }
+
+    if runsAndReviewPage == .review,
+       selectedSurface == .approvals,
+       let selectedApprovalItemID,
+       let selectedItem = approvalItems.first(where: { $0.id == selectedApprovalItemID }),
+       let runID = selectedItem.runId,
+       let run = agentRuns.first(where: { $0.id == runID }) {
+      selectAgentRun(run)
+      self.selectedApprovalItemID = selectedItem.id
+    }
+    return nil
   }
 
   public func refreshRunReviewData() async {

@@ -3889,7 +3889,7 @@ private struct RunCenterRow: View {
             .font(.caption2.weight(.semibold)).foregroundStyle(.orange)
         }
       }
-      Text(run.goal).font(.body.weight(.semibold)).lineLimit(2)
+      Text(run.displayTitle).font(.body.weight(.semibold)).lineLimit(2)
       HStack(spacing: 8) {
         Text(run.progressText)
         if let workflow = run.workflowDisplayName {
@@ -3977,7 +3977,7 @@ private struct RunCenterDetail: View {
             Spacer(minLength: 8)
             DetailPaneControlGroup()
           }
-          Text(run.goal).font(.title2.weight(.semibold)).textSelection(.enabled)
+          Text(run.displayTitle).font(.title2.weight(.semibold)).textSelection(.enabled)
           Text("Updated \(AgentRunTimestampPresentation.displayText(for: run.updatedAt))")
             .font(.caption)
             .foregroundStyle(.secondary)
@@ -4003,7 +4003,7 @@ private struct RunCenterDetail: View {
               } label: {
                 HStack(alignment: .top, spacing: 8) {
                   StatusPill(text: relatedRun.status)
-                  Text(relatedRun.goal)
+                  Text(relatedRun.displayTitle)
                     .font(.callout.weight(.medium))
                     .multilineTextAlignment(.leading)
                   Spacer(minLength: 8)

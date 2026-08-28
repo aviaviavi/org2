@@ -72,6 +72,98 @@ final class AgentRunModelsTests: XCTestCase {
     XCTAssertEqual(WorkspaceStore.runReviewAutoRefreshIntervalNanoseconds, 60_000_000_000)
   }
 
+  @MainActor
+  func testApprovalRefreshReloadsSelectedRunDetailWithoutScanningRunArchive() async throws {
+    let workspace = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-approval-detail-refresh-\(UUID().uuidString)", isDirectory: true)
+    let repoRoot = workspace.appendingPathComponent("repo", isDirectory: true)
+    let dist = repoRoot.appendingPathComponent("dist", isDirectory: true)
+    let corpus = workspace.appendingPathComponent("corpus", isDirectory: true)
+    try FileManager.default.createDirectory(at: dist, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: corpus, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: workspace) }
+
+    let staleRun = try makeRun(
+      id: "revised-draft-run",
+      status: "waiting-approval",
+      pendingApproval: true,
+      approvalAction: "Send the older draft.",
+      updatedAt: "2026-08-28T16:00:00.000Z"
+    )
+    let currentRun = try makeRun(
+      id: staleRun.id,
+      status: "waiting-approval",
+      pendingApproval: true,
+      approvalAction: "Send the latest revised draft.",
+      updatedAt: "2026-08-28T16:05:00.000Z"
+    )
+    let staleApproval = try XCTUnwrap(staleRun.approvals.first)
+    let currentApproval = try XCTUnwrap(currentRun.approvals.first)
+    let staleQueueItem = approvalQueueItem(
+      run: staleRun,
+      approval: staleApproval,
+      root: corpus
+    )
+
+    let queuePayload: [String: Any] = [
+      "count": 1,
+      "items": [[
+        "kind": "run",
+        "title": currentApproval.title,
+        "status": currentApproval.status,
+        "file": corpus.appendingPathComponent(".org2/runs/\(currentRun.id).org2").path,
+        "line": 1,
+        "idValue": currentApproval.id,
+        "properties": [:],
+        "body": currentApproval.action,
+        "tags": [],
+        "approvalId": currentApproval.id,
+        "action": currentApproval.action,
+        "riskClass": currentApproval.riskClass,
+        "requestedAt": currentApproval.requestedAt,
+        "runId": currentRun.id,
+        "runGoal": currentRun.goal,
+        "runStatus": currentRun.status,
+        "runPendingApprovalCount": currentRun.pendingApprovalCount,
+        "runApprovalCount": currentRun.approvals.count,
+      ]]
+    ]
+    let queueData = try JSONSerialization.data(withJSONObject: queuePayload)
+    let queueBase64 = queueData.base64EncodedString()
+    try """
+    process.stdout.write(Buffer.from("\(queueBase64)", "base64").toString("utf8"));
+    """.write(to: dist.appendingPathComponent("cli.js"), atomically: true, encoding: .utf8)
+
+    let store = WorkspaceStore(cli: Org2CLI(repoRoot: repoRoot))
+    store.setCorpusRoot(corpus, persistsDefault: false)
+    store.runsAndReviewPage = .review
+    store.replaceAgentRunsForTesting([staleRun])
+    store.replaceApprovalItemsForTesting([staleQueueItem])
+    store.selectApprovalItem(staleQueueItem)
+
+    var detailRefreshCount = 0
+    store.agentRunDetailLoaderForTesting = { runID in
+      detailRefreshCount += 1
+      XCTAssertEqual(runID, currentRun.id)
+      return currentRun
+    }
+    var archiveRefreshCount = 0
+    store.agentRunListLoaderForTesting = {
+      archiveRefreshCount += 1
+      return [currentRun]
+    }
+
+    await store.refreshApprovals(updatesStatus: true)
+
+    XCTAssertEqual(detailRefreshCount, 1)
+    XCTAssertEqual(archiveRefreshCount, 0)
+    XCTAssertEqual(store.approvalItems.first?.action, "Send the latest revised draft.")
+    XCTAssertEqual(
+      store.presentedAgentRun?.actionablePendingApprovals.first?.action,
+      "Send the latest revised draft."
+    )
+  }
+
   func testDecodesGoalAndAgentProfileCatalogs() throws {
     let goalPayload = try JSONDecoder().decode(AgentGoalListPayload.self, from: Data(#"""
     {

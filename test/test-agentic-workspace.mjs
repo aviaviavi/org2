@@ -117,6 +117,33 @@ try {
   const afterGuardedUpdate = loadAgentRunSnapshot(root, guardedRun.id);
   assert.equal(afterGuardedUpdate.run.comments.length, 1);
 
+  let titledRun = createAgentRun({
+    id: "custom-title-approval",
+    title: "Prepare a concise owner review",
+    goal: "Research the account and draft a safe owner-review packet",
+  });
+  titledRun = transitionAgentRun(titledRun, "running");
+  titledRun = requestAgentRunApproval(titledRun, {
+    id: "custom-title-decision",
+    title: "Approve the concise review",
+    action: "send the reviewed packet",
+    riskClass: "external-action",
+    requestedRole: "owner",
+  });
+  saveAgentRun(root, titledRun);
+  const titledSnapshot = loadAgentRunSnapshot(root, titledRun.id);
+  assert.deepEqual(titledSnapshot.sourceIssues, []);
+  const titledDecision = spawnSync(process.execPath, [
+    path.resolve("dist/cli.js"), "run", "approval-decide", titledRun.id, "custom-title-decision",
+    "--decision", "approved", "--actor", "Avi", "--role", "owner",
+    "--fingerprint", titledRun.approvals[0].fingerprint,
+    "--dir", root, "--json",
+  ], { encoding: "utf8" });
+  assert.equal(titledDecision.status, 0, titledDecision.stderr || titledDecision.stdout);
+  assert.equal(loadAgentRun(root, titledRun.id).title, titledRun.title);
+  assert.match(loadAgentRunSnapshot(root, titledRun.id).raw, /^:RUN_TITLE: Prepare a concise owner review$/m);
+  fs.unlinkSync(path.join(root, ".org2", "runs", `${titledRun.id}.org2`));
+
   const wrongRevision = spawnSync(process.execPath, [
     path.resolve("dist/cli.js"), "run", "comment", guardedRun.id,
     "--author", "test", "--body", "Must not overwrite", "--if-revision", "sha256:stale", "--dir", root,

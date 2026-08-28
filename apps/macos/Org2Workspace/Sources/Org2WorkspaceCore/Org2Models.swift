@@ -375,6 +375,7 @@ public struct AgentWorkflowItem: Identifiable, Decodable, Hashable, Sendable {
 
 public struct AgentRunItem: Identifiable, Decodable, Hashable, Sendable {
   public let id: String
+  public let title: String?
   public let goal: String
   public let acceptanceCriteria: [String]
   public let status: String
@@ -404,6 +405,11 @@ public struct AgentRunItem: Identifiable, Decodable, Hashable, Sendable {
   public let completedAt: String?
   public let blockedReason: String?
   public let failure: String?
+
+  public var displayTitle: String {
+    let title = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    return title.isEmpty ? goal : title
+  }
 
   public var pendingApprovalCount: Int { pendingApprovals.count }
   public var currentApprovalBoundary: [AgentRunApprovalItem] {
@@ -618,6 +624,7 @@ public struct AgentRunItem: Identifiable, Decodable, Hashable, Sendable {
   var runFilterText: String {
     var values = [
       id,
+      title,
       goal,
       status,
       riskClass,
