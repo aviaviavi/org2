@@ -2329,7 +2329,11 @@ private struct RenderedTableView: View {
                       rowIndex: visibleRow.index
                     ))
                     .overlay(alignment: .trailing) {
-                      Divider()
+                      if columnIndex != columnWindow.visibleColumns.last {
+                        Rectangle()
+                          .fill(Color.secondary.opacity(0.18))
+                          .frame(width: 1)
+                      }
                     }
                 }
               }

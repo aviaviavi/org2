@@ -609,6 +609,14 @@ final class OpenClawChatLayoutTests: XCTestCase {
       renderedTableSource.contains(".overlay(alignment: .bottom)"),
       "Cell rows must not paint implicit horizontal dividers through AI chat table text"
     )
+    XCTAssertFalse(
+      renderedTableSource.contains("Divider()"),
+      "Table cell separators must declare a vertical shape instead of relying on Divider orientation"
+    )
+    XCTAssertTrue(
+      renderedTableSource.contains(".frame(width: 1)"),
+      "Table columns should retain an explicitly vertical separator"
+    )
     XCTAssertTrue(
       renderedTableSource.contains("case .separator:"),
       "Explicit Org table hlines should remain visible"
