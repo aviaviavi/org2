@@ -590,6 +590,31 @@ final class OpenClawChatLayoutTests: XCTestCase {
     )
   }
 
+  func testAssistantTablesOnlyDrawExplicitOrgHorizontalRules() throws {
+    let testFile = URL(fileURLWithPath: #filePath)
+    let packageRoot = testFile
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+    let tableSource = packageRoot
+      .appendingPathComponent("Sources/Org2WorkspaceCore/OrgDocumentRenderedBlocks.swift")
+    let source = try String(contentsOf: tableSource, encoding: .utf8)
+    let tableStart = try XCTUnwrap(source.range(of: "private struct RenderedTableView: View"))
+    let tableEnd = try XCTUnwrap(
+      source.range(of: "private struct RenderedTableAvailableWidthKey", range: tableStart.upperBound..<source.endIndex)
+    )
+    let renderedTableSource = source[tableStart.lowerBound..<tableEnd.lowerBound]
+
+    XCTAssertFalse(
+      renderedTableSource.contains(".overlay(alignment: .bottom)"),
+      "Cell rows must not paint implicit horizontal dividers through AI chat table text"
+    )
+    XCTAssertTrue(
+      renderedTableSource.contains("case .separator:"),
+      "Explicit Org table hlines should remain visible"
+    )
+  }
+
   func testAssistantTableColumnsFitOrdinaryFourColumnChatTables() {
     let rows: [OrgTableRow] = [
       .cells(["Line item", "Monthly quantity", "Unit price", "Annual reference"]),

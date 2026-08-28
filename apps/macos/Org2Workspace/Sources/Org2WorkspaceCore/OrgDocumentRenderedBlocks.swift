@@ -2333,10 +2333,6 @@ private struct RenderedTableView: View {
                     }
                 }
               }
-              .overlay(alignment: .bottom) {
-                Divider()
-                  .opacity(table.headerRowIndex == visibleRow.index ? 0 : 0.65)
-              }
             case .separator:
               Rectangle()
                 .fill(separatorColor(rowIndex: visibleRow.index))
