@@ -9399,6 +9399,64 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testManualApprovalRefreshQueuesBehindBackgroundRefresh() async throws {
+    let workspace = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-manual-approval-refresh-\(UUID().uuidString)", isDirectory: true)
+    let repoRoot = workspace.appendingPathComponent("repo", isDirectory: true)
+    let dist = repoRoot.appendingPathComponent("dist", isDirectory: true)
+    let corpus = workspace.appendingPathComponent("corpus", isDirectory: true)
+    try FileManager.default.createDirectory(at: dist, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: corpus, withIntermediateDirectories: true)
+    let note = corpus.appendingPathComponent("approvals.org2")
+    let state = workspace.appendingPathComponent("approval-state.txt")
+    try "* TODO Review thing\n".write(to: note, atomically: true, encoding: .utf8)
+    let encodedPath = String(data: try JSONEncoder().encode(note.path), encoding: .utf8)!
+    try """
+    const fs = require("fs");
+    const state = "\(state.path)";
+    const count = fs.existsSync(state) ? Number(fs.readFileSync(state, "utf8")) + 1 : 1;
+    fs.writeFileSync(state, String(count));
+    const payload = {
+      count: 1,
+      items: [{
+        title: count < 3 ? "Existing approval" : "New approval",
+        status: "review-required",
+        todo: "TODO",
+        level: 1,
+        file: \(encodedPath),
+        line: 1,
+        idValue: "approval-1",
+        properties: { ID: "approval-1", REVIEW_STATUS: "review-required" },
+        body: "Review body.",
+        tags: []
+      }]
+    };
+    setTimeout(() => {
+      process.stdout.write(JSON.stringify(payload));
+    }, count === 2 ? 350 : 0);
+    """.write(to: dist.appendingPathComponent("cli.js"), atomically: true, encoding: .utf8)
+
+    let store = WorkspaceStore(cli: Org2CLI(repoRoot: repoRoot))
+    store.setCorpusRoot(corpus)
+    await store.refreshApprovals(updatesStatus: true)
+    XCTAssertEqual(store.approvalItems.map(\.title), ["Existing approval"])
+
+    let backgroundRefresh = Task { await store.refreshApprovals() }
+    try await Task.sleep(nanoseconds: 100_000_000)
+    await store.refreshApprovals(updatesStatus: true)
+
+    XCTAssertTrue(store.isLoadingApprovals)
+    XCTAssertEqual(store.statusText, "Refreshing approvals next...")
+
+    await backgroundRefresh.value
+    try await waitForCondition {
+      store.approvalItems.map(\.title) == ["New approval"]
+        && (try? String(contentsOf: state, encoding: .utf8)) == "3"
+        && !store.isLoadingApprovals
+    }
+  }
+
+  @MainActor
   func testReviewPageRefreshLoadsOnlyApprovals() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-local-approval-refresh-\(UUID().uuidString)", isDirectory: true)

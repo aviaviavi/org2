@@ -2178,6 +2178,7 @@ public final class WorkspaceStore: ObservableObject {
   private var preservesSelectedRenderedBlocksMetadataForNextAssignment = false
   private var isRefreshingAgenda = false
   private var isRefreshingApprovals = false
+  private var approvalRefreshRequestedAfterCurrent = false
   private var isRefreshingAgentRuns = false
   private var isRefreshingAgentWorkflows = false
   private var isRefreshingAgentGoals = false
@@ -2861,6 +2862,7 @@ public final class WorkspaceStore: ObservableObject {
     sourceEditorSelection = NSRange(location: 0, length: 0)
     isRefreshingAgenda = false
     isRefreshingApprovals = false
+    approvalRefreshRequestedAfterCurrent = false
     isRefreshingAgentRuns = false
     isRefreshingAgentWorkflows = false
     isRefreshingAgentGoals = false
@@ -4131,7 +4133,9 @@ public final class WorkspaceStore: ObservableObject {
   public func refreshApprovals(updatesStatus: Bool = false) async {
     guard !isRefreshingApprovals else {
       if updatesStatus {
-        statusText = "Approvals already refreshing"
+        approvalRefreshRequestedAfterCurrent = true
+        isLoadingApprovals = true
+        statusText = "Refreshing approvals next..."
       }
       return
     }
@@ -4151,9 +4155,16 @@ public final class WorkspaceStore: ObservableObject {
     }
     errorText = nil
     defer {
+      let shouldRefreshAgain = approvalRefreshRequestedAfterCurrent
+      approvalRefreshRequestedAfterCurrent = false
       isRefreshingApprovals = false
       hasCompletedApprovalsLoad = true
-      if showsLoading {
+      if shouldRefreshAgain {
+        isLoadingApprovals = true
+        Task { @MainActor [weak self] in
+          await self?.refreshApprovals(updatesStatus: true)
+        }
+      } else if showsLoading {
         isLoadingApprovals = false
       }
     }

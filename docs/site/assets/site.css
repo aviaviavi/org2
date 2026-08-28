@@ -2693,6 +2693,9 @@ body #content {
 
 body > .org2-footer {
   position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 0.75rem;
   width: min(100%, 78rem);
   max-width: 78rem;
   margin: 6rem auto 0;
@@ -2702,6 +2705,7 @@ body > .org2-footer {
   font-family: var(--font-mono);
   font-size: 0.68rem;
   letter-spacing: 0.05em;
+  text-align: center;
   text-transform: uppercase;
 }
 
@@ -2716,6 +2720,48 @@ body > .org2-footer::before {
 
 body > .org2-footer p {
   margin: 0;
+}
+
+body > .org2-footer .org2-footer-incubator {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: var(--muted);
+  font-family: var(--font-sans);
+  font-size: 0.78rem;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+body > .org2-footer .org2-footer-incubator a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--fg);
+  font-size: 1rem;
+  letter-spacing: -0.025em;
+  line-height: 1;
+  text-decoration: none;
+}
+
+body > .org2-footer .org2-footer-incubator a:hover {
+  color: var(--syntax-keyword);
+}
+
+body > .org2-footer .org2-footer-incubator strong {
+  font-weight: 650;
+}
+
+body > .org2-footer img.org2-footer-scarf-mark {
+  position: static;
+  width: 1.15rem;
+  height: 1.15rem;
+  opacity: 1;
+  pointer-events: none;
+}
+
+body > .org2-footer .org2-footer-tagline {
+  color: var(--quiet);
 }
 
 @media (max-width: 920px) {

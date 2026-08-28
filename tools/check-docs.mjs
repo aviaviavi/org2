@@ -203,6 +203,15 @@ if (
 ) {
   fail("docs-site publishing must retain branded PNG Open Graph output");
 }
+if (
+  !siteProject?.postambleHtml?.includes("Incubated at")
+  || !siteProject?.postambleHtml?.includes('href="https://scarf.sh"')
+  || !siteProject?.postambleHtml?.includes('src="assets/scarf-mark.svg"')
+  || !siteStyles.includes(".org2-footer-incubator")
+  || !fs.existsSync(path.join(repoRoot, "docs", "site", "assets", "scarf-mark.svg"))
+) {
+  fail("OpenOrg site footer must retain the styled Scarf incubation credit");
+}
 
 const publicSourcePages = fs.readdirSync(path.join(repoRoot, "docs", "site"))
   .filter((name) => /\.org2?$/i.test(name))
@@ -235,6 +244,13 @@ for (const sourcePage of publicSourcePages) {
   ];
   for (const entry of requiredHeadEntries) {
     if (!html.includes(entry)) fail(`site/${slug}.html is missing required social metadata: ${entry}`);
+  }
+  if (
+    !html.includes('<span>Incubated at</span>')
+    || !html.includes('href="https://scarf.sh"')
+    || !html.includes('src="assets/scarf-mark.svg"')
+  ) {
+    fail(`site/${slug}.html is missing the Scarf incubation credit`);
   }
   if (!fs.existsSync(pngPath)) {
     fail(`Open Graph image is missing: site/assets/og/${slug}.png`);
