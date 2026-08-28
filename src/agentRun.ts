@@ -7,6 +7,7 @@ import {
   type GuardedFileWriteOptions,
 } from "./guardedFile.js";
 import { parseHeadlineTitleForRoam } from "./headlineTitle.js";
+import { defaultRunApprovalIndexPath } from "./indexPaths.js";
 import { safeIdentifier } from "./safeIdentifier.js";
 
 export const ORG2_AGENT_RUN_SCHEMA = "org2:agent-run:v1" as const;
@@ -1179,33 +1180,126 @@ export function listAgentRuns(corpusRoot: string): AgentRun[] {
   return listAgentRunSnapshots(corpusRoot).map((snapshot) => snapshot.run);
 }
 
+type AgentRunApprovalIndexEntry = {
+  file: string;
+  modifiedMs: number;
+  byteCount: number;
+  run: AgentRun | null;
+};
+
+type AgentRunApprovalIndex = {
+  $schema: "org2:run-approval-index:v1";
+  version: 1;
+  rootDir: string;
+  entries: AgentRunApprovalIndexEntry[];
+};
+
+function readAgentRunApprovalIndex(corpusRoot: string): AgentRunApprovalIndex | null {
+  const rootDir = path.resolve(corpusRoot);
+  try {
+    const parsed = JSON.parse(fs.readFileSync(defaultRunApprovalIndexPath(rootDir), "utf8")) as AgentRunApprovalIndex;
+    if (
+      parsed.$schema !== "org2:run-approval-index:v1"
+      || parsed.version !== 1
+      || path.resolve(parsed.rootDir) !== rootDir
+      || !Array.isArray(parsed.entries)
+    ) return null;
+    for (const entry of parsed.entries) {
+      if (
+        !entry
+        || typeof entry.file !== "string"
+        || !Number.isFinite(entry.modifiedMs)
+        || !Number.isFinite(entry.byteCount)
+        || (entry.run !== null && !validateAgentRun(entry.run).valid)
+      ) return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writeAgentRunApprovalIndex(corpusRoot: string, entries: AgentRunApprovalIndexEntry[]): void {
+  const rootDir = path.resolve(corpusRoot);
+  const outputPath = defaultRunApprovalIndexPath(rootDir);
+  const temporaryPath = `${outputPath}.${process.pid}.${crypto.randomUUID()}.tmp`;
+  try {
+    fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+    const index: AgentRunApprovalIndex = {
+      $schema: "org2:run-approval-index:v1",
+      version: 1,
+      rootDir,
+      entries,
+    };
+    fs.writeFileSync(temporaryPath, `${JSON.stringify(index)}\n`, "utf8");
+    fs.renameSync(temporaryPath, outputPath);
+  } catch {
+    // The index is disposable. Approval discovery remains correct if the
+    // machine-local index directory is unavailable or a concurrent writer wins.
+  } finally {
+    try {
+      if (fs.existsSync(temporaryPath)) fs.unlinkSync(temporaryPath);
+    } catch {
+      // Best-effort cleanup for a disposable cache file.
+    }
+  }
+}
+
 /**
  * Loads only durable runs that can affect the unified approval queue.
  *
  * Run records carry a readable approval-count projection before the canonical
- * JSON block. Most automated runs never request approval, so parsing and
- * validating every machine-state block makes `org2 approvals` scale with the
- * entire run history instead of the much smaller decision history. Older
- * records without the projection still fall back to a full parse.
+ * JSON block. A machine-local index fingerprints every durable run and retains
+ * the parsed records that have approvals, so a warm queue refresh opens only
+ * changed run files instead of rereading the entire run history. Older records
+ * without the projection still fall back to a full parse.
  */
 export function listAgentRunsWithApprovals(corpusRoot: string): AgentRun[] {
   const dir = agentRunDirectory(corpusRoot);
   if (!fs.existsSync(dir)) return [];
 
-  return fs.readdirSync(dir, { withFileTypes: true })
+  const previous = readAgentRunApprovalIndex(corpusRoot);
+  const previousByFile = new Map((previous?.entries || []).map((entry) => [entry.file, entry]));
+  let changed = previous === null;
+  const entries = fs.readdirSync(dir, { withFileTypes: true })
     .filter((entry) => entry.isFile() && entry.name.endsWith(".org2"))
-    .flatMap((entry): AgentRun[] => {
+    .map((entry): AgentRunApprovalIndexEntry | null => {
       const file = path.join(dir, entry.name);
+      let stat: fs.Stats;
+      try {
+        stat = fs.statSync(file);
+      } catch {
+        changed = true;
+        return null;
+      }
+      if (!stat.isFile()) return null;
+      const modifiedMs = Math.trunc(stat.mtimeMs);
+      const cached = previousByFile.get(file);
+      if (cached && cached.modifiedMs === modifiedMs && cached.byteCount === stat.size) {
+        return cached;
+      }
+
+      changed = true;
       const raw = fs.readFileSync(file, "utf8");
       const summary = /^\*\* Approvals \[\d+\/(\d+) pending\]\s*$/im.exec(raw);
-      if (summary && Number(summary[1]) === 0) return [];
+      if (summary && Number(summary[1]) === 0) {
+        return { file, modifiedMs, byteCount: stat.size, run: null };
+      }
 
       const run = parseAgentRunOrg(raw);
-      if (run.approvals.length === 0) return [];
-      // Ignore Syncthing conflict copies and other non-canonical projections.
-      if (file !== agentRunPath(corpusRoot, run.id)) return [];
-      return [run];
+      const canonicalRun = run.approvals.length > 0 && file === agentRunPath(corpusRoot, run.id)
+        ? run
+        : null;
+      return { file, modifiedMs, byteCount: stat.size, run: canonicalRun };
     })
+    .filter((entry): entry is AgentRunApprovalIndexEntry => entry !== null)
+    .sort((a, b) => a.file.localeCompare(b.file));
+
+  if (entries.length !== previousByFile.size) changed = true;
+  if (changed) writeAgentRunApprovalIndex(corpusRoot, entries);
+
+  return entries
+    .flatMap((entry) => entry.run ? [entry.run] : [])
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id));
 }
 

@@ -36,6 +36,7 @@ import {
   agentRunApprovalDecisionKeys,
   agentRunPath,
   currentAgentRunApprovalBoundary,
+  loadAgentRun,
   listAgentRunsWithApprovals,
   type AgentRun,
 } from "./agentRun.js";
@@ -777,6 +778,7 @@ type ApprovalQueuePayload = {
   };
   skippedCandidates?: number;
   items: ApprovalQueueItem[];
+  runDetails?: AgentRun[];
 };
 
 type ApprovalQueueCandidate = {
@@ -8570,6 +8572,7 @@ async function main(): Promise<void> {
 
   // Approval queue
   let approvalsFormat: "text" | "json" = "text";
+  let approvalRunDetailIDs: string[] = [];
 
   // Rebuildable local indexes
   let indexFormat: "text" | "json" = "text";
@@ -9878,6 +9881,12 @@ async function main(): Promise<void> {
         }
         i++;
       }
+    } else if (arg === "--run-detail" && command === "approvals") {
+      i++;
+      if (i < args.length) {
+        approvalRunDetailIDs.push(args[i]!);
+        i++;
+      }
     } else if (arg === "--context") {
       i++;
       if (i < args.length) {
@@ -10237,7 +10246,7 @@ Core commands:
   org2 eval <run|fixture> RUN [options]
   org2 agenda --dir DIR [--recursive] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--tui]
   org2 todo <set|toggle|assign|approve> --file FILE (--line N | --pos LINE[:COL]) [--apply]
-  org2 approvals --dir DIR [--recursive] [--include-archives] [--index auto|never|rebuild] [--format text|json]
+  org2 approvals --dir DIR [--recursive] [--include-archives] [--index auto|never|rebuild] [--run-detail ID] [--format text|json]
   org2 plan <set|today> --file FILE (--line N | --pos LINE[:COL]) [--apply]
   org2 crypt <encrypt|decrypt|reencrypt> --file FILE (--line N | --pos LINE[:COL]) [--passphrase PASS] [--recipient USER]... [--recipient-file FILE]... [--default-recipient-self] [--gpg-program PATH] [--gpg-timeout SECONDS] [--apply]
   org2 capture --file FILE --title TITLE [--template note|task] [--apply]
@@ -10288,7 +10297,7 @@ Roam / IDs:
 Maintenance / health:
   org2 doctor [--dir CORPUS] [--json]
   org2 index [--dir DIR] [--recursive] [--include-archives] [--file FILE|--files FILE ...] [--incremental] [--format text|json]
-  org2 approvals [--dir DIR] [--recursive] [--include-archives] [--file FILE|--files FILE ...] [--index auto|never|rebuild] [--format text|json]
+  org2 approvals [--dir DIR] [--recursive] [--include-archives] [--file FILE|--files FILE ...] [--index auto|never|rebuild] [--run-detail ID] [--format text|json]
   org2 compile corpus [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--out FILE] [--format json|jsonl] [--incremental] [--cache FILE]
   org2 ai validate-job --job FILE [--format text|json]
   org2 ai run --job FILE [--out FILE] [--apply] [--format text|json]
@@ -10374,6 +10383,7 @@ Flags:
   --recursive         Recurse into subdirectories
   --include-archives  Include archive files/directories
   --index MODE        auto (default), never, or rebuild. Auto uses a fresh search index or rebuilds it.
+  --run-detail ID     Include the current full run in JSON output; repeatable
   --format text|json  Output format`;
   } else if (command === "plan") {
     text = `org2 plan ${options.planAction}
@@ -13339,12 +13349,16 @@ Flags:
     }
 
     const sortedItems = unifiedPendingApprovalItems(approvalCandidates);
+    const runByID = new Map(runs.map((run) => [run.id, run]));
+    const runDetails = Array.from(new Set(approvalRunDetailIDs))
+      .map((runID) => runByID.get(runID) || loadAgentRun(rootDir, runID));
     const payload: ApprovalQueuePayload = {
       $schema: "org2:approvals:v2",
       count: sortedItems.length,
       index: indexStatus,
       ...(skippedCandidates > 0 ? { skippedCandidates } : {}),
       items: sortedItems,
+      ...(runDetails.length > 0 ? { runDetails } : {}),
     };
 
     if (approvalsFormat === "json") {

@@ -806,6 +806,7 @@ private struct SearchIndexBuildPayload: Decodable {
 private struct ApprovalPayload: Decodable {
   let count: Int
   let items: [ApprovalItem]
+  let runDetails: [AgentRunItem]?
 }
 
 private struct WorkspaceSearchIndex: Decodable {
@@ -4225,12 +4226,16 @@ public final class WorkspaceStore: ObservableObject {
 
     do {
       do {
-        let payload: ApprovalPayload = try await cli.runJSON([
+        var arguments = [
           "approvals",
           "--dir", corpusRoot.path,
           "--recursive",
           "--format", "json"
-        ])
+        ]
+        for runID in runDetailIDsBeforeRefresh.sorted() {
+          arguments.append(contentsOf: ["--run-detail", runID])
+        }
+        let payload: ApprovalPayload = try await cli.runJSON(arguments)
         let nextApprovalItems = Self.sortedApprovalItems(payload.items)
         let currentApprovalItems = approvalItems
         let approvalsChanged = await Task.detached(priority: .utility) {
@@ -4241,8 +4246,13 @@ public final class WorkspaceStore: ObservableObject {
           approvalItems = nextApprovalItems
         }
         syncApprovalSelectionAfterRefresh()
+        let inlineRunDetails = payload.runDetails ?? []
+        applyRefreshedApprovalRuns(inlineRunDetails)
+        let inlineRunDetailIDs = Set(inlineRunDetails.map(\.id))
         let detailError = await refreshApprovalRunDetails(
-          runDetailIDsBeforeRefresh.union(approvalRunDetailIDsForRefresh())
+          runDetailIDsBeforeRefresh
+            .union(approvalRunDetailIDsForRefresh())
+            .subtracting(inlineRunDetailIDs)
         )
         if let detailError {
           approvalLoadErrorText = detailError
@@ -4387,6 +4397,12 @@ public final class WorkspaceStore: ObservableObject {
     }
     guard !Task.isCancelled, !refreshedRuns.isEmpty else { return nil }
 
+    applyRefreshedApprovalRuns(refreshedRuns)
+    return nil
+  }
+
+  private func applyRefreshedApprovalRuns(_ refreshedRuns: [AgentRunItem]) {
+    guard !refreshedRuns.isEmpty else { return }
     var nextRuns = agentRuns
     for refreshedRun in refreshedRuns {
       if let index = nextRuns.firstIndex(where: { $0.id == refreshedRun.id }) {
@@ -4408,7 +4424,6 @@ public final class WorkspaceStore: ObservableObject {
       selectAgentRun(run)
       self.selectedApprovalItemID = selectedItem.id
     }
-    return nil
   }
 
   public func refreshRunReviewData() async {

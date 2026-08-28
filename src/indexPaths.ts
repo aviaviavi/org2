@@ -34,6 +34,10 @@ export function defaultSearchIndexPath(rootDir: string): string {
   return path.join(org2CorpusIndexDir(rootDir), "search-v1.json");
 }
 
+export function defaultRunApprovalIndexPath(rootDir: string): string {
+  return path.join(org2CorpusIndexDir(rootDir), "run-approvals-v1.json");
+}
+
 export function defaultCorpusCachePath(rootDir: string): string {
   return path.join(org2CorpusIndexDir(rootDir), "corpus-index-cache.json");
 }

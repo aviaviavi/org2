@@ -224,6 +224,30 @@ final class AgentRunModelsTests: XCTestCase {
         "runStatus": currentRun.status,
         "runPendingApprovalCount": currentRun.pendingApprovalCount,
         "runApprovalCount": currentRun.approvals.count,
+      ]],
+      "runDetails": [[
+        "id": currentRun.id,
+        "goal": currentRun.goal,
+        "acceptanceCriteria": [],
+        "status": currentRun.status,
+        "riskClass": currentRun.riskClass,
+        "capabilities": [],
+        "context": [],
+        "plan": [],
+        "artifacts": [],
+        "approvals": [[
+          "id": currentApproval.id,
+          "title": currentApproval.title,
+          "action": currentApproval.action,
+          "riskClass": currentApproval.riskClass,
+          "status": currentApproval.status,
+          "requestedAt": currentApproval.requestedAt,
+        ]],
+        "validations": [],
+        "comments": [],
+        "events": [],
+        "createdAt": currentRun.createdAt,
+        "updatedAt": currentRun.updatedAt,
       ]]
     ]
     let queueData = try JSONSerialization.data(withJSONObject: queuePayload)
@@ -253,7 +277,7 @@ final class AgentRunModelsTests: XCTestCase {
 
     await store.refreshApprovals(updatesStatus: true)
 
-    XCTAssertEqual(detailRefreshCount, 1)
+    XCTAssertEqual(detailRefreshCount, 0)
     XCTAssertEqual(archiveRefreshCount, 0)
     XCTAssertEqual(store.approvalItems.first?.action, "Send the latest revised draft.")
     XCTAssertEqual(

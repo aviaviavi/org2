@@ -22,6 +22,7 @@ const note = path.join(tmp, "approvals.org2");
 const conflict = path.join(tmp, "approvals.sync-conflict-20260626-100557-3XMYYT2.org2");
 const versionsDir = path.join(tmp, ".stversions", "agents");
 const versionedApproval = path.join(versionsDir, "approvals~20260706-100605.org2");
+process.env.ORG2_INDEX_HOME = indexHome;
 
 function cli(args) {
   return execFileSync("node", ["dist/cli.js", ...args], {
@@ -153,6 +154,45 @@ assert.equal(headlineItems[1].title, "Approve sending Mercor technographics data
 assert.equal(headlineItems[1].idValue, "approval-priority");
 assert.equal(headlineItems[1].status, "waiting-on-avi-approval");
 assert.equal(payload.items.some((item) => item.idValue === "duplicate-run-linked-approval"), false);
+
+const detailPayload = JSON.parse(cli([
+  "approvals", "--dir", tmp, "--recursive", "--run-detail", "release-run", "--format", "json",
+]));
+assert.deepEqual(detailPayload.runDetails.map((run) => run.id), ["release-run"]);
+assert.equal(detailPayload.runDetails[0].approvals.length, 2);
+
+const originalReadFileSync = fs.readFileSync;
+let cachedRunReads = 0;
+fs.readFileSync = function countedReadFileSync(file, ...args) {
+  if (String(file).startsWith(`${path.join(tmp, ".org2", "runs")}${path.sep}`)) cachedRunReads += 1;
+  return originalReadFileSync.call(this, file, ...args);
+};
+try {
+  assert.deepEqual(
+    listAgentRunsWithApprovals(tmp).map((run) => run.id).sort(),
+    ["completed-elsewhere-run", "release-run"],
+  );
+} finally {
+  fs.readFileSync = originalReadFileSync;
+}
+assert.equal(cachedRunReads, 0, "a warm approval scan should not reopen unchanged run records");
+
+saveAgentRun(tmp, addAgentRunComment(
+  loadAgentRun(tmp, "release-run"),
+  "test",
+  "Change one run while retaining its approval boundary.",
+));
+let changedRunReads = 0;
+fs.readFileSync = function countedReadFileSync(file, ...args) {
+  if (String(file).startsWith(`${path.join(tmp, ".org2", "runs")}${path.sep}`)) changedRunReads += 1;
+  return originalReadFileSync.call(this, file, ...args);
+};
+try {
+  listAgentRunsWithApprovals(tmp);
+} finally {
+  fs.readFileSync = originalReadFileSync;
+}
+assert.equal(changedRunReads, 1, "an incremental approval scan should reopen only the changed run record");
 
 fs.appendFileSync(note, `
 
