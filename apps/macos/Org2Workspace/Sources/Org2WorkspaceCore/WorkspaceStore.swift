@@ -7497,6 +7497,16 @@ public final class WorkspaceStore: ObservableObject {
     startNewAIThread(with: files.map(openClawContextPointer(for:)))
   }
 
+  func openClawDraftByAddingCorpusFileContext(_ file: CorpusFile, to draft: String) -> String {
+    let pointer = openClawContextPointer(for: file)
+    guard !OpenClawContextPresentation(draft).contexts.contains(where: {
+      $0.reference == pointer.reference
+    }) else {
+      return draft
+    }
+    return injectedOpenClawContext(pointer) + draft
+  }
+
   public func askOpenClawAboutCurrentSelection(threadMode: OpenClawThreadMode = .newThread) {
     guard let pointer = openClawContextPointerForCurrentSelection() else {
       statusText = "Select a page or entry first"

@@ -462,6 +462,46 @@ final class AIChatSharedRoomTests: XCTestCase {
     XCTAssertEqual(all?.completingMention(in: "Please ask @a"), "Please ask @codex @openclaw ")
   }
 
+  func testComposerMentionsIncludeCorpusFilesAndRemoveTheCompletedToken() {
+    let files = [
+      CorpusFile(
+        path: "/tmp/revenue-scout.org2",
+        relativePath: "agents/revenue-scout.org2",
+        modifiedAt: nil,
+        byteCount: nil
+      ),
+      CorpusFile(
+        path: "/tmp/product-plan.org2",
+        relativePath: "projects/product-plan.org2",
+        modifiedAt: nil,
+        byteCount: nil
+      )
+    ]
+
+    let suggestions = AIChatComposerMentionSuggestion.suggestions(
+      for: "Review @revenue",
+      destinations: AIChatDestinationConfiguration.defaults,
+      allDestinationIDs: AIChatDestinationConfiguration.defaults.map(\.id),
+      corpusFiles: files
+    )
+
+    XCTAssertEqual(suggestions.map(\.id), ["file:/tmp/revenue-scout.org2"])
+    XCTAssertEqual(suggestions.map(\.title), ["revenue-scout.org2"])
+    XCTAssertEqual(suggestions.map(\.detail), ["agents/revenue-scout.org2"])
+    XCTAssertEqual(
+      AIChatMentionSuggestion.removingActiveMention(in: "Review @revenue"),
+      "Review "
+    )
+    XCTAssertTrue(
+      AIChatComposerMentionSuggestion.suggestions(
+        for: "Email me@example.com",
+        destinations: AIChatDestinationConfiguration.defaults,
+        allDestinationIDs: AIChatDestinationConfiguration.defaults.map(\.id),
+        corpusFiles: files
+      ).isEmpty
+    )
+  }
+
   @MainActor
   func testTwoCodexDestinationsRemainIndependentInOneRoom() async throws {
     let root = FileManager.default.temporaryDirectory

@@ -6160,6 +6160,48 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testComposerFileMentionAddsExistingContextPillWithoutDuplication() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-composer-file-mention-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let fileURL = root.appendingPathComponent("revenue-scout.org2")
+    try "#+TITLE: Revenue Scout\n".write(to: fileURL, atomically: true, encoding: .utf8)
+    let file = CorpusFile(
+      path: fileURL.path,
+      relativePath: "agents/revenue-scout.org2",
+      modifiedAt: nil,
+      byteCount: nil
+    )
+    let suiteName = "org2-composer-file-mention-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json")
+    )
+    store.setCorpusRoot(root, persistsDefault: false)
+    store.openClawRemoteCorpusPath = "/remote/org2"
+
+    let firstDraft = store.openClawDraftByAddingCorpusFileContext(
+      file,
+      to: "Please review this."
+    )
+    let firstPresentation = OpenClawContextPresentation(firstDraft)
+    XCTAssertEqual(firstPresentation.contexts.map(\.kind), ["selected file"])
+    XCTAssertEqual(firstPresentation.contexts.map(\.title), ["revenue scout"])
+    XCTAssertEqual(firstPresentation.contexts.map(\.reference), [
+      "/remote/org2/revenue-scout.org2:1"
+    ])
+    XCTAssertEqual(firstPresentation.userText, "Please review this.")
+
+    let duplicateDraft = store.openClawDraftByAddingCorpusFileContext(file, to: firstDraft)
+    XCTAssertEqual(duplicateDraft, firstDraft)
+    XCTAssertEqual(OpenClawContextPresentation(duplicateDraft).contexts.count, 1)
+  }
+
+  @MainActor
   func testAskOpenClawAboutCurrentSelectionPrefersSelectedRenderedBlock() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-ai-block-context-\(UUID().uuidString)", isDirectory: true)

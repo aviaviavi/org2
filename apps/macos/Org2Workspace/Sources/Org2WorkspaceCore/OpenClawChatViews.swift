@@ -1703,8 +1703,8 @@ struct OpenClawComposerView: View {
           if presentation.userText.isEmpty {
             Text(
               store.selectedAIChatIsSharedRoom
-                ? "Add context, or @mention an agent…"
-                : "Message \(store.selectedAIChatDestination.title)"
+                ? "Add context, or @mention an agent or file…"
+                : "Message \(store.selectedAIChatDestination.title), or @mention a file…"
             )
               .font(.body)
               .foregroundStyle(.tertiary)
@@ -2304,17 +2304,25 @@ struct OpenClawComposerView: View {
   }
 
   private func selectedMentionSuggestion(
-    in suggestions: [AIChatMentionSuggestion]
-  ) -> AIChatMentionSuggestion? {
+    in suggestions: [AIChatComposerMentionSuggestion]
+  ) -> AIChatComposerMentionSuggestion? {
     guard !suggestions.isEmpty else { return nil }
     return suggestions[min(max(0, selectedMentionSuggestionIndex), suggestions.count - 1)]
   }
 
-  private func completeMention(_ suggestion: AIChatMentionSuggestion) {
+  private func completeMention(_ suggestion: AIChatComposerMentionSuggestion) {
     let presentation = OpenClawContextPresentation(localDraft)
-    localDraft = presentation.replacingUserText(
-      suggestion.completingMention(in: presentation.userText)
-    )
+    switch suggestion {
+    case .destination(let destination):
+      localDraft = presentation.replacingUserText(
+        destination.completingMention(in: presentation.userText)
+      )
+    case .corpusFile(let file):
+      let draftWithoutMention = presentation.replacingUserText(
+        AIChatMentionSuggestion.removingActiveMention(in: presentation.userText)
+      )
+      localDraft = store.openClawDraftByAddingCorpusFileContext(file, to: draftWithoutMention)
+    }
     moveComposerCursorToEndRequest &+= 1
   }
 
@@ -2328,13 +2336,14 @@ struct OpenClawComposerView: View {
     )
   }
 
-  private func mentionSuggestions(for text: String) -> [AIChatMentionSuggestion] {
-    AIChatMentionSuggestion.suggestions(
+  private func mentionSuggestions(for text: String) -> [AIChatComposerMentionSuggestion] {
+    AIChatComposerMentionSuggestion.suggestions(
       for: text,
       destinations: store.enabledAIChatDestinations,
       allDestinationIDs: store.selectedAIChatIsSharedRoom
         ? store.selectedAIChatRoomDestinationIDs
-        : store.enabledAIChatDestinations.map(\.id)
+        : store.enabledAIChatDestinations.map(\.id),
+      corpusFiles: store.corpusFiles
     )
   }
 
@@ -2497,6 +2506,16 @@ struct AIChatMentionSuggestion: Identifiable, Equatable {
     return text.replacingCharacters(in: range, with: insertion)
   }
 
+  static func activeMentionQuery(in text: String) -> String? {
+    guard let range = activeMentionRange(in: text) else { return nil }
+    return String(text[range].dropFirst())
+  }
+
+  static func removingActiveMention(in text: String) -> String {
+    guard let range = activeMentionRange(in: text) else { return text }
+    return text.replacingCharacters(in: range, with: "")
+  }
+
   private static func activeMentionRange(in text: String) -> Range<String.Index>? {
     guard let atIndex = text.lastIndex(of: "@") else { return nil }
     if atIndex != text.startIndex {
@@ -2511,10 +2530,74 @@ struct AIChatMentionSuggestion: Identifiable, Equatable {
   }
 }
 
+enum AIChatComposerMentionSuggestion: Identifiable, Equatable {
+  case destination(AIChatMentionSuggestion)
+  case corpusFile(CorpusFile)
+
+  var id: String {
+    switch self {
+    case .destination(let suggestion): "destination:\(suggestion.id)"
+    case .corpusFile(let file): "file:\(file.id)"
+    }
+  }
+
+  var title: String {
+    switch self {
+    case .destination(let suggestion): suggestion.title
+    case .corpusFile(let file): file.name
+    }
+  }
+
+  var detail: String {
+    switch self {
+    case .destination(let suggestion): suggestion.detail
+    case .corpusFile(let file): file.relativePath
+    }
+  }
+
+  var systemImage: String {
+    switch self {
+    case .destination(let suggestion): suggestion.systemImage
+    case .corpusFile: "doc.text"
+    }
+  }
+
+  static func suggestions(
+    for text: String,
+    destinations: [AIChatDestinationConfiguration],
+    allDestinationIDs: [String],
+    corpusFiles: [CorpusFile],
+    limit: Int = 10
+  ) -> [AIChatComposerMentionSuggestion] {
+    guard let query = AIChatMentionSuggestion.activeMentionQuery(in: text) else { return [] }
+    let destinationSuggestions = AIChatMentionSuggestion.suggestions(
+      for: text,
+      destinations: destinations,
+      allDestinationIDs: allDestinationIDs
+    )
+    let fileLimit = max(0, limit - destinationSuggestions.count)
+    let matchingFiles: [CorpusFile]
+    if query.isEmpty {
+      matchingFiles = Array(corpusFiles.prefix(fileLimit))
+    } else {
+      matchingFiles = WorkspaceStore.searchCorpusFilesForWorkspace(
+        corpusFiles,
+        query: query,
+        limit: fileLimit
+      )
+    }
+    return Array(
+      (destinationSuggestions.map(AIChatComposerMentionSuggestion.destination)
+        + matchingFiles.map(AIChatComposerMentionSuggestion.corpusFile))
+        .prefix(limit)
+    )
+  }
+}
+
 private struct AIChatMentionSuggestionsView: View {
-  let suggestions: [AIChatMentionSuggestion]
-  let selectedSuggestionID: AIChatMentionSuggestion.ID?
-  let select: (AIChatMentionSuggestion) -> Void
+  let suggestions: [AIChatComposerMentionSuggestion]
+  let selectedSuggestionID: AIChatComposerMentionSuggestion.ID?
+  let select: (AIChatComposerMentionSuggestion) -> Void
 
   var body: some View {
     VStack(spacing: 2) {
