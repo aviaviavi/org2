@@ -1,5 +1,19 @@
 # Org2 Tools
 
+## Coordinated OpenOrg releases
+
+`release-openorg.mjs` is the resumable release orchestrator for npm, VS Code, notarized Apple Silicon and Intel DMGs, GitHub Releases, TestFlight, Scarf-backed downloads, and the generated site. It prints a read-only plan by default:
+
+```bash
+npm run release:openorg -- patch \
+  --ios-build 25 \
+  --notes /absolute/path/to/release-notes.md
+```
+
+Add `--execute` only after reviewing the plan. Long validation and packaging lanes run concurrently, each writes its own log under `/tmp/openorg-release-VERSION/`, and successful phases are checkpointed in `state.json`. Rerunning the same command resumes from the last completed phase.
+
+The normal iOS path requires `OPENORG_ASC_ISSUER_ID`, `OPENORG_ASC_KEY_ID`, and `OPENORG_ASC_PRIVATE_KEY_PATH` so the build is reliably assigned to both TestFlight groups. macOS publication requires the existing `OPENORG_NOTARY_KEYCHAIN_PROFILE`. Run `npm run release:openorg -- --help` for repair and partial-run options.
+
 ## Documentation coverage check
 
 `npm run docs:check` builds the CLI, verifies that every top-level help family is represented in `org2 agent capabilities`, and checks that the canonical agent/documentation entry points exist. GitHub Pages CI runs the same check before publishing.

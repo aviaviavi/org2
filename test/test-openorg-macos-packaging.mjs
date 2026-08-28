@@ -31,6 +31,8 @@ assert.equal(plan.bundleIdentifier, "org.org2.workspace");
 assert.equal(plan.dailyAppUntouched, "/Users/avi/Applications/Org2Workspace.app");
 assert.equal(plan.executableName, "Org2Workspace");
 assert.equal(plan.hardenedRuntime, true);
+assert.equal(plan.swiftBuild, "isolated per artifact");
+assert.equal(plan.targetRuntimeSelection, "architecture-verified at execution");
 assert.equal(plan.staging, "isolated temporary directory");
 assert.match(plan.output, /OpenOrg\.dmg$/);
 

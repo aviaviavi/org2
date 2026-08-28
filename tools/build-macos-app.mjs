@@ -38,6 +38,9 @@ const iconPath = resolve(
     ?? join(packageDir, "Sources", "Org2Workspace", "Resources", "OpenOrgAppIcon.png")
 );
 const swiftBuildArch = process.env.ORG2_WORKSPACE_SWIFT_ARCH ?? defaultSwiftBuildArch();
+const swiftScratchPath = process.env.ORG2_WORKSPACE_SWIFT_SCRATCH_PATH?.trim()
+  ? resolve(process.env.ORG2_WORKSPACE_SWIFT_SCRATCH_PATH.trim())
+  : "";
 const swiftBuildConfiguration = resolveBuildConfiguration();
 const bundledNodePath = process.env.ORG2_WORKSPACE_NODE_PATH?.trim()
   || (swiftBuildConfiguration === "release" ? discoverNodePath() : "");
@@ -160,7 +163,8 @@ function defaultSwiftBuildArch() {
 }
 
 function swiftBuildArgs(...args) {
-  const architectureArgs = swiftBuildArch ? [...args, "--arch", swiftBuildArch] : args;
+  const scratchArgs = swiftScratchPath ? [...args, "--scratch-path", swiftScratchPath] : args;
+  const architectureArgs = swiftBuildArch ? [...scratchArgs, "--arch", swiftBuildArch] : scratchArgs;
   return swiftBuildConfiguration
     ? [...architectureArgs, "--configuration", swiftBuildConfiguration]
     : architectureArgs;
@@ -385,6 +389,12 @@ function copyOrg2Runtime(resourcesDir) {
   const runtimeNodeArchitecture = runtimeNodeSourcePath
     ? detectNodeArchitecture(runtimeNodeSourcePath)
     : null;
+  const expectedNodeArchitecture = swiftBuildArch === "x86_64" ? "x64" : swiftBuildArch;
+  if (bundledNodePath && expectedNodeArchitecture && runtimeNodeArchitecture !== expectedNodeArchitecture) {
+    throw new Error(
+      `Bundled Node.js runtime must be ${expectedNodeArchitecture} for the ${swiftBuildArch} app; found ${runtimeNodeArchitecture}.`
+    );
+  }
   const duckDBBindingPackages = duckDBBindingPackagesForRuntime({
     bundledNodePath,
     nodeArchitecture: runtimeNodeArchitecture,
@@ -594,6 +604,7 @@ function main() {
       iconPath,
       hardenedRuntime: requestedSigningIdentity?.startsWith("Developer ID Application:") ?? false,
       nodePath: bundledNodePath || null,
+      swiftScratchPath: swiftScratchPath || null,
       whisperCppPath: bundledWhisperCppPath || null,
       whisperModelPath: bundledWhisperModelPath || null,
     }, null, 2));

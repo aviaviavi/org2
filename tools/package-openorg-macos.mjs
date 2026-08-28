@@ -13,6 +13,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { detectNodeArchitecture } from "./macos-runtime-node.mjs";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const packageVersion = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8")).version;
@@ -125,6 +126,66 @@ function artifactManifestPath(dmgPath) {
   return dmgPath.slice(0, -extname(dmgPath).length) + ".json";
 }
 
+function firstMatchingNodePath(architecture) {
+  const expected = architecture === "x86_64" ? "x64" : "arm64";
+  const suffix = architecture === "x86_64" ? "X86_64" : "ARM64";
+  const configured = process.env[`OPENORG_${suffix}_NODE_PATH`]?.trim();
+  const candidates = [
+    configured,
+    process.env.ORG2_WORKSPACE_NODE_PATH?.trim(),
+    "/opt/homebrew/bin/node",
+    "/usr/local/bin/node",
+    process.execPath,
+  ].filter(Boolean);
+  for (const candidate of [...new Set(candidates)]) {
+    if (!existsSync(candidate)) continue;
+    try {
+      if (detectNodeArchitecture(candidate) === expected) return candidate;
+    } catch {
+      // Keep looking; execution reports the complete target-specific error below.
+    }
+  }
+  throw new Error(
+    `No ${expected} Node.js runtime was found. Set OPENORG_${suffix}_NODE_PATH to a target-architecture Node binary.`
+  );
+}
+
+function binaryArchitectures(path) {
+  const result = spawnSync("lipo", ["-archs", path], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "ignore"],
+  });
+  return result.status === 0 ? result.stdout.trim().split(/\s+/).filter(Boolean) : [];
+}
+
+function firstMatchingWhisperPath(architecture) {
+  const suffix = architecture === "x86_64" ? "X86_64" : "ARM64";
+  const candidates = [
+    process.env[`OPENORG_${suffix}_WHISPER_CPP_PATH`]?.trim(),
+    process.env.ORG2_WORKSPACE_WHISPER_CPP_PATH?.trim(),
+    "/opt/homebrew/bin/whisper-cli",
+    "/usr/local/bin/whisper-cli",
+  ].filter(Boolean);
+  const match = [...new Set(candidates)].find((candidate) => (
+    existsSync(candidate) && binaryArchitectures(candidate).includes(architecture)
+  ));
+  if (match) return match;
+  throw new Error(
+    `No ${architecture} whisper-cli was found. Set OPENORG_${suffix}_WHISPER_CPP_PATH to a target-architecture executable.`
+  );
+}
+
+function whisperModelPath() {
+  const candidates = [
+    process.env.OPENORG_WHISPER_MODEL_PATH?.trim(),
+    process.env.ORG2_WORKSPACE_WHISPER_MODEL_PATH?.trim(),
+    join(process.env.HOME ?? "", "Library", "Application Support", "org2", "whisper", "ggml-base.en.bin"),
+  ].filter(Boolean);
+  const match = candidates.find((candidate) => existsSync(candidate));
+  if (match) return match;
+  throw new Error("No ggml-base.en.bin model was found. Set OPENORG_WHISPER_MODEL_PATH.");
+}
+
 function printPlan() {
   console.log(JSON.stringify({
     appName: "OpenOrg",
@@ -135,6 +196,8 @@ function printPlan() {
     hardenedRuntime: true,
     notarization: options.notaryProfile ? "notarytool Keychain profile configured" : "not configured",
     output: options.output,
+    swiftBuild: "isolated per artifact",
+    targetRuntimeSelection: "architecture-verified at execution",
     staging: "isolated temporary directory",
     version: packageVersion,
   }, null, 2));
@@ -160,6 +223,9 @@ function main() {
   }
 
   const signingIdentity = developerIDApplicationIdentity();
+  const nodePath = firstMatchingNodePath(options.architecture);
+  const whisperCppPath = firstMatchingWhisperPath(options.architecture);
+  const modelPath = whisperModelPath();
   const workingDirectory = mkdtempSync(join(tmpdir(), "openorg-release-"));
   const builtApp = join(workingDirectory, "OpenOrg.app");
   const dmgRoot = join(workingDirectory, "dmg-root");
@@ -173,7 +239,11 @@ function main() {
         ORG2_WORKSPACE_APP_PATH: builtApp,
         ORG2_WORKSPACE_BUNDLE_ID: "org.org2.workspace",
         ORG2_WORKSPACE_CODE_SIGN_IDENTITY: signingIdentity,
+        ORG2_WORKSPACE_NODE_PATH: nodePath,
         ORG2_WORKSPACE_SWIFT_ARCH: options.architecture,
+        ORG2_WORKSPACE_SWIFT_SCRATCH_PATH: join(workingDirectory, "swift-build"),
+        ORG2_WORKSPACE_WHISPER_CPP_PATH: whisperCppPath,
+        ORG2_WORKSPACE_WHISPER_MODEL_PATH: modelPath,
       },
     });
 

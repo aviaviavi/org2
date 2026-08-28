@@ -22,6 +22,16 @@ assert.equal(defaultDaily.configuration, "release");
 assert.equal(defaultDaily.appName, "OpenOrg");
 assert.match(defaultDaily.appPath, /OpenOrg\.app$/);
 assert.match(defaultDaily.iconPath, /OpenOrgAppIcon\.png$/);
+assert.equal(defaultDaily.swiftScratchPath, null);
+
+const isolatedScratch = JSON.parse(
+  spawnSync(process.execPath, [join(repoRoot, "tools/build-macos-app.mjs"), "--print-configuration"], {
+    cwd: repoRoot,
+    encoding: "utf8",
+    env: { ...process.env, ORG2_WORKSPACE_SWIFT_SCRATCH_PATH: "/tmp/openorg-release-test" },
+  }).stdout
+);
+assert.equal(isolatedScratch.swiftScratchPath, "/tmp/openorg-release-test");
 
 const refusedDebug = run(
   "tools/build-macos-app.mjs",
