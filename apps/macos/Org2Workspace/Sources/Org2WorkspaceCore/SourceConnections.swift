@@ -33,6 +33,98 @@ public struct WorkspaceSourceSchedule: Codable, Equatable, Sendable {
   }
 }
 
+public enum WorkspaceSourceIntervalUnit: String, CaseIterable, Identifiable, Sendable {
+  case minutes
+  case hours
+
+  public var id: String { rawValue }
+  public var multiplier: Int { self == .hours ? 60 : 1 }
+}
+
+public struct WorkspaceSourceScheduleDraft: Equatable, Sendable {
+  public var kind: WorkspaceSourceSchedule.Kind
+  public var intervalValue: Int
+  public var intervalUnit: WorkspaceSourceIntervalUnit
+  public var dailyTime: Date
+  public var timezone: String
+
+  public init(
+    schedule: WorkspaceSourceSchedule?,
+    now: Date = Date(),
+    calendar: Calendar = .current
+  ) {
+    kind = schedule?.kind ?? .interval
+    let minutes = max(1, schedule?.everyMinutes ?? 120)
+    if minutes.isMultiple(of: 60) {
+      intervalValue = minutes / 60
+      intervalUnit = .hours
+    } else {
+      intervalValue = minutes
+      intervalUnit = .minutes
+    }
+    let parts = (schedule?.time ?? "02:00").split(separator: ":")
+    let hour = parts.first.flatMap { Int($0) } ?? 2
+    let minute = parts.count > 1 ? Int(parts[1]) ?? 0 : 0
+    dailyTime = calendar.date(bySettingHour: hour, minute: minute, second: 0, of: now) ?? now
+    timezone = schedule?.timezone ?? "local"
+  }
+
+  public func schedule(enabled: Bool, calendar: Calendar = .current) throws -> WorkspaceSourceSchedule {
+    let normalizedTimezone = timezone.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard normalizedTimezone == "local" || TimeZone(identifier: normalizedTimezone) != nil else {
+      throw ValidationError("Choose Local time or a valid time zone.")
+    }
+    switch kind {
+    case .interval:
+      guard intervalValue > 0 else {
+        throw ValidationError("Sync frequency must be greater than zero.")
+      }
+      let (minutes, overflow) = intervalValue.multipliedReportingOverflow(by: intervalUnit.multiplier)
+      guard !overflow else { throw ValidationError("Sync frequency is too large.") }
+      return WorkspaceSourceSchedule(
+        enabled: enabled,
+        kind: .interval,
+        everyMinutes: minutes,
+        time: nil,
+        timezone: normalizedTimezone
+      )
+    case .daily:
+      let components = calendar.dateComponents([.hour, .minute], from: dailyTime)
+      guard let hour = components.hour, let minute = components.minute else {
+        throw ValidationError("Choose a valid daily sync time.")
+      }
+      return WorkspaceSourceSchedule(
+        enabled: enabled,
+        kind: .daily,
+        everyMinutes: nil,
+        time: String(format: "%02d:%02d", hour, minute),
+        timezone: normalizedTimezone
+      )
+    }
+  }
+
+  public struct ValidationError: LocalizedError, Equatable {
+    public var message: String
+
+    public init(_ message: String) {
+      self.message = message
+    }
+
+    public var errorDescription: String? { message }
+  }
+}
+
+public struct WorkspaceSourceScheduleUpdateEnvelope: Codable, Equatable, Sendable {
+  public var schema: String
+  public var root: String
+  public var configFile: String
+  public var profile: String
+  public var previous: WorkspaceSourceSchedule?
+  public var schedule: WorkspaceSourceSchedule
+  public var changed: Bool
+  public var applied: Bool
+}
+
 public struct WorkspaceSourceProfileStatus: Codable, Identifiable, Equatable, Sendable {
   public var id: String
   public var type: String

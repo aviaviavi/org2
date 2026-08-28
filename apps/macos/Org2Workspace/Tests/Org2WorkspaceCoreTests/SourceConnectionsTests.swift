@@ -199,6 +199,80 @@ final class SourceConnectionsTests: XCTestCase {
     XCTAssertTrue(WorkspaceSourceSchedulePlanner.isDue(state, at: sameDay))
   }
 
+  func testScheduleDraftRoundTripsIntervalAndDailyControls() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "UTC"))
+    let now = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-08-28T12:00:00Z"))
+
+    var intervalDraft = WorkspaceSourceScheduleDraft(
+      schedule: WorkspaceSourceSchedule(
+        enabled: true,
+        kind: .interval,
+        everyMinutes: 120,
+        time: nil,
+        timezone: "local"
+      ),
+      now: now,
+      calendar: calendar
+    )
+    XCTAssertEqual(intervalDraft.intervalValue, 2)
+    XCTAssertEqual(intervalDraft.intervalUnit, .hours)
+    intervalDraft.intervalValue = 45
+    intervalDraft.intervalUnit = .minutes
+    XCTAssertEqual(
+      try intervalDraft.schedule(enabled: false, calendar: calendar),
+      WorkspaceSourceSchedule(
+        enabled: false,
+        kind: .interval,
+        everyMinutes: 45,
+        time: nil,
+        timezone: "local"
+      )
+    )
+
+    var dailyDraft = WorkspaceSourceScheduleDraft(schedule: nil, now: now, calendar: calendar)
+    dailyDraft.kind = .daily
+    dailyDraft.dailyTime = try XCTUnwrap(
+      calendar.date(bySettingHour: 8, minute: 45, second: 0, of: now)
+    )
+    dailyDraft.timezone = "America/Los_Angeles"
+    XCTAssertEqual(
+      try dailyDraft.schedule(enabled: true, calendar: calendar),
+      WorkspaceSourceSchedule(
+        enabled: true,
+        kind: .daily,
+        everyMinutes: nil,
+        time: "08:45",
+        timezone: "America/Los_Angeles"
+      )
+    )
+  }
+
+  func testScheduleDraftRejectsZeroFrequencyAndInvalidTimezone() {
+    var draft = WorkspaceSourceScheduleDraft(schedule: nil)
+    draft.intervalValue = 0
+    XCTAssertThrowsError(try draft.schedule(enabled: true)) { error in
+      XCTAssertEqual(error.localizedDescription, "Sync frequency must be greater than zero.")
+    }
+    draft.intervalValue = 1
+    draft.timezone = "Not/A-Time-Zone"
+    XCTAssertThrowsError(try draft.schedule(enabled: true)) { error in
+      XCTAssertEqual(error.localizedDescription, "Choose Local time or a valid time zone.")
+    }
+  }
+
+  func testDecodesSourceScheduleMutationResult() throws {
+    let data = Data(#"""
+    {"schema":"org2:source-schedule:v1","root":"/tmp/corpus","configFile":"/tmp/corpus/org2.json","profile":"slack","previous":{"enabled":true,"kind":"interval","everyMinutes":120,"timezone":"local"},"schedule":{"enabled":false,"kind":"interval","everyMinutes":120,"timezone":"local"},"changed":true,"applied":true}
+    """#.utf8)
+    let envelope = try JSONDecoder().decode(WorkspaceSourceScheduleUpdateEnvelope.self, from: data)
+    XCTAssertEqual(envelope.profile, "slack")
+    XCTAssertEqual(envelope.previous?.summary, "Every 2 hours")
+    XCTAssertEqual(envelope.schedule.summary, "Off")
+    XCTAssertTrue(envelope.changed)
+    XCTAssertTrue(envelope.applied)
+  }
+
   func testScheduleStateStorePersistsPerCorpusAndProfile() throws {
     let (defaults, key) = isolatedDefaults()
     let store = WorkspaceSourceScheduleStateStore(defaults: defaults, persistenceKey: key)

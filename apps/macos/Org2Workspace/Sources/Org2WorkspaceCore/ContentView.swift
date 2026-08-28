@@ -6464,6 +6464,7 @@ private struct SourcesView: View {
 
 private struct SourceProfileCard: View {
   @EnvironmentObject private var store: WorkspaceStore
+  @State private var isSchedulePresented = false
   let profile: WorkspaceSourceProfileStatus
   let runtime: WorkspaceSourceRuntimeStatus?
 
@@ -6605,44 +6606,167 @@ private struct SourceProfileCard: View {
       RoundedRectangle(cornerRadius: 12, style: .continuous)
         .stroke(WorkspaceDesign.hairline, lineWidth: 1)
     }
+    .sheet(isPresented: $isSchedulePresented) {
+      SourceScheduleSheet(profile: profile)
+        .environmentObject(store)
+    }
   }
 
   private var sourceActions: some View {
-    HStack(spacing: 8) {
-      Button {
-        Task { await store.syncAndStageSource(profile) }
-      } label: {
-        Label(isRunning ? "Working" : "Sync & Stage", systemImage: "arrow.triangle.2.circlepath")
-      }
-      .disabled(isRunning || !canSync)
-
-      Button("Preview") {
-        Task { await store.previewSourceImport(profile) }
-      }
-      .disabled(isRunning || !profile.ready)
-
-      Button("Check Setup") {
-        Task { await store.checkSourceSetup(profile) }
-      }
-      .disabled(isRunning)
-
-      Button("Reveal Reviews") {
-        store.revealSourceReviews(profile)
-      }
-
-      if profile.type == "notion" {
-        Button(store.sourceHasStoredCredential(profile) ? "Replace Token" : "Add Token") {
-          store.presentSourceCredential(for: profile)
+    VStack(alignment: .leading, spacing: 8) {
+      HStack(spacing: 8) {
+        Button {
+          Task { await store.syncAndStageSource(profile) }
+        } label: {
+          Label(isRunning ? "Working" : "Run Now", systemImage: "arrow.triangle.2.circlepath")
         }
-        if store.sourceHasStoredCredential(profile) {
-          Button("Remove Token", role: .destructive) {
-            store.deleteSourceCredential(profile)
+        .help("Sync this connector now and stage any new source records.")
+        .disabled(isRunning || !canSync)
+
+        if let schedule = profile.schedule {
+          Button(schedule.enabled ? "Pause Schedule" : "Resume Schedule") {
+            Task { await store.setSourceScheduleEnabled(profile, enabled: !schedule.enabled) }
+          }
+          .disabled(isRunning)
+        }
+
+        Button(profile.schedule == nil ? "Add Schedule…" : "Edit Schedule…") {
+          isSchedulePresented = true
+        }
+        .disabled(isRunning)
+      }
+
+      HStack(spacing: 8) {
+        Button("Preview") {
+          Task { await store.previewSourceImport(profile) }
+        }
+        .disabled(isRunning || !profile.ready)
+
+        Button("Check Setup") {
+          Task { await store.checkSourceSetup(profile) }
+        }
+        .disabled(isRunning)
+
+        Button("Reveal Reviews") {
+          store.revealSourceReviews(profile)
+        }
+
+        if profile.type == "notion" {
+          Button(store.sourceHasStoredCredential(profile) ? "Replace Token" : "Add Token") {
+            store.presentSourceCredential(for: profile)
+          }
+          if store.sourceHasStoredCredential(profile) {
+            Button("Remove Token", role: .destructive) {
+              store.deleteSourceCredential(profile)
+            }
           }
         }
       }
     }
     .controlSize(.small)
     .buttonStyle(WorkspaceActionButtonStyle())
+  }
+}
+
+private struct SourceScheduleSheet: View {
+  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(\.dismiss) private var dismiss
+  let profile: WorkspaceSourceProfileStatus
+  @State private var draft: WorkspaceSourceScheduleDraft
+  @State private var validationMessage: String?
+
+  init(profile: WorkspaceSourceProfileStatus) {
+    self.profile = profile
+    _draft = State(initialValue: WorkspaceSourceScheduleDraft(schedule: profile.schedule))
+  }
+
+  private var timeZoneChoices: [String] {
+    var choices = ["local", TimeZone.current.identifier, "UTC"]
+    choices.append(contentsOf: TimeZone.knownTimeZoneIdentifiers)
+    var seen = Set<String>()
+    return choices.filter { seen.insert($0).inserted }
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 16) {
+      VStack(alignment: .leading, spacing: 4) {
+        Text("\(profile.id.capitalized) Sync Schedule")
+          .font(.title2.weight(.semibold))
+        Text("The schedule is stored with this connector in org2.json. Run Now remains available when scheduled sync is paused.")
+          .foregroundStyle(.secondary)
+          .fixedSize(horizontal: false, vertical: true)
+      }
+
+      Picker("Frequency", selection: $draft.kind) {
+        Text("Repeating interval").tag(WorkspaceSourceSchedule.Kind.interval)
+        Text("Once each day").tag(WorkspaceSourceSchedule.Kind.daily)
+      }
+      .pickerStyle(.segmented)
+
+      Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 12) {
+        if draft.kind == .interval {
+          GridRow {
+            Text("Run every")
+            HStack(spacing: 8) {
+              TextField("2", value: $draft.intervalValue, format: .number)
+                .frame(width: 72)
+                .textFieldStyle(.roundedBorder)
+              Picker("Unit", selection: $draft.intervalUnit) {
+                Text("Minutes").tag(WorkspaceSourceIntervalUnit.minutes)
+                Text("Hours").tag(WorkspaceSourceIntervalUnit.hours)
+              }
+              .labelsHidden()
+              .frame(width: 110)
+            }
+          }
+        } else {
+          GridRow {
+            Text("Run at")
+            DatePicker("", selection: $draft.dailyTime, displayedComponents: .hourAndMinute)
+              .labelsHidden()
+          }
+        }
+
+        GridRow {
+          Text("Time zone")
+          Picker("Time zone", selection: $draft.timezone) {
+            ForEach(timeZoneChoices, id: \.self) { timeZone in
+              Text(timeZone == "local" ? "Local time" : timeZone).tag(timeZone)
+            }
+          }
+          .labelsHidden()
+          .frame(minWidth: 240)
+        }
+      }
+
+      if let validationMessage {
+        Label(validationMessage, systemImage: "exclamationmark.triangle.fill")
+          .font(.caption)
+          .foregroundStyle(.red)
+      }
+
+      HStack {
+        Spacer()
+        Button("Cancel") { dismiss() }
+        Button("Save Schedule") {
+          do {
+            let schedule = try draft.schedule(enabled: profile.schedule?.enabled ?? true)
+            validationMessage = nil
+            Task {
+              if await store.updateSourceSchedule(profile, schedule: schedule) {
+                dismiss()
+              }
+            }
+          } catch {
+            validationMessage = error.localizedDescription
+          }
+        }
+        .keyboardShortcut(.defaultAction)
+        .disabled(store.activeSourceOperationIDs.contains(profile.id))
+      }
+    }
+    .padding(22)
+    .frame(width: 520)
   }
 }
 

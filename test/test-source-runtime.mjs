@@ -77,6 +77,38 @@ if (args.includes("messages")) {
     time: "02:00",
     timezone: "America/Los_Angeles",
   });
+
+  const schedulePreview = run("schedule", "slack", "--kind", "daily", "--time", "08:45", "--timezone", "UTC");
+  assert.equal(schedulePreview.status, 0, schedulePreview.stderr);
+  assert.deepEqual(JSON.parse(schedulePreview.stdout).schedule, {
+    enabled: true,
+    kind: "daily",
+    time: "08:45",
+    timezone: "UTC",
+  });
+  assert.equal(JSON.parse(fs.readFileSync(path.join(corpus, "org2.json"), "utf8")).externalSources.slack.schedule.kind, "interval");
+
+  const scheduleApplied = run("schedule", "slack", "--kind", "daily", "--time", "08:45", "--timezone", "UTC", "--apply");
+  assert.equal(scheduleApplied.status, 0, scheduleApplied.stderr);
+  assert.equal(JSON.parse(scheduleApplied.stdout).applied, true);
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(corpus, "org2.json"), "utf8")).externalSources.slack.schedule, {
+    enabled: true,
+    kind: "daily",
+    time: "08:45",
+    timezone: "UTC",
+  });
+
+  const paused = run("schedule", "slack", "--pause", "--apply");
+  assert.equal(paused.status, 0, paused.stderr);
+  assert.equal(JSON.parse(paused.stdout).schedule.enabled, false);
+  const resumed = run("schedule", "slack", "--resume", "--apply");
+  assert.equal(resumed.status, 0, resumed.stderr);
+  assert.equal(JSON.parse(resumed.stdout).schedule.enabled, true);
+
+  const invalidScheduleEdit = run("schedule", "slack", "--kind", "daily", "--time", "25:00", "--apply");
+  assert.equal(invalidScheduleEdit.status, 1);
+  assert.match(invalidScheduleEdit.stderr, /daily schedule requires time in HH:MM form/);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(corpus, "org2.json"), "utf8")).externalSources.slack.schedule.time, "08:45");
   assert.equal(run("doctor", "slack").status, 1);
 
   const missingDir = run("list", "--dir");

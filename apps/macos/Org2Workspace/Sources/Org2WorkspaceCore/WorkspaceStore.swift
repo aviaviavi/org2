@@ -3448,6 +3448,68 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   @discardableResult
+  public func updateSourceSchedule(
+    _ profile: WorkspaceSourceProfileStatus,
+    schedule: WorkspaceSourceSchedule
+  ) async -> Bool {
+    var arguments = [
+      "source", "schedule", profile.id,
+      "--kind", schedule.kind.rawValue,
+    ]
+    switch schedule.kind {
+    case .interval:
+      arguments += ["--every-minutes", String(schedule.everyMinutes ?? 0)]
+    case .daily:
+      arguments += ["--time", schedule.time ?? ""]
+    }
+    arguments += ["--timezone", schedule.timezone, "--apply"]
+    return await applySourceScheduleCommand(arguments, profile: profile)
+  }
+
+  @discardableResult
+  public func setSourceScheduleEnabled(
+    _ profile: WorkspaceSourceProfileStatus,
+    enabled: Bool
+  ) async -> Bool {
+    await applySourceScheduleCommand(
+      ["source", "schedule", profile.id, enabled ? "--resume" : "--pause", "--apply"],
+      profile: profile
+    )
+  }
+
+  @discardableResult
+  private func applySourceScheduleCommand(
+    _ command: [String],
+    profile: WorkspaceSourceProfileStatus
+  ) async -> Bool {
+    guard let corpusRoot, !activeSourceOperationIDs.contains(profile.id) else { return false }
+    activeSourceOperationIDs.insert(profile.id)
+    defer { activeSourceOperationIDs.remove(profile.id) }
+    setSourceOperationMessage(nil, profileID: profile.id)
+    do {
+      let envelope: WorkspaceSourceScheduleUpdateEnvelope = try await cli.runJSON(
+        command + ["--dir", corpusRoot.path, "--json"]
+      )
+      if let index = sourceProfiles.firstIndex(where: { $0.id == profile.id }) {
+        sourceProfiles[index].schedule = envelope.schedule
+      }
+      refreshSourceScheduleStates()
+      setSourceOperationMessage(
+        envelope.schedule.enabled
+          ? "Scheduled sync set to \(envelope.schedule.summary)."
+          : "Scheduled sync paused. Run Now remains available.",
+        profileID: profile.id
+      )
+      return true
+    } catch is CancellationError {
+      return false
+    } catch {
+      setSourceOperationMessage(error.localizedDescription, profileID: profile.id, failed: true)
+      return false
+    }
+  }
+
+  @discardableResult
   private func performSyncAndStageSource(
     _ profile: WorkspaceSourceProfileStatus,
     trigger: SourceSyncTrigger
@@ -3498,7 +3560,7 @@ public final class WorkspaceStore: ObservableObject {
       }
       recordSourceScheduleResult(profile, trigger: trigger, succeeded: true, error: nil)
       await finishSourceSyncEventBatch(requiresFallbackScan: true)
-      await refreshSourceConnections()
+      await refreshSourceConnection(profile.id)
       return true
     } catch is CancellationError {
       setSourceOperationMessage(nil, profileID: profile.id)
@@ -3514,6 +3576,33 @@ public final class WorkspaceStore: ObservableObject {
       )
       await finishSourceSyncEventBatch(requiresFallbackScan: false)
       return false
+    }
+  }
+
+  private func refreshSourceConnection(_ profileID: String) async {
+    guard let corpusRoot else { return }
+    do {
+      let profiles: [WorkspaceSourceProfileStatus] = try await cli.runJSON(
+        ["source", "list", profileID, "--dir", corpusRoot.path, "--json"]
+      )
+      guard let profile = profiles.first else { return }
+      if let index = sourceProfiles.firstIndex(where: { $0.id == profileID }) {
+        sourceProfiles[index] = profile
+      } else {
+        sourceProfiles.append(profile)
+        sourceProfiles.sort { $0.id.localizedStandardCompare($1.id) == .orderedAscending }
+      }
+      let envelope: WorkspaceSourceStatusEnvelope = try await cli.runJSON(
+        ["source", "status", profileID, "--dir", corpusRoot.path, "--json"]
+      )
+      if let runtime = envelope.sources.first {
+        sourceRuntimeStatuses[profileID] = runtime
+      }
+      refreshSourceScheduleStates()
+    } catch is CancellationError {
+      return
+    } catch {
+      setSourceOperationMessage(error.localizedDescription, profileID: profileID, failed: true)
     }
   }
 

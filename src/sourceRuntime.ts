@@ -211,6 +211,9 @@ function usage(): string {
   org2 source list [--dir CORPUS] [--json]
   org2 source doctor [PROFILE...] [--timeout SECONDS] [--dir CORPUS] [--json]
   org2 source bind PROFILE [--binary PATH] [--config PATH] [--working-directory PATH] [--dir CORPUS] [--apply] [--json]
+  org2 source schedule PROFILE (--pause|--resume) [--dir CORPUS] [--apply] [--json]
+  org2 source schedule PROFILE --kind interval --every-minutes N [--timezone ZONE] [--dir CORPUS] [--apply] [--json]
+  org2 source schedule PROFILE --kind daily --time HH:MM [--timezone ZONE] [--dir CORPUS] [--apply] [--json]
   org2 source status [PROFILE...] [--timeout SECONDS] [--dir CORPUS] [--json]
   org2 source import [PROFILE...] [--since 14d|TIMESTAMP] [--limit N] [--timeout SECONDS] [--dir CORPUS] [--apply] [--json]
   org2 source sync [PROFILE...] [--ingest] [--since 14d|TIMESTAMP] [--limit N] [--timeout SECONDS] [--dir CORPUS] [--apply] [--json]
@@ -236,6 +239,12 @@ function parseArgs(args: string[]) {
   let workingDirectory: string | undefined;
   let since: string | undefined;
   let limit: number | undefined;
+  let pause = false;
+  let resume = false;
+  let scheduleKind: "interval" | "daily" | undefined;
+  let everyMinutes: number | undefined;
+  let scheduleTime: string | undefined;
+  let timezone: string | undefined;
   let timeoutMs = DEFAULT_CRAWLER_TIMEOUT_MS;
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i]!;
@@ -250,6 +259,8 @@ function parseArgs(args: string[]) {
       json = true;
     } else if (arg === "--apply") apply = true;
     else if (arg === "--ingest") ingest = true;
+    else if (arg === "--pause") pause = true;
+    else if (arg === "--resume") resume = true;
     else if (arg === "--binary") {
       binary = optionValue(args, i, arg);
       i += 1;
@@ -267,6 +278,22 @@ function parseArgs(args: string[]) {
       if (!Number.isInteger(value) || value <= 0) throw new Error("source --limit must be a positive integer");
       limit = value;
       i += 1;
+    } else if (arg === "--kind") {
+      const value = optionValue(args, i, arg);
+      if (value !== "interval" && value !== "daily") throw new Error("source --kind must be interval or daily");
+      scheduleKind = value;
+      i += 1;
+    } else if (arg === "--every-minutes") {
+      const value = Number(optionValue(args, i, arg));
+      if (!Number.isInteger(value) || value <= 0) throw new Error("source --every-minutes must be a positive integer");
+      everyMinutes = value;
+      i += 1;
+    } else if (arg === "--time") {
+      scheduleTime = optionValue(args, i, arg);
+      i += 1;
+    } else if (arg === "--timezone") {
+      timezone = optionValue(args, i, arg);
+      i += 1;
     } else if (arg === "--timeout") {
       const seconds = Number(optionValue(args, i, arg));
       if (!Number.isFinite(seconds) || seconds <= 0 || seconds > MAX_CRAWLER_TIMEOUT_SECONDS) {
@@ -278,15 +305,28 @@ function parseArgs(args: string[]) {
     else if (arg.startsWith("-")) throw new Error(`unknown source option: ${arg}`);
     else positional.push(arg);
   }
-  return { positional, dir, json, apply, ingest, binary, configPath, workingDirectory, since, limit, timeoutMs };
+  return {
+    positional, dir, json, apply, ingest, binary, configPath, workingDirectory, since, limit,
+    pause, resume, scheduleKind, everyMinutes, scheduleTime, timezone, timeoutMs,
+  };
 }
 
-function resolveCorpus(dir: string): { root: string; profiles: Record<string, Org2ExternalSourceConfig> } {
+function resolveCorpus(dir: string): { root: string; configFile: string; profiles: Record<string, Org2ExternalSourceConfig> } {
   const start = path.resolve(dir || process.cwd());
   const configFile = findConfigFile(start);
   if (!configFile) throw new Error(`no org2.json found from ${start}`);
   const root = path.dirname(configFile);
-  return { root, profiles: loadConfig(configFile).externalSources || {} };
+  return { root, configFile, profiles: loadConfig(configFile).externalSources || {} };
+}
+
+function writeJSONAtomic(file: string, value: unknown): void {
+  const temporary = `${file}.${process.pid}.${randomUUID()}.tmp`;
+  try {
+    fs.writeFileSync(temporary, JSON.stringify(value, null, 2) + "\n", "utf8");
+    fs.renameSync(temporary, file);
+  } finally {
+    try { fs.rmSync(temporary, { force: true }); } catch {}
+  }
 }
 
 export function sourceBindingsPath(root: string): string {
@@ -379,7 +419,7 @@ export async function runSourceCommand(args: string[]): Promise<boolean> {
   const parsed = parseArgs(args.slice(1));
   const action = parsed.positional.shift() || "list";
   if (action === "help") { process.stdout.write(usage() + "\n"); return true; }
-  const { root, profiles } = resolveCorpus(parsed.dir);
+  const { root, configFile, profiles } = resolveCorpus(parsed.dir);
   const selected = parsed.positional;
   const select = <T extends { id: string }>(items: T[]) => selected.length ? items.filter((item) => selected.includes(item.id)) : items;
   if (selected.some((id) => !profiles[id])) throw new Error(`unknown external source profile: ${selected.find((id) => !profiles[id])}`);
@@ -441,6 +481,67 @@ export async function runSourceCommand(args: string[]): Promise<boolean> {
     }
     emit({ schema: "org2:source-status:v1", root, sources: result }, parsed.json);
     if (result.some((item) => !item.ok)) process.exitCode = 1;
+    return true;
+  }
+
+  if (action === "schedule") {
+    const id = selected[0];
+    if (!id || selected.length !== 1) throw new Error("org2 source schedule requires exactly one PROFILE");
+    if (parsed.pause && parsed.resume) throw new Error("source schedule accepts only one of --pause or --resume");
+    const isToggle = parsed.pause || parsed.resume;
+    const hasScheduleFields = parsed.scheduleKind !== undefined
+      || parsed.everyMinutes !== undefined
+      || parsed.scheduleTime !== undefined
+      || parsed.timezone !== undefined;
+    if (isToggle && hasScheduleFields) throw new Error("source schedule cannot combine --pause or --resume with schedule fields");
+    if (!isToggle && !parsed.scheduleKind) {
+      throw new Error("source schedule requires --pause, --resume, or --kind interval|daily");
+    }
+
+    const profile = profiles[id]!;
+    let candidate: Org2ExternalSourceConfig["schedule"];
+    if (isToggle) {
+      if (!profile.schedule) throw new Error(`external source ${id} has no schedule to ${parsed.pause ? "pause" : "resume"}`);
+      candidate = { ...profile.schedule, enabled: parsed.resume };
+    } else if (parsed.scheduleKind === "interval") {
+      if (parsed.everyMinutes === undefined) throw new Error("interval source schedule requires --every-minutes N");
+      if (parsed.scheduleTime !== undefined) throw new Error("interval source schedule does not accept --time");
+      candidate = {
+        enabled: profile.schedule?.enabled !== false,
+        kind: "interval",
+        everyMinutes: parsed.everyMinutes,
+        timezone: parsed.timezone || profile.schedule?.timezone || "local",
+      };
+    } else {
+      if (parsed.scheduleTime === undefined) throw new Error("daily source schedule requires --time HH:MM");
+      if (parsed.everyMinutes !== undefined) throw new Error("daily source schedule does not accept --every-minutes");
+      candidate = {
+        enabled: profile.schedule?.enabled !== false,
+        kind: "daily",
+        time: parsed.scheduleTime,
+        timezone: parsed.timezone || profile.schedule?.timezone || "local",
+      };
+    }
+    const normalized = normalizedSchedule(id, { ...profile, schedule: candidate });
+    if (!normalized) throw new Error(`external source ${id} schedule could not be normalized`);
+    const previous = profile.schedule ? normalizedSchedule(id, profile) : undefined;
+    const changed = JSON.stringify(previous) !== JSON.stringify(normalized);
+    if (parsed.apply && changed) {
+      const config = loadConfig(configFile);
+      config.externalSources = config.externalSources || {};
+      config.externalSources[id] = { ...profile, schedule: normalized };
+      writeJSONAtomic(configFile, config);
+    }
+    emit({
+      schema: "org2:source-schedule:v1",
+      root,
+      configFile,
+      profile: id,
+      ...(previous ? { previous } : {}),
+      schedule: normalized,
+      changed,
+      applied: parsed.apply,
+    }, parsed.json);
     return true;
   }
 

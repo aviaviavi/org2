@@ -23,6 +23,30 @@ final class WorkspaceListSelectionTests: XCTestCase {
     XCTAssertFalse(source.contains("Use the toolbar Refresh to retry."))
   }
 
+  func testSourcesExposeConnectorLocalSyncAndScheduleControls() throws {
+    let testFile = URL(fileURLWithPath: #filePath)
+    let packageRoot = testFile
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+    let contentView = try String(
+      contentsOf: packageRoot.appendingPathComponent("Sources/Org2WorkspaceCore/ContentView.swift"),
+      encoding: .utf8
+    )
+    let workspaceStore = try String(
+      contentsOf: packageRoot.appendingPathComponent("Sources/Org2WorkspaceCore/WorkspaceStore.swift"),
+      encoding: .utf8
+    )
+
+    XCTAssertTrue(contentView.contains(#"Label(isRunning ? "Working" : "Run Now""#))
+    XCTAssertTrue(contentView.contains(#"Button(schedule.enabled ? "Pause Schedule" : "Resume Schedule")"#))
+    XCTAssertTrue(contentView.contains(#"Button(profile.schedule == nil ? "Add Schedule…" : "Edit Schedule…")"#))
+    XCTAssertTrue(contentView.contains("DatePicker"))
+    XCTAssertTrue(contentView.contains("WorkspaceSourceIntervalUnit.hours"))
+    XCTAssertTrue(workspaceStore.contains("await refreshSourceConnection(profile.id)"))
+    XCTAssertTrue(workspaceStore.contains(#"["source", "status", profileID"#))
+  }
+
   func testVerticallyStackedNodeContextPaneHasNoLeadingDividerOverlay() throws {
     let testFile = URL(fileURLWithPath: #filePath)
     let packageRoot = testFile
