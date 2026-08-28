@@ -14,6 +14,23 @@ private final class ObservedPathSet: @unchecked Sendable {
   }
 }
 
+private final class ObservedCLICommands: @unchecked Sendable {
+  private let lock = NSLock()
+  private var commands: [String] = []
+
+  func append(_ metric: Org2CLIInvocationMetric) {
+    lock.lock()
+    commands.append(metric.command)
+    lock.unlock()
+  }
+
+  func count(_ command: String) -> Int {
+    lock.lock()
+    defer { lock.unlock() }
+    return commands.filter { $0 == command }.count
+  }
+}
+
 final class CorpusFileWatcherTests: XCTestCase {
   func testClassifiesRuntimeRunChangesSeparatelyFromVisibleCorpusContent() {
     let root = URL(fileURLWithPath: "/tmp/org2-corpus").standardizedFileURL
@@ -253,6 +270,100 @@ final class CorpusFileWatcherTests: XCTestCase {
       try await Task.sleep(nanoseconds: 20_000_000)
     }
     XCTAssertTrue(store.selectedEntrySource?.text.contains("* Bravo") == true)
+  }
+
+  @MainActor
+  func testSourceSyncDefersFileEventsIntoOnePostSyncIndexUpdate() async throws {
+    let workspace = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-source-sync-event-batch-\(UUID().uuidString)", isDirectory: true)
+    let repoRoot = workspace.appendingPathComponent("repo", isDirectory: true)
+    let dist = repoRoot.appendingPathComponent("dist", isDirectory: true)
+    let corpus = workspace.appendingPathComponent("corpus", isDirectory: true)
+    try FileManager.default.createDirectory(at: dist, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: corpus, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: workspace) }
+    try """
+    const args = process.argv.slice(2);
+    if (args[0] === "source" && args[1] === "sync") {
+      setTimeout(() => process.stdout.write(JSON.stringify({
+        schema: "org2:source-sync:v1",
+        root: ".",
+        applied: true,
+        results: [{ id: "notion", ok: true, imported: {
+          apply: true,
+          inputCount: 2,
+          acceptedCount: 2,
+          skippedCount: 0,
+          groupCount: 2,
+          changedFileCount: 2
+        }}]
+      })), 500);
+    } else if (args[0] === "index") {
+      process.stdout.write(JSON.stringify({ fileCount: 2, lineCount: 2, skippedFiles: 0 }));
+    } else if (args[0] === "source" && args[1] === "list") {
+      process.stdout.write("[]");
+    } else {
+      process.stderr.write(`Unexpected command: ${args.join(" ")}`);
+      process.exitCode = 2;
+    }
+    """.write(to: dist.appendingPathComponent("cli.js"), atomically: true, encoding: .utf8)
+
+    let commands = ObservedCLICommands()
+    let cli = Org2CLI(repoRoot: repoRoot, telemetryHandler: commands.append)
+    let store = WorkspaceStore(cli: cli)
+    store.setCorpusRoot(corpus, persistsDefault: false)
+    store.setWorkspaceRealtimeRefreshActive(true)
+    defer { store.setWorkspaceRealtimeRefreshActive(false) }
+    let profile = WorkspaceSourceProfileStatus(
+      id: "notion",
+      type: "knowledge-base",
+      enabled: true,
+      scopes: [],
+      workspaceId: nil,
+      rawZone: "raw/connectors/notion",
+      reviewZone: "views/connectors/notion",
+      ingestionSince: nil,
+      ingestionLimit: 100,
+      syncArgs: [],
+      media: "metadata-only",
+      schedule: nil,
+      binary: "notcrawl",
+      binaryAvailable: true,
+      configPath: nil,
+      configAvailable: true,
+      ready: true
+    )
+
+    let sync = Task { await store.syncAndStageSource(profile) }
+    try await Task.sleep(nanoseconds: 100_000_000)
+    let first = corpus.appendingPathComponent("raw/connectors/notion/first.org2")
+    try FileManager.default.createDirectory(
+      at: first.deletingLastPathComponent(),
+      withIntermediateDirectories: true
+    )
+    try "* First\n".write(to: first, atomically: true, encoding: .utf8)
+    store.handleCorpusFileEvents([first.path], corpusRoot: corpus, requiresFullScan: false)
+    try await Task.sleep(nanoseconds: 180_000_000)
+
+    let second = corpus.appendingPathComponent("views/connectors/notion/second.org2")
+    try FileManager.default.createDirectory(
+      at: second.deletingLastPathComponent(),
+      withIntermediateDirectories: true
+    )
+    try "* Second\n".write(to: second, atomically: true, encoding: .utf8)
+    store.handleCorpusFileEvents([second.path], corpusRoot: corpus, requiresFullScan: false)
+    try await Task.sleep(nanoseconds: 180_000_000)
+
+    XCTAssertEqual(
+      commands.count("cli.index"),
+      0,
+      "File events must not start index work while the connector is still writing"
+    )
+
+    await sync.value
+
+    XCTAssertEqual(commands.count("cli.index"), 1)
+    XCTAssertEqual(Set(store.corpusFiles.map(\.path)), Set([first.path, second.path]))
   }
 
   func testReportsNestedFileWritesWithoutScanningTheCorpus() throws {

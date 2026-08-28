@@ -59,6 +59,28 @@ On Apple Silicon the test launcher runs Swift natively even when npm itself is
 running through Rosetta, so the optimized test bundle matches the app's target
 architecture.
 
+* CLI latency
+
+Every CLI and bundled renderer process launched by Org2 Workspace emits one
+structured completion record in the
+=org.org2.workspace/CLILatency= unified-log category. Records include a
+sanitized command identity, elapsed milliseconds, outcome, exit status, and
+standard-input, standard-output, and standard-error byte counts. They never
+include command data arguments, corpus paths, search queries, environment
+values, or output contents.
+
+Recent records can be inspected during development with:
+
+#+begin_src sh
+log show --last 10m \
+  --predicate 'subsystem == "org.org2.workspace" && category == "CLILatency"'
+#+end_src
+
+The record is emitted once, after the process and its output collectors settle,
+so it does not add polling or per-byte work to a CLI invocation. The Swift CLI
+wrapper also accepts an injected structured metric sink for focused tests and
+in-process diagnostics consumers.
+
 * Incident storage
 
 Captured evidence is primary input, so it belongs under =raw/= rather than =compiled/=:

@@ -32,6 +32,29 @@ export type Org2SearchIndexFile = {
   modifiedMs: number;
   byteCount: number;
   lines: string[];
+  /**
+   * Optional query-time metadata. Older v1 indexes do not contain this field
+   * and remain readable through the line-parser fallback.
+   */
+  headings?: Org2SearchIndexHeading[];
+};
+
+export type Org2SearchIndexHeading = {
+  /** Zero-based source line, matching the representation used by `lines`. */
+  line: number;
+  /** Inclusive, zero-based end of this heading's subtree. */
+  endLine: number;
+  level: number;
+  title: string;
+  todo?: string;
+  tags: string[];
+  id?: string;
+  /** The ID is visible only to matches at or after its property line. */
+  idLine?: number;
+  /** Index of the parent heading in the containing file's headings array. */
+  parent?: number;
+  /** First timestamp-like date found in this heading's subtree. */
+  date?: string;
 };
 
 export type Org2SearchIndex = {
@@ -112,6 +135,66 @@ export type Org2SearchOptions = {
 
 type SearchHeading = { line: number; level: number; title: string; todo?: string; tags: string[]; id?: string };
 type SearchHeadingRef = { level: number; title: string; line: number; lineNumber: number };
+type LiteralCaseInsensitiveMatcher = { needle: string; asciiPattern?: RegExp };
+
+const NON_ASCII_PATTERN = /[^\x00-\x7f]/;
+
+function indexSearchFile(rootDir: string, absolutePath: string, stat: fs.Stats, lines: string[]): Org2SearchIndexFile {
+  return {
+    path: absolutePath,
+    relativePath: relativeIndexPath(rootDir, absolutePath),
+    modifiedMs: Math.trunc(stat.mtimeMs),
+    byteCount: stat.size,
+    lines,
+    headings: buildSearchIndexHeadings(lines),
+  };
+}
+
+function buildSearchIndexHeadings(lines: string[]): Org2SearchIndexHeading[] {
+  const headings: Org2SearchIndexHeading[] = [];
+  const stack: number[] = [];
+
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+    const line = lines[lineIndex] || "";
+    const parsed = line.charCodeAt(0) === 42 ? parseSearchHeading(line) : null;
+    if (parsed) {
+      while (stack.length && headings[stack[stack.length - 1]!]!.level >= parsed.level) {
+        headings[stack.pop()!]!.endLine = lineIndex - 1;
+      }
+      const parent = stack[stack.length - 1];
+      const heading: Org2SearchIndexHeading = {
+        line: lineIndex,
+        endLine: lines.length - 1,
+        level: parsed.level,
+        title: parsed.title,
+        todo: parsed.todo,
+        tags: parsed.tags,
+        ...(parent !== undefined ? { parent } : {}),
+      };
+      headings.push(heading);
+      stack.push(headings.length - 1);
+    }
+
+    const currentIndex = stack[stack.length - 1];
+    const current = currentIndex === undefined ? undefined : headings[currentIndex];
+    const idMatch = current && line.includes(":ID:") ? /^:ID:\s*(\S+)\s*$/.exec(line.trim()) : null;
+    if (idMatch && current) {
+      current.id = idMatch[1];
+      current.idLine = lineIndex;
+    }
+
+    const date = extractDateFromTimestamp(line);
+    if (date) {
+      for (const openHeadingIndex of stack) {
+        const openHeading = headings[openHeadingIndex]!;
+        if (!openHeading.date) openHeading.date = date;
+      }
+    }
+  }
+
+  for (const headingIndex of stack) headings[headingIndex]!.endLine = lines.length - 1;
+  return headings;
+}
 
 export function buildSearchIndex(options: {
   rootDir: string;
@@ -135,13 +218,7 @@ export function buildSearchIndex(options: {
       const lines = raw.split("\n");
       lineCount += lines.length;
       byteCount += stat.size;
-      indexedFiles.push({
-        path: absolutePath,
-        relativePath: relativeIndexPath(rootDir, absolutePath),
-        modifiedMs: Math.trunc(stat.mtimeMs),
-        byteCount: stat.size,
-        lines,
-      });
+      indexedFiles.push(indexSearchFile(rootDir, absolutePath, stat, lines));
     } catch {
       skippedFiles += 1;
     }
@@ -199,13 +276,7 @@ export function updateSearchIndex(options: {
       const stat = fs.statSync(absolutePath);
       if (!stat.isFile()) continue;
       const raw = fs.readFileSync(absolutePath, "utf8").replace(/\r\n/g, "\n");
-      indexedFiles.push({
-        path: absolutePath,
-        relativePath: relativeIndexPath(rootDir, absolutePath),
-        modifiedMs: Math.trunc(stat.mtimeMs),
-        byteCount: stat.size,
-        lines: raw.split("\n"),
-      });
+      indexedFiles.push(indexSearchFile(rootDir, absolutePath, stat, raw.split("\n")));
     } catch (error) {
       // A path that vanished between the event and this read is a deletion, not
       // an indexing failure. Other read errors are reported but never preserve
@@ -302,13 +373,17 @@ export function loadCompatibleSearchIndex(options: {
 
 export function searchIndexedCorpus(index: Org2SearchIndex, options: Org2SearchOptions): Org2SearchHit[] {
   const hits: Org2SearchHit[] = [];
-  const needle = options.query.toLowerCase();
+  const matcher = literalCaseInsensitiveMatcher(options.query);
   const fileZoneFilters = options.fileZoneFilters.map((zone) => zone.toLowerCase()).filter(Boolean);
 
   for (const file of index.files) {
     const normalizedFile = file.path.toLowerCase();
     if (fileZoneFilters.length && !fileZoneFilters.some((zone) => normalizedFile.includes(zone))) continue;
-    collectSearchHitsForLines(file.path, file.lines, needle, options, hits);
+    if (file.headings) {
+      collectSearchHitsForIndexedFile(file, matcher, options, hits);
+    } else {
+      collectSearchHitsForLines(file.path, file.lines, matcher, options, hits);
+    }
     if (hits.length >= options.limit && normalizedSort(options.sort) === "scan") break;
   }
 
@@ -318,7 +393,7 @@ export function searchIndexedCorpus(index: Org2SearchIndex, options: Org2SearchO
 export function searchFilesByScan(files: string[], options: Org2SearchOptions): { hits: Org2SearchHit[]; skippedFileCount: number } {
   const hits: Org2SearchHit[] = [];
   const subtreeHits = new Map<string, Org2SearchHit>();
-  const needle = options.query.toLowerCase();
+  const matcher = literalCaseInsensitiveMatcher(options.query);
   const fileZoneFilters = options.fileZoneFilters.map((zone) => zone.toLowerCase()).filter(Boolean);
   let skippedFileCount = 0;
 
@@ -328,7 +403,7 @@ export function searchFilesByScan(files: string[], options: Org2SearchOptions): 
       if (fileZoneFilters.length && !fileZoneFilters.some((zone) => normalizedFile.includes(zone))) continue;
       const raw = fs.readFileSync(filePath, "utf8").replace(/\r\n/g, "\n");
       const fileHits: Org2SearchHit[] = [];
-      collectSearchHitsForLines(filePath, raw.split("\n"), needle, options, fileHits, subtreeHits);
+      collectSearchHitsForLines(filePath, raw.split("\n"), matcher, options, fileHits, subtreeHits);
       hits.push(...fileHits);
     } catch {
       skippedFileCount += 1;
@@ -372,7 +447,7 @@ export function searchPayload(options: {
 function collectSearchHitsForLines(
   filePath: string,
   lines: string[],
-  needle: string,
+  matcher: LiteralCaseInsensitiveMatcher,
   options: Org2SearchOptions,
   hits: Org2SearchHit[],
   subtreeHits = new Map<string, Org2SearchHit>(),
@@ -381,16 +456,16 @@ function collectSearchHitsForLines(
 
   for (let j = 0; j < lines.length; j += 1) {
     const line = lines[j] || "";
-    const parsed = parseSearchHeading(line);
+    const parsed = line.charCodeAt(0) === 42 ? parseSearchHeading(line) : null;
     if (parsed) {
       while (stack.length && stack[stack.length - 1]!.level >= parsed.level) stack.pop();
       stack.push({ line: j, ...parsed });
     }
 
     const current = stack[stack.length - 1];
-    const idMatch = /^:ID:\s*(\S+)\s*$/.exec(line.trim());
+    const idMatch = current && line.includes(":ID:") ? /^:ID:\s*(\S+)\s*$/.exec(line.trim()) : null;
     if (idMatch && current) current.id = idMatch[1];
-    if (!line.toLowerCase().includes(needle)) continue;
+    if (!matchesCaseInsensitiveLiteral(line, matcher)) continue;
     if (options.todoFilters.size && (!current?.todo || !options.todoFilters.has(current.todo.toUpperCase()))) continue;
     if (
       options.tagFilters.size &&
@@ -450,6 +525,115 @@ function collectSearchHitsForLines(
     if (options.subtree) subtreeHits.set(key, hit);
     hits.push(hit);
   }
+}
+
+function collectSearchHitsForIndexedFile(
+  file: Org2SearchIndexFile,
+  matcher: LiteralCaseInsensitiveMatcher,
+  options: Org2SearchOptions,
+  hits: Org2SearchHit[],
+): void {
+  const headings = file.headings || [];
+  const subtreeHits = new Map<string, Org2SearchHit>();
+  const fileDate = dateKeyFromFile(file.path);
+  const normalized = normalizedSort(options.sort);
+  let headingIndex = -1;
+
+  for (let j = 0; j < file.lines.length; j += 1) {
+    while (headingIndex + 1 < headings.length && headings[headingIndex + 1]!.line <= j) headingIndex += 1;
+
+    const line = file.lines[j] || "";
+    if (!matchesCaseInsensitiveLiteral(line, matcher)) continue;
+
+    const currentIndex = headingIndex;
+    const current = currentIndex >= 0 ? headings[currentIndex] : undefined;
+    if (options.todoFilters.size && (!current?.todo || !options.todoFilters.has(current.todo.toUpperCase()))) continue;
+    if (
+      options.tagFilters.size &&
+      !Array.from(options.tagFilters).every((tag) => current?.tags.some((candidate) => candidate.toLowerCase() === tag))
+    ) continue;
+    if (options.headingNeedle && !(current?.title || "").toLowerCase().includes(options.headingNeedle)) continue;
+
+    const sortDate = current?.date || fileDate;
+    if (!inDateWindow(sortDate, options.dateFrom, options.dateTo)) continue;
+
+    const headingAncestry = searchHeadingAncestry(headings, currentIndex);
+    const sourceStart = options.subtree && current ? current.line : j;
+    const sourceEnd = options.subtree && current ? current.endLine : j;
+    const start = options.subtree ? sourceStart : Math.max(0, j - options.context);
+    const end = options.subtree ? sourceEnd : Math.min(file.lines.length - 1, j + options.context);
+    const key = `${file.path}:${sourceStart + 1}:${sourceEnd + 1}`;
+    const match = { line: j + 1, snippet: line.trim() };
+
+    if (options.subtree) {
+      const existing = subtreeHits.get(key);
+      if (existing) {
+        existing.matchedLines.push(match);
+        if (!existing.snippet && match.snippet) existing.snippet = match.snippet;
+        continue;
+      }
+    }
+
+    const hit: Org2SearchHit = {
+      file: file.path,
+      line: options.subtree ? sourceStart + 1 : j + 1,
+      lineEnd: options.subtree ? sourceEnd + 1 : j + 1,
+      heading: current?.title,
+      headingLine: current ? current.line + 1 : undefined,
+      headingLevel: current?.level,
+      headingAncestry,
+      id: current?.idLine !== undefined && current.idLine <= j ? current.id : undefined,
+      todo: current?.todo,
+      tags: current?.tags || [],
+      snippet: line.trim(),
+      context: { startLine: start + 1, endLine: end + 1, lines: file.lines.slice(start, end + 1) },
+      sourceRange: { startLine: sourceStart + 1, endLine: sourceEnd + 1 },
+      matchedLines: [match],
+      date: sortDate || undefined,
+      sortDate: sortDate || undefined,
+      ...(options.answerContext ? { answerContext: file.lines.slice(start, end + 1).join("\n") } : {}),
+    };
+
+    if (options.subtree) subtreeHits.set(key, hit);
+    hits.push(hit);
+    if (!options.subtree && normalized === "scan" && hits.length >= options.limit) return;
+  }
+}
+
+function searchHeadingAncestry(headings: Org2SearchIndexHeading[], headingIndex: number): SearchHeadingRef[] {
+  if (headingIndex < 0) return [];
+  const ancestry: SearchHeadingRef[] = [];
+  let currentIndex: number | undefined = headingIndex;
+  while (currentIndex !== undefined) {
+    const heading: Org2SearchIndexHeading = headings[currentIndex]!;
+    ancestry.push({
+      level: heading.level,
+      title: heading.title,
+      line: heading.line,
+      lineNumber: heading.line + 1,
+    });
+    currentIndex = heading.parent;
+  }
+  ancestry.reverse();
+  return ancestry;
+}
+
+function literalCaseInsensitiveMatcher(query: string): LiteralCaseInsensitiveMatcher {
+  const needle = query.toLowerCase();
+  if (NON_ASCII_PATTERN.test(query)) return { needle };
+  return {
+    needle,
+    asciiPattern: new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"),
+  };
+}
+
+function matchesCaseInsensitiveLiteral(line: string, matcher: LiteralCaseInsensitiveMatcher): boolean {
+  // RegExp avoids allocating a lower-cased copy on the overwhelmingly common
+  // ASCII path. Unicode retains the exact legacy toLowerCase/includes behavior;
+  // JavaScript's /i folding intentionally differs for characters such as the
+  // Kelvin sign, dotted capital I, and long s.
+  if (matcher.asciiPattern && !NON_ASCII_PATTERN.test(line)) return matcher.asciiPattern.test(line);
+  return line.toLowerCase().includes(matcher.needle);
 }
 
 function sortAndLimitSearchHits(hits: Org2SearchHit[], sort: string, limit: number, query: string): Org2SearchHit[] {

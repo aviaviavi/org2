@@ -107,6 +107,23 @@ running through Rosetta, so the optimized test bundle matches the app's target
 architecture.</p>
 </section>
 <section class="org2-headline level-1">
+<h1 id="cli-latency">CLI latency</h1>
+<p>Every CLI and bundled renderer process launched by Org2 Workspace emits one
+structured completion record in the
+<code>org.org2.workspace/CLILatency</code> unified-log category. Records include a
+sanitized command identity, elapsed milliseconds, outcome, exit status, and
+standard-input, standard-output, and standard-error byte counts. They never
+include command data arguments, corpus paths, search queries, environment
+values, or output contents.</p>
+<p>Recent records can be inspected during development with:</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">log show --last 10m \
+  --predicate 'subsystem == &quot;org.org2.workspace&quot; &amp;&amp; category == &quot;CLILatency&quot;'</code></pre>
+<p>The record is emitted once, after the process and its output collectors settle,
+so it does not add polling or per-byte work to a CLI invocation. The Swift CLI
+wrapper also accepts an injected structured metric sink for focused tests and
+in-process diagnostics consumers.</p>
+</section>
+<section class="org2-headline level-1">
 <h1 id="incident-storage">Incident storage</h1>
 <p>Captured evidence is primary input, so it belongs under <code>raw/</code> rather than <code>compiled/</code>:</p>
 <pre class="org2-example">raw/diagnostics/org2-workspace/YYYY/MM/DD/

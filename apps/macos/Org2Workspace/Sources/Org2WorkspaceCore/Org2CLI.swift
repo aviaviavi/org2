@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import OSLog
 
 private struct Org2JSONDecodedValue<Value>: @unchecked Sendable {
   let value: Value
@@ -26,6 +27,43 @@ public enum Org2SlideExportFormat: String, CaseIterable, Identifiable, Sendable 
   }
 }
 
+public enum Org2CLIInvocationOutcome: String, Equatable, Sendable {
+  case succeeded
+  case failed
+  case timedOut = "timed-out"
+  case cancelled
+  case missingExecutable = "missing-executable"
+  case launchFailed = "launch-failed"
+}
+
+public struct Org2CLIInvocationMetric: Equatable, Sendable {
+  public let command: String
+  public let elapsedMilliseconds: Double
+  public let outcome: Org2CLIInvocationOutcome
+  public let standardInputBytes: Int
+  public let standardOutputBytes: Int
+  public let standardErrorBytes: Int
+  public let exitStatus: Int32?
+
+  public init(
+    command: String,
+    elapsedMilliseconds: Double,
+    outcome: Org2CLIInvocationOutcome,
+    standardInputBytes: Int,
+    standardOutputBytes: Int,
+    standardErrorBytes: Int,
+    exitStatus: Int32?
+  ) {
+    self.command = command
+    self.elapsedMilliseconds = elapsedMilliseconds
+    self.outcome = outcome
+    self.standardInputBytes = standardInputBytes
+    self.standardOutputBytes = standardOutputBytes
+    self.standardErrorBytes = standardErrorBytes
+    self.exitStatus = exitStatus
+  }
+}
+
 public struct Org2CLI: Sendable {
   private static let ignoreBrokenPipeSignal: Void = {
     _ = Darwin.signal(SIGPIPE, SIG_IGN)
@@ -34,13 +72,53 @@ public struct Org2CLI: Sendable {
   public let repoRoot: URL
   private let cliPath: URL
   private let nodePath: String?
+  private let telemetryHandler: (@Sendable (Org2CLIInvocationMetric) -> Void)?
+  private static let telemetryLogger = Logger(
+    subsystem: "org.org2.workspace",
+    category: "CLILatency"
+  )
+  private static let telemetryCommandRoots: Set<String> = [
+    "agent", "agent-profile", "agenda", "ai", "approvals", "archive", "artifact",
+    "backlinks", "brief", "capture", "clock", "compile", "context", "corpus",
+    "crypt", "data", "doctor", "entity", "eval", "export", "fmt", "goal",
+    "graph", "id", "index", "ledger", "lint", "lsp", "mcp", "plan", "publish",
+    "query", "query-data", "refile", "render-chart", "review", "roam", "run",
+    "search", "source", "todo", "version", "workflow", "workspace"
+  ]
+  private static let telemetryNestedCommands: Set<String> = [
+    "agent.capabilities", "agent.context", "agent.search", "agent.fetch", "agent.bundle",
+    "agent-profile.list", "agent-profile.show", "agent-profile.create", "agent-profile.update",
+    "agent-profile.resolve", "ai.validate-job", "ai.run", "ai.suggest-links", "ai.review",
+    "ai.promote", "artifact.graph", "artifact.rebuild", "brief.today", "brief.project",
+    "brief.node", "compile.corpus", "corpus.show", "corpus.validate", "corpus.init",
+    "data.refresh", "entity.show", "eval.run", "eval.fixture", "export.html",
+    "export.beamer", "goal.list", "goal.show", "goal.create", "goal.update",
+    "graph.audit", "id.get", "id.ensure", "ledger.list", "ledger.show", "ledger.create",
+    "ledger.update", "ledger.event", "mcp.serve", "mcp.clients", "mcp.client-add",
+    "mcp.discover", "mcp.snapshot", "review.list", "review.show", "run.create",
+    "run.list", "run.show", "run.validate", "run.start", "run.resume", "run.retry",
+    "run.cancel", "run.complete", "run.complete-external", "run.reopen-external",
+    "run.fail", "run.block", "run.fork", "run.normalize", "run.assign", "run.comment",
+    "run.outcome", "run.runtime", "run.step", "run.artifact", "run.artifact-review",
+    "run.validation", "run.approval-request", "run.approval-decide", "source.list",
+    "source.status", "source.doctor", "source.import", "source.sync", "todo.set",
+    "todo.toggle", "todo.assign", "todo.approve", "workflow.list", "workflow.show",
+    "workflow.validate", "workflow.save", "workflow.run", "workflow.triggers",
+    "workflow.package", "workflow.corpus-template", "workflow.install-builtin",
+    "workspace.agenda", "workspace.search"
+  ]
 
-  public init(repoRoot: URL, nodePath: String? = nil) {
+  public init(
+    repoRoot: URL,
+    nodePath: String? = nil,
+    telemetryHandler: (@Sendable (Org2CLIInvocationMetric) -> Void)? = nil
+  ) {
     self.repoRoot = repoRoot
     self.cliPath = repoRoot.appendingPathComponent("dist/cli.js")
     let bundledNode = repoRoot.appendingPathComponent("bin/node")
     self.nodePath = nodePath
       ?? (FileManager.default.isExecutableFile(atPath: bundledNode.path) ? bundledNode.path : nil)
+    self.telemetryHandler = telemetryHandler
   }
 
   public static func defaultRepoRoot(
@@ -271,7 +349,29 @@ public struct Org2CLI: Sendable {
   ) throws -> Data {
     _ = Self.ignoreBrokenPipeSignal
 
+    let startedAt = DispatchTime.now().uptimeNanoseconds
+    let command = Self.telemetryCommandIdentity(scriptPath: scriptPath, arguments: arguments)
+    var outcome = Org2CLIInvocationOutcome.failed
+    var standardOutputBytes = 0
+    var standardErrorBytes = 0
+    var exitStatus: Int32?
+    defer {
+      let elapsedNanoseconds = DispatchTime.now().uptimeNanoseconds - startedAt
+      let metric = Org2CLIInvocationMetric(
+        command: command,
+        elapsedMilliseconds: Double(elapsedNanoseconds) / 1_000_000,
+        outcome: outcome,
+        standardInputBytes: standardInput?.count ?? 0,
+        standardOutputBytes: standardOutputBytes,
+        standardErrorBytes: standardErrorBytes,
+        exitStatus: exitStatus
+      )
+      Self.recordTelemetry(metric)
+      telemetryHandler?(metric)
+    }
+
     guard FileManager.default.fileExists(atPath: scriptPath.path) else {
+      outcome = .missingExecutable
       throw Org2CLIError.missingCLI(scriptPath.path)
     }
 
@@ -300,7 +400,12 @@ public struct Org2CLI: Sendable {
     let stderrCollector = PipeOutputCollector()
     let readGroup = DispatchGroup()
 
-    try process.run()
+    do {
+      try process.run()
+    } catch {
+      outcome = .launchFailed
+      throw error
+    }
 
     // The child inherits its own copies. Keeping the parent's write ends open
     // can prevent readDataToEndOfFile() from ever observing EOF after the child
@@ -368,6 +473,7 @@ public struct Org2CLI: Sendable {
     }
 
     process.waitUntilExit()
+    exitStatus = process.terminationStatus
     // A command (or a descendant it spawned) can keep a pipe descriptor open
     // after the direct child exits. Never let output draining turn that into an
     // unbounded application hang. Do not forcibly close a FileHandle while its
@@ -375,16 +481,20 @@ public struct Org2CLI: Sendable {
     // reader owns the pipe and will unwind naturally when the descriptor closes.
     _ = readGroup.wait(timeout: .now() + 1)
 
+    let outData = stdoutCollector.data
+    let errData = stderrCollector.data
+    standardOutputBytes = outData.count
+    standardErrorBytes = errData.count
+
     if wasCancelled {
+      outcome = .cancelled
       throw CancellationError()
     }
 
     if didTimeOut {
+      outcome = .timedOut
       throw Org2CLIError.commandTimedOut(seconds: Int(timeout?.rounded(.up) ?? 0))
     }
-
-    let outData = stdoutCollector.data
-    let errData = stderrCollector.data
 
     guard process.terminationStatus == 0 else {
       let stderrText = String(data: errData, encoding: .utf8)?
@@ -398,7 +508,31 @@ public struct Org2CLI: Sendable {
       )
     }
 
+    outcome = .succeeded
     return outData
+  }
+
+  private static func recordTelemetry(_ metric: Org2CLIInvocationMetric) {
+    let exitStatus = metric.exitStatus.map(String.init) ?? "none"
+    telemetryLogger.info(
+      "command=\(metric.command, privacy: .public) elapsed_ms=\(metric.elapsedMilliseconds, privacy: .public) outcome=\(metric.outcome.rawValue, privacy: .public) stdin_bytes=\(metric.standardInputBytes, privacy: .public) stdout_bytes=\(metric.standardOutputBytes, privacy: .public) stderr_bytes=\(metric.standardErrorBytes, privacy: .public) exit_status=\(exitStatus, privacy: .public)"
+    )
+  }
+
+  static func telemetryCommandIdentity(scriptPath: URL, arguments: [String]) -> String {
+    let script = scriptPath.deletingPathExtension().lastPathComponent
+    guard script == "cli" else { return script }
+    guard let root = arguments.first,
+          telemetryCommandRoots.contains(root)
+    else { return "cli.unknown" }
+
+    if arguments.count > 1, arguments[1].utf8.count <= 48 {
+      let nestedCommand = "\(root).\(arguments[1])"
+      if telemetryNestedCommands.contains(nestedCommand) {
+        return "cli.\(nestedCommand)"
+      }
+    }
+    return "cli.\(root)"
   }
 
   private static func commandFailureMessage(from stdout: Data) -> String? {

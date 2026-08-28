@@ -2068,6 +2068,8 @@ public final class WorkspaceStore: ObservableObject {
   private var runReviewFileEventRefreshTask: Task<Void, Never>?
   private var runReviewFileEventGeneration = 0
   private var pendingCorpusChangedPaths: Set<String> = []
+  private var activeSourceSyncEventBatchCount = 0
+  private var sourceSyncEventBatchNeedsFallbackScan = false
   private var corpusFileWatchers: [String: CorpusFileWatcher] = [:]
   private var mountedCorpusEventRefreshTask: Task<Void, Never>?
   private var workspaceSurfaceRefreshTasks: [WorkspaceSurface: Task<Void, Never>] = [:]
@@ -2926,6 +2928,8 @@ public final class WorkspaceStore: ObservableObject {
     }
     needsFullCorpusRefreshAfterEvents = false
     pendingCorpusChangedPaths = []
+    activeSourceSyncEventBatchCount = 0
+    sourceSyncEventBatchNeedsFallbackScan = false
     agendaTodoShortcutMutationTask?.cancel()
     agendaTodoShortcutMutationTask = nil
     pendingAgendaTodoShortcutMutations = []
@@ -3441,6 +3445,7 @@ public final class WorkspaceStore: ObservableObject {
     guard let corpusRoot, !activeSourceOperationIDs.contains(profile.id) else { return false }
     activeSourceOperationIDs.insert(profile.id)
     defer { activeSourceOperationIDs.remove(profile.id) }
+    beginSourceSyncEventBatch()
     setSourceOperationMessage(nil, profileID: profile.id)
     do {
       let envelope: WorkspaceSourceOperationEnvelope = try await cli.runJSON(
@@ -3460,6 +3465,7 @@ public final class WorkspaceStore: ObservableObject {
           profileID: profile.id
         )
         recordSourceScheduleDeferred(profile, trigger: trigger)
+        await finishSourceSyncEventBatch(requiresFallbackScan: false)
         return true
       }
       guard result.ok else {
@@ -3481,11 +3487,12 @@ public final class WorkspaceStore: ObservableObject {
         setSourceOperationMessage("Sync finished.\(recoveredSuffix)", profileID: profile.id)
       }
       recordSourceScheduleResult(profile, trigger: trigger, succeeded: true, error: nil)
-      await refreshCorpusFiles()
+      await finishSourceSyncEventBatch(requiresFallbackScan: true)
       await refreshSourceConnections()
       return true
     } catch is CancellationError {
       setSourceOperationMessage(nil, profileID: profile.id)
+      await finishSourceSyncEventBatch(requiresFallbackScan: false)
       return false
     } catch {
       setSourceOperationMessage(error.localizedDescription, profileID: profile.id, failed: true)
@@ -3495,7 +3502,41 @@ public final class WorkspaceStore: ObservableObject {
         succeeded: false,
         error: error.localizedDescription
       )
+      await finishSourceSyncEventBatch(requiresFallbackScan: false)
       return false
+    }
+  }
+
+  private func beginSourceSyncEventBatch() {
+    if activeSourceSyncEventBatchCount == 0 {
+      sourceSyncEventBatchNeedsFallbackScan = false
+    }
+    activeSourceSyncEventBatchCount += 1
+  }
+
+  private func finishSourceSyncEventBatch(requiresFallbackScan: Bool) async {
+    guard activeSourceSyncEventBatchCount > 0 else { return }
+    sourceSyncEventBatchNeedsFallbackScan = sourceSyncEventBatchNeedsFallbackScan
+      || requiresFallbackScan
+
+    // FSEvents may deliver the connector's final atomic replacements just
+    // after the child exits. Keep the operation boundary open briefly so the
+    // tail joins the same deduplicated reconciliation instead of starting a
+    // second index update.
+    try? await Task.sleep(nanoseconds: 350_000_000)
+    activeSourceSyncEventBatchCount -= 1
+    guard activeSourceSyncEventBatchCount == 0 else { return }
+
+    let requiresFallbackScan = sourceSyncEventBatchNeedsFallbackScan
+    sourceSyncEventBatchNeedsFallbackScan = false
+    if needsFullCorpusRefreshAfterEvents || !pendingCorpusChangedPaths.isEmpty {
+      scheduleCorpusEventRefreshTask()
+      await postOpenClawWorkspaceRefreshTask?.value
+    } else if requiresFallbackScan {
+      // Watchers are disabled in some test and recovery environments, and an
+      // FSEvents drop can omit item paths. Reconcile once at the operation
+      // boundary rather than leaving successful connector output invisible.
+      await performFullCorpusFileRefreshAfterEvents()
     }
   }
 
@@ -19582,6 +19623,7 @@ public final class WorkspaceStore: ObservableObject {
 
   private func scheduleCorpusEventRefreshTask() {
     guard isWorkspaceRealtimeRefreshActive,
+          activeSourceSyncEventBatchCount == 0,
           postOpenClawWorkspaceRefreshTask == nil
     else {
       return
@@ -19592,7 +19634,9 @@ public final class WorkspaceStore: ObservableObject {
       try? await Task.sleep(nanoseconds: 120_000_000)
       guard let self else { return }
 
-      while !Task.isCancelled, self.isWorkspaceRealtimeRefreshActive {
+      while !Task.isCancelled,
+            self.isWorkspaceRealtimeRefreshActive,
+            self.activeSourceSyncEventBatchCount == 0 {
         if self.needsFullCorpusRefreshAfterEvents {
           self.needsFullCorpusRefreshAfterEvents = false
           self.pendingCorpusChangedPaths = []

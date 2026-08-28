@@ -58,7 +58,7 @@ import {
 import { loadAiJobManifest, validateAiJobManifest } from "./aiJobManifest.js";
 import { createAiAdapterRequest, MockAiAdapter, type AiAdapterContextItem, type AiAdapterResponse } from "./aiAdapter.js";
 import { buildGeneratedArtifactMetadata, formatOrg2ArtifactPropertyDrawer, sha256Hex, updateArtifactReviewStatusInText } from "./artifactMetadata.js";
-import { defaultCorpusCachePath, org2IndexHome } from "./indexPaths.js";
+import { defaultCorpusCachePath, org2CorpusIndexDir, org2IndexHome } from "./indexPaths.js";
 import { ingestDemoSource, type Org2RawCaptureInput } from "./ingestionPipeline.js";
 import { parseHeadlineTitleForRoam } from "./headlineTitle.js";
 import { parseIsoCalendarDate } from "./calendarDate.js";
@@ -2971,6 +2971,128 @@ interface ScheduledItem {
   tags: string[];
   properties: Record<string, string>;
   habit?: HabitAgendaState;
+}
+
+const AGENDA_CACHE_SCHEMA_VERSION = "org2-agenda-cache/v1";
+const AGENDA_CACHE_MAX_QUERIES = 4;
+
+type AgendaCacheFileEntry = {
+  size: number;
+  mtimeMs: number;
+  ctimeMs: number;
+  items: ScheduledItem[];
+};
+
+type AgendaCacheQueryEntry = {
+  updatedAt: string;
+  files: Record<string, AgendaCacheFileEntry>;
+};
+
+type AgendaCache = {
+  schemaVersion: typeof AGENDA_CACHE_SCHEMA_VERSION;
+  rootDir: string;
+  queries: Record<string, AgendaCacheQueryEntry>;
+};
+
+function emptyAgendaCache(rootDir: string): AgendaCache {
+  return {
+    schemaVersion: AGENDA_CACHE_SCHEMA_VERSION,
+    rootDir: path.resolve(rootDir),
+    queries: {},
+  };
+}
+
+function readAgendaCache(cacheFile: string, rootDir: string): AgendaCache {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(cacheFile, "utf8")) as Partial<AgendaCache>;
+    const queriesAreValid = parsed.queries
+      && typeof parsed.queries === "object"
+      && !Array.isArray(parsed.queries)
+      && Object.values(parsed.queries).every((query) => (
+        query
+        && typeof query === "object"
+        && !Array.isArray(query)
+        && typeof query.updatedAt === "string"
+        && query.files
+        && typeof query.files === "object"
+        && !Array.isArray(query.files)
+        && Object.values(query.files).every((entry) => (
+          entry
+          && typeof entry === "object"
+          && !Array.isArray(entry)
+          && typeof entry.size === "number"
+          && typeof entry.mtimeMs === "number"
+          && typeof entry.ctimeMs === "number"
+          && Array.isArray(entry.items)
+        ))
+      ));
+    if (
+      parsed.schemaVersion === AGENDA_CACHE_SCHEMA_VERSION
+      && parsed.rootDir === path.resolve(rootDir)
+      && queriesAreValid
+    ) {
+      return parsed as AgendaCache;
+    }
+  } catch {
+    // A missing, stale, or corrupt derived cache is always safe to rebuild.
+  }
+  return emptyAgendaCache(rootDir);
+}
+
+function writeAgendaCache(cacheFile: string, cache: AgendaCache): void {
+  try {
+    fs.mkdirSync(path.dirname(cacheFile), { recursive: true });
+    const tempFile = `${cacheFile}.${process.pid}.tmp`;
+    fs.writeFileSync(tempFile, JSON.stringify(cache) + "\n", "utf8");
+    fs.renameSync(tempFile, cacheFile);
+  } catch {
+    // Agenda remains fully functional when its disposable cache cannot be written.
+  }
+}
+
+function pruneAgendaCacheQueries(cache: AgendaCache, keepQueryKey: string): void {
+  const queryKeys = Object.keys(cache.queries);
+  if (queryKeys.length <= AGENDA_CACHE_MAX_QUERIES) return;
+
+  queryKeys
+    .filter((queryKey) => queryKey !== keepQueryKey)
+    .sort((a, b) => {
+      const aUpdated = cache.queries[a]?.updatedAt || "";
+      const bUpdated = cache.queries[b]?.updatedAt || "";
+      return bUpdated.localeCompare(aUpdated);
+    })
+    .slice(AGENDA_CACHE_MAX_QUERIES - 1)
+    .forEach((queryKey) => delete cache.queries[queryKey]);
+}
+
+function agendaCacheFileEntryMatches(entry: AgendaCacheFileEntry | undefined, stat: fs.Stats): boolean {
+  return Boolean(
+    entry
+    && Array.isArray(entry.items)
+    && entry.size === stat.size
+    && entry.mtimeMs === stat.mtimeMs
+    && entry.ctimeMs === stat.ctimeMs,
+  );
+}
+
+function agendaCacheRootForFiles(filePaths: string[], fallbackRoot: string): string {
+  const firstFile = filePaths[0];
+  if (!firstFile) return path.resolve(fallbackRoot);
+
+  let commonRoot = path.dirname(path.resolve(firstFile));
+  for (const filePath of filePaths.slice(1)) {
+    const fileDir = path.dirname(path.resolve(filePath));
+    while (true) {
+      const relative = path.relative(commonRoot, fileDir);
+      if (relative === "" || (!relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative))) {
+        break;
+      }
+      const parent = path.dirname(commonRoot);
+      if (parent === commonRoot) break;
+      commonRoot = parent;
+    }
+  }
+  return commonRoot;
 }
 
 function deduplicateAgendaPlanningItems(items: ScheduledItem[]): ScheduledItem[] {
@@ -15748,74 +15870,149 @@ Flags:
   // Process files
   const startIso = startDate.toISOString().slice(0, 10);
   const endIso = endDate.toISOString().slice(0, 10);
+  const agendaCacheRootDir = agendaUsesExplicitFiles
+    ? agendaCacheRootForFiles(files, process.cwd())
+    : agendaConfig
+      ? path.resolve(agendaConfigBaseDir)
+      : dir
+        ? path.resolve(dir)
+        : agendaCacheRootForFiles(files, agendaConfigBaseDir);
+  const agendaCacheFile = path.join(org2CorpusIndexDir(agendaCacheRootDir), "agenda-v1.json");
+  const agendaCache = readAgendaCache(agendaCacheFile, agendaCacheRootDir);
 
-  const collectAgendaOutput = (): { outputItems: ScheduledItem[]; skippedFileCount: number } => {
+  const agendaQueryKey = (runtimeStartDate: Date, runtimeEndDate: Date): string => crypto
+    .createHash("sha256")
+    .update(JSON.stringify({
+      schemaVersion: AGENDA_CACHE_SCHEMA_VERSION,
+      packageVersion: org2PackageVersion(),
+      cwd: process.cwd(),
+      args,
+      start: runtimeStartDate.toISOString().slice(0, 10),
+      end: runtimeEndDate.toISOString().slice(0, 10),
+    }))
+    .digest("hex");
+
+  const scanAgendaFile = (filePath: string, runtimeStartDate: Date, runtimeEndDate: Date): ScheduledItem[] => {
+    const content = fs.readFileSync(filePath, "utf8");
+    const normalized = content.replace(/\r?\n/g, "\n");
+
+    // Agenda intentionally uses a lightweight line-based scan so we can provide
+    // stable 0-based line numbers for editor integrations (VS Code agenda → open file).
+    // The canonical parser does not currently preserve source locations.
+    return findScheduledItemsInText(
+      normalized,
+      filePath,
+      runtimeStartDate,
+      runtimeEndDate,
+      includeOverdue,
+      parsedAgendaStatus.filter,
+      parsedAgendaExcludeStatus.filter,
+      parsedAgendaKind.filter,
+      parsedAgendaExcludeKind.filter,
+      parsedAgendaWhen.filter,
+      parsedAgendaExcludeWhen.filter,
+      parsedAgendaWeekday.filter,
+      parsedAgendaExcludeWeekday.filter,
+      parsedAgendaWeek.filter,
+      parsedAgendaExcludeWeek.filter,
+      parsedAgendaDayOfMonth.filter,
+      parsedAgendaExcludeDayOfMonth.filter,
+      parsedAgendaMonth.filter,
+      parsedAgendaExcludeMonth.filter,
+      parsedAgendaQuarter.filter,
+      parsedAgendaExcludeQuarter.filter,
+      parsedAgendaYear.filter,
+      parsedAgendaExcludeYear.filter,
+      parsedAgendaDate.filter,
+      parsedAgendaExcludeDate.filter,
+      parsedAgendaLevel.filter,
+      parsedAgendaExcludeLevel.filter,
+      parsedAgendaMatch,
+      parsedAgendaExcludeMatch,
+      parsedAgendaTag,
+      parsedAgendaId.filter,
+      parsedAgendaTodo,
+      parsedAgendaPriority.filter,
+      parsedAgendaTime.filter,
+      parsedAgendaEffort,
+      parsedAgendaProperty.filter,
+      parsedAgendaExcludeTag,
+      parsedAgendaExcludeId.filter,
+      parsedAgendaExcludeTodo,
+      parsedAgendaExcludePriority.filter,
+      parsedAgendaExcludeTime.filter,
+      parsedAgendaExcludeEffort,
+      parsedAgendaExcludeProperty.filter,
+    );
+  };
+
+  const collectAgendaOutput = (
+    targetFiles: string[],
+    runtimeStartDate: Date,
+    runtimeEndDate: Date,
+  ): { outputItems: ScheduledItem[]; skippedFileCount: number } => {
     const allItems: ScheduledItem[] = [];
     let skippedFileCount = 0;
+    const queryKey = agendaQueryKey(runtimeStartDate, runtimeEndDate);
+    const previousQuery = agendaCache.queries[queryKey];
+    const previousFiles = previousQuery?.files || {};
+    const nextFiles: Record<string, AgendaCacheFileEntry> = {};
+    let cacheDirty = !previousQuery;
 
-    for (const filePath of files) {
+    for (const filePath of targetFiles) {
       if (!matchesAgendaFileFilter(filePath, parsedAgendaFile)) continue;
       if (!matchesAgendaExcludeFileFilter(filePath, parsedAgendaExcludeFile)) continue;
 
       try {
-        const content = fs.readFileSync(filePath, "utf8");
-        const normalized = content.replace(/\r?\n/g, "\n");
+        const absolutePath = path.resolve(filePath);
+        const statBefore = fs.statSync(filePath);
+        const cached = previousFiles[absolutePath];
+        if (agendaCacheFileEntryMatches(cached, statBefore)) {
+          nextFiles[absolutePath] = cached!;
+          allItems.push(...cached!.items);
+          continue;
+        }
 
-        // Agenda intentionally uses a lightweight line-based scan so we can provide
-        // stable 0-based line numbers for editor integrations (VS Code agenda → open file).
-        // The canonical parser does not currently preserve source locations.
-        const items = findScheduledItemsInText(
-          normalized,
-          filePath,
-          startDate,
-          endDate,
-          includeOverdue,
-          parsedAgendaStatus.filter,
-          parsedAgendaExcludeStatus.filter,
-          parsedAgendaKind.filter,
-          parsedAgendaExcludeKind.filter,
-          parsedAgendaWhen.filter,
-          parsedAgendaExcludeWhen.filter,
-          parsedAgendaWeekday.filter,
-          parsedAgendaExcludeWeekday.filter,
-          parsedAgendaWeek.filter,
-          parsedAgendaExcludeWeek.filter,
-          parsedAgendaDayOfMonth.filter,
-          parsedAgendaExcludeDayOfMonth.filter,
-          parsedAgendaMonth.filter,
-          parsedAgendaExcludeMonth.filter,
-          parsedAgendaQuarter.filter,
-          parsedAgendaExcludeQuarter.filter,
-          parsedAgendaYear.filter,
-          parsedAgendaExcludeYear.filter,
-          parsedAgendaDate.filter,
-          parsedAgendaExcludeDate.filter,
-          parsedAgendaLevel.filter,
-          parsedAgendaExcludeLevel.filter,
-          parsedAgendaMatch,
-          parsedAgendaExcludeMatch,
-          parsedAgendaTag,
-          parsedAgendaId.filter,
-          parsedAgendaTodo,
-          parsedAgendaPriority.filter,
-          parsedAgendaTime.filter,
-          parsedAgendaEffort,
-          parsedAgendaProperty.filter,
-          parsedAgendaExcludeTag,
-          parsedAgendaExcludeId.filter,
-          parsedAgendaExcludeTodo,
-          parsedAgendaExcludePriority.filter,
-          parsedAgendaExcludeTime.filter,
-          parsedAgendaExcludeEffort,
-          parsedAgendaExcludeProperty.filter,
-        );
+        const items = scanAgendaFile(filePath, runtimeStartDate, runtimeEndDate);
         allItems.push(...items);
+        const statAfter = fs.statSync(filePath);
+        if (
+          statBefore.size === statAfter.size
+          && statBefore.mtimeMs === statAfter.mtimeMs
+          && statBefore.ctimeMs === statAfter.ctimeMs
+        ) {
+          nextFiles[absolutePath] = {
+            size: statAfter.size,
+            mtimeMs: statAfter.mtimeMs,
+            ctimeMs: statAfter.ctimeMs,
+            items,
+          };
+        }
+        cacheDirty = true;
       } catch (err) {
         skippedFileCount += 1;
+        cacheDirty = true;
         if (verboseErrors) {
           console.error(`Error processing ${filePath}:`, err instanceof Error ? err.message : err);
         }
       }
+    }
+
+    const previousFileKeys = Object.keys(previousFiles);
+    if (
+      previousFileKeys.length !== Object.keys(nextFiles).length
+      || previousFileKeys.some((filePath) => !nextFiles[filePath])
+    ) {
+      cacheDirty = true;
+    }
+
+    if (cacheDirty) {
+      agendaCache.queries[queryKey] = {
+        updatedAt: new Date().toISOString(),
+        files: nextFiles,
+      };
+      pruneAgendaCacheQueries(agendaCache, queryKey);
+      writeAgendaCache(agendaCacheFile, agendaCache);
     }
 
     allItems.sort((a, b) =>
@@ -15846,7 +16043,7 @@ Flags:
     return { outputItems, skippedFileCount };
   };
 
-  const { outputItems, skippedFileCount } = collectAgendaOutput();
+  const { outputItems, skippedFileCount } = collectAgendaOutput(files, startDate, endDate);
 
   if (skippedFileCount > 0 && !verboseErrors) {
     console.error(
@@ -15867,97 +16064,8 @@ Flags:
         if (!agendaToDate) {
           runtimeEndDate.setUTCDate(runtimeEndDate.getUTCDate() + days - 1);
         }
-
-        const allItems: ScheduledItem[] = [];
-        let skippedFileCount = 0;
-
-        for (const filePath of collectAgendaFiles()) {
-          if (!matchesAgendaFileFilter(filePath, parsedAgendaFile)) continue;
-          if (!matchesAgendaExcludeFileFilter(filePath, parsedAgendaExcludeFile)) continue;
-
-          try {
-            const content = fs.readFileSync(filePath, "utf8");
-            const normalized = content.replace(/\r?\n/g, "\n");
-            const refreshedItems = findScheduledItemsInText(
-              normalized,
-              filePath,
-              runtimeStartDate,
-              runtimeEndDate,
-              includeOverdue,
-              parsedAgendaStatus.filter,
-              parsedAgendaExcludeStatus.filter,
-              parsedAgendaKind.filter,
-              parsedAgendaExcludeKind.filter,
-              parsedAgendaWhen.filter,
-              parsedAgendaExcludeWhen.filter,
-              parsedAgendaWeekday.filter,
-              parsedAgendaExcludeWeekday.filter,
-              parsedAgendaWeek.filter,
-              parsedAgendaExcludeWeek.filter,
-              parsedAgendaDayOfMonth.filter,
-              parsedAgendaExcludeDayOfMonth.filter,
-              parsedAgendaMonth.filter,
-              parsedAgendaExcludeMonth.filter,
-              parsedAgendaQuarter.filter,
-              parsedAgendaExcludeQuarter.filter,
-              parsedAgendaYear.filter,
-              parsedAgendaExcludeYear.filter,
-              parsedAgendaDate.filter,
-              parsedAgendaExcludeDate.filter,
-              parsedAgendaLevel.filter,
-              parsedAgendaExcludeLevel.filter,
-              parsedAgendaMatch,
-              parsedAgendaExcludeMatch,
-              parsedAgendaTag,
-              parsedAgendaId.filter,
-              parsedAgendaTodo,
-              parsedAgendaPriority.filter,
-              parsedAgendaTime.filter,
-              parsedAgendaEffort,
-              parsedAgendaProperty.filter,
-              parsedAgendaExcludeTag,
-              parsedAgendaExcludeId.filter,
-              parsedAgendaExcludeTodo,
-              parsedAgendaExcludePriority.filter,
-              parsedAgendaExcludeTime.filter,
-              parsedAgendaExcludeEffort,
-              parsedAgendaExcludeProperty.filter,
-            );
-            allItems.push(...refreshedItems);
-          } catch (err) {
-            skippedFileCount += 1;
-            if (verboseErrors) {
-              console.error(`Error processing ${filePath}:`, err instanceof Error ? err.message : err);
-            }
-          }
-        }
-
-        allItems.sort((a, b) =>
-          compareAgendaItems(
-            a,
-            b,
-            parsedAgendaGroup.groupOrder,
-            parsedAgendaSort.sortOrder,
-            parsedAgendaDateOrder.dateOrder,
-            parsedAgendaTodoOrder,
-            parsedAgendaStatusOrder.statusOrder,
-            parsedAgendaKindOrder.kindOrder,
-            parsedAgendaPriorityOrder.priorityOrder,
-            parsedAgendaEffortOrder,
-            parsedAgendaTagOrder,
-          ),
-        );
-
-        const groupLimitedItems = applyAgendaGroupLimit(
-          allItems,
-          parsedAgendaGroup.groupOrder,
-          agendaGroupLimit,
-          parsedAgendaTagOrder,
-        );
-        const dayLimitedItems = applyAgendaDayLimit(groupLimitedItems, agendaDayLimit);
-        const refreshedOutputItems = agendaLimit ? dayLimitedItems.slice(0, agendaLimit) : dayLimitedItems;
-
-        return { items: refreshedOutputItems, skippedFiles: skippedFileCount };
+        const refreshed = collectAgendaOutput(collectAgendaFiles(), runtimeStartDate, runtimeEndDate);
+        return { items: refreshed.outputItems, skippedFiles: refreshed.skippedFileCount };
       },
     });
     return;

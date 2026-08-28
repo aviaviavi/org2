@@ -11,12 +11,18 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 const cli = path.join(repoRoot, "dist", "cli.js");
 const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), "org2-cli-performance-"));
 const corpus = path.join(fixtureRoot, "corpus");
+const agendaCorpus = path.join(fixtureRoot, "agenda-corpus");
 const indexHome = path.join(fixtureRoot, "index");
 const fileCount = 500;
 const headingsPerFile = 10;
+const agendaFileCount = Number.parseInt(process.env.ORG2_PERF_AGENDA_FILES || "2000", 10);
 const scale = Number.parseFloat(process.env.ORG2_PERF_BUDGET_SCALE || "1");
 
 assert.ok(Number.isFinite(scale) && scale >= 0.5 && scale <= 10, "ORG2_PERF_BUDGET_SCALE must be from 0.5 to 10");
+assert.ok(
+  Number.isFinite(agendaFileCount) && agendaFileCount >= 500 && agendaFileCount <= 20_000,
+  "ORG2_PERF_AGENDA_FILES must be from 500 to 20000",
+);
 
 const budgets = {
   startup: 2_000 * scale,
@@ -26,6 +32,9 @@ const budgets = {
   context: 10_000 * scale,
   contextWarm: 4_000 * scale,
   incrementalChange: 5_000 * scale,
+  agendaCold: 6_000 * scale,
+  agendaWarm: 1_000 * scale,
+  agendaIncremental: 1_500 * scale,
 };
 
 function syntheticFile(fileIndex) {
@@ -53,6 +62,19 @@ function syntheticFile(fileIndex) {
     );
   }
   return `${lines.join("\n")}\n`;
+}
+
+function syntheticAgendaFile(fileIndex, headline = `Synthetic agenda item ${fileIndex}`) {
+  return [
+    `* TODO ${headline} :perf:`,
+    `SCHEDULED: <2026-08-27 Thu ${String(8 + (fileIndex % 10)).padStart(2, "0")}:00>`,
+    ":PROPERTIES:",
+    `:ID: perf-agenda-${fileIndex}`,
+    `:PROJECT: performance-${fileIndex % 20}`,
+    ":END:",
+    "Representative agenda body text.",
+    "",
+  ].join("\n");
 }
 
 function runCase(name, args, budgetMs) {
@@ -124,7 +146,36 @@ try {
     budgets.incrementalChange,
   ));
 
-  const [, compiled, lint, graphAudit, contextCold, contextWarm, incremental] = results;
+  fs.mkdirSync(agendaCorpus, { recursive: true });
+  for (let fileIndex = 0; fileIndex < agendaFileCount; fileIndex += 1) {
+    fs.writeFileSync(
+      path.join(agendaCorpus, `agenda-${String(fileIndex).padStart(5, "0")}.org2`),
+      syntheticAgendaFile(fileIndex),
+      "utf8",
+    );
+  }
+  const agendaArgs = [
+    "agenda",
+    "--dir",
+    agendaCorpus,
+    "--recursive",
+    "--from",
+    "2026-08-27",
+    "--to",
+    "2026-08-27",
+    "--format",
+    "json",
+  ];
+  results.push(runCase("agenda/cold", agendaArgs, budgets.agendaCold));
+  results.push(runCase("agenda/warm", agendaArgs, budgets.agendaWarm));
+  fs.writeFileSync(
+    path.join(agendaCorpus, "agenda-00000.org2"),
+    syntheticAgendaFile(0, "Updated synthetic agenda item"),
+    "utf8",
+  );
+  results.push(runCase("agenda/one change", agendaArgs, budgets.agendaIncremental));
+
+  const [, compiled, lint, graphAudit, contextCold, contextWarm, incremental, agendaCold, agendaWarm, agendaIncremental] = results;
   assert.equal(compiled.payload.stats.files, fileCount);
   assert.equal(compiled.payload.stats.headings, fileCount * headingsPerFile);
   assert.equal(lint.payload.checkedFiles, fileCount);
@@ -135,8 +186,16 @@ try {
   assert.ok(contextWarm.payload.results.length > 0);
   assert.equal(incremental.payload.indexState.parsedFiles, 1);
   assert.equal(incremental.payload.indexState.reusedFiles, fileCount - 1);
+  assert.equal(agendaCold.payload.days[0].items.length, agendaFileCount);
+  assert.deepEqual(agendaWarm.payload, agendaCold.payload);
+  assert.equal(agendaIncremental.payload.days[0].items.length, agendaFileCount);
+  assert.ok(
+    agendaIncremental.payload.days[0].items.some((item) => item.headline === "Updated synthetic agenda item"),
+  );
 
-  process.stdout.write(`CLI performance regression suite (${fileCount} files, ${fileCount * (headingsPerFile + 1)} nodes; budget scale ${scale})\n`);
+  process.stdout.write(
+    `CLI performance regression suite (${fileCount} general files, ${agendaFileCount} agenda files; ${fileCount * (headingsPerFile + 1)} nodes; budget scale ${scale})\n`,
+  );
   for (const result of results) {
     process.stdout.write(`  ${result.name.padEnd(22)} ${(result.elapsedMs / 1000).toFixed(3)}s\n`);
   }
