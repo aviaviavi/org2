@@ -1,3 +1,4 @@
+import AppKit
 import Combine
 import XCTest
 @testable import Org2WorkspaceCore
@@ -45,6 +46,25 @@ private actor ApprovalDecisionGate {
   }
 }
 
+private func selectionKeyDown(
+  _ characters: String = "",
+  keyCode: UInt16,
+  modifiers: NSEvent.ModifierFlags = []
+) -> NSEvent {
+  NSEvent.keyEvent(
+    with: .keyDown,
+    location: .zero,
+    modifierFlags: modifiers,
+    timestamp: 0,
+    windowNumber: 0,
+    context: nil,
+    characters: characters,
+    charactersIgnoringModifiers: characters,
+    isARepeat: false,
+    keyCode: keyCode
+  )!
+}
+
 final class AgentRunModelsTests: XCTestCase {
   func testRunCenterResolvesSelectedApprovalWithinPresentedRun() {
     XCTAssertEqual(
@@ -70,6 +90,84 @@ final class AgentRunModelsTests: XCTestCase {
 
   func testRunReviewAutoRefreshUsesOneMinuteInterval() {
     XCTAssertEqual(WorkspaceStore.runReviewAutoRefreshIntervalNanoseconds, 60_000_000_000)
+  }
+
+  @MainActor
+  func testActiveListPaneKeyboardSelectionCoversReviewRunsAndFiles() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-list-keyboard-selection-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let runs = try (0..<3).map { index in
+      try makeRun(
+        id: "selection-run-\(index)",
+        goal: "Review selection \(index)",
+        status: "waiting-approval",
+        pendingApproval: true,
+        updatedAt: "2026-08-28T16:0\(index):00.000Z"
+      )
+    }
+    let approvals = try runs.map { run in
+      approvalQueueItem(
+        run: run,
+        approval: try XCTUnwrap(run.approvals.first),
+        root: root
+      )
+    }
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.corpusRoot = root
+    store.replaceAgentRunsForTesting(runs)
+    store.replaceApprovalItemsForTesting(approvals)
+    store.selectedSurface = .approvals
+    store.runsAndReviewPage = .review
+    store.activateWorkspacePane(.surface)
+
+    let visibleApprovals = store.visibleApprovalItems
+    store.selectApprovalItem(visibleApprovals[1])
+    XCTAssertTrue(store.handleWorkspaceKeyDown(selectionKeyDown("a", keyCode: 0, modifiers: [.command])))
+    XCTAssertEqual(store.bulkApprovalSelectionCount, 3)
+    XCTAssertTrue(store.handleWorkspaceKeyDown(selectionKeyDown("a", keyCode: 0, modifiers: [.command, .shift])))
+    XCTAssertEqual(store.bulkApprovalSelectionCount, 0)
+    XCTAssertTrue(store.handleWorkspaceKeyDown(selectionKeyDown(keyCode: 125, modifiers: [.shift])))
+    XCTAssertEqual(store.bulkSelectedApprovalItemIDs, [visibleApprovals[1].id, visibleApprovals[2].id])
+    XCTAssertEqual(store.selectedApprovalItemID, visibleApprovals[2].id)
+
+    store.clearApprovalBulkSelection()
+    store.activateWorkspacePane(.detail)
+    XCTAssertFalse(store.handleWorkspaceKeyDown(selectionKeyDown("a", keyCode: 0, modifiers: [.command])))
+    XCTAssertEqual(store.bulkApprovalSelectionCount, 0)
+
+    store.activateWorkspacePane(.surface)
+    store.runsAndReviewPage = .runs
+    store.agentRunSelectionScope = .attention
+    let visibleRunIDs = store.agentRunIDs(for: .attention)
+    store.selectAgentRun(try XCTUnwrap(store.agentRun(for: visibleRunIDs[1])))
+    XCTAssertTrue(store.handleWorkspaceKeyDown(selectionKeyDown("a", keyCode: 0, modifiers: [.command])))
+    XCTAssertEqual(store.selectedAgentRunIDsForAIContext, Set(visibleRunIDs))
+    XCTAssertTrue(store.handleWorkspaceKeyDown(selectionKeyDown("a", keyCode: 0, modifiers: [.command, .shift])))
+    XCTAssertTrue(store.selectedAgentRunIDsForAIContext.isEmpty)
+    XCTAssertTrue(store.handleWorkspaceKeyDown(selectionKeyDown(keyCode: 125, modifiers: [.shift])))
+    XCTAssertEqual(store.selectedAgentRunIDsForAIContext, [visibleRunIDs[1], visibleRunIDs[2]])
+    XCTAssertEqual(store.selectedAgentRunID, visibleRunIDs[2])
+
+    let files = try (0..<3).map { index in
+      let url = root.appendingPathComponent("selection-\(index).org2")
+      try "* File \(index)\n".write(to: url, atomically: true, encoding: .utf8)
+      return CorpusFile(path: url.path, relativePath: url.lastPathComponent, modifiedAt: nil, byteCount: nil)
+    }
+    store.corpusFiles = files
+    store.selectedSurface = .files
+    store.activateWorkspacePane(.surface)
+    let visibleFiles = store.filteredCorpusFiles
+    store.selectedCorpusFileID = visibleFiles[1].id
+    XCTAssertTrue(store.handleWorkspaceKeyDown(selectionKeyDown("a", keyCode: 0, modifiers: [.command])))
+    XCTAssertEqual(store.selectedCorpusFileIDsForAIContext, Set(visibleFiles.map(\.id)))
+    XCTAssertTrue(store.handleWorkspaceKeyDown(selectionKeyDown("a", keyCode: 0, modifiers: [.command, .shift])))
+    XCTAssertTrue(store.selectedCorpusFileIDsForAIContext.isEmpty)
+    XCTAssertTrue(store.handleWorkspaceKeyDown(selectionKeyDown(keyCode: 126, modifiers: [.shift])))
+    XCTAssertEqual(store.selectedCorpusFileIDsForAIContext, [visibleFiles[0].id, visibleFiles[1].id])
+    XCTAssertEqual(store.selectedCorpusFileID, visibleFiles[0].id)
   }
 
   @MainActor

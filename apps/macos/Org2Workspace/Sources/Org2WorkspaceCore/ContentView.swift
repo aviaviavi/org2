@@ -2579,7 +2579,7 @@ private struct KeyboardShortcutsView: View {
         VStack(alignment: .leading, spacing: 4) {
           Text("Keyboard Shortcuts")
             .font(.title2.weight(.semibold))
-          Text("Command shortcuts work globally. Agenda, document, and chat panes add local keys when focused.")
+          Text("Command shortcuts work globally. Lists, documents, and chat panes add local keys when focused.")
             .font(.callout)
             .foregroundStyle(.secondary)
         }
@@ -2649,8 +2649,6 @@ private struct KeyboardShortcutsView: View {
             ShortcutHelpItem(keys: "o / Return", action: "Open item"),
             ShortcutHelpItem(keys: "e", action: "Edit item source"),
             ShortcutHelpItem(keys: "c", action: "Capture task"),
-            ShortcutHelpItem(keys: "⌘A / ⌘⇧A", action: "Select visible / clear bulk selection"),
-            ShortcutHelpItem(keys: "⇧↑ / ⇧↓", action: "Extend bulk selection"),
             ShortcutHelpItem(keys: "Space", action: "Clear TODO status"),
             ShortcutHelpItem(keys: "t / i / d / x", action: "TODO / in-progress / done / canceled"),
             ShortcutHelpItem(keys: "A", action: "Assign to agent"),
@@ -2659,6 +2657,11 @@ private struct KeyboardShortcutsView: View {
             ShortcutHelpItem(keys: "s / n / w / m", action: "Schedule today / tomorrow / week / month"),
             ShortcutHelpItem(keys: "S / N / W / M", action: "Deadline today / tomorrow / week / month"),
             ShortcutHelpItem(keys: "q", action: "Quit app")
+          ])
+
+          ShortcutSection(title: "Lists", shortcuts: [
+            ShortcutHelpItem(keys: "⌘A / ⌘⇧A", action: "Select visible / clear selection"),
+            ShortcutHelpItem(keys: "⇧↑ / ⇧↓", action: "Extend selection")
           ])
 
           ShortcutSection(title: "Document", shortcuts: [
@@ -3704,6 +3707,7 @@ private struct RunCenterView: View {
       }
     }
     .onAppear {
+      store.agentRunSelectionScope = scope
       if let selectedRun {
         performAfterSwiftUIViewUpdate {
           store.selectAgentRun(selectedRun)
@@ -3721,8 +3725,10 @@ private struct RunCenterView: View {
       }
     }
     .onChange(of: scope) {
+      store.agentRunSelectionScope = scope
       visibleRunLimit = Self.initialVisibleRunLimit
       performAfterSwiftUIViewUpdate {
+        store.reconcileAgentRunAIContextSelection(visibleIDs: visibleRunIDs)
         syncVisibleRunSelection(in: visibleEntries)
       }
     }

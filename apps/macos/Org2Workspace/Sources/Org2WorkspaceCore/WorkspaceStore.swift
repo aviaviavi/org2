@@ -1325,6 +1325,7 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var selectedApprovalItemIDsForAIContext: Set<ApprovalItem.ID> = []
   @Published public var bulkSelectedApprovalItemIDs: Set<ApprovalItem.ID> = []
   @Published public var runsAndReviewPage: RunsAndReviewPage = .runs
+  var agentRunSelectionScope: AgentRunScope = .active
   @Published public var isLoadingApprovals = false
   @Published public private(set) var hasCompletedApprovalsLoad = false
   @Published public private(set) var approvalLoadErrorText: String?
@@ -6029,6 +6030,25 @@ public final class WorkspaceStore: ObservableObject {
     updateApprovalBulkSelectionStatusText()
   }
 
+  public func extendApprovalBulkSelection(by delta: Int) {
+    let items = visibleApprovalItems
+    let result = Self.extendedKeyboardSelection(
+      bulkSelectedApprovalItemIDs,
+      activeID: selectedApprovalItemID,
+      visibleIDs: items.map(\.id),
+      delta: delta
+    )
+    guard let targetID = result.targetID,
+          let target = items.first(where: { $0.id == targetID })
+    else {
+      statusText = "No visible approvals"
+      return
+    }
+    bulkSelectedApprovalItemIDs = result.selection
+    selectApprovalItem(target)
+    updateApprovalBulkSelectionStatusText()
+  }
+
   public func clearApprovalBulkSelection() {
     guard !bulkSelectedApprovalItemIDs.isEmpty else { return }
     bulkSelectedApprovalItemIDs = []
@@ -8160,6 +8180,35 @@ public final class WorkspaceStore: ObservableObject {
     selectedAgentRunIDsForAIContext.formIntersection(visibleIDs)
   }
 
+  func selectAllVisibleAgentRunsForAIContext() {
+    let visibleIDs = agentRunIDs(for: agentRunSelectionScope)
+    selectedAgentRunIDsForAIContext = Set(visibleIDs)
+    statusText = Self.listSelectionStatus(count: visibleIDs.count, singular: "run")
+  }
+
+  func clearAgentRunAIContextSelection() {
+    guard !selectedAgentRunIDsForAIContext.isEmpty else { return }
+    selectedAgentRunIDsForAIContext = []
+    statusText = "Run selection cleared"
+  }
+
+  func extendAgentRunAIContextSelection(by delta: Int) {
+    let visibleIDs = agentRunIDs(for: agentRunSelectionScope)
+    let result = Self.extendedKeyboardSelection(
+      selectedAgentRunIDsForAIContext,
+      activeID: selectedAgentRunID,
+      visibleIDs: visibleIDs,
+      delta: delta
+    )
+    guard let targetID = result.targetID, let target = agentRun(for: targetID) else {
+      statusText = "No visible runs"
+      return
+    }
+    selectedAgentRunIDsForAIContext = result.selection
+    selectAgentRun(target)
+    statusText = Self.listSelectionStatus(count: result.selection.count, singular: "run")
+  }
+
   private static func updatedAIContextSelection<ID: Hashable>(
     _ selection: Set<ID>,
     activeID: ID?,
@@ -8190,6 +8239,36 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     return [clickedID]
+  }
+
+  private static func extendedKeyboardSelection<ID: Hashable>(
+    _ selection: Set<ID>,
+    activeID: ID?,
+    visibleIDs: [ID],
+    delta: Int
+  ) -> (selection: Set<ID>, targetID: ID?) {
+    guard !visibleIDs.isEmpty else { return (selection, nil) }
+
+    let currentIndex = activeID.flatMap { visibleIDs.firstIndex(of: $0) }
+    let targetIndex: Int
+    if let currentIndex {
+      targetIndex = max(0, min(visibleIDs.count - 1, currentIndex + delta))
+    } else {
+      targetIndex = delta < 0 ? visibleIDs.count - 1 : 0
+    }
+
+    var nextSelection = selection
+    if let currentIndex {
+      nextSelection.insert(visibleIDs[currentIndex])
+    }
+    let targetID = visibleIDs[targetIndex]
+    nextSelection.insert(targetID)
+    return (nextSelection, targetID)
+  }
+
+  private static func listSelectionStatus(count: Int, singular: String) -> String {
+    if count == 0 { return "No visible \(singular)s" }
+    return count == 1 ? "1 \(singular) selected" : "\(count) \(singular)s selected"
   }
 
   private func activateAgentRunDetail(_ runID: AgentRunItem.ID, recordsHistory: Bool) {
@@ -12427,6 +12506,37 @@ public final class WorkspaceStore: ObservableObject {
 
   public func reconcileCorpusFileAIContextSelection(visibleIDs: [CorpusFile.ID]) {
     selectedCorpusFileIDsForAIContext.formIntersection(visibleIDs)
+  }
+
+  func selectAllVisibleCorpusFilesForAIContext() {
+    let visibleIDs = filteredCorpusFiles.map(\.id)
+    selectedCorpusFileIDsForAIContext = Set(visibleIDs)
+    statusText = Self.listSelectionStatus(count: visibleIDs.count, singular: "file")
+  }
+
+  func clearCorpusFileAIContextSelection() {
+    guard !selectedCorpusFileIDsForAIContext.isEmpty else { return }
+    selectedCorpusFileIDsForAIContext = []
+    statusText = "File selection cleared"
+  }
+
+  func extendCorpusFileAIContextSelection(by delta: Int) {
+    let files = filteredCorpusFiles
+    let result = Self.extendedKeyboardSelection(
+      selectedCorpusFileIDsForAIContext,
+      activeID: selectedCorpusFileID,
+      visibleIDs: files.map(\.id),
+      delta: delta
+    )
+    guard let targetID = result.targetID,
+          let target = files.first(where: { $0.id == targetID })
+    else {
+      statusText = "No visible files"
+      return
+    }
+    selectedCorpusFileIDsForAIContext = result.selection
+    selectCorpusFile(target)
+    statusText = Self.listSelectionStatus(count: result.selection.count, singular: "file")
   }
 
   public func openSidebarFile(_ file: CorpusFile) {
@@ -24167,13 +24277,79 @@ public final class WorkspaceStore: ObservableObject {
     if handleSlidePreviewKeyDown(event) {
       return true
     }
-    if selectedSurface == .agenda {
-      return handleAgendaKeyDown(event)
+    if selectedSurface == .agenda, handleAgendaKeyDown(event) {
+      return true
+    }
+    if selectedSurface == .approvals, handleAgentWorkListSelectionKeyDown(event) {
+      return true
+    }
+    if selectedSurface == .files, handleFileListSelectionKeyDown(event) {
+      return true
     }
     if handleDocumentKeyDown(event) {
       return true
     }
-    return handleAgendaKeyDown(event)
+    return false
+  }
+
+  private func handleAgentWorkListSelectionKeyDown(_ event: NSEvent) -> Bool {
+    guard activeWorkspacePane == .surface else { return false }
+    switch runsAndReviewPage {
+    case .review:
+      return handleListSelectionKeyDown(
+        event,
+        selectAll: selectAllVisibleApprovalItemsForBulkAction,
+        clear: clearApprovalBulkSelection,
+        extend: extendApprovalBulkSelection
+      )
+    case .runs:
+      return handleListSelectionKeyDown(
+        event,
+        selectAll: selectAllVisibleAgentRunsForAIContext,
+        clear: clearAgentRunAIContextSelection,
+        extend: extendAgentRunAIContextSelection
+      )
+    case .goals, .agents, .workflows:
+      return false
+    }
+  }
+
+  private func handleFileListSelectionKeyDown(_ event: NSEvent) -> Bool {
+    guard activeWorkspacePane == .surface else { return false }
+    return handleListSelectionKeyDown(
+      event,
+      selectAll: selectAllVisibleCorpusFilesForAIContext,
+      clear: clearCorpusFileAIContextSelection,
+      extend: extendCorpusFileAIContextSelection
+    )
+  }
+
+  private func handleListSelectionKeyDown(
+    _ event: NSEvent,
+    selectAll: () -> Void,
+    clear: () -> Void,
+    extend: (Int) -> Void
+  ) -> Bool {
+    let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
+    let key = (event.charactersIgnoringModifiers ?? event.characters ?? "").lowercased()
+    if modifiers == [.command], key == "a" {
+      selectAll()
+      return true
+    }
+    if modifiers == [.command, .shift], key == "a" {
+      clear()
+      return true
+    }
+    guard modifiers == [.shift] else { return false }
+    if event.keyCode == 125 {
+      extend(1)
+      return true
+    }
+    if event.keyCode == 126 {
+      extend(-1)
+      return true
+    }
+    return false
   }
 
   public func makeSurfacePrimary(_ surface: WorkspaceSurface) {
@@ -24807,7 +24983,7 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func handleAgendaKeyDown(_ event: NSEvent) -> Bool {
-    guard selectedSurface == .agenda else { return false }
+    guard selectedSurface == .agenda, activeWorkspacePane == .surface else { return false }
 
     let key = event.characters ?? event.charactersIgnoringModifiers ?? ""
     let keyIgnoringModifiers = event.charactersIgnoringModifiers ?? key

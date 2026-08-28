@@ -11335,6 +11335,11 @@ final class Org2ModelsTests: XCTestCase {
     let third = try XCTUnwrap(store.visibleAgendaItems.first { $0.headline == "Third task" })
     store.selectAgendaItem(second)
 
+    store.activateWorkspacePane(.detail)
+    XCTAssertFalse(store.handleWorkspaceKeyDown(keyDown(characters: "a", keyCode: 0, modifiers: [.command])))
+    XCTAssertEqual(store.bulkAgendaSelectionCount, 0)
+    store.activateWorkspacePane(.surface)
+
     XCTAssertTrue(store.handleAgendaKeyDown(keyDown(keyCode: 125, modifiers: [.shift])))
     XCTAssertTrue(store.isAgendaItemBulkSelected(second))
     XCTAssertTrue(store.isAgendaItemBulkSelected(third))
