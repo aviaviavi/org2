@@ -6378,7 +6378,7 @@ private struct NodeSearchContextMenu: View {
 
     Button {
       store.selectSearchNode(node)
-      Task { await store.briefCurrentNodeInOpenClaw() }
+      Task { await store.briefCurrentNode() }
     } label: {
       Label("Brief Node", systemImage: "doc.text.magnifyingglass")
     }
@@ -8083,7 +8083,7 @@ private struct OpenClawConfigurationSheet: View {
             .font(.caption.weight(.medium))
             .foregroundStyle(.secondary)
           Toggle("Start node briefs in a new chat thread", isOn: $briefsStartNewThread)
-            .help("When enabled, Brief creates a fresh OpenClaw chat instead of adding the prompt to the current thread.")
+            .help("When enabled, Brief creates a fresh AI chat instead of adding the prompt to the current thread.")
         }
 
         GridRow {
@@ -9160,7 +9160,7 @@ private struct DetailHeader: View {
       }
 
       Button {
-        Task { await store.briefCurrentNodeInOpenClaw() }
+        Task { await store.briefCurrentNode() }
       } label: {
         if store.isBuildingNodeBrief {
           Label("Brief", systemImage: "hourglass")
@@ -9168,7 +9168,7 @@ private struct DetailHeader: View {
           Label("Brief", systemImage: "text.bubble")
         }
       }
-      .disabled(!store.canBriefCurrentNodeInOpenClaw)
+      .disabled(!store.canBriefCurrentNode)
 
       if case .meeting = location {
         Button {
@@ -10665,7 +10665,7 @@ private struct NodeContextOverview: View {
       NodeContextStats()
 
       Button {
-        Task { await store.briefCurrentNodeInOpenClaw() }
+        Task { await store.briefCurrentNode() }
       } label: {
         if store.isBuildingNodeBrief {
           Label("Building Brief", systemImage: "hourglass")
@@ -10674,7 +10674,7 @@ private struct NodeContextOverview: View {
         }
       }
       .buttonStyle(WorkspaceActionButtonStyle())
-      .disabled(!store.canBriefCurrentNodeInOpenClaw)
+      .disabled(!store.canBriefCurrentNode)
       .help(store.openClawBriefsStartNewThread
         ? "Generate the brief in a new AI chat thread."
         : "Generate the brief in the current AI chat thread.")
@@ -10818,13 +10818,13 @@ private struct NodeContextBrief: View {
           corpusRoot: store.corpusRoot
         )
       } else {
-        Text("Generate a source-cited brief for this node, save it into views/openclaw, and show it here.")
+        Text("Generate a source-cited brief for this node, save it as an agent-neutral view artifact, and show it here.")
           .font(.callout)
           .foregroundStyle(.secondary)
           .fixedSize(horizontal: false, vertical: true)
 
         Button {
-          Task { await store.briefCurrentNodeInOpenClaw() }
+          Task { await store.briefCurrentNode() }
         } label: {
           if store.isBuildingNodeBrief {
             Label("Building Brief", systemImage: "hourglass")
@@ -10833,12 +10833,12 @@ private struct NodeContextBrief: View {
           }
         }
         .buttonStyle(WorkspaceActionButtonStyle())
-        .disabled(!store.canBriefCurrentNodeInOpenClaw)
+        .disabled(!store.canBriefCurrentNode)
         .help(store.openClawBriefsStartNewThread
           ? "Generate the brief in a new AI chat thread."
           : "Generate the brief in the current AI chat thread.")
 
-        Text("Generated briefs live as review-required org2 view artifacts.")
+        Text("Generated briefs live in views/node-briefs and work with any AI runtime.")
           .font(.caption)
           .foregroundStyle(.tertiary)
           .fixedSize(horizontal: false, vertical: true)

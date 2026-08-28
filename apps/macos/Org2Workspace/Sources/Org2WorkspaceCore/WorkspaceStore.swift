@@ -7609,7 +7609,7 @@ public final class WorkspaceStore: ObservableObject {
     OrgHTMLDocumentLayout(width: renderedDocumentWidth, margin: renderedDocumentMargin)
   }
 
-  public var canBriefCurrentNodeInOpenClaw: Bool {
+  public var canBriefCurrentNode: Bool {
     selectedLocation != nil
       && corpusRoot != nil
       && !isBuildingNodeBrief
@@ -7958,7 +7958,7 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
-  public func briefCurrentNodeInOpenClaw() async {
+  public func briefCurrentNode() async {
     guard let location = selectedLocation else {
       statusText = "Select a node first"
       return
@@ -7968,16 +7968,13 @@ public final class WorkspaceStore: ObservableObject {
       return
     }
 
-    let existingID = location.idValue?.trimmingCharacters(in: .whitespacesAndNewlines)
-    let initialArtifactRelativePath = Self.nodeBriefArtifactRelativePath(
-      title: location.title,
-      id: existingID?.isEmpty == false ? existingID : nil,
-      file: relativePath(location.file),
-      line: location.lineForEditor
-    )
-    let initialArtifactURL = corpusRoot.appendingPathComponent(initialArtifactRelativePath).standardizedFileURL
-    if Self.hasUsableNodeBriefArtifact(at: initialArtifactURL) {
-      openNodeBriefArtifact(url: initialArtifactURL, relativePath: initialArtifactRelativePath, title: location.title)
+    let briefTitle = nodeBriefDisplayTitle(for: location)
+    if let artifact = nodeBriefArtifact(for: location) {
+      openNodeBriefArtifact(
+        url: URL(fileURLWithPath: artifact.file).standardizedFileURL,
+        relativePath: artifact.relativePath,
+        title: briefTitle
+      )
       return
     }
 
@@ -7988,30 +7985,37 @@ public final class WorkspaceStore: ObservableObject {
 
     do {
       let id = try await backlinkTargetID(for: location)
+      if let artifact = nodeBriefArtifact(for: location, sourceID: id) {
+        openNodeBriefArtifact(
+          url: URL(fileURLWithPath: artifact.file).standardizedFileURL,
+          relativePath: artifact.relativePath,
+          title: briefTitle
+        )
+        return
+      }
       let artifactRelativePath = Self.nodeBriefArtifactRelativePath(
-        title: location.title,
         id: id,
         file: relativePath(location.file),
         line: location.lineForEditor
       )
       let artifactURL = corpusRoot.appendingPathComponent(artifactRelativePath).standardizedFileURL
       if Self.hasUsableNodeBriefArtifact(at: artifactURL) {
-        openNodeBriefArtifact(url: artifactURL, relativePath: artifactRelativePath, title: location.title)
+        openNodeBriefArtifact(url: artifactURL, relativePath: artifactRelativePath, title: briefTitle)
         return
       }
 
       let prompt = Self.nodeBriefPrompt(
-        title: location.title,
+        title: briefTitle,
         reference: "\(relativePath(location.file)):\(location.lineForEditor)",
         artifactRelativePath: artifactRelativePath,
         artifactLocalPath: artifactURL.path,
-        artifactOpenClawPath: mappedPathForOpenClaw(artifactURL.path),
+        artifactRuntimePath: mappedPathForOpenClaw(artifactURL.path),
         sourceID: id
       )
       pendingNodeBriefArtifactRelativePath = artifactRelativePath
-      pendingNodeBriefTitle = location.title
+      pendingNodeBriefTitle = briefTitle
       setOpenClawAssistantPanelPresented(true)
-      prepareOpenClawThreadForNodeBrief(title: location.title)
+      prepareOpenClawThreadForNodeBrief(title: briefTitle)
       let runtimeTitle = selectedAIChatRuntime.title
       let briefContext: OpenClawWorkspaceContext?
       if let thread = selectedOpenClawChatThread {
@@ -8029,7 +8033,7 @@ public final class WorkspaceStore: ObservableObject {
         attachments: [],
         workspaceContext: briefContext
       )
-      if await openNodeBriefArtifactWhenAvailable(url: artifactURL, relativePath: artifactRelativePath, title: location.title) {
+      if await openNodeBriefArtifactWhenAvailable(url: artifactURL, relativePath: artifactRelativePath, title: briefTitle) {
         return
       }
       if openClawStatusText == "\(runtimeTitle) replied" || openClawStatusText.hasPrefix("Edited ") {
@@ -25353,18 +25357,76 @@ public final class WorkspaceStore: ObservableObject {
     backlinks?.backlinks.count ?? 0
   }
 
+  private func nodeBriefDisplayTitle(for location: WorkspaceLocation) -> String {
+    if let source = selectedEntrySource,
+       URL(fileURLWithPath: source.file).standardizedFileURL.path
+         == URL(fileURLWithPath: location.file).standardizedFileURL.path {
+      let fallback = URL(fileURLWithPath: location.file).deletingPathExtension().lastPathComponent
+      let title = Self.openClawTitle(from: source.text, fallback: fallback).title
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+      if !title.isEmpty { return title }
+    }
+    let title = location.title.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !title.isEmpty else {
+      return URL(fileURLWithPath: location.file).deletingPathExtension().lastPathComponent
+    }
+    return URL(fileURLWithPath: title).deletingPathExtension().lastPathComponent
+  }
+
+  private func nodeBriefArtifact(
+    for location: WorkspaceLocation,
+    sourceID explicitSourceID: String? = nil
+  ) -> NodeBriefArtifact? {
+    guard let corpusRoot else { return nil }
+    let source = selectedEntrySource.flatMap { source -> EntrySource? in
+      URL(fileURLWithPath: source.file).standardizedFileURL.path
+        == URL(fileURLWithPath: location.file).standardizedFileURL.path ? source : nil
+    }
+    let sourceID = [
+      explicitSourceID,
+      location.idValue,
+      source.flatMap { Self.firstOrgID(in: $0.text) }
+    ]
+    .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+    .first(where: { !$0.isEmpty })
+    let file = relativePath(location.file)
+    let line = location.lineForEditor
+    var relativePaths = [Self.nodeBriefArtifactRelativePath(
+      id: sourceID,
+      file: file,
+      line: line
+    )]
+    var legacyTitles = [
+      nodeBriefDisplayTitle(for: location),
+      location.title,
+      URL(fileURLWithPath: location.file).deletingPathExtension().lastPathComponent
+    ]
+    if let source {
+      let fallback = URL(fileURLWithPath: location.file).deletingPathExtension().lastPathComponent
+      legacyTitles.append(Self.openClawTitle(from: source.text, fallback: fallback).title)
+    }
+    for title in legacyTitles where !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      relativePaths.append(Self.legacyNodeBriefArtifactRelativePath(
+        title: title,
+        id: sourceID,
+        file: file,
+        line: line
+      ))
+    }
+
+    var seen = Set<String>()
+    for relativePath in relativePaths where seen.insert(relativePath).inserted {
+      let url = corpusRoot.appendingPathComponent(relativePath).standardizedFileURL
+      if let artifact = Self.nodeBriefArtifact(at: url, relativePath: relativePath) {
+        return artifact
+      }
+    }
+    return nil
+  }
+
   public var currentNodeBriefArtifact: NodeBriefArtifact? {
-    guard let location = selectedLocation,
-          let corpusRoot else { return nil }
-    let existingID = location.idValue?.trimmingCharacters(in: .whitespacesAndNewlines)
-    let relativePath = Self.nodeBriefArtifactRelativePath(
-      title: location.title,
-      id: existingID?.isEmpty == false ? existingID : nil,
-      file: relativePath(location.file),
-      line: location.lineForEditor
-    )
-    let url = corpusRoot.appendingPathComponent(relativePath).standardizedFileURL
-    return Self.nodeBriefArtifact(at: url, relativePath: relativePath)
+    guard let location = selectedLocation else { return nil }
+    return nodeBriefArtifact(for: location)
   }
 
   public func openCurrentNodeBriefArtifact() {
@@ -25977,11 +26039,12 @@ public final class WorkspaceStore: ObservableObject {
 
   private func openNodeBriefArtifact(url: URL, relativePath: String, title: String) {
     let modifiedAt = Self.modificationDate(for: url)
+    let zone = NSString(string: relativePath).deletingLastPathComponent
     let thread = OpenClawThread(
       title: "Brief: \(title)",
       file: url.path,
       line: 1,
-      zone: "views/openclaw",
+      zone: zone.isEmpty ? "views" : zone,
       modifiedAt: modifiedAt,
       idValue: nil
     )
@@ -25993,15 +26056,29 @@ public final class WorkspaceStore: ObservableObject {
     statusText = "Opened \(relativePath)"
   }
 
-  nonisolated static func nodeBriefArtifactRelativePath(title: String, id: String?, file: String, line: Int) -> String {
-    let titleSlug = slug(title)
+  nonisolated static func nodeBriefArtifactRelativePath(id: String?, file: String, line: Int) -> String {
     let tokenRaw: String
     if let id = id?.trimmingCharacters(in: .whitespacesAndNewlines), !id.isEmpty {
       tokenRaw = id
     } else {
       tokenRaw = "\(file)-line-\(max(1, line))"
     }
-    return "views/openclaw/node-briefs/\(titleSlug)-\(slug(tokenRaw)).org2"
+    return "views/node-briefs/\(slug(tokenRaw)).org2"
+  }
+
+  nonisolated static func legacyNodeBriefArtifactRelativePath(
+    title: String,
+    id: String?,
+    file: String,
+    line: Int
+  ) -> String {
+    let tokenRaw: String
+    if let id = id?.trimmingCharacters(in: .whitespacesAndNewlines), !id.isEmpty {
+      tokenRaw = id
+    } else {
+      tokenRaw = "\(file)-line-\(max(1, line))"
+    }
+    return "views/openclaw/node-briefs/\(slug(title))-\(slug(tokenRaw)).org2"
   }
 
   nonisolated private static func hasUsableNodeBriefArtifact(at url: URL) -> Bool {
@@ -26083,7 +26160,7 @@ public final class WorkspaceStore: ObservableObject {
     reference: String,
     artifactRelativePath: String,
     artifactLocalPath: String,
-    artifactOpenClawPath: String,
+    artifactRuntimePath: String,
     sourceID: String?
   ) -> String {
     let artifactID = "node-brief-\(slug(sourceID ?? reference))"
@@ -26095,7 +26172,7 @@ public final class WorkspaceStore: ObservableObject {
     Generate a concise, source-cited briefing for the selected org2 node "\(title)" and save it as an org2 view artifact.
 
     Target artifact relative path: \(artifactRelativePath)
-    Target artifact path for OpenClaw: \(artifactOpenClawPath)
+    Target artifact path for the current AI runtime: \(artifactRuntimePath)
     Local artifact path: \(artifactLocalPath)
     Selected node: \(reference)
     \(sourceID.map { "Selected node ID: \($0)" } ?? "Selected node ID: unavailable")
@@ -26120,12 +26197,12 @@ public final class WorkspaceStore: ObservableObject {
     :ORG2_ARTIFACT_SCHEMA: org2-artifact-metadata/v1
     :ORG2_ARTIFACT_ROLE: view
     :ORG2_PROVENANCE: \(provenance)
-    :ORG2_GENERATOR: OpenClaw via Org2Workspace node brief
+    :ORG2_GENERATOR: OpenOrg AI chat node brief
     :ORG2_GENERATED_AT: <ISO-8601 timestamp>
     :ORG2_CLAIM_STATE: source-backed
     :ORG2_REVIEW_STATUS: review-required
     :ORG2_AI_TASK: node-brief
-    :ORG2_PROMPT_TEMPLATE: node-brief@v2
+    :ORG2_PROMPT_TEMPLATE: node-brief@v3
     :END:
 
     Then write these sections:
@@ -31938,7 +32015,7 @@ public final class WorkspaceStore: ObservableObject {
   nonisolated private static func openClawThreadDirectories(corpusRoot: URL) -> [URL] {
     let configured = workspaceConfig(corpusRoot: corpusRoot)?.openClaw?.threadDirs ?? []
     let rawDirectories = configured.isEmpty
-      ? ["agents", "meetings", "notes/openclaw", "raw/openclaw", "views/openclaw"]
+      ? ["agents", "meetings", "notes/openclaw", "raw/openclaw", "views/openclaw", "views/node-briefs"]
       : configured
 
     return rawDirectories.map { raw in

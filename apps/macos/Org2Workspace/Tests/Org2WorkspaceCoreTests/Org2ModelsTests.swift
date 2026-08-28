@@ -9000,11 +9000,11 @@ final class Org2ModelsTests: XCTestCase {
     """.write(to: secondSource, atomically: true, encoding: .utf8)
 
     let artifactRelativePath = WorkspaceStore.nodeBriefArtifactRelativePath(
-      title: "Target Node",
       id: targetID,
       file: "target.org2",
       line: 1
     )
+    XCTAssertEqual(artifactRelativePath, "views/node-briefs/\(targetID).org2")
 
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
@@ -9014,9 +9014,12 @@ final class Org2ModelsTests: XCTestCase {
         let prompt = try XCTUnwrap(messages.last?.content)
         XCTAssertTrue(prompt.contains("Generate a concise, source-cited briefing for the selected org2 node \"Target Node\""))
         XCTAssertTrue(prompt.contains("Target artifact relative path: \(artifactRelativePath)"))
+        XCTAssertTrue(prompt.contains("Target artifact path for the current AI runtime:"))
+        XCTAssertTrue(prompt.contains(":ORG2_GENERATOR: OpenOrg AI chat node brief"))
+        XCTAssertFalse(prompt.contains("Target artifact path for OpenClaw:"))
         XCTAssertTrue(prompt.contains(":ORG2_ARTIFACT_ROLE: view"))
         XCTAssertTrue(prompt.contains(":ORG2_REVIEW_STATUS: review-required"))
-        XCTAssertTrue(prompt.contains(":ORG2_PROMPT_TEMPLATE: node-brief@v2"))
+        XCTAssertTrue(prompt.contains(":ORG2_PROMPT_TEMPLATE: node-brief@v3"))
         XCTAssertTrue(prompt.contains("* Most important facts"))
         XCTAssertTrue(prompt.contains("* Active related tasks"))
         XCTAssertTrue(prompt.contains("* Recent related decisions"))
@@ -9071,7 +9074,7 @@ final class Org2ModelsTests: XCTestCase {
       OpenClawChatMessage(role: .user, content: "Existing unrelated chat")
     ]
 
-    await store.briefCurrentNodeInOpenClaw()
+    await store.briefCurrentNode()
 
     XCTAssertEqual(store.openClawDraft, "")
     XCTAssertNotEqual(store.selectedOpenClawChatThreadID, originalThreadID)
@@ -9129,7 +9132,7 @@ final class Org2ModelsTests: XCTestCase {
       idValue: targetID
     )))
 
-    await store.briefCurrentNodeInOpenClaw()
+    await store.briefCurrentNode()
 
     XCTAssertEqual(store.selectedOpenClawChatThreadID, originalThreadID)
     XCTAssertEqual(store.openClawChatThreads.count, 1)
@@ -9240,7 +9243,6 @@ final class Org2ModelsTests: XCTestCase {
     """.write(to: target, atomically: true, encoding: .utf8)
 
     let artifactRelativePath = WorkspaceStore.nodeBriefArtifactRelativePath(
-      title: "Target Node",
       id: targetID,
       file: "target.org2",
       line: 1
@@ -9273,7 +9275,7 @@ final class Org2ModelsTests: XCTestCase {
       idValue: targetID
     )))
 
-    await store.briefCurrentNodeInOpenClaw()
+    await store.briefCurrentNode()
 
     XCTAssertEqual(store.openClawDraft, "")
     XCTAssertEqual(store.selectedSurface, .files)
@@ -9282,7 +9284,7 @@ final class Org2ModelsTests: XCTestCase {
       return
     }
     XCTAssertEqual(selected.file, artifactURL.path)
-    XCTAssertEqual(selected.zone, "views/openclaw")
+    XCTAssertEqual(selected.zone, "views/node-briefs")
     XCTAssertEqual(store.statusText, "Opened \(artifactRelativePath)")
   }
 
@@ -9292,7 +9294,6 @@ final class Org2ModelsTests: XCTestCase {
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     let targetID = "66666666-6666-4666-8666-666666666666"
     let artifactRelativePath = WorkspaceStore.nodeBriefArtifactRelativePath(
-      title: "Target Node",
       id: targetID,
       file: "target.org2",
       line: 1
@@ -9322,6 +9323,70 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(artifact.file, artifactURL.path)
     XCTAssertEqual(artifact.title, "Node brief: Target Node")
     XCTAssertEqual(artifact.body, "* Highlights\nCached inline result.")
+  }
+
+  @MainActor
+  func testNodeBriefPaneFindsLegacyArtifactWrittenFromDocumentTitle() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-node-brief-legacy-title-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let targetID = "c0bdbd1e-ba6e-4a67-bf1b-cfe145d0923e"
+    let target = root.appendingPathComponent("maven-central.org2")
+    try """
+    :PROPERTIES:
+    :ID: \(targetID)
+    :END:
+
+    #+TITLE: Maven Central
+    """.write(to: target, atomically: true, encoding: .utf8)
+
+    let legacyRelativePath = WorkspaceStore.legacyNodeBriefArtifactRelativePath(
+      title: "Maven Central",
+      id: targetID,
+      file: "maven-central.org2",
+      line: 1
+    )
+    let legacyURL = root.appendingPathComponent(legacyRelativePath)
+    try FileManager.default.createDirectory(
+      at: legacyURL.deletingLastPathComponent(),
+      withIntermediateDirectories: true
+    )
+    try """
+    #+TITLE: Node brief: Maven Central
+    :PROPERTIES:
+    :ORG2_ARTIFACT_SCHEMA: org2-artifact-metadata/v1
+    :ORG2_ARTIFACT_ROLE: view
+    :ORG2_PROVENANCE: id:\(targetID), file:maven-central.org2:1
+    :ORG2_REVIEW_STATUS: review-required
+    :END:
+
+    * Most important facts
+    Existing Maven Central brief.
+    """.write(to: legacyURL, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.selectCorpusFile(CorpusFile(
+      path: target.path,
+      relativePath: "maven-central.org2",
+      modifiedAt: nil,
+      byteCount: nil
+    ))
+
+    try await waitForCondition {
+      store.selectedEntrySource?.file == target.path
+    }
+
+    XCTAssertEqual(store.currentNodeBriefArtifact?.relativePath, legacyRelativePath)
+    await store.briefCurrentNode()
+
+    guard case .openClaw(let selected)? = store.selectedLocation else {
+      XCTFail("Expected the legacy Maven Central brief to open")
+      return
+    }
+    XCTAssertEqual(selected.file, legacyURL.path)
+    XCTAssertEqual(selected.title, "Brief: Maven Central")
+    XCTAssertEqual(selected.zone, "views/openclaw/node-briefs")
   }
 
   @MainActor
@@ -9715,7 +9780,6 @@ final class Org2ModelsTests: XCTestCase {
     """.write(to: target, atomically: true, encoding: .utf8)
 
     let artifactRelativePath = WorkspaceStore.nodeBriefArtifactRelativePath(
-      title: "Target Node",
       id: targetID,
       file: "target.org2",
       line: 1
@@ -9754,7 +9818,7 @@ final class Org2ModelsTests: XCTestCase {
       idValue: targetID
     )))
 
-    await store.briefCurrentNodeInOpenClaw()
+    await store.briefCurrentNode()
 
     guard case .openClaw(let selected)? = store.selectedLocation else {
       XCTFail("Expected generated brief artifact to be selected")
@@ -9783,7 +9847,6 @@ final class Org2ModelsTests: XCTestCase {
     """.write(to: target, atomically: true, encoding: .utf8)
 
     let artifactRelativePath = WorkspaceStore.nodeBriefArtifactRelativePath(
-      title: "Target Node",
       id: targetID,
       file: "target.org2",
       line: 1
@@ -9824,7 +9887,7 @@ final class Org2ModelsTests: XCTestCase {
       idValue: targetID
     )))
 
-    await store.briefCurrentNodeInOpenClaw()
+    await store.briefCurrentNode()
 
     guard case .openClaw(let selected)? = store.selectedLocation else {
       XCTFail("Expected delayed generated brief artifact to be selected")
