@@ -204,6 +204,16 @@ private struct DocumentSettingsView: View {
       } header: {
         Label("Rendered Documents", systemImage: "doc.text.magnifyingglass")
       }
+
+      Section {
+        Toggle("Format Org files on save", isOn: $store.formatOrgFilesOnSave)
+
+        Text("Runs the shared Org2 formatter before saving a full .org or .org2 page. Turn this off to preserve the source exactly as typed.")
+          .font(.callout)
+          .foregroundStyle(.secondary)
+      } header: {
+        Label("Source Editing", systemImage: "text.cursor")
+      }
     }
     .formStyle(.grouped)
     .padding(8)

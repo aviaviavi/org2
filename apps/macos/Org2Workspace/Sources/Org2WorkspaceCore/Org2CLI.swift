@@ -316,6 +316,23 @@ public struct Org2CLI: Sendable {
     try runProcess(scriptPath: cliPath, arguments: arguments)
   }
 
+  public func formatOrgText(_ text: String, timeout: TimeInterval = 8) async throws -> String {
+    let operation = Task.detached(priority: .userInitiated) {
+      try runProcess(
+        scriptPath: cliPath,
+        arguments: ["fmt", "--stdin"],
+        standardInput: Data(text.utf8),
+        timeout: timeout
+      )
+    }
+    let data = try await withTaskCancellationHandler {
+      try await operation.value
+    } onCancel: {
+      operation.cancel()
+    }
+    return String(decoding: data, as: UTF8.self)
+  }
+
   public func exportBeamer(
     file: URL,
     destination: URL,

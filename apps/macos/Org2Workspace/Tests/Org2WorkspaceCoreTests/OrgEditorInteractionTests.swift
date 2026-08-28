@@ -1470,6 +1470,7 @@ final class OrgEditorInteractionTests: XCTestCase {
 
     let defaults = UserDefaults(suiteName: "org2-editor-interaction-\(UUID().uuidString)") ?? .standard
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()), defaults: defaults)
+    store.formatOrgFilesOnSave = false
     store.setCorpusRoot(root)
     store.selectCorpusFile(CorpusFile(
       path: file.path,

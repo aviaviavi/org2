@@ -1766,6 +1766,11 @@ public final class WorkspaceStore: ObservableObject {
       applyPropertyDrawerDefaultToLoadedHTML()
     }
   }
+  @Published public var formatOrgFilesOnSave = true {
+    didSet {
+      defaults.set(formatOrgFilesOnSave, forKey: formatOrgFilesOnSaveKey)
+    }
+  }
   @Published public var sourceEditorPresentation: SourceEditorPresentation = .source {
     didSet {
       defaults.set(sourceEditorPresentation.rawValue, forKey: sourceEditorPresentationKey)
@@ -1934,6 +1939,7 @@ public final class WorkspaceStore: ObservableObject {
   private let renderedDocumentWidthKey = "Org2Workspace.renderedDocument.width"
   private let renderedDocumentMarginKey = "Org2Workspace.renderedDocument.margin"
   private let propertyDrawersExpandedByDefaultKey = "Org2Workspace.renderedDocument.propertyDrawersExpandedByDefault.v1"
+  private let formatOrgFilesOnSaveKey = "Org2Workspace.sourceEditor.formatOrgFilesOnSave.v1"
   private let sourceEditorPresentationKey = "Org2Workspace.sourceEditor.presentation"
   private let documentPreviewOverridesKey = "Org2Workspace.documentPreview.overrides.v1"
   private let documentViewportSourceLinesKey = "Org2Workspace.documentViewportSourceLines.v1"
@@ -2312,6 +2318,7 @@ public final class WorkspaceStore: ObservableObject {
     whisperModelPathText = defaults.string(forKey: whisperModelPathKey) ?? ""
     transcriptionLanguageText = defaults.string(forKey: transcriptionLanguageKey) ?? "en"
     propertyDrawersExpandedByDefault = defaults.object(forKey: propertyDrawersExpandedByDefaultKey) as? Bool ?? true
+    formatOrgFilesOnSave = defaults.object(forKey: formatOrgFilesOnSaveKey) as? Bool ?? true
     sourceEditorPresentation = defaults.string(forKey: sourceEditorPresentationKey)
       .flatMap(SourceEditorPresentation.init(rawValue:)) ?? .source
     documentPreviewOverrides = Self.restoreDocumentPreviewOverrides(
@@ -10499,7 +10506,16 @@ public final class WorkspaceStore: ObservableObject {
     isSavingEntry = true
     defer { isSavingEntry = false }
 
-    let replacement = sourceEditorLocalDraftText ?? editableEntryText
+    let draft = sourceEditorLocalDraftText ?? editableEntryText
+    let formatResult = await formattedEntryTextForSave(draft, source: source)
+    let replacement = formatResult.text
+    guard selectedEntrySource?.id == source.id,
+          isEditingEntry,
+          Self.normalizeLineEndings(sourceEditorLocalDraftText ?? editableEntryText)
+            == Self.normalizeLineEndings(draft)
+    else {
+      return
+    }
     let undoSnapshot = fileUndoSnapshot(for: source.file)
     do {
       try await Task.detached(priority: .userInitiated) {
@@ -10530,12 +10546,32 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     recordFileUndo(from: undoSnapshot)
-    statusText = savedStatus
+    statusText = formatResult.warning.map { "\(savedStatus), but \($0)" } ?? savedStatus
     await finishSavedEntry(
       source: source,
       savedText: replacement,
       keepEditing: !savedStatus.contains("encrypted")
     )
+  }
+
+  private func formattedEntryTextForSave(
+    _ text: String,
+    source: EntrySource
+  ) async -> (text: String, warning: String?) {
+    guard formatOrgFilesOnSave,
+          selectedEntrySourceMode == .page,
+          source.startLine == 1,
+          !source.isSubtree,
+          Self.isOrgTextFile(URL(fileURLWithPath: source.file))
+    else {
+      return (text, nil)
+    }
+
+    do {
+      return (try await cli.formatOrgText(text), nil)
+    } catch {
+      return (text, "formatting failed: \(error.localizedDescription)")
+    }
   }
 
   private func presentEditorSaveConflict(source: EntrySource, draft: String) {
