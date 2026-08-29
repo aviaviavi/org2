@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -7,6 +8,7 @@ import {
   buildReleasePlan,
   parseReleaseOptions,
   resolveReleaseVersion,
+  testFlightReviewAttributes,
 } from "../tools/release-openorg.mjs";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -40,6 +42,17 @@ assert.deepEqual(
 );
 assert.equal(TESTFLIGHT.internalGroupId, "f7462891-5b0e-4ccf-a3bc-2c2ea2f2540d");
 assert.equal(TESTFLIGHT.externalGroupId, "566e8d38-3c80-442c-8b9a-4f7916181149");
+assert.deepEqual(testFlightReviewAttributes(), {
+  demoAccountRequired: false,
+  notes: TESTFLIGHT.reviewNotes,
+});
+assert.match(TESTFLIGHT.reviewNotes, /no account system and does not require sign-in/);
+assert.match(TESTFLIGHT.reviewNotes, /locally installed OpenOrg macOS companion/);
+
+const releaseSource = readFileSync(join(repoRoot, "tools", "release-openorg.mjs"), "utf8");
+assert.ok(
+  releaseSource.indexOf("await updateBetaReviewDetails();") < releaseSource.indexOf("await submitBetaReview(build.id);")
+);
 
 const planResult = spawnSync(process.execPath, [
   join(repoRoot, "tools", "release-openorg.mjs"),

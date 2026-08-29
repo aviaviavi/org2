@@ -38,7 +38,20 @@ export const TESTFLIGHT = Object.freeze({
   externalGroupId: "566e8d38-3c80-442c-8b9a-4f7916181149",
   externalGroupName: "OpenOrg Alpha",
   publicLink: "https://testflight.apple.com/join/Yp3hfBng",
+  reviewNotes: [
+    "OpenOrg has no account system and does not require sign-in, so there are no demo credentials to provide.",
+    "All note browsing, reading, and editing can be reviewed without an account.",
+    "AI chat is optional and relays requests to a locally installed OpenOrg macOS companion configured by the user; it is not backed by an OpenOrg-hosted account.",
+    "The AI chat surface will remain unavailable when no companion is configured, but the rest of the iOS app is fully reviewable.",
+  ].join(" "),
 });
+
+export function testFlightReviewAttributes() {
+  return {
+    demoAccountRequired: false,
+    notes: TESTFLIGHT.reviewNotes,
+  };
+}
 
 function currentVersion() {
   return JSON.parse(readFileSync(rootPackagePath, "utf8")).version;
@@ -538,6 +551,21 @@ async function upsertWhatToTest(buildId, value) {
   });
 }
 
+async function updateBetaReviewDetails() {
+  const response = await ascRequest(`/v1/apps/${TESTFLIGHT.appId}/betaAppReviewDetail`);
+  const detail = response.data;
+  if (!detail?.id) throw new Error("App Store Connect did not return beta app review details");
+  await ascRequest(`/v1/betaAppReviewDetails/${detail.id}`, {
+    body: { data: {
+      attributes: testFlightReviewAttributes(),
+      id: detail.id,
+      type: "betaAppReviewDetails",
+    } },
+    method: "PATCH",
+  });
+  return detail.id;
+}
+
 async function submitBetaReview(buildId) {
   await ascRequest("/v1/betaAppReviewSubmissions", {
     acceptConflict: true,
@@ -567,6 +595,7 @@ async function publishTestFlight(plan, options) {
   build = await waitForTestFlightBuild(plan);
   const whatToTest = readFileSync(resolve(options.whatToTestFile || options.notesFile), "utf8").trim().slice(0, 4_000);
   await upsertWhatToTest(build.id, whatToTest);
+  await updateBetaReviewDetails();
   await addBuildToGroup(build.id, TESTFLIGHT.internalGroupId);
   await addBuildToGroup(build.id, TESTFLIGHT.externalGroupId);
   await submitBetaReview(build.id);

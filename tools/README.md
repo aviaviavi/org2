@@ -12,7 +12,7 @@ npm run release:openorg -- patch \
 
 Add `--execute` only after reviewing the plan. Long validation and packaging lanes run concurrently, each writes its own log under `/tmp/openorg-release-VERSION/`, and successful phases are checkpointed in `state.json`. Rerunning the same command resumes from the last completed phase.
 
-The normal iOS path requires `OPENORG_ASC_ISSUER_ID`, `OPENORG_ASC_KEY_ID`, and `OPENORG_ASC_PRIVATE_KEY_PATH` so the build is reliably assigned to both TestFlight groups. macOS publication requires the existing `OPENORG_NOTARY_KEYCHAIN_PROFILE`. Run `npm run release:openorg -- --help` for repair and partial-run options.
+The normal iOS path requires `OPENORG_ASC_ISSUER_ID`, `OPENORG_ASC_KEY_ID`, and `OPENORG_ASC_PRIVATE_KEY_PATH` so the build is reliably assigned to both TestFlight groups. Before submission, the workflow also marks demo credentials as unnecessary and supplies the canonical beta-review note explaining that optional AI chat is relayed through a locally installed macOS companion. macOS publication requires the existing `OPENORG_NOTARY_KEYCHAIN_PROFILE`. Run `npm run release:openorg -- --help` for repair and partial-run options.
 
 ## Documentation coverage check
 
