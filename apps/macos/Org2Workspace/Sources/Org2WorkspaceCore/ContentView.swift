@@ -9618,6 +9618,7 @@ private struct OrgRenderedDocumentPreview: View {
             reportStatus: { store.statusText = $0 },
             allowsTablePersistence: source.isEditable,
             saveTableView: { store.requestSaveRenderedTableView($0) },
+            recalculateTableFormulas: { store.requestRecalculateRenderedTableFormulas(at: $0) },
             reportViewportSourceLine: reportViewportSourceLine
           )
           .frame(maxHeight: .infinity)

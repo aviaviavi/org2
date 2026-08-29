@@ -93,6 +93,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <li><p><code>compile corpus</code></p></li>
 <li><p><code>render-chart</code></p></li>
 <li><p><code>query-data</code></p></li>
+<li><p><code>table recalculate</code></p></li>
 <li><p><code>roam ...</code></p></li>
 <li><p><code>crypt ...</code></p></li>
 <li><p><code>export html</code></p></li>
@@ -214,6 +215,10 @@ org2 refile --file notes.org2 --pos 120:0 --to-file projects.org2 --to-pos 40:0 
 <p>Canonical formatting for Org2 files.</p>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 fmt --dir ~/notes --recursive --check
 org2 fmt --dir ~/notes --recursive --apply</code></pre>
+</section>
+<section class="org2-headline level-1">
+<h1 id="table-formula-evaluation">Table formula evaluation</h1>
+<p><code>org2 table recalculate --file FILE [--line N] [--formula-index N] [--apply] [--format text|diff|json]</code> evaluates the selected table's safe <code>#+TBLFM:</code> formulas. It previews by default, selects the first formula line unless <code>--formula-index</code> is given, and performs an atomic revision-guarded write only with <code>--apply</code>. Invalid, remote, Emacs Lisp, and otherwise unsupported expressions return diagnostics without changing the file.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="chart-rendering">Chart rendering</h1>

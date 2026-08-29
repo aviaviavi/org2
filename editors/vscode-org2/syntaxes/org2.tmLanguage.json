@@ -7,6 +7,9 @@
       "include": "#comments"
     },
     {
+      "include": "#tableFormulas"
+    },
+    {
       "include": "#directives"
     },
     {
@@ -50,6 +53,18 @@
     }
   ],
   "repository": {
+    "tableFormulas": {
+      "patterns": [
+        {
+          "name": "meta.table.formula.org2",
+          "match": "^(\\s*)(#\\+TBLFM:)(\\s*)(.*)$",
+          "captures": {
+            "2": { "name": "keyword.control.table-formula.org2" },
+            "4": { "name": "meta.expression.table-formula.org2" }
+          }
+        }
+      ]
+    },
     "advancedElements": {
       "patterns": [
         {

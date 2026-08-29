@@ -78,7 +78,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <tr><td>Source files</td><td><code>.org</code></td><td>Reads <code>.org</code>; recommends <code>.org2</code> when Org2-specific behavior is used</td></tr>
 <tr><td>Editing</td><td>Deep structural editing, folding, capture, refile, tables, and keyboard workflows</td><td>Native rendered/source views and a VS Code extension; less editing depth than Org Mode</td></tr>
 <tr><td>Planning</td><td>Highly configurable TODOs, agendas, clocks, habits, repeaters, reports, and logs</td><td>Common TODO and planning semantics shared by the Mac app, VS Code, CLI, and agenda TUI</td></tr>
-<tr><td>Tables and code</td><td>Spreadsheet-like tables and the mature Babel ecosystem</td><td>Structured tables, preserved source blocks, SQL-backed data notes, and charts; not a Babel replacement</td></tr>
+<tr><td>Tables and code</td><td>Spreadsheet-like tables and the mature Babel ecosystem</td><td>Safe <code>#+TBLFM:</code> evaluation, structured tables, preserved source blocks, SQL-backed data notes, and charts; not a Babel replacement</td></tr>
 <tr><td>Publishing</td><td>Many built-in and third-party export backends and publishing projects</td><td>HTML/site publishing and Beamer-compatible presentation export</td></tr>
 <tr><td>Automation</td><td>Emacs Lisp APIs and Emacs batch mode</td><td>Standalone commands, JSON output, LSP, MCP, and source-range-aware compiler output</td></tr>
 <tr><td>Maturity</td><td>Decades of use, documentation, packages, and hard-won edge-case handling</td><td>Early alpha; useful today, but still changing</td></tr>
@@ -105,7 +105,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <section class="org2-headline level-2">
 <h2 id="tables-babel-and-export">Tables, Babel, and export</h2>
 <p>Org tables can behave like a small spreadsheet, complete with formulas and a polished editor. Babel supports a large language ecosystem for literate programming and reproducible research. Org's exporter ships with several backends and has many more in packages.</p>
-<p>Org2 parses tables and source blocks, but its execution story is narrower. Today it focuses on explicit SQL/data blocks, materialized results, deterministic charts, HTML publishing, and presentation export. A serious Babel setup should stay in Org Mode.</p>
+<p>Org2 parses tables and source blocks and evaluates a safe, useful subset of <code>#+TBLFM:</code> spreadsheet formulas across its CLI, rendered views, and exports. Its broader execution story remains narrower: explicit SQL/data blocks, materialized results, deterministic charts, HTML publishing, and presentation export. It does not execute Emacs Lisp formulas or replace Babel, so a serious Babel setup should stay in Org Mode.</p>
 </section>
 <section class="org2-headline level-2">
 <h2 id="ecosystem-and-stability">Ecosystem and stability</h2>

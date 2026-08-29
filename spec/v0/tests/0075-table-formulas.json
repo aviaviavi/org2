@@ -1,0 +1,67 @@
+{
+  "type": "Document",
+  "version": "0",
+  "children": [
+    {
+      "type": "Table",
+      "rows": [
+        {
+          "type": "TableRow",
+          "indent": "",
+          "cells": ["Item", "Qty", "Total"],
+          "contents": [
+            [{ "type": "Text", "value": "Item" }],
+            [{ "type": "Text", "value": "Qty" }],
+            [{ "type": "Text", "value": "Total" }]
+          ]
+        },
+        {
+          "type": "TableHline",
+          "indent": "",
+          "raw": "|------+-----+-------|"
+        },
+        {
+          "type": "TableRow",
+          "indent": "",
+          "cells": ["A", "2", ""],
+          "contents": [
+            [{ "type": "Text", "value": "A" }],
+            [{ "type": "Text", "value": "2" }],
+            [{ "type": "Text", "value": "" }]
+          ]
+        },
+        {
+          "type": "TableRow",
+          "indent": "",
+          "cells": ["B", "3", ""],
+          "contents": [
+            [{ "type": "Text", "value": "B" }],
+            [{ "type": "Text", "value": "3" }],
+            [{ "type": "Text", "value": "" }]
+          ]
+        }
+      ],
+      "formulas": [
+        {
+          "type": "TableFormulaLine",
+          "raw": "#+TBLFM: $3=$2*10::@4$3=vsum(@3$3..@4$3);%.1f",
+          "indent": "",
+          "valueRaw": "$3=$2*10::@4$3=vsum(@3$3..@4$3);%.1f",
+          "assignments": [
+            {
+              "raw": "$3=$2*10",
+              "targetRaw": "$3",
+              "expressionRaw": "$2*10"
+            },
+            {
+              "raw": "@4$3=vsum(@3$3..@4$3);%.1f",
+              "targetRaw": "@4$3",
+              "expressionRaw": "vsum(@3$3..@4$3)",
+              "modeRaw": "%.1f"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

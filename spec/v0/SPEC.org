@@ -273,6 +273,14 @@ Examples:
 - =||= → =cells: [""]=
 - =|a||b|= → =cells: ["a", "", "b"]=
 
+** Table formulas
+
+One or more =#+TBLFM:= lines immediately following a pipe table MUST be attached to that =Table= as ordered =TableFormulaLine= nodes. Each line retains its complete raw source and exposes =::=-separated assignments with =targetRaw=, =expressionRaw=, and optional =modeRaw=. Printers MUST preserve formula lines even when an expression is not executable by Org2.
+
+The shared evaluator supports safe deterministic spreadsheet expressions: field, row, column, and rectangular-range targets; absolute, relative, and A1 references; arithmetic, comparisons, boolean operators, vector aggregates, common numeric functions, numeric formats, and duration modes. Column assignments begin after the first hline. Later assignments replace earlier assignments for the same cell.
+
+Recalculation MUST be atomic: if any selected assignment is invalid, refers outside the table, or requests an unsupported execution mechanism, no cell may be changed. Emacs Lisp forms, remote-table execution, and arbitrary Calc extensions are outside the v0 execution boundary and MUST remain losslessly preserved.
+
 ** Hline row syntax
 
 A *table hline row line* is a table row line where, after trimming leading/trailing whitespace, the line matches:

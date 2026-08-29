@@ -138,6 +138,20 @@ assert.doesNotMatch(published.html, /org2-app-document-script/);
 assert.match(published.html, /<section class="org2-headline level-1"/);
 assert.match(published.html, /<dl class="org2-properties">/);
 
+const formulaDocument = parseOrgToCanonicalAst(`| Item | Qty | Price | Total |
+|------+-----+-------+-------|
+| A    | 2   | 3.5   |       |
+#+TBLFM: $4=$2*$3;%.2f
+`, { sourceRanges: true });
+const formulaRendered = renderOrgDocumentToAppHtml(formulaDocument);
+assert.match(formulaRendered.html, /<td>7\.00<\/td>/);
+assert.match(formulaRendered.html, /data-org2-formula-count="1"/);
+assert.match(formulaRendered.html, /org2TableFormula/);
+assert.match(formulaRendered.html, /Recalculate/);
+const formulaPublished = renderOrgDocumentToHtml(formulaDocument);
+assert.match(formulaPublished.html, /<td>7\.00<\/td>/);
+assert.match(formulaPublished.html, /Calculated from TBLFM/);
+
 const imageSource = `* Chess
 1. [ ] Alapin Sicilian
    - Position to study

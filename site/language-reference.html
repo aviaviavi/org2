@@ -321,7 +321,15 @@ const x = 1</code></pre>
 <li><p>Horizontal separator rows: <code>|---+---|</code></p></li>
 <li><p>Table content is parsed and preserved. Each row retains compatible raw <code>cells</code> strings and also exposes parallel structured <code>contents</code> inline objects.</p></li>
 </ul>
-<p>Org table formulas such as <code>#+TBLFM:</code> remain preserved keyword text; Org2 does not evaluate them.</p>
+<p>Org table formulas are attached to their preceding table as structured <code>TableFormulaLine</code> nodes and can be recalculated safely:</p>
+<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">| item | qty | price | total |
+|------+-----+-------+-------|
+| A    |   2 |  3.50 |       |
+| B    |   4 |  2.00 |       |
+#+TBLFM: $4=$2*$3;%.2f</code></pre>
+<p><code>org2 table recalculate --file report.org2</code> previews the changed cells; add <code>--apply</code> to write them atomically. The Mac rendered view evaluates supported formulas for display and offers the same explicit recalculation action for editable files. HTML export uses the shared evaluator without rewriting source.</p>
+<p>The safe formula subset includes field, row, column, and rectangular-range assignments; absolute and relative <code>@row$column</code> references; A1 references; arithmetic, comparisons, and boolean operators; <code>vsum</code>, <code>vmean</code>, <code>vmin</code>, <code>vmax</code>, <code>vmedian</code>, <code>vcount</code>, common numeric functions; printf/Calc-style numeric formats; and <code>T</code>, <code>U</code>, and <code>t</code> duration modes. Later assignments override earlier assignments for the same cell. Empty-field <code>N</code> mode is supported. Formula lines, including unsupported forms, remain lossless.</p>
+<p>Org2 deliberately does not execute Emacs Lisp formulas, remote-table references, or arbitrary Calc extensions. An unsupported or invalid formula produces a diagnostic and leaves the source unchanged rather than partially updating a table.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="deliberate-compatibility-boundary">Deliberate compatibility boundary</h1>

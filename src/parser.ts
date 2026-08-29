@@ -33,6 +33,7 @@ import type {
   SrcBlockLine,
   SrcBlockNode,
   TableNode,
+  TableFormulaLineNode,
   TargetNode,
   TextNode,
   TimestampNode,
@@ -1027,6 +1028,8 @@ type ParseSrcBlockResult = {
 type ParseTableResult = {
   table: TableNode;
   nextLineIndex: number;
+  /** First line after the pipe rows, before attached formula lines. */
+  tableEndLineIndex: number;
 };
 
 function parseSrcBlockLine(line: string, lineNumber: number): SrcBlockLine | null {
@@ -1229,15 +1232,64 @@ function parseTableRowCells(rest: string): string[] {
   return core.split("|").map((c) => c.trim());
 }
 
+function splitTableFormulaTopLevel(value: string, delimiter: "::" | ";"): string[] {
+  const parts: string[] = [];
+  let start = 0;
+  let depth = 0;
+  let quote: string | undefined;
+  for (let i = 0; i < value.length; i += 1) {
+    const ch = value[i] ?? "";
+    if (quote) {
+      if (ch === "\\") i += 1;
+      else if (ch === quote) quote = undefined;
+      continue;
+    }
+    if (ch === '"' || ch === "'") { quote = ch; continue; }
+    if (ch === "(") depth += 1;
+    else if (ch === ")") depth = Math.max(0, depth - 1);
+    else if (depth === 0 && value.slice(i, i + delimiter.length) === delimiter) {
+      parts.push(value.slice(start, i));
+      start = i + delimiter.length;
+      i += delimiter.length - 1;
+    }
+  }
+  parts.push(value.slice(start));
+  return parts;
+}
+
+function parseTableFormulaLine(raw: string): TableFormulaLineNode {
+  const match = /^(\s*)#\+TBLFM:\s*(.*)$/i.exec(raw);
+  const indent = match?.[1] ?? "";
+  const valueRaw = match?.[2] ?? "";
+  const assignments = splitTableFormulaTopLevel(valueRaw, "::").map((assignmentRaw) => {
+    let depth = 0;
+    let equals = -1;
+    for (let i = 0; i < assignmentRaw.length; i += 1) {
+      const ch = assignmentRaw[i];
+      if (ch === "(") depth += 1;
+      else if (ch === ")") depth = Math.max(0, depth - 1);
+      else if (ch === "=" && depth === 0 && assignmentRaw[i - 1] !== "<" && assignmentRaw[i - 1] !== ">" && assignmentRaw[i - 1] !== "!" && assignmentRaw[i + 1] !== "=") { equals = i; break; }
+    }
+    const targetRaw = equals >= 0 ? assignmentRaw.slice(0, equals).trim() : "";
+    const rhs = equals >= 0 ? assignmentRaw.slice(equals + 1) : assignmentRaw;
+    const expressionAndMode = splitTableFormulaTopLevel(rhs, ";");
+    const expressionRaw = (expressionAndMode.shift() ?? "").trim();
+    const modeRaw = expressionAndMode.join(";").trim();
+    return { raw: assignmentRaw, targetRaw, expressionRaw, ...(modeRaw ? { modeRaw } : {}) };
+  });
+  return { type: "TableFormulaLine", raw, indent, valueRaw, assignments };
+}
+
 function parseTable(lines: string[], startLineIndex: number, indent: string): ParseTableResult {
   const rows: TableNode["rows"] = [];
-
+  let tableEndLineIndex = lines.length;
   for (let i = startLineIndex; i < lines.length; i += 1) {
     const line = lines[i] ?? "";
 
     const matched = matchTableLine(line, indent);
     if (!matched) {
-      return { table: { type: "Table", rows }, nextLineIndex: i };
+      tableEndLineIndex = i;
+      break;
     }
 
     const rest = matched.rest;
@@ -1251,8 +1303,20 @@ function parseTable(lines: string[], startLineIndex: number, indent: string): Pa
     const cells = parseTableRowCells(rest);
     rows.push({ type: "TableRow", indent: lineIndent, cells, contents: cells.map(parseInlinesFromText) });
   }
-
-  return { table: { type: "Table", rows }, nextLineIndex: lines.length };
+  const formulas: NonNullable<TableNode["formulas"]> = [];
+  let nextLineIndex = tableEndLineIndex;
+  while (nextLineIndex < lines.length) {
+    const line = lines[nextLineIndex] ?? "";
+    if (!/^\s*#\+TBLFM:/i.test(line)) break;
+    if (indent && !line.startsWith(indent)) break;
+    formulas.push(parseTableFormulaLine(line));
+    nextLineIndex += 1;
+  }
+  return {
+    table: { type: "Table", rows, ...(formulas.length > 0 ? { formulas } : {}) },
+    nextLineIndex,
+    tableEndLineIndex,
+  };
 }
 
 function parseDynamicBlock(lines: string[], startLineIndex: number): { block: DynamicBlockNode; nextLineIndex: number } | null {
@@ -1626,8 +1690,8 @@ export function parseOrgToCanonicalAst(input: string, options: ParseOptions = {}
       flushParagraph();
       endList();
 
-      const { table, nextLineIndex } = parseTable(lines, i, "");
-      pushCurrent(attachAffiliatedKeywords(table), lineNumber, nextLineIndex);
+      const { table, nextLineIndex, tableEndLineIndex } = parseTable(lines, i, "");
+      pushCurrent(attachAffiliatedKeywords(table), lineNumber, tableEndLineIndex);
       i = nextLineIndex;
       continue;
     }

@@ -14,7 +14,7 @@ Two names matter here. *OpenOrg* is the application. *Org2* is the open file for
 | Source files | =.org= | Reads =.org=; recommends =.org2= when Org2-specific behavior is used |
 | Editing | Deep structural editing, folding, capture, refile, tables, and keyboard workflows | Native rendered/source views and a VS Code extension; less editing depth than Org Mode |
 | Planning | Highly configurable TODOs, agendas, clocks, habits, repeaters, reports, and logs | Common TODO and planning semantics shared by the Mac app, VS Code, CLI, and agenda TUI |
-| Tables and code | Spreadsheet-like tables and the mature Babel ecosystem | Structured tables, preserved source blocks, SQL-backed data notes, and charts; not a Babel replacement |
+| Tables and code | Spreadsheet-like tables and the mature Babel ecosystem | Safe =#+TBLFM:= evaluation, structured tables, preserved source blocks, SQL-backed data notes, and charts; not a Babel replacement |
 | Publishing | Many built-in and third-party export backends and publishing projects | HTML/site publishing and Beamer-compatible presentation export |
 | Automation | Emacs Lisp APIs and Emacs batch mode | Standalone commands, JSON output, LSP, MCP, and source-range-aware compiler output |
 | Maturity | Decades of use, documentation, packages, and hard-won edge-case handling | Early alpha; useful today, but still changing |
@@ -43,7 +43,7 @@ Org2 covers the planning features needed by ordinary agendas: TODO state, schedu
 
 Org tables can behave like a small spreadsheet, complete with formulas and a polished editor. Babel supports a large language ecosystem for literate programming and reproducible research. Org's exporter ships with several backends and has many more in packages.
 
-Org2 parses tables and source blocks, but its execution story is narrower. Today it focuses on explicit SQL/data blocks, materialized results, deterministic charts, HTML publishing, and presentation export. A serious Babel setup should stay in Org Mode.
+Org2 parses tables and source blocks and evaluates a safe, useful subset of =#+TBLFM:= spreadsheet formulas across its CLI, rendered views, and exports. Its broader execution story remains narrower: explicit SQL/data blocks, materialized results, deterministic charts, HTML publishing, and presentation export. It does not execute Emacs Lisp formulas or replace Babel, so a serious Babel setup should stay in Org Mode.
 
 ** Ecosystem and stability
 

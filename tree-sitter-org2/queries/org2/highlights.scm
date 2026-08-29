@@ -14,6 +14,7 @@
 (latex_environment_marker) @markup.raw
 (drawer_line) @property
 (table_row) @markup.raw
+(table_formula) @function.macro
 (list_item) @markup.list
 (footnote_definition) @markup.footnote
 (fixed_width) @markup.raw

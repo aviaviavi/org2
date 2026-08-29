@@ -273,7 +273,21 @@ The binding works anywhere links are parsed, including prose, headings, and tabl
 - Horizontal separator rows: =|---+---|=
 - Table content is parsed and preserved. Each row retains compatible raw =cells= strings and also exposes parallel structured =contents= inline objects.
 
-Org table formulas such as =#+TBLFM:= remain preserved keyword text; Org2 does not evaluate them.
+Org table formulas are attached to their preceding table as structured =TableFormulaLine= nodes and can be recalculated safely:
+
+#+begin_src org
+| item | qty | price | total |
+|------+-----+-------+-------|
+| A    |   2 |  3.50 |       |
+| B    |   4 |  2.00 |       |
+#+TBLFM: $4=$2*$3;%.2f
+#+end_src
+
+=org2 table recalculate --file report.org2= previews the changed cells; add =--apply= to write them atomically. The Mac rendered view evaluates supported formulas for display and offers the same explicit recalculation action for editable files. HTML export uses the shared evaluator without rewriting source.
+
+The safe formula subset includes field, row, column, and rectangular-range assignments; absolute and relative =@row$column= references; A1 references; arithmetic, comparisons, and boolean operators; =vsum=, =vmean=, =vmin=, =vmax=, =vmedian=, =vcount=, common numeric functions; printf/Calc-style numeric formats; and =T=, =U=, and =t= duration modes. Later assignments override earlier assignments for the same cell. Empty-field =N= mode is supported. Formula lines, including unsupported forms, remain lossless.
+
+Org2 deliberately does not execute Emacs Lisp formulas, remote-table references, or arbitrary Calc extensions. An unsupported or invalid formula produces a diagnostic and leaves the source unchanged rather than partially updating a table.
 
 * Deliberate compatibility boundary
 

@@ -18,6 +18,8 @@ syn match org2Heading8 /^\*\{8}\s\+.*$/
 
 " Keyword lines / directives: #+NAME: value (case-insensitive)
 syn match org2Directive /^#\+\c[A-Za-z0-9_\-]\+:.*/
+syn match org2TableFormula /^\s*#\+\cTBLFM:.*/ contains=org2TableReference
+syn match org2TableReference /\v(\$[<>#+-]*\d*|@[<>=#+-]*\d*(\$[<>=#+-]*\d*)?)/ contained
 
 " Planning lines: SCHEDULED: / DEADLINE:
 syn match org2Planning /^\s*\c\(SCHEDULED\|DEADLINE\):.*/
@@ -85,6 +87,8 @@ hi def link org2Heading7 Special
 hi def link org2Heading8 Comment
 
 hi def link org2Directive Keyword
+hi def link org2TableFormula Statement
+hi def link org2TableReference Identifier
 hi def link org2Planning Keyword
 hi def link org2BlockBegin Keyword
 hi def link org2BlockEnd Keyword

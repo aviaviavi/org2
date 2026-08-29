@@ -11074,6 +11074,49 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
+  func requestRecalculateRenderedTableFormulas(at startLine: Int) {
+    guard let source = selectedEntrySource, source.isEditable else {
+      statusText = "This table is read-only"
+      return
+    }
+    guard !isEditingEntry else {
+      statusText = "Save or close source editing before recalculating a table"
+      return
+    }
+    guard !isSavingBlock else {
+      statusText = "Another source update is still in progress"
+      return
+    }
+
+    Task { @MainActor [weak self, source] in
+      guard let self, self.selectedEntrySource?.id == source.id else { return }
+      self.isSavingBlock = true
+      defer { self.isSavingBlock = false }
+      do {
+        let undoSnapshot = self.fileUndoSnapshot(for: source.file)
+        _ = try await self.cli.run([
+          "table", "recalculate",
+          "--file", source.file,
+          "--line", String(startLine),
+          "--apply", "--format", "json",
+        ])
+        self.recordFileUndo(from: undoSnapshot)
+        self.invalidateCanonicalDocumentCache(for: source.file)
+        let staleRenderKey = self.entryHTMLRenderKey(for: source)
+        self.renderedHTMLCache.removeValue(forKey: staleRenderKey)
+        self.renderedHTMLCacheOrder.removeAll { $0 == staleRenderKey }
+        if let selectedLocation = self.selectedLocation {
+          await self.loadEntrySource(for: selectedLocation)
+        }
+        self.statusText = "Recalculated table formulas at line \(startLine)"
+        self.scheduleAgendaRefresh(preserveSelection: true)
+      } catch {
+        self.errorText = error.localizedDescription
+        self.statusText = "Could not recalculate table formulas"
+      }
+    }
+  }
+
   private func saveRenderedTableView(
     _ replacement: String,
     replacing block: OrgEditableBlock,

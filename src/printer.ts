@@ -137,7 +137,7 @@ function printSrcBlock(node: SrcBlockNode): string {
 }
 
 
-function printTable(node: TableNode): string {
+export function printTableRows(node: TableNode): string {
   const tableRows = node.rows.filter((r) => r.type === "TableRow") as Array<Extract<TableNode["rows"][number], { type: "TableRow" }>>;
 
   const colCount = tableRows.reduce((max, r) => Math.max(max, r.cells.length), 0);
@@ -175,7 +175,12 @@ function printTable(node: TableNode): string {
     })
     .join("\n");
 
-  return [...printAffiliatedKeywords(node), table].filter((l) => l.length > 0).join("\n");
+  return table;
+}
+
+function printTable(node: TableNode): string {
+  const formulas = node.formulas?.map((formula) => formula.raw) ?? [];
+  return [...printAffiliatedKeywords(node), printTableRows(node), ...formulas].filter((l) => l.length > 0).join("\n");
 }
 
 function printListItem(node: ListItemNode, continuationIndent: string, nestedListIndent: string): string {

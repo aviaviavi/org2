@@ -84,7 +84,7 @@ Run-linked approval headings are projections, not additional decisions. When =OR
 - *Capture and organize*: =capture=, =archive=, and =refile=.
 - *Find and connect knowledge*: =search=, =query=, =id=, =backlinks=, =entity=, =index=, and =roam ...=.
 - *Check corpus health*: =doctor= checks the agentic workspace boundary; =fmt --check=, =lint=, and =graph audit= check source formatting, metadata, and graph integrity.
-- *Work with data*: =query-data= materializes explicit dataset/SQL blocks; =render-chart= renders deterministic chart declarations. Remote refresh is always explicit.
+- *Work with data*: =table recalculate= previews or atomically applies safe =#+TBLFM:= spreadsheet formulas; =query-data= materializes explicit dataset/SQL blocks; =render-chart= renders deterministic chart declarations. Remote refresh is always explicit.
 - *Create reviewed AI artifacts*: =ai validate-job=, =ai run=, =ai review=, =ai suggest-links=, and =ai promote= preserve the review boundary.
 - *Publish*: =export html= and =publish= derive HTML without replacing the source corpus; =export beamer= derives reviewable LaTeX or a compiled presentation PDF from an Org/Org2 talk.
 - *Use editor semantics*: =lsp= exposes shared navigation, completion, diagnostics, formatting, and refactoring behavior.

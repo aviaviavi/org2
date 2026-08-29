@@ -83,7 +83,7 @@ public struct Org2CLI: Sendable {
     "crypt", "data", "doctor", "entity", "eval", "export", "fmt", "goal",
     "graph", "id", "index", "ledger", "lint", "lsp", "mcp", "plan", "publish",
     "query", "query-data", "refile", "render-chart", "review", "roam", "run",
-    "search", "source", "todo", "version", "workflow", "workspace"
+    "search", "source", "table", "todo", "version", "workflow", "workspace"
   ]
   private static let telemetryNestedCommands: Set<String> = [
     "agent.capabilities", "agent.context", "agent.search", "agent.fetch", "agent.bundle",
@@ -101,7 +101,7 @@ public struct Org2CLI: Sendable {
     "run.fail", "run.block", "run.fork", "run.normalize", "run.assign", "run.comment",
     "run.outcome", "run.runtime", "run.step", "run.artifact", "run.artifact-review",
     "run.validation", "run.approval-request", "run.approval-decide", "source.list",
-    "source.status", "source.doctor", "source.import", "source.sync", "todo.set",
+    "source.status", "source.doctor", "source.import", "source.sync", "table.recalculate", "todo.set",
     "todo.toggle", "todo.assign", "todo.approve", "workflow.list", "workflow.show",
     "workflow.validate", "workflow.save", "workflow.run", "workflow.triggers",
     "workflow.package", "workflow.corpus-template", "workflow.install-builtin",

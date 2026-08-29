@@ -403,7 +403,37 @@
         "rows": {
           "type": "array",
           "items": { "$ref": "#/$defs/TableRow" }
+        },
+        "formulas": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/TableFormulaLine" }
         }
+      }
+    },
+    "TableFormulaLine": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "raw", "indent", "valueRaw", "assignments"],
+      "properties": {
+        "type": { "const": "TableFormulaLine" },
+        "raw": { "type": "string" },
+        "indent": { "type": "string" },
+        "valueRaw": { "type": "string" },
+        "assignments": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/TableFormulaAssignment" }
+        }
+      }
+    },
+    "TableFormulaAssignment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["raw", "targetRaw", "expressionRaw"],
+      "properties": {
+        "raw": { "type": "string" },
+        "targetRaw": { "type": "string" },
+        "expressionRaw": { "type": "string" },
+        "modeRaw": { "type": "string" }
       }
     },
     "TableRow": {

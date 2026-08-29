@@ -157,3 +157,12 @@ test('headline TODO aliases still receive TODO keyword syntax highlighting', asy
     assert(keywordToken.scopes.includes('keyword.other.todo.org2'), `expected TODO scope for ${keyword}`);
   }
 });
+
+test('table formula lines receive a dedicated expression scope', async () => {
+  const registry = await createRegistry();
+  const grammar = await registry.loadGrammar('source.org2');
+  const line = '#+TBLFM: $4=$2*$3;%.2f::@5$4=vsum(@2$4..@4$4)';
+  const result = grammar.tokenizeLine(line, null);
+  assert(result.tokens.some((token) => token.scopes.includes('keyword.control.table-formula.org2')));
+  assert(result.tokens.some((token) => token.scopes.includes('meta.expression.table-formula.org2')));
+});

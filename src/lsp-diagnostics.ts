@@ -1,4 +1,5 @@
 import { parseOrgWithDiagnostics } from "./parser.js";
+import { evaluateTableNode, tablesInDocument } from "./tableFormula.js";
 
 export interface Position {
   line: number;
@@ -44,7 +45,7 @@ class DiagnosticLineTracker {
  * LSP positions are 0-based, while parser errors are 1-based.
  */
 export function buildPublishDiagnosticsParams(uri: string, text: string): PublishDiagnosticsParams {
-  const result = parseOrgWithDiagnostics(text);
+  const result = parseOrgWithDiagnostics(text, { sourceRanges: true });
   const tracker = new DiagnosticLineTracker(text);
 
   const diagnostics: Diagnostic[] = result.diagnostics.map((parseErr) => {
@@ -63,6 +64,27 @@ export function buildPublishDiagnosticsParams(uri: string, text: string): Publis
       code: "org2-parser",
     };
   });
+
+  for (const table of tablesInDocument(result.ast)) {
+    const sourceRange = table.sourceRange;
+    if (!sourceRange) continue;
+    table.formulas?.forEach((_formula, formulaIndex) => {
+      const evaluation = evaluateTableNode(table, formulaIndex);
+      if (evaluation.ok) return;
+      const line = sourceRange.endLine + formulaIndex;
+      for (const issue of evaluation.diagnostics) {
+        diagnostics.push({
+          range: {
+            start: { line, character: 0 },
+            end: { line, character: tracker.getLineLength(line) },
+          },
+          severity: DiagnosticSeverity.Error,
+          message: issue.message,
+          code: "org2-table-formula",
+        });
+      }
+    });
+  }
 
   return { uri, diagnostics };
 }

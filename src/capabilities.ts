@@ -134,8 +134,8 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
       },
       {
         id: "data-and-charts",
-        purpose: "Inspect or materialize DuckDB-backed datasets and render deterministic charts from note-local declarations.",
-        commands: ["org2 query-data", "org2 render-chart"],
+        purpose: "Recalculate safe spreadsheet formulas, inspect or materialize DuckDB-backed datasets, and render deterministic charts from note-local declarations.",
+        commands: ["org2 table recalculate", "org2 query-data", "org2 render-chart"],
         writes: "mixed",
       },
       {

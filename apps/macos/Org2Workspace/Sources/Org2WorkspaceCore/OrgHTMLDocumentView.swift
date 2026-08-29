@@ -445,6 +445,7 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
   let reportStatus: @MainActor (String) -> Void
   var allowsTablePersistence = false
   var saveTableView: @MainActor (OrgHTMLTableViewSnapshot) -> Void = { _ in }
+  var recalculateTableFormulas: @MainActor (Int) -> Void = { _ in }
   var reportViewportSourceLine: @MainActor (Int?) -> Void = { _ in }
 
   func makeCoordinator() -> Coordinator {
@@ -462,6 +463,10 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
     configuration.userContentController.add(
       context.coordinator,
       name: Coordinator.tableViewMessageHandlerName
+    )
+    configuration.userContentController.add(
+      context.coordinator,
+      name: Coordinator.tableFormulaMessageHandlerName
     )
     configuration.userContentController.add(
       context.coordinator,
@@ -505,6 +510,7 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
     let tablePersistenceChanged = coordinator.allowsTablePersistence != allowsTablePersistence
     coordinator.allowsTablePersistence = allowsTablePersistence
     coordinator.saveTableView = saveTableView
+    coordinator.recalculateTableFormulas = recalculateTableFormulas
     coordinator.reportViewportSourceLine = reportViewportSourceLine
     coordinator.restorationSourceLine = restorationSourceLine
     let layoutChanged = coordinator.layout != layout
@@ -552,6 +558,9 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
       forName: Coordinator.tableViewMessageHandlerName
     )
     webView.configuration.userContentController.removeScriptMessageHandler(
+      forName: Coordinator.tableFormulaMessageHandlerName
+    )
+    webView.configuration.userContentController.removeScriptMessageHandler(
       forName: Coordinator.entryContextMenuMessageHandlerName
     )
     webView.configuration.userContentController.removeScriptMessageHandler(
@@ -581,6 +590,7 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
   final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
     nonisolated static let viewportMessageHandlerName = "org2ViewportSourceLine"
     nonisolated static let tableViewMessageHandlerName = "org2TableView"
+    nonisolated static let tableFormulaMessageHandlerName = "org2TableFormula"
     nonisolated static let entryContextMenuMessageHandlerName = "org2EntryContextMenu"
     nonisolated static let paneActivationMessageHandlerName = "org2PaneActivation"
     weak var webView: WKWebView?
@@ -603,6 +613,7 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
     var reportStatus: @MainActor (String) -> Void = { _ in }
     var allowsTablePersistence = false
     var saveTableView: @MainActor (OrgHTMLTableViewSnapshot) -> Void = { _ in }
+    var recalculateTableFormulas: @MainActor (Int) -> Void = { _ in }
     var reportViewportSourceLine: @MainActor (Int?) -> Void = { _ in }
     let localResourceHandler = OrgHTMLLocalResourceSchemeHandler()
 
@@ -637,6 +648,13 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
               let snapshot = OrgHTMLTableViewSnapshot(message.body)
         else { return }
         saveTableView(snapshot)
+      case Self.tableFormulaMessageHandlerName:
+        guard allowsTablePersistence,
+              let body = message.body as? [String: Any],
+              let startLine = (body["startLine"] as? NSNumber)?.intValue,
+              startLine > 0
+        else { return }
+        recalculateTableFormulas(startLine)
       case Self.entryContextMenuMessageHandlerName:
         guard let payload = message.body as? [String: Any],
               let line = (payload["line"] as? NSNumber)?.intValue,

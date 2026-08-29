@@ -8361,6 +8361,10 @@ async function main(): Promise<void> {
     const { runSourceCommand } = await import("./sourceRuntime.js");
     if (await runSourceCommand(args)) return;
   }
+  if (args[0] === "table") {
+    const { runTableFormulaCommand } = await import("./tableFormulaCli.js");
+    if (await runTableFormulaCommand(args)) return;
+  }
 
   if (args[0] === "ingest") {
     await runIngestCommand(args.slice(1));
@@ -10283,6 +10287,7 @@ Roam / IDs:
   org2 compile corpus --dir DIR [--recursive] [--out FILE] [--format json|jsonl]
   org2 render-chart --file FILE [--block-id ID|--line N] [--out FILE] [--format svg|json]
   org2 query-data (--file FILE|--stdin) [--results NAME|--line N] [--out FILE|--apply] [--format org|json]
+  org2 table recalculate --file FILE [--line N] [--formula-index N] [--apply] [--format text|diff|json]
   org2 agent capabilities
   org2 agent <context|search|fetch|bundle> [options]
   org2 context QUERY [--dir DIR] [--recursive] [--budget 8k] [--format markdown|org|json]

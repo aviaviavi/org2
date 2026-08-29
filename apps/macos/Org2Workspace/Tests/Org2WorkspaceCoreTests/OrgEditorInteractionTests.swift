@@ -508,6 +508,83 @@ final class OrgEditorInteractionTests: XCTestCase {
     XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), sourceTextBeforeInteraction)
   }
 
+  func testRenderedFormulaTableRoutesRecalculationToItsSourceLine() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-formula-table-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let file = root.appendingPathComponent("formula.org2")
+    let text = """
+      | Item | Qty | Total |
+      |------+-----+-------|
+      | A    | 2   |       |
+      #+TBLFM: $3=$2*10
+      """
+    try text.write(to: file, atomically: true, encoding: .utf8)
+    let source = EntrySource(
+      file: file.path,
+      startLine: 1,
+      endLineExclusive: 5,
+      text: text,
+      isSubtree: false
+    )
+    let html = try await Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()).renderAppHTML(
+      source.text,
+      sourcePath: source.file
+    )
+    var receivedLine: Int?
+    let content = OrgHTMLDocumentView(
+      html: html,
+      source: source,
+      corpusRoot: root,
+      searchQuery: nil,
+      searchOccurrenceIndex: nil,
+      searchOccurrenceCount: 0,
+      scrollRequest: nil,
+      layout: OrgHTMLDocumentLayout(width: .comfortable, margin: .standard),
+      askAIAboutHeading: { _ in },
+      performEntryAction: { _, _ in },
+      reportStatus: { _ in },
+      allowsTablePersistence: true,
+      recalculateTableFormulas: { receivedLine = $0 }
+    )
+    let hostingView = NSHostingView(rootView: content)
+    let window = NSWindow(
+      contentRect: NSRect(x: 0, y: 0, width: 700, height: 500),
+      styleMask: [.titled, .closable],
+      backing: .buffered,
+      defer: false
+    )
+    window.contentView = hostingView
+    window.makeKeyAndOrderFront(nil)
+    retainedInteractionWindows.append(window)
+
+    var webView: WKWebView?
+    try await waitForCondition {
+      webView = firstWebView(in: window.contentView)
+      return webView != nil
+    }
+    let renderedWebView = try XCTUnwrap(webView)
+    let controlsDeadline = Date().addingTimeInterval(5)
+    var formulaControlReady = false
+    while Date() < controlsDeadline && !formulaControlReady {
+      formulaControlReady = (try? await renderedWebView.callAsyncJavaScript(
+        "return Boolean(document.querySelector('[data-org2-table-formula]') && !document.querySelector('[data-org2-table-formula]').hidden);",
+        arguments: [:],
+        in: nil,
+        contentWorld: .page
+      )) as? Bool == true
+      if !formulaControlReady { try await pumpRunLoop() }
+    }
+    XCTAssertTrue(formulaControlReady)
+    _ = try await renderedWebView.callAsyncJavaScript(
+      "document.querySelector('[data-org2-table-formula]').click(); return true;",
+      arguments: [:],
+      in: nil,
+      contentWorld: .page
+    )
+    try await waitForCondition { receivedLine == 1 }
+  }
+
   func testTypingHeadingReturnAndParagraphUsesFreshEditorState() async throws {
     try XCTSkipIf(true, "Rendered inline text editing is retired from normal UI entry points; source editing is primary.")
     let harness = try await makeHarness(initialText: "")

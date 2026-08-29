@@ -17,6 +17,7 @@ module.exports = grammar({
       $.latex_environment_marker,
       $.drawer_line,
       $.table_row,
+      $.table_formula,
       $.list_item,
       $.footnote_definition,
       $.fixed_width,
@@ -47,6 +48,7 @@ module.exports = grammar({
     latex_environment_marker: _ => token(/\\(?:begin|end)\{[^}\n]+\}[^\n]*/),
     drawer_line: _ => token(/:[A-Za-z0-9_@#%+.-]+:[^\n]*/),
     table_row: _ => token(/\|[^\n]*\|/),
+    table_formula: _ => token(/#\+[Tt][Bb][Ll][Ff][Mm]:[^\n]*/),
     // Column-zero `* ` is a headline in Org. Keeping whole-line list tokens at
     // lower lexical priority lets `stars` win that ambiguity while indented
     // star bullets remain list items after extras consume their indentation.

@@ -26,6 +26,7 @@ Main workflows:
 - =compile corpus=
 - =render-chart=
 - =query-data=
+- =table recalculate=
 - =roam ...=
 - =crypt ...=
 - =export html=
@@ -179,6 +180,10 @@ Canonical formatting for Org2 files.
 org2 fmt --dir ~/notes --recursive --check
 org2 fmt --dir ~/notes --recursive --apply
 #+end_src
+
+* Table formula evaluation
+
+=org2 table recalculate --file FILE [--line N] [--formula-index N] [--apply] [--format text|diff|json]= evaluates the selected table's safe =#+TBLFM:= formulas. It previews by default, selects the first formula line unless =--formula-index= is given, and performs an atomic revision-guarded write only with =--apply=. Invalid, remote, Emacs Lisp, and otherwise unsupported expressions return diagnostics without changing the file.
 
 * Chart rendering
 

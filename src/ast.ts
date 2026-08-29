@@ -267,10 +267,28 @@ export type TableHlineNode = {
   raw: string;
 };
 
+/** One assignment from an Org `#+TBLFM:` line. Raw fields are retained so
+ * unsupported Calc/Emacs forms can still round-trip without loss. */
+export type TableFormulaAssignmentNode = {
+  raw: string;
+  targetRaw: string;
+  expressionRaw: string;
+  modeRaw?: string;
+};
+
+export type TableFormulaLineNode = {
+  type: "TableFormulaLine";
+  raw: string;
+  indent: string;
+  valueRaw: string;
+  assignments: TableFormulaAssignmentNode[];
+};
+
 export type TableNode = {
   type: "Table";
   affiliatedKeywords?: KeywordLineNode[];
   rows: (TableRowNode | TableHlineNode)[];
+  formulas?: TableFormulaLineNode[];
 };
 
 export type ListItemNode = {

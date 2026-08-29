@@ -32,6 +32,7 @@ import {
 } from "./link-abbrev.js";
 import { COMPAT_CONTENT_CLOSE, COMPAT_CONTENT_OPEN, COMPAT_CONTENT_STYLE_SECTION } from "./publish-defaults.js";
 import { isPresentationDocument } from "./presentation.js";
+import { evaluateTableNode } from "./tableFormula.js";
 
 function escapeHtml(value: string): string {
   return String(value)
@@ -501,6 +502,9 @@ th { color: var(--org2-muted); background: var(--org2-faint); font-family: var(-
 .org2-table-sort-button:hover { color: var(--org2-text); background: var(--org2-faint); }
 .org2-table-control-button:disabled { cursor: default; opacity: 0.44; }
 .org2-table-save-button { color: var(--org2-accent); font-weight: 650; }
+.org2-table-formula-button { color: var(--org2-accent); font-weight: 650; }
+.org2-table-formula-status { display: block; margin: -0.75rem 0 1rem; color: var(--org2-muted); font-size: 0.78rem; }
+.org2-table-formula-error { color: var(--org2-danger, #b42318); }
 .org2-table-sort-button { margin-left: 0.28rem; padding: 0.06rem 0.22rem; font-size: 0.72rem; }
 .org2-table-sort-button[aria-pressed="true"] { color: var(--org2-accent); background: color-mix(in srgb, var(--org2-accent) 10%, transparent); }
 .org2-resizable-table th, .org2-resizable-table td { min-width: 72px; }
@@ -737,7 +741,15 @@ const APP_DOCUMENT_SCRIPT = `(() => {
       save.hidden = !window.__org2TablePersistenceEnabled;
       save.dataset.org2TableSave = "true";
 
-      controls.append(filter, count, showMore, reset, save);
+      const recalculate = document.createElement("button");
+      recalculate.type = "button";
+      recalculate.className = "org2-table-control-button org2-table-formula-button";
+      recalculate.textContent = "Recalculate";
+      recalculate.title = "Recalculate this table from its #+TBLFM formulas and save the results";
+      recalculate.hidden = !window.__org2TablePersistenceEnabled || Number(table.dataset.org2FormulaCount || 0) === 0;
+      recalculate.dataset.org2TableFormula = "true";
+
+      controls.append(filter, count, showMore, reset, recalculate, save);
       wrapper.insertBefore(controls, table);
 
       let sortColumn = null;
@@ -849,6 +861,11 @@ const APP_DOCUMENT_SCRIPT = `(() => {
           sortActive: sortColumn !== null
         });
       });
+      recalculate.addEventListener("click", () => {
+        const handler = window.webkit?.messageHandlers?.org2TableFormula;
+        if (!handler) return;
+        handler.postMessage({ startLine: Number(table.dataset.org2StartLine || 0) });
+      });
 
       refresh();
     });
@@ -857,6 +874,10 @@ const APP_DOCUMENT_SCRIPT = `(() => {
       window.__org2TablePersistenceEnabled = Boolean(enabled);
       document.querySelectorAll("[data-org2-table-save='true']").forEach((button) => {
         button.hidden = !window.__org2TablePersistenceEnabled;
+      });
+      document.querySelectorAll("[data-org2-table-formula='true']").forEach((button) => {
+        const table = button.closest(".org2-table-scroll")?.querySelector("table");
+        button.hidden = !window.__org2TablePersistenceEnabled || Number(table?.dataset.org2FormulaCount || 0) === 0;
       });
     };
   }
@@ -1822,8 +1843,8 @@ function renderTableRow(
 ): string {
   const cellTag = asHeader ? "th" : "td";
   const cells = row.cells
-    .map((cell, cellIndex) => {
-      const parsed = row.contents?.[cellIndex] ?? parseInlinesFromText(String(cell || "").trim());
+    .map((cell) => {
+      const parsed = parseInlinesFromText(String(cell || "").trim());
       if (parsed.length === 1 && parsed[0]?.type === "Link" && parsed[0].descriptionRaw !== undefined) {
         const binding = parseOrgColorBindingTarget(parsed[0].targetRaw);
         if (binding) {
@@ -1839,7 +1860,9 @@ function renderTableRow(
 }
 
 function renderTable(node: TableNode, context: RenderContext): string {
-  const rows = node.rows;
+  const formulaResult = node.formulas?.length ? evaluateTableNode(node) : undefined;
+  const renderedNode = formulaResult?.ok ? formulaResult.table : node;
+  const rows = renderedNode.rows;
   const firstHline = rows.findIndex((row): row is TableHlineNode => row.type === "TableHline");
 
   const headerRows =
@@ -1858,11 +1881,18 @@ function renderTable(node: TableNode, context: RenderContext): string {
   const renderedBody = `<tbody>\n${resolvedBodyRows.map((row) => renderTableRow(row, false, context)).join("\n")}\n</tbody>`;
 
   const sourceAttributes = renderSourceAttributes(node, context);
-  const table = `<table${sourceAttributes}>\n${[renderedHead, renderedBody].filter(Boolean).join("\n")}\n</table>`;
+  const formulaAttributes = node.formulas?.length
+    ? ` data-org2-formula-count="${node.formulas.length}" data-org2-formula-state="${formulaResult?.ok ? "current" : "error"}"`
+    : "";
+  const table = `<table${sourceAttributes}${formulaAttributes}>\n${[renderedHead, renderedBody].filter(Boolean).join("\n")}\n</table>`;
   const tableHtml = context.profile === "app" ? `<div class="org2-table-scroll">\n${table}\n</div>` : table;
+  const formulaStatus = formulaResult
+    ? `<small class="org2-table-formula-status${formulaResult.ok ? "" : " org2-table-formula-error"}">${formulaResult.ok ? `Calculated from TBLFM${(node.formulas?.length ?? 0) > 1 ? ` line 1 of ${node.formulas?.length}` : ""}` : `Formula not evaluated: ${escapeHtml(formulaResult.diagnostics[0]?.message ?? "unsupported formula")}`}</small>`
+    : "";
   const sourceRange = (node as SourceRangedNode).sourceRange;
   const chart = sourceRange ? context.chartsByTableLine?.get(sourceRange.startLine) : undefined;
-  return chart ? `${tableHtml}\n${renderEmbeddedChart(chart)}` : tableHtml;
+  const output = `${tableHtml}${formulaStatus ? `\n${formulaStatus}` : ""}`;
+  return chart ? `${output}\n${renderEmbeddedChart(chart)}` : output;
 }
 
 function renderListItem(node: ListItemNode, context: RenderContext): string {
