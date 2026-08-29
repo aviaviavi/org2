@@ -663,6 +663,71 @@ export function rowsToOrgTable(rows: Record<string, unknown>[]): string {
   return [rowLine(headers), separator, ...renderedRows.map(rowLine)].join("\n") + "\n";
 }
 
+function localOrgDate(date: Date): string {
+  const year = String(date.getFullYear()).padStart(4, "0");
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const weekday = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][date.getDay()];
+  return `${year}-${month}-${day} ${weekday}`;
+}
+
+function localOrgTimestamp(date: Date, openingDelimiter: "[" | "<" = "["): string {
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  const timeZone = new Intl.DateTimeFormat("en-US", { timeZoneName: "short" })
+    .formatToParts(date)
+    .find((part) => part.type === "timeZoneName")
+    ?.value
+    .replace(/\s+/g, "");
+  const closingDelimiter = openingDelimiter === "<" ? ">" : "]";
+  return `${openingDelimiter}${localOrgDate(date)} ${hours}:${minutes}${timeZone ? ` ${timeZone}` : ""}${closingDelimiter}`;
+}
+
+function latestDataQueryRunAt(results: DataQueryResult[]): string | undefined {
+  let latestValue: string | undefined;
+  let latestTime = Number.NEGATIVE_INFINITY;
+  for (const result of results) {
+    const value = String(result.provenance?.ranAt || "").trim();
+    const time = Date.parse(value);
+    if (!value || Number.isNaN(time) || time < latestTime) continue;
+    latestValue = value;
+    latestTime = time;
+  }
+  return latestValue;
+}
+
+function updateDataNotebookRefreshMetadata(input: string, refreshedAt: string): string {
+  const date = new Date(refreshedAt);
+  if (Number.isNaN(date.getTime())) return input;
+
+  let text = input;
+  text = text.replace(
+    /^(\s*#\+updated:\s*)(.*)$/im,
+    (_match, prefix: string, currentValue: string) => {
+      const current = String(currentValue || "").trim();
+      const nextValue = current.startsWith("[")
+        ? `[${localOrgDate(date)}]`
+        : current.startsWith("<")
+          ? `<${localOrgDate(date)}>`
+          : localOrgDate(date).slice(0, 10);
+      return `${prefix}${nextValue}`;
+    },
+  );
+  text = text.replace(
+    /^(\s*#\+property:\s+ORG2_OBSERVED_AT(?:\s+|=))(.*)$/im,
+    (_match, prefix: string, currentValue: string) => {
+      const current = String(currentValue || "").trim();
+      const nextValue = current.startsWith("[")
+        ? localOrgTimestamp(date)
+        : current.startsWith("<")
+          ? localOrgTimestamp(date, "<")
+          : date.toISOString();
+      return `${prefix}${nextValue}`;
+    },
+  );
+  return text;
+}
+
 export function applyDataQueryResult(input: string, result: DataQueryResult): { text: string; changed: boolean } {
   if (!result.ok || !result.resultId || !result.orgTable || !result.source) {
     throw new Error("Cannot apply an unsuccessful or incomplete data query result");
@@ -714,6 +779,10 @@ export function applyDataQueryResults(
     const applied = applyDataQueryResult(text, result);
     text = applied.text;
     if (applied.changed) changedResultCount++;
+  }
+  const refreshedAt = latestDataQueryRunAt(results);
+  if (refreshedAt) {
+    text = updateDataNotebookRefreshMetadata(text, refreshedAt);
   }
   return {
     text,

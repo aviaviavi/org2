@@ -9200,6 +9200,38 @@ public final class WorkspaceStore: ObservableObject {
     ]
   }
 
+  nonisolated static func dataNotebookLocationByRefreshingModificationDate(
+    _ location: WorkspaceLocation?,
+    file: String,
+    modifiedAt: Date?
+  ) -> WorkspaceLocation? {
+    guard case .openClaw(let thread)? = location,
+          URL(fileURLWithPath: thread.file).standardizedFileURL.path
+            == URL(fileURLWithPath: file).standardizedFileURL.path
+    else {
+      return location
+    }
+    return .openClaw(OpenClawThread(
+      title: thread.title,
+      file: thread.file,
+      line: thread.lineForEditor,
+      zone: thread.zone,
+      modifiedAt: modifiedAt,
+      idValue: thread.idValue
+    ))
+  }
+
+  private func refreshSelectedDataNotebookModificationDate(for file: String) {
+    let modifiedAt = Self.modificationDate(for: URL(fileURLWithPath: file))
+    let refreshedLocation = Self.dataNotebookLocationByRefreshingModificationDate(
+      selectedLocation,
+      file: file,
+      modifiedAt: modifiedAt
+    )
+    guard refreshedLocation != selectedLocation else { return }
+    selectedLocation = refreshedLocation
+  }
+
   public func refreshSelectedDataNotebook() async {
     guard canRefreshSelectedDataNotebook,
           let file = selectedEntrySource?.file ?? selectedLocation?.file
@@ -9222,6 +9254,7 @@ public final class WorkspaceStore: ObservableObject {
       )
 
       invalidateCanonicalDocumentCache(for: file)
+      refreshSelectedDataNotebookModificationDate(for: file)
       if let selectedLocation {
         await loadEntrySource(for: selectedLocation)
       }

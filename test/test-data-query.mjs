@@ -54,7 +54,12 @@ y: fetches
 `, "utf8");
 fs.copyFileSync(note, applyNote);
 
-const batchSource = `* Batch package fetch report
+const batchSource = `#+title: Batch package fetch report
+#+updated: [2026-08-26 Wed]
+#+property: ORG2_ARTIFACT_ROLE view
+#+property: ORG2_OBSERVED_AT [2026-08-26 Wed 13:42 PDT]
+
+* Batch package fetch report
 
 \`\`\`dataset fetches
 type: csv
@@ -480,6 +485,10 @@ assert.deepEqual(batchJson.results.map((result) => result.resultId), [
 const batchAppliedText = fs.readFileSync(batchApplyNote, "utf8");
 assert.equal((batchAppliedText.match(/^#\+query-data: result=fetches_by_state\b/gm) || []).length, 1);
 assert.equal((batchAppliedText.match(/^#\+query-data: result=positive_fetches_by_state\b/gm) || []).length, 1);
+assert.doesNotMatch(batchAppliedText, /^#\+updated: \[2026-08-26 Wed\]$/m);
+assert.doesNotMatch(batchAppliedText, /^#\+property: ORG2_OBSERVED_AT \[2026-08-26 Wed 13:42 PDT\]$/m);
+assert.match(batchAppliedText, /^#\+updated: \[\d{4}-\d{2}-\d{2} [A-Z][a-z]{2}\]$/m);
+assert.match(batchAppliedText, /^#\+property: ORG2_OBSERVED_AT \[\d{4}-\d{2}-\d{2} [A-Z][a-z]{2} \d{2}:\d{2} [^\]]+\]$/m);
 assert.ok(batchAppliedText.indexOf("#+query-data: result=fetches_by_state")
   < batchAppliedText.indexOf("```sql results=positive_fetches_by_state"));
 

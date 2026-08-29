@@ -15976,6 +15976,39 @@ final class Org2ModelsTests: XCTestCase {
     )
   }
 
+  func testDataNotebookRefreshUpdatesSelectedFileModificationDate() throws {
+    let oldDate = Date(timeIntervalSince1970: 1_700_000_000)
+    let refreshedDate = Date(timeIntervalSince1970: 1_800_000_000)
+    let location = WorkspaceLocation.openClaw(OpenClawThread(
+      title: "Dashboard",
+      file: "/tmp/dashboard.org2",
+      line: 7,
+      zone: "views",
+      modifiedAt: oldDate,
+      idValue: "dashboard-id"
+    ))
+
+    let refreshed = WorkspaceStore.dataNotebookLocationByRefreshingModificationDate(
+      location,
+      file: "/tmp/../tmp/dashboard.org2",
+      modifiedAt: refreshedDate
+    )
+
+    guard case .openClaw(let thread)? = refreshed else {
+      return XCTFail("Expected the selected OpenClaw file location")
+    }
+    XCTAssertEqual(thread.modifiedAt, refreshedDate)
+    XCTAssertEqual(thread.lineForEditor, 7)
+    XCTAssertEqual(thread.idValue, "dashboard-id")
+
+    let unrelated = WorkspaceStore.dataNotebookLocationByRefreshingModificationDate(
+      location,
+      file: "/tmp/another.org2",
+      modifiedAt: refreshedDate
+    )
+    XCTAssertEqual(unrelated, location)
+  }
+
   @MainActor
   func testSelectedFileDataNotebookDetectionDoesNotReadFromDiskOnEveryAccess() throws {
     let root = FileManager.default.temporaryDirectory
