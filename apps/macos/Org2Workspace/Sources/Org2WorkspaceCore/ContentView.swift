@@ -9240,15 +9240,6 @@ private struct DetailHeader: View {
         .disabled(!store.canLinkifyCurrentFile)
       }
 
-      if store.selectedFileIsDataNotebook {
-        Divider()
-
-        Button {
-          store.presentScarfMetabaseConfiguration()
-        } label: {
-          Label("Metabase Credentials…", systemImage: "key")
-        }
-      }
     } label: {
       Label("File", systemImage: "doc.text.magnifyingglass")
     }

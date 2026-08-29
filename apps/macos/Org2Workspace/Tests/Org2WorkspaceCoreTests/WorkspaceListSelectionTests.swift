@@ -47,6 +47,22 @@ final class WorkspaceListSelectionTests: XCTestCase {
     XCTAssertTrue(workspaceStore.contains(#"["source", "status", profileID"#))
   }
 
+  func testNotebookCredentialsAreContextualInsteadOfAFileMenuCommand() throws {
+    let testFile = URL(fileURLWithPath: #filePath)
+    let packageRoot = testFile
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+    let contentView = try String(
+      contentsOf: packageRoot.appendingPathComponent("Sources/Org2WorkspaceCore/ContentView.swift"),
+      encoding: .utf8
+    )
+
+    XCTAssertFalse(contentView.contains(#"Label("Metabase Credentials…", systemImage: "key")"#))
+    XCTAssertTrue(contentView.contains(#"Button("Update Credentials")"#))
+    XCTAssertTrue(contentView.contains("if failure.needsCredentialUpdate"))
+  }
+
   func testVerticallyStackedNodeContextPaneHasNoLeadingDividerOverlay() throws {
     let testFile = URL(fileURLWithPath: #filePath)
     let packageRoot = testFile
