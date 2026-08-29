@@ -66,8 +66,10 @@ make macos-app
 #+end_src
 
 The equivalent npm script is =npm run build:macos-app=. The daily-app command
-builds an optimized release binary by default. Use the explicit variants when
-switching modes during development:
+builds an optimized release binary by default. It assembles and verifies a
+complete staged app before replacing the installed bundle, so a failed build
+leaves the existing app untouched. Use the explicit variants when switching
+modes during development:
 
 #+begin_src sh
 npm run build:macos-app:release

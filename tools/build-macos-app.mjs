@@ -15,8 +15,9 @@ import {
   writeFileSync,
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { installStagedAppBundle } from "./atomic-app-bundle.mjs";
 import {
   detectNodeArchitecture,
   duckDBBindingPackagesForRuntime,
@@ -275,8 +276,8 @@ function runningProcessesForBinary(binaryPath) {
     .filter(Boolean);
 }
 
-function writeInfoPlist() {
-  const contentsDir = join(appPath, "Contents");
+function writeInfoPlist(bundlePath) {
+  const contentsDir = join(bundlePath, "Contents");
   const plist = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -389,12 +390,8 @@ function copyOrg2Runtime(resourcesDir) {
   const runtimeNodeArchitecture = runtimeNodeSourcePath
     ? detectNodeArchitecture(runtimeNodeSourcePath)
     : null;
-  const expectedNodeArchitecture = swiftBuildArch === "x86_64" ? "x64" : swiftBuildArch;
-  if (bundledNodePath && expectedNodeArchitecture && runtimeNodeArchitecture !== expectedNodeArchitecture) {
-    throw new Error(
-      `Bundled Node.js runtime must be ${expectedNodeArchitecture} for the ${swiftBuildArch} app; found ${runtimeNodeArchitecture}.`
-    );
-  }
+  // Node runs as a child process, so its architecture may differ from the Swift
+  // app when Rosetta is available. Bundle the DuckDB binding for Node itself.
   const duckDBBindingPackages = duckDBBindingPackagesForRuntime({
     bundledNodePath,
     nodeArchitecture: runtimeNodeArchitecture,
@@ -603,12 +600,20 @@ function main() {
       configuration: swiftBuildConfiguration,
       iconPath,
       hardenedRuntime: requestedSigningIdentity?.startsWith("Developer ID Application:") ?? false,
+      installStrategy: "verified staged replacement",
+      nodeArchitecture: bundledNodePath ? detectNodeArchitecture(bundledNodePath) : null,
       nodePath: bundledNodePath || null,
       swiftScratchPath: swiftScratchPath || null,
       whisperCppPath: bundledWhisperCppPath || null,
       whisperModelPath: bundledWhisperModelPath || null,
     }, null, 2));
     return;
+  }
+
+  const installedBinaryPath = join(appPath, "Contents", "MacOS", executableName);
+  const runningPids = runningProcessesForBinary(installedBinaryPath);
+  if (runningPids.length > 0) {
+    throw new Error(`${appName} is running from ${appPath}. Quit it and rerun this command.`);
   }
 
   console.log(`Building ${executableName} (${swiftBuildConfiguration})...`);
@@ -623,76 +628,76 @@ function main() {
     throw new Error(`Built binary not found at ${binaryPath}`);
   }
 
-  const contentsDir = join(appPath, "Contents");
-  const macOSDir = join(contentsDir, "MacOS");
-  const resourcesDir = join(contentsDir, "Resources");
-  mkdirSync(macOSDir, { recursive: true });
-  mkdirSync(resourcesDir, { recursive: true });
-  for (const entry of readdirSync(appPath)) {
-    if (entry !== "Contents") {
-      rmSync(join(appPath, entry), { recursive: true, force: true });
+  mkdirSync(dirname(appPath), { recursive: true });
+  const stagingRoot = mkdtempSync(join(dirname(appPath), `.${basename(appPath)}.staging-`));
+  const stagedAppPath = join(stagingRoot, basename(appPath));
+  try {
+    const contentsDir = join(stagedAppPath, "Contents");
+    const macOSDir = join(contentsDir, "MacOS");
+    const resourcesDir = join(contentsDir, "Resources");
+    mkdirSync(macOSDir, { recursive: true });
+    mkdirSync(resourcesDir, { recursive: true });
+
+    writeInfoPlist(stagedAppPath);
+    const appBinaryPath = join(macOSDir, executableName);
+    copyFileSync(binaryPath, appBinaryPath);
+    chmodSync(appBinaryPath, 0o755);
+
+    if (!existsSync(iconPath)) {
+      throw new Error(`App icon not found at ${iconPath}`);
     }
-  }
+    writeIconSet(iconPath, resourcesDir);
+    copyFileSync(
+      join(packageDir, "Sources", "Org2WorkspaceCore", "Resources", "NewMessage.mp3"),
+      join(resourcesDir, "NewMessage.mp3")
+    );
+    const runtimeNodePath = copyOrg2Runtime(resourcesDir);
+    const whisperRuntime = copyWhisperRuntime(resourcesDir);
 
-  writeInfoPlist();
-  const appBinaryPath = join(macOSDir, executableName);
-  const runningPids = runningProcessesForBinary(appBinaryPath);
-  if (runningPids.length > 0) {
-    throw new Error(`${appName} is running from ${appPath}. Quit it and rerun this command.`);
-  }
-  copyFileSync(binaryPath, appBinaryPath);
-  chmodSync(appBinaryPath, 0o755);
-
-  if (!existsSync(iconPath)) {
-    throw new Error(`App icon not found at ${iconPath}`);
-  }
-  writeIconSet(iconPath, resourcesDir);
-  copyFileSync(
-    join(packageDir, "Sources", "Org2WorkspaceCore", "Resources", "NewMessage.mp3"),
-    join(resourcesDir, "NewMessage.mp3")
-  );
-  const runtimeNodePath = copyOrg2Runtime(resourcesDir);
-  const whisperRuntime = copyWhisperRuntime(resourcesDir);
-
-  const signingIdentity = codeSigningIdentity();
-  const signingLabel = signingIdentity === "-" ? "ad-hoc" : signingIdentity;
-  console.log(`Signing ${appPath} as ${bundleIdentifier} with ${signingLabel}...`);
-  if (usesHardenedRuntime(signingIdentity)) {
-    for (const entitlementsPath of [appEntitlementsPath, nodeEntitlementsPath]) {
-      if (!existsSync(entitlementsPath)) {
-        throw new Error(`Hardened-runtime entitlements not found at ${entitlementsPath}`);
+    const signingIdentity = codeSigningIdentity();
+    const signingLabel = signingIdentity === "-" ? "ad-hoc" : signingIdentity;
+    console.log(`Signing staged ${appName} as ${bundleIdentifier} with ${signingLabel}...`);
+    if (usesHardenedRuntime(signingIdentity)) {
+      for (const entitlementsPath of [appEntitlementsPath, nodeEntitlementsPath]) {
+        if (!existsSync(entitlementsPath)) {
+          throw new Error(`Hardened-runtime entitlements not found at ${entitlementsPath}`);
+        }
       }
     }
-  }
-  if (runtimeNodePath) {
-    run("codesign", codesignArgs(signingIdentity, runtimeNodePath, {
-      entitlements: nodeEntitlementsPath,
-    }));
-  }
-  for (const library of whisperRuntime.libraries) {
-    run("codesign", codesignArgs(signingIdentity, library));
-  }
-  if (whisperRuntime.executable) {
-    run("codesign", codesignArgs(signingIdentity, whisperRuntime.executable));
-    verifyWhisperRuntime(whisperRuntime.executable);
-  }
-  for (const nestedPath of nestedMachOPaths(resourcesDir)) {
-    if (nestedPath === runtimeNodePath
-        || nestedPath === whisperRuntime.executable
-        || whisperRuntime.libraries.includes(nestedPath)) {
-      continue;
+    if (runtimeNodePath) {
+      run("codesign", codesignArgs(signingIdentity, runtimeNodePath, {
+        entitlements: nodeEntitlementsPath,
+      }));
     }
-    run("codesign", codesignArgs(signingIdentity, nestedPath));
-  }
-  run("codesign", codesignArgs(signingIdentity, appPath, {
-    entitlements: appEntitlementsPath,
-    identifier: bundleIdentifier,
-  }));
-  run("codesign", ["--verify", "--deep", "--strict", appPath]);
-  if (signingIdentity === "-") {
-    console.warn(
-      "Warning: ad-hoc signing gives the app a cdhash-based TCC identity. macOS Screen/System Audio permission may reset after rebuilds. Set ORG2_WORKSPACE_CODE_SIGN_IDENTITY to a stable signing identity to avoid that."
-    );
+    for (const library of whisperRuntime.libraries) {
+      run("codesign", codesignArgs(signingIdentity, library));
+    }
+    if (whisperRuntime.executable) {
+      run("codesign", codesignArgs(signingIdentity, whisperRuntime.executable));
+      verifyWhisperRuntime(whisperRuntime.executable);
+    }
+    for (const nestedPath of nestedMachOPaths(resourcesDir)) {
+      if (nestedPath === runtimeNodePath
+          || nestedPath === whisperRuntime.executable
+          || whisperRuntime.libraries.includes(nestedPath)) {
+        continue;
+      }
+      run("codesign", codesignArgs(signingIdentity, nestedPath));
+    }
+    run("codesign", codesignArgs(signingIdentity, stagedAppPath, {
+      entitlements: appEntitlementsPath,
+      identifier: bundleIdentifier,
+    }));
+    run("codesign", ["--verify", "--deep", "--strict", stagedAppPath]);
+
+    installStagedAppBundle({ stagedAppPath, targetAppPath: appPath });
+    if (signingIdentity === "-") {
+      console.warn(
+        "Warning: ad-hoc signing gives the app a cdhash-based TCC identity. macOS Screen/System Audio permission may reset after rebuilds. Set ORG2_WORKSPACE_CODE_SIGN_IDENTITY to a stable signing identity to avoid that."
+      );
+    }
+  } finally {
+    rmSync(stagingRoot, { recursive: true, force: true });
   }
 
   console.log(`Built ${appPath}`);

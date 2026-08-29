@@ -1,7 +1,18 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { installStagedAppBundle } from "../tools/atomic-app-bundle.mjs";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -22,6 +33,8 @@ assert.equal(defaultDaily.configuration, "release");
 assert.equal(defaultDaily.appName, "OpenOrg");
 assert.match(defaultDaily.appPath, /OpenOrg\.app$/);
 assert.match(defaultDaily.iconPath, /OpenOrgAppIcon\.png$/);
+assert.equal(defaultDaily.installStrategy, "verified staged replacement");
+assert.ok(defaultDaily.nodeArchitecture === "arm64" || defaultDaily.nodeArchitecture === "x64");
 assert.equal(defaultDaily.swiftScratchPath, null);
 
 const isolatedScratch = JSON.parse(
@@ -64,5 +77,38 @@ const codexRelease = JSON.parse(
   ]).stdout
 );
 assert.equal(codexRelease.configuration, "release");
+
+const temporaryDirectory = mkdtempSync(join(tmpdir(), "org2-atomic-app-install-"));
+function makeBundle(path, marker) {
+  mkdirSync(path, { recursive: true });
+  writeFileSync(join(path, "marker.txt"), marker);
+}
+
+try {
+  const stagedApp = join(temporaryDirectory, "staged", "OpenOrg.app");
+  const installedApp = join(temporaryDirectory, "installed", "OpenOrg.app");
+  makeBundle(stagedApp, "new");
+  makeBundle(installedApp, "old");
+  installStagedAppBundle({ stagedAppPath: stagedApp, targetAppPath: installedApp });
+  assert.equal(readFileSync(join(installedApp, "marker.txt"), "utf8"), "new");
+  assert.equal(existsSync(stagedApp), false);
+  assert.equal(
+    readdirSync(dirname(installedApp)).some((entry) => entry.includes(".backup-")),
+    false
+  );
+
+  const rollbackTarget = join(temporaryDirectory, "rollback", "OpenOrg.app");
+  const invalidNestedStage = join(rollbackTarget, "nested-staged.app");
+  makeBundle(rollbackTarget, "preserved");
+  makeBundle(invalidNestedStage, "never-installed");
+  assert.throws(() => installStagedAppBundle({
+    stagedAppPath: invalidNestedStage,
+    targetAppPath: rollbackTarget,
+  }));
+  assert.equal(readFileSync(join(rollbackTarget, "marker.txt"), "utf8"), "preserved");
+  assert.equal(existsSync(invalidNestedStage), true);
+} finally {
+  rmSync(temporaryDirectory, { recursive: true, force: true });
+}
 
 console.log("macOS app build-mode tests passed");
