@@ -85,7 +85,6 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 </ol>
 <p>OpenOrg creates a small Org2 workspace with a welcome note and folders for daily notes, ordinary notes, generated views, and workflows. Everything is plain text that you can inspect in Finder, Git, or another editor. OpenOrg never requires an app-specific canonical database.</p>
 <p>If you already keep notes in a folder, choose <strong>Open an existing corpus</strong> instead. Markdown and other plain-text material can live alongside Org2 files while you adopt Org2 gradually.</p>
-<p>The public <code>0.4.2</code> Org2 Workspace downloads are developer-signed but not notarized. OpenOrg Alpha ships after its Developer ID build passes Apple notarization, has a stapled ticket, and opens normally through Gatekeeper.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="2-capture-one-scheduled-commitment">2) Capture one scheduled commitment</h1>
@@ -184,7 +183,7 @@ org2 agenda --dir /path/to/your/corpus --recursive --tui</code></pre>
 <h1 id="ios-app">iOS app</h1>
 <p>OpenOrg for iOS is available as a private TestFlight beta and as source. To join the beta, <a href="mailto:mail@avi.press?subject=OpenOrg%20for%20iOS%20TestFlight">email Avi for an invitation</a> and include the email address you use with TestFlight. It is not currently distributed through the public App Store.</p>
 <p>The iOS app can open a Files-visible local corpus for capture, Agenda, approvals, and file viewing. Its AI sidebar can also control Mac-hosted chats over Tailscale: enable <strong>Mobile Remote</strong> in the Mac app's settings, create a one-time pairing code, then open <strong>Settings → Connect a Mac</strong> from the iOS sidebar and scan it. The Mac remains responsible for model access and corpus context and must be awake with OpenOrg running. Workflow controls are intentionally desktop-only for now.</p>
-<p>To build it yourself, open <code>apps/ios/Org2Mobile/Org2Mobile.xcodeproj</code> in Xcode, select your Apple development team, configure the <code>group.org.org2.mobile</code> App Group for the app and share extension, and run it on a simulator or device. See <code>apps/ios/Org2Mobile/README.md</code> for details.</p>
+<p>Developers can also <a href="https://github.com/aviaviavi/org2/tree/main/apps/ios/Org2Mobile">build the iOS app from source</a>.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="coming-from-emacs-org-mode">Coming from Emacs Org mode?</h1>

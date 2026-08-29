@@ -24,8 +24,4 @@ Org2 is the open =.org2= format, compiler/runtime, CLI, npm package, schemas, an
 - Local configuration of agent destinations and explicitly authorized context.
 - Packaging, updates, diagnostics, and a coherent product experience.
 
-* Stable technical identifiers
-
-OpenOrg uses stable bundle, preference, Keychain, executable, corpus, CLI, package, and schema identifiers. These technical contracts let the app, developer tools, and corpus work together consistently.
-
 See [[file:language-reference.org][Org2 language reference]] for the format and [[file:editors-macos.org][OpenOrg for macOS]] for the product client.

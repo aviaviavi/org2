@@ -15,11 +15,6 @@
         <li>Stable IDs, backlinks, dailies, node creation, link previews, and graph-health checks.</li>
         <li>Preview-first mutations from the CLI and editors; writes require an explicit apply step.</li>
       </ul>
-      <div class="org2-command" aria-label="Planning and graph commands">
-        <span>Planning and graph commands</span>
-        <pre class="org2-src language-sh"><code class="language-sh">org2 agenda --dir ~/notes --recursive --tui
-org2 roam graph --dir ~/notes --recursive --format report</code></pre>
-      </div>
       <p class="org2-feature-links"><a href="workflows.html">Everyday workflows</a><a href="tooling-reference.html">CLI reference</a></p>
     </div>
     <div class="org2-feature-media org2-feature-media-pair">
@@ -34,23 +29,10 @@ org2 roam graph --dir ~/notes --recursive --format report</code></pre>
       <p>Selected context, citations, plans, outputs, validation, clarifications, and approvals stay together while the work moves. People can see what happened before approving a consequential action—and what evidence proves it finished.</p>
       <ul>
         <li>Bounded context packs carry explicit file-and-line citations.</li>
-        <li>Portable goals and named agent profiles separate why and who from runtime, provider, and model identity; resolved refs stay attached to delegated headings, runs, and workflows.</li>
-        <li>Generated work lands in reviewable artifact zones before promotion into canonical notes.</li>
-        <li>One pending-decision queue combines run-bound approvals with standalone file-backed approvals; run decisions preserve one native ID and immutable review-material fingerprint across CLI, Mac, mobile, and runtime adapters. Decisions are item-scoped, so rejecting one action does not discard sibling approvals from the same batch.</li>
-        <li>Recurring workflow executions roll up under stable logical work while retaining separate scheduler attempts, and event/fresh-path gates skip unchanged expensive work.</li>
-        <li>A read-only workspace doctor finds contradictory run and approval state, duplicate decision identities, broken projections, and unmanaged recurring work before another agent acts.</li>
-        <li>Atomic revision-checked run and workflow writes reject stale clients and ambiguous direct edits, protecting newer work.</li>
-        <li>Per-account work ledgers keep stable identity, curated context, linked approvals, contact receipts, and idempotent history queryable without one ever-growing agent file.</li>
-        <li>Runtime adapters can add native lifecycle and scheduling behavior, while CLI, MCP, and plain files keep the underlying work portable across agents and models.</li>
+        <li>Generated work remains separate from canonical notes until someone reviews it.</li>
+        <li>One decision queue brings together approvals from files, agent runs, and mobile.</li>
+        <li>Reusable workflows keep their instructions, schedules, history, and results in inspectable files.</li>
       </ul>
-      <div class="org2-command" aria-label="Agent context and review commands">
-        <span>Context and review commands</span>
-        <pre class="org2-src language-sh"><code class="language-sh">org2 agent context --query "launch risks" --dir ~/notes --recursive
-org2 doctor --dir ~/notes --json
-org2 ledger list account-outreach --eligible --dir ~/notes --json
-org2 approvals --dir ~/notes --recursive --format json
-org2 review list --status pending --dir ~/notes</code></pre>
-      </div>
       <p class="org2-feature-links"><a href="agent-quickstart.html">Agent quickstart</a><a href="ai-adapters.html">Provider-neutral adapters</a></p>
     </div>
     <div class="org2-feature-media">
@@ -84,11 +66,6 @@ org2 review list --status pending --dir ~/notes</code></pre>
         <li>Provenance-stamped result tables and source-aware chart definitions.</li>
         <li>Named external credential profiles; inline secrets are rejected.</li>
       </ul>
-      <div class="org2-command" aria-label="Data notebook commands">
-        <span>Inspect or materialize a result</span>
-        <pre class="org2-src language-sh"><code class="language-sh">org2 query-data --file notes/readiness.org2 --inspect
-org2 query-data --file notes/readiness.org2 --results weekly --apply</code></pre>
-      </div>
       <p class="org2-feature-links"><a href="language-reference.html#local-datasets-and-sql-views">Notebook syntax</a><a href="tooling-reference.html">Query-data options</a></p>
     </div>
     <div class="org2-feature-media">
@@ -101,11 +78,9 @@ org2 query-data --file notes/readiness.org2 --results weekly --apply</code></pre
       <h2 id="meetings-context-title">Meetings become source-backed context</h2>
       <p>OpenOrg can record or import a meeting, keep audio and transcripts local, and render summaries, decisions, and follow-ups from ordinary files. Those records can then feed agenda items, cited agent runs, entity pages, and reports.</p>
       <ul>
-        <li>Local-first transcription with explicit artifact paths and status.</li>
-        <li>A Mac-owned completion hook can route each freshly transcribed meeting to a named agent and new or existing thread exactly once, without replaying historical files.</li>
-        <li>Event and timeline metadata for connecting meetings, people, projects, and later work.</li>
-        <li>Every Org node exposes its entity type as an editable badge; full-page people, companies, and projects surface a compact live view of direct and meeting-inherited action items without generating a full brief.</li>
-        <li>Raw evidence, curated notes, generated drafts, and published output retain provenance.</li>
+        <li>Choose local transcription or another provider you configure.</li>
+        <li>Send a finished transcript to a named agent for a summary or follow-up.</li>
+        <li>Connect meetings to people, projects, decisions, and action items.</li>
       </ul>
       <p class="org2-feature-links"><a href="editors-macos.html">OpenOrg for macOS</a><a href="corpus-flow.html">Artifact flow</a></p>
     </div>
@@ -117,12 +92,12 @@ org2 query-data --file notes/readiness.org2 --results weekly --apply</code></pre
   <section class="org2-feature-section" id="external-sources" aria-labelledby="external-sources-title">
     <div class="org2-feature-heading">
       <h2 id="external-sources-title">Bring in context without surrendering control</h2>
-      <p>Configured source profiles can crawl systems such as Slack and Notion into inspectable local <code>.org2</code> captures you own, with stable identity and provenance. The ingestion boundary is pluggable, so messages, documents, issues, mail, datasets, and future sources can enter the same reviewable flow.</p>
+      <p>Connect systems such as Slack and Notion, keep a local copy of the selected material, and decide what becomes part of your lasting notes.</p>
     </div>
     <div class="org2-feature-grid">
-      <article><h3>Pluggable by design</h3><p>A source adapter supplies bounded records and provenance; Org2 supplies the shared staging, review, linking, and promotion semantics.</p></article>
-      <article><h3>Local files you own</h3><p>Each crawl writes inspectable captures while machine bindings and credentials stay outside canonical notes. Staged files retain stable source IDs, timestamps, hashes, URLs, and provenance.</p></article>
-      <article><h3>Review before promotion</h3><p>Imported material lands under configured raw and views zones. People and agents can redact, verify, and promote selected knowledge without treating an external mirror as canonical truth.</p></article>
+      <article><h3>Sync on your schedule</h3><p>Run a connector now, pause it, or choose a repeating interval or daily time.</p></article>
+      <article><h3>Local files you own</h3><p>Imported material remains inspectable while credentials stay in protected local storage.</p></article>
+      <article><h3>Review before promotion</h3><p>Verify, redact, and select useful knowledge before treating it as canonical.</p></article>
     </div>
   </section>
 
@@ -136,14 +111,7 @@ org2 query-data --file notes/readiness.org2 --results weekly --apply</code></pre
       <div class="org2-editor-cards">
         <article><strong>Talks and slides</strong><p>Develop the narrative beside its research, preview the deck in the Mac app, and export Beamer-compatible TeX or a presentation-ready PDF.</p></article>
         <article><strong>Customer-ready documents</strong><p>Turn approved source material into quotes, reports, and marketing collateral, then export a clean reading-layout PDF.</p></article>
-        <article><strong>Publishing</strong><p>Publish a disclosure-safe document or subtree as a portable web bundle or Google Doc, or build a complete project with navigation, styles, rewritten links, and generated indexes. This documentation site is built by Org2.</p></article>
-        <div class="org2-command" aria-label="Formatting and publishing commands">
-          <span>Render a talk, document, or site</span>
-          <pre class="org2-src language-sh"><code class="language-sh">org2 fmt --dir ~/notes --recursive --check
-org2 publish document --file brief.org2 --to web --out-dir publish/brief
-org2 publish docs-site --config org2.json --preview
-org2 export beamer --file talk.org2 --pdf --apply</code></pre>
-        </div>
+        <article><strong>Publishing</strong><p>Share a disclosure-safe document as a web bundle or Google Doc, or publish a complete site.</p></article>
       </div>
     </div>
     <p class="org2-feature-links org2-feature-links-centered"><a href="editors.html">Editor integrations</a><a href="getting-started.html">Getting started</a></p>
@@ -155,12 +123,12 @@ org2 export beamer --file talk.org2 --pdf --apply</code></pre>
       <p>A scan-friendly inventory of the broader surface available today.</p>
     </div>
     <div class="org2-feature-card-grid">
-      <article><h3>Plain-text core</h3><ul><li>Headings, drawers, properties, TODOs, planning, links, blocks, tables, timestamps</li><li>Explicit portable foreground/background bindings for inline text and whole table cells</li><li>Capture, archive, refile, canonical formatting</li><li>Disclosure-safe web and Google Docs publishing, HTML sites, and Beamer-compatible presentation export</li><li>Source ranges and structured compiler output</li></ul></article>
-      <article><h3>Knowledge + planning</h3><ul><li>Agenda CLI, JSON, TUI, VS Code, and Mac surfaces</li><li>IDs, backlinks, dailies, nodes, link insertion, graph reports</li><li>Cited search, query, entity pages, and context bundles</li><li>Linkify previews and review-only semantic suggestions</li></ul></article>
-      <article><h3>Agents + review</h3><ul><li>Durable runs, workflows, plans, steps, budgets, comments, retries</li><li>Single-agent threads or shared rooms spanning arbitrary named local, remote, hosted, and self-hosted destinations, with explicit <code>@mentions</code>, <code>@all</code>, per-agent models, and independent progress</li><li>Idempotent, agent-attributed background posts can reach any named AI chat without starting or steering a turn</li><li>A fresh successful meeting transcription can automatically queue a configurable prompt to a named agent and thread exactly once, without historical replay</li><li>Active-corpus <code>.agents/skills</code> discovery and autocomplete for user-invocable AI skills</li><li>Native AI context settings for persistent custom instructions and current- or all-loaded-corpora read access</li><li>In-flight chat stays bound to its originating write corpus and authorized read roots while the visible workspace switches</li><li>Reversible active/settled chat history with shared inactivity policy</li><li>Mac-local read, preview, and apply tools that preserve unsaved editor drafts and exact per-turn diffs</li><li>Artifacts, validation, approvals, review queues, outcome records</li><li>Pluggable runtime lifecycle and schedule integration</li><li>MCP resources, prompts, tools, client discovery, and snapshots</li></ul></article>
-      <article><h3>Data + provenance</h3><ul><li>Safe <code>#+TBLFM:</code> spreadsheet evaluation with preview-first recalculation</li><li>Datasets, SQL views, materialized results, deterministic charts</li><li>Artifact roles, dependency graphs, freshness, and rebuild plans</li><li>Meeting, event-stream, timeline, and data-link records</li><li>Evaluation fixtures and sanitized workflow replay</li></ul></article>
-      <article><h3>Editors + clients</h3><ul><li>Native OpenOrg workspace and mobile approval flows</li><li>Ephemeral filtering, sorting, resizing, and shared formula recalculation for rendered Org tables</li><li>In-app CSV table and raw-text editing from corpus files or document links</li><li>VS Code commands plus shared LSP capabilities</li><li>Vim / Neovim and Emacs integration paths</li><li>CLI JSON for scripts and additional clients</li></ul></article>
-      <article><h3>Safety + portability</h3><ul><li>Local files stay canonical and Git-reviewable</li><li>Preview-first mutations and explicit approval gates</li><li>GPG-backed per-subtree, multi-recipient encryption</li><li>Portable personal, shared, and project corpus identity</li></ul></article>
+      <article><h3>Plain-text documents</h3><p>Notes, tasks, links, tables, properties, and dates remain readable in ordinary files.</p></article>
+      <article><h3>Knowledge + planning</h3><p>Agenda, daily notes, search, IDs, backlinks, people, projects, and graph views keep related work connected.</p></article>
+      <article><h3>Agents + review</h3><p>Local or remote agents can use cited context, create durable outputs, and pause for approval.</p></article>
+      <article><h3>Data + publishing</h3><p>Evaluate table formulas, build data notebooks and charts, export PDFs and slides, and publish sites.</p></article>
+      <article><h3>Apps + editors</h3><p>Use OpenOrg on Mac and iPhone, or work with the same files in VS Code, Vim, Neovim, Emacs, and the CLI.</p></article>
+      <article><h3>Safety + portability</h3><p>Local files stay canonical, writes are previewable, approvals are explicit, and sensitive sections can be encrypted.</p></article>
     </div>
   </section>
 

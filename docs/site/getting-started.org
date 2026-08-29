@@ -25,8 +25,6 @@ OpenOrg creates a small Org2 workspace with a welcome note and folders for daily
 
 If you already keep notes in a folder, choose *Open an existing corpus* instead. Markdown and other plain-text material can live alongside Org2 files while you adopt Org2 gradually.
 
-The public =0.4.2= Org2 Workspace downloads are developer-signed but not notarized. OpenOrg Alpha ships after its Developer ID build passes Apple notarization, has a stapled ticket, and opens normally through Gatekeeper.
-
 * 2) Capture one scheduled commitment
 
 Open *Capture*, keep *Task* selected, give the commitment a concrete title, and leave *Scheduled* enabled for today. OpenOrg appends the task to today's daily note and refreshes Agenda.
@@ -161,7 +159,7 @@ OpenOrg for iOS is available as a private TestFlight beta and as source. To join
 
 The iOS app can open a Files-visible local corpus for capture, Agenda, approvals, and file viewing. Its AI sidebar can also control Mac-hosted chats over Tailscale: enable *Mobile Remote* in the Mac app's settings, create a one-time pairing code, then open *Settings → Connect a Mac* from the iOS sidebar and scan it. The Mac remains responsible for model access and corpus context and must be awake with OpenOrg running. Workflow controls are intentionally desktop-only for now.
 
-To build it yourself, open =apps/ios/Org2Mobile/Org2Mobile.xcodeproj= in Xcode, select your Apple development team, configure the =group.org.org2.mobile= App Group for the app and share extension, and run it on a simulator or device. See =apps/ios/Org2Mobile/README.md= for details.
+Developers can also [[https://github.com/aviaviavi/org2/tree/main/apps/ios/Org2Mobile][build the iOS app from source]].
 
 * Coming from Emacs Org mode?
 

@@ -69,21 +69,4 @@ OpenOrg brings capture, agenda, approvals, and Mac-hosted AI chat to iPhone. The
 </section>
 #+END_EXPORT
 
-The [[file:getting-started.org::*iOS app][iOS setup guide]] covers source signing, the share extension, corpus sync, and pairing Mobile Remote with the Mac app over Tailscale.
-
-* Stable OpenOrg download URL
-
-OpenOrg release automation uses one permanent template for versioned disk images:
-
-#+begin_src text
-https://org2.gateway.scarf.sh/downloads/{version}/{artifact}
-#+end_src
-
-For example, the current OpenOrg builds are:
-
-#+begin_src text
-https://org2.gateway.scarf.sh/downloads/0.5.2/OpenOrg.dmg
-https://org2.gateway.scarf.sh/downloads/0.5.2/OpenOrg-Intel.dmg
-#+end_src
-
-Scarf redirects those requests to the matching =github.com/aviaviavi/org2/releases/download/{version}/{artifact}= files. No release files are hosted separately by Scarf.
+The [[file:getting-started.org::*iOS app][iOS setup guide]] explains how to pair Mobile Remote with the Mac app over Tailscale.
