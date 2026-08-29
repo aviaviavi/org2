@@ -1,5 +1,6 @@
 node_modules/
 dist/
+tree-sitter-org2/src/
 .build/
 .DS_Store
 .codex/*

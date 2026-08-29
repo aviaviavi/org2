@@ -9,7 +9,7 @@ The primary goal of v0 is to define a *lossless, round-trippable parse* of Org-l
 This document is intended to be a compact, self-contained overview of what Org2 v0 standardizes.
 
 - Primary contract: parse text into a canonical AST with lossless round-trip guarantees.
-- Primary syntax families in v0: headlines, drawers/properties, directives/comments, source/common blocks, lists, tables, timestamps, links, emphasis, keyword lines, planning lines.
+- Primary syntax families in v0: headlines, drawers/properties, directives/comments, source/common/special/dynamic blocks, lists, tables, timestamps, links, emphasis, scholarly inline objects, keyword lines, and planning lines.
 - Compatibility posture: standard Org forms remain canonical; selected Org2 syntax sugar/aliases are additive.
 - Semantic posture: parsing is normative in v0; most higher-level behavior modules (agenda/workflow/export semantics) are intentionally deferred.
 
@@ -119,7 +119,7 @@ A headline line produces a =Headline= node with:
 
 A headline title MAY begin with a TODO keyword.
 
-In v0, the supported TODO keywords are:
+The built-in TODO keywords are:
 
 - =TODO=
 - =IN_PROGRESS=
@@ -132,6 +132,12 @@ Example:
 - =* DONE Ship docs= produces a =Headline= with =todo: "DONE"= and =title: "Ship docs"=.
 
 TODO workflow semantics are out of scope for v0.
+
+A document MAY extend the parsed vocabulary with =#+TODO:=, =#+SEQ_TODO:=, or =#+TYP_TODO:=. The parser MUST ignore fast-selection suffixes in parentheses and the =|= done-state separator. The exact declared keyword is stored in =todo=.
+
+** Priority and COMMENT metadata
+
+An optional =[#A]= through =[#Z]= or =[#0]= through =[#9]= cookie following the TODO keyword MUST be stored in the dedicated =priority= field without remaining in =title=. An Org =COMMENT= marker in headline metadata MUST set =commented: true=.
 
 ** Tags (syntax only)
 
@@ -233,6 +239,15 @@ Fenced triple-backtick blocks (=``` ... ```=) are also supported as *additive sy
 
 Executing source blocks and interpreting header args (babel semantics) are out of scope for v0.
 
+* Other block and element syntax
+
+- Any =#+begin_NAME= / =#+end_NAME= pair not reserved for a source alias MUST produce a =Block= whose =kind= is =NAME= in lowercase. Its body remains lossless raw text.
+- =#+begin: NAME PARAMS= / =#+end:= MUST produce a =DynamicBlock=. Dynamic-block writer execution is out of scope.
+- Consecutive lines beginning with =: = MUST produce a =FixedWidth= node.
+- A line containing five or more hyphens (and optional surrounding whitespace) MUST produce a =HorizontalRule=.
+- =\begin{NAME}= / =\end{NAME}= pairs MUST produce a =LatexEnvironment= with raw body text.
+- A line beginning with =%%(= MUST produce a =DiarySexp=.
+
 * Tables (pipe tables)
 
 Org2 v0 supports Org-mode style *pipe tables*.
@@ -244,16 +259,17 @@ A *table row line* is a line that:
 - Begins with =|= (optionally after indentation spaces), and
 - Ends with =|= (ignoring trailing whitespace).
 
-The bytes between pipes are treated as *raw cell strings*.
+The bytes between pipes are trimmed into compatible cell strings and also parsed into inline objects.
 
 A table row line produces a =TableRow= node with:
 
-- =cells=: an array of strings, where each string is the raw byte sequence between separators.
+- =cells=: the existing array of trimmed strings, retained for compatibility and deterministic table formatting.
+- =contents=: a parallel array whose entries contain canonical inline nodes for each cell.
 
 Examples:
 
 - =|a|b|= → =cells: ["a", "b"]=
-- =| a | b |= → =cells: [" a ", " b "]=
+- =| a | b |= → =cells: ["a", "b"]=
 - =||= → =cells: [""]=
 - =|a||b|= → =cells: ["a", "", "b"]=
 
@@ -319,6 +335,7 @@ A *list item line* matches one of:
 
 - =- = followed by optional checkbox and content (bullet list)
 - =+ = followed by optional checkbox and content (bullet list, alternative marker)
+- An indented =* = followed by optional checkbox and content (at column zero, =* = remains a headline)
 - =<digits>.= or =<digits>)= followed by space, optional checkbox, and content (ordered list)
 
 Examples:
@@ -339,6 +356,7 @@ A *checkbox* is an optional marker that appears at the start of list item conten
 
 - =[ ]= → unchecked, creates =checkbox: "unchecked"= on the =ListItem=
 - =[X]= or =[x]= → checked, creates =checkbox: "checked"= on the =ListItem=
+- =[-]= → partial/indeterminate, creates =checkbox: "indeterminate"= on the =ListItem=
 
 The checkbox MUST be followed by a space and then the item content.
 
@@ -348,6 +366,8 @@ Progress cookies are recognized as structured inline state:
 - =[p%]= → percentage progress cookie
 
 Org2 compile outputs also compute checkbox rollups over file/headline ranges and lint stale progress cookies whose displayed value no longer matches the checked checkbox count.
+
+An optional =[@N]= counter cookie before the checkbox MUST be stored as =counter: N=. A =term :: definition= item MUST store the parsed term in =descriptionTag= and the definition as its ordinary children.
 
 ** Nested lists
 
@@ -462,6 +482,24 @@ Backtick code spans (=`...`=) are additive syntax sugar and follow the same boun
 
 Nesting is not supported in v0. Any marker bytes inside =content= are treated as plain text.
 
+* Rich inline objects
+
+Org2 v0 emits dedicated inline nodes for the following non-executable Org objects:
+
+- =FootnoteReference=: =[fn:LABEL]=, =[fn:LABEL:DEFINITION]=, or =[fn::DEFINITION]=. A line beginning with =[fn:LABEL]= produces a =FootnoteDefinition= element.
+- =Citation=: =[cite:@KEY]=, optional style forms such as =[cite/t:@KEY]=, and semicolon-separated references with per-reference prefix/suffix text.
+- =Target=: =<<TARGET>>= and radio =<<<TARGET>>>= forms.
+- =Entity=: common Org entity names such as =\alpha=, =\copy=, and =\rarr=.
+- =LatexFragment=: =$...$=, =$$...$$=, =\(...\)=, and =\[...\]=.
+- =ExportSnippet=: =@@BACKEND:VALUE@@=.
+- =Script=: braced or simple =_subscript= and =^superscript= suffixes.
+- =LineBreak=: two backslashes at the end of a logical line.
+- =Link= with =format: "angle"=: =<SCHEME:TARGET>=.
+
+All of these nodes MUST retain =raw= bytes for deterministic printing. Rendering or resolving citations, bibliographies, entities, LaTeX, export backends, and radio links is a semantic module rather than a parser obligation.
+
+Macro expansion, inline source blocks, inline Babel calls, and Babel execution are deliberately outside the v0 canonical AST. Their source bytes remain ordinary text or directives.
+
 * Links (v0)
 
 Org2 v0 supports a limited subset of Org links as inline nodes.
@@ -505,10 +543,10 @@ Renderers apply a binding to its label wherever inline links are supported. When
 
 When parsing inline content, the parser applies transformations in a deterministic order to avoid ambiguities:
 
-1. *Timestamps* are recognized first (both active and inactive)
-2. *Bracket links* are recognized next (before emphasis)
-3. *Plain URLs* are recognized (before emphasis)
-4. *Emphasis* markers are recognized last, respecting boundary rules
+1. Rich delimiter-led objects (targets, footnotes, citations, export snippets, LaTeX/entities, scripts, and hard line breaks)
+2. Progress cookies and timestamps
+3. Bracket, angle, and plain links
+4. Emphasis markers, respecting boundary rules
 
 This order ensures that:
 - Links take precedence over emphasis (e.g., =[[url][*text*]]= parses as a link, not emphasis within a link)

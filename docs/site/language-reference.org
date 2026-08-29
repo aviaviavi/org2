@@ -37,6 +37,13 @@ Headline TODO states parsed into the canonical AST:
 
 Workflow tools may accept aliases such as =PROG= or =WAITING= and normalize them to one of the canonical TODO keywords above.
 
+Files may also declare their own Org-compatible vocabulary with =#+TODO:=, =#+SEQ_TODO:=, or =#+TYP_TODO:=. Fast-selection suffixes such as =WAITING(w)= are recognized and omitted from the stored headline state:
+
+#+begin_src org
+#+TODO: IDEA(i) WAITING(w) | SHIPPED(s)
+* WAITING Publish the package
+#+end_src
+
 Example:
 
 #+begin_src org
@@ -52,6 +59,8 @@ Example:
 #+begin_src org
 * TODO [#A] Critical task
 #+end_src
+
+Priority is stored as the dedicated =priority= headline field. Org's =COMMENT= headline marker is stored as =commented: true= while all source bytes still round-trip unchanged.
 
 * Tags
 
@@ -115,6 +124,8 @@ Supported timestamp forms:
 - Checkboxes: =[ ]=, =[X]=, =[x]=, =[-]=
 - Checkbox progress cookies: =[n/m]= and =[p%]= may appear in headings or list items; compile output exposes computed checkbox totals and lint reports stale cookies.
 - Nested lists via indentation.
+- Counter cookies such as =[@3]= are stored separately from the written ordered-list marker.
+- Descriptive items use =term :: definition= and render as description lists.
 
 * Links
 
@@ -125,6 +136,8 @@ Supported link forms:
 - File links: =[[file:path/to/file.org]]=
 - ID links: =[[id:UUID][label]]= (roam-style link)
 - Wiki links: =[[Node Title]]= (roam-style link)
+- Angle links: =<mailto:hello@example.com>=
+- Targets: =<<name>>= and radio targets =<<<name>>>=
 
 Both ID links and Wiki links are first-class in Org2 roam workflows.
 
@@ -187,6 +200,28 @@ The root =org2.json= may identify the corpus independently of its local path:
 - Verbatim: ==verbatim==
 - Code: =~code~=, with Markdown-style =`code`= accepted as shorthand
 
+* Rich inline objects
+
+Org2 also parses the everyday publishing and scholarly inline objects used by Org:
+
+- Footnote references: =[fn:label]=, =[fn:label:inline definition]=, and =[fn::anonymous definition]=
+- Citations: =[cite:@key]= and multi-reference/style forms such as =[cite/t:@doe; see @roe p. 4]=
+- Entities: =\alpha=, =\copy=, =\rarr=, and other common Org entities
+- LaTeX fragments: =$x_2$=, =$$x = y$$=, =\(...\)=, and =\[...\]=
+- Export snippets: =@@html:<mark>highlighted</mark>@@=
+- Subscripts and superscripts: =H_2O= and =x^{2}=
+- Explicit line breaks: two backslashes at the end of a line
+
+These are first-class canonical AST objects and render in the CLI, published HTML, and Mac/iOS document views. Export snippets are emitted as raw HTML only by the publishing renderer; app previews escape their payload.
+
+Footnote definitions use the ordinary Org form:
+
+#+begin_src org
+The claim has a source.[fn:source]
+
+[fn:source] Supporting detail.
+#+end_src
+
 * Blocks
 
 Recognized block forms include:
@@ -197,6 +232,12 @@ Recognized block forms include:
 - Verse blocks: =#+begin_verse ... #+end_verse=
 - Center blocks: =#+begin_center ... #+end_center=
 - Comment blocks: =#+begin_comment ... #+end_comment=
+- Arbitrary special blocks: =#+begin_NAME ... #+end_NAME=
+- Dynamic blocks: =#+begin: NAME ... #+end:= (parsed and preserved; Org2 does not execute dynamic-block writers)
+- LaTeX environments: =\begin{equation} ... \end{equation}=
+- Fixed-width lines beginning with a colon followed by one space
+- Horizontal rules of five or more hyphens
+- Diary sexps beginning with =%%(=
 
 ** Syntactic sugar / aliases
 
@@ -230,7 +271,13 @@ The portable named palette is =black=, =blue=, =brown=, =gray=/=grey=, =green=, 
 
 The binding works anywhere links are parsed, including prose, headings, and table cells. In ordinary inline content, background color applies to the labeled span. When one color binding occupies an entire table cell, rendered clients apply its foreground and background to the whole cell. It remains a normal bracket link in the canonical AST and round-trips byte-for-byte, so standard Org tools preserve the label even when they do not interpret the =color:= type. Invalid color declarations remain ordinary links rather than accepting arbitrary CSS.
 - Horizontal separator rows: =|---+---|=
-- Table content is parsed and preserved.
+- Table content is parsed and preserved. Each row retains compatible raw =cells= strings and also exposes parallel structured =contents= inline objects.
+
+Org table formulas such as =#+TBLFM:= remain preserved keyword text; Org2 does not evaluate them.
+
+* Deliberate compatibility boundary
+
+Org2 now covers most Org syntax used for notes, planning, publishing, linking, and scholarly prose. It deliberately does not implement macro expansion, Babel execution, inline source/call evaluation, or dynamic-block execution. Inline tasks remain ordinary deep headlines rather than a separate execution construct. Unsupported execution-oriented forms remain losslessly preserved as text or directives.
 
 Tables, source blocks, and common blocks can carry adjacent affiliated keyword metadata:
 

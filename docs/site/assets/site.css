@@ -333,6 +333,37 @@ li code {
   word-break: break-word;
 }
 
+.org2-description-list {
+  display: grid;
+  grid-template-columns: minmax(7rem, max-content) minmax(0, 1fr);
+  gap: 0.35rem 1rem;
+  margin: 1rem 0;
+}
+
+.org2-description-list dt {
+  font-weight: 700;
+}
+
+.org2-description-list dd {
+  min-width: 0;
+  margin: 0;
+}
+
+.org2-description-list dd > :first-child {
+  margin-top: 0;
+}
+
+@media (max-width: 620px) {
+  .org2-description-list {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.15rem;
+  }
+
+  .org2-description-list dd {
+    margin-bottom: 0.65rem;
+  }
+}
+
 @media (max-width: 720px) {
   table {
     display: block;

@@ -1034,6 +1034,15 @@ function inlineText(node: InlineNode): string {
       return node.descriptionRaw ?? node.targetRaw;
     case "ProgressCookie":
       return node.raw;
+    case "Entity":
+    case "LatexFragment":
+    case "ExportSnippet":
+    case "FootnoteReference":
+    case "Citation":
+    case "Target":
+    case "Script":
+    case "LineBreak":
+      return node.raw;
   }
 }
 

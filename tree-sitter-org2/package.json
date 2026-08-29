@@ -14,7 +14,7 @@
     "test/"
   ],
   "scripts": {
-    "test": "tree-sitter test"
+    "test": "tree-sitter generate --no-bindings && tree-sitter test"
   },
   "devDependencies": {
     "tree-sitter-cli": "^0.22.6"

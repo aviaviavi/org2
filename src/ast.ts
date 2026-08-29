@@ -43,10 +43,70 @@ export type EmphasisNode = {
 
 export type LinkNode = {
   type: "Link";
-  format: "bracket" | "plain";
+  format: "bracket" | "plain" | "angle";
   raw: string;
   targetRaw: string;
   descriptionRaw?: string;
+};
+
+export type EntityNode = {
+  type: "Entity";
+  raw: string;
+  nameRaw: string;
+};
+
+export type LatexFragmentNode = {
+  type: "LatexFragment";
+  raw: string;
+  display: boolean;
+};
+
+export type ExportSnippetNode = {
+  type: "ExportSnippet";
+  raw: string;
+  backendRaw: string;
+  valueRaw: string;
+};
+
+export type FootnoteReferenceNode = {
+  type: "FootnoteReference";
+  raw: string;
+  labelRaw?: string;
+  definitionRaw?: string;
+};
+
+export type CitationReference = {
+  keyRaw: string;
+  prefixRaw?: string;
+  suffixRaw?: string;
+};
+
+export type CitationNode = {
+  type: "Citation";
+  raw: string;
+  styleRaw?: string;
+  prefixRaw?: string;
+  suffixRaw?: string;
+  references: CitationReference[];
+};
+
+export type TargetNode = {
+  type: "Target";
+  raw: string;
+  valueRaw: string;
+  radio: boolean;
+};
+
+export type ScriptNode = {
+  type: "Script";
+  raw: string;
+  kind: "subscript" | "superscript";
+  valueRaw: string;
+};
+
+export type LineBreakNode = {
+  type: "LineBreak";
+  raw: string;
 };
 
 export type ProgressCookieNode = {
@@ -138,7 +198,7 @@ export type SrcBlockNode = {
   end?: SrcBlockLine;
 };
 
-export type BlockKind = "example" | "quote" | "verse" | "center" | "comment" | "export";
+export type BlockKind = "example" | "quote" | "verse" | "center" | "comment" | "export" | (string & {});
 
 export type BlockNode = {
   type: "Block";
@@ -150,10 +210,55 @@ export type BlockNode = {
   end?: SrcBlockLine;
 };
 
+export type DynamicBlockNode = {
+  type: "DynamicBlock";
+  affiliatedKeywords?: KeywordLineNode[];
+  nameRaw: string;
+  parametersRaw: string;
+  indent: string;
+  beginRaw: string;
+  bodyRaw: string;
+  terminated: boolean;
+  endRaw?: string;
+};
+
+export type FixedWidthNode = {
+  type: "FixedWidth";
+  lines: Array<{ raw: string; indent: string; valueRaw: string }>;
+};
+
+export type HorizontalRuleNode = {
+  type: "HorizontalRule";
+  raw: string;
+  indent: string;
+};
+
+export type LatexEnvironmentNode = {
+  type: "LatexEnvironment";
+  nameRaw: string;
+  beginRaw: string;
+  bodyRaw: string;
+  terminated: boolean;
+  endRaw?: string;
+};
+
+export type DiarySexpNode = {
+  type: "DiarySexp";
+  raw: string;
+};
+
+export type FootnoteDefinitionNode = {
+  type: "FootnoteDefinition";
+  labelRaw: string;
+  children: InlineNode[];
+};
+
 export type TableRowNode = {
   type: "TableRow";
   indent: string;
   cells: string[];
+  /** Parsed cell objects, parallel to `cells`; raw strings remain for compatibility and printing. */
+  contents?: InlineNode[][];
 };
 
 export type TableHlineNode = {
@@ -172,7 +277,10 @@ export type ListItemNode = {
   type: "ListItem";
   /** Written ordinal when it differs from the item's implicit one-based position. */
   ordinal?: number;
-  checkbox?: "unchecked" | "checked";
+  /** Org's explicit [@N] counter cookie, distinct from the written list marker. */
+  counter?: number;
+  checkbox?: "unchecked" | "checked" | "indeterminate";
+  descriptionTag?: InlineNode[];
   progressCookie?: ProgressCookieNode;
   children: Node[];
 };
@@ -187,12 +295,28 @@ export type HeadlineNode = {
   type: "Headline";
   level: number;
   todo?: string;
+  priority?: string;
+  commented?: boolean;
   tags?: string[];
   title: InlineNode[];
   children: Node[];
 };
 
-export type InlineNode = TextNode | TimestampNode | TimestampRangeNode | EmphasisNode | LinkNode | ProgressCookieNode;
+export type InlineNode =
+  | TextNode
+  | TimestampNode
+  | TimestampRangeNode
+  | EmphasisNode
+  | LinkNode
+  | ProgressCookieNode
+  | EntityNode
+  | LatexFragmentNode
+  | ExportSnippetNode
+  | FootnoteReferenceNode
+  | CitationNode
+  | TargetNode
+  | ScriptNode
+  | LineBreakNode;
 
 export type Node =
   | HeadlineNode
@@ -208,6 +332,12 @@ export type Node =
   | DrawerNode
   | SrcBlockNode
   | BlockNode
+  | DynamicBlockNode
+  | FixedWidthNode
+  | HorizontalRuleNode
+  | LatexEnvironmentNode
+  | DiarySexpNode
+  | FootnoteDefinitionNode
   | TableNode
   | TextNode;
 

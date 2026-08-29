@@ -27,6 +27,20 @@
                   "cells": [
                     "a",
                     "b"
+                  ],
+                  "contents": [
+                    [
+                      {
+                        "type": "Text",
+                        "value": "a"
+                      }
+                    ],
+                    [
+                      {
+                        "type": "Text",
+                        "value": "b"
+                      }
+                    ]
                   ]
                 },
                 {
@@ -35,6 +49,20 @@
                   "cells": [
                     "c",
                     "d"
+                  ],
+                  "contents": [
+                    [
+                      {
+                        "type": "Text",
+                        "value": "c"
+                      }
+                    ],
+                    [
+                      {
+                        "type": "Text",
+                        "value": "d"
+                      }
+                    ]
                   ]
                 }
               ]

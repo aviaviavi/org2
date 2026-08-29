@@ -4,6 +4,79 @@
   "children": [
     {
       "type": "Table",
+      "rows": [
+        {
+          "type": "TableRow",
+          "indent": "",
+          "cells": [
+            "quarter",
+            "revenue"
+          ],
+          "contents": [
+            [
+              {
+                "type": "Text",
+                "value": "quarter"
+              }
+            ],
+            [
+              {
+                "type": "Text",
+                "value": "revenue"
+              }
+            ]
+          ]
+        },
+        {
+          "type": "TableHline",
+          "indent": "",
+          "raw": "|---------+---------|"
+        },
+        {
+          "type": "TableRow",
+          "indent": "",
+          "cells": [
+            "2026-Q1",
+            "1200"
+          ],
+          "contents": [
+            [
+              {
+                "type": "Text",
+                "value": "2026-Q1"
+              }
+            ],
+            [
+              {
+                "type": "Text",
+                "value": "1200"
+              }
+            ]
+          ]
+        },
+        {
+          "type": "TableRow",
+          "indent": "",
+          "cells": [
+            "2026-Q2",
+            "1500"
+          ],
+          "contents": [
+            [
+              {
+                "type": "Text",
+                "value": "2026-Q2"
+              }
+            ],
+            [
+              {
+                "type": "Text",
+                "value": "1500"
+              }
+            ]
+          ]
+        }
+      ],
       "affiliatedKeywords": [
         {
           "type": "KeywordLine",
@@ -33,32 +106,22 @@
           "keyRaw": "dataset",
           "valueRaw": " finance.revenue"
         }
-      ],
-      "rows": [
-        {
-          "type": "TableRow",
-          "indent": "",
-          "cells": ["quarter", "revenue"]
-        },
-        {
-          "type": "TableHline",
-          "indent": "",
-          "raw": "|---------+---------|"
-        },
-        {
-          "type": "TableRow",
-          "indent": "",
-          "cells": ["2026-Q1", "1200"]
-        },
-        {
-          "type": "TableRow",
-          "indent": "",
-          "cells": ["2026-Q2", "1500"]
-        }
       ]
     },
     {
       "type": "SrcBlock",
+      "terminated": true,
+      "begin": {
+        "indent": "",
+        "keywordRaw": "begin_src",
+        "afterKeywordRaw": " sql"
+      },
+      "bodyRaw": "select * from quarterly_revenue;",
+      "end": {
+        "indent": "",
+        "keywordRaw": "end_src",
+        "afterKeywordRaw": ""
+      },
       "affiliatedKeywords": [
         {
           "type": "KeywordLine",
@@ -74,19 +137,7 @@
           "keyRaw": "view",
           "valueRaw": " finance.revenue_by_quarter"
         }
-      ],
-      "terminated": true,
-      "begin": {
-        "indent": "",
-        "keywordRaw": "begin_src",
-        "afterKeywordRaw": " sql"
-      },
-      "bodyRaw": "select * from quarterly_revenue;",
-      "end": {
-        "indent": "",
-        "keywordRaw": "end_src",
-        "afterKeywordRaw": ""
-      }
+      ]
     }
   ]
 }

@@ -3,6 +3,7 @@ import type {
   CommentLineNode,
   DocumentNode,
   DrawerNode,
+  DynamicBlockNode,
   EmphasisNode,
   HeadlineNode,
   InlineNode,
@@ -62,6 +63,15 @@ function printInline(node: InlineNode): string {
       return printLink(node);
     case "ProgressCookie":
       return printProgressCookie(node);
+    case "Entity":
+    case "LatexFragment":
+    case "ExportSnippet":
+    case "FootnoteReference":
+    case "Citation":
+    case "Target":
+    case "Script":
+    case "LineBreak":
+      return node.raw;
     default: {
       const _exhaustive: never = node;
       return _exhaustive;
@@ -99,7 +109,7 @@ function printDrawer(node: DrawerNode): string {
   return `${begin}\n${node.bodyRaw}\n${end}`;
 }
 
-function printAffiliatedKeywords(node: SrcBlockNode | BlockNode | TableNode): string[] {
+function printAffiliatedKeywords(node: SrcBlockNode | BlockNode | DynamicBlockNode | TableNode): string[] {
   return (node.affiliatedKeywords ?? []).map(printKeywordLine);
 }
 
@@ -206,13 +216,16 @@ function printList(node: ListNode, indent: string = ""): string {
     let checkboxStr = "";
     if (item.checkbox === "unchecked") checkboxStr = " [ ]";
     if (item.checkbox === "checked") checkboxStr = " [X]";
+    if (item.checkbox === "indeterminate") checkboxStr = " [-]";
+    const counterStr = item.counter !== undefined ? ` [@${item.counter}]` : "";
+    const descriptionStr = item.descriptionTag ? ` ${item.descriptionTag.map(printInline).join("")} ::` : "";
 
     const nestedListIndent = indent + " ".repeat(marker.length + 1);
-    const continuationIndent = indent + " ".repeat(marker.length + checkboxStr.length + 1);
+    const continuationIndent = indent + " ".repeat(marker.length + counterStr.length + checkboxStr.length + descriptionStr.length + 1);
     const content = printListItem(item, continuationIndent, nestedListIndent);
 
     const lines = content.split("\n");
-    const firstLine = `${indent}${marker}${checkboxStr} ${lines[0]}`;
+    const firstLine = `${indent}${marker}${counterStr}${checkboxStr}${descriptionStr} ${lines[0]}`;
     const restLines = lines.slice(1).map((line) => {
       if (line.startsWith(nestedListIndent)) return line;
       if (line.startsWith(continuationIndent)) return line;
@@ -241,6 +254,20 @@ function printNode(node: Node): string {
       return printClock(node);
     case "Block":
       return printBlock(node);
+    case "DynamicBlock": {
+      const body = node.bodyRaw.length > 0 ? `\n${node.bodyRaw}` : "";
+      const end = node.terminated && node.endRaw ? `\n${node.endRaw}` : "";
+      return [...printAffiliatedKeywords(node), `${node.beginRaw}${body}${end}`].join("\n");
+    }
+    case "FixedWidth":
+      return node.lines.map((line) => line.raw).join("\n");
+    case "HorizontalRule":
+    case "DiarySexp":
+      return node.raw;
+    case "LatexEnvironment":
+      return [node.beginRaw, node.bodyRaw, node.terminated ? node.endRaw : undefined].filter((line) => line !== undefined && line.length > 0).join("\n");
+    case "FootnoteDefinition":
+      return `[fn:${node.labelRaw}]${node.children.length > 0 ? ` ${node.children.map(printInline).join("")}` : ""}`;
     case "CommentLine":
       return printCommentLine(node);
     case "PropertyDrawer":
@@ -279,6 +306,8 @@ function printHeadline(node: HeadlineNode): string {
   const stars = "*".repeat(node.level);
 
   const todo = node.todo ? `${node.todo} ` : "";
+  const priority = node.priority ? `[#${node.priority}] ` : "";
+  const comment = node.commented ? "COMMENT " : "";
   const title = node.title.map(printInline).join("");
 
   const tags =
@@ -286,7 +315,7 @@ function printHeadline(node: HeadlineNode): string {
       ? ` :${node.tags.map((t) => `${t}:`).join("")}`
       : "";
 
-  const headlineLine = `${stars} ${todo}${title}${tags}`;
+  const headlineLine = `${stars} ${todo}${priority}${comment}${title}${tags}`;
   
   // Print children if any
   if (!node.children || node.children.length === 0) {

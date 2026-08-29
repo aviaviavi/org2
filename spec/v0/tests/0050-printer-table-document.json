@@ -11,6 +11,20 @@
           "cells": [
             "x",
             "y"
+          ],
+          "contents": [
+            [
+              {
+                "type": "Text",
+                "value": "x"
+              }
+            ],
+            [
+              {
+                "type": "Text",
+                "value": "y"
+              }
+            ]
           ]
         },
         {
@@ -19,6 +33,20 @@
           "cells": [
             "1",
             "2"
+          ],
+          "contents": [
+            [
+              {
+                "type": "Text",
+                "value": "1"
+              }
+            ],
+            [
+              {
+                "type": "Text",
+                "value": "2"
+              }
+            ]
           ]
         },
         {
@@ -27,6 +55,20 @@
           "cells": [
             "3",
             "4"
+          ],
+          "contents": [
+            [
+              {
+                "type": "Text",
+                "value": "3"
+              }
+            ],
+            [
+              {
+                "type": "Text",
+                "value": "4"
+              }
+            ]
           ]
         }
       ]

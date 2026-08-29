@@ -105,7 +105,11 @@ function inlinePlainText(nodes: InlineNode[]): string {
       if (node.type === "Link") return node.descriptionRaw || node.targetRaw;
       if (node.type === "ProgressCookie") return node.raw;
       if (node.type === "Timestamp") return node.raw;
-      return `${node.start.raw}--${node.end.raw}`;
+      if (node.type === "TimestampRange") return `${node.start.raw}--${node.end.raw}`;
+      if (node.type === "Target") return node.valueRaw;
+      if (node.type === "Script") return node.valueRaw;
+      if (node.type === "ExportSnippet") return node.valueRaw;
+      return node.raw;
     })
     .join("");
 }
@@ -529,6 +533,22 @@ function renderInline(node: InlineNode): string {
   if (node.type === "Timestamp") return renderText(node.raw);
   if (node.type === "TimestampRange") return `${renderText(node.start.raw)}--${renderText(node.end.raw)}`;
   if (node.type === "ProgressCookie") return renderText(node.raw);
+  if (node.type === "Entity") return replaceLatexUnicode(node.raw);
+  if (node.type === "LatexFragment") return replaceLatexUnicode(node.raw);
+  if (node.type === "ExportSnippet") {
+    return node.backendRaw.toLowerCase() === "latex" ? replaceLatexUnicode(node.valueRaw) : "";
+  }
+  if (node.type === "LineBreak") return "\\\\";
+  if (node.type === "Script") {
+    const body = renderText(node.valueRaw);
+    return node.kind === "subscript" ? `\\textsubscript{${body}}` : `\\textsuperscript{${body}}`;
+  }
+  if (node.type === "FootnoteReference") {
+    if (node.definitionRaw !== undefined) return `\\footnote{${renderText(node.definitionRaw)}}`;
+    return `\\textsuperscript{${renderText(node.labelRaw || "fn")}}`;
+  }
+  if (node.type === "Citation") return renderText(node.raw);
+  if (node.type === "Target") return `\\hypertarget{${escapeLatexUrl(node.valueRaw)}}{}`;
   if (node.type === "Emphasis") {
     const body = node.kind === "code" || node.kind === "verbatim"
       ? escapeLatexText(node.content)
@@ -603,14 +623,28 @@ function renderParagraph(node: ParagraphNode, latexAttributes?: string): string 
 }
 
 function renderListItem(item: ListItemNode): string {
-  const checkbox = item.checkbox === "checked" ? "[x] " : item.checkbox === "unchecked" ? "[ ] " : "";
+  const checkbox = item.checkbox === "checked"
+    ? "[x] "
+    : item.checkbox === "unchecked"
+      ? "[ ] "
+      : item.checkbox === "indeterminate"
+        ? "[-] "
+        : "";
   const body = renderAstNodes(item.children).trim();
+  if (item.descriptionTag) {
+    return `\\item[${renderInlines(item.descriptionTag)}] ${escapeLatexText(checkbox)}${body}`;
+  }
   const ordinal = item.ordinal !== undefined ? `[${item.ordinal}.]` : "";
-  return `\\item${ordinal} ${escapeLatexText(checkbox)}${body}`;
+  const counter = item.counter !== undefined ? `\\setcounter{enumi}{${Math.max(0, item.counter - 1)}}\n` : "";
+  return `${counter}\\item${ordinal} ${escapeLatexText(checkbox)}${body}`;
 }
 
 function renderList(node: ListNode): string {
-  const environment = node.ordered ? "enumerate" : "itemize";
+  const environment = node.items.length > 0 && node.items.every((item) => item.descriptionTag)
+    ? "description"
+    : node.ordered
+      ? "enumerate"
+      : "itemize";
   return [
     `\\begin{${environment}}`,
     ...node.items.map(renderListItem),
@@ -627,9 +661,10 @@ function renderTable(node: TableNode): string {
       renderedRows.push("\\hline");
       continue;
     }
-    const cells = Array.from({ length: columnCount }, (_, index) =>
-      renderInlines(parseInlinesFromText(row.cells[index] || "")),
-    );
+    const cells = Array.from({ length: columnCount }, (_, index) => {
+      const contents = row.contents?.[index] ?? parseInlinesFromText(row.cells[index] || "");
+      return renderInlines(contents);
+    });
     renderedRows.push(`${cells.join(" & ")}\\\\[0pt]`);
   }
   return [
@@ -700,6 +735,20 @@ function renderAstNode(node: Node, latexAttributes?: string): string {
   if (node.type === "ListItem") return renderListItem(node);
   if (node.type === "SrcBlock") return renderSourceBlock(node);
   if (node.type === "Block") return renderBlock(node);
+  if (node.type === "DynamicBlock") {
+    return renderAstNodes(parseOrgToCanonicalAst(node.bodyRaw).children);
+  }
+  if (node.type === "FixedWidth") {
+    return renderLiteralBlock(node.lines.map((line) => line.valueRaw).join("\n"));
+  }
+  if (node.type === "HorizontalRule") return "\\noindent\\rule{\\linewidth}{0.4pt}";
+  if (node.type === "LatexEnvironment") {
+    return [node.beginRaw, node.bodyRaw.replace(/\n$/, ""), node.endRaw].filter(Boolean).join("\n");
+  }
+  if (node.type === "DiarySexp") return renderLiteralBlock(node.raw);
+  if (node.type === "FootnoteDefinition") {
+    return `\\hypertarget{fn-${escapeLatexUrl(node.labelRaw)}}{}\\textsuperscript{${escapeLatexText(node.labelRaw)}} ${renderInlines(node.children)}`;
+  }
   if (node.type === "Table") return renderTable(node);
   if (node.type === "KeywordLine") return renderKeyword(node);
   if (node.type === "Text") return renderText(node.value);

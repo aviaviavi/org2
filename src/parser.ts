@@ -1,13 +1,24 @@
 import type {
   BlockKind,
   BlockNode,
+  CitationNode,
   CommentLineNode,
+  DiarySexpNode,
   DocumentNode,
+  DynamicBlockNode,
   EmphasisKind,
   EmphasisNode,
+  EntityNode,
+  ExportSnippetNode,
+  FixedWidthNode,
+  FootnoteDefinitionNode,
+  FootnoteReferenceNode,
   HeadlineNode,
   InlineNode,
   KeywordLineNode,
+  LatexEnvironmentNode,
+  LatexFragmentNode,
+  LineBreakNode,
   LinkNode,
   ProgressCookieNode,
   ListItemNode,
@@ -22,6 +33,7 @@ import type {
   SrcBlockLine,
   SrcBlockNode,
   TableNode,
+  TargetNode,
   TextNode,
   TimestampNode,
   TimestampRangeNode,
@@ -79,6 +91,12 @@ function emphasis(kind: EmphasisKind, marker: string, content: string): Emphasis
 
 function link(node: Omit<LinkNode, "type">): LinkNode {
   return { type: "Link", ...node };
+}
+
+type ParsedInlineAt = { node: InlineNode; endIndex: number };
+
+function rawInline<T extends InlineNode>(node: T, endIndex: number): ParsedInlineAt {
+  return { node, endIndex };
 }
 
 function progressCookie(node: Omit<ProgressCookieNode, "type">): ProgressCookieNode {
@@ -280,8 +298,146 @@ function parsePlainUrlAt(value: string, startIndex: number): ParsedLinkAt | null
   };
 }
 
+function parseAngleLinkAt(value: string, startIndex: number): ParsedLinkAt | null {
+  const match = /^<([A-Za-z][A-Za-z0-9+.-]*:[^<>\s]+)>/.exec(value.slice(startIndex));
+  if (!match) return null;
+  const raw = match[0];
+  return {
+    node: link({ format: "angle", raw, targetRaw: match[1] ?? "" }),
+    endIndex: startIndex + raw.length,
+  };
+}
+
 function parseLinkAt(value: string, startIndex: number): ParsedLinkAt | null {
-  return parseBracketLinkAt(value, startIndex) ?? parsePlainUrlAt(value, startIndex);
+  return parseBracketLinkAt(value, startIndex) ?? parseAngleLinkAt(value, startIndex) ?? parsePlainUrlAt(value, startIndex);
+}
+
+function parseTargetAt(value: string, startIndex: number): ParsedInlineAt | null {
+  const rest = value.slice(startIndex);
+  const radioMatch = /^<<<([^<>\n]+)>>>/.exec(rest);
+  if (radioMatch) {
+    const raw = radioMatch[0];
+    return rawInline<TargetNode>({ type: "Target", raw, valueRaw: radioMatch[1] ?? "", radio: true }, startIndex + raw.length);
+  }
+  const match = /^<<([^<>\n]+)>>/.exec(rest);
+  if (!match) return null;
+  const raw = match[0];
+  return rawInline<TargetNode>({ type: "Target", raw, valueRaw: match[1] ?? "", radio: false }, startIndex + raw.length);
+}
+
+function parseFootnoteReferenceAt(value: string, startIndex: number): ParsedInlineAt | null {
+  const match = /^\[fn:([^\]\n:]*)(?::([^\]\n]*))?\]/i.exec(value.slice(startIndex));
+  if (!match) return null;
+  const raw = match[0];
+  const labelRaw = match[1] || undefined;
+  const definitionRaw = match[2] !== undefined ? match[2] : undefined;
+  return rawInline<FootnoteReferenceNode>({
+    type: "FootnoteReference",
+    raw,
+    ...(labelRaw ? { labelRaw } : {}),
+    ...(definitionRaw !== undefined ? { definitionRaw } : {}),
+  }, startIndex + raw.length);
+}
+
+function parseCitationAt(value: string, startIndex: number): ParsedInlineAt | null {
+  const match = /^\[cite(?:\/([^:\]\s]+))?:([^\]\n]+)\]/i.exec(value.slice(startIndex));
+  if (!match) return null;
+  const raw = match[0];
+  const body = match[2] ?? "";
+  const references: CitationNode["references"] = [];
+  for (const segment of body.split(";")) {
+    const keyMatch = /^(.*?)(?:@)([A-Za-z0-9_:.+\-/]+)(.*)$/.exec(segment);
+    if (!keyMatch) continue;
+    const prefixRaw = (keyMatch[1] ?? "").trim() || undefined;
+    const suffixRaw = (keyMatch[3] ?? "").trim() || undefined;
+    references.push({
+      keyRaw: keyMatch[2] ?? "",
+      ...(prefixRaw ? { prefixRaw } : {}),
+      ...(suffixRaw ? { suffixRaw } : {}),
+    });
+  }
+  if (references.length === 0) return null;
+  return rawInline<CitationNode>({
+    type: "Citation",
+    raw,
+    ...(match[1] ? { styleRaw: match[1] } : {}),
+    references,
+  }, startIndex + raw.length);
+}
+
+function parseExportSnippetAt(value: string, startIndex: number): ParsedInlineAt | null {
+  const match = /^@@([A-Za-z0-9_-]+):([\s\S]*?)@@/.exec(value.slice(startIndex));
+  if (!match) return null;
+  const raw = match[0];
+  return rawInline<ExportSnippetNode>({
+    type: "ExportSnippet",
+    raw,
+    backendRaw: match[1] ?? "",
+    valueRaw: match[2] ?? "",
+  }, startIndex + raw.length);
+}
+
+const ORG_ENTITY_NAMES = new Set([
+  "alpha", "beta", "gamma", "delta", "epsilon", "zeta", "eta", "theta", "iota", "kappa", "lambda", "mu", "nu", "xi", "omicron", "pi", "rho", "sigma", "tau", "upsilon", "phi", "chi", "psi", "omega",
+  "Alpha", "Beta", "Gamma", "Delta", "Theta", "Lambda", "Xi", "Pi", "Sigma", "Upsilon", "Phi", "Psi", "Omega",
+  "nbsp", "copy", "reg", "trade", "ndash", "mdash", "hellip", "laquo", "raquo", "lsquo", "rsquo", "ldquo", "rdquo", "bull", "middot", "times", "divide", "plusmn", "le", "ge", "ne", "infin", "rarr", "larr", "uarr", "darr", "harr", "check", "deg",
+]);
+
+function parseEntityAt(value: string, startIndex: number): ParsedInlineAt | null {
+  const match = /^\\([A-Za-z]+)(?:\{\})?/.exec(value.slice(startIndex));
+  if (!match || !ORG_ENTITY_NAMES.has(match[1] ?? "")) return null;
+  const raw = match[0];
+  return rawInline<EntityNode>({ type: "Entity", raw, nameRaw: match[1] ?? "" }, startIndex + raw.length);
+}
+
+function parseLatexFragmentAt(value: string, startIndex: number): ParsedInlineAt | null {
+  const rest = value.slice(startIndex);
+  let match = /^\$\$([^\n]*?)\$\$/.exec(rest);
+  if (match) {
+    const raw = match[0];
+    return rawInline<LatexFragmentNode>({ type: "LatexFragment", raw, display: true }, startIndex + raw.length);
+  }
+  match = /^\$([^$\n]+)\$/.exec(rest);
+  if (match) {
+    const raw = match[0];
+    return rawInline<LatexFragmentNode>({ type: "LatexFragment", raw, display: false }, startIndex + raw.length);
+  }
+  match = /^\\\[([\s\S]*?)\\\]/.exec(rest);
+  if (match) {
+    const raw = match[0];
+    return rawInline<LatexFragmentNode>({ type: "LatexFragment", raw, display: true }, startIndex + raw.length);
+  }
+  match = /^\\\(([^\n]*?)\\\)/.exec(rest);
+  if (!match) return null;
+  const raw = match[0];
+  return rawInline<LatexFragmentNode>({ type: "LatexFragment", raw, display: false }, startIndex + raw.length);
+}
+
+function parseScriptAt(value: string, startIndex: number): ParsedInlineAt | null {
+  const marker = value[startIndex];
+  if (marker !== "_" && marker !== "^") return null;
+  const prev = startIndex > 0 ? value[startIndex - 1] : undefined;
+  if (!prev || !/[A-Za-z0-9})\]]/.test(prev)) return null;
+  const match = /^(?:([_^])\{([^{}\n]+)\}|([_^])([A-Za-z0-9+\-]))/.exec(value.slice(startIndex));
+  if (!match) return null;
+  const raw = match[0];
+  const actualMarker = match[1] ?? match[3];
+  const valueRaw = match[2] ?? match[4] ?? "";
+  const isUnbracedLetter = match[3] !== undefined && /^[A-Za-z]$/.test(valueRaw);
+  if (isUnbracedLetter && /[A-Za-z0-9]/.test(value[startIndex + raw.length] ?? "")) return null;
+  return rawInline({
+    type: "Script",
+    raw,
+    kind: actualMarker === "_" ? "subscript" : "superscript",
+    valueRaw,
+  }, startIndex + raw.length);
+}
+
+function parseLineBreakAt(value: string, startIndex: number): ParsedInlineAt | null {
+  if (value.slice(startIndex, startIndex + 2) !== "\\\\") return null;
+  const after = value[startIndex + 2];
+  if (after !== undefined && after !== "\n") return null;
+  return rawInline<LineBreakNode>({ type: "LineBreak", raw: "\\\\" }, startIndex + 2);
 }
 
 type ParsedProgressCookieAt = { node: ProgressCookieNode; endIndex: number };
@@ -309,6 +465,23 @@ export function parseInlinesFromText(value: string): InlineNode[] {
   let lastTextStart = 0;
 
   while (i < value.length) {
+    const parsedRichObject =
+      parseTargetAt(value, i) ??
+      parseFootnoteReferenceAt(value, i) ??
+      parseCitationAt(value, i) ??
+      parseExportSnippetAt(value, i) ??
+      parseLatexFragmentAt(value, i) ??
+      parseEntityAt(value, i) ??
+      parseScriptAt(value, i) ??
+      parseLineBreakAt(value, i);
+    if (parsedRichObject) {
+      if (lastTextStart < i) out.push(text(value.slice(lastTextStart, i)));
+      out.push(parsedRichObject.node);
+      i = parsedRichObject.endIndex;
+      lastTextStart = i;
+      continue;
+    }
+
     const parsedProgressCookie = parseProgressCookieAt(value, i);
     if (parsedProgressCookie) {
       if (lastTextStart < i) {
@@ -513,7 +686,8 @@ function parsePlanningLine(line: string, lineNumber: number): PlanningNode[] | n
 function parseHeadline(
   line: string,
   lineNumber: number,
-): { level: number; title: string; todo?: string; tags?: string[] } {
+  todoKeywords: readonly string[],
+): { level: number; title: string; todo?: string; priority?: string; commented?: boolean; tags?: string[] } {
   const match = /^(\*+)(\s+)(.*)$/.exec(line);
   if (!match) {
     fail(makeError("Invalid headline; expected one or more '*' followed by a space", lineNumber, 1));
@@ -532,6 +706,8 @@ function parseHeadline(
   }
 
   let todo;
+  let priority;
+  let commented = false;
   let tags;
   let rest = raw;
 
@@ -548,21 +724,52 @@ function parseHeadline(
     }
   }
 
-  // Todo keyword (Org2 supports a small set).
-  for (const kw of TODO_KEYWORDS) {
-    const prefix = `${kw} `;
-    if (rest.startsWith(prefix)) {
-      todo = kw;
-      rest = rest.slice(prefix.length);
-      break;
+  if (rest === "COMMENT" || rest.startsWith("COMMENT ")) {
+    commented = true;
+    rest = rest.slice("COMMENT".length).trimStart();
+  }
+
+  if (!commented) {
+    for (const kw of todoKeywords) {
+      const prefix = `${kw} `;
+      if (rest.startsWith(prefix)) {
+        todo = kw;
+        rest = rest.slice(prefix.length);
+        break;
+      }
     }
+  }
+
+  const priorityMatch = /^\[#([A-Za-z0-9])\](?:\s+|$)/.exec(rest);
+  if (priorityMatch) {
+    priority = priorityMatch[1];
+    rest = rest.slice(priorityMatch[0].length);
+  }
+
+  if (rest === "COMMENT" || rest.startsWith("COMMENT ")) {
+    commented = true;
+    rest = rest.slice("COMMENT".length).trimStart();
   }
 
   if (rest.length === 0) {
     fail(makeError("Invalid headline; title cannot be empty", lineNumber, stars.length + 2));
   }
 
-  return { level: stars.length, title: rest, todo, tags };
+  return { level: stars.length, title: rest, todo, priority, ...(commented ? { commented } : {}), tags };
+}
+
+function parseDocumentTodoKeywords(input: string): string[] {
+  const keywords = new Set<string>(TODO_KEYWORDS);
+  for (const line of input.split("\n")) {
+    const match = /^\s*#\+(?:TODO|SEQ_TODO|TYP_TODO):(.*)$/i.exec(line);
+    if (!match) continue;
+    for (const token of (match[1] ?? "").trim().split(/\s+/)) {
+      if (!token || token === "|") continue;
+      const keyword = token.replace(/\([^)]*\)$/, "");
+      if (/^[A-Za-z][A-Za-z0-9_-]*$/.test(keyword)) keywords.add(keyword);
+    }
+  }
+  return [...keywords].sort((left, right) => right.length - left.length || left.localeCompare(right));
 }
 
 function getChildrenArray(node: DocumentNode | HeadlineNode): Node[] {
@@ -572,9 +779,11 @@ function getChildrenArray(node: DocumentNode | HeadlineNode): Node[] {
 type ParsedListItem = {
   ordered: boolean;
   ordinal?: number;
+  counter?: number;
   content: string;
   indentColumn: number;
-  checkbox?: "unchecked" | "checked";
+  checkbox?: "unchecked" | "checked" | "indeterminate";
+  descriptionTag?: InlineNode[];
   progressCookie?: ProgressCookieNode;
 };
 
@@ -697,23 +906,74 @@ function parseDrawer(lines: string[], startLineIndex: number): ParseDrawerResult
   };
 }
 
-function parseListItemContent(contentRaw: string): Pick<ParsedListItem, "content" | "checkbox" | "progressCookie"> | null {
+function parseListItemContent(contentRaw: string): Pick<ParsedListItem, "content" | "counter" | "checkbox" | "descriptionTag" | "progressCookie"> | null {
   let content = contentRaw;
   if (content.length === 0) return null;
 
-  let checkbox: "unchecked" | "checked" | undefined;
-  const checkboxMatch = /^\[([ Xx])\]\s+(.*)$/.exec(content);
+  let counter: number | undefined;
+  const counterMatch = /^\[@(\d+)\]\s+(.*)$/.exec(content);
+  if (counterMatch) {
+    counter = Number.parseInt(counterMatch[1] ?? "0", 10);
+    content = counterMatch[2] ?? "";
+  }
+
+  let checkbox: "unchecked" | "checked" | "indeterminate" | undefined;
+  const checkboxMatch = /^\[([ Xx-])\]\s+(.*)$/.exec(content);
   if (checkboxMatch) {
-    checkbox = checkboxMatch[1] === " " ? "unchecked" : "checked";
+    checkbox = checkboxMatch[1] === " " ? "unchecked" : checkboxMatch[1] === "-" ? "indeterminate" : "checked";
     content = checkboxMatch[2] ?? "";
   }
 
   const progressCookie = parseProgressCookieAt(content, 0)?.node;
-  return { content, ...(checkbox ? { checkbox } : {}), ...(progressCookie ? { progressCookie } : {}) };
+  let descriptionTag: InlineNode[] | undefined;
+  const descriptionMatch = findDescriptionSeparator(content);
+  if (descriptionMatch && descriptionMatch.tagRaw.trim()) {
+    descriptionTag = parseInlinesFromText(descriptionMatch.tagRaw.trim());
+    content = descriptionMatch.contentRaw;
+  }
+  return {
+    content,
+    ...(counter !== undefined ? { counter } : {}),
+    ...(checkbox ? { checkbox } : {}),
+    ...(descriptionTag ? { descriptionTag } : {}),
+    ...(progressCookie ? { progressCookie } : {}),
+  };
+}
+
+function findDescriptionSeparator(value: string): { tagRaw: string; contentRaw: string } | null {
+  const pattern = /\s+::(?:\s+|$)/g;
+  for (const match of value.matchAll(pattern)) {
+    const separatorIndex = match.index ?? 0;
+    if (descriptionSeparatorIsInsideDelimitedObject(value, separatorIndex)) continue;
+    return {
+      tagRaw: value.slice(0, separatorIndex),
+      contentRaw: value.slice(separatorIndex + match[0].length),
+    };
+  }
+  return null;
+}
+
+function descriptionSeparatorIsInsideDelimitedObject(value: string, index: number): boolean {
+  for (let i = 0; i < index; ) {
+    const parsed =
+      parseLinkAt(value, i) ??
+      parseExportSnippetAt(value, i) ??
+      parseFootnoteReferenceAt(value, i) ??
+      parseCitationAt(value, i) ??
+      parseLatexFragmentAt(value, i) ??
+      parseEmphasisAt(value, i);
+    if (!parsed) {
+      i += 1;
+      continue;
+    }
+    if (parsed.endIndex > index) return true;
+    i = parsed.endIndex;
+  }
+  return false;
 }
 
 function parseListItemLine(line: string): ParsedListItem | null {
-  const unordered = /^([+-])(\s+)(.*)$/.exec(line);
+  const unordered = /^([+*-])(\s+)(.*)$/.exec(line);
   if (unordered) {
     const ws = unordered[2];
     if (ws !== " ") return null;
@@ -742,14 +1002,18 @@ function parseListItemLine(line: string): ParsedListItem | null {
 
 function listItemNode(
   content: string,
-  checkbox?: "unchecked" | "checked",
+  checkbox?: "unchecked" | "checked" | "indeterminate",
   progressCookie?: ProgressCookieNode,
   ordinal?: number,
+  counter?: number,
+  descriptionTag?: InlineNode[],
 ): ListItemNode {
   return {
     type: "ListItem",
     ...(ordinal !== undefined ? { ordinal } : {}),
+    ...(counter !== undefined ? { counter } : {}),
     ...(checkbox ? { checkbox } : {}),
+    ...(descriptionTag ? { descriptionTag } : {}),
     ...(progressCookie ? { progressCookie } : {}),
     children: [paragraphFromText(content)],
   };
@@ -806,13 +1070,10 @@ function isEndSrc(line: SrcBlockLine): boolean {
 
 function getBlockKindFromBegin(line: SrcBlockLine): BlockKind | null {
   const key = line.keywordRaw.toLowerCase();
-  if (key === "begin_example") return "example";
-  if (key === "begin_quote") return "quote";
-  if (key === "begin_verse") return "verse";
-  if (key === "begin_center") return "center";
-  if (key === "begin_comment") return "comment";
-  if (key === "begin_export") return "export";
-  return null;
+  if (!key.startsWith("begin_")) return null;
+  const kind = key.slice("begin_".length);
+  if (!kind || kind === "src" || kind === "org2") return null;
+  return kind;
 }
 
 function isEndBlockForKind(line: SrcBlockLine, kind: BlockKind): boolean {
@@ -987,10 +1248,99 @@ function parseTable(lines: string[], startLineIndex: number, indent: string): Pa
       continue;
     }
 
-    rows.push({ type: "TableRow", indent: lineIndent, cells: parseTableRowCells(rest) });
+    const cells = parseTableRowCells(rest);
+    rows.push({ type: "TableRow", indent: lineIndent, cells, contents: cells.map(parseInlinesFromText) });
   }
 
   return { table: { type: "Table", rows }, nextLineIndex: lines.length };
+}
+
+function parseDynamicBlock(lines: string[], startLineIndex: number): { block: DynamicBlockNode; nextLineIndex: number } | null {
+  const beginRaw = lines[startLineIndex] ?? "";
+  const begin = /^(\s*)#\+begin:\s+([^\s]+)(.*)$/i.exec(beginRaw);
+  if (!begin) return null;
+  for (let i = startLineIndex + 1; i < lines.length; i += 1) {
+    if (!/^\s*#\+end:\s*$/i.test(lines[i] ?? "")) continue;
+    return {
+      block: {
+        type: "DynamicBlock",
+        nameRaw: begin[2] ?? "",
+        parametersRaw: begin[3] ?? "",
+        indent: begin[1] ?? "",
+        beginRaw,
+        bodyRaw: lines.slice(startLineIndex + 1, i).join("\n"),
+        terminated: true,
+        endRaw: lines[i] ?? "",
+      },
+      nextLineIndex: i + 1,
+    };
+  }
+  return {
+    block: {
+      type: "DynamicBlock",
+      nameRaw: begin[2] ?? "",
+      parametersRaw: begin[3] ?? "",
+      indent: begin[1] ?? "",
+      beginRaw,
+      bodyRaw: lines.slice(startLineIndex + 1).join("\n"),
+      terminated: false,
+    },
+    nextLineIndex: lines.length,
+  };
+}
+
+function parseFixedWidth(lines: string[], startLineIndex: number): { node: FixedWidthNode; nextLineIndex: number } | null {
+  const parsedLines: FixedWidthNode["lines"] = [];
+  let i = startLineIndex;
+  for (; i < lines.length; i += 1) {
+    const raw = lines[i] ?? "";
+    const match = /^(\s*):(?: ?)(.*)$/.exec(raw);
+    if (!match || /^\s*:[^\s:]+:$/.test(raw)) break;
+    parsedLines.push({ raw, indent: match[1] ?? "", valueRaw: match[2] ?? "" });
+  }
+  return parsedLines.length > 0 ? { node: { type: "FixedWidth", lines: parsedLines }, nextLineIndex: i } : null;
+}
+
+function parseLatexEnvironment(lines: string[], startLineIndex: number): { node: LatexEnvironmentNode; nextLineIndex: number } | null {
+  const beginRaw = lines[startLineIndex] ?? "";
+  const begin = /^\s*\\begin\{([^{}\s]+)\}/.exec(beginRaw);
+  if (!begin) return null;
+  const nameRaw = begin[1] ?? "";
+  const endPattern = new RegExp(`^\\s*\\\\end\\{${nameRaw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\}\\s*$`);
+  for (let i = startLineIndex + 1; i < lines.length; i += 1) {
+    if (!endPattern.test(lines[i] ?? "")) continue;
+    return {
+      node: {
+        type: "LatexEnvironment",
+        nameRaw,
+        beginRaw,
+        bodyRaw: lines.slice(startLineIndex + 1, i).join("\n"),
+        terminated: true,
+        endRaw: lines[i] ?? "",
+      },
+      nextLineIndex: i + 1,
+    };
+  }
+  return {
+    node: {
+      type: "LatexEnvironment",
+      nameRaw,
+      beginRaw,
+      bodyRaw: lines.slice(startLineIndex + 1).join("\n"),
+      terminated: false,
+    },
+    nextLineIndex: lines.length,
+  };
+}
+
+function parseFootnoteDefinitionLine(line: string): FootnoteDefinitionNode | null {
+  const match = /^\[fn:([^\]\s:]+)\](?:\s+(.*)|\s*)$/i.exec(line);
+  if (!match) return null;
+  return {
+    type: "FootnoteDefinition",
+    labelRaw: match[1] ?? "",
+    children: parseInlinesFromText(match[2] ?? ""),
+  };
 }
 
 export function parseOrgToCanonicalAst(input: string, options: ParseOptions = {}): DocumentNode {
@@ -1069,7 +1419,7 @@ export function parseOrgToCanonicalAst(input: string, options: ParseOptions = {}
     return keywords;
   }
 
-  function attachAffiliatedKeywords<T extends SrcBlockNode | BlockNode | TableNode>(node: T): T {
+  function attachAffiliatedKeywords<T extends SrcBlockNode | BlockNode | DynamicBlockNode | TableNode>(node: T): T {
     const affiliatedKeywords = takeAffiliatedKeywords();
     if (!affiliatedKeywords) return node;
     return { ...node, affiliatedKeywords };
@@ -1108,23 +1458,84 @@ export function parseOrgToCanonicalAst(input: string, options: ParseOptions = {}
   function addListItem(
     ordered: boolean,
     content: string,
-    checkbox?: "unchecked" | "checked",
+    checkbox?: "unchecked" | "checked" | "indeterminate",
     itemProgressCookie?: ProgressCookieNode,
     sourceOrdinal?: number,
+    counter?: number,
+    descriptionTag?: InlineNode[],
   ): ListItemNode {
     const list = ensureList(ordered);
     const ordinal = ordered && sourceOrdinal !== list.items.length + 1 ? sourceOrdinal : undefined;
-    const item = listItemNode(content, checkbox, itemProgressCookie, ordinal);
+    const item = listItemNode(content, checkbox, itemProgressCookie, ordinal, counter, descriptionTag);
     list.items.push(item);
     return item;
   }
 
   const lines = input.split("\n");
+  const documentTodoKeywords = parseDocumentTodoKeywords(input);
   const documentEndLine = input.endsWith("\n") ? Math.max(1, lines.length - 1) : lines.length;
 
   for (let i = 0; i < lines.length; ) {
     const lineNumber = i + 1;
     const line = lines[i];
+
+    const dynamic = parseDynamicBlock(lines, i);
+    if (dynamic) {
+      flushParagraph();
+      endList();
+      pushCurrent(attachAffiliatedKeywords(dynamic.block), lineNumber, dynamic.nextLineIndex);
+      i = dynamic.nextLineIndex;
+      continue;
+    }
+
+    const latexEnvironment = parseLatexEnvironment(lines, i);
+    if (latexEnvironment) {
+      flushParagraph();
+      endList();
+      flushAffiliatedKeywords();
+      pushCurrent(latexEnvironment.node, lineNumber, latexEnvironment.nextLineIndex);
+      i = latexEnvironment.nextLineIndex;
+      continue;
+    }
+
+    const footnoteDefinition = parseFootnoteDefinitionLine(line);
+    if (footnoteDefinition) {
+      flushParagraph();
+      endList();
+      flushAffiliatedKeywords();
+      pushCurrent(footnoteDefinition, lineNumber);
+      i += 1;
+      continue;
+    }
+
+    const horizontalRule = /^(\s*)-{5,}\s*$/.exec(line);
+    if (horizontalRule) {
+      flushParagraph();
+      endList();
+      flushAffiliatedKeywords();
+      pushCurrent({ type: "HorizontalRule", raw: line, indent: horizontalRule[1] ?? "" }, lineNumber);
+      i += 1;
+      continue;
+    }
+
+    if (/^\s*%%\(/.test(line)) {
+      flushParagraph();
+      endList();
+      flushAffiliatedKeywords();
+      pushCurrent({ type: "DiarySexp", raw: line } satisfies DiarySexpNode, lineNumber);
+      i += 1;
+      continue;
+    }
+
+    const fixedWidth = parseFixedWidth(lines, i);
+    if (fixedWidth) {
+      flushParagraph();
+      endList();
+      flushAffiliatedKeywords();
+      pushCurrent(fixedWidth.node, lineNumber, fixedWidth.nextLineIndex);
+      i = fixedWidth.nextLineIndex;
+      continue;
+    }
 
     {
       const keyword = parseKeywordLine(line, lineNumber);
@@ -1226,7 +1637,7 @@ export function parseOrgToCanonicalAst(input: string, options: ParseOptions = {}
       endList();
       flushAffiliatedKeywords();
 
-      const { level, title, todo, tags } = parseHeadline(line, lineNumber);
+      const { level, title, todo, priority, commented, tags } = parseHeadline(line, lineNumber, documentTodoKeywords);
 
       while (headlineStack.length > 0 && headlineStack[headlineStack.length - 1].level >= level) {
         const popped = headlineStack.pop();
@@ -1237,6 +1648,8 @@ export function parseOrgToCanonicalAst(input: string, options: ParseOptions = {}
         type: "Headline",
         level,
         ...(todo ? { todo } : {}),
+        ...(priority ? { priority } : {}),
+        ...(commented ? { commented } : {}),
         ...(tags ? { tags } : {}),
         title: parseInlinesFromText(title),
         children: [],
@@ -1302,6 +1715,8 @@ export function parseOrgToCanonicalAst(input: string, options: ParseOptions = {}
         listItem.checkbox,
         listItem.progressCookie,
         listItem.ordinal,
+        listItem.counter,
+        listItem.descriptionTag,
       );
       i += 1;
 
@@ -1418,6 +1833,8 @@ export function parseOrgToCanonicalAst(input: string, options: ParseOptions = {}
                   nestedItem.checkbox,
                   nestedItem.progressCookie,
                   nestedOrdinal,
+                  nestedItem.counter,
+                  nestedItem.descriptionTag,
                 );
                 nestedList.items.push(nestedListItem);
                 i += 1;
@@ -1485,6 +1902,8 @@ export function parseOrgToCanonicalAst(input: string, options: ParseOptions = {}
                             deeperItem.checkbox,
                             deeperItem.progressCookie,
                             deeperOrdinal,
+                            deeperItem.counter,
+                            deeperItem.descriptionTag,
                           );
                           deeperList.items.push(deeperListItem);
                           i += 1;

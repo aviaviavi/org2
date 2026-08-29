@@ -10,8 +10,11 @@ The canonical definition of Org2 remains the **spec + fixtures** (and any future
 
 ## What it parses (currently)
 
-- Headlines: leading `*` stars, a single space, then title text
-- Paragraph/text lines
+- Headlines and paragraph/text lines
+- Source, export, arbitrary special, and dynamic block markers
+- LaTeX environment markers, drawers, tables, and list items
+- Footnote definitions, fixed-width lines, horizontal rules, and diary sexps
+- Keywords and comments
 
 ## Neovim (nvim-treesitter)
 
@@ -74,4 +77,5 @@ npm install
 npm test
 ```
 
-`npm test` runs `tree-sitter test` using the corpus files in `test/corpus/`.
+`npm test` regenerates the non-checked-in parser and runs `tree-sitter test`
+using the corpus files in `test/corpus/`.

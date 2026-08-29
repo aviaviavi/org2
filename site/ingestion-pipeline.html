@@ -69,17 +69,17 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <h1 id="data-model">Data model</h1>
 <p>Raw connector output uses <code>org2-ingestion/v1</code> and is stored in a raw/source zone such as <code>raw/slack/</code>, <code>raw/gmail/</code>, or a configured equivalent.</p>
 <p>Required raw capture fields:</p>
-<ul>
-<li><p><code>sourceType</code> :: <code>slack</code>, <code>gmail</code>, <code>meeting</code>, <code>linear</code>, <code>github</code>, <code>note</code>, or <code>demo</code></p></li>
-<li><p><code>externalId</code> :: stable upstream id, e.g. Slack timestamp or GitHub issue id</p></li>
-<li><p><code>authors</code> :: one or more source authors</p></li>
-<li><p><code>capturedAt</code> / <code>occurredAt</code> :: ingestion time and source event time</p></li>
-<li><p><code>visibility</code> and <code>sensitivity</code> :: source access/safety hints</p></li>
-<li><p><code>contentHash</code> :: SHA-256 of normalized raw content</p></li>
-<li><p><code>sourceRef</code> :: source URL/ref when available</p></li>
-<li><p><code>rawRef</code> :: stable provenance ref, <code>sourceType:externalId@sha256:contentHash</code></p></li>
-<li><p><code>content</code> :: normalized raw text/body</p></li>
-</ul>
+<dl class="org2-description-list">
+<dt><code>sourceType</code></dt><dd><p><code>slack</code>, <code>gmail</code>, <code>meeting</code>, <code>linear</code>, <code>github</code>, <code>note</code>, or <code>demo</code></p></dd>
+<dt><code>externalId</code></dt><dd><p>stable upstream id, e.g. Slack timestamp or GitHub issue id</p></dd>
+<dt><code>authors</code></dt><dd><p>one or more source authors</p></dd>
+<dt><code>capturedAt</code> / <code>occurredAt</code></dt><dd><p>ingestion time and source event time</p></dd>
+<dt><code>visibility</code> and <code>sensitivity</code></dt><dd><p>source access/safety hints</p></dd>
+<dt><code>contentHash</code></dt><dd><p>SHA-256 of normalized raw content</p></dd>
+<dt><code>sourceRef</code></dt><dd><p>source URL/ref when available</p></dd>
+<dt><code>rawRef</code></dt><dd><p>stable provenance ref, <code>sourceType:externalId@sha256:contentHash</code></p></dd>
+<dt><code>content</code></dt><dd><p>normalized raw text/body</p></dd>
+</dl>
 <p>Derived review artifacts are generated beside, not over, durable notes. They include:</p>
 <ul>
 <li><p>summary candidates</p></li>

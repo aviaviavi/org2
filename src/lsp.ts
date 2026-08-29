@@ -5,6 +5,7 @@ import {
   parseOrgWithDiagnostics,
   DocumentNode,
   HeadlineNode,
+  InlineNode,
   Node,
   ListNode,
 } from "./parser.js";
@@ -903,19 +904,32 @@ class LSPServer {
         });
       }
 
-    } else if (node.type === "SrcBlock" || node.type === "Block") {
+    } else if (node.type === "SrcBlock" || node.type === "Block" || node.type === "DynamicBlock" || node.type === "LatexEnvironment") {
       if (node.terminated) {
-        const beginKeyword = node.type === "SrcBlock" ? "BEGIN_SRC" : `BEGIN_${node.kind.toUpperCase()}`;
-        const endKeyword = node.type === "SrcBlock" ? "END_SRC" : `END_${node.kind.toUpperCase()}`;
+        const beginKeyword = node.type === "SrcBlock"
+          ? "begin_src"
+          : node.type === "Block"
+            ? `begin_${node.kind.toLowerCase()}`
+            : node.type === "DynamicBlock"
+              ? "#+begin:"
+              : `\\begin{${node.nameRaw}}`;
+        const endKeyword = node.type === "SrcBlock"
+          ? "end_src"
+          : node.type === "Block"
+            ? `end_${node.kind.toLowerCase()}`
+            : node.type === "DynamicBlock"
+              ? "#+end:"
+              : `\\end{${node.nameRaw}}`;
 
         let beginLine = -1;
         let endLine = -1;
         for (let i = 0; i < tracker.getLinesCount(); i++) {
           const line = tracker.getLine(i);
-          if (line.includes(beginKeyword) && beginLine < 0) {
+          const normalizedLine = line.toLowerCase();
+          if (normalizedLine.includes(beginKeyword.toLowerCase()) && beginLine < 0) {
             beginLine = i;
           }
-          if (line.includes(endKeyword) && beginLine >= 0) {
+          if (normalizedLine.includes(endKeyword.toLowerCase()) && beginLine >= 0) {
             endLine = i;
             break;
           }
@@ -1584,6 +1598,14 @@ class LSPServer {
     };
 
     const todoKeywords = new Set<string>(TODO_KEYWORDS);
+    for (const line of lines) {
+      const todoDirective = /^\s*#\+(?:TODO|SEQ_TODO|TYP_TODO):(.*)$/i.exec(line);
+      if (!todoDirective) continue;
+      for (const token of (todoDirective[1] || "").trim().split(/\s+/)) {
+        const keyword = token.replace(/\([^)]*\)$/, "").toUpperCase();
+        if (keyword && keyword !== "|") todoKeywords.add(keyword);
+      }
+    }
 
     for (let lineNumber = 0; lineNumber < lines.length; lineNumber++) {
       const line = lines[lineNumber] ?? "";
@@ -1608,6 +1630,18 @@ class LSPServer {
         const startChar = (propertyMatch[1] || "").length;
         const propertyKey = propertyMatch[2] || "";
         addToken(lineNumber, startChar, propertyKey.length, SemanticTokenType.Property);
+      }
+
+      const structuralKeywordRegex = /#\+(?:begin|end)(?:_[A-Za-z0-9_-]+|:)/gi;
+      let structuralMatch: RegExpExecArray | null;
+      while ((structuralMatch = structuralKeywordRegex.exec(line)) !== null) {
+        addToken(lineNumber, structuralMatch.index, structuralMatch[0].length, SemanticTokenType.Keyword);
+      }
+
+      const richObjectRegex = /\[cite(?:\/[^:\]\s]+)?:[^\]\n]+\]|\[fn:[^\]\n]*\]|<<<[^<>\n]+>>>|<<[^<>\n]+>>|@@[A-Za-z0-9_-]+:.*?@@|<[A-Za-z][A-Za-z0-9+.-]*:[^<>\s]+>/g;
+      let richObjectMatch: RegExpExecArray | null;
+      while ((richObjectMatch = richObjectRegex.exec(line)) !== null) {
+        addToken(lineNumber, richObjectMatch.index, richObjectMatch[0].length, SemanticTokenType.String);
       }
 
       const linkRegex = /\[\[([^\]\n]+?)\](?:\[[^\]\n]*\])?\]/g;
@@ -3934,13 +3968,26 @@ class LSPServer {
     this.sendNotification("textDocument/publishDiagnostics", buildPublishDiagnosticsParams(uri, doc.text));
   }
 
-  private inlineNodesToText(nodes: any[]): string {
+  private inlineNodesToText(nodes: InlineNode[]): string {
     if (!nodes) return "";
     return nodes
       .map((node) => {
-        if (node.type === "Text") return node.value;
-        if (node.type === "Emphasis") return node.content;
-        return "";
+        switch (node.type) {
+          case "Text": return node.value;
+          case "Emphasis": return node.content;
+          case "Link": return node.descriptionRaw || node.targetRaw;
+          case "Timestamp":
+          case "ProgressCookie":
+          case "Entity":
+          case "LatexFragment":
+          case "Citation":
+          case "LineBreak": return node.raw;
+          case "TimestampRange": return `${node.start.raw}${node.separatorRaw}${node.end.raw}`;
+          case "ExportSnippet": return node.valueRaw;
+          case "FootnoteReference": return node.definitionRaw ?? node.labelRaw ?? "";
+          case "Target":
+          case "Script": return node.valueRaw;
+        }
       })
       .join("");
   }

@@ -105,6 +105,9 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <li><p><code>CANCELLED</code> / <code>CANCELED</code></p></li>
 </ul>
 <p>Workflow tools may accept aliases such as <code>PROG</code> or <code>WAITING</code> and normalize them to one of the canonical TODO keywords above.</p>
+<p>Files may also declare their own Org-compatible vocabulary with <code>#+TODO:</code>, <code>#+SEQ_TODO:</code>, or <code>#+TYP_TODO:</code>. Fast-selection suffixes such as <code>WAITING(w)</code> are recognized and omitted from the stored headline state:</p>
+<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">#+TODO: IDEA(i) WAITING(w) | SHIPPED(s)
+* WAITING Publish the package</code></pre>
 <p>Example:</p>
 <pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">* TODO Ship docs
 * IN_PROGRESS Implement parser tests
@@ -116,6 +119,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <li><p>Syntax: <code>[#A]</code> style cookie after TODO keyword (or at headline start when no TODO keyword).</p></li>
 </ul>
 <pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">* TODO [#A] Critical task</code></pre>
+<p>Priority is stored as the dedicated <code>priority</code> headline field. Org's <code>COMMENT</code> headline marker is stored as <code>commented: true</code> while all source bytes still round-trip unchanged.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="tags">Tags</h1>
@@ -184,6 +188,8 @@ CLOSED: [2026-02-20 Fri]</code></pre>
 <li><p>Checkboxes: <code>[ ]</code>, <code>[X]</code>, <code>[x]</code>, <code>[-]</code></p></li>
 <li><p>Checkbox progress cookies: <code>[n/m]</code> and <code>[p%]</code> may appear in headings or list items; compile output exposes computed checkbox totals and lint reports stale cookies.</p></li>
 <li><p>Nested lists via indentation.</p></li>
+<li><p>Counter cookies such as <code>[@3]</code> are stored separately from the written ordered-list marker.</p></li>
+<li><p>Descriptive items use <code>term :: definition</code> and render as description lists.</p></li>
 </ul>
 </section>
 <section class="org2-headline level-1">
@@ -195,6 +201,8 @@ CLOSED: [2026-02-20 Fri]</code></pre>
 <li><p>File links: <code>[[file:path/to/file.org]]</code></p></li>
 <li><p>ID links: <code>[[id:UUID][label]]</code> (roam-style link)</p></li>
 <li><p>Wiki links: <code>[[Node Title]]</code> (roam-style link)</p></li>
+<li><p>Angle links: <code>&lt;mailto:hello@example.com&gt;</code></p></li>
+<li><p>Targets: <code>&lt;&lt;name&gt;&gt;</code> and radio targets <code>&lt;&lt;&lt;name&gt;&gt;&gt;</code></p></li>
 </ul>
 <p>Both ID links and Wiki links are first-class in Org2 roam workflows.</p>
 <p>Link abbreviations are supported with built-ins, config, and <code>#+LINK</code> directives.</p>
@@ -253,6 +261,24 @@ CLOSED: [2026-02-20 Fri]</code></pre>
 </ul>
 </section>
 <section class="org2-headline level-1">
+<h1 id="rich-inline-objects">Rich inline objects</h1>
+<p>Org2 also parses the everyday publishing and scholarly inline objects used by Org:</p>
+<ul>
+<li><p>Footnote references: <code>[fn:label]</code>, <code>[fn:label:inline definition]</code>, and <code>[fn::anonymous definition]</code></p></li>
+<li><p>Citations: <code>[cite:@key]</code> and multi-reference/style forms such as <code>[cite/t:@doe; see @roe p. 4]</code></p></li>
+<li><p>Entities: <code>\alpha</code>, <code>\copy</code>, <code>\rarr</code>, and other common Org entities</p></li>
+<li><p>LaTeX fragments: <code>$x_2$</code>, <code>$$x = y$$</code>, <code>\(...\)</code>, and <code>\[...\]</code></p></li>
+<li><p>Export snippets: <code>@@html:&lt;mark&gt;highlighted&lt;/mark&gt;@@</code></p></li>
+<li><p>Subscripts and superscripts: <code>H_2O</code> and <code>x^{2}</code></p></li>
+<li><p>Explicit line breaks: two backslashes at the end of a line</p></li>
+</ul>
+<p>These are first-class canonical AST objects and render in the CLI, published HTML, and Mac/iOS document views. Export snippets are emitted as raw HTML only by the publishing renderer; app previews escape their payload.</p>
+<p>Footnote definitions use the ordinary Org form:</p>
+<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">The claim has a source.[fn:source]
+
+[fn:source] Supporting detail.</code></pre>
+</section>
+<section class="org2-headline level-1">
 <h1 id="blocks">Blocks</h1>
 <p>Recognized block forms include:</p>
 <ul>
@@ -262,6 +288,12 @@ CLOSED: [2026-02-20 Fri]</code></pre>
 <li><p>Verse blocks: <code>#+begin_verse ... #+end_verse</code></p></li>
 <li><p>Center blocks: <code>#+begin_center ... #+end_center</code></p></li>
 <li><p>Comment blocks: <code>#+begin_comment ... #+end_comment</code></p></li>
+<li><p>Arbitrary special blocks: <code>#+begin_NAME ... #+end_NAME</code></p></li>
+<li><p>Dynamic blocks: <code>#+begin: NAME ... #+end:</code> (parsed and preserved; Org2 does not execute dynamic-block writers)</p></li>
+<li><p>LaTeX environments: <code>\begin{equation} ... \end{equation}</code></p></li>
+<li><p>Fixed-width lines beginning with a colon followed by one space</p></li>
+<li><p>Horizontal rules of five or more hyphens</p></li>
+<li><p>Diary sexps beginning with <code>%%(</code></p></li>
 </ul>
 <section class="org2-headline level-2">
 <h2 id="syntactic-sugar-aliases">Syntactic sugar / aliases</h2>
@@ -287,8 +319,13 @@ const x = 1</code></pre>
 <p>The binding works anywhere links are parsed, including prose, headings, and table cells. In ordinary inline content, background color applies to the labeled span. When one color binding occupies an entire table cell, rendered clients apply its foreground and background to the whole cell. It remains a normal bracket link in the canonical AST and round-trips byte-for-byte, so standard Org tools preserve the label even when they do not interpret the <code>color:</code> type. Invalid color declarations remain ordinary links rather than accepting arbitrary CSS.</p>
 <ul>
 <li><p>Horizontal separator rows: <code>|---+---|</code></p></li>
-<li><p>Table content is parsed and preserved.</p></li>
+<li><p>Table content is parsed and preserved. Each row retains compatible raw <code>cells</code> strings and also exposes parallel structured <code>contents</code> inline objects.</p></li>
 </ul>
+<p>Org table formulas such as <code>#+TBLFM:</code> remain preserved keyword text; Org2 does not evaluate them.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="deliberate-compatibility-boundary">Deliberate compatibility boundary</h1>
+<p>Org2 now covers most Org syntax used for notes, planning, publishing, linking, and scholarly prose. It deliberately does not implement macro expansion, Babel execution, inline source/call evaluation, or dynamic-block execution. Inline tasks remain ordinary deep headlines rather than a separate execution construct. Unsupported execution-oriented forms remain losslessly preserved as text or directives.</p>
 <p>Tables, source blocks, and common blocks can carry adjacent affiliated keyword metadata:</p>
 <pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">#+name: quarterly_revenue
 #+chart: line x=quarter y=revenue

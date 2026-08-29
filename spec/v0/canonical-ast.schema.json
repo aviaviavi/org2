@@ -30,10 +30,17 @@
         { "$ref": "#/$defs/DirectiveLine" },
         { "$ref": "#/$defs/CommentLine" },
         { "$ref": "#/$defs/Planning" },
+        { "$ref": "#/$defs/Clock" },
         { "$ref": "#/$defs/PropertyDrawer" },
         { "$ref": "#/$defs/Drawer" },
         { "$ref": "#/$defs/SrcBlock" },
         { "$ref": "#/$defs/Block" },
+        { "$ref": "#/$defs/DynamicBlock" },
+        { "$ref": "#/$defs/FixedWidth" },
+        { "$ref": "#/$defs/HorizontalRule" },
+        { "$ref": "#/$defs/LatexEnvironment" },
+        { "$ref": "#/$defs/DiarySexp" },
+        { "$ref": "#/$defs/FootnoteDefinition" },
         { "$ref": "#/$defs/Table" },
         { "$ref": "#/$defs/Text" }
       ]
@@ -46,6 +53,8 @@
         "type": { "const": "Headline" },
         "level": { "type": "integer", "minimum": 1 },
         "todo": { "type": "string" },
+        "priority": { "type": "string", "pattern": "^[A-Za-z0-9]$" },
+        "commented": { "type": "boolean" },
         "tags": {
           "type": "array",
           "items": { "type": "string" }
@@ -95,9 +104,20 @@
           "type": "integer",
           "minimum": 0
         },
+        "counter": {
+          "type": "integer",
+          "minimum": 0
+        },
         "checkbox": {
           "type": "string",
-          "enum": ["unchecked", "checked"]
+          "enum": ["unchecked", "checked", "indeterminate"]
+        },
+        "descriptionTag": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Inline" }
+        },
+        "progressCookie": {
+          "$ref": "#/$defs/ProgressCookie"
         },
         "children": {
           "type": "array",
@@ -151,6 +171,17 @@
         "timestamp": {
           "oneOf": [{ "$ref": "#/$defs/Timestamp" }, { "$ref": "#/$defs/TimestampRange" }]
         }
+      }
+    },
+    "Clock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "raw"],
+      "properties": {
+        "type": { "const": "Clock" },
+        "raw": { "type": "string" },
+        "start": { "$ref": "#/$defs/Timestamp" },
+        "end": { "$ref": "#/$defs/Timestamp" }
       }
     },
     "PropertyDrawer": {
@@ -259,7 +290,7 @@
           "type": "array",
           "items": { "$ref": "#/$defs/KeywordLine" }
         },
-        "kind": { "type": "string", "enum": ["example", "quote", "verse", "center", "comment", "export"] },
+        "kind": { "type": "string" },
         "terminated": { "const": true },
         "begin": { "$ref": "#/$defs/SrcBlockLine" },
         "bodyRaw": { "type": "string" },
@@ -276,10 +307,87 @@
           "type": "array",
           "items": { "$ref": "#/$defs/KeywordLine" }
         },
-        "kind": { "type": "string", "enum": ["example", "quote", "verse", "center", "comment", "export"] },
+        "kind": { "type": "string" },
         "terminated": { "const": false },
         "begin": { "$ref": "#/$defs/SrcBlockLine" },
         "bodyRaw": { "type": "string" }
+      }
+    },
+    "DynamicBlock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "nameRaw", "parametersRaw", "indent", "beginRaw", "bodyRaw", "terminated"],
+      "properties": {
+        "type": { "const": "DynamicBlock" },
+        "affiliatedKeywords": { "type": "array", "items": { "$ref": "#/$defs/KeywordLine" } },
+        "nameRaw": { "type": "string" },
+        "parametersRaw": { "type": "string" },
+        "indent": { "type": "string" },
+        "beginRaw": { "type": "string" },
+        "bodyRaw": { "type": "string" },
+        "terminated": { "type": "boolean" },
+        "endRaw": { "type": "string" }
+      }
+    },
+    "FixedWidthLine": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["raw", "indent", "valueRaw"],
+      "properties": {
+        "raw": { "type": "string" },
+        "indent": { "type": "string" },
+        "valueRaw": { "type": "string" }
+      }
+    },
+    "FixedWidth": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "lines"],
+      "properties": {
+        "type": { "const": "FixedWidth" },
+        "lines": { "type": "array", "items": { "$ref": "#/$defs/FixedWidthLine" } }
+      }
+    },
+    "HorizontalRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "raw", "indent"],
+      "properties": {
+        "type": { "const": "HorizontalRule" },
+        "raw": { "type": "string" },
+        "indent": { "type": "string" }
+      }
+    },
+    "LatexEnvironment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "nameRaw", "beginRaw", "bodyRaw", "terminated"],
+      "properties": {
+        "type": { "const": "LatexEnvironment" },
+        "nameRaw": { "type": "string" },
+        "beginRaw": { "type": "string" },
+        "bodyRaw": { "type": "string" },
+        "terminated": { "type": "boolean" },
+        "endRaw": { "type": "string" }
+      }
+    },
+    "DiarySexp": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "raw"],
+      "properties": {
+        "type": { "const": "DiarySexp" },
+        "raw": { "type": "string" }
+      }
+    },
+    "FootnoteDefinition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "labelRaw", "children"],
+      "properties": {
+        "type": { "const": "FootnoteDefinition" },
+        "labelRaw": { "type": "string" },
+        "children": { "type": "array", "items": { "$ref": "#/$defs/Inline" } }
       }
     },
     "Table": {
@@ -311,6 +419,10 @@
         "cells": {
           "type": "array",
           "items": { "type": "string" }
+        },
+        "contents": {
+          "type": "array",
+          "items": { "type": "array", "items": { "$ref": "#/$defs/Inline" } }
         }
       }
     },
@@ -384,7 +496,7 @@
       "required": ["type", "format", "raw", "targetRaw"],
       "properties": {
         "type": { "const": "Link" },
-        "format": { "type": "string", "enum": ["bracket", "plain"] },
+        "format": { "type": "string", "enum": ["bracket", "plain", "angle"] },
         "raw": { "type": "string" },
         "targetRaw": { "type": "string" },
         "descriptionRaw": { "type": "string" }
@@ -396,8 +508,126 @@
         { "$ref": "#/$defs/Timestamp" },
         { "$ref": "#/$defs/TimestampRange" },
         { "$ref": "#/$defs/Emphasis" },
-        { "$ref": "#/$defs/Link" }
+        { "$ref": "#/$defs/Link" },
+        { "$ref": "#/$defs/ProgressCookie" },
+        { "$ref": "#/$defs/Entity" },
+        { "$ref": "#/$defs/LatexFragment" },
+        { "$ref": "#/$defs/ExportSnippet" },
+        { "$ref": "#/$defs/FootnoteReference" },
+        { "$ref": "#/$defs/Citation" },
+        { "$ref": "#/$defs/Target" },
+        { "$ref": "#/$defs/Script" },
+        { "$ref": "#/$defs/LineBreak" }
       ]
+    },
+    "ProgressCookie": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "raw", "format"],
+      "properties": {
+        "type": { "const": "ProgressCookie" },
+        "raw": { "type": "string" },
+        "format": { "type": "string", "enum": ["fraction", "percent"] },
+        "done": { "type": "integer", "minimum": 0 },
+        "total": { "type": "integer", "minimum": 0 },
+        "percent": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "Entity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "raw", "nameRaw"],
+      "properties": {
+        "type": { "const": "Entity" },
+        "raw": { "type": "string" },
+        "nameRaw": { "type": "string" }
+      }
+    },
+    "LatexFragment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "raw", "display"],
+      "properties": {
+        "type": { "const": "LatexFragment" },
+        "raw": { "type": "string" },
+        "display": { "type": "boolean" }
+      }
+    },
+    "ExportSnippet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "raw", "backendRaw", "valueRaw"],
+      "properties": {
+        "type": { "const": "ExportSnippet" },
+        "raw": { "type": "string" },
+        "backendRaw": { "type": "string" },
+        "valueRaw": { "type": "string" }
+      }
+    },
+    "FootnoteReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "raw"],
+      "properties": {
+        "type": { "const": "FootnoteReference" },
+        "raw": { "type": "string" },
+        "labelRaw": { "type": "string" },
+        "definitionRaw": { "type": "string" }
+      }
+    },
+    "CitationReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["keyRaw"],
+      "properties": {
+        "keyRaw": { "type": "string" },
+        "prefixRaw": { "type": "string" },
+        "suffixRaw": { "type": "string" }
+      }
+    },
+    "Citation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "raw", "references"],
+      "properties": {
+        "type": { "const": "Citation" },
+        "raw": { "type": "string" },
+        "styleRaw": { "type": "string" },
+        "prefixRaw": { "type": "string" },
+        "suffixRaw": { "type": "string" },
+        "references": { "type": "array", "items": { "$ref": "#/$defs/CitationReference" } }
+      }
+    },
+    "Target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "raw", "valueRaw", "radio"],
+      "properties": {
+        "type": { "const": "Target" },
+        "raw": { "type": "string" },
+        "valueRaw": { "type": "string" },
+        "radio": { "type": "boolean" }
+      }
+    },
+    "Script": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "raw", "kind", "valueRaw"],
+      "properties": {
+        "type": { "const": "Script" },
+        "raw": { "type": "string" },
+        "kind": { "type": "string", "enum": ["subscript", "superscript"] },
+        "valueRaw": { "type": "string" }
+      }
+    },
+    "LineBreak": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "raw"],
+      "properties": {
+        "type": { "const": "LineBreak" },
+        "raw": { "type": "string" }
+      }
     },
     "Emphasis": {
       "type": "object",

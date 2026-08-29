@@ -1,0 +1,280 @@
+{
+  "type": "Document",
+  "version": "0",
+  "children": [
+    {
+      "type": "KeywordLine",
+      "raw": "#+TODO: WAITING(w) | SHIPPED(s)",
+      "indent": "",
+      "keyRaw": "TODO",
+      "valueRaw": " WAITING(w) | SHIPPED(s)"
+    },
+    {
+      "type": "Headline",
+      "level": 1,
+      "todo": "WAITING",
+      "priority": "A",
+      "commented": true,
+      "title": [
+        {
+          "type": "Text",
+          "value": "Rich syntax"
+        }
+      ],
+      "children": [
+        {
+          "type": "Paragraph",
+          "children": [
+            {
+              "type": "Text",
+              "value": "A citation "
+            },
+            {
+              "type": "Citation",
+              "raw": "[cite/t:@doe2024; see @roe2025 p. 4]",
+              "styleRaw": "t",
+              "references": [
+                {
+                  "keyRaw": "doe2024"
+                },
+                {
+                  "keyRaw": "roe2025",
+                  "prefixRaw": "see",
+                  "suffixRaw": "p. 4"
+                }
+              ]
+            },
+            {
+              "type": "Text",
+              "value": ", footnote "
+            },
+            {
+              "type": "FootnoteReference",
+              "raw": "[fn:note]",
+              "labelRaw": "note"
+            },
+            {
+              "type": "Text",
+              "value": ", entity "
+            },
+            {
+              "type": "Entity",
+              "raw": "\\alpha",
+              "nameRaw": "alpha"
+            },
+            {
+              "type": "Text",
+              "value": ", math "
+            },
+            {
+              "type": "LatexFragment",
+              "raw": "$x_2$",
+              "display": false
+            },
+            {
+              "type": "Text",
+              "value": ", export "
+            },
+            {
+              "type": "ExportSnippet",
+              "raw": "@@html:<mark>yes</mark>@@",
+              "backendRaw": "html",
+              "valueRaw": "<mark>yes</mark>"
+            },
+            {
+              "type": "Text",
+              "value": ", target "
+            },
+            {
+              "type": "Target",
+              "raw": "<<spot>>",
+              "valueRaw": "spot",
+              "radio": false
+            },
+            {
+              "type": "Text",
+              "value": ", angle "
+            },
+            {
+              "type": "Link",
+              "format": "angle",
+              "raw": "<mailto:hello@example.com>",
+              "targetRaw": "mailto:hello@example.com"
+            },
+            {
+              "type": "Text",
+              "value": ", and a hard break"
+            },
+            {
+              "type": "LineBreak",
+              "raw": "\\\\"
+            },
+            {
+              "type": "Text",
+              "value": "\non the next line."
+            }
+          ]
+        },
+        {
+          "type": "FootnoteDefinition",
+          "labelRaw": "note",
+          "children": [
+            {
+              "type": "Text",
+              "value": "Supporting note."
+            }
+          ]
+        },
+        {
+          "type": "List",
+          "ordered": false,
+          "items": [
+            {
+              "type": "ListItem",
+              "counter": 3,
+              "checkbox": "indeterminate",
+              "descriptionTag": [
+                {
+                  "type": "Text",
+                  "value": "term"
+                }
+              ],
+              "children": [
+                {
+                  "type": "Paragraph",
+                  "children": [
+                    {
+                      "type": "Text",
+                      "value": "definition"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "HorizontalRule",
+          "raw": "-----",
+          "indent": ""
+        },
+        {
+          "type": "FixedWidth",
+          "lines": [
+            {
+              "raw": ": fixed",
+              "indent": "",
+              "valueRaw": "fixed"
+            },
+            {
+              "raw": ": width",
+              "indent": "",
+              "valueRaw": "width"
+            }
+          ]
+        },
+        {
+          "type": "Block",
+          "kind": "note",
+          "terminated": true,
+          "begin": {
+            "indent": "",
+            "keywordRaw": "begin_note",
+            "afterKeywordRaw": " warning"
+          },
+          "bodyRaw": "Arbitrary block.",
+          "end": {
+            "indent": "",
+            "keywordRaw": "end_note",
+            "afterKeywordRaw": ""
+          }
+        },
+        {
+          "type": "DynamicBlock",
+          "nameRaw": "clocktable",
+          "parametersRaw": " :scope file",
+          "indent": "",
+          "beginRaw": "#+begin: clocktable :scope file",
+          "bodyRaw": "Dynamic body.",
+          "terminated": true,
+          "endRaw": "#+end:"
+        },
+        {
+          "type": "LatexEnvironment",
+          "nameRaw": "equation",
+          "beginRaw": "\\begin{equation}",
+          "bodyRaw": "x = y",
+          "terminated": true,
+          "endRaw": "\\end{equation}"
+        },
+        {
+          "type": "DiarySexp",
+          "raw": "%%(diary-anniversary 1 1 2000)"
+        },
+        {
+          "type": "Table",
+          "rows": [
+            {
+              "type": "TableRow",
+              "indent": "",
+              "cells": [
+                "rich",
+                "[fn:note]"
+              ],
+              "contents": [
+                [
+                  {
+                    "type": "Text",
+                    "value": "rich"
+                  }
+                ],
+                [
+                  {
+                    "type": "FootnoteReference",
+                    "raw": "[fn:note]",
+                    "labelRaw": "note"
+                  }
+                ]
+              ]
+            },
+            {
+              "type": "TableHline",
+              "indent": "",
+              "raw": "|------+-----------|"
+            },
+            {
+              "type": "TableRow",
+              "indent": "",
+              "cells": [
+                "x_2",
+                "<<cell>>"
+              ],
+              "contents": [
+                [
+                  {
+                    "type": "Text",
+                    "value": "x"
+                  },
+                  {
+                    "type": "Script",
+                    "raw": "_2",
+                    "kind": "subscript",
+                    "valueRaw": "2"
+                  }
+                ],
+                [
+                  {
+                    "type": "Target",
+                    "raw": "<<cell>>",
+                    "valueRaw": "cell",
+                    "radio": false
+                  }
+                ]
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

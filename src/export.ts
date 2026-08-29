@@ -373,6 +373,16 @@ ul, ol { margin: 0.55rem 0 0.9rem; padding-left: 1.55rem; }
 li { min-width: 0; margin: 0.24rem 0; padding-left: 0.12rem; overflow-wrap: anywhere; }
 li > p { display: inline; }
 input[type="checkbox"] { width: 0.95rem; height: 0.95rem; margin: 0 0.42rem 0 -0.05rem; accent-color: var(--org2-accent); vertical-align: -0.11rem; }
+.org2-checkbox-mixed { display: inline-grid; width: 0.95rem; height: 0.95rem; margin: 0 0.42rem 0 -0.05rem; place-items: center; border: 1px solid var(--org2-muted); border-radius: 3px; color: var(--org2-muted); font-size: 0.8rem; line-height: 1; vertical-align: -0.11rem; }
+.org2-priority { color: var(--org2-danger); font-family: var(--org2-font-mono); font-size: 0.72em; font-weight: 750; }
+.org2-comment-keyword { color: var(--org2-muted); font-family: var(--org2-font-mono); font-size: 0.72em; font-weight: 700; }
+.org2-headline.commented { opacity: 0.7; }
+.org2-progress-cookie, .org2-latex-fragment, .org2-citation, .org2-export-snippet { font-family: var(--org2-font-mono); }
+.org2-latex-fragment { color: var(--org2-accent); }
+.org2-footnote-definition { margin: 0.7rem 0; padding-top: 0.45rem; border-top: 1px solid var(--org2-rule); color: var(--org2-muted); font-size: 0.86rem; }
+.org2-description-list { display: grid; grid-template-columns: max-content 1fr; gap: 0.32rem 0.8rem; }
+.org2-description-list dt { font-weight: 700; }
+.org2-description-list dd { margin: 0; }
 .org2-image-figure {
   width: fit-content;
   max-width: 100%;
@@ -1515,8 +1525,18 @@ function inlineToText(node: InlineNode): string {
   if (node.type === "TimestampRange") return `${node.start.raw}${node.separatorRaw}${node.end.raw}`;
   if (node.type === "Emphasis") return node.content;
   if (node.type === "Link") return node.descriptionRaw || node.targetRaw;
-  return "";
+  if (node.type === "Target") return node.valueRaw;
+  if (node.type === "Script") return node.valueRaw;
+  if (node.type === "ExportSnippet") return node.valueRaw;
+  if (node.type === "FootnoteReference") return node.definitionRaw || node.labelRaw || "";
+  return node.raw;
 }
+
+const HTML_ENTITY_VALUES: Record<string, string> = {
+  alpha: "α", beta: "β", gamma: "γ", delta: "δ", epsilon: "ε", zeta: "ζ", eta: "η", theta: "θ", iota: "ι", kappa: "κ", lambda: "λ", mu: "μ", nu: "ν", xi: "ξ", omicron: "ο", pi: "π", rho: "ρ", sigma: "σ", tau: "τ", upsilon: "υ", phi: "φ", chi: "χ", psi: "ψ", omega: "ω",
+  Alpha: "Α", Beta: "Β", Gamma: "Γ", Delta: "Δ", Theta: "Θ", Lambda: "Λ", Xi: "Ξ", Pi: "Π", Sigma: "Σ", Upsilon: "Υ", Phi: "Φ", Psi: "Ψ", Omega: "Ω",
+  nbsp: "\u00a0", copy: "©", reg: "®", trade: "™", ndash: "–", mdash: "—", hellip: "…", laquo: "«", raquo: "»", lsquo: "‘", rsquo: "’", ldquo: "“", rdquo: "”", bull: "•", middot: "·", times: "×", divide: "÷", plusmn: "±", le: "≤", ge: "≥", ne: "≠", infin: "∞", rarr: "→", larr: "←", uarr: "↑", darr: "↓", harr: "↔", check: "✓", deg: "°",
+};
 
 function renderTimestamp(node: TimestampNode): string {
   const klass = node.active ? "org2-timestamp active" : "org2-timestamp inactive";
@@ -1654,6 +1674,42 @@ function renderInline(node: InlineNode, context: RenderContext): string {
   if (node.type === "TimestampRange") return renderTimestampRange(node);
   if (node.type === "Emphasis") return renderEmphasis(node);
   if (node.type === "Link") return renderLink(node, context);
+  if (node.type === "ProgressCookie") return `<span class="org2-progress-cookie">${escapeHtml(node.raw)}</span>`;
+  if (node.type === "Entity") return `<span class="org2-entity" title="${escapeAttr(node.raw)}">${escapeHtml(HTML_ENTITY_VALUES[node.nameRaw] || node.raw)}</span>`;
+  if (node.type === "LatexFragment") {
+    const displayClass = node.display ? " display" : "";
+    return `<span class="org2-latex-fragment${displayClass}">${escapeHtml(node.raw)}</span>`;
+  }
+  if (node.type === "ExportSnippet") {
+    if (node.backendRaw.toLowerCase() !== "html") return "";
+    return context.profile === "app"
+      ? `<span class="org2-export-snippet">${escapeHtml(node.valueRaw)}</span>`
+      : node.valueRaw;
+  }
+  if (node.type === "FootnoteReference") {
+    const label = node.labelRaw || "*";
+    if (node.definitionRaw !== undefined) {
+      return `<sup class="org2-footnote-reference inline" title="${escapeAttr(node.definitionRaw)}">${escapeHtml(label)}</sup>`;
+    }
+    const id = normalizeAnchorId(`fn-${label}`) || "fn-inline";
+    return `<sup class="org2-footnote-reference"><a href="#${escapeAttr(id)}">${escapeHtml(label)}</a></sup>`;
+  }
+  if (node.type === "Citation") {
+    const references = node.references.map((reference) =>
+      [reference.prefixRaw, `@${reference.keyRaw}`, reference.suffixRaw].filter(Boolean).join(" "),
+    ).join("; ");
+    const content = [node.prefixRaw, references, node.suffixRaw].filter(Boolean).join(" ");
+    return `<cite class="org2-citation" data-org2-citation-style="${escapeAttr(node.styleRaw || "")}">${escapeHtml(content)}</cite>`;
+  }
+  if (node.type === "Target") {
+    const id = normalizeAnchorId(node.valueRaw) || "target";
+    return `<span class="org2-target${node.radio ? " radio" : ""}" id="${escapeAttr(id)}"></span>`;
+  }
+  if (node.type === "Script") {
+    const tag = node.kind === "subscript" ? "sub" : "sup";
+    return `<${tag}>${escapeHtml(node.valueRaw)}</${tag}>`;
+  }
+  if (node.type === "LineBreak") return "<br />";
   return "";
 }
 
@@ -1746,7 +1802,9 @@ function renderBlock(node: BlockNode, context: RenderContext): string {
     if (exportTarget === "html" && context.profile !== "app") return bodyRaw;
     return `<pre class="org2-export">${body}</pre>`;
   }
-  return `<pre class="org2-example">${body}</pre>`;
+  if (node.kind === "example") return `<pre class="org2-example">${body}</pre>`;
+  const kind = node.kind.toLowerCase().replace(/[^a-z0-9_-]+/g, "-");
+  return `<div class="org2-special-block org2-special-block-${escapeAttr(kind)}"${renderSourceAttributes(node, context)}><pre>${body}</pre></div>`;
 }
 
 function dedentBlockBody(bodyRaw: string, indent: string): string {
@@ -1764,8 +1822,8 @@ function renderTableRow(
 ): string {
   const cellTag = asHeader ? "th" : "td";
   const cells = row.cells
-    .map((cell) => {
-      const parsed = parseInlinesFromText(String(cell || "").trim());
+    .map((cell, cellIndex) => {
+      const parsed = row.contents?.[cellIndex] ?? parseInlinesFromText(String(cell || "").trim());
       if (parsed.length === 1 && parsed[0]?.type === "Link" && parsed[0].descriptionRaw !== undefined) {
         const binding = parseOrgColorBindingTarget(parsed[0].targetRaw);
         if (binding) {
@@ -1811,19 +1869,41 @@ function renderListItem(node: ListItemNode, context: RenderContext): string {
   const body = renderNodes(node.children, context);
   const sourceAttributes = renderSourceAttributes(node, context);
   const ordinalAttribute = node.ordinal !== undefined ? ` value="${node.ordinal}"` : "";
+  const counterAttribute = node.counter !== undefined ? ` data-org2-counter="${node.counter}"` : "";
   const checkbox =
     node.checkbox === "checked"
       ? '<input type="checkbox" checked disabled /> '
       : node.checkbox === "unchecked"
         ? '<input type="checkbox" disabled /> '
+        : node.checkbox === "indeterminate"
+          ? '<span class="org2-checkbox-mixed" role="checkbox" aria-checked="mixed">−</span> '
         : "";
+  const description = node.descriptionTag
+    ? `<strong class="org2-description-tag">${renderInlineChildren(node.descriptionTag, context)}</strong> — `
+    : "";
 
-  if (!body.trim()) return `<li${ordinalAttribute}${sourceAttributes}>${checkbox}</li>`;
-  if (body.includes("\n")) return `<li${ordinalAttribute}${sourceAttributes}>${checkbox}\n${body}\n</li>`;
-  return `<li${ordinalAttribute}${sourceAttributes}>${checkbox}${body}</li>`;
+  if (!body.trim()) return `<li${ordinalAttribute}${counterAttribute}${sourceAttributes}>${checkbox}${description}</li>`;
+  if (body.includes("\n")) return `<li${ordinalAttribute}${counterAttribute}${sourceAttributes}>${checkbox}${description}\n${body}\n</li>`;
+  return `<li${ordinalAttribute}${counterAttribute}${sourceAttributes}>${checkbox}${description}${body}</li>`;
 }
 
 function renderList(node: ListNode, context: RenderContext): string {
+  if (node.items.length > 0 && node.items.every((item) => item.descriptionTag)) {
+    const entries = node.items.map((item) => {
+      const term = renderInlineChildren(item.descriptionTag || [], context);
+      const body = renderNodes(item.children, context);
+      const checkbox = item.checkbox === "checked"
+        ? '<input type="checkbox" checked disabled /> '
+        : item.checkbox === "unchecked"
+          ? '<input type="checkbox" disabled /> '
+          : item.checkbox === "indeterminate"
+            ? '<span class="org2-checkbox-mixed" role="checkbox" aria-checked="mixed">−</span> '
+            : "";
+      const counterAttribute = item.counter !== undefined ? ` data-org2-counter="${item.counter}"` : "";
+      return `<dt${counterAttribute}>${term}</dt><dd>${checkbox}${body}</dd>`;
+    }).join("\n");
+    return `<dl class="org2-description-list"${renderSourceAttributes(node, context)}>\n${entries}\n</dl>`;
+  }
   const tag = node.ordered ? "ol" : "ul";
   const items = node.items.map((item) => renderListItem(item, context)).join("\n");
   return `<${tag}${renderSourceAttributes(node, context)}>\n${items}\n</${tag}>`;
@@ -1838,6 +1918,8 @@ function renderHeadline(node: HeadlineNode, context: RenderContext): string {
   const todoClass = String(node.todo || "").trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-");
   const appTodoClass = context.profile === "app" && todoClass ? ` todo-${escapeAttr(todoClass)}` : "";
   const todo = node.todo ? `<span class="org2-todo${appTodoClass}">${escapeHtml(node.todo)}</span> ` : "";
+  const priority = node.priority ? `<span class="org2-priority">[#${escapeHtml(node.priority)}]</span> ` : "";
+  const comment = node.commented ? '<span class="org2-comment-keyword">COMMENT</span> ' : "";
   const tags =
     node.tags && node.tags.length > 0
       ? ` <span class="org2-tags">${node.tags.map((tag) => `<span class="org2-tag">${escapeHtml(tag)}</span>`).join(" ")}</span>`
@@ -1850,14 +1932,14 @@ function renderHeadline(node: HeadlineNode, context: RenderContext): string {
     const body = childrenHtml.trim()
       ? `\n<div class="org2-headline-body">\n${childrenHtml}\n</div>`
       : "";
-    return `<details class="org2-headline level-${node.level}" open${renderSourceAttributes(node, context)}>\n<summary class="org2-headline-summary"><${headingTag}${headingIdAttr}>${headingNumber}${todo}${title}${tags}</${headingTag}></summary>${body}\n</details>`;
+    return `<details class="org2-headline level-${node.level}${node.commented ? " commented" : ""}" open${renderSourceAttributes(node, context)}>\n<summary class="org2-headline-summary"><${headingTag}${headingIdAttr}>${headingNumber}${todo}${priority}${comment}${title}${tags}</${headingTag}></summary>${body}\n</details>`;
   }
 
   if (!childrenHtml.trim()) {
-    return `<section class="org2-headline level-${node.level}"${renderSourceAttributes(node, context)}>\n<${headingTag}${headingIdAttr}>${headingNumber}${todo}${title}${tags}</${headingTag}>\n</section>`;
+    return `<section class="org2-headline level-${node.level}${node.commented ? " commented" : ""}"${renderSourceAttributes(node, context)}>\n<${headingTag}${headingIdAttr}>${headingNumber}${todo}${priority}${comment}${title}${tags}</${headingTag}>\n</section>`;
   }
 
-  return `<section class="org2-headline level-${node.level}"${renderSourceAttributes(node, context)}>\n<${headingTag}${headingIdAttr}>${headingNumber}${todo}${title}${tags}</${headingTag}>\n${childrenHtml}\n</section>`;
+  return `<section class="org2-headline level-${node.level}${node.commented ? " commented" : ""}"${renderSourceAttributes(node, context)}>\n<${headingTag}${headingIdAttr}>${headingNumber}${todo}${priority}${comment}${title}${tags}</${headingTag}>\n${childrenHtml}\n</section>`;
 }
 
 function renderNode(node: Node, context: RenderContext): string {
@@ -1869,6 +1951,24 @@ function renderNode(node: Node, context: RenderContext): string {
   if (node.type === "PropertyDrawer") return renderPropertyDrawer(node, context);
   if (node.type === "SrcBlock") return renderSrcBlock(node, context);
   if (node.type === "Block") return renderBlock(node, context);
+  if (node.type === "DynamicBlock") {
+    const body = escapeHtml(node.bodyRaw.replace(/\n$/, ""));
+    return `<section class="org2-dynamic-block" data-org2-dynamic-block="${escapeAttr(node.nameRaw)}"${renderSourceAttributes(node, context)}><header>${escapeHtml(node.nameRaw)}</header><pre>${body}</pre></section>`;
+  }
+  if (node.type === "FixedWidth") {
+    const body = node.lines.map((line) => line.valueRaw).join("\n");
+    return `<pre class="org2-fixed-width"${renderSourceAttributes(node, context)}>${escapeHtml(body)}</pre>`;
+  }
+  if (node.type === "HorizontalRule") return `<hr${renderSourceAttributes(node, context)} />`;
+  if (node.type === "LatexEnvironment") {
+    const raw = [node.beginRaw, node.bodyRaw, node.endRaw].filter(Boolean).join("\n");
+    return `<pre class="org2-latex-environment" data-org2-latex-environment="${escapeAttr(node.nameRaw)}"${renderSourceAttributes(node, context)}>${escapeHtml(raw)}</pre>`;
+  }
+  if (node.type === "DiarySexp") return `<code class="org2-diary-sexp"${renderSourceAttributes(node, context)}>${escapeHtml(node.raw)}</code>`;
+  if (node.type === "FootnoteDefinition") {
+    const id = normalizeAnchorId(`fn-${node.labelRaw}`) || "fn";
+    return `<aside class="org2-footnote-definition" id="${escapeAttr(id)}"${renderSourceAttributes(node, context)}><sup>${escapeHtml(node.labelRaw)}</sup> ${renderInlineChildren(node.children, context)}</aside>`;
+  }
   if (node.type === "Table") return renderTable(node, context);
   if (node.type === "Drawer") {
     const name = escapeHtml(node.nameRaw);

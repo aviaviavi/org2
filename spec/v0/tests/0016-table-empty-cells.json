@@ -12,6 +12,26 @@
             "",
             "",
             ""
+          ],
+          "contents": [
+            [
+              {
+                "type": "Text",
+                "value": ""
+              }
+            ],
+            [
+              {
+                "type": "Text",
+                "value": ""
+              }
+            ],
+            [
+              {
+                "type": "Text",
+                "value": ""
+              }
+            ]
           ]
         },
         {
@@ -21,6 +41,26 @@
             "a",
             "",
             "b"
+          ],
+          "contents": [
+            [
+              {
+                "type": "Text",
+                "value": "a"
+              }
+            ],
+            [
+              {
+                "type": "Text",
+                "value": ""
+              }
+            ],
+            [
+              {
+                "type": "Text",
+                "value": "b"
+              }
+            ]
           ]
         }
       ]

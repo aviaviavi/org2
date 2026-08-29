@@ -50,8 +50,18 @@ function collectNodeTypes(node, counts = {}) {
     }
   }
 
-  if (Array.isArray(node.cells)) {
-    // Table cells are strings, not nodes
+  if (Array.isArray(node.descriptionTag)) {
+    for (const elem of node.descriptionTag) {
+      collectNodeTypes(elem, counts);
+    }
+  }
+
+  if (Array.isArray(node.contents)) {
+    for (const cell of node.contents) {
+      for (const elem of cell) {
+        collectNodeTypes(elem, counts);
+      }
+    }
   }
 
   if (node.start) collectNodeTypes(node.start, counts);
@@ -99,6 +109,8 @@ function analyzeFixtures() {
     keywords: 0,
     directives: 0,
     comments: 0,
+    richInlineObjects: 0,
+    specialElements: 0,
   };
 
   const fixtureList = [];
@@ -128,6 +140,14 @@ function analyzeFixtures() {
       if (counts.KeywordLine) constructCounts.keywords++;
       if (counts.DirectiveLine) constructCounts.directives++;
       if (counts.CommentLine) constructCounts.comments++;
+      if (
+        counts.Entity || counts.LatexFragment || counts.ExportSnippet || counts.FootnoteReference
+        || counts.Citation || counts.Target || counts.Script || counts.LineBreak
+      ) constructCounts.richInlineObjects++;
+      if (
+        counts.DynamicBlock || counts.FixedWidth || counts.HorizontalRule
+        || counts.LatexEnvironment || counts.DiarySexp || counts.FootnoteDefinition
+      ) constructCounts.specialElements++;
 
       fixtureList.push({
         name,

@@ -1,0 +1,33 @@
+#+TODO: WAITING(w) | SHIPPED(s)
+
+* WAITING [#A] COMMENT Rich syntax
+
+A citation [cite/t:@doe2024; see @roe2025 p. 4], footnote [fn:note], entity \alpha, math $x_2$, export @@html:<mark>yes</mark>@@, target <<spot>>, angle <mailto:hello@example.com>, and a hard break\\
+on the next line.
+
+[fn:note] Supporting note.
+
+- [@3] [-] term :: definition
+
+-----
+
+: fixed
+: width
+
+#+begin_note warning
+Arbitrary block.
+#+end_note
+
+#+begin: clocktable :scope file
+Dynamic body.
+#+end:
+
+\begin{equation}
+x = y
+\end{equation}
+
+%%(diary-anniversary 1 1 2000)
+
+| rich | [fn:note] |
+|------+-----------|
+| x_2  | <<cell>>  |

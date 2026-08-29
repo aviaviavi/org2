@@ -16,6 +16,9 @@
       "include": "#blocks"
     },
     {
+      "include": "#advancedElements"
+    },
+    {
       "include": "#headlines"
     },
     {
@@ -37,6 +40,9 @@
       "include": "#timestamps"
     },
     {
+      "include": "#orgObjects"
+    },
+    {
       "include": "#emphasis"
     },
     {
@@ -44,6 +50,72 @@
     }
   ],
   "repository": {
+    "advancedElements": {
+      "patterns": [
+        {
+          "name": "meta.block.dynamic.org2",
+          "begin": "^(\\s*)(#\\+begin:)(\\s+)([^\\s]+).*$",
+          "beginCaptures": {
+            "2": { "name": "keyword.control.block.begin.org2" },
+            "4": { "name": "entity.name.function.dynamic-block.org2" }
+          },
+          "end": "^(\\s*)(#\\+end:)(\\s*)$",
+          "endCaptures": { "2": { "name": "keyword.control.block.end.org2" } }
+        },
+        {
+          "name": "meta.environment.latex.org2",
+          "begin": "^(\\s*)(\\\\begin\\{)([^}]+)(\\}).*$",
+          "beginCaptures": {
+            "2": { "name": "punctuation.definition.environment.begin.latex" },
+            "3": { "name": "entity.name.type.environment.latex" },
+            "4": { "name": "punctuation.definition.environment.begin.latex" }
+          },
+          "end": "^(\\s*)(\\\\end\\{)([^}]+)(\\})\\s*$",
+          "endCaptures": {
+            "2": { "name": "punctuation.definition.environment.end.latex" },
+            "3": { "name": "entity.name.type.environment.latex" },
+            "4": { "name": "punctuation.definition.environment.end.latex" }
+          }
+        },
+        {
+          "name": "meta.footnote.definition.org2",
+          "match": "^(\\[fn:)([^]\\s:]+)(\\])(?:\\s+)(.*)$",
+          "captures": {
+            "1": { "name": "punctuation.definition.footnote.org2" },
+            "2": { "name": "constant.other.reference.footnote.org2" },
+            "3": { "name": "punctuation.definition.footnote.org2" },
+            "4": { "name": "string.unquoted.footnote.org2" }
+          }
+        },
+        {
+          "name": "meta.separator.org2",
+          "match": "^\\s*-{5,}\\s*$"
+        },
+        {
+          "name": "string.unquoted.fixed-width.org2",
+          "match": "^\\s*:\\s.*$"
+        },
+        {
+          "name": "constant.language.diary-sexp.org2",
+          "match": "^\\s*%%\\(.*\\)\\s*$"
+        }
+      ]
+    },
+    "orgObjects": {
+      "patterns": [
+        { "name": "constant.other.citation.org2", "match": "\\[cite(?:/[^:\\]\\s]+)?:[^\\]\\n]+\\]" },
+        { "name": "constant.other.reference.footnote.org2", "match": "\\[fn:[^\\]\\n]*\\]" },
+        { "name": "entity.name.tag.target.org2", "match": "<<<[^<>\\n]+>>>|<<[^<>\\n]+>>" },
+        { "name": "meta.embedded.inline.export.org2", "match": "@@[A-Za-z0-9_-]+:.*?@@" },
+        { "name": "string.other.math.latex.org2", "match": "\\$\\$[^\\n]*?\\$\\$|\\$[^$\\n]+\\$|\\\\\\([^\\n]*?\\\\\\)|\\\\\\[[^\\n]*?\\\\\\]" },
+        { "name": "constant.character.entity.org2", "match": "\\\\[A-Za-z]+(?:\\{\\})?" },
+        { "name": "markup.underline.link.org2", "match": "<[A-Za-z][A-Za-z0-9+.-]*:[^<>\\s]+>" },
+        { "name": "constant.numeric.script.org2", "match": "(?<=[A-Za-z0-9}\\]])(?:[_^]\\{[^}\\n]+\\}|[_^](?:[0-9+-]|[A-Za-z](?![A-Za-z0-9])))" },
+        { "name": "constant.numeric.list-counter.org2", "match": "\\[@\\d+\\]" },
+        { "name": "punctuation.separator.description-list.org2", "match": "\\s+::(?=\\s|$)" },
+        { "name": "constant.character.escape.line-break.org2", "match": "\\\\\\\\$" }
+      ]
+    },
     "comments": {
       "patterns": [
         {

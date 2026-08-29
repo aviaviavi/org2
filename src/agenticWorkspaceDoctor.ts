@@ -276,6 +276,14 @@ function inlineText(node: InlineNode): string {
     case "Emphasis": return `${node.marker}${node.content}${node.marker}`;
     case "Link": return node.descriptionRaw ?? node.targetRaw;
     case "ProgressCookie": return node.raw;
+    case "Entity":
+    case "LatexFragment":
+    case "ExportSnippet":
+    case "FootnoteReference":
+    case "Citation":
+    case "Target":
+    case "Script":
+    case "LineBreak": return node.raw;
   }
 }
 

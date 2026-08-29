@@ -1,13 +1,21 @@
-=== Headlines
+==================
+Headlines
+==================
 
 * Hello world
 
 ---
 
 (source_file
-  (headline stars: (stars) title: (title)))
+  (blank_line)
+  (headline
+    stars: (stars)
+    title: (title))
+  (blank_line))
 
-=== Multiple Headlines
+==================
+Multiple Headlines
+==================
 
 * One
 * Two
@@ -15,10 +23,19 @@
 ---
 
 (source_file
-  (headline stars: (stars) title: (title))
-  (headline stars: (stars) title: (title)))
+  (blank_line)
+  (headline
+    stars: (stars)
+    title: (title))
+  (blank_line)
+  (headline
+    stars: (stars)
+    title: (title))
+  (blank_line))
 
-=== Paragraph
+==================
+Paragraph
+==================
 
 This is a paragraph.
 Second line.
@@ -26,4 +43,59 @@ Second line.
 ---
 
 (source_file
-  (paragraph line: (text) line: (text)))
+  (blank_line)
+  (paragraph
+    line: (text))
+  (blank_line)
+  (paragraph
+    line: (text))
+  (blank_line))
+
+==================
+Extended structural lines
+==================
+
+#+begin_note warning
+#+end_note
+#+begin: clocktable
+#+end:
+\begin{equation}
+\end{equation}
+[fn:n] Note.
+: fixed
+%%(diary-anniversary 1 1 2000)
+| A |
+- [@3] [-] term :: value
+#+TITLE: Example
+# Comment
+
+---
+
+(source_file
+  (blank_line)
+  (block_marker)
+  (blank_line)
+  (block_marker)
+  (blank_line)
+  (dynamic_block_marker)
+  (blank_line)
+  (dynamic_block_marker)
+  (blank_line)
+  (latex_environment_marker)
+  (blank_line)
+  (latex_environment_marker)
+  (blank_line)
+  (footnote_definition)
+  (blank_line)
+  (fixed_width)
+  (blank_line)
+  (diary_sexp)
+  (blank_line)
+  (table_row)
+  (blank_line)
+  (list_item)
+  (blank_line)
+  (keyword_line)
+  (blank_line)
+  (comment_line)
+  (blank_line))
