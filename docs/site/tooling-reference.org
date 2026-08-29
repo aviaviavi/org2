@@ -711,10 +711,34 @@ org2 export html --file README.org --out README.html --apply
 org2 export html --dir docs/site --recursive --out-dir site --apply
 org2 export beamer --file talks/demo.org2 --out publish/demo.tex --apply
 org2 export beamer --file talks/demo.org2 --out publish/demo.pdf --pdf --apply
+org2 publish document --file reports/brief.org2 --to web --out-dir publish/brief
+org2 publish document --file reports/brief.org2 --to web --out-dir publish/brief --apply
+org2 publish document --file reports/brief.org2 --to google-docs --folder-id DRIVE_FOLDER_ID
 org2 publish docs-site --config org2.json
 #+end_src
 
 Useful export options include TOC, heading numbering, stylesheet injection, and Org-file-link rewrite to HTML targets.
+
+=publish document= is the share boundary for an arbitrary document or the subtree selected by =--line=. It creates a separate disclosure-safe projection before rendering: property drawers, TODO state, tags, planning and clock data, comments, commented subtrees, dynamic blocks, table formulas, raw HTML, internal IDs, and unresolved local links are not sent to the destination. Referenced raster images are embedded into the output, subject to size limits. The preview reports included assets, removal counts, hashes, and warnings without writing anything.
+
+The =web= destination writes a self-contained =index.html= plus =manifest.json=. The bundle has a restrictive content-security policy, no-referrer behavior, and search indexing disabled unless =--allow-indexing= is explicit. It contains no route back into the corpus. A static bundle does not itself authenticate viewers: OpenOrg hosting, a self-hosted publisher, or another web host must enforce public, secret-link, or per-person access. Updating a non-empty output directory requires =--replace-existing=.
+
+The =google-docs= destination renders the same safe projection as a deterministic DOCX with embedded images, then asks Google Drive to convert it into a native Google Doc. Images never need a temporary public URL. It uses the narrow =https://www.googleapis.com/auth/drive.file= scope and reads its short-lived access token from =ORG2_GOOGLE_DRIVE_ACCESS_TOKEN= by default; tokens are never accepted as command-line arguments or stored in the publication. A newly created Doc inherits the destination folder's Google Drive permissions, and Org2 does not alter those permissions. Embedded PNG, JPEG, and GIF images are supported. The initial implementation uses Drive's multipart import and therefore rejects upload artifacts over 5 MB; convert unsupported image formats, reduce embedded images, or use the web bundle destination for larger documents.
+
+Publishing to Google is deliberately one-way. Save the returned document ID and Drive version in the calling app's private destination state. Replacing an existing Doc requires all three guards: =--document-id ID=, =--if-version VERSION=, and =--replace-existing=. Org2 fetches the current Drive record first and refuses the upload when the version changed, so a collaborator's edits are not silently overwritten. It also refuses full-content replacement when the target has comments, because replacement could detach their anchors even when comments did not advance the file version. The caller can then import remote changes or publish a new copy. Permissions, comments, suggestions, and Google revision history belong to Google; Org2 does not attempt bidirectional synchronization.
+
+#+begin_src sh
+# Create after inspecting the preview.
+ORG2_GOOGLE_DRIVE_ACCESS_TOKEN="$TOKEN" \
+  org2 publish document --file reports/brief.org2 --to google-docs \
+  --folder-id DRIVE_FOLDER_ID --apply --format json
+
+# Guarded full-document replacement.
+ORG2_GOOGLE_DRIVE_ACCESS_TOKEN="$TOKEN" \
+  org2 publish document --file reports/brief.org2 --to google-docs \
+  --document-id GOOGLE_DOCUMENT_ID --if-version LAST_SEEN_VERSION \
+  --replace-existing --apply --format json
+#+end_src
 
 =export beamer= previews by default. Without =--pdf= it produces reviewable =.tex=; with =--pdf= it runs =pdflatex= twice so references, outlines, and overlays settle before the PDF is written. Select another installed command or absolute executable path with =--latex-engine=. The compiler invokes the engine directly with non-interactive, halt-on-error flags and does not enable shell escape.
 

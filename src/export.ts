@@ -1642,6 +1642,10 @@ function resolveImageLinkSource(rawTarget: string, context: RenderContext): stri
   );
   if (!expandedTarget) return null;
 
+  if (/^data:image\/(?:avif|gif|jpeg|png|webp);base64,[a-z0-9+/=]+$/i.test(expandedTarget)) {
+    return expandedTarget;
+  }
+
   const targetWithoutSearch = expandedTarget.split("::", 1)[0] || "";
   const match = targetWithoutSearch.match(/^([^?#]*)([?#].*)?$/);
   const pathPart = match?.[1] || "";
@@ -1661,6 +1665,7 @@ function resolveImageLinkSource(rawTarget: string, context: RenderContext): stri
 }
 
 function imageAltText(source: string): string {
+  if (/^data:image\//i.test(source)) return "Image";
   const pathPart = source.split(/[?#]/, 1)[0] || "";
   const filename = path.basename(pathPart).replace(/\.[^.]+$/, "");
   try {

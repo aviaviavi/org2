@@ -8365,6 +8365,10 @@ async function main(): Promise<void> {
     const { runTableFormulaCommand } = await import("./tableFormulaCli.js");
     if (await runTableFormulaCommand(args)) return;
   }
+  if (args[0] === "publish" && args[1] === "document") {
+    const { runPublishDocumentCommand } = await import("./publishDocumentCli.js");
+    if (await runPublishDocumentCommand(args)) return;
+  }
 
   if (args[0] === "ingest") {
     await runIngestCommand(args.slice(1));
@@ -10271,6 +10275,8 @@ Export / publish:
   org2 export html --file FILE [--out FILE] [--apply]
   org2 export html --dir DIR [--recursive] [--out-dir DIR] [--index FILE] [--apply]
   org2 export beamer --file FILE [--out FILE] [--pdf] [--latex-engine COMMAND] [--apply]
+  org2 publish document --file FILE --to web --out-dir DIR [--line N] [--apply]
+  org2 publish document --file FILE --to google-docs [--folder-id ID] [--apply]
   org2 publish [PROJECT] [--config PATH] [--preview]
 
 Roam / IDs:
@@ -10503,10 +10509,14 @@ Flags:
 
 Usage:
   org2 publish [PROJECT] [--config PATH] [--preview]
+  org2 publish document --file FILE --to web --out-dir DIR [--line N] [--apply]
+  org2 publish document --file FILE --to google-docs [--folder-id ID] [--apply]
 
 Flags:
   --config PATH   Publish config file
-  --preview       Do not write outputs`;
+  --preview       Do not write project outputs
+
+Run 'org2 publish document --help' for single-document destinations and guarded Google Doc updates.`;
   } else if (command === "fmt") {
     text = `org2 fmt
 
