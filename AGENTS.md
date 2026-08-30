@@ -1,243 +1,233 @@
-# Org2 Agent Guide
+# OpenOrg / Org2 Agent Guide
 
-OpenClaw is the primary agent runtime for this repository today. These
-instructions are written so an OpenClaw coding session can work safely without
-assuming that the macOS app, a generated index, or model memory is the source of
-truth.
+This repository contains two closely related layers:
+
+- **OpenOrg** is the user-facing macOS and iOS workspace.
+- **Org2** is the open `.org2` format and the shared compiler/runtime, CLI,
+  schemas, publishing system, plugin runtime, and editor tooling beneath it.
+
+These instructions are runtime-neutral. OpenClaw, Codex, Claude Code, and other
+agents may work here, but no agent runtime, app cache, generated index, or model
+memory is the source of truth.
 
 ## Start here
 
-1. Read this file and inspect `git status` before changing anything. Preserve
-   unrelated work in a dirty tree.
-2. Decide whether the task concerns this repository or an Org2 corpus. This file
-   governs repository work. For corpus writes, also read
-   `docs/site/openclaw-knowledge-layer.org` and the nearest `org2.json`.
-3. In a fresh checkout, install the locked dependencies with `npm ci`. Reuse an
-   existing `node_modules/` when dependencies have not changed. Build before
-   using the checkout's CLI:
+1. Read this file, inspect `git status --short --branch`, and check the current
+   worktree before editing. Preserve unrelated work in a dirty checkout.
+2. Decide whether the request changes this repository or an Org2 corpus. This
+   file governs repository work. Corpus work also follows the nearest corpus
+   `AGENTS.md` and `org2.json`; ordinary `.org2` and `.org` files remain
+   canonical there.
+3. In a fresh checkout, install the locked dependencies with `npm ci`. Reuse
+   an existing `node_modules/` only when the lockfile has not changed.
+4. Build before using the checkout's CLI, then ask the implementation what it
+   supports:
 
    ```sh
    npm run build
    npm run org2 -- agent capabilities
-   ```
-
-   During development, prefer `npm run org2 -- ...` or `node dist/cli.js ...`
-   over a globally installed `org2`; the global binary may describe a different
-   version.
-4. Ask the implementation what it supports instead of relying on remembered
-   flags:
-
-   ```sh
    npm run org2 -- --help
    npm run org2 -- COMMAND --help
-   npm run org2 -- agent capabilities
    ```
+
+   Prefer `npm run org2 -- ...` or `node dist/cli.js ...` during development.
+   A globally installed `org2` may expose a different version.
+5. Choose the smallest affected surface and its focused tests before making a
+   broad change. Check documentation impact at the same time as code impact.
+
+## Source of truth and safety
+
+- Treat inspectable plain text as canonical. Derived indexes, compiled context,
+  reports, app state, generated pages, and runtime state must be disposable or
+  reconstructible.
+- Preserve source ranges, stable IDs, file/line citations, provenance, hashes,
+  and review state across compiler and agent workflows.
+- Most Org2 mutations preview by default and require `--apply`. Inspect the
+  preview or JSON envelope before applying it.
+- Keep generated or uncertain corpus work in reviewable zones such as `views/`
+  or `compiled/`; promotion into canonical `notes/` is an explicit action.
+  Keep immutable imports and provider payloads in `raw/`.
+- Never put credentials, tokens, cookies, private keys, model credentials, or
+  machine-local bindings in source, fixtures, corpora, runs, plugins, generated
+  artifacts, or documentation examples.
+- Multi-corpus reads require explicit mounts. A corpus visible in OpenOrg is not
+  implicit agent authority, and writes remain scoped to one active corpus.
+- Do not perform external side effects such as sending messages, creating
+  tickets, publishing, installing plugins, restarting services, or changing a
+  user's daily app unless the user explicitly authorizes that action.
+- Durable run and workflow writes are guarded and atomic. Carry
+  `--if-revision` when state crosses requests; never hand-edit machine-state
+  blocks in `.org2/runs/*.org2`.
+
+## Working in a concurrent repository
+
+- Existing modifications and untracked files belong to the user or another
+  worker unless you know otherwise. Never discard, stage, format, or commit them
+  as a side effect of your task.
+- If the primary checkout is dirty or behind `origin/main`, use a clean,
+  isolated worktree based on the current remote tip. Fetch and rebase again
+  immediately before pushing because this repository changes frequently.
+- Keep commits single-purpose. Do not mix generated output, release metadata, or
+  another worker's feature into a convenient commit.
+- Do not commit, push, tag, publish, or open a pull request unless the user
+  requested that external action. A request to push a scoped change authorizes
+  the normal commit and push needed for that change, not unrelated work.
+- Avoid destructive Git commands. Resolve exact targets first, and prefer a
+  recoverable or isolated workflow when a checkout contains work in progress.
 
 ## Product and architecture
 
-- Org2 is an early-alpha, local-first knowledge compiler and runtime for
-  Org-shaped plain text. Ordinary `.org2` and `.org` files are canonical.
 - The TypeScript compiler/runtime under `src/` owns parsing, semantics, source
-  ranges, IDs, links, agenda behavior, corpus operations, publishing, LSP
-  behavior, and agent-facing interfaces. Build output goes to `dist/`.
-- Apps and editor integrations are clients of shared semantics. Do not create a
-  second parser, private canonical database, or app-only language behavior.
-- `apps/macos/Org2Workspace/` is the native Swift workspace and OpenClaw chat
-  client. It shells out to the built shared CLI/parser where appropriate.
-- `apps/ios/Org2Mobile/` is a lightweight review and capture client. Its
-  `mobile-inbox.org2` flow is an append-oriented transport boundary, not a new
-  source of language semantics.
-- `integrations/openclaw/` contains the native `org2-lifecycle` plugin.
-  OpenClaw is the deepest current integration, but run files, workflows, CLI
-  JSON, cited context, and MCP interfaces must remain portable to other agents.
-- VS Code plus the CLI remains the strongest general editing workflow. The
-  macOS rendered editor is a structured workflow surface; raw source editing is
-  the full-fidelity escape hatch.
-- Prefer a coherent Org2 standard over bug-for-bug GNU Org compatibility.
+  ranges, IDs, links, agenda behavior, corpus operations, agent interfaces,
+  publishing, plugin contracts, and LSP behavior. Build output goes to `dist/`.
+- Apps and editor integrations consume shared semantics. Do not create a second
+  parser, a private canonical database, or app-only language behavior.
+- `apps/macos/Org2Workspace/` is the native OpenOrg workspace. It supports
+  local and explicitly mounted corpora, reading/editing, capture, meetings,
+  publishing, data views, plugins, durable agent work, and per-thread AI chat
+  through configured runtimes such as OpenClaw and Codex.
+- `apps/ios/Org2Mobile/` is the source-distributed mobile capture, corpus, chat,
+  and approval client. Its inbox flows are transport boundaries, not new
+  language semantics.
+- `integrations/openclaw/` contains the optional `org2-lifecycle` adapter.
+  OpenClaw is a native integration, not the owner of runs, workflows, approvals,
+  or corpus state.
+- The plugin runtime installs content-addressed Git packages, pins exact commits
+  and SHA-256 contents in the corpus lock, and requires machine-local trust
+  before contributed commands or sandboxed renderers execute. CLI and OpenOrg
+  use the same renderer contribution; there is no separate app-only plugin ABI.
+- Prefer one coherent Org2 standard over bug-for-bug GNU Org compatibility.
+  Keep AI/provider behavior optional above deterministic compiler output.
 
-## Non-negotiable data boundaries
+## Agent runtimes and durable work
 
-- Keep inspectable plain text as the source of truth. Derived indexes, compiled
-  context, app state, and OpenClaw state must be disposable or reconstructible.
-- Preserve file/line citations, stable IDs, source ranges, provenance, and
-  review state through agent workflows.
-- Preview mutations first. Most Org2 write commands require `--apply`; inspect
-  the preview or JSON envelope before applying it.
-- Write generated or uncertain work to `views/` or `compiled/`. Promotion into
-  canonical `notes/` is an explicit review action.
-- Keep raw imports in `raw/` and minimize rewriting them. Keep publish output
-  derived from reviewed source.
-- Never put credentials, tokens, cookies, private keys, or machine-local
-  bindings in a corpus, run, workflow, generated artifact, fixture, or
-  documentation example.
-- Multi-corpus reads require explicit mounts. A human-visible app mount is not
-  implicit agent authority. Writes remain scoped to one active corpus.
-- Do not perform external side effects—messages, tickets, calendar changes,
-  publishing, or other third-party writes—without explicit authorization and
-  an inspectable approval boundary.
-
-## OpenClaw integration contract
-
-The `org2-lifecycle` plugin maps substantial main-agent turns, subagent work,
-and cron executions into durable Org2 runs. It also prepares manual workflow
-runs, reconciles active workflow schedules into OpenClaw cron, and resumes an
-approved workflow in its correlated chat session.
-
-When changing this path:
-
-- Keep the adapter pinned to its configured `corpusDir`. Validate the portable
-  corpus ID supplied by the Mac app before creating, syncing, or continuing
-  work; fail closed on a mismatch.
-- Preserve stable OpenClaw correlation and idempotency keys. A retry or resumed
-  event must update the same run rather than create a duplicate.
-- Do not promote ordinary conversation or personal TODOs into durable runs.
-- Treat approvals, clarifications, and `review-required` artifacts as open
-  boundaries. A successful agent turn is not the same as a completed durable
-  run.
-- Record available provider, model, token, cost, and elapsed-time metadata, but
-  never credentials.
-- On successful completion, record a concise reviewer-facing outcome summary.
-  On failure or blockage, record an actionable reason rather than a generic
-  status.
-- Keep workflow declarations in visible top-level `workflows/`; continue to
-  read the legacy `.org2/workflows/` path where compatibility requires it.
-- Use shared CLI lifecycle operations instead of hand-editing machine-state
-  blocks in `.org2/runs/*.org2`.
-
-The checked-out plugin can be tested and inspected with:
-
-```sh
-npm run test:openclaw
-openclaw plugins inspect org2-lifecycle --runtime --json
-```
-
-Installing the linked plugin, changing OpenClaw configuration, restarting the
-Gateway, or reconciling a real user's schedules changes external runtime state.
-Do those only when the user explicitly asks. Source-local plugin instructions
-live in `integrations/openclaw/README.md`.
-
-## Durable run behavior
-
-Use the CLI contract for durable delegation:
-
-- `run create/list/show/start/resume/cancel/fork/reopen-external` manages the lifecycle.
-- `run block ID --reason "Specific clarification or next action"` records a
-  useful blocker; reasonless blocks are invalid. If the run already has a
-  pending approval, leave it in `waiting-approval`. A genuinely independent
-  clarification or operational condition requires `--separate-from-approval`,
-  and Org2 rejects that override when the reason merely restates the approval.
-- `run approval-decide` is the only way to decide a run-backed approval.
-  `org2 approvals` and Agent Work are projections of that same run record; do
-  not create a duplicate heading for the decision.
-- `run artifact-review` records review of an output and updates linked Org
-  artifact metadata when applicable.
-- `run complete ID --summary "What happened"` is allowed only when acceptance
-  criteria are met and no review-required artifact remains open.
-- `run complete-external` is for a person-confirmed outcome completed elsewhere;
-  an agent must not infer that resolution.
-- `run reopen-external` repairs a mistaken whole-run external completion from
-  `waiting-approval` without replacing the run or its retained approval IDs.
-- `run runtime` records observable execution metadata.
-
-Authored workflows under `workflows/` are reviewable recipes. They declare
-inputs, capabilities, outputs, checks, triggers, and approval boundaries.
-Schedule declarations remain portable in the file; OpenClaw owns due checks and
-execution state.
+- Goals are portable `org2:goal:v1` records and named workers are
+  `org2:agent-profile:v1` records. OpenClaw, Codex, Claude Code, model names,
+  and session IDs are execution details, not `AGENT_REF` values.
+- Resolve the current runtime binding with `org2 agent-profile resolve` before
+  creating delegated work. Preserve an existing `AGENT_REF` or `GOAL_REF`;
+  if no binding resolves, leave the refs unset rather than guessing.
+- Use `org2 run` for durable delegated work and `org2 workflow` for reusable
+  recipes. Use the CLI lifecycle commands instead of rewriting run files.
+- Treat approvals, clarifications, failed checks, and `review-required`
+  artifacts as open boundaries. An agent turn succeeding does not by itself
+  complete the durable run.
+- Use `org2 approvals` for the unified decision queue and
+  `org2 run approval-decide` for run-backed decisions. Preserve the exact run,
+  approval, fingerprint, and provider decision-key identity; do not create a
+  duplicate heading for the same decision.
+- Blocking requires a specific question or next action. Completion requires a
+  concise reviewer-facing outcome and no unresolved approval or artifact review.
+  Only a person may confirm whole-run completion outside the workflow.
+- Use `org2 thread post` or the matching MCP tool only when an explicitly
+  asynchronous worker must report into a named AI chat. Foreground agents reply
+  normally and must not duplicate their response through the inbox.
+- When changing the OpenClaw adapter, preserve its configured single-corpus
+  boundary, portable corpus-ID validation, stable correlation/idempotency keys,
+  approval continuation semantics, and runtime metadata without credentials.
+  Read `integrations/openclaw/README.md` before modifying or installing it.
 
 ## Repository map
 
-- `src/`: TypeScript parser, CLI, compiler/runtime, LSP, publishing, corpus,
-  workflow, and agent utilities.
-- `test/`: Node integration and regression tests; `test/agent/` contains focused
-  agent/context coverage.
-- `spec/v0/`: language specification and conformance documents.
-- `apps/macos/Org2Workspace/`: Swift package for the native macOS workspace.
-- `apps/ios/Org2Mobile/`: iOS app and share extension.
-- `integrations/openclaw/`: OpenClaw lifecycle plugin and its unit tests.
+- `src/`: shared TypeScript compiler/runtime, CLI, corpus, publishing, plugin,
+  workflow, agent, data, and LSP implementation.
+- `test/`: Node integration and regression tests; `test/agent/` contains
+  focused agent/context coverage.
+- `spec/v0/`: language, schema, and conformance contracts.
+- `apps/macos/Org2Workspace/`: Swift package for OpenOrg on macOS, support
+  executables, and Swift tests.
+- `apps/ios/Org2Mobile/`: iOS app, share extension, and mobile navigation
+  contract.
+- `integrations/openclaw/`: OpenClaw lifecycle plugin and tests.
 - `editors/`: VS Code and Vim integrations.
-- `tree-sitter-org2/`: tree-sitter grammar and queries.
-- `docs/site/`: canonical documentation sources.
+- `tree-sitter-org2/`: grammar and editor queries.
+- `docs/site/`: canonical public documentation sources.
 - `site/`: generated website output; never hand-edit it.
-- `examples/`: reviewable examples and synthetic demo corpora.
-- `.codex/org2-workspace-corpus/`: disposable development corpus for the Codex
-  macOS app.
+- `examples/`: reviewable examples, plugin packages, and synthetic demo
+  corpora.
+- `tools/`: build, packaging, release, documentation, benchmark, screenshot,
+  and maintenance scripts.
+- `.codex/skills/`: repository-owned operational skills, including the release
+  procedure.
+- `.codex/org2-workspace-corpus/`: disposable corpus for the isolated macOS
+  development app.
 
 ## Implementation rules
 
-- Put shared semantics in TypeScript first. Swift, editor extensions, and
-  OpenClaw should consume the shared output rather than reinterpret source.
-- Keep changes small and preserve existing formatting and source ranges where
-  possible. Do not rewrite unrelated corpus or source content.
+- Put shared language and automation semantics in TypeScript first. Swift,
+  plugins, and editor extensions should consume shared output rather than
+  reinterpret source.
+- Keep changes small and preserve existing formatting, source ranges, and
+  compatibility identifiers where possible.
+- Treat JSON envelopes, schemas, CLI flags, MCP tools, plugin manifests, and
+  renderer results as public contracts. Version or migrate them deliberately.
 - Add or update a focused regression test for behavior changes. Prefer the
-  narrowest useful test while iterating, then broaden verification based on
+  narrowest useful test while iterating, then broaden validation according to
   risk.
-- Treat schemas and JSON envelopes as public contracts. Make versioning and
-  compatibility deliberate.
-- Keep AI/provider behavior optional above deterministic compiler output.
-- If a pre-existing test or lint failure is present, record it and verify the
-  change does not add a new failure.
+- Keep deterministic behavior below optional AI integrations. Tests must not
+  require live provider credentials or mutate a user's real corpus.
+- Preserve compatibility across the CLI, OpenOrg, editors, and agent adapters
+  when changing a shared capability.
+- If a failure predates the change, record evidence and prove the change does
+  not introduce a new failure.
 
 ## Validation matrix
 
-Choose checks that match the affected surface:
+Choose checks that cover the affected surfaces:
 
 ```sh
-# TypeScript build
+# TypeScript compile
 npm run build
 
-# Focused Node test
+# Focused Node regression
 node test/path-to-test.mjs
 
-# Agent/run/workflow behavior
+# Agent, corpus, OpenClaw, LSP, or publishing surfaces
 npm run test:agentic
-
-# OpenClaw plugin plus end-to-end lifecycle contract
-npm run test:openclaw
-
-# Corpus identity behavior
 npm run test:corpus
-
-# LSP behavior
+npm run test:openclaw
 npm run test:lsp
+npm run test:publish-document
 
-# Swift package tests
+# Native macOS package
 swift test --package-path apps/macos/Org2Workspace
+
+# Documentation and generated-artifact contracts
+npm run docs:check
+npm run check:generated
 
 # Full repository suite
 npm test
 ```
 
-The full suite is appropriate for broad parser, CLI, schema, or cross-client
-changes. A documentation-only instruction change does not require the entire
-runtime suite, but it still requires the documentation checks below.
+Use focused checks while iterating. Run the full suite for broad parser, CLI,
+schema, publishing, plugin, or cross-client changes. An instruction-only change
+does not require every runtime suite, but it must still pass the documentation
+contract that reads this file.
 
 ## Documentation contract
 
-- Treat documentation impact as part of every feature change. Update canonical
-  sources under `docs/site/`; do not hand-edit generated `site/` HTML.
+- Treat documentation impact as part of every feature. Update canonical sources
+  under `docs/site/`; do not hand-edit generated `site/` HTML.
 - Run `npm run docs:check` when agent discovery, CLI/API behavior, workflows,
-  safety boundaries, configuration, app surfaces, or roadmap claims change.
-- Run `npm run check:generated` when generated artifacts are intentionally
-  updated.
-- When adding or removing a public capability, keep `org2 agent capabilities`,
-  `docs/site/agent-quickstart.org`, `docs/site/llms.txt`,
-  `docs/site/features.org`, and the relevant reference/editor page aligned.
-- If no user-facing docs change is needed, say why in the change summary.
-
-## Coordinated releases
-
-Use the repository-owned `.codex/skills/org2-release/SKILL.md` workflow when
-cutting, repairing, or auditing a release. It covers npm, VS Code Marketplace,
-the macOS DMG, GitHub Releases, and the Scarf-tracked downloads surface. After
-all assets are attached, preview and apply `tools/sync-release-downloads.mjs`
-so `docs/site/downloads.org` and every GitHub release body use the permanent
-Scarf Gateway redirect while GitHub Releases remains the artifact host.
+  safety boundaries, configuration, app surfaces, or product claims change.
+- When public documentation changes, regenerate the checked-in site with the
+  repository publish command and use `npm run check:generated` when the
+  generated contract is in scope.
+- When adding or removing a public capability, keep
+  `org2 agent capabilities`, `docs/site/agent-quickstart.org`,
+  `docs/site/llms.txt`, `docs/site/features.org`, and the relevant
+  reference/editor page aligned.
+- Keep public positioning provider-neutral. Runtime-specific integration details
+  belong in the agent quickstart, tooling reference, or integration docs rather
+  than the product homepage.
+- If no user-facing documentation change is needed, state why in the handoff.
 
 ## macOS development safety
 
-The user's daily app is `/Users/avi/Applications/Org2Workspace.app` with bundle
-identifier `org.org2.workspace`. Do not quit, overwrite, re-sign, or relaunch it
-unless the user explicitly asks to update the main app.
+The user's daily app is `/Users/avi/Applications/OpenOrg.app` with bundle
+identifier `org.org2.workspace`. Do not quit, overwrite, re-sign, or relaunch
+it unless the user explicitly asks to update the daily app.
 
 Use the isolated development app:
 
@@ -246,17 +236,35 @@ npm run build:macos-app:codex
 npm run open:macos-app:codex
 ```
 
-It installs as `/Users/avi/Applications/Org2Workspace Codex.app` with bundle
-identifier `org.org2.workspace.codex` and defaults to the disposable
-`.codex/org2-workspace-corpus`. Do not point it at
-`/Users/avi/avi.org2` without explicit permission. Build the daily app with
-`npm run build:macos-app` only when the user asks to promote a validated build.
+These commands install `/Users/avi/Applications/OpenOrg Preview.app` with
+bundle identifier `org.org2.workspace.codex` and use the disposable
+`.codex/org2-workspace-corpus`. Do not point the preview at a personal corpus
+without explicit permission. If the build guard reports that the preview is
+running, quit only **OpenOrg Preview** before rebuilding.
+
+Use `npm run build:macos-app` only when the user asks to promote a validated
+build to the daily app. Release packaging uses isolated staging and must not
+replace or launch the daily bundle. For UI changes, combine focused Swift tests
+with an isolated build and proportionate visual verification.
+
+## Coordinated releases
+
+Use the repository-owned `.codex/skills/org2-release/SKILL.md` workflow when
+cutting, repairing, or auditing a release. The canonical
+`npm run release:openorg -- ...` command is preview-first and coordinates npm,
+VS Code, macOS DMGs, iOS/TestFlight, GitHub Releases, and Scarf-backed download
+surfaces.
+
+Do not reconstruct a coordinated release manually unless repairing one
+explicitly scoped channel. Require a clean, synchronized `main`, inspect the
+plan before `--execute`, retain checkpoint state, and verify every published
+surface before reporting completion.
 
 ## Before handing off
 
-1. Re-read the diff and confirm only intended files changed.
-2. Run the smallest complete set of checks for the affected surfaces.
-3. Report behavior changed, validation run, remaining risks, and documentation
-   impact.
-4. Do not commit, push, install plugins, restart services, publish, or update the
-   daily app unless the user requested that external action.
+1. Re-read the complete diff and confirm only intended files changed.
+2. Run the smallest complete validation set for every affected surface.
+3. Check `git status --short --branch` and remote divergence again.
+4. Report the behavior or guidance changed, validation run, documentation
+   impact, remaining risks, and any external actions performed.
+5. If a commit or push was requested, report the exact commit and destination.
