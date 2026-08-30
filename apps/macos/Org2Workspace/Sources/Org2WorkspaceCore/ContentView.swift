@@ -135,6 +135,7 @@ public struct ContentView: View {
 
 private struct WorkspaceTabBar: View {
   @EnvironmentObject private var store: WorkspaceStore
+  @StateObject private var dragCoordinator = WorkspaceTabDragCoordinator()
 
   var body: some View {
     HStack(spacing: 8) {
@@ -142,7 +143,7 @@ private struct WorkspaceTabBar: View {
         ScrollView(.horizontal, showsIndicators: false) {
           LazyHStack(spacing: 4) {
             ForEach(store.workspaceTabs) { tab in
-              WorkspaceTabItem(tab: tab)
+              WorkspaceTabItem(tab: tab, dragCoordinator: dragCoordinator)
                 .id(tab.id)
             }
           }
@@ -182,6 +183,7 @@ private struct WorkspaceTabBar: View {
 private struct WorkspaceTabItem: View {
   @EnvironmentObject private var store: WorkspaceStore
   let tab: WorkspaceTab
+  let dragCoordinator: WorkspaceTabDragCoordinator
   @State private var isHovered = false
   @State private var isDropTargeted = false
 
@@ -244,12 +246,12 @@ private struct WorkspaceTabItem: View {
       WorkspaceTabInteractionTarget(
         tabID: tab.id,
         title: title,
-        systemImage: store.workspaceTabDisplaySystemImage(for: tab),
         isSelected: isSelected,
         showsCloseButton: store.workspaceTabs.count > 1 && (isSelected || isHovered),
         canClose: store.workspaceTabs.count > 1,
         canMoveLeft: tabIndex != 0,
         canMoveRight: tabIndex != store.workspaceTabs.count - 1,
+        dragCoordinator: dragCoordinator,
         select: { store.selectWorkspaceTab(tab.id) },
         close: { store.closeWorkspaceTab(tab.id) },
         duplicate: { store.duplicateWorkspaceTab(tab.id) },
@@ -261,9 +263,7 @@ private struct WorkspaceTabItem: View {
         moveRight: { store.moveWorkspaceTab(tab.id, offset: 1) },
         closeOthers: { store.closeOtherWorkspaceTabs(keeping: tab.id) },
         moveTab: { sourceID in
-          withAnimation(WorkspaceMotion.quick) {
-            _ = store.moveWorkspaceTab(sourceID, to: tab.id)
-          }
+          _ = store.moveWorkspaceTab(sourceID, to: tab.id)
         },
         hoverChanged: { isHovered = $0 },
         dropTargetChanged: { isDropTargeted = $0 }
@@ -275,12 +275,12 @@ private struct WorkspaceTabItem: View {
 private struct WorkspaceTabInteractionTarget: NSViewRepresentable {
   let tabID: WorkspaceTab.ID
   let title: String
-  let systemImage: String
   let isSelected: Bool
   let showsCloseButton: Bool
   let canClose: Bool
   let canMoveLeft: Bool
   let canMoveRight: Bool
+  let dragCoordinator: WorkspaceTabDragCoordinator
   let select: () -> Void
   let close: () -> Void
   let duplicate: () -> Void
@@ -299,12 +299,12 @@ private struct WorkspaceTabInteractionTarget: NSViewRepresentable {
   func updateNSView(_ view: WorkspaceTabInteractionView, context: Context) {
     view.tabID = tabID
     view.title = title
-    view.systemImage = systemImage
     view.isSelected = isSelected
     view.showsCloseButton = showsCloseButton
     view.canClose = canClose
     view.canMoveLeft = canMoveLeft
     view.canMoveRight = canMoveRight
+    view.dragCoordinator = dragCoordinator
     view.select = select
     view.close = close
     view.duplicate = duplicate
@@ -320,15 +320,55 @@ private struct WorkspaceTabInteractionTarget: NSViewRepresentable {
 }
 
 @MainActor
-final class WorkspaceTabInteractionView: NSView, NSDraggingSource {
+final class WorkspaceTabDragCoordinator: ObservableObject {
+  private weak var sourceView: WorkspaceTabInteractionView?
+  private weak var targetView: WorkspaceTabInteractionView?
+
+  var hasActiveDrag: Bool { sourceView != nil }
+
+  func begin(from source: WorkspaceTabInteractionView) {
+    cancel()
+    sourceView = source
+  }
+
+  func updateTarget(_ target: WorkspaceTabInteractionView?) {
+    let nextTarget = target === sourceView ? nil : target
+    guard nextTarget !== targetView else { return }
+    targetView?.dropTargetChanged?(false)
+    targetView = nextTarget
+    targetView?.dropTargetChanged?(true)
+  }
+
+  func finish() {
+    let sourceID = sourceView?.tabID
+    let moveTab = targetView?.moveTab
+    cancel()
+    if let sourceID, let moveTab {
+      Task { @MainActor in
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        guard !Task.isCancelled else { return }
+        moveTab(sourceID)
+      }
+    }
+  }
+
+  func cancel() {
+    targetView?.dropTargetChanged?(false)
+    sourceView = nil
+    targetView = nil
+  }
+}
+
+@MainActor
+final class WorkspaceTabInteractionView: NSView {
   var tabID = WorkspaceTab.ID()
   var title = "Tab"
-  var systemImage = "doc.text"
   var isSelected = false
   var showsCloseButton = false
   var canMoveLeft = false
   var canMoveRight = false
   var canClose = true
+  weak var dragCoordinator: WorkspaceTabDragCoordinator?
   var select: (() -> Void)?
   var close: (() -> Void)?
   var duplicate: (() -> Void)?
@@ -347,7 +387,6 @@ final class WorkspaceTabInteractionView: NSView, NSDraggingSource {
 
   override init(frame frameRect: NSRect) {
     super.init(frame: frameRect)
-    registerForDraggedTypes([.string])
 
     closeButton.isBordered = false
     closeButton.bezelStyle = .regularSquare
@@ -424,22 +463,24 @@ final class WorkspaceTabInteractionView: NSView, NSDraggingSource {
   }
 
   override func mouseDragged(with event: NSEvent) {
-    guard !startedDragging, let pointerDownLocation else { return }
-    let currentLocation = convert(event.locationInWindow, from: nil)
-    guard hypot(
-      currentLocation.x - pointerDownLocation.x,
-      currentLocation.y - pointerDownLocation.y
-    ) >= 4 else { return }
-
-    startedDragging = true
-    let pasteboardItem = NSPasteboardItem()
-    pasteboardItem.setString(tabID.uuidString, forType: .string)
-    let draggingItem = NSDraggingItem(pasteboardWriter: pasteboardItem)
-    draggingItem.setDraggingFrame(bounds, contents: dragPreviewImage())
-    beginDraggingSession(with: [draggingItem], event: event, source: self)
+    if !startedDragging, let pointerDownLocation {
+      let currentLocation = convert(event.locationInWindow, from: nil)
+      guard hypot(
+        currentLocation.x - pointerDownLocation.x,
+        currentLocation.y - pointerDownLocation.y
+      ) >= 4 else { return }
+      startedDragging = true
+      dragCoordinator?.begin(from: self)
+    }
+    guard dragCoordinator?.hasActiveDrag == true else { return }
+    dragCoordinator?.updateTarget(tabTarget(at: event))
   }
 
   override func mouseUp(with event: NSEvent) {
+    if dragCoordinator?.hasActiveDrag == true {
+      dragCoordinator?.updateTarget(tabTarget(at: event))
+      dragCoordinator?.finish()
+    }
     pointerDownLocation = nil
     startedDragging = false
   }
@@ -454,49 +495,6 @@ final class WorkspaceTabInteractionView: NSView, NSDraggingSource {
     } else {
       super.keyDown(with: event)
     }
-  }
-
-  override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-    updateDropTarget(for: sender)
-  }
-
-  override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
-    updateDropTarget(for: sender)
-  }
-
-  override func draggingExited(_ sender: NSDraggingInfo?) {
-    dropTargetChanged?(false)
-  }
-
-  override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
-    defer { dropTargetChanged?(false) }
-    guard let sourceID = draggedTabID(from: sender), sourceID != tabID else { return false }
-    moveTab?(sourceID)
-    return true
-  }
-
-  override func concludeDragOperation(_ sender: NSDraggingInfo?) {
-    dropTargetChanged?(false)
-  }
-
-  func draggingSession(
-    _ session: NSDraggingSession,
-    sourceOperationMaskFor context: NSDraggingContext
-  ) -> NSDragOperation {
-    .move
-  }
-
-  func ignoreModifierKeys(for session: NSDraggingSession) -> Bool {
-    true
-  }
-
-  func draggingSession(
-    _ session: NSDraggingSession,
-    endedAt screenPoint: NSPoint,
-    operation: NSDragOperation
-  ) {
-    pointerDownLocation = nil
-    startedDragging = false
   }
 
   func updatePresentation() {
@@ -540,38 +538,21 @@ final class WorkspaceTabInteractionView: NSView, NSDraggingSource {
     return menu
   }
 
-  private func updateDropTarget(for sender: NSDraggingInfo) -> NSDragOperation {
-    guard let sourceID = draggedTabID(from: sender), sourceID != tabID else {
-      dropTargetChanged?(false)
-      return []
-    }
-    dropTargetChanged?(true)
-    return .move
-  }
-
-  private func draggedTabID(from sender: NSDraggingInfo) -> WorkspaceTab.ID? {
-    sender.draggingPasteboard.string(forType: .string).flatMap(UUID.init(uuidString:))
-  }
-
-  private func dragPreviewImage() -> NSImage {
-    let imageSize = NSSize(width: max(bounds.width, 180), height: max(bounds.height, 28))
-    return NSImage(size: imageSize, flipped: false) { [title, systemImage] rect in
-      NSColor.windowBackgroundColor.withAlphaComponent(0.94).setFill()
-      NSBezierPath(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), xRadius: 7, yRadius: 7).fill()
-      NSColor.separatorColor.setStroke()
-      NSBezierPath(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), xRadius: 7, yRadius: 7).stroke()
-
-      if let icon = NSImage(systemSymbolName: systemImage, accessibilityDescription: nil) {
-        icon.draw(in: NSRect(x: 10, y: (rect.height - 14) / 2, width: 14, height: 14))
+  private func tabTarget(at event: NSEvent) -> WorkspaceTabInteractionView? {
+    guard let contentView = window?.contentView else { return nil }
+    for tabView in descendantTabViews(in: contentView) {
+      let localPoint = tabView.convert(event.locationInWindow, from: nil)
+      if tabView.bounds.contains(localPoint) {
+        return tabView
       }
-      (title as NSString).draw(
-        in: NSRect(x: 31, y: (rect.height - 16) / 2, width: rect.width - 40, height: 16),
-        withAttributes: [
-          .font: NSFont.systemFont(ofSize: 12, weight: .medium),
-          .foregroundColor: NSColor.labelColor
-        ]
-      )
-      return true
+    }
+    return nil
+  }
+
+  private func descendantTabViews(in view: NSView) -> [WorkspaceTabInteractionView] {
+    view.subviews.flatMap { child in
+      ([child as? WorkspaceTabInteractionView].compactMap { $0 })
+        + descendantTabViews(in: child)
     }
   }
 

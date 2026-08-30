@@ -71,4 +71,22 @@ final class WorkspaceTabBarInteractionTests: XCTestCase {
     XCTAssertTrue(try XCTUnwrap(menu.item(withTitle: "Move Tab Right")).isEnabled)
     XCTAssertTrue(try XCTUnwrap(menu.item(withTitle: "Close Tab")).isEnabled)
   }
+
+  func testTabDragCoordinatorMovesTheSourceToTheTarget() async {
+    let coordinator = WorkspaceTabDragCoordinator()
+    let source = WorkspaceTabInteractionView(frame: NSRect(x: 0, y: 0, width: 180, height: 28))
+    let target = WorkspaceTabInteractionView(frame: NSRect(x: 184, y: 0, width: 180, height: 28))
+    var movedTabID: WorkspaceTab.ID?
+    var targetStates: [Bool] = []
+    target.moveTab = { movedTabID = $0 }
+    target.dropTargetChanged = { targetStates.append($0) }
+
+    coordinator.begin(from: source)
+    coordinator.updateTarget(target)
+    coordinator.finish()
+    try? await Task.sleep(nanoseconds: 100_000_000)
+
+    XCTAssertEqual(movedTabID, source.tabID)
+    XCTAssertEqual(targetStates, [true, false])
+  }
 }

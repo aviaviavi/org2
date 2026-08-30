@@ -11,6 +11,7 @@ struct Org2WorkspaceScreenshotRenderer {
       let width = Double(ProcessInfo.processInfo.environment["ORG2_WORKSPACE_SCREENSHOT_WIDTH"] ?? "") ?? 1400
       let height = Double(ProcessInfo.processInfo.environment["ORG2_WORKSPACE_SCREENSHOT_HEIGHT"] ?? "") ?? 900
       let scale = Double(ProcessInfo.processInfo.environment["ORG2_WORKSPACE_SCREENSHOT_SCALE"] ?? "") ?? 1
+      let verifiesTabs = CommandLine.arguments.contains("--verify-tabs")
 
       _ = await MainActor.run {
         NSApplication.shared.setActivationPolicy(.prohibited)
@@ -21,6 +22,13 @@ struct Org2WorkspaceScreenshotRenderer {
         WorkspaceStore(defaults: defaults)
       }
       await store.bootstrap()
+      let verificationTabIDs: [WorkspaceTab.ID] = await MainActor.run {
+        guard verifiesTabs else { return [] }
+        let firstTabID = store.selectedWorkspaceTabID
+        let secondTabID = store.newWorkspaceTab()
+        let thirdTabID = store.newWorkspaceTab()
+        return [firstTabID, secondTabID, thirdTabID]
+      }
       for _ in 0..<100 {
         let renderState = await MainActor.run {
           (
@@ -51,7 +59,8 @@ struct Org2WorkspaceScreenshotRenderer {
         outputPath: outputPath,
         width: width,
         height: height,
-        scale: scale
+        scale: scale,
+        verificationTabIDs: verificationTabIDs
       )
     } catch {
       FileHandle.standardError.write(Data("\(error.localizedDescription)\n".utf8))
@@ -76,7 +85,8 @@ struct Org2WorkspaceScreenshotRenderer {
     outputPath: String,
     width: Double,
     height: Double,
-    scale: Double
+    scale: Double,
+    verificationTabIDs: [WorkspaceTab.ID]
   ) async throws {
     let content = ZStack {
       Color(nsColor: .windowBackgroundColor)
@@ -110,6 +120,15 @@ struct Org2WorkspaceScreenshotRenderer {
     window.layoutIfNeeded()
     hostingView.layoutSubtreeIfNeeded()
     hostingView.displayIfNeeded()
+
+    if !verificationTabIDs.isEmpty {
+      try await verifyTabInteractions(
+        in: window,
+        hostingView: hostingView,
+        store: store,
+        expectedTabIDs: verificationTabIDs
+      )
+    }
 
     guard var bitmap = hostingView.bitmapImageRepForCachingDisplay(in: hostingView.bounds) else {
       throw ScreenshotRenderError.renderFailed
@@ -153,6 +172,123 @@ struct Org2WorkspaceScreenshotRenderer {
       withIntermediateDirectories: true
     )
     try png.write(to: outputURL)
+  }
+
+  @MainActor
+  private static func verifyTabInteractions(
+    in window: NSWindow,
+    hostingView: NSView,
+    store: WorkspaceStore,
+    expectedTabIDs: [WorkspaceTab.ID]
+  ) async throws {
+    guard expectedTabIDs.count == 3 else {
+      throw ScreenshotRenderError.tabVerificationFailed("expected three fixture tabs")
+    }
+    var tabViews = workspaceTabViews(in: hostingView)
+    guard tabViews.count == expectedTabIDs.count else {
+      throw ScreenshotRenderError.tabVerificationFailed(
+        "rendered \(tabViews.count) tab targets instead of \(expectedTabIDs.count)"
+      )
+    }
+
+    sendClick(to: tabViews[0], in: window)
+    await settleTabEvents()
+    guard store.selectedWorkspaceTabID == expectedTabIDs[0] else {
+      throw ScreenshotRenderError.tabVerificationFailed("a real window click did not select the first tab")
+    }
+
+    tabViews = workspaceTabViews(in: hostingView)
+    sendDrag(from: tabViews[0], to: tabViews[2], in: window)
+    await settleTabEvents(durationNanoseconds: 250_000_000)
+    let reorderedTabIDs = store.workspaceTabs.map(\.id)
+    guard reorderedTabIDs == [expectedTabIDs[1], expectedTabIDs[2], expectedTabIDs[0]] else {
+      throw ScreenshotRenderError.tabVerificationFailed(
+        "a real window drag produced \(reorderedTabIDs.map(\.uuidString))"
+      )
+    }
+
+    tabViews = workspaceTabViews(in: hostingView)
+    guard let closeButton = tabViews[2].subviews.compactMap({ $0 as? NSButton }).first else {
+      throw ScreenshotRenderError.tabVerificationFailed("the selected tab has no native close button")
+    }
+    guard let closeAction = closeButton.action,
+          NSApp.sendAction(closeAction, to: closeButton.target, from: closeButton)
+    else {
+      throw ScreenshotRenderError.tabVerificationFailed("the native close button rejected its action")
+    }
+    await settleTabEvents()
+    guard store.workspaceTabs.map(\.id) == [expectedTabIDs[1], expectedTabIDs[2]] else {
+      throw ScreenshotRenderError.tabVerificationFailed("the native close action did not close the selected tab")
+    }
+
+    FileHandle.standardError.write(Data("Verified integrated tab click and drag events plus the native close action\n".utf8))
+  }
+
+  @MainActor
+  private static func workspaceTabViews(in view: NSView) -> [NSView] {
+    var matches: [NSView] = []
+    for child in view.subviews {
+      if NSStringFromClass(type(of: child)).hasSuffix(".WorkspaceTabInteractionView") {
+        matches.append(child)
+      }
+      matches.append(contentsOf: workspaceTabViews(in: child))
+    }
+    return matches.sorted {
+      $0.convert($0.bounds, to: nil).minX < $1.convert($1.bounds, to: nil).minX
+    }
+  }
+
+  @MainActor
+  private static func sendClick(to view: NSView, in window: NSWindow) {
+    let location = view.convert(
+      NSPoint(x: view.bounds.midX, y: view.bounds.midY),
+      to: nil
+    )
+    window.sendEvent(mouseEvent(.leftMouseDown, at: location, in: window, eventNumber: 1))
+    window.sendEvent(mouseEvent(.leftMouseUp, at: location, in: window, eventNumber: 2))
+  }
+
+  @MainActor
+  private static func sendDrag(from source: NSView, to target: NSView, in window: NSWindow) {
+    let start = source.convert(
+      NSPoint(x: source.bounds.midX, y: source.bounds.midY),
+      to: nil
+    )
+    let destination = target.convert(
+      NSPoint(x: target.bounds.midX, y: target.bounds.midY),
+      to: nil
+    )
+    let threshold = NSPoint(x: start.x + 8, y: start.y)
+
+    window.sendEvent(mouseEvent(.leftMouseDown, at: start, in: window, eventNumber: 3))
+    window.sendEvent(mouseEvent(.leftMouseDragged, at: threshold, in: window, eventNumber: 4))
+    window.sendEvent(mouseEvent(.leftMouseDragged, at: destination, in: window, eventNumber: 5))
+    window.sendEvent(mouseEvent(.leftMouseUp, at: destination, in: window, eventNumber: 6))
+  }
+
+  @MainActor
+  private static func mouseEvent(
+    _ type: NSEvent.EventType,
+    at location: NSPoint,
+    in window: NSWindow,
+    eventNumber: Int
+  ) -> NSEvent {
+    NSEvent.mouseEvent(
+      with: type,
+      location: location,
+      modifierFlags: [],
+      timestamp: ProcessInfo.processInfo.systemUptime,
+      windowNumber: window.windowNumber,
+      context: nil,
+      eventNumber: eventNumber,
+      clickCount: 1,
+      pressure: type == .leftMouseUp ? 0 : 1
+    )!
+  }
+
+  @MainActor
+  private static func settleTabEvents(durationNanoseconds: UInt64 = 100_000_000) async {
+    try? await Task.sleep(nanoseconds: durationNanoseconds)
   }
 
   @MainActor
@@ -241,6 +377,7 @@ struct Org2WorkspaceScreenshotRenderer {
 private enum ScreenshotRenderError: LocalizedError {
   case missingOutputPath
   case renderFailed
+  case tabVerificationFailed(String)
 
   var errorDescription: String? {
     switch self {
@@ -248,6 +385,8 @@ private enum ScreenshotRenderError: LocalizedError {
       return "Usage: Org2WorkspaceScreenshotRenderer --out PATH"
     case .renderFailed:
       return "Could not render OpenOrg screenshot"
+    case .tabVerificationFailed(let reason):
+      return "Tab interaction verification failed: \(reason)"
     }
   }
 }
