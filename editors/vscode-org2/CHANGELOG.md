@@ -4,6 +4,14 @@ All notable changes to the Org2 VS Code extension are documented in this file.
 
 ## Unreleased
 
+## 0.5.3 - 2026-08-30
+
+## Highlights
+
+- Add Local Claude Code as an optional OpenOrg AI destination using the installed Claude Code CLI and the user's existing Anthropic sign-in.
+- Stream replies, resume Claude sessions, pass explicit attachments and corpus context, and expose Claude Code through shared rooms and Mobile Remote.
+- Map OpenOrg local-agent permissions to Claude Code Plan, Accept Edits, and Bypass Permissions modes while preserving the participants in existing rooms.
+
 ## 0.5.2 - 2026-08-28
 
 - Coordinated the extension with the OpenOrg 0.5.2 alpha release and current Org2 runtime.

@@ -2,7 +2,7 @@
   "name": "org2-vscode",
   "displayName": "Org2",
   "description": "Org2 for VS Code (requires org2 CLI): syntax, folding, agenda, roam, TODO/planning, export",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "publisher": "AviPress",
   "main": "./extension.js",
   "activationEvents": [
@@ -150,15 +150,15 @@
       },
       {
         "command": "org2.formatWorkspaceCheck",
-        "title": "Org2: Formatter \u2014 Check Workspace Drift"
+        "title": "Org2: Formatter — Check Workspace Drift"
       },
       {
         "command": "org2.formatWorkspaceApply",
-        "title": "Org2: Formatter \u2014 Apply Workspace Formatting"
+        "title": "Org2: Formatter — Apply Workspace Formatting"
       },
       {
         "command": "org2.lintWorkspaceCorpus",
-        "title": "Org2: Corpus Lint \u2014 Graph & Artifact Health"
+        "title": "Org2: Corpus Lint — Graph & Artifact Health"
       },
       {
         "command": "org2.compileWorkspaceCorpus",
@@ -182,19 +182,19 @@
       },
       {
         "command": "org2.aiMarkDeferred",
-        "title": "Org2: AI \u2014 Mark Draft Deferred"
+        "title": "Org2: AI — Mark Draft Deferred"
       },
       {
         "command": "org2.aiMarkRejected",
-        "title": "Org2: AI \u2014 Mark Draft Rejected"
+        "title": "Org2: AI — Mark Draft Rejected"
       },
       {
         "command": "org2.aiMarkReviewed",
-        "title": "Org2: AI \u2014 Mark Draft Reviewed"
+        "title": "Org2: AI — Mark Draft Reviewed"
       },
       {
         "command": "org2.aiReviewWorkspace",
-        "title": "Org2: AI \u2014 Review Workspace / Active File"
+        "title": "Org2: AI — Review Workspace / Active File"
       },
       {
         "command": "org2.graphAuditWorkspace",
@@ -202,15 +202,15 @@
       },
       {
         "command": "org2.aiRunDraft",
-        "title": "Org2: AI \u2014 Write Draft Artifact"
+        "title": "Org2: AI — Write Draft Artifact"
       },
       {
         "command": "org2.aiSuggestLinks",
-        "title": "Org2: AI \u2014 Suggest Links & Entities"
+        "title": "Org2: AI — Suggest Links & Entities"
       },
       {
         "command": "org2.aiPromoteDraft",
-        "title": "Org2: AI \u2014 Promote Reviewed Draft"
+        "title": "Org2: AI — Promote Reviewed Draft"
       },
       {
         "command": "org2.searchWorkspace",
@@ -222,27 +222,27 @@
       },
       {
         "command": "org2.roamLinkifyPreview",
-        "title": "Org2: Roam \u2014 Linkify Preview"
+        "title": "Org2: Roam — Linkify Preview"
       },
       {
         "command": "org2.roamLinkifyApply",
-        "title": "Org2: Roam \u2014 Linkify Apply"
+        "title": "Org2: Roam — Linkify Apply"
       },
       {
         "command": "org2.roamGraph",
-        "title": "Org2: Roam \u2014 Graph Report"
+        "title": "Org2: Roam — Graph Report"
       },
       {
         "command": "org2.formatCurrentFileCheck",
-        "title": "Org2: Formatter \u2014 Check Current File Drift"
+        "title": "Org2: Formatter — Check Current File Drift"
       },
       {
         "command": "org2.formatCurrentFilePreviewDiff",
-        "title": "Org2: Formatter \u2014 Preview Current File Diff"
+        "title": "Org2: Formatter — Preview Current File Diff"
       },
       {
         "command": "org2.formatCurrentFileApply",
-        "title": "Org2: Formatter \u2014 Apply Current File Formatting"
+        "title": "Org2: Formatter — Apply Current File Formatting"
       },
       {
         "command": "org2.exportCurrentFileHtml",
@@ -288,19 +288,19 @@
       },
       {
         "command": "org2.setTodoTODO",
-        "title": "Org2: Set Todo \u2192 TODO"
+        "title": "Org2: Set Todo → TODO"
       },
       {
         "command": "org2.setTodoInProgress",
-        "title": "Org2: Set Todo \u2192 IN_PROGRESS"
+        "title": "Org2: Set Todo → IN_PROGRESS"
       },
       {
         "command": "org2.setTodoDone",
-        "title": "Org2: Set Todo \u2192 DONE"
+        "title": "Org2: Set Todo → DONE"
       },
       {
         "command": "org2.setTodoCanceled",
-        "title": "Org2: Set Todo \u2192 CANCELED"
+        "title": "Org2: Set Todo → CANCELED"
       },
       {
         "command": "org2.markDoneAndHandoff",
@@ -360,63 +360,63 @@
       },
       {
         "command": "org2.roamDailiesGotoToday",
-        "title": "Org2: Roam Dailies \u2014 Go to Today"
+        "title": "Org2: Roam Dailies — Go to Today"
       },
       {
         "command": "org2.roamDailiesGotoYesterday",
-        "title": "Org2: Roam Dailies \u2014 Go to Yesterday"
+        "title": "Org2: Roam Dailies — Go to Yesterday"
       },
       {
         "command": "org2.roamDailiesGotoTomorrow",
-        "title": "Org2: Roam Dailies \u2014 Go to Tomorrow"
+        "title": "Org2: Roam Dailies — Go to Tomorrow"
       },
       {
         "command": "org2.roamDailiesGotoDate",
-        "title": "Org2: Roam Dailies \u2014 Go to Date"
+        "title": "Org2: Roam Dailies — Go to Date"
       },
       {
         "command": "org2.roamNodeNew",
-        "title": "Org2: Roam \u2014 New Node"
+        "title": "Org2: Roam — New Node"
       },
       {
         "command": "org2.roamCopyIdLink",
-        "title": "Org2: Roam \u2014 Copy ID Link (Current Heading/File)"
+        "title": "Org2: Roam — Copy ID Link (Current Heading/File)"
       },
       {
         "command": "org2.roamCopyIdLinkById",
-        "title": "Org2: Roam \u2014 Copy ID Link (Prompt/Link)"
+        "title": "Org2: Roam — Copy ID Link (Prompt/Link)"
       },
       {
         "command": "org2.roamInsertBacklink",
-        "title": "Org2: Roam \u2014 Insert Backlink (Prompt/Link)"
+        "title": "Org2: Roam — Insert Backlink (Prompt/Link)"
       },
       {
         "command": "org2.roamOpenId",
-        "title": "Org2: Roam \u2014 Open ID (Prompt/Link)"
+        "title": "Org2: Roam — Open ID (Prompt/Link)"
       },
       {
         "command": "org2.roamOpenTitle",
-        "title": "Org2: Roam \u2014 Open Title Link (Prompt/Link)"
+        "title": "Org2: Roam — Open Title Link (Prompt/Link)"
       },
       {
         "command": "org2.roamShowBacklinks",
-        "title": "Org2: Roam \u2014 Show Backlinks (Current Heading/File)"
+        "title": "Org2: Roam — Show Backlinks (Current Heading/File)"
       },
       {
         "command": "org2.roamShowBacklinksById",
-        "title": "Org2: Roam \u2014 Show Backlinks (Prompt/Link)"
+        "title": "Org2: Roam — Show Backlinks (Prompt/Link)"
       },
       {
         "command": "org2.roamOpenBacklink",
-        "title": "Org2: Roam \u2014 Open Backlink Source (Current Heading/File)"
+        "title": "Org2: Roam — Open Backlink Source (Current Heading/File)"
       },
       {
         "command": "org2.roamOpenBacklinkById",
-        "title": "Org2: Roam \u2014 Open Backlink Source (Prompt/Link)"
+        "title": "Org2: Roam — Open Backlink Source (Prompt/Link)"
       },
       {
         "command": "org2.roamDbSync",
-        "title": "Org2: Roam \u2014 DB Sync (Ensure File IDs)"
+        "title": "Org2: Roam — DB Sync (Ensure File IDs)"
       },
       {
         "command": "org2.rerunAutoFold",
@@ -975,7 +975,7 @@
         "org2.agenda.priorityOrder": {
           "type": "string",
           "default": "",
-          "description": "Optional custom ordering for priority markers used by `agenda --sort priority` / `--group priority` (comma-separated values from `A..Z` or `0..9`, accepts bracketed forms like `[#A]`; blank keeps default A\u2192Z then 0\u21929 ordering)."
+          "description": "Optional custom ordering for priority markers used by `agenda --sort priority` / `--group priority` (comma-separated values from `A..Z` or `0..9`, accepts bracketed forms like `[#A]`; blank keeps default A→Z then 0→9 ordering)."
         },
         "org2.agenda.tagOrder": {
           "type": "string",
