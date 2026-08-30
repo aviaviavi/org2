@@ -27,6 +27,8 @@ Global capture works anywhere on your Mac while OpenOrg is running. Press =Cmd-C
 
 You can open several corpora and switch between them from the sidebar. Agenda and Search can read across all mounted corpora, while writes stay scoped to the active corpus.
 
+Use tabs to keep several documents or workspace views open without mixing their navigation history. Press =Cmd-T= for a new tab and =Cmd-Shift-[= or =Cmd-Shift-]= for the previous or next tab. Drag tabs to reorder them, or right-click one to duplicate, move, close, or close the other tabs.
+
 * Write and read
 
 #+begin_export html
@@ -115,6 +117,7 @@ Back up or sync the corpus with a file-oriented tool you understand, such as Git
 - =Cmd-A= selects visible items in Agenda, Files, Runs, or Review; =Shift-Up/Down= extends the selection.
 - =Cmd-F= searches the active pane.
 - =Cmd-R= refreshes the workspace when you need a manual reconciliation.
+- =Cmd-T= opens a tab; =Cmd-Shift-[= and =Cmd-Shift-]= move between tabs.
 
 Use the in-app keyboard shortcuts sheet for the complete map.
 

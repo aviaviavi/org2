@@ -83,6 +83,22 @@ public enum WorkspaceKeyboardShortcutScope: Equatable, Sendable {
   case globalOnly
 }
 
+public struct WorkspaceTab: Identifiable, Hashable, Sendable {
+  public let id: UUID
+  public fileprivate(set) var title: String
+  public fileprivate(set) var systemImage: String
+
+  fileprivate init(
+    id: UUID = UUID(),
+    title: String,
+    systemImage: String
+  ) {
+    self.id = id
+    self.title = title
+    self.systemImage = systemImage
+  }
+}
+
 enum WorkspacePaneFocus: Equatable, Sendable {
   case surface
   case detail
@@ -563,6 +579,11 @@ private struct WorkspaceNavigationSnapshot: Hashable {
   let selectedCorpusFileID: String?
   let selectedMeetingID: String?
   let selectedOpenClawChatThreadID: UUID?
+}
+
+private struct WorkspaceTabState {
+  let navigation: WorkspaceNavigationSnapshot
+  let backStack: [WorkspaceNavigationSnapshot]
 }
 
 private struct OpenClawContextPointer: Equatable, Sendable {
@@ -1252,6 +1273,9 @@ public final class WorkspaceStore: ObservableObject {
   nonisolated static let workspaceSearchCandidateLimit = 100
   nonisolated static let workspaceSearchDisplayLimit = 50
   nonisolated static let agendaRangeDays = 30
+
+  @Published public private(set) var workspaceTabs: [WorkspaceTab]
+  @Published public private(set) var selectedWorkspaceTabID: WorkspaceTab.ID
 
   @Published public var selectedSurface: WorkspaceSurface = .home {
     didSet {
@@ -2169,6 +2193,7 @@ public final class WorkspaceStore: ObservableObject {
       canNavigateBack = !workspaceNavigationBackStack.isEmpty
     }
   }
+  private var workspaceTabStates: [WorkspaceTab.ID: WorkspaceTabState] = [:]
   private var workspaceUndoStack: [WorkspaceUndoAction] = []
   private var workspaceRedoStack: [WorkspaceUndoAction] = []
   private var corpusWorkspaceCaches: [String: CorpusWorkspaceCache] = [:]
@@ -2256,6 +2281,12 @@ public final class WorkspaceStore: ObservableObject {
     claudeSendHandlerForTesting: (@Sendable ([OpenClawChatMessage], UUID, OpenClawWorkspaceContext) async throws -> ClaudeCodeTurnResult)? = nil,
     legacyDefaultsDomains: [String]? = nil
   ) {
+    let initialWorkspaceTab = WorkspaceTab(
+      title: WorkspaceSurface.home.title,
+      systemImage: WorkspaceSurface.home.systemImage
+    )
+    workspaceTabs = [initialWorkspaceTab]
+    selectedWorkspaceTabID = initialWorkspaceTab.id
     self.defaults = defaults
     sourceScheduleStateStore = WorkspaceSourceScheduleStateStore(defaults: defaults)
     mountedCorpora = Self.shouldIgnoreStandardDefaultsForTests(defaults)
@@ -2900,6 +2931,7 @@ public final class WorkspaceStore: ObservableObject {
     selectedAgentRunID = cachedWorkspace?.selectedAgentRunID
     selectedAgentRunIDsForAIContext = []
     presentedAgentRunID = nil
+    resetWorkspaceTabsForCorpusChange()
     mutatingAgentRunIDs = []
     mutatingStandaloneApprovalFiles = []
     approvingApprovalItemIDs = []
@@ -8553,8 +8585,143 @@ public final class WorkspaceStore: ObservableObject {
     requestDetailScroll(toBlock: match.blockID)
   }
 
+  public func workspaceTabDisplayTitle(for tab: WorkspaceTab) -> String {
+    tab.id == selectedWorkspaceTabID
+      ? currentWorkspaceTabMetadata().title
+      : tab.title
+  }
+
+  public func workspaceTabDisplaySystemImage(for tab: WorkspaceTab) -> String {
+    tab.id == selectedWorkspaceTabID
+      ? currentWorkspaceTabMetadata().systemImage
+      : tab.systemImage
+  }
+
+  @discardableResult
+  public func newWorkspaceTab() -> WorkspaceTab.ID {
+    saveSelectedWorkspaceTabState()
+    let tab = WorkspaceTab(
+      title: WorkspaceSurface.home.title,
+      systemImage: WorkspaceSurface.home.systemImage
+    )
+    let insertionIndex = workspaceTabs.firstIndex(where: {
+      $0.id == selectedWorkspaceTabID
+    }).map { $0 + 1 } ?? workspaceTabs.endIndex
+    workspaceTabs.insert(tab, at: insertionIndex)
+    workspaceTabStates[tab.id] = initialWorkspaceTabState()
+    activateWorkspaceTab(tab.id)
+    return tab.id
+  }
+
+  @discardableResult
+  public func duplicateWorkspaceTab(_ tabID: WorkspaceTab.ID? = nil) -> WorkspaceTab.ID {
+    saveSelectedWorkspaceTabState()
+    let sourceID = tabID.flatMap { requestedID in
+      workspaceTabs.contains(where: { $0.id == requestedID }) ? requestedID : nil
+    } ?? selectedWorkspaceTabID
+    let sourceState = workspaceTabStates[sourceID] ?? initialWorkspaceTabState()
+    let sourceTab = workspaceTabs.first(where: { $0.id == sourceID })
+      ?? WorkspaceTab(
+        title: WorkspaceSurface.home.title,
+        systemImage: WorkspaceSurface.home.systemImage
+      )
+    let duplicate = WorkspaceTab(
+      title: sourceTab.title,
+      systemImage: sourceTab.systemImage
+    )
+    let insertionIndex = workspaceTabs.firstIndex(where: {
+      $0.id == sourceID
+    }).map { $0 + 1 } ?? workspaceTabs.endIndex
+    workspaceTabs.insert(duplicate, at: insertionIndex)
+    workspaceTabStates[duplicate.id] = sourceState
+    activateWorkspaceTab(duplicate.id)
+    return duplicate.id
+  }
+
+  public func selectWorkspaceTab(_ tabID: WorkspaceTab.ID) {
+    guard tabID != selectedWorkspaceTabID,
+          workspaceTabs.contains(where: { $0.id == tabID })
+    else { return }
+    saveSelectedWorkspaceTabState()
+    activateWorkspaceTab(tabID)
+  }
+
+  public func selectPreviousWorkspaceTab() {
+    selectAdjacentWorkspaceTab(offset: -1)
+  }
+
+  public func selectNextWorkspaceTab() {
+    selectAdjacentWorkspaceTab(offset: 1)
+  }
+
+  public func closeWorkspaceTab(_ tabID: WorkspaceTab.ID) {
+    guard workspaceTabs.count > 1,
+          let closingIndex = workspaceTabs.firstIndex(where: { $0.id == tabID })
+    else { return }
+
+    if tabID != selectedWorkspaceTabID {
+      workspaceTabs.remove(at: closingIndex)
+      workspaceTabStates.removeValue(forKey: tabID)
+      return
+    }
+
+    let replacementIndex = closingIndex < workspaceTabs.count - 1
+      ? closingIndex + 1
+      : closingIndex - 1
+    let replacementID = workspaceTabs[replacementIndex].id
+    workspaceTabs.remove(at: closingIndex)
+    workspaceTabStates.removeValue(forKey: tabID)
+    activateWorkspaceTab(replacementID)
+  }
+
+  public func closeOtherWorkspaceTabs(keeping tabID: WorkspaceTab.ID) {
+    guard workspaceTabs.count > 1,
+          workspaceTabs.contains(where: { $0.id == tabID })
+    else { return }
+    if selectedWorkspaceTabID != tabID {
+      selectWorkspaceTab(tabID)
+    } else {
+      saveSelectedWorkspaceTabState()
+    }
+    let keptTab = workspaceTabs.first(where: { $0.id == tabID })
+      ?? WorkspaceTab(
+        id: tabID,
+        title: WorkspaceSurface.home.title,
+        systemImage: WorkspaceSurface.home.systemImage
+      )
+    workspaceTabs = [keptTab]
+    workspaceTabStates = workspaceTabStates.filter { $0.key == tabID }
+  }
+
+  @discardableResult
+  public func moveWorkspaceTab(
+    _ tabID: WorkspaceTab.ID,
+    to targetID: WorkspaceTab.ID
+  ) -> Bool {
+    guard tabID != targetID,
+          let sourceIndex = workspaceTabs.firstIndex(where: { $0.id == tabID }),
+          let targetIndex = workspaceTabs.firstIndex(where: { $0.id == targetID })
+    else { return false }
+    let tab = workspaceTabs.remove(at: sourceIndex)
+    workspaceTabs.insert(tab, at: min(targetIndex, workspaceTabs.endIndex))
+    return true
+  }
+
+  public func moveWorkspaceTab(_ tabID: WorkspaceTab.ID, offset: Int) {
+    guard offset != 0,
+          let sourceIndex = workspaceTabs.firstIndex(where: { $0.id == tabID })
+    else { return }
+    let targetIndex = sourceIndex + offset
+    guard workspaceTabs.indices.contains(targetIndex) else { return }
+    workspaceTabs.swapAt(sourceIndex, targetIndex)
+  }
+
   public func navigateBack() {
     guard let snapshot = workspaceNavigationBackStack.popLast() else { return }
+    restoreWorkspaceNavigationSnapshot(snapshot)
+  }
+
+  private func restoreWorkspaceNavigationSnapshot(_ snapshot: WorkspaceNavigationSnapshot) {
     if let runID = snapshot.agentRunDetailID,
        agentRuns.contains(where: { $0.id == runID }) {
       activateAgentRunDetail(runID, recordsHistory: false)
@@ -8571,6 +8738,109 @@ public final class WorkspaceStore: ObservableObject {
     }
     restoreWorkspaceSelection(from: snapshot)
     restoreWorkspacePaneLayout(from: snapshot)
+  }
+
+  private func saveSelectedWorkspaceTabState() {
+    let metadata = currentWorkspaceTabMetadata()
+    if let index = workspaceTabs.firstIndex(where: {
+      $0.id == selectedWorkspaceTabID
+    }), workspaceTabs[index].title != metadata.title
+      || workspaceTabs[index].systemImage != metadata.systemImage {
+      workspaceTabs[index].title = metadata.title
+      workspaceTabs[index].systemImage = metadata.systemImage
+    }
+    workspaceTabStates[selectedWorkspaceTabID] = WorkspaceTabState(
+      navigation: currentWorkspaceNavigationSnapshot(),
+      backStack: workspaceNavigationBackStack
+    )
+  }
+
+  private func activateWorkspaceTab(_ tabID: WorkspaceTab.ID) {
+    guard workspaceTabs.contains(where: { $0.id == tabID }) else { return }
+    let state = workspaceTabStates[tabID] ?? initialWorkspaceTabState()
+    // A tab switch is a session boundary even when both tabs point at the
+    // same file. Tear down the outgoing detail first so editor drafts,
+    // in-flight loads, and view-local state cannot leak into the next tab.
+    clearDetailForNavigation()
+    selectedWorkspaceTabID = tabID
+    workspaceNavigationBackStack = state.backStack
+    restoreWorkspaceNavigationSnapshot(state.navigation)
+  }
+
+  private func selectAdjacentWorkspaceTab(offset: Int) {
+    guard workspaceTabs.count > 1,
+          let selectedIndex = workspaceTabs.firstIndex(where: {
+            $0.id == selectedWorkspaceTabID
+          })
+    else { return }
+    let count = workspaceTabs.count
+    let nextIndex = (selectedIndex + offset % count + count) % count
+    selectWorkspaceTab(workspaceTabs[nextIndex].id)
+  }
+
+  private func initialWorkspaceTabState() -> WorkspaceTabState {
+    WorkspaceTabState(
+      navigation: WorkspaceNavigationSnapshot(
+        location: nil,
+        agentRunDetailID: nil,
+        selectedSurface: .home,
+        selectedEntrySourceMode: .entry,
+        expandedWorkspaceSurface: nil,
+        isWorkspaceSurfacePaneClosed: false,
+        isWorkspaceDetailPaneClosed: false,
+        isWorkspaceDetailPaneExpanded: false,
+        isOpenClawAssistantPresented: false,
+        isNodeContextPanePresented: false,
+        selectedAgendaItemID: nil,
+        selectedAssignedWorkItemID: nil,
+        selectedApprovalItemID: nil,
+        selectedCorpusFileID: nil,
+        selectedMeetingID: nil,
+        selectedOpenClawChatThreadID: nil
+      ),
+      backStack: []
+    )
+  }
+
+  private func resetWorkspaceTabsForCorpusChange() {
+    workspaceTabStates = [:]
+    let metadata = currentWorkspaceTabMetadata()
+    workspaceTabs = [WorkspaceTab(
+      id: selectedWorkspaceTabID,
+      title: metadata.title,
+      systemImage: metadata.systemImage
+    )]
+  }
+
+  private func currentWorkspaceTabMetadata() -> (title: String, systemImage: String) {
+    let rawTitle: String
+    if let presentedAgentRun {
+      rawTitle = presentedAgentRun.goal
+    } else if selectedSurface == .openClaw,
+              let threadID = selectedOpenClawChatThreadID,
+              let thread = openClawChatThreads.first(where: { $0.id == threadID }) {
+      rawTitle = thread.title
+    } else if let selectedLocation {
+      rawTitle = selectedLocation.title
+    } else {
+      rawTitle = selectedSurface.title
+    }
+    return (
+      Self.normalizedWorkspaceTabTitle(rawTitle, fallback: selectedSurface.title),
+      selectedSurface.systemImage
+    )
+  }
+
+  nonisolated private static func normalizedWorkspaceTabTitle(
+    _ rawTitle: String,
+    fallback: String
+  ) -> String {
+    let cleaned = Org2Display.cleanInline(rawTitle)
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    let resolved = cleaned.isEmpty ? fallback : cleaned
+    let limit = 48
+    guard resolved.count > limit else { return resolved }
+    return String(resolved.prefix(limit - 1)).trimmingCharacters(in: .whitespaces) + "…"
   }
 
   private func activateDetailLocation(
@@ -10335,7 +10605,12 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public var liveFileEditorHasUnsavedChanges: Bool {
-    guard let source = selectedEntrySource, isLiveFileEditorSelected else { return false }
+    guard let source = selectedEntrySource,
+          let selectedLocation,
+          isLiveFileEditorSelected,
+          URL(fileURLWithPath: source.file).standardizedFileURL.path
+            == URL(fileURLWithPath: selectedLocation.file).standardizedFileURL.path
+    else { return false }
     return Self.normalizeLineEndings(editableEntryText) != Self.normalizeLineEndings(source.text)
   }
 
@@ -25014,6 +25289,11 @@ public final class WorkspaceStore: ObservableObject {
         }
         guard canSaveCurrentFile else { return false }
         Task { await saveActiveEdit() }
+      case "t":
+        newWorkspaceTab()
+      case "w":
+        guard workspaceTabs.count > 1 else { return false }
+        closeWorkspaceTab(selectedWorkspaceTabID)
       case "/":
         isKeyboardShortcutsPresented = true
       case "z":
@@ -25031,6 +25311,12 @@ public final class WorkspaceStore: ObservableObject {
 
     if modifiers == [.command, .shift] {
       switch key {
+      case "[":
+        selectPreviousWorkspaceTab()
+        return true
+      case "]":
+        selectNextWorkspaceTab()
+        return true
       case "f":
         focusSearchSurface()
         return true

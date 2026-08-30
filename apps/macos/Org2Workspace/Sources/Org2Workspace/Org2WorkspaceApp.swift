@@ -92,6 +92,11 @@ struct Org2WorkspaceApp: App {
       }
 
       CommandGroup(replacing: .newItem) {
+        Button("New Tab") {
+          store.newWorkspaceTab()
+        }
+        .keyboardShortcut("t", modifiers: [.command])
+
         Button("New AI Thread") {
           store.createAIChatThread()
           store.makeSurfacePrimary(.openClaw)
@@ -100,6 +105,20 @@ struct Org2WorkspaceApp: App {
       }
 
       CommandGroup(after: .newItem) {
+        Button("Show Previous Tab") {
+          store.selectPreviousWorkspaceTab()
+        }
+        .keyboardShortcut("[", modifiers: [.command, .shift])
+        .disabled(store.workspaceTabs.count < 2)
+
+        Button("Show Next Tab") {
+          store.selectNextWorkspaceTab()
+        }
+        .keyboardShortcut("]", modifiers: [.command, .shift])
+        .disabled(store.workspaceTabs.count < 2)
+
+        Divider()
+
         Button("Open Corpus...") {
           store.chooseCorpus()
         }

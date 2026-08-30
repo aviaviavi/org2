@@ -19,61 +19,66 @@ public struct ContentView: View {
 
   public var body: some View {
     GeometryReader { proxy in
-      NavigationSplitView {
-        SidebarView()
-          .navigationSplitViewColumnWidth(
-            min: WorkspaceSidebarLayout.minimumWidth,
-            ideal: WorkspaceSidebarLayout.defaultWidth(for: proxy.size.width),
-            max: WorkspaceSidebarLayout.maximumWidth(for: proxy.size.width)
-          )
-      } detail: {
-        WorkspaceMainArea()
+      VStack(spacing: 0) {
+        WorkspaceTabBar()
+
+        NavigationSplitView {
+          SidebarView()
+            .navigationSplitViewColumnWidth(
+              min: WorkspaceSidebarLayout.minimumWidth,
+              ideal: WorkspaceSidebarLayout.defaultWidth(for: proxy.size.width),
+              max: WorkspaceSidebarLayout.maximumWidth(for: proxy.size.width)
+            )
+        } detail: {
+          WorkspaceMainArea()
+        }
       }
       .toolbar {
-      ToolbarItem(placement: .navigation) {
-        Button {
-          store.navigateBack()
-        } label: {
-          Label("Back", systemImage: "chevron.left")
-        }
-        .labelStyle(.iconOnly)
-        .frame(width: 28, height: 28)
-        .help(store.canNavigateBack ? "Back" : "No previous location")
-      }
-
-      ToolbarItemGroup {
-        Button {
-          store.makeSurfacePrimary(.openClaw)
-        } label: {
-          Label("Open AI Chat", systemImage: "bubble.left")
-        }
-
-        Button {
-          store.chooseCorpus()
-        } label: {
-          Label("Mount Corpus", systemImage: "folder.badge.plus")
-        }
-
-        Button {
-          if store.isRefreshingWorkspace {
-            store.cancelWorkspaceRefresh()
-          } else {
-            Task { await store.refreshWorkspace() }
+        ToolbarItem(placement: .navigation) {
+          Button {
+            store.navigateBack()
+          } label: {
+            Label("Back", systemImage: "chevron.left")
           }
-        } label: {
-          if store.isRefreshingWorkspace {
-            HStack(spacing: 6) {
-              WorkspaceActivityIndicator(size: .small)
-              Text("Cancel Refresh All")
+          .labelStyle(.iconOnly)
+          .frame(width: 28, height: 28)
+          .disabled(!store.canNavigateBack)
+          .help(store.canNavigateBack ? "Back" : "No previous location")
+        }
+
+        ToolbarItemGroup {
+          Button {
+            store.makeSurfacePrimary(.openClaw)
+          } label: {
+            Label("Open AI Chat", systemImage: "bubble.left")
+          }
+
+          Button {
+            store.chooseCorpus()
+          } label: {
+            Label("Mount Corpus", systemImage: "folder.badge.plus")
+          }
+
+          Button {
+            if store.isRefreshingWorkspace {
+              store.cancelWorkspaceRefresh()
+            } else {
+              Task { await store.refreshWorkspace() }
             }
-          } else {
-            Label("Refresh All", systemImage: "arrow.clockwise")
+          } label: {
+            if store.isRefreshingWorkspace {
+              HStack(spacing: 6) {
+                WorkspaceActivityIndicator(size: .small)
+                Text("Cancel Refresh All")
+              }
+            } else {
+              Label("Refresh All", systemImage: "arrow.clockwise")
+            }
           }
+          .disabled(store.corpusRoot == nil && !store.isRefreshingWorkspace)
+          .help(store.isRefreshingWorkspace ? "Stop the current workspace refresh (⌘R)" : "Refresh every workspace view (⌘R)")
         }
-        .disabled(store.corpusRoot == nil && !store.isRefreshingWorkspace)
-        .help(store.isRefreshingWorkspace ? "Stop the current workspace refresh (⌘R)" : "Refresh every workspace view (⌘R)")
       }
-    }
       .keyboardEventMonitor { event, scope in
         store.handleWorkspaceKeyDown(event, scope: scope)
       }
@@ -125,6 +130,181 @@ public struct ContentView: View {
           dismissButton: .default(Text("OK"))
         )
       }
+    }
+  }
+}
+
+private struct WorkspaceTabBar: View {
+  @EnvironmentObject private var store: WorkspaceStore
+
+  var body: some View {
+    HStack(spacing: 8) {
+      ScrollViewReader { proxy in
+        ScrollView(.horizontal, showsIndicators: false) {
+          LazyHStack(spacing: 4) {
+            ForEach(store.workspaceTabs) { tab in
+              WorkspaceTabItem(tab: tab)
+                .id(tab.id)
+            }
+          }
+          .padding(.horizontal, 6)
+        }
+        .onChange(of: store.selectedWorkspaceTabID) { _, tabID in
+          withAnimation(WorkspaceMotion.quick) {
+            proxy.scrollTo(tabID, anchor: .center)
+          }
+        }
+      }
+
+      Button {
+        store.newWorkspaceTab()
+      } label: {
+        Image(systemName: "plus")
+          .font(.system(size: 11, weight: .semibold))
+          .frame(width: 24, height: 24)
+      }
+      .buttonStyle(.plain)
+      .background(WorkspaceDesign.controlFill, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+      .help("New Tab (⌘T)")
+      .accessibilityLabel("New Tab")
+      .padding(.trailing, 8)
+    }
+    .frame(height: 36)
+    .background(WorkspaceDesign.barBackground)
+    .overlay(alignment: .bottom) {
+      Rectangle()
+        .fill(WorkspaceDesign.hairline)
+        .frame(height: 1)
+    }
+  }
+}
+
+private struct WorkspaceTabItem: View {
+  @EnvironmentObject private var store: WorkspaceStore
+  let tab: WorkspaceTab
+  @State private var isHovered = false
+  @State private var isDropTargeted = false
+
+  private var isSelected: Bool {
+    store.selectedWorkspaceTabID == tab.id
+  }
+
+  private var tabIndex: Int? {
+    store.workspaceTabs.firstIndex(where: { $0.id == tab.id })
+  }
+
+  private var title: String {
+    store.workspaceTabDisplayTitle(for: tab)
+  }
+
+  var body: some View {
+    HStack(spacing: 4) {
+      Button {
+        store.selectWorkspaceTab(tab.id)
+      } label: {
+        HStack(spacing: 7) {
+          Image(systemName: store.workspaceTabDisplaySystemImage(for: tab))
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(isSelected ? Color.accentColor : WorkspaceDesign.secondaryText)
+            .frame(width: 14)
+          Text(title)
+            .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
+            .foregroundStyle(WorkspaceDesign.primaryText)
+            .lineLimit(1)
+            .truncationMode(.tail)
+          Spacer(minLength: 0)
+        }
+        .contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
+
+      if store.workspaceTabs.count > 1 {
+        Button {
+          store.closeWorkspaceTab(tab.id)
+        } label: {
+          Image(systemName: "xmark")
+            .font(.system(size: 8, weight: .bold))
+            .frame(width: 16, height: 16)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(WorkspaceDesign.secondaryText)
+        .opacity(isSelected || isHovered ? 1 : 0)
+        .allowsHitTesting(isSelected || isHovered)
+        .accessibilityLabel("Close \(title)")
+      }
+    }
+    .padding(.horizontal, 9)
+    .frame(width: 180, height: 28)
+    .background(
+      isSelected
+        ? WorkspaceDesign.selectedFill
+        : isDropTargeted
+          ? WorkspaceDesign.controlPressedFill
+          : isHovered ? WorkspaceDesign.controlHoverFill : WorkspaceDesign.controlFill,
+      in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+    )
+    .overlay {
+      RoundedRectangle(cornerRadius: 7, style: .continuous)
+        .stroke(
+          isSelected || isDropTargeted ? Color.accentColor.opacity(0.34) : WorkspaceDesign.hairline,
+          lineWidth: 1
+        )
+    }
+    .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+    .onHover { isHovered = $0 }
+    .help(title)
+    .accessibilityElement(children: .contain)
+    .accessibilityAddTraits(isSelected ? .isSelected : [])
+    .draggable(tab.id.uuidString) {
+      Label(title, systemImage: store.workspaceTabDisplaySystemImage(for: tab))
+        .font(.callout)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+    .dropDestination(for: String.self) { items, _ in
+      guard let sourceID = items.compactMap(UUID.init(uuidString:)).first else {
+        return false
+      }
+      withAnimation(WorkspaceMotion.quick) {
+        _ = store.moveWorkspaceTab(sourceID, to: tab.id)
+      }
+      return true
+    } isTargeted: { isDropTargeted = $0 }
+    .contextMenu {
+      Button("New Tab") {
+        store.selectWorkspaceTab(tab.id)
+        store.newWorkspaceTab()
+      }
+
+      Button("Duplicate Tab") {
+        store.duplicateWorkspaceTab(tab.id)
+      }
+
+      Divider()
+
+      Button("Move Tab Left") {
+        store.moveWorkspaceTab(tab.id, offset: -1)
+      }
+      .disabled(tabIndex == 0)
+
+      Button("Move Tab Right") {
+        store.moveWorkspaceTab(tab.id, offset: 1)
+      }
+      .disabled(tabIndex == store.workspaceTabs.count - 1)
+
+      Divider()
+
+      Button("Close Tab") {
+        store.closeWorkspaceTab(tab.id)
+      }
+      .disabled(store.workspaceTabs.count == 1)
+
+      Button("Close Other Tabs") {
+        store.closeOtherWorkspaceTabs(keeping: tab.id)
+      }
+      .disabled(store.workspaceTabs.count == 1)
     }
   }
 }
@@ -2617,6 +2797,12 @@ private struct KeyboardShortcutsView: View {
             ShortcutHelpItem(keys: "⌘5 / ⌘M", action: "Meetings"),
             ShortcutHelpItem(keys: "⌘6", action: "AI Chat"),
             ShortcutHelpItem(keys: "⌘0", action: "Sources")
+          ])
+
+          ShortcutSection(title: "Tabs", shortcuts: [
+            ShortcutHelpItem(keys: "⌘T", action: "New tab"),
+            ShortcutHelpItem(keys: "⌘⇧[ / ⌘⇧]", action: "Previous / next tab"),
+            ShortcutHelpItem(keys: "⌘W", action: "Close current tab")
           ])
 
           ShortcutSection(title: "Pane Layout", shortcuts: [
