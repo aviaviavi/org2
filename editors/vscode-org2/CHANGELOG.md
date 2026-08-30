@@ -4,6 +4,22 @@ All notable changes to the Org2 VS Code extension are documented in this file.
 
 ## Unreleased
 
+## 0.6.0 - 2026-08-30
+
+## Highlights
+
+- OpenOrg now keeps Google Drive publications linked to their source. The first publish records the Drive artifact and guarded version in the relevant `.org2` property drawer; publishing that scope and format again updates the same Doc, Slides deck, Sheet, or PDF instead of creating a duplicate.
+- A green Google Drive badge in the document header makes linked artifacts easy to reopen or copy, and the publish sheet clearly distinguishes first-time publishing from updating an existing destination.
+- Distributed Mac builds now include OpenOrg's registered Google OAuth desktop client, so most users can connect Google Drive directly while custom clients remain available for self-built deployments.
+- The workspace's Context pane and source-cited Brief experience are now represented throughout the product guidance, demo corpus, and generated site.
+- Release packaging now verifies the Google OAuth configuration before producing distributable Mac artifacts.
+
+## Stability and polish
+
+- Preserves guarded Google Drive replacement semantics so remote changes or comments are not silently overwritten.
+- Improves the getting-started guidance around runtime-neutral agent work, triggers, approvals, and durable corpus records.
+- Refreshes the macOS product screenshots and feature presentation for the current workspace UI.
+
 ## 0.5.4 - 2026-08-30
 
 ## OpenOrg 0.5.4
