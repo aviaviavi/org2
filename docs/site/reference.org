@@ -19,6 +19,7 @@ Org2 reference is split into two detailed sections:
 - [[file:tooling-reference.org][Tooling reference]]
   - agenda filters and views
   - formatter behavior
+  - content-addressed Git plugins, trust, commands, templates, and document renderers
   - roam workflows (IDs/backlinks/node creation/link insertion)
   - export/publish/LSP workflows
 - [[file:editors.org][Editor integrations]]

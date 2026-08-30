@@ -7,6 +7,13 @@ package, schemas, and editor tooling. This repository contains both the shared
 Org2 foundation and the OpenOrg apps built on it; repository and developer
 identifiers remain Org2 for compatibility.
 
+The initial plugin runtime installs self-contained Git packages through
+=org2 plugin=, pins exact commits and SHA-256 contents in a corpus lock file,
+and requires machine-local trust before contributed CLI commands or sandboxed
+document renderers execute. The same renderer contribution is used by CLI HTML
+export and OpenOrg; there is no separate native-app plugin ABI. See
+https://org2.avi.press/tooling-reference.html#plugins.
+
 OpenOrg product site: https://openorg.so/
 Current developer docs: https://org2.avi.press/
 

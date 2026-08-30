@@ -508,6 +508,13 @@ All of these nodes MUST retain =raw= bytes for deterministic printing. Rendering
 
 Macro expansion, inline source blocks, inline Babel calls, and Babel execution are deliberately outside the v0 canonical AST. Their source bytes remain ordinary text or directives.
 
+External plugins MUST NOT replace or mutate the v0 parser contract. A client
+MAY interpret preserved source-block languages or other canonical nodes through
+an additive, versioned extension API, but the underlying AST and deterministic
+printer remain defined by this specification. Plugin manifests, locks, trust,
+execution, and presentation sandboxing are runtime contracts rather than new
+v0 syntax.
+
 * Links (v0)
 
 Org2 v0 supports a limited subset of Org links as inline nodes.

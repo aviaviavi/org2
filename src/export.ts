@@ -33,6 +33,7 @@ import {
 import { COMPAT_CONTENT_CLOSE, COMPAT_CONTENT_OPEN, COMPAT_CONTENT_STYLE_SECTION } from "./publish-defaults.js";
 import { isPresentationDocument } from "./presentation.js";
 import { evaluateTableNode } from "./tableFormula.js";
+import type { Org2PluginRender } from "./pluginRuntime.js";
 
 function escapeHtml(value: string): string {
   return String(value)
@@ -550,6 +551,19 @@ th { color: var(--org2-muted); background: var(--org2-faint); font-family: var(-
 .org2-chart-tooltip[hidden] { display: none; }
 .org2-chart-tooltip-label { display: block; color: var(--org2-muted); }
 .org2-chart-tooltip-value { display: block; margin-top: 0.08rem; font-weight: 650; font-variant-numeric: tabular-nums; }
+.org2-plugin-render { width: 100%; margin: 0.85rem 0 1.25rem; overflow: hidden; }
+.org2-plugin-render iframe { color-scheme: light dark; }
+.org2-plugin-render-error {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0.75rem 0 1rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid color-mix(in srgb, var(--org2-danger, #b42318) 40%, transparent);
+  border-radius: 10px;
+  color: var(--org2-danger, #b42318);
+  background: color-mix(in srgb, var(--org2-danger, #b42318) 7%, transparent);
+  font-size: 0.86rem;
+}
 .org2-column-resizer {
   position: absolute;
   top: 0;
@@ -1043,6 +1057,7 @@ type RenderContext = {
   profile?: "publish" | "app";
   chartsByTableLine?: Map<number, OrgEmbeddedChart>;
   chartsByBlockLine?: Map<number, OrgEmbeddedChart>;
+  pluginRendersByBlockLine?: Map<number, Org2PluginRender>;
 };
 
 export type OrgEmbeddedChart = {
@@ -1794,6 +1809,8 @@ function renderSrcBlock(node: SrcBlockNode, context: RenderContext): string {
     .split(/\s+/)[0];
   const language = languageRaw.toLowerCase().replace(/[^a-z0-9_+-]/g, "");
   const sourceRange = (node as SourceRangedNode).sourceRange;
+  const pluginRender = sourceRange ? context.pluginRendersByBlockLine?.get(sourceRange.startLine) : undefined;
+  if (pluginRender) return renderPluginFrame(pluginRender, renderSourceAttributes(node, context));
   const embeddedChart = sourceRange && (language === "chart" || language === "plot")
     ? context.chartsByBlockLine?.get(sourceRange.startLine)
     : undefined;
@@ -1803,6 +1820,19 @@ function renderSrcBlock(node: SrcBlockNode, context: RenderContext): string {
   const body = escapeHtml(node.bodyRaw.replace(/\n$/, ""));
   const baseStyle = "padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;";
   return `<pre class="org2-src${languageClass}"${renderSourceAttributes(node, context)} style="${escapeAttr(baseStyle)}"><code${codeClassAttr}>${body}</code></pre>`;
+}
+
+function renderPluginFrame(render: Org2PluginRender, sourceAttributes = ""): string {
+  const identity = `${render.pluginId}:${render.rendererId}`;
+  if (render.error) {
+    return `<aside class="org2-plugin-render-error" data-org2-plugin="${escapeAttr(identity)}"${sourceAttributes}><strong>Plugin renderer unavailable</strong><span>${escapeHtml(render.error)}</span></aside>`;
+  }
+  const csp = "default-src 'none'; base-uri 'none'; connect-src 'none'; font-src data:; form-action 'none'; frame-src 'none'; img-src data: blob:; media-src data: blob:; navigate-to 'none'; object-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; worker-src 'none'";
+  const css = String(render.css || "").replace(/<\/style/gi, "<\\/style");
+  const script = String(render.script || "").replace(/<\/script/gi, "<\\/script");
+  const document = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${escapeAttr(csp)}"><meta name="referrer" content="no-referrer"><style>html,body{margin:0;padding:0;color-scheme:light dark;font-family:-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif}*{box-sizing:border-box}${css}</style></head><body>${render.html || ""}${script ? `<script>${script}</script>` : ""}</body></html>`;
+  const title = render.title || `${render.pluginId} ${render.rendererId}`;
+  return `<figure class="org2-plugin-render" data-org2-plugin="${escapeAttr(identity)}"${sourceAttributes}><iframe title="${escapeAttr(title)}" sandbox="allow-scripts" referrerpolicy="no-referrer" loading="lazy" style="display:block;width:100%;height:${render.height}px;border:0;background:transparent" srcdoc="${escapeAttr(document)}"></iframe></figure>`;
 }
 
 function renderEmbeddedChart(chart: OrgEmbeddedChart, sourceAttributes = ""): string {
@@ -2166,6 +2196,7 @@ function buildDocumentRenderContext(
     linearTeam?: string;
     profile?: "publish" | "app";
     charts?: OrgEmbeddedChart[];
+    pluginRenders?: Org2PluginRender[];
   },
 ): { context: RenderContext; tocItems: TocItem[] } {
   let tocItems: TocItem[] = [];
@@ -2189,6 +2220,10 @@ function buildDocumentRenderContext(
       if (chart.source.chartLine) context.chartsByBlockLine.set(chart.source.chartLine, chart);
       else context.chartsByTableLine.set(chart.source.line, chart);
     }
+  }
+
+  if (opts.pluginRenders?.length) {
+    context.pluginRendersByBlockLine = new Map(opts.pluginRenders.map((render) => [render.source.line, render]));
   }
 
   if (includeHeadlineData) {
@@ -2307,6 +2342,7 @@ export function renderOrgDocumentToHtml(
     linearTeam?: string;
     profile?: "publish" | "app";
     charts?: OrgEmbeddedChart[];
+    pluginRenders?: Org2PluginRender[];
   } = {},
 ): { html: string; title: string; metadata: OrgExportMetadata } {
   const title = resolveTitle(doc, opts.title, opts.sourcePath);
@@ -2322,6 +2358,7 @@ export function renderOrgDocumentToHtml(
     linearTeam: opts.linearTeam,
     profile: opts.profile,
     charts: opts.charts,
+    pluginRenders: opts.pluginRenders,
   });
 
   const mainBody = renderMainBody({
@@ -2364,6 +2401,7 @@ export function renderOrgDocumentToAppHtml(
     linearTeam?: string;
     customCss?: string;
     charts?: OrgEmbeddedChart[];
+    pluginRenders?: Org2PluginRender[];
   } = {},
 ): { html: string; title: string; metadata: OrgExportMetadata } {
   const customCss = String(opts.customCss || "").trim();
@@ -2388,6 +2426,7 @@ export function renderOrgDocumentToAppHtml(
     linearTeam: opts.linearTeam,
     profile: "app",
     charts: opts.charts,
+    pluginRenders: opts.pluginRenders,
   });
 }
 

@@ -1,0 +1,19 @@
+#+title: Org2 Chess PGN plugin
+
+This self-contained example plugin renders =pgn= and =chess-pgn= source blocks
+as an interactive board through the shared Org2 HTML runtime. It therefore
+works in =org2 export html= and OpenOrg without a separate Mac extension. It
+uses the v1 process protocol and ships without an install step or third-party
+dependencies.
+
+From a corpus, install the package from this repository and explicitly trust
+its resolved content hash:
+
+#+begin_src sh
+org2 plugin add https://github.com/aviaviavi/org2.git \
+  --subdir examples/plugins/chess-pgn --trust --apply
+#+end_src
+
+The first install is pinned in =org2.plugins.lock.json=. Later
+=org2 plugin sync --apply= reproduces that exact version; use
+=org2 plugin update org2.chess-pgn --apply= to advance it deliberately.

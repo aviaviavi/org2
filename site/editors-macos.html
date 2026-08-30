@@ -96,6 +96,11 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <li><p><strong>Edit Source</strong> provides a native macOS text editor with syntax highlighting, folding, diagnostics, list continuation, TODO and planning commands, link insertion, undo, and safe saving.</p></li>
 </ul>
 <p>An optional split view keeps source and rendered preview visible together. Rendered tables can be filtered, sorted, and resized without changing the source. CSV files open in an editable table with a raw-text fallback.</p>
+<p>Trusted Org2 plugins can add renderers for source-block languages. The shared
+CLI HTML runtime powers both read mode and source preview, so the same plugin
+also works in <code>org2 export html</code> without a separate Mac extension or app
+rebuild. Renderer UI runs in a sandboxed, opaque-origin frame. See
+<a href="tooling-reference.html#plugins">Tooling reference → Plugins</a>.</p>
 <p>OpenOrg can export an ordinary document or selected subtree as a clean PDF. It can also preview slide decks and export presentation PDFs. Publication uses a disclosure-safe copy that removes private workspace metadata and unresolved local references from the shared output.</p>
 </section>
 <section class="org2-headline level-1">

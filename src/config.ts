@@ -83,6 +83,15 @@ export type Org2ExternalSourceConfig = {
   };
 };
 
+export type Org2PluginConfig = {
+  /** GitHub shorthand, Git URL, file URL, or local Git checkout. */
+  source: string;
+  /** Mutable source intent; the lock file records the immutable commit. */
+  ref?: string;
+  /** Optional plugin package directory within a larger repository. */
+  subdir?: string;
+};
+
 export interface Org2Config {
   corpus?: Org2CorpusIdentity;
   agendaFiles?: string[];
@@ -104,6 +113,8 @@ export interface Org2Config {
     projects?: Record<string, Org2PublishProjectConfig>;
   };
   dataSources?: Record<string, Org2DataSourceConfig>;
+  /** Portable plugin source intent. Exact commits and hashes live in org2.plugins.lock.json. */
+  plugins?: Org2PluginConfig[];
   /** Portable, non-secret source intent. Credentials and machine paths live in local bindings. */
   externalSources?: Record<string, Org2ExternalSourceConfig>;
 }

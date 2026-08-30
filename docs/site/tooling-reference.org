@@ -20,6 +20,7 @@ Main workflows:
 - =index=, =entity=, =approvals=, =clock=
 - =agent capabilities=, =agent context/search/fetch/bundle=, =context=, =brief=
 - =goal=, =agent-profile=, =run=, =review=, =workflow=, =artifact=, =runtime=, =mcp=, =eval=
+- =plugin= for content-addressed Git extensions, commands, templates, and document renderers
 - =corpus= identity inspection, validation, and preview-first initialization
 - =workspace agenda=, =workspace search= for read-only projections across explicitly mounted corpora
 - =source list=, =source doctor=, =source status=, =source bind=, =source schedule=, =source import=, =source sync= for external source mirrors and staged review packets
@@ -36,6 +37,135 @@ Main workflows:
 - =graph audit=
 - =ai validate-job=
 - =lsp=
+
+* Plugins
+
+Org2 plugins are self-contained Git packages. A corpus records portable source
+intent in =org2.json=, while =org2.plugins.lock.json= pins the exact Git commit,
+validated manifest, and SHA-256 hash of the package contents. Installed bytes
+live in the machine-wide content store under =~/.org2/plugins/store/= and are
+shared safely by every corpus that locks the same hash. Set =ORG2_PLUGIN_HOME=
+to use a different machine-local store.
+
+The first release accepts ordinary GitHub HTTPS URLs, =github:OWNER/REPOSITORY=
+shorthand, general HTTPS/SSH/scp-style Git URLs, =file:= URLs, and local Git
+checkouts. A package can also live in a repository subdirectory. Mutable refs
+are only resolved by =add= or =update=; =sync= always reproduces the locked
+commit and fails if its content hash changes.
+
+#+begin_src sh
+# Preview the exact revision and content hash without changing the corpus.
+org2 plugin add https://github.com/example/org2-calendar.git --dir ~/notes --json
+
+# Record the source, lock and install the package, then trust this exact hash.
+org2 plugin add github:example/org2-calendar --dir ~/notes --trust --apply
+
+# Install a package from a monorepo.
+org2 plugin add https://github.com/aviaviavi/org2.git \
+  --subdir examples/plugins/chess-pgn --dir ~/notes --trust --apply
+
+org2 plugin list --dir ~/notes --json
+org2 plugin doctor --dir ~/notes --json
+org2 plugin sync --dir ~/notes
+org2 plugin sync --dir ~/notes --apply
+org2 plugin update org2.chess-pgn --dir ~/notes
+org2 plugin update org2.chess-pgn --dir ~/notes --trust --apply
+org2 plugin trust org2.chess-pgn --revoke --dir ~/notes --apply
+#+end_src
+
+All mutations preview unless =--apply= is present. =remove= deletes the corpus
+declaration and lock entry but retains immutable store bytes because another
+corpus may use them. The initial ecosystem intentionally has no central
+registry: the locked source, commit, hash, and manifest are sufficient to
+reproduce and audit a package. A future registry can resolve names into this
+same source-and-lock model without becoming the package authority.
+
+** Package manifest
+
+A package root contains =org2-plugin.json= and every file it needs at runtime.
+Symlinks and install scripts are rejected; executable contributions use =.js=,
+=.mjs=, or =.cjs= process entries inside that self-contained package. This
+keeps a locked Git tree independently hashable and removes a mutable
+dependency-install step.
+
+#+begin_src json
+{
+  "$schema": "org2:plugin-manifest:v1",
+  "id": "example.cards",
+  "name": "Example cards",
+  "version": "0.1.0",
+  "engines": { "org2": ">=0.5.2 <1.0.0" },
+  "permissions": { "environment": ["EXAMPLE_API_TOKEN"] },
+  "contributes": {
+    "commands": [
+      { "id": "import", "entry": "import.mjs" }
+    ],
+    "renderers": [
+      {
+        "id": "card",
+        "languages": ["example-card"],
+        "entry": "render-card.mjs"
+      }
+    ],
+    "templates": [
+      { "id": "card-note", "path": "templates/card.org2" }
+    ]
+  }
+}
+#+end_src
+
+The =engines.org2= field accepts exact versions, comparison sets, =^= and =~=
+ranges, and =||= alternatives. An incompatible package is rejected before it
+enters the store. Environment variables are absent by default apart from a
+small process baseline; a manifest must name each additional variable it wants
+to receive.
+
+** Contributions and process protocol
+
+V1 has three additive contribution kinds:
+
+- *Commands* run explicitly with =org2 plugin exec PLUGIN COMMAND -- ARG...=.
+  The process receives one =org2:plugin-invocation:v1= JSON object on stdin and
+  returns one =org2:plugin-result:v1= JSON object on stdout.
+- *Templates* are static package files copied into the corpus with
+  =org2 plugin template PLUGIN:TEMPLATE --out PATH=. Output must remain inside
+  the corpus and preview/apply rules still apply.
+- *Document renderers* claim one or more source-block languages. The shared CLI
+  renderer gives the process the block body, arguments, source lines, and
+  document path. It returns
+  =org2:plugin-render-result:v1= JSON containing HTML plus optional CSS,
+  JavaScript, title, and height. The result replaces that source block in
+  =org2 export html=, OpenOrg read mode, and OpenOrg source preview.
+
+The npm package ships JSON Schemas for the manifest, lock, invocation, command
+result, and renderer result under =spec/v0/plugin-*.schema.json=. Plugin stdout
+is bounded to 1 MiB; renderer fields have smaller per-field limits, and a
+package is limited to 10,000 files and 64 MiB of content.
+
+The shared parser still owns the canonical Org2 AST. V1 renderer languages are
+therefore additive source-block syntax, not arbitrary parser replacement. The
+versioned contribution model leaves room for future importers, syntax semantic
+modules, data sources, and other integration points without making their code
+part of core. Built-in =chart= and =plot= languages remain reserved.
+
+** Trust boundary
+
+Downloading or locking a plugin never executes it. Execution requires the
+package's exact content hash in the current machine's trust file. A later Git
+commit has a different hash and is inert until separately reviewed and trusted;
+=plugin trust --revoke --apply= stops execution of the locked hash immediately.
+
+A trusted plugin process is native code with the user's file and network access.
+The reduced environment limits accidental credential inheritance but is not an
+OS sandbox. Trust packages as carefully as any local executable. Renderer output
+has a second boundary: OpenOrg puts it in an opaque-origin iframe with a
+deny-by-default content-security policy, no network connections, no forms,
+frames, objects, workers, or top-level navigation, and only inline code plus
+=data:= or =blob:= media. Renderer failure stays local to the block and appears
+as an actionable error instead of preventing the rest of the document from
+rendering.
+
+The repository includes [[https://github.com/aviaviavi/org2/tree/main/examples/plugins/chess-pgn][a dependency-free chess PGN renderer and note template]] as a complete reference package.
 
 * Corpus identity
 

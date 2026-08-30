@@ -87,6 +87,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <li><p><code>index</code>, <code>entity</code>, <code>approvals</code>, <code>clock</code></p></li>
 <li><p><code>agent capabilities</code>, <code>agent context/search/fetch/bundle</code>, <code>context</code>, <code>brief</code></p></li>
 <li><p><code>goal</code>, <code>agent-profile</code>, <code>run</code>, <code>review</code>, <code>workflow</code>, <code>artifact</code>, <code>runtime</code>, <code>mcp</code>, <code>eval</code></p></li>
+<li><p><code>plugin</code> for content-addressed Git extensions, commands, templates, and document renderers</p></li>
 <li><p><code>corpus</code> identity inspection, validation, and preview-first initialization</p></li>
 <li><p><code>workspace agenda</code>, <code>workspace search</code> for read-only projections across explicitly mounted corpora</p></li>
 <li><p><code>source list</code>, <code>source doctor</code>, <code>source status</code>, <code>source bind</code>, <code>source schedule</code>, <code>source import</code>, <code>source sync</code> for external source mirrors and staged review packets</p></li>
@@ -104,6 +105,129 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <li><p><code>ai validate-job</code></p></li>
 <li><p><code>lsp</code></p></li>
 </ul>
+</section>
+<section class="org2-headline level-1">
+<h1 id="plugins">Plugins</h1>
+<p>Org2 plugins are self-contained Git packages. A corpus records portable source
+intent in <code>org2.json</code>, while <code>org2.plugins.lock.json</code> pins the exact Git commit,
+validated manifest, and SHA-256 hash of the package contents. Installed bytes
+live in the machine-wide content store under <code>~/.org2/plugins/store/</code> and are
+shared safely by every corpus that locks the same hash. Set <code>ORG2_PLUGIN_HOME</code>
+to use a different machine-local store.</p>
+<p>The first release accepts ordinary GitHub HTTPS URLs, <code>github:OWNER/REPOSITORY</code>
+shorthand, general HTTPS/SSH/scp-style Git URLs, <code>file:</code> URLs, and local Git
+checkouts. A package can also live in a repository subdirectory. Mutable refs
+are only resolved by <code>add</code> or <code>update</code>; <code>sync</code> always reproduces the locked
+commit and fails if its content hash changes.</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh"># Preview the exact revision and content hash without changing the corpus.
+org2 plugin add https://github.com/example/org2-calendar.git --dir ~/notes --json
+
+# Record the source, lock and install the package, then trust this exact hash.
+org2 plugin add github:example/org2-calendar --dir ~/notes --trust --apply
+
+# Install a package from a monorepo.
+org2 plugin add https://github.com/aviaviavi/org2.git \
+  --subdir examples/plugins/chess-pgn --dir ~/notes --trust --apply
+
+org2 plugin list --dir ~/notes --json
+org2 plugin doctor --dir ~/notes --json
+org2 plugin sync --dir ~/notes
+org2 plugin sync --dir ~/notes --apply
+org2 plugin update org2.chess-pgn --dir ~/notes
+org2 plugin update org2.chess-pgn --dir ~/notes --trust --apply
+org2 plugin trust org2.chess-pgn --revoke --dir ~/notes --apply</code></pre>
+<p>All mutations preview unless <code>--apply</code> is present. <code>remove</code> deletes the corpus
+declaration and lock entry but retains immutable store bytes because another
+corpus may use them. The initial ecosystem intentionally has no central
+registry: the locked source, commit, hash, and manifest are sufficient to
+reproduce and audit a package. A future registry can resolve names into this
+same source-and-lock model without becoming the package authority.</p>
+<section class="org2-headline level-2">
+<h2 id="package-manifest">Package manifest</h2>
+<p>A package root contains <code>org2-plugin.json</code> and every file it needs at runtime.
+Symlinks and install scripts are rejected; executable contributions use <code>.js</code>,
+<code>.mjs</code>, or <code>.cjs</code> process entries inside that self-contained package. This
+keeps a locked Git tree independently hashable and removes a mutable
+dependency-install step.</p>
+<pre class="org2-src language-json" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-json">{
+  &quot;$schema&quot;: &quot;org2:plugin-manifest:v1&quot;,
+  &quot;id&quot;: &quot;example.cards&quot;,
+  &quot;name&quot;: &quot;Example cards&quot;,
+  &quot;version&quot;: &quot;0.1.0&quot;,
+  &quot;engines&quot;: { &quot;org2&quot;: &quot;&gt;=0.5.2 &lt;1.0.0&quot; },
+  &quot;permissions&quot;: { &quot;environment&quot;: [&quot;EXAMPLE_API_TOKEN&quot;] },
+  &quot;contributes&quot;: {
+    &quot;commands&quot;: [
+      { &quot;id&quot;: &quot;import&quot;, &quot;entry&quot;: &quot;import.mjs&quot; }
+    ],
+    &quot;renderers&quot;: [
+      {
+        &quot;id&quot;: &quot;card&quot;,
+        &quot;languages&quot;: [&quot;example-card&quot;],
+        &quot;entry&quot;: &quot;render-card.mjs&quot;
+      }
+    ],
+    &quot;templates&quot;: [
+      { &quot;id&quot;: &quot;card-note&quot;, &quot;path&quot;: &quot;templates/card.org2&quot; }
+    ]
+  }
+}</code></pre>
+<p>The <code>engines.org2</code> field accepts exact versions, comparison sets, <code>^</code> and <code>~</code>
+ranges, and <code>||</code> alternatives. An incompatible package is rejected before it
+enters the store. Environment variables are absent by default apart from a
+small process baseline; a manifest must name each additional variable it wants
+to receive.</p>
+</section>
+<section class="org2-headline level-2">
+<h2 id="contributions-and-process-protocol">Contributions and process protocol</h2>
+<p>V1 has three additive contribution kinds:</p>
+<ul>
+<li>
+<p><strong>Commands</strong> run explicitly with <code>org2 plugin exec PLUGIN COMMAND -- ARG...</code>.</p>
+<p>The process receives one <code>org2:plugin-invocation:v1</code> JSON object on stdin and
+returns one <code>org2:plugin-result:v1</code> JSON object on stdout.</p>
+</li>
+<li>
+<p><strong>Templates</strong> are static package files copied into the corpus with</p>
+<p><code>org2 plugin template PLUGIN:TEMPLATE --out PATH</code>. Output must remain inside
+the corpus and preview/apply rules still apply.</p>
+</li>
+<li>
+<p><strong>Document renderers</strong> claim one or more source-block languages. The shared CLI</p>
+<p>renderer gives the process the block body, arguments, source lines, and
+document path. It returns
+<code>org2:plugin-render-result:v1</code> JSON containing HTML plus optional CSS,
+JavaScript, title, and height. The result replaces that source block in
+<code>org2 export html</code>, OpenOrg read mode, and OpenOrg source preview.</p>
+</li>
+</ul>
+<p>The npm package ships JSON Schemas for the manifest, lock, invocation, command
+result, and renderer result under <code>spec/v0/plugin-*.schema.json</code>. Plugin stdout
+is bounded to 1 MiB; renderer fields have smaller per-field limits, and a
+package is limited to 10,000 files and 64 MiB of content.</p>
+<p>The shared parser still owns the canonical Org2 AST. V1 renderer languages are
+therefore additive source-block syntax, not arbitrary parser replacement. The
+versioned contribution model leaves room for future importers, syntax semantic
+modules, data sources, and other integration points without making their code
+part of core. Built-in <code>chart</code> and <code>plot</code> languages remain reserved.</p>
+</section>
+<section class="org2-headline level-2">
+<h2 id="trust-boundary">Trust boundary</h2>
+<p>Downloading or locking a plugin never executes it. Execution requires the
+package's exact content hash in the current machine's trust file. A later Git
+commit has a different hash and is inert until separately reviewed and trusted;
+<code>plugin trust --revoke --apply</code> stops execution of the locked hash immediately.</p>
+<p>A trusted plugin process is native code with the user's file and network access.
+The reduced environment limits accidental credential inheritance but is not an
+OS sandbox. Trust packages as carefully as any local executable. Renderer output
+has a second boundary: OpenOrg puts it in an opaque-origin iframe with a
+deny-by-default content-security policy, no network connections, no forms,
+frames, objects, workers, or top-level navigation, and only inline code plus
+<code>data:</code> or <code>blob:</code> media. Renderer failure stays local to the block and appears
+as an actionable error instead of preventing the rest of the document from
+rendering.</p>
+<p>The repository includes <a href="https://github.com/aviaviavi/org2/tree/main/examples/plugins/chess-pgn">a dependency-free chess PGN renderer and note template</a> as a complete reference package.</p>
+</section>
 </section>
 <section class="org2-headline level-1">
 <h1 id="corpus-identity">Corpus identity</h1>

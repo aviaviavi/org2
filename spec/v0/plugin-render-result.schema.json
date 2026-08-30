@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://org2.avi.press/spec/v0/plugin-render-result.schema.json",
+  "title": "Org2 plugin document-renderer result v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["$schema", "html"],
+  "properties": {
+    "$schema": { "const": "org2:plugin-render-result:v1" },
+    "html": { "type": "string", "maxLength": 500000 },
+    "css": { "type": "string", "maxLength": 100000 },
+    "script": { "type": "string", "maxLength": 200000 },
+    "title": { "type": "string" },
+    "height": { "type": "number", "minimum": 80, "maximum": 2400 }
+  }
+}

@@ -37,6 +37,7 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
       "Use `org2 ledger` for stable per-account bookkeeping in recurring workflows; canonical accounts live under `notes/LEDGER/accounts/`.",
       "Use `org2 corpus show|validate|init` to inspect or establish portable corpus identity before team mounting.",
       "Use `org2 source list|doctor|status|bind|import|sync` to manage corpus-declared Slack and Notion crawler profiles and stage review packets without storing credentials in the corpus.",
+      "Use `org2 plugin list|doctor` to inspect corpus-declared extensions, `plugin sync` to reproduce the content-addressed lock, and `plugin update` to advance a Git ref deliberately.",
       "Use `org2 workspace agenda|search` only with explicitly granted `--mount` paths for read-only multi-corpus projections.",
       "Use `org2 publish document` to preview and publish a disclosure-safe document or subtree as a portable web bundle or Google Doc.",
     ],
@@ -66,6 +67,7 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
       "Run and workflow mutations use atomic guarded writes. Pass `--if-revision sha256:...` when carrying run state across requests; a stale revision, concurrent writer, duplicate create, or out-of-band readable-state edit fails instead of silently overwriting newer source.",
       "Keep curated account identity, aliases, commercial context, and idempotent work history in a ledger account under notes/. Keep immutable imports and provider payloads under raw/, and link approvals to their canonical run instead of copying decision state.",
       "Resolve every available stable identity before creating recurring account work. Treat ambiguity or source drift as a blocker rather than guessing.",
+      "Plugin Git sources are inert until their exact SHA-256 content hash is trusted on the current machine. Review a locked package before `org2 plugin trust --apply`; use `--revoke` to stop executing that hash.",
     ],
     workflows: [
       {
@@ -109,6 +111,12 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
         purpose: "Track artifact dependencies, select eligible model runtimes by capability policy, and expose or snapshot MCP integrations.",
         commands: ["org2 artifact", "org2 runtime", "org2 mcp"],
         writes: "mixed",
+      },
+      {
+        id: "plugins",
+        purpose: "Pin, reproduce, inspect, trust, and run content-addressed Git extensions that contribute CLI commands, templates, or sandboxed document renderers shared by CLI and app clients.",
+        commands: ["org2 plugin"],
+        writes: "preview-by-default",
       },
       {
         id: "planning",
@@ -174,7 +182,7 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
     clients: [
       { id: "cli", role: "Canonical automation and integration surface over the shared TypeScript compiler/runtime." },
       { id: "vscode", role: "Best-supported general editing workflow, backed by shared CLI/LSP semantics." },
-      { id: "macos-workspace", role: "Native alpha workspace shell with personal/shared corpus mounts, corpus-qualified federated agenda/search, explicit write-corpus switching, capture, reading/editing, meetings, data notebooks, workflow/run/review controls, agent handoffs, and named per-thread OpenClaw plus ChatGPT-authenticated local, WebSocket, or managed-SSH Codex chat backed by shared compiler semantics." },
+      { id: "macos-workspace", role: "Native alpha workspace shell with personal/shared corpus mounts, corpus-qualified federated agenda/search, explicit write-corpus switching, capture, reading/editing, meetings, data notebooks, content-hash-trusted sandboxed document renderers, workflow/run/review controls, agent handoffs, and named per-thread OpenClaw plus ChatGPT-authenticated local, WebSocket, or managed-SSH Codex chat backed by shared compiler semantics." },
       { id: "ios-mobile", role: "Source-distributed mobile corpus and approval client; run decisions retain the native run, approval, and fingerprint identity when queued through the mobile inbox." },
       { id: "openclaw", role: "First native agent-runtime adapter: Gateway chat plus a lifecycle plugin that maps substantial work into durable runs, prepares workflow attempts, event-gates scheduled work, and reconciles active workflow schedules into OpenClaw cron." },
     ],

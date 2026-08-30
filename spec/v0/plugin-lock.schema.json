@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://org2.avi.press/spec/v0/plugin-lock.schema.json",
+  "title": "Org2 plugin lock v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["$schema", "plugins"],
+  "properties": {
+    "$schema": { "const": "org2:plugin-lock:v1" },
+    "plugins": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "name", "version", "source", "resolvedSource", "revision", "contentHash", "manifest"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "version": { "type": "string" },
+          "source": { "type": "string" },
+          "resolvedSource": { "type": "string" },
+          "ref": { "type": "string" },
+          "subdir": { "type": "string" },
+          "revision": { "type": "string", "pattern": "^[a-f0-9]{40,64}$" },
+          "contentHash": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+          "manifest": { "$ref": "plugin-manifest.schema.json" }
+        }
+      }
+    }
+  }
+}

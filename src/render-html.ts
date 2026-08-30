@@ -7,6 +7,7 @@ import { renderOrgCharts } from "./chartRender.js";
 import { findConfigFile, loadConfig } from "./config.js";
 import { renderOrgDocumentToAppHtml } from "./export.js";
 import { parseOrgToCanonicalAst } from "./parser.js";
+import { renderPluginSourceBlocks } from "./pluginRuntime.js";
 
 function usage(exitCode = 2): never {
   const command = path.basename(process.argv[1] ?? "render-html");
@@ -63,6 +64,7 @@ function main(): void {
   const charts = renderOrgCharts(renderInput, { file: sourcePath, sourceLineOffset })
     .filter((chart): chart is typeof chart & { svg: string; source: NonNullable<typeof chart.source> } => chart.ok && Boolean(chart.svg && chart.source))
     .map((chart) => ({ svg: chart.svg, source: chart.source, presentation: chart.presentation }));
+  const pluginRenders = renderPluginSourceBlocks(document, { sourcePath }).renders;
   let linkAbbreviations: Record<string, string> | undefined;
   let linearTeam: string | undefined;
   if (sourcePath) {
@@ -82,6 +84,7 @@ function main(): void {
     sourcePath,
     customCss,
     charts,
+    pluginRenders,
     linkAbbreviations,
     linearTeam,
   });

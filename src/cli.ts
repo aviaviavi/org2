@@ -98,6 +98,14 @@ function embeddedChartsForSource(raw: string, file?: string) {
     .map((chart) => ({ svg: chart.svg, source: chart.source, presentation: chart.presentation }));
 }
 
+let pluginRuntimePromise: Promise<typeof import("./pluginRuntime.js")> | undefined;
+
+async function pluginRendersForDocument(document: DocumentNode, sourcePath: string) {
+  pluginRuntimePromise ||= import("./pluginRuntime.js");
+  const runtime = await pluginRuntimePromise;
+  return runtime.renderPluginSourceBlocks(document, { sourcePath }).renders;
+}
+
 function parseIsoDate(dateStr: string): Date {
   const parsed = parseIsoCalendarDate(dateStr);
   if (!parsed) {
@@ -8365,6 +8373,10 @@ async function main(): Promise<void> {
     const { runTableFormulaCommand } = await import("./tableFormulaCli.js");
     if (await runTableFormulaCommand(args)) return;
   }
+  if (args[0] === "plugin" || args[0] === "plugins") {
+    const { runPluginCommand } = await import("./pluginCli.js");
+    if (await runPluginCommand(args)) return;
+  }
   if (args[0] === "publish" && args[1] === "document") {
     const { runPublishDocumentCommand } = await import("./publishDocumentCli.js");
     if (await runPublishDocumentCommand(args)) return;
@@ -10260,6 +10272,7 @@ Core commands:
   org2 artifact <graph|rebuild> --manifest FILE [--apply]
   org2 runtime <init|show|select|verify-paths> [POLICY] [--capability ID]...
   org2 mcp <serve|clients|client-add|discover|snapshot> [options]
+  org2 plugin <list|init|add|remove|update|sync|trust|doctor|exec|template> [options]
   org2 eval <run|fixture> RUN [options]
   org2 agenda --dir DIR [--recursive] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--tui]
   org2 todo <set|toggle|assign|approve> --file FILE (--line N | --pos LINE[:COL]) [--apply]
@@ -11959,6 +11972,7 @@ Flags:
       const sourceRaw = fs.readFileSync(sourcePath, "utf8").replace(/\r\n/g, "\n");
       const sourceAst = parseOrgToCanonicalAst(sourceRaw, { sourceRanges: true });
       const sourceCharts = embeddedChartsForSource(sourceRaw, sourcePath);
+      const sourcePluginRenders = await pluginRendersForDocument(sourceAst, sourcePath);
 
       const relativeSourcePath = path.relative(sourceDir, sourcePath);
       const outputRelativePath = /\.(org|org2)$/i.test(relativeSourcePath)
@@ -11986,6 +12000,7 @@ Flags:
         linkAbbreviations: configLinkAbbreviations,
         linearTeam: configLinearTeam,
         charts: sourceCharts,
+        pluginRenders: sourcePluginRenders,
       });
 
       const ogSlug = outputRelativePathPosix
@@ -12105,6 +12120,7 @@ Flags:
         linkAbbreviations: configLinkAbbreviations,
         linearTeam: configLinearTeam,
         charts: sourceCharts,
+        pluginRenders: sourcePluginRenders,
       });
 
       const existingOutput = fs.existsSync(outputPathAbsolute)
@@ -12539,6 +12555,7 @@ Flags:
         const sourceRaw = fs.readFileSync(sourcePath, "utf8").replace(/\r\n/g, "\n");
         const sourceAst = parseOrgToCanonicalAst(sourceRaw, { sourceRanges: true });
         const sourceCharts = embeddedChartsForSource(sourceRaw, sourcePath);
+        const sourcePluginRenders = await pluginRendersForDocument(sourceAst, sourcePath);
         const rendered = renderOrgDocumentToHtml(sourceAst, {
           sourcePath: toDisplayPath(sourcePath),
           stylesheets: exportStylesheetsNormalized,
@@ -12551,6 +12568,7 @@ Flags:
           linkAbbreviations: exportConfigLinkAbbreviations,
           linearTeam: exportConfigLinearTeam,
           charts: sourceCharts,
+          pluginRenders: sourcePluginRenders,
         });
 
         const relativeSourcePath = path.relative(sourceDir, sourcePath);
@@ -12674,6 +12692,7 @@ Flags:
     const sourceRaw = fs.readFileSync(sourcePath, "utf8").replace(/\r\n/g, "\n");
     const sourceAst = parseOrgToCanonicalAst(sourceRaw, { sourceRanges: true });
     const sourceCharts = embeddedChartsForSource(sourceRaw, sourcePath);
+    const sourcePluginRenders = await pluginRendersForDocument(sourceAst, sourcePath);
     const rendered = renderOrgDocumentToHtml(sourceAst, {
       title: exportTitle || undefined,
       sourcePath: sourcePathInput,
@@ -12687,6 +12706,7 @@ Flags:
       linkAbbreviations: exportConfigLinkAbbreviations,
       linearTeam: exportConfigLinearTeam,
       charts: sourceCharts,
+      pluginRenders: sourcePluginRenders,
     });
 
     const defaultOutputPath = (() => {

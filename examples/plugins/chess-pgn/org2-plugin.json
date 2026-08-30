@@ -1,0 +1,27 @@
+{
+  "$schema": "org2:plugin-manifest:v1",
+  "id": "org2.chess-pgn",
+  "name": "Org2 Chess PGN",
+  "version": "0.1.0",
+  "description": "Interactive PGN rendering for Org2 HTML documents.",
+  "engines": {
+    "org2": ">=0.5.2"
+  },
+  "contributes": {
+    "renderers": [
+      {
+        "id": "pgn-board",
+        "description": "Render a PGN source block as an interactive chess board and move list.",
+        "languages": ["pgn", "chess-pgn"],
+        "entry": "render-pgn.mjs"
+      }
+    ],
+    "templates": [
+      {
+        "id": "game-note",
+        "description": "A new Org2 note containing a PGN game block.",
+        "path": "templates/game-note.org2"
+      }
+    ]
+  }
+}

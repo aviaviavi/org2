@@ -81,7 +81,7 @@ public struct Org2CLI: Sendable {
     "agent", "agent-profile", "agenda", "ai", "approvals", "archive", "artifact",
     "backlinks", "brief", "capture", "clock", "compile", "context", "corpus",
     "crypt", "data", "doctor", "entity", "eval", "export", "fmt", "goal",
-    "graph", "id", "index", "ledger", "lint", "lsp", "mcp", "plan", "publish",
+    "graph", "id", "index", "ledger", "lint", "lsp", "mcp", "plan", "plugin", "publish",
     "query", "query-data", "refile", "render-chart", "review", "roam", "run",
     "search", "source", "table", "todo", "version", "workflow", "workspace"
   ]
@@ -96,6 +96,8 @@ public struct Org2CLI: Sendable {
     "graph.audit", "id.get", "id.ensure", "ledger.list", "ledger.show", "ledger.create",
     "ledger.update", "ledger.event", "mcp.serve", "mcp.clients", "mcp.client-add",
     "mcp.discover", "mcp.snapshot", "review.list", "review.show", "run.create",
+    "plugin.list", "plugin.init", "plugin.add", "plugin.remove", "plugin.update",
+    "plugin.sync", "plugin.trust", "plugin.doctor", "plugin.exec", "plugin.template",
     "run.list", "run.show", "run.validate", "run.start", "run.resume", "run.retry",
     "run.cancel", "run.complete", "run.complete-external", "run.reopen-external",
     "run.fail", "run.block", "run.fork", "run.normalize", "run.assign", "run.comment",

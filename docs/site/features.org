@@ -127,8 +127,8 @@
       <article><h3>Knowledge + planning</h3><p>Agenda, daily notes, search, IDs, backlinks, people, projects, and graph views keep related work connected.</p></article>
       <article><h3>Agents + review</h3><p>Local or remote agents can use cited context, create durable outputs, and pause for approval.</p></article>
       <article><h3>Data + publishing</h3><p>Evaluate table formulas, build data notebooks and charts, export PDFs and slides, and publish sites.</p></article>
-      <article><h3>Apps + editors</h3><p>Use OpenOrg on Mac and iPhone, or work with the same files in VS Code, Vim, Neovim, Emacs, and the CLI.</p></article>
-      <article><h3>Safety + portability</h3><p>Local files stay canonical, writes are previewable, approvals are explicit, and sensitive sections can be encrypted.</p></article>
+      <article><h3>Apps + editors</h3><p>Use OpenOrg on Mac and iPhone, work with the same files in other editors, and extend CLI commands, templates, or document rendering with plugins.</p></article>
+      <article><h3>Safety + portability</h3><p>Local files stay canonical, writes are previewable, approvals are explicit, and plugin locks pin exact Git commits and SHA-256 contents.</p></article>
     </div>
   </section>
 

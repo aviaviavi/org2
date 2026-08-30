@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://org2.avi.press/spec/v0/plugin-result.schema.json",
+  "title": "Org2 plugin command result v1",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["$schema", "ok"],
+  "properties": {
+    "$schema": { "const": "org2:plugin-result:v1" },
+    "ok": { "type": "boolean" },
+    "text": { "type": "string" },
+    "data": {},
+    "error": { "type": "string" }
+  }
+}

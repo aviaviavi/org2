@@ -116,6 +116,13 @@ final class Org2CLITelemetryTests: XCTestCase {
     XCTAssertEqual(
       Org2CLI.telemetryCommandIdentity(
         scriptPath: cli,
+        arguments: ["plugin", "update", "private-plugin-id", "--dir", "/private/corpus"]
+      ),
+      "cli.plugin.update"
+    )
+    XCTAssertEqual(
+      Org2CLI.telemetryCommandIdentity(
+        scriptPath: cli,
         arguments: ["private-command", "secret-value"]
       ),
       "cli.unknown"

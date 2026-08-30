@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://org2.avi.press/spec/v0/plugin-invocation.schema.json",
+  "title": "Org2 plugin process invocation v1",
+  "oneOf": [
+    { "$ref": "#/$defs/commandInvocation" },
+    { "$ref": "#/$defs/renderInvocation" }
+  ],
+  "$defs": {
+    "plugin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version", "contentHash"],
+      "properties": {
+        "id": { "type": "string" },
+        "version": { "type": "string" },
+        "contentHash": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }
+      }
+    },
+    "contribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id"],
+      "properties": { "id": { "type": "string" } }
+    },
+    "commandInvocation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["$schema", "kind", "plugin", "contribution", "corpusRoot", "cwd", "arguments"],
+      "properties": {
+        "$schema": { "const": "org2:plugin-invocation:v1" },
+        "kind": { "const": "command" },
+        "plugin": { "$ref": "#/$defs/plugin" },
+        "contribution": { "$ref": "#/$defs/contribution" },
+        "corpusRoot": { "type": "string" },
+        "cwd": { "type": "string" },
+        "arguments": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "renderInvocation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["$schema", "kind", "plugin", "contribution", "document", "block"],
+      "properties": {
+        "$schema": { "const": "org2:plugin-invocation:v1" },
+        "kind": { "const": "render" },
+        "plugin": { "$ref": "#/$defs/plugin" },
+        "contribution": { "$ref": "#/$defs/contribution" },
+        "document": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["sourcePath"],
+          "properties": { "sourcePath": { "type": "string" } }
+        },
+        "block": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["language", "arguments", "body", "startLine", "endLine"],
+          "properties": {
+            "language": { "type": "string" },
+            "arguments": { "type": "array", "items": { "type": "string" } },
+            "body": { "type": "string" },
+            "startLine": { "type": "integer", "minimum": 1 },
+            "endLine": { "type": "integer", "minimum": 1 }
+          }
+        }
+      }
+    }
+  }
+}
