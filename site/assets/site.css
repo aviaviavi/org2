@@ -2783,6 +2783,12 @@ body > .org2-footer img.org2-footer-scarf-logo {
   pointer-events: none;
 }
 
+@media (prefers-color-scheme: dark) {
+  body > .org2-footer img.org2-footer-scarf-logo {
+    filter: brightness(0) invert(1);
+  }
+}
+
 body > .org2-footer .org2-footer-tagline {
   color: var(--quiet);
 }
