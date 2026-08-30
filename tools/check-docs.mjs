@@ -93,6 +93,9 @@ try {
 if (!siteNavigation.includes("setupHeadingAnchors") || !siteNavigation.includes("navigator.clipboard.writeText")) {
   fail("site navigation is missing copyable heading anchors");
 }
+if (!siteNavigation.includes('[data-heading-anchors="off"]') || !features.includes('data-heading-anchors="off"')) {
+  fail("site card headings are missing their copy-anchor opt-out");
+}
 if (!siteStyles.includes(".org2-heading-anchor") || !siteStyles.includes("scroll-margin-top")) {
   fail("site styles are missing heading-anchor layout and sticky-navigation offset");
 }

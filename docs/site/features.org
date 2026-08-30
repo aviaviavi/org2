@@ -122,7 +122,7 @@
       <h2 id="feature-inventory-title">Current feature coverage</h2>
       <p>A scan-friendly inventory of the broader surface available today.</p>
     </div>
-    <div class="org2-feature-card-grid">
+    <div class="org2-feature-card-grid" data-heading-anchors="off">
       <article><h3>Plain-text documents</h3><p>Notes, tasks, links, tables, properties, and dates remain readable in ordinary files.</p></article>
       <article><h3>Knowledge + planning</h3><p>Agenda, daily notes, search, IDs, backlinks, people, projects, and graph views keep related work connected.</p></article>
       <article><h3>Agents + review</h3><p>Local or remote agents can use cited context, create durable outputs, and pause for approval.</p></article>

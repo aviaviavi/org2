@@ -208,7 +208,9 @@
   function setupHeadingAnchors() {
     var headings = Array.prototype.slice.call(
       document.querySelectorAll('#content h1, #content h2, #content h3, #content h4, #content h5, #content h6')
-    );
+    ).filter(function (heading) {
+      return !heading.closest('[data-heading-anchors="off"]');
+    });
     if (!headings.length) return;
 
     var usedIds = new Set(
