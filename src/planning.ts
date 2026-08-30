@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import { parseIsoCalendarDate } from "./calendarDate.js";
+import { formatOrgDateTimestamp } from "./calendarDate.js";
 import { computeSubtreeRange, findHeadingAtOrAbove, findPlanningBlockEnd, splitSourceLines } from "./sourceLines.js";
 
 export type PlanningKind = "SCHEDULED" | "DEADLINE";
@@ -11,20 +11,17 @@ export function planningKindFromArg(kind: PlanningKindArg): PlanningKind {
   return "SCHEDULED";
 }
 
-function formatOrgDateTimestamp(dateIso: string): string {
+function formatPlanningDateTimestamp(dateIso: string): string {
   // Format like <2026-01-17 Sat>
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateIso)) {
     throw new Error(`Invalid --date (expected YYYY-MM-DD): ${dateIso}`);
   }
 
-  const parsed = parseIsoCalendarDate(dateIso);
-  if (!parsed) {
+  const timestamp = formatOrgDateTimestamp(dateIso);
+  if (!timestamp) {
     throw new Error(`Invalid --date: ${dateIso}`);
   }
-
-  const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-  const dow = days[parsed.date.getUTCDay()];
-  return `<${dateIso} ${dow}>`;
+  return timestamp;
 }
 
 function replacePlanningTokenInLine(line: string, kind: PlanningKind, timestamp: string): string {
@@ -69,7 +66,7 @@ export function updatePlanningInText(input: string, opts: UpdatePlanningOptions)
 
   const { endExclusive } = computeSubtreeRange(lines, headingIndex);
 
-  const timestamp = formatOrgDateTimestamp(opts.date);
+  const timestamp = formatPlanningDateTimestamp(opts.date);
 
   // Planning lines (if present) are expected to appear immediately after the headline.
   // We'll update the first planning line that mentions the target kind; otherwise insert

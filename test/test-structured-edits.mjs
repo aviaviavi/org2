@@ -4,8 +4,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const { formatOrgDateTimestamp } = await import(path.join(repo, "dist", "calendarDate.js"));
 const { updatePlanningInText } = await import(path.join(repo, "dist", "planning.js"));
 const { assignTodoInText, updateTodoInText } = await import(path.join(repo, "dist", "todo.js"));
+
+assert.equal(formatOrgDateTimestamp("2028-02-29"), "<2028-02-29 Tue>");
+assert.equal(formatOrgDateTimestamp("2026-02-29"), null);
+assert.equal(formatOrgDateTimestamp("2026-7-08"), null);
 
 const source = `Intro line before headings
 

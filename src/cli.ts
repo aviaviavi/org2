@@ -62,7 +62,7 @@ import { buildGeneratedArtifactMetadata, formatOrg2ArtifactPropertyDrawer, sha25
 import { defaultCorpusCachePath, org2CorpusIndexDir, org2IndexHome } from "./indexPaths.js";
 import { ingestDemoSource, type Org2RawCaptureInput } from "./ingestionPipeline.js";
 import { parseHeadlineTitleForRoam } from "./headlineTitle.js";
-import { parseIsoCalendarDate } from "./calendarDate.js";
+import { formatOrgDateTimestamp, parseIsoCalendarDate } from "./calendarDate.js";
 import { parseTimestampRepeater, parseTimestampWarning } from "./timestampModifiers.js";
 import type { TimestampRepeater, TimestampWarning } from "./ast.js";
 import {
@@ -6193,18 +6193,9 @@ function resolveAgendaTuiTodayDailyNotePath(config: Org2Config | null, baseDir: 
 }
 
 function formatAgendaTuiDateTimestamp(dateIso: string): string {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateIso);
-  if (!m) throw new Error(`Invalid date: ${dateIso}`);
-
-  const year = Number(m[1]);
-  const month = Number(m[2]);
-  const day = Number(m[3]);
-  const d = new Date(Date.UTC(year, month - 1, day));
-  if (Number.isNaN(d.getTime())) throw new Error(`Invalid date: ${dateIso}`);
-
-  const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-  const dow = days[d.getUTCDay()];
-  return `<${dateIso} ${dow}>`;
+  const timestamp = formatOrgDateTimestamp(dateIso);
+  if (!timestamp) throw new Error(`Invalid date: ${dateIso}`);
+  return timestamp;
 }
 
 function appendAgendaTuiTodoToDailyNote(dailyNotePath: string, title: string): void {

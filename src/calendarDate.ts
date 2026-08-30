@@ -5,6 +5,8 @@ export type IsoCalendarDate = {
   date: Date;
 };
 
+const ORG_WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
+
 export function parseIsoCalendarDate(raw: string): IsoCalendarDate | null {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
   if (!match) return null;
@@ -25,4 +27,10 @@ export function parseIsoCalendarDate(raw: string): IsoCalendarDate | null {
   }
 
   return { year, month, day, date };
+}
+
+export function formatOrgDateTimestamp(raw: string): string | null {
+  const parsed = parseIsoCalendarDate(raw);
+  if (!parsed) return null;
+  return `<${raw} ${ORG_WEEKDAYS[parsed.date.getUTCDay()]}>`;
 }
