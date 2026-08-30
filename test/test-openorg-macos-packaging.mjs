@@ -1,10 +1,27 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const script = join(repoRoot, "tools", "package-openorg-macos.mjs");
+const nodeEntitlements = readFileSync(join(
+  repoRoot,
+  "apps", "macos", "Org2Workspace", "OpenOrgNode.entitlements"
+), "utf8");
+const intelNodeEntitlements = readFileSync(join(
+  repoRoot,
+  "apps", "macos", "Org2Workspace", "OpenOrgNodeIntel.entitlements"
+), "utf8");
+
+assert.match(nodeEntitlements, /<key>com\.apple\.security\.cs\.allow-jit<\/key>\s*<true\/>/);
+assert.doesNotMatch(nodeEntitlements, /com\.apple\.security\.cs\.allow-unsigned-executable-memory/);
+assert.match(intelNodeEntitlements, /<key>com\.apple\.security\.cs\.allow-jit<\/key>\s*<true\/>/);
+assert.match(
+  intelNodeEntitlements,
+  /<key>com\.apple\.security\.cs\.allow-unsigned-executable-memory<\/key>\s*<true\/>/
+);
 
 const defaultPlanResult = spawnSync(process.execPath, [script, "--plan"], {
   cwd: repoRoot,

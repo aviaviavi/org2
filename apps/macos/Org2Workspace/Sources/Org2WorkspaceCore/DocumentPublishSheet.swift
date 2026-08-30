@@ -149,7 +149,7 @@ struct DocumentPublishSheet: View {
         Text("OpenOrg serves the sealed output from this Mac. Anyone on a network that can reach this Mac and receives the unguessable link can open it.")
           .font(.callout)
           .foregroundStyle(.secondary)
-        Label("OpenOrg must remain running. The first version uses unencrypted HTTP, so use it only on a trusted local or private network.", systemImage: "lock.open.trianglebadge.exclamationmark")
+        Label("OpenOrg must be running for links to be reachable. Active links resume automatically after relaunch. The first version uses unencrypted HTTP, so use it only on a trusted local or private network.", systemImage: "lock.open.trianglebadge.exclamationmark")
           .font(.caption)
           .foregroundStyle(.orange)
         SettingsLink {

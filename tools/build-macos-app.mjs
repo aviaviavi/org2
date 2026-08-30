@@ -50,6 +50,9 @@ const swiftScratchPath = process.env.ORG2_WORKSPACE_SWIFT_SCRATCH_PATH?.trim()
 const swiftBuildConfiguration = resolveBuildConfiguration();
 const bundledNodePath = process.env.ORG2_WORKSPACE_NODE_PATH?.trim()
   || (swiftBuildConfiguration === "release" ? discoverNodePath() : "");
+const bundledNodeArchitecture = bundledNodePath
+  ? detectNodeArchitecture(bundledNodePath)
+  : null;
 const bundledWhisperCppPath = process.env.ORG2_WORKSPACE_WHISPER_CPP_PATH?.trim()
   || (swiftBuildConfiguration === "release" ? discoverWhisperCppPath() : "");
 const bundledWhisperModelPath = process.env.ORG2_WORKSPACE_WHISPER_MODEL_PATH?.trim()
@@ -62,7 +65,12 @@ const appEntitlementsPath = resolve(
 );
 const nodeEntitlementsPath = resolve(
   process.env.ORG2_WORKSPACE_NODE_ENTITLEMENTS
-    ?? join(packageDir, "OpenOrgNode.entitlements")
+    ?? join(
+      packageDir,
+      bundledNodeArchitecture === "x64"
+        ? "OpenOrgNodeIntel.entitlements"
+        : "OpenOrgNode.entitlements"
+    )
 );
 function sparkleUpdateConfiguration() {
   const architecture = swiftBuildArch || (process.arch === "x64" ? "x86_64" : "arm64");
@@ -244,6 +252,24 @@ function codesignArgs(identity, path, options = {}) {
   }
   args.push(path);
   return args;
+}
+
+function verifyNodeRuntime(executable) {
+  const result = spawnSync(executable, ["-e", "process.stdout.write(process.arch)"], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  if (result.status !== 0) {
+    const detail = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
+    throw new Error(
+      `Signed bundled Node.js failed its launch check${detail ? `:\n${detail}` : "."}`
+    );
+  }
+  if (result.stdout.trim() !== bundledNodeArchitecture) {
+    throw new Error(
+      `Signed bundled Node.js reported ${result.stdout.trim() || "no architecture"}; expected ${bundledNodeArchitecture}`
+    );
+  }
 }
 
 function nestedMachOPaths(root) {
@@ -685,7 +711,8 @@ function main() {
       iconPath,
       hardenedRuntime: requestedSigningIdentity?.startsWith("Developer ID Application:") ?? false,
       installStrategy: "verified staged replacement",
-      nodeArchitecture: bundledNodePath ? detectNodeArchitecture(bundledNodePath) : null,
+      nodeArchitecture: bundledNodeArchitecture,
+      nodeEntitlementsPath,
       nodePath: bundledNodePath || null,
       googleOAuthClientConfigured: googleOAuthClientID.length > 0,
       googleOAuthClientSecretConfigured: googleOAuthClientSecret.length > 0,
@@ -756,6 +783,7 @@ function main() {
       run("codesign", codesignArgs(signingIdentity, runtimeNodePath, {
         entitlements: nodeEntitlementsPath,
       }));
+      verifyNodeRuntime(runtimeNodePath);
     }
     for (const library of whisperRuntime.libraries) {
       run("codesign", codesignArgs(signingIdentity, library));

@@ -1,5 +1,5 @@
 #+TITLE: Getting started
-#+SUBTITLE: Reach the first useful OpenOrg loop in about five minutes.
+#+SUBTITLE: Learn where notes, agents, workflows, and schedules fit—then reach the first useful loop.
 
 #+BEGIN_EXPORT html
 <section class="org2-page-intro">
@@ -11,6 +11,75 @@
   </div>
 </section>
 #+END_EXPORT
+
+* First, the mental model
+
+OpenOrg is the shared workspace that holds and coordinates work; it is not one autonomous agent that is always awake inside your notes. Your *corpus*—the ordinary folder of =.org2=, =.org=, and related files—is the durable memory and source of truth. OpenOrg turns those files into useful views, gives configured agents bounded access to them, and keeps delegated work and decisions inspectable.
+
+Codex, Claude Code, and OpenClaw are *runtimes*: they are the engines that actually reason and act. A runtime sees the current conversation, the context you selected or authorized, the active corpus's instructions and capabilities, and the tools OpenOrg exposes for that turn or run. It does not silently absorb the whole workspace or keep watching it after the turn ends.
+
+That leads to a useful rule: *put durable intent in the corpus, not only in chat*. Chat is a good place to explore and ask for help setting something up, but the result should become the appropriate inspectable record when you want OpenOrg to remember or repeat it.
+
+| If you mean... | Put it here | Think of it as... |
+|---+---+---|
+| Something you need to remember or do | A note or =TODO= in the relevant project or daily note | Durable knowledge or a human commitment |
+| Work that should appear on a particular day | A =SCHEDULED:= date on that =TODO= | An Agenda item, not an agent invocation |
+| A conversation or exploratory request | AI Chat with the relevant files or headings selected | An interactive session with a runtime |
+| Something that should wake an agent on a cadence | A native Codex or Claude schedule, or a workflow trigger | The clock and launcher |
+| Instructions the agent should reuse | A packaged skill or a workflow in =workflows/= | The playbook |
+| One bounded piece of delegated work worth tracking | A run under *Agent Work* | The durable attempt, with context, status, outputs, and review |
+| A stable role such as /Customer Support/ or /Research/ | An agent profile in =agent-profiles/= | A portable job description that may bind to a runtime |
+| A durable outcome several tasks or agents serve | A goal in =goals/= | The reason the work exists and how success is judged |
+| Imported Slack, Notion, or other source material | A source profile plus its =raw/= and review zones | External context brought home with provenance |
+
+Agent profiles are not background processes, and a goal does not execute itself. A profile says /who this worker is/ across runtimes; a workflow says /how this recurring process works/; a run records /what happened this time/; and a runtime supplies the actual compute.
+
+** Automation has three independent layers
+
+Do not force the trigger, instructions, and durable record to have the same owner:
+
+1. The *trigger* answers /what wakes the agent?/. It might be a native Codex scheduled task, a Claude task or Routine, an OpenClaw-reconciled workflow schedule, an external event, or a person clicking *Run Now*.
+2. The *instructions* answer /what should this execution do?/. They might live in the scheduled prompt, a prepackaged skill, or an authored Org2 workflow. A skill can teach any compatible runtime how to discover the installed =org2= capabilities and follow the same lifecycle correctly.
+3. The *durable record* answers /where can everyone see what happened?/. The scheduled agent can call the Org2 CLI directly—or follow a skill that does so—to create or instantiate a run, record its runtime and progress, attach artifacts and validation, request approvals, and complete it with a reviewer-facing summary.
+
+These layers deliberately compose. A remote Codex scheduled task can own the clock, invoke a packaged operating skill, and use =org2 run= or =org2 workflow run= inside the mounted corpus. Codex still has its native task and thread, while =.org2/runs/= remains the shared, runtime-neutral record rendered by OpenOrg. This setup does not require OpenClaw.
+
+** "Scheduled" can mean four different things
+
+This distinction prevents most early setup confusion:
+
+1. *A scheduled commitment* belongs on a normal =TODO=. It appears in Agenda so a person can act on it. File creation or a scheduled date does not invoke an agent.
+2. *A runtime-native scheduled task* lets Codex or Claude own the wake-up and native task state. [[https://learn.chatgpt.com/docs/automations][Codex scheduled tasks]] can be created by asking Codex or ChatGPT, can invoke skills, and can work in a selected project or worktree. Their prompt or skill can require every execution to use the Org2 CLI so the durable work still lands in the corpus. OpenOrg also shows native Codex task threads read-only under *External Threads*. [[https://code.claude.com/docs/en/scheduled-tasks][Claude Code scheduling]] supports session-scoped prompts such as =/loop=, while Claude Desktop scheduled tasks and cloud Routines provide more durable triggers.
+3. *A portable scheduled workflow* belongs in =workflows/= when the process definition, inputs, review boundaries, and per-attempt run history should remain inspectable in the corpus and replaceable across runtimes. OpenClaw is currently the only adapter that automatically reconciles the schedule declared in that file, but it is not the only way to execute the workflow: a native Codex or Claude scheduled task can be instructed to call =org2 workflow run= itself.
+4. *A scheduled source refresh* belongs to that source's profile in =org2.json=. The Mac app runs enabled connector schedules while OpenOrg is open and catches up after sleep or the next launch. This refreshes source material; it is separate from asking an agent to analyze it.
+
+Runtime-native schedules are still managed by their native clients today. Create or edit Codex tasks from a Codex or ChatGPT desktop conversation and its *Scheduled* view; create Claude tasks from Claude Code, Claude Desktop, or Routines. OpenOrg does not need to rewrite those schedules to remain the system of record for their Org2 runs.
+
+For example, “review my priorities at 8:30” can mean three different things. If you want a reminder, create a scheduled =TODO=. If you want Codex to prepare the brief, ask Codex to create a scheduled task over the corpus and instruct it—directly or through a skill—to record each attempt with the Org2 CLI. If the reusable recipe itself should also live in the corpus, define an Org2 workflow and have the scheduled task instantiate it.
+
+** Grow a reliable flow in layers
+
+You do not need to design a metaharness on day one. Use this order:
+
+1. *Choose the corpus.* Confirm which folder should hold the work and give it a portable identity in *Settings → Workspace*. Writes always belong to one active corpus, even when Search or Agenda can read several.
+2. *Connect a runtime.* Local or remote Codex and Claude are enough for interactive and scheduled work when they can access the corpus and its CLI. Add OpenClaw when you specifically want it to reconcile schedules declared in authored Org2 workflow files.
+3. *Work the process once.* Keep the source notes and tasks where they naturally belong, select the relevant context, and ask the runtime to help with one concrete outcome.
+4. *Track consequential delegation.* Use a durable run when the work needs status, artifacts, validation, approvals, or a reviewer-facing outcome—not for every casual question.
+5. *Package proven repetition.* Put runtime operating instructions in a skill, or generalize the process into an Org2 workflow with inputs, steps, expected outputs, checks, and approval boundaries. Keep generated material in =views/= or =compiled/= until reviewed.
+6. *Name stable responsibility only when useful.* Create an agent profile and goal when the same role or outcome should survive a change of model, runtime, or chat thread.
+7. *Test before scheduling.* First run the prompt, skill, or workflow manually and inspect both its output and its Org2 run. Then choose the trigger independently: Codex, Claude, OpenClaw, or another scheduler can wake the agent as long as it follows the same corpus lifecycle. Sending messages, publishing, deleting, or other consequential actions should still stop for explicit approval.
+
+Back up the corpus like any important folder, and keep tokens, runtime credentials, machine paths, and scheduler job IDs outside its files.
+
+** Ask OpenOrg to help with setup
+
+“Teach OpenOrg our flow” is a reasonable starting request, but make the desired durable result explicit. For example:
+
+#+begin_quote
+Help me set up a weekday startup review. First inspect this corpus and the installed Org2 capabilities. Separate the trigger, reusable instructions, and durable run record. Recommend whether the instructions should be a packaged skill or an Org2 workflow, and show how each scheduled execution will create and update its Org2 run. Propose the inputs, outputs, and review boundaries without activating anything. Then help me test one manual run; only after I review its corpus record should we enable the runtime-native or workflow schedule.
+#+end_quote
+
+This uses chat as the setup conversation while making the corpus records—not the agent's memory—the lasting configuration.
 
 * 1) Install the Mac app and connect an agent
 

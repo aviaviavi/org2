@@ -27,6 +27,32 @@ final class DocumentPublishingTests: XCTestCase {
     XCTAssertNil(DocumentPublishFormat.beamerSlides.googleCLIDestination)
   }
 
+  func testGoogleDisclosurePreviewDoesNotReceiveLocalOutputArguments() {
+    let arguments = WorkspaceStore.documentPublishArguments(
+      sourceFile: URL(fileURLWithPath: "/tmp/recipes.org2"),
+      request: DocumentPublishRequest(
+        destination: .googleDrive,
+        format: .googleDocs,
+        googleFolderID: "folder-123"
+      ),
+      outputDirectory: URL(fileURLWithPath: "/tmp/openorg-publish-preview"),
+      apply: false
+    )
+
+    XCTAssertEqual(
+      arguments,
+      [
+        "publish", "document",
+        "--file", "/tmp/recipes.org2",
+        "--to", "google-docs",
+        "--format", "json",
+        "--folder-id", "folder-123",
+      ]
+    )
+    XCTAssertFalse(arguments.contains("--out-dir"))
+    XCTAssertFalse(arguments.contains("--out-file"))
+  }
+
   func testLocalPublicationRetainsSourceAndFormatForSettingsManagement() throws {
     let url = try XCTUnwrap(URL(string: "http://example.local:1234/a/secret"))
     let publication = LocalDocumentPublication(
@@ -127,13 +153,104 @@ final class DocumentPublishingTests: XCTestCase {
     let (_, unavailableResponse) = try await URLSession.shared.data(from: unavailableURL)
     XCTAssertEqual((unavailableResponse as? HTTPURLResponse)?.statusCode, 404)
 
-    host.revoke(publication.id)
+    try host.revoke(publication.id)
     let (_, revokedResponse) = try await URLSession.shared.data(from: publication.localURL)
     XCTAssertEqual((revokedResponse as? HTTPURLResponse)?.statusCode, 404)
 
     let (secondData, secondResponse) = try await URLSession.shared.data(from: second.localURL)
     XCTAssertEqual((secondResponse as? HTTPURLResponse)?.statusCode, 200)
     XCTAssertEqual(secondData, html)
+  }
+
+  func testLocalPublicationSurvivesHostRestartWithTheSameSecretURL() async throws {
+    let storageDirectory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("openorg-publication-persistence-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: storageDirectory) }
+
+    let html = Data("<!doctype html><title>Persistent report</title><p>Still here</p>".utf8)
+    let firstHost = LocalDocumentPublicationHost(
+      bindHost: "127.0.0.1",
+      advertisedHost: "127.0.0.1",
+      storageDirectory: storageDirectory
+    )
+    let original = try await firstHost.publish(
+      data: html,
+      title: "Persistent report",
+      mediaType: "text/html",
+      sourcePath: "/tmp/report.org2",
+      format: .html
+    )
+    firstHost.stop()
+
+    let restoredHost = LocalDocumentPublicationHost(
+      bindHost: "127.0.0.1",
+      advertisedHost: "ignored.example",
+      storageDirectory: storageDirectory
+    )
+    let restoredPublications = try await restoredHost.restorePublications()
+    let restored = try XCTUnwrap(restoredPublications.first)
+    defer { restoredHost.stop() }
+
+    XCTAssertEqual(restored.id, original.id)
+    XCTAssertEqual(restored.url, original.url)
+    XCTAssertEqual(restored.localURL, original.localURL)
+    XCTAssertEqual(restored.sourcePath, "/tmp/report.org2")
+    XCTAssertEqual(restored.format, .html)
+
+    let (servedData, response) = try await URLSession.shared.data(from: restored.localURL)
+    XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
+    XCTAssertEqual(servedData, html)
+
+    try restoredHost.revoke(restored.id)
+    restoredHost.stop()
+    let emptyHost = LocalDocumentPublicationHost(
+      bindHost: "127.0.0.1",
+      advertisedHost: "127.0.0.1",
+      storageDirectory: storageDirectory
+    )
+    defer { emptyHost.stop() }
+    let publicationsAfterRevocation = try await emptyHost.restorePublications()
+    XCTAssertTrue(publicationsAfterRevocation.isEmpty)
+  }
+
+  @MainActor
+  func testWorkspaceBootstrapRestoresPersistedLocalPublications() async throws {
+    let storageDirectory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("openorg-bootstrap-publications-\(UUID().uuidString)", isDirectory: true)
+    let suiteName = "openorg-bootstrap-publications-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer {
+      defaults.removePersistentDomain(forName: suiteName)
+      try? FileManager.default.removeItem(at: storageDirectory)
+    }
+
+    let firstHost = LocalDocumentPublicationHost(
+      bindHost: "127.0.0.1",
+      advertisedHost: "127.0.0.1",
+      storageDirectory: storageDirectory
+    )
+    let original = try await firstHost.publish(
+      html: Data("<!doctype html><title>Restored by bootstrap</title>".utf8),
+      title: "Restored by bootstrap"
+    )
+    firstHost.stop()
+
+    let restoredHost = LocalDocumentPublicationHost(
+      bindHost: "127.0.0.1",
+      advertisedHost: "127.0.0.1",
+      storageDirectory: storageDirectory
+    )
+    defer { restoredHost.stop() }
+    let store = WorkspaceStore(
+      cli: try Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      automaticStarterCorpusURL: nil,
+      localDocumentPublicationHost: restoredHost
+    )
+
+    await store.bootstrap()
+
+    XCTAssertEqual(store.localDocumentPublications.map(\.url), [original.url])
   }
 
   func testLocalHostServesPDFWithAProtectedInlineContentType() async throws {

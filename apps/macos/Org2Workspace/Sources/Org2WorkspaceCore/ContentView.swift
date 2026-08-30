@@ -143,22 +143,31 @@ private struct WorkspaceTabBar: View {
 
   var body: some View {
     HStack(spacing: 8) {
-      ScrollViewReader { proxy in
-        ScrollView(.horizontal, showsIndicators: false) {
-          LazyHStack(spacing: 4) {
-            ForEach(store.workspaceTabs) { tab in
-              WorkspaceTabItem(tab: tab, dragCoordinator: dragCoordinator)
-                .id(tab.id)
-            }
-          }
-          .padding(.horizontal, 6)
+      WorkspaceTabStrip(
+        items: store.workspaceTabs.map { tab in
+          WorkspaceTabStripItem(
+            id: tab.id,
+            title: store.workspaceTabDisplayTitle(for: tab),
+            systemImage: store.workspaceTabDisplaySystemImage(for: tab)
+          )
+        },
+        selectedTabID: store.selectedWorkspaceTabID,
+        dragCoordinator: dragCoordinator,
+        select: store.selectWorkspaceTab,
+        close: store.closeWorkspaceTab,
+        duplicate: { tabID in
+          _ = store.duplicateWorkspaceTab(tabID)
+        },
+        newTab: { tabID in
+          store.selectWorkspaceTab(tabID)
+          store.newWorkspaceTab()
+        },
+        move: store.moveWorkspaceTab,
+        closeOthers: store.closeOtherWorkspaceTabs,
+        moveTab: { sourceID, targetID in
+          _ = store.moveWorkspaceTab(sourceID, to: targetID)
         }
-        .onChange(of: store.selectedWorkspaceTabID) { _, tabID in
-          withAnimation(WorkspaceMotion.quick) {
-            proxy.scrollTo(tabID, anchor: .center)
-          }
-        }
-      }
+      )
 
       Button {
         store.newWorkspaceTab()
@@ -184,94 +193,186 @@ private struct WorkspaceTabBar: View {
   }
 }
 
-private struct WorkspaceTabItem: View {
-  @EnvironmentObject private var store: WorkspaceStore
-  let tab: WorkspaceTab
+struct WorkspaceTabStripItem: Identifiable, Equatable {
+  let id: WorkspaceTab.ID
+  let title: String
+  let systemImage: String
+}
+
+private struct WorkspaceTabStrip: NSViewRepresentable {
+  let items: [WorkspaceTabStripItem]
+  let selectedTabID: WorkspaceTab.ID
   let dragCoordinator: WorkspaceTabDragCoordinator
+  let select: (WorkspaceTab.ID) -> Void
+  let close: (WorkspaceTab.ID) -> Void
+  let duplicate: (WorkspaceTab.ID) -> Void
+  let newTab: (WorkspaceTab.ID) -> Void
+  let move: (WorkspaceTab.ID, Int) -> Void
+  let closeOthers: (WorkspaceTab.ID) -> Void
+  let moveTab: (WorkspaceTab.ID, WorkspaceTab.ID) -> Void
 
-  private var isSelected: Bool {
-    store.selectedWorkspaceTabID == tab.id
+  func makeNSView(context: Context) -> WorkspaceTabStripView {
+    WorkspaceTabStripView(frame: .zero)
   }
 
-  private var tabIndex: Int? {
-    store.workspaceTabs.firstIndex(where: { $0.id == tab.id })
-  }
-
-  private var title: String {
-    store.workspaceTabDisplayTitle(for: tab)
-  }
-
-  var body: some View {
-    WorkspaceTabInteractionTarget(
-      tabID: tab.id,
-      title: title,
-      systemImage: store.workspaceTabDisplaySystemImage(for: tab),
-      isSelected: isSelected,
-      showsCloseButton: store.workspaceTabs.count > 1 && isSelected,
-      canClose: store.workspaceTabs.count > 1,
-      canMoveLeft: tabIndex != 0,
-      canMoveRight: tabIndex != store.workspaceTabs.count - 1,
+  func updateNSView(_ view: WorkspaceTabStripView, context: Context) {
+    view.update(
+      items: items,
+      selectedTabID: selectedTabID,
       dragCoordinator: dragCoordinator,
-      select: { store.selectWorkspaceTab(tab.id) },
-      close: { store.closeWorkspaceTab(tab.id) },
-      duplicate: { store.duplicateWorkspaceTab(tab.id) },
-      newTab: {
-        store.selectWorkspaceTab(tab.id)
-        store.newWorkspaceTab()
-      },
-      moveLeft: { store.moveWorkspaceTab(tab.id, offset: -1) },
-      moveRight: { store.moveWorkspaceTab(tab.id, offset: 1) },
-      closeOthers: { store.closeOtherWorkspaceTabs(keeping: tab.id) },
-      moveTab: { sourceID in
-        _ = store.moveWorkspaceTab(sourceID, to: tab.id)
-      }
+      select: select,
+      close: close,
+      duplicate: duplicate,
+      newTab: newTab,
+      move: move,
+      closeOthers: closeOthers,
+      moveTab: moveTab
     )
-    .frame(width: 180, height: 28)
   }
 }
 
-private struct WorkspaceTabInteractionTarget: NSViewRepresentable {
-  let tabID: WorkspaceTab.ID
-  let title: String
-  let systemImage: String
-  let isSelected: Bool
-  let showsCloseButton: Bool
-  let canClose: Bool
-  let canMoveLeft: Bool
-  let canMoveRight: Bool
-  let dragCoordinator: WorkspaceTabDragCoordinator
-  let select: () -> Void
-  let close: () -> Void
-  let duplicate: () -> Void
-  let newTab: () -> Void
-  let moveLeft: () -> Void
-  let moveRight: () -> Void
-  let closeOthers: () -> Void
-  let moveTab: (WorkspaceTab.ID) -> Void
+@MainActor
+final class WorkspaceTabStripView: NSView {
+  private static let tabWidth: CGFloat = 180
+  private static let tabHeight: CGFloat = 28
+  private static let tabSpacing: CGFloat = 4
+  private static let horizontalPadding: CGFloat = 6
 
-  func makeNSView(context: Context) -> WorkspaceTabInteractionView {
-    WorkspaceTabInteractionView(frame: .zero)
+  private let scrollView = NSScrollView()
+  private let tabDocumentView = FlippedWorkspaceTabDocumentView()
+  private var orderedTabIDs: [WorkspaceTab.ID] = []
+  private var tabViews: [WorkspaceTab.ID: WorkspaceTabInteractionView] = [:]
+  private var selectedTabID: WorkspaceTab.ID?
+
+  override init(frame frameRect: NSRect) {
+    super.init(frame: frameRect)
+
+    scrollView.borderType = .noBorder
+    scrollView.drawsBackground = false
+    scrollView.hasHorizontalScroller = false
+    scrollView.hasVerticalScroller = false
+    scrollView.horizontalScrollElasticity = .automatic
+    scrollView.verticalScrollElasticity = .none
+    scrollView.documentView = tabDocumentView
+    addSubview(scrollView)
   }
 
-  func updateNSView(_ view: WorkspaceTabInteractionView, context: Context) {
-    view.tabID = tabID
-    view.title = title
-    view.systemImage = systemImage
-    view.isSelected = isSelected
-    view.showsCloseButton = showsCloseButton
-    view.canClose = canClose
-    view.canMoveLeft = canMoveLeft
-    view.canMoveRight = canMoveRight
-    view.dragCoordinator = dragCoordinator
-    view.select = select
-    view.close = close
-    view.duplicate = duplicate
-    view.newTab = newTab
-    view.moveLeft = moveLeft
-    view.moveRight = moveRight
-    view.closeOthers = closeOthers
-    view.moveTab = moveTab
-    view.updatePresentation()
+  @available(*, unavailable)
+  required init?(coder: NSCoder) {
+    fatalError("init(coder:) has not been implemented")
+  }
+
+  override func layout() {
+    super.layout()
+    scrollView.frame = bounds
+
+    let contentWidth = max(
+      bounds.width,
+      Self.horizontalPadding * 2
+        + CGFloat(orderedTabIDs.count) * Self.tabWidth
+        + CGFloat(max(0, orderedTabIDs.count - 1)) * Self.tabSpacing
+    )
+    tabDocumentView.frame = NSRect(
+      x: 0,
+      y: 0,
+      width: contentWidth,
+      height: bounds.height
+    )
+    let tabY = max(0, (bounds.height - Self.tabHeight) / 2)
+    for (index, tabID) in orderedTabIDs.enumerated() {
+      tabViews[tabID]?.frame = NSRect(
+        x: Self.horizontalPadding + CGFloat(index) * (Self.tabWidth + Self.tabSpacing),
+        y: tabY,
+        width: Self.tabWidth,
+        height: Self.tabHeight
+      )
+    }
+  }
+
+  func update(
+    items: [WorkspaceTabStripItem],
+    selectedTabID: WorkspaceTab.ID,
+    dragCoordinator: WorkspaceTabDragCoordinator,
+    select: @escaping (WorkspaceTab.ID) -> Void,
+    close: @escaping (WorkspaceTab.ID) -> Void,
+    duplicate: @escaping (WorkspaceTab.ID) -> Void,
+    newTab: @escaping (WorkspaceTab.ID) -> Void,
+    move: @escaping (WorkspaceTab.ID, Int) -> Void,
+    closeOthers: @escaping (WorkspaceTab.ID) -> Void,
+    moveTab: @escaping (WorkspaceTab.ID, WorkspaceTab.ID) -> Void
+  ) {
+    let nextIDs = Set(items.map(\.id))
+    for (tabID, tabView) in tabViews where !nextIDs.contains(tabID) {
+      tabView.removeFromSuperview()
+      tabViews.removeValue(forKey: tabID)
+    }
+
+    let canClose = items.count > 1
+    for (index, item) in items.enumerated() {
+      let tabView: WorkspaceTabInteractionView
+      if let existing = tabViews[item.id] {
+        tabView = existing
+      } else {
+        tabView = WorkspaceTabInteractionView(frame: .zero)
+        tabViews[item.id] = tabView
+        tabDocumentView.addSubview(tabView)
+      }
+      tabView.tabID = item.id
+      tabView.title = item.title
+      tabView.systemImage = item.systemImage
+      tabView.isSelected = selectedTabID == item.id
+      tabView.showsCloseButton = canClose && selectedTabID == item.id
+      tabView.canClose = canClose
+      tabView.canMoveLeft = index > 0
+      tabView.canMoveRight = index < items.count - 1
+      tabView.dragCoordinator = dragCoordinator
+      tabView.select = { select(item.id) }
+      tabView.close = { close(item.id) }
+      tabView.duplicate = { duplicate(item.id) }
+      tabView.newTab = { newTab(item.id) }
+      tabView.moveLeft = { move(item.id, -1) }
+      tabView.moveRight = { move(item.id, 1) }
+      tabView.closeOthers = { closeOthers(item.id) }
+      tabView.moveTab = { sourceID in moveTab(sourceID, item.id) }
+      tabView.updatePresentation()
+    }
+
+    let selectionChanged = self.selectedTabID != selectedTabID
+    orderedTabIDs = items.map(\.id)
+    self.selectedTabID = selectedTabID
+    needsLayout = true
+    if selectionChanged {
+      performAfterSwiftUIViewUpdate { [weak self] in
+        self?.scrollSelectedTabToVisible()
+      }
+    }
+  }
+
+  func tabView(for tabID: WorkspaceTab.ID) -> WorkspaceTabInteractionView? {
+    tabViews[tabID]
+  }
+
+  private func scrollSelectedTabToVisible() {
+    layoutSubtreeIfNeeded()
+    guard let selectedTabID,
+          let tabView = tabViews[selectedTabID]
+    else { return }
+    tabView.scrollToVisible(tabView.bounds)
+  }
+}
+
+private final class FlippedWorkspaceTabDocumentView: NSView {
+  override var isFlipped: Bool { true }
+
+  override func hitTest(_ point: NSPoint) -> NSView? {
+    guard !isHidden, alphaValue > 0, bounds.contains(point) else { return nil }
+    for child in subviews.reversed() {
+      let childPoint = child.convert(point, from: self)
+      if let hitView = child.hitTest(childPoint) {
+        return hitView
+      }
+    }
+    return self
   }
 }
 
@@ -388,6 +489,11 @@ final class WorkspaceTabInteractionView: NSView {
   }
 
   override var acceptsFirstResponder: Bool { true }
+
+  // The tab strip sits next to the titlebar. Plain NSView instances default to
+  // participating in background window dragging, which can consume primary
+  // mouse events before this view receives mouseDown in optimized builds.
+  override var mouseDownCanMoveWindow: Bool { false }
 
   override func hitTest(_ point: NSPoint) -> NSView? {
     guard !isHidden, alphaValue > 0, bounds.contains(point) else { return nil }

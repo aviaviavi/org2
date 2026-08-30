@@ -44,6 +44,12 @@ assert.match(defaultDaily.appPath, /OpenOrg\.app$/);
 assert.match(defaultDaily.iconPath, /OpenOrgAppIcon\.png$/);
 assert.equal(defaultDaily.installStrategy, "verified staged replacement");
 assert.ok(defaultDaily.nodeArchitecture === "arm64" || defaultDaily.nodeArchitecture === "x64");
+assert.match(
+  defaultDaily.nodeEntitlementsPath,
+  defaultDaily.nodeArchitecture === "x64"
+    ? /OpenOrgNodeIntel\.entitlements$/
+    : /OpenOrgNode\.entitlements$/
+);
 assert.equal(defaultDaily.swiftScratchPath, null);
 assert.equal(defaultDaily.updates.enabled, true);
 assert.equal(defaultDaily.updates.intervalSeconds, 7200);

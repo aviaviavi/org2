@@ -24,6 +24,73 @@ final class WorkspaceTabBarInteractionTests: XCTestCase {
 
     XCTAssertEqual(selectionCount, 1)
     XCTAssertTrue(view.acceptsFirstMouse(for: event))
+    XCTAssertFalse(view.mouseDownCanMoveWindow)
+  }
+
+  func testNativeTabStripRoutesAWindowClickThroughEveryParent() throws {
+    let firstID = WorkspaceTab.ID()
+    let secondID = WorkspaceTab.ID()
+    let strip = WorkspaceTabStripView(frame: NSRect(x: 0, y: 0, width: 420, height: 36))
+    let coordinator = WorkspaceTabDragCoordinator()
+    var selectedID: WorkspaceTab.ID?
+    strip.update(
+      items: [
+        WorkspaceTabStripItem(id: firstID, title: "Home", systemImage: "house.fill"),
+        WorkspaceTabStripItem(id: secondID, title: "Sources", systemImage: "arrow.triangle.2.circlepath.circle")
+      ],
+      selectedTabID: firstID,
+      dragCoordinator: coordinator,
+      select: { selectedID = $0 },
+      close: { _ in },
+      duplicate: { _ in },
+      newTab: { _ in },
+      move: { _, _ in },
+      closeOthers: { _ in },
+      moveTab: { _, _ in }
+    )
+
+    _ = NSApplication.shared
+    let window = NSWindow(
+      contentRect: NSRect(x: 0, y: 0, width: 420, height: 36),
+      styleMask: [.titled],
+      backing: .buffered,
+      defer: false
+    )
+    window.contentView = strip
+    window.makeKeyAndOrderFront(nil)
+    defer { window.orderOut(nil) }
+    strip.layoutSubtreeIfNeeded()
+
+    let secondTab = try XCTUnwrap(strip.tabView(for: secondID))
+    let pointInStrip = secondTab.convert(
+      NSPoint(x: secondTab.bounds.midX, y: secondTab.bounds.midY),
+      to: strip
+    )
+    XCTAssertTrue(strip.bounds.contains(pointInStrip))
+    let hitView = strip.hitTest(pointInStrip)
+    XCTAssertTrue(
+      hitView === secondTab,
+      "Expected the second tab, hit \(String(describing: hitView)) at \(pointInStrip)"
+    )
+
+    let pointInWindow = secondTab.convert(
+      NSPoint(x: secondTab.bounds.midX, y: secondTab.bounds.midY),
+      to: nil
+    )
+    let mouseDown = try XCTUnwrap(NSEvent.mouseEvent(
+      with: .leftMouseDown,
+      location: pointInWindow,
+      modifierFlags: [],
+      timestamp: 0,
+      windowNumber: window.windowNumber,
+      context: nil,
+      eventNumber: 2,
+      clickCount: 1,
+      pressure: 1
+    ))
+    window.sendEvent(mouseDown)
+
+    XCTAssertEqual(selectedID, secondID)
   }
 
   func testNativeTabOwnsItsVisibleContentAndExactHitTargets() throws {

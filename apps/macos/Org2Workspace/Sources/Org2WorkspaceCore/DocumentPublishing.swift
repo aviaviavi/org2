@@ -917,6 +917,7 @@ private final class GoogleDriveOAuthLoopbackReceiver: @unchecked Sendable {
 
 public enum LocalDocumentPublicationHostError: LocalizedError, Sendable {
   case invalidAdvertisedHost
+  case persistenceFailed(String)
   case randomNumberFailure(OSStatus)
   case startupFailed(String)
   case startupTimedOut
@@ -925,6 +926,8 @@ public enum LocalDocumentPublicationHostError: LocalizedError, Sendable {
     switch self {
     case .invalidAdvertisedHost:
       "OpenOrg could not determine a local hostname for this Mac."
+    case .persistenceFailed(let message):
+      "OpenOrg could not persist the local publication: \(message)"
     case .randomNumberFailure(let status):
       "OpenOrg could not create a secure publication link (status \(status))."
     case .startupFailed(let message):
@@ -967,28 +970,76 @@ private final class LocalPublicationListenerStartup: @unchecked Sendable {
 
 public final class LocalDocumentPublicationHost: @unchecked Sendable {
   private struct HostedDocument: Sendable {
+    let id: String
     let title: String
-    let data: Data
     let mediaType: String
+    let sourcePath: String?
+    let format: DocumentPublishFormat?
+    let createdAt: Date
+    let data: Data?
+    let artifactURL: URL?
+
+    func contentData() throws -> Data {
+      if let data { return data }
+      guard let artifactURL else { return Data() }
+      return try Data(contentsOf: artifactURL)
+    }
   }
 
+  private struct PersistedDocument: Codable, Sendable {
+    let id: String
+    let title: String
+    let mediaType: String
+    let sourcePath: String?
+    let format: String?
+    let createdAt: Date
+  }
+
+  private struct PersistedState: Codable, Sendable {
+    let schema: String
+    let port: UInt16
+    let advertisedHost: String
+    let documents: [PersistedDocument]
+  }
+
+  private static let persistedStateSchema = "openorg:local-document-publications:v1"
   private let queue = DispatchQueue(label: "org.openorg.document-publishing", qos: .userInitiated)
   private let stateLock = NSLock()
   private let startupLock = NSLock()
   private let connectionLock = NSLock()
   private let bindHost: String
   private let advertisedHost: String
+  private let storageDirectory: URL?
   private var listener: NWListener?
   private var listeningPort: UInt16?
+  private var persistedPort: UInt16?
+  private var restorationError: LocalDocumentPublicationHostError?
   private var documents: [String: HostedDocument] = [:]
   private var connections: [UUID: MobileRemoteHTTPConnection] = [:]
 
   public init(
     bindHost: String = "0.0.0.0",
-    advertisedHost: String = ProcessInfo.processInfo.hostName
+    advertisedHost: String = ProcessInfo.processInfo.hostName,
+    storageDirectory: URL? = nil
   ) {
     self.bindHost = bindHost
-    self.advertisedHost = advertisedHost.trimmingCharacters(in: .whitespacesAndNewlines)
+    self.storageDirectory = storageDirectory?.standardizedFileURL
+    let currentAdvertisedHost = advertisedHost.trimmingCharacters(in: .whitespacesAndNewlines)
+    var restoredAdvertisedHost = currentAdvertisedHost
+    if let storageDirectory = self.storageDirectory {
+      do {
+        if let restored = try Self.loadPersistedState(from: storageDirectory) {
+          restoredAdvertisedHost = restored.advertisedHost
+          persistedPort = restored.port
+          documents = restored.documents
+        }
+      } catch let error as LocalDocumentPublicationHostError {
+        restorationError = error
+      } catch {
+        restorationError = .persistenceFailed(error.localizedDescription)
+      }
+    }
+    self.advertisedHost = restoredAdvertisedHost
   }
 
   public func publish(html: Data, title: String) async throws -> LocalDocumentPublication {
@@ -998,51 +1049,130 @@ public final class LocalDocumentPublicationHost: @unchecked Sendable {
   public func publish(
     data: Data,
     title: String,
-    mediaType: String
+    mediaType: String,
+    sourcePath: String? = nil,
+    format: DocumentPublishFormat? = nil
   ) async throws -> LocalDocumentPublication {
+    guard Self.httpURL(host: advertisedHost, port: 1, path: "/") != nil else {
+      throw LocalDocumentPublicationHostError.invalidAdvertisedHost
+    }
     let port = try await Task.detached(priority: .userInitiated) { [self] in
       try startIfNeededBlocking()
     }.value
-    let token = try Self.secretToken()
-    storeDocument(
-      HostedDocument(
-        title: title,
-        data: data,
-        mediaType: normalizedMediaType(mediaType)
-      ),
-      token: token
-    )
-
-    guard !advertisedHost.isEmpty else {
-      revoke(token)
-      throw LocalDocumentPublicationHostError.invalidAdvertisedHost
-    }
-    let path = "/a/\(token)"
-    guard let url = Self.httpURL(host: advertisedHost, port: port, path: path),
-          let localURL = Self.httpURL(host: "127.0.0.1", port: port, path: path)
-    else {
-      revoke(token)
-      throw LocalDocumentPublicationHostError.invalidAdvertisedHost
-    }
-    return LocalDocumentPublication(
+    let token = try uniqueSecretToken()
+    let candidateDocument = HostedDocument(
       id: token,
       title: title,
-      url: url,
-      localURL: localURL,
-      mediaType: normalizedMediaType(mediaType)
+      mediaType: Self.normalizedMediaType(mediaType),
+      sourcePath: sourcePath,
+      format: format,
+      createdAt: Date(),
+      data: data,
+      artifactURL: nil
     )
+    _ = try publication(for: candidateDocument, port: port)
+    let document = try storeDocument(candidateDocument)
+    return try publication(for: document, port: port)
   }
 
-  public func revoke(_ publicationID: String) {
-    stateLock.lock()
-    documents[publicationID] = nil
-    stateLock.unlock()
+  public func restorePublications() async throws -> [LocalDocumentPublication] {
+    let (restorationError, hasDocuments) = stateLock.withLock {
+      (self.restorationError, !documents.isEmpty)
+    }
+    if let restorationError { throw restorationError }
+    guard hasDocuments else { return [] }
+
+    let port = try await Task.detached(priority: .userInitiated) { [self] in
+      try startIfNeededBlocking()
+    }.value
+    let restoredDocuments = stateLock.withLock {
+      documents.values.sorted { $0.createdAt > $1.createdAt }
+    }
+    return try restoredDocuments.map { try publication(for: $0, port: port) }
   }
 
-  private func storeDocument(_ document: HostedDocument, token: String) {
+  public func revoke(_ publicationID: String) throws {
     stateLock.lock()
-    documents[token] = document
-    stateLock.unlock()
+    guard let removedDocument = documents.removeValue(forKey: publicationID) else {
+      stateLock.unlock()
+      return
+    }
+    do {
+      try persistStateLocked()
+      stateLock.unlock()
+    } catch {
+      documents[publicationID] = removedDocument
+      stateLock.unlock()
+      throw LocalDocumentPublicationHostError.persistenceFailed(error.localizedDescription)
+    }
+    if let artifactURL = removedDocument.artifactURL {
+      try? FileManager.default.removeItem(at: artifactURL)
+    }
+  }
+
+  public func revokeAll() throws {
+    stateLock.lock()
+    let removedDocuments = documents
+    documents = [:]
+    do {
+      try persistStateLocked()
+      stateLock.unlock()
+    } catch {
+      documents = removedDocuments
+      stateLock.unlock()
+      throw LocalDocumentPublicationHostError.persistenceFailed(error.localizedDescription)
+    }
+    for document in removedDocuments.values {
+      if let artifactURL = document.artifactURL {
+        try? FileManager.default.removeItem(at: artifactURL)
+      }
+    }
+  }
+
+  private func storeDocument(_ document: HostedDocument) throws -> HostedDocument {
+    var storedDocument = document
+    if let storageDirectory {
+      do {
+        try Self.prepareStorageDirectory(storageDirectory)
+        let artifactURL = Self.artifactURL(
+          storageDirectory: storageDirectory,
+          publicationID: document.id,
+          mediaType: document.mediaType
+        )
+        try document.contentData().write(to: artifactURL, options: .atomic)
+        try FileManager.default.setAttributes(
+          [.posixPermissions: 0o600],
+          ofItemAtPath: artifactURL.path
+        )
+        storedDocument = HostedDocument(
+          id: document.id,
+          title: document.title,
+          mediaType: document.mediaType,
+          sourcePath: document.sourcePath,
+          format: document.format,
+          createdAt: document.createdAt,
+          data: nil,
+          artifactURL: artifactURL
+        )
+      } catch {
+        throw LocalDocumentPublicationHostError.persistenceFailed(error.localizedDescription)
+      }
+    }
+
+    stateLock.lock()
+    documents[storedDocument.id] = storedDocument
+    do {
+      try persistStateLocked()
+      stateLock.unlock()
+      return storedDocument
+    } catch {
+      documents[storedDocument.id] = nil
+      stateLock.unlock()
+      if let artifactURL = storedDocument.artifactURL {
+        try? FileManager.default.removeItem(at: artifactURL)
+      }
+      throw LocalDocumentPublicationHostError.persistenceFailed(error.localizedDescription)
+    }
   }
 
   public func stop() {
@@ -1071,14 +1201,17 @@ public final class LocalDocumentPublicationHost: @unchecked Sendable {
 
     stateLock.lock()
     let existingPort = listeningPort
+    let requestedPort = persistedPort
+    let restorationError = restorationError
     stateLock.unlock()
+    if let restorationError { throw restorationError }
     if let existingPort { return existingPort }
 
     let parameters = NWParameters.tcp
     parameters.allowLocalEndpointReuse = true
     parameters.requiredLocalEndpoint = .hostPort(
       host: NWEndpoint.Host(bindHost),
-      port: .any
+      port: requestedPort.flatMap(NWEndpoint.Port.init(rawValue:)) ?? .any
     )
     let candidate: NWListener
     do {
@@ -1114,8 +1247,22 @@ public final class LocalDocumentPublicationHost: @unchecked Sendable {
       stateLock.lock()
       listener = candidate
       listeningPort = port
-      stateLock.unlock()
-      return port
+      let shouldPersistPort = persistedPort == nil
+      persistedPort = port
+      do {
+        if shouldPersistPort {
+          try persistStateLocked()
+        }
+        stateLock.unlock()
+        return port
+      } catch {
+        listener = nil
+        listeningPort = nil
+        persistedPort = requestedPort
+        stateLock.unlock()
+        candidate.cancel()
+        throw LocalDocumentPublicationHostError.persistenceFailed(error.localizedDescription)
+      }
     } catch {
       candidate.cancel()
       throw error
@@ -1160,6 +1307,15 @@ public final class LocalDocumentPublicationHost: @unchecked Sendable {
     guard let document else {
       return .error("This publication is unavailable or has been revoked.", statusCode: 404)
     }
+    let body: Data
+    if request.method == "HEAD" {
+      body = Data()
+    } else {
+      guard let persistedData = try? document.contentData() else {
+        return .error("This publication artifact is unavailable.", statusCode: 503)
+      }
+      body = persistedData
+    }
     let isHTML = document.mediaType == "text/html"
     return MobileRemoteHTTPResponse(
       statusCode: 200,
@@ -1173,15 +1329,187 @@ public final class LocalDocumentPublicationHost: @unchecked Sendable {
         "X-Content-Type-Options": "nosniff",
         "X-Robots-Tag": "noindex, nofollow, noarchive",
       ],
-      body: request.method == "HEAD" ? Data() : document.data
+      body: body
     )
   }
 
-  private func normalizedMediaType(_ mediaType: String) -> String {
+  private static func normalizedMediaType(_ mediaType: String) -> String {
     switch mediaType.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
     case "application/pdf": "application/pdf"
     default: "text/html"
     }
+  }
+
+  private func publication(
+    for document: HostedDocument,
+    port: UInt16
+  ) throws -> LocalDocumentPublication {
+    guard !advertisedHost.isEmpty else {
+      throw LocalDocumentPublicationHostError.invalidAdvertisedHost
+    }
+    let path = "/a/\(document.id)"
+    guard let url = Self.httpURL(host: advertisedHost, port: port, path: path),
+          let localURL = Self.httpURL(host: "127.0.0.1", port: port, path: path)
+    else {
+      throw LocalDocumentPublicationHostError.invalidAdvertisedHost
+    }
+    return LocalDocumentPublication(
+      id: document.id,
+      title: document.title,
+      url: url,
+      localURL: localURL,
+      mediaType: document.mediaType,
+      sourcePath: document.sourcePath,
+      format: document.format,
+      createdAt: document.createdAt
+    )
+  }
+
+  private func uniqueSecretToken() throws -> String {
+    for _ in 0..<8 {
+      let token = try Self.secretToken()
+      stateLock.lock()
+      let isAvailable = documents[token] == nil
+      stateLock.unlock()
+      if isAvailable { return token }
+    }
+    throw LocalDocumentPublicationHostError.persistenceFailed(
+      "OpenOrg could not allocate a unique publication identifier."
+    )
+  }
+
+  private func persistStateLocked() throws {
+    guard let storageDirectory,
+          let port = listeningPort ?? persistedPort
+    else {
+      return
+    }
+    try Self.prepareStorageDirectory(storageDirectory)
+    let persistedDocuments = documents.values
+      .sorted { $0.createdAt > $1.createdAt }
+      .map { document in
+        PersistedDocument(
+          id: document.id,
+          title: document.title,
+          mediaType: document.mediaType,
+          sourcePath: document.sourcePath,
+          format: document.format?.rawValue,
+          createdAt: document.createdAt
+        )
+      }
+    let state = PersistedState(
+      schema: Self.persistedStateSchema,
+      port: port,
+      advertisedHost: advertisedHost,
+      documents: persistedDocuments
+    )
+    let encoder = JSONEncoder()
+    encoder.dateEncodingStrategy = .iso8601
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    var data = try encoder.encode(state)
+    data.append(contentsOf: "\n".utf8)
+    let manifestURL = Self.manifestURL(storageDirectory: storageDirectory)
+    try data.write(to: manifestURL, options: .atomic)
+    try FileManager.default.setAttributes(
+      [.posixPermissions: 0o600],
+      ofItemAtPath: manifestURL.path
+    )
+  }
+
+  private static func loadPersistedState(
+    from storageDirectory: URL
+  ) throws -> (
+    advertisedHost: String,
+    port: UInt16,
+    documents: [String: HostedDocument]
+  )? {
+    let manifestURL = manifestURL(storageDirectory: storageDirectory)
+    guard FileManager.default.fileExists(atPath: manifestURL.path) else { return nil }
+    let decoder = JSONDecoder()
+    decoder.dateDecodingStrategy = .iso8601
+    let state = try decoder.decode(PersistedState.self, from: Data(contentsOf: manifestURL))
+    let advertisedHost = state.advertisedHost.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard state.schema == persistedStateSchema,
+          state.port > 0,
+          httpURL(host: advertisedHost, port: state.port, path: "/") != nil
+    else {
+      throw LocalDocumentPublicationHostError.persistenceFailed(
+        "The stored publication manifest is invalid."
+      )
+    }
+
+    var restoredDocuments: [String: HostedDocument] = [:]
+    for record in state.documents {
+      guard isValidPublicationID(record.id),
+            record.mediaType == "text/html" || record.mediaType == "application/pdf"
+      else {
+        continue
+      }
+      let format = record.format.flatMap(DocumentPublishFormat.init(rawValue:))
+      if record.format != nil, format == nil { continue }
+      let artifactURL = artifactURL(
+        storageDirectory: storageDirectory,
+        publicationID: record.id,
+        mediaType: record.mediaType
+      )
+      guard FileManager.default.fileExists(atPath: artifactURL.path) else { continue }
+      restoredDocuments[record.id] = HostedDocument(
+        id: record.id,
+        title: record.title,
+        mediaType: record.mediaType,
+        sourcePath: record.sourcePath,
+        format: format,
+        createdAt: record.createdAt,
+        data: nil,
+        artifactURL: artifactURL
+      )
+    }
+    return (advertisedHost, state.port, restoredDocuments)
+  }
+
+  private static func prepareStorageDirectory(_ storageDirectory: URL) throws {
+    let artifactDirectory = artifactDirectory(storageDirectory: storageDirectory)
+    try FileManager.default.createDirectory(
+      at: artifactDirectory,
+      withIntermediateDirectories: true
+    )
+    for directory in [storageDirectory, artifactDirectory] {
+      try FileManager.default.setAttributes(
+        [.posixPermissions: 0o700],
+        ofItemAtPath: directory.path
+      )
+    }
+  }
+
+  private static func manifestURL(storageDirectory: URL) -> URL {
+    storageDirectory.appendingPathComponent("publications.json", isDirectory: false)
+  }
+
+  private static func artifactDirectory(storageDirectory: URL) -> URL {
+    storageDirectory.appendingPathComponent("artifacts", isDirectory: true)
+  }
+
+  private static func artifactURL(
+    storageDirectory: URL,
+    publicationID: String,
+    mediaType: String
+  ) -> URL {
+    artifactDirectory(storageDirectory: storageDirectory)
+      .appendingPathComponent(
+        "\(publicationID).\(mediaType == "application/pdf" ? "pdf" : "html")",
+        isDirectory: false
+      )
+  }
+
+  private static func isValidPublicationID(_ publicationID: String) -> Bool {
+    (40...128).contains(publicationID.count)
+      && publicationID.utf8.allSatisfy { byte in
+        (65...90).contains(byte)
+          || (97...122).contains(byte)
+          || (48...57).contains(byte)
+          || byte == 45
+          || byte == 95
+      }
   }
 
   private static func httpURL(host: String, port: UInt16, path: String) -> URL? {

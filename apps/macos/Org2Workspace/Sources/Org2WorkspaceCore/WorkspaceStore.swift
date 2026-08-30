@@ -1934,7 +1934,7 @@ public final class WorkspaceStore: ObservableObject {
   private let defaults: UserDefaults
   private let automaticStarterCorpusURL: URL?
   private let sourceScheduleStateStore: WorkspaceSourceScheduleStateStore
-  private let localDocumentPublicationHost = LocalDocumentPublicationHost()
+  private let localDocumentPublicationHost: LocalDocumentPublicationHost
   private let meetingRecorder = MeetingAudioRecorder()
   private let openClawVoiceRecorder = MeetingAudioRecorder()
   private let meetingSystemAudioRecorder = MeetingSystemAudioRecorder()
@@ -2286,7 +2286,8 @@ public final class WorkspaceStore: ObservableObject {
     codexSendHandlerForTesting: (@Sendable ([OpenClawChatMessage], UUID, OpenClawWorkspaceContext) async throws -> String)? = nil,
     claudeSendHandlerForTesting: (@Sendable ([OpenClawChatMessage], UUID, OpenClawWorkspaceContext) async throws -> ClaudeCodeTurnResult)? = nil,
     legacyDefaultsDomains: [String]? = nil,
-    automaticStarterCorpusURL: URL? = nil
+    automaticStarterCorpusURL: URL? = nil,
+    localDocumentPublicationHost: LocalDocumentPublicationHost? = nil
   ) {
     let initialWorkspaceTab = WorkspaceTab(
       title: WorkspaceSurface.home.title,
@@ -2295,6 +2296,10 @@ public final class WorkspaceStore: ObservableObject {
     workspaceTabs = [initialWorkspaceTab]
     selectedWorkspaceTabID = initialWorkspaceTab.id
     self.defaults = defaults
+    self.localDocumentPublicationHost = localDocumentPublicationHost
+      ?? LocalDocumentPublicationHost(
+        storageDirectory: Self.localDocumentPublicationStorageDirectory()
+      )
     self.automaticStarterCorpusURL = automaticStarterCorpusURL
       ?? (NSClassFromString("XCTestCase") == nil ? Self.defaultStarterCorpusURL() : nil)
     sourceScheduleStateStore = WorkspaceSourceScheduleStateStore(defaults: defaults)
@@ -2401,6 +2406,7 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func bootstrap() async {
+    await restoreLocalDocumentPublications()
     await refreshAudioSettingsStatusAsync()
     if corpusRoot == nil {
       if let screenshotCorpusRoot = screenshotCorpusRootFromEnvironment() {
@@ -10519,9 +10525,11 @@ public final class WorkspaceStore: ObservableObject {
     statusText = "Checking the publication boundary…"
     defer { isPublishingDocument = false }
 
-    let outputDirectory = documentPublicationDirectory(preview: true)
+    let outputDirectory = request.destination == .localLink
+      ? documentPublicationDirectory(preview: true)
+      : nil
     let result: DocumentPublishCLIResult = try await cli.runJSON(
-      documentPublishArguments(
+      Self.documentPublishArguments(
         sourceFile: sourceFile,
         request: request,
         outputDirectory: outputDirectory,
@@ -10550,7 +10558,7 @@ public final class WorkspaceStore: ObservableObject {
     case .localLink:
       let outputDirectory = documentPublicationDirectory(preview: false)
       let result: DocumentPublishCLIResult = try await cli.runJSON(
-        documentPublishArguments(
+        Self.documentPublishArguments(
           sourceFile: sourceFile,
           request: request,
           outputDirectory: outputDirectory,
@@ -10587,21 +10595,13 @@ public final class WorkspaceStore: ObservableObject {
       let hostedPublication = try await localDocumentPublicationHost.publish(
         data: data,
         title: result.artifact.title,
-        mediaType: mediaType
-      )
-      let publication = LocalDocumentPublication(
-        id: hostedPublication.id,
-        title: hostedPublication.title,
-        url: hostedPublication.url,
-        localURL: hostedPublication.localURL,
-        mediaType: hostedPublication.mediaType,
+        mediaType: mediaType,
         sourcePath: result.source.file,
-        format: request.format,
-        createdAt: hostedPublication.createdAt
+        format: request.format
       )
-      localDocumentPublications.insert(publication, at: 0)
+      localDocumentPublications.insert(hostedPublication, at: 0)
       statusText = "Published \(result.artifact.title) on the local network"
-      return .localLink(publication: publication, result: result)
+      return .localLink(publication: hostedPublication, result: result)
 
     case .googleDrive:
       let token = googleAccessToken?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -10617,7 +10617,7 @@ public final class WorkspaceStore: ObservableObject {
           line: request.line
         )
         _ = try await cli.runJSON(
-          documentPublishArguments(
+          Self.documentPublishArguments(
             sourceFile: sourceFile,
             request: webRequest,
             outputDirectory: outputDirectory,
@@ -10632,7 +10632,7 @@ public final class WorkspaceStore: ObservableObject {
         let pdfURL = outputDirectory.appendingPathComponent("publication.pdf", isDirectory: false)
         try Org2PDFExporter.validated(pdf).write(to: pdfURL, options: .atomic)
         result = try await cli.runJSON(
-          documentPublishArguments(
+          Self.documentPublishArguments(
             sourceFile: sourceFile,
             request: request,
             outputDirectory: nil,
@@ -10643,7 +10643,7 @@ public final class WorkspaceStore: ObservableObject {
         )
       } else {
         result = try await cli.runJSON(
-          documentPublishArguments(
+          Self.documentPublishArguments(
             sourceFile: sourceFile,
             request: request,
             outputDirectory: nil,
@@ -10670,17 +10670,34 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func revokeLocalDocumentPublication(_ publicationID: String) {
-    localDocumentPublicationHost.revoke(publicationID)
-    localDocumentPublications.removeAll { $0.id == publicationID }
-    statusText = "Local publication revoked"
+    do {
+      try localDocumentPublicationHost.revoke(publicationID)
+      localDocumentPublications.removeAll { $0.id == publicationID }
+      statusText = "Local publication revoked"
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Could not revoke the local publication"
+    }
   }
 
   public func revokeAllLocalDocumentPublications() {
-    for publication in localDocumentPublications {
-      localDocumentPublicationHost.revoke(publication.id)
+    do {
+      try localDocumentPublicationHost.revokeAll()
+      localDocumentPublications.removeAll()
+      statusText = "All local publications revoked"
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Could not revoke all local publications"
     }
-    localDocumentPublications.removeAll()
-    statusText = "All local publications revoked"
+  }
+
+  private func restoreLocalDocumentPublications() async {
+    do {
+      localDocumentPublications = try await localDocumentPublicationHost.restorePublications()
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Could not restore local publications"
+    }
   }
 
   private func sourceFileForDocumentPublishing() async throws -> URL {
@@ -10698,7 +10715,7 @@ public final class WorkspaceStore: ObservableObject {
     return sourceFile.standardizedFileURL
   }
 
-  private func documentPublishArguments(
+  nonisolated static func documentPublishArguments(
     sourceFile: URL,
     request: DocumentPublishRequest,
     outputDirectory: URL?,
@@ -10721,8 +10738,8 @@ public final class WorkspaceStore: ObservableObject {
     if let line = request.line {
       arguments.append(contentsOf: ["--line", String(line)])
     }
-    if let outputDirectory {
-      if request.destination == .localLink, request.format == .beamerSlides {
+    if let outputDirectory, request.destination == .localLink {
+      if request.format == .beamerSlides {
         arguments.append(contentsOf: [
           "--out-file",
           outputDirectory.appendingPathComponent("presentation.pdf", isDirectory: false).path,
@@ -10767,6 +10784,26 @@ public final class WorkspaceStore: ObservableObject {
       .appendingPathComponent("OpenOrg", isDirectory: true)
       .appendingPathComponent("Publications", isDirectory: true)
       .appendingPathComponent(UUID().uuidString.lowercased(), isDirectory: true)
+  }
+
+  private static func localDocumentPublicationStorageDirectory() -> URL? {
+    let applicationFolder: String
+    switch Bundle.main.bundleIdentifier {
+    case "org.org2.workspace":
+      applicationFolder = "OpenOrg"
+    case "org.org2.workspace.codex":
+      applicationFolder = "OpenOrg Preview"
+    default:
+      return nil
+    }
+    let applicationSupport = FileManager.default.urls(
+      for: .applicationSupportDirectory,
+      in: .userDomainMask
+    ).first ?? FileManager.default.temporaryDirectory
+    return applicationSupport
+      .appendingPathComponent(applicationFolder, isDirectory: true)
+      .appendingPathComponent("Publications", isDirectory: true)
+      .appendingPathComponent("Hosted", isDirectory: true)
   }
 
   public func exportCurrentDocumentPDF() async {
