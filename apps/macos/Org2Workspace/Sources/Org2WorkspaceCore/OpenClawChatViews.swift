@@ -471,7 +471,9 @@ private struct OpenClawMessageBodyView: View {
             RenderedBlockView(
               block: block.rendered,
               rawText: block.rawText,
-              inlineActions: .readOnly
+              inlineActions: .readOnly(copySourceBlock: { lines in
+                OpenClawMessageClipboard.copyCodeSnippet(lines: lines)
+              })
             )
             .frame(
               maxWidth: compact || !block.isRenderedTable ? (compact ? 360 : 640) : .infinity,
@@ -1342,6 +1344,19 @@ enum OpenClawMessageClipboard {
     to pasteboard: NSPasteboard = .general
   ) -> Bool {
     write(text(for: message), to: pasteboard)
+  }
+
+  nonisolated static func codeSnippetText(lines: [String]) -> String {
+    lines.joined(separator: "\n")
+  }
+
+  @MainActor
+  @discardableResult
+  static func copyCodeSnippet(
+    lines: [String],
+    to pasteboard: NSPasteboard = .general
+  ) -> Bool {
+    write(codeSnippetText(lines: lines), to: pasteboard)
   }
 
   @MainActor

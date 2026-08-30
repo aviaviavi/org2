@@ -13555,7 +13555,8 @@ final class Org2ModelsTests: XCTestCase {
         commandLabel: "sh",
         stdout: "hi\n"
       ),
-      runSourceBlock: nil
+      runSourceBlock: nil,
+      copySourceBlock: nil
     )
     let changedStateSameSignature = RenderedBlockInlineActions(
       isSourceEditable: true,
@@ -13573,7 +13574,8 @@ final class Org2ModelsTests: XCTestCase {
         commandLabel: "sh",
         stdout: String(repeating: "large output\n", count: 1_000)
       ),
-      runSourceBlock: nil
+      runSourceBlock: nil,
+      copySourceBlock: nil
     )
     let changedSignature = RenderedBlockInlineActions(
       isSourceEditable: true,
@@ -13591,7 +13593,8 @@ final class Org2ModelsTests: XCTestCase {
         commandLabel: "sh",
         stdout: "hi again\n"
       ),
-      runSourceBlock: nil
+      runSourceBlock: nil,
+      copySourceBlock: nil
     )
 
     let base = RenderedBlockView(

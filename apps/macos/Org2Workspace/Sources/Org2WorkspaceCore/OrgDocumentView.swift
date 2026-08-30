@@ -309,7 +309,8 @@ struct OrgRenderedEntryView: View, Equatable {
         toggleListItemCheckbox: nil,
         sourceBlockRunRenderSignature: "",
         sourceBlockRunState: nil,
-        runSourceBlock: nil
+        runSourceBlock: nil,
+        copySourceBlock: nil
       )
     }
     let runnableSourceLanguage: String? = {
@@ -351,7 +352,8 @@ struct OrgRenderedEntryView: View, Equatable {
       },
       sourceBlockRunRenderSignature: WorkspaceStore.sourceBlockRunRenderSignature(for: sourceBlockRunState),
       sourceBlockRunState: sourceBlockRunState,
-      runSourceBlock: runSourceBlock
+      runSourceBlock: runSourceBlock,
+      copySourceBlock: nil
     )
   }
 

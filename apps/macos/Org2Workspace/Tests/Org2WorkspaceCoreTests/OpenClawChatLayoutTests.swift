@@ -540,6 +540,18 @@ final class OpenClawChatLayoutTests: XCTestCase {
     XCTAssertEqual(pasteboard.string(forType: .string), "First paragraph.\n\nSecond paragraph.")
   }
 
+  func testCodeSnippetClipboardCopiesOnlyTheSnippetBody() {
+    let pasteboard = NSPasteboard(name: NSPasteboard.Name("org2-chat-code-copy-\(UUID().uuidString)"))
+    defer { pasteboard.releaseGlobally() }
+
+    XCTAssertTrue(OpenClawMessageClipboard.copyCodeSnippet(
+      lines: ["let answer = 42", "print(answer)"],
+      to: pasteboard
+    ))
+
+    XCTAssertEqual(pasteboard.string(forType: .string), "let answer = 42\nprint(answer)")
+  }
+
   func testAssistantMessagesRenderStructuredOrg2AndRepairCommonFormattingMistakes() {
     let raw = """
     * Does Codex have server mode?

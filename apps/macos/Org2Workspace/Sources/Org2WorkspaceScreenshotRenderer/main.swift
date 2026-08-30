@@ -12,16 +12,42 @@ struct Org2WorkspaceScreenshotRenderer {
       let height = Double(ProcessInfo.processInfo.environment["ORG2_WORKSPACE_SCREENSHOT_HEIGHT"] ?? "") ?? 900
       let scale = Double(ProcessInfo.processInfo.environment["ORG2_WORKSPACE_SCREENSHOT_SCALE"] ?? "") ?? 1
       let verifiesTabs = CommandLine.arguments.contains("--verify-tabs")
+      let verifiesCodeCopy = CommandLine.arguments.contains("--verify-code-copy")
 
       _ = await MainActor.run {
         NSApplication.shared.setActivationPolicy(.prohibited)
         NSApplication.shared.appearance = NSAppearance(named: .aqua)
       }
       let defaults = UserDefaults(suiteName: "org2-workspace-screenshot-\(UUID().uuidString)") ?? .standard
+      if verifiesCodeCopy {
+        defaults.set(true, forKey: "Org2Workspace.openOrgLaunchGuideCompleted.v1")
+      }
       let store = await MainActor.run {
         WorkspaceStore(defaults: defaults)
       }
       await store.bootstrap()
+      if verifiesCodeCopy {
+        await MainActor.run {
+          store.selectedSurface = .openClaw
+          store.openClawMessages = [
+            OpenClawChatMessage(
+              role: .assistant,
+              content: """
+              Here are two independent snippets.
+
+              #+begin_src swift
+              let answer = 42
+              print(answer)
+              #+end_src
+
+              #+begin_src sh
+              org2 lint --recursive
+              #+end_src
+              """
+            )
+          ]
+        }
+      }
       let verificationTabIDs: [WorkspaceTab.ID] = await MainActor.run {
         guard verifiesTabs else { return [] }
         let firstTabID = store.selectedWorkspaceTabID
@@ -60,7 +86,8 @@ struct Org2WorkspaceScreenshotRenderer {
         width: width,
         height: height,
         scale: scale,
-        verificationTabIDs: verificationTabIDs
+        verificationTabIDs: verificationTabIDs,
+        verifiesCodeCopy: verifiesCodeCopy
       )
     } catch {
       FileHandle.standardError.write(Data("\(error.localizedDescription)\n".utf8))
@@ -86,7 +113,8 @@ struct Org2WorkspaceScreenshotRenderer {
     width: Double,
     height: Double,
     scale: Double,
-    verificationTabIDs: [WorkspaceTab.ID]
+    verificationTabIDs: [WorkspaceTab.ID],
+    verifiesCodeCopy: Bool
   ) async throws {
     let content = ZStack {
       Color(nsColor: .windowBackgroundColor)
@@ -129,7 +157,6 @@ struct Org2WorkspaceScreenshotRenderer {
         expectedTabIDs: verificationTabIDs
       )
     }
-
     guard var bitmap = hostingView.bitmapImageRepForCachingDisplay(in: hostingView.bounds) else {
       throw ScreenshotRenderError.renderFailed
     }
@@ -172,6 +199,38 @@ struct Org2WorkspaceScreenshotRenderer {
       withIntermediateDirectories: true
     )
     try png.write(to: outputURL)
+    if verifiesCodeCopy {
+      try verifyCodeCopy(in: hostingView)
+    }
+  }
+
+  @MainActor
+  private static func verifyCodeCopy(in hostingView: NSView) throws {
+    let buttons = descendantButtons(in: hostingView).filter {
+      $0.accessibilityLabel() == "Copy code"
+    }
+    guard buttons.count == 2 else {
+      throw ScreenshotRenderError.codeCopyVerificationFailed(
+        "rendered \(buttons.count) copy controls instead of two"
+      )
+    }
+
+    let pasteboard = NSPasteboard.general
+    pasteboard.clearContents()
+    buttons[0].performClick(nil)
+    guard pasteboard.string(forType: .string) == "let answer = 42\nprint(answer)" else {
+      throw ScreenshotRenderError.codeCopyVerificationFailed(
+        "the visible control did not copy only its source block"
+      )
+    }
+    FileHandle.standardError.write(Data("Verified visible code-block copy control and exact clipboard payload\n".utf8))
+  }
+
+  @MainActor
+  private static func descendantButtons(in view: NSView) -> [NSButton] {
+    view.subviews.flatMap { child in
+      (child as? NSButton).map { [$0] } ?? descendantButtons(in: child)
+    }
   }
 
   @MainActor
@@ -397,6 +456,7 @@ private enum ScreenshotRenderError: LocalizedError {
   case missingOutputPath
   case renderFailed
   case tabVerificationFailed(String)
+  case codeCopyVerificationFailed(String)
 
   var errorDescription: String? {
     switch self {
@@ -406,6 +466,8 @@ private enum ScreenshotRenderError: LocalizedError {
       return "Could not render OpenOrg screenshot"
     case .tabVerificationFailed(let reason):
       return "Tab interaction verification failed: \(reason)"
+    case .codeCopyVerificationFailed(let reason):
+      return "Code copy interaction verification failed: \(reason)"
     }
   }
 }

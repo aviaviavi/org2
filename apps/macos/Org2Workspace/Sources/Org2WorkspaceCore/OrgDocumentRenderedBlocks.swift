@@ -38,6 +38,7 @@ struct RenderedBlockView: View, Equatable {
         && lhs.corpusRoot == rhs.corpusRoot
         && lhs.searchHighlightQuery == rhs.searchHighlightQuery
         && lhs.inlineActions.isSourceEditable == rhs.inlineActions.isSourceEditable
+        && lhs.inlineActions.canCopySourceBlock == rhs.inlineActions.canCopySourceBlock
         && lhs.inlineActions.sourceBlockRunRenderSignature == rhs.inlineActions.sourceBlockRunRenderSignature
     }
 
@@ -48,6 +49,7 @@ struct RenderedBlockView: View, Equatable {
       && lhs.corpusRoot == rhs.corpusRoot
       && lhs.searchHighlightQuery == rhs.searchHighlightQuery
       && lhs.inlineActions.isSourceEditable == rhs.inlineActions.isSourceEditable
+      && lhs.inlineActions.canCopySourceBlock == rhs.inlineActions.canCopySourceBlock
       && lhs.inlineActions.sourceBlockRunRenderSignature == rhs.inlineActions.sourceBlockRunRenderSignature
   }
 
@@ -521,6 +523,9 @@ struct RenderedBlockInlineActions: Sendable {
   let sourceBlockRunRenderSignature: String?
   let sourceBlockRunState: SourceBlockRunState?
   let runSourceBlock: (@MainActor @Sendable () -> Void)?
+  let copySourceBlock: (@MainActor @Sendable ([String]) -> Bool)?
+
+  var canCopySourceBlock: Bool { copySourceBlock != nil }
 
   static let readOnly = RenderedBlockInlineActions(
     isSourceEditable: false,
@@ -533,8 +538,28 @@ struct RenderedBlockInlineActions: Sendable {
     toggleListItemCheckbox: nil,
     sourceBlockRunRenderSignature: nil,
     sourceBlockRunState: nil,
-    runSourceBlock: nil
+    runSourceBlock: nil,
+    copySourceBlock: nil
   )
+
+  static func readOnly(
+    copySourceBlock: @escaping @MainActor @Sendable ([String]) -> Bool
+  ) -> RenderedBlockInlineActions {
+    RenderedBlockInlineActions(
+      isSourceEditable: false,
+      decryptSubtree: nil,
+      toggleHeadingTodo: nil,
+      setHeadingPriority: nil,
+      setHeadingTags: nil,
+      setPlanningBlock: nil,
+      setPropertyValue: nil,
+      toggleListItemCheckbox: nil,
+      sourceBlockRunRenderSignature: nil,
+      sourceBlockRunState: nil,
+      runSourceBlock: nil,
+      copySourceBlock: copySourceBlock
+    )
+  }
 }
 
 private struct RenderedHorizontalRuleView: View {
@@ -1675,6 +1700,10 @@ private struct RenderedSourceView: View {
             .foregroundStyle(.secondary)
         }
         Spacer(minLength: 0)
+        if let copySourceBlock = inlineActions.copySourceBlock {
+          SourceBlockCopyButton(lines: lines, copySourceBlock: copySourceBlock)
+            .frame(width: 24, height: 20)
+        }
         SourceRunHeaderAccessory(language: language, inlineActions: inlineActions)
       }
 
@@ -1786,6 +1815,57 @@ struct SourceBlockLineWindow: Equatable {
       limit: safeLimit,
       isExpanded: clampedLimit >= lines.count
     )
+  }
+}
+
+private struct SourceBlockCopyButton: NSViewRepresentable {
+  let lines: [String]
+  let copySourceBlock: @MainActor @Sendable ([String]) -> Bool
+
+  func makeCoordinator() -> Coordinator {
+    Coordinator(lines: lines, copySourceBlock: copySourceBlock)
+  }
+
+  func makeNSView(context: Context) -> NSButton {
+    let button = NSButton(
+      image: NSImage(systemSymbolName: "doc.on.doc", accessibilityDescription: "Copy code") ?? NSImage(),
+      target: context.coordinator,
+      action: #selector(Coordinator.copyCode(_:))
+    )
+    button.isBordered = false
+    button.focusRingType = .none
+    button.imageScaling = .scaleProportionallyDown
+    button.contentTintColor = .secondaryLabelColor
+    button.toolTip = "Copy code"
+    button.setAccessibilityLabel("Copy code")
+    return button
+  }
+
+  func updateNSView(_ button: NSButton, context: Context) {
+    context.coordinator.lines = lines
+    context.coordinator.copySourceBlock = copySourceBlock
+  }
+
+  @MainActor
+  final class Coordinator: NSObject {
+    var lines: [String]
+    var copySourceBlock: @MainActor @Sendable ([String]) -> Bool
+
+    init(
+      lines: [String],
+      copySourceBlock: @escaping @MainActor @Sendable ([String]) -> Bool
+    ) {
+      self.lines = lines
+      self.copySourceBlock = copySourceBlock
+    }
+
+    @objc func copyCode(_ sender: NSButton) {
+      guard copySourceBlock(lines) else { return }
+      sender.image = NSImage(systemSymbolName: "checkmark", accessibilityDescription: "Code copied")
+      sender.contentTintColor = .systemGreen
+      sender.toolTip = "Code copied"
+      sender.setAccessibilityLabel("Code copied")
+    }
   }
 }
 
