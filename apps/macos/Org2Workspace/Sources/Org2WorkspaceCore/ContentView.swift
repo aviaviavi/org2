@@ -8294,6 +8294,21 @@ struct OpenClawChatScrollRestoration: Equatable {
   }
 }
 
+@MainActor
+enum OpenClawChatScrollGeometry {
+  static func constrainedBounds(in scrollView: NSScrollView) -> NSRect? {
+    let clipView = scrollView.contentView
+    let currentBounds = clipView.bounds
+    let constrainedBounds = clipView.constrainBoundsRect(currentBounds)
+    guard abs(constrainedBounds.origin.x - currentBounds.origin.x) > 0.5
+      || abs(constrainedBounds.origin.y - currentBounds.origin.y) > 0.5
+    else {
+      return nil
+    }
+    return constrainedBounds
+  }
+}
+
 private struct OpenClawChatScrollPositionBridge: NSViewRepresentable {
   let threadID: UUID?
   let selectionGeneration: Int
@@ -8485,14 +8500,12 @@ private struct OpenClawChatScrollPositionBridge: NSViewRepresentable {
     }
 
     @objc private func layoutDidChange(_ notification: Notification) {
-      guard !didRestore,
-            !isRestoring,
-            let scrollView,
-            restoreIfPossible(in: scrollView)
-      else {
-        return
+      guard !isRestoring, let scrollView else { return }
+      if didRestore {
+        constrainToDocumentIfNeeded(in: scrollView)
+      } else if restoreIfPossible(in: scrollView) {
+        didRestore = true
       }
-      didRestore = true
     }
 
     private func restoreIfPossible(in scrollView: NSScrollView) -> Bool {
@@ -8514,6 +8527,18 @@ private struct OpenClawChatScrollPositionBridge: NSViewRepresentable {
       isRestoring = false
       parent.onPositionChange(clamped)
       return true
+    }
+
+    private func constrainToDocumentIfNeeded(in scrollView: NSScrollView) {
+      guard let constrainedBounds = OpenClawChatScrollGeometry.constrainedBounds(
+        in: scrollView
+      ) else { return }
+      let clipView = scrollView.contentView
+      isRestoring = true
+      clipView.scroll(to: constrainedBounds.origin)
+      scrollView.reflectScrolledClipView(clipView)
+      isRestoring = false
+      parent.onPositionChange(Self.normalizedPosition(in: scrollView))
     }
 
     private static func normalizedPosition(in scrollView: NSScrollView) -> Double {

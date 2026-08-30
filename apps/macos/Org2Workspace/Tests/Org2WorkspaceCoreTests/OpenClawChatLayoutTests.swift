@@ -410,6 +410,23 @@ final class OpenClawChatLayoutTests: XCTestCase {
     XCTAssertTrue(nextThread.requiresNewRestoration(after: initial))
   }
 
+  func testChatScrollGeometryClampsViewportBelowAResizedTranscript() throws {
+    let scrollView = NSScrollView(
+      frame: NSRect(x: 0, y: 0, width: 400, height: 300)
+    )
+    let transcript = NSView(
+      frame: NSRect(x: 0, y: 0, width: 400, height: 350)
+    )
+    scrollView.documentView = transcript
+    scrollView.contentView.scroll(to: NSPoint(x: 0, y: 700))
+
+    let constrained = try XCTUnwrap(
+      OpenClawChatScrollGeometry.constrainedBounds(in: scrollView)
+    )
+
+    XCTAssertEqual(constrained.origin.y, 50, accuracy: 0.5)
+  }
+
   func testJumpToBottomAppearsOnlyAboveLatestContent() {
     XCTAssertFalse(OpenClawChatScrollVisibility(position: 0.4, hasContent: false).showsJumpToBottom)
     XCTAssertTrue(OpenClawChatScrollVisibility(position: 0.4, hasContent: true).showsJumpToBottom)
