@@ -1,6 +1,5 @@
 import AppKit
 import SwiftUI
-import UniformTypeIdentifiers
 
 @MainActor
 private func performAfterSwiftUIViewUpdate(
@@ -136,7 +135,6 @@ public struct ContentView: View {
 
 private struct WorkspaceTabBar: View {
   @EnvironmentObject private var store: WorkspaceStore
-  @State private var draggedTabID: WorkspaceTab.ID?
 
   var body: some View {
     HStack(spacing: 8) {
@@ -144,7 +142,7 @@ private struct WorkspaceTabBar: View {
         ScrollView(.horizontal, showsIndicators: false) {
           LazyHStack(spacing: 4) {
             ForEach(store.workspaceTabs) { tab in
-              WorkspaceTabItem(tab: tab, draggedTabID: $draggedTabID)
+              WorkspaceTabItem(tab: tab)
                 .id(tab.id)
             }
           }
@@ -176,6 +174,7 @@ private struct WorkspaceTabBar: View {
       Rectangle()
         .fill(WorkspaceDesign.hairline)
         .frame(height: 1)
+        .allowsHitTesting(false)
     }
   }
 }
@@ -183,7 +182,6 @@ private struct WorkspaceTabBar: View {
 private struct WorkspaceTabItem: View {
   @EnvironmentObject private var store: WorkspaceStore
   let tab: WorkspaceTab
-  @Binding var draggedTabID: WorkspaceTab.ID?
   @State private var isHovered = false
   @State private var isDropTargeted = false
 
@@ -213,32 +211,15 @@ private struct WorkspaceTabItem: View {
           .truncationMode(.tail)
         Spacer(minLength: 0)
       }
-      .contentShape(Rectangle())
-      .onTapGesture {
-        store.selectWorkspaceTab(tab.id)
-      }
-      .accessibilityElement(children: .combine)
-      .accessibilityLabel(title)
-      .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
-      .accessibilityAction {
-        store.selectWorkspaceTab(tab.id)
-      }
+      .accessibilityHidden(true)
 
       if store.workspaceTabs.count > 1 {
-        Button {
-          store.closeWorkspaceTab(tab.id)
-        } label: {
-          Image(systemName: "xmark")
-            .font(.system(size: 8, weight: .bold))
-            .frame(width: 16, height: 16)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
+        Image(systemName: "xmark")
+          .font(.system(size: 8, weight: .bold))
+          .frame(width: 16, height: 16)
         .foregroundStyle(WorkspaceDesign.secondaryText)
         .opacity(isSelected || isHovered ? 1 : 0)
-        .allowsHitTesting(isSelected || isHovered)
-        .accessibilityLabel("Close \(title)")
-        .help("Close Tab (⌘W)")
+        .accessibilityHidden(true)
       }
     }
     .padding(.horizontal, 9)
@@ -257,67 +238,376 @@ private struct WorkspaceTabItem: View {
           isSelected || isDropTargeted ? Color.accentColor.opacity(0.34) : WorkspaceDesign.hairline,
           lineWidth: 1
         )
+        .allowsHitTesting(false)
     }
-    .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-    .onHover { isHovered = $0 }
-    .help(title)
-    .accessibilityElement(children: .contain)
-    .accessibilityAddTraits(isSelected ? .isSelected : [])
-    .contextMenu {
-      Button("New Tab") {
-        store.selectWorkspaceTab(tab.id)
-        store.newWorkspaceTab()
-      }
-
-      Button("Duplicate Tab") {
-        store.duplicateWorkspaceTab(tab.id)
-      }
-
-      Divider()
-
-      Button("Move Tab Left") {
-        store.moveWorkspaceTab(tab.id, offset: -1)
-      }
-      .disabled(tabIndex == 0)
-
-      Button("Move Tab Right") {
-        store.moveWorkspaceTab(tab.id, offset: 1)
-      }
-      .disabled(tabIndex == store.workspaceTabs.count - 1)
-
-      Divider()
-
-      Button("Close Tab") {
-        store.closeWorkspaceTab(tab.id)
-      }
-      .disabled(store.workspaceTabs.count == 1)
-
-      Button("Close Other Tabs") {
-        store.closeOtherWorkspaceTabs(keeping: tab.id)
-      }
-      .disabled(store.workspaceTabs.count == 1)
+    .overlay {
+      WorkspaceTabInteractionTarget(
+        tabID: tab.id,
+        title: title,
+        systemImage: store.workspaceTabDisplaySystemImage(for: tab),
+        isSelected: isSelected,
+        showsCloseButton: store.workspaceTabs.count > 1 && (isSelected || isHovered),
+        canClose: store.workspaceTabs.count > 1,
+        canMoveLeft: tabIndex != 0,
+        canMoveRight: tabIndex != store.workspaceTabs.count - 1,
+        select: { store.selectWorkspaceTab(tab.id) },
+        close: { store.closeWorkspaceTab(tab.id) },
+        duplicate: { store.duplicateWorkspaceTab(tab.id) },
+        newTab: {
+          store.selectWorkspaceTab(tab.id)
+          store.newWorkspaceTab()
+        },
+        moveLeft: { store.moveWorkspaceTab(tab.id, offset: -1) },
+        moveRight: { store.moveWorkspaceTab(tab.id, offset: 1) },
+        closeOthers: { store.closeOtherWorkspaceTabs(keeping: tab.id) },
+        moveTab: { sourceID in
+          withAnimation(WorkspaceMotion.quick) {
+            _ = store.moveWorkspaceTab(sourceID, to: tab.id)
+          }
+        },
+        hoverChanged: { isHovered = $0 },
+        dropTargetChanged: { isDropTargeted = $0 }
+      )
     }
-    .onDrag {
-      draggedTabID = tab.id
-      return NSItemProvider(object: tab.id.uuidString as NSString)
-    } preview: {
-      Label(title, systemImage: store.workspaceTabDisplaySystemImage(for: tab))
-        .font(.callout)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+  }
+}
+
+private struct WorkspaceTabInteractionTarget: NSViewRepresentable {
+  let tabID: WorkspaceTab.ID
+  let title: String
+  let systemImage: String
+  let isSelected: Bool
+  let showsCloseButton: Bool
+  let canClose: Bool
+  let canMoveLeft: Bool
+  let canMoveRight: Bool
+  let select: () -> Void
+  let close: () -> Void
+  let duplicate: () -> Void
+  let newTab: () -> Void
+  let moveLeft: () -> Void
+  let moveRight: () -> Void
+  let closeOthers: () -> Void
+  let moveTab: (WorkspaceTab.ID) -> Void
+  let hoverChanged: (Bool) -> Void
+  let dropTargetChanged: (Bool) -> Void
+
+  func makeNSView(context: Context) -> WorkspaceTabInteractionView {
+    WorkspaceTabInteractionView(frame: .zero)
+  }
+
+  func updateNSView(_ view: WorkspaceTabInteractionView, context: Context) {
+    view.tabID = tabID
+    view.title = title
+    view.systemImage = systemImage
+    view.isSelected = isSelected
+    view.showsCloseButton = showsCloseButton
+    view.canClose = canClose
+    view.canMoveLeft = canMoveLeft
+    view.canMoveRight = canMoveRight
+    view.select = select
+    view.close = close
+    view.duplicate = duplicate
+    view.newTab = newTab
+    view.moveLeft = moveLeft
+    view.moveRight = moveRight
+    view.closeOthers = closeOthers
+    view.moveTab = moveTab
+    view.hoverChanged = hoverChanged
+    view.dropTargetChanged = dropTargetChanged
+    view.updatePresentation()
+  }
+}
+
+@MainActor
+final class WorkspaceTabInteractionView: NSView, NSDraggingSource {
+  var tabID = WorkspaceTab.ID()
+  var title = "Tab"
+  var systemImage = "doc.text"
+  var isSelected = false
+  var showsCloseButton = false
+  var canMoveLeft = false
+  var canMoveRight = false
+  var canClose = true
+  var select: (() -> Void)?
+  var close: (() -> Void)?
+  var duplicate: (() -> Void)?
+  var newTab: (() -> Void)?
+  var moveLeft: (() -> Void)?
+  var moveRight: (() -> Void)?
+  var closeOthers: (() -> Void)?
+  var moveTab: ((WorkspaceTab.ID) -> Void)?
+  var hoverChanged: ((Bool) -> Void)?
+  var dropTargetChanged: ((Bool) -> Void)?
+
+  private let closeButton = NSButton()
+  private var pointerDownLocation: NSPoint?
+  private var startedDragging = false
+  private var trackingAreaReference: NSTrackingArea?
+
+  override init(frame frameRect: NSRect) {
+    super.init(frame: frameRect)
+    registerForDraggedTypes([.string])
+
+    closeButton.isBordered = false
+    closeButton.bezelStyle = .regularSquare
+    closeButton.focusRingType = .none
+    closeButton.image = NSImage(
+      systemSymbolName: "xmark",
+      accessibilityDescription: "Close Tab"
+    )
+    closeButton.imageScaling = .scaleProportionallyDown
+    closeButton.contentTintColor = .secondaryLabelColor
+    closeButton.target = self
+    closeButton.action = #selector(closeTab)
+    closeButton.toolTip = "Close Tab (⌘W)"
+    addSubview(closeButton)
+
+    setAccessibilityElement(true)
+    setAccessibilityRole(.button)
+  }
+
+  @available(*, unavailable)
+  required init?(coder: NSCoder) {
+    fatalError("init(coder:) has not been implemented")
+  }
+
+  override var acceptsFirstResponder: Bool { true }
+
+  override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+    true
+  }
+
+  override func accessibilityPerformPress() -> Bool {
+    select?()
+    return true
+  }
+
+  override func layout() {
+    super.layout()
+    closeButton.frame = NSRect(
+      x: max(0, bounds.maxX - 25),
+      y: max(0, (bounds.height - 18) / 2),
+      width: 18,
+      height: 18
+    )
+  }
+
+  override func updateTrackingAreas() {
+    if let trackingAreaReference {
+      removeTrackingArea(trackingAreaReference)
     }
-    .onDrop(
-      of: [UTType.plainText.identifier],
-      isTargeted: $isDropTargeted
-    ) { _ in
-      guard let sourceID = draggedTabID else { return false }
-      withAnimation(WorkspaceMotion.quick) {
-        _ = store.moveWorkspaceTab(sourceID, to: tab.id)
+    let area = NSTrackingArea(
+      rect: bounds,
+      options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect],
+      owner: self,
+      userInfo: nil
+    )
+    addTrackingArea(area)
+    trackingAreaReference = area
+    super.updateTrackingAreas()
+  }
+
+  override func mouseEntered(with event: NSEvent) {
+    hoverChanged?(true)
+  }
+
+  override func mouseExited(with event: NSEvent) {
+    hoverChanged?(false)
+  }
+
+  override func mouseDown(with event: NSEvent) {
+    window?.makeFirstResponder(self)
+    pointerDownLocation = convert(event.locationInWindow, from: nil)
+    startedDragging = false
+    select?()
+  }
+
+  override func mouseDragged(with event: NSEvent) {
+    guard !startedDragging, let pointerDownLocation else { return }
+    let currentLocation = convert(event.locationInWindow, from: nil)
+    guard hypot(
+      currentLocation.x - pointerDownLocation.x,
+      currentLocation.y - pointerDownLocation.y
+    ) >= 4 else { return }
+
+    startedDragging = true
+    let pasteboardItem = NSPasteboardItem()
+    pasteboardItem.setString(tabID.uuidString, forType: .string)
+    let draggingItem = NSDraggingItem(pasteboardWriter: pasteboardItem)
+    draggingItem.setDraggingFrame(bounds, contents: dragPreviewImage())
+    beginDraggingSession(with: [draggingItem], event: event, source: self)
+  }
+
+  override func mouseUp(with event: NSEvent) {
+    pointerDownLocation = nil
+    startedDragging = false
+  }
+
+  override func rightMouseDown(with event: NSEvent) {
+    NSMenu.popUpContextMenu(makeContextMenu(), with: event, for: self)
+  }
+
+  override func keyDown(with event: NSEvent) {
+    if event.keyCode == 36 || event.keyCode == 49 {
+      select?()
+    } else {
+      super.keyDown(with: event)
+    }
+  }
+
+  override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+    updateDropTarget(for: sender)
+  }
+
+  override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+    updateDropTarget(for: sender)
+  }
+
+  override func draggingExited(_ sender: NSDraggingInfo?) {
+    dropTargetChanged?(false)
+  }
+
+  override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+    defer { dropTargetChanged?(false) }
+    guard let sourceID = draggedTabID(from: sender), sourceID != tabID else { return false }
+    moveTab?(sourceID)
+    return true
+  }
+
+  override func concludeDragOperation(_ sender: NSDraggingInfo?) {
+    dropTargetChanged?(false)
+  }
+
+  func draggingSession(
+    _ session: NSDraggingSession,
+    sourceOperationMaskFor context: NSDraggingContext
+  ) -> NSDragOperation {
+    .move
+  }
+
+  func ignoreModifierKeys(for session: NSDraggingSession) -> Bool {
+    true
+  }
+
+  func draggingSession(
+    _ session: NSDraggingSession,
+    endedAt screenPoint: NSPoint,
+    operation: NSDragOperation
+  ) {
+    pointerDownLocation = nil
+    startedDragging = false
+  }
+
+  func updatePresentation() {
+    closeButton.isHidden = !showsCloseButton
+    closeButton.isEnabled = canClose
+    closeButton.menu = makeContextMenu()
+    closeButton.setAccessibilityLabel("Close \(title)")
+    toolTip = title
+    setAccessibilityLabel(title)
+    setAccessibilitySelected(isSelected)
+    needsLayout = true
+  }
+
+  func makeContextMenu() -> NSMenu {
+    let menu = NSMenu()
+    menu.autoenablesItems = false
+    menu.addItem(menuItem(title: "New Tab", action: #selector(createTab)))
+    menu.addItem(menuItem(title: "Duplicate Tab", action: #selector(duplicateTab)))
+    menu.addItem(.separator())
+    menu.addItem(menuItem(
+      title: "Move Tab Left",
+      action: #selector(moveTabLeft),
+      isEnabled: canMoveLeft
+    ))
+    menu.addItem(menuItem(
+      title: "Move Tab Right",
+      action: #selector(moveTabRight),
+      isEnabled: canMoveRight
+    ))
+    menu.addItem(.separator())
+    menu.addItem(menuItem(
+      title: "Close Tab",
+      action: #selector(closeTab),
+      isEnabled: canClose
+    ))
+    menu.addItem(menuItem(
+      title: "Close Other Tabs",
+      action: #selector(closeOtherTabs),
+      isEnabled: canClose
+    ))
+    return menu
+  }
+
+  private func updateDropTarget(for sender: NSDraggingInfo) -> NSDragOperation {
+    guard let sourceID = draggedTabID(from: sender), sourceID != tabID else {
+      dropTargetChanged?(false)
+      return []
+    }
+    dropTargetChanged?(true)
+    return .move
+  }
+
+  private func draggedTabID(from sender: NSDraggingInfo) -> WorkspaceTab.ID? {
+    sender.draggingPasteboard.string(forType: .string).flatMap(UUID.init(uuidString:))
+  }
+
+  private func dragPreviewImage() -> NSImage {
+    let imageSize = NSSize(width: max(bounds.width, 180), height: max(bounds.height, 28))
+    return NSImage(size: imageSize, flipped: false) { [title, systemImage] rect in
+      NSColor.windowBackgroundColor.withAlphaComponent(0.94).setFill()
+      NSBezierPath(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), xRadius: 7, yRadius: 7).fill()
+      NSColor.separatorColor.setStroke()
+      NSBezierPath(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), xRadius: 7, yRadius: 7).stroke()
+
+      if let icon = NSImage(systemSymbolName: systemImage, accessibilityDescription: nil) {
+        icon.draw(in: NSRect(x: 10, y: (rect.height - 14) / 2, width: 14, height: 14))
       }
-      draggedTabID = nil
+      (title as NSString).draw(
+        in: NSRect(x: 31, y: (rect.height - 16) / 2, width: rect.width - 40, height: 16),
+        withAttributes: [
+          .font: NSFont.systemFont(ofSize: 12, weight: .medium),
+          .foregroundColor: NSColor.labelColor
+        ]
+      )
       return true
     }
+  }
+
+  private func menuItem(
+    title: String,
+    action: Selector,
+    isEnabled: Bool = true
+  ) -> NSMenuItem {
+    let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+    item.target = self
+    item.isEnabled = isEnabled
+    return item
+  }
+
+  @objc private func createTab() {
+    newTab?()
+  }
+
+  @objc private func duplicateTab() {
+    duplicate?()
+  }
+
+  @objc private func moveTabLeft() {
+    moveLeft?()
+  }
+
+  @objc private func moveTabRight() {
+    moveRight?()
+  }
+
+  @objc private func closeTab() {
+    close?()
+  }
+
+  @objc private func closeOtherTabs() {
+    closeOthers?()
   }
 }
 
