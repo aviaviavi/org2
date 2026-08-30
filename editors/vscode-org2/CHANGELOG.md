@@ -4,6 +4,17 @@ All notable changes to the Org2 VS Code extension are documented in this file.
 
 ## Unreleased
 
+## 0.5.4 - 2026-08-30
+
+## OpenOrg 0.5.4
+
+- Adds signed automatic updates to the Mac app.
+- Checks quietly at launch and every two hours by default.
+- Adds a manual Check for Updates command and settings to disable checks or install downloaded updates on quit.
+- Supports Install, Remind Later, and Skip This Version through the standard macOS update flow.
+- Publishes architecture-specific, cryptographically signed update feeds for Apple Silicon and Intel.
+- Adds independent workspace tabs with mouse selection, close controls, right-click actions, drag-and-drop reordering, and keyboard navigation.
+
 ## 0.5.3 - 2026-08-30
 
 ## Highlights
