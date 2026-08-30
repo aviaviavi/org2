@@ -149,7 +149,7 @@ export function buildReleasePlan(options, baseVersion = currentVersion()) {
     phases: [
       { name: "preflight", parallel: ["GitHub auth", "npm auth", "Apple/signing configuration"] },
       { name: "stamp", parallel: false },
-      { name: "validate", parallel: ["Node/full", "VS Code", "Swift/serial"] },
+      { name: "validate", parallel: ["Node/full", "VS Code"], then: ["Swift/serial"] },
       { name: "package", parallel: ["OpenOrg arm64 DMG", "OpenOrg Intel DMG", ...(options.skipIOS ? [] : ["iOS archive"]) ] },
       { name: "publish", parallel: ["Git tag workflow + DMGs", ...(options.skipIOS ? [] : ["TestFlight upload + groups"]) ] },
       { name: "sync", parallel: false },
@@ -351,8 +351,12 @@ async function validate(plan) {
   await runParallel([
     () => runJob(plan, "Node full suite", "npm", ["test"]),
     () => runJob(plan, "VS Code suite", "npm", ["test"], { cwd: vscodePackageDir }),
-    () => runJob(plan, "Swift suite serial", "swift", ["test", "--package-path", "apps/macos/Org2Workspace", "--no-parallel"]),
   ]);
+  // The Node suite exercises both arm64 and x86_64 Mac packaging. Running
+  // Swift tests alongside it lets those cross-architecture builds contend for
+  // the same package build directory, which can leave the XCTest runner and
+  // test bundle on different architectures. Keep Swift serial across jobs too.
+  await runJob(plan, "Swift suite serial", "swift", ["test", "--package-path", "apps/macos/Org2Workspace", "--no-parallel"]);
   await runJob(plan, "Generated artifact check", "npm", ["run", "check:generated"]);
   await runJob(plan, "npm pack preview", "npm", ["pack", "--dry-run", "--json"]);
 }

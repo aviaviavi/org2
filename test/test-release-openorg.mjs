@@ -34,7 +34,11 @@ assert.equal(plan.safeDefaults.failClosedOnDirtyTree, true);
 assert.equal(plan.safeDefaults.notarizationRequired, true);
 assert.deepEqual(
   plan.phases.find((phase) => phase.name === "validate").parallel,
-  ["Node/full", "VS Code", "Swift/serial"]
+  ["Node/full", "VS Code"]
+);
+assert.deepEqual(
+  plan.phases.find((phase) => phase.name === "validate").then,
+  ["Swift/serial"]
 );
 assert.deepEqual(
   plan.phases.find((phase) => phase.name === "package").parallel,
@@ -50,6 +54,10 @@ assert.match(TESTFLIGHT.reviewNotes, /no account system and does not require sig
 assert.match(TESTFLIGHT.reviewNotes, /locally installed OpenOrg macOS companion/);
 
 const releaseSource = readFileSync(join(repoRoot, "tools", "release-openorg.mjs"), "utf8");
+assert.ok(
+  releaseSource.indexOf('runJob(plan, "Swift suite serial"')
+    > releaseSource.indexOf('await runParallel([', releaseSource.indexOf("async function validate"))
+);
 assert.ok(
   releaseSource.indexOf("await updateBetaReviewDetails();") < releaseSource.indexOf("await submitBetaReview(build.id);")
 );
