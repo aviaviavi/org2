@@ -12,12 +12,22 @@ let package = Package(
     .executable(name: "Org2WorkspaceDiagnostics", targets: ["Org2WorkspaceDiagnostics"]),
     .executable(name: "Org2WorkspaceScreenshotRenderer", targets: ["Org2WorkspaceScreenshotRenderer"])
   ],
+  dependencies: [
+    .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.9.6")
+  ],
   targets: [
     .executableTarget(
       name: "Org2Workspace",
-      dependencies: ["Org2WorkspaceCore", "Org2WorkspaceDiagnosticsCore"],
+      dependencies: [
+        "Org2WorkspaceCore",
+        "Org2WorkspaceDiagnosticsCore",
+        .product(name: "Sparkle", package: "Sparkle")
+      ],
       resources: [
         .process("Resources")
+      ],
+      linkerSettings: [
+        .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])
       ]
     ),
     .target(

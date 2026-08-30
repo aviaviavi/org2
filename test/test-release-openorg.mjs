@@ -61,6 +61,12 @@ assert.ok(
 assert.ok(
   releaseSource.indexOf("await updateBetaReviewDetails();") < releaseSource.indexOf("await submitBetaReview(build.id);")
 );
+assert.ok(
+  releaseSource.indexOf("await generateSparkleAppcasts(plan, options);")
+    < releaseSource.indexOf("await waitForGitHubWorkflow(plan);")
+);
+assert.match(releaseSource, /appcast-arm64\.xml/);
+assert.match(releaseSource, /appcast-intel\.xml/);
 
 const planResult = spawnSync(process.execPath, [
   join(repoRoot, "tools", "release-openorg.mjs"),

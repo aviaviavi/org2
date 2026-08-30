@@ -15,6 +15,15 @@ import { fileURLToPath } from "node:url";
 import { installStagedAppBundle } from "../tools/atomic-app-bundle.mjs";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const updaterSource = readFileSync(join(
+  repoRoot,
+  "apps", "macos", "Org2Workspace", "Sources", "Org2Workspace", "SoftwareUpdateController.swift"
+), "utf8");
+
+assert.match(updaterSource, /checkForUpdatesInBackground\(\)/);
+assert.match(updaterSource, /Automatically check for updates/);
+assert.match(updaterSource, /Download updates automatically and install on quit/);
+assert.match(updaterSource, /skip a version/);
 
 function run(script, args, expectedStatus = 0) {
   const result = spawnSync(process.execPath, [join(repoRoot, script), ...args], {
@@ -36,6 +45,9 @@ assert.match(defaultDaily.iconPath, /OpenOrgAppIcon\.png$/);
 assert.equal(defaultDaily.installStrategy, "verified staged replacement");
 assert.ok(defaultDaily.nodeArchitecture === "arm64" || defaultDaily.nodeArchitecture === "x64");
 assert.equal(defaultDaily.swiftScratchPath, null);
+assert.equal(defaultDaily.updates.enabled, true);
+assert.equal(defaultDaily.updates.intervalSeconds, 7200);
+assert.match(defaultDaily.updates.feedURL, /appcast-(arm64|intel)\.xml$/);
 
 const isolatedScratch = JSON.parse(
   spawnSync(process.execPath, [join(repoRoot, "tools/build-macos-app.mjs"), "--print-configuration"], {
@@ -69,6 +81,7 @@ assert.equal(codexDebug.bundleIdentifier, "org.org2.workspace.codex");
 assert.equal(codexDebug.configuration, "debug");
 assert.equal(codexDebug.appName, "OpenOrg Preview");
 assert.match(codexDebug.appPath, /OpenOrg Preview\.app$/);
+assert.equal(codexDebug.updates.enabled, false);
 
 const codexRelease = JSON.parse(
   run("tools/build-macos-app-codex.mjs", [

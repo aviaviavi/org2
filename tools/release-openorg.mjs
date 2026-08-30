@@ -4,6 +4,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { createSign } from "node:crypto";
 import {
   closeSync,
+  copyFileSync,
   existsSync,
   mkdirSync,
   openSync,
@@ -14,12 +15,18 @@ import {
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  OPENORG_SPARKLE_ACCOUNT,
+  OPENORG_SPARKLE_PUBLIC_KEY,
+  OPENORG_SPARKLE_TARGETS,
+} from "./openorg-sparkle.mjs";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const rootPackagePath = join(repoRoot, "package.json");
 const vscodePackageDir = join(repoRoot, "editors", "vscode-org2");
 const iosProjectPath = join(repoRoot, "apps", "ios", "Org2Mobile", "Org2Mobile.xcodeproj");
 const iosProjectFile = join(iosProjectPath, "project.pbxproj");
+const macPackageDir = join(repoRoot, "apps", "macos", "Org2Workspace");
 
 export const RELEASE_PHASES = [
   "preflight",
@@ -147,7 +154,7 @@ export function buildReleasePlan(options, baseVersion = currentVersion()) {
       version,
     },
     phases: [
-      { name: "preflight", parallel: ["GitHub auth", "npm auth", "Apple/signing configuration"] },
+      { name: "preflight", parallel: ["GitHub auth", "npm auth", "Apple/signing configuration", "Sparkle signing key"] },
       { name: "stamp", parallel: false },
       { name: "validate", parallel: ["Node/full", "VS Code"], then: ["Swift/serial"] },
       { name: "package", parallel: ["OpenOrg arm64 DMG", "OpenOrg Intel DMG", ...(options.skipIOS ? [] : ["iOS archive"]) ] },
@@ -308,6 +315,14 @@ async function preflight(plan, options) {
   if (tagExists) throw new Error(`Tag ${plan.version} already exists`);
   const npmExists = capture("npm", ["view", `@aviaviavi/org2@${plan.version}`, "version"], { allowFailure: true }).ok;
   if (npmExists) throw new Error(`@aviaviavi/org2@${plan.version} is already published`);
+  await runJob(plan, "Resolve Mac updater tools", "swift", ["package", "resolve"], { cwd: macPackageDir });
+  const sparkleKey = capture(sparkleTool("generate_keys"), [
+    "--account", OPENORG_SPARKLE_ACCOUNT,
+    "-p",
+  ]).stdout;
+  if (sparkleKey !== OPENORG_SPARKLE_PUBLIC_KEY) {
+    throw new Error("The Sparkle signing key in Keychain does not match OpenOrg's embedded public key");
+  }
   await runParallel([
     () => runJob(plan, "GitHub authentication", "gh", ["auth", "status"]),
     () => runJob(plan, "npm authentication", "npm", ["whoami"]),
@@ -458,7 +473,45 @@ function releaseBody(plan, options) {
   return path;
 }
 
+function sparkleTool(name) {
+  const path = join(macPackageDir, ".build", "artifacts", "sparkle", "Sparkle", "bin", name);
+  if (!existsSync(path)) {
+    throw new Error(`Sparkle tool ${name} is missing. Run swift package resolve in ${macPackageDir}.`);
+  }
+  return path;
+}
+
+async function generateSparkleAppcasts(plan, options) {
+  const tool = sparkleTool("generate_appcast");
+  for (const target of OPENORG_SPARKLE_TARGETS) {
+    const staging = join(plan.artifactsDir, `sparkle-${target.architecture}`);
+    rmSync(staging, { recursive: true, force: true });
+    mkdirSync(staging, { recursive: true });
+    const archive = join(staging, target.artifact);
+    copyFileSync(join(plan.artifactsDir, target.artifact), archive);
+    copyFileSync(resolve(options.notesFile), archive.replace(/\.dmg$/, ".md"));
+    await runJob(plan, `Sign ${target.architecture} update feed`, tool, [
+      "--account", OPENORG_SPARKLE_ACCOUNT,
+      "--download-url-prefix", `https://github.com/aviaviavi/org2/releases/download/${plan.version}/`,
+      "--link", "https://openorg.so/downloads.html",
+      "--embed-release-notes",
+      "--maximum-versions", "1",
+      staging,
+    ]);
+    const generated = join(staging, target.output);
+    if (!existsSync(generated)) throw new Error(`Sparkle did not generate ${target.output}`);
+    const contents = readFileSync(generated, "utf8");
+    if (!contents.includes(`/${plan.version}/${target.artifact}`)
+        || !contents.includes("sparkle:edSignature=")
+        || !contents.includes("sparkle-signatures:")) {
+      throw new Error(`Generated ${target.output} is missing its release URL or signature`);
+    }
+    writeFileSync(join(repoRoot, "docs", "site", "assets", target.output), contents);
+  }
+}
+
 async function publishGitHub(plan, options) {
+  await generateSparkleAppcasts(plan, options);
   await waitForGitHubWorkflow(plan);
   await runJob(plan, "Upload notarized DMGs", "gh", [
     "release", "upload", plan.version,
@@ -625,7 +678,13 @@ async function synchronize(plan) {
     "tools/sync-release-downloads.mjs", "--release", plan.version, "--apply-page", "--apply-release-notes",
   ]);
   await runJob(plan, "Publish documentation site", "npm", ["run", "org2", "--", "publish", "docs-site", "--config", "org2.json"]);
-  capture("git", ["add", "--", "docs/site/downloads.org", "site"]);
+  capture("git", [
+    "add", "--",
+    "docs/site/downloads.org",
+    "docs/site/assets/appcast-arm64.xml",
+    "docs/site/assets/appcast-intel.xml",
+    "site",
+  ]);
   const staged = capture("git", ["diff", "--cached", "--quiet"], { allowFailure: true });
   if (!staged.ok) capture("git", ["commit", "-m", `Publish OpenOrg ${plan.version} download surfaces`]);
   capture("git", ["push", "origin", "main"]);
@@ -639,6 +698,20 @@ async function verifyScarf(plan) {
       throw new Error(`Scarf redirect mismatch for ${artifact}: ${response.status} ${response.headers.get("location")}`);
     }
   }
+}
+
+async function verifySparkleAppcasts(plan) {
+  for (const target of OPENORG_SPARKLE_TARGETS) {
+    const response = await fetch(`https://openorg.so/assets/${target.output}`);
+    if (!response.ok) throw new Error(`Sparkle feed ${target.output} returned ${response.status}`);
+    const contents = await response.text();
+    if (!contents.includes(`/${plan.version}/${target.artifact}`)
+        || !contents.includes("sparkle:edSignature=")
+        || !contents.includes("sparkle-signatures:")) {
+      throw new Error(`Sparkle feed ${target.output} does not advertise signed ${plan.version}`);
+    }
+  }
+  console.log(`✓ Sparkle feeds advertise ${plan.version}`);
 }
 
 async function pollUntil(label, timeoutMs, check) {
@@ -681,6 +754,7 @@ async function verify(plan, options) {
       console.log(`✓ GitHub Release ${release.url}`);
     },
     () => verifyScarf(plan),
+    () => verifySparkleAppcasts(plan),
     ...(!options.skipIOS && !options.skipTestFlightGroups ? [async () => {
       const build = await findTestFlightBuild(plan);
       if (!build || build.attributes?.processingState !== "VALID") throw new Error("TestFlight build is not valid");

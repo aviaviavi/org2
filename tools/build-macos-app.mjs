@@ -22,6 +22,11 @@ import {
   detectNodeArchitecture,
   duckDBBindingPackagesForRuntime,
 } from "./macos-runtime-node.mjs";
+import {
+  OPENORG_SPARKLE_CHECK_INTERVAL_SECONDS,
+  OPENORG_SPARKLE_PUBLIC_KEY,
+  openOrgSparkleFeedURL,
+} from "./openorg-sparkle.mjs";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const packageVersion = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8")).version;
@@ -57,6 +62,15 @@ const nodeEntitlementsPath = resolve(
   process.env.ORG2_WORKSPACE_NODE_ENTITLEMENTS
     ?? join(packageDir, "OpenOrgNode.entitlements")
 );
+function sparkleUpdateConfiguration() {
+  const architecture = swiftBuildArch || (process.arch === "x64" ? "x86_64" : "arm64");
+  return {
+    architecture,
+    enabled: bundleIdentifier === "org.org2.workspace",
+    feedURL: openOrgSparkleFeedURL(architecture),
+    intervalSeconds: OPENORG_SPARKLE_CHECK_INTERVAL_SECONDS,
+  };
+}
 
 function parseBuildOptions(arguments_) {
   const options = {
@@ -278,6 +292,28 @@ function runningProcessesForBinary(binaryPath) {
 
 function writeInfoPlist(bundlePath) {
   const contentsDir = join(bundlePath, "Contents");
+  const updates = sparkleUpdateConfiguration();
+  const sparkleConfiguration = updates.enabled
+    ? `
+  <key>SUFeedURL</key>
+  <string>${updates.feedURL}</string>
+  <key>SUPublicEDKey</key>
+  <string>${OPENORG_SPARKLE_PUBLIC_KEY}</string>
+  <key>SUEnableAutomaticChecks</key>
+  <true/>
+  <key>SUScheduledCheckInterval</key>
+  <integer>${OPENORG_SPARKLE_CHECK_INTERVAL_SECONDS}</integer>
+  <key>SUAllowsAutomaticUpdates</key>
+  <true/>
+  <key>SUAutomaticallyUpdate</key>
+  <false/>
+  <key>SUEnableSystemProfiling</key>
+  <false/>
+  <key>SUVerifyUpdateBeforeExtraction</key>
+  <true/>
+  <key>SURequireSignedFeed</key>
+  <true/>`
+    : "";
   const plist = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -301,7 +337,7 @@ function writeInfoPlist(bundlePath) {
   <key>CFBundleShortVersionString</key>
   <string>${xmlEscape(packageVersion)}</string>
   <key>CFBundleVersion</key>
-  <string>1</string>
+  <string>${xmlEscape(packageVersion)}</string>${sparkleConfiguration}
   <key>Org2BuildConfiguration</key>
   <string>${xmlEscape(swiftBuildConfiguration)}</string>
   <key>LSMinimumSystemVersion</key>
@@ -318,6 +354,41 @@ function writeInfoPlist(bundlePath) {
 </plist>
 `;
   writeFileSync(join(contentsDir, "Info.plist"), plist);
+}
+
+function copySparkleFramework(buildProductsDir, contentsDir) {
+  const source = join(buildProductsDir, "Sparkle.framework");
+  if (!existsSync(source)) {
+    throw new Error(`Sparkle.framework was not produced in ${buildProductsDir}`);
+  }
+  const frameworksDir = join(contentsDir, "Frameworks");
+  const destination = join(frameworksDir, "Sparkle.framework");
+  mkdirSync(frameworksDir, { recursive: true });
+  run("ditto", [source, destination], { capture: true });
+  return destination;
+}
+
+function signSparkleFramework(frameworkPath, identity) {
+  const versionRoot = join(frameworkPath, "Versions", "B");
+  const nestedTargets = [
+    { path: join(versionRoot, "XPCServices", "Installer.xpc") },
+    { path: join(versionRoot, "XPCServices", "Downloader.xpc"), preserveEntitlements: true },
+    { path: join(versionRoot, "Autoupdate") },
+    { path: join(versionRoot, "Updater.app") },
+  ];
+  for (const target of nestedTargets) {
+    if (!existsSync(target.path)) continue;
+    const args = ["--force", "--sign", identity];
+    if (usesHardenedRuntime(identity)) {
+      args.push("--timestamp", "--options", "runtime");
+    }
+    if (target.preserveEntitlements) {
+      args.push("--preserve-metadata=entitlements");
+    }
+    args.push(target.path);
+    run("codesign", args);
+  }
+  run("codesign", codesignArgs(identity, frameworkPath));
 }
 
 function writeIconSet(sourcePngPath, resourcesDir) {
@@ -604,6 +675,7 @@ function main() {
       nodeArchitecture: bundledNodePath ? detectNodeArchitecture(bundledNodePath) : null,
       nodePath: bundledNodePath || null,
       swiftScratchPath: swiftScratchPath || null,
+      updates: sparkleUpdateConfiguration(),
       whisperCppPath: bundledWhisperCppPath || null,
       whisperModelPath: bundledWhisperModelPath || null,
     }, null, 2));
@@ -642,6 +714,7 @@ function main() {
     const appBinaryPath = join(macOSDir, executableName);
     copyFileSync(binaryPath, appBinaryPath);
     chmodSync(appBinaryPath, 0o755);
+    const sparkleFrameworkPath = copySparkleFramework(buildProductsDir, contentsDir);
 
     if (!existsSync(iconPath)) {
       throw new Error(`App icon not found at ${iconPath}`);
@@ -676,6 +749,7 @@ function main() {
       run("codesign", codesignArgs(signingIdentity, whisperRuntime.executable));
       verifyWhisperRuntime(whisperRuntime.executable);
     }
+    signSparkleFramework(sparkleFrameworkPath, signingIdentity);
     for (const nestedPath of nestedMachOPaths(resourcesDir)) {
       if (nestedPath === runtimeNodePath
           || nestedPath === whisperRuntime.executable

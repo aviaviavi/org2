@@ -5,6 +5,8 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct WorkspaceSettingsView: View {
+  @ObservedObject var softwareUpdates: SoftwareUpdateController
+
   var body: some View {
     TabView {
       AppearanceSettingsView()
@@ -30,6 +32,11 @@ struct WorkspaceSettingsView: View {
       MobileRemoteSettingsView()
         .tabItem {
           Label("Mobile Remote", systemImage: "iphone")
+        }
+
+      SoftwareUpdateSettingsView(softwareUpdates: softwareUpdates)
+        .tabItem {
+          Label("Updates", systemImage: "arrow.triangle.2.circlepath")
         }
     }
     .frame(width: 660, height: 620)

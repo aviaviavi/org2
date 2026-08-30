@@ -9,6 +9,7 @@ struct Org2WorkspaceApp: App {
   @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
   @StateObject private var store = WorkspaceStore()
   @StateObject private var mobileRemote = MobileRemoteCoordinator()
+  @StateObject private var softwareUpdates = SoftwareUpdateController()
   private let globalCaptureHotKey = GlobalCaptureHotKey()
 
   init() {
@@ -52,6 +53,7 @@ struct Org2WorkspaceApp: App {
           store.setRunReviewAutoRefreshActive(isActive, refreshImmediately: false)
           mobileRemote.attach(to: store)
           mobileRemote.startIfConfigured()
+          softwareUpdates.checkAtLaunchIfEnabled()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
           store.setWorkspaceRealtimeRefreshActive(true)
@@ -70,6 +72,7 @@ struct Org2WorkspaceApp: App {
     .windowToolbarStyle(.unifiedCompact(showsTitle: false))
     .commands {
       CommandGroup(after: .appInfo) {
+        CheckForUpdatesCommand(softwareUpdates: softwareUpdates)
         Divider()
         Button("Getting Started") {
           store.presentLaunchGuide()
@@ -384,7 +387,7 @@ struct Org2WorkspaceApp: App {
     }
 
     Settings {
-      WorkspaceSettingsView()
+      WorkspaceSettingsView(softwareUpdates: softwareUpdates)
         .environmentObject(store)
         .environmentObject(mobileRemote)
         .preferredColorScheme(store.appearanceMode.colorScheme)
