@@ -248,6 +248,29 @@ final class WorkspaceListSelectionTests: XCTestCase {
     XCTAssertTrue(source.contains(#".keyboardShortcut("n", modifiers: [.command])"#))
   }
 
+  func testKeyboardShortcutsAreDiscoverableFromSidebarAndHelpMenu() throws {
+    let testFile = URL(fileURLWithPath: #filePath)
+    let packageRoot = testFile
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+    let appSource = try String(
+      contentsOf: packageRoot.appendingPathComponent("Sources/Org2Workspace/Org2WorkspaceApp.swift"),
+      encoding: .utf8
+    )
+    let contentSource = try String(
+      contentsOf: packageRoot.appendingPathComponent("Sources/Org2WorkspaceCore/ContentView.swift"),
+      encoding: .utf8
+    )
+
+    XCTAssertTrue(appSource.contains("CommandGroup(after: .help)"))
+    XCTAssertTrue(appSource.contains("Button(\"Getting Started\")"))
+    XCTAssertTrue(appSource.contains("Button(\"Keyboard Shortcuts…\")"))
+    XCTAssertTrue(appSource.contains(#".keyboardShortcut("/", modifiers: [.command])"#))
+    XCTAssertTrue(contentSource.contains("Label(\"Keyboard Shortcuts\", systemImage: \"questionmark.circle\")"))
+    XCTAssertTrue(contentSource.contains("store.presentKeyboardShortcuts()"))
+  }
+
   func testGlobalSearchFocusWaitsForTheCachedSurfaceToAttach() throws {
     let testFile = URL(fileURLWithPath: #filePath)
     let packageRoot = testFile

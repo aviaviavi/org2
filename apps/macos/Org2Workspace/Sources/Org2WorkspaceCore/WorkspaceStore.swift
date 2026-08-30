@@ -13223,6 +13223,10 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
+  public func presentKeyboardShortcuts() {
+    isKeyboardShortcutsPresented = true
+  }
+
   public func focusSearchSurface() {
     makeSurfacePrimary(.search)
     searchFocusToken += 1
@@ -25381,7 +25385,7 @@ public final class WorkspaceStore: ObservableObject {
         guard workspaceTabs.count > 1 else { return false }
         closeWorkspaceTab(selectedWorkspaceTabID)
       case "/":
-        isKeyboardShortcutsPresented = true
+        presentKeyboardShortcuts()
       case "z":
         guard scope == .all else { return false }
         performUndoCommand()
@@ -25425,7 +25429,7 @@ public final class WorkspaceStore: ObservableObject {
         break
       }
       if key == "/" || event.characters == "?" {
-        isKeyboardShortcutsPresented = true
+        presentKeyboardShortcuts()
         return true
       }
     }

@@ -1608,6 +1608,17 @@ private struct SidebarHeader: View {
       }
 
       Button {
+        store.presentKeyboardShortcuts()
+      } label: {
+        Label("Keyboard Shortcuts", systemImage: "questionmark.circle")
+      }
+      .labelStyle(.iconOnly)
+      .buttonStyle(.plain)
+      .foregroundStyle(WorkspaceDesign.secondaryText)
+      .frame(width: 26, height: 26)
+      .help("Keyboard Shortcuts (⌘/)")
+
+      Button {
         store.focusSearchSurface()
       } label: {
         Label("Search", systemImage: "magnifyingglass")

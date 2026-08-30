@@ -73,10 +73,19 @@ struct Org2WorkspaceApp: App {
     .commands {
       CommandGroup(after: .appInfo) {
         CheckForUpdatesCommand(softwareUpdates: softwareUpdates)
-        Divider()
+      }
+
+      CommandGroup(after: .help) {
         Button("Getting Started") {
           store.presentLaunchGuide()
         }
+
+        Divider()
+
+        Button("Keyboard Shortcuts…") {
+          store.presentKeyboardShortcuts()
+        }
+        .keyboardShortcut("/", modifiers: [.command])
       }
 
       CommandGroup(replacing: .undoRedo) {
