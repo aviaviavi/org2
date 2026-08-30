@@ -200,6 +200,16 @@ enum WorkspaceSidebarLayout {
   }
 }
 
+enum WorkspaceMainSplitLayout {
+  // Keep the default two-pane window usable at common laptop widths. The
+  // document pane remains large enough for its compact header while the chat
+  // pane retains enough room for bubbles and its adaptive composer.
+  static let surfaceMinimumWidth: CGFloat = 300
+  static let surfaceIdealWidth: CGFloat = 440
+  static let detailMinimumWidth: CGFloat = 420
+  static let detailIdealWidth: CGFloat = 680
+}
+
 struct WorkspaceIconBadge: View {
   let systemImage: String
   var tint: Color = .secondary

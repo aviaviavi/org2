@@ -37,6 +37,15 @@ private struct TranscriptLayoutProbe: NSViewRepresentable {
 
 @MainActor
 final class OpenClawChatLayoutTests: XCTestCase {
+  func testDefaultSplitProtectsAUsableChatPaneAtLaptopWidth() {
+    XCTAssertGreaterThanOrEqual(WorkspaceMainSplitLayout.surfaceMinimumWidth, 300)
+    XCTAssertLessThanOrEqual(
+      WorkspaceMainSplitLayout.surfaceMinimumWidth + WorkspaceMainSplitLayout.detailMinimumWidth,
+      720,
+      "The two-pane minimum must fit inside the default compact workspace after navigation chrome"
+    )
+  }
+
   func testLiveProgressFeedShowsOnlyCurrentActivityUntilExpanded() {
     let completed = OpenClawActivityFeedItem(
       id: "completed",

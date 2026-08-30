@@ -1852,6 +1852,7 @@ public final class WorkspaceStore: ObservableObject {
       }
     }
   }
+  @Published public private(set) var isSelectedRenderedBlocksReady = false
   public private(set) var selectedRenderedBlocksRenderSignature = WorkspaceStore.renderedBlocksRenderSignature(for: [])
   public private(set) var selectedRenderedBlocksSignature = WorkspaceStore.renderedBlocksSignature(for: [])
   public private(set) var selectedRenderedBlockIndexes: [OrgEditableBlock.ID: Int] = [:]
@@ -27859,6 +27860,7 @@ public final class WorkspaceStore: ObservableObject {
       selectedEntryRenderError = nil
       selectedEntryHTMLRenderKey = nil
       selectedRenderedBlocks = []
+      isSelectedRenderedBlocksReady = false
       selectedBlockID = nil
       isRenderingEntrySource = false
       return
@@ -27906,6 +27908,30 @@ public final class WorkspaceStore: ObservableObject {
           return
         }
       }
+      let modifiedAt = Self.modificationDate(for: URL(fileURLWithPath: source.file).standardizedFileURL)
+      let blocks: [OrgEditableBlock]
+      if let cachedBlocks = self.cachedRenderedBlocks(for: source, modifiedAt: modifiedAt) {
+        blocks = cachedBlocks
+      } else {
+        blocks = await Task.detached(priority: .userInitiated) {
+          OrgEntryRenderer.parseEditable(source.text, baseLine: source.startLine)
+        }.value
+      }
+      guard generation == self.entrySourceLoadGeneration,
+            renderGeneration == self.entryHTMLRenderGeneration,
+            self.selectedEntrySource?.id == source.id,
+            self.selectedEntryHTMLRenderKey == renderKey
+      else {
+        return
+      }
+      if self.cachedRenderedBlocks(for: source, modifiedAt: modifiedAt) == nil {
+        self.cacheRenderedBlocks(blocks, for: source, modifiedAt: modifiedAt)
+      }
+      // The native Org renderer is the dependable baseline and is fast enough
+      // to publish first. HTML/plugin rendering can then enhance the page
+      // without ever leaving the default document view blocked on a process.
+      self.applyRenderedBlocks(blocks, for: source)
+
       if cachedHTML == nil {
         do {
           let sourceLineOffset = max(0, source.startLine - 1)
@@ -27947,27 +27973,6 @@ public final class WorkspaceStore: ObservableObject {
           self.selectedEntryRenderError = error.localizedDescription
         }
       }
-
-      let modifiedAt = Self.modificationDate(for: URL(fileURLWithPath: source.file).standardizedFileURL)
-      let blocks: [OrgEditableBlock]
-      if let cachedBlocks = self.cachedRenderedBlocks(for: source, modifiedAt: modifiedAt) {
-        blocks = cachedBlocks
-      } else {
-        blocks = await Task.detached(priority: .utility) {
-          OrgEntryRenderer.parseEditable(source.text, baseLine: source.startLine)
-        }.value
-      }
-      guard generation == self.entrySourceLoadGeneration,
-            renderGeneration == self.entryHTMLRenderGeneration,
-            self.selectedEntrySource?.id == source.id,
-            self.selectedEntryHTMLRenderKey == renderKey
-      else {
-        return
-      }
-      if self.cachedRenderedBlocks(for: source, modifiedAt: modifiedAt) == nil {
-        self.cacheRenderedBlocks(blocks, for: source, modifiedAt: modifiedAt)
-      }
-      self.applyRenderedBlocks(blocks, for: source)
       self.entryHTMLRenderWatchdogTask?.cancel()
       self.entryHTMLRenderWatchdogTask = nil
       self.entryHTMLRenderTask = nil
@@ -28077,6 +28082,7 @@ public final class WorkspaceStore: ObservableObject {
     selectedEntryRenderError = nil
     selectedEntryHTMLRenderKey = renderKey
     selectedRenderedBlocks = []
+    isSelectedRenderedBlocksReady = false
     selectedBlockID = nil
   }
 
@@ -28135,6 +28141,7 @@ public final class WorkspaceStore: ObservableObject {
     if selectedRenderedBlocks != visibleBlocks {
       selectedRenderedBlocks = visibleBlocks
     }
+    isSelectedRenderedBlocksReady = true
     if let pending = pendingBlockSelection,
        pending.file == source.file {
       let pendingBlock = blockForSelectionLine(pending.line, mode: pending.mode, in: visibleBlocks)

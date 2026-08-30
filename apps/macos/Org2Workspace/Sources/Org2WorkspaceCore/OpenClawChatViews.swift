@@ -1709,6 +1709,7 @@ struct OpenClawComposerView: View {
   @State private var moveComposerCursorToEndRequest = 0
   let focusOnAppear: Bool
   let compact: Bool
+  let openConfiguration: () -> Void
 
   var body: some View {
     let presentation = OpenClawContextPresentation(localDraft)
@@ -1736,6 +1737,9 @@ struct OpenClawComposerView: View {
             )
               .font(.body)
               .foregroundStyle(.tertiary)
+              .lineLimit(1)
+              .truncationMode(.tail)
+              .frame(maxWidth: .infinity, alignment: .leading)
               .padding(.horizontal, 10)
               .padding(.vertical, 9)
           }
@@ -1807,120 +1811,9 @@ struct OpenClawComposerView: View {
         }
       }
 
-      HStack(spacing: 8) {
-        if store.isSendingOpenClawMessage {
-          Text(store.openClawQueuedMessageCount > 1 ? "\(store.openClawQueuedMessageCount - 1) queued" : "Sending")
-            .font(.caption.weight(.medium))
-            .foregroundStyle(.secondary)
-            .lineLimit(1)
-            .fixedSize(horizontal: true, vertical: false)
-            .layoutPriority(2)
-        }
-        if store.isRecordingOpenClawVoiceNote {
-          HStack(spacing: 6) {
-            Image(systemName: "waveform")
-              .foregroundStyle(.red)
-            OpenClawVoiceInputMeterView(meterState: store.openClawVoiceMeterState)
-              .frame(width: compact ? 72 : 110, height: 7)
-          }
-          .help("Recording \(store.selectedAIChatDisplayTitle) dictation")
-        } else if store.isTranscribingOpenClawVoiceNote {
-          HStack(spacing: 8) {
-            VStack(alignment: .leading, spacing: 3) {
-              HStack(spacing: 5) {
-                Text("Transcribing")
-                  .font(.caption.weight(.medium))
-                  .foregroundStyle(.secondary)
-                if !store.openClawVoiceTranscriptionElapsedText.isEmpty {
-                  Text(store.openClawVoiceTranscriptionElapsedText)
-                    .font(.caption2.monospacedDigit().weight(.medium))
-                    .foregroundStyle(.tertiary)
-                }
-              }
-              ProgressView(value: store.openClawVoiceTranscriptionProgress)
-                .progressViewStyle(.linear)
-                .frame(width: compact ? 92 : 140)
-            }
-          }
-          .help("Estimated local dictation transcription progress")
-        }
-        Spacer(minLength: 0)
-        if store.selectedAIChatIsSharedRoom {
-          ForEach(store.selectedAIChatRoomDestinationIDs, id: \.self) { destinationID in
-            roomModelPicker(forDestinationID: destinationID)
-          }
-        } else {
-          runtimePicker
-          modelPicker
-          if !store.selectedAIChatDestination.adapter.isDirectProvider {
-            reasoningPicker
-          }
-        }
-
-        Button {
-          store.chooseOpenClawAttachments()
-        } label: {
-          Label("Attach File", systemImage: "paperclip")
-        }
-        .labelStyle(.iconOnly)
-        .buttonStyle(WorkspaceActionButtonStyle())
-        .help("Attach file or image")
-
-        Button {
-          flushDraftToStore()
-          if store.isRecordingOpenClawVoiceNote {
-            Task {
-              await store.stopOpenClawVoiceNoteRecording(action: .insertIntoComposer)
-            }
-          } else {
-            Task { await store.startOpenClawVoiceNoteRecording() }
-          }
-        } label: {
-          Label(
-            store.isRecordingOpenClawVoiceNote ? "Stop Dictation" : "Dictate",
-            systemImage: store.isRecordingOpenClawVoiceNote ? "stop.fill" : "mic.fill"
-          )
-        }
-        .buttonStyle(WorkspaceActionButtonStyle())
-        .disabled(!store.isRecordingOpenClawVoiceNote && !store.canStartOpenClawVoiceNoteRecording)
-        .help(
-          store.isRecordingOpenClawVoiceNote
-            ? "Stop dictating and place the transcript in the composer without sending"
-            : "Start local voice dictation"
-        )
-
-        Button {
-          performPrimaryAction(delivery: .automatic)
-        } label: {
-          Label(
-            primaryActionTitle,
-            systemImage: primaryActionSystemImage
-          )
-        }
-        .buttonStyle(WorkspaceActionButtonStyle())
-        .disabled(!store.isRecordingOpenClawVoiceNote && !canSend)
-        .help(primaryActionHelp)
-
-        if isRunning
-          && !store.selectedAIChatIsSharedRoom
-          && !store.isRecordingOpenClawVoiceNote
-        {
-          Menu {
-            Button {
-              _ = sendIfPossible(delivery: .steer)
-            } label: {
-              Label("Steer Now", systemImage: "arrow.turn.up.right")
-            }
-            .disabled(!canSend)
-          } label: {
-            Label("More delivery options", systemImage: "chevron.down")
-          }
-          .labelStyle(.iconOnly)
-          .menuStyle(.borderlessButton)
-          .menuIndicator(.hidden)
-          .fixedSize()
-          .help("Steer the current turn now (⌘Return)")
-        }
+      ViewThatFits(in: .horizontal) {
+        composerFooter(showsDetailedConfiguration: true)
+        composerFooter(showsDetailedConfiguration: false)
       }
     }
     .onAppear {
@@ -1954,6 +1847,162 @@ struct OpenClawComposerView: View {
     }
     .task(id: store.openClawChatSelectionGeneration) {
       await store.refreshAIChatConfiguration()
+    }
+  }
+
+  private func composerFooter(showsDetailedConfiguration: Bool) -> some View {
+    HStack(spacing: showsDetailedConfiguration ? 8 : 5) {
+      if showsDetailedConfiguration {
+        composerStatus(compact: false)
+      } else {
+        composerStatus(compact: true)
+      }
+
+      Spacer(minLength: 0)
+
+      if showsDetailedConfiguration {
+        detailedConfigurationControls
+        composerActionButtons
+      } else {
+        Button(action: openConfiguration) {
+          Label("Chat configuration", systemImage: "slider.horizontal.3")
+        }
+        .buttonStyle(WorkspaceActionButtonStyle())
+        .help("Configure destination, model, and reasoning")
+
+        Group {
+          composerActionButtons
+        }
+        .labelStyle(.iconOnly)
+      }
+    }
+  }
+
+  @ViewBuilder
+  private func composerStatus(compact compactStatus: Bool) -> some View {
+    if store.isSendingOpenClawMessage && !compactStatus {
+      Text(store.openClawQueuedMessageCount > 1 ? "\(store.openClawQueuedMessageCount - 1) queued" : "Sending")
+        .font(.caption.weight(.medium))
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
+        .fixedSize(horizontal: true, vertical: false)
+        .layoutPriority(2)
+    }
+    if store.isRecordingOpenClawVoiceNote {
+      HStack(spacing: 6) {
+        Image(systemName: "waveform")
+          .foregroundStyle(.red)
+        OpenClawVoiceInputMeterView(meterState: store.openClawVoiceMeterState)
+          .frame(width: compactStatus ? 42 : (compact ? 72 : 110), height: 7)
+      }
+      .help("Recording \(store.selectedAIChatDisplayTitle) dictation")
+    } else if store.isTranscribingOpenClawVoiceNote {
+      if compactStatus {
+        ProgressView(value: store.openClawVoiceTranscriptionProgress)
+          .progressViewStyle(.circular)
+          .controlSize(.small)
+          .help("Transcribing \(store.openClawVoiceTranscriptionElapsedText)")
+      } else {
+        VStack(alignment: .leading, spacing: 3) {
+          HStack(spacing: 5) {
+            Text("Transcribing")
+              .font(.caption.weight(.medium))
+              .foregroundStyle(.secondary)
+            if !store.openClawVoiceTranscriptionElapsedText.isEmpty {
+              Text(store.openClawVoiceTranscriptionElapsedText)
+                .font(.caption2.monospacedDigit().weight(.medium))
+                .foregroundStyle(.tertiary)
+            }
+          }
+          ProgressView(value: store.openClawVoiceTranscriptionProgress)
+            .progressViewStyle(.linear)
+            .frame(width: compact ? 92 : 140)
+        }
+        .help("Estimated local dictation transcription progress")
+      }
+    }
+  }
+
+  @ViewBuilder
+  private var detailedConfigurationControls: some View {
+    if store.selectedAIChatIsSharedRoom {
+      ForEach(store.selectedAIChatRoomDestinationIDs, id: \.self) { destinationID in
+        roomModelPicker(forDestinationID: destinationID)
+      }
+    } else {
+      runtimePicker
+      modelPicker
+      if !store.selectedAIChatDestination.adapter.isDirectProvider {
+        reasoningPicker
+      }
+    }
+  }
+
+  @ViewBuilder
+  private var composerActionButtons: some View {
+    Button {
+      store.chooseOpenClawAttachments()
+    } label: {
+      Label("Attach File", systemImage: "paperclip")
+    }
+    .labelStyle(.iconOnly)
+    .buttonStyle(WorkspaceActionButtonStyle())
+    .help("Attach file or image")
+
+    Button {
+      flushDraftToStore()
+      if store.isRecordingOpenClawVoiceNote {
+        Task {
+          await store.stopOpenClawVoiceNoteRecording(action: .insertIntoComposer)
+        }
+      } else {
+        Task { await store.startOpenClawVoiceNoteRecording() }
+      }
+    } label: {
+      Label(
+        store.isRecordingOpenClawVoiceNote ? "Stop Dictation" : "Dictate",
+        systemImage: store.isRecordingOpenClawVoiceNote ? "stop.fill" : "mic.fill"
+      )
+    }
+    .buttonStyle(WorkspaceActionButtonStyle())
+    .disabled(!store.isRecordingOpenClawVoiceNote && !store.canStartOpenClawVoiceNoteRecording)
+    .help(
+      store.isRecordingOpenClawVoiceNote
+        ? "Stop dictating and place the transcript in the composer without sending"
+        : "Start local voice dictation"
+    )
+
+    Button {
+      performPrimaryAction(delivery: .automatic)
+    } label: {
+      Label(
+        primaryActionTitle,
+        systemImage: primaryActionSystemImage
+      )
+    }
+    .buttonStyle(WorkspaceActionButtonStyle())
+    .disabled(!store.isRecordingOpenClawVoiceNote && !canSend)
+    .help(primaryActionHelp)
+
+    if isRunning
+      && !store.selectedAIChatIsSharedRoom
+      && !store.isRecordingOpenClawVoiceNote
+    {
+      Menu {
+        Button {
+          _ = sendIfPossible(delivery: .steer)
+        } label: {
+          Label("Steer Now", systemImage: "arrow.turn.up.right")
+        }
+        .disabled(!canSend)
+      } label: {
+        Label("More delivery options", systemImage: "chevron.down")
+      }
+      .labelStyle(.iconOnly)
+      .menuStyle(.borderlessButton)
+      .menuIndicator(.hidden)
+      .fixedSize()
+      .help("Steer the current turn now (⌘Return)")
     }
   }
 

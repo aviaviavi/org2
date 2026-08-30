@@ -11842,6 +11842,53 @@ final class Org2ModelsTests: XCTestCase {
         && !store.isRenderingEntrySource
     }
     XCTAssertEqual(store.statusText, "Preview rendering timed out")
+    XCTAssertTrue(store.isSelectedRenderedBlocksReady)
+    XCTAssertTrue(store.selectedRenderedBlocks.contains { $0.rawText.contains("Slow render") })
+  }
+
+  @MainActor
+  func testEntryPublishesNativeDocumentBeforeEnhancedHTMLFinishes() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-native-preview-first-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let note = root.appendingPathComponent("native-first.org2")
+    try "* Native preview\nBody\n".write(to: note, atomically: true, encoding: .utf8)
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data("""
+    {
+      "todo": null,
+      "headline": "Native preview",
+      "kind": "NONE",
+      "file": "\(note.path)",
+      "line": 1,
+      "body": "Body",
+      "level": 1,
+      "tags": [],
+      "properties": {}
+    }
+    """.utf8))
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.agendaEntryRenderIdleDelayNanoseconds = 0
+    store.entryHTMLRendererForTesting = { _, _, _, _ in
+      try await Task.sleep(nanoseconds: 400_000_000)
+      return "<html><body>Enhanced preview</body></html>"
+    }
+
+    store.select(.agenda(item))
+
+    try await waitForCondition {
+      store.isSelectedRenderedBlocksReady
+        && store.selectedRenderedBlocks.contains { $0.rawText.contains("Native preview") }
+    }
+    XCTAssertNil(store.selectedEntryHTML)
+    XCTAssertTrue(store.isRenderingEntrySource)
+
+    try await waitForCondition {
+      store.selectedEntryHTML?.contains("Enhanced preview") == true
+        && !store.isRenderingEntrySource
+    }
   }
 
   @MainActor

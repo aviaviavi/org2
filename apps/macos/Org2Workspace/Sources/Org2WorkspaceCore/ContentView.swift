@@ -888,12 +888,18 @@ private struct WorkspaceMainArea: View {
       HSplitView {
         if !store.isWorkspaceSurfacePaneClosed || !store.hasWorkspaceDetailContent {
           WorkspaceSurfaceCacheView(selectedSurface: store.selectedSurface)
-            .frame(minWidth: 320, idealWidth: 460)
+            .frame(
+              minWidth: WorkspaceMainSplitLayout.surfaceMinimumWidth,
+              idealWidth: WorkspaceMainSplitLayout.surfaceIdealWidth
+            )
         }
 
         if store.hasWorkspaceDetailContent && !store.isWorkspaceDetailPaneClosed {
           WorkspaceDetailArea()
-            .frame(minWidth: 520, idealWidth: 720)
+            .frame(
+              minWidth: WorkspaceMainSplitLayout.detailMinimumWidth,
+              idealWidth: WorkspaceMainSplitLayout.detailIdealWidth
+            )
         }
       }
     }
@@ -8009,7 +8015,8 @@ private struct OpenClawChatView: View {
 
       OpenClawComposerView(
         focusOnAppear: presentation != .assistantPanel,
-        compact: presentation.isCompact
+        compact: presentation.isCompact,
+        openConfiguration: { isShowingConfiguration = true }
       )
       .padding(presentation.isCompact ? 10 : 16)
     }
@@ -8129,18 +8136,24 @@ private struct OpenClawChatView: View {
   private var homeHeaderActions: some View {
     newChatButton
 
-    Button {
-      store.resetOpenClawChat()
-    } label: {
-      Label("Clear", systemImage: "trash")
-    }
-    .disabled(store.isSendingOpenClawMessage || store.openClawMessages.isEmpty)
+    Menu {
+      Button {
+        store.resetOpenClawChat()
+      } label: {
+        Label("Clear", systemImage: "trash")
+      }
+      .disabled(store.isSendingOpenClawMessage || store.openClawMessages.isEmpty)
 
-    Button {
-      isShowingConfiguration = true
+      Button {
+        isShowingConfiguration = true
+      } label: {
+        Label("Configure", systemImage: "slider.horizontal.3")
+      }
     } label: {
-      Label("Configure", systemImage: "slider.horizontal.3")
+      Label("More chat actions", systemImage: "ellipsis.circle")
     }
+    .menuIndicator(.hidden)
+    .fixedSize()
   }
 
   private var chatTranscript: some View {
@@ -10252,6 +10265,8 @@ private struct OrgRenderedDocumentPreview: View {
           )
           .frame(maxHeight: .infinity)
         }
+      } else if store.isSelectedRenderedBlocksReady {
+        nativePreview
       } else if let error = store.selectedEntryRenderError {
         OrgHTMLRenderFailureView(message: error)
       } else {
@@ -10260,6 +10275,45 @@ private struct OrgRenderedDocumentPreview: View {
     }
     .task(id: "\(source.id):\(WorkspaceStore.entityType(for: source)?.rawValue ?? "untyped")") {
       await store.loadEntityActionItems(for: source)
+    }
+  }
+
+  private var nativePreview: some View {
+    VStack(spacing: 0) {
+      if WorkspaceStore.showsEntityActionItems(for: source) {
+        EntityActionItemsPanel(
+          payload: store.entityActionItems,
+          isLoading: store.isLoadingEntityActionItems,
+          selectItem: store.selectEntityActionItem
+        )
+        .padding(.horizontal, 18)
+        .padding(.top, 12)
+        .padding(.bottom, 8)
+      }
+
+      if let error = store.selectedEntryRenderError {
+        HStack(spacing: 8) {
+          Label("Enhanced preview unavailable", systemImage: "exclamationmark.triangle")
+            .font(.caption.weight(.medium))
+            .foregroundStyle(.secondary)
+            .help(error)
+          Spacer(minLength: 0)
+          Button {
+            store.retrySelectedEntryRendering()
+          } label: {
+            Label("Retry", systemImage: "arrow.clockwise")
+          }
+          .controlSize(.small)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 7)
+        .background(WorkspaceDesign.controlFill)
+      }
+
+      ScrollView {
+        LegacyStructuredEntryEditorView(source: source)
+          .padding(16)
+      }
     }
   }
 }
