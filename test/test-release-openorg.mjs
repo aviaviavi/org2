@@ -58,6 +58,8 @@ assert.ok(
   releaseSource.indexOf('runJob(plan, "Swift suite serial"')
     > releaseSource.indexOf('await runParallel([', releaseSource.indexOf("async function validate"))
 );
+assert.match(releaseSource, /--scratch-path[\s\S]+swift-tests/);
+assert.match(releaseSource, /"-arm64", "swift"/);
 assert.ok(
   releaseSource.indexOf("await updateBetaReviewDetails();") < releaseSource.indexOf("await submitBetaReview(build.id);")
 );

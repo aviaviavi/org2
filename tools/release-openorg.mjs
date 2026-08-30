@@ -373,11 +373,15 @@ async function validate(plan) {
     () => runJob(plan, "Node full suite", "npm", ["test"]),
     () => runJob(plan, "VS Code suite", "npm", ["test"], { cwd: vscodePackageDir }),
   ]);
-  // The Node suite exercises both arm64 and x86_64 Mac packaging. Running
-  // Swift tests alongside it lets those cross-architecture builds contend for
-  // the same package build directory, which can leave the XCTest runner and
-  // test bundle on different architectures. Keep Swift serial across jobs too.
-  await runJob(plan, "Swift suite serial", "swift", ["test", "--package-path", "apps/macos/Org2Workspace", "--no-parallel"]);
+  // The Node suite exercises both arm64 and x86_64 Mac packaging. Keep the
+  // Swift suite serial and give it a release-local scratch directory so the
+  // XCTest runner cannot inherit either packaging lane's architecture cache.
+  await runJob(plan, "Swift suite serial", "/usr/bin/arch", [
+    "-arm64", "swift", "test",
+    "--package-path", "apps/macos/Org2Workspace",
+    "--scratch-path", join(plan.artifactsDir, "swift-tests"),
+    "--no-parallel",
+  ]);
   await runJob(plan, "Generated artifact check", "npm", ["run", "check:generated"]);
   await runJob(plan, "npm pack preview", "npm", ["pack", "--dry-run", "--json"]);
 }

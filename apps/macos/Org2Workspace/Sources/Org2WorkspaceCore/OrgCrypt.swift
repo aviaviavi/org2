@@ -270,12 +270,11 @@ public enum OrgCrypt {
     process.standardOutput = stdout
     process.standardError = stderr
 
-    try process.run()
     let semaphore = DispatchSemaphore(value: 0)
-    DispatchQueue.global(qos: .userInitiated).async {
-      process.waitUntilExit()
+    process.terminationHandler = { _ in
       semaphore.signal()
     }
+    try process.run()
 
     if semaphore.wait(timeout: .now() + .milliseconds(Int(settings.gpgTimeout * 1000))) == .timedOut {
       if process.isRunning {
