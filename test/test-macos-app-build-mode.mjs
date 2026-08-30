@@ -35,8 +35,18 @@ function run(script, args, expectedStatus = 0, environment = process.env) {
   return result;
 }
 
+const noGoogleOAuthEnvironment = { ...process.env };
+delete noGoogleOAuthEnvironment.ORG2_GOOGLE_OAUTH_CLIENT_JSON;
+delete noGoogleOAuthEnvironment.ORG2_GOOGLE_OAUTH_CLIENT_ID;
+delete noGoogleOAuthEnvironment.ORG2_GOOGLE_OAUTH_CLIENT_SECRET;
+
 const defaultDaily = JSON.parse(
-  run("tools/build-macos-app.mjs", ["--print-configuration"]).stdout
+  run(
+    "tools/build-macos-app.mjs",
+    ["--print-configuration"],
+    0,
+    noGoogleOAuthEnvironment
+  ).stdout
 );
 assert.equal(defaultDaily.bundleIdentifier, "org.org2.workspace");
 assert.equal(defaultDaily.configuration, "release");
@@ -58,10 +68,6 @@ assert.match(defaultDaily.updates.feedURL, /appcast-(arm64|intel)\.xml$/);
 assert.equal(defaultDaily.googleOAuthClientSource, null);
 assert.equal(defaultDaily.googleOAuthRequired, false);
 
-const noGoogleOAuthEnvironment = { ...process.env };
-delete noGoogleOAuthEnvironment.ORG2_GOOGLE_OAUTH_CLIENT_JSON;
-delete noGoogleOAuthEnvironment.ORG2_GOOGLE_OAUTH_CLIENT_ID;
-delete noGoogleOAuthEnvironment.ORG2_GOOGLE_OAUTH_CLIENT_SECRET;
 const refusedUnconfiguredDistribution = run(
   "tools/build-macos-app.mjs",
   ["--require-google-oauth-client", "--print-configuration"],
