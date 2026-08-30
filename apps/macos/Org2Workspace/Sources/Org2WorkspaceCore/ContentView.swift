@@ -184,8 +184,6 @@ private struct WorkspaceTabItem: View {
   @EnvironmentObject private var store: WorkspaceStore
   let tab: WorkspaceTab
   let dragCoordinator: WorkspaceTabDragCoordinator
-  @State private var isHovered = false
-  @State private var isDropTargeted = false
 
   private var isSelected: Bool {
     store.selectedWorkspaceTabID == tab.id
@@ -200,81 +198,38 @@ private struct WorkspaceTabItem: View {
   }
 
   var body: some View {
-    HStack(spacing: 4) {
-      HStack(spacing: 7) {
-        Image(systemName: store.workspaceTabDisplaySystemImage(for: tab))
-          .font(.system(size: 11, weight: .medium))
-          .foregroundStyle(isSelected ? Color.accentColor : WorkspaceDesign.secondaryText)
-          .frame(width: 14)
-        Text(title)
-          .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
-          .foregroundStyle(WorkspaceDesign.primaryText)
-          .lineLimit(1)
-          .truncationMode(.tail)
-        Spacer(minLength: 0)
+    WorkspaceTabInteractionTarget(
+      tabID: tab.id,
+      title: title,
+      systemImage: store.workspaceTabDisplaySystemImage(for: tab),
+      isSelected: isSelected,
+      showsCloseButton: store.workspaceTabs.count > 1 && isSelected,
+      canClose: store.workspaceTabs.count > 1,
+      canMoveLeft: tabIndex != 0,
+      canMoveRight: tabIndex != store.workspaceTabs.count - 1,
+      dragCoordinator: dragCoordinator,
+      select: { store.selectWorkspaceTab(tab.id) },
+      close: { store.closeWorkspaceTab(tab.id) },
+      duplicate: { store.duplicateWorkspaceTab(tab.id) },
+      newTab: {
+        store.selectWorkspaceTab(tab.id)
+        store.newWorkspaceTab()
+      },
+      moveLeft: { store.moveWorkspaceTab(tab.id, offset: -1) },
+      moveRight: { store.moveWorkspaceTab(tab.id, offset: 1) },
+      closeOthers: { store.closeOtherWorkspaceTabs(keeping: tab.id) },
+      moveTab: { sourceID in
+        _ = store.moveWorkspaceTab(sourceID, to: tab.id)
       }
-      .accessibilityHidden(true)
-
-      if store.workspaceTabs.count > 1 {
-        Image(systemName: "xmark")
-          .font(.system(size: 8, weight: .bold))
-          .frame(width: 16, height: 16)
-        .foregroundStyle(WorkspaceDesign.secondaryText)
-        .opacity(isSelected || isHovered ? 1 : 0)
-        .accessibilityHidden(true)
-      }
-    }
-    .padding(.horizontal, 9)
-    .frame(width: 180, height: 28)
-    .background(
-      isSelected
-        ? WorkspaceDesign.selectedFill
-        : isDropTargeted
-          ? WorkspaceDesign.controlPressedFill
-          : isHovered ? WorkspaceDesign.controlHoverFill : WorkspaceDesign.controlFill,
-      in: RoundedRectangle(cornerRadius: 7, style: .continuous)
     )
-    .overlay {
-      RoundedRectangle(cornerRadius: 7, style: .continuous)
-        .stroke(
-          isSelected || isDropTargeted ? Color.accentColor.opacity(0.34) : WorkspaceDesign.hairline,
-          lineWidth: 1
-        )
-        .allowsHitTesting(false)
-    }
-    .overlay {
-      WorkspaceTabInteractionTarget(
-        tabID: tab.id,
-        title: title,
-        isSelected: isSelected,
-        showsCloseButton: store.workspaceTabs.count > 1 && (isSelected || isHovered),
-        canClose: store.workspaceTabs.count > 1,
-        canMoveLeft: tabIndex != 0,
-        canMoveRight: tabIndex != store.workspaceTabs.count - 1,
-        dragCoordinator: dragCoordinator,
-        select: { store.selectWorkspaceTab(tab.id) },
-        close: { store.closeWorkspaceTab(tab.id) },
-        duplicate: { store.duplicateWorkspaceTab(tab.id) },
-        newTab: {
-          store.selectWorkspaceTab(tab.id)
-          store.newWorkspaceTab()
-        },
-        moveLeft: { store.moveWorkspaceTab(tab.id, offset: -1) },
-        moveRight: { store.moveWorkspaceTab(tab.id, offset: 1) },
-        closeOthers: { store.closeOtherWorkspaceTabs(keeping: tab.id) },
-        moveTab: { sourceID in
-          _ = store.moveWorkspaceTab(sourceID, to: tab.id)
-        },
-        hoverChanged: { isHovered = $0 },
-        dropTargetChanged: { isDropTargeted = $0 }
-      )
-    }
+    .frame(width: 180, height: 28)
   }
 }
 
 private struct WorkspaceTabInteractionTarget: NSViewRepresentable {
   let tabID: WorkspaceTab.ID
   let title: String
+  let systemImage: String
   let isSelected: Bool
   let showsCloseButton: Bool
   let canClose: Bool
@@ -289,8 +244,6 @@ private struct WorkspaceTabInteractionTarget: NSViewRepresentable {
   let moveRight: () -> Void
   let closeOthers: () -> Void
   let moveTab: (WorkspaceTab.ID) -> Void
-  let hoverChanged: (Bool) -> Void
-  let dropTargetChanged: (Bool) -> Void
 
   func makeNSView(context: Context) -> WorkspaceTabInteractionView {
     WorkspaceTabInteractionView(frame: .zero)
@@ -299,6 +252,7 @@ private struct WorkspaceTabInteractionTarget: NSViewRepresentable {
   func updateNSView(_ view: WorkspaceTabInteractionView, context: Context) {
     view.tabID = tabID
     view.title = title
+    view.systemImage = systemImage
     view.isSelected = isSelected
     view.showsCloseButton = showsCloseButton
     view.canClose = canClose
@@ -313,8 +267,6 @@ private struct WorkspaceTabInteractionTarget: NSViewRepresentable {
     view.moveRight = moveRight
     view.closeOthers = closeOthers
     view.moveTab = moveTab
-    view.hoverChanged = hoverChanged
-    view.dropTargetChanged = dropTargetChanged
     view.updatePresentation()
   }
 }
@@ -334,9 +286,9 @@ final class WorkspaceTabDragCoordinator: ObservableObject {
   func updateTarget(_ target: WorkspaceTabInteractionView?) {
     let nextTarget = target === sourceView ? nil : target
     guard nextTarget !== targetView else { return }
-    targetView?.dropTargetChanged?(false)
+    targetView?.setDropTargeted(false)
     targetView = nextTarget
-    targetView?.dropTargetChanged?(true)
+    targetView?.setDropTargeted(true)
   }
 
   func finish() {
@@ -353,7 +305,7 @@ final class WorkspaceTabDragCoordinator: ObservableObject {
   }
 
   func cancel() {
-    targetView?.dropTargetChanged?(false)
+    targetView?.setDropTargeted(false)
     sourceView = nil
     targetView = nil
   }
@@ -363,6 +315,7 @@ final class WorkspaceTabDragCoordinator: ObservableObject {
 final class WorkspaceTabInteractionView: NSView {
   var tabID = WorkspaceTab.ID()
   var title = "Tab"
+  var systemImage = "doc"
   var isSelected = false
   var showsCloseButton = false
   var canMoveLeft = false
@@ -377,16 +330,32 @@ final class WorkspaceTabInteractionView: NSView {
   var moveRight: (() -> Void)?
   var closeOthers: (() -> Void)?
   var moveTab: ((WorkspaceTab.ID) -> Void)?
-  var hoverChanged: ((Bool) -> Void)?
-  var dropTargetChanged: ((Bool) -> Void)?
 
+  private let iconView = NSImageView()
+  private let titleLabel = NSTextField(labelWithString: "")
   private let closeButton = NSButton()
+  private var isHovered = false
+  private var isDropTargeted = false
   private var pointerDownLocation: NSPoint?
   private var startedDragging = false
   private var trackingAreaReference: NSTrackingArea?
 
   override init(frame frameRect: NSRect) {
     super.init(frame: frameRect)
+
+    wantsLayer = true
+    layer?.cornerRadius = 7
+    layer?.borderWidth = 1
+
+    iconView.imageScaling = .scaleProportionallyDown
+    iconView.setAccessibilityElement(false)
+    addSubview(iconView)
+
+    titleLabel.lineBreakMode = .byTruncatingTail
+    titleLabel.maximumNumberOfLines = 1
+    titleLabel.isSelectable = false
+    titleLabel.setAccessibilityElement(false)
+    addSubview(titleLabel)
 
     closeButton.isBordered = false
     closeButton.bezelStyle = .regularSquare
@@ -395,8 +364,11 @@ final class WorkspaceTabInteractionView: NSView {
       systemSymbolName: "xmark",
       accessibilityDescription: "Close Tab"
     )
+    closeButton.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 8, weight: .semibold)
     closeButton.imageScaling = .scaleProportionallyDown
+    closeButton.imagePosition = .imageOnly
     closeButton.contentTintColor = .secondaryLabelColor
+    closeButton.refusesFirstResponder = true
     closeButton.target = self
     closeButton.action = #selector(closeTab)
     closeButton.toolTip = "Close Tab (⌘W)"
@@ -413,6 +385,17 @@ final class WorkspaceTabInteractionView: NSView {
 
   override var acceptsFirstResponder: Bool { true }
 
+  override func hitTest(_ point: NSPoint) -> NSView? {
+    guard !isHidden, alphaValue > 0, bounds.contains(point) else { return nil }
+    if !closeButton.isHidden {
+      let closePoint = closeButton.convert(point, from: self)
+      if closeButton.bounds.contains(closePoint) {
+        return closeButton
+      }
+    }
+    return self
+  }
+
   override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
     true
   }
@@ -424,11 +407,25 @@ final class WorkspaceTabInteractionView: NSView {
 
   override func layout() {
     super.layout()
+    iconView.frame = NSRect(
+      x: 9,
+      y: max(0, (bounds.height - 14) / 2),
+      width: 14,
+      height: 14
+    )
     closeButton.frame = NSRect(
       x: max(0, bounds.maxX - 25),
       y: max(0, (bounds.height - 18) / 2),
       width: 18,
       height: 18
+    )
+    let titleX: CGFloat = 30
+    let trailingEdge = closeButton.isHidden ? bounds.maxX - 9 : closeButton.frame.minX - 5
+    titleLabel.frame = NSRect(
+      x: titleX,
+      y: max(0, (bounds.height - 17) / 2),
+      width: max(0, trailingEdge - titleX),
+      height: 17
     )
   }
 
@@ -448,11 +445,13 @@ final class WorkspaceTabInteractionView: NSView {
   }
 
   override func mouseEntered(with event: NSEvent) {
-    hoverChanged?(true)
+    isHovered = true
+    updatePresentation()
   }
 
   override func mouseExited(with event: NSEvent) {
-    hoverChanged?(false)
+    isHovered = false
+    updatePresentation()
   }
 
   override func mouseDown(with event: NSEvent) {
@@ -498,14 +497,52 @@ final class WorkspaceTabInteractionView: NSView {
   }
 
   func updatePresentation() {
-    closeButton.isHidden = !showsCloseButton
+    titleLabel.stringValue = title
+    titleLabel.font = .systemFont(ofSize: 12, weight: isSelected ? .semibold : .regular)
+    titleLabel.textColor = .labelColor
+    iconView.image = NSImage(systemSymbolName: systemImage, accessibilityDescription: nil)
+    iconView.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 11, weight: .medium)
+    iconView.contentTintColor = isSelected ? .controlAccentColor : .secondaryLabelColor
+    closeButton.isHidden = !(canClose && (showsCloseButton || isHovered))
     closeButton.isEnabled = canClose
     closeButton.menu = makeContextMenu()
     closeButton.setAccessibilityLabel("Close \(title)")
     toolTip = title
     setAccessibilityLabel(title)
     setAccessibilitySelected(isSelected)
+    updateColors()
     needsLayout = true
+  }
+
+  func setDropTargeted(_ targeted: Bool) {
+    guard isDropTargeted != targeted else { return }
+    isDropTargeted = targeted
+    updateColors()
+  }
+
+  override func viewDidChangeEffectiveAppearance() {
+    super.viewDidChangeEffectiveAppearance()
+    updateColors()
+  }
+
+  private func updateColors() {
+    let background: NSColor
+    if isSelected {
+      background = .selectedContentBackgroundColor.withAlphaComponent(0.14)
+    } else if isDropTargeted {
+      background = .controlAccentColor.withAlphaComponent(0.12)
+    } else if isHovered {
+      background = .controlAccentColor.withAlphaComponent(0.07)
+    } else {
+      background = .controlBackgroundColor.withAlphaComponent(0.78)
+    }
+    let border = isSelected || isDropTargeted
+      ? NSColor.controlAccentColor.withAlphaComponent(0.34)
+      : NSColor.separatorColor
+    effectiveAppearance.performAsCurrentDrawingAppearance {
+      layer?.backgroundColor = background.cgColor
+      layer?.borderColor = border.cgColor
+    }
   }
 
   func makeContextMenu() -> NSMenu {

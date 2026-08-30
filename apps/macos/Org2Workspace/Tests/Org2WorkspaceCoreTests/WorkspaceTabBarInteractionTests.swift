@@ -26,6 +26,24 @@ final class WorkspaceTabBarInteractionTests: XCTestCase {
     XCTAssertTrue(view.acceptsFirstMouse(for: event))
   }
 
+  func testNativeTabOwnsItsVisibleContentAndExactHitTargets() throws {
+    let view = WorkspaceTabInteractionView(frame: NSRect(x: 0, y: 0, width: 180, height: 28))
+    view.title = "Home"
+    view.systemImage = "house.fill"
+    view.isSelected = true
+    view.showsCloseButton = true
+    view.canClose = true
+    view.updatePresentation()
+    view.layoutSubtreeIfNeeded()
+
+    let closeButton = try XCTUnwrap(view.subviews.compactMap { $0 as? NSButton }.first)
+    XCTAssertEqual(view.subviews.compactMap { $0 as? NSButton }.count, 1)
+    XCTAssertEqual(view.subviews.compactMap { $0 as? NSTextField }.count, 1)
+    XCTAssertTrue(view.hitTest(NSPoint(x: 80, y: 14)) === view)
+    XCTAssertTrue(view.hitTest(NSPoint(x: closeButton.frame.midX, y: closeButton.frame.midY)) === closeButton)
+    XCTAssertEqual(closeButton.frame, NSRect(x: 155, y: 5, width: 18, height: 18))
+  }
+
   func testAppKitTabTargetExposesClickableCloseControl() throws {
     let view = WorkspaceTabInteractionView(frame: NSRect(x: 0, y: 0, width: 180, height: 28))
     var closeCount = 0
@@ -77,9 +95,7 @@ final class WorkspaceTabBarInteractionTests: XCTestCase {
     let source = WorkspaceTabInteractionView(frame: NSRect(x: 0, y: 0, width: 180, height: 28))
     let target = WorkspaceTabInteractionView(frame: NSRect(x: 184, y: 0, width: 180, height: 28))
     var movedTabID: WorkspaceTab.ID?
-    var targetStates: [Bool] = []
     target.moveTab = { movedTabID = $0 }
-    target.dropTargetChanged = { targetStates.append($0) }
 
     coordinator.begin(from: source)
     coordinator.updateTarget(target)
@@ -87,6 +103,5 @@ final class WorkspaceTabBarInteractionTests: XCTestCase {
     try? await Task.sleep(nanoseconds: 100_000_000)
 
     XCTAssertEqual(movedTabID, source.tabID)
-    XCTAssertEqual(targetStates, [true, false])
   }
 }

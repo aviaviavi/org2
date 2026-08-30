@@ -191,10 +191,16 @@ struct Org2WorkspaceScreenshotRenderer {
       )
     }
 
+    let firstTabHitView = hitView(atCenterOf: tabViews[0], in: window)
+    guard firstTabHitView === tabViews[0] else {
+      throw ScreenshotRenderError.tabVerificationFailed(
+        "the visible first tab does not own its hit-test area"
+      )
+    }
     sendClick(to: tabViews[0], in: window)
     await settleTabEvents()
     guard store.selectedWorkspaceTabID == expectedTabIDs[0] else {
-      throw ScreenshotRenderError.tabVerificationFailed("a real window click did not select the first tab")
+      throw ScreenshotRenderError.tabVerificationFailed("an AppKit mouse click did not select the first tab")
     }
 
     tabViews = workspaceTabViews(in: hostingView)
@@ -211,11 +217,10 @@ struct Org2WorkspaceScreenshotRenderer {
     guard let closeButton = tabViews[2].subviews.compactMap({ $0 as? NSButton }).first else {
       throw ScreenshotRenderError.tabVerificationFailed("the selected tab has no native close button")
     }
-    guard let closeAction = closeButton.action,
-          NSApp.sendAction(closeAction, to: closeButton.target, from: closeButton)
-    else {
-      throw ScreenshotRenderError.tabVerificationFailed("the native close button rejected its action")
+    guard hitView(atCenterOf: closeButton, in: window) === closeButton else {
+      throw ScreenshotRenderError.tabVerificationFailed("the visible close button does not own its hit-test area")
     }
+    sendClick(to: closeButton, in: window)
     await settleTabEvents()
     guard store.workspaceTabs.map(\.id) == [expectedTabIDs[1], expectedTabIDs[2]] else {
       throw ScreenshotRenderError.tabVerificationFailed("the native close action did not close the selected tab")
@@ -239,13 +244,27 @@ struct Org2WorkspaceScreenshotRenderer {
   }
 
   @MainActor
+  private static func hitView(atCenterOf view: NSView, in window: NSWindow) -> NSView? {
+    guard let contentView = window.contentView else { return nil }
+    let windowPoint = view.convert(
+      NSPoint(x: view.bounds.midX, y: view.bounds.midY),
+      to: nil
+    )
+    return contentView.hitTest(windowPoint)
+  }
+
+  @MainActor
   private static func sendClick(to view: NSView, in window: NSWindow) {
     let location = view.convert(
       NSPoint(x: view.bounds.midX, y: view.bounds.midY),
       to: nil
     )
-    window.sendEvent(mouseEvent(.leftMouseDown, at: location, in: window, eventNumber: 1))
-    window.sendEvent(mouseEvent(.leftMouseUp, at: location, in: window, eventNumber: 2))
+    if let button = view as? NSButton {
+      button.performClick(nil)
+      return
+    }
+    view.mouseDown(with: mouseEvent(.leftMouseDown, at: location, in: window, eventNumber: 1))
+    view.mouseUp(with: mouseEvent(.leftMouseUp, at: location, in: window, eventNumber: 2))
   }
 
   @MainActor
@@ -260,10 +279,10 @@ struct Org2WorkspaceScreenshotRenderer {
     )
     let threshold = NSPoint(x: start.x + 8, y: start.y)
 
-    window.sendEvent(mouseEvent(.leftMouseDown, at: start, in: window, eventNumber: 3))
-    window.sendEvent(mouseEvent(.leftMouseDragged, at: threshold, in: window, eventNumber: 4))
-    window.sendEvent(mouseEvent(.leftMouseDragged, at: destination, in: window, eventNumber: 5))
-    window.sendEvent(mouseEvent(.leftMouseUp, at: destination, in: window, eventNumber: 6))
+    source.mouseDown(with: mouseEvent(.leftMouseDown, at: start, in: window, eventNumber: 3))
+    source.mouseDragged(with: mouseEvent(.leftMouseDragged, at: threshold, in: window, eventNumber: 4))
+    source.mouseDragged(with: mouseEvent(.leftMouseDragged, at: destination, in: window, eventNumber: 5))
+    source.mouseUp(with: mouseEvent(.leftMouseUp, at: destination, in: window, eventNumber: 6))
   }
 
   @MainActor
