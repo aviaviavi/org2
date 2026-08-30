@@ -20,6 +20,22 @@ private struct ActivitySelectionHarness: View {
 }
 
 @MainActor
+private final class TranscriptLayoutProbeCounter {
+  var realizedRows = 0
+}
+
+private struct TranscriptLayoutProbe: NSViewRepresentable {
+  let counter: TranscriptLayoutProbeCounter
+
+  func makeNSView(context: Context) -> NSView {
+    counter.realizedRows += 1
+    return NSView(frame: .zero)
+  }
+
+  func updateNSView(_ nsView: NSView, context: Context) {}
+}
+
+@MainActor
 final class OpenClawChatLayoutTests: XCTestCase {
   func testLiveProgressFeedShowsOnlyCurrentActivityUntilExpanded() {
     let completed = OpenClawActivityFeedItem(
@@ -277,7 +293,7 @@ final class OpenClawChatLayoutTests: XCTestCase {
     XCTAssertFalse(view.isUpdatingForTesting)
   }
 
-  func testChatThreadSwitchDoesNotRequestAnimatedScrolling() {
+  func testChatThreadSwitchDoesNotRequestAutomaticScrolling() {
     let previous = OpenClawChatScrollUpdate(
       threadID: UUID(),
       messageCount: 3,
@@ -289,10 +305,10 @@ final class OpenClawChatLayoutTests: XCTestCase {
       isSending: true
     )
 
-    XCTAssertNil(next.animatedTarget(after: previous))
+    XCTAssertNil(next.automaticTarget(after: previous))
   }
 
-  func testChatActivityWithinAThreadStillRequestsAnimatedScrolling() {
+  func testChatActivityWithinAThreadStillRequestsAutomaticScrolling() {
     let threadID = UUID()
     let idle = OpenClawChatScrollUpdate(
       threadID: threadID,
@@ -310,8 +326,8 @@ final class OpenClawChatLayoutTests: XCTestCase {
       isSending: true
     )
 
-    XCTAssertEqual(appended.animatedTarget(after: idle), .latestMessage)
-    XCTAssertEqual(sending.animatedTarget(after: appended), .typingIndicator)
+    XCTAssertEqual(appended.automaticTarget(after: idle), .latestMessage)
+    XCTAssertEqual(sending.automaticTarget(after: appended), .typingIndicator)
   }
 
   func testThreadFindMatchesVisibleMessageTextCaseInsensitively() {
@@ -474,14 +490,11 @@ final class OpenClawChatLayoutTests: XCTestCase {
       )
     }
     let view = ScrollView {
-      LazyVStack(alignment: .leading, spacing: 10) {
+      OpenClawChatTranscriptStack(spacing: 10) {
         ForEach(messages) { message in
           ChatBubbleView(message: message)
         }
       }
-      // Mirrors the production transcript: selection is disabled at the lazy
-      // stack boundary and re-enabled by each realized chat bubble.
-      .textSelection(.disabled)
     }
     .frame(width: 720, height: 600)
     let hostingView = NSHostingView(rootView: view)
@@ -493,6 +506,25 @@ final class OpenClawChatLayoutTests: XCTestCase {
 
     XCTAssertLessThan(elapsed, 2)
     XCTAssertEqual(hostingView.fittingSize.width, 720, accuracy: 1)
+  }
+
+  func testTranscriptUsesExactGeometryForRowsBeyondTheViewport() {
+    let counter = TranscriptLayoutProbeCounter()
+    let view = ScrollView {
+      OpenClawChatTranscriptStack(spacing: 0) {
+        ForEach(0..<120, id: \.self) { _ in
+          TranscriptLayoutProbe(counter: counter)
+            .frame(height: 24)
+        }
+      }
+    }
+    .frame(width: 500, height: 240)
+    let hostingView = NSHostingView(rootView: view)
+    hostingView.frame = NSRect(x: 0, y: 0, width: 500, height: 240)
+
+    hostingView.layoutSubtreeIfNeeded()
+
+    XCTAssertEqual(counter.realizedRows, 120)
   }
 
   func testMessageClipboardCopiesContentWithoutRoleChrome() {

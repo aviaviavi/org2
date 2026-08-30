@@ -8048,7 +8048,7 @@ private struct OpenClawChatView: View {
 
     return ScrollViewReader { proxy in
       ScrollView {
-        LazyVStack(alignment: .leading, spacing: presentation.isCompact ? 8 : 10) {
+        OpenClawChatTranscriptStack(spacing: presentation.isCompact ? 8 : 10) {
           if store.openClawMessages.isEmpty {
             EmptyChatView(statusText: store.openClawStatusText)
               .frame(maxWidth: .infinity, minHeight: presentation.isCompact ? 140 : 220)
@@ -8106,9 +8106,6 @@ private struct OpenClawChatView: View {
             .id("openclaw-chat-bottom")
             .accessibilityHidden(true)
         }
-        // Keep the lazy transcript itself out of one native selection overlay;
-        // each realized message owns its smaller selectable-text region instead.
-        .textSelection(.disabled)
         .padding(presentation.isCompact ? 10 : 16)
       }
       .defaultScrollAnchor(.bottom)
@@ -8129,17 +8126,13 @@ private struct OpenClawChatView: View {
         }
       ))
       .onChange(of: scrollUpdate) { previous, current in
-        switch current.animatedTarget(after: previous) {
+        switch current.automaticTarget(after: previous) {
         case .latestMessage:
           if isChatNearBottom {
-            withAnimation(WorkspaceMotion.quick) {
-              proxy.scrollTo("openclaw-chat-bottom", anchor: .bottom)
-            }
-          }
-        case .typingIndicator:
-          withAnimation(WorkspaceMotion.quick) {
             proxy.scrollTo("openclaw-chat-bottom", anchor: .bottom)
           }
+        case .typingIndicator:
+          proxy.scrollTo("openclaw-chat-bottom", anchor: .bottom)
         case nil:
           break
         }
@@ -8239,6 +8232,29 @@ private struct OpenClawChatView: View {
   }
 }
 
+struct OpenClawChatTranscriptStack<Content: View>: View {
+  let spacing: CGFloat
+  @ViewBuilder let content: () -> Content
+
+  init(spacing: CGFloat, @ViewBuilder content: @escaping () -> Content) {
+    self.spacing = spacing
+    self.content = content
+  }
+
+  var body: some View {
+    // Chat rows change height while a turn starts and while structured content
+    // finishes rendering. A LazyVStack can retain an estimated height across
+    // those updates, leaving valid-looking document space below the last row.
+    // Exact layout keeps ScrollViewReader and the native scroll view in sync.
+    VStack(alignment: .leading, spacing: spacing) {
+      content()
+    }
+    // Keep the transcript itself out of one native selection overlay; each
+    // message owns its smaller selectable-text region instead.
+    .textSelection(.disabled)
+  }
+}
+
 struct OpenClawChatScrollVisibility: Equatable {
   static let nearBottomThreshold = 0.985
 
@@ -8258,7 +8274,7 @@ struct OpenClawChatScrollVisibility: Equatable {
   }
 }
 
-enum OpenClawChatAnimatedScrollTarget: Equatable {
+enum OpenClawChatAutomaticScrollTarget: Equatable {
   case latestMessage
   case typingIndicator
 }
@@ -8268,7 +8284,7 @@ struct OpenClawChatScrollUpdate: Equatable {
   let messageCount: Int
   let isSending: Bool
 
-  func animatedTarget(after previous: Self) -> OpenClawChatAnimatedScrollTarget? {
+  func automaticTarget(after previous: Self) -> OpenClawChatAutomaticScrollTarget? {
     guard threadID == previous.threadID else { return nil }
     if isSending && !previous.isSending {
       return .typingIndicator
