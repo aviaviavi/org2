@@ -1,0 +1,28 @@
+<?xml version="1.0" standalone="yes"?><!-- sparkle-sign-warning:
+IMPORTANT: This file was signed by Sparkle. Any modifications to this file requires re-signing this file with generate_appcast or sign_update! The signed signature will be embedded at the end of this file.
+--><rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+    <channel>
+        <title>OpenOrg</title>
+        <item>
+            <title>0.5.4</title>
+            <pubDate>Sat, 29 Aug 2026 21:28:10 -0700</pubDate>
+            <link>https://openorg.so/downloads.html</link>
+            <sparkle:version>0.5.4</sparkle:version>
+            <sparkle:shortVersionString>0.5.4</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description sparkle:format="markdown"><![CDATA[## OpenOrg 0.5.4
+
+- Adds signed automatic updates to the Mac app.
+- Checks quietly at launch and every two hours by default.
+- Adds a manual Check for Updates command and settings to disable checks or install downloaded updates on quit.
+- Supports Install, Remind Later, and Skip This Version through the standard macOS update flow.
+- Publishes architecture-specific, cryptographically signed update feeds for Apple Silicon and Intel.
+- Adds independent workspace tabs with mouse selection, close controls, right-click actions, drag-and-drop reordering, and keyboard navigation.
+]]></description>
+            <enclosure url="https://github.com/aviaviavi/org2/releases/download/0.5.4/OpenOrg-Intel.dmg" length="235537554" type="application/octet-stream" sparkle:edSignature="mWo/OTWeEkDIGcaUsdPnzxlXjnGjjy0/3ylOwhX2qrDx1y0g0e6A6zT5CAGlq3p9+7iHOr4P50++IpYkn+s+Dw=="></enclosure>
+        </item>
+    </channel>
+</rss><!-- sparkle-signatures:
+edSignature: m7opukyQ91H6qY4VD5KK/l2VkJYiuJAY/SOYCPBkQbAEvw/3hZv/zv0w8XSCHEgC6WrSfU7rbGOlXZs3Og/vAw==
+length: 1757
+-->
