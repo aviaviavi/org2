@@ -431,12 +431,12 @@ private struct SharingSettingsView: View {
 
       HStack(spacing: 8) {
         Button {
-          NSWorkspace.shared.open(publication.localURL)
+          NSWorkspace.shared.open(publication.openURL)
         } label: {
           Image(systemName: "arrow.up.right.square")
         }
         .buttonStyle(.borderless)
-        .help("Open locally")
+        .help("Open shareable link")
 
         Button {
           copyToPasteboard(publication.url.absoluteString)

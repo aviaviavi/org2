@@ -431,6 +431,9 @@ public struct LocalDocumentPublication: Identifiable, Hashable, Sendable {
   public let format: DocumentPublishFormat?
   public let createdAt: Date
 
+  /// The advertised network URL used by both Open and Copy Link actions.
+  public var openURL: URL { url }
+
   public init(
     id: String,
     title: String,

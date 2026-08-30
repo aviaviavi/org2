@@ -176,12 +176,12 @@ struct DocumentPublishSheet: View {
               }
               Spacer()
               Button {
-                NSWorkspace.shared.open(publication.localURL)
+                NSWorkspace.shared.open(publication.openURL)
               } label: {
                 Image(systemName: "arrow.up.right.square")
               }
               .buttonStyle(.borderless)
-              .help("Open locally")
+              .help("Open shareable link")
               Button {
                 copy(publication.url.absoluteString)
               } label: {
@@ -408,8 +408,8 @@ struct DocumentPublishSheet: View {
           .font(.caption)
           .foregroundStyle(.secondary)
         HStack {
-          Button("Open") {
-            NSWorkspace.shared.open(publication.localURL)
+          Button("Open Shared Link") {
+            NSWorkspace.shared.open(publication.openURL)
           }
           Button("Copy Link") {
             copy(publication.url.absoluteString)

@@ -310,6 +310,24 @@ final class DocumentPublishingTests: XCTestCase {
     XCTAssertEqual(secondData, html)
   }
 
+  func testLocalPublicationOpenURLUsesTheAdvertisedShareLink() async throws {
+    let host = LocalDocumentPublicationHost(
+      bindHost: "127.0.0.1",
+      advertisedHost: "shareable-host.local"
+    )
+    defer { host.stop() }
+
+    let publication = try await host.publish(
+      html: Data("<!doctype html><title>Shareable report</title>".utf8),
+      title: "Shareable report"
+    )
+
+    XCTAssertEqual(publication.openURL, publication.url)
+    XCTAssertEqual(publication.openURL.host, "shareable-host.local")
+    XCTAssertNotEqual(publication.openURL, publication.localURL)
+    XCTAssertEqual(publication.localURL.host, "127.0.0.1")
+  }
+
   func testLocalPublicationSurvivesHostRestartWithTheSameSecretURL() async throws {
     let storageDirectory = FileManager.default.temporaryDirectory
       .appendingPathComponent("openorg-publication-persistence-\(UUID().uuidString)", isDirectory: true)
