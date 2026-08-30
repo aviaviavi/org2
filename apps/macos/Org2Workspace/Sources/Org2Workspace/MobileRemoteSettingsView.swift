@@ -9,6 +9,11 @@ struct WorkspaceSettingsView: View {
 
   var body: some View {
     TabView {
+      CorpusSettingsView()
+        .tabItem {
+          Label("Workspace", systemImage: "folder")
+        }
+
       AppearanceSettingsView()
         .tabItem {
           Label("Appearance", systemImage: "circle.lefthalf.filled")
@@ -40,6 +45,98 @@ struct WorkspaceSettingsView: View {
         }
     }
     .frame(width: 660, height: 620)
+  }
+}
+
+private struct CorpusSettingsView: View {
+  @EnvironmentObject private var store: WorkspaceStore
+  @State private var corpusName = ""
+  @State private var corpusKind = "personal"
+  @State private var isSaving = false
+
+  var body: some View {
+    Form {
+      Section {
+        if let root = store.corpusRoot {
+          TextField("Name", text: $corpusName)
+
+          Picker("Kind", selection: $corpusKind) {
+            Text("Personal").tag("personal")
+            Text("Project").tag("project")
+            Text("Shared").tag("shared")
+          }
+
+          LabeledContent("Location") {
+            Text(root.path)
+              .font(.callout.monospaced())
+              .foregroundStyle(.secondary)
+              .lineLimit(2)
+              .truncationMode(.middle)
+              .textSelection(.enabled)
+          }
+
+          HStack {
+            Button("Reveal in Finder") {
+              store.launchGuideRevealWorkspace()
+            }
+            Button("Open Another Corpus…") {
+              store.chooseCorpus()
+            }
+            Spacer()
+            Button {
+              isSaving = true
+              Task {
+                _ = await store.updateActiveCorpusIdentity(
+                  name: corpusName,
+                  kind: corpusKind
+                )
+                isSaving = false
+              }
+            } label: {
+              if isSaving {
+                HStack(spacing: 6) {
+                  ProgressView().controlSize(.small)
+                  Text("Saving")
+                }
+              } else {
+                Text("Save Corpus Info")
+              }
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(isSaving || corpusName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+          }
+        } else {
+          ContentUnavailableView(
+            "No Workspace Open",
+            systemImage: "folder.badge.questionmark",
+            description: Text("Open a corpus to edit its name, kind, or location.")
+          )
+          Button("Open Corpus…") { store.chooseCorpus() }
+        }
+      } header: {
+        Label("Corpus", systemImage: "folder")
+      } footer: {
+        Text("The corpus remains an ordinary folder. Move or rename it in Finder, then open its new location here. Its portable name and kind are stored in org2.json.")
+      }
+    }
+    .formStyle(.grouped)
+    .padding(8)
+    .frame(width: 620)
+    .frame(minHeight: 460)
+    .onAppear(perform: loadCorpusInfo)
+    .onChange(of: store.corpusRoot?.standardizedFileURL.path) {
+      loadCorpusInfo()
+    }
+    .onChange(of: store.activeCorpusIdentity) {
+      loadCorpusInfo()
+    }
+  }
+
+  private func loadCorpusInfo() {
+    corpusName = store.activeCorpusIdentity?.name
+      ?? store.corpusRoot?.lastPathComponent
+      ?? ""
+    corpusKind = store.activeCorpusIdentity?.kind ?? "personal"
   }
 }
 

@@ -3,6 +3,30 @@ import XCTest
 @testable import Org2WorkspaceCore
 
 final class WorkspaceListSelectionTests: XCTestCase {
+  func testFirstRunLeadsWithAgentConnectionAndKeepsCorpusOptionsSecondary() throws {
+    let testFile = URL(fileURLWithPath: #filePath)
+    let packageRoot = testFile
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+    let contentView = try String(
+      contentsOf: packageRoot.appendingPathComponent("Sources/Org2WorkspaceCore/ContentView.swift"),
+      encoding: .utf8
+    )
+    let settings = try String(
+      contentsOf: packageRoot.appendingPathComponent("Sources/Org2Workspace/MobileRemoteSettingsView.swift"),
+      encoding: .utf8
+    )
+
+    XCTAssertTrue(contentView.contains(#"Text("Connect an agent")"#))
+    XCTAssertTrue(contentView.contains(#"DisclosureGroup("Workspace options""#))
+    XCTAssertTrue(contentView.contains(#"Button("Continue to Home")"#))
+    XCTAssertFalse(contentView.contains("Five-minute launch path"))
+    XCTAssertTrue(settings.contains(#"Label("Workspace", systemImage: "folder")"#))
+    XCTAssertTrue(settings.contains(#"TextField("Name", text: $corpusName)"#))
+    XCTAssertTrue(settings.contains(#"Button("Open Another Corpus…")"#))
+  }
+
   func testPrimaryWorkspaceViewsKeepPaneLocalRefreshActions() throws {
     let testFile = URL(fileURLWithPath: #filePath)
     let packageRoot = testFile

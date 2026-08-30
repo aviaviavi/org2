@@ -514,8 +514,9 @@ final class Org2ModelsTests: XCTestCase {
 
     let welcome = try String(contentsOf: welcomeURL, encoding: .utf8)
     XCTAssertTrue(welcome.contains("#+TITLE: Welcome to OpenOrg"))
-    XCTAssertTrue(welcome.contains("* TODO Capture your first real commitment"))
-    XCTAssertTrue(welcome.contains("* Five-minute path"))
+    XCTAssertTrue(welcome.contains("* Your workspace"))
+    XCTAssertTrue(welcome.contains("Start on Home"))
+    XCTAssertTrue(welcome.contains("move or rename this folder"))
     XCTAssertTrue(welcome.contains("Open =Help → Getting Started="))
 
     let configData = try Data(contentsOf: root.appendingPathComponent("org2.json"))
@@ -526,6 +527,55 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(identity["schema"] as? String, "org2:corpus:v1")
     XCTAssertEqual(identity["kind"] as? String, "personal")
     XCTAssertFalse((identity["id"] as? String ?? "").isEmpty)
+  }
+
+  func testAutomaticStarterCorpusUsesPreferredEmptyFolderAndAvoidsUnrelatedFiles() throws {
+    let parent = FileManager.default.temporaryDirectory
+      .appendingPathComponent("openorg-automatic-corpus-\(UUID().uuidString)", isDirectory: true)
+    let preferred = parent.appendingPathComponent("OpenOrg", isDirectory: true)
+    try FileManager.default.createDirectory(at: preferred, withIntermediateDirectories: true)
+    try "keep me\n".write(
+      to: preferred.appendingPathComponent("unrelated.txt"),
+      atomically: true,
+      encoding: .utf8
+    )
+    defer { try? FileManager.default.removeItem(at: parent) }
+
+    let created = try WorkspaceStore.prepareAutomaticStarterCorpus(preferredRoot: preferred)
+
+    XCTAssertEqual(created.lastPathComponent, "OpenOrg 2")
+    XCTAssertTrue(FileManager.default.fileExists(atPath: created.appendingPathComponent("org2.json").path))
+    XCTAssertEqual(
+      try String(contentsOf: preferred.appendingPathComponent("unrelated.txt"), encoding: .utf8),
+      "keep me\n"
+    )
+  }
+
+  @MainActor
+  func testBootstrapCreatesStarterCorpusAndOpensHomeBeforeAgentSetup() async throws {
+    let parent = FileManager.default.temporaryDirectory
+      .appendingPathComponent("openorg-first-run-\(UUID().uuidString)", isDirectory: true)
+    let preferred = parent.appendingPathComponent("OpenOrg", isDirectory: true)
+    let suiteName = "openorg-first-run-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer {
+      defaults.removePersistentDomain(forName: suiteName)
+      try? FileManager.default.removeItem(at: parent)
+    }
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      automaticStarterCorpusURL: preferred
+    )
+
+    await store.bootstrap()
+
+    XCTAssertEqual(store.corpusRoot?.standardizedFileURL.path, preferred.standardizedFileURL.path)
+    XCTAssertEqual(store.selectedSurface, .home)
+    XCTAssertTrue(store.hasWorkspaceDetailContent)
+    XCTAssertTrue(store.isLaunchGuidePresented)
+    XCTAssertTrue(FileManager.default.fileExists(atPath: preferred.appendingPathComponent("org2.json").path))
+    XCTAssertTrue(store.selectedLocation?.file.contains("/daily/") == true)
   }
 
   @MainActor
@@ -544,6 +594,56 @@ final class Org2ModelsTests: XCTestCase {
     store.completeLaunchGuide()
     XCTAssertFalse(store.isLaunchGuidePresented)
     XCTAssertTrue(defaults.bool(forKey: "Org2Workspace.openOrgLaunchGuideCompleted.v1"))
+  }
+
+  @MainActor
+  func testLaunchGuideConnectsSelectedAgentAndLandsOnHome() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("openorg-launch-agent-\(UUID().uuidString)", isDirectory: true)
+    let suiteName = "openorg-launch-agent-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer {
+      defaults.removePersistentDomain(forName: suiteName)
+      try? FileManager.default.removeItem(at: root)
+    }
+    _ = try WorkspaceStore.initializeStarterCorpus(at: root)
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()), defaults: defaults)
+    store.setCorpusRoot(root)
+
+    store.completeLaunchGuide(destinationID: AIChatDestinationConfiguration.localClaudeID)
+
+    XCTAssertEqual(store.selectedSurface, .home)
+    XCTAssertEqual(
+      store.selectedOpenClawChatThread?.destinationID,
+      AIChatDestinationConfiguration.localClaudeID
+    )
+    XCTAssertTrue(store.aiChatDestination(id: AIChatDestinationConfiguration.localClaudeID)?.isEnabled == true)
+    XCTAssertTrue(store.selectedLocation?.file.contains("/daily/") == true)
+    XCTAssertTrue(defaults.bool(forKey: "Org2Workspace.openOrgLaunchGuideCompleted.v1"))
+  }
+
+  @MainActor
+  func testCorpusInfoCanBeUpdatedWithoutChangingItsStableIdentity() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("openorg-corpus-info-\(UUID().uuidString)", isDirectory: true)
+    let suiteName = "openorg-corpus-info-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer {
+      defaults.removePersistentDomain(forName: suiteName)
+      try? FileManager.default.removeItem(at: root)
+    }
+    _ = try WorkspaceStore.initializeStarterCorpus(at: root)
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()), defaults: defaults)
+    store.setCorpusRoot(root)
+    await store.refreshActiveCorpusIdentity()
+    let originalID = try XCTUnwrap(store.activeCorpusIdentity?.id)
+
+    let updated = await store.updateActiveCorpusIdentity(name: "Marc's Workspace", kind: "project")
+
+    XCTAssertTrue(updated)
+    XCTAssertEqual(store.activeCorpusIdentity?.id, originalID)
+    XCTAssertEqual(store.activeCorpusIdentity?.name, "Marc's Workspace")
+    XCTAssertEqual(store.activeCorpusIdentity?.kind, "project")
   }
 
   func testInitializeSharedStarterCorpusRecordsPortableIdentity() throws {

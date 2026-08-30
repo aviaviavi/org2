@@ -594,120 +594,200 @@ final class WorkspaceTabInteractionView: NSView {
 
 private struct OpenOrgLaunchGuideView: View {
   @EnvironmentObject private var store: WorkspaceStore
+  @State private var selectedDestinationID: String?
+  @State private var showsWorkspaceOptions = false
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 18) {
+    VStack(alignment: .leading, spacing: 20) {
       HStack(alignment: .top, spacing: 14) {
         WorkspaceIconBadge(
-          systemImage: "door.left.hand.open",
+          systemImage: "text.bubble.fill",
           tint: .accentColor,
           fill: Color.accentColor.opacity(0.12)
         )
         VStack(alignment: .leading, spacing: 5) {
-          Text("Get useful in five minutes")
+          Text("Connect an agent")
             .font(.title2.weight(.semibold))
-          Text(WorkspaceProductIdentity.primaryPromise)
+          Text("Choose an agent already installed on this Mac. OpenOrg will take you straight to a familiar chat box with today's note beside it.")
             .font(.callout)
             .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
         }
         Spacer()
       }
 
-      VStack(spacing: 0) {
-        guideStep(
-          number: 1,
-          title: "Connect your files",
-          detail: "This workspace is an ordinary folder. OpenOrg derives views without moving your source of truth into a private database.",
-          actionTitle: nil,
-          action: nil
+      VStack(spacing: 10) {
+        agentOption(
+          id: AIChatDestinationConfiguration.localCodexID,
+          title: "Codex",
+          detail: codexDetail,
+          systemImage: AIChatRuntime.codex.systemImage,
+          isAvailable: store.isLocalCodexInstalled,
+          badge: store.codexAccountState.isReady ? "Ready" : (store.isLocalCodexInstalled ? "Sign in" : "Not installed")
         )
-        Divider()
-        guideStep(
-          number: 2,
-          title: "Capture one commitment",
-          detail: "Add a scheduled task to today's daily note so it has a concrete place in your work.",
-          actionTitle: "Open Capture",
-          action: store.launchGuideCaptureItem
+        agentOption(
+          id: AIChatDestinationConfiguration.localClaudeID,
+          title: "Claude Code",
+          detail: store.isLocalClaudeCodeInstalled
+            ? "Uses your existing local Claude Code installation and sign-in."
+            : "Install and sign in to Claude Code first, then reopen this guide.",
+          systemImage: AIChatRuntime.claude.systemImage,
+          isAvailable: store.isLocalClaudeCodeInstalled,
+          badge: store.isLocalClaudeCodeInstalled ? "Installed" : "Not installed"
         )
-        Divider()
-        guideStep(
-          number: 3,
-          title: "See it in Agenda",
-          detail: "Select the commitment and keep its surrounding file context one click away.",
-          actionTitle: "Open Agenda",
-          action: store.launchGuideOpenAgenda
-        )
-        Divider()
-        guideStep(
-          number: 4,
-          title: "Ask an agent for bounded work",
-          detail: "Choose any configured destination. The agent can use authorized local context while the durable result remains in your workspace.",
-          actionTitle: "Ask an Agent",
-          action: store.launchGuideAskAgent
-        )
-        Divider()
-        guideStep(
-          number: 5,
-          title: "Review the result and keep the files",
-          detail: "Inspect citations, artifacts, and approvals in Agent Work, then open the same Org2 files in any editor.",
-          actionTitle: "Open Agent Work",
-          action: store.launchGuideOpenAgentWork
+        agentOption(
+          id: AIChatDestinationConfiguration.openClawID,
+          title: "OpenClaw",
+          detail: "Use an OpenClaw Gateway you already run locally or on your network.",
+          systemImage: AIChatRuntime.openClaw.systemImage,
+          isAvailable: true,
+          badge: "Existing gateway"
         )
       }
-      .background(
-        RoundedRectangle(cornerRadius: 14, style: .continuous)
-          .fill(WorkspaceDesign.panelFill)
-          .overlay {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-              .stroke(WorkspaceDesign.hairline, lineWidth: 1)
+
+      if selectedDestinationID == AIChatDestinationConfiguration.localCodexID,
+         store.isLocalCodexInstalled,
+         !store.codexAccountState.isReady {
+        HStack(spacing: 10) {
+          Text(store.codexAccountState.label)
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .lineLimit(2)
+          Spacer()
+          Button {
+            Task { await store.beginCodexChatGPTLogin() }
+          } label: {
+            if store.isCodexSigningIn {
+              HStack(spacing: 6) {
+                WorkspaceActivityIndicator(size: .small, style: .signal)
+                Text("Signing In")
+              }
+            } else {
+              Text("Sign in with ChatGPT")
+            }
           }
-      )
+          .disabled(store.isCodexSigningIn)
+        }
+        .padding(12)
+        .background(Color.accentColor.opacity(0.07), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+      }
+
+      DisclosureGroup("Workspace options", isExpanded: $showsWorkspaceOptions) {
+        VStack(alignment: .leading, spacing: 10) {
+          Text("OpenOrg created a plain-text workspace automatically. You can move or rename it later, or choose another folder now.")
+            .font(.callout)
+            .foregroundStyle(.secondary)
+          if let root = store.corpusRoot {
+            Text(root.path)
+              .font(.caption.monospaced())
+              .foregroundStyle(.secondary)
+              .textSelection(.enabled)
+          }
+          HStack {
+            Button("Use Another Folder…") { store.chooseCorpus() }
+            Button("Reveal in Finder") { store.launchGuideRevealWorkspace() }
+          }
+        }
+        .padding(.top, 8)
+      }
 
       HStack {
-        Button("Reveal Workspace in Finder") {
-          store.launchGuideRevealWorkspace()
-        }
-        Spacer()
-        Button("Later") {
-          store.dismissLaunchGuide()
-        }
-        Button("Done") {
+        Button("Continue without an agent") {
           store.completeLaunchGuide()
         }
+        Spacer()
+        Button("Continue to Home") {
+          store.completeLaunchGuide(destinationID: selectedDestinationID)
+        }
         .buttonStyle(.borderedProminent)
+        .disabled(!canContinue)
       }
     }
     .padding(24)
-    .frame(width: 720)
-  }
-
-  private func guideStep(
-    number: Int,
-    title: String,
-    detail: String,
-    actionTitle: String?,
-    action: (() -> Void)?
-  ) -> some View {
-    HStack(alignment: .top, spacing: 14) {
-      Text(String(number))
-        .font(.caption.monospacedDigit().weight(.bold))
-        .foregroundStyle(.tint)
-        .frame(width: 24, height: 24)
-        .background(Color.accentColor.opacity(0.12), in: Circle())
-      VStack(alignment: .leading, spacing: 4) {
-        Text(title)
-          .font(.body.weight(.semibold))
-        Text(detail)
-          .font(.callout)
-          .foregroundStyle(.secondary)
-          .fixedSize(horizontal: false, vertical: true)
+    .frame(width: 680)
+    .onAppear {
+      if selectedDestinationID == nil {
+        selectedDestinationID = store.selectedOpenClawChatThread?.destinationID
+          ?? store.suggestedLaunchGuideDestinationID()
       }
-      Spacer(minLength: 12)
-      if let actionTitle, let action {
-        Button(actionTitle, action: action)
+      if store.isLocalCodexInstalled {
+        Task { await store.refreshCodexAccount() }
       }
     }
-    .padding(14)
+  }
+
+  private var codexDetail: String {
+    guard store.isLocalCodexInstalled else {
+      return "Install Codex or the ChatGPT desktop app first, then reopen this guide."
+    }
+    return store.codexAccountState.isReady
+      ? "Uses the Codex installation and ChatGPT sign-in already on this Mac."
+      : "Sign in with ChatGPT once, then OpenOrg can start local Codex chats."
+  }
+
+  private var canContinue: Bool {
+    switch selectedDestinationID {
+    case AIChatDestinationConfiguration.localCodexID:
+      store.isLocalCodexInstalled && store.codexAccountState.isReady
+    case AIChatDestinationConfiguration.localClaudeID:
+      store.isLocalClaudeCodeInstalled
+    case AIChatDestinationConfiguration.openClawID:
+      true
+    default:
+      false
+    }
+  }
+
+  private func agentOption(
+    id: String,
+    title: String,
+    detail: String,
+    systemImage: String,
+    isAvailable: Bool,
+    badge: String
+  ) -> some View {
+    Button {
+      selectedDestinationID = id
+    } label: {
+      HStack(alignment: .top, spacing: 12) {
+        Image(systemName: systemImage)
+          .font(.title3)
+          .foregroundStyle(selectedDestinationID == id ? Color.accentColor : Color.secondary)
+          .frame(width: 28, height: 28)
+        VStack(alignment: .leading, spacing: 4) {
+          Text(title)
+            .font(.body.weight(.semibold))
+            .foregroundStyle(.primary)
+          Text(detail)
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        Spacer(minLength: 12)
+        Text(badge)
+          .font(.caption.weight(.medium))
+          .foregroundStyle(selectedDestinationID == id ? Color.accentColor : Color.secondary)
+          .padding(.horizontal, 8)
+          .padding(.vertical, 4)
+          .background(
+            (selectedDestinationID == id ? Color.accentColor : Color.secondary).opacity(0.09),
+            in: Capsule()
+          )
+      }
+      .padding(14)
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .disabled(!isAvailable)
+    .background(WorkspaceDesign.panelFill, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    .overlay {
+      RoundedRectangle(cornerRadius: 12, style: .continuous)
+        .stroke(
+          selectedDestinationID == id ? Color.accentColor.opacity(0.7) : WorkspaceDesign.hairline,
+          lineWidth: selectedDestinationID == id ? 1.5 : 1
+        )
+    }
+    .opacity(isAvailable ? 1 : 0.68)
   }
 }
 

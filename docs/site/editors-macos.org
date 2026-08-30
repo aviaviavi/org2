@@ -3,11 +3,13 @@
 
 OpenOrg brings an ordinary folder of Org and Org2 files into one Mac app. Your files remain the source of truth, so you can also read, edit, sync, or version them with tools you already use.
 
-* Start with a folder
+* Start with an agent and today's note
 
-On first launch, choose *Open an existing corpus*, *Create a new corpus*, or *Create a shared team corpus*. Creating a workspace adds a welcome note and a few useful folders without overwriting files already there.
+On first launch, OpenOrg creates a plain-text workspace automatically and asks you to connect an agent already available on your Mac. Choose local Codex, local Claude Code, or an OpenClaw Gateway you already run. You can also continue without AI; OpenOrg does not require an account or agent.
 
-The short getting-started guide walks through a complete first loop: capture a commitment, find it in Agenda, ask an agent for bounded help, and review the result. You can reopen it later from *Help → Getting Started*.
+After setup, Home opens immediately with a chat box and today's daily note side by side. Ask a question, write in the note, or do both. The initial workspace lives in a normal folder that you can move or rename. Use *OpenOrg → Settings… → Workspace* to update its portable name and kind, reveal it in Finder, or open a different corpus.
+
+If you already keep notes in another folder, choose it from the workspace options during setup or mount it later from the corpus switcher. OpenOrg derives its views without moving your source of truth into a private database.
 
 Global capture works anywhere on your Mac while OpenOrg is running. Press =Cmd-Ctrl-Return= to add a note or task to today's daily note, including dates, tags, links, files, or images.
 

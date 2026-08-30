@@ -1928,6 +1928,7 @@ public final class WorkspaceStore: ObservableObject {
 
   public let cli: Org2CLI
   private let defaults: UserDefaults
+  private let automaticStarterCorpusURL: URL?
   private let sourceScheduleStateStore: WorkspaceSourceScheduleStateStore
   private let meetingRecorder = MeetingAudioRecorder()
   private let openClawVoiceRecorder = MeetingAudioRecorder()
@@ -2279,7 +2280,8 @@ public final class WorkspaceStore: ObservableObject {
     openClawRecoveryHandler: (@Sendable (OpenClawPendingTurn, String) async throws -> String)? = nil,
     codexSendHandlerForTesting: (@Sendable ([OpenClawChatMessage], UUID, OpenClawWorkspaceContext) async throws -> String)? = nil,
     claudeSendHandlerForTesting: (@Sendable ([OpenClawChatMessage], UUID, OpenClawWorkspaceContext) async throws -> ClaudeCodeTurnResult)? = nil,
-    legacyDefaultsDomains: [String]? = nil
+    legacyDefaultsDomains: [String]? = nil,
+    automaticStarterCorpusURL: URL? = nil
   ) {
     let initialWorkspaceTab = WorkspaceTab(
       title: WorkspaceSurface.home.title,
@@ -2288,6 +2290,8 @@ public final class WorkspaceStore: ObservableObject {
     workspaceTabs = [initialWorkspaceTab]
     selectedWorkspaceTabID = initialWorkspaceTab.id
     self.defaults = defaults
+    self.automaticStarterCorpusURL = automaticStarterCorpusURL
+      ?? (NSClassFromString("XCTestCase") == nil ? Self.defaultStarterCorpusURL() : nil)
     sourceScheduleStateStore = WorkspaceSourceScheduleStateStore(defaults: defaults)
     mountedCorpora = Self.shouldIgnoreStandardDefaultsForTests(defaults)
       ? []
@@ -2403,6 +2407,18 @@ public final class WorkspaceStore: ObservableObject {
             persistsDefault: false,
             openClawMigrationSource: appOpenClawTranscriptURL
           )
+        } else if let automaticStarterCorpusURL {
+          do {
+            let root = try Self.prepareAutomaticStarterCorpus(
+              preferredRoot: automaticStarterCorpusURL
+            )
+            setCorpusRoot(root)
+            selectedSurface = .home
+            statusText = "Created your OpenOrg workspace"
+          } catch {
+            errorText = error.localizedDescription
+            statusText = "Could not create the starter workspace"
+          }
         }
       }
     }
@@ -2429,6 +2445,7 @@ public final class WorkspaceStore: ObservableObject {
         await refreshOpenClawThreads()
         await applyScreenshotModeFromEnvironment()
       }
+      presentLaunchGuideIfNeeded()
     } else {
       statusText = "No corpus selected"
     }
@@ -2593,6 +2610,7 @@ public final class WorkspaceStore: ObservableObject {
       setCorpusRoot(url)
       Task {
         await refreshWorkspace()
+        openHome()
         presentLaunchGuideIfNeeded()
       }
     }
@@ -2607,36 +2625,41 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func completeLaunchGuide() {
+    completeLaunchGuide(destinationID: nil)
+  }
+
+  public func completeLaunchGuide(destinationID: String?) {
+    if let destinationID,
+       var destination = aiChatDestination(id: destinationID) {
+      if !destination.isEnabled {
+        destination.isEnabled = true
+        updateAIChatDestination(destination)
+      }
+      if selectedOpenClawChatThread?.destinationID != destinationID {
+        createAIChatThread(destinationID: destinationID)
+      }
+    }
     defaults.set(true, forKey: launchGuideCompletedKey)
     isLaunchGuidePresented = false
+    selectedSurface = .home
+    openHome()
   }
 
-  public func launchGuideCaptureItem() {
-    isLaunchGuidePresented = false
-    Task { @MainActor in
-      await Task.yield()
-      isCapturePanelPresented = true
-    }
+  public var isLocalCodexInstalled: Bool {
+    CodexAppServerClient.resolveExecutableURL() != nil
   }
 
-  public func launchGuideOpenAgenda() {
-    isLaunchGuidePresented = false
-    selectedSurface = .agenda
+  public var isLocalClaudeCodeInstalled: Bool {
+    ClaudeCodeClient.resolveExecutableURL() != nil
   }
 
-  public func launchGuideAskAgent() {
-    isLaunchGuidePresented = false
-    makeSurfacePrimary(.openClaw)
-  }
-
-  public func launchGuideOpenAgentWork() {
-    isLaunchGuidePresented = false
-    runsAndReviewPage = .review
-    selectedSurface = .approvals
+  public func suggestedLaunchGuideDestinationID() -> String? {
+    if isLocalCodexInstalled { return AIChatDestinationConfiguration.localCodexID }
+    if isLocalClaudeCodeInstalled { return AIChatDestinationConfiguration.localClaudeID }
+    return nil
   }
 
   public func launchGuideRevealWorkspace() {
-    isLaunchGuidePresented = false
     guard let corpusRoot else { return }
     NSWorkspace.shared.activateFileViewerSelecting([corpusRoot])
   }
@@ -2668,21 +2691,62 @@ public final class WorkspaceStore: ObservableObject {
     guard panel.runModal() == .OK, let url = panel.url else { return }
 
     do {
-      let welcomeURL = try Self.initializeStarterCorpus(at: url, kind: kind)
+      _ = try Self.initializeStarterCorpus(at: url, kind: kind)
       setCorpusRoot(url)
-      selectedSurface = .files
+      selectedSurface = .home
       statusText = "Created starter corpus at \(url.standardizedFileURL.path)"
       Task {
         await refreshWorkspace()
-        if let welcome = corpusFiles.filter({ $0.path == welcomeURL.path }).first {
-          selectCorpusFile(welcome)
-        }
+        openHome()
         presentLaunchGuideIfNeeded()
       }
     } catch {
       statusText = error.localizedDescription
       errorText = error.localizedDescription
     }
+  }
+
+  nonisolated static func defaultStarterCorpusURL(
+    fileManager: FileManager = .default
+  ) -> URL {
+    let documents = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first
+      ?? fileManager.homeDirectoryForCurrentUser.appendingPathComponent("Documents", isDirectory: true)
+    return documents.appendingPathComponent("OpenOrg", isDirectory: true).standardizedFileURL
+  }
+
+  nonisolated static func prepareAutomaticStarterCorpus(
+    preferredRoot: URL,
+    fileManager: FileManager = .default
+  ) throws -> URL {
+    let preferred = preferredRoot.standardizedFileURL
+    let parent = preferred.deletingLastPathComponent()
+    let baseName = preferred.lastPathComponent.isEmpty ? "OpenOrg" : preferred.lastPathComponent
+
+    for suffix in 1...100 {
+      let candidate = suffix == 1
+        ? preferred
+        : parent.appendingPathComponent("\(baseName) \(suffix)", isDirectory: true)
+      var isDirectory: ObjCBool = false
+      if !fileManager.fileExists(atPath: candidate.path, isDirectory: &isDirectory) {
+        _ = try initializeStarterCorpus(at: candidate)
+        return candidate
+      }
+      guard isDirectory.boolValue else { continue }
+      if fileManager.fileExists(atPath: candidate.appendingPathComponent("org2.json").path) {
+        return candidate
+      }
+      let visibleEntries = try fileManager.contentsOfDirectory(
+        at: candidate,
+        includingPropertiesForKeys: nil,
+        options: [.skipsHiddenFiles]
+      )
+      if visibleEntries.isEmpty {
+        _ = try initializeStarterCorpus(at: candidate)
+        return candidate
+      }
+    }
+
+    throw StarterCorpusCreationError.notEmpty(preferred.path)
   }
 
   nonisolated static func initializeStarterCorpus(at url: URL, kind: String = "personal") throws -> URL {
@@ -2752,31 +2816,16 @@ public final class WorkspaceStore: ObservableObject {
     let welcome = """
     #+TITLE: Welcome to OpenOrg
 
-    * Start here
+    * Your workspace
 
-    OpenOrg is a local-first workspace built on the open Org2 format. This folder is an Org2 corpus: its plain-text files are the source of truth, while Agenda, search, graph, agent context, and published views are derived from them.
+    OpenOrg keeps its source of truth in this ordinary folder. Start on Home: ask your connected agent a question, or write directly in today's note beside the chat.
 
-    * TODO Capture your first real commitment
+    - Daily notes live in =daily/=.
+    - Longer-lived notes live in =notes/=.
+    - Agent output stays reviewable in =views/= or =compiled/=.
+    - Open =Help → Getting Started= whenever you want to reconnect an agent or review the basics.
 
-    Use Capture to add a scheduled task, then open Agenda to see it appear with the context that created it.
-
-    * Five-minute path
-
-    1. Capture one scheduled commitment.
-    2. Open Agenda and select it.
-    3. Ask a configured agent to perform one bounded task using the local context.
-    4. Open Agent Work to inspect citations, output, and anything awaiting approval.
-    5. Open this file in another editor to confirm the work remains ordinary text you control.
-
-    * Next steps
-
-    - Open =Help → Getting Started= whenever you want the guided path again.
-    - Use Capture to append a note or TODO to today's daily note.
-    - Use daily notes for quick capture and =notes/= for durable knowledge.
-    - Keep =inbox.org2= as an optional transport/import buffer when a sync client cannot safely append to the active daily note.
-    - Put generated, reviewable work in =views/= or =compiled/= before promoting it into canonical notes.
-    - Keep reusable processes as editable Org2 files in =workflows/=.
-    - Open any file in source mode whenever you want full-fidelity text editing.
+    You can move or rename this folder, open the files in another editor, and change its name or location later in OpenOrg settings.
     """
     try (welcome + "\n").write(to: welcomeURL, atomically: true, encoding: .utf8)
     return welcomeURL
@@ -3078,6 +3127,43 @@ public final class WorkspaceStore: ObservableObject {
     } catch {
       activeCorpusIdentity = nil
       upsertCorpusMount(path: corpusRoot.path, identity: nil)
+    }
+  }
+
+  public func updateActiveCorpusIdentity(name rawName: String, kind rawKind: String) async -> Bool {
+    guard let corpusRoot, let identity = activeCorpusIdentity else {
+      errorText = "Open a corpus before changing its information."
+      return false
+    }
+    let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+    let kind = rawKind.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    guard !name.isEmpty else {
+      errorText = "Corpus name cannot be empty."
+      return false
+    }
+    guard ["personal", "project", "shared"].contains(kind) else {
+      errorText = "Corpus kind must be personal, project, or shared."
+      return false
+    }
+
+    let arguments = [
+      "corpus", "init",
+      "--dir", corpusRoot.path,
+      "--id", identity.id,
+      "--name", name,
+      "--kind", kind,
+      "--json"
+    ]
+    do {
+      _ = try await cli.run(arguments)
+      _ = try await cli.run(arguments + ["--apply"])
+      await refreshActiveCorpusIdentity()
+      statusText = "Updated corpus information"
+      return true
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Could not update corpus information"
+      return false
     }
   }
 

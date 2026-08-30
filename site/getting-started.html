@@ -67,27 +67,33 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <p class="org2-document-subtitle" role="doc-subtitle">Reach the first useful OpenOrg loop in about five minutes.</p>
 </header>
 <section class="org2-page-intro">
-  <p>Start with the OpenOrg Mac app: open a folder you own, capture one commitment, see it in Agenda, ask an agent for one bounded outcome, and review the cited result. You do not need Emacs or prior Org mode experience.</p>
+  <p>Start with the OpenOrg Mac app: connect an agent you already use, ask a question from Home, and keep today's note beside the conversation. You do not need Emacs, prior Org mode experience, or an OpenOrg account.</p>
   <div class="org2-page-summary org2-page-summary-sequence" aria-label="Getting started overview">
-    <div><strong>Open local files.</strong><span>Your workspace is an ordinary folder of readable text that you control.</span></div>
-    <div><strong>Capture and delegate.</strong><span>Schedule one real commitment, then ask any configured agent for bounded work.</span></div>
-    <div><strong>Review and keep control.</strong><span>Inspect citations and approvals while the durable result stays in your files.</span></div>
+    <div><strong>Connect an agent.</strong><span>Choose local Codex, local Claude Code, or an OpenClaw Gateway you already run.</span></div>
+    <div><strong>Start from Home.</strong><span>A familiar chat box and today's note are ready immediately.</span></div>
+    <div><strong>Keep control.</strong><span>The automatically created workspace remains an ordinary folder you can move, rename, or replace.</span></div>
   </div>
 </section>
 <section class="org2-headline level-1">
-<h1 id="1-install-the-mac-app">1) Install the Mac app</h1>
-<p>OpenOrg is the recommended starting point. It gives you capture, daily notes, Agenda, search, rendered files, agent threads, and Agent Work without requiring you to learn the Org2 format first.</p>
+<h1 id="1-install-the-mac-app-and-connect-an-agent">1) Install the Mac app and connect an agent</h1>
+<p>OpenOrg is the recommended starting point. It gives you a simple Home view first, with deeper notes, planning, search, meetings, and Agent Work available when you need them.</p>
 <ol>
 <li><p>Download the latest <code>OpenOrg.dmg</code> from the <a href="downloads.html">downloads page</a>.</p></li>
 <li><p>Open the disk image and drag <code>OpenOrg.app</code> into <code>Applications</code>.</p></li>
-<li><p>Open the app and choose <strong>Create a new corpus</strong>.</p></li>
-<li><p>Pick a folder that you can easily find and back up.</p></li>
+<li><p>Open the app and choose an agent already installed on your Mac.</p></li>
+<li><p>Sign in if needed, then choose <strong>Continue to Home</strong>.</p></li>
 </ol>
-<p>OpenOrg creates a small Org2 workspace with a welcome note and folders for daily notes, ordinary notes, generated views, and workflows. Everything is plain text that you can inspect in Finder, Git, or another editor. OpenOrg never requires an app-specific canonical database.</p>
-<p>If you already keep notes in a folder, choose <strong>Open an existing corpus</strong> instead. Markdown and other plain-text material can live alongside Org2 files while you adopt Org2 gradually.</p>
+<p>OpenOrg creates a small workspace automatically, then opens Home with a chat box and today's note. Everything is plain text that you can inspect in Finder, Git, or another editor. OpenOrg never requires an app-specific canonical database.</p>
+<p>You can continue without an agent. If you already keep notes in another folder, expand <strong>Workspace options</strong> during setup or open it later. Use <strong>OpenOrg → Settings… → Workspace</strong> to rename the corpus identity, reveal its folder, or switch locations.</p>
 </section>
 <section class="org2-headline level-1">
-<h1 id="2-capture-one-scheduled-commitment">2) Capture one scheduled commitment</h1>
+<h1 id="2-ask-something-or-write-todays-note">2) Ask something or write today's note</h1>
+<p>Home is deliberately familiar: type into the chat box to ask the connected agent a question, or type directly into today's note beside it. The note is ordinary text, and you can bring it into the conversation whenever it is useful context.</p>
+<p>Try a concrete first request:</p>
+<blockquote>Help me turn today's rough notes into a short plan. Show me the proposed structure before changing any files.</blockquote>
+</section>
+<section class="org2-headline level-1">
+<h1 id="3-capture-one-scheduled-commitment">3) Capture one scheduled commitment</h1>
 <p>Open <strong>Capture</strong>, keep <strong>Task</strong> selected, give the commitment a concrete title, and leave <strong>Scheduled</strong> enabled for today. OpenOrg appends the task to today's daily note and refreshes Agenda.</p>
 <p>Open <strong>Agenda</strong> and select the task. The task stays connected to the source file and any surrounding decision, meeting, or project context.</p>
 <p>You can also click <strong>New Note</strong> and write normally. A note might be a project, meeting, person, recipe, decision, or anything else you want to remember.</p>
@@ -113,21 +119,14 @@ SCHEDULED: &lt;2030-01-15 Tue&gt;
 <p>You can use the app's controls for everyday work and open the readable source whenever you want it.</p>
 </section>
 <section class="org2-headline level-1">
-<h1 id="3-use-today-and-agenda">3) Use Today and Agenda</h1>
+<h1 id="4-use-today-and-agenda">4) Use Today and Agenda</h1>
 <p>Open <strong>Today</strong> for a lightweight daily note. Use it for quick thoughts, a running log, or tasks that do not yet need their own file.</p>
 <p>Open <strong>Agenda</strong> to see actionable items collected across the entire corpus. Mark an item done, reschedule it, assign a priority, or open its source note. You do not need to manually copy tasks into a separate task manager.</p>
 </section>
 <section class="org2-headline level-1">
-<h1 id="4-ask-an-agent-for-bounded-work">4) Ask an agent for bounded work</h1>
-<p>AI is optional. Your files work without a model or agent.</p>
-<p>To connect one, open <strong>OpenOrg → Settings… → AI Chat</strong>. Add or enable a named local, remote, hosted, or self-hosted destination. Agents outside the native app can use the same corpus through CLI JSON and MCP.</p>
-<p>With the captured task selected, open <strong>AI Chat</strong> and ask for one concrete outcome with a clear boundary:</p>
-<blockquote>Prepare a one-page launch brief using this task and its linked context. Cite every input and leave the result for review; do not publish or message anyone.</blockquote>
-<p>The destination is replaceable. OpenOrg records the selected files, thread, run, citations, and resulting artifact as durable workspace context.</p>
-</section>
-<section class="org2-headline level-1">
-<h1 id="5-review-the-cited-result">5) Review the cited result</h1>
-<p>Open <strong>Agent Work</strong>. Inspect the run status, cited inputs, artifact, validation, and anything awaiting approval. Approve, revise, or reject consequential work based on that evidence.</p>
+<h1 id="5-review-agent-work-when-needed">5) Review agent work when needed</h1>
+<p>For a bounded delegated task, select the relevant note or commitment and ask for one concrete outcome. OpenOrg records the selected files, thread, run, citations, and resulting artifact as durable workspace context.</p>
+<p>Open <strong>Agent Work</strong> to inspect the run status, cited inputs, artifact, validation, and anything awaiting approval. Approve, revise, or reject consequential work based on that evidence.</p>
 <p>Finally, reveal the workspace in Finder and open the resulting <code>.org2</code> file in another editor. The first useful loop ends with portable work you control.</p>
 </section>
 <section class="org2-headline level-1">
@@ -144,6 +143,7 @@ SCHEDULED: &lt;2030-01-15 Tue&gt;
 <h1 id="find-and-connect-what-you-know">Find and connect what you know</h1>
 <p>Use <code>Command-K</code> to quickly open any file or heading. Global search finds text, tasks, agent work, and other indexed workspace records.</p>
 <p>When two ideas belong together, add a link. Org2 keeps source locations and backlinks, so a person, project, meeting, or decision stays connected to the work that came from it.</p>
+<p>OpenOrg's agent connection is provider-neutral. Other local, remote, hosted, or self-hosted tools can work with the same corpus through CLI JSON and MCP interfaces; Codex, Claude Code, and OpenClaw are convenient built-in starting points, not requirements.</p>
 <p>Do not try to design the perfect folder structure on day one. A few notes plus daily capture are enough; reorganize later as useful patterns emerge.</p>
 </section>
 <section class="org2-headline level-1">

@@ -3,29 +3,39 @@
 
 #+BEGIN_EXPORT html
 <section class="org2-page-intro">
-  <p>Start with the OpenOrg Mac app: open a folder you own, capture one commitment, see it in Agenda, ask an agent for one bounded outcome, and review the cited result. You do not need Emacs or prior Org mode experience.</p>
+  <p>Start with the OpenOrg Mac app: connect an agent you already use, ask a question from Home, and keep today's note beside the conversation. You do not need Emacs, prior Org mode experience, or an OpenOrg account.</p>
   <div class="org2-page-summary org2-page-summary-sequence" aria-label="Getting started overview">
-    <div><strong>Open local files.</strong><span>Your workspace is an ordinary folder of readable text that you control.</span></div>
-    <div><strong>Capture and delegate.</strong><span>Schedule one real commitment, then ask any configured agent for bounded work.</span></div>
-    <div><strong>Review and keep control.</strong><span>Inspect citations and approvals while the durable result stays in your files.</span></div>
+    <div><strong>Connect an agent.</strong><span>Choose local Codex, local Claude Code, or an OpenClaw Gateway you already run.</span></div>
+    <div><strong>Start from Home.</strong><span>A familiar chat box and today's note are ready immediately.</span></div>
+    <div><strong>Keep control.</strong><span>The automatically created workspace remains an ordinary folder you can move, rename, or replace.</span></div>
   </div>
 </section>
 #+END_EXPORT
 
-* 1) Install the Mac app
+* 1) Install the Mac app and connect an agent
 
-OpenOrg is the recommended starting point. It gives you capture, daily notes, Agenda, search, rendered files, agent threads, and Agent Work without requiring you to learn the Org2 format first.
+OpenOrg is the recommended starting point. It gives you a simple Home view first, with deeper notes, planning, search, meetings, and Agent Work available when you need them.
 
 1. Download the latest =OpenOrg.dmg= from the [[file:downloads.org][downloads page]].
 2. Open the disk image and drag =OpenOrg.app= into =Applications=.
-3. Open the app and choose *Create a new corpus*.
-4. Pick a folder that you can easily find and back up.
+3. Open the app and choose an agent already installed on your Mac.
+4. Sign in if needed, then choose *Continue to Home*.
 
-OpenOrg creates a small Org2 workspace with a welcome note and folders for daily notes, ordinary notes, generated views, and workflows. Everything is plain text that you can inspect in Finder, Git, or another editor. OpenOrg never requires an app-specific canonical database.
+OpenOrg creates a small workspace automatically, then opens Home with a chat box and today's note. Everything is plain text that you can inspect in Finder, Git, or another editor. OpenOrg never requires an app-specific canonical database.
 
-If you already keep notes in a folder, choose *Open an existing corpus* instead. Markdown and other plain-text material can live alongside Org2 files while you adopt Org2 gradually.
+You can continue without an agent. If you already keep notes in another folder, expand *Workspace options* during setup or open it later. Use *OpenOrg → Settings… → Workspace* to rename the corpus identity, reveal its folder, or switch locations.
 
-* 2) Capture one scheduled commitment
+* 2) Ask something or write today's note
+
+Home is deliberately familiar: type into the chat box to ask the connected agent a question, or type directly into today's note beside it. The note is ordinary text, and you can bring it into the conversation whenever it is useful context.
+
+Try a concrete first request:
+
+#+begin_quote
+Help me turn today's rough notes into a short plan. Show me the proposed structure before changing any files.
+#+end_quote
+
+* 3) Capture one scheduled commitment
 
 Open *Capture*, keep *Task* selected, give the commitment a concrete title, and leave *Scheduled* enabled for today. OpenOrg appends the task to today's daily note and refreshes Agenda.
 
@@ -58,29 +68,17 @@ Only a few conventions matter at first:
 
 You can use the app's controls for everyday work and open the readable source whenever you want it.
 
-* 3) Use Today and Agenda
+* 4) Use Today and Agenda
 
 Open *Today* for a lightweight daily note. Use it for quick thoughts, a running log, or tasks that do not yet need their own file.
 
 Open *Agenda* to see actionable items collected across the entire corpus. Mark an item done, reschedule it, assign a priority, or open its source note. You do not need to manually copy tasks into a separate task manager.
 
-* 4) Ask an agent for bounded work
+* 5) Review agent work when needed
 
-AI is optional. Your files work without a model or agent.
+For a bounded delegated task, select the relevant note or commitment and ask for one concrete outcome. OpenOrg records the selected files, thread, run, citations, and resulting artifact as durable workspace context.
 
-To connect one, open *OpenOrg → Settings… → AI Chat*. Add or enable a named local, remote, hosted, or self-hosted destination. Agents outside the native app can use the same corpus through CLI JSON and MCP.
-
-With the captured task selected, open *AI Chat* and ask for one concrete outcome with a clear boundary:
-
-#+begin_quote
-Prepare a one-page launch brief using this task and its linked context. Cite every input and leave the result for review; do not publish or message anyone.
-#+end_quote
-
-The destination is replaceable. OpenOrg records the selected files, thread, run, citations, and resulting artifact as durable workspace context.
-
-* 5) Review the cited result
-
-Open *Agent Work*. Inspect the run status, cited inputs, artifact, validation, and anything awaiting approval. Approve, revise, or reject consequential work based on that evidence.
+Open *Agent Work* to inspect the run status, cited inputs, artifact, validation, and anything awaiting approval. Approve, revise, or reject consequential work based on that evidence.
 
 Finally, reveal the workspace in Finder and open the resulting =.org2= file in another editor. The first useful loop ends with portable work you control.
 
@@ -99,6 +97,8 @@ Open *Agent Work* to inspect cited inputs, artifacts, validation, pending decisi
 Use =Command-K= to quickly open any file or heading. Global search finds text, tasks, agent work, and other indexed workspace records.
 
 When two ideas belong together, add a link. Org2 keeps source locations and backlinks, so a person, project, meeting, or decision stays connected to the work that came from it.
+
+OpenOrg's agent connection is provider-neutral. Other local, remote, hosted, or self-hosted tools can work with the same corpus through CLI JSON and MCP interfaces; Codex, Claude Code, and OpenClaw are convenient built-in starting points, not requirements.
 
 Do not try to design the perfect folder structure on day one. A few notes plus daily capture are enough; reorganize later as useful patterns emerge.
 
