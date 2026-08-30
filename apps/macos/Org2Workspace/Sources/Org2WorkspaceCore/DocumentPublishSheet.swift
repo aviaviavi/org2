@@ -12,6 +12,7 @@ struct DocumentPublishSheet: View {
   @State private var googleFolderID = ""
   @State private var googleOAuthClientID = ""
   @State private var googleOAuthClientSecret = ""
+  @State private var showCustomGoogleOAuthClient = false
   @State private var googleCredential: GoogleDriveOAuthCredential?
   @State private var preview: DocumentPublishCLIResult?
   @State private var previewedRequest: DocumentPublishRequest?
@@ -61,6 +62,7 @@ struct DocumentPublishSheet: View {
     )
     .task {
       restoreGoogleCredential()
+      restoreLinkedGoogleDestination()
       await previewPublication()
     }
     .onChange(of: destination) { _, newDestination in
@@ -210,8 +212,29 @@ struct DocumentPublishSheet: View {
           .font(.callout)
           .foregroundStyle(.secondary)
 
-        TextField("Destination folder ID (optional)", text: $googleFolderID)
-          .textFieldStyle(.roundedBorder)
+        if let linkedPublication = existingGooglePublication {
+          VStack(alignment: .leading, spacing: 8) {
+            Label("Linked \(linkedPublication.format.title)", systemImage: "link.circle.fill")
+              .font(.subheadline.weight(.semibold))
+              .foregroundStyle(.green)
+            Text("Publishing again updates this same Google Drive file. Its link and guarded Drive version are saved in the \(linkedPublication.scopeLabel.lowercased()) properties.")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+            HStack {
+              Button("Open Linked Artifact") {
+                NSWorkspace.shared.open(linkedPublication.url)
+              }
+              Button("Copy Link") {
+                copy(linkedPublication.url.absoluteString)
+              }
+            }
+          }
+          .padding(10)
+          .background(Color.green.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+        } else {
+          TextField("Destination folder ID (optional)", text: $googleFolderID)
+            .textFieldStyle(.roundedBorder)
+        }
 
         if let googleCredential {
           HStack(spacing: 8) {
@@ -228,35 +251,59 @@ struct DocumentPublishSheet: View {
           Text("OAuth client: \(abbreviatedClientID(googleCredential.clientID))")
             .font(.caption2.monospaced())
             .foregroundStyle(.tertiary)
-        } else {
-          TextField("Google OAuth Desktop client ID", text: $googleOAuthClientID)
-            .textFieldStyle(.roundedBorder)
-          SecureField("Google OAuth Desktop client secret", text: $googleOAuthClientSecret)
-            .textFieldStyle(.roundedBorder)
-          HStack {
-            Button("Import Client JSON…") {
-              importGoogleOAuthClientJSON()
-            }
-            Button("Connect Google Drive") {
-              Task { await connectGoogleDrive() }
-            }
-            .disabled(
-              isWorking
-                || GoogleDriveOAuthConfiguration.normalizedClientID(googleOAuthClientID) == nil
-            )
-            Button("Create OAuth client…") {
-              if let url = URL(string: "https://console.cloud.google.com/apis/credentials") {
-                NSWorkspace.shared.open(url)
-              }
-            }
+        } else if GoogleDriveOAuthConfiguration.hasManagedClient {
+          Button("Connect Google Drive") {
+            Task { await connectGoogleDrive(usingCustomClient: false) }
           }
-          Text("Download the Desktop app client JSON from Google and import it here, or paste its client ID and client secret. The secret is masked here and saved only with the OAuth credential in macOS Keychain. Authorization opens in your default browser; no Google password or token is entered into OpenOrg.")
+          .disabled(isWorking)
+
+          Text("OpenOrg uses its registered Google OAuth client. Authorization opens in your default browser; your Google password and tokens are never entered into OpenOrg.")
             .font(.caption)
             .foregroundStyle(.secondary)
+
+          DisclosureGroup(
+            "Use a custom OAuth client",
+            isExpanded: $showCustomGoogleOAuthClient
+          ) {
+            customGoogleOAuthClientConfiguration
+              .padding(.top, 8)
+          }
+          .font(.caption)
+        } else {
+          customGoogleOAuthClientConfiguration
         }
       }
       .padding(14)
       .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
+    }
+  }
+
+  private var customGoogleOAuthClientConfiguration: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      TextField("Google OAuth Desktop client ID", text: $googleOAuthClientID)
+        .textFieldStyle(.roundedBorder)
+      SecureField("Google OAuth Desktop client secret", text: $googleOAuthClientSecret)
+        .textFieldStyle(.roundedBorder)
+      HStack {
+        Button("Import Client JSON…") {
+          importGoogleOAuthClientJSON()
+        }
+        Button("Connect with Custom Client") {
+          Task { await connectGoogleDrive(usingCustomClient: true) }
+        }
+        .disabled(
+          isWorking
+            || GoogleDriveOAuthConfiguration.normalizedClientID(googleOAuthClientID) == nil
+        )
+        Button("Create OAuth client…") {
+          if let url = URL(string: "https://console.cloud.google.com/apis/credentials") {
+            NSWorkspace.shared.open(url)
+          }
+        }
+      }
+      Text("Advanced: import the JSON for a Google OAuth client of type Desktop app, or paste its paired client ID and client secret. The secret is masked here and saved only with the resulting OAuth credential in macOS Keychain.")
+        .font(.caption)
+        .foregroundStyle(.secondary)
     }
   }
 
@@ -386,6 +433,9 @@ struct DocumentPublishSheet: View {
           .font(.caption.monospaced())
           .foregroundStyle(.secondary)
           .textSelection(.enabled)
+        Text("OpenOrg saved this link and Drive version in the .org2 source. Publishing the same scope and format again updates this file instead of creating a duplicate.")
+          .font(.callout)
+          .foregroundStyle(.secondary)
         HStack {
           Button(format == .pdf ? "Open in Google Drive" : "Open in \(format.title)") {
             NSWorkspace.shared.open(url)
@@ -436,7 +486,7 @@ struct DocumentPublishSheet: View {
           ProgressView()
             .controlSize(.small)
         }
-        Button(destination == .localLink ? "Publish Local \(format.title)" : "Publish to \(format.title)") {
+        Button(publishButtonTitle) {
           Task { await publish() }
         }
         .keyboardShortcut(.defaultAction)
@@ -459,6 +509,19 @@ struct DocumentPublishSheet: View {
       && preview != nil
       && previewedRequest == request
       && (destination != .googleDrive || googleCredential != nil)
+  }
+
+  private var existingGooglePublication: GoogleDrivePublicationBinding? {
+    store.googleDrivePublication(for: request)
+  }
+
+  private var publishButtonTitle: String {
+    if destination == .localLink {
+      return "Publish Local \(format.title)"
+    }
+    return existingGooglePublication == nil
+      ? "Publish to \(format.title)"
+      : "Update Linked \(format.title)"
   }
 
   private func invalidatePreview() {
@@ -512,44 +575,77 @@ struct DocumentPublishSheet: View {
   }
 
   private func restoreGoogleCredential() {
-    if googleOAuthClientID.isEmpty {
-      googleOAuthClientID = GoogleDriveOAuthConfiguration.configuredClientID() ?? ""
-    }
-    if googleOAuthClientSecret.isEmpty {
-      googleOAuthClientSecret = GoogleDriveOAuthConfiguration.configuredClientSecret() ?? ""
-    }
     if googleCredential == nil,
        let credential = GoogleDriveOAuthCredentialKeychain.readCredential() {
       googleCredential = credential
-      if googleOAuthClientID.isEmpty {
+      if credential.clientID != GoogleDriveOAuthConfiguration.managedClientID() {
         googleOAuthClientID = credential.clientID
-      }
-      if googleOAuthClientSecret.isEmpty {
         googleOAuthClientSecret = credential.clientSecret ?? ""
       }
+      return
+    }
+
+    if GoogleDriveOAuthConfiguration.hasManagedClient {
+      let savedClientID = GoogleDriveOAuthConfiguration.savedClientID()
+      googleOAuthClientID = savedClientID == GoogleDriveOAuthConfiguration.managedClientID()
+        ? ""
+        : savedClientID ?? ""
+      googleOAuthClientSecret = ""
+    } else {
+      showCustomGoogleOAuthClient = true
+      googleOAuthClientID = GoogleDriveOAuthConfiguration.configuredClientID() ?? ""
+      googleOAuthClientSecret = GoogleDriveOAuthConfiguration.configuredClientSecret() ?? ""
     }
   }
 
+  private func restoreLinkedGoogleDestination() {
+    let linked = store.currentDocumentGoogleDrivePublications
+      .filter { $0.scopeLine == nil }
+      .max { left, right in
+        (left.publishedAt ?? .distantPast) < (right.publishedAt ?? .distantPast)
+      }
+    guard let linked else { return }
+    destination = .googleDrive
+    format = linked.format
+  }
+
   @MainActor
-  private func connectGoogleDrive() async {
+  private func connectGoogleDrive(usingCustomClient: Bool) async {
     guard !isWorking else { return }
     isWorking = true
     errorText = nil
     defer { isWorking = false }
     do {
+      let client: GoogleDriveOAuthDesktopClient
+      if usingCustomClient {
+        client = try GoogleDriveOAuthDesktopClient(
+          clientID: googleOAuthClientID,
+          clientSecret: googleOAuthClientSecret
+        )
+      } else {
+        guard let managedClient = GoogleDriveOAuthConfiguration.managedClientPair() else {
+          throw GoogleDriveOAuthError.invalidClientID
+        }
+        guard managedClient.clientSecret != nil else {
+          throw GoogleDriveOAuthError.missingClientSecret
+        }
+        client = managedClient
+      }
       let credential = try await GoogleDriveOAuthClient().authorize(
-        clientID: googleOAuthClientID,
-        clientSecret: googleOAuthClientSecret,
+        clientID: client.clientID,
+        clientSecret: client.clientSecret,
         openAuthorizationURL: { url in
           await MainActor.run {
             NSWorkspace.shared.open(url)
           }
         }
       )
-      GoogleDriveOAuthConfiguration.saveClientID(credential.clientID)
+      if usingCustomClient {
+        GoogleDriveOAuthConfiguration.saveClientID(credential.clientID)
+        googleOAuthClientID = credential.clientID
+        googleOAuthClientSecret = credential.clientSecret ?? ""
+      }
       try GoogleDriveOAuthCredentialKeychain.saveCredential(credential)
-      googleOAuthClientID = credential.clientID
-      googleOAuthClientSecret = credential.clientSecret ?? ""
       googleCredential = credential
     } catch {
       errorText = error.localizedDescription
@@ -558,8 +654,15 @@ struct DocumentPublishSheet: View {
 
   private func disconnectGoogleDrive() {
     do {
+      let disconnectedCredential = googleCredential
       try GoogleDriveOAuthCredentialKeychain.deleteCredential()
       googleCredential = nil
+      if let disconnectedCredential,
+         disconnectedCredential.clientID != GoogleDriveOAuthConfiguration.managedClientID() {
+        googleOAuthClientID = disconnectedCredential.clientID
+        googleOAuthClientSecret = disconnectedCredential.clientSecret ?? ""
+        showCustomGoogleOAuthClient = true
+      }
     } catch {
       errorText = error.localizedDescription
     }

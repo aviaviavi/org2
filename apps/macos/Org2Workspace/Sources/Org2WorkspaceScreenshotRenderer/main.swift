@@ -26,6 +26,16 @@ struct Org2WorkspaceScreenshotRenderer {
         WorkspaceStore(defaults: defaults)
       }
       await store.bootstrap()
+      await MainActor.run {
+        let rawContextTab = ProcessInfo.processInfo.environment["ORG2_WORKSPACE_SCREENSHOT_CONTEXT_TAB"]?
+          .trimmingCharacters(in: .whitespacesAndNewlines)
+          .lowercased()
+        if let rawContextTab,
+           let contextTab = NodeContextTab(rawValue: rawContextTab) {
+          store.isNodeContextPanePresented = true
+          store.nodeContextTab = contextTab
+        }
+      }
       if verifiesCodeCopy {
         await MainActor.run {
           store.selectedSurface = .openClaw

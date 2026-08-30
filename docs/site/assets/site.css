@@ -2572,6 +2572,7 @@ body #content {
 #content .org2-feature-jumps a {
   border: 1px solid var(--border);
   border-radius: 5px;
+  padding: 0.48rem 0.72rem;
   background: var(--bg);
   color: var(--fg);
   font-family: var(--font-mono);

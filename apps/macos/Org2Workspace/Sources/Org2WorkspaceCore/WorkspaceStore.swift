@@ -1746,6 +1746,7 @@ public final class WorkspaceStore: ObservableObject {
   }
   @Published public var selectedEntrySource: EntrySource? {
     didSet {
+      updateCurrentDocumentGoogleDrivePublications(for: selectedEntrySource)
       if let file = selectedEntrySource?.file {
         updateSelectedFileDataNotebookState(for: file)
       }
@@ -1916,6 +1917,7 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var isDocumentPublisherPresented = false
   @Published public private(set) var isPublishingDocument = false
   @Published public private(set) var localDocumentPublications: [LocalDocumentPublication] = []
+  @Published public private(set) var currentDocumentGoogleDrivePublications: [GoogleDrivePublicationBinding] = []
   @Published public var exportNotice: Org2ExportNotice?
   @Published public var editorSaveConflict: Org2EditorSaveConflict?
   @Published public private(set) var isLiveFileEditorAutosaving = false
@@ -10506,6 +10508,36 @@ public final class WorkspaceStore: ObservableObject {
     currentOrgSourceFile?.deletingPathExtension().lastPathComponent ?? "Document"
   }
 
+  public func googleDrivePublication(
+    for request: DocumentPublishRequest
+  ) -> GoogleDrivePublicationBinding? {
+    guard request.destination == .googleDrive,
+          let sourceFile = currentOrgSourceFile,
+          let sourceText = try? String(contentsOf: sourceFile, encoding: .utf8)
+    else { return nil }
+    return GoogleDrivePublicationBinding.binding(
+      for: request.format,
+      in: sourceText,
+      line: request.line
+    )
+  }
+
+  private func updateCurrentDocumentGoogleDrivePublications(for source: EntrySource?) {
+    guard let source else {
+      currentDocumentGoogleDrivePublications = []
+      return
+    }
+    let sourceText: String?
+    if !source.isSubtree && source.startLine == 1 {
+      sourceText = source.text
+    } else {
+      sourceText = try? String(contentsOfFile: source.file, encoding: .utf8)
+    }
+    currentDocumentGoogleDrivePublications = sourceText.map {
+      GoogleDrivePublicationBinding.allBindings(in: $0)
+    } ?? []
+  }
+
   public func presentDocumentPublisher() {
     guard currentOrgSourceFile != nil else {
       statusText = "Open an Org or Org2 document first"
@@ -10521,6 +10553,10 @@ public final class WorkspaceStore: ObservableObject {
       throw DocumentPublishingError.unsupportedFormat
     }
     let sourceFile = try await sourceFileForDocumentPublishing()
+    let googleBinding = try googleDrivePublicationBinding(
+      sourceFile: sourceFile,
+      request: request
+    )
     isPublishingDocument = true
     statusText = "Checking the publication boundary…"
     defer { isPublishingDocument = false }
@@ -10533,6 +10569,7 @@ public final class WorkspaceStore: ObservableObject {
         sourceFile: sourceFile,
         request: request,
         outputDirectory: outputDirectory,
+        googleBinding: googleBinding,
         apply: false
       )
     )
@@ -10548,6 +10585,10 @@ public final class WorkspaceStore: ObservableObject {
       throw DocumentPublishingError.unsupportedFormat
     }
     let sourceFile = try await sourceFileForDocumentPublishing()
+    let googleBinding = try googleDrivePublicationBinding(
+      sourceFile: sourceFile,
+      request: request
+    )
     isPublishingDocument = true
     statusText = request.destination == .localLink
       ? "Starting the local publication…"
@@ -10637,6 +10678,7 @@ public final class WorkspaceStore: ObservableObject {
             request: request,
             outputDirectory: nil,
             pdfFile: pdfURL,
+            googleBinding: googleBinding,
             apply: true
           ),
           environment: ["ORG2_GOOGLE_DRIVE_ACCESS_TOKEN": token]
@@ -10647,6 +10689,7 @@ public final class WorkspaceStore: ObservableObject {
             sourceFile: sourceFile,
             request: request,
             outputDirectory: nil,
+            googleBinding: googleBinding,
             apply: true
           ),
           environment: ["ORG2_GOOGLE_DRIVE_ACCESS_TOKEN": token]
@@ -10658,7 +10701,25 @@ public final class WorkspaceStore: ObservableObject {
       else {
         throw DocumentPublishingError.invalidGoogleResponse
       }
-      statusText = "Published \(result.artifact.title) to \(request.format.title)"
+      let binding = GoogleDrivePublicationBinding(
+        format: request.format,
+        fileID: fileID,
+        url: url,
+        version: result.destinationString("version"),
+        publishedAt: Date(),
+        scopeLine: request.line
+      )
+      do {
+        try await persistGoogleDrivePublication(binding, in: sourceFile)
+      } catch {
+        throw DocumentPublishingError.googlePublicationPersistenceFailed(
+          url,
+          error.localizedDescription
+        )
+      }
+      statusText = googleBinding == nil
+        ? "Published and linked \(result.artifact.title) in \(request.format.title)"
+        : "Updated linked \(request.format.title) publication"
       return .googleDrive(
         format: request.format,
         url: url,
@@ -10720,6 +10781,7 @@ public final class WorkspaceStore: ObservableObject {
     request: DocumentPublishRequest,
     outputDirectory: URL?,
     pdfFile: URL? = nil,
+    googleBinding: GoogleDrivePublicationBinding? = nil,
     apply: Bool
   ) -> [String] {
     let cliDestination: String
@@ -10748,7 +10810,15 @@ public final class WorkspaceStore: ObservableObject {
         arguments.append(contentsOf: ["--out-dir", outputDirectory.path])
       }
     }
-    if let folderID = request.googleFolderID, request.destination == .googleDrive {
+    if let googleBinding,
+       request.destination == .googleDrive,
+       let version = googleBinding.version {
+      arguments.append(contentsOf: [
+        "--document-id", googleBinding.fileID,
+        "--if-version", version,
+        "--replace-existing",
+      ])
+    } else if let folderID = request.googleFolderID, request.destination == .googleDrive {
       arguments.append(contentsOf: ["--folder-id", folderID])
     }
     if let pdfFile {
@@ -10758,6 +10828,45 @@ public final class WorkspaceStore: ObservableObject {
       arguments.append("--apply")
     }
     return arguments
+  }
+
+  private func googleDrivePublicationBinding(
+    sourceFile: URL,
+    request: DocumentPublishRequest
+  ) throws -> GoogleDrivePublicationBinding? {
+    guard request.destination == .googleDrive else { return nil }
+    let sourceText = try String(contentsOf: sourceFile, encoding: .utf8)
+    let binding = GoogleDrivePublicationBinding.binding(
+      for: request.format,
+      in: sourceText,
+      line: request.line
+    )
+    if let binding, binding.version == nil {
+      throw DocumentPublishingError.missingGooglePublicationVersion(binding.url)
+    }
+    return binding
+  }
+
+  private func persistGoogleDrivePublication(
+    _ binding: GoogleDrivePublicationBinding,
+    in sourceFile: URL
+  ) async throws {
+    let sourceFile = sourceFile.standardizedFileURL
+    try await Task.detached(priority: .userInitiated) {
+      let sourceText = try String(contentsOf: sourceFile, encoding: .utf8)
+      guard let updatedSource = GoogleDrivePublicationBinding.sourceText(
+        sourceText,
+        upserting: binding
+      ) else {
+        throw CocoaError(.fileWriteUnknown)
+      }
+      guard updatedSource != sourceText else { return }
+      try updatedSource.write(to: sourceFile, atomically: true, encoding: .utf8)
+    }.value
+    invalidateCanonicalDocumentCache(for: sourceFile.path)
+    if selectedLocation?.file == sourceFile.path {
+      await reloadSelectedEntrySource()
+    }
   }
 
   private func renderedPublicationPDF(html: Data, baseURL: URL) async throws -> Data {

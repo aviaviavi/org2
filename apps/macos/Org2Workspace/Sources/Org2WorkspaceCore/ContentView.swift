@@ -9516,6 +9516,41 @@ private struct NodeEntityTypeMenu: View {
   }
 }
 
+private struct GoogleDrivePublicationMenu: View {
+  let publications: [GoogleDrivePublicationBinding]
+
+  var body: some View {
+    Menu {
+      ForEach(publications) { publication in
+        Menu {
+          Button("Open") {
+            NSWorkspace.shared.open(publication.url)
+          }
+          Button("Copy Link") {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(publication.url.absoluteString, forType: .string)
+          }
+        } label: {
+          Label(
+            "\(publication.format.title) · \(publication.scopeLabel)",
+            systemImage: publication.format.systemImage
+          )
+        }
+      }
+    } label: {
+      Label("Google Drive", systemImage: "link.circle.fill")
+        .font(.caption.weight(.medium))
+        .foregroundStyle(.green)
+        .padding(.horizontal, 7)
+        .padding(.vertical, 3)
+        .background(Color.green.opacity(0.09), in: Capsule())
+    }
+    .menuStyle(.borderlessButton)
+    .fixedSize()
+    .help("Open or copy this document's linked Google Drive publication")
+  }
+}
+
 private struct DetailScrollCommandBridge: NSViewRepresentable {
   let request: DetailScrollRequest?
 
@@ -9676,6 +9711,11 @@ private struct DetailHeader: View {
              !store.selectedFileIsCSV,
              store.selectedEntrySource != nil {
             NodeEntityTypeMenu()
+          }
+          if !store.currentDocumentGoogleDrivePublications.isEmpty {
+            GoogleDrivePublicationMenu(
+              publications: store.currentDocumentGoogleDrivePublications
+            )
           }
         }
         if !location.subtitle.isEmpty {

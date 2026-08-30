@@ -1,0 +1,22 @@
+#+TITLE: Beacon Launch brief
+:PROPERTIES:
+:ORG2_ARTIFACT_SCHEMA: org2-artifact-metadata/v1
+:ORG2_ARTIFACT_ROLE: view
+:ORG2_PROVENANCE: id:11111111-1111-4111-8111-111111111111, file:notes/projects/beacon-launch.org2
+:ORG2_GENERATOR: OpenOrg demo brief
+:ORG2_GENERATED_AT: 2026-06-15T16:00:00Z
+:ORG2_REVIEW_STATUS: review-required
+:END:
+
+* What matters now
+- Beacon is preparing a narrow private beta of a local analytics workspace.
+- The launch review centers on onboarding speed, offline sample-data import, and cited recommendations.
+- Design approved the onboarding copy. Workflow clarity and data-readiness validation remain open.
+
+* Open work
+- Review the launch readiness brief.
+- Confirm who owns final review of the CSV import path.
+- Turn the transcript decisions into Agenda items.
+
+* Suggested next step
+- Draft the readiness summary from the meeting note and active TODOs, then return it for review before sending.

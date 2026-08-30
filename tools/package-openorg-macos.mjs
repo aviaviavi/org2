@@ -186,6 +186,13 @@ function whisperModelPath() {
   throw new Error("No ggml-base.en.bin model was found. Set OPENORG_WHISPER_MODEL_PATH.");
 }
 
+function googleOAuthClientSource() {
+  if (process.env.ORG2_GOOGLE_OAUTH_CLIENT_JSON?.trim()) return "desktop-client-json";
+  const clientID = process.env.ORG2_GOOGLE_OAUTH_CLIENT_ID?.trim();
+  const clientSecret = process.env.ORG2_GOOGLE_OAUTH_CLIENT_SECRET?.trim();
+  return clientID && clientSecret ? "environment-pair" : null;
+}
+
 function printPlan() {
   console.log(JSON.stringify({
     appName: "OpenOrg",
@@ -193,6 +200,7 @@ function printPlan() {
     bundleIdentifier: "org.org2.workspace",
     dailyAppUntouched: "/Users/avi/Applications/Org2Workspace.app",
     executableName: "Org2Workspace",
+    googleOAuthClientSource: googleOAuthClientSource(),
     hardenedRuntime: true,
     notarization: options.notaryProfile ? "notarytool Keychain profile configured" : "not configured",
     output: options.output,
@@ -218,6 +226,11 @@ function main() {
   if (process.platform !== "darwin") {
     throw new Error("OpenOrg DMG packaging requires macOS");
   }
+  if (!googleOAuthClientSource()) {
+    throw new Error(
+      "OpenOrg DMG packaging requires the shared Google OAuth Desktop client. Set ORG2_GOOGLE_OAUTH_CLIENT_JSON to its protected JSON path, or set the paired ORG2_GOOGLE_OAUTH_CLIENT_ID and ORG2_GOOGLE_OAUTH_CLIENT_SECRET values."
+    );
+  }
   if (existsSync(options.output) && !options.force) {
     throw new Error(`Refusing to replace existing artifact: ${options.output}`);
   }
@@ -232,7 +245,11 @@ function main() {
   const unsignedDMG = join(workingDirectory, "OpenOrg.dmg");
 
   try {
-    run(process.execPath, [join(repoRoot, "tools", "build-macos-app.mjs"), "--configuration", "release"], {
+    run(process.execPath, [
+      join(repoRoot, "tools", "build-macos-app.mjs"),
+      "--configuration", "release",
+      "--require-google-oauth-client",
+    ], {
       env: {
         ...process.env,
         ORG2_WORKSPACE_APP_NAME: "OpenOrg",

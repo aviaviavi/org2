@@ -67,6 +67,7 @@ assert.ok(
 );
 assert.match(releaseSource, /appcast-arm64\.xml/);
 assert.match(releaseSource, /appcast-intel\.xml/);
+assert.match(releaseSource, /--require-google-oauth-client/);
 
 const planResult = spawnSync(process.execPath, [
   join(repoRoot, "tools", "release-openorg.mjs"),

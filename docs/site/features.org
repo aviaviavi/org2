@@ -9,17 +9,18 @@
   <section class="org2-feature-story" id="planning-knowledge" aria-labelledby="planning-knowledge-title">
     <div class="org2-feature-copy">
       <h2 id="planning-knowledge-title">Planning and linked notes</h2>
-      <p>TODO state, schedules, deadlines, priorities, effort, tags, IDs, aliases, and links are readable in the note. Org2 turns them into focused agenda views and a navigable knowledge graph.</p>
+      <p>TODO state, schedules, deadlines, priorities, effort, tags, IDs, aliases, and links are readable in the note. OpenOrg turns them into focused agenda views and useful context around whatever you are working on.</p>
       <ul>
         <li>Agenda across many files, with date windows, filters, grouping, and real-world TODO vocabularies.</li>
-        <li>Stable IDs, backlinks, dailies, node creation, link previews, and graph-health checks.</li>
+        <li>A context pane brings together backlinks, related notes, and source-cited AI briefs; linked action items stay beside the note.</li>
+        <li>Stable IDs, dailies, node creation, link previews, and graph-health checks keep the underlying connections portable.</li>
         <li>Preview-first mutations from the CLI and editors; writes require an explicit apply step.</li>
       </ul>
       <p class="org2-feature-links"><a href="workflows.html">Everyday workflows</a><a href="tooling-reference.html">CLI reference</a></p>
     </div>
     <div class="org2-feature-media org2-feature-media-pair">
       <figure><img src="assets/screenshots/macos-workspace-agenda.png" alt="OpenOrg agenda with scheduled tasks, assignees, and linked note context" loading="lazy" /><figcaption>A native agenda over ordinary corpus files.</figcaption></figure>
-      <figure><img src="assets/screenshots/graph.png" alt="Org2 knowledge graph connecting backlinks, source provenance, agenda, editor, and meeting nodes" loading="lazy" /><figcaption>The same IDs and links compiled into a graph.</figcaption></figure>
+      <figure><img src="assets/screenshots/macos-workspace-context.png" alt="OpenOrg project note with open work and a source-cited AI brief in the Context pane" loading="lazy" /><figcaption>Linked work and a source-cited brief stay beside the note.</figcaption></figure>
     </div>
   </section>
 

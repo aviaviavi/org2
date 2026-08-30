@@ -57,8 +57,9 @@ const bundledWhisperCppPath = process.env.ORG2_WORKSPACE_WHISPER_CPP_PATH?.trim(
   || (swiftBuildConfiguration === "release" ? discoverWhisperCppPath() : "");
 const bundledWhisperModelPath = process.env.ORG2_WORKSPACE_WHISPER_MODEL_PATH?.trim()
   || (swiftBuildConfiguration === "release" ? discoverWhisperModelPath() : "");
-const googleOAuthClientID = process.env.ORG2_GOOGLE_OAUTH_CLIENT_ID?.trim() || "";
-const googleOAuthClientSecret = process.env.ORG2_GOOGLE_OAUTH_CLIENT_SECRET?.trim() || "";
+const googleOAuthConfiguration = resolveGoogleOAuthConfiguration();
+const googleOAuthClientID = googleOAuthConfiguration.clientID;
+const googleOAuthClientSecret = googleOAuthConfiguration.clientSecret;
 const appEntitlementsPath = resolve(
   process.env.ORG2_WORKSPACE_APP_ENTITLEMENTS
     ?? join(packageDir, "OpenOrg.entitlements")
@@ -86,8 +87,10 @@ function parseBuildOptions(arguments_) {
   const options = {
     allowDailyDebug: false,
     configuration: "",
+    googleOAuthClientJSON: "",
     help: false,
     printConfiguration: false,
+    requireGoogleOAuthClient: false,
   };
   for (let index = 0; index < arguments_.length; index += 1) {
     const argument = arguments_[index];
@@ -102,8 +105,18 @@ function parseBuildOptions(arguments_) {
         }
         options.configuration = arguments_[index];
         break;
+      case "--google-oauth-client-json":
+        index += 1;
+        if (index >= arguments_.length) {
+          throw new Error("--google-oauth-client-json requires a path");
+        }
+        options.googleOAuthClientJSON = arguments_[index];
+        break;
       case "--print-configuration":
         options.printConfiguration = true;
+        break;
+      case "--require-google-oauth-client":
+        options.requireGoogleOAuthClient = true;
         break;
       case "--help":
       case "-h":
@@ -124,6 +137,58 @@ function resolveBuildConfiguration() {
     throw new Error(`Unsupported Swift build configuration: ${configured}. Use debug or release.`);
   }
   return configured;
+}
+
+function resolveGoogleOAuthConfiguration() {
+  const jsonPath = buildOptions.googleOAuthClientJSON
+    || process.env.ORG2_GOOGLE_OAUTH_CLIENT_JSON?.trim()
+    || "";
+  const environmentClientID = process.env.ORG2_GOOGLE_OAUTH_CLIENT_ID?.trim() || "";
+  const environmentClientSecret = process.env.ORG2_GOOGLE_OAUTH_CLIENT_SECRET?.trim() || "";
+  if (jsonPath && (environmentClientID || environmentClientSecret)) {
+    throw new Error(
+      "Configure Google OAuth with either a Desktop client JSON or the separate client environment variables, not both."
+    );
+  }
+  if (!jsonPath) {
+    if (Boolean(environmentClientID) !== Boolean(environmentClientSecret)) {
+      throw new Error(
+        "ORG2_GOOGLE_OAUTH_CLIENT_ID and ORG2_GOOGLE_OAUTH_CLIENT_SECRET must be configured together."
+      );
+    }
+    return {
+      clientID: environmentClientID,
+      clientSecret: environmentClientSecret,
+      source: environmentClientID || environmentClientSecret ? "environment" : null,
+    };
+  }
+
+  const resolvedPath = resolve(jsonPath);
+  let envelope;
+  try {
+    envelope = JSON.parse(readFileSync(resolvedPath, "utf8"));
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(`Could not read Google OAuth Desktop client JSON at ${resolvedPath}: ${detail}`);
+  }
+  if (!envelope?.installed || envelope.web) {
+    throw new Error(
+      `Google OAuth client JSON at ${resolvedPath} must contain an installed Desktop client, not a Web application client.`
+    );
+  }
+  const clientID = typeof envelope.installed.client_id === "string"
+    ? envelope.installed.client_id.trim()
+    : "";
+  const clientSecret = typeof envelope.installed.client_secret === "string"
+    ? envelope.installed.client_secret.trim()
+    : "";
+  if (!clientID.endsWith(".apps.googleusercontent.com")) {
+    throw new Error(`Google OAuth Desktop client JSON at ${resolvedPath} has no valid client ID.`);
+  }
+  if (!clientSecret) {
+    throw new Error(`Google OAuth Desktop client JSON at ${resolvedPath} has no client secret.`);
+  }
+  return { clientID, clientSecret, source: "desktop-client-json" };
 }
 
 function firstExistingPath(candidates) {
@@ -157,7 +222,11 @@ function buildUsage() {
 Options:
   --configuration MODE    Build debug or release (daily app default: release)
   --allow-daily-debug     Explicitly allow a debug build at org.org2.workspace
+  --google-oauth-client-json PATH
+                          Bundle a Google OAuth Desktop client without copying its JSON into source
   --print-configuration   Print the resolved mode and paths without building
+  --require-google-oauth-client
+                          Fail unless a complete Google OAuth Desktop client is bundled
   --help                  Show this help`;
 }
 
@@ -702,6 +771,14 @@ function main() {
       "Refusing to install an implicit debug build as the daily app. Use npm run build:macos-app:debug when that is intentional."
     );
   }
+  if (
+    buildOptions.requireGoogleOAuthClient
+    && (!googleOAuthClientID || !googleOAuthClientSecret)
+  ) {
+    throw new Error(
+      "This distributable build requires OpenOrg's Google OAuth Desktop client. Set ORG2_GOOGLE_OAUTH_CLIENT_JSON to its protected JSON path, or set the paired ORG2_GOOGLE_OAUTH_CLIENT_ID and ORG2_GOOGLE_OAUTH_CLIENT_SECRET values."
+    );
+  }
   if (buildOptions.printConfiguration) {
     console.log(JSON.stringify({
       appPath,
@@ -716,6 +793,8 @@ function main() {
       nodePath: bundledNodePath || null,
       googleOAuthClientConfigured: googleOAuthClientID.length > 0,
       googleOAuthClientSecretConfigured: googleOAuthClientSecret.length > 0,
+      googleOAuthClientSource: googleOAuthConfiguration.source,
+      googleOAuthRequired: buildOptions.requireGoogleOAuthClient,
       swiftScratchPath: swiftScratchPath || null,
       updates: sparkleUpdateConfiguration(),
       whisperCppPath: bundledWhisperCppPath || null,

@@ -53,6 +53,154 @@ final class DocumentPublishingTests: XCTestCase {
     XCTAssertFalse(arguments.contains("--out-file"))
   }
 
+  func testLinkedGooglePublicationUsesGuardedUpdateArgumentsInsteadOfFolder() throws {
+    let binding = GoogleDrivePublicationBinding(
+      format: .googleDocs,
+      fileID: "doc-stable",
+      url: try XCTUnwrap(URL(string: "https://docs.google.com/document/d/doc-stable/edit")),
+      version: "12"
+    )
+    let arguments = WorkspaceStore.documentPublishArguments(
+      sourceFile: URL(fileURLWithPath: "/tmp/brief.org2"),
+      request: DocumentPublishRequest(
+        destination: .googleDrive,
+        format: .googleDocs,
+        googleFolderID: "ignored-after-linking"
+      ),
+      outputDirectory: nil,
+      googleBinding: binding,
+      apply: true
+    )
+
+    XCTAssertEqual(
+      arguments,
+      [
+        "publish", "document",
+        "--file", "/tmp/brief.org2",
+        "--to", "google-docs",
+        "--format", "json",
+        "--document-id", "doc-stable",
+        "--if-version", "12",
+        "--replace-existing",
+        "--apply",
+      ]
+    )
+    XCTAssertFalse(arguments.contains("--folder-id"))
+  }
+
+  func testGooglePublicationBindingPersistsAndUpdatesInFileProperties() throws {
+    let source = """
+    #+TITLE: Stable Brief
+    :PROPERTIES:
+    :ID: brief-id
+    :END:
+
+    * Findings
+    Original source stays readable.
+    """
+    let url = try XCTUnwrap(URL(string: "https://docs.google.com/document/d/doc-stable/edit"))
+    let first = GoogleDrivePublicationBinding(
+      format: .googleDocs,
+      fileID: "doc-stable",
+      url: url,
+      version: "7",
+      publishedAt: try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-08-30T18:00:00Z"))
+    )
+
+    let persisted = try XCTUnwrap(
+      GoogleDrivePublicationBinding.sourceText(source, upserting: first)
+    )
+    XCTAssertTrue(persisted.contains(":ID: brief-id"))
+    XCTAssertTrue(persisted.contains(":ORG2_PUBLISH_GOOGLE_DOCS_FILE_ID: doc-stable"))
+    XCTAssertTrue(persisted.contains(":ORG2_PUBLISH_GOOGLE_DOCS_URL: \(url.absoluteString)"))
+    XCTAssertTrue(persisted.contains(":ORG2_PUBLISH_GOOGLE_DOCS_VERSION: 7"))
+
+    let restored = try XCTUnwrap(
+      GoogleDrivePublicationBinding.binding(for: .googleDocs, in: persisted, line: nil)
+    )
+    XCTAssertEqual(restored.fileID, "doc-stable")
+    XCTAssertEqual(restored.url, url)
+    XCTAssertEqual(restored.version, "7")
+    XCTAssertNil(restored.scopeLine)
+
+    let second = GoogleDrivePublicationBinding(
+      format: .googleDocs,
+      fileID: "doc-stable",
+      url: url,
+      version: "8",
+      publishedAt: try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-08-30T19:00:00Z"))
+    )
+    let updated = try XCTUnwrap(
+      GoogleDrivePublicationBinding.sourceText(persisted, upserting: second)
+    )
+    XCTAssertEqual(updated.components(separatedBy: ":ORG2_PUBLISH_GOOGLE_DOCS_FILE_ID:").count, 2)
+    XCTAssertTrue(updated.contains(":ORG2_PUBLISH_GOOGLE_DOCS_VERSION: 8"))
+    XCTAssertFalse(updated.contains(":ORG2_PUBLISH_GOOGLE_DOCS_VERSION: 7"))
+  }
+
+  func testGooglePublicationBindingCreatesAFilePropertyDrawerWhenMissing() throws {
+    let source = "#+TITLE: New Brief\n\n* Findings\nBody\n"
+    let url = try XCTUnwrap(URL(string: "https://drive.google.com/file/d/pdf-stable/view"))
+    let binding = GoogleDrivePublicationBinding(
+      format: .pdf,
+      fileID: "pdf-stable",
+      url: url,
+      version: "1",
+      publishedAt: Date(timeIntervalSince1970: 1_777_777_777)
+    )
+
+    let persisted = try XCTUnwrap(
+      GoogleDrivePublicationBinding.sourceText(source, upserting: binding)
+    )
+
+    XCTAssertTrue(persisted.hasPrefix("#+TITLE: New Brief\n:PROPERTIES:\n"))
+    XCTAssertTrue(persisted.contains(":ORG2_PUBLISH_GOOGLE_DRIVE_PDF_FILE_ID: pdf-stable"))
+    XCTAssertTrue(persisted.hasSuffix("* Findings\nBody\n"))
+    XCTAssertEqual(
+      GoogleDrivePublicationBinding.binding(for: .pdf, in: persisted, line: nil)?.url,
+      url
+    )
+  }
+
+  func testGooglePublicationBindingUsesThePublishedSubtreePropertyDrawer() throws {
+    let source = """
+    #+TITLE: Scoped Brief
+
+    * First
+    Keep this separate.
+    * Second
+    SCHEDULED: <2026-08-31 Mon>
+    :PROPERTIES:
+    :ID: second-id
+    :END:
+    Publish this subtree.
+    """
+    let url = try XCTUnwrap(URL(string: "https://docs.google.com/presentation/d/slides-stable/edit"))
+    let binding = GoogleDrivePublicationBinding(
+      format: .googleSlides,
+      fileID: "slides-stable",
+      url: url,
+      version: "3",
+      publishedAt: Date(timeIntervalSince1970: 1_777_777_777),
+      scopeLine: 10
+    )
+
+    let persisted = try XCTUnwrap(
+      GoogleDrivePublicationBinding.sourceText(source, upserting: binding)
+    )
+    XCTAssertNil(
+      GoogleDrivePublicationBinding.binding(for: .googleSlides, in: persisted, line: nil)
+    )
+    let restored = try XCTUnwrap(
+      GoogleDrivePublicationBinding.binding(for: .googleSlides, in: persisted, line: 10)
+    )
+    XCTAssertEqual(restored.fileID, "slides-stable")
+    XCTAssertEqual(restored.version, "3")
+    XCTAssertEqual(restored.scopeLine, 5)
+    XCTAssertTrue(persisted.contains(":ID: second-id\n:ORG2_PUBLISH_GOOGLE_SLIDES_FILE_ID: slides-stable"))
+    XCTAssertEqual(GoogleDrivePublicationBinding.allBindings(in: persisted), [restored])
+  }
+
   func testLocalPublicationRetainsSourceAndFormatForSettingsManagement() throws {
     let url = try XCTUnwrap(URL(string: "http://example.local:1234/a/secret"))
     let publication = LocalDocumentPublication(
@@ -318,6 +466,24 @@ final class DocumentPublishingTests: XCTestCase {
     XCTAssertEqual(client.clientSecret, "desktop-secret")
   }
 
+  func testManagedGoogleOAuthClientTakesPrecedenceOverSavedCustomClient() {
+    let clientID = GoogleDriveOAuthConfiguration.resolvedClientID(
+      managedCandidates: [nil, " bundled-client.apps.googleusercontent.com "],
+      savedClientID: "custom-client.apps.googleusercontent.com"
+    )
+
+    XCTAssertEqual(clientID, "bundled-client.apps.googleusercontent.com")
+  }
+
+  func testSavedGoogleOAuthClientRemainsFallbackForUnconfiguredBuilds() {
+    let clientID = GoogleDriveOAuthConfiguration.resolvedClientID(
+      managedCandidates: [nil, "  "],
+      savedClientID: " custom-client.apps.googleusercontent.com "
+    )
+
+    XCTAssertEqual(clientID, "custom-client.apps.googleusercontent.com")
+  }
+
   func testGoogleDesktopClientJSONRejectsWebApplicationCredentials() throws {
     let data = Data(
       #"{"web":{"client_id":"web-client.apps.googleusercontent.com","client_secret":"web-secret"}}"#.utf8
@@ -337,6 +503,26 @@ final class DocumentPublishingTests: XCTestCase {
 
     XCTAssertNil(credential.clientSecret)
     XCTAssertEqual(credential.clientID, "desktop-client.apps.googleusercontent.com")
+  }
+
+  func testBundledSecretHydratesOnlyAMatchingLegacyGoogleCredential() {
+    XCTAssertEqual(
+      GoogleDriveOAuthConfiguration.resolvedClientSecret(
+        credentialClientID: "openorg-client.apps.googleusercontent.com",
+        credentialClientSecret: nil,
+        managedClientID: "openorg-client.apps.googleusercontent.com",
+        managedClientSecret: "bundled-secret"
+      ),
+      "bundled-secret"
+    )
+    XCTAssertNil(
+      GoogleDriveOAuthConfiguration.resolvedClientSecret(
+        credentialClientID: "custom-client.apps.googleusercontent.com",
+        credentialClientSecret: nil,
+        managedClientID: "openorg-client.apps.googleusercontent.com",
+        managedClientSecret: "bundled-secret"
+      )
+    )
   }
 
   func testGoogleCredentialRefreshKeepsRefreshTokenAndScope() async throws {

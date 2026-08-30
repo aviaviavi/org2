@@ -108,6 +108,274 @@ public struct DocumentPublishRequest: Hashable, Sendable {
   }
 }
 
+public struct GoogleDrivePublicationBinding: Identifiable, Hashable, Sendable {
+  public let format: DocumentPublishFormat
+  public let fileID: String
+  public let url: URL
+  public let version: String?
+  public let publishedAt: Date?
+  public let scopeLine: Int?
+
+  public init(
+    format: DocumentPublishFormat,
+    fileID: String,
+    url: URL,
+    version: String? = nil,
+    publishedAt: Date? = nil,
+    scopeLine: Int? = nil
+  ) {
+    self.format = format
+    self.fileID = fileID.trimmingCharacters(in: .whitespacesAndNewlines)
+    self.url = url
+    let normalizedVersion = version?.trimmingCharacters(in: .whitespacesAndNewlines)
+    self.version = normalizedVersion?.isEmpty == false ? normalizedVersion : nil
+    self.publishedAt = publishedAt
+    self.scopeLine = scopeLine
+  }
+
+  public var id: String {
+    "\(format.rawValue):\(fileID):\(scopeLine ?? 0)"
+  }
+
+  public var scopeLabel: String {
+    scopeLine.map { "Subtree at line \($0)" } ?? "Entire document"
+  }
+
+  fileprivate var propertyStem: String? {
+    Self.propertyStem(for: format)
+  }
+
+  private static func propertyStem(for format: DocumentPublishFormat) -> String? {
+    switch format {
+    case .googleDocs: "ORG2_PUBLISH_GOOGLE_DOCS"
+    case .googleSlides: "ORG2_PUBLISH_GOOGLE_SLIDES"
+    case .googleSheets: "ORG2_PUBLISH_GOOGLE_SHEETS"
+    case .pdf: "ORG2_PUBLISH_GOOGLE_DRIVE_PDF"
+    case .html, .beamerSlides: nil
+    }
+  }
+
+  static func binding(
+    for format: DocumentPublishFormat,
+    in sourceText: String,
+    line: Int?
+  ) -> GoogleDrivePublicationBinding? {
+    bindings(in: sourceText, line: line).first { $0.format == format }
+  }
+
+  static func bindings(in sourceText: String, line: Int?) -> [GoogleDrivePublicationBinding] {
+    let lines = normalizedLines(sourceText)
+    guard let target = target(in: lines, line: line),
+          let drawer = target.drawer
+    else { return [] }
+    let properties = propertyValues(in: lines, drawer: drawer)
+
+    return DocumentPublishDestination.googleDrive.formats.compactMap { format in
+      guard let stem = propertyStem(for: format),
+            let fileID = normalizedPropertyValue(properties["\(stem)_FILE_ID"]),
+            let urlText = normalizedPropertyValue(properties["\(stem)_URL"]),
+            let url = URL(string: urlText),
+            url.scheme?.lowercased() == "https",
+            ["docs.google.com", "drive.google.com"].contains(url.host?.lowercased() ?? "")
+      else { return nil }
+
+      let publishedAt = normalizedPropertyValue(properties["\(stem)_PUBLISHED_AT"])
+        .flatMap { ISO8601DateFormatter().date(from: $0) }
+      return GoogleDrivePublicationBinding(
+        format: format,
+        fileID: fileID,
+        url: url,
+        version: normalizedPropertyValue(properties["\(stem)_VERSION"]),
+        publishedAt: publishedAt,
+        scopeLine: target.scopeLine
+      )
+    }
+  }
+
+  static func allBindings(in sourceText: String) -> [GoogleDrivePublicationBinding] {
+    let lines = normalizedLines(sourceText)
+    var bindings = bindings(in: sourceText, line: nil)
+    for (index, line) in lines.enumerated() where isHeading(line) {
+      bindings.append(contentsOf: self.bindings(in: sourceText, line: index + 1))
+    }
+    return bindings
+  }
+
+  static func sourceText(
+    _ sourceText: String,
+    upserting binding: GoogleDrivePublicationBinding
+  ) -> String? {
+    guard let stem = binding.propertyStem,
+          !binding.fileID.isEmpty
+    else { return nil }
+
+    let lineEnding = sourceText.contains("\r\n") ? "\r\n" : "\n"
+    var lines = normalizedLines(sourceText)
+    guard let target = target(in: lines, line: binding.scopeLine) else { return nil }
+    let publishedAt = ISO8601DateFormatter().string(from: binding.publishedAt ?? Date())
+    var values: [(String, String?)] = [
+      ("\(stem)_FILE_ID", binding.fileID),
+      ("\(stem)_URL", binding.url.absoluteString),
+      ("\(stem)_VERSION", binding.version),
+      ("\(stem)_PUBLISHED_AT", publishedAt),
+    ]
+    values = values.map { key, value in
+      (key, value.map(sanitizedPropertyValue))
+    }
+
+    if let drawer = target.drawer {
+      var drawerEnd = drawer.upperBound
+      for (key, value) in values {
+        let existingIndex = (drawer.lowerBound + 1..<drawerEnd).first { index in
+          propertyKey(in: lines[index]) == key
+        }
+        if let value {
+          if let existingIndex {
+            lines[existingIndex] = ":\(key): \(value)"
+          } else {
+            lines.insert(":\(key): \(value)", at: drawerEnd)
+            drawerEnd += 1
+          }
+        } else if let existingIndex {
+          lines.remove(at: existingIndex)
+          drawerEnd -= 1
+        }
+      }
+    } else {
+      let drawerLines = [":PROPERTIES:"]
+        + values.compactMap { key, value in value.map { ":\(key): \($0)" } }
+        + [":END:"]
+      lines.insert(contentsOf: drawerLines, at: target.insertionIndex)
+    }
+    return lines.joined(separator: lineEnding)
+  }
+
+  private struct PropertyTarget {
+    let drawer: ClosedRange<Int>?
+    let insertionIndex: Int
+    let scopeLine: Int?
+  }
+
+  private static func target(in lines: [String], line: Int?) -> PropertyTarget? {
+    guard !lines.isEmpty else {
+      return PropertyTarget(drawer: nil, insertionIndex: 0, scopeLine: nil)
+    }
+    guard let line else {
+      let preambleEnd = lines.firstIndex(where: isHeading) ?? lines.count
+      let drawer = propertyDrawer(in: lines, searchRange: 0..<preambleEnd)
+      let lastKeyword = (0..<preambleEnd).last { index in
+        lines[index].trimmingCharacters(in: .whitespaces).hasPrefix("#+")
+      }
+      return PropertyTarget(
+        drawer: drawer,
+        insertionIndex: drawer?.upperBound ?? lastKeyword.map { $0 + 1 } ?? 0,
+        scopeLine: nil
+      )
+    }
+
+    let targetIndex = max(0, min(lines.count - 1, line - 1))
+    guard let headingIndex = stride(from: targetIndex, through: 0, by: -1)
+      .first(where: { isHeading(lines[$0]) })
+    else { return nil }
+    var subtreeEnd = lines.count
+    let headingLevel = lines[headingIndex].prefix { $0 == "*" }.count
+    if headingIndex + 1 < lines.count {
+      for index in (headingIndex + 1)..<lines.count where isHeading(lines[index]) {
+        if lines[index].prefix(while: { $0 == "*" }).count <= headingLevel {
+          subtreeEnd = index
+          break
+        }
+      }
+    }
+    var insertionIndex = headingIndex + 1
+    while insertionIndex < subtreeEnd,
+          lines[insertionIndex].trimmingCharacters(in: .whitespaces).range(
+            of: #"^(?:SCHEDULED|DEADLINE|CLOSED):"#,
+            options: [.regularExpression, .caseInsensitive]
+          ) != nil {
+      insertionIndex += 1
+    }
+    let drawer = insertionIndex < subtreeEnd
+      ? propertyDrawer(in: lines, searchRange: insertionIndex..<subtreeEnd, directOnly: true)
+      : nil
+    return PropertyTarget(
+      drawer: drawer,
+      insertionIndex: insertionIndex,
+      scopeLine: headingIndex + 1
+    )
+  }
+
+  private static func propertyDrawer(
+    in lines: [String],
+    searchRange: Range<Int>,
+    directOnly: Bool = false
+  ) -> ClosedRange<Int>? {
+    for start in searchRange {
+      if directOnly && start != searchRange.lowerBound { return nil }
+      guard lines[start].trimmingCharacters(in: .whitespaces).uppercased() == ":PROPERTIES:"
+      else { continue }
+      guard start + 1 < searchRange.upperBound,
+            let end = lines[(start + 1)..<searchRange.upperBound].firstIndex(where: {
+              $0.trimmingCharacters(in: .whitespaces).uppercased() == ":END:"
+            })
+      else { return nil }
+      return start...end
+    }
+    return nil
+  }
+
+  private static func propertyValues(
+    in lines: [String],
+    drawer: ClosedRange<Int>
+  ) -> [String: String] {
+    guard drawer.lowerBound + 1 < drawer.upperBound else { return [:] }
+    var properties: [String: String] = [:]
+    for index in (drawer.lowerBound + 1)..<drawer.upperBound {
+      let trimmed = lines[index].trimmingCharacters(in: .whitespaces)
+      guard let key = propertyKey(in: trimmed),
+            let separator = trimmed.dropFirst().firstIndex(of: ":")
+      else { continue }
+      let valueStart = trimmed.index(after: separator)
+      properties[key] = String(trimmed[valueStart...])
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    return properties
+  }
+
+  private static func propertyKey(in line: String) -> String? {
+    let trimmed = line.trimmingCharacters(in: .whitespaces)
+    guard trimmed.hasPrefix(":"),
+          let separator = trimmed.dropFirst().firstIndex(of: ":")
+    else { return nil }
+    let keyStart = trimmed.index(after: trimmed.startIndex)
+    let key = String(trimmed[keyStart..<separator]).uppercased()
+    return key.isEmpty ? nil : key
+  }
+
+  private static func normalizedLines(_ sourceText: String) -> [String] {
+    sourceText
+      .replacingOccurrences(of: "\r\n", with: "\n")
+      .split(separator: "\n", omittingEmptySubsequences: false)
+      .map(String.init)
+  }
+
+  private static func normalizedPropertyValue(_ value: String?) -> String? {
+    let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines)
+    return normalized?.isEmpty == false ? normalized : nil
+  }
+
+  private static func sanitizedPropertyValue(_ value: String) -> String {
+    value
+      .replacingOccurrences(of: "\n", with: " ")
+      .replacingOccurrences(of: "\r", with: " ")
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  private static func isHeading(_ line: String) -> Bool {
+    line.range(of: #"^\*+\s+"#, options: .regularExpression) != nil
+  }
+}
+
 public struct DocumentPublishCLIResult: Decodable, Sendable {
   public struct Source: Decodable, Sendable {
     public let file: String
@@ -201,6 +469,8 @@ public enum DocumentPublishingError: LocalizedError, Sendable {
   case pendingEdits
   case missingGoogleCredential
   case invalidGoogleResponse
+  case missingGooglePublicationVersion(URL)
+  case googlePublicationPersistenceFailed(URL, String)
   case missingWebBundle(String)
   case unsupportedFormat
 
@@ -216,6 +486,10 @@ public enum DocumentPublishingError: LocalizedError, Sendable {
       "Connect Google Drive before publishing."
     case .invalidGoogleResponse:
       "Google Drive completed without returning a usable document link."
+    case .missingGooglePublicationVersion(let url):
+      "The linked Google Drive artifact has no saved Drive version, so OpenOrg will not risk creating a duplicate or overwriting remote changes. Open the existing artifact at \(url.absoluteString)."
+    case .googlePublicationPersistenceFailed(let url, let reason):
+      "Google Drive published the artifact, but OpenOrg could not save its stable link in the source file: \(reason). Recover it at \(url.absoluteString)."
     case .missingWebBundle(let path):
       "Org2 completed without producing the expected web publication at \(path)."
     case .unsupportedFormat:
@@ -264,21 +538,83 @@ public enum GoogleDriveOAuthConfiguration {
   public static let clientSecretInfoKey = "OpenOrgGoogleOAuthClientSecret"
   public static let clientSecretEnvironmentKey = "ORG2_GOOGLE_OAUTH_CLIENT_SECRET"
 
+  public static func managedClientID() -> String? {
+    resolvedClientID(
+      managedCandidates: [
+        Bundle.main.object(forInfoDictionaryKey: clientIDInfoKey) as? String,
+        ProcessInfo.processInfo.environment[clientIDEnvironmentKey],
+      ],
+      savedClientID: nil
+    )
+  }
+
+  public static func managedClientSecret() -> String? {
+    [
+      Bundle.main.object(forInfoDictionaryKey: clientSecretInfoKey) as? String,
+      ProcessInfo.processInfo.environment[clientSecretEnvironmentKey],
+    ].compactMap(normalizedClientSecret).first
+  }
+
   public static func configuredClientID() -> String? {
-    let candidates = [
-      UserDefaults.standard.string(forKey: clientIDDefaultsKey),
-      Bundle.main.object(forInfoDictionaryKey: clientIDInfoKey) as? String,
-      ProcessInfo.processInfo.environment[clientIDEnvironmentKey],
-    ]
-    return candidates.compactMap(normalizedClientID).first
+    resolvedClientID(
+      managedCandidates: [
+        Bundle.main.object(forInfoDictionaryKey: clientIDInfoKey) as? String,
+        ProcessInfo.processInfo.environment[clientIDEnvironmentKey],
+      ],
+      savedClientID: UserDefaults.standard.string(forKey: clientIDDefaultsKey)
+    )
   }
 
   public static func configuredClientSecret() -> String? {
-    let candidates = [
-      Bundle.main.object(forInfoDictionaryKey: clientSecretInfoKey) as? String,
-      ProcessInfo.processInfo.environment[clientSecretEnvironmentKey],
-    ]
-    return candidates.compactMap(normalizedClientSecret).first
+    managedClientSecret()
+  }
+
+  static func resolvedClientID(
+    managedCandidates: [String?],
+    savedClientID: String?
+  ) -> String? {
+    let candidates = managedCandidates + [savedClientID]
+    return candidates.compactMap(normalizedClientID).first
+  }
+
+  public static func savedClientID() -> String? {
+    normalizedClientID(UserDefaults.standard.string(forKey: clientIDDefaultsKey))
+  }
+
+  public static var hasManagedClient: Bool {
+    managedClientID() != nil && managedClientSecret() != nil
+  }
+
+  public static func managedClientPair() -> GoogleDriveOAuthDesktopClient? {
+    guard let clientID = managedClientID() else { return nil }
+    return try? GoogleDriveOAuthDesktopClient(
+      clientID: clientID,
+      clientSecret: managedClientSecret()
+    )
+  }
+
+  public static func clientSecret(for credential: GoogleDriveOAuthCredential) -> String? {
+    resolvedClientSecret(
+      credentialClientID: credential.clientID,
+      credentialClientSecret: credential.clientSecret,
+      managedClientID: managedClientID(),
+      managedClientSecret: managedClientSecret()
+    )
+  }
+
+  static func resolvedClientSecret(
+    credentialClientID: String,
+    credentialClientSecret: String?,
+    managedClientID: String?,
+    managedClientSecret: String?
+  ) -> String? {
+    if let credentialClientSecret = normalizedClientSecret(credentialClientSecret) {
+      return credentialClientSecret
+    }
+    guard normalizedClientID(credentialClientID) == normalizedClientID(managedClientID) else {
+      return nil
+    }
+    return normalizedClientSecret(managedClientSecret)
   }
 
   public static func saveClientID(_ clientID: String) {
@@ -615,12 +951,13 @@ public struct GoogleDriveOAuthClient: Sendable {
     guard credential.expirationDate.timeIntervalSince(now) <= 120 else {
       return credential
     }
+    let clientSecret = GoogleDriveOAuthConfiguration.clientSecret(for: credential)
     var tokenFields = [
       "client_id": credential.clientID,
       "grant_type": "refresh_token",
       "refresh_token": credential.refreshToken,
     ]
-    if let clientSecret = credential.clientSecret {
+    if let clientSecret {
       tokenFields["client_secret"] = clientSecret
     }
     let response = try await tokenResponse(fields: tokenFields)
@@ -630,7 +967,7 @@ public struct GoogleDriveOAuthClient: Sendable {
     }
     return GoogleDriveOAuthCredential(
       clientID: credential.clientID,
-      clientSecret: credential.clientSecret,
+      clientSecret: clientSecret,
       accessToken: response.accessToken,
       refreshToken: response.refreshToken ?? credential.refreshToken,
       expirationDate: now.addingTimeInterval(TimeInterval(response.expiresIn)),

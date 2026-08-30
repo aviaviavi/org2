@@ -30,6 +30,12 @@ const scenarios = [
   },
   {
     mode: "files",
+    target: "notes/projects/beacon-launch",
+    contextTab: "brief",
+    fileName: "macos-workspace-context.png",
+  },
+  {
+    mode: "files",
     target: "views/launch-readiness-data",
     fileName: "macos-workspace-data.png",
   },
@@ -70,6 +76,7 @@ function captureScenario(scenario) {
       ORG2_WORKSPACE_SCREENSHOT_CORPUS: renderCorpusRoot,
       ORG2_WORKSPACE_SCREENSHOT_MODE: scenario.mode,
       ORG2_WORKSPACE_SCREENSHOT_TARGET: scenario.target ?? "",
+      ORG2_WORKSPACE_SCREENSHOT_CONTEXT_TAB: scenario.contextTab ?? "",
       ORG2_WORKSPACE_SCREENSHOT_WIDTH: "1400",
       ORG2_WORKSPACE_SCREENSHOT_HEIGHT: "900",
       ORG2_WORKSPACE_SCREENSHOT_SCALE: "1",

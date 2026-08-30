@@ -305,6 +305,12 @@ async function preflight(plan, options) {
   if (!process.env.OPENORG_NOTARY_KEYCHAIN_PROFILE?.trim()) {
     throw new Error("OPENORG_NOTARY_KEYCHAIN_PROFILE is required");
   }
+  capture(process.execPath, [
+    "tools/build-macos-app.mjs",
+    "--configuration", "release",
+    "--require-google-oauth-client",
+    "--print-configuration",
+  ]);
   if (!options.skipIOS && !options.skipTestFlightGroups) {
     for (const name of ["OPENORG_ASC_ISSUER_ID", "OPENORG_ASC_KEY_ID", "OPENORG_ASC_PRIVATE_KEY_PATH"]) {
       if (!process.env[name]?.trim()) throw new Error(`${name} is required for reliable TestFlight group assignment`);
