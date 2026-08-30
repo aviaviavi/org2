@@ -4,25 +4,30 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>OpenOrg</title>
         <item>
-            <title>0.5.4</title>
-            <pubDate>Sat, 29 Aug 2026 21:28:10 -0700</pubDate>
+            <title>0.6.0</title>
+            <pubDate>Sun, 30 Aug 2026 15:38:02 -0700</pubDate>
             <link>https://openorg.so/downloads.html</link>
-            <sparkle:version>0.5.4</sparkle:version>
-            <sparkle:shortVersionString>0.5.4</sparkle:shortVersionString>
+            <sparkle:version>0.6.0</sparkle:version>
+            <sparkle:shortVersionString>0.6.0</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <description sparkle:format="markdown"><![CDATA[## OpenOrg 0.5.4
+            <description sparkle:format="markdown"><![CDATA[## Highlights
 
-- Adds signed automatic updates to the Mac app.
-- Checks quietly at launch and every two hours by default.
-- Adds a manual Check for Updates command and settings to disable checks or install downloaded updates on quit.
-- Supports Install, Remind Later, and Skip This Version through the standard macOS update flow.
-- Publishes architecture-specific, cryptographically signed update feeds for Apple Silicon and Intel.
-- Adds independent workspace tabs with mouse selection, close controls, right-click actions, drag-and-drop reordering, and keyboard navigation.
+- OpenOrg now keeps Google Drive publications linked to their source. The first publish records the Drive artifact and guarded version in the relevant `.org2` property drawer; publishing that scope and format again updates the same Doc, Slides deck, Sheet, or PDF instead of creating a duplicate.
+- A green Google Drive badge in the document header makes linked artifacts easy to reopen or copy, and the publish sheet clearly distinguishes first-time publishing from updating an existing destination.
+- Distributed Mac builds now include OpenOrg's registered Google OAuth desktop client, so most users can connect Google Drive directly while custom clients remain available for self-built deployments.
+- The workspace's Context pane and source-cited Brief experience are now represented throughout the product guidance, demo corpus, and generated site.
+- Release packaging now verifies the Google OAuth configuration before producing distributable Mac artifacts.
+
+## Stability and polish
+
+- Preserves guarded Google Drive replacement semantics so remote changes or comments are not silently overwritten.
+- Improves the getting-started guidance around runtime-neutral agent work, triggers, approvals, and durable corpus records.
+- Refreshes the macOS product screenshots and feature presentation for the current workspace UI.
 ]]></description>
-            <enclosure url="https://github.com/aviaviavi/org2/releases/download/0.5.4/OpenOrg-Intel.dmg" length="235537554" type="application/octet-stream" sparkle:edSignature="mWo/OTWeEkDIGcaUsdPnzxlXjnGjjy0/3ylOwhX2qrDx1y0g0e6A6zT5CAGlq3p9+7iHOr4P50++IpYkn+s+Dw=="></enclosure>
+            <enclosure url="https://github.com/aviaviavi/org2/releases/download/0.6.0/OpenOrg-Intel.dmg" length="236075220" type="application/octet-stream" sparkle:edSignature="A5pxUYP5+Tm7nerIm56mBQ54LS2Y+A1CSpJfbxHsWskXyMkagngdBqqvlS3y3ElvB4gnM9js/uN1w+Jtu0JtCw=="></enclosure>
         </item>
     </channel>
 </rss><!-- sparkle-signatures:
-edSignature: m7opukyQ91H6qY4VD5KK/l2VkJYiuJAY/SOYCPBkQbAEvw/3hZv/zv0w8XSCHEgC6WrSfU7rbGOlXZs3Og/vAw==
-length: 1757
+edSignature: BEg3k4v7V1ot57bV6ohzALVK6bE/HFsEH6fFazAzSN3Z4u8wkgWFE9SmCvQfH26ogMjZj/QdCbP+Fx8/lOatBg==
+length: 2518
 -->
