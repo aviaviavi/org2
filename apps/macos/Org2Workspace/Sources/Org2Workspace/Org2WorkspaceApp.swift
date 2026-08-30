@@ -105,6 +105,14 @@ struct Org2WorkspaceApp: App {
       }
 
       CommandGroup(after: .newItem) {
+        Button("Close Tab") {
+          store.closeWorkspaceTab(store.selectedWorkspaceTabID)
+        }
+        .keyboardShortcut("w", modifiers: [.command])
+        .disabled(store.workspaceTabs.count < 2)
+
+        Divider()
+
         Button("Show Previous Tab") {
           store.selectPreviousWorkspaceTab()
         }

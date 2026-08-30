@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 @MainActor
 private func performAfterSwiftUIViewUpdate(
@@ -19,17 +20,16 @@ public struct ContentView: View {
 
   public var body: some View {
     GeometryReader { proxy in
-      VStack(spacing: 0) {
-        WorkspaceTabBar()
-
-        NavigationSplitView {
-          SidebarView()
-            .navigationSplitViewColumnWidth(
-              min: WorkspaceSidebarLayout.minimumWidth,
-              ideal: WorkspaceSidebarLayout.defaultWidth(for: proxy.size.width),
-              max: WorkspaceSidebarLayout.maximumWidth(for: proxy.size.width)
-            )
-        } detail: {
+      NavigationSplitView {
+        SidebarView()
+          .navigationSplitViewColumnWidth(
+            min: WorkspaceSidebarLayout.minimumWidth,
+            ideal: WorkspaceSidebarLayout.defaultWidth(for: proxy.size.width),
+            max: WorkspaceSidebarLayout.maximumWidth(for: proxy.size.width)
+          )
+      } detail: {
+        VStack(spacing: 0) {
+          WorkspaceTabBar()
           WorkspaceMainArea()
         }
       }
@@ -136,6 +136,7 @@ public struct ContentView: View {
 
 private struct WorkspaceTabBar: View {
   @EnvironmentObject private var store: WorkspaceStore
+  @State private var draggedTabID: WorkspaceTab.ID?
 
   var body: some View {
     HStack(spacing: 8) {
@@ -143,7 +144,7 @@ private struct WorkspaceTabBar: View {
         ScrollView(.horizontal, showsIndicators: false) {
           LazyHStack(spacing: 4) {
             ForEach(store.workspaceTabs) { tab in
-              WorkspaceTabItem(tab: tab)
+              WorkspaceTabItem(tab: tab, draggedTabID: $draggedTabID)
                 .id(tab.id)
             }
           }
@@ -182,6 +183,7 @@ private struct WorkspaceTabBar: View {
 private struct WorkspaceTabItem: View {
   @EnvironmentObject private var store: WorkspaceStore
   let tab: WorkspaceTab
+  @Binding var draggedTabID: WorkspaceTab.ID?
   @State private var isHovered = false
   @State private var isDropTargeted = false
 
@@ -199,24 +201,28 @@ private struct WorkspaceTabItem: View {
 
   var body: some View {
     HStack(spacing: 4) {
-      Button {
-        store.selectWorkspaceTab(tab.id)
-      } label: {
-        HStack(spacing: 7) {
-          Image(systemName: store.workspaceTabDisplaySystemImage(for: tab))
-            .font(.system(size: 11, weight: .medium))
-            .foregroundStyle(isSelected ? Color.accentColor : WorkspaceDesign.secondaryText)
-            .frame(width: 14)
-          Text(title)
-            .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
-            .foregroundStyle(WorkspaceDesign.primaryText)
-            .lineLimit(1)
-            .truncationMode(.tail)
-          Spacer(minLength: 0)
-        }
-        .contentShape(Rectangle())
+      HStack(spacing: 7) {
+        Image(systemName: store.workspaceTabDisplaySystemImage(for: tab))
+          .font(.system(size: 11, weight: .medium))
+          .foregroundStyle(isSelected ? Color.accentColor : WorkspaceDesign.secondaryText)
+          .frame(width: 14)
+        Text(title)
+          .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
+          .foregroundStyle(WorkspaceDesign.primaryText)
+          .lineLimit(1)
+          .truncationMode(.tail)
+        Spacer(minLength: 0)
       }
-      .buttonStyle(.plain)
+      .contentShape(Rectangle())
+      .onTapGesture {
+        store.selectWorkspaceTab(tab.id)
+      }
+      .accessibilityElement(children: .combine)
+      .accessibilityLabel(title)
+      .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+      .accessibilityAction {
+        store.selectWorkspaceTab(tab.id)
+      }
 
       if store.workspaceTabs.count > 1 {
         Button {
@@ -232,6 +238,7 @@ private struct WorkspaceTabItem: View {
         .opacity(isSelected || isHovered ? 1 : 0)
         .allowsHitTesting(isSelected || isHovered)
         .accessibilityLabel("Close \(title)")
+        .help("Close Tab (⌘W)")
       }
     }
     .padding(.horizontal, 9)
@@ -256,22 +263,6 @@ private struct WorkspaceTabItem: View {
     .help(title)
     .accessibilityElement(children: .contain)
     .accessibilityAddTraits(isSelected ? .isSelected : [])
-    .draggable(tab.id.uuidString) {
-      Label(title, systemImage: store.workspaceTabDisplaySystemImage(for: tab))
-        .font(.callout)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-    }
-    .dropDestination(for: String.self) { items, _ in
-      guard let sourceID = items.compactMap(UUID.init(uuidString:)).first else {
-        return false
-      }
-      withAnimation(WorkspaceMotion.quick) {
-        _ = store.moveWorkspaceTab(sourceID, to: tab.id)
-      }
-      return true
-    } isTargeted: { isDropTargeted = $0 }
     .contextMenu {
       Button("New Tab") {
         store.selectWorkspaceTab(tab.id)
@@ -305,6 +296,27 @@ private struct WorkspaceTabItem: View {
         store.closeOtherWorkspaceTabs(keeping: tab.id)
       }
       .disabled(store.workspaceTabs.count == 1)
+    }
+    .onDrag {
+      draggedTabID = tab.id
+      return NSItemProvider(object: tab.id.uuidString as NSString)
+    } preview: {
+      Label(title, systemImage: store.workspaceTabDisplaySystemImage(for: tab))
+        .font(.callout)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+    .onDrop(
+      of: [UTType.plainText.identifier],
+      isTargeted: $isDropTargeted
+    ) { _ in
+      guard let sourceID = draggedTabID else { return false }
+      withAnimation(WorkspaceMotion.quick) {
+        _ = store.moveWorkspaceTab(sourceID, to: tab.id)
+      }
+      draggedTabID = nil
+      return true
     }
   }
 }
