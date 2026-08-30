@@ -117,6 +117,25 @@ assert.doesNotMatch(
   /\.onAppear \{[\s\S]{0,180}remote\.beginPolling/,
   "Transcript polling must not depend only on onAppear",
 );
+const mobileThreadScrollView = mobileThreadView.slice(
+  mobileThreadView.indexOf("private func chatScrollView"),
+  mobileThreadView.indexOf("private var composer"),
+);
+assert.doesNotMatch(
+  mobileThreadScrollView,
+  /LazyVStack/,
+  "Chat transcripts must use exact row geometry so changing message heights cannot leave phantom space below the final row",
+);
+assert.match(
+  mobileThreadView,
+  /private func scrollToBottomIfFollowing[\s\S]*scrollToBottom\(proxy: proxy, animated: false\)/,
+  "Automatic transcript following must not animate through simultaneous composer and message layout changes",
+);
+assert.match(
+  mobileThreadView,
+  /if !isNearChatBottom[\s\S]*Button \{[\s\S]*scrollToBottom\(proxy: proxy, animated: true\)/,
+  "The explicit jump-to-latest control should retain animated scrolling",
+);
 
 const createThread = remoteStore.slice(
   remoteStore.indexOf("func createThread(destination:"),

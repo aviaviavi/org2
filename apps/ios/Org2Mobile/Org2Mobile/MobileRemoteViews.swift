@@ -1244,7 +1244,7 @@ struct MobileRemoteThreadView: View {
       }
       .onChange(of: isSending) { _, sending in
         if sending {
-          scrollToBottom(proxy: proxy)
+          scrollToBottom(proxy: proxy, animated: false)
         } else {
           scrollToBottomIfFollowing(proxy: proxy)
         }
@@ -1256,7 +1256,7 @@ struct MobileRemoteThreadView: View {
       .overlay(alignment: .bottomTrailing) {
         if !isNearChatBottom {
           Button {
-            scrollToBottom(proxy: proxy)
+            scrollToBottom(proxy: proxy, animated: true)
           } label: {
             Image(systemName: "arrow.down")
               .font(.system(size: 14, weight: .semibold))
@@ -1302,7 +1302,11 @@ struct MobileRemoteThreadView: View {
   private func chatScrollView(detail: MobileRemoteThreadDetail) -> some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 0) {
-        LazyVStack(alignment: .leading, spacing: 12) {
+        // Transcript rows change height when an optimistic send is replaced,
+        // streaming content arrives, and activity sections expand. Lazy stack
+        // estimates can survive those changes and create phantom space below
+        // the final row, so keep this geometry exact like the desktop client.
+        VStack(alignment: .leading, spacing: 12) {
           if let connectionError = remote.threadConnectionError {
             Label(connectionError, systemImage: "wifi.exclamationmark")
               .font(.caption)
@@ -1900,10 +1904,10 @@ struct MobileRemoteThreadView: View {
 
   private func scrollToBottomIfFollowing(proxy: ScrollViewProxy) {
     guard isNearChatBottom else { return }
-    scrollToBottom(proxy: proxy)
+    scrollToBottom(proxy: proxy, animated: false)
   }
 
-  private func scrollToBottom(proxy: ScrollViewProxy, animated: Bool = true) {
+  private func scrollToBottom(proxy: ScrollViewProxy, animated: Bool) {
     let target = bottomAnchorID
     Task { @MainActor in
       await Task.yield()
