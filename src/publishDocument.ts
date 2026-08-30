@@ -10,6 +10,7 @@ import type {
   TableNode,
   TimestampNode,
 } from "./ast.js";
+import { renderOrgCharts, type ChartTableData } from "./chartRender.js";
 import { renderOrgDocumentToHtml } from "./export.js";
 import {
   buildBuiltInLinkAbbreviations,
@@ -23,11 +24,22 @@ import {
 import { parseInlinesFromText, parseOrgToCanonicalAst } from "./parser.js";
 import { computeSubtreeRange, findHeadingAtOrAbove, getHeadlineLevel, isHeadlineLine, splitSourceLines } from "./sourceLines.js";
 import { renderPublishedDocumentToDocx, type PreparedDocxDocument } from "./publishedDocumentDocx.js";
+import {
+  renderPublishedDocumentToOdp,
+  renderPublishedDocumentToOds,
+  type PreparedOdfDocument,
+} from "./publishedDocumentOdf.js";
 
 export const PUBLISHED_DOCUMENT_SCHEMA = "org2:published-document:v1" as const;
 export const GOOGLE_DOCS_PUBLICATION_SCHEMA = "org2:google-docs-publication:v1" as const;
+export const GOOGLE_SLIDES_PUBLICATION_SCHEMA = "org2:google-slides-publication:v1" as const;
+export const GOOGLE_SHEETS_PUBLICATION_SCHEMA = "org2:google-sheets-publication:v1" as const;
+export const GOOGLE_DRIVE_PDF_PUBLICATION_SCHEMA = "org2:google-drive-pdf-publication:v1" as const;
 export const GOOGLE_DRIVE_FILE_SCOPE = "https://www.googleapis.com/auth/drive.file" as const;
 export const GOOGLE_DOCS_MIME_TYPE = "application/vnd.google-apps.document" as const;
+export const GOOGLE_SLIDES_MIME_TYPE = "application/vnd.google-apps.presentation" as const;
+export const GOOGLE_SHEETS_MIME_TYPE = "application/vnd.google-apps.spreadsheet" as const;
+export const PDF_MEDIA_TYPE = "application/pdf" as const;
 export const GOOGLE_DRIVE_MULTIPART_MAX_BYTES = 5_000_000;
 
 const DEFAULT_MAX_IMAGE_BYTES = 10 * 1024 * 1024;
@@ -40,6 +52,11 @@ const SAFE_DOCUMENT_KEYWORDS = new Set([
   "LANGUAGE",
   "SUBTITLE",
   "TITLE",
+]);
+const SAFE_SLIDE_LEVEL_KEYWORDS = new Set([
+  "BEAMER_FRAME_LEVEL",
+  "ORG2_SLIDE_LEVEL",
+  "SLIDE_LEVEL",
 ]);
 
 const SAFE_IMAGE_MIME_TYPES: Record<string, string> = {
@@ -138,6 +155,26 @@ export type GoogleDocsPublicationResult = {
   artifactHash: string;
 };
 
+export type GoogleWorkspaceDestination = "google-docs" | "google-slides" | "google-sheets" | "google-drive-pdf";
+
+export type GoogleWorkspacePublicationResult = {
+  $schema:
+    | typeof GOOGLE_DOCS_PUBLICATION_SCHEMA
+    | typeof GOOGLE_SLIDES_PUBLICATION_SCHEMA
+    | typeof GOOGLE_SHEETS_PUBLICATION_SCHEMA
+    | typeof GOOGLE_DRIVE_PDF_PUBLICATION_SCHEMA;
+  destination: GoogleWorkspaceDestination;
+  action: "create" | "update";
+  fileId: string;
+  name: string;
+  version?: string;
+  modifiedTime?: string;
+  webViewLink: string;
+  sourceHash: string;
+  projectionHash: string;
+  artifactHash: string;
+};
+
 export type PublishToGoogleDocsOptions = {
   accessToken: string;
   documentId?: string;
@@ -146,6 +183,19 @@ export type PublishToGoogleDocsOptions = {
   replaceExisting?: boolean;
   fetchImpl?: typeof fetch;
 };
+
+export type PublishToGoogleWorkspaceOptions = PublishToGoogleDocsOptions & {
+  pdfBytes?: Buffer;
+};
+
+export type PreparedPdfDocument = {
+  mediaType: typeof PDF_MEDIA_TYPE;
+  bytes: Buffer;
+  byteLength: number;
+  sha256: string;
+};
+
+export type PreparedGoogleWorkspaceUpload = PreparedDocxDocument | PreparedOdfDocument | PreparedPdfDocument;
 
 type EmbeddedAsset = PublishedAsset & {
   resolvedPath: string;
@@ -526,6 +576,21 @@ function sanitizeNode(node: Node, context: SanitizationContext): Node | null {
       return sanitizeListItem(node, context);
     case "KeywordLine": {
       const key = String(node.keyRaw || "").trim().toUpperCase();
+      if (SAFE_SLIDE_LEVEL_KEYWORDS.has(key)) {
+        const parsed = Number.parseInt(String(node.valueRaw || "").trim(), 10);
+        if (!Number.isInteger(parsed) || parsed < 1 || parsed > 12) {
+          redact(context, "metadata");
+          context.warnings.push(`${key} was removed because its slide level was invalid.`);
+          return null;
+        }
+        return {
+          type: "KeywordLine",
+          raw: `#+${key}: ${parsed}`,
+          indent: "",
+          keyRaw: key,
+          valueRaw: String(parsed),
+        };
+      }
       if (!SAFE_DOCUMENT_KEYWORDS.has(key)) {
         redact(context, key === "HTML_HEAD" || key === "HTML_HEAD_EXTRA" ? "rawHtml" : "metadata");
         return null;
@@ -608,7 +673,67 @@ function sanitizeNode(node: Node, context: SanitizationContext): Node | null {
 }
 
 function sanitizeNodes(nodes: Node[], context: SanitizationContext): Node[] {
-  return nodes.map((node) => sanitizeNode(node, context)).filter((node): node is Node => node !== null);
+  return nodes.map((node) => {
+    const sanitized = sanitizeNode(node, context);
+    if (!sanitized) return null;
+
+    const sourceRange = (node as Node & { sourceRange?: { startLine: number; endLine: number } }).sourceRange;
+    if (sourceRange) {
+      // Publishing needs source locations only long enough to attach deterministic
+      // chart SVGs to their sanitized chart blocks. Keep them non-enumerable so
+      // they never enter the public projection, manifest, or projection hash.
+      Object.defineProperty(sanitized, "sourceRange", {
+        value: { ...sourceRange },
+        enumerable: false,
+      });
+    }
+    return sanitized;
+  }).filter((node): node is Node => node !== null);
+}
+
+function publishedChartTableData(nodes: Node[], originalNodes: Node[]): ReadonlyMap<number, ChartTableData> {
+  const originalHeaders = new Map<number, string[]>();
+  const visitOriginal = (node: Node): void => {
+    if (node.type === "Table") {
+      const sourceRange = (node as Node & { sourceRange?: { startLine: number } }).sourceRange;
+      const header = node.rows.find((row) => row.type === "TableRow");
+      if (sourceRange && header?.type === "TableRow") originalHeaders.set(sourceRange.startLine, [...header.cells]);
+      return;
+    }
+    if (node.type === "Headline" || node.type === "ListItem") {
+      node.children.forEach(visitOriginal);
+      return;
+    }
+    if (node.type === "List") node.items.forEach(visitOriginal);
+  };
+  originalNodes.forEach(visitOriginal);
+
+  const tables = new Map<number, ChartTableData>();
+  const visit = (node: Node): void => {
+    if (node.type === "Table") {
+      const sourceRange = (node as Node & { sourceRange?: { startLine: number } }).sourceRange;
+      const rows = node.rows
+        .filter((row) => row.type === "TableRow")
+        .map((row) => [...row.cells]);
+      if (sourceRange && rows.length > 0) {
+        tables.set(sourceRange.startLine, {
+          // Header cells are chart column identifiers. Preserve their literal
+          // spelling (for example rolling_7d) while taking every rendered data
+          // value from the sanitized projection below.
+          headers: originalHeaders.get(sourceRange.startLine) || rows[0] || [],
+          rows: rows.slice(1),
+        });
+      }
+      return;
+    }
+    if (node.type === "Headline" || node.type === "ListItem") {
+      node.children.forEach(visit);
+      return;
+    }
+    if (node.type === "List") node.items.forEach(visit);
+  };
+  nodes.forEach(visit);
+  return tables;
 }
 
 function firstDocumentTitle(doc: DocumentNode): string {
@@ -642,7 +767,7 @@ function hardenExternalLinks(html: string): string {
 export function preparePublishedDocument(options: PreparePublishedDocumentOptions): PreparedPublishedDocument {
   const normalizedSource = normalizeSourceText(options.sourceText);
   const selected = selectedSourceText(normalizedSource, options.line);
-  const originalDocument = parseOrgToCanonicalAst(selected.text);
+  const originalDocument = parseOrgToCanonicalAst(selected.text, { sourceRanges: true });
   const abbreviations = mergeLinkAbbreviations([
     buildBuiltInLinkAbbreviations(options.linearTeam),
     collectLinkAbbreviationsFromRecord(options.linkAbbreviations),
@@ -663,6 +788,22 @@ export function preparePublishedDocument(options: PreparePublishedDocumentOption
     version: "0",
     children: sanitizeNodes(originalDocument.children, context),
   };
+  const chartResults = renderOrgCharts(selected.text, {
+    tableDataByLine: publishedChartTableData(document.children, originalDocument.children),
+  });
+  const charts = chartResults
+    .filter((chart): chart is typeof chart & { svg: string; source: NonNullable<typeof chart.source> } => (
+      chart.ok && Boolean(chart.svg && chart.source)
+    ))
+    .map((chart) => ({ svg: chart.svg, source: chart.source, presentation: chart.presentation }));
+  for (const chart of chartResults) {
+    if (chart.ok) continue;
+    const detail = chart.diagnostics
+      .filter((diagnostic) => diagnostic.severity === "error")
+      .map((diagnostic) => diagnostic.message)
+      .join("; ");
+    context.warnings.push(`Chart was not rendered${detail ? `: ${detail}` : "."}`);
+  }
   const title = String(options.title || "").trim() || firstDocumentTitle(document);
   const rendered = renderOrgDocumentToHtml(document, {
     title,
@@ -672,6 +813,7 @@ export function preparePublishedDocument(options: PreparePublishedDocumentOption
     includeDocumentHeader: selected.selection === "document",
     headIncludes: disclosureHeadIncludes(options.allowIndexing === true),
     profile: "publish",
+    charts,
   });
   const html = hardenExternalLinks(rendered.html);
   const assets = [...context.assetsByPath.values()]
@@ -802,22 +944,62 @@ function googleFileFields(): string {
   return "id,name,mimeType,modifiedTime,version,webViewLink,trashed,capabilities(canEdit)";
 }
 
+function googleWorkspaceSpec(destination: GoogleWorkspaceDestination): {
+  schema: GoogleWorkspacePublicationResult["$schema"];
+  targetMediaType: string;
+  displayName: string;
+  fallbackLink(fileId: string): string;
+} {
+  switch (destination) {
+    case "google-docs":
+      return {
+        schema: GOOGLE_DOCS_PUBLICATION_SCHEMA,
+        targetMediaType: GOOGLE_DOCS_MIME_TYPE,
+        displayName: "Google Docs",
+        fallbackLink: (fileId) => `https://docs.google.com/document/d/${encodeURIComponent(fileId)}/edit`,
+      };
+    case "google-slides":
+      return {
+        schema: GOOGLE_SLIDES_PUBLICATION_SCHEMA,
+        targetMediaType: GOOGLE_SLIDES_MIME_TYPE,
+        displayName: "Google Slides",
+        fallbackLink: (fileId) => `https://docs.google.com/presentation/d/${encodeURIComponent(fileId)}/edit`,
+      };
+    case "google-sheets":
+      return {
+        schema: GOOGLE_SHEETS_PUBLICATION_SCHEMA,
+        targetMediaType: GOOGLE_SHEETS_MIME_TYPE,
+        displayName: "Google Sheets",
+        fallbackLink: (fileId) => `https://docs.google.com/spreadsheets/d/${encodeURIComponent(fileId)}/edit`,
+      };
+    case "google-drive-pdf":
+      return {
+        schema: GOOGLE_DRIVE_PDF_PUBLICATION_SCHEMA,
+        targetMediaType: PDF_MEDIA_TYPE,
+        displayName: "Google Drive PDF",
+        fallbackLink: (fileId) => `https://drive.google.com/file/d/${encodeURIComponent(fileId)}/view`,
+      };
+  }
+}
+
 function googleResult(
   publication: PreparedPublishedDocument,
-  upload: PreparedDocxDocument,
+  upload: PreparedGoogleWorkspaceUpload,
+  destination: GoogleWorkspaceDestination,
   file: GoogleDriveFileMetadata,
   action: "create" | "update",
-): GoogleDocsPublicationResult {
-  if (!file.id) throw new Error("Google Drive did not return a document ID");
+): GoogleWorkspacePublicationResult {
+  if (!file.id) throw new Error("Google Drive did not return a file ID");
+  const spec = googleWorkspaceSpec(destination);
   return {
-    $schema: GOOGLE_DOCS_PUBLICATION_SCHEMA,
-    destination: "google-docs",
+    $schema: spec.schema,
+    destination,
     action,
     fileId: file.id,
     name: file.name || publication.manifest.title,
     ...(file.version ? { version: String(file.version) } : {}),
     ...(file.modifiedTime ? { modifiedTime: file.modifiedTime } : {}),
-    webViewLink: file.webViewLink || `https://docs.google.com/document/d/${encodeURIComponent(file.id)}/edit`,
+    webViewLink: file.webViewLink || spec.fallbackLink(file.id),
     sourceHash: publication.sourceHash,
     projectionHash: publication.projectionHash,
     artifactHash: upload.sha256,
@@ -834,31 +1016,73 @@ export function prepareGoogleDocsUpload(publication: PreparedPublishedDocument):
   });
 }
 
-export async function publishToGoogleDocs(
+export function prepareGoogleSlidesUpload(publication: PreparedPublishedDocument): PreparedOdfDocument {
+  const unsupportedImages = publication.assets.filter((asset) => !["image/gif", "image/jpeg", "image/png"].includes(asset.mediaType));
+  if (unsupportedImages.length > 0) {
+    throw new Error(`Google Slides publishing supports embedded PNG, JPEG, and GIF images; convert ${unsupportedImages.map((asset) => asset.name).join(", ")} or publish a web bundle`);
+  }
+  return renderPublishedDocumentToOdp(publication.document, publication.manifest.title, {
+    includeTitle: publication.manifest.selection === "document",
+  });
+}
+
+export function prepareGoogleSheetsUpload(publication: PreparedPublishedDocument): PreparedOdfDocument {
+  return renderPublishedDocumentToOds(publication.document, publication.manifest.title);
+}
+
+export function prepareGoogleDrivePdfUpload(pdfBytes: Buffer): PreparedPdfDocument {
+  const bytes = Buffer.from(pdfBytes);
+  if (bytes.length < 8 || !bytes.subarray(0, 5).equals(Buffer.from("%PDF-"))) {
+    throw new Error("Google Drive PDF publishing requires a valid PDF produced from the disclosure-safe publication");
+  }
+  return {
+    mediaType: PDF_MEDIA_TYPE,
+    bytes,
+    byteLength: bytes.length,
+    sha256: sha256(bytes),
+  };
+}
+
+export function prepareGoogleWorkspaceUpload(
   publication: PreparedPublishedDocument,
-  options: PublishToGoogleDocsOptions,
-): Promise<GoogleDocsPublicationResult> {
+  destination: GoogleWorkspaceDestination,
+  pdfBytes?: Buffer,
+): PreparedGoogleWorkspaceUpload {
+  if (destination === "google-docs") return prepareGoogleDocsUpload(publication);
+  if (destination === "google-slides") return prepareGoogleSlidesUpload(publication);
+  if (destination === "google-sheets") return prepareGoogleSheetsUpload(publication);
+  if (!pdfBytes) throw new Error("Google Drive PDF publishing requires rendered PDF bytes");
+  return prepareGoogleDrivePdfUpload(pdfBytes);
+}
+
+export async function publishToGoogleWorkspace(
+  publication: PreparedPublishedDocument,
+  destination: GoogleWorkspaceDestination,
+  options: PublishToGoogleWorkspaceOptions,
+): Promise<GoogleWorkspacePublicationResult> {
+  const spec = googleWorkspaceSpec(destination);
   const accessToken = String(options.accessToken || "").trim();
-  if (!accessToken) throw new Error("Google Docs publishing requires an access token");
-  const upload = prepareGoogleDocsUpload(publication);
+  if (!accessToken) throw new Error(`${spec.displayName} publishing requires an access token`);
+  const upload = prepareGoogleWorkspaceUpload(publication, destination, options.pdfBytes);
   if (upload.byteLength > GOOGLE_DRIVE_MULTIPART_MAX_BYTES) {
-    throw new Error(`Google Docs publishing currently supports artifacts up to ${GOOGLE_DRIVE_MULTIPART_MAX_BYTES} bytes; reduce embedded assets or publish a web bundle`);
+    throw new Error(`${spec.displayName} publishing currently supports artifacts up to ${GOOGLE_DRIVE_MULTIPART_MAX_BYTES} bytes; reduce embedded assets or publish a web bundle`);
   }
   const request = options.fetchImpl || globalThis.fetch;
-  if (typeof request !== "function") throw new Error("Google Docs publishing requires a fetch implementation");
+  if (typeof request !== "function") throw new Error(`${spec.displayName} publishing requires a fetch implementation`);
   const authorization = `Bearer ${accessToken}`;
   const appProperties = {
     org2Schema: PUBLISHED_DOCUMENT_SCHEMA,
     org2SourceHash: publication.sourceHash,
     org2ProjectionHash: publication.projectionHash,
     org2ArtifactHash: upload.sha256,
+    org2Destination: destination,
   };
   const boundary = `org2-${upload.sha256.slice(0, 24)}`;
 
   if (!options.documentId) {
     const metadata: Record<string, unknown> = {
       name: publication.manifest.title,
-      mimeType: GOOGLE_DOCS_MIME_TYPE,
+      mimeType: spec.targetMediaType,
       appProperties,
       ...(options.folderId ? { parents: [options.folderId] } : {}),
     };
@@ -875,14 +1099,20 @@ export async function publishToGoogleDocs(
       },
       body: requestBodyBytes(multipartBody(boundary, metadata, upload.mediaType, upload.bytes)),
     });
-    return googleResult(publication, upload, await googleJsonResponse(response, "create", [accessToken]), "create");
+    return googleResult(
+      publication,
+      upload,
+      destination,
+      await googleJsonResponse(response, "create", [accessToken]),
+      "create",
+    );
   }
 
   if (options.replaceExisting !== true) {
-    throw new Error("Updating a Google Doc requires replaceExisting: true");
+    throw new Error(`Updating ${spec.displayName} requires replaceExisting: true`);
   }
   const expectedVersion = String(options.expectedVersion || "").trim();
-  if (!expectedVersion) throw new Error("Updating a Google Doc requires an expected remote version");
+  if (!expectedVersion) throw new Error(`Updating ${spec.displayName} requires an expected remote version`);
 
   const documentId = encodeURIComponent(options.documentId);
   const metadataQuery = new URLSearchParams({ supportsAllDrives: "true", fields: googleFileFields() });
@@ -891,11 +1121,11 @@ export async function publishToGoogleDocs(
     headers: { authorization },
   });
   const current = await googleJsonResponse(metadataResponse, "metadata check", [accessToken]);
-  if (current.trashed) throw new Error("The Google Doc is in the trash");
-  if (current.mimeType !== GOOGLE_DOCS_MIME_TYPE) throw new Error("The target Google Drive file is not a Google Doc");
-  if (current.capabilities?.canEdit === false) throw new Error("The connected Google account cannot edit the target document");
+  if (current.trashed) throw new Error(`The ${spec.displayName} file is in the trash`);
+  if (current.mimeType !== spec.targetMediaType) throw new Error(`The target Google Drive file is not a ${spec.displayName} file`);
+  if (current.capabilities?.canEdit === false) throw new Error("The connected Google account cannot edit the target file");
   if (String(current.version || "") !== expectedVersion) {
-    throw new Error(`Google Doc version changed: expected ${expectedVersion}, found ${current.version || "unknown"}. Import the remote changes or publish as a new copy.`);
+    throw new Error(`${spec.displayName} version changed: expected ${expectedVersion}, found ${current.version || "unknown"}. Import the remote changes or publish as a new copy.`);
   }
 
   const commentQuery = new URLSearchParams({
@@ -908,7 +1138,7 @@ export async function publishToGoogleDocs(
     headers: { authorization },
   });
   if (await googleCommentsPresent(commentResponse, accessToken)) {
-    throw new Error("The Google Doc has comments. Full-content replacement could detach their anchors; publish as a new copy instead.");
+    throw new Error(`The ${spec.displayName} file has comments. Full-content replacement could detach their anchors; publish as a new copy instead.`);
   }
 
   const updateQuery = new URLSearchParams({
@@ -926,5 +1156,18 @@ export async function publishToGoogleDocs(
     },
     body: requestBodyBytes(multipartBody(boundary, { appProperties }, upload.mediaType, upload.bytes)),
   });
-  return googleResult(publication, upload, await googleJsonResponse(response, "update", [accessToken]), "update");
+  return googleResult(
+    publication,
+    upload,
+    destination,
+    await googleJsonResponse(response, "update", [accessToken]),
+    "update",
+  );
+}
+
+export async function publishToGoogleDocs(
+  publication: PreparedPublishedDocument,
+  options: PublishToGoogleDocsOptions,
+): Promise<GoogleDocsPublicationResult> {
+  return await publishToGoogleWorkspace(publication, "google-docs", options) as GoogleDocsPublicationResult;
 }

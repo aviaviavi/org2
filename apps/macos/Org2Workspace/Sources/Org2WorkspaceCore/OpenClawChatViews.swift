@@ -2295,6 +2295,7 @@ struct OpenClawComposerView: View {
     guard canSend else { return false }
     let text = localDraft
     localDraft = ""
+    moveComposerCursorToEndRequest &+= 1
     lastStoreDraft = ""
     store.cacheOpenClawComposerDraft("")
     if delivery == .automatic {
@@ -2996,6 +2997,9 @@ private struct OpenClawComposerTextView: NSViewRepresentable {
     textView.autoresizingMask = [.width]
     scrollView.documentView = textView
     context.coordinator.lastMoveCursorToEndRequest = moveCursorToEndRequest
+    context.coordinator.textSynchronization = OpenClawComposerTextSynchronization(
+      initialModelText: text
+    )
 
     if focusOnAppear {
       DispatchQueue.main.async {
@@ -3020,9 +3024,18 @@ private struct OpenClawComposerTextView: NSViewRepresentable {
     }
     let movesCursorToEnd = context.coordinator.lastMoveCursorToEndRequest != moveCursorToEndRequest
     let selectedRange = textView.selectedRange()
-    let textChanged = textView.string != text
+    // AppKit can accept another keystroke before SwiftUI presents the state
+    // from the previous one. Never replace that newer native edit with its
+    // delayed model echo, because doing so also restores an older selection.
+    let modelUpdate = context.coordinator.textSynchronization.modelTextUpdate(
+      text,
+      forced: movesCursorToEnd
+    )
+    let textChanged = modelUpdate == .applyModelText && textView.string != text
     if textChanged {
+      context.coordinator.isApplyingModelText = true
       textView.string = text
+      context.coordinator.isApplyingModelText = false
     }
     if textChanged || movesCursorToEnd {
       let nextRange = OpenClawComposerSelection.updatedRange(
@@ -3041,14 +3054,20 @@ private struct OpenClawComposerTextView: NSViewRepresentable {
   final class Coordinator: NSObject, NSTextViewDelegate {
     var parent: OpenClawComposerTextView
     var lastMoveCursorToEndRequest = 0
+    var textSynchronization = OpenClawComposerTextSynchronization()
+    var isApplyingModelText = false
 
     init(parent: OpenClawComposerTextView) {
       self.parent = parent
     }
 
     func textDidChange(_ notification: Notification) {
-      guard let textView = notification.object as? NSTextView else { return }
-      parent.text = textView.string
+      guard !isApplyingModelText,
+            let textView = notification.object as? NSTextView
+      else { return }
+      let nativeText = textView.string
+      textSynchronization.nativeTextDidChange(nativeText)
+      parent.text = nativeText
     }
   }
 
@@ -3108,6 +3127,47 @@ private struct OpenClawComposerTextView: NSViewRepresentable {
       }
       super.keyDown(with: event)
     }
+  }
+}
+
+enum OpenClawComposerModelTextUpdate: Equatable {
+  case applyModelText
+  case preserveNativeText
+}
+
+struct OpenClawComposerTextSynchronization {
+  private var pendingNativeTexts: [String] = []
+  private var lastModelText: String?
+
+  init(initialModelText: String? = nil) {
+    lastModelText = initialModelText
+  }
+
+  mutating func nativeTextDidChange(_ text: String) {
+    if pendingNativeTexts.isEmpty, let lastModelText {
+      pendingNativeTexts.append(lastModelText)
+    }
+    guard pendingNativeTexts.last != text else { return }
+    pendingNativeTexts.append(text)
+  }
+
+  mutating func modelTextUpdate(
+    _ text: String,
+    forced: Bool = false
+  ) -> OpenClawComposerModelTextUpdate {
+    lastModelText = text
+    if forced {
+      pendingNativeTexts.removeAll(keepingCapacity: true)
+      return .applyModelText
+    }
+
+    if let acknowledgedIndex = pendingNativeTexts.lastIndex(of: text) {
+      pendingNativeTexts.removeFirst(acknowledgedIndex + 1)
+      return .preserveNativeText
+    }
+
+    pendingNativeTexts.removeAll(keepingCapacity: true)
+    return .applyModelText
   }
 }
 

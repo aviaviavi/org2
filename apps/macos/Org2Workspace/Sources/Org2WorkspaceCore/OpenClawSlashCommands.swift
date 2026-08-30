@@ -59,7 +59,7 @@ public enum OpenClawSlashCommands {
     .init(name: "spellcheck", summary: "Check prose in the current document", systemImage: "textformat.abc.dottedunderline"),
     .init(name: "lint", summary: "Lint the current corpus", systemImage: "checkmark.seal"),
     .init(name: "export", arguments: "pdf|html", summary: "Export the current document", systemImage: "square.and.arrow.up"),
-    .init(name: "publish", arguments: "preview [PROJECT]", summary: "Preview or build a publish project", systemImage: "globe"),
+    .init(name: "publish", arguments: "document | preview [PROJECT]", summary: "Publish this document or build a site project", systemImage: "globe"),
     .init(name: "brief", summary: "Ask the agent for a cited document brief", systemImage: "doc.text.magnifyingglass", isAgentAssisted: true),
     .init(name: "summarize", summary: "Ask the agent to summarize the current document", systemImage: "text.alignleft", isAgentAssisted: true),
   ]

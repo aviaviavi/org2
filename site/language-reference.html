@@ -29,6 +29,24 @@
 <meta name="twitter:image" content="https://openorg.so/assets/og/language-reference.png" />
 <meta name="twitter:image:alt" content="Language reference — This is the practical language reference for Org2 v0." />
 <style id="org2-chart-style">
+:root {
+  --org2-chart-axis: #475569;
+  --org2-chart-grid: #d7dee8;
+  --org2-chart-mark: #2563eb;
+  --org2-chart-label: #475569;
+  --org2-chart-title: #0f172a;
+  --org2-chart-surface: #ffffff;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --org2-chart-axis: rgba(233, 234, 237, 0.5);
+    --org2-chart-grid: rgba(233, 234, 237, 0.12);
+    --org2-chart-mark: #79b8ed;
+    --org2-chart-label: #a4a8b0;
+    --org2-chart-title: #e9eaed;
+    --org2-chart-surface: #202226;
+  }
+}
 .org2-chart { width: min(100%, 800px); margin: 1rem 0 1.35rem; overflow-x: auto; }
 .org2-chart-compact { width: min(100%, 680px); }
 .org2-chart-wide { width: 100%; }

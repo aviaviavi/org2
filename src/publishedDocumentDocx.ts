@@ -8,6 +8,7 @@ import type {
   ParagraphNode,
   TableNode,
 } from "./ast.js";
+import { storedZipArchive } from "./zipArchive.js";
 
 export const DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document" as const;
 
@@ -330,80 +331,6 @@ function rootRelationshipsXml(): string {
   return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>';
 }
 
-type ZipEntry = { name: string; data: Buffer };
-
-let crcTable: Uint32Array | undefined;
-
-function crc32(data: Buffer): number {
-  if (!crcTable) {
-    crcTable = new Uint32Array(256);
-    for (let index = 0; index < 256; index += 1) {
-      let value = index;
-      for (let bit = 0; bit < 8; bit += 1) value = (value & 1) ? (0xedb88320 ^ (value >>> 1)) : (value >>> 1);
-      crcTable[index] = value >>> 0;
-    }
-  }
-  let value = 0xffffffff;
-  for (const byte of data) value = (crcTable[(value ^ byte) & 0xff] || 0) ^ (value >>> 8);
-  return (value ^ 0xffffffff) >>> 0;
-}
-
-function zipArchive(entries: ZipEntry[]): Buffer {
-  const localParts: Buffer[] = [];
-  const centralParts: Buffer[] = [];
-  let offset = 0;
-  for (const entry of entries) {
-    const name = Buffer.from(entry.name, "utf8");
-    const checksum = crc32(entry.data);
-    const localHeader = Buffer.alloc(30);
-    localHeader.writeUInt32LE(0x04034b50, 0);
-    localHeader.writeUInt16LE(20, 4);
-    localHeader.writeUInt16LE(0, 6);
-    localHeader.writeUInt16LE(0, 8);
-    localHeader.writeUInt16LE(0, 10);
-    localHeader.writeUInt16LE(0x21, 12);
-    localHeader.writeUInt32LE(checksum, 14);
-    localHeader.writeUInt32LE(entry.data.length, 18);
-    localHeader.writeUInt32LE(entry.data.length, 22);
-    localHeader.writeUInt16LE(name.length, 26);
-    localHeader.writeUInt16LE(0, 28);
-    localParts.push(localHeader, name, entry.data);
-
-    const centralHeader = Buffer.alloc(46);
-    centralHeader.writeUInt32LE(0x02014b50, 0);
-    centralHeader.writeUInt16LE(20, 4);
-    centralHeader.writeUInt16LE(20, 6);
-    centralHeader.writeUInt16LE(0, 8);
-    centralHeader.writeUInt16LE(0, 10);
-    centralHeader.writeUInt16LE(0, 12);
-    centralHeader.writeUInt16LE(0x21, 14);
-    centralHeader.writeUInt32LE(checksum, 16);
-    centralHeader.writeUInt32LE(entry.data.length, 20);
-    centralHeader.writeUInt32LE(entry.data.length, 24);
-    centralHeader.writeUInt16LE(name.length, 28);
-    centralHeader.writeUInt16LE(0, 30);
-    centralHeader.writeUInt16LE(0, 32);
-    centralHeader.writeUInt16LE(0, 34);
-    centralHeader.writeUInt16LE(0, 36);
-    centralHeader.writeUInt32LE(0, 38);
-    centralHeader.writeUInt32LE(offset, 42);
-    centralParts.push(centralHeader, name);
-    offset += localHeader.length + name.length + entry.data.length;
-  }
-
-  const central = Buffer.concat(centralParts);
-  const end = Buffer.alloc(22);
-  end.writeUInt32LE(0x06054b50, 0);
-  end.writeUInt16LE(0, 4);
-  end.writeUInt16LE(0, 6);
-  end.writeUInt16LE(entries.length, 8);
-  end.writeUInt16LE(entries.length, 10);
-  end.writeUInt32LE(central.length, 12);
-  end.writeUInt32LE(offset, 16);
-  end.writeUInt16LE(0, 20);
-  return Buffer.concat([...localParts, central, end]);
-}
-
 export function renderPublishedDocumentToDocx(
   document: DocumentNode,
   title: string,
@@ -423,7 +350,7 @@ export function renderPublishedDocumentToDocx(
   const titleParagraph = options.includeTitle === false ? "" : paragraph(runText(title), { style: "Title", afterTwips: 240 });
   const body = `${titleParagraph}${renderNodes(document.children, context)}<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1080" w:right="1080" w:bottom="1080" w:left="1080" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr>`;
   const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:body>${body}</w:body></w:document>`;
-  const entries: ZipEntry[] = [
+  const entries = [
     { name: "[Content_Types].xml", data: Buffer.from(contentTypesXml(context)) },
     { name: "_rels/.rels", data: Buffer.from(rootRelationshipsXml()) },
     { name: "word/document.xml", data: Buffer.from(documentXml) },
@@ -431,7 +358,7 @@ export function renderPublishedDocumentToDocx(
     { name: "word/_rels/document.xml.rels", data: Buffer.from(documentRelationshipsXml(context)) },
     ...context.media.map((media) => ({ name: `word/media/${media.filename}`, data: media.data })),
   ];
-  const bytes = zipArchive(entries);
+  const bytes = storedZipArchive(entries);
   return {
     mediaType: DOCX_MEDIA_TYPE,
     bytes,

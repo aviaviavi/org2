@@ -33,6 +33,16 @@ final class OpenClawSlashCommandTests: XCTestCase {
     XCTAssertTrue(OpenClawSlashCommands.suggestions(for: "/search notes").isEmpty)
   }
 
+  func testPublishDocumentCommandOpensTheNativePublishingSurface() {
+    guard case .command(let command, let arguments) = OpenClawSlashCommands.parse("/publish document") else {
+      return XCTFail("Expected the publish command")
+    }
+    XCTAssertEqual(command.name, "publish")
+    XCTAssertEqual(arguments, "document")
+    XCTAssertEqual(command.arguments, "document | preview [PROJECT]")
+    XCTAssertFalse(command.isAgentAssisted)
+  }
+
   func testCatalogKeepsAgentContextInternal() {
     XCTAssertFalse(OpenClawSlashCommands.all.map(\.name).contains("context"))
     XCTAssertTrue(OpenClawSlashCommands.all.first(where: { $0.name == "brief" })?.isAgentAssisted == true)

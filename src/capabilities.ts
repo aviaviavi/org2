@@ -39,7 +39,7 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
       "Use `org2 source list|doctor|status|bind|import|sync` to manage corpus-declared Slack and Notion crawler profiles and stage review packets without storing credentials in the corpus.",
       "Use `org2 plugin list|doctor` to inspect corpus-declared extensions, `plugin sync` to reproduce the content-addressed lock, and `plugin update` to advance a Git ref deliberately.",
       "Use `org2 workspace agenda|search` only with explicitly granted `--mount` paths for read-only multi-corpus projections.",
-      "Use `org2 publish document` to preview and publish a disclosure-safe document or subtree as a portable web bundle or Google Doc.",
+      "Use `org2 publish document` to preview and publish a disclosure-safe document or subtree as a web bundle, Beamer PDF, Google Doc, Google Slides deck, Google Sheet, or Google Drive PDF.",
     ],
     safety: [
       "Treat corpus files as user-owned source code: make small, reviewable text changes.",
@@ -62,7 +62,7 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
       "Treat OpenClaw and Codex as runtimes, not agent identities. Store named workers under agent-profiles/, bind non-secret runtime agent IDs there, and preserve resolved agentRef/goalRef on runs, workflows, and delegated headings.",
       "Run targeted tests plus `org2 lint` around writes when practical; never put secrets in notes or generated artifacts.",
       "Never infer agent access from corpora remembered by a person's app; every federated CLI mount must be explicit.",
-      "Single-document publishing strips private Org metadata and raw HTML before rendering. A static web bundle does not implement viewer authentication; its host must enforce any secret-link or per-person access policy.",
+      "Single-document publishing strips private Org metadata and raw HTML before rendering every format. A static web bundle does not implement viewer authentication; its host must enforce any secret-link or per-person access policy, while Google Drive owns permissions for Docs, Slides, Sheets, and PDF files.",
       "Treat `org2 doctor` as a read-only consistency check. Review its evidence before repairing canonical state; the command never mutates files automatically.",
       "Run and workflow mutations use atomic guarded writes. Pass `--if-revision sha256:...` when carrying run state across requests; a stale revision, concurrent writer, duplicate create, or out-of-band readable-state edit fails instead of silently overwriting newer source.",
       "Keep curated account identity, aliases, commercial context, and idempotent work history in a ledger account under notes/. Keep immutable imports and provider payloads under raw/, and link approvals to their canonical run instead of copying decision state.",
@@ -156,7 +156,7 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
       },
       {
         id: "publishing",
-        purpose: "Publish a disclosure-safe document or subtree to a portable web bundle or Google Doc, export documents and Beamer-compatible slide decks, compile presentation PDFs, or publish a multi-file HTML project.",
+        purpose: "Publish a disclosure-safe document or subtree to a portable web bundle, safe Beamer PDF, Google Doc, Google Slides deck, Google Sheet, or Google Drive PDF; export ordinary documents and slide decks; or publish a multi-file HTML project.",
         commands: ["org2 publish document", "org2 export html", "org2 export beamer", "org2 publish"],
         writes: "preview-by-default",
       },

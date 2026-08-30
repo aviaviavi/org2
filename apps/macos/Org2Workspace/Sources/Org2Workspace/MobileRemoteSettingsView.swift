@@ -24,6 +24,11 @@ struct WorkspaceSettingsView: View {
           Label("Documents", systemImage: "doc.richtext")
         }
 
+      SharingSettingsView()
+        .tabItem {
+          Label("Sharing", systemImage: "network")
+        }
+
       MeetingSettingsView()
         .tabItem {
           Label("Meetings", systemImage: "waveform")
@@ -323,6 +328,145 @@ private struct DocumentSettingsView: View {
     .padding(8)
     .frame(width: 560)
     .frame(minHeight: 460)
+  }
+}
+
+private struct SharingSettingsView: View {
+  @EnvironmentObject private var store: WorkspaceStore
+  @State private var isConfirmingStopAll = false
+
+  var body: some View {
+    Form {
+      Section {
+        if store.localDocumentPublications.isEmpty {
+          ContentUnavailableView(
+            "No Active Local Links",
+            systemImage: "network.slash",
+            description: Text("Publish a document to Local Link and it will appear here while OpenOrg is hosting it.")
+          )
+          .frame(maxWidth: .infinity, minHeight: 180)
+        } else {
+          ForEach(store.localDocumentPublications) { publication in
+            publicationRow(publication)
+          }
+        }
+      } header: {
+        Label("Active Local Links", systemImage: "network")
+      } footer: {
+        Text("These links serve sealed exports, not source files or corpus access. They stop working when OpenOrg quits or when you stop hosting them here.")
+      }
+
+      if !store.localDocumentPublications.isEmpty {
+        Section {
+          Button("Stop Hosting All", role: .destructive) {
+            isConfirmingStopAll = true
+          }
+        }
+      }
+
+      Section {
+        Label("Local links use unencrypted HTTP and an unguessable bearer URL. Share them only over a trusted local or private network.", systemImage: "lock.open.trianglebadge.exclamationmark")
+          .foregroundStyle(.orange)
+      } header: {
+        Label("Local Link Security", systemImage: "lock.shield")
+      }
+    }
+    .formStyle(.grouped)
+    .padding(8)
+    .frame(width: 620)
+    .frame(minHeight: 460)
+    .confirmationDialog(
+      "Stop hosting every local publication?",
+      isPresented: $isConfirmingStopAll
+    ) {
+      Button("Stop Hosting All", role: .destructive) {
+        store.revokeAllLocalDocumentPublications()
+      }
+      Button("Cancel", role: .cancel) {}
+    } message: {
+      Text("Every active link will stop working immediately. You can publish the files again later with new links.")
+    }
+  }
+
+  private func publicationRow(_ publication: LocalDocumentPublication) -> some View {
+    HStack(alignment: .top, spacing: 12) {
+      Image(systemName: publication.format?.systemImage ?? "doc")
+        .font(.title3)
+        .foregroundStyle(.secondary)
+        .frame(width: 24)
+
+      VStack(alignment: .leading, spacing: 4) {
+        HStack(spacing: 7) {
+          Text(publication.title)
+            .font(.callout.weight(.semibold))
+            .lineLimit(1)
+          Text(publication.format?.title ?? publication.mediaType)
+            .font(.caption2.weight(.medium))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(.quaternary, in: Capsule())
+        }
+
+        if let sourcePath = publication.sourcePath {
+          Text(abbreviatedPath(sourcePath))
+            .font(.caption.monospaced())
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .textSelection(.enabled)
+        }
+
+        Text(publication.url.absoluteString)
+          .font(.caption2.monospaced())
+          .foregroundStyle(.secondary)
+          .lineLimit(1)
+          .textSelection(.enabled)
+
+        Text("Hosted \(publication.createdAt.formatted(date: .abbreviated, time: .shortened))")
+          .font(.caption2)
+          .foregroundStyle(.tertiary)
+      }
+
+      Spacer(minLength: 8)
+
+      HStack(spacing: 8) {
+        Button {
+          NSWorkspace.shared.open(publication.localURL)
+        } label: {
+          Image(systemName: "arrow.up.right.square")
+        }
+        .buttonStyle(.borderless)
+        .help("Open locally")
+
+        Button {
+          copyToPasteboard(publication.url.absoluteString)
+        } label: {
+          Image(systemName: "doc.on.doc")
+        }
+        .buttonStyle(.borderless)
+        .help("Copy link")
+
+        Button(role: .destructive) {
+          store.revokeLocalDocumentPublication(publication.id)
+        } label: {
+          Image(systemName: "stop.circle")
+        }
+        .buttonStyle(.borderless)
+        .help("Stop hosting")
+      }
+    }
+    .padding(.vertical, 5)
+  }
+
+  private func abbreviatedPath(_ path: String) -> String {
+    let home = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.path
+    guard path == home || path.hasPrefix(home + "/") else { return path }
+    return "~" + path.dropFirst(home.count)
+  }
+
+  private func copyToPasteboard(_ value: String) {
+    NSPasteboard.general.clearContents()
+    NSPasteboard.general.setString(value, forType: .string)
   }
 }
 

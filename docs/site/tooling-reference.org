@@ -843,7 +843,10 @@ org2 export beamer --file talks/demo.org2 --out publish/demo.tex --apply
 org2 export beamer --file talks/demo.org2 --out publish/demo.pdf --pdf --apply
 org2 publish document --file reports/brief.org2 --to web --out-dir publish/brief
 org2 publish document --file reports/brief.org2 --to web --out-dir publish/brief --apply
+org2 publish document --file talks/briefing.org2 --to beamer-pdf --out-file publish/briefing.pdf
 org2 publish document --file reports/brief.org2 --to google-docs --folder-id DRIVE_FOLDER_ID
+org2 publish document --file talks/briefing.org2 --to google-slides --folder-id DRIVE_FOLDER_ID
+org2 publish document --file reports/evidence.org2 --to google-sheets --folder-id DRIVE_FOLDER_ID
 org2 publish docs-site --config org2.json
 #+end_src
 
@@ -851,16 +854,40 @@ Useful export options include TOC, heading numbering, stylesheet injection, and 
 
 =publish document= is the share boundary for an arbitrary document or the subtree selected by =--line=. It creates a separate disclosure-safe projection before rendering: property drawers, TODO state, tags, planning and clock data, comments, commented subtrees, dynamic blocks, table formulas, raw HTML, internal IDs, and unresolved local links are not sent to the destination. Referenced raster images are embedded into the output, subject to size limits. The preview reports included assets, removal counts, hashes, and warnings without writing anything.
 
-The =web= destination writes a self-contained =index.html= plus =manifest.json=. The bundle has a restrictive content-security policy, no-referrer behavior, and search indexing disabled unless =--allow-indexing= is explicit. It contains no route back into the corpus. A static bundle does not itself authenticate viewers: OpenOrg hosting, a self-hosted publisher, or another web host must enforce public, secret-link, or per-person access. Updating a non-empty output directory requires =--replace-existing=.
+The =web= destination writes a self-contained =index.html= plus =manifest.json=. Its HTML uses the same responsive document stylesheet as the OpenOrg reader: the content column is fluid up to its readable maximum width, text and charts stay inside the viewport, and wide tables receive their own horizontal scroll container. Deterministic =chart= and =plot= blocks are embedded as SVG when their source table is inside the published document or selected subtree; charts cannot resolve data from outside that disclosure boundary. The bundle has a restrictive content-security policy, no-referrer behavior, and search indexing disabled unless =--allow-indexing= is explicit. It contains no route back into the corpus. A static bundle does not itself authenticate viewers: OpenOrg hosting, a self-hosted publisher, or another web host must enforce public, secret-link, or per-person access. Updating a non-empty output directory requires =--replace-existing=.
 
-The =google-docs= destination renders the same safe projection as a deterministic DOCX with embedded images, then asks Google Drive to convert it into a native Google Doc. Images never need a temporary public URL. It uses the narrow =https://www.googleapis.com/auth/drive.file= scope and reads its short-lived access token from =ORG2_GOOGLE_DRIVE_ACCESS_TOKEN= by default; tokens are never accepted as command-line arguments or stored in the publication. A newly created Doc inherits the destination folder's Google Drive permissions, and Org2 does not alter those permissions. Embedded PNG, JPEG, and GIF images are supported. The initial implementation uses Drive's multipart import and therefore rejects upload artifacts over 5 MB; convert unsupported image formats, reduce embedded images, or use the web bundle destination for larger documents.
+The =beamer-pdf= destination applies a second presentation-safety pass to the same projection, compiles slide headings with a fixed safe Beamer profile, and writes a PDF. Raw LaTeX headers and export blocks are never inherited by this publishing path. Use =export beamer= instead when you deliberately need reviewable author-controlled LaTeX.
 
-Publishing to Google is deliberately one-way. Save the returned document ID and Drive version in the calling app's private destination state. Replacing an existing Doc requires all three guards: =--document-id ID=, =--if-version VERSION=, and =--replace-existing=. Org2 fetches the current Drive record first and refuses the upload when the version changed, so a collaborator's edits are not silently overwritten. It also refuses full-content replacement when the target has comments, because replacement could detach their anchors even when comments did not advance the file version. The caller can then import remote changes or publish a new copy. Permissions, comments, suggestions, and Google revision history belong to Google; Org2 does not attempt bidirectional synchronization.
+In OpenOrg for macOS, choose *Publish Document… → Local Link* to run this projection and host a *Web page*, document *PDF*, or compiled *Beamer slides (PDF)* directly from the Mac behind a high-entropy capability URL. The first local host is session-bound, available only while OpenOrg is running, and uses HTTP on the local/private network; do not use it on an untrusted network. The result screen can copy or open the link and revoke it immediately. *Settings → Sharing* is the persistent management surface for this app session: it lists the source path, output format, URL, and start time for every active link and can open, copy, stop, or stop all publications.
+
+Google Drive publishing uses one authorization and four formats:
+
+- =google-docs= renders deterministic DOCX and imports an editable Google Doc.
+- =google-slides= renders deterministic ODP from the selected slide headings and imports an editable Google Slides deck.
+- =google-sheets= renders deterministic ODS with one sheet per Org table and imports an editable Google Sheets workbook. A selection with no table fails before upload.
+- =google-drive-pdf= uploads a disclosure-safe fixed-layout PDF as an ordinary Drive file. The Mac publish sheet renders that PDF from the sealed HTML projection; direct CLI callers supply it with =--pdf-file FILE.pdf=.
+
+Images never need a temporary public URL. All four formats use the narrow =https://www.googleapis.com/auth/drive.file= scope and read a short-lived access token from =ORG2_GOOGLE_DRIVE_ACCESS_TOKEN= by default; tokens are never accepted as command-line arguments or stored in the publication. A newly created file inherits the destination folder's Google Drive permissions, and Org2 does not alter those permissions. The initial implementation uses Drive's multipart import and therefore rejects upload artifacts over 5 MB; convert unsupported image formats, reduce embedded images, or use the web bundle destination for larger documents. Google documents support embedded PNG, JPEG, and GIF images; the safe Beamer PDF path supports PNG and JPEG.
+
+The macOS publish sheet performs Google's installed-desktop-app authorization flow in the system browser. It uses a random loopback callback port, a per-request PKCE verifier and =state= value, and the =drive.file= scope. The access and refresh credentials are stored in macOS Keychain; an expired access token is refreshed before the sheet passes it to the CLI process through the environment, never in command arguments. Disconnecting removes the credential from that Mac.
+
+OpenOrg can eventually bundle its registered desktop client credential pair through the =OpenOrgGoogleOAuthClientID= and =OpenOrgGoogleOAuthClientSecret= application properties. Until then, download the OAuth client JSON for a Google Cloud client of application type *Desktop app* and choose *Import Client JSON…* in the publish sheet; the client ID and client secret can also be pasted separately. OpenOrg masks the imported client secret and stores it with the OAuth credential in macOS Keychain. It sends the pair only to Google's token endpoint for authorization-code exchange and refresh; it never passes the client secret to Org2, the corpus, a published artifact, or a command-line argument. Google's installed-app guidance notes that some clients receive a client secret but that installed applications cannot keep one confidential in the same sense as a server application. The flow still uses a loopback redirect, PKCE, and a per-request state value. Developers may provide =ORG2_GOOGLE_OAUTH_CLIENT_ID= and =ORG2_GOOGLE_OAUTH_CLIENT_SECRET= when building a configured app. See [[https://developers.google.com/identity/protocols/oauth2/native-app][OAuth 2.0 for desktop apps]], [[https://developers.google.com/identity/protocols/oauth2][Google OAuth 2.0 overview]], and [[https://developers.google.com/workspace/drive/api/guides/api-specific-auth][Drive authorization scopes]].
+
+Publishing to Google is deliberately one-way. Save the returned file ID and Drive version in the calling app's private destination state. Replacing an existing Doc, Slides deck, Sheet, or PDF requires all three guards: =--document-id ID=, =--if-version VERSION=, and =--replace-existing=. Org2 fetches the current Drive record first and refuses the upload when the version changed, so a collaborator's edits are not silently overwritten. It also refuses full-content replacement when the target has comments, because replacement could detach their anchors even when comments did not advance the file version. The caller can then import remote changes or publish a new copy. Permissions, comments, suggestions, and Google revision history belong to Google; Org2 does not attempt bidirectional synchronization.
 
 #+begin_src sh
 # Create after inspecting the preview.
 ORG2_GOOGLE_DRIVE_ACCESS_TOKEN="$TOKEN" \
   org2 publish document --file reports/brief.org2 --to google-docs \
+  --folder-id DRIVE_FOLDER_ID --apply --format json
+
+# Other native Google formats use the same credential and folder policy.
+ORG2_GOOGLE_DRIVE_ACCESS_TOKEN="$TOKEN" \
+  org2 publish document --file talks/briefing.org2 --to google-slides \
+  --folder-id DRIVE_FOLDER_ID --apply --format json
+
+ORG2_GOOGLE_DRIVE_ACCESS_TOKEN="$TOKEN" \
+  org2 publish document --file reports/evidence.org2 --to google-sheets \
   --folder-id DRIVE_FOLDER_ID --apply --format json
 
 # Guarded full-document replacement.

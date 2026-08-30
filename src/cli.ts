@@ -10280,7 +10280,9 @@ Export / publish:
   org2 export html --dir DIR [--recursive] [--out-dir DIR] [--index FILE] [--apply]
   org2 export beamer --file FILE [--out FILE] [--pdf] [--latex-engine COMMAND] [--apply]
   org2 publish document --file FILE --to web --out-dir DIR [--line N] [--apply]
-  org2 publish document --file FILE --to google-docs [--folder-id ID] [--apply]
+  org2 publish document --file FILE --to beamer-pdf --out-file FILE.pdf [--line N] [--apply]
+  org2 publish document --file FILE --to google-docs|google-slides|google-sheets [--folder-id ID] [--apply]
+  org2 publish document --file FILE --to google-drive-pdf --pdf-file FILE.pdf [--folder-id ID] [--apply]
   org2 publish [PROJECT] [--config PATH] [--preview]
 
 Roam / IDs:
@@ -10514,13 +10516,15 @@ Flags:
 Usage:
   org2 publish [PROJECT] [--config PATH] [--preview]
   org2 publish document --file FILE --to web --out-dir DIR [--line N] [--apply]
-  org2 publish document --file FILE --to google-docs [--folder-id ID] [--apply]
+  org2 publish document --file FILE --to beamer-pdf --out-file FILE.pdf [--line N] [--apply]
+  org2 publish document --file FILE --to google-docs|google-slides|google-sheets [--folder-id ID] [--apply]
+  org2 publish document --file FILE --to google-drive-pdf --pdf-file FILE.pdf [--folder-id ID] [--apply]
 
 Flags:
   --config PATH   Publish config file
   --preview       Do not write project outputs
 
-Run 'org2 publish document --help' for single-document destinations and guarded Google Doc updates.`;
+Run 'org2 publish document --help' for single-document destinations and guarded Google Drive updates.`;
   } else if (command === "fmt") {
     text = `org2 fmt
 

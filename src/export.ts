@@ -79,7 +79,25 @@ const DOCUMENT_IMAGE_STYLE = `
 .org2-image { display: block; width: auto; max-width: 100%; height: auto; border-radius: 0.5rem; }
 li > .org2-image-figure { margin-top: 0.55rem; }`;
 
-const DOCUMENT_CHART_STYLE = `.org2-chart { width: min(100%, 800px); margin: 1rem 0 1.35rem; overflow-x: auto; }
+const DOCUMENT_CHART_STYLE = `:root {
+  --org2-chart-axis: #475569;
+  --org2-chart-grid: #d7dee8;
+  --org2-chart-mark: #2563eb;
+  --org2-chart-label: #475569;
+  --org2-chart-title: #0f172a;
+  --org2-chart-surface: #ffffff;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --org2-chart-axis: rgba(233, 234, 237, 0.5);
+    --org2-chart-grid: rgba(233, 234, 237, 0.12);
+    --org2-chart-mark: #79b8ed;
+    --org2-chart-label: #a4a8b0;
+    --org2-chart-title: #e9eaed;
+    --org2-chart-surface: #202226;
+  }
+}
+.org2-chart { width: min(100%, 800px); margin: 1rem 0 1.35rem; overflow-x: auto; }
 .org2-chart-compact { width: min(100%, 680px); }
 .org2-chart-wide { width: 100%; }
 .org2-chart svg { display: block; width: 100%; height: auto; margin: 0; }`;
@@ -144,7 +162,7 @@ const APP_DOCUMENT_STYLE = `:root {
   }
 }
 *, *::before, *::after { box-sizing: border-box; }
-html, body { width: 100%; min-height: 100%; margin: 0; background: transparent; overflow-x: hidden; }
+html, body { width: 100%; max-width: 100%; min-height: 100%; margin: 0; background: transparent; overflow-x: hidden; }
 body {
   color: var(--org2-text);
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
@@ -158,8 +176,13 @@ main.org2-document {
   width: min(100%, var(--org2-content-width));
   max-width: 100%;
   margin: 0 auto;
-  padding: 22px min(var(--org2-page-padding), 5vw) 64px;
+  padding: 22px clamp(16px, 5vw, var(--org2-page-padding)) 64px;
 }
+main.org2-document,
+main.org2-document > *,
+section.org2-headline,
+details.org2-headline,
+.org2-headline-body { min-width: 0; }
 .org2-document-header { margin: 0.15rem 0 1.1rem; }
 .org2-document-title {
   margin: 0;
@@ -460,7 +483,7 @@ li > .org2-image-figure { margin-top: 0.65rem; }
 table { width: 100%; margin: 0.8rem 0 1.15rem; border-collapse: collapse; font-size: 0.9rem; font-variant-numeric: tabular-nums; }
 th, td { padding: 0.46rem 0.58rem; border-bottom: 1px solid var(--org2-rule); text-align: left; vertical-align: top; }
 th { color: var(--org2-muted); background: var(--org2-faint); font-family: var(--org2-font-mono); font-size: 0.78rem; font-weight: 650; }
-.org2-table-scroll { width: 100%; max-width: 100%; margin: 0.8rem 0 1.15rem; overflow-x: auto; overscroll-behavior-inline: contain; }
+.org2-table-scroll { display: block; width: 100%; max-width: 100%; min-width: 0; margin: 0.8rem 0 1.15rem; overflow-x: auto; overscroll-behavior-inline: contain; -webkit-overflow-scrolling: touch; }
 .org2-table-scroll table { width: auto; min-width: 100%; margin: 0; }
 .org2-table-scroll th, .org2-table-scroll td { overflow-wrap: normal; word-break: normal; hyphens: none; }
 .org2-table-controls {
@@ -1920,7 +1943,9 @@ function renderTable(node: TableNode, context: RenderContext): string {
     ? ` data-org2-formula-count="${node.formulas.length}" data-org2-formula-state="${formulaResult?.ok ? "current" : "error"}"`
     : "";
   const table = `<table${sourceAttributes}${formulaAttributes}>\n${[renderedHead, renderedBody].filter(Boolean).join("\n")}\n</table>`;
-  const tableHtml = context.profile === "app" ? `<div class="org2-table-scroll">\n${table}\n</div>` : table;
+  const tableHtml = context.profile === "app" || context.profile === "publish"
+    ? `<div class="org2-table-scroll">\n${table}\n</div>`
+    : table;
   const formulaStatus = formulaResult
     ? `<small class="org2-table-formula-status${formulaResult.ok ? "" : " org2-table-formula-error"}">${formulaResult.ok ? `Calculated from TBLFM${(node.formulas?.length ?? 0) > 1 ? ` line 1 of ${node.formulas?.length}` : ""}` : `Formula not evaluated: ${escapeHtml(formulaResult.diagnostics[0]?.message ?? "unsupported formula")}`}</small>`
     : "";
@@ -2377,10 +2402,15 @@ export function renderOrgDocumentToHtml(
     metadata,
     headIncludes: [
       ...(opts.headIncludes || []),
-      opts.charts?.length && opts.profile !== "app" ? `<style id="org2-chart-style">\n${DOCUMENT_CHART_STYLE}\n</style>` : "",
+      opts.profile === "publish"
+        ? `<style id="org2-publish-document-style">\n${APP_DOCUMENT_STYLE}${renderOptions.includeToc ? `\n${DOCUMENT_TOC_STYLE}` : ""}\n</style>`
+        : "",
+      opts.charts?.length && opts.profile !== "app" && opts.profile !== "publish"
+        ? `<style id="org2-chart-style">\n${DOCUMENT_CHART_STYLE}\n</style>`
+        : "",
     ].filter(Boolean),
     stylesheets: opts.stylesheets,
-    includeDefaultStyle: opts.includeDefaultStyle,
+    includeDefaultStyle: opts.profile === "publish" ? false : opts.includeDefaultStyle,
     includeToc: renderOptions.includeToc,
     mainBody,
     preambleHtml: String(opts.preambleHtml || "").trim(),

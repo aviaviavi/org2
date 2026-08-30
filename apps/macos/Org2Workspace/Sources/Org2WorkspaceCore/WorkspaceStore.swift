@@ -1913,6 +1913,9 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var isSavingBlock = false
   @Published public private(set) var isExportingCurrentDocumentPDF = false
   @Published public private(set) var isExportingSlides = false
+  @Published public var isDocumentPublisherPresented = false
+  @Published public private(set) var isPublishingDocument = false
+  @Published public private(set) var localDocumentPublications: [LocalDocumentPublication] = []
   @Published public var exportNotice: Org2ExportNotice?
   @Published public var editorSaveConflict: Org2EditorSaveConflict?
   @Published public private(set) var isLiveFileEditorAutosaving = false
@@ -1931,6 +1934,7 @@ public final class WorkspaceStore: ObservableObject {
   private let defaults: UserDefaults
   private let automaticStarterCorpusURL: URL?
   private let sourceScheduleStateStore: WorkspaceSourceScheduleStateStore
+  private let localDocumentPublicationHost = LocalDocumentPublicationHost()
   private let meetingRecorder = MeetingAudioRecorder()
   private let openClawVoiceRecorder = MeetingAudioRecorder()
   private let meetingSystemAudioRecorder = MeetingSystemAudioRecorder()
@@ -10475,6 +10479,296 @@ public final class WorkspaceStore: ObservableObject {
       && !isSavingBlock
   }
 
+  public var canPublishCurrentDocument: Bool {
+    currentOrgSourceFile != nil
+      && !isPublishingDocument
+      && !isSavingEntry
+      && !isSavingBlock
+  }
+
+  public var currentDocumentPublishSubtreeLine: Int? {
+    if let source = selectedEntrySource, source.isSubtree {
+      return source.startLine
+    }
+    if let selectedBlock {
+      return selectedBlock.startLine
+    }
+    return currentDocumentViewportSourceLine
+  }
+
+  public var currentDocumentPublishDisplayName: String {
+    currentOrgSourceFile?.deletingPathExtension().lastPathComponent ?? "Document"
+  }
+
+  public func presentDocumentPublisher() {
+    guard currentOrgSourceFile != nil else {
+      statusText = "Open an Org or Org2 document first"
+      return
+    }
+    isDocumentPublisherPresented = true
+  }
+
+  public func previewDocumentPublication(
+    _ request: DocumentPublishRequest
+  ) async throws -> DocumentPublishCLIResult {
+    guard request.destination.formats.contains(request.format) else {
+      throw DocumentPublishingError.unsupportedFormat
+    }
+    let sourceFile = try await sourceFileForDocumentPublishing()
+    isPublishingDocument = true
+    statusText = "Checking the publication boundary…"
+    defer { isPublishingDocument = false }
+
+    let outputDirectory = documentPublicationDirectory(preview: true)
+    let result: DocumentPublishCLIResult = try await cli.runJSON(
+      documentPublishArguments(
+        sourceFile: sourceFile,
+        request: request,
+        outputDirectory: outputDirectory,
+        apply: false
+      )
+    )
+    statusText = "Publication preview ready"
+    return result
+  }
+
+  public func publishDocument(
+    _ request: DocumentPublishRequest,
+    googleAccessToken: String? = nil
+  ) async throws -> DocumentPublishOutcome {
+    guard request.destination.formats.contains(request.format) else {
+      throw DocumentPublishingError.unsupportedFormat
+    }
+    let sourceFile = try await sourceFileForDocumentPublishing()
+    isPublishingDocument = true
+    statusText = request.destination == .localLink
+      ? "Starting the local publication…"
+      : "Publishing to \(request.format.title)…"
+    defer { isPublishingDocument = false }
+
+    switch request.destination {
+    case .localLink:
+      let outputDirectory = documentPublicationDirectory(preview: false)
+      let result: DocumentPublishCLIResult = try await cli.runJSON(
+        documentPublishArguments(
+          sourceFile: sourceFile,
+          request: request,
+          outputDirectory: outputDirectory,
+          apply: true
+        )
+      )
+      let data: Data
+      let mediaType: String
+      switch request.format {
+      case .html:
+        let indexURL = outputDirectory.appendingPathComponent("index.html", isDirectory: false)
+        guard let html = try? Data(contentsOf: indexURL), !html.isEmpty else {
+          throw DocumentPublishingError.missingWebBundle(indexURL.path)
+        }
+        data = html
+        mediaType = "text/html"
+      case .pdf:
+        let indexURL = outputDirectory.appendingPathComponent("index.html", isDirectory: false)
+        guard let html = try? Data(contentsOf: indexURL), !html.isEmpty else {
+          throw DocumentPublishingError.missingWebBundle(indexURL.path)
+        }
+        data = try await renderedPublicationPDF(html: html, baseURL: outputDirectory)
+        mediaType = "application/pdf"
+      case .beamerSlides:
+        let pdfURL = outputDirectory.appendingPathComponent("presentation.pdf", isDirectory: false)
+        guard let pdf = try? Data(contentsOf: pdfURL), !pdf.isEmpty else {
+          throw DocumentPublishingError.missingWebBundle(pdfURL.path)
+        }
+        data = try Org2PDFExporter.validated(pdf)
+        mediaType = "application/pdf"
+      case .googleDocs, .googleSlides, .googleSheets:
+        throw DocumentPublishingError.unsupportedFormat
+      }
+      let hostedPublication = try await localDocumentPublicationHost.publish(
+        data: data,
+        title: result.artifact.title,
+        mediaType: mediaType
+      )
+      let publication = LocalDocumentPublication(
+        id: hostedPublication.id,
+        title: hostedPublication.title,
+        url: hostedPublication.url,
+        localURL: hostedPublication.localURL,
+        mediaType: hostedPublication.mediaType,
+        sourcePath: result.source.file,
+        format: request.format,
+        createdAt: hostedPublication.createdAt
+      )
+      localDocumentPublications.insert(publication, at: 0)
+      statusText = "Published \(result.artifact.title) on the local network"
+      return .localLink(publication: publication, result: result)
+
+    case .googleDrive:
+      let token = googleAccessToken?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+      guard !token.isEmpty else {
+        throw DocumentPublishingError.missingGoogleCredential
+      }
+      let result: DocumentPublishCLIResult
+      if request.format == .pdf {
+        let outputDirectory = documentPublicationDirectory(preview: false)
+        let webRequest = DocumentPublishRequest(
+          destination: .localLink,
+          format: .html,
+          line: request.line
+        )
+        _ = try await cli.runJSON(
+          documentPublishArguments(
+            sourceFile: sourceFile,
+            request: webRequest,
+            outputDirectory: outputDirectory,
+            apply: true
+          )
+        ) as DocumentPublishCLIResult
+        let indexURL = outputDirectory.appendingPathComponent("index.html", isDirectory: false)
+        guard let html = try? Data(contentsOf: indexURL), !html.isEmpty else {
+          throw DocumentPublishingError.missingWebBundle(indexURL.path)
+        }
+        let pdf = try await renderedPublicationPDF(html: html, baseURL: outputDirectory)
+        let pdfURL = outputDirectory.appendingPathComponent("publication.pdf", isDirectory: false)
+        try Org2PDFExporter.validated(pdf).write(to: pdfURL, options: .atomic)
+        result = try await cli.runJSON(
+          documentPublishArguments(
+            sourceFile: sourceFile,
+            request: request,
+            outputDirectory: nil,
+            pdfFile: pdfURL,
+            apply: true
+          ),
+          environment: ["ORG2_GOOGLE_DRIVE_ACCESS_TOKEN": token]
+        )
+      } else {
+        result = try await cli.runJSON(
+          documentPublishArguments(
+            sourceFile: sourceFile,
+            request: request,
+            outputDirectory: nil,
+            apply: true
+          ),
+          environment: ["ORG2_GOOGLE_DRIVE_ACCESS_TOKEN": token]
+        )
+      }
+      guard let link = result.destinationString("webViewLink"),
+            let url = URL(string: link),
+            let fileID = result.destinationString("fileId")
+      else {
+        throw DocumentPublishingError.invalidGoogleResponse
+      }
+      statusText = "Published \(result.artifact.title) to \(request.format.title)"
+      return .googleDrive(
+        format: request.format,
+        url: url,
+        fileID: fileID,
+        version: result.destinationString("version"),
+        result: result
+      )
+    }
+  }
+
+  public func revokeLocalDocumentPublication(_ publicationID: String) {
+    localDocumentPublicationHost.revoke(publicationID)
+    localDocumentPublications.removeAll { $0.id == publicationID }
+    statusText = "Local publication revoked"
+  }
+
+  public func revokeAllLocalDocumentPublications() {
+    for publication in localDocumentPublications {
+      localDocumentPublicationHost.revoke(publication.id)
+    }
+    localDocumentPublications.removeAll()
+    statusText = "All local publications revoked"
+  }
+
+  private func sourceFileForDocumentPublishing() async throws -> URL {
+    guard !isPublishingDocument else {
+      throw DocumentPublishingError.busy
+    }
+    guard let sourceFile = currentOrgSourceFile else {
+      throw DocumentPublishingError.noDocument
+    }
+    guard await savePendingEditsBeforeExport(
+      blockedStatus: "Save the current edit before publishing the document"
+    ) else {
+      throw DocumentPublishingError.pendingEdits
+    }
+    return sourceFile.standardizedFileURL
+  }
+
+  private func documentPublishArguments(
+    sourceFile: URL,
+    request: DocumentPublishRequest,
+    outputDirectory: URL?,
+    pdfFile: URL? = nil,
+    apply: Bool
+  ) -> [String] {
+    let cliDestination: String
+    switch request.destination {
+    case .localLink:
+      cliDestination = request.format == .beamerSlides ? "beamer-pdf" : "web"
+    case .googleDrive:
+      cliDestination = request.format.googleCLIDestination ?? "google-docs"
+    }
+    var arguments = [
+      "publish", "document",
+      "--file", sourceFile.path,
+      "--to", cliDestination,
+      "--format", "json",
+    ]
+    if let line = request.line {
+      arguments.append(contentsOf: ["--line", String(line)])
+    }
+    if let outputDirectory {
+      if request.destination == .localLink, request.format == .beamerSlides {
+        arguments.append(contentsOf: [
+          "--out-file",
+          outputDirectory.appendingPathComponent("presentation.pdf", isDirectory: false).path,
+        ])
+      } else {
+        arguments.append(contentsOf: ["--out-dir", outputDirectory.path])
+      }
+    }
+    if let folderID = request.googleFolderID, request.destination == .googleDrive {
+      arguments.append(contentsOf: ["--folder-id", folderID])
+    }
+    if let pdfFile {
+      arguments.append(contentsOf: ["--pdf-file", pdfFile.path])
+    }
+    if apply {
+      arguments.append("--apply")
+    }
+    return arguments
+  }
+
+  private func renderedPublicationPDF(html: Data, baseURL: URL) async throws -> Data {
+    let htmlString = String(decoding: html, as: UTF8.self)
+    let pdf: Data
+    if let documentPDFRendererForTesting {
+      pdf = try await documentPDFRendererForTesting(htmlString, baseURL)
+    } else {
+      pdf = try await Org2PDFExporter().data(for: htmlString, baseURL: baseURL)
+    }
+    return try Org2PDFExporter.validated(pdf)
+  }
+
+  private func documentPublicationDirectory(preview: Bool) -> URL {
+    if preview {
+      return FileManager.default.temporaryDirectory
+        .appendingPathComponent("openorg-publish-preview-\(UUID().uuidString)", isDirectory: true)
+    }
+    let applicationSupport = FileManager.default.urls(
+      for: .applicationSupportDirectory,
+      in: .userDomainMask
+    ).first ?? FileManager.default.temporaryDirectory
+    return applicationSupport
+      .appendingPathComponent("OpenOrg", isDirectory: true)
+      .appendingPathComponent("Publications", isDirectory: true)
+      .appendingPathComponent(UUID().uuidString.lowercased(), isDirectory: true)
+  }
+
   public func exportCurrentDocumentPDF() async {
     guard let sourceFile = currentOrgSourceFile else {
       statusText = "Open an Org or Org2 file first"
@@ -17278,6 +17572,13 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   private func executeOpenClawPublish(_ arguments: String) async throws -> String {
+    if arguments.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "document" {
+      guard currentOrgSourceFile != nil else {
+        return "Open an Org or Org2 document first, then run /publish document."
+      }
+      presentDocumentPublisher()
+      return "Opened Publish Document. Preview the disclosure boundary, then choose a local or Google Drive format."
+    }
     guard let corpusRoot else { return "Open a corpus first, then run /publish." }
     let config = corpusRoot.appendingPathComponent("org2.json")
     guard FileManager.default.fileExists(atPath: config.path) else {

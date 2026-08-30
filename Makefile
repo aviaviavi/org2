@@ -4,7 +4,7 @@ build:
 	npm run build
 
 macos-app:
-	node tools/build-macos-app.mjs
+	npm run build:macos-app
 
 test:
 	npm test

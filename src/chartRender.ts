@@ -33,6 +33,11 @@ export type ChartRenderResult = {
   diagnostics: ChartRenderDiagnostic[];
 };
 
+export type ChartTableData = {
+  headers: string[];
+  rows: string[][];
+};
+
 type Keyword = {
   key: string;
   value: string;
@@ -76,6 +81,7 @@ export type RenderChartOptions = {
   blockId?: string;
   outputPath?: string;
   sourceLineOffset?: number;
+  tableDataByLine?: ReadonlyMap<number, ChartTableData>;
 };
 
 const AFFILIATED_KEYS = new Set(["NAME", "CAPTION", "PLOT", "CHART", "DATASET", "VIEW", "RESULTS", "HEADER", "HEADERS"]);
@@ -329,7 +335,26 @@ function candidateFromTable(table: ParsedTableBlock, spec: ChartSpec | undefined
   };
 }
 
-function collectNamedTables(lines: string[], file?: string): Map<string, ParsedTableBlock> {
+function tableDataOverride(
+  tableStartLine: number,
+  tableLines: string[],
+  tableDataByLine?: ReadonlyMap<number, ChartTableData>,
+): { headers: string[]; rows: string[][]; diagnostics: ChartRenderDiagnostic[] } | undefined {
+  if (!tableDataByLine) return parseTable(tableLines);
+  const table = tableDataByLine.get(tableStartLine);
+  if (!table) return undefined;
+  return {
+    headers: table.headers,
+    rows: table.rows,
+    diagnostics: table.rows.length > 0 ? [] : [diagnostic("Chart table has no data rows")],
+  };
+}
+
+function collectNamedTables(
+  lines: string[],
+  file?: string,
+  tableDataByLine?: ReadonlyMap<number, ChartTableData>,
+): Map<string, ParsedTableBlock> {
   const tables = new Map<string, ParsedTableBlock>();
   let pending: Keyword[] = [];
   let i = 0;
@@ -353,13 +378,15 @@ function collectNamedTables(lines: string[], file?: string): Map<string, ParsedT
 
       const name = keywordValue(pending, "NAME");
       if (name) {
-        const parsedTable = parseTable(tableLines);
-        tables.set(name, {
-          source: { ...(file ? { file } : {}), line: tableStartLine, endLine: i, blockId: name, kind: "table" },
-          headers: parsedTable.headers,
-          rows: parsedTable.rows,
-          diagnostics: parsedTable.diagnostics,
-        });
+        const parsedTable = tableDataOverride(tableStartLine, tableLines, tableDataByLine);
+        if (parsedTable) {
+          tables.set(name, {
+            source: { ...(file ? { file } : {}), line: tableStartLine, endLine: i, blockId: name, kind: "table" },
+            headers: parsedTable.headers,
+            rows: parsedTable.rows,
+            diagnostics: parsedTable.diagnostics,
+          });
+        }
       }
       pending = [];
       continue;
@@ -372,13 +399,17 @@ function collectNamedTables(lines: string[], file?: string): Map<string, ParsedT
   return tables;
 }
 
-function collectChartCandidates(raw: string, file?: string): ChartCandidate[] {
+function collectChartCandidates(
+  raw: string,
+  file?: string,
+  tableDataByLine?: ReadonlyMap<number, ChartTableData>,
+): ChartCandidate[] {
   // Parse first so malformed syntax still goes through the canonical parser in this API path.
   parseOrgToCanonicalAst(raw);
 
   const lines = raw.replace(/\r\n/g, "\n").split("\n");
   const candidates: ChartCandidate[] = [];
-  const namedTables = collectNamedTables(lines, file);
+  const namedTables = collectNamedTables(lines, file, tableDataByLine);
   let previousTable: ParsedTableBlock | undefined;
   let pending: Keyword[] = [];
   let i = 0;
@@ -404,7 +435,12 @@ function collectChartCandidates(raw: string, file?: string): ChartCandidate[] {
       const chartRaw = keywordValue(pending, "CHART") || keywordValue(pending, "PLOT");
       const name = keywordValue(pending, "NAME");
       const caption = keywordValue(pending, "CAPTION");
-      const parsedTable = parseTable(tableLines);
+      const parsedTable = tableDataOverride(tableStartLine, tableLines, tableDataByLine);
+      if (!parsedTable) {
+        previousTable = undefined;
+        pending = [];
+        continue;
+      }
       const table: ParsedTableBlock = {
         source: { ...(file ? { file } : {}), line: tableStartLine, endLine: tableEndLine, ...(name ? { blockId: name } : {}), kind: "table" },
         headers: parsedTable.headers,
@@ -692,8 +728,11 @@ export function renderOrgChart(raw: string, opts: RenderChartOptions = {}): Char
   };
 }
 
-export function renderOrgCharts(raw: string, opts: Pick<RenderChartOptions, "file" | "sourceLineOffset"> = {}): ChartRenderResult[] {
-  const candidates = collectChartCandidates(raw, opts.file);
+export function renderOrgCharts(
+  raw: string,
+  opts: Pick<RenderChartOptions, "file" | "sourceLineOffset" | "tableDataByLine"> = {},
+): ChartRenderResult[] {
+  const candidates = collectChartCandidates(raw, opts.file, opts.tableDataByLine);
   const offset = Math.max(0, opts.sourceLineOffset || 0);
   return candidates.map((candidate) => {
     const rendered = renderSvg(candidate);

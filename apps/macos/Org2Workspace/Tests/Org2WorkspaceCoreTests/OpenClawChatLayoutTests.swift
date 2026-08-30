@@ -46,6 +46,49 @@ final class OpenClawChatLayoutTests: XCTestCase {
     )
   }
 
+  func testComposerPreservesNewerNativeTextAcrossDelayedModelUpdates() {
+    var synchronization = OpenClawComposerTextSynchronization(initialModelText: "")
+
+    synchronization.nativeTextDidChange("ok")
+    synchronization.nativeTextDidChange("ok ")
+    synchronization.nativeTextDidChange("ok -")
+
+    XCTAssertEqual(
+      synchronization.modelTextUpdate(""),
+      .preserveNativeText
+    )
+    XCTAssertEqual(
+      synchronization.modelTextUpdate("ok"),
+      .preserveNativeText
+    )
+    XCTAssertEqual(
+      synchronization.modelTextUpdate("ok "),
+      .preserveNativeText
+    )
+    XCTAssertEqual(
+      synchronization.modelTextUpdate("ok -"),
+      .preserveNativeText
+    )
+    XCTAssertEqual(
+      synchronization.modelTextUpdate("Externally restored draft"),
+      .applyModelText
+    )
+  }
+
+  func testComposerForcedModelUpdateSupersedesPendingNativeText() {
+    var synchronization = OpenClawComposerTextSynchronization()
+    synchronization.nativeTextDidChange("Send this")
+
+    XCTAssertEqual(
+      synchronization.modelTextUpdate("", forced: true),
+      .applyModelText
+    )
+    XCTAssertEqual(
+      synchronization.modelTextUpdate("Send this"),
+      .applyModelText
+    )
+  }
+
   func testLiveProgressFeedShowsOnlyCurrentActivityUntilExpanded() {
     let completed = OpenClawActivityFeedItem(
       id: "completed",

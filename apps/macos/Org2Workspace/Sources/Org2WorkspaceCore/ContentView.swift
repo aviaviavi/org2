@@ -108,6 +108,10 @@ public struct ContentView: View {
         DataSourceConfigurationSheet()
           .environmentObject(store)
       }
+      .sheet(isPresented: $store.isDocumentPublisherPresented) {
+        DocumentPublishSheet()
+          .environmentObject(store)
+      }
       .sheet(isPresented: $store.isCapturePanelPresented) {
         GlobalCaptureView()
           .environmentObject(store)
@@ -9857,6 +9861,13 @@ private struct DetailHeader: View {
 
       if !store.selectedFileIsPDF {
         Divider()
+
+        Button {
+          store.presentDocumentPublisher()
+        } label: {
+          Label("Publish Document…", systemImage: "square.and.arrow.up")
+        }
+        .disabled(!store.canPublishCurrentDocument)
 
         Button {
           Task { await store.exportCurrentDocumentPDF() }

@@ -52,6 +52,21 @@ rebuild. Renderer UI runs in a sandboxed, opaque-origin frame. See
 
 OpenOrg can export an ordinary document or selected subtree as a clean PDF. It can also preview slide decks and export presentation PDFs. Publication uses a disclosure-safe copy that removes private workspace metadata and unresolved local references from the shared output.
 
+* Publish a document
+
+Open an Org or Org2 document, open its document menu, and choose *Publish Document…*. The same sheet also opens from =/publish document= in AI Chat. Choose the entire document or the subtree at the current reading/editing position, then inspect the disclosure preview before publishing.
+
+The publish sheet separates the *destination* from the *format*:
+
+- *Local Link* can serve a read-only *Web page*, fixed-layout *PDF*, or compiled *Beamer slides (PDF)*. Web pages use the same fluid, bounded document layout as OpenOrg's reader; long text wraps, charts shrink with the viewport, and wide tables scroll inside the page instead of widening it. The destination creates a high-entropy secret URL from the Mac. Devices must be able to reach the Mac on the local or private network, OpenOrg must remain running, and the initial server uses unencrypted HTTP. Use it only on a network you trust. Open *Settings → Sharing* to see every source file and format currently hosted, open or copy a link, stop one, or stop all of them.
+- *Google Drive* can create an editable *Google Doc*, *Google Slides* deck, or *Google Sheets* workbook, or upload a fixed-layout *PDF*. Slides use the selected content's slide headings. Sheets create one tab per Org table and refuse a selection with no tables. The optional folder ID selects a Drive folder; otherwise Google places the file in the connected account's default location. Google Drive owns sharing and identity. *Connect Google Drive* opens Google's consent page in the default browser using the desktop loopback and PKCE flow, requests only the per-file =drive.file= scope, and keeps the refresh credential in macOS Keychain.
+
+Web pages and fixed-layout PDFs embed deterministic =chart= and =plot= visualizations. A chart's source table must be inside the published document or selected subtree; publishing never follows a chart reference back into unselected corpus content.
+
+Until OpenOrg distributes its own registered Google client, Google Drive setup requires a Google Cloud OAuth client once: enable the Drive API, configure the consent screen, create an OAuth client of type *Desktop app*, download its JSON file, and choose *Import Client JSON…* in the publish sheet. OpenOrg imports the paired client ID and client secret, masks the secret in the interface, and stores it with the resulting OAuth credential in macOS Keychain; they can also be pasted separately. Google passwords and OAuth tokens are never pasted into OpenOrg. See [[https://developers.google.com/identity/protocols/oauth2/native-app][Google's desktop OAuth guide]], [[https://developers.google.com/identity/protocols/oauth2][Google's OAuth overview]], and [[https://developers.google.com/workspace/drive/api/guides/api-specific-auth][Drive scope guidance]].
+
+Property drawers, TODO state, tags, planning and clock data, comments, commented subtrees, dynamic blocks, table formulas, raw HTML, internal IDs, unresolved local links, and runtime data are removed before either destination receives content. Referenced supported raster images are embedded in the sealed artifact.
+
 * Agent work and approvals
 
 #+begin_export html

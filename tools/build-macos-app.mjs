@@ -54,6 +54,8 @@ const bundledWhisperCppPath = process.env.ORG2_WORKSPACE_WHISPER_CPP_PATH?.trim(
   || (swiftBuildConfiguration === "release" ? discoverWhisperCppPath() : "");
 const bundledWhisperModelPath = process.env.ORG2_WORKSPACE_WHISPER_MODEL_PATH?.trim()
   || (swiftBuildConfiguration === "release" ? discoverWhisperModelPath() : "");
+const googleOAuthClientID = process.env.ORG2_GOOGLE_OAUTH_CLIENT_ID?.trim() || "";
+const googleOAuthClientSecret = process.env.ORG2_GOOGLE_OAUTH_CLIENT_SECRET?.trim() || "";
 const appEntitlementsPath = resolve(
   process.env.ORG2_WORKSPACE_APP_ENTITLEMENTS
     ?? join(packageDir, "OpenOrg.entitlements")
@@ -314,6 +316,15 @@ function writeInfoPlist(bundlePath) {
   <key>SURequireSignedFeed</key>
   <true/>`
     : "";
+  const googleOAuthConfiguration = `${googleOAuthClientID
+    ? `
+  <key>OpenOrgGoogleOAuthClientID</key>
+  <string>${xmlEscape(googleOAuthClientID)}</string>`
+    : ""}${googleOAuthClientSecret
+    ? `
+  <key>OpenOrgGoogleOAuthClientSecret</key>
+  <string>${xmlEscape(googleOAuthClientSecret)}</string>`
+    : ""}`;
   const plist = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -337,13 +348,15 @@ function writeInfoPlist(bundlePath) {
   <key>CFBundleShortVersionString</key>
   <string>${xmlEscape(packageVersion)}</string>
   <key>CFBundleVersion</key>
-  <string>${xmlEscape(packageVersion)}</string>${sparkleConfiguration}
+  <string>${xmlEscape(packageVersion)}</string>${sparkleConfiguration}${googleOAuthConfiguration}
   <key>Org2BuildConfiguration</key>
   <string>${xmlEscape(swiftBuildConfiguration)}</string>
   <key>LSMinimumSystemVersion</key>
   <string>14.0</string>
   <key>NSHighResolutionCapable</key>
   <true/>
+  <key>NSLocalNetworkUsageDescription</key>
+  <string>${xmlEscape(appName)} serves document links that you explicitly publish to your local network.</string>
   <key>NSMicrophoneUsageDescription</key>
   <string>${xmlEscape(appName)} records microphone audio for meeting notes.</string>
   <key>NSScreenCaptureUsageDescription</key>
@@ -674,6 +687,8 @@ function main() {
       installStrategy: "verified staged replacement",
       nodeArchitecture: bundledNodePath ? detectNodeArchitecture(bundledNodePath) : null,
       nodePath: bundledNodePath || null,
+      googleOAuthClientConfigured: googleOAuthClientID.length > 0,
+      googleOAuthClientSecretConfigured: googleOAuthClientSecret.length > 0,
       swiftScratchPath: swiftScratchPath || null,
       updates: sparkleUpdateConfiguration(),
       whisperCppPath: bundledWhisperCppPath || null,

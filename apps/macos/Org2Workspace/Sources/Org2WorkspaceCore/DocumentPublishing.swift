@@ -1,0 +1,1208 @@
+import CryptoKit
+import Foundation
+import LocalAuthentication
+import Network
+import Security
+
+public enum DocumentPublishDestination: String, CaseIterable, Identifiable, Sendable {
+  case localLink
+  case googleDrive
+
+  public var id: String { rawValue }
+
+  public var title: String {
+    switch self {
+    case .localLink: "Local Link"
+    case .googleDrive: "Google Drive"
+    }
+  }
+
+  public var formats: [DocumentPublishFormat] {
+    switch self {
+    case .localLink:
+      [.html, .pdf, .beamerSlides]
+    case .googleDrive:
+      [.googleDocs, .googleSlides, .googleSheets, .pdf]
+    }
+  }
+
+  public var defaultFormat: DocumentPublishFormat {
+    formats[0]
+  }
+}
+
+public enum DocumentPublishFormat: String, CaseIterable, Hashable, Identifiable, Sendable {
+  case html
+  case pdf
+  case beamerSlides
+  case googleDocs
+  case googleSlides
+  case googleSheets
+
+  public var id: String { rawValue }
+
+  public var title: String {
+    switch self {
+    case .html: "Web page"
+    case .pdf: "PDF"
+    case .beamerSlides: "Beamer slides (PDF)"
+    case .googleDocs: "Google Docs"
+    case .googleSlides: "Google Slides"
+    case .googleSheets: "Google Sheets"
+    }
+  }
+
+  public var systemImage: String {
+    switch self {
+    case .html: "globe"
+    case .pdf: "doc.richtext"
+    case .beamerSlides: "rectangle.on.rectangle.angled"
+    case .googleDocs: "doc.text"
+    case .googleSlides: "rectangle.on.rectangle"
+    case .googleSheets: "tablecells"
+    }
+  }
+
+  public var googleCLIDestination: String? {
+    switch self {
+    case .googleDocs: "google-docs"
+    case .googleSlides: "google-slides"
+    case .googleSheets: "google-sheets"
+    case .pdf: "google-drive-pdf"
+    case .html, .beamerSlides: nil
+    }
+  }
+}
+
+public enum DocumentPublishScope: String, CaseIterable, Identifiable, Sendable {
+  case document
+  case subtree
+
+  public var id: String { rawValue }
+
+  public var title: String {
+    switch self {
+    case .document: "Entire document"
+    case .subtree: "Current subtree"
+    }
+  }
+}
+
+public struct DocumentPublishRequest: Hashable, Sendable {
+  public let destination: DocumentPublishDestination
+  public let format: DocumentPublishFormat
+  public let line: Int?
+  public let googleFolderID: String?
+
+  public init(
+    destination: DocumentPublishDestination,
+    format: DocumentPublishFormat,
+    line: Int? = nil,
+    googleFolderID: String? = nil
+  ) {
+    self.destination = destination
+    self.format = format
+    self.line = line
+    let normalizedFolderID = googleFolderID?.trimmingCharacters(in: .whitespacesAndNewlines)
+    self.googleFolderID = normalizedFolderID?.isEmpty == false ? normalizedFolderID : nil
+  }
+}
+
+public struct DocumentPublishCLIResult: Decodable, Sendable {
+  public struct Source: Decodable, Sendable {
+    public let file: String
+    public let selection: String
+    public let sourceHash: String
+    public let line: Int?
+  }
+
+  public struct Asset: Decodable, Hashable, Sendable {
+    public let name: String
+    public let mediaType: String
+    public let bytes: Int
+    public let sha256: String
+  }
+
+  public struct Artifact: Decodable, Sendable {
+    public let title: String
+    public let mediaType: String
+    public let selection: String
+    public let artifactHash: String
+    public let bytes: Int
+    public let projectionHash: String
+    public let assets: [Asset]
+  }
+
+  public struct Disclosure: Decodable, Sendable {
+    public let redactions: [String: Int]
+    public let warnings: [String]
+  }
+
+  public let applied: Bool
+  public let source: Source
+  public let artifact: Artifact
+  public let disclosure: Disclosure
+  public let destination: JSONValue
+
+  public var redactionCount: Int {
+    disclosure.redactions.values.reduce(0, +)
+  }
+
+  public func destinationString(_ key: String) -> String? {
+    destination[key]?.stringValue
+  }
+}
+
+public struct LocalDocumentPublication: Identifiable, Hashable, Sendable {
+  public let id: String
+  public let title: String
+  public let url: URL
+  public let localURL: URL
+  public let mediaType: String
+  public let sourcePath: String?
+  public let format: DocumentPublishFormat?
+  public let createdAt: Date
+
+  public init(
+    id: String,
+    title: String,
+    url: URL,
+    localURL: URL,
+    mediaType: String = "text/html",
+    sourcePath: String? = nil,
+    format: DocumentPublishFormat? = nil,
+    createdAt: Date = Date()
+  ) {
+    self.id = id
+    self.title = title
+    self.url = url
+    self.localURL = localURL
+    self.mediaType = mediaType
+    self.sourcePath = sourcePath
+    self.format = format
+    self.createdAt = createdAt
+  }
+}
+
+public enum DocumentPublishOutcome: Sendable {
+  case localLink(publication: LocalDocumentPublication, result: DocumentPublishCLIResult)
+  case googleDrive(
+    format: DocumentPublishFormat,
+    url: URL,
+    fileID: String,
+    version: String?,
+    result: DocumentPublishCLIResult
+  )
+}
+
+public enum DocumentPublishingError: LocalizedError, Sendable {
+  case noDocument
+  case busy
+  case pendingEdits
+  case missingGoogleCredential
+  case invalidGoogleResponse
+  case missingWebBundle(String)
+  case unsupportedFormat
+
+  public var errorDescription: String? {
+    switch self {
+    case .noDocument:
+      "Open an Org or Org2 document before publishing."
+    case .busy:
+      "A document publication is already in progress."
+    case .pendingEdits:
+      "Save the current edit before publishing the document."
+    case .missingGoogleCredential:
+      "Connect Google Drive before publishing."
+    case .invalidGoogleResponse:
+      "Google Drive completed without returning a usable document link."
+    case .missingWebBundle(let path):
+      "Org2 completed without producing the expected web publication at \(path)."
+    case .unsupportedFormat:
+      "That format is not available for the selected publication destination."
+    }
+  }
+}
+
+public struct GoogleDriveOAuthCredential: Codable, Equatable, Sendable {
+  public let clientID: String
+  public let clientSecret: String?
+  public let accessToken: String
+  public let refreshToken: String
+  public let expirationDate: Date
+  public let scope: String
+  public let tokenType: String
+
+  public init(
+    clientID: String,
+    clientSecret: String? = nil,
+    accessToken: String,
+    refreshToken: String,
+    expirationDate: Date,
+    scope: String,
+    tokenType: String = "Bearer"
+  ) {
+    self.clientID = clientID
+    self.clientSecret = GoogleDriveOAuthConfiguration.normalizedClientSecret(clientSecret)
+    self.accessToken = accessToken
+    self.refreshToken = refreshToken
+    self.expirationDate = expirationDate
+    self.scope = scope
+    self.tokenType = tokenType
+  }
+
+  public var grantsDriveFileScope: Bool {
+    scope.split(whereSeparator: { $0.isWhitespace })
+      .contains(Substring(GoogleDriveOAuthClient.driveFileScope))
+  }
+}
+
+public enum GoogleDriveOAuthConfiguration {
+  public static let clientIDDefaultsKey = "org.openorg.google-drive-oauth-client-id"
+  public static let clientIDInfoKey = "OpenOrgGoogleOAuthClientID"
+  public static let clientIDEnvironmentKey = "ORG2_GOOGLE_OAUTH_CLIENT_ID"
+  public static let clientSecretInfoKey = "OpenOrgGoogleOAuthClientSecret"
+  public static let clientSecretEnvironmentKey = "ORG2_GOOGLE_OAUTH_CLIENT_SECRET"
+
+  public static func configuredClientID() -> String? {
+    let candidates = [
+      UserDefaults.standard.string(forKey: clientIDDefaultsKey),
+      Bundle.main.object(forInfoDictionaryKey: clientIDInfoKey) as? String,
+      ProcessInfo.processInfo.environment[clientIDEnvironmentKey],
+    ]
+    return candidates.compactMap(normalizedClientID).first
+  }
+
+  public static func configuredClientSecret() -> String? {
+    let candidates = [
+      Bundle.main.object(forInfoDictionaryKey: clientSecretInfoKey) as? String,
+      ProcessInfo.processInfo.environment[clientSecretEnvironmentKey],
+    ]
+    return candidates.compactMap(normalizedClientSecret).first
+  }
+
+  public static func saveClientID(_ clientID: String) {
+    if let normalized = normalizedClientID(clientID) {
+      UserDefaults.standard.set(normalized, forKey: clientIDDefaultsKey)
+    } else {
+      UserDefaults.standard.removeObject(forKey: clientIDDefaultsKey)
+    }
+  }
+
+  public static func normalizedClientID(_ value: String?) -> String? {
+    let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    return normalized.isEmpty ? nil : normalized
+  }
+
+  public static func normalizedClientSecret(_ value: String?) -> String? {
+    let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    return normalized.isEmpty ? nil : normalized
+  }
+}
+
+public struct GoogleDriveOAuthDesktopClient: Equatable, Sendable {
+  public let clientID: String
+  public let clientSecret: String?
+
+  public init(clientID: String, clientSecret: String? = nil) throws {
+    guard let normalizedClientID = GoogleDriveOAuthConfiguration.normalizedClientID(clientID) else {
+      throw GoogleDriveOAuthDesktopClientError.missingClientID
+    }
+    self.clientID = normalizedClientID
+    self.clientSecret = GoogleDriveOAuthConfiguration.normalizedClientSecret(clientSecret)
+  }
+
+  public static func decodeGoogleClientJSON(_ data: Data) throws -> GoogleDriveOAuthDesktopClient {
+    struct ClientRecord: Decodable {
+      let clientID: String
+      let clientSecret: String?
+
+      enum CodingKeys: String, CodingKey {
+        case clientID = "client_id"
+        case clientSecret = "client_secret"
+      }
+    }
+
+    struct ClientEnvelope: Decodable {
+      let installed: ClientRecord?
+      let web: ClientRecord?
+    }
+
+    let envelope: ClientEnvelope
+    do {
+      envelope = try JSONDecoder().decode(ClientEnvelope.self, from: data)
+    } catch {
+      throw GoogleDriveOAuthDesktopClientError.invalidJSON
+    }
+    guard let installed = envelope.installed else {
+      if envelope.web != nil {
+        throw GoogleDriveOAuthDesktopClientError.webClientNotSupported
+      }
+      throw GoogleDriveOAuthDesktopClientError.missingDesktopClient
+    }
+    return try GoogleDriveOAuthDesktopClient(
+      clientID: installed.clientID,
+      clientSecret: installed.clientSecret
+    )
+  }
+}
+
+public enum GoogleDriveOAuthDesktopClientError: LocalizedError, Equatable, Sendable {
+  case invalidJSON
+  case missingDesktopClient
+  case webClientNotSupported
+  case missingClientID
+
+  public var errorDescription: String? {
+    switch self {
+    case .invalidJSON:
+      "That file is not a valid Google OAuth client JSON file."
+    case .missingDesktopClient:
+      "That JSON file does not contain a Google OAuth Desktop app client."
+    case .webClientNotSupported:
+      "That JSON file contains a Web application client. Create and download a Desktop app OAuth client instead."
+    case .missingClientID:
+      "The Google OAuth Desktop app client is missing its client ID."
+    }
+  }
+}
+
+public enum GoogleDriveOAuthCredentialKeychain {
+  public static let service = "Org2Workspace.GoogleDrive"
+  public static let account = "drive.file.oauth-credential"
+
+  public static func containsCredential() -> Bool {
+    SecItemCopyMatching(baseQuery() as CFDictionary, nil) == errSecSuccess
+  }
+
+  public static func readCredential(allowUserInteraction: Bool = false) -> GoogleDriveOAuthCredential? {
+    var query = baseQuery()
+    query[kSecReturnData as String] = true
+    query[kSecMatchLimit as String] = kSecMatchLimitOne
+    let context = LAContext()
+    context.interactionNotAllowed = !allowUserInteraction
+    query[kSecUseAuthenticationContext as String] = context
+    var result: CFTypeRef?
+    guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
+          let data = result as? Data
+    else { return nil }
+    return try? JSONDecoder().decode(GoogleDriveOAuthCredential.self, from: data)
+  }
+
+  public static func saveCredential(_ credential: GoogleDriveOAuthCredential) throws {
+    guard !credential.accessToken.isEmpty,
+          !credential.refreshToken.isEmpty,
+          !credential.clientID.isEmpty
+    else {
+      throw GoogleDriveOAuthCredentialKeychainError.invalidCredential
+    }
+    let data: Data
+    do {
+      data = try JSONEncoder().encode(credential)
+    } catch {
+      throw GoogleDriveOAuthCredentialKeychainError.invalidCredential
+    }
+    var addition = baseQuery()
+    addition[kSecValueData as String] = data
+    addition[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+    let status = SecItemAdd(addition as CFDictionary, nil)
+    if status == errSecDuplicateItem {
+      let update = SecItemUpdate(
+        baseQuery() as CFDictionary,
+        [kSecValueData as String: data] as CFDictionary
+      )
+      guard update == errSecSuccess else {
+        throw GoogleDriveOAuthCredentialKeychainError.status(update)
+      }
+      return
+    }
+    guard status == errSecSuccess else {
+      throw GoogleDriveOAuthCredentialKeychainError.status(status)
+    }
+  }
+
+  public static func deleteCredential() throws {
+    let status = SecItemDelete(baseQuery() as CFDictionary)
+    guard status == errSecSuccess || status == errSecItemNotFound else {
+      throw GoogleDriveOAuthCredentialKeychainError.status(status)
+    }
+  }
+
+  private static func baseQuery() -> [String: Any] {
+    [
+      kSecClass as String: kSecClassGenericPassword,
+      kSecAttrService as String: service,
+      kSecAttrAccount as String: account,
+    ]
+  }
+}
+
+public enum GoogleDriveOAuthCredentialKeychainError: LocalizedError, Equatable {
+  case invalidCredential
+  case status(OSStatus)
+
+  public var errorDescription: String? {
+    switch self {
+    case .invalidCredential:
+      "Google Drive returned an incomplete credential. Connect the account again."
+    case .status(let status):
+      "Could not update the Google Drive credential in Keychain (status \(status))."
+    }
+  }
+}
+
+public enum GoogleDriveOAuthError: LocalizedError, Sendable {
+  case invalidClientID
+  case missingClientSecret
+  case browserOpenFailed
+  case callbackServer(String)
+  case callbackTimedOut
+  case invalidCallback
+  case stateMismatch
+  case authorizationDenied(String)
+  case tokenRequestFailed(Int, String?)
+  case invalidTokenResponse
+  case missingRefreshToken
+  case scopeNotGranted
+
+  public var errorDescription: String? {
+    switch self {
+    case .invalidClientID:
+      "Enter the client ID from a Google OAuth Desktop app."
+    case .missingClientSecret:
+      "Google requires the client secret paired with this Desktop app client. Import the downloaded OAuth client JSON, or paste its client secret, and connect again."
+    case .browserOpenFailed:
+      "OpenOrg could not open the Google authorization page."
+    case .callbackServer(let detail):
+      "OpenOrg could not start the temporary Google authorization callback: \(detail)"
+    case .callbackTimedOut:
+      "Google Drive authorization timed out. Try connecting again."
+    case .invalidCallback:
+      "Google returned an invalid authorization response."
+    case .stateMismatch:
+      "Google authorization could not be verified. Try connecting again."
+    case .authorizationDenied(let detail):
+      detail.isEmpty ? "Google Drive authorization was cancelled." : "Google Drive authorization failed: \(detail)"
+    case .tokenRequestFailed(let status, let detail):
+      if let detail, !detail.isEmpty {
+        "Google token exchange failed (HTTP \(status)): \(detail)"
+      } else {
+        "Google token exchange failed (HTTP \(status))."
+      }
+    case .invalidTokenResponse:
+      "Google returned an invalid OAuth credential."
+    case .missingRefreshToken:
+      "Google did not return a refresh credential. Connect the account again."
+    case .scopeNotGranted:
+      "Google Drive access was not granted. Connect again and approve Drive file access."
+    }
+  }
+}
+
+private struct GoogleDriveOAuthTokenResponse: Decodable, Sendable {
+  let accessToken: String
+  let expiresIn: Int
+  let refreshToken: String?
+  let scope: String?
+  let tokenType: String?
+
+  enum CodingKeys: String, CodingKey {
+    case accessToken = "access_token"
+    case expiresIn = "expires_in"
+    case refreshToken = "refresh_token"
+    case scope
+    case tokenType = "token_type"
+  }
+}
+
+private struct GoogleDriveOAuthErrorResponse: Decodable {
+  let error: String?
+  let errorDescription: String?
+
+  enum CodingKeys: String, CodingKey {
+    case error
+    case errorDescription = "error_description"
+  }
+}
+
+private struct GoogleDriveOAuthCallback: Sendable {
+  let code: String
+  let state: String
+}
+
+public struct GoogleDriveOAuthClient: Sendable {
+  public static let driveFileScope = "https://www.googleapis.com/auth/drive.file"
+  public static let authorizationEndpoint = URL(string: "https://accounts.google.com/o/oauth2/v2/auth")!
+  public static let tokenEndpoint = URL(string: "https://oauth2.googleapis.com/token")!
+
+  public typealias HTTPRequest = @Sendable (URLRequest) async throws -> (Data, URLResponse)
+  public typealias OpenAuthorizationURL = @Sendable (URL) async -> Bool
+
+  private let httpRequest: HTTPRequest
+
+  public init(
+    httpRequest: @escaping HTTPRequest = { request in
+      try await URLSession.shared.data(for: request)
+    }
+  ) {
+    self.httpRequest = httpRequest
+  }
+
+  public func authorize(
+    clientID: String,
+    clientSecret: String? = nil,
+    openAuthorizationURL: @escaping OpenAuthorizationURL
+  ) async throws -> GoogleDriveOAuthCredential {
+    guard let normalizedClientID = GoogleDriveOAuthConfiguration.normalizedClientID(clientID) else {
+      throw GoogleDriveOAuthError.invalidClientID
+    }
+
+    let receiver = GoogleDriveOAuthLoopbackReceiver()
+    let redirectURL = try await receiver.start()
+    defer { receiver.stop() }
+
+    let codeVerifier = try Self.randomURLSafeString(byteCount: 64)
+    let codeChallenge = Self.codeChallenge(for: codeVerifier)
+    let state = try Self.randomURLSafeString(byteCount: 32)
+    let authorizationURL = try Self.authorizationURL(
+      clientID: normalizedClientID,
+      redirectURL: redirectURL,
+      codeChallenge: codeChallenge,
+      state: state
+    )
+    guard await openAuthorizationURL(authorizationURL) else {
+      throw GoogleDriveOAuthError.browserOpenFailed
+    }
+
+    let callback = try await receiver.waitForCallback()
+    guard callback.state == state else {
+      throw GoogleDriveOAuthError.stateMismatch
+    }
+    let normalizedClientSecret = GoogleDriveOAuthConfiguration.normalizedClientSecret(clientSecret)
+    var tokenFields = [
+      "client_id": normalizedClientID,
+      "code": callback.code,
+      "code_verifier": codeVerifier,
+      "grant_type": "authorization_code",
+      "redirect_uri": redirectURL.absoluteString,
+    ]
+    if let normalizedClientSecret {
+      tokenFields["client_secret"] = normalizedClientSecret
+    }
+    let response = try await tokenResponse(fields: tokenFields)
+    guard let refreshToken = response.refreshToken, !refreshToken.isEmpty else {
+      throw GoogleDriveOAuthError.missingRefreshToken
+    }
+    let scope = response.scope ?? Self.driveFileScope
+    guard Self.grantsDriveFileScope(scope) else {
+      throw GoogleDriveOAuthError.scopeNotGranted
+    }
+    return GoogleDriveOAuthCredential(
+      clientID: normalizedClientID,
+      clientSecret: normalizedClientSecret,
+      accessToken: response.accessToken,
+      refreshToken: refreshToken,
+      expirationDate: Date().addingTimeInterval(TimeInterval(response.expiresIn)),
+      scope: scope,
+      tokenType: response.tokenType ?? "Bearer"
+    )
+  }
+
+  public func refreshingIfNeeded(
+    _ credential: GoogleDriveOAuthCredential,
+    now: Date = Date()
+  ) async throws -> GoogleDriveOAuthCredential {
+    guard credential.expirationDate.timeIntervalSince(now) <= 120 else {
+      return credential
+    }
+    var tokenFields = [
+      "client_id": credential.clientID,
+      "grant_type": "refresh_token",
+      "refresh_token": credential.refreshToken,
+    ]
+    if let clientSecret = credential.clientSecret {
+      tokenFields["client_secret"] = clientSecret
+    }
+    let response = try await tokenResponse(fields: tokenFields)
+    let scope = response.scope ?? credential.scope
+    guard Self.grantsDriveFileScope(scope) else {
+      throw GoogleDriveOAuthError.scopeNotGranted
+    }
+    return GoogleDriveOAuthCredential(
+      clientID: credential.clientID,
+      clientSecret: credential.clientSecret,
+      accessToken: response.accessToken,
+      refreshToken: response.refreshToken ?? credential.refreshToken,
+      expirationDate: now.addingTimeInterval(TimeInterval(response.expiresIn)),
+      scope: scope,
+      tokenType: response.tokenType ?? credential.tokenType
+    )
+  }
+
+  static func authorizationURL(
+    clientID: String,
+    redirectURL: URL,
+    codeChallenge: String,
+    state: String
+  ) throws -> URL {
+    var components = URLComponents(url: authorizationEndpoint, resolvingAgainstBaseURL: false)
+    components?.queryItems = [
+      URLQueryItem(name: "client_id", value: clientID),
+      URLQueryItem(name: "redirect_uri", value: redirectURL.absoluteString),
+      URLQueryItem(name: "response_type", value: "code"),
+      URLQueryItem(name: "scope", value: driveFileScope),
+      URLQueryItem(name: "code_challenge", value: codeChallenge),
+      URLQueryItem(name: "code_challenge_method", value: "S256"),
+      URLQueryItem(name: "state", value: state),
+      URLQueryItem(name: "prompt", value: "consent"),
+    ]
+    guard let url = components?.url else {
+      throw GoogleDriveOAuthError.invalidClientID
+    }
+    return url
+  }
+
+  static func codeChallenge(for codeVerifier: String) -> String {
+    Data(SHA256.hash(data: Data(codeVerifier.utf8)))
+      .base64EncodedString()
+      .replacingOccurrences(of: "+", with: "-")
+      .replacingOccurrences(of: "/", with: "_")
+      .replacingOccurrences(of: "=", with: "")
+  }
+
+  private static func randomURLSafeString(byteCount: Int) throws -> String {
+    var bytes = [UInt8](repeating: 0, count: byteCount)
+    let status = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
+    guard status == errSecSuccess else {
+      throw LocalDocumentPublicationHostError.randomNumberFailure(status)
+    }
+    return Data(bytes)
+      .base64EncodedString()
+      .replacingOccurrences(of: "+", with: "-")
+      .replacingOccurrences(of: "/", with: "_")
+      .replacingOccurrences(of: "=", with: "")
+  }
+
+  private static func grantsDriveFileScope(_ scope: String) -> Bool {
+    scope.split(whereSeparator: { $0.isWhitespace }).contains(Substring(driveFileScope))
+  }
+
+  private func tokenResponse(fields: [String: String]) async throws -> GoogleDriveOAuthTokenResponse {
+    var request = URLRequest(url: Self.tokenEndpoint)
+    request.httpMethod = "POST"
+    request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+    var components = URLComponents()
+    components.queryItems = fields.sorted { $0.key < $1.key }
+      .map { URLQueryItem(name: $0.key, value: $0.value) }
+    request.httpBody = Data((components.percentEncodedQuery ?? "").utf8)
+
+    let data: Data
+    let response: URLResponse
+    do {
+      (data, response) = try await httpRequest(request)
+    } catch {
+      throw GoogleDriveOAuthError.tokenRequestFailed(0, error.localizedDescription)
+    }
+    guard let httpResponse = response as? HTTPURLResponse else {
+      throw GoogleDriveOAuthError.invalidTokenResponse
+    }
+    guard (200..<300).contains(httpResponse.statusCode) else {
+      let errorResponse = try? JSONDecoder().decode(GoogleDriveOAuthErrorResponse.self, from: data)
+      let detail = errorResponse?.errorDescription ?? errorResponse?.error
+      if httpResponse.statusCode == 400,
+         detail?.localizedCaseInsensitiveContains("client_secret") == true,
+         detail?.localizedCaseInsensitiveContains("missing") == true {
+        throw GoogleDriveOAuthError.missingClientSecret
+      }
+      throw GoogleDriveOAuthError.tokenRequestFailed(httpResponse.statusCode, detail)
+    }
+    guard let decoded = try? JSONDecoder().decode(GoogleDriveOAuthTokenResponse.self, from: data),
+          !decoded.accessToken.isEmpty,
+          decoded.expiresIn > 0
+    else {
+      throw GoogleDriveOAuthError.invalidTokenResponse
+    }
+    return decoded
+  }
+}
+
+private final class GoogleDriveOAuthLoopbackReceiver: @unchecked Sendable {
+  private let queue = DispatchQueue(label: "org.openorg.google-oauth-loopback", qos: .userInitiated)
+  private let stateLock = NSLock()
+  private let connectionLock = NSLock()
+  private var listener: NWListener?
+  private var connections: [UUID: MobileRemoteHTTPConnection] = [:]
+  private var result: Result<GoogleDriveOAuthCallback, Error>?
+  private var continuation: CheckedContinuation<GoogleDriveOAuthCallback, Error>?
+
+  func start() async throws -> URL {
+    let parameters = NWParameters.tcp
+    parameters.allowLocalEndpointReuse = true
+    parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: .any)
+    let candidate: NWListener
+    do {
+      candidate = try NWListener(using: parameters)
+    } catch {
+      throw GoogleDriveOAuthError.callbackServer(error.localizedDescription)
+    }
+    let startup = LocalPublicationListenerStartup()
+    candidate.stateUpdateHandler = { state in
+      switch state {
+      case .ready:
+        guard let port = candidate.port?.rawValue else {
+          startup.complete(.failure(.startupFailed("No callback port was assigned.")))
+          return
+        }
+        startup.complete(.success(port))
+      case .failed(let error):
+        startup.complete(.failure(.startupFailed(error.localizedDescription)))
+      case .cancelled:
+        startup.complete(.failure(.startupFailed("The callback listener was cancelled.")))
+      default:
+        break
+      }
+    }
+    candidate.newConnectionHandler = { [weak self] connection in
+      self?.accept(connection)
+    }
+    candidate.start(queue: queue)
+
+    do {
+      let port = try await Task.detached(priority: .userInitiated) {
+        try startup.wait()
+      }.value
+      storeListener(candidate)
+      queue.asyncAfter(deadline: .now() + 300) { [weak self] in
+        self?.complete(.failure(GoogleDriveOAuthError.callbackTimedOut))
+      }
+      guard let url = URL(string: "http://127.0.0.1:\(port)") else {
+        throw GoogleDriveOAuthError.callbackServer("The callback URL was invalid.")
+      }
+      return url
+    } catch {
+      candidate.cancel()
+      if let oauthError = error as? GoogleDriveOAuthError {
+        throw oauthError
+      }
+      throw GoogleDriveOAuthError.callbackServer(error.localizedDescription)
+    }
+  }
+
+  func waitForCallback() async throws -> GoogleDriveOAuthCallback {
+    try await withCheckedThrowingContinuation { continuation in
+      stateLock.lock()
+      if let result {
+        stateLock.unlock()
+        continuation.resume(with: result)
+      } else {
+        self.continuation = continuation
+        stateLock.unlock()
+      }
+    }
+  }
+
+  func stop() {
+    stateLock.lock()
+    let activeListener = listener
+    listener = nil
+    stateLock.unlock()
+    activeListener?.cancel()
+
+    connectionLock.lock()
+    let activeConnections = Array(connections.values)
+    connections = [:]
+    connectionLock.unlock()
+    activeConnections.forEach { $0.cancel() }
+  }
+
+  deinit {
+    stop()
+  }
+
+  private func accept(_ connection: NWConnection) {
+    let id = UUID()
+    let remoteConnection = MobileRemoteHTTPConnection(
+      connection: connection,
+      handler: { [weak self] request in
+        self?.response(to: request)
+          ?? .error("Authorization is unavailable.", statusCode: 503)
+      },
+      completion: { [weak self] in self?.removeConnection(id) }
+    )
+    connectionLock.lock()
+    connections[id] = remoteConnection
+    connectionLock.unlock()
+    remoteConnection.start(on: queue)
+  }
+
+  private func storeListener(_ listener: NWListener) {
+    stateLock.lock()
+    self.listener = listener
+    stateLock.unlock()
+  }
+
+  private func removeConnection(_ id: UUID) {
+    connectionLock.lock()
+    connections[id] = nil
+    connectionLock.unlock()
+  }
+
+  private func response(to request: MobileRemoteHTTPRequest) -> MobileRemoteHTTPResponse {
+    guard request.method == "GET",
+          let components = URLComponents(string: request.path),
+          components.path.isEmpty || components.path == "/"
+    else {
+      return .error("Not found.", statusCode: 404)
+    }
+    let values = (components.queryItems ?? []).reduce(into: [String: String]()) { values, item in
+      if values[item.name] == nil, let value = item.value {
+        values[item.name] = value
+      }
+    }
+    if let error = values["error"] {
+      let detail = values["error_description"] ?? error
+      complete(.failure(GoogleDriveOAuthError.authorizationDenied(detail)))
+      return htmlResponse(
+        title: "Google Drive was not connected",
+        message: "Return to OpenOrg to try again."
+      )
+    }
+    guard let code = values["code"], !code.isEmpty,
+          let state = values["state"], !state.isEmpty
+    else {
+      complete(.failure(GoogleDriveOAuthError.invalidCallback))
+      return htmlResponse(
+        title: "Google Drive could not be connected",
+        message: "Return to OpenOrg to try again."
+      )
+    }
+    complete(.success(GoogleDriveOAuthCallback(code: code, state: state)))
+    return htmlResponse(
+      title: "Google Drive connected",
+      message: "You can close this window and return to OpenOrg."
+    )
+  }
+
+  private func complete(_ newResult: Result<GoogleDriveOAuthCallback, Error>) {
+    stateLock.lock()
+    guard result == nil else {
+      stateLock.unlock()
+      return
+    }
+    result = newResult
+    let continuation = continuation
+    self.continuation = nil
+    stateLock.unlock()
+    continuation?.resume(with: newResult)
+  }
+
+  private func htmlResponse(title: String, message: String) -> MobileRemoteHTTPResponse {
+    let html = """
+      <!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+      <title>\(title)</title><style>body{font:16px -apple-system,BlinkMacSystemFont,sans-serif;max-width:38rem;margin:12vh auto;padding:0 2rem;color:#202124}h1{font-size:1.6rem}</style></head>
+      <body><h1>\(title)</h1><p>\(message)</p></body></html>
+      """
+    return MobileRemoteHTTPResponse(
+      statusCode: 200,
+      headers: [
+        "Content-Type": "text/html; charset=utf-8",
+        "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",
+        "Referrer-Policy": "no-referrer",
+        "X-Content-Type-Options": "nosniff",
+      ],
+      body: Data(html.utf8)
+    )
+  }
+}
+
+public enum LocalDocumentPublicationHostError: LocalizedError, Sendable {
+  case invalidAdvertisedHost
+  case randomNumberFailure(OSStatus)
+  case startupFailed(String)
+  case startupTimedOut
+
+  public var errorDescription: String? {
+    switch self {
+    case .invalidAdvertisedHost:
+      "OpenOrg could not determine a local hostname for this Mac."
+    case .randomNumberFailure(let status):
+      "OpenOrg could not create a secure publication link (status \(status))."
+    case .startupFailed(let message):
+      "The local publication server could not start: \(message)"
+    case .startupTimedOut:
+      "The local publication server did not become ready in time."
+    }
+  }
+}
+
+private final class LocalPublicationListenerStartup: @unchecked Sendable {
+  private let lock = NSLock()
+  private let semaphore = DispatchSemaphore(value: 0)
+  private var result: Result<UInt16, LocalDocumentPublicationHostError>?
+
+  func complete(_ result: Result<UInt16, LocalDocumentPublicationHostError>) {
+    lock.lock()
+    guard self.result == nil else {
+      lock.unlock()
+      return
+    }
+    self.result = result
+    lock.unlock()
+    semaphore.signal()
+  }
+
+  func wait() throws -> UInt16 {
+    guard semaphore.wait(timeout: .now() + 5) == .success else {
+      throw LocalDocumentPublicationHostError.startupTimedOut
+    }
+    lock.lock()
+    let result = self.result
+    lock.unlock()
+    guard let result else {
+      throw LocalDocumentPublicationHostError.startupFailed("No listener state was returned.")
+    }
+    return try result.get()
+  }
+}
+
+public final class LocalDocumentPublicationHost: @unchecked Sendable {
+  private struct HostedDocument: Sendable {
+    let title: String
+    let data: Data
+    let mediaType: String
+  }
+
+  private let queue = DispatchQueue(label: "org.openorg.document-publishing", qos: .userInitiated)
+  private let stateLock = NSLock()
+  private let startupLock = NSLock()
+  private let connectionLock = NSLock()
+  private let bindHost: String
+  private let advertisedHost: String
+  private var listener: NWListener?
+  private var listeningPort: UInt16?
+  private var documents: [String: HostedDocument] = [:]
+  private var connections: [UUID: MobileRemoteHTTPConnection] = [:]
+
+  public init(
+    bindHost: String = "0.0.0.0",
+    advertisedHost: String = ProcessInfo.processInfo.hostName
+  ) {
+    self.bindHost = bindHost
+    self.advertisedHost = advertisedHost.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  public func publish(html: Data, title: String) async throws -> LocalDocumentPublication {
+    try await publish(data: html, title: title, mediaType: "text/html")
+  }
+
+  public func publish(
+    data: Data,
+    title: String,
+    mediaType: String
+  ) async throws -> LocalDocumentPublication {
+    let port = try await Task.detached(priority: .userInitiated) { [self] in
+      try startIfNeededBlocking()
+    }.value
+    let token = try Self.secretToken()
+    storeDocument(
+      HostedDocument(
+        title: title,
+        data: data,
+        mediaType: normalizedMediaType(mediaType)
+      ),
+      token: token
+    )
+
+    guard !advertisedHost.isEmpty else {
+      revoke(token)
+      throw LocalDocumentPublicationHostError.invalidAdvertisedHost
+    }
+    let path = "/a/\(token)"
+    guard let url = Self.httpURL(host: advertisedHost, port: port, path: path),
+          let localURL = Self.httpURL(host: "127.0.0.1", port: port, path: path)
+    else {
+      revoke(token)
+      throw LocalDocumentPublicationHostError.invalidAdvertisedHost
+    }
+    return LocalDocumentPublication(
+      id: token,
+      title: title,
+      url: url,
+      localURL: localURL,
+      mediaType: normalizedMediaType(mediaType)
+    )
+  }
+
+  public func revoke(_ publicationID: String) {
+    stateLock.lock()
+    documents[publicationID] = nil
+    stateLock.unlock()
+  }
+
+  private func storeDocument(_ document: HostedDocument, token: String) {
+    stateLock.lock()
+    documents[token] = document
+    stateLock.unlock()
+  }
+
+  public func stop() {
+    stateLock.lock()
+    let activeListener = listener
+    listener = nil
+    listeningPort = nil
+    documents = [:]
+    stateLock.unlock()
+    activeListener?.cancel()
+
+    connectionLock.lock()
+    let activeConnections = Array(connections.values)
+    connections = [:]
+    connectionLock.unlock()
+    activeConnections.forEach { $0.cancel() }
+  }
+
+  deinit {
+    stop()
+  }
+
+  private func startIfNeededBlocking() throws -> UInt16 {
+    startupLock.lock()
+    defer { startupLock.unlock() }
+
+    stateLock.lock()
+    let existingPort = listeningPort
+    stateLock.unlock()
+    if let existingPort { return existingPort }
+
+    let parameters = NWParameters.tcp
+    parameters.allowLocalEndpointReuse = true
+    parameters.requiredLocalEndpoint = .hostPort(
+      host: NWEndpoint.Host(bindHost),
+      port: .any
+    )
+    let candidate: NWListener
+    do {
+      candidate = try NWListener(using: parameters)
+    } catch {
+      throw LocalDocumentPublicationHostError.startupFailed(error.localizedDescription)
+    }
+
+    let startup = LocalPublicationListenerStartup()
+    candidate.stateUpdateHandler = { state in
+      switch state {
+      case .ready:
+        guard let port = candidate.port?.rawValue else {
+          startup.complete(.failure(.startupFailed("No listening port was assigned.")))
+          return
+        }
+        startup.complete(.success(port))
+      case .failed(let error):
+        startup.complete(.failure(.startupFailed(error.localizedDescription)))
+      case .cancelled:
+        startup.complete(.failure(.startupFailed("The listener was cancelled.")))
+      default:
+        break
+      }
+    }
+    candidate.newConnectionHandler = { [weak self] connection in
+      self?.accept(connection)
+    }
+    candidate.start(queue: queue)
+
+    do {
+      let port = try startup.wait()
+      stateLock.lock()
+      listener = candidate
+      listeningPort = port
+      stateLock.unlock()
+      return port
+    } catch {
+      candidate.cancel()
+      throw error
+    }
+  }
+
+  private func accept(_ connection: NWConnection) {
+    let id = UUID()
+    let remoteConnection = MobileRemoteHTTPConnection(
+      connection: connection,
+      handler: { [weak self] request in
+        self?.response(to: request)
+          ?? .error("The publication server is unavailable.", statusCode: 503)
+      },
+      completion: { [weak self] in self?.removeConnection(id) }
+    )
+    connectionLock.lock()
+    connections[id] = remoteConnection
+    connectionLock.unlock()
+    remoteConnection.start(on: queue)
+  }
+
+  private func removeConnection(_ id: UUID) {
+    connectionLock.lock()
+    connections[id] = nil
+    connectionLock.unlock()
+  }
+
+  private func response(to request: MobileRemoteHTTPRequest) -> MobileRemoteHTTPResponse {
+    guard request.method == "GET" || request.method == "HEAD" else {
+      return .error("Not found.", statusCode: 404)
+    }
+    let requestPath = URLComponents(string: request.path)?.path ?? request.path
+    let components = requestPath.split(separator: "/", omittingEmptySubsequences: true)
+    guard components.count == 2, components[0] == "a" else {
+      return .error("Not found.", statusCode: 404)
+    }
+    let token = String(components[1])
+    stateLock.lock()
+    let document = documents[token]
+    stateLock.unlock()
+    guard let document else {
+      return .error("This publication is unavailable or has been revoked.", statusCode: 404)
+    }
+    let isHTML = document.mediaType == "text/html"
+    return MobileRemoteHTTPResponse(
+      statusCode: 200,
+      headers: [
+        "Content-Type": isHTML ? "text/html; charset=utf-8" : document.mediaType,
+        "Content-Security-Policy": isHTML
+          ? "default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'"
+          : "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'",
+        "Content-Disposition": "inline",
+        "Referrer-Policy": "no-referrer",
+        "X-Content-Type-Options": "nosniff",
+        "X-Robots-Tag": "noindex, nofollow, noarchive",
+      ],
+      body: request.method == "HEAD" ? Data() : document.data
+    )
+  }
+
+  private func normalizedMediaType(_ mediaType: String) -> String {
+    switch mediaType.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+    case "application/pdf": "application/pdf"
+    default: "text/html"
+    }
+  }
+
+  private static func httpURL(host: String, port: UInt16, path: String) -> URL? {
+    var components = URLComponents()
+    components.scheme = "http"
+    components.host = host
+    components.port = Int(port)
+    components.path = path
+    return components.url
+  }
+
+  private static func secretToken() throws -> String {
+    var bytes = [UInt8](repeating: 0, count: 32)
+    let status = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
+    guard status == errSecSuccess else {
+      throw LocalDocumentPublicationHostError.randomNumberFailure(status)
+    }
+    return Data(bytes)
+      .base64EncodedString()
+      .replacingOccurrences(of: "+", with: "-")
+      .replacingOccurrences(of: "/", with: "_")
+      .replacingOccurrences(of: "=", with: "")
+  }
+}

@@ -6,10 +6,17 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   GOOGLE_DRIVE_FILE_SCOPE,
+  GOOGLE_SHEETS_MIME_TYPE,
+  GOOGLE_SLIDES_MIME_TYPE,
   prepareGoogleDocsUpload,
+  prepareGoogleDrivePdfUpload,
+  prepareGoogleSheetsUpload,
+  prepareGoogleSlidesUpload,
   preparePublishedDocument,
   publishToGoogleDocs,
+  publishToGoogleWorkspace,
 } from "../dist/publishDocument.js";
+import { preparePublishedBeamer } from "../dist/publishedDocumentBeamer.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const cliPath = path.join(repoRoot, "dist", "cli.js");
@@ -53,7 +60,11 @@ ${secretValue}
 `;
 
 function runCli(extraArgs, options = {}) {
-  return spawnSync(process.execPath, [cliPath, "publish", "document", "--file", sourcePath, ...extraArgs], {
+  return runCliFor(sourcePath, extraArgs, options);
+}
+
+function runCliFor(file, extraArgs, options = {}) {
+  return spawnSync(process.execPath, [cliPath, "publish", "document", "--file", file, ...extraArgs], {
     cwd: fixtureRoot,
     encoding: "utf8",
     env: { ...process.env, ORG2_GOOGLE_DRIVE_ACCESS_TOKEN: "", ...(options.env || {}) },
@@ -107,6 +118,14 @@ try {
   assert.match(html, /<meta name="referrer" content="no-referrer" \/>/);
   assert.match(html, /<meta name="robots" content="noindex, nofollow, noarchive" \/>/);
   assert.match(html, /Content-Security-Policy/);
+  assert.match(html, /id="org2-publish-document-style"/);
+  assert.match(html, /--org2-content-width: 960px/);
+  assert.match(html, /html, body \{[^}]*overflow-x: hidden/);
+  assert.match(html, /padding: 22px clamp\(16px, 5vw, var\(--org2-page-padding\)\) 64px/);
+  assert.match(html, /details\.org2-headline,/);
+  assert.match(html, /<div class="org2-table-scroll">/);
+  assert.match(html, /\.org2-table-scroll \{[^}]*min-width: 0;[^}]*overflow-x: auto;/);
+  assert.doesNotMatch(html, /margin: 2rem auto; max-width: 860px/);
   assert.match(html, /data:image\/png;base64,/);
   assert.match(html, /<a rel="noopener noreferrer" href="https:\/\/example\.com\/report">External source<\/a>/);
   assert.match(html, /Internal source/);
@@ -128,7 +147,84 @@ try {
   const subtree = preparePublishedDocument({ sourceText: source, sourcePath, line: subtreeLine });
   assert.equal(subtree.manifest.selection, "subtree");
   assert.match(subtree.html, /<h1>Research findings<\/h1>/);
-  assert.doesNotMatch(subtree.html, /Document preface|org2-document-header/);
+  assert.doesNotMatch(subtree.html, /Document preface|<header class="org2-document-header"/);
+
+  const chartSource = `#+TITLE: Published Dashboard
+* Dashboard
+#+name: growth_chart
+\`\`\`chart line
+title: Monthly growth
+source: growth_series
+x: month
+y: value
+interactive: true
+\`\`\`
+
+#+name: growth_series
+| month | value |
+|-------+-------|
+| Jan   | 10    |
+| Feb   | 14    |
+`;
+  const chartPublication = preparePublishedDocument({ sourceText: chartSource });
+  assert.match(chartPublication.html, /<figure class="org2-chart org2-chart-medium"/);
+  assert.match(chartPublication.html, /class="org2-chart-svg"/);
+  assert.match(chartPublication.html, /Monthly growth/);
+  assert.match(chartPublication.html, /--org2-chart-title: #24262a/);
+  assert.match(chartPublication.html, /--org2-chart-title: #e9eaed/);
+  assert.doesNotMatch(chartPublication.html, /language-chart|source: growth_series/);
+  assert.doesNotMatch(JSON.stringify(chartPublication.document), /sourceRange/);
+
+  const sanitizedChartSource = `* Shared dashboard
+#+name: safe_series
+| label | rolling_7d |
+|-------+------------|
+| [[file:/private/customer-list.csv][Public total]] | 12 |
+
+\`\`\`chart bar
+source: safe_series
+x: label
+y: rolling_7d
+\`\`\`
+`;
+  const sanitizedChartPublication = preparePublishedDocument({ sourceText: sanitizedChartSource });
+  assert.match(sanitizedChartPublication.html, /org2-chart-svg/);
+  assert.match(sanitizedChartPublication.html, /Public total/);
+  assert.doesNotMatch(sanitizedChartPublication.html, /private\/customer-list/);
+
+  const commentedChartSource = `* COMMENT Private data
+#+name: commented_series
+| month | value |
+|-------+-------|
+| Jan   | 98765 |
+
+* Shared chart
+\`\`\`chart line
+source: commented_series
+x: month
+y: value
+\`\`\`
+`;
+  const commentedChartPublication = preparePublishedDocument({ sourceText: commentedChartSource });
+  assert.doesNotMatch(commentedChartPublication.html, /org2-chart-svg|98765/);
+  assert.match(commentedChartPublication.warnings.join("\n"), /No table found for chart source "commented_series"/);
+
+  const scopedChartSource = `#+name: private_series
+| month | value |
+|-------+-------|
+| Jan   | 98765 |
+
+* Shared chart
+\`\`\`chart line
+source: private_series
+x: month
+y: value
+\`\`\`
+`;
+  const scopedChartLine = scopedChartSource.slice(0, scopedChartSource.indexOf("* Shared chart")).split("\n").length;
+  const scopedChartPublication = preparePublishedDocument({ sourceText: scopedChartSource, line: scopedChartLine });
+  assert.doesNotMatch(scopedChartPublication.html, /org2-chart-svg|98765/);
+  assert.match(scopedChartPublication.warnings.join("\n"), /No table found for chart source "private_series"/);
 
   const repeat = runCli(["--to", "web", "--out-dir", webOut, "--replace-existing", "--apply", "--format", "json"]);
   assert.equal(repeat.status, 0, repeat.stderr || repeat.stdout);
@@ -291,8 +387,140 @@ try {
     /has comments.*publish as a new copy/i,
   );
   assert.deepEqual(commentedCalls.map((call) => call.init.method), ["GET", "GET"], "comments must stop the replacement upload");
+
+  const workspaceSourcePath = path.join(fixtureRoot, "workspace-formats.org2");
+  const workspaceSource = `#+TITLE: Publication Formats
+#+ORG2_SLIDE_LEVEL: 2
+#+LATEX_HEADER: \\input{/private/should-never-run}
+* Findings
+** Market signal
+The market is growing.
+
+- Cited research
+- Repeatable method
+
+| Company | Score |
+|---------+-------|
+| Alpha | 42 |
+
+* Appendix
+** Evidence
+The evidence is reproducible.
+
+| Source | URL |
+|--------+-----|
+| Public report | https://example.com/report |
+`;
+  fs.writeFileSync(workspaceSourcePath, workspaceSource);
+  const workspacePublication = preparePublishedDocument({
+    sourceText: workspaceSource,
+    sourcePath: workspaceSourcePath,
+  });
+
+  const odp = prepareGoogleSlidesUpload(workspacePublication);
+  assert.deepEqual(odp.bytes.subarray(0, 2), Buffer.from("PK"));
+  assert.deepEqual(prepareGoogleSlidesUpload(workspacePublication).bytes, odp.bytes, "ODP media should be deterministic");
+  assert.equal(odp.itemCount, 3, "a full-document deck should include a title page and two slides");
+  const odpEntries = storedZipEntries(odp.bytes);
+  assert.equal([...odpEntries.keys()][0], "mimetype", "ODF requires the uncompressed mimetype entry first");
+  assert.equal(odpEntries.get("mimetype").toString("utf8"), "application/vnd.oasis.opendocument.presentation");
+  assert.ok(odpEntries.has("content.xml"));
+  assert.ok(odpEntries.has("styles.xml"));
+  assert.ok(odpEntries.has("META-INF/manifest.xml"));
+  const odpContent = odpEntries.get("content.xml").toString("utf8");
+  assert.match(odpContent, /Market signal/);
+  assert.match(odpContent, /Evidence/);
+  assert.match(odpContent, /<table:table/);
+  assert.doesNotMatch(odpContent, /private\/should-never-run/);
+
+  const ods = prepareGoogleSheetsUpload(workspacePublication);
+  assert.deepEqual(ods.bytes.subarray(0, 2), Buffer.from("PK"));
+  assert.deepEqual(prepareGoogleSheetsUpload(workspacePublication).bytes, ods.bytes, "ODS media should be deterministic");
+  assert.equal(ods.itemCount, 2);
+  const odsEntries = storedZipEntries(ods.bytes);
+  assert.equal(odsEntries.get("mimetype").toString("utf8"), "application/vnd.oasis.opendocument.spreadsheet");
+  const odsContent = odsEntries.get("content.xml").toString("utf8");
+  assert.match(odsContent, /table:name="Market signal"/);
+  assert.match(odsContent, /table:name="Evidence"/);
+  assert.match(odsContent, /office:value="42"/);
+  assert.doesNotMatch(odsContent, /private\/should-never-run/);
+
+  const beamer = preparePublishedBeamer(workspacePublication.document);
+  assert.equal(beamer.slideCount, 2);
+  assert.match(beamer.tex, /\\begin\{frame\}.*Market signal/s);
+  assert.doesNotMatch(beamer.tex, /\\input\{\/private\/should-never-run\}/);
+
+  const beamerPreview = runCliFor(workspaceSourcePath, [
+    "--to", "beamer-pdf",
+    "--out-file", path.join(fixtureRoot, "formats.pdf"),
+    "--format", "json",
+  ]);
+  assert.equal(beamerPreview.status, 0, beamerPreview.stderr || beamerPreview.stdout);
+  assert.equal(JSON.parse(beamerPreview.stdout).destination.slideCount, 2);
+
+  const slidesPreview = runCliFor(workspaceSourcePath, ["--to", "google-slides", "--format", "json"]);
+  assert.equal(slidesPreview.status, 0, slidesPreview.stderr || slidesPreview.stdout);
+  const slidesPreviewPayload = JSON.parse(slidesPreview.stdout);
+  assert.equal(slidesPreviewPayload.destination.mimeType, GOOGLE_SLIDES_MIME_TYPE);
+  assert.equal(slidesPreviewPayload.destination.inputMediaType, "application/vnd.oasis.opendocument.presentation");
+
+  const sheetsPreview = runCliFor(workspaceSourcePath, ["--to", "google-sheets", "--format", "json"]);
+  assert.equal(sheetsPreview.status, 0, sheetsPreview.stderr || sheetsPreview.stdout);
+  const sheetsPreviewPayload = JSON.parse(sheetsPreview.stdout);
+  assert.equal(sheetsPreviewPayload.destination.mimeType, GOOGLE_SHEETS_MIME_TYPE);
+  assert.equal(sheetsPreviewPayload.destination.inputMediaType, "application/vnd.oasis.opendocument.spreadsheet");
+
+  const pdfPreview = runCliFor(workspaceSourcePath, ["--to", "google-drive-pdf", "--format", "json"]);
+  assert.equal(pdfPreview.status, 0, pdfPreview.stderr || pdfPreview.stdout);
+  assert.equal(JSON.parse(pdfPreview.stdout).destination.renderingRequired, true);
+
+  for (const [destination, targetMediaType, inputMediaType] of [
+    ["google-slides", GOOGLE_SLIDES_MIME_TYPE, "application/vnd.oasis.opendocument.presentation"],
+    ["google-sheets", GOOGLE_SHEETS_MIME_TYPE, "application/vnd.oasis.opendocument.spreadsheet"],
+  ]) {
+    const calls = [];
+    const result = await publishToGoogleWorkspace(workspacePublication, destination, {
+      accessToken: "ephemeral-test-token",
+      fetchImpl: async (url, init) => {
+        calls.push({ url: String(url), init });
+        return new Response(JSON.stringify({
+          id: `${destination}-created`,
+          name: "Publication Formats",
+          mimeType: targetMediaType,
+          version: "1",
+        }), { status: 200 });
+      },
+    });
+    assert.equal(calls.length, 1);
+    const body = Buffer.from(calls[0].init.body).toString("latin1");
+    assert.match(body, new RegExp(targetMediaType.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    assert.match(body, new RegExp(inputMediaType.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    assert.equal(result.destination, destination);
+    assert.match(result.webViewLink, destination === "google-slides" ? /presentation/ : /spreadsheets/);
+  }
+
+  const pdfBytes = Buffer.from("%PDF-1.7\nsealed-publication\n%%EOF");
+  assert.equal(prepareGoogleDrivePdfUpload(pdfBytes).mediaType, "application/pdf");
+  assert.throws(() => prepareGoogleDrivePdfUpload(Buffer.from("not a pdf")), /valid PDF/);
+  const pdfCalls = [];
+  const pdfResult = await publishToGoogleWorkspace(workspacePublication, "google-drive-pdf", {
+    accessToken: "ephemeral-test-token",
+    pdfBytes,
+    fetchImpl: async (url, init) => {
+      pdfCalls.push({ url: String(url), init });
+      return new Response(JSON.stringify({
+        id: "pdf-created",
+        name: "Publication Formats",
+        mimeType: "application/pdf",
+        version: "1",
+      }), { status: 200 });
+    },
+  });
+  assert.equal(pdfResult.destination, "google-drive-pdf");
+  assert.match(pdfResult.webViewLink, /drive\.google\.com\/file/);
+  assert.ok(Buffer.from(pdfCalls[0].init.body).indexOf(pdfBytes) > 0);
 } finally {
   fs.rmSync(fixtureRoot, { recursive: true, force: true });
 }
 
-console.log("single-document web and Google Docs publishing tests passed");
+console.log("single-document multi-format local and Google publishing tests passed");
