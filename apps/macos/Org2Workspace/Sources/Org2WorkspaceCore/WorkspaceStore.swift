@@ -192,7 +192,7 @@ final class WorkspaceTranscriptionProgressState: ObservableObject {
 /// prevents every streamed token from invalidating unrelated workspace views.
 @MainActor
 final class OpenClawChatLiveState: ObservableObject {
-  nonisolated static let streamPublishIntervalNanoseconds: UInt64 = 33_000_000
+  nonisolated static let streamPublishIntervalNanoseconds: UInt64 = 66_000_000
 
   @Published fileprivate var gatewayStateByThreadID: [UUID: OpenClawGatewayConnectionState] = [:]
   @Published fileprivate var gatewayDetailByThreadID: [UUID: String] = [:]
@@ -18503,13 +18503,14 @@ public final class WorkspaceStore: ObservableObject {
         destinationID: destinationID
       ) else { return }
       openClawLiveState.noteEvent(for: threadID, coalesced: true)
-      let streamingReply = CodexStreamingText.appending(
+      let previousItemID = codexStreamingItemIDByThreadID[threadID]
+      let appendableDelta = CodexStreamingText.deltaWithItemBoundary(
         delta,
         itemID: itemID,
-        after: codexStreamingItemIDByThreadID[threadID],
-        to: openClawLiveState.streamingReply(for: threadID)
+        after: previousItemID,
+        hasExistingText: previousItemID != nil
       )
-      openClawLiveState.replaceStreamingReply(streamingReply, for: threadID, coalesced: true)
+      openClawLiveState.appendStreamingDelta(appendableDelta, for: threadID)
       codexStreamingItemIDByThreadID[threadID] = itemID
       if selectedOpenClawChatThreadID == threadID {
         let nextStatus = "\(destinationName) is replying"

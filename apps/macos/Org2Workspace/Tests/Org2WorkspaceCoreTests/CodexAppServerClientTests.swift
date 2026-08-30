@@ -154,6 +154,27 @@ final class CodexAppServerClientTests: XCTestCase {
     )
   }
 
+  func testCodexStreamingDeltaAddsOnlyTheNewItemBoundary() {
+    XCTAssertEqual(
+      CodexStreamingText.deltaWithItemBoundary(
+        " continues",
+        itemID: "commentary-1",
+        after: "commentary-1",
+        hasExistingText: true
+      ),
+      " continues"
+    )
+    XCTAssertEqual(
+      CodexStreamingText.deltaWithItemBoundary(
+        "The next update",
+        itemID: "commentary-2",
+        after: "commentary-1",
+        hasExistingText: true
+      ),
+      "\n\nThe next update"
+    )
+  }
+
   func testCodexWorkspaceSnapshotIncludesUnsavedSelectedSource() {
     let context = OpenClawWorkspaceContext(
       localCorpusRoot: "/tmp/example-corpus",

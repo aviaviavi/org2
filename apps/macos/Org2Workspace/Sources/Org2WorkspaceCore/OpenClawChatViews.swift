@@ -3142,6 +3142,10 @@ struct OpenClawTypingIndicatorView: View {
   }
 
   var body: some View {
+    let livePresentation = OpenClawProgressPresentation.liveTextPresentation(
+      from: streamingReply,
+      showsAll: showsAllStreamingProgress
+    )
     HStack {
       VStack(alignment: .leading, spacing: 9) {
         VStack(alignment: .leading, spacing: 4) {
@@ -3182,18 +3186,15 @@ struct OpenClawTypingIndicatorView: View {
         }
         .help(connectionHelp(now: statusEvaluationDate))
 
-        if let liveText = OpenClawProgressPresentation.liveText(
-          from: streamingReply,
-          showsAll: showsAllStreamingProgress
-        ) {
+        if let livePresentation {
           OpenClawMessageBodyView(
-            rawText: liveText,
+            rawText: livePresentation.text,
             compact: compact,
             managesTextSelection: true,
             rendersStructuredOrg2: true
           )
 
-          if OpenClawProgressPresentation.hasEarlierLiveText(streamingReply) {
+          if livePresentation.hasEarlierText {
             Button {
               withAnimation(WorkspaceMotion.disclosure) {
                 showsAllStreamingProgress.toggle()
@@ -3727,28 +3728,44 @@ private struct OpenClawActivityFeedRow: View {
 }
 
 enum OpenClawProgressPresentation {
+  struct LiveTextPresentation: Equatable {
+    let text: String
+    let hasEarlierText: Bool
+  }
+
   private static let maximumReasoningLength = 1_200
   private static let maximumCollapsedLiveLength = 320
 
-  static func liveText(from raw: String, showsAll: Bool) -> String? {
+  static func liveTextPresentation(
+    from raw: String,
+    showsAll: Bool
+  ) -> LiveTextPresentation? {
     let readable = normalizedReadableText(raw)
     guard !readable.isEmpty else { return nil }
-    guard !showsAll else { return readable }
 
     let paragraphs = readable.components(separatedBy: "\n\n")
       .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
       .filter { !$0.isEmpty }
     let latest = paragraphs.last ?? readable
-    guard latest.count > maximumCollapsedLiveLength else { return latest }
-    return String(latest.prefix(maximumCollapsedLiveLength - 1))
-      .trimmingCharacters(in: .whitespacesAndNewlines) + "\u{2026}"
+    let collapsed: String
+    if latest.count > maximumCollapsedLiveLength {
+      collapsed = String(latest.prefix(maximumCollapsedLiveLength - 1))
+        .trimmingCharacters(in: .whitespacesAndNewlines) + "\u{2026}"
+    } else {
+      collapsed = latest
+    }
+    return LiveTextPresentation(
+      text: showsAll ? readable : collapsed,
+      hasEarlierText: collapsed != readable
+    )
+  }
+
+  static func liveText(from raw: String, showsAll: Bool) -> String? {
+    liveTextPresentation(from: raw, showsAll: showsAll)?.text
   }
 
   static func hasEarlierLiveText(_ raw: String) -> Bool {
-    guard let collapsed = liveText(from: raw, showsAll: false),
-          let expanded = liveText(from: raw, showsAll: true)
-    else { return false }
-    return collapsed != expanded
+    liveTextPresentation(from: raw, showsAll: false)?.hasEarlierText ?? false
   }
 
   static func reasoningText(from raw: String) -> String? {

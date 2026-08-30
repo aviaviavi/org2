@@ -32,6 +32,18 @@ final class WorkspacePerformanceRegressionTests: XCTestCase {
     XCTAssertEqual(liveState.reasoning(for: threadID), String(repeating: "r", count: 100))
   }
 
+  func testLiveChatAppendsLargeCodexTokenBurstWithoutCumulativeReplacement() {
+    let liveState = OpenClawChatLiveState()
+    let threadID = UUID()
+    let tokenCount = 10_000
+
+    for _ in 0..<tokenCount {
+      liveState.appendStreamingDelta("x", for: threadID)
+    }
+
+    XCTAssertEqual(liveState.streamingReply(for: threadID).count, tokenCount)
+  }
+
   func testInteractionLatencyP95UsesTheSlowestFivePercentBoundary() {
     let samples = (1...100).map(Double.init)
     XCTAssertEqual(WorkspaceInteractionLatency.percentile95(samples), 95)

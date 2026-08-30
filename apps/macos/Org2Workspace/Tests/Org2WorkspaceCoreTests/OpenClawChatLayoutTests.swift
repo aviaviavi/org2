@@ -1240,6 +1240,16 @@ final class OpenClawChatLayoutTests: XCTestCase {
     XCTAssertTrue(OpenClawProgressPresentation.hasEarlierLiveText(progress))
   }
 
+  func testLiveProgressPresentationComputesTextAndDisclosureTogether() throws {
+    let progress = "First update.\n\nSecond update."
+    let presentation = try XCTUnwrap(
+      OpenClawProgressPresentation.liveTextPresentation(from: progress, showsAll: false)
+    )
+
+    XCTAssertEqual(presentation.text, "Second update.")
+    XCTAssertTrue(presentation.hasEarlierText)
+  }
+
   func testAssistantResponseTraceRoundTripsWithTranscriptMessage() throws {
     let trace = OpenClawResponseTrace(
       reasoning: "Checking the relevant files.",

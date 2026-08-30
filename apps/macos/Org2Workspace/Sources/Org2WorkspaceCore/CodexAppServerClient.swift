@@ -212,17 +212,31 @@ public enum CodexAppServerEvent: Sendable {
 }
 
 enum CodexStreamingText {
+  static func deltaWithItemBoundary(
+    _ delta: String,
+    itemID: String,
+    after previousItemID: String?,
+    hasExistingText: Bool
+  ) -> String {
+    guard let previousItemID,
+          previousItemID != itemID,
+          hasExistingText
+    else { return delta }
+    return "\n\n" + delta
+  }
+
   static func appending(
     _ delta: String,
     itemID: String,
     after previousItemID: String?,
     to existing: String
   ) -> String {
-    guard let previousItemID,
-          previousItemID != itemID,
-          !existing.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    else { return existing + delta }
-    return existing + "\n\n" + delta
+    existing + deltaWithItemBoundary(
+      delta,
+      itemID: itemID,
+      after: previousItemID,
+      hasExistingText: !existing.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    )
   }
 }
 
@@ -294,13 +308,27 @@ public actor CodexAppServerClient {
   public typealias DynamicToolHandler =
     @Sendable (CodexDynamicToolCall) async -> CodexDynamicToolResult
 
-  private struct PendingTurn {
+  private final class PendingTurn {
     var finalReply = ""
-    var streamedReply = ""
+    var streamedReplyChunks: [String] = []
     var streamedItemID: String?
     var errorMessage: String?
     var continuation: CheckedContinuation<CodexTurnResult, Never>?
     var completedResult: CodexTurnResult?
+
+    var streamedReply: String {
+      streamedReplyChunks.joined()
+    }
+
+    func appendStreamedReply(_ delta: String, itemID: String) {
+      streamedReplyChunks.append(CodexStreamingText.deltaWithItemBoundary(
+        delta,
+        itemID: itemID,
+        after: streamedItemID,
+        hasExistingText: !streamedReplyChunks.isEmpty
+      ))
+      streamedItemID = itemID
+    }
   }
 
   private let executableURL: URL?
@@ -1190,7 +1218,7 @@ public actor CodexAppServerClient {
     loadedThreadIDs.removeAll()
     failPendingRequests(CodexAppServerError.disconnected(message))
     for turnID in Array(pendingTurns.keys) {
-      guard var pending = pendingTurns[turnID] else { continue }
+      guard let pending = pendingTurns[turnID] else { continue }
       guard pending.completedResult == nil else { continue }
       let result = CodexTurnResult(
         threadID: "",
@@ -1414,14 +1442,8 @@ public actor CodexAppServerClient {
             let delta = params["delta"]?.stringValue
       else { return }
       let itemID = params["itemId"]?.stringValue ?? "\(turnID):legacy-agent-message"
-      var pending = pendingTurns[turnID] ?? PendingTurn()
-      pending.streamedReply = CodexStreamingText.appending(
-        delta,
-        itemID: itemID,
-        after: pending.streamedItemID,
-        to: pending.streamedReply
-      )
-      pending.streamedItemID = itemID
+      let pending = pendingTurns[turnID] ?? PendingTurn()
+      pending.appendStreamedReply(delta, itemID: itemID)
       pendingTurns[turnID] = pending
       await eventHandler(.agentMessageDelta(
         threadID: threadID,
@@ -1448,7 +1470,7 @@ public actor CodexAppServerClient {
       let turnID = params["turnId"]?.stringValue
       let message = params["error"]?["message"]?.stringValue ?? "Codex turn error"
       if let turnID {
-        var pending = pendingTurns[turnID] ?? PendingTurn()
+        let pending = pendingTurns[turnID] ?? PendingTurn()
         pending.errorMessage = message
         pendingTurns[turnID] = pending
       }
@@ -1484,7 +1506,7 @@ public actor CodexAppServerClient {
        let text = item["text"]?.stringValue {
       let phase = item["phase"]?.stringValue
       if phase == nil || phase == "final_answer" {
-        var pending = pendingTurns[turnID] ?? PendingTurn()
+        let pending = pendingTurns[turnID] ?? PendingTurn()
         pending.finalReply = text
         pendingTurns[turnID] = pending
       }
@@ -1514,7 +1536,7 @@ public actor CodexAppServerClient {
       pendingTurns.removeValue(forKey: turnID)
       return
     }
-    var pending = pendingTurns[turnID] ?? PendingTurn()
+    let pending = pendingTurns[turnID] ?? PendingTurn()
     let status = CodexTurnResult.Status(rawValue: turn["status"]?.stringValue ?? "")
       ?? .failed
     let errorMessage = turn["error"]?["message"]?.stringValue ?? pending.errorMessage
@@ -1560,7 +1582,7 @@ public actor CodexAppServerClient {
           ))
           return
         }
-        var pending = pendingTurns[turnID] ?? PendingTurn()
+        let pending = pendingTurns[turnID] ?? PendingTurn()
         if let completed = pending.completedResult {
           pendingTurns.removeValue(forKey: turnID)
           continuation.resume(returning: completed)
@@ -1578,7 +1600,7 @@ public actor CodexAppServerClient {
 
   private func cancelPendingTurn(threadID: String, turnID: String) {
     ignoredCompletedTurnIDs.insert(turnID)
-    guard var pending = pendingTurns[turnID] else {
+    guard let pending = pendingTurns[turnID] else {
       cancelledTurnIDs.insert(turnID)
       return
     }
