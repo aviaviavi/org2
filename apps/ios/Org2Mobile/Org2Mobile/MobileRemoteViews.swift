@@ -3,6 +3,22 @@ import SwiftUI
 import UIKit
 import VisionKit
 
+private func mobileAIRuntimeTitle(_ runtime: String) -> String {
+  switch runtime {
+  case "codex": "Codex"
+  case "claude": "Claude Code"
+  default: "OpenClaw"
+  }
+}
+
+private func mobileAIRuntimeSystemImage(_ runtime: String) -> String {
+  switch runtime {
+  case "codex": "chevron.left.forwardslash.chevron.right"
+  case "claude": "c.circle"
+  default: "network"
+  }
+}
+
 struct MobileAISidebarView: View {
   @EnvironmentObject private var remote: MobileRemoteStore
   let selectedThreadID: UUID?
@@ -955,7 +971,7 @@ private struct MobileRemoteThreadRow: View {
         Spacer()
         Text(thread.isSharedRoom == true
           ? "Room"
-          : (thread.destinationName ?? (thread.runtime == "codex" ? "Codex" : "OpenClaw")))
+          : (thread.destinationName ?? mobileAIRuntimeTitle(thread.runtime)))
           .font(.caption2.weight(.medium))
           .foregroundStyle(.secondary)
       }
@@ -984,9 +1000,7 @@ private struct MobileAIMentionSuggestion: Identifiable {
       MobileAIMentionSuggestion(
         id: destination.id,
         title: "@\(destination.mention)",
-        systemImage: destination.runtime == "codex"
-          ? "chevron.left.forwardslash.chevron.right"
-          : "network",
+        systemImage: mobileAIRuntimeSystemImage(destination.runtime),
         insertion: "@\(destination.mention) "
       )
     } + [MobileAIMentionSuggestion(
@@ -1690,7 +1704,7 @@ struct MobileRemoteThreadView: View {
     if let destinationName = remote.threadDetail?.thread.destinationName {
       return destinationName
     }
-    return remote.threadDetail?.thread.runtime == "codex" ? "Codex" : "OpenClaw"
+    return mobileAIRuntimeTitle(remote.threadDetail?.thread.runtime ?? "openClaw")
   }
 
   private var aiChatDestinations: [MobileRemoteAIDestination] {
@@ -2051,6 +2065,7 @@ private struct MobileRemoteMessageBubble: View {
       let target: String
       switch audience {
       case "codex": target = "Codex"
+      case "claude": target = "Claude Code"
       case "openClaw": target = "OpenClaw"
       case "everyone": target = "All agents"
       default: return nil
@@ -2061,7 +2076,7 @@ private struct MobileRemoteMessageBubble: View {
       return destinationName
     }
     guard let runtime = message.authorRuntime else { return nil }
-    return runtime == "codex" ? "Codex" : "OpenClaw"
+    return mobileAIRuntimeTitle(runtime)
   }
 
   private var responseBorderColor: Color {
@@ -3035,7 +3050,7 @@ private struct MobileRemoteInProgressBubble: View {
        !activeDestinationName.isEmpty {
       return activeDestinationName
     }
-    return detail.thread.runtime == "codex" ? "Codex" : "OpenClaw"
+    return mobileAIRuntimeTitle(detail.thread.runtime)
   }
 
   private var trimmedReply: String {

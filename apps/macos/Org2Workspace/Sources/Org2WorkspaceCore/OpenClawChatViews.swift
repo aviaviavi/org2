@@ -851,7 +851,7 @@ enum AIChatRoomTranscriptPresentation {
       }
       let expectedDestinationIDs = !message.audienceDestinationIDs.isEmpty
         ? message.audienceDestinationIDs
-        : (message.audience?.runtimes.map(AIChatDestinationConfiguration.defaultID(for:)) ?? [])
+        : legacyDestinationIDs(for: message.audience)
       guard message.role == .user, !expectedDestinationIDs.isEmpty
       else {
         consumed.insert(message.id)
@@ -906,6 +906,19 @@ enum AIChatRoomTranscriptPresentation {
       )))
     }
     return items
+  }
+
+  private static func legacyDestinationIDs(
+    for audience: AIChatAudience?
+  ) -> [String] {
+    guard let audience else { return [] }
+    if audience == .everyone {
+      return [
+        AIChatDestinationConfiguration.localCodexID,
+        AIChatDestinationConfiguration.openClawID,
+      ]
+    }
+    return audience.runtimes.map(AIChatDestinationConfiguration.defaultID(for:))
   }
 }
 

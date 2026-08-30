@@ -31,7 +31,7 @@ When working in a corpus, look for the nearest =org2.json=. It can define file s
 
 * Goals, agent profiles, and runtimes
 
-Org2 separates the outcome, worker, and execution mechanism. A goal is a portable =org2:goal:v1= record under =goals/=. A named worker such as /Customer Support/ or /Product Research/ is an =org2:agent-profile:v1= record under =agent-profiles/=. OpenClaw and Codex are runtimes: they execute work, but they are not themselves =AGENT_REF= values.
+Org2 separates the outcome, worker, and execution mechanism. A goal is a portable =org2:goal:v1= record under =goals/=. A named worker such as /Customer Support/ or /Product Research/ is an =org2:agent-profile:v1= record under =agent-profiles/=. OpenClaw, Codex, and Claude Code are runtimes: they execute work, but they are not themselves =AGENT_REF= values.
 
 Profiles contain responsibilities, capabilities, skills, goal refs, and non-secret runtime bindings. A binding such as =openclaw:customer-support= connects the configured OpenClaw agent ID to the portable =customer-support= profile. =codex:default= may provide a default profile for a Codex chat, while a selected heading's existing =AGENT_REF= and =GOAL_REF= take precedence. Credentials, model selection, session IDs, and machine paths remain outside the profile.
 

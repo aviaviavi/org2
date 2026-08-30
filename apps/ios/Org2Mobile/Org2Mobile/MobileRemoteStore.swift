@@ -559,7 +559,12 @@ final class MobileRemoteStore: ObservableObject {
     guard let messageID = thread.latestAssistantMessageID else { return }
     let content = UNMutableNotificationContent()
     content.title = thread.title
-    let runtimeTitle = thread.runtime == "codex" ? "Codex" : "OpenClaw"
+    let runtimeTitle: String
+    switch thread.runtime {
+    case "codex": runtimeTitle = "Codex"
+    case "claude": runtimeTitle = "Claude Code"
+    default: runtimeTitle = "OpenClaw"
+    }
     let preview = thread.latestAssistantPreview?.trimmingCharacters(in: .whitespacesAndNewlines)
     if let preview, !preview.isEmpty {
       content.body = preview

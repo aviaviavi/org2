@@ -76,7 +76,7 @@ public struct AIProviderChatClient: Sendable {
     try validateAttachments(in: messages)
 
     let system = """
-    You are connected directly to OpenOrg as \(destinationName). You can discuss the supplied context, but this direct model connection has no tools, filesystem access, or permission to perform side effects. Never claim that you changed a file or external service. When the user asks for an action, explain that they should use a harness destination such as Codex or OpenClaw.
+    You are connected directly to OpenOrg as \(destinationName). You can discuss the supplied context, but this direct model connection has no tools, filesystem access, or permission to perform side effects. Never claim that you changed a file or external service. When the user asks for an action, explain that they should use a harness destination such as Codex, Claude Code, or OpenClaw.
 
     \(workspaceContext.systemPrompt(runtime: settings.adapter.rawValue, runtimeAgentID: destinationName))
     """
@@ -103,7 +103,7 @@ public struct AIProviderChatClient: Sendable {
       }.joined(separator: "\n")
     case .ollama:
       reply = (object["message"] as? [String: Any])?["content"] as? String
-    case .codexLocal, .codexRemote, .codexManagedRemote, .openClaw:
+    case .codexLocal, .claudeLocal, .codexRemote, .codexManagedRemote, .openClaw:
       throw AIProviderChatError.unsupportedAdapter(settings.adapter.rawValue)
     }
     let normalizedReply = reply?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -116,7 +116,7 @@ public struct AIProviderChatClient: Sendable {
     case .openAI, .openRouter: "chat/completions"
     case .anthropic: "messages"
     case .ollama: "chat"
-    case .codexLocal, .codexRemote, .codexManagedRemote, .openClaw: ""
+    case .codexLocal, .claudeLocal, .codexRemote, .codexManagedRemote, .openClaw: ""
     }
   }
 
@@ -139,7 +139,7 @@ public struct AIProviderChatClient: Sendable {
       if let apiKey = settings.apiKey {
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
       }
-    case .codexLocal, .codexRemote, .codexManagedRemote, .openClaw:
+    case .codexLocal, .claudeLocal, .codexRemote, .codexManagedRemote, .openClaw:
       break
     }
   }
@@ -169,7 +169,7 @@ public struct AIProviderChatClient: Sendable {
         "messages": [["role": "system", "content": system]] + messages.map(ollamaMessage),
         "stream": false,
       ]
-    case .codexLocal, .codexRemote, .codexManagedRemote, .openClaw:
+    case .codexLocal, .claudeLocal, .codexRemote, .codexManagedRemote, .openClaw:
       return [:]
     }
   }
@@ -278,7 +278,7 @@ public enum AIProviderChatError: LocalizedError, Equatable {
     case .modelRequired:
       "Choose a model in this destination's settings before sending."
     case .unsupportedAttachment(let fileName):
-      "Direct provider destinations currently support image attachments only (\(fileName) is not an image). Use Codex or OpenClaw for other files."
+      "Direct provider destinations currently support image attachments only (\(fileName) is not an image). Use Codex, Claude Code, or OpenClaw for other files."
     case .invalidResponse:
       "The provider returned an unreadable response."
     case .httpStatus(let status, let detail):

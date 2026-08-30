@@ -334,11 +334,11 @@ public struct OpenClawWorkspaceContext: Sendable {
     ORG2_SELECTED_AGENT_REF: \(selectedAgentRef ?? "")
     ORG2_SELECTED_GOAL_REF: \(selectedGoalRef ?? "")
 
-    OpenClaw and Codex are execution runtimes, not portable agent identities. Named workers such as Customer Support or Product Research are =org2:agent-profile:v1= records under =agent-profiles/=. Resolve this runtime identity before creating durable work:
+    OpenClaw, Codex, and Claude Code are execution runtimes, not portable agent identities. Named workers such as Customer Support or Product Research are =org2:agent-profile:v1= records under =agent-profiles/=. Resolve this runtime identity before creating durable work:
 
     \(resolution)
 
-    If the selected work already has =AGENT_REF= or =GOAL_REF=, preserve those refs; they take precedence over a runtime default. Otherwise, if resolution returns an =agentRef= or =goalRef=, preserve those exact stable IDs. Pass them to =org2 run create --agent-ref ID --goal-ref ID= and =org2 workflow run --agent-ref ID --goal-ref ID=. Use =org2 todo assign --agent-ref ID --goal-ref ID= for delegated TODOs, or the equivalent =:AGENT_REF:= and =:GOAL_REF:= properties when authoring a heading directly; =:ASSIGNEE:= remains only the readable human-facing label. Never use =openclaw=, =codex=, a model name, or a session ID as =AGENT_REF:=. If no selected ref or active profile binding is found, leave the refs unset rather than guessing.
+    If the selected work already has =AGENT_REF= or =GOAL_REF=, preserve those refs; they take precedence over a runtime default. Otherwise, if resolution returns an =agentRef= or =goalRef=, preserve those exact stable IDs. Pass them to =org2 run create --agent-ref ID --goal-ref ID= and =org2 workflow run --agent-ref ID --goal-ref ID=. Use =org2 todo assign --agent-ref ID --goal-ref ID= for delegated TODOs, or the equivalent =:AGENT_REF:= and =:GOAL_REF:= properties when authoring a heading directly; =:ASSIGNEE:= remains only the readable human-facing label. Never use =openclaw=, =codex=, =claude=, a model name, or a session ID as =AGENT_REF:=. If no selected ref or active profile binding is found, leave the refs unset rather than guessing.
     """
   }
 
@@ -452,6 +452,16 @@ public struct OpenClawWorkspaceContext: Sendable {
   }
 
   public func codexSystemPrompt() -> String {
+    localAgentSystemPrompt(runtime: "codex", runtimeTitle: "Codex")
+  }
+
+  public func localAgentSystemPrompt(runtime: String, runtimeTitle: String) -> String {
+    let fileAccessInstruction: String
+    if runtime == "codex" {
+      fileAccessInstruction = "Use the client-provided Org2 workspace tools for any other corpus reads or writes."
+    } else {
+      fileAccessInstruction = "You are running locally through the installed \(runtimeTitle) CLI. Use its filesystem tools for authorized local roots. Write only inside the active corpus, and obey the permission mode selected in OpenOrg."
+    }
     var sections = [
       """
       Org2 workspace UI snapshot
@@ -459,7 +469,7 @@ public struct OpenClawWorkspaceContext: Sendable {
       Active local corpus root: \(localCorpusRoot ?? "not selected")
       Current surface: \(selectedSurface)
 
-      This snapshot was supplied by OpenOrg. The selected source text may include unsaved editor changes and is authoritative for that visible draft. Use the client-provided Org2 workspace tools for any other corpus reads or writes.
+      This snapshot was supplied by OpenOrg. The selected source text may include unsaved editor changes and is authoritative for that visible draft. \(fileAccessInstruction)
       """,
       """
       Org2 working rules
@@ -472,7 +482,7 @@ public struct OpenClawWorkspaceContext: Sendable {
     ]
 
     sections.append(formatAuthorizedCorpora())
-    sections.append(coordinationPrompt(runtime: "codex", runtimeAgentID: "default"))
+    sections.append(coordinationPrompt(runtime: runtime, runtimeAgentID: "default"))
 
     if !customInstructions.isEmpty {
       sections.append("""
@@ -542,7 +552,7 @@ public struct OpenClawWorkspaceContext: Sendable {
         lines.append("  Runtime root: not configured")
       }
     }
-    lines.append("Use the listed runtime root when working through a remote OpenClaw Gateway, and the local root when working through local Codex. Never infer access to an unlisted corpus.")
+    lines.append("Use the listed runtime root when working through a remote OpenClaw Gateway, and the local root when working through local Codex or Claude Code. Never infer access to an unlisted corpus.")
     return lines.joined(separator: "\n")
   }
 

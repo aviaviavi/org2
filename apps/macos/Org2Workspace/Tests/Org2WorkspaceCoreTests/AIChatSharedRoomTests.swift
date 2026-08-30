@@ -215,6 +215,31 @@ final class AIChatSharedRoomTests: XCTestCase {
     XCTAssertFalse(legacy.isSharedRoom)
     XCTAssertEqual(legacy.roomAudience, .codex)
     XCTAssertTrue(legacy.canChangeAIRuntime)
+
+    let legacySharedJSON = #"""
+    {
+      "id":"00000000-0000-0000-0000-000000000002",
+      "title":"Legacy shared room",
+      "createdAt":0,
+      "updatedAt":0,
+      "runtime":"openClaw",
+      "sessionKey":"legacy-shared",
+      "messages":[],
+      "isSharedRoom":true,
+      "roomAudience":"everyone"
+    }
+    """#
+    let legacyShared = try decoder.decode(
+      OpenClawChatThread.self,
+      from: Data(legacySharedJSON.utf8)
+    )
+    XCTAssertEqual(legacyShared.roomDestinationIDs, [
+      AIChatDestinationConfiguration.localCodexID,
+      AIChatDestinationConfiguration.openClawID,
+    ])
+    XCTAssertFalse(
+      legacyShared.roomDestinationIDs.contains(AIChatDestinationConfiguration.localClaudeID)
+    )
   }
 
   @MainActor
@@ -400,15 +425,16 @@ final class AIChatSharedRoomTests: XCTestCase {
     )
     XCTAssertEqual(AIChatRoomRouting("@Codex review this").audience, .codex)
     XCTAssertEqual(AIChatRoomRouting("ask @openclaw next").audience, .openClaw)
+    XCTAssertEqual(AIChatRoomRouting("ask @claude next").audience, .claude)
 
     let all = AIChatRoomRouting("@all compare approaches")
     XCTAssertEqual(all.audience, .everyone)
-    XCTAssertEqual(all.normalizedText, "@Codex @OpenClaw compare approaches")
-    XCTAssertEqual(all.summary, "Invokes Codex + OpenClaw")
+    XCTAssertEqual(all.normalizedText, "@Codex @Claude @OpenClaw compare approaches")
+    XCTAssertEqual(all.summary, "Invokes all agents")
 
     let legacyBoth = AIChatRoomRouting("@both compare approaches")
     XCTAssertEqual(legacyBoth.audience, .everyone)
-    XCTAssertEqual(legacyBoth.normalizedText, "@Codex @OpenClaw compare approaches")
+    XCTAssertEqual(legacyBoth.normalizedText, "@Codex @Claude @OpenClaw compare approaches")
 
     XCTAssertEqual(AIChatRoomRouting("mail me@example.com").audience, .thread)
   }

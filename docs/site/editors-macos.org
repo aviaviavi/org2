@@ -68,13 +68,15 @@ Reusable work can be saved as a workflow. Workflows remain ordinary files that y
 
 AI is optional. OpenOrg does not require an OpenOrg account, and ordinary note, Agenda, search, meeting, and document features work without an AI destination.
 
-In *OpenOrg → Settings… → AI Chat*, you can configure named destinations including local Codex, remote Codex App Server, OpenClaw, OpenAI-compatible providers, Anthropic, OpenRouter, or Ollama. API keys are stored in macOS Keychain, not in the corpus.
+In *OpenOrg → Settings… → AI Chat*, you can configure named destinations including local Codex, local Claude Code, remote Codex App Server, OpenClaw, OpenAI-compatible providers, Anthropic, OpenRouter, or Ollama. API keys are stored in macOS Keychain, not in the corpus.
+
+To use Claude Code, install it and sign in with =claude auth login=, then enable *Claude Code* in AI Chat settings. OpenOrg starts the local CLI, streams its replies, and resumes the same Claude Code session on later turns. No Anthropic key is copied into OpenOrg. The Local Agent Permissions setting maps to Claude Code's Plan, Accept Edits, or Bypass Permissions mode.
 
 Add files, headings, selected items, images, PDFs, audio, or other supported attachments as explicit context. Typing =@= finds corpus files and destinations. In a shared room, mention a destination by name or use =@all=; every reply remains attributed to the agent that produced it.
 
 Threads and their context are stored locally with the corpus. A settled thread can be reopened later. Long-running OpenClaw turns can stream progress, be stopped, and reconnect after an app restart when the connected runtime supports it.
 
-The iOS app can relay chat to a paired Mac over Tailscale. The Mac remains responsible for corpus access and model connections, so it must be awake with OpenOrg running. See [[file:getting-started.org::*iOS app][iOS setup]] for the current beta and pairing path.
+The iOS app can relay Codex, Claude Code, and other configured chat destinations to a paired Mac over Tailscale. The Mac remains responsible for corpus access and model connections, so it must be awake with OpenOrg running. See [[file:getting-started.org::*iOS app][iOS setup]] for the current beta and pairing path.
 
 See [[file:agent-quickstart.org][Agent quickstart]] for permissions, runtime integration, durable runs, and automation details.
 

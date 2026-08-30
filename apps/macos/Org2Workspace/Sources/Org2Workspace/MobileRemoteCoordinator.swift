@@ -335,7 +335,7 @@ final class MobileRemoteCoordinator: ObservableObject {
         id = store.createAIChatRemoteThread(destinationID: destinationID)
       } else {
         guard let runtime = AIChatRuntime(rawValue: payload.runtime) else {
-          return .error("Choose either the codex or openClaw runtime.", statusCode: 400)
+          return .error("Choose a configured Codex, Claude Code, or OpenClaw runtime.", statusCode: 400)
         }
         id = store.createAIChatRemoteThread(runtime: runtime)
       }

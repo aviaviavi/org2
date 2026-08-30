@@ -57,7 +57,7 @@ struct AIChatSettingsView: View {
             Label("Add Destination", systemImage: "plus")
           }
           Spacer()
-          Text("Use names such as @codex-local, @codex-remote, or @research-agent.")
+          Text("Use names such as @claude, @codex-remote, or @research-agent.")
             .font(.caption)
             .foregroundStyle(.secondary)
         }
@@ -79,11 +79,11 @@ struct AIChatSettingsView: View {
         }
         .pickerStyle(.radioGroup)
 
-        Text(codexAccessHelp)
+        Text(localAgentAccessHelp)
           .font(.callout)
           .foregroundStyle(store.codexSandboxAccess == .fullAccess ? Color.orange : Color.secondary)
       } header: {
-        Label("Codex Permissions", systemImage: "lock.shield")
+        Label("Local Agent Permissions", systemImage: "lock.shield")
       }
 
       Section {
@@ -121,7 +121,7 @@ struct AIChatSettingsView: View {
               .stroke(.separator, lineWidth: 1)
           }
 
-        Text("These instructions are included with every new AI chat turn for both OpenClaw and Codex.")
+        Text("These instructions are included with every new AI chat turn for OpenClaw, Codex, and Claude Code.")
           .font(.callout)
           .foregroundStyle(.secondary)
       } header: {
@@ -164,17 +164,17 @@ struct AIChatSettingsView: View {
   }
 
   private var addableDestinationAdapters: [AIChatDestinationAdapter] {
-    AIChatDestinationAdapter.allCases.filter { $0 != .codexLocal }
+    AIChatDestinationAdapter.allCases.filter { $0 != .codexLocal && $0 != .claudeLocal }
   }
 
-  private var codexAccessHelp: String {
+  private var localAgentAccessHelp: String {
     switch store.codexSandboxAccess {
     case .readOnly:
-      return "Codex can inspect local files but must use OpenOrg's reviewed edit tools for corpus changes."
+      return "Codex and Claude Code can inspect local files. Claude Code runs in Plan mode; Codex must use OpenOrg's reviewed edit tools for corpus changes."
     case .workspaceWrite:
-      return "Codex can run commands and write inside the active corpus. Codex state such as ~/.codex lease files remains protected."
+      return "Codex and Claude Code can edit inside the active corpus. Their protected settings and repository metadata remain guarded by each runtime."
     case .fullAccess:
-      return "Codex can write anywhere your Mac account can, including ~/.codex lease state and other repositories. OpenOrg does not show approval prompts in this mode; use it only for trusted threads. The change applies on the next turn, including in an existing thread."
+      return "Codex and Claude Code can write anywhere your Mac account can. OpenOrg does not show approval prompts in this mode; use it only for trusted threads. The change applies on the next turn, including in an existing thread."
     }
   }
 
@@ -331,6 +331,7 @@ private struct AIChatDestinationEditor: View {
 
   private var isBuiltIn: Bool {
     destination.id == AIChatDestinationConfiguration.localCodexID
+      || destination.id == AIChatDestinationConfiguration.localClaudeID
       || destination.id == AIChatDestinationConfiguration.openClawID
   }
 
@@ -401,6 +402,8 @@ private struct AIChatDestinationEditor: View {
     switch destination.adapter {
     case .codexLocal:
       return "Starts a local Codex App Server process on this Mac."
+    case .claudeLocal:
+      return "Starts the locally installed Claude Code CLI and uses its existing Anthropic sign-in. Conversations resume through Claude Code's local session history."
     case .codexRemote:
       return "Connects to a Codex App Server over WebSocket. Use TLS and a bearer token outside localhost; the workspace path is resolved on the remote machine."
     case .codexManagedRemote:

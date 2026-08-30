@@ -2474,6 +2474,7 @@ public struct OpenClawThreadSettlementSettings: Hashable, Codable, Sendable {
 public enum AIChatRuntime: String, CaseIterable, Codable, Identifiable, Sendable {
   case openClaw
   case codex
+  case claude
 
   public var id: String { rawValue }
 
@@ -2481,6 +2482,7 @@ public enum AIChatRuntime: String, CaseIterable, Codable, Identifiable, Sendable
     switch self {
     case .openClaw: "OpenClaw"
     case .codex: "Codex"
+    case .claude: "Claude Code"
     }
   }
 
@@ -2488,12 +2490,14 @@ public enum AIChatRuntime: String, CaseIterable, Codable, Identifiable, Sendable
     switch self {
     case .openClaw: "network"
     case .codex: "chevron.left.forwardslash.chevron.right"
+    case .claude: "c.circle"
     }
   }
 }
 
 public enum AIChatDestinationAdapter: String, CaseIterable, Codable, Identifiable, Sendable {
   case codexLocal
+  case claudeLocal
   case codexRemote
   case codexManagedRemote
   case openClaw
@@ -2507,6 +2511,7 @@ public enum AIChatDestinationAdapter: String, CaseIterable, Codable, Identifiabl
   public var runtime: AIChatRuntime {
     switch self {
     case .codexLocal, .codexRemote, .codexManagedRemote: .codex
+    case .claudeLocal: .claude
     case .openClaw, .openAI, .anthropic, .openRouter, .ollama: .openClaw
     }
   }
@@ -2514,6 +2519,7 @@ public enum AIChatDestinationAdapter: String, CaseIterable, Codable, Identifiabl
   public var title: String {
     switch self {
     case .codexLocal: "Local Codex"
+    case .claudeLocal: "Local Claude Code"
     case .codexRemote: "Remote Codex"
     case .codexManagedRemote: "Managed Remote Codex"
     case .openClaw: "OpenClaw Gateway"
@@ -2527,6 +2533,7 @@ public enum AIChatDestinationAdapter: String, CaseIterable, Codable, Identifiabl
   public var systemImage: String {
     switch self {
     case .codexLocal, .codexRemote, .codexManagedRemote: AIChatRuntime.codex.systemImage
+    case .claudeLocal: AIChatRuntime.claude.systemImage
     case .openClaw: AIChatRuntime.openClaw.systemImage
     case .openAI: "sparkles"
     case .anthropic: "a.circle"
@@ -2538,14 +2545,14 @@ public enum AIChatDestinationAdapter: String, CaseIterable, Codable, Identifiabl
   public var isDirectProvider: Bool {
     switch self {
     case .openAI, .anthropic, .openRouter, .ollama: true
-    case .codexLocal, .codexRemote, .codexManagedRemote, .openClaw: false
+    case .codexLocal, .claudeLocal, .codexRemote, .codexManagedRemote, .openClaw: false
     }
   }
 
   public var requiresAPIKey: Bool {
     switch self {
     case .openAI, .anthropic, .openRouter: true
-    case .codexLocal, .codexRemote, .codexManagedRemote, .openClaw, .ollama: false
+    case .codexLocal, .claudeLocal, .codexRemote, .codexManagedRemote, .openClaw, .ollama: false
     }
   }
 
@@ -2555,13 +2562,14 @@ public enum AIChatDestinationAdapter: String, CaseIterable, Codable, Identifiabl
     case .anthropic: "https://api.anthropic.com/v1"
     case .openRouter: "https://openrouter.ai/api/v1"
     case .ollama: "http://127.0.0.1:11434/api"
-    case .codexLocal, .codexRemote, .codexManagedRemote, .openClaw: ""
+    case .codexLocal, .claudeLocal, .codexRemote, .codexManagedRemote, .openClaw: ""
     }
   }
 
   public var defaultName: String {
     switch self {
     case .codexLocal: "Codex"
+    case .claudeLocal: "Claude Code"
     case .codexRemote: "Remote Codex"
     case .codexManagedRemote: "Managed Remote Codex"
     case .openClaw: "OpenClaw"
@@ -2575,6 +2583,7 @@ public enum AIChatDestinationAdapter: String, CaseIterable, Codable, Identifiabl
   public var defaultMention: String {
     switch self {
     case .codexLocal: "codex"
+    case .claudeLocal: "claude"
     case .codexRemote: "codex-remote"
     case .codexManagedRemote: "codex-managed"
     case .openClaw: "openclaw"
@@ -2588,6 +2597,7 @@ public enum AIChatDestinationAdapter: String, CaseIterable, Codable, Identifiabl
 
 public struct AIChatDestinationConfiguration: Identifiable, Hashable, Codable, Sendable {
   public static let localCodexID = "builtin.codex"
+  public static let localClaudeID = "builtin.claude"
   public static let openClawID = "builtin.openclaw"
 
   public let id: String
@@ -2627,9 +2637,9 @@ public struct AIChatDestinationConfiguration: Identifiable, Hashable, Codable, S
   public var title: String { name.isEmpty ? mention : name }
   public var systemImage: String { adapter.systemImage }
   public var mentionText: String { "@\(mention)" }
-  public var requiresEndpoint: Bool { adapter != .codexLocal }
+  public var requiresEndpoint: Bool { adapter != .codexLocal && adapter != .claudeLocal }
   public var acceptsBearerToken: Bool {
-    adapter != .codexLocal && adapter != .codexManagedRemote
+    adapter != .codexLocal && adapter != .claudeLocal && adapter != .codexManagedRemote
   }
 
   public static var defaults: [AIChatDestinationConfiguration] {
@@ -2645,12 +2655,23 @@ public struct AIChatDestinationConfiguration: Identifiable, Hashable, Codable, S
         name: "OpenClaw",
         mention: "openclaw",
         adapter: .openClaw
+      ),
+      AIChatDestinationConfiguration(
+        id: localClaudeID,
+        name: "Claude Code",
+        mention: "claude",
+        adapter: .claudeLocal,
+        isEnabled: false
       )
     ]
   }
 
   public static func defaultID(for runtime: AIChatRuntime) -> String {
-    runtime == .codex ? localCodexID : openClawID
+    switch runtime {
+    case .codex: localCodexID
+    case .claude: localClaudeID
+    case .openClaw: openClawID
+    }
   }
 
   public static func normalizedMention(_ raw: String) -> String {
@@ -2703,6 +2724,10 @@ public struct AIChatDestinationRouting: Equatable, Sendable {
                 let destination = enabled.first(where: { $0.id == AIChatDestinationConfiguration.openClawID }),
                 !selected.contains(destination.id) {
         selected.append(destination.id)
+      } else if mention == "claude",
+                let destination = enabled.first(where: { $0.id == AIChatDestinationConfiguration.localClaudeID }),
+                !selected.contains(destination.id) {
+        selected.append(destination.id)
       }
     }
 
@@ -2729,6 +2754,9 @@ public struct AIChatDestinationRouting: Equatable, Sendable {
       } else if mention == "openclaw",
                 let destination = enabled.first(where: { $0.id == AIChatDestinationConfiguration.openClawID }) {
         replacement = destination.mentionText
+      } else if mention == "claude",
+                let destination = enabled.first(where: { $0.id == AIChatDestinationConfiguration.localClaudeID }) {
+        replacement = destination.mentionText
       } else {
         continue
       }
@@ -2752,6 +2780,7 @@ public enum AIChatAudience: String, CaseIterable, Codable, Identifiable, Sendabl
   case thread
   case openClaw
   case codex
+  case claude
   case everyone
 
   public var id: String { rawValue }
@@ -2761,7 +2790,8 @@ public enum AIChatAudience: String, CaseIterable, Codable, Identifiable, Sendabl
     case .thread: "Thread"
     case .openClaw: "OpenClaw"
     case .codex: "Codex"
-    case .everyone: "Codex + OpenClaw"
+    case .claude: "Claude Code"
+    case .everyone: "All agents"
     }
   }
 
@@ -2770,6 +2800,7 @@ public enum AIChatAudience: String, CaseIterable, Codable, Identifiable, Sendabl
     case .thread: "Post context"
     case .openClaw: "Ask OpenClaw"
     case .codex: "Ask Codex"
+    case .claude: "Ask Claude Code"
     case .everyone: "Ask all"
     }
   }
@@ -2779,6 +2810,7 @@ public enum AIChatAudience: String, CaseIterable, Codable, Identifiable, Sendabl
     case .thread: "text.bubble"
     case .openClaw: AIChatRuntime.openClaw.systemImage
     case .codex: AIChatRuntime.codex.systemImage
+    case .claude: AIChatRuntime.claude.systemImage
     case .everyone: "person.2.fill"
     }
   }
@@ -2788,12 +2820,17 @@ public enum AIChatAudience: String, CaseIterable, Codable, Identifiable, Sendabl
     case .thread: []
     case .openClaw: [.openClaw]
     case .codex: [.codex]
-    case .everyone: [.codex, .openClaw]
+    case .claude: [.claude]
+    case .everyone: AIChatRuntime.allCases
     }
   }
 
   public init(runtime: AIChatRuntime) {
-    self = runtime == .codex ? .codex : .openClaw
+    switch runtime {
+    case .codex: self = .codex
+    case .claude: self = .claude
+    case .openClaw: self = .openClaw
+    }
   }
 }
 
@@ -2809,6 +2846,7 @@ public struct AIChatRoomRouting: Equatable, Sendable {
     )
     var invokesCodex = false
     var invokesOpenClaw = false
+    var invokesClaude = false
     var normalized = rawText
 
     for match in matches {
@@ -2818,9 +2856,12 @@ public struct AIChatRoomRouting: Equatable, Sendable {
         invokesCodex = true
       case "openclaw":
         invokesOpenClaw = true
+      case "claude":
+        invokesClaude = true
       case "all", "both":
         invokesCodex = true
         invokesOpenClaw = true
+        invokesClaude = true
       default:
         break
       }
@@ -2833,14 +2874,17 @@ public struct AIChatRoomRouting: Equatable, Sendable {
       switch mention {
       case "codex": replacement = "@Codex"
       case "openclaw": replacement = "@OpenClaw"
-      case "all", "both": replacement = "@Codex @OpenClaw"
+      case "claude": replacement = "@Claude"
+      case "all", "both": replacement = "@Codex @Claude @OpenClaw"
       default: continue
       }
       normalized = (normalized as NSString).replacingCharacters(in: match.range, with: replacement)
     }
 
-    if invokesCodex && invokesOpenClaw {
+    if invokesCodex && invokesOpenClaw && invokesClaude {
       audience = .everyone
+    } else if invokesClaude {
+      audience = .claude
     } else if invokesCodex {
       audience = .codex
     } else if invokesOpenClaw {
@@ -2855,13 +2899,14 @@ public struct AIChatRoomRouting: Equatable, Sendable {
     switch audience {
     case .thread: "Posts to thread · no agents invoked"
     case .codex: "Invokes Codex"
+    case .claude: "Invokes Claude Code"
     case .openClaw: "Invokes OpenClaw"
-    case .everyone: "Invokes Codex + OpenClaw"
+    case .everyone: "Invokes all agents"
     }
   }
 
   private static let mentionPattern = try! NSRegularExpression(
-    pattern: #"(?i)(?<![A-Za-z0-9_])@(codex|openclaw|all|both)(?![A-Za-z0-9_])"#
+    pattern: #"(?i)(?<![A-Za-z0-9_])@(codex|claude|openclaw|all|both)(?![A-Za-z0-9_])"#
   )
 }
 
@@ -2936,25 +2981,30 @@ public struct AIChatRemoteConfiguration: Sendable {
 public struct AIChatRoomModelSelection: Hashable, Codable, Sendable {
   public let codex: String?
   public let openClaw: String?
+  public let claude: String?
 
-  public init(codex: String? = nil, openClaw: String? = nil) {
+  public init(codex: String? = nil, openClaw: String? = nil, claude: String? = nil) {
     self.codex = codex
     self.openClaw = openClaw
+    self.claude = claude
   }
 
   public func model(for runtime: AIChatRuntime) -> String? {
     switch runtime {
     case .codex: codex
     case .openClaw: openClaw
+    case .claude: claude
     }
   }
 
   public func replacingModel(_ model: String?, for runtime: AIChatRuntime) -> AIChatRoomModelSelection {
     switch runtime {
     case .codex:
-      AIChatRoomModelSelection(codex: model, openClaw: openClaw)
+      AIChatRoomModelSelection(codex: model, openClaw: openClaw, claude: claude)
     case .openClaw:
-      AIChatRoomModelSelection(codex: codex, openClaw: model)
+      AIChatRoomModelSelection(codex: codex, openClaw: model, claude: claude)
+    case .claude:
+      AIChatRoomModelSelection(codex: codex, openClaw: openClaw, claude: model)
     }
   }
 }
@@ -3131,7 +3181,7 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
       : AIChatRoomModelSelection()
     roomDestinationIDs = isSharedRoom
       ? (try container.decodeIfPresent([String].self, forKey: .roomDestinationIDs)
-          ?? roomAudience.runtimes.map(AIChatDestinationConfiguration.defaultID(for:)))
+          ?? Self.legacyRoomDestinationIDs(for: roomAudience))
       : []
     let decodedRoomModelsByDestination = try container.decodeIfPresent(
       [String: String].self,
@@ -3139,9 +3189,15 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
     )
     var migratedRoomModelPairs: [(String, String)] = []
     for id in roomDestinationIDs {
-        let legacyRuntime: AIChatRuntime = id == AIChatDestinationConfiguration.localCodexID
-          ? .codex
-          : .openClaw
+        let legacyRuntime: AIChatRuntime
+        switch id {
+        case AIChatDestinationConfiguration.localCodexID:
+          legacyRuntime = .codex
+        case AIChatDestinationConfiguration.localClaudeID:
+          legacyRuntime = .claude
+        default:
+          legacyRuntime = .openClaw
+        }
         if let legacyModel = roomModels.model(for: legacyRuntime) {
           migratedRoomModelPairs.append((id, legacyModel))
         }
@@ -3150,6 +3206,21 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
     roomModelsByDestination = isSharedRoom
       ? (decodedRoomModelsByDestination ?? migratedRoomModelsByDestination)
       : [:]
+  }
+
+  private static func legacyRoomDestinationIDs(
+    for audience: AIChatAudience
+  ) -> [String] {
+    // Shared rooms written before destination IDs existed used `everyone`
+    // to mean the original Codex + OpenClaw pair. Preserve that routing when
+    // decoding old transcripts instead of silently adding a new participant.
+    if audience == .everyone {
+      return [
+        AIChatDestinationConfiguration.localCodexID,
+        AIChatDestinationConfiguration.openClawID,
+      ]
+    }
+    return audience.runtimes.map(AIChatDestinationConfiguration.defaultID(for:))
   }
 
   public func replacingOpenClawChatMetadata(

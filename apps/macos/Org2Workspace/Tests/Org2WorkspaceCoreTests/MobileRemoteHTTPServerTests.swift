@@ -451,9 +451,22 @@ final class MobileRemoteHTTPServerTests: XCTestCase {
     let selectedID = store.createOpenClawChatThread(runtime: .openClaw)
     let remoteID = store.createAIChatRemoteThread(runtime: .codex)
 
+    var claude = try XCTUnwrap(
+      store.aiChatDestination(id: AIChatDestinationConfiguration.localClaudeID)
+    )
+    claude.isEnabled = true
+    store.updateAIChatDestination(claude)
+    let claudeRemoteID = store.createAIChatRemoteThread(
+      destinationID: AIChatDestinationConfiguration.localClaudeID
+    )
+
     XCTAssertEqual(store.selectedOpenClawChatThreadID, selectedID)
     XCTAssertNotEqual(remoteID, selectedID)
     XCTAssertEqual(store.openClawChatThreads.first(where: { $0.id == remoteID })?.runtime, .codex)
+    XCTAssertEqual(
+      store.openClawChatThreads.first(where: { $0.id == claudeRemoteID })?.runtime,
+      .claude
+    )
   }
 
   @MainActor

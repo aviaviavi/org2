@@ -1995,6 +1995,7 @@ public final class WorkspaceStore: ObservableObject {
   private let openClawSendHandler: (@Sendable ([OpenClawChatMessage], String, String, OpenClawWorkspaceContext?) async throws -> String)?
   private let openClawRecoveryHandler: (@Sendable (OpenClawPendingTurn, String) async throws -> String)?
   private let codexSendHandlerForTesting: (@Sendable ([OpenClawChatMessage], UUID, OpenClawWorkspaceContext) async throws -> String)?
+  private let claudeSendHandlerForTesting: (@Sendable ([OpenClawChatMessage], UUID, OpenClawWorkspaceContext) async throws -> ClaudeCodeTurnResult)?
   private var openClawSessionKey = WorkspaceStore.makeOpenClawSessionKey()
   private var shouldPersistOpenClawMessages = false
   private var isApplyingOpenClawThreadMessages = false
@@ -2011,6 +2012,7 @@ public final class WorkspaceStore: ObservableObject {
   private var openClawGatewayClientsByThreadID: [UUID: OpenClawGatewayClient] = [:]
   private var codexAppServerClient: CodexAppServerClient?
   private var codexAppServerClientsByDestinationID: [String: CodexAppServerClient] = [:]
+  private var claudeCodeClient: ClaudeCodeClient?
   private var externalCodexAppServerClient: CodexAppServerClient?
   private var externalThreadRefreshRequestID: UUID?
   private var externalThreadLoadRequestID: UUID?
@@ -2251,6 +2253,7 @@ public final class WorkspaceStore: ObservableObject {
     openClawSendHandler: (@Sendable ([OpenClawChatMessage], String, String, OpenClawWorkspaceContext?) async throws -> String)? = nil,
     openClawRecoveryHandler: (@Sendable (OpenClawPendingTurn, String) async throws -> String)? = nil,
     codexSendHandlerForTesting: (@Sendable ([OpenClawChatMessage], UUID, OpenClawWorkspaceContext) async throws -> String)? = nil,
+    claudeSendHandlerForTesting: (@Sendable ([OpenClawChatMessage], UUID, OpenClawWorkspaceContext) async throws -> ClaudeCodeTurnResult)? = nil,
     legacyDefaultsDomains: [String]? = nil
   ) {
     self.defaults = defaults
@@ -2265,6 +2268,7 @@ public final class WorkspaceStore: ObservableObject {
     self.openClawSendHandler = openClawSendHandler
     self.openClawRecoveryHandler = openClawRecoveryHandler
     self.codexSendHandlerForTesting = codexSendHandlerForTesting
+    self.claudeSendHandlerForTesting = claudeSendHandlerForTesting
     self.cli = cli
       ?? (try? Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
       ?? Org2CLI(repoRoot: URL(fileURLWithPath: FileManager.default.currentDirectoryPath))
@@ -14971,7 +14975,13 @@ public final class WorkspaceStore: ObservableObject {
 
   public func aiChatDestinationRuntime(_ destinationID: String) -> AIChatRuntime {
     aiChatDestination(id: destinationID)?.runtime
-      ?? (destinationID == AIChatDestinationConfiguration.localCodexID ? .codex : .openClaw)
+      ?? {
+        switch destinationID {
+        case AIChatDestinationConfiguration.localCodexID: .codex
+        case AIChatDestinationConfiguration.localClaudeID: .claude
+        default: .openClaw
+        }
+      }()
   }
 
   public func addAIChatDestination(
@@ -15029,9 +15039,10 @@ public final class WorkspaceStore: ObservableObject {
 
   public func removeAIChatDestination(_ destinationID: String) {
     guard destinationID != AIChatDestinationConfiguration.localCodexID,
+          destinationID != AIChatDestinationConfiguration.localClaudeID,
           destinationID != AIChatDestinationConfiguration.openClawID
     else {
-      aiChatDestinationSettingsError = "The default Codex and OpenClaw destinations can be disabled, but not deleted."
+      aiChatDestinationSettingsError = "Built-in local and OpenClaw destinations can be disabled, but not deleted."
       return
     }
     guard !openClawChatThreads.contains(where: {
@@ -15437,6 +15448,11 @@ public final class WorkspaceStore: ObservableObject {
         effectiveModel = selectedModel?.id
         reasoningOptions = selectedModel?.reasoningOptions ?? []
         defaultReasoningEffort = selectedModel?.defaultReasoningEffort
+      case .claudeLocal:
+        models = try await modelsForAIChatDestination(thread.destinationID)
+        effectiveModel = thread.model
+        reasoningOptions = []
+        defaultReasoningEffort = nil
       case .openClaw:
         let settings = openClawSettings(forDestinationID: thread.destinationID, allowKeychainRead: true)
         let client = OpenClawGatewayClient(settings: settings)
@@ -15929,6 +15945,21 @@ public final class WorkspaceStore: ObservableObject {
         }
         return false
       }
+    }
+    if activeRuntime == .claude {
+      guard isAIChatThreadRunning(threadID) else {
+        if selectedOpenClawChatThreadID == threadID {
+          openClawStatusText = "No active Claude Code request to stop"
+        }
+        return false
+      }
+      markOpenClawRunStopped(
+        in: threadID,
+        statusText: thread.isSharedRoom ? "Shared room stopped" : "Claude Code stopped"
+      )
+      await claudeCodeClient?.interrupt(openOrgThreadID: threadID)
+      aiChatDrainTasksByThreadID[threadID]?.task.cancel()
+      return true
     }
     guard let gateway = openClawGatewayClientsByThreadID[threadID] else {
       // A recovered run spends time between Gateway connections while its
@@ -16481,7 +16512,13 @@ public final class WorkspaceStore: ObservableObject {
       throw AIChatRemoteConfigurationError.threadNotFound
     }
     let adapter = aiChatDestination(id: thread.destinationID)?.adapter
-      ?? (thread.runtime == .codex ? .codexLocal : .openClaw)
+      ?? {
+        switch thread.runtime {
+        case .codex: .codexLocal
+        case .claude: .claudeLocal
+        case .openClaw: .openClaw
+        }
+      }()
     switch adapter {
     case .codexLocal, .codexRemote, .codexManagedRemote:
       let models = try await codexClient(forDestinationID: thread.destinationID).listModels()
@@ -16494,6 +16531,15 @@ public final class WorkspaceStore: ObservableObject {
         reasoningEffort: thread.reasoningEffort,
         reasoningOptions: selected?.reasoningOptions ?? [],
         defaultReasoningEffort: selected?.defaultReasoningEffort
+      )
+    case .claudeLocal:
+      let models = try await modelsForAIChatDestination(thread.destinationID)
+      return AIChatRemoteConfiguration(
+        models: models,
+        effectiveModel: thread.model,
+        reasoningEffort: nil,
+        reasoningOptions: [],
+        defaultReasoningEffort: nil
       )
     case .openClaw:
       let settings = openClawSettings(
@@ -16999,6 +17045,8 @@ public final class WorkspaceStore: ObservableObject {
     case .openClaw:
       return openClawGatewayClientsByThreadID[threadID] != nil
         && openClawActiveRunIDByThreadID[threadID] != nil
+    case .claude:
+      return false
     }
   }
 
@@ -17039,6 +17087,10 @@ public final class WorkspaceStore: ObservableObject {
             message: Self.expandingOpenClawAgentCommand(message).content,
             attachments: message.attachments,
             idempotencyKey: message.id.uuidString.lowercased()
+          )
+        case .claude:
+          throw ClaudeCodeError.invalidResponse(
+            "steering is not available for Claude Code; queue a follow-up instead"
           )
         }
       }
@@ -17098,6 +17150,8 @@ public final class WorkspaceStore: ObservableObject {
       return message.localizedCaseInsensitiveContains("active run")
         || message.localizedCaseInsensitiveContains("live run")
         || message.localizedCaseInsensitiveContains("in progress")
+    case .claude:
+      return false
     }
   }
 
@@ -17153,7 +17207,7 @@ public final class WorkspaceStore: ObservableObject {
     let targetRuntimes = targetDestinationIDs.map(aiChatDestinationRuntime)
     let effectiveAudience: AIChatAudience = {
       if targetRuntimes.isEmpty { return .thread }
-      if Set(targetRuntimes) == Set(AIChatRuntime.allCases) { return .everyone }
+      if targetDestinationIDs.count > 1 { return .everyone }
       return AIChatAudience(runtime: targetRuntimes[0])
     }()
     if thread.isSharedRoom,
@@ -17390,6 +17444,13 @@ public final class WorkspaceStore: ObservableObject {
             threadID: threadID,
             destinationID: dispatchDestinationID,
             localEditTurnID: localEditTurnID,
+            sendOrigin: sendOrigin
+          )
+        case .claudeLocal:
+          reply = try await sendClaudeCodeRequest(
+            messages: requestMessages,
+            threadID: threadID,
+            destinationID: dispatchDestinationID,
             sendOrigin: sendOrigin
           )
         case .openAI, .anthropic, .openRouter, .ollama:
@@ -17848,6 +17909,85 @@ public final class WorkspaceStore: ObservableObject {
     return reply
   }
 
+  private func sendClaudeCodeRequest(
+    messages: [OpenClawChatMessage],
+    threadID: UUID,
+    destinationID: String,
+    sendOrigin: AIChatSendOrigin
+  ) async throws -> String {
+    guard let corpusRoot = sendOrigin.corpusRoot else {
+      throw ClaudeCodeError.invalidResponse("choose an Org2 corpus before using Claude Code")
+    }
+    guard let destination = aiChatDestination(id: destinationID),
+          destination.adapter == .claudeLocal,
+          let thread = openClawChatThread(threadID, transcriptURL: sendOrigin.transcriptURL),
+          let userMessage = messages.last(where: { $0.role == .user }),
+          thread.runtime == .claude
+            || (thread.isSharedRoom && userMessage.targetDestinationID == destinationID)
+    else {
+      throw ClaudeCodeError.invalidResponse("the selected thread is not routed to Claude Code")
+    }
+    let requestMessages = thread.isSharedRoom
+      ? Self.sharedRoomRequestMessages(
+          messages,
+          targetDestinationName: destination.name,
+          targetDestinationID: destinationID,
+          destinationNamesByID: Dictionary(
+            uniqueKeysWithValues: enabledAIChatDestinations.map { ($0.id, $0.name) }
+          ),
+          through: userMessage.id
+        )
+      : messages
+    let requestUserMessage = requestMessages.last(where: { $0.id == userMessage.id }) ?? userMessage
+
+    openClawGatewayStateByThreadID[threadID] = .connecting
+    openClawGatewayDetailByThreadID[threadID] = destination.name
+    if selectedOpenClawChatThreadID == threadID {
+      openClawStatusText = "Connecting to \(destination.name)"
+    }
+
+    let result: ClaudeCodeTurnResult
+    if let claudeSendHandlerForTesting {
+      result = try await claudeSendHandlerForTesting(
+        requestMessages,
+        threadID,
+        sendOrigin.workspaceContext
+      )
+    } else {
+      result = try await localClaudeCodeClient().runTurn(
+        openOrgThreadID: threadID,
+        existingSessionID: thread.runtimeThreadID(forDestinationID: destinationID),
+        message: Self.expandingOpenClawAgentCommand(requestUserMessage).content,
+        systemPrompt: sendOrigin.workspaceContext.localAgentSystemPrompt(
+          runtime: "claude",
+          runtimeTitle: "Claude Code"
+        ),
+        attachments: requestUserMessage.attachments,
+        cwd: corpusRoot,
+        model: thread.model(forDestinationID: destinationID),
+        sandboxAccess: codexSandboxAccess
+      )
+    }
+
+    if result.sessionID != thread.runtimeThreadID(forDestinationID: destinationID) {
+      var runtimeThreadIDs = thread.runtimeThreadIDsByDestination
+      runtimeThreadIDs[destinationID] = result.sessionID
+      replaceOpenClawChatThread(
+        thread.replacingOpenClawChatMetadata(
+          runtimeThreadID: destinationID == thread.destinationID ? .some(result.sessionID) : nil,
+          runtimeThreadIDsByDestination: runtimeThreadIDs
+        ),
+        transcriptURL: sendOrigin.transcriptURL
+      )
+    }
+    openClawGatewayStateByThreadID[threadID] = .connected
+    openClawGatewayDetailByThreadID[threadID] = destination.name
+    let reply = result.reply.trimmingCharacters(in: .whitespacesAndNewlines)
+    return reply.isEmpty
+      ? "Claude Code completed the turn without a text response."
+      : reply
+  }
+
   private func sendCodexRequest(
     messages: [OpenClawChatMessage],
     threadID: UUID,
@@ -18028,6 +18168,15 @@ public final class WorkspaceStore: ObservableObject {
     return client
   }
 
+  private func localClaudeCodeClient() -> ClaudeCodeClient {
+    if let claudeCodeClient { return claudeCodeClient }
+    let client = ClaudeCodeClient { [weak self] threadID, event in
+      await self?.handleClaudeCodeEvent(event, threadID: threadID)
+    }
+    claudeCodeClient = client
+    return client
+  }
+
   private func invalidateCodexClient(forDestinationID destinationID: String) {
     guard let client = codexAppServerClientsByDestinationID.removeValue(
       forKey: destinationID
@@ -18042,10 +18191,13 @@ public final class WorkspaceStore: ObservableObject {
     externalCodexAppServerClient = nil
     codexAppServerClientsByDestinationID.removeAll()
     codexActiveTurnsByThreadID.removeAll()
+    let claudeClient = claudeCodeClient
+    claudeCodeClient = nil
     var stoppedClients = Set<ObjectIdentifier>()
     for client in clients where stoppedClients.insert(ObjectIdentifier(client)).inserted {
       await client.shutdown()
     }
+    await claudeClient?.shutdown()
   }
 
   private func codexClient(forDestinationID destinationID: String) throws -> CodexAppServerClient {
@@ -18086,7 +18238,7 @@ public final class WorkspaceStore: ObservableObject {
         )
       }
       transport = .managedRemote(sshHost: destination.endpoint)
-    case .openClaw, .openAI, .anthropic, .openRouter, .ollama:
+    case .claudeLocal, .openClaw, .openAI, .anthropic, .openRouter, .ollama:
       throw CodexAppServerError.invalidResponse("the configured AI destination is not a Codex target")
     }
     let client = CodexAppServerClient(
@@ -18114,6 +18266,12 @@ public final class WorkspaceStore: ObservableObject {
     switch destination.adapter {
     case .codexLocal, .codexRemote, .codexManagedRemote:
       return try await codexClient(forDestinationID: destinationID).listModels()
+    case .claudeLocal:
+      return [
+        AIChatModelOption(id: "sonnet", label: "Sonnet"),
+        AIChatModelOption(id: "opus", label: "Opus"),
+        AIChatModelOption(id: "haiku", label: "Haiku")
+      ]
     case .openClaw:
       return try await OpenClawGatewayClient(
         settings: openClawSettings(forDestinationID: destinationID, allowKeychainRead: true)
@@ -18227,6 +18385,49 @@ public final class WorkspaceStore: ObservableObject {
       return CodexDynamicToolResult(success: true, text: String(decoding: output, as: UTF8.self))
     } catch {
       return CodexDynamicToolResult(success: false, text: error.localizedDescription)
+    }
+  }
+
+  private func handleClaudeCodeEvent(
+    _ event: ClaudeCodeEvent,
+    threadID: UUID
+  ) async {
+    guard openClawChatThreads.contains(where: { $0.id == threadID }) else { return }
+    openClawLastEventAtByThreadID[threadID] = Date()
+    switch event {
+    case .sessionStarted(let sessionID):
+      openClawGatewayStateByThreadID[threadID] = .connected
+      openClawActiveRunIDByThreadID[threadID] = sessionID
+      if selectedOpenClawChatThreadID == threadID {
+        openClawStatusText = "Claude Code is working"
+      }
+    case .textDelta(let delta):
+      openClawLiveState.noteEvent(for: threadID, coalesced: true)
+      openClawLiveState.appendStreamingDelta(delta, for: threadID)
+      if selectedOpenClawChatThreadID == threadID {
+        openClawStatusText = "Claude Code is replying"
+      }
+    case .activity(let id, let title, let status):
+      let activity = OpenClawRunActivity(
+        id: id,
+        runID: openClawActiveRunIDByThreadID[threadID] ?? "claude-code",
+        kind: .tool,
+        title: title,
+        detail: nil,
+        status: status
+      )
+      var activities = openClawRunActivitiesByThreadID[threadID] ?? []
+      if let index = activities.firstIndex(where: { $0.id == id }) {
+        activities[index] = activity
+      } else {
+        activities.append(activity)
+      }
+      openClawRunActivitiesByThreadID[threadID] = Array(activities.suffix(80))
+    case .warning(let message):
+      openClawGatewayDetailByThreadID[threadID] = message
+      if selectedOpenClawChatThreadID == threadID {
+        openClawStatusText = message
+      }
     }
   }
 
@@ -18839,7 +19040,13 @@ public final class WorkspaceStore: ObservableObject {
       let speaker: String
       switch message.role {
       case .user:
-        speaker = "Avi → \(message.audience?.title ?? "room")"
+        let destinationNames = message.audienceDestinationIDs.compactMap {
+          destinationNamesByID[$0]
+        }
+        let audienceTitle = destinationNames.isEmpty
+          ? (message.audience?.title ?? "room")
+          : destinationNames.joined(separator: " + ")
+        speaker = "Avi → \(audienceTitle)"
       case .assistant:
         speaker = message.authorLabel
           ?? message.authorDestinationID.flatMap { destinationNamesByID[$0] }
@@ -20224,7 +20431,9 @@ public final class WorkspaceStore: ObservableObject {
     if let threadID {
       cancelOpenClawPendingTurnRecovery(for: threadID)
       if let index = openClawChatThreads.firstIndex(where: { $0.id == threadID }),
-         openClawChatThreads[index].runtime == .codex || openClawChatThreads[index].isSharedRoom {
+         openClawChatThreads[index].runtime == .codex
+           || openClawChatThreads[index].runtime == .claude
+           || openClawChatThreads[index].isSharedRoom {
         openClawChatThreads[index] = openClawChatThreads[index]
           .replacingOpenClawChatMetadata(
             runtimeThreadID: .some(nil),
@@ -20246,9 +20455,14 @@ public final class WorkspaceStore: ObservableObject {
     syncSelectedOpenClawSendState()
     openClawChatScrollPosition = nil
     openClawAssistantChatScrollPosition = nil
-    openClawStatusText = selectedAIChatRuntime == .codex
-      ? "Ready for a Codex message"
-      : Self.openClawStatusText(settings: currentOpenClawSettings())
+    switch selectedAIChatRuntime {
+    case .codex:
+      openClawStatusText = "Ready for a Codex message"
+    case .claude:
+      openClawStatusText = "Ready for a Claude Code message"
+    case .openClaw:
+      openClawStatusText = Self.openClawStatusText(settings: currentOpenClawSettings())
+    }
   }
 
   public var selectedOpenClawChatThread: OpenClawChatThread? {
@@ -20370,9 +20584,7 @@ public final class WorkspaceStore: ObservableObject {
   @discardableResult
   public func createAIChatRemoteThread(runtime: AIChatRuntime) -> UUID {
     let destinationID = enabledAIChatDestinations.first(where: { $0.runtime == runtime })?.id
-      ?? (runtime == .codex
-        ? AIChatDestinationConfiguration.localCodexID
-        : AIChatDestinationConfiguration.openClawID)
+      ?? AIChatDestinationConfiguration.defaultID(for: runtime)
     return createAIChatRemoteThread(destinationID: destinationID)
   }
 

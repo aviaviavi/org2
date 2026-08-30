@@ -211,11 +211,16 @@ final class CodexAppServerClientTests: XCTestCase {
     XCTAssertTrue(openClaw.contains("ORG2_SELECTED_AGENT_REF: scarf-support"))
     XCTAssertTrue(openClaw.contains("ORG2_SELECTED_GOAL_REF: customer-trust"))
     XCTAssertTrue(openClaw.contains("org2 agent-profile resolve --runtime openclaw --runtime-agent-id scarf-support --dir /srv/example-corpus --json"))
-    XCTAssertTrue(openClaw.contains("Never use =openclaw=, =codex=, a model name, or a session ID as =AGENT_REF:="))
+    XCTAssertTrue(openClaw.contains("Never use =openclaw=, =codex=, =claude=, a model name, or a session ID as =AGENT_REF:="))
 
     let codex = context.codexSystemPrompt()
     XCTAssertTrue(codex.contains("Execution runtime: codex"))
     XCTAssertTrue(codex.contains("org2 agent-profile resolve --runtime codex --runtime-agent-id default --dir /tmp/example-corpus --json"))
+
+    let claude = context.localAgentSystemPrompt(runtime: "claude", runtimeTitle: "Claude Code")
+    XCTAssertTrue(claude.contains("Execution runtime: claude"))
+    XCTAssertTrue(claude.contains("running locally through the installed Claude Code CLI"))
+    XCTAssertFalse(claude.contains("Use the client-provided Org2 workspace tools for any other corpus reads or writes."))
   }
 
   func testWorkspaceSnapshotIncludesAuthorizedCorporaAndCustomInstructions() {
