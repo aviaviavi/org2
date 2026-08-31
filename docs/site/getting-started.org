@@ -14,7 +14,7 @@
 
 * First, the mental model
 
-OpenOrg is the shared workspace that holds and coordinates work; it is not one autonomous agent that is always awake inside your notes. Your *corpus*—the ordinary folder of =.org2=, =.org=, and related files—is the durable memory and source of truth. OpenOrg turns those files into useful views, gives configured agents bounded access to them, and keeps delegated work and decisions inspectable across every agent you use.
+OpenOrg is the shared workspace that holds and coordinates work; it is not one autonomous agent that is always awake inside your notes. Your *corpus*—the ordinary folder of =.org=, =.org2=, and related files—is the durable memory and source of truth. OpenOrg turns those files into useful views, gives configured agents bounded access to them, and keeps delegated work and decisions inspectable across every agent you use.
 
 The agent harness you connect is a *runtime*: the engine that actually reasons and acts. Codex, Claude Code, and OpenClaw are the runtimes OpenOrg supports out of the box today, but they are examples rather than the architecture. Other local, remote, hosted, or self-hosted harnesses can use the same files and Org2 interfaces as adapters are added.
 
@@ -154,7 +154,7 @@ For a bounded delegated task, select the relevant note or commitment and ask for
 
 Open *Agent Work* for one queue across every configured runtime. Inspect what is blocked, answer clarifying questions, and review the run status, cited inputs, artifacts, and validation before you approve, revise, or reject consequential work.
 
-Finally, reveal the workspace in Finder and open the resulting =.org2= file in another editor. The first useful loop ends with portable work you control.
+Finally, reveal the workspace in Finder and open the resulting =.org= file in another editor. The first useful loop ends with portable work you control.
 
 * Know what leaves your Mac
 
@@ -245,7 +245,7 @@ Point the Mac app at the existing folder with *Open an existing corpus*, or try 
 org2 agenda --dir /path/to/your/org-directory --recursive
 #+end_src
 
-For new Org2-specific files, =.org2= makes intent clearer. To edit them with Org mode, add this association:
+New documents created by OpenOrg use =.org=. Existing =.org2= files remain fully supported and are never renamed automatically. If you also want Emacs to recognize those existing =.org2= files, add this association:
 
 #+begin_src emacs-lisp
 (add-to-list 'auto-mode-alist '("\\.org2\\'" . org-mode))

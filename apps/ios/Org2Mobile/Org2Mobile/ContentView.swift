@@ -1227,7 +1227,7 @@ private struct NewNoteView: View {
             }
           }
         } footer: {
-          Text("Saved to mobile-inbox.org2 for safe desktop sync.")
+          Text("Saved to mobile-inbox.org for safe desktop sync.")
         }
 
         Section {

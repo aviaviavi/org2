@@ -4,7 +4,7 @@ This document defines the contextual portion of the Org2 v0 language. It is
 normative together with [[file:GRAMMAR.ebnf][GRAMMAR.ebnf]],
 [[file:SPEC.org][SPEC.org]],
 [[file:canonical-ast.schema.json][canonical-ast.schema.json]], and the
-conformance cases and fixtures described in [[file:CONFORMANCE.md][CONFORMANCE.md]].
+conformance cases and fixtures described in [[file:CONFORMANCE.org][CONFORMANCE.org]].
 
 =GRAMMAR.ebnf= identifies surface candidates. This document decides which
 candidate wins when forms overlap, groups physical lines into elements, builds

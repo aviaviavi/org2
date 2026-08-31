@@ -4,6 +4,30 @@ import Foundation
 import SwiftUI
 import UniformTypeIdentifiers
 
+public enum OrgDocumentDefaults {
+  public static let preferredExtension = "org"
+  public static let legacyExtension = "org2"
+
+  public static func url(
+    in directory: URL,
+    baseName: String,
+    fileManager: FileManager = .default
+  ) -> URL {
+    let preferred = directory.appendingPathComponent("\(baseName).\(preferredExtension)")
+    if fileManager.fileExists(atPath: preferred.path) {
+      return preferred
+    }
+    let legacy = directory.appendingPathComponent("\(baseName).\(legacyExtension)")
+    return fileManager.fileExists(atPath: legacy.path) ? legacy : preferred
+  }
+
+  public static func candidateURLs(in directory: URL, baseName: String) -> [URL] {
+    [preferredExtension, legacyExtension].map {
+      directory.appendingPathComponent("\(baseName).\($0)")
+    }
+  }
+}
+
 public enum AIChatMessageSound: String, CaseIterable, Identifiable, Sendable {
   case org2 = "org2"
   case systemAlert = "system-alert"
@@ -2804,7 +2828,7 @@ public final class WorkspaceStore: ObservableObject {
     let identityObject = try JSONSerialization.jsonObject(with: identityData)
     let config: [String: Any] = [
       "corpus": identityObject,
-      "agendaFiles": ["inbox.org2", "notes/**/*.org2", "notes/**/*.org", "daily/**/*.org2", "daily/**/*.org"],
+      "agendaFiles": ["inbox.org", "inbox.org2", "notes/**/*.org", "notes/**/*.org2", "daily/**/*.org", "daily/**/*.org2"],
       "recursive": true,
       "ignorePatterns": [".git/**", ".#*", "compiled/**"],
       "roam": ["indexDir": "notes", "nodesDir": "notes", "dailiesDir": "daily"]
@@ -2820,12 +2844,12 @@ public final class WorkspaceStore: ObservableObject {
     This optional intake buffer is for importers or sync clients that cannot safely append to an actively edited daily note. Mac capture appends to today's daily note.
     """
     try (inbox + "\n").write(
-      to: root.appendingPathComponent("inbox.org2"),
+      to: root.appendingPathComponent("inbox.org"),
       atomically: true,
       encoding: .utf8
     )
 
-    let welcomeURL = root.appendingPathComponent("notes/welcome.org2")
+    let welcomeURL = root.appendingPathComponent("notes/welcome.org")
     let welcome = """
     #+TITLE: Welcome to OpenOrg
 
@@ -16642,7 +16666,7 @@ public final class WorkspaceStore: ObservableObject {
       .prefix(10)
       .joined(separator: "-")
     let identifier = thread.externalID.prefix(12)
-    return "views/external-threads/\(slug.isEmpty ? "thread" : slug)-\(identifier).org2"
+    return "views/external-threads/\(slug.isEmpty ? "thread" : slug)-\(identifier).org"
   }
 
   nonisolated static func externalThreadSnapshotText(_ detail: ExternalThreadDetail) -> String {
@@ -27265,7 +27289,7 @@ public final class WorkspaceStore: ObservableObject {
     } else {
       tokenRaw = "\(file)-line-\(max(1, line))"
     }
-    return "views/node-briefs/\(slug(tokenRaw)).org2"
+    return "views/node-briefs/\(slug(tokenRaw)).org"
   }
 
   nonisolated static func legacyNodeBriefArtifactRelativePath(
@@ -32287,7 +32311,8 @@ public final class WorkspaceStore: ObservableObject {
 
         let ext = fileURL.pathExtension.lowercased()
         guard allowedExtensions.contains(ext) else { continue }
-        if fileURL.lastPathComponent.hasSuffix(".transcript.org2") { continue }
+        if fileURL.lastPathComponent.hasSuffix(".transcript.org")
+          || fileURL.lastPathComponent.hasSuffix(".transcript.org2") { continue }
 
         let prefix = (try? readPrefix(fileURL, maxBytes: 48 * 1024)) ?? ""
         let titleInfo = openClawTitle(from: prefix, fallback: fileURL.deletingPathExtension().lastPathComponent)
@@ -32331,7 +32356,8 @@ public final class WorkspaceStore: ObservableObject {
     for case let fileURL as URL in enumerator {
       let values = try? fileURL.resourceValues(forKeys: [.contentModificationDateKey, .isRegularFileKey])
       guard values?.isRegularFile == true,
-            fileURL.pathExtension.lowercased() == "org2",
+            ["org", "org2"].contains(fileURL.pathExtension.lowercased()),
+            !fileURL.lastPathComponent.hasSuffix(".transcript.org"),
             !fileURL.lastPathComponent.hasSuffix(".transcript.org2")
       else {
         continue
@@ -32405,10 +32431,11 @@ public final class WorkspaceStore: ObservableObject {
     var recoverable: [RecoverableMeetingRecording] = []
     for audioURL in primaryAudioFiles {
       let baseName = audioURL.deletingPathExtension().lastPathComponent
-      let noteURL = meetingsDirectory.appendingPathComponent("\(baseName).org2")
-      let transcriptURL = meetingsDirectory.appendingPathComponent("\(baseName).transcript.org2")
-      guard !fileManager.fileExists(atPath: noteURL.path),
-            !fileManager.fileExists(atPath: transcriptURL.path)
+      let noteURL = OrgDocumentDefaults.url(in: meetingsDirectory, baseName: baseName, fileManager: fileManager)
+      let transcriptURL = OrgDocumentDefaults.url(in: meetingsDirectory, baseName: "\(baseName).transcript", fileManager: fileManager)
+      let existingDocuments = OrgDocumentDefaults.candidateURLs(in: meetingsDirectory, baseName: baseName)
+        + OrgDocumentDefaults.candidateURLs(in: meetingsDirectory, baseName: "\(baseName).transcript")
+      guard !existingDocuments.contains(where: { fileManager.fileExists(atPath: $0.path) })
       else {
         continue
       }
@@ -33520,7 +33547,10 @@ public final class WorkspaceStore: ObservableObject {
       basePath = corpusRoot.path
     }
 
-    return URL(fileURLWithPath: basePath).appendingPathComponent("\(Self.formatDate(date)).org2")
+    return OrgDocumentDefaults.url(
+      in: URL(fileURLWithPath: basePath),
+      baseName: Self.formatDate(date)
+    )
   }
 
   private func createDailyNote(at url: URL) throws {
@@ -33563,7 +33593,7 @@ public final class WorkspaceStore: ObservableObject {
     } else {
       base = corpusRoot.appendingPathComponent("notes", isDirectory: true)
     }
-    return base.appendingPathComponent("\(Self.slug(title)).org2")
+    return OrgDocumentDefaults.url(in: base, baseName: Self.slug(title))
   }
 
   private func ensureKnowledgeNode(title: String, sourceLocation: WorkspaceLocation?) throws -> CreatedKnowledgeNode {
@@ -33759,7 +33789,7 @@ public final class WorkspaceStore: ObservableObject {
 
     let alert = NSAlert()
     alert.messageText = "Create Knowledge Node"
-    alert.informativeText = "Create a linked Org2 node in the corpus."
+    alert.informativeText = "Create a linked Org document in the corpus."
     alert.addButton(withTitle: "Create")
     alert.addButton(withTitle: "Cancel")
 

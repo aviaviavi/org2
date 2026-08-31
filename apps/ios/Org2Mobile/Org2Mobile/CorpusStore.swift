@@ -17,7 +17,6 @@ final class CorpusStore: ObservableObject {
 
   private let bookmarkKey = MobileCaptureWriter.bookmarkKey
   private let cachedRootPathKey = MobileCaptureWriter.cachedRootPathKey
-  private let mobileInboxFilename = MobileCaptureWriter.mobileInboxFilename
   private let mobileInboxAssetsDirectory = MobileCaptureWriter.mobileInboxAssetsDirectory
   private let cacheFilename = "org2-mobile-corpus-cache.json"
   private let dueTodayNotificationIdentifierPrefix = "org2.due-today.daily"
@@ -174,9 +173,9 @@ final class CorpusStore: ObservableObject {
       let text = message?.trimmingCharacters(in: .whitespacesAndNewlines)
       let prompt = text?.isEmpty == false ? text! : defaultMessage(for: action, approval: approval)
       try appendOpenClawRequest(action: action, title: approval.title, sourceFile: approval.file, sourceLine: approval.line, body: prompt)
-      statusMessage = "Added \(action.title.lowercased()) request to corpus mobile-inbox.org2"
+      statusMessage = "Added \(action.title.lowercased()) request to the corpus mobile inbox"
     } catch {
-      errorMessage = "Could not write to corpus mobile-inbox.org2. Re-select the synced corpus folder and try again."
+      errorMessage = "Could not write to the corpus mobile inbox. Re-select the synced corpus folder and try again."
     }
   }
 
@@ -234,7 +233,7 @@ final class CorpusStore: ObservableObject {
       let inboxURL = try appendMobileNote(title: title, body: body, attachments: attachments, scheduledDate: scheduledDate)
       statusMessage = "Queued note in \(inboxURL.lastPathComponent)"
     } catch {
-      errorMessage = "Could not write to corpus mobile-inbox.org2. Re-select the synced corpus folder and try again."
+      errorMessage = "Could not write to the corpus mobile inbox. Re-select the synced corpus folder and try again."
     }
   }
 
@@ -902,7 +901,7 @@ final class CorpusStore: ObservableObject {
     entryID: String,
     baseURL: URL
   ) throws {
-    let inboxURL = baseURL.appending(path: mobileInboxFilename)
+    let inboxURL = MobileCaptureWriter.mobileInboxURL(baseURL: baseURL)
     if !attachments.isEmpty {
       let assetsURL = baseURL.appending(path: "\(mobileInboxAssetsDirectory)/\(entryID)", directoryHint: .isDirectory)
       try FileManager.default.createDirectory(at: assetsURL, withIntermediateDirectories: true)

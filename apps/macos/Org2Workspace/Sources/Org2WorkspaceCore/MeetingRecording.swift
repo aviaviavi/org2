@@ -149,8 +149,9 @@ public enum MeetingArtifactWriter {
     let basePrefix = "\(timestampSlug(recordedAt))-\(slug(title))"
     var baseName = basePrefix
     var suffix = 2
-    while fileManager.fileExists(atPath: baseDirectory.appendingPathComponent("\(baseName).org2").path)
-      || fileManager.fileExists(atPath: baseDirectory.appendingPathComponent("\(baseName).transcript.org2").path)
+    while (OrgDocumentDefaults.candidateURLs(in: baseDirectory, baseName: baseName)
+      + OrgDocumentDefaults.candidateURLs(in: baseDirectory, baseName: "\(baseName).transcript"))
+      .contains(where: { fileManager.fileExists(atPath: $0.path) })
       || fileManager.fileExists(atPath: baseDirectory.appendingPathComponent("\(baseName).\(audioExtension)").path)
       || fileManager.fileExists(atPath: baseDirectory.appendingPathComponent("\(baseName).system.\(systemAudioExtension)").path) {
       baseName = "\(basePrefix)-\(suffix)"
@@ -162,10 +163,10 @@ public enum MeetingArtifactWriter {
       title: title,
       recordedAt: recordedAt,
       baseName: baseName,
-      noteURL: baseDirectory.appendingPathComponent("\(baseName).org2"),
+      noteURL: baseDirectory.appendingPathComponent("\(baseName).\(OrgDocumentDefaults.preferredExtension)"),
       audioURL: baseDirectory.appendingPathComponent("\(baseName).\(audioExtension)"),
       systemAudioURL: baseDirectory.appendingPathComponent("\(baseName).system.\(systemAudioExtension)"),
-      transcriptURL: baseDirectory.appendingPathComponent("\(baseName).transcript.org2")
+      transcriptURL: baseDirectory.appendingPathComponent("\(baseName).transcript.\(OrgDocumentDefaults.preferredExtension)")
     )
   }
 

@@ -386,7 +386,7 @@ public struct OpenClawWorkspaceContext: Sendable {
     sections.append("""
     Org2 working rules
 
-    Org2 is a plain-text, org-mode-inspired knowledge workspace. Files are usually .org2 or .org. Headings use leading stars; TODO state, priority, and tags live on headings. Planning metadata uses SCHEDULED, DEADLINE, and CLOSED lines. Stable node identity lives in :PROPERTIES: drawers using :ID:. Links commonly use [[id:<uuid>][label]].
+    Org2 is a plain-text, org-mode-inspired knowledge workspace. New documents use .org; existing .org2 files remain fully supported. Headings use leading stars; TODO state, priority, and tags live on headings. Planning metadata uses SCHEDULED, DEADLINE, and CLOSED lines. Stable node identity lives in :PROPERTIES: drawers using :ID:. Links commonly use [[id:<uuid>][label]].
 
     Use existing org2 tooling when available instead of inventing a parser:
     - org2 agent capabilities for the current machine-readable command and safety contract
@@ -474,7 +474,7 @@ public struct OpenClawWorkspaceContext: Sendable {
       """
       Org2 working rules
 
-      Org2 is a plain-text, org-mode-inspired knowledge workspace. Files are usually .org2 or .org. Headings use leading stars; TODO state, priority, and tags live on headings. Planning metadata uses SCHEDULED, DEADLINE, and CLOSED lines. Stable node identity lives in :PROPERTIES: drawers using :ID:. Links commonly use [[id:<uuid>][label]].
+      Org2 is a plain-text, org-mode-inspired knowledge workspace. New documents use .org; existing .org2 files remain fully supported. Headings use leading stars; TODO state, priority, and tags live on headings. Planning metadata uses SCHEDULED, DEADLINE, and CLOSED lines. Stable node identity lives in :PROPERTIES: drawers using :ID:. Links commonly use [[id:<uuid>][label]].
 
       Preserve the Org2 plaintext format, make the smallest useful edit, and cite exact file paths plus line numbers for concrete claims. Do not write generated Backlinks sections into note files; backlinks are computed views.
       """,
@@ -696,8 +696,8 @@ public struct OpenClawWorkspaceContext: Sendable {
 
   private var citationExamplePath: String {
     let root = remoteCorpusRoot ?? localCorpusRoot
-    guard let root else { return "notes/example.org2" }
-    return root + "/notes/example.org2"
+    guard let root else { return "notes/example.org" }
+    return root + "/notes/example.org"
   }
 
   private static func mappedPath(_ path: String, localCorpusRoot: String?, remoteCorpusRoot: String?) -> String {

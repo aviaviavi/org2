@@ -1043,7 +1043,7 @@ private struct CorpusOnboardingView: View {
         HStack(alignment: .top, spacing: 18) {
           onboardingCard(
             title: "Open an existing corpus",
-            detail: "Choose any folder containing .org2 or .org files. OpenOrg will scan it and derive Agenda, search, graph, and workspace views.",
+            detail: "Choose any folder containing .org or .org2 files. OpenOrg will scan it and derive Agenda, search, graph, and workspace views.",
             systemImage: "folder",
             actionTitle: "Choose Folder"
           ) {
@@ -1071,7 +1071,7 @@ private struct CorpusOnboardingView: View {
         VStack(spacing: 5) {
           Text("Already use Org Mode?")
             .font(.callout.weight(.semibold))
-          Text("No migration is required. Open the folder you already have and adopt .org2 gradually if you want to.")
+          Text("No migration is required. New documents use .org, and existing .org2 files remain fully supported.")
             .font(.callout)
             .foregroundStyle(.secondary)
             .multilineTextAlignment(.center)

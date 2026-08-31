@@ -9,7 +9,7 @@ const specRoot = path.join(repoRoot, "spec", "v0");
 const grammarPath = path.join(specRoot, "GRAMMAR.ebnf");
 const parsingPath = path.join(specRoot, "PARSING.org");
 const specPath = path.join(specRoot, "SPEC.org");
-const conformancePath = path.join(specRoot, "CONFORMANCE.md");
+const conformancePath = path.join(specRoot, "CONFORMANCE.org");
 const schemaPath = path.join(specRoot, "canonical-ast.schema.json");
 const casesPath = path.join(specRoot, "parsing-cases.json");
 
@@ -227,7 +227,7 @@ function main() {
     "* AST construction and losslessness",
   ]);
   requireText(spec, "SPEC.org", ["GRAMMAR.ebnf", "PARSING.org", "parsing-cases.json"]);
-  requireText(conformance, "CONFORMANCE.md", ["GRAMMAR.ebnf", "PARSING.org", "parsing-cases.json"]);
+  requireText(conformance, "CONFORMANCE.org", ["GRAMMAR.ebnf", "PARSING.org", "parsing-cases.json"]);
 
   console.log(`OK: language specification (${productions.size} grammar productions, ${caseCount} parsing cases)`);
 }

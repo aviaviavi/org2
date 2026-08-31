@@ -1,0 +1,228 @@
+#+title: Org2 v0 Conformance Document
+
+This document explicitly defines stable invariants and conformance
+guarantees for Org2 v0, and notes what remains experimental.
+
+* Scope
+*Org2 v0* defines a *lossless, round-trippable parse* of Org-like
+documents into a *canonical AST* that conforms to
+=canonical-ast.schema.json=.
+
+* Normative Language Bundle
+Org2 v0 is jointly specified by:
+
+- =GRAMMAR.ebnf=: lexical and line-level surface candidates
+- =PARSING.org=: contextual precedence, multi-line grouping, nesting,
+  recovery, and AST construction
+- =SPEC.org=: per-construct syntax and field requirements
+- =canonical-ast.schema.json=: the canonical output data model
+- =parsing-cases.json=: focused ambiguity and precedence examples
+- =spec/v0/tests/*.org= plus sibling =*.json=: full golden parse and
+  round-trip fixtures
+
+These artifacts are jointly normative. A contradiction is a
+specification defect and MUST be resolved explicitly; an implementation
+cannot choose one artifact merely because it is more convenient. The
+production TypeScript parser and the Tree-sitter editor parser are
+implementations of this bundle, not independent language authorities.
+
+* Stable Invariants (v0)
+** 1. Parse → AST Schema Validity
+- Every parsed document MUST produce a =Document= node conforming to the
+  canonical AST schema.
+- The Document MUST have:
+  - =type: "Document"=
+  - =version: "0"=
+  - =children=: an array of valid nodes
+- All child nodes (Headline, Paragraph, List, Table, Block, etc.) MUST
+  conform to the type definitions in =canonical-ast.schema.json=.
+- Additional properties are NOT allowed on any node (per
+  =additionalProperties: false=).
+
+** 2. Deterministic Printing Rules
+The following rules ensure deterministic, round-trippable printing:
+
+*** Headline Printing
+- Level N headline: =*= repeated N times, followed by exactly one space,
+  then the title
+- TODO keyword (if present): one of =TODO=, =IN_PROGRESS=, =DONE=,
+  =CANCELED=, or =CANCELLED=; appears at start of title, followed by
+  space
+- Tags (if present): appear at end of title, surrounded by colons
+  (=:tag1:tag2:=)
+- Children are printed below the headline, respecting nesting depth
+
+*** Inline Element Printing (Text, Emphasis, Link, Timestamp, etc.)
+- *Text*: printed as-is (no escaping required in v0)
+- *Emphasis*: marker + content + marker (e.g., =*bold*=, =_underline_=)
+  - Marker types: =*= (bold), =/= (italic), =_= (underline), =+=
+    (strike), === (verbatim), =~= (code)
+- *Link*: printed as =[[TARGET]]= or =[[TARGET][DESCRIPTION]]= (bracket
+  link format)
+- *Timestamp*: printed as =<DATE RAW>= or =[DATE RAW]= (active or
+  inactive)
+- *TimestampRange*: =<START> -- <END>= or variants with spacing
+
+*** Block Printing (SrcBlock, Block, Table)
+- *SrcBlock*:
+  - Begin line: =begin.indent= + =#+= + =begin.keywordRaw= +
+    =begin.afterKeywordRaw= + newline
+  - Body: raw body bytes as-is
+  - End line: =end.indent= + =#+= + =end.keywordRaw= +
+    =end.afterKeywordRaw= + newline
+  - If unterminated: body bytes only (no end marker)
+- *Block* (example/quote/verse/center):
+  - Same begin/end marker format as SrcBlock
+  - Body: raw bytes as-is
+- *Table*:
+  - Each row line: =|= + cells joined by =|= + =|= + newline
+  - Hline row: =|= + dashes/pluses + =|= + newline
+  - Cells printed with exact spacing preserved
+
+*** List Printing
+- *List*: unordered uses =-= or =+=, ordered uses =<N>.= or =<N>)=
+- *ListItem*: explicit =ordinal= when present, checkbox (if present) as
+  =[ ]= or =[X]=, then space, then content
+
+*** Drawer and Property Printing
+- *PropertyDrawer*: =:PROPERTIES:= + property lines + =:END:=
+  - Each property: =:KEY: VALUE= or =:KEY:= (no value)
+- *Drawer*: =:NAME:= + content lines + =:END:=
+
+*** Comment and Directive Printing
+- *CommentLine*: =# = + content (preserved as-is)
+- *DirectiveLine*: =#+= + key + = = + value (preserved as-is)
+- *KeywordLine*: =#+= + keyRaw + =:= + valueRaw (preserved as-is)
+
+*** Planning Line Printing
+- *Planning*: =KIND: = + timestamp (if present) + remaining raw bytes
+  - KIND is one of: =SCHEDULED=, =DEADLINE=, =CLOSED=
+
+** 3. Print Round-Trip Guarantee
+For all normative test fixtures in =spec/v0/tests/=:
+
+- *Parse*: =.org= input → canonical AST (=.json=)
+- *Print*: canonical AST → serialized text
+- *Result*: Printed text MUST be byte-identical to the original =.org=
+  input
+
+This guarantee relies on:
+
+- No lossy inline parsing (timestamps, links, emphasis capture raw
+  marker bytes)
+- Block/drawer preservation of raw begin/end marker lines
+- Deterministic printing rules (defined above)
+
+** 4. Error Handling Policy
+- *Unterminated SrcBlock*: parsed with =terminated: false=, no =end=
+  field, =bodyRaw= captures all remaining bytes until EOF
+- *Unterminated Block* (example/quote/verse/center): same as SrcBlock
+- *Unknown Directives*: preserved as =DirectiveLine= nodes with =raw=
+  field intact
+- *Unmatched Markers* (emphasis, links): if they cannot be matched,
+  treated as literal text
+
+No hard errors are thrown; the parser emits best-effort AST nodes.
+
+** 5. Versioning of Canonical AST Output
+Every =Document= node MUST include:
+
+#+begin_src json
+{
+  "type": "Document",
+  "version": "0",
+  "children": [...]
+}
+#+end_src
+
+The =version= field explicitly versions the AST schema. Future breaking
+changes MUST increment to =version: "1"=, etc.
+
+** 6. Node Type Stability
+The following node types are stable in v0:
+
+- *Structural*: Document, Headline, Paragraph, List, ListItem
+- *Blocks and elements*: SrcBlock, Block, DynamicBlock, FixedWidth,
+  HorizontalRule, LatexEnvironment, DiarySexp, FootnoteDefinition,
+  Table, TableRow, TableHline, TableFormulaLine
+- *Drawers*: PropertyDrawer, Drawer
+- *Metadata*: KeywordLine, affiliatedKeywords on eligible elements,
+  DirectiveLine, CommentLine, Planning, Clock
+- *Inline*: Text, Emphasis, Link, Timestamp, TimestampRange,
+  ProgressCookie, Entity, LatexFragment, ExportSnippet,
+  FootnoteReference, Citation, Target, Script, LineBreak
+
+All of these types and their field schemas are covered by normative
+fixtures and MUST NOT change within v0.
+
+* Experimental / Non-Normative (v0)
+The following are explicitly *out of scope* for v0 and MAY change in
+future versions without triggering a major version bump:
+
+1. *TODO workflow semantics* --- TODO keyword syntax is parsed, but
+   workflow transitions, custom keyword sets, and todo inheritance are
+   not specified.
+2. *Tag semantics* --- tag syntax is parsed, but semantics (tag
+   inheritance, special tags) are not defined.
+3. *Property semantics* --- property drawer syntax is parsed, but
+   property inheritance, special properties, and "computed" properties
+   are not specified.
+4. *Agenda behavior* --- agenda generation, scheduling semantics, and
+   deadline evaluation are not covered.
+5. *Clocking and time-tracking* --- CLOCK drawers and logbook entries
+   have no specified semantics.
+6. *Link evaluation* --- link targets are captured as raw strings; link
+   resolution and export are not specified.
+7. *Export/rendering* --- converting AST to HTML, LaTeX, or other
+   formats is not specified in v0.
+
+* Conformance Testing
+Conformance is validated via:
+
+1. *Language-bundle validation*: =GRAMMAR.ebnf= has no duplicate,
+   undefined, or unreachable productions; all normative artifacts and
+   required parsing-rule sections are present.
+2. *Focused parsing cases*: Every entry in =parsing-cases.json= produces
+   its exact =expectedAst=.
+3. *Schema validation*: All fixtures are validated against
+   =canonical-ast.schema.json=.
+4. *Fixture coverage*: Test fixtures in =spec/v0/tests/= cover stable
+   node types and normative parsing rules.
+5. *Round-trip testing*: For selected fixtures, parse → print reproduces
+   source bytes and parse → print → parse produces an identical AST.
+
+The =conformance-report.mjs= tool scans fixtures and summarizes coverage
+by node type.
+
+* How to Verify Conformance
+#+begin_src sh
+# Validate the grammar graph and normative language bundle
+npm run check:language-spec
+
+# Run the focused ambiguity and precedence cases
+npm run test:language-spec
+
+# Run all tests (parser and conformance)
+npm test
+
+# Run conformance report only
+npm run conformance-report
+
+# Run fixture tests
+npm run fixtures
+
+# Run CLI tests
+npm run cli-test
+#+end_src
+
+* Changes to This Document
+As v0 is finalized:
+
+- *Additive changes* (clarifications, new non-normative examples) MAY be
+  made without version bump
+- *Breaking schema changes* MUST move to =spec/v1/=
+- *Experimental features becoming stable* MUST be marked explicitly in
+  this document
+
+Conformance is cumulative: if a v0.1 implementation supported feature X,
+all v0.N (N ≥ 1) implementations MUST support feature X.

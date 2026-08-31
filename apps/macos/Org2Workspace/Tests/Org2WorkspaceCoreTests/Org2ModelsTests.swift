@@ -504,9 +504,9 @@ final class Org2ModelsTests: XCTestCase {
 
     let welcomeURL = try WorkspaceStore.initializeStarterCorpus(at: root)
 
-    XCTAssertEqual(welcomeURL.standardizedFileURL.path, root.appendingPathComponent("notes/welcome.org2").path)
+    XCTAssertEqual(welcomeURL.standardizedFileURL.path, root.appendingPathComponent("notes/welcome.org").path)
     XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("org2.json").path))
-    XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("inbox.org2").path))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("inbox.org").path))
     XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("daily").path))
     XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("views").path))
     XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("compiled").path))
@@ -527,6 +527,23 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(identity["schema"] as? String, "org2:corpus:v1")
     XCTAssertEqual(identity["kind"] as? String, "personal")
     XCTAssertFalse((identity["id"] as? String ?? "").isEmpty)
+  }
+
+  func testOrgDocumentDefaultsCreatesOrgButPreservesExistingOrg2Files() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org-document-defaults-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    XCTAssertEqual(OrgDocumentDefaults.url(in: root, baseName: "new").lastPathComponent, "new.org")
+
+    let legacy = root.appendingPathComponent("existing.org2")
+    try "* Existing\n".write(to: legacy, atomically: true, encoding: .utf8)
+    XCTAssertEqual(OrgDocumentDefaults.url(in: root, baseName: "existing"), legacy)
+
+    let preferred = root.appendingPathComponent("existing.org")
+    try "* Preferred\n".write(to: preferred, atomically: true, encoding: .utf8)
+    XCTAssertEqual(OrgDocumentDefaults.url(in: root, baseName: "existing"), preferred)
   }
 
   func testAutomaticStarterCorpusUsesPreferredEmptyFolderAndAvoidsUnrelatedFiles() throws {
@@ -4402,6 +4419,8 @@ final class Org2ModelsTests: XCTestCase {
     let note = try String(contentsOf: bundle.noteURL, encoding: .utf8)
     let transcript = try String(contentsOf: bundle.transcriptURL, encoding: .utf8)
 
+    XCTAssertEqual(bundle.noteURL.pathExtension, "org")
+    XCTAssertTrue(bundle.transcriptURL.lastPathComponent.hasSuffix(".transcript.org"))
     XCTAssertTrue(note.contains("* Meeting: Scarf reporting sync"))
     XCTAssertTrue(note.contains(":kind: meeting"))
     XCTAssertTrue(note.contains(":audio_artifact: meetings/"))
@@ -4897,7 +4916,7 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(store.meetings[0].transcriptionStatus, "complete")
     XCTAssertTrue(store.meetings[0].audioArtifact?.hasPrefix("meetings/") == true)
     XCTAssertNil(store.meetings[0].systemAudioArtifact)
-    XCTAssertTrue(store.meetings[0].transcriptArtifact?.hasSuffix(".transcript.org2") == true)
+    XCTAssertTrue(store.meetings[0].transcriptArtifact?.hasSuffix(".transcript.org") == true)
   }
 
   func testScansRecoverableMeetingAudioButExcludesActiveRecording() throws {
@@ -9104,7 +9123,7 @@ final class Org2ModelsTests: XCTestCase {
       file: "target.org2",
       line: 1
     )
-    XCTAssertEqual(artifactRelativePath, "views/node-briefs/\(targetID).org2")
+    XCTAssertEqual(artifactRelativePath, "views/node-briefs/\(targetID).org")
 
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
@@ -12048,7 +12067,7 @@ final class Org2ModelsTests: XCTestCase {
     let formatter = DateFormatter()
     formatter.locale = Locale(identifier: "en_US_POSIX")
     formatter.dateFormat = "yyyy-MM-dd"
-    let fileName = "\(formatter.string(from: Date())).org2"
+    let fileName = "\(formatter.string(from: Date())).org"
     let daily = root
       .appendingPathComponent("dailies", isDirectory: true)
       .appendingPathComponent(fileName)
@@ -12060,6 +12079,31 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(store.selectedEntrySourceMode, .page)
     XCTAssertEqual(store.selectedLocation?.file, daily.path)
     XCTAssertEqual(store.corpusFiles.map(\.relativePath), ["dailies/\(fileName)"])
+  }
+
+  @MainActor
+  func testOpenDailyNotePreservesExistingOrg2DailyFile() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-legacy-daily-open-\(UUID().uuidString)", isDirectory: true)
+    let dailies = root.appendingPathComponent("dailies", isDirectory: true)
+    try FileManager.default.createDirectory(at: dailies, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try #"{"roam":{"dailiesDir":"dailies"}}"#
+      .write(to: root.appendingPathComponent("org2.json"), atomically: true, encoding: .utf8)
+
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.dateFormat = "yyyy-MM-dd"
+    let baseName = formatter.string(from: Date())
+    let legacy = dailies.appendingPathComponent("\(baseName).org2")
+    try "#+TITLE: Legacy daily note\n\n".write(to: legacy, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.openDailyNote(.today)
+
+    XCTAssertEqual(store.selectedLocation?.file, legacy.path)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: dailies.appendingPathComponent("\(baseName).org").path))
   }
 
   @MainActor
@@ -12147,7 +12191,7 @@ final class Org2ModelsTests: XCTestCase {
     let formatter = DateFormatter()
     formatter.locale = Locale(identifier: "en_US_POSIX")
     formatter.dateFormat = "yyyy-MM-dd"
-    let fileName = "\(formatter.string(from: Date())).org2"
+    let fileName = "\(formatter.string(from: Date())).org"
     let daily = root
       .appendingPathComponent("dailies", isDirectory: true)
       .appendingPathComponent(fileName)
@@ -12187,7 +12231,7 @@ final class Org2ModelsTests: XCTestCase {
     let formatter = DateFormatter()
     formatter.locale = Locale(identifier: "en_US_POSIX")
     formatter.dateFormat = "yyyy-MM-dd"
-    let fileName = "\(formatter.string(from: Date())).org2"
+    let fileName = "\(formatter.string(from: Date())).org"
     let daily = root
       .appendingPathComponent("dailies", isDirectory: true)
       .appendingPathComponent(fileName)
@@ -12325,7 +12369,7 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(prompt.contains("\(remoteRoot)/raw/connectors/knowledge/team"))
     XCTAssertTrue(prompt.contains("last sync: 2026-07-21T17:00:00Z"))
     XCTAssertTrue(prompt.contains("Clickable citations in AI chat"))
-    XCTAssertTrue(prompt.contains("[descriptive label](\(remoteRoot)/notes/example.org2:42)"))
+    XCTAssertTrue(prompt.contains("[descriptive label](\(remoteRoot)/notes/example.org:42)"))
     XCTAssertTrue(prompt.contains("#L42-L47"))
     XCTAssertTrue(prompt.contains("\(remoteRoot)/notes/alice.org2:4"))
     XCTAssertTrue(prompt.contains("\(remoteRoot)/threads/follow-up.org2:8"))
@@ -16068,7 +16112,7 @@ final class Org2ModelsTests: XCTestCase {
 
     let node = root
       .appendingPathComponent("knowledge", isDirectory: true)
-      .appendingPathComponent("docker.org2")
+      .appendingPathComponent("docker.org")
     let nodeText = try String(contentsOf: node, encoding: .utf8)
     let idMatch = try XCTUnwrap(nodeText.range(of: #":ID:\s+([A-Fa-f0-9-]+)"#, options: .regularExpression))
     let idLine = String(nodeText[idMatch])

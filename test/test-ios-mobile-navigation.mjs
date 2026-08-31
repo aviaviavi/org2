@@ -18,6 +18,10 @@ const corpusStore = readFileSync(
   resolve("apps/ios/Org2Mobile/Org2Mobile/CorpusStore.swift"),
   "utf8",
 );
+const mobileCaptureSupport = readFileSync(
+  resolve("apps/ios/Org2Mobile/Org2Mobile/MobileCaptureSupport.swift"),
+  "utf8",
+);
 const remoteCoordinator = readFileSync(
   resolve("apps/macos/Org2Workspace/Sources/Org2Workspace/MobileRemoteCoordinator.swift"),
   "utf8",
@@ -152,5 +156,13 @@ assert.doesNotMatch(corpusStore, /content\.title = "Org2/);
 assert.doesNotMatch(remoteCoordinator, /title: "Org2 reply notifications"/);
 assert.match(remoteStore, /serverName = "OpenOrg on Mac"/);
 assert.match(remoteStore, /storedServerName == "Org2 on Mac"/);
+assert.match(mobileCaptureSupport, /mobileInboxFilename = "mobile-inbox\.org"/);
+assert.match(mobileCaptureSupport, /legacyMobileInboxFilename = "mobile-inbox\.org2"/);
+assert.match(
+  mobileCaptureSupport,
+  /fileManager\.fileExists\(atPath: legacy\.path\) \? legacy : preferred/,
+  "iOS capture should keep appending to an existing legacy mobile-inbox.org2 file",
+);
+assert.match(contentView, /Saved to mobile-inbox\.org for safe desktop sync\./);
 
 console.log("iOS mobile navigation tests passed");

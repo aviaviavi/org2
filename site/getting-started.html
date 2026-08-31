@@ -76,7 +76,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 </section>
 <section class="org2-headline level-1">
 <h1 id="first-the-mental-model">First, the mental model</h1>
-<p>OpenOrg is the shared workspace that holds and coordinates work; it is not one autonomous agent that is always awake inside your notes. Your <strong>corpus</strong>—the ordinary folder of <code>.org2</code>, <code>.org</code>, and related files—is the durable memory and source of truth. OpenOrg turns those files into useful views, gives configured agents bounded access to them, and keeps delegated work and decisions inspectable across every agent you use.</p>
+<p>OpenOrg is the shared workspace that holds and coordinates work; it is not one autonomous agent that is always awake inside your notes. Your <strong>corpus</strong>—the ordinary folder of <code>.org</code>, <code>.org2</code>, and related files—is the durable memory and source of truth. OpenOrg turns those files into useful views, gives configured agents bounded access to them, and keeps delegated work and decisions inspectable across every agent you use.</p>
 <p>The agent harness you connect is a <strong>runtime</strong>: the engine that actually reasons and acts. Codex, Claude Code, and OpenClaw are the runtimes OpenOrg supports out of the box today, but they are examples rather than the architecture. Other local, remote, hosted, or self-hosted harnesses can use the same files and Org2 interfaces as adapters are added.</p>
 <p>A runtime sees the current conversation, the context you selected or authorized, the active corpus's instructions and capabilities, and the tools OpenOrg exposes for that turn or run. It does not silently absorb the whole workspace or keep watching it after the turn ends.</p>
 <p>That leads to a useful rule: <strong>put durable intent in the corpus, not only in chat</strong>. Chat is a good place to explore and ask for help setting something up, but the result should become the appropriate inspectable record when you want OpenOrg to remember or repeat it.</p>
@@ -193,7 +193,7 @@ SCHEDULED: &lt;2030-01-15 Tue&gt;
 <h1 id="5-review-approvals-and-agent-work">5) Review approvals and agent work</h1>
 <p>For a bounded delegated task, select the relevant note or commitment and ask for one concrete outcome. OpenOrg records the selected files, thread, run, citations, and resulting artifact as durable workspace context.</p>
 <p>Open <strong>Agent Work</strong> for one queue across every configured runtime. Inspect what is blocked, answer clarifying questions, and review the run status, cited inputs, artifacts, and validation before you approve, revise, or reject consequential work.</p>
-<p>Finally, reveal the workspace in Finder and open the resulting <code>.org2</code> file in another editor. The first useful loop ends with portable work you control.</p>
+<p>Finally, reveal the workspace in Finder and open the resulting <code>.org</code> file in another editor. The first useful loop ends with portable work you control.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="know-what-leaves-your-mac">Know what leaves your Mac</h1>
@@ -256,7 +256,7 @@ org2 agenda --dir /path/to/your/corpus --recursive --tui</code></pre>
 <p>You can use your existing Org directory directly. Org2 accepts <code>.org</code> as a first-class input format, so there is no required bulk conversion and no need to rename files before trying Org2.</p>
 <p>Point the Mac app at the existing folder with <strong>Open an existing corpus</strong>, or try the CLI without changing anything:</p>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 agenda --dir /path/to/your/org-directory --recursive</code></pre>
-<p>For new Org2-specific files, <code>.org2</code> makes intent clearer. To edit them with Org mode, add this association:</p>
+<p>New documents created by OpenOrg use <code>.org</code>. Existing <code>.org2</code> files remain fully supported and are never renamed automatically. If you also want Emacs to recognize those existing <code>.org2</code> files, add this association:</p>
 <pre class="org2-src language-emacs-lisp" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-emacs-lisp">(add-to-list 'auto-mode-alist '(&quot;\\.org2\\'&quot; . org-mode))</code></pre>
 <p>Org2 supports outlines, TODO states, planning lines, properties, links, tables, source blocks, agendas, and publishing. Keep complex Babel setups, custom Emacs Lisp, specialized export backends, and heavily customized agenda behavior in Org mode until their Org2 behavior has been verified. Both tools can work over the same readable source where their semantics overlap.</p>
 <p>See <a href="editors-emacs.html">Using Org2 from Emacs</a>, <a href="org2-vs-org-mode.html">Org2 vs Org Mode</a>, and <a href="migration.html">Migration guidance</a>.</p>

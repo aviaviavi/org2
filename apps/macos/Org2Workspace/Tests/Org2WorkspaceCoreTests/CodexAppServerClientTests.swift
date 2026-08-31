@@ -1197,7 +1197,7 @@ final class CodexAppServerClientTests: XCTestCase {
     XCTAssertTrue(snapshot.contains(": * that must stay quoted"))
     XCTAssertEqual(
       WorkspaceStore.externalThreadSnapshotRelativePath(summary),
-      "views/external-threads/inspect-release-state-019f-thread.org2"
+      "views/external-threads/inspect-release-state-019f-thread.org"
     )
   }
 

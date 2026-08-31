@@ -61,11 +61,21 @@ enum MobileCaptureWriter {
   static let appGroupID = "group.org.org2.mobile"
   static let bookmarkKey = "org2.mobile.corpusBookmark"
   static let cachedRootPathKey = "org2.mobile.cachedRootPath"
-  static let mobileInboxFilename = "mobile-inbox.org2"
+  static let mobileInboxFilename = "mobile-inbox.org"
+  static let legacyMobileInboxFilename = "mobile-inbox.org2"
   static let mobileInboxAssetsDirectory = "mobile-inbox-assets"
 
   static var sharedDefaults: UserDefaults {
     UserDefaults(suiteName: appGroupID) ?? .standard
+  }
+
+  static func mobileInboxURL(baseURL: URL, fileManager: FileManager = .default) -> URL {
+    let preferred = baseURL.appendingPathComponent(mobileInboxFilename)
+    if fileManager.fileExists(atPath: preferred.path) {
+      return preferred
+    }
+    let legacy = baseURL.appendingPathComponent(legacyMobileInboxFilename)
+    return fileManager.fileExists(atPath: legacy.path) ? legacy : preferred
   }
 
   static func saveSharedCorpusAccess(bookmark: Data, rootURL: URL) {
@@ -157,7 +167,7 @@ enum MobileCaptureWriter {
     entryID: String,
     baseURL: URL
   ) throws -> URL {
-    let inboxURL = baseURL.appendingPathComponent(mobileInboxFilename)
+    let inboxURL = mobileInboxURL(baseURL: baseURL)
     if !attachments.isEmpty {
       let assetsURL = baseURL
         .appendingPathComponent(mobileInboxAssetsDirectory, isDirectory: true)

@@ -16,7 +16,7 @@ This document is intended to be a compact, self-contained overview of what Org2 
 Related docs:
 - Normative surface grammar: [[file:GRAMMAR.ebnf][GRAMMAR.ebnf]]
 - Deterministic precedence and AST-construction rules: [[file:PARSING.org][PARSING.org]]
-- Conformance rules and invariants: [[file:CONFORMANCE.md][CONFORMANCE.md]]
+- Conformance rules and invariants: [[file:CONFORMANCE.org][CONFORMANCE.org]]
 - Native org-roam-style module draft (v0 scope proposal): [[file:ROAM.org][ROAM.org]]
 
 * Scope

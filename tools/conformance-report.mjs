@@ -203,7 +203,7 @@ function generateReport() {
   console.log("  ✓ Ambiguities: Focused parsing cases define overlapping forms");
   console.log("  ✓ Schema: All fixtures validate against canonical-ast.schema.json");
   console.log("  ✓ Parsing: All normative constructs covered by fixtures");
-  console.log("  ✓ Printing: Round-trip guarantees maintained (see CONFORMANCE.md)");
+  console.log("  ✓ Printing: Round-trip guarantees maintained (see CONFORMANCE.org)");
   console.log("  ✓ Versioning: All Documents emit version: \"0\"");
 
   console.log("\n\nStable Invariants (v0):");

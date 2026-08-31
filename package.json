@@ -17,7 +17,7 @@
     "spec/v0/SPEC.org",
     "spec/v0/GRAMMAR.ebnf",
     "spec/v0/PARSING.org",
-    "spec/v0/CONFORMANCE.md",
+    "spec/v0/CONFORMANCE.org",
     "spec/v0/canonical-ast.schema.json",
     "spec/v0/parsing-cases.json",
     "spec/v0/agent-run.schema.json",

@@ -20,11 +20,11 @@ public struct OpenClawLocalEditWorkspaceContext: Equatable, Sendable {
 
     1. Read effective local text, including any unsaved editor draft:
        invokeCommand: \(OpenClawLocalEditBroker.readCommand)
-       invokeParamsJson: {"turnId":"\(turnID)","path":"relative/path.org2"}
+       invokeParamsJson: {"turnId":"\(turnID)","path":"relative/path.org"}
        For an additional authorized corpus, include its exact local root from the workspace context as "corpusRoot".
     2. Preview one or more whole-file replacements. Existing files require the exact sha256 returned by read:
        invokeCommand: \(OpenClawLocalEditBroker.previewCommand)
-       invokeParamsJson: {"turnId":"\(turnID)","edits":[{"path":"relative/path.org2","expectedSha256":"<read sha256>","replacementText":"<complete replacement text>"}]}
+       invokeParamsJson: {"turnId":"\(turnID)","edits":[{"path":"relative/path.org","expectedSha256":"<read sha256>","replacementText":"<complete replacement text>"}]}
        To create a file, omit expectedSha256 and set "createsFile":true.
     3. Apply the exact preview only after preview succeeds:
        invokeCommand: \(OpenClawLocalEditBroker.applyCommand)
