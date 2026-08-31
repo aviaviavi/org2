@@ -83,4 +83,8 @@ Agents and runtime adapters should record observable execution metadata with `or
 
 - https://github.com/aviaviavi/org2
 - https://github.com/aviaviavi/org2/blob/main/spec/v0/SPEC.org
+- https://github.com/aviaviavi/org2/blob/main/spec/v0/GRAMMAR.ebnf
+- https://github.com/aviaviavi/org2/blob/main/spec/v0/PARSING.org
+- https://github.com/aviaviavi/org2/blob/main/spec/v0/canonical-ast.schema.json
+- https://github.com/aviaviavi/org2/blob/main/spec/v0/parsing-cases.json
 - https://github.com/aviaviavi/org2/blob/main/spec/v0/CONFORMANCE.md

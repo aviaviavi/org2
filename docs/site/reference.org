@@ -43,4 +43,4 @@ Org2 reference is split into two detailed sections:
 - [[file:org2-vs-org-mode.org][Org2 vs Org Mode]]
 - [[file:org2-vs-markdown.org][Org2 vs Markdown]]
 
-For the formal specification, see [[https://github.com/aviaviavi/org2/blob/main/spec/v0/SPEC.org][spec/v0/SPEC.org]].
+For the independently implementable language standard, see [[https://github.com/aviaviavi/org2/blob/main/spec/v0/SPEC.org][SPEC.org]], [[https://github.com/aviaviavi/org2/blob/main/spec/v0/GRAMMAR.ebnf][GRAMMAR.ebnf]], and [[https://github.com/aviaviavi/org2/blob/main/spec/v0/PARSING.org][PARSING.org]].

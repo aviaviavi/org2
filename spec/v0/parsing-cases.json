@@ -1,0 +1,291 @@
+{
+  "version": "0",
+  "cases": [
+    {
+      "id": "column-zero-star-is-headline",
+      "source": "* item\n",
+      "expectedAst": {
+        "type": "Document",
+        "version": "0",
+        "children": [
+          {
+            "type": "Headline",
+            "level": 1,
+            "title": [{ "type": "Text", "value": "item" }],
+            "children": []
+          }
+        ]
+      }
+    },
+    {
+      "id": "indented-star-is-list",
+      "source": " * item\n",
+      "expectedAst": {
+        "type": "Document",
+        "version": "0",
+        "children": [
+          {
+            "type": "List",
+            "ordered": false,
+            "items": [
+              {
+                "type": "ListItem",
+                "children": [
+                  {
+                    "type": "Paragraph",
+                    "children": [{ "type": "Text", "value": "item" }]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "affiliated-keyword-attaches",
+      "source": "#+NAME: revenue\n| quarter | total |\n",
+      "expectedAst": {
+        "type": "Document",
+        "version": "0",
+        "children": [
+          {
+            "type": "Table",
+            "rows": [
+              {
+                "type": "TableRow",
+                "indent": "",
+                "cells": ["quarter", "total"],
+                "contents": [
+                  [{ "type": "Text", "value": "quarter" }],
+                  [{ "type": "Text", "value": "total" }]
+                ]
+              }
+            ],
+            "affiliatedKeywords": [
+              {
+                "type": "KeywordLine",
+                "raw": "#+NAME: revenue",
+                "indent": "",
+                "keyRaw": "NAME",
+                "valueRaw": " revenue"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "blank-line-breaks-affiliation",
+      "source": "#+NAME: revenue\n\n| quarter | total |\n",
+      "expectedAst": {
+        "type": "Document",
+        "version": "0",
+        "children": [
+          {
+            "type": "KeywordLine",
+            "raw": "#+NAME: revenue",
+            "indent": "",
+            "keyRaw": "NAME",
+            "valueRaw": " revenue"
+          },
+          {
+            "type": "Table",
+            "rows": [
+              {
+                "type": "TableRow",
+                "indent": "",
+                "cells": ["quarter", "total"],
+                "contents": [
+                  [{ "type": "Text", "value": "quarter" }],
+                  [{ "type": "Text", "value": "total" }]
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "source-body-is-raw",
+      "source": "#+begin_src org\n* literal\n#+end_src\n",
+      "expectedAst": {
+        "type": "Document",
+        "version": "0",
+        "children": [
+          {
+            "type": "SrcBlock",
+            "terminated": true,
+            "begin": {
+              "indent": "",
+              "keywordRaw": "begin_src",
+              "afterKeywordRaw": " org"
+            },
+            "bodyRaw": "* literal",
+            "end": {
+              "indent": "",
+              "keywordRaw": "end_src",
+              "afterKeywordRaw": ""
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "bracket-link-precedes-emphasis",
+      "source": "[[https://example.com][*literal*]]\n",
+      "expectedAst": {
+        "type": "Document",
+        "version": "0",
+        "children": [
+          {
+            "type": "Paragraph",
+            "children": [
+              {
+                "type": "Link",
+                "format": "bracket",
+                "raw": "[[https://example.com][*literal*]]",
+                "targetRaw": "https://example.com",
+                "descriptionRaw": "*literal*"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "timestamp-range-precedes-single",
+      "source": "<2026-01-01> -- <2026-01-02>\n",
+      "expectedAst": {
+        "type": "Document",
+        "version": "0",
+        "children": [
+          {
+            "type": "Paragraph",
+            "children": [
+              {
+                "type": "TimestampRange",
+                "start": { "type": "Timestamp", "active": true, "raw": "<2026-01-01>" },
+                "separatorRaw": " -- ",
+                "end": { "type": "Timestamp", "active": true, "raw": "<2026-01-02>" }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "property-drawer-precedes-fixed-width",
+      "source": ":PROPERTIES:\n:ID: abc\n:END:\n",
+      "expectedAst": {
+        "type": "Document",
+        "version": "0",
+        "children": [
+          {
+            "type": "PropertyDrawer",
+            "properties": [{ "key": "ID", "value": "abc" }]
+          }
+        ]
+      }
+    },
+    {
+      "id": "keyword-and-directive-are-distinct",
+      "source": "#+SOMETHING value\n#+TITLE: Value\n",
+      "expectedAst": {
+        "type": "Document",
+        "version": "0",
+        "children": [
+          {
+            "type": "DirectiveLine",
+            "raw": "#+SOMETHING value",
+            "indent": "",
+            "keywordRaw": "SOMETHING",
+            "afterKeywordRaw": " value"
+          },
+          {
+            "type": "KeywordLine",
+            "raw": "#+TITLE: Value",
+            "indent": "",
+            "keyRaw": "TITLE",
+            "valueRaw": " Value"
+          }
+        ]
+      }
+    },
+    {
+      "id": "exact-triple-fence-is-source",
+      "source": "```js\nconst x = 1;\n```\n",
+      "expectedAst": {
+        "type": "Document",
+        "version": "0",
+        "children": [
+          {
+            "type": "SrcBlock",
+            "terminated": true,
+            "begin": { "indent": "", "keywordRaw": "```", "afterKeywordRaw": "js" },
+            "bodyRaw": "const x = 1;",
+            "end": { "indent": "", "keywordRaw": "```", "afterKeywordRaw": "" }
+          }
+        ]
+      }
+    },
+    {
+      "id": "four-backticks-are-text",
+      "source": "````js\nbody\n````\n",
+      "expectedAst": {
+        "type": "Document",
+        "version": "0",
+        "children": [
+          {
+            "type": "Paragraph",
+            "children": [{ "type": "Text", "value": "````js\nbody\n````" }]
+          }
+        ]
+      }
+    },
+    {
+      "id": "document-todo-config-precedes-headline-metadata",
+      "source": "#+TODO: WAIT | DONE\n* WAIT thing\n",
+      "expectedAst": {
+        "type": "Document",
+        "version": "0",
+        "children": [
+          {
+            "type": "KeywordLine",
+            "raw": "#+TODO: WAIT | DONE",
+            "indent": "",
+            "keyRaw": "TODO",
+            "valueRaw": " WAIT | DONE"
+          },
+          {
+            "type": "Headline",
+            "level": 1,
+            "todo": "WAIT",
+            "title": [{ "type": "Text", "value": "thing" }],
+            "children": []
+          }
+        ]
+      }
+    },
+    {
+      "id": "dynamic-block-precedes-directive",
+      "source": "#+begin: clocktable :scope file\nraw\n#+end:\n",
+      "expectedAst": {
+        "type": "Document",
+        "version": "0",
+        "children": [
+          {
+            "type": "DynamicBlock",
+            "nameRaw": "clocktable",
+            "parametersRaw": " :scope file",
+            "indent": "",
+            "beginRaw": "#+begin: clocktable :scope file",
+            "bodyRaw": "raw",
+            "terminated": true,
+            "endRaw": "#+end:"
+          }
+        ]
+      }
+    }
+  ]
+}

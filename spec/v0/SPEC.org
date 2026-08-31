@@ -14,6 +14,8 @@ This document is intended to be a compact, self-contained overview of what Org2 
 - Semantic posture: parsing is normative in v0; most higher-level behavior modules (agenda/workflow/export semantics) are intentionally deferred.
 
 Related docs:
+- Normative surface grammar: [[file:GRAMMAR.ebnf][GRAMMAR.ebnf]]
+- Deterministic precedence and AST-construction rules: [[file:PARSING.org][PARSING.org]]
 - Conformance rules and invariants: [[file:CONFORMANCE.md][CONFORMANCE.md]]
 - Native org-roam-style module draft (v0 scope proposal): [[file:ROAM.org][ROAM.org]]
 
@@ -21,6 +23,7 @@ Related docs:
 
 ** In scope (normative)
 - Input text → canonical AST
+- Surface grammar, contextual precedence, and AST-construction algorithms
 - Canonical AST schema and invariants
 - Normative fixtures: =.org= input → =.json= AST output
 
@@ -42,11 +45,22 @@ A compliant implementation MUST:
 - Parse a document into the *canonical AST* described by [[file:canonical-ast.schema.json][canonical-ast.schema.json]].
 - Preserve enough information to *round-trip* to the original bytes (modulo a future, explicitly-defined normalization layer).
 
-The authoritative definition of correctness is:
+The language contract is jointly defined by:
+- Surface candidates: [[file:GRAMMAR.ebnf][GRAMMAR.ebnf]]
+- Contextual precedence, grouping, and AST construction: [[file:PARSING.org][PARSING.org]]
+- Per-construct requirements in this document
 - The *canonical AST schema*: [[file:canonical-ast.schema.json][canonical-ast.schema.json]]
+- Ambiguity examples: [[file:parsing-cases.json][parsing-cases.json]]
 - The *normative fixtures* in =tests/=
 
-A grammar (Tree-sitter, PEG, etc.) is recommended, but is not itself authoritative; it is an implementation detail as long as it produces the canonical AST.
+These artifacts are jointly normative and MUST NOT intentionally conflict. A
+contradiction among them is a specification defect to be resolved explicitly,
+not permission for an implementation to select whichever artifact it prefers.
+
+An optimized hand-written parser, generated parser, Tree-sitter grammar, or
+other implementation strategy is conforming when its observable AST,
+diagnostics, and round-trip output satisfy this contract. No production parser
+implementation is itself the language definition.
 
 ** Layer 2: Semantic modules (future, normative, scoped)
 
@@ -99,6 +113,10 @@ Fixtures live in =tests/=:
 - =NNNN-*.json= is the canonical AST output
 
 Implementations SHOULD run these fixtures as golden tests.
+
+Small inputs whose purpose is to settle overlapping interpretations live in
+=parsing-cases.json=. Implementations SHOULD run those cases in addition to the
+larger golden fixtures.
 
 * Headlines (subheadings)
 
@@ -627,7 +645,7 @@ Planning semantics are out of scope for v0.
 
 Org2 v0 supports parsing common block types as a lossless structural node.
 
-Recognized begin/end pairs (case-insensitive keyword matching is NOT required in v0 for these blocks):
+Recognized begin/end pairs are matched ASCII case-insensitively:
 
 - =#+begin_example= / =#+end_example=
 - =#+begin_quote= / =#+end_quote=

@@ -199,6 +199,8 @@ function generateReport() {
 
   console.log("\n\nConformance Status:");
   console.log("-------------------");
+  console.log("  ✓ Language: Surface grammar and contextual parsing contract validated");
+  console.log("  ✓ Ambiguities: Focused parsing cases define overlapping forms");
   console.log("  ✓ Schema: All fixtures validate against canonical-ast.schema.json");
   console.log("  ✓ Parsing: All normative constructs covered by fixtures");
   console.log("  ✓ Printing: Round-trip guarantees maintained (see CONFORMANCE.md)");
@@ -206,6 +208,7 @@ function generateReport() {
 
   console.log("\n\nStable Invariants (v0):");
   console.log("-------------------");
+  console.log("  • Surface candidates + deterministic parsing precedence");
   console.log("  • Parse → AST schema validity (canonical-ast.schema.json)");
   console.log("  • Deterministic printing rules (per node type)");
   console.log("  • Print round-trip guarantees for fixtures");

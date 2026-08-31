@@ -6,6 +6,19 @@ This document explicitly defines stable invariants and conformance guarantees fo
 
 **Org2 v0** defines a **lossless, round-trippable parse** of Org-like documents into a **canonical AST** that conforms to `canonical-ast.schema.json`.
 
+## Normative Language Bundle
+
+Org2 v0 is jointly specified by:
+
+- `GRAMMAR.ebnf`: lexical and line-level surface candidates
+- `PARSING.org`: contextual precedence, multi-line grouping, nesting, recovery, and AST construction
+- `SPEC.org`: per-construct syntax and field requirements
+- `canonical-ast.schema.json`: the canonical output data model
+- `parsing-cases.json`: focused ambiguity and precedence examples
+- `spec/v0/tests/*.org` plus sibling `*.json`: full golden parse and round-trip fixtures
+
+These artifacts are jointly normative. A contradiction is a specification defect and MUST be resolved explicitly; an implementation cannot choose one artifact merely because it is more convenient. The production TypeScript parser and the Tree-sitter editor parser are implementations of this bundle, not independent language authorities.
+
 ## Stable Invariants (v0)
 
 ### 1. Parse → AST Schema Validity
@@ -108,10 +121,10 @@ The `version` field explicitly versions the AST schema. Future breaking changes 
 The following node types are stable in v0:
 
 - **Structural**: Document, Headline, Paragraph, List, ListItem
-- **Blocks**: SrcBlock, Block, Table, TableRow, TableHline
+- **Blocks and elements**: SrcBlock, Block, DynamicBlock, FixedWidth, HorizontalRule, LatexEnvironment, DiarySexp, FootnoteDefinition, Table, TableRow, TableHline, TableFormulaLine
 - **Drawers**: PropertyDrawer, Drawer
-- **Metadata**: KeywordLine, affiliatedKeywords on blocks/tables, DirectiveLine, CommentLine, Planning
-- **Inline**: Text, Emphasis, Link, Timestamp, TimestampRange
+- **Metadata**: KeywordLine, affiliatedKeywords on eligible elements, DirectiveLine, CommentLine, Planning, Clock
+- **Inline**: Text, Emphasis, Link, Timestamp, TimestampRange, ProgressCookie, Entity, LatexFragment, ExportSnippet, FootnoteReference, Citation, Target, Script, LineBreak
 
 All of these types and their field schemas are covered by normative fixtures and MUST NOT change within v0.
 
@@ -131,15 +144,23 @@ The following are explicitly **out of scope** for v0 and MAY change in future ve
 
 Conformance is validated via:
 
-1. **Schema validation**: All fixtures are validated against `canonical-ast.schema.json`
-2. **Fixture coverage**: Test fixtures in `spec/v0/tests/` cover all stable node types and normative parsing rules
-3. **Round-trip testing**: For selected fixtures (marked in `conformance-report`), verify parse → print → parse produces identical AST
+1. **Language-bundle validation**: `GRAMMAR.ebnf` has no duplicate, undefined, or unreachable productions; all normative artifacts and required parsing-rule sections are present.
+2. **Focused parsing cases**: Every entry in `parsing-cases.json` produces its exact `expectedAst`.
+3. **Schema validation**: All fixtures are validated against `canonical-ast.schema.json`.
+4. **Fixture coverage**: Test fixtures in `spec/v0/tests/` cover stable node types and normative parsing rules.
+5. **Round-trip testing**: For selected fixtures, parse → print reproduces source bytes and parse → print → parse produces an identical AST.
 
 The `conformance-report.mjs` tool scans fixtures and summarizes coverage by node type.
 
 ## How to Verify Conformance
 
 ```bash
+# Validate the grammar graph and normative language bundle
+npm run check:language-spec
+
+# Run the focused ambiguity and precedence cases
+npm run test:language-spec
+
 # Run all tests (parser and conformance)
 npm test
 

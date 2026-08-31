@@ -1,6 +1,7 @@
-// Intentionally minimal, non-normative grammar scaffold.
-// Org2's canonical meaning is defined by its AST + fixtures/spec,
-// not by this Tree-sitter grammar.
+// Intentionally minimal, non-normative Tree-sitter implementation.
+// The normative surface grammar and contextual parsing contract live in
+// spec/v0/GRAMMAR.ebnf and spec/v0/PARSING.org. This editor parser is not the
+// canonical lossless AST parser.
 
 module.exports = grammar({
   name: 'org2',

@@ -4,9 +4,9 @@ A minimal Tree-sitter grammar scaffold for **Org2**.
 
 ## Status
 
-This grammar is intentionally small and **non-normative**. It exists to support early editor experimentation (highlighting, folding, incremental parsing).
+This Tree-sitter implementation is intentionally small and **non-normative**. It exists to support editor highlighting, folding, and incremental parsing.
 
-The canonical definition of Org2 remains the **spec + fixtures** (and any future canonical AST format). If there is any mismatch between this grammar and the spec/fixtures, the spec/fixtures win.
+The normative language bundle is `spec/v0/GRAMMAR.ebnf`, `PARSING.org`, `SPEC.org`, `canonical-ast.schema.json`, and the conformance cases and fixtures. This Tree-sitter grammar should track that contract, but it is not a substitute for the canonical lossless AST parser.
 
 ## What it parses (currently)
 

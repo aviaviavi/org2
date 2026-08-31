@@ -1,7 +1,7 @@
 {
   "name": "tree-sitter-org2",
   "version": "0.0.1",
-  "description": "Tree-sitter grammar scaffold for Org2 (non-normative)",
+  "description": "Tree-sitter editor parser for Org2 (non-normative)",
   "license": "MIT",
   "repository": {
     "type": "git",

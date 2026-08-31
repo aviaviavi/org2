@@ -1,0 +1,329 @@
+#+title: Org2 v0 Deterministic Parsing Rules
+
+This document defines the contextual portion of the Org2 v0 language. It is
+normative together with [[file:GRAMMAR.ebnf][GRAMMAR.ebnf]],
+[[file:SPEC.org][SPEC.org]],
+[[file:canonical-ast.schema.json][canonical-ast.schema.json]], and the
+conformance cases and fixtures described in [[file:CONFORMANCE.md][CONFORMANCE.md]].
+
+=GRAMMAR.ebnf= identifies surface candidates. This document decides which
+candidate wins when forms overlap, groups physical lines into elements, builds
+the headline and list trees, parses inline objects, and maps the result to the
+canonical AST.
+
+* Normative terminology
+
+The key words MUST, MUST NOT, REQUIRED, SHALL, SHALL NOT, SHOULD, SHOULD NOT,
+RECOMMENDED, MAY, and OPTIONAL are to be interpreted as requirements on a
+conforming Org2 v0 implementation.
+
+A /physical line/ is the sequence between LF bytes, excluding the LF. Input
+containing CRLF is rejected in v0. A final LF is optional and is preserved by
+the lossless printing contract.
+
+A /candidate/ is a surface form accepted by a production in =GRAMMAR.ebnf=.
+Candidate recognition alone does not create an AST node: precedence and
+context below determine the selected interpretation.
+
+* Processing stages
+
+A conforming parser MUST behave as though it performs these stages in order:
+
+1. Split the input into LF-delimited physical lines.
+2. Scan file-level TODO declarations to obtain the document TODO vocabulary.
+3. Recognize and group block-level elements using the precedence in this
+   document.
+4. Build the headline and list containment trees.
+5. Parse inline-bearing fields using the inline precedence in this document.
+6. Emit a =Document= with =version: "0"= that satisfies the canonical schema.
+
+An implementation MAY combine or reorder internal operations when the
+observable AST, diagnostics, and round-trip output are identical.
+
+* Block candidate precedence
+
+At each unconsumed physical line outside a raw block body, implementations
+MUST try block interpretations in this order:
+
+1. Dynamic-block opener.
+2. LaTeX-environment opener.
+3. Footnote definition.
+4. Horizontal rule.
+5. Diary sexp.
+6. Fixed-width line group, excluding drawer-shaped =:NAME:= lines.
+7. Keyword line.
+8. Planning line.
+9. Clock line.
+10. Comment line.
+11. Source-block opener, special-block opener, or preserved directive.
+12. Pipe-table row.
+13. Headline.
+14. Property-drawer opener.
+15. Generic-drawer opener.
+16. Blank line.
+17. List item.
+18. Paragraph fallback.
+
+The order is normative even where two candidates currently produce equivalent
+raw text. Implementations MUST NOT use registration of a custom link, block,
+or keyword type to alter this order.
+
+** Required ambiguity decisions
+
+- A column-zero line beginning with one or more asterisks followed by one
+  space is a headline, not a list item.
+- An indented =* = candidate is eligible to become an unordered list item.
+- A =#+KEY: VALUE= line is a =KeywordLine=. A non-block =#+KEY VALUE= line is
+  a preserved =DirectiveLine=.
+- A =#+begin:= candidate starts a dynamic block before it can be classified as
+  a keyword or directive.
+- A drawer-shaped =:NAME:= line is not a fixed-width line.
+- Exactly three backticks may open a fenced source block. A run of four or
+  more backticks is paragraph text in v0.
+- Once a raw block body begins, headline, list, inline, and other block syntax
+  inside the body is not parsed.
+
+The machine-readable cases in =parsing-cases.json= are normative examples of
+these decisions.
+
+* Multi-line grouping
+
+** Raw blocks
+
+A source, special, dynamic, or LaTeX block consumes lines through its first
+matching end marker. Lines in its body are retained as =bodyRaw= and MUST NOT
+be parsed recursively.
+
+Source and special-block names are compared ASCII case-insensitively. A
+=#+begin_src= or =#+begin_org2= opener ends at the first =#+end_src= or
+=#+end_org2= marker. A fenced opener ends only at a line containing exactly
+three backticks plus optional spaces after indentation.
+
+A =#+begin_NAME= special block ends at the first =#+end_NAME= marker with the
+same ASCII-case-insensitive =NAME=. A dynamic block ends at =#+end:=. A LaTeX
+environment ends at an =\end{NAME}= line whose case-sensitive =NAME= equals
+the opener.
+
+If EOF arrives first, the node has =terminated: false=, omits its end field,
+and retains all remaining physical lines in =bodyRaw=.
+
+** Drawers
+
+A property drawer begins at =:PROPERTIES:= and requires a matching-indentation
+=:END:=. Every interior nonblank line MUST match =:KEY: VALUE=. Invalid lines,
+blank interior lines, mismatched indentation, or a missing end marker produce
+a parse diagnostic rather than a partial =PropertyDrawer=.
+
+A generic drawer begins at =:NAME:=, where =NAME= is neither empty nor =END=,
+and ends at the first matching-indentation =:END:=. An unterminated generic
+drawer remains a lossless =Drawer= with =terminated: false=.
+
+** Tables
+
+One or more consecutive pipe-table candidates form one =Table=. The first
+non-table line ends the row group. Consecutive =#+TBLFM:= lines immediately
+following that group attach to the table in source order. A standalone
+=#+TBLFM:= line is an ordinary =KeywordLine=.
+
+Table cells are split at pipe characters after removing the outer pipes.
+Leading and trailing cell whitespace is discarded in =cells=; each resulting
+cell is also parsed as an inline sequence into the parallel =contents= array.
+
+** Fixed-width groups
+
+Consecutive fixed-width candidates form one =FixedWidth=. A drawer-shaped
+=:NAME:= line terminates the group and is reconsidered using block precedence.
+
+** Paragraphs and blank lines
+
+Consecutive physical lines that reach paragraph fallback form one =Paragraph=.
+Their contents are joined with LF before inline parsing. A recognized element
+or blank line terminates the paragraph.
+
+Blank lines do not produce canonical AST nodes. Their placement remains
+available to the lossless printer as non-enumerable implementation metadata;
+such metadata is not part of the canonical JSON AST.
+
+* Affiliated keyword algorithm
+
+The following case-insensitive keyword keys are affiliated candidates:
+
+- =NAME=
+- =CAPTION=
+- =HEADER= and =HEADERS=
+- =RESULTS=
+- =PLOT=
+- =CHART=
+- =DATASET=
+- =VIEW=
+- Any key beginning with =ATTR_=
+
+Consecutive affiliated candidates are buffered. They attach in source order to
+the immediately following =Table=, =SrcBlock=, =Block=, or =DynamicBlock=.
+Any blank line or other selected element flushes the buffer as sibling
+=KeywordLine= nodes before that element.
+
+Affiliation changes containment only. It MUST NOT interpret or normalize the
+keyword value.
+
+* Headline construction
+
+A headline candidate has a run of =*= at column zero, exactly one following
+space, and a nonempty payload. The star count becomes =level=.
+
+Before parsing headline title inlines, implementations MUST perform this
+metadata extraction:
+
+1. Remove a valid trailing =:tag1:tag2:= group into =tags=.
+2. Recognize a leading =COMMENT= marker.
+3. If not already commented, recognize the longest matching document TODO
+   keyword followed by a space.
+4. Recognize a following priority cookie =[#A]= through =[#Z]= or =[#0]=
+   through =[#9]=.
+5. Recognize a =COMMENT= marker following TODO and priority metadata.
+6. Reject the headline if no title payload remains.
+7. Parse the remaining title as inlines.
+
+The document TODO vocabulary is the union of the built-in vocabulary and valid
+tokens declared by =#+TODO:=, =#+SEQ_TODO:=, and =#+TYP_TODO:= anywhere in the
+document. Fast-selection suffixes in parentheses and the =|= separator are not
+part of a keyword. Longest keywords are tested first.
+
+For tree construction, a headline of level =L= becomes a child of the nearest
+preceding open headline whose level is less than =L=. If none exists, it is a
+document child. Equal or shallower headlines close open headlines until this
+condition holds. Skipped levels do not create implicit nodes.
+
+Non-headline elements following a headline attach to the deepest currently
+open headline until another headline changes the open stack.
+
+* List construction
+
+A list marker must be followed by exactly one space and nonempty item content.
+At column zero, the headline decision takes precedence over an asterisk marker.
+
+The parser removes, in order, an optional =[@N]= counter cookie and an optional
+checkbox. It then recognizes a description separator consisting of whitespace,
+=::=, and whitespace or end-of-line, except when that separator lies inside a
+recognized delimited inline object. The left side becomes =descriptionTag= and
+the right side becomes ordinary item content.
+
+Adjacent items with the same ordered/unordered kind and indentation belong to
+one =List=. Greater indentation creates a nested =List= under the preceding
+=ListItem=. Lesser indentation closes lists until the matching level is found.
+A kind change at the same indentation ends the current list and begins another.
+Blank lines and headlines terminate all currently scanned item continuations.
+
+An ordered marker's written number is stored as =ordinal= only when it differs
+from the item's implicit one-based position in that =List=. =[@N]= is stored
+independently as =counter=.
+
+Indented source blocks, special blocks, directives, tables, and prose that meet
+an item's continuation indentation become children of that =ListItem=. Their
+internal parsing follows the same block and inline rules unless the element is
+a raw block.
+
+* Inline candidate precedence
+
+Inline parsing scans left-to-right. At each unconsumed character position it
+MUST try candidates in this order:
+
+1. Target.
+2. Footnote reference.
+3. Citation.
+4. Export snippet.
+5. LaTeX fragment.
+6. Entity.
+7. Subscript or superscript.
+8. Hard line break.
+9. Progress cookie.
+10. Timestamp, extended to a timestamp range when possible.
+11. Bracket link, then angle link, then plain HTTP(S) URL.
+12. Emphasis.
+13. Text fallback.
+
+When a candidate succeeds, preceding fallback characters become one =Text=
+node and scanning resumes after the entire candidate. Failed opener bytes stay
+in text. Adjacent fallback characters SHOULD be coalesced into one =Text= node.
+
+Bracket-link descriptions are retained as =descriptionRaw= and are not parsed
+as nested inline nodes in v0. Thus link recognition shields emphasis markers
+inside the description. Timestamp-range recognition similarly takes precedence
+over emitting its first timestamp alone.
+
+* Inline boundary and matching rules
+
+** Emphasis
+
+Native markers =*=, =/=, =_=, =+=, ===, and =~= require an opening boundary at
+start-of-input or after whitespace or a non-ASCII-word character. Their closing
+marker must be followed by the same kind of boundary. Content must be nonempty,
+single-line, and must neither begin nor end with whitespace. The first closer
+satisfying these requirements wins. Emphasis content is raw and does not nest.
+
+The additive backtick code marker may touch word characters. It otherwise uses
+the same nonempty, single-line rule. Adjacent backticks are excluded so runs do
+not consume fenced-block examples.
+
+For emphasis boundaries, an ASCII word character is =[A-Za-z0-9]=. In v0 the
+whitespace check used inside inline emphasis is space or LF.
+
+** Timestamps
+
+A timestamp opener succeeds only when the first ten interior characters match
+=YYYY-MM-DD=. The first matching =]>= or =>= closes it. For a possible range,
+only spaces may surround the exact =--= separator. If no valid second timestamp
+follows, the first timestamp is emitted alone.
+
+** Links and URLs
+
+A bracket link closes at the first =]]= after its opener. The first =][= in its
+interior separates target and description. An angle link requires an ASCII
+scheme followed by a colon and a nonempty target without whitespace or angle
+brackets.
+
+A plain link begins with lowercase =http://= or =https://= and extends to
+whitespace. Trailing =)=, comma, period, exclamation mark, question mark,
+semicolon, and colon are removed from the recognized URL and remain text.
+
+** Other inline objects
+
+Targets, footnotes, citations, export snippets, LaTeX fragments, entities,
+scripts, progress cookies, and line breaks use the candidate forms in
+=GRAMMAR.ebnf=. Where the EBNF contains a prose terminal, the detailed field
+mapping and restrictions in =SPEC.org= apply.
+
+A hard line break is exactly two backslashes at the end of the inline input or
+immediately before LF. A script candidate succeeds only after an ASCII letter,
+digit, closing brace, closing parenthesis, or closing bracket. An unbraced
+single-letter script is rejected when another ASCII alphanumeric immediately
+follows it.
+
+* Diagnostics and recovery
+
+Org2 v0 is lossless and best-effort for unmatched inline delimiters, unknown
+directives, unterminated generic drawers, and unterminated raw blocks. These
+forms become text or lossless nodes as specified above.
+
+The following are parse diagnostics rather than best-effort nodes:
+
+- CRLF input.
+- Tabs in structural indentation or structural fields for which =SPEC.org=
+  requires spaces. Tabs in ordinary prose and raw block bodies remain text.
+- A malformed or unterminated property drawer.
+- A recognized headline candidate with invalid spacing or an empty title.
+
+The diagnostic API MAY return an empty =Document= after a fatal parse
+diagnostic, but it MUST NOT return a partially mutated canonical AST as if the
+document conformed.
+
+* AST construction and losslessness
+
+Every selected element and inline object maps to the same-named canonical node
+described in =SPEC.org= and =canonical-ast.schema.json=. Fields ending in
+=Raw= preserve source bytes and MUST NOT be normalized during parsing.
+
+Parsing MUST be deterministic: identical input and parser options produce
+structurally identical canonical JSON. Printing a normative fixture's AST MUST
+reproduce its source byte-for-byte. A production parser need not share an
+implementation strategy with the reference parser or grammar tooling.

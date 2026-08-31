@@ -2,13 +2,16 @@
 
 This is the practical language reference for Org2 v0.
 
-For the normative draft spec, see [[https://github.com/aviaviavi/org2/blob/main/spec/v0/SPEC.org][spec/v0/SPEC.org]].
+For the normative draft standard, start with [[https://github.com/aviaviavi/org2/blob/main/spec/v0/SPEC.org][SPEC.org]]. The standard is independently implementable: its surface grammar, contextual parsing algorithms, canonical AST schema, and executable conformance cases are all public.
 
 * Spec map
 
 Use this mapping when deciding where behavior is defined:
 
-- Core syntax and canonical AST: [[https://github.com/aviaviavi/org2/blob/main/spec/v0/SPEC.org][spec/v0/SPEC.org]]
+- Language overview and construct requirements: [[https://github.com/aviaviavi/org2/blob/main/spec/v0/SPEC.org][SPEC.org]]
+- Normative surface grammar: [[https://github.com/aviaviavi/org2/blob/main/spec/v0/GRAMMAR.ebnf][GRAMMAR.ebnf]]
+- Parsing precedence, grouping, and AST construction: [[https://github.com/aviaviavi/org2/blob/main/spec/v0/PARSING.org][PARSING.org]]
+- Canonical AST and executable conformance: [[https://github.com/aviaviavi/org2/blob/main/spec/v0/canonical-ast.schema.json][canonical-ast.schema.json]] and [[https://github.com/aviaviavi/org2/blob/main/spec/v0/parsing-cases.json][parsing-cases.json]]
 - Roam semantics (IDs, links, backlinks model): [[https://github.com/aviaviavi/org2/blob/main/spec/v0/ROAM.org][spec/v0/ROAM.org]]
 - CLI/editor workflow behavior: [[file:tooling-reference.org][Tooling reference]]
 

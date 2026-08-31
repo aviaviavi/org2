@@ -19,6 +19,12 @@ Current developer docs: https://org2.avi.press/
 
 For now, the canonical project docs live on the website.
 
+The independently implementable Org2 v0 language standard lives under
+=spec/v0/=. It combines a normative surface grammar, deterministic contextual
+parsing rules, the canonical AST schema, and executable conformance cases. The
+optimized TypeScript parser and editor parsers implement that contract; they do
+not define separate language dialects.
+
 ** Agent discovery
 
 After installing the CLI, agents can inspect the exact capabilities of that

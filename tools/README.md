@@ -49,6 +49,20 @@ Use `--apply-page` to update `docs/site/downloads.org`, `--apply-release-notes` 
 
 Validates that each fixture pair exists and that the expected JSON conforms to the canonical AST schema.
 
+Before fixture validation, `npm run fixtures` also runs
+`tools/check-language-spec.mjs`. That check validates the normative
+`GRAMMAR.ebnf` production graph, required contextual-rule sections in
+`PARSING.org`, canonical AST references, and the shape of
+`parsing-cases.json`. `test/test-language-spec.mjs` then runs every focused
+ambiguity case against the production parser.
+
+Run the language-contract checks independently with:
+
+```bash
+npm run check:language-spec
+npm run test:language-spec
+```
+
 ### Run (default: auto)
 
 Auto mode will run end-to-end validation if the reference parser is available at `dist/parse.js`; otherwise it runs schema-only.

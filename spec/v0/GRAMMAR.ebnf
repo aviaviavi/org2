@@ -1,0 +1,268 @@
+(*
+  Org2 v0 surface grammar
+
+  This file is normative for lexical and line-level candidate forms. It uses
+  ISO/IEC 14977-style EBNF. Text between question marks is a prose-defined
+  terminal character class. Contextual precedence, multi-line grouping,
+  nesting, and canonical AST construction are defined by PARSING.org.
+
+  Several candidates intentionally overlap. For example, a column-zero
+  asterisk line can resemble both a headline and a list item, and a #+ line
+  can resemble a keyword, block marker, or preserved directive. PARSING.org
+  resolves those overlaps deterministically.
+*)
+
+document = [ logical-line ], { lf, logical-line }, [ lf ] ;
+
+logical-line = blank-line | line-candidate ;
+
+line-candidate =
+    dynamic-block-begin-line
+  | dynamic-block-end-line
+  | latex-environment-begin-line
+  | latex-environment-end-line
+  | footnote-definition-line
+  | horizontal-rule-line
+  | diary-sexp-line
+  | fixed-width-line
+  | keyword-line
+  | planning-line
+  | clock-line
+  | comment-line
+  | source-block-begin-line
+  | source-block-end-line
+  | special-block-begin-line
+  | special-block-end-line
+  | directive-line
+  | table-line
+  | table-formula-line
+  | headline-line
+  | property-drawer-begin-line
+  | property-line
+  | drawer-begin-line
+  | drawer-end-line
+  | list-item-line
+  | paragraph-line ;
+
+blank-line = { horizontal-whitespace } ;
+
+headline-line = stars, space, inline-sequence ;
+stars = asterisk, { asterisk } ;
+
+dynamic-block-begin-line =
+  indentation, ? ASCII case-insensitive "#+begin:" ?, spaces,
+  dynamic-block-name,
+  line-tail ;
+dynamic-block-end-line =
+  indentation, ? ASCII case-insensitive "#+end:" ?, { space } ;
+dynamic-block-name = nonspace-line-char, { nonspace-line-char } ;
+
+latex-environment-begin-line =
+  indentation, backslash, "begin{", latex-environment-name, "}", line-tail ;
+latex-environment-end-line =
+  indentation, backslash, "end{", latex-environment-name, "}", { space } ;
+latex-environment-name =
+  nonspace-nonbrace-line-char, { nonspace-nonbrace-line-char } ;
+
+footnote-definition-line =
+  "[fn:", footnote-label, "]", [ spaces, inline-sequence ] ;
+
+horizontal-rule-line =
+  indentation, "-----", { hyphen }, { space } ;
+
+diary-sexp-line = indentation, "%%(", line-tail ;
+
+fixed-width-line = indentation, ":", [ space ], line-tail ;
+
+keyword-line = indentation, "#+", keyword-key, ":", line-tail ;
+keyword-key = keyword-key-char, { keyword-key-char } ;
+keyword-key-char = ? any non-whitespace character other than colon, CR, or LF ? ;
+
+planning-line = indentation, planning-entry, { spaces, planning-entry } ;
+planning-entry = planning-key, ":", line-tail ;
+planning-key = "SCHEDULED" | "DEADLINE" | "CLOSED" ;
+
+clock-line = indentation, "CLOCK:", line-tail ;
+
+comment-line = indentation, "#", comment-tail ;
+comment-tail = ? any sequence not beginning with plus; CR and LF excluded ? ;
+
+source-block-begin-line =
+    org-source-begin-line
+  | org2-source-begin-line
+  | fence-begin-line ;
+source-block-end-line =
+    org-source-end-line
+  | org2-source-end-line
+  | fence-end-line ;
+
+org-source-begin-line =
+  indentation, ? ASCII case-insensitive "#+begin_src" ?, line-tail ;
+org-source-end-line =
+  indentation, ? ASCII case-insensitive "#+end_src" ?, line-tail ;
+org2-source-begin-line =
+  indentation, ? ASCII case-insensitive "#+begin_org2" ?, line-tail ;
+org2-source-end-line =
+  indentation, ? ASCII case-insensitive "#+end_org2" ?, line-tail ;
+
+fence-begin-line = indentation, "```", [ fence-info ] ;
+fence-info = non-backtick-line-char, { line-char } ;
+fence-end-line = indentation, "```", { space } ;
+
+special-block-begin-line =
+  indentation, "#+", ? ASCII case-insensitive "begin_" ?, block-name,
+  line-tail ;
+special-block-end-line =
+  indentation, "#+", ? ASCII case-insensitive "end_" ?, block-name,
+  line-tail ;
+block-name = nonspace-line-char, { nonspace-line-char } ;
+
+directive-line = indentation, "#+", directive-key, line-tail ;
+directive-key = nonspace-line-char, { nonspace-line-char } ;
+
+table-line = indentation, "|", table-body, "|", { space } ;
+table-body = { line-char } ;
+table-formula-line =
+  indentation, ? ASCII case-insensitive "#+TBLFM:" ?, line-tail ;
+
+property-drawer-begin-line = indentation, ":PROPERTIES:" ;
+property-line = indentation, ":", property-key, ":", line-tail ;
+property-key = nonspace-noncolon-line-char,
+               { nonspace-noncolon-line-char } ;
+
+drawer-begin-line = indentation, ":", drawer-name, ":" ;
+drawer-end-line = indentation, ":END:" ;
+drawer-name = nonspace-noncolon-line-char,
+              { nonspace-noncolon-line-char } ;
+
+list-item-line = indentation, list-marker, space, list-item-content ;
+list-marker = unordered-marker | ordered-marker ;
+unordered-marker = hyphen | plus | asterisk ;
+ordered-marker = digits, ( "." | ")" ) ;
+list-item-content = [ counter-cookie, space ],
+                    [ checkbox, space ],
+                    inline-sequence ;
+counter-cookie = "[@", digits, "]" ;
+checkbox = "[ ]" | "[X]" | "[x]" | "[-]" ;
+
+paragraph-line = inline-sequence ;
+
+inline-sequence = inline-item, { inline-item } ;
+inline-item =
+    target
+  | footnote-reference
+  | citation
+  | export-snippet
+  | latex-fragment
+  | entity
+  | script
+  | line-break
+  | progress-cookie
+  | timestamp-range
+  | timestamp
+  | bracket-link
+  | angle-link
+  | plain-url
+  | emphasis
+  | inline-text-char ;
+
+target = standard-target | radio-target ;
+standard-target = "<<", target-body, ">>" ;
+radio-target = "<<<", target-body, ">>>" ;
+target-body = ? one or more characters other than angle brackets, CR, or LF ? ;
+
+footnote-reference =
+  "[fn:", [ footnote-label ], [ ":", footnote-definition ], "]" ;
+footnote-label = ? one or more characters other than colon, closing bracket,
+                   whitespace, CR, or LF ? ;
+footnote-definition = ? zero or more characters other than closing bracket,
+                        CR, or LF ? ;
+
+citation = "[cite", [ "/", citation-style ], ":", citation-body, "]" ;
+citation-style = ? one or more characters other than colon, closing bracket,
+                   whitespace, CR, or LF ? ;
+citation-body = ? one or more non-LF characters containing at least one
+                  syntactically valid at-sign citation key ? ;
+
+export-snippet = "@@", backend-name, ":", export-body, "@@" ;
+backend-name = backend-name-char, { backend-name-char } ;
+backend-name-char = ascii-letter | digit | underscore | hyphen ;
+export-body = ? shortest sequence of characters ending before the next @@ ? ;
+
+latex-fragment =
+    "$$", display-latex-body, "$$"
+  | "$", inline-latex-body, "$"
+  | backslash, "[", display-latex-body, backslash, "]"
+  | backslash, "(", inline-latex-body, backslash, ")" ;
+display-latex-body = ? shortest sequence permitted by its delimiters ? ;
+inline-latex-body = ? shortest non-LF sequence permitted by its delimiters ? ;
+
+entity = backslash, entity-name, [ "{}" ] ;
+entity-name = ascii-letter, { ascii-letter } ;
+
+script = script-marker,
+         ( "{", script-body, "}" | script-single-character ) ;
+script-marker = "_" | "^" ;
+script-body = ? one or more characters other than braces, CR, or LF ? ;
+script-single-character = ascii-letter | digit | plus | hyphen ;
+
+line-break = backslash, backslash ;
+
+progress-cookie = fraction-cookie | percent-cookie ;
+fraction-cookie = "[", digits, "/", digits, "]" ;
+percent-cookie = "[", digit, [ digit, [ digit ] ], "%]" ;
+
+timestamp-range = timestamp, { space }, "--", { space }, timestamp ;
+timestamp = active-timestamp | inactive-timestamp ;
+active-timestamp = "<", date, timestamp-tail, ">" ;
+inactive-timestamp = "[", date, timestamp-tail, "]" ;
+date = digit, digit, digit, digit, "-", digit, digit, "-", digit, digit ;
+timestamp-tail = ? zero or more characters before the matching delimiter ? ;
+
+bracket-link = "[[", link-target,
+               ( "]]" | "][", link-description, "]]" ) ;
+link-target = ? shortest sequence ending before ][ or ]] ? ;
+link-description = ? shortest sequence ending before ]] ? ;
+
+angle-link = "<", scheme, ":", angle-link-target, ">" ;
+scheme = ascii-letter, { ascii-letter | digit | plus | hyphen | dot } ;
+angle-link-target = ? one or more non-whitespace characters other than angle
+                      brackets, CR, or LF ? ;
+
+plain-url = ? http:// or https:// followed by one or more non-whitespace
+              characters, with trailing common punctuation excluded ? ;
+
+emphasis = emphasis-marker, emphasis-body, emphasis-marker ;
+emphasis-marker = asterisk | slash | underscore | plus | equals | tilde
+                  | backtick ;
+emphasis-body = ? nonempty single-line content satisfying PARSING.org boundary
+                  rules ? ;
+
+indentation = { space } ;
+spaces = space, { space } ;
+line-tail = { line-char } ;
+inline-text-char = line-char ;
+line-char = ? any Unicode scalar value other than CR or LF ? ;
+nonspace-line-char = ? any Unicode scalar value other than whitespace, CR,
+                       or LF ? ;
+nonspace-nonbrace-line-char = ? any Unicode scalar value other than
+                                whitespace, braces, CR, or LF ? ;
+nonspace-noncolon-line-char = ? any Unicode scalar value other than
+                                whitespace, colon, CR, or LF ? ;
+non-backtick-line-char = ? any line-char other than backtick ? ;
+digits = digit, { digit } ;
+digit = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" ;
+ascii-letter = ? U+0041 through U+005A or U+0061 through U+007A ? ;
+horizontal-whitespace = ? any Unicode whitespace other than CR or LF ? ;
+space = ? U+0020 ? ;
+lf = ? U+000A ? ;
+backslash = ? U+005C ? ;
+asterisk = "*" ;
+backtick = "`" ;
+slash = "/" ;
+underscore = "_" ;
+plus = "+" ;
+hyphen = "-" ;
+dot = "." ;
+equals = "=" ;
+tilde = "~" ;
