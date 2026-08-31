@@ -5,6 +5,7 @@
  * Tests JSON-RPC message handling and basic LSP operations
  */
 
+import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 
@@ -22,7 +23,6 @@ const testCases = [
         capabilities: {},
       },
     },
-    expectResult: true,
   },
   {
     name: "DidOpen",
@@ -38,7 +38,6 @@ const testCases = [
         },
       },
     },
-    expectResult: false, // No response expected
   },
   {
     name: "DocumentSymbol",
@@ -52,17 +51,23 @@ const testCases = [
         },
       },
     },
-    expectResult: true,
   },
 ];
+
+function sendMessage(server, request) {
+  const content = JSON.stringify(request);
+  server.stdin.write(`Content-Length: ${Buffer.byteLength(content, "utf8")}\r\n\r\n${content}`);
+}
 
 async function runTests() {
   console.log("Starting org2 LSP integration tests...\n");
 
-  const server = spawn("node", ["dist/lsp.js"], { cwd: resolve(".") });
+  const server = spawn(process.execPath, ["dist/lsp.js"], { cwd: resolve(".") });
 
   let responseBuffer = "";
   const responses = [];
+  const responsesById = new Map();
+  let stderr = "";
 
   server.stdout.on("data", (data) => {
     responseBuffer += data.toString();
@@ -86,43 +91,53 @@ async function runTests() {
 
       const parsed = JSON.parse(message);
       responses.push(parsed);
+      if (Object.prototype.hasOwnProperty.call(parsed, "id")) responsesById.set(parsed.id, parsed);
     }
   });
 
-  // Send test requests
-  for (const test of testCases) {
-    const content = JSON.stringify(test.request);
-    const message = `Content-Length: ${Buffer.byteLength(content, "utf8")}\r\n\r\n${content}`;
-    server.stdin.write(message);
-
-    // Wait for response
-    await new Promise((resolve) => setTimeout(resolve, 200));
-  }
-
-  // Shutdown
-  const shutdownContent = JSON.stringify({
-    jsonrpc: "2.0",
-    id: 999,
-    method: "shutdown",
-    params: {},
+  server.stderr.on("data", (data) => {
+    stderr += data.toString();
   });
-  server.stdin.write(`Content-Length: ${Buffer.byteLength(shutdownContent, "utf8")}\r\n\r\n${shutdownContent}`);
 
-  await new Promise((resolve) => setTimeout(resolve, 500));
+  const waitForResponse = (id, timeoutMs = 5000) => new Promise((resolveResponse, reject) => {
+    const deadline = Date.now() + timeoutMs;
+    const check = () => {
+      if (responsesById.has(id)) {
+        resolveResponse(responsesById.get(id));
+        return;
+      }
+      if (Date.now() > deadline) {
+        reject(new Error(`Timed out waiting for LSP response id=${id}${stderr ? `: ${stderr.trim()}` : ""}`));
+        return;
+      }
+      setTimeout(check, 20);
+    };
+    check();
+  });
 
-  server.kill();
+  try {
+    sendMessage(server, testCases[0].request);
+    const initialize = await waitForResponse(1);
+    assert.equal(initialize?.error, undefined, `initialize failed: ${JSON.stringify(initialize?.error)}`);
+    assert.equal(initialize?.result?.serverInfo?.name, "org2-lsp");
 
-  console.log("Responses received:", responses.length);
-  console.log(
-    JSON.stringify(responses, null, 2)
-  );
+    sendMessage(server, { jsonrpc: "2.0", method: "initialized", params: {} });
+    sendMessage(server, testCases[1].request);
+    sendMessage(server, testCases[2].request);
 
-  if (responses.length >= 2) {
+    const documentSymbols = await waitForResponse(2);
+    assert.equal(documentSymbols?.error, undefined, `documentSymbol failed: ${JSON.stringify(documentSymbols?.error)}`);
+    assert.deepEqual(documentSymbols?.result?.map((symbol) => symbol.name), ["Headline"]);
+
+    sendMessage(server, { jsonrpc: "2.0", id: 999, method: "shutdown", params: {} });
+    await waitForResponse(999);
+
+    console.log("Responses received:", responses.length);
+    console.log(JSON.stringify(responses, null, 2));
     console.log("\n✓ LSP integration test passed!");
     return true;
-  } else {
-    console.log("\n✗ LSP integration test failed - insufficient responses");
-    return false;
+  } finally {
+    server.kill();
   }
 }
 
