@@ -16,6 +16,21 @@ private actor AIChatSharedRoomRecorder {
   }
 }
 
+private func waitForCondition(
+  timeout: TimeInterval = 5,
+  _ condition: @escaping @MainActor () -> Bool
+) async throws {
+  let deadline = Date().addingTimeInterval(timeout)
+  while Date() < deadline {
+    if await MainActor.run(body: condition) {
+      return
+    }
+    try await Task.sleep(nanoseconds: 10_000_000)
+  }
+  let matched = await MainActor.run(body: condition)
+  XCTAssertTrue(matched)
+}
+
 private actor AIChatSharedRoomGate {
   private var isOpen = false
   private var continuations: [CheckedContinuation<Void, Never>] = []
@@ -122,6 +137,71 @@ final class AIChatSharedRoomTests: XCTestCase {
       messages[0].sendFailure,
       "Codex was stopped by you. Retry to start this request again."
     )
+  }
+
+  @MainActor
+  func testStaleCodexSteerClearsActiveTurnAndRuntimeThread() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-codex-stale-steer-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let suiteName = "AIChatCodexStaleSteer.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let gate = AIChatSharedRoomGate()
+    let store = WorkspaceStore(
+      defaults: defaults,
+      openClawTranscriptURL: root.appendingPathComponent("chat.json"),
+      codexSendHandlerForTesting: { _, _, _ in
+        await gate.wait()
+        return "This late reply must not be appended."
+      },
+      legacyDefaultsDomains: []
+    )
+    store.setCorpusRoot(root, persistsDefault: false)
+    let threadID = store.createOpenClawChatThread(runtime: .codex)
+    store.aiChatSteerHandlerForTesting = { _, _, _, _ in
+      throw CodexAppServerError.server(
+        code: nil,
+        message: "thread not found: missing-codex-thread"
+      )
+    }
+
+    let sendTask = Task { @MainActor in
+      await store.sendOpenClawMessage(text: "Start a long Codex task")
+    }
+    for _ in 0..<100 where !store.isAIChatThreadRunning(threadID) {
+      try await Task.sleep(nanoseconds: 10_000_000)
+    }
+    store.recordCodexActiveTurnForTesting(
+      threadID: threadID,
+      runtimeThreadID: "missing-codex-thread",
+      turnID: "turn-1"
+    )
+
+    store.sendComposedOpenClawMessage(text: "Are you stalled?")
+    let queuedMessage = try XCTUnwrap(store.openClawMessages.last)
+    XCTAssertTrue(store.canSteerQueuedAIChatMessage(queuedMessage.id))
+
+    await store.steerQueuedAIChatMessage(queuedMessage.id)
+    try await waitForCondition {
+      store.openClawMessages.last?.deliveryStatus == .failed
+        && store.isAIChatThreadRunning(threadID) == false
+    }
+
+    await gate.open()
+    await sendTask.value
+
+    let thread = try XCTUnwrap(store.openClawChatThreads.first(where: { $0.id == threadID }))
+    XCTAssertNil(thread.runtimeThreadID(forDestinationID: AIChatDestinationConfiguration.localCodexID))
+    XCTAssertEqual(thread.messages.count, 2)
+    XCTAssertEqual(thread.messages[0].deliveryStatus, .failed)
+    XCTAssertTrue(thread.messages[0].sendFailure?.contains("task expired") == true)
+    XCTAssertEqual(thread.messages[1].deliveryStatus, .failed)
+    XCTAssertEqual(thread.messages[1].deliveryKind, .followUp)
+    XCTAssertTrue(thread.messages[1].sendFailure?.contains("Retry to start a new turn") == true)
+    XCTAssertFalse(store.isAIChatMessageQueued(queuedMessage.id))
+    XCTAssertFalse(store.isAIChatThreadRunning(threadID))
   }
 
   @MainActor

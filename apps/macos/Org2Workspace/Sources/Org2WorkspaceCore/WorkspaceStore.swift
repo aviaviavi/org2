@@ -2090,6 +2090,7 @@ public final class WorkspaceStore: ObservableObject {
   private static let externalThreadDetailCacheLimit = 6
   private var codexActiveTurnsByThreadID: [UUID: (runtimeThreadID: String, turnID: String)] = [:]
   private var codexLocalThreadIDsByRuntimeThreadID: [String: UUID] = [:]
+  private var staleCodexRuntimeThreadIDs: Set<UUID> = []
   @Published private var activeSharedRoomRuntimeByThreadID: [UUID: AIChatRuntime] = [:]
   @Published private var activeSharedRoomDestinationByThreadID: [UUID: String] = [:]
   var aiChatSteerHandlerForTesting: ((
@@ -2098,6 +2099,29 @@ public final class WorkspaceStore: ObservableObject {
     _ content: String,
     _ attachments: [OpenClawChatAttachment]
   ) async throws -> Void)?
+
+  func recordCodexActiveTurnForTesting(
+    threadID: UUID,
+    runtimeThreadID: String,
+    turnID: String,
+    destinationID: String = AIChatDestinationConfiguration.localCodexID
+  ) {
+    codexActiveTurnsByThreadID[threadID] = (runtimeThreadID, turnID)
+    codexLocalThreadIDsByRuntimeThreadID["\(destinationID)\u{0}\(runtimeThreadID)"] = threadID
+    openClawGatewayStateByThreadID[threadID] = .connected
+    openClawActiveRunIDByThreadID[threadID] = turnID
+    guard let thread = openClawChatThreads.first(where: { $0.id == threadID }) else { return }
+    var runtimeThreadIDs = thread.runtimeThreadIDsByDestination
+    runtimeThreadIDs[destinationID] = runtimeThreadID
+    replaceOpenClawChatThread(
+      thread.replacingOpenClawChatMetadata(
+        runtimeThreadID: destinationID == thread.destinationID ? .some(runtimeThreadID) : nil,
+        runtimeThreadIDsByDestination: runtimeThreadIDs
+      ),
+      transcriptURL: openClawTranscriptURL,
+      shouldPersist: false
+    )
+  }
   private var openClawRecoveryTasksByThreadID: [UUID: Task<Void, Never>] = [:]
   private var openClawRecoveryTaskTokensByThreadID: [UUID: UUID] = [:]
   private var deferredOpenClawTranscriptPersistenceTask: Task<Void, Never>?
@@ -17104,6 +17128,19 @@ public final class WorkspaceStore: ObservableObject {
         }
         return true
       } catch {
+        if Self.codexRuntimeThreadWasStale(after: error) {
+          forgetCodexRuntimeThread(
+            active.runtimeThreadID,
+            destinationID: activeDestinationID,
+            in: threadID
+          )
+          markStaleCodexRunExpired(
+            in: threadID,
+            destinationID: activeDestinationID,
+            statusText: "\(destinationName) task expired; retry or send a new message to continue"
+          )
+          return true
+        }
         if selectedOpenClawChatThreadID == threadID {
           openClawStatusText = "Could not stop Codex: \(error.localizedDescription)"
         }
@@ -18281,6 +18318,29 @@ public final class WorkspaceStore: ObservableObject {
         }
         return
       }
+      if thread.runtime == .codex,
+         Self.codexRuntimeThreadWasStale(after: error) {
+        let active = codexActiveTurnsByThreadID[threadID]
+        forgetCodexRuntimeThread(
+          active?.runtimeThreadID,
+          destinationID: thread.destinationID,
+          in: threadID
+        )
+        let staleMessage = "\(aiChatDestinationTitle(thread.destinationID)) task expired before this guidance could be sent. Retry to start a new turn with this chat context."
+        markStaleCodexRunExpired(
+          in: threadID,
+          destinationID: thread.destinationID,
+          statusText: "\(aiChatDestinationTitle(thread.destinationID)) task expired; retry your last message to continue"
+        )
+        replaceOpenClawMessageDelivery(
+          for: message.id,
+          in: threadID,
+          status: .failed,
+          kind: .followUp,
+          sendFailure: staleMessage
+        )
+        return
+      }
       replaceOpenClawSendFailure(
         for: message.id,
         in: threadID,
@@ -18327,6 +18387,166 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
+  nonisolated private static func codexRuntimeThreadWasStale(after error: Error) -> Bool {
+    guard let error = error as? CodexAppServerError else { return false }
+    switch error {
+    case .server(_, let message), .invalidResponse(let message), .disconnected(let message):
+      return codexRuntimeThreadStaleMessage(message)
+    case .requestTimedOut(let method):
+      return method == "thread/resume"
+    case .executableNotFound, .launchFailed, .notAuthenticated, .turnFailed, .turnInterrupted:
+      return false
+    }
+  }
+
+  nonisolated private static func codexRuntimeThreadStaleMessage(_ message: String) -> Bool {
+    let lowercased = message.lowercased()
+    return lowercased.contains("thread not found")
+      || lowercased.contains("task not found")
+      || lowercased.contains("does not exist")
+      || lowercased.contains("unknown thread")
+      || lowercased.contains("unknown task")
+  }
+
+  private func forgetCodexRuntimeThread(
+    _ runtimeThreadID: String?,
+    destinationID: String,
+    in threadID: UUID,
+    transcriptURL: URL? = nil
+  ) {
+    let targetTranscriptURL = transcriptURL ?? openClawTranscriptURL
+    codexActiveTurnsByThreadID.removeValue(forKey: threadID)
+    if let runtimeThreadID {
+      codexLocalThreadIDsByRuntimeThreadID.removeValue(
+        forKey: "\(destinationID)\u{0}\(runtimeThreadID)"
+      )
+    }
+    guard let thread = openClawChatThread(
+      threadID,
+      transcriptURL: targetTranscriptURL
+    ) else {
+      return
+    }
+    var runtimeThreadIDs = thread.runtimeThreadIDsByDestination
+    var legacyRuntimeThreadID: String?? = nil
+    var changed = false
+    if let runtimeThreadID,
+       runtimeThreadIDs[destinationID] == runtimeThreadID {
+      runtimeThreadIDs.removeValue(forKey: destinationID)
+      changed = true
+    }
+    if destinationID == thread.destinationID,
+       let runtimeThreadID,
+       thread.runtimeThreadID == runtimeThreadID {
+      legacyRuntimeThreadID = .some(nil)
+      changed = true
+    }
+    guard changed else { return }
+    replaceOpenClawChatThread(
+      thread.replacingOpenClawChatMetadata(
+        runtimeThreadID: legacyRuntimeThreadID,
+        runtimeThreadIDsByDestination: runtimeThreadIDs
+      ),
+      transcriptURL: targetTranscriptURL
+    )
+  }
+
+  private func markStaleCodexRunExpired(
+    in threadID: UUID,
+    destinationID: String,
+    transcriptURL: URL? = nil,
+    statusText: String
+  ) {
+    let targetTranscriptURL = transcriptURL ?? openClawTranscriptURL
+    staleCodexRuntimeThreadIDs.insert(threadID)
+    cancelOpenClawPendingTurnRecovery(for: threadID)
+    aiChatDrainTasksByThreadID.removeValue(forKey: threadID)?.task.cancel()
+
+    let failureText = "\(aiChatDestinationTitle(destinationID)) task expired before OpenOrg could finish receiving it. Retry to start a new task with this chat context."
+    var expiredMessageIDs = Set(openClawPendingUserMessageIDs(for: threadID))
+    if let activeMessageID = activeOpenClawUserMessageIDByThreadID[threadID] {
+      expiredMessageIDs.insert(activeMessageID)
+    }
+    var messages = openClawMessages(for: threadID, transcriptURL: targetTranscriptURL)
+    var changedMessages = false
+    for index in messages.indices where expiredMessageIDs.contains(messages[index].id) {
+      let message = messages[index]
+      guard message.role == .user,
+            message.deliveryStatus == .sending || message.sendFailure != failureText
+      else {
+        continue
+      }
+      messages[index] = message.replacingDeliveryStatus(.failed, sendFailure: failureText)
+      changedMessages = true
+    }
+    if changedMessages {
+      updateOpenClawChatThread(
+        threadID,
+        messages: messages,
+        transcriptURL: targetTranscriptURL,
+        shouldPersist: true
+      )
+    }
+
+    removeAllPendingOpenClawUserMessages(in: threadID)
+    activeOpenClawUserMessageIDByThreadID.removeValue(forKey: threadID)
+    drainingOpenClawThreadIDs.remove(threadID)
+    openClawRequestStartedAtByThreadID.removeValue(forKey: threadID)
+    activeSharedRoomRuntimeByThreadID.removeValue(forKey: threadID)
+    activeSharedRoomDestinationByThreadID.removeValue(forKey: threadID)
+    clearOpenClawCompletedRunPresentation(for: threadID)
+    openClawGatewayStateByThreadID[threadID] = .disconnected
+    openClawGatewayDetailByThreadID[threadID] = failureText
+    if selectedOpenClawChatThreadID == threadID,
+       isActiveAIChatTranscript(targetTranscriptURL) {
+      openClawStatusText = statusText
+    }
+    syncSelectedOpenClawSendState()
+  }
+
+  private func replaceOpenClawMessageDelivery(
+    for messageID: UUID,
+    in threadID: UUID,
+    status: OpenClawChatMessage.DeliveryStatus,
+    kind: OpenClawChatMessage.DeliveryKind,
+    sendFailure: String?,
+    transcriptURL: URL? = nil
+  ) {
+    let targetTranscriptURL = transcriptURL ?? openClawTranscriptURL
+    var messages = openClawMessages(for: threadID, transcriptURL: targetTranscriptURL)
+    guard let index = messages.firstIndex(where: { $0.id == messageID }) else { return }
+    let message = messages[index]
+    messages[index] = OpenClawChatMessage(
+      id: message.id,
+      role: message.role,
+      content: message.content,
+      attachments: message.attachments,
+      createdAt: message.createdAt,
+      changeSummary: message.changeSummary,
+      responseTrace: message.responseTrace,
+      sendFailure: sendFailure,
+      deliveryStatus: status,
+      deliveryKind: kind,
+      authorRuntime: message.authorRuntime,
+      authorLabel: message.authorLabel,
+      authorAgentRef: message.authorAgentRef,
+      source: message.source,
+      audience: message.audience,
+      targetRuntime: message.targetRuntime,
+      authorDestinationID: message.authorDestinationID,
+      audienceDestinationIDs: message.audienceDestinationIDs,
+      targetDestinationID: message.targetDestinationID,
+      isRoomDispatchCopy: message.isRoomDispatchCopy,
+      roomRoundID: message.roomRoundID
+    )
+    updateOpenClawChatThread(
+      threadID,
+      messages: messages,
+      transcriptURL: targetTranscriptURL,
+      shouldPersist: true
+    )
+  }
+
   private func enqueueExistingAIChatMessageAsFollowUp(_ messageID: UUID, in threadID: UUID) {
     var messages = openClawMessages(for: threadID)
     guard let index = messages.firstIndex(where: { $0.id == messageID }) else { return }
@@ -18362,6 +18582,7 @@ public final class WorkspaceStore: ObservableObject {
   ) -> Bool {
     guard let thread = openClawChatThreads.first(where: { $0.id == threadID }) else { return false }
     stoppedOpenClawThreadIDs.remove(threadID)
+    staleCodexRuntimeThreadIDs.remove(threadID)
     let destinationRouting = thread.isSharedRoom
       ? AIChatDestinationRouting(
           text,
@@ -18738,6 +18959,9 @@ public final class WorkspaceStore: ObservableObject {
         if stoppedOpenClawThreadIDs.contains(threadID)
           || error is CancellationError
           || Self.openClawRunWasStopped(after: error) {
+          if staleCodexRuntimeThreadIDs.contains(threadID) {
+            return
+          }
           markOpenClawRunStopped(
             in: threadID,
             transcriptURL: sendOrigin.transcriptURL,
@@ -20510,6 +20734,7 @@ public final class WorkspaceStore: ObservableObject {
     // late events from the canceled attempt, but must not suppress the retry's
     // gateway events or turn its errors back into another stopped result.
     stoppedOpenClawThreadIDs.remove(threadID)
+    staleCodexRuntimeThreadIDs.remove(threadID)
     clearOpenClawSendFailure(for: messageID, in: threadID)
     replaceOpenClawDeliveryStatus(for: messageID, in: threadID, with: .sending)
     if message.deliveryKind == .steer,
