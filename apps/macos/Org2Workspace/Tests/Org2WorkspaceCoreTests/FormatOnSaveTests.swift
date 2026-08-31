@@ -75,6 +75,62 @@ final class FormatOnSaveTests: XCTestCase {
     XCTAssertFalse(harness.store.entryEditorHasUnsavedChanges)
   }
 
+  func testFullPageOrgSaveCanonicalizesAcceptedSyntaxSugar() async throws {
+    let initial = """
+    #+TITLE: Canonical Org
+
+    * Example
+    Original body
+    """
+    let draft = """
+    #+TITLE: Canonical Org
+
+    * Example
+    Use `inline code` here.
+
+    ```js
+    const value = `literal`;
+    ```
+    """
+    let harness = try await makeHarness(initialText: initial, fileExtension: "org")
+    defer { harness.defaults.removePersistentDomain(forName: harness.defaultsSuiteName) }
+
+    harness.store.beginEditingCurrentScope()
+    harness.store.editableEntryText = draft
+    harness.store.noteSourceEditorLocalTextChanged(draft)
+    await harness.store.saveActiveEdit()
+
+    let saved = try String(contentsOf: harness.file, encoding: .utf8)
+    XCTAssertTrue(saved.contains("Use ~inline code~ here."))
+    XCTAssertTrue(saved.contains("#+begin_src js\nconst value = `literal`;\n#+end_src"))
+    XCTAssertFalse(saved.contains("```js"))
+    XCTAssertEqual(harness.store.selectedEntrySource?.text, saved)
+    XCTAssertFalse(harness.store.entryEditorHasUnsavedChanges)
+  }
+
+  func testOrgSaveCanonicalizesSugarWhenGeneralFormattingIsDisabled() async throws {
+    let initial = """
+    * Example
+    Original body
+    """
+    let draft = """
+    * Example
+    Use `inline code` here.
+    """
+    let harness = try await makeHarness(initialText: initial, fileExtension: "org")
+    defer { harness.defaults.removePersistentDomain(forName: harness.defaultsSuiteName) }
+    harness.store.formatOrgFilesOnSave = false
+
+    harness.store.beginEditingCurrentScope()
+    harness.store.editableEntryText = draft
+    harness.store.noteSourceEditorLocalTextChanged(draft)
+    await harness.store.saveActiveEdit()
+
+    let saved = try String(contentsOf: harness.file, encoding: .utf8)
+    XCTAssertTrue(saved.contains("Use ~inline code~ here."))
+    XCTAssertFalse(saved.contains("`inline code`"))
+  }
+
   func testFormattingFailureStillSavesOriginalDraft() async throws {
     let initial = """
     #+TITLE: Inventory
@@ -130,11 +186,14 @@ final class FormatOnSaveTests: XCTestCase {
     XCTAssertFalse(store.entryEditorHasUnsavedChanges)
   }
 
-  private func makeHarness(initialText: String) async throws -> FormatOnSaveHarness {
+  private func makeHarness(
+    initialText: String,
+    fileExtension: String = "org2"
+  ) async throws -> FormatOnSaveHarness {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-format-on-save-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-    let file = root.appendingPathComponent("inventory.org2")
+    let file = root.appendingPathComponent("inventory.\(fileExtension)")
     try initialText.write(to: file, atomically: true, encoding: .utf8)
 
     let suiteName = "org2-format-on-save-harness-\(UUID().uuidString)"

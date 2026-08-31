@@ -198,11 +198,43 @@ function keywordValue(keywords: Keyword[], key: string): string | undefined {
   return keywords.find((keyword) => keyword.key === key)?.value;
 }
 
-function isChartFenceOpener(line: string): boolean {
+type ChartBlockOpener = {
+  afterOpener: string;
+  isEnd(line: string): boolean;
+};
+
+function parseChartBlockOpener(line: string): ChartBlockOpener | null {
   const match = /^\s*```($|[^`].*)$/.exec(line);
-  if (!match) return false;
-  const afterFence = String(match[1] || "").trim();
-  return /^(chart|plot)(?:\s|$)/i.test(afterFence);
+  if (match) {
+    const afterFence = String(match[1] || "").trim();
+    if (!/^(chart|plot)(?:\s|$)/i.test(afterFence)) return null;
+    return {
+      afterOpener: afterFence,
+      isEnd: (candidate) => /^\s*```\s*$/.test(candidate),
+    };
+  }
+
+  const source = /^\s*#\+begin_src\s+(chart|plot)(?:\s+(.*?))?\s*$/i.exec(line);
+  if (source) {
+    const kind = String(source[1] || "chart").toLowerCase();
+    const args = String(source[2] || "").trim();
+    return {
+      afterOpener: [kind, args].filter(Boolean).join(" "),
+      isEnd: (candidate) => /^\s*#\+end_src\s*$/i.test(candidate),
+    };
+  }
+
+  const special = /^\s*#\+begin_(chart|plot)\b(.*?)\s*$/i.exec(line);
+  if (special) {
+    const kind = String(special[1] || "chart").toLowerCase();
+    const args = String(special[2] || "").trim();
+    return {
+      afterOpener: [kind, args].filter(Boolean).join(" "),
+      isEnd: (candidate) => new RegExp(`^\\s*#\\+end_${kind}\\s*$`, "i").test(candidate),
+    };
+  }
+
+  return null;
 }
 
 type FencedChartBlock = {
@@ -221,15 +253,15 @@ type ParsedFencedChartSpec = {
 
 function parseFencedChartBlock(lines: string[], startIndex: number): FencedChartBlock | null {
   const opener = lines[startIndex] || "";
-  if (!isChartFenceOpener(opener)) return null;
+  const parsedOpener = parseChartBlockOpener(opener);
+  if (!parsedOpener) return null;
 
-  const openerMatch = /^\s*```($|[^`].*)$/.exec(opener);
-  const openerRest = String(openerMatch?.[1] || "").trim();
+  const openerRest = parsedOpener.afterOpener;
   const bodyLines: string[] = [];
   let i = startIndex + 1;
   while (i < lines.length) {
     const line = lines[i] || "";
-    if (/^\s*```\s*$/.test(line)) {
+    if (parsedOpener.isEnd(line)) {
       const parsed = parseFencedChartSpec(openerRest, bodyLines);
       return { raw: parsed.raw.trim(), ...(parsed.title ? { title: parsed.title } : {}), ...(parsed.source ? { source: parsed.source } : {}), startLine: startIndex + 1, endLine: i + 1 };
     }

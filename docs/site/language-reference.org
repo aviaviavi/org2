@@ -244,23 +244,30 @@ Recognized block forms include:
 
 ** Syntactic sugar / aliases
 
-Org2 supports a friendlier fenced-code alias for source blocks:
+OpenOrg accepts a friendlier fenced-code typing alias for source blocks:
 
-#+begin_src org
+#+begin_example
 ```ts
 const x = 1
 ```
-#+end_src
+#+end_example
 
 This is treated as syntactic sugar for:
 
-#+begin_src org
+#+begin_example
 #+begin_src ts
 const x = 1
 #+end_src
-#+end_src
+#+end_example
 
-Prefer the fenced form for new hand-written examples and docs. The verbose =#+begin_src= form remains fully supported for compatibility and explicit Org-style interchange.
+New =.org= documents use the ordinary Org form on disk. The Mac app rewrites fences to =#+begin_src= / =#+end_src= and rewrites backtick inline code to =~code~= whenever edited =.org= source is saved. This syntax canonicalization still occurs when general format-on-save is disabled: the input remains quick to type, while persisted =.org= files stay valid Org syntax. Existing =.org2= files and the default lossless parser/printer preserve their original spelling.
+
+The CLI exposes the same explicit serialization profile:
+
+#+begin_src sh
+org2 fmt --stdin --canonical-org
+org2 fmt --file note.org --canonical-org --apply
+#+end_src
 
 Fenced source blocks use exactly three backticks for the opener and closer. Four-or-more backticks remain ordinary text in v0, which keeps Markdown examples that quote org2 fences from accidentally becoming executable org2 source, chart, dataset, or SQL blocks.
 

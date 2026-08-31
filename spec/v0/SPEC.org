@@ -88,6 +88,17 @@ Org2 v0 keeps Org begin/end and inline forms as canonical, while allowing a smal
   - Parsed as inline code emphasis (same =kind: "code"= target as ~=...=~).
 
 These sugar forms are conveniences, not a replacement for standard Org forms.
+The lossless parser and default printer preserve whichever spelling was read.
+Implementations that persist ordinary =.org= documents MAY explicitly select
+the *canonical Org serialization profile*, which rewrites fenced source blocks
+to =#+begin_src= / =#+end_src=, =#+begin_org2= aliases to
+=#+begin_src org2= / =#+end_src=, and representable backtick inline code to
+ordinary Org inline-code markup, preferring tilde delimiters and using equals
+delimiters when the content itself contains a tilde. Sugar is preserved when
+rewriting would make a literal =#+end_src= body line or inline delimiter
+ambiguous.
+This profile is an explicit serialization choice rather than the default
+round-trip behavior.
 
 * Native org-roam support (v0 status)
 

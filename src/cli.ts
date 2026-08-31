@@ -8,6 +8,7 @@ import os from "node:os";
 import { spawnSync } from "node:child_process";
 import { buildUnifiedDiff } from "./unifiedDiff.js";
 import { parseOrgToCanonicalAst } from "./parser.js";
+import { canonicalizeOrgSyntaxSugar } from "./canonicalOrg.js";
 import { printCanonicalAstToOrg } from "./printer.js";
 import { normalizePgpArmorForDecrypt, protectPgpBlocks, restorePgpBlocks } from "./pgp.js";
 import {
@@ -8543,6 +8544,7 @@ async function main(): Promise<void> {
   let fmtStdin = false;
   let fmtApply = false;
   let fmtCheck = false;
+  let fmtCanonicalOrg = false;
   let fmtFormat: "text" | "json" = "text";
   let fmtConfigPath = "";
   let fmtFileFiltersRaw: string[] = [];
@@ -10185,6 +10187,9 @@ async function main(): Promise<void> {
         fmtCheck = true;
       }
       i++;
+    } else if (arg === "--canonical-org") {
+      if (command === "fmt") fmtCanonicalOrg = true;
+      i++;
     } else if (arg === "--apply" || arg === "--in-place") {
       if (command === "todo") {
         todoApply = true;
@@ -10334,7 +10339,7 @@ Maintenance / health:
   org2 ai promote --file DRAFT --to-file NOTE [--apply] [--format text|json]
   org2 graph audit [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--format report|json]
   org2 lint [--dir DIR] [--recursive] [--include-archives] [--file FILE|--files FILE ...] [--format text|json]
-  org2 fmt [--stdin] [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--check] [--apply]
+  org2 fmt [--stdin] [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--canonical-org] [--check] [--apply]
 
 Other:
   org2 version
@@ -10529,7 +10534,7 @@ Run 'org2 publish document --help' for single-document destinations and guarded 
     text = `org2 fmt
 
 Usage:
-  org2 fmt [--stdin] [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--check] [--apply]
+  org2 fmt [--stdin] [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--canonical-org] [--check] [--apply]
 
 Flags:
   --stdin         Read input from stdin
@@ -10537,6 +10542,7 @@ Flags:
   --recursive     Recurse into subdirectories
   --file FILE     Single target file
   --files FILE    One or more target files
+  --canonical-org Rewrite accepted syntax sugar to ordinary Org forms
   --check         Exit non-zero if formatting would change files
   --apply         Write changes instead of previewing`;
   } else if (command === "lsp") {
@@ -14919,6 +14925,7 @@ Flags:
       const normalized = rawIn.replace(/\r\n/g, "\n");
       const { text: protectedText, blocks } = protectPgpBlocks(normalized);
       const ast = parseOrgToCanonicalAst(protectedText);
+      if (fmtCanonicalOrg) canonicalizeOrgSyntaxSugar(ast);
       const formatted = printCanonicalAstToOrg(ast);
       return restorePgpBlocks(formatted, blocks);
     };

@@ -318,11 +318,15 @@ public struct Org2CLI: Sendable {
     try runProcess(scriptPath: cliPath, arguments: arguments)
   }
 
-  public func formatOrgText(_ text: String, timeout: TimeInterval = 8) async throws -> String {
+  public func formatOrgText(
+    _ text: String,
+    canonicalOrgSyntax: Bool = false,
+    timeout: TimeInterval = 8
+  ) async throws -> String {
     let operation = Task.detached(priority: .userInitiated) {
       try runProcess(
         scriptPath: cliPath,
-        arguments: ["fmt", "--stdin"],
+        arguments: ["fmt", "--stdin"] + (canonicalOrgSyntax ? ["--canonical-org"] : []),
         standardInput: Data(text.utf8),
         timeout: timeout
       )

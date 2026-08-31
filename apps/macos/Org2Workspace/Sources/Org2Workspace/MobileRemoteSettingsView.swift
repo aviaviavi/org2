@@ -317,7 +317,7 @@ private struct DocumentSettingsView: View {
       Section {
         Toggle("Format Org files on save", isOn: $store.formatOrgFilesOnSave)
 
-        Text("Runs the shared Org2 formatter before saving a full .org or .org2 page. Turn this off to preserve the source exactly as typed.")
+        Text("Runs the shared Org2 formatter before saving a full .org or .org2 page. Turn this off to preserve layout as typed; .org typing conveniences such as code fences are still saved as standard Org syntax.")
           .font(.callout)
           .foregroundStyle(.secondary)
       } header: {

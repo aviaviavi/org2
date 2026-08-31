@@ -354,9 +354,10 @@ org2 refile --file notes.org2 --pos 120:0 --to-file projects.org2 --to-pos 40:0 
 </section>
 <section class="org2-headline level-1">
 <h1 id="formatter">Formatter</h1>
-<p>Canonical formatting for Org2 files.</p>
+<p>Deterministic formatting for Org and Org2 files. Add <code>--canonical-org</code> to rewrite accepted input conveniences such as fenced source blocks, <code>#+begin_org2</code> aliases, and backtick inline code to ordinary Org syntax. OpenOrg uses this profile whenever edited <code>.org</code> source contains those conveniences; <code>.org2</code> files retain lossless spelling. Syntax canonicalization is independent of the app's optional general format-on-save setting.</p>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 fmt --dir ~/notes --recursive --check
-org2 fmt --dir ~/notes --recursive --apply</code></pre>
+org2 fmt --dir ~/notes --recursive --apply
+org2 fmt --file note.org --canonical-org --apply</code></pre>
 </section>
 <section class="org2-headline level-1">
 <h1 id="table-formula-evaluation">Table formula evaluation</h1>

@@ -10,6 +10,7 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "org2-render-chart-"));
 const note = path.join(tmp, "report.org2");
 const badSortNote = path.join(tmp, "bad-sort.org2");
 const fourTickChartNote = path.join(tmp, "four-tick-chart.org2");
+const canonicalChartNote = path.join(tmp, "canonical-chart.org");
 const out = path.join(tmp, "chart.svg");
 
 fs.writeFileSync(note, `* Revenue report
@@ -84,6 +85,21 @@ y: fetches
 \`\`\`\`
 `, "utf8");
 
+fs.writeFileSync(canonicalChartNote, `* Canonical chart source
+
+#+name: canonical_chart
+| bucket | fetches |
+|--------+---------|
+| 0-10   | 14      |
+| 11-50  | 32      |
+
+#+begin_src chart histogram
+x: bucket
+y: fetches
+source: previous-table
+#+end_src
+`, "utf8");
+
 function cli(args, input) {
   return execFileSync("node", ["dist/cli.js", ...args], { cwd: repo, encoding: "utf8", input });
 }
@@ -136,6 +152,11 @@ assert.equal(futureSourceJson.ok, true);
 assert.equal(futureSourceJson.source.blockId, "future_source_chart");
 assert.equal(futureSourceJson.source.dataBlockId, "future_fetches_result");
 assert.match(futureSourceJson.svg, /<rect /);
+
+const canonicalChartJson = JSON.parse(cli(["render-chart", "--file", canonicalChartNote, "--block-id", "canonical_chart", "--format", "json"]));
+assert.equal(canonicalChartJson.ok, true);
+assert.equal(canonicalChartJson.source.blockId, "canonical_chart");
+assert.match(canonicalChartJson.svg, /Org2 histogram chart/);
 
 const bad = spawnSync("node", ["dist/cli.js", "render-chart", "--file", note, "--block-id", "missing", "--format", "json"], { cwd: repo, encoding: "utf8" });
 assert.notEqual(bad.status, 0);

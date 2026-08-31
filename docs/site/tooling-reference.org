@@ -304,11 +304,12 @@ Archiving moves the selected subtree to a companion archive file (by default =FI
 
 * Formatter
 
-Canonical formatting for Org2 files.
+Deterministic formatting for Org and Org2 files. Add =--canonical-org= to rewrite accepted input conveniences such as fenced source blocks, =#+begin_org2= aliases, and backtick inline code to ordinary Org syntax. OpenOrg uses this profile whenever edited =.org= source contains those conveniences; =.org2= files retain lossless spelling. Syntax canonicalization is independent of the app's optional general format-on-save setting.
 
 #+begin_src sh
 org2 fmt --dir ~/notes --recursive --check
 org2 fmt --dir ~/notes --recursive --apply
+org2 fmt --file note.org --canonical-org --apply
 #+end_src
 
 * Table formula evaluation

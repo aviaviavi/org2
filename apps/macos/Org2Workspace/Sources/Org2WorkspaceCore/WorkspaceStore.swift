@@ -11529,17 +11529,23 @@ public final class WorkspaceStore: ObservableObject {
     _ text: String,
     source: EntrySource
   ) async -> (text: String, warning: String?) {
-    guard formatOrgFilesOnSave,
-          selectedEntrySourceMode == .page,
-          source.startLine == 1,
-          !source.isSubtree,
-          Self.isOrgTextFile(URL(fileURLWithPath: source.file))
-    else {
+    let sourceURL = URL(fileURLWithPath: source.file)
+    guard Self.isOrgTextFile(sourceURL) else {
+      return (text, nil)
+    }
+
+    let canonicalOrgSyntax = sourceURL.pathExtension.lowercased() == "org"
+    let shouldCanonicalizeSugar = canonicalOrgSyntax && Self.containsOrgSyntaxSugar(text)
+    let shouldFormatFullPage = formatOrgFilesOnSave
+      && selectedEntrySourceMode == .page
+      && source.startLine == 1
+      && !source.isSubtree
+    guard shouldCanonicalizeSugar || shouldFormatFullPage else {
       return (text, nil)
     }
 
     do {
-      return (try await cli.formatOrgText(text), nil)
+      return (try await cli.formatOrgText(text, canonicalOrgSyntax: canonicalOrgSyntax), nil)
     } catch {
       return (text, "formatting failed: \(error.localizedDescription)")
     }
@@ -30068,6 +30074,11 @@ public final class WorkspaceStore: ObservableObject {
   nonisolated private static func isOrgTextFile(_ url: URL) -> Bool {
     let ext = url.pathExtension.lowercased()
     return ext == "org" || ext == "org2"
+  }
+
+  nonisolated private static func containsOrgSyntaxSugar(_ text: String) -> Bool {
+    text.contains("`")
+      || text.range(of: #"(?im)^\s*#\+begin_org2\b"#, options: .regularExpression) != nil
   }
 
   nonisolated private static func writeOrgRecoveryBackup(
