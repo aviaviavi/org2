@@ -355,6 +355,7 @@ assert.match(chartRendered.html, /<polyline /);
 assert.match(chartRendered.html, /tooltip\.className = "org2-chart-tooltip"/);
 assert.match(chartRendered.html, /installInteractiveCharts/);
 assert.match(chartRendered.html, /data-org2-chart-mark="true"/);
+assert.match(chartRendered.html, /mark\.dataset\.series \|\| yLabel/);
 const appScript = chartRendered.html.match(/<script id="org2-app-document-script">\n([\s\S]*?)\n<\/script>/)?.[1];
 assert.ok(appScript);
 new Function(appScript);

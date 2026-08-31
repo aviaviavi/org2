@@ -966,7 +966,8 @@ const APP_DOCUMENT_SCRIPT = `(() => {
         mark.classList.add("org2-chart-mark-active");
         tooltipLabel.textContent = mark.dataset.label || "";
         const yLabel = svg.dataset.org2ChartYLabel || "value";
-        tooltipValue.textContent = yLabel + ": " + (mark.dataset.value || "");
+        const seriesLabel = mark.dataset.series || yLabel;
+        tooltipValue.textContent = seriesLabel + ": " + (mark.dataset.value || "");
         tooltip.hidden = false;
 
         if (crosshair) {

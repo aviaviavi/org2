@@ -396,8 +396,21 @@ height: 300
 interactive: true
 #+end_src</pre>
 <p>The current renderer supports <code>bar</code>, <code>line</code>, and bucketed <code>histogram</code> charts over the previous table or a named table source. Add <code>sort: x-asc</code>, <code>sort: x-desc</code>, <code>sort: y-asc</code>, or <code>sort: y-desc</code> when the visual should order marks independently of the table's source row order. <code>size</code> accepts <code>compact</code>, <code>medium</code>, or <code>wide</code>. <code>height</code> accepts 220–720 pixels and defaults according to the size preset. <code>interactive</code> defaults to <code>true</code>; in the Mac app it enables nearest-point hover, exact-value tooltips, a crosshair, and keyboard navigation between marks. Static SVG remains the canonical CLI and export fallback.</p>
+<p>Line and bar charts may render multiple numeric columns against the same x-axis. List the columns in <code>y</code> (or <code>series</code> inside a chart source block), separated by commas:</p>
+<pre class="org2-example">#+name: quarterly_metrics
+| quarter | revenue | cost | profit |
+|---------+---------+------+--------|
+| 2026-Q1 | 1200    | 700  | 500    |
+| 2026-Q2 | 1500    | 825  | 675    |
+
+#+begin_src chart line
+x: quarter
+y: revenue, cost, profit
+source: quarterly_metrics
+#+end_src</pre>
+<p>Each line receives a stable color and grouped bar charts place each series beside the others within its x-axis category. Multi-series charts include a legend, series-aware accessibility labels, and series names in interactive tooltips. A <code>y-asc</code> or <code>y-desc</code> sort uses the first listed series. Histograms remain single-series because each row already represents one bucket.</p>
 <p>The Mac app treats chart interaction as app-owned presentation behavior. Notes cannot provide arbitrary JavaScript. Chart cards can also be resized horizontally in the rendered view; use <code>size</code> and <code>height</code> when the desired dimensions should remain deterministic in source.</p>
-<p>Chart SVG uses CSS custom properties with opinionated defaults: <code>--org2-chart-mark</code>, <code>--org2-chart-surface</code>, <code>--org2-chart-axis</code>, <code>--org2-chart-grid</code>, <code>--org2-chart-label</code>, and <code>--org2-chart-title</code>. Set them on <code>.org2-chart</code> in a published stylesheet or the Mac app's <code>.org2/app.css</code> to customize the visual theme without changing the data declaration.</p>
+<p>Chart SVG uses CSS custom properties with opinionated defaults: <code>--org2-chart-mark</code>, <code>--org2-chart-series-2</code> through <code>--org2-chart-series-8</code>, <code>--org2-chart-surface</code>, <code>--org2-chart-axis</code>, <code>--org2-chart-grid</code>, <code>--org2-chart-label</code>, and <code>--org2-chart-title</code>. The first series retains <code>--org2-chart-mark</code> for compatibility. Set them on <code>.org2-chart</code> in a published stylesheet or the Mac app's <code>.org2/app.css</code> to customize the visual theme without changing the data declaration.</p>
 <p>The CLI can render chart-affiliated tables directly:</p>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 render-chart --file report.org --block-id quarterly_revenue --format svg</code></pre>
 </section>

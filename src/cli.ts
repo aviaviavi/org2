@@ -10692,6 +10692,7 @@ Flags:
 
 Output:
   Deterministic SVG for #+chart or #+plot metadata attached to an org2 table.
+  Line and bar charts accept comma-separated y columns for multiple series.
   JSON output includes ok, format, artifact, source, diagnostics, and svg.`;
   } else if (command === "query-data") {
     text = `org2 query-data

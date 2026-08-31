@@ -57,7 +57,7 @@ export type ChartPresentation = {
 type ChartSpec = {
   type: ChartType;
   x: string;
-  y: string;
+  series: string[];
   title?: string;
   sort: ChartSort;
   presentation: ChartPresentation;
@@ -138,7 +138,8 @@ function parseChartSpec(raw: string, title?: string): { spec?: ChartSpec; diagno
   }
 
   const x = params.get("x") || "";
-  const y = params.get("y") || "";
+  const rawSeries = params.get("y") || params.get("series") || "";
+  const series = rawSeries.split(",").map((column) => column.trim()).filter(Boolean);
   const sortRaw = (params.get("sort") || "none").toLowerCase();
   const sort = parseChartSort(sortRaw);
   const sizeRaw = (params.get("size") || "medium").toLowerCase();
@@ -152,17 +153,23 @@ function parseChartSpec(raw: string, title?: string): { spec?: ChartSpec; diagno
   const interactiveRaw = (params.get("interactive") || "true").toLowerCase();
   const interactive = parseBoolean(interactiveRaw);
   if (!x) diagnostics.push(diagnostic("Chart spec requires x=column"));
-  if (!y) diagnostics.push(diagnostic("Chart spec requires y=column"));
+  if (series.length === 0) diagnostics.push(diagnostic("Chart spec requires y=column or y=column,column"));
+  if (new Set(series.map((column) => column.toLowerCase())).size !== series.length) {
+    diagnostics.push(diagnostic("Chart series columns must be unique"));
+  }
+  if (type === "histogram" && series.length > 1) {
+    diagnostics.push(diagnostic("Histogram charts support exactly one y column"));
+  }
   if (!sort) diagnostics.push(diagnostic(`Unsupported chart sort "${sortRaw}". Supported sorts: none, x-asc, x-desc, y-asc, y-desc`));
   if (!size) diagnostics.push(diagnostic(`Unsupported chart size "${sizeRaw}". Supported sizes: compact, medium, wide`));
   if (!height) diagnostics.push(diagnostic("Chart height must be an integer from 220 to 720 pixels"));
   if (interactive === undefined) diagnostics.push(diagnostic("Chart interactive must be true or false"));
-  if (!type || !x || !y || !sort || !size || !height || interactive === undefined) return { diagnostics };
+  if (!type || !x || series.length === 0 || diagnostics.some((item) => item.severity === "error") || !sort || !size || !height || interactive === undefined) return { diagnostics };
   return {
     spec: {
       type,
       x,
-      y,
+      series,
       sort,
       presentation: { size, height, interactive },
       ...(title ? { title } : {}),
@@ -289,7 +296,7 @@ function parseFencedChartSpec(openerRest: string, bodyLines: string[]): ParsedFe
   const type = firstArg && !firstArg.includes("=") ? firstArg : bodyParams.get("type") || bodyParams.get("chart") || "bar";
   const tokens = [type];
   const x = bodyParams.get("x");
-  const y = bodyParams.get("y");
+  const y = bodyParams.get("y") || bodyParams.get("series");
   const sort = bodyParams.get("sort");
   const title = bodyParams.get("title");
   const source = bodyParams.get("source");
@@ -298,7 +305,7 @@ function parseFencedChartSpec(openerRest: string, bodyLines: string[]): ParsedFe
   const interactive = bodyParams.get("interactive");
 
   if (x) tokens.push(`x=${x}`);
-  if (y) tokens.push(`y=${y}`);
+  if (y) tokens.push(`y=${y.replace(/\s*,\s*/g, ",")}`);
   if (sort) tokens.push(`sort=${sort}`);
   if (size) tokens.push(`size=${size}`);
   if (height) tokens.push(`height=${height}`);
@@ -360,7 +367,7 @@ type ParsedTableBlock = {
 function candidateFromTable(table: ParsedTableBlock, spec: ChartSpec | undefined, diagnostics: ChartRenderDiagnostic[], source?: Partial<ChartRenderSource>): ChartCandidate {
   return {
     source: { ...table.source, ...source },
-    spec: spec || { type: "bar", x: "", y: "", sort: "none", presentation: { size: "medium", height: 360, interactive: true } },
+    spec: spec || { type: "bar", x: "", series: [], sort: "none", presentation: { size: "medium", height: 360, interactive: true } },
     headers: table.headers,
     rows: table.rows,
     diagnostics: [...diagnostics, ...table.diagnostics],
@@ -509,7 +516,7 @@ function collectChartCandidates(
           } else {
             candidates.push({
               source: { ...(file ? { file } : {}), line: fencedChart?.startLine || tableStartLine, endLine: fencedChart?.endLine || chartEndLine, ...(name ? { blockId: name } : {}), kind: "table" },
-              spec: parsedSpec.spec || { type: "bar", x: "", y: "", sort: "none", presentation: { size: "medium", height: 360, interactive: true } },
+              spec: parsedSpec.spec || { type: "bar", x: "", series: [], sort: "none", presentation: { size: "medium", height: 360, interactive: true } },
               headers: [],
               rows: [],
               diagnostics: [
@@ -543,7 +550,7 @@ function collectChartCandidates(
         ));
         candidates.push({
           source: { ...(file ? { file } : {}), line: fencedChart.startLine, endLine: fencedChart.endLine, ...(name ? { blockId: name } : {}), kind: "table" },
-          spec: parsedSpec.spec || { type: "bar", x: "", y: "", sort: "none", presentation: { size: "medium", height: 360, interactive: true } },
+          spec: parsedSpec.spec || { type: "bar", x: "", series: [], sort: "none", presentation: { size: "medium", height: 360, interactive: true } },
           headers: [],
           rows: [],
           diagnostics,
@@ -613,42 +620,61 @@ function formatTick(value: number, step: number): string {
 function renderSvg(candidate: ChartCandidate): { svg?: string; diagnostics: ChartRenderDiagnostic[] } {
   const diagnostics = [...candidate.diagnostics];
   const xIndex = columnIndex(candidate.headers, candidate.spec.x);
-  const yIndex = columnIndex(candidate.headers, candidate.spec.y);
   if (xIndex < 0) diagnostics.push(diagnostic(`Unknown x column "${candidate.spec.x}"`, { line: candidate.source.line, blockId: candidate.source.blockId }));
-  if (yIndex < 0) diagnostics.push(diagnostic(`Unknown y column "${candidate.spec.y}"`, { line: candidate.source.line, blockId: candidate.source.blockId }));
-  if (xIndex < 0 || yIndex < 0) return { diagnostics };
+  const seriesIndexes = candidate.spec.series.map((series) => ({ series, index: columnIndex(candidate.headers, series) }));
+  for (const entry of seriesIndexes) {
+    if (entry.index < 0) diagnostics.push(diagnostic(`Unknown y column "${entry.series}"`, { line: candidate.source.line, blockId: candidate.source.blockId }));
+  }
+  if (xIndex < 0 || seriesIndexes.length === 0 || seriesIndexes.some((entry) => entry.index < 0)) return { diagnostics };
 
-  const points = candidate.rows.map((row) => ({
+  const categories = candidate.rows.map((row) => ({
     label: String(row[xIndex] || ""),
-    rawValue: String(row[yIndex] || ""),
-    value: Number.parseFloat(String(row[yIndex] || "").replace(/,/g, "")),
+    points: seriesIndexes.map(({ series, index }) => {
+      const rawValue = String(row[index] || "");
+      return {
+        label: String(row[xIndex] || ""),
+        series,
+        rawValue,
+        value: Number.parseFloat(rawValue.replace(/,/g, "")),
+      };
+    }),
   }));
-  const invalid = points.find((point) => !Number.isFinite(point.value));
+  const invalid = categories.flatMap((category) => category.points).find((point) => !Number.isFinite(point.value));
   if (invalid) {
-    diagnostics.push(diagnostic(`Non-numeric y value "${invalid.rawValue}" in column "${candidate.spec.y}"`, { line: candidate.source.line, blockId: candidate.source.blockId }));
+    diagnostics.push(diagnostic(`Non-numeric y value "${invalid.rawValue}" in column "${invalid.series}"`, { line: candidate.source.line, blockId: candidate.source.blockId }));
     return { diagnostics };
   }
-  if (points.length === 0) return { diagnostics };
+  if (categories.length === 0) return { diagnostics };
 
-  const sortedPoints = [...points];
+  const sortedCategories = [...categories];
   const compareLabels = (a: string, b: string): number => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
   if (candidate.spec.sort === "x-asc") {
-    sortedPoints.sort((a, b) => compareLabels(a.label, b.label));
+    sortedCategories.sort((a, b) => compareLabels(a.label, b.label));
   } else if (candidate.spec.sort === "x-desc") {
-    sortedPoints.sort((a, b) => compareLabels(b.label, a.label));
+    sortedCategories.sort((a, b) => compareLabels(b.label, a.label));
   } else if (candidate.spec.sort === "y-asc") {
-    sortedPoints.sort((a, b) => a.value - b.value || compareLabels(a.label, b.label));
+    sortedCategories.sort((a, b) => (a.points[0]?.value || 0) - (b.points[0]?.value || 0) || compareLabels(a.label, b.label));
   } else if (candidate.spec.sort === "y-desc") {
-    sortedPoints.sort((a, b) => b.value - a.value || compareLabels(a.label, b.label));
+    sortedCategories.sort((a, b) => (b.points[0]?.value || 0) - (a.points[0]?.value || 0) || compareLabels(a.label, b.label));
   }
 
   const width = 720;
   const height = candidate.spec.presentation.height;
-  const margin = { top: candidate.spec.title ? 48 : 20, right: 22, bottom: 72, left: 58 };
+  const hasMultipleSeries = candidate.spec.series.length > 1;
+  const legendColumns = Math.min(4, candidate.spec.series.length);
+  const legendRows = hasMultipleSeries ? Math.ceil(candidate.spec.series.length / legendColumns) : 0;
+  const legendTop = candidate.spec.title ? 38 : 14;
+  const margin = {
+    top: hasMultipleSeries ? legendTop + legendRows * 19 + 10 : candidate.spec.title ? 48 : 20,
+    right: 22,
+    bottom: 72,
+    left: 58,
+  };
   const plotWidth = width - margin.left - margin.right;
   const plotHeight = height - margin.top - margin.bottom;
-  const rawMaxValue = Math.max(0, ...sortedPoints.map((point) => point.value));
-  const rawMinValue = Math.min(0, ...sortedPoints.map((point) => point.value));
+  const allPoints = sortedCategories.flatMap((category) => category.points);
+  const rawMaxValue = Math.max(0, ...allPoints.map((point) => point.value));
+  const rawMinValue = Math.min(0, ...allPoints.map((point) => point.value));
   const rawSpan = Math.max(1, rawMaxValue - rawMinValue);
   const tickStep = niceTickStep(rawSpan);
   const minValue = Math.floor(rawMinValue / tickStep) * tickStep;
@@ -658,14 +684,28 @@ function renderSvg(candidate: ChartCandidate): { svg?: string; diagnostics: Char
   const zeroY = yFor(0);
   const axisColor = "var(--org2-chart-axis, #334155)";
   const gridColor = "var(--org2-chart-grid, #d7dee8)";
-  const markColor = "var(--org2-chart-mark, #2563eb)";
   const labelColor = "var(--org2-chart-label, #475569)";
+  const seriesColors = [
+    "var(--org2-chart-mark, #2563eb)",
+    "var(--org2-chart-series-2, #dc2626)",
+    "var(--org2-chart-series-3, #16a34a)",
+    "var(--org2-chart-series-4, #9333ea)",
+    "var(--org2-chart-series-5, #ea580c)",
+    "var(--org2-chart-series-6, #0891b2)",
+    "var(--org2-chart-series-7, #c026d3)",
+    "var(--org2-chart-series-8, #4d7c0f)",
+  ];
+  const colorForSeries = (index: number): string => seriesColors[index % seriesColors.length] || seriesColors[0]!;
+  const isBarChart = candidate.spec.type === "bar" || candidate.spec.type === "histogram";
+  const categoryX = (index: number): number => isBarChart
+    ? margin.left + (plotWidth * (index + 0.5)) / Math.max(1, sortedCategories.length)
+    : margin.left + (sortedCategories.length === 1 ? plotWidth / 2 : (plotWidth * index) / (sortedCategories.length - 1));
 
-  const labelEvery = Math.max(1, Math.ceil(sortedPoints.length / 7));
-  const labels = sortedPoints.map((point, index) => {
-    if (index % labelEvery !== 0 && index !== sortedPoints.length - 1) return "";
-    const x = margin.left + (sortedPoints.length === 1 ? plotWidth / 2 : (plotWidth * index) / (sortedPoints.length - 1));
-    return `<text x="${x.toFixed(1)}" y="${height - 38}" font-size="11" fill="${labelColor}" text-anchor="end" transform="rotate(-28 ${x.toFixed(1)} ${height - 38})">${escapeXml(point.label)}</text>`;
+  const labelEvery = Math.max(1, Math.ceil(sortedCategories.length / 7));
+  const labels = sortedCategories.map((category, index) => {
+    if (index % labelEvery !== 0 && index !== sortedCategories.length - 1) return "";
+    const x = categoryX(index);
+    return `<text x="${x.toFixed(1)}" y="${height - 38}" font-size="11" fill="${labelColor}" text-anchor="end" transform="rotate(-28 ${x.toFixed(1)} ${height - 38})">${escapeXml(category.label)}</text>`;
   }).filter(Boolean);
 
   const tickValues: number[] = [];
@@ -677,39 +717,61 @@ function renderSvg(candidate: ChartCandidate): { svg?: string; diagnostics: Char
     return `<line x1="${margin.left}" y1="${y.toFixed(1)}" x2="${width - margin.right}" y2="${y.toFixed(1)}" stroke="${gridColor}" stroke-width="1" vector-effect="non-scaling-stroke"/><text x="${margin.left - 10}" y="${(y + 4).toFixed(1)}" font-size="11" fill="${labelColor}" text-anchor="end">${formatTick(value, tickStep)}</text>`;
   });
 
-  const markAttributes = (point: { label: string; value: number }, x: number): string => {
-    const label = `${point.label}: ${point.value}`;
-    return `class="org2-chart-mark" data-org2-chart-mark="true" data-label="${escapeXml(point.label)}" data-value="${point.value}" data-chart-x="${x.toFixed(1)}" role="graphics-symbol" aria-label="${escapeXml(label)}" tabindex="0"`;
+  const markAttributes = (point: { label: string; series: string; value: number }, x: number): string => {
+    const label = hasMultipleSeries ? `${point.series} — ${point.label}: ${point.value}` : `${point.label}: ${point.value}`;
+    return `class="org2-chart-mark" data-org2-chart-mark="true" data-label="${escapeXml(point.label)}" data-series="${escapeXml(point.series)}" data-value="${point.value}" data-chart-x="${x.toFixed(1)}" role="graphics-symbol" aria-label="${escapeXml(label)}" tabindex="0"`;
   };
 
-  const marks = candidate.spec.type === "bar" || candidate.spec.type === "histogram"
-    ? sortedPoints.map((point, index) => {
-        const band = plotWidth / Math.max(1, sortedPoints.length);
-        const barWidth = Math.max(8, band * 0.62);
-        const x = margin.left + band * index + (band - barWidth) / 2;
-        const y = yFor(Math.max(0, point.value));
-        const h = Math.abs(zeroY - yFor(point.value));
-        return `<rect ${markAttributes(point, x + barWidth / 2)} x="${x.toFixed(1)}" y="${Math.min(y, zeroY).toFixed(1)}" width="${barWidth.toFixed(1)}" height="${h.toFixed(1)}" rx="3" fill="${markColor}"><title>${escapeXml(point.label)}: ${point.value}</title></rect>`;
+  const marks = isBarChart
+    ? sortedCategories.flatMap((category, categoryIndex) => {
+        const band = plotWidth / Math.max(1, sortedCategories.length);
+        const groupWidth = band * (hasMultipleSeries ? 0.76 : 0.62);
+        const gap = hasMultipleSeries ? Math.min(3, groupWidth * 0.04) : 0;
+        const barWidth = Math.max(1, (groupWidth - gap * Math.max(0, category.points.length - 1)) / Math.max(1, category.points.length));
+        const groupX = margin.left + band * categoryIndex + (band - groupWidth) / 2;
+        return category.points.map((point, seriesIndex) => {
+          const x = groupX + seriesIndex * (barWidth + gap);
+          const y = yFor(Math.max(0, point.value));
+          const h = Math.abs(zeroY - yFor(point.value));
+          const titleText = hasMultipleSeries ? `${point.series} — ${point.label}: ${point.value}` : `${point.label}: ${point.value}`;
+          return `<rect ${markAttributes(point, x + barWidth / 2)} x="${x.toFixed(1)}" y="${Math.min(y, zeroY).toFixed(1)}" width="${barWidth.toFixed(1)}" height="${h.toFixed(1)}" rx="3" fill="${colorForSeries(seriesIndex)}"><title>${escapeXml(titleText)}</title></rect>`;
+        });
       })
-    : [
-        `<polyline class="org2-chart-line" fill="none" stroke="${markColor}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" points="${sortedPoints.map((point, index) => {
-          const x = margin.left + (sortedPoints.length === 1 ? plotWidth / 2 : (plotWidth * index) / (sortedPoints.length - 1));
-          return `${x.toFixed(1)},${yFor(point.value).toFixed(1)}`;
-        }).join(" ")}"/>`,
-        ...sortedPoints.map((point, index) => {
-          const x = margin.left + (sortedPoints.length === 1 ? plotWidth / 2 : (plotWidth * index) / (sortedPoints.length - 1));
-          return `<circle ${markAttributes(point, x)} cx="${x.toFixed(1)}" cy="${yFor(point.value).toFixed(1)}" r="3.4" fill="${markColor}" stroke="var(--org2-chart-surface, #ffffff)" stroke-width="1.5" vector-effect="non-scaling-stroke"><title>${escapeXml(point.label)}: ${point.value}</title></circle>`;
-        }),
-      ];
+    : candidate.spec.series.flatMap((series, seriesIndex) => {
+        const points = sortedCategories.map((category) => category.points[seriesIndex]!).filter(Boolean);
+        const color = colorForSeries(seriesIndex);
+        return [
+          `<polyline class="org2-chart-line" data-series="${escapeXml(series)}" fill="none" stroke="${color}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" points="${points.map((point, index) => `${categoryX(index).toFixed(1)},${yFor(point.value).toFixed(1)}`).join(" ")}"/>`,
+          ...points.map((point, index) => {
+            const x = categoryX(index);
+            const titleText = hasMultipleSeries ? `${point.series} — ${point.label}: ${point.value}` : `${point.label}: ${point.value}`;
+            return `<circle ${markAttributes(point, x)} cx="${x.toFixed(1)}" cy="${yFor(point.value).toFixed(1)}" r="3.4" fill="${color}" stroke="var(--org2-chart-surface, #ffffff)" stroke-width="1.5" vector-effect="non-scaling-stroke"><title>${escapeXml(titleText)}</title></circle>`;
+          }),
+        ];
+      });
+
+  const legend = hasMultipleSeries
+    ? candidate.spec.series.map((series, index) => {
+        const column = index % legendColumns;
+        const row = Math.floor(index / legendColumns);
+        const itemWidth = plotWidth / legendColumns;
+        const x = margin.left + column * itemWidth;
+        const y = legendTop + row * 19;
+        return `<g class="org2-chart-legend-item" data-series="${escapeXml(series)}"><circle cx="${(x + 5).toFixed(1)}" cy="${y.toFixed(1)}" r="4" fill="${colorForSeries(index)}"/><text x="${(x + 14).toFixed(1)}" y="${(y + 4).toFixed(1)}" font-size="11" fill="${labelColor}">${escapeXml(series)}</text></g>`;
+      })
+    : [];
 
   const title = candidate.spec.title
     ? `<text x="${margin.left}" y="27" font-size="16" font-weight="600" fill="var(--org2-chart-title, #0f172a)">${escapeXml(candidate.spec.title)}</text>`
     : "";
+  const seriesLabel = candidate.spec.series.join(", ");
+  const accessibleTitle = candidate.spec.title || `${seriesLabel} by ${candidate.spec.x}`;
   const svg = [
-    `<svg xmlns="http://www.w3.org/2000/svg" class="org2-chart-svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeXml(candidate.spec.title || `${candidate.spec.y} by ${candidate.spec.x}`)}" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" data-org2-chart-size="${candidate.spec.presentation.size}" data-org2-chart-interactive="${candidate.spec.presentation.interactive}" data-org2-chart-y-label="${escapeXml(candidate.spec.y)}" data-org2-plot-top="${margin.top}" data-org2-plot-bottom="${height - margin.bottom}">`,
-    `<title>${escapeXml(candidate.spec.title || `${candidate.spec.y} by ${candidate.spec.x}`)}</title>`,
-    `<desc>Org2 ${candidate.spec.type} chart for ${escapeXml(candidate.spec.y)} by ${escapeXml(candidate.spec.x)}</desc>`,
+    `<svg xmlns="http://www.w3.org/2000/svg" class="org2-chart-svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeXml(accessibleTitle)}" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" data-org2-chart-size="${candidate.spec.presentation.size}" data-org2-chart-interactive="${candidate.spec.presentation.interactive}" data-org2-chart-y-label="${escapeXml(candidate.spec.series.length === 1 ? seriesLabel : "value")}" data-org2-chart-series="${escapeXml(candidate.spec.series.join(","))}" data-org2-plot-top="${margin.top}" data-org2-plot-bottom="${height - margin.bottom}">`,
+    `<title>${escapeXml(accessibleTitle)}</title>`,
+    `<desc>Org2 ${candidate.spec.type} chart for ${escapeXml(seriesLabel)} by ${escapeXml(candidate.spec.x)}</desc>`,
     title,
+    ...legend,
     ...yTicks,
     `<line x1="${margin.left}" y1="${margin.top}" x2="${margin.left}" y2="${height - margin.bottom}" stroke="${axisColor}" stroke-width="1" vector-effect="non-scaling-stroke"/>`,
     `<line x1="${margin.left}" y1="${zeroY.toFixed(1)}" x2="${width - margin.right}" y2="${zeroY.toFixed(1)}" stroke="${axisColor}" stroke-width="1" vector-effect="non-scaling-stroke"/>`,
@@ -719,7 +781,7 @@ function renderSvg(candidate: ChartCandidate): { svg?: string; diagnostics: Char
     ...marks,
     ...labels,
     `<text x="${(margin.left + plotWidth / 2).toFixed(1)}" y="${height - 7}" font-size="11" fill="${labelColor}" text-anchor="middle">${escapeXml(candidate.spec.x)}</text>`,
-    `<text x="16" y="${(margin.top + plotHeight / 2).toFixed(1)}" font-size="11" fill="${labelColor}" text-anchor="middle" transform="rotate(-90 16 ${(margin.top + plotHeight / 2).toFixed(1)})">${escapeXml(candidate.spec.y)}</text>`,
+    `<text x="16" y="${(margin.top + plotHeight / 2).toFixed(1)}" font-size="11" fill="${labelColor}" text-anchor="middle" transform="rotate(-90 16 ${(margin.top + plotHeight / 2).toFixed(1)})">${escapeXml(candidate.spec.series.length === 1 ? seriesLabel : "value")}</text>`,
     `</svg>`,
   ].filter(Boolean).join("\n");
 

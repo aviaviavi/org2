@@ -11,6 +11,9 @@ const note = path.join(tmp, "report.org2");
 const badSortNote = path.join(tmp, "bad-sort.org2");
 const fourTickChartNote = path.join(tmp, "four-tick-chart.org2");
 const canonicalChartNote = path.join(tmp, "canonical-chart.org");
+const multiLineChartNote = path.join(tmp, "multi-line-chart.org");
+const multiBarChartNote = path.join(tmp, "multi-bar-chart.org");
+const invalidMultiHistogramNote = path.join(tmp, "invalid-multi-histogram.org");
 const out = path.join(tmp, "chart.svg");
 
 fs.writeFileSync(note, `* Revenue report
@@ -100,6 +103,41 @@ source: previous-table
 #+end_src
 `, "utf8");
 
+fs.writeFileSync(multiLineChartNote, `* Multi-series line chart
+
+#+name: quarterly_metrics
+#+caption: Revenue, cost, and profit
+#+chart: line x=quarter y=revenue,cost,profit
+| quarter | revenue | cost | profit |
+|---------+---------+------+--------|
+| 2026-Q1 | 1200    | 700  | 500    |
+| 2026-Q2 | 1500    | 825  | 675    |
+| 2026-Q3 | 1800    | 990  | 810    |
+`, "utf8");
+
+fs.writeFileSync(multiBarChartNote, `* Multi-series grouped bar chart
+
+#+name: regional_metrics
+| region | current | previous |
+|--------+---------+----------|
+| East   | 42      | 35       |
+| West   | 56      | 48       |
+
+#+name: regional_metrics_chart
+#+begin_src chart bar
+x: region
+series: current, previous
+source: regional_metrics
+title: Regional comparison
+#+end_src
+`, "utf8");
+
+fs.writeFileSync(invalidMultiHistogramNote, `#+chart: histogram x=bucket y=current,previous
+| bucket | current | previous |
+|--------+---------+----------|
+| 0-10   | 14      | 12       |
+`, "utf8");
+
 function cli(args, input) {
   return execFileSync("node", ["dist/cli.js", ...args], { cwd: repo, encoding: "utf8", input });
 }
@@ -157,6 +195,29 @@ const canonicalChartJson = JSON.parse(cli(["render-chart", "--file", canonicalCh
 assert.equal(canonicalChartJson.ok, true);
 assert.equal(canonicalChartJson.source.blockId, "canonical_chart");
 assert.match(canonicalChartJson.svg, /Org2 histogram chart/);
+
+const multiLineChartJson = JSON.parse(cli(["render-chart", "--file", multiLineChartNote, "--block-id", "quarterly_metrics", "--format", "json"]));
+assert.equal(multiLineChartJson.ok, true);
+assert.equal((multiLineChartJson.svg.match(/<polyline /g) || []).length, 3);
+assert.equal((multiLineChartJson.svg.match(/class="org2-chart-legend-item"/g) || []).length, 3);
+assert.match(multiLineChartJson.svg, /data-org2-chart-series="revenue,cost,profit"/);
+assert.match(multiLineChartJson.svg, /data-series="cost"/);
+assert.match(multiLineChartJson.svg, /<title>cost — 2026-Q2: 825<\/title>/);
+
+const multiBarChartJson = JSON.parse(cli(["render-chart", "--file", multiBarChartNote, "--block-id", "regional_metrics_chart", "--format", "json"]));
+assert.equal(multiBarChartJson.ok, true);
+assert.equal(multiBarChartJson.source.dataBlockId, "regional_metrics");
+assert.equal((multiBarChartJson.svg.match(/<rect class="org2-chart-mark"/g) || []).length, 4);
+assert.equal((multiBarChartJson.svg.match(/class="org2-chart-legend-item"/g) || []).length, 2);
+assert.match(multiBarChartJson.svg, /Regional comparison/);
+assert.match(multiBarChartJson.svg, /data-series="previous"/);
+
+const invalidMultiHistogram = spawnSync("node", ["dist/cli.js", "render-chart", "--file", invalidMultiHistogramNote, "--format", "json"], {
+  cwd: repo,
+  encoding: "utf8",
+});
+assert.notEqual(invalidMultiHistogram.status, 0);
+assert.match(JSON.parse(invalidMultiHistogram.stdout).diagnostics[0].message, /Histogram charts support exactly one y column/);
 
 const bad = spawnSync("node", ["dist/cli.js", "render-chart", "--file", note, "--block-id", "missing", "--format", "json"], { cwd: repo, encoding: "utf8" });
 assert.notEqual(bad.status, 0);
