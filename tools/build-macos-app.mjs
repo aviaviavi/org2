@@ -810,6 +810,8 @@ function main() {
     throw new Error(`${appName} is running from ${appPath}. Quit it and rerun this command.`);
   }
 
+  console.log("Building the shared Org2 runtime for the app bundle...");
+  run("npm", ["run", "build"], { cwd: repoRoot });
   console.log(`Building ${executableName} (${swiftBuildConfiguration})...`);
   run("swift", swiftBuildArgs("build"), { cwd: packageDir });
   const buildProductsDir = run("swift", swiftBuildArgs("build", "--show-bin-path"), {

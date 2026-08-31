@@ -1535,6 +1535,29 @@ final class AgentRunModelsTests: XCTestCase {
     )
   }
 
+  func testAutomationScheduleDraftRecognizesCommonSchedulesAndPreservesAdvancedCron() {
+    let weekly = AutomationScheduleDraft(expression: "0 9 * * 1")
+    XCTAssertEqual(weekly.frequency, .weekly)
+    XCTAssertEqual(weekly.weekday, 1)
+    XCTAssertEqual(weekly.hour, 9)
+    XCTAssertEqual(weekly.expression, "0 9 * * 1")
+    XCTAssertTrue(weekly.summary.contains("Monday"))
+
+    var interval = AutomationScheduleDraft(expression: "every 4h")
+    XCTAssertEqual(interval.frequency, .interval)
+    XCTAssertEqual(interval.intervalHours, 4)
+    interval.intervalHours = 6
+    XCTAssertEqual(interval.expression, "every 6h")
+
+    let weekdays = AutomationScheduleDraft(expression: "30 8 * * 1-5")
+    XCTAssertEqual(weekdays.frequency, .weekdays)
+    XCTAssertEqual(weekdays.expression, "30 8 * * 1-5")
+
+    let advanced = AutomationScheduleDraft(expression: "15 10 1,15 * *")
+    XCTAssertEqual(advanced.frequency, .advanced)
+    XCTAssertEqual(advanced.expression, "15 10 1,15 * *")
+  }
+
   func testCompletedRunPresentsOutcomeAndCollapsesSupersededValidationResults() throws {
     let data = Data(#"""
     {

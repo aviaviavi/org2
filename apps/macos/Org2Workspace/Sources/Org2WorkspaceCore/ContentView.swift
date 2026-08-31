@@ -4215,8 +4215,17 @@ private struct WorkflowsView: View {
       }
 
       HStack(spacing: 6) {
-        Image(systemName: "clock.badge.checkmark")
-        Text(store.automationSchedulerStatusText)
+        Image(systemName: store.automationSchedulerErrorText == nil
+          ? "clock.badge.checkmark"
+          : "exclamationmark.triangle.fill")
+        VStack(alignment: .leading, spacing: 2) {
+          Text(store.automationSchedulerStatusText)
+          if let schedulerError = store.automationSchedulerErrorText {
+            Text(schedulerError)
+              .foregroundStyle(.red)
+              .textSelection(.enabled)
+          }
+        }
         Spacer()
       }
       .font(.caption)
@@ -4405,6 +4414,8 @@ private struct NewAutomationSheet: View {
   @State private var scheduleEnabled = true
   @State private var schedule = "0 9 * * 1"
   @State private var timezone = TimeZone.current.identifier
+  @State private var isCreating = false
+  @State private var creationError: String?
 
   var body: some View {
     VStack(alignment: .leading, spacing: 16) {
@@ -4431,11 +4442,7 @@ private struct NewAutomationSheet: View {
 
         Toggle("Run on a schedule", isOn: $scheduleEnabled)
         if scheduleEnabled {
-          TextField("Five-field cron or every 4h", text: $schedule)
-          TextField("IANA timezone", text: $timezone)
-          Text("Example: 0 9 * * 1 runs every Monday at 9:00. OpenOrg catches up the latest missed occurrence when it reopens.")
-            .font(.caption)
-            .foregroundStyle(.secondary)
+          AutomationScheduleEditor(expression: $schedule, timezone: $timezone)
         }
 
         VStack(alignment: .leading, spacing: 6) {
@@ -4450,16 +4457,27 @@ private struct NewAutomationSheet: View {
         }
       }
       .formStyle(.grouped)
+      .disabled(isCreating)
+
+      if let creationError {
+        Label(creationError, systemImage: "exclamationmark.triangle.fill")
+          .font(.caption)
+          .foregroundStyle(.red)
+          .textSelection(.enabled)
+      }
 
       HStack {
         Spacer()
-        Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
-        Button("Create Automation") {
+        Button("Cancel") { dismiss() }
+          .keyboardShortcut(.cancelAction)
+          .disabled(isCreating)
+        Button {
           let selectedAgent = agentRef.isEmpty ? nil : agentRef
           let selectedSchedule = scheduleEnabled ? schedule : nil
-          dismiss()
-          Task {
-            await store.createAgentAutomation(
+          creationError = nil
+          isCreating = true
+          Task { @MainActor in
+            let created = await store.createAgentAutomation(
               title: title,
               prompt: prompt,
               destinationID: destinationID,
@@ -4467,6 +4485,21 @@ private struct NewAutomationSheet: View {
               schedule: selectedSchedule,
               timezone: timezone
             )
+            isCreating = false
+            if created {
+              dismiss()
+            } else {
+              creationError = store.errorText ?? "OpenOrg could not create this automation."
+            }
+          }
+        } label: {
+          if isCreating {
+            HStack(spacing: 6) {
+              ProgressView().controlSize(.small)
+              Text("Creating…")
+            }
+          } else {
+            Text("Create Automation")
           }
         }
         .keyboardShortcut(.defaultAction)
@@ -4476,11 +4509,12 @@ private struct NewAutomationSheet: View {
             || prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || destinationID.isEmpty
             || (scheduleEnabled && schedule.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            || isCreating
         )
       }
     }
     .padding(24)
-    .frame(width: 640, height: 650)
+    .frame(width: 640, height: 700)
     .onAppear {
       if destinationID.isEmpty {
         destinationID = store.enabledAIChatDestinations.first?.id ?? ""
@@ -4500,6 +4534,8 @@ private struct WorkflowScheduleSheet: View {
   @State private var cron: String
   @State private var timezone: String
   @State private var destinationID: String
+  @State private var isSaving = false
+  @State private var saveError: String?
 
   init(workflow: AgentWorkflowItem) {
     self.workflow = workflow
@@ -4522,40 +4558,174 @@ private struct WorkflowScheduleSheet: View {
         }
       }
       Toggle("Enable schedule", isOn: $enabled)
-      TextField("Five-field cron or every 4h", text: $cron).disabled(!enabled)
-      TextField("IANA timezone", text: $timezone).disabled(!enabled)
-      Text("Example: 0 9 * * 1 runs every Monday at 9:00 in the selected timezone.")
-        .font(.caption).foregroundStyle(.secondary)
+      if enabled {
+        AutomationScheduleEditor(expression: $cron, timezone: $timezone)
+      }
+      if let saveError {
+        Label(saveError, systemImage: "exclamationmark.triangle.fill")
+          .font(.caption)
+          .foregroundStyle(.red)
+          .textSelection(.enabled)
+      }
       HStack {
         Spacer()
-        Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
-        Button("Save") {
-          dismiss()
-          Task {
-            await store.setAgentWorkflowSchedule(
+        Button("Cancel") { dismiss() }
+          .keyboardShortcut(.cancelAction)
+          .disabled(isSaving)
+        Button {
+          saveError = nil
+          isSaving = true
+          Task { @MainActor in
+            let saved = await store.setAgentWorkflowSchedule(
               workflow,
               cron: cron,
               timezone: timezone,
               destinationID: destinationID,
               enabled: enabled
             )
+            isSaving = false
+            if saved {
+              dismiss()
+            } else {
+              saveError = store.errorText ?? "OpenOrg could not save this schedule."
+            }
+          }
+        } label: {
+          if isSaving {
+            HStack(spacing: 6) {
+              ProgressView().controlSize(.small)
+              Text("Saving…")
+            }
+          } else {
+            Text("Save")
           }
         }
         .keyboardShortcut(.defaultAction)
         .buttonStyle(.borderedProminent)
         .disabled(
-          enabled
-            && (destinationID.isEmpty || cron.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+          isSaving
+            || (enabled
+              && (destinationID.isEmpty
+                || cron.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
         )
       }
     }
     .padding(24)
-    .frame(width: 520)
+    .frame(width: 560)
     .onAppear {
       if destinationID.isEmpty {
         destinationID = store.enabledAIChatDestinations.first?.id ?? ""
       }
     }
+  }
+}
+
+private struct AutomationScheduleEditor: View {
+  @Binding private var expression: String
+  @Binding private var timezone: String
+  @State private var draft: AutomationScheduleDraft
+
+  init(expression: Binding<String>, timezone: Binding<String>) {
+    _expression = expression
+    _timezone = timezone
+    _draft = State(initialValue: AutomationScheduleDraft(expression: expression.wrappedValue))
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 10) {
+      Picker("Frequency", selection: $draft.frequency) {
+        ForEach(AutomationScheduleFrequency.allCases) { frequency in
+          Text(frequency.title).tag(frequency)
+        }
+      }
+
+      switch draft.frequency {
+      case .interval:
+        Stepper(
+          "Every \(draft.intervalHours) hour\(draft.intervalHours == 1 ? "" : "s")",
+          value: $draft.intervalHours,
+          in: 1...24
+        )
+      case .daily, .weekdays:
+        DatePicker("Time", selection: timeBinding, displayedComponents: .hourAndMinute)
+      case .weekly:
+        Picker("Day", selection: $draft.weekday) {
+          ForEach(Array(AutomationScheduleDraft.weekdayNames.enumerated()), id: \.offset) { index, name in
+            Text(name).tag(index)
+          }
+        }
+        DatePicker("Time", selection: timeBinding, displayedComponents: .hourAndMinute)
+      case .monthly:
+        Stepper("Day \(draft.monthDay) of the month", value: $draft.monthDay, in: 1...31)
+        DatePicker("Time", selection: timeBinding, displayedComponents: .hourAndMinute)
+      case .advanced:
+        TextField("Five-field cron or every 4h", text: $draft.advancedExpression)
+        Text("Use a five-field cron expression or an interval such as every 4h.")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
+
+      Picker("Timezone", selection: $timezone) {
+        ForEach(timezoneOptions, id: \.self) { identifier in
+          Text(timezoneLabel(identifier)).tag(identifier)
+        }
+      }
+      DisclosureGroup("Advanced timezone") {
+        TextField("IANA timezone identifier", text: $timezone)
+          .textFieldStyle(.roundedBorder)
+      }
+
+      Label(draft.summary, systemImage: "calendar.badge.clock")
+        .font(.caption.weight(.medium))
+        .foregroundStyle(.secondary)
+      Text("OpenOrg catches up the latest missed occurrence when it reopens.")
+        .font(.caption)
+        .foregroundStyle(.tertiary)
+    }
+    .onAppear { expression = draft.expression }
+    .onChange(of: draft) { _, updatedDraft in
+      expression = updatedDraft.expression
+    }
+  }
+
+  private var timeBinding: Binding<Date> {
+    Binding(
+      get: {
+        var components = Calendar.current.dateComponents([.year, .month, .day], from: Date())
+        components.hour = draft.hour
+        components.minute = draft.minute
+        return Calendar.current.date(from: components) ?? Date()
+      },
+      set: { date in
+        let components = Calendar.current.dateComponents([.hour, .minute], from: date)
+        draft.hour = components.hour ?? draft.hour
+        draft.minute = components.minute ?? draft.minute
+      }
+    )
+  }
+
+  private var timezoneOptions: [String] {
+    var identifiers = [
+      TimeZone.current.identifier,
+      timezone,
+      "UTC",
+      "America/Los_Angeles",
+      "America/Denver",
+      "America/Chicago",
+      "America/New_York",
+      "Europe/London",
+      "Europe/Berlin",
+      "Asia/Tokyo",
+      "Australia/Sydney"
+    ]
+    identifiers = identifiers.filter { !$0.isEmpty }
+    return identifiers.reduce(into: []) { result, identifier in
+      if !result.contains(identifier) { result.append(identifier) }
+    }
+  }
+
+  private func timezoneLabel(_ identifier: String) -> String {
+    identifier == TimeZone.current.identifier ? "Local (\(identifier))" : identifier
   }
 }
 

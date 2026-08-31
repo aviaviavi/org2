@@ -19,11 +19,18 @@ const updaterSource = readFileSync(join(
   repoRoot,
   "apps", "macos", "Org2Workspace", "Sources", "Org2Workspace", "SoftwareUpdateController.swift"
 ), "utf8");
+const macAppBuildSource = readFileSync(join(repoRoot, "tools", "build-macos-app.mjs"), "utf8");
 
 assert.match(updaterSource, /checkForUpdatesInBackground\(\)/);
 assert.match(updaterSource, /Automatically check for updates/);
 assert.match(updaterSource, /Download updates automatically and install on quit/);
 assert.match(updaterSource, /skip a version/);
+const sharedRuntimeBuildIndex = macAppBuildSource.indexOf('run("npm", ["run", "build"]');
+const swiftAppBuildIndex = macAppBuildSource.indexOf('run("swift", swiftBuildArgs("build")');
+const runtimeCopyIndex = macAppBuildSource.indexOf("const runtimeNodePath = copyOrg2Runtime(resourcesDir)");
+assert.ok(sharedRuntimeBuildIndex >= 0, "macOS app builds must compile the shared runtime");
+assert.ok(sharedRuntimeBuildIndex < swiftAppBuildIndex, "shared runtime must build before the Swift app");
+assert.ok(sharedRuntimeBuildIndex < runtimeCopyIndex, "shared runtime must build before it is bundled");
 
 function run(script, args, expectedStatus = 0, environment = process.env) {
   const result = spawnSync(process.execPath, [join(repoRoot, script), ...args], {

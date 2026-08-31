@@ -1431,6 +1431,7 @@ public final class WorkspaceStore: ObservableObject {
   @Published public private(set) var isLoadingAgentWorkflows = false
   @Published public private(set) var mutatingAgentWorkflowIDs: Set<AgentWorkflowItem.ID> = []
   @Published public private(set) var automationSchedulerStatusText = "Automation scheduler is starting"
+  @Published public private(set) var automationSchedulerErrorText: String?
   @Published public private(set) var agentGoals: [AgentGoalItem] = []
   @Published public var selectedAgentGoalID: AgentGoalItem.ID?
   @Published public private(set) var isLoadingAgentGoals = false
@@ -3969,11 +3970,13 @@ public final class WorkspaceStore: ObservableObject {
       automationSchedulerActivationTask?.cancel()
       automationSchedulerActivationTask = nil
       automationSchedulerStatusText = "Automation scheduler is off"
+      automationSchedulerErrorText = nil
       return
     }
 
     guard automationSchedulerTask == nil else { return }
     automationSchedulerStatusText = "Checking automations…"
+    automationSchedulerErrorText = nil
     Task { @MainActor [weak self] in
       await self?.checkDueAgentAutomations()
     }
@@ -4010,8 +4013,11 @@ public final class WorkspaceStore: ObservableObject {
       automationSchedulerStatusText = corpusRoot == nil
         ? "Choose a corpus to run automations"
         : "Automation scheduler is off"
+      automationSchedulerErrorText = nil
       return
     }
+    automationSchedulerStatusText = "Checking automations…"
+    automationSchedulerErrorText = nil
     do {
       let formatter = ISO8601DateFormatter()
       formatter.formatOptions = [.withInternetDateTime]
@@ -4039,6 +4045,7 @@ public final class WorkspaceStore: ObservableObject {
         : "Dispatched \(dispatchedCount) of \(payload.due.count) automations"
     } catch {
       automationSchedulerStatusText = "Automation check failed"
+      automationSchedulerErrorText = error.localizedDescription
       errorText = "Automation scheduler: \(error.localizedDescription)"
     }
   }
@@ -5230,8 +5237,16 @@ public final class WorkspaceStore: ObservableObject {
     timezone: String,
     destinationID: String?,
     enabled: Bool
-  ) async {
-    guard let corpusRoot, !mutatingAgentWorkflowIDs.contains(workflow.id) else { return }
+  ) async -> Bool {
+    guard let corpusRoot else {
+      errorText = "Choose a corpus before scheduling an automation."
+      return false
+    }
+    guard !mutatingAgentWorkflowIDs.contains(workflow.id) else {
+      errorText = "This automation is already being updated."
+      return false
+    }
+    errorText = nil
     mutatingAgentWorkflowIDs.insert(workflow.id)
     defer { mutatingAgentWorkflowIDs.remove(workflow.id) }
     do {
@@ -5254,9 +5269,11 @@ public final class WorkspaceStore: ObservableObject {
       await refreshAgentWorkflows()
       statusText = enabled ? "Scheduled \(workflow.title)" : "Disabled \(workflow.title) schedule"
       if let refreshed = agentWorkflows.first(where: { $0.id == workflow.id }) { selectAgentWorkflow(refreshed) }
+      return true
     } catch {
       errorText = error.localizedDescription
       statusText = "Workflow schedule failed"
+      return false
     }
   }
 
@@ -5277,14 +5294,18 @@ public final class WorkspaceStore: ObservableObject {
     agentRef: String?,
     schedule: String?,
     timezone: String
-  ) async {
-    guard let corpusRoot else { return }
+  ) async -> Bool {
+    guard let corpusRoot else {
+      errorText = "Choose a corpus before creating an automation."
+      return false
+    }
+    errorText = nil
     let normalizedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
     let normalizedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
     let normalizedSchedule = schedule?.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !normalizedTitle.isEmpty, !normalizedPrompt.isEmpty else {
       errorText = "Enter an automation name and prompt."
-      return
+      return false
     }
     let id = Self.automationIdentifier(
       title: normalizedTitle,
@@ -5320,9 +5341,11 @@ public final class WorkspaceStore: ObservableObject {
         ? "Created and scheduled \(normalizedTitle)"
         : "Created \(normalizedTitle)"
       await checkDueAgentAutomations()
+      return true
     } catch {
       errorText = error.localizedDescription
       statusText = "Automation creation failed"
+      return false
     }
   }
 
