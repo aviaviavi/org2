@@ -2062,6 +2062,11 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     private var lastCommandRequestID: Int?
     private var observedClipView: NSClipView?
     nonisolated(unsafe) private var scrollObserver: NSObjectProtocol?
+    private var viewportHighlightedCharacterIndexes = IndexSet()
+    private var viewportHighlightUTF16Length: Int?
+    private var viewportHighlightMonospaced: Bool?
+    private var viewportHighlightConcealsSyntax: Bool?
+    private var isApplyingViewportHighlighting = false
     weak var gutterView: OrgSourceEditorGutterView?
 
     init(parent: OrgSyntaxTextEditor) {
@@ -2104,6 +2109,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       guard let textView = notification.object as? NSTextView else { return }
       let currentText = textView.string
       let currentUTF16Length = textView.textStorage?.length ?? (currentText as NSString).length
+      invalidateViewportHighlighting()
       if currentUTF16Length > OrgSyntaxTextEditor.continuousTextCheckingUTF16Limit,
          textView.isContinuousSpellCheckingEnabled || textView.isGrammarCheckingEnabled {
         OrgSyntaxTextEditor.configureTextChecking(
@@ -2992,21 +2998,39 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       }
     }
 
-    private func highlightVisibleRange(in textView: NSTextView) {
+    @discardableResult
+    func highlightVisibleRange(in textView: NSTextView) -> Bool {
+      guard !isApplyingViewportHighlighting else { return false }
       guard let layoutManager = textView.layoutManager,
             let textContainer = textView.textContainer,
             let storage = textView.textStorage
-      else { return }
+      else { return false }
       let visibleRect = textView.enclosingScrollView?.contentView.bounds ?? textView.visibleRect
       let glyphRange = layoutManager.glyphRange(forBoundingRect: visibleRect.insetBy(dx: 0, dy: -240), in: textContainer)
       let characterRange = layoutManager.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
-      guard characterRange.length > 0 else { return }
+      guard characterRange.length > 0 else { return false }
+      let lineRange = storage.mutableString.lineRange(for: characterRange)
+      prepareViewportHighlighting(for: storage)
+      let coveredRange = lineRange.location..<NSMaxRange(lineRange)
+      guard !viewportHighlightedCharacterIndexes.contains(integersIn: coveredRange) else {
+        return false
+      }
+
+      // Record coverage before mutating NSTextStorage. Attribute edits
+      // invalidate TextKit layout and can synchronously or asynchronously
+      // produce another clip-view bounds notification. Remembering every
+      // covered line range makes those notifications converge even if layout
+      // alternates between two neighboring visible ranges.
+      viewportHighlightedCharacterIndexes.insert(integersIn: coveredRange)
+      isApplyingViewportHighlighting = true
+      defer { isApplyingViewportHighlighting = false }
       _ = OrgSyntaxHighlighter.apply(
         to: storage,
-        characterRange: characterRange,
+        characterRange: lineRange,
         monospaced: parent.monospaced,
         concealsSyntax: parent.concealsSyntax
       )
+      return true
     }
 
     private func handleBoundaryArrowCommand(_ commandSelector: Selector, in textView: NSTextView) -> Bool {
@@ -3077,6 +3101,38 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       lastHighlightedText = nil
       lastHighlightedMonospaced = nil
       hasHighlightedText = false
+      invalidateViewportHighlighting()
+    }
+
+    private func invalidateViewportHighlighting() {
+      viewportHighlightedCharacterIndexes.removeAll()
+      viewportHighlightUTF16Length = nil
+      viewportHighlightMonospaced = nil
+      viewportHighlightConcealsSyntax = nil
+    }
+
+    private func prepareViewportHighlighting(for storage: NSTextStorage) {
+      guard viewportHighlightUTF16Length != storage.length
+              || viewportHighlightMonospaced != parent.monospaced
+              || viewportHighlightConcealsSyntax != parent.concealsSyntax
+      else {
+        return
+      }
+      viewportHighlightedCharacterIndexes.removeAll()
+      viewportHighlightUTF16Length = storage.length
+      viewportHighlightMonospaced = parent.monospaced
+      viewportHighlightConcealsSyntax = parent.concealsSyntax
+    }
+
+    private func recordViewportHighlighting(
+      _ range: NSRange,
+      in storage: NSTextStorage
+    ) {
+      guard range.length > 0 else { return }
+      prepareViewportHighlighting(for: storage)
+      viewportHighlightedCharacterIndexes.insert(
+        integersIn: range.location..<NSMaxRange(range)
+      )
     }
 
     func recordKnownText(_ text: String, utf16Length providedUTF16Length: Int? = nil) {
@@ -3476,6 +3532,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     func applyHighlighting(to textView: NSTextView) {
       cancelDeferredHighlighting()
       guard let storage = textView.textStorage else { return }
+      invalidateViewportHighlighting()
       let selectedRanges = textView.selectedRanges
       let visibleOrigin = Self.visibleOrigin(of: textView)
       let typingAttributes = OrgSyntaxHighlighter.apply(
@@ -3485,6 +3542,12 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       )
       textView.typingAttributes = typingAttributes
       textView.selectedRanges = selectedRanges
+      if OrgSyntaxHighlighter.shouldTokenizeLiveText(utf16Length: storage.length) {
+        recordViewportHighlighting(
+          NSRange(location: 0, length: storage.length),
+          in: storage
+        )
+      }
       Self.restoreVisibleOrigin(visibleOrigin, of: textView)
       recordHighlightedState(for: textView)
       publishContentHeight(for: textView)

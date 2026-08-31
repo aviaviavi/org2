@@ -8233,6 +8233,78 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testSyntaxEditorViewportHighlightingConvergesAndRemembersCoveredRanges() throws {
+    let text = String(
+      repeating: "* TODO Heading\nBody with [[id:abc][Alice]].\n",
+      count: 800
+    )
+    XCTAssertGreaterThan(
+      (text as NSString).length,
+      OrgSyntaxHighlighter.liveTokenizationUTF16Limit
+    )
+
+    var boundText = text
+    let editor = OrgSyntaxTextEditor(
+      text: Binding(
+        get: { boundText },
+        set: { boundText = $0 }
+      ),
+      monospaced: true,
+      liveHighlighting: true,
+      incrementalHighlighting: true,
+      concealsSyntax: false
+    )
+    let coordinator = OrgSyntaxTextEditor.Coordinator(parent: editor)
+    let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 320, height: 120))
+    scrollView.hasVerticalScroller = true
+    let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 320, height: 30_000))
+    textView.isVerticallyResizable = true
+    textView.textContainer?.containerSize = NSSize(
+      width: 320,
+      height: CGFloat.greatestFiniteMagnitude
+    )
+    textView.layoutManager?.allowsNonContiguousLayout = true
+    textView.string = text
+    scrollView.documentView = textView
+    coordinator.applyHighlighting(to: textView)
+
+    func applicationsUntilQuiescent(at origin: NSPoint) -> Int? {
+      scrollView.contentView.scroll(to: origin)
+      scrollView.reflectScrolledClipView(scrollView.contentView)
+      var applications = 0
+      for _ in 0..<8 {
+        guard coordinator.highlightVisibleRange(in: textView) else {
+          return applications
+        }
+        applications += 1
+      }
+      return nil
+    }
+
+    let initialApplications = try XCTUnwrap(applicationsUntilQuiescent(at: .zero))
+    XCTAssertGreaterThan(initialApplications, 0)
+    XCTAssertFalse(coordinator.highlightVisibleRange(in: textView))
+    let todoColor = textView.textStorage?.attribute(
+      .foregroundColor,
+      at: 2,
+      effectiveRange: nil
+    ) as? NSColor
+    XCTAssertEqual(todoColor, NSColor.controlAccentColor)
+
+    let scrolledApplications = try XCTUnwrap(
+      applicationsUntilQuiescent(at: NSPoint(x: 0, y: 900))
+    )
+    XCTAssertGreaterThan(scrolledApplications, 0)
+    XCTAssertEqual(try XCTUnwrap(applicationsUntilQuiescent(at: .zero)), 0)
+
+    coordinator.invalidateHighlighting()
+    XCTAssertGreaterThan(
+      try XCTUnwrap(applicationsUntilQuiescent(at: .zero)),
+      0
+    )
+  }
+
+  @MainActor
   func testSyntaxEditorDoesNotScheduleDeferredHighlightingForLargeBuffers() {
     let largeText = String(repeating: "Body with [[id:abc][Alice]].\n", count: 2_000)
     XCTAssertGreaterThan((largeText as NSString).length, OrgSyntaxHighlighter.liveTokenizationUTF16Limit)
