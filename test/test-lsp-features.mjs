@@ -38,7 +38,7 @@ Link two: [[id:abc-123]]
 `;
 
 const quickFixOrgContent = "* Quickfix Playground\r\n\tTabbed line\r\n";
-const formattingOrgContent = "| a  |b|\n| longer | c |\n|---+---|\n| x | yyy |\n";
+const formattingOrgContent = "Use `inline code`.\n\n```js\nconst value = 1;\n```\n\n| a  |b|\n| longer | c |\n|---+---|\n| x | yyy |\n";
 const rangeFormattingOrgContent = "* Keep\nBody.\n\n| a|bb |\n|longer| c|\n|--+--|\n|x|yyy|\n\n* Tail\nunchanged\n";
 const signatureHelpOrgContent = "* Signature Playground\nSCHEDULED: <2026-02-14 Sat>\nDEADLINE: [2026-02-15 Sun]\n";
 const semanticTokensOrgContent = `* TODO Semantic Playground
@@ -57,6 +57,7 @@ const colorOrgContent = `* Color Playground
 `;
 const startupResponseWaitMs = 1000;
 const expectedFormattedTableSnippet = "| a      | b   |";
+const expectedCanonicalOrgSourceSnippet = "#+begin_src js\nconst value = 1;\n#+end_src";
 const expectedRangeFormattedSnippet = "| a      | bb  |";
 
 function findPosition(haystack, needle) {
@@ -588,7 +589,13 @@ async function testLSPFeatures() {
                             const formattingResponse = allResponses.find((r) => r.id === 8);
                             const formattingEdits = Array.isArray(formattingResponse?.result) ? formattingResponse.result : null;
                             const formattedText = formattingEdits?.[0]?.newText || "";
-                            if (formattingEdits && formattingEdits.length > 0 && formattedText.includes(expectedFormattedTableSnippet)) {
+                            if (
+                              formattingEdits &&
+                              formattingEdits.length > 0 &&
+                              formattedText.includes(expectedFormattedTableSnippet) &&
+                              formattedText.includes("Use ~inline code~.") &&
+                              formattedText.includes(expectedCanonicalOrgSourceSnippet)
+                            ) {
                               console.log(`✓ Formatting returned ${formattingEdits.length} edit(s)`);
                               testsPassed++;
                             } else {

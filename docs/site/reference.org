@@ -36,7 +36,8 @@ Org2 reference is split into two detailed sections:
   - what is roadmap
 - [[file:migration.org][Practical migration]]
   - using existing =.org= files
-  - adopting =.org2= gradually
+  - defaulting new human-facing documents to =.org=
+  - retaining existing =.org2= files without forced migration
   - mixing ID links and title links
 - [[file:features.org][Features]]
 - [[file:agentic-workspace-roadmap.org][Agentic workspace roadmap]]

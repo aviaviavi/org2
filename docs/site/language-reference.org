@@ -260,13 +260,13 @@ const x = 1
 #+end_src
 #+end_example
 
-New =.org= documents use the ordinary Org form on disk. The Mac app rewrites fences to =#+begin_src= / =#+end_src= and rewrites backtick inline code to =~code~= whenever edited =.org= source is saved. This syntax canonicalization still occurs when general format-on-save is disabled: the input remains quick to type, while persisted =.org= files stay valid Org syntax. Existing =.org2= files and the default lossless parser/printer preserve their original spelling.
+New =.org= documents use the ordinary Org form on disk. OpenOrg, file-based CLI formatting, the LSP, and editor integrations rewrite fences to =#+begin_src= / =#+end_src= and backtick inline code to ordinary Org inline markup whenever edited =.org= source is persisted or formatted. This syntax canonicalization still occurs when general format-on-save is disabled: the input remains quick to type, while persisted =.org= files stay valid Org syntax. Existing =.org2= files and the default lossless parser/printer preserve their original spelling.
 
-The CLI exposes the same explicit serialization profile:
+File-based CLI formatting selects the profile automatically from the extension. Stdin has no filename, so buffer-oriented callers select it explicitly:
 
 #+begin_src sh
 org2 fmt --stdin --canonical-org
-org2 fmt --file note.org --canonical-org --apply
+org2 fmt --file note.org --apply
 #+end_src
 
 Fenced source blocks use exactly three backticks for the opener and closer. Four-or-more backticks remain ordinary text in v0, which keeps Markdown examples that quote org2 fences from accidentally becoming executable org2 source, chart, dataset, or SQL blocks.
@@ -293,7 +293,7 @@ Org table formulas are attached to their preceding table as structured =TableFor
 #+TBLFM: $4=$2*$3;%.2f
 #+end_src
 
-=org2 table recalculate --file report.org2= previews the changed cells; add =--apply= to write them atomically. The Mac rendered view evaluates supported formulas for display and offers the same explicit recalculation action for editable files. HTML export uses the shared evaluator without rewriting source.
+=org2 table recalculate --file report.org= previews the changed cells; add =--apply= to write them atomically. The Mac rendered view evaluates supported formulas for display and offers the same explicit recalculation action for editable files. HTML export uses the shared evaluator without rewriting source.
 
 The safe formula subset includes field, row, column, and rectangular-range assignments; absolute and relative =@row$column= references; A1 references; arithmetic, comparisons, and boolean operators; =vsum=, =vmean=, =vmin=, =vmax=, =vmedian=, =vcount=, common numeric functions; printf/Calc-style numeric formats; and =T=, =U=, and =t= duration modes. Later assignments override earlier assignments for the same cell. Empty-field =N= mode is supported. Formula lines, including unsupported forms, remain lossless.
 
@@ -316,26 +316,26 @@ Tables, source blocks, and common blocks can carry adjacent affiliated keyword m
 
 Recognized affiliated keys include =NAME=, =CAPTION=, =PLOT=, =CHART=, =DATASET=, =VIEW=, =RESULTS=, =HEADER=/=HEADERS=, and =ATTR_*= keys. The parser preserves them on the following table or block as =affiliatedKeywords= for chart renderers, dataset indexes, SQL views, and exporters.
 
-For new chart examples, prefer an adjacent fenced chart block when it is easier to read:
+Canonical =.org= documents use an adjacent chart source block:
 
-#+begin_src org
+#+begin_example
 #+name: fetch_buckets
 | bucket | fetches |
 |--------+---------|
 | 0-10   | 14      |
 | 11-50  | 32      |
 
-```chart histogram
+#+begin_src chart histogram
 x: bucket
 y: fetches
 sort: y-desc
 source: previous-table
-```
 #+end_src
+#+end_example
 
-This is ergonomic syntax sugar for chart metadata over the preceding table. Fenced chart blocks may also point at a named table or materialized result elsewhere in the same note:
+This is chart metadata over the preceding table. Chart source blocks may also point at a named table or materialized result elsewhere in the same note; fenced chart input remains accepted as typing sugar:
 
-#+begin_src org
+#+begin_example
 #+name: package_fetches_result
 #+results: query-fetches-by-company
 | day        | fetches |
@@ -343,15 +343,15 @@ This is ergonomic syntax sugar for chart metadata over the preceding table. Fenc
 | 2026-06-10 | 84      |
 
 #+name: package_fetches_chart
-```chart line
+#+begin_src chart line
 x: day
 y: fetches
 source: package_fetches_result
 size: compact
 height: 300
 interactive: true
-```
 #+end_src
+#+end_example
 
 The current renderer supports =bar=, =line=, and bucketed =histogram= charts over the previous table or a named table source. Add =sort: x-asc=, =sort: x-desc=, =sort: y-asc=, or =sort: y-desc= when the visual should order marks independently of the table's source row order. =size= accepts =compact=, =medium=, or =wide=. =height= accepts 220–720 pixels and defaults according to the size preset. =interactive= defaults to =true=; in the Mac app it enables nearest-point hover, exact-value tooltips, a crosshair, and keyboard navigation between marks. Static SVG remains the canonical CLI and export fallback.
 
@@ -362,79 +362,79 @@ Chart SVG uses CSS custom properties with opinionated defaults: =--org2-chart-ma
 The CLI can render chart-affiliated tables directly:
 
 #+begin_src sh
-org2 render-chart --file report.org2 --block-id quarterly_revenue --format svg
+org2 render-chart --file report.org --block-id quarterly_revenue --format svg
 #+end_src
 
 * Local datasets and SQL views
 
-Org2 can describe local/ad hoc data workflows with fenced =dataset= and =sql= blocks. This is intended for notebook-like reports over explicit local files, read-only URLs, and named org2 tables, with DuckDB as the first execution bridge:
+Org2 can describe local/ad hoc data workflows with =dataset= and =sql= source blocks. Equivalent fences remain accepted as typing sugar. This is intended for notebook-like reports over explicit local files, read-only URLs, and named Org tables, with DuckDB as the first execution bridge:
 
-#+begin_src org
-```dataset fetches
+#+begin_example
+#+begin_src dataset fetches
 type: csv
 path: ./data/package-fetches.csv
 engine: duckdb
-```
+#+end_src
 
-```sql results=fetches_by_state artifact=views/fetches_by_state.org freshness=24h
+#+begin_src sql results=fetches_by_state artifact=views/fetches_by_state.org freshness=24h
 SELECT state, count(*) AS fetches
 FROM fetches
 GROUP BY state
 ORDER BY fetches DESC
-```
+#+end_src
 
-```chart bar
+#+begin_src chart bar
 source: fetches_by_state
 x: state
 y: fetches
-```
 #+end_src
+#+end_example
 
 =org2 query-data= reads these blocks, creates DuckDB views for local files, URL-backed sources, named org2 tables, or configured remote analytics datasets, creates declared SQL views, runs a selected SQL result block through the local DuckDB CLI, and materializes the returned rows as a named org table or JSON envelope. Materialized org tables include a =#+query-data:= provenance line with the result id, row count, optional freshness token, selected SQL hash, full DuckDB script hash, and =ran_at= timestamp:
 
 #+begin_src sh
-org2 query-data --file report.org2 --results fetches_by_state --out report.fetches.org
-org2 query-data --file report.org2 --results fetches_by_state --apply
-org2 query-data --file report.org2 --line 42 --format json
-org2 query-data --file report.org2 --inspect --include-script
-cat report.org2 | org2 query-data --stdin --results fetches_by_state --format json
+org2 query-data --file report.org --results fetches_by_state --out report.fetches.org
+org2 query-data --file report.org --results fetches_by_state --apply
+org2 query-data --file report.org --line 42 --format json
+org2 query-data --file report.org --inspect --include-script
+cat report.org | org2 query-data --stdin --results fetches_by_state --format json
 #+end_src
 
 Use =--stdin= when an editor, agent, or notebook-style client wants to run the current buffer without saving it first. Use =--line N= to select the SQL result block containing or after the cursor line. JSON output includes =resultBlocks= with each available SQL result id and source range. Use =--inspect= to return parsed datasets, SQL views, result metadata, diagnostics, and selected-query provenance without running DuckDB; =--include-script= also returns generated DuckDB SQL. Relative file paths are resolved from the working directory for stdin input. SQL result ids must be unique, and dataset ids and SQL view ids must be distinct because they become DuckDB relation names. Local URL/table datasets may carry metadata-only credential/config references such as =env:SCARF_API_TOKEN= or =profile:product-analytics=; remote analytics datasets use their named profile operationally but never insert credentials into generated SQL. Inline bearer tokens, passwords, and other literal secrets are rejected. SQL result blocks can include =artifact=PATH= and =freshness=24h= / =ttl=24h= / =max-age=24h= metadata. Executed results stamp =ranAt= so clients can evaluate freshness.
 
 Use =sql view=NAME= when a report needs a reusable local projection before the final result table:
 
-#+begin_src org
-```sql view=california_fetches
+#+begin_example
+#+begin_src sql view=california_fetches
 SELECT state, fetches
 FROM fetches
 WHERE state = 'CA'
-```
+#+end_src
 
-```sql results=fetches_by_state
+#+begin_src sql results=fetches_by_state
 SELECT state, sum(fetches) AS fetches
 FROM california_fetches
 GROUP BY state
-```
 #+end_src
+#+end_example
 
 Use =url:= instead of =path:= when DuckDB should read a declared HTTP(S) or =file:= URL directly:
 
-#+begin_src org
-```dataset remote_fetches
+#+begin_example
+#+begin_src dataset remote_fetches
 type: csv
 url: https://data.example.test/package-fetches.csv
 engine: duckdb
 credential: env:SCARF_API_TOKEN
 config: profile:product-analytics
-```
+#+end_src
 
-```sql results=remote_fetches_by_state
+#+begin_src sql results=remote_fetches_by_state
 SELECT state, count(*) AS fetches
 FROM remote_fetches
 GROUP BY state
-```
 #+end_src
+#+end_example
 
 ** Remote analytics datasets
 
@@ -466,8 +466,8 @@ Remote datasets use the same named-dataset and DuckDB result pipeline as local C
 
 A ClickHouse dataset carries read-only SQL:
 
-#+begin_src org
-```dataset package_fetches
+#+begin_example
+#+begin_src dataset package_fetches
 type: clickhouse
 profile: scarf-clickhouse
 query: |
@@ -476,25 +476,25 @@ query: |
   WHERE timestamp >= now() - INTERVAL 30 DAY
   GROUP BY day
   ORDER BY day
-```
 #+end_src
+#+end_example
 
 A Metabase dataset executes a saved question by numeric question/card ID. Optional =parameters: |= is JSON using Metabase's parameter payload format:
 
-#+begin_src org
-```dataset revenue
+#+begin_example
+#+begin_src dataset revenue
 type: metabase
 profile: scarf-metabase
 question: 123
 parameters: |
   []
-```
 #+end_src
+#+end_example
 
 For a reproducible notebook, put the native SQL directly in the dataset block instead of relying on a mutable saved question. The profile must provide either a positive =databaseId= or a =databaseIdEnv= naming an environment variable that contains it:
 
-#+begin_src org
-```dataset recent_organizations
+#+begin_example
+#+begin_src dataset recent_organizations
 type: metabase
 profile: scarf-metabase
 query: |
@@ -502,42 +502,42 @@ query: |
   FROM organizations
   ORDER BY created_at DESC
   LIMIT 25
-```
 #+end_src
+#+end_example
 
-Use either dataset in ordinary DuckDB SQL, materialize the result as an org table with =org2 query-data=, then attach a =```chart= block to that named result. ClickHouse requests set server-side read-only mode, row limits, execution timeouts, and JSON output. Metabase requests use API-key authentication and saved-question JSON export. Both adapters enforce response-size and row limits locally as well.
+Use either dataset in ordinary DuckDB SQL, materialize the result as an Org table with =org2 query-data=, then attach a =#+begin_src chart= block to that named result. ClickHouse requests set server-side read-only mode, row limits, execution timeouts, and JSON output. Metabase requests use API-key authentication and saved-question JSON export. Both adapters enforce response-size and row limits locally as well.
 
 For notebooks with multiple remote sources, declare each result's dependency edge explicitly with =sources=DATASET_ID[,DATASET_ID...]=. Org2 validates the named sources, loads only those datasets for that result, and records them in materialization provenance:
 
-#+begin_src org
-```sql results=recent_organizations sources=recent_organizations_source freshness=24h
+#+begin_example
+#+begin_src sql results=recent_organizations sources=recent_organizations_source freshness=24h
 SELECT * FROM recent_organizations_source
 ORDER BY created_at DESC
-```
 #+end_src
+#+end_example
 
 Refreshing data is always explicit. Use =org2 query-data --apply= to insert the selected result after its SQL block or replace the existing provenance-stamped result in place. HTML rendering and opening a note in the Mac app only consume tables already present in the document; they never contact Metabase or ClickHouse. Valid chart declarations over those tables are rendered automatically as responsive inline SVG in the Mac app and static HTML exports.
 
-Use =type: table= with =source: NAME= when the source data already lives in a named org2 table:
+Use =type: table= with =source: NAME= when the source data already lives in a named Org table:
 
-#+begin_src org
+#+begin_example
 #+name: raw_fetches
 | state | fetches |
 |-------+---------|
 | CA    | 42      |
 | NY    | 24      |
 
-```dataset fetches
+#+begin_src dataset fetches
 type: table
 source: raw_fetches
 engine: duckdb
-```
+#+end_src
 
-```sql results=fetches_total
+#+begin_src sql results=fetches_total
 SELECT sum(fetches) AS fetches
 FROM fetches
-```
 #+end_src
+#+end_example
 
 This is deliberately scoped to explicit local/ad hoc data sources. Org2 stores the source path, read-only URL, table/view name, optional column and primary-key metadata, credential/config reference, query, and materialized result/provenance; secrets, bearer tokens, and remote warehouse credentials belong in external tooling, not in notes.
 
@@ -546,9 +546,9 @@ This is deliberately scoped to explicit local/ad hoc data sources. Org2 stores t
 Org2 can compile an Org-shaped outline into a backend-neutral presentation model and render that model as Beamer LaTeX or PDF:
 
 #+begin_src sh
-org2 export beamer --file talk.org2
-org2 export beamer --file talk.org2 --out talk.tex --apply
-org2 export beamer --file talk.org2 --out talk.pdf --pdf --apply
+org2 export beamer --file talk.org
+org2 export beamer --file talk.org --out talk.tex --apply
+org2 export beamer --file talk.org --out talk.pdf --pdf --apply
 #+end_src
 
 Export previews by default. =--pdf= invokes =pdflatex= twice; use =--latex-engine COMMAND= to select another installed LaTeX engine.

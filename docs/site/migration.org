@@ -10,8 +10,9 @@ This page keeps migration simple: keep existing notes working while you adopt Or
 
 * New files
 
-- Prefer =.org2= for new notes.
-- This keeps Org2-native intent clear and helps tooling/scoping.
+- Prefer =.org= for new notes and other human-facing documents.
+- OpenOrg, the CLI, LSP, and editor integrations save accepted shorthand in ordinary Org syntax when the target file ends in =.org=.
+- Keep existing =.org2= files in place unless you deliberately choose to migrate them; they remain fully supported and retain lossless spelling.
 
 * Roam link migration
 
@@ -30,4 +31,3 @@ This page keeps migration simple: keep existing notes working while you adopt Or
 - Org2 targets practical parity, not bug-for-bug GNU Org behavior.
 - Some extension-specific editor UX differs from Emacs org-mode/org-roam.
 - Re-run CI/automation commands after migration changes (=agenda=, =roam db-sync=, =publish=) to validate behavior in your environment.
-

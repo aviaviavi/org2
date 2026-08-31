@@ -186,7 +186,7 @@ dependency-install step.</p>
       }
     ],
     &quot;templates&quot;: [
-      { &quot;id&quot;: &quot;card-note&quot;, &quot;path&quot;: &quot;templates/card.org2&quot; }
+      { &quot;id&quot;: &quot;card-note&quot;, &quot;path&quot;: &quot;templates/card.org&quot; }
     ]
   }
 }</code></pre>
@@ -341,23 +341,24 @@ org2 roam node new --dir ~/notes --title &quot;Acme Corp&quot; --apply --json</c
 </section>
 <section class="org2-headline level-1">
 <h1 id="planning-edits"><span class="org2-todo">TODO</span> + planning edits</h1>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 todo toggle --file notes.org2 --line 42 --apply
-org2 todo set --file notes.org2 --line 42 --status in_progress --apply
-org2 plan set --file notes.org2 --line 42 --kind scheduled --date 2026-03-25 --apply</code></pre>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 todo toggle --file notes.org --line 42 --apply
+org2 todo set --file notes.org --line 42 --status in_progress --apply
+org2 plan set --file notes.org --line 42 --kind scheduled --date 2026-03-25 --apply</code></pre>
 </section>
 <section class="org2-headline level-1">
 <h1 id="capture-archive-refile">Capture / archive / refile</h1>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 capture --file inbox.org2 --title &quot;Quick note&quot; --template note --apply
-org2 archive --file notes.org2 --pos 120:0 --apply
-org2 refile --file notes.org2 --pos 120:0 --to-file projects.org2 --to-pos 40:0 --apply</code></pre>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 capture --file inbox.org --title &quot;Quick note&quot; --template note --apply
+org2 archive --file notes.org --pos 120:0 --apply
+org2 refile --file notes.org --pos 120:0 --to-file projects.org --to-pos 40:0 --apply</code></pre>
 <p>Archiving moves the selected subtree to a companion archive file (by default <code>FILE_archive</code> for <code>.org</code> and <code>.org2</code> files, otherwise <code>FILE.archive</code>). Archived subtrees receive a property drawer with <code>ARCHIVED_AT</code>, <code>ARCHIVE_SOURCE</code>, <code>ARCHIVE_SOURCE_LINE</code>, <code>ARCHIVE_HEADING_PATH</code>, and <code>ARCHIVE_ORIGINAL_ID</code> when the original subtree had an <code>ID</code>. Use <code>--format diff</code> to preview the exact removal/append operation, or <code>--format json</code> for editor/agent integrations.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="formatter">Formatter</h1>
-<p>Deterministic formatting for Org and Org2 files. Add <code>--canonical-org</code> to rewrite accepted input conveniences such as fenced source blocks, <code>#+begin_org2</code> aliases, and backtick inline code to ordinary Org syntax. OpenOrg uses this profile whenever edited <code>.org</code> source contains those conveniences; <code>.org2</code> files retain lossless spelling. Syntax canonicalization is independent of the app's optional general format-on-save setting.</p>
+<p>Deterministic formatting for Org and Org2 files. File-based formatting automatically rewrites accepted input conveniences such as fenced source blocks, <code>#+begin_org2</code> aliases, and backtick inline code to ordinary Org syntax when the target ends in <code>.org</code>. Mixed directory operations choose the profile independently for each file. Existing <code>.org2</code> files retain lossless spelling unless <code>--canonical-org</code> is explicitly supplied. Use that flag for stdin, which has no filename, or to force the canonical profile for another target. OpenOrg, the LSP, and VS Code follow the same extension-aware rule. Syntax canonicalization remains independent of optional general format-on-save settings.</p>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 fmt --dir ~/notes --recursive --check
 org2 fmt --dir ~/notes --recursive --apply
-org2 fmt --file note.org --canonical-org --apply</code></pre>
+org2 fmt --file note.org --apply
+org2 fmt --stdin --canonical-org</code></pre>
 </section>
 <section class="org2-headline level-1">
 <h1 id="table-formula-evaluation">Table formula evaluation</h1>
@@ -365,101 +366,101 @@ org2 fmt --file note.org --canonical-org --apply</code></pre>
 </section>
 <section class="org2-headline level-1">
 <h1 id="chart-rendering">Chart rendering</h1>
-<p><code>org2 render-chart</code> renders an SVG artifact from <code>#+chart:</code> / <code>#+plot:</code> metadata or an adjacent fenced <code>```chart</code> block attached to an org2 table. Editor clients share this backend, so each extension uses the same table parsing and chart semantics.</p>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 render-chart --file report.org2 --block-id quarterly_revenue --out /tmp/quarterly-revenue.svg
-org2 render-chart --file report.org2 --line 42 --format json</code></pre>
-<p>The first renderer supports deterministic <code>bar</code>, <code>line</code>, and bucketed <code>histogram</code> charts with <code>x</code> and <code>y</code> column mappings. New hand-written examples should prefer fenced chart blocks when they are easier to scan:</p>
-<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">| bucket | fetches |
+<p><code>org2 render-chart</code> renders an SVG artifact from <code>#+chart:</code> / <code>#+plot:</code> metadata or an adjacent <code>#+begin_src chart</code> block attached to an Org table. Fenced chart input remains accepted as typing sugar. Editor clients share this backend, so each extension uses the same table parsing and chart semantics.</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 render-chart --file report.org --block-id quarterly_revenue --out /tmp/quarterly-revenue.svg
+org2 render-chart --file report.org --line 42 --format json</code></pre>
+<p>The first renderer supports deterministic <code>bar</code>, <code>line</code>, and bucketed <code>histogram</code> charts with <code>x</code> and <code>y</code> column mappings. Canonical <code>.org</code> documents use source blocks:</p>
+<pre class="org2-example">| bucket | fetches |
 |--------+---------|
 | 0-10   | 14      |
 | 11-50  | 32      |
 
-```chart histogram
+#+begin_src chart histogram
 x: bucket
 y: fetches
 sort: y-desc
 source: previous-table
-```</code></pre>
+#+end_src</pre>
 <p>For data-backed reports, a chart block can also point at a named materialized result table in the same note:</p>
-<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">#+name: package_fetches_result
+<pre class="org2-example">#+name: package_fetches_result
 #+results: query-fetches-by-company
 | day        | fetches |
 |------------+---------|
 | 2026-06-10 | 84      |
 
 #+name: package_fetches_chart
-```chart line
+#+begin_src chart line
 x: day
 y: fetches
 source: package_fetches_result
-```</code></pre>
+#+end_src</pre>
 <p>Add <code>sort: x-asc</code>, <code>sort: x-desc</code>, <code>sort: y-asc</code>, or <code>sort: y-desc</code> when a chart preview should be ordered independently of the table rows. JSON output includes <code>ok</code>, <code>format</code>, <code>artifact</code>, <code>source</code>, <code>diagnostics</code>, and <code>svg</code> so VS Code, Vim, or agent tooling can show useful errors for missing columns, unsupported chart types, missing chart sorts, missing named source tables, or missing chart blocks.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="data-queries">Data queries</h1>
-<p><code>org2 query-data</code> is the DuckDB-backed bridge for local and remote datasets described in org2 notes. It scans fenced <code>```dataset</code> blocks, creates DuckDB views for explicit <code>csv</code>, <code>parquet</code>, or <code>json</code> paths/URLs, named org2 tables, ClickHouse queries, or saved Metabase questions, optionally creates reusable SQL views from <code>```sql view=NAME</code> blocks, then runs a fenced <code>```sql results=NAME</code> block and materializes the returned rows.</p>
-<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">```dataset fetches
+<p><code>org2 query-data</code> is the DuckDB-backed bridge for local and remote datasets described in Org notes. It scans <code>#+begin_src dataset</code> blocks, creates DuckDB views for explicit <code>csv</code>, <code>parquet</code>, or <code>json</code> paths/URLs, named Org tables, ClickHouse queries, or saved Metabase questions, optionally creates reusable SQL views from <code>#+begin_src sql view=NAME</code> blocks, then runs a <code>#+begin_src sql results=NAME</code> block and materializes the returned rows. Equivalent fences remain accepted as typing sugar.</p>
+<pre class="org2-example">#+begin_src dataset fetches
 type: csv
 path: ./data/package-fetches.csv
 engine: duckdb
-```
+#+end_src
 
-```sql results=fetches_by_state artifact=views/fetches_by_state.org freshness=24h
+#+begin_src sql results=fetches_by_state artifact=views/fetches_by_state.org freshness=24h
 SELECT state, count(*) AS fetches
 FROM fetches
 GROUP BY state
 ORDER BY fetches DESC
-```</code></pre>
+#+end_src</pre>
 <p>Reusable SQL views can sit between datasets and the final materialized result:</p>
-<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">```sql view=california_fetches
+<pre class="org2-example">#+begin_src sql view=california_fetches
 SELECT state, fetches
 FROM fetches
 WHERE state = 'CA'
-```
+#+end_src
 
-```sql results=fetches_by_state
+#+begin_src sql results=fetches_by_state
 SELECT state, sum(fetches) AS fetches
 FROM california_fetches
 GROUP BY state
-```</code></pre>
+#+end_src</pre>
 <p>Read-only HTTP(S) or <code>file:</code> URLs can be recorded with <code>url:</code> when DuckDB can read the source directly:</p>
-<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">```dataset remote_fetches
+<pre class="org2-example">#+begin_src dataset remote_fetches
 type: csv
 url: https://data.example.test/package-fetches.csv
 engine: duckdb
 credential: env:SCARF_API_TOKEN
 config: profile:product-analytics
-```
+#+end_src
 
-```sql results=remote_fetches_by_state
+#+begin_src sql results=remote_fetches_by_state
 SELECT state, count(*) AS fetches
 FROM remote_fetches
 GROUP BY state
-```</code></pre>
+#+end_src</pre>
 <p>Named org2 tables can also become local DuckDB views without an intermediate CSV export:</p>
-<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">#+name: raw_fetches
+<pre class="org2-example">#+name: raw_fetches
 | state | fetches |
 |-------+---------|
 | CA    | 42      |
 | NY    | 24      |
 
-```dataset fetches
+#+begin_src dataset fetches
 type: table
 source: raw_fetches
 engine: duckdb
-```
+#+end_src
 
-```sql results=fetches_total
+#+begin_src sql results=fetches_total
 SELECT sum(fetches) AS fetches
 FROM fetches
-```</code></pre>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 query-data --file report.org2 --results fetches_by_state
-org2 query-data --file report.org2 --line 42 --format json
-org2 query-data --file report.org2 --inspect --include-script
-org2 query-data --file report.org2 --results fetches_by_state --out views/fetches_by_state.org
-org2 query-data --file report.org2 --results fetches_by_state --apply
-org2 query-data --file report.org2 --all-results --apply --format json
-cat report.org2 | org2 query-data --stdin --results fetches_by_state</code></pre>
+#+end_src</pre>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 query-data --file report.org --results fetches_by_state
+org2 query-data --file report.org --line 42 --format json
+org2 query-data --file report.org --inspect --include-script
+org2 query-data --file report.org --results fetches_by_state --out views/fetches_by_state.org
+org2 query-data --file report.org --results fetches_by_state --apply
+org2 query-data --file report.org --all-results --apply --format json
+cat report.org | org2 query-data --stdin --results fetches_by_state</code></pre>
 <p>The default output is a named org table with <code>#+name: fetches_by_state</code> so it can be pasted or written into the note and consumed by <code>render-chart</code> via <code>source: fetches_by_state</code>. <code>--apply</code> inserts that generated block after the selected SQL block or replaces the existing <code>#+query-data: result</code>...= block in place. <code>--all-results --apply</code> runs every named SQL result first, applies the complete set in memory, advances existing <code>#+updated:</code> and <code>ORG2_OBSERVED_AT</code> file metadata from the latest successful result timestamp, and writes the source file once only after all results succeed; any query failure leaves the file unchanged. Materialized tables include a compact provenance line with the result id, row count, explicit source dependencies, optional artifact/freshness, query and script hashes, and <code>ran_at</code> timestamp. Add <code>artifact=PATH</code> to record an intended materialized output and <code>freshness=24h</code>, <code>ttl=24h</code>, or <code>max-age=24h</code> when clients should know how long a result can be treated as fresh. SQL result ids must be unique within the note, and dataset ids and SQL view ids share DuckDB's relation namespace. Inline bearer tokens and passwords are rejected. JSON output includes diagnostics, dataset metadata, SQL views, available result blocks, provenance, rows, and the generated org table; <code>--include-script</code> includes DuckDB setup SQL. Use <code>--inspect</code> to parse without running DuckDB. Org2 uses its bundled DuckDB engine by default; <code>--duckdb PATH</code> is an explicit CLI-engine override. ClickHouse and Metabase datasets resolve named <code>dataSources</code> profiles from the nearest <code>org2.json</code>; secrets are read only from profile-named environment variables or the Mac app's Keychain workflow. Metabase datasets may target saved questions or include reproducible native SQL with a configured database ID. Remote refresh is explicit: HTML export and merely opening a note in the Mac rendered view never execute warehouse queries. See <a href="language-reference.html">the language reference</a> for profile and dataset examples.</p>
 </section>
 <section class="org2-headline level-1">
@@ -501,7 +502,7 @@ org2 thread auto-settle --dir ~/notes --apply</code></pre>
   --runtime-agent-id customer-support --dir ~/notes --json
 org2 run create --goal &quot;Resolve the customer issue&quot; \
   --agent-ref customer-support --goal-ref customer-trust --dir ~/notes
-org2 todo assign --file notes/support.org2 --line 12 --assignee &quot;Customer Support&quot; \
+org2 todo assign --file notes/support.org --line 12 --assignee &quot;Customer Support&quot; \
   --agent-ref customer-support --goal-ref customer-trust --apply</code></pre>
 <p>The resolved <code>agentRef</code> is the portable worker ID; OpenClaw, Codex, and Claude Code are runtimes, not profile IDs. A profile's <code>primaryGoalRef</code> is returned as the default <code>goalRef</code>. Existing selected-work refs take precedence over a runtime default. <code>AGENT_REF</code> and <code>GOAL_REF</code> flow through agent context, durable runs, and authored workflows; <code>ASSIGNEE</code> remains the readable display label. Resolution fails on ambiguous active bindings or a missing primary goal and returns <code>found: false</code> for an unbound runtime identity, allowing clients to omit refs rather than guess.</p>
 <p><code>org2 run</code> manages <code>org2:agent-run:v1</code> records under <code>.org2/runs/</code>. Each record contains readable Org sections plus a canonical JSON block; writes are atomic. The state machine supports queued, running, waiting-approval, blocked, completed, failed, and canceled states. Invalid transitions fail instead of silently rewriting history.</p>
@@ -510,7 +511,7 @@ org2 todo assign --file notes/support.org2 --line 12 --assignee &quot;Customer S
   --risk local-draft --owner avi --assignee analyst \
   --policy deep-analysis --token-limit 50000 --cost-limit-usd 10 --time-limit-seconds 1800 \
   --step agent:&quot;Draft cited review&quot; --step validation:&quot;Validate citations and export&quot; \
-  --context notes/operations.org2 --capability agent-context --dir ~/notes
+  --context notes/operations.org --capability agent-context --dir ~/notes
 org2 run list --dir ~/notes --json
 org2 run show RUN_ID --dir ~/notes --json
 org2 run start RUN_ID --dir ~/notes
@@ -586,7 +587,7 @@ org2 workflow activate weekly-operating-review --dir ~/notes
 org2 workflow schedule weekly-operating-review --cron &quot;0 9 * * 1&quot; \
   --timezone America/Los_Angeles --gate-event capture --gate-path notes/ --dir ~/notes
 org2 workflow signal weekly-operating-review --event capture \
-  --signal-id capture-2026-W29 --changed notes/inbox.org2 --dir ~/notes
+  --signal-id capture-2026-W29 --changed notes/inbox.org --dir ~/notes
 org2 workflow gate weekly-operating-review --trigger openclaw-schedule --dir ~/notes --json
 org2 workflow pause weekly-operating-review --dir ~/notes
 org2 workflow migrate --dir ~/notes
@@ -651,13 +652,13 @@ org2 eval fixture RUN_ID --output test/fixtures/weekly-review.run.json --dir ~/n
 org2 ai validate-job --job examples/jobs/weekly-summary.org2-ai.json --format json</code></pre>
 <p>Use this in CI or editor workflows before a future AI runner consumes a job. The validator checks corpus input selection, task type, symbolic adapter names, generated output targets, provenance/review requirements, and common accidental secret leaks. See <a href="ai-job-manifests.html">AI job manifests</a> for the schema and examples.</p>
 <p><code>org2 ai run</code> writes a reviewable generated draft artifact from a validated job. The current implementation is provider-free and uses manifest <code>input.files</code> as deterministic source material, including simple glob patterns. It stamps <code>ORG2_PROVENANCE</code>, <code>ORG2_SOURCE_HASHES</code>, prompt/template, adapter/model, generated-at, and <code>ORG2_REVIEW_STATUS</code> metadata. Without <code>--apply</code> it previews the draft.</p>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 ai run --job examples/jobs/weekly-summary.org2-ai.json --out views/weekly-summary.org2
-org2 ai run --job examples/jobs/weekly-summary.org2-ai.json --out views/weekly-summary.org2 --apply</code></pre>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 ai run --job examples/jobs/weekly-summary.org2-ai.json --out views/weekly-summary.org
+org2 ai run --job examples/jobs/weekly-summary.org2-ai.json --out views/weekly-summary.org --apply</code></pre>
 <p><code>org2 ai suggest-links</code> ranks compiler-provided roam/linkify candidates with the deterministic mock adapter. It scans the graph, aliases, exact linkify matches, represented-node semantic suggestions, and title-case entity mentions, then emits review-only suggestions with confidence, reasons, source context, and citations. It never edits canonical notes directly; <code>--apply</code> only writes the suggestion report when <code>--out</code> is provided.</p>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 ai suggest-links --dir ~/notes --recursive --format json
-org2 ai suggest-links --dir ~/notes --recursive --out views/link-suggestions.org2 --apply</code></pre>
+org2 ai suggest-links --dir ~/notes --recursive --out views/link-suggestions.org --apply</code></pre>
 <p><code>org2 ai promote</code> is the safe acceptance path. It refuses drafts until <code>ORG2_REVIEW_STATUS</code> is <code>reviewed</code>, then appends the reviewed body to a canonical note only when <code>--apply</code> is present and marks the draft <code>promoted</code>.</p>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 ai promote --file views/weekly-summary.org2 --to-file notes/weekly-summary.org2 --apply</code></pre>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 ai promote --file views/weekly-summary.org --to-file notes/weekly-summary.org --apply</code></pre>
 <p>See <a href="ai-draft-artifacts.html">AI draft artifacts</a> for the full format, review checklist, and VS Code command-palette entry points.</p>
 </section>
 <section class="org2-headline level-1">
@@ -683,7 +684,7 @@ org2 compile corpus --dir ~/notes --recursive --incremental --out compiled/corpu
 <p>Use <code>search</code> for literal, case-insensitive full-text lookup over <code>.org</code> and <code>.org2</code> files, and <code>query</code> when you want cited context suitable for answering factual questions from notes. Directory scans are non-recursive unless <code>--recursive</code> is set. The <a href="llm-consumers.html">External LLM consumer pattern</a> page shows how provider-agnostic agents can turn this JSON into cited model context without adding LLM calls to Org2 core.</p>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 search &quot;Chris Martin&quot; --dir ~/notes --recursive --context 3 --sort date-desc
 org2 search &quot;Mercor&quot; --dir ~/notes --recursive --sort relevance
-org2 index --dir ~/notes --recursive --file ~/notes/inbox.org2 --incremental --format json
+org2 index --dir ~/notes --recursive --file ~/notes/inbox.org --incremental --format json
 org2 query &quot;Chris Martin&quot; --dir ~/notes --recursive --subtree --sort date-desc --format json
 org2 query &quot;Sentra&quot; --dir ~/notes --recursive --format json
 org2 query actions --object 'id:PERSON-ID' --dir ~/notes --recursive --recent-days 30 --format json</code></pre>
@@ -715,17 +716,17 @@ org2 roam graph --dir ~/notes --recursive --format json</code></pre>
 <h1 id="org-crypt">Org-crypt</h1>
 <p>Org2 keeps the existing Org-style <code>:crypt:</code> convention and encrypts at the subtree boundary. A subtree can be encrypted symmetrically with a passphrase, or to multiple public-key recipients so the same private note can be opened by your user key, another device key, and an agent key without sharing one password around.</p>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh"># Passphrase/symmetric mode
-org2 crypt decrypt --file secrets.org2 --line 42 --passphrase 'your-passphrase' --apply
-org2 crypt encrypt --file secrets.org2 --line 42 --passphrase 'your-passphrase' --apply
+org2 crypt decrypt --file secrets.org --line 42 --passphrase 'your-passphrase' --apply
+org2 crypt encrypt --file secrets.org --line 42 --passphrase 'your-passphrase' --apply
 
 # Multi-recipient public-key mode
-org2 crypt encrypt --file secrets.org2 --line 42 \
+org2 crypt encrypt --file secrets.org --line 42 \
   --recipient user@example.com \
   --recipient agent@example.com \
   --apply
 
 # Public-key recipient files are useful for keys that are not in your keyring
-org2 crypt encrypt --file secrets.org2 --line 42 \
+org2 crypt encrypt --file secrets.org --line 42 \
   --recipient-file keys/agent-public.asc \
   --apply
 
@@ -738,7 +739,7 @@ org2 crypt encrypt --file secrets.org2 --line 42 \
 Only the entries with this property are encrypted to that agent.
 
 # Migration: decrypt an existing block, then re-encrypt it for the new recipients
-org2 crypt reencrypt --file secrets.org2 --line 42 \
+org2 crypt reencrypt --file secrets.org --line 42 \
   --passphrase 'old-passphrase-if-needed' \
   --recipient user@example.com \
   --recipient agent@example.com \
@@ -749,14 +750,14 @@ org2 crypt reencrypt --file secrets.org2 --line 42 \
 <h1 id="export-publish">Export + publish</h1>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 export html --file README.org --out README.html --apply
 org2 export html --dir docs/site --recursive --out-dir site --apply
-org2 export beamer --file talks/demo.org2 --out publish/demo.tex --apply
-org2 export beamer --file talks/demo.org2 --out publish/demo.pdf --pdf --apply
-org2 publish document --file reports/brief.org2 --to web --out-dir publish/brief
-org2 publish document --file reports/brief.org2 --to web --out-dir publish/brief --apply
-org2 publish document --file talks/briefing.org2 --to beamer-pdf --out-file publish/briefing.pdf
-org2 publish document --file reports/brief.org2 --to google-docs --folder-id DRIVE_FOLDER_ID
-org2 publish document --file talks/briefing.org2 --to google-slides --folder-id DRIVE_FOLDER_ID
-org2 publish document --file reports/evidence.org2 --to google-sheets --folder-id DRIVE_FOLDER_ID
+org2 export beamer --file talks/demo.org --out publish/demo.tex --apply
+org2 export beamer --file talks/demo.org --out publish/demo.pdf --pdf --apply
+org2 publish document --file reports/brief.org --to web --out-dir publish/brief
+org2 publish document --file reports/brief.org --to web --out-dir publish/brief --apply
+org2 publish document --file talks/briefing.org --to beamer-pdf --out-file publish/briefing.pdf
+org2 publish document --file reports/brief.org --to google-docs --folder-id DRIVE_FOLDER_ID
+org2 publish document --file talks/briefing.org --to google-slides --folder-id DRIVE_FOLDER_ID
+org2 publish document --file reports/evidence.org --to google-sheets --folder-id DRIVE_FOLDER_ID
 org2 publish docs-site --config org2.json</code></pre>
 <p>Useful export options include TOC, heading numbering, stylesheet injection, and Org-file-link rewrite to HTML targets.</p>
 <p><code>publish document</code> is the share boundary for an arbitrary document or the subtree selected by <code>--line</code>. It creates a separate disclosure-safe projection before rendering: property drawers, TODO state, tags, planning and clock data, comments, commented subtrees, dynamic blocks, table formulas, raw HTML, internal IDs, and unresolved local links are not sent to the destination. Referenced raster images are embedded into the output, subject to size limits. The preview reports included assets, removal counts, hashes, and warnings without writing anything.</p>
@@ -777,21 +778,21 @@ org2 publish docs-site --config org2.json</code></pre>
 <p>Publishing to Google is deliberately one-way. CLI callers must retain the returned file ID and Drive version in durable destination state. OpenOrg stores that non-secret binding in the published scope's property drawer, using format-specific <code>ORG2_PUBLISH_GOOGLE_*</code> properties for the file ID, URL, version, and publish time; whole-document bindings live in the file drawer and subtree bindings live on the selected headline. OAuth credentials remain in Keychain and are never stored in those properties. Replacing an existing Doc, Slides deck, Sheet, or PDF requires all three guards: <code>--document-id ID</code>, <code>--if-version VERSION</code>, and <code>--replace-existing</code>. Org2 fetches the current Drive record first and refuses the upload when the version changed, so a collaborator's edits are not silently overwritten. It also refuses full-content replacement when the target has comments, because replacement could detach their anchors even when comments did not advance the file version. The caller can then import remote changes or publish a new copy. Permissions, comments, suggestions, and Google revision history belong to Google; Org2 does not attempt bidirectional synchronization.</p>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh"># Create after inspecting the preview.
 ORG2_GOOGLE_DRIVE_ACCESS_TOKEN=&quot;$TOKEN&quot; \
-  org2 publish document --file reports/brief.org2 --to google-docs \
+  org2 publish document --file reports/brief.org --to google-docs \
   --folder-id DRIVE_FOLDER_ID --apply --format json
 
 # Other native Google formats use the same credential and folder policy.
 ORG2_GOOGLE_DRIVE_ACCESS_TOKEN=&quot;$TOKEN&quot; \
-  org2 publish document --file talks/briefing.org2 --to google-slides \
+  org2 publish document --file talks/briefing.org --to google-slides \
   --folder-id DRIVE_FOLDER_ID --apply --format json
 
 ORG2_GOOGLE_DRIVE_ACCESS_TOKEN=&quot;$TOKEN&quot; \
-  org2 publish document --file reports/evidence.org2 --to google-sheets \
+  org2 publish document --file reports/evidence.org --to google-sheets \
   --folder-id DRIVE_FOLDER_ID --apply --format json
 
 # Guarded full-document replacement.
 ORG2_GOOGLE_DRIVE_ACCESS_TOKEN=&quot;$TOKEN&quot; \
-  org2 publish document --file reports/brief.org2 --to google-docs \
+  org2 publish document --file reports/brief.org --to google-docs \
   --document-id GOOGLE_DOCUMENT_ID --if-version LAST_SEEN_VERSION \
   --replace-existing --apply --format json</code></pre>
 <p><code>export beamer</code> previews by default. Without <code>--pdf</code> it produces reviewable <code>.tex</code>; with <code>--pdf</code> it runs <code>pdflatex</code> twice so references, outlines, and overlays settle before the PDF is written. Select another installed command or absolute executable path with <code>--latex-engine</code>. The compiler invokes the engine directly with non-interactive, halt-on-error flags and does not enable shell escape.</p>

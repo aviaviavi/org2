@@ -108,7 +108,7 @@ dependency-install step.
       }
     ],
     "templates": [
-      { "id": "card-note", "path": "templates/card.org2" }
+      { "id": "card-note", "path": "templates/card.org" }
     ]
   }
 }
@@ -287,29 +287,30 @@ Important behavior:
 * TODO + planning edits
 
 #+begin_src sh
-org2 todo toggle --file notes.org2 --line 42 --apply
-org2 todo set --file notes.org2 --line 42 --status in_progress --apply
-org2 plan set --file notes.org2 --line 42 --kind scheduled --date 2026-03-25 --apply
+org2 todo toggle --file notes.org --line 42 --apply
+org2 todo set --file notes.org --line 42 --status in_progress --apply
+org2 plan set --file notes.org --line 42 --kind scheduled --date 2026-03-25 --apply
 #+end_src
 
 * Capture / archive / refile
 
 #+begin_src sh
-org2 capture --file inbox.org2 --title "Quick note" --template note --apply
-org2 archive --file notes.org2 --pos 120:0 --apply
-org2 refile --file notes.org2 --pos 120:0 --to-file projects.org2 --to-pos 40:0 --apply
+org2 capture --file inbox.org --title "Quick note" --template note --apply
+org2 archive --file notes.org --pos 120:0 --apply
+org2 refile --file notes.org --pos 120:0 --to-file projects.org --to-pos 40:0 --apply
 #+end_src
 
 Archiving moves the selected subtree to a companion archive file (by default =FILE_archive= for =.org= and =.org2= files, otherwise =FILE.archive=). Archived subtrees receive a property drawer with =ARCHIVED_AT=, =ARCHIVE_SOURCE=, =ARCHIVE_SOURCE_LINE=, =ARCHIVE_HEADING_PATH=, and =ARCHIVE_ORIGINAL_ID= when the original subtree had an =ID=. Use =--format diff= to preview the exact removal/append operation, or =--format json= for editor/agent integrations.
 
 * Formatter
 
-Deterministic formatting for Org and Org2 files. Add =--canonical-org= to rewrite accepted input conveniences such as fenced source blocks, =#+begin_org2= aliases, and backtick inline code to ordinary Org syntax. OpenOrg uses this profile whenever edited =.org= source contains those conveniences; =.org2= files retain lossless spelling. Syntax canonicalization is independent of the app's optional general format-on-save setting.
+Deterministic formatting for Org and Org2 files. File-based formatting automatically rewrites accepted input conveniences such as fenced source blocks, =#+begin_org2= aliases, and backtick inline code to ordinary Org syntax when the target ends in =.org=. Mixed directory operations choose the profile independently for each file. Existing =.org2= files retain lossless spelling unless =--canonical-org= is explicitly supplied. Use that flag for stdin, which has no filename, or to force the canonical profile for another target. OpenOrg, the LSP, and VS Code follow the same extension-aware rule. Syntax canonicalization remains independent of optional general format-on-save settings.
 
 #+begin_src sh
 org2 fmt --dir ~/notes --recursive --check
 org2 fmt --dir ~/notes --recursive --apply
-org2 fmt --file note.org --canonical-org --apply
+org2 fmt --file note.org --apply
+org2 fmt --stdin --canonical-org
 #+end_src
 
 * Table formula evaluation
@@ -318,32 +319,32 @@ org2 fmt --file note.org --canonical-org --apply
 
 * Chart rendering
 
-=org2 render-chart= renders an SVG artifact from =#+chart:= / =#+plot:= metadata or an adjacent fenced =```chart= block attached to an org2 table. Editor clients share this backend, so each extension uses the same table parsing and chart semantics.
+=org2 render-chart= renders an SVG artifact from =#+chart:= / =#+plot:= metadata or an adjacent =#+begin_src chart= block attached to an Org table. Fenced chart input remains accepted as typing sugar. Editor clients share this backend, so each extension uses the same table parsing and chart semantics.
 
 #+begin_src sh
-org2 render-chart --file report.org2 --block-id quarterly_revenue --out /tmp/quarterly-revenue.svg
-org2 render-chart --file report.org2 --line 42 --format json
+org2 render-chart --file report.org --block-id quarterly_revenue --out /tmp/quarterly-revenue.svg
+org2 render-chart --file report.org --line 42 --format json
 #+end_src
 
-The first renderer supports deterministic =bar=, =line=, and bucketed =histogram= charts with =x= and =y= column mappings. New hand-written examples should prefer fenced chart blocks when they are easier to scan:
+The first renderer supports deterministic =bar=, =line=, and bucketed =histogram= charts with =x= and =y= column mappings. Canonical =.org= documents use source blocks:
 
-#+begin_src org
+#+begin_example
 | bucket | fetches |
 |--------+---------|
 | 0-10   | 14      |
 | 11-50  | 32      |
 
-```chart histogram
+#+begin_src chart histogram
 x: bucket
 y: fetches
 sort: y-desc
 source: previous-table
-```
 #+end_src
+#+end_example
 
 For data-backed reports, a chart block can also point at a named materialized result table in the same note:
 
-#+begin_src org
+#+begin_example
 #+name: package_fetches_result
 #+results: query-fetches-by-company
 | day        | fetches |
@@ -351,97 +352,97 @@ For data-backed reports, a chart block can also point at a named materialized re
 | 2026-06-10 | 84      |
 
 #+name: package_fetches_chart
-```chart line
+#+begin_src chart line
 x: day
 y: fetches
 source: package_fetches_result
-```
 #+end_src
+#+end_example
 
 Add =sort: x-asc=, =sort: x-desc=, =sort: y-asc=, or =sort: y-desc= when a chart preview should be ordered independently of the table rows. JSON output includes =ok=, =format=, =artifact=, =source=, =diagnostics=, and =svg= so VS Code, Vim, or agent tooling can show useful errors for missing columns, unsupported chart types, missing chart sorts, missing named source tables, or missing chart blocks.
 
 * Data queries
 
-=org2 query-data= is the DuckDB-backed bridge for local and remote datasets described in org2 notes. It scans fenced =```dataset= blocks, creates DuckDB views for explicit =csv=, =parquet=, or =json= paths/URLs, named org2 tables, ClickHouse queries, or saved Metabase questions, optionally creates reusable SQL views from =```sql view=NAME= blocks, then runs a fenced =```sql results=NAME= block and materializes the returned rows.
+=org2 query-data= is the DuckDB-backed bridge for local and remote datasets described in Org notes. It scans =#+begin_src dataset= blocks, creates DuckDB views for explicit =csv=, =parquet=, or =json= paths/URLs, named Org tables, ClickHouse queries, or saved Metabase questions, optionally creates reusable SQL views from =#+begin_src sql view=NAME= blocks, then runs a =#+begin_src sql results=NAME= block and materializes the returned rows. Equivalent fences remain accepted as typing sugar.
 
-#+begin_src org
-```dataset fetches
+#+begin_example
+#+begin_src dataset fetches
 type: csv
 path: ./data/package-fetches.csv
 engine: duckdb
-```
+#+end_src
 
-```sql results=fetches_by_state artifact=views/fetches_by_state.org freshness=24h
+#+begin_src sql results=fetches_by_state artifact=views/fetches_by_state.org freshness=24h
 SELECT state, count(*) AS fetches
 FROM fetches
 GROUP BY state
 ORDER BY fetches DESC
-```
 #+end_src
+#+end_example
 
 Reusable SQL views can sit between datasets and the final materialized result:
 
-#+begin_src org
-```sql view=california_fetches
+#+begin_example
+#+begin_src sql view=california_fetches
 SELECT state, fetches
 FROM fetches
 WHERE state = 'CA'
-```
+#+end_src
 
-```sql results=fetches_by_state
+#+begin_src sql results=fetches_by_state
 SELECT state, sum(fetches) AS fetches
 FROM california_fetches
 GROUP BY state
-```
 #+end_src
+#+end_example
 
 Read-only HTTP(S) or =file:= URLs can be recorded with =url:= when DuckDB can read the source directly:
 
-#+begin_src org
-```dataset remote_fetches
+#+begin_example
+#+begin_src dataset remote_fetches
 type: csv
 url: https://data.example.test/package-fetches.csv
 engine: duckdb
 credential: env:SCARF_API_TOKEN
 config: profile:product-analytics
-```
+#+end_src
 
-```sql results=remote_fetches_by_state
+#+begin_src sql results=remote_fetches_by_state
 SELECT state, count(*) AS fetches
 FROM remote_fetches
 GROUP BY state
-```
 #+end_src
+#+end_example
 
 Named org2 tables can also become local DuckDB views without an intermediate CSV export:
 
-#+begin_src org
+#+begin_example
 #+name: raw_fetches
 | state | fetches |
 |-------+---------|
 | CA    | 42      |
 | NY    | 24      |
 
-```dataset fetches
+#+begin_src dataset fetches
 type: table
 source: raw_fetches
 engine: duckdb
-```
-
-```sql results=fetches_total
-SELECT sum(fetches) AS fetches
-FROM fetches
-```
 #+end_src
 
+#+begin_src sql results=fetches_total
+SELECT sum(fetches) AS fetches
+FROM fetches
+#+end_src
+#+end_example
+
 #+begin_src sh
-org2 query-data --file report.org2 --results fetches_by_state
-org2 query-data --file report.org2 --line 42 --format json
-org2 query-data --file report.org2 --inspect --include-script
-org2 query-data --file report.org2 --results fetches_by_state --out views/fetches_by_state.org
-org2 query-data --file report.org2 --results fetches_by_state --apply
-org2 query-data --file report.org2 --all-results --apply --format json
-cat report.org2 | org2 query-data --stdin --results fetches_by_state
+org2 query-data --file report.org --results fetches_by_state
+org2 query-data --file report.org --line 42 --format json
+org2 query-data --file report.org --inspect --include-script
+org2 query-data --file report.org --results fetches_by_state --out views/fetches_by_state.org
+org2 query-data --file report.org --results fetches_by_state --apply
+org2 query-data --file report.org --all-results --apply --format json
+cat report.org | org2 query-data --stdin --results fetches_by_state
 #+end_src
 
 The default output is a named org table with =#+name: fetches_by_state= so it can be pasted or written into the note and consumed by =render-chart= via =source: fetches_by_state=. =--apply= inserts that generated block after the selected SQL block or replaces the existing =#+query-data: result=...= block in place. =--all-results --apply= runs every named SQL result first, applies the complete set in memory, advances existing =#+updated:= and =ORG2_OBSERVED_AT= file metadata from the latest successful result timestamp, and writes the source file once only after all results succeed; any query failure leaves the file unchanged. Materialized tables include a compact provenance line with the result id, row count, explicit source dependencies, optional artifact/freshness, query and script hashes, and =ran_at= timestamp. Add =artifact=PATH= to record an intended materialized output and =freshness=24h=, =ttl=24h=, or =max-age=24h= when clients should know how long a result can be treated as fresh. SQL result ids must be unique within the note, and dataset ids and SQL view ids share DuckDB's relation namespace. Inline bearer tokens and passwords are rejected. JSON output includes diagnostics, dataset metadata, SQL views, available result blocks, provenance, rows, and the generated org table; =--include-script= includes DuckDB setup SQL. Use =--inspect= to parse without running DuckDB. Org2 uses its bundled DuckDB engine by default; =--duckdb PATH= is an explicit CLI-engine override. ClickHouse and Metabase datasets resolve named =dataSources= profiles from the nearest =org2.json=; secrets are read only from profile-named environment variables or the Mac app's Keychain workflow. Metabase datasets may target saved questions or include reproducible native SQL with a configured database ID. Remote refresh is explicit: HTML export and merely opening a note in the Mac rendered view never execute warehouse queries. See [[file:language-reference.org][the language reference]] for profile and dataset examples.
@@ -500,7 +501,7 @@ org2 agent-profile resolve --runtime openclaw \
   --runtime-agent-id customer-support --dir ~/notes --json
 org2 run create --goal "Resolve the customer issue" \
   --agent-ref customer-support --goal-ref customer-trust --dir ~/notes
-org2 todo assign --file notes/support.org2 --line 12 --assignee "Customer Support" \
+org2 todo assign --file notes/support.org --line 12 --assignee "Customer Support" \
   --agent-ref customer-support --goal-ref customer-trust --apply
 #+end_src
 
@@ -514,7 +515,7 @@ org2 run create --goal "Prepare the weekly operating review" \
   --risk local-draft --owner avi --assignee analyst \
   --policy deep-analysis --token-limit 50000 --cost-limit-usd 10 --time-limit-seconds 1800 \
   --step agent:"Draft cited review" --step validation:"Validate citations and export" \
-  --context notes/operations.org2 --capability agent-context --dir ~/notes
+  --context notes/operations.org --capability agent-context --dir ~/notes
 org2 run list --dir ~/notes --json
 org2 run show RUN_ID --dir ~/notes --json
 org2 run start RUN_ID --dir ~/notes
@@ -615,7 +616,7 @@ org2 workflow activate weekly-operating-review --dir ~/notes
 org2 workflow schedule weekly-operating-review --cron "0 9 * * 1" \
   --timezone America/Los_Angeles --gate-event capture --gate-path notes/ --dir ~/notes
 org2 workflow signal weekly-operating-review --event capture \
-  --signal-id capture-2026-W29 --changed notes/inbox.org2 --dir ~/notes
+  --signal-id capture-2026-W29 --changed notes/inbox.org --dir ~/notes
 org2 workflow gate weekly-operating-review --trigger openclaw-schedule --dir ~/notes --json
 org2 workflow pause weekly-operating-review --dir ~/notes
 org2 workflow migrate --dir ~/notes
@@ -714,21 +715,21 @@ Use this in CI or editor workflows before a future AI runner consumes a job. The
 =org2 ai run= writes a reviewable generated draft artifact from a validated job. The current implementation is provider-free and uses manifest =input.files= as deterministic source material, including simple glob patterns. It stamps =ORG2_PROVENANCE=, =ORG2_SOURCE_HASHES=, prompt/template, adapter/model, generated-at, and =ORG2_REVIEW_STATUS= metadata. Without =--apply= it previews the draft.
 
 #+begin_src sh
-org2 ai run --job examples/jobs/weekly-summary.org2-ai.json --out views/weekly-summary.org2
-org2 ai run --job examples/jobs/weekly-summary.org2-ai.json --out views/weekly-summary.org2 --apply
+org2 ai run --job examples/jobs/weekly-summary.org2-ai.json --out views/weekly-summary.org
+org2 ai run --job examples/jobs/weekly-summary.org2-ai.json --out views/weekly-summary.org --apply
 #+end_src
 
 =org2 ai suggest-links= ranks compiler-provided roam/linkify candidates with the deterministic mock adapter. It scans the graph, aliases, exact linkify matches, represented-node semantic suggestions, and title-case entity mentions, then emits review-only suggestions with confidence, reasons, source context, and citations. It never edits canonical notes directly; =--apply= only writes the suggestion report when =--out= is provided.
 
 #+begin_src sh
 org2 ai suggest-links --dir ~/notes --recursive --format json
-org2 ai suggest-links --dir ~/notes --recursive --out views/link-suggestions.org2 --apply
+org2 ai suggest-links --dir ~/notes --recursive --out views/link-suggestions.org --apply
 #+end_src
 
 =org2 ai promote= is the safe acceptance path. It refuses drafts until =ORG2_REVIEW_STATUS= is =reviewed=, then appends the reviewed body to a canonical note only when =--apply= is present and marks the draft =promoted=.
 
 #+begin_src sh
-org2 ai promote --file views/weekly-summary.org2 --to-file notes/weekly-summary.org2 --apply
+org2 ai promote --file views/weekly-summary.org --to-file notes/weekly-summary.org --apply
 #+end_src
 
 See [[file:ai-draft-artifacts.org][AI draft artifacts]] for the full format, review checklist, and VS Code command-palette entry points.
@@ -763,7 +764,7 @@ Use =search= for literal, case-insensitive full-text lookup over =.org= and =.or
 #+begin_src sh
 org2 search "Chris Martin" --dir ~/notes --recursive --context 3 --sort date-desc
 org2 search "Mercor" --dir ~/notes --recursive --sort relevance
-org2 index --dir ~/notes --recursive --file ~/notes/inbox.org2 --incremental --format json
+org2 index --dir ~/notes --recursive --file ~/notes/inbox.org --incremental --format json
 org2 query "Chris Martin" --dir ~/notes --recursive --subtree --sort date-desc --format json
 org2 query "Sentra" --dir ~/notes --recursive --format json
 org2 query actions --object 'id:PERSON-ID' --dir ~/notes --recursive --recent-days 30 --format json
@@ -803,17 +804,17 @@ Org2 keeps the existing Org-style =:crypt:= convention and encrypts at the subtr
 
 #+begin_src sh
 # Passphrase/symmetric mode
-org2 crypt decrypt --file secrets.org2 --line 42 --passphrase 'your-passphrase' --apply
-org2 crypt encrypt --file secrets.org2 --line 42 --passphrase 'your-passphrase' --apply
+org2 crypt decrypt --file secrets.org --line 42 --passphrase 'your-passphrase' --apply
+org2 crypt encrypt --file secrets.org --line 42 --passphrase 'your-passphrase' --apply
 
 # Multi-recipient public-key mode
-org2 crypt encrypt --file secrets.org2 --line 42 \
+org2 crypt encrypt --file secrets.org --line 42 \
   --recipient user@example.com \
   --recipient agent@example.com \
   --apply
 
 # Public-key recipient files are useful for keys that are not in your keyring
-org2 crypt encrypt --file secrets.org2 --line 42 \
+org2 crypt encrypt --file secrets.org --line 42 \
   --recipient-file keys/agent-public.asc \
   --apply
 
@@ -826,7 +827,7 @@ org2 crypt encrypt --file secrets.org2 --line 42 \
 Only the entries with this property are encrypted to that agent.
 
 # Migration: decrypt an existing block, then re-encrypt it for the new recipients
-org2 crypt reencrypt --file secrets.org2 --line 42 \
+org2 crypt reencrypt --file secrets.org --line 42 \
   --passphrase 'old-passphrase-if-needed' \
   --recipient user@example.com \
   --recipient agent@example.com \
@@ -840,14 +841,14 @@ Per-entry recipient properties let one corpus mix private-only and shared-with-a
 #+begin_src sh
 org2 export html --file README.org --out README.html --apply
 org2 export html --dir docs/site --recursive --out-dir site --apply
-org2 export beamer --file talks/demo.org2 --out publish/demo.tex --apply
-org2 export beamer --file talks/demo.org2 --out publish/demo.pdf --pdf --apply
-org2 publish document --file reports/brief.org2 --to web --out-dir publish/brief
-org2 publish document --file reports/brief.org2 --to web --out-dir publish/brief --apply
-org2 publish document --file talks/briefing.org2 --to beamer-pdf --out-file publish/briefing.pdf
-org2 publish document --file reports/brief.org2 --to google-docs --folder-id DRIVE_FOLDER_ID
-org2 publish document --file talks/briefing.org2 --to google-slides --folder-id DRIVE_FOLDER_ID
-org2 publish document --file reports/evidence.org2 --to google-sheets --folder-id DRIVE_FOLDER_ID
+org2 export beamer --file talks/demo.org --out publish/demo.tex --apply
+org2 export beamer --file talks/demo.org --out publish/demo.pdf --pdf --apply
+org2 publish document --file reports/brief.org --to web --out-dir publish/brief
+org2 publish document --file reports/brief.org --to web --out-dir publish/brief --apply
+org2 publish document --file talks/briefing.org --to beamer-pdf --out-file publish/briefing.pdf
+org2 publish document --file reports/brief.org --to google-docs --folder-id DRIVE_FOLDER_ID
+org2 publish document --file talks/briefing.org --to google-slides --folder-id DRIVE_FOLDER_ID
+org2 publish document --file reports/evidence.org --to google-sheets --folder-id DRIVE_FOLDER_ID
 org2 publish docs-site --config org2.json
 #+end_src
 
@@ -881,21 +882,21 @@ Publishing to Google is deliberately one-way. CLI callers must retain the return
 #+begin_src sh
 # Create after inspecting the preview.
 ORG2_GOOGLE_DRIVE_ACCESS_TOKEN="$TOKEN" \
-  org2 publish document --file reports/brief.org2 --to google-docs \
+  org2 publish document --file reports/brief.org --to google-docs \
   --folder-id DRIVE_FOLDER_ID --apply --format json
 
 # Other native Google formats use the same credential and folder policy.
 ORG2_GOOGLE_DRIVE_ACCESS_TOKEN="$TOKEN" \
-  org2 publish document --file talks/briefing.org2 --to google-slides \
+  org2 publish document --file talks/briefing.org --to google-slides \
   --folder-id DRIVE_FOLDER_ID --apply --format json
 
 ORG2_GOOGLE_DRIVE_ACCESS_TOKEN="$TOKEN" \
-  org2 publish document --file reports/evidence.org2 --to google-sheets \
+  org2 publish document --file reports/evidence.org --to google-sheets \
   --folder-id DRIVE_FOLDER_ID --apply --format json
 
 # Guarded full-document replacement.
 ORG2_GOOGLE_DRIVE_ACCESS_TOKEN="$TOKEN" \
-  org2 publish document --file reports/brief.org2 --to google-docs \
+  org2 publish document --file reports/brief.org --to google-docs \
   --document-id GOOGLE_DOCUMENT_ID --if-version LAST_SEEN_VERSION \
   --replace-existing --apply --format json
 #+end_src

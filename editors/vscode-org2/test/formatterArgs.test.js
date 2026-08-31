@@ -2,6 +2,9 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+  isCanonicalOrgFilePath,
+  containsOrgSyntaxSugar,
+  buildFormatterStdinArgs,
   resolveWorkspaceFormatterPathFilters,
   buildWorkspaceFormatterCommandArgs,
   buildCurrentFileFormatterPreviewArgs,
@@ -9,6 +12,20 @@ const {
   buildCurrentFileFormatterApplyArgs,
   buildCurrentFileFormatterStdoutArgs,
 } = require('../formatterArgs');
+
+test('canonical Org helpers: detect .org targets, syntax sugar, and formatter stdin profile', () => {
+  assert.equal(isCanonicalOrgFilePath('/tmp/notes/today.org'), true);
+  assert.equal(isCanonicalOrgFilePath('/tmp/notes/today.ORG'), true);
+  assert.equal(isCanonicalOrgFilePath('/tmp/notes/today.org2'), false);
+  assert.equal(containsOrgSyntaxSugar('Use `inline code`.'), true);
+  assert.equal(containsOrgSyntaxSugar('#+begin_org2\n* Nested\n#+end_org2\n'), true);
+  assert.equal(containsOrgSyntaxSugar('Use ~inline code~.'), false);
+  assert.deepEqual(
+    buildFormatterStdinArgs({ canonicalOrgSyntax: true, format: 'json' }),
+    ['fmt', '--stdin', '--canonical-org', '--format', 'json']
+  );
+  assert.deepEqual(buildFormatterStdinArgs(), ['fmt', '--stdin']);
+});
 
 test('resolveWorkspaceFormatterPathFilters: trims filters and resolves relative config path from workspace root', () => {
   const out = resolveWorkspaceFormatterPathFilters({

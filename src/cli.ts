@@ -10542,7 +10542,7 @@ Flags:
   --recursive     Recurse into subdirectories
   --file FILE     Single target file
   --files FILE    One or more target files
-  --canonical-org Rewrite accepted syntax sugar to ordinary Org forms
+  --canonical-org Rewrite accepted syntax sugar to ordinary Org forms (automatic for .org file targets; required for stdin)
   --check         Exit non-zero if formatting would change files
   --apply         Write changes instead of previewing`;
   } else if (command === "lsp") {
@@ -14921,14 +14921,17 @@ Flags:
   }
 
   if (command === "fmt") {
-    const formatOne = (rawIn: string): string => {
+    const formatOne = (rawIn: string, canonicalOrgSyntax = fmtCanonicalOrg): string => {
       const normalized = rawIn.replace(/\r\n/g, "\n");
       const { text: protectedText, blocks } = protectPgpBlocks(normalized);
       const ast = parseOrgToCanonicalAst(protectedText);
-      if (fmtCanonicalOrg) canonicalizeOrgSyntaxSugar(ast);
+      if (canonicalOrgSyntax) canonicalizeOrgSyntaxSugar(ast);
       const formatted = printCanonicalAstToOrg(ast);
       return restorePgpBlocks(formatted, blocks);
     };
+
+    const shouldCanonicalizeFmtFile = (file: string): boolean =>
+      fmtCanonicalOrg || path.extname(file).toLowerCase() === ".org";
 
     const emitFmtCheckJson = (checkedFiles: string[], changedFiles: string[]): void => {
       process.stdout.write(
@@ -15011,7 +15014,7 @@ Flags:
       }
       const stdinRaw = fs.readFileSync(0, "utf8");
       const normalizedStdinRaw = stdinRaw.replace(/\r\n/g, "\n");
-      const formattedText = formatOne(stdinRaw);
+      const formattedText = formatOne(stdinRaw, fmtCanonicalOrg);
 
       if (fmtFormat === "json") {
         emitFmtStdinJson(formattedText, formattedText !== normalizedStdinRaw);
@@ -15088,7 +15091,7 @@ Flags:
       const changedFiles: string[] = [];
       for (const file of fmtFiles) {
         const raw = fs.readFileSync(file, "utf8");
-        const out = formatOne(raw);
+        const out = formatOne(raw, shouldCanonicalizeFmtFile(file));
         if (out !== raw.replace(/\r\n/g, "\n")) {
           changedFiles.push(file);
         }
@@ -15116,7 +15119,7 @@ Flags:
       }
       const targetFile = fmtFiles[0]!;
       const raw = fs.readFileSync(targetFile, "utf8");
-      const out = formatOne(raw);
+      const out = formatOne(raw, shouldCanonicalizeFmtFile(targetFile));
 
       if (fmtFormat === "json") {
         emitFmtPreviewJson(targetFile, out, out !== raw.replace(/\r\n/g, "\n"));
@@ -15131,7 +15134,7 @@ Flags:
     for (const file of fmtFiles) {
       const raw = fs.readFileSync(file, "utf8");
       const normalizedRaw = raw.replace(/\r\n/g, "\n");
-      const out = formatOne(raw);
+      const out = formatOne(raw, shouldCanonicalizeFmtFile(file));
       if (out !== normalizedRaw) {
         fs.writeFileSync(file, out, "utf8");
         changedFiles.push(file);

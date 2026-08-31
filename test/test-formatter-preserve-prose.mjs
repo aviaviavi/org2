@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { parseOrgToCanonicalAst } from "../dist/parser.js";
 import { printCanonicalAstToOrg } from "../dist/printer.js";
 
@@ -72,3 +75,35 @@ const preservedAmbiguity = execFileSync(
   { encoding: "utf8", input: ambiguousSugar },
 );
 assert.equal(preservedAmbiguity, ambiguousSugar, "canonicalization must not change ambiguous literal content");
+
+const extensionFixtureDir = fs.mkdtempSync(path.join(os.tmpdir(), "org2-canonical-extension-"));
+try {
+  const orgFile = path.join(extensionFixtureDir, "note.org");
+  const org2File = path.join(extensionFixtureDir, "legacy.org2");
+  fs.writeFileSync(orgFile, sugarInput, "utf8");
+  fs.writeFileSync(org2File, sugarInput, "utf8");
+
+  const automaticOrgPreview = execFileSync(
+    "node",
+    ["dist/cli.js", "fmt", "--file", orgFile],
+    { encoding: "utf8" },
+  );
+  assert.equal(automaticOrgPreview, canonicalOrg, ".org file formatting selects canonical Org automatically");
+
+  const losslessOrg2Preview = execFileSync(
+    "node",
+    ["dist/cli.js", "fmt", "--file", org2File],
+    { encoding: "utf8" },
+  );
+  assert.equal(losslessOrg2Preview, sugarInput, ".org2 file formatting remains lossless by default");
+
+  execFileSync(
+    "node",
+    ["dist/cli.js", "fmt", "--files", orgFile, org2File, "--apply"],
+    { encoding: "utf8" },
+  );
+  assert.equal(fs.readFileSync(orgFile, "utf8"), canonicalOrg, "mixed apply canonicalizes .org files");
+  assert.equal(fs.readFileSync(org2File, "utf8"), sugarInput, "mixed apply preserves .org2 spelling");
+} finally {
+  fs.rmSync(extensionFixtureDir, { recursive: true, force: true });
+}

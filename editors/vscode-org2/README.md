@@ -51,6 +51,7 @@ Then install/run the extension from `editors/vscode-org2` with the Extension Dev
   - AI draft review workflows, including meeting/transcript summary drafts
 - LSP-backed editing:
   - definitions, hovers, completion, rename, formatting, code lens, and more
+- Extension-aware serialization: `*.org` saves and formatting rewrite accepted fenced/backtick shorthand to ordinary Org syntax; existing `*.org2` files remain lossless by default.
 
 ## Feature details
 
@@ -211,7 +212,7 @@ The extension can show an *agenda* view powered by the `org2` CLI.
 - `org2.agenda.groupLimit`: optional per-day per-group row cap when `groupBy` is set (`0` = no per-group cap)
 - `org2.agenda.dateOrder`: overall date ordering for agenda groups (`asc` oldest-first or `desc` newest-first)
 - `org2.agenda.recursive`: when scope=`workspace`, whether to scan recursively (default true)
-- `org2.roam.dailiesDir`: optional root directory for Roam dailies (`YYYY-MM-DD.org2`); defaults to `org2.roam.indexDir`, then `org2.agenda.dir`, then workspace root
+- `org2.roam.dailiesDir`: optional root directory for Roam dailies (new files use `YYYY-MM-DD.org`; existing `.org2` dailies remain discoverable); defaults to `org2.roam.indexDir`, then `org2.agenda.dir`, then workspace root
 - `org2.roam.indexDir`: optional root directory for Roam ID/query/backlinks/db-sync operations; absolute paths are used directly, relative paths resolve against `org2.agenda.dir`/workspace root
 - `org2.roam.nodesDir`: optional directory for `Org2: Roam — New Node`; absolute paths are used directly, relative paths resolve against `org2.roam.indexDir` (or `org2.agenda.dir`/workspace root)
 - `org2.agenda.command`: command used to run org2 (default: `org2`)
@@ -411,9 +412,9 @@ This is intentionally small and TextMate-based. The repo also contains a Tree-si
 The extension shells out to the workspace `org2` CLI for editor workflows. Unified source capture is currently exposed by the CLI rather than a VS Code command:
 
 ```sh
-org2 capture --text "note" --to inbox.org2 --title "Quick note" --apply
-org2 capture --stdin --to raw/transcript.org2 --title "Transcript" --apply
-org2 capture --file transcript.txt --to raw/inbox.org2 --apply
+org2 capture --text "note" --to inbox.org --title "Quick note" --apply
+org2 capture --stdin --to raw/transcript.org --title "Transcript" --apply
+org2 capture --file transcript.txt --to raw/inbox.org --apply
 ```
 
 Captured source entries include source type, origin, timestamp, author (when provided), content hash, and provenance metadata in an org property drawer.

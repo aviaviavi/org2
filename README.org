@@ -1,10 +1,12 @@
 * OpenOrg and Org2
 
 *OpenOrg* is a local-first suite of apps for building knowledge locally and
-putting it to work with people and AI agents. *Org2* is the open =.org2= file
-format and toolchain that powers those apps: the compiler/runtime, CLI, npm
-package, schemas, and editor tooling. This repository contains both the shared
-Org2 foundation and the OpenOrg apps built on it; repository and developer
+putting it to work with people and AI agents. *Org2* is the independently
+specified compiler/runtime and semantic profile that powers those apps, plus
+the CLI, npm package, schemas, and editor tooling. Human-facing documents use
+ordinary =.org= files by default; existing =.org2= files and structured runtime
+records remain supported. This repository contains both the shared Org2
+foundation and the OpenOrg apps built on it; repository and developer
 identifiers remain Org2 for compatibility.
 
 The initial plugin runtime installs self-contained Git packages through

@@ -139,7 +139,7 @@ if (
 if (
   !homepage.includes("#+TITLE: OpenOrg")
   || !homepage.includes("Build your knowledge locally and put it to work.")
-  || !productArchitecture.includes("A local-first workspace built on an open format and toolkit.")
+  || !productArchitecture.includes("A local-first workspace built on ordinary files and an open toolkit.")
   || !productArchitecture.includes("=@aviaviavi/org2=")
 ) {
   fail("product site must distinguish OpenOrg from the Org2 substrate");

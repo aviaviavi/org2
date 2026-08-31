@@ -65,7 +65,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <h1 class="org2-document-title">Org2 vs Org Mode</h1>
 </header>
 <p>The short version: if you want the best Org experience inside Emacs, use Org Mode. OpenOrg is for a different constraint: keeping much of Org's useful structure in ordinary files while using a native Mac app, VS Code, a standalone CLI, or other non-Emacs tools.</p>
-<p>Two names matter here. <strong>OpenOrg</strong> is the application. <strong>Org2</strong> is the open file format, parser, and runtime underneath it. Org2 is not a fork of Org Mode and does not claim complete Org compatibility. It is a smaller, deliberately specified interpretation of Org-shaped text.</p>
+<p>Two names matter here. <strong>OpenOrg</strong> is the application. <strong>Org2</strong> is the independently specified parser/runtime and semantic profile underneath it. Org2 is not a fork of Org Mode and does not claim complete Org compatibility. It implements a deliberately defined, portable interpretation of Org text.</p>
 <section class="org2-headline level-1">
 <h1 id="at-a-glance">At a glance</h1>
 <table>
@@ -73,9 +73,9 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <tr><th>Question</th><th>Org Mode</th><th>OpenOrg + Org2</th></tr>
 </thead>
 <tbody>
-<tr><td>What is it?</td><td>A major mode and extensive toolset for GNU Emacs</td><td>A native workspace built on a standalone parser, CLI, and file format</td></tr>
+<tr><td>What is it?</td><td>A major mode and extensive toolset for GNU Emacs</td><td>A native workspace built on a standalone parser/runtime, CLI, and semantic profile</td></tr>
 <tr><td>Natural home</td><td>Emacs</td><td>OpenOrg for Mac, VS Code, the CLI, and lightweight iOS workflows</td></tr>
-<tr><td>Source files</td><td><code>.org</code></td><td>Reads <code>.org</code>; recommends <code>.org2</code> when Org2-specific behavior is used</td></tr>
+<tr><td>Source files</td><td><code>.org</code></td><td>Uses <code>.org</code> by default; continues to read and preserve existing <code>.org2</code> files</td></tr>
 <tr><td>Editing</td><td>Deep structural editing, folding, capture, refile, tables, and keyboard workflows</td><td>Native rendered/source views and a VS Code extension; less editing depth than Org Mode</td></tr>
 <tr><td>Planning</td><td>Highly configurable TODOs, agendas, clocks, habits, repeaters, reports, and logs</td><td>Common TODO and planning semantics shared by the Mac app, VS Code, CLI, and agenda TUI</td></tr>
 <tr><td>Tables and code</td><td>Spreadsheet-like tables and the mature Babel ecosystem</td><td>Safe <code>#+TBLFM:</code> evaluation, structured tables, preserved source blocks, SQL-backed data notes, and charts; not a Babel replacement</td></tr>
@@ -130,7 +130,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <h1 id="compatibility-in-practice">Compatibility in practice</h1>
 <ul>
 <li><p>Existing <code>.org</code> files are normal Org2 compiler input.</p></li>
-<li><p><code>.org2</code> is useful when a workspace relies on Org2-specific blocks, metadata, or tooling. Emacs can open those files in <code>org-mode</code> with a simple file association.</p></li>
+<li><p>OpenOrg creates human-facing documents as <code>.org</code>. Existing <code>.org2</code> files remain supported and can be opened in <code>org-mode</code> with a simple file association.</p></li>
 <li><p>Common headings, TODOs, planning lines, properties, tags, links, blocks, lists, tables, and timestamps should be unsurprising in either editor.</p></li>
 <li><p>Org2-specific declarations remain readable text in Emacs, but Emacs does not automatically give them Org2 behavior.</p></li>
 <li><p>Custom Emacs Lisp, complex Babel graphs, specialized export backends, and heavily customized agenda rules do not port merely because the underlying file parses.</p></li>

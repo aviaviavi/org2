@@ -22,6 +22,9 @@ const {
   buildAgendaStatusFilterQuickPickOptions,
 } = require('./agendaStatusFilter');
 const {
+  isCanonicalOrgFilePath,
+  containsOrgSyntaxSugar,
+  buildFormatterStdinArgs,
   resolveWorkspaceFormatterPathFilters,
   buildWorkspaceFormatterCommandArgs,
   buildCurrentFileFormatterPreviewArgs,
@@ -1120,7 +1123,7 @@ async function ensureFileHasTopLevelId(doc) {
 
 async function openRoamDailyForDateString(dateStr) {
   const root = getRoamDailiesRootDir();
-  const fileName = `${dateStr}.org2`;
+  const fileName = `${dateStr}.org`;
   const absPath = path.join(root, fileName);
   const uri = vscode.Uri.file(absPath);
 
@@ -1531,11 +1534,15 @@ function activate(context) {
     });
   }
 
-  async function formatOrg2Text(text) {
+  async function formatOrg2Text(text, canonicalOrgSyntax = false) {
     const cwd = getWorkspaceRoot() || process.cwd();
 
     try {
-      const jsonResult = await runFmtWithStdin(['fmt', '--stdin', '--format', 'json'], text, cwd);
+      const jsonResult = await runFmtWithStdin(
+        buildFormatterStdinArgs({ canonicalOrgSyntax, format: 'json' }),
+        text,
+        cwd
+      );
       const parsedJson = parseFormatterStdinJson(jsonResult.stdout);
       if (parsedJson) {
         return parsedJson.formattedText;
@@ -1548,7 +1555,7 @@ function activate(context) {
       }
     }
 
-    const fallback = await runFmtWithStdin(['fmt', '--stdin'], text, cwd);
+    const fallback = await runFmtWithStdin(buildFormatterStdinArgs({ canonicalOrgSyntax }), text, cwd);
     return fallback.stdout;
   }
 
@@ -1995,10 +2002,10 @@ function activate(context) {
     if (!jobUris || jobUris.length === 0 || jobUris[0].scheme !== 'file') return;
 
     const jobPath = jobUris[0].fsPath;
-    const defaultName = `${path.basename(jobPath, path.extname(jobPath))}.org2`;
+    const defaultName = `${path.basename(jobPath, path.extname(jobPath))}.org`;
     const targetUri = await vscode.window.showSaveDialog({
       defaultUri: vscode.Uri.file(path.join(root, 'views', defaultName)),
-      filters: { 'Org2 draft artifacts': ['org2', 'org'] },
+      filters: { 'Org2 draft artifacts': ['org', 'org2'] },
       title: 'Write Org2 AI draft artifact',
     });
     if (!targetUri || targetUri.scheme !== 'file') return;
@@ -2033,10 +2040,10 @@ function activate(context) {
 
   async function runAiLinkSuggestionReport() {
     const root = getAgendaRootDir();
-    const defaultUri = vscode.Uri.file(path.join(root, 'views', 'link-suggestions.org2'));
+    const defaultUri = vscode.Uri.file(path.join(root, 'views', 'link-suggestions.org'));
     const targetUri = await vscode.window.showSaveDialog({
       defaultUri,
-      filters: { 'Org2 suggestion reports': ['org2', 'org'], 'JSON suggestion reports': ['json'] },
+      filters: { 'Org2 suggestion reports': ['org', 'org2'], 'JSON suggestion reports': ['json'] },
       title: 'Write review-only Org2 AI link/entity suggestion report',
     });
     if (!targetUri || targetUri.scheme !== 'file') return;
@@ -2635,8 +2642,11 @@ function activate(context) {
   const formattingProvider = {
     async provideDocumentFormattingEdits(document) {
       const text = document.getText();
+      const canonicalOrgSyntax = document.uri && document.uri.scheme === 'file'
+        ? isCanonicalOrgFilePath(document.uri.fsPath)
+        : false;
       try {
-        const formatted = await formatOrg2Text(text);
+        const formatted = await formatOrg2Text(text, canonicalOrgSyntax);
         const fullRange = new vscode.Range(
           0,
           0,
@@ -2663,16 +2673,20 @@ function activate(context) {
       const cfg = vscode.workspace.getConfiguration('org2');
       const formatEnabled = cfg.get('formatOnSave', true);
       const autoEncryptCrypt = cfg.get('crypt.encryptOnSave', true);
+      const canonicalOrgSyntax = doc.uri && doc.uri.scheme === 'file'
+        ? isCanonicalOrgFilePath(doc.uri.fsPath)
+        : false;
+      const shouldCanonicalizeSugar = canonicalOrgSyntax && containsOrgSyntaxSugar(doc.getText());
 
-      if (!formatEnabled && !autoEncryptCrypt) return;
+      if (!formatEnabled && !autoEncryptCrypt && !shouldCanonicalizeSugar) return;
 
       e.waitUntil(
         (async () => {
           let text = doc.getText();
 
-          if (formatEnabled) {
+          if (formatEnabled || shouldCanonicalizeSugar) {
             try {
-              text = await formatOrg2Text(text);
+              text = await formatOrg2Text(text, canonicalOrgSyntax);
             } catch (_) {
               // Keep saving even if formatting fails.
             }
@@ -4166,8 +4180,8 @@ function activate(context) {
     if (captureFilePick.customPath) {
       const customPathRaw = await vscode.window.showInputBox({
         prompt: 'Org2: capture file path',
-        value: defaultFileRaw || activeFilePath || path.join(workspaceRoot, 'inbox.org2'),
-        placeHolder: '/path/to/inbox.org2',
+        value: defaultFileRaw || activeFilePath || path.join(workspaceRoot, 'inbox.org'),
+        placeHolder: '/path/to/inbox.org',
         validateInput: (v) => (String(v || '').trim() ? undefined : 'Capture file path is required'),
       });
       if (customPathRaw === undefined) return;
@@ -4329,7 +4343,7 @@ function activate(context) {
     })
   );
 
-  // Roam dailies navigation (open or create YYYY-MM-DD.org2)
+  // Roam dailies navigation (open or create YYYY-MM-DD.org)
   context.subscriptions.push(
     vscode.commands.registerCommand('org2.roamDailiesGotoToday', async () => {
       await openRoamDailyForDateString(formatDateYYYYMMDD(new Date()));

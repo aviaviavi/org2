@@ -1,15 +1,15 @@
 #+TITLE: OpenOrg and Org2
-#+SUBTITLE: A local-first workspace built on an open format and toolkit.
+#+SUBTITLE: A local-first workspace built on ordinary files and an open toolkit.
 
 * The boundary
 
 OpenOrg is the native workspace, onboarding, integrations, and overall experience for building knowledge locally and putting it to work with people and agents.
 
-Org2 is the open =.org2= format, compiler/runtime, CLI, npm package, schemas, and editor tooling underneath it. OpenOrg reads the same ordinary files as other Org2-compatible tools.
+Org2 is the independently specified compiler/runtime and semantic profile underneath OpenOrg, together with its CLI, npm package, schemas, and editor tooling. Human-facing documents use ordinary =.org= files by default. Existing =.org2= files and structured runtime records remain supported for compatibility.
 
 * Portability
 
-- Ordinary =.org2= and =.org= files are the source of truth.
+- Ordinary =.org= files are the default source of truth for human-facing documents; existing =.org2= files remain first-class input.
 - The command-line tools are =org2= and =org2-lsp=.
 - The npm package is =@aviaviavi/org2=.
 - VS Code, Vim, Neovim, Emacs, CLI JSON, and MCP clients can work with the same corpus.

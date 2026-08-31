@@ -720,7 +720,7 @@
         "org2.roam.dailiesDir": {
           "type": "string",
           "default": "",
-          "description": "Root directory for Org2 Roam dailies files (YYYY-MM-DD.org2). If empty, falls back to org2.roam.indexDir, then org2.agenda.dir, then the VS Code workspace folder."
+          "description": "Root directory for Org2 Roam dailies files (new files use YYYY-MM-DD.org; existing .org2 dailies remain discoverable). If empty, falls back to org2.roam.indexDir, then org2.agenda.dir, then the VS Code workspace folder."
         },
         "org2.roam.indexDir": {
           "type": "string",
@@ -1171,7 +1171,7 @@
         "org2.formatOnSave": {
           "type": "boolean",
           "default": true,
-          "description": "Auto-format Org tables on save (runs `org2 fmt --stdin` and replaces the document)."
+          "description": "Auto-format Org tables on save. Canonical syntax conversion for `.org` files still runs when accepted fenced/backtick shorthand is present; `.org2` files retain lossless spelling."
         },
         "org2.todo.writeTransitionLogbook": {
           "type": "boolean",

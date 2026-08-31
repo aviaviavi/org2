@@ -21,6 +21,8 @@ Marketplace page: [[https://marketplace.visualstudio.com/items?itemName=AviPress
 
 Open your notes folder and run =Org2: Open Agenda= from the command palette.
 
+New human-facing documents use =.org=. In =.org= files, formatting and save-time shorthand handling rewrite fenced blocks and backtick inline code to ordinary Org syntax. Existing =.org2= files retain their lossless spelling.
+
 ** Source install
 
 For extension development or unreleased builds, use the repository copy at =editors/vscode-org2/=.

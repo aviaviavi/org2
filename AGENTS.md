@@ -3,8 +3,10 @@
 This repository contains two closely related layers:
 
 - **OpenOrg** is the user-facing macOS and iOS workspace.
-- **Org2** is the open `.org2` format and the shared compiler/runtime, CLI,
-  schemas, publishing system, plugin runtime, and editor tooling beneath it.
+- **Org2** is the independently specified compiler/runtime and semantic profile
+  for ordinary `.org` documents, plus the CLI, schemas, publishing system,
+  plugin runtime, and editor tooling beneath OpenOrg. Existing `.org2` files
+  and structured runtime records remain supported for compatibility.
 
 These instructions are runtime-neutral. OpenClaw, Codex, Claude Code, and other
 agents may work here, but no agent runtime, app cache, generated index, or model

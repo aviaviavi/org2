@@ -4,6 +4,22 @@ function normalizeOptionalString(value) {
   return String(value || '').trim();
 }
 
+function isCanonicalOrgFilePath(filePath) {
+  return path.extname(String(filePath || '')).toLowerCase() === '.org';
+}
+
+function containsOrgSyntaxSugar(text) {
+  const source = String(text || '');
+  return source.includes('`') || /^\s*#\+begin_org2\b/im.test(source);
+}
+
+function buildFormatterStdinArgs(options = {}) {
+  const args = ['fmt', '--stdin'];
+  if (options.canonicalOrgSyntax) args.push('--canonical-org');
+  if (options.format) args.push('--format', String(options.format));
+  return args;
+}
+
 function resolveWorkspaceFormatterPathFilters(options = {}) {
   const {
     root = process.cwd(),
@@ -71,6 +87,9 @@ function buildCurrentFileFormatterStdoutArgs(filePath) {
 }
 
 module.exports = {
+  isCanonicalOrgFilePath,
+  containsOrgSyntaxSugar,
+  buildFormatterStdinArgs,
   resolveWorkspaceFormatterPathFilters,
   buildWorkspaceFormatterCommandArgs,
   buildCurrentFileFormatterPreviewArgs,

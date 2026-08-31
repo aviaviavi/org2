@@ -10,6 +10,7 @@ import {
   ListNode,
 } from "./parser.js";
 import { printCanonicalAstToOrg } from "./printer.js";
+import { canonicalizeOrgSyntaxSugar } from "./canonicalOrg.js";
 import { protectPgpBlocks, restorePgpBlocks } from "./pgp.js";
 import { findConfigFile, loadConfig } from "./config.js";
 import {
@@ -647,7 +648,7 @@ class LSPServer {
           return;
         }
 
-        const edits = this.getDocumentFormattingEdits(doc.text);
+        const edits = this.getDocumentFormattingEdits(doc.text, doc.uri);
         this.sendResponse(id, edits);
       } else if (method === "textDocument/rangeFormatting") {
         const { textDocument, range } = params;
@@ -657,7 +658,7 @@ class LSPServer {
           return;
         }
 
-        const edits = this.getRangeFormattingEdits(doc.text, range);
+        const edits = this.getRangeFormattingEdits(doc.text, range, doc.uri);
         this.sendResponse(id, edits);
       } else if (method === "textDocument/onTypeFormatting") {
         const { textDocument, position, ch } = params;
@@ -667,7 +668,7 @@ class LSPServer {
           return;
         }
 
-        const edits = this.getOnTypeFormattingEdits(doc.text, position, String(ch || ""));
+        const edits = this.getOnTypeFormattingEdits(doc.text, position, String(ch || ""), doc.uri);
         this.sendResponse(id, edits);
       } else if (method === "textDocument/selectionRange") {
         const { textDocument, positions } = params;
@@ -1383,8 +1384,8 @@ class LSPServer {
     return actions;
   }
 
-  private getDocumentFormattingEdits(text: string): TextEdit[] {
-    const formatted = this.formatCanonicalOrgText(text);
+  private getDocumentFormattingEdits(text: string, uri: string): TextEdit[] {
+    const formatted = this.formatCanonicalOrgText(text, this.shouldCanonicalizeOrgUri(uri));
     if (!formatted) {
       return [];
     }
@@ -1402,7 +1403,7 @@ class LSPServer {
     ];
   }
 
-  private getRangeFormattingEdits(text: string, range: Range): TextEdit[] {
+  private getRangeFormattingEdits(text: string, range: Range, uri: string): TextEdit[] {
     const lines = text.split("\n");
     if (lines.length === 0) {
       return [];
@@ -1415,7 +1416,7 @@ class LSPServer {
     const endLineExclusive = Math.min(lines.length, Math.max(startLine + 1, endLineExclusiveBase));
 
     const selectedText = lines.slice(startLine, endLineExclusive).join("\n");
-    const formatted = this.formatCanonicalOrgText(selectedText);
+    const formatted = this.formatCanonicalOrgText(selectedText, this.shouldCanonicalizeOrgUri(uri));
     if (!formatted) {
       return [];
     }
@@ -1438,7 +1439,12 @@ class LSPServer {
     ];
   }
 
-  private getOnTypeFormattingEdits(text: string, position: Position, triggerCharacter: string): TextEdit[] {
+  private getOnTypeFormattingEdits(
+    text: string,
+    position: Position,
+    triggerCharacter: string,
+    uri: string,
+  ): TextEdit[] {
     if (triggerCharacter !== "|" && triggerCharacter !== "\n") {
       return [];
     }
@@ -1469,7 +1475,7 @@ class LSPServer {
     return this.getRangeFormattingEdits(text, {
       start: { line: startLine, character: 0 },
       end: { line: endLine, character: endCharacter },
-    });
+    }, uri);
   }
 
   private isTableLikeLine(line: string): boolean {
@@ -2574,11 +2580,20 @@ class LSPServer {
     return Math.max(0, Math.min(maxLine, Number(line)));
   }
 
-  private formatCanonicalOrgText(rawText: string): string | null {
+  private shouldCanonicalizeOrgUri(uri: string): boolean {
+    try {
+      return uri.startsWith("file:") && path.extname(fileURLToPath(uri)).toLowerCase() === ".org";
+    } catch {
+      return false;
+    }
+  }
+
+  private formatCanonicalOrgText(rawText: string, canonicalOrgSyntax = false): string | null {
     try {
       const normalized = rawText.replace(/\r\n/g, "\n");
       const { text: protectedText, blocks } = protectPgpBlocks(normalized);
       const ast = parseOrgToCanonicalAst(protectedText);
+      if (canonicalOrgSyntax) canonicalizeOrgSyntaxSugar(ast);
       const formatted = printCanonicalAstToOrg(ast);
       return restorePgpBlocks(formatted, blocks);
     } catch {

@@ -52,11 +52,11 @@
 <section class="org2-sample" aria-labelledby="org2-sample-title">
   <aside class="org2-lineage-note" aria-labelledby="org2-lineage-title">
     <p class="org2-lineage-label" id="org2-lineage-title">For Org mode users</p>
-    <p><strong>Org2 aims to be an editor-agnostic successor to Emacs Org mode</strong>—carrying forward its durable plain-text model and programmable structure, then extending those ideas for a world where editors, native apps, and AI agents need to share the same context.</p>
+    <p><strong>OpenOrg brings Org's durable plain-text model to native apps, editors, CLIs, and AI agents.</strong> It uses ordinary <code>.org</code> documents by default while providing one independently specified runtime for links, planning, publishing, data, and agent workflows outside Emacs.</p>
     <a href="org2-vs-org-mode.html">How Org2 compares <span aria-hidden="true">→</span></a>
   </aside>
   <div class="org2-sample-intro">
-    <h2 id="org2-sample-title">What an Org2 file looks like</h2>
+    <h2 id="org2-sample-title">What an OpenOrg document looks like</h2>
     <p>One plain-text document can carry notes, tasks, dates, links, data records, source provenance, and agent handoff boundaries while staying readable in any editor.</p>
   </div>
   <div class="org2-sample-layout">
@@ -67,8 +67,8 @@
       <div style="--callout-top: 69.8rem"><strong>Assigned Work</strong><span>ASSIGNEE and STATUS turn normal TODOs into an agent-readable work queue.</span></div>
     </aside>
     <figure class="org2-sample-file">
-      <figcaption>notes/product-launch.org2</figcaption>
-      <pre aria-label="Example Org2 document"><code><span class="org2-syntax-keyword">#+title:</span> Product launch workspace
+      <figcaption>notes/product-launch.org</figcaption>
+      <pre aria-label="Example Org document"><code><span class="org2-syntax-keyword">#+title:</span> Product launch workspace
 <span class="org2-syntax-keyword">#+filetags:</span> <span class="org2-syntax-tag">:launch:q3:</span>
 <span class="org2-syntax-keyword">#+roam_aliases:</span> beta launch rollout
 
@@ -83,7 +83,7 @@
 
   - [X] Draft invite copy
   - [ ] Confirm onboarding path with <span class="org2-syntax-link">[[id:design-review][design review]]</span>
-  - [ ] Publish release notes from <span class="org2-syntax-link">[[file:release-notes.org2][release notes]]</span>
+  - [ ] Publish release notes from <span class="org2-syntax-link">[[file:release-notes.org][release notes]]</span>
 
 <span class="org2-syntax-heading">**</span> Meeting notes
   Decisions:
@@ -91,9 +91,9 @@
   - Track follow-ups in the same file as the project plan.
 
 <span class="org2-syntax-heading">**</span> Source query for docs
-  <span class="org2-syntax-block">``` sh</span>
+  <span class="org2-syntax-block">#+begin_src sh</span>
   org2 query --tag launch --format json
-  <span class="org2-syntax-block">```</span>
+  <span class="org2-syntax-block">#+end_src</span>
 
 <span class="org2-syntax-heading">**</span> Launch readiness data <span class="org2-syntax-tag">:evidence:</span>
   <span class="org2-syntax-drawer">:PROPERTIES:</span>
@@ -101,17 +101,17 @@
   <span class="org2-syntax-prop">:KIND:</span> dataset
   <span class="org2-syntax-drawer">:END:</span>
 
-  <span class="org2-syntax-block">```dataset launch_readiness</span>
+  <span class="org2-syntax-block">#+begin_src dataset launch_readiness</span>
   type: csv
   path: data/launch-readiness.csv
   engine: duckdb
-  <span class="org2-syntax-block">```</span>
+  <span class="org2-syntax-block">#+end_src</span>
 
-  <span class="org2-syntax-block">```sql results=launch_readiness_summary artifact=views/launch-readiness.org freshness=24h</span>
+  <span class="org2-syntax-block">#+begin_src sql results=launch_readiness_summary artifact=views/launch-readiness.org freshness=24h</span>
   SELECT week, activated_users, blocker_count
   FROM launch_readiness
   ORDER BY week DESC
-  <span class="org2-syntax-block">```</span>
+  <span class="org2-syntax-block">#+end_src</span>
 
 <span class="org2-syntax-heading">**</span> <span class="org2-syntax-todo">TODO</span> Summarize launch blockers
   <span class="org2-syntax-drawer">:PROPERTIES:</span>
@@ -126,7 +126,7 @@
 <span class="org2-syntax-heading">*</span> AI draft summary <span class="org2-syntax-tag">:draft:</span>
   <span class="org2-syntax-drawer">:PROPERTIES:</span>
   <span class="org2-syntax-prop">:ORG2_ARTIFACT_ROLE:</span> view
-  <span class="org2-syntax-prop">:ORG2_PROVENANCE:</span> file:raw/calls/beta-kickoff.org2, id:launch-readiness-data
+  <span class="org2-syntax-prop">:ORG2_PROVENANCE:</span> file:raw/calls/beta-kickoff.org, id:launch-readiness-data
   <span class="org2-syntax-prop">:ORG2_CLAIM_STATE:</span> source-backed
   <span class="org2-syntax-prop">:ORG2_REVIEW_STATUS:</span> review-required
   <span class="org2-syntax-drawer">:END:</span>
@@ -153,7 +153,7 @@ Your files are the source of truth. Apps and agents share the context, people ke
 * What you can do with it
 
 - *Turn commitments into follow-through* without separating them from the conversation or document that created them.
-- *Bring outside context home* by crawling systems such as Slack and Notion into provenance-preserving local =.org2= files.
+- *Bring outside context home* by crawling systems such as Slack and Notion into provenance-preserving local =.org= files.
 - *Delegate across people and agents* while keeping responsibility, progress, and context visible.
 - *Review the decisions that matter* in one approval queue while routine agent steps continue in the background.
 - *Produce useful artifacts* including talks, analytics, visualizations, reports, PDFs, and published sites.
@@ -171,7 +171,7 @@ The result is deliberately boring composability: inspectable files that can driv
 
 * Start here
 
-OpenOrg Alpha is for technical founders, operators, and knowledge workers who want agents working over files they own. Org2 provides the open format, compiler, CLI, and editor tooling underneath the workspace.
+OpenOrg Alpha is for technical founders, operators, and knowledge workers who want agents working over files they own. Org2 provides the independently specified compiler/runtime, CLI, and editor tooling underneath the workspace.
 
 - [[file:getting-started.org][Getting started]]
 - [[file:openorg-and-org2.org][OpenOrg and Org2 architecture]]

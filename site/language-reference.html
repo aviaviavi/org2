@@ -326,10 +326,10 @@ const x = 1
 <pre class="org2-example">#+begin_src ts
 const x = 1
 #+end_src</pre>
-<p>New <code>.org</code> documents use the ordinary Org form on disk. The Mac app rewrites fences to <code>#+begin_src</code> / <code>#+end_src</code> and rewrites backtick inline code to <code>~code~</code> whenever edited <code>.org</code> source is saved. This syntax canonicalization still occurs when general format-on-save is disabled: the input remains quick to type, while persisted <code>.org</code> files stay valid Org syntax. Existing <code>.org2</code> files and the default lossless parser/printer preserve their original spelling.</p>
-<p>The CLI exposes the same explicit serialization profile:</p>
+<p>New <code>.org</code> documents use the ordinary Org form on disk. OpenOrg, file-based CLI formatting, the LSP, and editor integrations rewrite fences to <code>#+begin_src</code> / <code>#+end_src</code> and backtick inline code to ordinary Org inline markup whenever edited <code>.org</code> source is persisted or formatted. This syntax canonicalization still occurs when general format-on-save is disabled: the input remains quick to type, while persisted <code>.org</code> files stay valid Org syntax. Existing <code>.org2</code> files and the default lossless parser/printer preserve their original spelling.</p>
+<p>File-based CLI formatting selects the profile automatically from the extension. Stdin has no filename, so buffer-oriented callers select it explicitly:</p>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 fmt --stdin --canonical-org
-org2 fmt --file note.org --canonical-org --apply</code></pre>
+org2 fmt --file note.org --apply</code></pre>
 <p>Fenced source blocks use exactly three backticks for the opener and closer. Four-or-more backticks remain ordinary text in v0, which keeps Markdown examples that quote org2 fences from accidentally becoming executable org2 source, chart, dataset, or SQL blocks.</p>
 </section>
 </section>
@@ -351,7 +351,7 @@ org2 fmt --file note.org --canonical-org --apply</code></pre>
 | A    |   2 |  3.50 |       |
 | B    |   4 |  2.00 |       |
 #+TBLFM: $4=$2*$3;%.2f</code></pre>
-<p><code>org2 table recalculate --file report.org2</code> previews the changed cells; add <code>--apply</code> to write them atomically. The Mac rendered view evaluates supported formulas for display and offers the same explicit recalculation action for editable files. HTML export uses the shared evaluator without rewriting source.</p>
+<p><code>org2 table recalculate --file report.org</code> previews the changed cells; add <code>--apply</code> to write them atomically. The Mac rendered view evaluates supported formulas for display and offers the same explicit recalculation action for editable files. HTML export uses the shared evaluator without rewriting source.</p>
 <p>The safe formula subset includes field, row, column, and rectangular-range assignments; absolute and relative <code>@row$column</code> references; A1 references; arithmetic, comparisons, and boolean operators; <code>vsum</code>, <code>vmean</code>, <code>vmin</code>, <code>vmax</code>, <code>vmedian</code>, <code>vcount</code>, common numeric functions; printf/Calc-style numeric formats; and <code>T</code>, <code>U</code>, and <code>t</code> duration modes. Later assignments override earlier assignments for the same cell. Empty-field <code>N</code> mode is supported. Formula lines, including unsupported forms, remain lossless.</p>
 <p>Org2 deliberately does not execute Emacs Lisp formulas, remote-table references, or arbitrary Calc extensions. An unsupported or invalid formula produces a diagnostic and leaves the source unchanged rather than partially updating a table.</p>
 </section>
@@ -366,95 +366,95 @@ org2 fmt --file note.org --canonical-org --apply</code></pre>
 |---------+---------|
 | 2026-Q1 | 1200    |</code></pre>
 <p>Recognized affiliated keys include <code>NAME</code>, <code>CAPTION</code>, <code>PLOT</code>, <code>CHART</code>, <code>DATASET</code>, <code>VIEW</code>, <code>RESULTS</code>, <code>HEADER</code>/<code>HEADERS</code>, and <code>ATTR_*</code> keys. The parser preserves them on the following table or block as <code>affiliatedKeywords</code> for chart renderers, dataset indexes, SQL views, and exporters.</p>
-<p>For new chart examples, prefer an adjacent fenced chart block when it is easier to read:</p>
-<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">#+name: fetch_buckets
+<p>Canonical <code>.org</code> documents use an adjacent chart source block:</p>
+<pre class="org2-example">#+name: fetch_buckets
 | bucket | fetches |
 |--------+---------|
 | 0-10   | 14      |
 | 11-50  | 32      |
 
-```chart histogram
+#+begin_src chart histogram
 x: bucket
 y: fetches
 sort: y-desc
 source: previous-table
-```</code></pre>
-<p>This is ergonomic syntax sugar for chart metadata over the preceding table. Fenced chart blocks may also point at a named table or materialized result elsewhere in the same note:</p>
-<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">#+name: package_fetches_result
+#+end_src</pre>
+<p>This is chart metadata over the preceding table. Chart source blocks may also point at a named table or materialized result elsewhere in the same note; fenced chart input remains accepted as typing sugar:</p>
+<pre class="org2-example">#+name: package_fetches_result
 #+results: query-fetches-by-company
 | day        | fetches |
 |------------+---------|
 | 2026-06-10 | 84      |
 
 #+name: package_fetches_chart
-```chart line
+#+begin_src chart line
 x: day
 y: fetches
 source: package_fetches_result
 size: compact
 height: 300
 interactive: true
-```</code></pre>
+#+end_src</pre>
 <p>The current renderer supports <code>bar</code>, <code>line</code>, and bucketed <code>histogram</code> charts over the previous table or a named table source. Add <code>sort: x-asc</code>, <code>sort: x-desc</code>, <code>sort: y-asc</code>, or <code>sort: y-desc</code> when the visual should order marks independently of the table's source row order. <code>size</code> accepts <code>compact</code>, <code>medium</code>, or <code>wide</code>. <code>height</code> accepts 220–720 pixels and defaults according to the size preset. <code>interactive</code> defaults to <code>true</code>; in the Mac app it enables nearest-point hover, exact-value tooltips, a crosshair, and keyboard navigation between marks. Static SVG remains the canonical CLI and export fallback.</p>
 <p>The Mac app treats chart interaction as app-owned presentation behavior. Notes cannot provide arbitrary JavaScript. Chart cards can also be resized horizontally in the rendered view; use <code>size</code> and <code>height</code> when the desired dimensions should remain deterministic in source.</p>
 <p>Chart SVG uses CSS custom properties with opinionated defaults: <code>--org2-chart-mark</code>, <code>--org2-chart-surface</code>, <code>--org2-chart-axis</code>, <code>--org2-chart-grid</code>, <code>--org2-chart-label</code>, and <code>--org2-chart-title</code>. Set them on <code>.org2-chart</code> in a published stylesheet or the Mac app's <code>.org2/app.css</code> to customize the visual theme without changing the data declaration.</p>
 <p>The CLI can render chart-affiliated tables directly:</p>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 render-chart --file report.org2 --block-id quarterly_revenue --format svg</code></pre>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 render-chart --file report.org --block-id quarterly_revenue --format svg</code></pre>
 </section>
 <section class="org2-headline level-1">
 <h1 id="local-datasets-and-sql-views">Local datasets and SQL views</h1>
-<p>Org2 can describe local/ad hoc data workflows with fenced <code>dataset</code> and <code>sql</code> blocks. This is intended for notebook-like reports over explicit local files, read-only URLs, and named org2 tables, with DuckDB as the first execution bridge:</p>
-<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">```dataset fetches
+<p>Org2 can describe local/ad hoc data workflows with <code>dataset</code> and <code>sql</code> source blocks. Equivalent fences remain accepted as typing sugar. This is intended for notebook-like reports over explicit local files, read-only URLs, and named Org tables, with DuckDB as the first execution bridge:</p>
+<pre class="org2-example">#+begin_src dataset fetches
 type: csv
 path: ./data/package-fetches.csv
 engine: duckdb
-```
+#+end_src
 
-```sql results=fetches_by_state artifact=views/fetches_by_state.org freshness=24h
+#+begin_src sql results=fetches_by_state artifact=views/fetches_by_state.org freshness=24h
 SELECT state, count(*) AS fetches
 FROM fetches
 GROUP BY state
 ORDER BY fetches DESC
-```
+#+end_src
 
-```chart bar
+#+begin_src chart bar
 source: fetches_by_state
 x: state
 y: fetches
-```</code></pre>
+#+end_src</pre>
 <p><code>org2 query-data</code> reads these blocks, creates DuckDB views for local files, URL-backed sources, named org2 tables, or configured remote analytics datasets, creates declared SQL views, runs a selected SQL result block through the local DuckDB CLI, and materializes the returned rows as a named org table or JSON envelope. Materialized org tables include a <code>#+query-data:</code> provenance line with the result id, row count, optional freshness token, selected SQL hash, full DuckDB script hash, and <code>ran_at</code> timestamp:</p>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 query-data --file report.org2 --results fetches_by_state --out report.fetches.org
-org2 query-data --file report.org2 --results fetches_by_state --apply
-org2 query-data --file report.org2 --line 42 --format json
-org2 query-data --file report.org2 --inspect --include-script
-cat report.org2 | org2 query-data --stdin --results fetches_by_state --format json</code></pre>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 query-data --file report.org --results fetches_by_state --out report.fetches.org
+org2 query-data --file report.org --results fetches_by_state --apply
+org2 query-data --file report.org --line 42 --format json
+org2 query-data --file report.org --inspect --include-script
+cat report.org | org2 query-data --stdin --results fetches_by_state --format json</code></pre>
 <p>Use <code>--stdin</code> when an editor, agent, or notebook-style client wants to run the current buffer without saving it first. Use <code>--line N</code> to select the SQL result block containing or after the cursor line. JSON output includes <code>resultBlocks</code> with each available SQL result id and source range. Use <code>--inspect</code> to return parsed datasets, SQL views, result metadata, diagnostics, and selected-query provenance without running DuckDB; <code>--include-script</code> also returns generated DuckDB SQL. Relative file paths are resolved from the working directory for stdin input. SQL result ids must be unique, and dataset ids and SQL view ids must be distinct because they become DuckDB relation names. Local URL/table datasets may carry metadata-only credential/config references such as <code>env:SCARF_API_TOKEN</code> or <code>profile:product-analytics</code>; remote analytics datasets use their named profile operationally but never insert credentials into generated SQL. Inline bearer tokens, passwords, and other literal secrets are rejected. SQL result blocks can include <code>artifact=PATH</code> and <code>freshness=24h</code> / <code>ttl=24h</code> / <code>max-age=24h</code> metadata. Executed results stamp <code>ranAt</code> so clients can evaluate freshness.</p>
 <p>Use <code>sql view=NAME</code> when a report needs a reusable local projection before the final result table:</p>
-<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">```sql view=california_fetches
+<pre class="org2-example">#+begin_src sql view=california_fetches
 SELECT state, fetches
 FROM fetches
 WHERE state = 'CA'
-```
+#+end_src
 
-```sql results=fetches_by_state
+#+begin_src sql results=fetches_by_state
 SELECT state, sum(fetches) AS fetches
 FROM california_fetches
 GROUP BY state
-```</code></pre>
+#+end_src</pre>
 <p>Use <code>url:</code> instead of <code>path:</code> when DuckDB should read a declared HTTP(S) or <code>file:</code> URL directly:</p>
-<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">```dataset remote_fetches
+<pre class="org2-example">#+begin_src dataset remote_fetches
 type: csv
 url: https://data.example.test/package-fetches.csv
 engine: duckdb
 credential: env:SCARF_API_TOKEN
 config: profile:product-analytics
-```
+#+end_src
 
-```sql results=remote_fetches_by_state
+#+begin_src sql results=remote_fetches_by_state
 SELECT state, count(*) AS fetches
 FROM remote_fetches
 GROUP BY state
-```</code></pre>
+#+end_src</pre>
 <section class="org2-headline level-2">
 <h2 id="remote-analytics-datasets">Remote analytics datasets</h2>
 <p>Remote datasets use the same named-dataset and DuckDB result pipeline as local CSV files. A note names a profile, but never contains a warehouse URL, API key, username, or password. Profiles live in the nearest <code>org2.json</code> and refer to secrets through environment-variable names:</p>
@@ -480,7 +480,7 @@ GROUP BY state
   }
 }</code></pre>
 <p>A ClickHouse dataset carries read-only SQL:</p>
-<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">```dataset package_fetches
+<pre class="org2-example">#+begin_src dataset package_fetches
 type: clickhouse
 profile: scarf-clickhouse
 query: |
@@ -489,17 +489,17 @@ query: |
   WHERE timestamp &gt;= now() - INTERVAL 30 DAY
   GROUP BY day
   ORDER BY day
-```</code></pre>
+#+end_src</pre>
 <p>A Metabase dataset executes a saved question by numeric question/card ID. Optional <code>parameters: |</code> is JSON using Metabase's parameter payload format:</p>
-<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">```dataset revenue
+<pre class="org2-example">#+begin_src dataset revenue
 type: metabase
 profile: scarf-metabase
 question: 123
 parameters: |
   []
-```</code></pre>
+#+end_src</pre>
 <p>For a reproducible notebook, put the native SQL directly in the dataset block instead of relying on a mutable saved question. The profile must provide either a positive <code>databaseId</code> or a <code>databaseIdEnv</code> naming an environment variable that contains it:</p>
-<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">```dataset recent_organizations
+<pre class="org2-example">#+begin_src dataset recent_organizations
 type: metabase
 profile: scarf-metabase
 query: |
@@ -507,40 +507,40 @@ query: |
   FROM organizations
   ORDER BY created_at DESC
   LIMIT 25
-```</code></pre>
-<p>Use either dataset in ordinary DuckDB SQL, materialize the result as an org table with <code>org2 query-data</code>, then attach a <code>```chart</code> block to that named result. ClickHouse requests set server-side read-only mode, row limits, execution timeouts, and JSON output. Metabase requests use API-key authentication and saved-question JSON export. Both adapters enforce response-size and row limits locally as well.</p>
+#+end_src</pre>
+<p>Use either dataset in ordinary DuckDB SQL, materialize the result as an Org table with <code>org2 query-data</code>, then attach a <code>#+begin_src chart</code> block to that named result. ClickHouse requests set server-side read-only mode, row limits, execution timeouts, and JSON output. Metabase requests use API-key authentication and saved-question JSON export. Both adapters enforce response-size and row limits locally as well.</p>
 <p>For notebooks with multiple remote sources, declare each result's dependency edge explicitly with <code>sources=DATASET_ID[,DATASET_ID...]</code>. Org2 validates the named sources, loads only those datasets for that result, and records them in materialization provenance:</p>
-<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">```sql results=recent_organizations sources=recent_organizations_source freshness=24h
+<pre class="org2-example">#+begin_src sql results=recent_organizations sources=recent_organizations_source freshness=24h
 SELECT * FROM recent_organizations_source
 ORDER BY created_at DESC
-```</code></pre>
+#+end_src</pre>
 <p>Refreshing data is always explicit. Use <code>org2 query-data --apply</code> to insert the selected result after its SQL block or replace the existing provenance-stamped result in place. HTML rendering and opening a note in the Mac app only consume tables already present in the document; they never contact Metabase or ClickHouse. Valid chart declarations over those tables are rendered automatically as responsive inline SVG in the Mac app and static HTML exports.</p>
-<p>Use <code>type: table</code> with <code>source: NAME</code> when the source data already lives in a named org2 table:</p>
-<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">#+name: raw_fetches
+<p>Use <code>type: table</code> with <code>source: NAME</code> when the source data already lives in a named Org table:</p>
+<pre class="org2-example">#+name: raw_fetches
 | state | fetches |
 |-------+---------|
 | CA    | 42      |
 | NY    | 24      |
 
-```dataset fetches
+#+begin_src dataset fetches
 type: table
 source: raw_fetches
 engine: duckdb
-```
+#+end_src
 
-```sql results=fetches_total
+#+begin_src sql results=fetches_total
 SELECT sum(fetches) AS fetches
 FROM fetches
-```</code></pre>
+#+end_src</pre>
 <p>This is deliberately scoped to explicit local/ad hoc data sources. Org2 stores the source path, read-only URL, table/view name, optional column and primary-key metadata, credential/config reference, query, and materialized result/provenance; secrets, bearer tokens, and remote warehouse credentials belong in external tooling, not in notes.</p>
 </section>
 </section>
 <section class="org2-headline level-1">
 <h1 id="presentations">Presentations</h1>
 <p>Org2 can compile an Org-shaped outline into a backend-neutral presentation model and render that model as Beamer LaTeX or PDF:</p>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 export beamer --file talk.org2
-org2 export beamer --file talk.org2 --out talk.tex --apply
-org2 export beamer --file talk.org2 --out talk.pdf --pdf --apply</code></pre>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 export beamer --file talk.org
+org2 export beamer --file talk.org --out talk.tex --apply
+org2 export beamer --file talk.org --out talk.pdf --pdf --apply</code></pre>
 <p>Export previews by default. <code>--pdf</code> invokes <code>pdflatex</code> twice; use <code>--latex-engine COMMAND</code> to select another installed LaTeX engine.</p>
 <p>For pdfLaTeX compatibility, common Unicode arrows, comparison operators, checkmarks, bullets, dashes, and related symbols are translated to equivalent LaTeX commands in prose, headings, metadata, and literal/source blocks. This includes symbols such as <code>→</code>, <code>↘</code>, <code>≥</code>, and <code>✓</code> that pdfLaTeX's default UTF-8 layer does not define directly.</p>
 <p>The frame level defaults to 2 and follows the familiar Org convention in <code>#+OPTIONS: H:2</code>: level-one headlines become sections and level-two headlines become slides. <code>#+ORG2_SLIDE_LEVEL:</code>, <code>#+SLIDE_LEVEL:</code>, and legacy <code>#+BEAMER_FRAME_LEVEL:</code> can set the level explicitly. <code>toc:t</code> adds an outline frame.</p>
