@@ -243,6 +243,7 @@ final class WorkspaceTabStripView: NSView {
   private var orderedTabIDs: [WorkspaceTab.ID] = []
   private var tabViews: [WorkspaceTab.ID: WorkspaceTabInteractionView] = [:]
   private var selectedTabID: WorkspaceTab.ID?
+  private weak var dragCoordinator: WorkspaceTabDragCoordinator?
 
   override init(frame frameRect: NSRect) {
     super.init(frame: frameRect)
@@ -287,6 +288,7 @@ final class WorkspaceTabStripView: NSView {
         height: Self.tabHeight
       )
     }
+    dragCoordinator?.restoreLiveLayout()
   }
 
   func update(
@@ -302,6 +304,10 @@ final class WorkspaceTabStripView: NSView {
     moveTab: @escaping (WorkspaceTab.ID, WorkspaceTab.ID) -> Void
   ) {
     let nextIDs = Set(items.map(\.id))
+    if dragCoordinator.hasActiveDrag, Set(orderedTabIDs) != nextIDs {
+      dragCoordinator.cancel()
+    }
+    self.dragCoordinator = dragCoordinator
     for (tabID, tabView) in tabViews where !nextIDs.contains(tabID) {
       tabView.removeFromSuperview()
       tabViews.removeValue(forKey: tabID)
@@ -378,41 +384,157 @@ private final class FlippedWorkspaceTabDocumentView: NSView {
 
 @MainActor
 final class WorkspaceTabDragCoordinator: ObservableObject {
+  private struct LiveDragState {
+    let views: [WorkspaceTabInteractionView]
+    let slotFrames: [NSRect]
+    let sourceIndex: Int
+    let grabOffsetX: CGFloat
+    var targetIndex: Int
+    var sourceX: CGFloat
+  }
+
+  private let reorderAnimationDuration: TimeInterval
   private weak var sourceView: WorkspaceTabInteractionView?
-  private weak var targetView: WorkspaceTabInteractionView?
+  private var liveDragState: LiveDragState?
+
+  init(reorderAnimationDuration: TimeInterval = 0.12) {
+    self.reorderAnimationDuration = reorderAnimationDuration
+  }
 
   var hasActiveDrag: Bool { sourceView != nil }
 
-  func begin(from source: WorkspaceTabInteractionView) {
+  func begin(from source: WorkspaceTabInteractionView, grabOffsetX: CGFloat) {
     cancel()
+    guard let container = source.superview else { return }
+    let views = container.subviews
+      .compactMap { $0 as? WorkspaceTabInteractionView }
+      .sorted { $0.frame.minX < $1.frame.minX }
+    guard views.count > 1,
+          let sourceIndex = views.firstIndex(where: { $0 === source })
+    else { return }
+
+    let slotFrames = views.map(\.frame)
     sourceView = source
+    liveDragState = LiveDragState(
+      views: views,
+      slotFrames: slotFrames,
+      sourceIndex: sourceIndex,
+      grabOffsetX: min(max(0, grabOffsetX), source.bounds.width),
+      targetIndex: sourceIndex,
+      sourceX: source.frame.minX
+    )
+    source.setBeingDragged(true)
   }
 
-  func updateTarget(_ target: WorkspaceTabInteractionView?) {
-    let nextTarget = target === sourceView ? nil : target
-    guard nextTarget !== targetView else { return }
-    targetView?.setDropTargeted(false)
-    targetView = nextTarget
-    targetView?.setDropTargeted(true)
+  func update(pointerX: CGFloat) {
+    guard var state = liveDragState,
+          sourceView != nil,
+          let firstSlot = state.slotFrames.first,
+          let lastSlot = state.slotFrames.last
+    else { return }
+
+    let sourceX = min(
+      max(pointerX - state.grabOffsetX, firstSlot.minX),
+      lastSlot.minX
+    )
+    let targetIndex = state.slotFrames.enumerated().min { first, second in
+      abs(first.element.minX - sourceX) < abs(second.element.minX - sourceX)
+    }?.offset ?? state.sourceIndex
+    let targetChanged = targetIndex != state.targetIndex
+    state.targetIndex = targetIndex
+    state.sourceX = sourceX
+    liveDragState = state
+    applyLiveLayout(state, animatingNeighbors: targetChanged)
   }
 
   func finish() {
-    let sourceID = sourceView?.tabID
-    let moveTab = targetView?.moveTab
-    cancel()
-    if let sourceID, let moveTab {
-      Task { @MainActor in
-        try? await Task.sleep(nanoseconds: 50_000_000)
-        guard !Task.isCancelled else { return }
-        moveTab(sourceID)
-      }
+    guard let state = liveDragState,
+          let source = sourceView
+    else {
+      cancel()
+      return
     }
+
+    let targetView = state.targetIndex == state.sourceIndex
+      ? nil
+      : state.views[state.targetIndex]
+    applySettledLayout(state, animated: true)
+    source.setBeingDragged(false)
+    sourceView = nil
+    liveDragState = nil
+    targetView?.moveTab?(source.tabID)
   }
 
   func cancel() {
-    targetView?.setDropTargeted(false)
+    if let state = liveDragState {
+      applyOriginalLayout(state, animated: true)
+    }
+    sourceView?.setBeingDragged(false)
     sourceView = nil
-    targetView = nil
+    liveDragState = nil
+  }
+
+  func restoreLiveLayout() {
+    guard let state = liveDragState else { return }
+    applyLiveLayout(state, animatingNeighbors: false)
+  }
+
+  private func applyLiveLayout(
+    _ state: LiveDragState,
+    animatingNeighbors: Bool
+  ) {
+    guard let source = sourceView else { return }
+    let visualOrder = visualOrder(for: state)
+    let neighborTargets = visualOrder.enumerated().compactMap { index, view in
+      view === source ? nil : (view, state.slotFrames[index])
+    }
+    applyFrames(
+      neighborTargets,
+      animated: animatingNeighbors
+    )
+
+    var sourceFrame = state.slotFrames[state.targetIndex]
+    sourceFrame.origin.x = state.sourceX
+    source.frame = sourceFrame
+  }
+
+  private func applySettledLayout(_ state: LiveDragState, animated: Bool) {
+    let targets = visualOrder(for: state).enumerated().map { index, view in
+      (view, state.slotFrames[index])
+    }
+    applyFrames(targets, animated: animated)
+  }
+
+  private func applyOriginalLayout(_ state: LiveDragState, animated: Bool) {
+    let targets = state.views.enumerated().map { index, view in
+      (view, state.slotFrames[index])
+    }
+    applyFrames(targets, animated: animated)
+  }
+
+  private func visualOrder(for state: LiveDragState) -> [WorkspaceTabInteractionView] {
+    var visualOrder = state.views
+    let source = visualOrder.remove(at: state.sourceIndex)
+    visualOrder.insert(source, at: state.targetIndex)
+    return visualOrder
+  }
+
+  private func applyFrames(
+    _ targets: [(WorkspaceTabInteractionView, NSRect)],
+    animated: Bool
+  ) {
+    guard animated, reorderAnimationDuration > 0 else {
+      for (view, frame) in targets {
+        view.frame = frame
+      }
+      return
+    }
+    NSAnimationContext.runAnimationGroup { context in
+      context.duration = reorderAnimationDuration
+      for (view, frame) in targets {
+        view.animator().frame = frame
+      }
+    }
   }
 }
 
@@ -440,7 +562,7 @@ final class WorkspaceTabInteractionView: NSView {
   private let titleLabel = NSTextField(labelWithString: "")
   private let closeButton = NSButton()
   private var isHovered = false
-  private var isDropTargeted = false
+  private(set) var isBeingDragged = false
   private var pointerDownLocation: NSPoint?
   private var startedDragging = false
   private var trackingAreaReference: NSTrackingArea?
@@ -579,15 +701,15 @@ final class WorkspaceTabInteractionView: NSView {
         currentLocation.y - pointerDownLocation.y
       ) >= 4 else { return }
       startedDragging = true
-      dragCoordinator?.begin(from: self)
+      dragCoordinator?.begin(from: self, grabOffsetX: pointerDownLocation.x)
     }
     guard dragCoordinator?.hasActiveDrag == true else { return }
-    dragCoordinator?.updateTarget(tabTarget(at: event))
+    updateDragLocation(with: event)
   }
 
   override func mouseUp(with event: NSEvent) {
     if dragCoordinator?.hasActiveDrag == true {
-      dragCoordinator?.updateTarget(tabTarget(at: event))
+      updateDragLocation(with: event)
       dragCoordinator?.finish()
     }
     pointerDownLocation = nil
@@ -599,7 +721,11 @@ final class WorkspaceTabInteractionView: NSView {
   }
 
   override func keyDown(with event: NSEvent) {
-    if event.keyCode == 36 || event.keyCode == 49 {
+    if event.keyCode == 53, dragCoordinator?.hasActiveDrag == true {
+      dragCoordinator?.cancel()
+      pointerDownLocation = nil
+      startedDragging = false
+    } else if event.keyCode == 36 || event.keyCode == 49 {
       select?()
     } else {
       super.keyDown(with: event)
@@ -624,10 +750,18 @@ final class WorkspaceTabInteractionView: NSView {
     needsLayout = true
   }
 
-  func setDropTargeted(_ targeted: Bool) {
-    guard isDropTargeted != targeted else { return }
-    isDropTargeted = targeted
+  func setBeingDragged(_ dragging: Bool) {
+    guard isBeingDragged != dragging else { return }
+    isBeingDragged = dragging
+    alphaValue = dragging ? 0.96 : 1
+    layer?.zPosition = dragging ? 1 : 0
+    layer?.shadowColor = NSColor.black.cgColor
+    layer?.shadowOpacity = dragging ? 0.28 : 0
+    layer?.shadowRadius = dragging ? 4 : 0
+    layer?.shadowOffset = CGSize(width: 0, height: -1)
+    closeButton.isHidden = dragging || !(canClose && (showsCloseButton || isHovered))
     updateColors()
+    needsLayout = true
   }
 
   override func viewDidChangeEffectiveAppearance() {
@@ -636,20 +770,20 @@ final class WorkspaceTabInteractionView: NSView {
   }
 
   private func updateColors() {
-    let background: NSColor
-    if isSelected {
-      background = .selectedContentBackgroundColor.withAlphaComponent(0.14)
-    } else if isDropTargeted {
-      background = .controlAccentColor.withAlphaComponent(0.12)
-    } else if isHovered {
-      background = .controlAccentColor.withAlphaComponent(0.07)
-    } else {
-      background = .controlBackgroundColor.withAlphaComponent(0.78)
-    }
-    let border = isSelected || isDropTargeted
-      ? NSColor.controlAccentColor.withAlphaComponent(0.34)
-      : NSColor.separatorColor
     effectiveAppearance.performAsCurrentDrawingAppearance {
+      let background: NSColor
+      if isBeingDragged {
+        background = .selectedContentBackgroundColor.withAlphaComponent(0.18)
+      } else if isSelected {
+        background = .selectedContentBackgroundColor.withAlphaComponent(0.14)
+      } else if isHovered {
+        background = .controlAccentColor.withAlphaComponent(0.07)
+      } else {
+        background = .controlBackgroundColor.withAlphaComponent(0.78)
+      }
+      let border = isSelected || isBeingDragged
+        ? NSColor.controlAccentColor.withAlphaComponent(0.34)
+        : NSColor.separatorColor
       layer?.backgroundColor = background.cgColor
       layer?.borderColor = border.cgColor
     }
@@ -685,22 +819,11 @@ final class WorkspaceTabInteractionView: NSView {
     return menu
   }
 
-  private func tabTarget(at event: NSEvent) -> WorkspaceTabInteractionView? {
-    guard let contentView = window?.contentView else { return nil }
-    for tabView in descendantTabViews(in: contentView) {
-      let localPoint = tabView.convert(event.locationInWindow, from: nil)
-      if tabView.bounds.contains(localPoint) {
-        return tabView
-      }
-    }
-    return nil
-  }
-
-  private func descendantTabViews(in view: NSView) -> [WorkspaceTabInteractionView] {
-    view.subviews.flatMap { child in
-      ([child as? WorkspaceTabInteractionView].compactMap { $0 })
-        + descendantTabViews(in: child)
-    }
+  private func updateDragLocation(with event: NSEvent) {
+    guard let container = superview else { return }
+    _ = container.autoscroll(with: event)
+    let location = container.convert(event.locationInWindow, from: nil)
+    dragCoordinator?.update(pointerX: location.x)
   }
 
   private func menuItem(

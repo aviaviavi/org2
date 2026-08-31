@@ -273,7 +273,22 @@ struct Org2WorkspaceScreenshotRenderer {
     }
 
     tabViews = workspaceTabViews(in: hostingView)
-    sendDrag(from: tabViews[0], to: tabViews[2], in: window)
+    let originalFrames = tabViews.map { $0.convert($0.bounds, to: nil) }
+    let dragDestination = beginDrag(from: tabViews[0], to: tabViews[2], in: window)
+    await settleTabEvents(durationNanoseconds: 180_000_000)
+    let liveFrames = tabViews.map { $0.convert($0.bounds, to: nil) }
+    guard abs(liveFrames[0].midX - dragDestination.x) < 1,
+          abs(liveFrames[1].minX - originalFrames[0].minX) < 1,
+          abs(liveFrames[2].minX - originalFrames[1].minX) < 1
+    else {
+      throw ScreenshotRenderError.tabVerificationFailed(
+        "the dragged tab or its neighbors did not move before mouse-up"
+      )
+    }
+    guard store.workspaceTabs.map(\.id) == expectedTabIDs else {
+      throw ScreenshotRenderError.tabVerificationFailed("the tab order committed before drop")
+    }
+    finishDrag(tabViews[0], at: dragDestination, in: window)
     await settleTabEvents(durationNanoseconds: 250_000_000)
     let reorderedTabIDs = store.workspaceTabs.map(\.id)
     guard reorderedTabIDs == [expectedTabIDs[1], expectedTabIDs[2], expectedTabIDs[0]] else {
@@ -295,7 +310,7 @@ struct Org2WorkspaceScreenshotRenderer {
       throw ScreenshotRenderError.tabVerificationFailed("the native close action did not close the selected tab")
     }
 
-    FileHandle.standardError.write(Data("Verified integrated tab click and drag events plus the native close action\n".utf8))
+    FileHandle.standardError.write(Data("Verified integrated tab click, live drag reordering, drop, and native close action\n".utf8))
   }
 
   @MainActor
@@ -337,13 +352,13 @@ struct Org2WorkspaceScreenshotRenderer {
   }
 
   @MainActor
-  private static func sendDrag(from source: NSView, to target: NSView, in window: NSWindow) {
+  private static func beginDrag(from source: NSView, to target: NSView, in window: NSWindow) -> NSPoint {
     let start = source.convert(
       NSPoint(x: source.bounds.midX, y: source.bounds.midY),
       to: nil
     )
     let destination = target.convert(
-      NSPoint(x: target.bounds.midX, y: target.bounds.midY),
+      NSPoint(x: target.bounds.midX - 30, y: target.bounds.midY),
       to: nil
     )
     let threshold = NSPoint(x: start.x + 8, y: start.y)
@@ -351,7 +366,12 @@ struct Org2WorkspaceScreenshotRenderer {
     source.mouseDown(with: mouseEvent(.leftMouseDown, at: start, in: window, eventNumber: 3))
     source.mouseDragged(with: mouseEvent(.leftMouseDragged, at: threshold, in: window, eventNumber: 4))
     source.mouseDragged(with: mouseEvent(.leftMouseDragged, at: destination, in: window, eventNumber: 5))
-    source.mouseUp(with: mouseEvent(.leftMouseUp, at: destination, in: window, eventNumber: 6))
+    return destination
+  }
+
+  @MainActor
+  private static func finishDrag(_ source: NSView, at location: NSPoint, in window: NSWindow) {
+    source.mouseUp(with: mouseEvent(.leftMouseUp, at: location, in: window, eventNumber: 6))
   }
 
   @MainActor
