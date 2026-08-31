@@ -1,0 +1,139 @@
+#+TITLE: MCP and agent skills
+#+DESCRIPTION: Connect agents to an Org2 corpus through the built-in MCP server or the portable Org2 skill.
+
+Org2 ships two complementary agent entry points:
+
+- The *MCP server* gives an MCP-capable client typed access to one explicitly selected corpus.
+- The *Org2 skill* teaches a skill-aware agent how to discover and use the broader CLI safely.
+
+MCP is the narrower typed surface. The skill is the operating guide and CLI fallback. Neither changes the corpus format or grants access to folders outside the corpus you select.
+
+* Start the Org2 MCP server
+
+Install the npm package, then start the local stdio server with an absolute corpus path:
+
+#+begin_src sh
+npm install --global @aviaviavi/org2
+org2 mcp serve --dir /absolute/path/to/notes
+#+end_src
+
+The process speaks MCP over standard input and output. Normally an MCP client starts and supervises it; you do not keep a separate network service running.
+
+** Codex CLI and app
+
+Current Codex clients share local MCP configuration. Add Org2 from the CLI:
+
+#+begin_src sh
+codex mcp add org2 -- org2 mcp serve --dir /absolute/path/to/notes
+codex mcp list
+#+end_src
+
+Restart the client after changing configuration, then use =/mcp= to inspect the connection. You can also add the same stdio command under *Settings → MCP servers*. See the [[https://learn.chatgpt.com/docs/extend/mcp?surface=cli][official Codex MCP setup guide]].
+
+** Claude Code
+
+#+begin_src sh
+claude mcp add --transport stdio --scope user org2 -- \
+  org2 mcp serve --dir /absolute/path/to/notes
+claude mcp get org2
+#+end_src
+
+Use =/mcp= inside Claude Code to check status. See the [[https://code.claude.com/docs/en/mcp][official Claude Code MCP guide]] for project, local, and user scopes.
+
+** Other stdio MCP clients
+
+Clients that accept the common JSON server shape can use:
+
+#+begin_src json
+{
+  "mcpServers": {
+    "org2": {
+      "type": "stdio",
+      "command": "org2",
+      "args": ["mcp", "serve", "--dir", "/absolute/path/to/notes"]
+    }
+  }
+}
+#+end_src
+
+If a GUI-launched client cannot find =org2= on its =PATH=, set =command= to the absolute executable path returned by =command -v org2=.
+
+* What the server exposes
+
+| MCP capability | Current Org2 surface |
+|----------------+----------------------|
+| Resources | Every ordinary =.org= and =.org2= file beneath the selected corpus, addressed as =org2://corpus/PATH= |
+| Prompts | Authored Org2 workflows, including their declared inputs |
+| Tools | Five typed coordination and durable-work operations listed below |
+
+The current tools are:
+
+- =org2_agent_profile_resolve=: resolve a runtime identity to a portable agent profile and primary goal.
+- =org2_run_create=: instantiate a reusable workflow as a durable run.
+- =org2_run_transition=: move a run through its lifecycle; completion requires a reviewer-facing summary.
+- =org2_run_list=: inspect durable runs and review state.
+- =org2_thread_post=: post an attributed, idempotent background update to an existing AI chat without starting a model turn.
+
+The server is deliberately *not* a complete mirror of the CLI yet. Search, bounded context assembly, Agenda, TODO mutation, publishing, lint, graph checks, and most other commands remain CLI operations. Use the general skill below so an agent knows when to leave MCP and call CLI JSON.
+
+* Corpus and safety boundaries
+
+- =--dir= selects the only corpus exposed by that server process.
+- Resource reads stay beneath the canonical corpus root, reject symlinked files, and expose only =.org= and =.org2= source.
+- Workflow prompts and resource listing are read-only.
+- Run creation, run transition, and thread posting are writes. They use the same guarded Org2 records and lifecycle rules as the CLI, but the MCP call itself is the requested action; there is no second =--apply= preview inside those tools.
+- Credentials are not read from corpus files or returned as MCP resources. Keep client secrets in the client environment or its credential store.
+
+Only enable write tools for agents you trust to act within that corpus. If a client supports per-tool approval, require confirmation for the three mutating tools.
+
+* Quick protocol check
+
+This low-level smoke test initializes the server and lists resources without making changes:
+
+#+begin_src sh
+printf '%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
+  '{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}' \
+  '{"jsonrpc":"2.0","id":2,"method":"resources/list","params":{}}' \
+  | org2 mcp serve --dir /absolute/path/to/notes
+#+end_src
+
+You should receive an initialize result and a sorted =resources= array. A client connection test should additionally show five tools and the corpus's workflow prompts.
+
+* Install the general Org2 skill
+
+The npm package includes the canonical portable skill at =skills/org2/SKILL.md=. Install a corpus-owned copy with a preview first:
+
+#+begin_src sh
+org2 skill install --dir /absolute/path/to/notes
+org2 skill install --dir /absolute/path/to/notes --apply
+#+end_src
+
+The destination is =.agents/skills/org2/SKILL.md=. The installer creates only a missing file. If that path already contains a user-managed copy, it reports a conflict and never overwrites it. Use =--format json= for automation.
+
+Codex discovers repository skills from =.agents/skills=; other skill-aware runtimes can point at or copy the same standards-shaped directory. OpenOrg includes the skill in every newly created starter workspace and also exposes the packaged built-in =/org2= skill in AI Chat before an OpenClaw Gateway is connected. A corpus-local copy takes precedence, so user edits remain authoritative. See the [[https://learn.chatgpt.com/docs/build-skills][official Codex skill guide]] for Codex discovery and invocation.
+
+The skill tells agents to:
+
+- discover the installed command contract with =org2 agent capabilities=;
+- prefer MCP resources and typed tools when connected;
+- use bounded CLI JSON for the rest of the product;
+- preview mutations, preserve IDs and citations, respect approvals, and keep credentials outside the corpus;
+- validate changes with a focused lint, graph, or command-specific check.
+
+It intentionally does not duplicate the complete CLI reference. The installed capability manifest and =--help= output remain authoritative for the version on that machine.
+
+* Org2 as an MCP client
+
+Do not confuse the inbound server above with Org2's outbound MCP snapshot commands:
+
+#+begin_src sh
+org2 mcp client-add crm --command crm-mcp --arg=--stdio \
+  --capability accounts --env CRM_TOKEN --dir /absolute/path/to/notes
+org2 mcp discover crm --snapshot crm-capabilities \
+  --dir /absolute/path/to/notes --json
+#+end_src
+
+=mcp client-add= records an external server declaration in =.org2/mcp-clients.json=. =mcp discover= inspects that external server, and =mcp snapshot= can preserve an external result under =raw/connectors/mcp/= with provenance. Environment-variable *names* may be recorded; their secret values remain machine-local.
+
+For every CLI family and flag, continue to [[file:tooling-reference.org][Tooling reference]]. For the general agent operating contract, see [[file:agent-quickstart.org][Agent quickstart]].

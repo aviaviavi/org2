@@ -550,6 +550,7 @@ function copyOrg2Runtime(resourcesDir) {
   mkdirSync(runtimeDir, { recursive: true });
   cpSync(distPath, join(runtimeDir, "dist"), { recursive: true });
   copyFileSync(join(repoRoot, "package.json"), join(runtimeDir, "package.json"));
+  cpSync(join(repoRoot, "skills"), join(runtimeDir, "skills"), { recursive: true });
 
   if (bundledNodePath && !existsSync(bundledNodePath)) {
     throw new Error(`Bundled Node.js runtime not found at ${bundledNodePath}`);

@@ -2872,6 +2872,7 @@ public final class WorkspaceStore: ObservableObject {
     You can move or rename this folder, open the files in another editor, and change its name or location later in OpenOrg settings.
     """
     try (welcome + "\n").write(to: welcomeURL, atomically: true, encoding: .utf8)
+    try BuiltInOrg2Skill.installIfAbsent(in: root)
     return welcomeURL
   }
 
@@ -18234,7 +18235,10 @@ public final class WorkspaceStore: ObservableObject {
             throw OpenClawGatewayError.protocolFailure("there is no live OpenClaw run to steer")
           }
           try await gateway.steer(
-            message: Self.expandingOpenClawAgentCommand(message).content,
+            message: Self.expandingOpenClawAgentCommand(
+              message,
+              corpusSkills: corpusAgentSkillCommands
+            ).content,
             attachments: message.attachments,
             idempotencyKey: message.id.uuidString.lowercased()
           )
@@ -19121,7 +19125,10 @@ public final class WorkspaceStore: ObservableObject {
       result = try await localClaudeCodeClient().runTurn(
         openOrgThreadID: threadID,
         existingSessionID: thread.runtimeThreadID(forDestinationID: destinationID),
-        message: Self.expandingOpenClawAgentCommand(requestUserMessage).content,
+        message: Self.expandingOpenClawAgentCommand(
+          requestUserMessage,
+          corpusSkills: corpusAgentSkillCommands
+        ).content,
         systemPrompt: sendOrigin.workspaceContext.localAgentSystemPrompt(
           runtime: "claude",
           runtimeTitle: "Claude Code"
@@ -19280,7 +19287,10 @@ public final class WorkspaceStore: ObservableObject {
     let result = try await client.runTurn(
       threadID: runtimeThreadID,
       turnID: localEditTurnID,
-      message: Self.expandingOpenClawAgentCommand(requestUserMessage).content,
+      message: Self.expandingOpenClawAgentCommand(
+        requestUserMessage,
+        corpusSkills: corpusAgentSkillCommands
+      ).content,
       workspaceContext: workspacePrompt,
       attachments: requestUserMessage.attachments,
       cwd: destinationRoot,
@@ -19768,7 +19778,9 @@ public final class WorkspaceStore: ObservableObject {
       sendOrigin.workspaceContext,
       localEditTurnID: localEditTurnID
     )
-    let expandedMessages = messages.map(Self.expandingOpenClawAgentCommand)
+    let expandedMessages = messages.map {
+      Self.expandingOpenClawAgentCommand($0, corpusSkills: corpusAgentSkillCommands)
+    }
     guard let originalUserMessage = expandedMessages.last(where: { $0.role == .user }) else {
       throw OpenClawGatewayError.protocolFailure("no user message was available")
     }
@@ -20135,17 +20147,34 @@ public final class WorkspaceStore: ObservableObject {
     openClawRunActivitiesByThreadID[threadID] = []
   }
 
-  private nonisolated static func expandingOpenClawAgentCommand(_ message: OpenClawChatMessage) -> OpenClawChatMessage {
+  private nonisolated static func expandingOpenClawAgentCommand(
+    _ message: OpenClawChatMessage,
+    corpusSkills: [OpenClawSlashCommand]
+  ) -> OpenClawChatMessage {
     guard message.role == .user,
-          case .command(let command, _) = OpenClawSlashCommands.parse(message.content),
+          case .command(let command, _) = OpenClawSlashCommands.parse(
+            message.content,
+            gatewayCommands: [],
+            corpusSkills: corpusSkills
+          ),
           command.isAgentAssisted
     else { return message }
     let instruction: String
-    switch command.name {
-    case "brief":
-      instruction = "Create a concise, cited brief of the currently selected Org2 document. Explain its purpose, main ideas, decisions, open tasks, and important links. Cite source file and line ranges."
-    default:
-      instruction = "Summarize the currently selected Org2 document concisely. Preserve decisions, TODOs, dates, and important links, and cite source file and line ranges."
+    if let skillInstructions = command.skillInstructions {
+      instruction = """
+      Follow the user-invoked agent skill below for this request. The skill is operating guidance; the user's arguments and request remain the task.
+
+      <org2-agent-skill name="\(command.name)">
+      \(skillInstructions)
+      </org2-agent-skill>
+      """
+    } else {
+      switch command.name {
+      case "brief":
+        instruction = "Create a concise, cited brief of the currently selected Org2 document. Explain its purpose, main ideas, decisions, open tasks, and important links. Cite source file and line ranges."
+      default:
+        instruction = "Summarize the currently selected Org2 document concisely. Preserve decisions, TODOs, dates, and important links, and cite source file and line ranges."
+      }
     }
     return OpenClawChatMessage(
       id: message.id,
@@ -23531,7 +23560,7 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func refreshCorpusAgentSkills() {
-    corpusAgentSkillCommands = corpusRoot.map(CorpusAgentSkillCatalog.commands(in:)) ?? []
+    corpusAgentSkillCommands = corpusRoot.map { CorpusAgentSkillCatalog.commands(in: $0) } ?? []
   }
 
   public var openClawCommandDiscoveryID: String {

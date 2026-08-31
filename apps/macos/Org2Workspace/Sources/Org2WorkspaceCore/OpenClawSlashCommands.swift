@@ -4,6 +4,7 @@ import Foundation
 public struct OpenClawSlashCommand: Identifiable, Equatable, Sendable {
   public enum Origin: String, Sendable {
     case org2
+    case builtInSkill
     case corpusSkill
     case openClaw
   }
@@ -15,6 +16,7 @@ public struct OpenClawSlashCommand: Identifiable, Equatable, Sendable {
   public let systemImage: String
   public let isAgentAssisted: Bool
   public let origin: Origin
+  public let skillInstructions: String?
 
   public var id: String { "\(origin.rawValue):\(name)" }
   public var invocation: String { arguments.isEmpty ? "/\(name)" : "/\(name) \(arguments)" }
@@ -26,7 +28,8 @@ public struct OpenClawSlashCommand: Identifiable, Equatable, Sendable {
     summary: String,
     systemImage: String,
     isAgentAssisted: Bool = false,
-    origin: Origin = .org2
+    origin: Origin = .org2,
+    skillInstructions: String? = nil
   ) {
     self.name = name
     self.aliases = aliases
@@ -35,6 +38,7 @@ public struct OpenClawSlashCommand: Identifiable, Equatable, Sendable {
     self.systemImage = systemImage
     self.isAgentAssisted = isAgentAssisted
     self.origin = origin
+    self.skillInstructions = skillInstructions
   }
 
   public func matches(_ candidate: String) -> Bool {
@@ -121,14 +125,14 @@ public enum OpenClawSlashCommands {
   ) -> String {
     let localRows = all.map { "\($0.invocation) — \($0.summary)" }.joined(separator: "\n")
     let skills = merged(with: gatewayCommands, corpusSkills: corpusSkills).filter {
-      $0.origin == .corpusSkill
+      $0.origin == .builtInSkill || $0.origin == .corpusSkill
     }
     let skillSection: String
     if skills.isEmpty {
       skillSection = ""
     } else {
       let rows = skills.map { "\($0.invocation) — \($0.summary)" }.joined(separator: "\n")
-      skillSection = "\n\nCorpus skills\n\n\(rows)"
+      skillSection = "\n\nAgent skills\n\n\(rows)"
     }
     let remote = merged(with: gatewayCommands, corpusSkills: corpusSkills).filter {
       $0.origin == .openClaw
@@ -149,7 +153,8 @@ public enum OpenClawSlashCommands {
   ) -> [OpenClawSlashCommand] {
     let localNames = Set(all.map(\.name))
     let uniqueSkills = corpusSkills.filter { command in
-      command.origin == .corpusSkill && !localNames.contains(command.name)
+      (command.origin == .builtInSkill || command.origin == .corpusSkill)
+        && !localNames.contains(command.name)
     }
     let knownNames = localNames.union(uniqueSkills.map(\.name))
     return all + uniqueSkills + gatewayCommands.filter { command in
@@ -173,50 +178,74 @@ public enum OpenClawSlashCommands {
 }
 
 enum CorpusAgentSkillCatalog {
-  static func commands(in corpusRoot: URL) -> [OpenClawSlashCommand] {
+  static func commands(
+    in corpusRoot: URL,
+    bundledSkillURL: URL? = BuiltInOrg2Skill.availableSourceURL()
+  ) -> [OpenClawSlashCommand] {
     let skillsRoot = corpusRoot
       .appendingPathComponent(".agents", isDirectory: true)
       .appendingPathComponent("skills", isDirectory: true)
-    guard let directories = try? FileManager.default.contentsOfDirectory(
+    let directories = (try? FileManager.default.contentsOfDirectory(
       at: skillsRoot,
       includingPropertiesForKeys: [.isDirectoryKey],
       options: [.skipsHiddenFiles]
-    ) else {
-      return []
-    }
+    )) ?? []
 
     var seenNames: Set<String> = []
-    return directories
+    var commands: [OpenClawSlashCommand] = directories
       .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
-      .compactMap { directory in
+      .compactMap { directory -> OpenClawSlashCommand? in
         guard (try? directory.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else {
           return nil
         }
-        let skillURL = directory.appendingPathComponent("SKILL.md")
-        guard let source = try? String(contentsOf: skillURL, encoding: .utf8),
-              let frontMatter = frontMatter(from: source),
-              frontMatter["user-invocable"]?.lowercased() != "false"
-        else {
-          return nil
-        }
-
-        let fallbackName = directory.lastPathComponent.lowercased()
-        let name = normalizedCommandName(frontMatter["name"] ?? fallbackName)
-        guard !name.isEmpty, seenNames.insert(name).inserted else { return nil }
-        let declaredSummary = frontMatter["description"]?
-          .trimmingCharacters(in: .whitespacesAndNewlines)
-        let summary = declaredSummary?.isEmpty == false
-          ? declaredSummary ?? ""
-          : "Use the \(name) corpus skill"
-        return OpenClawSlashCommand(
-          name: name,
-          arguments: "[ARGS]",
-          summary: summary,
-          systemImage: "wand.and.stars",
-          isAgentAssisted: true,
-          origin: .corpusSkill
+        return command(
+          at: directory.appendingPathComponent("SKILL.md"),
+          fallbackName: directory.lastPathComponent,
+          origin: .corpusSkill,
+          seenNames: &seenNames
         )
       }
+    if let bundledSkillURL,
+       let bundled = command(
+         at: bundledSkillURL,
+         fallbackName: "org2",
+         origin: .builtInSkill,
+         seenNames: &seenNames
+       ) {
+      commands.append(bundled)
+    }
+    return commands
+  }
+
+  private static func command(
+    at skillURL: URL,
+    fallbackName: String,
+    origin: OpenClawSlashCommand.Origin,
+    seenNames: inout Set<String>
+  ) -> OpenClawSlashCommand? {
+    guard let source = try? String(contentsOf: skillURL, encoding: .utf8),
+          let frontMatter = frontMatter(from: source),
+          frontMatter["user-invocable"]?.lowercased() != "false"
+    else {
+      return nil
+    }
+
+    let name = normalizedCommandName(frontMatter["name"] ?? fallbackName)
+    guard !name.isEmpty, seenNames.insert(name).inserted else { return nil }
+    let declaredSummary = frontMatter["description"]?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    let summary = declaredSummary?.isEmpty == false
+      ? declaredSummary ?? ""
+      : "Use the \(name) corpus skill"
+    return OpenClawSlashCommand(
+      name: name,
+      arguments: "[ARGS]",
+      summary: summary,
+      systemImage: "wand.and.stars",
+      isAgentAssisted: true,
+      origin: origin,
+      skillInstructions: source
+    )
   }
 
   private static func frontMatter(from source: String) -> [String: String]? {

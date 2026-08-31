@@ -111,7 +111,7 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
       {
         id: "portable-runtime",
         purpose: "Track artifact dependencies, select eligible model runtimes by capability policy, and expose or snapshot MCP integrations.",
-        commands: ["org2 artifact", "org2 runtime", "org2 mcp"],
+        commands: ["org2 artifact", "org2 runtime", "org2 mcp", "org2 skill install"],
         writes: "mixed",
       },
       {
@@ -190,6 +190,7 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
     ],
     docs: [
       { id: "agent-quickstart", url: "https://org2.avi.press/agent-quickstart.html" },
+      { id: "mcp-and-skills", url: "https://org2.avi.press/mcp-and-skills.html" },
       { id: "features", url: "https://org2.avi.press/features.html" },
       { id: "tooling-reference", url: "https://org2.avi.press/tooling-reference.html" },
       { id: "language-reference", url: "https://org2.avi.press/language-reference.html" },

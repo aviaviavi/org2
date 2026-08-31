@@ -83,7 +83,7 @@ public struct Org2CLI: Sendable {
     "crypt", "data", "doctor", "entity", "eval", "export", "fmt", "goal",
     "graph", "id", "index", "ledger", "lint", "lsp", "mcp", "plan", "plugin", "publish",
     "query", "query-data", "refile", "render-chart", "review", "roam", "run",
-    "search", "source", "table", "todo", "version", "workflow", "workspace"
+    "search", "skill", "source", "table", "todo", "version", "workflow", "workspace"
   ]
   private static let telemetryNestedCommands: Set<String> = [
     "agent.capabilities", "agent.context", "agent.search", "agent.fetch", "agent.bundle",
@@ -95,7 +95,7 @@ public struct Org2CLI: Sendable {
     "export.beamer", "goal.list", "goal.show", "goal.create", "goal.update",
     "graph.audit", "id.get", "id.ensure", "ledger.list", "ledger.show", "ledger.create",
     "ledger.update", "ledger.event", "mcp.serve", "mcp.clients", "mcp.client-add",
-    "mcp.discover", "mcp.snapshot", "review.list", "review.show", "run.create",
+    "mcp.discover", "mcp.snapshot", "review.list", "review.show", "run.create", "skill.install",
     "plugin.list", "plugin.init", "plugin.add", "plugin.remove", "plugin.update",
     "plugin.sync", "plugin.trust", "plugin.doctor", "plugin.exec", "plugin.template",
     "run.list", "run.show", "run.validate", "run.start", "run.resume", "run.retry",

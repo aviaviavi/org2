@@ -8357,6 +8357,10 @@ async function main(): Promise<void> {
     const { runAgenticWorkspaceCommand } = await import("./agenticWorkspaceCli.js");
     if (await runAgenticWorkspaceCommand(args)) return;
   }
+  if (args[0] === "skill") {
+    const { runSkillCommand } = await import("./skillCli.js");
+    if (await runSkillCommand(args)) return;
+  }
   if (args[0] === "source" || args[0] === "sources") {
     const { runSourceCommand } = await import("./sourceRuntime.js");
     if (await runSourceCommand(args)) return;
@@ -10268,6 +10272,7 @@ Core commands:
   org2 artifact <graph|rebuild> --manifest FILE [--apply]
   org2 runtime <init|show|select|verify-paths> [POLICY] [--capability ID]...
   org2 mcp <serve|clients|client-add|discover|snapshot> [options]
+  org2 skill install [--dir CORPUS] [--apply] [--format text|json]
   org2 plugin <list|init|add|remove|update|sync|trust|doctor|exec|template> [options]
   org2 eval <run|fixture> RUN [options]
   org2 agenda --dir DIR [--recursive] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--tui]

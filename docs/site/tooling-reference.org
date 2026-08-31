@@ -665,6 +665,8 @@ org2 runtime verify-paths --capability text --dir ~/notes --json
 
 =org2 mcp serve= starts a stdio Model Context Protocol server. It exposes bounded =org2://corpus/= resources, workflow prompts, and typed tools for listing, creating, and transitioning runs. =mcp client-add= records explicitly configured external servers in =.org2/mcp-clients.json=. =mcp discover= performs an initialize/list handshake, reports the server's resources, tools, and prompts, and can persist a provenance-bearing discovery snapshot. =mcp snapshot= writes any external result under =raw/connectors/mcp/= with source URI, retrieval time, identity, freshness, and payload so durable work does not depend on an invisible live response.
 
+See [[file:mcp-and-skills.org][MCP and agent skills]] for Codex, Claude Code, and generic stdio configuration, the exact current resources/prompts/five-tool surface, write boundaries, a protocol smoke test, and the packaged general Org2 skill. The MCP server remains intentionally narrower than the CLI.
+
 #+begin_src sh
 org2 mcp serve --dir ~/notes
 org2 mcp client-add crm --command crm-mcp --arg=--stdio --capability accounts --env CRM_TOKEN --dir ~/notes

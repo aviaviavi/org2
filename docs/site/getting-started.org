@@ -70,6 +70,8 @@ You do not need to design a metaharness on day one. Use this order:
 
 Back up the corpus like any important folder, and keep tokens, runtime credentials, machine paths, and scheduler job IDs outside its files.
 
+For a client connecting outside OpenOrg, use [[file:mcp-and-skills.org][MCP and agent skills]] to configure the stdio server or install the general Org2 skill. New OpenOrg starter workspaces already include the skill, and the app exposes its built-in =/org2= command without requiring an OpenClaw Gateway.
+
 ** One queue for decisions that need you
 
 Approval requests, clarifying questions, failed checks, and review-ready artifacts recorded in Org2 appear in *Agent Work*, no matter which configured runtime created them. Instead of visiting each harness to discover what is blocked, you get one queue over the shared corpus records.

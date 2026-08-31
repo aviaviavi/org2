@@ -41,6 +41,30 @@ The first command emits the versioned =org2:capabilities:v1= JSON manifest with
 workflow families, safety rules, client roles, and canonical documentation
 links. See https://org2.avi.press/agent-quickstart.html.
 
+** MCP and the general Org2 skill
+
+Connect any stdio MCP client to one explicit corpus with:
+
+#+begin_src sh
+org2 mcp serve --dir /absolute/path/to/notes
+#+end_src
+
+The server exposes corpus documents as resources, authored workflows as
+prompts, and five typed tools for agent-profile resolution, durable runs, and
+background thread posting. It is intentionally narrower than the CLI.
+
+The npm package also ships a portable general skill. Its installer previews by
+default and never overwrites a corpus-managed copy:
+
+#+begin_src sh
+org2 skill install --dir /absolute/path/to/notes
+org2 skill install --dir /absolute/path/to/notes --apply
+#+end_src
+
+See https://org2.avi.press/mcp-and-skills.html for Codex, Claude Code, and
+generic client setup; the exact MCP resource/tool surface; safety boundaries;
+and the CLI fallback contract.
+
 ** Development
 
 Run the full test suite with:

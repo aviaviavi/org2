@@ -34,7 +34,7 @@
         <li>One decision queue brings together approvals from files, agent runs, and mobile.</li>
         <li>Reusable workflows keep their instructions, schedules, history, and results in inspectable files.</li>
       </ul>
-      <p class="org2-feature-links"><a href="agent-quickstart.html">Agent quickstart</a><a href="ai-adapters.html">Provider-neutral adapters</a></p>
+      <p class="org2-feature-links"><a href="agent-quickstart.html">Agent quickstart</a><a href="mcp-and-skills.html">MCP and skills</a><a href="ai-adapters.html">Provider-neutral adapters</a></p>
     </div>
     <div class="org2-feature-media">
       <figure><img src="assets/screenshots/macos-workspace-runs-review.png" alt="OpenOrg Agent Work showing an approval-ready launch brief with outputs and review state" loading="lazy" /><figcaption>Agent Work keeps outcomes, artifacts, validation, and approval state together.</figcaption></figure>

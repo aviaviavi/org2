@@ -31,6 +31,7 @@
     "spec/v0/workspace-diagnostic.schema.json",
     "spec/v0/workflow.schema.json",
     "spec/v0/work-ledger-account.schema.json",
+    "skills/org2/SKILL.md",
     "README.org",
     "LICENSE"
   ],
@@ -68,7 +69,7 @@
     "docs:check": "npm run build && node tools/check-docs.mjs && npm run check:openorg-compat",
     "pretest": "npm run build && node test/test-plugin-runtime.mjs && node test/test-table-formula.mjs && node test/test-source-runtime.mjs && npm run test:agentic && npm run test:corpus && npm run test:openclaw:built",
     "prepublishOnly": "npm run docs:check && npm test",
-    "test:agentic": "node test/test-agentic-workspace.mjs && node test/test-agentic-doctor.mjs && node test/test-work-ledger.mjs && node test/test-openclaw-thread-state.mjs && node test/test-ai-chat-inbox.mjs",
+    "test:agentic": "node test/test-agentic-workspace.mjs && node test/test-agentic-doctor.mjs && node test/test-work-ledger.mjs && node test/test-openclaw-thread-state.mjs && node test/test-ai-chat-inbox.mjs && node test/test-skill-install.mjs",
     "test:corpus": "node test/test-corpus-identity.mjs && node test/test-node-actions.mjs",
     "test:node-actions": "npm run build && node test/test-node-actions.mjs",
     "test:sources": "npm run build && node test/test-source-runtime.mjs",

@@ -2520,7 +2520,7 @@ private struct OpenClawSlashCommandSuggestions: View {
   private func badge(for command: OpenClawSlashCommand) -> String? {
     switch command.origin {
     case .openClaw: "OpenClaw"
-    case .corpusSkill: "Skill"
+    case .builtInSkill, .corpusSkill: "Skill"
     case .org2: command.isAgentAssisted ? "Agent" : nil
     }
   }

@@ -53,6 +53,7 @@ for (const family of [...publicFamilies].sort()) {
 
 const requiredDocs = new Map([
   ["agent-quickstart", "docs/site/agent-quickstart.org"],
+  ["mcp-and-skills", "docs/site/mcp-and-skills.org"],
   ["features", "docs/site/features.org"],
   ["tooling-reference", "docs/site/tooling-reference.org"],
   ["language-reference", "docs/site/language-reference.org"],
@@ -66,7 +67,11 @@ for (const [id, relativePath] of requiredDocs) {
 }
 
 const quickstart = fs.readFileSync(path.join(repoRoot, "docs/site/agent-quickstart.org"), "utf8");
+const mcpAndSkills = fs.readFileSync(path.join(repoRoot, "docs/site/mcp-and-skills.org"), "utf8");
 const llms = fs.readFileSync(path.join(repoRoot, "docs/site/llms.txt"), "utf8");
+const readme = fs.readFileSync(path.join(repoRoot, "README.org"), "utf8");
+const packageJson = JSON.parse(fs.readFileSync(path.join(repoRoot, "package.json"), "utf8"));
+const generalSkill = fs.readFileSync(path.join(repoRoot, "skills/org2/SKILL.md"), "utf8");
 const agents = fs.readFileSync(path.join(repoRoot, "AGENTS.md"), "utf8");
 const siteNavigation = fs.readFileSync(path.join(repoRoot, "docs/site/assets/nav.js"), "utf8");
 const siteStyles = fs.readFileSync(path.join(repoRoot, "docs/site/assets/site.css"), "utf8");
@@ -81,6 +86,31 @@ const parsedPublishConfig = JSON.parse(publishConfig);
 const retiredPublicPages = ["privacy-and-data.org", "known-limitations.org", "launch-demo.org"];
 for (const [label, text] of [["agent quickstart", quickstart], ["llms.txt", llms]]) {
   if (!text.includes("org2 agent capabilities")) fail(`${label} does not point agents to the installed capability manifest`);
+}
+for (const required of [
+  "org2 mcp serve",
+  "org2 skill install",
+  "org2_agent_profile_resolve",
+  "org2_run_create",
+  "org2_run_transition",
+  "org2_run_list",
+  "org2_thread_post",
+  "codex mcp add",
+  "claude mcp add",
+]) {
+  if (!mcpAndSkills.includes(required)) fail(`MCP and skills guide is missing '${required}'`);
+}
+if (!readme.includes("mcp-and-skills.html") || !readme.includes("org2 skill install")) {
+  fail("README is missing the MCP and general-skill entry point");
+}
+if (!generalSkill.includes("name: org2") || !generalSkill.includes("org2 agent capabilities")) {
+  fail("general Org2 skill is missing required discovery guidance");
+}
+if (!(packageJson.files || []).includes("skills/org2/SKILL.md")) {
+  fail("npm package does not include the general Org2 skill");
+}
+if (!publishConfig.includes("mcp-and-skills.html")) {
+  fail("site navigation is missing MCP and agent skills");
 }
 if (!agents.includes("## Documentation contract")) fail("AGENTS.md is missing the documentation contract");
 if (!agents.includes(".codex/skills/org2-release/SKILL.md")) fail("AGENTS.md is missing the coordinated release skill");

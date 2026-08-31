@@ -5,6 +5,10 @@ Org2 reference is split into two detailed sections:
 - [[file:agent-quickstart.org][Agent quickstart]]
   - installed capability discovery
   - cited retrieval commands and safe write contract
+- [[file:mcp-and-skills.org][MCP and agent skills]]
+  - stdio server setup for common clients
+  - current resources, prompts, typed tools, and corpus boundaries
+  - portable general skill installation and CLI fallback
 
 - [[file:language-reference.org][Language reference]]
   - every core syntax construct

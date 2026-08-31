@@ -511,6 +511,9 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("views").path))
     XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("compiled").path))
     XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("workflows").path))
+    let skillURL = root.appendingPathComponent(".agents/skills/org2/SKILL.md")
+    XCTAssertTrue(FileManager.default.fileExists(atPath: skillURL.path))
+    XCTAssertTrue(try String(contentsOf: skillURL, encoding: .utf8).contains("org2 agent capabilities"))
 
     let welcome = try String(contentsOf: welcomeURL, encoding: .utf8)
     XCTAssertTrue(welcome.contains("#+TITLE: Welcome to OpenOrg"))
@@ -527,6 +530,23 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(identity["schema"] as? String, "org2:corpus:v1")
     XCTAssertEqual(identity["kind"] as? String, "personal")
     XCTAssertFalse((identity["id"] as? String ?? "").isEmpty)
+  }
+
+  func testBuiltInOrg2SkillInstallerNeverOverwritesACorpusCopy() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-built-in-skill-\(UUID().uuidString)", isDirectory: true)
+    let destination = root.appendingPathComponent(".agents/skills/org2/SKILL.md")
+    try FileManager.default.createDirectory(
+      at: destination.deletingLastPathComponent(),
+      withIntermediateDirectories: true
+    )
+    try "user-managed\n".write(to: destination, atomically: true, encoding: .utf8)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let installed = try BuiltInOrg2Skill.installIfAbsent(in: root)
+
+    XCTAssertEqual(installed.standardizedFileURL.path, destination.standardizedFileURL.path)
+    XCTAssertEqual(try String(contentsOf: destination, encoding: .utf8), "user-managed\n")
   }
 
   func testOrgDocumentDefaultsCreatesOrgButPreservesExistingOrg2Files() throws {
