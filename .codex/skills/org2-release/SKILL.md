@@ -34,15 +34,15 @@ npm run release:openorg -- patch \
 The orchestrator:
 
 - fails closed on a dirty or unsynchronized `main`;
-- checkpoints every phase under `/tmp/openorg-release-VERSION/state.json` and resumes completed work;
-- runs the Node, VS Code, and serial Swift suites concurrently;
+- checkpoints every phase and each input-fingerprinted validation job under `/tmp/openorg-release-VERSION/state.json`;
+- builds the shared runtime once, runs docs, Node, and VS Code validation concurrently, then runs Swift serially in an isolated scratch directory;
 - builds the isolated arm64 DMG, isolated Intel DMG, and iOS archive concurrently;
 - overlaps the GitHub tag workflow/DMG publication with TestFlight upload and processing;
 - assigns the TestFlight build to both required groups and requests external beta review through App Store Connect;
 - synchronizes GitHub, Scarf-backed downloads, and the generated site before parallel public verification;
 - writes each long-running job to a separate log beside the checkpoint.
 
-Use `--through PHASE` for an intentional checkpoint, `--restart` to discard state, `--skip-ios` for a tooling-only release, and `--skip-testflight-groups` only when explicitly accepting a manual App Store Connect handoff. Never use the latter as the normal path.
+Use `--through PHASE` for an intentional checkpoint, `--restart` to discard phase and job state, `--skip-ios` for a tooling-only release, and `--skip-testflight-groups` only when explicitly accepting a manual App Store Connect handoff. Validation retries reuse successful jobs only while the tracked and untracked release inputs retain the same fingerprint. Never use the latter as the normal path.
 
 ## 1. Establish scope
 
@@ -54,7 +54,7 @@ Use `--through PHASE` for an intentional checkpoint, `--restart` to discard stat
 ## 2. Validate the release candidate
 
 1. Confirm npm and GitHub authentication without printing tokens: `npm whoami` and `gh auth status`.
-2. Run the checks required by affected surfaces. For a coordinated release, the orchestrator runs `npm test`, `npm run docs:check`, extension tests, and the complete macOS Swift suite in safe parallel lanes.
+2. Run the checks required by affected surfaces. For a coordinated release, the orchestrator performs one shared build, runs the built Node and documentation checks with the extension tests, and then runs the complete macOS Swift suite serially. The tag workflow runs one independent `npm test` gate and publishes the already-packed tarball without repeating npm lifecycle tests.
 3. Resolve failures before versioning. Report pre-existing skips accurately.
 4. Commit and push the complete feature tree to `main` before creating release metadata.
 

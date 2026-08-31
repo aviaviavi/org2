@@ -1,14 +1,16 @@
 #!/usr/bin/env node
 
 import { spawn, spawnSync } from "node:child_process";
-import { createSign } from "node:crypto";
+import { createHash, createSign } from "node:crypto";
 import {
   closeSync,
   copyFileSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   openSync,
   readFileSync,
+  readlinkSync,
   renameSync,
   rmSync,
   writeFileSync,
@@ -156,7 +158,7 @@ export function buildReleasePlan(options, baseVersion = currentVersion()) {
     phases: [
       { name: "preflight", parallel: ["GitHub auth", "npm auth", "Apple/signing configuration", "Sparkle signing key"] },
       { name: "stamp", parallel: false },
-      { name: "validate", parallel: ["Node/full", "VS Code"], then: ["Swift/serial"] },
+      { name: "validate", once: ["Build shared runtime"], parallel: ["Docs", "Node/full", "VS Code"], then: ["Swift/serial"] },
       { name: "package", parallel: ["OpenOrg arm64 DMG", "OpenOrg Intel DMG", ...(options.skipIOS ? [] : ["iOS archive"]) ] },
       { name: "publish", parallel: ["Git tag workflow + DMGs", ...(options.skipIOS ? [] : ["TestFlight upload + groups"]) ] },
       { name: "sync", parallel: false },
@@ -184,7 +186,7 @@ Examples:
 
 Options:
   --execute                    Mutate, publish, and resume from checkpoints
-  --restart                    Remove the existing checkpoint before executing
+  --restart                    Remove existing phase and job checkpoints before executing
   --through PHASE              Stop after preflight|stamp|validate|package|publish|sync|verify
   --artifacts-dir PATH         Artifact, checkpoint, and per-job log directory
   --ios-build NUMBER           TestFlight build number (defaults to current + 1)
@@ -211,6 +213,7 @@ function readState(plan, options) {
       completed: {},
       createdAt: new Date().toISOString(),
       iosBuild: plan.ios?.build ?? null,
+      stepCheckpoints: {},
       version: plan.version,
     };
     atomicWriteJSON(statePath, initial);
@@ -219,6 +222,9 @@ function readState(plan, options) {
   const state = JSON.parse(readFileSync(statePath, "utf8"));
   if (state.version !== plan.version || state.iosBuild !== (plan.ios?.build ?? null)) {
     throw new Error(`Checkpoint ${statePath} belongs to a different release; use --restart`);
+  }
+  if (!state.stepCheckpoints || typeof state.stepCheckpoints !== "object") {
+    state.stepCheckpoints = {};
   }
   return state;
 }
@@ -244,6 +250,28 @@ function capture(command, args, options = {}) {
     stderr: result.stderr?.trim() ?? "",
     stdout: result.stdout?.trim() ?? "",
   };
+}
+
+function validationFingerprint() {
+  const hash = createHash("sha256");
+  hash.update("HEAD\0");
+  hash.update(capture("git", ["rev-parse", "HEAD"]).stdout);
+  hash.update("\0DIFF\0");
+  hash.update(capture("git", ["diff", "--binary", "--no-ext-diff", "HEAD", "--"]).stdout);
+  const untracked = capture("git", ["ls-files", "--others", "--exclude-standard", "-z"]).stdout
+    .split("\0")
+    .filter(Boolean)
+    .sort();
+  for (const relativePath of untracked) {
+    const absolutePath = join(repoRoot, relativePath);
+    hash.update("\0UNTRACKED\0");
+    hash.update(relativePath);
+    hash.update("\0");
+    hash.update(lstatSync(absolutePath).isSymbolicLink()
+      ? readlinkSync(absolutePath)
+      : readFileSync(absolutePath));
+  }
+  return hash.digest("hex");
 }
 
 function safeJobName(name) {
@@ -274,6 +302,35 @@ function runJob(plan, name, command, args, options = {}) {
       }
     });
   });
+}
+
+export async function runCheckpointedStep(plan, state, scope, fingerprint, key, name, job) {
+  state.stepCheckpoints ??= {};
+  let checkpoint = state.stepCheckpoints[scope];
+  if (!checkpoint || checkpoint.fingerprint !== fingerprint) {
+    checkpoint = { completed: {}, fingerprint };
+    state.stepCheckpoints[scope] = checkpoint;
+  }
+  if (checkpoint.completed[key]) {
+    console.log(`↷ ${name} already completed at ${checkpoint.completed[key]}`);
+    return { skipped: true };
+  }
+  const result = await job();
+  checkpoint.completed[key] = new Date().toISOString();
+  atomicWriteJSON(plan.checkpoints, state);
+  return { result, skipped: false };
+}
+
+function runValidationJob(plan, state, fingerprint, key, name, command, args, options = {}) {
+  return runCheckpointedStep(
+    plan,
+    state,
+    "validate",
+    fingerprint,
+    key,
+    name,
+    () => runJob(plan, name, command, args, options),
+  );
 }
 
 async function runParallel(jobs) {
@@ -366,24 +423,25 @@ async function stamp(plan, options) {
   updateVSCodeChangelog(plan.version, options.notesFile);
 }
 
-async function validate(plan) {
-  await runJob(plan, "Build shared runtime", "npm", ["run", "build"]);
-  await runJob(plan, "Documentation contract", "npm", ["run", "docs:check"]);
+async function validate(plan, _options, state) {
+  const fingerprint = validationFingerprint();
+  await runValidationJob(plan, state, fingerprint, "build", "Build shared runtime", "npm", ["run", "build"]);
   await runParallel([
-    () => runJob(plan, "Node full suite", "npm", ["test"]),
-    () => runJob(plan, "VS Code suite", "npm", ["test"], { cwd: vscodePackageDir }),
+    () => runValidationJob(plan, state, fingerprint, "docs", "Documentation contract", "npm", ["run", "docs:check:built"]),
+    () => runValidationJob(plan, state, fingerprint, "node", "Node full suite", "npm", ["run", "test:built"]),
+    () => runValidationJob(plan, state, fingerprint, "vscode", "VS Code suite", "npm", ["test"], { cwd: vscodePackageDir }),
   ]);
   // The Node suite exercises both arm64 and x86_64 Mac packaging. Keep the
   // Swift suite serial and give it a release-local scratch directory so the
   // XCTest runner cannot inherit either packaging lane's architecture cache.
-  await runJob(plan, "Swift suite serial", "/usr/bin/arch", [
+  await runValidationJob(plan, state, fingerprint, "swift", "Swift suite serial", "/usr/bin/arch", [
     "-arm64", "swift", "test",
     "--package-path", "apps/macos/Org2Workspace",
     "--scratch-path", join(plan.artifactsDir, "swift-tests"),
     "--no-parallel",
   ]);
-  await runJob(plan, "Generated artifact check", "npm", ["run", "check:generated"]);
-  await runJob(plan, "npm pack preview", "npm", ["pack", "--dry-run", "--json"]);
+  await runValidationJob(plan, state, fingerprint, "generated", "Generated artifact check", "npm", ["run", "check:generated:built"]);
+  await runValidationJob(plan, state, fingerprint, "npm-pack", "npm pack preview", "npm", ["pack", "--dry-run", "--json"]);
 }
 
 function writeExportOptions(plan) {
@@ -788,7 +846,7 @@ async function executePlan(plan, options) {
       continue;
     }
     console.log(`\n=== ${phase} ===`);
-    await implementations[phase](plan, options);
+    await implementations[phase](plan, options, state);
     markPhaseComplete(plan, state, phase);
   }
   console.log(`\nRelease ${plan.version} completed through ${options.through}.`);

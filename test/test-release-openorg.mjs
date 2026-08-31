@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -8,6 +9,7 @@ import {
   buildReleasePlan,
   parseReleaseOptions,
   resolveReleaseVersion,
+  runCheckpointedStep,
   testFlightReviewAttributes,
 } from "../tools/release-openorg.mjs";
 
@@ -34,7 +36,7 @@ assert.equal(plan.safeDefaults.failClosedOnDirtyTree, true);
 assert.equal(plan.safeDefaults.notarizationRequired, true);
 assert.deepEqual(
   plan.phases.find((phase) => phase.name === "validate").parallel,
-  ["Node/full", "VS Code"]
+  ["Docs", "Node/full", "VS Code"]
 );
 assert.deepEqual(
   plan.phases.find((phase) => phase.name === "validate").then,
@@ -55,7 +57,7 @@ assert.match(TESTFLIGHT.reviewNotes, /locally installed OpenOrg macOS companion/
 
 const releaseSource = readFileSync(join(repoRoot, "tools", "release-openorg.mjs"), "utf8");
 assert.ok(
-  releaseSource.indexOf('runJob(plan, "Swift suite serial"')
+  releaseSource.indexOf('"swift", "Swift suite serial"')
     > releaseSource.indexOf('await runParallel([', releaseSource.indexOf("async function validate"))
 );
 assert.match(releaseSource, /--scratch-path[\s\S]+swift-tests/);
@@ -70,6 +72,43 @@ assert.ok(
 assert.match(releaseSource, /appcast-arm64\.xml/);
 assert.match(releaseSource, /appcast-intel\.xml/);
 assert.match(releaseSource, /--require-google-oauth-client/);
+assert.match(releaseSource, /docs:check:built/);
+assert.match(releaseSource, /test:built/);
+assert.match(releaseSource, /check:generated:built/);
+
+const checkpointDirectory = mkdtempSync(join(tmpdir(), "openorg-release-checkpoint-test-"));
+try {
+  const checkpointPlan = { checkpoints: join(checkpointDirectory, "state.json") };
+  const checkpointState = { completed: {}, stepCheckpoints: {} };
+  let executions = 0;
+  const execute = async () => { executions += 1; };
+  const first = await runCheckpointedStep(
+    checkpointPlan, checkpointState, "validate", "tree-a", "node", "Node full suite", execute,
+  );
+  const resumed = await runCheckpointedStep(
+    checkpointPlan, checkpointState, "validate", "tree-a", "node", "Node full suite", execute,
+  );
+  assert.equal(first.skipped, false);
+  assert.equal(resumed.skipped, true);
+  assert.equal(executions, 1, "a successful validation job should not rerun for the same source tree");
+  await runCheckpointedStep(
+    checkpointPlan, checkpointState, "validate", "tree-b", "node", "Node full suite", execute,
+  );
+  assert.equal(executions, 2, "a source-tree change should invalidate validation job checkpoints");
+} finally {
+  rmSync(checkpointDirectory, { force: true, recursive: true });
+}
+
+const rootPackage = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8"));
+assert.equal(rootPackage.scripts.pretest, "npm run build");
+assert.equal(rootPackage.scripts.test, "npm run test:built");
+assert.match(rootPackage.scripts["test:built"], /test:prerequisites:built/);
+assert.doesNotMatch(rootPackage.scripts["docs:check:built"], /npm run build/);
+
+const releaseWorkflow = readFileSync(join(repoRoot, ".github", "workflows", "release-packages.yml"), "utf8");
+assert.match(releaseWorkflow, /name: Build \+ test once\s+run: npm test/);
+assert.doesNotMatch(releaseWorkflow, /npm run build\s+\n\s*npm test/);
+assert.match(releaseWorkflow, /npm publish \.\/\*\.tgz[^\n]+--ignore-scripts/);
 
 const planResult = spawnSync(process.execPath, [
   join(repoRoot, "tools", "release-openorg.mjs"),

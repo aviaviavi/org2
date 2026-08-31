@@ -64,10 +64,8 @@ jobs:
       - name: Install deps
         run: npm ci
 
-      - name: Build + test
-        run: |
-          npm run build
-          npm test
+      - name: Build + test once
+        run: npm test
 
       - name: Stamp package versions
         run: |
@@ -84,7 +82,10 @@ jobs:
 
       - name: Publish npm package (Trusted Publishing / OIDC)
         if: ${{ steps.version.outputs.dry_run != 'true' }}
-        run: npm publish --access public --provenance
+        # The release commit passed the explicit test gate above. Publishing
+        # the tarball with lifecycle scripts disabled prevents prepublishOnly
+        # from running the full suite a second time.
+        run: npm publish ./*.tgz --access public --provenance --ignore-scripts
 
       - name: Publish VS Code Marketplace extension
         if: ${{ steps.version.outputs.dry_run != 'true' }}

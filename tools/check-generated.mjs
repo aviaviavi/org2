@@ -9,7 +9,12 @@ function run(command, args) {
 }
 
 function main() {
-  run("npm", ["run", "build"]);
+  const args = process.argv.slice(2);
+  const unknown = args.filter((argument) => argument !== "--built");
+  if (unknown.length > 0) {
+    throw new Error(`Unknown option: ${unknown[0]}`);
+  }
+  if (!args.includes("--built")) run("npm", ["run", "build"]);
   run("npm", ["run", "fixtures", "--", "--e2e"]);
   run("npm", ["run", "org2", "--", "publish", "docs-site", "--config", "org2.json"]);
   run("git", [
