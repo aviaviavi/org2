@@ -844,6 +844,21 @@ enum AIChatRoomTranscriptPresentation {
 
     var items: [AIChatRoomTranscriptItem] = []
     var consumed = Set<UUID>()
+    var messagesByRoundID: [UUID: [OpenClawChatMessage]] = [:]
+    messagesByRoundID.reserveCapacity(messages.count / 3)
+    for message in messages {
+      if let roomRoundID = message.roomRoundID {
+        messagesByRoundID[roomRoundID, default: []].append(message)
+      }
+    }
+    var nextVisibleUserIndex = messages.endIndex
+    var legacyGroupEndIndexes = Array(repeating: messages.endIndex, count: messages.count)
+    for index in messages.indices.reversed() {
+      legacyGroupEndIndexes[index] = nextVisibleUserIndex
+      if messages[index].role == .user && !messages[index].isRoomDispatchCopy {
+        nextVisibleUserIndex = index
+      }
+    }
 
     for (index, message) in messages.enumerated() {
       guard !consumed.contains(message.id) else { continue }
@@ -863,12 +878,9 @@ enum AIChatRoomTranscriptPresentation {
 
       let groupedMessages: [OpenClawChatMessage]
       if let roomRoundID = message.roomRoundID {
-        groupedMessages = messages.filter { $0.roomRoundID == roomRoundID }
+        groupedMessages = messagesByRoundID[roomRoundID] ?? [message]
       } else {
-        let nextVisibleUserIndex = messages.indices.dropFirst(index + 1).first { candidate in
-          messages[candidate].role == .user && !messages[candidate].isRoomDispatchCopy
-        } ?? messages.endIndex
-        groupedMessages = Array(messages[index..<nextVisibleUserIndex])
+        groupedMessages = Array(messages[index..<legacyGroupEndIndexes[index]])
       }
       consumed.formUnion(groupedMessages.map(\.id))
 

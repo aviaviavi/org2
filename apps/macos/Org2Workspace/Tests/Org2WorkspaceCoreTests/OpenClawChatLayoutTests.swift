@@ -432,6 +432,42 @@ final class OpenClawChatLayoutTests: XCTestCase {
     )
   }
 
+  func testLargeSharedRoomTranscriptGroupingRemainsResponsive() {
+    var messages: [OpenClawChatMessage] = []
+    messages.reserveCapacity(6_000)
+    for index in 0..<2_000 {
+      let roundID = UUID()
+      messages.append(OpenClawChatMessage(
+        role: .user,
+        content: "Question \(index)",
+        audienceDestinationIDs: ["codex", "openclaw"],
+        roomRoundID: roundID
+      ))
+      messages.append(OpenClawChatMessage(
+        role: .assistant,
+        content: "Codex response \(index)",
+        authorDestinationID: "codex",
+        roomRoundID: roundID
+      ))
+      messages.append(OpenClawChatMessage(
+        role: .assistant,
+        content: "OpenClaw response \(index)",
+        authorDestinationID: "openclaw",
+        roomRoundID: roundID
+      ))
+    }
+
+    let startedAt = CFAbsoluteTimeGetCurrent()
+    let items = AIChatRoomTranscriptPresentation.items(
+      messages: messages,
+      isSharedRoom: true
+    )
+    let elapsed = CFAbsoluteTimeGetCurrent() - startedAt
+
+    XCTAssertEqual(items.count, 2_000)
+    XCTAssertLessThan(elapsed, 1)
+  }
+
   func testChatScrollRestorationDefaultsUnsavedThreadsToMostRecentMessage() {
     let threadID = UUID()
     let unsaved = OpenClawChatScrollRestoration(
@@ -558,6 +594,61 @@ final class OpenClawChatLayoutTests: XCTestCase {
 
     XCTAssertLessThan(elapsed, 2)
     XCTAssertEqual(hostingView.fittingSize.width, 720, accuracy: 1)
+  }
+
+  func testLargeTranscriptWindowOnlyMaterializesNewestPage() {
+    let messages = (0..<1_000).map { index in
+      OpenClawChatMessage(role: .assistant, content: "Message \(index)")
+    }
+
+    let firstWindow = OpenClawChatTranscriptWindow(
+      messages: messages,
+      isSharedRoom: false,
+      displayLimit: OpenClawChatTranscriptWindow.initialLimit
+    )
+
+    XCTAssertEqual(firstWindow.visibleItems.count, 80)
+    XCTAssertEqual(firstWindow.visibleItems.first?.id, messages[920].id)
+    XCTAssertEqual(firstWindow.visibleItems.last?.id, messages[999].id)
+    XCTAssertEqual(firstWindow.earlierBatchCount, 80)
+    XCTAssertTrue(firstWindow.hasEarlierMessages)
+    XCTAssertFalse(firstWindow.contains(messages[0].id))
+    XCTAssertTrue(firstWindow.contains(messages[999].id))
+
+    let expandedWindow = OpenClawChatTranscriptWindow(
+      messages: messages,
+      isSharedRoom: false,
+      displayLimit: firstWindow.nextDisplayLimit
+    )
+    XCTAssertEqual(expandedWindow.visibleItems.count, 160)
+    XCTAssertEqual(expandedWindow.visibleItems.first?.id, messages[840].id)
+  }
+
+  func testLargeTranscriptWindowBoundsExactRowRealization() {
+    let messages = (0..<1_000).map { index in
+      OpenClawChatMessage(role: .assistant, content: "Message \(index)")
+    }
+    let window = OpenClawChatTranscriptWindow(
+      messages: messages,
+      isSharedRoom: false,
+      displayLimit: OpenClawChatTranscriptWindow.initialLimit
+    )
+    let counter = TranscriptLayoutProbeCounter()
+    let view = ScrollView {
+      OpenClawChatTranscriptStack(spacing: 0) {
+        ForEach(window.visibleItems) { _ in
+          TranscriptLayoutProbe(counter: counter)
+            .frame(height: 24)
+        }
+      }
+    }
+    .frame(width: 500, height: 240)
+    let hostingView = NSHostingView(rootView: view)
+    hostingView.frame = NSRect(x: 0, y: 0, width: 500, height: 240)
+
+    hostingView.layoutSubtreeIfNeeded()
+
+    XCTAssertEqual(counter.realizedRows, 80)
   }
 
   func testTranscriptUsesExactGeometryForRowsBeyondTheViewport() {

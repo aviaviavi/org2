@@ -1995,7 +1995,8 @@ private struct OpenClawSidebarThreadList: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 2) {
-      if store.sidebarOpenClawChatThreads.isEmpty && store.settledOpenClawChatThreads.isEmpty {
+      if store.sidebarOpenClawChatThreadSummaries.isEmpty
+          && store.archivedOpenClawChatThreadSummaries.isEmpty {
         Text("No chat threads")
           .font(.caption)
           .foregroundStyle(.tertiary)
@@ -2003,8 +2004,7 @@ private struct OpenClawSidebarThreadList: View {
           .padding(.vertical, 3)
       } else {
         LazyVStack(alignment: .leading, spacing: 2) {
-          ForEach(store.sidebarOpenClawChatThreads) { thread in
-            let summary = OpenClawSidebarThreadSummary(thread: thread)
+          ForEach(store.sidebarOpenClawChatThreadSummaries) { summary in
             OpenClawSidebarThreadRow(
               summary: summary,
               isSelected: store.selectedOpenClawChatThreadID == summary.id && store.selectedSurface == .openClaw,
@@ -2027,7 +2027,7 @@ private struct OpenClawSidebarThreadList: View {
             ))
           }
 
-          if !store.settledOpenClawChatThreads.isEmpty {
+          if !store.archivedOpenClawChatThreadSummaries.isEmpty {
             HStack(spacing: 4) {
               Button {
                 withAnimation(WorkspaceMotion.disclosure) {
@@ -2040,7 +2040,7 @@ private struct OpenClawSidebarThreadList: View {
                 HStack(spacing: 5) {
                   Image(systemName: "checkmark.circle")
                   Text("Settled")
-                  Text("\(store.settledOpenClawChatThreads.count)")
+                  Text("\(store.archivedOpenClawChatThreadSummaries.count)")
                     .foregroundStyle(.tertiary)
                   Spacer(minLength: 0)
                   Image(systemName: "chevron.down")
@@ -2073,8 +2073,7 @@ private struct OpenClawSidebarThreadList: View {
           }
 
           if showsSettledThreads {
-            ForEach(Array(store.sidebarSettledOpenClawChatThreads.prefix(settledThreadDisplayLimit))) { thread in
-              let summary = OpenClawSidebarThreadSummary(thread: thread)
+            ForEach(Array(store.sidebarSettledOpenClawChatThreadSummaries.prefix(settledThreadDisplayLimit))) { summary in
               OpenClawSidebarThreadRow(
                 summary: summary,
                 isSelected: store.selectedOpenClawChatThreadID == summary.id && store.selectedSurface == .openClaw,
@@ -2098,18 +2097,18 @@ private struct OpenClawSidebarThreadList: View {
               ))
             }
 
-            if settledThreadDisplayLimit < store.sidebarSettledOpenClawChatThreads.count {
+            if settledThreadDisplayLimit < store.sidebarSettledOpenClawChatThreadSummaries.count {
               Button {
                 settledThreadDisplayLimit = OpenClawSettledThreadPagination.nextLimit(
                   currentLimit: settledThreadDisplayLimit,
-                  totalCount: store.sidebarSettledOpenClawChatThreads.count
+                  totalCount: store.sidebarSettledOpenClawChatThreadSummaries.count
                 )
               } label: {
                 HStack(spacing: 6) {
                   Image(systemName: "ellipsis.circle")
                   Text(OpenClawSettledThreadPagination.moreTitle(
                     currentLimit: settledThreadDisplayLimit,
-                    totalCount: store.sidebarSettledOpenClawChatThreads.count
+                    totalCount: store.sidebarSettledOpenClawChatThreadSummaries.count
                   ))
                   Spacer(minLength: 0)
                 }
@@ -2133,14 +2132,14 @@ private struct OpenClawSidebarThreadList: View {
     .onReceive(autoSettleTimer) { now in
       store.autoSettleOpenClawChatThreads(now: now)
     }
-    .onChange(of: store.settledOpenClawChatThreads.count) {
+    .onChange(of: store.archivedOpenClawChatThreadSummaries.count) {
       settledThreadDisplayLimit = OpenClawSettledThreadPagination.clampedLimit(
         currentLimit: settledThreadDisplayLimit,
-        totalCount: store.sidebarSettledOpenClawChatThreads.count
+        totalCount: store.sidebarSettledOpenClawChatThreadSummaries.count
       )
       let nextValue = OpenClawSettledThreadDisclosure.updated(
         isExpanded: showsSettledThreads,
-        settledThreadCount: store.settledOpenClawChatThreads.count
+        settledThreadCount: store.archivedOpenClawChatThreadSummaries.count
       )
       guard nextValue != showsSettledThreads else { return }
       withAnimation(WorkspaceMotion.disclosure) { showsSettledThreads = nextValue }
@@ -2249,14 +2248,14 @@ struct OpenClawSidebarThreadSummary: Identifiable, Hashable {
   let isPinned: Bool
   let unreadMessageCount: Int
 
-  init(thread: OpenClawChatThread) {
+  init(thread: OpenClawChatThread, messageCount: Int? = nil) {
     id = thread.id
     title = thread.title
     updatedAt = thread.updatedAt
     runtime = thread.runtime
     destinationID = thread.destinationID
     isSharedRoom = thread.isSharedRoom
-    messageCount = thread.messageCount
+    self.messageCount = messageCount ?? thread.messageCount
     isSettled = thread.isSettled
     hasResource = thread.resource != nil
     latestDeliveryNeedsAttention = thread.latestDeliveryNeedsAttention
@@ -8217,6 +8216,7 @@ private struct OpenClawChatView: View {
   @State private var threadFindMatches: [AIChatThreadSearchMatch] = []
   @State private var selectedThreadFindMessageID: UUID?
   @State private var threadFindNavigationGeneration = 0
+  @State private var transcriptDisplayLimit = OpenClawChatTranscriptWindow.initialLimit
   let presentation: OpenClawChatPresentation
   let surface: WorkspaceSurface?
 
@@ -8248,10 +8248,14 @@ private struct OpenClawChatView: View {
       refreshThreadFindMatches()
     }
     .onChange(of: store.selectedOpenClawChatThreadID) { _, _ in
+      transcriptDisplayLimit = OpenClawChatTranscriptWindow.initialLimit
       guard isShowingThreadFind else { return }
       rebuildThreadFindIndex()
     }
-    .onChange(of: store.openClawMessages.count) { _, _ in
+    .onChange(of: store.openClawMessages.count) { previousCount, currentCount in
+      if currentCount > previousCount && !isChatNearBottom {
+        transcriptDisplayLimit += currentCount - previousCount
+      }
       guard isShowingThreadFind else { return }
       rebuildThreadFindIndex()
     }
@@ -8426,9 +8430,10 @@ private struct OpenClawChatView: View {
       messageCount: store.openClawMessages.count,
       isSending: store.isSendingOpenClawMessage
     )
-    let transcriptItems = AIChatRoomTranscriptPresentation.items(
+    let transcriptWindow = OpenClawChatTranscriptWindow(
       messages: store.openClawMessages,
-      isSharedRoom: store.selectedAIChatIsSharedRoom
+      isSharedRoom: store.selectedAIChatIsSharedRoom,
+      displayLimit: transcriptDisplayLimit
     )
     let searchMatchMessageIDs = Set(threadFindMatches.map(\.messageID))
 
@@ -8439,7 +8444,29 @@ private struct OpenClawChatView: View {
             EmptyChatView(statusText: store.openClawStatusText)
               .frame(maxWidth: .infinity, minHeight: presentation.isCompact ? 140 : 220)
           } else {
-            ForEach(transcriptItems) { item in
+            if transcriptWindow.hasEarlierMessages {
+              Button {
+                let firstVisibleID = transcriptWindow.visibleItems.first?.id
+                transcriptDisplayLimit = transcriptWindow.nextDisplayLimit
+                if let firstVisibleID {
+                  DispatchQueue.main.async {
+                    proxy.scrollTo(firstVisibleID, anchor: .top)
+                  }
+                }
+              } label: {
+                Label(
+                  transcriptWindow.earlierMessagesTitle,
+                  systemImage: "arrow.up.circle"
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 6)
+              }
+              .buttonStyle(.plain)
+              .accessibilityIdentifier("openclaw-chat-show-earlier")
+            }
+            ForEach(transcriptWindow.visibleItems) { item in
               switch item {
               case .message(let message):
                 ChatBubbleView(
@@ -8529,8 +8556,19 @@ private struct OpenClawChatView: View {
                 $0.messageID == selectedThreadFindMessageID
               })
         else { return }
-        withAnimation(WorkspaceMotion.quick) {
-          proxy.scrollTo(match.scrollTargetID, anchor: .center)
+        if !transcriptWindow.contains(match.scrollTargetID),
+           transcriptWindow.hasEarlierMessages {
+          transcriptDisplayLimit = max(
+            transcriptDisplayLimit,
+            store.openClawMessages.count
+          )
+          DispatchQueue.main.async {
+            proxy.scrollTo(match.scrollTargetID, anchor: .center)
+          }
+        } else {
+          withAnimation(WorkspaceMotion.quick) {
+            proxy.scrollTo(match.scrollTargetID, anchor: .center)
+          }
         }
       }
       .overlay(alignment: .bottomTrailing) {
@@ -8638,6 +8676,59 @@ struct OpenClawChatTranscriptStack<Content: View>: View {
     // Keep the transcript itself out of one native selection overlay; each
     // message owns its smaller selectable-text region instead.
     .textSelection(.disabled)
+  }
+}
+
+struct OpenClawChatTranscriptWindow: Equatable {
+  static let initialLimit = 80
+  static let pageSize = 80
+
+  let visibleItems: [AIChatRoomTranscriptItem]
+  let displayLimit: Int
+  let earlierBatchCount: Int
+
+  init(
+    messages: [OpenClawChatMessage],
+    isSharedRoom: Bool,
+    displayLimit: Int
+  ) {
+    let resolvedLimit = max(Self.initialLimit, displayLimit)
+    self.displayLimit = resolvedLimit
+    if isSharedRoom {
+      let items = AIChatRoomTranscriptPresentation.items(
+        messages: messages,
+        isSharedRoom: true
+      )
+      visibleItems = Array(items.suffix(resolvedLimit))
+      earlierBatchCount = min(Self.pageSize, max(0, items.count - resolvedLimit))
+      return
+    }
+
+    let scanLimit = resolvedLimit + Self.pageSize
+    var newestItems: [AIChatRoomTranscriptItem] = []
+    newestItems.reserveCapacity(min(scanLimit, messages.count))
+    for message in messages.reversed() where !message.isRoomDispatchCopy {
+      newestItems.append(.message(message))
+      if newestItems.count == scanLimit { break }
+    }
+    visibleItems = Array(newestItems.prefix(resolvedLimit).reversed())
+    earlierBatchCount = max(0, newestItems.count - visibleItems.count)
+  }
+
+  var hasEarlierMessages: Bool { earlierBatchCount > 0 }
+
+  var nextDisplayLimit: Int {
+    displayLimit + earlierBatchCount
+  }
+
+  var earlierMessagesTitle: String {
+    earlierBatchCount == 1
+      ? "Show 1 earlier message"
+      : "Show \(earlierBatchCount) earlier messages"
+  }
+
+  func contains(_ id: UUID) -> Bool {
+    visibleItems.contains(where: { $0.id == id })
   }
 }
 

@@ -759,6 +759,11 @@ private struct QuickOpenIndexedChatThread: Sendable {
   let normalizedTitle: String
 }
 
+private struct OpenClawQuickOpenChatIndexSignature: Equatable {
+  let id: UUID
+  let title: String
+}
+
 private enum QuickOpenSearchMatch: Sendable {
   case file(CorpusFile)
   case chatThread(UUID)
@@ -1600,7 +1605,11 @@ public final class WorkspaceStore: ObservableObject {
       guard !isApplyingOpenClawThreadMessages else { return }
       updateSelectedOpenClawChatThread(messages: openClawMessages)
       guard shouldPersistOpenClawMessages else { return }
-      persistOpenClawTranscript()
+      if openClawSendingThreadIDs.isEmpty {
+        persistOpenClawTranscript()
+      } else {
+        scheduleOpenClawTranscriptPersistenceAfterInteraction()
+      }
     }
   }
   @Published public private(set) var openClawChatThreads: [OpenClawChatThread] = [] {
@@ -1615,6 +1624,8 @@ public final class WorkspaceStore: ObservableObject {
   }
   public private(set) var visibleOpenClawChatThreads: [OpenClawChatThread] = []
   public private(set) var archivedOpenClawChatThreads: [OpenClawChatThread] = []
+  private(set) var visibleOpenClawChatThreadSummaries: [OpenClawSidebarThreadSummary] = []
+  private(set) var archivedOpenClawChatThreadSummaries: [OpenClawSidebarThreadSummary] = []
   @Published public private(set) var openClawThreadSettlementSettings = OpenClawThreadSettlementSettings()
   public private(set) var openClawUnreadMessageCount = 0
   @Published public private(set) var selectedOpenClawChatThreadID: UUID?
@@ -2091,8 +2102,10 @@ public final class WorkspaceStore: ObservableObject {
   private var openClawRecoveryTaskTokensByThreadID: [UUID: UUID] = [:]
   private var deferredOpenClawTranscriptPersistenceTask: Task<Void, Never>?
   private var openClawTranscriptPersistenceGeneration: UInt64 = 0
-  var openClawTranscriptPersistenceDelayNanoseconds: UInt64 = 250_000_000
+  var openClawTranscriptPersistenceDelayNanoseconds: UInt64 = 750_000_000
   var openClawTranscriptSaverForTesting: (() throws -> Void)?
+  private var openClawVisibleMessageCountCache: [UUID: (rawCount: Int, visibleCount: Int)] = [:]
+  private var quickOpenChatIndexSignature: [OpenClawQuickOpenChatIndexSignature] = []
   private var openClawLocalEditBroker: OpenClawLocalEditBroker?
   private var openClawLocalEditCorpusRootsByTurnID: [String: URL] = [:]
   private var aiChatReadCorpusRootsByTurnID: [String: Set<String>] = [:]
@@ -14532,6 +14545,11 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   private func rebuildQuickOpenChatIndex() {
+    let signature = openClawChatThreads.map {
+      OpenClawQuickOpenChatIndexSignature(id: $0.id, title: $0.title)
+    }
+    guard signature != quickOpenChatIndexSignature else { return }
+    quickOpenChatIndexSignature = signature
     quickOpenIndexedChatThreads = openClawChatThreads.map { thread in
       QuickOpenIndexedChatThread(
         id: thread.id,
@@ -21677,6 +21695,15 @@ public final class WorkspaceStore: ObservableObject {
     return [promotedThread] + visibleOpenClawChatThreads.filter { $0.id != promotedThread.id }
   }
 
+  var sidebarOpenClawChatThreadSummaries: [OpenClawSidebarThreadSummary] {
+    guard let promotedSummary = sidebarPromotedOpenClawChatThreadSummary else {
+      return visibleOpenClawChatThreadSummaries
+    }
+    return [promotedSummary] + visibleOpenClawChatThreadSummaries.filter {
+      $0.id != promotedSummary.id
+    }
+  }
+
   public var sidebarSettledOpenClawChatThreads: [OpenClawChatThread] {
     guard let promotedThread = sidebarPromotedOpenClawChatThread,
           promotedThread.isSettled
@@ -21684,6 +21711,15 @@ public final class WorkspaceStore: ObservableObject {
       return settledOpenClawChatThreads
     }
     return settledOpenClawChatThreads.filter { $0.id != promotedThread.id }
+  }
+
+  var sidebarSettledOpenClawChatThreadSummaries: [OpenClawSidebarThreadSummary] {
+    guard let promotedSummary = sidebarPromotedOpenClawChatThreadSummary,
+          promotedSummary.isSettled
+    else {
+      return archivedOpenClawChatThreadSummaries
+    }
+    return archivedOpenClawChatThreadSummaries.filter { $0.id != promotedSummary.id }
   }
 
   private var sidebarPromotedOpenClawChatThread: OpenClawChatThread? {
@@ -21695,6 +21731,11 @@ public final class WorkspaceStore: ObservableObject {
     return openClawChatThreads.first { $0.id == sidebarPromotedOpenClawChatThreadID }
   }
 
+  private var sidebarPromotedOpenClawChatThreadSummary: OpenClawSidebarThreadSummary? {
+    guard let thread = sidebarPromotedOpenClawChatThread else { return nil }
+    return openClawSidebarThreadSummary(for: thread)
+  }
+
   private func rebuildOpenClawThreadDisplayCache() {
     visibleOpenClawChatThreads = Self.sortedOpenClawChatThreadsForDisplay(
       openClawChatThreads.filter { !$0.isSettled }
@@ -21702,7 +21743,43 @@ public final class WorkspaceStore: ObservableObject {
     archivedOpenClawChatThreads = Self.sortedOpenClawChatThreadsForDisplay(
       openClawChatThreads.filter(\.isSettled)
     )
+    let liveThreadIDs = Set(openClawChatThreads.map(\.id))
+    openClawVisibleMessageCountCache = openClawVisibleMessageCountCache.filter {
+      liveThreadIDs.contains($0.key)
+    }
+    visibleOpenClawChatThreadSummaries = visibleOpenClawChatThreads.map {
+      openClawSidebarThreadSummary(for: $0)
+    }
+    archivedOpenClawChatThreadSummaries = archivedOpenClawChatThreads.map {
+      openClawSidebarThreadSummary(for: $0)
+    }
     openClawUnreadMessageCount = openClawChatThreads.reduce(0) { $0 + $1.unreadMessageCount }
+  }
+
+  private func openClawSidebarThreadSummary(
+    for thread: OpenClawChatThread
+  ) -> OpenClawSidebarThreadSummary {
+    guard thread.isSharedRoom else {
+      return OpenClawSidebarThreadSummary(
+        thread: thread,
+        messageCount: thread.messages.count
+      )
+    }
+    let visibleMessageCount: Int
+    if let cached = openClawVisibleMessageCountCache[thread.id],
+       cached.rawCount == thread.messages.count {
+      visibleMessageCount = cached.visibleCount
+    } else {
+      visibleMessageCount = thread.messageCount
+      openClawVisibleMessageCountCache[thread.id] = (
+        rawCount: thread.messages.count,
+        visibleCount: visibleMessageCount
+      )
+    }
+    return OpenClawSidebarThreadSummary(
+      thread: thread,
+      messageCount: visibleMessageCount
+    )
   }
 
   public var canUndoOpenClawChatThreadArchive: Bool {
@@ -28457,6 +28534,12 @@ public final class WorkspaceStore: ObservableObject {
         return
       }
       guard !Task.isCancelled else { return }
+      if !self.openClawSendingThreadIDs.isEmpty {
+        guard generation == self.openClawTranscriptPersistenceGeneration else { return }
+        self.deferredOpenClawTranscriptPersistenceTask = nil
+        self.scheduleOpenClawTranscriptPersistenceAfterInteraction()
+        return
+      }
       if let openClawTranscriptSaverForTesting = self.openClawTranscriptSaverForTesting {
         do {
           try openClawTranscriptSaverForTesting()
@@ -29807,9 +29890,7 @@ public final class WorkspaceStore: ObservableObject {
       selectedThreadID: transcript.selectedThreadID,
       settlementSettings: transcript.settlementSettings
     )
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-    return try encoder.encode(payload)
+    return try JSONEncoder().encode(payload)
   }
 
   nonisolated private static func writeOpenClawTranscriptData(_ data: Data, to url: URL) throws {
