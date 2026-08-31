@@ -4069,43 +4069,45 @@ private struct WorkflowsView: View {
   @EnvironmentObject private var store: WorkspaceStore
   @State private var runWorkflow: AgentWorkflowItem?
   @State private var scheduleWorkflow: AgentWorkflowItem?
+  @State private var isCreatingAutomation = false
 
   var body: some View {
     VStack(spacing: 0) {
       HeaderBar(
-        title: "Workflows",
-        subtitle: "Plain-text processes in workflows/",
+        title: "Automations",
+        subtitle: "Prompt, schedule, and AI destination · plain text in workflows/",
         surface: .approvals
       ) {
         if store.isLoadingAgentWorkflows { WorkspaceActivityIndicator(size: .small) }
+        Button {
+          isCreatingAutomation = true
+        } label: {
+          Label("New Automation", systemImage: "plus")
+        }
         Button {
           Task { await store.refreshAgentWorkflows(updatesStatus: true) }
         } label: {
           Label("Refresh", systemImage: "arrow.clockwise")
         }
         .disabled(store.isLoadingAgentWorkflows)
-        Button {
-          Task {
-            do {
-              await store.refreshAgentWorkflows()
-              try await store.syncAgentWorkflowsWithOpenClaw()
-              store.statusText = "Workflows synced with OpenClaw"
-            } catch {
-              store.errorText = error.localizedDescription
-              store.statusText = "OpenClaw workflow sync failed"
-            }
-          }
-        } label: {
-          Label("Sync", systemImage: "arrow.triangle.2.circlepath")
-        }
       }
 
+      HStack(spacing: 6) {
+        Image(systemName: "clock.badge.checkmark")
+        Text(store.automationSchedulerStatusText)
+        Spacer()
+      }
+      .font(.caption)
+      .foregroundStyle(.secondary)
+      .padding(.horizontal, WorkspaceDesign.contentInset)
+      .padding(.vertical, 6)
+
       if store.isLoadingAgentWorkflows && store.agentWorkflows.isEmpty {
-        Spacer(); WorkspaceLoadingStateView("Loading workflows"); Spacer()
+        Spacer(); WorkspaceLoadingStateView("Loading automations"); Spacer()
       } else if store.agentWorkflows.isEmpty {
         EmptyStateView(
-          title: "No Workflows",
-          detail: "Complete a run and choose Create Reusable Workflow. The resulting Org2 file will appear in workflows/."
+          title: "No Automations",
+          detail: "Create a prompt, choose an AI destination, and optionally add a schedule. Its editable Org2 source will appear in workflows/."
         )
       } else {
         List {
@@ -4123,6 +4125,7 @@ private struct WorkflowsView: View {
               .listRowBackground(Color.clear)
               .contextMenu {
                 Button("Run Now") { runWorkflow = workflow }
+                Button("View History") { store.showAgentWorkflowHistory(workflow) }
                 Button("Edit Source") {
                   store.selectAgentWorkflow(workflow)
                   store.beginEditingCurrentScope()
@@ -4160,6 +4163,10 @@ private struct WorkflowsView: View {
       WorkflowScheduleSheet(workflow: workflow)
         .environmentObject(store)
     }
+    .sheet(isPresented: $isCreatingAutomation) {
+      NewAutomationSheet()
+        .environmentObject(store)
+    }
   }
 }
 
@@ -4186,6 +4193,19 @@ private struct WorkflowRow: View {
       HStack(spacing: 8) {
         Label("v\(workflow.version)", systemImage: "point.3.connected.trianglepath.dotted")
         Label(workflow.scheduleSummary, systemImage: workflow.scheduleTrigger?.enabled == true ? "clock" : "play")
+        if let destinationRef = workflow.destinationRef {
+          Label(store.aiChatDestination(id: destinationRef)?.title ?? destinationRef, systemImage: "paperplane")
+        }
+        let runCount = store.agentRunCount(workflowID: workflow.id)
+        if runCount > 0 {
+          Button {
+            store.showAgentWorkflowHistory(workflow)
+          } label: {
+            Label("\(runCount) run\(runCount == 1 ? "" : "s")", systemImage: "clock.arrow.circlepath")
+          }
+          .buttonStyle(.plain)
+          .help("Show this automation’s run history")
+        }
         if workflow.legacyLocation {
           Label("Legacy location", systemImage: "exclamationmark.triangle")
         }
@@ -4212,7 +4232,9 @@ private struct WorkflowRunSheet: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 16) {
       Text("Run \(workflow.title)").font(.title2.weight(.semibold))
-      Text("OpenClaw will execute this workflow from its canonical Org2 file. A durable run is created before agent work begins.")
+      let destinationName = workflow.destinationRef.flatMap { store.aiChatDestination(id: $0)?.title }
+        ?? "your default AI destination"
+      Text("OpenOrg will create a durable run, then send the prompt to \(destinationName).")
         .foregroundStyle(.secondary)
       if workflow.inputs.isEmpty {
         Text("This workflow has no inputs.").foregroundStyle(.secondary)
@@ -4251,6 +4273,103 @@ private struct WorkflowRunSheet: View {
   }
 }
 
+private struct NewAutomationSheet: View {
+  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(\.dismiss) private var dismiss
+  @State private var title = ""
+  @State private var prompt = ""
+  @State private var destinationID = ""
+  @State private var agentRef = ""
+  @State private var scheduleEnabled = true
+  @State private var schedule = "0 9 * * 1"
+  @State private var timezone = TimeZone.current.identifier
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 16) {
+      Text("New Automation").font(.title2.weight(.semibold))
+      Text("The prompt and schedule are stored in an ordinary Org2 workflow file. OpenOrg creates a durable run before sending each occurrence to the selected AI destination.")
+        .foregroundStyle(.secondary)
+
+      Form {
+        TextField("Name", text: $title)
+
+        Picker("AI destination", selection: $destinationID) {
+          ForEach(store.enabledAIChatDestinations) { destination in
+            Label(destination.title, systemImage: destination.systemImage)
+              .tag(destination.id)
+          }
+        }
+
+        Picker("Agent", selection: $agentRef) {
+          Text("Destination default").tag("")
+          ForEach(store.agentProfiles) { profile in
+            Text(profile.name).tag(profile.id)
+          }
+        }
+
+        Toggle("Run on a schedule", isOn: $scheduleEnabled)
+        if scheduleEnabled {
+          TextField("Five-field cron or every 4h", text: $schedule)
+          TextField("IANA timezone", text: $timezone)
+          Text("Example: 0 9 * * 1 runs every Monday at 9:00. OpenOrg catches up the latest missed occurrence when it reopens.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+
+        VStack(alignment: .leading, spacing: 6) {
+          Text("Prompt")
+          TextEditor(text: $prompt)
+            .font(.system(.body, design: .monospaced))
+            .frame(minHeight: 180)
+            .overlay {
+              RoundedRectangle(cornerRadius: 6)
+                .stroke(WorkspaceDesign.hairline)
+            }
+        }
+      }
+      .formStyle(.grouped)
+
+      HStack {
+        Spacer()
+        Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+        Button("Create Automation") {
+          let selectedAgent = agentRef.isEmpty ? nil : agentRef
+          let selectedSchedule = scheduleEnabled ? schedule : nil
+          dismiss()
+          Task {
+            await store.createAgentAutomation(
+              title: title,
+              prompt: prompt,
+              destinationID: destinationID,
+              agentRef: selectedAgent,
+              schedule: selectedSchedule,
+              timezone: timezone
+            )
+          }
+        }
+        .keyboardShortcut(.defaultAction)
+        .buttonStyle(.borderedProminent)
+        .disabled(
+          title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || destinationID.isEmpty
+            || (scheduleEnabled && schedule.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        )
+      }
+    }
+    .padding(24)
+    .frame(width: 640, height: 650)
+    .onAppear {
+      if destinationID.isEmpty {
+        destinationID = store.enabledAIChatDestinations.first?.id ?? ""
+      }
+      if store.agentProfiles.isEmpty {
+        Task { await store.refreshAgentProfiles() }
+      }
+    }
+  }
+}
+
 private struct WorkflowScheduleSheet: View {
   @EnvironmentObject private var store: WorkspaceStore
   @Environment(\.dismiss) private var dismiss
@@ -4258,6 +4377,7 @@ private struct WorkflowScheduleSheet: View {
   @State private var enabled: Bool
   @State private var cron: String
   @State private var timezone: String
+  @State private var destinationID: String
 
   init(workflow: AgentWorkflowItem) {
     self.workflow = workflow
@@ -4265,15 +4385,22 @@ private struct WorkflowScheduleSheet: View {
     _enabled = State(initialValue: trigger?.enabled == true)
     _cron = State(initialValue: trigger?.schedule ?? "0 9 * * 1")
     _timezone = State(initialValue: trigger?.timezone ?? TimeZone.current.identifier)
+    _destinationID = State(initialValue: workflow.destinationRef ?? "")
   }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 16) {
       Text("Schedule \(workflow.title)").font(.title2.weight(.semibold))
-      Text("OpenClaw owns due checks and execution. The desired schedule remains in the workflow’s plain-text definition.")
+      Text("OpenOrg checks this schedule while the app is running and sends each occurrence to the selected AI destination. The definition remains plain text.")
         .foregroundStyle(.secondary)
+      Picker("AI destination", selection: $destinationID) {
+        ForEach(store.enabledAIChatDestinations) { destination in
+          Label(destination.title, systemImage: destination.systemImage)
+            .tag(destination.id)
+        }
+      }
       Toggle("Enable schedule", isOn: $enabled)
-      TextField("Cron expression", text: $cron).disabled(!enabled)
+      TextField("Five-field cron or every 4h", text: $cron).disabled(!enabled)
       TextField("IANA timezone", text: $timezone).disabled(!enabled)
       Text("Example: 0 9 * * 1 runs every Monday at 9:00 in the selected timezone.")
         .font(.caption).foregroundStyle(.secondary)
@@ -4282,15 +4409,31 @@ private struct WorkflowScheduleSheet: View {
         Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
         Button("Save") {
           dismiss()
-          Task { await store.setAgentWorkflowSchedule(workflow, cron: cron, timezone: timezone, enabled: enabled) }
+          Task {
+            await store.setAgentWorkflowSchedule(
+              workflow,
+              cron: cron,
+              timezone: timezone,
+              destinationID: destinationID,
+              enabled: enabled
+            )
+          }
         }
         .keyboardShortcut(.defaultAction)
         .buttonStyle(.borderedProminent)
-        .disabled(enabled && cron.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        .disabled(
+          enabled
+            && (destinationID.isEmpty || cron.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        )
       }
     }
     .padding(24)
     .frame(width: 520)
+    .onAppear {
+      if destinationID.isEmpty {
+        destinationID = store.enabledAIChatDestinations.first?.id ?? ""
+      }
+    }
   }
 }
 
@@ -4692,6 +4835,17 @@ private struct RunCenterDetail: View {
               )
               .font(.caption.weight(.medium))
               .foregroundStyle(.secondary)
+            }
+            if let attempt = run.attempt {
+              Label("Attempt \(attempt.number)", systemImage: "calendar.badge.clock")
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+                .help(attempt.scheduledFor.map { "Scheduled for \($0)" } ?? "Scheduled automation attempt")
+            }
+            if let destinationRef = run.destinationRef {
+              Label(store.aiChatDestination(id: destinationRef)?.title ?? destinationRef, systemImage: "paperplane")
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
             }
             Spacer(minLength: 8)
             DetailPaneControlGroup()

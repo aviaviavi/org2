@@ -11,7 +11,7 @@ import {
   transitionAgentRun, updateAgentRunAssignment, updateAgentRunRuntime, updateAgentRunStep, validateAgentRun,
   updateAgentRunArtifactReview,
 } from "../dist/agentRun.js";
-import { dueWorkflowTriggers, installBuiltinWorkflow, instantiateWorkflow, legacyWorkflowDirectory, loadWorkflow, loadWorkflowSnapshot, markWorkflowTriggerAttempt, migrateLegacyWorkflows, packagedCorpusTemplate, parseWorkflowOrg, recordWorkflowSignal, renderWorkflowOrg, saveWorkflow, updateWorkflow, validateWorkflow, workflowFromRun, workflowPath, workflowTriggerEligibility } from "../dist/agentWorkflow.js";
+import { dueWorkflowTriggers, installBuiltinWorkflow, instantiateWorkflow, legacyWorkflowDirectory, loadWorkflow, loadWorkflowSnapshot, markWorkflowTriggerAttempt, migrateLegacyWorkflows, packagedCorpusTemplate, parseWorkflowOrg, promptAutomation, recordWorkflowSignal, renderWorkflowOrg, saveWorkflow, updateWorkflow, validateWorkflow, workflowFromRun, workflowPath, workflowScheduleOccurrences, workflowTriggerEligibility } from "../dist/agentWorkflow.js";
 import { artifactRebuildPlan, buildArtifactGraph, MEETING_TO_CONTROLLED_EXECUTION_WORKFLOW } from "../dist/artifactPipeline.js";
 import { discoverMcpClient, loadMcpClients, saveMcpClients, serveMcp, writeMcpSnapshot } from "../dist/mcpRuntime.js";
 import { safeIdentifier } from "../dist/safeIdentifier.js";
@@ -624,6 +624,78 @@ try {
   workflow.instructions = "Prepare the {{quarter}} board briefing";
   workflow.triggers.push({ id: "daily", type: "schedule", enabled: true, schedule: "every 1d", lastRunAt: "2026-07-12T00:00:00Z" });
   workflow.triggers.push({ id: "after-capture", type: "capture", enabled: true });
+  const scheduledAutomation = promptAutomation({
+    id: "weekly-product-update",
+    title: "Weekly product update",
+    instructions: "Summarize product progress and cite the relevant project notes.",
+    destinationRef: "builtin.claude",
+    agentRef: supportAgent.id,
+    schedule: "0 9 * * 1",
+    timezone: "America/Los_Angeles",
+    now: "2026-08-31T15:58:00Z",
+  });
+  assert.equal(validateWorkflow(scheduledAutomation).valid, true);
+  assert.equal(scheduledAutomation.state, "active");
+  assert.equal(scheduledAutomation.destinationRef, "builtin.claude");
+  assert.deepEqual(
+    workflowScheduleOccurrences(scheduledAutomation, { now: "2026-08-31T16:00:30Z" }).map((item) => item.scheduledFor),
+    ["2026-08-31T16:00:00.000Z"],
+  );
+  const renderedAutomation = renderWorkflowOrg(scheduledAutomation);
+  assert.match(renderedAutomation, /:AI_DESTINATION_REF: builtin\.claude/);
+  assert.equal(parseWorkflowOrg(renderedAutomation).destinationRef, "builtin.claude");
+  const automationRun = instantiateWorkflow(scheduledAutomation, {});
+  assert.equal(automationRun.destinationRef, "builtin.claude");
+  assert.match(renderAgentRunOrg(automationRun), /:AI_DESTINATION_REF: builtin\.claude/);
+  saveWorkflow(root, scheduledAutomation, { expectedRevision: null });
+  const automationRoot = path.join(root, "automation-corpus");
+  fs.mkdirSync(automationRoot, { recursive: true });
+  const invalidAutomation = spawnSync(process.execPath, [
+    path.resolve("dist/cli.js"), "workflow", "create", "invalid-automation",
+    "--title", "Invalid automation",
+    "--prompt", "Run this.",
+    "--destination-ref", "builtin.claude",
+    "--schedule", "sometimes",
+    "--dir", automationRoot,
+    "--json",
+  ], { encoding: "utf8" });
+  assert.notEqual(invalidAutomation.status, 0);
+  assert.match(invalidAutomation.stderr, /five-field cron expression/);
+  const createdAutomation = spawnSync(process.execPath, [
+    path.resolve("dist/cli.js"), "workflow", "create", "weekly-product-update",
+    "--title", "Weekly product update",
+    "--prompt", "Summarize product progress.",
+    "--destination-ref", "builtin.claude",
+    "--schedule", "0 9 * * 1",
+    "--timezone", "America/Los_Angeles",
+    "--now", "2026-08-31T15:58:00Z",
+    "--dir", automationRoot,
+    "--json",
+  ], { encoding: "utf8" });
+  assert.equal(createdAutomation.status, 0, createdAutomation.stderr || createdAutomation.stdout);
+  assert.equal(JSON.parse(createdAutomation.stdout).workflow.destinationRef, "builtin.claude");
+  const dueAutomation = spawnSync(process.execPath, [
+    path.resolve("dist/cli.js"), "workflow", "due",
+    "--now", "2026-08-31T16:00:30Z", "--dir", automationRoot, "--json",
+  ], { encoding: "utf8" });
+  assert.equal(dueAutomation.status, 0, dueAutomation.stderr || dueAutomation.stdout);
+  assert.equal(JSON.parse(dueAutomation.stdout).due[0].scheduledFor, "2026-08-31T16:00:00.000Z");
+  const dispatchedAutomation = spawnSync(process.execPath, [
+    path.resolve("dist/cli.js"), "workflow", "run", "weekly-product-update",
+    "--trigger", "schedule", "--scheduled-for", "2026-08-31T16:00:00Z",
+    "--dir", automationRoot, "--json",
+  ], { encoding: "utf8" });
+  assert.equal(dispatchedAutomation.status, 0, dispatchedAutomation.stderr || dispatchedAutomation.stdout);
+  const dispatchedAutomationPayload = JSON.parse(dispatchedAutomation.stdout);
+  assert.equal(dispatchedAutomationPayload.run.destinationRef, "builtin.claude");
+  assert.match(dispatchedAutomationPayload.prompt, /ORG2_AI_DESTINATION_REF: builtin\.claude/);
+  const overlappingAutomation = spawnSync(process.execPath, [
+    path.resolve("dist/cli.js"), "workflow", "due",
+    "--now", "2026-09-07T16:00:30Z", "--dir", automationRoot, "--json",
+  ], { encoding: "utf8" });
+  assert.equal(overlappingAutomation.status, 0, overlappingAutomation.stderr || overlappingAutomation.stdout);
+  assert.equal(JSON.parse(overlappingAutomation.stdout).due.length, 0);
+  assert.equal(JSON.parse(overlappingAutomation.stdout).skipped[0].activeRunId, dispatchedAutomationPayload.run.id);
   const invalidTriggers = {
     ...workflow,
     triggers: [

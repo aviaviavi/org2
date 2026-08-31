@@ -200,6 +200,7 @@ export interface AgentRun {
   goalRef?: string;
   workflowId?: string;
   workflowVersion?: string;
+  destinationRef?: string;
   providerPolicy?: string;
   provider?: string;
   model?: string;
@@ -238,6 +239,7 @@ export interface AgentRunCreateInput {
   goalRef?: string;
   workflowId?: string;
   workflowVersion?: string;
+  destinationRef?: string;
   providerPolicy?: string;
   provider?: string;
   model?: string;
@@ -444,6 +446,7 @@ export function createAgentRun(input: AgentRunCreateInput): AgentRun {
     ...(optional(input.goalRef) ? { goalRef: optional(input.goalRef) } : {}),
     ...(optional(input.workflowId) ? { workflowId: optional(input.workflowId) } : {}),
     ...(optional(input.workflowVersion) ? { workflowVersion: optional(input.workflowVersion) } : {}),
+    ...(optional(input.destinationRef) ? { destinationRef: optional(input.destinationRef) } : {}),
     ...(optional(input.providerPolicy) ? { providerPolicy: optional(input.providerPolicy) } : {}),
     ...(optional(input.provider) ? { provider: optional(input.provider) } : {}),
     ...(optional(input.model) ? { model: optional(input.model) } : {}),
@@ -485,6 +488,7 @@ export function validateAgentRun(value: unknown): AgentRunValidationResult {
   if (!String(run.goal || "").trim()) issues.push({ path: "$.goal", message: "must not be empty" });
   if (run.agentRef !== undefined && !String(run.agentRef).trim()) issues.push({ path: "$.agentRef", message: "must not be empty when present" });
   if (run.goalRef !== undefined && !String(run.goalRef).trim()) issues.push({ path: "$.goalRef", message: "must not be empty when present" });
+  if (run.destinationRef !== undefined && !String(run.destinationRef).trim()) issues.push({ path: "$.destinationRef", message: "must not be empty when present" });
   if (!run.status || !AGENT_RUN_STATUSES.includes(run.status)) issues.push({ path: "$.status", message: `must be one of: ${AGENT_RUN_STATUSES.join(", ")}` });
   if (!run.riskClass || !AGENT_RUN_RISK_CLASSES.includes(run.riskClass)) issues.push({ path: "$.riskClass", message: `must be one of: ${AGENT_RUN_RISK_CLASSES.join(", ")}` });
   for (const field of ["acceptanceCriteria", "capabilities", "context", "plan", "artifacts", "approvals", "validations", "comments", "events"] as const) {
@@ -971,6 +975,7 @@ export function forkAgentRun(run: AgentRun, input: { id?: string; actor?: string
     goalRef: run.goalRef,
     workflowId: run.workflowId,
     workflowVersion: run.workflowVersion,
+    destinationRef: run.destinationRef,
     providerPolicy: run.providerPolicy,
     capabilities: run.capabilities,
     context: run.context,
@@ -1017,6 +1022,7 @@ export function renderAgentRunOrg(run: AgentRun): string {
     ...(run.goalRef ? [`:GOAL_REF: ${orgEscape(run.goalRef)}`] : []),
     ...(run.workflowId ? [`:WORKFLOW_ID: ${orgEscape(run.workflowId)}`] : []),
     ...(run.workflowVersion ? [`:WORKFLOW_VERSION: ${orgEscape(run.workflowVersion)}`] : []),
+    ...(run.destinationRef ? [`:AI_DESTINATION_REF: ${orgEscape(run.destinationRef)}`] : []),
     ...(run.providerPolicy ? [`:PROVIDER_POLICY: ${orgEscape(run.providerPolicy)}`] : []),
     ...(run.provider ? [`:PROVIDER: ${orgEscape(run.provider)}`] : []),
     ...(run.model ? [`:MODEL: ${orgEscape(run.model)}`] : []),

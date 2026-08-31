@@ -1,16 +1,18 @@
-#+TITLE: Workflows
-#+SUBTITLE: Plain-text processes executed by replaceable runtimes
+#+TITLE: Automations and workflows
+#+SUBTITLE: Plain-text prompts and processes sent to replaceable AI destinations
 
 An Org2 workflow is a maintained, reusable process. Each workflow is an ordinary =.org2= file under the visible top-level =workflows/= directory. The file is the source of truth: it can be opened in Org2 Workspace, another editor, a terminal, or Git without depending on private application state.
 
-The Mac app and runtime adapters provide tooling around the file. They can list workflows, validate them, collect inputs, start runs, activate or pause schedules, and show execution history. Those controls must update or act from the canonical workflow file rather than creating a second GUI-owned definition.
+The Mac app and runtime adapters provide tooling around the file. They can create prompt automations, list and validate workflows, collect inputs, start runs, activate or pause schedules, and show execution history. Those controls must update or act from the canonical workflow file rather than creating a second GUI-owned definition.
 
 * Workflow, run, and runtime
 
 - A *workflow* describes how a class of work should happen: inputs, context rules, instructions, steps, outputs, validation, approvals, and triggers.
 - A *logical work item* groups recurring executions without conflating scheduler ticks.
 - An *attempt run* records one concrete execution of one workflow version, including its trigger, attempt number, context, state, artifacts, approvals, validation, events, and outcome.
-- A *runtime adapter* executes the workflow. OpenClaw is the first native adapter; the workflow and run formats do not depend on one provider.
+- An *agent profile* is the stable Org2 worker identity or responsibility attached to the work.
+- An *AI destination* is the configured execution endpoint, such as local Codex, Claude Code, OpenClaw, or a direct model provider. It is not the agent identity.
+- A *runtime adapter* sends work to that destination and normalizes its result into the same history. The workflow and run formats do not depend on one provider.
 
 Repeating a prompt is useful, but it does not by itself create a workflow. A workflow earns its durable form by making the process inspectable, editable, versionable, reviewable, and reliable across executions.
 
@@ -28,7 +30,25 @@ Older early-alpha installations may contain =.org2/workflows/=. Org2 continues t
 
 One workflow per file is the default. A note or project heading may link to or invoke a workflow, while independent files keep workflow identity, version history, review, and distribution straightforward.
 
-* Creating and maintaining a workflow
+* Creating an automation
+
+Open *Agent Work → Automations* in the Mac app and choose *New Automation*. Give it a name and prompt, select any enabled AI destination, optionally attach an agent profile, and either leave it manual or add an interval or cron schedule. OpenOrg writes the result as a normal file under =workflows/=. *Edit Source* opens that canonical file in the ordinary Org2 editor.
+
+The minimal CLI form is:
+
+#+begin_src sh
+org2 workflow create weekly-product-update \
+  --title "Weekly product update" \
+  --prompt "Prepare a cited update from this week's product notes." \
+  --destination-ref builtin.claude \
+  --schedule "0 9 * * 1" \
+  --timezone America/Los_Angeles \
+  --dir ~/notes
+#+end_src
+
+The readable =:AI_DESTINATION_REF:= property is a symbolic reference to configured app state; credentials and machine-local connection details never enter the workflow file. If that exact destination is missing or disabled, the attempt fails visibly instead of being sent somewhere else.
+
+* Creating and maintaining a fuller workflow
 
 A completed one-off run can become a draft workflow:
 
@@ -38,13 +58,15 @@ org2 workflow save RUN_ID --id weekly-review --dir ~/notes
 
 The saved file is a proposal, not an automatic publication or rerun. Review the concrete context copied from the original run, replace one-off values with inputs where appropriate, and inspect outputs, validation, and approval boundaries before activation.
 
-The Mac *Agent Work → Workflows* surface lists the files and opens the selected workflow in the normal Org2 document editor. *Edit Source* uses the same full-fidelity source mode available to other corpus files. Structured controls such as *Run Now*, *Validate*, *Schedule*, *Activate*, and *Pause* are conveniences over the file and shared CLI.
+The Mac *Agent Work → Automations* surface also lists fuller reusable workflows and opens the selected file in the normal Org2 document editor. Structured controls such as *Run Now*, *Validate*, *Schedule*, *Activate*, *Pause*, and *View History* are conveniences over the file and shared CLI.
 
 Useful lifecycle commands include:
 
 #+begin_src sh
 org2 workflow list --dir ~/notes --json
 org2 workflow validate weekly-review --dir ~/notes
+org2 workflow run weekly-review --dir ~/notes --json
+org2 workflow due --dir ~/notes --json
 org2 workflow activate weekly-review --dir ~/notes
 org2 workflow pause weekly-review --dir ~/notes
 org2 workflow schedule weekly-review --cron "0 9 * * 1" \
@@ -54,9 +76,25 @@ org2 workflow migrate --dir ~/notes
 
 Draft, active, and paused describe operational intent. Editing the file remains possible in every state. A workflow should be validated and reviewed before an edited version becomes responsible for consequential or scheduled work.
 
-* OpenClaw execution
+* OpenOrg scheduling and destination dispatch
 
-The =org2-lifecycle= plugin is the current execution bridge:
+OpenOrg owns the portable scheduling loop. While the Mac app is running, it checks active automations once a minute and again after launch or app activation. If the Mac was asleep or OpenOrg was closed, it catches up only the latest missed occurrence instead of replaying every tick.
+
+For each due occurrence OpenOrg:
+
+1. Creates a durable numbered run from the exact workflow revision before contacting an AI destination.
+2. Records the schedule, planned time, destination reference, agent profile, and stable logical-work ID.
+3. Refuses to overlap a queued, running, blocked, or approval-waiting attempt for the same automation.
+4. Opens a destination thread and sends the resolved prompt through the same destination-neutral path used by AI Chat.
+5. Retains the reply, result, errors, artifacts, approvals, duration, and destination thread in the shared run history.
+
+Codex, Claude Code, OpenClaw, and enabled custom or direct-provider destinations all use this path. Manual *Run Now* uses the same durable preparation and dispatch without waiting for the clock. Pausing the automation stops new attempts; it does not erase its source or history.
+
+This first version requires OpenOrg to be running. A small background helper or provider-native scheduler can be added later without changing the workflow file or splitting its run history.
+
+* OpenClaw lifecycle integration
+
+The optional =org2-lifecycle= plugin adds deeper OpenClaw lifecycle integration:
 
 1. For a manual execution, the plugin instantiates the workflow into a durable Org2 run before the agent begins.
 2. The plugin sends OpenClaw a workflow marker and a request to read the canonical workflow and run records.
@@ -72,19 +110,19 @@ High-volume account-oriented workflows should keep global selection state in =or
 
 Opening a PDF output from Agent Work uses the system's default PDF application (Preview by default on macOS). Text outputs continue to open in the Org2 workspace, with raw source editing available when needed.
 
-For scheduled work, the schedule declaration stays in the workflow file while OpenClaw owns due checks and execution:
+OpenClaw cron reconciliation remains available as an optional runtime-native clock:
 
-1. Activating or syncing workflows reconciles enabled schedule triggers into OpenClaw cron.
+1. Explicitly syncing workflows reconciles enabled generic =schedule= triggers into OpenClaw cron.
 2. The cron payload identifies the workflow, version, and trigger; it does not maintain a separate copy of the process.
 3. Each eligible execution creates a distinct numbered attempt under the workflow's stable logical-work ID. =run list --json= includes a =logicalWork= roll-up without erasing per-attempt evidence.
 4. A schedule may declare =--gate-event= and/or =--gate-path=. =workflow signal= records event/fresh-work evidence, and the lifecycle adapter safely skips a tick when no matching signal is newer than the prior attempt.
-5. Pausing the workflow disables its managed OpenClaw job.
+5. Pausing the workflow disables its managed OpenClaw job at the next reconciliation.
 
 OpenClaw job IDs and correlation mappings are adapter state. They are not part of the portable workflow definition. This boundary prevents scheduler details from leaking into authored corpus files and allows another runtime adapter to execute the same process later.
 
 The plugin has one explicit =corpusDir= write target. Requests from the Mac app carry the selected portable corpus ID, and the adapter refuses to act when that identity does not match its configured corpus. Read-only mounted agenda and search views do not silently become agent write access.
 
-The first scheduling slice uses cron expressions plus an optional IANA timezone. OpenClaw remains authoritative for due checks, retry behavior, and execution history; Org2 remains authoritative for the desired workflow, review boundaries, and durable work record.
+Do not enable both OpenOrg scheduling and a provider-native clock for the same automation. Provider-native scheduling is an execution adapter, not a second canonical definition; Org2 remains authoritative for the prompt, desired schedule, review boundaries, and durable work record.
 
 * Safety and review
 
@@ -94,4 +132,4 @@ Keep runtime credentials outside workflow files. A workflow may name a capabilit
 
 * Current limits
 
-This is an early workflow surface. The canonical file carries readable Org2 authoring fields plus a versioned machine-state block for the complete portable definition. The visible title, description, instructions, version, risk, and lifecycle state are authoritative when edited in source; a later structured save normalizes those values back into the complete definition. Source mode remains the complete editing escape hatch while structured assistance for inputs, steps, outputs, validation, and approvals becomes deeper. OpenClaw is the only adapter with native manual execution and schedule reconciliation today. More trigger types, richer revision comparison, automatic parameter suggestions, and additional runtime adapters can build on the same file/run boundary.
+This is an early automation surface. The canonical file carries readable Org2 authoring fields plus a versioned machine-state block for the complete portable definition. The visible title, description, instructions, destination reference, version, risk, and lifecycle state are authoritative when edited in source; a later structured save normalizes those values back into the complete definition. Source mode remains the complete editing escape hatch while structured assistance for inputs, steps, outputs, validation, and approvals becomes deeper. OpenOrg does not yet run schedules after the app process exits, offer a friendly natural-language schedule builder, or delegate clock ownership to Codex or Claude Code native schedulers.

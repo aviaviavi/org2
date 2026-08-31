@@ -77,7 +77,7 @@ Agent Work keeps each delegated job together with its goal, context, progress, o
 
 You can approve, reject, request changes, discuss, or record that work was completed elsewhere. Batch selection is available when several independent items can be decided together. Review material stays inspectable after a decision, providing a durable record of what was proposed and what happened.
 
-Reusable work can be saved as a workflow. Workflows remain ordinary files that you can inspect and edit; the app adds controls for validation, manual runs, activation, pausing, and schedules. See [[file:workflows.org][Workflows]] for the full lifecycle.
+The *Automations* view turns a prompt, optional agent profile, schedule, and any enabled AI destination into an ordinary file under =workflows/=. OpenOrg checks schedules while it is running, creates a durable run before dispatch, catches up the latest missed occurrence after sleep or relaunch, prevents overlapping attempts, and keeps one destination-neutral history. Fuller reusable workflows use the same files and add inputs, steps, validation, outputs, and approval boundaries. See [[file:workflows.org][Automations and workflows]] for the full lifecycle.
 
 * AI chat and agents
 

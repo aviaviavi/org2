@@ -178,7 +178,7 @@ OpenOrg Alpha is for technical founders, operators, and knowledge workers who wa
 - [[file:features.org][Features]]
 - [[file:editors-macos.org][OpenOrg for macOS]]
 - [[file:corpus-flow.org][Corpus flow]]
-- [[file:workflows.org][Workflows]]
+- [[file:workflows.org][Automations and workflows]]
 - [[file:collaboration.org][Shared corpora and collaboration]]
 - [[file:ai-processing-architecture.org][AI processing architecture]]
 - [[file:agent-quickstart.org][Agent and model integration]]

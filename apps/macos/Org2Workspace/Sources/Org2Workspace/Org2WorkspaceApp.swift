@@ -59,6 +59,7 @@ struct Org2WorkspaceApp: App {
           store.setWorkspaceRealtimeRefreshActive(true)
           store.setRunReviewAutoRefreshActive(true, refreshImmediately: false)
           store.sourceAutoSyncDidBecomeActive()
+          store.automationSchedulerDidBecomeActive()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
           store.setWorkspaceRealtimeRefreshActive(false)
@@ -67,6 +68,7 @@ struct Org2WorkspaceApp: App {
         .task {
           await store.bootstrap()
           store.setSourceAutoSyncActive(true)
+          store.setAutomationSchedulerActive(true)
         }
     }
     .windowToolbarStyle(.unifiedCompact(showsTitle: false))

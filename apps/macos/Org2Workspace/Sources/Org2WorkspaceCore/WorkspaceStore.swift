@@ -1293,6 +1293,7 @@ public final class WorkspaceStore: ObservableObject {
   nonisolated public static let defaultWorkspaceRefreshTimeoutNanoseconds: UInt64 = 15_000_000_000
   nonisolated public static let defaultEntryRenderTimeoutNanoseconds: UInt64 = 15_000_000_000
   nonisolated public static let sourceAutoSyncCheckIntervalNanoseconds: UInt64 = 60_000_000_000
+  nonisolated public static let automationScheduleCheckIntervalNanoseconds: UInt64 = 60_000_000_000
   nonisolated public static let applicationActivationRefreshDelayNanoseconds: UInt64 = 250_000_000
   nonisolated static let workspaceSearchCandidateLimit = 100
   nonisolated static let workspaceSearchDisplayLimit = 50
@@ -1424,6 +1425,7 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var selectedAgentWorkflowID: AgentWorkflowItem.ID?
   @Published public private(set) var isLoadingAgentWorkflows = false
   @Published public private(set) var mutatingAgentWorkflowIDs: Set<AgentWorkflowItem.ID> = []
+  @Published public private(set) var automationSchedulerStatusText = "Automation scheduler is starting"
   @Published public private(set) var agentGoals: [AgentGoalItem] = []
   @Published public var selectedAgentGoalID: AgentGoalItem.ID?
   @Published public private(set) var isLoadingAgentGoals = false
@@ -2266,6 +2268,11 @@ public final class WorkspaceStore: ObservableObject {
   private var sourceAutoSyncTask: Task<Void, Never>?
   private var sourceAutoSyncActivationTask: Task<Void, Never>?
   private var isSourceAutoSyncActive = false
+  private var automationSchedulerTask: Task<Void, Never>?
+  private var automationSchedulerActivationTask: Task<Void, Never>?
+  private var isAutomationSchedulerActive = false
+  private var dispatchingAutomationIDs: Set<String> = []
+  private var automationRunIDsByThreadID: [UUID: String] = [:]
   private var agendaTodoShortcutMutationTask: Task<Void, Never>?
   private var pendingAgendaTodoShortcutMutations: [AgendaTodoShortcutMutation] = []
   private var agendaRefreshDeferredForTodoShortcutBurst = false
@@ -3913,6 +3920,91 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
+  public func setAutomationSchedulerActive(
+    _ isActive: Bool,
+    checkIntervalNanoseconds: UInt64 = WorkspaceStore.automationScheduleCheckIntervalNanoseconds
+  ) {
+    isAutomationSchedulerActive = isActive
+    guard isActive else {
+      automationSchedulerTask?.cancel()
+      automationSchedulerTask = nil
+      automationSchedulerActivationTask?.cancel()
+      automationSchedulerActivationTask = nil
+      automationSchedulerStatusText = "Automation scheduler is off"
+      return
+    }
+
+    guard automationSchedulerTask == nil else { return }
+    automationSchedulerStatusText = "Checking automations…"
+    Task { @MainActor [weak self] in
+      await self?.checkDueAgentAutomations()
+    }
+    automationSchedulerTask = Task { @MainActor [weak self] in
+      while !Task.isCancelled {
+        do {
+          try await Task.sleep(nanoseconds: checkIntervalNanoseconds)
+        } catch {
+          return
+        }
+        guard let self, self.isAutomationSchedulerActive else { continue }
+        await self.checkDueAgentAutomations()
+      }
+    }
+  }
+
+  public func automationSchedulerDidBecomeActive() {
+    guard isAutomationSchedulerActive else { return }
+    automationSchedulerActivationTask?.cancel()
+    automationSchedulerActivationTask = Task { @MainActor [weak self] in
+      try? await Task.sleep(nanoseconds: Self.applicationActivationRefreshDelayNanoseconds)
+      guard !Task.isCancelled,
+            let self,
+            self.isAutomationSchedulerActive,
+            self.isWorkspaceRealtimeRefreshActive
+      else { return }
+      await self.checkDueAgentAutomations()
+      self.automationSchedulerActivationTask = nil
+    }
+  }
+
+  func checkDueAgentAutomations(now: Date = Date()) async {
+    guard isAutomationSchedulerActive, let corpusRoot else {
+      automationSchedulerStatusText = corpusRoot == nil
+        ? "Choose a corpus to run automations"
+        : "Automation scheduler is off"
+      return
+    }
+    do {
+      let formatter = ISO8601DateFormatter()
+      formatter.formatOptions = [.withInternetDateTime]
+      let payload: AgentWorkflowDueListPayload = try await cli.runJSON([
+        "workflow", "due",
+        "--now", formatter.string(from: now),
+        "--dir", corpusRoot.path,
+        "--json"
+      ])
+      if payload.due.isEmpty {
+        automationSchedulerStatusText = payload.skipped.isEmpty
+          ? "Automations are up to date"
+          : "\(payload.skipped.count) automation\(payload.skipped.count == 1 ? "" : "s") waiting for an active run"
+        return
+      }
+      automationSchedulerStatusText = "Dispatching \(payload.due.count) automation\(payload.due.count == 1 ? "" : "s")…"
+      var dispatchedCount = 0
+      for item in payload.due {
+        if await dispatchScheduledAgentAutomation(item) {
+          dispatchedCount += 1
+        }
+      }
+      automationSchedulerStatusText = dispatchedCount == payload.due.count
+        ? "Dispatched \(dispatchedCount) automation\(dispatchedCount == 1 ? "" : "s")"
+        : "Dispatched \(dispatchedCount) of \(payload.due.count) automations"
+    } catch {
+      automationSchedulerStatusText = "Automation check failed"
+      errorText = "Automation scheduler: \(error.localizedDescription)"
+    }
+  }
+
   private func checkDueSourceSchedules(refreshProfiles: Bool, now: Date = Date()) async {
     guard corpusRoot != nil else { return }
     if refreshProfiles || sourceProfiles.isEmpty {
@@ -5075,12 +5167,7 @@ public final class WorkspaceStore: ObservableObject {
       let action = state == "active" ? "activate" : state == "paused" ? "pause" : "draft"
       _ = try await cli.run(["workflow", action, workflow.id, "--dir", corpusRoot.path, "--json"])
       await refreshAgentWorkflows()
-      do {
-        try await syncAgentWorkflowsWithOpenClaw()
-        statusText = "\(workflow.title): \(state)"
-      } catch {
-        statusText = "\(workflow.title): \(state); OpenClaw sync pending"
-      }
+      statusText = "\(workflow.title): \(state)"
       if let refreshed = agentWorkflows.first(where: { $0.id == workflow.id }) { selectAgentWorkflow(refreshed) }
     } catch {
       errorText = error.localizedDescription
@@ -5103,6 +5190,7 @@ public final class WorkspaceStore: ObservableObject {
     _ workflow: AgentWorkflowItem,
     cron: String,
     timezone: String,
+    destinationID: String?,
     enabled: Bool
   ) async {
     guard let corpusRoot, !mutatingAgentWorkflowIDs.contains(workflow.id) else { return }
@@ -5117,14 +5205,16 @@ public final class WorkspaceStore: ObservableObject {
       } else {
         arguments.append("--disable")
       }
-      _ = try await cli.run(arguments)
-      await refreshAgentWorkflows()
-      do {
-        try await syncAgentWorkflowsWithOpenClaw()
-        statusText = enabled ? "Scheduled \(workflow.title)" : "Disabled \(workflow.title) schedule"
-      } catch {
-        statusText = enabled ? "Saved schedule; OpenClaw sync pending" : "Disabled schedule; OpenClaw sync pending"
+      if let destinationID = destinationID?.trimmingCharacters(in: .whitespacesAndNewlines),
+         !destinationID.isEmpty {
+        arguments += ["--destination-ref", destinationID]
       }
+      _ = try await cli.run(arguments)
+      if enabled && workflow.state != "active" {
+        _ = try await cli.run(["workflow", "activate", workflow.id, "--dir", corpusRoot.path, "--json"])
+      }
+      await refreshAgentWorkflows()
+      statusText = enabled ? "Scheduled \(workflow.title)" : "Disabled \(workflow.title) schedule"
       if let refreshed = agentWorkflows.first(where: { $0.id == workflow.id }) { selectAgentWorkflow(refreshed) }
     } catch {
       errorText = error.localizedDescription
@@ -5133,38 +5223,257 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func runAgentWorkflow(_ workflow: AgentWorkflowItem, inputs: [String: String]) async {
-    guard !mutatingAgentWorkflowIDs.contains(workflow.id) else { return }
-    mutatingAgentWorkflowIDs.insert(workflow.id)
-    defer { mutatingAgentWorkflowIDs.remove(workflow.id) }
+    _ = await prepareAndDispatchAgentAutomation(
+      workflowID: workflow.id,
+      title: workflow.title,
+      destinationRef: workflow.destinationRef,
+      inputs: inputs,
+      presentsThread: true
+    )
+  }
+
+  public func createAgentAutomation(
+    title: String,
+    prompt: String,
+    destinationID: String,
+    agentRef: String?,
+    schedule: String?,
+    timezone: String
+  ) async {
+    guard let corpusRoot else { return }
+    let normalizedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+    let normalizedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+    let normalizedSchedule = schedule?.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !normalizedTitle.isEmpty, !normalizedPrompt.isEmpty else {
+      errorText = "Enter an automation name and prompt."
+      return
+    }
+    let id = Self.automationIdentifier(
+      title: normalizedTitle,
+      existingIDs: Set(agentWorkflows.map(\.id))
+    )
     do {
-      let settings = currentOpenClawSettings(allowKeychainRead: true)
-      let gateway = OpenClawGatewayClient(settings: settings)
-      let prepared = try await gateway.prepareWorkflowRun(
-        workflowID: workflow.id,
-        inputs: inputs,
-        corpusID: activeCorpusIdentity?.id
-      )
-      let thread = createOpenClawChatThread(
-        title: "Workflow: \(workflow.title)",
-        statusText: "Starting \(workflow.title)"
-      )
-      navigateToSurface(.openClaw)
-      selectOpenClawChatThread(thread.id)
-      let pointer = OpenClawContextPointer(
-        kind: "workflow action",
-        displayTitle: workflow.title,
-        reference: "\(mappedPathForOpenClaw(workflow.file)):1",
-        displayReference: "\(workflow.file):1",
-        threadTitle: "Workflow: \(workflow.title)"
-      )
-      await sendOpenClawMessage(
-        text: automaticOpenClawActionText(pointer, prompt: prepared.prompt)
-      )
-      await refreshAgentRuns()
+      var arguments = [
+        "workflow", "create", id,
+        "--title", normalizedTitle,
+        "--prompt", normalizedPrompt,
+        "--destination-ref", destinationID,
+        "--dir", corpusRoot.path,
+        "--json"
+      ]
+      if let agentRef = agentRef?.trimmingCharacters(in: .whitespacesAndNewlines),
+         !agentRef.isEmpty {
+        arguments += ["--agent-ref", agentRef]
+      }
+      if let schedule = normalizedSchedule,
+         !schedule.isEmpty {
+        arguments += ["--schedule", schedule]
+        let timezone = timezone.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !timezone.isEmpty { arguments += ["--timezone", timezone] }
+      } else {
+        arguments += ["--state", "draft"]
+      }
+      _ = try await cli.run(arguments)
+      await refreshAgentWorkflows()
+      if let created = agentWorkflows.first(where: { $0.id == id }) {
+        selectAgentWorkflow(created)
+      }
+      statusText = normalizedSchedule?.isEmpty == false
+        ? "Created and scheduled \(normalizedTitle)"
+        : "Created \(normalizedTitle)"
+      await checkDueAgentAutomations()
     } catch {
       errorText = error.localizedDescription
-      statusText = "Workflow run failed"
+      statusText = "Automation creation failed"
     }
+  }
+
+  nonisolated static func automationIdentifier(title: String, existingIDs: Set<String>) -> String {
+    let scalars = title.lowercased().unicodeScalars.map { scalar -> Character in
+      CharacterSet.alphanumerics.contains(scalar) ? Character(String(scalar)) : "-"
+    }
+    var base = String(scalars)
+      .split(separator: "-", omittingEmptySubsequences: true)
+      .joined(separator: "-")
+    if base.isEmpty { base = "automation" }
+    base = String(base.prefix(56))
+    if !existingIDs.contains(base) { return base }
+    var suffix = 2
+    while existingIDs.contains("\(base)-\(suffix)") { suffix += 1 }
+    return "\(base)-\(suffix)"
+  }
+
+  public func showAgentWorkflowHistory(_ workflow: AgentWorkflowItem) {
+    runsAndReviewPage = .runs
+    agentRunFilter = workflow.id
+    if let run = agentRuns.first(where: { $0.workflowId == workflow.id }) {
+      selectAgentRun(run)
+    }
+  }
+
+  public func agentRunCount(workflowID: String) -> Int {
+    agentRuns.lazy.filter { $0.workflowId == workflowID }.count
+  }
+
+  private func dispatchScheduledAgentAutomation(_ item: AgentWorkflowDueItem) async -> Bool {
+    await prepareAndDispatchAgentAutomation(
+      workflowID: item.workflowId,
+      title: item.title,
+      destinationRef: item.destinationRef,
+      inputs: [:],
+      triggerID: item.triggerId,
+      scheduledFor: item.scheduledFor,
+      presentsThread: false
+    ) != nil
+  }
+
+  private func prepareAndDispatchAgentAutomation(
+    workflowID: String,
+    title: String,
+    destinationRef: String?,
+    inputs: [String: String],
+    triggerID: String? = nil,
+    scheduledFor: String? = nil,
+    presentsThread: Bool
+  ) async -> UUID? {
+    guard let corpusRoot, !dispatchingAutomationIDs.contains(workflowID) else { return nil }
+    dispatchingAutomationIDs.insert(workflowID)
+    mutatingAgentWorkflowIDs.insert(workflowID)
+    defer {
+      dispatchingAutomationIDs.remove(workflowID)
+      mutatingAgentWorkflowIDs.remove(workflowID)
+    }
+    var preparedRunID: String?
+    do {
+      var arguments = ["workflow", "run", workflowID, "--dir", corpusRoot.path, "--json"]
+      for (name, value) in inputs.sorted(by: { $0.key < $1.key }) {
+        arguments += ["--input", "\(name)=\(value)"]
+      }
+      if let triggerID {
+        arguments += ["--trigger", triggerID]
+      }
+      if let scheduledFor {
+        arguments += ["--scheduled-for", scheduledFor]
+      }
+      let prepared: AgentWorkflowRunPayload = try await cli.runJSON(arguments)
+      guard let run = prepared.run, let prompt = prepared.prompt else {
+        automationSchedulerStatusText = prepared.reason ?? "Automation attempt was skipped"
+        return nil
+      }
+      preparedRunID = run.id
+      guard let destination = resolvedAutomationDestination(destinationRef ?? run.destinationRef) else {
+        await failAgentAutomationRun(run.id, reason: "The configured AI destination is unavailable or disabled.")
+        return nil
+      }
+
+      _ = try await cli.run([
+        "run", "start", run.id,
+        "--actor", "OpenOrg Automation Scheduler",
+        "--dir", corpusRoot.path,
+        "--json"
+      ])
+      let thread = createOpenClawChatThread(
+        title: "Automation: \(title)",
+        statusText: presentsThread ? "Starting \(title)" : "",
+        runtime: destination.runtime,
+        destinationID: destination.id,
+        defersPersistence: true,
+        selectsThread: presentsThread
+      )
+      automationRunIDsByThreadID[thread.id] = run.id
+      _ = try? await cli.run([
+        "run", "comment", run.id,
+        "--author", "OpenOrg Automation Scheduler",
+        "--body", "AI destination: \(destination.id)\nAI chat thread: \(thread.id.uuidString.lowercased())",
+        "--dir", corpusRoot.path,
+        "--json"
+      ])
+      guard sendAIChatRemoteMessage(prompt, threadID: thread.id) else {
+        automationRunIDsByThreadID.removeValue(forKey: thread.id)
+        await failAgentAutomationRun(run.id, reason: "OpenOrg could not enqueue the automation prompt for \(destination.title).")
+        return nil
+      }
+      if presentsThread {
+        navigateToSurface(.openClaw)
+        selectOpenClawChatThread(thread.id)
+      }
+      statusText = "Sent \(title) to \(destination.title)"
+      await refreshAgentRuns()
+      await refreshAgentWorkflows()
+      return thread.id
+    } catch {
+      if let preparedRunID {
+        await failAgentAutomationRun(
+          preparedRunID,
+          reason: "OpenOrg could not dispatch this automation: \(error.localizedDescription)"
+        )
+      }
+      errorText = error.localizedDescription
+      statusText = "Automation dispatch failed"
+      return nil
+    }
+  }
+
+  private func resolvedAutomationDestination(_ destinationRef: String?) -> AIChatDestinationConfiguration? {
+    if let destinationRef = destinationRef?.trimmingCharacters(in: .whitespacesAndNewlines),
+       !destinationRef.isEmpty {
+      return enabledAIChatDestinations.first(where: { $0.id == destinationRef })
+    }
+    return enabledAIChatDestinations.first(where: { $0.id == AIChatDestinationConfiguration.openClawID })
+      ?? enabledAIChatDestinations.first
+  }
+
+  private func failAgentAutomationRun(_ runID: String, reason: String) async {
+    guard let corpusRoot else { return }
+    _ = try? await cli.run([
+      "run", "fail", runID,
+      "--reason", reason,
+      "--actor", "OpenOrg Automation Scheduler",
+      "--dir", corpusRoot.path,
+      "--json"
+    ])
+    await refreshAgentRuns()
+  }
+
+  private func recordAgentAutomationReply(
+    threadID: UUID,
+    destination: AIChatDestinationConfiguration,
+    reply: String
+  ) async {
+    guard let runID = automationRunIDsByThreadID.removeValue(forKey: threadID),
+          let corpusRoot
+    else { return }
+    let normalizedReply = String(
+      reply.trimmingCharacters(in: .whitespacesAndNewlines).prefix(8_000)
+    )
+    _ = try? await cli.run([
+      "run", "comment", runID,
+      "--author", destination.title,
+      "--body", "AI chat thread \(threadID.uuidString.lowercased()) replied:\n\(normalizedReply)",
+      "--dir", corpusRoot.path,
+      "--json"
+    ])
+    let currentRun: AgentRunItem? = try? await cli.runJSON([
+      "run", "show", runID,
+      "--dir", corpusRoot.path,
+      "--json"
+    ])
+    if currentRun?.status == "running" {
+      let summary = String(normalizedReply.prefix(4_000))
+      _ = try? await cli.run([
+        "run", "complete", runID,
+        "--summary", summary.isEmpty ? "The AI destination returned an empty response." : summary,
+        "--actor", "OpenOrg Automation Scheduler",
+        "--dir", corpusRoot.path,
+        "--json"
+      ])
+    }
+    await refreshAgentRuns()
+  }
+
+  private func failAgentAutomationThread(threadID: UUID, reason: String) async {
+    guard let runID = automationRunIDsByThreadID.removeValue(forKey: threadID) else { return }
+    await failAgentAutomationRun(runID, reason: reason)
   }
 
   public func syncAgentWorkflowsWithOpenClaw() async throws {
@@ -17131,7 +17440,6 @@ public final class WorkspaceStore: ObservableObject {
     let action = state == "active" ? "activate" : state == "paused" ? "pause" : "draft"
     _ = try await cli.run(["workflow", action, workflow.id, "--dir", corpusRoot.path, "--json"])
     await refreshAgentWorkflows(updatesStatus: false)
-    try? await syncAgentWorkflowsWithOpenClaw()
     return currentMobileRemoteWorkspaceSnapshot()
   }
 
@@ -17157,17 +17465,16 @@ public final class WorkspaceStore: ObservableObject {
       )
     }
 
-    let gateway = OpenClawGatewayClient(settings: currentOpenClawSettings(allowKeychainRead: true))
-    let prepared = try await gateway.prepareWorkflowRun(
+    guard let threadID = await prepareAndDispatchAgentAutomation(
       workflowID: workflow.id,
+      title: workflow.title,
+      destinationRef: workflow.destinationRef,
       inputs: inputs,
-      corpusID: activeCorpusIdentity?.id
-    )
-    let threadID = createAIChatRemoteThread(runtime: .openClaw)
-    guard sendAIChatRemoteMessage(prepared.prompt, threadID: threadID) else {
+      presentsThread: false
+    ) else {
       throw CocoaError(
         .fileWriteUnknown,
-        userInfo: [NSLocalizedDescriptionKey: "The workflow thread could not be started."]
+        userInfo: [NSLocalizedDescriptionKey: errorText ?? "The automation thread could not be started."]
       )
     }
     return threadID
@@ -18211,6 +18518,10 @@ public final class WorkspaceStore: ObservableObject {
           in: threadID,
           transcriptURL: sendOrigin.transcriptURL
         )
+        await failAgentAutomationThread(
+          threadID: threadID,
+          reason: "The configured AI destination is no longer available."
+        )
         removeFirstPendingOpenClawUserMessage(in: threadID)
         continue
       }
@@ -18324,6 +18635,11 @@ public final class WorkspaceStore: ObservableObject {
         activeOpenClawUserMessageIDByThreadID.removeValue(forKey: threadID)
         clearOpenClawCompletedRunPresentation(for: threadID)
         removeFirstPendingOpenClawUserMessage(in: threadID)
+        await recordAgentAutomationReply(
+          threadID: threadID,
+          destination: dispatchDestination,
+          reply: reply
+        )
         if isActiveAIChatSendOrigin(sendOrigin) {
           openClawStatusText = openClawPendingUserMessageIDs(for: threadID).isEmpty
             ? "\(dispatchDestination.name) replied"
@@ -18405,6 +18721,10 @@ public final class WorkspaceStore: ObservableObject {
             transcriptURL: sendOrigin.transcriptURL,
             statusText: "\(dispatchDestination.name) stopped"
           )
+          await failAgentAutomationThread(
+            threadID: threadID,
+            reason: "The \(dispatchDestination.title) automation turn was stopped."
+          )
           return
         }
         let failureText = Self.openClawSendFailureText(from: error)
@@ -18443,6 +18763,7 @@ public final class WorkspaceStore: ObservableObject {
           in: threadID,
           transcriptURL: sendOrigin.transcriptURL
         )
+        await failAgentAutomationThread(threadID: threadID, reason: failureText)
         removeAllPendingOpenClawUserMessages(in: threadID)
         return
       }
@@ -20851,6 +21172,8 @@ public final class WorkspaceStore: ObservableObject {
       workspaceActivationRefreshTask = nil
       sourceAutoSyncActivationTask?.cancel()
       sourceAutoSyncActivationTask = nil
+      automationSchedulerActivationTask?.cancel()
+      automationSchedulerActivationTask = nil
       mountedCorpusEventRefreshTask?.cancel()
       mountedCorpusEventRefreshTask = nil
       workspaceSurfaceRefreshTasks.values.forEach { $0.cancel() }

@@ -10810,7 +10810,7 @@ final class Org2ModelsTests: XCTestCase {
     let formatter = DateFormatter()
     formatter.locale = Locale(identifier: "en_US_POSIX")
     formatter.dateFormat = "yyyy-MM-dd"
-    let todayFileName = "\(formatter.string(from: Date())).org2"
+    let todayFileName = "\(formatter.string(from: Date())).\(OrgDocumentDefaults.preferredExtension)"
     let today = root
       .appendingPathComponent("dailies", isDirectory: true)
       .appendingPathComponent(todayFileName)
@@ -15966,7 +15966,7 @@ final class Org2ModelsTests: XCTestCase {
     formatter.dateFormat = "yyyy-MM-dd"
     let daily = root
       .appendingPathComponent("dailies", isDirectory: true)
-      .appendingPathComponent("\(formatter.string(from: Date())).org2")
+      .appendingPathComponent("\(formatter.string(from: Date())).\(OrgDocumentDefaults.preferredExtension)")
     let updated = try String(contentsOf: daily, encoding: .utf8)
     XCTAssertTrue(updated.contains("* TODO Captured from app"))
     XCTAssertTrue(updated.contains("SCHEDULED: <"))
@@ -16018,7 +16018,7 @@ final class Org2ModelsTests: XCTestCase {
     formatter.dateFormat = "yyyy-MM-dd"
     let daily = root
       .appendingPathComponent("dailies", isDirectory: true)
-      .appendingPathComponent("\(formatter.string(from: Date())).org2")
+      .appendingPathComponent("\(formatter.string(from: Date())).\(OrgDocumentDefaults.preferredExtension)")
     let updated = try String(contentsOf: daily, encoding: .utf8)
     XCTAssertTrue(updated.contains("* IN_PROGRESS [#A] Ship capture modal :capture:mac:"))
     XCTAssertTrue(updated.contains("SCHEDULED: <2026-06-15"))
@@ -16051,7 +16051,7 @@ final class Org2ModelsTests: XCTestCase {
 
     let node = root
       .appendingPathComponent("knowledge", isDirectory: true)
-      .appendingPathComponent("project-notes.org2")
+      .appendingPathComponent("project-notes.\(OrgDocumentDefaults.preferredExtension)")
     let text = try String(contentsOf: node, encoding: .utf8)
     XCTAssertTrue(text.contains("#+TITLE: Project Notes"))
     XCTAssertTrue(text.contains(":ID: "))

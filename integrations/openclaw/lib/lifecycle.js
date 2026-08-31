@@ -28,13 +28,20 @@ export function workflowMarker(prompt) {
   const text = String(prompt || "");
   const workflowId = text.match(/^ORG2_WORKFLOW_ID:\s*([^\s]+)\s*$/mi)?.[1];
   const workflowRunId = text.match(/^ORG2_WORKFLOW_RUN_ID:\s*([^\s]+)\s*$/mi)?.[1];
+  const workflowRunStarted = /^ORG2_WORKFLOW_RUN_STARTED:\s*true\s*$/mi.test(text);
   const triggerId = text.match(/^ORG2_WORKFLOW_TRIGGER_ID:\s*([^\s]+)\s*$/mi)?.[1];
   const inputsRaw = text.match(/^ORG2_WORKFLOW_INPUTS:\s*(\{.*\})\s*$/mi)?.[1];
   let inputs = {};
   if (inputsRaw) {
     try { inputs = JSON.parse(inputsRaw); } catch {}
   }
-  return workflowId ? { workflowId, workflowRunId, ...(triggerId ? { triggerId } : {}), inputs } : null;
+  return workflowId ? {
+    workflowId,
+    workflowRunId,
+    ...(workflowRunStarted ? { workflowRunStarted: true } : {}),
+    ...(triggerId ? { triggerId } : {}),
+    inputs,
+  } : null;
 }
 
 export function durableRunMarker(prompt) {
@@ -424,7 +431,7 @@ export class Org2Lifecycle {
       ]);
     }
     await this.exec(["run", "comment", runId, "--author", "org2-lifecycle", "--body", this.#correlationComment(key, details)]);
-    await this.exec(["run", "start", runId]);
+    if (!details.runAlreadyStarted) await this.exec(["run", "start", runId]);
     await this.#updateRuntime(runId, details);
     this.state.mappings[key] = {
       org2RunId: runId,
@@ -905,7 +912,11 @@ export class Org2Lifecycle {
     const jobs = await this.cron.list({ includeDisabled: true });
     const jobsById = new Map(jobs.map((job) => [job.id, job]));
     for (const workflow of workflows) {
-      const trigger = (workflow.triggers || []).find((item) => item.type === "schedule" && item.id === "openclaw-schedule");
+      const scheduleTriggers = (workflow.triggers || []).filter((item) => item.type === "schedule");
+      const trigger = scheduleTriggers.find((item) => item.id === "schedule")
+        || scheduleTriggers.find((item) => item.id === "openorg-schedule")
+        || scheduleTriggers.find((item) => item.id === "openclaw-schedule")
+        || scheduleTriggers[0];
       const desiredEnabled = workflow.state === "active" && trigger?.enabled === true && Boolean(trigger.schedule);
       let binding = this.state.workflowJobs[workflow.id];
       let job = binding?.jobId ? jobsById.get(binding.jobId) : undefined;

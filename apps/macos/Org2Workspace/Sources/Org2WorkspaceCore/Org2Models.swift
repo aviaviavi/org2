@@ -341,6 +341,48 @@ public struct AgentWorkflowTriggerItem: Decodable, Hashable, Sendable, Identifia
   public let timezone: String?
 }
 
+public struct AgentWorkflowDueListPayload: Decodable, Sendable {
+  public let schema: String
+  public let now: String
+  public let due: [AgentWorkflowDueItem]
+  public let skipped: [AgentWorkflowDueItem]
+}
+
+public struct AgentWorkflowDueItem: Decodable, Hashable, Sendable, Identifiable {
+  public let workflowId: String
+  public let title: String
+  public let destinationRef: String?
+  public let agentRef: String?
+  public let goalRef: String?
+  public let triggerId: String
+  public let schedule: String?
+  public let timezone: String?
+  public let scheduledFor: String
+  public let reason: String?
+  public let activeRunId: String?
+
+  public var id: String { "\(workflowId):\(triggerId):\(scheduledFor)" }
+}
+
+public struct AgentWorkflowRunPayload: Decodable, Sendable {
+  public let schema: String?
+  public let workflowId: String?
+  public let reason: String?
+  public let activeRunId: String?
+  public let run: AgentRunItem?
+  public let file: String?
+  public let prompt: String?
+}
+
+public struct AgentRunAttemptItem: Decodable, Hashable, Sendable {
+  public let id: String
+  public let number: Int
+  public let triggerId: String?
+  public let triggerType: String?
+  public let scheduledFor: String?
+  public let signalIds: [String]?
+}
+
 public struct AgentWorkflowItem: Identifiable, Decodable, Hashable, Sendable {
   public let id: String
   public let version: String
@@ -355,13 +397,16 @@ public struct AgentWorkflowItem: Identifiable, Decodable, Hashable, Sendable {
   public let file: String
   public let legacyLocation: Bool
   public let sourceRunId: String?
+  public let destinationRef: String?
   public let agentRef: String?
   public let goalRef: String?
   public let createdAt: String
   public let updatedAt: String
 
   public var scheduleTrigger: AgentWorkflowTriggerItem? {
-    triggers.first { $0.id == "openclaw-schedule" && $0.type == "schedule" }
+    triggers.first { $0.id == "schedule" && $0.type == "schedule" }
+      ?? triggers.first { ["openorg-schedule", "openclaw-schedule"].contains($0.id) && $0.type == "schedule" }
+      ?? triggers.first { $0.type == "schedule" }
   }
 
   public var scheduleSummary: String {
@@ -386,6 +431,7 @@ public struct AgentRunItem: Identifiable, Decodable, Hashable, Sendable {
   public let goalRef: String?
   public let workflowId: String?
   public let workflowVersion: String?
+  public let destinationRef: String?
   public let providerPolicy: String?
   public let provider: String?
   public let model: String?
@@ -398,6 +444,8 @@ public struct AgentRunItem: Identifiable, Decodable, Hashable, Sendable {
   public let comments: [AgentRunCommentItem]
   public let events: [AgentRunEventItem]
   public let outcome: AgentRunOutcomeItem?
+  public let logicalWorkId: String?
+  public let attempt: AgentRunAttemptItem?
   public let parentRunId: String?
   public let createdAt: String
   public let updatedAt: String
@@ -634,6 +682,10 @@ public struct AgentRunItem: Identifiable, Decodable, Hashable, Sendable {
       goalRef,
       workflowId,
       workflowVersion,
+      destinationRef,
+      logicalWorkId,
+      attempt?.triggerId,
+      attempt?.scheduledFor,
       providerPolicy,
       provider,
       model,
@@ -1147,7 +1199,7 @@ public enum RunsAndReviewPage: String, CaseIterable, Identifiable, Sendable {
   case review = "Review"
   case goals = "Goals"
   case agents = "Agents"
-  case workflows = "Workflows"
+  case workflows = "Automations"
 
   public var id: String { rawValue }
 }
@@ -1530,7 +1582,7 @@ public enum WorkspaceTextSearchCategory: Int, CaseIterable, Identifiable, Hashab
     case .chatThreads: "Chat Threads"
     case .approvals: "Approvals"
     case .agentRuns: "Runs"
-    case .workflows: "Workflows"
+    case .workflows: "Automations"
     case .goals: "Goals"
     case .agents: "Agents"
     case .pages: "Pages"

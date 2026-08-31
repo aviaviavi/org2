@@ -133,6 +133,7 @@ export default definePluginEntry({
           provider: ctx.modelProviderId,
           model: ctx.modelId,
           runtimeAgentId: runtimeAgentId(event, ctx),
+          runAlreadyStarted: marker.workflowRunStarted,
           ...selected,
         }));
         return;
@@ -248,7 +249,7 @@ export default definePluginEntry({
         const marker = workflowMarker(event.job?.payload?.text);
         if (marker) {
           await lifecycle.serialize(() => lifecycle.ensureWorkflow(key, marker.workflowId, marker.inputs, {
-            triggerId: marker.triggerId || "openclaw-schedule",
+            triggerId: marker.triggerId || "schedule",
             attemptId: key.replace(/[^A-Za-z0-9._-]+/g, "-"),
             scheduledFor: Number.isFinite(event.runAtMs) ? new Date(event.runAtMs).toISOString() : undefined,
             logicalWorkId: `workflow:${marker.workflowId}`,

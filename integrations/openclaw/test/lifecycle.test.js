@@ -69,6 +69,27 @@ test("recognizes prepared Org2 workflow runs", () => {
   assert.match(workflowContinuationPrompt({ id: "weekly-review", version: "1.2.0", title: "Weekly review" }, "run-42"), /org2 run approval-resolve --decision-key/);
 });
 
+test("recognizes a workflow run already started by OpenOrg", async () => {
+  const marker = workflowMarker([
+    "ORG2_WORKFLOW_ID: weekly-review",
+    "ORG2_WORKFLOW_RUN_ID: run-42",
+    "ORG2_WORKFLOW_RUN_STARTED: true",
+    "ORG2_WORKFLOW_INPUTS: {}",
+  ].join("\n"));
+  assert.equal(marker.workflowRunStarted, true);
+
+  const calls = [];
+  const lifecycle = new Org2Lifecycle({
+    exec: async (args) => {
+      calls.push(args);
+      return "";
+    },
+  });
+  await lifecycle.attach("turn:openorg:run-42", "run-42", { runAlreadyStarted: true });
+  assert.equal(calls.some((args) => args[0] === "run" && args[1] === "start"), false);
+  assert.equal(calls.some((args) => args[0] === "run" && args[1] === "comment"), true);
+});
+
 test("reply and resume persists the clarification and returns its correlated session", async () => {
   const calls = [];
   const dir = await mkdtemp(join(tmpdir(), "org2-clarification-resume-"));
@@ -229,7 +250,7 @@ test("reconciles an active Org2 schedule into OpenClaw cron", async () => {
       if (args[0] === "corpus") return JSON.stringify({ identity: { id: "personal" } });
       if (args[0] === "workflow" && args[1] === "list") return JSON.stringify({ workflows: [{
         id: "weekly-review", version: "1.0.0", title: "Weekly review", state: "active",
-        triggers: [{ id: "openclaw-schedule", type: "schedule", enabled: true, schedule: "0 9 * * 1", timezone: "America/Los_Angeles" }],
+        triggers: [{ id: "schedule", type: "schedule", enabled: true, schedule: "0 9 * * 1", timezone: "America/Los_Angeles" }],
       }] });
       return "";
     },
@@ -241,6 +262,32 @@ test("reconciles an active Org2 schedule into OpenClaw cron", async () => {
   assert.equal(added[0].schedule.expr, "0 9 * * 1");
   assert.equal(added[0].schedule.tz, "America/Los_Angeles");
   assert.equal(workflowMarker(added[0].payload.text).workflowId, "weekly-review");
+  assert.equal(workflowMarker(added[0].payload.text).triggerId, "schedule");
+});
+
+test("continues to reconcile the legacy OpenClaw schedule trigger", async () => {
+  const added = [];
+  const cron = {
+    list: async () => [],
+    add: async (input) => { added.push(input); return { id: "job-legacy" }; },
+    update: async () => {},
+    remove: async () => ({ removed: true }),
+  };
+  const lifecycle = new Org2Lifecycle({
+    cron,
+    exec: async (args) => {
+      if (args[0] === "corpus") return JSON.stringify({ identity: { id: "personal" } });
+      if (args[0] === "workflow" && args[1] === "list") return JSON.stringify({ workflows: [{
+        id: "legacy-review", version: "1.0.0", title: "Legacy review", state: "active",
+        triggers: [{ id: "openclaw-schedule", type: "schedule", enabled: true, schedule: "0 */4 * * *" }],
+      }] });
+      return "";
+    },
+    stateFile: join(await mkdtemp(join(tmpdir(), "org2-openclaw-legacy-cron-")), "state.json"),
+  });
+  await lifecycle.init();
+  await lifecycle.reconcile();
+  assert.equal(added.length, 1);
   assert.equal(workflowMarker(added[0].payload.text).triggerId, "openclaw-schedule");
 });
 

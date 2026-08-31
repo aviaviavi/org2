@@ -12,6 +12,8 @@ import {
 } from "./agentRun.js";
 
 export const ORG2_WORKFLOW_SCHEMA = "org2:workflow:v1" as const;
+export const WORKFLOW_SCHEDULE_TRIGGER_ID = "schedule" as const;
+export const LEGACY_WORKFLOW_SCHEDULE_TRIGGER_IDS = ["openorg-schedule", "openclaw-schedule"] as const;
 export const WORKFLOW_EVENT_TRIGGER_TYPES = ["capture", "meeting-import"] as const;
 export const WORKFLOW_TRIGGER_TYPES = ["manual", "schedule", "file-change", ...WORKFLOW_EVENT_TRIGGER_TYPES] as const;
 
@@ -78,10 +80,30 @@ export interface AgentWorkflow {
   signals?: WorkflowSignal[];
   compatibility: { org2: string; schema: string };
   sourceRunId?: string;
+  destinationRef?: string;
   agentRef?: string;
   goalRef?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface WorkflowScheduleOccurrence {
+  trigger: WorkflowTrigger;
+  scheduledFor: string;
+}
+
+export interface PromptAutomationInput {
+  id: string;
+  title: string;
+  instructions: string;
+  description?: string;
+  destinationRef?: string;
+  agentRef?: string;
+  goalRef?: string;
+  schedule?: string;
+  timezone?: string;
+  state?: AgentWorkflowState;
+  now?: string;
 }
 
 export interface AgentWorkflowSnapshot {
@@ -149,6 +171,7 @@ export function workflowFromRun(run: AgentRun, options: { id?: string; title?: s
     triggers: [{ id: "manual", type: "manual", enabled: true }],
     compatibility: { org2: ">=0.3.0 <1", schema: ORG2_WORKFLOW_SCHEMA },
     sourceRunId: run.id,
+    ...(run.destinationRef ? { destinationRef: run.destinationRef } : {}),
     ...(run.agentRef ? { agentRef: run.agentRef } : {}),
     ...(run.goalRef ? { goalRef: run.goalRef } : {}),
     createdAt: now,
@@ -156,11 +179,62 @@ export function workflowFromRun(run: AgentRun, options: { id?: string; title?: s
   };
 }
 
+export function promptAutomation(input: PromptAutomationInput): AgentWorkflow {
+  const now = nowIso(input.now);
+  const id = safeIdentifier(input.id, { invalidMessage: (raw) => `invalid workflow id: ${raw}` });
+  const title = String(input.title || "").trim();
+  const instructions = String(input.instructions || "").trim();
+  if (!title) throw new Error("automation title is required");
+  if (!instructions) throw new Error("automation prompt is required");
+  const schedule = String(input.schedule || "").trim();
+  const timezone = String(input.timezone || "").trim();
+  const state = input.state || (schedule ? "active" : "draft");
+  const workflow: AgentWorkflow = {
+    schema: ORG2_WORKFLOW_SCHEMA,
+    id,
+    version: "1.0.0",
+    title,
+    description: String(input.description || `Scheduled prompt automation for ${title}.`).trim(),
+    state,
+    instructions,
+    capabilities: [],
+    riskClass: "local-draft",
+    inputs: [],
+    contextRules: [],
+    steps: [{ id: "execute", kind: "agent", title: "Execute the automation prompt" }],
+    outputs: [],
+    validations: [],
+    approvals: [],
+    triggers: [
+      { id: "manual", type: "manual", enabled: true },
+      ...(schedule ? [{
+        id: WORKFLOW_SCHEDULE_TRIGGER_ID,
+        type: "schedule" as const,
+        enabled: true,
+        schedule,
+        ...(timezone ? { timezone } : {}),
+      }] : []),
+    ],
+    compatibility: { org2: ">=0.3.0 <1", schema: ORG2_WORKFLOW_SCHEMA },
+    ...(String(input.destinationRef || "").trim() ? { destinationRef: String(input.destinationRef).trim() } : {}),
+    ...(String(input.agentRef || "").trim() ? { agentRef: String(input.agentRef).trim() } : {}),
+    ...(String(input.goalRef || "").trim() ? { goalRef: String(input.goalRef).trim() } : {}),
+    createdAt: now,
+    updatedAt: now,
+  };
+  const validation = validateWorkflow(workflow);
+  if (!validation.valid) {
+    throw new Error(`invalid automation: ${validation.issues.map((issue) => `${issue.path} ${issue.message}`).join("; ")}`);
+  }
+  return workflow;
+}
+
 export function validateWorkflow(workflow: AgentWorkflow): WorkflowValidationResult {
   const issues: WorkflowValidationResult["issues"] = [];
   if (workflow.schema !== ORG2_WORKFLOW_SCHEMA) issues.push({ path: "schema", message: `must equal ${ORG2_WORKFLOW_SCHEMA}` });
   try { safeIdentifier(workflow.id, { invalidMessage: (raw) => `invalid workflow id: ${raw}` }); } catch (error) { issues.push({ path: "id", message: (error as Error).message }); }
   if (!workflow.title?.trim()) issues.push({ path: "title", message: "is required" });
+  if (workflow.destinationRef !== undefined && !String(workflow.destinationRef).trim()) issues.push({ path: "destinationRef", message: "must not be empty when present" });
   if (!["draft", "active", "paused"].includes(workflow.state || "draft")) issues.push({ path: "state", message: "must be draft, active, or paused" });
   if (!/^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$/.test(workflow.version || "")) issues.push({ path: "version", message: "must be semantic version syntax" });
   const ids = new Set<string>();
@@ -175,8 +249,11 @@ export function validateWorkflow(workflow: AgentWorkflow): WorkflowValidationRes
     triggerIds.add(trigger.id);
     if (!WORKFLOW_TRIGGER_TYPES.includes(trigger.type)) issues.push({ path: `triggers[${index}].type`, message: "is not supported" });
     if (trigger.type === "schedule" && !trigger.schedule) issues.push({ path: `triggers[${index}].schedule`, message: "is required for schedule triggers" });
-    if (trigger.type === "schedule" && trigger.schedule && !parseEvery(trigger.schedule)) {
-      issues.push({ path: `triggers[${index}].schedule`, message: "must use a positive interval such as every 15m, every 4h, or every 1d" });
+    if (trigger.type === "schedule" && trigger.schedule && !parseEvery(trigger.schedule) && !parseCron(trigger.schedule)) {
+      issues.push({ path: `triggers[${index}].schedule`, message: "must use a positive interval such as every 15m or a five-field cron expression" });
+    }
+    if (trigger.type === "schedule" && trigger.timezone && !validTimeZone(trigger.timezone)) {
+      issues.push({ path: `triggers[${index}].timezone`, message: "must be local or a valid IANA timezone" });
     }
     if (trigger.type === "file-change" && !trigger.path) issues.push({ path: `triggers[${index}].path`, message: "is required for file-change triggers" });
     if (trigger.gate && !(trigger.gate.events?.length || trigger.gate.paths?.length)) {
@@ -222,6 +299,7 @@ export function instantiateWorkflow(workflow: AgentWorkflow, inputs: Record<stri
     goalRef: options.goalRef || workflow.goalRef,
     workflowId: workflow.id,
     workflowVersion: workflow.version,
+    destinationRef: workflow.destinationRef,
     capabilities: workflow.capabilities,
     context: workflow.contextRules.map((ref) => ({ ref: applyTemplate(ref, resolved) })),
     plan: workflow.steps.map((step) => ({ ...step, title: applyTemplate(step.title, resolved), detail: step.detail ? applyTemplate(step.detail, resolved) : undefined })),
@@ -229,6 +307,31 @@ export function instantiateWorkflow(workflow: AgentWorkflow, inputs: Record<stri
     attempt: options.attempt,
     now: options.now,
   });
+}
+
+export function workflowExecutionPrompt(
+  workflow: AgentWorkflow,
+  run: AgentRun,
+  inputs: Record<string, string> = {},
+): string {
+  return [
+    `ORG2_WORKFLOW_ID: ${workflow.id}`,
+    `ORG2_WORKFLOW_VERSION: ${workflow.version}`,
+    `ORG2_WORKFLOW_RUN_ID: ${run.id}`,
+    "ORG2_WORKFLOW_RUN_STARTED: true",
+    ...(run.attempt?.triggerId ? [`ORG2_WORKFLOW_TRIGGER_ID: ${run.attempt.triggerId}`] : []),
+    ...(workflow.destinationRef ? [`ORG2_AI_DESTINATION_REF: ${workflow.destinationRef}`] : []),
+    `ORG2_WORKFLOW_INPUTS: ${JSON.stringify(inputs)}`,
+    "",
+    `Execute the Org2 automation “${workflow.title}”.`,
+    "",
+    "Automation prompt:",
+    run.goal,
+    "",
+    "This automation already has a durable Org2 run. Do not create a replacement run.",
+    "If the Org2 CLI is available, continue this run, update its steps and artifacts as work progresses, preserve approval boundaries, and record its final outcome before completing it.",
+    "If the destination cannot access Org2 tools, return the complete result in this chat; OpenOrg will retain the destination thread with the automation history.",
+  ].join("\n");
 }
 
 export function workflowDirectory(root: string): string { return path.join(path.resolve(root), "workflows"); }
@@ -256,6 +359,7 @@ export function renderWorkflowOrg(workflow: AgentWorkflow): string {
     `:RISK_CLASS: ${workflow.riskClass}`,
     ...(workflow.agentRef ? [`:AGENT_REF: ${workflow.agentRef}`] : []),
     ...(workflow.goalRef ? [`:GOAL_REF: ${workflow.goalRef}`] : []),
+    ...(workflow.destinationRef ? [`:AI_DESTINATION_REF: ${workflow.destinationRef}`] : []),
     ":END:",
     workflow.description,
     "",
@@ -280,6 +384,7 @@ export function parseWorkflowOrg(raw: string): AgentWorkflow {
   const version = raw.match(/^:ORG2_WORKFLOW_VERSION:\s*(.+)\s*$/mi)?.[1]?.trim();
   const agentRef = raw.match(/^:AGENT_REF:\s*(.+)\s*$/mi)?.[1]?.trim();
   const goalRef = raw.match(/^:GOAL_REF:\s*(.+)\s*$/mi)?.[1]?.trim();
+  const destinationRef = raw.match(/^:AI_DESTINATION_REF:\s*(.+)\s*$/mi)?.[1]?.trim();
   const description = raw.match(/^:END:\s*\r?\n([\s\S]*?)\r?\n\*\* Instructions\s*$/m)?.[1]?.trim();
   const instructions = raw.match(/^\*\* Instructions\s*\r?\n([\s\S]*?)\r?\n\*\* Machine state\s*$/m)?.[1]?.trim();
   // The readable Org2 fields are authoring fields, not a decorative copy. The
@@ -294,6 +399,7 @@ export function parseWorkflowOrg(raw: string): AgentWorkflow {
     ...(version ? { version } : {}),
     ...(agentRef ? { agentRef } : {}),
     ...(goalRef ? { goalRef } : {}),
+    ...(destinationRef ? { destinationRef } : {}),
     ...(riskClass ? { riskClass: riskClass as AgentRunRiskClass } : {}),
     state: (state || parsed.state || "draft") as AgentWorkflowState,
   };
@@ -362,6 +468,10 @@ export function updateWorkflow(
   const snapshot = loadWorkflowSnapshot(root, id);
   const workflow = update(snapshot.workflow);
   workflow.updatedAt = nowIso(now);
+  const validation = validateWorkflow(workflow);
+  if (!validation.valid) {
+    throw new Error(`invalid workflow: ${validation.issues.map((issue) => `${issue.path} ${issue.message}`).join("; ")}`);
+  }
   const target = workflowPath(root, workflow.id);
   if (path.resolve(snapshot.file) !== path.resolve(target)) {
     const current = readGuardedFile(snapshot.file);
@@ -395,7 +505,7 @@ export function migrateLegacyWorkflows(root: string): Array<{ id: string; from: 
   return results;
 }
 
-function parseEvery(raw: string): number | null {
+export function parseEvery(raw: string): number | null {
   const match = raw.trim().match(/^every\s+(\d+)\s*(m|h|d)$/i);
   if (!match) return null;
   const amount = Number(match[1]);
@@ -403,18 +513,173 @@ function parseEvery(raw: string): number | null {
   return amount * (match[2]?.toLowerCase() === "m" ? 60_000 : match[2]?.toLowerCase() === "h" ? 3_600_000 : 86_400_000);
 }
 
+interface ParsedCronField {
+  values: Set<number>;
+  wildcard: boolean;
+}
+
+interface ParsedCron {
+  minute: ParsedCronField;
+  hour: ParsedCronField;
+  dayOfMonth: ParsedCronField;
+  month: ParsedCronField;
+  dayOfWeek: ParsedCronField;
+}
+
+function parseCronField(raw: string, minimum: number, maximum: number, normalize?: (value: number) => number): ParsedCronField | null {
+  const source = raw.trim();
+  if (!source) return null;
+  const values = new Set<number>();
+  for (const segment of source.split(",")) {
+    const parts = segment.split("/");
+    if (parts.length > 2) return null;
+    const base = parts[0] || "";
+    const step = parts[1] === undefined ? 1 : Number(parts[1]);
+    if (!Number.isSafeInteger(step) || step < 1) return null;
+    let start: number;
+    let end: number;
+    if (base === "*") {
+      start = minimum;
+      end = maximum;
+    } else if (base.includes("-")) {
+      const range = base.split("-");
+      if (range.length !== 2) return null;
+      start = Number(range[0]);
+      end = Number(range[1]);
+    } else {
+      start = Number(base);
+      end = start;
+    }
+    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end)
+      || start < minimum || end > maximum || start > end) return null;
+    for (let value = start; value <= end; value += step) values.add(normalize ? normalize(value) : value);
+  }
+  return values.size ? { values, wildcard: source.startsWith("*") } : null;
+}
+
+function parseCron(raw: string): ParsedCron | null {
+  const fields = raw.trim().split(/\s+/);
+  if (fields.length !== 5) return null;
+  const minute = parseCronField(fields[0] || "", 0, 59);
+  const hour = parseCronField(fields[1] || "", 0, 23);
+  const dayOfMonth = parseCronField(fields[2] || "", 1, 31);
+  const month = parseCronField(fields[3] || "", 1, 12);
+  const dayOfWeek = parseCronField(fields[4] || "", 0, 7, (value) => value === 7 ? 0 : value);
+  return minute && hour && dayOfMonth && month && dayOfWeek
+    ? { minute, hour, dayOfMonth, month, dayOfWeek }
+    : null;
+}
+
+function validTimeZone(raw: string): boolean {
+  const timezone = raw.trim();
+  if (!timezone || timezone.toLowerCase() === "local") return true;
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: timezone }).format(new Date());
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function scheduleTimeZone(raw?: string): string {
+  const timezone = String(raw || "").trim();
+  if (!timezone || timezone.toLowerCase() === "local") {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  }
+  return timezone;
+}
+
+const WEEKDAY_INDEX: Record<string, number> = {
+  Sun: 0,
+  Mon: 1,
+  Tue: 2,
+  Wed: 3,
+  Thu: 4,
+  Fri: 5,
+  Sat: 6,
+};
+
+function cronMatches(date: Date, schedule: ParsedCron, formatter: Intl.DateTimeFormat): boolean {
+  const parts = Object.fromEntries(formatter.formatToParts(date).map((part) => [part.type, part.value]));
+  const minute = Number(parts.minute);
+  const hour = Number(parts.hour);
+  const dayOfMonth = Number(parts.day);
+  const month = Number(parts.month);
+  const dayOfWeek = WEEKDAY_INDEX[parts.weekday || ""];
+  if (![minute, hour, dayOfMonth, month, dayOfWeek].every(Number.isFinite)) return false;
+  if (!schedule.minute.values.has(minute) || !schedule.hour.values.has(hour) || !schedule.month.values.has(month)) return false;
+  const dayOfMonthMatches = schedule.dayOfMonth.values.has(dayOfMonth);
+  const dayOfWeekMatches = schedule.dayOfWeek.values.has(dayOfWeek!);
+  if (schedule.dayOfMonth.wildcard && schedule.dayOfWeek.wildcard) return true;
+  if (schedule.dayOfMonth.wildcard) return dayOfWeekMatches;
+  if (schedule.dayOfWeek.wildcard) return dayOfMonthMatches;
+  return dayOfMonthMatches || dayOfWeekMatches;
+}
+
+function scheduleBoundary(workflow: AgentWorkflow, trigger: WorkflowTrigger): number {
+  const raw = trigger.lastAttemptAt || trigger.lastRunAt || workflow.updatedAt || workflow.createdAt;
+  const parsed = new Date(raw).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+export function workflowScheduleOccurrence(
+  workflow: AgentWorkflow,
+  trigger: WorkflowTrigger,
+  nowRaw?: string,
+): WorkflowScheduleOccurrence | null {
+  if (!trigger.enabled || trigger.type !== "schedule" || !trigger.schedule) return null;
+  const now = new Date(nowRaw || Date.now()).getTime();
+  if (!Number.isFinite(now)) throw new Error(`invalid timestamp: ${nowRaw}`);
+  const boundary = scheduleBoundary(workflow, trigger);
+  if (boundary >= now) return null;
+  const interval = parseEvery(trigger.schedule);
+  if (interval) {
+    const count = Math.floor((now - boundary) / interval);
+    if (count < 1) return null;
+    return { trigger, scheduledFor: new Date(boundary + count * interval).toISOString() };
+  }
+  const cron = parseCron(trigger.schedule);
+  if (!cron || !validTimeZone(trigger.timezone || "")) return null;
+  const formatter = new Intl.DateTimeFormat("en-US-u-ca-gregory-nu-latn", {
+    timeZone: scheduleTimeZone(trigger.timezone),
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
+  const maximumLookback = 366 * 24 * 60 * 60 * 1_000;
+  const lowerBound = Math.max(boundary, now - maximumLookback);
+  for (let candidate = Math.floor(now / 60_000) * 60_000; candidate > lowerBound; candidate -= 60_000) {
+    if (cronMatches(new Date(candidate), cron, formatter)) {
+      return { trigger, scheduledFor: new Date(candidate).toISOString() };
+    }
+  }
+  return null;
+}
+
+export function workflowScheduleOccurrences(workflow: AgentWorkflow, options: { now?: string } = {}): WorkflowScheduleOccurrence[] {
+  return workflow.triggers.flatMap((trigger) => {
+    const occurrence = workflowScheduleOccurrence(workflow, trigger, options.now);
+    return occurrence && workflowTriggerEligibility(workflow, trigger.id).eligible ? [occurrence] : [];
+  });
+}
+
+export function workflowScheduleTrigger(workflow: AgentWorkflow): WorkflowTrigger | undefined {
+  return workflow.triggers.find((trigger) => trigger.type === "schedule" && trigger.id === WORKFLOW_SCHEDULE_TRIGGER_ID)
+    || LEGACY_WORKFLOW_SCHEDULE_TRIGGER_IDS.flatMap((id) => workflow.triggers.filter((trigger) => trigger.type === "schedule" && trigger.id === id))[0]
+    || workflow.triggers.find((trigger) => trigger.type === "schedule");
+}
+
 export function dueWorkflowTriggers(workflow: AgentWorkflow, options: { now?: string; changedPaths?: string[]; event?: WorkflowEventTriggerType } = {}): WorkflowTrigger[] {
-  const now = new Date(options.now || Date.now()).getTime();
   return workflow.triggers.filter((trigger) => {
     if (!trigger.enabled || trigger.type === "manual") return false;
     if (trigger.type === options.event) return true;
     if (trigger.type === "file-change") return (options.changedPaths || []).some((item) => item === trigger.path || item.startsWith(`${trigger.path}/`));
-    if (trigger.type === "schedule" && trigger.schedule) {
-      const interval = parseEvery(trigger.schedule);
-      if (!interval) return false;
-      const last = trigger.lastRunAt ? new Date(trigger.lastRunAt).getTime() : 0;
-      return Number.isFinite(last) && now - last >= interval && workflowTriggerEligibility(workflow, trigger.id).eligible;
-    }
+    if (trigger.type === "schedule") return workflowScheduleOccurrence(workflow, trigger, options.now) !== null
+      && workflowTriggerEligibility(workflow, trigger.id).eligible;
     return false;
   });
 }
@@ -483,6 +748,7 @@ export function packagedWorkflowManifest(workflow: AgentWorkflow): Record<string
     compatibility: workflow.compatibility,
     capabilities: workflow.capabilities,
     riskClass: workflow.riskClass,
+    destinationRef: workflow.destinationRef,
     inputs: workflow.inputs,
     outputs: workflow.outputs,
     approvals: workflow.approvals,

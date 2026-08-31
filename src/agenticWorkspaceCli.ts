@@ -41,7 +41,9 @@ import {
 } from "./agentRun.js";
 import { updateArtifactReviewStatusInText } from "./artifactMetadata.js";
 import {
+  LEGACY_WORKFLOW_SCHEDULE_TRIGGER_IDS,
   WORKFLOW_EVENT_TRIGGER_TYPES,
+  WORKFLOW_SCHEDULE_TRIGGER_ID,
   dueWorkflowTriggers,
   instantiateWorkflow,
   installBuiltinWorkflow,
@@ -51,6 +53,7 @@ import {
   migrateLegacyWorkflows,
   packagedWorkflowManifest,
   packagedCorpusTemplate,
+  promptAutomation,
   recordWorkflowSignal,
   saveWorkflow,
   updateWorkflow,
@@ -58,6 +61,8 @@ import {
   workflowTriggerEligibility,
   workflowSourcePath,
   workflowFromRun,
+  workflowExecutionPrompt,
+  workflowScheduleOccurrences,
 } from "./agentWorkflow.js";
 import { artifactRebuildPlan, buildArtifactGraph, loadArtifactDeclarations, MEETING_TO_CONTROLLED_EXECUTION_WORKFLOW, saveArtifactGraph } from "./artifactPipeline.js";
 import { discoverMcpClient, loadMcpClients, saveMcpClients, serveMcp, writeMcpSnapshot } from "./mcpRuntime.js";
@@ -193,7 +198,10 @@ const HELP = `Agentic workspace commands:
   org2 run approval-resolve --decision-key PROVIDER_KEY [--json]
   org2 run approval-reconcile [--apply] [--json]
   org2 review list [--status pending] | org2 review show RUN
-  org2 workflow list|show|validate|save|run|triggers|signal|gate|activate|pause|draft|schedule|migrate|package|corpus-template|install-builtin
+  org2 workflow list|show|validate|create|save|run|due|triggers|signal|gate|activate|pause|draft|schedule|migrate|package|corpus-template|install-builtin
+  org2 workflow create ID --title TEXT --prompt TEXT --destination-ref ID [--agent-ref ID] [--schedule EXPR --timezone IANA]
+  org2 workflow due [--now ISO_TIMESTAMP] [--dir CORPUS] [--json]
+  org2 workflow schedule ID --cron EXPR [--timezone IANA] [--destination-ref ID] | --disable
   org2 artifact graph --manifest FILE | org2 artifact rebuild --manifest FILE
   org2 runtime init|show|select|verify-paths
   org2 mcp serve|clients|client-add|discover|snapshot
@@ -1282,6 +1290,54 @@ function workflowCommand(parsed: ParsedArgs): void {
     return;
   }
   if (action === "install-builtin") { const name = parsed.positional[1] || "meeting-to-controlled-execution"; if (name !== "meeting-to-controlled-execution") throw new Error(`unknown built-in workflow: ${name}`); const file = installBuiltinWorkflow(corpus, MEETING_TO_CONTROLLED_EXECUTION_WORKFLOW); output(parsed, { id: name, file }, `installed ${name}\n${file}`); return; }
+  if (action === "create") {
+    const id = required(parsed.positional[1], "workflow id is required for create");
+    const schedule = flag(parsed, "schedule")?.trim() || flag(parsed, "cron")?.trim();
+    const workflow = promptAutomation({
+      id,
+      title: required(flag(parsed, "title"), "--title is required"),
+      instructions: required(flag(parsed, "prompt"), "--prompt is required"),
+      description: flag(parsed, "description"),
+      destinationRef: flag(parsed, "destination-ref") || flag(parsed, "destination"),
+      agentRef: flag(parsed, "agent-ref"),
+      goalRef: flag(parsed, "goal-ref"),
+      schedule,
+      timezone: flag(parsed, "timezone") || flag(parsed, "tz"),
+      state: optionalChoice(flag(parsed, "state"), ["draft", "active", "paused"] as const, "workflow state"),
+      now: flag(parsed, "now"),
+    });
+    const file = saveWorkflow(corpus, workflow, { expectedRevision: null });
+    output(parsed, { schema: "org2:automation-created:v1", workflow, file }, `created ${workflow.id}\n${file}`);
+    return;
+  }
+  if (action === "due") {
+    const now = flag(parsed, "now") || new Date().toISOString();
+    const activeStatuses = new Set<AgentRunStatus>(["queued", "running", "blocked", "waiting-approval"]);
+    const runs = listAgentRuns(corpus);
+    const due: Array<Record<string, unknown>> = [];
+    const skipped: Array<Record<string, unknown>> = [];
+    for (const item of listWorkflows(corpus).filter((candidate) => candidate.state === "active")) {
+      for (const occurrence of workflowScheduleOccurrences(item, { now })) {
+        const logicalWorkId = `workflow:${item.id}`;
+        const activeRun = runs.find((run) => run.logicalWorkId === logicalWorkId && activeStatuses.has(run.status));
+        const summary = {
+          workflowId: item.id,
+          title: item.title,
+          destinationRef: item.destinationRef,
+          agentRef: item.agentRef,
+          goalRef: item.goalRef,
+          triggerId: occurrence.trigger.id,
+          schedule: occurrence.trigger.schedule,
+          timezone: occurrence.trigger.timezone,
+          scheduledFor: occurrence.scheduledFor,
+        };
+        if (activeRun) skipped.push({ ...summary, reason: `active attempt ${activeRun.id} is ${activeRun.status}`, activeRunId: activeRun.id });
+        else due.push(summary);
+      }
+    }
+    output(parsed, { schema: "org2:automation-due-list:v1", now, due, skipped }, due.length ? due.map((item) => `${item.workflowId}\t${item.scheduledFor}`).join("\n") : "No automations due.");
+    return;
+  }
   const id = required(parsed.positional[1], `workflow id is required for ${action}`);
   if (action === "save") { const run = loadAgentRun(corpus, id); const workflow = workflowFromRun(run, { id: flag(parsed, "id"), title: flag(parsed, "title"), version: flag(parsed, "version") }); const file = saveWorkflow(corpus, workflow, { expectedRevision: null }); output(parsed, { workflow, file }, `saved ${workflow.id}@${workflow.version}`); return; }
   const workflow = loadWorkflow(corpus, id);
@@ -1297,27 +1353,35 @@ function workflowCommand(parsed: ParsedArgs): void {
     const cron = flag(parsed, "cron")?.trim();
     const timezone = flag(parsed, "timezone")?.trim() || flag(parsed, "tz")?.trim();
     const disabled = parsed.flags.has("disable");
+    const destinationRef = flag(parsed, "destination-ref") || flag(parsed, "destination");
     const gateEvents = flags(parsed, "gate-event").map((event) =>
       choice(event, [...WORKFLOW_EVENT_TRIGGER_TYPES, "file-change"] as const, "workflow gate event")
     );
     const gatePaths = flags(parsed, "gate-path");
     if (!disabled && !cron) throw new Error("workflow schedule requires --cron EXPR or --disable");
     const updated = updateWorkflow(corpus, id, (item) => {
-      const triggers = item.triggers.filter((trigger) => trigger.id !== "openclaw-schedule");
-      triggers.push({
-        id: "openclaw-schedule",
-        type: "schedule",
-        enabled: !disabled,
-        ...(cron ? { schedule: cron } : {}),
-        ...(timezone ? { timezone } : {}),
-        ...((gateEvents.length || gatePaths.length) ? {
-          gate: {
-            ...(gateEvents.length ? { events: gateEvents } : {}),
-            ...(gatePaths.length ? { paths: gatePaths } : {}),
-          },
-        } : {}),
-      });
-      return { ...item, triggers };
+      const scheduleIds = new Set<string>([WORKFLOW_SCHEDULE_TRIGGER_ID, ...LEGACY_WORKFLOW_SCHEDULE_TRIGGER_IDS]);
+      const triggers = item.triggers.filter((trigger) => !scheduleIds.has(trigger.id));
+      if (!disabled) {
+        triggers.push({
+          id: WORKFLOW_SCHEDULE_TRIGGER_ID,
+          type: "schedule",
+          enabled: true,
+          schedule: cron!,
+          ...(timezone ? { timezone } : {}),
+          ...((gateEvents.length || gatePaths.length) ? {
+            gate: {
+              ...(gateEvents.length ? { events: gateEvents } : {}),
+              ...(gatePaths.length ? { paths: gatePaths } : {}),
+            },
+          } : {}),
+        });
+      }
+      return {
+        ...item,
+        triggers,
+        ...(destinationRef ? { destinationRef: destinationRef.trim() } : {}),
+      };
     });
     output(parsed, updated, disabled ? `${id}: schedule disabled` : `${id}: scheduled ${cron}`);
     return;
@@ -1359,7 +1423,23 @@ function workflowCommand(parsed: ParsedArgs): void {
       output(parsed, { schema: "org2:workflow-run-skipped:v1", workflowId: id, triggerId, ...eligibility }, `skipped ${id}: ${eligibility.reason}`);
       return;
     }
-    const existingAttempts = listAgentRuns(corpus).filter((item) => item.logicalWorkId === (flag(parsed, "logical-work-id") || `workflow:${id}`) && item.attempt);
+    const logicalWorkId = flag(parsed, "logical-work-id") || `workflow:${id}`;
+    const existingAttempts = listAgentRuns(corpus).filter((item) => item.logicalWorkId === logicalWorkId && item.attempt);
+    const trigger = triggerId ? workflow.triggers.find((item) => item.id === triggerId) : undefined;
+    const activeAttempt = trigger?.type === "schedule"
+      ? existingAttempts.find((item) => (["queued", "running", "blocked", "waiting-approval"] as AgentRunStatus[]).includes(item.status))
+      : undefined;
+    if (activeAttempt) {
+      output(parsed, {
+        schema: "org2:workflow-run-skipped:v1",
+        workflowId: id,
+        triggerId,
+        eligible: false,
+        reason: `active attempt ${activeAttempt.id} is ${activeAttempt.status}`,
+        activeRunId: activeAttempt.id,
+      }, `skipped ${id}: active attempt ${activeAttempt.id} is ${activeAttempt.status}`);
+      return;
+    }
     const attemptNumber = existingAttempts.reduce((maximum, item) => Math.max(maximum, item.attempt?.number || 0), 0) + 1;
     const attemptAt = flag(parsed, "scheduled-for") || new Date().toISOString();
     const run = instantiateWorkflow(workflow, inputs, {
@@ -1367,7 +1447,7 @@ function workflowCommand(parsed: ParsedArgs): void {
       assignee: flag(parsed, "assignee"),
       agentRef: flag(parsed, "agent-ref"),
       goalRef: flag(parsed, "goal-ref"),
-      logicalWorkId: flag(parsed, "logical-work-id") || (triggerId ? `workflow:${id}` : undefined),
+      logicalWorkId: triggerId ? logicalWorkId : flag(parsed, "logical-work-id"),
       attempt: triggerId ? {
         id: flag(parsed, "attempt-id") || crypto.randomUUID(),
         number: attemptNumber,
@@ -1379,7 +1459,7 @@ function workflowCommand(parsed: ParsedArgs): void {
     });
     const file = saveAgentRun(corpus, run, { expectedRevision: null });
     if (triggerId) updateWorkflow(corpus, id, (item) => markWorkflowTriggerAttempt(item, triggerId, attemptAt));
-    output(parsed, { run, file, eligibility }, `created run ${run.id} from ${id}@${workflow.version}${run.attempt ? ` attempt ${run.attempt.number}` : ""}`);
+    output(parsed, { run, file, eligibility, prompt: workflowExecutionPrompt(workflow, run, inputs) }, `created run ${run.id} from ${id}@${workflow.version}${run.attempt ? ` attempt ${run.attempt.number}` : ""}`);
     return;
   }
   throw new Error(`unknown workflow action: ${action}`);

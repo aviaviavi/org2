@@ -110,4 +110,4 @@ Real-time collaborative editing and hosted identity are not prerequisites. The n
 - [[file:getting-started.org][Getting started]]
 - [[file:editors-macos.org][macOS Workspace]]
 - [[file:corpus-flow.org][Corpus flow]]
-- [[file:workflows.org][Workflows]]
+- [[file:workflows.org][Automations and workflows]]

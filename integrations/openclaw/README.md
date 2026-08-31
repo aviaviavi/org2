@@ -5,9 +5,11 @@ It is deliberately maintained in the Org2 repository so lifecycle schema and CLI
 changes can be tested with the bridge that consumes them.
 
 The plugin tracks substantial main-agent turns, subagent executions, and cron
-executions. It also prepares manual Org2 workflow runs before agent execution,
-reconciles active schedule triggers from visible `workflows/*.org2` files into
-OpenClaw cron, and continues any correlated existing run in its chat session
+executions. OpenOrg's destination-neutral scheduler is the portable default for
+plain prompt automations. As an optional runtime-native adapter, this plugin can
+also prepare manual Org2 workflow runs before agent execution, reconcile active
+schedule triggers from visible `workflows/*.org2` files into OpenClaw cron, and
+continue any correlated existing run in its chat session
 after its complete current approval boundary returns the run to `running`.
 Continuation does not require a reusable workflow and is keyed to the exact
 approval boundary so a repeated request does not enqueue the action twice. A revision request must carry

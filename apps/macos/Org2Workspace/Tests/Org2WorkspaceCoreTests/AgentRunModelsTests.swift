@@ -90,6 +90,7 @@ final class AgentRunModelsTests: XCTestCase {
 
   func testRunReviewAutoRefreshUsesOneMinuteInterval() {
     XCTAssertEqual(WorkspaceStore.runReviewAutoRefreshIntervalNanoseconds, 60_000_000_000)
+    XCTAssertEqual(WorkspaceStore.automationScheduleCheckIntervalNanoseconds, 60_000_000_000)
   }
 
   @MainActor
@@ -1452,9 +1453,10 @@ final class AgentRunModelsTests: XCTestCase {
         "state": "active",
         "instructions": "Prepare {{week}}.",
         "riskClass": "local-draft",
+        "destinationRef": "builtin.claude",
         "capabilities": ["agent-context"],
         "inputs": [{"id":"week","description":"Week","required":true,"default":"current"}],
-        "triggers": [{"id":"openclaw-schedule","type":"schedule","enabled":true,"schedule":"0 9 * * 1","timezone":"America/Los_Angeles"}],
+        "triggers": [{"id":"schedule","type":"schedule","enabled":true,"schedule":"0 9 * * 1","timezone":"America/Los_Angeles"}],
         "file": "/tmp/workflows/weekly-review.org2",
         "legacyLocation": false,
         "createdAt": "2026-07-17T00:00:00.000Z",
@@ -1466,8 +1468,71 @@ final class AgentRunModelsTests: XCTestCase {
     let workflow = try XCTUnwrap(JSONDecoder().decode(AgentWorkflowListPayload.self, from: data).workflows.first)
     XCTAssertEqual(workflow.id, "weekly-review")
     XCTAssertEqual(workflow.inputs.first?.default, "current")
+    XCTAssertEqual(workflow.destinationRef, "builtin.claude")
     XCTAssertEqual(workflow.scheduleSummary, "0 9 * * 1 · America/Los_Angeles")
     XCTAssertFalse(workflow.legacyLocation)
+  }
+
+  func testDecodesDueAutomationAndLegacyScheduleCompatibility() throws {
+    let dueData = Data(#"""
+    {
+      "schema": "org2:automation-due-list:v1",
+      "now": "2026-08-31T16:00:00.000Z",
+      "due": [{
+        "workflowId": "weekly-review",
+        "title": "Weekly review",
+        "destinationRef": "builtin.codex",
+        "agentRef": "product-research",
+        "triggerId": "schedule",
+        "schedule": "0 9 * * 1",
+        "timezone": "America/Los_Angeles",
+        "scheduledFor": "2026-08-31T16:00:00.000Z"
+      }],
+      "skipped": []
+    }
+    """#.utf8)
+    let due = try XCTUnwrap(JSONDecoder().decode(AgentWorkflowDueListPayload.self, from: dueData).due.first)
+    XCTAssertEqual(due.id, "weekly-review:schedule:2026-08-31T16:00:00.000Z")
+    XCTAssertEqual(due.destinationRef, "builtin.codex")
+    XCTAssertEqual(due.agentRef, "product-research")
+
+    let legacyData = Data(#"""
+    {
+      "schema": "org2:workflow-list:v1",
+      "workflows": [{
+        "id": "legacy-review",
+        "version": "1.0.0",
+        "title": "Legacy review",
+        "description": "Legacy schedule.",
+        "state": "active",
+        "instructions": "Run.",
+        "riskClass": "local-draft",
+        "capabilities": [],
+        "inputs": [],
+        "triggers": [{"id":"openclaw-schedule","type":"schedule","enabled":true,"schedule":"every 4h"}],
+        "file": "/tmp/workflows/legacy-review.org2",
+        "legacyLocation": false,
+        "createdAt": "2026-07-17T00:00:00.000Z",
+        "updatedAt": "2026-07-17T00:00:00.000Z"
+      }]
+    }
+    """#.utf8)
+    let legacy = try XCTUnwrap(JSONDecoder().decode(AgentWorkflowListPayload.self, from: legacyData).workflows.first)
+    XCTAssertEqual(legacy.scheduleSummary, "every 4h")
+  }
+
+  func testAutomationIdentifierIsReadableAndAvoidsCollisions() {
+    XCTAssertEqual(
+      WorkspaceStore.automationIdentifier(
+        title: "Weekly Product Update!",
+        existingIDs: ["weekly-product-update", "weekly-product-update-2"]
+      ),
+      "weekly-product-update-3"
+    )
+    XCTAssertEqual(
+      WorkspaceStore.automationIdentifier(title: "🚀", existingIDs: []),
+      "automation"
+    )
   }
 
   func testCompletedRunPresentsOutcomeAndCollapsesSupersededValidationResults() throws {

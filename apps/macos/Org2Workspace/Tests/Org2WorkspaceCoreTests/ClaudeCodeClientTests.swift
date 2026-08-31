@@ -176,6 +176,69 @@ final class WorkspaceClaudeCodeDestinationTests: XCTestCase {
     )
     XCTAssertEqual(thread.messages.last(where: { $0.role == .assistant })?.content, "Hello from Claude")
   }
+
+  func testDueAutomationCreatesDurableRunAndDispatchesToClaude() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("openorg-claude-automation-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let transcript = root.appendingPathComponent("chats.json")
+    let suiteName = "WorkspaceClaudeCodeDestinationTests.automation.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let cli = try Org2CLI(repoRoot: Org2CLI.defaultRepoRoot())
+    _ = try await cli.run([
+      "workflow", "create", "weekly-claude-brief",
+      "--title", "Weekly Claude brief",
+      "--prompt", "Prepare the weekly brief from the corpus.",
+      "--destination-ref", AIChatDestinationConfiguration.localClaudeID,
+      "--schedule", "0 9 * * 1",
+      "--timezone", "America/Los_Angeles",
+      "--now", "2099-08-30T15:58:00Z",
+      "--dir", root.path,
+      "--json"
+    ])
+    let store = WorkspaceStore(
+      cli: cli,
+      defaults: defaults,
+      openClawTranscriptURL: transcript,
+      claudeSendHandlerForTesting: { messages, _, _ in
+        let prompt = messages.last(where: { $0.role == .user })?.content ?? ""
+        XCTAssertTrue(prompt.contains("ORG2_WORKFLOW_ID: weekly-claude-brief"))
+        XCTAssertTrue(prompt.contains("ORG2_AI_DESTINATION_REF: builtin.claude"))
+        XCTAssertTrue(prompt.contains("Prepare the weekly brief from the corpus."))
+        return ClaudeCodeTurnResult(sessionID: "automation-session", reply: "The weekly brief is ready.")
+      },
+      legacyDefaultsDomains: []
+    )
+    store.setCorpusRoot(root, persistsDefault: false)
+    var claude = try XCTUnwrap(store.aiChatDestination(id: AIChatDestinationConfiguration.localClaudeID))
+    claude.isEnabled = true
+    store.updateAIChatDestination(claude)
+    store.setAutomationSchedulerActive(true, checkIntervalNanoseconds: 60_000_000_000)
+    defer { store.setAutomationSchedulerActive(false) }
+
+    let dueAt = try XCTUnwrap(ISO8601DateFormatter().date(from: "2099-08-31T16:00:30Z"))
+    await store.checkDueAgentAutomations(now: dueAt)
+    let timeout = Date().addingTimeInterval(8)
+    while Date() < timeout {
+      if store.agentRuns.contains(where: {
+        $0.workflowId == "weekly-claude-brief" && $0.status == "completed"
+      }) {
+        break
+      }
+      try await Task.sleep(for: .milliseconds(25))
+    }
+
+    let run = try XCTUnwrap(store.agentRuns.first(where: { $0.workflowId == "weekly-claude-brief" }))
+    XCTAssertEqual(run.destinationRef, AIChatDestinationConfiguration.localClaudeID)
+    XCTAssertEqual(run.status, "completed")
+    XCTAssertEqual(run.attempt?.triggerId, "schedule")
+    XCTAssertEqual(run.outcome?.summary, "The weekly brief is ready.")
+    let thread = try XCTUnwrap(store.openClawChatThreads.first(where: { $0.title == "Automation: Weekly Claude brief" }))
+    XCTAssertEqual(thread.destinationID, AIChatDestinationConfiguration.localClaudeID)
+    XCTAssertEqual(thread.messages.last(where: { $0.role == .assistant })?.content, "The weekly brief is ready.")
+  }
 }
 
 private extension Array where Element == String {
