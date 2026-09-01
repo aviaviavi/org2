@@ -54,16 +54,7 @@ jobs:
       - name: Run OpenOrg macOS correctness suite
         run: swift test --package-path apps/macos/Org2Workspace
 
-      - name: Run release-mode OpenOrg interaction gate
-        run: npm run test:macos-performance
-        env:
-          OPENORG_PERFORMANCE_ARTIFACT_DIR: ${{ runner.temp }}/openorg-performance
-
-      - name: Upload performance measurements
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: openorg-performance-${{ github.sha }}
-          path: ${{ runner.temp }}/openorg-performance
-          if-no-files-found: warn
-          retention-days: 30
+      - name: Run release-mode OpenOrg performance regressions
+        run: >-
+          swift test --package-path apps/macos/Org2Workspace --configuration release
+          --filter 'OpenOrgPerformanceGateTests|WorkspacePerformanceRegressionTests'
