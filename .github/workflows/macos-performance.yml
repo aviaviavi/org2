@@ -38,8 +38,6 @@ jobs:
   interaction-performance:
     runs-on: macos-15
     timeout-minutes: 45
-    env:
-      OPENORG_PERFORMANCE_ARTIFACT_DIR: ${{ runner.temp }}/openorg-performance
     steps:
       - uses: actions/checkout@v6
 
@@ -58,6 +56,8 @@ jobs:
 
       - name: Run release-mode OpenOrg interaction gate
         run: npm run test:macos-performance
+        env:
+          OPENORG_PERFORMANCE_ARTIFACT_DIR: ${{ runner.temp }}/openorg-performance
 
       - name: Upload performance measurements
         if: always()
