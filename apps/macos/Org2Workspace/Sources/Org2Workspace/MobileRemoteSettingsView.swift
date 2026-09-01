@@ -54,7 +54,7 @@ struct WorkspaceSettingsView: View {
 }
 
 private struct CorpusSettingsView: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   @State private var corpusName = ""
   @State private var corpusKind = "personal"
   @State private var isSaving = false
@@ -146,7 +146,7 @@ private struct CorpusSettingsView: View {
 }
 
 private struct MeetingSettingsView: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   @State private var meetingAutomationEnabled = false
   @State private var meetingAutomationDestinationID = AIChatDestinationConfiguration.openClawID
   @State private var meetingAutomationThreadMode = MeetingReadyAutomationThreadMode.newThread
@@ -270,9 +270,10 @@ private struct MeetingSettingsView: View {
 }
 
 private struct AppearanceSettingsView: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
 
   var body: some View {
+    @Bindable var store = store
     Form {
       Section {
         Picker("Theme", selection: $store.appearanceMode) {
@@ -297,9 +298,10 @@ private struct AppearanceSettingsView: View {
 }
 
 private struct DocumentSettingsView: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
 
   var body: some View {
+    @Bindable var store = store
     Form {
       Section {
         Toggle(
@@ -332,7 +334,7 @@ private struct DocumentSettingsView: View {
 }
 
 private struct SharingSettingsView: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   @State private var isConfirmingStopAll = false
 
   var body: some View {

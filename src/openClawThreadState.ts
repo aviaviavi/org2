@@ -1,35 +1,55 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import {
+  AI_CHAT_OPERATION_SCHEMA,
+  type AIChatOperation,
+  loadAIChatOperations,
+  nextAIChatOperationIdentity,
+  queueAIChatOperation,
+} from "./aiChatOperationJournal.js";
 
 export const OPENCLAW_THREAD_STATE_SCHEMA = "org2:openclaw-thread-state:v1";
 export const OPENCLAW_TRANSCRIPT_VERSION = 6;
+const STORE_MARKER_SCHEMA = "org2:ai-chat-transcript-store-marker:v1";
+const MANIFEST_V2_SCHEMA = "org2:ai-chat-transcript-manifest:v2";
+const MANIFEST_V1_SCHEMA = "org2:ai-chat-transcript-manifest:v1";
+const THREAD_SHARD_SCHEMA = "org2:ai-chat-thread:v1";
 const APPLE_REFERENCE_DATE_UNIX_SECONDS = 978_307_200;
+
+type JSONRecord = Record<string, unknown>;
 
 export interface OpenClawThreadSettlementSettings {
   autoSettleAfterSeconds: number | null;
+}
+
+export interface OpenClawChatMessageRecord {
+  id?: string;
+  role?: string;
+  content?: string;
+  deliveryStatus?: string;
+  sendFailure?: string | null;
+  authorLabel?: string;
+  authorAgentRef?: string;
+  source?: string;
+  attachments?: unknown[];
+  [key: string]: unknown;
 }
 
 export interface OpenClawChatThreadRecord {
   id: string;
   title?: string;
   updatedAt: number | string;
-  messages?: Array<{
-    id?: string;
-    role?: string;
-    content?: string;
-    deliveryStatus?: string;
-    sendFailure?: string | null;
-    authorLabel?: string;
-    authorAgentRef?: string;
-    source?: string;
-    [key: string]: unknown;
-  }>;
+  messages?: OpenClawChatMessageRecord[];
+  storedMessageCount?: number | null;
+  storedHasUnresolvedLatestDelivery?: boolean | null;
+  storedLatestDeliveryNeedsAttention?: boolean | null;
   isPinned?: boolean;
   isArchived?: boolean;
   settledAt?: number | string | null;
   unreadMessageCount?: number;
   pendingTurn?: unknown;
-  runtime?: "openClaw" | "codex";
+  runtime?: "openClaw" | "codex" | "claude";
   runtimeThreadID?: string | null;
   model?: string | null;
   reasoningEffort?: string | null;
@@ -45,28 +65,100 @@ export interface OpenClawTranscriptRecord {
   [key: string]: unknown;
 }
 
+export type OpenClawThreadStorageLayout =
+  | "empty"
+  | "legacy-monolith"
+  | "sharded-v1"
+  | "sharded-v2"
+  | "sharded-v2-pointer";
+
+export type OpenClawThreadRecoveryStatus = "healthy" | "recovered-previous-manifest";
+
 export interface OpenClawThreadState {
   schema: typeof OPENCLAW_THREAD_STATE_SCHEMA;
   file: string;
+  legacyFile: string;
   version: number;
   selectedThreadID: string | null;
   settlementSettings: OpenClawThreadSettlementSettings;
   threads: OpenClawChatThreadRecord[];
+  storageLayout: OpenClawThreadStorageLayout;
+  recoveryStatus: OpenClawThreadRecoveryStatus;
+  commitID: string | null;
+  generation: number | null;
+  pendingOperationCount: number;
 }
 
 export interface OpenClawThreadMutationResult {
   applied: boolean;
+  queued: boolean;
+  committed: false;
   changed: boolean;
   state: OpenClawThreadState;
   affectedThreadIds: string[];
+  operationFiles: string[];
+  operation?: AIChatOperation;
+}
+
+export interface LoadOpenClawThreadStateOptions {
+  hydrateThreadID?: string;
+  includePendingOperations?: boolean;
+}
+
+interface StoreMarker {
+  currentManifest: string;
+  currentDigest: string;
+  previousManifest: string | null;
+  previousDigest: string | null;
+}
+
+interface ManifestThreadEntry {
+  metadata: OpenClawChatThreadRecord;
+  shard: string;
+  shardDigest: string;
+}
+
+interface ResolvedTranscript {
+  state: OpenClawThreadState;
+  entries: Map<string, ManifestThreadEntry>;
+  storeRoot: string | null;
+}
+
+interface ParsedManifest {
+  file: string;
+  layout: "sharded-v1" | "sharded-v2";
+  threads: OpenClawChatThreadRecord[];
+  entries: ManifestThreadEntry[];
+  selectedThreadID: string | null;
+  settlementSettings: OpenClawThreadSettlementSettings;
+  commitID: string | null;
+  generation: number | null;
 }
 
 export function openClawTranscriptPath(corpusRoot: string): string {
   return path.join(path.resolve(corpusRoot), ".org2", "openclaw-chat.json");
 }
 
-function settlementSettings(payload: OpenClawTranscriptRecord): OpenClawThreadSettlementSettings {
-  const value = payload.settlementSettings?.autoSettleAfterSeconds;
+export function openClawTranscriptStorePath(corpusRoot: string): string {
+  const transcript = openClawTranscriptPath(corpusRoot);
+  return path.join(path.dirname(transcript), `${path.basename(transcript, path.extname(transcript))}.store`);
+}
+
+function isRecord(value: unknown): value is JSONRecord {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function digest(data: Buffer): string {
+  return crypto.createHash("sha256").update(data).digest("hex");
+}
+
+function isDigest(value: unknown): value is string {
+  return typeof value === "string" && /^[0-9a-f]{64}$/iu.test(value);
+}
+
+function settlementSettings(payload: JSONRecord): OpenClawThreadSettlementSettings {
+  const rawSettings = isRecord(payload.settlementSettings) ? payload.settlementSettings : undefined;
+  const value = rawSettings?.autoSettleAfterSeconds;
   return {
     autoSettleAfterSeconds: typeof value === "number" && Number.isFinite(value) && value > 0
       ? value
@@ -74,41 +166,444 @@ function settlementSettings(payload: OpenClawTranscriptRecord): OpenClawThreadSe
   };
 }
 
-function normalizedThreads(payload: OpenClawTranscriptRecord): OpenClawChatThreadRecord[] {
+function normalizedThread(value: unknown): OpenClawChatThreadRecord | null {
+  if (!isRecord(value)
+      || typeof value.id !== "string"
+      || (typeof value.updatedAt !== "number" && typeof value.updatedAt !== "string")) {
+    return null;
+  }
+  if (value.messages !== undefined && !Array.isArray(value.messages)) return null;
+  return value as unknown as OpenClawChatThreadRecord;
+}
+
+function normalizedLegacyThreads(payload: JSONRecord): OpenClawChatThreadRecord[] {
   if (!Array.isArray(payload.threads)) return [];
-  return payload.threads.filter((thread): thread is OpenClawChatThreadRecord => (
-    Boolean(thread)
-      && typeof thread === "object"
-      && typeof thread.id === "string"
-      && (typeof thread.updatedAt === "number" || typeof thread.updatedAt === "string")
-  ));
+  return payload.threads
+    .map(normalizedThread)
+    .filter((thread): thread is OpenClawChatThreadRecord => thread !== null);
 }
 
-function parsePayload(file: string): OpenClawTranscriptRecord {
-  if (!fs.existsSync(file)) {
-    return { version: OPENCLAW_TRANSCRIPT_VERSION, threads: [], selectedThreadID: null };
-  }
-  const parsed = JSON.parse(fs.readFileSync(file, "utf8")) as unknown;
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error(`invalid OpenClaw transcript payload: ${file}`);
-  }
-  return parsed as OpenClawTranscriptRecord;
+function safeManifestName(value: unknown): value is string {
+  return typeof value === "string"
+    && value.length > 0
+    && path.basename(value) === value;
 }
 
-function stateFromPayload(file: string, payload: OpenClawTranscriptRecord): OpenClawThreadState {
+function parseMarker(file: string): StoreMarker | null {
+  try {
+    const value = JSON.parse(fs.readFileSync(file, "utf8")) as unknown;
+    if (!isRecord(value)
+        || value.schema !== STORE_MARKER_SCHEMA
+        || typeof value.version !== "number"
+        || !safeManifestName(value.currentManifest)
+        || !isDigest(value.currentDigest)
+        || (value.previousManifest !== undefined
+          && value.previousManifest !== null
+          && !safeManifestName(value.previousManifest))
+        || (value.previousDigest !== undefined
+          && value.previousDigest !== null
+          && !isDigest(value.previousDigest))) {
+      return null;
+    }
+    return {
+      currentManifest: value.currentManifest,
+      currentDigest: value.currentDigest,
+      previousManifest: typeof value.previousManifest === "string" ? value.previousManifest : null,
+      previousDigest: typeof value.previousDigest === "string" ? value.previousDigest : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function parseManifestV2Data(
+  data: Buffer,
+  file: string,
+  expectedDigest?: string | null,
+): ParsedManifest | null {
+  try {
+    if (expectedDigest && digest(data) !== expectedDigest) return null;
+    const payload = JSON.parse(data.toString("utf8")) as unknown;
+    if (!isRecord(payload)
+        || payload.schema !== MANIFEST_V2_SCHEMA
+        || payload.version !== 2
+        || !Number.isSafeInteger(payload.generation)
+        || (payload.generation as number) < 0
+        || typeof payload.commitID !== "string"
+        || !Array.isArray(payload.threads)) {
+      return null;
+    }
+    const entries: ManifestThreadEntry[] = [];
+    for (const value of payload.threads) {
+      if (!isRecord(value)
+          || typeof value.shard !== "string"
+          || typeof value.shardDigest !== "string") {
+        return null;
+      }
+      const metadata = normalizedThread(value.metadata);
+      if (!metadata) return null;
+      entries.push({ metadata, shard: value.shard, shardDigest: value.shardDigest });
+    }
+    return {
+      file,
+      layout: "sharded-v2",
+      threads: entries.map((entry) => entry.metadata),
+      entries,
+      selectedThreadID: typeof payload.selectedThreadID === "string" ? payload.selectedThreadID : null,
+      settlementSettings: settlementSettings(payload),
+      commitID: payload.commitID,
+      generation: payload.generation as number,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function loadManifestV2(file: string, expectedDigest?: string | null): ParsedManifest | null {
+  try {
+    return parseManifestV2Data(fs.readFileSync(file), file, expectedDigest);
+  } catch {
+    return null;
+  }
+}
+
+function loadManifestV1(file: string): ParsedManifest | null {
+  try {
+    const payload = JSON.parse(fs.readFileSync(file, "utf8")) as unknown;
+    if (!isRecord(payload) || payload.schema !== MANIFEST_V1_SCHEMA || !Array.isArray(payload.threads)) {
+      return null;
+    }
+    const threads: OpenClawChatThreadRecord[] = [];
+    const entries: ManifestThreadEntry[] = [];
+    for (const value of payload.threads) {
+      const metadata = normalizedThread(value);
+      if (!metadata) return null;
+      threads.push(metadata);
+      entries.push({
+        metadata,
+        shard: `threads/${metadata.id.toLowerCase()}.json`,
+        shardDigest: "",
+      });
+    }
+    return {
+      file,
+      layout: "sharded-v1",
+      threads,
+      entries,
+      selectedThreadID: typeof payload.selectedThreadID === "string" ? payload.selectedThreadID : null,
+      settlementSettings: settlementSettings(payload),
+      commitID: null,
+      generation: null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function manifestNamed(
+  storeRoot: string,
+  name: string,
+  expectedDigest: string | null,
+): ParsedManifest | null {
+  if (!safeManifestName(name)) return null;
+  return loadManifestV2(path.join(storeRoot, "manifests", name), expectedDigest);
+}
+
+function resolveShardedManifest(storeRoot: string): {
+  manifest: ParsedManifest;
+  recoveryStatus: OpenClawThreadRecoveryStatus;
+} | null {
+  const markerFile = path.join(storeRoot, "migration-marker.json");
+  const previousMarkerFile = path.join(storeRoot, "migration-marker.previous.json");
+  const currentView = path.join(storeRoot, "manifest.json");
+  const previousView = path.join(storeRoot, "manifest.previous.json");
+  const markerExists = fs.existsSync(markerFile) || fs.existsSync(previousMarkerFile);
+  const candidates: ParsedManifest[] = [];
+
+  const marker = parseMarker(markerFile);
+  if (marker) {
+    const current = manifestNamed(storeRoot, marker.currentManifest, marker.currentDigest);
+    if (current) {
+      return { manifest: current, recoveryStatus: "healthy" };
+    }
+    if (marker.previousManifest) {
+      const previous = manifestNamed(storeRoot, marker.previousManifest, marker.previousDigest);
+      if (previous) candidates.push(previous);
+    }
+  }
+
+  const previousMarker = parseMarker(previousMarkerFile);
+  if (previousMarker) {
+    const current = manifestNamed(
+      storeRoot,
+      previousMarker.currentManifest,
+      previousMarker.currentDigest,
+    );
+    if (current) candidates.push(current);
+    if (previousMarker.previousManifest) {
+      const previous = manifestNamed(
+        storeRoot,
+        previousMarker.previousManifest,
+        previousMarker.previousDigest,
+      );
+      if (previous) candidates.push(previous);
+    }
+  }
+
+  if (markerExists) {
+    const current = loadManifestV2(currentView);
+    const previous = loadManifestV2(previousView);
+    if (current) candidates.push(current);
+    if (previous) candidates.push(previous);
+    const unique = new Map<string, ParsedManifest>();
+    for (const candidate of candidates) {
+      if (candidate.commitID && !unique.has(candidate.commitID)) {
+        unique.set(candidate.commitID, candidate);
+      }
+    }
+    const recovered = [...unique.values()].sort(
+      (left, right) => (right.generation ?? 0) - (left.generation ?? 0),
+    )[0];
+    if (recovered) {
+      return { manifest: recovered, recoveryStatus: "recovered-previous-manifest" };
+    }
+    throw new Error(
+      "AI chat storage metadata is corrupt. The stale legacy transcript was not loaded and writes are disabled.",
+    );
+  }
+
+  const v2 = loadManifestV2(currentView);
+  if (v2) return { manifest: v2, recoveryStatus: "healthy" };
+  const v1 = loadManifestV1(currentView);
+  if (v1) return { manifest: v1, recoveryStatus: "healthy" };
+  if (fs.existsSync(currentView) || fs.existsSync(previousView)) {
+    throw new Error("AI chat storage exists but no valid manifest can be recovered. Writes are disabled.");
+  }
+  return null;
+}
+
+function stateFromManifest(
+  corpusRoot: string,
+  manifest: ParsedManifest,
+  recoveryStatus: OpenClawThreadRecoveryStatus,
+  layout: OpenClawThreadStorageLayout = manifest.layout,
+): ResolvedTranscript {
+  const legacyFile = openClawTranscriptPath(corpusRoot);
   return {
-    schema: OPENCLAW_THREAD_STATE_SCHEMA,
-    file,
-    version: Number.isFinite(payload.version) ? payload.version : 1,
-    selectedThreadID: typeof payload.selectedThreadID === "string" ? payload.selectedThreadID : null,
-    settlementSettings: settlementSettings(payload),
-    threads: normalizedThreads(payload),
+    state: {
+      schema: OPENCLAW_THREAD_STATE_SCHEMA,
+      file: manifest.file,
+      legacyFile,
+      version: OPENCLAW_TRANSCRIPT_VERSION,
+      selectedThreadID: manifest.selectedThreadID,
+      settlementSettings: manifest.settlementSettings,
+      threads: manifest.threads,
+      storageLayout: layout,
+      recoveryStatus,
+      commitID: manifest.commitID,
+      generation: manifest.generation,
+      pendingOperationCount: 0,
+    },
+    entries: new Map(manifest.entries.map((entry) => [entry.metadata.id.toLowerCase(), entry])),
+    storeRoot: openClawTranscriptStorePath(corpusRoot),
   };
 }
 
-export function loadOpenClawThreadState(corpusRoot: string): OpenClawThreadState {
+function emptyOrLegacyState(corpusRoot: string): ResolvedTranscript {
   const file = openClawTranscriptPath(corpusRoot);
-  return stateFromPayload(file, parsePayload(file));
+  if (!fs.existsSync(file)) {
+    return {
+      state: {
+        schema: OPENCLAW_THREAD_STATE_SCHEMA,
+        file,
+        legacyFile: file,
+        version: OPENCLAW_TRANSCRIPT_VERSION,
+        selectedThreadID: null,
+        settlementSettings: { autoSettleAfterSeconds: null },
+        threads: [],
+        storageLayout: "empty",
+        recoveryStatus: "healthy",
+        commitID: null,
+        generation: null,
+        pendingOperationCount: 0,
+      },
+      entries: new Map(),
+      storeRoot: null,
+    };
+  }
+  const data = fs.readFileSync(file);
+  const parsed = JSON.parse(data.toString("utf8")) as unknown;
+  if (!isRecord(parsed)) throw new Error(`invalid OpenClaw transcript payload: ${file}`);
+  if (parsed.schema === MANIFEST_V2_SCHEMA) {
+    const pointer = parseManifestV2Data(data, file);
+    if (!pointer) throw new Error(`invalid OpenClaw transcript compatibility pointer: ${file}`);
+    return stateFromManifest(corpusRoot, pointer, "healthy", "sharded-v2-pointer");
+  }
+  const numericVersion = typeof parsed.version === "number" && Number.isFinite(parsed.version)
+    ? parsed.version
+    : 1;
+  return {
+    state: {
+      schema: OPENCLAW_THREAD_STATE_SCHEMA,
+      file,
+      legacyFile: file,
+      version: numericVersion,
+      selectedThreadID: typeof parsed.selectedThreadID === "string" ? parsed.selectedThreadID : null,
+      settlementSettings: settlementSettings(parsed),
+      threads: normalizedLegacyThreads(parsed),
+      storageLayout: "legacy-monolith",
+      recoveryStatus: "healthy",
+      commitID: null,
+      generation: null,
+      pendingOperationCount: 0,
+    },
+    entries: new Map(),
+    storeRoot: null,
+  };
+}
+
+function resolveAuthoritativeTranscript(corpusRoot: string): ResolvedTranscript {
+  const storeRoot = openClawTranscriptStorePath(corpusRoot);
+  const sharded = resolveShardedManifest(storeRoot);
+  return sharded
+    ? stateFromManifest(corpusRoot, sharded.manifest, sharded.recoveryStatus)
+    : emptyOrLegacyState(corpusRoot);
+}
+
+function confinedShardPath(storeRoot: string, relativeShard: string): string {
+  const threadsRoot = path.resolve(storeRoot, "threads");
+  const shard = path.resolve(storeRoot, relativeShard);
+  if (!shard.startsWith(`${threadsRoot}${path.sep}`)) {
+    throw new Error(`invalid AI chat thread shard path: ${relativeShard}`);
+  }
+  const resolvedRoot = fs.realpathSync(threadsRoot);
+  const resolvedShard = fs.realpathSync(shard);
+  if (!resolvedShard.startsWith(`${resolvedRoot}${path.sep}`)) {
+    throw new Error(`unsafe AI chat thread shard path: ${relativeShard}`);
+  }
+  return resolvedShard;
+}
+
+function hydrateThread(
+  state: OpenClawThreadState,
+  entries: Map<string, ManifestThreadEntry>,
+  storeRoot: string,
+  requestedThreadID: string,
+): OpenClawThreadState {
+  const canonicalID = requestedThreadID.toLowerCase();
+  const entry = entries.get(canonicalID);
+  if (!entry) return state;
+  const shardFile = confinedShardPath(storeRoot, entry.shard);
+  const data = fs.readFileSync(shardFile);
+  if (entry.shardDigest && (!isDigest(entry.shardDigest) || digest(data) !== entry.shardDigest)) {
+    throw new Error(`AI chat thread shard digest mismatch: ${shardFile}`);
+  }
+  const shard = JSON.parse(data.toString("utf8")) as unknown;
+  if (!isRecord(shard) || shard.schema !== THREAD_SHARD_SCHEMA || !Array.isArray(shard.messages)) {
+    throw new Error(`invalid AI chat thread shard: ${shardFile}`);
+  }
+  const messages = shard.messages.map((stored, index): OpenClawChatMessageRecord => {
+    if (!isRecord(stored) || !isRecord(stored.message) || !Array.isArray(stored.attachments)) {
+      throw new Error(`invalid AI chat stored message ${index}: ${shardFile}`);
+    }
+    return {
+      ...stored.message,
+      attachments: stored.attachments,
+    } as OpenClawChatMessageRecord;
+  });
+  return {
+    ...state,
+    threads: state.threads.map((thread) => (
+      thread.id.toLowerCase() === canonicalID ? { ...thread, messages } : thread
+    )),
+  };
+}
+
+function copyState(state: OpenClawThreadState): OpenClawThreadState {
+  return {
+    ...state,
+    settlementSettings: { ...state.settlementSettings },
+    threads: state.threads.map((thread) => ({
+      ...thread,
+      messages: thread.messages ? [...thread.messages] : thread.messages,
+    })),
+  };
+}
+
+function matchingThreadIndex(threads: OpenClawChatThreadRecord[], threadID: string): number {
+  const canonicalID = threadID.trim().toLowerCase();
+  return threads.findIndex((thread) => thread.id.toLowerCase() === canonicalID);
+}
+
+function applyOperation(state: OpenClawThreadState, operation: AIChatOperation): string[] {
+  if (operation.kind === "settle-thread") {
+    const index = matchingThreadIndex(state.threads, operation.threadID);
+    if (index < 0 || isOpenClawThreadSettled(state.threads[index]!)) return [];
+    state.threads[index] = settledThread(state.threads[index]!, new Date(operation.settledAt));
+    return [state.threads[index]!.id];
+  }
+  if (operation.kind === "reopen-thread") {
+    const index = matchingThreadIndex(state.threads, operation.threadID);
+    if (index < 0 || !isOpenClawThreadSettled(state.threads[index]!)) return [];
+    state.threads[index] = reopenedThread(state.threads[index]!);
+    return [state.threads[index]!.id];
+  }
+  if (operation.kind === "configure-auto-settle") {
+    if (state.settlementSettings.autoSettleAfterSeconds === operation.autoSettleAfterSeconds) return [];
+    state.settlementSettings = { autoSettleAfterSeconds: operation.autoSettleAfterSeconds };
+    return ["settings"];
+  }
+  const now = new Date(operation.evaluatedAt);
+  const affected: string[] = [];
+  state.threads = state.threads.map((thread) => {
+    if (!canAutoSettleOpenClawThread(
+      thread,
+      state.settlementSettings,
+      now,
+      state.selectedThreadID,
+    )) return thread;
+    affected.push(thread.id);
+    return settledThread(thread, now);
+  });
+  return affected;
+}
+
+function stateIncludingPendingOperations(
+  corpusRoot: string,
+  state: OpenClawThreadState,
+): OpenClawThreadState {
+  const operations = loadAIChatOperations(corpusRoot);
+  if (operations.length === 0) return state;
+  const effective = copyState(state);
+  for (const operation of operations) applyOperation(effective, operation);
+  effective.pendingOperationCount = operations.length;
+  return effective;
+}
+
+export function loadOpenClawThreadState(
+  corpusRoot: string,
+  options: LoadOpenClawThreadStateOptions = {},
+): OpenClawThreadState {
+  const resolved = resolveAuthoritativeTranscript(corpusRoot);
+  const hydrated = options.hydrateThreadID && resolved.storeRoot
+    ? hydrateThread(
+      resolved.state,
+      resolved.entries,
+      resolved.storeRoot,
+      options.hydrateThreadID,
+    )
+    : resolved.state;
+  return options.includePendingOperations === false
+    ? hydrated
+    : stateIncludingPendingOperations(corpusRoot, hydrated);
+}
+
+export function findOpenClawThread(
+  state: OpenClawThreadState,
+  threadID: string,
+): OpenClawChatThreadRecord | undefined {
+  const index = matchingThreadIndex(state.threads, threadID);
+  return index < 0 ? undefined : state.threads[index];
 }
 
 export function isOpenClawThreadSettled(thread: OpenClawChatThreadRecord): boolean {
@@ -136,8 +631,12 @@ export function canAutoSettleOpenClawThread(
 ): boolean {
   const interval = settings.autoSettleAfterSeconds;
   if (!interval || interval <= 0 || isOpenClawThreadSettled(thread)) return false;
-  if (thread.id === selectedThreadID || thread.isPinned || thread.pendingTurn) return false;
+  if (thread.id.toLowerCase() === selectedThreadID?.toLowerCase()
+      || thread.isPinned
+      || thread.pendingTurn) return false;
   if ((thread.unreadMessageCount || 0) > 0) return false;
+  if (thread.storedHasUnresolvedLatestDelivery === true
+      || thread.storedLatestDeliveryNeedsAttention === true) return false;
   const latestMessage = thread.messages?.[thread.messages.length - 1];
   if (
     latestMessage?.deliveryStatus === "sending"
@@ -165,30 +664,38 @@ function reopenedThread(thread: OpenClawChatThreadRecord): OpenClawChatThreadRec
   };
 }
 
-function savePayload(file: string, payload: OpenClawTranscriptRecord): void {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const temporary = `${file}.${process.pid}.tmp`;
-  fs.writeFileSync(temporary, `${JSON.stringify(payload, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
-  fs.renameSync(temporary, file);
-  fs.chmodSync(file, 0o600);
-}
-
-function mutateOpenClawThreadState(
+function mutationResult(
   corpusRoot: string,
-  mutate: (payload: OpenClawTranscriptRecord) => string[],
+  state: OpenClawThreadState,
+  operation: AIChatOperation,
+  affectedThreadIds: string[],
   apply: boolean,
 ): OpenClawThreadMutationResult {
-  const file = openClawTranscriptPath(corpusRoot);
-  const payload = parsePayload(file);
-  const affectedThreadIds = mutate(payload);
-  const changed = affectedThreadIds.length > 0;
-  if (changed) payload.version = Math.max(OPENCLAW_TRANSCRIPT_VERSION, payload.version || 1);
-  if (changed && apply) savePayload(file, payload);
+  const queued = queueAIChatOperation(corpusRoot, operation, apply);
+  const nextState = copyState(state);
+  applyOperation(nextState, operation);
+  if (queued.applied) nextState.pendingOperationCount += 1;
   return {
-    applied: changed && apply,
-    changed,
-    state: stateFromPayload(file, payload),
+    applied: queued.applied,
+    queued: queued.applied,
+    committed: false,
+    changed: true,
+    state: nextState,
     affectedThreadIds,
+    operationFiles: [queued.file],
+    operation: queued.operation,
+  };
+}
+
+function unchangedMutationResult(state: OpenClawThreadState): OpenClawThreadMutationResult {
+  return {
+    applied: false,
+    queued: false,
+    committed: false,
+    changed: false,
+    state,
+    affectedThreadIds: [],
+    operationFiles: [],
   };
 }
 
@@ -197,15 +704,20 @@ export function settleOpenClawThread(
   threadID: string,
   options: { apply?: boolean; now?: Date } = {},
 ): OpenClawThreadMutationResult {
-  return mutateOpenClawThreadState(corpusRoot, (payload) => {
-    const threads = normalizedThreads(payload);
-    const index = threads.findIndex((thread) => thread.id === threadID);
-    if (index < 0) throw new Error(`unknown OpenClaw thread: ${threadID}`);
-    if (isOpenClawThreadSettled(threads[index]!)) return [];
-    threads[index] = settledThread(threads[index]!, options.now || new Date());
-    payload.threads = threads;
-    return [threadID];
-  }, options.apply === true);
+  const state = loadOpenClawThreadState(corpusRoot);
+  const thread = findOpenClawThread(state, threadID);
+  if (!thread) throw new Error(`unknown OpenClaw thread: ${threadID}`);
+  if (isOpenClawThreadSettled(thread)) return unchangedMutationResult(state);
+  const at = options.now || new Date();
+  if (!Number.isFinite(at.getTime())) throw new Error("OpenClaw settlement time must be valid");
+  const operation: AIChatOperation = {
+    schema: AI_CHAT_OPERATION_SCHEMA,
+    ...nextAIChatOperationIdentity(),
+    kind: "settle-thread",
+    threadID: thread.id,
+    settledAt: at.toISOString(),
+  };
+  return mutationResult(corpusRoot, state, operation, [thread.id], options.apply === true);
 }
 
 export function reopenOpenClawThread(
@@ -213,15 +725,17 @@ export function reopenOpenClawThread(
   threadID: string,
   options: { apply?: boolean } = {},
 ): OpenClawThreadMutationResult {
-  return mutateOpenClawThreadState(corpusRoot, (payload) => {
-    const threads = normalizedThreads(payload);
-    const index = threads.findIndex((thread) => thread.id === threadID);
-    if (index < 0) throw new Error(`unknown OpenClaw thread: ${threadID}`);
-    if (!isOpenClawThreadSettled(threads[index]!)) return [];
-    threads[index] = reopenedThread(threads[index]!);
-    payload.threads = threads;
-    return [threadID];
-  }, options.apply === true);
+  const state = loadOpenClawThreadState(corpusRoot);
+  const thread = findOpenClawThread(state, threadID);
+  if (!thread) throw new Error(`unknown OpenClaw thread: ${threadID}`);
+  if (!isOpenClawThreadSettled(thread)) return unchangedMutationResult(state);
+  const operation: AIChatOperation = {
+    schema: AI_CHAT_OPERATION_SCHEMA,
+    ...nextAIChatOperationIdentity(),
+    kind: "reopen-thread",
+    threadID: thread.id,
+  };
+  return mutationResult(corpusRoot, state, operation, [thread.id], options.apply === true);
 }
 
 export function configureOpenClawThreadSettlement(
@@ -229,30 +743,50 @@ export function configureOpenClawThreadSettlement(
   autoSettleAfterSeconds: number | null,
   options: { apply?: boolean } = {},
 ): OpenClawThreadMutationResult {
-  if (autoSettleAfterSeconds !== null && (!Number.isFinite(autoSettleAfterSeconds) || autoSettleAfterSeconds <= 0)) {
+  if (autoSettleAfterSeconds !== null
+      && (!Number.isFinite(autoSettleAfterSeconds) || autoSettleAfterSeconds <= 0)) {
     throw new Error("auto-settle interval must be a positive number of seconds or null");
   }
-  return mutateOpenClawThreadState(corpusRoot, (payload) => {
-    const current = settlementSettings(payload).autoSettleAfterSeconds;
-    if (current === autoSettleAfterSeconds) return [];
-    payload.settlementSettings = { autoSettleAfterSeconds };
-    return ["settings"];
-  }, options.apply === true);
+  const state = loadOpenClawThreadState(corpusRoot);
+  if (state.settlementSettings.autoSettleAfterSeconds === autoSettleAfterSeconds) {
+    return unchangedMutationResult(state);
+  }
+  const operation: AIChatOperation = {
+    schema: AI_CHAT_OPERATION_SCHEMA,
+    ...nextAIChatOperationIdentity(),
+    kind: "configure-auto-settle",
+    autoSettleAfterSeconds,
+  };
+  return mutationResult(corpusRoot, state, operation, ["settings"], options.apply === true);
 }
 
 export function autoSettleOpenClawThreads(
   corpusRoot: string,
   options: { apply?: boolean; now?: Date } = {},
 ): OpenClawThreadMutationResult {
-  return mutateOpenClawThreadState(corpusRoot, (payload) => {
-    const settings = settlementSettings(payload);
-    const now = options.now || new Date();
-    const affected: string[] = [];
-    payload.threads = normalizedThreads(payload).map((thread) => {
-      if (!canAutoSettleOpenClawThread(thread, settings, now, payload.selectedThreadID || null)) return thread;
-      affected.push(thread.id);
-      return settledThread(thread, now);
-    });
-    return affected;
-  }, options.apply === true);
+  const state = loadOpenClawThreadState(corpusRoot);
+  const now = options.now || new Date();
+  if (!Number.isFinite(now.getTime())) throw new Error("OpenClaw auto-settlement time must be valid");
+  const affectedThreadIds = state.threads
+    .filter((thread) => canAutoSettleOpenClawThread(
+      thread,
+      state.settlementSettings,
+      now,
+      state.selectedThreadID,
+    ))
+    .map((thread) => thread.id);
+  if (affectedThreadIds.length === 0) return unchangedMutationResult(state);
+  const operation: AIChatOperation = {
+    schema: AI_CHAT_OPERATION_SCHEMA,
+    ...nextAIChatOperationIdentity(),
+    kind: "auto-settle",
+    evaluatedAt: now.toISOString(),
+  };
+  return mutationResult(
+    corpusRoot,
+    state,
+    operation,
+    affectedThreadIds,
+    options.apply === true,
+  );
 }

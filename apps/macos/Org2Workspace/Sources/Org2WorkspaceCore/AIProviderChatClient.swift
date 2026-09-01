@@ -85,9 +85,14 @@ public struct AIProviderChatClient: Sendable {
     request.httpMethod = "POST"
     applyHeaders(to: &request)
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    request.httpBody = try JSONSerialization.data(
-      withJSONObject: requestBody(messages: Array(messages.suffix(30)), model: normalizedModel, system: system)
-    )
+    request.httpBody = try await Task.detached(priority: .userInitiated) {
+      let bodyObject = try self.requestBody(
+        messages: Array(messages.suffix(30)),
+        model: normalizedModel,
+        system: system
+      )
+      return try JSONSerialization.data(withJSONObject: bodyObject)
+    }.value
     let object = try await send(request)
     let reply: String?
     switch settings.adapter {
@@ -148,12 +153,12 @@ public struct AIProviderChatClient: Sendable {
     messages: [OpenClawChatMessage],
     model: String,
     system: String
-  ) -> [String: Any] {
+  ) throws -> [String: Any] {
     switch settings.adapter {
     case .openAI, .openRouter:
       return [
         "model": model,
-        "messages": [["role": "system", "content": system]] + messages.map(openAIMessage),
+        "messages": [["role": "system", "content": system]] + (try messages.map { try openAIMessage($0) }),
         "stream": false,
       ]
     case .anthropic:
@@ -161,12 +166,12 @@ public struct AIProviderChatClient: Sendable {
         "model": model,
         "max_tokens": 8_192,
         "system": system,
-        "messages": messages.map(anthropicMessage),
+        "messages": try messages.map { try anthropicMessage($0) },
       ]
     case .ollama:
       return [
         "model": model,
-        "messages": [["role": "system", "content": system]] + messages.map(ollamaMessage),
+        "messages": [["role": "system", "content": system]] + (try messages.map { try ollamaMessage($0) }),
         "stream": false,
       ]
     case .codexLocal, .claudeLocal, .codexRemote, .codexManagedRemote, .openClaw:
@@ -174,40 +179,40 @@ public struct AIProviderChatClient: Sendable {
     }
   }
 
-  private func openAIMessage(_ message: OpenClawChatMessage) -> [String: Any] {
+  private func openAIMessage(_ message: OpenClawChatMessage) throws -> [String: Any] {
     let content = attributedContent(message)
     guard !message.attachments.isEmpty else {
       return ["role": providerRole(message.role), "content": content]
     }
     var parts: [[String: Any]] = [["type": "text", "text": content]]
-    parts += message.attachments.map {
-      ["type": "image_url", "image_url": ["url": $0.dataURLString]]
+    parts += try message.attachments.map {
+      ["type": "image_url", "image_url": ["url": try $0.loadedDataURLString()]]
     }
     return ["role": providerRole(message.role), "content": parts]
   }
 
-  private func anthropicMessage(_ message: OpenClawChatMessage) -> [String: Any] {
+  private func anthropicMessage(_ message: OpenClawChatMessage) throws -> [String: Any] {
     var content: [[String: Any]] = [["type": "text", "text": attributedContent(message)]]
-    content += message.attachments.map {
+    content += try message.attachments.map {
       [
         "type": "image",
         "source": [
           "type": "base64",
           "media_type": $0.mimeType,
-          "data": $0.data.base64EncodedString(),
+          "data": try $0.loadData().base64EncodedString(),
         ],
       ]
     }
     return ["role": providerRole(message.role), "content": content]
   }
 
-  private func ollamaMessage(_ message: OpenClawChatMessage) -> [String: Any] {
+  private func ollamaMessage(_ message: OpenClawChatMessage) throws -> [String: Any] {
     var result: [String: Any] = [
       "role": providerRole(message.role),
       "content": attributedContent(message),
     ]
     if !message.attachments.isEmpty {
-      result["images"] = message.attachments.map { $0.data.base64EncodedString() }
+      result["images"] = try message.attachments.map { try $0.loadData().base64EncodedString() }
     }
     return result
   }

@@ -46,7 +46,7 @@ struct OrgRenderedEntrySourceContext: Equatable, Sendable {
 }
 
 struct OrgRenderedEntryView: View, Equatable {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   let blocks: [OrgEditableBlock]
   let blocksRenderSignature: String
   let source: OrgRenderedEntrySourceContext?

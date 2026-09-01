@@ -11,6 +11,23 @@ private actor SlashCommandRequestRecorder {
   }
 }
 
+private final class SlashDiscoveryThreadRecorder: @unchecked Sendable {
+  private let lock = NSLock()
+  private var values: [Bool] = []
+
+  func append(_ value: Bool) {
+    lock.lock()
+    values.append(value)
+    lock.unlock()
+  }
+
+  var snapshot: [Bool] {
+    lock.lock()
+    defer { lock.unlock() }
+    return values
+  }
+}
+
 final class OpenClawSlashCommandTests: XCTestCase {
   func testParsesKnownCommandAndArguments() {
     guard case .command(let command, let arguments) = OpenClawSlashCommands.parse("/search project atlas") else {
@@ -173,6 +190,55 @@ final class OpenClawSlashCommandTests: XCTestCase {
     )
     XCTAssertEqual(skills.last?.origin, .builtInSkill)
     XCTAssertTrue(skills.last?.skillInstructions?.contains("org2 agent capabilities") == true)
+  }
+
+  @MainActor
+  func testCorpusSkillDiscoveryPreparesAndRefreshesCacheOffMainActor() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-corpus-skill-cache-\(UUID().uuidString)", isDirectory: true)
+    let skillRoot = root.appendingPathComponent(".agents/skills/example", isDirectory: true)
+    try FileManager.default.createDirectory(at: skillRoot, withIntermediateDirectories: true)
+    defer {
+      CorpusAgentSkillCatalog.removeCachedCommandsForTesting()
+      try? FileManager.default.removeItem(at: root)
+    }
+    let skillURL = skillRoot.appendingPathComponent("SKILL.md")
+    try """
+    ---
+    name: example
+    description: First description.
+    ---
+    """.write(to: skillURL, atomically: true, encoding: .utf8)
+    CorpusAgentSkillCatalog.removeCachedCommandsForTesting()
+    let threads = SlashDiscoveryThreadRecorder()
+
+    let prepared = await CorpusAgentSkillCatalog.prepareCommands(
+      in: root,
+      bundledSkillURL: nil,
+      force: true,
+      discoveryThreadObserver: { threads.append($0) }
+    )
+    XCTAssertEqual(prepared.map(\.summary), ["First description."])
+    XCTAssertEqual(threads.snapshot, [false])
+
+    try """
+    ---
+    name: example
+    description: Updated description.
+    ---
+    """.write(to: skillURL, atomically: true, encoding: .utf8)
+    XCTAssertEqual(
+      CorpusAgentSkillCatalog.commands(in: root, bundledSkillURL: nil).map(\.summary),
+      ["First description."],
+      "Autocomplete must consume the prepared in-memory catalog without rereading SKILL.md"
+    )
+
+    let refreshed = await CorpusAgentSkillCatalog.prepareCommands(
+      in: root,
+      bundledSkillURL: nil,
+      force: true
+    )
+    XCTAssertEqual(refreshed.map(\.summary), ["Updated description."])
   }
 
   func testCorpusOrg2SkillOverridesTheBuiltInCopy() throws {

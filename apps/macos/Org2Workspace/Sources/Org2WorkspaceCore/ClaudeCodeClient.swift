@@ -385,7 +385,7 @@ public actor ClaudeCodeClient {
       }
       usedNames.insert(uniqueName.lowercased())
       let url = directory.appendingPathComponent(uniqueName)
-      try attachment.data.write(to: url, options: .atomic)
+      try attachment.loadData().write(to: url, options: .atomic)
       urls.append(url)
     }
     return (directory, urls)

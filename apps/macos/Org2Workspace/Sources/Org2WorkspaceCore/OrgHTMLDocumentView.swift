@@ -551,6 +551,7 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
   }
 
   static func dismantleNSView(_ webView: WKWebView, coordinator: Coordinator) {
+    coordinator.cancelFileLinkResolution()
     webView.configuration.userContentController.removeScriptMessageHandler(
       forName: Coordinator.viewportMessageHandlerName
     )
@@ -616,6 +617,16 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
     var recalculateTableFormulas: @MainActor (Int) -> Void = { _ in }
     var reportViewportSourceLine: @MainActor (Int?) -> Void = { _ in }
     let localResourceHandler = OrgHTMLLocalResourceSchemeHandler()
+    var fileLinkResolver: @Sendable (String, String, URL?) async -> OrgHTMLResolvedFileTarget? = {
+      target, sourceFile, corpusRoot in
+      await OrgHTMLLinkTarget.resolve(
+        target,
+        relativeTo: sourceFile,
+        corpusRoot: corpusRoot
+      )
+    }
+    private var fileLinkResolutionTask: Task<Void, Never>?
+    private var fileLinkResolutionGeneration: UInt64 = 0
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation?) {
       applyLayout(to: webView)
@@ -1042,9 +1053,13 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
       webView.evaluateJavaScript(script)
     }
 
-    private func open(target rawTarget: String) {
+    func open(target rawTarget: String) {
       let target = rawTarget.trimmingCharacters(in: .whitespacesAndNewlines)
       guard !target.isEmpty else { return }
+
+      fileLinkResolutionTask?.cancel()
+      fileLinkResolutionTask = nil
+      fileLinkResolutionGeneration &+= 1
 
       if let resolved = linkResolver.resolve(target: target) {
         openOrgFileReference(resolved.fileReference)
@@ -1059,24 +1074,48 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
         return
       }
 
-      guard let source,
-            let fileTarget = OrgHTMLLinkTarget.resolve(
-              target,
-              relativeTo: source.file,
-              corpusRoot: corpusRoot
-            )
-      else {
+      guard let source else {
         reportStatus("Could not resolve link: \(target)")
         return
       }
 
-      if OrgHTMLDocumentLinkRouting.opensInWorkspace(fileTarget.url) {
-        openOrgFileReference(OpenClawFileReference(path: fileTarget.url.path, line: fileTarget.line))
-      } else if FileManager.default.fileExists(atPath: fileTarget.url.path) {
-        NSWorkspace.shared.open(fileTarget.url)
-      } else {
-        reportStatus("Linked file not found: \(fileTarget.url.lastPathComponent)")
+      let generation = fileLinkResolutionGeneration
+      let sourceFile = source.file
+      let requestedCorpusRoot = corpusRoot
+      let resolver = fileLinkResolver
+      fileLinkResolutionTask = Task { @MainActor [weak self] in
+        let fileTarget = await resolver(target, sourceFile, requestedCorpusRoot)
+        guard !Task.isCancelled,
+              let self,
+              generation == self.fileLinkResolutionGeneration,
+              self.source?.file == sourceFile,
+              self.corpusRoot?.standardizedFileURL == requestedCorpusRoot?.standardizedFileURL
+        else {
+          return
+        }
+        self.fileLinkResolutionTask = nil
+        guard let fileTarget else {
+          self.reportStatus("Could not resolve link: \(target)")
+          return
+        }
+
+        if OrgHTMLDocumentLinkRouting.opensInWorkspace(fileTarget.url) {
+          self.openOrgFileReference(OpenClawFileReference(
+            path: fileTarget.url.path,
+            line: fileTarget.line
+          ))
+        } else if FileManager.default.fileExists(atPath: fileTarget.url.path) {
+          NSWorkspace.shared.open(fileTarget.url)
+        } else {
+          self.reportStatus("Linked file not found: \(fileTarget.url.lastPathComponent)")
+        }
       }
+    }
+
+    func cancelFileLinkResolution() {
+      fileLinkResolutionGeneration &+= 1
+      fileLinkResolutionTask?.cancel()
+      fileLinkResolutionTask = nil
     }
   }
 }
@@ -1169,13 +1208,23 @@ enum OrgHTMLRichCopy {
   """#
 }
 
-struct OrgHTMLResolvedFileTarget: Equatable {
+struct OrgHTMLResolvedFileTarget: Equatable, Sendable {
   let url: URL
   let line: Int?
 }
 
 enum OrgHTMLLinkTarget {
-  static func resolve(
+  nonisolated static func resolve(
+    _ rawTarget: String,
+    relativeTo sourceFile: String,
+    corpusRoot: URL?
+  ) async -> OrgHTMLResolvedFileTarget? {
+    await Task.detached(priority: .userInitiated) {
+      resolveOffMain(rawTarget, relativeTo: sourceFile, corpusRoot: corpusRoot)
+    }.value
+  }
+
+  private nonisolated static func resolveOffMain(
     _ rawTarget: String,
     relativeTo sourceFile: String,
     corpusRoot: URL?

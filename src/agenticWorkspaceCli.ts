@@ -74,6 +74,7 @@ import { federatedAgenda, federatedSearch } from "./federatedWorkspace.js";
 import {
   autoSettleOpenClawThreads,
   configureOpenClawThreadSettlement,
+  findOpenClawThread,
   isOpenClawThreadSettled,
   loadOpenClawThreadState,
   openClawDateMilliseconds,
@@ -548,8 +549,8 @@ function threadCommand(parsed: ParsedArgs): void {
   }
   if (action === "show") {
     const id = required(parsed.positional[1], "thread id is required");
-    const state = loadOpenClawThreadState(corpus);
-    const thread = state.threads.find((item) => item.id === id);
+    const state = loadOpenClawThreadState(corpus, { hydrateThreadID: id });
+    const thread = findOpenClawThread(state, id);
     if (!thread) throw new Error(`unknown OpenClaw thread: ${id}`);
     output(parsed, {
       schema: "org2:openclaw-thread:v1",
@@ -584,13 +585,13 @@ function threadCommand(parsed: ParsedArgs): void {
   if (action === "settle") {
     const id = required(parsed.positional[1], "thread id is required");
     const result = settleOpenClawThread(corpus, id, { apply });
-    output(parsed, result, `${result.applied ? "settled" : result.changed ? "would settle" : "already settled"} ${id}`);
+    output(parsed, result, `${result.queued ? "queued settlement for" : result.changed ? "would queue settlement for" : "already settled"} ${id}`);
     return;
   }
   if (action === "reopen") {
     const id = required(parsed.positional[1], "thread id is required");
     const result = reopenOpenClawThread(corpus, id, { apply });
-    output(parsed, result, `${result.applied ? "reopened" : result.changed ? "would reopen" : "already active"} ${id}`);
+    output(parsed, result, `${result.queued ? "queued reopening for" : result.changed ? "would queue reopening for" : "already active"} ${id}`);
     return;
   }
   if (action === "configure") {
@@ -600,7 +601,7 @@ function threadCommand(parsed: ParsedArgs): void {
       throw new Error("--auto-settle must be never or a positive number of seconds");
     }
     const result = configureOpenClawThreadSettlement(corpus, seconds, { apply });
-    output(parsed, result, `${result.applied ? "configured" : result.changed ? "would configure" : "unchanged"} auto-settle ${seconds ?? "never"}`);
+    output(parsed, result, `${result.queued ? "queued" : result.changed ? "would queue" : "unchanged"} auto-settle ${seconds ?? "never"}`);
     return;
   }
   if (action === "auto-settle") {
@@ -608,7 +609,7 @@ function threadCommand(parsed: ParsedArgs): void {
     const now = rawNow ? new Date(rawNow) : new Date();
     if (!Number.isFinite(now.getTime())) throw new Error("--now must be an ISO date");
     const result = autoSettleOpenClawThreads(corpus, { apply, now });
-    output(parsed, result, `${result.applied ? "settled" : "eligible"} ${result.affectedThreadIds.length} thread(s)`);
+    output(parsed, result, `${result.queued ? "queued auto-settlement for" : "eligible"} ${result.affectedThreadIds.length} thread(s)`);
     return;
   }
   throw new Error(`unknown thread action: ${action}`);

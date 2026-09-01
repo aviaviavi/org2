@@ -7,7 +7,7 @@ import SwiftUI
 @main
 struct Org2WorkspaceApp: App {
   @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-  @StateObject private var store = WorkspaceStore()
+  @State private var store = WorkspaceStore()
   @StateObject private var mobileRemote = MobileRemoteCoordinator()
   @StateObject private var softwareUpdates = SoftwareUpdateController()
   private let globalCaptureHotKey = GlobalCaptureHotKey()
@@ -30,13 +30,13 @@ struct Org2WorkspaceApp: App {
   var body: some Scene {
     WindowGroup(WorkspaceProductIdentity.displayName) {
       ContentView()
-        .environmentObject(store)
+        .environment(store)
         .preferredColorScheme(store.appearanceMode.colorScheme)
         .frame(minWidth: 1080, minHeight: 680)
         .background(WorkspaceWindowConfigurator())
         .onAppear {
           appDelegate.prepareForTermination = { [store] in
-            await store.shutdownAIChatTransports()
+            await store.prepareForTermination()
           }
           NSApplication.shared.setActivationPolicy(.regular)
           NSApplication.shared.activate(ignoringOtherApps: true)
@@ -58,8 +58,6 @@ struct Org2WorkspaceApp: App {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
           store.setWorkspaceRealtimeRefreshActive(true)
           store.setRunReviewAutoRefreshActive(true, refreshImmediately: false)
-          store.sourceAutoSyncDidBecomeActive()
-          store.automationSchedulerDidBecomeActive()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
           store.setWorkspaceRealtimeRefreshActive(false)
@@ -426,7 +424,7 @@ struct Org2WorkspaceApp: App {
 
     Settings {
       WorkspaceSettingsView(softwareUpdates: softwareUpdates)
-        .environmentObject(store)
+        .environment(store)
         .environmentObject(mobileRemote)
         .preferredColorScheme(store.appearanceMode.colorScheme)
     }
@@ -436,7 +434,7 @@ struct Org2WorkspaceApp: App {
 @MainActor
 private final class AppDelegate: NSObject, NSApplicationDelegate {
   private let diagnosticsHeartbeat = WorkspaceDiagnosticsHeartbeatResponder()
-  var prepareForTermination: (() async -> Void)?
+  var prepareForTermination: (() async -> Bool)?
   private var isPreparingForTermination = false
 
   func applicationWillFinishLaunching(_ notification: Notification) {
@@ -470,9 +468,13 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     isPreparingForTermination = true
     Task { @MainActor in
-      await prepareForTermination()
-      stopAppServices()
-      sender.reply(toApplicationShouldTerminate: true)
+      let shouldTerminate = await prepareForTermination()
+      if shouldTerminate {
+        stopAppServices()
+      } else {
+        isPreparingForTermination = false
+      }
+      sender.reply(toApplicationShouldTerminate: shouldTerminate)
     }
     return .terminateLater
   }

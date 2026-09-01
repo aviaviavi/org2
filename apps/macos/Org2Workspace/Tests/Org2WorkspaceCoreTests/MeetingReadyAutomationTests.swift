@@ -15,6 +15,30 @@ private actor MeetingAutomationSendRecorder {
   }
 }
 
+private actor SuspendedMeetingTranscription {
+  private var started = false
+  private var continuation: CheckedContinuation<MeetingTranscriptResult, Never>?
+
+  func transcribe() async -> MeetingTranscriptResult {
+    started = true
+    return await withCheckedContinuation { continuation = $0 }
+  }
+
+  func waitUntilStarted() async {
+    while !started { await Task.yield() }
+  }
+
+  func finish() {
+    continuation?.resume(returning: MeetingTranscriptResult(
+      text: "alpha transcript",
+      status: .complete,
+      engine: "test",
+      errorMessage: nil
+    ))
+    continuation = nil
+  }
+}
+
 final class MeetingReadyAutomationTests: XCTestCase {
   @MainActor
   func testOnlySuccessfulCompletionEventsQueueEachNewMeetingOnce() async throws {
@@ -203,6 +227,143 @@ final class MeetingReadyAutomationTests: XCTestCase {
     XCTAssertTrue(automationMessages[0].content.contains(
       "meeting-ready:meeting-id:\(canonicalMeetingID)"
     ))
+  }
+
+  @MainActor
+  func testColdExistingThreadQueuesExactlyOnceOnlyAfterHydration() async throws {
+    let fixture = try makeFixture()
+    defer { fixture.cleanup() }
+    let selected = OpenClawChatThread(
+      title: "Selected",
+      sessionKey: "selected",
+      messages: [OpenClawChatMessage(role: .assistant, content: "selected")]
+    )
+    let warm = (0..<16).map { index in
+      OpenClawChatThread(
+        title: "Warm \(index)",
+        sessionKey: "warm-\(index)",
+        messages: [OpenClawChatMessage(role: .assistant, content: "warm")]
+      )
+    }
+    let cold = OpenClawChatThread(
+      title: "Cold meeting target",
+      sessionKey: "cold-meeting-target",
+      messages: [OpenClawChatMessage(role: .assistant, content: "existing history")]
+    )
+    try AIChatTranscriptStore.shared.flush(
+      AIChatTranscriptSnapshot(
+        threads: [selected] + warm + [cold],
+        selectedThreadID: selected.id,
+        settlementSettings: OpenClawThreadSettlementSettings()
+      ),
+      legacyURL: fixture.transcript
+    )
+    let store = WorkspaceStore(
+      defaults: fixture.defaults,
+      openClawTranscriptURL: fixture.transcript,
+      openClawSendHandler: { _, _, _, _ in "Meeting processed" },
+      legacyDefaultsDomains: []
+    )
+    store.setCorpusRoot(fixture.root, persistsDefault: false)
+    XCTAssertTrue(store.unloadedAIChatThreadIDsForTesting.contains(cold.id))
+    XCTAssertTrue(store.saveMeetingReadyAutomationConfiguration(
+      isEnabled: true,
+      destinationID: AIChatDestinationConfiguration.openClawID,
+      threadMode: .existingThread,
+      threadID: cold.id,
+      prompt: "Process this meeting."
+    ))
+    let shardLoaded = expectation(description: "cold meeting shard loaded")
+    let enqueueResolved = expectation(description: "meeting enqueue resolved")
+    store.openClawThreadHydrationDelayNanosecondsForTesting = 300_000_000
+    store.openClawThreadHydrationDidLoadForTesting = { id in
+      if id == cold.id { shardLoaded.fulfill() }
+    }
+    store.meetingReadyAutomationEnqueueDidResolveForTesting = { _ in
+      enqueueResolved.fulfill()
+    }
+    let item = meeting(
+      title: "Deferred launch review",
+      file: fixture.root.appendingPathComponent("meetings/deferred-launch.org2").path,
+      idValue: "deferred-launch"
+    )
+
+    store.meetingTranscriptionDidCompleteForTesting(item)
+    store.meetingTranscriptionDidCompleteForTesting(item)
+    await fulfillment(of: [shardLoaded], timeout: 2)
+    XCTAssertFalse(store.meetingReadyAutomationStatusText.hasPrefix("Queued "))
+    XCTAssertFalse(store.meetingReadyAutomationStatusText.contains("pending"))
+    await fulfillment(of: [enqueueResolved], timeout: 2)
+
+    let hydrated = try XCTUnwrap(store.openClawChatThreads.first(where: { $0.id == cold.id }))
+    XCTAssertEqual(hydrated.messages.first?.content, "existing history")
+    XCTAssertEqual(hydrated.messages.filter {
+      $0.role == .user && $0.content.contains("meeting-ready:meeting-id:deferred-launch")
+    }.count, 1)
+    XCTAssertTrue(store.meetingReadyAutomationStatusText.hasPrefix("Queued "))
+  }
+
+  @MainActor
+  func testAlphaTranscriptionCompletionCannotPublishOrAutomateInBeta() async throws {
+    let base = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-meeting-context-race-\(UUID().uuidString)", isDirectory: true)
+    let alpha = base.appendingPathComponent("alpha", isDirectory: true)
+    let beta = base.appendingPathComponent("beta", isDirectory: true)
+    try FileManager.default.createDirectory(at: alpha, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: beta, withIntermediateDirectories: true)
+    let sourceAudio = base.appendingPathComponent("source.m4a")
+    try Data("audio".utf8).write(to: sourceAudio)
+    defer { try? FileManager.default.removeItem(at: base) }
+    let suiteName = "MeetingReadyAutomationTests.TranscriptionContext.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let sendRecorder = MeetingAutomationSendRecorder()
+    let gate = SuspendedMeetingTranscription()
+    let store = WorkspaceStore(
+      defaults: defaults,
+      openClawFallbackTranscriptURL: base.appendingPathComponent("fallback.json"),
+      openClawSendHandler: { messages, _, _, _ in
+        await sendRecorder.send(messages)
+      },
+      legacyDefaultsDomains: [],
+      automaticStarterCorpusURL: nil
+    )
+    store.setCorpusRoot(alpha, persistsDefault: false)
+    await store.waitForAIChatTranscriptLoadForTesting()
+    store.meetingTranscriptionForTesting = { _ in await gate.transcribe() }
+    let importTask = Task {
+      await store.importMeetingAudio(url: sourceAudio, title: "Alpha planning")
+    }
+    await gate.waitUntilStarted()
+
+    store.setCorpusRoot(beta, persistsDefault: false)
+    await store.waitForAIChatTranscriptLoadForTesting()
+    XCTAssertTrue(store.saveMeetingReadyAutomationConfiguration(
+      isEnabled: true,
+      destinationID: AIChatDestinationConfiguration.openClawID,
+      threadMode: .newThread,
+      threadID: nil,
+      prompt: "This beta automation must not receive alpha."
+    ))
+    let betaStatusBeforeCompletion = store.statusText
+    await gate.finish()
+    await importTask.value
+
+    XCTAssertTrue(store.meetings.isEmpty)
+    XCTAssertFalse(store.openClawChatThreads.contains(where: { thread in
+      thread.messages.contains(where: { $0.content.contains("Alpha planning") })
+    }))
+    let sendCount = await sendRecorder.callCount()
+    XCTAssertEqual(sendCount, 0)
+    XCTAssertEqual(store.statusText, betaStatusBeforeCompletion)
+    let alphaMeetings = alpha.appendingPathComponent("meetings", isDirectory: true)
+    let writtenArtifacts = try FileManager.default.contentsOfDirectory(
+      at: alphaMeetings,
+      includingPropertiesForKeys: nil
+    )
+    XCTAssertTrue(writtenArtifacts.contains(where: {
+      $0.pathExtension == OrgDocumentDefaults.preferredExtension
+    }))
   }
 
   private func meeting(

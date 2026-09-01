@@ -12,14 +12,14 @@ Use predictable top-level zones so humans, Org2, and automation agree on what ea
 | Zone | Example paths | Owner | Meaning |
 |---+---+---+---|
 | =raw/= | =raw/meetings/2026-05-20-team-sync.transcript.org2=, =raw/imports/slack/2026-05-20.json= | capture/import tools | Source material and append-only observations. Prefer minimal rewriting. |
-| =notes/= | =notes/daily/2026-05-20.org2=, =notes/people/alex.org2=, =notes/projects/openclaw.org2= | humans plus safe agent edits | Canonical working notes, TODOs, durable memory, and curated entities. |
+| =notes/= and =daily/= | =daily/2026-05-20.org2=, =notes/people/alex.org2=, =notes/projects/openclaw.org2= | humans plus safe agent edits | Canonical working notes, TODOs, durable memory, and curated entities. |
 | =compiled/= | =compiled/corpus.json=, =compiled/team-sync-context.json= | deterministic Org2 commands | Machine artifacts derived from =raw/= and =notes/=. Safe to regenerate. |
 | =views/= | =views/meeting-summaries/2026-05-20-team-sync.org2=, =views/link-suggestions.org2= | deterministic reports or generated drafts | Review surfaces, summaries, diagnostics, backlinks, and suggestions. Usually not canonical. |
 | =publish/= | =publish/team-handbook/=, =publish/openclaw-memory.html= | publish/export jobs | Shareable output created from reviewed source material. |
 
 Recommended placement:
 
-- Daily notes: =notes/daily/YYYY-MM-DD.org2=
+- Daily notes: =daily/YYYY-MM-DD.org2=
 - Imported transcripts and logs: =raw/<source>/YYYY-MM-DD-<slug>.<kind>.org2= or original machine format under =raw/imports/=
 - Generated summaries: =views/<workflow>/<slug>.org2= with =ORG2_REVIEW_STATUS: review-required=
 - Review artifacts and suggestion reports: =views/review/<slug>.org2= or =views/link-suggestions.org2=
@@ -67,7 +67,7 @@ Rules:
 
 ** Create or update TODOs
 
-Agents may add clear task candidates to =notes/daily/= or a project note. If the source is generated or uncertain, mark it for review.
+Agents may add clear task candidates to =daily/= or a project note. If the source is generated or uncertain, mark it for review.
 
 #+begin_src org
 ** TODO Send follow-up to Dana about launch checklist
@@ -168,7 +168,7 @@ Memory promotion is a reviewed state machine with explicit source boundaries.
 
 ** 1. Raw observation or transcript → candidate note
 
-- Capture source material in =raw/= or append an observation to =notes/daily/=
+- Capture source material in =raw/= or append an observation to =daily/=
 - Preserve timestamps, source refs, and source hashes when available
 - Generate summaries or extracted facts into =views/=, not =notes/=
 - Every generated factual claim cites source material or says evidence is missing

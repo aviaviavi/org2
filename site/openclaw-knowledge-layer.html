@@ -77,7 +77,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 </thead>
 <tbody>
 <tr><td><code>raw/</code></td><td><code>raw/meetings/2026-05-20-team-sync.transcript.org2</code>, <code>raw/imports/slack/2026-05-20.json</code></td><td>capture/import tools</td><td>Source material and append-only observations. Prefer minimal rewriting.</td></tr>
-<tr><td><code>notes/</code></td><td><code>notes/daily/2026-05-20.org2</code>, <code>notes/people/alex.org2</code>, <code>notes/projects/openclaw.org2</code></td><td>humans plus safe agent edits</td><td>Canonical working notes, TODOs, durable memory, and curated entities.</td></tr>
+<tr><td><code>notes/</code> and <code>daily/</code></td><td><code>daily/2026-05-20.org2</code>, <code>notes/people/alex.org2</code>, <code>notes/projects/openclaw.org2</code></td><td>humans plus safe agent edits</td><td>Canonical working notes, TODOs, durable memory, and curated entities.</td></tr>
 <tr><td><code>compiled/</code></td><td><code>compiled/corpus.json</code>, <code>compiled/team-sync-context.json</code></td><td>deterministic Org2 commands</td><td>Machine artifacts derived from <code>raw/</code> and <code>notes/</code>. Safe to regenerate.</td></tr>
 <tr><td><code>views/</code></td><td><code>views/meeting-summaries/2026-05-20-team-sync.org2</code>, <code>views/link-suggestions.org2</code></td><td>deterministic reports or generated drafts</td><td>Review surfaces, summaries, diagnostics, backlinks, and suggestions. Usually not canonical.</td></tr>
 <tr><td><code>publish/</code></td><td><code>publish/team-handbook/</code>, <code>publish/openclaw-memory.html</code></td><td>publish/export jobs</td><td>Shareable output created from reviewed source material.</td></tr>
@@ -85,7 +85,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 </table>
 <p>Recommended placement:</p>
 <ul>
-<li><p>Daily notes: <code>notes/daily/YYYY-MM-DD.org2</code></p></li>
+<li><p>Daily notes: <code>daily/YYYY-MM-DD.org2</code></p></li>
 <li><p>Imported transcripts and logs: <code>raw/&lt;source&gt;/YYYY-MM-DD-&lt;slug&gt;.&lt;kind&gt;.org2</code> or original machine format under <code>raw/imports/</code></p></li>
 <li><p>Generated summaries: <code>views/&lt;workflow&gt;/&lt;slug&gt;.org2</code> with <code>ORG2_REVIEW_STATUS: review-required</code></p></li>
 <li><p>Review artifacts and suggestion reports: <code>views/review/&lt;slug&gt;.org2</code> or <code>views/link-suggestions.org2</code></p></li>
@@ -124,7 +124,7 @@ Fran needs her heartworm medication refill checked this week.</code></pre>
 </section>
 <section class="org2-headline level-2">
 <h2 id="create-or-update-todos">Create or update TODOs</h2>
-<p>Agents may add clear task candidates to <code>notes/daily/</code> or a project note. If the source is generated or uncertain, mark it for review.</p>
+<p>Agents may add clear task candidates to <code>daily/</code> or a project note. If the source is generated or uncertain, mark it for review.</p>
 <pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">** TODO Send follow-up to Dana about launch checklist
 SCHEDULED: &lt;2026-05-21 Thu&gt;
 :PROPERTIES:
@@ -203,7 +203,7 @@ org2 lint --dir . --recursive</code></pre>
 <section class="org2-headline level-2">
 <h2 id="1-raw-observation-or-transcript-candidate-note">1. Raw observation or transcript → candidate note</h2>
 <ul>
-<li><p>Capture source material in <code>raw/</code> or append an observation to <code>notes/daily/</code></p></li>
+<li><p>Capture source material in <code>raw/</code> or append an observation to <code>daily/</code></p></li>
 <li><p>Preserve timestamps, source refs, and source hashes when available</p></li>
 <li><p>Generate summaries or extracted facts into <code>views/</code>, not <code>notes/</code></p></li>
 <li><p>Every generated factual claim cites source material or says evidence is missing</p></li>

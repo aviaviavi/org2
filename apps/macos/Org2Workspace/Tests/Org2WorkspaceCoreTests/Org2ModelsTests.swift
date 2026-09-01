@@ -1,6 +1,7 @@
 import AppKit
 @preconcurrency import AVFoundation
 import Combine
+import Observation
 import SwiftUI
 import WebKit
 import XCTest
@@ -11,6 +12,24 @@ private struct DecodeThreadPayload: Decodable {
 
   init(from decoder: Decoder) throws {
     decodedOnMainThread = Thread.isMainThread
+  }
+}
+
+private actor ControlledOrgHTMLFileLinkResolver {
+  private var continuations: [String: CheckedContinuation<OrgHTMLResolvedFileTarget?, Never>] = [:]
+
+  func resolve(_ target: String) async -> OrgHTMLResolvedFileTarget? {
+    await withCheckedContinuation { continuation in
+      continuations[target] = continuation
+    }
+  }
+
+  func hasRequest(_ target: String) -> Bool {
+    continuations[target] != nil
+  }
+
+  func complete(_ target: String, with result: OrgHTMLResolvedFileTarget?) {
+    continuations.removeValue(forKey: target)?.resume(returning: result)
   }
 }
 
@@ -43,6 +62,105 @@ private final class ThreadSafeStringRecorder: @unchecked Sendable {
     lock.withLock {
       storage.append(value)
     }
+  }
+}
+
+private final class ThreadSafeIntRecorder: @unchecked Sendable {
+  private let lock = NSLock()
+  private var storage: [Int] = []
+
+  var last: Int? {
+    lock.withLock { storage.last }
+  }
+
+  func append(_ value: Int) {
+    lock.withLock {
+      storage.append(value)
+    }
+  }
+}
+
+private final class ThreadSafeBoolRecorder: @unchecked Sendable {
+  private let lock = NSLock()
+  private var storage: [Bool] = []
+
+  var values: [Bool] {
+    lock.withLock { storage }
+  }
+
+  func append(_ value: Bool) {
+    lock.withLock { storage.append(value) }
+  }
+}
+
+private final class ControlledDailyNoteDirectoryResolver: @unchecked Sendable {
+  private let lock = NSLock()
+  private let firstStarted = DispatchSemaphore(value: 0)
+  private let releaseFirst = DispatchSemaphore(value: 0)
+  private let firstDirectoryName: String
+  private let laterDirectoryName: String
+  private var callCount = 0
+  private var hasReleasedFirst = false
+
+  init(firstDirectoryName: String, laterDirectoryName: String) {
+    self.firstDirectoryName = firstDirectoryName
+    self.laterDirectoryName = laterDirectoryName
+  }
+
+  func resolve(_ root: URL) -> URL {
+    let call = lock.withLock {
+      callCount += 1
+      return callCount
+    }
+    let directoryName: String
+    if call == 1 {
+      firstStarted.signal()
+      _ = releaseFirst.wait(timeout: .now() + 5)
+      directoryName = firstDirectoryName
+    } else {
+      directoryName = laterDirectoryName
+    }
+    return root.appendingPathComponent(directoryName, isDirectory: true).standardizedFileURL
+  }
+
+  func waitUntilFirstResolutionStarts(timeout: TimeInterval = 2) -> Bool {
+    firstStarted.wait(timeout: .now() + timeout) == .success
+  }
+
+  func releaseFirstResolution() {
+    let shouldRelease = lock.withLock {
+      guard !hasReleasedFirst else { return false }
+      hasReleasedFirst = true
+      return true
+    }
+    if shouldRelease { releaseFirst.signal() }
+  }
+}
+
+private actor DataNotebookInspectionGate {
+  private var started = false
+  private var continuation: CheckedContinuation<Void, Never>?
+  private var startWaiters: [CheckedContinuation<Void, Never>] = []
+
+  func wait() async {
+    started = true
+    startWaiters.forEach { $0.resume() }
+    startWaiters = []
+    await withCheckedContinuation { continuation in
+      self.continuation = continuation
+    }
+  }
+
+  func waitUntilStarted() async {
+    guard !started else { return }
+    await withCheckedContinuation { continuation in
+      startWaiters.append(continuation)
+    }
+  }
+
+  func release() {
+    continuation?.resume()
+    continuation = nil
   }
 }
 
@@ -634,7 +752,7 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
-  func testLaunchGuideConnectsSelectedAgentAndLandsOnHome() throws {
+  func testLaunchGuideConnectsSelectedAgentAndLandsOnHome() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("openorg-launch-agent-\(UUID().uuidString)", isDirectory: true)
     let suiteName = "openorg-launch-agent-\(UUID().uuidString)"
@@ -648,6 +766,7 @@ final class Org2ModelsTests: XCTestCase {
     store.setCorpusRoot(root)
 
     store.completeLaunchGuide(destinationID: AIChatDestinationConfiguration.localClaudeID)
+    await store.waitForDailyNoteNavigationForTesting()
 
     XCTAssertEqual(store.selectedSurface, .home)
     XCTAssertEqual(
@@ -1237,7 +1356,7 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertLessThanOrEqual(after, baseline + 4, "Repeated CLI runs leaked \(after - baseline) descriptors")
   }
 
-  func testOrgHTMLLinkTargetResolvesRelativeFileAndHeading() throws {
+  func testOrgHTMLLinkTargetResolvesRelativeFileAndHeading() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-html-link-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -1246,13 +1365,56 @@ final class Org2ModelsTests: XCTestCase {
     try "* Source\n".write(to: source, atomically: true, encoding: .utf8)
     try "* First\n* TODO Destination :work:\nBody\n".write(to: target, atomically: true, encoding: .utf8)
 
-    let resolved = try XCTUnwrap(OrgHTMLLinkTarget.resolve(
+    let candidate = await OrgHTMLLinkTarget.resolve(
       "file:target.org2::*Destination",
       relativeTo: source.path,
       corpusRoot: root
-    ))
+    )
+    let resolved = try XCTUnwrap(candidate)
     XCTAssertEqual(resolved.url, target.standardizedFileURL)
     XCTAssertEqual(resolved.line, 2)
+  }
+
+  @MainActor
+  func testRenderedDocumentDropsStaleLinkedHeadingResolution() async throws {
+    let resolver = ControlledOrgHTMLFileLinkResolver()
+    let coordinator = OrgHTMLDocumentView.Coordinator()
+    coordinator.source = EntrySource(
+      file: "/tmp/source.org2",
+      startLine: 1,
+      endLineExclusive: 2,
+      text: "* Source",
+      isSubtree: false
+    )
+    coordinator.fileLinkResolver = { target, _, _ in
+      await resolver.resolve(target)
+    }
+    var opened: [OpenClawFileReference] = []
+    coordinator.openOrgFileReference = { opened.append($0) }
+    let firstTarget = "file:first.org2::*First"
+    let secondTarget = "file:second.org2::*Second"
+
+    coordinator.open(target: firstTarget)
+    while !(await resolver.hasRequest(firstTarget)) {
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    coordinator.open(target: secondTarget)
+    while !(await resolver.hasRequest(secondTarget)) {
+      try await Task.sleep(for: .milliseconds(5))
+    }
+
+    await resolver.complete(
+      secondTarget,
+      with: OrgHTMLResolvedFileTarget(url: URL(fileURLWithPath: "/tmp/second.org2"), line: 9)
+    )
+    try await Task.sleep(for: .milliseconds(20))
+    await resolver.complete(
+      firstTarget,
+      with: OrgHTMLResolvedFileTarget(url: URL(fileURLWithPath: "/tmp/first.org2"), line: 3)
+    )
+    try await Task.sleep(for: .milliseconds(20))
+
+    XCTAssertEqual(opened, [OpenClawFileReference(path: "/tmp/second.org2", line: 9)])
   }
 
   func testApprovalItemsUseCanonicalParserSignals() async throws {
@@ -1958,7 +2120,7 @@ final class Org2ModelsTests: XCTestCase {
     )
 
     XCTAssertEqual(restored.openClawMessages.first?.attachments, [attachment])
-    XCTAssertTrue(attachment.dataURLString.hasPrefix("data:image/png;base64,"))
+    XCTAssertTrue(try attachment.loadedDataURLString().hasPrefix("data:image/png;base64,"))
   }
 
   @MainActor
@@ -2433,10 +2595,11 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
-  func testSettlingAndReopeningOpenClawThreadPersistsDurableState() throws {
+  func testSettlingAndReopeningOpenClawThreadPersistsDurableState() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-chat-thread-settle-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
     let transcript = root.appendingPathComponent("openclaw-chat.json")
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
@@ -2454,20 +2617,25 @@ final class Org2ModelsTests: XCTestCase {
       "Retain this history"
     )
     store.flushDeferredAIChatTranscriptPersistence()
+    try await store.waitForAIChatTranscriptPersistenceForTesting()
 
     let restored = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       openClawTranscriptURL: transcript
     )
     XCTAssertTrue(restored.settledOpenClawChatThreads.contains(where: { $0.id == threadID }))
-    XCTAssertEqual(
-      restored.openClawChatThreads.first(where: { $0.id == threadID })?.messages.first?.content,
-      "Retain this history"
+    let restoredMetadata = try XCTUnwrap(
+      restored.openClawChatThreads.first(where: { $0.id == threadID })
     )
+    XCTAssertEqual(restoredMetadata.messageCount, 1)
+    XCTAssertTrue(restoredMetadata.messages.isEmpty)
 
     restored.reopenOpenClawChatThread(threadID)
     XCTAssertTrue(restored.visibleOpenClawChatThreads.contains(where: { $0.id == threadID }))
     XCTAssertFalse(restored.settledOpenClawChatThreads.contains(where: { $0.id == threadID }))
+    restored.selectOpenClawChatThread(threadID)
+    await restored.waitForAIChatThreadHydrationForTesting(threadID)
+    XCTAssertEqual(restored.openClawMessages.first?.content, "Retain this history")
   }
 
   @MainActor
@@ -2654,6 +2822,33 @@ final class Org2ModelsTests: XCTestCase {
 
     XCTAssertTrue(thread.isSettled)
     XCTAssertEqual(thread.settledAt, thread.updatedAt)
+  }
+
+  @MainActor
+  func testAwaitedOpenClawSendReturnsAfterItsReplyIsInserted() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-awaited-chat-send-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let suiteName = "org2-workspace-awaited-chat-send-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json"),
+      openClawSendHandler: { _, _, _, _ in "terminal reply" }
+    )
+
+    store.openClawDraft = "foreground request"
+    await store.sendOpenClawMessage()
+
+    XCTAssertEqual(store.openClawMessages.map { "\($0.role.rawValue):\($0.content)" }, [
+      "user:foreground request",
+      "assistant:terminal reply"
+    ])
+    XCTAssertFalse(store.isSendingOpenClawMessage)
+    XCTAssertEqual(store.openClawQueuedMessageCount, 0)
   }
 
   @MainActor
@@ -3956,6 +4151,7 @@ final class Org2ModelsTests: XCTestCase {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-chat-corpus-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
     let suiteName = "org2-workspace-chat-corpus-\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suiteName)!
     defer { defaults.removePersistentDomain(forName: suiteName) }
@@ -3966,6 +4162,7 @@ final class Org2ModelsTests: XCTestCase {
       OpenClawChatMessage(role: .user, content: "Remember this corpus chat"),
       OpenClawChatMessage(role: .assistant, content: "Stored with the corpus")
     ]
+    try await store.waitForAIChatTranscriptPersistenceForTesting()
 
     let corpusTranscript = root
       .appendingPathComponent(".org2", isDirectory: true)
@@ -3984,6 +4181,7 @@ final class Org2ModelsTests: XCTestCase {
       .appendingPathComponent("org2-workspace-chat-migration-\(UUID().uuidString)", isDirectory: true)
     let appSupport = root.appendingPathComponent("app-support", isDirectory: true)
     try FileManager.default.createDirectory(at: appSupport, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
     let legacyTranscript = appSupport.appendingPathComponent("openclaw-chat.json")
     let legacyID = UUID()
     let createdAt = Date().timeIntervalSinceReferenceDate
@@ -4018,7 +4216,19 @@ final class Org2ModelsTests: XCTestCase {
       .appendingPathComponent("openclaw-chat.json")
     XCTAssertEqual(restored.openClawMessages.map(\.content), ["Legacy app-support chat"])
     XCTAssertTrue(FileManager.default.fileExists(atPath: corpusTranscript.path))
-    XCTAssertTrue(try String(contentsOf: corpusTranscript, encoding: .utf8).contains("Legacy app-support chat"))
+    let selectedThreadID = try XCTUnwrap(restored.selectedOpenClawChatThreadID)
+    let selectedThread = try XCTUnwrap(
+      restored.openClawChatThreads.first(where: { $0.id == selectedThreadID })
+    )
+    let persistedThread = try XCTUnwrap(AIChatTranscriptStore.shared.loadThread(
+      id: selectedThreadID,
+      metadata: selectedThread,
+      legacyURL: corpusTranscript
+    ))
+    XCTAssertEqual(persistedThread.messages.map(\.content), ["Legacy app-support chat"])
+    XCTAssertFalse(FileManager.default.fileExists(
+      atPath: AIChatTranscriptStore.storeDirectory(for: legacyTranscript).path
+    ))
   }
 
   @MainActor
@@ -4259,7 +4469,7 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
-  func testOrgCryptManagedRecipientFilesSplitAndPersistWithManualFiles() throws {
+  func testOrgCryptManagedRecipientFilesSplitAndPersistWithManualFiles() async throws {
     let suiteName = "org2-workspace-crypt-managed-config-\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suiteName)!
     defer { defaults.removePersistentDomain(forName: suiteName) }
@@ -4274,6 +4484,7 @@ final class Org2ModelsTests: XCTestCase {
 
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()), defaults: defaults)
     store.setCorpusRoot(root)
+    await store.waitForOrgCryptRecipientRefreshForTesting()
 
     XCTAssertEqual(store.orgCryptManagedRecipientFiles.map(\.relativePath), [
       "public-keys/clavi.asc",
@@ -4476,9 +4687,13 @@ final class Org2ModelsTests: XCTestCase {
   @MainActor
   func testMeetingMeterPublishesOneIsolatedFrameWithoutInvalidatingWorkspaceStore() throws {
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
-    var workspaceUpdates = 0
+    let workspaceChanged = ThreadSafeTestFlag()
     var meterUpdates = 0
-    let workspaceCancellable = store.objectWillChange.sink { workspaceUpdates += 1 }
+    withObservationTracking {
+      _ = store.selectedSurface
+    } onChange: {
+      _ = workspaceChanged.setIfUnset()
+    }
     let meterCancellable = store.meetingInputMeterState.objectWillChange.sink { meterUpdates += 1 }
 
     store.meetingInputMeterState.publish(
@@ -4496,34 +4711,38 @@ final class Org2ModelsTests: XCTestCase {
       )
     )
 
-    XCTAssertEqual(workspaceUpdates, 0)
+    XCTAssertFalse(workspaceChanged.value)
     XCTAssertEqual(meterUpdates, 1)
     XCTAssertEqual(store.meetingInputMeterState.levels.averageLevel, 0.42)
     XCTAssertEqual(store.meetingInputMeterState.levels.peakLevel, 0.74)
     XCTAssertEqual(store.meetingInputMeterState.levels.secondaryAverageLevel, 0.31)
     XCTAssertEqual(store.meetingInputMeterState.levels.secondaryPeakLevel, 0.65)
 
-    withExtendedLifetime((workspaceCancellable, meterCancellable)) {}
+    withExtendedLifetime(meterCancellable) {}
   }
 
   @MainActor
   func testMeetingTranscriptionProgressDoesNotInvalidateWorkspaceStore() throws {
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
-    var workspaceUpdates = 0
+    let workspaceChanged = ThreadSafeTestFlag()
     var progressUpdates = 0
-    let workspaceCancellable = store.objectWillChange.sink { workspaceUpdates += 1 }
+    withObservationTracking {
+      _ = store.selectedSurface
+    } onChange: {
+      _ = workspaceChanged.setIfUnset()
+    }
     let progressCancellable = store.meetingTranscriptionProgressState.objectWillChange.sink {
       progressUpdates += 1
     }
 
     store.meetingTranscriptionProgressState.publish(progress: 0.42, elapsedText: "12s")
 
-    XCTAssertEqual(workspaceUpdates, 0)
+    XCTAssertFalse(workspaceChanged.value)
     XCTAssertEqual(progressUpdates, 2)
     XCTAssertEqual(store.meetingTranscriptionProgress, 0.42)
     XCTAssertEqual(store.meetingTranscriptionElapsedText, "12s")
 
-    withExtendedLifetime((workspaceCancellable, progressCancellable)) {}
+    withExtendedLifetime(progressCancellable) {}
   }
 
   func testMeetingCaptureSourceDisclosesSystemAudioPermission() {
@@ -5321,17 +5540,18 @@ final class Org2ModelsTests: XCTestCase {
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
     store.createOpenClawChatThread()
 
-    var publishedChangeCount = 0
-    let cancellable = store.objectWillChange.sink {
-      publishedChangeCount += 1
+    let draftChanged = ThreadSafeTestFlag()
+    withObservationTracking {
+      _ = store.openClawDraft
+    } onChange: {
+      _ = draftChanged.setIfUnset()
     }
 
     store.cacheOpenClawComposerDraft("typing into a large chat")
     store.cacheOpenClawComposerDraft("typing into a large chat thread")
 
     XCTAssertEqual(store.openClawDraft, "")
-    XCTAssertEqual(publishedChangeCount, 0)
-    cancellable.cancel()
+    XCTAssertFalse(draftChanged.value)
   }
 
   @MainActor
@@ -5807,13 +6027,13 @@ final class Org2ModelsTests: XCTestCase {
     await firstSend.value
   }
 
-  func testOpenClawSteerRequestUsesExplicitQueueModeWithCommandFallback() {
+  func testOpenClawSteerRequestUsesExplicitQueueModeWithCommandFallback() throws {
     let attachment = OpenClawChatAttachment(
       fileName: "reference.txt",
       mimeType: "text/plain",
       data: Data("hello".utf8)
     )
-    let params = OpenClawGatewayClient.steerRequestParams(
+    let params = try OpenClawGatewayClient.steerRequestParams(
       message: "change direction",
       attachments: [attachment],
       sessionKey: "agent:main:test",
@@ -5826,7 +6046,7 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(params["idempotencyKey"] as? String, "steer-id")
     XCTAssertEqual((params["attachments"] as? [[String: Any]])?.first?["type"] as? String, "file")
 
-    let fallback = OpenClawGatewayClient.commandSteerRequestParams(
+    let fallback = try OpenClawGatewayClient.commandSteerRequestParams(
       message: "change direction",
       attachments: [attachment],
       sessionKey: "agent:main:test",
@@ -5929,7 +6149,24 @@ final class Org2ModelsTests: XCTestCase {
     await recorder.waitUntilStarted()
 
     store.openClawDraft = "edit this queued message"
-    await store.sendOpenClawMessage()
+    var editSendReturned = false
+    let editSend = Task { @MainActor in
+      await store.sendOpenClawMessage()
+      editSendReturned = true
+    }
+    try await waitForCondition(timeout: 1) { editSendReturned }
+    if !editSendReturned {
+      if let queuedID = store.openClawMessages.last?.id,
+         store.isAIChatMessageQueued(queuedID) {
+        store.deleteQueuedAIChatMessage(queuedID)
+      }
+      await recorder.finish(reply: "cleanup reply")
+      await editSend.value
+      await firstSend.value
+      XCTFail("Queueing behind an active turn must return without waiting for that turn")
+      return
+    }
+    await editSend.value
     let editMessage = try XCTUnwrap(store.openClawMessages.last)
     XCTAssertTrue(store.isAIChatMessageQueued(editMessage.id))
     XCTAssertFalse(store.isAIChatMessageQueued(try XCTUnwrap(store.openClawMessages.first?.id)))
@@ -5941,7 +6178,24 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(store.openClawQueuedMessageCount, 1)
 
     store.openClawDraft = "delete this queued message"
-    await store.sendOpenClawMessage()
+    var deleteSendReturned = false
+    let deleteSend = Task { @MainActor in
+      await store.sendOpenClawMessage()
+      deleteSendReturned = true
+    }
+    try await waitForCondition(timeout: 1) { deleteSendReturned }
+    if !deleteSendReturned {
+      if let queuedID = store.openClawMessages.last?.id,
+         store.isAIChatMessageQueued(queuedID) {
+        store.deleteQueuedAIChatMessage(queuedID)
+      }
+      await recorder.finish(reply: "cleanup reply")
+      await deleteSend.value
+      await firstSend.value
+      XCTFail("Queueing behind an active turn must return without waiting for that turn")
+      return
+    }
+    await deleteSend.value
     let deleteMessage = try XCTUnwrap(store.openClawMessages.last)
     XCTAssertTrue(store.isAIChatMessageQueued(deleteMessage.id))
 
@@ -6065,36 +6319,47 @@ final class Org2ModelsTests: XCTestCase {
     }
 
     let recorder = OpenClawSuspendedSendRecorder()
+    let suiteName = "org2-ai-chat-corpus-switch-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawFallbackTranscriptURL: firstRoot.appendingPathComponent("legacy-openclaw-chat.json"),
       openClawSendHandler: { messages, _, _, _ in
         try await recorder.send(messages: messages)
-      }
+      },
+      legacyDefaultsDomains: []
     )
     store.setCorpusRoot(firstRoot, persistsDefault: false)
+    await store.waitForAIChatTranscriptLoadForTesting()
     store.openClawDraft = "keep working"
     let send = Task { await store.sendOpenClawMessage() }
     await recorder.waitUntilStarted()
     let originatingThreadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
 
     store.setCorpusRoot(secondRoot, persistsDefault: false)
+    await store.waitForAIChatTranscriptLoadForTesting()
 
     XCTAssertTrue(store.openClawChatThreads.isEmpty)
     XCTAssertFalse(store.isSendingOpenClawMessage)
 
     store.setCorpusRoot(firstRoot, persistsDefault: false)
+    await store.waitForAIChatTranscriptLoadForTesting()
 
     XCTAssertEqual(store.selectedOpenClawChatThreadID, originatingThreadID)
     XCTAssertTrue(store.isSendingOpenClawMessage)
     XCTAssertEqual(store.openClawMessages.first?.deliveryStatus, .sending)
 
     store.setCorpusRoot(secondRoot, persistsDefault: false)
+    await store.waitForAIChatTranscriptLoadForTesting()
 
     await recorder.finish(reply: "finished in the background")
     await send.value
     XCTAssertTrue(store.openClawChatThreads.isEmpty)
 
     store.setCorpusRoot(firstRoot, persistsDefault: false)
+    await store.waitForAIChatTranscriptLoadForTesting()
 
     XCTAssertEqual(store.selectedOpenClawChatThreadID, originatingThreadID)
     XCTAssertEqual(store.openClawMessages.map { "\($0.role.rawValue):\($0.content)" }, [
@@ -6106,8 +6371,248 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testActiveAlphaTurnRejectsWarmBetaSendWithSameThreadUUID() async throws {
+    let base = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-ai-chat-active-origin-collision-\(UUID().uuidString)", isDirectory: true)
+    let alpha = base.appendingPathComponent("alpha", isDirectory: true)
+    let beta = base.appendingPathComponent("beta", isDirectory: true)
+    try FileManager.default.createDirectory(at: alpha, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: beta, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: base) }
+
+    let sharedThreadID = UUID()
+    let alphaThread = OpenClawChatThread(
+      id: sharedThreadID,
+      title: "Alpha thread",
+      sessionKey: "alpha-thread",
+      messages: []
+    )
+    let betaThread = OpenClawChatThread(
+      id: sharedThreadID,
+      title: "Beta thread",
+      sessionKey: "beta-thread",
+      messages: []
+    )
+    let alphaTranscript = alpha.appendingPathComponent(".org2/openclaw-chat.json")
+    let betaTranscript = beta.appendingPathComponent(".org2/openclaw-chat.json")
+    try AIChatTranscriptStore.shared.flush(
+      AIChatTranscriptSnapshot(
+        threads: [alphaThread],
+        selectedThreadID: sharedThreadID,
+        settlementSettings: OpenClawThreadSettlementSettings()
+      ),
+      legacyURL: alphaTranscript
+    )
+    try AIChatTranscriptStore.shared.flush(
+      AIChatTranscriptSnapshot(
+        threads: [betaThread],
+        selectedThreadID: sharedThreadID,
+        settlementSettings: OpenClawThreadSettlementSettings()
+      ),
+      legacyURL: betaTranscript
+    )
+
+    let recorder = OpenClawSuspendedSendRecorder()
+    let suiteName = "org2-ai-chat-active-origin-collision-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawFallbackTranscriptURL: base.appendingPathComponent("fallback.json"),
+      openClawSendHandler: { messages, _, _, _ in
+        try await recorder.send(messages: messages)
+      },
+      legacyDefaultsDomains: []
+    )
+
+    store.setCorpusRoot(alpha, persistsDefault: false)
+    await store.waitForAIChatTranscriptLoadForTesting()
+    XCTAssertEqual(store.selectedOpenClawChatThreadID, sharedThreadID)
+    store.openClawDraft = "alpha request"
+    let alphaSend = Task { await store.sendOpenClawMessage() }
+    await recorder.waitUntilStarted()
+    XCTAssertTrue(store.isSendingOpenClawMessage)
+
+    store.setCorpusRoot(beta, persistsDefault: false)
+    await store.waitForAIChatTranscriptLoadForTesting()
+
+    XCTAssertEqual(store.selectedOpenClawChatThreadID, sharedThreadID)
+    XCTAssertFalse(store.isSendingOpenClawMessage)
+    XCTAssertFalse(store.isAIChatThreadRunning(sharedThreadID))
+    XCTAssertTrue(store.openClawSendingThreadIDs.isEmpty)
+    XCTAssertEqual(store.openClawQueuedMessageCount, 0)
+    store.openClawDraft = "beta draft must stay"
+    store.attachOpenClawAttachment(
+      data: Data("beta attachment".utf8),
+      fileName: "beta.txt",
+      mimeType: "text/plain"
+    )
+
+    store.sendComposedOpenClawMessage(text: "beta draft must stay")
+
+    XCTAssertTrue(store.openClawMessages.isEmpty)
+    XCTAssertEqual(store.openClawDraft, "beta draft must stay")
+    XCTAssertEqual(store.openClawPendingAttachments.map(\.fileName), ["beta.txt"])
+    XCTAssertFalse(store.isSendingOpenClawMessage)
+    XCTAssertEqual(store.openClawQueuedMessageCount, 0)
+
+    await recorder.finish(reply: "alpha completed")
+    await alphaSend.value
+    XCTAssertTrue(store.openClawMessages.isEmpty)
+    XCTAssertEqual(store.openClawDraft, "beta draft must stay")
+    XCTAssertEqual(store.openClawPendingAttachments.map(\.fileName), ["beta.txt"])
+
+    store.setCorpusRoot(alpha, persistsDefault: false)
+    await store.waitForAIChatTranscriptLoadForTesting()
+    XCTAssertEqual(store.openClawMessages.map { "\($0.role.rawValue):\($0.content)" }, [
+      "user:alpha request",
+      "assistant:alpha completed"
+    ])
+    XCTAssertFalse(store.isSendingOpenClawMessage)
+    XCTAssertEqual(store.openClawQueuedMessageCount, 0)
+  }
+
+  @MainActor
+  func testActiveAlphaTurnRejectsColdBetaRemoteSendBeforeReportingAcceptance() async throws {
+    let base = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-ai-chat-active-origin-cold-remote-\(UUID().uuidString)", isDirectory: true)
+    let alpha = base.appendingPathComponent("alpha", isDirectory: true)
+    let beta = base.appendingPathComponent("beta", isDirectory: true)
+    try FileManager.default.createDirectory(at: alpha, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: beta, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: base) }
+
+    let sharedThreadID = UUID()
+    let alphaThread = OpenClawChatThread(
+      id: sharedThreadID,
+      title: "Alpha thread",
+      sessionKey: "alpha-thread",
+      messages: []
+    )
+    let betaSelected = OpenClawChatThread(
+      title: "Beta selected",
+      sessionKey: "beta-selected",
+      messages: [OpenClawChatMessage(role: .assistant, content: "selected history")]
+    )
+    let betaWarm = (0..<16).map { index in
+      OpenClawChatThread(
+        title: "Beta warm \(index)",
+        sessionKey: "beta-warm-\(index)",
+        messages: [OpenClawChatMessage(role: .assistant, content: "warm \(index)")]
+      )
+    }
+    let betaCold = OpenClawChatThread(
+      id: sharedThreadID,
+      title: "Beta cold thread",
+      sessionKey: "beta-cold-thread",
+      messages: [OpenClawChatMessage(role: .assistant, content: "beta history")]
+    )
+    try AIChatTranscriptStore.shared.flush(
+      AIChatTranscriptSnapshot(
+        threads: [alphaThread],
+        selectedThreadID: sharedThreadID,
+        settlementSettings: OpenClawThreadSettlementSettings()
+      ),
+      legacyURL: alpha.appendingPathComponent(".org2/openclaw-chat.json")
+    )
+    try AIChatTranscriptStore.shared.flush(
+      AIChatTranscriptSnapshot(
+        threads: [betaSelected] + betaWarm + [betaCold],
+        selectedThreadID: betaSelected.id,
+        settlementSettings: OpenClawThreadSettlementSettings()
+      ),
+      legacyURL: beta.appendingPathComponent(".org2/openclaw-chat.json")
+    )
+
+    let recorder = OpenClawSuspendedSendRecorder()
+    let suiteName = "org2-ai-chat-active-origin-cold-remote-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawFallbackTranscriptURL: base.appendingPathComponent("fallback.json"),
+      openClawSendHandler: { messages, _, _, _ in
+        try await recorder.send(messages: messages)
+      },
+      legacyDefaultsDomains: []
+    )
+
+    store.setCorpusRoot(alpha, persistsDefault: false)
+    await store.waitForAIChatTranscriptLoadForTesting()
+    store.openClawDraft = "alpha request"
+    let alphaSend = Task { await store.sendOpenClawMessage() }
+    await recorder.waitUntilStarted()
+
+    store.setCorpusRoot(beta, persistsDefault: false)
+    await store.waitForAIChatTranscriptLoadForTesting()
+    XCTAssertEqual(store.selectedOpenClawChatThreadID, betaSelected.id)
+    XCTAssertTrue(store.unloadedAIChatThreadIDsForTesting.contains(sharedThreadID))
+    XCTAssertFalse(store.isSendingOpenClawMessage)
+    store.openClawDraft = "beta local draft"
+    store.attachOpenClawAttachment(
+      data: Data("beta local attachment".utf8),
+      fileName: "beta-local.txt",
+      mimeType: "text/plain"
+    )
+    let remoteAttachment = OpenClawChatAttachment(
+      fileName: "mobile.txt",
+      mimeType: "text/plain",
+      data: Data("mobile attachment".utf8)
+    )
+
+    let acceptedDestination = store.sendAIChatRemoteMessageDestination(
+      "mobile request",
+      attachments: [remoteAttachment],
+      threadID: sharedThreadID
+    )
+
+    XCTAssertNil(acceptedDestination)
+    XCTAssertTrue(store.unloadedAIChatThreadIDsForTesting.contains(sharedThreadID))
+    XCTAssertEqual(store.openClawDraft, "beta local draft")
+    XCTAssertEqual(store.openClawPendingAttachments.map(\.fileName), ["beta-local.txt"])
+    XCTAssertFalse(store.isSendingOpenClawMessage)
+    XCTAssertEqual(store.openClawQueuedMessageCount, 0)
+
+    await recorder.finish(reply: "alpha completed")
+    await alphaSend.value
+    XCTAssertEqual(store.openClawDraft, "beta local draft")
+    XCTAssertEqual(store.openClawPendingAttachments.map(\.fileName), ["beta-local.txt"])
+
+    store.selectOpenClawChatThread(sharedThreadID)
+    await store.waitForAIChatThreadHydrationForTesting(sharedThreadID)
+    XCTAssertEqual(store.openClawMessages.map(\.content), ["beta history"])
+    XCTAssertTrue(store.openClawMessages.allSatisfy(\.attachments.isEmpty))
+
+    store.selectOpenClawChatThread(betaSelected.id)
+    XCTAssertEqual(store.openClawDraft, "beta local draft")
+    XCTAssertEqual(store.openClawPendingAttachments.map(\.fileName), ["beta-local.txt"])
+
+    store.setCorpusRoot(alpha, persistsDefault: false)
+    await store.waitForAIChatTranscriptLoadForTesting()
+    XCTAssertEqual(store.openClawMessages.map { "\($0.role.rawValue):\($0.content)" }, [
+      "user:alpha request",
+      "assistant:alpha completed"
+    ])
+  }
+
+  @MainActor
   func testOpenClawChatScrollPositionPersistsAndResets() throws {
-    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-openclaw-scroll-position-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let suiteName = "org2-openclaw-scroll-position-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json"),
+      legacyDefaultsDomains: []
+    )
+    store.createOpenClawChatThread()
 
     XCTAssertNil(store.openClawChatScrollPosition)
 
@@ -6129,7 +6634,7 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
-  func testReselectingPinnedOpenClawThreadRequestsFreshBottomPosition() throws {
+  func testReselectingPinnedOpenClawThreadPreservesPositionWithoutNewGeneration() throws {
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
     store.openClawMessages = [
       OpenClawChatMessage(role: .user, content: "Oldest"),
@@ -6144,8 +6649,36 @@ final class Org2ModelsTests: XCTestCase {
 
     XCTAssertEqual(store.selectedOpenClawChatThreadID, threadID)
     XCTAssertTrue(store.selectedOpenClawChatThread?.isPinned == true)
-    XCTAssertNil(store.openClawChatScrollPosition)
-    XCTAssertEqual(store.openClawChatSelectionGeneration, previousGeneration + 1)
+    XCTAssertEqual(try XCTUnwrap(store.openClawChatScrollPosition), 0, accuracy: 0.001)
+    XCTAssertEqual(store.openClawChatSelectionGeneration, previousGeneration)
+  }
+
+  @MainActor
+  func testScrollBridgeCanRecordOldThreadIdentityAfterSelectionChanges() throws {
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.openClawMessages = [OpenClawChatMessage(role: .assistant, content: "First")]
+    let firstID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
+    store.recordOpenClawChatScrollPosition(0.2, threadID: firstID)
+    let secondID = store.createOpenClawChatThread(runtime: .codex)
+
+    // The still-mounted bridge reports its old coordinator identity after the
+    // store has already published the new selection.
+    store.recordOpenClawChatScrollPosition(0.73, threadID: firstID)
+    XCTAssertEqual(store.selectedOpenClawChatThreadID, secondID)
+    XCTAssertNil(store.openClawChatScrollPosition(isAssistantPanel: false, threadID: secondID))
+    XCTAssertEqual(
+      try XCTUnwrap(store.openClawChatScrollPosition(isAssistantPanel: false, threadID: firstID)),
+      0.73,
+      accuracy: 0.001
+    )
+
+    let previousCompletion = store.openClawChatScrollRestorationCompletionGeneration
+    store.completeOpenClawChatScrollRestoration(threadID: secondID)
+    XCTAssertEqual(store.lastCompletedOpenClawChatScrollRestorationThreadID, secondID)
+    XCTAssertEqual(
+      store.openClawChatScrollRestorationCompletionGeneration,
+      previousCompletion + 1
+    )
   }
 
   @MainActor
@@ -7525,9 +8058,9 @@ final class Org2ModelsTests: XCTestCase {
     )
     let coordinator = OrgSyntaxTextEditor.Coordinator(parent: editor)
     let textView = NSTextView()
-    textView.string = "new"
+    textView.string = boundText
 
-    coordinator.textDidChange(Notification(name: NSText.didChangeNotification, object: textView))
+    applySyntaxEditorTextReplacement("new", in: textView, coordinator: coordinator)
 
     XCTAssertEqual(boundText, "old")
     XCTAssertEqual(liveText.current(fallback: ""), "new")
@@ -7590,13 +8123,12 @@ final class Org2ModelsTests: XCTestCase {
     )
     let coordinator = OrgSyntaxTextEditor.Coordinator(parent: editor)
     let textView = NSTextView()
+    textView.string = boundText
 
-    textView.string = "first"
-    coordinator.textDidChange(Notification(name: NSText.didChangeNotification, object: textView))
+    applySyntaxEditorTextReplacement("first", in: textView, coordinator: coordinator)
     XCTAssertTrue(coordinator.hasPendingTextPublishing(for: "first"))
 
-    textView.string = "second"
-    coordinator.textDidChange(Notification(name: NSText.didChangeNotification, object: textView))
+    applySyntaxEditorTextReplacement("second", in: textView, coordinator: coordinator)
     XCTAssertFalse(coordinator.hasPendingTextPublishing(for: "first"))
     XCTAssertTrue(coordinator.hasPendingTextPublishing(for: "second"))
 
@@ -7621,9 +8153,9 @@ final class Org2ModelsTests: XCTestCase {
     )
     let coordinator = OrgSyntaxTextEditor.Coordinator(parent: editor)
     let textView = NSTextView()
-    textView.string = "* Updated"
+    textView.string = boundText
 
-    coordinator.textDidChange(Notification(name: NSText.didChangeNotification, object: textView))
+    applySyntaxEditorTextReplacement("* Updated", in: textView, coordinator: coordinator)
 
     XCTAssertTrue(coordinator.hasDeferredHighlighting(for: "* Updated"))
     try await waitForCondition {
@@ -7649,11 +8181,10 @@ final class Org2ModelsTests: XCTestCase {
     )
     let coordinator = OrgSyntaxTextEditor.Coordinator(parent: editor)
     let textView = NSTextView()
+    textView.string = boundText
 
-    textView.string = "* First"
-    coordinator.textDidChange(Notification(name: NSText.didChangeNotification, object: textView))
-    textView.string = "* Latest"
-    coordinator.textDidChange(Notification(name: NSText.didChangeNotification, object: textView))
+    applySyntaxEditorTextReplacement("* First", in: textView, coordinator: coordinator)
+    applySyntaxEditorTextReplacement("* Latest", in: textView, coordinator: coordinator)
 
     XCTAssertEqual(recorder.values, [])
     try await waitForCondition {
@@ -7747,14 +8278,13 @@ final class Org2ModelsTests: XCTestCase {
     )
     let coordinator = OrgSyntaxTextEditor.Coordinator(parent: editor)
     let textView = NSTextView()
+    textView.string = boundText
 
-    textView.string = "plain"
-    coordinator.textDidChange(Notification(name: NSText.didChangeNotification, object: textView))
+    applySyntaxEditorTextReplacement("plain", in: textView, coordinator: coordinator)
     XCTAssertEqual(boundText, "old")
     XCTAssertTrue(coordinator.hasPendingTextPublishing(for: "plain"))
 
-    textView.string = "/todo"
-    coordinator.textDidChange(Notification(name: NSText.didChangeNotification, object: textView))
+    applySyntaxEditorTextReplacement("/todo", in: textView, coordinator: coordinator)
     XCTAssertEqual(boundText, "/todo")
     XCTAssertFalse(coordinator.hasPendingTextPublishing(for: "/todo"))
   }
@@ -7771,9 +8301,9 @@ final class Org2ModelsTests: XCTestCase {
     )
     let coordinator = OrgSyntaxTextEditor.Coordinator(parent: editor)
     let textView = NSTextView()
+    textView.string = boundText
 
-    textView.string = "* TODO Heading"
-    coordinator.textDidChange(Notification(name: NSText.didChangeNotification, object: textView))
+    applySyntaxEditorTextReplacement("* TODO Heading", in: textView, coordinator: coordinator)
 
     XCTAssertEqual(boundText, "* TODO Heading")
     XCTAssertFalse(coordinator.hasDeferredHighlighting(for: "* TODO Heading"))
@@ -7989,11 +8519,22 @@ final class Org2ModelsTests: XCTestCase {
       OrgSourceSemanticRegion(kind: .sourceBlock, startLine: 6, endLine: 8, level: nil, todo: nil)
     ])
     let nsText = text as NSString
+    let lineIndex = OrgSourceLineIndex(text: nsText)
 
     func isSuppressed(_ value: String) throws -> Bool {
       let range = nsText.range(of: value)
       XCTAssertNotEqual(range.location, NSNotFound)
-      return OrgSourceTextChecking.shouldSuppress(in: text, range: range, snapshot: snapshot)
+      let storageBacked = OrgSourceTextChecking.shouldSuppress(
+        in: nsText,
+        range: range,
+        snapshot: snapshot,
+        lineIndex: lineIndex
+      )
+      XCTAssertEqual(
+        storageBacked,
+        OrgSourceTextChecking.shouldSuppress(in: text, range: range, snapshot: snapshot)
+      )
+      return storageBacked
     }
 
     XCTAssertTrue(try isSuppressed("TODO"))
@@ -8124,6 +8665,11 @@ final class Org2ModelsTests: XCTestCase {
     )
 
     XCTAssertEqual(items.count, 2)
+    XCTAssertEqual(items[0].utf16Offset, 0)
+    XCTAssertEqual(
+      items[1].utf16Offset,
+      ("* TODO [#A] Parent\nSCHEDULED: <2026-07-11 Sat>\nBody\n" as NSString).length
+    )
     XCTAssertEqual(items[0].title, "Parent")
     XCTAssertEqual(items[0].todo, "TODO")
     XCTAssertEqual(items[0].priority, "A")
@@ -8282,7 +8828,7 @@ final class Org2ModelsTests: XCTestCase {
     }
 
     let initialApplications = try XCTUnwrap(applicationsUntilQuiescent(at: .zero))
-    XCTAssertGreaterThan(initialApplications, 0)
+    XCTAssertEqual(initialApplications, 0)
     XCTAssertFalse(coordinator.highlightVisibleRange(in: textView))
     let todoColor = textView.textStorage?.attribute(
       .foregroundColor,
@@ -9438,6 +9984,32 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testNodeBriefPreviewParsesLargeArtifactOffMainActor() async {
+    let body = (0..<25_000).map { index in
+      "* Heading \(index)\nBody \(index)"
+    }.joined(separator: "\n")
+    let artifact = NodeBriefArtifact(
+      relativePath: "views/node-briefs/large.org2",
+      file: "/tmp/large.org2",
+      title: "Large brief",
+      body: body,
+      modifiedAt: Date(timeIntervalSince1970: 1)
+    )
+    let revision = NodeBriefPreviewRevision(artifact)
+    let threads = ThreadSafeBoolRecorder()
+
+    let preparation = await NodeBriefPreviewBuilder.prepare(
+      body: body,
+      revision: revision,
+      workThreadObserver: { threads.append($0) }
+    )
+
+    XCTAssertEqual(threads.values, [false])
+    XCTAssertEqual(preparation.revision, revision)
+    XCTAssertEqual(preparation.blocks.count, 50_000)
+  }
+
+  @MainActor
   func testBriefCurrentNodeOpensCachedArtifact() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-node-brief-cache-\(UUID().uuidString)", isDirectory: true)
@@ -9586,6 +10158,7 @@ final class Org2ModelsTests: XCTestCase {
 
     try await waitForCondition {
       store.selectedEntrySource?.file == target.path
+        && store.currentNodeBriefArtifact?.relativePath == legacyRelativePath
     }
 
     XCTAssertEqual(store.currentNodeBriefArtifact?.relativePath, legacyRelativePath)
@@ -10132,7 +10705,7 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(store.searchResults.count, 1)
     XCTAssertEqual(store.searchResults.first?.file, note.path)
     XCTAssertEqual(store.searchResults.first?.heading, "Launch checklist")
-    XCTAssertEqual(store.selectedSurface, .search)
+    XCTAssertEqual(store.selectedSurface, .home)
   }
 
   func testWorkspaceSearchPrioritizesActiveTodosForDisplay() {
@@ -10416,7 +10989,7 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(store.searchResults.isEmpty)
     XCTAssertEqual(store.openClawChatSearchResults.count, 1)
     XCTAssertEqual(store.openClawChatSearchResults.first?.threadID, threadID)
-    XCTAssertEqual(store.selectedSurface, .search)
+    XCTAssertEqual(store.selectedSurface, .home)
 
     let result = try XCTUnwrap(store.openClawChatSearchResults.first)
     store.selectOpenClawChatSearchResult(result)
@@ -10887,7 +11460,7 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
-  func testGlobalDailyNoteShortcutsCreateAndOpenDailyFiles() throws {
+  func testGlobalDailyNoteShortcutsCreateAndOpenDailyFiles() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-daily-shortcuts-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -10898,6 +11471,7 @@ final class Org2ModelsTests: XCTestCase {
     store.setCorpusRoot(root)
 
     XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "7", keyCode: 26, modifiers: [.command])))
+    await store.waitForDailyNoteNavigationForTesting()
 
     let formatter = DateFormatter()
     formatter.locale = Locale(identifier: "en_US_POSIX")
@@ -12145,7 +12719,7 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
-  func testOpenDailyNoteCreatesAndSelectsConfiguredDailyFile() throws {
+  func testOpenDailyNoteCreatesAndSelectsConfiguredDailyFile() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-daily-open-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -12164,6 +12738,7 @@ final class Org2ModelsTests: XCTestCase {
       .appendingPathComponent("dailies", isDirectory: true)
       .appendingPathComponent(fileName)
       .standardizedFileURL
+    await store.waitForDailyNoteNavigationForTesting()
 
     XCTAssertTrue(FileManager.default.fileExists(atPath: daily.path))
     XCTAssertEqual(store.selectedSurface, .files)
@@ -12174,7 +12749,167 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
-  func testOpenDailyNotePreservesExistingOrg2DailyFile() throws {
+  func testDailyNoteDirectoryDefaultsToDailyWithoutAValidExplicitOverride() async throws {
+    let fixtureRoot = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-daily-defaults-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: fixtureRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: fixtureRoot) }
+
+    let fallbackConfigs: [Data?] = [
+      nil,
+      Data(#"{"roam":{"indexDir":"notes"}}"#.utf8),
+      Data(#"{"roam":{"indexDir":"notes","dailiesDir":"   "}}"#.utf8),
+      Data(#"{"roam":{"indexDir":"notes","dailiesDir":42}}"#.utf8),
+      Data(#"{"roam":{"dailiesDir":"daily"}"#.utf8),
+    ]
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+
+    for (index, config) in fallbackConfigs.enumerated() {
+      let root = fixtureRoot.appendingPathComponent("corpus-\(index)", isDirectory: true)
+      try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+      if let config {
+        try config.write(to: root.appendingPathComponent("org2.json"), options: .atomic)
+      }
+
+      let directory = await store.dailyNoteDirectoryForTesting(corpusRoot: root)
+
+      XCTAssertEqual(
+        directory,
+        root.appendingPathComponent("daily", isDirectory: true).standardizedFileURL,
+        "Scenario \(index) must not inherit roam.indexDir or the corpus root"
+      )
+    }
+
+    let nonDirectoryRoot = fixtureRoot.appendingPathComponent("corpus-file-override", isDirectory: true)
+    try FileManager.default.createDirectory(at: nonDirectoryRoot, withIntermediateDirectories: true)
+    try "not a directory".write(
+      to: nonDirectoryRoot.appendingPathComponent("not-daily"),
+      atomically: true,
+      encoding: .utf8
+    )
+    try Data(#"{"roam":{"dailiesDir":"not-daily"}}"#.utf8).write(
+      to: nonDirectoryRoot.appendingPathComponent("org2.json"),
+      options: .atomic
+    )
+
+    let nonDirectoryFallback = await store.dailyNoteDirectoryForTesting(
+      corpusRoot: nonDirectoryRoot
+    )
+    XCTAssertEqual(
+      nonDirectoryFallback,
+      nonDirectoryRoot.appendingPathComponent("daily", isDirectory: true).standardizedFileURL
+    )
+  }
+
+  @MainActor
+  func testDailyNoteDirectoryHonorsExplicitRelativeAndAbsoluteOverrides() async throws {
+    let fixtureRoot = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-daily-overrides-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: fixtureRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: fixtureRoot) }
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    let relativeRoot = fixtureRoot.appendingPathComponent("relative-corpus", isDirectory: true)
+    try FileManager.default.createDirectory(at: relativeRoot, withIntermediateDirectories: true)
+    try Data(
+      #"{"roam":{"indexDir":42,"dailiesDir":"custom/dailies"},"links":42}"#.utf8
+    ).write(to: relativeRoot.appendingPathComponent("org2.json"), options: .atomic)
+
+    let relativeDirectory = await store.dailyNoteDirectoryForTesting(corpusRoot: relativeRoot)
+    XCTAssertEqual(
+      relativeDirectory,
+      relativeRoot.appendingPathComponent("custom/dailies", isDirectory: true).standardizedFileURL
+    )
+
+    let absoluteRoot = fixtureRoot.appendingPathComponent("absolute-corpus", isDirectory: true)
+    let absoluteDirectory = absoluteRoot.appendingPathComponent("absolute-dailies", isDirectory: true)
+    try FileManager.default.createDirectory(at: absoluteRoot, withIntermediateDirectories: true)
+    let absoluteConfig = try JSONSerialization.data(withJSONObject: [
+      "roam": ["dailiesDir": absoluteDirectory.path]
+    ])
+    try absoluteConfig.write(to: absoluteRoot.appendingPathComponent("org2.json"), options: .atomic)
+
+    let resolvedAbsoluteDirectory = await store.dailyNoteDirectoryForTesting(
+      corpusRoot: absoluteRoot
+    )
+    XCTAssertEqual(
+      resolvedAbsoluteDirectory,
+      absoluteDirectory.standardizedFileURL
+    )
+  }
+
+  @MainActor
+  func testDailyNoteDirectoryInvalidationCannotPublishAStaleDetachedResult() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-daily-invalidation-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let config = root.appendingPathComponent("org2.json")
+    try "{}".write(to: config, atomically: true, encoding: .utf8)
+
+    let resolver = ControlledDailyNoteDirectoryResolver(
+      firstDirectoryName: "stale-daily",
+      laterDirectoryName: "fresh-daily"
+    )
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.dailyNoteDirectoryResolverForTesting = { root in resolver.resolve(root) }
+    store.setCorpusRoot(root)
+    let pendingResolution = Task { @MainActor in
+      await store.dailyNoteDirectoryForTesting(corpusRoot: root)
+    }
+    await Task.yield()
+    XCTAssertTrue(resolver.waitUntilFirstResolutionStarts())
+    defer { resolver.releaseFirstResolution() }
+
+    store.handleCorpusFileEvents([config.path], corpusRoot: root, requiresFullScan: false)
+    resolver.releaseFirstResolution()
+
+    let resolved = await pendingResolution.value
+    XCTAssertEqual(
+      resolved,
+      root.appendingPathComponent("fresh-daily", isDirectory: true).standardizedFileURL
+    )
+    let cachedResolution = await store.dailyNoteDirectoryForTesting(corpusRoot: root)
+    XCTAssertEqual(cachedResolution, resolved)
+  }
+
+  @MainActor
+  func testLatestDailyOrHomeNavigationWinsWhileDirectoryResolutionIsPending() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-daily-navigation-order-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let resolver = ControlledDailyNoteDirectoryResolver(
+      firstDirectoryName: "daily",
+      laterDirectoryName: "daily"
+    )
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.dailyNoteDirectoryResolverForTesting = { root in resolver.resolve(root) }
+    store.setCorpusRoot(root)
+    store.openDailyNote(.yesterday)
+    await Task.yield()
+    XCTAssertTrue(resolver.waitUntilFirstResolutionStarts())
+    defer { resolver.releaseFirstResolution() }
+
+    store.openHome()
+    resolver.releaseFirstResolution()
+    await store.waitForDailyNoteNavigationForTesting()
+
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.dateFormat = "yyyy-MM-dd"
+    let today = root
+      .appendingPathComponent("daily", isDirectory: true)
+      .appendingPathComponent("\(formatter.string(from: Date())).org")
+      .standardizedFileURL
+    XCTAssertEqual(store.selectedSurface, .home)
+    XCTAssertEqual(store.selectedLocation?.file, today.path)
+    XCTAssertTrue(FileManager.default.fileExists(atPath: today.path))
+  }
+
+  @MainActor
+  func testOpenDailyNotePreservesExistingOrg2DailyFile() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-legacy-daily-open-\(UUID().uuidString)", isDirectory: true)
     let dailies = root.appendingPathComponent("dailies", isDirectory: true)
@@ -12193,6 +12928,7 @@ final class Org2ModelsTests: XCTestCase {
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
     store.setCorpusRoot(root)
     store.openDailyNote(.today)
+    await store.waitForDailyNoteNavigationForTesting()
 
     XCTAssertEqual(store.selectedLocation?.file, legacy.path)
     XCTAssertFalse(FileManager.default.fileExists(atPath: dailies.appendingPathComponent("\(baseName).org").path))
@@ -12251,7 +12987,7 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
-  func testSidebarDailyNoteNavigationMakesDocumentPrimary() throws {
+  func testSidebarDailyNoteNavigationMakesDocumentPrimary() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-sidebar-daily-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -12261,15 +12997,29 @@ final class Org2ModelsTests: XCTestCase {
     store.setCorpusRoot(root)
     store.makeSurfacePrimary(.agenda)
     store.openDailyNoteFromSidebar(.today)
+    await store.waitForDailyNoteNavigationForTesting()
+
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.dateFormat = "yyyy-MM-dd"
+    let daily = root
+      .appendingPathComponent("daily", isDirectory: true)
+      .appendingPathComponent("\(formatter.string(from: Date())).org")
+      .standardizedFileURL
 
     XCTAssertEqual(store.selectedSurface, .files)
     XCTAssertTrue(store.isWorkspaceSurfacePaneClosed)
     XCTAssertFalse(store.isWorkspaceDetailPaneClosed)
     XCTAssertEqual(store.selectedEntrySourceMode, .page)
+    XCTAssertEqual(store.selectedLocation?.file, daily.path)
+    XCTAssertTrue(FileManager.default.fileExists(atPath: daily.path))
+    XCTAssertFalse(FileManager.default.fileExists(
+      atPath: root.appendingPathComponent(daily.lastPathComponent).path
+    ))
   }
 
   @MainActor
-  func testOpenHomeCreatesTodayDailyNoteAsOpenClawDetail() throws {
+  func testOpenHomeCreatesTodayDailyNoteAsOpenClawDetail() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-home-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -12288,6 +13038,7 @@ final class Org2ModelsTests: XCTestCase {
       .appendingPathComponent("dailies", isDirectory: true)
       .appendingPathComponent(fileName)
       .standardizedFileURL
+    await store.waitForDailyNoteNavigationForTesting()
 
     XCTAssertTrue(FileManager.default.fileExists(atPath: daily.path))
     XCTAssertEqual(store.selectedSurface, .home)
@@ -15909,7 +16660,7 @@ final class Org2ModelsTests: XCTestCase {
     await store.loadEntrySource(for: .search(result))
     try await waitForEntryRender(store)
 
-    store.presentSimilarTodoAssignment()
+    await store.presentSimilarTodoAssignment()
 
     XCTAssertTrue(store.isSimilarTodoAssignmentPresented)
     XCTAssertEqual(store.similarTodoCandidates.map(\.headline), [
@@ -16296,16 +17047,21 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
-  func testSelectedFileDataNotebookDetectionDoesNotReadFromDiskOnEveryAccess() throws {
+  func testSelectedFileDataNotebookDetectionDoesNotReadFromDiskOnEveryAccess() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-data-notebook-detection-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
     let notebook = root.appendingPathComponent("dashboard.org2")
     let note = root.appendingPathComponent("note.org2")
     try "```sql results=summary\nSELECT 1\n```\n".write(to: notebook, atomically: true, encoding: .utf8)
     try "* Plain note\n".write(to: note, atomically: true, encoding: .utf8)
 
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    let threadRecorder = ThreadSafeBoolRecorder()
+    store.selectedFileDataNotebookDidInspectForTesting = { isMainThread in
+      threadRecorder.append(isMainThread)
+    }
     store.selectedLocation = .openClaw(OpenClawThread(
       title: "Dashboard",
       file: notebook.path,
@@ -16314,9 +17070,12 @@ final class Org2ModelsTests: XCTestCase {
       modifiedAt: nil
     ))
 
+    try await waitForCondition { store.selectedFileIsDataNotebook }
     XCTAssertTrue(store.selectedFileIsDataNotebook)
     try FileManager.default.removeItem(at: notebook)
-    XCTAssertTrue(store.selectedFileIsDataNotebook)
+    for _ in 0..<100 {
+      XCTAssertTrue(store.selectedFileIsDataNotebook)
+    }
 
     store.selectedLocation = .openClaw(OpenClawThread(
       title: "Note",
@@ -16325,7 +17084,67 @@ final class Org2ModelsTests: XCTestCase {
       zone: "test",
       modifiedAt: nil
     ))
+    try await waitForCondition { threadRecorder.values.count >= 2 }
     XCTAssertFalse(store.selectedFileIsDataNotebook)
+    XCTAssertEqual(threadRecorder.values, [false, false])
+  }
+
+  @MainActor
+  func testStaleDataNotebookInspectionCannotOverwriteTheNewSelection() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-data-notebook-stale-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let notebook = root.appendingPathComponent("dashboard.org2")
+    let note = root.appendingPathComponent("note.org2")
+    try "```sql results=summary\nSELECT 1\n```\n".write(
+      to: notebook,
+      atomically: true,
+      encoding: .utf8
+    )
+    try "* Plain note\n".write(to: note, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    let gate = DataNotebookInspectionGate()
+    let completions = ThreadSafeStringRecorder()
+    let threadRecorder = ThreadSafeBoolRecorder()
+    store.selectedFileDataNotebookDidInspectForTesting = { isMainThread in
+      threadRecorder.append(isMainThread)
+    }
+    store.selectedFileDataNotebookInspectionForTesting = { url, _ in
+      if url.standardizedFileURL.path == notebook.standardizedFileURL.path {
+        await gate.wait()
+        completions.append("notebook")
+        return true
+      }
+      completions.append("note")
+      return false
+    }
+
+    store.selectedLocation = .openClaw(OpenClawThread(
+      title: "Dashboard",
+      file: notebook.path,
+      line: 1,
+      zone: "test",
+      modifiedAt: nil
+    ))
+    await gate.waitUntilStarted()
+    store.selectedLocation = .openClaw(OpenClawThread(
+      title: "Note",
+      file: note.path,
+      line: 1,
+      zone: "test",
+      modifiedAt: nil
+    ))
+    try await waitForCondition { completions.values.contains("note") }
+    XCTAssertFalse(store.selectedFileIsDataNotebook)
+
+    await gate.release()
+    try await waitForCondition { completions.values.contains("notebook") }
+    await Task.yield()
+    XCTAssertFalse(store.selectedFileIsDataNotebook)
+    XCTAssertEqual(threadRecorder.values.count, 2)
+    XCTAssertTrue(threadRecorder.values.allSatisfy { !$0 })
   }
 
   @MainActor
@@ -17059,6 +17878,271 @@ final class Org2ModelsTests: XCTestCase {
         && store.selectedEntrySource?.text == updated
     }
     XCTAssertEqual(store.statusText, "Redid edit in live-undo.org2")
+  }
+
+  @MainActor
+  func testNavigationSerializesPendingLiveEditorWritesAndKeepsNewestDraft() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-navigation-save-race-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let firstFile = root.appendingPathComponent("first.org2")
+    let secondFile = root.appendingPathComponent("second.org2")
+    let original = "* First\nOriginal"
+    let firstDraft = "* First\nFirst draft"
+    let newestDraft = "* First\nNewest draft"
+    try original.write(to: firstFile, atomically: true, encoding: .utf8)
+    try "* Second\nBody".write(to: secondFile, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      openClawTranscriptURL: root.appendingPathComponent("chat.json")
+    )
+    store.formatOrgFilesOnSave = false
+    store.setCorpusRoot(root)
+    store.selectCorpusFile(CorpusFile(
+      path: firstFile.path,
+      relativePath: firstFile.lastPathComponent,
+      modifiedAt: nil,
+      byteCount: nil
+    ))
+    let firstLocation = try XCTUnwrap(store.selectedLocation)
+    await store.loadEntrySource(for: firstLocation)
+    store.editorPersistenceDelayNanosecondsForTesting = 80_000_000
+
+    store.noteLiveFileEditorTextChanged(firstDraft)
+    let firstSave = Task { @MainActor in
+      await store.saveLiveFileEditor(explicit: false)
+    }
+    try await Task.sleep(nanoseconds: 10_000_000)
+    store.noteLiveFileEditorTextChanged(newestDraft)
+    store.selectCorpusFile(CorpusFile(
+      path: secondFile.path,
+      relativePath: secondFile.lastPathComponent,
+      modifiedAt: nil,
+      byteCount: nil
+    ))
+
+    await firstSave.value
+    let navigationSaveSucceeded = await store.waitForPendingEditorPersistenceForTesting()
+    XCTAssertTrue(navigationSaveSucceeded)
+    XCTAssertEqual(try String(contentsOf: firstFile, encoding: .utf8), newestDraft)
+    XCTAssertEqual(store.selectedLocation?.file, secondFile.path)
+    XCTAssertEqual(store.selectedEntrySource?.file, secondFile.path)
+  }
+
+  @MainActor
+  func testFailedOutgoingCheckpointRetainsExactDraftAfterNavigation() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-navigation-failed-checkpoint-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let firstFile = root.appendingPathComponent("first.org2")
+    let secondFile = root.appendingPathComponent("second.org2")
+    let original = "* First\nOriginal"
+    let exactDraft = "* First\nExact outgoing draft 😀"
+    try original.write(to: firstFile, atomically: true, encoding: .utf8)
+    try "* Second\nBody".write(to: secondFile, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      openClawTranscriptURL: root.appendingPathComponent("chat.json")
+    )
+    store.formatOrgFilesOnSave = false
+    store.setCorpusRoot(root)
+    store.selectCorpusFile(CorpusFile(
+      path: firstFile.path,
+      relativePath: firstFile.lastPathComponent,
+      modifiedAt: nil,
+      byteCount: nil
+    ))
+    let firstLocation = try XCTUnwrap(store.selectedLocation)
+    await store.loadEntrySource(for: firstLocation)
+    let outgoingSource = try XCTUnwrap(store.selectedEntrySource)
+    store.editorPersistenceDelayNanosecondsForTesting = 50_000_000
+    store.editorPersistenceFailureMessageForTesting = "injected outgoing failure"
+
+    store.persistSourceEditorCheckpoint(exactDraft, source: outgoingSource)
+    store.selectCorpusFile(CorpusFile(
+      path: secondFile.path,
+      relativePath: secondFile.lastPathComponent,
+      modifiedAt: nil,
+      byteCount: nil
+    ))
+
+    let persistenceSucceeded = await store.waitForPendingEditorPersistenceForTesting()
+    XCTAssertFalse(persistenceSucceeded)
+    XCTAssertEqual(try String(contentsOf: firstFile, encoding: .utf8), original)
+    XCTAssertEqual(store.selectedLocation?.file, secondFile.path)
+    XCTAssertEqual(
+      store.failedEditorPersistenceDraftForTesting(file: firstFile.path),
+      exactDraft
+    )
+    XCTAssertEqual(store.editorSaveConflict?.file, firstFile.path)
+    XCTAssertFalse(store.editorSaveConflict?.canOverwrite ?? true)
+  }
+
+  @MainActor
+  func testTerminationWaitsForEditorPersistenceAndRefusesDataLossOnFailure() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-termination-editor-save-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let note = root.appendingPathComponent("termination.org2")
+    let original = "* Termination\nOriginal"
+    let savedDraft = "* Termination\nSaved before quit"
+    try original.write(to: note, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      openClawTranscriptURL: root.appendingPathComponent("chat.json")
+    )
+    store.formatOrgFilesOnSave = false
+    store.openClawTranscriptSaverForTesting = {}
+    store.setCorpusRoot(root)
+    store.selectCorpusFile(CorpusFile(
+      path: note.path,
+      relativePath: note.lastPathComponent,
+      modifiedAt: nil,
+      byteCount: nil
+    ))
+    let location = try XCTUnwrap(store.selectedLocation)
+    await store.loadEntrySource(for: location)
+    store.editorPersistenceDelayNanosecondsForTesting = 80_000_000
+    store.noteLiveFileEditorTextChanged(savedDraft)
+
+    let pendingSave = Task { @MainActor in
+      await store.saveLiveFileEditor(explicit: false)
+    }
+    try await Task.sleep(nanoseconds: 10_000_000)
+    let canTerminate = await store.prepareForTermination()
+    XCTAssertTrue(canTerminate, store.statusText)
+    XCTAssertFalse(store.entryEditorHasUnsavedChanges)
+    XCTAssertFalse(store.liveFileEditorHasUnsavedChanges)
+    let terminationEditorLaneSucceeded = await store.waitForPendingEditorPersistenceForTesting()
+    XCTAssertTrue(terminationEditorLaneSucceeded, store.errorText ?? "")
+    await pendingSave.value
+    XCTAssertEqual(try String(contentsOf: note, encoding: .utf8), savedDraft)
+
+    let failingStore = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      openClawTranscriptURL: root.appendingPathComponent("failing-chat.json")
+    )
+    failingStore.formatOrgFilesOnSave = false
+    failingStore.openClawTranscriptSaverForTesting = {}
+    failingStore.setCorpusRoot(root)
+    failingStore.selectCorpusFile(CorpusFile(
+      path: note.path,
+      relativePath: note.lastPathComponent,
+      modifiedAt: nil,
+      byteCount: nil
+    ))
+    let failingLocation = try XCTUnwrap(failingStore.selectedLocation)
+    await failingStore.loadEntrySource(for: failingLocation)
+    failingStore.noteLiveFileEditorTextChanged("* Termination\nMust remain in memory")
+    failingStore.editorPersistenceFailureMessageForTesting = "injected disk failure"
+
+    let canTerminateAfterFailure = await failingStore.prepareForTermination()
+    XCTAssertFalse(canTerminateAfterFailure)
+    XCTAssertEqual(try String(contentsOf: note, encoding: .utf8), savedDraft)
+    XCTAssertTrue(failingStore.liveFileEditorHasUnsavedChanges)
+    XCTAssertEqual(
+      failingStore.failedEditorPersistenceDraftForTesting(file: note.path),
+      "* Termination\nMust remain in memory"
+    )
+    XCTAssertEqual(failingStore.statusText, "Could not save all editor changes before quitting")
+  }
+
+  @MainActor
+  func testTerminationAllowsCleanReadOnlyTranscriptButRefusesRejectedMetadataMutation() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-termination-read-only-chat-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let cleanSuiteName = "org2-workspace-termination-clean-read-only-\(UUID().uuidString)"
+    let cleanDefaults = try XCTUnwrap(UserDefaults(suiteName: cleanSuiteName))
+    defer { cleanDefaults.removePersistentDomain(forName: cleanSuiteName) }
+    let cleanStore = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: cleanDefaults,
+      openClawTranscriptURL: root.appendingPathComponent("clean-chat.json"),
+      legacyDefaultsDomains: []
+    )
+    await cleanStore.waitForAIChatTranscriptLoadForTesting()
+    var cleanSaveCount = 0
+    cleanStore.openClawTranscriptSaverForTesting = { cleanSaveCount += 1 }
+    cleanStore.setAIChatTranscriptWritesBlockedForTesting(true)
+
+    XCTAssertFalse(cleanStore.hasUnpersistedAIChatTranscriptMutationForTesting)
+    let cleanCanTerminate = await cleanStore.prepareForTermination()
+    XCTAssertTrue(cleanCanTerminate, cleanStore.statusText)
+    XCTAssertEqual(cleanSaveCount, 0, "a clean read-only transcript must not retry a known-blocked write")
+
+    let dirtySuiteName = "org2-workspace-termination-dirty-read-only-\(UUID().uuidString)"
+    let dirtyDefaults = try XCTUnwrap(UserDefaults(suiteName: dirtySuiteName))
+    defer { dirtyDefaults.removePersistentDomain(forName: dirtySuiteName) }
+    let dirtyStore = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: dirtyDefaults,
+      openClawTranscriptURL: root.appendingPathComponent("dirty-chat.json"),
+      legacyDefaultsDomains: []
+    )
+    await dirtyStore.waitForAIChatTranscriptLoadForTesting()
+    dirtyStore.openClawTranscriptPersistenceDelayNanoseconds = 60_000_000_000
+    dirtyStore.openClawTranscriptSaverForTesting = {}
+    let threadID = dirtyStore.createOpenClawChatThread(runtime: .codex)
+    dirtyStore.flushDeferredAIChatTranscriptPersistence()
+    XCTAssertFalse(dirtyStore.hasUnpersistedAIChatTranscriptMutationForTesting)
+    XCTAssertNil(dirtyStore.aiChatThreadMessageMutationVersionForTesting(threadID))
+
+    dirtyStore.setAIChatTranscriptWritesBlockedForTesting(true)
+    dirtyStore.renameOpenClawChatThread(threadID, title: "Unsaved read-only rename")
+
+    XCTAssertTrue(dirtyStore.hasUnpersistedAIChatTranscriptMutationForTesting)
+    XCTAssertNil(
+      dirtyStore.aiChatThreadMessageMutationVersionForTesting(threadID),
+      "metadata dirtiness must not depend on the message-only mutation map"
+    )
+    let dirtyCanTerminate = await dirtyStore.prepareForTermination()
+    XCTAssertFalse(dirtyCanTerminate)
+    XCTAssertEqual(dirtyStore.statusText, "Could not save AI chat before quitting")
+    XCTAssertTrue(dirtyStore.hasUnpersistedAIChatTranscriptMutationForTesting)
+  }
+
+  @MainActor
+  func testTerminationRefusesChatMutationCreatedDuringFinalTranscriptSave() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-termination-final-chat-race-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let suiteName = "org2-workspace-termination-final-chat-race-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: root.appendingPathComponent("chat.json"),
+      legacyDefaultsDomains: []
+    )
+    await store.waitForAIChatTranscriptLoadForTesting()
+    store.openClawTranscriptPersistenceDelayNanoseconds = 60_000_000_000
+    var saveCount = 0
+    var lateThreadID: UUID?
+    store.openClawTranscriptSaverForTesting = {
+      saveCount += 1
+      if saveCount == 1 {
+        lateThreadID = store.createAIChatRemoteThread(runtime: .codex)
+      }
+    }
+
+    let canTerminate = await store.prepareForTermination()
+    XCTAssertFalse(canTerminate)
+    let createdThreadID = try XCTUnwrap(lateThreadID)
+    XCTAssertEqual(saveCount, 1)
+    XCTAssertNotNil(store.aiChatThreadMessageMutationVersionForTesting(createdThreadID))
+    XCTAssertTrue(store.hasUnpersistedAIChatTranscriptMutationForTesting)
+    XCTAssertEqual(store.statusText, "Could not save AI chat before quitting")
   }
 
   @MainActor
@@ -20451,32 +21535,39 @@ final class Org2ModelsTests: XCTestCase {
 
   @MainActor
   func testRenderedEntryTodoActionTargetsRightClickedHeadingLine() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-rendered-todo-action-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
     let text = """
     #+TITLE: Context menu
 
     * TODO First
     * TODO Second
     """
+    let note = root.appendingPathComponent("context-menu.org2")
+    try text.write(to: note, atomically: true, encoding: .utf8)
     let source = EntrySource(
-      file: "/tmp/context-menu.org2",
+      file: note.path,
       startLine: 1,
       endLineExclusive: 5,
       text: text,
       isSubtree: false
     )
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
     store.selectedEntrySource = source
     store.selectedRenderedBlocks = OrgEntryRenderer.parseEditable(text, baseLine: 1)
-    var mutatedLine: Int?
+    let mutatedLines = ThreadSafeIntRecorder()
     store.todoStatusMutationForTesting = { status, _, line in
-      mutatedLine = line
+      mutatedLines.append(line)
       return status.label
     }
 
     store.performRenderedEntryAction(.todo(.done), at: 4)
-    try await waitForCondition { mutatedLine != nil }
+    try await waitForCondition { mutatedLines.last != nil }
 
-    XCTAssertEqual(mutatedLine, 4)
+    XCTAssertEqual(mutatedLines.last, 4)
   }
 
   @MainActor
@@ -20486,6 +21577,23 @@ final class Org2ModelsTests: XCTestCase {
       try await Task.sleep(nanoseconds: 20_000_000)
     }
     XCTAssertFalse(store.isRenderingEntrySource)
+  }
+
+  @MainActor
+  private func applySyntaxEditorTextReplacement(
+    _ replacement: String,
+    in textView: NSTextView,
+    coordinator: OrgSyntaxTextEditor.Coordinator
+  ) {
+    coordinator.attach(to: textView)
+    let range = NSRange(location: 0, length: textView.textStorage?.length ?? 0)
+    XCTAssertTrue(coordinator.textView(
+      textView,
+      shouldChangeTextIn: range,
+      replacementString: replacement
+    ))
+    textView.textStorage?.replaceCharacters(in: range, with: replacement)
+    coordinator.textDidChange(Notification(name: NSText.didChangeNotification, object: textView))
   }
 
   @MainActor

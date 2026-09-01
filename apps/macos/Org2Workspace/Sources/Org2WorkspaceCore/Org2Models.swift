@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 public struct CorpusIdentity: Codable, Hashable, Sendable {
@@ -2369,6 +2370,32 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
       roomRoundID: roomRoundID
     )
   }
+
+  func replacingAttachments(_ nextAttachments: [OpenClawChatAttachment]) -> OpenClawChatMessage {
+    OpenClawChatMessage(
+      id: id,
+      role: role,
+      content: content,
+      attachments: nextAttachments,
+      createdAt: createdAt,
+      changeSummary: changeSummary,
+      responseTrace: responseTrace,
+      sendFailure: sendFailure,
+      deliveryStatus: deliveryStatus,
+      deliveryKind: deliveryKind,
+      authorRuntime: authorRuntime,
+      authorLabel: authorLabel,
+      authorAgentRef: authorAgentRef,
+      source: source,
+      audience: audience,
+      targetRuntime: targetRuntime,
+      authorDestinationID: authorDestinationID,
+      audienceDestinationIDs: audienceDestinationIDs,
+      targetDestinationID: targetDestinationID,
+      isRoomDispatchCopy: isRoomDispatchCopy,
+      roomRoundID: roomRoundID
+    )
+  }
 }
 
 public struct OpenClawResponseTrace: Hashable, Codable, Sendable {
@@ -2386,10 +2413,33 @@ public struct OpenClawResponseTrace: Hashable, Codable, Sendable {
 }
 
 public struct OpenClawChatAttachment: Identifiable, Hashable, Codable, Sendable {
+  public enum DataError: LocalizedError, Sendable {
+    case missingBlob(String)
+    case unreadableBlob(String)
+    case sizeMismatch(String)
+    case digestMismatch(String)
+
+    public var errorDescription: String? {
+      switch self {
+      case .missingBlob(let name):
+        "The stored attachment \(name) is missing."
+      case .unreadableBlob(let name):
+        "The stored attachment \(name) could not be read."
+      case .sizeMismatch(let name):
+        "The stored attachment \(name) has the wrong size."
+      case .digestMismatch(let name):
+        "The stored attachment \(name) failed its integrity check."
+      }
+    }
+  }
+
   public let id: UUID
   public let fileName: String
   public let mimeType: String
-  public let data: Data
+  private let inlineData: Data?
+  private let blobURL: URL?
+  private let storedByteCount: Int
+  private let contentDigest: String
 
   public init(
     id: UUID = UUID(),
@@ -2400,15 +2450,122 @@ public struct OpenClawChatAttachment: Identifiable, Hashable, Codable, Sendable 
     self.id = id
     self.fileName = fileName
     self.mimeType = mimeType
-    self.data = data
+    inlineData = data
+    blobURL = nil
+    storedByteCount = data.count
+    contentDigest = Self.digest(for: data)
+  }
+
+  init(
+    id: UUID,
+    fileName: String,
+    mimeType: String,
+    blobURL: URL,
+    byteCount: Int,
+    contentDigest: String
+  ) {
+    self.id = id
+    self.fileName = fileName
+    self.mimeType = mimeType
+    inlineData = nil
+    self.blobURL = blobURL
+    storedByteCount = max(0, byteCount)
+    self.contentDigest = contentDigest
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case id
+    case fileName
+    case mimeType
+    case data
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    id = try container.decode(UUID.self, forKey: .id)
+    fileName = try container.decode(String.self, forKey: .fileName)
+    mimeType = try container.decode(String.self, forKey: .mimeType)
+    let data = try container.decode(Data.self, forKey: .data)
+    inlineData = data
+    blobURL = nil
+    storedByteCount = data.count
+    contentDigest = Self.digest(for: data)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(id, forKey: .id)
+    try container.encode(fileName, forKey: .fileName)
+    try container.encode(mimeType, forKey: .mimeType)
+    try container.encode(loadData(), forKey: .data)
+  }
+
+  public static func == (lhs: Self, rhs: Self) -> Bool {
+    lhs.id == rhs.id
+      && lhs.fileName == rhs.fileName
+      && lhs.mimeType == rhs.mimeType
+      && lhs.storedByteCount == rhs.storedByteCount
+      && lhs.contentDigest == rhs.contentDigest
+  }
+
+  public func hash(into hasher: inout Hasher) {
+    hasher.combine(id)
+    hasher.combine(fileName)
+    hasher.combine(mimeType)
+    hasher.combine(storedByteCount)
+    hasher.combine(contentDigest)
+  }
+
+  /// Loads and verifies attachment bytes. Call this from background work for
+  /// blob-backed attachments; SwiftUI bodies must never invoke it directly.
+  public func loadData() throws -> Data {
+    let loaded: Data
+    if let inlineData {
+      loaded = inlineData
+    } else {
+      guard let blobURL else { throw DataError.missingBlob(fileName) }
+      guard FileManager.default.fileExists(atPath: blobURL.path) else {
+        throw DataError.missingBlob(fileName)
+      }
+      do {
+        loaded = try Data(contentsOf: blobURL, options: .mappedIfSafe)
+      } catch {
+        throw DataError.unreadableBlob(fileName)
+      }
+    }
+    guard loaded.count == storedByteCount else { throw DataError.sizeMismatch(fileName) }
+    guard Self.digest(for: loaded) == contentDigest else { throw DataError.digestMismatch(fileName) }
+    return loaded
+  }
+
+  /// Inline bytes remain available for compatibility at ingestion boundaries.
+  /// Persisted blob bytes deliberately require the throwing `loadData()` API.
+  public var data: Data {
+    inlineData ?? Data()
   }
 
   public var byteCount: Int {
-    data.count
+    storedByteCount
   }
 
-  public var dataURLString: String {
-    "data:\(mimeType);base64,\(data.base64EncodedString())"
+  public func loadedDataURLString() throws -> String {
+    "data:\(mimeType);base64,\(try loadData().base64EncodedString())"
+  }
+
+  public func hasSameContent(as other: OpenClawChatAttachment) -> Bool {
+    fileName == other.fileName
+      && storedByteCount == other.storedByteCount
+      && contentDigest == other.contentDigest
+  }
+
+  var persistedContentDigest: String {
+    contentDigest
+  }
+
+  private static func digest(for data: Data) -> String {
+    SHA256.hash(data: data)
+      .map { String(format: "%02x", $0) }
+      .joined()
   }
 }
 
@@ -3074,6 +3231,9 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
   public let model: String?
   public let reasoningEffort: String?
   public let messages: [OpenClawChatMessage]
+  public let storedMessageCount: Int?
+  public let storedHasUnresolvedLatestDelivery: Bool?
+  public let storedLatestDeliveryNeedsAttention: Bool?
   public let isPinned: Bool
   public let isArchived: Bool
   public let settledAt: Date?
@@ -3099,6 +3259,9 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
     model: String? = nil,
     reasoningEffort: String? = nil,
     messages: [OpenClawChatMessage] = [],
+    storedMessageCount: Int? = nil,
+    storedHasUnresolvedLatestDelivery: Bool? = nil,
+    storedLatestDeliveryNeedsAttention: Bool? = nil,
     isPinned: Bool = false,
     isArchived: Bool = false,
     settledAt: Date? = nil,
@@ -3123,6 +3286,9 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
     self.model = model
     self.reasoningEffort = reasoningEffort
     self.messages = messages
+    self.storedMessageCount = storedMessageCount.map { max(0, $0) }
+    self.storedHasUnresolvedLatestDelivery = storedHasUnresolvedLatestDelivery
+    self.storedLatestDeliveryNeedsAttention = storedLatestDeliveryNeedsAttention
     self.isPinned = isPinned
     self.isArchived = isArchived
     self.settledAt = settledAt ?? (isArchived ? updatedAt : nil)
@@ -3141,7 +3307,7 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
   }
 
   public var messageCount: Int {
-    messages.lazy.filter { !$0.isRoomDispatchCopy }.count
+    storedMessageCount ?? messages.lazy.filter { !$0.isRoomDispatchCopy }.count
   }
 
   public var isSettled: Bool {
@@ -3149,16 +3315,18 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
   }
 
   public var canChangeAIRuntime: Bool {
-    !isSharedRoom && messages.isEmpty && pendingTurn == nil
+    !isSharedRoom && messageCount == 0 && pendingTurn == nil
   }
 
   public var hasUnresolvedLatestDelivery: Bool {
+    if let storedHasUnresolvedLatestDelivery { return storedHasUnresolvedLatestDelivery }
     guard let latestMessage = messages.last else { return false }
     return latestMessage.deliveryStatus == .sending
       || latestDeliveryNeedsAttention
   }
 
   public var latestDeliveryNeedsAttention: Bool {
+    if let storedLatestDeliveryNeedsAttention { return storedLatestDeliveryNeedsAttention }
     guard let latestMessage = messages.last else { return false }
     return latestMessage.deliveryStatus == .failed
       || latestMessage.deliveryStatus == .interrupted
@@ -3178,6 +3346,9 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
     case model
     case reasoningEffort
     case messages
+    case storedMessageCount
+    case storedHasUnresolvedLatestDelivery
+    case storedLatestDeliveryNeedsAttention
     case isPinned
     case isArchived
     case settledAt
@@ -3216,7 +3387,16 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
       ?? legacyRuntimeThreadIDsByDestination
     model = try container.decodeIfPresent(String.self, forKey: .model)
     reasoningEffort = try container.decodeIfPresent(String.self, forKey: .reasoningEffort)
-    messages = try container.decode([OpenClawChatMessage].self, forKey: .messages)
+    messages = try container.decodeIfPresent([OpenClawChatMessage].self, forKey: .messages) ?? []
+    storedMessageCount = try container.decodeIfPresent(Int.self, forKey: .storedMessageCount)
+    storedHasUnresolvedLatestDelivery = try container.decodeIfPresent(
+      Bool.self,
+      forKey: .storedHasUnresolvedLatestDelivery
+    )
+    storedLatestDeliveryNeedsAttention = try container.decodeIfPresent(
+      Bool.self,
+      forKey: .storedLatestDeliveryNeedsAttention
+    )
     isPinned = try container.decodeIfPresent(Bool.self, forKey: .isPinned) ?? false
     isArchived = try container.decodeIfPresent(Bool.self, forKey: .isArchived) ?? false
     settledAt = try container.decodeIfPresent(Date.self, forKey: .settledAt) ?? (isArchived ? updatedAt : nil)
@@ -3308,6 +3488,9 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
       model: nextModel ?? model,
       reasoningEffort: nextReasoningEffort ?? reasoningEffort,
       messages: messages,
+      storedMessageCount: storedMessageCount,
+      storedHasUnresolvedLatestDelivery: storedHasUnresolvedLatestDelivery,
+      storedLatestDeliveryNeedsAttention: storedLatestDeliveryNeedsAttention,
       isPinned: nextIsPinned ?? isPinned,
       isArchived: archived,
       settledAt: settlement,
@@ -3336,6 +3519,9 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
       model: model,
       reasoningEffort: reasoningEffort,
       messages: nextMessages,
+      storedMessageCount: nil,
+      storedHasUnresolvedLatestDelivery: nil,
+      storedLatestDeliveryNeedsAttention: nil,
       isPinned: isPinned,
       isArchived: isArchived,
       settledAt: settledAt,
@@ -3364,6 +3550,9 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
       model: model,
       reasoningEffort: reasoningEffort,
       messages: messages,
+      storedMessageCount: storedMessageCount,
+      storedHasUnresolvedLatestDelivery: storedHasUnresolvedLatestDelivery,
+      storedLatestDeliveryNeedsAttention: storedLatestDeliveryNeedsAttention,
       isPinned: isPinned,
       isArchived: isArchived,
       settledAt: settledAt,
@@ -3389,6 +3578,68 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
   public func runtimeThreadID(forDestinationID destinationID: String) -> String? {
     runtimeThreadIDsByDestination[destinationID]
       ?? (self.destinationID == destinationID ? runtimeThreadID : nil)
+  }
+
+  func metadataOnly() -> OpenClawChatThread {
+    OpenClawChatThread(
+      id: id,
+      title: title,
+      createdAt: createdAt,
+      updatedAt: updatedAt,
+      runtime: runtime,
+      destinationID: destinationID,
+      sessionKey: sessionKey,
+      runtimeThreadID: runtimeThreadID,
+      runtimeThreadIDsByDestination: runtimeThreadIDsByDestination,
+      model: model,
+      reasoningEffort: reasoningEffort,
+      messages: [],
+      storedMessageCount: messageCount,
+      storedHasUnresolvedLatestDelivery: hasUnresolvedLatestDelivery,
+      storedLatestDeliveryNeedsAttention: latestDeliveryNeedsAttention,
+      isPinned: isPinned,
+      isArchived: isArchived,
+      settledAt: settledAt,
+      unreadMessageCount: unreadMessageCount,
+      resource: resource,
+      pendingTurn: pendingTurn,
+      isSharedRoom: isSharedRoom,
+      roomAudience: roomAudience,
+      roomModels: roomModels,
+      roomDestinationIDs: roomDestinationIDs,
+      roomModelsByDestination: roomModelsByDestination
+    )
+  }
+
+  func hydrating(messages nextMessages: [OpenClawChatMessage]) -> OpenClawChatThread {
+    OpenClawChatThread(
+      id: id,
+      title: title,
+      createdAt: createdAt,
+      updatedAt: updatedAt,
+      runtime: runtime,
+      destinationID: destinationID,
+      sessionKey: sessionKey,
+      runtimeThreadID: runtimeThreadID,
+      runtimeThreadIDsByDestination: runtimeThreadIDsByDestination,
+      model: model,
+      reasoningEffort: reasoningEffort,
+      messages: nextMessages,
+      storedMessageCount: nil,
+      storedHasUnresolvedLatestDelivery: nil,
+      storedLatestDeliveryNeedsAttention: nil,
+      isPinned: isPinned,
+      isArchived: isArchived,
+      settledAt: settledAt,
+      unreadMessageCount: unreadMessageCount,
+      resource: resource,
+      pendingTurn: pendingTurn,
+      isSharedRoom: isSharedRoom,
+      roomAudience: roomAudience,
+      roomModels: roomModels,
+      roomDestinationIDs: roomDestinationIDs,
+      roomModelsByDestination: roomModelsByDestination
+    )
   }
 }
 

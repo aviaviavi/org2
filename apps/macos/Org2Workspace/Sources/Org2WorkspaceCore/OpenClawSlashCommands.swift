@@ -178,9 +178,106 @@ public enum OpenClawSlashCommands {
 }
 
 enum CorpusAgentSkillCatalog {
+  private struct CacheKey: Hashable, Sendable {
+    let corpusRootPath: String
+    let bundledSkillPath: String?
+  }
+
+  private final class CommandCache: @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [CacheKey: [OpenClawSlashCommand]] = [:]
+
+    func value(for key: CacheKey) -> [OpenClawSlashCommand]? {
+      lock.lock()
+      defer { lock.unlock() }
+      return values[key]
+    }
+
+    func insert(_ commands: [OpenClawSlashCommand], for key: CacheKey) {
+      lock.lock()
+      values[key] = commands
+      lock.unlock()
+    }
+
+    func removeAll() {
+      lock.lock()
+      values.removeAll()
+      lock.unlock()
+    }
+  }
+
+  private static let cache = CommandCache()
+
   static func commands(
     in corpusRoot: URL,
     bundledSkillURL: URL? = BuiltInOrg2Skill.availableSourceURL()
+  ) -> [OpenClawSlashCommand] {
+    let key = cacheKey(corpusRoot: corpusRoot, bundledSkillURL: bundledSkillURL)
+    if let cached = cache.value(for: key) {
+      return cached
+    }
+    let discovered = discoverCommands(in: corpusRoot, bundledSkillURL: bundledSkillURL)
+    cache.insert(discovered, for: key)
+    return discovered
+  }
+
+  nonisolated static func prepareCommands(
+    in corpusRoot: URL,
+    force: Bool = false,
+    discoveryThreadObserver: (@Sendable (Bool) -> Void)? = nil
+  ) async -> [OpenClawSlashCommand] {
+    await Task.detached(priority: .utility) {
+      discoveryThreadObserver?(currentThreadIsMainThread())
+      let bundledSkillURL = BuiltInOrg2Skill.availableSourceURL()
+      let key = cacheKey(corpusRoot: corpusRoot, bundledSkillURL: bundledSkillURL)
+      if !force, let cached = cache.value(for: key) {
+        return cached
+      }
+      let discovered = discoverCommands(in: corpusRoot, bundledSkillURL: bundledSkillURL)
+      cache.insert(discovered, for: key)
+      return discovered
+    }.value
+  }
+
+  nonisolated static func prepareCommands(
+    in corpusRoot: URL,
+    bundledSkillURL: URL?,
+    force: Bool = false,
+    discoveryThreadObserver: (@Sendable (Bool) -> Void)? = nil
+  ) async -> [OpenClawSlashCommand] {
+    let key = cacheKey(corpusRoot: corpusRoot, bundledSkillURL: bundledSkillURL)
+    if !force, let cached = cache.value(for: key) {
+      return cached
+    }
+    let discovered = await Task.detached(priority: .utility) {
+      discoveryThreadObserver?(currentThreadIsMainThread())
+      return discoverCommands(in: corpusRoot, bundledSkillURL: bundledSkillURL)
+    }.value
+    cache.insert(discovered, for: key)
+    return discovered
+  }
+
+  static func removeCachedCommandsForTesting() {
+    cache.removeAll()
+  }
+
+  private nonisolated static func currentThreadIsMainThread() -> Bool {
+    Thread.isMainThread
+  }
+
+  private nonisolated static func cacheKey(
+    corpusRoot: URL,
+    bundledSkillURL: URL?
+  ) -> CacheKey {
+    CacheKey(
+      corpusRootPath: corpusRoot.standardizedFileURL.path,
+      bundledSkillPath: bundledSkillURL?.standardizedFileURL.path
+    )
+  }
+
+  private nonisolated static func discoverCommands(
+    in corpusRoot: URL,
+    bundledSkillURL: URL?
   ) -> [OpenClawSlashCommand] {
     let skillsRoot = corpusRoot
       .appendingPathComponent(".agents", isDirectory: true)

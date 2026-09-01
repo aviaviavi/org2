@@ -204,14 +204,14 @@ final class MobileRemoteHTTPServerTests: XCTestCase {
     )
     store.setCorpusRoot(root, persistsDefault: false)
 
-    let preview = try store.mobileRemoteFilePreview(path: "notes/long.org2", line: 60)
+    let preview = try await store.mobileRemoteFilePreview(path: "notes/long.org2", line: 60)
     XCTAssertEqual(preview.startLine, 1)
     XCTAssertEqual(preview.highlightedLine, 60)
     XCTAssertEqual(preview.content, content)
     XCTAssertTrue(preview.content.contains("Line 1 with"))
     XCTAssertTrue(preview.content.contains("Line 80 with"))
 
-    let markdown = try store.mobileRemoteFilePreview(path: "notes/readme.md", line: nil)
+    let markdown = try await store.mobileRemoteFilePreview(path: "notes/readme.md", line: nil)
     XCTAssertEqual(markdown.content, "# Read me\nAll text is visible.")
   }
 
@@ -525,7 +525,7 @@ final class MobileRemoteHTTPServerTests: XCTestCase {
   }
 
   @MainActor
-  func testFilePreviewReadsCompleteFilesOnlyInsideMountedCorpora() throws {
+  func testFilePreviewReadsCompleteFilesOnlyInsideMountedCorpora() async throws {
     let suiteName = "MobileRemoteHTTPServerTests.\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suiteName)!
     defer { defaults.removePersistentDomain(forName: suiteName) }
@@ -550,7 +550,7 @@ final class MobileRemoteHTTPServerTests: XCTestCase {
     )
     store.setCorpusRoot(root)
 
-    let relativePreview = try store.mobileRemoteFilePreview(
+    let relativePreview = try await store.mobileRemoteFilePreview(
       path: "notes/talk.org2",
       line: 12
     )
@@ -560,12 +560,122 @@ final class MobileRemoteHTTPServerTests: XCTestCase {
     XCTAssertEqual(relativePreview.highlightedLine, 12)
     XCTAssertEqual(relativePreview.content, sourceText)
 
-    let absolutePreview = try store.mobileRemoteFilePreview(path: source.path, line: 1)
+    let absolutePreview = try await store.mobileRemoteFilePreview(path: source.path, line: 1)
     XCTAssertEqual(absolutePreview.relativePath, "notes/talk.org2")
 
-    XCTAssertThrowsError(try store.mobileRemoteFilePreview(path: outside.path, line: 1))
-    XCTAssertThrowsError(try store.mobileRemoteFilePreview(path: symlink.path, line: 1))
-    XCTAssertThrowsError(try store.mobileRemoteFilePreview(path: "../outside.org2", line: 1))
+    do {
+      _ = try await store.mobileRemoteFilePreview(path: outside.path, line: 1)
+      XCTFail("Expected an absolute path outside mounted corpora to be rejected")
+    } catch let error as MobileRemoteFilePreviewError {
+      XCTAssertEqual(error, .invalidPath)
+    }
+    do {
+      _ = try await store.mobileRemoteFilePreview(path: symlink.path, line: 1)
+      XCTFail("Expected a symlink escaping mounted corpora to be rejected")
+    } catch let error as MobileRemoteFilePreviewError {
+      XCTAssertEqual(error, .invalidPath)
+    }
+    do {
+      _ = try await store.mobileRemoteFilePreview(path: "../outside.org2", line: 1)
+      XCTFail("Expected a relative path escaping mounted corpora to be rejected")
+    } catch let error as MobileRemoteFilePreviewError {
+      XCTAssertEqual(error, .invalidPath)
+    }
+  }
+
+  @MainActor
+  func testLargeFilePreviewReadsAndValidatesItsLineOffMain() async throws {
+    let suiteName = "MobileRemoteHTTPServerTests.large-preview.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-mobile-large-preview-\(UUID().uuidString)", isDirectory: true)
+    let notes = root.appendingPathComponent("notes", isDirectory: true)
+    try FileManager.default.createDirectory(at: notes, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let source = notes.appendingPathComponent("large.org2")
+    let lineCount = 150_000
+    let sourceText = String(
+      repeating: "A complete large-file preview row 0123456789\n",
+      count: lineCount
+    )
+    try sourceText.write(to: source, atomically: true, encoding: .utf8)
+
+    let store = WorkspaceStore(
+      cli: Org2CLI(repoRoot: try Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json")
+    )
+    store.setCorpusRoot(root, persistsDefault: false)
+    let threadRecorder = MobileRemotePreviewThreadRecorder()
+    store.mobileRemoteFilePreviewDidReadForTesting = { isMainThread in
+      threadRecorder.append(isMainThread)
+    }
+
+    let preview = try await store.mobileRemoteFilePreview(
+      path: "notes/large.org2",
+      line: lineCount
+    )
+    XCTAssertEqual(preview.highlightedLine, lineCount)
+    XCTAssertEqual(preview.content.utf8.count, sourceText.utf8.count)
+    XCTAssertTrue(preview.content.hasPrefix("A complete large-file preview row"))
+
+    let invalidLinePreview = try await store.mobileRemoteFilePreview(
+      path: "notes/large.org2",
+      line: lineCount + 2
+    )
+    XCTAssertNil(invalidLinePreview.highlightedLine)
+    XCTAssertEqual(threadRecorder.values, [false, false])
+  }
+
+  @MainActor
+  func testFilePreviewRejectsAResultFromThePreviousCorpus() async throws {
+    let suiteName = "MobileRemoteHTTPServerTests.stale-preview.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let container = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-mobile-stale-preview-\(UUID().uuidString)", isDirectory: true)
+    let firstRoot = container.appendingPathComponent("first.org2", isDirectory: true)
+    let secondRoot = container.appendingPathComponent("second.org2", isDirectory: true)
+    let firstNotes = firstRoot.appendingPathComponent("notes", isDirectory: true)
+    try FileManager.default.createDirectory(at: firstNotes, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: secondRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: container) }
+    try "* First corpus\n".write(
+      to: firstNotes.appendingPathComponent("stale.org2"),
+      atomically: true,
+      encoding: .utf8
+    )
+
+    let store = WorkspaceStore(
+      cli: Org2CLI(repoRoot: try Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: container.appendingPathComponent("openclaw-chat.json")
+    )
+    store.setCorpusRoot(firstRoot, persistsDefault: false)
+    let gate = MobileRemotePreviewGate()
+    let threadRecorder = MobileRemotePreviewThreadRecorder()
+    store.mobileRemoteFilePreviewPreparationForTesting = {
+      await gate.wait()
+    }
+    store.mobileRemoteFilePreviewDidReadForTesting = { isMainThread in
+      threadRecorder.append(isMainThread)
+    }
+
+    let previewTask = Task { @MainActor in
+      try await store.mobileRemoteFilePreview(path: "notes/stale.org2", line: 1)
+    }
+    await gate.waitUntilStarted()
+    store.setCorpusRoot(secondRoot, persistsDefault: false)
+    await gate.release()
+
+    do {
+      _ = try await previewTask.value
+      XCTFail("Expected a preview from the previous corpus session to be rejected")
+    } catch let error as MobileRemoteFilePreviewError {
+      XCTAssertEqual(error, .invalidPath)
+    }
+    XCTAssertEqual(threadRecorder.values, [false])
   }
 
   @MainActor
@@ -729,5 +839,45 @@ private actor MobileRemoteWorkspaceContextRecorder {
 
   func contexts() -> [OpenClawWorkspaceContext] {
     recordedContexts
+  }
+}
+
+private actor MobileRemotePreviewGate {
+  private var started = false
+  private var continuation: CheckedContinuation<Void, Never>?
+  private var startWaiters: [CheckedContinuation<Void, Never>] = []
+
+  func wait() async {
+    started = true
+    startWaiters.forEach { $0.resume() }
+    startWaiters = []
+    await withCheckedContinuation { continuation in
+      self.continuation = continuation
+    }
+  }
+
+  func waitUntilStarted() async {
+    guard !started else { return }
+    await withCheckedContinuation { continuation in
+      startWaiters.append(continuation)
+    }
+  }
+
+  func release() {
+    continuation?.resume()
+    continuation = nil
+  }
+}
+
+private final class MobileRemotePreviewThreadRecorder: @unchecked Sendable {
+  private let lock = NSLock()
+  private var storage: [Bool] = []
+
+  var values: [Bool] {
+    lock.withLock { storage }
+  }
+
+  func append(_ isMainThread: Bool) {
+    lock.withLock { storage.append(isMainThread) }
   }
 }

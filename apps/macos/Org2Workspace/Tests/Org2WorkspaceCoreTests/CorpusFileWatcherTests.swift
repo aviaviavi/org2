@@ -31,6 +31,51 @@ private final class ObservedCLICommands: @unchecked Sendable {
   }
 }
 
+private enum ControlledCorpusFileScanError: Error, Sendable {
+  case injected
+}
+
+private actor ControlledCorpusFileScan {
+  private var continuations: [String: CheckedContinuation<[CorpusFile], Error>] = [:]
+
+  func scan(_ root: URL) async throws -> [CorpusFile] {
+    try await withCheckedThrowingContinuation { continuation in
+      continuations[root.standardizedFileURL.path] = continuation
+    }
+  }
+
+  func hasRequest(for root: URL) -> Bool {
+    continuations[root.standardizedFileURL.path] != nil
+  }
+
+  func succeed(_ root: URL, files: [CorpusFile]) {
+    continuations.removeValue(forKey: root.standardizedFileURL.path)?.resume(returning: files)
+  }
+
+  func fail(_ root: URL) {
+    continuations.removeValue(forKey: root.standardizedFileURL.path)?.resume(
+      throwing: ControlledCorpusFileScanError.injected
+    )
+  }
+}
+
+private actor ControlledIncrementalCorpusPreparation {
+  private var continuation: CheckedContinuation<Void, Never>?
+  private(set) var hasStarted = false
+
+  func wait() async {
+    hasStarted = true
+    await withCheckedContinuation { continuation in
+      self.continuation = continuation
+    }
+  }
+
+  func release() {
+    continuation?.resume()
+    continuation = nil
+  }
+}
+
 final class CorpusFileWatcherTests: XCTestCase {
   func testClassifiesRuntimeRunChangesSeparatelyFromVisibleCorpusContent() {
     let root = URL(fileURLWithPath: "/tmp/org2-corpus").standardizedFileURL
@@ -135,6 +180,195 @@ final class CorpusFileWatcherTests: XCTestCase {
   }
 
   @MainActor
+  func testCompletedCorpusScanCannotPublishIntoReplacementCorpus() async throws {
+    let workspace = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-stale-corpus-scan-\(UUID().uuidString)", isDirectory: true)
+    let alpha = workspace.appendingPathComponent("alpha", isDirectory: true)
+    let beta = workspace.appendingPathComponent("beta", isDirectory: true)
+    try FileManager.default.createDirectory(at: alpha, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: beta, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: workspace) }
+
+    let alphaFile = CorpusFile(
+      path: alpha.appendingPathComponent("alpha.org2").path,
+      relativePath: "alpha.org2",
+      modifiedAt: nil,
+      byteCount: 10
+    )
+    let betaFile = CorpusFile(
+      path: beta.appendingPathComponent("beta.org2").path,
+      relativePath: "beta.org2",
+      modifiedAt: nil,
+      byteCount: 20
+    )
+    let scanner = ControlledCorpusFileScan()
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(alpha, persistsDefault: false)
+    store.corpusFileScanForTesting = { root in
+      try await scanner.scan(root)
+    }
+
+    let staleRefresh = Task { @MainActor in
+      await store.refreshCorpusFiles()
+    }
+    let alphaScanStarted = await waitForScanRequest(scanner, root: alpha)
+    XCTAssertTrue(alphaScanStarted)
+
+    store.setCorpusRoot(beta, persistsDefault: false)
+    store.corpusFiles = [betaFile]
+    await store.waitForCorpusFilePublicationForTesting()
+    store.statusText = "Beta corpus ready"
+    store.errorText = nil
+
+    await scanner.succeed(alpha, files: [alphaFile])
+    await staleRefresh.value
+
+    XCTAssertEqual(store.corpusRoot?.standardizedFileURL.path, beta.standardizedFileURL.path)
+    XCTAssertEqual(store.corpusFiles, [betaFile])
+    XCTAssertEqual(store.statusText, "Beta corpus ready")
+    XCTAssertNil(store.errorText)
+    XCTAssertFalse(store.isScanningCorpusFiles)
+  }
+
+  @MainActor
+  func testFailedCorpusScanCannotReportErrorInReplacementCorpus() async throws {
+    let workspace = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-stale-corpus-scan-error-\(UUID().uuidString)", isDirectory: true)
+    let alpha = workspace.appendingPathComponent("alpha", isDirectory: true)
+    let beta = workspace.appendingPathComponent("beta", isDirectory: true)
+    try FileManager.default.createDirectory(at: alpha, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: beta, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: workspace) }
+
+    let scanner = ControlledCorpusFileScan()
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(alpha, persistsDefault: false)
+    store.corpusFileScanForTesting = { root in
+      try await scanner.scan(root)
+    }
+
+    let staleRefresh = Task { @MainActor in
+      await store.refreshCorpusFiles()
+    }
+    let alphaScanStarted = await waitForScanRequest(scanner, root: alpha)
+    XCTAssertTrue(alphaScanStarted)
+
+    store.setCorpusRoot(beta, persistsDefault: false)
+    store.statusText = "Beta corpus ready"
+    store.errorText = nil
+
+    await scanner.fail(alpha)
+    await staleRefresh.value
+
+    XCTAssertEqual(store.corpusRoot?.standardizedFileURL.path, beta.standardizedFileURL.path)
+    XCTAssertEqual(store.statusText, "Beta corpus ready")
+    XCTAssertNil(store.errorText)
+    XCTAssertFalse(store.isScanningCorpusFiles)
+  }
+
+  @MainActor
+  func testIncrementalCorpusUpdateCannotPublishIntoReplacementCorpus() async throws {
+    let workspace = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-stale-incremental-update-\(UUID().uuidString)", isDirectory: true)
+    let alpha = workspace.appendingPathComponent("alpha", isDirectory: true)
+    let beta = workspace.appendingPathComponent("beta", isDirectory: true)
+    try FileManager.default.createDirectory(at: alpha, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: beta, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: workspace) }
+
+    let changedAlphaURL = alpha.appendingPathComponent("changed.org2")
+    try "* Changed in alpha\n".write(to: changedAlphaURL, atomically: true, encoding: .utf8)
+    let betaFile = CorpusFile(
+      path: beta.appendingPathComponent("beta.org2").path,
+      relativePath: "beta.org2",
+      modifiedAt: nil,
+      byteCount: 20
+    )
+    let preparation = ControlledIncrementalCorpusPreparation()
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(alpha, persistsDefault: false)
+    store.incrementalCorpusChangePreparationForTesting = { _, _ in
+      await preparation.wait()
+    }
+
+    let staleUpdate = Task { @MainActor in
+      await store.applyIncrementalCorpusChangesForTesting([changedAlphaURL.path])
+    }
+    let incrementalPreparationStarted = await waitForIncrementalPreparation(preparation)
+    XCTAssertTrue(incrementalPreparationStarted)
+
+    store.setCorpusRoot(beta, persistsDefault: false)
+    store.corpusFiles = [betaFile]
+    await store.waitForCorpusFilePublicationForTesting()
+    store.statusText = "Beta corpus ready"
+    store.errorText = nil
+
+    await preparation.release()
+    await staleUpdate.value
+
+    XCTAssertEqual(store.corpusRoot?.standardizedFileURL.path, beta.standardizedFileURL.path)
+    XCTAssertEqual(store.corpusFiles, [betaFile])
+    XCTAssertEqual(store.statusText, "Beta corpus ready")
+    XCTAssertNil(store.errorText)
+  }
+
+  @MainActor
+  func testCancelledSurfaceRefreshCannotClearReplacementTaskHandle() async throws {
+    let workspace = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-stale-surface-task-\(UUID().uuidString)", isDirectory: true)
+    let alpha = workspace.appendingPathComponent("alpha", isDirectory: true)
+    let beta = workspace.appendingPathComponent("beta", isDirectory: true)
+    try FileManager.default.createDirectory(at: alpha, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: beta, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: workspace) }
+
+    let scanner = ControlledCorpusFileScan()
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(alpha, persistsDefault: false)
+    store.corpusFileScanForTesting = { root in
+      try await scanner.scan(root)
+    }
+    store.setWorkspaceRealtimeRefreshActive(true)
+    defer { store.setWorkspaceRealtimeRefreshActive(false) }
+    store.selectedSurface = .files
+
+    let alphaScanStarted = await waitForScanRequest(scanner, root: alpha)
+    XCTAssertTrue(alphaScanStarted)
+    XCTAssertTrue(store.hasWorkspaceSurfaceRefreshTaskForTesting(.files))
+    XCTAssertTrue(store.isScanningCorpusFiles)
+
+    store.setCorpusRoot(beta, persistsDefault: false)
+    store.selectedSurface = .home
+    store.selectedSurface = .files
+
+    let betaScanStarted = await waitForScanRequest(scanner, root: beta)
+    XCTAssertTrue(betaScanStarted)
+    XCTAssertTrue(store.hasWorkspaceSurfaceRefreshTaskForTesting(.files))
+    XCTAssertTrue(store.isScanningCorpusFiles)
+
+    await scanner.succeed(alpha, files: [])
+    try await Task.sleep(nanoseconds: 50_000_000)
+
+    XCTAssertTrue(
+      store.hasWorkspaceSurfaceRefreshTaskForTesting(.files),
+      "The cancelled alpha task must not clear the replacement beta task handle"
+    )
+    XCTAssertTrue(
+      store.isScanningCorpusFiles,
+      "The cancelled alpha scan must not clear the replacement beta scan's loading state"
+    )
+
+    await scanner.succeed(beta, files: [])
+    let deadline = Date().addingTimeInterval(2)
+    while (store.hasWorkspaceSurfaceRefreshTaskForTesting(.files) || store.isScanningCorpusFiles),
+          Date() < deadline {
+      try await Task.sleep(nanoseconds: 10_000_000)
+    }
+    XCTAssertFalse(store.hasWorkspaceSurfaceRefreshTaskForTesting(.files))
+    XCTAssertFalse(store.isScanningCorpusFiles)
+  }
+
+  @MainActor
   func testInactiveCorpusEventRefreshesDirtySurfaceWhenWorkspaceBecomesActive() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-realtime-refresh-\(UUID().uuidString)", isDirectory: true)
@@ -203,6 +437,146 @@ final class CorpusFileWatcherTests: XCTestCase {
   }
 
   @MainActor
+  func testPendingWatcherEventBuildsRoamSearchProjectionOffMainAfterActivation() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-activation-roam-projection-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let note = root.appendingPathComponent("large-roam-file.org2")
+    let headings = (0..<2_000).map { index in
+      "* Heading \(index)\n:PROPERTIES:\n:ID: activation-heading-\(index)\n:END:\n"
+    }.joined()
+    try ("#+TITLE: Activation projection\n" + headings).write(
+      to: note,
+      atomically: true,
+      encoding: .utf8
+    )
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root, persistsDefault: false)
+    store.setWorkspaceRealtimeRefreshActive(false)
+    await store.refreshCorpusFiles()
+
+    var deadline = Date().addingTimeInterval(10)
+    while (store.orgRoamLinkResolver.nodes.count != 2_001
+            || store.orgRoamSearchProjectionBuildCountForTesting == 0),
+          Date() < deadline {
+      try await Task.sleep(nanoseconds: 20_000_000)
+    }
+    XCTAssertEqual(store.orgRoamLinkResolver.nodes.count, 2_001)
+    XCTAssertGreaterThan(store.orgRoamSearchProjectionBuildCountForTesting, 0)
+    XCTAssertEqual(store.orgRoamSearchProjectionMainThreadBuildCountForTesting, 0)
+
+    deadline = Date().addingTimeInterval(10)
+    while store.orgRoamSearchProjectionReleaseCompletedCountForTesting
+            < store.orgRoamSearchProjectionReleaseScheduledCountForTesting,
+          Date() < deadline {
+      try await Task.sleep(nanoseconds: 20_000_000)
+    }
+    XCTAssertEqual(
+      store.orgRoamSearchProjectionReleaseCompletedCountForTesting,
+      store.orgRoamSearchProjectionReleaseScheduledCountForTesting
+    )
+    XCTAssertEqual(store.orgRoamSearchProjectionMainThreadReleaseCountForTesting, 0)
+
+    let buildCountBeforeActivation = store.orgRoamSearchProjectionBuildCountForTesting
+    let mainThreadBuildCountBeforeActivation =
+      store.orgRoamSearchProjectionMainThreadBuildCountForTesting
+    let releaseScheduleCountBeforeActivation =
+      store.orgRoamSearchProjectionReleaseScheduledCountForTesting
+    let mainThreadReleaseCountBeforeActivation =
+      store.orgRoamSearchProjectionMainThreadReleaseCountForTesting
+    store.handleCorpusFileEvents(
+      [note.path],
+      corpusRoot: root,
+      requiresFullScan: false
+    )
+
+    // The watcher event must remain queued while inactive. If it were applied
+    // here, this test would not cover the delayed Cmd-Tab activation path.
+    try await Task.sleep(nanoseconds: 200_000_000)
+    XCTAssertEqual(
+      store.orgRoamSearchProjectionBuildCountForTesting,
+      buildCountBeforeActivation
+    )
+
+    store.setWorkspaceRealtimeRefreshActive(true)
+    defer { store.setWorkspaceRealtimeRefreshActive(false) }
+    store.workspaceDidBecomeActive()
+    deadline = Date().addingTimeInterval(15)
+    while store.orgRoamSearchProjectionBuildCountForTesting == buildCountBeforeActivation,
+          Date() < deadline {
+      try await Task.sleep(nanoseconds: 20_000_000)
+    }
+    while store.orgRoamSearchProjectionReleaseCompletedCountForTesting
+            < store.orgRoamSearchProjectionReleaseScheduledCountForTesting,
+          Date() < deadline {
+      try await Task.sleep(nanoseconds: 20_000_000)
+    }
+
+    XCTAssertGreaterThan(
+      store.orgRoamSearchProjectionBuildCountForTesting,
+      buildCountBeforeActivation,
+      "Activation must drain the corpus event that the watcher queued while inactive"
+    )
+    XCTAssertEqual(store.orgRoamLinkResolver.nodes.count, 2_001)
+    XCTAssertEqual(
+      store.orgRoamSearchProjectionMainThreadBuildCountForTesting,
+      mainThreadBuildCountBeforeActivation,
+      "Resolver construction, signature generation, and search projection building must stay off the main thread"
+    )
+    XCTAssertGreaterThan(
+      store.orgRoamSearchProjectionReleaseScheduledCountForTesting,
+      releaseScheduleCountBeforeActivation,
+      "An equal watcher projection must transfer its unpublished ownership to the detached release sink"
+    )
+    XCTAssertEqual(
+      store.orgRoamSearchProjectionReleaseCompletedCountForTesting,
+      store.orgRoamSearchProjectionReleaseScheduledCountForTesting
+    )
+    XCTAssertEqual(
+      store.orgRoamSearchProjectionMainThreadReleaseCountForTesting,
+      mainThreadReleaseCountBeforeActivation,
+      "Rejected projection graphs must never perform their final ARC teardown on MainActor"
+    )
+
+    let replacementReleaseScheduleCount =
+      store.orgRoamSearchProjectionReleaseScheduledCountForTesting
+    let replacementMainThreadReleaseCount =
+      store.orgRoamSearchProjectionMainThreadReleaseCountForTesting
+    let replacementHeading = "* Replacement heading\n:PROPERTIES:\n:ID: activation-heading-replacement\n:END:\n"
+    try ("#+TITLE: Activation projection\n" + headings + replacementHeading).write(
+      to: note,
+      atomically: true,
+      encoding: .utf8
+    )
+    await store.applyIncrementalCorpusChangesForTesting([note.path])
+    deadline = Date().addingTimeInterval(15)
+    while (store.orgRoamLinkResolver.nodes.count != 2_002
+            || store.orgRoamSearchProjectionReleaseCompletedCountForTesting
+              < store.orgRoamSearchProjectionReleaseScheduledCountForTesting),
+          Date() < deadline {
+      try await Task.sleep(nanoseconds: 20_000_000)
+    }
+    XCTAssertEqual(store.orgRoamLinkResolver.nodes.count, 2_002)
+    XCTAssertGreaterThanOrEqual(
+      store.orgRoamSearchProjectionReleaseScheduledCountForTesting
+        - replacementReleaseScheduleCount,
+      2,
+      "Replacement must release both the old published box and the incoming ownership box off-main"
+    )
+    XCTAssertEqual(
+      store.orgRoamSearchProjectionReleaseCompletedCountForTesting,
+      store.orgRoamSearchProjectionReleaseScheduledCountForTesting
+    )
+    XCTAssertEqual(
+      store.orgRoamSearchProjectionMainThreadReleaseCountForTesting,
+      replacementMainThreadReleaseCount,
+      "Replaced projection graphs must never perform their final ARC teardown on MainActor"
+    )
+  }
+
+  @MainActor
   func testCleanWorkspaceActivationDoesNotInvalidateVisibleSurface() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-clean-activation-\(UUID().uuidString)", isDirectory: true)
@@ -223,6 +597,52 @@ final class CorpusFileWatcherTests: XCTestCase {
       store.isWorkspaceSurfaceDirty(.meetings),
       "Foregrounding an unchanged workspace must not trigger a corpus-wide meeting refresh"
     )
+  }
+
+  @MainActor
+  func testCleanSelectedFileActivationUsesMetadataFreshnessFastPath() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-clean-file-activation-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let note = root.appendingPathComponent("large.org2")
+    let text = "* Alpha\n" + String(repeating: "Generated body line.\n", count: 60_000)
+    try text.write(to: note, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.entryHTMLRendererForTesting = { _, _, _, _ in "<html><body></body></html>" }
+    store.setCorpusRoot(root, persistsDefault: false)
+    store.selectCorpusFile(CorpusFile(
+      path: note.path,
+      relativePath: note.lastPathComponent,
+      modifiedAt: try note.resourceValues(
+        forKeys: [.contentModificationDateKey]
+      ).contentModificationDate,
+      byteCount: Int64(text.utf8.count)
+    ))
+
+    var deadline = Date().addingTimeInterval(10)
+    while store.selectedEntrySource?.text.utf8.count != text.utf8.count,
+          Date() < deadline {
+      try await Task.sleep(nanoseconds: 20_000_000)
+    }
+    XCTAssertEqual(store.selectedEntrySource?.text.utf8.count, text.utf8.count)
+    XCTAssertEqual(store.selectedDetailFreshnessMetadataFastPathCountForTesting, 0)
+
+    store.setWorkspaceRealtimeRefreshActive(true)
+    defer { store.setWorkspaceRealtimeRefreshActive(false) }
+    store.workspaceDidBecomeActive()
+    deadline = Date().addingTimeInterval(3)
+    while store.selectedDetailFreshnessMetadataFastPathCountForTesting == 0,
+          Date() < deadline {
+      try await Task.sleep(nanoseconds: 10_000_000)
+    }
+    XCTAssertGreaterThan(
+      store.selectedDetailFreshnessMetadataFastPathCountForTesting,
+      0,
+      "An unchanged selected file must not be read and hashed after activation"
+    )
+    XCTAssertEqual(store.selectedEntrySource?.text.utf8.count, text.utf8.count)
   }
 
   @MainActor
@@ -392,5 +812,36 @@ final class CorpusFileWatcherTests: XCTestCase {
       )
       wait(for: [changed], timeout: 5)
     }
+  }
+
+  @MainActor
+  private func waitForScanRequest(
+    _ scanner: ControlledCorpusFileScan,
+    root: URL,
+    timeout: TimeInterval = 2
+  ) async -> Bool {
+    let deadline = Date().addingTimeInterval(timeout)
+    while Date() < deadline {
+      if await scanner.hasRequest(for: root) {
+        return true
+      }
+      try? await Task.sleep(nanoseconds: 10_000_000)
+    }
+    return await scanner.hasRequest(for: root)
+  }
+
+  @MainActor
+  private func waitForIncrementalPreparation(
+    _ preparation: ControlledIncrementalCorpusPreparation,
+    timeout: TimeInterval = 2
+  ) async -> Bool {
+    let deadline = Date().addingTimeInterval(timeout)
+    while Date() < deadline {
+      if await preparation.hasStarted {
+        return true
+      }
+      try? await Task.sleep(nanoseconds: 10_000_000)
+    }
+    return await preparation.hasStarted
   }
 }

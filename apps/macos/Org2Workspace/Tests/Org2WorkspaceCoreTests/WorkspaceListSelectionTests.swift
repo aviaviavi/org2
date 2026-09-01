@@ -380,16 +380,10 @@ final class WorkspaceListSelectionTests: XCTestCase {
       .appendingPathComponent("Sources/Org2WorkspaceCore/ContentView.swift")
     let source = try String(contentsOf: contentView, encoding: .utf8)
 
-    XCTAssertTrue(
-      source.contains(
-        """
-        ReadableListSelectionModifier(
-                        isSelected: store.selectedSurface == surface,
-                        verticalPadding: 4
-                      )
-        """
-      )
-    )
+    XCTAssertNotNil(source.range(
+      of: #"ReadableListSelectionModifier\(\s*isSelected:\s*store\.selectedSurface == surface,\s*verticalPadding:\s*4\s*\)"#,
+      options: .regularExpression
+    ))
     XCTAssertTrue(source.contains("var verticalPadding: CGFloat = 0"))
     XCTAssertEqual(
       source.components(separatedBy: ".workspaceSelectableRow(").count - 1,
@@ -538,11 +532,11 @@ final class WorkspaceListSelectionTests: XCTestCase {
     XCTAssertTrue(source.contains("OpenClawSidebarThreadContextMenuTarget("))
     XCTAssertTrue(source.contains("NSApp.currentEvent?.type == .rightMouseDown"))
     XCTAssertTrue(source.contains("rename?(threadID)"))
-    XCTAssertTrue(source.contains("presenting: renameRequest"))
+    XCTAssertTrue(source.contains("presenting: chatRenameRequest"))
     XCTAssertTrue(source.contains("let threadID = request.threadID"))
     XCTAssertTrue(source.contains("store.renameOpenClawChatThread(threadID, title: title)"))
     XCTAssertGreaterThanOrEqual(
-      source.components(separatedBy: "renameRequest = nil").count - 1,
+      source.components(separatedBy: "chatRenameRequest = nil").count - 1,
       2,
       "Both cancel and commit must clear the previous rename request explicitly"
     )

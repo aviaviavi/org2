@@ -7,6 +7,13 @@ import { approvedRunContinuationPrompt, clarificationContinuationPrompt, concise
 import { Org2Lifecycle } from "../lib/lifecycle.js";
 import { approvalAction, approvalContext, approvalTitle, draftCreatedEffect, draftSendEffect } from "../lib/draft-approvals.js";
 
+const lifecycleTestRoot = await mkdtemp(join(tmpdir(), "org2-openclaw-lifecycle-tests-"));
+let lifecycleTestStateID = 0;
+const newTestLifecycle = (options = {}) => new Org2Lifecycle({
+  stateFile: join(lifecycleTestRoot, `state-${lifecycleTestStateID += 1}.json`),
+  ...options,
+});
+
 test("tracks substantial work but not acknowledgements or heartbeats", () => {
   assert.equal(shouldTrackMainTurn("Please implement the lifecycle plugin", {}), true);
   assert.equal(shouldTrackMainTurn("cool", {}), false);
@@ -79,7 +86,7 @@ test("recognizes a workflow run already started by OpenOrg", async () => {
   assert.equal(marker.workflowRunStarted, true);
 
   const calls = [];
-  const lifecycle = new Org2Lifecycle({
+  const lifecycle = newTestLifecycle({
     exec: async (args) => {
       calls.push(args);
       return "";
@@ -99,7 +106,7 @@ test("reply and resume persists the clarification and returns its correlated ses
     status: "blocked",
     blockedReason: "Which commercial terms should we use?",
   };
-  const lifecycle = new Org2Lifecycle({
+  const lifecycle = newTestLifecycle({
     stateFile: join(dir, "state.json"),
     exec: async (args) => {
       calls.push(args);
@@ -137,7 +144,7 @@ test("reply and resume persists the clarification and returns its correlated ses
 
 test("reply and resume returns a usable fallback prompt without stale session correlation", async () => {
   const blocked = { id: "run-unmapped", goal: "Continue work", status: "blocked", blockedReason: "What next?" };
-  const lifecycle = new Org2Lifecycle({
+  const lifecycle = newTestLifecycle({
     exec: async (args) => {
       if (args[0] === "corpus") return JSON.stringify({ identity: { id: "personal" } });
       if (args[1] === "show" || args[1] === "comment") return JSON.stringify(blocked);
@@ -155,7 +162,7 @@ test("reply and resume returns a usable fallback prompt without stale session co
 test("prepares a durable run before handing a workflow to OpenClaw", async () => {
   const calls = [];
   const workflow = { id: "weekly-review", version: "1.0.0", title: "Weekly review" };
-  const lifecycle = new Org2Lifecycle({
+  const lifecycle = newTestLifecycle({
     owner: "operator",
     exec: async (args) => {
       calls.push(args);
@@ -174,7 +181,7 @@ test("prepares a durable run before handing a workflow to OpenClaw", async () =>
 test("resolves a named OpenClaw agent profile and stamps its goal on a durable run", async () => {
   const dir = await mkdtemp(join(tmpdir(), "org2-openclaw-agent-profile-"));
   const calls = [];
-  const lifecycle = new Org2Lifecycle({
+  const lifecycle = newTestLifecycle({
     owner: "operator",
     stateFile: join(dir, "state.json"),
     exec: async (args) => {
@@ -214,7 +221,7 @@ test("resolves a named OpenClaw agent profile and stamps its goal on a durable r
 
 test("keeps an explicit workflow goal ahead of an agent profile default", async () => {
   const calls = [];
-  const lifecycle = new Org2Lifecycle({
+  const lifecycle = newTestLifecycle({
     exec: async (args) => {
       calls.push(args);
       if (args[0] === "corpus") return JSON.stringify({ identity: { id: "personal" } });
@@ -244,7 +251,7 @@ test("reconciles an active Org2 schedule into OpenClaw cron", async () => {
     update: async () => {},
     remove: async () => ({ removed: true }),
   };
-  const lifecycle = new Org2Lifecycle({
+  const lifecycle = newTestLifecycle({
     cron,
     exec: async (args) => {
       if (args[0] === "corpus") return JSON.stringify({ identity: { id: "personal" } });
@@ -273,7 +280,7 @@ test("continues to reconcile the legacy OpenClaw schedule trigger", async () => 
     update: async () => {},
     remove: async () => ({ removed: true }),
   };
-  const lifecycle = new Org2Lifecycle({
+  const lifecycle = newTestLifecycle({
     cron,
     exec: async (args) => {
       if (args[0] === "corpus") return JSON.stringify({ identity: { id: "personal" } });
@@ -293,7 +300,7 @@ test("continues to reconcile the legacy OpenClaw schedule trigger", async () => 
 
 test("records an ineligible scheduled workflow attempt as skipped without creating a run", async () => {
   const dir = await mkdtemp(join(tmpdir(), "org2-openclaw-gate-"));
-  const lifecycle = new Org2Lifecycle({
+  const lifecycle = newTestLifecycle({
     stateFile: join(dir, "state.json"),
     exec: async (args) => {
       if (args[0] === "corpus") return JSON.stringify({ identity: { id: "personal" } });
@@ -328,7 +335,7 @@ test("finish reloads a mapping and records the required completion summary", asy
   const dir = await mkdtemp(join(tmpdir(), "org2-openclaw-"));
   const stateFile = join(dir, "state.json");
   const calls = [];
-  const lifecycle = new Org2Lifecycle({ stateFile, exec: async (args) => {
+  const lifecycle = newTestLifecycle({ stateFile, exec: async (args) => {
     calls.push(args);
     if (args[0] === "run" && args[1] === "show") return JSON.stringify({ id: "run-1", status: "running" });
     return "";
@@ -348,7 +355,7 @@ test("a successful OpenClaw turn leaves approval and clarification boundaries op
   const dir = await mkdtemp(join(tmpdir(), "org2-openclaw-approval-"));
   const stateFile = join(dir, "state.json");
   const calls = [];
-  const lifecycle = new Org2Lifecycle({ stateFile, exec: async (args) => {
+  const lifecycle = newTestLifecycle({ stateFile, exec: async (args) => {
     calls.push(args);
     if (args[0] === "run" && args[1] === "show") return JSON.stringify({ id: "run-1", status: "waiting-approval" });
     return "";
@@ -364,7 +371,7 @@ test("a successful OpenClaw turn leaves review-required artifacts open", async (
   const dir = await mkdtemp(join(tmpdir(), "org2-openclaw-artifact-review-"));
   const stateFile = join(dir, "state.json");
   const calls = [];
-  const lifecycle = new Org2Lifecycle({ stateFile, exec: async (args) => {
+  const lifecycle = newTestLifecycle({ stateFile, exec: async (args) => {
     calls.push(args);
     if (args[0] === "run" && args[1] === "show") {
       return JSON.stringify({
@@ -385,7 +392,7 @@ test("a successful OpenClaw turn leaves review-required artifacts open", async (
 test("a replayed terminal event accepts an already-completed historical run", async () => {
   const dir = await mkdtemp(join(tmpdir(), "org2-openclaw-completed-review-"));
   const stateFile = join(dir, "state.json");
-  const lifecycle = new Org2Lifecycle({ stateFile, exec: async (args) => {
+  const lifecycle = newTestLifecycle({ stateFile, exec: async (args) => {
     if (args[0] === "run" && args[1] === "show") {
       return JSON.stringify({
         id: "run-1",
@@ -405,7 +412,7 @@ test("session end fails active durable runs left without a terminal agent event"
   const dir = await mkdtemp(join(tmpdir(), "org2-openclaw-interrupted-"));
   const stateFile = join(dir, "state.json");
   const calls = [];
-  const lifecycle = new Org2Lifecycle({ stateFile, exec: async (args) => {
+  const lifecycle = newTestLifecycle({ stateFile, exec: async (args) => {
     calls.push(args);
     if (args[0] === "run" && args[1] === "show") return JSON.stringify({ id: "run-1", status: "running" });
     return "";
@@ -426,7 +433,7 @@ test("session end fails active durable runs left without a terminal agent event"
 });
 
 test("session end preserves deliberate approval and review pauses", async () => {
-  const lifecycle = new Org2Lifecycle({ exec: async () => {
+  const lifecycle = newTestLifecycle({ exec: async () => {
     throw new Error("paused mappings must not call Org2");
   } });
   lifecycle.state.mappings.approval = {
@@ -442,7 +449,7 @@ test("resumes an approved workflow in its correlated OpenClaw session", async ()
   const dir = await mkdtemp(join(tmpdir(), "org2-openclaw-resume-"));
   const stateFile = join(dir, "state.json");
   const workflow = { id: "weekly-review", version: "1.0.0", title: "Weekly review" };
-  const lifecycle = new Org2Lifecycle({ stateFile, exec: async (args) => {
+  const lifecycle = newTestLifecycle({ stateFile, exec: async (args) => {
     if (args[0] === "corpus") return JSON.stringify({ identity: { id: "personal" } });
     if (args[0] === "run" && args[1] === "show") return JSON.stringify({ id: "run-1", status: "running", workflowId: workflow.id, approvals: [{ status: "approved" }] });
     if (args[0] === "workflow" && args[1] === "show") return JSON.stringify(workflow);
@@ -477,7 +484,7 @@ test("resumes a correlated approved plain run only once per approval boundary", 
       { type: "approval-requested", data: { approvalId: approval.id } },
     ],
   };
-  const lifecycle = new Org2Lifecycle({ stateFile, exec: async (args) => {
+  const lifecycle = newTestLifecycle({ stateFile, exec: async (args) => {
     if (args[0] === "corpus") return JSON.stringify({ identity: { id: "personal" } });
     if (args[0] === "run" && args[1] === "show") return JSON.stringify(run);
     throw new Error(`unexpected command: ${args.join(" ")}`);
@@ -518,7 +525,7 @@ test("does not resume a run whose current approval boundary is incomplete", asyn
     approvals: [{ id: "review-1", status: "approved" }, { id: "review-2", status: "pending" }],
     events: [],
   };
-  const lifecycle = new Org2Lifecycle({ exec: async (args) => {
+  const lifecycle = newTestLifecycle({ exec: async (args) => {
     if (args[0] === "corpus") return JSON.stringify({ identity: { id: "personal" } });
     if (args[0] === "run" && args[1] === "show") return JSON.stringify(run);
     throw new Error(`unexpected command: ${args.join(" ")}`);
@@ -535,7 +542,7 @@ test("resumes a fully decided boundary while preserving rejected actions", async
     comments: [],
     events: [],
   };
-  const lifecycle = new Org2Lifecycle({ exec: async (args) => {
+  const lifecycle = newTestLifecycle({ exec: async (args) => {
     if (args[0] === "corpus") return JSON.stringify({ identity: { id: "personal" } });
     if (args[0] === "run" && args[1] === "show") return JSON.stringify(run);
     throw new Error(`unexpected command: ${args.join(" ")}`);
@@ -566,7 +573,7 @@ test("resumes a requested workflow revision with the reviewer's durable feedback
       { type: "approval-requested", data: { approvalId: approval.id } },
     ],
   };
-  const lifecycle = new Org2Lifecycle({ stateFile, exec: async (args) => {
+  const lifecycle = newTestLifecycle({ stateFile, exec: async (args) => {
     calls.push(args);
     if (args[0] === "corpus") return JSON.stringify({ identity: { id: "personal" } });
     if (args[0] === "run" && args[1] === "show") return JSON.stringify(run);
@@ -598,7 +605,7 @@ test("resumes a requested workflow revision with the reviewer's durable feedback
 });
 
 test("rejects a Mac workflow request for a different configured corpus", async () => {
-  const lifecycle = new Org2Lifecycle({ exec: async (args) => {
+  const lifecycle = newTestLifecycle({ exec: async (args) => {
     if (args[0] === "corpus") return JSON.stringify({ identity: { id: "team" } });
     return "";
   } });
@@ -655,7 +662,7 @@ test("requests an Org2 approval for a draft and gates sending on its decision", 
   const stateFile = join(dir, "state.json");
   const calls = [];
   let approvalStatus = "pending";
-  const lifecycle = new Org2Lifecycle({ owner: "avi", stateFile, exec: async (args) => {
+  const lifecycle = newTestLifecycle({ owner: "avi", stateFile, exec: async (args) => {
     calls.push(args);
     if (args[0] === "run" && args[1] === "create") {
       return JSON.stringify({ run: { id: "draft-run-1" } });
@@ -697,7 +704,7 @@ test("requests an Org2 approval for a draft and gates sending on its decision", 
 test("reloads draft approvals written by another plugin process before sending", async () => {
   const dir = await mkdtemp(join(tmpdir(), "org2-openclaw-shared-draft-"));
   const stateFile = join(dir, "state.json");
-  const lifecycle = new Org2Lifecycle({ stateFile, exec: async (args) => {
+  const lifecycle = newTestLifecycle({ stateFile, exec: async (args) => {
     if (args[0] === "run" && args[1] === "show") {
       return JSON.stringify({ id: "run-1", status: "running", approvals: [{ id: "approval-1", status: "approved", action: "Send shared draft" }] });
     }
@@ -742,7 +749,7 @@ test("reconciles an approved replacement for a canceled malformed draft approval
     "",
     "Provider draft: gmail:gog:draft-replaced",
   ].join("\n");
-  const lifecycle = new Org2Lifecycle({ stateFile, exec: async (args) => {
+  const lifecycle = newTestLifecycle({ stateFile, exec: async (args) => {
     if (args[0] === "run" && args[1] === "show") {
       return JSON.stringify({
         id: "run-1",
@@ -789,7 +796,7 @@ test("reconciles a missing local draft record from the canonical Org2 review reg
   const dir = await mkdtemp(join(tmpdir(), "org2-openclaw-review-registry-"));
   const stateFile = join(dir, "state.json");
   const action = "Send exact canonical draft";
-  const lifecycle = new Org2Lifecycle({ stateFile, exec: async (args) => {
+  const lifecycle = newTestLifecycle({ stateFile, exec: async (args) => {
     if (args[0] === "review") {
       return JSON.stringify({
         reviews: [{
@@ -819,7 +826,7 @@ test("reconciles a missing local draft record from the canonical Org2 review reg
 });
 
 test("fails closed when the canonical approval does not match the live draft", async () => {
-  const lifecycle = new Org2Lifecycle({ exec: async (args) => {
+  const lifecycle = newTestLifecycle({ exec: async (args) => {
     if (args[0] === "review") {
       return JSON.stringify({
         reviews: [{

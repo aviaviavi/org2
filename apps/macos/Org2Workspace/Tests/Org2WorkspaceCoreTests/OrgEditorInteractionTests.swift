@@ -1562,7 +1562,7 @@ final class OrgEditorInteractionTests: XCTestCase {
     }
 
     let content = ContentView()
-      .environmentObject(store)
+      .environment(store)
       .frame(width: 1280, height: 820)
     let hostingView = NSHostingView(rootView: content)
     hostingView.frame = NSRect(x: 0, y: 0, width: 1280, height: 820)

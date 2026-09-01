@@ -96,20 +96,58 @@ struct ParagraphWikiLinkCompletionMatch: Equatable, Sendable {
 enum ParagraphWikiLinkCompletion {
   static func match(in text: String, selectedRange: NSRange) -> ParagraphWikiLinkCompletionMatch? {
     guard selectedRange.length == 0 else { return nil }
-    // Avoid bridging and copying the entire prefix for ordinary paragraphs.
-    guard text.contains("[[") else { return nil }
     let ns = text as NSString
     let cursor = min(max(0, selectedRange.location), ns.length)
+    let windowStart = max(0, cursor - maximumLookbehindUTF16Length)
+    let windowRange = NSRange(location: windowStart, length: cursor - windowStart)
+    return match(
+      in: ns.substring(with: windowRange),
+      selectedRange: NSRange(location: cursor - windowStart, length: 0),
+      replacementOffset: windowStart
+    )
+  }
+
+  static func match(
+    in snapshot: OrgSyntaxTextEditorSelectionSnapshot
+  ) -> ParagraphWikiLinkCompletionMatch? {
+    guard snapshot.selectedRange.length == 0,
+          snapshot.selectedRange.location >= snapshot.localTextRange.location,
+          snapshot.selectedRange.location <= NSMaxRange(snapshot.localTextRange)
+    else { return nil }
+    return match(
+      in: snapshot.localText,
+      selectedRange: NSRange(
+        location: snapshot.selectedRange.location - snapshot.localTextRange.location,
+        length: 0
+      ),
+      replacementOffset: snapshot.localTextRange.location
+    )
+  }
+
+  private static func match(
+    in localText: String,
+    selectedRange: NSRange,
+    replacementOffset: Int
+  ) -> ParagraphWikiLinkCompletionMatch? {
+    guard selectedRange.length == 0 else { return nil }
+    let ns = localText as NSString
+    let cursor = min(max(0, selectedRange.location), ns.length)
     guard cursor >= 2 else { return nil }
-    let prefix = ns.substring(with: NSRange(location: 0, length: cursor))
-    guard let openRange = prefix.range(of: "[[", options: .backwards) else { return nil }
-    let openLocation = prefix.distance(from: prefix.startIndex, to: openRange.lowerBound)
+    let searchRange = NSRange(location: 0, length: cursor)
+    let openRange = ns.range(of: "[[", options: .backwards, range: searchRange)
+    guard openRange.location != NSNotFound else { return nil }
+    let openLocation = openRange.location
     let bodyLocation = openLocation + 2
     guard bodyLocation <= cursor else { return nil }
-    let body = ns.substring(with: NSRange(location: bodyLocation, length: cursor - bodyLocation))
-    let activeBody = activeQueryBody(in: body)
-    guard !activeBody.text.contains("]]"), !activeBody.text.contains("]["), !activeBody.text.contains("\n") else { return nil }
-    let query = activeBody.text.trimmingCharacters(in: .whitespacesAndNewlines)
+    let bodyRange = NSRange(location: bodyLocation, length: cursor - bodyLocation)
+    guard ns.range(of: "]]", range: bodyRange).location == NSNotFound,
+          ns.range(of: "][", range: bodyRange).location == NSNotFound,
+          ns.range(of: "\n", range: bodyRange).location == NSNotFound
+    else { return nil }
+    let delimiterRange = ns.range(of: " : ", range: bodyRange)
+    let queryEnd = delimiterRange.location == NSNotFound ? cursor : delimiterRange.location
+    let queryRange = NSRange(location: bodyLocation, length: max(0, queryEnd - bodyLocation))
+    let query = ns.substring(with: queryRange).trimmingCharacters(in: .whitespacesAndNewlines)
     guard !query.isEmpty,
           OpenClawFileReference.fromLinkTarget(query) == nil,
           !query.lowercased().hasPrefix("id:")
@@ -118,9 +156,14 @@ enum ParagraphWikiLinkCompletion {
     }
     return ParagraphWikiLinkCompletionMatch(
       query: query,
-      replacementRange: NSRange(location: openLocation, length: 2 + activeBody.utf16Length)
+      replacementRange: NSRange(
+        location: replacementOffset + openLocation,
+        length: 2 + queryRange.length
+      )
     )
   }
+
+  private static let maximumLookbehindUTF16Length = 4_096
 
   static func replacement(
     in text: String,
@@ -145,14 +188,6 @@ enum ParagraphWikiLinkCompletion {
     return "[[\(target)][\(cleanLabel)]]"
   }
 
-  private static func activeQueryBody(in body: String) -> (text: String, utf16Length: Int) {
-    guard let delimiterRange = body.range(of: " : ") else {
-      return (body, (body as NSString).length)
-    }
-
-    let query = String(body[..<delimiterRange.lowerBound])
-    return (query, (query as NSString).length)
-  }
 }
 
 struct ParagraphWikiLinkCompletionPanel: View {

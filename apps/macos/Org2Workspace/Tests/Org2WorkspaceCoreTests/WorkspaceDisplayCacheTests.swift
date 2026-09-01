@@ -1,9 +1,21 @@
 import XCTest
 @testable import Org2WorkspaceCore
 
+private actor RunReviewPageRefreshRecorder {
+  private var pages: [RunsAndReviewPage] = []
+
+  func record(_ page: RunsAndReviewPage) {
+    pages.append(page)
+  }
+
+  func snapshot() -> [RunsAndReviewPage] {
+    pages
+  }
+}
+
 final class WorkspaceDisplayCacheTests: XCTestCase {
   @MainActor
-  func testCorpusFileDisplayCacheInvalidatesForFileAndQueryChanges() throws {
+  func testCorpusFileDisplayCacheInvalidatesForFileAndQueryChanges() async throws {
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
     let alpha = CorpusFile(
       path: "/tmp/alpha.org2",
@@ -20,13 +32,87 @@ final class WorkspaceDisplayCacheTests: XCTestCase {
 
     store.corpusFiles = [alpha, beta]
     store.corpusFileFilter = "alpha"
+    await store.waitForCorpusFilePublicationForTesting()
     XCTAssertEqual(store.filteredCorpusFiles, [alpha])
+
+    store.selectedCorpusFileIDsForAIContext = [alpha.id, beta.id]
+    store.corpusFileFilter = "beta"
+    await store.waitForCorpusFilePublicationForTesting()
+    XCTAssertEqual(store.filteredCorpusFiles, [beta])
+    XCTAssertEqual(
+      store.selectedCorpusFileIDsForAIContext,
+      [beta.id],
+      "The store publication lane must reconcile selection without a mounted FilesView"
+    )
 
     store.corpusFiles = [beta]
     XCTAssertTrue(store.filteredCorpusFiles.isEmpty)
+    XCTAssertTrue(store.selectedCorpusFileIDsForAIContext.isEmpty)
 
     store.corpusFileFilter = "beta"
+    await store.waitForCorpusFilePublicationForTesting()
     XCTAssertEqual(store.filteredCorpusFiles, [beta])
+  }
+
+  @MainActor
+  func testCorpusAssignmentsStayFlatAcrossMultiSizeMainActorBudget() async throws {
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    let sizes = [2_000, 20_000, 80_000]
+    let catalogs = sizes.map { size in
+      (0..<size).map { index in
+        CorpusFile(
+          path: String(format: "/tmp/corpus/notes/%07d.org", index),
+          relativePath: String(format: "notes/%07d.org", index),
+          modifiedAt: nil,
+          byteCount: Int64(index)
+        )
+      }
+    }
+    var assignmentNanoseconds: [UInt64] = []
+
+    for catalog in catalogs {
+      let startedAt = DispatchTime.now().uptimeNanoseconds
+      store.corpusFiles = catalog
+      assignmentNanoseconds.append(DispatchTime.now().uptimeNanoseconds - startedAt)
+      await store.waitForCorpusFilePublicationForTesting()
+    }
+
+    for (size, elapsed) in zip(sizes, assignmentNanoseconds) {
+      XCTAssertLessThan(
+        elapsed,
+        30_000_000,
+        "Assigning \(size) corpus files blocked the main actor for more than 30 ms"
+      )
+    }
+    XCTAssertLessThan(
+      assignmentNanoseconds[2],
+      max(assignmentNanoseconds[0] * 6, 10_000_000),
+      "80k assignment grew with corpus size; derived projection work likely returned to the main actor"
+    )
+  }
+
+  @MainActor
+  func testCorpusAssignmentBurstBuildsOnlyLatestProjection() async throws {
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    let catalogs = (0..<24).map { revision in
+      (0..<2_000).map { index in
+        CorpusFile(
+          path: "/tmp/corpus-\(revision)/notes/\(index).org",
+          relativePath: "notes/revision-\(revision)-\(index).org",
+          modifiedAt: nil,
+          byteCount: Int64(index)
+        )
+      }
+    }
+
+    for catalog in catalogs {
+      store.corpusFiles = catalog
+    }
+    await store.waitForCorpusFilePublicationForTesting()
+
+    XCTAssertEqual(store.corpusFileProjectionBuildCountForTesting, 1)
+    XCTAssertEqual(store.filteredCorpusFiles.first, catalogs.last?.first)
+    XCTAssertEqual(store.filteredCorpusFiles.count, 500)
   }
 
   @MainActor
@@ -135,7 +221,7 @@ final class WorkspaceDisplayCacheTests: XCTestCase {
   }
 
   @MainActor
-  func testRunCenterRebuildsLargeDisplayCacheWithinRefreshBudget() throws {
+  func testRunCenterRebuildsLargeDisplayCacheOffMainWithinRefreshBudget() async throws {
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
     let runs = try (0..<4_205).map { index in
       try agentRun(
@@ -149,16 +235,50 @@ final class WorkspaceDisplayCacheTests: XCTestCase {
     let clock = ContinuousClock()
     let startedAt = clock.now
 
-    store.replaceAgentRunsForTesting(runs)
+    store.replaceAgentRunsForTesting(runs, buildsProjectionSynchronously: false)
 
     let elapsed = startedAt.duration(to: clock.now)
+    XCTAssertLessThan(elapsed, .milliseconds(25), "Assigning 4,205 runs must yield within an interactive frame")
+    await store.waitForAgentRunProjectionForTesting()
     XCTAssertEqual(store.agentRunCount(for: .all), runs.count)
     XCTAssertEqual(store.agentRunSections(for: .all).flatMap(\.entries).count, runs.count)
-    XCTAssertLessThan(elapsed, .milliseconds(250), "Refreshing 4,205 runs must not monopolize the main actor")
+    XCTAssertEqual(store.agentRunProjectionMainThreadBuildCountForTesting, 0)
   }
 
   @MainActor
-  func testRunCenterFiltersLargeCachedCatalogWithinInteractiveBudget() throws {
+  func testRunDetailLookupsStayIndexedAcrossALargeArchive() throws {
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    let runs = try (0..<4_205).map { index in
+      try agentRun(
+        id: "indexed-\(index)",
+        goal: "Indexed outcome \(index)",
+        status: "completed"
+      )
+    }
+    store.replaceAgentRunsForTesting(runs)
+    store.selectAgentRun(try XCTUnwrap(runs.last))
+    let ids = runs.map(\.id)
+    let clock = ContinuousClock()
+    let startedAt = clock.now
+    var checksum = 0
+
+    for index in 0..<20_000 {
+      checksum &+= store.agentRun(for: ids[index % ids.count])?.id.count ?? 0
+      checksum &+= store.presentedAgentRun?.id.count ?? 0
+    }
+
+    let elapsed = startedAt.duration(to: clock.now)
+    XCTAssertGreaterThan(checksum, 0)
+    XCTAssertEqual(store.presentedAgentRun?.id, "indexed-4204")
+    XCTAssertLessThan(
+      elapsed,
+      .milliseconds(150),
+      "Run-detail lookup regressed to scanning the complete run archive"
+    )
+  }
+
+  @MainActor
+  func testRunCenterFiltersLargeCachedCatalogWithinInteractiveBudget() async throws {
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
     let runs = try (0..<4_205).map { index in
       try agentRun(
@@ -174,8 +294,124 @@ final class WorkspaceDisplayCacheTests: XCTestCase {
     store.agentRunFilter = "outcome 4204"
 
     let elapsed = startedAt.duration(to: clock.now)
+    XCTAssertLessThan(elapsed, .milliseconds(25), "Filtering must yield within an interactive frame")
+    await store.waitForAgentRunProjectionForTesting()
     XCTAssertEqual(store.agentRunEntries(for: .all).map(\.id), ["completed-4204"])
-    XCTAssertLessThan(elapsed, .milliseconds(80), "Filtering cached runs must stay within an interactive frame budget")
+  }
+
+  @MainActor
+  func testCachedRunReviewPageRevisitDoesNotRefresh() async throws {
+    let root = try makeRunReviewRoot(label: "cached-revisit")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    let recorder = RunReviewPageRefreshRecorder()
+    let run = try agentRun(id: "cached-run")
+    store.setCorpusRoot(root, persistsDefault: false)
+    store.replaceAgentRunsForTesting([run])
+    store.runReviewPageRefreshOperationForTesting = { page in
+      await recorder.record(page)
+    }
+
+    store.runsAndReviewPage = .runs
+    await store.refreshSelectedRunReviewPageIfNeeded()
+    store.runsAndReviewPage = .review
+    store.replaceApprovalItemsForTesting([])
+    await store.refreshSelectedRunReviewPageIfNeeded()
+    store.runsAndReviewPage = .runs
+    await store.refreshSelectedRunReviewPageIfNeeded()
+
+    let automaticRefreshes = await recorder.snapshot()
+    XCTAssertEqual(automaticRefreshes, [])
+    XCTAssertEqual(store.agentRuns.map(\.id), ["cached-run"])
+
+    await store.refreshSelectedRunReviewPage()
+    let refreshesAfterExplicitRefresh = await recorder.snapshot()
+    XCTAssertEqual(refreshesAfterExplicitRefresh, [.runs])
+  }
+
+  @MainActor
+  func testLoadedEmptyRunReviewPageDoesNotRefetchOnSwitch() async throws {
+    let root = try makeRunReviewRoot(label: "loaded-empty")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    let recorder = RunReviewPageRefreshRecorder()
+    store.setCorpusRoot(root, persistsDefault: false)
+    store.replaceAgentRunsForTesting([])
+    store.runReviewPageRefreshOperationForTesting = { page in
+      await recorder.record(page)
+    }
+
+    store.runsAndReviewPage = .runs
+    await store.refreshSelectedRunReviewPageIfNeeded()
+    store.runsAndReviewPage = .review
+    store.runsAndReviewPage = .runs
+    await store.refreshSelectedRunReviewPageIfNeeded()
+
+    XCTAssertTrue(store.agentRuns.isEmpty)
+    XCTAssertTrue(store.isRunReviewPageLoadedForTesting(.runs))
+    XCTAssertFalse(store.isRunReviewPageDirtyForTesting(.runs))
+    let refreshedPages = await recorder.snapshot()
+    XCTAssertEqual(refreshedPages, [])
+  }
+
+  @MainActor
+  func testRunReviewInvalidationRefreshesEachDirtyPageWhenSelected() async throws {
+    let root = try makeRunReviewRoot(label: "page-dirty")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    let recorder = RunReviewPageRefreshRecorder()
+    store.setCorpusRoot(root, persistsDefault: false)
+    store.replaceAgentRunsForTesting([try agentRun(id: "dirty-run")])
+    store.replaceApprovalItemsForTesting([])
+    store.runReviewPageRefreshOperationForTesting = { page in
+      await recorder.record(page)
+    }
+
+    store.handleCorpusFileEvents(
+      [root.appendingPathComponent(".org2/runs/dirty-run.org2").path],
+      corpusRoot: root,
+      requiresFullScan: false
+    )
+    XCTAssertTrue(store.isRunReviewPageDirtyForTesting(.runs))
+    XCTAssertTrue(store.isRunReviewPageDirtyForTesting(.review))
+
+    store.runsAndReviewPage = .runs
+    await store.refreshSelectedRunReviewPageIfNeeded()
+    XCTAssertFalse(store.isRunReviewPageDirtyForTesting(.runs))
+    XCTAssertTrue(store.isRunReviewPageDirtyForTesting(.review))
+
+    store.runsAndReviewPage = .review
+    await store.refreshSelectedRunReviewPageIfNeeded()
+    XCTAssertFalse(store.isRunReviewPageDirtyForTesting(.review))
+    let refreshedPages = await recorder.snapshot()
+    XCTAssertEqual(refreshedPages, [.runs, .review])
+  }
+
+  @MainActor
+  func testInjectedRunScaleSurvivesWarmShippingPageSwitches() async throws {
+    let root = try makeRunReviewRoot(label: "scale-switch")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    let recorder = RunReviewPageRefreshRecorder()
+    let runs = try (0..<2_000).map { index in
+      try agentRun(id: "scale-\(index)", goal: "Scale run \(index)", status: "completed")
+    }
+    store.setCorpusRoot(root, persistsDefault: false)
+    store.replaceAgentRunsForTesting(runs)
+    store.replaceApprovalItemsForTesting([])
+    store.runReviewPageRefreshOperationForTesting = { page in
+      await recorder.record(page)
+    }
+
+    store.runsAndReviewPage = .review
+    await store.refreshSelectedRunReviewPageIfNeeded()
+    store.runsAndReviewPage = .runs
+    await store.refreshSelectedRunReviewPageIfNeeded()
+
+    XCTAssertEqual(store.agentRuns.count, runs.count)
+    XCTAssertEqual(store.agentRuns.first?.id, "scale-0")
+    let refreshedPages = await recorder.snapshot()
+    XCTAssertEqual(refreshedPages, [])
   }
 
   @MainActor
@@ -314,6 +550,13 @@ final class WorkspaceDisplayCacheTests: XCTestCase {
       status: "active",
       isPinned: false
     )
+  }
+
+  private func makeRunReviewRoot(label: String) throws -> URL {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-run-review-\(label)-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    return root
   }
 
   private func agenda(headline: String, file: String) throws -> AgendaPayload {

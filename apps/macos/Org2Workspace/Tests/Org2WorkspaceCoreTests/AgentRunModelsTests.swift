@@ -1,7 +1,24 @@
 import AppKit
-import Combine
+import Observation
 import XCTest
 @testable import Org2WorkspaceCore
+
+private final class AgentRunObservationFlag: @unchecked Sendable {
+  private let lock = NSLock()
+  private var changed = false
+
+  var value: Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    return changed
+  }
+
+  func set() {
+    lock.lock()
+    changed = true
+    lock.unlock()
+  }
+}
 
 private actor AgentRunListRefreshGate {
   private var continuation: CheckedContinuation<[AgentRunItem], Never>?
@@ -2196,13 +2213,17 @@ final class AgentRunModelsTests: XCTestCase {
     XCTAssertNil(store.selectedLocation)
     XCTAssertEqual(store.selectedSurface, .approvals)
 
-    var repeatedSelectionPublishCount = 0
-    let repeatedSelectionCancellable = store.objectWillChange.sink {
-      repeatedSelectionPublishCount += 1
+    let repeatedSelectionChanged = AgentRunObservationFlag()
+    withObservationTracking {
+      _ = store.presentedAgentRunID
+      _ = store.selectedSurface
+      _ = store.selectedLocation
+      _ = store.isWorkspaceDetailPaneClosed
+    } onChange: {
+      repeatedSelectionChanged.set()
     }
     store.selectAgentRun(run)
-    XCTAssertEqual(repeatedSelectionPublishCount, 0)
-    repeatedSelectionCancellable.cancel()
+    XCTAssertFalse(repeatedSelectionChanged.value)
 
     store.openAgentRunArtifact(try XCTUnwrap(run.artifacts.first))
     XCTAssertNil(store.presentedAgentRun)

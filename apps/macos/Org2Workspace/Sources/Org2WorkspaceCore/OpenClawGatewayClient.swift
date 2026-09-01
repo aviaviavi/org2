@@ -974,12 +974,12 @@ public actor OpenClawGatewayClient {
         "idempotencyKey": proposedRunID
       ]
       if !attachments.isEmpty {
-        params["attachments"] = attachments.map {
+        params["attachments"] = try attachments.map {
           [
             "type": $0.mimeType.hasPrefix("image/") ? "image" : "file",
             "fileName": $0.fileName,
             "mimeType": $0.mimeType,
-            "content": $0.data.base64EncodedString()
+            "content": try $0.loadData().base64EncodedString()
           ]
         }
       }
@@ -1177,7 +1177,7 @@ public actor OpenClawGatewayClient {
     guard let socket, let sessionKey, let agentID, runID != nil, !stopRequested else {
       throw OpenClawGatewayError.protocolFailure("there is no live OpenClaw run to steer")
     }
-    let params = Self.steerRequestParams(
+    let params = try Self.steerRequestParams(
       message: message,
       attachments: attachments,
       sessionKey: sessionKey,
@@ -1191,7 +1191,7 @@ public actor OpenClawGatewayClient {
       // Older Gateways reject the otherwise valid request before enqueueing it,
       // so it is safe to retry that same guidance using the command form.
       try await sendSteerRequest(
-        Self.commandSteerRequestParams(
+        try Self.commandSteerRequestParams(
           message: message,
           attachments: attachments,
           sessionKey: sessionKey,
@@ -1277,7 +1277,7 @@ public actor OpenClawGatewayClient {
     sessionKey: String,
     agentID: String,
     idempotencyKey: String
-  ) -> [String: Any] {
+  ) throws -> [String: Any] {
     var params: [String: Any] = [
       "sessionKey": sessionKey,
       "agentId": agentID,
@@ -1288,12 +1288,12 @@ public actor OpenClawGatewayClient {
       "queueMode": "steer"
     ]
     if !attachments.isEmpty {
-      params["attachments"] = attachments.map {
+      params["attachments"] = try attachments.map {
         [
           "type": $0.mimeType.hasPrefix("image/") ? "image" : "file",
           "fileName": $0.fileName,
           "mimeType": $0.mimeType,
-          "content": $0.data.base64EncodedString()
+          "content": try $0.loadData().base64EncodedString()
         ]
       }
     }
@@ -1306,7 +1306,7 @@ public actor OpenClawGatewayClient {
     sessionKey: String,
     agentID: String,
     idempotencyKey: String
-  ) -> [String: Any] {
+  ) throws -> [String: Any] {
     let trimmedMessage = message.trimmingCharacters(in: .whitespacesAndNewlines)
     let command = trimmedMessage.isEmpty
       ? "/steer Use the attached context to adjust the active run."
@@ -1320,12 +1320,12 @@ public actor OpenClawGatewayClient {
       "idempotencyKey": idempotencyKey
     ]
     if !attachments.isEmpty {
-      params["attachments"] = attachments.map {
+      params["attachments"] = try attachments.map {
         [
           "type": $0.mimeType.hasPrefix("image/") ? "image" : "file",
           "fileName": $0.fileName,
           "mimeType": $0.mimeType,
-          "content": $0.data.base64EncodedString()
+          "content": try $0.loadData().base64EncodedString()
         ]
       }
     }

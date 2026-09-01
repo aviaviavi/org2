@@ -73,6 +73,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <p>After setup, Home opens immediately with a chat box and today's daily note side by side. Ask a question, write in the note, or do both. New notes use <code>.org</code>; existing <code>.org2</code> files remain fully supported and are not renamed. The initial workspace lives in a normal folder that you can move or rename. Use <strong>OpenOrg → Settings… → Workspace</strong> to update its portable name and kind, reveal it in Finder, or open a different corpus.</p>
 <p>If you already keep notes in another folder, choose it from the workspace options during setup or mount it later from the corpus switcher. OpenOrg derives its views without moving your source of truth into a private database.</p>
 <p>Global capture works anywhere on your Mac while OpenOrg is running. Press <code>Cmd-Ctrl-Return</code> to add a note or task to today's daily note, including dates, tags, links, files, or images.</p>
+<p>OpenOrg stores daily notes in the corpus's <code>daily/</code> zone by default. Set <code>roam.dailiesDir</code> in <code>org2.json</code> to a valid absolute path or a directory relative to the corpus root to use a different location; missing or invalid values fall back to <code>daily/</code> rather than the corpus root.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="the-workspace">The workspace</h1>

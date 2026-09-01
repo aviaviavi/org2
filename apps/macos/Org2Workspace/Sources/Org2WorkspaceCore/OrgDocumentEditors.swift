@@ -291,7 +291,7 @@ struct InlineBlockEditorView: View {
 }
 
 private struct HorizontalRuleBlockEditor: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   let block: OrgEditableBlock
   @State private var isHovered = false
 
@@ -353,7 +353,7 @@ private struct HorizontalRuleBlockEditor: View {
 }
 
 private struct HeadingBlockEditor: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   let block: OrgEditableBlock
   let initialSelection: NSRange?
   private let level: Int
@@ -735,7 +735,7 @@ private struct HeadingBlockEditor: View {
 }
 
 private struct PlanningBlockEditor: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   let block: OrgEditableBlock
   let initialSelection: NSRange?
   @State private var kind: String
@@ -879,7 +879,7 @@ private struct PlanningBlockEditor: View {
 }
 
 private struct ListItemBlockEditor: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   let block: OrgEditableBlock
   let leadingWhitespace: String
   let initialSelection: NSRange?
@@ -1139,7 +1139,7 @@ private struct ListItemBlockEditor: View {
 }
 
 private struct KeywordBlockEditor: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   let block: OrgEditableBlock
   let initialSelection: NSRange?
   @State private var key: String
@@ -1298,7 +1298,7 @@ private struct KeywordBlockEditor: View {
 }
 
 private struct PropertyDrawerBlockEditor: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   let block: OrgEditableBlock
   @State private var drawer: OrgEditablePropertyDrawer
   @State private var isHovered = false
@@ -1517,7 +1517,7 @@ enum ParagraphInlineDetailsAvailability {
 }
 
 private struct ParagraphBlockEditor: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   let block: OrgEditableBlock
   let text: String
   @State private var draftText: String
@@ -1553,6 +1553,10 @@ private struct ParagraphBlockEditor: View {
   }
 
   private var paragraphEditorContent: some View {
+    let checkpointTarget = store.blockEditorCheckpointTarget(
+      for: block,
+      source: store.selectedEntrySource
+    )
     let slashCommandMatch = ParagraphSlashCommand.match(in: presentationText)
     let focusedInlineToken = ParagraphFocusedInlineEditor.focusedToken(
       text: presentationText,
@@ -1584,6 +1588,11 @@ private struct ParagraphBlockEditor: View {
           isFocused: $isTextFocused,
           contentHeight: $measuredEditorContentHeight,
           onLocalTextChange: handleLocalTextChange,
+          documentIdentity: checkpointTarget?.identity,
+          onCheckpointText: { text in
+            guard let checkpointTarget else { return }
+            store.persistBlockEditorCheckpoint(text, target: checkpointTarget)
+          },
           shouldPublishTextImmediately: ParagraphEditorTextPublishingPolicy.shouldPublishImmediately,
           onSaveCommand: saveParagraph,
           onSubmitContext: submitParagraph,
@@ -1941,7 +1950,7 @@ private struct ParagraphBlockEditor: View {
 }
 
 struct LiveRenderedTextBlockEditor: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   let block: OrgEditableBlock
   let initialSelection: NSRange?
   @State private var draftText: String
@@ -2087,7 +2096,11 @@ struct LiveRenderedTextBlockEditor: View {
     wikiLinkCompletionMatch: ParagraphWikiLinkCompletionMatch?,
     wikiLinkCompletionCandidates: [OrgRoamNodeReference]
   ) -> some View {
-    VStack(alignment: .leading, spacing: 4) {
+    let checkpointTarget = store.blockEditorCheckpointTarget(
+      for: block,
+      source: store.selectedEntrySource
+    )
+    return VStack(alignment: .leading, spacing: 4) {
       OrgSyntaxTextEditor(
         text: $draftText,
         showsScrollers: false,
@@ -2097,6 +2110,14 @@ struct LiveRenderedTextBlockEditor: View {
         selection: $selectedRange,
         isFocused: $isTextFocused,
         onLocalTextChange: handleLocalTextChange,
+        documentIdentity: checkpointTarget?.identity,
+        onCheckpointText: { text in
+          guard let checkpointTarget else { return }
+          store.persistBlockEditorCheckpoint(
+            Self.sourceText(for: block, editableText: text),
+            target: checkpointTarget
+          )
+        },
         shouldPublishTextImmediately: ParagraphEditorTextPublishingPolicy.shouldPublishImmediately,
         onSaveCommand: saveTextBlock,
         onSubmitContext: submitTextBlock,
@@ -2593,7 +2614,7 @@ private struct ParagraphSlashCommandPanel: View {
 }
 
 private struct MediaBlockEditor: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   let block: OrgEditableBlock
   @State private var media: OrgEditableMediaLink
   @State private var isHovered = false
@@ -2847,7 +2868,7 @@ private extension OrgMediaAttachment.Kind {
 }
 
 private struct QuoteBlockEditor: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   let block: OrgEditableBlock
   private let beginLine: String
   private let endLine: String
@@ -2877,6 +2898,10 @@ private struct QuoteBlockEditor: View {
   }
 
   var body: some View {
+    let checkpointTarget = store.blockEditorCheckpointTarget(
+      for: block,
+      source: store.selectedEntrySource
+    )
     ZStack(alignment: .topTrailing) {
       HStack(alignment: .top, spacing: 9) {
         Rectangle()
@@ -2893,6 +2918,14 @@ private struct QuoteBlockEditor: View {
           selection: $selectedRange,
           isFocused: $isTextFocused,
           onLocalTextChange: handleLocalTextChange,
+          documentIdentity: checkpointTarget?.identity,
+          onCheckpointText: { text in
+            guard let checkpointTarget else { return }
+            store.persistBlockEditorCheckpoint(
+              "\(beginLine)\n\(text)\n\(endLine)",
+              target: checkpointTarget
+            )
+          },
           onSaveCommand: saveQuote
         )
         .frame(minHeight: editorHeight, maxHeight: editorHeight)
@@ -2976,6 +3009,7 @@ private struct QuoteBlockEditor: View {
       presentationText = text
     }
     reserveEditorLines(for: text)
+    store.updateEditingBlockDraft(block, draft: rawQuote)
   }
 
   private var quoteControls: some View {
@@ -3046,7 +3080,7 @@ private struct QuoteBlockEditor: View {
 }
 
 private struct SourceBlockEditor: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   let block: OrgEditableBlock
   @State private var source: OrgEditableSourceBlock
   @State private var presentationBody: String
@@ -3075,6 +3109,10 @@ private struct SourceBlockEditor: View {
   }
 
   var body: some View {
+    let checkpointTarget = store.blockEditorCheckpointTarget(
+      for: block,
+      source: store.selectedEntrySource
+    )
     ZStack(alignment: .topTrailing) {
       VStack(alignment: .leading, spacing: 6) {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -3128,6 +3166,16 @@ private struct SourceBlockEditor: View {
           selection: $selectedRange,
           isFocused: $isBodyFocused,
           onLocalTextChange: handleLocalBodyChange,
+          documentIdentity: checkpointTarget?.identity,
+          onCheckpointText: { text in
+            guard let checkpointTarget else { return }
+            var checkpointSource = source
+            checkpointSource.body = text
+            store.persistBlockEditorCheckpoint(
+              checkpointSource.formattedRawText,
+              target: checkpointTarget
+            )
+          },
           onSaveCommand: saveSource
         )
         .frame(minHeight: editorHeight, maxHeight: editorHeight)
@@ -3273,6 +3321,7 @@ private struct SourceBlockEditor: View {
       presentationBody = text
     }
     reserveEditorLines(for: text)
+    store.updateEditingBlockDraft(block, draft: currentSource.formattedRawText)
   }
 
   private var sourceKindTitle: String {
@@ -3340,7 +3389,7 @@ private struct SourceBlockEditor: View {
 }
 
 private struct TableBlockEditor: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   let block: OrgEditableBlock
   @State private var table: OrgEditableTable
   @State private var isHovered = false

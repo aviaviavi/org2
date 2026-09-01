@@ -129,7 +129,7 @@ struct Org2WorkspaceScreenshotRenderer {
     let content = ZStack {
       Color(nsColor: .windowBackgroundColor)
       ContentView()
-        .environmentObject(store)
+        .environment(store)
         .frame(width: width, height: height)
     }
     .frame(width: width, height: height)

@@ -1,4 +1,5 @@
 import AppKit
+import CryptoKit
 import SwiftUI
 
 enum AIChatMessageTimestampPresentation {
@@ -270,34 +271,600 @@ struct OpenClawMessageOrgPresentation: Equatable, Sendable {
   }
 }
 
-final class OpenClawCachedMessagePresentation {
+struct OpenClawMessageBodyExcerpt: Equatable, Sendable {
+  static let collapsedUTF8ByteLimit = 32 * 1_024
+
+  let text: String
+  let isTruncated: Bool
+
+  nonisolated init(_ rawText: String, utf8ByteLimit: Int?) {
+    guard let utf8ByteLimit else {
+      text = rawText
+      isTruncated = false
+      return
+    }
+
+    let resolvedLimit = max(0, utf8ByteLimit)
+    var end = rawText.startIndex
+    var byteCount = 0
+    var truncated = false
+    for character in rawText {
+      let characterByteCount = String(character).utf8.count
+      if byteCount + characterByteCount > resolvedLimit {
+        truncated = true
+        break
+      }
+      byteCount += characterByteCount
+      end = rawText.index(after: end)
+    }
+    text = truncated ? String(rawText[..<end]) : rawText
+    isTruncated = truncated
+  }
+
+  nonisolated static func displayedUTF8ByteCount(for rawText: String) -> Int {
+    rawText.utf8.prefix(collapsedUTF8ByteLimit).count
+  }
+}
+
+struct OpenClawPreparedMessageBody: Equatable, Sendable {
+  let sourceText: String
+  let displayedText: String
+  let isTruncated: Bool
+  let org: OpenClawMessageOrgPresentation?
+  let containsInlineSyntax: Bool
+}
+
+struct OpenClawMessagePresentationInput: Equatable, Sendable {
+  let messageID: UUID
+  let role: OpenClawChatMessage.Role
+  let rawText: String
+  let responseTrace: OpenClawResponseTrace?
+
+  nonisolated init(_ message: OpenClawChatMessage) {
+    messageID = message.id
+    role = message.role
+    rawText = message.content
+    responseTrace = message.responseTrace
+  }
+}
+
+struct OpenClawMessagePresentationRevision: Equatable, Hashable, Sendable {
+  private struct Payload: Encodable {
+    let role: OpenClawChatMessage.Role
+    let rawText: String
+    let responseTrace: OpenClawResponseTrace?
+  }
+
+  let bytes: [UInt8]
+
+  nonisolated init(_ input: OpenClawMessagePresentationInput) {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys]
+    let payload = Payload(
+      role: input.role,
+      rawText: input.rawText,
+      responseTrace: input.responseTrace
+    )
+    let data = (try? encoder.encode(payload)) ?? Data(input.rawText.utf8)
+    bytes = Array(SHA256.hash(data: data))
+  }
+}
+
+final class OpenClawCachedMessagePresentation: Sendable {
+  let revision: OpenClawMessagePresentationRevision?
   let role: OpenClawChatMessage.Role
   let rawText: String
   let responseTrace: OpenClawResponseTrace?
   let context: OpenClawContextPresentation
-  let org: OpenClawMessageOrgPresentation?
+  let body: OpenClawPreparedMessageBody
   let activityFeedItems: [OpenClawActivityFeedItem]
 
   init(
+    revision: OpenClawMessagePresentationRevision? = nil,
     role: OpenClawChatMessage.Role,
     rawText: String,
     responseTrace: OpenClawResponseTrace?,
     context: OpenClawContextPresentation,
-    org: OpenClawMessageOrgPresentation?,
+    body: OpenClawPreparedMessageBody,
     activityFeedItems: [OpenClawActivityFeedItem]
   ) {
+    self.revision = revision
     self.role = role
     self.rawText = rawText
     self.responseTrace = responseTrace
     self.context = context
-    self.org = org
+    self.body = body
     self.activityFeedItems = activityFeedItems
   }
 
+  var org: OpenClawMessageOrgPresentation? { body.org }
+
+  nonisolated func matches(_ input: OpenClawMessagePresentationInput) -> Bool {
+    guard let revision else { return false }
+    return revision == OpenClawMessagePresentationRevision(input)
+  }
+
   func matches(_ message: OpenClawChatMessage) -> Bool {
-    role == message.role
-      && rawText == message.content
-      && responseTrace == message.responseTrace
+    matches(OpenClawMessagePresentationInput(message))
+  }
+}
+
+struct OpenClawPreparedMessagePresentation: Sendable {
+  let messageID: UUID
+  let value: OpenClawCachedMessagePresentation
+  let estimatedCost: Int
+}
+
+struct OpenClawResolvedMessagePresentation: Sendable {
+  let revision: OpenClawMessagePresentationRevision
+  let value: OpenClawCachedMessagePresentation
+  let preparedForCacheInstall: OpenClawPreparedMessagePresentation?
+}
+
+struct OpenClawExpandedMessageBodyInput: Equatable, Sendable {
+  static let pageCharacterLimit = 64 * 1_024
+
+  let messageID: UUID
+  let role: OpenClawChatMessage.Role
+  let sourceText: String
+  let pageIndex: Int
+
+  init(
+    messageID: UUID,
+    role: OpenClawChatMessage.Role,
+    sourceText: String,
+    pageIndex: Int = 0
+  ) {
+    self.messageID = messageID
+    self.role = role
+    self.sourceText = sourceText
+    self.pageIndex = max(0, pageIndex)
+  }
+}
+
+enum OpenClawMessagePresentationBuilder {
+  private static let placeholderUTF8ByteLimit = 2 * 1_024
+
+  nonisolated static func prepare(
+    _ input: OpenClawMessagePresentationInput,
+    revision suppliedRevision: OpenClawMessagePresentationRevision? = nil
+  ) -> OpenClawPreparedMessagePresentation {
+    let revision = suppliedRevision ?? OpenClawMessagePresentationRevision(input)
+    let context = OpenClawContextPresentation(
+      input.rawText,
+      extractsContexts: input.role == .user
+    )
+    let body = prepareBody(
+      sourceText: context.userText,
+      role: input.role,
+      utf8ByteLimit: OpenClawMessageBodyExcerpt.collapsedUTF8ByteLimit
+    )
+    let activityFeedItems = input.responseTrace.map {
+      OpenClawActivityFeed.items(from: $0.activities)
+    } ?? []
+    let value = OpenClawCachedMessagePresentation(
+      revision: revision,
+      role: input.role,
+      rawText: input.rawText,
+      responseTrace: input.responseTrace,
+      context: context,
+      body: body,
+      activityFeedItems: activityFeedItems
+    )
+    return OpenClawPreparedMessagePresentation(
+      messageID: input.messageID,
+      value: value,
+      estimatedCost: estimatedCost(
+        input: input,
+        context: context,
+        body: body,
+        activityFeedItems: activityFeedItems
+      )
+    )
+  }
+
+  nonisolated static func prepareExpandedBody(
+    sourceText: String,
+    role: OpenClawChatMessage.Role,
+    pageIndex: Int? = nil
+  ) -> OpenClawPreparedMessageBody? {
+    guard !Task.isCancelled else { return nil }
+    let body: OpenClawPreparedMessageBody
+    if let pageIndex {
+      let startOffset = max(0, pageIndex) * OpenClawExpandedMessageBodyInput.pageCharacterLimit
+      let start = sourceText.index(
+        sourceText.startIndex,
+        offsetBy: startOffset,
+        limitedBy: sourceText.endIndex
+      ) ?? sourceText.endIndex
+      let end = sourceText.index(
+        start,
+        offsetBy: OpenClawExpandedMessageBodyInput.pageCharacterLimit,
+        limitedBy: sourceText.endIndex
+      ) ?? sourceText.endIndex
+      let preparedPage = prepareBody(
+        sourceText: String(sourceText[start..<end]),
+        role: role,
+        utf8ByteLimit: nil
+      )
+      body = OpenClawPreparedMessageBody(
+        sourceText: sourceText,
+        displayedText: preparedPage.displayedText,
+        isTruncated: end < sourceText.endIndex,
+        org: preparedPage.org,
+        containsInlineSyntax: preparedPage.containsInlineSyntax
+      )
+    } else {
+      body = prepareBody(sourceText: sourceText, role: role, utf8ByteLimit: nil)
+    }
+    guard !Task.isCancelled else { return nil }
+    return body
+  }
+
+  nonisolated static func placeholder(
+    _ input: OpenClawMessagePresentationInput
+  ) -> OpenClawCachedMessagePresentation {
+    if input.role == .user {
+      return OpenClawCachedMessagePresentation(
+        role: input.role,
+        rawText: input.rawText,
+        responseTrace: input.responseTrace,
+        context: OpenClawContextPresentation("", extractsContexts: false),
+        body: OpenClawPreparedMessageBody(
+          sourceText: "",
+          displayedText: "Preparing message…",
+          isTruncated: false,
+          org: nil,
+          containsInlineSyntax: false
+        ),
+        activityFeedItems: []
+      )
+    }
+    let excerpt = OpenClawMessageBodyExcerpt(
+      input.rawText,
+      utf8ByteLimit: placeholderUTF8ByteLimit
+    )
+    let exceedsCollapsedLimit = input.rawText.utf8
+      .prefix(OpenClawMessageBodyExcerpt.collapsedUTF8ByteLimit + 1)
+      .count > OpenClawMessageBodyExcerpt.collapsedUTF8ByteLimit
+    return OpenClawCachedMessagePresentation(
+      role: input.role,
+      rawText: input.rawText,
+      responseTrace: input.responseTrace,
+      context: OpenClawContextPresentation(input.rawText, extractsContexts: false),
+      body: OpenClawPreparedMessageBody(
+        sourceText: input.rawText,
+        displayedText: excerpt.text,
+        isTruncated: exceedsCollapsedLimit,
+        org: nil,
+        containsInlineSyntax: false
+      ),
+      activityFeedItems: []
+    )
+  }
+
+  private nonisolated static func prepareBody(
+    sourceText: String,
+    role: OpenClawChatMessage.Role,
+    utf8ByteLimit: Int?
+  ) -> OpenClawPreparedMessageBody {
+    let excerpt = OpenClawMessageBodyExcerpt(sourceText, utf8ByteLimit: utf8ByteLimit)
+    let org = role == .assistant
+      ? OpenClawMessageOrgPresentation(excerpt.text)
+      : nil
+    let inlineText = org?.normalizedText ?? excerpt.text
+    let containsInlineSyntax = org?.usesStructuredRendering == true
+      ? false
+      : OrgInlineParser.hasInlineSyntaxCandidate(inlineText)
+    return OpenClawPreparedMessageBody(
+      sourceText: sourceText,
+      displayedText: excerpt.text,
+      isTruncated: excerpt.isTruncated,
+      org: org,
+      containsInlineSyntax: containsInlineSyntax
+    )
+  }
+
+  private nonisolated static func estimatedCost(
+    input: OpenClawMessagePresentationInput,
+    context: OpenClawContextPresentation,
+    body: OpenClawPreparedMessageBody,
+    activityFeedItems: [OpenClawActivityFeedItem]
+  ) -> Int {
+    var cost = input.rawText.utf8.count
+      + context.userText.utf8.count
+      + body.displayedText.utf8.count
+      + (body.org?.normalizedText.utf8.count ?? 0)
+      + (input.responseTrace?.reasoning.utf8.count ?? 0)
+    for contextItem in context.contexts {
+      cost += contextItem.kind.utf8.count
+        + contextItem.title.utf8.count
+        + contextItem.reference.utf8.count
+        + contextItem.sourceLine.utf8.count
+        + (contextItem.automaticPrompt?.utf8.count ?? 0)
+    }
+    for block in body.org?.blocks ?? [] {
+      cost += block.rawText.utf8.count
+    }
+    for item in activityFeedItems {
+      cost += item.id.utf8.count
+      cost += item.title.utf8.count
+      cost += item.detail?.utf8.count ?? 0
+      cost += item.latestDetail?.utf8.count ?? 0
+      cost += 128
+    }
+    return cost
+  }
+}
+
+actor OpenClawMessagePresentationPreparationCoordinator {
+  static let shared = OpenClawMessagePresentationPreparationCoordinator()
+  private static let maximumConcurrentWorkerCount = 2
+
+  private struct Entry {
+    let token: UUID
+    let input: OpenClawMessagePresentationInput
+    let task: Task<OpenClawPreparedMessagePresentation, Never>
+  }
+
+  private var entries: [UUID: [Entry]] = [:]
+  private var workerPermitWaiters: [CheckedContinuation<Void, Never>] = []
+  private var preparationCountForTesting = 0
+  private var activeWorkerCountValueForTesting = 0
+  private var peakConcurrentWorkerCountValueForTesting = 0
+  private var activeWorkerCountsByMessageForTesting: [UUID: Int] = [:]
+  private var peakWorkerCountsByMessageForTesting: [UUID: Int] = [:]
+  private var pausesWorkersForTesting = false
+  private var pausedWorkerContinuationsForTesting: [CheckedContinuation<Void, Never>] = []
+
+  func prepare(
+    _ input: OpenClawMessagePresentationInput
+  ) async -> OpenClawPreparedMessagePresentation {
+    await prepare(input, revision: nil)
+  }
+
+  func resolve(
+    _ input: OpenClawMessagePresentationInput,
+    cachedCandidate: OpenClawCachedMessagePresentation?
+  ) async -> OpenClawResolvedMessagePresentation {
+    let revision = OpenClawMessagePresentationRevision(input)
+    if cachedCandidate?.revision == revision,
+       let cachedCandidate {
+      return OpenClawResolvedMessagePresentation(
+        revision: revision,
+        value: cachedCandidate,
+        preparedForCacheInstall: nil
+      )
+    }
+    let prepared = await prepare(input, revision: revision)
+    return OpenClawResolvedMessagePresentation(
+      revision: revision,
+      value: prepared.value,
+      preparedForCacheInstall: prepared
+    )
+  }
+
+  private func prepare(
+    _ input: OpenClawMessagePresentationInput,
+    revision: OpenClawMessagePresentationRevision?
+  ) async -> OpenClawPreparedMessagePresentation {
+    let token: UUID
+    let task: Task<OpenClawPreparedMessagePresentation, Never>
+    if let existing = entries[input.messageID]?.first(where: { $0.input == input }) {
+      token = existing.token
+      task = existing.task
+    } else {
+      let previousTask = entries[input.messageID]?.last?.task
+      token = UUID()
+      task = Task.detached(priority: .userInitiated) {
+        if let previousTask {
+          _ = await previousTask.value
+        }
+        await self.acquireWorkerPermit(messageID: input.messageID)
+        let prepared = OpenClawMessagePresentationBuilder.prepare(
+          input,
+          revision: revision
+        )
+        await self.releaseWorkerPermit(messageID: input.messageID)
+        return prepared
+      }
+      entries[input.messageID, default: []].append(Entry(
+        token: token,
+        input: input,
+        task: task
+      ))
+      preparationCountForTesting += 1
+    }
+    let prepared = await task.value
+    removeFinishedEntry(messageID: input.messageID, token: token)
+    return prepared
+  }
+
+  private func removeFinishedEntry(messageID: UUID, token: UUID) {
+    guard var messageEntries = entries[messageID] else { return }
+    messageEntries.removeAll { $0.token == token }
+    if messageEntries.isEmpty {
+      entries.removeValue(forKey: messageID)
+    } else {
+      entries[messageID] = messageEntries
+    }
+  }
+
+  private func acquireWorkerPermit(messageID: UUID) async {
+    if activeWorkerCountValueForTesting >= Self.maximumConcurrentWorkerCount {
+      await withCheckedContinuation { continuation in
+        workerPermitWaiters.append(continuation)
+      }
+    } else {
+      activeWorkerCountValueForTesting += 1
+      peakConcurrentWorkerCountValueForTesting = max(
+        peakConcurrentWorkerCountValueForTesting,
+        activeWorkerCountValueForTesting
+      )
+    }
+    let messageWorkerCount = (activeWorkerCountsByMessageForTesting[messageID] ?? 0) + 1
+    activeWorkerCountsByMessageForTesting[messageID] = messageWorkerCount
+    peakWorkerCountsByMessageForTesting[messageID] = max(
+      peakWorkerCountsByMessageForTesting[messageID] ?? 0,
+      messageWorkerCount
+    )
+    guard pausesWorkersForTesting else { return }
+    await withCheckedContinuation { continuation in
+      pausedWorkerContinuationsForTesting.append(continuation)
+    }
+  }
+
+  private func releaseWorkerPermit(messageID: UUID) {
+    let messageWorkerCount = max(
+      0,
+      (activeWorkerCountsByMessageForTesting[messageID] ?? 1) - 1
+    )
+    if messageWorkerCount == 0 {
+      activeWorkerCountsByMessageForTesting.removeValue(forKey: messageID)
+    } else {
+      activeWorkerCountsByMessageForTesting[messageID] = messageWorkerCount
+    }
+    if workerPermitWaiters.isEmpty {
+      activeWorkerCountValueForTesting -= 1
+    } else {
+      workerPermitWaiters.removeFirst().resume()
+    }
+  }
+
+  func resetForTesting() async {
+    setWorkersPausedForTesting(false)
+    let pendingTasks = entries.values.flatMap { $0 }.map(\.task)
+    for task in pendingTasks {
+      _ = await task.value
+    }
+    entries.removeAll()
+    preparationCountForTesting = 0
+    activeWorkerCountValueForTesting = 0
+    peakConcurrentWorkerCountValueForTesting = 0
+    activeWorkerCountsByMessageForTesting.removeAll()
+    peakWorkerCountsByMessageForTesting.removeAll()
+  }
+
+  func countForTesting() -> Int { preparationCountForTesting }
+  func activeWorkerCountForTesting() -> Int { activeWorkerCountValueForTesting }
+  func peakConcurrentWorkerCountForTesting() -> Int { peakConcurrentWorkerCountValueForTesting }
+  func peakWorkerCountForTesting(messageID: UUID) -> Int {
+    peakWorkerCountsByMessageForTesting[messageID] ?? 0
+  }
+  func maximumConcurrentWorkerCountForTesting() -> Int {
+    Self.maximumConcurrentWorkerCount
+  }
+
+  func setWorkersPausedForTesting(_ paused: Bool) {
+    pausesWorkersForTesting = paused
+    guard !paused else { return }
+    let continuations = pausedWorkerContinuationsForTesting
+    pausedWorkerContinuationsForTesting.removeAll()
+    continuations.forEach { $0.resume() }
+  }
+}
+
+actor OpenClawExpandedMessageBodyPreparationCoordinator {
+  static let shared = OpenClawExpandedMessageBodyPreparationCoordinator()
+
+  private struct Entry {
+    let token: UUID
+    let input: OpenClawExpandedMessageBodyInput
+    let task: Task<OpenClawPreparedMessageBody?, Never>
+  }
+
+  private var entries: [UUID: [Entry]] = [:]
+  private var preparationCountForTesting = 0
+  private var activeWorkerCountValueForTesting = 0
+  private var peakConcurrentWorkerCountValueForTesting = 0
+  private var pausesWorkersForTesting = false
+  private var pausedWorkerContinuationsForTesting: [CheckedContinuation<Void, Never>] = []
+
+  func prepare(
+    _ input: OpenClawExpandedMessageBodyInput
+  ) async -> OpenClawPreparedMessageBody? {
+    let token: UUID
+    let task: Task<OpenClawPreparedMessageBody?, Never>
+    if let existing = entries[input.messageID]?.first(where: { $0.input == input }) {
+      token = existing.token
+      task = existing.task
+    } else {
+      let previousTask = entries[input.messageID]?.last?.task
+      token = UUID()
+      task = Task.detached(priority: .userInitiated) {
+        if let previousTask {
+          _ = await previousTask.value
+        }
+        await self.workerDidStart()
+        let prepared = OpenClawMessagePresentationBuilder.prepareExpandedBody(
+          sourceText: input.sourceText,
+          role: input.role,
+          pageIndex: input.pageIndex
+        )
+        await self.workerDidFinish()
+        return prepared
+      }
+      entries[input.messageID, default: []].append(Entry(
+        token: token,
+        input: input,
+        task: task
+      ))
+      preparationCountForTesting += 1
+    }
+    let prepared = await task.value
+    removeFinishedEntry(messageID: input.messageID, token: token)
+    return Task.isCancelled ? nil : prepared
+  }
+
+  private func removeFinishedEntry(messageID: UUID, token: UUID) {
+    guard var messageEntries = entries[messageID] else { return }
+    messageEntries.removeAll { $0.token == token }
+    if messageEntries.isEmpty {
+      entries.removeValue(forKey: messageID)
+    } else {
+      entries[messageID] = messageEntries
+    }
+  }
+
+  private func workerDidStart() async {
+    activeWorkerCountValueForTesting += 1
+    peakConcurrentWorkerCountValueForTesting = max(
+      peakConcurrentWorkerCountValueForTesting,
+      activeWorkerCountValueForTesting
+    )
+    guard pausesWorkersForTesting else { return }
+    await withCheckedContinuation { continuation in
+      pausedWorkerContinuationsForTesting.append(continuation)
+    }
+  }
+
+  private func workerDidFinish() {
+    activeWorkerCountValueForTesting -= 1
+  }
+
+  func resetForTesting() async {
+    setWorkersPausedForTesting(false)
+    let pendingTasks = entries.values.flatMap { $0 }.map(\.task)
+    pendingTasks.forEach { $0.cancel() }
+    for task in pendingTasks {
+      _ = await task.value
+    }
+    entries.removeAll()
+    preparationCountForTesting = 0
+    activeWorkerCountValueForTesting = 0
+    peakConcurrentWorkerCountValueForTesting = 0
+  }
+
+  func countForTesting() -> Int { preparationCountForTesting }
+  func activeWorkerCountForTesting() -> Int { activeWorkerCountValueForTesting }
+  func peakConcurrentWorkerCountForTesting() -> Int { peakConcurrentWorkerCountValueForTesting }
+
+  func setWorkersPausedForTesting(_ paused: Bool) {
+    pausesWorkersForTesting = paused
+    guard !paused else { return }
+    let continuations = pausedWorkerContinuationsForTesting
+    pausedWorkerContinuationsForTesting.removeAll()
+    continuations.forEach { $0.resume() }
   }
 }
 
@@ -326,37 +893,54 @@ enum OpenClawMessagePresentationCache {
   }()
 
   static func presentation(for message: OpenClawChatMessage) -> OpenClawCachedMessagePresentation {
-    let key = CacheKey(messageID: message.id)
-    if let cached = cache.object(forKey: key), cached.matches(message) {
+    let input = OpenClawMessagePresentationInput(message)
+    let key = CacheKey(messageID: input.messageID)
+    if let cached = cache.object(forKey: key), cached.matches(input) {
       return cached
     }
 
-    let context = OpenClawContextPresentation(
-      message.content,
-      extractsContexts: message.role == .user
+    let prepared = OpenClawMessagePresentationBuilder.prepare(input)
+    install(prepared)
+    return prepared.value
+  }
+
+  static func cachedPresentation(
+    for input: OpenClawMessagePresentationInput
+  ) -> OpenClawCachedMessagePresentation? {
+    guard let cached = cache.object(forKey: CacheKey(messageID: input.messageID)),
+          cached.matches(input)
+    else { return nil }
+    return cached
+  }
+
+  static func cachedPresentation(
+    messageID: UUID
+  ) -> OpenClawCachedMessagePresentation? {
+    cache.object(forKey: CacheKey(messageID: messageID))
+  }
+
+  static func install(_ prepared: OpenClawPreparedMessagePresentation) {
+    cache.setObject(
+      prepared.value,
+      forKey: CacheKey(messageID: prepared.messageID),
+      cost: prepared.estimatedCost
     )
-    let org = message.role == .assistant
-      ? OpenClawMessageOrgPresentation(context.userText)
-      : nil
-    let activityFeedItems = message.responseTrace.map {
-      OpenClawActivityFeed.items(from: $0.activities)
-    } ?? []
-    let value = OpenClawCachedMessagePresentation(
-      role: message.role,
-      rawText: message.content,
-      responseTrace: message.responseTrace,
-      context: context,
-      org: org,
-      activityFeedItems: activityFeedItems
-    )
-    let cost = message.content.utf8.count
-      + (message.responseTrace?.activities.count ?? 0) * 256
-    cache.setObject(value, forKey: key, cost: cost)
-    return value
+  }
+
+  static func install(_ prepared: [OpenClawPreparedMessagePresentation]) {
+    for presentation in prepared {
+      install(presentation)
+    }
   }
 
   static func removeAllForTesting() {
     cache.removeAllObjects()
+  }
+
+  static func cachedPresentationForTesting(
+    messageID: UUID
+  ) -> OpenClawCachedMessagePresentation? {
+    cache.object(forKey: CacheKey(messageID: messageID))
   }
 }
 
@@ -435,39 +1019,94 @@ enum OpenClawMessageOrgNormalizer {
   }
 }
 
-private struct OpenClawMessageBodyView: View {
+struct OpenClawMessageBodyView: View {
+  static let maximumStructuredBlockCountPerPage = 120
+
+  static func structuredBlockRange(
+    blockCount: Int,
+    pageIndex: Int
+  ) -> Range<Int> {
+    let resolvedBlockCount = max(0, blockCount)
+    let maximumPageIndex = max(
+      0,
+      (resolvedBlockCount - 1) / maximumStructuredBlockCountPerPage
+    )
+    let resolvedPageIndex = min(max(0, pageIndex), maximumPageIndex)
+    let lowerBound = min(
+      resolvedBlockCount,
+      resolvedPageIndex * maximumStructuredBlockCountPerPage
+    )
+    let upperBound = min(
+      resolvedBlockCount,
+      lowerBound + maximumStructuredBlockCountPerPage
+    )
+    return lowerBound..<upperBound
+  }
+
   let rawText: String
   let compact: Bool
   let managesTextSelection: Bool
   let rendersStructuredOrg2: Bool
   let structuredPresentation: OpenClawMessageOrgPresentation?
+  let containsInlineSyntax: Bool?
+  let allowsSynchronousStructuredPresentationFallback: Bool
+  let structuredPageToken: Int
+  @State private var structuredBlockPageIndex = 0
 
   init(
     rawText: String,
     compact: Bool,
     managesTextSelection: Bool,
     rendersStructuredOrg2: Bool,
-    structuredPresentation: OpenClawMessageOrgPresentation? = nil
+    structuredPresentation: OpenClawMessageOrgPresentation? = nil,
+    containsInlineSyntax: Bool? = nil,
+    allowsSynchronousStructuredPresentationFallback: Bool = true,
+    structuredPageToken: Int = 0
   ) {
     self.rawText = rawText
     self.compact = compact
     self.managesTextSelection = managesTextSelection
     self.rendersStructuredOrg2 = rendersStructuredOrg2
     self.structuredPresentation = structuredPresentation
+    self.containsInlineSyntax = containsInlineSyntax
+    self.allowsSynchronousStructuredPresentationFallback =
+      allowsSynchronousStructuredPresentationFallback
+    self.structuredPageToken = structuredPageToken
   }
 
   var body: some View {
-    let presentation = rendersStructuredOrg2
-      ? (structuredPresentation ?? OpenClawMessageOrgPresentation(rawText))
-      : nil
+    let presentation: OpenClawMessageOrgPresentation? = {
+      if rendersStructuredOrg2,
+         let structuredPresentation {
+        return structuredPresentation
+      }
+      if rendersStructuredOrg2,
+         allowsSynchronousStructuredPresentationFallback {
+        return OpenClawMessageOrgPresentation(rawText)
+      }
+      return nil
+    }()
     Group {
       if let presentation, presentation.usesStructuredRendering {
-        let containsTable = presentation.blocks.contains { block in
+        let blockCount = presentation.blocks.count
+        let maximumPageIndex = max(
+          0,
+          (blockCount - 1) / Self.maximumStructuredBlockCountPerPage
+        )
+        let resolvedPageIndex = min(max(0, structuredBlockPageIndex), maximumPageIndex)
+        let visibleBlockRange = Self.structuredBlockRange(
+          blockCount: blockCount,
+          pageIndex: resolvedPageIndex
+        )
+        let lowerBound = visibleBlockRange.lowerBound
+        let upperBound = visibleBlockRange.upperBound
+        let visibleBlocks = presentation.blocks[lowerBound..<upperBound]
+        let containsTable = visibleBlocks.contains { block in
           if case .table = block.rendered { return true }
           return false
         }
         VStack(alignment: .leading, spacing: 0) {
-          ForEach(presentation.blocks) { block in
+          ForEach(visibleBlocks) { block in
             RenderedBlockView(
               block: block.rendered,
               rawText: block.rawText,
@@ -480,12 +1119,38 @@ private struct OpenClawMessageBodyView: View {
               alignment: .leading
             )
           }
+          if maximumPageIndex > 0 {
+            HStack(spacing: 12) {
+              if resolvedPageIndex > 0 {
+                Button("Previous formatted blocks") {
+                  structuredBlockPageIndex = resolvedPageIndex - 1
+                }
+                .accessibilityIdentifier("openclaw-message-structured-previous")
+              }
+              Text("Blocks \(lowerBound + 1)–\(upperBound) of \(blockCount)")
+                .foregroundStyle(.tertiary)
+              if resolvedPageIndex < maximumPageIndex {
+                Button("Next formatted blocks") {
+                  structuredBlockPageIndex = resolvedPageIndex + 1
+                }
+                .accessibilityIdentifier("openclaw-message-structured-next")
+              }
+            }
+            .buttonStyle(.plain)
+            .font(.caption2.weight(.medium))
+            .padding(.top, 6)
+          }
         }
         .environment(\.orgInlineTextSelectionOwnerEnabled, managesTextSelection)
         .frame(
           maxWidth: compact || !containsTable ? (compact ? 360 : 640) : .infinity,
           alignment: .leading
         )
+      } else if containsInlineSyntax == false {
+        Text(presentation?.normalizedText ?? rawText)
+          .font(.body)
+          .lineSpacing(2)
+          .frame(maxWidth: compact ? 360 : 640, alignment: .leading)
       } else {
         OrgInlineText(
           presentation?.normalizedText ?? rawText,
@@ -496,6 +1161,142 @@ private struct OpenClawMessageBodyView: View {
     }
     .lineLimit(nil)
     .fixedSize(horizontal: false, vertical: true)
+    .onChange(of: structuredPageToken) { _, _ in
+      structuredBlockPageIndex = 0
+    }
+  }
+}
+
+private struct OpenClawMessageExpansionTaskKey: Equatable {
+  let messageID: UUID
+  let role: OpenClawChatMessage.Role
+  let createdAt: Date
+  let pageIndex: Int
+  let wantsFullBody: Bool
+  let presentationRevision: OpenClawMessagePresentationRevision?
+}
+
+@MainActor
+private final class OpenClawMessageAccessibilityPressView: NSView {
+  var activate: (() -> Void)?
+
+  override init(frame frameRect: NSRect) {
+    super.init(frame: frameRect)
+    setAccessibilityElement(true)
+    setAccessibilityRole(.button)
+  }
+
+  @available(*, unavailable)
+  required init?(coder: NSCoder) {
+    fatalError("init(coder:) has not been implemented")
+  }
+
+  override func hitTest(_ point: NSPoint) -> NSView? {
+    // Pointer input stays with the visible SwiftUI button. This view only
+    // supplies a stable native accessibility action for automation and VoiceOver.
+    nil
+  }
+
+  override func accessibilityPerformPress() -> Bool {
+    activate?()
+    return activate != nil
+  }
+}
+
+private struct OpenClawMessageAccessibilityPressTarget: NSViewRepresentable {
+  let identifier: String
+  let label: String
+  let activate: () -> Void
+
+  func makeNSView(context: Context) -> OpenClawMessageAccessibilityPressView {
+    OpenClawMessageAccessibilityPressView(frame: .zero)
+  }
+
+  func updateNSView(
+    _ view: OpenClawMessageAccessibilityPressView,
+    context: Context
+  ) {
+    view.activate = activate
+    view.setAccessibilityIdentifier(identifier)
+    view.setAccessibilityLabel(label)
+  }
+}
+
+private struct OpenClawMessageAccessibilityMarker: NSViewRepresentable {
+  let identifier: String
+  let label: String
+
+  func makeNSView(context: Context) -> NSView {
+    let view = NSView(frame: .zero)
+    view.setAccessibilityElement(true)
+    view.setAccessibilityRole(.staticText)
+    return view
+  }
+
+  func updateNSView(_ view: NSView, context: Context) {
+    view.setAccessibilityIdentifier(identifier)
+    view.setAccessibilityLabel(label)
+  }
+}
+
+private struct OpenClawMessagePresentationResolver: NSViewRepresentable {
+  let input: OpenClawMessagePresentationInput
+  let onResolve: @MainActor (OpenClawResolvedMessagePresentation) -> Void
+
+  @MainActor
+  final class Coordinator {
+    private var requestGeneration = 0
+    private var task: Task<Void, Never>?
+    private var lastAppliedRevision: OpenClawMessagePresentationRevision?
+
+    func resolve(
+      input: OpenClawMessagePresentationInput,
+      onResolve: @escaping @MainActor (OpenClawResolvedMessagePresentation) -> Void
+    ) {
+      requestGeneration &+= 1
+      let generation = requestGeneration
+      let cachedCandidate = OpenClawMessagePresentationCache.cachedPresentation(
+        messageID: input.messageID
+      )
+      task?.cancel()
+      task = Task { @MainActor in
+        let resolved = await OpenClawMessagePresentationPreparationCoordinator.shared.resolve(
+          input,
+          cachedCandidate: cachedCandidate
+        )
+        guard !Task.isCancelled,
+              generation == requestGeneration
+        else { return }
+        if let prepared = resolved.preparedForCacheInstall {
+          OpenClawMessagePresentationCache.install(prepared)
+        }
+        guard lastAppliedRevision != resolved.revision else { return }
+        lastAppliedRevision = resolved.revision
+        onResolve(resolved)
+      }
+    }
+
+    func cancel() {
+      requestGeneration &+= 1
+      task?.cancel()
+      task = nil
+    }
+  }
+
+  func makeCoordinator() -> Coordinator { Coordinator() }
+
+  func makeNSView(context: Context) -> NSView {
+    let view = NSView(frame: .zero)
+    view.setAccessibilityElement(false)
+    return view
+  }
+
+  func updateNSView(_ nsView: NSView, context: Context) {
+    context.coordinator.resolve(input: input, onResolve: onResolve)
+  }
+
+  static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
+    coordinator.cancel()
   }
 }
 
@@ -520,6 +1321,7 @@ struct ChatBubbleView: View {
   let isRoomResponse: Bool
   let isSearchMatch: Bool
   let isSelectedSearchMatch: Bool
+  let selectedSearchMatchPageIndex: Int
   let canSteerQueuedMessage: Bool
   let steerQueuedMessage: () -> Void
   let editQueuedMessage: () -> Void
@@ -527,6 +1329,12 @@ struct ChatBubbleView: View {
   @State private var isHovering = false
   @State private var didCopy = false
   @State private var previewedAttachment: OpenClawChatAttachment?
+  @State private var explicitlyShowsFullBody = false
+  @State private var expandedBodyPageIndex = 0
+  @State private var expandedBody: OpenClawPreparedMessageBody?
+  @State private var expandedBodyInput: OpenClawExpandedMessageBodyInput?
+  @State private var asynchronouslyPreparedPresentation: OpenClawCachedMessagePresentation?
+  @State private var presentationRevision: OpenClawMessagePresentationRevision?
 
   init(
     message: OpenClawChatMessage,
@@ -537,6 +1345,7 @@ struct ChatBubbleView: View {
     isRoomResponse: Bool = false,
     isSearchMatch: Bool = false,
     isSelectedSearchMatch: Bool = false,
+    selectedSearchMatchPageIndex: Int = 0,
     canSteerQueuedMessage: Bool = false,
     steerQueuedMessage: @escaping () -> Void = {},
     editQueuedMessage: @escaping () -> Void = {},
@@ -550,15 +1359,42 @@ struct ChatBubbleView: View {
     self.isRoomResponse = isRoomResponse
     self.isSearchMatch = isSearchMatch
     self.isSelectedSearchMatch = isSelectedSearchMatch
+    self.selectedSearchMatchPageIndex = max(0, selectedSearchMatchPageIndex)
     self.canSteerQueuedMessage = canSteerQueuedMessage
     self.steerQueuedMessage = steerQueuedMessage
     self.editQueuedMessage = editQueuedMessage
     self.deleteQueuedMessage = deleteQueuedMessage
+    _expandedBodyPageIndex = State(initialValue: max(0, selectedSearchMatchPageIndex))
   }
 
   var body: some View {
-    let cachedPresentation = OpenClawMessagePresentationCache.presentation(for: message)
+    let presentationInput = OpenClawMessagePresentationInput(message)
+    let cachedPresentation = asynchronouslyPreparedPresentation
+      ?? OpenClawMessagePresentationBuilder.placeholder(presentationInput)
     let presentation = cachedPresentation.context
+    let wantsFullBody = explicitlyShowsFullBody
+      || (isSelectedSearchMatch && cachedPresentation.body.isTruncated)
+    let expectedExpandedInput = OpenClawExpandedMessageBodyInput(
+      messageID: presentationInput.messageID,
+      role: presentationInput.role,
+      sourceText: cachedPresentation.body.sourceText,
+      pageIndex: expandedBodyPageIndex
+    )
+    let expandedBodyMatchesCurrentPage = expandedBodyInput?.messageID == expectedExpandedInput.messageID
+      && expandedBodyInput?.role == expectedExpandedInput.role
+      && expandedBodyInput?.pageIndex == expectedExpandedInput.pageIndex
+    let resolvedBody = wantsFullBody
+      && expandedBodyMatchesCurrentPage
+      ? expandedBody ?? cachedPresentation.body
+      : cachedPresentation.body
+    let expansionTaskKey = OpenClawMessageExpansionTaskKey(
+      messageID: message.id,
+      role: message.role,
+      createdAt: message.createdAt,
+      pageIndex: expandedBodyPageIndex,
+      wantsFullBody: wantsFullBody,
+      presentationRevision: presentationRevision
+    )
     HStack(alignment: .top, spacing: 10) {
       if message.role == .user {
         Spacer(minLength: compact ? 24 : 48)
@@ -605,13 +1441,23 @@ struct ChatBubbleView: View {
         if !presentation.contexts.isEmpty {
           OpenClawContextPillsView(contexts: presentation.contexts)
         }
-        if !presentation.userText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        if OpenClawProgressPresentation.containsNonWhitespace(resolvedBody.displayedText) {
           OpenClawMessageBodyView(
-            rawText: presentation.userText,
+            rawText: resolvedBody.displayedText,
             compact: compact,
             managesTextSelection: Self.managesMessageTextSelection,
             rendersStructuredOrg2: message.role == .assistant,
-            structuredPresentation: cachedPresentation.org
+            structuredPresentation: resolvedBody.org,
+            containsInlineSyntax: resolvedBody.containsInlineSyntax,
+            allowsSynchronousStructuredPresentationFallback: false,
+            structuredPageToken: wantsFullBody ? expandedBodyPageIndex + 1 : 0
+          )
+        }
+        if cachedPresentation.body.isTruncated {
+          largeMessageExpansionControl(
+            resolvedBody: resolvedBody,
+            wantsFullBody: wantsFullBody,
+            pageIsPrepared: expandedBodyMatchesCurrentPage && expandedBody != nil
           )
         }
         if !message.attachments.isEmpty {
@@ -685,14 +1531,210 @@ struct ChatBubbleView: View {
     }
     .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
     .fixedSize(horizontal: false, vertical: true)
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier(
+      "openclaw-chat-message-\(message.id.uuidString.lowercased())"
+    )
+    .background {
+      OpenClawMessageAccessibilityMarker(
+        identifier: "openclaw-chat-message-\(message.id.uuidString.lowercased())",
+        label: "\(roleTitle) message"
+      )
+    }
     .sheet(item: $previewedAttachment) { attachment in
       OpenClawAttachmentPreviewView(attachment: attachment)
     }
+    .background {
+      OpenClawMessagePresentationResolver(input: presentationInput) { resolved in
+        asynchronouslyPreparedPresentation = resolved.value
+        presentationRevision = resolved.revision
+      }
+      .frame(width: 0, height: 0)
+      .accessibilityHidden(true)
+    }
+    .task(id: expansionTaskKey) {
+      await synchronizeExpandedBody(
+        input: presentationInput,
+        wantsFullBody: wantsFullBody
+      )
+    }
+    .onChange(of: selectedSearchMatchPageIndex) { _, pageIndex in
+      guard isSelectedSearchMatch else { return }
+      expandedBodyPageIndex = max(0, pageIndex)
+    }
+  }
+
+  @ViewBuilder
+  private func largeMessageExpansionControl(
+    resolvedBody: OpenClawPreparedMessageBody,
+    wantsFullBody: Bool,
+    pageIsPrepared: Bool
+  ) -> some View {
+    let messageIdentifier = message.id.uuidString.lowercased()
+    if wantsFullBody && !pageIsPrepared {
+      HStack(spacing: 7) {
+        ProgressView()
+          .controlSize(.small)
+        Text(isSelectedSearchMatch
+          ? "Revealing full message for the selected match…"
+          : "Preparing full message…")
+      }
+      .font(.caption)
+      .foregroundStyle(.secondary)
+      .accessibilityElement(children: .combine)
+      .accessibilityLabel("Preparing full message")
+      .accessibilityIdentifier("openclaw-message-preparing-full-\(messageIdentifier)")
+    } else if pageIsPrepared && resolvedBody.isTruncated {
+      HStack(spacing: 12) {
+        if expandedBodyPageIndex > 0 {
+          Button("Previous part") {
+            expandedBodyPageIndex -= 1
+          }
+          .accessibilityIdentifier("openclaw-message-previous-part-\(messageIdentifier)")
+        }
+        Button("Next part") {
+          expandedBodyPageIndex += 1
+        }
+        .accessibilityIdentifier("openclaw-message-next-part-\(messageIdentifier)")
+        Button("Show Less") {
+          explicitlyShowsFullBody = false
+          expandedBodyPageIndex = 0
+        }
+        .accessibilityIdentifier("openclaw-message-show-less-\(messageIdentifier)")
+        .background {
+          OpenClawMessageAccessibilityPressTarget(
+            identifier: "openclaw-message-show-less-\(messageIdentifier)",
+            label: "Show collapsed message preview"
+          ) {
+            explicitlyShowsFullBody = false
+            expandedBodyPageIndex = 0
+          }
+        }
+      }
+      .buttonStyle(.plain)
+      .font(.caption.weight(.medium))
+      .foregroundStyle(.secondary)
+    } else if !resolvedBody.isTruncated && isSelectedSearchMatch {
+      Label("Full message shown for selected match", systemImage: "magnifyingglass")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .accessibilityIdentifier("openclaw-message-full-revealed-\(messageIdentifier)")
+        .background {
+          OpenClawMessageAccessibilityMarker(
+            identifier: "openclaw-message-full-revealed-\(messageIdentifier)",
+            label: "Full message shown for selected match"
+          )
+        }
+    } else if !resolvedBody.isTruncated {
+      Button {
+        explicitlyShowsFullBody = false
+        expandedBodyPageIndex = 0
+      } label: {
+        Label("Show Less", systemImage: "chevron.up")
+      }
+      .buttonStyle(.plain)
+      .font(.caption.weight(.medium))
+      .foregroundStyle(.secondary)
+      .accessibilityLabel("Show collapsed message preview")
+      .accessibilityIdentifier("openclaw-message-show-less-\(messageIdentifier)")
+      .background {
+        OpenClawMessageAccessibilityPressTarget(
+          identifier: "openclaw-message-show-less-\(messageIdentifier)",
+          label: "Show collapsed message preview"
+        ) {
+          explicitlyShowsFullBody = false
+          expandedBodyPageIndex = 0
+        }
+      }
+    } else if !wantsFullBody {
+      Button {
+        explicitlyShowsFullBody = true
+        expandedBodyPageIndex = 0
+      } label: {
+        Label("Show Full Message", systemImage: "chevron.down")
+      }
+      .buttonStyle(.plain)
+      .font(.caption.weight(.medium))
+      .foregroundStyle(.secondary)
+      .help("Show all of this large message")
+      .accessibilityLabel("Show full message")
+      .accessibilityIdentifier("openclaw-message-show-full-\(messageIdentifier)")
+      .background {
+        OpenClawMessageAccessibilityPressTarget(
+          identifier: "openclaw-message-show-full-\(messageIdentifier)",
+          label: "Show full message"
+        ) {
+          explicitlyShowsFullBody = true
+          expandedBodyPageIndex = 0
+        }
+      }
+    }
+  }
+
+  @MainActor
+  private func synchronizeExpandedBody(
+    input: OpenClawMessagePresentationInput,
+    wantsFullBody: Bool
+  ) async {
+    guard wantsFullBody else {
+      expandedBody = nil
+      expandedBodyInput = nil
+      return
+    }
+
+    let cachedCandidate = OpenClawMessagePresentationCache.cachedPresentation(
+      messageID: input.messageID
+    )
+    let resolved = await OpenClawMessagePresentationPreparationCoordinator.shared.resolve(
+      input,
+      cachedCandidate: cachedCandidate
+    )
+    guard !Task.isCancelled,
+          message.id == input.messageID,
+          message.role == input.role
+    else { return }
+    if let prepared = resolved.preparedForCacheInstall {
+      OpenClawMessagePresentationCache.install(prepared)
+    }
+    presentationRevision = resolved.revision
+    asynchronouslyPreparedPresentation = resolved.value
+    let preparedPresentation = resolved.value
+    guard preparedPresentation.body.isTruncated else {
+      expandedBody = nil
+      expandedBodyInput = nil
+      return
+    }
+
+    let expandedInput = OpenClawExpandedMessageBodyInput(
+      messageID: input.messageID,
+      role: input.role,
+      sourceText: preparedPresentation.body.sourceText,
+      pageIndex: expandedBodyPageIndex
+    )
+    let alreadyPreparedCurrentPage = expandedBodyInput?.messageID == expandedInput.messageID
+      && expandedBodyInput?.role == expandedInput.role
+      && expandedBodyInput?.pageIndex == expandedInput.pageIndex
+      && expandedBody != nil
+    guard !alreadyPreparedCurrentPage else { return }
+    let prepared = await OpenClawExpandedMessageBodyPreparationCoordinator.shared.prepare(
+      expandedInput
+    )
+    guard !Task.isCancelled,
+          let prepared,
+          message.id == expandedInput.messageID,
+          expandedBodyPageIndex == expandedInput.pageIndex,
+          presentationRevision == resolved.revision
+    else { return }
+    expandedBody = prepared
+    expandedBodyInput = expandedInput
   }
 
   private var copyButton: some View {
     Button {
-      didCopy = OpenClawMessageClipboard.copy(message)
+      let input = OpenClawMessageClipboard.Input(message)
+      Task { @MainActor in
+        didCopy = await OpenClawMessageClipboard.copy(input)
+      }
     } label: {
       Image(systemName: didCopy ? "checkmark" : "doc.on.doc")
         .font(.caption2.weight(.semibold))
@@ -778,7 +1820,7 @@ struct ChatBubbleView: View {
   }
 }
 
-struct AIChatRoomRound: Identifiable, Equatable {
+struct AIChatRoomRound: Identifiable, Equatable, Sendable {
   let id: UUID
   let trigger: OpenClawChatMessage
   let expectedDestinationIDs: [String]
@@ -822,7 +1864,7 @@ struct AIChatRoomRound: Identifiable, Equatable {
   }
 }
 
-enum AIChatRoomTranscriptItem: Identifiable, Equatable {
+enum AIChatRoomTranscriptItem: Identifiable, Equatable, Sendable {
   case message(OpenClawChatMessage)
   case round(AIChatRoomRound)
 
@@ -830,6 +1872,29 @@ enum AIChatRoomTranscriptItem: Identifiable, Equatable {
     switch self {
     case .message(let message): message.id
     case .round(let round): round.id
+    }
+  }
+
+  var visibleChatBubbleMessages: [OpenClawChatMessage] {
+    switch self {
+    case .message(let message):
+      return [message]
+    case .round(let round):
+      return [round.trigger] + round.expectedDestinationIDs
+        .prefix(AIChatRoomRoundView.maximumVisibleDestinationCount)
+        .compactMap {
+        round.response(forDestinationID: $0)
+      }
+    }
+  }
+
+  var visibleChatBubbleCount: Int {
+    visibleChatBubbleMessages.count
+  }
+
+  var displayedContentUTF8ByteCount: Int {
+    visibleChatBubbleMessages.reduce(into: 0) { total, message in
+      total += OpenClawMessageBodyExcerpt.displayedUTF8ByteCount(for: message.content)
     }
   }
 }
@@ -942,6 +2007,23 @@ enum AIChatRoomTranscriptPresentation {
 struct AIChatThreadSearchMatch: Identifiable, Equatable {
   let messageID: UUID
   let scrollTargetID: UUID
+  let rawMessageIndex: Int
+  let anchorRawMessageIndex: Int
+  let expandedBodyPageIndex: Int
+
+  init(
+    messageID: UUID,
+    scrollTargetID: UUID,
+    rawMessageIndex: Int = 0,
+    anchorRawMessageIndex: Int? = nil,
+    expandedBodyPageIndex: Int = 0
+  ) {
+    self.messageID = messageID
+    self.scrollTargetID = scrollTargetID
+    self.rawMessageIndex = rawMessageIndex
+    self.anchorRawMessageIndex = anchorRawMessageIndex ?? rawMessageIndex
+    self.expandedBodyPageIndex = max(0, expandedBodyPageIndex)
+  }
 
   var id: UUID { messageID }
 }
@@ -950,25 +2032,109 @@ struct AIChatThreadSearchCandidate: Equatable {
   let messageID: UUID
   let scrollTargetID: UUID
   let searchableText: String
+  let rawMessageIndex: Int
+  let anchorRawMessageIndex: Int
+}
+
+struct AIChatThreadSearchMessageInput: Sendable {
+  let messageID: UUID
+  let role: OpenClawChatMessage.Role
+  let rawText: String
+  let attachmentFileNames: [String]
+  let isRoomDispatchCopy: Bool
+  let roomRoundID: UUID?
+  let beginsLegacySharedRound: Bool
+
+  nonisolated init(_ message: OpenClawChatMessage) {
+    messageID = message.id
+    role = message.role
+    rawText = message.content
+    attachmentFileNames = message.attachments.map(\.fileName)
+    isRoomDispatchCopy = message.isRoomDispatchCopy
+    roomRoundID = message.roomRoundID
+    beginsLegacySharedRound = message.role == .user
+      && (!message.audienceDestinationIDs.isEmpty || message.audience != nil)
+  }
 }
 
 enum AIChatThreadSearch {
+  nonisolated static func candidates(
+    in messages: [OpenClawChatMessage],
+    isSharedRoom: Bool
+  ) -> [AIChatThreadSearchCandidate] {
+    candidates(
+      in: messages.map(AIChatThreadSearchMessageInput.init),
+      isSharedRoom: isSharedRoom
+    )
+  }
+
   static func candidates(
     in items: [AIChatRoomTranscriptItem]
   ) -> [AIChatThreadSearchCandidate] {
-    items.flatMap { item -> [AIChatThreadSearchCandidate] in
+    items.enumerated().flatMap { index, item -> [AIChatThreadSearchCandidate] in
       switch item {
       case .message(let message):
-        return [candidate(for: message, scrollTargetID: message.id)]
+        return [candidate(for: message, scrollTargetID: message.id, rawMessageIndex: index)]
       case .round(let round):
         let visibleMessages = [round.trigger] + round.expectedDestinationIDs.compactMap {
           round.response(forDestinationID: $0)
         }
         return visibleMessages.map { message in
-          candidate(for: message, scrollTargetID: round.id)
+          candidate(for: message, scrollTargetID: round.id, rawMessageIndex: index)
         }
       }
     }
+  }
+
+  nonisolated static func candidates(
+    in messages: [AIChatThreadSearchMessageInput],
+    isSharedRoom: Bool
+  ) -> [AIChatThreadSearchCandidate] {
+    var explicitRoundAnchors: [UUID: Int] = [:]
+    if isSharedRoom {
+      for (index, message) in messages.enumerated()
+      where !message.isRoomDispatchCopy && message.role == .user {
+        if let roundID = message.roomRoundID,
+           explicitRoundAnchors[roundID] == nil {
+          explicitRoundAnchors[roundID] = index
+        }
+      }
+    }
+
+    var result: [AIChatThreadSearchCandidate] = []
+    result.reserveCapacity(messages.count)
+    var legacyRoundAnchor: (id: UUID, index: Int)?
+    for (index, message) in messages.enumerated() {
+      guard !Task.isCancelled else { return [] }
+      guard !message.isRoomDispatchCopy else { continue }
+      let scrollTargetID: UUID
+      let anchorIndex: Int
+      if !isSharedRoom {
+        scrollTargetID = message.messageID
+        anchorIndex = index
+      } else if let roundID = message.roomRoundID {
+        scrollTargetID = roundID
+        anchorIndex = explicitRoundAnchors[roundID] ?? index
+      } else if message.role == .user {
+        if message.beginsLegacySharedRound {
+          legacyRoundAnchor = (message.messageID, index)
+        } else {
+          legacyRoundAnchor = nil
+        }
+        scrollTargetID = legacyRoundAnchor?.id ?? message.messageID
+        anchorIndex = legacyRoundAnchor?.index ?? index
+      } else {
+        scrollTargetID = legacyRoundAnchor?.id ?? message.messageID
+        anchorIndex = legacyRoundAnchor?.index ?? index
+      }
+      result.append(candidate(
+        for: message,
+        scrollTargetID: scrollTargetID,
+        rawMessageIndex: index,
+        anchorRawMessageIndex: anchorIndex
+      ))
+    }
+    return result
   }
 
   static func matches(
@@ -985,23 +2151,36 @@ enum AIChatThreadSearch {
     let query = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !query.isEmpty else { return [] }
 
-    return candidates.compactMap { candidate in
-      guard candidate.searchableText.range(
+    var result: [AIChatThreadSearchMatch] = []
+    result.reserveCapacity(min(candidates.count, 128))
+    for candidate in candidates {
+      guard !Task.isCancelled else { return [] }
+      guard let matchRange = candidate.searchableText.range(
         of: query,
         options: [.caseInsensitive, .diacriticInsensitive]
-      ) != nil else {
-        return nil
+      ) else {
+        continue
       }
-      return AIChatThreadSearchMatch(
-        messageID: candidate.messageID,
-        scrollTargetID: candidate.scrollTargetID
+      let matchCharacterOffset = candidate.searchableText.distance(
+        from: candidate.searchableText.startIndex,
+        to: matchRange.lowerBound
       )
+      result.append(AIChatThreadSearchMatch(
+        messageID: candidate.messageID,
+        scrollTargetID: candidate.scrollTargetID,
+        rawMessageIndex: candidate.rawMessageIndex,
+        anchorRawMessageIndex: candidate.anchorRawMessageIndex,
+        expandedBodyPageIndex: matchCharacterOffset
+          / OpenClawExpandedMessageBodyInput.pageCharacterLimit
+      ))
     }
+    return result
   }
 
   private static func candidate(
     for message: OpenClawChatMessage,
-    scrollTargetID: UUID
+    scrollTargetID: UUID,
+    rawMessageIndex: Int
   ) -> AIChatThreadSearchCandidate {
     let searchableText = ([OpenClawMessageClipboard.text(for: message)]
       + message.attachments.map(\.fileName))
@@ -1009,7 +2188,32 @@ enum AIChatThreadSearch {
     return AIChatThreadSearchCandidate(
       messageID: message.id,
       scrollTargetID: scrollTargetID,
-      searchableText: searchableText
+      searchableText: searchableText,
+      rawMessageIndex: rawMessageIndex,
+      anchorRawMessageIndex: rawMessageIndex
+    )
+  }
+
+  private nonisolated static func candidate(
+    for message: AIChatThreadSearchMessageInput,
+    scrollTargetID: UUID,
+    rawMessageIndex: Int,
+    anchorRawMessageIndex: Int
+  ) -> AIChatThreadSearchCandidate {
+    let content: String
+    if message.role == .user {
+      content = OpenClawContextPresentation(message.rawText).clipboardText
+    } else if message.role == .assistant {
+      content = OpenClawMessageOrgNormalizer.normalized(message.rawText)
+    } else {
+      content = message.rawText
+    }
+    return AIChatThreadSearchCandidate(
+      messageID: message.messageID,
+      scrollTargetID: scrollTargetID,
+      searchableText: ([content] + message.attachmentFileNames).joined(separator: "\n"),
+      rawMessageIndex: rawMessageIndex,
+      anchorRawMessageIndex: anchorRawMessageIndex
     )
   }
 }
@@ -1037,6 +2241,7 @@ struct AIChatThreadFindBar: View {
           onNext()
         }
         .accessibilityLabel("Find in current AI chat thread")
+        .accessibilityIdentifier("openclaw-chat-thread-find-field")
 
       Text(resultSummary)
         .font(.caption.monospacedDigit())
@@ -1092,22 +2297,27 @@ struct AIChatThreadFindBar: View {
 }
 
 struct AIChatRoomRoundView: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  nonisolated static let maximumVisibleDestinationCount = 8
+
+  @Environment(WorkspaceStore.self) private var store
   let round: AIChatRoomRound
   let compact: Bool
   let searchMatchMessageIDs: Set<UUID>
   let selectedSearchMatchMessageID: UUID?
+  let selectedSearchMatchPageIndex: Int
 
   init(
     round: AIChatRoomRound,
     compact: Bool,
     searchMatchMessageIDs: Set<UUID> = [],
-    selectedSearchMatchMessageID: UUID? = nil
+    selectedSearchMatchMessageID: UUID? = nil,
+    selectedSearchMatchPageIndex: Int = 0
   ) {
     self.round = round
     self.compact = compact
     self.searchMatchMessageIDs = searchMatchMessageIDs
     self.selectedSearchMatchMessageID = selectedSearchMatchMessageID
+    self.selectedSearchMatchPageIndex = selectedSearchMatchPageIndex
   }
 
   var body: some View {
@@ -1120,6 +2330,7 @@ struct AIChatRoomRoundView: View {
         isQueued: store.isAIChatMessageQueued(round.trigger.id),
         isSearchMatch: searchMatchMessageIDs.contains(round.trigger.id),
         isSelectedSearchMatch: selectedSearchMatchMessageID == round.trigger.id,
+        selectedSearchMatchPageIndex: selectedSearchMatchPageIndex,
         editQueuedMessage: { store.editQueuedAIChatMessage(round.trigger.id) },
         deleteQueuedMessage: { store.deleteQueuedAIChatMessage(round.trigger.id) }
       )
@@ -1136,17 +2347,29 @@ struct AIChatRoomRoundView: View {
 
         ViewThatFits(in: .horizontal) {
           HStack(alignment: .top, spacing: 8) {
-            ForEach(round.expectedDestinationIDs, id: \.self) { destinationID in
+            ForEach(visibleDestinationIDs, id: \.self) { destinationID in
               agentSlot(destinationID)
                 .frame(minWidth: 270, maxWidth: .infinity, alignment: .topLeading)
             }
           }
           VStack(alignment: .leading, spacing: 8) {
-            ForEach(round.expectedDestinationIDs, id: \.self) { destinationID in
+            ForEach(visibleDestinationIDs, id: \.self) { destinationID in
               agentSlot(destinationID)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
             }
           }
+        }
+        if omittedDestinationCount > 0 {
+          Text("\(omittedDestinationCount) additional destination\(omittedDestinationCount == 1 ? "" : "s") not mounted")
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
+            .accessibilityIdentifier("openclaw-room-round-omitted-destinations")
+            .background {
+              OpenClawMessageAccessibilityMarker(
+                identifier: "openclaw-room-round-omitted-destinations",
+                label: "Additional shared-room destinations not mounted"
+              )
+            }
         }
       }
       .padding(9)
@@ -1166,9 +2389,26 @@ struct AIChatRoomRoundView: View {
       compact: compact,
       searchMatchMessageIDs: searchMatchMessageIDs,
       selectedSearchMatchMessageID: selectedSearchMatchMessageID,
+      selectedSearchMatchPageIndex: selectedSearchMatchPageIndex,
       isActive: store.selectedAIChatActiveRoomRoundID == round.id
         && store.selectedAIChatActiveDestinationID == destinationID
     )
+  }
+
+  private var visibleDestinationIDs: [String] {
+    var visible = Array(round.expectedDestinationIDs.prefix(Self.maximumVisibleDestinationCount))
+    if let selectedSearchMatchMessageID,
+       let selectedDestinationID = round.expectedDestinationIDs.first(where: {
+         round.response(forDestinationID: $0)?.id == selectedSearchMatchMessageID
+       }),
+       !visible.contains(selectedDestinationID) {
+      visible.append(selectedDestinationID)
+    }
+    return visible
+  }
+
+  private var omittedDestinationCount: Int {
+    max(0, round.expectedDestinationIDs.count - visibleDestinationIDs.count)
   }
 
   private var roundStatus: String {
@@ -1178,12 +2418,13 @@ struct AIChatRoomRoundView: View {
 }
 
 private struct AIChatRoomAgentSlot: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   let round: AIChatRoomRound
   let destinationID: String
   let compact: Bool
   let searchMatchMessageIDs: Set<UUID>
   let selectedSearchMatchMessageID: UUID?
+  let selectedSearchMatchPageIndex: Int
   let isActive: Bool
 
   private var runtime: AIChatRuntime { store.aiChatDestinationRuntime(destinationID) }
@@ -1202,7 +2443,8 @@ private struct AIChatRoomAgentSlot: View {
           compact: true,
           isRoomResponse: true,
           isSearchMatch: searchMatchMessageIDs.contains(response.id),
-          isSelectedSearchMatch: selectedSearchMatchMessageID == response.id
+          isSelectedSearchMatch: selectedSearchMatchMessageID == response.id,
+          selectedSearchMatchPageIndex: selectedSearchMatchPageIndex
         )
       } else if isActive {
         VStack(alignment: .leading, spacing: 6) {
@@ -1339,17 +2581,46 @@ private struct OpenClawQueuedMessageActions: View {
 }
 
 enum OpenClawMessageClipboard {
+  struct Input: Sendable {
+    let role: OpenClawChatMessage.Role
+    let content: String
+    let attachmentFileNames: [String]
+
+    nonisolated init(_ message: OpenClawChatMessage) {
+      role = message.role
+      content = message.content
+      attachmentFileNames = message.attachments.map(\.fileName)
+    }
+  }
+
   nonisolated static func text(for message: OpenClawChatMessage) -> String {
-    if !message.content.isEmpty {
+    text(for: Input(message))
+  }
+
+  nonisolated static func text(for input: Input) -> String {
+    if !input.content.isEmpty {
       let content = OpenClawContextPresentation(
-        message.content,
-        extractsContexts: message.role == .user
+        input.content,
+        extractsContexts: input.role == .user
       ).clipboardText
-      return message.role == .assistant
+      return input.role == .assistant
         ? OpenClawMessageOrgNormalizer.normalized(content)
         : content
     }
-    return message.attachments.map { "[Attachment: \($0.fileName)]" }.joined(separator: "\n")
+    return input.attachmentFileNames.map { "[Attachment: \($0)]" }.joined(separator: "\n")
+  }
+
+  @MainActor
+  @discardableResult
+  static func copy(
+    _ input: Input,
+    to pasteboard: NSPasteboard = .general
+  ) async -> Bool {
+    let preparedText = await Task.detached(priority: .userInitiated) {
+      text(for: input)
+    }.value
+    guard !Task.isCancelled else { return false }
+    return write(preparedText, to: pasteboard)
   }
 
   @MainActor
@@ -1385,7 +2656,7 @@ enum OpenClawMessageClipboard {
 }
 
 private struct OpenClawContextPillsView: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   let contexts: [OpenClawPresentedContext]
   var remove: ((OpenClawPresentedContext) -> Void)?
 
@@ -1414,7 +2685,7 @@ private struct OpenClawContextPillsView: View {
 }
 
 private struct OpenClawContextPill: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   let context: OpenClawPresentedContext
   let remove: ((OpenClawPresentedContext) -> Void)?
   @State private var isHovering = false
@@ -1480,7 +2751,7 @@ private struct OpenClawContextPill: View {
 }
 
 private struct OpenClawSendFailureView: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   let messageID: UUID
   let deliveryStatus: OpenClawChatMessage.DeliveryStatus
   let failureText: String
@@ -1588,16 +2859,19 @@ private struct OpenClawAttachmentThumbnail: View {
   var body: some View {
     Button(action: onPreview) {
       VStack(alignment: .leading, spacing: 4) {
-        Group {
-          if let image = NSImage(data: attachment.data) {
-            Image(nsImage: image)
-              .resizable()
-              .scaledToFill()
-          } else {
+        OpenClawAsyncAttachmentImage(attachment: attachment) { error in
+          Group {
+            if error != nil {
+              Image(systemName: "exclamationmark.triangle")
+                .font(.title3)
+                .foregroundStyle(.orange)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
             Image(systemName: OpenClawAttachmentPresentation.systemImage(for: attachment.mimeType))
               .font(.title3)
               .foregroundStyle(.secondary)
               .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
           }
         }
         .frame(width: size, height: size)
@@ -1716,12 +2990,13 @@ private struct OpenClawChangeDeltaView: View {
 }
 
 struct OpenClawComposerView: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   @State private var localDraft = ""
   @State private var lastStoreDraft = ""
   @State private var selectedSlashSuggestionIndex = 0
   @State private var selectedMentionSuggestionIndex = 0
   @State private var moveComposerCursorToEndRequest = 0
+  @State private var corpusSkillDiscoveryTask: Task<Void, Never>?
   let focusOnAppear: Bool
   let compact: Bool
   let openConfiguration: () -> Void
@@ -1837,6 +3112,7 @@ struct OpenClawComposerView: View {
       cacheDraftLocally()
     }
     .onDisappear {
+      corpusSkillDiscoveryTask?.cancel()
       flushDraftToStore()
     }
     .onChange(of: localDraft) {
@@ -1844,7 +3120,7 @@ struct OpenClawComposerView: View {
       selectedMentionSuggestionIndex = 0
       cacheDraftLocally()
       if OpenClawContextPresentation(localDraft).userText == "/" {
-        store.refreshCorpusAgentSkills()
+        refreshCorpusAgentSkills()
         if store.selectedAIChatDestination.adapter == .openClaw {
           Task { await store.refreshOpenClawCommands() }
         }
@@ -1862,6 +3138,26 @@ struct OpenClawComposerView: View {
     }
     .task(id: store.openClawChatSelectionGeneration) {
       await store.refreshAIChatConfiguration()
+    }
+  }
+
+  private func refreshCorpusAgentSkills() {
+    corpusSkillDiscoveryTask?.cancel()
+    guard let requestedRoot = store.corpusRoot?.standardizedFileURL else { return }
+    corpusSkillDiscoveryTask = Task { @MainActor in
+      _ = await CorpusAgentSkillCatalog.prepareCommands(
+        in: requestedRoot,
+        force: true
+      )
+      guard !Task.isCancelled,
+            store.corpusRoot?.standardizedFileURL == requestedRoot
+      else {
+        return
+      }
+      // This call now only installs the already prepared cache entry. Directory
+      // enumeration and SKILL.md reads happened on the detached loader above.
+      store.refreshCorpusAgentSkills()
+      corpusSkillDiscoveryTask = nil
     }
   }
 
@@ -2767,7 +4063,7 @@ enum OpenClawComposerDraftSync {
 }
 
 private struct OpenClawPendingAttachmentsView: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   let compact: Bool
 
   var body: some View {
@@ -2784,24 +4080,22 @@ private struct OpenClawPendingAttachmentsView: View {
 }
 
 private struct OpenClawPendingAttachmentChip: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   let attachment: OpenClawChatAttachment
 
   var body: some View {
     HStack(spacing: 7) {
-      if let image = NSImage(data: attachment.data) {
-        Image(nsImage: image)
-          .resizable()
-          .scaledToFill()
-          .frame(width: 30, height: 30)
-          .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
-      } else {
-        Image(systemName: OpenClawAttachmentPresentation.systemImage(for: attachment.mimeType))
-          .font(.caption.weight(.semibold))
-          .foregroundStyle(.secondary)
-          .frame(width: 30, height: 30)
-          .background(WorkspaceDesign.subtleFill, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+      OpenClawAsyncAttachmentImage(attachment: attachment) { error in
+        Image(systemName: error == nil
+          ? OpenClawAttachmentPresentation.systemImage(for: attachment.mimeType)
+          : "exclamationmark.triangle")
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(error == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(.orange))
+        .frame(width: 30, height: 30)
+        .background(WorkspaceDesign.subtleFill, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
       }
+      .frame(width: 30, height: 30)
+      .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
 
       VStack(alignment: .leading, spacing: 1) {
         Text(attachment.fileName)
@@ -3215,6 +4509,7 @@ struct OpenClawLiveTypingIndicatorView: View {
   let onStop: () -> Void
 
   var body: some View {
+    let presentationSnapshot = threadID.map(liveState.presentationSnapshot(for:)) ?? .empty
     OpenClawTypingIndicatorView(
       startedAt: startedAt,
       lastEventAt: threadID.flatMap(liveState.lastEventAt(for:)),
@@ -3223,12 +4518,240 @@ struct OpenClawLiveTypingIndicatorView: View {
       connectionState: threadID.map(liveState.connectionState(for:)) ?? .disconnected,
       connectionDetail: threadID.flatMap(liveState.connectionDetail(for:)),
       runID: threadID.flatMap(liveState.activeRunID(for:)),
-      streamingReply: threadID.map(liveState.streamingReply(for:)) ?? "",
-      reasoning: threadID.map(liveState.reasoning(for:)) ?? "",
+      streamingReply: presentationSnapshot.streamingReply,
+      streamingReplyHasOmittedPrefix: presentationSnapshot.isStreamingReplyTruncated,
+      reasoning: presentationSnapshot.reasoning,
+      reasoningHasOmittedPrefix: presentationSnapshot.isReasoningTruncated,
       activities: threadID.map(liveState.runActivities(for:)) ?? [],
       compact: compact,
       onStop: onStop
     )
+  }
+}
+
+struct OpenClawLiveTextPreparationInput: Equatable, Sendable {
+  static let maximumActivityCount = 80
+  static let maximumActivityDetailUTF8ByteCount = 8 * 1_024
+
+  let rawText: String
+  let showsAll: Bool
+  let hasOmittedPrefix: Bool
+  let reasoning: String
+  let reasoningHasOmittedPrefix: Bool
+  let activities: [OpenClawRunActivity]
+
+  init(
+    rawText: String,
+    showsAll: Bool,
+    hasOmittedPrefix: Bool = false,
+    reasoning: String = "",
+    reasoningHasOmittedPrefix: Bool = false,
+    activities: [OpenClawRunActivity] = []
+  ) {
+    self.rawText = rawText
+    self.showsAll = showsAll
+    self.hasOmittedPrefix = hasOmittedPrefix
+    self.reasoning = reasoning
+    self.reasoningHasOmittedPrefix = reasoningHasOmittedPrefix
+    self.activities = activities.suffix(Self.maximumActivityCount).map { activity in
+      OpenClawRunActivity(
+        id: String(activity.id.prefix(256)),
+        runID: String(activity.runID.prefix(256)),
+        kind: activity.kind,
+        title: String(activity.title.prefix(512)),
+        detail: activity.detail.map {
+          OpenClawMessageBodyExcerpt(
+            $0,
+            utf8ByteLimit: Self.maximumActivityDetailUTF8ByteCount
+          ).text
+        },
+        status: activity.status,
+        updatedAt: activity.updatedAt
+      )
+    }
+  }
+}
+
+struct OpenClawPreparedLiveTextPresentation: Equatable, Sendable {
+  let text: OpenClawProgressPresentation.LiveTextPresentation?
+  let body: OpenClawPreparedMessageBody?
+  let reasoning: String?
+  let activityFeedItems: [OpenClawActivityFeedItem]
+}
+
+private struct OpenClawLiveTextPreparationTaskKey: Equatable {
+  let lastEventAt: Date?
+  let showsAll: Bool
+  let streamingCharacterCount: Int
+  let reasoningCharacterCount: Int
+  let activityCount: Int
+  let latestActivityUpdate: Date?
+}
+
+actor OpenClawLiveTextPreparationCoordinator {
+  static let shared = OpenClawLiveTextPreparationCoordinator()
+
+  private struct Entry {
+    let token: UUID
+    let input: OpenClawLiveTextPreparationInput
+    let task: Task<OpenClawPreparedLiveTextPresentation?, Never>
+  }
+
+  private var entries: [UUID: [Entry]] = [:]
+  private var tailTask: Task<OpenClawPreparedLiveTextPresentation?, Never>?
+  private var tailToken: UUID?
+  private var preparationCountForTesting = 0
+  private var activeWorkerCountValueForTesting = 0
+  private var peakConcurrentWorkerCountValueForTesting = 0
+  private var activeTokensByStream: [UUID: UUID] = [:]
+  private var parserInputsForTesting: [OpenClawLiveTextPreparationInput] = []
+  private var pausesWorkersForTesting = false
+  private var pausedWorkerContinuationsForTesting: [CheckedContinuation<Void, Never>] = []
+
+  func prepare(
+    streamID: UUID,
+    input: OpenClawLiveTextPreparationInput
+  ) async -> OpenClawPreparedLiveTextPresentation? {
+    let token: UUID
+    let task: Task<OpenClawPreparedLiveTextPresentation?, Never>
+    if let existing = entries[streamID]?.first(where: {
+      $0.input == input && !$0.task.isCancelled
+    }) {
+      token = existing.token
+      task = existing.task
+    } else {
+      let activeToken = activeTokensByStream[streamID]
+      let retainedEntries = entries[streamID]?.filter { entry in
+        if entry.token == activeToken { return true }
+        entry.task.cancel()
+        return false
+      } ?? []
+      if retainedEntries.isEmpty {
+        entries.removeValue(forKey: streamID)
+      } else {
+        entries[streamID] = retainedEntries
+      }
+      let previousTask = tailTask
+      token = UUID()
+      task = Task.detached(priority: .userInitiated) {
+        if let previousTask {
+          _ = await previousTask.value
+        }
+        guard !Task.isCancelled else { return nil }
+        await self.workerDidStart(streamID: streamID, token: token)
+        guard !Task.isCancelled else {
+          await self.workerDidFinish(streamID: streamID, token: token)
+          return nil
+        }
+        await self.parserWillStart(input: input)
+        let text = OpenClawProgressPresentation.liveTextPresentation(
+          from: input.rawText,
+          showsAll: input.showsAll,
+          hasOmittedPrefix: input.hasOmittedPrefix
+        )
+        let body = text.flatMap {
+          OpenClawMessagePresentationBuilder.prepareExpandedBody(
+            sourceText: $0.text,
+            role: .assistant
+          )
+        }
+        let reasoning = OpenClawProgressPresentation.reasoningText(
+          from: input.reasoning,
+          hasOmittedPrefix: input.reasoningHasOmittedPrefix
+        )
+        let activityFeedItems = OpenClawActivityFeed.items(from: input.activities)
+        let prepared = body == nil && reasoning == nil && activityFeedItems.isEmpty
+          ? nil
+          : OpenClawPreparedLiveTextPresentation(
+            text: text,
+            body: body,
+            reasoning: reasoning,
+            activityFeedItems: activityFeedItems
+          )
+        await self.workerDidFinish(streamID: streamID, token: token)
+        return prepared
+      }
+      entries[streamID, default: []].append(Entry(
+        token: token,
+        input: input,
+        task: task
+      ))
+      tailTask = task
+      tailToken = token
+      preparationCountForTesting += 1
+    }
+    let prepared = await task.value
+    removeFinishedEntry(streamID: streamID, token: token)
+    if tailToken == token {
+      tailTask = nil
+      tailToken = nil
+    }
+    return Task.isCancelled ? nil : prepared
+  }
+
+  private func removeFinishedEntry(streamID: UUID, token: UUID) {
+    guard var streamEntries = entries[streamID] else { return }
+    streamEntries.removeAll { $0.token == token }
+    if streamEntries.isEmpty {
+      entries.removeValue(forKey: streamID)
+    } else {
+      entries[streamID] = streamEntries
+    }
+  }
+
+  private func workerDidStart(streamID: UUID, token: UUID) async {
+    activeWorkerCountValueForTesting += 1
+    peakConcurrentWorkerCountValueForTesting = max(
+      peakConcurrentWorkerCountValueForTesting,
+      activeWorkerCountValueForTesting
+    )
+    activeTokensByStream[streamID] = token
+    guard pausesWorkersForTesting else { return }
+    await withCheckedContinuation { continuation in
+      pausedWorkerContinuationsForTesting.append(continuation)
+    }
+  }
+
+  private func parserWillStart(input: OpenClawLiveTextPreparationInput) {
+    parserInputsForTesting.append(input)
+  }
+
+  private func workerDidFinish(streamID: UUID, token: UUID) {
+    activeWorkerCountValueForTesting -= 1
+    if activeTokensByStream[streamID] == token {
+      activeTokensByStream.removeValue(forKey: streamID)
+    }
+  }
+
+  func resetForTesting() async {
+    setWorkersPausedForTesting(false)
+    let pendingTasks = entries.values.flatMap { $0 }.map(\.task)
+    for task in pendingTasks {
+      _ = await task.value
+    }
+    entries.removeAll()
+    tailTask = nil
+    tailToken = nil
+    preparationCountForTesting = 0
+    activeWorkerCountValueForTesting = 0
+    peakConcurrentWorkerCountValueForTesting = 0
+    activeTokensByStream.removeAll()
+    parserInputsForTesting.removeAll()
+  }
+
+  func countForTesting() -> Int { preparationCountForTesting }
+  func activeWorkerCountForTesting() -> Int { activeWorkerCountValueForTesting }
+  func peakConcurrentWorkerCountForTesting() -> Int { peakConcurrentWorkerCountValueForTesting }
+  func parserInputsForTestingSnapshot() -> [OpenClawLiveTextPreparationInput] {
+    parserInputsForTesting
+  }
+
+  func setWorkersPausedForTesting(_ paused: Bool) {
+    pausesWorkersForTesting = paused
+    guard !paused else { return }
+    let continuations = pausedWorkerContinuationsForTesting
+    pausedWorkerContinuationsForTesting.removeAll()
+    continuations.forEach { $0.resume() }
   }
 }
 
@@ -3244,13 +4767,17 @@ struct OpenClawTypingIndicatorView: View {
   let connectionDetail: String?
   let runID: String?
   let streamingReply: String
+  let streamingReplyHasOmittedPrefix: Bool
   let reasoning: String
+  let reasoningHasOmittedPrefix: Bool
   let activities: [OpenClawRunActivity]
   let compact: Bool
   let onStop: () -> Void
 
   @State private var showsAllStreamingProgress = false
   @State private var statusEvaluationDate = Date()
+  @State private var livePresentation: OpenClawPreparedLiveTextPresentation?
+  @State private var livePresentationStreamID = UUID()
 
   init(
     startedAt: Date?,
@@ -3261,7 +4788,9 @@ struct OpenClawTypingIndicatorView: View {
     connectionDetail: String?,
     runID: String?,
     streamingReply: String,
+    streamingReplyHasOmittedPrefix: Bool = false,
     reasoning: String,
+    reasoningHasOmittedPrefix: Bool = false,
     activities: [OpenClawRunActivity],
     compact: Bool,
     onStop: @escaping () -> Void
@@ -3274,23 +4803,45 @@ struct OpenClawTypingIndicatorView: View {
     self.connectionDetail = connectionDetail
     self.runID = runID
     self.streamingReply = streamingReply
+    self.streamingReplyHasOmittedPrefix = streamingReplyHasOmittedPrefix
     self.reasoning = reasoning
+    self.reasoningHasOmittedPrefix = reasoningHasOmittedPrefix
     self.activities = activities
     self.compact = compact
     self.onStop = onStop
   }
 
   var body: some View {
-    let livePresentation = OpenClawProgressPresentation.liveTextPresentation(
-      from: streamingReply,
-      showsAll: showsAllStreamingProgress
+    let livePresentationInput = OpenClawLiveTextPreparationInput(
+      rawText: streamingReply,
+      showsAll: showsAllStreamingProgress,
+      hasOmittedPrefix: streamingReplyHasOmittedPrefix,
+      reasoning: reasoning,
+      reasoningHasOmittedPrefix: reasoningHasOmittedPrefix,
+      activities: activities
     )
+    let livePresentationTaskKey = OpenClawLiveTextPreparationTaskKey(
+      lastEventAt: lastEventAt,
+      showsAll: showsAllStreamingProgress,
+      streamingCharacterCount: streamingReply.count,
+      reasoningCharacterCount: reasoning.count,
+      activityCount: activities.count,
+      latestActivityUpdate: activities.last?.updatedAt
+    )
+    let presentedActivityItems = livePresentation?.activityFeedItems ?? []
+    let presentedReasoning = livePresentation?.reasoning
     HStack {
       VStack(alignment: .leading, spacing: 9) {
         VStack(alignment: .leading, spacing: 4) {
           HStack(spacing: 8) {
             OpenClawShimmeringStatusText(
-              titleProvider: { statusTitle(now: $0) },
+              titleProvider: {
+                statusTitle(
+                  now: $0,
+                  activityFeedItems: presentedActivityItems,
+                  hasReasoning: presentedReasoning != nil
+                )
+              },
               animates: statusAnimates(now: statusEvaluationDate)
             )
             .fixedSize(horizontal: true, vertical: false)
@@ -3325,15 +4876,27 @@ struct OpenClawTypingIndicatorView: View {
         }
         .help(connectionHelp(now: statusEvaluationDate))
 
-        if let livePresentation {
+        if let livePresentation,
+           let text = livePresentation.text,
+           let body = livePresentation.body {
           OpenClawMessageBodyView(
-            rawText: livePresentation.text,
+            rawText: body.displayedText,
             compact: compact,
             managesTextSelection: false,
-            rendersStructuredOrg2: true
+            rendersStructuredOrg2: true,
+            structuredPresentation: body.org,
+            containsInlineSyntax: body.containsInlineSyntax,
+            allowsSynchronousStructuredPresentationFallback: false
           )
+          .accessibilityIdentifier("openclaw-live-presentation-ready")
+          .background {
+            OpenClawMessageAccessibilityMarker(
+              identifier: "openclaw-live-presentation-ready",
+              label: "Live response presentation ready"
+            )
+          }
 
-          if livePresentation.hasEarlierText {
+          if text.hasEarlierText {
             Button {
               withAnimation(WorkspaceMotion.disclosure) {
                 showsAllStreamingProgress.toggle()
@@ -3350,12 +4913,14 @@ struct OpenClawTypingIndicatorView: View {
           }
         }
 
-        if hasProgress {
+        if !presentedActivityItems.isEmpty || presentedReasoning != nil {
           OpenClawProgressFeedView(
-            reasoning: reasoning,
-            activities: activities,
+            reasoning: "",
+            activities: [],
             compact: compact,
-            isLive: true
+            isLive: true,
+            presentedItems: presentedActivityItems,
+            presentedReasoning: presentedReasoning
           )
         }
       }
@@ -3364,6 +4929,19 @@ struct OpenClawTypingIndicatorView: View {
       Spacer(minLength: compact ? 24 : 48)
     }
     .frame(maxWidth: .infinity, alignment: .leading)
+    .task(id: livePresentationTaskKey) {
+      do {
+        try await Task.sleep(for: .milliseconds(24))
+      } catch {
+        return
+      }
+      let prepared = await OpenClawLiveTextPreparationCoordinator.shared.prepare(
+        streamID: livePresentationStreamID,
+        input: livePresentationInput
+      )
+      guard !Task.isCancelled else { return }
+      livePresentation = prepared
+    }
     .task(id: nextStatusTransition) {
       guard let nextStatusTransition else { return }
       let delay = max(0, nextStatusTransition.timeIntervalSinceNow)
@@ -3392,6 +4970,18 @@ struct OpenClawTypingIndicatorView: View {
   }
 
   func statusTitle(now: Date) -> String {
+    statusTitle(
+      now: now,
+      activityFeedItems: OpenClawActivityFeed.items(from: activities),
+      hasReasoning: hasReasoning
+    )
+  }
+
+  private func statusTitle(
+    now: Date,
+    activityFeedItems: [OpenClawActivityFeedItem],
+    hasReasoning: Bool
+  ) -> String {
     if connectionState == .connected, runID != nil {
       if runLivenessAge(now: now) >= Self.stalledRunInterval {
         return "\(displayTitle) may be stalled"
@@ -3411,14 +5001,13 @@ struct OpenClawTypingIndicatorView: View {
       case .disconnected:
         return "\(displayTitle) connection interrupted"
       case .connected:
-        if let latest = OpenClawActivityFeed.items(from: activities)
-          .last(where: { $0.status == .running }) {
+        if let latest = activityFeedItems.last(where: { $0.status == .running }) {
           return "Running \(latest.title.lowercased())"
         }
         if runID == nil {
           return "Starting \(displayTitle)"
         }
-        if !trimmedReasoning.isEmpty {
+        if hasReasoning {
           return "\(displayTitle) is thinking"
         }
         return "\(displayTitle) is working"
@@ -3435,14 +5024,13 @@ struct OpenClawTypingIndicatorView: View {
       case .disconnected:
         return "Codex connection interrupted"
       case .connected:
-        if let latest = OpenClawActivityFeed.items(from: activities)
-          .last(where: { $0.status == .running }) {
+        if let latest = activityFeedItems.last(where: { $0.status == .running }) {
           return "Running \(latest.title.lowercased())"
         }
         if runID == nil {
           return "Starting Codex"
         }
-        if !trimmedReasoning.isEmpty {
+        if hasReasoning {
           return "Codex is thinking"
         }
         return "Codex is working"
@@ -3458,14 +5046,13 @@ struct OpenClawTypingIndicatorView: View {
     case .disconnected:
       return "Connection interrupted"
     case .connected:
-      if let latest = OpenClawActivityFeed.items(from: activities)
-        .last(where: { $0.status == .running }) {
+      if let latest = activityFeedItems.last(where: { $0.status == .running }) {
         return "Running \(latest.title.lowercased())"
       }
       if runID == nil {
         return "Starting OpenClaw"
       }
-      if !trimmedReasoning.isEmpty {
+      if hasReasoning {
         return "OpenClaw is thinking"
       }
       return "OpenClaw is working"
@@ -3484,12 +5071,12 @@ struct OpenClawTypingIndicatorView: View {
     return normalized.isEmpty ? runtime.title : normalized
   }
 
-  private var trimmedReasoning: String {
-    reasoning.trimmingCharacters(in: .whitespacesAndNewlines)
+  private var hasReasoning: Bool {
+    OpenClawProgressPresentation.containsNonWhitespace(reasoning)
   }
 
   private var hasProgress: Bool {
-    !OpenClawActivityFeed.items(from: activities).isEmpty || !trimmedReasoning.isEmpty
+    !OpenClawActivityFeed.items(from: activities).isEmpty || hasReasoning
   }
 
   func statusDetail(now: Date) -> String? {
@@ -3598,6 +5185,8 @@ private struct OpenClawProgressFeedView: View {
   let compact: Bool
   let isLive: Bool
   let presentedItems: [OpenClawActivityFeedItem]?
+  let reasoningHasOmittedPrefix: Bool
+  let preparedReasoning: String?
 
   @State private var showsFullFeed = false
 
@@ -3606,13 +5195,17 @@ private struct OpenClawProgressFeedView: View {
     activities: [OpenClawRunActivity],
     compact: Bool,
     isLive: Bool,
-    presentedItems: [OpenClawActivityFeedItem]? = nil
+    presentedItems: [OpenClawActivityFeedItem]? = nil,
+    reasoningHasOmittedPrefix: Bool = false,
+    presentedReasoning: String? = nil
   ) {
     self.reasoning = reasoning
     self.activities = activities
     self.compact = compact
     self.isLive = isLive
     self.presentedItems = presentedItems
+    self.reasoningHasOmittedPrefix = reasoningHasOmittedPrefix
+    preparedReasoning = presentedReasoning
   }
 
   private var items: [OpenClawActivityFeedItem] {
@@ -3620,7 +5213,10 @@ private struct OpenClawProgressFeedView: View {
   }
 
   private var presentedReasoning: String? {
-    OpenClawProgressPresentation.reasoningText(from: reasoning)
+    preparedReasoning ?? OpenClawProgressPresentation.reasoningText(
+      from: reasoning,
+      hasOmittedPrefix: reasoningHasOmittedPrefix
+    )
   }
 
   private var collapsedItemLimit: Int { compact ? 2 : 3 }
@@ -3700,6 +5296,16 @@ private struct OpenClawProgressFeedView: View {
         }
       }
 
+      let omittedExpandedItemCount = OpenClawProgressFeedPresentation.omittedExpandedItemCount(
+        itemCount: items.count,
+        isExpanded: showsFullFeed
+      )
+      if omittedExpandedItemCount > 0 {
+        Text("Showing the latest \(OpenClawProgressFeedPresentation.maximumExpandedItemCount) of \(items.count) updates. Earlier updates remain in the durable run record.")
+          .font(.caption2)
+          .foregroundStyle(.tertiary)
+      }
+
       if isLive, !showsFullFeed, canExpand {
         expansionButton
           .frame(maxWidth: .infinity, alignment: .leading)
@@ -3745,6 +5351,8 @@ private struct OpenClawProgressFeedView: View {
 }
 
 enum OpenClawProgressFeedPresentation {
+  static let maximumExpandedItemCount = 96
+
   static func visibleItems(
     _ items: [OpenClawActivityFeedItem],
     isLive: Bool,
@@ -3752,12 +5360,19 @@ enum OpenClawProgressFeedPresentation {
     collapsedItemLimit: Int
   ) -> [OpenClawActivityFeedItem] {
     if isLive {
-      guard !isExpanded else { return items }
+      guard !isExpanded else { return Array(items.suffix(maximumExpandedItemCount)) }
       return items.last(where: { $0.status == .running }).map { [$0] }
         ?? items.last.map { [$0] }
         ?? []
     }
-    return isExpanded ? items : Array(items.suffix(collapsedItemLimit))
+    return isExpanded
+      ? Array(items.suffix(maximumExpandedItemCount))
+      : Array(items.suffix(collapsedItemLimit))
+  }
+
+  static func omittedExpandedItemCount(itemCount: Int, isExpanded: Bool) -> Int {
+    guard isExpanded else { return 0 }
+    return max(0, itemCount - maximumExpandedItemCount)
   }
 
   static func showsReasoning(isLive: Bool, isExpanded: Bool) -> Bool {
@@ -3867,19 +5482,26 @@ private struct OpenClawActivityFeedRow: View {
 }
 
 enum OpenClawProgressPresentation {
-  struct LiveTextPresentation: Equatable {
+  struct LiveTextPresentation: Equatable, Sendable {
     let text: String
     let hasEarlierText: Bool
   }
 
   private static let maximumReasoningLength = 1_200
+  static let maximumReasoningInputUTF8ByteCount = 8 * 1_024
+  static let maximumLiveNormalizationInputCharacterCount = 8 * 1_024
   private static let maximumCollapsedLiveLength = 320
 
-  static func liveTextPresentation(
+  nonisolated static func liveTextPresentation(
     from raw: String,
-    showsAll: Bool
+    showsAll: Bool,
+    hasOmittedPrefix: Bool = false
   ) -> LiveTextPresentation? {
-    let readable = normalizedReadableText(raw)
+    let bounded = boundedSuffix(
+      raw,
+      maximumCharacterCount: maximumLiveNormalizationInputCharacterCount
+    )
+    let readable = normalizedReadableText(bounded.text)
     guard !readable.isEmpty else { return nil }
 
     let paragraphs = readable.components(separatedBy: "\n\n")
@@ -3895,22 +5517,34 @@ enum OpenClawProgressPresentation {
     }
     return LiveTextPresentation(
       text: showsAll ? readable : collapsed,
-      hasEarlierText: collapsed != readable
+      hasEarlierText: hasOmittedPrefix || bounded.wasTruncated || collapsed != readable
     )
   }
 
-  static func liveText(from raw: String, showsAll: Bool) -> String? {
+  nonisolated static func liveText(from raw: String, showsAll: Bool) -> String? {
     liveTextPresentation(from: raw, showsAll: showsAll)?.text
   }
 
-  static func hasEarlierLiveText(_ raw: String) -> Bool {
+  nonisolated static func hasEarlierLiveText(_ raw: String) -> Bool {
     liveTextPresentation(from: raw, showsAll: false)?.hasEarlierText ?? false
   }
 
-  static func reasoningText(from raw: String) -> String? {
-    let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+  nonisolated static func reasoningText(
+    from raw: String,
+    hasOmittedPrefix: Bool = false
+  ) -> String? {
+    guard containsNonWhitespace(raw) else { return nil }
+    let excerpt = OpenClawMessageBodyExcerpt(
+      raw,
+      utf8ByteLimit: maximumReasoningInputUTF8ByteCount
+    )
+    let trimmed = excerpt.text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else { return nil }
 
+    let startsLikeStructuredPayload = trimmed.first == "{" || trimmed.first == "["
+    if startsLikeStructuredPayload {
+      return nil
+    }
     if let data = trimmed.data(using: .utf8),
        (try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])) != nil {
       return nil
@@ -3923,11 +5557,27 @@ enum OpenClawProgressPresentation {
     guard !looksLikeEncodedPayload else { return nil }
 
     let readable = normalizedReadableText(trimmed)
-    guard readable.count > maximumReasoningLength else { return readable }
-    return String(readable.prefix(maximumReasoningLength - 1)).trimmingCharacters(in: .whitespacesAndNewlines) + "\u{2026}"
+    guard hasOmittedPrefix
+            || excerpt.isTruncated
+            || readable.count > maximumReasoningLength
+    else { return readable }
+    return String(readable.prefix(maximumReasoningLength - 1))
+      .trimmingCharacters(in: .whitespacesAndNewlines) + "\u{2026}"
   }
 
-  private static func normalizedReadableText(_ raw: String) -> String {
+  nonisolated static func containsNonWhitespace(_ raw: String) -> Bool {
+    raw.contains { !$0.isWhitespace }
+  }
+
+  private nonisolated static func boundedSuffix(
+    _ raw: String,
+    maximumCharacterCount: Int
+  ) -> (text: String, wasTruncated: Bool) {
+    guard raw.count > maximumCharacterCount else { return (raw, false) }
+    return (String(raw.suffix(maximumCharacterCount)), true)
+  }
+
+  private nonisolated static func normalizedReadableText(_ raw: String) -> String {
     raw.trimmingCharacters(in: .whitespacesAndNewlines)
       .replacingOccurrences(of: "[ \\t]+", with: " ", options: .regularExpression)
       .replacingOccurrences(of: "\\n[ \\t]*\\n(?:[ \\t]*\\n)+", with: "\n\n", options: .regularExpression)

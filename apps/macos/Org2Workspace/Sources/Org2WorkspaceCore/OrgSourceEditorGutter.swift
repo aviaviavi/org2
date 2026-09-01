@@ -9,6 +9,7 @@ enum OrgSourceEditorGutterAction: Equatable, Sendable {
 struct OrgSourceEditorGutterItem: Equatable, Identifiable, Sendable {
   let line: Int
   let endLine: Int
+  let utf16Offset: Int
   let level: Int
   let title: String
   let todo: String?
@@ -20,30 +21,59 @@ struct OrgSourceEditorGutterItem: Equatable, Identifiable, Sendable {
 
   var id: Int { line }
   var isFoldable: Bool { endLine > line }
+
+  func withFoldedState(_ isFolded: Bool) -> Self {
+    Self(
+      line: line,
+      endLine: endLine,
+      utf16Offset: utf16Offset,
+      level: level,
+      title: title,
+      todo: todo,
+      priority: priority,
+      hasScheduled: hasScheduled,
+      hasDeadline: hasDeadline,
+      hasDiagnostic: hasDiagnostic,
+      isFolded: isFolded
+    )
+  }
 }
 
 enum OrgSourceEditorGutterModel {
+  private static let priorityPattern = try! NSRegularExpression(
+    pattern: #"^\*+\s+(?:(?:TODO|IN_PROGRESS|PROG|WAIT|HOLD|PAUSED|DONE|CANCELED|CANCELLED)\s+)?\[#([A-Za-z0-9])\]"#
+  )
+  private static let titlePattern = try! NSRegularExpression(
+    pattern: #"^\*+\s+(?:(?:TODO|IN_PROGRESS|PROG|WAIT|HOLD|PAUSED|DONE|CANCELED|CANCELLED)\s+)?(?:\[#[A-Za-z0-9]\]\s+)?"#
+  )
+  private static let scheduledPattern = try! NSRegularExpression(pattern: #"^\s*SCHEDULED:"#)
+  private static let deadlinePattern = try! NSRegularExpression(pattern: #"^\s*DEADLINE:"#)
+
   static func items(
     text: String,
     snapshot: OrgSourceEditorSemanticSnapshot,
     foldedHeadlineStartLines: Set<Int>
   ) -> [OrgSourceEditorGutterItem] {
     let lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+    var lineUTF16Offsets: [Int] = []
+    lineUTF16Offsets.reserveCapacity(lines.count)
+    var nextUTF16Offset = 0
+    for line in lines {
+      lineUTF16Offsets.append(nextUTF16Offset)
+      nextUTF16Offset += (line as NSString).length + 1
+    }
     let headlines = snapshot.regions
       .filter { $0.kind == .headline }
       .sorted { $0.startLine < $1.startLine }
-    let diagnosticLines = Set(snapshot.diagnostics.map(\.line))
-    let diagnosticHeadlineLines = Set(diagnosticLines.compactMap { diagnosticLine in
-      headlines
-        .filter { $0.startLine <= diagnosticLine && $0.endLine >= diagnosticLine }
-        .max { $0.startLine < $1.startLine }?
-        .startLine
-    })
+    let diagnosticHeadlineLines = diagnosticHeadlineLines(
+      for: Set(snapshot.diagnostics.map(\.line)),
+      in: headlines
+    )
 
-    return headlines.compactMap { headline in
+    return headlines.enumerated().compactMap { index, headline in
       guard headline.startLine > 0, headline.startLine <= lines.count else { return nil }
       let rawHeading = lines[headline.startLine - 1]
-      let nextHeadlineLine = headlines.first { $0.startLine > headline.startLine }?.startLine
+      let nextHeadlineLine = index + 1 < headlines.count ? headlines[index + 1].startLine : nil
       let metadataEndLine = min(
         headline.endLine,
         max(headline.startLine, (nextHeadlineLine ?? (headline.endLine + 1)) - 1)
@@ -53,31 +83,67 @@ enum OrgSourceEditorGutterModel {
         : []
       let priority = firstCapture(
         in: rawHeading,
-        pattern: #"^\*+\s+(?:(?:TODO|IN_PROGRESS|PROG|WAIT|HOLD|PAUSED|DONE|CANCELED|CANCELLED)\s+)?\[#([A-Za-z0-9])\]"#
+        regex: priorityPattern
       )?.uppercased()
-      let title = rawHeading.replacingOccurrences(
-        of: #"^\*+\s+(?:(?:TODO|IN_PROGRESS|PROG|WAIT|HOLD|PAUSED|DONE|CANCELED|CANCELLED)\s+)?(?:\[#[A-Za-z0-9]\]\s+)?"#,
-        with: "",
-        options: .regularExpression
+      let rawHeadingRange = NSRange(location: 0, length: (rawHeading as NSString).length)
+      let title = titlePattern.stringByReplacingMatches(
+        in: rawHeading,
+        range: rawHeadingRange,
+        withTemplate: ""
       )
       return OrgSourceEditorGutterItem(
         line: headline.startLine,
         endLine: headline.endLine,
+        utf16Offset: lineUTF16Offsets[headline.startLine - 1],
         level: headline.level ?? 1,
         title: title,
         todo: headline.todo,
         priority: priority,
-        hasScheduled: metadataLines.contains { $0.range(of: #"^\s*SCHEDULED:"#, options: .regularExpression) != nil },
-        hasDeadline: metadataLines.contains { $0.range(of: #"^\s*DEADLINE:"#, options: .regularExpression) != nil },
+        hasScheduled: metadataLines.contains { firstMatch(of: scheduledPattern, in: $0) },
+        hasDeadline: metadataLines.contains { firstMatch(of: deadlinePattern, in: $0) },
         hasDiagnostic: diagnosticHeadlineLines.contains(headline.startLine),
         isFolded: foldedHeadlineStartLines.contains(headline.startLine)
       )
     }
   }
 
-  private static func firstCapture(in text: String, pattern: String) -> String? {
-    guard let regex = try? NSRegularExpression(pattern: pattern),
-          let match = regex.firstMatch(
+  private static func diagnosticHeadlineLines(
+    for lines: Set<Int>,
+    in headlines: [OrgSourceSemanticRegion]
+  ) -> Set<Int> {
+    guard !lines.isEmpty, !headlines.isEmpty else { return [] }
+    var result = Set<Int>()
+    var active: [OrgSourceSemanticRegion] = []
+    var headlineIndex = 0
+    for line in lines.sorted() {
+      while headlineIndex < headlines.count,
+            headlines[headlineIndex].startLine <= line {
+        let headline = headlines[headlineIndex]
+        while let last = active.last,
+              last.endLine < headline.startLine {
+          active.removeLast()
+        }
+        while let last = active.last,
+              !(last.startLine <= headline.startLine && last.endLine >= headline.endLine) {
+          active.removeLast()
+        }
+        active.append(headline)
+        headlineIndex += 1
+      }
+      while let last = active.last, last.endLine < line {
+        active.removeLast()
+      }
+      if let last = active.last,
+         last.startLine <= line,
+         last.endLine >= line {
+        result.insert(last.startLine)
+      }
+    }
+    return result
+  }
+
+  private static func firstCapture(in text: String, regex: NSRegularExpression) -> String? {
+    guard let match = regex.firstMatch(
             in: text,
             range: NSRange(location: 0, length: (text as NSString).length)
           ),
@@ -86,16 +152,27 @@ enum OrgSourceEditorGutterModel {
     else { return nil }
     return (text as NSString).substring(with: match.range(at: 1))
   }
+
+  private static func firstMatch(of regex: NSRegularExpression, in text: String) -> Bool {
+    regex.firstMatch(
+      in: text,
+      range: NSRange(location: 0, length: (text as NSString).length)
+    ) != nil
+  }
 }
 
 @MainActor
 final class OrgSourceEditorGutterView: NSRulerView {
   var items: [OrgSourceEditorGutterItem] = [] {
-    didSet { needsDisplay = true }
+    didSet {
+      invalidateVisibleGeometry()
+    }
   }
   var performAction: ((OrgSourceEditorGutterAction) -> Void)?
 
   private let gutterWidth: CGFloat = 46
+  private var visibleMarkers: [(item: OrgSourceEditorGutterItem, y: CGFloat)] = []
+  private(set) var lastDrawnItemCount = 0
 
   init(scrollView: NSScrollView, textView: NSTextView) {
     super.init(scrollView: scrollView, orientation: .verticalRuler)
@@ -105,6 +182,12 @@ final class OrgSourceEditorGutterView: NSRulerView {
 
   required init(coder: NSCoder) {
     fatalError("init(coder:) has not been implemented")
+  }
+
+  func invalidateVisibleGeometry() {
+    visibleMarkers = []
+    lastDrawnItemCount = 0
+    needsDisplay = true
   }
 
   override func drawHashMarksAndLabels(in rect: NSRect) {
@@ -117,11 +200,27 @@ final class OrgSourceEditorGutterView: NSRulerView {
     separator.line(to: NSPoint(x: bounds.maxX - 0.5, y: bounds.maxY))
     separator.stroke()
 
-    for item in items {
-      guard let y = markerY(forLine: item.line, in: textView),
+    guard let layoutManager = textView.layoutManager,
+          let textContainer = textView.textContainer
+    else { return }
+    layoutManager.ensureLayout(forBoundingRect: textView.visibleRect, in: textContainer)
+    let glyphRange = layoutManager.glyphRange(
+      forBoundingRect: textView.visibleRect,
+      in: textContainer
+    )
+    let characterRange = layoutManager.characterRange(
+      forGlyphRange: glyphRange,
+      actualGlyphRange: nil
+    )
+    visibleMarkers = []
+    lastDrawnItemCount = 0
+    for item in visibleItems(around: characterRange) {
+      guard let y = markerY(for: item, in: textView),
             y >= bounds.minY - 12,
             y <= bounds.maxY + 12
       else { continue }
+      visibleMarkers.append((item, y))
+      lastDrawnItemCount += 1
       draw(item, at: y)
     }
   }
@@ -200,15 +299,11 @@ final class OrgSourceEditorGutterView: NSRulerView {
     }
   }
 
-  func markerY(forLine line: Int, in textView: NSTextView) -> CGFloat? {
-    guard let layoutManager = textView.layoutManager,
-          let textContainer = textView.textContainer
-    else { return nil }
-    let nsText = textView.string as NSString
-    let lineRange = OrgSourceTextEditing.lineRange(in: nsText, line: line)
-    guard lineRange.location <= nsText.length else { return nil }
-    let glyphIndex = layoutManager.glyphIndexForCharacter(at: min(lineRange.location, max(0, nsText.length - 1)))
-    layoutManager.ensureLayout(for: textContainer)
+  func markerY(for item: OrgSourceEditorGutterItem, in textView: NSTextView) -> CGFloat? {
+    guard let layoutManager = textView.layoutManager else { return nil }
+    let textLength = textView.textStorage?.length ?? 0
+    guard textLength > 0, item.utf16Offset < textLength else { return nil }
+    let glyphIndex = layoutManager.glyphIndexForCharacter(at: item.utf16Offset)
     let fragment = layoutManager.lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: nil)
     let point = NSPoint(
       x: textView.textContainerOrigin.x,
@@ -217,14 +312,39 @@ final class OrgSourceEditorGutterView: NSRulerView {
     return convert(point, from: textView).y
   }
 
+  func markerY(forLine line: Int, in textView: NSTextView) -> CGFloat? {
+    guard let item = items.first(where: { $0.line == line }) else { return nil }
+    return markerY(for: item, in: textView)
+  }
+
   private func item(at point: NSPoint, in textView: NSTextView) -> OrgSourceEditorGutterItem? {
-    items.min { lhs, rhs in
-      abs((markerY(forLine: lhs.line, in: textView) ?? -.greatestFiniteMagnitude) - point.y)
-        < abs((markerY(forLine: rhs.line, in: textView) ?? -.greatestFiniteMagnitude) - point.y)
-    }.flatMap { item in
-      guard let y = markerY(forLine: item.line, in: textView), abs(y - point.y) <= 10 else { return nil }
-      return item
+    visibleMarkers.min { lhs, rhs in
+      abs(lhs.y - point.y) < abs(rhs.y - point.y)
+    }.flatMap { marker in
+      abs(marker.y - point.y) <= 10 ? marker.item : nil
     }
+  }
+
+  private func visibleItems(around range: NSRange) -> ArraySlice<OrgSourceEditorGutterItem> {
+    guard !items.isEmpty else { return [] }
+    let lowerOffset = max(0, range.location)
+    let upperOffset = max(lowerOffset, NSMaxRange(range))
+    var lower = 0
+    var upper = items.count
+    while lower < upper {
+      let middle = (lower + upper) / 2
+      if items[middle].utf16Offset < lowerOffset {
+        lower = middle + 1
+      } else {
+        upper = middle
+      }
+    }
+    let start = max(0, lower - 1)
+    var end = lower
+    while end < items.count, items[end].utf16Offset <= upperOffset {
+      end += 1
+    }
+    return items[start..<min(items.count, end + 1)]
   }
 
   private func menu(for item: OrgSourceEditorGutterItem) -> NSMenu {

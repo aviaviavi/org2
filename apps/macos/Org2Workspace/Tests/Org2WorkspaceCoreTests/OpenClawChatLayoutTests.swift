@@ -36,6 +36,79 @@ private struct TranscriptLayoutProbe: NSViewRepresentable {
 }
 
 @MainActor
+private enum ChatAccessibilityNode {
+  case view(NSView)
+  case element(NSAccessibilityElement)
+
+  var identity: ObjectIdentifier {
+    switch self {
+    case .view(let value): ObjectIdentifier(value)
+    case .element(let value): ObjectIdentifier(value)
+    }
+  }
+
+  var accessibilityIdentifier: String? {
+    switch self {
+    case .view(let value): value.accessibilityIdentifier()
+    case .element(let value): value.accessibilityIdentifier()
+    }
+  }
+
+  var accessibilityLabel: String? {
+    switch self {
+    case .view(let value): value.accessibilityLabel()
+    case .element(let value): value.accessibilityLabel()
+    }
+  }
+
+  var accessibilityRole: NSAccessibility.Role? {
+    switch self {
+    case .view(let value): value.accessibilityRole()
+    case .element(let value): value.accessibilityRole()
+    }
+  }
+
+  var children: [Any] {
+    switch self {
+    case .view(let value):
+      // SwiftUI may expose a native accessibility element through either the
+      // AppKit view hierarchy or the synthesized accessibility hierarchy,
+      // depending on when the hosting view first lays out. Traverse both so
+      // this assertion always exercises the real native action rather than a
+      // backend-specific tree shape.
+      return value.subviews + (value.accessibilityChildren() ?? [])
+    case .element(let value): return value.accessibilityChildren() ?? []
+    }
+  }
+
+  func performPress() -> Bool {
+    switch self {
+    case .view(let value): value.accessibilityPerformPress()
+    case .element(let value): value.accessibilityPerformPress()
+    }
+  }
+}
+
+@MainActor
+private func chatAccessibilityNodes(in root: NSView) -> [ChatAccessibilityNode] {
+  var result: [ChatAccessibilityNode] = []
+  var pending: [ChatAccessibilityNode] = [.view(root)]
+  var visited = Set<ObjectIdentifier>()
+  while let node = pending.popLast(), result.count < 2_000 {
+    guard visited.insert(node.identity).inserted else { continue }
+    result.append(node)
+    for child in node.children {
+      if let view = child as? NSView {
+        pending.append(.view(view))
+      } else if let element = child as? NSAccessibilityElement {
+        pending.append(.element(element))
+      }
+    }
+  }
+  return result
+}
+
+@MainActor
 final class OpenClawChatLayoutTests: XCTestCase {
   func testDefaultSplitProtectsAUsableChatPaneAtLaptopWidth() {
     XCTAssertGreaterThanOrEqual(WorkspaceMainSplitLayout.surfaceMinimumWidth, 300)
@@ -161,6 +234,38 @@ final class OpenClawChatLayoutTests: XCTestCase {
     )
   }
 
+  func testExpandedProgressFeedKeepsMountedRowsStrictlyBounded() {
+    let items = (0..<10_000).map { index in
+      OpenClawActivityFeedItem(
+        id: "activity-\(index)",
+        title: "Activity \(index)",
+        detail: nil,
+        latestDetail: nil,
+        status: .succeeded,
+        count: 1,
+        updatedAt: Date(timeIntervalSince1970: TimeInterval(index))
+      )
+    }
+
+    let visible = OpenClawProgressFeedPresentation.visibleItems(
+      items,
+      isLive: false,
+      isExpanded: true,
+      collapsedItemLimit: 3
+    )
+
+    XCTAssertEqual(visible.count, OpenClawProgressFeedPresentation.maximumExpandedItemCount)
+    XCTAssertEqual(visible.first?.id, "activity-9904")
+    XCTAssertEqual(visible.last?.id, "activity-9999")
+    XCTAssertEqual(
+      OpenClawProgressFeedPresentation.omittedExpandedItemCount(
+        itemCount: items.count,
+        isExpanded: true
+      ),
+      10_000 - OpenClawProgressFeedPresentation.maximumExpandedItemCount
+    )
+  }
+
   func testMessagePresentationCacheReusesParsedContentAndInvalidatesEdits() {
     OpenClawMessagePresentationCache.removeAllForTesting()
     let messageID = UUID()
@@ -193,6 +298,686 @@ final class OpenClawChatLayoutTests: XCTestCase {
     let editedPresentation = OpenClawMessagePresentationCache.presentation(for: edited)
     XCTAssertFalse(first === editedPresentation)
     XCTAssertEqual(editedPresentation.context.userText, "* Changed result")
+  }
+
+  func testDetachedMessagePresentationMatchesMainActorFallback() async {
+    OpenClawMessagePresentationCache.removeAllForTesting()
+    let message = OpenClawChatMessage(
+      role: .assistant,
+      content: "* Result\n| Name | Value |\n|------+-------|\n| Alpha | *one* |",
+      responseTrace: OpenClawResponseTrace(
+        reasoning: "Checked the source",
+        activities: [
+          OpenClawRunActivity(
+            id: "tool-1",
+            runID: "run-1",
+            kind: .tool,
+            title: "Read file",
+            detail: "Loaded the selected source",
+            status: .succeeded
+          ),
+        ]
+      )
+    )
+    let input = OpenClawMessagePresentationInput(message)
+    let prepared = await Task.detached {
+      OpenClawMessagePresentationBuilder.prepare(input)
+    }.value
+
+    XCTAssertEqual(prepared.messageID, message.id)
+    XCTAssertTrue(prepared.value.matches(input))
+    XCTAssertEqual(prepared.value.context.userText, message.content)
+    XCTAssertTrue(prepared.value.body.org?.usesStructuredRendering == true)
+    XCTAssertEqual(prepared.value.activityFeedItems.count, 1)
+    XCTAssertGreaterThan(prepared.estimatedCost, message.content.utf8.count)
+
+    OpenClawMessagePresentationCache.install(prepared)
+    XCTAssertTrue(OpenClawMessagePresentationCache.presentation(for: message) === prepared.value)
+  }
+
+  func testMessagePresentationInputAndCostDoNotDependOnAttachments() {
+    let messageID = UUID()
+    let content = "A response with [[notes/example.org2][a link]]."
+    let smallAttachmentMessage = OpenClawChatMessage(
+      id: messageID,
+      role: .assistant,
+      content: content,
+      attachments: [
+        OpenClawChatAttachment(
+          fileName: "small.bin",
+          mimeType: "application/octet-stream",
+          data: Data([0x01])
+        ),
+      ]
+    )
+    let largeAttachmentMessage = OpenClawChatMessage(
+      id: messageID,
+      role: .assistant,
+      content: content,
+      attachments: [
+        OpenClawChatAttachment(
+          fileName: "large.bin",
+          mimeType: "application/octet-stream",
+          data: Data(repeating: 0x42, count: 512 * 1_024)
+        ),
+      ]
+    )
+
+    let smallInput = OpenClawMessagePresentationInput(smallAttachmentMessage)
+    let largeInput = OpenClawMessagePresentationInput(largeAttachmentMessage)
+    XCTAssertEqual(smallInput, largeInput)
+
+    let smallPrepared = OpenClawMessagePresentationBuilder.prepare(smallInput)
+    let largePrepared = OpenClawMessagePresentationBuilder.prepare(largeInput)
+    XCTAssertEqual(smallPrepared.estimatedCost, largePrepared.estimatedCost)
+    XCTAssertEqual(smallPrepared.value.body, largePrepared.value.body)
+  }
+
+  func testLargeMessagePresentationUsesUnicodeSafeBoundedPreviewAndFullClipboardText() throws {
+    let boundary = OpenClawMessageBodyExcerpt.collapsedUTF8ByteLimit
+    let suffix = "🧪 FULL-CONTENT-SENTINEL"
+    let content = String(repeating: "a", count: boundary - 1) + suffix
+    let message = OpenClawChatMessage(role: .assistant, content: content)
+    let prepared = OpenClawMessagePresentationBuilder.prepare(
+      OpenClawMessagePresentationInput(message)
+    )
+
+    XCTAssertTrue(prepared.value.body.isTruncated)
+    XCTAssertLessThanOrEqual(
+      prepared.value.body.displayedText.utf8.count,
+      OpenClawMessageBodyExcerpt.collapsedUTF8ByteLimit
+    )
+    XCTAssertFalse(prepared.value.body.displayedText.contains("🧪"))
+    XCTAssertTrue(String(data: Data(prepared.value.body.displayedText.utf8), encoding: .utf8) != nil)
+    XCTAssertEqual(OpenClawMessageClipboard.text(for: message), content)
+
+    let expanded = try XCTUnwrap(OpenClawMessagePresentationBuilder.prepareExpandedBody(
+      sourceText: prepared.value.body.sourceText,
+      role: .assistant
+    ))
+    XCTAssertFalse(expanded.isTruncated)
+    XCTAssertEqual(expanded.displayedText, content)
+    XCTAssertTrue(expanded.containsInlineSyntax == false)
+  }
+
+  func testMultiMegabyteExpandedMessageUsesBoundedNavigablePages() throws {
+    let pageLimit = OpenClawExpandedMessageBodyInput.pageCharacterLimit
+    let source = String(repeating: "a", count: pageLimit)
+      + String(repeating: "b", count: pageLimit)
+      + "FINAL-PAGE-SENTINEL"
+
+    let first = try XCTUnwrap(OpenClawMessagePresentationBuilder.prepareExpandedBody(
+      sourceText: source,
+      role: .assistant,
+      pageIndex: 0
+    ))
+    let second = try XCTUnwrap(OpenClawMessagePresentationBuilder.prepareExpandedBody(
+      sourceText: source,
+      role: .assistant,
+      pageIndex: 1
+    ))
+    let final = try XCTUnwrap(OpenClawMessagePresentationBuilder.prepareExpandedBody(
+      sourceText: source,
+      role: .assistant,
+      pageIndex: 2
+    ))
+
+    XCTAssertEqual(first.displayedText.count, pageLimit)
+    XCTAssertEqual(second.displayedText.count, pageLimit)
+    XCTAssertTrue(first.isTruncated)
+    XCTAssertTrue(second.isTruncated)
+    XCTAssertFalse(first.displayedText.contains("FINAL-PAGE-SENTINEL"))
+    XCTAssertFalse(second.displayedText.contains("FINAL-PAGE-SENTINEL"))
+    XCTAssertEqual(final.displayedText, "FINAL-PAGE-SENTINEL")
+    XCTAssertFalse(final.isTruncated)
+  }
+
+  func testStructuredMessageBlockPagesRemainStrictlyBounded() {
+    let pageSize = OpenClawMessageBodyView.maximumStructuredBlockCountPerPage
+    let first = OpenClawMessageBodyView.structuredBlockRange(
+      blockCount: 10_000,
+      pageIndex: 0
+    )
+    let middle = OpenClawMessageBodyView.structuredBlockRange(
+      blockCount: 10_000,
+      pageIndex: 40
+    )
+    let final = OpenClawMessageBodyView.structuredBlockRange(
+      blockCount: 10_000,
+      pageIndex: .max
+    )
+
+    XCTAssertEqual(first, 0..<pageSize)
+    XCTAssertEqual(middle.count, pageSize)
+    XCTAssertLessThanOrEqual(final.count, pageSize)
+    XCTAssertEqual(final.upperBound, 10_000)
+  }
+
+  func testOffMainPresentationRevisionInvalidatesSameLengthMiddleEdit() async throws {
+    let messageID = UUID()
+    let originalInput = OpenClawMessagePresentationInput(OpenClawChatMessage(
+      id: messageID,
+      role: .assistant,
+      content: "prefix-ORIGINAL-suffix"
+    ))
+    let editedInput = OpenClawMessagePresentationInput(OpenClawChatMessage(
+      id: messageID,
+      role: .assistant,
+      content: "prefix-CHANGED!-suffix"
+    ))
+    XCTAssertEqual(originalInput.rawText.count, editedInput.rawText.count)
+
+    let (originalRevision, editedRevision) = await Task.detached {
+      (
+        OpenClawMessagePresentationRevision(originalInput),
+        OpenClawMessagePresentationRevision(editedInput)
+      )
+    }.value
+    XCTAssertNotEqual(originalRevision, editedRevision)
+
+    let original = OpenClawMessagePresentationBuilder.prepare(
+      originalInput,
+      revision: originalRevision
+    )
+    let resolved = await OpenClawMessagePresentationPreparationCoordinator.shared.resolve(
+      editedInput,
+      cachedCandidate: original.value
+    )
+    XCTAssertEqual(resolved.revision, editedRevision)
+    XCTAssertEqual(resolved.value.body.displayedText, editedInput.rawText)
+    XCTAssertNotNil(resolved.preparedForCacheInstall)
+  }
+
+  func testLargeMessagePreviewExposesNativeShowFullActionAndFindReveal() async throws {
+    OpenClawMessagePresentationCache.removeAllForTesting()
+    let message = OpenClawChatMessage(
+      role: .assistant,
+      content: String(
+        repeating: "large response ",
+        count: OpenClawMessageBodyExcerpt.collapsedUTF8ByteLimit / 8
+      )
+    )
+    let messageIdentifier = message.id.uuidString.lowercased()
+    let showFullID = "openclaw-message-show-full-\(messageIdentifier)"
+    let showLessID = "openclaw-message-show-less-\(messageIdentifier)"
+    let hostingView = NSHostingView(rootView: ChatBubbleView(message: message))
+    let window = NSWindow(
+      contentRect: NSRect(x: 0, y: 0, width: 720, height: 420),
+      styleMask: [.titled],
+      backing: .buffered,
+      defer: false
+    )
+    window.isReleasedWhenClosed = false
+    window.contentView = hostingView
+    window.orderFrontRegardless()
+    defer {
+      window.contentView = nil
+      window.close()
+    }
+
+    var showFullNode: ChatAccessibilityNode?
+    for _ in 0..<100 {
+      hostingView.layoutSubtreeIfNeeded()
+      window.displayIfNeeded()
+      showFullNode = chatAccessibilityNodes(in: hostingView).first {
+        $0.accessibilityIdentifier == showFullID
+      }
+      if showFullNode != nil { break }
+      try await Task.sleep(nanoseconds: 5_000_000)
+    }
+    let showFull = try XCTUnwrap(
+      showFullNode,
+      chatAccessibilityNodes(in: hostingView)
+        .compactMap { node -> String? in
+          guard node.accessibilityIdentifier != nil || node.accessibilityLabel != nil else {
+            return nil
+          }
+          let identifier = node.accessibilityIdentifier ?? "nil"
+          let label = node.accessibilityLabel ?? "nil"
+          let role = node.accessibilityRole?.rawValue ?? "nil"
+          return "id=\(identifier) label=\(label) role=\(role)"
+        }
+        .joined(separator: "\n")
+    )
+    XCTAssertTrue(showFull.performPress())
+
+    var didExposeShowLess = false
+    for _ in 0..<100 {
+      hostingView.layoutSubtreeIfNeeded()
+      window.displayIfNeeded()
+      if chatAccessibilityNodes(in: hostingView).contains(where: {
+        $0.accessibilityIdentifier == showLessID
+      }) {
+        didExposeShowLess = true
+        break
+      }
+      try await Task.sleep(nanoseconds: 5_000_000)
+    }
+    XCTAssertTrue(didExposeShowLess)
+
+    hostingView.rootView = ChatBubbleView(
+      message: message,
+      isSelectedSearchMatch: true
+    )
+    let revealedID = "openclaw-message-full-revealed-\(messageIdentifier)"
+    var didRevealSelectedMatch = false
+    for _ in 0..<100 {
+      hostingView.layoutSubtreeIfNeeded()
+      window.displayIfNeeded()
+      if chatAccessibilityNodes(in: hostingView).contains(where: {
+        $0.accessibilityIdentifier == revealedID
+      }) {
+        didRevealSelectedMatch = true
+        break
+      }
+      try await Task.sleep(nanoseconds: 5_000_000)
+    }
+    XCTAssertTrue(didRevealSelectedMatch)
+  }
+
+  func testInstalledPreparedPresentationStillInvalidatesAnEditedSameIDMessage() {
+    OpenClawMessagePresentationCache.removeAllForTesting()
+    let messageID = UUID()
+    let original = OpenClawChatMessage(
+      id: messageID,
+      role: .assistant,
+      content: "Original"
+    )
+    let prepared = OpenClawMessagePresentationBuilder.prepare(
+      OpenClawMessagePresentationInput(original)
+    )
+    OpenClawMessagePresentationCache.install(prepared)
+
+    let edited = OpenClawChatMessage(
+      id: messageID,
+      role: .assistant,
+      content: "Edited"
+    )
+    let editedPresentation = OpenClawMessagePresentationCache.presentation(for: edited)
+
+    XCTAssertFalse(editedPresentation === prepared.value)
+    XCTAssertEqual(editedPresentation.body.displayedText, "Edited")
+  }
+
+  func testConcurrentColdAndExpandedPreparationDeduplicatesWork() async throws {
+    let presentationCoordinator = OpenClawMessagePresentationPreparationCoordinator.shared
+    let expansionCoordinator = OpenClawExpandedMessageBodyPreparationCoordinator.shared
+    await presentationCoordinator.resetForTesting()
+    await expansionCoordinator.resetForTesting()
+    let message = OpenClawChatMessage(
+      role: .assistant,
+      content: String(repeating: "long response ", count: 4_000)
+    )
+    let input = OpenClawMessagePresentationInput(message)
+
+    async let first = presentationCoordinator.prepare(input)
+    async let second = presentationCoordinator.prepare(input)
+    let (firstPrepared, secondPrepared) = await (first, second)
+
+    XCTAssertTrue(firstPrepared.value === secondPrepared.value)
+    let presentationPreparationCount = await presentationCoordinator.countForTesting()
+    XCTAssertEqual(presentationPreparationCount, 1)
+
+    let expandedInput = OpenClawExpandedMessageBodyInput(
+      messageID: input.messageID,
+      role: input.role,
+      sourceText: firstPrepared.value.body.sourceText
+    )
+    async let firstExpanded = expansionCoordinator.prepare(expandedInput)
+    async let secondExpanded = expansionCoordinator.prepare(expandedInput)
+    let expandedBodies = await (firstExpanded, secondExpanded)
+
+    XCTAssertEqual(try XCTUnwrap(expandedBodies.0), try XCTUnwrap(expandedBodies.1))
+    let expansionPreparationCount = await expansionCoordinator.countForTesting()
+    XCTAssertEqual(expansionPreparationCount, 1)
+
+    let userExpandedInput = OpenClawExpandedMessageBodyInput(
+      messageID: expandedInput.messageID,
+      role: .user,
+      sourceText: expandedInput.sourceText
+    )
+    XCTAssertNotEqual(userExpandedInput, expandedInput)
+    let userExpandedResult = await expansionCoordinator.prepare(userExpandedInput)
+    let userExpanded = try XCTUnwrap(userExpandedResult)
+    XCTAssertNil(userExpanded.org)
+    let roleSensitivePreparationCount = await expansionCoordinator.countForTesting()
+    XCTAssertEqual(roleSensitivePreparationCount, 2)
+
+    await expansionCoordinator.resetForTesting()
+    let cancellationTask = Task {
+      do {
+        try await Task.sleep(nanoseconds: 50_000_000)
+      } catch {}
+      return await expansionCoordinator.prepare(expandedInput)
+    }
+    cancellationTask.cancel()
+    let cancelledExpansion = await cancellationTask.value
+    XCTAssertNil(cancelledExpansion)
+  }
+
+  func testStandardPreparationGloballyBoundsWorkersAndSerializesSameMessageEdits() async throws {
+    let coordinator = OpenClawMessagePresentationPreparationCoordinator.shared
+    await coordinator.resetForTesting()
+    await coordinator.setWorkersPausedForTesting(true)
+    let messageID = UUID()
+    let originalInput = OpenClawMessagePresentationInput(OpenClawChatMessage(
+      id: messageID,
+      role: .assistant,
+      content: "* Original\nOriginal body"
+    ))
+    let changedInput = OpenClawMessagePresentationInput(OpenClawChatMessage(
+      id: messageID,
+      role: .assistant,
+      content: "* Changed\nChanged body"
+    ))
+    let secondInput = OpenClawMessagePresentationInput(OpenClawChatMessage(
+      role: .assistant,
+      content: "Second message"
+    ))
+    let thirdInput = OpenClawMessagePresentationInput(OpenClawChatMessage(
+      role: .assistant,
+      content: "Third message"
+    ))
+
+    let originalTask = Task { await coordinator.prepare(originalInput) }
+    for _ in 0..<100 {
+      if await coordinator.activeWorkerCountForTesting() == 1 { break }
+      await Task.yield()
+    }
+    let changedTask = Task { await coordinator.prepare(changedInput) }
+    let secondTask = Task { await coordinator.prepare(secondInput) }
+    let thirdTask = Task { await coordinator.prepare(thirdInput) }
+    var allPreparationsWereScheduled = false
+    for _ in 0..<100 {
+      if await coordinator.countForTesting() == 4,
+         await coordinator.activeWorkerCountForTesting() == 2 {
+        allPreparationsWereScheduled = true
+        break
+      }
+      await Task.yield()
+    }
+    XCTAssertTrue(allPreparationsWereScheduled)
+    let workerLimit = await coordinator.maximumConcurrentWorkerCountForTesting()
+    let peakWhilePaused = await coordinator.peakConcurrentWorkerCountForTesting()
+    let sameMessagePeakWhilePaused = await coordinator.peakWorkerCountForTesting(
+      messageID: messageID
+    )
+    XCTAssertEqual(workerLimit, 2)
+    XCTAssertEqual(peakWhilePaused, workerLimit)
+    XCTAssertEqual(sameMessagePeakWhilePaused, 1)
+
+    await coordinator.setWorkersPausedForTesting(false)
+    let original = await originalTask.value
+    let changed = await changedTask.value
+    _ = await secondTask.value
+    _ = await thirdTask.value
+    XCTAssertEqual(original.value.rawText, originalInput.rawText)
+    XCTAssertEqual(changed.value.rawText, changedInput.rawText)
+    let preparationCount = await coordinator.countForTesting()
+    let finalActiveWorkerCount = await coordinator.activeWorkerCountForTesting()
+    let peakWorkerCount = await coordinator.peakConcurrentWorkerCountForTesting()
+    let sameMessagePeakWorkerCount = await coordinator.peakWorkerCountForTesting(
+      messageID: messageID
+    )
+    XCTAssertEqual(preparationCount, 4)
+    XCTAssertEqual(finalActiveWorkerCount, 0)
+    XCTAssertEqual(peakWorkerCount, workerLimit)
+    XCTAssertEqual(sameMessagePeakWorkerCount, 1)
+  }
+
+  func testExpandedPreparationSerializesRapidCancelRerequestAndChangedInput() async throws {
+    let coordinator = OpenClawExpandedMessageBodyPreparationCoordinator.shared
+    await coordinator.resetForTesting()
+    await coordinator.setWorkersPausedForTesting(true)
+    let messageID = UUID()
+    let originalInput = OpenClawExpandedMessageBodyInput(
+      messageID: messageID,
+      role: .assistant,
+      sourceText: "* Original\nOriginal body"
+    )
+    let changedInput = OpenClawExpandedMessageBodyInput(
+      messageID: messageID,
+      role: .user,
+      sourceText: "Changed body"
+    )
+
+    let canceledWaiter = Task {
+      await coordinator.prepare(originalInput)
+    }
+    var originalWorkerDidStart = false
+    for _ in 0..<100 {
+      if await coordinator.activeWorkerCountForTesting() == 1 {
+        originalWorkerDidStart = true
+        break
+      }
+      await Task.yield()
+    }
+    XCTAssertTrue(originalWorkerDidStart)
+
+    canceledWaiter.cancel()
+    async let repeatedResult = coordinator.prepare(originalInput)
+    async let changedResult = coordinator.prepare(changedInput)
+    var bothRequestsWereQueued = false
+    for _ in 0..<100 {
+      if await coordinator.countForTesting() == 2 {
+        bothRequestsWereQueued = true
+        break
+      }
+      await Task.yield()
+    }
+    XCTAssertTrue(bothRequestsWereQueued)
+    let activeWorkerCountWhilePaused = await coordinator.activeWorkerCountForTesting()
+    let peakWorkerCountWhilePaused = await coordinator.peakConcurrentWorkerCountForTesting()
+    XCTAssertEqual(activeWorkerCountWhilePaused, 1)
+    XCTAssertEqual(peakWorkerCountWhilePaused, 1)
+
+    await coordinator.setWorkersPausedForTesting(false)
+    let canceledResult = await canceledWaiter.value
+    let (repeated, changed) = await (repeatedResult, changedResult)
+    XCTAssertNil(canceledResult)
+    XCTAssertEqual(try XCTUnwrap(repeated).sourceText, originalInput.sourceText)
+    XCTAssertEqual(try XCTUnwrap(changed).sourceText, changedInput.sourceText)
+    let preparationCount = await coordinator.countForTesting()
+    let finalActiveWorkerCount = await coordinator.activeWorkerCountForTesting()
+    let peakWorkerCount = await coordinator.peakConcurrentWorkerCountForTesting()
+    XCTAssertEqual(preparationCount, 2)
+    XCTAssertEqual(finalActiveWorkerCount, 0)
+    XCTAssertEqual(peakWorkerCount, 1)
+  }
+
+  func testChatBubbleColdPathUsesBoundedAsyncPlaceholderInsteadOfSynchronousCacheMiss() throws {
+    let message = OpenClawChatMessage(
+      role: .assistant,
+      content: String(repeating: "L", count: 1_694_760)
+    )
+    let input = OpenClawMessagePresentationInput(message)
+    let placeholder = OpenClawMessagePresentationBuilder.placeholder(input)
+
+    XCTAssertLessThanOrEqual(placeholder.body.displayedText.utf8.count, 2 * 1_024)
+    XCTAssertTrue(placeholder.body.isTruncated)
+    XCTAssertNil(placeholder.body.org)
+    XCTAssertFalse(placeholder.body.containsInlineSyntax)
+
+    let sourceURL = URL(fileURLWithPath: #filePath)
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .appendingPathComponent("Sources/Org2WorkspaceCore/OpenClawChatViews.swift")
+    let source = try String(contentsOf: sourceURL, encoding: .utf8)
+    let bubbleStart = try XCTUnwrap(source.range(of: "struct ChatBubbleView: View"))
+    let bubbleEnd = try XCTUnwrap(
+      source.range(of: "private var copyButton: some View", range: bubbleStart.upperBound..<source.endIndex)
+    )
+    let bubbleBody = source[bubbleStart.lowerBound..<bubbleEnd.lowerBound]
+    XCTAssertFalse(bubbleBody.contains("OpenClawMessagePresentationCache.presentation(for: message)"))
+    XCTAssertTrue(bubbleBody.contains("OpenClawMessagePresentationResolver(input: presentationInput)"))
+    XCTAssertTrue(bubbleBody.contains("allowsSynchronousStructuredPresentationFallback: false"))
+  }
+
+  func testColdUserPlaceholderNeverExposesAutomaticContextPromptOrUserExcerpt() {
+    let secretPrompt = "PRIVATE-AUTOMATIC-CONTEXT-SENTINEL"
+    let userText = "PRIVATE-USER-TEXT-SENTINEL"
+    let message = OpenClawChatMessage(
+      role: .user,
+      content: """
+      Use selected file “Private” at notes/private.org as context.
+      #+begin_org2_ai_context
+      \(secretPrompt)
+      #+end_org2_ai_context
+
+      \(userText)
+      """
+    )
+    let placeholder = OpenClawMessagePresentationBuilder.placeholder(
+      OpenClawMessagePresentationInput(message)
+    )
+
+    XCTAssertTrue(placeholder.context.contexts.isEmpty)
+    XCTAssertTrue(placeholder.context.userText.isEmpty)
+    XCTAssertTrue(placeholder.body.sourceText.isEmpty)
+    XCTAssertEqual(placeholder.body.displayedText, "Preparing message…")
+    XCTAssertFalse(placeholder.body.displayedText.contains(secretPrompt))
+    XCTAssertFalse(placeholder.body.displayedText.contains(userText))
+  }
+
+  func testLiveStreamingPresentationIsSerialOffMainAndNeverFallsBackToSynchronousParsing() async throws {
+    let coordinator = OpenClawLiveTextPreparationCoordinator.shared
+    await coordinator.resetForTesting()
+    await coordinator.setWorkersPausedForTesting(true)
+    let streamID = UUID()
+    let firstInput = OpenClawLiveTextPreparationInput(
+      rawText: "First update",
+      showsAll: false
+    )
+    let obsoleteInput = OpenClawLiveTextPreparationInput(
+      rawText: "Obsolete queued update",
+      showsAll: false
+    )
+    let latestInput = OpenClawLiveTextPreparationInput(
+      rawText: "Latest update",
+      showsAll: false
+    )
+    let firstTask = Task {
+      await coordinator.prepare(streamID: streamID, input: firstInput)
+    }
+    var firstWorkerDidStart = false
+    for _ in 0..<100 {
+      if await coordinator.activeWorkerCountForTesting() == 1 {
+        firstWorkerDidStart = true
+        break
+      }
+      await Task.yield()
+    }
+    XCTAssertTrue(firstWorkerDidStart)
+    let obsoleteTask = Task {
+      await coordinator.prepare(streamID: streamID, input: obsoleteInput)
+    }
+    for _ in 0..<100 {
+      if await coordinator.countForTesting() == 2 { break }
+      await Task.yield()
+    }
+    let latestTask = Task {
+      await coordinator.prepare(streamID: streamID, input: latestInput)
+    }
+    var allInputsWereScheduled = false
+    for _ in 0..<100 {
+      if await coordinator.countForTesting() == 3 {
+        allInputsWereScheduled = true
+        break
+      }
+      await Task.yield()
+    }
+    XCTAssertTrue(allInputsWereScheduled)
+    await coordinator.setWorkersPausedForTesting(false)
+    let first = await firstTask.value
+    let obsolete = await obsoleteTask.value
+    let latest = await latestTask.value
+
+    XCTAssertEqual(try XCTUnwrap(try XCTUnwrap(first).body).displayedText, firstInput.rawText)
+    XCTAssertNil(obsolete)
+    XCTAssertEqual(try XCTUnwrap(try XCTUnwrap(latest).body).displayedText, latestInput.rawText)
+    let parserInputs = await coordinator.parserInputsForTestingSnapshot()
+    XCTAssertEqual(parserInputs, [firstInput, latestInput])
+    let preparationCount = await coordinator.countForTesting()
+    let finalActiveWorkerCount = await coordinator.activeWorkerCountForTesting()
+    let peakWorkerCount = await coordinator.peakConcurrentWorkerCountForTesting()
+    XCTAssertEqual(preparationCount, 3)
+    XCTAssertEqual(finalActiveWorkerCount, 0)
+    XCTAssertEqual(peakWorkerCount, 1)
+
+    let sourceURL = URL(fileURLWithPath: #filePath)
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .appendingPathComponent("Sources/Org2WorkspaceCore/OpenClawChatViews.swift")
+    let source = try String(contentsOf: sourceURL, encoding: .utf8)
+    let viewStart = try XCTUnwrap(source.range(of: "struct OpenClawTypingIndicatorView: View"))
+    let viewEnd = try XCTUnwrap(
+      source.range(of: "  func statusTitle(now: Date)", range: viewStart.upperBound..<source.endIndex)
+    )
+    let viewSource = source[viewStart.lowerBound..<viewEnd.lowerBound]
+    XCTAssertFalse(viewSource.contains("OpenClawProgressPresentation.liveTextPresentation("))
+    XCTAssertTrue(viewSource.contains("Task.sleep(for: .milliseconds(24))"))
+    XCTAssertTrue(viewSource.contains("OpenClawLiveTextPreparationCoordinator.shared.prepare"))
+    XCTAssertTrue(viewSource.contains("allowsSynchronousStructuredPresentationFallback: false"))
+  }
+
+  func testLivePreparationBoundsReasoningActivitiesAndRawDetailsBeforeGrouping() async throws {
+    let oversizedDetail = String(repeating: "detail ", count: 200_000)
+    let activities = (0..<200).map { index in
+      OpenClawRunActivity(
+        id: "activity-\(index)",
+        runID: "run",
+        kind: .tool,
+        title: "tool",
+        detail: oversizedDetail,
+        status: index == 199 ? .running : .succeeded
+      )
+    }
+    let input = OpenClawLiveTextPreparationInput(
+      rawText: String(repeating: "stream ", count: 100_000),
+      showsAll: false,
+      hasOmittedPrefix: true,
+      reasoning: String(repeating: "reasoning ", count: 100_000),
+      reasoningHasOmittedPrefix: true,
+      activities: activities
+    )
+
+    XCTAssertEqual(input.activities.count, OpenClawLiveTextPreparationInput.maximumActivityCount)
+    XCTAssertTrue(input.activities.allSatisfy {
+      ($0.detail?.utf8.count ?? 0)
+        <= OpenClawLiveTextPreparationInput.maximumActivityDetailUTF8ByteCount
+    })
+    let preparedResult = await OpenClawLiveTextPreparationCoordinator.shared.prepare(
+      streamID: UUID(),
+      input: input
+    )
+    let prepared = try XCTUnwrap(preparedResult)
+    XCTAssertLessThanOrEqual(
+      try XCTUnwrap(prepared.body).displayedText.count,
+      OpenClawProgressPresentation.maximumLiveNormalizationInputCharacterCount
+    )
+    XCTAssertLessThanOrEqual(prepared.reasoning?.count ?? .max, 1_200)
+    XCTAssertLessThanOrEqual(prepared.activityFeedItems.count, input.activities.count)
+  }
+
+  func testLiveTypingViewReadsOneBoundedSnapshotAndNeverMaterializesFullRopes() throws {
+    let sourceURL = URL(fileURLWithPath: #filePath)
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .appendingPathComponent("Sources/Org2WorkspaceCore/OpenClawChatViews.swift")
+    let source = try String(contentsOf: sourceURL, encoding: .utf8)
+    let start = try XCTUnwrap(source.range(of: "struct OpenClawLiveTypingIndicatorView: View"))
+    let end = try XCTUnwrap(source.range(
+      of: "struct OpenClawLiveTextPreparationInput",
+      range: start.upperBound..<source.endIndex
+    ))
+    let viewSource = source[start.lowerBound..<end.lowerBound]
+
+    XCTAssertEqual(viewSource.components(separatedBy: "presentationSnapshot(for:").count - 1, 1)
+    XCTAssertFalse(viewSource.contains("streamingReply(for:"))
+    XCTAssertFalse(viewSource.contains("reasoning(for:"))
   }
 
   func testChatTimestampsIncludeUsefulDateContext() throws {
@@ -394,8 +1179,18 @@ final class OpenClawChatLayoutTests: XCTestCase {
     XCTAssertEqual(
       AIChatThreadSearch.matches(query: "launch", in: items),
       [
-        AIChatThreadSearchMatch(messageID: first.id, scrollTargetID: first.id),
-        AIChatThreadSearchMatch(messageID: second.id, scrollTargetID: second.id),
+        AIChatThreadSearchMatch(
+          messageID: first.id,
+          scrollTargetID: first.id,
+          rawMessageIndex: 0,
+          anchorRawMessageIndex: 0
+        ),
+        AIChatThreadSearchMatch(
+          messageID: second.id,
+          scrollTargetID: second.id,
+          rawMessageIndex: 1,
+          anchorRawMessageIndex: 1
+        ),
       ]
     )
     XCTAssertTrue(AIChatThreadSearch.matches(query: "   ", in: items).isEmpty)
@@ -430,6 +1225,49 @@ final class OpenClawChatLayoutTests: XCTestCase {
       AIChatThreadSearch.matches(query: "migration", in: items),
       [AIChatThreadSearchMatch(messageID: codex.id, scrollTargetID: roundID)]
     )
+  }
+
+  func testThreadFindComputesBoundedExpandedPageForLateLargeMessageMatch() async throws {
+    let pageLimit = OpenClawExpandedMessageBodyInput.pageCharacterLimit
+    let message = OpenClawChatMessage(
+      role: .assistant,
+      content: String(repeating: "x", count: pageLimit + 100)
+        + " LATE-FIND-SENTINEL"
+    )
+    let inputs = [AIChatThreadSearchMessageInput(message)]
+    let matches = await Task.detached {
+      let candidates = AIChatThreadSearch.candidates(
+        in: inputs,
+        isSharedRoom: false
+      )
+      return AIChatThreadSearch.matches(query: "LATE-FIND-SENTINEL", in: candidates)
+    }.value
+
+    let match = try XCTUnwrap(matches.first)
+    XCTAssertEqual(match.messageID, message.id)
+    XCTAssertEqual(match.expandedBodyPageIndex, 1)
+  }
+
+  func testThreadFindProjectsLargeTranscriptInsideDetachedWorker() async throws {
+    let messages = (0..<8_000).map { index in
+      OpenClawChatMessage(
+        role: index.isMultiple(of: 2) ? .user : .assistant,
+        content: index == 7_999 ? "LATE-PROJECTION-SENTINEL" : "Message \(index)",
+        attachments: [OpenClawChatAttachment(
+          fileName: "attachment-\(index).txt",
+          mimeType: "text/plain",
+          data: Data()
+        )]
+      )
+    }
+
+    let matches = await Task.detached {
+      let candidates = AIChatThreadSearch.candidates(in: messages, isSharedRoom: false)
+      return AIChatThreadSearch.matches(query: "LATE-PROJECTION-SENTINEL", in: candidates)
+    }.value
+
+    XCTAssertEqual(matches.count, 1)
+    XCTAssertEqual(matches.first?.rawMessageIndex, 7_999)
   }
 
   func testLargeSharedRoomTranscriptGroupingRemainsResponsive() {
@@ -608,10 +1446,11 @@ final class OpenClawChatLayoutTests: XCTestCase {
       displayLimit: OpenClawChatTranscriptWindow.initialLimit
     )
 
-    XCTAssertEqual(firstWindow.visibleItems.count, 80)
-    XCTAssertEqual(firstWindow.visibleItems.first?.id, messages[920].id)
+    XCTAssertEqual(firstWindow.visibleItems.count, 24)
+    XCTAssertEqual(firstWindow.visibleChatBubbleCount, 24)
+    XCTAssertEqual(firstWindow.visibleItems.first?.id, messages[976].id)
     XCTAssertEqual(firstWindow.visibleItems.last?.id, messages[999].id)
-    XCTAssertEqual(firstWindow.earlierBatchCount, 80)
+    XCTAssertEqual(firstWindow.earlierBatchCount, 40)
     XCTAssertTrue(firstWindow.hasEarlierMessages)
     XCTAssertFalse(firstWindow.contains(messages[0].id))
     XCTAssertTrue(firstWindow.contains(messages[999].id))
@@ -621,8 +1460,114 @@ final class OpenClawChatLayoutTests: XCTestCase {
       isSharedRoom: false,
       displayLimit: firstWindow.nextDisplayLimit
     )
-    XCTAssertEqual(expandedWindow.visibleItems.count, 160)
-    XCTAssertEqual(expandedWindow.visibleItems.first?.id, messages[840].id)
+    XCTAssertEqual(firstWindow.nextDisplayLimit, 64)
+    XCTAssertEqual(expandedWindow.visibleItems.count, 64)
+    XCTAssertEqual(expandedWindow.visibleItems.first?.id, messages[936].id)
+  }
+
+  func testOffWindowFindRevealUsesCenteredBoundedTranscriptWindow() {
+    let messages = (0..<10_000).map { index in
+      OpenClawChatMessage(role: .assistant, content: "Message \(index)")
+    }
+    let targetIndex = 1_234
+    let window = OpenClawChatTranscriptWindow(
+      messages: messages,
+      isSharedRoom: false,
+      displayLimit: OpenClawChatTranscriptWindow.maximumDisplayLimit,
+      anchor: OpenClawChatTranscriptAnchor(
+        itemID: messages[targetIndex].id,
+        rawMessageIndex: targetIndex
+      )
+    )
+
+    XCTAssertTrue(window.contains(messages[targetIndex].id))
+    XCTAssertLessThanOrEqual(
+      window.visibleChatBubbleCount,
+      OpenClawChatTranscriptWindow.maximumDisplayLimit
+    )
+    XCTAssertEqual(
+      window.nextDisplayLimit,
+      OpenClawChatTranscriptWindow.maximumDisplayLimit
+    )
+    XCTAssertNotNil(window.earlierPageAnchor)
+  }
+
+  func testSharedRoomWindowBoundsRawGroupingAndDestinationsBeforeMount() {
+    var messages: [OpenClawChatMessage] = []
+    let destinationIDs = (0..<100).map { "agent-\($0)" }
+    for roundIndex in 0..<60 {
+      let roundID = UUID()
+      messages.append(OpenClawChatMessage(
+        role: .user,
+        content: "Question \(roundIndex)",
+        audienceDestinationIDs: destinationIDs,
+        roomRoundID: roundID
+      ))
+      for destinationID in destinationIDs {
+        messages.append(OpenClawChatMessage(
+          role: .assistant,
+          content: "Response",
+          authorDestinationID: destinationID,
+          roomRoundID: roundID
+        ))
+      }
+    }
+
+    let window = OpenClawChatTranscriptWindow(
+      messages: messages,
+      isSharedRoom: true,
+      displayLimit: OpenClawChatTranscriptWindow.initialLimit
+    )
+
+    XCTAssertLessThanOrEqual(
+      window.visibleChatBubbleCount,
+      OpenClawChatTranscriptWindow.initialLimit
+    )
+    XCTAssertTrue(window.hasEarlierMessages)
+    XCTAssertTrue(window.visibleItems.allSatisfy {
+      $0.visibleChatBubbleCount <= AIChatRoomRoundView.maximumVisibleDestinationCount + 1
+    })
+    XCTAssertEqual(OpenClawChatTranscriptWindow.maximumRawMessageScanCount, 416)
+  }
+
+  func testLargeTranscriptWindowAlsoBoundsDisplayedContentBytes() {
+    let largeBody = String(
+      repeating: "x",
+      count: OpenClawMessageBodyExcerpt.collapsedUTF8ByteLimit * 2
+    )
+    let messages = (0..<80).map { _ in
+      OpenClawChatMessage(role: .assistant, content: largeBody)
+    }
+
+    let firstWindow = OpenClawChatTranscriptWindow(
+      messages: messages,
+      isSharedRoom: false,
+      displayLimit: OpenClawChatTranscriptWindow.initialLimit
+    )
+
+    XCTAssertEqual(firstWindow.visibleChatBubbleCount, 8)
+    XCTAssertEqual(
+      firstWindow.displayedContentUTF8ByteCount,
+      OpenClawChatTranscriptWindow.initialDisplayedContentUTF8ByteLimit
+    )
+    XCTAssertEqual(firstWindow.visibleItems.first?.id, messages[72].id)
+    XCTAssertEqual(firstWindow.earlierBatchCount, 40)
+
+    let expandedWindow = OpenClawChatTranscriptWindow(
+      messages: messages,
+      isSharedRoom: false,
+      displayLimit: firstWindow.nextDisplayLimit
+    )
+    XCTAssertEqual(expandedWindow.visibleChatBubbleCount, 48)
+    XCTAssertEqual(expandedWindow.visibleItems.first?.id, messages[32].id)
+    XCTAssertEqual(
+      OpenClawChatTranscriptWindow.displayedContentUTF8ByteLimit(
+        forDisplayLimit: firstWindow.nextDisplayLimit
+      ),
+      OpenClawChatTranscriptWindow.initialDisplayedContentUTF8ByteLimit
+        + OpenClawChatTranscriptWindow.pageSize
+          * OpenClawMessageBodyExcerpt.collapsedUTF8ByteLimit
+    )
   }
 
   func testLargeTranscriptWindowBoundsExactRowRealization() {
@@ -649,7 +1594,7 @@ final class OpenClawChatLayoutTests: XCTestCase {
 
     hostingView.layoutSubtreeIfNeeded()
 
-    XCTAssertEqual(counter.realizedRows, 80)
+    XCTAssertEqual(counter.realizedRows, 24)
   }
 
   func testTranscriptUsesExactGeometryForRowsBeyondTheViewport() {
@@ -908,7 +1853,7 @@ final class OpenClawChatLayoutTests: XCTestCase {
     XCTAssertEqual(OpenClawMessageClipboard.text(for: message), "[Attachment: diagram.png]")
   }
 
-  func testChatAttachmentPreviewClassifiesImagesPDFsAndTextDocuments() {
+  func testChatAttachmentPreviewClassifiesImagesPDFsAndTextDocuments() throws {
     let image = OpenClawChatAttachment(
       fileName: "diagram.png",
       mimeType: "image/png",
@@ -933,7 +1878,10 @@ final class OpenClawChatLayoutTests: XCTestCase {
     XCTAssertEqual(OpenClawAttachmentPresentation.previewKind(for: image), .image)
     XCTAssertEqual(OpenClawAttachmentPresentation.previewKind(for: pdf), .pdf)
     XCTAssertEqual(OpenClawAttachmentPresentation.previewKind(for: text), .text)
-    XCTAssertEqual(OpenClawAttachmentPresentation.decodedText(for: text), "name,value\nalpha,1")
+    XCTAssertEqual(
+      OpenClawAttachmentPresentation.decodedText(data: try text.loadData()),
+      "name,value\nalpha,1"
+    )
     XCTAssertEqual(OpenClawAttachmentPresentation.previewKind(for: binary), .unsupported)
   }
 
@@ -1412,6 +2360,21 @@ final class OpenClawChatLayoutTests: XCTestCase {
     let presented = OpenClawProgressPresentation.reasoningText(from: prose)
     XCTAssertNotNil(presented)
     XCTAssertLessThanOrEqual(presented?.count ?? .max, 1_200)
+
+    let omittedSentinel = "OMITTED-LARGE-REASONING-SENTINEL"
+    let largeReasoning = String(repeating: "Working through bounded context. ", count: 100_000)
+      + omittedSentinel
+    let bounded = OpenClawProgressPresentation.reasoningText(from: largeReasoning)
+    XCTAssertEqual(OpenClawProgressPresentation.maximumReasoningInputUTF8ByteCount, 8 * 1_024)
+    XCTAssertLessThanOrEqual(bounded?.count ?? .max, 1_200)
+    XCTAssertTrue(bounded?.hasSuffix("…") == true)
+    XCTAssertFalse(bounded?.contains(omittedSentinel) == true)
+    XCTAssertNil(OpenClawProgressPresentation.reasoningText(
+      from: "{\"results\":[" + String(repeating: "0,", count: 100_000) + "0]}"
+    ))
+    XCTAssertFalse(OpenClawProgressPresentation.containsNonWhitespace(
+      String(repeating: " \n\t", count: 100_000)
+    ))
   }
 
   func testLiveProgressShowsLatestReadableUpdateByDefault() throws {

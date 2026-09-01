@@ -342,7 +342,8 @@ final class AIChatSharedRoomTests: XCTestCase {
     await store.sendOpenClawMessage(text: "Original question")
     let source = try XCTUnwrap(store.openClawChatThreads.first(where: { $0.id == sourceID }))
 
-    let forkID = try XCTUnwrap(store.forkAIChatThread(sourceID))
+    let loadedForkID = await store.forkAIChatThread(sourceID)
+    let forkID = try XCTUnwrap(loadedForkID)
     let fork = try XCTUnwrap(store.openClawChatThreads.first(where: { $0.id == forkID }))
 
     XCTAssertNotEqual(fork.id, source.id)

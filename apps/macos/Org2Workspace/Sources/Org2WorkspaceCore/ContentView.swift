@@ -13,11 +13,12 @@ private func performAfterSwiftUIViewUpdate(
 }
 
 public struct ContentView: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
 
   public init() {}
 
   public var body: some View {
+    @Bindable var store = store
     GeometryReader { proxy in
       NavigationSplitView {
         SidebarView()
@@ -84,47 +85,46 @@ public struct ContentView: View {
       .environment(\.openOrgFileReference) { reference in
         store.openChatFileReference(reference)
       }
-      .environment(\.orgRoamLinkResolver, store.orgRoamLinkResolver)
       .onDisappear {
         store.flushDeferredAIChatTranscriptPersistence()
       }
       .sheet(isPresented: $store.isQuickOpenPresented) {
         QuickOpenView()
-          .environmentObject(store)
+          .environment(store)
       }
       .sheet(isPresented: $store.isKeyboardShortcutsPresented) {
         KeyboardShortcutsView()
-          .environmentObject(store)
+          .environment(store)
       }
       .sheet(isPresented: $store.isOrgCryptConfigurationPresented) {
         OrgCryptConfigurationSheet()
-          .environmentObject(store)
+          .environment(store)
       }
       .sheet(isPresented: $store.isLaunchGuidePresented) {
         OpenOrgLaunchGuideView()
-          .environmentObject(store)
+          .environment(store)
       }
       .sheet(isPresented: $store.isDataSourceConfigurationPresented) {
         DataSourceConfigurationSheet()
-          .environmentObject(store)
+          .environment(store)
       }
       .sheet(isPresented: $store.isDocumentPublisherPresented) {
         DocumentPublishSheet()
-          .environmentObject(store)
+          .environment(store)
       }
       .sheet(isPresented: $store.isCapturePanelPresented) {
         GlobalCaptureView()
-          .environmentObject(store)
+          .environment(store)
       }
       .sheet(isPresented: $store.isSimilarTodoAssignmentPresented) {
         SimilarTodoAssignmentView()
-          .environmentObject(store)
+          .environment(store)
       }
       .sheet(item: $store.editorSaveConflict, onDismiss: {
         store.keepEditingAfterSaveConflict()
       }) { conflict in
         EditorSaveConflictSheet(conflict: conflict)
-          .environmentObject(store)
+          .environment(store)
       }
       .alert(item: $store.exportNotice) { notice in
         Alert(
@@ -138,7 +138,7 @@ public struct ContentView: View {
 }
 
 private struct WorkspaceTabBar: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   @StateObject private var dragCoordinator = WorkspaceTabDragCoordinator()
 
   var body: some View {
@@ -863,7 +863,7 @@ final class WorkspaceTabInteractionView: NSView {
 }
 
 private struct OpenOrgLaunchGuideView: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   @State private var selectedDestinationID: String?
   @State private var showsWorkspaceOptions = false
 
@@ -1062,7 +1062,7 @@ private struct OpenOrgLaunchGuideView: View {
 }
 
 private struct EditorSaveConflictSheet: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   let conflict: Org2EditorSaveConflict
 
   var body: some View {
@@ -1112,7 +1112,7 @@ private struct EditorSaveConflictSheet: View {
 }
 
 private struct WorkspaceMainArea: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
 
   var body: some View {
     if store.corpusRoot == nil {
@@ -1140,7 +1140,7 @@ private struct WorkspaceMainArea: View {
 }
 
 private struct CorpusOnboardingView: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
 
   var body: some View {
     ScrollView {
@@ -1247,8 +1247,265 @@ private struct CorpusOnboardingView: View {
   }
 }
 
+enum WorkspaceSurfaceMountIdentity {
+  static func accessibilityIdentifier(for surface: WorkspaceSurface) -> String {
+    "org.openorg.workspace.surface.\(surface.rawValue)"
+  }
+}
+
+enum WorkspaceSurfaceNavigationIdentity {
+  static func accessibilityIdentifier(for surface: WorkspaceSurface) -> String {
+    "org.openorg.workspace.navigation.\(surface.rawValue)"
+  }
+}
+
+enum CorpusFileRowAccessibilityIdentity {
+  static func accessibilityIdentifier(for fileID: CorpusFile.ID) -> String {
+    "org.openorg.workspace.file-row.\(fileID)"
+  }
+}
+
+enum OpenClawSidebarThreadAccessibilityIdentity {
+  static func accessibilityIdentifier(for threadID: UUID) -> String {
+    "org.openorg.workspace.ai-thread-row.\(threadID.uuidString.lowercased())"
+  }
+
+  static let settledDisclosure = "org.openorg.workspace.ai-thread-settled-disclosure"
+  static let settledShowMore = "org.openorg.workspace.ai-thread-settled-show-more"
+}
+
+enum RunsAndReviewPageAccessibilityIdentity {
+  static func accessibilityIdentifier(for page: RunsAndReviewPage) -> String {
+    "org.openorg.workspace.agent-work-page.\(page.rawValue.lowercased())"
+  }
+}
+
+@MainActor
+private final class WorkspaceAccessibilityPressView: NSView {
+  var activate: (() -> Void)?
+
+  override init(frame frameRect: NSRect) {
+    super.init(frame: frameRect)
+    setAccessibilityElement(true)
+    setAccessibilityRole(.button)
+  }
+
+  @available(*, unavailable)
+  required init?(coder: NSCoder) {
+    fatalError("init(coder:) has not been implemented")
+  }
+
+  override func hitTest(_ point: NSPoint) -> NSView? {
+    // Pointer input remains attached to the visible SwiftUI control. This view
+    // gives UI automation a stable native press target without covering it.
+    nil
+  }
+
+  override func accessibilityPerformPress() -> Bool {
+    activate?()
+    return true
+  }
+}
+
+private struct WorkspaceAccessibilityPressTarget: NSViewRepresentable {
+  let identifier: String
+  let label: String
+  let isSelected: Bool
+  let activate: () -> Void
+
+  func makeNSView(context: Context) -> WorkspaceAccessibilityPressView {
+    WorkspaceAccessibilityPressView(frame: .zero)
+  }
+
+  func updateNSView(
+    _ view: WorkspaceAccessibilityPressView,
+    context: Context
+  ) {
+    view.activate = activate
+    view.setAccessibilityIdentifier(identifier)
+    view.setAccessibilityLabel(label)
+    view.setAccessibilitySelected(isSelected)
+  }
+}
+
+struct WorkspaceLazyCollection<Content: View>: View {
+  let horizontalInset: CGFloat
+  let verticalInset: CGFloat
+  let rowSpacing: CGFloat
+  let pinsSectionHeaders: Bool
+  private let content: Content
+
+  init(
+    horizontalInset: CGFloat = 8,
+    verticalInset: CGFloat = 6,
+    rowSpacing: CGFloat = 2,
+    pinsSectionHeaders: Bool = true,
+    @ViewBuilder content: () -> Content
+  ) {
+    self.horizontalInset = horizontalInset
+    self.verticalInset = verticalInset
+    self.rowSpacing = rowSpacing
+    self.pinsSectionHeaders = pinsSectionHeaders
+    self.content = content()
+  }
+
+  var body: some View {
+    ScrollView {
+      LazyVStack(
+        alignment: .leading,
+        spacing: rowSpacing,
+        pinnedViews: pinsSectionHeaders ? [.sectionHeaders] : []
+      ) {
+        content
+      }
+      .padding(.horizontal, horizontalInset)
+      .padding(.vertical, verticalInset)
+    }
+    .background(WorkspaceDesign.appBackground)
+  }
+}
+
+struct WorkspaceLazySectionHeader<Content: View>: View {
+  private let content: Content
+
+  init(@ViewBuilder content: () -> Content) {
+    self.content = content()
+  }
+
+  var body: some View {
+    content
+      .font(.caption.weight(.semibold))
+      .foregroundStyle(.secondary)
+      .textCase(nil)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .padding(.horizontal, 10)
+      .padding(.vertical, 6)
+      .background(WorkspaceDesign.appBackground)
+      .accessibilityAddTraits(.isHeader)
+  }
+}
+
+struct WorkspaceLazyRowModifier<ID: Hashable>: ViewModifier {
+  let id: ID
+
+  func body(content: Content) -> some View {
+    content
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .id(id)
+  }
+}
+
+enum WorkspaceCollectionRowAccessibilityIdentity {
+  static let runShowMore = "org.openorg.workspace.collection-control.run-show-more"
+
+  static func accessibilityIdentifier<ID>(kind: String, id: ID) -> String {
+    "org.openorg.workspace.collection-row.\(kind).\(String(describing: id))"
+  }
+}
+
+private struct WorkspaceAccessibleCollectionRowModifier: ViewModifier {
+  let identifier: String
+  let label: String
+  let isSelected: Bool
+  let open: () -> Void
+
+  func body(content: Content) -> some View {
+    content
+      .accessibilityElement(children: .contain)
+      .accessibilityLabel(label)
+      .accessibilityIdentifier(identifier)
+      .accessibilityAction(.default) {
+        open()
+      }
+      .accessibilityAction(named: Text("Open")) {
+        open()
+      }
+      .background {
+        WorkspaceAccessibilityPressTarget(
+          identifier: identifier,
+          label: label,
+          isSelected: isSelected,
+          activate: open
+        )
+      }
+  }
+}
+
+extension View {
+  func workspaceLazyRow<ID: Hashable>(id: ID) -> some View {
+    modifier(WorkspaceLazyRowModifier(id: id))
+  }
+
+  func workspaceAccessibleCollectionRow<ID>(
+    kind: String,
+    id: ID,
+    label: String,
+    isSelected: Bool = false,
+    open: @escaping () -> Void
+  ) -> some View {
+    modifier(WorkspaceAccessibleCollectionRowModifier(
+      identifier: WorkspaceCollectionRowAccessibilityIdentity.accessibilityIdentifier(
+        kind: kind,
+        id: id
+      ),
+      label: label,
+      isSelected: isSelected,
+      open: open
+    ))
+  }
+}
+
+@MainActor
+private final class WorkspaceSurfaceNavigationAccessibilityView: NSView {
+  var activate: (() -> Void)?
+
+  override init(frame frameRect: NSRect) {
+    super.init(frame: frameRect)
+    setAccessibilityElement(true)
+    setAccessibilityRole(.button)
+  }
+
+  @available(*, unavailable)
+  required init?(coder: NSCoder) {
+    fatalError("init(coder:) has not been implemented")
+  }
+
+  override func hitTest(_ point: NSPoint) -> NSView? {
+    // Pointer input belongs to the visible SwiftUI Button. This native view is
+    // a stable accessibility publication target and must not cover its label.
+    nil
+  }
+
+  override func accessibilityPerformPress() -> Bool {
+    activate?()
+    return true
+  }
+}
+
+private struct WorkspaceSurfaceNavigationAccessibilityTarget: NSViewRepresentable {
+  let surface: WorkspaceSurface
+  let isSelected: Bool
+  let activate: () -> Void
+
+  func makeNSView(context: Context) -> WorkspaceSurfaceNavigationAccessibilityView {
+    WorkspaceSurfaceNavigationAccessibilityView(frame: .zero)
+  }
+
+  func updateNSView(
+    _ view: WorkspaceSurfaceNavigationAccessibilityView,
+    context: Context
+  ) {
+    view.activate = activate
+    view.setAccessibilityLabel(surface.title)
+    view.setAccessibilityIdentifier(
+      WorkspaceSurfaceNavigationIdentity.accessibilityIdentifier(for: surface)
+    )
+    view.setAccessibilitySelected(isSelected)
+  }
+}
+
 private struct WorkspaceSurfaceCacheView: NSViewRepresentable {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   let selectedSurface: WorkspaceSurface
 
   func makeCoordinator() -> Coordinator {
@@ -1258,79 +1515,134 @@ private struct WorkspaceSurfaceCacheView: NSViewRepresentable {
   func makeNSView(context: Context) -> NSView {
     let view = NSView(frame: .zero)
     view.translatesAutoresizingMaskIntoConstraints = false
+    context.coordinator.install(
+      in: view,
+      surface: selectedSurface,
+      store: store
+    )
     return view
   }
 
   func updateNSView(_ view: NSView, context: Context) {
-    context.coordinator.scheduleShow(surface: selectedSurface, in: view, store: store)
+    context.coordinator.show(surface: selectedSurface, in: view, store: store)
   }
 
   @MainActor
   final class Coordinator {
-    private var hosts: [WorkspaceSurface: NSHostingView<AnyView>] = [:]
+    private var host: NSHostingView<AnyView>?
     private var activeSurface: WorkspaceSurface?
-    private var activeConstraints: [NSLayoutConstraint] = []
-    private var pendingShowTask: Task<Void, Never>?
 
-    func scheduleShow(surface: WorkspaceSurface, in container: NSView, store: WorkspaceStore) {
-      guard activeSurface != surface || hosts[surface]?.superview !== container else { return }
-      pendingShowTask?.cancel()
-      pendingShowTask = Task { @MainActor [weak self] in
-        await Task.yield()
-        guard !Task.isCancelled, let self else { return }
-        self.pendingShowTask = nil
-        self.show(surface: surface, in: container, store: store)
-      }
-    }
-
-    private func show(surface: WorkspaceSurface, in container: NSView, store: WorkspaceStore) {
-      guard activeSurface != surface || hosts[surface]?.superview !== container else { return }
-      NSLayoutConstraint.deactivate(activeConstraints)
-      activeConstraints = []
-      if let activeSurface, let activeHost = hosts[activeSurface] {
-        activeHost.removeFromSuperview()
-      }
-
-      let host = hostView(for: surface, store: store)
-      if host.superview !== container {
-        container.addSubview(host)
-      }
-      activeConstraints = [
+    func install(
+      in container: NSView,
+      surface: WorkspaceSurface,
+      store: WorkspaceStore
+    ) {
+      guard host == nil else { return }
+      let host = makeHost(surface: surface, store: store)
+      container.addSubview(host)
+      NSLayoutConstraint.activate([
         host.leadingAnchor.constraint(equalTo: container.leadingAnchor),
         host.trailingAnchor.constraint(equalTo: container.trailingAnchor),
         host.topAnchor.constraint(equalTo: container.topAnchor),
-        host.bottomAnchor.constraint(equalTo: container.bottomAnchor)
-      ]
-      NSLayoutConstraint.activate(activeConstraints)
+        host.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+      ])
+      self.host = host
       activeSurface = surface
     }
 
-    private func hostView(for surface: WorkspaceSurface, store: WorkspaceStore) -> NSHostingView<AnyView> {
-      if let host = hosts[surface] {
-        return host
+    func show(
+      surface: WorkspaceSurface,
+      in container: NSView,
+      store: WorkspaceStore
+    ) {
+      guard let host else {
+        install(in: container, surface: surface, store: store)
+        return
       }
+      guard host.superview === container else {
+        assertionFailure("The workspace surface host must remain attached to its original container")
+        return
+      }
+      guard activeSurface != surface else { return }
 
-      let host = NSHostingView(rootView: AnyView(
+      resignFirstResponderIfContained(in: host)
+      // Replacing the only host's explicitly identified root destroys the
+      // outgoing SwiftUI graph. Inactive surfaces therefore receive normal
+      // onDisappear/task cancellation without remaining hidden observers,
+      // while the NSHostingView itself never leaves the window hierarchy.
+      host.rootView = Self.rootView(surface: surface, store: store)
+      host.setAccessibilityIdentifier(
+        WorkspaceSurfaceMountIdentity.accessibilityIdentifier(for: surface)
+      )
+      activeSurface = surface
+    }
+
+    private func makeHost(
+      surface: WorkspaceSurface,
+      store: WorkspaceStore
+    ) -> NSHostingView<AnyView> {
+      let host = NSHostingView(rootView: Self.rootView(surface: surface, store: store))
+      // The host is fully constrained to its container. Asking SwiftUI for an
+      // intrinsic, minimum, and maximum size as well makes AppKit measure the
+      // entire active surface during every constraint pass.
+      host.sizingOptions = []
+      host.translatesAutoresizingMaskIntoConstraints = false
+      host.setAccessibilityIdentifier(
+        WorkspaceSurfaceMountIdentity.accessibilityIdentifier(for: surface)
+      )
+      return host
+    }
+
+    private static func rootView(
+      surface: WorkspaceSurface,
+      store: WorkspaceStore
+    ) -> AnyView {
+      AnyView(
         WorkspaceSurfaceView(surface: surface)
-          .environmentObject(store)
+          .environment(store)
           .environment(\.openOrgFileReference) { reference in
             store.openChatFileReference(reference)
           }
-      ))
-      // The host is fully constrained to its container. Asking SwiftUI for an
-      // intrinsic, minimum, and maximum size as well makes AppKit measure the
-      // entire active surface during every constraint pass, which is
-      // particularly expensive for corpus-scale Lists.
-      host.sizingOptions = []
-      host.translatesAutoresizingMaskIntoConstraints = false
-      hosts[surface] = host
-      return host
+          .id(surface)
+      )
+    }
+
+    private func resignFirstResponderIfContained(in host: NSView) {
+      guard let window = host.window,
+            let firstResponder = window.firstResponder,
+            Self.responder(firstResponder, isContainedIn: host)
+      else { return }
+      _ = window.makeFirstResponder(nil)
+    }
+
+    private static func responder(
+      _ responder: NSResponder,
+      isContainedIn host: NSView
+    ) -> Bool {
+      if let responderView = responder as? NSView,
+         responderView === host || responderView.isDescendant(of: host) {
+        return true
+      }
+      if let fieldEditor = responder as? NSTextView,
+         let delegateView = fieldEditor.delegate as? NSView,
+         delegateView === host || delegateView.isDescendant(of: host) {
+        return true
+      }
+      var ancestor = responder.nextResponder
+      while let current = ancestor {
+        if let view = current as? NSView,
+           view === host || view.isDescendant(of: host) {
+          return true
+        }
+        ancestor = current.nextResponder
+      }
+      return false
     }
   }
 }
 
 private struct WorkspaceSurfaceView: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   let surface: WorkspaceSurface
 
   var body: some View {
@@ -1378,7 +1690,7 @@ private struct WorkspaceSurfaceView: View {
 }
 
 private struct HomeView: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
 
   var body: some View {
     OpenClawChatView(presentation: .homePane, surface: .home)
@@ -1391,7 +1703,7 @@ private struct HomeView: View {
 }
 
 private struct ExternalThreadsView: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   @State private var searchDraft = ""
   @State private var pendingSearchUpdate: Task<Void, Never>?
 
@@ -1476,19 +1788,26 @@ private struct ExternalThreadsView: View {
         }
         Spacer()
       } else {
-        List(store.filteredExternalThreads) { thread in
-          Button {
-            Task { await store.selectExternalThread(thread.id) }
-          } label: {
-            ExternalThreadRow(
-              thread: thread,
-              isSelected: store.selectedExternalThreadID == thread.id
+        WorkspaceLazyCollection {
+          ForEach(store.filteredExternalThreads) { thread in
+            Button {
+              Task { await store.selectExternalThread(thread.id) }
+            } label: {
+              ExternalThreadRow(
+                thread: thread,
+                isSelected: store.selectedExternalThreadID == thread.id
+              )
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier(
+              WorkspaceCollectionRowAccessibilityIdentity.accessibilityIdentifier(
+                kind: "external-thread",
+                id: thread.id
+              )
             )
+            .workspaceLazyRow(id: thread.id)
           }
-          .buttonStyle(.plain)
-          .listRowBackground(Color.clear)
         }
-        .listStyle(.inset)
       }
     }
     .background(WorkspaceDesign.surfaceBackground)
@@ -1701,10 +2020,11 @@ private struct ExternalThreadMessageCard: View {
 }
 
 private struct WorkspaceDetailArea: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
 
   var body: some View {
     DetailView()
+      .environment(\.orgRoamLinkResolver, store.orgRoamLinkResolver)
       .simultaneousGesture(
         TapGesture().onEnded {
           store.activateWorkspacePane(.detail)
@@ -1714,8 +2034,16 @@ private struct WorkspaceDetailArea: View {
 }
 
 private struct SidebarView: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   @State private var showsCommandShortcuts = false
+  @State private var isChatThreadListExpanded = true
+  @State private var showsSettledChatThreads = false
+  @State private var settledChatThreadDisplayLimit = OpenClawSettledThreadPagination.pageSize
+  @State private var chatRenameRequest: OpenClawThreadRenameRequest?
+  @State private var chatRenameDraft = ""
+
+  private let autoSettleChatTimer = Timer.publish(every: 300, on: .main, in: .common).autoconnect()
+  private let chatSurface = WorkspaceSurface.openClaw
 
   var body: some View {
     let pinnedCorpusFiles = store.pinnedCorpusFiles
@@ -1725,25 +2053,38 @@ private struct SidebarView: View {
       List {
         Section {
           ForEach(WorkspaceSurface.sidebarCases) { surface in
-            SidebarSurfaceRow(
-              surface: surface,
-              showsCommandShortcut: showsCommandShortcuts,
-              notificationCount: surface == .approvals ? store.approvalItems.count : 0
-            )
-            .modifier(
-              ReadableListSelectionModifier(
-                isSelected: store.selectedSurface == surface,
-                verticalPadding: 4
-              )
-            )
-            .contentShape(Rectangle())
-            .onTapGesture {
+            Button {
               guard surface != store.selectedSurface else { return }
-              performAfterSwiftUIViewUpdate {
-                guard surface != store.selectedSurface else { return }
-                store.makeSurfacePrimary(surface)
+              store.makeSurfacePrimary(surface)
+            } label: {
+              SidebarSurfaceRow(
+                surface: surface,
+                showsCommandShortcut: showsCommandShortcuts,
+                notificationCount: surface == .approvals ? store.approvalItems.count : 0
+              )
+              .modifier(
+                ReadableListSelectionModifier(
+                  isSelected: store.selectedSurface == surface,
+                  verticalPadding: 4
+                )
+              )
+              .contentShape(Rectangle())
+              .background {
+                WorkspaceSurfaceNavigationAccessibilityTarget(
+                  surface: surface,
+                  isSelected: store.selectedSurface == surface,
+                  activate: {
+                    guard surface != store.selectedSurface else { return }
+                    store.makeSurfacePrimary(surface)
+                  }
+                )
               }
             }
+            .buttonStyle(.plain)
+            .accessibilityLabel(surface.title)
+            .accessibilityIdentifier(
+              WorkspaceSurfaceNavigationIdentity.accessibilityIdentifier(for: surface)
+            )
             .listRowBackground(Color.clear)
             .help(surface.commandShortcutTitle.isEmpty ? surface.title : "\(surface.title) (\(surface.commandShortcutTitle))")
           }
@@ -1797,7 +2138,59 @@ private struct SidebarView: View {
         }
 
         Section {
-          OpenClawSidebarSurfaceGroup(showsCommandShortcut: showsCommandShortcuts)
+          chatSurfaceRow
+            .listRowBackground(Color.clear)
+
+          if isChatThreadListExpanded {
+            if store.sidebarOpenClawChatThreadSummaries.isEmpty
+                && store.archivedOpenClawChatThreadSummaries.isEmpty {
+              Text("No chat threads")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+                .padding(.leading, 42)
+                .padding(.vertical, 3)
+                .listRowBackground(Color.clear)
+            } else {
+              ForEach(store.sidebarOpenClawChatThreadSummaries) { summary in
+                chatThreadRow(summary)
+                  .id(OpenClawSidebarThreadRowIdentity(
+                    summary: summary,
+                    isSending: store.openClawSendingThreadIDs.contains(summary.id),
+                    isSelected: store.selectedOpenClawChatThreadID == summary.id
+                      && store.selectedSurface == .openClaw
+                  ))
+                  .listRowBackground(Color.clear)
+              }
+
+              if !store.archivedOpenClawChatThreadSummaries.isEmpty {
+                settledChatThreadDisclosureRow
+                  .listRowBackground(Color.clear)
+              }
+
+              if showsSettledChatThreads {
+                ForEach(Array(
+                  store.sidebarSettledOpenClawChatThreadSummaries
+                    .prefix(settledChatThreadDisplayLimit)
+                )) { summary in
+                  chatThreadRow(summary)
+                    .opacity(0.68)
+                    .id(OpenClawSidebarThreadRowIdentity(
+                      summary: summary,
+                      isSending: store.openClawSendingThreadIDs.contains(summary.id),
+                      isSelected: store.selectedOpenClawChatThreadID == summary.id
+                        && store.selectedSurface == .openClaw
+                    ))
+                    .listRowBackground(Color.clear)
+                }
+
+                if settledChatThreadDisplayLimit
+                    < store.sidebarSettledOpenClawChatThreadSummaries.count {
+                  settledChatThreadShowMoreRow
+                    .listRowBackground(Color.clear)
+                }
+              }
+            }
+          }
         } header: {
           SidebarSectionLabel("Chat")
         }
@@ -1811,6 +2204,245 @@ private struct SidebarView: View {
     .commandShortcutRevealMonitor($showsCommandShortcuts)
     .animation(WorkspaceMotion.quick, value: showsCommandShortcuts)
     .background(WorkspaceDesign.appBackground)
+    .onAppear {
+      store.autoSettleOpenClawChatThreads()
+    }
+    .onReceive(autoSettleChatTimer) { now in
+      guard isChatThreadListExpanded else { return }
+      store.autoSettleOpenClawChatThreads(now: now)
+    }
+    .onChange(of: isChatThreadListExpanded) {
+      if isChatThreadListExpanded {
+        store.autoSettleOpenClawChatThreads()
+      } else {
+        showsSettledChatThreads = false
+        settledChatThreadDisplayLimit = OpenClawSettledThreadPagination.pageSize
+        chatRenameRequest = nil
+      }
+    }
+    .onChange(of: store.archivedOpenClawChatThreadSummaries.count) {
+      guard isChatThreadListExpanded else { return }
+      settledChatThreadDisplayLimit = OpenClawSettledThreadPagination.clampedLimit(
+        currentLimit: settledChatThreadDisplayLimit,
+        totalCount: store.sidebarSettledOpenClawChatThreadSummaries.count
+      )
+      let nextValue = OpenClawSettledThreadDisclosure.updated(
+        isExpanded: showsSettledChatThreads,
+        settledThreadCount: store.archivedOpenClawChatThreadSummaries.count
+      )
+      guard nextValue != showsSettledChatThreads else { return }
+      withAnimation(WorkspaceMotion.disclosure) { showsSettledChatThreads = nextValue }
+    }
+    .alert(
+      "Rename Thread",
+      isPresented: chatRenameAlertIsPresented,
+      presenting: chatRenameRequest
+    ) { request in
+      TextField("Thread name", text: $chatRenameDraft)
+      Button("Cancel", role: .cancel) {
+        chatRenameRequest = nil
+      }
+      Button("Rename") {
+        let threadID = request.threadID
+        let title = chatRenameDraft
+        chatRenameRequest = nil
+        store.renameOpenClawChatThread(threadID, title: title)
+      }
+    }
+  }
+
+  private var chatSurfaceRow: some View {
+    HStack(spacing: 6) {
+      Button {
+        store.makeSurfacePrimary(chatSurface)
+      } label: {
+        HStack(spacing: 6) {
+          Label(chatSurface.title, systemImage: chatSurface.systemImage)
+            .font(.callout.weight(.medium))
+          if store.openClawUnreadMessageCount > 0 {
+            OpenClawUnreadBadge(count: store.openClawUnreadMessageCount, compact: true)
+          }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
+      .help(
+        chatSurface.commandShortcutTitle.isEmpty
+          ? chatSurface.title
+          : "\(chatSurface.title) (\(chatSurface.commandShortcutTitle))"
+      )
+
+      Button {
+        store.createAIChatThread()
+        store.makeSurfacePrimary(.openClaw)
+        isChatThreadListExpanded = true
+      } label: {
+        Image(systemName: "plus")
+          .font(.caption.weight(.semibold))
+          .frame(width: 18, height: 18)
+      }
+      .buttonStyle(.plain)
+      .foregroundStyle(.secondary)
+      .help("New chat thread")
+
+      Button {
+        withAnimation(WorkspaceMotion.disclosure) {
+          isChatThreadListExpanded.toggle()
+        }
+      } label: {
+        Image(systemName: "chevron.down")
+          .font(.caption2.weight(.semibold))
+          .rotationEffect(.degrees(isChatThreadListExpanded ? 0 : -90))
+          .frame(width: 16, height: 18)
+      }
+      .buttonStyle(.plain)
+      .foregroundStyle(.secondary)
+      .help(isChatThreadListExpanded ? "Hide chat threads" : "Show chat threads")
+
+      if showsCommandShortcuts && !chatSurface.commandShortcutTitle.isEmpty {
+        KeyboardShortcutBadge(text: chatSurface.commandShortcutTitle)
+          .transition(.opacity.combined(with: .move(edge: .trailing)))
+      }
+    }
+  }
+
+  private func chatThreadRow(_ summary: OpenClawSidebarThreadSummary) -> some View {
+    OpenClawSidebarThreadRow(
+      summary: summary,
+      isSelected: store.selectedOpenClawChatThreadID == summary.id
+        && store.selectedSurface == .openClaw,
+      isSending: store.openClawSendingThreadIDs.contains(summary.id),
+      select: {
+        store.makeSurfacePrimary(.openClaw)
+        store.selectOpenClawChatThread(summary.id)
+      },
+      rename: { beginRenamingChatThread(threadID: $0) },
+      fork: {
+        Task { @MainActor in
+          _ = await store.forkAIChatThread(summary.id)
+        }
+      },
+      togglePin: { store.toggleOpenClawChatThreadPin(summary.id) },
+      settle: { store.settleOpenClawChatThread(summary.id) },
+      reopen: { store.reopenOpenClawChatThread(summary.id) }
+    )
+  }
+
+  private var settledChatThreadDisclosureRow: some View {
+    HStack(spacing: 4) {
+      Button {
+        toggleSettledChatThreads()
+      } label: {
+        HStack(spacing: 5) {
+          Image(systemName: "checkmark.circle")
+          Text("Settled")
+          Text("\(store.archivedOpenClawChatThreadSummaries.count)")
+            .foregroundStyle(.tertiary)
+          Spacer(minLength: 0)
+          Image(systemName: "chevron.down")
+            .font(.caption2.weight(.semibold))
+            .rotationEffect(.degrees(showsSettledChatThreads ? 0 : -90))
+        }
+        .font(.callout)
+        .foregroundStyle(.secondary)
+        .padding(.vertical, 6)
+      }
+      .buttonStyle(.plain)
+      .help(showsSettledChatThreads ? "Hide settled chat threads" : "Show settled chat threads")
+      .accessibilityIdentifier(
+        OpenClawSidebarThreadAccessibilityIdentity.settledDisclosure
+      )
+      .background {
+        WorkspaceAccessibilityPressTarget(
+          identifier: OpenClawSidebarThreadAccessibilityIdentity.settledDisclosure,
+          label: showsSettledChatThreads
+            ? "Hide settled chat threads"
+            : "Show settled chat threads",
+          isSelected: showsSettledChatThreads,
+          activate: toggleSettledChatThreads
+        )
+      }
+
+      if store.canUndoOpenClawChatThreadArchive {
+        Button {
+          store.undoLastOpenClawChatThreadArchive()
+        } label: {
+          Image(systemName: "arrow.uturn.backward")
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .frame(width: 24, height: 24)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Reopen last settled chat thread")
+      }
+    }
+    .padding(.leading, 42)
+    .padding(.trailing, 8)
+  }
+
+  private var settledChatThreadShowMoreRow: some View {
+    Button {
+      showMoreSettledChatThreads()
+    } label: {
+      HStack(spacing: 6) {
+        Image(systemName: "ellipsis.circle")
+        Text(OpenClawSettledThreadPagination.moreTitle(
+          currentLimit: settledChatThreadDisplayLimit,
+          totalCount: store.sidebarSettledOpenClawChatThreadSummaries.count
+        ))
+        Spacer(minLength: 0)
+      }
+      .font(.caption)
+      .foregroundStyle(.secondary)
+      .padding(.leading, 42)
+      .padding(.vertical, 6)
+    }
+    .buttonStyle(.plain)
+    .help("Load more settled chat threads")
+    .accessibilityIdentifier(
+      OpenClawSidebarThreadAccessibilityIdentity.settledShowMore
+    )
+    .background {
+      WorkspaceAccessibilityPressTarget(
+        identifier: OpenClawSidebarThreadAccessibilityIdentity.settledShowMore,
+        label: "Load more settled chat threads",
+        isSelected: false,
+        activate: showMoreSettledChatThreads
+      )
+    }
+  }
+
+  private var chatRenameAlertIsPresented: Binding<Bool> {
+    Binding(
+      get: { chatRenameRequest != nil },
+      set: { isPresented in
+        if !isPresented { chatRenameRequest = nil }
+      }
+    )
+  }
+
+  private func toggleSettledChatThreads() {
+    withAnimation(WorkspaceMotion.disclosure) {
+      showsSettledChatThreads.toggle()
+    }
+    if !showsSettledChatThreads {
+      settledChatThreadDisplayLimit = OpenClawSettledThreadPagination.pageSize
+    }
+  }
+
+  private func showMoreSettledChatThreads() {
+    settledChatThreadDisplayLimit = OpenClawSettledThreadPagination.nextLimit(
+      currentLimit: settledChatThreadDisplayLimit,
+      totalCount: store.sidebarSettledOpenClawChatThreadSummaries.count
+    )
+  }
+
+  private func beginRenamingChatThread(threadID: UUID) {
+    guard let thread = store.openClawChatThreads.first(where: { $0.id == threadID }) else { return }
+    chatRenameDraft = thread.title
+    chatRenameRequest = OpenClawThreadRenameRequest(threadID: threadID)
   }
 }
 
@@ -1830,7 +2462,7 @@ private struct SidebarSectionLabel: View {
 }
 
 private struct SidebarHeader: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   let showsCommandShortcuts: Bool
 
   var body: some View {
@@ -1880,7 +2512,7 @@ private struct SidebarHeader: View {
 }
 
 private struct SidebarCorpusSwitcher: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
 
   var body: some View {
     Menu {
@@ -2040,267 +2672,6 @@ private struct SidebarSurfaceRow: View {
   }
 }
 
-private struct OpenClawSidebarSurfaceGroup: View {
-  @EnvironmentObject private var store: WorkspaceStore
-  @State private var isThreadListExpanded = true
-  let showsCommandShortcut: Bool
-
-  private let surface = WorkspaceSurface.openClaw
-
-  var body: some View {
-    VStack(alignment: .leading, spacing: 4) {
-      HStack(spacing: 6) {
-        Button {
-          store.makeSurfacePrimary(surface)
-        } label: {
-          HStack(spacing: 6) {
-            Label(surface.title, systemImage: surface.systemImage)
-              .font(.callout.weight(.medium))
-            if store.openClawUnreadMessageCount > 0 {
-              OpenClawUnreadBadge(count: store.openClawUnreadMessageCount, compact: true)
-            }
-          }
-          .frame(maxWidth: .infinity, alignment: .leading)
-          .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help(surface.commandShortcutTitle.isEmpty ? surface.title : "\(surface.title) (\(surface.commandShortcutTitle))")
-
-        Button {
-          store.createAIChatThread()
-          store.makeSurfacePrimary(.openClaw)
-          isThreadListExpanded = true
-        } label: {
-          Image(systemName: "plus")
-            .font(.caption.weight(.semibold))
-            .frame(width: 18, height: 18)
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(.secondary)
-        .help("New chat thread")
-
-        Button {
-          withAnimation(WorkspaceMotion.disclosure) {
-            isThreadListExpanded.toggle()
-          }
-        } label: {
-          Image(systemName: "chevron.down")
-            .font(.caption2.weight(.semibold))
-            .rotationEffect(.degrees(isThreadListExpanded ? 0 : -90))
-            .frame(width: 16, height: 18)
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(.secondary)
-        .help(isThreadListExpanded ? "Hide chat threads" : "Show chat threads")
-
-        if showsCommandShortcut && !surface.commandShortcutTitle.isEmpty {
-          KeyboardShortcutBadge(text: surface.commandShortcutTitle)
-            .transition(.opacity.combined(with: .move(edge: .trailing)))
-        }
-      }
-
-      if isThreadListExpanded {
-        OpenClawSidebarThreadList()
-      }
-
-    }
-  }
-}
-
-private struct OpenClawSidebarThreadList: View {
-  @EnvironmentObject private var store: WorkspaceStore
-  @State private var showsSettledThreads = false
-  @State private var settledThreadDisplayLimit = OpenClawSettledThreadPagination.pageSize
-  @State private var renameRequest: OpenClawThreadRenameRequest?
-  @State private var renameDraft = ""
-
-  private let autoSettleTimer = Timer.publish(every: 300, on: .main, in: .common).autoconnect()
-
-  var body: some View {
-    VStack(alignment: .leading, spacing: 2) {
-      if store.sidebarOpenClawChatThreadSummaries.isEmpty
-          && store.archivedOpenClawChatThreadSummaries.isEmpty {
-        Text("No chat threads")
-          .font(.caption)
-          .foregroundStyle(.tertiary)
-          .padding(.leading, 42)
-          .padding(.vertical, 3)
-      } else {
-        LazyVStack(alignment: .leading, spacing: 2) {
-          ForEach(store.sidebarOpenClawChatThreadSummaries) { summary in
-            OpenClawSidebarThreadRow(
-              summary: summary,
-              isSelected: store.selectedOpenClawChatThreadID == summary.id && store.selectedSurface == .openClaw,
-              isSending: store.openClawSendingThreadIDs.contains(summary.id),
-              select: {
-                store.makeSurfacePrimary(.openClaw)
-                store.selectOpenClawChatThread(summary.id)
-              },
-              rename: { beginRenaming(threadID: $0) },
-              fork: { store.forkAIChatThread(summary.id) },
-              togglePin: { store.toggleOpenClawChatThreadPin(summary.id) },
-              settle: { store.settleOpenClawChatThread(summary.id) },
-              reopen: { store.reopenOpenClawChatThread(summary.id) }
-            )
-            .id(OpenClawSidebarThreadRowIdentity(
-              summary: summary,
-              isSending: store.openClawSendingThreadIDs.contains(summary.id),
-              isSelected: store.selectedOpenClawChatThreadID == summary.id
-                && store.selectedSurface == .openClaw
-            ))
-          }
-
-          if !store.archivedOpenClawChatThreadSummaries.isEmpty {
-            HStack(spacing: 4) {
-              Button {
-                withAnimation(WorkspaceMotion.disclosure) {
-                  showsSettledThreads.toggle()
-                }
-                if !showsSettledThreads {
-                  settledThreadDisplayLimit = OpenClawSettledThreadPagination.pageSize
-                }
-              } label: {
-                HStack(spacing: 5) {
-                  Image(systemName: "checkmark.circle")
-                  Text("Settled")
-                  Text("\(store.archivedOpenClawChatThreadSummaries.count)")
-                    .foregroundStyle(.tertiary)
-                  Spacer(minLength: 0)
-                  Image(systemName: "chevron.down")
-                    .font(.caption2.weight(.semibold))
-                    .rotationEffect(.degrees(showsSettledThreads ? 0 : -90))
-                }
-                  .font(.callout)
-                  .foregroundStyle(.secondary)
-                  .padding(.vertical, 6)
-              }
-              .buttonStyle(.plain)
-              .help(showsSettledThreads ? "Hide settled chat threads" : "Show settled chat threads")
-
-              if store.canUndoOpenClawChatThreadArchive {
-                Button {
-                  store.undoLastOpenClawChatThreadArchive()
-                } label: {
-                  Image(systemName: "arrow.uturn.backward")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 24, height: 24)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help("Reopen last settled chat thread")
-              }
-            }
-            .padding(.leading, 42)
-            .padding(.trailing, 8)
-          }
-
-          if showsSettledThreads {
-            ForEach(Array(store.sidebarSettledOpenClawChatThreadSummaries.prefix(settledThreadDisplayLimit))) { summary in
-              OpenClawSidebarThreadRow(
-                summary: summary,
-                isSelected: store.selectedOpenClawChatThreadID == summary.id && store.selectedSurface == .openClaw,
-                isSending: store.openClawSendingThreadIDs.contains(summary.id),
-                select: {
-                  store.makeSurfacePrimary(.openClaw)
-                  store.selectOpenClawChatThread(summary.id)
-                },
-                rename: { beginRenaming(threadID: $0) },
-                fork: { store.forkAIChatThread(summary.id) },
-                togglePin: { store.toggleOpenClawChatThreadPin(summary.id) },
-                settle: { store.settleOpenClawChatThread(summary.id) },
-                reopen: { store.reopenOpenClawChatThread(summary.id) }
-              )
-              .opacity(0.68)
-              .id(OpenClawSidebarThreadRowIdentity(
-                summary: summary,
-                isSending: store.openClawSendingThreadIDs.contains(summary.id),
-                isSelected: store.selectedOpenClawChatThreadID == summary.id
-                  && store.selectedSurface == .openClaw
-              ))
-            }
-
-            if settledThreadDisplayLimit < store.sidebarSettledOpenClawChatThreadSummaries.count {
-              Button {
-                settledThreadDisplayLimit = OpenClawSettledThreadPagination.nextLimit(
-                  currentLimit: settledThreadDisplayLimit,
-                  totalCount: store.sidebarSettledOpenClawChatThreadSummaries.count
-                )
-              } label: {
-                HStack(spacing: 6) {
-                  Image(systemName: "ellipsis.circle")
-                  Text(OpenClawSettledThreadPagination.moreTitle(
-                    currentLimit: settledThreadDisplayLimit,
-                    totalCount: store.sidebarSettledOpenClawChatThreadSummaries.count
-                  ))
-                  Spacer(minLength: 0)
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .padding(.leading, 42)
-                .padding(.vertical, 6)
-              }
-              .buttonStyle(.plain)
-              .help("Load more settled chat threads")
-            }
-          }
-        }
-        .padding(.vertical, 1)
-      }
-    }
-    .padding(.top, 2)
-    .onAppear {
-      store.autoSettleOpenClawChatThreads()
-    }
-    .onReceive(autoSettleTimer) { now in
-      store.autoSettleOpenClawChatThreads(now: now)
-    }
-    .onChange(of: store.archivedOpenClawChatThreadSummaries.count) {
-      settledThreadDisplayLimit = OpenClawSettledThreadPagination.clampedLimit(
-        currentLimit: settledThreadDisplayLimit,
-        totalCount: store.sidebarSettledOpenClawChatThreadSummaries.count
-      )
-      let nextValue = OpenClawSettledThreadDisclosure.updated(
-        isExpanded: showsSettledThreads,
-        settledThreadCount: store.archivedOpenClawChatThreadSummaries.count
-      )
-      guard nextValue != showsSettledThreads else { return }
-      withAnimation(WorkspaceMotion.disclosure) { showsSettledThreads = nextValue }
-    }
-    .alert(
-      "Rename Thread",
-      isPresented: renameAlertIsPresented,
-      presenting: renameRequest
-    ) { request in
-      TextField("Thread name", text: $renameDraft)
-      Button("Cancel", role: .cancel) {
-        renameRequest = nil
-      }
-      Button("Rename") {
-        let threadID = request.threadID
-        let title = renameDraft
-        renameRequest = nil
-        store.renameOpenClawChatThread(threadID, title: title)
-      }
-    }
-  }
-
-  private var renameAlertIsPresented: Binding<Bool> {
-    Binding(
-      get: { renameRequest != nil },
-      set: { isPresented in
-        if !isPresented { renameRequest = nil }
-      }
-    )
-  }
-
-  private func beginRenaming(threadID: UUID) {
-    guard let thread = store.openClawChatThreads.first(where: { $0.id == threadID }) else { return }
-    renameDraft = thread.title
-    renameRequest = OpenClawThreadRenameRequest(threadID: threadID)
-  }
-}
-
 private struct OpenClawThreadRenameRequest: Identifiable {
   let threadID: UUID
   var id: UUID { threadID }
@@ -2388,7 +2759,7 @@ struct OpenClawSidebarThreadSummary: Identifiable, Hashable {
 }
 
 private struct OpenClawSidebarThreadRow: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   @State private var isHovered = false
   let summary: OpenClawSidebarThreadSummary
   let isSelected: Bool
@@ -2524,14 +2895,17 @@ private struct OpenClawSidebarThreadRow: View {
       }
     }
     .overlay {
-      // SwiftUI can reuse the first row's context-menu action when this LazyVStack
+      // SwiftUI can reuse another recycled row's context-menu action when this
       // is opened with a physical right-click. A native hit target keeps the menu
       // attached to the NSView that was actually clicked while the SwiftUI menu
       // remains available to accessibility actions.
       OpenClawSidebarThreadContextMenuTarget(
         threadID: summary.id,
+        title: summary.title,
+        isSelected: isSelected,
         isPinned: summary.isPinned,
         isSettled: summary.isSettled,
+        select: select,
         rename: rename,
         fork: fork,
         togglePin: togglePin,
@@ -2599,8 +2973,11 @@ struct OpenClawSidebarThreadActivityView: View {
 
 private struct OpenClawSidebarThreadContextMenuTarget: NSViewRepresentable {
   let threadID: UUID
+  let title: String
+  let isSelected: Bool
   let isPinned: Bool
   let isSettled: Bool
+  let select: () -> Void
   let rename: (UUID) -> Void
   let fork: () -> Void
   let togglePin: () -> Void
@@ -2615,22 +2992,40 @@ private struct OpenClawSidebarThreadContextMenuTarget: NSViewRepresentable {
     view.threadID = threadID
     view.isPinned = isPinned
     view.isSettled = isSettled
+    view.select = select
     view.rename = rename
     view.fork = fork
     view.togglePin = togglePin
     view.settle = settle
     view.reopen = reopen
+    view.setAccessibilityIdentifier(
+      OpenClawSidebarThreadAccessibilityIdentity.accessibilityIdentifier(for: threadID)
+    )
+    view.setAccessibilityLabel(title)
+    view.setAccessibilitySelected(isSelected)
   }
 
   final class ContextMenuView: NSView {
     var threadID: UUID?
     var isPinned = false
     var isSettled = false
+    var select: (() -> Void)?
     var rename: ((UUID) -> Void)?
     var fork: (() -> Void)?
     var togglePin: (() -> Void)?
     var settle: (() -> Void)?
     var reopen: (() -> Void)?
+
+    override init(frame frameRect: NSRect) {
+      super.init(frame: frameRect)
+      setAccessibilityElement(true)
+      setAccessibilityRole(.button)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+      fatalError("init(coder:) has not been implemented")
+    }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
       guard bounds.contains(point), NSApp.currentEvent?.type == .rightMouseDown else { return nil }
@@ -2661,6 +3056,11 @@ private struct OpenClawSidebarThreadContextMenuTarget: NSViewRepresentable {
         action: #selector(toggleThreadSettlement)
       ))
       NSMenu.popUpContextMenu(menu, with: event, for: self)
+    }
+
+    override func accessibilityPerformPress() -> Bool {
+      select?()
+      return true
     }
 
     private func menuItem(title: String, systemImage: String, action: Selector) -> NSMenuItem {
@@ -2711,7 +3111,7 @@ private struct OpenClawUnreadBadge: View {
 }
 
 private struct FilesView: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   @FocusState private var filterFocused: Bool
   @State private var filterDraft = ""
   @State private var pendingFilterUpdate: Task<Void, Never>?
@@ -2769,22 +3169,52 @@ private struct FilesView: View {
           Task { await store.refreshCorpusFiles() }
         }
       } else {
-        List {
-          ForEach(store.filteredCorpusFiles) { file in
-            CorpusFileRow(file: file)
-              .contentShape(Rectangle())
-              .onTapGesture {
-                let modifiers = NSApp.currentEvent?.modifierFlags ?? []
-                store.handleCorpusFileClick(file, modifiers: modifiers)
-              }
-              .modifier(ReadableListSelectionModifier(isSelected: store.isCorpusFileSelectedForAIContext(file)))
-              .listRowBackground(Color.clear)
-              .contextMenu {
-                CorpusFileContextMenu(file: file)
-              }
+        ScrollView {
+          LazyVStack(spacing: 2) {
+            ForEach(store.filteredCorpusFiles) { file in
+              CorpusFileRow(file: file)
+                // Files have a deliberately bounded two-line presentation. A
+                // fixed row extent lets LazyVStack place only visible rows and
+                // avoids NSTableView's automatic-height measurement pass across
+                // the entire corpus whenever the window becomes active.
+                .frame(height: 52)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                  let modifiers = NSApp.currentEvent?.modifierFlags ?? []
+                  store.handleCorpusFileClick(file, modifiers: modifiers)
+                }
+                .modifier(ReadableListSelectionModifier(isSelected: store.isCorpusFileSelectedForAIContext(file)))
+                .contextMenu {
+                  CorpusFileContextMenu(file: file)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(file.name)
+                .accessibilityValue(file.relativePath)
+                .accessibilityAddTraits(.isButton)
+                .accessibilityIdentifier(
+                  CorpusFileRowAccessibilityIdentity.accessibilityIdentifier(for: file.id)
+                )
+                .accessibilityAction {
+                  store.handleCorpusFileClick(file)
+                }
+                .background {
+                  WorkspaceAccessibilityPressTarget(
+                    identifier: CorpusFileRowAccessibilityIdentity.accessibilityIdentifier(
+                      for: file.id
+                    ),
+                    label: file.name,
+                    isSelected: store.selectedCorpusFileID == file.id,
+                    activate: {
+                      store.handleCorpusFileClick(file)
+                    }
+                  )
+                }
+            }
           }
+          .padding(.horizontal, 8)
+          .padding(.vertical, 6)
         }
-        .listStyle(.inset)
+        .background(WorkspaceDesign.appBackground)
         .onChange(of: store.selectedCorpusFileID) {
           guard let id = store.selectedCorpusFileID,
                 let file = store.corpusFiles.first(where: { $0.id == id })
@@ -2795,9 +3225,6 @@ private struct FilesView: View {
             guard store.selectedCorpusFileID == id else { return }
             store.selectCorpusFile(file)
           }
-        }
-        .onChange(of: store.filteredCorpusFiles.map(\.id)) { _, ids in
-          store.reconcileCorpusFileAIContextSelection(visibleIDs: ids)
         }
       }
     }
@@ -2871,7 +3298,7 @@ private struct ReadableListSelectionModifier: ViewModifier {
 }
 
 private struct CorpusFileContextMenu: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   let file: CorpusFile
   var afterOpen: (() -> Void)? = nil
 
@@ -2930,7 +3357,7 @@ private struct CorpusFileContextMenu: View {
 }
 
 private struct WorkspaceLocationContextMenu<OpenLabel: View>: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   let location: WorkspaceLocation
   let select: () -> Void
   let showsHeadingActions: Bool
@@ -3001,7 +3428,7 @@ private struct WorkspaceLocationContextMenu<OpenLabel: View>: View {
 }
 
 private struct HeadingActionsContextMenu: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   let location: WorkspaceLocation
   let select: () -> Void
 
@@ -3095,7 +3522,7 @@ private struct HeadingActionsContextMenu: View {
 }
 
 private struct QuickOpenView: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   @Environment(\.dismiss) private var dismiss
   @FocusState private var queryFocused: Bool
   @State private var query = ""
@@ -3241,11 +3668,12 @@ private struct QuickOpenChatThreadRow: View {
 }
 
 private struct SimilarTodoAssignmentView: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   @Environment(\.dismiss) private var dismiss
   @FocusState private var assigneeFocused: Bool
 
   var body: some View {
+    @Bindable var store = store
     VStack(alignment: .leading, spacing: 14) {
       HStack(alignment: .firstTextBaseline) {
         VStack(alignment: .leading, spacing: 4) {
@@ -3340,7 +3768,7 @@ private struct SimilarTodoAssignmentView: View {
 }
 
 private struct SimilarTodoCandidateRow: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   let candidate: SimilarTodoCandidate
 
   var body: some View {
@@ -3589,7 +4017,7 @@ private struct ShortcutSection: View {
 }
 
 private struct AgendaView: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   @FocusState private var agendaFilterFocused: Bool
 
   var body: some View {
@@ -3687,13 +4115,14 @@ private struct AgendaView: View {
 }
 
 private struct AgendaControls: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   @State private var isShowingOpenClawConfiguration = false
   @State private var filterDraft = ""
   @State private var pendingFilterUpdate: Task<Void, Never>?
   var agendaFilterFocused: FocusState<Bool>.Binding
 
   var body: some View {
+    @Bindable var store = store
     VStack(alignment: .leading, spacing: 8) {
       HStack(spacing: 10) {
         Picker("Mode", selection: $store.agendaMode) {
@@ -3783,7 +4212,7 @@ private struct AgendaControls: View {
     .padding(.bottom, 12)
     .sheet(isPresented: $isShowingOpenClawConfiguration) {
       OpenClawConfigurationSheet()
-        .environmentObject(store)
+        .environment(store)
     }
     .onAppear { filterDraft = store.agendaFilter }
     .onChange(of: store.agendaFilter) {
@@ -3865,7 +4294,7 @@ private struct MetricView: View {
 }
 
 private struct AgendaListView: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
 
   var body: some View {
     VStack(spacing: 0) {
@@ -3883,9 +4312,10 @@ private struct AgendaListView: View {
 }
 
 private struct RunsAndReviewView: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
 
   var body: some View {
+    @Bindable var store = store
     VStack(spacing: 0) {
       HStack(spacing: 0) {
         Spacer(minLength: 0)
@@ -3895,6 +4325,23 @@ private struct RunsAndReviewView: View {
         .labelsHidden()
         .pickerStyle(.segmented)
         .frame(maxWidth: 520)
+        .background {
+          ZStack {
+            ForEach(RunsAndReviewPage.allCases) { page in
+              WorkspaceAccessibilityPressTarget(
+                identifier: RunsAndReviewPageAccessibilityIdentity.accessibilityIdentifier(
+                  for: page
+                ),
+                label: "\(page.rawValue) Agent Work page",
+                isSelected: store.runsAndReviewPage == page,
+                activate: {
+                  guard store.runsAndReviewPage != page else { return }
+                  store.runsAndReviewPage = page
+                }
+              )
+            }
+          }
+        }
         Spacer(minLength: 0)
       }
       .padding(.horizontal, WorkspaceDesign.contentInset)
@@ -3916,13 +4363,13 @@ private struct RunsAndReviewView: View {
       }
     }
     .onChange(of: store.runsAndReviewPage) {
-      Task { await store.refreshSelectedRunReviewPage() }
+      Task { await store.refreshSelectedRunReviewPageIfNeeded() }
     }
   }
 }
 
 private struct GoalsView: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
 
   var body: some View {
     VStack(spacing: 0) {
@@ -3947,19 +4394,21 @@ private struct GoalsView: View {
           detail: "Goals created in this corpus appear here automatically. Agents can create one with org2 goal create."
         )
       } else {
-        List {
+        WorkspaceLazyCollection {
           ForEach(store.agentGoals) { goal in
             AgentGoalRow(goal: goal)
               .contentShape(Rectangle())
               .onTapGesture {
-                if store.selectedAgentGoalID == goal.id {
-                  store.selectAgentGoal(goal)
-                } else {
-                  store.selectedAgentGoalID = goal.id
-                }
+                selectGoal(goal)
               }
               .modifier(ReadableListSelectionModifier(isSelected: store.selectedAgentGoalID == goal.id))
-              .listRowBackground(Color.clear)
+              .workspaceAccessibleCollectionRow(
+                kind: "goal",
+                id: goal.id,
+                label: goal.title,
+                isSelected: store.selectedAgentGoalID == goal.id,
+                open: { selectGoal(goal) }
+              )
               .contextMenu {
                 if let ownerAgentRef = goal.ownerAgentRef {
                   Button("View Owner Agent") { store.showAgentProfile(ownerAgentRef) }
@@ -3974,9 +4423,9 @@ private struct GoalsView: View {
                   }
                 }
               }
+              .workspaceLazyRow(id: goal.id)
           }
         }
-        .listStyle(.inset)
         .onChange(of: store.selectedAgentGoalID) {
           guard let id = store.selectedAgentGoalID,
                 let goal = store.agentGoals.first(where: { $0.id == id }) else { return }
@@ -3988,7 +4437,7 @@ private struct GoalsView: View {
       }
     }
     .task {
-      if store.agentGoals.isEmpty { await store.refreshAgentGoals() }
+      await store.refreshSelectedRunReviewPageIfNeeded()
     }
     .onAppear {
       guard let id = store.selectedAgentGoalID,
@@ -3999,10 +4448,18 @@ private struct GoalsView: View {
       }
     }
   }
+
+  private func selectGoal(_ goal: AgentGoalItem) {
+    if store.selectedAgentGoalID == goal.id {
+      store.selectAgentGoal(goal)
+    } else {
+      store.selectedAgentGoalID = goal.id
+    }
+  }
 }
 
 private struct AgentGoalRow: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   let goal: AgentGoalItem
 
   var body: some View {
@@ -4053,7 +4510,7 @@ private struct AgentGoalRow: View {
 }
 
 private struct AgentsView: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
 
   var body: some View {
     VStack(spacing: 0) {
@@ -4078,19 +4535,21 @@ private struct AgentsView: View {
           detail: "Named agent profiles created in this corpus appear here automatically. OpenClaw, Codex, and Claude Code remain runtimes, not agent identities."
         )
       } else {
-        List {
+        WorkspaceLazyCollection {
           ForEach(store.agentProfiles) { profile in
             AgentProfileRow(profile: profile)
               .contentShape(Rectangle())
               .onTapGesture {
-                if store.selectedAgentProfileID == profile.id {
-                  store.selectAgentProfile(profile)
-                } else {
-                  store.selectedAgentProfileID = profile.id
-                }
+                selectProfile(profile)
               }
               .modifier(ReadableListSelectionModifier(isSelected: store.selectedAgentProfileID == profile.id))
-              .listRowBackground(Color.clear)
+              .workspaceAccessibleCollectionRow(
+                kind: "agent",
+                id: profile.id,
+                label: profile.name,
+                isSelected: store.selectedAgentProfileID == profile.id,
+                open: { selectProfile(profile) }
+              )
               .contextMenu {
                 if let primaryGoalRef = profile.primaryGoalRef {
                   Button("View Primary Goal") { store.showAgentGoal(primaryGoalRef) }
@@ -4108,9 +4567,9 @@ private struct AgentsView: View {
                   }
                 }
               }
+              .workspaceLazyRow(id: profile.id)
           }
         }
-        .listStyle(.inset)
         .onChange(of: store.selectedAgentProfileID) {
           guard let id = store.selectedAgentProfileID,
                 let profile = store.agentProfiles.first(where: { $0.id == id }) else { return }
@@ -4122,7 +4581,7 @@ private struct AgentsView: View {
       }
     }
     .task {
-      if store.agentProfiles.isEmpty { await store.refreshAgentProfiles() }
+      await store.refreshSelectedRunReviewPageIfNeeded()
     }
     .onAppear {
       guard let id = store.selectedAgentProfileID,
@@ -4133,10 +4592,18 @@ private struct AgentsView: View {
       }
     }
   }
+
+  private func selectProfile(_ profile: AgentProfileItem) {
+    if store.selectedAgentProfileID == profile.id {
+      store.selectAgentProfile(profile)
+    } else {
+      store.selectedAgentProfileID = profile.id
+    }
+  }
 }
 
 private struct AgentProfileRow: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   let profile: AgentProfileItem
 
   var body: some View {
@@ -4188,7 +4655,7 @@ private struct AgentProfileRow: View {
 }
 
 private struct WorkflowsView: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   @State private var runWorkflow: AgentWorkflowItem?
   @State private var scheduleWorkflow: AgentWorkflowItem?
   @State private var workflowPendingDeletion: AgentWorkflowItem?
@@ -4254,19 +4721,21 @@ private struct WorkflowsView: View {
           detail: "Create a prompt, choose an AI destination, and optionally add a schedule. Its editable Org2 source will appear in workflows/."
         )
       } else {
-        List {
+        WorkspaceLazyCollection {
           ForEach(store.agentWorkflows) { workflow in
             WorkflowRow(workflow: workflow)
               .contentShape(Rectangle())
               .onTapGesture {
-                if store.selectedAgentWorkflowID == workflow.id {
-                  store.selectAgentWorkflow(workflow)
-                } else {
-                  store.selectedAgentWorkflowID = workflow.id
-                }
+                selectWorkflow(workflow)
               }
               .modifier(ReadableListSelectionModifier(isSelected: store.selectedAgentWorkflowID == workflow.id))
-              .listRowBackground(Color.clear)
+              .workspaceAccessibleCollectionRow(
+                kind: "workflow",
+                id: workflow.id,
+                label: workflow.title,
+                isSelected: store.selectedAgentWorkflowID == workflow.id,
+                open: { selectWorkflow(workflow) }
+              )
               .contextMenu {
                 Button("Run Now") { runWorkflow = workflow }
                 Button("View History") { store.showAgentWorkflowHistory(workflow) }
@@ -4287,9 +4756,9 @@ private struct WorkflowsView: View {
                   workflowPendingDeletion = workflow
                 }
               }
+              .workspaceLazyRow(id: workflow.id)
           }
         }
-        .listStyle(.inset)
         .onChange(of: store.selectedAgentWorkflowID) {
           guard let id = store.selectedAgentWorkflowID,
                 let workflow = store.agentWorkflows.first(where: { $0.id == id }) else { return }
@@ -4301,19 +4770,19 @@ private struct WorkflowsView: View {
       }
     }
     .task {
-      if store.agentWorkflows.isEmpty { await store.refreshAgentWorkflows() }
+      await store.refreshSelectedRunReviewPageIfNeeded()
     }
     .sheet(item: $runWorkflow) { workflow in
       WorkflowRunSheet(workflow: workflow)
-        .environmentObject(store)
+        .environment(store)
     }
     .sheet(item: $scheduleWorkflow) { workflow in
       WorkflowScheduleSheet(workflow: workflow)
-        .environmentObject(store)
+        .environment(store)
     }
     .sheet(isPresented: $isCreatingAutomation) {
       NewAutomationSheet()
-        .environmentObject(store)
+        .environment(store)
     }
     .confirmationDialog(
       "Delete \(workflowPendingDeletion?.title ?? "Automation")?",
@@ -4335,10 +4804,18 @@ private struct WorkflowsView: View {
       Text("This removes the workflow definition. Existing run history is preserved.")
     }
   }
+
+  private func selectWorkflow(_ workflow: AgentWorkflowItem) {
+    if store.selectedAgentWorkflowID == workflow.id {
+      store.selectAgentWorkflow(workflow)
+    } else {
+      store.selectedAgentWorkflowID = workflow.id
+    }
+  }
 }
 
 private struct WorkflowRow: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   let workflow: AgentWorkflowItem
 
   var body: some View {
@@ -4386,7 +4863,7 @@ private struct WorkflowRow: View {
 }
 
 private struct WorkflowRunSheet: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   @Environment(\.dismiss) private var dismiss
   let workflow: AgentWorkflowItem
   @State private var values: [String: String]
@@ -4441,7 +4918,7 @@ private struct WorkflowRunSheet: View {
 }
 
 private struct NewAutomationSheet: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   @Environment(\.dismiss) private var dismiss
   @State private var title = ""
   @State private var prompt = ""
@@ -4563,7 +5040,7 @@ private struct NewAutomationSheet: View {
 }
 
 private struct WorkflowScheduleSheet: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   @Environment(\.dismiss) private var dismiss
   let workflow: AgentWorkflowItem
   @State private var enabled: Bool
@@ -4769,7 +5246,7 @@ private struct RunCenterView: View {
   private static let initialVisibleRunLimit = 250
   private static let visibleRunBatchSize = 250
 
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   @State private var scope: AgentRunScope = .active
   @State private var visibleRunLimit = Self.initialVisibleRunLimit
   @FocusState private var filterFocused: Bool
@@ -4828,7 +5305,7 @@ private struct RunCenterView: View {
           EmptyStateView(title: "No Matching Runs", detail: "No \(scope.rawValue.lowercased()) runs match this search.")
         }
       } else {
-        List {
+        WorkspaceLazyCollection {
           ForEach(visibleSections) { section in
             Section {
               ForEach(section.entries) { entry in
@@ -4848,7 +5325,12 @@ private struct RunCenterView: View {
                   )
                 }
                 .buttonStyle(.plain)
-                .listRowBackground(Color.clear)
+                .accessibilityIdentifier(
+                  WorkspaceCollectionRowAccessibilityIdentity.accessibilityIdentifier(
+                    kind: "run",
+                    id: entry.id
+                  )
+                )
                 .contextMenu {
                   Button {
                     store.startNewAIThreadFromAgentRunSelection(including: entry.run)
@@ -4861,13 +5343,13 @@ private struct RunCenterView: View {
                     Label("View Run Record", systemImage: "doc.text")
                   }
                 }
+                .workspaceLazyRow(id: entry.id)
               }
             } header: {
               if let sourceMeeting = section.sourceMeeting {
-                Label(sourceMeeting.displayTitle, systemImage: "calendar")
-                  .font(.caption.weight(.semibold))
-                  .foregroundStyle(.secondary)
-                  .textCase(nil)
+                WorkspaceLazySectionHeader {
+                  Label(sourceMeeting.displayTitle, systemImage: "calendar")
+                }
               }
             }
           }
@@ -4885,9 +5367,10 @@ private struct RunCenterView: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
+            .accessibilityIdentifier(WorkspaceCollectionRowAccessibilityIdentity.runShowMore)
+            .workspaceLazyRow(id: WorkspaceCollectionRowAccessibilityIdentity.runShowMore)
           }
         }
-        .listStyle(.inset)
       }
     }
     .onAppear {
@@ -4896,9 +5379,8 @@ private struct RunCenterView: View {
         performAfterSwiftUIViewUpdate {
           store.selectAgentRun(selectedRun)
         }
-      } else if store.agentRuns.isEmpty && !store.isLoadingAgentRuns {
-        Task { await store.refreshAgentRuns() }
       }
+      Task { await store.refreshSelectedRunReviewPageIfNeeded() }
     }
     .onChange(of: store.selectedAgentRunID) {
       guard let selectedRun else { return }
@@ -4937,7 +5419,7 @@ private struct RunCenterView: View {
 }
 
 private struct RunCenterSearch: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   @State private var draftFilter = ""
   @State private var pendingFilterUpdate: Task<Void, Never>?
   var filterFocused: FocusState<Bool>.Binding
@@ -5129,8 +5611,41 @@ private enum RunCompletionMode {
   }
 }
 
+enum RunCenterDetailCollection: String, CaseIterable, Hashable, Sendable {
+  case relatedRuns
+  case highlights
+  case nextActions
+  case pendingApprovals
+  case retainedApprovals
+  case artifacts
+  case attentionValidations
+  case reviewRequiredArtifacts
+  case approvalReviewArtifacts
+  case plan
+  case acceptanceCriteria
+  case latestValidations
+  case context
+  case comments
+}
+
+enum RunCenterDetailCollectionPresentation {
+  static let initialItemLimit = 32
+  static let pageItemCount = 32
+
+  static func visibleCount(total: Int, requestedLimit: Int?) -> Int {
+    min(max(0, total), max(initialItemLimit, requestedLimit ?? initialItemLimit))
+  }
+
+  static func nextVisibleCount(total: Int, currentLimit: Int?) -> Int {
+    min(
+      max(0, total),
+      visibleCount(total: total, requestedLimit: currentLimit) + pageItemCount
+    )
+  }
+}
+
 private struct RunCenterDetail: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   @State private var clarificationResponse = ""
   @State private var clarificationError: String?
   @State private var completionSummary = ""
@@ -5142,6 +5657,7 @@ private struct RunCenterDetail: View {
   @State private var openClawApprovalDetails: OpenClawExecApprovalDetails?
   @State private var isLoadingOpenClawApprovalDetails = false
   @State private var openClawApprovalDetailsError: String?
+  @State private var collectionDisplayLimits: [RunCenterDetailCollection: Int] = [:]
   let run: AgentRunItem
 
   private var isMutating: Bool { store.mutatingAgentRunIDs.contains(run.id) }
@@ -5152,7 +5668,7 @@ private struct RunCenterDetail: View {
 
     ScrollViewReader { scrollProxy in
       ScrollView {
-        VStack(alignment: .leading, spacing: 18) {
+        LazyVStack(alignment: .leading, spacing: 18) {
         VStack(alignment: .leading, spacing: 6) {
           HStack(spacing: 8) {
             StatusPill(text: run.status)
@@ -5198,7 +5714,10 @@ private struct RunCenterDetail: View {
 
         if !relatedRuns.isEmpty {
           runSection("Related meeting outcomes") {
-            ForEach(relatedRuns) { relatedRun in
+            ForEach(relatedRuns.prefix(visibleCount(
+              for: .relatedRuns,
+              total: relatedRuns.count
+            ))) { relatedRun in
               Button {
                 store.selectAgentRun(relatedRun)
               } label: {
@@ -5215,6 +5734,7 @@ private struct RunCenterDetail: View {
               }
               .buttonStyle(.plain)
             }
+            showMoreButton(for: .relatedRuns, total: relatedRuns.count, noun: "related outcomes")
           }
         }
 
@@ -5237,18 +5757,24 @@ private struct RunCenterDetail: View {
               if let outcome = run.outcome, !outcome.highlights.isEmpty {
                 VStack(alignment: .leading, spacing: 5) {
                   Text("Highlights").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                  ForEach(Array(outcome.highlights.enumerated()), id: \.offset) { _, highlight in
+                  ForEach(Array(outcome.highlights
+                    .prefix(visibleCount(for: .highlights, total: outcome.highlights.count))
+                    .enumerated()), id: \.offset) { _, highlight in
                     Label(highlight, systemImage: "sparkles")
                   }
+                  showMoreButton(for: .highlights, total: outcome.highlights.count, noun: "highlights")
                 }
               }
 
               if let outcome = run.outcome, !outcome.nextActions.isEmpty {
                 VStack(alignment: .leading, spacing: 5) {
                   Text("Next actions").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                  ForEach(Array(outcome.nextActions.enumerated()), id: \.offset) { _, action in
+                  ForEach(Array(outcome.nextActions
+                    .prefix(visibleCount(for: .nextActions, total: outcome.nextActions.count))
+                    .enumerated()), id: \.offset) { _, action in
                     Label(action, systemImage: "arrow.right.circle")
                   }
+                  showMoreButton(for: .nextActions, total: outcome.nextActions.count, noun: "next actions")
                 }
               } else if run.humanNextAction != nil {
                 Label("No action required", systemImage: "checkmark.circle.fill")
@@ -5271,7 +5797,7 @@ private struct RunCenterDetail: View {
             Text("\(pending.count) of \(run.approvals.count) approval\(run.approvals.count == 1 ? "" : "s") still need a decision. These are the same approvals shown in Review; deciding in either place updates this run record.")
               .font(.caption)
               .foregroundStyle(.secondary)
-            ForEach(pending) { approval in
+            ForEach(visiblePendingApprovals(pending)) { approval in
               let approvalIsMutating = store.isAgentRunApprovalActionInProgress(
                 runID: run.id,
                 approvalID: approval.id
@@ -5321,6 +5847,7 @@ private struct RunCenterDetail: View {
               }
               .id(approval.id)
             }
+            showMoreButton(for: .pendingApprovals, total: pending.count, noun: "approvals")
           }
         }
 
@@ -5330,18 +5857,29 @@ private struct RunCenterDetail: View {
             Text("This finished run retained \(retainedPending.count) unresolved approval\(retainedPending.count == 1 ? "" : "s") for audit history. No decision is required, and \(retainedPending.count == 1 ? "it is" : "they are") not shown in Review.")
               .font(.caption)
               .foregroundStyle(.secondary)
-            ForEach(retainedPending) { approval in
+            ForEach(retainedPending.prefix(visibleCount(
+              for: .retainedApprovals,
+              total: retainedPending.count
+            ))) { approval in
               VStack(alignment: .leading, spacing: 4) {
                 Text(approval.title).font(.body.weight(.semibold))
                 Text(approval.action).font(.callout).foregroundStyle(.secondary)
               }
             }
+            showMoreButton(
+              for: .retainedApprovals,
+              total: retainedPending.count,
+              noun: "retained approvals"
+            )
           }
         }
 
         if !run.artifacts.isEmpty {
           runSection("Outputs") {
-            ForEach(run.artifacts) { artifact in
+            ForEach(run.artifacts.prefix(visibleCount(
+              for: .artifacts,
+              total: run.artifacts.count
+            ))) { artifact in
               Button { store.openAgentRunArtifact(artifact) } label: {
                 HStack(alignment: .top, spacing: 9) {
                   Image(systemName: artifact.role == "export" ? "square.and.arrow.up" : "doc.text")
@@ -5357,6 +5895,7 @@ private struct RunCenterDetail: View {
               .buttonStyle(.plain)
               .help("Open \(artifact.path) in Org2")
             }
+            showMoreButton(for: .artifacts, total: run.artifacts.count, noun: "outputs")
           }
         }
 
@@ -5368,14 +5907,25 @@ private struct RunCenterDetail: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             }
-            ForEach(run.attentionValidations) { validation in
+            ForEach(run.attentionValidations.prefix(visibleCount(
+              for: .attentionValidations,
+              total: run.attentionValidations.count
+            ))) { validation in
               Label(
                 validation.detail ?? "\(validation.displayName): \(AgentRunItem.humanizedLabel(validation.status))",
                 systemImage: "exclamationmark.triangle.fill"
               )
               .foregroundStyle(validation.status == "failed" ? .red : .orange)
             }
-            ForEach(reviewRequiredArtifacts) { artifact in
+            showMoreButton(
+              for: .attentionValidations,
+              total: run.attentionValidations.count,
+              noun: "validation signals"
+            )
+            ForEach(reviewRequiredArtifacts.prefix(visibleCount(
+              for: .reviewRequiredArtifacts,
+              total: reviewRequiredArtifacts.count
+            ))) { artifact in
               Button { store.openAgentRunArtifact(artifact) } label: {
                 Label(
                   run.isFinished
@@ -5386,6 +5936,11 @@ private struct RunCenterDetail: View {
               }
               .buttonStyle(.link)
             }
+            showMoreButton(
+              for: .reviewRequiredArtifacts,
+              total: reviewRequiredArtifacts.count,
+              noun: "review outputs"
+            )
           }
         }
 
@@ -5412,6 +5967,7 @@ private struct RunCenterDetail: View {
       openClawApprovalDetails = nil
       openClawApprovalDetailsError = nil
       isLoadingOpenClawApprovalDetails = false
+      collectionDisplayLimits.removeAll(keepingCapacity: true)
     }
     .task(id: "\(run.id):\(run.updatedAt)") {
       await loadOpenClawApprovalDetails()
@@ -5518,12 +6074,20 @@ private struct RunCenterDetail: View {
         Text("Review outputs before approving")
           .font(.caption.weight(.semibold))
           .foregroundStyle(.secondary)
-        ForEach(run.artifacts) { artifact in
+        ForEach(run.artifacts.prefix(visibleCount(
+          for: .approvalReviewArtifacts,
+          total: run.artifacts.count
+        ))) { artifact in
           Button { store.openAgentRunArtifact(artifact) } label: {
             Label(artifact.displayTitle, systemImage: "doc.text")
           }
           .buttonStyle(.link)
         }
+        showMoreButton(
+          for: .approvalReviewArtifacts,
+          total: run.artifacts.count,
+          noun: "review outputs"
+        )
       }
     } else if requiresReviewMaterial(approval),
               approval.note?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
@@ -5710,12 +6274,67 @@ private struct RunCenterDetail: View {
       .buttonStyle(WorkspaceActionButtonStyle()).disabled(isMutating)
   }
 
+  private func visibleCount(
+    for collection: RunCenterDetailCollection,
+    total: Int
+  ) -> Int {
+    RunCenterDetailCollectionPresentation.visibleCount(
+      total: total,
+      requestedLimit: collectionDisplayLimits[collection]
+    )
+  }
+
+  private func visiblePendingApprovals(
+    _ approvals: [AgentRunApprovalItem]
+  ) -> [AgentRunApprovalItem] {
+    var visible = Array(approvals.prefix(visibleCount(
+      for: .pendingApprovals,
+      total: approvals.count
+    )))
+    guard let selectedID = RunCenterPresentation.approvalID(
+      selectedApprovalItemID: store.selectedApprovalItemID,
+      runID: run.id
+    ),
+      !visible.contains(where: { $0.id == selectedID }),
+      let selected = approvals.first(where: { $0.id == selectedID })
+    else {
+      return visible
+    }
+    // Preserve direct navigation from Review without mounting every approval
+    // that precedes a late match in a very large durable run.
+    visible.append(selected)
+    return visible
+  }
+
+  @ViewBuilder
+  private func showMoreButton(
+    for collection: RunCenterDetailCollection,
+    total: Int,
+    noun: String
+  ) -> some View {
+    let current = visibleCount(for: collection, total: total)
+    if current < total {
+      let next = RunCenterDetailCollectionPresentation.nextVisibleCount(
+        total: total,
+        currentLimit: collectionDisplayLimits[collection]
+      )
+      Button {
+        collectionDisplayLimits[collection] = next
+      } label: {
+        Label("Show \(next - current) more \(noun)", systemImage: "ellipsis.circle")
+      }
+      .buttonStyle(.plain)
+      .font(.caption.weight(.medium))
+      .foregroundStyle(.secondary)
+    }
+  }
+
   private var technicalDetails: some View {
     DisclosureGroup {
       VStack(alignment: .leading, spacing: 16) {
         if !run.plan.isEmpty {
           technicalGroup("Plan") {
-            ForEach(run.plan) { step in
+            ForEach(run.plan.prefix(visibleCount(for: .plan, total: run.plan.count))) { step in
               HStack(alignment: .top) {
                 Image(systemName: stepIcon(step.status))
                   .foregroundStyle(stepColor(step.status))
@@ -5727,45 +6346,68 @@ private struct RunCenterDetail: View {
                 }
               }
             }
+            showMoreButton(for: .plan, total: run.plan.count, noun: "plan steps")
           }
         }
 
         if !run.acceptanceCriteria.isEmpty {
           technicalGroup("Acceptance criteria") {
-            ForEach(Array(run.acceptanceCriteria.enumerated()), id: \.offset) { _, criterion in
+            ForEach(Array(run.acceptanceCriteria
+              .prefix(visibleCount(
+                for: .acceptanceCriteria,
+                total: run.acceptanceCriteria.count
+              ))
+              .enumerated()), id: \.offset) { _, criterion in
               Label(criterion, systemImage: "checkmark")
             }
+            showMoreButton(
+              for: .acceptanceCriteria,
+              total: run.acceptanceCriteria.count,
+              noun: "criteria"
+            )
           }
         }
 
         if !run.latestValidations.isEmpty {
           technicalGroup("Latest validation results") {
-            ForEach(run.latestValidations) { validation in
+            ForEach(run.latestValidations.prefix(visibleCount(
+              for: .latestValidations,
+              total: run.latestValidations.count
+            ))) { validation in
               Label(
                 "\(validation.displayName): \(AgentRunItem.humanizedLabel(validation.status))",
                 systemImage: validation.status == "passed" ? "checkmark.seal.fill" : validation.status == "skipped" ? "minus.circle" : "exclamationmark.triangle"
               )
               .foregroundStyle(validation.status == "passed" ? .green : validation.status == "skipped" ? .secondary : .orange)
             }
+            showMoreButton(
+              for: .latestValidations,
+              total: run.latestValidations.count,
+              noun: "validation results"
+            )
           }
         }
 
         if !run.context.isEmpty {
           technicalGroup("Cited context") {
-            ForEach(Array(run.context.enumerated()), id: \.offset) { _, item in
+            ForEach(Array(run.context
+              .prefix(visibleCount(for: .context, total: run.context.count))
+              .enumerated()), id: \.offset) { _, item in
               Text(item.citation ?? item.ref).font(.callout.monospaced()).textSelection(.enabled)
             }
+            showMoreButton(for: .context, total: run.context.count, noun: "context items")
           }
         }
 
         if !run.comments.isEmpty {
           technicalGroup("Handoff and comments") {
-            ForEach(run.comments) { comment in
+            ForEach(run.comments.prefix(visibleCount(for: .comments, total: run.comments.count))) { comment in
               VStack(alignment: .leading) {
                 Text(comment.author).font(.caption.weight(.semibold))
                 Text(comment.body)
               }
             }
+            showMoreButton(for: .comments, total: run.comments.count, noun: "comments")
           }
         }
 
@@ -5854,7 +6496,7 @@ private struct RunCompletionSheet: View {
 }
 
 private struct ApprovalsView: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   @FocusState private var filterFocused: Bool
   @State private var discussionItem: ApprovalItem?
   @State private var discussionMessage = "I need to discuss this approval item before deciding."
@@ -5918,7 +6560,7 @@ private struct ApprovalsView: View {
           Task { await store.discussApprovalInOpenClaw(item, message: message, threadMode: threadMode) }
         }
       )
-        .environmentObject(store)
+        .environment(store)
     }
     .sheet(item: $revisionItem) { item in
       ApprovalRevisionSheet(
@@ -5959,9 +6601,7 @@ private struct ApprovalsView: View {
       }
     }
     .onAppear {
-      if store.approvalItems.isEmpty && !store.isLoadingApprovals {
-        Task { await store.refreshApprovals() }
-      }
+      Task { await store.refreshSelectedRunReviewPageIfNeeded() }
     }
     .onChange(of: store.selectedApprovalItemID) {
       guard let id = store.selectedApprovalItemID,
@@ -6005,7 +6645,7 @@ private struct ApprovalsView: View {
         EmptyStateView(title: "No Matching Approvals", detail: "No pending approvals match this search.")
       }
     } else {
-      List {
+      WorkspaceLazyCollection {
         ForEach(store.visibleApprovalItems) { item in
           ApprovalRow(
             item: item,
@@ -6036,9 +6676,15 @@ private struct ApprovalsView: View {
           .contentShape(Rectangle())
           .onTapGesture {
             let modifiers = NSApp.currentEvent?.modifierFlags ?? []
-            store.handleApprovalItemClick(item, modifiers: modifiers)
+            selectApprovalItem(item, modifiers: modifiers)
           }
-          .listRowBackground(Color.clear)
+          .workspaceAccessibleCollectionRow(
+            kind: "approval",
+            id: item.id,
+            label: Org2Display.cleanInline(item.title),
+            isSelected: store.isApprovalItemSelectedForAIContext(item),
+            open: { selectApprovalItem(item) }
+          )
           .contextMenu {
             if item.isRunApproval {
               Button {
@@ -6099,15 +6745,22 @@ private struct ApprovalsView: View {
               Label("Copy Discussion Text", systemImage: "doc.on.doc")
             }
           }
+          .workspaceLazyRow(id: item.id)
         }
       }
-      .listStyle(.inset)
     }
+  }
+
+  private func selectApprovalItem(
+    _ item: ApprovalItem,
+    modifiers: NSEvent.ModifierFlags = []
+  ) {
+    store.handleApprovalItemClick(item, modifiers: modifiers)
   }
 }
 
 private struct ApprovalControls: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   @State private var filterDraft = ""
   @State private var pendingFilterUpdate: Task<Void, Never>?
   var filterFocused: FocusState<Bool>.Binding
@@ -6169,7 +6822,7 @@ private struct ApprovalControls: View {
 }
 
 private struct ApprovalBulkActionBar: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   let markDoneElsewhere: () -> Void
   let reject: () -> Void
 
@@ -6479,7 +7132,7 @@ private struct ApprovalRevisionSheet: View {
 
 private struct ApprovalDiscussionSheet: View {
   @Environment(\.dismiss) private var dismiss
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   let item: ApprovalItem
   @Binding var message: String
   let discuss: (String, OpenClawThreadMode) -> Void
@@ -6553,12 +7206,12 @@ private struct ApprovalDiscussionSheet: View {
 }
 
 private struct AgendaItemListView: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
 
   var body: some View {
-    List {
+    WorkspaceLazyCollection {
       ForEach(store.agendaDisplaySections) { section in
-        Section(section.label) {
+        Section {
           ForEach(section.items) { item in
             AgendaRow(
               item: item,
@@ -6577,11 +7230,15 @@ private struct AgendaItemListView: View {
               .contentShape(Rectangle())
               .onTapGesture {
                 let modifiers = NSApp.currentEvent?.modifierFlags ?? []
-                performAfterSwiftUIViewUpdate {
-                  store.handleAgendaItemClick(item, modifiers: modifiers)
-                }
+                selectAgendaItem(item, modifiers: modifiers)
               }
-              .listRowBackground(Color.clear)
+              .workspaceAccessibleCollectionRow(
+                kind: "agenda",
+                id: item.id,
+                label: Org2Display.cleanInline(item.headline),
+                isSelected: store.selectedAgendaItemID == item.id,
+                open: { selectAgendaItem(item) }
+              )
               .contextMenu {
                 WorkspaceLocationContextMenu(
                   location: .agenda(item),
@@ -6602,6 +7259,11 @@ private struct AgendaItemListView: View {
                   )
                 }
               }
+              .workspaceLazyRow(id: item.id)
+          }
+        } header: {
+          WorkspaceLazySectionHeader {
+            Text(section.label)
           }
         }
       }
@@ -6609,14 +7271,23 @@ private struct AgendaItemListView: View {
       if store.agendaDisplaySections.isEmpty {
         Text("No agenda items")
           .foregroundStyle(.secondary)
+          .padding(WorkspaceDesign.contentInset)
       }
     }
-    .listStyle(.inset)
+  }
+
+  private func selectAgendaItem(
+    _ item: AgendaItem,
+    modifiers: NSEvent.ModifierFlags = []
+  ) {
+    performAfterSwiftUIViewUpdate {
+      store.handleAgendaItemClick(item, modifiers: modifiers)
+    }
   }
 }
 
 private struct AssignedAgendaListView: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
 
   var body: some View {
     if store.isLoadingAssignedWork {
@@ -6624,9 +7295,9 @@ private struct AssignedAgendaListView: View {
       WorkspaceLoadingStateView("Loading assigned work")
       Spacer()
     } else {
-      List {
+      WorkspaceLazyCollection {
         ForEach(store.assignedWorkSections) { section in
-          Section(section.label) {
+          Section {
             ForEach(section.items) { item in
               AssignedWorkRow(
                 item: item,
@@ -6637,7 +7308,13 @@ private struct AssignedAgendaListView: View {
                 .onTapGesture {
                   store.selectAssignedWorkItem(item)
                 }
-                .listRowBackground(Color.clear)
+                .workspaceAccessibleCollectionRow(
+                  kind: "assigned-agenda",
+                  id: item.id,
+                  label: Org2Display.cleanInline(item.headline),
+                  isSelected: store.selectedAssignedWorkItemID == item.id,
+                  open: { store.selectAssignedWorkItem(item) }
+                )
                 .contextMenu {
                   WorkspaceLocationContextMenu(
                     location: .assigned(item),
@@ -6647,6 +7324,11 @@ private struct AssignedAgendaListView: View {
                     Label("Open", systemImage: "person.crop.circle.badge.checkmark")
                   }
                 }
+                .workspaceLazyRow(id: item.id)
+            }
+          } header: {
+            WorkspaceLazySectionHeader {
+              Text(section.label)
             }
           }
         }
@@ -6654,9 +7336,9 @@ private struct AssignedAgendaListView: View {
         if store.assignedWorkSections.isEmpty {
           Text("No all-time agenda items")
             .foregroundStyle(.secondary)
+            .padding(WorkspaceDesign.contentInset)
         }
       }
-      .listStyle(.inset)
       .onChange(of: store.selectedAssignedWorkItemID) {
         guard let id = store.selectedAssignedWorkItemID,
               let item = store.assignedWorkItems.first(where: { $0.id == id })
@@ -6679,7 +7361,7 @@ private struct AssignedAgendaListView: View {
 }
 
 private struct AgendaBulkActionBar: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
 
   var body: some View {
     HStack(spacing: 8) {
@@ -7065,12 +7747,13 @@ private struct AgendaAssignmentIndicator: View {
 }
 
 private struct SearchView: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   @FocusState private var isSearchFocused: Bool
   @State private var searchDraft = ""
   @State private var pendingSearchUpdate: Task<Void, Never>?
 
   var body: some View {
+    @Bindable var store = store
     VStack(spacing: 0) {
       HeaderBar(title: "Search", subtitle: store.searchMode.subtitle, surface: .search) {
         if store.isSearching {
@@ -7176,36 +7859,47 @@ private struct SearchView: View {
           }
         }
       } else {
-        List {
+        WorkspaceLazyCollection {
           ForEach(store.workspaceTextSearchSections) { section in
-            Section(section.category.title) {
+            Section {
               ForEach(section.items) { item in
                 workspaceSearchRow(item)
+              }
+            } header: {
+              WorkspaceLazySectionHeader {
+                Text(section.category.title)
               }
             }
           }
         }
-        .listStyle(.inset)
       }
     case .nodes:
       let nodes = store.searchNodes
       if nodes.isEmpty {
         EmptyStateView(title: "No Nodes", detail: "\(nodeEmptyStateDetail) Use the toolbar Refresh to rebuild the corpus index.")
       } else {
-        List(nodes) { node in
-          NodeSearchRow(
-            node: node,
-            sourceReference: store.relativePath(node.file) + ":\(node.line)"
-          )
+        WorkspaceLazyCollection {
+          ForEach(nodes) { node in
+            NodeSearchRow(
+              node: node,
+              sourceReference: store.relativePath(node.file) + ":\(node.line)"
+            )
             .contentShape(Rectangle())
             .onTapGesture {
               store.selectSearchNode(node)
             }
+            .workspaceAccessibleCollectionRow(
+              kind: "search-node",
+              id: node.id,
+              label: Org2Display.cleanInline(node.title),
+              open: { store.selectSearchNode(node) }
+            )
             .contextMenu {
               NodeSearchContextMenu(node: node)
             }
+            .workspaceLazyRow(id: node.id)
+          }
         }
-        .listStyle(.inset)
       }
     }
   }
@@ -7253,44 +7947,41 @@ private struct SearchView: View {
 
   @ViewBuilder
   private func workspaceSearchRow(_ item: WorkspaceTextSearchItem) -> some View {
-    switch item {
-    case .activeTodo(let result), .entry(let result), .corpusText(let result):
-      corpusSearchRow(result)
-    case .file(let file):
-      CorpusFileRow(file: file)
-        .padding(.horizontal, WorkspaceDesign.contentInset)
-        .contentShape(Rectangle())
-        .onTapGesture {
-          store.selectSearchFile(file)
-        }
-        .contextMenu {
-          CorpusFileContextMenu(file: file)
-        }
-    case .chatThread(let result), .chatMessage(let result):
-      ChatSearchRow(result: result)
-        .contentShape(Rectangle())
-        .onTapGesture {
-          store.selectOpenClawChatSearchResult(result)
-        }
-    case .agentWork(let result):
-      AgentWorkSearchRow(result: result)
-        .contentShape(Rectangle())
-        .onTapGesture {
-          store.selectAgentWorkSearchResult(result)
-        }
-    case .page(let node):
-      NodeSearchRow(
-        node: node,
-        sourceReference: store.relativePath(node.file) + ":\(node.line)"
-      )
-        .contentShape(Rectangle())
-        .onTapGesture {
-          store.selectSearchNode(node)
-        }
-        .contextMenu {
-          NodeSearchContextMenu(node: node)
-        }
+    Group {
+      switch item {
+      case .activeTodo(let result), .entry(let result), .corpusText(let result):
+        corpusSearchRow(result)
+      case .file(let file):
+        CorpusFileRow(file: file)
+          .padding(.horizontal, WorkspaceDesign.contentInset)
+          .contextMenu {
+            CorpusFileContextMenu(file: file)
+          }
+      case .chatThread(let result), .chatMessage(let result):
+        ChatSearchRow(result: result)
+      case .agentWork(let result):
+        AgentWorkSearchRow(result: result)
+      case .page(let node):
+        NodeSearchRow(
+          node: node,
+          sourceReference: store.relativePath(node.file) + ":\(node.line)"
+        )
+          .contextMenu {
+            NodeSearchContextMenu(node: node)
+          }
+      }
     }
+    .contentShape(Rectangle())
+    .onTapGesture {
+      selectSearchItem(item)
+    }
+    .workspaceAccessibleCollectionRow(
+      kind: "search-result",
+      id: item.id,
+      label: searchAccessibilityLabel(item),
+      open: { selectSearchItem(item) }
+    )
+    .workspaceLazyRow(id: item.id)
   }
 
   private func corpusSearchRow(_ result: SearchResult) -> some View {
@@ -7298,10 +7989,6 @@ private struct SearchView: View {
       result: result,
       sourceReference: store.corpusQualifiedPath(result.file, corpus: result.corpus) + ":\(result.lineForEditor)"
     )
-      .contentShape(Rectangle())
-      .onTapGesture {
-        store.selectSearchResult(result)
-      }
       .contextMenu {
         WorkspaceLocationContextMenu(
           location: .search(result),
@@ -7311,6 +7998,36 @@ private struct SearchView: View {
           Label("Open", systemImage: "magnifyingglass")
         }
       }
+  }
+
+  private func selectSearchItem(_ item: WorkspaceTextSearchItem) {
+    switch item {
+    case .activeTodo(let result), .entry(let result), .corpusText(let result):
+      store.selectSearchResult(result)
+    case .file(let file):
+      store.selectSearchFile(file)
+    case .chatThread(let result), .chatMessage(let result):
+      store.selectOpenClawChatSearchResult(result)
+    case .agentWork(let result):
+      store.selectAgentWorkSearchResult(result)
+    case .page(let node):
+      store.selectSearchNode(node)
+    }
+  }
+
+  private func searchAccessibilityLabel(_ item: WorkspaceTextSearchItem) -> String {
+    switch item {
+    case .activeTodo(let result), .entry(let result), .corpusText(let result):
+      Org2Display.cleanInline(result.title)
+    case .file(let file):
+      file.name
+    case .chatThread(let result), .chatMessage(let result):
+      result.title
+    case .agentWork(let result):
+      result.title
+    case .page(let node):
+      Org2Display.cleanInline(node.title)
+    }
   }
 }
 
@@ -7534,7 +8251,7 @@ private struct NodeSearchRow: View {
 }
 
 private struct NodeSearchContextMenu: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   let node: OrgRoamNodeReference
 
   var body: some View {
@@ -7588,9 +8305,10 @@ private struct NodeSearchContextMenu: View {
 }
 
 private struct SourcesView: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
 
   var body: some View {
+    @Bindable var store = store
     VStack(spacing: 0) {
       HeaderBar(
         title: "Sources",
@@ -7652,13 +8370,13 @@ private struct SourcesView: View {
     }
     .sheet(isPresented: $store.isSourceCredentialPresented) {
       SourceCredentialSheet()
-        .environmentObject(store)
+        .environment(store)
     }
   }
 }
 
 private struct SourceProfileCard: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   @State private var isSchedulePresented = false
   let profile: WorkspaceSourceProfileStatus
   let runtime: WorkspaceSourceRuntimeStatus?
@@ -7803,7 +8521,7 @@ private struct SourceProfileCard: View {
     }
     .sheet(isPresented: $isSchedulePresented) {
       SourceScheduleSheet(profile: profile)
-        .environmentObject(store)
+        .environment(store)
     }
   }
 
@@ -7864,7 +8582,7 @@ private struct SourceProfileCard: View {
 }
 
 private struct SourceScheduleSheet: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   @Environment(\.dismiss) private var dismiss
   let profile: WorkspaceSourceProfileStatus
   @State private var draft: WorkspaceSourceScheduleDraft
@@ -7966,9 +8684,10 @@ private struct SourceScheduleSheet: View {
 }
 
 private struct SourceCredentialSheet: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
 
   var body: some View {
+    @Bindable var store = store
     VStack(alignment: .leading, spacing: 14) {
       Text("Connect Notion")
         .font(.title2.weight(.semibold))
@@ -7996,9 +8715,10 @@ private struct SourceCredentialSheet: View {
 }
 
 private struct MeetingsView: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
 
   var body: some View {
+    @Bindable var store = store
     VStack(spacing: 0) {
       HeaderBar(title: "Meetings", subtitle: "\(store.meetings.count) local meeting\(store.meetings.count == 1 ? "" : "s")", surface: .meetings) {
         if store.isLoadingMeetings || store.isProcessingMeeting {
@@ -8096,33 +8816,40 @@ private struct MeetingsView: View {
           }
         }
       } else {
-        List {
+        WorkspaceLazyCollection {
           if !store.pendingMeetingProcessingItems.isEmpty {
-            Section("Processing") {
+            Section {
               ForEach(store.pendingMeetingProcessingItems) { item in
                 MeetingProcessingRow(item: item)
+                  .workspaceLazyRow(id: "meeting-processing:\(item.id)")
+              }
+            } header: {
+              WorkspaceLazySectionHeader {
+                Text("Processing")
               }
             }
           }
 
           ForEach(store.meetingDisplaySections) { section in
-            Section(section.label) {
+            Section {
               ForEach(section.meetings) { meeting in
                 MeetingRow(
                   meeting: meeting,
                   isProcessing: store.isMeetingProcessing(meeting),
                   sourceReference: store.relativePath(meeting.file) + ":\(meeting.lineForEditor)"
-                )
+                  )
                   .contentShape(Rectangle())
                   .onTapGesture {
-                    if store.selectedMeetingID == meeting.id {
-                      store.selectMeeting(meeting)
-                    } else {
-                      store.selectedMeetingID = meeting.id
-                    }
+                    selectMeeting(meeting)
                   }
                   .modifier(ReadableListSelectionModifier(isSelected: store.selectedMeetingID == meeting.id))
-                  .listRowBackground(Color.clear)
+                  .workspaceAccessibleCollectionRow(
+                    kind: "meeting",
+                    id: meeting.id,
+                    label: Org2Display.cleanInline(meeting.title),
+                    isSelected: store.selectedMeetingID == meeting.id,
+                    open: { selectMeeting(meeting) }
+                  )
                   .contextMenu {
                     WorkspaceLocationContextMenu(
                       location: .meeting(meeting),
@@ -8137,11 +8864,15 @@ private struct MeetingsView: View {
                       Label("Delete Meeting", systemImage: "trash")
                     }
                   }
+                  .workspaceLazyRow(id: meeting.id)
+              }
+            } header: {
+              WorkspaceLazySectionHeader {
+                Text(section.label)
               }
             }
           }
         }
-        .listStyle(.inset)
         .onChange(of: store.selectedMeetingID) {
           guard let id = store.selectedMeetingID,
                 let meeting = store.meetings.first(where: { $0.id == id })
@@ -8161,14 +8892,23 @@ private struct MeetingsView: View {
       }
     }
   }
+
+  private func selectMeeting(_ meeting: MeetingWorkspaceItem) {
+    if store.selectedMeetingID == meeting.id {
+      store.selectMeeting(meeting)
+    } else {
+      store.selectedMeetingID = meeting.id
+    }
+  }
 }
 
 public struct MeetingTranscriptionSettingsView: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
 
   public init() {}
 
   public var body: some View {
+    @Bindable var store = store
     VStack(alignment: .leading, spacing: 8) {
       Picker("Provider", selection: $store.meetingTranscriptionProvider) {
         ForEach(MeetingTranscriptionProvider.allCases) { provider in
@@ -8253,6 +8993,7 @@ public struct MeetingTranscriptionSettingsView: View {
 
   @ViewBuilder
   private var providerSettings: some View {
+    @Bindable var store = store
     switch store.meetingTranscriptionProvider {
     case .automatic, .localWhisper:
       VStack(alignment: .leading, spacing: 6) {
@@ -8536,16 +9277,19 @@ private enum OpenClawChatPresentation {
 }
 
 private struct OpenClawChatView: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   @State private var isShowingConfiguration = false
   @State private var isChatNearBottom = true
   @State private var isShowingThreadFind = false
   @State private var threadFindQuery = ""
   @State private var threadFindCandidates: [AIChatThreadSearchCandidate] = []
   @State private var threadFindMatches: [AIChatThreadSearchMatch] = []
+  @State private var threadFindIndexTask: Task<Void, Never>?
+  @State private var threadFindMatchTask: Task<Void, Never>?
   @State private var selectedThreadFindMessageID: UUID?
   @State private var threadFindNavigationGeneration = 0
   @State private var transcriptDisplayLimit = OpenClawChatTranscriptWindow.initialLimit
+  @State private var transcriptWindowAnchor: OpenClawChatTranscriptAnchor?
   let presentation: OpenClawChatPresentation
   let surface: WorkspaceSurface?
 
@@ -8558,11 +9302,23 @@ private struct OpenClawChatView: View {
     VStack(spacing: 0) {
       header
 
+      if let recoveryNotice = store.aiChatTranscriptRecoveryNotice {
+        Label(recoveryNotice, systemImage: "exclamationmark.triangle.fill")
+          .font(.caption)
+          .foregroundStyle(.orange)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .padding(.horizontal, presentation.isCompact ? 10 : 16)
+          .padding(.vertical, 8)
+          .background(Color.orange.opacity(0.08))
+          .accessibilityIdentifier("ai-chat-transcript-recovery-notice")
+        Divider()
+      }
+
       chatColumn
     }
     .sheet(isPresented: $isShowingConfiguration) {
       OpenClawConfigurationSheet()
-        .environmentObject(store)
+        .environment(store)
     }
     .task {
       await store.refreshOpenClawCommands()
@@ -8578,6 +9334,7 @@ private struct OpenClawChatView: View {
     }
     .onChange(of: store.selectedOpenClawChatThreadID) { _, _ in
       transcriptDisplayLimit = OpenClawChatTranscriptWindow.initialLimit
+      transcriptWindowAnchor = nil
       guard isShowingThreadFind else { return }
       rebuildThreadFindIndex()
     }
@@ -8587,6 +9344,10 @@ private struct OpenClawChatView: View {
       }
       guard isShowingThreadFind else { return }
       rebuildThreadFindIndex()
+    }
+    .onDisappear {
+      threadFindIndexTask?.cancel()
+      threadFindMatchTask?.cancel()
     }
   }
 
@@ -8762,9 +9523,13 @@ private struct OpenClawChatView: View {
     let transcriptWindow = OpenClawChatTranscriptWindow(
       messages: store.openClawMessages,
       isSharedRoom: store.selectedAIChatIsSharedRoom,
-      displayLimit: transcriptDisplayLimit
+      displayLimit: transcriptDisplayLimit,
+      anchor: transcriptWindowAnchor
     )
     let searchMatchMessageIDs = Set(threadFindMatches.map(\.messageID))
+    let selectedThreadFindMatch = threadFindMatches.first(where: {
+      $0.messageID == selectedThreadFindMessageID
+    })
 
     return ScrollViewReader { proxy in
       ScrollView {
@@ -8776,7 +9541,12 @@ private struct OpenClawChatView: View {
             if transcriptWindow.hasEarlierMessages {
               Button {
                 let firstVisibleID = transcriptWindow.visibleItems.first?.id
-                transcriptDisplayLimit = transcriptWindow.nextDisplayLimit
+                if transcriptWindow.nextDisplayLimit > transcriptWindow.displayLimit {
+                  transcriptWindowAnchor = nil
+                  transcriptDisplayLimit = transcriptWindow.nextDisplayLimit
+                } else if let earlierPageAnchor = transcriptWindow.earlierPageAnchor {
+                  transcriptWindowAnchor = earlierPageAnchor
+                }
                 if let firstVisibleID {
                   DispatchQueue.main.async {
                     proxy.scrollTo(firstVisibleID, anchor: .top)
@@ -8806,6 +9576,9 @@ private struct OpenClawChatView: View {
                   isQueued: message.role == .user && store.isAIChatMessageQueued(message.id),
                   isSearchMatch: searchMatchMessageIDs.contains(message.id),
                   isSelectedSearchMatch: selectedThreadFindMessageID == message.id,
+                  selectedSearchMatchPageIndex: selectedThreadFindMatch?.messageID == message.id
+                    ? selectedThreadFindMatch?.expandedBodyPageIndex ?? 0
+                    : 0,
                   canSteerQueuedMessage: store.canSteerQueuedAIChatMessage(message.id),
                   steerQueuedMessage: {
                     Task { await store.steerQueuedAIChatMessage(message.id) }
@@ -8823,7 +9596,8 @@ private struct OpenClawChatView: View {
                   round: round,
                   compact: presentation.isCompact,
                   searchMatchMessageIDs: searchMatchMessageIDs,
-                  selectedSearchMatchMessageID: selectedThreadFindMessageID
+                  selectedSearchMatchMessageID: selectedThreadFindMessageID,
+                  selectedSearchMatchPageIndex: selectedThreadFindMatch?.expandedBodyPageIndex ?? 0
                 )
                   .id(round.id)
               }
@@ -8852,12 +9626,16 @@ private struct OpenClawChatView: View {
         .textSelection(.enabled)
       }
       .defaultScrollAnchor(.bottom)
-      .id(store.openClawChatSelectionGeneration)
+      // Keep the scroll container alive across thread selection. Re-keying the
+      // entire transcript here forced SwiftUI/TextKit to destroy and rebuild
+      // every visible bubble before the first frame of every thread switch.
+      // The position bridge already receives the selection generation and is
+      // the narrow place that resets per-thread scroll state.
       .background(OpenClawChatScrollPositionBridge(
         threadID: store.selectedOpenClawChatThreadID,
         selectionGeneration: store.openClawChatSelectionGeneration,
         initialPosition: store.openClawChatScrollPosition(isAssistantPanel: presentation.isCompact),
-        onPositionChange: { position in
+        onPositionChange: { threadID, position in
           let visibility = OpenClawChatScrollVisibility(
             position: position,
             hasContent: !store.openClawMessages.isEmpty
@@ -8865,7 +9643,14 @@ private struct OpenClawChatView: View {
           if let nextIsNearBottom = visibility.updatedNearBottomState(after: isChatNearBottom) {
             isChatNearBottom = nextIsNearBottom
           }
-          store.recordOpenClawChatScrollPosition(position, isAssistantPanel: presentation.isCompact)
+          store.recordOpenClawChatScrollPosition(
+            position,
+            isAssistantPanel: presentation.isCompact,
+            threadID: threadID
+          )
+        },
+        onRestorationComplete: { threadID in
+          store.completeOpenClawChatScrollRestoration(threadID: threadID)
         }
       ))
       .onChange(of: scrollUpdate) { previous, current in
@@ -8888,9 +9673,9 @@ private struct OpenClawChatView: View {
         else { return }
         if !transcriptWindow.contains(match.scrollTargetID),
            transcriptWindow.hasEarlierMessages {
-          transcriptDisplayLimit = max(
-            transcriptDisplayLimit,
-            store.openClawMessages.count
+          transcriptWindowAnchor = OpenClawChatTranscriptAnchor(
+            itemID: match.scrollTargetID,
+            rawMessageIndex: match.anchorRawMessageIndex
           )
           DispatchQueue.main.async {
             proxy.scrollTo(match.scrollTargetID, anchor: .center)
@@ -8929,13 +9714,6 @@ private struct OpenClawChatView: View {
     }
   }
 
-  private var threadFindTranscriptItems: [AIChatRoomTranscriptItem] {
-    AIChatRoomTranscriptPresentation.items(
-      messages: store.openClawMessages,
-      isSharedRoom: store.selectedAIChatIsSharedRoom
-    )
-  }
-
   private var selectedThreadFindMatchIndex: Int? {
     guard let selectedThreadFindMessageID else { return nil }
     return threadFindMatches.firstIndex(where: {
@@ -8944,24 +9722,72 @@ private struct OpenClawChatView: View {
   }
 
   private func refreshThreadFindMatches() {
-    let previousSelection = selectedThreadFindMessageID
-    let matches = AIChatThreadSearch.matches(
-      query: threadFindQuery,
-      in: threadFindCandidates
-    )
-    threadFindMatches = matches
-    if let previousSelection,
-       matches.contains(where: { $0.messageID == previousSelection }) {
-      selectedThreadFindMessageID = previousSelection
-    } else {
-      selectedThreadFindMessageID = matches.first?.messageID
+    threadFindMatchTask?.cancel()
+    let query = threadFindQuery
+    guard OpenClawProgressPresentation.containsNonWhitespace(query) else {
+      threadFindMatches = []
+      selectedThreadFindMessageID = nil
+      return
     }
-    requestThreadFindScroll()
+    let previousSelection = selectedThreadFindMessageID
+    let candidates = threadFindCandidates
+    threadFindMatchTask = Task { @MainActor in
+      do {
+        try await Task.sleep(for: .milliseconds(24))
+      } catch {
+        return
+      }
+      let worker = Task.detached(priority: .userInitiated) {
+        AIChatThreadSearch.matches(query: query, in: candidates)
+      }
+      let matches = await withTaskCancellationHandler {
+        await worker.value
+      } onCancel: {
+        worker.cancel()
+      }
+      guard !Task.isCancelled,
+            query == threadFindQuery
+      else { return }
+      threadFindMatches = matches
+      if let previousSelection,
+         matches.contains(where: { $0.messageID == previousSelection }) {
+        selectedThreadFindMessageID = previousSelection
+      } else {
+        selectedThreadFindMessageID = matches.first?.messageID
+      }
+      requestThreadFindScroll()
+    }
   }
 
   private func rebuildThreadFindIndex() {
-    threadFindCandidates = AIChatThreadSearch.candidates(in: threadFindTranscriptItems)
-    refreshThreadFindMatches()
+    threadFindIndexTask?.cancel()
+    threadFindMatchTask?.cancel()
+    // Array/String storage is copy-on-write, so this snapshot is constant-time.
+    // Per-message search normalization and attachment-name projection happen in
+    // the detached worker below instead of while the find bar is opening.
+    let messages = store.openClawMessages
+    let isSharedRoom = store.selectedAIChatIsSharedRoom
+    let threadID = store.selectedOpenClawChatThreadID
+    threadFindIndexTask = Task { @MainActor in
+      do {
+        try await Task.sleep(for: .milliseconds(24))
+      } catch {
+        return
+      }
+      let worker = Task.detached(priority: .userInitiated) {
+        AIChatThreadSearch.candidates(in: messages, isSharedRoom: isSharedRoom)
+      }
+      let candidates = await withTaskCancellationHandler {
+        await worker.value
+      } onCancel: {
+        worker.cancel()
+      }
+      guard !Task.isCancelled,
+            threadID == store.selectedOpenClawChatThreadID
+      else { return }
+      threadFindCandidates = candidates
+      refreshThreadFindMatches()
+    }
   }
 
   private func selectAdjacentThreadFindMatch(offset: Int) {
@@ -8978,12 +9804,20 @@ private struct OpenClawChatView: View {
   }
 
   private func closeThreadFind() {
+    threadFindIndexTask?.cancel()
+    threadFindMatchTask?.cancel()
     isShowingThreadFind = false
     threadFindQuery = ""
     threadFindCandidates = []
     threadFindMatches = []
     selectedThreadFindMessageID = nil
+    transcriptWindowAnchor = nil
   }
+}
+
+struct OpenClawChatTranscriptAnchor: Equatable {
+  let itemID: UUID
+  let rawMessageIndex: Int
 }
 
 struct OpenClawChatTranscriptStack<Content: View>: View {
@@ -9010,45 +9844,118 @@ struct OpenClawChatTranscriptStack<Content: View>: View {
 }
 
 struct OpenClawChatTranscriptWindow: Equatable {
-  static let initialLimit = 80
-  static let pageSize = 80
+  static let initialLimit = 24
+  static let pageSize = 40
+  static let maximumDisplayLimit = initialLimit + (pageSize * 2)
+  static let maximumRawMessageScanCount = maximumDisplayLimit * 4
+  static let initialDisplayedContentUTF8ByteLimit = 256 * 1_024
+  private static let pageDisplayedContentUTF8ByteLimit =
+    pageSize * OpenClawMessageBodyExcerpt.collapsedUTF8ByteLimit
 
   let visibleItems: [AIChatRoomTranscriptItem]
   let displayLimit: Int
   let earlierBatchCount: Int
+  let earlierPageAnchor: OpenClawChatTranscriptAnchor?
+  private let hasEarlierItems: Bool
+  private let resolvedNextDisplayLimit: Int
 
   init(
     messages: [OpenClawChatMessage],
     isSharedRoom: Bool,
-    displayLimit: Int
+    displayLimit: Int,
+    anchor: OpenClawChatTranscriptAnchor? = nil
   ) {
-    let resolvedLimit = max(Self.initialLimit, displayLimit)
+    let resolvedLimit = min(
+      Self.maximumDisplayLimit,
+      max(Self.initialLimit, displayLimit)
+    )
     self.displayLimit = resolvedLimit
+    let nextLimit = min(Self.maximumDisplayLimit, resolvedLimit + Self.pageSize)
+    resolvedNextDisplayLimit = nextLimit
+    let displayedContentLimit = Self.displayedContentUTF8ByteLimit(
+      forDisplayLimit: resolvedLimit
+    )
+    let nextDisplayedContentLimit = Self.displayedContentUTF8ByteLimit(
+      forDisplayLimit: nextLimit
+    )
+    let rawMessageRange = Self.boundedRawMessageRange(
+      messageCount: messages.count,
+      anchorRawMessageIndex: anchor?.rawMessageIndex
+    )
+    let boundedMessages = Array(messages[rawMessageRange])
+    let candidates: [AIChatRoomTranscriptItem]
     if isSharedRoom {
-      let items = AIChatRoomTranscriptPresentation.items(
-        messages: messages,
+      candidates = AIChatRoomTranscriptPresentation.items(
+        messages: boundedMessages,
         isSharedRoom: true
       )
-      visibleItems = Array(items.suffix(resolvedLimit))
-      earlierBatchCount = min(Self.pageSize, max(0, items.count - resolvedLimit))
-      return
+    } else {
+      candidates = boundedMessages.compactMap { message in
+        message.isRoomDispatchCopy ? nil : .message(message)
+      }
     }
-
-    let scanLimit = resolvedLimit + Self.pageSize
-    var newestItems: [AIChatRoomTranscriptItem] = []
-    newestItems.reserveCapacity(min(scanLimit, messages.count))
-    for message in messages.reversed() where !message.isRoomDispatchCopy {
-      newestItems.append(.message(message))
-      if newestItems.count == scanLimit { break }
+    let visible = Self.constrainedWindow(
+      of: candidates,
+      anchorItemID: anchor?.itemID,
+      bubbleLimit: resolvedLimit,
+      displayedContentUTF8ByteLimit: displayedContentLimit
+    )
+    let nextVisible = Self.constrainedWindow(
+      of: candidates,
+      anchorItemID: anchor?.itemID,
+      bubbleLimit: nextLimit,
+      displayedContentUTF8ByteLimit: nextDisplayedContentLimit
+    )
+    visibleItems = visible
+    let hasRawMessagesBeforeWindow = rawMessageRange.lowerBound > messages.startIndex
+    hasEarlierItems = hasRawMessagesBeforeWindow || Self.hasItemsBeforeVisible(
+      visible,
+      in: candidates
+    )
+    if hasEarlierItems {
+      if nextVisible.visibleChatBubbleCount > visible.visibleChatBubbleCount {
+        earlierBatchCount = max(
+          1,
+          nextVisible.visibleChatBubbleCount - visible.visibleChatBubbleCount
+        )
+      } else {
+        earlierBatchCount = min(Self.pageSize, max(1, rawMessageRange.lowerBound))
+      }
+    } else {
+      earlierBatchCount = 0
     }
-    visibleItems = Array(newestItems.prefix(resolvedLimit).reversed())
-    earlierBatchCount = max(0, newestItems.count - visibleItems.count)
+    if hasEarlierItems,
+       let firstVisibleItem = visible.first,
+       let rawIndex = Self.rawMessageIndex(
+         forItemID: firstVisibleItem.id,
+         in: boundedMessages,
+         absoluteOffset: rawMessageRange.lowerBound
+       ) {
+      earlierPageAnchor = OpenClawChatTranscriptAnchor(
+        itemID: firstVisibleItem.id,
+        rawMessageIndex: rawIndex
+      )
+    } else {
+      earlierPageAnchor = nil
+    }
   }
 
-  var hasEarlierMessages: Bool { earlierBatchCount > 0 }
+  var visibleMessagesForPresentation: [OpenClawChatMessage] {
+    visibleItems.flatMap(\.visibleChatBubbleMessages)
+  }
+
+  var visibleChatBubbleCount: Int {
+    visibleItems.visibleChatBubbleCount
+  }
+
+  var displayedContentUTF8ByteCount: Int {
+    visibleItems.displayedContentUTF8ByteCount
+  }
+
+  var hasEarlierMessages: Bool { hasEarlierItems }
 
   var nextDisplayLimit: Int {
-    displayLimit + earlierBatchCount
+    resolvedNextDisplayLimit
   }
 
   var earlierMessagesTitle: String {
@@ -9059,6 +9966,139 @@ struct OpenClawChatTranscriptWindow: Equatable {
 
   func contains(_ id: UUID) -> Bool {
     visibleItems.contains(where: { $0.id == id })
+  }
+
+  static func displayedContentUTF8ByteLimit(forDisplayLimit displayLimit: Int) -> Int {
+    let resolvedLimit = min(maximumDisplayLimit, max(initialLimit, displayLimit))
+    let additionalBubbleCount = max(0, resolvedLimit - initialLimit)
+    let additionalPages = (additionalBubbleCount + pageSize - 1) / pageSize
+    return initialDisplayedContentUTF8ByteLimit
+      + additionalPages * pageDisplayedContentUTF8ByteLimit
+  }
+
+  private static func boundedRawMessageRange(
+    messageCount: Int,
+    anchorRawMessageIndex: Int?
+  ) -> Range<Int> {
+    guard messageCount > maximumRawMessageScanCount else { return 0..<messageCount }
+    guard let anchorRawMessageIndex else {
+      return (messageCount - maximumRawMessageScanCount)..<messageCount
+    }
+    let anchorIndex = min(max(0, anchorRawMessageIndex), messageCount - 1)
+    let leadingCount = maximumRawMessageScanCount / 2
+    var lowerBound = max(0, anchorIndex - leadingCount)
+    var upperBound = min(messageCount, lowerBound + maximumRawMessageScanCount)
+    lowerBound = max(0, upperBound - maximumRawMessageScanCount)
+    upperBound = min(messageCount, lowerBound + maximumRawMessageScanCount)
+    return lowerBound..<upperBound
+  }
+
+  private static func hasItemsBeforeVisible(
+    _ visible: [AIChatRoomTranscriptItem],
+    in candidates: [AIChatRoomTranscriptItem]
+  ) -> Bool {
+    guard let firstVisibleID = visible.first?.id,
+          let firstVisibleIndex = candidates.firstIndex(where: { $0.id == firstVisibleID })
+    else { return false }
+    return firstVisibleIndex > candidates.startIndex
+  }
+
+  private static func rawMessageIndex(
+    forItemID itemID: UUID,
+    in messages: [OpenClawChatMessage],
+    absoluteOffset: Int
+  ) -> Int? {
+    guard let index = messages.firstIndex(where: { message in
+      message.id == itemID || message.roomRoundID == itemID
+    }) else { return nil }
+    return absoluteOffset + index
+  }
+
+  private static func constrainedWindow(
+    of items: [AIChatRoomTranscriptItem],
+    anchorItemID: UUID?,
+    bubbleLimit: Int,
+    displayedContentUTF8ByteLimit: Int
+  ) -> [AIChatRoomTranscriptItem] {
+    guard let anchorItemID,
+          let anchorIndex = items.firstIndex(where: { $0.id == anchorItemID })
+    else {
+      return constrainedSuffix(
+        of: items,
+        bubbleLimit: bubbleLimit,
+        displayedContentUTF8ByteLimit: displayedContentUTF8ByteLimit
+      )
+    }
+    var lowerBound = anchorIndex
+    var upperBound = anchorIndex + 1
+    var bubbleCount = items[anchorIndex].visibleChatBubbleCount
+    var displayedContentByteCount = items[anchorIndex].displayedContentUTF8ByteCount
+    var growsBeforeNext = true
+    var canGrowBefore = lowerBound > items.startIndex
+    var canGrowAfter = upperBound < items.endIndex
+    while canGrowBefore || canGrowAfter {
+      let candidateIndex: Int
+      if growsBeforeNext, canGrowBefore {
+        candidateIndex = lowerBound - 1
+      } else if canGrowAfter {
+        candidateIndex = upperBound
+      } else {
+        candidateIndex = lowerBound - 1
+      }
+      let candidate = items[candidateIndex]
+      let fits = bubbleCount + candidate.visibleChatBubbleCount <= bubbleLimit
+        && displayedContentByteCount + candidate.displayedContentUTF8ByteCount
+          <= displayedContentUTF8ByteLimit
+      if fits {
+        if candidateIndex < lowerBound {
+          lowerBound = candidateIndex
+        } else {
+          upperBound = candidateIndex + 1
+        }
+        bubbleCount += candidate.visibleChatBubbleCount
+        displayedContentByteCount += candidate.displayedContentUTF8ByteCount
+      } else if candidateIndex < lowerBound {
+        canGrowBefore = false
+      } else {
+        canGrowAfter = false
+      }
+      canGrowBefore = canGrowBefore && lowerBound > items.startIndex
+      canGrowAfter = canGrowAfter && upperBound < items.endIndex
+      growsBeforeNext.toggle()
+    }
+    return Array(items[lowerBound..<upperBound])
+  }
+
+  private static func constrainedSuffix(
+    of items: [AIChatRoomTranscriptItem],
+    bubbleLimit: Int,
+    displayedContentUTF8ByteLimit: Int
+  ) -> [AIChatRoomTranscriptItem] {
+    var newestItems: [AIChatRoomTranscriptItem] = []
+    newestItems.reserveCapacity(min(bubbleLimit, items.count))
+    var bubbleCount = 0
+    var displayedContentByteCount = 0
+    for item in items.reversed() {
+      let itemBubbleCount = item.visibleChatBubbleCount
+      let itemContentByteCount = item.displayedContentUTF8ByteCount
+      let fits = bubbleCount + itemBubbleCount <= bubbleLimit
+        && displayedContentByteCount + itemContentByteCount <= displayedContentUTF8ByteLimit
+      guard fits || newestItems.isEmpty else { break }
+      newestItems.append(item)
+      bubbleCount += itemBubbleCount
+      displayedContentByteCount += itemContentByteCount
+    }
+    return Array(newestItems.reversed())
+  }
+}
+
+private extension Array where Element == AIChatRoomTranscriptItem {
+  var visibleChatBubbleCount: Int {
+    reduce(into: 0) { $0 += $1.visibleChatBubbleCount }
+  }
+
+  var displayedContentUTF8ByteCount: Int {
+    reduce(into: 0) { $0 += $1.displayedContentUTF8ByteCount }
   }
 }
 
@@ -9132,11 +10172,16 @@ enum OpenClawChatScrollGeometry {
   }
 }
 
+enum OpenClawChatAccessibilityIdentity {
+  static let transcriptScrollBridge = "org.openorg.chat.transcript-scroll-bridge"
+}
+
 private struct OpenClawChatScrollPositionBridge: NSViewRepresentable {
   let threadID: UUID?
   let selectionGeneration: Int
   let initialPosition: Double?
-  let onPositionChange: (Double) -> Void
+  let onPositionChange: (UUID?, Double) -> Void
+  let onRestorationComplete: (UUID?) -> Void
 
   private var restoration: OpenClawChatScrollRestoration {
     OpenClawChatScrollRestoration(
@@ -9151,7 +10196,13 @@ private struct OpenClawChatScrollPositionBridge: NSViewRepresentable {
   }
 
   func makeNSView(context: Context) -> NSView {
-    NSView(frame: .zero)
+    let view = NSView(frame: .zero)
+    // This view already resolves the exact enclosing transcript scroll view for
+    // restoration. Publish the same stable native identity so performance and
+    // accessibility harnesses never guess among the sidebar and transcript
+    // scroll containers by geometry.
+    view.setAccessibilityIdentifier(OpenClawChatAccessibilityIdentity.transcriptScrollBridge)
+    return view
   }
 
   func updateNSView(_ view: NSView, context: Context) {
@@ -9183,8 +10234,14 @@ private struct OpenClawChatScrollPositionBridge: NSViewRepresentable {
 
     func updateParent(_ parent: OpenClawChatScrollPositionBridge) {
       let nextRestoration = parent.restoration
+      let requiresRestoration = nextRestoration.requiresNewRestoration(after: restoration)
+      if requiresRestoration {
+        // The bridge remains mounted across thread switches. Capture the old
+        // thread's position before replacing its callback with the new one.
+        recordCurrentPosition()
+      }
       self.parent = parent
-      guard nextRestoration.requiresNewRestoration(after: restoration) else { return }
+      guard requiresRestoration else { return }
       restoration = nextRestoration
       didRestore = false
       isRestoring = false
@@ -9216,7 +10273,7 @@ private struct OpenClawChatScrollPositionBridge: NSViewRepresentable {
       }
       startObserving(scrollView)
       if restoreIfPossible(in: scrollView) {
-        didRestore = true
+        completeRestoration()
       } else {
         scheduleRestoreRetry(from: view)
       }
@@ -9226,9 +10283,10 @@ private struct OpenClawChatScrollPositionBridge: NSViewRepresentable {
       restoreAttempts += 1
       guard restoreAttempts < 80 else {
         if let scrollView = view.enclosingScrollView {
-          didRestore = true
+          completeRestoration()
           startObserving(scrollView)
         } else {
+          completeRestoration()
           self.startObservingIfPossible(from: view)
         }
         return
@@ -9245,7 +10303,13 @@ private struct OpenClawChatScrollPositionBridge: NSViewRepresentable {
       else {
         return
       }
-      parent.onPositionChange(Self.normalizedPosition(in: scrollView))
+      parent.onPositionChange(restoration.threadID, Self.normalizedPosition(in: scrollView))
+    }
+
+    private func completeRestoration() {
+      guard !didRestore else { return }
+      didRestore = true
+      parent.onRestorationComplete(restoration.threadID)
     }
 
     func stopObserving() {
@@ -9315,11 +10379,14 @@ private struct OpenClawChatScrollPositionBridge: NSViewRepresentable {
       guard !isRestoring, let scrollView else { return }
       guard didRestore else {
         if restoreIfPossible(in: scrollView) {
-          didRestore = true
+          completeRestoration()
         }
         return
       }
-      parent.onPositionChange(Self.normalizedPosition(in: scrollView))
+      parent.onPositionChange(
+        restoration.threadID,
+        Self.normalizedPosition(in: scrollView)
+      )
     }
 
     @objc private func layoutDidChange(_ notification: Notification) {
@@ -9327,7 +10394,7 @@ private struct OpenClawChatScrollPositionBridge: NSViewRepresentable {
       if didRestore {
         constrainToDocumentIfNeeded(in: scrollView)
       } else if restoreIfPossible(in: scrollView) {
-        didRestore = true
+        completeRestoration()
       }
     }
 
@@ -9348,7 +10415,7 @@ private struct OpenClawChatScrollPositionBridge: NSViewRepresentable {
       clipView.scroll(to: origin)
       scrollView.reflectScrolledClipView(clipView)
       isRestoring = false
-      parent.onPositionChange(clamped)
+      parent.onPositionChange(restoration.threadID, clamped)
       return true
     }
 
@@ -9361,7 +10428,10 @@ private struct OpenClawChatScrollPositionBridge: NSViewRepresentable {
       clipView.scroll(to: constrainedBounds.origin)
       scrollView.reflectScrolledClipView(clipView)
       isRestoring = false
-      parent.onPositionChange(Self.normalizedPosition(in: scrollView))
+      parent.onPositionChange(
+        restoration.threadID,
+        Self.normalizedPosition(in: scrollView)
+      )
     }
 
     private static func normalizedPosition(in scrollView: NSScrollView) -> Double {
@@ -9378,7 +10448,7 @@ private struct OpenClawChatScrollPositionBridge: NSViewRepresentable {
 }
 
 private struct OpenClawConfigurationSheet: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   @Environment(\.dismiss) private var dismiss
   @State private var endpoint = ""
   @State private var agent = ""
@@ -9652,7 +10722,7 @@ private struct OpenClawConfigurationSheet: View {
 }
 
 private struct OrgCryptConfigurationSheet: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   @Environment(\.dismiss) private var dismiss
   @State private var encryptOnSave = true
   @State private var recipientsText = ""
@@ -9836,7 +10906,7 @@ private struct OrgCryptConfigurationSheet: View {
 }
 
 private struct DataSourceConfigurationSheet: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   @Environment(\.dismiss) private var dismiss
   @State private var apiKey = ""
   @State private var clearAPIKey = false
@@ -9993,7 +11063,7 @@ private struct AssignedWorkRow: View {
 }
 
 private struct DetailView: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
@@ -10042,7 +11112,7 @@ private struct DetailView: View {
 }
 
 private struct NodeEntityTypeMenu: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
 
   var body: some View {
     Menu {
@@ -10168,7 +11238,7 @@ private struct DetailScrollCommandBridge: NSViewRepresentable {
 }
 
 private struct DetailHeader: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   @ObservedObject var sourceEditorInteraction: SourceEditorInteractionModel
   @FocusState private var isPageSearchFocused: Bool
   @State private var pageSearchDraft = ""
@@ -10176,6 +11246,7 @@ private struct DetailHeader: View {
   let renderedViewportSourceLine: Int?
 
   var body: some View {
+    @Bindable var store = store
     VStack(alignment: .leading, spacing: 10) {
       ViewThatFits(in: .horizontal) {
         HStack(alignment: .top, spacing: 16) {
@@ -10488,7 +11559,8 @@ private struct DetailHeader: View {
   }
 
   private var documentLayoutMenu: some View {
-    Menu {
+    @Bindable var store = store
+    return Menu {
       Picker("Preview", selection: documentPreviewPreferenceBinding) {
         Label(
           "Automatic (\(store.inferredDocumentPreviewKind.title))",
@@ -10867,7 +11939,7 @@ private struct DetailHeader: View {
       Divider()
 
       Button {
-        store.presentSimilarTodoAssignment()
+        Task { await store.presentSimilarTodoAssignment() }
       } label: {
         Label("Find Similar TODOs...", systemImage: "rectangle.stack.badge.plus")
       }
@@ -10910,7 +11982,7 @@ private struct DetailHeader: View {
 }
 
 private struct LiveFileEditorBody: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   let location: WorkspaceLocation
   let reportViewportSourceLine: @MainActor (Int?) -> Void
 
@@ -10951,7 +12023,7 @@ private struct LiveFileEditorBody: View {
 }
 
 private struct OrgRenderedDocumentPreview: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   let source: EntrySource
   let loadingLabel: String
   let reportViewportSourceLine: @MainActor (Int?) -> Void
@@ -11183,7 +12255,7 @@ private struct EntityActionItemsPanel: View {
 }
 
 private struct LegacyStructuredEntryEditorView: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   let source: EntrySource
 
   var body: some View {
@@ -11227,7 +12299,7 @@ private struct OrgHTMLLoadingView: View {
 }
 
 private struct LinkedPDFPreviewPane: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   @State private var zoomScale: CGFloat = 1
   @State private var pageCount = 0
   @State private var pageIndex: Int?
@@ -11306,7 +12378,7 @@ private struct LinkedPDFPreviewPane: View {
 }
 
 private struct OrgSlidePreviewPane: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   var reportViewportSourceLine: @MainActor (Int?) -> Void = { _ in }
 
   var body: some View {
@@ -11504,7 +12576,7 @@ private struct OrgPDFPreviewControls: View {
 }
 
 private struct OrgHTMLRenderFailureView: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   let message: String
 
   var body: some View {
@@ -11540,13 +12612,16 @@ private struct OrgHTMLRenderFailureView: View {
 }
 
 private struct OrgSourceEditorWithLinkTools: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   @Environment(\.orgRoamLinkResolver) private var orgRoamLinkResolver
   @ObservedObject var interaction: SourceEditorInteractionModel
   @State private var sourcePreviewLine: Int?
+  @State private var sourceCaretLocalLine: Int?
+  @State private var sourceSelectionSnapshot: OrgSyntaxTextEditorSelectionSnapshot?
   @State private var sourcePreviewScrollTask: Task<Void, Never>?
 
   var body: some View {
+    @Bindable var store = store
     VStack(alignment: .leading, spacing: 8) {
       sourceEditorCommandBar
 
@@ -11569,11 +12644,7 @@ private struct OrgSourceEditorWithLinkTools: View {
     }
     .onChange(of: interaction.text) {
       store.noteSourceEditorLocalTextChanged(interaction.text)
-      scheduleSourcePreviewScroll()
       store.scheduleSourceEditorPreview(text: interaction.text)
-    }
-    .onChange(of: interaction.selection) {
-      scheduleSourcePreviewScroll()
     }
     .onChange(of: store.sourceEditorPresentation) { _, presentation in
       scheduleSourcePreviewScroll()
@@ -11585,13 +12656,20 @@ private struct OrgSourceEditorWithLinkTools: View {
       scheduleSourcePreviewScroll()
       store.scheduleSourceEditorPreview(immediate: true)
     }
+    .onChange(of: store.selectedEntrySource?.id) {
+      sourceCaretLocalLine = nil
+      sourceSelectionSnapshot = nil
+      sourcePreviewLine = nil
+    }
     .onDisappear {
       sourcePreviewScrollTask?.cancel()
     }
   }
 
   private var sourceColumn: some View {
-    VStack(alignment: .leading, spacing: 8) {
+    @Bindable var store = store
+    let sourceAtMount = store.selectedEntrySource
+    return VStack(alignment: .leading, spacing: 8) {
       OrgSyntaxTextEditor(
         text: $interaction.text,
         monospaced: true,
@@ -11616,6 +12694,13 @@ private struct OrgSourceEditorWithLinkTools: View {
           store.statusText = status
         },
         selection: $interaction.selection,
+        onSelectionSnapshot: { snapshot in
+          sourceSelectionSnapshot = snapshot
+          if sourceCaretLocalLine != snapshot.sourceLine {
+            sourceCaretLocalLine = snapshot.sourceLine
+            scheduleSourcePreviewScroll()
+          }
+        },
         onViewportSourceLine: { line in
           guard let source = store.selectedEntrySource else { return }
           store.recordDocumentViewportSourceLine(
@@ -11630,6 +12715,22 @@ private struct OrgSourceEditorWithLinkTools: View {
           store.noteSourceEditorLocalTextChanged(text)
           if store.sourceEditorPresentation == .split {
             store.scheduleSourceEditorPreview(text: text)
+          }
+        },
+        documentIdentity: sourceAtMount?.id,
+        onCheckpointText: { text in
+          if let sourceAtMount {
+            store.persistSourceEditorCheckpoint(text, source: sourceAtMount)
+          }
+        },
+        documentGeneration: { interaction.documentGeneration },
+        bindingGeneration: { interaction.bindingGeneration },
+        onTextPublicationConflict: { text in
+          if let sourceAtMount {
+            store.preserveSourceEditorDraftAfterPublicationConflict(
+              text,
+              source: sourceAtMount
+            )
           }
         },
         onSaveCommand: { context in
@@ -11775,31 +12876,31 @@ private struct OrgSourceEditorWithLinkTools: View {
   private func scheduleSourcePreviewScroll() {
     sourcePreviewScrollTask?.cancel()
     guard store.sourceEditorPresentation == .split,
-          let source = store.selectedEntrySource
+          let source = store.selectedEntrySource,
+          let localLine = sourceCaretLocalLine
     else {
       sourcePreviewLine = nil
       return
     }
-    let text = interaction.text
-    let offset = min(max(0, interaction.selection.location), text.utf16.count)
+    let sourceID = source.id
+    let sourceStartLine = source.startLine
     sourcePreviewScrollTask = Task { @MainActor in
       do {
         try await Task.sleep(nanoseconds: 90_000_000)
       } catch {
         return
       }
-      let localLine = await Task.detached(priority: .userInitiated) {
-        1 + text.utf16.prefix(offset).reduce(into: 0) { count, unit in
-          if unit == 10 { count += 1 }
-        }
-      }.value
-      guard !Task.isCancelled else { return }
-      sourcePreviewLine = source.startLine + localLine - 1
+      guard !Task.isCancelled,
+            store.sourceEditorPresentation == .split,
+            store.selectedEntrySource?.id == sourceID
+      else { return }
+      sourcePreviewLine = sourceStartLine + localLine - 1
     }
   }
 
   private var sourceEditorCommandBar: some View {
-    HStack(spacing: 8) {
+    @Bindable var store = store
+    return HStack(spacing: 8) {
       HStack(spacing: 6) {
         Menu {
           Button("Heading") { store.requestSourceEditorCommand(.insertHeading) }
@@ -11915,10 +13016,7 @@ private struct OrgSourceEditorWithLinkTools: View {
   }
 
   private var wikiLinkCompletionMatch: ParagraphWikiLinkCompletionMatch? {
-    ParagraphWikiLinkCompletion.match(
-      in: interaction.text,
-      selectedRange: interaction.selection
-    )
+    sourceSelectionSnapshot.flatMap(ParagraphWikiLinkCompletion.match(in:))
   }
 
   private func insertBacklinkForSelection() {
@@ -11968,6 +13066,7 @@ private struct OrgSourceEditorWithLinkTools: View {
   }
 
   private func applyInlineEdit(_ edit: InlineSelectionReplacement) {
+    sourceSelectionSnapshot = nil
     interaction.text = edit.text
     interaction.selection = edit.selectedRange
     store.noteSourceEditorLocalTextChanged(edit.text)
@@ -11975,7 +13074,7 @@ private struct OrgSourceEditorWithLinkTools: View {
 }
 
 private struct EntryBodyView: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   let location: WorkspaceLocation
   let reportViewportSourceLine: @MainActor (Int?) -> Void
 
@@ -12143,9 +13242,10 @@ private struct DetailMetadataGrid: View {
 }
 
 private struct NodeContextPane: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
 
   var body: some View {
+    @Bindable var store = store
     VStack(alignment: .leading, spacing: 0) {
       HStack(spacing: 8) {
         Label("Context", systemImage: "sidebar.right")
@@ -12198,7 +13298,7 @@ private struct NodeContextPane: View {
 }
 
 private struct NodeContextOverview: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
 
   var body: some View {
     VStack(alignment: .leading, spacing: 14) {
@@ -12247,7 +13347,7 @@ private struct NodeContextOverview: View {
 }
 
 private struct NodeContextReferences: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
 
   var body: some View {
     if store.backlinkFileGroups.isEmpty {
@@ -12267,7 +13367,7 @@ private struct NodeContextReferences: View {
 }
 
 private struct NodeContextRelated: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
 
   var body: some View {
     let items = store.relatedBacklinkNodes
@@ -12324,7 +13424,7 @@ private struct NodeContextRelated: View {
 }
 
 private struct NodeContextBrief: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
 
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
@@ -12391,11 +13491,10 @@ private struct NodeContextBrief: View {
 private struct NodeBriefRenderedPreview: View {
   let artifact: NodeBriefArtifact
   let corpusRoot: URL?
+  @State private var preparation: NodeBriefPreviewPreparation?
 
-  private var blocks: [OrgEditableBlock] {
-    OrgEntryRenderer
-      .parseEditable(artifact.body)
-      .filter(OrgRenderedBlockDisplayPolicy.isVisible)
+  private var revision: NodeBriefPreviewRevision {
+    NodeBriefPreviewRevision(artifact)
   }
 
   var body: some View {
@@ -12404,12 +13503,29 @@ private struct NodeBriefRenderedPreview: View {
         .font(.callout)
         .foregroundStyle(.secondary)
         .fixedSize(horizontal: false, vertical: true)
-    } else if blocks.isEmpty {
+    } else if preparation?.revision != revision {
+      HStack(spacing: 8) {
+        ProgressView()
+          .controlSize(.small)
+        Text("Preparing brief preview…")
+          .font(.callout)
+          .foregroundStyle(.secondary)
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .task(id: revision) {
+        let prepared = await NodeBriefPreviewBuilder.prepare(
+          body: artifact.body,
+          revision: revision
+        )
+        guard !Task.isCancelled, prepared.revision == revision else { return }
+        preparation = prepared
+      }
+    } else if preparation?.blocks.isEmpty != false {
       OrgInlineText(artifact.body, font: .callout)
         .frame(maxWidth: .infinity, alignment: .leading)
     } else {
       LazyVStack(alignment: .leading, spacing: 5) {
-        ForEach(blocks) { block in
+        ForEach(preparation?.blocks ?? []) { block in
           NodeBriefCompactBlockView(
             block: block,
             sourceFile: artifact.file,
@@ -12420,6 +13536,44 @@ private struct NodeBriefRenderedPreview: View {
       }
       .frame(maxWidth: .infinity, alignment: .leading)
     }
+  }
+}
+
+struct NodeBriefPreviewRevision: Hashable, Sendable {
+  let relativePath: String
+  let modifiedAt: Date?
+  let utf8Count: Int
+
+  init(_ artifact: NodeBriefArtifact) {
+    relativePath = artifact.relativePath
+    modifiedAt = artifact.modifiedAt
+    utf8Count = artifact.body.utf8.count
+  }
+}
+
+struct NodeBriefPreviewPreparation: Sendable {
+  let revision: NodeBriefPreviewRevision
+  let blocks: [OrgEditableBlock]
+}
+
+enum NodeBriefPreviewBuilder {
+  nonisolated static func prepare(
+    body: String,
+    revision: NodeBriefPreviewRevision,
+    workThreadObserver: (@Sendable (Bool) -> Void)? = nil
+  ) async -> NodeBriefPreviewPreparation {
+    await Task.detached(priority: .userInitiated) {
+      workThreadObserver?(currentThreadIsMainThread())
+      let blocks = OrgEntryRenderer
+        .parseEditable(body)
+        .filter(OrgRenderedBlockDisplayPolicy.isVisible)
+      return NodeBriefPreviewPreparation(revision: revision, blocks: blocks)
+    }.value
+  }
+
+
+  private nonisolated static func currentThreadIsMainThread() -> Bool {
+    Thread.isMainThread
   }
 }
 
@@ -12534,7 +13688,7 @@ private struct NodeBriefCompactBlockView: View {
 }
 
 private struct NodeContextStats: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
 
   var body: some View {
     HStack(spacing: 8) {
@@ -12582,7 +13736,7 @@ private struct CountPill: View {
 }
 
 private struct NodeContextEmptyText: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
 
   var body: some View {
     Text(emptyText)
@@ -12599,7 +13753,7 @@ private struct NodeContextEmptyText: View {
 }
 
 private struct BacklinkFileGroupRow: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   let group: BacklinkFileGroup
 
   var body: some View {
@@ -12665,7 +13819,7 @@ private struct BacklinkFileGroupRow: View {
 }
 
 private struct BacklinkRow: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   let backlink: BacklinkItem
   var compact = false
 
@@ -12769,7 +13923,7 @@ private struct HeaderBar<Trailing: View>: View {
 }
 
 private struct DetailPaneControlGroup: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
 
   var body: some View {
     HStack(spacing: 6) {

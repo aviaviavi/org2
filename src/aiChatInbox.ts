@@ -1,7 +1,11 @@
 import crypto from "node:crypto";
-import fs from "node:fs";
 import path from "node:path";
-import { loadOpenClawThreadState } from "./openClawThreadState.js";
+import {
+  aiChatInboxDirectory as sharedAIChatInboxDirectory,
+  encodedJSONEnvelope,
+  publishJSONEnvelope,
+} from "./aiChatOperationJournal.js";
+import { findOpenClawThread, loadOpenClawThreadState } from "./openClawThreadState.js";
 
 export const AI_CHAT_INBOX_SCHEMA = "org2:ai-chat-inbox-message:v1";
 
@@ -33,7 +37,7 @@ export interface QueueAIChatInboxMessageResult {
 }
 
 export function aiChatInboxDirectory(corpusRoot: string): string {
-  return path.join(path.resolve(corpusRoot), ".org2", "ai-chat-inbox");
+  return sharedAIChatInboxDirectory(corpusRoot);
 }
 
 function normalizedOptional(value: string | undefined): string | undefined {
@@ -68,11 +72,9 @@ export function queueAIChatInboxMessage(
   const content = rawContent.trim();
   if (!content) throw new Error("AI chat message content is required");
   if (content.length > 200_000) throw new Error("AI chat message content exceeds 200000 characters");
-  const state = loadOpenClawThreadState(corpusRoot);
   const requestedThreadID = threadID.trim();
-  const thread = state.threads.find((candidate) => (
-    candidate.id.toLowerCase() === requestedThreadID.toLowerCase()
-  ));
+  const state = loadOpenClawThreadState(corpusRoot, { hydrateThreadID: requestedThreadID });
+  const thread = findOpenClawThread(state, requestedThreadID);
   if (!thread) {
     throw new Error(`unknown OpenClaw thread: ${threadID}`);
   }
@@ -112,23 +114,15 @@ export function queueAIChatInboxMessage(
     }
     return { applied: false, changed: false, file, message };
   }
+  // The Swift consumer caps the complete UTF-8 envelope at 512,000 bytes.
+  // Validate that exact representation before preview or publication.
+  encodedJSONEnvelope(message);
   if (!options.apply) return { applied: false, changed: true, file, message };
-
-  fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
-  if (fs.existsSync(file)) {
-    const existing = JSON.parse(fs.readFileSync(file, "utf8")) as AIChatInboxMessage;
-    if (!sameDelivery(existing, message)) {
-      throw new Error(`AI chat idempotency key already queues a different message: ${file}`);
-    }
-    return { applied: false, changed: false, file, message: existing };
-  }
-  const temporary = `${file}.${process.pid}.tmp`;
-  fs.writeFileSync(temporary, `${JSON.stringify(message, null, 2)}\n`, {
-    encoding: "utf8",
-    mode: 0o600,
-    flag: "wx",
-  });
-  fs.renameSync(temporary, file);
-  fs.chmodSync(file, 0o600);
-  return { applied: true, changed: true, file, message };
+  const published = publishJSONEnvelope(file, message, sameDelivery, "message");
+  return {
+    applied: published.applied,
+    changed: published.applied,
+    file,
+    message: published.payload,
+  };
 }

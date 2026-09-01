@@ -2,10 +2,11 @@ import Org2WorkspaceCore
 import SwiftUI
 
 struct AIChatSettingsView: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   @State private var editedDestination: AIChatDestinationConfiguration?
 
   var body: some View {
+    @Bindable var store = store
     Form {
       Section {
         Picker("Corpus access", selection: $store.aiChatCorpusAccessScope) {
@@ -134,7 +135,7 @@ struct AIChatSettingsView: View {
     .frame(minHeight: 560)
     .sheet(item: $editedDestination) { destination in
       AIChatDestinationEditor(destination: destination)
-        .environmentObject(store)
+        .environment(store)
     }
   }
 
@@ -182,7 +183,7 @@ struct AIChatSettingsView: View {
 
 private struct AIChatDestinationEditor: View {
   @Environment(\.dismiss) private var dismiss
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(WorkspaceStore.self) private var store
   @State private var destination: AIChatDestinationConfiguration
   @State private var token = ""
   @State private var clearsSavedToken = false

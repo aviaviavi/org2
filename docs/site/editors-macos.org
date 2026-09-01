@@ -13,6 +13,8 @@ If you already keep notes in another folder, choose it from the workspace option
 
 Global capture works anywhere on your Mac while OpenOrg is running. Press =Cmd-Ctrl-Return= to add a note or task to today's daily note, including dates, tags, links, files, or images.
 
+OpenOrg stores daily notes in the corpus's =daily/= zone by default. Set =roam.dailiesDir= in =org2.json= to a valid absolute path or a directory relative to the corpus root to use a different location; missing or invalid values fall back to =daily/= rather than the corpus root.
+
 * The workspace
 
 #+begin_export html

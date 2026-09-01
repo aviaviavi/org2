@@ -68,7 +68,13 @@ enum OrgSourceTextEditing {
     in text: String,
     selectedRange: NSRange
   ) -> OrgSyntaxTextEditReplacement? {
-    let nsText = text as NSString
+    newlineReplacement(in: text as NSString, selectedRange: selectedRange)
+  }
+
+  static func newlineReplacement(
+    in nsText: NSString,
+    selectedRange: NSRange
+  ) -> OrgSyntaxTextEditReplacement? {
     let selectedRange = clampedRange(selectedRange, utf16Length: nsText.length)
     let lineContext = lineContext(in: nsText, selectedRange: selectedRange)
     guard let continuation = listContinuation(for: lineContext.textBeforeSelection)
@@ -87,7 +93,18 @@ enum OrgSourceTextEditing {
     selectedRange: NSRange,
     direction: OrgSourceTextIndentDirection
   ) -> OrgSyntaxTextEditReplacement? {
-    let nsText = text as NSString
+    indentationReplacement(
+      in: text as NSString,
+      selectedRange: selectedRange,
+      direction: direction
+    )
+  }
+
+  static func indentationReplacement(
+    in nsText: NSString,
+    selectedRange: NSRange,
+    direction: OrgSourceTextIndentDirection
+  ) -> OrgSyntaxTextEditReplacement? {
     let selectedRange = clampedRange(selectedRange, utf16Length: nsText.length)
     let affectedRange = affectedLineRange(in: nsText, selectedRange: selectedRange)
     guard affectedRange.length > 0 else { return nil }
@@ -149,10 +166,23 @@ enum OrgSourceTextEditing {
     selectedRange: NSRange,
     snapshot: OrgSourceEditorSemanticSnapshot?
   ) -> OrgSyntaxTextEditReplacement {
-    let nsText = text as NSString
+    headingInsertionReplacement(
+      in: text as NSString,
+      selectedRange: selectedRange,
+      snapshot: snapshot,
+      lineIndex: nil
+    )
+  }
+
+  static func headingInsertionReplacement(
+    in nsText: NSString,
+    selectedRange: NSRange,
+    snapshot: OrgSourceEditorSemanticSnapshot?,
+    lineIndex: OrgSourceLineIndex?
+  ) -> OrgSyntaxTextEditReplacement {
     let selection = clampedRange(selectedRange, utf16Length: nsText.length)
     let context = lineContext(in: nsText, selectedRange: selection)
-    let line = lineNumber(in: nsText, utf16Offset: selection.location)
+    let line = lineNumber(in: nsText, utf16Offset: selection.location, lineIndex: lineIndex)
     let level = headingMarker(in: context.lineText)?.level
       ?? enclosingHeadline(in: snapshot, line: line)?.level
       ?? 1
@@ -169,7 +199,13 @@ enum OrgSourceTextEditing {
     in text: String,
     selectedRange: NSRange
   ) -> OrgSyntaxTextEditReplacement {
-    let nsText = text as NSString
+    listItemInsertionReplacement(in: text as NSString, selectedRange: selectedRange)
+  }
+
+  static func listItemInsertionReplacement(
+    in nsText: NSString,
+    selectedRange: NSRange
+  ) -> OrgSyntaxTextEditReplacement {
     let selection = clampedRange(selectedRange, utf16Length: nsText.length)
     let context = lineContext(in: nsText, selectedRange: selection)
     let indent = leadingWhitespace(in: context.lineText)
@@ -188,14 +224,27 @@ enum OrgSourceTextEditing {
     selectedRange: NSRange,
     snapshot: OrgSourceEditorSemanticSnapshot?
   ) -> OrgSyntaxTextEditReplacement? {
-    let nsText = text as NSString
+    todoCycleReplacement(
+      in: text as NSString,
+      selectedRange: selectedRange,
+      snapshot: snapshot,
+      lineIndex: nil
+    )
+  }
+
+  static func todoCycleReplacement(
+    in nsText: NSString,
+    selectedRange: NSRange,
+    snapshot: OrgSourceEditorSemanticSnapshot?,
+    lineIndex: OrgSourceLineIndex?
+  ) -> OrgSyntaxTextEditReplacement? {
     let selection = clampedRange(selectedRange, utf16Length: nsText.length)
-    let currentLine = lineNumber(in: nsText, utf16Offset: selection.location)
-    let headingLine = headingMarker(in: lineText(in: nsText, line: currentLine)) != nil
+    let currentLine = lineNumber(in: nsText, utf16Offset: selection.location, lineIndex: lineIndex)
+    let headingLine = headingMarker(in: lineText(in: nsText, line: currentLine, lineIndex: lineIndex)) != nil
       ? currentLine
       : enclosingHeadline(in: snapshot, line: currentLine)?.startLine
     guard let headingLine else { return nil }
-    let range = lineRange(in: nsText, line: headingLine)
+    let range = lineRange(in: nsText, line: headingLine, lineIndex: lineIndex)
     let raw = nsText.substring(with: NSRange(
       location: range.location,
       length: max(0, lineContentEnd(in: nsText, lineRange: range) - range.location)
@@ -241,15 +290,30 @@ enum OrgSourceTextEditing {
     priority: String?,
     snapshot: OrgSourceEditorSemanticSnapshot?
   ) -> OrgSyntaxTextEditReplacement? {
-    let nsText = text as NSString
+    priorityReplacement(
+      in: text as NSString,
+      selectedRange: selectedRange,
+      priority: priority,
+      snapshot: snapshot,
+      lineIndex: nil
+    )
+  }
+
+  static func priorityReplacement(
+    in nsText: NSString,
+    selectedRange: NSRange,
+    priority: String?,
+    snapshot: OrgSourceEditorSemanticSnapshot?,
+    lineIndex: OrgSourceLineIndex?
+  ) -> OrgSyntaxTextEditReplacement? {
     let selection = clampedRange(selectedRange, utf16Length: nsText.length)
-    let currentLine = lineNumber(in: nsText, utf16Offset: selection.location)
-    let headingLine = headingMarker(in: lineText(in: nsText, line: currentLine)) != nil
+    let currentLine = lineNumber(in: nsText, utf16Offset: selection.location, lineIndex: lineIndex)
+    let headingLine = headingMarker(in: lineText(in: nsText, line: currentLine, lineIndex: lineIndex)) != nil
       ? currentLine
       : enclosingHeadline(in: snapshot, line: currentLine)?.startLine
     guard let headingLine else { return nil }
 
-    let lineRange = lineRange(in: nsText, line: headingLine)
+    let lineRange = lineRange(in: nsText, line: headingLine, lineIndex: lineIndex)
     let raw = nsText.substring(with: NSRange(
       location: lineRange.location,
       length: max(0, lineContentEnd(in: nsText, lineRange: lineRange) - lineRange.location)
@@ -298,20 +362,37 @@ enum OrgSourceTextEditing {
     date: Date?,
     snapshot: OrgSourceEditorSemanticSnapshot?
   ) -> OrgSyntaxTextEditReplacement? {
+    planningReplacement(
+      in: text as NSString,
+      selectedRange: selectedRange,
+      kind: kind,
+      date: date,
+      snapshot: snapshot,
+      lineIndex: nil
+    )
+  }
+
+  static func planningReplacement(
+    in nsText: NSString,
+    selectedRange: NSRange,
+    kind: String,
+    date: Date?,
+    snapshot: OrgSourceEditorSemanticSnapshot?,
+    lineIndex: OrgSourceLineIndex?
+  ) -> OrgSyntaxTextEditReplacement? {
     let normalizedKind = kind.uppercased()
     guard normalizedKind == "SCHEDULED" || normalizedKind == "DEADLINE" else { return nil }
-    let nsText = text as NSString
     let selection = clampedRange(selectedRange, utf16Length: nsText.length)
-    let currentLine = lineNumber(in: nsText, utf16Offset: selection.location)
+    let currentLine = lineNumber(in: nsText, utf16Offset: selection.location, lineIndex: lineIndex)
     guard let headline = enclosingHeadline(in: snapshot, line: currentLine)
       ?? headlineRegion(startingAt: currentLine, in: snapshot)
     else { return nil }
 
-    let endLine = min(headline.endLine, lineCount(in: nsText))
+    let endLine = min(headline.endLine, lineCount(in: nsText, lineIndex: lineIndex))
     for line in (headline.startLine + 1)...max(headline.startLine + 1, endLine) {
-      let raw = lineText(in: nsText, line: line)
+      let raw = lineText(in: nsText, line: line, lineIndex: lineIndex)
       if raw.range(of: #"^\s*\#(normalizedKind):"#, options: .regularExpression) != nil {
-        let range = lineRange(in: nsText, line: line)
+        let range = lineRange(in: nsText, line: line, lineIndex: lineIndex)
         if let date {
           return OrgSyntaxTextEditReplacement(
             range: NSRange(
@@ -327,7 +408,7 @@ enum OrgSourceTextEditing {
     }
 
     guard let date else { return nil }
-    let headingRange = lineRange(in: nsText, line: headline.startLine)
+    let headingRange = lineRange(in: nsText, line: headline.startLine, lineIndex: lineIndex)
     let insertion = lineContentEnd(in: nsText, lineRange: headingRange)
     return OrgSyntaxTextEditReplacement(
       range: NSRange(location: insertion, length: 0),
@@ -340,22 +421,35 @@ enum OrgSourceTextEditing {
     selectedRange: NSRange,
     snapshot: OrgSourceEditorSemanticSnapshot?
   ) -> OrgSyntaxTextEditReplacement? {
-    let nsText = text as NSString
+    clearPlanningReplacement(
+      in: text as NSString,
+      selectedRange: selectedRange,
+      snapshot: snapshot,
+      lineIndex: nil
+    )
+  }
+
+  static func clearPlanningReplacement(
+    in nsText: NSString,
+    selectedRange: NSRange,
+    snapshot: OrgSourceEditorSemanticSnapshot?,
+    lineIndex: OrgSourceLineIndex?
+  ) -> OrgSyntaxTextEditReplacement? {
     let selection = clampedRange(selectedRange, utf16Length: nsText.length)
-    let currentLine = lineNumber(in: nsText, utf16Offset: selection.location)
+    let currentLine = lineNumber(in: nsText, utf16Offset: selection.location, lineIndex: lineIndex)
     guard let headline = enclosingHeadline(in: snapshot, line: currentLine)
       ?? headlineRegion(startingAt: currentLine, in: snapshot)
     else { return nil }
 
     var planningRanges: [NSRange] = []
-    let endLine = min(headline.endLine, lineCount(in: nsText))
+    let endLine = min(headline.endLine, lineCount(in: nsText, lineIndex: lineIndex))
     for line in (headline.startLine + 1)...max(headline.startLine + 1, endLine) {
-      let raw = lineText(in: nsText, line: line)
+      let raw = lineText(in: nsText, line: line, lineIndex: lineIndex)
       if raw.range(
         of: #"^\s*(?:SCHEDULED|DEADLINE|CLOSED):"#,
         options: [.regularExpression, .caseInsensitive]
       ) != nil {
-        planningRanges.append(lineRange(in: nsText, line: line))
+        planningRanges.append(lineRange(in: nsText, line: line, lineIndex: lineIndex))
       } else if headingMarker(in: raw) != nil {
         break
       }
@@ -384,35 +478,52 @@ enum OrgSourceTextEditing {
     value: String,
     snapshot: OrgSourceEditorSemanticSnapshot?
   ) -> OrgSyntaxTextEditReplacement? {
+    propertyReplacement(
+      in: text as NSString,
+      selectedRange: selectedRange,
+      key: rawKey,
+      value: value,
+      snapshot: snapshot,
+      lineIndex: nil
+    )
+  }
+
+  static func propertyReplacement(
+    in nsText: NSString,
+    selectedRange: NSRange,
+    key rawKey: String,
+    value: String,
+    snapshot: OrgSourceEditorSemanticSnapshot?,
+    lineIndex: OrgSourceLineIndex?
+  ) -> OrgSyntaxTextEditReplacement? {
     let key = rawKey.trimmingCharacters(in: .whitespacesAndNewlines)
       .uppercased()
       .replacingOccurrences(of: " ", with: "_")
     guard !key.isEmpty, !key.contains(":") else { return nil }
-    let nsText = text as NSString
     let selection = clampedRange(selectedRange, utf16Length: nsText.length)
-    let currentLine = lineNumber(in: nsText, utf16Offset: selection.location)
+    let currentLine = lineNumber(in: nsText, utf16Offset: selection.location, lineIndex: lineIndex)
     guard let headline = enclosingHeadline(in: snapshot, line: currentLine)
       ?? headlineRegion(startingAt: currentLine, in: snapshot)
     else { return nil }
 
     var drawerStart: Int?
-    let endLine = min(headline.endLine, lineCount(in: nsText))
+    let endLine = min(headline.endLine, lineCount(in: nsText, lineIndex: lineIndex))
     for line in (headline.startLine + 1)...max(headline.startLine + 1, endLine) {
-      let raw = lineText(in: nsText, line: line)
+      let raw = lineText(in: nsText, line: line, lineIndex: lineIndex)
       if raw == ":PROPERTIES:" {
         drawerStart = line
         continue
       }
       if drawerStart != nil {
         if raw == ":END:" {
-          let endRange = lineRange(in: nsText, line: line)
+          let endRange = lineRange(in: nsText, line: line, lineIndex: lineIndex)
           return OrgSyntaxTextEditReplacement(
             range: NSRange(location: endRange.location, length: 0),
             replacement: ":\(key): \(value)\n"
           )
         }
         if raw.uppercased().hasPrefix(":\(key):") {
-          let range = lineRange(in: nsText, line: line)
+          let range = lineRange(in: nsText, line: line, lineIndex: lineIndex)
           return OrgSyntaxTextEditReplacement(
             range: NSRange(
               location: range.location,
@@ -425,7 +536,7 @@ enum OrgSourceTextEditing {
       if headingMarker(in: raw) != nil { break }
     }
 
-    let headingRange = lineRange(in: nsText, line: headline.startLine)
+    let headingRange = lineRange(in: nsText, line: headline.startLine, lineIndex: lineIndex)
     let insertion = lineContentEnd(in: nsText, lineRange: headingRange)
     return OrgSyntaxTextEditReplacement(
       range: NSRange(location: insertion, length: 0),
@@ -439,9 +550,22 @@ enum OrgSourceTextEditing {
     target rawTarget: String,
     description rawDescription: String?
   ) -> OrgSyntaxTextEditReplacement? {
+    linkReplacement(
+      in: text as NSString,
+      selectedRange: selectedRange,
+      target: rawTarget,
+      description: rawDescription
+    )
+  }
+
+  static func linkReplacement(
+    in nsText: NSString,
+    selectedRange: NSRange,
+    target rawTarget: String,
+    description rawDescription: String?
+  ) -> OrgSyntaxTextEditReplacement? {
     let target = rawTarget.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !target.isEmpty else { return nil }
-    let nsText = text as NSString
     let selection = clampedRange(selectedRange, utf16Length: nsText.length)
     let selectedText = selection.length > 0 ? nsText.substring(with: selection) : ""
     let description = rawDescription?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -456,17 +580,39 @@ enum OrgSourceTextEditing {
     direction: OrgSourceEditorCommand,
     snapshot: OrgSourceEditorSemanticSnapshot?
   ) -> NSRange? {
+    headingNavigationRange(
+      in: text as NSString,
+      selectedRange: selectedRange,
+      direction: direction,
+      snapshot: snapshot,
+      lineIndex: nil
+    )
+  }
+
+  static func headingNavigationRange(
+    in nsText: NSString,
+    selectedRange: NSRange,
+    direction: OrgSourceEditorCommand,
+    snapshot: OrgSourceEditorSemanticSnapshot?,
+    lineIndex: OrgSourceLineIndex?
+  ) -> NSRange? {
     guard direction == .previousHeading || direction == .nextHeading,
           let snapshot
     else { return nil }
-    let nsText = text as NSString
-    let currentLine = lineNumber(in: nsText, utf16Offset: selectedRange.location)
+    let currentLine = lineNumber(
+      in: nsText,
+      utf16Offset: selectedRange.location,
+      lineIndex: lineIndex
+    )
     let headlines = snapshot.regions.filter { $0.kind == .headline }
     let target = direction == .nextHeading
       ? headlines.first(where: { $0.startLine > currentLine })
       : headlines.last(where: { $0.startLine < currentLine })
     guard let target else { return nil }
-    return NSRange(location: lineRange(in: nsText, line: target.startLine).location, length: 0)
+    return NSRange(
+      location: lineRange(in: nsText, line: target.startLine, lineIndex: lineIndex).location,
+      length: 0
+    )
   }
 
   static func sourceRange(
@@ -495,6 +641,15 @@ enum OrgSourceTextEditing {
     return line
   }
 
+  private static func lineNumber(
+    in text: NSString,
+    utf16Offset: Int,
+    lineIndex: OrgSourceLineIndex?
+  ) -> Int {
+    lineIndex?.lineNumber(atUTF16Offset: utf16Offset)
+      ?? lineNumber(in: text, utf16Offset: utf16Offset)
+  }
+
   static func lineRange(in text: NSString, line requestedLine: Int) -> NSRange {
     let target = max(1, requestedLine)
     var line = 1
@@ -506,8 +661,29 @@ enum OrgSourceTextEditing {
     return text.lineRange(for: NSRange(location: min(location, text.length), length: 0))
   }
 
+  private static func lineRange(
+    in text: NSString,
+    line requestedLine: Int,
+    lineIndex: OrgSourceLineIndex?
+  ) -> NSRange {
+    lineIndex?.lineRange(forLine: requestedLine)
+      ?? lineRange(in: text, line: requestedLine)
+  }
+
   static func lineText(in text: NSString, line: Int) -> String {
     let range = lineRange(in: text, line: line)
+    return text.substring(with: NSRange(
+      location: range.location,
+      length: max(0, lineContentEnd(in: text, lineRange: range) - range.location)
+    ))
+  }
+
+  private static func lineText(
+    in text: NSString,
+    line: Int,
+    lineIndex: OrgSourceLineIndex?
+  ) -> String {
+    let range = lineRange(in: text, line: line, lineIndex: lineIndex)
     return text.substring(with: NSRange(
       location: range.location,
       length: max(0, lineContentEnd(in: text, lineRange: range) - range.location)
@@ -519,6 +695,13 @@ enum OrgSourceTextEditing {
     var count = 1
     for location in 0..<text.length where text.character(at: location) == 10 { count += 1 }
     return count
+  }
+
+  private static func lineCount(
+    in text: NSString,
+    lineIndex: OrgSourceLineIndex?
+  ) -> Int {
+    lineIndex?.lineCount ?? lineCount(in: text)
   }
 
   static func fallbackSemanticSnapshot(in text: String) -> OrgSourceEditorSemanticSnapshot {
@@ -687,7 +870,7 @@ enum OrgSourceTextEditing {
     }
   }
 
-  private static func headingMarker(in text: String) -> (level: Int, consumedUTF16Length: Int)? {
+  static func headingMarker(in text: String) -> (level: Int, consumedUTF16Length: Int)? {
     var level = 0
     var index = text.startIndex
     while index < text.endIndex, text[index] == "*" {
@@ -804,16 +987,31 @@ enum OrgSourceTextChecking {
   static func shouldSuppress(
     in text: String,
     range requestedRange: NSRange,
-    snapshot: OrgSourceEditorSemanticSnapshot?
+    snapshot: OrgSourceEditorSemanticSnapshot?,
+    lineIndex: OrgSourceLineIndex? = nil
   ) -> Bool {
-    let nsText = text as NSString
+    shouldSuppress(
+      in: text as NSString,
+      range: requestedRange,
+      snapshot: snapshot,
+      lineIndex: lineIndex
+    )
+  }
+
+  static func shouldSuppress(
+    in nsText: NSString,
+    range requestedRange: NSRange,
+    snapshot: OrgSourceEditorSemanticSnapshot?,
+    lineIndex: OrgSourceLineIndex? = nil
+  ) -> Bool {
     guard nsText.length > 0 else { return false }
     let location = min(max(0, requestedRange.location), max(0, nsText.length - 1))
     let range = NSRange(
       location: location,
       length: min(max(1, requestedRange.length), nsText.length - location)
     )
-    let line = OrgSourceTextEditing.lineNumber(in: nsText, utf16Offset: range.location)
+    let line = lineIndex?.lineNumber(atUTF16Offset: range.location)
+      ?? OrgSourceTextEditing.lineNumber(in: nsText, utf16Offset: range.location)
 
     if snapshot?.regions.contains(where: { region in
       guard region.startLine <= line, region.endLine >= line else { return false }
@@ -901,6 +1099,42 @@ enum OrgSyntaxTextEditorTextPublishing: Equatable {
   case deferred(milliseconds: Int)
 }
 
+/// Navigation/lifecycle bridge for owners of deferred native editors.
+@MainActor
+enum OrgSyntaxTextEditorLifecycle {
+  /// Captures every dirty native buffer without materializing it on the main
+  /// actor. The returned identities let an owner avoid enqueueing a stale
+  /// binding snapshot while the exact native checkpoint is in flight.
+  @discardableResult
+  static func checkpointPendingTextChanges() -> Set<String> {
+    OrgSyntaxTextEditor.checkpointPendingTextChanges()
+  }
+
+  static func waitForPendingTextCheckpoints() async {
+    await OrgSyntaxTextEditor.waitForPendingTextCheckpoints()
+  }
+
+  /// Publishes the latest native-buffer contents into each mounted editor's
+  /// owner state without invoking a save or navigation checkpoint callback.
+  /// App-level Save/export commands await this boundary before inspecting the
+  /// owner's dirty state.
+  @discardableResult
+  static func publishPendingTextChanges() -> Int {
+    OrgSyntaxTextEditor.publishPendingTextChanges()
+  }
+
+  /// Reserved for small synchronous submit boundaries. Navigation and app
+  /// lifecycle code must use `checkpointPendingTextChanges()` instead.
+  @discardableResult
+  static func flushPendingTextChanges() -> Int {
+    OrgSyntaxTextEditor.flushPendingTextChanges()
+  }
+
+  static var hasPendingTextChanges: Bool {
+    OrgSyntaxTextEditor.hasPendingTextChanges
+  }
+}
+
 final class OrgSyntaxTextEditorDraftBuffer {
   var text: String?
 
@@ -955,10 +1189,13 @@ fileprivate enum OrgSyntaxTextBoundaryCaretPlacement {
 final class OrgSyntaxTextView: NSTextView {
   var documentSelectionContext: OrgSyntaxTextSelectionContext?
   var onSaveCommand: ((OrgSyntaxTextEditorSubmitContext) -> Bool)?
+  var onDeferredSaveCommand: (() -> Bool)?
   var onDeleteDocumentSelection: (([OrgSyntaxTextSelectionDocumentFragment]) -> Bool)?
   var onReplaceDocumentSelection: (([OrgSyntaxTextSelectionDocumentFragment], String) -> Bool)?
   var onSourceEditorCommand: ((OrgSourceEditorCommand, OrgSyntaxTextView) -> Bool)?
   var onMouseSelectionEnded: ((OrgSyntaxTextView) -> Void)?
+  var onWindowAttachmentChanged: ((OrgSyntaxTextView) -> Void)?
+  var onLifecycleBoundary: ((OrgSyntaxTextView) -> Void)?
   var isApplyingCrossEditorSelection = false
   var isTrackingMouseSelection = false
   private var crossEditorHighlightedRange: NSRange?
@@ -986,7 +1223,32 @@ final class OrgSyntaxTextView: NSTextView {
     return becameFirstResponder
   }
 
+  override func resignFirstResponder() -> Bool {
+    let didResign = super.resignFirstResponder()
+    if didResign {
+      onLifecycleBoundary?(self)
+    }
+    return didResign
+  }
+
+  override func viewWillMove(toWindow newWindow: NSWindow?) {
+    if window != nil, newWindow == nil {
+      onLifecycleBoundary?(self)
+    }
+    super.viewWillMove(toWindow: newWindow)
+  }
+
+  override func viewDidMoveToWindow() {
+    super.viewDidMoveToWindow()
+    onWindowAttachmentChanged?(self)
+  }
+
   override func mouseDown(with event: NSEvent) {
+    let latencyToken = WorkspaceInteractionLatency.begin(.sourceEditorPointerToDraw)
+    defer {
+      pendingLatencyTokens.append(latencyToken)
+      needsDisplay = true
+    }
     if event.clickCount == 1,
        OrgSyntaxTextSelectionBridge.beginSelection(in: self, event: event) {
       isTrackingMouseSelection = true
@@ -1149,7 +1411,13 @@ final class OrgSyntaxTextView: NSTextView {
   }
 
   private func performSaveShortcut() -> Bool {
-    onSaveCommand?(OrgSyntaxTextEditorSubmitContext(text: string, selectedRange: selectedRange())) == true
+    if (textStorage?.length ?? 0) > OrgSyntaxTextEditor.Coordinator.synchronousTextSnapshotUTF16Limit,
+       let onDeferredSaveCommand {
+      return onDeferredSaveCommand()
+    }
+    return onSaveCommand?(
+      OrgSyntaxTextEditorSubmitContext(text: string, selectedRange: selectedRange())
+    ) == true
   }
 
   private func performFindShortcut() {
@@ -1423,7 +1691,7 @@ enum OrgSyntaxTextSelectionBridge {
       if view.selectedRange().length > 0 {
         view.setSelectedRange(NSRange(location: 0, length: 0))
       }
-      let length = (view.string as NSString).length
+      let length = view.textStorage?.length ?? 0
       let range = NSRange(location: 0, length: length)
       view.applyCrossEditorHighlight(range)
       if length > 0 {
@@ -1482,12 +1750,13 @@ enum OrgSyntaxTextSelectionBridge {
       return nil
     }
     let selectedText = liveFragments.compactMap { view, range -> String? in
+      let text = view.string
       guard range.length > 0,
-            let swiftRange = Range(range, in: view.string)
+            let swiftRange = Range(range, in: text)
       else {
         return nil
       }
-      return String(view.string[swiftRange])
+      return String(text[swiftRange])
     }
     guard !selectedText.isEmpty else {
       return nil
@@ -1504,11 +1773,12 @@ enum OrgSyntaxTextSelectionBridge {
 
     let documentFragments = liveFragments.compactMap { view, range -> OrgSyntaxTextSelectionDocumentFragment? in
       guard let context = view.documentSelectionContext else { return nil }
+      let text = view.string
       return OrgSyntaxTextSelectionDocumentFragment(
         context: context,
         editorRange: range,
-        editorUTF16Length: (view.string as NSString).length,
-        editorText: view.string
+        editorUTF16Length: view.textStorage?.length ?? (text as NSString).length,
+        editorText: text
       )
     }
     guard documentFragments.count == liveFragments.count,
@@ -1544,7 +1814,7 @@ enum OrgSyntaxTextSelectionBridge {
     let targetView = textViews[targetIndex]
     clearCrossEditorSelection(containing: textView, preserving: targetView)
     targetView.window?.makeFirstResponder(targetView)
-    let targetLength = (targetView.string as NSString).length
+    let targetLength = targetView.textStorage?.length ?? 0
     let targetLocation: Int
     switch placement {
     case .start:
@@ -1646,7 +1916,7 @@ enum OrgSyntaxTextSelectionBridge {
     targetIndex: Int,
     targetLocation: Int
   ) -> NSRange {
-    let length = (textView.string as NSString).length
+    let length = textView.textStorage?.length ?? 0
     if anchorIndex == targetIndex {
       let start = min(anchorLocation, targetLocation)
       let end = max(anchorLocation, targetLocation)
@@ -1678,9 +1948,16 @@ enum OrgSyntaxTextSelectionBridge {
 
   private static func characterLocation(in textView: OrgSyntaxTextView, windowPoint: NSPoint) -> Int {
     let localPoint = textView.convert(windowPoint, from: nil)
-    let length = (textView.string as NSString).length
+    let length = textView.textStorage?.length ?? 0
     return min(max(0, textView.characterIndexForInsertion(at: localPoint)), length)
   }
+}
+
+struct OrgSyntaxTextEditorSelectionSnapshot: Equatable {
+  let selectedRange: NSRange
+  let sourceLine: Int?
+  let localText: String
+  let localTextRange: NSRange
 }
 
 struct OrgSyntaxTextEditor: NSViewRepresentable {
@@ -1703,11 +1980,17 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
   let diagnostics: Binding<[Org2EditorDiagnostic]>?
   let onCommandStatus: ((String) -> Void)?
   let selection: Binding<NSRange>?
+  let onSelectionSnapshot: ((OrgSyntaxTextEditorSelectionSnapshot) -> Void)?
   let onViewportSourceLine: ((Int) -> Void)?
   let onGutterBacklinks: ((Int) -> Void)?
   let isFocused: Binding<Bool>?
   let contentHeight: Binding<CGFloat>?
   let onLocalTextChange: ((String) -> Void)?
+  let documentIdentity: String?
+  let onCheckpointText: ((String) -> Void)?
+  let documentGeneration: (() -> UInt64)?
+  let bindingGeneration: (() -> UInt64)?
+  let onTextPublicationConflict: ((String) -> Void)?
   let shouldPublishTextImmediately: ((String) -> Bool)?
   let onSaveCommand: ((OrgSyntaxTextEditorSubmitContext) -> Bool)?
   let onSubmit: (() -> Bool)?
@@ -1737,11 +2020,17 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     diagnostics: Binding<[Org2EditorDiagnostic]>? = nil,
     onCommandStatus: ((String) -> Void)? = nil,
     selection: Binding<NSRange>? = nil,
+    onSelectionSnapshot: ((OrgSyntaxTextEditorSelectionSnapshot) -> Void)? = nil,
     onViewportSourceLine: ((Int) -> Void)? = nil,
     onGutterBacklinks: ((Int) -> Void)? = nil,
     isFocused: Binding<Bool>? = nil,
     contentHeight: Binding<CGFloat>? = nil,
     onLocalTextChange: ((String) -> Void)? = nil,
+    documentIdentity: String? = nil,
+    onCheckpointText: ((String) -> Void)? = nil,
+    documentGeneration: (() -> UInt64)? = nil,
+    bindingGeneration: (() -> UInt64)? = nil,
+    onTextPublicationConflict: ((String) -> Void)? = nil,
     shouldPublishTextImmediately: ((String) -> Bool)? = nil,
     onSaveCommand: ((OrgSyntaxTextEditorSubmitContext) -> Bool)? = nil,
     onSubmit: (() -> Bool)? = nil,
@@ -1770,11 +2059,17 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     self.diagnostics = diagnostics
     self.onCommandStatus = onCommandStatus
     self.selection = selection
+    self.onSelectionSnapshot = onSelectionSnapshot
     self.onViewportSourceLine = onViewportSourceLine
     self.onGutterBacklinks = onGutterBacklinks
     self.isFocused = isFocused
     self.contentHeight = contentHeight
     self.onLocalTextChange = onLocalTextChange
+    self.documentIdentity = documentIdentity
+    self.onCheckpointText = onCheckpointText
+    self.documentGeneration = documentGeneration
+    self.bindingGeneration = bindingGeneration
+    self.onTextPublicationConflict = onTextPublicationConflict
     self.shouldPublishTextImmediately = shouldPublishTextImmediately
     self.onSaveCommand = onSaveCommand
     self.onSubmit = onSubmit
@@ -1789,6 +2084,39 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     Coordinator(parent: self)
   }
 
+  /// Flushes every mounted editor's unpublished text synchronously.
+  ///
+  /// Owners must call this before replacing navigation/editing state. AppKit
+  /// teardown can happen after SwiftUI has already changed that state, which
+  /// is too late for an outgoing editor to persist its draft safely.
+  @MainActor
+  @discardableResult
+  static func flushPendingTextChanges() -> Int {
+    Coordinator.flushRegisteredTextChanges()
+  }
+
+  @MainActor
+  @discardableResult
+  static func checkpointPendingTextChanges() -> Set<String> {
+    Coordinator.checkpointRegisteredTextChanges()
+  }
+
+  @MainActor
+  static func waitForPendingTextCheckpoints() async {
+    await Coordinator.waitForPendingTextCheckpoints()
+  }
+
+  @MainActor
+  @discardableResult
+  static func publishPendingTextChanges() -> Int {
+    Coordinator.publishRegisteredTextChanges()
+  }
+
+  @MainActor
+  static var hasPendingTextChanges: Bool {
+    Coordinator.hasRegisteredPendingTextChanges
+  }
+
   func makeNSView(context: Context) -> NSScrollView {
     let scrollView = NSScrollView()
     scrollView.drawsBackground = false
@@ -1801,6 +2129,10 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     textView.delegate = context.coordinator
     textView.documentSelectionContext = documentSelectionContext
     textView.onSaveCommand = onSaveCommand
+    textView.onDeferredSaveCommand = { [weak coordinator = context.coordinator, weak textView] in
+      guard let coordinator, let textView else { return false }
+      return coordinator.requestExplicitSaveCheckpoint(from: textView)
+    }
     textView.onDeleteDocumentSelection = onDeleteDocumentSelection
     textView.onReplaceDocumentSelection = onReplaceDocumentSelection
     textView.onSourceEditorCommand = { [weak coordinator = context.coordinator] command, textView in
@@ -1809,7 +2141,13 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     textView.onMouseSelectionEnded = { [weak coordinator = context.coordinator] textView in
       coordinator?.mouseSelectionDidEnd(in: textView)
     }
-    textView.string = text
+    textView.onWindowAttachmentChanged = { [weak coordinator = context.coordinator] textView in
+      coordinator?.attach(to: textView)
+    }
+    textView.onLifecycleBoundary = { [weak coordinator = context.coordinator] textView in
+      coordinator?.requestLifecycleCheckpoint(from: textView)
+    }
+    context.coordinator.attach(to: textView)
     textView.drawsBackground = false
     textView.isRichText = false
     textView.importsGraphics = false
@@ -1819,13 +2157,20 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     textView.isAutomaticTextReplacementEnabled = false
     textView.isAutomaticSpellingCorrectionEnabled = false
     Self.configureNativeFind(in: textView)
+    textView.font = OrgSyntaxHighlighter.baseFont(monospaced: monospaced)
+    textView.typingAttributes = OrgSyntaxHighlighter.baseTypingAttributes(monospaced: monospaced)
+    // Configure the empty text view first so NSTextView gives inserted source
+    // its base attributes as it creates storage. Applying `font` or resetting
+    // attributes after this assignment traverses a multi-megabyte document on
+    // the main thread before the first frame.
+    context.coordinator.isApplyingProgrammaticChange = true
+    textView.string = text
+    context.coordinator.isApplyingProgrammaticChange = false
     Self.configureTextChecking(
       textChecking,
       in: textView,
       utf16Length: textView.textStorage?.length
     )
-    textView.font = OrgSyntaxHighlighter.baseFont(monospaced: monospaced)
-    textView.typingAttributes = OrgSyntaxHighlighter.baseTypingAttributes(monospaced: monospaced)
     textView.textContainerInset = textInset
     textView.textContainer?.widthTracksTextView = true
     textView.textContainer?.lineFragmentPadding = 0
@@ -1857,8 +2202,16 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     }
     context.coordinator.observeScrolling(of: scrollView, textView: textView)
     context.coordinator.recordKnownText(text, utf16Length: textView.textStorage?.length)
+    context.coordinator.scheduleLineIndexReset(text: text)
     context.coordinator.applyHighlighting(to: textView)
-    context.coordinator.scheduleSemanticAnalysis(for: textView, expectedText: text, delayMilliseconds: 0)
+    context.coordinator.scheduleSemanticAnalysis(
+      for: textView,
+      expectedText: text,
+      delayMilliseconds: Coordinator.initialSemanticAnalysisDelayMilliseconds(
+        utf16Length: textView.textStorage?.length ?? 0,
+        configuredDelayMilliseconds: semanticAnalysisDelayMilliseconds
+      )
+    )
     context.coordinator.publishContentHeight(for: textView)
     if let selection {
       let requestedSelection = Self.clampedRange(
@@ -1875,10 +2228,21 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
   }
 
   func updateNSView(_ scrollView: NSScrollView, context: Context) {
-    context.coordinator.parent = self
-    guard let textView = scrollView.documentView as? OrgSyntaxTextView else { return }
+    guard let textView = scrollView.documentView as? OrgSyntaxTextView else {
+      context.coordinator.updateParent(self)
+      return
+    }
+    // SwiftUI can replace the bound document while a large native-buffer
+    // publication is still pending. Keep the outgoing value-type parent long
+    // enough to route that checkpoint through its binding, callbacks, and
+    // document identity rather than whichever document is arriving now.
+    let pendingTextOwner = context.coordinator.updateParent(self)
     textView.documentSelectionContext = documentSelectionContext
     textView.onSaveCommand = onSaveCommand
+    textView.onDeferredSaveCommand = { [weak coordinator = context.coordinator, weak textView] in
+      guard let coordinator, let textView else { return false }
+      return coordinator.requestExplicitSaveCheckpoint(from: textView)
+    }
     textView.onDeleteDocumentSelection = onDeleteDocumentSelection
     textView.onReplaceDocumentSelection = onReplaceDocumentSelection
     textView.onSourceEditorCommand = { [weak coordinator = context.coordinator] command, textView in
@@ -1887,21 +2251,46 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     textView.onMouseSelectionEnded = { [weak coordinator = context.coordinator] textView in
       coordinator?.mouseSelectionDidEnd(in: textView)
     }
+    textView.onWindowAttachmentChanged = { [weak coordinator = context.coordinator] textView in
+      coordinator?.attach(to: textView)
+    }
+    textView.onLifecycleBoundary = { [weak coordinator = context.coordinator] textView in
+      coordinator?.requestLifecycleCheckpoint(from: textView)
+    }
+    context.coordinator.attach(to: textView)
 
     var currentUTF16Length = textView.textStorage?.length
-    let cachedEditorText = context.coordinator.knownText(matchingUTF16Length: currentUTF16Length)
-    var editorText = cachedEditorText ?? textView.string
-    if cachedEditorText == nil {
-      context.coordinator.recordKnownText(editorText, utf16Length: currentUTF16Length)
+    var editorText: String?
+    var appliesAuthoritativeExternalText = false
+    if context.coordinator.hasUnpublishedLocalText,
+       context.coordinator.hasExternalBoundTextChange(text) {
+      let resolved = context.coordinator.resolvePendingLocalText(
+        beforeApplyingExternalText: text,
+        from: textView,
+        ownedBy: pendingTextOwner
+      )
+      editorText = resolved
+      appliesAuthoritativeExternalText = resolved == nil
+    }
+    if !context.coordinator.hasPendingLocalText {
+      if editorText == nil {
+        let cachedEditorText = context.coordinator.knownText(matchingUTF16Length: currentUTF16Length)
+        editorText = cachedEditorText ?? textView.string
+        if cachedEditorText == nil, let editorText {
+          context.coordinator.recordKnownText(editorText, utf16Length: currentUTF16Length)
+        }
+      }
     }
     var appliedProgrammaticText = false
     var focusedVisibleOriginBeforeProgrammaticText: NSPoint?
     var preferredSelectionAfterProgrammaticText: NSRange?
-    if Self.shouldApplyProgrammaticText(
-      editorText: editorText,
-      boundText: text,
-      hasPendingLocalText: context.coordinator.hasPendingTextPublishing(for: editorText)
-    ) {
+    if appliesAuthoritativeExternalText || editorText.map({ currentEditorText in
+      Self.shouldApplyProgrammaticText(
+        editorText: currentEditorText,
+        boundText: text,
+        hasPendingLocalText: context.coordinator.hasPendingLocalText
+      )
+    }) == true {
       let wasFirstResponder = textView.window?.firstResponder === textView
       if wasFirstResponder {
         focusedVisibleOriginBeforeProgrammaticText = Coordinator.visibleOrigin(of: textView)
@@ -1914,16 +2303,19 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       )
       context.coordinator.cancelDeferredHighlighting()
       context.coordinator.cancelDeferredTextPublishing()
+      context.coordinator.clearSemanticState()
       context.coordinator.isApplyingProgrammaticChange = true
       textView.string = text
       context.coordinator.isApplyingProgrammaticChange = false
+      context.coordinator.resetBufferSession(to: text)
+      textView.undoManager?.removeAllActions()
       currentUTF16Length = textView.textStorage?.length
       if let preferredSelectionAfterProgrammaticText {
         textView.setSelectedRange(preferredSelectionAfterProgrammaticText)
       }
       context.coordinator.recordKnownText(text, utf16Length: currentUTF16Length)
+      context.coordinator.scheduleLineIndexReset(text: text)
       context.coordinator.invalidateHighlighting()
-      context.coordinator.clearSemanticState()
       editorText = text
       appliedProgrammaticText = true
       context.coordinator.resetViewportSourceLinePublishing()
@@ -1932,7 +2324,9 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     if let selection {
       let requestedSelection = preferredSelectionAfterProgrammaticText ?? Self.clampedRange(
         selection.wrappedValue,
-        utf16Length: currentUTF16Length ?? OrgSyntaxHighlighter.utf16Length(of: editorText)
+        utf16Length: currentUTF16Length
+          ?? editorText.map { OrgSyntaxHighlighter.utf16Length(of: $0) }
+          ?? 0
       )
       let currentSelection = textView.selectedRange()
       if currentSelection != requestedSelection,
@@ -1955,12 +2349,26 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       utf16Length: currentUTF16Length
     )
 
-    if appliedProgrammaticText || !context.coordinator.hasDeferredHighlighting(for: editorText) {
+    if appliedProgrammaticText || !context.coordinator.hasDeferredHighlightingForCurrentBuffer {
       context.coordinator.applyHighlightingIfNeeded(to: textView, currentText: editorText)
     }
     Coordinator.restoreVisibleOrigin(focusedVisibleOriginBeforeProgrammaticText, of: textView)
     context.coordinator.performRequestedCommandIfNeeded(commandRequest, in: textView)
     context.coordinator.publishContentHeight(for: textView)
+  }
+
+  static func dismantleNSView(_ scrollView: NSScrollView, coordinator: Coordinator) {
+    guard let textView = scrollView.documentView as? OrgSyntaxTextView else { return }
+    coordinator.prepareForDismantle(textView)
+    textView.delegate = nil
+    textView.onSaveCommand = nil
+    textView.onDeferredSaveCommand = nil
+    textView.onDeleteDocumentSelection = nil
+    textView.onReplaceDocumentSelection = nil
+    textView.onSourceEditorCommand = nil
+    textView.onMouseSelectionEnded = nil
+    textView.onWindowAttachmentChanged = nil
+    textView.onLifecycleBoundary = nil
   }
 
   private static func clampedRange(_ range: NSRange, in text: String) -> NSRange {
@@ -2025,36 +2433,78 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
   }
 
   @MainActor
-  final class Coordinator: NSObject, NSTextViewDelegate {
+  final class Coordinator: NSObject, NSTextViewDelegate, @preconcurrency NSTextStorageDelegate {
+    private final class WeakLifecycleCoordinator {
+      weak var value: Coordinator?
+
+      init(_ value: Coordinator) {
+        self.value = value
+      }
+    }
+
+    private static var lifecycleCoordinators: [UUID: WeakLifecycleCoordinator] = [:]
+    private static var pendingTextCheckpointTasks: [UUID: Task<Void, Never>] = [:]
+    private static var textCheckpointTailsByDocument: [
+      String: (identifier: UUID, task: Task<Void, Never>)
+    ] = [:]
     var parent: OrgSyntaxTextEditor
+    private let lifecycleID = UUID()
     var isApplyingProgrammaticChange = false
     private var lastHighlightedText: String?
     private var lastHighlightedMonospaced: Bool?
+    private var lastHighlightedConcealsSyntax: Bool?
+    private var lastHighlightedLiveHighlighting: Bool?
     private var hasHighlightedText = false
     private var deferredHighlightText: String?
     private var deferredHighlightMonospaced: Bool?
     private var deferredHighlightTask: Task<Void, Never>?
     private var deferredIncrementalHighlightText: String?
+    private var deferredIncrementalHighlightGeneration: Int?
     private var deferredIncrementalHighlightRange: NSRange?
     private var deferredIncrementalHighlightTask: Task<Void, Never>?
     private var deferredTextPublishText: String?
+    private var deferredTextPublishUTF16Length: Int?
     private var deferredTextPublishTask: Task<Void, Never>?
     private var deferredTextPublishGeneration = 0
     private var deferredCaretPublishRange: NSRange?
     private var deferredCaretPublishTask: Task<Void, Never>?
     private var deferredCaretPublishGeneration = 0
+    private var lastPublishedSelectionSnapshot: OrgSyntaxTextEditorSelectionSnapshot?
     nonisolated(unsafe) private var deferredViewportPublishWorkItem: DispatchWorkItem?
+    nonisolated(unsafe) private var deferredScrollRefreshWorkItem: DispatchWorkItem?
     private var deferredContentHeightPublishTask: Task<Void, Never>?
     private var deferredContentHeightPublishGeneration = 0
     private var lastPublishedViewportSourceLine: Int?
     private var lastKnownText: String?
     private var lastKnownTextUTF16Length: Int?
+    private var lastKnownTextGeneration: Int?
+    private var lastObservedBoundText: String
+    private var localTextGeneration = 0
+    private(set) var hasUnpublishedLocalText = false
+    private var detachedTextCheckpointCount = 0
+    var hasPendingLocalText: Bool {
+      hasUnpublishedLocalText || detachedTextCheckpointCount > 0
+    }
+    private(set) var fullDocumentSnapshotCount = 0
+    private(set) var mainActorFullDocumentSnapshotCount = 0
+    private let bufferSession: OrgSyntaxTextBufferSession
+    private var lineIndex = OrgSourceLineIndex()
+    private var isLineIndexReady = true
+    private var lineIndexBuildGeneration = 0
+    private var lineIndexBuildTask: Task<Void, Never>?
+    private var pendingLineIndexEdits: [(range: NSRange, replacement: String)] = []
     private var hasAppliedFocusRequest = false
     private var pendingEditedRange: NSRange?
     private var semanticAnalysisTask: Task<Void, Never>?
     private var semanticAnalysisGeneration = 0
     private var semanticSnapshot: OrgSourceEditorSemanticSnapshot?
-    private var semanticSnapshotText: String?
+    private var semanticSnapshotTextGeneration: Int?
+    private var semanticHeadlineRegionsByStartLine: [Int: OrgSourceSemanticRegion] = [:]
+    private var semanticBackgroundRegions: [OrgSourceSemanticRegion] = []
+    private var semanticDiagnosticsByLine: [Org2EditorDiagnostic] = []
+    private var semanticPresentationViewportLines: ClosedRange<Int>?
+    var deferredTextSnapshotForTesting: (() async -> OrgSyntaxTextBufferSession.Snapshot)?
+    var checkpointSnapshotForTesting: ((OrgSyntaxTextBufferSession.Capture) async -> OrgSyntaxTextBufferSession.Snapshot)?
     private var foldedHeadlineStartLines = Set<Int>()
     private var foldPresentationRanges: [NSRange] = []
     private var diagnosticPresentationRanges: [NSRange] = []
@@ -2062,6 +2512,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     private var lastCommandRequestID: Int?
     private var observedClipView: NSClipView?
     nonisolated(unsafe) private var scrollObserver: NSObjectProtocol?
+    private weak var activeTextView: NSTextView?
     private var viewportHighlightedCharacterIndexes = IndexSet()
     private var viewportHighlightUTF16Length: Int?
     private var viewportHighlightMonospaced: Bool?
@@ -2071,6 +2522,27 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
 
     init(parent: OrgSyntaxTextEditor) {
       self.parent = parent
+      lastObservedBoundText = parent.text
+      bufferSession = OrgSyntaxTextBufferSession(text: parent.text)
+      super.init()
+    }
+
+    @discardableResult
+    func updateParent(_ next: OrgSyntaxTextEditor) -> OrgSyntaxTextEditor {
+      let previous = parent
+      let presentationChanged = parent.monospaced != next.monospaced
+        || parent.concealsSyntax != next.concealsSyntax
+        || parent.liveHighlighting != next.liveHighlighting
+      let documentChanged = parent.documentIdentity != next.documentIdentity
+      parent = next
+      if presentationChanged {
+        cancelDeferredHighlighting()
+        invalidateHighlighting()
+      }
+      if documentChanged {
+        lastPublishedSelectionSnapshot = nil
+      }
+      return previous
     }
 
     deinit {
@@ -2079,11 +2551,411 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       deferredTextPublishTask?.cancel()
       deferredCaretPublishTask?.cancel()
       deferredViewportPublishWorkItem?.cancel()
+      deferredScrollRefreshWorkItem?.cancel()
       deferredContentHeightPublishTask?.cancel()
       semanticAnalysisTask?.cancel()
+      lineIndexBuildTask?.cancel()
       if let scrollObserver {
         NotificationCenter.default.removeObserver(scrollObserver)
       }
+      let identifier = lifecycleID
+      MainActor.assumeIsolated {
+        Self.unregisterFromLifecycleFlush(id: identifier)
+      }
+    }
+
+    func attach(to textView: NSTextView) {
+      if activeTextView !== textView,
+         activeTextView?.textStorage?.delegate === self {
+        activeTextView?.textStorage?.delegate = nil
+      }
+      activeTextView = textView
+      if textView.textStorage?.delegate !== self {
+        textView.textStorage?.delegate = self
+      }
+      Self.registerForLifecycleFlush(self)
+    }
+
+    func prepareForDismantle(_ textView: NSTextView) {
+      _ = checkpointActiveTextViewIfNeeded()
+      flushCaretPublishing(from: textView)
+      cancelDeferredHighlighting()
+      deferredContentHeightPublishTask?.cancel()
+      deferredContentHeightPublishTask = nil
+      semanticAnalysisTask?.cancel()
+      semanticAnalysisTask = nil
+      if textView.textStorage?.delegate === self {
+        textView.textStorage?.delegate = nil
+      }
+      if activeTextView === textView {
+        activeTextView = nil
+      }
+      if let scrollObserver {
+        NotificationCenter.default.removeObserver(scrollObserver)
+        self.scrollObserver = nil
+      }
+      deferredScrollRefreshWorkItem?.cancel()
+      deferredScrollRefreshWorkItem = nil
+      observedClipView = nil
+      Self.unregisterFromLifecycleFlush(id: lifecycleID)
+    }
+
+    @discardableResult
+    private func flushActiveTextViewIfNeeded() -> Bool {
+      guard let activeTextView else { return false }
+      let didFlushText = hasUnpublishedLocalText
+      if didFlushText {
+        flushPendingTextPublishingIfNeeded(from: activeTextView)
+      }
+      flushCaretPublishing(from: activeTextView)
+      return didFlushText
+    }
+
+    @discardableResult
+    private func checkpointActiveTextViewIfNeeded() -> Bool {
+      guard hasUnpublishedLocalText else { return false }
+      cancelDeferredTextPublishing()
+
+      let checkpointID = UUID()
+      let session = bufferSession
+      let capture = session.capture()
+      let selection = activeTextView?.selectedRange() ?? NSRange(location: 0, length: 0)
+      let directCheckpoint = parent.onCheckpointText
+      let localChange = parent.onLocalTextChange
+      let saveHandler = parent.onSaveCommand
+      let binding = parent.$text
+      let boundary = textPublicationBoundary()
+      let conflictHandler = parent.onTextPublicationConflict
+      let documentGeneration = parent.documentGeneration
+      let expectedDocumentGeneration = documentGeneration?()
+      let orderingKey = parent.documentIdentity ?? lifecycleID.uuidString
+      let predecessor = Self.textCheckpointTailsByDocument[orderingKey]?.task
+      let snapshotProvider = checkpointSnapshotForTesting
+
+      // The persistent piece tree makes this a point-in-time capture without
+      // copying the native NSTextStorage. A new edit flips the dirty bit again
+      // and receives its own later checkpoint.
+      hasUnpublishedLocalText = false
+      detachedTextCheckpointCount += 1
+      let task = Task { @MainActor [weak self, predecessor] in
+        if let predecessor {
+          await predecessor.value
+        }
+        self?.fullDocumentSnapshotCount += 1
+        let snapshot = await Self.materializeCheckpoint(
+          session: session,
+          capture: capture,
+          provider: snapshotProvider
+        )
+        defer {
+          self?.detachedTextCheckpointCount = max(
+            0,
+            (self?.detachedTextCheckpointCount ?? 1) - 1
+          )
+          Self.pendingTextCheckpointTasks.removeValue(forKey: checkpointID)
+          if Self.textCheckpointTailsByDocument[orderingKey]?.identifier == checkpointID {
+            Self.textCheckpointTailsByDocument.removeValue(forKey: orderingKey)
+          }
+        }
+        guard snapshot.revision == capture.revision else { return }
+
+        let bindingWasCurrent = Self.bindingIsCurrent(binding, for: boundary)
+        let documentWasCurrent = Self.documentIsCurrent(
+          generation: documentGeneration,
+          expected: expectedDocumentGeneration
+        )
+
+        if let directCheckpoint {
+          if bindingWasCurrent {
+            binding.wrappedValue = snapshot.text
+            if session.revision == snapshot.revision {
+              self?.recordKnownText(
+                snapshot.text,
+                utf16Length: capture.utf16Length,
+                isPublished: true
+              )
+            }
+          }
+          directCheckpoint(snapshot.text)
+        } else if let saveHandler {
+          guard documentWasCurrent else {
+            conflictHandler?(snapshot.text)
+            return
+          }
+          localChange?(snapshot.text)
+          binding.wrappedValue = snapshot.text
+          if session.revision == snapshot.revision {
+            self?.recordKnownText(
+              snapshot.text,
+              utf16Length: capture.utf16Length,
+              isPublished: true
+            )
+          }
+          _ = saveHandler(OrgSyntaxTextEditorSubmitContext(
+            text: snapshot.text,
+            selectedRange: selection
+          ))
+        } else if bindingWasCurrent {
+          localChange?(snapshot.text)
+          binding.wrappedValue = snapshot.text
+          if session.revision == snapshot.revision {
+            self?.recordKnownText(
+              snapshot.text,
+              utf16Length: capture.utf16Length,
+              isPublished: true
+            )
+          }
+        } else {
+          conflictHandler?(snapshot.text)
+        }
+      }
+      Self.pendingTextCheckpointTasks[checkpointID] = task
+      Self.textCheckpointTailsByDocument[orderingKey] = (checkpointID, task)
+      return true
+    }
+
+    @discardableResult
+    private func publishOwnerTextIfNeeded() -> Bool {
+      guard hasUnpublishedLocalText else { return false }
+      cancelDeferredTextPublishing()
+
+      let checkpointID = UUID()
+      let session = bufferSession
+      let capture = session.capture()
+      let localChange = parent.onLocalTextChange
+      let binding = parent.$text
+      let conflictHandler = parent.onTextPublicationConflict
+      let documentGeneration = parent.documentGeneration
+      let expectedDocumentGeneration = documentGeneration?()
+      let orderingKey = parent.documentIdentity ?? lifecycleID.uuidString
+      let predecessor = Self.textCheckpointTailsByDocument[orderingKey]?.task
+      let snapshotProvider = checkpointSnapshotForTesting
+
+      hasUnpublishedLocalText = false
+      detachedTextCheckpointCount += 1
+      let task = Task { @MainActor [weak self, predecessor] in
+        if let predecessor {
+          await predecessor.value
+        }
+        self?.fullDocumentSnapshotCount += 1
+        let snapshot = await Self.materializeCheckpoint(
+          session: session,
+          capture: capture,
+          provider: snapshotProvider
+        )
+        defer {
+          self?.detachedTextCheckpointCount = max(
+            0,
+            (self?.detachedTextCheckpointCount ?? 1) - 1
+          )
+          Self.pendingTextCheckpointTasks.removeValue(forKey: checkpointID)
+          if Self.textCheckpointTailsByDocument[orderingKey]?.identifier == checkpointID {
+            Self.textCheckpointTailsByDocument.removeValue(forKey: orderingKey)
+          }
+        }
+        guard snapshot.revision == capture.revision else { return }
+        guard Self.documentIsCurrent(
+          generation: documentGeneration,
+          expected: expectedDocumentGeneration
+        ) else {
+          conflictHandler?(snapshot.text)
+          return
+        }
+        localChange?(snapshot.text)
+        binding.wrappedValue = snapshot.text
+        if session.revision == snapshot.revision {
+          self?.recordKnownText(
+            snapshot.text,
+            utf16Length: capture.utf16Length,
+            isPublished: true
+          )
+        }
+      }
+      Self.pendingTextCheckpointTasks[checkpointID] = task
+      Self.textCheckpointTailsByDocument[orderingKey] = (checkpointID, task)
+      return true
+    }
+
+    func requestExplicitSaveCheckpoint(from textView: NSTextView) -> Bool {
+      guard let saveHandler = parent.onSaveCommand else { return false }
+      cancelDeferredTextPublishing()
+
+      let checkpointID = UUID()
+      let session = bufferSession
+      let capture = session.capture()
+      let selection = textView.selectedRange()
+      let localChange = parent.onLocalTextChange
+      let binding = parent.$text
+      let conflictHandler = parent.onTextPublicationConflict
+      let documentGeneration = parent.documentGeneration
+      let expectedDocumentGeneration = documentGeneration?()
+      let orderingKey = parent.documentIdentity ?? lifecycleID.uuidString
+      let predecessor = Self.textCheckpointTailsByDocument[orderingKey]?.task
+      let snapshotProvider = checkpointSnapshotForTesting
+      hasUnpublishedLocalText = false
+      detachedTextCheckpointCount += 1
+
+      let task = Task { @MainActor [weak self, predecessor] in
+        if let predecessor {
+          await predecessor.value
+        }
+        self?.fullDocumentSnapshotCount += 1
+        let snapshot = await Self.materializeCheckpoint(
+          session: session,
+          capture: capture,
+          provider: snapshotProvider
+        )
+        defer {
+          self?.detachedTextCheckpointCount = max(
+            0,
+            (self?.detachedTextCheckpointCount ?? 1) - 1
+          )
+          Self.pendingTextCheckpointTasks.removeValue(forKey: checkpointID)
+          if Self.textCheckpointTailsByDocument[orderingKey]?.identifier == checkpointID {
+            Self.textCheckpointTailsByDocument.removeValue(forKey: orderingKey)
+          }
+        }
+        guard snapshot.revision == capture.revision else { return }
+        guard Self.documentIsCurrent(
+          generation: documentGeneration,
+          expected: expectedDocumentGeneration
+        ) else {
+          conflictHandler?(snapshot.text)
+          return
+        }
+        localChange?(snapshot.text)
+        binding.wrappedValue = snapshot.text
+        if session.revision == snapshot.revision {
+          self?.recordKnownText(
+            snapshot.text,
+            utf16Length: capture.utf16Length,
+            isPublished: true
+          )
+        }
+        _ = saveHandler(OrgSyntaxTextEditorSubmitContext(
+          text: snapshot.text,
+          selectedRange: selection
+        ))
+      }
+      Self.pendingTextCheckpointTasks[checkpointID] = task
+      Self.textCheckpointTailsByDocument[orderingKey] = (checkpointID, task)
+      return true
+    }
+
+    @discardableResult
+    static func checkpointRegisteredTextChanges() -> Set<String> {
+      pruneLifecycleCoordinators()
+      var identities = Set<String>()
+      for box in Array(lifecycleCoordinators.values) {
+        guard let coordinator = box.value,
+              coordinator.hasUnpublishedLocalText
+        else { continue }
+        if let identity = coordinator.parent.documentIdentity {
+          identities.insert(identity)
+        }
+        _ = coordinator.checkpointActiveTextViewIfNeeded()
+      }
+      return identities
+    }
+
+    @discardableResult
+    static func publishRegisteredTextChanges() -> Int {
+      pruneLifecycleCoordinators()
+      var publishCount = 0
+      for box in Array(lifecycleCoordinators.values) {
+        if box.value?.publishOwnerTextIfNeeded() == true {
+          publishCount += 1
+        }
+      }
+      return publishCount
+    }
+
+    static func waitForPendingTextCheckpoints() async {
+      while let task = pendingTextCheckpointTasks.values.first {
+        await task.value
+      }
+    }
+
+    private static func bindingIsCurrent(
+      _ binding: Binding<String>,
+      for boundary: TextPublicationBoundary
+    ) -> Bool {
+      if let generation = boundary.bindingGeneration,
+         let expected = boundary.expectedBindingGeneration {
+        return generation() == expected
+      }
+      return binding.wrappedValue == boundary.baselineText
+    }
+
+    private static func materializeCheckpoint(
+      session: OrgSyntaxTextBufferSession,
+      capture: OrgSyntaxTextBufferSession.Capture,
+      provider: ((OrgSyntaxTextBufferSession.Capture) async -> OrgSyntaxTextBufferSession.Snapshot)?
+    ) async -> OrgSyntaxTextBufferSession.Snapshot {
+      if let provider {
+        return await provider(capture)
+      }
+      return await session.snapshotAsync(from: capture, priority: .userInitiated)
+    }
+
+    private static func documentIsCurrent(
+      generation: (() -> UInt64)?,
+      expected: UInt64?
+    ) -> Bool {
+      guard let generation, let expected else { return true }
+      return generation() == expected
+    }
+
+    @discardableResult
+    static func flushRegisteredTextChanges() -> Int {
+      pruneLifecycleCoordinators()
+      var flushCount = 0
+      let coordinators = Array(lifecycleCoordinators.values)
+      for box in coordinators {
+        if box.value?.flushActiveTextViewIfNeeded() == true {
+          flushCount += 1
+        }
+      }
+      return flushCount
+    }
+
+    static var hasRegisteredPendingTextChanges: Bool {
+      pruneLifecycleCoordinators()
+      return lifecycleCoordinators.values.contains {
+        $0.value?.hasPendingLocalText == true
+      }
+    }
+
+    private static func registerForLifecycleFlush(_ coordinator: Coordinator) {
+      pruneLifecycleCoordinators()
+      lifecycleCoordinators[coordinator.lifecycleID] = WeakLifecycleCoordinator(coordinator)
+    }
+
+    private static func unregisterFromLifecycleFlush(id: UUID) {
+      lifecycleCoordinators.removeValue(forKey: id)
+      pruneLifecycleCoordinators()
+    }
+
+    private static func pruneLifecycleCoordinators() {
+      lifecycleCoordinators = lifecycleCoordinators.filter { $0.value.value != nil }
+    }
+
+    /// Resign notifications must never synchronously materialize a large
+    /// native buffer before AppKit can dispatch the click or Cmd-Tab. Owner
+    /// navigation uses the explicit lifecycle bridge; passive focus changes
+    /// request a generation-checked background checkpoint.
+    func requestLifecycleCheckpoint(from textView: NSTextView) {
+      guard hasUnpublishedLocalText else {
+        flushCaretPublishing(from: textView)
+        return
+      }
+      let utf16Length = textView.textStorage?.length ?? 0
+      if utf16Length <= Self.synchronousTextSnapshotUTF16Limit {
+        flushPendingTextPublishingIfNeeded(from: textView)
+      } else {
+        scheduleDeferredTextPublishing(from: textView, milliseconds: 0)
+      }
+      flushCaretPublishing(from: textView)
     }
 
     func applyFocusRequestIfNeeded(to textView: NSTextView, enabled: Bool) {
@@ -2107,8 +2979,14 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
 
     func textDidChange(_ notification: Notification) {
       guard let textView = notification.object as? NSTextView else { return }
-      let currentText = textView.string
-      let currentUTF16Length = textView.textStorage?.length ?? (currentText as NSString).length
+      if isApplyingProgrammaticChange {
+        return
+      }
+      let currentUTF16Length = textView.textStorage?.length ?? 0
+      synchronizeLineIndexIfNeeded(with: textView)
+
+      hasUnpublishedLocalText = true
+      invalidateKnownText()
       invalidateViewportHighlighting()
       if currentUTF16Length > OrgSyntaxTextEditor.continuousTextCheckingUTF16Limit,
          textView.isContinuousSpellCheckingEnabled || textView.isGrammarCheckingEnabled {
@@ -2118,12 +2996,20 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
           utf16Length: currentUTF16Length
         )
       }
-      recordKnownText(currentText, utf16Length: currentUTF16Length)
-      parent.onLocalTextChange?(currentText)
-      if !isApplyingProgrammaticChange {
-        publishTextChange(currentText)
+
+      var currentText: String?
+      if shouldSnapshotSynchronously(utf16Length: currentUTF16Length) {
+        let snapshot = snapshotCurrentText(from: textView)
+        currentText = snapshot
+        parent.onLocalTextChange?(snapshot)
+        publishTextChange(snapshot)
+      } else {
+        scheduleDeferredTextPublishing(
+          from: textView,
+          milliseconds: deferredTextPublishingDelayMilliseconds
+        )
       }
-      publishSelectionIfNeeded(textView.selectedRange(), in: currentText)
+      publishSelectionIfNeeded(textView.selectedRange(), from: textView)
       scheduleSemanticAnalysis(
         for: textView,
         expectedText: nil,
@@ -2153,19 +3039,27 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
         publishContentHeight(for: textView)
         return
       }
-      let shouldScheduleHighlighting = Self.shouldScheduleDeferredHighlighting(
-        text: currentText,
-        utf16Length: currentUTF16Length,
-        previousHighlightedText: lastHighlightedText,
-        monospacedUnchanged: lastHighlightedMonospaced == parent.monospaced
-      )
+      if currentText == nil,
+         OrgSyntaxHighlighter.shouldTokenizeLiveText(utf16Length: currentUTF16Length) {
+        currentText = snapshotCurrentText(from: textView)
+      }
+      let shouldScheduleHighlighting = currentText.map {
+        Self.shouldScheduleDeferredHighlighting(
+          text: $0,
+          utf16Length: currentUTF16Length,
+          previousHighlightedText: lastHighlightedText,
+          monospacedUnchanged: lastHighlightedMonospaced == parent.monospaced
+            && lastHighlightedConcealsSyntax == parent.concealsSyntax
+            && lastHighlightedLiveHighlighting == parent.liveHighlighting
+        )
+      } ?? false
       markUserTextChangedForHighlighting(
         in: textView,
         currentText: currentText,
         utf16Length: currentUTF16Length,
         willScheduleDeferredHighlighting: shouldScheduleHighlighting
       )
-      if shouldScheduleHighlighting {
+      if shouldScheduleHighlighting, let currentText {
         scheduleDeferredHighlighting(to: textView, expectedText: currentText)
       } else {
         cancelDeferredHighlighting()
@@ -2198,23 +3092,54 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       shouldChangeTextIn affectedCharRange: NSRange,
       replacementString: String?
     ) -> Bool {
-      let replacementLength = ((replacementString ?? "") as NSString).length
-      pendingEditedRange = NSRange(
-        location: affectedCharRange.location,
-        length: max(1, replacementLength)
-      )
       unfoldIfEditTouchesHiddenText(affectedCharRange, in: textView)
-      // Avoid materializing the full backing string for the overwhelmingly
-      // common case. A large source document can otherwise be copied once in
-      // shouldChangeTextIn and again in textDidChange for every keystroke.
-      if !foldedHeadlineStartLines.isEmpty {
-        adjustFoldedHeadlines(
-          for: affectedCharRange,
-          replacement: replacementString ?? "",
-          in: textView.string
-        )
-      }
       return true
+    }
+
+    func textStorage(
+      _ textStorage: NSTextStorage,
+      didProcessEditing editedMask: NSTextStorageEditActions,
+      range editedRange: NSRange,
+      changeInLength delta: Int
+    ) {
+      guard editedMask.contains(.editedCharacters), !isApplyingProgrammaticChange else {
+        return
+      }
+
+      // This callback describes the committed transaction. Deriving the old
+      // range from TextKit's new range + length delta keeps the mirrors exact
+      // for IME composition, undo/redo, same-length replacements, and edits
+      // that never pass through NSTextView's permission callback.
+      let replacementRange = OrgSyntaxTextEditor.clampedRange(
+        editedRange,
+        utf16Length: textStorage.length
+      )
+      let priorRange = NSRange(
+        location: replacementRange.location,
+        length: max(0, replacementRange.length - delta)
+      )
+      let replacement = textStorage.mutableString.substring(with: replacementRange)
+      pendingEditedRange = NSRange(
+        location: replacementRange.location,
+        length: max(1, replacementRange.length)
+      )
+
+      if !foldedHeadlineStartLines.isEmpty {
+        adjustFoldedHeadlines(for: priorRange, replacement: replacement)
+      }
+      localTextGeneration = bufferSession.replaceCharacters(
+        in: priorRange,
+        with: replacement
+      )
+      if isLineIndexReady {
+        lineIndex.replaceCharacters(in: priorRange, with: replacement)
+      } else {
+        pendingLineIndexEdits.append((priorRange, replacement))
+      }
+      // Semantic/gutter coordinates belong to the previous committed
+      // revision. Disable their actions immediately; the debounced analyzer
+      // will install a generation-matching replacement.
+      gutterView?.items = []
     }
 
     func textView(
@@ -2223,10 +3148,18 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       range affectedCharRange: NSRange
     ) -> Int {
       guard parent.textChecking == .spellingAndGrammar, value != 0 else { return 0 }
+      // Until the detached line index is ready, asking the spell checker to
+      // classify a range near EOF would scan the whole document on the main
+      // actor. Deferring underlines is preferable to blocking a key event.
+      guard isLineIndexReady else { return 0 }
+      guard let text = textView.textStorage?.mutableString else { return value }
       return OrgSourceTextChecking.shouldSuppress(
-        in: textView.string,
+        in: text,
         range: affectedCharRange,
-        snapshot: semanticSnapshotText == textView.string ? semanticSnapshot : nil
+        snapshot: semanticSnapshotTextGeneration == localTextGeneration
+          ? semanticSnapshot
+          : nil,
+        lineIndex: lineIndex
       ) ? 0 : value
     }
 
@@ -2236,8 +3169,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
 
     func textDidEndEditing(_ notification: Notification) {
       if let textView = notification.object as? NSTextView {
-        flushTextPublishing(from: textView)
-        flushCaretPublishing(from: textView)
+        requestLifecycleCheckpoint(from: textView)
       }
       parent.isFocused?.wrappedValue = false
     }
@@ -2274,9 +3206,12 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
         return true
       }
 
-      flushTextPublishing(from: textView)
+      guard parent.onSubmitContext != nil || parent.onSubmit != nil else {
+        return false
+      }
+      let text = flushTextPublishing(from: textView)
       let context = OrgSyntaxTextEditorSubmitContext(
-        text: textView.string,
+        text: text,
         selectedRange: textView.selectedRange()
       )
       if let onSubmitContext = parent.onSubmitContext,
@@ -2294,8 +3229,9 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       in textView: NSTextView
     ) -> Bool {
       guard parent.orgWritingCommands,
+            let text = textView.textStorage?.mutableString,
             let replacement = OrgSourceTextEditing.indentationReplacement(
-              in: textView.string,
+              in: text,
               selectedRange: textView.selectedRange(),
               direction: direction
             )
@@ -2304,14 +3240,15 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       }
       textView.insertText(replacement.replacement, replacementRange: replacement.range)
       textView.setSelectedRange(replacement.selectedRangeAfterReplacement)
-      publishSelectionIfNeeded(replacement.selectedRangeAfterReplacement, in: textView.string)
+      publishSelectionIfNeeded(replacement.selectedRangeAfterReplacement, from: textView)
       return true
     }
 
     private func handleOrgNewlineCommand(in textView: NSTextView) -> Bool {
       guard parent.orgWritingCommands,
+            let text = textView.textStorage?.mutableString,
             let replacement = OrgSourceTextEditing.newlineReplacement(
-              in: textView.string,
+              in: text,
               selectedRange: textView.selectedRange()
             )
       else {
@@ -2319,7 +3256,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       }
       textView.insertText(replacement.replacement, replacementRange: replacement.range)
       textView.setSelectedRange(replacement.selectedRangeAfterReplacement)
-      publishSelectionIfNeeded(replacement.selectedRangeAfterReplacement, in: textView.string)
+      publishSelectionIfNeeded(replacement.selectedRangeAfterReplacement, from: textView)
       return true
     }
 
@@ -2341,11 +3278,12 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       case .command(let targetLine, _), .backlinks(let targetLine):
         line = targetLine
       }
-      let lineRange = OrgSourceTextEditing.lineRange(in: textView.string as NSString, line: line)
+      synchronizeLineIndexIfNeeded(with: textView)
+      let lineRange = lineIndex.lineRange(forLine: line)
       let selection = NSRange(location: lineRange.location, length: 0)
       textView.setSelectedRange(selection)
       textView.scrollRangeToVisible(selection)
-      publishSelectionIfNeeded(selection, in: textView.string)
+      publishSelectionIfNeeded(selection, from: textView)
 
       switch action {
       case .command(_, let command):
@@ -2362,9 +3300,19 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     ) -> Bool {
       guard parent.orgWritingCommands else { return false }
       textView.window?.makeFirstResponder(textView)
-      let text = textView.string
+      guard let text = textView.textStorage?.mutableString else { return false }
+      synchronizeLineIndexIfNeeded(with: textView)
+      guard isLineIndexReady else {
+        reportCommandStatus("Source structure is still being indexed; try again shortly")
+        return true
+      }
       let selection = textView.selectedRange()
       let snapshot = currentSemanticSnapshot(for: text)
+      if snapshot == nil,
+         commandRequiresCurrentSemantics(command, text: text, selection: selection) {
+        reportCommandStatus("Source structure is still being analyzed; try again shortly")
+        return true
+      }
       let replacement: OrgSyntaxTextEditReplacement?
       let actionName: String
 
@@ -2373,7 +3321,8 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
         replacement = OrgSourceTextEditing.headingInsertionReplacement(
           in: text,
           selectedRange: selection,
-          snapshot: snapshot
+          snapshot: snapshot,
+          lineIndex: lineIndex
         )
         actionName = "Insert Heading"
       case .insertListItem:
@@ -2400,7 +3349,8 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
         replacement = OrgSourceTextEditing.todoCycleReplacement(
           in: text,
           selectedRange: selection,
-          snapshot: snapshot
+          snapshot: snapshot,
+          lineIndex: lineIndex
         )
         actionName = "Cycle TODO"
       case .setPriority(let priority):
@@ -2408,7 +3358,8 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
           in: text,
           selectedRange: selection,
           priority: priority,
-          snapshot: snapshot
+          snapshot: snapshot,
+          lineIndex: lineIndex
         )
         actionName = priority.map { "Set Priority \($0)" } ?? "Clear Priority"
       case .scheduleToday:
@@ -2417,7 +3368,8 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
           selectedRange: selection,
           kind: "SCHEDULED",
           date: Calendar.current.startOfDay(for: Date()),
-          snapshot: snapshot
+          snapshot: snapshot,
+          lineIndex: lineIndex
         )
         actionName = "Schedule Today"
       case .deadlineToday:
@@ -2426,14 +3378,16 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
           selectedRange: selection,
           kind: "DEADLINE",
           date: Calendar.current.startOfDay(for: Date()),
-          snapshot: snapshot
+          snapshot: snapshot,
+          lineIndex: lineIndex
         )
         actionName = "Set Deadline"
       case .clearPlanning:
         replacement = OrgSourceTextEditing.clearPlanningReplacement(
           in: text,
           selectedRange: selection,
-          snapshot: snapshot
+          snapshot: snapshot,
+          lineIndex: lineIndex
         )
         actionName = "Clear Planning"
       case .insertProperty:
@@ -2443,7 +3397,8 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
           selectedRange: selection,
           key: property.key,
           value: property.value,
-          snapshot: snapshot
+          snapshot: snapshot,
+          lineIndex: lineIndex
         )
         actionName = "Set Property"
       case .insertLink:
@@ -2456,6 +3411,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
         )
         actionName = "Insert Link"
       case .toggleFold:
+        guard let snapshot else { return true }
         return toggleFold(at: selection, in: textView, snapshot: snapshot)
       case .unfoldAll:
         foldedHeadlineStartLines.removeAll()
@@ -2467,14 +3423,15 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
           in: text,
           selectedRange: selection,
           direction: command,
-          snapshot: snapshot
+          snapshot: snapshot,
+          lineIndex: lineIndex
         ) else {
           WorkspaceSound.beep()
           return true
         }
         textView.setSelectedRange(range)
         textView.scrollRangeToVisible(range)
-        publishSelectionIfNeeded(range, in: text)
+        publishSelectionIfNeeded(range, from: textView)
         return true
       }
 
@@ -2498,25 +3455,106 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       textView.setSelectedRange(replacement.selectedRangeAfterReplacement)
       undoManager?.setActionName(actionName)
       undoManager?.endUndoGrouping()
-      publishSelectionIfNeeded(replacement.selectedRangeAfterReplacement, in: textView.string)
+      publishSelectionIfNeeded(replacement.selectedRangeAfterReplacement, from: textView)
       textView.scrollRangeToVisible(replacement.selectedRangeAfterReplacement)
       reportCommandStatus(actionName)
     }
 
-    private func currentSemanticSnapshot(for text: String) -> OrgSourceEditorSemanticSnapshot {
-      if semanticSnapshotText == text, let semanticSnapshot {
+    private func currentSemanticSnapshot(for text: NSString) -> OrgSourceEditorSemanticSnapshot? {
+      if semanticSnapshotTextGeneration == localTextGeneration, let semanticSnapshot {
         return semanticSnapshot
       }
-      return OrgSourceTextEditing.fallbackSemanticSnapshot(in: text)
+      guard text.length <= Self.synchronousSemanticFallbackUTF16Limit else {
+        return nil
+      }
+      let fallback = OrgSourceTextEditing.fallbackSemanticSnapshot(in: text as String)
+      installCurrentSemanticSnapshot(fallback)
+      return fallback
+    }
+
+    private func commandRequiresCurrentSemantics(
+      _ command: OrgSourceEditorCommand,
+      text: NSString,
+      selection: NSRange
+    ) -> Bool {
+      switch command {
+      case .insertHeading, .cycleTodo, .setPriority:
+        let line = lineIndex.lineNumber(atUTF16Offset: selection.location)
+        let range = lineIndex.lineRange(forLine: line)
+        let contentRange = NSRange(
+          location: range.location,
+          length: max(0, OrgSourceTextEditing.lineContentEnd(in: text, lineRange: range) - range.location)
+        )
+        return OrgSourceTextEditing.headingMarker(in: text.substring(with: contentRange)) == nil
+      case .scheduleToday, .deadlineToday, .clearPlanning, .insertProperty,
+           .toggleFold, .previousHeading, .nextHeading:
+        return true
+      case .insertListItem, .promote, .demote, .insertLink, .unfoldAll:
+        return false
+      }
+    }
+
+    private func installCurrentSemanticSnapshot(
+      _ snapshot: OrgSourceEditorSemanticSnapshot,
+      headlineRegionsByStartLine: [Int: OrgSourceSemanticRegion]? = nil,
+      backgroundRegions: [OrgSourceSemanticRegion]? = nil,
+      diagnosticsByLine: [Org2EditorDiagnostic]? = nil
+    ) {
+      semanticSnapshot = snapshot
+      semanticSnapshotTextGeneration = localTextGeneration
+      semanticHeadlineRegionsByStartLine = headlineRegionsByStartLine
+        ?? Self.headlineRegionsByStartLine(in: snapshot)
+      semanticBackgroundRegions = backgroundRegions
+        ?? Self.backgroundSemanticRegions(in: snapshot)
+      semanticDiagnosticsByLine = diagnosticsByLine
+        ?? snapshot.diagnostics.sorted { lhs, rhs in
+          lhs.line == rhs.line ? lhs.column < rhs.column : lhs.line < rhs.line
+        }
+      semanticPresentationViewportLines = nil
+    }
+
+    nonisolated private static func headlineRegionsByStartLine(
+      in snapshot: OrgSourceEditorSemanticSnapshot
+    ) -> [Int: OrgSourceSemanticRegion] {
+      var result: [Int: OrgSourceSemanticRegion] = [:]
+      for region in snapshot.regions where region.kind == .headline {
+        result[region.startLine] = region
+      }
+      return result
+    }
+
+    nonisolated private static func backgroundSemanticRegions(
+      in snapshot: OrgSourceEditorSemanticSnapshot
+    ) -> [OrgSourceSemanticRegion] {
+      snapshot.regions.filter { region in
+        switch region.kind {
+        case .properties, .sourceBlock, .table:
+          return true
+        default:
+          return false
+        }
+      }.sorted { lhs, rhs in
+        lhs.startLine == rhs.startLine
+          ? lhs.endLine < rhs.endLine
+          : lhs.startLine < rhs.startLine
+      }
+    }
+
+    private func currentFoldedHeadlineRegions() -> [OrgSourceSemanticRegion] {
+      guard semanticSnapshotTextGeneration == localTextGeneration else { return [] }
+      return foldedHeadlineStartLines.sorted().compactMap {
+        semanticHeadlineRegionsByStartLine[$0]
+      }
     }
 
     private func promptForLink(in textView: NSTextView) -> (target: String, description: String?)? {
+      guard let text = textView.textStorage?.mutableString else { return nil }
       let selectedRange = OrgSyntaxTextEditor.clampedRange(
         textView.selectedRange(),
-        utf16Length: (textView.string as NSString).length
+        utf16Length: text.length
       )
       let selectedText = selectedRange.length > 0
-        ? (textView.string as NSString).substring(with: selectedRange)
+        ? text.substring(with: selectedRange)
         : ""
       let clipboard = NSPasteboard.general.string(forType: .string) ?? ""
       let targetField = NSTextField(string: clipboardLooksLikeLink(clipboard) ? clipboard : "")
@@ -2576,12 +3614,11 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       in textView: NSTextView,
       snapshot: OrgSourceEditorSemanticSnapshot
     ) -> Bool {
-      let nsText = textView.string as NSString
-      let line = OrgSourceTextEditing.lineNumber(in: nsText, utf16Offset: selection.location)
+      synchronizeLineIndexIfNeeded(with: textView)
+      let line = lineIndex.lineNumber(atUTF16Offset: selection.location)
       guard let headline = OrgSourceTextEditing.enclosingHeadline(in: snapshot, line: line),
-            OrgSourceTextEditing.sourceRange(
+            indexedSourceRange(
               for: headline,
-              in: textView.string,
               excludingFirstLine: true
             )?.length ?? 0 > 0
       else {
@@ -2595,37 +3632,35 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
         reportCommandStatus("Expanded source heading")
       } else {
         foldedHeadlineStartLines.insert(headline.startLine)
-        let headingRange = OrgSourceTextEditing.lineRange(in: nsText, line: headline.startLine)
+        let headingRange = lineIndex.lineRange(forLine: headline.startLine)
         textView.setSelectedRange(NSRange(location: headingRange.location, length: 0))
         reportCommandStatus("Collapsed source heading")
       }
       applyFoldPresentation(to: textView)
-      refreshGutter(for: textView, snapshot: snapshot)
+      refreshGutterFoldState()
       publishContentHeight(for: textView)
       return true
     }
 
     private func applyFoldPresentation(to textView: NSTextView) {
       guard let layoutManager = textView.layoutManager else { return }
-      let textLength = (textView.string as NSString).length
+      let textLength = textView.textStorage?.length ?? 0
       for range in validPresentationRanges(foldPresentationRanges, textLength: textLength) {
         layoutManager.removeTemporaryAttribute(.font, forCharacterRange: range)
         layoutManager.removeTemporaryAttribute(.foregroundColor, forCharacterRange: range)
         layoutManager.removeTemporaryAttribute(.paragraphStyle, forCharacterRange: range)
       }
       foldPresentationRanges = []
-      guard !foldedHeadlineStartLines.isEmpty else { return }
-      let snapshot = currentSemanticSnapshot(for: textView.string)
+      let foldedHeadlines = currentFoldedHeadlineRegions()
+      guard !foldedHeadlines.isEmpty else { return }
       let hiddenFont = NSFont.systemFont(ofSize: 0.01)
       let paragraph = NSMutableParagraphStyle()
       paragraph.minimumLineHeight = 0.01
       paragraph.maximumLineHeight = 0.01
       paragraph.lineSpacing = 0
-      for headline in snapshot.regions where headline.kind == .headline
-        && foldedHeadlineStartLines.contains(headline.startLine) {
-        guard let range = OrgSourceTextEditing.sourceRange(
+      for headline in foldedHeadlines {
+        guard let range = indexedSourceRange(
           for: headline,
-          in: textView.string,
           excludingFirstLine: true
         ), range.length > 0 else { continue }
         layoutManager.addTemporaryAttribute(.font, value: hiddenFont, forCharacterRange: range)
@@ -2640,20 +3675,25 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
 
     private func adjustFoldedHeadlines(
       for affectedRange: NSRange,
-      replacement: String,
-      in text: String
+      replacement: String
     ) {
       guard !foldedHeadlineStartLines.isEmpty else { return }
-      let nsText = text as NSString
-      let range = OrgSyntaxTextEditor.clampedRange(affectedRange, utf16Length: nsText.length)
-      let removed = nsText.substring(with: range).filter { $0 == "\n" }.count
-      let inserted = replacement.filter { $0 == "\n" }.count
+      let range = OrgSyntaxTextEditor.clampedRange(
+        affectedRange,
+        utf16Length: lineIndex.documentUTF16Length
+      )
+      let removed = lineIndex.newlineCount(in: range)
+      let inserted = replacement.utf16.reduce(into: 0) { count, codeUnit in
+        if codeUnit == 0x0A {
+          count += 1
+        }
+      }
       let lineDelta = inserted - removed
       guard lineDelta != 0 || range.length > 0 else { return }
 
       var adjusted = Set<Int>()
       for startLine in foldedHeadlineStartLines {
-        let headingOffset = OrgSourceTextEditing.lineRange(in: nsText, line: startLine).location
+        let headingOffset = lineIndex.utf16Offset(forLine: startLine)
         if NSMaxRange(range) <= headingOffset {
           adjusted.insert(max(1, startLine + lineDelta))
         } else if range.location > headingOffset {
@@ -2664,13 +3704,11 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     }
 
     private func unfoldIfSelectionEntersHiddenText(_ selection: NSRange, in textView: NSTextView) {
-      guard !foldedHeadlineStartLines.isEmpty else { return }
-      let snapshot = currentSemanticSnapshot(for: textView.string)
-      for headline in snapshot.regions where headline.kind == .headline
-        && foldedHeadlineStartLines.contains(headline.startLine) {
-        guard let range = OrgSourceTextEditing.sourceRange(
+      let foldedHeadlines = currentFoldedHeadlineRegions()
+      guard !foldedHeadlines.isEmpty else { return }
+      for headline in foldedHeadlines {
+        guard let range = indexedSourceRange(
           for: headline,
-          in: textView.string,
           excludingFirstLine: true
         ) else { continue }
         if selection.location >= range.location && selection.location < NSMaxRange(range) {
@@ -2683,13 +3721,11 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     }
 
     private func unfoldIfEditTouchesHiddenText(_ range: NSRange, in textView: NSTextView) {
-      guard !foldedHeadlineStartLines.isEmpty else { return }
-      let snapshot = currentSemanticSnapshot(for: textView.string)
-      for headline in snapshot.regions where headline.kind == .headline
-        && foldedHeadlineStartLines.contains(headline.startLine) {
-        guard let hidden = OrgSourceTextEditing.sourceRange(
+      let foldedHeadlines = currentFoldedHeadlineRegions()
+      guard !foldedHeadlines.isEmpty else { return }
+      for headline in foldedHeadlines {
+        guard let hidden = indexedSourceRange(
           for: headline,
-          in: textView.string,
           excludingFirstLine: true
         ) else { continue }
         if NSIntersectionRange(hidden, range).length > 0
@@ -2706,11 +3742,34 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       semanticAnalysisTask = nil
       semanticAnalysisGeneration += 1
       semanticSnapshot = nil
-      semanticSnapshotText = nil
+      semanticSnapshotTextGeneration = nil
+      semanticHeadlineRegionsByStartLine = [:]
+      semanticBackgroundRegions = []
+      semanticDiagnosticsByLine = []
+      semanticPresentationViewportLines = nil
+      cancelDeferredCaretPublishing()
+      deferredViewportPublishWorkItem?.cancel()
+      deferredViewportPublishWorkItem = nil
+      if let textView = activeTextView, let layoutManager = textView.layoutManager {
+        let textLength = textView.textStorage?.length ?? 0
+        for range in validPresentationRanges(
+          foldPresentationRanges + diagnosticPresentationRanges + semanticPresentationRanges,
+          textLength: textLength
+        ) {
+          layoutManager.removeTemporaryAttribute(.font, forCharacterRange: range)
+          layoutManager.removeTemporaryAttribute(.foregroundColor, forCharacterRange: range)
+          layoutManager.removeTemporaryAttribute(.paragraphStyle, forCharacterRange: range)
+          layoutManager.removeTemporaryAttribute(.backgroundColor, forCharacterRange: range)
+          layoutManager.removeTemporaryAttribute(.underlineStyle, forCharacterRange: range)
+          layoutManager.removeTemporaryAttribute(.underlineColor, forCharacterRange: range)
+          layoutManager.removeTemporaryAttribute(.toolTip, forCharacterRange: range)
+        }
+      }
       foldedHeadlineStartLines.removeAll()
       foldPresentationRanges = []
       diagnosticPresentationRanges = []
       semanticPresentationRanges = []
+      gutterView?.items = []
       parent.diagnostics?.wrappedValue = []
     }
 
@@ -2722,14 +3781,21 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       semanticAnalysisTask?.cancel()
       semanticAnalysisGeneration += 1
       let generation = semanticAnalysisGeneration
-      if delayMilliseconds == 0 || semanticSnapshot == nil {
-        let fallbackText = expectedText ?? textView.string
+      let documentBoundary = documentBoundary()
+      let utf16Length = textView.textStorage?.length ?? 0
+      let needsCurrentFallback = semanticSnapshotTextGeneration != localTextGeneration
+      if needsCurrentFallback,
+         delayMilliseconds == 0,
+         utf16Length <= Self.synchronousSemanticFallbackUTF16Limit {
+        let fallbackText = expectedText ?? snapshotCurrentText(from: textView)
         let fallback = OrgSourceTextEditing.fallbackSemanticSnapshot(in: fallbackText)
-        semanticSnapshot = fallback
-        semanticSnapshotText = fallbackText
+        installCurrentSemanticSnapshot(fallback)
         refreshGutter(for: textView, snapshot: fallback)
       }
-      guard let analyzer = parent.semanticAnalyzer else {
+      let analyzer = parent.semanticAnalyzer
+      let needsDeferredFallback = analyzer == nil
+        && semanticSnapshotTextGeneration != localTextGeneration
+      guard analyzer != nil || needsDeferredFallback else {
         return
       }
       semanticAnalysisTask = Task { @MainActor [weak self, weak textView] in
@@ -2743,6 +3809,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
         guard !Task.isCancelled,
               let self,
               self.semanticAnalysisGeneration == generation,
+              self.documentIsCurrent(for: documentBoundary),
               let textView
         else { return }
 
@@ -2750,20 +3817,88 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
         // configured interval. Capturing it for every key made fast typing in
         // large files linearly more expensive even though all but the final
         // analysis was cancelled.
-        let analysisText = expectedText ?? textView.string
-        guard let snapshot = await analyzer(analysisText),
+        let analysisText: String
+        if let expectedText {
+          analysisText = expectedText
+        } else if let knownText = self.knownText(matchingUTF16Length: utf16Length) {
+          analysisText = knownText
+        } else if utf16Length > Self.synchronousTextSnapshotUTF16Limit {
+          let bufferSnapshot = await self.bufferSession.snapshotAsync(priority: .utility)
+          guard !Task.isCancelled,
+                self.semanticAnalysisGeneration == generation,
+                self.documentIsCurrent(for: documentBoundary),
+                bufferSnapshot.revision == self.bufferSession.revision
+          else { return }
+          analysisText = bufferSnapshot.text
+        } else {
+          analysisText = self.snapshotCurrentText(from: textView)
+        }
+        let snapshot: OrgSourceEditorSemanticSnapshot?
+        if let analyzer {
+          snapshot = await analyzer(analysisText)
+        } else {
+          snapshot = await Task.detached(priority: .utility) {
+            OrgSourceTextEditing.fallbackSemanticSnapshot(in: analysisText)
+          }.value
+        }
+        guard let snapshot,
               !Task.isCancelled,
-              self.semanticAnalysisGeneration == generation
+              self.semanticAnalysisGeneration == generation,
+              self.documentIsCurrent(for: documentBoundary)
         else { return }
-        self.semanticSnapshot = snapshot
-        self.semanticSnapshotText = analysisText
+        let foldedHeadlineStartLines = self.foldedHeadlineStartLines
+        let derivedSemantics = await Task.detached(priority: .utility) {
+          (
+            gutterItems: OrgSourceEditorGutterModel.items(
+              text: analysisText,
+              snapshot: snapshot,
+              foldedHeadlineStartLines: foldedHeadlineStartLines
+            ),
+            headlineRegionsByStartLine: Self.headlineRegionsByStartLine(in: snapshot),
+            backgroundRegions: Self.backgroundSemanticRegions(in: snapshot),
+            diagnosticsByLine: snapshot.diagnostics.sorted { lhs, rhs in
+              lhs.line == rhs.line ? lhs.column < rhs.column : lhs.line < rhs.line
+            }
+          )
+        }.value
+        guard !Task.isCancelled,
+              self.semanticAnalysisGeneration == generation,
+              self.documentIsCurrent(for: documentBoundary)
+        else { return }
+        if let lineIndexBuildTask = self.lineIndexBuildTask {
+          await lineIndexBuildTask.value
+        }
+        guard !Task.isCancelled,
+              self.semanticAnalysisGeneration == generation,
+              self.documentIsCurrent(for: documentBoundary),
+              self.isLineIndexReady
+        else { return }
+        self.installCurrentSemanticSnapshot(
+          snapshot,
+          headlineRegionsByStartLine: derivedSemantics.headlineRegionsByStartLine,
+          backgroundRegions: derivedSemantics.backgroundRegions,
+          diagnosticsByLine: derivedSemantics.diagnosticsByLine
+        )
         self.parent.diagnostics?.wrappedValue = snapshot.diagnostics
-        self.clearTextCheckingIndicators(in: textView, snapshot: snapshot)
-        self.applySemanticPresentation(to: textView, snapshot: snapshot)
-        self.applyDiagnosticPresentation(to: textView, diagnostics: snapshot.diagnostics)
+        self.clearTextCheckingIndicators(in: textView, text: analysisText, snapshot: snapshot)
+        self.refreshSemanticPresentation(to: textView)
         self.applyFoldPresentation(to: textView)
-        self.refreshGutter(for: textView, snapshot: snapshot)
+        self.gutterView?.items = derivedSemantics.gutterItems
       }
+    }
+
+    static let synchronousSemanticFallbackUTF16Limit = 64_000
+    static let largeDocumentInitialSemanticIdleDelayMilliseconds = 180
+
+    static func initialSemanticAnalysisDelayMilliseconds(
+      utf16Length: Int,
+      configuredDelayMilliseconds: Int
+    ) -> Int {
+      guard utf16Length > synchronousSemanticFallbackUTF16Limit else { return 0 }
+      return max(
+        largeDocumentInitialSemanticIdleDelayMilliseconds,
+        configuredDelayMilliseconds
+      )
     }
 
     private func refreshGutter(
@@ -2771,35 +3906,66 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       snapshot: OrgSourceEditorSemanticSnapshot? = nil
     ) {
       guard let gutterView else { return }
+      let text = snapshotCurrentText(from: textView)
+      guard let currentSnapshot = snapshot ?? currentSemanticSnapshot(for: text as NSString) else {
+        gutterView.items = []
+        return
+      }
       gutterView.items = OrgSourceEditorGutterModel.items(
-        text: textView.string,
-        snapshot: snapshot ?? currentSemanticSnapshot(for: textView.string),
+        text: text,
+        snapshot: currentSnapshot,
         foldedHeadlineStartLines: foldedHeadlineStartLines
       )
     }
 
+    private func refreshGutterFoldState() {
+      guard let gutterView else { return }
+      gutterView.items = gutterView.items.map { item in
+        item.withFoldedState(foldedHeadlineStartLines.contains(item.line))
+      }
+    }
+
     private func clearTextCheckingIndicators(
       in textView: NSTextView,
+      text: String,
       snapshot: OrgSourceEditorSemanticSnapshot
     ) {
-      guard parent.textChecking == .spellingAndGrammar else { return }
-      for range in OrgSourceTextChecking.excludedSemanticRanges(in: textView.string, snapshot: snapshot) {
+      guard parent.textChecking == .spellingAndGrammar,
+            (text as NSString).length <= OrgSyntaxTextEditor.continuousTextCheckingUTF16Limit
+      else { return }
+      for range in OrgSourceTextChecking.excludedSemanticRanges(in: text, snapshot: snapshot) {
         textView.setSpellingState(0, range: range)
       }
     }
 
+    private func refreshSemanticPresentation(to textView: NSTextView) {
+      guard let visibleLines = visibleSemanticPresentationLines(in: textView) else { return }
+      guard semanticPresentationViewportLines != visibleLines else { return }
+      semanticPresentationViewportLines = visibleLines
+      applySemanticPresentation(to: textView, visibleLines: visibleLines)
+      applyDiagnosticPresentation(to: textView, visibleLines: visibleLines)
+    }
+
     private func applySemanticPresentation(
       to textView: NSTextView,
-      snapshot: OrgSourceEditorSemanticSnapshot
+      visibleLines: ClosedRange<Int>
     ) {
       guard let layoutManager = textView.layoutManager else { return }
-      let textLength = (textView.string as NSString).length
+      let textLength = textView.textStorage?.length ?? 0
       for range in validPresentationRanges(semanticPresentationRanges, textLength: textLength) {
         layoutManager.removeTemporaryAttribute(.backgroundColor, forCharacterRange: range)
       }
       semanticPresentationRanges = []
 
-      for region in snapshot.regions {
+      var index = lowerBoundBackgroundRegion(startingAtOrAfter: visibleLines.lowerBound)
+      if index > 0 {
+        index -= 1
+      }
+      while semanticBackgroundRegions.indices.contains(index) {
+        let region = semanticBackgroundRegions[index]
+        guard region.startLine <= visibleLines.upperBound else { break }
+        defer { index += 1 }
+        guard region.endLine >= visibleLines.lowerBound else { continue }
         let color: NSColor?
         switch region.kind {
         case .properties:
@@ -2812,7 +3978,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
           color = nil
         }
         guard let color,
-              let range = OrgSourceTextEditing.sourceRange(for: region, in: textView.string),
+              let range = indexedSourceRange(for: region),
               range.length > 0
         else { continue }
         layoutManager.addTemporaryAttribute(.backgroundColor, value: color, forCharacterRange: range)
@@ -2822,10 +3988,11 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
 
     private func applyDiagnosticPresentation(
       to textView: NSTextView,
-      diagnostics: [Org2EditorDiagnostic]
+      visibleLines: ClosedRange<Int>
     ) {
       guard let layoutManager = textView.layoutManager else { return }
-      let textLength = (textView.string as NSString).length
+      synchronizeLineIndexIfNeeded(with: textView)
+      let textLength = textView.textStorage?.length ?? 0
       for range in validPresentationRanges(diagnosticPresentationRanges, textLength: textLength) {
         layoutManager.removeTemporaryAttribute(.underlineStyle, forCharacterRange: range)
         layoutManager.removeTemporaryAttribute(.underlineColor, forCharacterRange: range)
@@ -2833,9 +4000,12 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       }
       diagnosticPresentationRanges = []
       guard textLength > 0 else { return }
-      let nsText = textView.string as NSString
-      for diagnostic in diagnostics {
-        let lineRange = OrgSourceTextEditing.lineRange(in: nsText, line: diagnostic.line)
+      var index = lowerBoundDiagnostic(atOrAfter: visibleLines.lowerBound)
+      while semanticDiagnosticsByLine.indices.contains(index) {
+        let diagnostic = semanticDiagnosticsByLine[index]
+        guard diagnostic.line <= visibleLines.upperBound else { break }
+        index += 1
+        let lineRange = lineIndex.lineRange(forLine: diagnostic.line)
         let contentEnd = max(lineRange.location, min(
           textLength,
           lineRange.location + lineRange.length
@@ -2859,6 +4029,68 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       }
     }
 
+    private func visibleSemanticPresentationLines(
+      in textView: NSTextView
+    ) -> ClosedRange<Int>? {
+      guard isLineIndexReady, lineIndex.lineCount > 0 else { return nil }
+      let textLength = textView.textStorage?.length ?? 0
+      guard textLength > 0,
+            let layoutManager = textView.layoutManager,
+            let textContainer = textView.textContainer
+      else { return 1...1 }
+
+      let visibleRect = textView.enclosingScrollView?.contentView.bounds ?? textView.visibleRect
+      let expandedRect = visibleRect.insetBy(dx: 0, dy: -320)
+      let glyphRange = layoutManager.glyphRange(
+        forBoundingRect: expandedRect,
+        in: textContainer
+      )
+      let characterRange = layoutManager.characterRange(
+        forGlyphRange: glyphRange,
+        actualGlyphRange: nil
+      )
+      if characterRange.length > 0 {
+        let lower = lineIndex.lineNumber(atUTF16Offset: characterRange.location)
+        let upper = lineIndex.lineNumber(
+          atUTF16Offset: min(textLength, NSMaxRange(characterRange))
+        )
+        return max(1, lower)...min(lineIndex.lineCount, max(lower, upper))
+      }
+
+      let selectedLine = lineIndex.lineNumber(
+        atUTF16Offset: min(textLength, textView.selectedRange().location)
+      )
+      return max(1, selectedLine - 80)...min(lineIndex.lineCount, selectedLine + 80)
+    }
+
+    private func lowerBoundBackgroundRegion(startingAtOrAfter line: Int) -> Int {
+      var lower = 0
+      var upper = semanticBackgroundRegions.count
+      while lower < upper {
+        let middle = lower + (upper - lower) / 2
+        if semanticBackgroundRegions[middle].startLine < line {
+          lower = middle + 1
+        } else {
+          upper = middle
+        }
+      }
+      return lower
+    }
+
+    private func lowerBoundDiagnostic(atOrAfter line: Int) -> Int {
+      var lower = 0
+      var upper = semanticDiagnosticsByLine.count
+      while lower < upper {
+        let middle = lower + (upper - lower) / 2
+        if semanticDiagnosticsByLine[middle].line < line {
+          lower = middle + 1
+        } else {
+          upper = middle
+        }
+      }
+      return lower
+    }
+
     private func validPresentationRanges(_ ranges: [NSRange], textLength: Int) -> [NSRange] {
       ranges.compactMap { range in
         guard range.location < textLength else { return nil }
@@ -2867,6 +4099,19 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
           length: min(range.length, textLength - max(0, range.location))
         )
       }.filter { $0.length > 0 }
+    }
+
+    private func indexedSourceRange(
+      for region: OrgSourceSemanticRegion,
+      excludingFirstLine: Bool = false
+    ) -> NSRange? {
+      let startLine = region.startLine + (excludingFirstLine ? 1 : 0)
+      guard startLine <= region.endLine,
+            startLine <= lineIndex.lineCount
+      else { return nil }
+      let start = lineIndex.utf16Offset(forLine: startLine)
+      let endRange = lineIndex.lineRange(forLine: min(region.endLine, lineIndex.lineCount))
+      return NSRange(location: start, length: max(0, NSMaxRange(endRange) - start))
     }
 
     func observeScrolling(of scrollView: NSScrollView, textView: NSTextView) {
@@ -2882,24 +4127,39 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
         object: clipView,
         queue: .main
       ) { [weak self, weak textView] _ in
-        Task { @MainActor in
+        MainActor.assumeIsolated {
           guard let self, let textView else { return }
-          if self.parent.incrementalHighlighting,
-             !self.hasDeferredHighlighting(for: textView.string) {
-            self.highlightVisibleRange(in: textView)
-          }
-          self.gutterView?.needsDisplay = true
-          self.scheduleViewportSourceLinePublishing(for: textView)
+          self.scheduleCoalescedScrollRefresh(for: textView)
         }
       }
       DispatchQueue.main.async { [weak self, weak textView] in
         guard let self, let textView else { return }
-        if self.parent.incrementalHighlighting {
+        if self.shouldHighlightVisibleRange(in: textView) {
           self.highlightVisibleRange(in: textView)
         }
-        self.gutterView?.needsDisplay = true
+        self.refreshSemanticPresentation(to: textView)
+        self.gutterView?.invalidateVisibleGeometry()
         self.scheduleViewportSourceLinePublishing(for: textView, delayMilliseconds: 0)
       }
+    }
+
+    private func scheduleCoalescedScrollRefresh(for textView: NSTextView) {
+      guard deferredScrollRefreshWorkItem == nil else { return }
+      let workItem = DispatchWorkItem { [weak self, weak textView] in
+        MainActor.assumeIsolated {
+          guard let self, let textView else { return }
+          self.deferredScrollRefreshWorkItem = nil
+          if self.shouldHighlightVisibleRange(in: textView),
+             !self.hasDeferredHighlightingForCurrentBuffer {
+            self.highlightVisibleRange(in: textView)
+          }
+          self.refreshSemanticPresentation(to: textView)
+          self.gutterView?.invalidateVisibleGeometry()
+          self.scheduleViewportSourceLinePublishing(for: textView)
+        }
+      }
+      deferredScrollRefreshWorkItem = workItem
+      DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(8), execute: workItem)
     }
 
     func resetViewportSourceLinePublishing() {
@@ -2910,13 +4170,13 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       for textView: NSTextView,
       delayMilliseconds: Int = 80
     ) {
-      guard parent.onViewportSourceLine != nil else { return }
+      guard parent.onViewportSourceLine != nil, isLineIndexReady else { return }
       deferredViewportPublishWorkItem?.cancel()
       let workItem = DispatchWorkItem { [weak self, weak textView] in
         Task { @MainActor in
           guard let self,
                 let textView,
-                let line = Self.visibleSourceLine(of: textView),
+                let line = Self.visibleSourceLine(of: textView, lineIndex: self.lineIndex),
                 line != self.lastPublishedViewportSourceLine
           else {
             return
@@ -2932,9 +4192,12 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       )
     }
 
-    static func visibleSourceLine(of textView: NSTextView) -> Int? {
-      let text = textView.string
-      guard !text.isEmpty else { return 1 }
+    static func visibleSourceLine(
+      of textView: NSTextView,
+      lineIndex existingLineIndex: OrgSourceLineIndex? = nil
+    ) -> Int? {
+      let textLength = textView.textStorage?.length ?? 0
+      guard textLength > 0 else { return 1 }
       let visibleRect = textView.visibleRect
       guard visibleRect.height > 0 else { return nil }
       let anchorY = min(
@@ -2945,11 +4208,23 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
         max(0, textView.characterIndexForInsertion(
           at: NSPoint(x: textView.textContainerOrigin.x + 1, y: anchorY)
         )),
-        (text as NSString).length
+        textLength
       )
-      return 1 + text.utf16.prefix(characterIndex).reduce(into: 0) { line, unit in
-        if unit == 10 { line += 1 }
+      if let existingLineIndex,
+         existingLineIndex.documentUTF16Length == textLength {
+        return existingLineIndex.lineNumber(atUTF16Offset: characterIndex)
       }
+      // Large documents build this index off-main. Defer publication until
+      // that build installs instead of reconstructing every line from a
+      // scroll/first-frame callback on the main actor.
+      guard textLength <= synchronousTextSnapshotUTF16Limit else { return nil }
+      guard let text = textView.textStorage?.mutableString else { return 1 }
+      return OrgSourceLineIndex(text: text).lineNumber(atUTF16Offset: characterIndex)
+    }
+
+    func sourceLine(atUTF16Offset offset: Int, in textView: NSTextView) -> Int {
+      synchronizeLineIndexIfNeeded(with: textView)
+      return lineIndex.lineNumber(atUTF16Offset: offset)
     }
 
     private func applyIncrementalHighlighting(to textView: NSTextView, editedRange: NSRange) {
@@ -2966,12 +4241,15 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
 
     private func scheduleDeferredIncrementalHighlighting(
       to textView: NSTextView,
-      expectedText: String,
+      expectedText: String?,
       editedRange: NSRange,
       milliseconds: Int
     ) {
       deferredIncrementalHighlightTask?.cancel()
       deferredIncrementalHighlightText = expectedText
+      let textGeneration = localTextGeneration
+      let documentBoundary = documentBoundary()
+      deferredIncrementalHighlightGeneration = textGeneration
       if let pendingRange = deferredIncrementalHighlightRange {
         deferredIncrementalHighlightRange = NSUnionRange(pendingRange, editedRange)
       } else {
@@ -2987,12 +4265,15 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
         guard !Task.isCancelled,
               let self,
               let textView,
-              self.deferredIncrementalHighlightText == expectedText
+              self.deferredIncrementalHighlightGeneration == textGeneration,
+              self.localTextGeneration == textGeneration,
+              self.documentIsCurrent(for: documentBoundary)
         else { return }
         let range = self.deferredIncrementalHighlightRange
           ?? NSRange(location: textView.selectedRange().location, length: 0)
         self.deferredIncrementalHighlightTask = nil
         self.deferredIncrementalHighlightText = nil
+        self.deferredIncrementalHighlightGeneration = nil
         self.deferredIncrementalHighlightRange = nil
         self.applyIncrementalHighlighting(to: textView, editedRange: range)
       }
@@ -3000,6 +4281,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
 
     @discardableResult
     func highlightVisibleRange(in textView: NSTextView) -> Bool {
+      guard parent.liveHighlighting else { return false }
       guard !isApplyingViewportHighlighting else { return false }
       guard let layoutManager = textView.layoutManager,
             let textContainer = textView.textContainer,
@@ -3033,6 +4315,15 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       return true
     }
 
+    private func shouldHighlightVisibleRange(in textView: NSTextView) -> Bool {
+      guard parent.liveHighlighting else { return false }
+      return parent.incrementalHighlighting
+        || Self.shouldUseViewportOnlyHighlighting(
+          utf16Length: textView.textStorage?.length ?? 0,
+          showsScrollers: parent.showsScrollers
+        )
+    }
+
     private func handleBoundaryArrowCommand(_ commandSelector: Selector, in textView: NSTextView) -> Bool {
       guard let syntaxTextView = textView as? OrgSyntaxTextView,
             syntaxTextView.documentSelectionContext != nil
@@ -3043,7 +4334,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       guard selectedRange.length == 0 else {
         return false
       }
-      let textLength = (textView.string as NSString).length
+      let textLength = textView.textStorage?.length ?? 0
       let clampedLocation = min(max(0, selectedRange.location), textLength)
 
       switch commandSelector {
@@ -3090,9 +4381,9 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
         return false
       }
 
-      flushTextPublishing(from: textView)
+      let text = flushTextPublishing(from: textView)
       return onDeleteBackwardContext(OrgSyntaxTextEditorSubmitContext(
-        text: textView.string,
+        text: text,
         selectedRange: selectedRange
       ))
     }
@@ -3100,6 +4391,8 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     func invalidateHighlighting() {
       lastHighlightedText = nil
       lastHighlightedMonospaced = nil
+      lastHighlightedConcealsSyntax = nil
+      lastHighlightedLiveHighlighting = nil
       hasHighlightedText = false
       invalidateViewportHighlighting()
     }
@@ -3135,15 +4428,243 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       )
     }
 
-    func recordKnownText(_ text: String, utf16Length providedUTF16Length: Int? = nil) {
+    func resetLineIndex(from textView: NSTextView) {
+      guard let text = textView.textStorage?.mutableString else {
+        lineIndex.reset(with: "")
+        isLineIndexReady = true
+        return
+      }
+      lineIndex.reset(with: text)
+      isLineIndexReady = true
+      pendingLineIndexEdits = []
+    }
+
+    func scheduleLineIndexReset(text: String) {
+      lineIndexBuildTask?.cancel()
+      lineIndexBuildGeneration &+= 1
+      let generation = lineIndexBuildGeneration
+      let utf16Length = (text as NSString).length
+      guard utf16Length > Self.synchronousTextSnapshotUTF16Limit else {
+        lineIndex.reset(with: text as NSString)
+        isLineIndexReady = true
+        pendingLineIndexEdits = []
+        return
+      }
+
+      isLineIndexReady = false
+      pendingLineIndexEdits = []
+      lineIndexBuildTask = Task { @MainActor [weak self] in
+        let built = await Task.detached(priority: .utility) {
+          OrgSourceLineIndex(text: text as NSString)
+        }.value
+        guard !Task.isCancelled,
+              let self,
+              self.lineIndexBuildGeneration == generation
+        else { return }
+        for edit in self.pendingLineIndexEdits {
+          built.replaceCharacters(in: edit.range, with: edit.replacement)
+        }
+        self.lineIndex = built
+        self.pendingLineIndexEdits = []
+        self.isLineIndexReady = true
+        self.lineIndexBuildTask = nil
+        self.gutterView?.invalidateVisibleGeometry()
+        if let textView = self.activeTextView {
+          self.publishSelectionSnapshotIfNeeded(textView.selectedRange(), from: textView)
+          self.scheduleViewportSourceLinePublishing(for: textView, delayMilliseconds: 0)
+        }
+      }
+    }
+
+    func waitForLineIndexBuildForTesting() async {
+      await lineIndexBuildTask?.value
+    }
+
+    func installSemanticSnapshotForTesting(_ snapshot: OrgSourceEditorSemanticSnapshot) {
+      installCurrentSemanticSnapshot(snapshot)
+    }
+
+    func refreshSemanticPresentationForTesting(in textView: NSTextView) {
+      refreshSemanticPresentation(to: textView)
+    }
+
+    var semanticPresentationRangeCountForTesting: Int {
+      semanticPresentationRanges.count + diagnosticPresentationRanges.count
+    }
+
+    func resetBufferSession(to text: String) {
+      bufferSession.reset(to: text)
+      localTextGeneration = bufferSession.revision
+      hasUnpublishedLocalText = false
+    }
+
+    private func synchronizeLineIndexIfNeeded(with textView: NSTextView) {
+      guard isLineIndexReady else { return }
+      let utf16Length = textView.textStorage?.length ?? 0
+      guard lineIndex.documentUTF16Length != utf16Length else { return }
+      resetLineIndex(from: textView)
+    }
+
+    private func invalidateKnownText() {
+      lastKnownText = nil
+      lastKnownTextUTF16Length = nil
+      lastKnownTextGeneration = nil
+    }
+
+    private func snapshotCurrentText(from textView: NSTextView) -> String {
+      let utf16Length = textView.textStorage?.length ?? 0
+      if let known = knownText(matchingUTF16Length: utf16Length) {
+        return known
+      }
+      fullDocumentSnapshotCount += 1
+      mainActorFullDocumentSnapshotCount += 1
+      let snapshot = bufferSession.snapshot().text
+      recordKnownText(snapshot, utf16Length: utf16Length, isPublished: false)
+      return snapshot
+    }
+
+    private func shouldSnapshotSynchronously(utf16Length: Int) -> Bool {
+      if utf16Length <= Self.synchronousTextSnapshotUTF16Limit {
+        return true
+      }
+      if case .immediate = parent.textPublishing {
+        return true
+      }
+      return false
+    }
+
+    private var deferredTextPublishingDelayMilliseconds: Int {
+      switch parent.textPublishing {
+      case .immediate:
+        return 0
+      case .deferred(let milliseconds):
+        return milliseconds
+      }
+    }
+
+    static let synchronousTextSnapshotUTF16Limit = 64_000
+
+    func hasExternalBoundTextChange(_ boundText: String) -> Bool {
+      boundText != lastObservedBoundText
+    }
+
+    /// Delivers pending local text before accepting an authoritative bound
+    /// replacement. Publishing both values in order lets the owner preserve
+    /// the outgoing draft while the editor proceeds to the incoming document.
+    @discardableResult
+    func resolvePendingLocalText(
+      beforeApplyingExternalText externalText: String,
+      from textView: NSTextView,
+      ownedBy providedPendingTextOwner: OrgSyntaxTextEditor? = nil
+    ) -> String? {
+      let pendingTextOwner = providedPendingTextOwner ?? parent
+      cancelDeferredTextPublishing()
+      let utf16Length = textView.textStorage?.length ?? 0
+      guard utf16Length <= Self.synchronousTextSnapshotUTF16Limit else {
+        checkpointPendingLocalTextBeforeExternalReplacement(ownedBy: pendingTextOwner)
+        lastObservedBoundText = externalText
+        invalidateKnownText()
+        return nil
+      }
+      let localText = snapshotCurrentText(from: textView)
+      pendingTextOwner.onLocalTextChange?(localText)
+      let pendingTextBinding = pendingTextOwner.$text
+      if pendingTextBinding.wrappedValue != localText {
+        pendingTextBinding.wrappedValue = localText
+      }
+      recordKnownText(localText, utf16Length: textView.textStorage?.length, isPublished: true)
+
+      if parent.text != externalText {
+        parent.text = externalText
+      }
+      lastObservedBoundText = externalText
+      if externalText != localText {
+        invalidateKnownText()
+      }
+      return localText
+    }
+
+    private func checkpointPendingLocalTextBeforeExternalReplacement(
+      ownedBy pendingTextOwner: OrgSyntaxTextEditor
+    ) {
+      guard hasUnpublishedLocalText else { return }
+      let checkpointID = UUID()
+      let session = bufferSession
+      let capture = session.capture()
+      let directCheckpoint = pendingTextOwner.onCheckpointText
+      let localChange = pendingTextOwner.onLocalTextChange
+      let conflictHandler = pendingTextOwner.onTextPublicationConflict
+      let orderingKey = pendingTextOwner.documentIdentity ?? lifecycleID.uuidString
+      let predecessor = Self.textCheckpointTailsByDocument[orderingKey]?.task
+      let snapshotProvider = checkpointSnapshotForTesting
+
+      hasUnpublishedLocalText = false
+      detachedTextCheckpointCount += 1
+      let task = Task { @MainActor [weak self, predecessor] in
+        if let predecessor {
+          await predecessor.value
+        }
+        self?.fullDocumentSnapshotCount += 1
+        let snapshot = await Self.materializeCheckpoint(
+          session: session,
+          capture: capture,
+          provider: snapshotProvider
+        )
+        defer {
+          self?.detachedTextCheckpointCount = max(
+            0,
+            (self?.detachedTextCheckpointCount ?? 1) - 1
+          )
+          Self.pendingTextCheckpointTasks.removeValue(forKey: checkpointID)
+          if Self.textCheckpointTailsByDocument[orderingKey]?.identifier == checkpointID {
+            Self.textCheckpointTailsByDocument.removeValue(forKey: orderingKey)
+          }
+        }
+        guard snapshot.revision == capture.revision else { return }
+        if let directCheckpoint {
+          directCheckpoint(snapshot.text)
+        } else if let conflictHandler {
+          conflictHandler(snapshot.text)
+        } else {
+          localChange?(snapshot.text)
+        }
+      }
+      Self.pendingTextCheckpointTasks[checkpointID] = task
+      Self.textCheckpointTailsByDocument[orderingKey] = (checkpointID, task)
+    }
+
+    @discardableResult
+    func flushPendingTextPublishingIfNeeded(from textView: NSTextView) -> String? {
+      guard hasUnpublishedLocalText else { return nil }
+      let boundText = parent.text
+      if hasExternalBoundTextChange(boundText) {
+        return resolvePendingLocalText(
+          beforeApplyingExternalText: boundText,
+          from: textView
+        )
+      }
+      return flushTextPublishing(from: textView)
+    }
+
+    func recordKnownText(
+      _ text: String,
+      utf16Length providedUTF16Length: Int? = nil,
+      isPublished: Bool = true
+    ) {
       lastKnownText = text
       lastKnownTextUTF16Length = providedUTF16Length ?? (text as NSString).length
+      lastKnownTextGeneration = localTextGeneration
+      if isPublished {
+        hasUnpublishedLocalText = false
+        lastObservedBoundText = text
+      }
     }
 
     func knownText(matchingUTF16Length utf16Length: Int?) -> String? {
       guard let utf16Length,
             let lastKnownText,
-            lastKnownTextUTF16Length == utf16Length
+            lastKnownTextUTF16Length == utf16Length,
+            lastKnownTextGeneration == localTextGeneration
       else {
         return nil
       }
@@ -3156,13 +4677,16 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       utf16Length providedUTF16Length: Int? = nil,
       willScheduleDeferredHighlighting: Bool = true
     ) {
-      let text = currentText ?? textView.string
-      let utf16Length = providedUTF16Length ?? textView.textStorage?.length ?? (text as NSString).length
+      let utf16Length = providedUTF16Length
+        ?? textView.textStorage?.length
+        ?? currentText.map { ($0 as NSString).length }
+        ?? 0
       if canPreserveLargeBufferAttributes(utf16Length: utf16Length) {
         textView.typingAttributes = OrgSyntaxHighlighter.baseTypingAttributes(monospaced: parent.monospaced)
-        recordHighlightedState(text: text, utf16Length: utf16Length)
+        recordHighlightedState(text: currentText, utf16Length: utf16Length)
         return
       }
+      let text = currentText ?? snapshotCurrentText(from: textView)
       if !willScheduleDeferredHighlighting {
         textView.typingAttributes = OrgSyntaxHighlighter.baseTypingAttributes(monospaced: parent.monospaced)
         recordHighlightedState(text: text, utf16Length: utf16Length)
@@ -3179,6 +4703,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       deferredIncrementalHighlightTask?.cancel()
       deferredIncrementalHighlightTask = nil
       deferredIncrementalHighlightText = nil
+      deferredIncrementalHighlightGeneration = nil
       deferredIncrementalHighlightRange = nil
     }
 
@@ -3186,11 +4711,16 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       deferredTextPublishTask?.cancel()
       deferredTextPublishTask = nil
       deferredTextPublishText = nil
+      deferredTextPublishUTF16Length = nil
       deferredTextPublishGeneration += 1
     }
 
     func hasPendingTextPublishing(for text: String) -> Bool {
-      deferredTextPublishTask != nil && deferredTextPublishText == text
+      guard deferredTextPublishTask != nil else { return false }
+      if let deferredTextPublishText {
+        return deferredTextPublishText == text
+      }
+      return deferredTextPublishUTF16Length == (text as NSString).length
     }
 
     func hasDeferredHighlighting(for text: String) -> Bool {
@@ -3198,20 +4728,34 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
         && deferredHighlightText == text
         && deferredHighlightMonospaced == parent.monospaced)
         || (deferredIncrementalHighlightTask != nil
-          && deferredIncrementalHighlightText == text)
+          && deferredIncrementalHighlightGeneration == localTextGeneration
+          && (deferredIncrementalHighlightText == nil
+            || deferredIncrementalHighlightText == text))
+    }
+
+    var hasDeferredHighlightingForCurrentBuffer: Bool {
+      (deferredHighlightTask != nil
+        && deferredHighlightMonospaced == parent.monospaced)
+        || (deferredIncrementalHighlightTask != nil
+          && deferredIncrementalHighlightGeneration == localTextGeneration)
     }
 
     func applyHighlightingIfNeeded(to textView: NSTextView, currentText: String? = nil) {
-      let text = currentText ?? textView.string
-      let utf16Length = textView.textStorage?.length ?? (text as NSString).length
+      let utf16Length = textView.textStorage?.length
+        ?? currentText.map { ($0 as NSString).length }
+        ?? 0
       if canPreserveLargeBufferAttributes(utf16Length: utf16Length) {
         textView.typingAttributes = OrgSyntaxHighlighter.baseTypingAttributes(monospaced: parent.monospaced)
-        recordHighlightedState(text: text, utf16Length: utf16Length)
+        recordHighlightedState(text: currentText, utf16Length: utf16Length)
         return
       }
 
+      let text = currentText ?? snapshotCurrentText(from: textView)
+
       guard lastHighlightedText != text
               || lastHighlightedMonospaced != parent.monospaced
+              || lastHighlightedConcealsSyntax != parent.concealsSyntax
+              || lastHighlightedLiveHighlighting != parent.liveHighlighting
       else {
         return
       }
@@ -3220,7 +4764,9 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
 
     private func canPreserveLargeBufferAttributes(utf16Length: Int) -> Bool {
       guard hasHighlightedText,
-            lastHighlightedMonospaced == parent.monospaced
+            lastHighlightedMonospaced == parent.monospaced,
+            lastHighlightedConcealsSyntax == parent.concealsSyntax,
+            lastHighlightedLiveHighlighting == parent.liveHighlighting
       else {
         return false
       }
@@ -3234,12 +4780,14 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     private func publishTextChange(_ currentText: String) {
       guard parent.text != currentText else {
         cancelDeferredTextPublishing()
+        recordKnownText(currentText, isPublished: true)
         return
       }
 
       if parent.shouldPublishTextImmediately?(currentText) == true {
         cancelDeferredTextPublishing()
         parent.text = currentText
+        recordKnownText(currentText, isPublished: true)
         return
       }
 
@@ -3247,23 +4795,92 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       case .immediate:
         cancelDeferredTextPublishing()
         parent.text = currentText
+        recordKnownText(currentText, isPublished: true)
       case .deferred(let milliseconds):
         scheduleDeferredTextPublishing(currentText, milliseconds: milliseconds)
       }
     }
 
-    private func flushTextPublishing(from textView: NSTextView) {
-      cancelDeferredTextPublishing()
-      if parent.text != textView.string {
-        parent.text = textView.string
+    private struct TextPublicationBoundary {
+      let bindingGeneration: (() -> UInt64)?
+      let expectedBindingGeneration: UInt64?
+      let baselineText: String
+      let conflictHandler: ((String) -> Void)?
+    }
+
+    private struct DocumentBoundary {
+      let generation: (() -> UInt64)?
+      let expectedGeneration: UInt64?
+    }
+
+    private func documentBoundary() -> DocumentBoundary {
+      let generation = parent.documentGeneration
+      return DocumentBoundary(
+        generation: generation,
+        expectedGeneration: generation?()
+      )
+    }
+
+    private func documentIsCurrent(for boundary: DocumentBoundary) -> Bool {
+      guard let generation = boundary.generation,
+            let expected = boundary.expectedGeneration
+      else { return true }
+      return generation() == expected
+    }
+
+    private func textPublicationBoundary() -> TextPublicationBoundary {
+      let bindingGeneration = parent.bindingGeneration
+      return TextPublicationBoundary(
+        bindingGeneration: bindingGeneration,
+        expectedBindingGeneration: bindingGeneration?(),
+        baselineText: parent.text,
+        conflictHandler: parent.onTextPublicationConflict
+      )
+    }
+
+    private func bindingIsCurrent(for boundary: TextPublicationBoundary) -> Bool {
+      if let bindingGeneration = boundary.bindingGeneration,
+         let expected = boundary.expectedBindingGeneration {
+        return bindingGeneration() == expected
       }
+      return parent.text == boundary.baselineText
+    }
+
+    private func finishConflictedTextPublication(
+      _ text: String,
+      boundary: TextPublicationBoundary
+    ) {
+      deferredTextPublishTask = nil
+      deferredTextPublishText = nil
+      deferredTextPublishUTF16Length = nil
+      hasUnpublishedLocalText = false
+      invalidateKnownText()
+      boundary.conflictHandler?(text)
+    }
+
+    @discardableResult
+    private func flushTextPublishing(from textView: NSTextView) -> String {
+      let shouldNotifyLocalChange = hasUnpublishedLocalText
+      cancelDeferredTextPublishing()
+      let snapshot = snapshotCurrentText(from: textView)
+      if shouldNotifyLocalChange {
+        parent.onLocalTextChange?(snapshot)
+      }
+      if parent.text != snapshot {
+        parent.text = snapshot
+      }
+      recordKnownText(snapshot, isPublished: true)
+      return snapshot
     }
 
     private func scheduleDeferredTextPublishing(_ text: String, milliseconds: Int) {
       cancelDeferredTextPublishing()
       deferredTextPublishGeneration += 1
       let generation = deferredTextPublishGeneration
+      let textGeneration = localTextGeneration
+      let boundary = textPublicationBoundary()
       deferredTextPublishText = text
+      deferredTextPublishUTF16Length = (text as NSString).length
 
       deferredTextPublishTask = Task { @MainActor [weak self] in
         do {
@@ -3274,19 +4891,83 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
         guard !Task.isCancelled,
               let self,
               self.deferredTextPublishGeneration == generation,
+              self.localTextGeneration == textGeneration,
               let expectedText = self.deferredTextPublishText
         else { return }
+        guard self.bindingIsCurrent(for: boundary) else {
+          self.finishConflictedTextPublication(expectedText, boundary: boundary)
+          return
+        }
         self.deferredTextPublishTask = nil
         self.deferredTextPublishText = nil
+        self.deferredTextPublishUTF16Length = nil
         if self.parent.text != expectedText {
           self.parent.text = expectedText
         }
+        self.recordKnownText(expectedText, isPublished: true)
+      }
+    }
+
+    private func scheduleDeferredTextPublishing(
+      from textView: NSTextView,
+      milliseconds: Int
+    ) {
+      cancelDeferredTextPublishing()
+      deferredTextPublishGeneration += 1
+      let generation = deferredTextPublishGeneration
+      let textGeneration = localTextGeneration
+      let bufferCapture = bufferSession.capture()
+      let boundary = textPublicationBoundary()
+      let expectedUTF16Length = textView.textStorage?.length ?? 0
+      deferredTextPublishUTF16Length = expectedUTF16Length
+
+      let session = bufferSession
+      deferredTextPublishTask = Task { @MainActor [weak self, weak textView] in
+        do {
+          try await Task.sleep(nanoseconds: UInt64(max(0, milliseconds)) * 1_000_000)
+        } catch {
+          return
+        }
+        guard !Task.isCancelled,
+              let self,
+              let textView,
+              self.deferredTextPublishGeneration == generation,
+              self.localTextGeneration == textGeneration,
+              textView.textStorage?.length == expectedUTF16Length
+        else { return }
+
+        self.fullDocumentSnapshotCount += 1
+        let snapshot: OrgSyntaxTextBufferSession.Snapshot
+        if let deferredTextSnapshotForTesting = self.deferredTextSnapshotForTesting {
+          snapshot = await deferredTextSnapshotForTesting()
+        } else {
+          snapshot = await session.snapshotAsync(
+            from: bufferCapture,
+            priority: .utility
+          )
+        }
+        guard !Task.isCancelled,
+              self.deferredTextPublishGeneration == generation,
+              self.localTextGeneration == textGeneration,
+              snapshot.revision == bufferCapture.revision
+        else { return }
+        guard self.bindingIsCurrent(for: boundary) else {
+          self.finishConflictedTextPublication(snapshot.text, boundary: boundary)
+          return
+        }
+        self.deferredTextPublishTask = nil
+        self.deferredTextPublishText = nil
+        self.deferredTextPublishUTF16Length = nil
+        self.parent.onLocalTextChange?(snapshot.text)
+        self.parent.text = snapshot.text
+        self.recordKnownText(snapshot.text, isPublished: true)
       }
     }
 
     private func scheduleDeferredHighlighting(to textView: NSTextView, expectedText: String) {
       cancelDeferredHighlighting()
       let expectedMonospaced = parent.monospaced
+      let documentBoundary = documentBoundary()
       deferredHighlightText = expectedText
       deferredHighlightMonospaced = expectedMonospaced
 
@@ -3298,7 +4979,8 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
         }
         guard !Task.isCancelled, let self, let textView else { return }
         guard self.deferredHighlightText == expectedText,
-              self.deferredHighlightMonospaced == expectedMonospaced
+              self.deferredHighlightMonospaced == expectedMonospaced,
+              self.documentIsCurrent(for: documentBoundary)
         else { return }
 
         self.deferredHighlightTask = nil
@@ -3334,38 +5016,61 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     }
 
     private func publishSelectionIfNeeded(_ selectedRange: NSRange, from textView: NSTextView) {
-      guard let selection = parent.selection,
-            selection.wrappedValue != selectedRange
-      else {
-        return
-      }
+      let selection = parent.selection
+      let selectionNeedsUpdate = selection.map { $0.wrappedValue != selectedRange } ?? false
+      guard selectionNeedsUpdate || parent.onSelectionSnapshot != nil else { return }
 
       // A caret-only move does not need the buffer contents. Publishing it
       // after the existing debounce keeps restoration accurate without
-      // copying or scanning a large file on every arrow key or click.
-      if selectedRange.length == 0, selection.wrappedValue.length == 0 {
+      // copying or scanning a large file on every arrow key or click. The
+      // optional local snapshot is capped to a small window and obtains its
+      // line from the editor's incremental index.
+      if selectedRange.length == 0,
+         (selection?.wrappedValue.length ?? 0) == 0 {
         if parent.caretPublishingDelayMilliseconds > 0 {
           scheduleDeferredCaretPublishing(
             selectedRange,
-            milliseconds: parent.caretPublishingDelayMilliseconds
+            milliseconds: parent.caretPublishingDelayMilliseconds,
+            textView: textView
           )
         } else {
           cancelDeferredCaretPublishing()
-          selection.wrappedValue = selectedRange
+          publishSelectionSnapshotIfNeeded(selectedRange, from: textView)
+          if selectionNeedsUpdate {
+            selection?.wrappedValue = selectedRange
+          }
         }
         return
       }
 
-      publishSelectionIfNeeded(selectedRange, in: textView.string)
+      if selectedRange.length == 0,
+         parent.caretPublishingDelayMilliseconds > 0 {
+        scheduleDeferredCaretPublishing(
+          selectedRange,
+          milliseconds: parent.caretPublishingDelayMilliseconds,
+          textView: textView
+        )
+      } else {
+        cancelDeferredCaretPublishing()
+        publishSelectionSnapshotIfNeeded(selectedRange, from: textView)
+        if selectionNeedsUpdate {
+          selection?.wrappedValue = selectedRange
+        }
+      }
     }
 
-    private func scheduleDeferredCaretPublishing(_ range: NSRange, milliseconds: Int) {
+    private func scheduleDeferredCaretPublishing(
+      _ range: NSRange,
+      milliseconds: Int,
+      textView: NSTextView? = nil
+    ) {
       cancelDeferredCaretPublishing()
       deferredCaretPublishGeneration += 1
       let generation = deferredCaretPublishGeneration
+      let documentBoundary = documentBoundary()
       deferredCaretPublishRange = range
 
-      deferredCaretPublishTask = Task { @MainActor [weak self] in
+      deferredCaretPublishTask = Task { @MainActor [weak self, weak textView] in
         do {
           try await Task.sleep(nanoseconds: UInt64(max(0, milliseconds)) * 1_000_000)
         } catch {
@@ -3374,10 +5079,15 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
         guard !Task.isCancelled,
               let self,
               self.deferredCaretPublishGeneration == generation,
+              self.documentIsCurrent(for: documentBoundary),
               let expectedRange = self.deferredCaretPublishRange
         else { return }
         self.deferredCaretPublishTask = nil
         self.deferredCaretPublishRange = nil
+        if let textView,
+           textView.selectedRange() == expectedRange {
+          self.publishSelectionSnapshotIfNeeded(expectedRange, from: textView)
+        }
         if self.parent.selection?.wrappedValue != expectedRange {
           self.parent.selection?.wrappedValue = expectedRange
         }
@@ -3387,6 +5097,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     private func flushCaretPublishing(from textView: NSTextView) {
       cancelDeferredCaretPublishing()
       let range = textView.selectedRange()
+      publishSelectionSnapshotIfNeeded(range, from: textView)
       if parent.selection?.wrappedValue != range {
         parent.selection?.wrappedValue = range
       }
@@ -3400,8 +5111,53 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     }
 
     func shouldReadTextForSelectionPublishing(_ selectedRange: NSRange) -> Bool {
+      if parent.onSelectionSnapshot != nil { return true }
       guard let selection = parent.selection else { return false }
       return selection.wrappedValue != selectedRange
+    }
+
+    private func publishSelectionSnapshotIfNeeded(
+      _ requestedRange: NSRange,
+      from textView: NSTextView
+    ) {
+      guard let publish = parent.onSelectionSnapshot,
+            let storage = textView.textStorage?.mutableString
+      else { return }
+
+      let selectedRange = OrgSyntaxTextEditor.clampedRange(
+        requestedRange,
+        utf16Length: storage.length
+      )
+      let caret = selectedRange.location
+      var windowStart = max(0, caret - Self.selectionSnapshotLookbehindUTF16Length)
+      // Do not split a surrogate pair when the bounded window begins inside
+      // one. NSTextView selections themselves are already valid boundaries.
+      if windowStart > 0,
+         windowStart < storage.length,
+         (0xDC00...0xDFFF).contains(storage.character(at: windowStart)),
+         (0xD800...0xDBFF).contains(storage.character(at: windowStart - 1)) {
+        windowStart -= 1
+      }
+      let localRange = NSRange(
+        location: windowStart,
+        length: max(0, caret - windowStart)
+      )
+      let sourceLine: Int?
+      if isLineIndexReady,
+         lineIndex.documentUTF16Length == storage.length {
+        sourceLine = lineIndex.lineNumber(atUTF16Offset: caret)
+      } else {
+        sourceLine = nil
+      }
+      let snapshot = OrgSyntaxTextEditorSelectionSnapshot(
+        selectedRange: selectedRange,
+        sourceLine: sourceLine,
+        localText: storage.substring(with: localRange),
+        localTextRange: localRange
+      )
+      guard snapshot != lastPublishedSelectionSnapshot else { return }
+      lastPublishedSelectionSnapshot = snapshot
+      publish(snapshot)
     }
 
     static func shouldPublishSelection(
@@ -3445,6 +5201,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     }
 
     static let selectionInlineSyntaxRadius = 512
+    static let selectionSnapshotLookbehindUTF16Length = 4_096
 
     static func shouldApplyExternalSelection(
       requestedSelection: NSRange,
@@ -3529,12 +5286,40 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       return false
     }
 
+    static func shouldUseViewportOnlyHighlighting(
+      utf16Length: Int,
+      showsScrollers: Bool
+    ) -> Bool {
+      showsScrollers
+        && utf16Length > OrgSyntaxHighlighter.liveTokenizationUTF16Limit
+    }
+
     func applyHighlighting(to textView: NSTextView) {
       cancelDeferredHighlighting()
       guard let storage = textView.textStorage else { return }
       invalidateViewportHighlighting()
       let selectedRanges = textView.selectedRanges
       let visibleOrigin = Self.visibleOrigin(of: textView)
+      if Self.shouldUseViewportOnlyHighlighting(
+        utf16Length: storage.length,
+        showsScrollers: parent.showsScrollers
+      ) {
+        // NSTextView assigned base attributes while creating the storage.
+        // Resetting the complete attributed string here is an avoidable O(N)
+        // main-thread pass. Restyle only laid-out lines now and each newly
+        // visible range as the user scrolls.
+        textView.typingAttributes = OrgSyntaxHighlighter.baseTypingAttributes(
+          monospaced: parent.monospaced
+        )
+        if parent.liveHighlighting {
+          highlightVisibleRange(in: textView)
+        }
+        textView.selectedRanges = selectedRanges
+        Self.restoreVisibleOrigin(visibleOrigin, of: textView)
+        recordHighlightedState(text: nil, utf16Length: storage.length)
+        publishContentHeight(for: textView)
+        return
+      }
       let typingAttributes = OrgSyntaxHighlighter.apply(
         to: storage,
         monospaced: parent.monospaced,
@@ -3614,14 +5399,18 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       let utf16Length = textView.textStorage?.length ?? 0
       hasHighlightedText = true
       lastHighlightedMonospaced = parent.monospaced
+      lastHighlightedConcealsSyntax = parent.concealsSyntax
+      lastHighlightedLiveHighlighting = parent.liveHighlighting
       lastHighlightedText = OrgSyntaxHighlighter.shouldTokenizeLiveText(utf16Length: utf16Length)
         ? textView.string
         : nil
     }
 
-    private func recordHighlightedState(text: String, utf16Length: Int) {
+    private func recordHighlightedState(text: String?, utf16Length: Int) {
       hasHighlightedText = true
       lastHighlightedMonospaced = parent.monospaced
+      lastHighlightedConcealsSyntax = parent.concealsSyntax
+      lastHighlightedLiveHighlighting = parent.liveHighlighting
       if OrgSyntaxHighlighter.shouldTokenizeLiveText(utf16Length: utf16Length) {
         lastHighlightedText = text
       } else {

@@ -1,0 +1,60 @@
+{
+  "$schema": "org2:openorg-performance-corpus-shape:v1",
+  "version": 3,
+  "description": "Aggregate, privacy-safe union of the root-heavy and zoned OpenOrg corpus layouts. It preserves both workloads without corpus text, file names, IDs, or source paths.",
+  "privacy": {
+    "containsCorpusContent": false,
+    "containsFileNames": false,
+    "containsSourcePaths": false
+  },
+  "documents": {
+    "activeFileCount": 5475,
+    "rootFileCount": 1934,
+    "extensionMix": {
+      "csv": 35,
+      "md": 127,
+      "org": 3239,
+      "org2": 2074
+    },
+    "zones": [
+      { "kind": "notes", "fileCount": 1206 },
+      { "kind": "daily", "fileCount": 1439 },
+      { "kind": "agents", "fileCount": 34 },
+      { "kind": "meetings", "fileCount": 276 },
+      { "kind": "views", "fileCount": 418 },
+      { "kind": "other", "fileCount": 168 }
+    ],
+    "sizeBytes": {
+      "p50": 2077,
+      "p90": 17120,
+      "p95": 35606,
+      "p99": 181762,
+      "max": 5848122
+    },
+    "largeDocumentWorkload": {
+      "headlineIntervalBytes": 896,
+      "longLineBytes": 4096,
+      "longLineEvery": 11,
+      "crlfEvery": 3
+    }
+  },
+  "chat": {
+    "threadCount": 362,
+    "activeThreadCount": 12,
+    "archivedThreadCount": 350,
+    "messageCount": 2905,
+    "maxMessagesPerThread": 233,
+    "attachmentBytes": 20033298,
+    "largestMessageBytes": 7741,
+    "encodedTranscriptBytes": 41338378
+  },
+  "workspaceScale": {
+    "agentRunCount": 5935,
+    "approvalItemCount": 500,
+    "externalThreadCount": 250,
+    "sourceProfileCount": 12
+  },
+  "events": {
+    "burstFileCount": 100
+  }
+}

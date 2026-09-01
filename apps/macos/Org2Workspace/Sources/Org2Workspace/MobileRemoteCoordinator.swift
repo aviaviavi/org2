@@ -40,6 +40,7 @@ final class MobileRemoteCoordinator: ObservableObject {
   private let credentialVault: MobileRemoteCredentialVault
   private let pushCredentialStore: MobileRemotePushCredentialStore
   private let pushSender: MobileRemotePushSender
+  private let backgroundWork = MobileRemoteBackgroundWork()
   private weak var store: WorkspaceStore?
   private var server: MobileRemoteHTTPServer?
   private var failedPairingAttempts = 0
@@ -318,9 +319,11 @@ final class MobileRemoteCoordinator: ObservableObject {
     }
 
     if request.method == "GET", path == "/v1/threads" {
-      return .json(MobileRemoteThreadList(threads: store.openClawChatThreads.map {
-        threadSummary($0, store: store)
-      }))
+      let threads = store.openClawChatThreads
+      return await backgroundWork.threadListResponse(
+        threads: threads,
+        context: threadProjectionContext(for: threads, store: store)
+      )
     }
 
     if request.method == "POST", path == "/v1/threads" {
@@ -343,7 +346,7 @@ final class MobileRemoteCoordinator: ObservableObject {
     }
 
     if request.method == "GET", path == "/v1/workspace" {
-      return .json(await store.mobileRemoteWorkspaceSnapshot())
+      return await backgroundWork.jsonResponse(await store.mobileRemoteWorkspaceSnapshot())
     }
 
     let workspaceComponents = path.split(separator: "/").map(String.init)
@@ -405,7 +408,8 @@ final class MobileRemoteCoordinator: ObservableObject {
         return .error("The cited file reference could not be read.", statusCode: 400)
       }
       do {
-        return .json(try store.mobileRemoteFilePreview(path: payload.path, line: payload.line))
+        let preview = try await store.mobileRemoteFilePreview(path: payload.path, line: payload.line)
+        return await backgroundWork.jsonResponse(preview)
       } catch {
         return .error(error.localizedDescription, statusCode: 404)
       }
@@ -413,7 +417,8 @@ final class MobileRemoteCoordinator: ObservableObject {
 
     if request.method == "GET", path == "/v1/external-threads" {
       do {
-        return .json(ExternalThreadList(threads: try await store.externalThreadSummaries()))
+        let threads = try await store.externalThreadSummaries()
+        return await backgroundWork.jsonResponse(ExternalThreadList(threads: threads))
       } catch {
         return .error(error.localizedDescription, statusCode: 503)
       }
@@ -431,7 +436,7 @@ final class MobileRemoteCoordinator: ObservableObject {
           externalID: externalID
         )
         if request.method == "GET", externalComponents.count == 4 {
-          return .json(detail)
+          return await backgroundWork.jsonResponse(detail)
         }
         if request.method == "POST",
            externalComponents.count == 5,
@@ -462,7 +467,13 @@ final class MobileRemoteCoordinator: ObservableObject {
     }
 
     if request.method == "GET", components.count == 3 {
-      return .json(threadDetail(thread, store: store))
+      guard let hydratedThread = await store.hydratedAIChatThreadForDetail(threadID) else {
+        return .error("This conversation could not be loaded.", statusCode: 503)
+      }
+      return await backgroundWork.threadDetailResponse(
+        thread: hydratedThread,
+        context: threadDetailProjectionContext(for: hydratedThread, store: store)
+      )
     }
     if request.method == "GET", components.count == 4, components[3] == "configuration" {
       do {
@@ -506,10 +517,16 @@ final class MobileRemoteCoordinator: ObservableObject {
       ), let updated = store.openClawChatThreads.first(where: { $0.id == threadID }) else {
         return .error("Thread not found.", statusCode: 404)
       }
-      return .json(threadSummary(updated, store: store))
+      let context = threadProjectionContext(for: [updated], store: store)
+      return await backgroundWork.jsonResponse(
+        MobileRemoteThreadProjection.summary(thread: updated, context: context)
+      )
     }
     if request.method == "POST", components.count == 4, components[3] == "fork" {
-      guard let forkedThreadID = store.forkAIChatThread(threadID, selectsThread: false) else {
+      guard let forkedThreadID = await store.forkAIChatThread(
+        threadID,
+        selectsThread: false
+      ) else {
         return .error("This thread could not be forked.", statusCode: 409)
       }
       return .json(
@@ -518,18 +535,15 @@ final class MobileRemoteCoordinator: ObservableObject {
       )
     }
     if request.method == "POST", components.count == 4, components[3] == "messages" {
-      guard let payload = try? request.decode(MobileRemoteSendMessageRequest.self) else {
-        return .error("The message could not be read.", statusCode: 400)
-      }
-      let attachments: [OpenClawChatAttachment]
+      let payload: MobileRemotePreparedSendMessage
       do {
-        attachments = try Self.chatAttachments(from: payload.attachments)
+        payload = try await backgroundWork.prepareSendMessage(from: request)
       } catch {
         return .error(error.localizedDescription, statusCode: 400)
       }
       guard let destinationThreadID = store.sendAIChatRemoteMessageDestination(
         payload.content,
-        attachments: attachments,
+        attachments: payload.attachments,
         threadID: threadID,
         delivery: payload.delivery.flatMap(AIChatMessageDeliveryPreference.init(rawValue:))
           ?? .automatic
@@ -606,15 +620,15 @@ final class MobileRemoteCoordinator: ObservableObject {
     let registrations = credentialVault.pushRegistrations
     guard !registrations.isEmpty else { return }
     for message in messages {
-      let visibleText = WorkspaceStore.visibleAIChatMessageText(message)
-        .trimmingCharacters(in: .whitespacesAndNewlines)
+      let visibleText = MobileRemoteMessagePreview.make(
+        from: message,
+        characterLimit: 220
+      )?.text
       let envelope = MobileRemotePushEnvelope(
         messageID: message.id,
         threadID: thread.id,
         title: thread.title,
-        body: visibleText.isEmpty
-          ? "An AI agent replied."
-          : String(visibleText.prefix(220))
+        body: visibleText ?? "An AI agent replied."
       )
       for registration in registrations {
         Task { [weak self] in
@@ -650,72 +664,31 @@ final class MobileRemoteCoordinator: ObservableObject {
     try await pushSender.send(envelope, to: registration, credentials: credentials)
   }
 
-  private func threadSummary(_ thread: OpenClawChatThread, store: WorkspaceStore) -> MobileRemoteThreadSummary {
-    let destination = store.aiChatDestination(id: thread.destinationID)
-    let preview = thread.messages
-      .last(where: { !$0.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
-      .map(WorkspaceStore.visibleAIChatMessageText)?
-      .trimmingCharacters(in: .whitespacesAndNewlines)
-    let latestAssistantMessage = thread.messages.last(where: {
-      $0.role == .assistant && !$0.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    })
-    return MobileRemoteThreadSummary(
-      id: thread.id,
-      title: thread.title,
-      runtime: thread.runtime.rawValue,
-      destinationID: thread.destinationID,
-      destinationName: thread.isSharedRoom ? "Shared AI Room" : destination?.name,
-      isSharedRoom: thread.isSharedRoom,
-      model: thread.model,
-      updatedAt: thread.updatedAt,
-      isSettled: thread.isSettled,
-      isPinned: thread.isPinned,
-      isRunning: store.isAIChatThreadRunning(thread.id),
-      unreadMessageCount: thread.unreadMessageCount,
-      preview: preview.map { String($0.prefix(180)) },
-      latestAssistantMessageID: latestAssistantMessage?.id,
-      latestAssistantPreview: latestAssistantMessage.map {
-        String($0.content.trimmingCharacters(in: .whitespacesAndNewlines).prefix(180))
-      }
+  private func threadProjectionContext(
+    for threads: [OpenClawChatThread],
+    store: WorkspaceStore
+  ) -> MobileRemoteThreadProjectionContext {
+    MobileRemoteThreadProjectionContext(
+      destinationNamesByID: store.aiChatDestinationTitlesByID,
+      runningThreadIDs: Set(threads.lazy.filter {
+        store.isAIChatThreadRunning($0.id)
+      }.map(\.id))
     )
   }
 
-  private func threadDetail(_ thread: OpenClawChatThread, store: WorkspaceStore) -> MobileRemoteThreadDetail {
+  private func threadDetailProjectionContext(
+    for thread: OpenClawChatThread,
+    store: WorkspaceStore
+  ) -> MobileRemoteThreadDetailProjectionContext {
     let activeDestinationName = store.aiChatActiveDestinationID(for: thread.id)
       .map(store.aiChatDestinationTitle)
-    return MobileRemoteThreadDetail(
-      thread: threadSummary(thread, store: store),
-      messages: thread.messages.map {
-        let authorDestination = $0.authorDestinationID.flatMap(store.aiChatDestination(id:))
-        let audienceDestinationIDs = $0.audienceDestinationIDs.isEmpty
-          ? [$0.targetDestinationID].compactMap { $0 }
-          : $0.audienceDestinationIDs
-        return MobileRemoteChatMessage(
-          id: $0.id,
-          role: $0.role.rawValue,
-          content: $0.content,
-          attachmentNames: $0.attachments.compactMap(\.fileName),
-          createdAt: $0.createdAt,
-          deliveryStatus: $0.deliveryStatus.rawValue,
-          deliveryKind: $0.deliveryKind.rawValue,
-          sendFailure: $0.sendFailure,
-          authorRuntime: $0.authorRuntime?.rawValue,
-          authorDestinationID: $0.authorDestinationID,
-          authorDestinationName: authorDestination?.name,
-          audience: $0.audience?.rawValue,
-          audienceDestinationNames: audienceDestinationIDs.compactMap {
-            store.aiChatDestination(id: $0)?.name
-          },
-          isRoomDispatchCopy: $0.isRoomDispatchCopy,
-          roomRoundID: $0.roomRoundID
-        )
-      },
+    let livePresentation = store.aiChatLivePresentationSnapshot(for: thread.id)
+    return MobileRemoteThreadDetailProjectionContext(
+      threads: threadProjectionContext(for: [thread], store: store),
       activeDestinationName: activeDestinationName,
-      streamingReply: store.aiChatStreamingReply(for: thread.id),
-      reasoning: store.aiChatReasoning(for: thread.id),
-      activities: MobileRemoteActivityPresentation.items(
-        from: store.aiChatRunActivities(for: thread.id)
-      ),
+      streamingReply: livePresentation.streamingReply,
+      reasoning: livePresentation.reasoning,
+      activities: store.aiChatRunActivities(for: thread.id),
       connectionState: store.aiChatConnectionState(for: thread.id).rawValue,
       connectionDetail: store.aiChatConnectionDetail(for: thread.id)
     )
@@ -746,37 +719,6 @@ final class MobileRemoteCoordinator: ObservableObject {
       },
       defaultReasoningEffort: configuration.defaultReasoningEffort
     )
-  }
-
-  private static func chatAttachments(
-    from payloads: [MobileRemoteAttachment]
-  ) throws -> [OpenClawChatAttachment] {
-    guard payloads.count <= 4 else {
-      throw MobileRemoteRequestError.tooManyPhotos
-    }
-    var totalBytes = 0
-    return try payloads.map { payload in
-      let mimeType = payload.mimeType.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-      guard mimeType.hasPrefix("image/") else {
-        throw MobileRemoteRequestError.unsupportedAttachment(payload.fileName)
-      }
-      guard !payload.data.isEmpty, payload.data.count <= 5_000_000 else {
-        throw MobileRemoteRequestError.photoTooLarge(payload.fileName)
-      }
-      totalBytes += payload.data.count
-      guard totalBytes <= 8_000_000 else {
-        throw MobileRemoteRequestError.photosTooLarge
-      }
-      let fileName = URL(fileURLWithPath: payload.fileName).lastPathComponent
-      guard !fileName.isEmpty else {
-        throw MobileRemoteRequestError.unsupportedAttachment("Photo")
-      }
-      return OpenClawChatAttachment(
-        fileName: fileName,
-        mimeType: mimeType,
-        data: payload.data
-      )
-    }
   }
 
   static func isTailscaleIPv4(_ address: String) -> Bool {
@@ -811,26 +753,6 @@ final class MobileRemoteCoordinator: ObservableObject {
       }
     }
     return results.sorted()
-  }
-}
-
-private enum MobileRemoteRequestError: LocalizedError {
-  case tooManyPhotos
-  case photoTooLarge(String)
-  case photosTooLarge
-  case unsupportedAttachment(String)
-
-  var errorDescription: String? {
-    switch self {
-    case .tooManyPhotos:
-      "Attach no more than four photos at a time."
-    case .photoTooLarge(let name):
-      "\(name) is too large to send from Mobile Remote."
-    case .photosTooLarge:
-      "The selected photos are too large to send together."
-    case .unsupportedAttachment(let name):
-      "\(name) is not a supported photo attachment."
-    }
   }
 }
 

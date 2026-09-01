@@ -1,0 +1,382 @@
+{
+  "$schema": "org2:openorg-performance-budgets:v1",
+  "version": 6,
+  "description": "Calibrated absolute release-build interaction budgets. A scenario or named target fails when it exceeds either its percentile or maximum budget.",
+  "scenarios": {
+    "chat-transcript-load": {
+      "minimumSamples": 1,
+      "p95Milliseconds": 750,
+      "maximumMilliseconds": 1500
+    },
+    "corpus-catalog-refresh": {
+      "minimumSamples": 1,
+      "p95Milliseconds": 750,
+      "maximumMilliseconds": 1500
+    },
+    "application-activation-to-draw": {
+      "minimumSamples": 20,
+      "p95Milliseconds": 50,
+      "maximumMilliseconds": 100
+    },
+    "post-activation-main-actor-gap": {
+      "minimumSamples": 20,
+      "p95Milliseconds": 16.7,
+      "maximumMilliseconds": 50
+    },
+    "workspace-navigation-to-draw": {
+      "minimumSamples": 18,
+      "p95Milliseconds": 350,
+      "maximumMilliseconds": 450,
+      "targets": {
+        "agenda:default": {
+          "p95Milliseconds": 260,
+          "maximumMilliseconds": 275
+        },
+        "files:default": {
+          "p95Milliseconds": 230,
+          "maximumMilliseconds": 275
+        },
+        "approvals:runs": {
+          "p95Milliseconds": 350,
+          "maximumMilliseconds": 450
+        },
+        "approvals:review": {
+          "p95Milliseconds": 105,
+          "maximumMilliseconds": 125
+        },
+        "meetings:default": {
+          "p95Milliseconds": 95,
+          "maximumMilliseconds": 110
+        },
+        "sources:default": {
+          "p95Milliseconds": 95,
+          "maximumMilliseconds": 125
+        },
+        "externalThreads:default": {
+          "p95Milliseconds": 110,
+          "maximumMilliseconds": 125
+        },
+        "openClaw:default": {
+          "p95Milliseconds": 105,
+          "maximumMilliseconds": 115
+        },
+        "home:default": {
+          "p95Milliseconds": 385,
+          "maximumMilliseconds": 425
+        },
+        "search:default": {
+          "p95Milliseconds": 165,
+          "maximumMilliseconds": 180
+        }
+      }
+    },
+    "thread-switch-to-draw": {
+      "minimumSamples": 30,
+      "p95Milliseconds": 50,
+      "maximumMilliseconds": 100
+    },
+    "large-thread-find-query-to-reveal": {
+      "minimumSamples": 1,
+      "p95Milliseconds": 150,
+      "maximumMilliseconds": 300
+    },
+    "shared-room-bounded-mount-to-draw": {
+      "minimumSamples": 5,
+      "p95Milliseconds": 50,
+      "maximumMilliseconds": 100
+    },
+    "large-live-update-to-draw": {
+      "minimumSamples": 1,
+      "p95Milliseconds": 50,
+      "maximumMilliseconds": 100
+    },
+    "large-live-update-main-actor-gap": {
+      "minimumSamples": 1,
+      "p95Milliseconds": 50,
+      "maximumMilliseconds": 100
+    },
+    "pointer-to-window-update": {
+      "minimumSamples": 20,
+      "p95Milliseconds": 16.7,
+      "maximumMilliseconds": 100
+    },
+    "composer-key-to-draw": {
+      "minimumSamples": 20,
+      "p95Milliseconds": 16.7,
+      "maximumMilliseconds": 100
+    },
+    "window-resize-to-draw": {
+      "minimumSamples": 60,
+      "p95Milliseconds": 16.7,
+      "maximumMilliseconds": 50
+    },
+    "large-editor-key-to-draw": {
+      "minimumSamples": 20,
+      "p95Milliseconds": 16.7,
+      "maximumMilliseconds": 100
+    },
+    "large-editor-focus-resign": {
+      "minimumSamples": 1,
+      "p95Milliseconds": 16.7,
+      "maximumMilliseconds": 50
+    },
+    "large-editor-post-input-main-actor-gap": {
+      "minimumSamples": 1,
+      "p95Milliseconds": 50,
+      "maximumMilliseconds": 100
+    },
+    "large-editor-open-to-first-visible-frame": {
+      "minimumSamples": 1,
+      "p95Milliseconds": 200,
+      "maximumMilliseconds": 500
+    },
+    "large-editor-selection-to-draw": {
+      "minimumSamples": 10,
+      "p95Milliseconds": 33.4,
+      "maximumMilliseconds": 100
+    },
+    "large-editor-caret-click-to-draw": {
+      "minimumSamples": 10,
+      "p95Milliseconds": 33.4,
+      "maximumMilliseconds": 100
+    },
+    "large-editor-drag-selection-to-draw": {
+      "minimumSamples": 10,
+      "p95Milliseconds": 33.4,
+      "maximumMilliseconds": 100
+    },
+    "large-editor-window-resize-to-draw": {
+      "minimumSamples": 60,
+      "p95Milliseconds": 16.7,
+      "maximumMilliseconds": 50
+    },
+    "large-editor-continuous-scroll-to-draw": {
+      "minimumSamples": 60,
+      "p95Milliseconds": 33.4,
+      "maximumMilliseconds": 100
+    },
+    "large-editor-post-scroll-main-actor-gap": {
+      "minimumSamples": 1,
+      "p95Milliseconds": 50,
+      "maximumMilliseconds": 100
+    },
+    "large-editor-gutter-action-to-draw": {
+      "minimumSamples": 10,
+      "p95Milliseconds": 33.4,
+      "maximumMilliseconds": 100
+    },
+    "large-editor-structural-command-to-draw": {
+      "minimumSamples": 10,
+      "p95Milliseconds": 50,
+      "maximumMilliseconds": 150
+    },
+    "large-editor-explicit-save-persistence": {
+      "minimumSamples": 1,
+      "p95Milliseconds": 2500,
+      "maximumMilliseconds": 5000
+    },
+    "large-editor-menu-save-persistence": {
+      "minimumSamples": 1,
+      "p95Milliseconds": 2500,
+      "maximumMilliseconds": 5000
+    },
+    "large-editor-dirty-navigation-to-draw": {
+      "minimumSamples": 1,
+      "p95Milliseconds": 200,
+      "maximumMilliseconds": 500
+    },
+    "large-editor-draft-persistence": {
+      "minimumSamples": 1,
+      "p95Milliseconds": 2500,
+      "maximumMilliseconds": 5000
+    },
+    "large-editor-external-reload-main-actor-gap": {
+      "minimumSamples": 1,
+      "p95Milliseconds": 50,
+      "maximumMilliseconds": 100
+    },
+    "corpus-event-burst-convergence": {
+      "minimumSamples": 1,
+      "p95Milliseconds": 2000,
+      "maximumMilliseconds": 2500
+    },
+    "corpus-event-burst-main-actor-gap": {
+      "minimumSamples": 1,
+      "p95Milliseconds": 50,
+      "maximumMilliseconds": 100
+    },
+    "interaction-soak-main-actor-gap": {
+      "minimumSamples": 1,
+      "p95Milliseconds": 50,
+      "maximumMilliseconds": 100
+    },
+    "real-corpus-readonly-scan-and-publish": {
+      "optional": true,
+      "minimumSamples": 1,
+      "p95Milliseconds": 1000,
+      "maximumMilliseconds": 2000
+    },
+    "real-application-activation-to-draw": {
+      "optional": true,
+      "minimumSamples": 20,
+      "p95Milliseconds": 50,
+      "maximumMilliseconds": 100
+    },
+    "real-post-activation-main-actor-gap": {
+      "optional": true,
+      "minimumSamples": 20,
+      "p95Milliseconds": 16.7,
+      "maximumMilliseconds": 50
+    },
+    "real-workspace-navigation-to-draw": {
+      "optional": true,
+      "minimumSamples": 18,
+      "p95Milliseconds": 350,
+      "maximumMilliseconds": 450,
+      "targets": {
+        "agenda:default": {
+          "p95Milliseconds": 260,
+          "maximumMilliseconds": 275
+        },
+        "files:default": {
+          "p95Milliseconds": 230,
+          "maximumMilliseconds": 275
+        },
+        "approvals:runs": {
+          "p95Milliseconds": 350,
+          "maximumMilliseconds": 450
+        },
+        "approvals:review": {
+          "p95Milliseconds": 105,
+          "maximumMilliseconds": 125
+        },
+        "meetings:default": {
+          "p95Milliseconds": 95,
+          "maximumMilliseconds": 110
+        },
+        "sources:default": {
+          "p95Milliseconds": 95,
+          "maximumMilliseconds": 125
+        },
+        "externalThreads:default": {
+          "p95Milliseconds": 110,
+          "maximumMilliseconds": 125
+        },
+        "openClaw:default": {
+          "p95Milliseconds": 105,
+          "maximumMilliseconds": 115
+        },
+        "home:default": {
+          "p95Milliseconds": 385,
+          "maximumMilliseconds": 425
+        },
+        "search:default": {
+          "p95Milliseconds": 165,
+          "maximumMilliseconds": 180
+        }
+      }
+    },
+    "real-thread-switch-to-draw": {
+      "optional": true,
+      "minimumSamples": 20,
+      "p95Milliseconds": 50,
+      "maximumMilliseconds": 100
+    },
+    "real-large-editor-open-to-first-visible-frame": {
+      "optional": true,
+      "minimumSamples": 1,
+      "p95Milliseconds": 200,
+      "maximumMilliseconds": 500
+    },
+    "real-large-editor-key-to-draw": {
+      "optional": true,
+      "minimumSamples": 20,
+      "p95Milliseconds": 16.7,
+      "maximumMilliseconds": 100
+    },
+    "real-large-editor-focus-resign": {
+      "optional": true,
+      "minimumSamples": 1,
+      "p95Milliseconds": 16.7,
+      "maximumMilliseconds": 50
+    },
+    "real-large-editor-post-input-main-actor-gap": {
+      "optional": true,
+      "minimumSamples": 1,
+      "p95Milliseconds": 50,
+      "maximumMilliseconds": 100
+    },
+    "real-large-editor-selection-to-draw": {
+      "optional": true,
+      "minimumSamples": 10,
+      "p95Milliseconds": 33.4,
+      "maximumMilliseconds": 100
+    },
+    "real-large-editor-caret-click-to-draw": {
+      "optional": true,
+      "minimumSamples": 10,
+      "p95Milliseconds": 33.4,
+      "maximumMilliseconds": 100
+    },
+    "real-large-editor-drag-selection-to-draw": {
+      "optional": true,
+      "minimumSamples": 10,
+      "p95Milliseconds": 33.4,
+      "maximumMilliseconds": 100
+    },
+    "real-large-editor-window-resize-to-draw": {
+      "optional": true,
+      "minimumSamples": 60,
+      "p95Milliseconds": 16.7,
+      "maximumMilliseconds": 50
+    },
+    "real-large-editor-continuous-scroll-to-draw": {
+      "optional": true,
+      "minimumSamples": 60,
+      "p95Milliseconds": 33.4,
+      "maximumMilliseconds": 100
+    },
+    "real-large-editor-post-scroll-main-actor-gap": {
+      "optional": true,
+      "minimumSamples": 1,
+      "p95Milliseconds": 50,
+      "maximumMilliseconds": 100
+    },
+    "real-large-editor-gutter-action-to-draw": {
+      "optional": true,
+      "minimumSamples": 10,
+      "p95Milliseconds": 33.4,
+      "maximumMilliseconds": 100
+    },
+    "real-large-editor-structural-command-to-draw": {
+      "optional": true,
+      "minimumSamples": 10,
+      "p95Milliseconds": 50,
+      "maximumMilliseconds": 150
+    },
+    "real-large-editor-explicit-save-persistence": {
+      "optional": true,
+      "minimumSamples": 1,
+      "p95Milliseconds": 2500,
+      "maximumMilliseconds": 5000
+    },
+    "real-large-editor-menu-save-persistence": {
+      "optional": true,
+      "minimumSamples": 1,
+      "p95Milliseconds": 2500,
+      "maximumMilliseconds": 5000
+    },
+    "real-large-editor-dirty-navigation-to-draw": {
+      "optional": true,
+      "minimumSamples": 1,
+      "p95Milliseconds": 200,
+      "maximumMilliseconds": 500
+    },
+    "real-large-editor-draft-persistence": {
+      "optional": true,
+      "minimumSamples": 1,
+      "p95Milliseconds": 2500,
+      "maximumMilliseconds": 5000
+    }
+  }
+}

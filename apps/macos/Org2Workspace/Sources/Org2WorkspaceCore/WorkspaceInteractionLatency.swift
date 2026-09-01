@@ -4,19 +4,74 @@ import QuartzCore
 
 @MainActor
 enum WorkspaceInteractionLatency {
-  enum Kind: String, CaseIterable {
+  enum Kind: String, CaseIterable, Sendable {
     case pointerToWindowUpdate = "pointer-to-window-update"
     case sourceEditorKeyToDraw = "source-editor-key-to-draw"
+    case sourceEditorPointerToDraw = "source-editor-pointer-to-draw"
     case sourceEditorDragToDraw = "source-editor-drag-to-draw"
     case composerKeyToDraw = "composer-key-to-draw"
+    case applicationActivationToDraw = "application-activation-to-draw"
+    case workspaceNavigationToDraw = "workspace-navigation-to-draw"
+    case threadSwitchToDraw = "thread-switch-to-draw"
+    case windowResizeToDraw = "window-resize-to-draw"
+    case corpusEventBurst = "corpus-event-burst"
 
-    var budgetMilliseconds: Double { 16.7 }
+    var budgetMilliseconds: Double {
+      switch self {
+      case .pointerToWindowUpdate,
+           .sourceEditorKeyToDraw,
+           .sourceEditorPointerToDraw,
+           .composerKeyToDraw:
+        16.7
+      case .sourceEditorDragToDraw:
+        33.4
+      case .applicationActivationToDraw,
+           .threadSwitchToDraw:
+        50
+      case .workspaceNavigationToDraw,
+           .corpusEventBurst:
+        50
+      case .windowResizeToDraw:
+        33.4
+      }
+    }
+  }
+
+  struct Snapshot: Equatable, Sendable {
+    let kind: Kind
+    let sampleCount: Int
+    let retainedSampleCount: Int
+    let budgetViolationCount: Int
+    let p50Milliseconds: Double
+    let p95Milliseconds: Double
+    let p99Milliseconds: Double
+    let maximumMilliseconds: Double
+    let budgetMilliseconds: Double
+
+    var exceedsBudget: Bool {
+      p95Milliseconds > budgetMilliseconds
+    }
   }
 
   struct Token {
     let kind: Kind
     let startedAt: CFTimeInterval
     let interval: OSSignpostIntervalState
+  }
+
+  private struct RetainedSampleBuffer {
+    var values: [Double] = []
+    var nextReplacementIndex = 0
+
+    mutating func append(_ value: Double, limit: Int) {
+      guard limit > 0 else { return }
+      if values.count < limit {
+        values.append(value)
+        return
+      }
+      values[nextReplacementIndex] = value
+      nextReplacementIndex = (nextReplacementIndex + 1) % limit
+    }
   }
 
   private static let signposter = OSSignposter(
@@ -28,7 +83,11 @@ enum WorkspaceInteractionLatency {
     category: "InteractionLatency"
   )
   private static let rollingSampleLimit = 120
-  private static var samplesByKind: [Kind: [Double]] = [:]
+  private static let retainedSampleLimit = 2_048
+  private static var rollingSamplesByKind: [Kind: [Double]] = [:]
+  private static var retainedSamplesByKind: [Kind: RetainedSampleBuffer] = [:]
+  private static var sampleCountByKind: [Kind: Int] = [:]
+  private static var budgetViolationCountByKind: [Kind: Int] = [:]
 
   static func begin(_ kind: Kind) -> Token {
     Token(
@@ -38,43 +97,95 @@ enum WorkspaceInteractionLatency {
     )
   }
 
-  static func finish(_ token: Token, finishedAt: CFTimeInterval = CACurrentMediaTime()) {
+  @discardableResult
+  static func finish(
+    _ token: Token,
+    finishedAt: CFTimeInterval = CACurrentMediaTime()
+  ) -> Double {
     signposter.endInterval("UI interaction to draw", token.interval)
     let elapsedMilliseconds = max(0, finishedAt - token.startedAt) * 1_000
     record(elapsedMilliseconds, for: token.kind)
     if elapsedMilliseconds > token.kind.budgetMilliseconds {
       logger.warning(
-        "\(token.kind.rawValue, privacy: .public) exceeded the 16.7 ms frame budget: \(elapsedMilliseconds, format: .fixed(precision: 1)) ms"
+        "\(token.kind.rawValue, privacy: .public) exceeded its \(token.kind.budgetMilliseconds, format: .fixed(precision: 1)) ms budget: \(elapsedMilliseconds, format: .fixed(precision: 1)) ms"
       )
     }
+    return elapsedMilliseconds
   }
 
   static func percentile95(_ samples: [Double]) -> Double {
+    percentile(samples, fraction: 0.95)
+  }
+
+  static func snapshot(for kind: Kind) -> Snapshot {
+    let retained = retainedSamplesByKind[kind]?.values ?? []
+    return Snapshot(
+      kind: kind,
+      sampleCount: sampleCountByKind[kind, default: 0],
+      retainedSampleCount: retained.count,
+      budgetViolationCount: budgetViolationCountByKind[kind, default: 0],
+      p50Milliseconds: percentile(retained, fraction: 0.50),
+      p95Milliseconds: percentile95(retained),
+      p99Milliseconds: percentile(retained, fraction: 0.99),
+      maximumMilliseconds: retained.max() ?? 0,
+      budgetMilliseconds: kind.budgetMilliseconds
+    )
+  }
+
+  static func snapshots() -> [Snapshot] {
+    Kind.allCases.map(snapshot(for:))
+  }
+
+  static func resetRecordedSamples() {
+    rollingSamplesByKind = [:]
+    retainedSamplesByKind = [:]
+    sampleCountByKind = [:]
+    budgetViolationCountByKind = [:]
+  }
+
+  static func recordForTesting(_ elapsedMilliseconds: Double, for kind: Kind) {
+    record(max(0, elapsedMilliseconds), for: kind)
+  }
+
+  private static func percentile(_ samples: [Double], fraction: Double) -> Double {
     guard !samples.isEmpty else { return 0 }
     let ordered = samples.sorted()
-    let index = min(ordered.count - 1, Int(ceil(Double(ordered.count) * 0.95)) - 1)
+    let boundedFraction = min(1, max(0, fraction))
+    let index = min(
+      ordered.count - 1,
+      Int(ceil(Double(ordered.count) * boundedFraction)) - 1
+    )
     return ordered[max(0, index)]
   }
 
   private static func record(_ elapsedMilliseconds: Double, for kind: Kind) {
-    var samples = samplesByKind[kind] ?? []
-    samples.append(elapsedMilliseconds)
-    guard samples.count >= rollingSampleLimit else {
-      samplesByKind[kind] = samples
+    sampleCountByKind[kind, default: 0] += 1
+    if elapsedMilliseconds > kind.budgetMilliseconds {
+      budgetViolationCountByKind[kind, default: 0] += 1
+    }
+
+    var retainedSamples = retainedSamplesByKind[kind] ?? RetainedSampleBuffer()
+    retainedSamples.append(elapsedMilliseconds, limit: retainedSampleLimit)
+    retainedSamplesByKind[kind] = retainedSamples
+
+    var rollingSamples = rollingSamplesByKind[kind] ?? []
+    rollingSamples.append(elapsedMilliseconds)
+    guard rollingSamples.count >= rollingSampleLimit else {
+      rollingSamplesByKind[kind] = rollingSamples
       return
     }
 
-    let p95 = percentile95(samples)
+    let p95 = percentile95(rollingSamples)
     if p95 > kind.budgetMilliseconds {
       logger.warning(
-        "\(kind.rawValue, privacy: .public) rolling p95 exceeded the 16.7 ms frame budget: \(p95, format: .fixed(precision: 1)) ms"
+        "\(kind.rawValue, privacy: .public) rolling p95 exceeded its \(kind.budgetMilliseconds, format: .fixed(precision: 1)) ms budget: \(p95, format: .fixed(precision: 1)) ms"
       )
     } else {
       logger.info(
         "\(kind.rawValue, privacy: .public) rolling p95: \(p95, format: .fixed(precision: 1)) ms"
       )
     }
-    samplesByKind[kind] = []
+    rollingSamplesByKind[kind] = []
   }
 }
 
@@ -129,6 +240,13 @@ public final class WorkspacePointerLatencyMonitor: NSObject {
       observesWindowUpdates = false
     }
     pending = nil
+  }
+
+  func beginPointerSampleForTesting(in window: NSWindow) {
+    pending = (
+      window.windowNumber,
+      WorkspaceInteractionLatency.begin(.pointerToWindowUpdate)
+    )
   }
 
   @objc private func windowDidUpdate(_ notification: Notification) {

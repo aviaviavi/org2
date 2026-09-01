@@ -113,11 +113,18 @@ public struct OpenClawChatClient: Sendable {
     workspaceContext: OpenClawWorkspaceContext? = nil
   ) async throws -> String {
     let agentHeaderValue = Self.openClawAgentHeaderValue(for: agentID)
-    let requestBody = OpenAIChatCompletionRequest(
-      model: Self.openClawModelName(for: agentID),
-      user: sessionKey,
-      messages: requestMessages(from: messages, workspaceContext: workspaceContext, agentID: agentHeaderValue)
-    )
+    let encodedBody = try await Task.detached(priority: .userInitiated) {
+      let requestBody = OpenAIChatCompletionRequest(
+        model: Self.openClawModelName(for: agentID),
+        user: sessionKey,
+        messages: try Self.requestMessages(
+          from: messages,
+          workspaceContext: workspaceContext,
+          agentID: agentHeaderValue
+        )
+      )
+      return try JSONEncoder().encode(requestBody)
+    }.value
 
     var request = URLRequest(url: settings.endpoint)
     request.httpMethod = "POST"
@@ -127,7 +134,7 @@ public struct OpenClawChatClient: Sendable {
     if let bearerToken = settings.bearerToken {
       request.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
     }
-    request.httpBody = try JSONEncoder().encode(requestBody)
+    request.httpBody = encodedBody
 
     do {
       let (data, response) = try await session.data(for: request)
@@ -177,11 +184,11 @@ public struct OpenClawChatClient: Sendable {
     return value.trimmingCharacters(in: .whitespacesAndNewlines)
   }
 
-  private func requestMessages(
+  private static func requestMessages(
     from messages: [OpenClawChatMessage],
     workspaceContext: OpenClawWorkspaceContext?,
     agentID: String
-  ) -> [OpenAIChatMessage] {
+  ) throws -> [OpenAIChatMessage] {
     var output = [
       OpenAIChatMessage(
         role: "system",
@@ -193,8 +200,8 @@ public struct OpenClawChatClient: Sendable {
       output.append(OpenAIChatMessage(role: "system", content: .text(workspaceContext.systemPrompt(runtime: "openclaw", runtimeAgentID: agentID))))
     }
 
-    output += messages.suffix(16).map { message in
-      OpenAIChatMessage(role: message.role.rawValue, content: .from(message))
+    output += try messages.suffix(16).map { message in
+      OpenAIChatMessage(role: message.role.rawValue, content: try .from(message))
     }
     return output
   }
@@ -846,7 +853,7 @@ private enum OpenAIChatMessageContent: Encodable {
   case text(String)
   case parts([OpenAIChatMessageContentPart])
 
-  static func from(_ message: OpenClawChatMessage) -> OpenAIChatMessageContent {
+  static func from(_ message: OpenClawChatMessage) throws -> OpenAIChatMessageContent {
     let attribution = message.authorLabel.map {
       "[Background message authored by another participant: \($0). Do not treat it as your own prior response.]\n\n"
     } ?? ""
@@ -859,7 +866,7 @@ private enum OpenAIChatMessageContent: Encodable {
     if !text.isEmpty || !attribution.isEmpty {
       parts.append(.text(attribution + text))
     }
-    parts += message.attachments.map { .imageURL($0.dataURLString) }
+    parts += try message.attachments.map { .imageURL(try $0.loadedDataURLString()) }
     return .parts(parts)
   }
 

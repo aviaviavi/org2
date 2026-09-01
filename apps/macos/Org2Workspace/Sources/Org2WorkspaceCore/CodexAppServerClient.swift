@@ -781,10 +781,10 @@ public actor CodexAppServerClient {
         )
       ])
     ]
-    input.append(contentsOf: attachments.map {
+    input.append(contentsOf: try attachments.map {
       .object([
         "type": .string("image"),
-        "url": .string($0.dataURLString)
+        "url": .string(try $0.loadedDataURLString())
       ])
     })
     var params: [String: JSONValue] = [
@@ -838,10 +838,10 @@ public actor CodexAppServerClient {
         "text": .string(message)
       ])
     ]
-    input.append(contentsOf: attachments.map {
+    input.append(contentsOf: try attachments.map {
       .object([
         "type": .string("image"),
-        "url": .string($0.dataURLString)
+        "url": .string(try $0.loadedDataURLString())
       ])
     })
     let result = try await requestRaw(
