@@ -4,6 +4,35 @@ All notable changes to the Org2 VS Code extension are documented in this file.
 
 ## Unreleased
 
+## 0.7.0 - 2026-09-01
+
+# OpenOrg 0.7.0
+
+OpenOrg 0.7.0 makes ordinary `.org` files the default, formalizes the Org2 language contract, and adds a complete first pass at destination-neutral automations and portable agent tooling.
+
+## Highlights
+
+- New documents use `.org`, while existing `.org2` files remain fully supported. Markdown-style fences and inline backticks remain convenient input syntax and are saved canonically as Org syntax.
+- The language standard now includes a normative EBNF surface grammar, contextual parsing rules, executable ambiguity cases, canonical AST schema, and conformance fixtures without replacing the optimized production parser.
+- OpenOrg Automations can target Codex, Claude Code, OpenClaw, or direct providers; schedule controls cover intervals, daily, weekdays, weekly, monthly, timezone-aware times, and advanced cron expressions.
+- Automations now surface creation and scheduler errors, can be deleted from the Mac UI with preserved run history, and expose a preview-first `org2 workflow delete` command.
+- A portable Org2 agent skill now ships with npm and OpenOrg, alongside a dedicated MCP and agent-skills guide and a preview-first skill installer.
+- Local web/PDF publication links persist across relaunch and now keep the same URL when the same document scope and format are republished.
+- Charts support multiple series, and `.org` canonicalization is consistent across the Mac app, CLI, LSP, and VS Code.
+
+## Reliability and polish
+
+- Reduced source-editor typing lag by removing a highlight feedback loop.
+- Improved large AI-chat performance, stale-task recovery, and transcript-wide text selection across paragraphs and messages.
+- Improved live workspace tab dragging and stabilized timing-sensitive CI checks.
+- Reduced duplicate validation in the coordinated release pipeline while preserving its independent publication gate.
+
+## Compatibility
+
+- Existing `.org2` documents and structured runtime records remain supported.
+- This release updates the npm package, VS Code extension, and notarized Apple Silicon and Intel OpenOrg builds.
+- iOS/TestFlight is intentionally not included in this release.
+
 ## 0.6.0 - 2026-08-30
 
 ## Highlights
