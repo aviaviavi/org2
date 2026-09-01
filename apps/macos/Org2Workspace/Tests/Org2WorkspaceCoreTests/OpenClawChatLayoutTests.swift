@@ -16,6 +16,7 @@ private struct ActivitySelectionHarness: View {
       OpenClawSidebarThreadActivityView(isSelected: model.selectedIndex == 0)
       OpenClawSidebarThreadActivityView(isSelected: model.selectedIndex == 1)
     }
+    .environment(\._accessibilityReduceMotion, false)
   }
 }
 
