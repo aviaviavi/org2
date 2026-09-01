@@ -4,30 +4,43 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>OpenOrg</title>
         <item>
-            <title>0.6.0</title>
-            <pubDate>Sun, 30 Aug 2026 15:38:02 -0700</pubDate>
+            <title>0.7.0</title>
+            <pubDate>Mon, 31 Aug 2026 17:58:01 -0700</pubDate>
             <link>https://openorg.so/downloads.html</link>
-            <sparkle:version>0.6.0</sparkle:version>
-            <sparkle:shortVersionString>0.6.0</sparkle:shortVersionString>
+            <sparkle:version>0.7.0</sparkle:version>
+            <sparkle:shortVersionString>0.7.0</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <description sparkle:format="markdown"><![CDATA[## Highlights
+            <description sparkle:format="markdown"><![CDATA[# OpenOrg 0.7.0
 
-- OpenOrg now keeps Google Drive publications linked to their source. The first publish records the Drive artifact and guarded version in the relevant `.org2` property drawer; publishing that scope and format again updates the same Doc, Slides deck, Sheet, or PDF instead of creating a duplicate.
-- A green Google Drive badge in the document header makes linked artifacts easy to reopen or copy, and the publish sheet clearly distinguishes first-time publishing from updating an existing destination.
-- Distributed Mac builds now include OpenOrg's registered Google OAuth desktop client, so most users can connect Google Drive directly while custom clients remain available for self-built deployments.
-- The workspace's Context pane and source-cited Brief experience are now represented throughout the product guidance, demo corpus, and generated site.
-- Release packaging now verifies the Google OAuth configuration before producing distributable Mac artifacts.
+OpenOrg 0.7.0 makes ordinary `.org` files the default, formalizes the Org2 language contract, and adds a complete first pass at destination-neutral automations and portable agent tooling.
 
-## Stability and polish
+## Highlights
 
-- Preserves guarded Google Drive replacement semantics so remote changes or comments are not silently overwritten.
-- Improves the getting-started guidance around runtime-neutral agent work, triggers, approvals, and durable corpus records.
-- Refreshes the macOS product screenshots and feature presentation for the current workspace UI.
+- New documents use `.org`, while existing `.org2` files remain fully supported. Markdown-style fences and inline backticks remain convenient input syntax and are saved canonically as Org syntax.
+- The language standard now includes a normative EBNF surface grammar, contextual parsing rules, executable ambiguity cases, canonical AST schema, and conformance fixtures without replacing the optimized production parser.
+- OpenOrg Automations can target Codex, Claude Code, OpenClaw, or direct providers; schedule controls cover intervals, daily, weekdays, weekly, monthly, timezone-aware times, and advanced cron expressions.
+- Automations now surface creation and scheduler errors, can be deleted from the Mac UI with preserved run history, and expose a preview-first `org2 workflow delete` command.
+- A portable Org2 agent skill now ships with npm and OpenOrg, alongside a dedicated MCP and agent-skills guide and a preview-first skill installer.
+- Local web/PDF publication links persist across relaunch and now keep the same URL when the same document scope and format are republished.
+- Charts support multiple series, and `.org` canonicalization is consistent across the Mac app, CLI, LSP, and VS Code.
+
+## Reliability and polish
+
+- Reduced source-editor typing lag by removing a highlight feedback loop.
+- Improved large AI-chat performance, stale-task recovery, and transcript-wide text selection across paragraphs and messages.
+- Improved live workspace tab dragging and stabilized timing-sensitive CI checks.
+- Reduced duplicate validation in the coordinated release pipeline while preserving its independent publication gate.
+
+## Compatibility
+
+- Existing `.org2` documents and structured runtime records remain supported.
+- This release updates the npm package, VS Code extension, and notarized Apple Silicon and Intel OpenOrg builds.
+- iOS/TestFlight is intentionally not included in this release.
 ]]></description>
-            <enclosure url="https://github.com/aviaviavi/org2/releases/download/0.6.0/OpenOrg-Intel.dmg" length="236075220" type="application/octet-stream" sparkle:edSignature="A5pxUYP5+Tm7nerIm56mBQ54LS2Y+A1CSpJfbxHsWskXyMkagngdBqqvlS3y3ElvB4gnM9js/uN1w+Jtu0JtCw=="></enclosure>
+            <enclosure url="https://github.com/aviaviavi/org2/releases/download/0.7.0/OpenOrg-Intel.dmg" length="236233669" type="application/octet-stream" sparkle:edSignature="cTz8Fuq6cBMvf3f9LQeAiB0sV2tVSYUiU9GDN695cL6p/W35HljM4ucPvDy8D1cjk7sYTDYnKeQ2x08EQmdHAw=="></enclosure>
         </item>
     </channel>
 </rss><!-- sparkle-signatures:
-edSignature: BEg3k4v7V1ot57bV6ohzALVK6bE/HFsEH6fFazAzSN3Z4u8wkgWFE9SmCvQfH26ogMjZj/QdCbP+Fx8/lOatBg==
-length: 2518
+edSignature: VZBdrOSBY2A0texf/Nk/a5L/x+7Ze3n6G7JOHjyIBADnSGAcxVhzEOm8SUDYMm8clQsip4UtvEBAxAJ0BdL0BQ==
+length: 3309
 -->
