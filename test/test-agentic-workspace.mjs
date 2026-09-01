@@ -11,7 +11,7 @@ import {
   transitionAgentRun, updateAgentRunAssignment, updateAgentRunRuntime, updateAgentRunStep, validateAgentRun,
   updateAgentRunArtifactReview,
 } from "../dist/agentRun.js";
-import { dueWorkflowTriggers, installBuiltinWorkflow, instantiateWorkflow, legacyWorkflowDirectory, loadWorkflow, loadWorkflowSnapshot, markWorkflowTriggerAttempt, migrateLegacyWorkflows, packagedCorpusTemplate, parseWorkflowOrg, promptAutomation, recordWorkflowSignal, renderWorkflowOrg, saveWorkflow, updateWorkflow, validateWorkflow, workflowFromRun, workflowPath, workflowScheduleOccurrences, workflowTriggerEligibility } from "../dist/agentWorkflow.js";
+import { deleteWorkflow, dueWorkflowTriggers, installBuiltinWorkflow, instantiateWorkflow, legacyWorkflowDirectory, loadWorkflow, loadWorkflowSnapshot, markWorkflowTriggerAttempt, migrateLegacyWorkflows, packagedCorpusTemplate, parseWorkflowOrg, promptAutomation, recordWorkflowSignal, renderWorkflowOrg, saveWorkflow, updateWorkflow, validateWorkflow, workflowFromRun, workflowPath, workflowScheduleOccurrences, workflowTriggerEligibility } from "../dist/agentWorkflow.js";
 import { artifactRebuildPlan, buildArtifactGraph, MEETING_TO_CONTROLLED_EXECUTION_WORKFLOW } from "../dist/artifactPipeline.js";
 import { discoverMcpClient, loadMcpClients, saveMcpClients, serveMcp, writeMcpSnapshot } from "../dist/mcpRuntime.js";
 import { safeIdentifier } from "../dist/safeIdentifier.js";
@@ -696,6 +696,20 @@ try {
   assert.equal(overlappingAutomation.status, 0, overlappingAutomation.stderr || overlappingAutomation.stdout);
   assert.equal(JSON.parse(overlappingAutomation.stdout).due.length, 0);
   assert.equal(JSON.parse(overlappingAutomation.stdout).skipped[0].activeRunId, dispatchedAutomationPayload.run.id);
+  const previewDeletion = spawnSync(process.execPath, [
+    path.resolve("dist/cli.js"), "workflow", "delete", "weekly-product-update",
+    "--dir", automationRoot, "--json",
+  ], { encoding: "utf8" });
+  assert.equal(previewDeletion.status, 0, previewDeletion.stderr || previewDeletion.stdout);
+  assert.equal(JSON.parse(previewDeletion.stdout).applied, false);
+  assert.equal(fs.existsSync(workflowPath(automationRoot, "weekly-product-update")), true);
+  const appliedDeletion = spawnSync(process.execPath, [
+    path.resolve("dist/cli.js"), "workflow", "delete", "weekly-product-update",
+    "--dir", automationRoot, "--apply", "--json",
+  ], { encoding: "utf8" });
+  assert.equal(appliedDeletion.status, 0, appliedDeletion.stderr || appliedDeletion.stdout);
+  assert.equal(JSON.parse(appliedDeletion.stdout).applied, true);
+  assert.equal(fs.existsSync(workflowPath(automationRoot, "weekly-product-update")), false);
   const invalidTriggers = {
     ...workflow,
     triggers: [
@@ -823,6 +837,10 @@ try {
   const migration = migrateLegacyWorkflows(root);
   assert.equal(migration.some((item) => item.id === "legacy-workflow" && !item.skipped), true);
   assert.equal(fs.existsSync(workflowPath(root, "legacy-workflow")), true);
+  assert.equal(deleteWorkflow(root, "legacy-workflow").applied, false);
+  assert.equal(fs.existsSync(workflowPath(root, "legacy-workflow")), true);
+  assert.equal(deleteWorkflow(root, "legacy-workflow", { apply: true }).applied, true);
+  assert.equal(fs.existsSync(workflowPath(root, "legacy-workflow")), false);
 
   const source = path.join(root, "notes", "source.org2");
   const report = path.join(root, "compiled", "report.pdf");

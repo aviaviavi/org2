@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { guardedWriteFile, readGuardedFile, type GuardedFileWriteOptions } from "./guardedFile.js";
+import { guardedDeleteFile, guardedWriteFile, readGuardedFile, type GuardedFileWriteOptions } from "./guardedFile.js";
 import { safeIdentifier } from "./safeIdentifier.js";
 import {
   createAgentRun,
@@ -457,6 +457,37 @@ export function listWorkflows(root: string): AgentWorkflow[] {
     }
   }
   return [...byID.values()].sort((a, b) => a.id.localeCompare(b.id));
+}
+
+export function deleteWorkflow(
+  root: string,
+  id: string,
+  options: { apply?: boolean } = {},
+): { id: string; files: string[]; applied: boolean } {
+  const safeID = safeIdentifier(id, {
+    invalidMessage: (raw) => `invalid workflow id: ${raw}`,
+  });
+  const files = [
+    workflowPath(root, safeID),
+    path.join(legacyWorkflowDirectory(root), `${safeID}.org2`),
+  ].filter((file, index, candidates) =>
+    candidates.indexOf(file) === index && fs.existsSync(file)
+  );
+  if (files.length === 0) throw new Error(`workflow not found: ${safeID}`);
+
+  const snapshots = files.map(readGuardedFile);
+  for (const snapshot of snapshots) {
+    const workflow = parseWorkflowOrg(snapshot.content);
+    if (workflow.id !== safeID) {
+      throw new Error(`workflow source id mismatch: expected ${safeID}, found ${workflow.id}: ${snapshot.file}`);
+    }
+  }
+  if (options.apply) {
+    for (const snapshot of snapshots) {
+      guardedDeleteFile(snapshot.file, { expectedRevision: snapshot.revision });
+    }
+  }
+  return { id: safeID, files, applied: options.apply === true };
 }
 
 export function updateWorkflow(

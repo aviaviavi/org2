@@ -1311,6 +1311,7 @@ private final class LocalPublicationListenerStartup: @unchecked Sendable {
 public final class LocalDocumentPublicationHost: @unchecked Sendable {
   private struct HostedDocument: Sendable {
     let id: String
+    let stableKey: String?
     let title: String
     let mediaType: String
     let sourcePath: String?
@@ -1328,6 +1329,7 @@ public final class LocalDocumentPublicationHost: @unchecked Sendable {
 
   private struct PersistedDocument: Codable, Sendable {
     let id: String
+    let stableKey: String?
     let title: String
     let mediaType: String
     let sourcePath: String?
@@ -1391,7 +1393,8 @@ public final class LocalDocumentPublicationHost: @unchecked Sendable {
     title: String,
     mediaType: String,
     sourcePath: String? = nil,
-    format: DocumentPublishFormat? = nil
+    format: DocumentPublishFormat? = nil,
+    stableKey: String? = nil
   ) async throws -> LocalDocumentPublication {
     guard Self.httpURL(host: advertisedHost, port: 1, path: "/") != nil else {
       throw LocalDocumentPublicationHostError.invalidAdvertisedHost
@@ -1399,14 +1402,38 @@ public final class LocalDocumentPublicationHost: @unchecked Sendable {
     let port = try await Task.detached(priority: .userInitiated) { [self] in
       try startIfNeededBlocking()
     }.value
-    let token = try uniqueSecretToken()
+    let trimmedStableKey = stableKey?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let normalizedStableKey = trimmedStableKey?.isEmpty == false ? trimmedStableKey : nil
+    let normalizedMediaType = Self.normalizedMediaType(mediaType)
+    let existingDocument = normalizedStableKey.flatMap { stableKey in
+      stateLock.withLock {
+        let exactMatch = documents.values
+          .filter { $0.stableKey == stableKey }
+          .max { $0.createdAt < $1.createdAt }
+        if let exactMatch { return exactMatch }
+
+        // Publications created before stable keys were introduced still carry
+        // their source and format. Adopt the newest compatible legacy match
+        // so installing this update does not force one final URL change.
+        return documents.values
+          .filter {
+            $0.stableKey == nil
+              && $0.sourcePath == sourcePath
+              && $0.format == format
+              && $0.mediaType == normalizedMediaType
+          }
+          .max { $0.createdAt < $1.createdAt }
+      }
+    }
+    let token = try existingDocument?.id ?? uniqueSecretToken()
     let candidateDocument = HostedDocument(
       id: token,
+      stableKey: normalizedStableKey,
       title: title,
-      mediaType: Self.normalizedMediaType(mediaType),
+      mediaType: normalizedMediaType,
       sourcePath: sourcePath,
       format: format,
-      createdAt: Date(),
+      createdAt: existingDocument?.createdAt ?? Date(),
       data: data,
       artifactURL: nil
     )
@@ -1486,6 +1513,7 @@ public final class LocalDocumentPublicationHost: @unchecked Sendable {
         )
         storedDocument = HostedDocument(
           id: document.id,
+          stableKey: document.stableKey,
           title: document.title,
           mediaType: document.mediaType,
           sourcePath: document.sourcePath,
@@ -1730,6 +1758,7 @@ public final class LocalDocumentPublicationHost: @unchecked Sendable {
       .map { document in
         PersistedDocument(
           id: document.id,
+          stableKey: document.stableKey,
           title: document.title,
           mediaType: document.mediaType,
           sourcePath: document.sourcePath,
@@ -1795,6 +1824,7 @@ public final class LocalDocumentPublicationHost: @unchecked Sendable {
       guard FileManager.default.fileExists(atPath: artifactURL.path) else { continue }
       restoredDocuments[record.id] = HostedDocument(
         id: record.id,
+        stableKey: record.stableKey,
         title: record.title,
         mediaType: record.mediaType,
         sourcePath: record.sourcePath,

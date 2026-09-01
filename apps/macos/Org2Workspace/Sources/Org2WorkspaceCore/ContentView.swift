@@ -4191,6 +4191,7 @@ private struct WorkflowsView: View {
   @EnvironmentObject private var store: WorkspaceStore
   @State private var runWorkflow: AgentWorkflowItem?
   @State private var scheduleWorkflow: AgentWorkflowItem?
+  @State private var workflowPendingDeletion: AgentWorkflowItem?
   @State private var isCreatingAutomation = false
 
   var body: some View {
@@ -4206,6 +4207,18 @@ private struct WorkflowsView: View {
         } label: {
           Label("New Automation", systemImage: "plus")
         }
+        Button(role: .destructive) {
+          workflowPendingDeletion = store.agentWorkflows.first {
+            $0.id == store.selectedAgentWorkflowID
+          }
+        } label: {
+          Label("Delete", systemImage: "trash")
+        }
+        .disabled(
+          store.selectedAgentWorkflowID == nil
+            || store.selectedAgentWorkflowID.map(store.mutatingAgentWorkflowIDs.contains) == true
+        )
+        .help("Delete the selected automation")
         Button {
           Task { await store.refreshAgentWorkflows(updatesStatus: true) }
         } label: {
@@ -4269,6 +4282,10 @@ private struct WorkflowsView: View {
                 } else {
                   Button("Activate") { Task { await store.setAgentWorkflowState(workflow, state: "active") } }
                 }
+                Divider()
+                Button("Delete Automation…", role: .destructive) {
+                  workflowPendingDeletion = workflow
+                }
               }
           }
         }
@@ -4297,6 +4314,25 @@ private struct WorkflowsView: View {
     .sheet(isPresented: $isCreatingAutomation) {
       NewAutomationSheet()
         .environmentObject(store)
+    }
+    .confirmationDialog(
+      "Delete \(workflowPendingDeletion?.title ?? "Automation")?",
+      isPresented: Binding(
+        get: { workflowPendingDeletion != nil },
+        set: { if !$0 { workflowPendingDeletion = nil } }
+      ),
+      titleVisibility: .visible
+    ) {
+      Button("Delete Automation", role: .destructive) {
+        guard let workflow = workflowPendingDeletion else { return }
+        workflowPendingDeletion = nil
+        Task { await store.deleteAgentWorkflow(workflow) }
+      }
+      Button("Cancel", role: .cancel) {
+        workflowPendingDeletion = nil
+      }
+    } message: {
+      Text("This removes the workflow definition. Existing run history is preserved.")
     }
   }
 }
@@ -8813,6 +8849,7 @@ private struct OpenClawChatView: View {
             .accessibilityHidden(true)
         }
         .padding(presentation.isCompact ? 10 : 16)
+        .textSelection(.enabled)
       }
       .defaultScrollAnchor(.bottom)
       .id(store.openClawChatSelectionGeneration)

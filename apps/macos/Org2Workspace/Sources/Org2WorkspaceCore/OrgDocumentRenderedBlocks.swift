@@ -3,6 +3,25 @@ import AVKit
 import ImageIO
 import SwiftUI
 
+private struct OrgTextSelectionOwnerModifier: ViewModifier {
+  @Environment(\.orgInlineTextSelectionOwnerEnabled) private var selectionOwnerEnabled
+
+  @ViewBuilder
+  func body(content: Content) -> some View {
+    if selectionOwnerEnabled {
+      content.textSelection(.enabled)
+    } else {
+      content
+    }
+  }
+}
+
+private extension View {
+  func orgTextSelectionOwner() -> some View {
+    modifier(OrgTextSelectionOwnerModifier())
+  }
+}
+
 struct RenderedBlockView: View, Equatable {
   let block: OrgRenderedBlock
   let rawText: String?
@@ -1401,7 +1420,7 @@ private struct RenderedPropertiesView: View {
                row.value.range(of: #"^[0-9a-fA-F-]{36}$"#, options: .regularExpression) != nil {
               Text(Org2Display.shortID(row.value))
                 .font(.callout)
-                .textSelection(.enabled)
+                .orgTextSelectionOwner()
             } else {
               RenderedPropertyValueView(
                 row: row,
@@ -1714,7 +1733,7 @@ private struct RenderedSourceView: View {
             Text(line.isEmpty ? " " : line)
               .font(.system(.body, design: .monospaced))
               .foregroundStyle(color(for: line))
-              .textSelection(.enabled)
+              .orgTextSelectionOwner()
           }
         }
         .padding(10)
@@ -2027,7 +2046,7 @@ struct SourceRunOutputView: View {
     case .text(let text):
       Text(text.isEmpty ? " " : text)
         .font(.system(.caption, design: .monospaced))
-        .textSelection(.enabled)
+        .orgTextSelectionOwner()
         .frame(maxWidth: .infinity, alignment: .leading)
     case .table(let table):
       SourceRunTableView(table: table)
@@ -2112,7 +2131,7 @@ private struct SourceRunTableView: View {
             ForEach(0..<columnCount, id: \.self) { columnIndex in
               Text(cellText(row, at: columnIndex))
                 .font(.caption)
-                .textSelection(.enabled)
+                .orgTextSelectionOwner()
                 .lineLimit(4)
                 .padding(.horizontal, 9)
                 .padding(.vertical, 6)

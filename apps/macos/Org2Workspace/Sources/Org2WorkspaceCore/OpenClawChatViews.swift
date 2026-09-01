@@ -481,7 +481,7 @@ private struct OpenClawMessageBodyView: View {
             )
           }
         }
-        .environment(\.orgInlineTextSelectionEnabled, managesTextSelection)
+        .environment(\.orgInlineTextSelectionOwnerEnabled, managesTextSelection)
         .frame(
           maxWidth: compact || !containsTable ? (compact ? 360 : 640) : .infinity,
           alignment: .leading
@@ -507,7 +507,10 @@ private extension OrgEditableBlock {
 }
 
 struct ChatBubbleView: View {
-  static let managesMessageTextSelection = true
+  // One selection owner wraps the complete transcript. Giving each message
+  // or rendered block its own owner prevents a drag from crossing the view
+  // boundary, even though every individual fragment is selectable.
+  static let managesMessageTextSelection = false
 
   let message: OpenClawChatMessage
   let runtime: AIChatRuntime
@@ -3326,7 +3329,7 @@ struct OpenClawTypingIndicatorView: View {
           OpenClawMessageBodyView(
             rawText: livePresentation.text,
             compact: compact,
-            managesTextSelection: true,
+            managesTextSelection: false,
             rendersStructuredOrg2: true
           )
 

@@ -14,6 +14,11 @@ export interface GuardedFileWriteOptions {
   expectedRevision?: string | null;
 }
 
+export interface GuardedFileDeleteOptions {
+  /** A SHA-256 revision requires an exact match before deletion. */
+  expectedRevision?: string;
+}
+
 export class GuardedFileConflictError extends Error {
   readonly code = "ORG2_WRITE_CONFLICT";
   readonly file: string;
@@ -140,6 +145,52 @@ export function guardedWriteFile(
     return { file: absolute, content, revision: guardedContentRevision(content) };
   } finally {
     if (temporary && fs.existsSync(temporary)) fs.unlinkSync(temporary);
+    fs.closeSync(lockDescriptor);
+    if (fs.existsSync(lockFile)) fs.unlinkSync(lockFile);
+  }
+}
+
+export function guardedDeleteFile(
+  file: string,
+  options: GuardedFileDeleteOptions = {},
+): GuardedFileSnapshot {
+  const absolute = path.resolve(file);
+  const directory = path.dirname(absolute);
+  const lockFile = `${absolute}.lock`;
+  let lockDescriptor: number;
+  try {
+    lockDescriptor = fs.openSync(lockFile, "wx", 0o600);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    throw new GuardedFileConflictError(
+      `file is already being updated${lockOwner(lockFile)}: ${absolute}`,
+      { file: absolute },
+    );
+  }
+
+  try {
+    fs.writeFileSync(lockDescriptor, `${JSON.stringify({
+      schema: "org2:write-lock:v1",
+      pid: process.pid,
+      hostname: os.hostname(),
+      createdAt: new Date().toISOString(),
+      file: absolute,
+    }, null, 2)}\n`, "utf8");
+    fs.fsyncSync(lockDescriptor);
+
+    const actualRevision = currentRevision(absolute);
+    if (typeof options.expectedRevision === "string" && actualRevision !== options.expectedRevision) {
+      throw new GuardedFileConflictError(
+        `file changed after it was read; expected ${options.expectedRevision}, found ${actualRevision || "absent"}: ${absolute}`,
+        { file: absolute, expectedRevision: options.expectedRevision, actualRevision },
+      );
+    }
+
+    const snapshot = readGuardedFile(absolute);
+    fs.unlinkSync(absolute);
+    syncDirectory(directory);
+    return snapshot;
+  } finally {
     fs.closeSync(lockDescriptor);
     if (fs.existsSync(lockFile)) fs.unlinkSync(lockFile);
   }

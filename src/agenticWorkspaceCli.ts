@@ -45,6 +45,7 @@ import {
   WORKFLOW_EVENT_TRIGGER_TYPES,
   WORKFLOW_SCHEDULE_TRIGGER_ID,
   dueWorkflowTriggers,
+  deleteWorkflow,
   instantiateWorkflow,
   installBuiltinWorkflow,
   listWorkflows,
@@ -198,10 +199,11 @@ const HELP = `Agentic workspace commands:
   org2 run approval-resolve --decision-key PROVIDER_KEY [--json]
   org2 run approval-reconcile [--apply] [--json]
   org2 review list [--status pending] | org2 review show RUN
-  org2 workflow list|show|validate|create|save|run|due|triggers|signal|gate|activate|pause|draft|schedule|migrate|package|corpus-template|install-builtin
+  org2 workflow list|show|validate|create|save|run|due|triggers|signal|gate|activate|pause|draft|schedule|delete|migrate|package|corpus-template|install-builtin
   org2 workflow create ID --title TEXT --prompt TEXT --destination-ref ID [--agent-ref ID] [--schedule EXPR --timezone IANA]
   org2 workflow due [--now ISO_TIMESTAMP] [--dir CORPUS] [--json]
   org2 workflow schedule ID --cron EXPR [--timezone IANA] [--destination-ref ID] | --disable
+  org2 workflow delete ID [--apply]
   org2 artifact graph --manifest FILE | org2 artifact rebuild --manifest FILE
   org2 runtime init|show|select|verify-paths
   org2 mcp serve|clients|client-add|discover|snapshot
@@ -1340,6 +1342,15 @@ function workflowCommand(parsed: ParsedArgs): void {
   }
   const id = required(parsed.positional[1], `workflow id is required for ${action}`);
   if (action === "save") { const run = loadAgentRun(corpus, id); const workflow = workflowFromRun(run, { id: flag(parsed, "id"), title: flag(parsed, "title"), version: flag(parsed, "version") }); const file = saveWorkflow(corpus, workflow, { expectedRevision: null }); output(parsed, { workflow, file }, `saved ${workflow.id}@${workflow.version}`); return; }
+  if (action === "delete") {
+    const result = deleteWorkflow(corpus, id, { apply: enabled(parsed, "apply") });
+    output(
+      parsed,
+      { schema: "org2:workflow-deletion:v1", ...result },
+      `${result.applied ? "deleted" : "would delete"} ${id}\n${result.files.join("\n")}`,
+    );
+    return;
+  }
   const workflow = loadWorkflow(corpus, id);
   if (action === "show") { output(parsed, workflow); return; }
   if (action === "validate") { const result = validateWorkflow(workflow); output(parsed, result, result.valid ? `${id}: valid` : result.issues.map((issue) => `${issue.path}: ${issue.message}`).join("\n")); if (!result.valid) process.exitCode = 1; return; }

@@ -67,7 +67,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <p class="org2-document-subtitle" role="doc-subtitle">Plain-text prompts and processes sent to replaceable AI destinations</p>
 </header>
 <p>An Org2 workflow is a maintained, reusable process. Each workflow is an ordinary <code>.org2</code> file under the visible top-level <code>workflows/</code> directory. The file is the source of truth: it can be opened in Org2 Workspace, another editor, a terminal, or Git without depending on private application state.</p>
-<p>The Mac app and runtime adapters provide tooling around the file. They can create prompt automations, list and validate workflows, collect inputs, start runs, activate or pause schedules, and show execution history. Those controls must update or act from the canonical workflow file rather than creating a second GUI-owned definition.</p>
+<p>The Mac app and runtime adapters provide tooling around the file. They can create prompt automations, list and validate workflows, collect inputs, start runs, activate or pause schedules, delete definitions, and show execution history. Those controls must update or act from the canonical workflow file rather than creating a second GUI-owned definition.</p>
 <section class="org2-headline level-1">
 <h1 id="workflow-run-and-runtime">Workflow, run, and runtime</h1>
 <ul>
@@ -117,8 +117,11 @@ org2 workflow activate weekly-review --dir ~/notes
 org2 workflow pause weekly-review --dir ~/notes
 org2 workflow schedule weekly-review --cron &quot;0 9 * * 1&quot; \
   --timezone America/Los_Angeles --dir ~/notes
+org2 workflow delete weekly-review --dir ~/notes
+org2 workflow delete weekly-review --dir ~/notes --apply
 org2 workflow migrate --dir ~/notes</code></pre>
 <p>Draft, active, and paused describe operational intent. Editing the file remains possible in every state. A workflow should be validated and reviewed before an edited version becomes responsible for consequential or scheduled work.</p>
+<p>The first <code>workflow delete</code> command previews the exact workflow files that would be removed; <code>--apply</code> performs the deletion. The Mac app exposes the same action behind a confirmation dialog. Deleting an automation removes its definition and prevents future OpenOrg schedule checks, but preserves every existing run and its review history. It does not cancel an attempt that has already been dispatched.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="openorg-scheduling-and-destination-dispatch">OpenOrg scheduling and destination dispatch</h1>

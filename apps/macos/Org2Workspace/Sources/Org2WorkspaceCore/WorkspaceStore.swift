@@ -5277,6 +5277,38 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
+  public func deleteAgentWorkflow(_ workflow: AgentWorkflowItem) async -> Bool {
+    guard let corpusRoot else {
+      errorText = "Choose a corpus before deleting an automation."
+      return false
+    }
+    guard !mutatingAgentWorkflowIDs.contains(workflow.id) else {
+      errorText = "This automation is already being updated."
+      return false
+    }
+    errorText = nil
+    mutatingAgentWorkflowIDs.insert(workflow.id)
+    defer { mutatingAgentWorkflowIDs.remove(workflow.id) }
+    do {
+      _ = try await cli.run([
+        "workflow", "delete", workflow.id,
+        "--dir", corpusRoot.path,
+        "--apply",
+        "--json",
+      ])
+      if selectedAgentWorkflowID == workflow.id {
+        selectedAgentWorkflowID = nil
+      }
+      await refreshAgentWorkflows()
+      statusText = "Deleted \(workflow.title)"
+      return true
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Automation deletion failed"
+      return false
+    }
+  }
+
   public func runAgentWorkflow(_ workflow: AgentWorkflowItem, inputs: [String: String]) async {
     _ = await prepareAndDispatchAgentAutomation(
       workflowID: workflow.id,
@@ -11032,8 +11064,13 @@ public final class WorkspaceStore: ObservableObject {
         title: result.artifact.title,
         mediaType: mediaType,
         sourcePath: result.source.file,
-        format: request.format
+        format: request.format,
+        stableKey: Self.localDocumentPublicationStableKey(
+          sourceFile: sourceFile,
+          request: request
+        )
       )
+      localDocumentPublications.removeAll { $0.id == hostedPublication.id }
       localDocumentPublications.insert(hostedPublication, at: 0)
       statusText = "Published \(result.artifact.title) on the local network"
       return .localLink(publication: hostedPublication, result: result)
@@ -11222,6 +11259,18 @@ public final class WorkspaceStore: ObservableObject {
       arguments.append("--apply")
     }
     return arguments
+  }
+
+  nonisolated static func localDocumentPublicationStableKey(
+    sourceFile: URL,
+    request: DocumentPublishRequest
+  ) -> String {
+    let scope = request.line.map(String.init) ?? "document"
+    return [
+      sourceFile.standardizedFileURL.path,
+      "scope:\(scope)",
+      "format:\(request.format.rawValue)",
+    ].joined(separator: "\n")
   }
 
   private func googleDrivePublicationBinding(

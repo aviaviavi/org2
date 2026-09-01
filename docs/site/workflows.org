@@ -3,7 +3,7 @@
 
 An Org2 workflow is a maintained, reusable process. Each workflow is an ordinary =.org2= file under the visible top-level =workflows/= directory. The file is the source of truth: it can be opened in Org2 Workspace, another editor, a terminal, or Git without depending on private application state.
 
-The Mac app and runtime adapters provide tooling around the file. They can create prompt automations, list and validate workflows, collect inputs, start runs, activate or pause schedules, and show execution history. Those controls must update or act from the canonical workflow file rather than creating a second GUI-owned definition.
+The Mac app and runtime adapters provide tooling around the file. They can create prompt automations, list and validate workflows, collect inputs, start runs, activate or pause schedules, delete definitions, and show execution history. Those controls must update or act from the canonical workflow file rather than creating a second GUI-owned definition.
 
 * Workflow, run, and runtime
 
@@ -71,10 +71,14 @@ org2 workflow activate weekly-review --dir ~/notes
 org2 workflow pause weekly-review --dir ~/notes
 org2 workflow schedule weekly-review --cron "0 9 * * 1" \
   --timezone America/Los_Angeles --dir ~/notes
+org2 workflow delete weekly-review --dir ~/notes
+org2 workflow delete weekly-review --dir ~/notes --apply
 org2 workflow migrate --dir ~/notes
 #+end_src
 
 Draft, active, and paused describe operational intent. Editing the file remains possible in every state. A workflow should be validated and reviewed before an edited version becomes responsible for consequential or scheduled work.
+
+The first =workflow delete= command previews the exact workflow files that would be removed; =--apply= performs the deletion. The Mac app exposes the same action behind a confirmation dialog. Deleting an automation removes its definition and prevents future OpenOrg schedule checks, but preserves every existing run and its review history. It does not cancel an attempt that has already been dispatched.
 
 * OpenOrg scheduling and destination dispatch
 

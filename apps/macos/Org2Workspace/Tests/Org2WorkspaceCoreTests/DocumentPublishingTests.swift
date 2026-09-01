@@ -328,6 +328,87 @@ final class DocumentPublishingTests: XCTestCase {
     XCTAssertEqual(publication.localURL.host, "127.0.0.1")
   }
 
+  func testLocalPublicationRepublishUpdatesTheStableSecretURL() async throws {
+    let host = LocalDocumentPublicationHost(
+      bindHost: "127.0.0.1",
+      advertisedHost: "127.0.0.1"
+    )
+    defer { host.stop() }
+
+    let first = try await host.publish(
+      data: Data("<p>First version</p>".utf8),
+      title: "Stable report",
+      mediaType: "text/html",
+      sourcePath: "/tmp/stable-report.org",
+      format: .html,
+      stableKey: "/tmp/stable-report.org\nscope:document\nformat:html"
+    )
+    let updated = try await host.publish(
+      data: Data("<p>Updated version</p>".utf8),
+      title: "Stable report",
+      mediaType: "text/html",
+      sourcePath: "/tmp/stable-report.org",
+      format: .html,
+      stableKey: "/tmp/stable-report.org\nscope:document\nformat:html"
+    )
+
+    XCTAssertEqual(updated.id, first.id)
+    XCTAssertEqual(updated.url, first.url)
+    XCTAssertEqual(updated.localURL, first.localURL)
+    let (servedData, response) = try await URLSession.shared.data(from: updated.localURL)
+    XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
+    XCTAssertEqual(String(decoding: servedData, as: UTF8.self), "<p>Updated version</p>")
+  }
+
+  func testLocalPublicationStableKeyAdoptsTheNewestLegacyPublicationURL() async throws {
+    let host = LocalDocumentPublicationHost(
+      bindHost: "127.0.0.1",
+      advertisedHost: "127.0.0.1"
+    )
+    defer { host.stop() }
+
+    let original = try await host.publish(
+      data: Data("<p>Legacy version</p>".utf8),
+      title: "Legacy report",
+      mediaType: "text/html",
+      sourcePath: "/tmp/legacy-stable-report.org",
+      format: .html
+    )
+    let updated = try await host.publish(
+      data: Data("<p>Updated version</p>".utf8),
+      title: "Legacy report",
+      mediaType: "text/html",
+      sourcePath: "/tmp/legacy-stable-report.org",
+      format: .html,
+      stableKey: "/tmp/legacy-stable-report.org\nscope:document\nformat:html"
+    )
+
+    XCTAssertEqual(updated.id, original.id)
+    XCTAssertEqual(updated.url, original.url)
+    let (servedData, response) = try await URLSession.shared.data(from: updated.localURL)
+    XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
+    XCTAssertEqual(String(decoding: servedData, as: UTF8.self), "<p>Updated version</p>")
+  }
+
+  func testLocalPublicationStableKeyIncludesSourceScopeAndFormat() {
+    let file = URL(fileURLWithPath: "/tmp/stable-report.org")
+    let wholeHTML = WorkspaceStore.localDocumentPublicationStableKey(
+      sourceFile: file,
+      request: DocumentPublishRequest(destination: .localLink, format: .html)
+    )
+    let subtreeHTML = WorkspaceStore.localDocumentPublicationStableKey(
+      sourceFile: file,
+      request: DocumentPublishRequest(destination: .localLink, format: .html, line: 12)
+    )
+    let wholePDF = WorkspaceStore.localDocumentPublicationStableKey(
+      sourceFile: file,
+      request: DocumentPublishRequest(destination: .localLink, format: .pdf)
+    )
+
+    XCTAssertNotEqual(wholeHTML, subtreeHTML)
+    XCTAssertNotEqual(wholeHTML, wholePDF)
+  }
+
   func testLocalPublicationSurvivesHostRestartWithTheSameSecretURL() async throws {
     let storageDirectory = FileManager.default.temporaryDirectory
       .appendingPathComponent("openorg-publication-persistence-\(UUID().uuidString)", isDirectory: true)

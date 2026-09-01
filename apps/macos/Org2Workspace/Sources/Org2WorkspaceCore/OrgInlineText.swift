@@ -17,6 +17,10 @@ struct OrgInlineTextSelectionEnabledKey: EnvironmentKey {
   static let defaultValue = true
 }
 
+struct OrgInlineTextSelectionOwnerEnabledKey: EnvironmentKey {
+  static let defaultValue = true
+}
+
 struct OrgInlineTextActivation {
   let activate: @MainActor (NSRange) -> Void
 }
@@ -54,6 +58,11 @@ extension EnvironmentValues {
     set { self[OrgInlineTextSelectionEnabledKey.self] = newValue }
   }
 
+  var orgInlineTextSelectionOwnerEnabled: Bool {
+    get { self[OrgInlineTextSelectionOwnerEnabledKey.self] }
+    set { self[OrgInlineTextSelectionOwnerEnabledKey.self] = newValue }
+  }
+
   var orgInlineTextActivation: OrgInlineTextActivation? {
     get { self[OrgInlineTextActivationKey.self] }
     set { self[OrgInlineTextActivationKey.self] = newValue }
@@ -70,6 +79,7 @@ struct OrgInlineText: View {
   @Environment(\.orgRoamLinkResolver) private var orgRoamLinkResolver
   @Environment(\.orgInlineSearchHighlightQuery) private var searchHighlightQuery
   @Environment(\.orgInlineTextSelectionEnabled) private var textSelectionEnabled
+  @Environment(\.orgInlineTextSelectionOwnerEnabled) private var textSelectionOwnerEnabled
   @Environment(\.orgInlineTextActivation) private var textActivation
   @Environment(\.orgInlineTextLinkActivation) private var linkActivation
   let raw: String
@@ -92,7 +102,7 @@ struct OrgInlineText: View {
   @ViewBuilder
   var body: some View {
     if textSelectionEnabled {
-      if managesTextSelection {
+      if managesTextSelection, textSelectionOwnerEnabled {
         baseText
           .textSelection(.enabled)
       } else {
