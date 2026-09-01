@@ -458,7 +458,7 @@ public struct Org2CLI: Sendable {
         try? stdout.fileHandleForReading.close()
         readGroup.leave()
       }
-      stdoutCollector.set(stdout.fileHandleForReading.readDataToEndOfFile())
+      stdoutCollector.drain(stdout.fileHandleForReading)
     }
     readGroup.enter()
     DispatchQueue.global(qos: .userInitiated).async {
@@ -466,7 +466,7 @@ public struct Org2CLI: Sendable {
         try? stderr.fileHandleForReading.close()
         readGroup.leave()
       }
-      stderrCollector.set(stderr.fileHandleForReading.readDataToEndOfFile())
+      stderrCollector.drain(stderr.fileHandleForReading)
     }
 
     let deadline = timeout.map {
@@ -504,6 +504,8 @@ public struct Org2CLI: Sendable {
     // unbounded application hang. Do not forcibly close a FileHandle while its
     // reader is active; Foundation can raise an Objective-C exception. The
     // reader owns the pipe and will unwind naturally when the descriptor closes.
+    // Collectors publish each chunk as it arrives, so a descendant retaining the
+    // pipe cannot make us discard output already written by the direct child.
     _ = readGroup.wait(timeout: .now() + 1)
 
     let outData = stdoutCollector.data
@@ -627,10 +629,14 @@ private final class PipeOutputCollector: @unchecked Sendable {
   private let lock = NSLock()
   private var storage = Data()
 
-  func set(_ data: Data) {
-    lock.lock()
-    storage = data
-    lock.unlock()
+  func drain(_ handle: FileHandle) {
+    while true {
+      let chunk = handle.availableData
+      guard !chunk.isEmpty else { return }
+      lock.lock()
+      storage.append(chunk)
+      lock.unlock()
+    }
   }
 
   var data: Data {
