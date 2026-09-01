@@ -1,16 +1,16 @@
 #!/usr/bin/env node
 
-import fs from "node:fs";
 import process from "node:process";
 import { parseNonNegativeIntegerArgument } from "./cliArguments.js";
 import { parseOrgWithDiagnostics } from "./parser.js";
+import { readStdinText } from "./stdin.js";
 
 function usage(exitCode = 2): never {
   console.error("Usage: editor-analysis [--source-line-offset N]");
   process.exit(exitCode);
 }
 
-function main() {
+async function main(): Promise<void> {
   const args = process.argv.slice(2);
   if (args.includes("--help") || args.includes("-h")) usage(0);
 
@@ -34,7 +34,7 @@ function main() {
     usage();
   }
 
-  const input = fs.readFileSync(0, "utf8");
+  const input = await readStdinText();
   const result = parseOrgWithDiagnostics(input, {
     sourceRanges: true,
     sourceLineOffset,
@@ -45,4 +45,4 @@ function main() {
   })}\n`);
 }
 
-main();
+await main();

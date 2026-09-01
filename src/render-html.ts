@@ -8,6 +8,7 @@ import { findConfigFile, loadConfig } from "./config.js";
 import { renderOrgDocumentToAppHtml } from "./export.js";
 import { parseOrgToCanonicalAst } from "./parser.js";
 import { renderPluginSourceBlocks } from "./pluginRuntime.js";
+import { readStdinText } from "./stdin.js";
 
 function usage(exitCode = 2): never {
   const command = path.basename(process.argv[1] ?? "render-html");
@@ -15,7 +16,7 @@ function usage(exitCode = 2): never {
   process.exit(exitCode);
 }
 
-function main(): void {
+async function main(): Promise<void> {
   const args = process.argv.slice(2);
   let sourcePath: string | undefined;
   let title: string | undefined;
@@ -43,7 +44,7 @@ function main(): void {
     usage();
   }
 
-  const input = fs.readFileSync(0, "utf8").replace(/\r\n/g, "\n");
+  const input = (await readStdinText()).replace(/\r\n/g, "\n");
   let renderInput = input;
   let document: ReturnType<typeof parseOrgToCanonicalAst>;
   try {
@@ -91,4 +92,4 @@ function main(): void {
   process.stdout.write(rendered.html);
 }
 
-main();
+await main();

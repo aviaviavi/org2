@@ -62,6 +62,7 @@ import { createAiAdapterRequest, MockAiAdapter, type AiAdapterContextItem, type 
 import { buildGeneratedArtifactMetadata, formatOrg2ArtifactPropertyDrawer, sha256Hex, updateArtifactReviewStatusInText } from "./artifactMetadata.js";
 import { defaultCorpusCachePath, org2CorpusIndexDir, org2IndexHome } from "./indexPaths.js";
 import { ingestDemoSource, type Org2RawCaptureInput } from "./ingestionPipeline.js";
+import { readStdinText } from "./stdin.js";
 import { parseHeadlineTitleForRoam } from "./headlineTitle.js";
 import { formatOrgDateTimestamp, parseIsoCalendarDate } from "./calendarDate.js";
 import { parseTimestampRepeater, parseTimestampWarning } from "./timestampModifiers.js";
@@ -8312,7 +8313,7 @@ or {metadata:{...}, content:"..."}. Generated view artifacts are review-required
       content: rawContent || metadataString("content") || "",
     };
   } else {
-    const content = readStdin ? fs.readFileSync(0, "utf8") : fs.readFileSync(file, "utf8");
+    const content = readStdin ? await readStdinText() : fs.readFileSync(file, "utf8");
     const sourceKind = readStdin ? "stdin" : "file";
     input = {
       sourceType: sourceTypeOverride || sourceKind,
@@ -10959,7 +10960,7 @@ Flags:
     }
 
     const input = renderChartStdin
-      ? fs.readFileSync(0, "utf8").replace(/\r\n/g, "\n")
+      ? (await readStdinText()).replace(/\r\n/g, "\n")
       : fs.readFileSync(path.resolve(renderChartFile), "utf8").replace(/\r\n/g, "\n");
     const sourceFile = renderChartStdin ? undefined : renderChartFile;
     const result = renderOrgChart(input, {
@@ -11027,7 +11028,7 @@ Flags:
     }
 
     const input = dataQueryStdin
-      ? fs.readFileSync(0, "utf8").replace(/\r\n/g, "\n")
+      ? (await readStdinText()).replace(/\r\n/g, "\n")
       : fs.readFileSync(path.resolve(dataQueryFile), "utf8").replace(/\r\n/g, "\n");
     if (dataQueryAllResults) {
       const inspection = await runOrg2DataQuery(input, {
@@ -12820,7 +12821,7 @@ Flags:
         normalizedBody = captureTextRaw.replace(/\r\n/g, "\n").trim();
         origin ||= "literal:text";
       } else if (inputSourceType === "stdin") {
-        normalizedBody = fs.readFileSync(0, "utf8").replace(/\r\n/g, "\n").trim();
+        normalizedBody = (await readStdinText()).replace(/\r\n/g, "\n").trim();
         origin ||= "stdin";
       } else if (inputSourceType === "file") {
         const stat = fs.statSync(captureSourceFile);
@@ -15018,7 +15019,7 @@ Flags:
         console.error("Error: fmt --stdin cannot be combined with --dir/--file/--files");
         process.exit(1);
       }
-      const stdinRaw = fs.readFileSync(0, "utf8");
+      const stdinRaw = await readStdinText();
       const normalizedStdinRaw = stdinRaw.replace(/\r\n/g, "\n");
       const formattedText = formatOne(stdinRaw, fmtCanonicalOrg);
 

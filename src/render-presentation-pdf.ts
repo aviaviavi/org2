@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 
-import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { compileBeamerPdf } from "./beamerCompile.js";
 import { parseNonNegativeIntegerArgument } from "./cliArguments.js";
 import { parseOrgToCanonicalAst } from "./parser.js";
 import { renderPresentationToBeamer } from "./presentation.js";
+import { readStdinText } from "./stdin.js";
 
 function usage(exitCode = 2): never {
   const command = path.basename(process.argv[1] ?? "render-presentation-pdf");
@@ -16,7 +16,7 @@ function usage(exitCode = 2): never {
   process.exit(exitCode);
 }
 
-function main(): void {
+async function main(): Promise<void> {
   const args = process.argv.slice(2);
   let sourcePath: string | undefined;
   let latexEngine: string | undefined;
@@ -55,7 +55,7 @@ function main(): void {
 
   if (!sourcePath) usage();
 
-  const input = fs.readFileSync(0, "utf8").replace(/\r\n/g, "\n");
+  const input = (await readStdinText()).replace(/\r\n/g, "\n");
   let rendered: ReturnType<typeof renderPresentationToBeamer>;
   try {
     const document = parseOrgToCanonicalAst(input, {
@@ -91,4 +91,4 @@ function main(): void {
   process.stdout.write(compiled.pdf);
 }
 
-main();
+await main();

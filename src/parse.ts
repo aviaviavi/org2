@@ -5,6 +5,7 @@ import path from "node:path";
 import process from "node:process";
 import { parseNonNegativeIntegerArgument } from "./cliArguments.js";
 import { parseOrgToCanonicalAst } from "./parser.js";
+import { readStdinText } from "./stdin.js";
 
 function usage(exitCode = 2): never {
   const cmd = path.basename(process.argv[1] ?? "parse");
@@ -12,7 +13,7 @@ function usage(exitCode = 2): never {
   process.exit(exitCode);
 }
 
-function main() {
+async function main(): Promise<void> {
   const args = process.argv.slice(2);
   if (args.includes("--help") || args.includes("-h")) {
     usage(0);
@@ -53,9 +54,9 @@ function main() {
     usage();
   }
 
-  const input = filePath === "-" ? fs.readFileSync(0, "utf8") : fs.readFileSync(filePath, "utf8");
+  const input = filePath === "-" ? await readStdinText() : fs.readFileSync(filePath, "utf8");
   const ast = parseOrgToCanonicalAst(input, { sourceRanges, sourceLineOffset });
   process.stdout.write(`${JSON.stringify(ast, null, 2)}\n`);
 }
 
-main();
+await main();
