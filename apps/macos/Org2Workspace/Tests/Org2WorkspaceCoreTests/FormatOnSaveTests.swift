@@ -127,8 +127,14 @@ final class FormatOnSaveTests: XCTestCase {
     await harness.store.saveActiveEdit()
 
     let saved = try String(contentsOf: harness.file, encoding: .utf8)
-    XCTAssertTrue(saved.contains("Use ~inline code~ here."))
-    XCTAssertFalse(saved.contains("`inline code`"))
+    XCTAssertTrue(
+      saved.contains("Use ~inline code~ here."),
+      "Expected canonical Org syntax after save; status: \(harness.store.statusText)"
+    )
+    XCTAssertFalse(
+      saved.contains("`inline code`"),
+      "Expected syntax sugar to be removed after save; status: \(harness.store.statusText)"
+    )
   }
 
   func testFormattingFailureStillSavesOriginalDraft() async throws {

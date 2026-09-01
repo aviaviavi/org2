@@ -1735,6 +1735,7 @@ private struct EditorInteractionHarness {
     XCTFail("""
     Timed out waiting for focused editor text \(String(reflecting: expected)).
     Editors: \(editorTexts.map { String(reflecting: $0) }.joined(separator: ", "))
+    Editing block ID: \(store.editingBlockID ?? "<nil>")
     Selected block: \(store.selectedBlock?.rawText ?? "<nil>")
     Rendered blocks: \(renderedBlocks)
     Status: \(store.statusText)

@@ -469,7 +469,9 @@ public struct Org2CLI: Sendable {
       stderrCollector.set(stderr.fileHandleForReading.readDataToEndOfFile())
     }
 
-    let deadline = timeout.map { Date().addingTimeInterval(max(0.01, $0)) }
+    let deadline = timeout.map {
+      DispatchTime.now() + .milliseconds(Int((max(0.01, $0) * 1_000).rounded(.up)))
+    }
     var didTimeOut = false
     var wasCancelled = false
     while process.isRunning {
@@ -477,7 +479,7 @@ public struct Org2CLI: Sendable {
         wasCancelled = true
         break
       }
-      if let deadline, Date() >= deadline {
+      if let deadline, DispatchTime.now() >= deadline {
         didTimeOut = true
         break
       }
@@ -486,8 +488,8 @@ public struct Org2CLI: Sendable {
 
     if process.isRunning && (didTimeOut || wasCancelled) {
       process.terminate()
-      let terminationDeadline = Date().addingTimeInterval(0.5)
-      while process.isRunning && Date() < terminationDeadline {
+      let terminationDeadline = DispatchTime.now() + .milliseconds(500)
+      while process.isRunning && DispatchTime.now() < terminationDeadline {
         Thread.sleep(forTimeInterval: 0.01)
       }
       if process.isRunning {

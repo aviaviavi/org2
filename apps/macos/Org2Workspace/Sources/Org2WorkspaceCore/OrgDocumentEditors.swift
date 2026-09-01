@@ -986,7 +986,9 @@ private struct ListItemBlockEditor: View {
       autosaveTask?.cancel()
       autosaveTask = nil
     }
-    .onAppear {
+    .task(id: block.id) {
+      await Task.yield()
+      guard !Task.isCancelled else { return }
       textFocused = true
       InlineEditorInitialSelection.applyToFocusedField(initialSelection, text: text)
     }
