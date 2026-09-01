@@ -44,6 +44,13 @@ The orchestrator:
 
 Use `--through PHASE` for an intentional checkpoint, `--restart` to discard phase and job state, `--skip-ios` for a tooling-only release, and `--skip-testflight-groups` only when explicitly accepting a manual App Store Connect handoff. Validation retries reuse successful jobs only while the tracked and untracked release inputs retain the same fingerprint. Never use the latter as the normal path.
 
+## Resume and repair without duplicate work
+
+1. Resume the existing versioned checkpoint before considering `--restart`. Inspect its completed phases, validation fingerprint, and per-job logs. Restart only when the recorded inputs are stale or the candidate itself changed.
+2. A failed parallel packaging phase may still leave one fully valid Mac artifact. Preserve any artifact whose sidecar has the exact version and architecture, whose SHA-256 matches, and whose signing, notarization, stapling, and Gatekeeper checks passed. Repair only the failed architecture with `tools/package-openorg-macos.mjs`.
+3. npm optional native dependencies follow the architecture of the Node process that installs them. For a single-architecture repair, run the locked install under the target-architecture Node binary and launch the package command with that same binary. Before returning to a host-architecture documentation or sync step, restore the lockfile install under the orchestrator's host Node. Do not rerun validation merely because dependencies were reinstalled from an unchanged lockfile.
+4. Manually mark a failed fan-out phase complete only as a narrow recovery after every required output independently satisfies that phase's contract. Never advance a checkpoint to conceal a missing, unnotarized, mismatched, or unverified artifact.
+
 ## 1. Establish scope
 
 1. Read `AGENTS.md` and inspect `git status`, the current branch, recent tags, and existing releases.
@@ -63,7 +70,7 @@ Use `--through PHASE` for an intentional checkpoint, `--restart` to discard phas
 1. Stamp root and VS Code manifests and lockfiles with `npm version VERSION --no-git-tag-version --allow-same-version` and the equivalent `npm --prefix editors/vscode-org2 version` command.
 2. Add a concise VS Code changelog entry. Avoid npm serialization noise unrelated to the version.
 3. Validate `npm pack --dry-run --json` and package the VSIX from `editors/vscode-org2`.
-4. The orchestrator packages both architectures concurrently with `tools/package-openorg-macos.mjs`. Each package gets its own temporary app staging and Swift scratch directory. Supply the target-architecture Node binary, pinned native whisper.cpp executable, verified `ggml-base.en.bin` model, Developer ID identity, and notarytool Keychain profile through the documented environment variables. The command fails closed when a runtime or notarization credential is missing, signs nested code with hardened runtime, submits the DMG for notarization, staples it, runs Gatekeeper verification, and records a sidecar manifest and SHA-256. Never overwrite or relaunch `/Users/avi/Applications/Org2Workspace.app` during release packaging.
+4. The orchestrator packages both architectures concurrently with `tools/package-openorg-macos.mjs`. Each package gets its own temporary app staging and Swift scratch directory. Supply the target-architecture Node binary, pinned native whisper.cpp executable, verified `ggml-base.en.bin` model, Developer ID identity, shared Google OAuth desktop client, and notarytool Keychain profile through the environment variables in the release contract. The command fails closed when a runtime or notarization credential is missing, signs nested code with hardened runtime, submits the DMG for notarization, staples it, runs Gatekeeper verification, and records a sidecar manifest and SHA-256. Never overwrite or relaunch the daily app at `~/Applications/OpenOrg.app` or its historical `~/Applications/Org2Workspace.app` path during release packaging.
 5. Require `OpenOrg.dmg` for Apple Silicon and `OpenOrg-Intel.dmg` for Intel. Verify the app with `codesign --verify --deep --strict`, the image with `hdiutil verify`, and the stapled artifact with `xcrun stapler validate` and `spctl`.
 
 ## 4. Publish
@@ -94,7 +101,7 @@ The sync tool regenerates `docs/site/downloads.org` from GitHub Release assets a
 ## 6. Verify publicly
 
 1. Confirm npm's `latest` dist-tag equals the version.
-2. Confirm the Marketplace serves the exact versioned VSIX; allow for catalog propagation delay.
+2. Confirm the Marketplace serves the exact versioned VSIX, allowing for catalog propagation delay. If the tag workflow's Marketplace publish step succeeded and the exact VSIX is attached to the GitHub Release but the public catalog still shows the prior version, do not block or roll back the GitHub/npm/Mac release and do not republish the same version. Report Marketplace visibility as a pending follow-up and retry only that public check later; leave the final verification checkpoint incomplete until it converges.
 3. Download GitHub Release assets back and inspect their embedded versions.
 4. Request every Scarf URL without following redirects. Require a 3xx response whose `Location` is the matching GitHub Release asset.
 5. Run `node tools/sync-release-downloads.mjs --check` and confirm the repository is clean and synchronized with `origin/main`.
