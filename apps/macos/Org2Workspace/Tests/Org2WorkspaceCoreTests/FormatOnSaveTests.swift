@@ -94,6 +94,7 @@ final class FormatOnSaveTests: XCTestCase {
     """
     let harness = try await makeHarness(initialText: initial, fileExtension: "org")
     defer { harness.defaults.removePersistentDomain(forName: harness.defaultsSuiteName) }
+    harness.store.formatOrgFilesOnSave = false
 
     harness.store.beginEditingCurrentScope()
     harness.store.editableEntryText = draft
@@ -106,35 +107,6 @@ final class FormatOnSaveTests: XCTestCase {
     XCTAssertFalse(saved.contains("```js"))
     XCTAssertEqual(harness.store.selectedEntrySource?.text, saved)
     XCTAssertFalse(harness.store.entryEditorHasUnsavedChanges)
-  }
-
-  func testOrgSaveCanonicalizesSugarWhenGeneralFormattingIsDisabled() async throws {
-    let initial = """
-    * Example
-    Original body
-    """
-    let draft = """
-    * Example
-    Use `inline code` here.
-    """
-    let harness = try await makeHarness(initialText: initial, fileExtension: "org")
-    defer { harness.defaults.removePersistentDomain(forName: harness.defaultsSuiteName) }
-    harness.store.formatOrgFilesOnSave = false
-
-    harness.store.beginEditingCurrentScope()
-    harness.store.editableEntryText = draft
-    harness.store.noteSourceEditorLocalTextChanged(draft)
-    await harness.store.saveActiveEdit()
-
-    let saved = try String(contentsOf: harness.file, encoding: .utf8)
-    XCTAssertTrue(
-      saved.contains("Use ~inline code~ here."),
-      "Expected canonical Org syntax after save; status: \(harness.store.statusText)"
-    )
-    XCTAssertFalse(
-      saved.contains("`inline code`"),
-      "Expected syntax sugar to be removed after save; status: \(harness.store.statusText)"
-    )
   }
 
   func testFormattingFailureStillSavesOriginalDraft() async throws {

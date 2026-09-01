@@ -288,6 +288,7 @@ final class OpenClawSlashCommandTests: XCTestCase {
       openClawSendHandler: { messages, _, _, _ in await recorder.record(messages) }
     )
     store.setCorpusRoot(root, persistsDefault: false)
+    await store.waitForCorpusAgentSkillRefreshForTesting()
 
     store.submitOpenClawComposerInput(text: "/setup-scarf-slack-agent C123 scarf")
     let deadline = Date().addingTimeInterval(3)

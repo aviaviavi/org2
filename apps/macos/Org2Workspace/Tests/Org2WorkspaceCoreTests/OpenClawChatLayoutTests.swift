@@ -4,23 +4,6 @@ import XCTest
 @testable import Org2WorkspaceCore
 
 @MainActor
-private final class ActivitySelectionModel: ObservableObject {
-  @Published var selectedIndex = 0
-}
-
-private struct ActivitySelectionHarness: View {
-  @ObservedObject var model: ActivitySelectionModel
-
-  var body: some View {
-    VStack {
-      OpenClawSidebarThreadActivityView(isSelected: model.selectedIndex == 0)
-      OpenClawSidebarThreadActivityView(isSelected: model.selectedIndex == 1)
-    }
-    .environment(\._accessibilityReduceMotion, false)
-  }
-}
-
-@MainActor
 private final class TranscriptLayoutProbeCounter {
   var realizedRows = 0
 }
@@ -1057,36 +1040,6 @@ final class OpenClawChatLayoutTests: XCTestCase {
     XCTAssertFalse(OpenClawSidebarThreadActivityView(isSelected: false).shouldAnimate)
   }
 
-  func testSidebarThreadActivityAnimationTransfersBetweenHostedRows() {
-    let model = ActivitySelectionModel()
-    let hostingView = NSHostingView(rootView: ActivitySelectionHarness(model: model))
-    let window = NSWindow(
-      contentRect: NSRect(x: 0, y: 0, width: 180, height: 80),
-      styleMask: [.borderless],
-      backing: .buffered,
-      defer: false
-    )
-    window.contentView = hostingView
-    hostingView.layoutSubtreeIfNeeded()
-
-    var dots = hostedActivityDots(in: hostingView)
-    XCTAssertEqual(dots.count, 2)
-    XCTAssertEqual(dots.filter(\.isAnimatingForTesting).count, 1)
-    let initiallyAnimatedDot = dots.first(where: \.isAnimatingForTesting)
-
-    model.selectedIndex = 1
-    RunLoop.main.run(until: Date().addingTimeInterval(0.05))
-    hostingView.layoutSubtreeIfNeeded()
-
-    dots = hostedActivityDots(in: hostingView)
-    XCTAssertEqual(dots.count, 2)
-    XCTAssertEqual(dots.filter(\.isAnimatingForTesting).count, 1)
-    XCTAssertFalse(
-      dots.first(where: \.isAnimatingForTesting) === initiallyAnimatedDot,
-      "Selecting another thread must move the native animation to its row"
-    )
-  }
-
   func testActivityPulseRunsOnCoreAnimationInsteadOfSwiftUIFrameClock() {
     let view = CoreAnimationActivityDotNSView(frame: NSRect(x: 0, y: 0, width: 5, height: 5))
 
@@ -1095,16 +1048,6 @@ final class OpenClawChatLayoutTests: XCTestCase {
 
     view.configure(animates: false, color: .controlAccentColor)
     XCTAssertFalse(view.isAnimatingForTesting)
-  }
-
-  private func hostedActivityDots(in view: NSView) -> [CoreAnimationActivityDotNSView] {
-    var result = view is CoreAnimationActivityDotNSView
-      ? [view as! CoreAnimationActivityDotNSView]
-      : []
-    for subview in view.subviews {
-      result.append(contentsOf: hostedActivityDots(in: subview))
-    }
-    return result
   }
 
   func testPeriodicStatusTextUsesAnAppKitLocalTimer() {

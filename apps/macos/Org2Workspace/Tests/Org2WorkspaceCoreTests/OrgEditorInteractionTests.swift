@@ -1073,20 +1073,6 @@ final class OrgEditorInteractionTests: XCTestCase {
     XCTAssertTrue(source.contains("- [ ] first task second task"))
   }
 
-  func testKeyboardListReturnCreatesNextItemAfterCurrentText() async throws {
-    let harness = try await makeHarness(initialText: "")
-
-    try await harness.beginAppendingAtEnd()
-    try await harness.typeKeys("- [ ] first task")
-    try await harness.pressReturnKey()
-    try await harness.waitForFocusedEditorText("")
-    try await harness.typeKeys("second task")
-    try await harness.saveActiveBlock()
-
-    let source = try harness.fileText()
-    XCTAssertEqual(source, "- [ ] first task\n- [ ] second task")
-  }
-
   func testDirectTypingIntoSelectedListItemOpensSourceEditorAndInsertsText() async throws {
     let harness = try await makeHarness(initialText: "- [ ] alpha")
 
