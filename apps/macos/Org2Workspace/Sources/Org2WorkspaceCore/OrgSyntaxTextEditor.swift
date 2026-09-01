@@ -2578,7 +2578,9 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
 
     func prepareForDismantle(_ textView: NSTextView) {
       _ = checkpointActiveTextViewIfNeeded()
-      flushCaretPublishing(from: textView)
+      // SwiftUI can dismantle the editor while its hosting graph is being
+      // destroyed. Do not publish selection state back into that graph.
+      cancelDeferredCaretPublishing()
       cancelDeferredHighlighting()
       deferredContentHeightPublishTask?.cancel()
       deferredContentHeightPublishTask = nil
