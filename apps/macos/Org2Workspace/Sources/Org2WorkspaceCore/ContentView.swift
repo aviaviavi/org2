@@ -79,6 +79,8 @@ public struct ContentView: View {
           .help(store.isRefreshingWorkspace ? "Stop the current workspace refresh (⌘R)" : "Refresh every workspace view (⌘R)")
         }
       }
+      .toolbarBackground(WorkspaceDesign.barBackground, for: .windowToolbar)
+      .toolbarBackground(.visible, for: .windowToolbar)
       .keyboardEventMonitor { event, scope in
         store.handleWorkspaceKeyDown(event, scope: scope)
       }
