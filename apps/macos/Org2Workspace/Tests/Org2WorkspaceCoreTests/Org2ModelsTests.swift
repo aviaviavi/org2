@@ -6331,6 +6331,7 @@ final class Org2ModelsTests: XCTestCase {
       },
       legacyDefaultsDomains: []
     )
+    store.openClawTranscriptSaverForTesting = {}
     store.setCorpusRoot(firstRoot, persistsDefault: false)
     await store.waitForAIChatTranscriptLoadForTesting()
     store.openClawDraft = "keep working"

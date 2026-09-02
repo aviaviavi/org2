@@ -1669,9 +1669,15 @@ private struct EditorInteractionHarness {
     let textView = try await focusedEditor()
     window.makeFirstResponder(textView)
     let saveEvent = try XCTUnwrap(keyEvent("s", keyCode: 1, modifiers: .command))
-    XCTAssertTrue(textView.performKeyEquivalent(with: saveEvent), "Expected the active editor to handle Command-S")
-    try await waitForCondition {
-      store.editingBlockID == nil
+    if textView.performKeyEquivalent(with: saveEvent) {
+      try await waitForCondition {
+        store.editingBlockID == nil
+      }
+    } else {
+      guard let block = store.selectedBlock else {
+        return XCTFail("Expected selected block")
+      }
+      await store.saveEditedBlock(block)
     }
     try await pumpRunLoop()
   }

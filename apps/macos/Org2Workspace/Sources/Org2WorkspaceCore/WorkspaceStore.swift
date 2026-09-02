@@ -35974,9 +35974,11 @@ public final class WorkspaceStore {
     let fallbackMessages = previousURL.path == appOpenClawTranscriptURL.standardizedFileURL.path
       ? openClawMessages
       : []
-    let hasInFlightTurn = aiChatSendOriginsByThreadID.values.contains {
-      $0.transcriptURL.standardizedFileURL.path == targetURL.path
-    }
+    let inFlightThreadIDs = Set(aiChatSendOriginsByThreadID.compactMap { threadID, origin in
+      origin.transcriptURL.standardizedFileURL.path == targetURL.path ? threadID : nil
+    })
+    let cachedTargetTranscript = inactiveAIChatTranscriptsByPath[targetURL.path]
+    let hasInFlightTurn = !inFlightThreadIDs.isEmpty
     isLoadingAIChatTranscript = true
     aiChatTranscriptWritesBlocked = false
     aiChatTranscriptRecoveryNotice = nil
@@ -36013,7 +36015,10 @@ public final class WorkspaceStore {
         atPath: AIChatTranscriptStore.storeDirectory(for: targetURL)
           .appendingPathComponent("migration-marker.previous.json").path
       )
-    if !hasTargetTranscript, sourceURL == nil, fallbackMessages.isEmpty {
+    if !hasTargetTranscript,
+       sourceURL == nil,
+       fallbackMessages.isEmpty,
+       cachedTargetTranscript == nil {
       openClawTranscriptLoadTask = nil
       isLoadingAIChatTranscript = false
       hasAuthoritativeAIChatTranscriptState = true
@@ -36078,8 +36083,13 @@ public final class WorkspaceStore {
         } else {
           loaded = result
         }
+        let restored = Self.restoringCachedAIChatThreads(
+          in: loaded,
+          cachedTranscript: cachedTargetTranscript,
+          priorityThreadIDs: inFlightThreadIDs
+        )
         return Self.prepareInitialOpenClawTranscriptLoad(
-          loaded,
+          restored,
           preferredSelectedThreadID: preferredSelectedThreadID
         )
       }.value
@@ -36105,6 +36115,43 @@ public final class WorkspaceStore {
       self.applyAIChatTranscriptRecoveryStatus(loaded.recoveryStatus)
       self.startPendingOpenClawTurnRecovery()
     }
+  }
+
+  nonisolated private static func restoringCachedAIChatThreads(
+    in loaded: OpenClawWorkspaceTranscriptLoad,
+    cachedTranscript: OpenClawTranscriptState?,
+    priorityThreadIDs: Set<UUID>
+  ) -> OpenClawWorkspaceTranscriptLoad {
+    guard let cachedTranscript, !cachedTranscript.threads.isEmpty else { return loaded }
+
+    var threads = loaded.transcript.threads
+    var restoredThreadIDs = Set<UUID>()
+    for cachedThread in cachedTranscript.threads {
+      if let index = threads.firstIndex(where: { $0.id == cachedThread.id }) {
+        guard priorityThreadIDs.contains(cachedThread.id)
+          || cachedThread.updatedAt > threads[index].updatedAt
+        else { continue }
+        threads[index] = cachedThread
+      } else {
+        threads.append(cachedThread)
+      }
+      restoredThreadIDs.insert(cachedThread.id)
+    }
+    guard !restoredThreadIDs.isEmpty else { return loaded }
+    let threadIDSet = Set(threads.map(\.id))
+    let selectedThreadID = cachedTranscript.selectedThreadID.flatMap { id in
+      threadIDSet.contains(id) ? id : nil
+    } ?? loaded.transcript.selectedThreadID
+    return OpenClawWorkspaceTranscriptLoad(
+      transcript: OpenClawTranscriptState(
+        threads: sortedOpenClawChatThreadsForDisplay(threads),
+        selectedThreadID: selectedThreadID,
+        settlementSettings: cachedTranscript.settlementSettings
+      ),
+      unloadedThreadIDs: loaded.unloadedThreadIDs.subtracting(restoredThreadIDs),
+      requiresMigration: loaded.requiresMigration,
+      recoveryStatus: loaded.recoveryStatus
+    )
   }
 
   private func loadOpenClawTranscriptForWorkspace(
