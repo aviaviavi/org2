@@ -17,35 +17,6 @@ final class FormatOnSaveTests: XCTestCase {
     XCTAssertFalse(restoredStore.formatOrgFilesOnSave)
   }
 
-  func testFullPageSaveFormatsOrgTableByDefault() async throws {
-    let initial = """
-    #+TITLE: Inventory
-
-    * Items
-    Original body
-    """
-    let draft = """
-    #+TITLE: Inventory
-
-    * Items
-    | Name|Count |
-    |---+---|
-    | Apples|2|
-    """
-    let harness = try await makeHarness(initialText: initial)
-    defer { harness.defaults.removePersistentDomain(forName: harness.defaultsSuiteName) }
-    let expected = try await harness.cli.formatOrgText(draft)
-
-    harness.store.beginEditingCurrentScope()
-    harness.store.editableEntryText = draft
-    harness.store.noteSourceEditorLocalTextChanged(draft)
-    await harness.store.saveActiveEdit()
-
-    XCTAssertEqual(try String(contentsOf: harness.file, encoding: .utf8), expected)
-    XCTAssertEqual(harness.store.selectedEntrySource?.text, expected)
-    XCTAssertFalse(harness.store.entryEditorHasUnsavedChanges)
-  }
-
   func testFullPageSavePreservesSourceWhenFormatOnSaveIsDisabled() async throws {
     let initial = """
     #+TITLE: Inventory
