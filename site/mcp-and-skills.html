@@ -154,7 +154,10 @@ claude mcp get org2</code></pre>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 skill install --dir /absolute/path/to/notes
 org2 skill install --dir /absolute/path/to/notes --apply</code></pre>
 <p>The destination is <code>.agents/skills/org2/SKILL.md</code>. The installer creates only a missing file. If that path already contains a user-managed copy, it reports a conflict and never overwrites it. Use <code>--format json</code> for automation.</p>
-<p>Codex discovers repository skills from <code>.agents/skills</code>; other skill-aware runtimes can point at or copy the same standards-shaped directory. OpenOrg includes the skill in every newly created starter workspace and also exposes the packaged built-in <code>/org2</code> skill in AI Chat before an OpenClaw Gateway is connected. A corpus-local copy takes precedence, so user edits remain authoritative. See the <a href="https://learn.chatgpt.com/docs/build-skills">official Codex skill guide</a> for Codex discovery and invocation.</p>
+<p>Codex discovers repository skills from <code>.agents/skills</code>; other skill-aware runtimes can point at or copy the same standards-shaped directory. OpenOrg includes the general skill in every newly created starter workspace so those external agents can discover it. Inside OpenOrg, the equivalent core guidance is part of every AI chat's ambient operating context instead of a separate <code>/org2</code> command. See the <a href="https://learn.chatgpt.com/docs/build-skills">official Codex skill guide</a> for Codex discovery and invocation.</p>
+<section class="org2-headline level-2">
+<h2 id="manage-workspace-skills-in-openorg">Manage workspace skills in OpenOrg</h2>
+<p>Open the <strong>Skills</strong> workspace surface or press <code>Cmd-Shift-K</code>. The catalog shows additional procedures authored for the workspace, whether each is directly invocable, its source path, and validation problems that need repair. The reserved <code>org2</code> infrastructure skill is intentionally omitted because OpenOrg already supplies that guidance ambiently. Select a listed skill to edit its <code>SKILL.md</code> in the normal document pane. <strong>New Skill</strong> creates only a missing <code>.agents/skills/NAME/SKILL.md</code> starter; it never overwrites an existing skill. Removing a workspace skill moves its whole top-level skill folder to the macOS Trash so it remains recoverable.</p>
 <p>The skill tells agents to:</p>
 <ul>
 <li><p>discover the installed command contract with <code>org2 agent capabilities</code>;</p></li>
@@ -164,6 +167,7 @@ org2 skill install --dir /absolute/path/to/notes --apply</code></pre>
 <li><p>validate changes with a focused lint, graph, or command-specific check.</p></li>
 </ul>
 <p>It intentionally does not duplicate the complete CLI reference. The installed capability manifest and <code>--help</code> output remain authoritative for the version on that machine.</p>
+</section>
 </section>
 <section class="org2-headline level-1">
 <h1 id="org2-as-an-mcp-client">Org2 as an MCP client</h1>

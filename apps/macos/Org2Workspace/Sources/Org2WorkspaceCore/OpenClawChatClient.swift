@@ -321,6 +321,14 @@ public struct OpenClawWorkspaceContext: Sendable {
   The Markdown-link form required below for clickable file-and-line citations is a deliberate OpenOrg chat transport exception; it does not change the syntax to use inside corpus content.
   """
 
+  nonisolated static let agentOperatingGuidance = """
+  Org2 agent operating guidance
+
+  Treat ordinary .org and .org2 files as canonical source. Before relying on a remembered CLI surface, inspect =org2 agent capabilities= when execution is available, and read the nearest =org2.json= for corpus-specific behavior. Prefer bounded JSON interfaces and existing typed tools over ad hoc parsing.
+
+  Keep changes small and reviewable. Preview supported mutations before applying them, preserve IDs, citations, agent and goal references, respect approval boundaries, and keep credentials outside the corpus. Use durable Org2 runs for delegated work that must be resumable or auditable. Validate changes proportionally with a focused lint, graph audit, or command-specific check.
+  """
+
   private func coordinationPrompt(runtime: String?, runtimeAgentID: String?) -> String {
     let runtime = runtime?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     let runtimeAgentID = runtimeAgentID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -407,6 +415,8 @@ public struct OpenClawWorkspaceContext: Sendable {
 
     sections.append(Self.responseFormattingContract)
 
+    sections.append(Self.agentOperatingGuidance)
+
     if let localEdit {
       sections.append(localEdit.systemPrompt())
     }
@@ -487,6 +497,8 @@ public struct OpenClawWorkspaceContext: Sendable {
       """,
       Self.responseFormattingContract
     ]
+
+    sections.append(Self.agentOperatingGuidance)
 
     sections.append(formatAuthorizedCorpora())
     sections.append(coordinationPrompt(runtime: runtime, runtimeAgentID: "default"))

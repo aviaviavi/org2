@@ -237,6 +237,8 @@ final class CodexAppServerClientTests: XCTestCase {
     let codex = context.codexSystemPrompt()
     XCTAssertTrue(codex.contains("Execution runtime: codex"))
     XCTAssertTrue(codex.contains("org2 agent-profile resolve --runtime codex --runtime-agent-id default --dir /tmp/example-corpus --json"))
+    XCTAssertTrue(codex.contains("Org2 agent operating guidance"))
+    XCTAssertTrue(codex.contains("org2 agent capabilities"))
 
     let claude = context.localAgentSystemPrompt(runtime: "claude", runtimeTitle: "Claude Code")
     XCTAssertTrue(claude.contains("Execution runtime: claude"))

@@ -1119,7 +1119,10 @@ private struct WorkspaceNavigationSnapshot: Hashable {
   let location: WorkspaceLocation?
   let agentRunDetailID: AgentRunItem.ID?
   let selectedSurface: WorkspaceSurface
+  let activeWorkspacePane: WorkspacePaneFocus
   let selectedEntrySourceMode: EntrySourceMode
+  let agendaMode: AgendaMode
+  let runsAndReviewPage: RunsAndReviewPage
   let expandedWorkspaceSurface: WorkspaceSurface?
   let isWorkspaceSurfacePaneClosed: Bool
   let isWorkspaceDetailPaneClosed: Bool
@@ -1129,9 +1132,15 @@ private struct WorkspaceNavigationSnapshot: Hashable {
   let selectedAgendaItemID: String?
   let selectedAssignedWorkItemID: AssignedWorkItem.ID?
   let selectedApprovalItemID: ApprovalItem.ID?
+  let selectedAgentRunID: AgentRunItem.ID?
+  let selectedAgentWorkflowID: AgentWorkflowItem.ID?
+  let selectedAgentGoalID: AgentGoalItem.ID?
+  let selectedAgentProfileID: AgentProfileItem.ID?
   let selectedCorpusFileID: String?
   let selectedMeetingID: String?
   let selectedOpenClawChatThreadID: UUID?
+  let selectedExternalThreadID: String?
+  let selectedWorkspaceSkillID: WorkspaceSkillItem.ID?
 }
 
 private struct WorkspaceTabState {
@@ -2207,6 +2216,8 @@ public final class WorkspaceStore {
   public var isQuickOpenPresented = false
   public var isKeyboardShortcutsPresented = false
   public var isCapturePanelPresented = false
+  public var isDailyNoteDatePickerPresented = false
+  public var dailyNotePickerDate = Date()
   public var isLaunchGuidePresented = false
   public var captureDraft = WorkspaceCaptureDraft()
   public var isSimilarTodoAssignmentPresented = false
@@ -2417,6 +2428,8 @@ public final class WorkspaceStore {
   public var openClawEndpointText = ""
   public private(set) var openClawGatewayCommands: [OpenClawSlashCommand] = []
   public private(set) var corpusAgentSkillCommands: [OpenClawSlashCommand] = []
+  public private(set) var workspaceSkills: [WorkspaceSkillItem] = []
+  public var selectedWorkspaceSkillID: WorkspaceSkillItem.ID?
   public private(set) var isRefreshingOpenClawCommands = false
   public private(set) var aiChatModelOptions: [AIChatModelOption] = []
   public private(set) var aiChatRoomModelOptions: [AIChatRuntime: [AIChatModelOption]] = [:]
@@ -11009,7 +11022,10 @@ public final class WorkspaceStore {
         location: nil,
         agentRunDetailID: nil,
         selectedSurface: .home,
+        activeWorkspacePane: .surface,
         selectedEntrySourceMode: .entry,
+        agendaMode: .focus,
+        runsAndReviewPage: .runs,
         expandedWorkspaceSurface: nil,
         isWorkspaceSurfacePaneClosed: false,
         isWorkspaceDetailPaneClosed: false,
@@ -11019,9 +11035,15 @@ public final class WorkspaceStore {
         selectedAgendaItemID: nil,
         selectedAssignedWorkItemID: nil,
         selectedApprovalItemID: nil,
+        selectedAgentRunID: nil,
+        selectedAgentWorkflowID: nil,
+        selectedAgentGoalID: nil,
+        selectedAgentProfileID: nil,
         selectedCorpusFileID: nil,
         selectedMeetingID: nil,
-        selectedOpenClawChatThreadID: nil
+        selectedOpenClawChatThreadID: nil,
+        selectedExternalThreadID: nil,
+        selectedWorkspaceSkillID: nil
       ),
       backStack: []
     )
@@ -11039,12 +11061,20 @@ public final class WorkspaceStore {
 
   private func currentWorkspaceTabMetadata() -> (title: String, systemImage: String) {
     let rawTitle: String
-    if let presentedAgentRun {
+    if activeWorkspacePane == .surface, !isWorkspaceSurfacePaneClosed {
+      if selectedSurface == .skills,
+         let selectedWorkspaceSkillID,
+         let skill = workspaceSkills.first(where: { $0.id == selectedWorkspaceSkillID }) {
+        rawTitle = "/\(skill.name)"
+      } else if selectedSurface == .openClaw,
+                let threadID = selectedOpenClawChatThreadID,
+                let thread = openClawChatThreads.first(where: { $0.id == threadID }) {
+        rawTitle = thread.title
+      } else {
+        rawTitle = selectedSurface.title
+      }
+    } else if let presentedAgentRun {
       rawTitle = presentedAgentRun.goal
-    } else if selectedSurface == .openClaw,
-              let threadID = selectedOpenClawChatThreadID,
-              let thread = openClawChatThreads.first(where: { $0.id == threadID }) {
-      rawTitle = thread.title
     } else if let selectedLocation {
       rawTitle = selectedLocation.title
     } else {
@@ -11185,7 +11215,10 @@ public final class WorkspaceStore {
       location: selectedLocation,
       agentRunDetailID: presentedAgentRunID,
       selectedSurface: selectedSurface,
+      activeWorkspacePane: activeWorkspacePane,
       selectedEntrySourceMode: selectedEntrySourceMode,
+      agendaMode: agendaMode,
+      runsAndReviewPage: runsAndReviewPage,
       expandedWorkspaceSurface: expandedWorkspaceSurface,
       isWorkspaceSurfacePaneClosed: isWorkspaceSurfacePaneClosed,
       isWorkspaceDetailPaneClosed: isWorkspaceDetailPaneClosed,
@@ -11195,9 +11228,15 @@ public final class WorkspaceStore {
       selectedAgendaItemID: locationAgendaItemID ?? selectedAgendaItemID,
       selectedAssignedWorkItemID: locationAssignedItemID ?? selectedAssignedWorkItemID,
       selectedApprovalItemID: locationApprovalItemID ?? selectedApprovalItemID,
+      selectedAgentRunID: selectedAgentRunID,
+      selectedAgentWorkflowID: selectedAgentWorkflowID,
+      selectedAgentGoalID: selectedAgentGoalID,
+      selectedAgentProfileID: selectedAgentProfileID,
       selectedCorpusFileID: locationCorpusFileID ?? selectedCorpusFileID,
       selectedMeetingID: locationMeetingID ?? selectedMeetingID,
-      selectedOpenClawChatThreadID: selectedOpenClawChatThreadID
+      selectedOpenClawChatThreadID: selectedOpenClawChatThreadID,
+      selectedExternalThreadID: selectedExternalThreadID,
+      selectedWorkspaceSkillID: selectedWorkspaceSkillID
     )
   }
 
@@ -11236,18 +11275,27 @@ public final class WorkspaceStore {
 
   private func restoreWorkspaceSelection(from snapshot: WorkspaceNavigationSnapshot) {
     selectedEntrySourceMode = snapshot.selectedEntrySourceMode
+    agendaMode = snapshot.agendaMode
+    runsAndReviewPage = snapshot.runsAndReviewPage
     selectedAgendaItemID = snapshot.selectedAgendaItemID
     agendaSelectionAnchor = selectedAgendaItemID.flatMap { selectedID in
       visibleAgendaItems.first(where: { $0.id == selectedID }).map(AgendaSelectionAnchor.init)
     }
     selectedAssignedWorkItemID = snapshot.selectedAssignedWorkItemID
     selectedApprovalItemID = snapshot.selectedApprovalItemID
+    selectedAgentRunID = snapshot.selectedAgentRunID
+    selectedAgentWorkflowID = snapshot.selectedAgentWorkflowID
+    selectedAgentGoalID = snapshot.selectedAgentGoalID
+    selectedAgentProfileID = snapshot.selectedAgentProfileID
     selectedCorpusFileID = snapshot.selectedCorpusFileID
     selectedMeetingID = snapshot.selectedMeetingID
-    selectedAgentRunID = snapshot.agentRunDetailID ?? selectedAgentRunID
+    selectedExternalThreadID = snapshot.selectedExternalThreadID
+    selectedWorkspaceSkillID = snapshot.selectedWorkspaceSkillID
     if let threadID = snapshot.selectedOpenClawChatThreadID,
        openClawChatThreads.contains(where: { $0.id == threadID }) {
       selectOpenClawChatThread(threadID, persistsSelection: false)
+    } else {
+      selectedOpenClawChatThreadID = nil
     }
   }
 
@@ -11258,6 +11306,7 @@ public final class WorkspaceStore {
     isWorkspaceDetailPaneExpanded = snapshot.isWorkspaceDetailPaneExpanded
     isOpenClawAssistantPresented = snapshot.isOpenClawAssistantPresented
     isNodeContextPanePresented = snapshot.isNodeContextPanePresented
+    activeWorkspacePane = snapshot.activeWorkspacePane
     if snapshot.isNodeContextPanePresented, let selectedLocation {
       scheduleBacklinksLoad(for: selectedLocation)
     } else {
@@ -16819,7 +16868,7 @@ public final class WorkspaceStore {
       focusCorpusFileFilter()
     case .home, .openClaw:
       presentAIChatThreadFind()
-    case .meetings, .sources, .externalThreads:
+    case .meetings, .sources, .externalThreads, .skills:
       return focusPageSearch()
     case .search:
       if selectedLocation != nil {
@@ -18796,8 +18845,33 @@ public final class WorkspaceStore {
     startDailyNoteNavigation(target, opensFromSidebar: true)
   }
 
+  public func presentDailyNoteDatePicker() {
+    guard corpusRoot != nil else {
+      statusText = "No corpus selected"
+      return
+    }
+    dailyNotePickerDate = Date()
+    isDailyNoteDatePickerPresented = true
+  }
+
+  public func openDailyNoteFromDatePicker() {
+    let date = dailyNotePickerDate
+    isDailyNoteDatePickerPresented = false
+    startDailyNoteNavigation(date: date, opensFromSidebar: true)
+  }
+
   private func startDailyNoteNavigation(
     _ target: DailyNoteTarget,
+    opensFromSidebar: Bool
+  ) {
+    startDailyNoteNavigation(
+      date: Self.date(for: target),
+      opensFromSidebar: opensFromSidebar
+    )
+  }
+
+  private func startDailyNoteNavigation(
+    date: Date,
     opensFromSidebar: Bool
   ) {
     guard let corpusRoot,
@@ -18811,7 +18885,7 @@ public final class WorkspaceStore {
     dailyNoteActivationTask = Task { @MainActor [weak self] in
       guard let self else { return }
       await self.openDailyNote(
-        target,
+        date: date,
         opensFromSidebar: opensFromSidebar,
         corpusRoot: corpusRoot,
         context: context,
@@ -18821,13 +18895,12 @@ public final class WorkspaceStore {
   }
 
   private func openDailyNote(
-    _ target: DailyNoteTarget,
+    date: Date,
     opensFromSidebar: Bool,
     corpusRoot: URL,
     context: WorkspaceDocumentCorpusContext,
     generation: UInt64
   ) async {
-    let date = Self.date(for: target)
     let url = await dailyNotePath(corpusRoot: corpusRoot, date: date)
     guard !Task.isCancelled,
           dailyNoteNavigationGeneration == generation,
@@ -25891,6 +25964,8 @@ public final class WorkspaceStore {
       await refreshOpenClawThreads(showsLoading: false)
     case .externalThreads:
       await refreshExternalThreads()
+    case .skills:
+      refreshCorpusAgentSkills()
     }
     markWorkspaceSurfaceCleanIfUnchanged(surface, generation: dirtyGeneration)
   }
@@ -25921,6 +25996,8 @@ public final class WorkspaceStore {
       isRefreshingOpenClawThreads
     case .externalThreads:
       isRefreshingExternalThreads
+    case .skills:
+      false
     }
   }
 
@@ -28854,29 +28931,176 @@ public final class WorkspaceStore {
     corpusAgentSkillRefreshTask?.cancel()
     guard let root = corpusRoot?.standardizedFileURL else {
       corpusAgentSkillCommands = []
+      workspaceSkills = []
+      selectedWorkspaceSkillID = nil
       corpusAgentSkillRefreshTask = nil
       return
     }
     let sessionGeneration = corpusSessionGeneration
     let observer = corpusAgentSkillDiscoveryForTesting
     corpusAgentSkillRefreshTask = Task { @MainActor [weak self] in
-      let commands = await CorpusAgentSkillCatalog.prepareCommands(
+      async let preparedCommands = CorpusAgentSkillCatalog.prepareCommands(
         in: root,
         force: force,
         discoveryThreadObserver: observer
       )
+      async let preparedSkills = Task.detached(priority: .utility) {
+        WorkspaceSkillCatalog.discover(in: root)
+      }.value
+      let (commands, skills) = await (preparedCommands, preparedSkills)
       guard let self,
             !Task.isCancelled,
             self.corpusAgentSkillRefreshGeneration == generation,
             self.isCurrentCorpusSession(root: root, generation: sessionGeneration)
       else { return }
       self.corpusAgentSkillCommands = commands
+      self.workspaceSkills = skills
+      if let selectedID = self.selectedWorkspaceSkillID,
+         !skills.contains(where: { $0.id == selectedID }) {
+        self.selectedWorkspaceSkillID = nil
+      }
       self.corpusAgentSkillRefreshTask = nil
     }
   }
 
   func waitForCorpusAgentSkillRefreshForTesting() async {
-    await corpusAgentSkillRefreshTask?.value
+    while let task = corpusAgentSkillRefreshTask {
+      let generation = corpusAgentSkillRefreshGeneration
+      await task.value
+      await Task.yield()
+      if corpusAgentSkillRefreshGeneration == generation,
+         corpusAgentSkillRefreshTask == nil {
+        return
+      }
+    }
+  }
+
+  public func selectWorkspaceSkill(_ skill: WorkspaceSkillItem) {
+    selectedWorkspaceSkillID = skill.id
+    openWorkspaceSkillFile(at: URL(fileURLWithPath: skill.sourcePath))
+  }
+
+  private func openWorkspaceSkillFile(at rawURL: URL) {
+    let url = rawURL.standardizedFileURL
+    let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
+    selectCorpusFile(CorpusFile(
+      path: url.path,
+      relativePath: relativePath(url.path),
+      modifiedAt: values?.contentModificationDate,
+      byteCount: values?.fileSize.map(Int64.init)
+    ), surface: .skills)
+  }
+
+  @discardableResult
+  public func createWorkspaceSkill(name rawName: String, description: String) -> Bool {
+    guard let corpusRoot else { return false }
+    let rawName = rawName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    let name = WorkspaceSkillCatalog.normalizedSkillName(rawName)
+    guard !name.isEmpty, name == rawName else {
+      errorText = "Use lowercase letters, digits, and hyphens for the skill name."
+      statusText = "Invalid skill name"
+      return false
+    }
+    guard name != "org2" else {
+      errorText = "The org2 name is reserved for OpenOrg's built-in operating guidance."
+      statusText = "Reserved skill name"
+      return false
+    }
+    let summary = description
+      .split(whereSeparator: { $0.isWhitespace })
+      .joined(separator: " ")
+    guard !summary.isEmpty else {
+      errorText = "Add a short description of when the skill should be used."
+      statusText = "Skill description required"
+      return false
+    }
+    let skillsRoot = corpusRoot
+      .appendingPathComponent(".agents", isDirectory: true)
+      .appendingPathComponent("skills", isDirectory: true)
+    let directory = skillsRoot.appendingPathComponent(name, isDirectory: true)
+    let destination = directory.appendingPathComponent("SKILL.md")
+    do {
+      try assertSafeWorkspaceSkillParents(corpusRoot: corpusRoot, target: skillsRoot)
+      guard !FileManager.default.fileExists(atPath: destination.path) else {
+        errorText = "A workspace skill named \(name) already exists."
+        statusText = "Skill already exists"
+        return false
+      }
+      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+      try assertSafeWorkspaceSkillParents(corpusRoot: corpusRoot, target: directory)
+      let source = WorkspaceSkillCatalog.newSkillSource(name: name, description: summary)
+      try Data(source.utf8).write(to: destination, options: .withoutOverwriting)
+      selectedWorkspaceSkillID = destination.standardizedFileURL.path
+      openWorkspaceSkillFile(at: destination)
+      refreshCorpusAgentSkills(force: true)
+      statusText = "Created /\(name)"
+      return true
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Could not create the skill"
+      return false
+    }
+  }
+
+  public func moveWorkspaceSkillToTrash(_ skill: WorkspaceSkillItem) async {
+    guard let corpusRoot else { return }
+    let skillsRoot = corpusRoot
+      .appendingPathComponent(".agents", isDirectory: true)
+      .appendingPathComponent("skills", isDirectory: true)
+      .standardizedFileURL
+    let skillFile = URL(fileURLWithPath: skill.sourcePath).standardizedFileURL
+    let directory = skillFile.deletingLastPathComponent()
+    guard skillFile.lastPathComponent == "SKILL.md",
+          directory.deletingLastPathComponent() == skillsRoot
+    else {
+      errorText = "Only top-level workspace skill folders can be removed."
+      statusText = "Skill could not be removed"
+      return
+    }
+    do {
+      let removesSelectedDetail = selectedLocation?.file == skillFile.path
+      if removesSelectedDetail {
+        persistLiveFileEditorDraftBeforeNavigation()
+        guard await awaitPendingEditorPersistence() else {
+          statusText = "Save the current skill before removing it"
+          return
+        }
+      }
+      var resultingURL: NSURL?
+      try FileManager.default.trashItem(at: directory, resultingItemURL: &resultingURL)
+      if removesSelectedDetail {
+        clearDetailForNavigation()
+      }
+      if selectedWorkspaceSkillID == skill.id { selectedWorkspaceSkillID = nil }
+      if removesSelectedDetail {
+        isWorkspaceSurfacePaneClosed = false
+        isWorkspaceDetailPaneClosed = true
+        activeWorkspacePane = .surface
+      }
+      refreshCorpusAgentSkills(force: true)
+      statusText = "Moved /\(skill.name) to Trash"
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Could not move the skill to Trash"
+    }
+  }
+
+  private func assertSafeWorkspaceSkillParents(corpusRoot: URL, target: URL) throws {
+    let root = corpusRoot.standardizedFileURL
+    let target = target.standardizedFileURL
+    guard target.path.hasPrefix(root.path + "/.agents") else {
+      throw CocoaError(.fileWriteNoPermission, userInfo: [NSFilePathErrorKey: target.path])
+    }
+    var current = root
+    let components = target.pathComponents.dropFirst(root.pathComponents.count)
+    for component in components {
+      current.appendPathComponent(component, isDirectory: true)
+      guard FileManager.default.fileExists(atPath: current.path) else { continue }
+      let values = try current.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+      guard values.isDirectory == true, values.isSymbolicLink != true else {
+        throw CocoaError(.fileWriteNoPermission, userInfo: [NSFilePathErrorKey: current.path])
+      }
+    }
   }
 
   public var openClawCommandDiscoveryID: String {
@@ -32486,6 +32710,10 @@ public final class WorkspaceStore {
     }
 
     if modifiers == [.command, .shift] {
+      if event.keyCode == 26 {
+        presentDailyNoteDatePicker()
+        return true
+      }
       switch key {
       case "[":
         selectPreviousWorkspaceTab()
@@ -32495,6 +32723,9 @@ public final class WorkspaceStore {
         return true
       case "f":
         focusSearchSurface()
+        return true
+      case "k":
+        makeSurfacePrimary(.skills)
         return true
       case "m":
         guard corpusRoot != nil else { return false }
@@ -42417,11 +42648,12 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
   case sources
   case openClaw
   case externalThreads
+  case skills
 
   public var id: String { rawValue }
 
   public static var sidebarCases: [WorkspaceSurface] {
-    [.home, .agenda, .files, .approvals, .meetings, .sources, .externalThreads]
+    [.home, .agenda, .files, .approvals, .meetings, .sources, .skills, .externalThreads]
   }
 
   public var title: String {
@@ -42435,6 +42667,7 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
     case .sources: "Sources"
     case .openClaw: "AI Chat"
     case .externalThreads: "External Threads"
+    case .skills: "Skills"
     }
   }
 
@@ -42449,6 +42682,7 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
     case .sources: "arrow.triangle.2.circlepath.circle"
     case .openClaw: "sparkles"
     case .externalThreads: "rectangle.stack.badge.person.crop"
+    case .skills: "wand.and.stars"
     }
   }
 
@@ -42463,6 +42697,7 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
     case .sources: "⌘0"
     case .openClaw: "⌘6"
     case .externalThreads: ""
+    case .skills: "⌘⇧K"
     }
   }
 }

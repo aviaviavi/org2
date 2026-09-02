@@ -20,16 +20,16 @@ public struct ContentView: View {
   public var body: some View {
     @Bindable var store = store
     GeometryReader { proxy in
-      NavigationSplitView {
-        SidebarView()
-          .navigationSplitViewColumnWidth(
-            min: WorkspaceSidebarLayout.minimumWidth,
-            ideal: WorkspaceSidebarLayout.defaultWidth(for: proxy.size.width),
-            max: WorkspaceSidebarLayout.maximumWidth(for: proxy.size.width)
-          )
-      } detail: {
-        VStack(spacing: 0) {
-          WorkspaceTabBar()
+      VStack(spacing: 0) {
+        WorkspaceTabBar()
+        NavigationSplitView {
+          SidebarView()
+            .navigationSplitViewColumnWidth(
+              min: WorkspaceSidebarLayout.minimumWidth,
+              ideal: WorkspaceSidebarLayout.defaultWidth(for: proxy.size.width),
+              max: WorkspaceSidebarLayout.maximumWidth(for: proxy.size.width)
+            )
+        } detail: {
           WorkspaceMainArea()
         }
       }
@@ -114,6 +114,10 @@ public struct ContentView: View {
       }
       .sheet(isPresented: $store.isCapturePanelPresented) {
         GlobalCaptureView()
+          .environment(store)
+      }
+      .sheet(isPresented: $store.isDailyNoteDatePickerPresented) {
+        DailyNoteDatePickerSheet()
           .environment(store)
       }
       .sheet(isPresented: $store.isSimilarTodoAssignmentPresented) {
@@ -1667,6 +1671,8 @@ private struct WorkspaceSurfaceView: View {
           OpenClawChatView()
         case .externalThreads:
           ExternalThreadsView()
+        case .skills:
+          SkillsView()
         }
       }
       // Some surface controls and rows have a useful minimum content width.
@@ -1699,6 +1705,253 @@ private struct HomeView: View {
           store.ensureHomeDetailReady()
         }
       }
+  }
+}
+
+private struct SkillsView: View {
+  @Environment(WorkspaceStore.self) private var store
+  @State private var isCreatingSkill = false
+  @State private var skillPendingRemoval: WorkspaceSkillItem?
+
+  var body: some View {
+    VStack(spacing: 0) {
+      HStack(spacing: 10) {
+        VStack(alignment: .leading, spacing: 2) {
+          Text("Skills")
+            .font(.title2.weight(.semibold))
+          Text("Agent procedures available to this workspace")
+            .font(.callout)
+            .foregroundStyle(.secondary)
+        }
+        Spacer(minLength: 12)
+        Button {
+          store.refreshCorpusAgentSkills(force: true)
+        } label: {
+          Label("Refresh Skills", systemImage: "arrow.clockwise")
+        }
+        .labelStyle(.iconOnly)
+        .help("Refresh skills")
+        Button {
+          isCreatingSkill = true
+        } label: {
+          Label("New Skill", systemImage: "plus")
+        }
+        .help("Create a workspace skill")
+      }
+      .padding(.horizontal, 18)
+      .padding(.vertical, 14)
+
+      Divider()
+
+      HStack(alignment: .top, spacing: 10) {
+        Image(systemName: "info.circle")
+          .foregroundStyle(.secondary)
+        Text("Org2 guidance is built into OpenOrg and available in every AI chat. This list shows additional procedures authored for this workspace.")
+          .font(.callout)
+          .foregroundStyle(.secondary)
+          .fixedSize(horizontal: false, vertical: true)
+        Spacer(minLength: 0)
+      }
+      .padding(.horizontal, 18)
+      .padding(.vertical, 12)
+
+      Divider()
+
+      if store.workspaceSkills.isEmpty {
+        ContentUnavailableView {
+          Label("No Workspace Skills", systemImage: "wand.and.stars")
+        } description: {
+          Text("Create a skill to give agents a reusable workspace procedure.")
+        } actions: {
+          Button("New Skill") { isCreatingSkill = true }
+        }
+      } else {
+        ScrollView {
+          LazyVStack(spacing: 8) {
+            ForEach(store.workspaceSkills) { skill in
+              WorkspaceSkillRow(
+                skill: skill,
+                isSelected: store.selectedWorkspaceSkillID == skill.id,
+                open: { store.selectWorkspaceSkill(skill) },
+                remove: { skillPendingRemoval = skill }
+              )
+            }
+          }
+          .padding(12)
+        }
+      }
+    }
+    .task {
+      if store.workspaceSkills.isEmpty {
+        store.refreshCorpusAgentSkills()
+      }
+    }
+    .sheet(isPresented: $isCreatingSkill) {
+      NewWorkspaceSkillSheet(isPresented: $isCreatingSkill)
+        .environment(store)
+    }
+    .confirmationDialog(
+      "Move /\(skillPendingRemoval?.name ?? "skill") to Trash?",
+      isPresented: Binding(
+        get: { skillPendingRemoval != nil },
+        set: { if !$0 { skillPendingRemoval = nil } }
+      ),
+      titleVisibility: .visible
+    ) {
+      if let skill = skillPendingRemoval {
+        Button("Move to Trash", role: .destructive) {
+          Task { await store.moveWorkspaceSkillToTrash(skill) }
+          skillPendingRemoval = nil
+        }
+      }
+      Button("Cancel", role: .cancel) { skillPendingRemoval = nil }
+    } message: {
+      Text("The skill folder can be recovered from the Trash.")
+    }
+  }
+}
+
+private struct WorkspaceSkillRow: View {
+  let skill: WorkspaceSkillItem
+  let isSelected: Bool
+  let open: () -> Void
+  let remove: () -> Void
+
+  var body: some View {
+    HStack(alignment: .top, spacing: 12) {
+      Image(systemName: skill.validationMessage == nil ? "wand.and.stars" : "exclamationmark.triangle")
+        .font(.title3)
+        .foregroundStyle(skill.validationMessage == nil ? Color.accentColor : Color.orange)
+        .frame(width: 24)
+      VStack(alignment: .leading, spacing: 5) {
+        HStack(spacing: 7) {
+          Text("/\(skill.name)")
+            .font(.headline.monospaced())
+          Text("Workspace")
+            .font(.caption2.weight(.semibold))
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(WorkspaceDesign.panelFill, in: Capsule())
+          if !skill.isUserInvocable {
+            Text("Agent only")
+              .font(.caption2.weight(.semibold))
+              .foregroundStyle(.secondary)
+          }
+        }
+        Text(skill.validationMessage ?? skill.description)
+          .font(.callout)
+          .foregroundStyle(skill.validationMessage == nil ? Color.secondary : Color.orange)
+          .lineLimit(3)
+        Text(skill.sourcePath)
+          .font(.caption2.monospaced())
+          .foregroundStyle(.tertiary)
+          .lineLimit(1)
+          .truncationMode(.middle)
+      }
+      Spacer(minLength: 8)
+      Image(systemName: "chevron.right")
+        .foregroundStyle(.tertiary)
+    }
+    .padding(12)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .contentShape(Rectangle())
+    .onTapGesture(perform: open)
+    .background(
+      isSelected ? Color.accentColor.opacity(0.11) : WorkspaceDesign.panelFill,
+      in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+    )
+    .overlay {
+      RoundedRectangle(cornerRadius: 12, style: .continuous)
+        .stroke(isSelected ? Color.accentColor.opacity(0.65) : WorkspaceDesign.hairline, lineWidth: 1)
+    }
+    .contextMenu {
+      Button("Edit Skill", action: open)
+      Button("Reveal in Finder") {
+        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: skill.sourcePath)])
+      }
+      Divider()
+      Button("Move to Trash", role: .destructive, action: remove)
+    }
+  }
+}
+
+private struct NewWorkspaceSkillSheet: View {
+  @Environment(WorkspaceStore.self) private var store
+  @Binding var isPresented: Bool
+  @State private var name = ""
+  @State private var summary = ""
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 16) {
+      Text("New Workspace Skill")
+        .font(.title2.weight(.semibold))
+      Text("Skills are plain SKILL.md files under .agents/skills. The generated file opens in the normal editor so you can finish its procedure.")
+        .font(.callout)
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
+      Form {
+        TextField("Name", text: $name, prompt: Text("weekly-review"))
+        TextField("When to use it", text: $summary, axis: .vertical)
+          .lineLimit(2...4)
+      }
+      HStack {
+        Spacer()
+        Button("Cancel") { isPresented = false }
+        Button("Create") {
+          if store.createWorkspaceSkill(name: name, description: summary) {
+            isPresented = false
+          }
+        }
+        .keyboardShortcut(.defaultAction)
+        .disabled(
+          name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        )
+      }
+    }
+    .padding(20)
+    .frame(width: 480)
+  }
+}
+
+private struct DailyNoteDatePickerSheet: View {
+  @Environment(WorkspaceStore.self) private var store
+
+  var body: some View {
+    @Bindable var store = store
+    VStack(alignment: .leading, spacing: 16) {
+      VStack(alignment: .leading, spacing: 4) {
+        Text("Open Daily Note")
+          .font(.title2.weight(.semibold))
+        Text("Choose a date to open or create its note in this workspace's daily folder.")
+          .font(.callout)
+          .foregroundStyle(.secondary)
+          .fixedSize(horizontal: false, vertical: true)
+      }
+
+      DatePicker(
+        "Daily note date",
+        selection: $store.dailyNotePickerDate,
+        displayedComponents: .date
+      )
+      .datePickerStyle(.graphical)
+      .labelsHidden()
+      .accessibilityLabel("Daily note date")
+
+      HStack {
+        Spacer()
+        Button("Cancel") {
+          store.isDailyNoteDatePickerPresented = false
+        }
+        .keyboardShortcut(.cancelAction)
+        Button("Open") {
+          store.openDailyNoteFromDatePicker()
+        }
+        .keyboardShortcut(.defaultAction)
+      }
+    }
+    .padding(20)
+    .frame(width: 390)
   }
 }
 
@@ -2133,6 +2386,22 @@ private struct SidebarView: View {
             .buttonStyle(.plain)
             .help("\(target.title) daily note (\(target.commandShortcutTitle))")
           }
+          Button {
+            store.presentDailyNoteDatePicker()
+          } label: {
+            HStack(spacing: 8) {
+              Label("Choose Date…", systemImage: "calendar.badge.plus")
+                .font(.callout.weight(.medium))
+              Spacer(minLength: 0)
+              if showsCommandShortcuts {
+                KeyboardShortcutBadge(text: DailyNoteTarget.datePickerCommandShortcutTitle)
+                  .transition(.opacity.combined(with: .move(edge: .trailing)))
+              }
+            }
+            .contentShape(Rectangle())
+          }
+          .buttonStyle(.plain)
+          .help("Open a daily note for any date (\(DailyNoteTarget.datePickerCommandShortcutTitle))")
         } header: {
           SidebarSectionLabel("Daily")
         }
@@ -3873,6 +4142,7 @@ private struct KeyboardShortcutsView: View {
             ShortcutHelpItem(keys: "⌘⇧F", action: "Corpus search"),
             ShortcutHelpItem(keys: "⌘5 / ⌘M", action: "Meetings"),
             ShortcutHelpItem(keys: "⌘6", action: "AI Chat"),
+            ShortcutHelpItem(keys: "⌘⇧K", action: "Skills"),
             ShortcutHelpItem(keys: "⌘0", action: "Sources")
           ])
 
@@ -3896,7 +4166,8 @@ private struct KeyboardShortcutsView: View {
           ShortcutSection(title: "Daily Notes", shortcuts: [
             ShortcutHelpItem(keys: "⌘7", action: "Today"),
             ShortcutHelpItem(keys: "⌘8", action: "Yesterday"),
-            ShortcutHelpItem(keys: "⌘9", action: "Tomorrow")
+            ShortcutHelpItem(keys: "⌘9", action: "Tomorrow"),
+            ShortcutHelpItem(keys: DailyNoteTarget.datePickerCommandShortcutTitle, action: "Choose date")
           ])
 
           ShortcutSection(title: "Agenda", shortcuts: [
@@ -11412,6 +11683,7 @@ private struct DetailHeader: View {
       } else {
         ViewThatFits(in: .horizontal) {
           fullDetailActionBar
+          condensedDetailActionBar
           compactDetailActionBar
         }
       }
@@ -11489,19 +11761,28 @@ private struct DetailHeader: View {
   }
 
   private var compactDetailActionBar: some View {
-    VStack(alignment: .leading, spacing: 8) {
+    WorkspaceControlStrip {
+      detailNavigationControls
+      viewAndResourceControls
+      primaryDocumentControls
+    }
+    .labelStyle(.iconOnly)
+    .fixedSize(horizontal: true, vertical: false)
+  }
+
+  private var condensedDetailActionBar: some View {
+    HStack(spacing: 7) {
       WorkspaceControlStrip {
         detailNavigationControls
         viewAndResourceControls
       }
-
-      HStack(spacing: 7) {
-        Spacer(minLength: 0)
-        WorkspaceControlStrip {
-          primaryDocumentControls
-        }
+      .labelStyle(.iconOnly)
+      Spacer(minLength: 8)
+      WorkspaceControlStrip {
+        primaryDocumentControls
       }
     }
+    .fixedSize(horizontal: true, vertical: false)
   }
 
   private var detailNavigationControls: some View {

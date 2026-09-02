@@ -56,6 +56,83 @@ final class WorkspaceTabsTests: XCTestCase {
     XCTAssertTrue(store.canNavigateBack)
   }
 
+  func testTabsKeepWorkspaceSurfaceModeSelectionAndPaneLayoutIndependent() throws {
+    let (store, defaults, suiteName) = try makeStore()
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+
+    let agendaTabID = store.selectedWorkspaceTabID
+    store.selectedSurface = .agenda
+    store.agendaMode = .assigned
+    store.selectedAgendaItemID = "agenda:first"
+    store.isWorkspaceSurfacePaneClosed = false
+    store.isWorkspaceDetailPaneClosed = true
+
+    let agentWorkTabID = store.newWorkspaceTab()
+    store.selectedSurface = .approvals
+    store.runsAndReviewPage = .workflows
+    store.selectedAgentWorkflowID = "workflow:second"
+    store.selectedApprovalItemID = "approval:second"
+    store.isWorkspaceSurfacePaneClosed = true
+    store.isWorkspaceDetailPaneClosed = false
+
+    store.selectWorkspaceTab(agendaTabID)
+    XCTAssertEqual(store.selectedSurface, .agenda)
+    XCTAssertEqual(store.agendaMode, .assigned)
+    XCTAssertEqual(store.selectedAgendaItemID, "agenda:first")
+    XCTAssertNil(store.selectedAgentWorkflowID)
+    XCTAssertNil(store.selectedApprovalItemID)
+    XCTAssertFalse(store.isWorkspaceSurfacePaneClosed)
+    XCTAssertTrue(store.isWorkspaceDetailPaneClosed)
+
+    store.selectWorkspaceTab(agentWorkTabID)
+    XCTAssertEqual(store.selectedSurface, .approvals)
+    XCTAssertEqual(store.runsAndReviewPage, .workflows)
+    XCTAssertEqual(store.selectedAgentWorkflowID, "workflow:second")
+    XCTAssertEqual(store.selectedApprovalItemID, "approval:second")
+    XCTAssertTrue(store.isWorkspaceSurfacePaneClosed)
+    XCTAssertFalse(store.isWorkspaceDetailPaneClosed)
+  }
+
+  func testTabsDoNotLeakSkillSelectionIntoAnotherSurface() throws {
+    let (store, defaults, suiteName) = try makeStore()
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+
+    let firstTabID = store.selectedWorkspaceTabID
+    store.selectedSurface = .skills
+    store.selectedWorkspaceSkillID = "/tmp/first/SKILL.md"
+
+    let secondTabID = store.newWorkspaceTab()
+    store.selectedSurface = .agenda
+    XCTAssertNil(store.selectedWorkspaceSkillID)
+
+    store.selectWorkspaceTab(firstTabID)
+    XCTAssertEqual(store.selectedSurface, .skills)
+    XCTAssertEqual(store.selectedWorkspaceSkillID, "/tmp/first/SKILL.md")
+
+    store.selectWorkspaceTab(secondTabID)
+    XCTAssertEqual(store.selectedSurface, .agenda)
+    XCTAssertNil(store.selectedWorkspaceSkillID)
+  }
+
+  func testActiveTabTitleRepresentsTheActiveWorkspacePane() throws {
+    let (store, defaults, suiteName) = try makeStore()
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let tab = try XCTUnwrap(store.workspaceTabs.first)
+    store.selectedSurface = .agenda
+    store.selectedLocation = .openClaw(OpenClawThread(
+      title: "Project Plan",
+      file: "/tmp/project-plan.org",
+      line: 1,
+      zone: "notes",
+      modifiedAt: nil
+    ))
+    store.isWorkspaceDetailPaneClosed = false
+
+    XCTAssertEqual(store.workspaceTabDisplayTitle(for: tab), "Agenda")
+    store.makeDetailPanePrimary()
+    XCTAssertEqual(store.workspaceTabDisplayTitle(for: tab), "Project Plan")
+  }
+
   func testClosingTabsUsesTheAdjacentTabWithoutAddingBackHistory() throws {
     let (store, defaults, suiteName) = try makeStore()
     defer { defaults.removePersistentDomain(forName: suiteName) }

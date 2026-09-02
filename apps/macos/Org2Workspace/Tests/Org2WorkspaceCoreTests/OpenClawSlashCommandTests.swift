@@ -163,7 +163,7 @@ final class OpenClawSlashCommandTests: XCTestCase {
 
     let skills = CorpusAgentSkillCatalog.commands(in: root)
 
-    XCTAssertEqual(skills.map(\.name), ["setup-scarf-slack-agent", "org2"])
+    XCTAssertEqual(skills.map(\.name), ["setup-scarf-slack-agent"])
     XCTAssertEqual(skills.first?.origin, .corpusSkill)
     XCTAssertEqual(skills.first?.arguments, "[ARGS]")
     XCTAssertEqual(skills.first?.summary, "Set up a customer Scarf AI Slack agent channel.")
@@ -188,8 +188,7 @@ final class OpenClawSlashCommandTests: XCTestCase {
         corpusSkills: skills
       ).contains("Agent skills")
     )
-    XCTAssertEqual(skills.last?.origin, .builtInSkill)
-    XCTAssertTrue(skills.last?.skillInstructions?.contains("org2 agent capabilities") == true)
+    XCTAssertFalse(skills.contains(where: { $0.name == "org2" }))
   }
 
   @MainActor
@@ -241,7 +240,7 @@ final class OpenClawSlashCommandTests: XCTestCase {
     XCTAssertEqual(refreshed.map(\.summary), ["Updated description."])
   }
 
-  func testCorpusOrg2SkillOverridesTheBuiltInCopy() throws {
+  func testCorpusOrg2SkillRemainsInfrastructureInsteadOfASlashCommand() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-local-skill-\(UUID().uuidString)", isDirectory: true)
     let skillRoot = root.appendingPathComponent(".agents/skills/org2", isDirectory: true)
@@ -259,9 +258,11 @@ final class OpenClawSlashCommandTests: XCTestCase {
 
     let skills = CorpusAgentSkillCatalog.commands(in: root)
 
-    XCTAssertEqual(skills.map(\.name), ["org2"])
-    XCTAssertEqual(skills.first?.origin, .corpusSkill)
-    XCTAssertTrue(skills.first?.skillInstructions?.contains("Preserve this local guidance.") == true)
+    XCTAssertTrue(skills.isEmpty)
+    XCTAssertEqual(
+      OpenClawSlashCommands.parse("/org2", gatewayCommands: [], corpusSkills: skills),
+      .unknown("org2")
+    )
   }
 
   @MainActor
@@ -296,7 +297,7 @@ final class OpenClawSlashCommandTests: XCTestCase {
       try await Task.sleep(for: .milliseconds(20))
     }
 
-    XCTAssertEqual(store.corpusAgentSkillCommands.map(\.name), ["setup-scarf-slack-agent", "org2"])
+    XCTAssertEqual(store.corpusAgentSkillCommands.map(\.name), ["setup-scarf-slack-agent"])
     XCTAssertEqual(store.openClawMessages.first?.content, "/setup-scarf-slack-agent C123 scarf")
     let request = await recorder.messages
     XCTAssertTrue(request.first?.content.hasPrefix("/setup-scarf-slack-agent C123 scarf") == true)
@@ -337,6 +338,8 @@ final class OpenClawSlashCommandTests: XCTestCase {
     )
     XCTAssertTrue(wrappedMessage.hasPrefix("<org2-workspace-context>"))
     XCTAssertTrue(wrappedMessage.contains("Org2 response formatting contract"))
+    XCTAssertTrue(wrappedMessage.contains("Org2 agent operating guidance"))
+    XCTAssertTrue(wrappedMessage.contains("org2 agent capabilities"))
     XCTAssertTrue(wrappedMessage.contains("are application instructions and must be followed"))
     XCTAssertTrue(wrappedMessage.contains("|-------+--------------|"))
   }

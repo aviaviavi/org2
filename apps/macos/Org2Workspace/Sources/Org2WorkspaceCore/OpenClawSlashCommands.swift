@@ -289,28 +289,24 @@ enum CorpusAgentSkillCatalog {
     )) ?? []
 
     var seenNames: Set<String> = []
-    var commands: [OpenClawSlashCommand] = directories
+    let commands: [OpenClawSlashCommand] = directories
       .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
       .compactMap { directory -> OpenClawSlashCommand? in
         guard (try? directory.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else {
           return nil
         }
-        return command(
+        guard let command = command(
           at: directory.appendingPathComponent("SKILL.md"),
           fallbackName: directory.lastPathComponent,
           origin: .corpusSkill,
           seenNames: &seenNames
-        )
+        ), command.name != "org2" else { return nil }
+        return command
       }
-    if let bundledSkillURL,
-       let bundled = command(
-         at: bundledSkillURL,
-         fallbackName: "org2",
-         origin: .builtInSkill,
-         seenNames: &seenNames
-       ) {
-      commands.append(bundled)
-    }
+    // OpenOrg supplies the general Org2 operating contract ambiently on every
+    // chat turn. The installed org2 skill remains corpus infrastructure for
+    // external agents, not a user-invoked Mac app workflow.
+    _ = bundledSkillURL
     return commands
   }
 
@@ -345,7 +341,7 @@ enum CorpusAgentSkillCatalog {
     )
   }
 
-  private static func frontMatter(from source: String) -> [String: String]? {
+  static func frontMatter(from source: String) -> [String: String]? {
     let lines = source.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
     guard lines.first?.trimmingCharacters(in: .whitespacesAndNewlines) == "---",
           let closingIndex = lines.dropFirst().firstIndex(where: {
@@ -385,7 +381,7 @@ enum CorpusAgentSkillCatalog {
     return values
   }
 
-  private static func normalizedCommandName(_ rawValue: String) -> String {
+  static func normalizedCommandName(_ rawValue: String) -> String {
     let candidate = unquoted(rawValue).lowercased()
     let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyz0123456789-")
     guard !candidate.isEmpty,

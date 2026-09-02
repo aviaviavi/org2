@@ -127,7 +127,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <li><p><strong>Test before scheduling.</strong> First run the prompt, skill, or workflow manually and inspect both its output and its Org2 run. Then choose the trigger independently: a runtime schedule, an OpenOrg event, or another scheduler can wake the agent as long as it follows the same corpus lifecycle. Sending messages, publishing, deleting, or other consequential actions should still stop for explicit approval.</p></li>
 </ol>
 <p>Back up the corpus like any important folder, and keep tokens, runtime credentials, machine paths, and scheduler job IDs outside its files.</p>
-<p>For a client connecting outside OpenOrg, use <a href="mcp-and-skills.html">MCP and agent skills</a> to configure the stdio server or install the general Org2 skill. New OpenOrg starter workspaces already include the skill, and the app exposes its built-in <code>/org2</code> command without requiring an OpenClaw Gateway.</p>
+<p>For a client connecting outside OpenOrg, use <a href="mcp-and-skills.html">MCP and agent skills</a> to configure the stdio server or install the general Org2 skill. New OpenOrg starter workspaces already include that skill for external agents. OpenOrg itself supplies the equivalent core guidance ambiently in every AI chat rather than exposing a separate <code>/org2</code> command.</p>
 </section>
 <section class="org2-headline level-2">
 <h2 id="one-queue-for-decisions-that-need-you">One queue for decisions that need you</h2>
@@ -187,7 +187,7 @@ SCHEDULED: &lt;2030-01-15 Tue&gt;
 </section>
 <section class="org2-headline level-1">
 <h1 id="4-use-today-and-agenda">4) Use Today and Agenda</h1>
-<p>Open <strong>Today</strong> for a lightweight daily note. Use it for quick thoughts, a running log, or tasks that do not yet need their own file.</p>
+<p>Open <strong>Today</strong> for a lightweight daily note. Use it for quick thoughts, a running log, or tasks that do not yet need their own file. To revisit another day, choose <strong>Daily → Choose Date…</strong> in the sidebar or press <code>Cmd-Shift-7</code>; OpenOrg opens the existing note or creates it in the configured daily folder.</p>
 <p>Open <strong>Agenda</strong> to see actionable items collected across the entire corpus. Mark an item done, reschedule it, assign a priority, or open its source note. You do not need to manually copy tasks into a separate task manager.</p>
 </section>
 <section class="org2-headline level-1">

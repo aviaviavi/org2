@@ -6498,6 +6498,8 @@ public enum DailyNoteTarget: String, CaseIterable, Identifiable, Sendable {
   case yesterday
   case tomorrow
 
+  public static let datePickerCommandShortcutTitle = "⌘⇧7"
+
   public var id: String { rawValue }
 
   public var title: String {

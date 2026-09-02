@@ -1183,6 +1183,7 @@ private final class WorkspaceRenderPerformanceHarness {
     case .openClaw: ("6", [.command], 22)
     case .sources: ("0", [.command], 29)
     case .search: ("f", [.command, .shift], 3)
+    case .skills: ("k", [.command, .shift], 40)
     case .externalThreads: nil
     }
   }
@@ -2060,6 +2061,7 @@ final class OpenOrgPerformanceGateTests: XCTestCase {
     for surface in [
       WorkspaceSurface.meetings,
       WorkspaceSurface.sources,
+      WorkspaceSurface.skills,
       WorkspaceSurface.externalThreads,
     ] {
       try harness.performNavigationAction(to: surface)

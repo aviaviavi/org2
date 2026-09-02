@@ -11194,11 +11194,16 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "f", keyCode: 3, modifiers: [.command])))
     XCTAssertEqual(store.aiChatFindRequestGeneration, threadFindGeneration + 1)
 
+    XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "K", keyCode: 40, modifiers: [.command, .shift])))
+    XCTAssertEqual(store.selectedSurface, .skills)
+
     XCTAssertFalse(store.handleGlobalKeyDown(keyDown(characters: "f", keyCode: 3, modifiers: [.command, .option])))
     XCTAssertFalse(store.handleGlobalKeyDown(keyDown(characters: "w", keyCode: 13, modifiers: [.command, .option])))
     XCTAssertFalse(store.handleGlobalKeyDown(keyDown(characters: "p", keyCode: 35, modifiers: [.command, .option])))
 
-    XCTAssertFalse(store.handleGlobalKeyDown(keyDown(characters: "7", keyCode: 26, modifiers: [.command, .shift])))
+    XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "7", keyCode: 26, modifiers: [.command, .shift])))
+    XCTAssertFalse(store.isDailyNoteDatePickerPresented)
+    XCTAssertEqual(store.statusText, "No corpus selected")
 
     XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "0", keyCode: 29, modifiers: [.command])))
     XCTAssertEqual(store.selectedSurface, .sources)
@@ -11343,9 +11348,10 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(WorkspaceSurface.meetings.commandShortcutTitle, "⌘5/⌘M")
     XCTAssertEqual(WorkspaceSurface.sources.commandShortcutTitle, "⌘0")
     XCTAssertEqual(WorkspaceSurface.openClaw.commandShortcutTitle, "⌘6")
+    XCTAssertEqual(WorkspaceSurface.skills.commandShortcutTitle, "⌘⇧K")
     XCTAssertEqual(
       WorkspaceSurface.sidebarCases,
-      [.home, .agenda, .files, .approvals, .meetings, .sources, .externalThreads]
+      [.home, .agenda, .files, .approvals, .meetings, .sources, .skills, .externalThreads]
     )
   }
 
@@ -11485,6 +11491,30 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(FileManager.default.fileExists(atPath: today.path))
     XCTAssertEqual(store.selectedCorpusFileID, today.path)
     XCTAssertEqual(store.selectedSurface, .files)
+
+    XCTAssertTrue(store.handleGlobalKeyDown(keyDown(
+      characters: "7",
+      keyCode: 26,
+      modifiers: [.command, .shift]
+    )))
+    XCTAssertTrue(store.isDailyNoteDatePickerPresented)
+    var components = DateComponents()
+    components.calendar = Calendar(identifier: .gregorian)
+    components.year = 2024
+    components.month = 2
+    components.day = 29
+    store.dailyNotePickerDate = try XCTUnwrap(components.date)
+    store.openDailyNoteFromDatePicker()
+    XCTAssertFalse(store.isDailyNoteDatePickerPresented)
+    await store.waitForDailyNoteNavigationForTesting()
+
+    let arbitrary = root
+      .appendingPathComponent("dailies", isDirectory: true)
+      .appendingPathComponent("2024-02-29.\(OrgDocumentDefaults.preferredExtension)")
+      .standardizedFileURL
+    XCTAssertTrue(FileManager.default.fileExists(atPath: arbitrary.path))
+    XCTAssertEqual(store.selectedCorpusFileID, arbitrary.path)
+    XCTAssertEqual(store.selectedSurface, .files)
   }
 
   func testDailyNoteTargetsPutTodayFirstAndExposeCommandShortcuts() {
@@ -11492,6 +11522,7 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(DailyNoteTarget.today.commandShortcutTitle, "⌘7")
     XCTAssertEqual(DailyNoteTarget.yesterday.commandShortcutTitle, "⌘8")
     XCTAssertEqual(DailyNoteTarget.tomorrow.commandShortcutTitle, "⌘9")
+    XCTAssertEqual(DailyNoteTarget.datePickerCommandShortcutTitle, "⌘⇧7")
   }
 
   func testAgendaSurfaceIsNamedAgenda() {
