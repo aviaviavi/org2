@@ -156,7 +156,7 @@ export function buildReleasePlan(options, baseVersion = currentVersion()) {
       version,
     },
     phases: [
-      { name: "preflight", parallel: ["GitHub auth", "npm auth", "Apple/signing configuration", "Sparkle signing key"] },
+      { name: "preflight", parallel: ["GitHub auth", "npm registry", "Apple/signing configuration", "Sparkle signing key"] },
       { name: "stamp", parallel: false },
       { name: "validate", once: ["Build shared runtime"], parallel: ["Docs", "Node/full", "VS Code"], then: ["Swift/serial"] },
       { name: "package", parallel: ["OpenOrg arm64 DMG", "OpenOrg Intel DMG", ...(options.skipIOS ? [] : ["iOS archive"]) ] },
@@ -388,7 +388,7 @@ async function preflight(plan, options) {
   }
   await runParallel([
     () => runJob(plan, "GitHub authentication", "gh", ["auth", "status"]),
-    () => runJob(plan, "npm authentication", "npm", ["whoami"]),
+    () => runJob(plan, "npm registry reachability", "npm", ["ping"]),
     () => runJob(plan, "Apple signing identities", "security", ["find-identity", "-v", "-p", "codesigning"]),
   ]);
 }

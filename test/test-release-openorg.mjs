@@ -75,6 +75,8 @@ assert.match(releaseSource, /--require-google-oauth-client/);
 assert.match(releaseSource, /docs:check:built/);
 assert.match(releaseSource, /test:built/);
 assert.match(releaseSource, /check:generated:built/);
+assert.match(releaseSource, /"npm registry reachability", "npm", \["ping"\]/);
+assert.doesNotMatch(releaseSource, /"npm authentication", "npm", \["whoami"\]/);
 
 const checkpointDirectory = mkdtempSync(join(tmpdir(), "openorg-release-checkpoint-test-"));
 try {
