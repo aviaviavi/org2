@@ -2294,6 +2294,7 @@ private struct SidebarView: View {
   @State private var settledChatThreadDisplayLimit = OpenClawSettledThreadPagination.pageSize
   @State private var chatRenameRequest: OpenClawThreadRenameRequest?
   @State private var chatRenameDraft = ""
+  @State private var showsFileTree = false
 
   private let autoSettleChatTimer = Timer.publish(every: 300, on: .main, in: .common).autoconnect()
   private let chatSurface = WorkspaceSurface.openClaw
@@ -2404,6 +2405,33 @@ private struct SidebarView: View {
           .help("Open a daily note for any date (\(DailyNoteTarget.datePickerCommandShortcutTitle))")
         } header: {
           SidebarSectionLabel("Daily")
+        }
+
+        Section {
+          DisclosureGroup(isExpanded: $showsFileTree) {
+            if store.corpusFileTree.isEmpty {
+              Text(store.isScanningCorpusFiles ? "Scanning files…" : "No files")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+                .padding(.vertical, 3)
+            } else {
+              OutlineGroup(store.corpusFileTree, children: \.children) { node in
+                SidebarCorpusFileTreeRow(node: node)
+              }
+            }
+          } label: {
+            HStack(spacing: 7) {
+              Image(systemName: "folder")
+                .foregroundStyle(WorkspaceDesign.structuralAccent)
+              Text("Files")
+                .font(.callout.weight(.medium))
+              Spacer(minLength: 0)
+              Text("\(store.corpusFiles.count)")
+                .font(.caption2.monospacedDigit())
+                .foregroundStyle(.tertiary)
+            }
+          }
+          .help("Browse the corpus as a collapsible file tree")
         }
 
         Section {
@@ -2712,6 +2740,30 @@ private struct SidebarView: View {
     guard let thread = store.openClawChatThreads.first(where: { $0.id == threadID }) else { return }
     chatRenameDraft = thread.title
     chatRenameRequest = OpenClawThreadRenameRequest(threadID: threadID)
+  }
+}
+
+private struct SidebarCorpusFileTreeRow: View {
+  @Environment(WorkspaceStore.self) private var store
+  let node: CorpusFileTreeNode
+
+  var body: some View {
+    if let file = node.file {
+      Button {
+        store.openSidebarFile(file)
+      } label: {
+        CorpusFileTreeNodeLabel(node: node, compact: true)
+          .contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
+      .contextMenu {
+        CorpusFileContextMenu(file: file)
+      }
+      .help(file.relativePath)
+    } else {
+      CorpusFileTreeNodeLabel(node: node, compact: true)
+        .help("\(node.descendantFileCount) file\(node.descendantFileCount == 1 ? "" : "s")")
+    }
   }
 }
 
@@ -3440,46 +3492,24 @@ private struct FilesView: View {
       } else {
         ScrollView {
           LazyVStack(spacing: 2) {
-            ForEach(store.filteredCorpusFiles) { file in
-              CorpusFileRow(file: file)
-                // Files have a deliberately bounded two-line presentation. A
-                // fixed row extent lets LazyVStack place only visible rows and
-                // avoids NSTableView's automatic-height measurement pass across
-                // the entire corpus whenever the window becomes active.
+            if filterDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+              OutlineGroup(store.filteredCorpusFileTree, children: \.children) { node in
+                CorpusFileTreeRow(node: node)
+                  .frame(minHeight: 44)
+              }
+            } else {
+              ForEach(store.filteredCorpusFiles) { file in
+                CorpusFileTreeRow(node: CorpusFileTreeNode(
+                  id: file.id,
+                  name: file.name,
+                  relativePath: file.relativePath,
+                  file: file,
+                  children: nil,
+                  descendantFileCount: 1
+                ))
                 .frame(height: 52)
-                .contentShape(Rectangle())
-                .onTapGesture {
-                  let modifiers = NSApp.currentEvent?.modifierFlags ?? []
-                  store.handleCorpusFileClick(file, modifiers: modifiers)
-                }
-                .modifier(ReadableListSelectionModifier(isSelected: store.isCorpusFileSelectedForAIContext(file)))
-                .contextMenu {
-                  CorpusFileContextMenu(file: file)
-                }
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel(file.name)
-                .accessibilityValue(file.relativePath)
-                .accessibilityAddTraits(.isButton)
-                .accessibilityIdentifier(
-                  CorpusFileRowAccessibilityIdentity.accessibilityIdentifier(for: file.id)
-                )
-                .accessibilityAction {
-                  store.handleCorpusFileClick(file)
-                }
-                .background {
-                  WorkspaceAccessibilityPressTarget(
-                    identifier: CorpusFileRowAccessibilityIdentity.accessibilityIdentifier(
-                      for: file.id
-                    ),
-                    label: file.name,
-                    isSelected: store.selectedCorpusFileID == file.id,
-                    activate: {
-                      store.handleCorpusFileClick(file)
-                    }
-                  )
-                }
+              }
             }
-          }
           .padding(.horizontal, 8)
           .padding(.vertical, 6)
         }
@@ -3526,6 +3556,66 @@ private struct FilesView: View {
     if store.corpusFileFilter != filterDraft {
       store.corpusFileFilter = filterDraft
     }
+  }
+}
+
+private struct CorpusFileTreeRow: View {
+  @Environment(WorkspaceStore.self) private var store
+  let node: CorpusFileTreeNode
+
+  var body: some View {
+    if let file = node.file {
+      CorpusFileTreeNodeLabel(node: node)
+        .contentShape(Rectangle())
+        .onTapGesture {
+          let modifiers = NSApp.currentEvent?.modifierFlags ?? []
+          store.handleCorpusFileClick(file, modifiers: modifiers)
+        }
+        .modifier(ReadableListSelectionModifier(isSelected: store.isCorpusFileSelectedForAIContext(file)))
+        .listRowBackground(Color.clear)
+        .contextMenu {
+          CorpusFileContextMenu(file: file)
+        }
+    } else {
+      CorpusFileTreeNodeLabel(node: node)
+        .listRowBackground(Color.clear)
+    }
+  }
+}
+
+private struct CorpusFileTreeNodeLabel: View {
+  let node: CorpusFileTreeNode
+  var compact = false
+
+  var body: some View {
+    HStack(spacing: compact ? 6 : 8) {
+      Image(systemName: node.isDirectory ? "folder" : "doc.text")
+        .foregroundStyle(node.isDirectory ? WorkspaceDesign.structuralAccent : WorkspaceDesign.secondaryText)
+        .frame(width: compact ? 14 : 18)
+      VStack(alignment: .leading, spacing: compact ? 0 : 2) {
+        Text(node.name)
+          .font(compact ? .caption : .body.weight(.medium))
+          .lineLimit(1)
+        if !compact, let file = node.file {
+          Text(file.directory.isEmpty ? "Corpus root" : file.directory)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .truncationMode(.middle)
+        }
+      }
+      Spacer(minLength: 0)
+      if node.isDirectory {
+        Text("\(node.descendantFileCount)")
+          .font(.caption2.monospacedDigit())
+          .foregroundStyle(.tertiary)
+      } else if !compact, let byteCount = node.file?.byteCount {
+        Text(ByteCountFormatter.string(fromByteCount: byteCount, countStyle: .file))
+          .font(.caption)
+          .foregroundStyle(.tertiary)
+      }
+    }
+    .padding(.vertical, compact ? 1 : WorkspaceDesign.rowVerticalPadding)
   }
 }
 
@@ -3746,9 +3836,11 @@ private struct HeadingActionsContextMenu: View {
       Label("Priority", systemImage: "flag")
     }
 
-    Button {
-      select()
-      Task { await store.applyAgentHandoffShortcut(to: location) }
+    Menu {
+      AgentHandoffMenuItems { profile in
+        select()
+        Task { await store.applyAgentHandoffShortcut(to: location, agentProfile: profile) }
+      }
     } label: {
       Label("Pass to Agent", systemImage: "person.crop.circle.badge.checkmark")
     }
@@ -3786,6 +3878,37 @@ private struct HeadingActionsContextMenu: View {
     Button(title) {
       select()
       Task { await store.applyPriorityShortcut(priority, to: location) }
+    }
+  }
+}
+
+private struct AgentHandoffMenuItems: View {
+  @Environment(WorkspaceStore.self) private var store
+  let handOff: (AgentProfileItem?) -> Void
+
+  private var availableProfiles: [AgentProfileItem] {
+    store.agentProfiles
+      .filter { $0.status.lowercased() == "active" }
+      .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+  }
+
+  var body: some View {
+    if !availableProfiles.isEmpty {
+      ForEach(availableProfiles) { profile in
+        Button {
+          handOff(profile)
+        } label: {
+          Label(profile.name, systemImage: "person.crop.circle")
+        }
+        .help(profile.description.isEmpty ? profile.id : profile.description)
+      }
+      Divider()
+    }
+
+    Button {
+      handOff(nil)
+    } label: {
+      Label("Configured default (\(store.agentHandoffAssignee))", systemImage: "gearshape")
     }
   }
 }
@@ -4328,6 +4451,9 @@ private struct AgendaView: View {
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     .onChange(of: store.agendaMode) {
       let mode = store.agendaMode
+      if mode == .assigned, store.agendaDateFilter != .any {
+        store.agendaDateFilter = .any
+      }
       performAfterSwiftUIViewUpdate {
         guard store.agendaMode == mode else { return }
         if mode == .assigned {
@@ -4435,16 +4561,6 @@ private struct AgendaControls: View {
 
         Spacer(minLength: 0)
 
-        if store.agendaMode == .assigned {
-          Button {
-            isShowingOpenClawConfiguration = true
-          } label: {
-            Label("Assignees", systemImage: "person.2")
-          }
-          .buttonStyle(WorkspaceActionButtonStyle())
-          .help("Configure which ASSIGNEE names count as you")
-        }
-
         Button {
           store.promptAndCaptureTodoShortcut()
         } label: {
@@ -4454,9 +4570,8 @@ private struct AgendaControls: View {
       }
 
       HStack(spacing: 8) {
-        Image(systemName: "line.3.horizontal.decrease.circle")
-          .font(.caption)
-          .foregroundStyle(.tertiary)
+        AgendaStructuredFiltersMenu()
+          .buttonStyle(WorkspaceActionButtonStyle())
         TextField("Filter agenda", text: $filterDraft)
           .textFieldStyle(.roundedBorder)
           .focused(agendaFilterFocused)
@@ -4475,6 +4590,48 @@ private struct AgendaControls: View {
           }
           .labelStyle(.iconOnly)
           .help("Clear agenda filter")
+        }
+      }
+
+      if store.hasAgendaStructuredFilters {
+        ScrollView(.horizontal, showsIndicators: false) {
+          HStack(spacing: 6) {
+            if store.agendaDateFilter != .any {
+              AgendaFilterChip(title: store.agendaDateFilter.title) {
+                store.setAgendaDateFilter(.any)
+              }
+            }
+            if !store.agendaAssigneeFilter.isEmpty {
+              AgendaFilterChip(
+                title: "Assignee: \(store.agendaAssigneeFilterTitle(store.agendaAssigneeFilter))"
+              ) {
+                store.agendaAssigneeFilter = ""
+                store.syncAgendaSelectionAfterDisplayOptionsChange()
+              }
+            }
+            if !store.agendaStatusFilter.isEmpty {
+              AgendaFilterChip(
+                title: "Status: \(store.agendaStatusFilterTitle(store.agendaStatusFilter))"
+              ) {
+                store.agendaStatusFilter = ""
+                store.syncAgendaSelectionAfterDisplayOptionsChange()
+              }
+            }
+            if !store.agendaPriorityFilter.isEmpty {
+              AgendaFilterChip(
+                title: "Priority: \(store.agendaPriorityFilterTitle(store.agendaPriorityFilter))"
+              ) {
+                store.agendaPriorityFilter = ""
+                store.syncAgendaSelectionAfterDisplayOptionsChange()
+              }
+            }
+            if !store.agendaTopicFilter.isEmpty {
+              AgendaFilterChip(title: "Topic: \(store.agendaTopicFilter)") {
+                store.agendaTopicFilter = ""
+                store.syncAgendaSelectionAfterDisplayOptionsChange()
+              }
+            }
+          }
         }
       }
     }
@@ -4511,6 +4668,154 @@ private struct AgendaControls: View {
     if store.agendaFilter != filterDraft {
       store.agendaFilter = filterDraft
     }
+  }
+}
+
+private struct AgendaStructuredFiltersMenu: View {
+  @Environment(WorkspaceStore.self) private var store
+
+  var body: some View {
+    Menu {
+      if store.agendaMode != .assigned {
+        Menu("Date") {
+          ForEach(AgendaDateFilter.allCases) { filter in
+            filterButton(filter.title, isSelected: store.agendaDateFilter == filter) {
+              store.setAgendaDateFilter(filter)
+            }
+          }
+        }
+      }
+
+      Menu("Assignee") {
+        filterButton("Any assignee", isSelected: store.agendaAssigneeFilter.isEmpty) {
+          setAssignee("")
+        }
+        filterButton("Unassigned", isSelected: store.agendaAssigneeFilter == WorkspaceStore.agendaUnassignedFilter) {
+          setAssignee(WorkspaceStore.agendaUnassignedFilter)
+        }
+        if !store.agendaAssigneeFilterOptions.isEmpty { Divider() }
+        ForEach(store.agendaAssigneeFilterOptions, id: \.self) { assignee in
+          filterButton(assignee, isSelected: store.agendaAssigneeFilter == assignee) {
+            setAssignee(assignee)
+          }
+        }
+      }
+
+      Menu("Status") {
+        filterButton("Any status", isSelected: store.agendaStatusFilter.isEmpty) {
+          setStatus("")
+        }
+        filterButton("Open", isSelected: store.agendaStatusFilter == WorkspaceStore.agendaOpenStatusFilter) {
+          setStatus(WorkspaceStore.agendaOpenStatusFilter)
+        }
+        filterButton("Completed", isSelected: store.agendaStatusFilter == WorkspaceStore.agendaCompletedStatusFilter) {
+          setStatus(WorkspaceStore.agendaCompletedStatusFilter)
+        }
+        if !store.agendaStatusFilterOptions.isEmpty { Divider() }
+        ForEach(store.agendaStatusFilterOptions, id: \.self) { status in
+          filterButton(status, isSelected: store.agendaStatusFilter.caseInsensitiveCompare(status) == .orderedSame) {
+            setStatus(status)
+          }
+        }
+      }
+
+      Menu("Priority") {
+        filterButton("Any priority", isSelected: store.agendaPriorityFilter.isEmpty) {
+          setPriority("")
+        }
+        filterButton("No priority", isSelected: store.agendaPriorityFilter == WorkspaceStore.agendaNoPriorityFilter) {
+          setPriority(WorkspaceStore.agendaNoPriorityFilter)
+        }
+        if !store.agendaPriorityFilterOptions.isEmpty { Divider() }
+        ForEach(store.agendaPriorityFilterOptions, id: \.self) { priority in
+          filterButton(priority, isSelected: store.agendaPriorityFilter.caseInsensitiveCompare(priority) == .orderedSame) {
+            setPriority(priority)
+          }
+        }
+      }
+
+      Menu("Topic") {
+        filterButton("Any topic", isSelected: store.agendaTopicFilter.isEmpty) {
+          setTopic("")
+        }
+        if !store.agendaTopicFilterOptions.isEmpty { Divider() }
+        ForEach(store.agendaTopicFilterOptions, id: \.self) { topic in
+          filterButton(topic, isSelected: store.agendaTopicFilter.caseInsensitiveCompare(topic) == .orderedSame) {
+            setTopic(topic)
+          }
+        }
+      }
+
+      if store.hasAgendaStructuredFilters {
+        Divider()
+        Button("Clear Filters") {
+          store.clearAgendaStructuredFilters()
+        }
+      }
+    } label: {
+      Label(
+        store.hasAgendaStructuredFilters
+          ? "Filters (\(store.agendaStructuredFilterCount))"
+          : "Filters",
+        systemImage: "line.3.horizontal.decrease.circle"
+      )
+    }
+    .help("Filter by date, assignee, status, priority, or topic")
+  }
+
+  private func setAssignee(_ value: String) {
+    store.agendaAssigneeFilter = value
+    store.syncAgendaSelectionAfterDisplayOptionsChange()
+  }
+
+  private func setStatus(_ value: String) {
+    store.agendaStatusFilter = value
+    store.syncAgendaSelectionAfterDisplayOptionsChange()
+  }
+
+  private func setPriority(_ value: String) {
+    store.agendaPriorityFilter = value
+    store.syncAgendaSelectionAfterDisplayOptionsChange()
+  }
+
+  private func setTopic(_ value: String) {
+    store.agendaTopicFilter = value
+    store.syncAgendaSelectionAfterDisplayOptionsChange()
+  }
+
+  private func filterButton(
+    _ title: String,
+    isSelected: Bool,
+    action: @escaping () -> Void
+  ) -> some View {
+    Button(action: action) {
+      if isSelected {
+        Label(title, systemImage: "checkmark")
+      } else {
+        Text(title)
+      }
+    }
+  }
+}
+
+private struct AgendaFilterChip: View {
+  let title: String
+  let clear: () -> Void
+
+  var body: some View {
+    Button(action: clear) {
+      HStack(spacing: 4) {
+        Text(title)
+        Image(systemName: "xmark")
+          .font(.system(size: 8, weight: .bold))
+      }
+      .font(.caption)
+      .padding(.horizontal, 8)
+      .padding(.vertical, 4)
+      .background(WorkspaceDesign.controlFill, in: Capsule())
+    }
+    .buttonStyle(.plain)
+    .help("Remove \(title) filter")
   }
 }
 
@@ -7681,8 +7986,10 @@ private struct AgendaBulkActionBar: View {
         Label("Done", systemImage: "checkmark.circle")
       }
 
-      Button {
-        Task { await store.applyAgentHandoffShortcut() }
+      Menu {
+        AgentHandoffMenuItems { profile in
+          Task { await store.applyAgentHandoffShortcut(agentProfile: profile) }
+        }
       } label: {
         Label("Pass to Agent", systemImage: "paperplane")
       }
@@ -9894,7 +10201,6 @@ private struct OpenClawChatView: View {
             .accessibilityHidden(true)
         }
         .padding(presentation.isCompact ? 10 : 16)
-        .textSelection(.enabled)
       }
       .defaultScrollAnchor(.bottom)
       // Keep the scroll container alive across thread selection. Re-keying the
@@ -12225,8 +12531,10 @@ private struct DetailHeader: View {
         Label("Find Similar TODOs...", systemImage: "rectangle.stack.badge.plus")
       }
 
-      Button {
-        Task { await store.applyAgentHandoffShortcut() }
+      Menu {
+        AgentHandoffMenuItems { profile in
+          Task { await store.applyAgentHandoffShortcut(agentProfile: profile) }
+        }
       } label: {
         Label("Pass to Agent", systemImage: "person.crop.circle.badge.checkmark")
       }

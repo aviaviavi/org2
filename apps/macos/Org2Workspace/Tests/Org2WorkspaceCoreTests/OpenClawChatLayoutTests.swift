@@ -1348,11 +1348,11 @@ final class OpenClawChatLayoutTests: XCTestCase {
     XCTAssertGreaterThan(hostingView.fittingSize.height, 118)
   }
 
-  func testChatBubblesDeferTextSelectionToTheTranscript() {
-    XCTAssertFalse(ChatBubbleView.managesMessageTextSelection)
+  func testChatBubblesOwnSelectableTextWithoutATranscriptWideOverlay() {
+    XCTAssertTrue(ChatBubbleView.managesMessageTextSelection)
   }
 
-  func testLongTranscriptLayoutRemainsResponsiveWithUnifiedSelection() {
+  func testLongTranscriptLayoutRemainsResponsiveWithPerMessageSelection() {
     let messages = (0..<120).map { index in
       OpenClawChatMessage(
         role: index.isMultiple(of: 2) ? .user : .assistant,
@@ -1365,7 +1365,6 @@ final class OpenClawChatLayoutTests: XCTestCase {
           ChatBubbleView(message: message)
         }
       }
-      .textSelection(.enabled)
     }
     .frame(width: 720, height: 600)
     let hostingView = NSHostingView(rootView: view)

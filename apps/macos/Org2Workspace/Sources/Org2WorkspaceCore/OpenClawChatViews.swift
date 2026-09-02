@@ -1308,10 +1308,10 @@ private extension OrgEditableBlock {
 }
 
 struct ChatBubbleView: View {
-  // One selection owner wraps the complete transcript. Giving each message
-  // or rendered block its own owner prevents a drag from crossing the view
-  // boundary, even though every individual fragment is selectable.
-  static let managesMessageTextSelection = false
+  // Keep selection ownership local to a message. A transcript-wide native
+  // selection overlay becomes expensive for long histories, while the stack
+  // deliberately disables inherited selection to preserve exact layout.
+  static let managesMessageTextSelection = true
 
   let message: OpenClawChatMessage
   let runtime: AIChatRuntime
@@ -4882,7 +4882,7 @@ struct OpenClawTypingIndicatorView: View {
           OpenClawMessageBodyView(
             rawText: body.displayedText,
             compact: compact,
-            managesTextSelection: false,
+            managesTextSelection: true,
             rendersStructuredOrg2: true,
             structuredPresentation: body.org,
             containsInlineSyntax: body.containsInlineSyntax,

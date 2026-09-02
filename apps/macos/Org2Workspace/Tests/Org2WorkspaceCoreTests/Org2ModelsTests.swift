@@ -16195,15 +16195,35 @@ final class Org2ModelsTests: XCTestCase {
     """
 
     let item = try JSONDecoder().decode(AgendaItem.self, from: Data(itemJSON.utf8))
+    let profile = try JSONDecoder().decode(AgentProfileItem.self, from: Data(#"""
+    {
+      "schema": "org2:agent-profile:v1",
+      "id": "product-research",
+      "name": "Product Research",
+      "description": "Researches product questions",
+      "status": "active",
+      "responsibilities": [],
+      "capabilities": [],
+      "skills": [],
+      "runtimeBindings": [],
+      "goalRefs": ["product-quality"],
+      "primaryGoalRef": "product-quality",
+      "file": "/tmp/product-research.org2",
+      "createdAt": "2026-06-12T00:00:00.000Z",
+      "updatedAt": "2026-06-12T00:00:00.000Z"
+    }
+    """#.utf8))
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
     store.setCorpusRoot(root)
     store.select(.agenda(item))
-    await store.applyAgentHandoffShortcut()
+    await store.applyAgentHandoffShortcut(agentProfile: profile)
 
     let updated = try String(contentsOf: note, encoding: .utf8)
     XCTAssertTrue(updated.contains("* TODO Send to agent"))
     XCTAssertFalse(updated.contains("* DONE Send to agent"))
-    XCTAssertTrue(updated.contains(":ASSIGNEE: OpenClaw"))
+    XCTAssertTrue(updated.contains(":ASSIGNEE: Product Research"))
+    XCTAssertTrue(updated.contains(":AGENT_REF: product-research"))
+    XCTAssertTrue(updated.contains(":GOAL_REF: product-quality"))
     XCTAssertTrue(updated.contains(":STATUS: ready"))
     XCTAssertTrue(updated.contains(":ASSIGNED_AT: <"))
   }

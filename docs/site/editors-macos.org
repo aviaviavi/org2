@@ -21,8 +21,8 @@ OpenOrg stores daily notes in the corpus's =daily/= zone by default. Set =roam.d
 <figure class="org2-section-shot"><img src="assets/screenshots/macos-workspace-agenda.png" alt="OpenOrg Agenda showing scheduled tasks and linked note context" loading="eager" /><figcaption>Agenda keeps commitments connected to the notes and decisions behind them.</figcaption></figure>
 #+end_export
 
-- *Agenda* :: see scheduled work and deadlines across one or all open corpora. Mark items done, reschedule them, change priority, or open the source note.
-- *Files* :: browse and search Org, Org2, Markdown, CSV, and generated workspace files.
+- *Agenda* :: see scheduled work and deadlines across one or all open corpora. Filter by date, assignee, status, priority, topic, or text; mark items done, reschedule them, change priority, or open the source note.
+- *Files* :: expand the cached corpus file tree directly in the sidebar, or use the full tree and search surface for Org, Org2, Markdown, CSV, and generated workspace files.
 - *Agent Work* :: follow delegated runs, inspect outputs and citations, and handle decisions that need you.
 - *Meetings* :: record or import audio and keep transcripts, summaries, decisions, and follow-ups together.
 - *Sources* :: connect supported external sources such as Slack and Notion, run a sync, or control its schedule.
@@ -82,7 +82,7 @@ Property drawers, TODO state, tags, planning and clock data, comments, commented
 
 Agent Work keeps each delegated job together with its goal, context, progress, outputs, citations, checks, and final outcome. The *Runs* view shows what is active, blocked, complete, or failed. The *Review* view collects the specific decisions that require a person.
 
-You can approve, reject, request changes, discuss, or record that work was completed elsewhere. Batch selection is available when several independent items can be decided together. Review material stays inspectable after a decision, providing a durable record of what was proposed and what happened.
+You can approve, reject, request changes, discuss, or record that work was completed elsewhere. Batch selection applies independent decisions concurrently, coalesces the visible queue update and reconciliation, and still serializes writes that target the same canonical run or source file. Review material stays inspectable after a decision, providing a durable record of what was proposed and what happened.
 
 The *Automations* view turns a prompt, optional agent profile, schedule, and any enabled AI destination into an ordinary file under =workflows/=. OpenOrg checks schedules while it is running, creates a durable run before dispatch, catches up the latest missed occurrence after sleep or relaunch, prevents overlapping attempts, and keeps one destination-neutral history. The toolbar and row menu can delete a selected definition after confirmation without deleting its prior run history. Fuller reusable workflows use the same files and add inputs, steps, validation, outputs, and approval boundaries. See [[file:workflows.org][Automations and workflows]] for the full lifecycle.
 
@@ -98,7 +98,9 @@ In *OpenOrg → Settings… → AI Chat*, you can configure named destinations i
 
 To use Claude Code, install it and sign in with =claude auth login=, then enable *Claude Code* in AI Chat settings. OpenOrg starts the local CLI, streams its replies, and resumes the same Claude Code session on later turns. No Anthropic key is copied into OpenOrg. The Local Agent Permissions setting maps to Claude Code's Plan, Accept Edits, or Bypass Permissions mode.
 
-Add files, headings, selected items, images, PDFs, audio, or other supported attachments as explicit context. Typing =@= finds corpus files and destinations. In a shared room, mention a destination by name or use =@all=; every reply remains attributed to the agent that produced it.
+Add files, headings, selected items, images, PDFs, audio, or other supported attachments as explicit context. Typing =@= finds corpus files and destinations. Chat message text remains selectable without creating one transcript-wide selection overlay for long histories. In a shared room, mention a destination by name or use =@all=; every reply remains attributed to the agent that produced it.
+
+*Pass to Agent* menus list active portable agent profiles from the corpus. Choosing one writes its readable name as =ASSIGNEE= and preserves its stable =AGENT_REF= plus primary =GOAL_REF= when available; the configured legacy handoff target remains available as a fallback.
 
 Threads and their context are stored locally with the corpus. A settled thread can be reopened later. Long-running OpenClaw turns can stream progress, be stopped, and reconnect after an app restart when the connected runtime supports it.
 

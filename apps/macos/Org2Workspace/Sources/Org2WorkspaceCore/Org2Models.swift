@@ -1976,6 +1976,33 @@ public struct CorpusFile: Identifiable, Hashable, Sendable {
   public var id: String { path }
 }
 
+public struct CorpusFileTreeNode: Identifiable, Hashable, Sendable {
+  public let id: String
+  public let name: String
+  public let relativePath: String
+  public let file: CorpusFile?
+  public let children: [CorpusFileTreeNode]?
+  public let descendantFileCount: Int
+
+  public init(
+    id: String,
+    name: String,
+    relativePath: String,
+    file: CorpusFile?,
+    children: [CorpusFileTreeNode]?,
+    descendantFileCount: Int
+  ) {
+    self.id = id
+    self.name = name
+    self.relativePath = relativePath
+    self.file = file
+    self.children = children
+    self.descendantFileCount = descendantFileCount
+  }
+
+  public var isDirectory: Bool { file == nil }
+}
+
 public struct OrgCryptRecipientFile: Identifiable, Hashable, Sendable {
   public let path: String
   public let relativePath: String
@@ -6421,6 +6448,26 @@ public enum AgendaMode: String, CaseIterable, Identifiable, Sendable {
     case .today: "Today"
     case .range: "Range"
     case .assigned: "All Time"
+    }
+  }
+}
+
+public enum AgendaDateFilter: String, CaseIterable, Identifiable, Sendable {
+  case any
+  case overdue
+  case today
+  case next7
+  case later
+
+  public var id: String { rawValue }
+
+  public var title: String {
+    switch self {
+    case .any: "Any date"
+    case .overdue: "Overdue"
+    case .today: "Today"
+    case .next7: "Next 7 days"
+    case .later: "Later"
     }
   }
 }

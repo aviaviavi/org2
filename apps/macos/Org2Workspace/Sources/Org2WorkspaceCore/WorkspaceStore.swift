@@ -1324,6 +1324,11 @@ private struct AgendaDisplayBuckets: Sendable {
   var later: [AgendaItem] = []
 }
 
+private final class MutableCorpusFileTreeNode {
+  var directories: [String: MutableCorpusFileTreeNode] = [:]
+  var files: [CorpusFile] = []
+}
+
 private struct SearchNodeIndexRow: Sendable {
   let node: OrgRoamNodeReference
   let normalizedCandidates: [String]
@@ -2063,6 +2068,10 @@ public final class SourceEditorInteractionModel: ObservableObject {
 public final class WorkspaceStore {
   nonisolated public static let meetingCaptureSourceSummary = "Captures microphone and system/call audio. System audio uses macOS ScreenCaptureKit permission; Org2 records audio only."
   nonisolated public static let defaultAgentHandoffAssignee = "OpenClaw"
+  nonisolated public static let agendaOpenStatusFilter = "__open__"
+  nonisolated public static let agendaCompletedStatusFilter = "__completed__"
+  nonisolated public static let agendaUnassignedFilter = "__unassigned__"
+  nonisolated public static let agendaNoPriorityFilter = "__no_priority__"
   nonisolated public static let runReviewAutoRefreshIntervalNanoseconds: UInt64 = 60_000_000_000
   nonisolated public static let defaultWorkspaceRefreshTimeoutNanoseconds: UInt64 = 15_000_000_000
   nonisolated public static let defaultEntryRenderTimeoutNanoseconds: UInt64 = 15_000_000_000
@@ -2110,6 +2119,45 @@ public final class WorkspaceStore {
       rebuildAssignedWorkDisplayCache()
     }
   }
+  private var isUpdatingAgendaStructuredFilters = false
+  public var agendaDateFilter: AgendaDateFilter = .any {
+    didSet {
+      guard oldValue != agendaDateFilter, !isUpdatingAgendaStructuredFilters else { return }
+      rebuildAgendaDisplayCache()
+    }
+  }
+  public var agendaAssigneeFilter = "" {
+    didSet {
+      guard oldValue != agendaAssigneeFilter, !isUpdatingAgendaStructuredFilters else { return }
+      rebuildAgendaDisplayCache()
+      rebuildAssignedWorkDisplayCache()
+    }
+  }
+  public var agendaStatusFilter = "" {
+    didSet {
+      guard oldValue != agendaStatusFilter, !isUpdatingAgendaStructuredFilters else { return }
+      rebuildAgendaDisplayCache()
+      rebuildAssignedWorkDisplayCache()
+    }
+  }
+  public var agendaPriorityFilter = "" {
+    didSet {
+      guard oldValue != agendaPriorityFilter, !isUpdatingAgendaStructuredFilters else { return }
+      rebuildAgendaDisplayCache()
+      rebuildAssignedWorkDisplayCache()
+    }
+  }
+  public var agendaTopicFilter = "" {
+    didSet {
+      guard oldValue != agendaTopicFilter, !isUpdatingAgendaStructuredFilters else { return }
+      rebuildAgendaDisplayCache()
+      rebuildAssignedWorkDisplayCache()
+    }
+  }
+  public private(set) var agendaAssigneeFilterOptions: [String] = []
+  public private(set) var agendaStatusFilterOptions: [String] = []
+  public private(set) var agendaPriorityFilterOptions: [String] = []
+  public private(set) var agendaTopicFilterOptions: [String] = []
   public var agendaFilterFocusToken = 0
   public var agendaReadScope: WorkspaceReadScope = .activeCorpus
   public var isAgendaFilterFocused = false
@@ -2211,6 +2259,8 @@ public final class WorkspaceStore {
     }
   }
   public private(set) var filteredCorpusFiles: [CorpusFile] = []
+  public private(set) var corpusFileTree: [CorpusFileTreeNode] = []
+  public private(set) var filteredCorpusFileTree: [CorpusFileTreeNode] = []
   public var corpusFileFilterFocusToken = 0
   public var isScanningCorpusFiles = false
   public var isQuickOpenPresented = false
@@ -2231,6 +2281,7 @@ public final class WorkspaceStore {
       assignedWorkSearchRows = assignedWorkItems.map { item in
         AssignedWorkSearchRow(item: item, searchText: Self.assignedWorkFilterText(for: item))
       }
+      rebuildAgendaFilterOptions()
       rebuildAssignedWorkDisplayCache()
     }
   }
@@ -7398,6 +7449,19 @@ public final class WorkspaceStore {
     }
   }
 
+  private func continueAfterApprovalBoundary(
+    _ run: AgentRunItem,
+    waits: Bool
+  ) async {
+    if waits {
+      await continueOpenClawAfterApprovalBoundary(run)
+      return
+    }
+    Task { @MainActor [weak self] in
+      await self?.continueOpenClawAfterApprovalBoundary(run)
+    }
+  }
+
   private func continueOpenClawAfterApprovalBoundary(_ run: AgentRunItem) async {
     if run.status == "running",
        run.pendingApprovalCount == 0,
@@ -8229,7 +8293,7 @@ public final class WorkspaceStore {
     let items = selectedApprovalItemsForBulkMutation()
     guard !items.isEmpty else { return }
     await performBulkApprovalAction(items) { store, item in
-      await store.approve(item)
+      await store.approve(item, updatesApprovalQueue: false, waitsForContinuation: false)
     }
   }
 
@@ -8237,7 +8301,13 @@ public final class WorkspaceStore {
     let items = selectedApprovalItemsForBulkMutation()
     guard !items.isEmpty else { return }
     await performBulkApprovalAction(items) { store, item in
-      await store.rejectApproval(item, endStatus: endStatus, reason: reason)
+      await store.rejectApproval(
+        item,
+        endStatus: endStatus,
+        reason: reason,
+        updatesApprovalQueue: false,
+        waitsForContinuation: false
+      )
     }
   }
 
@@ -8245,7 +8315,12 @@ public final class WorkspaceStore {
     let items = selectedApprovalItemsForBulkMutation()
     guard !items.isEmpty else { return }
     await performBulkApprovalAction(items) { store, item in
-      await store.completeApprovalExternally(item, summary: summary)
+      await store.completeApprovalExternally(
+        item,
+        summary: summary,
+        updatesApprovalQueue: false,
+        waitsForContinuation: false
+      )
     }
   }
 
@@ -8264,6 +8339,16 @@ public final class WorkspaceStore {
     }
 
     let failedIDs = selectedIDs.filter { approvalActionErrorsByItemID[$0] != nil }
+    let completedIDs = selectedIDs.subtracting(failedIDs)
+    if !completedIDs.isEmpty {
+      approvalItems.removeAll { completedIDs.contains($0.id) }
+      if let selectedApprovalItemID, completedIDs.contains(selectedApprovalItemID) {
+        self.selectedApprovalItemID = nil
+        approvalSelectionAnchor = nil
+        syncApprovalSelectionAfterRefresh()
+      }
+    }
+    scheduleApprovalsRefresh()
     bulkSelectedApprovalItemIDs = Set(failedIDs)
     let completedCount = items.count - failedIDs.count
     if failedIDs.isEmpty {
@@ -8283,6 +8368,14 @@ public final class WorkspaceStore {
   }
 
   public func approve(_ item: ApprovalItem) async {
+    await approve(item, updatesApprovalQueue: true, waitsForContinuation: true)
+  }
+
+  private func approve(
+    _ item: ApprovalItem,
+    updatesApprovalQueue: Bool,
+    waitsForContinuation: Bool
+  ) async {
     guard !isApprovalActionInProgress(item) else { return }
     let originalVisibleIndex = visibleApprovalItems.firstIndex(where: { $0.id == item.id })
     beginApprovalAction(item, kind: .approve)
@@ -8292,9 +8385,11 @@ public final class WorkspaceStore {
     do {
       if item.isRunApproval {
         let updated = try await decideRunApprovalItem(item, decision: "approved")
-        removeApprovalItemOptimistically(item.id, originalVisibleIndex: originalVisibleIndex)
-        scheduleApprovalsRefresh()
-        await continueOpenClawAfterApprovalBoundary(updated)
+        if updatesApprovalQueue {
+          removeApprovalItemOptimistically(item.id, originalVisibleIndex: originalVisibleIndex)
+          scheduleApprovalsRefresh()
+        }
+        await continueAfterApprovalBoundary(updated, waits: waitsForContinuation)
         return
       }
       try await approveAndAgentHandoff(HeadlineMutationTarget(
@@ -8307,8 +8402,10 @@ public final class WorkspaceStore {
       if let standaloneContext {
         guard isCurrentDocumentCorpusContext(standaloneContext) else { return }
       }
-      removeApprovalItemOptimistically(item.id, originalVisibleIndex: originalVisibleIndex)
-      scheduleApprovalsRefresh()
+      if updatesApprovalQueue {
+        removeApprovalItemOptimistically(item.id, originalVisibleIndex: originalVisibleIndex)
+        scheduleApprovalsRefresh()
+      }
     } catch {
       if let standaloneContext, !isCurrentDocumentCorpusContext(standaloneContext) { return }
       recordApprovalActionFailure(item, error: error, status: "Approve handoff failed")
@@ -8332,6 +8429,22 @@ public final class WorkspaceStore {
   }
 
   public func rejectApproval(_ item: ApprovalItem, endStatus: TodoEditStatus, reason: String) async {
+    await rejectApproval(
+      item,
+      endStatus: endStatus,
+      reason: reason,
+      updatesApprovalQueue: true,
+      waitsForContinuation: true
+    )
+  }
+
+  private func rejectApproval(
+    _ item: ApprovalItem,
+    endStatus: TodoEditStatus,
+    reason: String,
+    updatesApprovalQueue: Bool,
+    waitsForContinuation: Bool
+  ) async {
     guard !isApprovalActionInProgress(item) else { return }
     let originalVisibleIndex = visibleApprovalItems.firstIndex(where: { $0.id == item.id })
     beginApprovalAction(item, kind: .reject)
@@ -8341,9 +8454,11 @@ public final class WorkspaceStore {
     do {
       if item.isRunApproval {
         let updated = try await decideRunApprovalItem(item, decision: "rejected", note: reason)
-        removeApprovalItemOptimistically(item.id, originalVisibleIndex: originalVisibleIndex)
-        scheduleApprovalsRefresh()
-        await continueOpenClawAfterApprovalBoundary(updated)
+        if updatesApprovalQueue {
+          removeApprovalItemOptimistically(item.id, originalVisibleIndex: originalVisibleIndex)
+          scheduleApprovalsRefresh()
+        }
+        await continueAfterApprovalBoundary(updated, waits: waitsForContinuation)
         return
       }
       try await rejectApproval(
@@ -8360,8 +8475,10 @@ public final class WorkspaceStore {
       if let standaloneContext {
         guard isCurrentDocumentCorpusContext(standaloneContext) else { return }
       }
-      removeApprovalItemOptimistically(item.id, originalVisibleIndex: originalVisibleIndex)
-      scheduleApprovalsRefresh()
+      if updatesApprovalQueue {
+        removeApprovalItemOptimistically(item.id, originalVisibleIndex: originalVisibleIndex)
+        scheduleApprovalsRefresh()
+      }
     } catch {
       if let standaloneContext, !isCurrentDocumentCorpusContext(standaloneContext) { return }
       recordApprovalActionFailure(item, error: error, status: "Reject approval failed")
@@ -8369,6 +8486,20 @@ public final class WorkspaceStore {
   }
 
   public func completeApprovalExternally(_ item: ApprovalItem, summary: String) async {
+    await completeApprovalExternally(
+      item,
+      summary: summary,
+      updatesApprovalQueue: true,
+      waitsForContinuation: true
+    )
+  }
+
+  private func completeApprovalExternally(
+    _ item: ApprovalItem,
+    summary: String,
+    updatesApprovalQueue: Bool,
+    waitsForContinuation: Bool
+  ) async {
     guard !isApprovalActionInProgress(item) else { return }
     let normalizedSummary = summary.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !normalizedSummary.isEmpty else {
@@ -8388,10 +8519,12 @@ public final class WorkspaceStore {
           decision: "canceled",
           receipt: "Completed externally: \(normalizedSummary)"
         )
-        removeApprovalItemOptimistically(item.id, originalVisibleIndex: originalVisibleIndex)
-        scheduleApprovalsRefresh()
+        if updatesApprovalQueue {
+          removeApprovalItemOptimistically(item.id, originalVisibleIndex: originalVisibleIndex)
+          scheduleApprovalsRefresh()
+        }
         statusText = "Recorded external completion for \(item.title) · \(updated.pendingApprovalCount) pending"
-        await continueOpenClawAfterApprovalBoundary(updated)
+        await continueAfterApprovalBoundary(updated, waits: waitsForContinuation)
         return
       }
 
@@ -8408,8 +8541,10 @@ public final class WorkspaceStore {
       if let standaloneContext {
         guard isCurrentDocumentCorpusContext(standaloneContext) else { return }
       }
-      removeApprovalItemOptimistically(item.id, originalVisibleIndex: originalVisibleIndex)
-      scheduleApprovalsRefresh()
+      if updatesApprovalQueue {
+        removeApprovalItemOptimistically(item.id, originalVisibleIndex: originalVisibleIndex)
+        scheduleApprovalsRefresh()
+      }
     } catch {
       if let standaloneContext, !isCurrentDocumentCorpusContext(standaloneContext) { return }
       recordApprovalActionFailure(item, error: error, status: "External completion failed")
@@ -16601,10 +16736,61 @@ public final class WorkspaceStore {
   private func rebuildAssignedWorkDisplayCache() {
     let terms = Self.filterTerms(from: agendaFilter)
     visibleAssignedWorkItems = assignedWorkSearchRows.compactMap { row in
+      guard Self.matchesAssignedWorkStructuredFilters(
+        row.item,
+        assignee: agendaAssigneeFilter,
+        status: agendaStatusFilter,
+        priority: agendaPriorityFilter,
+        topic: agendaTopicFilter
+      ) else { return nil }
       guard !terms.isEmpty else { return row.item }
       return terms.allSatisfy { row.searchText.contains($0) } ? row.item : nil
     }
     assignedWorkSections = Self.groupAssignedWorkSections(visibleAssignedWorkItems)
+  }
+
+  nonisolated private static func matchesAssignedWorkStructuredFilters(
+    _ item: AssignedWorkItem,
+    assignee: String,
+    status: String,
+    priority: String,
+    topic: String
+  ) -> Bool {
+    let normalizedAssignee = item.assignee.trimmingCharacters(in: .whitespacesAndNewlines)
+    if assignee == agendaUnassignedFilter {
+      guard normalizedAssignee.isEmpty else { return false }
+    } else if !assignee.isEmpty,
+              normalizedAssignee.caseInsensitiveCompare(assignee) != .orderedSame {
+      return false
+    }
+
+    let todo = item.todo?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    let propertyStatus = propertyValue("STATUS", in: item.properties) ?? item.status
+    if status == agendaOpenStatusFilter {
+      let normalizedTodo = todo.uppercased()
+      guard !["DONE", "CANCELED", "CANCELLED"].contains(normalizedTodo) else { return false }
+    } else if status == agendaCompletedStatusFilter {
+      let normalizedTodo = todo.uppercased()
+      guard ["DONE", "CANCELED", "CANCELLED"].contains(normalizedTodo) else { return false }
+    } else if !status.isEmpty,
+              todo.caseInsensitiveCompare(status) != .orderedSame,
+              propertyStatus.caseInsensitiveCompare(status) != .orderedSame {
+      return false
+    }
+
+    let itemPriority = propertyValue("PRIORITY", in: item.properties) ?? ""
+    if priority == agendaNoPriorityFilter {
+      guard itemPriority.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+    } else if !priority.isEmpty,
+              itemPriority.caseInsensitiveCompare(priority) != .orderedSame {
+      return false
+    }
+
+    if !topic.isEmpty,
+       !item.tags.contains(where: { $0.caseInsensitiveCompare(topic) == .orderedSame }) {
+      return false
+    }
+    return true
   }
 
   private static func groupAssignedWorkSections(_ items: [AssignedWorkItem]) -> [AssignedWorkSection] {
@@ -17381,7 +17567,8 @@ public final class WorkspaceStore {
     corpusFileProjection = .empty
     corpusFilesByPath = [:]
     quickOpenIndexedFiles = []
-    publishFilteredCorpusFiles([])
+    corpusFileTree = []
+    publishFilteredCorpusFiles([], tree: [])
     quickOpenSearchGeneration += 1
     quickOpenSearchTask?.cancel()
     quickOpenFiles = []
@@ -17398,9 +17585,9 @@ public final class WorkspaceStore {
     // Keep empty-query lists coherent immediately without doing corpus-scale
     // work. These prefixes are hard bounded by their UI result limits.
     if corpusFileFilter.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-      publishFilteredCorpusFiles(Array(files.prefix(500)))
+      publishFilteredCorpusFiles(Array(files.prefix(500)), tree: [])
     } else {
-      publishFilteredCorpusFiles([])
+      publishFilteredCorpusFiles([], tree: [])
     }
     if quickOpenQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
       quickOpenFiles = Array(files.prefix(80))
@@ -17412,6 +17599,7 @@ public final class WorkspaceStore {
       corpusFileProjectionTask = nil
       publishCorpusFileProjection(
         .empty,
+        tree: [],
         projectionGeneration: projectionGeneration,
         filesGeneration: filesGeneration
       )
@@ -17427,8 +17615,11 @@ public final class WorkspaceStore {
       else { return }
 
       self.corpusFileProjectionBuildCountForTesting += 1
-      let projection = await Task.detached(priority: .utility) {
-        CorpusFileCatalog.projection(for: files)
+      let (projection, tree) = await Task.detached(priority: .utility) {
+        (
+          CorpusFileCatalog.projection(for: files),
+          Self.makeCorpusFileTree(files)
+        )
       }.value
       guard !Task.isCancelled,
             self.corpusFileProjectionGeneration == projectionGeneration,
@@ -17437,6 +17628,7 @@ public final class WorkspaceStore {
 
       self.publishCorpusFileProjection(
         projection,
+        tree: tree,
         projectionGeneration: projectionGeneration,
         filesGeneration: filesGeneration
       )
@@ -17445,6 +17637,7 @@ public final class WorkspaceStore {
 
   private func publishCorpusFileProjection(
     _ projection: CorpusFileCatalog.Projection,
+    tree: [CorpusFileTreeNode],
     projectionGeneration: UInt64,
     filesGeneration: UInt64
   ) {
@@ -17455,6 +17648,7 @@ public final class WorkspaceStore {
     corpusFileProjection = projection
     corpusFilesByPath = projection.filesByPath
     quickOpenIndexedFiles = projection.indexedFiles
+    corpusFileTree = tree
     corpusFileProjectionTask = nil
     schedulePinnedCorpusFileProjection(catalogProjection: projection)
     scheduleCorpusFileDisplayRefresh()
@@ -17609,11 +17803,12 @@ public final class WorkspaceStore {
     let generation = corpusFileDisplayGeneration
     let indexedFiles = quickOpenIndexedFiles
     let query = corpusFileFilter
+    let fullTree = corpusFileTree
     corpusFileDisplayTask?.cancel()
 
     guard !indexedFiles.isEmpty else {
       corpusFileDisplayTask = nil
-      publishFilteredCorpusFiles([])
+      publishFilteredCorpusFiles([], tree: [])
       return
     }
 
@@ -17624,25 +17819,33 @@ public final class WorkspaceStore {
             self.corpusFileDisplayGeneration == generation
       else { return }
 
-      let files = await Task.detached(priority: .userInitiated) {
-        Self.filterIndexedQuickOpenFiles(
+      let (files, tree) = await Task.detached(priority: .userInitiated) {
+        let files = Self.filterIndexedQuickOpenFiles(
           indexedFiles,
           query: query,
           limit: 500
         )
+        let tree = query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+          ? fullTree
+          : Self.makeCorpusFileTree(files)
+        return (files, tree)
       }.value
       guard !Task.isCancelled,
             self.corpusFileDisplayGeneration == generation,
             self.corpusFileFilter == query
       else { return }
 
-      self.publishFilteredCorpusFiles(files)
+      self.publishFilteredCorpusFiles(files, tree: tree)
       self.corpusFileDisplayTask = nil
     }
   }
 
-  private func publishFilteredCorpusFiles(_ files: [CorpusFile]) {
+  private func publishFilteredCorpusFiles(
+    _ files: [CorpusFile],
+    tree: [CorpusFileTreeNode]
+  ) {
     filteredCorpusFiles = files
+    filteredCorpusFileTree = tree
     reconcileCorpusFileAIContextSelection(visibleIDs: files.map(\.id))
   }
 
@@ -17668,6 +17871,61 @@ public final class WorkspaceStore {
 
   func waitForCorpusFilePublicationForTesting() async {
     await awaitCorpusFilePublication()
+  }
+
+  nonisolated static func makeCorpusFileTree(_ files: [CorpusFile]) -> [CorpusFileTreeNode] {
+    let root = MutableCorpusFileTreeNode()
+    for file in files {
+      let components = file.relativePath.split(separator: "/").map(String.init)
+      guard !components.isEmpty else { continue }
+      var directory = root
+      for component in components.dropLast() {
+        if let existing = directory.directories[component] {
+          directory = existing
+        } else {
+          let created = MutableCorpusFileTreeNode()
+          directory.directories[component] = created
+          directory = created
+        }
+      }
+      directory.files.append(file)
+    }
+
+    func materialize(
+      _ node: MutableCorpusFileTreeNode,
+      relativePath: String
+    ) -> [CorpusFileTreeNode] {
+      let directories = node.directories.keys.sorted {
+        $0.localizedCaseInsensitiveCompare($1) == .orderedAscending
+      }.compactMap { name -> CorpusFileTreeNode? in
+        guard let child = node.directories[name] else { return nil }
+        let childPath = relativePath.isEmpty ? name : "\(relativePath)/\(name)"
+        let children = materialize(child, relativePath: childPath)
+        return CorpusFileTreeNode(
+          id: "directory:\(childPath)",
+          name: name,
+          relativePath: childPath,
+          file: nil,
+          children: children,
+          descendantFileCount: children.reduce(0) { $0 + $1.descendantFileCount }
+        )
+      }
+      let fileNodes = node.files.sorted {
+        $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+      }.map { file in
+        CorpusFileTreeNode(
+          id: file.id,
+          name: file.name,
+          relativePath: file.relativePath,
+          file: file,
+          children: nil,
+          descendantFileCount: 1
+        )
+      }
+      return directories + fileNodes
+    }
+
+    return materialize(root, relativePath: "")
   }
 
   private func scheduleQuickOpenSearch(debounce: Bool = true) {
@@ -29466,6 +29724,11 @@ public final class WorkspaceStore {
       mode: agendaMode,
       overdueOrder: agendaOverdueOrder,
       filter: agendaFilter,
+      dateFilter: agendaDateFilter,
+      assigneeFilter: agendaAssigneeFilter,
+      statusFilter: agendaStatusFilter,
+      priorityFilter: agendaPriorityFilter,
+      topicFilter: agendaTopicFilter,
       buckets: agendaDisplayBuckets,
       filterTextByItemID: agendaFilterTextByItemID
     )
@@ -29618,6 +29881,7 @@ public final class WorkspaceStore {
     guard let agenda else {
       agendaFilterTextByItemID = [:]
       agendaDisplayBuckets = AgendaDisplayBuckets()
+      rebuildAgendaFilterOptions()
       return
     }
     let next7End = Self.isoDate(
@@ -29647,6 +29911,60 @@ public final class WorkspaceStore {
       index[item.id] = item.agendaFilterText
     }
     agendaFilterTextByItemID = index
+    rebuildAgendaFilterOptions()
+  }
+
+  private func rebuildAgendaFilterOptions() {
+    let agendaItems = agendaDisplayBuckets.overdue
+      + agendaDisplayBuckets.today
+      + agendaDisplayBuckets.next7
+      + agendaDisplayBuckets.later
+    let agendaAssignees = agendaItems.compactMap {
+      Self.propertyValue("ASSIGNEE", in: $0.properties)
+    }
+    let agendaStatuses = agendaItems.flatMap { item in
+      [item.todo, Self.propertyValue("STATUS", in: item.properties)].compactMap { $0 }
+    }
+    let agendaPriorities = agendaItems.compactMap { item in
+      item.priority ?? Self.propertyValue("PRIORITY", in: item.properties)
+    }
+    let assignedStatuses = assignedWorkItems.flatMap { item in
+      [item.todo, item.status, Self.propertyValue("STATUS", in: item.properties)].compactMap { $0 }
+    }
+    let assignedPriorities = assignedWorkItems.compactMap {
+      Self.propertyValue("PRIORITY", in: $0.properties)
+    }
+
+    agendaAssigneeFilterOptions = Self.sortedUniqueFacetValues(
+      agendaAssignees + assignedWorkItems.map(\.assignee)
+    )
+    agendaStatusFilterOptions = Self.sortedUniqueFacetValues(agendaStatuses + assignedStatuses)
+    agendaPriorityFilterOptions = Self.sortedUniqueFacetValues(agendaPriorities + assignedPriorities)
+    agendaTopicFilterOptions = Self.sortedUniqueFacetValues(
+      agendaItems.flatMap(\.tags) + assignedWorkItems.flatMap(\.tags)
+    )
+  }
+
+  nonisolated private static func sortedUniqueFacetValues(_ values: [String]) -> [String] {
+    var displayByNormalizedValue: [String: String] = [:]
+    for value in values {
+      let display = value.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !display.isEmpty else { continue }
+      let normalized = display.lowercased()
+      if displayByNormalizedValue[normalized] == nil {
+        displayByNormalizedValue[normalized] = display
+      }
+    }
+    return displayByNormalizedValue.values.sorted {
+      $0.localizedCaseInsensitiveCompare($1) == .orderedAscending
+    }
+  }
+
+  nonisolated private static func propertyValue(
+    _ key: String,
+    in properties: [String: String]
+  ) -> String? {
+    properties.first { $0.key.caseInsensitiveCompare(key) == .orderedSame }?.value
   }
 
   private static func makeAgendaDisplaySections(
@@ -29654,23 +29972,35 @@ public final class WorkspaceStore {
     mode: AgendaMode,
     overdueOrder: AgendaOverdueOrder,
     filter: String,
+    dateFilter: AgendaDateFilter,
+    assigneeFilter: String,
+    statusFilter: String,
+    priorityFilter: String,
+    topicFilter: String,
     buckets: AgendaDisplayBuckets,
     filterTextByItemID: [AgendaItem.ID: String]
   ) -> [AgendaDisplaySection] {
     guard agenda != nil else { return [] }
     let terms = filterTerms(from: filter)
     let matchesFilter: (AgendaItem) -> Bool = { item in
+      guard matchesAgendaStructuredFilters(
+        item,
+        assignee: assigneeFilter,
+        status: statusFilter,
+        priority: priorityFilter,
+        topic: topicFilter
+      ) else { return false }
       guard !terms.isEmpty else { return true }
       let searchText = filterTextByItemID[item.id] ?? item.agendaFilterText
       return terms.allSatisfy { searchText.contains($0) }
     }
     let overdue = sortedOverdueItems(
-      buckets.overdue.filter(matchesFilter),
+      (dateFilter == .any || dateFilter == .overdue ? buckets.overdue : []).filter(matchesFilter),
       order: overdueOrder
     )
-    let today = buckets.today.filter(matchesFilter)
-    let next7 = buckets.next7.filter(matchesFilter)
-    let later = buckets.later.filter(matchesFilter)
+    let today = (dateFilter == .any || dateFilter == .today ? buckets.today : []).filter(matchesFilter)
+    let next7 = (dateFilter == .any || dateFilter == .next7 ? buckets.next7 : []).filter(matchesFilter)
+    let later = (dateFilter == .any || dateFilter == .later ? buckets.later : []).filter(matchesFilter)
 
     switch mode {
     case .focus:
@@ -29697,6 +30027,49 @@ public final class WorkspaceStore {
     case .assigned:
       return []
     }
+  }
+
+  nonisolated private static func matchesAgendaStructuredFilters(
+    _ item: AgendaItem,
+    assignee: String,
+    status: String,
+    priority: String,
+    topic: String
+  ) -> Bool {
+    let itemAssignee = propertyValue("ASSIGNEE", in: item.properties)?
+      .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    if assignee == agendaUnassignedFilter {
+      guard itemAssignee.isEmpty else { return false }
+    } else if !assignee.isEmpty,
+              itemAssignee.caseInsensitiveCompare(assignee) != .orderedSame {
+      return false
+    }
+
+    let todo = item.todo?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    let propertyStatus = propertyValue("STATUS", in: item.properties) ?? ""
+    if status == agendaOpenStatusFilter {
+      guard item.isActionable else { return false }
+    } else if status == agendaCompletedStatusFilter {
+      guard !item.isActionable else { return false }
+    } else if !status.isEmpty,
+              todo.caseInsensitiveCompare(status) != .orderedSame,
+              propertyStatus.caseInsensitiveCompare(status) != .orderedSame {
+      return false
+    }
+
+    let itemPriority = item.priority ?? propertyValue("PRIORITY", in: item.properties) ?? ""
+    if priority == agendaNoPriorityFilter {
+      guard itemPriority.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+    } else if !priority.isEmpty,
+              itemPriority.caseInsensitiveCompare(priority) != .orderedSame {
+      return false
+    }
+
+    if !topic.isEmpty,
+       !item.tags.contains(where: { $0.caseInsensitiveCompare(topic) == .orderedSame }) {
+      return false
+    }
+    return true
   }
 
   nonisolated static func sortedOverdueItems(
@@ -30176,6 +30549,57 @@ public final class WorkspaceStore {
   public func clearAgendaFilter() {
     agendaFilter = ""
     syncAgendaSelectionAfterDisplayOptionsChange()
+  }
+
+  public var agendaStructuredFilterCount: Int {
+    [
+      agendaDateFilter == .any ? "" : agendaDateFilter.rawValue,
+      agendaAssigneeFilter,
+      agendaStatusFilter,
+      agendaPriorityFilter,
+      agendaTopicFilter
+    ].filter { !$0.isEmpty }.count
+  }
+
+  public var hasAgendaStructuredFilters: Bool {
+    agendaStructuredFilterCount > 0
+  }
+
+  public func setAgendaDateFilter(_ filter: AgendaDateFilter) {
+    if filter == .next7 || filter == .later {
+      agendaMode = .range
+    }
+    agendaDateFilter = filter
+    syncAgendaSelectionAfterDisplayOptionsChange()
+  }
+
+  public func clearAgendaStructuredFilters() {
+    isUpdatingAgendaStructuredFilters = true
+    agendaDateFilter = .any
+    agendaAssigneeFilter = ""
+    agendaStatusFilter = ""
+    agendaPriorityFilter = ""
+    agendaTopicFilter = ""
+    isUpdatingAgendaStructuredFilters = false
+    rebuildAgendaDisplayCache()
+    rebuildAssignedWorkDisplayCache()
+    syncAgendaSelectionAfterDisplayOptionsChange()
+  }
+
+  public func agendaStatusFilterTitle(_ filter: String) -> String {
+    switch filter {
+    case Self.agendaOpenStatusFilter: "Open"
+    case Self.agendaCompletedStatusFilter: "Completed"
+    default: filter
+    }
+  }
+
+  public func agendaAssigneeFilterTitle(_ filter: String) -> String {
+    filter == Self.agendaUnassignedFilter ? "Unassigned" : filter
+  }
+
+  public func agendaPriorityFilterTitle(_ filter: String) -> String {
+    filter == Self.agendaNoPriorityFilter ? "No priority" : filter
   }
 
   public var canOrganizeCurrentHeadline: Bool {
@@ -31188,20 +31612,29 @@ public final class WorkspaceStore {
 
   nonisolated private static func assignTodoInDocument(
     assignee: String,
+    agentRef: String? = nil,
+    goalRef: String? = nil,
     target: HeadlineMutationTarget,
     cli: Org2CLI,
     execution: WorkspaceDocumentMutationExecution
   ) async throws -> HeadlineMutationTarget {
     let snapshot = try await execution.readSnapshot(at: URL(fileURLWithPath: target.file))
     let resolved = try resolveHeadlineMutationTarget(target, in: snapshot.text, requiresTodo: true)
+    var arguments = [
+      "todo", "assign",
+      "--file", snapshot.url.path,
+      "--line", "\(resolved.line)",
+      "--assignee", assignee,
+    ]
+    if let agentRef, !agentRef.isEmpty {
+      arguments += ["--agent-ref", agentRef]
+    }
+    if let goalRef, !goalRef.isEmpty {
+      arguments += ["--goal-ref", goalRef]
+    }
     let replacement = try await previewCLIDocumentMutation(
       cli: cli,
-      arguments: [
-        "todo", "assign",
-        "--file", snapshot.url.path,
-        "--line", "\(resolved.line)",
-        "--assignee", assignee,
-      ],
+      arguments: arguments,
       basedOn: snapshot
     )
     try await execution.commit(replacement, over: snapshot) { replacement, url, previous in
@@ -31386,9 +31819,13 @@ public final class WorkspaceStore {
   }
 
   public func applyAgentHandoffShortcut() async {
+    await applyAgentHandoffShortcut(agentProfile: nil)
+  }
+
+  public func applyAgentHandoffShortcut(agentProfile: AgentProfileItem?) async {
     let bulkItems = selectedAgendaItemsForBulkMutation()
     if !bulkItems.isEmpty {
-      await applyAgentHandoffShortcut(to: bulkItems)
+      await applyAgentHandoffShortcut(to: bulkItems, agentProfile: agentProfile)
       return
     }
 
@@ -31402,9 +31839,13 @@ public final class WorkspaceStore {
     }
 
     do {
-      try await markReadyForAgent(target, timestamp: Self.orgTimestamp(Date()))
+      try await markReadyForAgent(
+        target,
+        timestamp: Self.orgTimestamp(Date()),
+        agentProfile: agentProfile
+      )
       guard isCurrentDocumentCorpusContext(context) else { return }
-      statusText = "Ready for agent -> \(target.title)"
+      statusText = "Ready for \(agentProfile?.name ?? resolvedAgentHandoffAssignee()) -> \(target.title)"
       await refreshAfterHeadlineMutation(target)
     } catch {
       guard isCurrentDocumentCorpusContext(context) else { return }
@@ -31414,6 +31855,13 @@ public final class WorkspaceStore {
   }
 
   public func applyAgentHandoffShortcut(to location: WorkspaceLocation) async {
+    await applyAgentHandoffShortcut(to: location, agentProfile: nil)
+  }
+
+  public func applyAgentHandoffShortcut(
+    to location: WorkspaceLocation,
+    agentProfile: AgentProfileItem?
+  ) async {
     guard let target = headlineMutationTarget(for: location) else {
       statusText = "Select a heading first"
       return
@@ -31424,9 +31872,13 @@ public final class WorkspaceStore {
     }
 
     do {
-      try await markReadyForAgent(target, timestamp: Self.orgTimestamp(Date()))
+      try await markReadyForAgent(
+        target,
+        timestamp: Self.orgTimestamp(Date()),
+        agentProfile: agentProfile
+      )
       guard isCurrentDocumentCorpusContext(context) else { return }
-      statusText = "Ready for agent -> \(target.title)"
+      statusText = "Ready for \(agentProfile?.name ?? resolvedAgentHandoffAssignee()) -> \(target.title)"
       await refreshAfterHeadlineMutation(target)
     } catch {
       guard isCurrentDocumentCorpusContext(context) else { return }
@@ -31435,7 +31887,10 @@ public final class WorkspaceStore {
     }
   }
 
-  private func applyAgentHandoffShortcut(to items: [AgendaItem]) async {
+  private func applyAgentHandoffShortcut(
+    to items: [AgendaItem],
+    agentProfile: AgentProfileItem?
+  ) async {
     guard let originContext = captureDocumentCorpusContext() else {
       statusText = "No corpus selected"
       return
@@ -31444,7 +31899,11 @@ public final class WorkspaceStore {
       let timestamp = Self.orgTimestamp(Date())
       var touchedFiles: Set<String> = []
       for item in agendaMutationOrder(items) {
-        try await markReadyForAgent(HeadlineMutationTarget(item: item), timestamp: timestamp)
+        try await markReadyForAgent(
+          HeadlineMutationTarget(item: item),
+          timestamp: timestamp,
+          agentProfile: agentProfile
+        )
         touchedFiles.insert(item.file)
       }
       guard isCurrentDocumentCorpusContext(originContext) else { return }
@@ -31453,7 +31912,7 @@ public final class WorkspaceStore {
       }
       bulkSelectedAgendaItemIDs = []
       await refreshAgenda(updatesStatus: false)
-      statusText = "Ready for agent -> \(items.count) items"
+      statusText = "Ready for \(agentProfile?.name ?? resolvedAgentHandoffAssignee()) -> \(items.count) items"
     } catch {
       guard isCurrentDocumentCorpusContext(originContext) else { return }
       errorText = error.localizedDescription
@@ -31461,9 +31920,13 @@ public final class WorkspaceStore {
     }
   }
 
-  private func markReadyForAgent(_ target: HeadlineMutationTarget, timestamp: String) async throws {
+  private func markReadyForAgent(
+    _ target: HeadlineMutationTarget,
+    timestamp: String,
+    agentProfile: AgentProfileItem?
+  ) async throws {
     let context = try documentMutationContext(for: target)
-    let assignee = resolvedAgentHandoffAssignee()
+    let assignee = agentProfile?.name ?? resolvedAgentHandoffAssignee()
     let cli = self.cli
     let testMutation = todoStatusMutationForTesting
     try await performDocumentMutation(context: context, files: [target.file]) { execution in
@@ -31482,6 +31945,8 @@ public final class WorkspaceStore {
 
       let assignedTarget = try await Self.assignTodoInDocument(
         assignee: assignee,
+        agentRef: agentProfile?.id,
+        goalRef: agentProfile?.primaryGoalRef,
         target: resolved,
         cli: cli,
         execution: execution
@@ -42653,7 +43118,7 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
   public var id: String { rawValue }
 
   public static var sidebarCases: [WorkspaceSurface] {
-    [.home, .agenda, .files, .approvals, .meetings, .sources, .skills, .externalThreads]
+    [.home, .agenda, .approvals, .meetings, .sources, .skills, .externalThreads]
   }
 
   public var title: String {

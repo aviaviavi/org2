@@ -31,9 +31,13 @@ final class WorkspaceDisplayCacheTests: XCTestCase {
     )
 
     store.corpusFiles = [alpha, beta]
+    await store.waitForCorpusFilePublicationForTesting()
+    XCTAssertEqual(store.corpusFileTree.map(\.name), ["notes", "projects"])
+    XCTAssertEqual(store.corpusFileTree.map(\.descendantFileCount), [1, 1])
     store.corpusFileFilter = "alpha"
     await store.waitForCorpusFilePublicationForTesting()
     XCTAssertEqual(store.filteredCorpusFiles, [alpha])
+    XCTAssertEqual(store.filteredCorpusFileTree.map(\.name), ["notes"])
 
     store.selectedCorpusFileIDsForAIContext = [alpha.id, beta.id]
     store.corpusFileFilter = "beta"
@@ -126,6 +130,15 @@ final class WorkspaceDisplayCacheTests: XCTestCase {
     XCTAssertTrue(store.visibleAgendaItems.isEmpty)
 
     store.agendaFilter = "beta launch"
+    XCTAssertEqual(store.visibleAgendaItems.map(\.headline), ["Beta launch"])
+
+    store.agendaStatusFilter = WorkspaceStore.agendaCompletedStatusFilter
+    XCTAssertTrue(store.visibleAgendaItems.isEmpty)
+    store.agendaStatusFilter = WorkspaceStore.agendaOpenStatusFilter
+    XCTAssertEqual(store.visibleAgendaItems.map(\.headline), ["Beta launch"])
+    store.agendaDateFilter = .overdue
+    XCTAssertTrue(store.visibleAgendaItems.isEmpty)
+    store.agendaDateFilter = .today
     XCTAssertEqual(store.visibleAgendaItems.map(\.headline), ["Beta launch"])
   }
 
