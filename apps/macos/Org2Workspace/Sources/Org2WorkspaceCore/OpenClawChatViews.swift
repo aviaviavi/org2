@@ -1307,11 +1307,432 @@ private extension OrgEditableBlock {
   }
 }
 
+struct AIChatTranscriptSelectableRegion: Equatable {
+  let messageID: UUID
+  let text: String
+  let frame: CGRect
+}
+
+struct AIChatTranscriptSelectionEndpoint: Equatable {
+  let messageID: UUID
+  let utf16Location: Int
+}
+
+@MainActor
+@Observable
+final class AIChatTranscriptSelectionModel {
+  private(set) var selectedRanges: [UUID: NSRange] = [:]
+  private(set) var regions: [AIChatTranscriptSelectableRegion] = []
+  private var anchor: AIChatTranscriptSelectionEndpoint?
+  private(set) var isSelecting = false
+
+  func updateRegions(_ incomingRegions: [AIChatTranscriptSelectableRegion]) {
+    var latestByMessageID: [UUID: AIChatTranscriptSelectableRegion] = [:]
+    for region in incomingRegions where !region.text.isEmpty && region.frame.width > 0 && region.frame.height > 0 {
+      latestByMessageID[region.messageID] = region
+    }
+    regions = latestByMessageID.values.sorted {
+      if abs($0.frame.minY - $1.frame.minY) > 1 {
+        return $0.frame.minY < $1.frame.minY
+      }
+      return $0.frame.minX < $1.frame.minX
+    }
+    let visibleIDs = Set(regions.map(\.messageID))
+    selectedRanges = selectedRanges.filter { visibleIDs.contains($0.key) }
+  }
+
+  func beginSelection(at point: CGPoint) {
+    guard let endpoint = endpoint(at: point, requiresContainment: true) else {
+      clear()
+      return
+    }
+    anchor = endpoint
+    isSelecting = true
+    applySelection(from: endpoint, to: endpoint)
+  }
+
+  func extendSelection(to point: CGPoint) {
+    guard isSelecting,
+          let anchor,
+          let extent = endpoint(at: point, requiresContainment: false)
+    else { return }
+    applySelection(from: anchor, to: extent)
+  }
+
+  func finishSelection(at point: CGPoint) {
+    extendSelection(to: point)
+    isSelecting = false
+  }
+
+  func applySelection(
+    from anchor: AIChatTranscriptSelectionEndpoint,
+    to extent: AIChatTranscriptSelectionEndpoint
+  ) {
+    guard let anchorIndex = regions.firstIndex(where: { $0.messageID == anchor.messageID }),
+          let extentIndex = regions.firstIndex(where: { $0.messageID == extent.messageID })
+    else {
+      selectedRanges = [:]
+      return
+    }
+
+    let lowerIndex = min(anchorIndex, extentIndex)
+    let upperIndex = max(anchorIndex, extentIndex)
+    var ranges: [UUID: NSRange] = [:]
+    for index in lowerIndex...upperIndex {
+      let region = regions[index]
+      let textLength = (region.text as NSString).length
+      let lowerLocation: Int
+      let upperLocation: Int
+      if anchorIndex == extentIndex {
+        lowerLocation = min(anchor.utf16Location, extent.utf16Location)
+        upperLocation = max(anchor.utf16Location, extent.utf16Location)
+      } else if index == anchorIndex {
+        if anchorIndex < extentIndex {
+          lowerLocation = anchor.utf16Location
+          upperLocation = textLength
+        } else {
+          lowerLocation = 0
+          upperLocation = anchor.utf16Location
+        }
+      } else if index == extentIndex {
+        if extentIndex > anchorIndex {
+          lowerLocation = 0
+          upperLocation = extent.utf16Location
+        } else {
+          lowerLocation = extent.utf16Location
+          upperLocation = textLength
+        }
+      } else {
+        lowerLocation = 0
+        upperLocation = textLength
+      }
+      let clampedLower = min(textLength, max(0, lowerLocation))
+      let clampedUpper = min(textLength, max(clampedLower, upperLocation))
+      ranges[region.messageID] = NSRange(
+        location: clampedLower,
+        length: clampedUpper - clampedLower
+      )
+    }
+    selectedRanges = ranges
+  }
+
+  func selectedRange(for messageID: UUID) -> NSRange? {
+    guard let range = selectedRanges[messageID], range.length > 0 else { return nil }
+    return range
+  }
+
+  var selectedText: String? {
+    let fragments = regions.compactMap { region -> String? in
+      guard let range = selectedRange(for: region.messageID) else { return nil }
+      return (region.text as NSString).substring(with: range)
+    }
+    guard !fragments.isEmpty else { return nil }
+    return fragments.joined(separator: "\n\n")
+  }
+
+  @discardableResult
+  func copySelection(to pasteboard: NSPasteboard = .general) -> Bool {
+    guard let selectedText else { return false }
+    return OpenClawMessageClipboard.write(selectedText, to: pasteboard)
+  }
+
+  func clear() {
+    selectedRanges = [:]
+    anchor = nil
+    isSelecting = false
+  }
+
+  private func endpoint(
+    at point: CGPoint,
+    requiresContainment: Bool
+  ) -> AIChatTranscriptSelectionEndpoint? {
+    let region = requiresContainment
+      ? regions.first(where: { $0.frame.contains(point) })
+      : closestRegion(to: point)
+    guard let region else { return nil }
+    let localPoint = CGPoint(
+      x: point.x - region.frame.minX,
+      y: point.y - region.frame.minY
+    )
+    let location = OrgInlineTextSelectionMapper.characterLocation(
+      in: region.text,
+      font: .body,
+      lineSpacing: 2,
+      bounds: CGRect(origin: .zero, size: region.frame.size),
+      point: localPoint
+    )
+    return AIChatTranscriptSelectionEndpoint(
+      messageID: region.messageID,
+      utf16Location: location
+    )
+  }
+
+  private func closestRegion(to point: CGPoint) -> AIChatTranscriptSelectableRegion? {
+    if let containingRegion = regions.first(where: { $0.frame.contains(point) }) {
+      return containingRegion
+    }
+    return regions.min { lhs, rhs in
+      squaredDistance(from: point, to: lhs.frame) < squaredDistance(from: point, to: rhs.frame)
+    }
+  }
+
+  private func squaredDistance(from point: CGPoint, to frame: CGRect) -> CGFloat {
+    let dx = max(0, max(frame.minX - point.x, point.x - frame.maxX))
+    let dy = max(0, max(frame.minY - point.y, point.y - frame.maxY))
+    return dx * dx + dy * dy
+  }
+}
+
+struct AIChatTranscriptSelectionEventBridge: NSViewRepresentable {
+  let selectionModel: AIChatTranscriptSelectionModel
+
+  func makeNSView(context: Context) -> EventView {
+    EventView(selectionModel: selectionModel)
+  }
+
+  func updateNSView(_ view: EventView, context: Context) {
+    view.selectionModel = selectionModel
+  }
+
+  static func dismantleNSView(_ view: EventView, coordinator: ()) {
+    view.removeEventMonitor()
+  }
+
+  @MainActor
+  final class EventView: NSView, NSUserInterfaceValidations {
+    var selectionModel: AIChatTranscriptSelectionModel
+    private var eventMonitor: Any?
+    private var observedWindow: NSWindow?
+
+    init(selectionModel: AIChatTranscriptSelectionModel) {
+      self.selectionModel = selectionModel
+      super.init(frame: .zero)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+      fatalError("init(coder:) has not been implemented")
+    }
+
+    override var isFlipped: Bool { true }
+    override var acceptsFirstResponder: Bool { true }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+      nil
+    }
+
+    @IBAction
+    func copy(_ sender: Any?) {
+      selectionModel.copySelection()
+    }
+
+    func validateUserInterfaceItem(_ item: any NSValidatedUserInterfaceItem) -> Bool {
+      if item.action == #selector(copy(_:)) {
+        return selectionModel.selectedText != nil
+      }
+      return responds(to: item.action)
+    }
+
+    override func viewDidMoveToWindow() {
+      super.viewDidMoveToWindow()
+      installEventMonitorIfNeeded()
+    }
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+      if newWindow !== window {
+        removeEventMonitor()
+      }
+      super.viewWillMove(toWindow: newWindow)
+    }
+
+    func removeEventMonitor() {
+      if let eventMonitor {
+        NSEvent.removeMonitor(eventMonitor)
+      }
+      eventMonitor = nil
+      observedWindow = nil
+    }
+
+    private func installEventMonitorIfNeeded() {
+      guard let window,
+            eventMonitor == nil || observedWindow !== window
+      else { return }
+      removeEventMonitor()
+      observedWindow = window
+      eventMonitor = NSEvent.addLocalMonitorForEvents(
+        matching: [.leftMouseDown, .leftMouseDragged, .leftMouseUp, .keyDown]
+      ) { [weak self, weak window] event in
+        guard let self,
+              let window,
+              event.window === window
+        else { return event }
+        return self.handle(event)
+      }
+    }
+
+    private func handle(_ event: NSEvent) -> NSEvent? {
+      if event.type == .keyDown,
+         event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+         event.charactersIgnoringModifiers?.lowercased() == "c",
+         selectionModel.copySelection() {
+        return nil
+      }
+
+      let point = convert(event.locationInWindow, from: nil)
+      switch event.type {
+      case .leftMouseDown:
+        selectionModel.beginSelection(at: point)
+      case .leftMouseDragged:
+        guard selectionModel.isSelecting else { break }
+        selectionModel.extendSelection(to: point)
+        window?.makeFirstResponder(self)
+      case .leftMouseUp:
+        guard selectionModel.isSelecting else { break }
+        selectionModel.finishSelection(at: point)
+        window?.makeFirstResponder(self)
+      default:
+        break
+      }
+      return event
+    }
+  }
+}
+
+private struct AIChatTranscriptSelectionModelKey: EnvironmentKey {
+  static let defaultValue: AIChatTranscriptSelectionModel? = nil
+}
+
+extension EnvironmentValues {
+  var aiChatTranscriptSelectionModel: AIChatTranscriptSelectionModel? {
+    get { self[AIChatTranscriptSelectionModelKey.self] }
+    set { self[AIChatTranscriptSelectionModelKey.self] = newValue }
+  }
+}
+
+struct AIChatTranscriptSelectableRegionPreferenceKey: PreferenceKey {
+  static let defaultValue: [AIChatTranscriptSelectableRegion] = []
+
+  static func reduce(
+    value: inout [AIChatTranscriptSelectableRegion],
+    nextValue: () -> [AIChatTranscriptSelectableRegion]
+  ) {
+    value.append(contentsOf: nextValue())
+  }
+}
+
+private struct AIChatTranscriptSelectableTextModifier: ViewModifier {
+  @Environment(\.aiChatTranscriptSelectionModel) private var selectionModel
+  let messageID: UUID
+  let text: String
+
+  func body(content: Content) -> some View {
+    content
+      .background {
+        if let range = selectionModel?.selectedRange(for: messageID) {
+          AIChatTranscriptSelectionHighlight(text: text, range: range)
+            .allowsHitTesting(false)
+        }
+      }
+      .background {
+        if selectionModel != nil {
+          GeometryReader { proxy in
+            Color.clear.preference(
+              key: AIChatTranscriptSelectableRegionPreferenceKey.self,
+              value: [AIChatTranscriptSelectableRegion(
+                messageID: messageID,
+                text: text,
+                frame: proxy.frame(in: .named(AIChatTranscriptSelectionModel.coordinateSpaceName))
+              )]
+            )
+          }
+        }
+      }
+  }
+}
+
+private struct AIChatTranscriptSelectionHighlight: NSViewRepresentable {
+  let text: String
+  let range: NSRange
+
+  func makeNSView(context: Context) -> HighlightView {
+    HighlightView(frame: .zero)
+  }
+
+  func updateNSView(_ view: HighlightView, context: Context) {
+    view.text = text
+    view.range = range
+    view.needsDisplay = true
+  }
+
+  final class HighlightView: NSView {
+    var text = ""
+    var range = NSRange(location: 0, length: 0)
+
+    override var isFlipped: Bool { true }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+      nil
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+      super.draw(dirtyRect)
+      guard range.length > 0, bounds.width > 0 else { return }
+      let paragraphStyle = NSMutableParagraphStyle()
+      paragraphStyle.lineSpacing = 2
+      paragraphStyle.lineBreakMode = .byWordWrapping
+      let storage = NSTextStorage(
+        string: text,
+        attributes: [
+          .font: NSFont.systemFont(ofSize: NSFont.systemFontSize),
+          .paragraphStyle: paragraphStyle,
+        ]
+      )
+      let layoutManager = NSLayoutManager()
+      let container = NSTextContainer(size: NSSize(
+        width: bounds.width,
+        height: CGFloat.greatestFiniteMagnitude
+      ))
+      container.lineFragmentPadding = 0
+      container.lineBreakMode = .byWordWrapping
+      layoutManager.addTextContainer(container)
+      storage.addLayoutManager(layoutManager)
+      layoutManager.ensureLayout(for: container)
+      let characterRange = NSIntersectionRange(
+        range,
+        NSRange(location: 0, length: storage.length)
+      )
+      guard characterRange.length > 0 else { return }
+      let glyphRange = layoutManager.glyphRange(
+        forCharacterRange: characterRange,
+        actualCharacterRange: nil
+      )
+      NSColor.selectedTextBackgroundColor.withAlphaComponent(0.58).setFill()
+      layoutManager.enumerateEnclosingRects(
+        forGlyphRange: glyphRange,
+        withinSelectedGlyphRange: glyphRange,
+        in: container
+      ) { rect, _ in
+        NSBezierPath(roundedRect: rect, xRadius: 2, yRadius: 2).fill()
+      }
+    }
+  }
+}
+
+private extension View {
+  func aiChatTranscriptSelectableText(messageID: UUID, text: String) -> some View {
+    modifier(AIChatTranscriptSelectableTextModifier(messageID: messageID, text: text))
+  }
+}
+
+extension AIChatTranscriptSelectionModel {
+  static let coordinateSpaceName = "openclaw-chat-transcript-selection"
+}
+
 struct ChatBubbleView: View {
-  // Keep selection ownership local to a message. A transcript-wide native
-  // selection overlay becomes expensive for long histories, while the stack
-  // deliberately disables inherited selection to preserve exact layout.
-  static let managesMessageTextSelection = true
+  // One selection owner wraps the bounded visible transcript. Giving each
+  // message or rendered block its own owner prevents a drag from crossing
+  // paragraphs, bullets, and message boundaries.
+  static let managesMessageTextSelection = false
 
   let message: OpenClawChatMessage
   let runtime: AIChatRuntime
@@ -1451,6 +1872,10 @@ struct ChatBubbleView: View {
             containsInlineSyntax: resolvedBody.containsInlineSyntax,
             allowsSynchronousStructuredPresentationFallback: false,
             structuredPageToken: wantsFullBody ? expandedBodyPageIndex + 1 : 0
+          )
+          .aiChatTranscriptSelectableText(
+            messageID: message.id,
+            text: resolvedBody.displayedText
           )
         }
         if cachedPresentation.body.isTruncated {
@@ -4882,7 +5307,7 @@ struct OpenClawTypingIndicatorView: View {
           OpenClawMessageBodyView(
             rawText: body.displayedText,
             compact: compact,
-            managesTextSelection: true,
+            managesTextSelection: false,
             rendersStructuredOrg2: true,
             structuredPresentation: body.org,
             containsInlineSyntax: body.containsInlineSyntax,

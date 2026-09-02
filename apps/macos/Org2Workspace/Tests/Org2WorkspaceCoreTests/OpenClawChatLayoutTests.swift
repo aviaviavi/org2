@@ -1348,19 +1348,49 @@ final class OpenClawChatLayoutTests: XCTestCase {
     XCTAssertGreaterThan(hostingView.fittingSize.height, 118)
   }
 
-  func testChatBubblesOwnSelectableTextWithoutATranscriptWideOverlay() {
-    XCTAssertTrue(ChatBubbleView.managesMessageTextSelection)
+  func testChatBubblesDeferTextSelectionToTheBoundedTranscript() {
+    XCTAssertFalse(ChatBubbleView.managesMessageTextSelection)
   }
 
-  func testLongTranscriptLayoutRemainsResponsiveWithPerMessageSelection() {
+  func testTranscriptSelectionCopiesAcrossFourConsecutiveMessages() throws {
+    let messageIDs = (0..<4).map { _ in UUID() }
+    let texts = [
+      "First message begins here.",
+      "Second message is selected in full.",
+      "Third message is selected in full.",
+      "Fourth message ends here.",
+    ]
+    let model = AIChatTranscriptSelectionModel()
+    model.updateRegions(zip(messageIDs, texts).enumerated().map { index, pair in
+      AIChatTranscriptSelectableRegion(
+        messageID: pair.0,
+        text: pair.1,
+        frame: CGRect(x: 0, y: CGFloat(index * 60), width: 400, height: 44)
+      )
+    })
+
+    model.applySelection(
+      from: AIChatTranscriptSelectionEndpoint(messageID: messageIDs[0], utf16Location: 6),
+      to: AIChatTranscriptSelectionEndpoint(messageID: messageIDs[3], utf16Location: 14)
+    )
+
+    XCTAssertEqual(
+      try XCTUnwrap(model.selectedText),
+      "message begins here.\n\nSecond message is selected in full.\n\nThird message is selected in full.\n\nFourth message"
+    )
+    XCTAssertEqual(model.selectedRanges.count, 4)
+  }
+
+  func testLongTranscriptLayoutRemainsResponsiveWithUnifiedSelection() {
     let messages = (0..<120).map { index in
       OpenClawChatMessage(
         role: index.isMultiple(of: 2) ? .user : .assistant,
         content: "Message \(index) has enough text to wrap across multiple lines in a typical chat pane. It remains copyable through the message affordance."
       )
     }
+    let selectionModel = AIChatTranscriptSelectionModel()
     let view = ScrollView {
-      OpenClawChatTranscriptStack(spacing: 10) {
+      OpenClawChatTranscriptStack(spacing: 10, selectionModel: selectionModel) {
         ForEach(messages) { message in
           ChatBubbleView(message: message)
         }

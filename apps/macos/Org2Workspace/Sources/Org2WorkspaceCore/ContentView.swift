@@ -9871,6 +9871,7 @@ private struct OpenClawChatView: View {
   @State private var threadFindNavigationGeneration = 0
   @State private var transcriptDisplayLimit = OpenClawChatTranscriptWindow.initialLimit
   @State private var transcriptWindowAnchor: OpenClawChatTranscriptAnchor?
+  @State private var transcriptSelection = AIChatTranscriptSelectionModel()
   let presentation: OpenClawChatPresentation
   let surface: WorkspaceSurface?
 
@@ -9916,6 +9917,7 @@ private struct OpenClawChatView: View {
     .onChange(of: store.selectedOpenClawChatThreadID) { _, _ in
       transcriptDisplayLimit = OpenClawChatTranscriptWindow.initialLimit
       transcriptWindowAnchor = nil
+      transcriptSelection.clear()
       guard isShowingThreadFind else { return }
       rebuildThreadFindIndex()
     }
@@ -10114,7 +10116,10 @@ private struct OpenClawChatView: View {
 
     return ScrollViewReader { proxy in
       ScrollView {
-        OpenClawChatTranscriptStack(spacing: presentation.isCompact ? 8 : 10) {
+        OpenClawChatTranscriptStack(
+          spacing: presentation.isCompact ? 8 : 10,
+          selectionModel: transcriptSelection
+        ) {
           if store.openClawMessages.isEmpty {
             EmptyChatView(statusText: store.openClawStatusText)
               .frame(maxWidth: .infinity, minHeight: presentation.isCompact ? 140 : 220)
@@ -10402,10 +10407,16 @@ struct OpenClawChatTranscriptAnchor: Equatable {
 
 struct OpenClawChatTranscriptStack<Content: View>: View {
   let spacing: CGFloat
+  let selectionModel: AIChatTranscriptSelectionModel?
   @ViewBuilder let content: () -> Content
 
-  init(spacing: CGFloat, @ViewBuilder content: @escaping () -> Content) {
+  init(
+    spacing: CGFloat,
+    selectionModel: AIChatTranscriptSelectionModel? = nil,
+    @ViewBuilder content: @escaping () -> Content
+  ) {
     self.spacing = spacing
+    self.selectionModel = selectionModel
     self.content = content
   }
 
@@ -10417,8 +10428,18 @@ struct OpenClawChatTranscriptStack<Content: View>: View {
     VStack(alignment: .leading, spacing: spacing) {
       content()
     }
-    // Keep the transcript itself out of one native selection overlay; each
-    // message owns its smaller selectable-text region instead.
+    .environment(\.aiChatTranscriptSelectionModel, selectionModel)
+    .coordinateSpace(name: AIChatTranscriptSelectionModel.coordinateSpaceName)
+    .onPreferenceChange(AIChatTranscriptSelectableRegionPreferenceKey.self) { regions in
+      selectionModel?.updateRegions(regions)
+    }
+    .background {
+      if let selectionModel {
+        AIChatTranscriptSelectionEventBridge(selectionModel: selectionModel)
+      }
+    }
+    // Native SwiftUI selection creates an independent range for every Text.
+    // The transcript coordinator above owns the cross-view range instead.
     .textSelection(.disabled)
   }
 }

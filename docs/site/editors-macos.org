@@ -98,7 +98,7 @@ In *OpenOrg → Settings… → AI Chat*, you can configure named destinations i
 
 To use Claude Code, install it and sign in with =claude auth login=, then enable *Claude Code* in AI Chat settings. OpenOrg starts the local CLI, streams its replies, and resumes the same Claude Code session on later turns. No Anthropic key is copied into OpenOrg. The Local Agent Permissions setting maps to Claude Code's Plan, Accept Edits, or Bypass Permissions mode.
 
-Add files, headings, selected items, images, PDFs, audio, or other supported attachments as explicit context. Typing =@= finds corpus files and destinations. Chat message text remains selectable without creating one transcript-wide selection overlay for long histories. In a shared room, mention a destination by name or use =@all=; every reply remains attributed to the agent that produced it.
+Add files, headings, selected items, images, PDFs, audio, or other supported attachments as explicit context. Typing =@= finds corpus files and destinations. Chat text has one selection region across the bounded visible transcript, so a drag can copy across paragraphs, bullets, and consecutive messages without mounting an unbounded history. In a shared room, mention a destination by name or use =@all=; every reply remains attributed to the agent that produced it.
 
 *Pass to Agent* menus list active portable agent profiles from the corpus. Choosing one writes its readable name as =ASSIGNEE= and preserves its stable =AGENT_REF= plus primary =GOAL_REF= when available; the configured legacy handoff target remains available as a fallback.
 
