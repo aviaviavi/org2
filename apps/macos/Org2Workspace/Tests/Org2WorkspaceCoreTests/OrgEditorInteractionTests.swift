@@ -1666,10 +1666,13 @@ private struct EditorInteractionHarness {
   }
 
   func saveActiveBlock() async throws {
-    guard let block = store.selectedBlock else {
-      return XCTFail("Expected selected block")
+    let textView = try await focusedEditor()
+    window.makeFirstResponder(textView)
+    let saveEvent = try XCTUnwrap(keyEvent("s", keyCode: 1, modifiers: .command))
+    XCTAssertTrue(textView.performKeyEquivalent(with: saveEvent), "Expected the active editor to handle Command-S")
+    try await waitForCondition {
+      store.editingBlockID == nil
     }
-    await store.saveEditedBlock(block)
     try await pumpRunLoop()
   }
 
