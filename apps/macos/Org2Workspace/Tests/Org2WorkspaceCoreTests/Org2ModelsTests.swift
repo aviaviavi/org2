@@ -11351,7 +11351,7 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(WorkspaceSurface.skills.commandShortcutTitle, "⌘⇧K")
     XCTAssertEqual(
       WorkspaceSurface.sidebarCases,
-      [.home, .agenda, .files, .approvals, .meetings, .sources, .skills, .externalThreads]
+      [.home, .agenda, .approvals, .meetings, .sources, .skills, .externalThreads]
     )
   }
 
