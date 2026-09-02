@@ -4,6 +4,34 @@ All notable changes to the Org2 VS Code extension are documented in this file.
 
 ## Unreleased
 
+## 0.7.1 - 2026-09-02
+
+# OpenOrg 0.7.1
+
+OpenOrg 0.7.1 is a performance and reliability release focused on keeping large workspaces, long AI chats, editing, and background activity responsive.
+
+## Highlights
+
+- Reworked workspace data flow, file cataloging, document mutation, source indexing, and editor buffering to keep navigation and editing responsive as corpora grow.
+- Sharded AI chat transcript storage and added a durable operation journal so long histories and background deliveries no longer require rewriting one large shared record.
+- Reduced chat rendering, selection, layout, attachment-preview, and teardown work across local, Codex, Claude Code, and OpenClaw conversations.
+- Moved expensive Mobile Remote work away from latency-sensitive UI paths and tightened synchronization with the desktop workspace.
+- Added explicit performance budgets, representative large-corpus fixtures, native regression gates, and dedicated macOS performance CI.
+- Made subprocess stdin and output handling resilient around EOF and process teardown.
+- Corrected daily-note placement so invalid or missing configuration falls back to the corpus's `daily/` directory instead of the corpus root.
+
+## Reliability
+
+- Stabilized timing-sensitive macOS tests and performance workflows while preserving deterministic regression coverage.
+- Removed redundant or timing-dependent integration cases that duplicated stronger behavioral checks.
+- Updated the release procedure to preserve successful architecture artifacts, resume checkpoints, and use GitHub Trusted Publishing for npm without requiring a local npm token.
+
+## Distribution
+
+- Apple Silicon and Intel Mac disk images are Developer ID signed, notarized, stapled, and verified with Gatekeeper.
+- npm and the VS Code extension are published from the version tag through GitHub Trusted Publishing and the Marketplace workflow.
+- iOS is intentionally not included in this release.
+
 ## 0.7.0 - 2026-09-01
 
 # OpenOrg 0.7.0
