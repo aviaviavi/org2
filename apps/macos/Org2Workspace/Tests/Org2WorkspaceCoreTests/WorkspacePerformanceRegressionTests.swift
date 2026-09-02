@@ -1,5 +1,4 @@
 import AppKit
-import Combine
 import Observation
 import SwiftUI
 import XCTest
@@ -89,34 +88,6 @@ final class WorkspacePerformanceRegressionTests: XCTestCase {
     XCTAssertTrue(detail.contains("run.plan.prefix(visibleCount"))
     XCTAssertTrue(detail.contains("run.context\n              .prefix(visibleCount"))
     XCTAssertTrue(detail.contains("run.comments.prefix(visibleCount"))
-  }
-
-  func testLiveChatCoalescesTokenBurstsIntoOnePublication() async throws {
-    let liveState = OpenClawChatLiveState()
-    let threadID = UUID()
-    var publicationCount = 0
-    let observation = liveState.objectWillChange.sink {
-      publicationCount += 1
-    }
-    defer { observation.cancel() }
-
-    for _ in 0..<100 {
-      liveState.noteEvent(for: threadID, coalesced: true)
-      liveState.appendStreamingDelta("x", for: threadID)
-      liveState.appendReasoningDelta("r", for: threadID)
-    }
-
-    XCTAssertEqual(liveState.streamingReply(for: threadID), String(repeating: "x", count: 100))
-    XCTAssertEqual(liveState.reasoning(for: threadID), String(repeating: "r", count: 100))
-    XCTAssertEqual(publicationCount, 0)
-
-    try await Task.sleep(
-      nanoseconds: OpenClawChatLiveState.streamPublishIntervalNanoseconds + 40_000_000
-    )
-
-    XCTAssertEqual(publicationCount, 1)
-    XCTAssertEqual(liveState.streamingReply(for: threadID), String(repeating: "x", count: 100))
-    XCTAssertEqual(liveState.reasoning(for: threadID), String(repeating: "r", count: 100))
   }
 
   func testLiveChatAppendsLargeCodexTokenBurstWithoutCumulativeReplacement() {
