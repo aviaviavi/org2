@@ -1354,6 +1354,7 @@ final class OpenClawChatLayoutTests: XCTestCase {
 
   func testTranscriptSelectionCopiesAcrossFourConsecutiveMessages() throws {
     let messageIDs = (0..<4).map { _ in UUID() }
+    let regionIDs = (0..<4).map { _ in UUID() }
     let texts = [
       "First message begins here.",
       "Second message is selected in full.",
@@ -1363,15 +1364,19 @@ final class OpenClawChatLayoutTests: XCTestCase {
     let model = AIChatTranscriptSelectionModel()
     model.updateRegions(zip(messageIDs, texts).enumerated().map { index, pair in
       AIChatTranscriptSelectableRegion(
+        id: regionIDs[index],
         messageID: pair.0,
-        text: pair.1,
+        layout: AIChatTranscriptTextLayout(
+          attributedText: NSAttributedString(string: pair.1),
+          lineSpacing: 2
+        ),
         frame: CGRect(x: 0, y: CGFloat(index * 60), width: 400, height: 44)
       )
     })
 
     model.applySelection(
-      from: AIChatTranscriptSelectionEndpoint(messageID: messageIDs[0], utf16Location: 6),
-      to: AIChatTranscriptSelectionEndpoint(messageID: messageIDs[3], utf16Location: 14)
+      from: AIChatTranscriptSelectionEndpoint(regionID: regionIDs[0], utf16Location: 6),
+      to: AIChatTranscriptSelectionEndpoint(regionID: regionIDs[3], utf16Location: 14)
     )
 
     XCTAssertEqual(
@@ -1379,6 +1384,34 @@ final class OpenClawChatLayoutTests: XCTestCase {
       "message begins here.\n\nSecond message is selected in full.\n\nThird message is selected in full.\n\nFourth message"
     )
     XCTAssertEqual(model.selectedRanges.count, 4)
+  }
+
+  func testTranscriptSelectionJoinsRenderedFragmentsWithinOneMessage() throws {
+    let messageID = UUID()
+    let regionIDs = (0..<3).map { _ in UUID() }
+    let texts = ["First bullet", "Second bullet wraps", "Third bullet"]
+    let model = AIChatTranscriptSelectionModel()
+    model.updateRegions(texts.enumerated().map { index, text in
+      AIChatTranscriptSelectableRegion(
+        id: regionIDs[index],
+        messageID: messageID,
+        layout: AIChatTranscriptTextLayout(
+          attributedText: NSAttributedString(string: text),
+          lineSpacing: 2
+        ),
+        frame: CGRect(x: 40, y: CGFloat(index * 50), width: 300, height: 40)
+      )
+    })
+
+    model.applySelection(
+      from: AIChatTranscriptSelectionEndpoint(regionID: regionIDs[0], utf16Location: 0),
+      to: AIChatTranscriptSelectionEndpoint(regionID: regionIDs[2], utf16Location: 12)
+    )
+
+    XCTAssertEqual(
+      try XCTUnwrap(model.selectedText),
+      "First bullet\nSecond bullet wraps\nThird bullet"
+    )
   }
 
   func testLongTranscriptLayoutRemainsResponsiveWithUnifiedSelection() {

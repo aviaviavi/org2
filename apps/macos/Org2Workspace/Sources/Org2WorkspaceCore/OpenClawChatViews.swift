@@ -1147,9 +1147,10 @@ struct OpenClawMessageBodyView: View {
           alignment: .leading
         )
       } else if containsInlineSyntax == false {
-        Text(presentation?.normalizedText ?? rawText)
-          .font(.body)
-          .lineSpacing(2)
+        OrgInlineText(
+          presentation?.normalizedText ?? rawText,
+          managesTextSelection: managesTextSelection
+        )
           .frame(maxWidth: compact ? 360 : 640, alignment: .leading)
       } else {
         OrgInlineText(
@@ -1307,14 +1308,122 @@ private extension OrgEditableBlock {
   }
 }
 
+struct AIChatTranscriptTextLayout: Equatable {
+  let attributedText: NSAttributedString
+  let lineSpacing: CGFloat
+
+  var text: String { attributedText.string }
+
+  static func == (lhs: Self, rhs: Self) -> Bool {
+    lhs.lineSpacing == rhs.lineSpacing
+      && lhs.attributedText.isEqual(to: rhs.attributedText)
+  }
+
+  func characterLocation(in bounds: CGRect, at point: CGPoint) -> Int {
+    let textKit = makeTextKitLayout(width: bounds.width)
+    let localPoint = CGPoint(
+      x: point.x,
+      y: point.y - verticalOffset(containerHeight: bounds.height, usedHeight: textKit.usedRect.height)
+    )
+    let utf16Length = attributedText.length
+    guard utf16Length > 0, textKit.glyphRange.length > 0 else { return 0 }
+    if localPoint.y > textKit.usedRect.maxY { return utf16Length }
+    var fraction: CGFloat = 0
+    let glyphIndex = textKit.layoutManager.glyphIndex(
+      for: CGPoint(
+        x: min(max(0, localPoint.x), max(0, bounds.width)),
+        y: max(0, localPoint.y)
+      ),
+      in: textKit.container,
+      fractionOfDistanceThroughGlyph: &fraction
+    )
+    return min(utf16Length, max(0, textKit.layoutManager.characterIndexForGlyph(at: glyphIndex)))
+  }
+
+  func selectionRects(for range: NSRange, in bounds: CGRect) -> [CGRect] {
+    let textKit = makeTextKitLayout(width: bounds.width)
+    let characterRange = NSIntersectionRange(
+      range,
+      NSRange(location: 0, length: attributedText.length)
+    )
+    guard characterRange.length > 0 else { return [] }
+    let glyphRange = textKit.layoutManager.glyphRange(
+      forCharacterRange: characterRange,
+      actualCharacterRange: nil
+    )
+    let yOffset = verticalOffset(
+      containerHeight: bounds.height,
+      usedHeight: textKit.usedRect.height
+    )
+    var rects: [CGRect] = []
+    textKit.layoutManager.enumerateEnclosingRects(
+      forGlyphRange: glyphRange,
+      withinSelectedGlyphRange: glyphRange,
+      in: textKit.container
+    ) { rect, _ in
+      rects.append(rect.offsetBy(dx: 0, dy: yOffset))
+    }
+    return rects
+  }
+
+  private func makeTextKitLayout(width: CGFloat) -> (
+    storage: NSTextStorage,
+    layoutManager: NSLayoutManager,
+    container: NSTextContainer,
+    usedRect: CGRect,
+    glyphRange: NSRange
+  ) {
+    let storage = NSTextStorage(attributedString: attributedText)
+    let fullRange = NSRange(location: 0, length: storage.length)
+    if storage.length > 0 {
+      let paragraphStyle = NSMutableParagraphStyle()
+      paragraphStyle.lineSpacing = lineSpacing
+      paragraphStyle.lineBreakMode = .byWordWrapping
+      storage.addAttribute(.paragraphStyle, value: paragraphStyle, range: fullRange)
+      if storage.attribute(.font, at: 0, effectiveRange: nil) == nil {
+        storage.addAttribute(
+          .font,
+          value: NSFont.systemFont(ofSize: NSFont.systemFontSize),
+          range: fullRange
+        )
+      }
+    }
+    let layoutManager = NSLayoutManager()
+    let container = NSTextContainer(size: NSSize(
+      width: max(1, width),
+      height: CGFloat.greatestFiniteMagnitude
+    ))
+    container.lineFragmentPadding = 0
+    container.lineBreakMode = .byWordWrapping
+    container.maximumNumberOfLines = 0
+    layoutManager.addTextContainer(container)
+    storage.addLayoutManager(layoutManager)
+    layoutManager.ensureLayout(for: container)
+    return (
+      storage,
+      layoutManager,
+      container,
+      layoutManager.usedRect(for: container),
+      layoutManager.glyphRange(for: container)
+    )
+  }
+
+  private func verticalOffset(containerHeight: CGFloat, usedHeight: CGFloat) -> CGFloat {
+    max(0, (containerHeight - usedHeight) / 2)
+  }
+}
+
 struct AIChatTranscriptSelectableRegion: Equatable {
+  let id: UUID
   let messageID: UUID
-  let text: String
+  let layout: AIChatTranscriptTextLayout
   let frame: CGRect
+
+  var text: String { layout.text }
 }
 
 struct AIChatTranscriptSelectionEndpoint: Equatable {
-  let messageID: UUID
+  let regionID: UUID
   let utf16Location: Int
 }
 
@@ -1327,17 +1436,17 @@ final class AIChatTranscriptSelectionModel {
   private(set) var isSelecting = false
 
   func updateRegions(_ incomingRegions: [AIChatTranscriptSelectableRegion]) {
-    var latestByMessageID: [UUID: AIChatTranscriptSelectableRegion] = [:]
+    var latestByID: [UUID: AIChatTranscriptSelectableRegion] = [:]
     for region in incomingRegions where !region.text.isEmpty && region.frame.width > 0 && region.frame.height > 0 {
-      latestByMessageID[region.messageID] = region
+      latestByID[region.id] = region
     }
-    regions = latestByMessageID.values.sorted {
+    regions = latestByID.values.sorted {
       if abs($0.frame.minY - $1.frame.minY) > 1 {
         return $0.frame.minY < $1.frame.minY
       }
       return $0.frame.minX < $1.frame.minX
     }
-    let visibleIDs = Set(regions.map(\.messageID))
+    let visibleIDs = Set(regions.map(\.id))
     selectedRanges = selectedRanges.filter { visibleIDs.contains($0.key) }
   }
 
@@ -1368,8 +1477,8 @@ final class AIChatTranscriptSelectionModel {
     from anchor: AIChatTranscriptSelectionEndpoint,
     to extent: AIChatTranscriptSelectionEndpoint
   ) {
-    guard let anchorIndex = regions.firstIndex(where: { $0.messageID == anchor.messageID }),
-          let extentIndex = regions.firstIndex(where: { $0.messageID == extent.messageID })
+    guard let anchorIndex = regions.firstIndex(where: { $0.id == anchor.regionID }),
+          let extentIndex = regions.firstIndex(where: { $0.id == extent.regionID })
     else {
       selectedRanges = [:]
       return
@@ -1408,7 +1517,7 @@ final class AIChatTranscriptSelectionModel {
       }
       let clampedLower = min(textLength, max(0, lowerLocation))
       let clampedUpper = min(textLength, max(clampedLower, upperLocation))
-      ranges[region.messageID] = NSRange(
+      ranges[region.id] = NSRange(
         location: clampedLower,
         length: clampedUpper - clampedLower
       )
@@ -1416,18 +1525,31 @@ final class AIChatTranscriptSelectionModel {
     selectedRanges = ranges
   }
 
-  func selectedRange(for messageID: UUID) -> NSRange? {
-    guard let range = selectedRanges[messageID], range.length > 0 else { return nil }
+  func selectedRange(for regionID: UUID) -> NSRange? {
+    guard let range = selectedRanges[regionID], range.length > 0 else { return nil }
     return range
   }
 
   var selectedText: String? {
-    let fragments = regions.compactMap { region -> String? in
-      guard let range = selectedRange(for: region.messageID) else { return nil }
-      return (region.text as NSString).substring(with: range)
+    var fragments: [(messageID: UUID, text: String)] = []
+    for region in regions {
+      guard let range = selectedRange(for: region.id) else { continue }
+      fragments.append((
+        messageID: region.messageID,
+        text: (region.text as NSString).substring(with: range)
+      ))
     }
     guard !fragments.isEmpty else { return nil }
-    return fragments.joined(separator: "\n\n")
+    var output = ""
+    var previousMessageID: UUID?
+    for fragment in fragments {
+      if !output.isEmpty {
+        output += fragment.messageID == previousMessageID ? "\n" : "\n\n"
+      }
+      output += fragment.text
+      previousMessageID = fragment.messageID
+    }
+    return output
   }
 
   @discardableResult
@@ -1454,15 +1576,12 @@ final class AIChatTranscriptSelectionModel {
       x: point.x - region.frame.minX,
       y: point.y - region.frame.minY
     )
-    let location = OrgInlineTextSelectionMapper.characterLocation(
-      in: region.text,
-      font: .body,
-      lineSpacing: 2,
-      bounds: CGRect(origin: .zero, size: region.frame.size),
-      point: localPoint
+    let location = region.layout.characterLocation(
+      in: CGRect(origin: .zero, size: region.frame.size),
+      at: localPoint
     )
     return AIChatTranscriptSelectionEndpoint(
-      messageID: region.messageID,
+      regionID: region.id,
       utf16Location: location
     )
   }
@@ -1602,15 +1721,24 @@ private struct AIChatTranscriptSelectionModelKey: EnvironmentKey {
   static let defaultValue: AIChatTranscriptSelectionModel? = nil
 }
 
+private struct AIChatTranscriptSelectionMessageIDKey: EnvironmentKey {
+  static let defaultValue: UUID? = nil
+}
+
 extension EnvironmentValues {
   var aiChatTranscriptSelectionModel: AIChatTranscriptSelectionModel? {
     get { self[AIChatTranscriptSelectionModelKey.self] }
     set { self[AIChatTranscriptSelectionModelKey.self] = newValue }
   }
+
+  var aiChatTranscriptSelectionMessageID: UUID? {
+    get { self[AIChatTranscriptSelectionMessageIDKey.self] }
+    set { self[AIChatTranscriptSelectionMessageIDKey.self] = newValue }
+  }
 }
 
 struct AIChatTranscriptSelectableRegionPreferenceKey: PreferenceKey {
-  static let defaultValue: [AIChatTranscriptSelectableRegion] = []
+  nonisolated(unsafe) static let defaultValue: [AIChatTranscriptSelectableRegion] = []
 
   static func reduce(
     value: inout [AIChatTranscriptSelectableRegion],
@@ -1620,38 +1748,78 @@ struct AIChatTranscriptSelectableRegionPreferenceKey: PreferenceKey {
   }
 }
 
-private struct AIChatTranscriptSelectableTextModifier: ViewModifier {
+struct AIChatTranscriptSelectableTextModifier: ViewModifier {
   @Environment(\.aiChatTranscriptSelectionModel) private var selectionModel
-  let messageID: UUID
-  let text: String
+  @Environment(\.aiChatTranscriptSelectionMessageID) private var messageID
+  @State private var regionID = UUID()
+  let rawText: String
+  let font: Font
+  let lineSpacing: CGFloat
+  let linkResolver: OrgRoamLinkResolver
+  let searchHighlightQuery: String?
 
+  @ViewBuilder
   func body(content: Content) -> some View {
-    content
-      .background {
-        if let range = selectionModel?.selectedRange(for: messageID) {
-          AIChatTranscriptSelectionHighlight(text: text, range: range)
-            .allowsHitTesting(false)
+    if let selectionModel, let messageID {
+      let layout = selectionLayout
+      content
+        .background {
+          if let range = selectionModel.selectedRange(for: regionID) {
+            AIChatTranscriptSelectionHighlight(layout: layout, range: range)
+              .allowsHitTesting(false)
+          }
         }
-      }
-      .background {
-        if selectionModel != nil {
+        .background {
           GeometryReader { proxy in
             Color.clear.preference(
               key: AIChatTranscriptSelectableRegionPreferenceKey.self,
               value: [AIChatTranscriptSelectableRegion(
+                id: regionID,
                 messageID: messageID,
-                text: text,
+                layout: layout,
                 frame: proxy.frame(in: .named(AIChatTranscriptSelectionModel.coordinateSpaceName))
               )]
             )
           }
         }
-      }
+    } else {
+      content
+    }
+  }
+
+  private var selectionLayout: AIChatTranscriptTextLayout {
+    let attributed: AttributedString
+    if let searchHighlightQuery,
+       !searchHighlightQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      let base = OrgInlineText.usesAttributedRendering(rawText)
+        ? OrgInlineAttributedString.cached(
+            raw: rawText,
+            baseFont: font,
+            linkResolver: linkResolver
+          )
+        : OrgInlineAttributedString.plain(rawText, baseFont: font)
+      attributed = OrgInlineAttributedString.highlightingSearchMatches(
+        in: base,
+        query: searchHighlightQuery
+      )
+    } else if OrgInlineText.usesAttributedRendering(rawText) {
+      attributed = OrgInlineAttributedString.cached(
+        raw: rawText,
+        baseFont: font,
+        linkResolver: linkResolver
+      )
+    } else {
+      attributed = OrgInlineAttributedString.plain(rawText, baseFont: font)
+    }
+    return AIChatTranscriptTextLayout(
+      attributedText: NSAttributedString(attributed),
+      lineSpacing: lineSpacing
+    )
   }
 }
 
 private struct AIChatTranscriptSelectionHighlight: NSViewRepresentable {
-  let text: String
+  let layout: AIChatTranscriptTextLayout
   let range: NSRange
 
   func makeNSView(context: Context) -> HighlightView {
@@ -1659,13 +1827,13 @@ private struct AIChatTranscriptSelectionHighlight: NSViewRepresentable {
   }
 
   func updateNSView(_ view: HighlightView, context: Context) {
-    view.text = text
+    view.layout = layout
     view.range = range
     view.needsDisplay = true
   }
 
   final class HighlightView: NSView {
-    var text = ""
+    var layout: AIChatTranscriptTextLayout?
     var range = NSRange(location: 0, length: 0)
 
     override var isFlipped: Bool { true }
@@ -1676,51 +1844,30 @@ private struct AIChatTranscriptSelectionHighlight: NSViewRepresentable {
 
     override func draw(_ dirtyRect: NSRect) {
       super.draw(dirtyRect)
-      guard range.length > 0, bounds.width > 0 else { return }
-      let paragraphStyle = NSMutableParagraphStyle()
-      paragraphStyle.lineSpacing = 2
-      paragraphStyle.lineBreakMode = .byWordWrapping
-      let storage = NSTextStorage(
-        string: text,
-        attributes: [
-          .font: NSFont.systemFont(ofSize: NSFont.systemFontSize),
-          .paragraphStyle: paragraphStyle,
-        ]
-      )
-      let layoutManager = NSLayoutManager()
-      let container = NSTextContainer(size: NSSize(
-        width: bounds.width,
-        height: CGFloat.greatestFiniteMagnitude
-      ))
-      container.lineFragmentPadding = 0
-      container.lineBreakMode = .byWordWrapping
-      layoutManager.addTextContainer(container)
-      storage.addLayoutManager(layoutManager)
-      layoutManager.ensureLayout(for: container)
-      let characterRange = NSIntersectionRange(
-        range,
-        NSRange(location: 0, length: storage.length)
-      )
-      guard characterRange.length > 0 else { return }
-      let glyphRange = layoutManager.glyphRange(
-        forCharacterRange: characterRange,
-        actualCharacterRange: nil
-      )
+      guard let layout, range.length > 0, bounds.width > 0 else { return }
       NSColor.selectedTextBackgroundColor.withAlphaComponent(0.58).setFill()
-      layoutManager.enumerateEnclosingRects(
-        forGlyphRange: glyphRange,
-        withinSelectedGlyphRange: glyphRange,
-        in: container
-      ) { rect, _ in
+      for rect in layout.selectionRects(for: range, in: bounds) {
         NSBezierPath(roundedRect: rect, xRadius: 2, yRadius: 2).fill()
       }
     }
   }
 }
 
-private extension View {
-  func aiChatTranscriptSelectableText(messageID: UUID, text: String) -> some View {
-    modifier(AIChatTranscriptSelectableTextModifier(messageID: messageID, text: text))
+extension View {
+  func aiChatTranscriptSelectableText(
+    rawText: String,
+    font: Font,
+    lineSpacing: CGFloat,
+    linkResolver: OrgRoamLinkResolver,
+    searchHighlightQuery: String?
+  ) -> some View {
+    modifier(AIChatTranscriptSelectableTextModifier(
+      rawText: rawText,
+      font: font,
+      lineSpacing: lineSpacing,
+      linkResolver: linkResolver,
+      searchHighlightQuery: searchHighlightQuery
+    ))
   }
 }
 
@@ -1873,10 +2020,7 @@ struct ChatBubbleView: View {
             allowsSynchronousStructuredPresentationFallback: false,
             structuredPageToken: wantsFullBody ? expandedBodyPageIndex + 1 : 0
           )
-          .aiChatTranscriptSelectableText(
-            messageID: message.id,
-            text: resolvedBody.displayedText
-          )
+          .environment(\.aiChatTranscriptSelectionMessageID, message.id)
         }
         if cachedPresentation.body.isTruncated {
           largeMessageExpansionControl(

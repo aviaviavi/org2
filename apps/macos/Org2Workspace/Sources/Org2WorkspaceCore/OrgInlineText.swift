@@ -101,6 +101,18 @@ struct OrgInlineText: View {
 
   @ViewBuilder
   var body: some View {
+    selectableBody
+      .aiChatTranscriptSelectableText(
+        rawText: raw,
+        font: font,
+        lineSpacing: lineSpacing,
+        linkResolver: orgRoamLinkResolver,
+        searchHighlightQuery: searchHighlightQuery
+      )
+  }
+
+  @ViewBuilder
+  private var selectableBody: some View {
     if textSelectionEnabled {
       if managesTextSelection, textSelectionOwnerEnabled {
         baseText
