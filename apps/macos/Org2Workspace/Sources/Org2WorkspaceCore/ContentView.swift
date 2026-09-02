@@ -3510,6 +3510,7 @@ private struct FilesView: View {
                 .frame(height: 52)
               }
             }
+          }
           .padding(.horizontal, 8)
           .padding(.vertical, 6)
         }

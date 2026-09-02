@@ -285,11 +285,15 @@ final class WorkspaceDocumentMutationLaneTests: XCTestCase {
       "data.write(to: url, options: [.atomic])",
       // Ephemeral plugin script in a unique temporary directory.
       "source.body.write(to: scriptURL",
+      // Workspace-authored agent skill source. This is non-Org Markdown,
+      // restricted to a validated .agents/skills descendant, and refuses to
+      // replace an existing file.
+      "Data(source.utf8).write(to: destination, options: .withoutOverwriting)",
       // The sole ordinary-document writer and its recovery backup sink.
       "text.write(to: url, atomically: true, encoding: .utf8)",
       "previousText.write(to: backupURL",
     ]
-    XCTAssertEqual(directWriteLines.count, 12, "Classify every new direct filesystem write")
+    XCTAssertEqual(directWriteLines.count, 13, "Classify every new direct filesystem write")
     for line in directWriteLines {
       XCTAssertTrue(
         classifiedDirectWriteMarkers.contains(where: line.contains),
