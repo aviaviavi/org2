@@ -21,7 +21,11 @@ The iOS client is distributed separately through TestFlight. Its marketing versi
 - External group: `OpenOrg Alpha` (`566e8d38-3c80-442c-8b9a-4f7916181149`)
 - Public beta link: `https://testflight.apple.com/join/Yp3hfBng`
 
-`tools/release-openorg.mjs` archives and uploads the iOS client, waits for App Store Connect processing, updates the English `What to Test` text, adds the build to both groups, and submits it for external beta review. Configure these non-committed environment variables once:
+Run `tools/release-openorg.mjs` with `--skip-testflight-groups` for a normal iOS release. The orchestrator archives and uploads the client while Mac publication proceeds. Finish distribution in an existing signed-in App Store Connect browser session: wait for the exact version/build to process, set the English `What to Test` text, attach `Org2 Internal` and `OpenOrg Alpha`, and submit external beta review. Confirm at action time before the final browser submission because it grants tester access, submits to Apple, and may notify testers.
+
+Do not use API automation for TestFlight review details, external-group assignment, or beta-review submission. App Store Connect API roles can permit binary upload, build reads, localization updates, and internal assignment while returning security-forbidden errors for external distribution. The browser flow is the release contract, not an exceptional fallback.
+
+The legacy API-assisted path uses these non-committed environment variables, but it is not the normal release procedure:
 
 - `OPENORG_ASC_ISSUER_ID`
 - `OPENORG_ASC_KEY_ID`
@@ -62,7 +66,12 @@ Environment variable names and non-secret paths may be recorded in local operato
 - Historical Org2 Workspace DMGs remain developer-signed but not notarized; say so plainly on their download page.
 - Never build into, replace, or relaunch the daily app at `~/Applications/OpenOrg.app` or its historical `~/Applications/Org2Workspace.app` path as part of release packaging.
 - Build each macOS architecture with a distinct `ORG2_WORKSPACE_SWIFT_SCRATCH_PATH`; parallel release builds must never share SwiftPM's mutable build directory.
+- Preserve `/usr/bin`, `/bin`, `/usr/sbin`, and `/sbin` when customizing `PATH`; Gatekeeper verification requires `/usr/sbin/spctl`. A missing executable is an environment failure, not evidence that notarization failed.
 - Attach all distributable files to the matching GitHub Release before synchronizing downloads.
+
+## Publication recovery
+
+The tag workflow treats VS Code Marketplace publication as non-blocking so npm or Marketplace outages cannot prevent GitHub Release asset attachment. If the Marketplace submission itself fails and the version is still absent, dispatch `.github/workflows/release-packages.yml` with `dry_run=false`, the existing `release_version`, and `publish_only=true`. This repair checks out the version tag and skips both the full test gate and npm publication. Do not use it to rebuild a changed candidate or to republish an existing registry version.
 
 ## Download synchronization
 

@@ -71,6 +71,8 @@ assert.ok(
 );
 assert.match(releaseSource, /appcast-arm64\.xml/);
 assert.match(releaseSource, /appcast-intel\.xml/);
+assert.match(releaseSource, /VS Code Marketplace has not exposed.*catalog propagation is a non-blocking follow-up/);
+assert.doesNotMatch(releaseSource, /pollUntil\("VS Code Marketplace public version"/);
 assert.match(releaseSource, /--require-google-oauth-client/);
 assert.match(releaseSource, /docs:check:built/);
 assert.match(releaseSource, /test:built/);
@@ -108,9 +110,14 @@ assert.match(rootPackage.scripts["test:built"], /test:prerequisites:built/);
 assert.doesNotMatch(rootPackage.scripts["docs:check:built"], /npm run build/);
 
 const releaseWorkflow = readFileSync(join(repoRoot, ".github", "workflows", "release-packages.yml"), "utf8");
-assert.match(releaseWorkflow, /name: Build \+ test once\s+run: npm test/);
+assert.match(releaseWorkflow, /name: Build \+ test once[\s\S]{0,200}run: npm test/);
 assert.doesNotMatch(releaseWorkflow, /npm run build\s+\n\s*npm test/);
 assert.match(releaseWorkflow, /npm publish \.\/\*\.tgz[^\n]+--ignore-scripts/);
+assert.match(releaseWorkflow, /publish_only:/);
+assert.match(releaseWorkflow, /Publish VS Code Marketplace extension[\s\S]{0,200}continue-on-error: true/);
+
+const macPackageSource = readFileSync(join(repoRoot, "tools", "package-openorg-macos.mjs"), "utf8");
+assert.match(macPackageSource, /run\("\/usr\/sbin\/spctl"/);
 
 const planResult = spawnSync(process.execPath, [
   join(repoRoot, "tools", "release-openorg.mjs"),

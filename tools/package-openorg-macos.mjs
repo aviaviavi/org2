@@ -289,7 +289,7 @@ function main() {
       ]);
       run("xcrun", ["stapler", "staple", unsignedDMG]);
       run("xcrun", ["stapler", "validate", unsignedDMG]);
-      run("spctl", [
+      run("/usr/sbin/spctl", [
         "--assess", "--type", "open",
         "--context", "context:primary-signature",
         "--verbose=2", unsignedDMG,

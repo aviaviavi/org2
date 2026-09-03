@@ -1,11 +1,11 @@
 ---
 name: org2-release
-description: Publish, repair, or verify coordinated Org2 releases across npm, the VS Code Marketplace, GitHub Releases, the macOS DMG, the Scarf-tracked downloads page, and GitHub release notes. Use when cutting an Org2 version, republishing a missing channel, attaching release artifacts, updating release download links, or auditing whether an Org2 release is complete.
+description: Publish, repair, or verify coordinated Org2 releases across npm, the VS Code Marketplace, GitHub Releases, notarized macOS DMGs, TestFlight, Scarf-tracked downloads, and release notes. Use when cutting an Org2 version, repairing a missing channel, attaching release artifacts, updating release links, or auditing release completeness.
 ---
 
 # Org2 Release
 
-Ship one coordinated Org2 version without touching the user's daily app. Keep GitHub Releases as the artifact host and route public direct downloads through the permanent Scarf Gateway template.
+Ship one coordinated Org2 version without touching the user's daily app. Treat the notarized Mac artifacts and GitHub Release as the primary release path: TestFlight distribution and Marketplace visibility must not delay or roll back them. Keep GitHub Releases as the artifact host and route public direct downloads through the permanent Scarf Gateway template.
 
 Read [references/release-contract.md](references/release-contract.md) before mutating a registry, tag, GitHub Release, Scarf configuration, or download surface.
 
@@ -18,7 +18,8 @@ Prepare reviewer-facing Markdown notes, then inspect the read-only plan:
 ```sh
 npm run release:openorg -- patch \
   --ios-build NEXT_BUILD \
-  --notes /absolute/path/to/release-notes.md
+  --notes /absolute/path/to/release-notes.md \
+  --skip-testflight-groups
 ```
 
 The command is preview-only unless `--execute` is present. When the plan is correct:
@@ -28,6 +29,7 @@ npm run release:openorg -- patch \
   --ios-build NEXT_BUILD \
   --notes /absolute/path/to/release-notes.md \
   --what-to-test /absolute/path/to/what-to-test.md \
+  --skip-testflight-groups \
   --execute
 ```
 
@@ -37,19 +39,21 @@ The orchestrator:
 - checkpoints every phase and each input-fingerprinted validation job under `/tmp/openorg-release-VERSION/state.json`;
 - builds the shared runtime once, runs docs, Node, and VS Code validation concurrently, then runs Swift serially in an isolated scratch directory;
 - builds the isolated arm64 DMG, isolated Intel DMG, and iOS archive concurrently;
-- overlaps the GitHub tag workflow/DMG publication with TestFlight upload and processing;
-- assigns the TestFlight build to both required groups and requests external beta review through App Store Connect;
+- overlaps the GitHub tag workflow/DMG publication with the TestFlight binary upload;
+- leaves TestFlight metadata, group assignment, and external beta review for the signed-in App Store Connect browser flow described below;
 - synchronizes GitHub, Scarf-backed downloads, and the generated site before parallel public verification;
 - writes each long-running job to a separate log beside the checkpoint.
 
-Use `--through PHASE` for an intentional checkpoint, `--restart` to discard phase and job state, `--skip-ios` for a tooling-only release, and `--skip-testflight-groups` only when explicitly accepting a manual App Store Connect handoff. Validation retries reuse successful jobs only while the tracked and untracked release inputs retain the same fingerprint. Never use the latter as the normal path.
+Use `--through PHASE` for an intentional checkpoint, `--restart` to discard phase and job state, and `--skip-ios` for a tooling-only release. For an iOS release, `--skip-testflight-groups` is the normal browser-first path: it skips only API-driven distribution, not the required browser completion below. Validation retries reuse successful jobs only while the tracked and untracked release inputs retain the same fingerprint. Never use `--restart` merely to retry one failed lane.
 
 ## Resume and repair without duplicate work
 
 1. Resume the existing versioned checkpoint before considering `--restart`. Inspect its completed phases, validation fingerprint, and per-job logs. Restart only when the recorded inputs are stale or the candidate itself changed.
-2. A failed parallel packaging phase may still leave one fully valid Mac artifact. Preserve any artifact whose sidecar has the exact version and architecture, whose SHA-256 matches, and whose signing, notarization, stapling, and Gatekeeper checks passed. Repair only the failed architecture with `tools/package-openorg-macos.mjs`.
-3. npm optional native dependencies follow the architecture of the Node process that installs them. For a single-architecture repair, run the locked install under the target-architecture Node binary and launch the package command with that same binary. Before returning to a host-architecture documentation or sync step, restore the lockfile install under the orchestrator's host Node. Do not rerun validation merely because dependencies were reinstalled from an unchanged lockfile.
-4. Manually mark a failed fan-out phase complete only as a narrow recovery after every required output independently satisfies that phase's contract. Never advance a checkpoint to conceal a missing, unnotarized, mismatched, or unverified artifact.
+2. Do not repeat the complete Swift suite solely to chase a timing-only failure. If the full run has no functional failure, rerun each failed timing test once in isolation. Accept the full run plus focused passing retry as the release evidence; repeat the full suite only when a functional test failed or an isolated timing retry still fails.
+3. A failed parallel packaging phase may still leave one fully valid Mac artifact. Preserve any artifact whose sidecar has the exact version and architecture, whose SHA-256 matches, and whose signing, notarization, stapling, and Gatekeeper checks passed. Repair only the failed architecture with `tools/package-openorg-macos.mjs`.
+4. npm optional native dependencies follow the architecture of the Node process that installs them. Before a single-architecture repair, run the locked install under the target-architecture Node binary and launch the package command with that same binary. Preserve the system command directories in `PATH`—at minimum `/usr/bin:/bin:/usr/sbin:/sbin`—so notarization verification can invoke `/usr/sbin/spctl`. Before returning to a host-architecture documentation or sync step, restore the lockfile install under the orchestrator's host Node. Dependency restoration from an unchanged lockfile does not invalidate validation.
+5. If the tag workflow times out only while publishing VS Code, do not rerun the release or republish npm. Confirm the version is absent from the Marketplace, then use the workflow's `publish_only=true` dispatch for the same version. It checks out the version tag, skips the full test and npm publication gates, retries Marketplace submission, and reattaches the small release assets. The tag workflow is intentionally allowed to continue to GitHub asset publication when Marketplace submission fails.
+6. Manually mark a failed fan-out phase complete only as a narrow recovery after every required output independently satisfies that phase's contract. Never advance a checkpoint to conceal a missing, unnotarized, mismatched, or unverified artifact.
 
 ## 1. Establish scope
 
@@ -76,10 +80,29 @@ Use `--through PHASE` for an intentional checkpoint, `--restart` to discard phas
 ## 4. Publish
 
 1. Commit release metadata, push `main`, create an annotated version tag, and push the tag.
-2. Watch `.github/workflows/release-packages.yml` to completion. It publishes npm through Trusted Publishing, publishes the VS Code extension, creates the GitHub Release, and attaches the npm and VSIX artifacts.
-3. If the workflow fails, inspect its logs before using a local fallback. Never republish a version already visible in a registry.
+2. Watch `.github/workflows/release-packages.yml` through npm publication and GitHub asset attachment. It attempts the VS Code extension too, but that optional channel cannot block creation of the GitHub Release.
+3. If a publication lane fails, inspect its logs before using a fallback. Never republish a version already visible in a registry. For a Marketplace-only retry, dispatch:
+
+   ```sh
+   gh workflow run release-packages.yml --ref main \
+     -f dry_run=false \
+     -f release_version=VERSION \
+     -f publish_only=true
+   ```
+
 4. Upload the verified OpenOrg DMGs with their canonical architecture names and replace generated notes with reviewer-facing highlights, installation requirements, notarization status, checksums, and the full changelog.
-5. Unless iOS was explicitly skipped, upload the stamped archive to TestFlight, wait for processing, update `What to Test`, assign both the internal and external groups, and submit external beta review. The orchestrator performs these actions concurrently with GitHub publication.
+5. Unless iOS was explicitly skipped, let the orchestrator upload the stamped archive concurrently with GitHub publication. Complete TestFlight distribution through the browser after the binary reaches a valid processed state.
+
+## TestFlight browser completion
+
+Use an existing signed-in App Store Connect browser session for every release. Do not use the App Store Connect API to update review details, attach the external group, or submit beta review; API-key roles may allow upload and reads while forbidding those distribution actions.
+
+1. Open the exact OpenOrg version and build under TestFlight and wait for processing to complete.
+2. Set the English `What to Test` text from the prepared release file.
+3. Ensure the build belongs to `Org2 Internal` and select `OpenOrg Alpha` as the external group.
+4. Review whether `Automatically notify testers` matches the release intent.
+5. Immediately before clicking `Submit for Review`, obtain the browser action-time confirmation required for granting the external group access, submitting Apple beta review, and notifying testers.
+6. After submission, verify the build page shows both groups and the external review/testing status. Browser completion is part of an iOS release even though it runs outside the orchestrator checkpoint.
 
 ## 5. Synchronize tracked downloads
 
@@ -101,7 +124,7 @@ The sync tool regenerates `docs/site/downloads.org` from GitHub Release assets a
 ## 6. Verify publicly
 
 1. Confirm npm's `latest` dist-tag equals the version.
-2. Confirm the Marketplace serves the exact versioned VSIX, allowing for catalog propagation delay. If the tag workflow's Marketplace publish step succeeded and the exact VSIX is attached to the GitHub Release but the public catalog still shows the prior version, do not block or roll back the GitHub/npm/Mac release and do not republish the same version. Report Marketplace visibility as a pending follow-up and retry only that public check later; leave the final verification checkpoint incomplete until it converges.
+2. Check the Marketplace once. If its publish step succeeded and the exact VSIX is attached to the GitHub Release but the catalog still shows the prior version, do not wait, block, roll back, or republish. Report catalog visibility as a non-blocking propagation follow-up.
 3. Download GitHub Release assets back and inspect their embedded versions.
 4. Request every Scarf URL without following redirects. Require a 3xx response whose `Location` is the matching GitHub Release asset.
 5. Run `node tools/sync-release-downloads.mjs --check` and confirm the repository is clean and synchronized with `origin/main`.

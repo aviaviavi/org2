@@ -804,15 +804,20 @@ async function verify(plan, options) {
     () => pollUntil("npm public version", 10 * 60_000, async () => (
       capture("npm", ["view", "@aviaviavi/org2@latest", "version"], { allowFailure: true }).stdout === plan.version
     )),
-    () => pollUntil("VS Code Marketplace public version", 15 * 60_000, async () => {
+    async () => {
       const result = capture("npx", ["@vscode/vsce", "show", "AviPress.org2-vscode", "--json"], {
         allowFailure: true,
         cwd: vscodePackageDir,
       });
-      if (!result.ok || !result.stdout) return false;
-      const extension = JSON.parse(result.stdout);
-      return extension.versions?.[0]?.version === plan.version;
-    }),
+      if (result.ok && result.stdout) {
+        const extension = JSON.parse(result.stdout);
+        if (extension.versions?.[0]?.version === plan.version) {
+          console.log(`✓ VS Code Marketplace public version`);
+          return;
+        }
+      }
+      console.warn(`VS Code Marketplace has not exposed ${plan.version} yet; catalog propagation is a non-blocking follow-up.`);
+    },
     async () => {
       const release = JSON.parse(capture("gh", ["release", "view", plan.version, "--json", "assets,tagName,url"]).stdout);
       const names = new Set(release.assets.map((asset) => asset.name));
