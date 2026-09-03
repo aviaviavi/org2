@@ -4,43 +4,47 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>OpenOrg</title>
         <item>
-            <title>0.7.1</title>
-            <pubDate>Tue, 01 Sep 2026 19:30:29 -0700</pubDate>
+            <title>0.7.2</title>
+            <pubDate>Thu, 03 Sep 2026 10:23:20 -0700</pubDate>
             <link>https://openorg.so/downloads.html</link>
-            <sparkle:version>0.7.1</sparkle:version>
-            <sparkle:shortVersionString>0.7.1</sparkle:shortVersionString>
+            <sparkle:version>0.7.2</sparkle:version>
+            <sparkle:shortVersionString>0.7.2</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[# OpenOrg 0.7.1
+            <description sparkle:format="markdown"><![CDATA[# OpenOrg 0.7.2
 
-OpenOrg 0.7.1 is a performance and reliability release focused on keeping large workspaces, long AI chats, editing, and background activity responsive.
+OpenOrg 0.7.2 improves workspace navigation, AI chat, meeting recording reliability, automation management, and everyday document work.
 
 ## Highlights
 
-- Reworked workspace data flow, file cataloging, document mutation, source indexing, and editor buffering to keep navigation and editing responsive as corpora grow.
-- Sharded AI chat transcript storage and added a durable operation journal so long histories and background deliveries no longer require rewriting one large shared record.
-- Reduced chat rendering, selection, layout, attachment-preview, and teardown work across local, Codex, Claude Code, and OpenClaw conversations.
-- Moved expensive Mobile Remote work away from latency-sensitive UI paths and tightened synchronization with the desktop workspace.
-- Added explicit performance budgets, representative large-corpus fixtures, native regression gates, and dedicated macOS performance CI.
-- Made subprocess stdin and output handling resilient around EOF and process teardown.
-- Corrected daily-note placement so invalid or missing configuration falls back to the corpus's `daily/` directory instead of the corpus root.
+- Added a dedicated Skills manager for workspace-authored agent procedures, available from the sidebar and with Command-Shift-K. The built-in Org2 operating guidance remains ambient and hidden from the user-managed skill list.
+- Made tabs represent the full workspace state, preserving the active surface, document selection, pane focus, and pane layout independently across tabs.
+- Added a Daily “Choose Date…” action and Command-Shift-7 shortcut for opening or creating the daily note for any date.
+- Added workspace filtering and file-tree navigation improvements, plus richer agent handoff metadata.
+- Made the document toolbar adapt cleanly from wide to narrow panes and unified the native toolbar and workspace tab-strip appearance.
 
-## Reliability
+## AI chat
 
-- Stabilized timing-sensitive macOS tests and performance workflows while preserving deterministic regression coverage.
-- Removed redundant or timing-dependent integration cases that duplicated stronger behavioral checks.
-- Updated the release procedure to preserve successful architecture artifacts, resume checkpoints, and use GitHub Trusted Publishing for npm without requiring a local npm token.
+- Text selection now spans paragraphs, bullets, links, and consecutive messages, with standard Command-C and Edit → Copy behavior.
+- Selection highlights align with the rendered typography, wrapping, links, and indentation.
+- Tightened corpus-switch persistence so chat state cannot leak across workspaces during rapid transitions.
+
+## Meetings and reliability
+
+- Meeting recordings now retain the original ScreenCaptureKit interruption error and surface system-audio failures immediately.
+- Interrupted system-audio recordings are finalized when possible, and non-empty partial artifacts are preserved for recovery instead of being deleted.
+- Stabilized editor saves, sidebar navigation, and macOS CI timing-sensitive coverage.
 
 ## Distribution
 
 - Apple Silicon and Intel Mac disk images are Developer ID signed, notarized, stapled, and verified with Gatekeeper.
-- npm and the VS Code extension are published from the version tag through GitHub Trusted Publishing and the Marketplace workflow.
-- iOS is intentionally not included in this release.
+- npm and the VS Code extension are published from the version tag through their normal release workflows.
+- iOS build 27 is published to TestFlight for internal and external testing.
 ]]></description>
-            <enclosure url="https://github.com/aviaviavi/org2/releases/download/0.7.1/OpenOrg.dmg" length="223155492" type="application/octet-stream" sparkle:edSignature="m/JVR36rULpFx+Muo8e4TunALJuHgjJevta4q4/sIel4DH/J8UPOdqnVPblUmPNpXdspUU2rSEP9wUSFWkAcAg=="></enclosure>
+            <enclosure url="https://github.com/aviaviavi/org2/releases/download/0.7.2/OpenOrg.dmg" length="224225919" type="application/octet-stream" sparkle:edSignature="2kLrwOhD5AKfM5Cj5+VV8XKnhJFgf4ONj2gy3hh+BM1Su0Otyh34Div4RWXiPvWMyxTnOquR63fyxpZQ91O6CA=="></enclosure>
         </item>
     </channel>
 </rss><!-- sparkle-signatures:
-edSignature: 0iqBs0HfSz9rfWsR9adc+L7IFCp3h8BVuYk1mm/w3gyBHcVGhZPFmk3LoExqhIQJYKr24RGBq4SydEiFIuZgCQ==
-length: 3153
+edSignature: Ffaja8mQJoIfkvO/+HVn1qDcJacj95ZOX1qelASJ532nDVUNPYasEJhEBowE9AX3vmpz7n4Ku7BtS1Y9lgjeDQ==
+length: 3228
 -->
