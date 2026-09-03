@@ -5086,6 +5086,58 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(transcript.text.contains("The customer asked for Friday."))
   }
 
+  func testSystemAudioCaptureStateRetainsOriginalFailureAndStaysStopped() {
+    var state = MeetingSystemAudioCaptureState()
+    state.didStart()
+    XCTAssertTrue(state.isRunning)
+
+    state.didStopUnexpectedly("ScreenCaptureKit lost the audio stream.")
+    state.didStopUnexpectedly("Failed to stop a stream that is already stopped or does not exist.")
+    state.didStart()
+
+    XCTAssertFalse(state.isRunning)
+    XCTAssertEqual(
+      state.resolvedFailure(explicitStopFailure: "Could not stop system audio capture."),
+      "ScreenCaptureKit lost the audio stream."
+    )
+  }
+
+  func testMeetingTranscriptRetainsCaptureFailureAlongsidePartialSystemAudio() {
+    let transcript = MeetingTranscriptResult.combined(
+      microphone: MeetingTranscriptResult(
+        text: "The meeting continued.",
+        status: .complete,
+        engine: "whisper.cpp"
+      ),
+      systemAudio: MeetingTranscriptResult(
+        text: "Only the opening was captured.",
+        status: .complete,
+        engine: "whisper.cpp"
+      ),
+      systemAudioCaptureError: "ScreenCaptureKit lost the audio stream."
+    )
+
+    XCTAssertEqual(
+      transcript.errorMessage,
+      "system capture: ScreenCaptureKit lost the audio stream."
+    )
+  }
+
+  func testFileHasContentDistinguishesEmptyAndPartialMeetingArtifacts() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-system-audio-artifact-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let empty = root.appendingPathComponent("empty.m4a")
+    let partial = root.appendingPathComponent("partial.m4a")
+    try Data().write(to: empty)
+    try Data("partial media".utf8).write(to: partial)
+
+    XCTAssertFalse(WorkspaceStore.fileHasContent(root.appendingPathComponent("missing.m4a")))
+    XCTAssertFalse(WorkspaceStore.fileHasContent(empty))
+    XCTAssertTrue(WorkspaceStore.fileHasContent(partial))
+  }
+
   @MainActor
   func testDeleteMeetingRemovesNoteAndArtifacts() async throws {
     let root = FileManager.default.temporaryDirectory

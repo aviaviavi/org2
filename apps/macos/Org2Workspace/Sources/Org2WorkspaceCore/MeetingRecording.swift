@@ -132,6 +132,48 @@ public struct MeetingInputMeterSnapshot: Equatable, Sendable {
   )
 }
 
+struct MeetingSystemAudioCaptureState: Equatable, Sendable {
+  private(set) var isRunning = false
+  private(set) var firstFailureDescription: String?
+
+  mutating func reset() {
+    isRunning = false
+    firstFailureDescription = nil
+  }
+
+  mutating func didStart() {
+    // An immediate delegate failure can arrive before startCapture's
+    // completion handler. Do not revive a stream that has already failed.
+    guard firstFailureDescription == nil else { return }
+    isRunning = true
+  }
+
+  mutating func didStopNormally() {
+    isRunning = false
+  }
+
+  mutating func didStopUnexpectedly(_ description: String) {
+    isRunning = false
+    if firstFailureDescription == nil {
+      firstFailureDescription = description
+    }
+  }
+
+  func resolvedFailure(explicitStopFailure: String?) -> String? {
+    firstFailureDescription ?? explicitStopFailure
+  }
+}
+
+public struct MeetingSystemAudioRecordingResult: Equatable, Sendable {
+  public let duration: TimeInterval?
+  public let capturedSampleCount: Int
+  public let captureErrorDescription: String?
+
+  public var hasCapturedAudio: Bool {
+    capturedSampleCount > 0
+  }
+}
+
 public enum MeetingArtifactWriter {
   public static func preparePaths(
     corpusRoot: URL,
@@ -1344,7 +1386,7 @@ public final class MeetingSystemAudioRecorder: NSObject, SCStreamOutput, SCStrea
   private var lastMeterSnapshotTime: CMTime?
   private var sampleCount = 0
   private var latestSnapshot = MeetingInputMeterSnapshot.silent
-  private var isCaptureRunning = false
+  private var captureState = MeetingSystemAudioCaptureState()
 
   private static let meterSnapshotIntervalSeconds = 0.25
 
@@ -1352,6 +1394,10 @@ public final class MeetingSystemAudioRecorder: NSObject, SCStreamOutput, SCStrea
 
   public var inputMeterSnapshot: MeetingInputMeterSnapshot {
     stateLock.withLock { latestSnapshot }
+  }
+
+  public var captureErrorDescription: String? {
+    stateLock.withLock { captureState.firstFailureDescription }
   }
 
   public func startRecording(to audioURL: URL) async throws {
@@ -1411,13 +1457,13 @@ public final class MeetingSystemAudioRecorder: NSObject, SCStreamOutput, SCStrea
       lastMeterSnapshotTime = nil
       sampleCount = 0
       latestSnapshot = .silent
-      isCaptureRunning = false
+      captureState.reset()
     }
 
     do {
       try await startCapture(stream)
       stateLock.withLock {
-        isCaptureRunning = true
+        captureState.didStart()
       }
     } catch {
       resetState(cancelWriter: true)
@@ -1426,8 +1472,12 @@ public final class MeetingSystemAudioRecorder: NSObject, SCStreamOutput, SCStrea
   }
 
   public func stopRecording() async throws -> TimeInterval? {
+    try await stopRecordingWithResult().duration
+  }
+
+  public func stopRecordingWithResult() async throws -> MeetingSystemAudioRecordingResult {
     let state = stateLock.withLock {
-      (stream: stream, writer: writer, writerInput: writerInput, isCaptureRunning: isCaptureRunning)
+      (stream: stream, writer: writer, writerInput: writerInput, isCaptureRunning: captureState.isRunning)
     }
 
     guard let stream = state.stream,
@@ -1437,37 +1487,59 @@ public final class MeetingSystemAudioRecorder: NSObject, SCStreamOutput, SCStrea
       throw MeetingSystemAudioRecorderError.notRecording
     }
 
+    var explicitStopFailure: String?
     if state.isCaptureRunning {
-      try await stopCapture(stream)
-      stateLock.withLock {
-        isCaptureRunning = false
+      do {
+        try await stopCapture(stream)
+        stateLock.withLock {
+          captureState.didStopNormally()
+        }
+      } catch {
+        // ScreenCaptureKit can report an unexpected stop through the delegate
+        // just before this completion handler says the stream is already
+        // stopped. Preserve the delegate's original error and still finalize
+        // every sample the writer received.
+        explicitStopFailure = error.localizedDescription
       }
     }
-    return try await finishWriting(writer: writer, writerInput: writerInput)
+    return try await finishWriting(
+      writer: writer,
+      writerInput: writerInput,
+      explicitStopFailure: explicitStopFailure
+    )
   }
 
   public func pauseRecording() async throws {
     let state = stateLock.withLock {
-      (stream: stream, isCaptureRunning: isCaptureRunning)
+      (stream: stream, isCaptureRunning: captureState.isRunning)
     }
     guard let stream = state.stream else { throw MeetingSystemAudioRecorderError.notRecording }
     guard state.isCaptureRunning else { return }
     try await stopCapture(stream)
     stateLock.withLock {
-      isCaptureRunning = false
+      captureState.didStopNormally()
       latestSnapshot = .silent
     }
   }
 
   public func resumeRecording() async throws {
     let state = stateLock.withLock {
-      (stream: stream, isCaptureRunning: isCaptureRunning)
+      (
+        stream: stream,
+        isCaptureRunning: captureState.isRunning,
+        captureErrorDescription: captureState.firstFailureDescription
+      )
     }
     guard let stream = state.stream else { throw MeetingSystemAudioRecorderError.notRecording }
     guard !state.isCaptureRunning else { return }
+    if let captureErrorDescription = state.captureErrorDescription {
+      throw MeetingSystemAudioRecorderError.startFailed(
+        "The previous system audio stream stopped unexpectedly: \(captureErrorDescription)"
+      )
+    }
     try await startCapture(stream)
     stateLock.withLock {
-      isCaptureRunning = true
+      captureState.didStart()
     }
   }
 
@@ -1527,6 +1599,8 @@ public final class MeetingSystemAudioRecorder: NSObject, SCStreamOutput, SCStrea
 
   public nonisolated func stream(_ stream: SCStream, didStopWithError error: Error) {
     stateLock.withLock {
+      guard self.stream === stream else { return }
+      captureState.didStopUnexpectedly(error.localizedDescription)
       latestSnapshot = .silent
     }
   }
@@ -1557,15 +1631,19 @@ public final class MeetingSystemAudioRecorder: NSObject, SCStreamOutput, SCStrea
 
   private func finishWriting(
     writer: AVAssetWriter,
-    writerInput: AVAssetWriterInput
-  ) async throws -> TimeInterval? {
-    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<TimeInterval?, Error>) in
+    writerInput: AVAssetWriterInput,
+    explicitStopFailure: String?
+  ) async throws -> MeetingSystemAudioRecordingResult {
+    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<MeetingSystemAudioRecordingResult, Error>) in
       sampleQueue.async {
         let state = self.stateLock.withLock {
           let state = (
             firstPresentationTime: self.firstPresentationTime,
             lastPresentationTime: self.lastPresentationTime,
-            sampleCount: self.sampleCount
+            sampleCount: self.sampleCount,
+            captureErrorDescription: self.captureState.resolvedFailure(
+              explicitStopFailure: explicitStopFailure
+            )
           )
           self.stream = nil
           self.writer = nil
@@ -1575,13 +1653,17 @@ public final class MeetingSystemAudioRecorder: NSObject, SCStreamOutput, SCStrea
           self.lastMeterSnapshotTime = nil
           self.sampleCount = 0
           self.latestSnapshot = .silent
-          self.isCaptureRunning = false
+          self.captureState.reset()
           return state
         }
 
         guard state.sampleCount > 0, writer.status != .unknown else {
           writer.cancelWriting()
-          continuation.resume(returning: nil)
+          continuation.resume(returning: MeetingSystemAudioRecordingResult(
+            duration: nil,
+            capturedSampleCount: 0,
+            captureErrorDescription: state.captureErrorDescription
+          ))
           return
         }
 
@@ -1593,9 +1675,17 @@ public final class MeetingSystemAudioRecorder: NSObject, SCStreamOutput, SCStrea
           }
           if let firstPresentationTime = state.firstPresentationTime,
              let lastPresentationTime = state.lastPresentationTime {
-            continuation.resume(returning: max(0, CMTimeGetSeconds(lastPresentationTime - firstPresentationTime)))
+            continuation.resume(returning: MeetingSystemAudioRecordingResult(
+              duration: max(0, CMTimeGetSeconds(lastPresentationTime - firstPresentationTime)),
+              capturedSampleCount: state.sampleCount,
+              captureErrorDescription: state.captureErrorDescription
+            ))
           } else {
-            continuation.resume(returning: nil)
+            continuation.resume(returning: MeetingSystemAudioRecordingResult(
+              duration: nil,
+              capturedSampleCount: state.sampleCount,
+              captureErrorDescription: state.captureErrorDescription
+            ))
           }
         }
       }
@@ -1613,7 +1703,7 @@ public final class MeetingSystemAudioRecorder: NSObject, SCStreamOutput, SCStrea
       lastMeterSnapshotTime = nil
       sampleCount = 0
       latestSnapshot = .silent
-      isCaptureRunning = false
+      captureState.reset()
       return writer
     }
 

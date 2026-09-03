@@ -9618,7 +9618,9 @@ public final class WorkspaceStore {
       var systemAudioCaptureError = recording.systemAudioStartError
       if recording.capturesSystemAudio {
         do {
-          if let systemDuration = try await meetingSystemAudioRecorder.stopRecording(), systemDuration > 0 {
+          let result = try await meetingSystemAudioRecorder.stopRecordingWithResult()
+          systemAudioCaptureError = result.captureErrorDescription
+          if result.hasCapturedAudio {
             systemAudioURL = recording.paths.systemAudioURL
           } else {
             try? await removeMeetingArtifacts(
@@ -9628,10 +9630,16 @@ public final class WorkspaceStore {
             systemAudioCaptureError = "No system audio samples were captured."
           }
         } catch {
-          try? await removeMeetingArtifacts(
-            [recording.paths.systemAudioURL],
-            corpusRoot: corpusRoot
-          )
+          // A writer failure may still leave useful diagnostic or recoverable
+          // media. Keep any non-empty artifact instead of destroying it.
+          if Self.fileHasContent(recording.paths.systemAudioURL) {
+            systemAudioURL = recording.paths.systemAudioURL
+          } else {
+            try? await removeMeetingArtifacts(
+              [recording.paths.systemAudioURL],
+              corpusRoot: corpusRoot
+            )
+          }
           systemAudioCaptureError = error.localizedDescription
         }
       }
@@ -39667,7 +39675,21 @@ public final class WorkspaceStore {
   private func updateMeetingInputMeter(force: Bool = false) {
     let snapshot = meetingRecorder.inputMeterSnapshot
     let systemSnapshot = meetingSystemAudioRecorder.inputMeterSnapshot
+    if isCapturingSystemAudio,
+       let captureError = meetingSystemAudioRecorder.captureErrorDescription {
+      isCapturingSystemAudio = false
+      meetingSystemAudioStatusText = "System audio stopped: \(captureError)"
+    }
     publishMeetingMeterLevels(microphone: snapshot, systemAudio: systemSnapshot, force: force)
+  }
+
+  nonisolated static func fileHasContent(_ url: URL) -> Bool {
+    guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+          let size = attributes[.size] as? NSNumber
+    else {
+      return false
+    }
+    return size.int64Value > 0
   }
 
   private func publishMeetingMeterLevels(
