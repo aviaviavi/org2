@@ -91,6 +91,7 @@ function parseBuildOptions(arguments_) {
     help: false,
     printConfiguration: false,
     requireGoogleOAuthClient: false,
+    restart: false,
   };
   for (let index = 0; index < arguments_.length; index += 1) {
     const argument = arguments_[index];
@@ -117,6 +118,9 @@ function parseBuildOptions(arguments_) {
         break;
       case "--require-google-oauth-client":
         options.requireGoogleOAuthClient = true;
+        break;
+      case "--restart":
+        options.restart = true;
         break;
       case "--help":
       case "-h":
@@ -227,6 +231,7 @@ Options:
   --print-configuration   Print the resolved mode and paths without building
   --require-google-oauth-client
                           Fail unless a complete Google OAuth Desktop client is bundled
+  --restart               Build while the installed app runs, then quit, replace, and relaunch it
   --help                  Show this help`;
 }
 
@@ -385,6 +390,53 @@ function runningProcessesForBinary(binaryPath) {
     .split(/\n+/)
     .map((line) => line.trim())
     .filter(Boolean);
+}
+
+function assertInstalledAppIsStopped(binaryPath) {
+  const runningPids = runningProcessesForBinary(binaryPath);
+  if (runningPids.length > 0) {
+    throw new Error(`${appName} is running from ${appPath}. Quit it and rerun this command.`);
+  }
+}
+
+function waitForInstalledAppToStop(binaryPath, timeoutMilliseconds = 30_000) {
+  const deadline = Date.now() + timeoutMilliseconds;
+  const waitSignal = new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT));
+  let runningPids = runningProcessesForBinary(binaryPath);
+  while (runningPids.length > 0 && Date.now() < deadline) {
+    Atomics.wait(waitSignal, 0, 0, 100);
+    runningPids = runningProcessesForBinary(binaryPath);
+  }
+  return runningPids;
+}
+
+function quitRunningInstalledApp(binaryPath) {
+  const runningPids = runningProcessesForBinary(binaryPath);
+  if (runningPids.length === 0) return;
+
+  console.log(`Build verified. Asking ${appName} to save and quit...`);
+  const quitScript = `tell application id ${JSON.stringify(bundleIdentifier)} to quit`;
+  const quitResult = spawnSync("osascript", ["-e", quitScript], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const remainingPids = waitForInstalledAppToStop(binaryPath);
+  if (remainingPids.length === 0) return;
+
+  const quitDetail = [quitResult.stdout, quitResult.stderr]
+    .filter(Boolean)
+    .join("\n")
+    .trim();
+  throw new Error(
+    `${appName} did not finish quitting; the verified build was not installed${
+      quitDetail ? `:\n${quitDetail}` : "."
+    }`
+  );
+}
+
+function launchInstalledApp() {
+  console.log(`Opening the updated ${appName}...`);
+  run("open", ["-n", appPath]);
 }
 
 function writeInfoPlist(bundlePath) {
@@ -796,6 +848,7 @@ function main() {
       googleOAuthClientSecretConfigured: googleOAuthClientSecret.length > 0,
       googleOAuthClientSource: googleOAuthConfiguration.source,
       googleOAuthRequired: buildOptions.requireGoogleOAuthClient,
+      restartAfterInstall: buildOptions.restart,
       swiftScratchPath: swiftScratchPath || null,
       updates: sparkleUpdateConfiguration(),
       whisperCppPath: bundledWhisperCppPath || null,
@@ -805,9 +858,8 @@ function main() {
   }
 
   const installedBinaryPath = join(appPath, "Contents", "MacOS", executableName);
-  const runningPids = runningProcessesForBinary(installedBinaryPath);
-  if (runningPids.length > 0) {
-    throw new Error(`${appName} is running from ${appPath}. Quit it and rerun this command.`);
+  if (!buildOptions.restart) {
+    assertInstalledAppIsStopped(installedBinaryPath);
   }
 
   console.log("Building the shared Org2 runtime for the app bundle...");
@@ -889,7 +941,37 @@ function main() {
     }));
     run("codesign", ["--verify", "--deep", "--strict", stagedAppPath]);
 
-    installStagedAppBundle({ stagedAppPath, targetAppPath: appPath });
+    if (buildOptions.restart) {
+      quitRunningInstalledApp(installedBinaryPath);
+    } else {
+      // A user may have launched the app while the build was running. Never
+      // replace a bundle that became active after the initial guard.
+      assertInstalledAppIsStopped(installedBinaryPath);
+    }
+
+    try {
+      installStagedAppBundle({ stagedAppPath, targetAppPath: appPath });
+    } catch (installError) {
+      if (buildOptions.restart && existsSync(appPath)) {
+        try {
+          launchInstalledApp();
+        } catch (relaunchError) {
+          const installDetail = installError instanceof Error
+            ? installError.message
+            : String(installError);
+          const relaunchDetail = relaunchError instanceof Error
+            ? relaunchError.message
+            : String(relaunchError);
+          throw new Error(
+            `${installDetail}\nThe previous app could not be reopened after rollback: ${relaunchDetail}`
+          );
+        }
+      }
+      throw installError;
+    }
+    if (buildOptions.restart) {
+      launchInstalledApp();
+    }
     if (signingIdentity === "-") {
       console.warn(
         "Warning: ad-hoc signing gives the app a cdhash-based TCC identity. macOS Screen/System Audio permission may reset after rebuilds. Set ORG2_WORKSPACE_CODE_SIGN_IDENTITY to a stable signing identity to avoid that."

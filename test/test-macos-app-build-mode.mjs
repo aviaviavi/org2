@@ -20,6 +20,8 @@ const updaterSource = readFileSync(join(
   "apps", "macos", "Org2Workspace", "Sources", "Org2Workspace", "SoftwareUpdateController.swift"
 ), "utf8");
 const macAppBuildSource = readFileSync(join(repoRoot, "tools", "build-macos-app.mjs"), "utf8");
+const makefileSource = readFileSync(join(repoRoot, "Makefile"), "utf8");
+const packageJSON = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8"));
 
 assert.match(updaterSource, /checkForUpdatesInBackground\(\)/);
 assert.match(updaterSource, /Automatically check for updates/);
@@ -31,6 +33,29 @@ const runtimeCopyIndex = macAppBuildSource.indexOf("const runtimeNodePath = copy
 assert.ok(sharedRuntimeBuildIndex >= 0, "macOS app builds must compile the shared runtime");
 assert.ok(sharedRuntimeBuildIndex < swiftAppBuildIndex, "shared runtime must build before the Swift app");
 assert.ok(sharedRuntimeBuildIndex < runtimeCopyIndex, "shared runtime must build before it is bundled");
+const stagedVerificationIndex = macAppBuildSource.indexOf(
+  'run("codesign", ["--verify", "--deep", "--strict", stagedAppPath]);'
+);
+const gracefulQuitIndex = macAppBuildSource.indexOf(
+  "quitRunningInstalledApp(installedBinaryPath);"
+);
+const stagedInstallIndex = macAppBuildSource.indexOf(
+  "installStagedAppBundle({ stagedAppPath, targetAppPath: appPath });"
+);
+assert.ok(stagedVerificationIndex >= 0, "the staged app must be verified before installation");
+assert.ok(
+  stagedVerificationIndex < gracefulQuitIndex,
+  "restart builds must keep the current app running until staged verification finishes"
+);
+assert.ok(
+  gracefulQuitIndex < stagedInstallIndex,
+  "restart builds must finish a graceful quit before replacing the app"
+);
+assert.match(makefileSource, /^macos-app-restart:\n\tnpm run build:macos-app:restart$/m);
+assert.equal(
+  packageJSON.scripts["build:macos-app:restart"],
+  "node tools/build-macos-app.mjs --configuration release --restart"
+);
 
 function run(script, args, expectedStatus = 0, environment = process.env) {
   const result = spawnSync(process.execPath, [join(repoRoot, script), ...args], {
@@ -61,6 +86,7 @@ assert.equal(defaultDaily.appName, "OpenOrg");
 assert.match(defaultDaily.appPath, /OpenOrg\.app$/);
 assert.match(defaultDaily.iconPath, /OpenOrgAppIcon\.png$/);
 assert.equal(defaultDaily.installStrategy, "verified staged replacement");
+assert.equal(defaultDaily.restartAfterInstall, false);
 assert.ok(defaultDaily.nodeArchitecture === "arm64" || defaultDaily.nodeArchitecture === "x64");
 assert.match(
   defaultDaily.nodeEntitlementsPath,
@@ -159,6 +185,16 @@ const explicitDebug = JSON.parse(
   ]).stdout
 );
 assert.equal(explicitDebug.configuration, "debug");
+
+const restartDaily = JSON.parse(
+  run("tools/build-macos-app.mjs", [
+    "--configuration", "release",
+    "--restart",
+    "--print-configuration",
+  ]).stdout
+);
+assert.equal(restartDaily.restartAfterInstall, true);
+assert.equal(restartDaily.configuration, "release");
 
 const codexDebug = JSON.parse(
   run("tools/build-macos-app-codex.mjs", ["--print-configuration"]).stdout

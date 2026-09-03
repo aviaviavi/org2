@@ -41,6 +41,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "build:macos-app": "node tools/build-macos-app.mjs --configuration release",
+    "build:macos-app:restart": "node tools/build-macos-app.mjs --configuration release --restart",
     "build:macos-app:release": "node tools/build-macos-app.mjs --configuration release",
     "build:macos-app:debug": "node tools/build-macos-app.mjs --configuration debug --allow-daily-debug",
     "build:macos-app:codex": "node tools/build-macos-app-codex.mjs --configuration debug",

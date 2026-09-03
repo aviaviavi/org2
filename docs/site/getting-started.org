@@ -276,6 +276,13 @@ npm run build:macos-app
 open ~/Applications/OpenOrg.app
 #+end_src
 
+For a local dogfooding loop, =make macos-app-restart= (or
+=npm run build:macos-app:restart=) leaves the current daily app open while it compiles
+and verifies a staged replacement. It requests a graceful quit only when the
+new bundle is ready, swaps the bundle atomically, and reopens OpenOrg. A failed
+build leaves the running app untouched. This is a short restart rather than
+hot reload; finish active recordings or provider turns before invoking it.
+
 Side-by-side development uses =npm run build:macos-app:codex= for debug or =npm run build:macos-app:codex:release= for optimized behavior. Both target the isolated =OpenOrg Preview.app= and leave the daily app untouched.
 
 * Next steps

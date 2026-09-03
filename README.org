@@ -111,6 +111,18 @@ leaves the existing app untouched. Use the explicit variants when switching
 modes during development:
 
 #+begin_src sh
+make macos-app-restart
+#+end_src
+
+The restart target keeps the installed OpenOrg running throughout compilation
+and staged-bundle verification. Once the replacement is ready, it asks OpenOrg
+to save and quit, atomically installs the verified bundle, and immediately
+reopens it. If the build fails, the running app is not interrupted. This is a
+short restart rather than hot reload, so active recordings and provider turns
+should be allowed to finish first.
+
+#+begin_src sh
+npm run build:macos-app:restart
 npm run build:macos-app:release
 npm run build:macos-app:debug
 npm run build:macos-app:codex          # isolated debug app

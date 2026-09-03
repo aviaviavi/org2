@@ -273,6 +273,12 @@ npm run org2 -- --version</code></pre>
 <p>Build the optimized daily Mac app with:</p>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run build:macos-app
 open ~/Applications/OpenOrg.app</code></pre>
+<p>For a local dogfooding loop, <code>make macos-app-restart</code> (or
+<code>npm run build:macos-app:restart</code>) leaves the current daily app open while it compiles
+and verifies a staged replacement. It requests a graceful quit only when the
+new bundle is ready, swaps the bundle atomically, and reopens OpenOrg. A failed
+build leaves the running app untouched. This is a short restart rather than
+hot reload; finish active recordings or provider turns before invoking it.</p>
 <p>Side-by-side development uses <code>npm run build:macos-app:codex</code> for debug or <code>npm run build:macos-app:codex:release</code> for optimized behavior. Both target the isolated <code>OpenOrg Preview.app</code> and leave the daily app untouched.</p>
 </section>
 <section class="org2-headline level-1">
