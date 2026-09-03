@@ -4,6 +4,38 @@ All notable changes to the Org2 VS Code extension are documented in this file.
 
 ## Unreleased
 
+## 0.7.2 - 2026-09-03
+
+# OpenOrg 0.7.2
+
+OpenOrg 0.7.2 improves workspace navigation, AI chat, meeting recording reliability, automation management, and everyday document work.
+
+## Highlights
+
+- Added a dedicated Skills manager for workspace-authored agent procedures, available from the sidebar and with Command-Shift-K. The built-in Org2 operating guidance remains ambient and hidden from the user-managed skill list.
+- Made tabs represent the full workspace state, preserving the active surface, document selection, pane focus, and pane layout independently across tabs.
+- Added a Daily “Choose Date…” action and Command-Shift-7 shortcut for opening or creating the daily note for any date.
+- Added workspace filtering and file-tree navigation improvements, plus richer agent handoff metadata.
+- Made the document toolbar adapt cleanly from wide to narrow panes and unified the native toolbar and workspace tab-strip appearance.
+
+## AI chat
+
+- Text selection now spans paragraphs, bullets, links, and consecutive messages, with standard Command-C and Edit → Copy behavior.
+- Selection highlights align with the rendered typography, wrapping, links, and indentation.
+- Tightened corpus-switch persistence so chat state cannot leak across workspaces during rapid transitions.
+
+## Meetings and reliability
+
+- Meeting recordings now retain the original ScreenCaptureKit interruption error and surface system-audio failures immediately.
+- Interrupted system-audio recordings are finalized when possible, and non-empty partial artifacts are preserved for recovery instead of being deleted.
+- Stabilized editor saves, sidebar navigation, and macOS CI timing-sensitive coverage.
+
+## Distribution
+
+- Apple Silicon and Intel Mac disk images are Developer ID signed, notarized, stapled, and verified with Gatekeeper.
+- npm and the VS Code extension are published from the version tag through their normal release workflows.
+- iOS build 27 is published to TestFlight for internal and external testing.
+
 ## 0.7.1 - 2026-09-02
 
 # OpenOrg 0.7.1
