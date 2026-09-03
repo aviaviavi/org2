@@ -5,7 +5,7 @@ description: Publish, repair, or verify coordinated Org2 releases across npm, th
 
 # Org2 Release
 
-Ship one coordinated Org2 version without touching the user's daily app. Treat the notarized Mac artifacts and GitHub Release as the primary release path: TestFlight distribution and Marketplace visibility must not delay or roll back them. Keep GitHub Releases as the artifact host and route public direct downloads through the permanent Scarf Gateway template.
+Ship one coordinated Org2 version without touching the user's daily app. Treat the notarized Mac artifacts and GitHub Release as the primary release path: TestFlight distribution and Marketplace visibility must not delay them or cause them to be rolled back. Keep GitHub Releases as the artifact host and route public direct downloads through the permanent Scarf Gateway template.
 
 Read [references/release-contract.md](references/release-contract.md) before mutating a registry, tag, GitHub Release, Scarf configuration, or download surface.
 
