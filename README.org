@@ -14,10 +14,10 @@ The initial plugin runtime installs self-contained Git packages through
 and requires machine-local trust before contributed CLI commands or sandboxed
 document renderers execute. The same renderer contribution is used by CLI HTML
 export and OpenOrg; there is no separate native-app plugin ABI. See
-https://org2.avi.press/tooling-reference.html#plugins.
+https://openorg.so/tooling-reference.html#plugins.
 
 OpenOrg product site: https://openorg.so/
-Current developer docs: https://org2.avi.press/
+Current developer docs: https://openorg.so/
 
 For now, the canonical project docs live on the website.
 
@@ -39,7 +39,7 @@ org2 agent --help
 
 The first command emits the versioned =org2:capabilities:v1= JSON manifest with
 workflow families, safety rules, client roles, and canonical documentation
-links. See https://org2.avi.press/agent-quickstart.html.
+links. See https://openorg.so/agent-quickstart.html.
 
 ** MCP and the general Org2 skill
 
@@ -61,7 +61,7 @@ org2 skill install --dir /absolute/path/to/notes
 org2 skill install --dir /absolute/path/to/notes --apply
 #+end_src
 
-See https://org2.avi.press/mcp-and-skills.html for Codex, Claude Code, and
+See https://openorg.so/mcp-and-skills.html for Codex, Claude Code, and
 generic client setup; the exact MCP resource/tool surface; safety boundaries;
 and the CLI fallback contract.
 
