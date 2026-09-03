@@ -16,6 +16,11 @@ on:
         required: false
         default: "0.1.0-rc.1"
         type: string
+      publish_only:
+        description: "Retry publication from an existing version tag without rebuilding or retesting"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -29,6 +34,8 @@ jobs:
       OVSX_PAT: ${{ secrets.OVSX_PAT }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_only && inputs.release_version || github.ref }}
 
       - uses: actions/setup-node@v6
         with:
@@ -65,6 +72,7 @@ jobs:
         run: npm ci
 
       - name: Build + test once
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.publish_only != true }}
         run: npm test
 
       - name: Stamp package versions
@@ -81,17 +89,23 @@ jobs:
           npx @vscode/vsce package
 
       - name: Publish npm package (Trusted Publishing / OIDC)
-        if: ${{ steps.version.outputs.dry_run != 'true' }}
+        if: ${{ steps.version.outputs.dry_run != 'true' && (github.event_name != 'workflow_dispatch' || inputs.publish_only != true) }}
         # The release commit passed the explicit test gate above. Publishing
         # the tarball with lifecycle scripts disabled prevents prepublishOnly
         # from running the full suite a second time.
         run: npm publish ./*.tgz --access public --provenance --ignore-scripts
 
       - name: Publish VS Code Marketplace extension
+        id: vscode_publish
+        continue-on-error: true
         if: ${{ steps.version.outputs.dry_run != 'true' }}
         run: |
           cd editors/vscode-org2
           npx @vscode/vsce publish --no-update-package-json --pat "$VSCE_PAT"
+
+      - name: Report deferred VS Code Marketplace publication
+        if: ${{ steps.version.outputs.dry_run != 'true' && steps.vscode_publish.outcome == 'failure' }}
+        run: echo "::warning::VS Code Marketplace publication did not complete; continuing the release so it can be retried independently."
 
       - name: Publish Open VSX extension (optional)
         if: ${{ steps.version.outputs.dry_run != 'true' && env.OVSX_PAT != '' }}
@@ -104,6 +118,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           name: ${{ steps.version.outputs.version }}
+          tag_name: ${{ steps.version.outputs.version }}
           files: |
             *.tgz
             editors/vscode-org2/*.vsix
