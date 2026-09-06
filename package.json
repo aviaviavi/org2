@@ -63,7 +63,7 @@
     "lsp": "node dist/lsp.js",
     "fixtures": "npm run check:language-spec && node tools/fixture-runner.mjs",
     "cli-test": "node tools/cli-test-runner.mjs",
-    "test:lsp": "node test/test-lsp-call-hierarchy.mjs && node test/test-lsp-diagnostics.mjs && node test/test-lsp-features.mjs && node test/test-lsp-file-link-completion.mjs && node test/test-lsp-file-link-search-definition.mjs && node test/test-lsp-id-link-completion.mjs && node test/test-lsp-inlay-hints.mjs && node test/test-lsp-integration.mjs && node test/test-lsp-linked-editing-file-links.mjs && node test/test-lsp-on-type-formatting.mjs && node test/test-lsp-rename-file-links.mjs && node test/test-lsp-todo-keyword-completion.mjs && node test/test-lsp-will-rename-files.mjs",
+    "test:lsp": "node test/test-lsp-call-hierarchy.mjs && node test/test-lsp-diagnostics.mjs && node test/test-lsp-features.mjs && node test/test-lsp-file-link-completion.mjs && node test/test-lsp-file-link-search-definition.mjs && node test/test-lsp-id-link-completion.mjs && node test/test-lsp-inlay-hints.mjs && node test/test-lsp-integration.mjs && node test/test-lsp-transport.mjs && node test/test-lsp-linked-editing-file-links.mjs && node test/test-lsp-on-type-formatting.mjs && node test/test-lsp-rename-file-links.mjs && node test/test-lsp-todo-keyword-completion.mjs && node test/test-lsp-will-rename-files.mjs",
     "conformance-report": "npm run check:language-spec && node tools/conformance-report.mjs",
     "check:language-spec": "node tools/check-language-spec.mjs",
     "test:language-spec": "npm run build && npm run check:language-spec && node test/test-language-spec.mjs",

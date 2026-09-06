@@ -311,27 +311,27 @@ class LSPServer {
   private workspaceRoots: string[] = [];
 
   async start(): Promise<void> {
-    let buffer = "";
-
-    process.stdin.setEncoding("utf-8");
+    // Content-Length counts UTF-8 bytes, not JavaScript UTF-16 code units.
+    // Keep incomplete characters and frames intact until the full body arrives.
+    let buffer = Buffer.alloc(0);
 
     const processData = () => {
       while (buffer.includes("\r\n\r\n")) {
         const headerEnd = buffer.indexOf("\r\n\r\n");
-        const headers = buffer.substring(0, headerEnd);
-        buffer = buffer.substring(headerEnd + 4);
+        const headers = buffer.subarray(0, headerEnd).toString("ascii");
 
-        const lengthMatch = headers.match(/Content-Length: (\d+)/);
-        if (!lengthMatch) continue;
-
-        const contentLength = parseInt(lengthMatch[1], 10);
-        if (buffer.length < contentLength) {
-          buffer = headers + "\r\n\r\n" + buffer;
-          break;
+        const lengthMatch = headers.match(/^Content-Length:\s*(\d+)$/im);
+        if (!lengthMatch) {
+          buffer = buffer.subarray(headerEnd + 4);
+          continue;
         }
 
-        const content = buffer.substring(0, contentLength);
-        buffer = buffer.substring(contentLength);
+        const contentLength = parseInt(lengthMatch[1], 10);
+        const frameEnd = headerEnd + 4 + contentLength;
+        if (buffer.length < frameEnd) break;
+
+        const content = buffer.subarray(headerEnd + 4, frameEnd).toString("utf8");
+        buffer = buffer.subarray(frameEnd);
 
         try {
           const message = JSON.parse(content);
@@ -342,8 +342,8 @@ class LSPServer {
       }
     };
 
-    process.stdin.on("data", (chunk: string) => {
-      buffer += chunk;
+    process.stdin.on("data", (chunk: Buffer) => {
+      buffer = Buffer.concat([buffer, chunk]);
       processData();
     });
 
@@ -4035,7 +4035,8 @@ class LSPServer {
     return offset;
   }
 
-  private sendResponse(id: number | string, result: any): void {
+  private sendResponse(id: number | string | undefined, result: any): void {
+    if (id === undefined) return;
     const response = {
       jsonrpc: "2.0",
       id,
@@ -4044,17 +4045,18 @@ class LSPServer {
     this.sendMessage(response);
   }
 
-  private sendError(id: number | string | null, code: number, message: string): void {
+  private sendError(id: number | string | null | undefined, code: number, message: string): void {
+    // Notifications (including unknown methods and failed handlers) receive no
+    // response. Protocol parse errors instead carry an explicit null id.
+    if (id === undefined) return;
     const response: any = {
       jsonrpc: "2.0",
+      id,
       error: {
         code,
         message,
       },
     };
-    if (id !== null && id !== undefined) {
-      response.id = id;
-    }
     this.sendMessage(response);
   }
 
