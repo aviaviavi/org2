@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { automationHostRef, acquireWorkflowDispatchLock } from "./automationHost.js";
 import {
   AGENT_RUN_APPROVAL_DECISIONS,
   AGENT_RUN_ARTIFACT_REVIEW_STATUSES,
@@ -202,7 +203,7 @@ const HELP = `Agentic workspace commands:
   org2 review list [--status pending] | org2 review show RUN
   org2 workflow list|show|validate|create|save|run|due|triggers|signal|gate|activate|pause|draft|schedule|delete|migrate|package|corpus-template|install-builtin
   org2 workflow create ID --title TEXT --prompt TEXT --destination-ref ID [--agent-ref ID] [--schedule EXPR --timezone IANA]
-  org2 workflow due [--now ISO_TIMESTAMP] [--dir CORPUS] [--json]
+  org2 workflow due [--host-ref HOST] [--now ISO_TIMESTAMP] [--dir CORPUS] [--json]
   org2 workflow schedule ID --cron EXPR [--timezone IANA] [--destination-ref ID] | --disable
   org2 workflow delete ID [--apply]
   org2 artifact graph --manifest FILE | org2 artifact rebuild --manifest FILE
@@ -1315,6 +1316,12 @@ function workflowCommand(parsed: ParsedArgs): void {
   }
   if (action === "due") {
     const now = flag(parsed, "now") || new Date().toISOString();
+    const owner = automationHostRef(corpus);
+    const requestingHost = flag(parsed, "host-ref") || "desktop";
+    if (owner !== requestingHost) {
+      output(parsed, { schema: "org2:automation-due-list:v1", now, due: [], skipped: [], hostRef: owner, reason: `Automations are owned by ${owner}` }, `Automations are owned by ${owner}.`);
+      return;
+    }
     const activeStatuses = new Set<AgentRunStatus>(["queued", "running", "blocked", "waiting-approval"]);
     const runs = listAgentRuns(corpus);
     const due: Array<Record<string, unknown>> = [];
@@ -1428,51 +1435,69 @@ function workflowCommand(parsed: ParsedArgs): void {
     return;
   }
   if (action === "run") {
-    const inputs = Object.fromEntries(flags(parsed, "input").map((item) => { const at = item.indexOf("="); if (at < 1) throw new Error("--input must be NAME=VALUE"); return [item.slice(0, at), item.slice(at + 1)]; }));
-    const triggerId = flag(parsed, "trigger");
-    const eligibility = triggerId ? workflowTriggerEligibility(workflow, triggerId) : { eligible: true, reason: "manual run", signalIds: [] };
-    if (!eligibility.eligible) {
-      output(parsed, { schema: "org2:workflow-run-skipped:v1", workflowId: id, triggerId, ...eligibility }, `skipped ${id}: ${eligibility.reason}`);
+    const release = acquireWorkflowDispatchLock(corpus, id);
+    try {
+      const workflow = loadWorkflow(corpus, id);
+      const owner = automationHostRef(corpus);
+      if (flag(parsed, "trigger") && owner !== (flag(parsed, "host-ref") || "desktop")) {
+        output(parsed, { schema: "org2:workflow-run-skipped:v1", workflowId: id, eligible: false, reason: `Automations are owned by ${owner}` }, `Automations are owned by ${owner}.`);
+        return;
+      }
+      const inputs = Object.fromEntries(flags(parsed, "input").map((item) => { const at = item.indexOf("="); if (at < 1) throw new Error("--input must be NAME=VALUE"); return [item.slice(0, at), item.slice(at + 1)]; }));
+      const triggerId = flag(parsed, "trigger");
+      const eligibility = triggerId ? workflowTriggerEligibility(workflow, triggerId) : { eligible: true, reason: "manual run", signalIds: [] };
+      if (!eligibility.eligible) {
+        output(parsed, { schema: "org2:workflow-run-skipped:v1", workflowId: id, triggerId, ...eligibility }, `skipped ${id}: ${eligibility.reason}`);
+        return;
+      }
+      const logicalWorkId = flag(parsed, "logical-work-id") || `workflow:${id}`;
+      const existingAttempts = listAgentRuns(corpus).filter((item) => item.logicalWorkId === logicalWorkId && item.attempt);
+      const trigger = triggerId ? workflow.triggers.find((item) => item.id === triggerId) : undefined;
+      const scheduledFor = flag(parsed, "scheduled-for");
+      const priorOccurrence = triggerId && scheduledFor
+        ? existingAttempts.find((item) => item.attempt?.triggerId === triggerId && item.attempt?.scheduledFor === scheduledFor)
+        : undefined;
+      if (priorOccurrence) {
+        output(parsed, { schema: "org2:workflow-run-skipped:v1", workflowId: id, triggerId, eligible: false,
+          reason: `occurrence already has attempt ${priorOccurrence.id}`, activeRunId: priorOccurrence.id }, `Occurrence already dispatched: ${priorOccurrence.id}`);
+        return;
+      }
+      const activeAttempt = trigger?.type === "schedule"
+        ? existingAttempts.find((item) => (["queued", "running", "blocked", "waiting-approval"] as AgentRunStatus[]).includes(item.status))
+        : undefined;
+      if (activeAttempt) {
+        output(parsed, {
+          schema: "org2:workflow-run-skipped:v1",
+          workflowId: id,
+          triggerId,
+          eligible: false,
+          reason: `active attempt ${activeAttempt.id} is ${activeAttempt.status}`,
+          activeRunId: activeAttempt.id,
+        }, `skipped ${id}: active attempt ${activeAttempt.id} is ${activeAttempt.status}`);
+        return;
+      }
+      const attemptNumber = existingAttempts.reduce((maximum, item) => Math.max(maximum, item.attempt?.number || 0), 0) + 1;
+      const attemptAt = flag(parsed, "scheduled-for") || new Date().toISOString();
+      const run = instantiateWorkflow(workflow, inputs, {
+        owner: flag(parsed, "owner"),
+        assignee: flag(parsed, "assignee"),
+        agentRef: flag(parsed, "agent-ref"),
+        goalRef: flag(parsed, "goal-ref"),
+        logicalWorkId: triggerId ? logicalWorkId : flag(parsed, "logical-work-id"),
+        attempt: triggerId ? {
+          id: flag(parsed, "attempt-id") || crypto.randomUUID(),
+          number: attemptNumber,
+          triggerId,
+          triggerType: workflow.triggers.find((item) => item.id === triggerId)?.type,
+          scheduledFor: attemptAt,
+          signalIds: eligibility.signalIds,
+        } : undefined,
+      });
+      const file = saveAgentRun(corpus, run, { expectedRevision: null });
+      if (triggerId) updateWorkflow(corpus, id, (item) => markWorkflowTriggerAttempt(item, triggerId, attemptAt));
+      output(parsed, { run, file, eligibility, prompt: workflowExecutionPrompt(workflow, run, inputs) }, `created run ${run.id} from ${id}@${workflow.version}${run.attempt ? ` attempt ${run.attempt.number}` : ""}`);
       return;
-    }
-    const logicalWorkId = flag(parsed, "logical-work-id") || `workflow:${id}`;
-    const existingAttempts = listAgentRuns(corpus).filter((item) => item.logicalWorkId === logicalWorkId && item.attempt);
-    const trigger = triggerId ? workflow.triggers.find((item) => item.id === triggerId) : undefined;
-    const activeAttempt = trigger?.type === "schedule"
-      ? existingAttempts.find((item) => (["queued", "running", "blocked", "waiting-approval"] as AgentRunStatus[]).includes(item.status))
-      : undefined;
-    if (activeAttempt) {
-      output(parsed, {
-        schema: "org2:workflow-run-skipped:v1",
-        workflowId: id,
-        triggerId,
-        eligible: false,
-        reason: `active attempt ${activeAttempt.id} is ${activeAttempt.status}`,
-        activeRunId: activeAttempt.id,
-      }, `skipped ${id}: active attempt ${activeAttempt.id} is ${activeAttempt.status}`);
-      return;
-    }
-    const attemptNumber = existingAttempts.reduce((maximum, item) => Math.max(maximum, item.attempt?.number || 0), 0) + 1;
-    const attemptAt = flag(parsed, "scheduled-for") || new Date().toISOString();
-    const run = instantiateWorkflow(workflow, inputs, {
-      owner: flag(parsed, "owner"),
-      assignee: flag(parsed, "assignee"),
-      agentRef: flag(parsed, "agent-ref"),
-      goalRef: flag(parsed, "goal-ref"),
-      logicalWorkId: triggerId ? logicalWorkId : flag(parsed, "logical-work-id"),
-      attempt: triggerId ? {
-        id: flag(parsed, "attempt-id") || crypto.randomUUID(),
-        number: attemptNumber,
-        triggerId,
-        triggerType: workflow.triggers.find((item) => item.id === triggerId)?.type,
-        scheduledFor: attemptAt,
-        signalIds: eligibility.signalIds,
-      } : undefined,
-    });
-    const file = saveAgentRun(corpus, run, { expectedRevision: null });
-    if (triggerId) updateWorkflow(corpus, id, (item) => markWorkflowTriggerAttempt(item, triggerId, attemptAt));
-    output(parsed, { run, file, eligibility, prompt: workflowExecutionPrompt(workflow, run, inputs) }, `created run ${run.id} from ${id}@${workflow.version}${run.attempt ? ` attempt ${run.attempt.number}` : ""}`);
-    return;
+    } finally { release(); }
   }
   throw new Error(`unknown workflow action: ${action}`);
 }

@@ -8,6 +8,7 @@ let package = Package(
     .macOS(.v14)
   ],
   products: [
+    .executable(name: "OpenOrgServer", targets: ["OpenOrgServer"]),
     .executable(name: "Org2Workspace", targets: ["Org2Workspace"]),
     .executable(name: "Org2WorkspaceDiagnostics", targets: ["Org2WorkspaceDiagnostics"]),
     .executable(name: "Org2WorkspaceScreenshotRenderer", targets: ["Org2WorkspaceScreenshotRenderer"])
@@ -16,6 +17,7 @@ let package = Package(
     .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.9.6")
   ],
   targets: [
+    .executableTarget(name: "OpenOrgServer", dependencies: ["Org2WorkspaceCore"]),
     .executableTarget(
       name: "Org2Workspace",
       dependencies: [

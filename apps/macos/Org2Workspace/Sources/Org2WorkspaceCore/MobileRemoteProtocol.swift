@@ -21,6 +21,8 @@ public enum MobileRemoteProtocol {
 public struct MobileRemoteServerStatus: Codable, Hashable, Sendable {
   public let protocolVersion: Int
   public let serverName: String
+  public let hostRef: String?
+  public let hostKind: String?
   public let corpusName: String?
   public let threadCount: Int
   public let runningThreadCount: Int
@@ -31,6 +33,8 @@ public struct MobileRemoteServerStatus: Codable, Hashable, Sendable {
   public init(
     protocolVersion: Int = MobileRemoteProtocol.version,
     serverName: String,
+    hostRef: String? = nil,
+    hostKind: String? = nil,
     corpusName: String?,
     threadCount: Int,
     runningThreadCount: Int,
@@ -40,6 +44,8 @@ public struct MobileRemoteServerStatus: Codable, Hashable, Sendable {
   ) {
     self.protocolVersion = protocolVersion
     self.serverName = serverName
+    self.hostRef = hostRef
+    self.hostKind = hostKind
     self.corpusName = corpusName
     self.threadCount = threadCount
     self.runningThreadCount = runningThreadCount

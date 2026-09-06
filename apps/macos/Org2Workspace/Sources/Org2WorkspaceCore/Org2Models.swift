@@ -343,6 +343,7 @@ public struct AgentWorkflowTriggerItem: Decodable, Hashable, Sendable, Identifia
 }
 
 public struct AgentWorkflowDueListPayload: Decodable, Sendable {
+  public let reason: String?
   public let schema: String
   public let now: String
   public let due: [AgentWorkflowDueItem]

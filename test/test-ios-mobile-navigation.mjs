@@ -23,7 +23,7 @@ const mobileCaptureSupport = readFileSync(
   "utf8",
 );
 const remoteCoordinator = readFileSync(
-  resolve("apps/macos/Org2Workspace/Sources/Org2Workspace/MobileRemoteCoordinator.swift"),
+  resolve("apps/macos/Org2Workspace/Sources/Org2WorkspaceCore/MobileRemoteCoordinator.swift"),
   "utf8",
 );
 

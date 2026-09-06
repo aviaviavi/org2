@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Headless OpenOrg server</title>
+<meta name="subtitle" content="Keep chats and scheduled work available on a dedicated Mac" />
+<link rel="icon" type="image/png" href="assets/favicon.png" />
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
+<script type="module" src="assets/shiki-vscode.js"></script>
+<script defer src="assets/nav.js"></script>
+<meta name="description" content="Keep chats and scheduled work available on a dedicated Mac" />
+<link rel="canonical" href="https://openorg.so/headless-server.html" />
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="OpenOrg" />
+<meta property="og:locale" content="en_US" />
+<meta property="og:title" content="Headless OpenOrg server" />
+<meta property="og:description" content="Keep chats and scheduled work available on a dedicated Mac" />
+<meta property="og:url" content="https://openorg.so/headless-server.html" />
+<meta property="og:image" content="https://openorg.so/assets/og/headless-server.png" />
+<meta property="og:image:secure_url" content="https://openorg.so/assets/og/headless-server.png" />
+<meta property="og:image:type" content="image/png" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta property="og:image:alt" content="Headless OpenOrg server — Keep chats and scheduled work available on a dedicated Mac" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Headless OpenOrg server" />
+<meta name="twitter:description" content="Keep chats and scheduled work available on a dedicated Mac" />
+<meta name="twitter:url" content="https://openorg.so/headless-server.html" />
+<meta name="twitter:image" content="https://openorg.so/assets/og/headless-server.png" />
+<meta name="twitter:image:alt" content="Headless OpenOrg server — Keep chats and scheduled work available on a dedicated Mac" />
+<link rel="stylesheet" href="assets/site.css" />
+<style>
+:root { color-scheme: light dark; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 2rem auto; max-width: 860px; padding: 0 1rem; line-height: 1.5; }
+main { display: grid; gap: 0.75rem; }
+section.org2-headline { margin: 0.5rem 0 1rem; }
+h1,h2,h3,h4,h5,h6 { margin: 1rem 0 0.5rem; line-height: 1.25; }
+.org2-todo { font-size: 0.8em; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; opacity: 0.9; }
+.org2-tags { font-size: 0.8em; opacity: 0.8; }
+.org2-tag { border: 1px solid currentColor; border-radius: 999px; padding: 0 0.35em; }
+.org2-planning { font-size: 0.95em; opacity: 0.9; }
+.org2-planning-kind { font-weight: 600; }
+.org2-properties { display: grid; grid-template-columns: max-content 1fr; gap: 0.15rem 0.75rem; margin: 0.5rem 0; }
+.org2-properties dt { font-weight: 600; }
+.org2-properties dd { margin: 0; }
+.org2-src, .org2-example, .org2-verse, .org2-comment, .org2-directive, pre { overflow-x: auto; padding: 0.75rem; border-radius: 0.5rem; background: rgba(127,127,127,0.12); }
+.org2-center { text-align: center; }
+.org2-underline { text-decoration: underline; }
+table { border-collapse: collapse; width: 100%; margin: 0.5rem 0 1rem; }
+th, td { border: 1px solid rgba(127,127,127,0.35); padding: 0.35rem 0.5rem; text-align: left; }
+thead th { background: rgba(127,127,127,0.16); }
+a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
+</style>
+<style>
+#content { max-width: 60em; margin: auto; line-height: 1.35; }
+#content li > p { margin: 0; }
+#content li + li { margin-top: 0.2rem; }
+</style>
+</head>
+<body>
+<div id="content" class="content">
+<main class="org2-document">
+<div class="org2-nav"><details class="org2-nav-menu" open><summary>Menu</summary><nav aria-label="OpenOrg"><a href="index.html">OpenOrg</a><a href="features.html">How it works</a><a href="getting-started.html">Getting started</a><a href="downloads.html">Downloads</a><a href="openorg-and-org2.html">Architecture</a><details class="org2-nav-dropdown"><summary>Org2 developer docs</summary><div class="org2-nav-dropdown-menu"><a href="reference.html">Overview</a><a href="corpus-flow.html">Corpus flow</a><a href="language-reference.html">Language reference</a><a href="tooling-reference.html">Tooling reference</a><a href="mcp-and-skills.html">MCP and agent skills</a><a href="maintenance-workflows.html">Maintenance and health</a><a href="agent-quickstart.html">Agents and models</a><a href="semantics-status.html">Semantics and status</a><a href="migration.html">Practical migration</a></div></details><details class="org2-nav-dropdown"><summary>Editors</summary><div class="org2-nav-dropdown-menu"><a href="editors.html">Overview</a><a href="editors-macos.html">OpenOrg for macOS</a><a href="editors-vscode.html">VS Code</a><a href="editors-vim.html">Vim / Neovim</a><a href="editors-emacs.html">Emacs</a></div></details><a class="org2-nav-github" href="https://github.com/aviaviavi/org2" target="_blank" rel="noopener noreferrer"><svg class="org2-nav-github-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8a8.013 8.013 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.57 7.57 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.19 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg> GitHub</a><form class="org2-site-search" role="search"><button class="org2-site-search-toggle" type="button" aria-label="Open site search" aria-expanded="false">⌕</button><label class="sr-only" for="org2-site-search-input">Search OpenOrg and Org2 docs</label><input id="org2-site-search-input" type="search" placeholder="Search docs" autocomplete="off" aria-label="Search OpenOrg and Org2 docs" aria-expanded="false"/><div class="org2-site-search-results" hidden></div></form></nav></details></div>
+<header class="org2-document-header">
+<h1 class="org2-document-title">Headless OpenOrg server</h1>
+<p class="org2-document-subtitle" role="doc-subtitle">Keep chats and scheduled work available on a dedicated Mac</p>
+</header>
+<p><code>org2 server start</code> runs OpenOrg's chat relay and automation scheduler without opening the desktop app. This first implementation requires macOS 14 or later and reuses the desktop's chat engine, Mobile Remote protocol, corpus operations, and runtime adapters. The TypeScript CLI continues to own workflow scheduling and durable run semantics.</p>
+<p>The host needs its own accessible corpus, configured agent runtimes, and Tailscale connection. A phone can use the server while a different Mac is asleep or disconnected. The server holds a process-scoped assertion against idle system sleep while running; it cannot override a closed laptop lid, loss of power, or logout.</p>
+<section class="org2-headline level-1">
+<h1 id="set-up-a-host">Set up a host</h1>
+<p>Build from a checkout with locked dependencies:</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm ci
+npm run build:server</code></pre>
+<p>Initialize a machine-local configuration. The corpus must already have a valid <code>org2.json</code> identity; use <code>org2 corpus init --help</code> when creating a new test corpus. Obtain this machine's address with <code>tailscale ip -4</code>.</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">node dist/cli.js server init --dir /path/to/corpus --host-ref home-server --bind 100.64.0.1
+node dist/cli.js server init --dir /path/to/corpus --host-ref home-server --bind 100.64.0.1 --apply
+node dist/cli.js server start</code></pre>
+<p><code>init</code> previews before writing <code>~/.local/state/openorg/server.json</code>. Its parent directory must have mode <code>0700</code>; configuration and the local control socket are private to the operating-system user. Use <code>--config /private/state/server.json</code> for another instance, and pass it to subsequent commands. The configuration must stay outside the corpus and source checkout. It records absolute local paths, a symbolic host reference, the display name, Tailscale address, relay port, destination configurations, and whether scheduling is enabled.</p>
+<p>The default destination is local Codex using its existing login. <code>--destination claude</code> or <code>--destination openclaw</code> selects the corresponding built-in adapter. Additional destination configurations use the same fields as the desktop. OpenClaw's built-in destination honors its configured <code>endpoint</code> and <code>agentID</code>; empty values use the host's gateway settings and <code>main</code> agent. Provider credentials stay in runtime login stores, protected gateway configuration, or Keychain. Setup does not copy data or credentials from another machine.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="use-an-existing-corpus-and-chat-history">Use an existing corpus and chat history</h1>
+<p>Chat transcripts, thread IDs, pins, and settled state are persisted under the corpus's <code>.org2/</code> directory. Point <code>server init --dir</code> at the existing corpus on the host to make that history available immediately. If the corpus is already synchronized there, no separate transcript import is needed. Verify that synchronization includes the hidden <code>.org2/</code> directory and all referenced transcript shards and attachment blobs.</p>
+<p>Agent runtime sessions are separate from the visible transcript. Existing Codex or Claude conversations may reference session IDs stored outside the corpus; make those specific runtime sessions available on the host and configure the same destination IDs before continuing them. Reuse an existing remote gateway for OpenClaw conversations. Provider authentication remains machine-local and must not be copied into the corpus.</p>
+<p>To change an already paired server's corpus, stop it, update <code>corpusRoot</code> and destinations in its private configuration, then start it again. Preserve its configuration location, <code>hostRef</code>, and paired-device file to preserve the phone pairing. Check for running work before switching. Keep scheduling disabled until the intended automation owner and required runtimes are ready.</p>
+<p>Run <code>server status</code> from a second terminal to see the endpoint, scheduler status, active chats, and paired devices. <code>server stop</code> closes the relay and saves chat interruption state before shutdown. A second native server cannot acquire the same corpus while its first server is running.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="pair-the-iphone">Pair the iPhone</h1>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">node dist/cli.js server pair</code></pre>
+<p>This returns a pairing URL, endpoint, and one-use six-digit code, valid for ten minutes. Open the pairing link on the iPhone, or enter the endpoint and code under <strong>Settings → Host Connection</strong>. Both devices must be on the same Tailscale network. The public listener accepts only the Tailscale binding; authenticated relay requests use a device credential stored in the iPhone Keychain. The headless host persists only token hashes in its private state directory, so pairing does not require a GUI Keychain unlock. <code>server revoke --device-id ID</code> removes a paired device.</p>
+<p>The updated iOS app saves multiple hosts and lets you explicitly select the Mac or the server. Each host has its own credential and serves its configured corpus's conversations. Switching is disabled while a request is in flight, and changing pairing text cannot redirect an existing host's credential. Existing single-Mac pairings migrate into this host list. The current Mobile Remote protocol remains compatible with older iOS builds, which can pair with the server as their single host.</p>
+<p>The desktop continues to operate its local corpus and chats. This version does not make the desktop a client of the server relay or coordinate simultaneous transcript writers across replicated corpora. When hosting an existing corpus, continue its chats through the server and avoid simultaneous desktop chat editing against another synced copy. This also avoids diverging copies of agent runtime sessions. Agents on the server can use <code>org2 thread post</code> to deliver idempotent background results to the same conversation.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="choose-the-automation-owner">Choose the automation owner</h1>
+<p>A corpus defaults to the symbolic scheduler owner <code>desktop</code>. Assign its scheduled automations to a server with a preview:</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">node dist/cli.js server assign --dir /path/to/corpus --host-ref home-server
+node dist/cli.js server assign --dir /path/to/corpus --host-ref home-server --apply</code></pre>
+<p>This writes only <code>automationHostRef</code> to <code>org2.json</code>. The server passes its host reference to <code>workflow due</code> and scheduled <code>workflow run</code> calls; the desktop passes <code>desktop</code>. Both discovery and dispatch check ownership. Updated desktop installations skip a server-owned corpus when the laptop reconnects. Older desktop builds do not enforce this field; stop their scheduler or update them before transferring ownership. Switch back by assigning <code>desktop</code>. Let active work finish or explicitly stop it before transferring ownership; changing the owner does not cancel a dispatched agent turn.</p>
+<p>Scheduling catches up the latest missed occurrence, suppresses overlap with queued, running, blocked, or approval-waiting attempts, and retains the explicit destination reference. The server must have that destination enabled. Missing destinations fail visibly. There is no automatic rerouting to another provider or another machine.</p>
+<p>Attempt creation is serialized per workflow on the actual filesystem, and a previously recorded scheduled occurrence cannot be dispatched again, even after its run terminates. An orphaned <code>.org2/workflow-dispatch-locks/ID.lock</code> fails closed; inspect its process and host before removing it. A background process exiting does not prove a whole run is complete: durable approvals, artifacts, and review boundaries still apply.</p>
+<p>Independent copies synchronized through Git, iCloud, or another replication tool do not provide a distributed lock. Do not run the same symbolic server identity on multiple such copies. Use one authoritative host for scheduling and execution. Automatic machine failover and per-workflow host placement are future work.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="keep-the-process-running">Keep the process running</h1>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">node dist/cli.js server service
+node dist/cli.js server service --apply</code></pre>
+<p>The preview shows the complete launchd agent and the exact <code>launchctl bootstrap</code> command. Applying writes <code>~/Library/LaunchAgents/org.org2.server.HOST.plist</code>; run the returned command to load it. The service starts at user login and restarts after failures. This is a user service, so the Mac must remain logged in. A deliberate <code>server stop</code> exits successfully and stays stopped until explicitly started again. After a reboot, sign in to make runtime logins and Keychain available.</p>
+<p>Logs live beside the server configuration as <code>server.log</code> and <code>server-error.log</code>. Pairing codes are returned through the private control socket, not written to service logs. Use stable checkout and executable paths for a persistent installation; do not remove the installed build directory.</p>
+<p>Foreground iPhone chat works immediately after pairing. Background reply notifications additionally require Apple Push Notification credentials for the iOS app:</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">node dist/cli.js server push-config --team-id TEAM --key-id KEY --key-file /private/path/AuthKey.p8
+node dist/cli.js server push-config --team-id TEAM --key-id KEY --key-file /private/path/AuthKey.p8 --apply</code></pre>
+<p>The CLI reads the private key locally and sends it only through the private control socket for storage in Keychain. It does not print the key. The iPhone registers its notification token on its next connection.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="other-headless-uses">Other headless uses</h1>
+<p>The shared relay also exposes canonical Agenda, approvals, workflow controls, cited file previews, and external Codex tasks to iOS. Existing bounded CLI commands provide search, capture, ingestion, publishing, and MCP access on the host. Those commands retain their own preview, mount, credential, and review requirements. The server does not automatically enable source synchronization, meeting recording, or local document publication merely by starting.</p>
+</section>
+</main>
+</div>
+<footer class="org2-footer"><div class="org2-footer-incubator"><span>Incubated at</span><a href="https://scarf.sh" target="_blank" rel="noopener noreferrer"><img class="org2-footer-scarf-logo" src="assets/scarf-logo.svg" alt="Scarf" /></a></div><p class="org2-footer-tagline">Build your knowledge locally and put it to work.</p><img referrerpolicy="no-referrer-when-downgrade" src="https://static.scarf.sh/a.png?x-pxid=e39e0a38-773e-4446-b8b0-804f923e3dc3" alt="" /></footer>
+</body>
+</html>

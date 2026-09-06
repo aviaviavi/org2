@@ -93,6 +93,8 @@ export type Org2PluginConfig = {
 };
 
 export interface Org2Config {
+  /** Symbolic scheduler owner; defaults to desktop. Machine endpoints stay outside the corpus. */
+  automationHostRef?: string;
   corpus?: Org2CorpusIdentity;
   agendaFiles?: string[];
   recursive?: boolean;

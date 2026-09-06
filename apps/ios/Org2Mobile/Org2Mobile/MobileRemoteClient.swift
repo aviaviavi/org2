@@ -13,13 +13,13 @@ enum MobileRemoteClientError: LocalizedError {
     case .invalidEndpoint:
       "Enter a Tailscale URL such as http://100.64.0.1:48922."
     case .connection(let detail):
-      "Could not reach the Mac: \(detail)"
+      "Could not reach the host: \(detail)"
     case .malformedResponse:
-      "The Mac returned an unreadable response."
+      "The host returned an unreadable response."
     case .server(let message):
       message
     case .incompatibleProtocol:
-      "This Mac uses a different Mobile Remote protocol version. Update OpenOrg on both devices."
+      "This host uses a different Mobile Remote protocol version. Update OpenOrg on both devices."
     }
   }
 }
@@ -113,7 +113,7 @@ struct MobileRemoteClient: Sendable {
 
     guard (200..<300).contains(response.statusCode) else {
       let envelope = try? MobileRemoteWire.decoder().decode(MobileRemoteErrorEnvelope.self, from: response.body)
-      throw MobileRemoteClientError.server(envelope?.error ?? "The Mac rejected this request.")
+      throw MobileRemoteClientError.server(envelope?.error ?? "The host rejected this request.")
     }
     return try MobileRemoteWire.decoder().decode(type, from: response.body)
   }

@@ -3523,6 +3523,37 @@ public final class WorkspaceStore {
     restoreInterruptedOpenClawSendStatusIfNeeded()
   }
 
+  /// Starts the corpus and chat lifecycle without desktop onboarding, audio, or windows.
+  public func bootstrapHeadless(
+    corpusRoot: URL,
+    hostRef: String,
+    destinations: [AIChatDestinationConfiguration]
+  ) async {
+    automationHostRef = hostRef
+    configureHeadlessDestinations(destinations)
+    setCorpusRoot(corpusRoot, persistsDefault: false)
+    if let openClawTranscriptLoadTask { await openClawTranscriptLoadTask.value }
+    startPendingOpenClawTurnRecovery()
+    setWorkspaceRealtimeRefreshActive(true)
+    await refreshAgenda()
+    await refreshRunReviewData()
+  }
+
+  public var automationHostRef: String = "desktop"
+
+  func configureHeadlessDestinations(_ destinations: [AIChatDestinationConfiguration]) {
+    guard let destination = destinations.first(where: { $0.id == AIChatDestinationConfiguration.openClawID }),
+          destination.adapter == .openClaw else { return }
+    // The desktop's built-in adapter reads these settings separately. A server
+    // must use its original configuration, before the desktop's inherited-agent
+    // migration clears the built-in destination's agentID.
+    let endpoint = destination.endpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+    openClawEndpointText = endpoint.isEmpty
+      ? OpenClawGatewaySettings.resolve().endpoint.absoluteString : endpoint
+    let agentID = destination.agentID.trimmingCharacters(in: .whitespacesAndNewlines)
+    openClawAgentID = agentID.isEmpty ? "main" : agentID
+  }
+
   public func bootstrap() async {
     await restoreLocalDocumentPublications()
     await refreshAudioSettingsStatusAsync()
@@ -5358,14 +5389,15 @@ public final class WorkspaceStore {
       formatter.formatOptions = [.withInternetDateTime]
       let payload: AgentWorkflowDueListPayload = try await cli.runJSON([
         "workflow", "due",
+        "--host-ref", automationHostRef,
         "--now", formatter.string(from: now),
         "--dir", corpusRoot.path,
         "--json"
       ])
       if payload.due.isEmpty {
-        automationSchedulerStatusText = payload.skipped.isEmpty
+        automationSchedulerStatusText = payload.reason ?? (payload.skipped.isEmpty
           ? "Automations are up to date"
-          : "\(payload.skipped.count) automation\(payload.skipped.count == 1 ? "" : "s") waiting for an active run"
+          : "\(payload.skipped.count) automation\(payload.skipped.count == 1 ? "" : "s") waiting for an active run")
         return
       }
       automationSchedulerStatusText = "Dispatching \(payload.due.count) automation\(payload.due.count == 1 ? "" : "s")…"
@@ -6921,7 +6953,7 @@ public final class WorkspaceStore {
         arguments += ["--input", "\(name)=\(value)"]
       }
       if let triggerID {
-        arguments += ["--trigger", triggerID]
+        arguments += ["--trigger", triggerID, "--host-ref", automationHostRef]
       }
       if let scheduledFor {
         arguments += ["--scheduled-for", scheduledFor]

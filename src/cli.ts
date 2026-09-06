@@ -8349,6 +8349,12 @@ or {metadata:{...}, content:"..."}. Generated view artifacts are review-required
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
 
+  if (args[0] === "server") {
+    const { runServerCommand } = await import("./serverCli.js");
+    await runServerCommand(args.slice(1));
+    return;
+  }
+
   if (args.length === 1 && ["version", "--version", "-v"].includes(args[0] || "")) {
     process.stdout.write(`${org2PackageVersion()}\n`);
     return;
@@ -10351,6 +10357,7 @@ Other:
   org2 version
   org2 --version
   org2 lsp
+  org2 server <init|start|status|pair|revoke|stop|assign|service|push-config> [options]
 
 Tips:
   - Use --help with subcommands for detailed flags (e.g., org2 agenda --help).

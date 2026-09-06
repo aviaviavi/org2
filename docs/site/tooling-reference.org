@@ -937,3 +937,7 @@ For full details, see:
 
 - =LSP_README.md=
 - [[file:editors-vscode.org][VS Code integration docs]]
+
+* Headless server CLI
+
+=org2 server init|start|status|pair|revoke|stop|assign|service|push-config= manages the macOS headless relay and scheduler. Configuration is machine-local; =server assign= previews a symbolic =automationHostRef= change in =org2.json=. The =workflow due --host-ref HOST= and scheduled =workflow run --host-ref HOST= interfaces enforce that owner. See [[file:headless-server.org][Headless server setup]] for the complete lifecycle and limitations.

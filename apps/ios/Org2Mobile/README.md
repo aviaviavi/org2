@@ -47,3 +47,7 @@ The Mac listener binds only to its Tailscale IPv4 address on port `48922`; it is
 Photo attachments and remote model selection require Mobile Remote protocol v2. Update both the Mac and iOS apps together; the apps reject a mismatched protocol instead of silently dropping attachments.
 
 The app and share extension use the `group.org.org2.mobile` app group so the extension can reuse the selected corpus bookmark. Enable that App Group for both targets in the Apple developer portal before device signing.
+
+## Headless host pairing
+
+Mobile Remote also connects to `org2 server` on a dedicated Mac. Settings → Host Connection saves a separate Keychain credential for each host and selects one host at a time. Existing Mac pairings migrate automatically. Hosts serve the chat history persisted in their configured corpus; selecting another host does not copy history or agent runtime sessions. Simultaneous desktop/server chat editing against synced corpus copies is not coordinated. See [headless server setup](../../../docs/site/headless-server.org).

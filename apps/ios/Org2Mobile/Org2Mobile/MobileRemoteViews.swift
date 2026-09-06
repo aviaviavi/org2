@@ -35,7 +35,7 @@ struct MobileAISidebarView: View {
         VStack(alignment: .leading, spacing: 2) {
           Text("AI Chat")
             .font(.title2.weight(.bold))
-          Text(remote.isPaired ? statusSubtitle : "Connect a Mac to start chatting")
+          Text(remote.isPaired ? statusSubtitle : "Connect a Host to start chatting")
             .font(.caption)
             .foregroundStyle(.secondary)
             .lineLimit(1)
@@ -232,9 +232,27 @@ struct MobileSettingsView: View {
         }
       }
 
-      Section("Mac Connection") {
+      Section("Host Connection") {
+        ForEach(remote.savedHosts) { host in
+          Button {
+            remote.selectHost(host)
+          } label: {
+            Label(host.name, systemImage: host.id == remote.activeHostID ? "checkmark.circle.fill" : "server.rack")
+          }
+          .disabled(!remote.canChangeHost)
+        }
         if remote.isPaired {
-          LabeledContent("Mac", value: remote.serverName)
+          NavigationLink("Add Another Host") {
+            MobileRemotePairingView()
+              .navigationTitle("Connect Host")
+          }
+          .disabled(!remote.canChangeHost)
+          Text("Each host provides chats from its configured corpus. Choose the server to keep working while your laptop is away.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        if remote.isPaired {
+          LabeledContent("Host", value: remote.serverName)
           LabeledContent("Status", value: remote.isConnected ? "Connected" : "Unavailable")
           LabeledContent("Endpoint", value: remote.pairedEndpoint)
           if let connectionError = remote.connectionError, !remote.isConnected {
@@ -248,18 +266,18 @@ struct MobileSettingsView: View {
             Label("Reconnect", systemImage: "arrow.clockwise")
           }
           .disabled(remote.isRefreshing)
-          Button("Forget This Mac", role: .destructive) {
+          Button("Forget This Host", role: .destructive) {
             remote.disconnect()
           }
         } else {
           NavigationLink {
             MobileRemotePairingView()
-              .navigationTitle("Connect Mac")
+              .navigationTitle("Connect Host")
               .navigationBarTitleDisplayMode(.inline)
           } label: {
-            Label("Connect a Mac", systemImage: "desktopcomputer")
+            Label("Connect a Host", systemImage: "desktopcomputer")
           }
-          Text("Pair over Tailscale to use AI chat, external tasks, and canonical approvals from your Mac.")
+          Text("Pair over Tailscale to use AI chat, external tasks, and canonical approvals from your host.")
             .font(.caption)
             .foregroundStyle(.secondary)
         }
@@ -346,7 +364,7 @@ struct MobileRemoteRootView: View {
                 }
               }
               Divider()
-              Button("Forget This Mac", role: .destructive) {
+              Button("Forget This Host", role: .destructive) {
                 path = []
                 remote.disconnect()
               }
@@ -420,14 +438,14 @@ struct MobileRemoteRootView: View {
             Circle()
               .fill(remote.isConnected ? Color.green : Color.secondary)
               .frame(width: 8, height: 8)
-              .accessibilityLabel(remote.isConnected ? "Connected" : "Mac unavailable")
+              .accessibilityLabel(remote.isConnected ? "Connected" : "Host unavailable")
           }
         }
         .padding(.vertical, 3)
 
         if !remote.isConnected, !remote.isRefreshing {
           VStack(alignment: .leading, spacing: 8) {
-            Text(remote.connectionError ?? "This phone cannot currently reach the paired Mac.")
+            Text(remote.connectionError ?? "This phone cannot currently reach the selected host.")
               .font(.caption)
               .foregroundStyle(.orange)
             HStack {
@@ -531,7 +549,7 @@ struct MobileRemoteRootView: View {
               .foregroundStyle(.secondary)
             Text("No Remote Chats")
               .font(.headline)
-            Text("Create a chat here or in OpenOrg on your Mac.")
+            Text("Create a chat here or in OpenOrg on your host.")
               .font(.subheadline)
               .foregroundStyle(.secondary)
               .multilineTextAlignment(.center)
@@ -607,7 +625,7 @@ struct MobileRemoteRootView: View {
   }
 
   private var statusSubtitle: String {
-    guard remote.isConnected else { return "Waiting for Mac over Tailscale" }
+    guard remote.isConnected else { return "Waiting for host over Tailscale" }
     guard let status = remote.status else { return "Connected over Tailscale" }
     let corpus = status.corpusName.map { " • \($0)" } ?? ""
     let running = status.runningThreadCount == 1
@@ -674,7 +692,7 @@ struct MobileExternalThreadListView: View {
         ContentUnavailableView(
           "No External Threads",
           systemImage: "rectangle.stack.badge.person.crop",
-          description: Text("Recent native Codex tasks from your Mac will appear here.")
+          description: Text("Recent native Codex tasks from your host will appear here.")
         )
       } else if filteredThreads.isEmpty && !query.isEmpty {
         ContentUnavailableView.search(text: query)
@@ -880,14 +898,14 @@ private struct MobileRemotePairingView: View {
           Image(systemName: "desktopcomputer")
             .font(.system(size: 48))
             .foregroundStyle(.blue)
-          Text("Your Mac, from your phone")
+          Text("Your workspace, always available")
             .font(.title2.weight(.semibold))
-          Text("Continue OpenOrg AI chats while you’re away from your desk. Your Mac stays the executor and source of context.")
+          Text("Connect to your Mac or an always-on OpenOrg server. The selected host runs your chats and provides their workspace context.")
             .foregroundStyle(.secondary)
         }
 
         VStack(alignment: .leading, spacing: 12) {
-          Label("On the Mac, open OpenOrg Settings → Mobile Remote.", systemImage: "1.circle.fill")
+          Label("On a Mac, open Settings → Mobile Remote. For a server, ask your agent for a pairing link.", systemImage: "1.circle.fill")
           Label("Turn it on and create a one-time pairing code.", systemImage: "2.circle.fill")
           Label("Scan the QR code below, or enter its details.", systemImage: "3.circle.fill")
         }
@@ -921,13 +939,13 @@ private struct MobileRemotePairingView: View {
               if remote.isPairing {
                 ProgressView()
               }
-              Text(remote.isPairing ? "Pairing…" : "Pair with Mac")
+              Text(remote.isPairing ? "Pairing…" : "Pair with Host")
             }
             .frame(maxWidth: .infinity)
           }
           .buttonStyle(.bordered)
           .controlSize(.large)
-          .disabled(remote.isPairing || remote.endpointDraft.isEmpty || remote.codeDraft.isEmpty)
+          .disabled(!remote.canChangeHost || remote.endpointDraft.isEmpty || remote.codeDraft.isEmpty)
         }
 
         Label(
@@ -1096,7 +1114,7 @@ struct MobileRemoteThreadView: View {
       } else {
         if let message = remote.threadConnectionError {
           ContentUnavailableView(
-            "Mac Unavailable",
+            "Host Unavailable",
             systemImage: "wifi.exclamationmark",
             description: Text(message)
           )
@@ -1802,7 +1820,7 @@ struct MobileRemoteThreadView: View {
       roomRoundID: nil
     )
 
-    // Make send feel local even when the paired Mac is slow to acknowledge it.
+    // Make send feel local even when the selected host is slow to acknowledge it.
     // The field remains focused, so the next message can be typed immediately.
     draft = ""
     dictationPrefix = ""
@@ -3192,7 +3210,7 @@ private struct MobileRemoteScannerSheet: View {
     NavigationStack {
       MobileRemoteQRScanner(onScan: onScan)
         .ignoresSafeArea(edges: .bottom)
-        .navigationTitle("Scan Mac")
+        .navigationTitle("Scan Host")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
           ToolbarItem(placement: .cancellationAction) {

@@ -165,7 +165,7 @@ public actor ClaudeCodeClient {
       })
     }
     return candidates.lazy
-      .map { URL(fileURLWithPath: $0).standardizedFileURL }
+      .map { URL(fileURLWithPath: $0).standardizedFileURL.resolvingSymlinksInPath() }
       .first {
         fileManager.isExecutableFile(atPath: $0.path)
           && (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) != false

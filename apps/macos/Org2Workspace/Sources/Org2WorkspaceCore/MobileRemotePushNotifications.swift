@@ -36,9 +36,9 @@ final class MobileRemotePushCredentialStore: @unchecked Sendable {
   private let service: String
   private let account = "apns-private-key"
 
-  init(defaults: UserDefaults = .standard) {
+  init(defaults: UserDefaults = .standard, credentialNamespace: String? = nil) {
     self.defaults = defaults
-    service = (Bundle.main.bundleIdentifier ?? "org.org2.workspace") + ".mobile-remote-push"
+    service = (credentialNamespace ?? Bundle.main.bundleIdentifier ?? "org.org2.workspace") + ".mobile-remote-push"
   }
 
   var teamID: String {

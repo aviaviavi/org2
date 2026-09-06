@@ -140,3 +140,7 @@
   </section>
 </div>
 #+END_EXPORT
+
+* Headless host
+
+A dedicated macOS host can run the OpenOrg chat relay and automation scheduler from =org2 server= without a desktop window. iOS can save and select a Mac or server; each corpus has an explicit scheduler owner. See [[file:headless-server.org][Headless server setup]] for pairing, login-service installation, and the current host boundaries.

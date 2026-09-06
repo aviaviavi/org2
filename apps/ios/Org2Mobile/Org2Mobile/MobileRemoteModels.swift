@@ -25,9 +25,17 @@ enum MobileRemoteWire {
   }
 }
 
+struct MobileRemoteSavedHost: Codable, Hashable, Identifiable {
+  let id: UUID
+  var name: String
+  let endpoint: String
+}
+
 struct MobileRemoteServerStatus: Codable, Hashable {
   let protocolVersion: Int
   let serverName: String
+  let hostRef: String?
+  let hostKind: String?
   let corpusName: String?
   let threadCount: Int
   let runningThreadCount: Int

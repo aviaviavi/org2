@@ -40,6 +40,8 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "build:server": "npm run build && swift build --package-path apps/macos/Org2Workspace --product OpenOrgServer",
+    "test:server": "node test/test-server.mjs",
     "build:macos-app": "node tools/build-macos-app.mjs --configuration release",
     "build:macos-app:restart": "node tools/build-macos-app.mjs --configuration release --restart",
     "build:macos-app:release": "node tools/build-macos-app.mjs --configuration release",
@@ -73,7 +75,7 @@
     "pretest": "npm run build",
     "prepublishOnly": "npm run docs:check && npm test",
     "test:prerequisites:built": "node test/test-plugin-runtime.mjs && node test/test-table-formula.mjs && node test/test-source-runtime.mjs && npm run test:agentic && npm run test:corpus && npm run test:openclaw:built",
-    "test:agentic": "node test/test-agentic-workspace.mjs && node test/test-agentic-doctor.mjs && node test/test-work-ledger.mjs && node test/test-openclaw-thread-state.mjs && node test/test-ai-chat-inbox.mjs && node test/test-skill-install.mjs",
+    "test:agentic": "node test/test-server.mjs && node test/test-agentic-workspace.mjs && node test/test-agentic-doctor.mjs && node test/test-work-ledger.mjs && node test/test-openclaw-thread-state.mjs && node test/test-ai-chat-inbox.mjs && node test/test-skill-install.mjs",
     "test:corpus": "node test/test-corpus-identity.mjs && node test/test-node-actions.mjs",
     "test:node-actions": "npm run build && node test/test-node-actions.mjs",
     "test:sources": "npm run build && node test/test-source-runtime.mjs",

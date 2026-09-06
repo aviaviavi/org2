@@ -56,6 +56,7 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
       "A `run approval-decide --decision revised` request must include `--note \"Requested changes\"`; revision feedback is stored as the decision note and does not authorize the protected action.",
       "Approval decisions are item-scoped: rejecting or canceling one action leaves sibling approvals pending, and the run resumes only after the current boundary is fully decided, executing approved actions while excluding rejected or canceled ones. A client recording that one approval was completed elsewhere must cancel only that approval with an external receipt; it must not complete the containing run. Use `revised` with a concrete note when replacement material is required.",
       "Scheduled workflow runs use a stable logicalWorkId plus distinct numbered attempt records. A schedule with an event/fresh-path gate is skipped until `workflow signal` records matching work after the prior attempt.",
+      "Use `org2 server` for a standalone macOS relay and scheduler. Server configuration is machine-local; `server assign --host-ref HOST` writes only a symbolic automation owner to org2.json. iOS selects one paired host at a time; independently synced corpus copies are not a distributed lock.",
       "The OpenOrg scheduler catches up only the latest missed occurrence and refuses overlapping queued, running, blocked, or approval-waiting attempts. An unavailable explicit AI destination fails visibly; it must never silently reroute the prompt.",
       "Deleting a workflow is preview-first and removes only its canonical definition; preserve prior runs and never imply that deleting the definition cancels work already dispatched to a runtime.",
       "A run with a review-required artifact cannot be completed normally; after the human decision, use `org2 run artifact-review RUN_ID ARTIFACT_ID --status reviewed|rejected --actor NAME` to update both the durable run and linked Org artifact before completion.",
@@ -90,6 +91,12 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
         purpose: "Combine agenda or search output from explicitly named identified corpora while retaining corpus identity on every result.",
         commands: ["org2 workspace agenda", "org2 workspace search"],
         writes: "read-only",
+      },
+      {
+        id: "headless-server",
+        purpose: "Host the OpenOrg chat relay and automation scheduler without a desktop window on macOS, pair iOS over Tailscale, and assign one explicit scheduler owner per corpus.",
+        commands: ["org2 server init", "org2 server start", "org2 server status", "org2 server pair", "org2 server assign", "org2 server service", "org2 server stop", "org2 server revoke", "org2 server push-config"],
+        writes: "mixed",
       },
       {
         id: "agentic-workspace",

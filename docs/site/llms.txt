@@ -72,6 +72,8 @@ Agents and runtime adapters should record observable execution metadata with `or
 
 ## Agent entry points
 
+- [Headless server](headless-server.html): macOS CLI relay and scheduler, iOS host pairing, explicit corpus automation ownership, user launchd service, and current failover boundaries.
+
 - https://org2.avi.press/agent-quickstart.html
 - https://org2.avi.press/mcp-and-skills.html
 - https://org2.avi.press/tooling-reference.html

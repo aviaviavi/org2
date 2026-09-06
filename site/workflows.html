@@ -170,7 +170,11 @@ org2 workflow migrate --dir ~/notes</code></pre>
 </section>
 <section class="org2-headline level-1">
 <h1 id="current-limits">Current limits</h1>
-<p>This is an early automation surface. The canonical file carries readable Org2 authoring fields plus a versioned machine-state block for the complete portable definition. The visible title, description, instructions, destination reference, version, risk, and lifecycle state are authoritative when edited in source; a later structured save normalizes those values back into the complete definition. Source mode remains the complete editing escape hatch while structured assistance for inputs, steps, outputs, validation, and approvals becomes deeper. OpenOrg does not yet run schedules after the app process exits, offer a friendly natural-language schedule builder, or delegate clock ownership to Codex or Claude Code native schedulers.</p>
+<p>This is an early automation surface. The canonical file carries readable Org2 authoring fields plus a versioned machine-state block for the complete portable definition. The visible title, description, instructions, destination reference, version, risk, and lifecycle state are authoritative when edited in source; a later structured save normalizes those values back into the complete definition. Source mode remains the complete editing escape hatch while structured assistance for inputs, steps, outputs, validation, and approvals becomes deeper. Scheduled work requires the selected desktop app or headless server process to be running. OpenOrg does not yet offer a friendly natural-language schedule builder or delegate clock ownership to Codex or Claude Code native schedulers.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="running-without-the-desktop-app">Running without the desktop app</h1>
+<p>The <a href="headless-server.html">headless server</a> reuses these workflow and run records. Assign <code>automationHostRef</code> with preview-first <code>org2 server assign --dir CORPUS --host-ref HOST</code>. Updated desktop schedulers skip a corpus owned by another host. Scheduled attempt creation locks each workflow separately and refuses an already dispatched occurrence. Independently synchronized copies require one explicitly chosen owner; they do not support automatic distributed failover.</p>
 </section>
 </main>
 </div>

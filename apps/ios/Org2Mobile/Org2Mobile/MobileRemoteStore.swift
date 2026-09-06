@@ -5,6 +5,15 @@ import UIKit
 
 @MainActor
 final class MobileRemoteStore: ObservableObject {
+  @Published private(set) var savedHosts: [MobileRemoteSavedHost] = []
+  @Published private(set) var activeHostID: UUID?
+  @Published private(set) var activeRequestCount = 0
+  private var activeEndpoint = ""
+  private static let savedHostsKey = "Org2Mobile.remote.hosts.v1"
+  private static let activeHostKey = "Org2Mobile.remote.activeHost.v1"
+
+  var canChangeHost: Bool { activeRequestCount == 0 && !isPairing }
+
   @Published private(set) var isPaired = false
   @Published private(set) var isConnected = false
   @Published private(set) var connectionError: String?
@@ -76,7 +85,28 @@ final class MobileRemoteStore: ObservableObject {
       ? "OpenOrg on Mac"
       : storedServerName ?? "OpenOrg on Mac"
     accessToken = Self.loadToken()
-    isPaired = !endpointDraft.isEmpty && accessToken != nil
+    savedHosts = defaults.data(forKey: Self.savedHostsKey).flatMap {
+      try? JSONDecoder().decode([MobileRemoteSavedHost].self, from: $0)
+    } ?? []
+    activeHostID = defaults.string(forKey: Self.activeHostKey).flatMap(UUID.init(uuidString:))
+    if let host = savedHosts.first(where: { $0.id == activeHostID }) {
+      activeEndpoint = host.endpoint
+      endpointDraft = host.endpoint
+      serverName = host.name
+      accessToken = Self.loadToken(account: host.id.uuidString)
+    } else if !endpointDraft.isEmpty, let token = accessToken {
+      let id = UUID()
+      if (try? Self.saveToken(token, account: id.uuidString)) != nil {
+        let host = MobileRemoteSavedHost(id: id, name: serverName, endpoint: endpointDraft)
+        savedHosts.append(host)
+        activeHostID = id
+        activeEndpoint = host.endpoint
+        defaults.set(try? JSONEncoder().encode(savedHosts), forKey: Self.savedHostsKey)
+        defaults.set(id.uuidString, forKey: Self.activeHostKey)
+        Self.deleteToken()
+      }
+    }
+    isPaired = !activeEndpoint.isEmpty && accessToken != nil
     notificationObservers = [
       NotificationCenter.default.addObserver(
         forName: .org2RemotePushTokenUpdated,
@@ -122,15 +152,19 @@ final class MobileRemoteStore: ObservableObject {
     endpointDraft = endpoint
     codeDraft = code
     if let name = components.queryItems?.first(where: { $0.name == "name" })?.value {
-      serverName = name
+      if !isPaired { serverName = name }
     }
     return true
   }
 
   func pair() async {
-    guard !isPairing else { return }
+    guard canChangeHost else {
+      errorMessage = "Wait for the current host request to finish before pairing."
+      return
+    }
     isPairing = true
-    defer { isPairing = false }
+    activeRequestCount += 1
+    defer { isPairing = false; activeRequestCount -= 1 }
     do {
       let client = try MobileRemoteClient(endpoint: endpointDraft, accessToken: nil)
       let response: MobileRemotePairResponse = try await client.post(
@@ -144,7 +178,19 @@ final class MobileRemoteStore: ObservableObject {
       guard response.protocolVersion == MobileRemoteWire.version else {
         throw MobileRemoteClientError.incompatibleProtocol
       }
-      try Self.saveToken(response.accessToken)
+      let endpoint = client.endpoint.absoluteString
+      let host = MobileRemoteSavedHost(id: response.deviceID, name: response.serverName, endpoint: endpoint)
+      try Self.saveToken(response.accessToken, account: host.id.uuidString)
+      disconnect(forgetHost: false, checksRequests: false)
+      savedHosts.removeAll { existing in
+        if existing.endpoint == endpoint { Self.deleteToken(account: existing.id.uuidString); return true }
+        return false
+      }
+      savedHosts.append(host)
+      activeHostID = host.id
+      activeEndpoint = endpoint
+      endpointDraft = endpoint
+      persistHosts()
       accessToken = response.accessToken
       serverName = response.serverName
       codeDraft = ""
@@ -152,17 +198,51 @@ final class MobileRemoteStore: ObservableObject {
       defaults.set(serverName, forKey: Self.serverNameKey)
       defaults.set(response.deviceID.uuidString, forKey: Self.deviceIDKey)
       isPaired = true
+      isPairing = false
       await prepareThreadNotifications()
       await refresh()
       await syncPushRegistrationIfNeeded(force: true)
+      setAppActive(appIsActive)
     } catch {
       errorMessage = error.localizedDescription
     }
   }
 
-  func disconnect() {
-    if isPaired, accessToken != nil, let client = try? pairedClient() {
+  func selectHost(_ host: MobileRemoteSavedHost) {
+    guard canChangeHost, host.id != activeHostID else { return }
+    guard let token = Self.loadToken(account: host.id.uuidString) else {
+      errorMessage = "Pair with this host again to restore its credential."
+      return
+    }
+    disconnect(forgetHost: false)
+    activeHostID = host.id
+    activeEndpoint = host.endpoint
+    endpointDraft = host.endpoint
+    serverName = host.name
+    accessToken = token
+    isPaired = true
+    persistHosts()
+    defaults.set(host.endpoint, forKey: Self.endpointKey)
+    defaults.set(host.name, forKey: Self.serverNameKey)
+    setAppActive(appIsActive)
+    Task { await refresh(); await refreshWorkspace(reportsErrors: false) }
+  }
+
+  private func persistHosts() {
+    defaults.set(try? JSONEncoder().encode(savedHosts), forKey: Self.savedHostsKey)
+    defaults.set(activeHostID?.uuidString, forKey: Self.activeHostKey)
+  }
+
+  func disconnect(forgetHost: Bool = true, checksRequests: Bool = true) {
+    guard !checksRequests || canChangeHost else {
+      errorMessage = "Wait for the current host request to finish before disconnecting."
+      return
+    }
+    if isPaired, let accessToken,
+       let client = try? MobileRemoteClient(endpoint: activeEndpoint, accessToken: accessToken) {
+      activeRequestCount += 1
       Task {
+        defer { activeRequestCount -= 1 }
         _ = try? await client.post(
           "/v1/push-registration",
           payload: MobileRemotePushRegistrationRequest(
@@ -180,13 +260,19 @@ final class MobileRemoteStore: ObservableObject {
     pollingLeaseID = nil
     foregroundReplyPollingTask?.cancel()
     foregroundReplyPollingTask = nil
-    Self.deleteToken()
+    if forgetHost, let activeHostID {
+      Self.deleteToken(account: activeHostID.uuidString)
+      savedHosts.removeAll { $0.id == activeHostID }
+    }
+    activeHostID = nil
+    activeEndpoint = ""
+    persistHosts()
     accessToken = nil
     isPaired = false
     isConnected = false
     connectionError = nil
     realTimeNotificationsActive = false
-    pushNotificationStatusText = "Pair with a Mac for real-time notifications"
+    pushNotificationStatusText = "Pair with a host for real-time notifications"
     pushRegistrationFingerprint = nil
     status = nil
     threads = []
@@ -217,6 +303,8 @@ final class MobileRemoteStore: ObservableObject {
   }
 
   func refresh(reportsErrors: Bool = true) async {
+    activeRequestCount += 1
+    defer { activeRequestCount -= 1 }
     guard isPaired, !isRefreshing else { return }
     isRefreshing = true
     defer { isRefreshing = false }
@@ -247,6 +335,8 @@ final class MobileRemoteStore: ObservableObject {
   }
 
   func refreshWorkspace(reportsErrors: Bool = true) async {
+    activeRequestCount += 1
+    defer { activeRequestCount -= 1 }
     guard isPaired, !isRefreshingWorkspace else { return }
     isRefreshingWorkspace = true
     defer { isRefreshingWorkspace = false }
@@ -262,7 +352,7 @@ final class MobileRemoteStore: ObservableObject {
     } catch {
       workspaceConnectionError = error.localizedDescription
       if reportsErrors, workspaceUpdatedAt == nil {
-        errorMessage = "Could not load canonical workspace data from the Mac. \(error.localizedDescription)"
+        errorMessage = "Could not load canonical workspace data from the host. \(error.localizedDescription)"
       }
     }
   }
@@ -327,6 +417,8 @@ final class MobileRemoteStore: ObservableObject {
   }
 
   func runWorkflow(_ workflow: MobileRemoteWorkflowItem, inputs: [String: String]) async -> UUID? {
+    activeRequestCount += 1
+    defer { activeRequestCount -= 1 }
     guard !mutatingWorkspaceItemIDs.contains(workflow.id) else { return nil }
     mutatingWorkspaceItemIDs.insert(workflow.id)
     defer { mutatingWorkspaceItemIDs.remove(workflow.id) }
@@ -349,6 +441,8 @@ final class MobileRemoteStore: ObservableObject {
     _ id: String,
     operation: () async throws -> MobileRemoteWorkspaceSnapshot
   ) async {
+    activeRequestCount += 1
+    defer { activeRequestCount -= 1 }
     guard !mutatingWorkspaceItemIDs.contains(id) else { return }
     mutatingWorkspaceItemIDs.insert(id)
     defer { mutatingWorkspaceItemIDs.remove(id) }
@@ -462,6 +556,8 @@ final class MobileRemoteStore: ObservableObject {
     force: Bool,
     enabled requestedEnabled: Bool? = nil
   ) async {
+    activeRequestCount += 1
+    defer { activeRequestCount -= 1 }
     guard isPaired, !isSyncingPushRegistration else { return }
     let enabled = requestedEnabled ?? threadNotificationsEnabled
     let token = enabled
@@ -516,6 +612,8 @@ final class MobileRemoteStore: ObservableObject {
   private func reconcileReplyNotifications(
     with nextThreads: [MobileRemoteThreadSummary]
   ) async {
+    activeRequestCount += 1
+    defer { activeRequestCount -= 1 }
     let baseline = replyNotificationBaseline()
     let hasBaseline = defaults.data(forKey: Self.replyNotificationBaselineKey) != nil
     let nextBaseline = Dictionary(uniqueKeysWithValues: nextThreads.compactMap { thread in
@@ -594,6 +692,8 @@ final class MobileRemoteStore: ObservableObject {
   }
 
   func sendTestReplyNotification() async {
+    activeRequestCount += 1
+    defer { activeRequestCount -= 1 }
     await prepareThreadNotifications()
     guard !threadNotificationsUnavailable else { return }
     await syncPushRegistrationIfNeeded(force: true)
@@ -623,6 +723,8 @@ final class MobileRemoteStore: ObservableObject {
   }
 
   func createThread(destination: MobileRemoteAIDestination) async -> UUID? {
+    activeRequestCount += 1
+    defer { activeRequestCount -= 1 }
     guard isConnected else {
       errorMessage = connectionError.map {
         "Reconnect to the Mac before creating a chat. \($0)"
@@ -656,6 +758,8 @@ final class MobileRemoteStore: ObservableObject {
   }
 
   func refreshExternalThreads() async {
+    activeRequestCount += 1
+    defer { activeRequestCount -= 1 }
     guard !isRefreshingExternalThreads else { return }
     isRefreshingExternalThreads = true
     defer { isRefreshingExternalThreads = false }
@@ -678,6 +782,8 @@ final class MobileRemoteStore: ObservableObject {
   }
 
   func loadExternalThread(_ thread: MobileExternalThreadSummary) async {
+    activeRequestCount += 1
+    defer { activeRequestCount -= 1 }
     let requestID = UUID()
     externalThreadLoadRequestID = requestID
     if let cached = externalThreadDetailCache[thread.id] {
@@ -726,6 +832,8 @@ final class MobileRemoteStore: ObservableObject {
   }
 
   func continueExternalThread(_ thread: MobileExternalThreadSummary) async -> UUID? {
+    activeRequestCount += 1
+    defer { activeRequestCount -= 1 }
     do {
       let response: MobileRemoteMutationResponse = try await pairedClient().post(
         externalThreadPath(thread) + "/continue",
@@ -742,6 +850,8 @@ final class MobileRemoteStore: ObservableObject {
   }
 
   func forkThread(_ threadID: UUID) async -> UUID? {
+    activeRequestCount += 1
+    defer { activeRequestCount -= 1 }
     guard !mutatingThreadIDs.contains(threadID) else { return nil }
     mutatingThreadIDs.insert(threadID)
     defer { mutatingThreadIDs.remove(threadID) }
@@ -820,6 +930,8 @@ final class MobileRemoteStore: ObservableObject {
     threadID: UUID,
     delivery: String? = nil
   ) async -> UUID? {
+    activeRequestCount += 1
+    defer { activeRequestCount -= 1 }
     let message = rawMessage.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !message.isEmpty || !attachments.isEmpty else { return nil }
     do {
@@ -847,7 +959,9 @@ final class MobileRemoteStore: ObservableObject {
   }
 
   func filePreview(path: String, line: Int?) async throws -> MobileRemoteFilePreview {
-    try await pairedClient().post(
+    activeRequestCount += 1
+    defer { activeRequestCount -= 1 }
+    return try await pairedClient().post(
       "/v1/files/preview",
       payload: MobileRemoteFilePreviewRequest(path: path, line: line),
       timeout: 60,
@@ -873,6 +987,8 @@ final class MobileRemoteStore: ObservableObject {
     _ request: MobileRemoteUpdateThreadConfigurationRequest,
     threadID: UUID
   ) async {
+    activeRequestCount += 1
+    defer { activeRequestCount -= 1 }
     guard !isUpdatingConfiguration else { return }
     isUpdatingConfiguration = true
     defer { isUpdatingConfiguration = false }
@@ -907,6 +1023,8 @@ final class MobileRemoteStore: ObservableObject {
   }
 
   func stop(threadID: UUID) async {
+    activeRequestCount += 1
+    defer { activeRequestCount -= 1 }
     do {
       let _: MobileRemoteMutationResponse = try await pairedClient().post(
         "/v1/threads/\(threadID.uuidString)/stop",
@@ -920,6 +1038,8 @@ final class MobileRemoteStore: ObservableObject {
   }
 
   private func refreshThread(_ threadID: UUID, pollingLeaseID expectedLeaseID: UUID? = nil) async {
+    activeRequestCount += 1
+    defer { activeRequestCount -= 1 }
     do {
       let detail = try await pairedClient().get(
         "/v1/threads/\(threadID.uuidString)",
@@ -954,6 +1074,8 @@ final class MobileRemoteStore: ObservableObject {
     _ threadID: UUID,
     pollingLeaseID expectedLeaseID: UUID? = nil
   ) async {
+    activeRequestCount += 1
+    defer { activeRequestCount -= 1 }
     let requestID = UUID()
     configurationRequestID = requestID
     isRefreshingConfiguration = true
@@ -985,6 +1107,8 @@ final class MobileRemoteStore: ObservableObject {
     _ request: MobileRemoteUpdateThreadStateRequest,
     threadID: UUID
   ) async {
+    activeRequestCount += 1
+    defer { activeRequestCount -= 1 }
     guard !mutatingThreadIDs.contains(threadID) else { return }
     mutatingThreadIDs.insert(threadID)
     defer { mutatingThreadIDs.remove(threadID) }
@@ -1046,20 +1170,20 @@ final class MobileRemoteStore: ObservableObject {
   }
 
   private func pairedClient() throws -> MobileRemoteClient {
-    guard let accessToken else { throw MobileRemoteClientError.server("Pair this phone with the Mac again.") }
-    return try MobileRemoteClient(endpoint: endpointDraft, accessToken: accessToken)
+    guard !isPairing, let accessToken else { throw MobileRemoteClientError.server("Pair this phone with the host again.") }
+    return try MobileRemoteClient(endpoint: activeEndpoint, accessToken: accessToken)
   }
 
   var pairedEndpoint: String {
-    endpointDraft
+    activeEndpoint
   }
 
-  private static func saveToken(_ token: String) throws {
+  private static func saveToken(_ token: String, account: String = tokenAccount) throws {
     let data = Data(token.utf8)
     let query: [String: Any] = [
       kSecClass as String: kSecClassGenericPassword,
       kSecAttrService as String: tokenService,
-      kSecAttrAccount as String: tokenAccount
+      kSecAttrAccount as String: account
     ]
     let attributes: [String: Any] = [
       kSecValueData as String: data,
@@ -1076,11 +1200,11 @@ final class MobileRemoteStore: ObservableObject {
     }
   }
 
-  private static func loadToken() -> String? {
+  private static func loadToken(account: String = tokenAccount) -> String? {
     let query: [String: Any] = [
       kSecClass as String: kSecClassGenericPassword,
       kSecAttrService as String: tokenService,
-      kSecAttrAccount as String: tokenAccount,
+      kSecAttrAccount as String: account,
       kSecReturnData as String: true,
       kSecMatchLimit as String: kSecMatchLimitOne
     ]
@@ -1093,11 +1217,11 @@ final class MobileRemoteStore: ObservableObject {
     return String(data: data, encoding: .utf8)
   }
 
-  private static func deleteToken() {
+  private static func deleteToken(account: String = tokenAccount) {
     let query: [String: Any] = [
       kSecClass as String: kSecClassGenericPassword,
       kSecAttrService as String: tokenService,
-      kSecAttrAccount as String: tokenAccount
+      kSecAttrAccount as String: account
     ]
     SecItemDelete(query as CFDictionary)
   }

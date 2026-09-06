@@ -1,16 +1,16 @@
 import Combine
+import CryptoKit
 import Darwin
 import Foundation
-import Org2WorkspaceCore
 import Security
 
-struct MobileRemotePairedDevice: Codable, Identifiable, Hashable {
-  let id: UUID
-  let name: String
-  let pairedAt: Date
-  let pushRegisteredAt: Date?
+public struct MobileRemotePairedDevice: Codable, Identifiable, Hashable {
+  public let id: UUID
+  public let name: String
+  public let pairedAt: Date
+  public let pushRegisteredAt: Date?
 
-  init(id: UUID, name: String, pairedAt: Date, pushRegisteredAt: Date? = nil) {
+  public init(id: UUID, name: String, pairedAt: Date, pushRegisteredAt: Date? = nil) {
     self.id = id
     self.name = name
     self.pairedAt = pairedAt
@@ -19,23 +19,26 @@ struct MobileRemotePairedDevice: Codable, Identifiable, Hashable {
 }
 
 @MainActor
-final class MobileRemoteCoordinator: ObservableObject {
-  @Published private(set) var isEnabled: Bool
-  @Published private(set) var bindHost: String
-  @Published private(set) var isListening = false
-  @Published private(set) var statusText = "Off"
-  @Published private(set) var pairingCode: String?
-  @Published private(set) var pairingExpiresAt: Date?
-  @Published private(set) var pairedDevices: [MobileRemotePairedDevice]
-  @Published private(set) var pushTeamID: String
-  @Published private(set) var pushKeyID: String
-  @Published private(set) var pushProviderConfigured: Bool
-  @Published private(set) var pushStatusText: String
+public final class MobileRemoteCoordinator: ObservableObject {
+  @Published public private(set) var isEnabled: Bool
+  @Published public private(set) var bindHost: String
+  @Published public private(set) var isListening = false
+  @Published public private(set) var statusText = "Off"
+  @Published public private(set) var pairingCode: String?
+  @Published public private(set) var pairingExpiresAt: Date?
+  @Published public private(set) var pairedDevices: [MobileRemotePairedDevice]
+  @Published public private(set) var pushTeamID: String
+  @Published public private(set) var pushKeyID: String
+  @Published public private(set) var pushProviderConfigured: Bool
+  @Published public private(set) var pushStatusText: String
 
   private static let enabledKey = "Org2Workspace.mobileRemote.enabled.v1"
   private static let bindHostKey = "Org2Workspace.mobileRemote.bindHost.v1"
   private static let pairingLifetime: TimeInterval = 10 * 60
 
+  private let configuredServerName: String?
+  private let hostRef: String?
+  private let port: UInt16
   private let defaults: UserDefaults
   private let credentialVault: MobileRemoteCredentialVault
   private let pushCredentialStore: MobileRemotePushCredentialStore
@@ -46,11 +49,21 @@ final class MobileRemoteCoordinator: ObservableObject {
   private var failedPairingAttempts = 0
   private var serverGeneration = 0
 
-  init(defaults: UserDefaults = .standard) {
+  public init(
+    defaults: UserDefaults = .standard,
+    credentialNamespace: String? = nil,
+    credentialFile: URL? = nil,
+    serverName: String? = nil,
+    hostRef: String? = nil,
+    port: UInt16 = MobileRemoteProtocol.defaultPort
+  ) {
+    self.configuredServerName = serverName
+    self.hostRef = hostRef
+    self.port = port
     self.defaults = defaults
-    pushCredentialStore = MobileRemotePushCredentialStore(defaults: defaults)
+    pushCredentialStore = MobileRemotePushCredentialStore(defaults: defaults, credentialNamespace: credentialNamespace)
     pushSender = MobileRemotePushSender()
-    credentialVault = MobileRemoteCredentialVault()
+    credentialVault = MobileRemoteCredentialVault(credentialNamespace: credentialNamespace, credentialFile: credentialFile)
     isEnabled = defaults.bool(forKey: Self.enabledKey)
     let savedHost = defaults.string(forKey: Self.bindHostKey) ?? ""
     bindHost = savedHost.isEmpty ? (Self.tailscaleIPv4Addresses().first ?? "") : savedHost
@@ -63,12 +76,12 @@ final class MobileRemoteCoordinator: ObservableObject {
       : "Import an APNs authentication key to enable real-time alerts"
   }
 
-  var endpoint: String? {
+  public var endpoint: String? {
     guard Self.isTailscaleIPv4(bindHost) else { return nil }
-    return "http://\(bindHost):\(MobileRemoteProtocol.defaultPort)"
+    return "http://\(bindHost):\(port)"
   }
 
-  var pairingPayload: String? {
+  public var pairingPayload: String? {
     guard let endpoint, let pairingCode else { return nil }
     var components = URLComponents()
     components.scheme = "org2-remote"
@@ -76,44 +89,47 @@ final class MobileRemoteCoordinator: ObservableObject {
     components.queryItems = [
       URLQueryItem(name: "endpoint", value: endpoint),
       URLQueryItem(name: "code", value: pairingCode),
-      URLQueryItem(name: "name", value: Self.serverName)
+      URLQueryItem(name: "name", value: serverName)
     ]
     return components.string
   }
 
-  var pairingExpirationText: String? {
+  public var pairingExpirationText: String? {
     guard let pairingExpiresAt else { return nil }
     return pairingExpiresAt.formatted(date: .omitted, time: .shortened)
   }
 
-  func attach(to store: WorkspaceStore) {
+  public func attach(to store: WorkspaceStore) {
     self.store = store
     store.openClawIncomingMessageHandler = { [weak self] thread, messages in
       self?.enqueuePushNotifications(for: thread, messages: messages)
     }
   }
 
-  func setPushTeamID(_ value: String) {
+  public func setPushTeamID(_ value: String) {
     pushCredentialStore.setTeamID(value)
     refreshPushProviderState()
   }
 
-  func setPushKeyID(_ value: String) {
+  public func setPushKeyID(_ value: String) {
     pushCredentialStore.setKeyID(value)
     refreshPushProviderState()
   }
 
-  func importPushPrivateKey(_ data: Data) {
+  @discardableResult
+  public func importPushPrivateKey(_ data: Data) -> Bool {
     do {
       try pushCredentialStore.importPrivateKey(data)
       refreshPushProviderState()
       pushStatusText = "APNs key saved securely in Keychain"
+      return true
     } catch {
       pushStatusText = error.localizedDescription
+      return false
     }
   }
 
-  func clearPushPrivateKey() {
+  public func clearPushPrivateKey() {
     do {
       try pushCredentialStore.clearPrivateKey()
       refreshPushProviderState()
@@ -123,12 +139,12 @@ final class MobileRemoteCoordinator: ObservableObject {
     }
   }
 
-  func startIfConfigured() {
+  public func startIfConfigured() {
     guard isEnabled, server == nil else { return }
     start()
   }
 
-  func setEnabled(_ enabled: Bool) {
+  public func setEnabled(_ enabled: Bool) {
     isEnabled = enabled
     defaults.set(enabled, forKey: Self.enabledKey)
     if enabled {
@@ -138,7 +154,7 @@ final class MobileRemoteCoordinator: ObservableObject {
     }
   }
 
-  func setBindHost(_ host: String) {
+  public func setBindHost(_ host: String) {
     let normalized = host.trimmingCharacters(in: .whitespacesAndNewlines)
     guard bindHost != normalized else { return }
     bindHost = normalized
@@ -148,12 +164,12 @@ final class MobileRemoteCoordinator: ObservableObject {
     }
   }
 
-  func useDetectedTailscaleAddress() {
+  public func useDetectedTailscaleAddress() {
     guard let address = Self.tailscaleIPv4Addresses().first else { return }
     setBindHost(address)
   }
 
-  func generatePairingCode() {
+  public func generatePairingCode() {
     guard isEnabled, isListening, endpoint != nil else {
       statusText = "Turn on Mobile Remote with a valid Tailscale address first."
       return
@@ -169,7 +185,7 @@ final class MobileRemoteCoordinator: ObservableObject {
     failedPairingAttempts = 0
   }
 
-  func revoke(_ device: MobileRemotePairedDevice) {
+  public func revoke(_ device: MobileRemotePairedDevice) {
     do {
       try credentialVault.revoke(device.id)
       pairedDevices = credentialVault.devices
@@ -179,7 +195,7 @@ final class MobileRemoteCoordinator: ObservableObject {
     }
   }
 
-  func revokeAllDevices() {
+  public func revokeAllDevices() {
     do {
       try credentialVault.revokeAll()
       pairedDevices = []
@@ -221,7 +237,7 @@ final class MobileRemoteCoordinator: ObservableObject {
       }
     )
     do {
-      try server.start(host: bindHost, port: MobileRemoteProtocol.defaultPort)
+      try server.start(host: bindHost, port: port)
       self.server = server
     } catch {
       self.server = nil
@@ -251,7 +267,7 @@ final class MobileRemoteCoordinator: ObservableObject {
     }
 
     guard let token = request.bearerToken, credentialVault.contains(token: token) else {
-      return .error("Pair this device with the Mac again.", statusCode: 401)
+      return .error("Pair this device with this host again.", statusCode: 401)
     }
     guard let store else {
       return .error("The OpenOrg workspace is unavailable.", statusCode: 503)
@@ -260,7 +276,9 @@ final class MobileRemoteCoordinator: ObservableObject {
     if request.method == "GET", path == "/v1/status" {
       let threads = store.openClawChatThreads
       return .json(MobileRemoteServerStatus(
-        serverName: Self.serverName,
+        serverName: serverName,
+        hostRef: hostRef,
+        hostKind: hostRef == nil ? "desktop" : "server",
         corpusName: store.corpusRoot?.lastPathComponent,
         threadCount: threads.count,
         runningThreadCount: threads.filter { store.isAIChatThreadRunning($0.id) }.count,
@@ -333,7 +351,7 @@ final class MobileRemoteCoordinator: ObservableObject {
       let id: UUID
       if let destinationID = payload.destinationID {
         guard store.enabledAIChatDestinations.contains(where: { $0.id == destinationID }) else {
-          return .error("That AI destination is unavailable on the Mac.", statusCode: 400)
+          return .error("That AI destination is unavailable on this host.", statusCode: 400)
         }
         id = store.createAIChatRemoteThread(destinationID: destinationID)
       } else {
@@ -590,7 +608,7 @@ final class MobileRemoteCoordinator: ObservableObject {
       failedPairingAttempts = 0
       statusText = "Paired \(paired.device.name)"
       return .json(MobileRemotePairResponse(
-        serverName: Self.serverName,
+        serverName: serverName,
         deviceID: paired.device.id,
         accessToken: paired.token
       ), statusCode: 201)
@@ -694,8 +712,8 @@ final class MobileRemoteCoordinator: ObservableObject {
     )
   }
 
-  private static var serverName: String {
-    Host.current().localizedName ?? "OpenOrg on Mac"
+  public var serverName: String {
+    configuredServerName ?? Host.current().localizedName ?? "OpenOrg on Mac"
   }
 
   private func threadConfiguration(
@@ -721,13 +739,13 @@ final class MobileRemoteCoordinator: ObservableObject {
     )
   }
 
-  static func isTailscaleIPv4(_ address: String) -> Bool {
+  public static func isTailscaleIPv4(_ address: String) -> Bool {
     let parts = address.split(separator: ".").compactMap { UInt8($0) }
     guard parts.count == 4 else { return false }
     return parts[0] == 100 && (64...127).contains(parts[1])
   }
 
-  static func tailscaleIPv4Addresses() -> [String] {
+  public static func tailscaleIPv4Addresses() -> [String] {
     var firstAddress: UnsafeMutablePointer<ifaddrs>?
     guard getifaddrs(&firstAddress) == 0, let firstAddress else { return [] }
     defer { freeifaddrs(firstAddress) }
@@ -756,7 +774,7 @@ final class MobileRemoteCoordinator: ObservableObject {
   }
 }
 
-private final class MobileRemoteCredentialVault {
+final class MobileRemoteCredentialVault {
   struct PushTarget: Sendable {
     let deviceID: UUID
     let registration: MobileRemoteStoredPushRegistration
@@ -768,16 +786,20 @@ private final class MobileRemoteCredentialVault {
     var pushRegistration: MobileRemoteStoredPushRegistration?
   }
 
-  private let service = (Bundle.main.bundleIdentifier ?? "org.org2.workspace") + ".mobile-remote"
+  private let service: String
+  private let credentialFile: URL?
+  private var credentialReadFailed = false
   private let account = "paired-devices"
   private var records: [Record]
 
-  init() {
+  init(credentialNamespace: String? = nil, credentialFile: URL? = nil) {
+    service = (credentialNamespace ?? Bundle.main.bundleIdentifier ?? "org.org2.workspace") + ".mobile-remote"
+    self.credentialFile = credentialFile
     records = []
     records = load()
   }
 
-  var devices: [MobileRemotePairedDevice] {
+  public var devices: [MobileRemotePairedDevice] {
     records.map { record in
       MobileRemotePairedDevice(
         id: record.device.id,
@@ -788,7 +810,7 @@ private final class MobileRemoteCredentialVault {
     }.sorted { $0.pairedAt > $1.pairedAt }
   }
 
-  var pushRegistrations: [PushTarget] {
+  public var pushRegistrations: [PushTarget] {
     records.compactMap { record in
       record.pushRegistration.map {
         PushTarget(deviceID: record.device.id, registration: $0)
@@ -796,11 +818,11 @@ private final class MobileRemoteCredentialVault {
     }
   }
 
-  func contains(token: String) -> Bool {
-    records.contains { Self.securelyEqual($0.token, token) }
+  public func contains(token: String) -> Bool {
+    records.contains { Self.securelyEqual($0.token, storedToken(token)) }
   }
 
-  func pair(deviceName rawName: String) throws -> (device: MobileRemotePairedDevice, token: String) {
+  public func pair(deviceName rawName: String) throws -> (device: MobileRemotePairedDevice, token: String) {
     let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
     let device = MobileRemotePairedDevice(
       id: UUID(),
@@ -808,7 +830,7 @@ private final class MobileRemoteCredentialVault {
       pairedAt: Date()
     )
     let token = try Self.randomToken()
-    records.append(Record(device: device, token: token, pushRegistration: nil))
+    records.append(Record(device: device, token: storedToken(token), pushRegistration: nil))
     do {
       try save()
     } catch {
@@ -818,11 +840,11 @@ private final class MobileRemoteCredentialVault {
     return (device, token)
   }
 
-  func setPushRegistration(
+  public func setPushRegistration(
     _ request: MobileRemotePushRegistrationRequest,
     forAccessToken accessToken: String
   ) throws -> Bool {
-    guard let index = records.firstIndex(where: { Self.securelyEqual($0.token, accessToken) }) else {
+    guard let index = records.firstIndex(where: { Self.securelyEqual($0.token, storedToken(accessToken)) }) else {
       throw MobileRemoteCredentialError.unknownDevice
     }
     let previous = records[index].pushRegistration
@@ -852,15 +874,15 @@ private final class MobileRemoteCredentialVault {
     return records[index].pushRegistration != nil
   }
 
-  func pushRegistration(forAccessToken accessToken: String) -> PushTarget? {
-    records.first(where: { Self.securelyEqual($0.token, accessToken) }).flatMap { record in
+  public func pushRegistration(forAccessToken accessToken: String) -> PushTarget? {
+    records.first(where: { Self.securelyEqual($0.token, storedToken(accessToken)) }).flatMap { record in
       record.pushRegistration.map {
         PushTarget(deviceID: record.device.id, registration: $0)
       }
     }
   }
 
-  func clearPushRegistration(deviceID: UUID) throws {
+  public func clearPushRegistration(deviceID: UUID) throws {
     guard let index = records.firstIndex(where: { $0.device.id == deviceID }) else { return }
     let previous = records[index].pushRegistration
     records[index].pushRegistration = nil
@@ -872,7 +894,7 @@ private final class MobileRemoteCredentialVault {
     }
   }
 
-  func revoke(_ id: UUID) throws {
+  public func revoke(_ id: UUID) throws {
     let previous = records
     records.removeAll { $0.device.id == id }
     do {
@@ -883,7 +905,7 @@ private final class MobileRemoteCredentialVault {
     }
   }
 
-  func revokeAll() throws {
+  public func revokeAll() throws {
     let previous = records
     records = []
     do {
@@ -895,6 +917,15 @@ private final class MobileRemoteCredentialVault {
   }
 
   private func load() -> [Record] {
+    if let credentialFile {
+      guard FileManager.default.fileExists(atPath: credentialFile.path) else { return [] }
+      do {
+        return try MobileRemoteProtocol.decoder().decode([Record].self, from: Data(contentsOf: credentialFile))
+      } catch {
+        credentialReadFailed = true
+        return []
+      }
+    }
     let query: [String: Any] = [
       kSecClass as String: kSecClassGenericPassword,
       kSecAttrService as String: service,
@@ -912,7 +943,13 @@ private final class MobileRemoteCredentialVault {
   }
 
   private func save() throws {
+    guard !credentialReadFailed else { throw CocoaError(.fileReadCorruptFile) }
     let data = try MobileRemoteProtocol.encoder().encode(records)
+    if let credentialFile {
+      try data.write(to: credentialFile, options: [.atomic])
+      try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: credentialFile.path)
+      return
+    }
     let query: [String: Any] = [
       kSecClass as String: kSecClassGenericPassword,
       kSecAttrService as String: service,
@@ -945,6 +982,14 @@ private final class MobileRemoteCredentialVault {
       .replacingOccurrences(of: "=", with: "")
   }
 
+  private func storedToken(_ token: String) -> String {
+    // Headless login sessions may not have an unlocked Keychain. Persist only
+    // token hashes inside the CLI's private state directory; iOS keeps its
+    // actual credential in Keychain. Desktop credential storage is unchanged.
+    guard credentialFile != nil else { return token }
+    return SHA256.hash(data: Data(token.utf8)).map { String(format: "%02x", $0) }.joined()
+  }
+
   private static func securelyEqual(_ lhs: String, _ rhs: String) -> Bool {
     let left = Array(lhs.utf8)
     let right = Array(rhs.utf8)
@@ -958,14 +1003,14 @@ private enum MobileRemoteCredentialError: LocalizedError {
   case invalidPushRegistration
   case unknownDevice
 
-  var errorDescription: String? {
+  public var errorDescription: String? {
     switch self {
     case .keychain(let status):
       "Keychain error \(status)"
     case .invalidPushRegistration:
       "The iPhone supplied an invalid push registration."
     case .unknownDevice:
-      "Pair this device with the Mac again."
+      "Pair this device with this host again."
     }
   }
 }
