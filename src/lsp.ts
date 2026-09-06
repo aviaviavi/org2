@@ -374,7 +374,9 @@ class LSPServer {
             implementationProvider: true,
             referencesProvider: true,
             workspaceSymbolProvider: true,
-            documentLinkProvider: true,
+            documentLinkProvider: {
+              resolveProvider: false,
+            },
             documentHighlightProvider: true,
             hoverProvider: true,
             renameProvider: {

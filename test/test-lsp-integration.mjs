@@ -120,6 +120,7 @@ async function runTests() {
     const initialize = await waitForResponse(1);
     assert.equal(initialize?.error, undefined, `initialize failed: ${JSON.stringify(initialize?.error)}`);
     assert.equal(initialize?.result?.serverInfo?.name, "org2-lsp");
+    assert.deepEqual(initialize?.result?.capabilities?.documentLinkProvider, { resolveProvider: false });
 
     sendMessage(server, { jsonrpc: "2.0", method: "initialized", params: {} });
     sendMessage(server, testCases[1].request);
