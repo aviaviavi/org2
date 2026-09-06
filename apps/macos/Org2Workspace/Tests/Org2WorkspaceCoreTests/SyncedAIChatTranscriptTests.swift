@@ -4,6 +4,9 @@ import XCTest
 
 final class SyncedAIChatTranscriptTests: XCTestCase {
   private func replicate(_ source: URL, to target: URL) throws {
+    // flush waits for the commit, but obsolete manifests are collected afterward.
+    // Copy the fixture only after that cleanup has finished.
+    AIChatTranscriptStore.shared.waitUntilIdleForTesting()
     let fm = FileManager.default
     let sourceStore = AIChatTranscriptStore.storeDirectory(for: source)
     let targetStore = AIChatTranscriptStore.storeDirectory(for: target)
