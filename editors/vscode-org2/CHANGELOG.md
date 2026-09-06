@@ -4,6 +4,22 @@ All notable changes to the Org2 VS Code extension are documented in this file.
 
 ## Unreleased
 
+## 0.8.0 - 2026-09-06
+
+OpenOrg 0.8.0 keeps iPhone AI chat and scheduled work available through a dedicated Mac, even when your laptop is asleep or away.
+
+- Run the chat relay and automation scheduler without a desktop window using `org2 server`. Pair, inspect, revoke devices, assign the scheduler host, and install a login service from the CLI.
+- Reuse existing corpus chat history. The Mac now refreshes conversations and messages arriving through corpus synchronization while preserving selection and unfinished drafts.
+- Give scheduled automations one explicit host. Updated Mac and server schedulers enforce that owner and suppress duplicate occurrences. Automatic failover across replicated copies is not enabled.
+- Save multiple hosts in the iOS app and choose which host handles chat. Each host retains its own protected pairing credential.
+- Improve LSP compatibility with strict clients: notifications receive no response, and split Unicode messages use correct UTF-8 byte framing.
+- Fix chat code/table scrolling, refresh stale Codex model catalogs, and keep the headless supervisor alive through temporary nonblocking input reads.
+- Make release retries reuse verified artifacts, install native dependencies separately for each Mac architecture, avoid repeated runtime builds, and stabilize the tests that delayed the previous release.
+
+macOS downloads support macOS 14 or later and include the local dictation runtime. Both Apple Silicon and Intel DMGs require Developer ID signing and Apple notarization before publication. iOS 0.8.0 build 28 is distributed separately through TestFlight, subject to Apple's processing and beta review.
+
+For a synchronized corpus, continue a conversation from one execution host at a time. The desktop refreshes replicated history; it does not yet relay desktop messages through the headless server.
+
 ## 0.7.2 - 2026-09-03
 
 # OpenOrg 0.7.2
