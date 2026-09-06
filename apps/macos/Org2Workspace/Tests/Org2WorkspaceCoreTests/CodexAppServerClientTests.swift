@@ -757,6 +757,65 @@ final class CodexAppServerClientTests: XCTestCase {
     await client.shutdown()
   }
 
+  func testAgedModelCatalogRestartsIdleAppServerBeforeRefresh() async throws {
+    let temporaryDirectory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-codex-model-refresh-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: temporaryDirectory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
+
+    let executable = temporaryDirectory.appendingPathComponent("fake-codex-model-refresh")
+    let script = #"""
+    #!/bin/sh
+    count_file="$0.count"
+    count=0
+    if [ -f "$count_file" ]; then
+      count=$(sed -n '1p' "$count_file")
+    fi
+    count=$((count + 1))
+    printf '%s\n' "$count" > "$count_file"
+    while IFS= read -r line; do
+      request_id=$(printf '%s\n' "$line" | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p')
+      case "$line" in
+        *'"method":"initialize"'*)
+          printf '{"id":%s,"result":{"userAgent":"fake-codex"}}\n' "$request_id"
+          ;;
+        *'"method":"initialized"'*)
+          ;;
+        *'"method":"model/list"'*)
+          if [ "$count" -eq 1 ]; then
+            model_id="gpt-before-refresh"
+            model_name="Before refresh"
+          else
+            model_id="gpt-after-refresh"
+            model_name="After refresh"
+          fi
+          printf '{"id":%s,"result":{"data":[{"id":"%s","displayName":"%s","isDefault":true}],"nextCursor":null}}\n' "$request_id" "$model_id" "$model_name"
+          ;;
+      esac
+    done
+    """#
+    try script.write(to: executable, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes(
+      [.posixPermissions: 0o700],
+      ofItemAtPath: executable.path
+    )
+
+    let client = CodexAppServerClient(
+      executableURL: executable,
+      eventHandler: { _ in },
+      dynamicToolHandler: { _ in
+        CodexDynamicToolResult(success: false, text: "No tools in this test.")
+      }
+    )
+
+    let first = try await client.listModels(refreshingTransportIfOlderThan: 300)
+    let refreshed = try await client.listModels(refreshingTransportIfOlderThan: 0)
+
+    XCTAssertEqual(first.map(\.id), ["gpt-before-refresh"])
+    XCTAssertEqual(refreshed.map(\.id), ["gpt-after-refresh"])
+    await client.shutdown()
+  }
+
   func testSlowThreadResumeUsesDedicatedRecoveryTimeout() async throws {
     let temporaryDirectory = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-codex-slow-resume-\(UUID().uuidString)", isDirectory: true)

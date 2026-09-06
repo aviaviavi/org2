@@ -380,6 +380,11 @@ final class MobileRemoteStore: ObservableObject {
     appIsActive = isActive
     foregroundReplyPollingTask?.cancel()
     foregroundReplyPollingTask = nil
+    if isActive, isPaired, let pollingThreadID {
+      Task { [weak self] in
+        await self?.refreshThreadConfiguration(pollingThreadID)
+      }
+    }
     guard isActive, isPaired, threadNotificationsEnabled else { return }
     foregroundReplyPollingTask = Task { [weak self] in
       guard let self else { return }

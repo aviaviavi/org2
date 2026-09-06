@@ -58,6 +58,7 @@ struct Org2WorkspaceApp: App {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
           store.setWorkspaceRealtimeRefreshActive(true)
           store.setRunReviewAutoRefreshActive(true, refreshImmediately: false)
+          Task { await store.refreshAIChatConfiguration() }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
           store.setWorkspaceRealtimeRefreshActive(false)

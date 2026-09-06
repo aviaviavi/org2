@@ -2941,6 +2941,7 @@ public final class WorkspaceStore {
   private var openClawGatewayClientsByThreadID: [UUID: OpenClawGatewayClient] = [:]
   private var codexAppServerClient: CodexAppServerClient?
   private var codexAppServerClientsByDestinationID: [String: CodexAppServerClient] = [:]
+  private static let codexModelCatalogMaximumAge: TimeInterval = 15 * 60
   private var claudeCodeClient: ClaudeCodeClient?
   private var externalCodexAppServerClient: CodexAppServerClient?
   private var externalThreadRefreshRequestID: UUID?
@@ -21712,7 +21713,7 @@ public final class WorkspaceStore {
       }()
     switch adapter {
     case .codexLocal, .codexRemote, .codexManagedRemote:
-      let models = try await codexClient(forDestinationID: thread.destinationID).listModels()
+      let models = try await modelsForAIChatDestination(thread.destinationID)
       let selected = thread.model.flatMap { model in
         models.first(where: { $0.id == model })
       } ?? models.first(where: \.isDefault)
@@ -24054,7 +24055,9 @@ public final class WorkspaceStore {
     }
     switch destination.adapter {
     case .codexLocal, .codexRemote, .codexManagedRemote:
-      return try await codexClient(forDestinationID: destinationID).listModels()
+      return try await codexClient(forDestinationID: destinationID).listModels(
+        refreshingTransportIfOlderThan: Self.codexModelCatalogMaximumAge
+      )
     case .claudeLocal:
       return [
         AIChatModelOption(id: "sonnet", label: "Sonnet"),

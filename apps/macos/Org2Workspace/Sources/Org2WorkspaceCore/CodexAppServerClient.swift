@@ -357,6 +357,7 @@ public actor CodexAppServerClient {
   private var cancelledTurnIDs = Set<String>()
   private var ignoredCompletedTurnIDs = Set<String>()
   private var loadedThreadIDs = Set<String>()
+  private var modelCatalogLoadedAt: Date?
   private var latestStderr = ""
 
   public init(
@@ -498,7 +499,21 @@ public actor CodexAppServerClient {
     return CodexLoginStart(loginID: loginID, authURL: authURL)
   }
 
-  public func listModels() async throws -> [AIChatModelOption] {
+  public func listModels(
+    refreshingTransportIfOlderThan maximumAge: TimeInterval? = nil
+  ) async throws -> [AIChatModelOption] {
+    if let maximumAge,
+       let modelCatalogLoadedAt,
+       Date().timeIntervalSince(modelCatalogLoadedAt) >= max(0, maximumAge),
+       pendingRequests.isEmpty,
+       pendingTurns.isEmpty,
+       startupTask == nil {
+      // Codex snapshots its remote model catalog for the lifetime of the app-
+      // server process. Rotate an idle transport before refreshing an aged
+      // catalog so newly launched models appear without restarting OpenOrg.
+      shutdown()
+    }
+
     var models: [AIChatModelOption] = []
     var cursor: String?
     repeat {
@@ -519,6 +534,7 @@ public actor CodexAppServerClient {
       models.append(contentsOf: rows.compactMap(Self.modelOption))
       cursor = result["nextCursor"]?.stringValue
     } while cursor != nil
+    modelCatalogLoadedAt = Date()
     return models
   }
 
@@ -869,6 +885,7 @@ public actor CodexAppServerClient {
     startupTask = nil
     outputBuffer = Data()
     loadedThreadIDs.removeAll()
+    modelCatalogLoadedAt = nil
     if let processToStop, processToStop.isRunning {
       processToStop.terminate()
       // A wedged app-server can ignore SIGTERM while retaining Codex's
