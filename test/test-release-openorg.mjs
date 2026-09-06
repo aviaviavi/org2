@@ -1,19 +1,23 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   TESTFLIGHT,
+  appStoreConnectAuthenticationArguments,
   buildReleasePlan,
   parseReleaseOptions,
   resolveReleaseVersion,
   runCheckpointedStep,
   reusableMacArtifact,
+  reusableIOSArchive,
   testFlightReviewAttributes,
 } from "../tools/release-openorg.mjs";
+
+import { notarizationAuthentication } from "../tools/openorg-notarization.mjs";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -84,6 +88,45 @@ assert.doesNotMatch(releaseSource, /"npm authentication", "npm", \["whoami"\]/);
 
 const checkpointDirectory = mkdtempSync(join(tmpdir(), "openorg-release-checkpoint-test-"));
 try {
+  assert.equal(notarizationAuthentication("", {}), null);
+  assert.deepEqual(notarizationAuthentication(" Existing Profile ", {}).args, ["--keychain-profile", "Existing Profile"]);
+  assert.throws(() => notarizationAuthentication("Existing Profile", { OPENORG_NOTARY_KEY_ID: "test-key" }), /requires/);
+  assert.throws(() => notarizationAuthentication("", { OPENORG_NOTARY_KEY_ID: "test-key", OPENORG_NOTARY_PRIVATE_KEY_PATH: join(checkpointDirectory, "missing.p8") }), /existing protected key file/);
+  const privateKeyReference = join(checkpointDirectory, "synthetic-key.p8");
+  writeFileSync(privateKeyReference, "synthetic fixture; no provider credential", { mode: 0o600 });
+  const apiEnvironment = { OPENORG_NOTARY_KEY_ID: "test-key", OPENORG_NOTARY_PRIVATE_KEY_PATH: privateKeyReference, OPENORG_NOTARY_ISSUER_ID: "test-issuer" };
+  assert.deepEqual(notarizationAuthentication("Existing Profile", apiEnvironment).args,
+    ["--key", privateKeyReference, "--key-id", "test-key", "--issuer", "test-issuer"]);
+  delete apiEnvironment.OPENORG_NOTARY_ISSUER_ID;
+  assert.deepEqual(notarizationAuthentication("", apiEnvironment).args,
+    ["--key", privateKeyReference, "--key-id", "test-key"]);
+  assert.deepEqual(appStoreConnectAuthenticationArguments({}), []);
+  assert.throws(() => appStoreConnectAuthenticationArguments({ OPENORG_ASC_KEY_ID: "test-key" }), /PRIVATE_KEY_PATH is required/);
+  assert.deepEqual(appStoreConnectAuthenticationArguments({ OPENORG_ASC_PRIVATE_KEY_PATH: privateKeyReference, OPENORG_ASC_KEY_ID: "test-key", OPENORG_ASC_ISSUER_ID: "test-issuer" }),
+    ["-authenticationKeyPath", privateKeyReference, "-authenticationKeyID", "test-key", "-authenticationKeyIssuerID", "test-issuer"]);
+
+  const archive = join(checkpointDirectory, "test.xcarchive");
+  const archiveApp = join(archive, "Products", "Applications", "OpenOrg.app");
+  mkdirSync(archiveApp, { recursive: true });
+  writeFileSync(join(archiveApp, "Info.plist"), "synthetic app metadata");
+  const archiveProperties = { CFBundleShortVersionString: "0.8.0", CFBundleVersion: "28", ApplicationPath: "Applications/OpenOrg.app" };
+  let validSignature = true;
+  const archiveCapture = (command, args) => {
+    if (command === "codesign") {
+      assert.equal(args.at(-1), archiveApp);
+      return { ok: validSignature };
+    }
+    // An archive's CreationDate cannot be converted to JSON; read string fields directly.
+    assert.equal(command, "plutil");
+    assert.equal(args[0], "-extract");
+    assert.equal(args[2], "raw");
+    return { stdout: archiveProperties[args[1].replace("ApplicationProperties.", "")] };
+  };
+  assert.equal(reusableIOSArchive(archive, "0.8.0", 28, archiveCapture), true);
+  assert.equal(reusableIOSArchive(archive, "0.8.1", 28, archiveCapture), false);
+  assert.equal(reusableIOSArchive(archive, "0.8.0", 29, archiveCapture), false);
+  validSignature = false;
+  assert.equal(reusableIOSArchive(archive, "0.8.0", 28, archiveCapture), false);
   const checkpointPlan = { checkpoints: join(checkpointDirectory, "state.json") };
   const checkpointState = { completed: {}, stepCheckpoints: {} };
   const artifact = join(checkpointDirectory, "OpenOrg.dmg");

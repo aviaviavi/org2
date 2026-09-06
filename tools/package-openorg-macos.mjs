@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
+import { notarizationAuthentication } from "./openorg-notarization.mjs";
 import {
   copyFileSync,
   existsSync,
@@ -209,7 +210,7 @@ function printPlan() {
     executableName: "Org2Workspace",
     googleOAuthClientSource: googleOAuthClientSource(),
     hardenedRuntime: true,
-    notarization: options.notaryProfile ? "notarytool Keychain profile configured" : "not configured",
+    notarization: notarizationAuthentication(options.notaryProfile)?.label ?? "not configured",
     output: options.output,
     swiftBuild: "isolated per artifact",
     runtimeDependencies: "locked install under target Node in isolated staging",
@@ -228,8 +229,9 @@ function main() {
     printPlan();
     return;
   }
-  if (options.requireNotarization && !options.notaryProfile) {
-    throw new Error("--require-notarization needs --notary-profile or OPENORG_NOTARY_KEYCHAIN_PROFILE");
+  const notarization = notarizationAuthentication(options.notaryProfile);
+  if (options.requireNotarization && !notarization) {
+    throw new Error("--require-notarization needs --notary-profile, OPENORG_NOTARY_KEYCHAIN_PROFILE, or existing OPENORG_NOTARY_PRIVATE_KEY_PATH / OPENORG_NOTARY_KEY_ID credentials");
   }
   if (process.platform !== "darwin") {
     throw new Error("OpenOrg DMG packaging requires macOS");
@@ -243,6 +245,10 @@ function main() {
     throw new Error(`Refusing to replace existing artifact: ${options.output}`);
   }
 
+  if (notarization) {
+    // Validate in the same process environment before expensive compilation.
+    run("xcrun", ["notarytool", "history", ...notarization.args, "--output-format", "json"], { capture: true });
+  }
   const signingIdentity = developerIDApplicationIdentity();
   const nodePath = firstMatchingNodePath(options.architecture);
   const whisperCppPath = firstMatchingWhisperPath(options.architecture);
@@ -251,6 +257,7 @@ function main() {
   const builtApp = join(workingDirectory, "OpenOrg.app");
   const dmgRoot = join(workingDirectory, "dmg-root");
   const unsignedDMG = join(workingDirectory, "OpenOrg.dmg");
+  let completed = false;
 
   try {
     // Never race architecture-specific npm installs in the shared checkout.
@@ -302,10 +309,10 @@ function main() {
     run("hdiutil", ["verify", unsignedDMG]);
 
     let notarized = false;
-    if (options.notaryProfile) {
+    if (notarization) {
       run("xcrun", [
         "notarytool", "submit", unsignedDMG,
-        "--keychain-profile", options.notaryProfile,
+        ...notarization.args,
         "--wait",
       ]);
       run("xcrun", ["stapler", "staple", unsignedDMG]);
@@ -332,11 +339,13 @@ function main() {
       sha256,
       version: packageVersion,
     }, null, 2) + "\n");
+    completed = true;
     console.log(`Packaged ${options.output}`);
     console.log(`SHA-256 ${sha256}`);
     console.log(notarized ? "Notarization ticket stapled" : "Local candidate only; notarization was not requested");
   } finally {
-    rmSync(workingDirectory, { recursive: true, force: true });
+    if (completed) rmSync(workingDirectory, { recursive: true, force: true });
+    else console.error(`Failed release staging retained for repair: ${workingDirectory}`);
   }
 }
 

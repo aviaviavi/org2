@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { spawn, spawnSync } from "node:child_process";
+import { notarizationAuthentication } from "./openorg-notarization.mjs";
 import { createHash, createSign } from "node:crypto";
 import {
   closeSync,
@@ -360,15 +361,18 @@ function requireCleanMain() {
 async function preflight(plan, options) {
   requireFile(options.notesFile, "Release notes");
   requireCleanMain();
-  if (!process.env.OPENORG_NOTARY_KEYCHAIN_PROFILE?.trim()) {
-    throw new Error("OPENORG_NOTARY_KEYCHAIN_PROFILE is required");
-  }
+  const notarization = notarizationAuthentication(process.env.OPENORG_NOTARY_KEYCHAIN_PROFILE);
+  if (!notarization) throw new Error("A notarization Keychain profile or existing Apple API key is required");
+  await runJob(plan, "Apple notarization access", "xcrun", [
+    "notarytool", "history", ...notarization.args, "--output-format", "json",
+  ]);
   capture(process.execPath, [
     "tools/build-macos-app.mjs",
     "--configuration", "release",
     "--require-google-oauth-client",
     "--print-configuration",
   ]);
+  if (!options.skipIOS) appStoreConnectAuthenticationArguments();
   if (!options.skipIOS && !options.skipTestFlightGroups) {
     for (const name of ["OPENORG_ASC_ISSUER_ID", "OPENORG_ASC_KEY_ID", "OPENORG_ASC_PRIVATE_KEY_PATH"]) {
       if (!process.env[name]?.trim()) throw new Error(`${name} is required for reliable TestFlight group assignment`);
@@ -467,14 +471,16 @@ export function reusableMacArtifact(file, version, architecture) {
   } catch { return false; }
 }
 
-function reusableIOSArchive(archivePath, version, build) {
+export function reusableIOSArchive(archivePath, version, build, captureCommand = capture) {
   try {
-    const metadata = JSON.parse(capture("plutil", ["-convert", "json", "-o", "-", join(archivePath, "Info.plist")]).stdout);
-    const properties = metadata.ApplicationProperties;
-    if (properties.CFBundleShortVersionString !== version || properties.CFBundleVersion !== String(build)) return false;
-    const appPath = join(archivePath, "Products", properties.ApplicationPath);
+    // Archive plists contain dates, which plutil cannot convert to JSON.
+    const property = (name) => captureCommand("plutil", [
+      "-extract", `ApplicationProperties.${name}`, "raw", "-o", "-", join(archivePath, "Info.plist"),
+    ]).stdout;
+    if (property("CFBundleShortVersionString") !== version || property("CFBundleVersion") !== String(build)) return false;
+    const appPath = join(archivePath, "Products", property("ApplicationPath"));
     return existsSync(join(appPath, "Info.plist"))
-      && capture("codesign", ["--verify", "--deep", "--strict", appPath], { allowFailure: true }).ok;
+      && captureCommand("codesign", ["--verify", "--deep", "--strict", appPath], { allowFailure: true }).ok;
   } catch { return false; }
 }
 
@@ -510,6 +516,7 @@ async function packageArtifacts(plan, options, state) {
       `MARKETING_VERSION=${plan.version}`,
       `CURRENT_PROJECT_VERSION=${plan.ios.build}`,
       "-allowProvisioningUpdates",
+      ...appStoreConnectAuthenticationArguments(),
     ], () => reusableIOSArchive(archivePath, plan.version, plan.ios.build)));
     writeExportOptions(plan);
   }
@@ -621,6 +628,17 @@ function base64URL(value) {
   return Buffer.from(value).toString("base64url");
 }
 
+export function appStoreConnectAuthenticationArguments(environment = process.env) {
+  const names = ["OPENORG_ASC_PRIVATE_KEY_PATH", "OPENORG_ASC_KEY_ID", "OPENORG_ASC_ISSUER_ID"];
+  const values = names.map((name) => environment[name]?.trim());
+  if (!values.some(Boolean)) return [];
+  for (const [index, name] of names.entries()) {
+    if (!values[index]) throw new Error(`${name} is required when an App Store Connect API key is configured`);
+  }
+  requireFile(values[0], "App Store Connect private key");
+  return ["-authenticationKeyPath", resolve(values[0]), "-authenticationKeyID", values[1], "-authenticationKeyIssuerID", values[2]];
+}
+
 function appStoreConnectToken() {
   const issuer = process.env.OPENORG_ASC_ISSUER_ID.trim();
   const keyId = process.env.OPENORG_ASC_KEY_ID.trim();
@@ -730,7 +748,8 @@ async function submitBetaReview(buildId) {
 }
 
 async function publishTestFlight(plan, options) {
-  let build = options.skipTestFlightGroups ? null : await findTestFlightBuild(plan);
+  const authentication = appStoreConnectAuthenticationArguments();
+  let build = authentication.length || !options.skipTestFlightGroups ? await findTestFlightBuild(plan) : null;
   if (!build) {
     await runJob(plan, "Upload iOS build", "xcodebuild", [
       "-exportArchive",
@@ -738,6 +757,7 @@ async function publishTestFlight(plan, options) {
       "-exportPath", join(plan.artifactsDir, "ios-export"),
       "-exportOptionsPlist", join(plan.artifactsDir, "ExportOptions.plist"),
       "-allowProvisioningUpdates",
+      ...authentication,
     ]);
   }
   if (options.skipTestFlightGroups) {

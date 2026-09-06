@@ -25,11 +25,13 @@ Run `tools/release-openorg.mjs` with `--skip-testflight-groups` for a normal iOS
 
 Do not use API automation for TestFlight review details, external-group assignment, or beta-review submission. App Store Connect API roles can permit binary upload, build reads, localization updates, and internal assignment while returning security-forbidden errors for external distribution. The browser flow is the release contract, not an exceptional fallback.
 
-The legacy API-assisted path uses these non-committed environment variables, but it is not the normal release procedure:
+Existing API credentials for binary upload and build-status reads use these non-committed environment variables:
 
 - `OPENORG_ASC_ISSUER_ID`
 - `OPENORG_ASC_KEY_ID`
 - `OPENORG_ASC_PRIVATE_KEY_PATH`
+
+When these existing-key references are configured, the orchestrator passes them to Xcode for archive signing and binary upload, including with `--skip-testflight-groups`. It checks for an already uploaded build before retrying publication; browser distribution remains separate. Partial key configuration fails during preflight instead of falling back to an unavailable saved Xcode login.
 
 The private key stays outside the repository. Do not log it, copy it into release state, or add it to a corpus. The orchestrator stores only the resulting non-secret build ID and group IDs in its temporary checkpoint directory.
 
@@ -52,7 +54,8 @@ Use `SCARF_API_TOKEN` only for authenticated API reads or an explicitly authoriz
 
 Configure macOS release inputs outside the repository:
 
-- `OPENORG_NOTARY_KEYCHAIN_PROFILE`: the existing notarytool Keychain profile. Validate the profile with a read-only notarytool history request; do not export or recreate stored credentials during a release.
+- `OPENORG_NOTARY_KEYCHAIN_PROFILE`: the existing notarytool Keychain profile. The orchestrator and packager validate access with a read-only history request before compilation. Do not export or recreate stored credentials during a release.
+- For an existing Apple API key in a protected file, use `OPENORG_NOTARY_PRIVATE_KEY_PATH` and `OPENORG_NOTARY_KEY_ID`, plus `OPENORG_NOTARY_ISSUER_ID` for a team key. These explicit references take precedence over a Keychain profile and allow a release when interactive Keychain access is unavailable. Key contents never enter plans, logs, source, or checkpoint files. This configures an existing credential; it does not create or rotate a key.
 - `OPENORG_ARM64_NODE_PATH` and `OPENORG_X86_64_NODE_PATH`: native Node executables for each target architecture. Verify each with `process.arch` instead of inferring architecture from its filesystem location.
 - `OPENORG_ARM64_WHISPER_CPP_PATH` and `OPENORG_X86_64_WHISPER_CPP_PATH`: target-native whisper.cpp executables when they are not discoverable automatically.
 - `OPENORG_WHISPER_MODEL_PATH`: the verified shared `ggml-base.en.bin` model when it is not discoverable automatically.
