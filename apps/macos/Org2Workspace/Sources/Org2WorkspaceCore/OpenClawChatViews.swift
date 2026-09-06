@@ -1679,7 +1679,7 @@ struct AIChatTranscriptSelectionEventBridge: NSViewRepresentable {
       removeEventMonitor()
       observedWindow = window
       eventMonitor = NSEvent.addLocalMonitorForEvents(
-        matching: [.leftMouseDown, .leftMouseDragged, .leftMouseUp, .keyDown]
+        matching: [.leftMouseDown, .leftMouseDragged, .leftMouseUp, .keyDown, .scrollWheel]
       ) { [weak self, weak window] event in
         guard let self,
               let window,
@@ -1690,6 +1690,24 @@ struct AIChatTranscriptSelectionEventBridge: NSViewRepresentable {
     }
 
     private func handle(_ event: NSEvent) -> NSEvent? {
+      if event.type == .scrollWheel,
+         let window,
+         let contentView = window.contentView {
+        let location = contentView.convert(event.locationInWindow, from: nil)
+        if let hitView = contentView.hitTest(location),
+           let outerScrollView = AIChatNestedScrollWheelRouting.outerScrollView(
+             for: hitView,
+             deltaX: event.scrollingDeltaX,
+             deltaY: event.scrollingDeltaY
+           ) {
+          // SwiftUI's nested horizontal ScrollView consumes vertical wheel
+          // gestures even though a rendered table or source block cannot move
+          // vertically. Hand that gesture to the transcript instead.
+          outerScrollView.scrollWheel(with: event)
+          return nil
+        }
+      }
+
       if event.type == .keyDown,
          event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
          event.charactersIgnoringModifiers?.lowercased() == "c",
@@ -1714,6 +1732,31 @@ struct AIChatTranscriptSelectionEventBridge: NSViewRepresentable {
       }
       return event
     }
+  }
+}
+
+@MainActor
+enum AIChatNestedScrollWheelRouting {
+  static func outerScrollView(
+    for hitView: NSView,
+    deltaX: CGFloat,
+    deltaY: CGFloat
+  ) -> NSScrollView? {
+    guard abs(deltaY) > abs(deltaX), abs(deltaY) > 0 else { return nil }
+
+    var scrollViews: [NSScrollView] = []
+    var candidate: NSView? = hitView
+    while let view = candidate {
+      if let scrollView = view as? NSScrollView {
+        scrollViews.append(scrollView)
+      }
+      candidate = view.superview
+    }
+    guard scrollViews.count >= 2 else { return nil }
+
+    let innerScrollView = scrollViews[0]
+    guard !innerScrollView.hasVerticalScroller else { return nil }
+    return scrollViews[1]
   }
 }
 

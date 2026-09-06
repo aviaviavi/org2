@@ -1724,6 +1724,68 @@ final class OpenClawChatLayoutTests: XCTestCase {
     )
   }
 
+  func testAssistantSourceBlockKeepsLongJSONOnNaturalWidthLines() {
+    let raw = """
+    #+begin_src json
+    {"agenda":{"directories":["daily","weekly","monthly","quarterly","yearly"],"adapter":"docs/openorg-cadence-adapter.md"}}
+    #+end_src
+    """
+    let presentation = OpenClawMessageOrgPresentation(raw)
+    let view = OpenClawMessageBodyView(
+      rawText: raw,
+      compact: false,
+      managesTextSelection: false,
+      rendersStructuredOrg2: true,
+      structuredPresentation: presentation
+    )
+    .frame(width: 640, alignment: .leading)
+    let hostingView = NSHostingView(rootView: view)
+    hostingView.frame = NSRect(x: 0, y: 0, width: 640, height: 1)
+    hostingView.layoutSubtreeIfNeeded()
+
+    XCTAssertLessThan(
+      hostingView.fittingSize.height,
+      180,
+      "A source line inside a horizontal scroller must not wrap one glyph per row"
+    )
+  }
+
+  func testVerticalWheelGesturesInsideRenderedTableRouteToTranscript() {
+    let outerScrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 640, height: 300))
+    outerScrollView.hasVerticalScroller = true
+    let transcript = NSView(frame: NSRect(x: 0, y: 0, width: 640, height: 1_200))
+    outerScrollView.documentView = transcript
+
+    let tableScrollView = NSScrollView(frame: NSRect(x: 20, y: 100, width: 600, height: 180))
+    tableScrollView.hasHorizontalScroller = true
+    tableScrollView.hasVerticalScroller = false
+    let table = NSView(frame: NSRect(x: 0, y: 0, width: 900, height: 160))
+    let cell = NSView(frame: NSRect(x: 0, y: 0, width: 120, height: 40))
+    table.addSubview(cell)
+    tableScrollView.documentView = table
+    transcript.addSubview(tableScrollView)
+
+    XCTAssertIdentical(
+      AIChatNestedScrollWheelRouting.outerScrollView(
+        for: cell,
+        deltaX: 0,
+        deltaY: 12
+      ),
+      outerScrollView
+    )
+    XCTAssertNil(AIChatNestedScrollWheelRouting.outerScrollView(
+      for: cell,
+      deltaX: 12,
+      deltaY: 0
+    ))
+    tableScrollView.hasVerticalScroller = true
+    XCTAssertNil(AIChatNestedScrollWheelRouting.outerScrollView(
+      for: cell,
+      deltaX: 0,
+      deltaY: 12
+    ))
+  }
+
   func testAssistantTableCellsFillTheTallestWrappedCellInEachRow() throws {
     let testFile = URL(fileURLWithPath: #filePath)
     let packageRoot = testFile

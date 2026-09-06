@@ -1733,11 +1733,17 @@ private struct RenderedSourceView: View {
             Text(line.isEmpty ? " " : line)
               .font(.system(.body, design: .monospaced))
               .foregroundStyle(color(for: line))
+              // A horizontal ScrollView proposes an unconstrained width. Keep
+              // each source line at its natural width so SwiftUI does not
+              // satisfy that proposal by wrapping the line one glyph at a
+              // time inside a narrow chat bubble.
+              .fixedSize(horizontal: true, vertical: true)
               .orgTextSelectionOwner()
           }
         }
         .padding(10)
       }
+      .frame(maxWidth: .infinity, alignment: .leading)
       .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
       .overlay(
         RoundedRectangle(cornerRadius: 6, style: .continuous)
