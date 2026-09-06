@@ -7,6 +7,11 @@ import WebKit
 import XCTest
 @testable import Org2WorkspaceCore
 
+@MainActor
+private final class DelayedCorpusEventReceiver {
+  weak var store: WorkspaceStore?
+}
+
 private struct DecodeThreadPayload: Decodable {
   let decodedOnMainThread: Bool
 
@@ -4078,18 +4083,24 @@ final class Org2ModelsTests: XCTestCase {
     defer { defaults.removePersistentDomain(forName: suiteName) }
 
     let notePath = note.path
+    let events = DelayedCorpusEventReceiver()
+    defer { try? FileManager.default.removeItem(at: temp) }
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
       openClawTranscriptURL: transcript,
       openClawSendHandler: { _, _, _, _ in
-        Task.detached {
+        Task { @MainActor in
           try? await Task.sleep(nanoseconds: 200_000_000)
           try? "Original\nAdded\n".write(toFile: notePath, atomically: true, encoding: .utf8)
+          // This tests delayed change handling; CorpusFileWatcherTests cover
+          // asynchronous OS delivery independently of this retry deadline.
+          events.store?.handleCorpusFileEvents([notePath], corpusRoot: root, requiresFullScan: false)
         }
         return "Updated later"
       }
     )
+    events.store = store
     store.setCorpusRoot(root)
     store.openClawDraft = "Update this"
 
@@ -4118,18 +4129,24 @@ final class Org2ModelsTests: XCTestCase {
     defer { defaults.removePersistentDomain(forName: suiteName) }
 
     let notePath = note.path
+    let events = DelayedCorpusEventReceiver()
+    defer { try? FileManager.default.removeItem(at: temp) }
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
       openClawTranscriptURL: transcript,
       openClawSendHandler: { _, _, _, _ in
-        Task.detached {
+        Task { @MainActor in
           try? await Task.sleep(nanoseconds: 250_000_000)
           try? "Before\nAfter\n".write(toFile: notePath, atomically: true, encoding: .utf8)
+          // This tests delayed change handling; CorpusFileWatcherTests cover
+          // asynchronous OS delivery independently of this retry deadline.
+          events.store?.handleCorpusFileEvents([notePath], corpusRoot: root, requiresFullScan: false)
         }
         return "Updated note.org2"
       }
     )
+    events.store = store
     store.setCorpusRoot(root)
     store.openClawDraft = "Update the note"
 

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,6 +11,7 @@ import {
   parseReleaseOptions,
   resolveReleaseVersion,
   runCheckpointedStep,
+  reusableMacArtifact,
   testFlightReviewAttributes,
 } from "../tools/release-openorg.mjs";
 
@@ -84,6 +86,16 @@ const checkpointDirectory = mkdtempSync(join(tmpdir(), "openorg-release-checkpoi
 try {
   const checkpointPlan = { checkpoints: join(checkpointDirectory, "state.json") };
   const checkpointState = { completed: {}, stepCheckpoints: {} };
+  const artifact = join(checkpointDirectory, "OpenOrg.dmg");
+  writeFileSync(artifact, "verified candidate");
+  const metadata = { version: "0.8.0", architecture: "arm64", notarized: true,
+    sha256: createHash("sha256").update(readFileSync(artifact)).digest("hex") };
+  writeFileSync(join(checkpointDirectory, "OpenOrg.json"), JSON.stringify(metadata));
+  assert.equal(reusableMacArtifact(artifact, "0.8.0", "arm64"), true);
+  assert.equal(reusableMacArtifact(artifact, "0.8.0", "x86_64"), false);
+  assert.equal(reusableMacArtifact(artifact, "0.7.2", "arm64"), false);
+  writeFileSync(artifact, "damaged candidate");
+  assert.equal(reusableMacArtifact(artifact, "0.8.0", "arm64"), false);
   let executions = 0;
   const execute = async () => { executions += 1; };
   const first = await runCheckpointedStep(
@@ -99,6 +111,20 @@ try {
     checkpointPlan, checkpointState, "validate", "tree-b", "node", "Node full suite", execute,
   );
   assert.equal(executions, 2, "a source-tree change should invalidate validation job checkpoints");
+  await runCheckpointedStep(
+    checkpointPlan, checkpointState, "package", "tree-b", "arm64", "Arm DMG", execute,
+  );
+  await assert.rejects(runCheckpointedStep(
+    checkpointPlan, checkpointState, "package", "tree-b", "intel", "Intel DMG", async () => { throw new Error("notarization unavailable"); },
+  ), /notarization unavailable/);
+  await runCheckpointedStep(
+    checkpointPlan, checkpointState, "package", "tree-b", "arm64", "Arm DMG", execute,
+  );
+  assert.equal(executions, 3, "retrying a failed sibling must retain successful packaging");
+  await runCheckpointedStep(
+    checkpointPlan, checkpointState, "package", "tree-b", "arm64", "Arm DMG", execute, () => false,
+  );
+  assert.equal(executions, 4, "missing or corrupt output must invalidate its successful checkpoint");
 } finally {
   rmSync(checkpointDirectory, { force: true, recursive: true });
 }

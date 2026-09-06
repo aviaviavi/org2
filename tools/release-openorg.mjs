@@ -279,6 +279,7 @@ function safeJobName(name) {
 }
 
 function runJob(plan, name, command, args, options = {}) {
+  const startedAt = Date.now();
   const logPath = join(plan.artifactsDir, `${safeJobName(name)}.log`);
   console.log(`→ ${name}`);
   const descriptor = openSync(logPath, "a");
@@ -295,8 +296,8 @@ function runJob(plan, name, command, args, options = {}) {
     child.once("exit", (code, signal) => {
       closeSync(descriptor);
       if (code === 0) {
-        console.log(`✓ ${name}`);
-        resolvePromise({ logPath, name });
+        console.log(`✓ ${name} (${((Date.now() - startedAt) / 1000).toFixed(1)}s)`);
+        resolvePromise({ logPath, name, durationMs: Date.now() - startedAt });
       } else {
         rejectPromise(new Error(`${name} failed (${signal ?? `exit ${code}`}); see ${logPath}`));
       }
@@ -304,14 +305,14 @@ function runJob(plan, name, command, args, options = {}) {
   });
 }
 
-export async function runCheckpointedStep(plan, state, scope, fingerprint, key, name, job) {
+export async function runCheckpointedStep(plan, state, scope, fingerprint, key, name, job, isReusable = () => true) {
   state.stepCheckpoints ??= {};
   let checkpoint = state.stepCheckpoints[scope];
   if (!checkpoint || checkpoint.fingerprint !== fingerprint) {
     checkpoint = { completed: {}, fingerprint };
     state.stepCheckpoints[scope] = checkpoint;
   }
-  if (checkpoint.completed[key]) {
+  if (checkpoint.completed[key] && await isReusable()) {
     console.log(`↷ ${name} already completed at ${checkpoint.completed[key]}`);
     return { skipped: true };
   }
@@ -458,32 +459,58 @@ function writeExportOptions(plan) {
   return path;
 }
 
-async function packageArtifacts(plan, options) {
+export function reusableMacArtifact(file, version, architecture) {
+  try {
+    const metadata = JSON.parse(readFileSync(file.replace(/\.dmg$/, ".json"), "utf8"));
+    return metadata.version === version && metadata.architecture === architecture && metadata.notarized === true
+      && metadata.sha256 === createHash("sha256").update(readFileSync(file)).digest("hex");
+  } catch { return false; }
+}
+
+function reusableIOSArchive(archivePath, version, build) {
+  try {
+    const metadata = JSON.parse(capture("plutil", ["-convert", "json", "-o", "-", join(archivePath, "Info.plist")]).stdout);
+    const properties = metadata.ApplicationProperties;
+    if (properties.CFBundleShortVersionString !== version || properties.CFBundleVersion !== String(build)) return false;
+    const appPath = join(archivePath, "Products", properties.ApplicationPath);
+    return existsSync(join(appPath, "Info.plist"))
+      && capture("codesign", ["--verify", "--deep", "--strict", appPath], { allowFailure: true }).ok;
+  } catch { return false; }
+}
+
+async function packageArtifacts(plan, options, state) {
+  const fingerprint = validationFingerprint();
+  const packageJob = (key, name, command, args, reusable) => runCheckpointedStep(
+    plan, state, "package", fingerprint, key, name,
+    () => runJob(plan, name, command, args), reusable,
+  );
   const armDMG = join(plan.artifactsDir, "OpenOrg.dmg");
   const intelDMG = join(plan.artifactsDir, "OpenOrg-Intel.dmg");
   const jobs = [
-    () => runJob(plan, "OpenOrg arm64 DMG", process.execPath, [
+    () => packageJob("arm64", "OpenOrg arm64 DMG", process.execPath, [
       "tools/package-openorg-macos.mjs", "--architecture", "arm64", "--output", armDMG,
-      "--require-notarization", "--force",
-    ]),
-    () => runJob(plan, "OpenOrg Intel DMG", process.execPath, [
+      "--require-notarization", "--force", "--skip-runtime-build",
+    ], () => reusableMacArtifact(armDMG, plan.version, "arm64")),
+    () => packageJob("intel", "OpenOrg Intel DMG", process.execPath, [
       "tools/package-openorg-macos.mjs", "--architecture", "x86_64", "--output", intelDMG,
-      "--require-notarization", "--force",
-    ]),
+      "--require-notarization", "--force", "--skip-runtime-build",
+    ], () => reusableMacArtifact(intelDMG, plan.version, "x86_64")),
   ];
   if (!options.skipIOS) {
     const archivePath = join(plan.artifactsDir, "OpenOrg.xcarchive");
-    jobs.push(() => runJob(plan, "iOS release archive", "xcodebuild", [
+    jobs.push(() => packageJob("ios", "iOS release archive", "xcodebuild", [
       "-project", iosProjectPath,
       "-scheme", "Org2Mobile",
       "-configuration", "Release",
       "-destination", "generic/platform=iOS",
       "-archivePath", archivePath,
-      "clean", "archive",
+      "-derivedDataPath", join(plan.artifactsDir, "ios-derived-data"),
+      "-jobs", "2",
+      "archive",
       `MARKETING_VERSION=${plan.version}`,
       `CURRENT_PROJECT_VERSION=${plan.ios.build}`,
       "-allowProvisioningUpdates",
-    ]));
+    ], () => reusableIOSArchive(archivePath, plan.version, plan.ios.build)));
     writeExportOptions(plan);
   }
   await runParallel(jobs);

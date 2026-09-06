@@ -92,6 +92,7 @@ function parseBuildOptions(arguments_) {
     printConfiguration: false,
     requireGoogleOAuthClient: false,
     restart: false,
+    skipRuntimeBuild: false,
   };
   for (let index = 0; index < arguments_.length; index += 1) {
     const argument = arguments_[index];
@@ -118,6 +119,9 @@ function parseBuildOptions(arguments_) {
         break;
       case "--require-google-oauth-client":
         options.requireGoogleOAuthClient = true;
+        break;
+      case "--skip-runtime-build":
+        options.skipRuntimeBuild = true;
         break;
       case "--restart":
         options.restart = true;
@@ -231,6 +235,7 @@ Options:
   --print-configuration   Print the resolved mode and paths without building
   --require-google-oauth-client
                           Fail unless a complete Google OAuth Desktop client is bundled
+  --skip-runtime-build    Reuse the shared runtime already validated by the release command
   --restart               Build while the installed app runs, then quit, replace, and relaunch it
   --help                  Show this help`;
 }
@@ -635,7 +640,7 @@ function copyOrg2Runtime(resourcesDir) {
     "detect-libc",
   ];
   for (const packageName of runtimePackages) {
-    const source = join(repoRoot, "node_modules", ...packageName.split("/"));
+    const source = join(process.env.ORG2_WORKSPACE_RUNTIME_DEPENDENCIES || repoRoot, "node_modules", ...packageName.split("/"));
     if (!existsSync(source)) {
       if (swiftBuildConfiguration === "release") {
         throw new Error(`Production runtime dependency ${packageName} is missing. Run npm ci for the target Node.js architecture.`);
@@ -862,8 +867,12 @@ function main() {
     assertInstalledAppIsStopped(installedBinaryPath);
   }
 
-  console.log("Building the shared Org2 runtime for the app bundle...");
-  run("npm", ["run", "build"], { cwd: repoRoot });
+  if (!buildOptions.skipRuntimeBuild) {
+    console.log("Building the shared Org2 runtime for the app bundle...");
+    run("npm", ["run", "build"], { cwd: repoRoot });
+  } else if (!existsSync(join(repoRoot, "dist", "cli.js"))) {
+    throw new Error("--skip-runtime-build requires an already built shared runtime");
+  }
   console.log(`Building ${executableName} (${swiftBuildConfiguration})...`);
   run("swift", swiftBuildArgs("build"), { cwd: packageDir });
   const buildProductsDir = run("swift", swiftBuildArgs("build", "--show-bin-path"), {

@@ -36,9 +36,9 @@ npm run release:openorg -- patch \
 The orchestrator:
 
 - fails closed on a dirty or unsynchronized `main`;
-- checkpoints every phase and each input-fingerprinted validation job under `/tmp/openorg-release-VERSION/state.json`;
+- checkpoints every phase and each input-fingerprinted validation and packaging job under `/tmp/openorg-release-VERSION/state.json`;
 - builds the shared runtime once, runs docs, Node, and VS Code validation concurrently, then runs Swift serially in an isolated scratch directory;
-- builds the isolated arm64 DMG, isolated Intel DMG, and iOS archive concurrently;
+- builds the isolated arm64 DMG, isolated Intel DMG, and iOS archive concurrently, reusing the validated TypeScript output and installing each architecture's production dependencies in separate staging;
 - overlaps the GitHub tag workflow/DMG publication with the TestFlight binary upload;
 - leaves TestFlight metadata, group assignment, and external beta review for the signed-in App Store Connect browser flow described below;
 - synchronizes GitHub, Scarf-backed downloads, and the generated site before parallel public verification;
@@ -50,8 +50,8 @@ Use `--through PHASE` for an intentional checkpoint, `--restart` to discard phas
 
 1. Resume the existing versioned checkpoint before considering `--restart`. Inspect its completed phases, validation fingerprint, and per-job logs. Restart only when the recorded inputs are stale or the candidate itself changed.
 2. Do not repeat the complete Swift suite solely to chase a timing-only failure. If the full run has no functional failure, rerun each failed timing test once in isolation. Accept the full run plus focused passing retry as the release evidence; repeat the full suite only when a functional test failed or an isolated timing retry still fails.
-3. A failed parallel packaging phase may still leave one fully valid Mac artifact. Preserve any artifact whose sidecar has the exact version and architecture, whose SHA-256 matches, and whose signing, notarization, stapling, and Gatekeeper checks passed. Repair only the failed architecture with `tools/package-openorg-macos.mjs`.
-4. npm optional native dependencies follow the architecture of the Node process that installs them. Before a single-architecture repair, run the locked install under the target-architecture Node binary and launch the package command with that same binary. Preserve the system command directories in `PATH`—at minimum `/usr/bin:/bin:/usr/sbin:/sbin`—so notarization verification can invoke `/usr/sbin/spctl`. Before returning to a host-architecture documentation or sync step, restore the lockfile install under the orchestrator's host Node. Dependency restoration from an unchanged lockfile does not invalidate validation.
+3. Resume a failed packaging phase normally. Its completed jobs are retained only while the source fingerprint and outputs match: Mac sidecars must have the exact version and architecture, notarization success, and matching SHA-256; iOS archives must have the exact version/build and valid code signatures. Missing or damaged outputs rerun only their own job. Use `tools/package-openorg-macos.mjs` for an explicitly scoped architecture repair.
+4. npm optional native dependencies follow the architecture of the Node process that installs them. The Mac packager now installs locked production dependencies under each target Node in its own temporary directory and loads the native DuckDB binding before compiling Swift. Do not replace the shared checkout's dependencies between parallel packaging jobs. Preserve `/usr/bin:/bin:/usr/sbin:/sbin` in `PATH` so notarization verification can invoke `/usr/sbin/spctl`.
 5. If the tag workflow times out only while publishing VS Code, do not rerun the release or republish npm. Confirm the version is absent from the Marketplace, then use the workflow's `publish_only=true` dispatch for the same version. It checks out the version tag, skips the full test and npm publication gates, retries Marketplace submission, and reattaches the small release assets. The tag workflow is intentionally allowed to continue to GitHub asset publication when Marketplace submission fails.
 6. Manually mark a failed fan-out phase complete only as a narrow recovery after every required output independently satisfies that phase's contract. Never advance a checkpoint to conceal a missing, unnotarized, mismatched, or unverified artifact.
 

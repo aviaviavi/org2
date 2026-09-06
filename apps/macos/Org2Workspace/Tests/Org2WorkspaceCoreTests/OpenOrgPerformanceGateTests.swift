@@ -1827,12 +1827,21 @@ private final class WorkspaceApplicationLifecycleDriver: NSObject {
   }
 }
 
+private final class ProbeTestClock: @unchecked Sendable {
+  private let lock = NSLock()
+  private var ticks = 0
+  func now() -> CFTimeInterval {
+    lock.withLock { ticks += 1; return Double(ticks) / 1000 }
+  }
+}
+
 @MainActor
 private final class MainActorGapProbe {
   typealias Cadence = @Sendable (UInt64) async throws -> Void
 
   private let intervalMilliseconds: Double
   private let cadence: Cadence
+  private let now: @Sendable () -> CFTimeInterval
   private let didEnqueueForTesting: (@Sendable () -> Void)?
   private var task: Task<Double, Never>?
 
@@ -1841,10 +1850,12 @@ private final class MainActorGapProbe {
     cadence: @escaping Cadence = { intervalNanoseconds in
       try await Task.sleep(nanoseconds: intervalNanoseconds)
     },
-    didEnqueueForTesting: (@Sendable () -> Void)? = nil
+    didEnqueueForTesting: (@Sendable () -> Void)? = nil,
+    now: @escaping @Sendable () -> CFTimeInterval = { CACurrentMediaTime() }
   ) {
     self.intervalMilliseconds = intervalMilliseconds
     self.cadence = cadence
+    self.now = now
     self.didEnqueueForTesting = didEnqueueForTesting
   }
 
@@ -1852,6 +1863,7 @@ private final class MainActorGapProbe {
     precondition(task == nil, "MainActorGapProbe must be stopped before it is restarted")
     let intervalNanoseconds = UInt64(intervalMilliseconds * 1_000_000)
     let cadence = cadence
+    let now = now
     let didEnqueueForTesting = didEnqueueForTesting
     task = Task.detached(priority: .userInitiated) {
       var maximumGapMilliseconds: Double = 0
@@ -1866,10 +1878,10 @@ private final class MainActorGapProbe {
         // Timestamp only the interval during which work is actually queued on
         // the main thread. Background timer wake-up jitter, process suspension,
         // and profiler pauses before this point are intentionally excluded.
-        let enqueuedAt = CACurrentMediaTime()
+        let enqueuedAt = now()
         let gapMilliseconds: Double = await withCheckedContinuation { continuation in
           DispatchQueue.main.async {
-            continuation.resume(returning: (CACurrentMediaTime() - enqueuedAt) * 1_000)
+            continuation.resume(returning: (now() - enqueuedAt) * 1_000)
           }
           didEnqueueForTesting?()
         }
@@ -1901,14 +1913,17 @@ private final class MainActorGapProbe {
 
 @MainActor
 final class OpenOrgPerformanceGateTests: XCTestCase {
-  func testMainActorGapProbeStaysBelowFrameBudgetWhileMainQueueIsIdle() async throws {
-    let probe = MainActorGapProbe(intervalMilliseconds: 1)
+  func testMainActorGapProbeMeasuresEnqueueToCallbackInterval() async throws {
+    // Check the measuring code deterministically. Real UI performance gates
+    // below still use the monotonic system clock and their original budgets.
+    let clock = ProbeTestClock()
+    let probe = MainActorGapProbe(intervalMilliseconds: 1, now: { clock.now() })
     probe.start()
     try await Task.sleep(nanoseconds: 75_000_000)
 
     let maximumGapMilliseconds = await probe.stop()
 
-    XCTAssertLessThan(maximumGapMilliseconds, 16.7)
+    XCTAssertEqual(maximumGapMilliseconds, 1, accuracy: 0.000_001)
   }
 
   func testMainActorGapProbeDoesNotCountBackgroundCadenceDelay() async {

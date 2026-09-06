@@ -2,7 +2,9 @@
 
 import { spawnSync } from "node:child_process";
 import {
+  copyFileSync,
   existsSync,
+  realpathSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -39,6 +41,7 @@ function parseOptions(args) {
     output: "",
     plan: false,
     requireNotarization: false,
+    skipRuntimeBuild: false,
   };
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index];
@@ -54,6 +57,9 @@ function parseOptions(args) {
         break;
       case "--require-notarization":
         parsed.requireNotarization = true;
+        break;
+      case "--skip-runtime-build":
+        parsed.skipRuntimeBuild = true;
         break;
       case "--force":
         parsed.force = true;
@@ -87,6 +93,7 @@ Options:
   --output PATH             DMG output path
   --notary-profile NAME     notarytool Keychain profile (or OPENORG_NOTARY_KEYCHAIN_PROFILE)
   --require-notarization    fail instead of producing an unstapled local candidate
+  --skip-runtime-build      reuse a shared runtime already built and validated
   --force                   replace an existing output artifact
   --plan                    print the resolved non-secret packaging plan
   --help                    show this help`;
@@ -205,6 +212,7 @@ function printPlan() {
     notarization: options.notaryProfile ? "notarytool Keychain profile configured" : "not configured",
     output: options.output,
     swiftBuild: "isolated per artifact",
+    runtimeDependencies: "locked install under target Node in isolated staging",
     targetRuntimeSelection: "architecture-verified at execution",
     staging: "isolated temporary directory",
     version: packageVersion,
@@ -245,13 +253,26 @@ function main() {
   const unsignedDMG = join(workingDirectory, "OpenOrg.dmg");
 
   try {
-    run(process.execPath, [
+    // Never race architecture-specific npm installs in the shared checkout.
+    // Resolve and load the target binding before spending time compiling Swift.
+    const dependencies = join(workingDirectory, "runtime-dependencies");
+    mkdirSync(dependencies);
+    for (const file of ["package.json", "package-lock.json"]) {
+      copyFileSync(join(repoRoot, file), join(dependencies, file));
+    }
+    const targetEnvironment = { ...process.env, PATH: `${dirname(nodePath)}:${process.env.PATH}` };
+    const npmCLI = realpathSync(run("which", ["npm"], { capture: true }));
+    run(nodePath, [npmCLI, "ci", "--omit=dev", "--no-audit", "--no-fund"], { cwd: dependencies, env: targetEnvironment });
+    run(nodePath, ["-e", "require('@duckdb/node-bindings')"], { cwd: dependencies, env: targetEnvironment });
+    run(nodePath, [
       join(repoRoot, "tools", "build-macos-app.mjs"),
       "--configuration", "release",
       "--require-google-oauth-client",
+      ...(options.skipRuntimeBuild ? ["--skip-runtime-build"] : []),
     ], {
       env: {
-        ...process.env,
+        ...targetEnvironment,
+        ORG2_WORKSPACE_RUNTIME_DEPENDENCIES: dependencies,
         ORG2_WORKSPACE_APP_NAME: "OpenOrg",
         ORG2_WORKSPACE_APP_PATH: builtApp,
         ORG2_WORKSPACE_BUNDLE_ID: "org.org2.workspace",
