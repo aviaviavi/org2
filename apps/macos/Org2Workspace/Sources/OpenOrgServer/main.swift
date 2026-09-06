@@ -93,7 +93,7 @@ struct OpenOrgServer {
       store.setAutomationSchedulerActive(config.schedulesEnabled)
       emit(["event": "ready", "hostRef": config.hostRef, "endpoint": remote.endpoint ?? ""])
 
-      for try await line in FileHandle.standardInput.bytes.lines {
+      for try await line in HeadlessControlInput.lines(descriptor: STDIN_FILENO) {
         guard let data = line.data(using: .utf8),
               let request = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let id = request["id"] as? String,

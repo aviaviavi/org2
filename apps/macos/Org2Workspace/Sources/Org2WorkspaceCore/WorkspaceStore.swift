@@ -827,6 +827,7 @@ struct CorpusFileEventClassification: Equatable, Sendable {
   let hasAgentRunStateChanges: Bool
   let hasConfigurationChanges: Bool
   let hasAIChatInboxChanges: Bool
+  var hasAIChatTranscriptChanges = false
 }
 
 private struct AIChatInboxMessage: Decodable, Sendable {
@@ -2993,6 +2994,9 @@ public final class WorkspaceStore {
   private var openClawThreadMessageMutationCounter: UInt64 = 0
   private var openClawThreadMessageMutationVersions: [UUID: UInt64] = [:]
   private var openClawThreadMessageRevisions: [UUID: UInt64] = [:]
+  private var syncedAIChatRefreshTask: Task<Void, Never>?
+  private var syncedAIChatRefreshNeeded = false
+  private var knownAIChatThreadIDsByPath: [String: Set<UUID>] = [:]
   private var aiChatTranscriptMutationGeneration: UInt64 = 0
   private var aiChatTranscriptPersistedMutationGeneration: UInt64 = 0
   private var publishedOpenClawMessagesIdentity: PublishedAIChatMessagesIdentity?
@@ -4735,6 +4739,9 @@ public final class WorkspaceStore {
     if classified.hasAgentRunStateChanges {
       markWorkspaceSurfacesDirty([.approvals, .search], refreshVisible: false)
       scheduleRunReviewRefreshAfterEvents()
+    }
+    if requiresFullScan || classified.hasAIChatTranscriptChanges {
+      scheduleSyncedAIChatTranscriptRefresh()
     }
     if requiresFullScan || classified.hasAIChatInboxChanges {
       scheduleAIChatInboxDrain()
@@ -25940,6 +25947,7 @@ public final class WorkspaceStore {
     var hasAgentRunStateChanges = false
     var hasConfigurationChanges = false
     var hasAIChatInboxChanges = false
+    var hasAIChatTranscriptChanges = false
 
     for rawPath in paths {
       let path = URL(fileURLWithPath: rawPath).standardizedFileURL.path
@@ -25954,6 +25962,10 @@ public final class WorkspaceStore {
       if relativePath.hasPrefix(".org2/runs/"),
          URL(fileURLWithPath: path).pathExtension.lowercased() == "org2" {
         hasAgentRunStateChanges = true
+        continue
+      }
+      if relativePath == ".org2/openclaw-chat.json" || relativePath.hasPrefix(".org2/openclaw-chat.store/") {
+        hasAIChatTranscriptChanges = true
         continue
       }
       if relativePath.hasPrefix(".org2/ai-chat-inbox/") {
@@ -25973,7 +25985,8 @@ public final class WorkspaceStore {
       contentPaths: contentPaths,
       hasAgentRunStateChanges: hasAgentRunStateChanges,
       hasConfigurationChanges: hasConfigurationChanges,
-      hasAIChatInboxChanges: hasAIChatInboxChanges
+      hasAIChatInboxChanges: hasAIChatInboxChanges,
+      hasAIChatTranscriptChanges: hasAIChatTranscriptChanges
     )
   }
 
@@ -26114,6 +26127,7 @@ public final class WorkspaceStore {
   public func workspaceDidBecomeActive() {
     guard isWorkspaceRealtimeRefreshActive else { return }
     scheduleAgendaClockInvalidation()
+    scheduleSyncedAIChatTranscriptRefresh()
 
     if needsFullCorpusRefreshAfterEvents {
       scheduleFullCorpusFileRefreshAfterEvents()
@@ -35637,10 +35651,14 @@ public final class WorkspaceStore {
   }
 
   private func aiChatTranscriptSnapshot() -> AIChatTranscriptSnapshot {
-    AIChatTranscriptSnapshot(
+    let key = openClawTranscriptURL.standardizedFileURL.path
+    let known = knownAIChatThreadIDsByPath[key, default: []].union(openClawChatThreads.map(\.id))
+    knownAIChatThreadIDsByPath[key] = known
+    return AIChatTranscriptSnapshot(
       threads: openClawChatThreads,
       selectedThreadID: selectedOpenClawChatThreadID,
-      settlementSettings: openClawThreadSettlementSettings
+      settlementSettings: openClawThreadSettlementSettings,
+      knownThreadIDs: known
     )
   }
 
@@ -35651,6 +35669,11 @@ public final class WorkspaceStore {
   ) {
     let context = captureAIChatCorpusContext()
     let mutationVersions = openClawThreadMessageMutationVersions
+    var snapshot = snapshot
+    let key = legacyURL.standardizedFileURL.path
+    let known = knownAIChatThreadIDsByPath[key, default: []].union(snapshot.threads.map(\.id))
+    snapshot.knownThreadIDs = known
+    knownAIChatThreadIDsByPath[key] = known
     let storeGeneration = AIChatTranscriptStore.shared.enqueue(snapshot, legacyURL: legacyURL)
     lastEnqueuedAIChatTranscriptStoreGeneration = (storeGeneration, legacyURL)
     Task { @MainActor [weak self] in
@@ -35928,6 +35951,68 @@ public final class WorkspaceStore {
       loaded: loaded,
       presentations: presentations
     )
+  }
+
+  private func scheduleSyncedAIChatTranscriptRefresh() {
+    syncedAIChatRefreshNeeded = true
+    guard syncedAIChatRefreshTask == nil else { return }
+    syncedAIChatRefreshTask = Task { @MainActor [weak self] in
+      while !Task.isCancelled {
+        try? await Task.sleep(for: .milliseconds(250))
+        guard let self, !Task.isCancelled else { return }
+        guard self.syncedAIChatRefreshNeeded else { break }
+        self.syncedAIChatRefreshNeeded = false
+        if !(await self.refreshSyncedAIChatTranscript()) {
+          self.syncedAIChatRefreshNeeded = true
+          try? await Task.sleep(for: .seconds(1))
+        }
+      }
+      self?.syncedAIChatRefreshTask = nil
+    }
+  }
+
+  private var hasLocallyRunningAIChatThread: Bool {
+    !openClawSendingThreadIDs.isEmpty || drainingOpenClawThreadIDs.contains {
+      isAIChatRuntimeStateVisible(for: $0)
+    }
+  }
+
+  /// Refresh replicas without dispatching agent work or writing viewed history.
+  @discardableResult
+  func refreshSyncedAIChatTranscript() async -> Bool {
+    guard hasAuthoritativeAIChatTranscriptState, !isLoadingAIChatTranscript,
+          !hasUnpersistedAIChatTranscriptMutation,
+          !hasLocallyRunningAIChatThread
+    else { return false }
+    let target = openClawTranscriptURL
+    let generation = aiChatTranscriptMutationGeneration
+    let loaded = await Task.detached(priority: .utility) {
+      AIChatTranscriptStore.shared.loadIfAvailable(legacyURL: target, preferPersisted: true)
+    }.value
+    guard target == openClawTranscriptURL, generation == aiChatTranscriptMutationGeneration,
+          !isLoadingAIChatTranscript, !hasUnpersistedAIChatTranscriptMutation,
+          !hasLocallyRunningAIChatThread
+    else { return false }
+    guard let loaded else { return true }
+    // A sync provider may deliver the commit marker before its immutable shards.
+    guard loaded.recoveryStatus == .healthy else { return false }
+    saveOpenClawComposerForSelectedThread()
+    openClawThreadHydrationTasks.values.forEach { $0.cancel() }
+    openClawThreadHydrationTasks.removeAll()
+    openClawThreadHydrationTaskTokens.removeAll()
+    unloadedOpenClawChatThreadIDs = loaded.unloadedThreadIDs
+    isApplyingPersistedOpenClawChatThreads = true
+    applyOpenClawTranscript(OpenClawTranscriptState(
+      threads: loaded.snapshot.threads,
+      selectedThreadID: selectedOpenClawChatThreadID,
+      settlementSettings: loaded.snapshot.settlementSettings
+    ), shouldPersist: false, allowsMaintenanceWrites: false)
+    isApplyingPersistedOpenClawChatThreads = false
+    initializeHydratedOpenClawChatThreadLRU()
+    if let selectedOpenClawChatThreadID, unloadedOpenClawChatThreadIDs.contains(selectedOpenClawChatThreadID) {
+      hydrateOpenClawChatThread(selectedOpenClawChatThreadID)
+    }
+    return true
   }
 
   private func startFixedAIChatTranscriptLoad() {
@@ -36355,7 +36440,13 @@ public final class WorkspaceStore {
     }
   }
 
-  private func applyOpenClawTranscript(_ transcript: OpenClawTranscriptState, shouldPersist: Bool) {
+  private func applyOpenClawTranscript(
+    _ transcript: OpenClawTranscriptState,
+    shouldPersist: Bool,
+    allowsMaintenanceWrites: Bool = true
+  ) {
+    knownAIChatThreadIDsByPath[openClawTranscriptURL.standardizedFileURL.path, default: []]
+      .formUnion(transcript.threads.map(\.id))
     hasAuthoritativeAIChatTranscriptState = true
     openClawThreadSettlementSettings = transcript.settlementSettings
     let migratedThreads = transcript.threads.map { thread in
@@ -36394,7 +36485,7 @@ public final class WorkspaceStore {
       openClawDraft = ""
       openClawPendingAttachments = []
     }
-    let autoSettledIDs = autoSettleOpenClawChatThreads(shouldPersist: false)
+    let autoSettledIDs = allowsMaintenanceWrites ? autoSettleOpenClawChatThreads(shouldPersist: false) : []
     let threads = openClawChatThreads
     for thread in threads {
       let messageIDs = thread.messages.compactMap { message in
@@ -36423,7 +36514,7 @@ public final class WorkspaceStore {
     } else {
       openClawStatusText = Self.openClawStatusText(settings: currentOpenClawSettings())
     }
-    if shouldPersist || migratedThreadMetadata || !autoSettledIDs.isEmpty {
+    if shouldPersist || (allowsMaintenanceWrites && (migratedThreadMetadata || !autoSettledIDs.isEmpty)) {
       persistOpenClawTranscript()
     }
   }

@@ -5,6 +5,7 @@ struct AIChatTranscriptSnapshot: Sendable {
   let threads: [OpenClawChatThread]
   let selectedThreadID: UUID?
   let settlementSettings: OpenClawThreadSettlementSettings
+  var knownThreadIDs: Set<UUID>? = nil
 }
 
 enum AIChatTranscriptRecoveryStatus: Equatable, Sendable {
@@ -149,10 +150,14 @@ final class AIChatTranscriptStore: @unchecked Sendable {
     }
   }
 
-  func loadIfAvailable(legacyURL: URL) -> AIChatTranscriptLoadResult? {
+  func loadIfAvailable(legacyURL: URL, preferPersisted: Bool = false) -> AIChatTranscriptLoadResult? {
     let url = legacyURL.standardizedFileURL
     let key = url.path
     condition.lock()
+    let hasPendingWrite = latestSnapshots[key].map {
+      persistedGenerations[key, default: 0] < $0.generation
+    } ?? false
+    if preferPersisted && !hasPendingWrite { latestSnapshots.removeValue(forKey: key) }
     let pending = latestSnapshots[key]
     condition.unlock()
     if let pending {
@@ -478,6 +483,12 @@ final class AIChatTranscriptStore: @unchecked Sendable {
     entries.reserveCapacity(snapshot.threads.count)
 
     for thread in snapshot.threads {
+      if snapshot.knownThreadIDs != nil,
+         let prior = priorManifest?.threads.first(where: { $0.metadata.id == thread.id }),
+         prior.metadata.updatedAt > thread.updatedAt {
+        entries.append(prior)
+        continue
+      }
       if thread.storedMessageCount != nil {
         if let prior = priorManifest?.threads.first(where: { $0.metadata.id == thread.id }) {
           guard loadThreadShard(prior, storeURL: storeURL) != nil
@@ -548,6 +559,15 @@ final class AIChatTranscriptStore: @unchecked Sendable {
         shardDigest: shardDigest,
         blobs: threadBlobs.sorted()
       ))
+    }
+
+    // A snapshot can predate a synced thread. Absence only means deletion if
+    // this workspace had actually observed that ID; never erase unseen threads.
+    if let knownIDs = snapshot.knownThreadIDs {
+      let writtenIDs = Set(entries.map { $0.metadata.id })
+      entries += (priorManifest?.threads ?? []).filter {
+        !knownIDs.contains($0.metadata.id) && !writtenIDs.contains($0.metadata.id)
+      }
     }
 
     let commitID = UUID().uuidString.lowercased()
