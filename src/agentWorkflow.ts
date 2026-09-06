@@ -374,18 +374,39 @@ export function renderWorkflowOrg(workflow: AgentWorkflow): string {
   ].join("\n");
 }
 
+function stripDuplicatedWorkflowHeaders(description: string, id: string): string {
+  let remaining = description.trim();
+  // Older reads started at a document-level :END: and captured the generated
+  // wrapper as prose. Only unwrap leading package headers for this workflow.
+  while (true) {
+    const header = remaining.match(/^#\+TITLE:[ \t]+Org2 workflow package[ \t]*\r?\n(?:[ \t]*\r?\n)*\*[ \t]+[^\r\n]+\r?\n:PROPERTIES:[ \t]*\r?\n((?::[^\r\n]*\r?\n)*?):END:[ \t]*(?:\r?\n|$)/i);
+    if (!header || header[1].match(/^:ORG2_WORKFLOW_ID:[ \t]*(.+)\r?$/mi)?.[1]?.trim() !== id) return remaining;
+    remaining = remaining.slice(header[0].length).trimStart();
+  }
+}
+
 export function parseWorkflowOrg(raw: string): AgentWorkflow {
   const match = raw.match(/#\+begin_src\s+json\s+:org2-workflow\s*\r?\n([\s\S]*?)\r?\n#\+end_src/i);
   if (!match) throw new Error("workflow file is missing its :org2-workflow machine-state block");
   const parsed = JSON.parse(match[1] || "{}") as AgentWorkflow;
-  const headingTitle = raw.match(/^\*\s+(.+)\s*$/m)?.[1]?.trim();
-  const state = raw.match(/^:WORKFLOW_STATE:\s*(.+)\s*$/mi)?.[1]?.trim();
-  const riskClass = raw.match(/^:RISK_CLASS:\s*(.+)\s*$/mi)?.[1]?.trim();
-  const version = raw.match(/^:ORG2_WORKFLOW_VERSION:\s*(.+)\s*$/mi)?.[1]?.trim();
-  const agentRef = raw.match(/^:AGENT_REF:\s*(.+)\s*$/mi)?.[1]?.trim();
-  const goalRef = raw.match(/^:GOAL_REF:\s*(.+)\s*$/mi)?.[1]?.trim();
-  const destinationRef = raw.match(/^:AI_DESTINATION_REF:\s*(.+)\s*$/mi)?.[1]?.trim();
-  const description = raw.match(/^:END:\s*\r?\n([\s\S]*?)\r?\n\*\* Instructions\s*$/m)?.[1]?.trim();
+  const readable = raw.slice(0, match.index);
+  const heading = readable.match(/^\*[ \t]+([^\r\n]+)\r?$/m);
+  const headingTitle = heading?.[1]?.trim();
+  const afterHeading = heading ? readable.slice(heading.index! + heading[0].length) : "";
+  // The workflow's own drawer, not a file ID drawer or a drawer in its prompt,
+  // defines the editable metadata and the start of the description.
+  const drawer = afterHeading.match(/^\r?\n(?:[ \t]*\r?\n)*:PROPERTIES:[ \t]*\r?\n((?::[^\r\n]*\r?\n)*?):END:[ \t]*(?:\r?\n|$)/i);
+  const properties = drawer?.[1] || "";
+  const state = properties.match(/^:WORKFLOW_STATE:[ \t]*(.+)\r?$/mi)?.[1]?.trim();
+  const riskClass = properties.match(/^:RISK_CLASS:[ \t]*(.+)\r?$/mi)?.[1]?.trim();
+  const version = properties.match(/^:ORG2_WORKFLOW_VERSION:[ \t]*(.+)\r?$/mi)?.[1]?.trim();
+  const agentRef = properties.match(/^:AGENT_REF:[ \t]*(.+)\r?$/mi)?.[1]?.trim();
+  const goalRef = properties.match(/^:GOAL_REF:[ \t]*(.+)\r?$/mi)?.[1]?.trim();
+  const destinationRef = properties.match(/^:AI_DESTINATION_REF:[ \t]*(.+)\r?$/mi)?.[1]?.trim();
+  const visibleDescription = drawer
+    ? afterHeading.slice(drawer[0].length).match(/^([\s\S]*?)^\*\* Instructions[ \t]*\r?$/m)?.[1]?.trim()
+    : undefined;
+  const description = stripDuplicatedWorkflowHeaders(visibleDescription ?? parsed.description, parsed.id);
   const instructions = raw.match(/^\*\* Instructions\s*\r?\n([\s\S]*?)\r?\n\*\* Machine state\s*$/m)?.[1]?.trim();
   // The readable Org2 fields are authoring fields, not a decorative copy. The
   // machine block carries the complete portable schema; editing these visible
@@ -394,7 +415,7 @@ export function parseWorkflowOrg(raw: string): AgentWorkflow {
   const workflow = {
     ...parsed,
     ...(headingTitle ? { title: headingTitle } : {}),
-    ...(description ? { description } : {}),
+    description,
     ...(instructions ? { instructions } : {}),
     ...(version ? { version } : {}),
     ...(agentRef ? { agentRef } : {}),
@@ -414,7 +435,18 @@ export function saveWorkflow(
   options: GuardedFileWriteOptions = {},
 ): string {
   const target = workflowPath(root, workflow.id);
-  return guardedWriteFile(target, renderWorkflowOrg(workflow), options).file;
+  const source = workflowSourcePath(root, workflow.id);
+  const snapshot = fs.existsSync(source) ? readGuardedFile(source) : undefined;
+  const rendered = renderWorkflowOrg(workflow);
+  // Keep document identity and other file-level metadata across structured
+  // saves. They belong to the source document, not the portable workflow JSON.
+  const preamble = snapshot?.content.match(/^[\s\S]*?(?=^\*[ \t]+\S)/m)?.[0];
+  const content = preamble === undefined ? rendered : preamble + rendered.slice(rendered.indexOf("\n") + 1);
+  return guardedWriteFile(target, content, {
+    expectedRevision: options.expectedRevision !== undefined
+      ? options.expectedRevision
+      : snapshot?.file === target ? snapshot.revision : null,
+  }).file;
 }
 
 export function installBuiltinWorkflow(root: string, template: AgentWorkflowTemplate): string {

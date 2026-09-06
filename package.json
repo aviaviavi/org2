@@ -75,7 +75,7 @@
     "pretest": "npm run build",
     "prepublishOnly": "npm run docs:check && npm test",
     "test:prerequisites:built": "node test/test-plugin-runtime.mjs && node test/test-table-formula.mjs && node test/test-source-runtime.mjs && npm run test:agentic && npm run test:corpus && npm run test:openclaw:built",
-    "test:agentic": "node test/test-server.mjs && node test/test-agentic-workspace.mjs && node test/test-agentic-doctor.mjs && node test/test-work-ledger.mjs && node test/test-openclaw-thread-state.mjs && node test/test-ai-chat-inbox.mjs && node test/test-skill-install.mjs",
+    "test:agentic": "node test/test-workflow-serialization.mjs && node test/test-server.mjs && node test/test-agentic-workspace.mjs && node test/test-agentic-doctor.mjs && node test/test-work-ledger.mjs && node test/test-openclaw-thread-state.mjs && node test/test-ai-chat-inbox.mjs && node test/test-skill-install.mjs",
     "test:corpus": "node test/test-corpus-identity.mjs && node test/test-node-actions.mjs",
     "test:node-actions": "npm run build && node test/test-node-actions.mjs",
     "test:sources": "npm run build && node test/test-source-runtime.mjs",
