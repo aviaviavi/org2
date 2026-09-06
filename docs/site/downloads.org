@@ -7,23 +7,23 @@
 </section>
 #+END_EXPORT
 
-* OpenOrg 0.7.2
+* OpenOrg 0.8.0
 
 #+BEGIN_EXPORT html
-<section class="org2-download-grid" aria-label="OpenOrg 0.7.2 downloads">
+<section class="org2-download-grid" aria-label="OpenOrg 0.8.0 downloads">
     <article class="org2-download-card org2-download-card-macos-apple-silicon">
       <p class="org2-download-kicker">macOS</p>
       <h3>OpenOrg for macOS (Apple Silicon DMG)</h3>
       <p>Native Apple Silicon workspace app. Developer ID signed, notarized, and stapled.</p>
-      <p class="org2-download-meta">0.7.2 · 213.8 MB</p>
-      <a class="org2-download-button" href="https://org2.gateway.scarf.sh/downloads/0.7.2/OpenOrg.dmg">Download <span aria-hidden="true">↓</span></a>
+      <p class="org2-download-meta">0.8.0 · 218.9 MB</p>
+      <a class="org2-download-button" href="https://org2.gateway.scarf.sh/downloads/0.8.0/OpenOrg.dmg">Download <span aria-hidden="true">↓</span></a>
     </article>
     <article class="org2-download-card org2-download-card-macos-intel">
       <p class="org2-download-kicker">macOS</p>
       <h3>OpenOrg for macOS (Intel DMG)</h3>
       <p>Native Intel workspace app. Developer ID signed, notarized, and stapled.</p>
-      <p class="org2-download-meta">0.7.2 · 228.5 MB</p>
-      <a class="org2-download-button" href="https://org2.gateway.scarf.sh/downloads/0.7.2/OpenOrg-Intel.dmg">Download <span aria-hidden="true">↓</span></a>
+      <p class="org2-download-meta">0.8.0 · 227.9 MB</p>
+      <a class="org2-download-button" href="https://org2.gateway.scarf.sh/downloads/0.8.0/OpenOrg-Intel.dmg">Download <span aria-hidden="true">↓</span></a>
     </article>
     <article class="org2-download-card org2-download-card-vscode">
       <p class="org2-download-kicker">VS Code</p>
@@ -82,8 +82,8 @@ https://org2.gateway.scarf.sh/downloads/{version}/{artifact}
 For example, the current OpenOrg builds are:
 
 #+begin_src text
-https://org2.gateway.scarf.sh/downloads/0.7.2/OpenOrg.dmg
-https://org2.gateway.scarf.sh/downloads/0.7.2/OpenOrg-Intel.dmg
+https://org2.gateway.scarf.sh/downloads/0.8.0/OpenOrg.dmg
+https://org2.gateway.scarf.sh/downloads/0.8.0/OpenOrg-Intel.dmg
 #+end_src
 
 Scarf redirects those requests to the matching =github.com/aviaviavi/org2/releases/download/{version}/{artifact}= files. No release files are hosted separately by Scarf.

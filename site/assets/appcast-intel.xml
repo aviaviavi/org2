@@ -4,46 +4,30 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>OpenOrg</title>
         <item>
-            <title>0.7.2</title>
-            <pubDate>Thu, 03 Sep 2026 09:55:22 -0700</pubDate>
+            <title>0.8.0</title>
+            <pubDate>Sun, 06 Sep 2026 12:44:33 -0700</pubDate>
             <link>https://openorg.so/downloads.html</link>
-            <sparkle:version>0.7.2</sparkle:version>
-            <sparkle:shortVersionString>0.7.2</sparkle:shortVersionString>
+            <sparkle:version>0.8.0</sparkle:version>
+            <sparkle:shortVersionString>0.8.0</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <description sparkle:format="markdown"><![CDATA[# OpenOrg 0.7.2
+            <description sparkle:format="markdown"><![CDATA[OpenOrg 0.8.0 keeps iPhone AI chat and scheduled work available through a dedicated Mac, even when your laptop is asleep or away.
 
-OpenOrg 0.7.2 improves workspace navigation, AI chat, meeting recording reliability, automation management, and everyday document work.
+- Run the chat relay and automation scheduler without a desktop window using `org2 server`. Pair, inspect, revoke devices, assign the scheduler host, and install a login service from the CLI.
+- Reuse existing corpus chat history. The Mac now refreshes conversations and messages arriving through corpus synchronization while preserving selection and unfinished drafts.
+- Give scheduled automations one explicit host. Updated Mac and server schedulers enforce that owner and suppress duplicate occurrences. Automatic failover across replicated copies is not enabled.
+- Save multiple hosts in the iOS app and choose which host handles chat. Each host retains its own protected pairing credential.
+- Improve LSP compatibility with strict clients: notifications receive no response, and split Unicode messages use correct UTF-8 byte framing.
+- Fix chat code/table scrolling, refresh stale Codex model catalogs, and keep the headless supervisor alive through temporary nonblocking input reads.
+- Make release retries reuse verified artifacts, install native dependencies separately for each Mac architecture, avoid repeated runtime builds, and stabilize the tests that delayed the previous release.
 
-## Highlights
+macOS downloads support macOS 14 or later and include the local dictation runtime. Both Apple Silicon and Intel DMGs require Developer ID signing and Apple notarization before publication. iOS 0.8.0 build 28 is distributed separately through TestFlight, subject to Apple's processing and beta review.
 
-- Added a dedicated Skills manager for workspace-authored agent procedures, available from the sidebar and with Command-Shift-K. The built-in Org2 operating guidance remains ambient and hidden from the user-managed skill list.
-- Made tabs represent the full workspace state, preserving the active surface, document selection, pane focus, and pane layout independently across tabs.
-- Added a Daily “Choose Date…” action and Command-Shift-7 shortcut for opening or creating the daily note for any date.
-- Added workspace filtering and file-tree navigation improvements, plus richer agent handoff metadata.
-- Made the document toolbar adapt cleanly from wide to narrow panes and unified the native toolbar and workspace tab-strip appearance.
-
-## AI chat
-
-- Text selection now spans paragraphs, bullets, links, and consecutive messages, with standard Command-C and Edit → Copy behavior.
-- Selection highlights align with the rendered typography, wrapping, links, and indentation.
-- Tightened corpus-switch persistence so chat state cannot leak across workspaces during rapid transitions.
-
-## Meetings and reliability
-
-- Meeting recordings now retain the original ScreenCaptureKit interruption error and surface system-audio failures immediately.
-- Interrupted system-audio recordings are finalized when possible, and non-empty partial artifacts are preserved for recovery instead of being deleted.
-- Stabilized editor saves, sidebar navigation, and macOS CI timing-sensitive coverage.
-
-## Distribution
-
-- Apple Silicon and Intel Mac disk images are Developer ID signed, notarized, stapled, and verified with Gatekeeper.
-- npm and the VS Code extension are published from the version tag through their normal release workflows.
-- iOS build 27 is published to TestFlight for internal and external testing.
+For a synchronized corpus, continue a conversation from one execution host at a time. The desktop refreshes replicated history; it does not yet relay desktop messages through the headless server.
 ]]></description>
-            <enclosure url="https://github.com/aviaviavi/org2/releases/download/0.7.2/OpenOrg-Intel.dmg" length="239561041" type="application/octet-stream" sparkle:edSignature="tTGTI5hGnI96E5t6Q/IvIZNuFqwOi5aNp/3QpFnSn0snw3vzBM8odMcOHDnX/b+B5vXdtIIHhFEFuuDL69WAAg=="></enclosure>
+            <enclosure url="https://github.com/aviaviavi/org2/releases/download/0.8.0/OpenOrg-Intel.dmg" length="238986186" type="application/octet-stream" sparkle:edSignature="xFQHQlPfAYjUREMhrPBQFez9j3BWUcf56r/zW22fh2kKQPrjxh7DnG/vU74JS2zv2xq63pZY6vhItxqZea0ADw=="></enclosure>
         </item>
     </channel>
 </rss><!-- sparkle-signatures:
-edSignature: wQxxzKSuZUoVP3w9tkF2QloI7QbWglodpo/n1krlZ1neC//WwkSXf+u1Dg5a3reqavctU/jJKxcX6P9RD+4iAA==
-length: 3155
+edSignature: GjsGmmqixGDBXmToB6/s5maB3HraldJH9dpKVZiYDsBw3pbKxJy3jEkdfCues7cUII2y4sFHqbPXhf5eG3eCCw==
+length: 3002
 -->
