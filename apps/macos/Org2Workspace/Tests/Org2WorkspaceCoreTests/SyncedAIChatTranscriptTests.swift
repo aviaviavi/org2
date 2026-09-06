@@ -94,6 +94,23 @@ final class SyncedAIChatTranscriptTests: XCTestCase {
     XCTAssertEqual(actual.snapshot.threads.first?.messages.first?.content, "Preserve me")
   }
 
+  func testDeliveryUpdatesNeverMoveActivityTimeBackward() {
+    let before = Date(timeIntervalSinceReferenceDate: 1_000)
+    let message = OpenClawChatMessage(role: .user, content: "Earlier message", createdAt: before.addingTimeInterval(-10))
+    let thread = OpenClawChatThread(title: "Conversation", updatedAt: before, sessionKey: "agent:main:test", messages: [message])
+    let changed = WorkspaceStore.updatedOpenClawChatThread(
+      thread, messages: [message.replacingDeliveryStatus(.interrupted, sendFailure: "Stopped")],
+      newAssistantMessageCount: 0, isThreadOpen: true, pendingTurnUpdate: .replace(nil)
+    )
+    XCTAssertEqual(changed.updatedAt, before)
+    let later = OpenClawChatMessage(role: .assistant, content: "New reply", createdAt: before.addingTimeInterval(10))
+    let replied = WorkspaceStore.updatedOpenClawChatThread(
+      changed, messages: [message, later], newAssistantMessageCount: 1,
+      isThreadOpen: true, pendingTurnUpdate: .preserve
+    )
+    XCTAssertEqual(replied.updatedAt, later.createdAt)
+  }
+
   func testTranscriptEventsAreRecognizedWithoutRefreshingCanonicalDocuments() {
     let root = URL(fileURLWithPath: "/tmp/corpus")
     let classified = WorkspaceStore.classifyCorpusFileEvents([

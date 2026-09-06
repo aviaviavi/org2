@@ -27762,7 +27762,7 @@ public final class WorkspaceStore {
       id: current.id,
       title: updatedOpenClawThreadTitle(current: current, messages: messages),
       createdAt: current.createdAt,
-      updatedAt: messages.last?.createdAt ?? Date(),
+      updatedAt: max(current.updatedAt, messages.last?.createdAt ?? Date()),
       runtime: current.runtime,
       destinationID: current.destinationID,
       sessionKey: current.sessionKey,
