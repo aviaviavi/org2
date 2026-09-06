@@ -23,6 +23,7 @@ import {
 import { parseHeadlineTitleForRoam } from "./headlineTitle.js";
 import { buildPublishDiagnosticsParams } from "./lsp-diagnostics.js";
 import { TODO_KEYWORDS, normalizeTodoKeyword, statusFromKeyword } from "./todo.js";
+import { formatLocalOrgTimestamp } from "./calendarDate.js";
 
 import fs from "node:fs";
 import path from "node:path";
@@ -2847,12 +2848,7 @@ class LSPServer {
   }
 
   private formatOrgTimestamp(date: Date, active: boolean): string {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, "0");
-    const day = String(date.getDate()).padStart(2, "0");
-    const weekday = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][date.getDay()];
-    const body = `${year}-${month}-${day} ${weekday}`;
-    return active ? `<${body}>` : `[${body}]`;
+    return formatLocalOrgTimestamp(date, { delimiter: active ? "<" : "[" });
   }
 
   private extractLinkTargetAtPosition(text: string, pos: Position): string | null {

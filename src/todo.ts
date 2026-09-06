@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { formatLocalOrgTimestamp } from "./calendarDate.js";
 import {
   computeSubtreeRange,
   findDrawerInLines,
@@ -56,15 +57,7 @@ export function isActiveTodoKeyword(keyword: string | null | undefined): boolean
 }
 
 export function formatOrgTimestamp(now: Date): string {
-  // Format like <2026-01-21 Wed 12:34>
-  const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
-  const dow = days[now.getDay()];
-  const hh = String(now.getHours()).padStart(2, "0");
-  const mm = String(now.getMinutes()).padStart(2, "0");
-  return `<${year}-${month}-${day} ${dow} ${hh}:${mm}>`;
+  return formatLocalOrgTimestamp(now, { includeTime: true });
 }
 
 function parseHeadlineTodoKeyword(line: string): TodoKeyword | undefined {

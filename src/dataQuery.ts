@@ -5,6 +5,7 @@ import { DuckDBConnection } from "@duckdb/node-api";
 import { findConfigFile, loadConfig, type Org2DataSourceConfig } from "./config.js";
 import { loadRemoteDataset, type RemoteDatasetRequest } from "./dataSources.js";
 import { isOrgTableDataLine, isOrgTableHline, parseOrgTableDataLine } from "./orgTableData.js";
+import { formatLocalOrgDate } from "./calendarDate.js";
 
 export type DataQueryDiagnostic = {
   severity: "error" | "warning";
@@ -663,14 +664,6 @@ export function rowsToOrgTable(rows: Record<string, unknown>[]): string {
   return [rowLine(headers), separator, ...renderedRows.map(rowLine)].join("\n") + "\n";
 }
 
-function localOrgDate(date: Date): string {
-  const year = String(date.getFullYear()).padStart(4, "0");
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  const weekday = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][date.getDay()];
-  return `${year}-${month}-${day} ${weekday}`;
-}
-
 function localOrgTimestamp(date: Date, openingDelimiter: "[" | "<" = "["): string {
   const hours = String(date.getHours()).padStart(2, "0");
   const minutes = String(date.getMinutes()).padStart(2, "0");
@@ -680,7 +673,7 @@ function localOrgTimestamp(date: Date, openingDelimiter: "[" | "<" = "["): strin
     ?.value
     .replace(/\s+/g, "");
   const closingDelimiter = openingDelimiter === "<" ? ">" : "]";
-  return `${openingDelimiter}${localOrgDate(date)} ${hours}:${minutes}${timeZone ? ` ${timeZone}` : ""}${closingDelimiter}`;
+  return `${openingDelimiter}${formatLocalOrgDate(date)} ${hours}:${minutes}${timeZone ? ` ${timeZone}` : ""}${closingDelimiter}`;
 }
 
 function latestDataQueryRunAt(results: DataQueryResult[]): string | undefined {
@@ -706,10 +699,10 @@ function updateDataNotebookRefreshMetadata(input: string, refreshedAt: string): 
     (_match, prefix: string, currentValue: string) => {
       const current = String(currentValue || "").trim();
       const nextValue = current.startsWith("[")
-        ? `[${localOrgDate(date)}]`
+        ? `[${formatLocalOrgDate(date)}]`
         : current.startsWith("<")
-          ? `<${localOrgDate(date)}>`
-          : localOrgDate(date).slice(0, 10);
+          ? `<${formatLocalOrgDate(date)}>`
+          : formatLocalOrgDate(date).slice(0, 10);
       return `${prefix}${nextValue}`;
     },
   );

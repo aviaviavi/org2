@@ -5984,10 +5984,9 @@ function computeAgendaTuiNextMonthFirst(date: Date): Date {
 }
 
 function formatAgendaTuiPlanningLabel(dateIso: string): string {
-  const [year, month, day] = dateIso.split("-").map((value) => Number.parseInt(value, 10));
-  const date = new Date(Date.UTC(year, month - 1, day));
-  const weekday = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][date.getUTCDay()] || "";
-  return `<${dateIso} ${weekday}>`;
+  const timestamp = formatOrgDateTimestamp(dateIso);
+  if (!timestamp) throw new Error(`Invalid date: ${dateIso}`);
+  return timestamp;
 }
 
 function applyAgendaTuiPlanning(item: ScheduledItem, kind: "scheduled" | "deadline", dateIso: string): ScheduledItem {
