@@ -1,6 +1,7 @@
 import AVFoundation
 import Foundation
 import Speech
+import UIKit
 
 @MainActor
 final class MobileVoiceTranscriber: ObservableObject {
@@ -33,6 +34,7 @@ final class MobileVoiceTranscriber: ObservableObject {
   private var recognitionTask: SFSpeechRecognitionTask?
   private var pendingStartID: UUID?
   private var recognitionID: UUID?
+  private var idleTimerWasDisabled: Bool?
 
   func start() async {
     guard !isRecording else { return }
@@ -98,6 +100,10 @@ final class MobileVoiceTranscriber: ObservableObject {
       engine.prepare()
       try engine.start()
       isRecording = true
+      // Keep the live transcript visible during hands-free dictation. Only
+      // hold the screen awake once microphone capture has actually started.
+      idleTimerWasDisabled = UIApplication.shared.isIdleTimerDisabled
+      UIApplication.shared.isIdleTimerDisabled = true
       let recognitionID = UUID()
       self.recognitionID = recognitionID
 
@@ -128,6 +134,7 @@ final class MobileVoiceTranscriber: ObservableObject {
   }
 
   func stop() {
+    pendingStartID = nil
     guard isRecording else { return }
     stopAudioCapture()
     recognitionRequest?.endAudio()
@@ -191,6 +198,12 @@ final class MobileVoiceTranscriber: ObservableObject {
   }
 
   private func stopAudioCapture() {
+    // All terminal paths (stop, send, cancellation, and recognition failure)
+    // release the same hold, without changing a pre-existing idle policy.
+    if let idleTimerWasDisabled {
+      UIApplication.shared.isIdleTimerDisabled = idleTimerWasDisabled
+      self.idleTimerWasDisabled = nil
+    }
     audioEngine?.stop()
     if hasInstalledInputTap {
       tappedInputNode?.removeTap(onBus: 0)

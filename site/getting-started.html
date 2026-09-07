@@ -250,6 +250,7 @@ org2 agenda --dir /path/to/your/corpus --recursive --tui</code></pre>
 <h1 id="ios-app">iOS app</h1>
 <p>OpenOrg for iOS is available as a private TestFlight beta and as source. To join the beta, <a href="mailto:mail@avi.press?subject=OpenOrg%20for%20iOS%20TestFlight">email Avi for an invitation</a> and include the email address you use with TestFlight. It is not currently distributed through the public App Store.</p>
 <p>The iOS app can open a Files-visible local corpus for capture, Agenda, approvals, and file viewing. Its AI sidebar can also control Mac-hosted chats over Tailscale: enable <strong>Mobile Remote</strong> in the Mac app's settings, create a one-time pairing code, then open <strong>Settings → Connect a Mac</strong> from the iOS sidebar and scan it. The selected host remains responsible for model access and corpus context. You can also pair with a <a href="headless-server.html">headless OpenOrg server</a> to keep chats available without the laptop. Updated iOS builds save multiple hosts under Host Connection.</p>
+<p>The chat microphone keeps the screen awake while dictation is recording so you can follow the live transcript without touching the phone. Normal auto-lock behavior resumes when recording stops. Leaving the app stops recording and preserves the draft.</p>
 <p>Developers can also <a href="https://github.com/aviaviavi/org2/tree/main/apps/ios/Org2Mobile">build the iOS app from source</a>.</p>
 </section>
 <section class="org2-headline level-1">

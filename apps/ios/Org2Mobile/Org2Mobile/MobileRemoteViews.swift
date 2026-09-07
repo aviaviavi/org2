@@ -1204,6 +1204,11 @@ struct MobileRemoteThreadView: View {
     .onChange(of: voiceTranscriber.transcript) { _, transcript in
       draft = Self.appendingDictation(transcript, to: dictationPrefix)
     }
+    .onReceive(NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in
+      // Preserve the draft, but release microphone capture and the screen-awake
+      // hold when the user deliberately leaves the app or locks the phone.
+      voiceTranscriber.stop()
+    }
     .photosPicker(
       isPresented: $isPhotoPickerPresented,
       selection: $selectedPhotoItems,
