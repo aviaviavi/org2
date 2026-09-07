@@ -163,6 +163,14 @@ final class AIChatTranscriptStore: @unchecked Sendable {
     if let pending {
       return Self.materializePendingSnapshot(pending.snapshot, legacyURL: url)
     }
+    return loadCommittedIfAvailable(legacyURL: url)
+  }
+
+  /// Read a replica's commit even when this process has a queued local snapshot.
+  /// Callers reconcile local mutations before applying the returned threads.
+  func loadCommittedIfAvailable(legacyURL: URL) -> AIChatTranscriptLoadResult? {
+    let url = legacyURL.standardizedFileURL
+    let key = url.path
     guard let state = Self.loadStoreState(legacyURL: url) else { return nil }
     condition.lock()
     validatedStoreStates[key] = state

@@ -2996,6 +2996,10 @@ public final class WorkspaceStore {
   private var openClawThreadMessageRevisions: [UUID: UInt64] = [:]
   private var syncedAIChatRefreshTask: Task<Void, Never>?
   private var syncedAIChatRefreshNeeded = false
+  // Metadata at the last clean local save or replica import. Message revisions
+  // separately protect edits that do not change thread metadata.
+  private var syncedAIChatCleanMetadata: [UUID: OpenClawChatThread] = [:]
+  private var syncedAIChatCleanSettlementSettings = OpenClawThreadSettlementSettings()
   private var knownAIChatThreadIDsByPath: [String: Set<UUID>] = [:]
   private var aiChatTranscriptMutationGeneration: UInt64 = 0
   private var aiChatTranscriptPersistedMutationGeneration: UInt64 = 0
@@ -35855,6 +35859,7 @@ public final class WorkspaceStore {
     }
     if aiChatTranscriptMutationGeneration == transcriptMutationGeneration {
       aiChatTranscriptPersistedMutationGeneration = transcriptMutationGeneration
+      rememberCleanAIChatTranscriptMetadata()
     }
   }
 
@@ -35971,47 +35976,107 @@ public final class WorkspaceStore {
     }
   }
 
-  private var hasLocallyRunningAIChatThread: Bool {
-    !openClawSendingThreadIDs.isEmpty || drainingOpenClawThreadIDs.contains {
+  private func aiChatTranscriptMetadata() -> [UUID: OpenClawChatThread] {
+    Dictionary(uniqueKeysWithValues: openClawChatThreads.map {
+      // Reading a conversation is local presentation state, not an edit that
+      // should prevent its next remote reply from arriving.
+      ($0.id, $0.metadataOnly().replacingOpenClawChatMetadata(unreadMessageCount: 0))
+    })
+  }
+
+  private func rememberCleanAIChatTranscriptMetadata() {
+    syncedAIChatCleanMetadata = aiChatTranscriptMetadata()
+    syncedAIChatCleanSettlementSettings = openClawThreadSettlementSettings
+  }
+
+  private func locallyProtectedAIChatThreadIDs(
+    metadata: [UUID: OpenClawChatThread]
+  ) -> Set<UUID> {
+    var ids = openClawSendingThreadIDs.union(drainingOpenClawThreadIDs.filter {
       isAIChatRuntimeStateVisible(for: $0)
+    })
+    ids.formUnion(openClawThreadMessageMutationVersions.keys)
+    if hasUnpersistedAIChatTranscriptMutation {
+      // Include locally deleted IDs so an incoming replica cannot resurrect them.
+      ids.formUnion(Set(metadata.keys).union(syncedAIChatCleanMetadata.keys).filter {
+        metadata[$0] != syncedAIChatCleanMetadata[$0]
+      })
     }
+    return ids
   }
 
   /// Refresh replicas without dispatching agent work or writing viewed history.
+  /// Only locally active/edited threads are protected; unrelated chats remain live.
   @discardableResult
   func refreshSyncedAIChatTranscript() async -> Bool {
-    guard hasAuthoritativeAIChatTranscriptState, !isLoadingAIChatTranscript,
-          !hasUnpersistedAIChatTranscriptMutation,
-          !hasLocallyRunningAIChatThread
-    else { return false }
+    guard hasAuthoritativeAIChatTranscriptState, !isLoadingAIChatTranscript else { return false }
     let target = openClawTranscriptURL
-    let generation = aiChatTranscriptMutationGeneration
+    let loadGeneration = openClawTranscriptLoadGeneration
+    let metadataBeforeRead = aiChatTranscriptMetadata()
+    let revisionsBeforeRead = openClawThreadMessageRevisions
+    let settingsBeforeRead = openClawThreadSettlementSettings
+    var protectedIDs = locallyProtectedAIChatThreadIDs(metadata: metadataBeforeRead)
     let loaded = await Task.detached(priority: .utility) {
-      AIChatTranscriptStore.shared.loadIfAvailable(legacyURL: target, preferPersisted: true)
+      AIChatTranscriptStore.shared.loadCommittedIfAvailable(legacyURL: target)
     }.value
-    guard target == openClawTranscriptURL, generation == aiChatTranscriptMutationGeneration,
-          !isLoadingAIChatTranscript, !hasUnpersistedAIChatTranscriptMutation,
-          !hasLocallyRunningAIChatThread
-    else { return false }
+    guard target == openClawTranscriptURL, loadGeneration == openClawTranscriptLoadGeneration,
+          !isLoadingAIChatTranscript else { return false }
     guard let loaded else { return true }
     // A sync provider may deliver the commit marker before its immutable shards.
     guard loaded.recoveryStatus == .healthy else { return false }
+    let currentMetadata = aiChatTranscriptMetadata()
+    protectedIDs.formUnion(locallyProtectedAIChatThreadIDs(metadata: currentMetadata))
+    // A local edit may also finish saving while the detached read is in flight.
+    protectedIDs.formUnion(Set(currentMetadata.keys).union(metadataBeforeRead.keys).filter {
+      currentMetadata[$0] != metadataBeforeRead[$0]
+        || openClawThreadMessageRevisions[$0] != revisionsBeforeRead[$0]
+    })
+    let imported = migrateAIChatThreadDestinations(loaded.snapshot.threads.filter { !protectedIDs.contains($0.id) })
+    let preserved = openClawChatThreads.filter { protectedIDs.contains($0.id) }
+    let refreshedIDs = Set(currentMetadata.keys).union(imported.map(\.id)).subtracting(protectedIDs)
     saveOpenClawComposerForSelectedThread()
-    openClawThreadHydrationTasks.values.forEach { $0.cancel() }
-    openClawThreadHydrationTasks.removeAll()
-    openClawThreadHydrationTaskTokens.removeAll()
-    unloadedOpenClawChatThreadIDs = loaded.unloadedThreadIDs
-    isApplyingPersistedOpenClawChatThreads = true
-    applyOpenClawTranscript(OpenClawTranscriptState(
-      threads: loaded.snapshot.threads,
-      selectedThreadID: selectedOpenClawChatThreadID,
-      settlementSettings: loaded.snapshot.settlementSettings
-    ), shouldPersist: false, allowsMaintenanceWrites: false)
-    isApplyingPersistedOpenClawChatThreads = false
-    initializeHydratedOpenClawChatThreadLRU()
-    if let selectedOpenClawChatThreadID, unloadedOpenClawChatThreadIDs.contains(selectedOpenClawChatThreadID) {
-      hydrateOpenClawChatThread(selectedOpenClawChatThreadID)
+    for id in refreshedIDs {
+      openClawThreadHydrationTasks.removeValue(forKey: id)?.cancel()
+      openClawThreadHydrationTaskTokens.removeValue(forKey: id)
+      openClawPendingUserMessageIDsByThreadID.removeValue(forKey: id)
+      openClawThreadMessageRevisions.removeValue(forKey: id)
+      syncedAIChatCleanMetadata.removeValue(forKey: id)
     }
+    unloadedOpenClawChatThreadIDs = unloadedOpenClawChatThreadIDs.intersection(protectedIDs)
+      .union(loaded.unloadedThreadIDs.subtracting(protectedIDs))
+    isApplyingPersistedOpenClawChatThreads = true
+    defer { isApplyingPersistedOpenClawChatThreads = false }
+    openClawChatThreads = Self.sortedOpenClawChatThreadsForDisplay(preserved + imported)
+    knownAIChatThreadIDsByPath[target.standardizedFileURL.path, default: []]
+      .formUnion(imported.map(\.id))
+    for thread in imported {
+      syncedAIChatCleanMetadata[thread.id] = thread.metadataOnly()
+        .replacingOpenClawChatMetadata(unreadMessageCount: 0)
+      openClawThreadMessageMutationCounter &+= 1
+      openClawThreadMessageRevisions[thread.id] = openClawThreadMessageMutationCounter
+      let pending = thread.messages.filter { $0.role == .user && $0.deliveryStatus == .sending }.map(\.id)
+      if !pending.isEmpty { openClawPendingUserMessageIDsByThreadID[thread.id] = pending }
+    }
+    if openClawThreadSettlementSettings == syncedAIChatCleanSettlementSettings,
+       openClawThreadSettlementSettings == settingsBeforeRead {
+      openClawThreadSettlementSettings = loaded.snapshot.settlementSettings
+      syncedAIChatCleanSettlementSettings = loaded.snapshot.settlementSettings
+    }
+    let selectedID = selectedOpenClawChatThreadID.flatMap { id in
+      openClawChatThreads.contains(where: { $0.id == id }) ? id : nil
+    } ?? openClawChatThreads.first?.id
+    if let selectedID {
+      if selectedID != selectedOpenClawChatThreadID || !protectedIDs.contains(selectedID) {
+        selectOpenClawChatThread(selectedID, persistsSelection: false)
+      }
+    } else {
+      selectedOpenClawChatThreadID = nil
+      openClawDraft = ""
+      openClawPendingAttachments = []
+      replaceOpenClawMessages([], shouldPersist: false)
+      syncSelectedOpenClawSendState()
+    }
+    initializeHydratedOpenClawChatThreadLRU()
     return true
   }
 
@@ -36440,16 +36505,8 @@ public final class WorkspaceStore {
     }
   }
 
-  private func applyOpenClawTranscript(
-    _ transcript: OpenClawTranscriptState,
-    shouldPersist: Bool,
-    allowsMaintenanceWrites: Bool = true
-  ) {
-    knownAIChatThreadIDsByPath[openClawTranscriptURL.standardizedFileURL.path, default: []]
-      .formUnion(transcript.threads.map(\.id))
-    hasAuthoritativeAIChatTranscriptState = true
-    openClawThreadSettlementSettings = transcript.settlementSettings
-    let migratedThreads = transcript.threads.map { thread in
+  private func migrateAIChatThreadDestinations(_ threads: [OpenClawChatThread]) -> [OpenClawChatThread] {
+    threads.map { thread in
       var migrated = thread
       if let destinationID = Self.recoveredNamedCodexDestinationID(
         for: thread,
@@ -36468,11 +36525,24 @@ public final class WorkspaceStore {
       }
       return migrated
     }
+  }
+
+  private func applyOpenClawTranscript(
+    _ transcript: OpenClawTranscriptState,
+    shouldPersist: Bool,
+    allowsMaintenanceWrites: Bool = true
+  ) {
+    knownAIChatThreadIDsByPath[openClawTranscriptURL.standardizedFileURL.path, default: []]
+      .formUnion(transcript.threads.map(\.id))
+    hasAuthoritativeAIChatTranscriptState = true
+    openClawThreadSettlementSettings = transcript.settlementSettings
+    let migratedThreads = migrateAIChatThreadDestinations(transcript.threads)
     let migratedThreadMetadata = zip(transcript.threads, migratedThreads).contains { pair in
       pair.0.sessionKey != pair.1.sessionKey
         || pair.0.destinationID != pair.1.destinationID
     }
     openClawChatThreads = Self.sortedOpenClawChatThreadsForDisplay(migratedThreads)
+    rememberCleanAIChatTranscriptMetadata()
     resetAIChatMessageRevisions(for: openClawChatThreads)
     let selectedID = [restoredSelectedAIChatThreadID(), transcript.selectedThreadID]
       .compactMap { $0 }

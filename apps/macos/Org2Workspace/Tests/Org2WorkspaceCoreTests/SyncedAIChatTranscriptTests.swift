@@ -2,6 +2,24 @@ import Foundation
 import XCTest
 @testable import Org2WorkspaceCore
 
+private actor SyncedChatSendGate {
+  private var continuation: CheckedContinuation<Void, Never>?
+  private var opened = false
+  private(set) var started = false
+
+  func wait() async {
+    started = true
+    if opened { return }
+    await withCheckedContinuation { continuation = $0 }
+  }
+
+  func open() {
+    opened = true
+    continuation?.resume()
+    continuation = nil
+  }
+}
+
 final class SyncedAIChatTranscriptTests: XCTestCase {
   private func replicate(_ source: URL, to target: URL) throws {
     // flush waits for the commit, but obsolete manifests are collected afterward.
@@ -76,6 +94,88 @@ final class SyncedAIChatTranscriptTests: XCTestCase {
     XCTAssertTrue(importedCompletion, "A remote pending turn must not prevent refreshing its completion")
     XCTAssertNil(store.openClawChatThreads.first { $0.id == incoming.id }?.pendingTurn)
     XCTAssertEqual(store.openClawMessages.map(\.content), ["From my phone", "From the server"])
+  }
+
+  @MainActor
+  func testSyncedThreadsArriveDuringLocalTurnAndPendingMetadataSave() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let localURL = root.appendingPathComponent("local.json")
+    let remoteURL = root.appendingPathComponent("remote.json")
+    let active = OpenClawChatThread(title: "Working locally", runtime: .codex, sessionKey: "local", messages: [])
+    let idle = OpenClawChatThread(title: "Existing phone chat", sessionKey: "idle", messages: [])
+    let renamed = OpenClawChatThread(title: "Rename me", sessionKey: "renamed", messages: [])
+    let incoming = OpenClawChatThread(title: "New phone chat", sessionKey: "phone", messages: [
+      OpenClawChatMessage(role: .assistant, content: "A new conversation from the server")
+    ])
+    let settings = OpenClawThreadSettlementSettings()
+    try AIChatTranscriptStore.shared.flush(AIChatTranscriptSnapshot(
+      threads: [active, idle, renamed], selectedThreadID: active.id, settlementSettings: settings
+    ), legacyURL: localURL)
+    let suite = "synced-active-chat-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let gate = SyncedChatSendGate()
+    let store = WorkspaceStore(
+      defaults: defaults, openClawTranscriptURL: localURL,
+      codexSendHandlerForTesting: { _, _, _ in
+        await gate.wait()
+        return "Local answer after syncing"
+      }, legacyDefaultsDomains: []
+    )
+    store.setCorpusRoot(root, persistsDefault: false)
+    await store.waitForAIChatTranscriptLoadForTesting()
+    let send = Task { @MainActor in await store.sendOpenClawMessage(text: "Keep working") }
+    defer { Task { await gate.open() } }
+    for _ in 0..<200 {
+      if await gate.started { break }
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    let started = await gate.started
+    XCTAssertTrue(started)
+    XCTAssertTrue(store.isAIChatThreadRunning(active.id))
+    try await store.waitForAIChatTranscriptPersistenceForTesting()
+    let working = try XCTUnwrap(store.openClawChatThreads.first { $0.id == active.id })
+    let revision = store.aiChatThreadMessageMutationVersionForTesting(active.id)
+    store.publishOpenClawComposerDraft("Keep this draft while the agent works")
+    try AIChatTranscriptStore.shared.flush(AIChatTranscriptSnapshot(
+      threads: [active, idle.replacingMessages([
+        OpenClawChatMessage(role: .assistant, content: "A remote reply in an existing chat")
+      ]), renamed, incoming], selectedThreadID: incoming.id, settlementSettings: settings
+    ), legacyURL: remoteURL)
+    try replicate(remoteURL, to: localURL)
+    let marker = AIChatTranscriptStore.storeDirectory(for: localURL).appendingPathComponent("migration-marker.json")
+    let before = try Data(contentsOf: marker)
+    AIChatTranscriptStore.shared.setWritesSuspendedForTesting(true, legacyURL: localURL)
+    defer { AIChatTranscriptStore.shared.setWritesSuspendedForTesting(false, legacyURL: localURL) }
+    store.renameOpenClawChatThread(renamed.id, title: "My unsaved local title")
+    XCTAssertTrue(store.hasUnpersistedAIChatTranscriptMutationForTesting)
+    let refreshed = await store.refreshSyncedAIChatTranscript()
+    XCTAssertTrue(refreshed, "A running local turn and queued save must not hide unrelated synced chats")
+    XCTAssertEqual(Set(store.openClawChatThreads.map(\.id)), [active.id, idle.id, renamed.id, incoming.id])
+    XCTAssertEqual(store.openClawChatThreads.first { $0.id == active.id }, working)
+    XCTAssertEqual(store.aiChatThreadMessageMutationVersionForTesting(active.id), revision)
+    XCTAssertTrue(store.isAIChatThreadRunning(active.id))
+    XCTAssertEqual(store.openClawChatThreads.first { $0.id == renamed.id }?.title, "My unsaved local title")
+    XCTAssertEqual(store.openClawChatThreads.first { $0.id == idle.id }?.messages.last?.content, "A remote reply in an existing chat")
+    XCTAssertEqual(store.selectedOpenClawChatThreadID, active.id)
+    XCTAssertEqual(store.openClawDraft, "Keep this draft while the agent works")
+    XCTAssertEqual(try Data(contentsOf: marker), before)
+    // Repeated refreshes must keep the dirty metadata protected as well.
+    let refreshedAgain = await store.refreshSyncedAIChatTranscript()
+    XCTAssertTrue(refreshedAgain)
+    XCTAssertEqual(store.openClawChatThreads.first { $0.id == renamed.id }?.title, "My unsaved local title")
+    AIChatTranscriptStore.shared.setWritesSuspendedForTesting(false, legacyURL: localURL)
+    await gate.open()
+    await send.value
+    XCTAssertFalse(store.isAIChatThreadRunning(active.id))
+    XCTAssertEqual(store.openClawMessages.last?.content, "Local answer after syncing")
+    store.flushDeferredAIChatTranscriptPersistence()
+    try await store.waitForAIChatTranscriptPersistenceForTesting()
+    AIChatTranscriptStore.shared.waitUntilIdleForTesting()
+    let saved = try XCTUnwrap(AIChatTranscriptStore.shared.loadCommittedIfAvailable(legacyURL: localURL))
+    XCTAssertEqual(Set(saved.snapshot.threads.map(\.id)), [active.id, idle.id, renamed.id, incoming.id])
   }
 
   func testStaleSnapshotPreservesUnseenThreadsButHonorsKnownDeletion() throws {
