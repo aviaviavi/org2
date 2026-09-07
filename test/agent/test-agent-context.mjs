@@ -199,13 +199,14 @@ const invalidExpiryDate = runJson("agent", "fetch", "--id", "invalid-expiry-date
 assert.equal(invalidExpiryDate.results[0].claimState.expiresAt, "2020-02-30T00:00:00Z");
 assert.equal(invalidExpiryDate.results[0].claimState.freshness, "fresh");
 
+// Keep the recency fixture fresh regardless of when this suite runs.
 const rankingDir = fs.mkdtempSync(path.join(os.tmpdir(), "org2-agent-ranking-test-"));
 fs.writeFileSync(path.join(rankingDir, "ranking.org2"), `#+title: Ranking
 
 * Recent trivial note
 :PROPERTIES:
 :ID: recent-trivial
-:UPDATED: 2026-06-01
+:UPDATED: ${new Date().toISOString().slice(0, 10)}
 :END:
 Copper launch retrieval note.
 
