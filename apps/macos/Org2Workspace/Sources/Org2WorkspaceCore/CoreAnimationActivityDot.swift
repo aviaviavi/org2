@@ -130,6 +130,21 @@ struct AppKitPeriodicLabel: NSViewRepresentable {
     )
   }
 
+  func sizeThatFits(
+    _ proposal: ProposedViewSize,
+    nsView: AppKitPeriodicTextField,
+    context: Context
+  ) -> CGSize? {
+    // AppKit's intrinsic text width can exceed SwiftUI's reserved status slot.
+    // Honor the proposal so truncation happens inside that slot, even as the
+    // timer changes the label without invalidating the surrounding layout.
+    let intrinsic = nsView.intrinsicContentSize
+    return CGSize(
+      width: max(0, proposal.width ?? intrinsic.width),
+      height: max(0, intrinsic.height)
+    )
+  }
+
   static func dismantleNSView(_ view: AppKitPeriodicTextField, coordinator: ()) {
     view.stopUpdating()
   }

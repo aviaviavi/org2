@@ -1121,6 +1121,72 @@ final class OpenClawChatLayoutTests: XCTestCase {
     XCTAssertFalse(view.isAnimatingForTesting)
   }
 
+  func testWorkingStatusKeepsElapsedTimeSeparateFromLongDestinationNames() async throws {
+    for compact in [false, true] {
+      for width: CGFloat in [280, 360, 560] {
+        let view = OpenClawTypingIndicatorView(
+          startedAt: Date().addingTimeInterval(-75),
+          lastEventAt: Date(),
+          runtime: .codex,
+          destinationTitle: "Managed Remote Codex",
+          connectionState: .connected,
+          connectionDetail: nil,
+          runID: "layout-test",
+          streamingReply: "",
+          reasoning: "",
+          activities: [],
+          compact: compact,
+          onStop: {}
+        )
+        .frame(width: width, height: 100)
+        .background(Color(nsColor: .windowBackgroundColor))
+        .environment(\.colorScheme, .light)
+        let host = NSHostingView(rootView: view)
+        let window = NSWindow(
+          contentRect: NSRect(x: 0, y: 0, width: width, height: 100),
+          styleMask: [.borderless], backing: .buffered, defer: false
+        )
+        window.appearance = NSAppearance(named: .aqua)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        window.orderFrontRegardless()
+        defer {
+          window.contentView = nil
+          window.close()
+        }
+        for _ in 0..<5 {
+          host.layoutSubtreeIfNeeded()
+          try await Task.sleep(for: .milliseconds(20))
+        }
+        let labels = chatAccessibilityNodes(in: host).compactMap { node -> AppKitPeriodicTextField? in
+          guard case .view(let view) = node else { return nil }
+          return view as? AppKitPeriodicTextField
+        }
+        let title = try XCTUnwrap(labels.first { $0.stringValue == "Managed Remote Codex is working" })
+        let elapsed = try XCTUnwrap(labels.first { $0 !== title })
+        let titleFrame = title.convert(title.bounds, to: host)
+        let elapsedFrame = elapsed.convert(elapsed.bounds, to: host)
+        XCTAssertLessThanOrEqual(titleFrame.maxX + 4, elapsedFrame.minX,
+          "The status title must not overlap elapsed time at \(width) points")
+        XCTAssertEqual(titleFrame.midY, elapsedFrame.midY, accuracy: 2,
+          "The title and timer must stay vertically aligned")
+        XCTAssertGreaterThanOrEqual(elapsedFrame.width, 48)
+        XCTAssertTrue(host.bounds.contains(elapsedFrame))
+        XCTAssertLessThanOrEqual(host.fittingSize.width, width)
+        if let directory = ProcessInfo.processInfo.environment["OPENORG_LAYOUT_SNAPSHOT_DIR"],
+           let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+          host.displayIfNeeded()
+          host.cacheDisplay(in: host.bounds, to: bitmap)
+          let output = URL(fileURLWithPath: directory, isDirectory: true)
+          try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+          try bitmap.representation(using: .png, properties: [:])?.write(
+            to: output.appendingPathComponent("working-status-\(Int(width))-\(compact).png")
+          )
+        }
+      }
+    }
+  }
+
   func testPeriodicStatusTextUsesAnAppKitLocalTimer() {
     let window = NSWindow(
       contentRect: NSRect(x: 0, y: 0, width: 160, height: 40),

@@ -5486,13 +5486,12 @@ struct OpenClawTypingIndicatorView: View {
               },
               animates: statusAnimates(now: statusEvaluationDate)
             )
-            .fixedSize(horizontal: true, vertical: false)
             AppKitPeriodicLabel(
               font: .monospacedDigitSystemFont(ofSize: 10, weight: .regular),
               color: .tertiaryLabelColor,
               textProvider: { elapsedText(now: $0) }
             )
-            .frame(minWidth: 36, idealWidth: 48, maxWidth: 58, minHeight: 14, alignment: .leading)
+            .frame(width: 58, height: 14, alignment: .leading)
             if canStop {
               Button(action: onStop) {
                 Image(systemName: "stop.fill")
