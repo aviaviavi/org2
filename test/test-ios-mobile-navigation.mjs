@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import "./test-ios-transcript.mjs";
 
 const contentView = readFileSync(
   resolve("apps/ios/Org2Mobile/Org2Mobile/ContentView.swift"),
@@ -130,6 +131,14 @@ assert.doesNotMatch(
   /LazyVStack/,
   "Chat transcripts must use exact row geometry so changing message heights cannot leave phantom space below the final row",
 );
+assert.match(mobileThreadScrollView, /MobileRemoteTranscriptPage\.make/);
+assert.match(mobileThreadScrollView, /ForEach\(messages\[page\]\)/);
+assert.doesNotMatch(mobileThreadScrollView, /ForEach\(detail\.messages/);
+assert.match(mobileThreadScrollView, /Earlier messages/);
+assert.match(mobileThreadScrollView, /Newer messages/);
+assert.match(remoteViews, /MobileRemoteTranscriptPage\.preview\(content\)/);
+assert.match(remoteViews, /Read full message/);
+assert.match(remoteViews, /UITextView\(usingTextLayoutManager: true\)/);
 assert.match(
   mobileThreadView,
   /private func scrollToBottomIfFollowing[\s\S]*scrollToBottom\(proxy: proxy, animated: false\)/,

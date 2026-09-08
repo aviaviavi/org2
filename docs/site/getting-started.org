@@ -235,6 +235,8 @@ OpenOrg for iOS is available as a private TestFlight beta and as source. To join
 
 The iOS app can open a Files-visible local corpus for capture, Agenda, approvals, and file viewing. Its AI sidebar can also control Mac-hosted chats over Tailscale: enable *Mobile Remote* in the Mac app's settings, create a one-time pairing code, then open *Settings → Connect a Mac* from the iOS sidebar and scan it. The selected host remains responsible for model access and corpus context. You can also pair with a [[file:headless-server.org][headless OpenOrg server]] to keep chats available without the laptop. Updated iOS builds save multiple hosts under Host Connection.
 
+Long chats display a page of messages at a time. Use *Earlier messages*, *Newer messages*, or *Back to latest messages* to navigate the complete history. Large messages show a preview with *Read full message*; copying a message always includes its complete text.
+
 The chat microphone keeps the screen awake while dictation is recording so you can follow the live transcript without touching the phone. Normal auto-lock behavior resumes when recording stops. Leaving the app stops recording and preserves the draft.
 
 Developers can also [[https://github.com/aviaviavi/org2/tree/main/apps/ios/Org2Mobile][build the iOS app from source]].

@@ -1102,6 +1102,7 @@ struct MobileRemoteThreadView: View {
   @State private var isNearChatBottom = true
   @State private var hasPresentedInitialContent = false
   @State private var pollingLeaseID: UUID?
+  @State private var transcriptPageEndID: UUID?
 
   var body: some View {
     Group {
@@ -1201,6 +1202,9 @@ struct MobileRemoteThreadView: View {
       }
       pollingLeaseID = nil
     }
+    .onChange(of: transcriptPageEndID) { _, _ in
+      isNearChatBottom = transcriptPageEndID == nil
+    }
     .onChange(of: voiceTranscriber.transcript) { _, transcript in
       draft = Self.appendingDictation(transcript, to: dictationPrefix)
     }
@@ -1253,6 +1257,9 @@ struct MobileRemoteThreadView: View {
           chatScrollView(detail: detail)
         }
       }
+      .onChange(of: transcriptPageEndID) { _, endID in
+        if endID == nil { scrollToBottom(proxy: proxy, animated: false) }
+      }
       .onChange(of: detail.messages.count) { _, _ in
         scrollToBottomIfFollowing(proxy: proxy)
       }
@@ -1279,6 +1286,7 @@ struct MobileRemoteThreadView: View {
       .overlay(alignment: .bottomTrailing) {
         if !isNearChatBottom {
           Button {
+            transcriptPageEndID = nil
             scrollToBottom(proxy: proxy, animated: true)
           } label: {
             Image(systemName: "arrow.down")
@@ -1323,12 +1331,15 @@ struct MobileRemoteThreadView: View {
   }
 
   private func chatScrollView(detail: MobileRemoteThreadDetail) -> some View {
-    ScrollView {
+    let messages = detail.messages.filter { $0.isRoomDispatchCopy != true }
+    let page = MobileRemoteTranscriptPage.make(messages: messages, endingAt: transcriptPageEndID)
+    return ScrollView {
       VStack(alignment: .leading, spacing: 0) {
         // Transcript rows change height when an optimistic send is replaced,
         // streaming content arrives, and activity sections expand. Lazy stack
         // estimates can survive those changes and create phantom space below
-        // the final row, so keep this geometry exact like the desktop client.
+        // the final row. Keep exact geometry for a bounded page, never the
+        // entire history: large eager transcripts can exhaust the iOS watchdog.
         VStack(alignment: .leading, spacing: 12) {
           if let connectionError = remote.threadConnectionError {
             Label(connectionError, systemImage: "wifi.exclamationmark")
@@ -1339,14 +1350,28 @@ struct MobileRemoteThreadView: View {
               .background(.quaternary, in: RoundedRectangle(cornerRadius: 10))
           }
 
-          ForEach(detail.messages.filter { $0.isRoomDispatchCopy != true }) { message in
+          if page.lowerBound > 0 {
+            Button("Earlier messages") {
+              transcriptPageEndID = messages[page.lowerBound - 1].id
+            }
+            .buttonStyle(.bordered)
+          }
+          if transcriptPageEndID != nil {
+            Button("Back to latest messages") {
+              transcriptPageEndID = nil
+              isNearChatBottom = true
+            }
+            .buttonStyle(.bordered)
+          }
+
+          ForEach(messages[page]) { message in
             MobileRemoteMessageBubble(message: message) { citation in
               selectedFileCitation = citation
             }
               .id(message.id)
           }
 
-          if let optimisticMessage,
+          if transcriptPageEndID == nil, let optimisticMessage,
              !detailContainsAcknowledgement(of: optimisticMessage, detail: detail) {
             MobileRemoteMessageBubble(message: optimisticMessage) { citation in
               selectedFileCitation = citation
@@ -1354,7 +1379,7 @@ struct MobileRemoteThreadView: View {
             .id(optimisticMessage.id)
           }
 
-          if isSending || detail.thread.isRunning || !detail.streamingReply.isEmpty {
+          if transcriptPageEndID == nil && (isSending || detail.thread.isRunning || !detail.streamingReply.isEmpty) {
             MobileRemoteInProgressBubble(
               detail: detail,
               isStarting: isSending
@@ -1362,9 +1387,9 @@ struct MobileRemoteThreadView: View {
             .id("in-progress")
           }
 
-          if !detail.reasoning.isEmpty {
+          if transcriptPageEndID == nil && !detail.reasoning.isEmpty {
             DisclosureGroup("Reasoning") {
-              Text(detail.reasoning)
+              MobileRemoteBoundedMessageText(content: detail.reasoning)
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -1374,8 +1399,15 @@ struct MobileRemoteThreadView: View {
             .background(.quaternary, in: RoundedRectangle(cornerRadius: 12))
           }
 
-          if !detail.activities.isEmpty {
+          if transcriptPageEndID == nil && !detail.activities.isEmpty {
             MobileRemoteActivityView(activities: detail.activities)
+          }
+          if page.upperBound < messages.count {
+            Button("Newer messages") {
+              let next = MobileRemoteTranscriptPage.newerPage(messages: messages, after: page.upperBound)
+              transcriptPageEndID = next.upperBound == messages.count ? nil : messages[next.upperBound - 1].id
+            }
+            .buttonStyle(.bordered)
           }
         }
 
@@ -1825,6 +1857,8 @@ struct MobileRemoteThreadView: View {
       roomRoundID: nil
     )
 
+    transcriptPageEndID = nil
+    isNearChatBottom = true
     // Make send feel local even when the selected host is slow to acknowledge it.
     // The field remains focused, so the next message can be typed immediately.
     draft = ""
@@ -1926,7 +1960,7 @@ struct MobileRemoteThreadView: View {
   }
 
   private func scrollToBottomIfFollowing(proxy: ScrollViewProxy) {
-    guard isNearChatBottom else { return }
+    guard isNearChatBottom, transcriptPageEndID == nil else { return }
     scrollToBottom(proxy: proxy, animated: false)
   }
 
@@ -1942,6 +1976,61 @@ struct MobileRemoteThreadView: View {
         proxy.scrollTo(target, anchor: .bottom)
       }
     }
+  }
+}
+
+// UITextView tiles long text inside its own scroll view. The transcript only
+// lays out a bounded preview; Copy still uses the complete original message.
+private struct MobileRemoteBoundedMessageText: View {
+  let content: String
+  @State private var isFullTextPresented = false
+
+  var body: some View {
+    let preview = MobileRemoteTranscriptPage.preview(content)
+    VStack(alignment: .leading, spacing: 8) {
+      Text(MobileRemoteMessageMarkup.attributedString(for: preview.text))
+        .textSelection(.enabled)
+      if preview.isTruncated {
+        Button("Read full message") { isFullTextPresented = true }
+          .font(.callout.weight(.medium))
+      }
+    }
+    .sheet(isPresented: $isFullTextPresented) {
+      NavigationStack {
+        MobileRemoteFullMessageTextView(content: content)
+          .navigationTitle("Full Message")
+          .navigationBarTitleDisplayMode(.inline)
+          .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+              Button("Done") { isFullTextPresented = false }
+            }
+            ToolbarItem(placement: .topBarLeading) {
+              Button("Copy") { UIPasteboard.general.string = content }
+            }
+          }
+      }
+      .tint(Color.accentColor)
+      .foregroundStyle(Color.primary)
+    }
+  }
+}
+
+private struct MobileRemoteFullMessageTextView: UIViewRepresentable {
+  let content: String
+
+  func makeUIView(context: Context) -> UITextView {
+    let view = UITextView(usingTextLayoutManager: true)
+    view.isEditable = false
+    view.isSelectable = true
+    view.isScrollEnabled = true
+    view.font = .preferredFont(forTextStyle: .body)
+    view.adjustsFontForContentSizeCategory = true
+    view.textContainerInset = UIEdgeInsets(top: 16, left: 12, bottom: 16, right: 12)
+    return view
+  }
+
+  func updateUIView(_ view: UITextView, context: Context) {
+    if view.text != content { view.text = content }
   }
 }
 
@@ -2007,8 +2096,7 @@ private struct MobileRemoteMessageBubble: View {
           }
         }
         if !presentation.userText.isEmpty {
-          Text(MobileRemoteMessageMarkup.attributedString(for: presentation.userText))
-            .textSelection(.enabled)
+          MobileRemoteBoundedMessageText(content: presentation.userText)
         }
         if !message.attachmentNames.isEmpty {
           Label(message.attachmentNames.joined(separator: ", "), systemImage: "paperclip")
@@ -3053,8 +3141,7 @@ private struct MobileRemoteInProgressBubble: View {
         )
 
         if !trimmedReply.isEmpty {
-          Text(detail.streamingReply)
-            .textSelection(.enabled)
+          MobileRemoteBoundedMessageText(content: detail.streamingReply)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
       }
