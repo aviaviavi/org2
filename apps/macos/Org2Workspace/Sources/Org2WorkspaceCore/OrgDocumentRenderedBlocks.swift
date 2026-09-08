@@ -2450,6 +2450,9 @@ private struct RenderedTableView: View {
             }
           }
         }
+        // A horizontal scroller must include every wrapped row in its ideal
+        // height instead of compressing the grid and clipping the final line.
+        .fixedSize(horizontal: false, vertical: true)
       }
       .frame(maxWidth: renderedTableWidth, alignment: .leading)
       .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))

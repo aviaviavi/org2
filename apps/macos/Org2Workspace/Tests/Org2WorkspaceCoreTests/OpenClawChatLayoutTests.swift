@@ -1724,6 +1724,88 @@ final class OpenClawChatLayoutTests: XCTestCase {
     )
   }
 
+  func testAssistantTableKeepsFinalWrappedRowInsideScrollViewport() async throws {
+    let selectionModel = AIChatTranscriptSelectionModel()
+    let raw = """
+    * Framework options
+
+    | Option | Why consider it | Main reservation |
+    |--------+-----------------+------------------|
+    | Vercel AI SDK | TypeScript fit; provider abstraction, streaming, tool-loop building blocks | You still own execution policy and persistence |
+    | pi agent tooling | Closer to an embeddable, multi-provider agent engine | Check how cleanly its session/tool assumptions fit OpenOrg |
+    | LangGraph | Explicit state machines and resumable execution | Risks duplicating OpenOrg’s existing lifecycle machinery |
+    | Small custom loop over a provider SDK | Minimal conceptual footprint; OpenOrg remains authoritative | Provider quirks and recovery can grow into framework maintenance |
+
+    * My recommendation
+    """
+    let view = OpenClawMessageBodyView(
+      rawText: raw,
+      compact: false,
+      managesTextSelection: false,
+      rendersStructuredOrg2: true,
+      structuredPresentation: OpenClawMessageOrgPresentation(raw)
+    )
+    .environment(\.aiChatTranscriptSelectionModel, selectionModel)
+    .environment(\.aiChatTranscriptSelectionMessageID, UUID())
+    .onPreferenceChange(AIChatTranscriptSelectableRegionPreferenceKey.self) {
+      selectionModel.updateRegions($0)
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    .coordinateSpace(name: AIChatTranscriptSelectionModel.coordinateSpaceName)
+    .background(Color(nsColor: .textBackgroundColor))
+    let hostingView = NSHostingView(rootView: view)
+    let window = NSWindow(
+      contentRect: NSRect(x: 0, y: 0, width: 960, height: 900),
+      styleMask: [.borderless],
+      backing: .buffered,
+      defer: false
+    )
+    window.isReleasedWhenClosed = false
+    window.contentView = hostingView
+    window.orderFrontRegardless()
+    defer {
+      window.contentView = nil
+      window.close()
+    }
+
+    // Reuse one view to cover resizing in both directions and horizontal overflow.
+    for width: CGFloat in [960, 640, 360, 280, 960] {
+      window.setContentSize(NSSize(width: width, height: 900))
+      for _ in 0..<5 {
+        hostingView.layoutSubtreeIfNeeded()
+        try await Task.sleep(for: .milliseconds(20))
+      }
+      let nodes = chatAccessibilityNodes(in: hostingView)
+      let scrollView = try XCTUnwrap(nodes.compactMap { node -> NSScrollView? in
+        guard case .view(let view) = node else { return nil }
+        return view as? NSScrollView
+      }.first)
+      let viewport = scrollView.contentView.convert(scrollView.contentView.bounds, to: hostingView)
+      for text in [
+        "Small custom loop over a provider SDK",
+        "Minimal conceptual footprint; OpenOrg remains authoritative",
+        "Provider quirks and recovery can grow into framework maintenance",
+      ] {
+        let cell = try XCTUnwrap(selectionModel.regions.first { $0.text == text })
+        XCTAssertLessThanOrEqual(
+          cell.frame.maxY,
+          viewport.maxY,
+          "The final wrapped line must fit above the bottom of the table at width \(width)"
+        )
+      }
+      let followingHeading = try XCTUnwrap(selectionModel.regions.first {
+        $0.text == "My recommendation"
+      })
+      XCTAssertGreaterThanOrEqual(followingHeading.frame.minY, viewport.maxY)
+      XCTAssertFalse(scrollView.hasVerticalScroller)
+      XCTAssertEqual(
+        try XCTUnwrap(scrollView.documentView).frame.width > viewport.width + 1,
+        width < RenderedTableColumnWidths.minimum * 3,
+        "Narrow tables must retain horizontal scrolling"
+      )
+    }
+  }
+
   func testAssistantSourceBlockKeepsLongJSONOnNaturalWidthLines() {
     let raw = """
     #+begin_src json
