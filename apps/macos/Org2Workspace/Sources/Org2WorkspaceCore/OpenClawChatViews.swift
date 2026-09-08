@@ -3611,7 +3611,6 @@ struct OpenClawComposerView: View {
   @State private var corpusSkillDiscoveryTask: Task<Void, Never>?
   let focusOnAppear: Bool
   let compact: Bool
-  let openConfiguration: () -> Void
 
   var body: some View {
     let presentation = OpenClawContextPresentation(localDraft)
@@ -3713,10 +3712,7 @@ struct OpenClawComposerView: View {
         }
       }
 
-      ViewThatFits(in: .horizontal) {
-        composerFooter(showsDetailedConfiguration: true)
-        composerFooter(showsDetailedConfiguration: false)
-      }
+      footer
     }
     .onAppear {
       localDraft = store.openClawDraft
@@ -3753,6 +3749,22 @@ struct OpenClawComposerView: View {
     }
   }
 
+  private var footer: some View {
+    ViewThatFits(in: .horizontal) {
+      composerFooter(showsDetailedConfiguration: true)
+      composerFooter(showsDetailedConfiguration: false)
+      VStack(alignment: .leading, spacing: 6) {
+        compactConfigurationControls
+        HStack(spacing: 5) {
+          composerStatus(compact: true)
+          Spacer(minLength: 0)
+          composerActionButtons
+            .labelStyle(.iconOnly)
+        }
+      }
+    }
+  }
+
   private func refreshCorpusAgentSkills() {
     corpusSkillDiscoveryTask?.cancel()
     guard let requestedRoot = store.corpusRoot?.standardizedFileURL else { return }
@@ -3775,28 +3787,40 @@ struct OpenClawComposerView: View {
 
   private func composerFooter(showsDetailedConfiguration: Bool) -> some View {
     HStack(spacing: showsDetailedConfiguration ? 8 : 5) {
-      if showsDetailedConfiguration {
-        composerStatus(compact: false)
-      } else {
-        composerStatus(compact: true)
-      }
-
+      composerStatus(compact: !showsDetailedConfiguration)
       Spacer(minLength: 0)
-
       if showsDetailedConfiguration {
         detailedConfigurationControls
         composerActionButtons
       } else {
-        Button(action: openConfiguration) {
-          Label("Chat configuration", systemImage: "slider.horizontal.3")
-        }
-        .buttonStyle(WorkspaceActionButtonStyle())
-        .help("Configure destination, model, and reasoning")
+        compactConfigurationControls
+        composerActionButtons
+          .labelStyle(.iconOnly)
+      }
+    }
+  }
 
-        Group {
-          composerActionButtons
+  @ViewBuilder
+  private var compactConfigurationControls: some View {
+    if store.selectedAIChatIsSharedRoom {
+      Menu {
+        ForEach(store.selectedAIChatRoomDestinationIDs, id: \.self) { destinationID in
+          roomModelPicker(forDestinationID: destinationID)
         }
-        .labelStyle(.iconOnly)
+      } label: {
+        Label("Models", systemImage: "cpu")
+          .font(.caption.weight(.medium))
+      }
+      .menuStyle(.borderlessButton)
+      .fixedSize()
+      .accessibilityLabel("Shared room models")
+    } else {
+      HStack(spacing: 2) {
+        runtimePicker(iconOnly: true)
+        modelPicker
+        if !store.selectedAIChatDestination.adapter.isDirectProvider {
+          reasoningPicker(iconOnly: true)
+        }
       }
     }
   }
@@ -3853,10 +3877,10 @@ struct OpenClawComposerView: View {
         roomModelPicker(forDestinationID: destinationID)
       }
     } else {
-      runtimePicker
+      runtimePicker()
       modelPicker
       if !store.selectedAIChatDestination.adapter.isDirectProvider {
-        reasoningPicker
+        reasoningPicker()
       }
     }
   }
@@ -3929,7 +3953,7 @@ struct OpenClawComposerView: View {
     }
   }
 
-  private var runtimePicker: some View {
+  private func runtimePicker(iconOnly: Bool = false) -> some View {
     Menu {
       ForEach(store.enabledAIChatDestinations) { destination in
         Button {
@@ -3946,7 +3970,7 @@ struct OpenClawComposerView: View {
     } label: {
       HStack(spacing: 4) {
         Image(systemName: store.selectedAIChatDestination.systemImage)
-        Text(store.selectedAIChatDestination.title)
+        if !iconOnly { Text(store.selectedAIChatDestination.title) }
         Image(
           systemName: store.canChangeSelectedAIChatRuntime
             ? "chevron.up.chevron.down"
@@ -3964,6 +3988,7 @@ struct OpenClawComposerView: View {
     .menuStyle(.borderlessButton)
     .menuIndicator(.hidden)
     .fixedSize()
+    .accessibilityLabel("AI destination: \(store.selectedAIChatDestination.title)")
     .disabled(!store.canChangeSelectedAIChatRuntime)
     .help(
       store.canChangeSelectedAIChatRuntime
@@ -4085,10 +4110,12 @@ struct OpenClawComposerView: View {
     .menuIndicator(.hidden)
     .fixedSize()
     .disabled(!store.canChangeSelectedAIChatConfiguration)
+    .accessibilityIdentifier("ai-chat-model-picker")
+    .accessibilityLabel("Model: \(store.selectedAIChatModelLabel)")
     .help("Choose a model for this chat, or inherit the \(store.selectedAIChatDestination.title) default")
   }
 
-  private var reasoningPicker: some View {
+  private func reasoningPicker(iconOnly: Bool = false) -> some View {
     Menu {
       Button {
         store.setSelectedAIChatReasoningEffort(nil)
@@ -4124,8 +4151,10 @@ struct OpenClawComposerView: View {
     } label: {
       HStack(spacing: 4) {
         Image(systemName: "brain")
-        Text(store.selectedAIChatReasoningLabel)
-          .lineLimit(1)
+        if !iconOnly {
+          Text(store.selectedAIChatReasoningLabel)
+            .lineLimit(1)
+        }
         Image(systemName: "chevron.up.chevron.down")
           .font(.caption2)
           .foregroundStyle(.tertiary)
@@ -4140,7 +4169,8 @@ struct OpenClawComposerView: View {
     .menuIndicator(.hidden)
     .fixedSize()
     .disabled(!store.canChangeSelectedAIChatConfiguration)
-    .help("Choose the reasoning effort for this chat")
+    .accessibilityLabel("Reasoning effort: \(store.selectedAIChatReasoningLabel)")
+    .help("Reasoning effort: \(store.selectedAIChatReasoningLabel)")
   }
 
   private var defaultReasoningLabel: String {

@@ -6,45 +6,54 @@ import UniformTypeIdentifiers
 
 struct WorkspaceSettingsView: View {
   @ObservedObject var softwareUpdates: SoftwareUpdateController
+  @AppStorage(WorkspaceSettingsNavigation.selectionKey) private var selection = "workspace"
 
   var body: some View {
-    TabView {
+    TabView(selection: $selection) {
       CorpusSettingsView()
+        .tag("workspace")
         .tabItem {
           Label("Workspace", systemImage: "folder")
         }
 
       AppearanceSettingsView()
+        .tag("appearance")
         .tabItem {
           Label("Appearance", systemImage: "circle.lefthalf.filled")
         }
 
       DocumentSettingsView()
+        .tag("documents")
         .tabItem {
           Label("Documents", systemImage: "doc.richtext")
         }
 
       SharingSettingsView()
+        .tag("sharing")
         .tabItem {
           Label("Sharing", systemImage: "network")
         }
 
       MeetingSettingsView()
+        .tag("meetings")
         .tabItem {
           Label("Meetings", systemImage: "waveform")
         }
 
       AIChatSettingsView()
+        .tag("aiChat")
         .tabItem {
           Label("AI Chat", systemImage: "text.bubble")
         }
 
       MobileRemoteSettingsView()
+        .tag("mobileRemote")
         .tabItem {
           Label("Mobile Remote", systemImage: "iphone")
         }
 
       SoftwareUpdateSettingsView(softwareUpdates: softwareUpdates)
+        .tag("updates")
         .tabItem {
           Label("Updates", systemImage: "arrow.triangle.2.circlepath")
         }

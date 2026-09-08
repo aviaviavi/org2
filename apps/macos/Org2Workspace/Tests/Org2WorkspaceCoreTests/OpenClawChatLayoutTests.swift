@@ -94,6 +94,77 @@ private func chatAccessibilityNodes(in root: NSView) -> [ChatAccessibilityNode] 
 
 @MainActor
 final class OpenClawChatLayoutTests: XCTestCase {
+  func testComposerKeepsModelControlsVisibleAcrossPaneWidths() async throws {
+    let suiteName = "ChatComposerLayout.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent(suiteName, isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer {
+      defaults.removePersistentDomain(forName: suiteName)
+      try? FileManager.default.removeItem(at: root)
+    }
+    let screenshotEnvironment = "ORG2_WORKSPACE_SCREENSHOT_CORPUS"
+    let previousScreenshotCorpus = ProcessInfo.processInfo.environment[screenshotEnvironment]
+    setenv(screenshotEnvironment, root.path, 1)
+    defer {
+      if let previousScreenshotCorpus {
+        setenv(screenshotEnvironment, previousScreenshotCorpus, 1)
+      } else {
+        unsetenv(screenshotEnvironment)
+      }
+    }
+    let store = WorkspaceStore(
+      defaults: defaults,
+      openClawTranscriptURL: root.appendingPathComponent("chat.json"),
+      legacyDefaultsDomains: []
+    )
+    store.createOpenClawChatThread(runtime: .codex)
+    store.setSelectedAIChatModel("a-model-with-a-long-display-name")
+
+    for compact in [false, true] {
+      for width: CGFloat in [280, 360, 460, 900] {
+        let footer = OpenClawComposerView(focusOnAppear: false, compact: compact)
+          .environment(store)
+          .frame(width: width)
+        let host = NSHostingView(rootView: footer)
+        let window = NSWindow(
+          contentRect: NSRect(x: 0, y: 0, width: width, height: 220),
+          styleMask: [.borderless], backing: .buffered, defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        host.frame = NSRect(x: 0, y: 0, width: width, height: 220)
+        window.orderFrontRegardless()
+        for _ in 0..<5 {
+          host.layoutSubtreeIfNeeded()
+          try await Task.sleep(for: .milliseconds(20))
+        }
+        let nodes = chatAccessibilityNodes(in: host)
+        // SwiftUI's synthesized AX labels are exposed to external clients, while
+        // in-process inspection sees the backing AppKit popup buttons.
+        let pickers = nodes.compactMap { node -> NSPopUpButton? in
+          guard case .view(let view) = node else { return nil }
+          return view as? NSPopUpButton
+        }
+        XCTAssertEqual(pickers.count, 3, "Destination, model, and reasoning remain available")
+        let modelPicker = try XCTUnwrap(pickers.first {
+          $0.accessibilityLabel() == "a-model-with-a-long-display-name"
+        }, "The model picker must survive at \(width) points (compact: \(compact))")
+        let modelFrame = modelPicker.convert(modelPicker.bounds, to: host)
+        XCTAssertGreaterThan(modelFrame.width, 24)
+        XCTAssertGreaterThan(modelFrame.height, 12)
+        XCTAssertGreaterThanOrEqual(modelFrame.minX, 0)
+        XCTAssertLessThanOrEqual(modelFrame.maxX, width)
+        XCTAssertTrue(host.bounds.contains(modelFrame))
+        XCTAssertLessThanOrEqual(host.fittingSize.width, width)
+        XCTAssertLessThan(host.fittingSize.height, 220)
+        window.contentView = nil
+        window.close()
+      }
+    }
+  }
+
   func testDefaultSplitProtectsAUsableChatPaneAtLaptopWidth() {
     XCTAssertGreaterThanOrEqual(WorkspaceMainSplitLayout.surfaceMinimumWidth, 300)
     XCTAssertLessThanOrEqual(

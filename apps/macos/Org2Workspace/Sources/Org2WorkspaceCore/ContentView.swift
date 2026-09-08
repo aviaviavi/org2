@@ -4516,7 +4516,6 @@ private struct AgendaView: View {
 
 private struct AgendaControls: View {
   @Environment(WorkspaceStore.self) private var store
-  @State private var isShowingOpenClawConfiguration = false
   @State private var filterDraft = ""
   @State private var pendingFilterUpdate: Task<Void, Never>?
   var agendaFilterFocused: FocusState<Bool>.Binding
@@ -4641,10 +4640,6 @@ private struct AgendaControls: View {
     .controlSize(.small)
     .padding(.horizontal, WorkspaceDesign.contentInset)
     .padding(.bottom, 12)
-    .sheet(isPresented: $isShowingOpenClawConfiguration) {
-      OpenClawConfigurationSheet()
-        .environment(store)
-    }
     .onAppear { filterDraft = store.agendaFilter }
     .onChange(of: store.agendaFilter) {
       if filterDraft != store.agendaFilter {
@@ -9859,7 +9854,6 @@ private enum OpenClawChatPresentation {
 
 private struct OpenClawChatView: View {
   @Environment(WorkspaceStore.self) private var store
-  @State private var isShowingConfiguration = false
   @State private var isChatNearBottom = true
   @State private var isShowingThreadFind = false
   @State private var threadFindQuery = ""
@@ -9897,10 +9891,6 @@ private struct OpenClawChatView: View {
       }
 
       chatColumn
-    }
-    .sheet(isPresented: $isShowingConfiguration) {
-      OpenClawConfigurationSheet()
-        .environment(store)
     }
     .task {
       await store.refreshOpenClawCommands()
@@ -9956,8 +9946,7 @@ private struct OpenClawChatView: View {
 
       OpenClawComposerView(
         focusOnAppear: presentation != .assistantPanel,
-        compact: presentation.isCompact,
-        openConfiguration: { isShowingConfiguration = true }
+        compact: presentation.isCompact
       )
       .padding(presentation.isCompact ? 10 : 16)
     }
@@ -9992,13 +9981,8 @@ private struct OpenClawChatView: View {
             .truncationMode(.tail)
         }
         Spacer(minLength: 0)
-        Button {
-          isShowingConfiguration = true
-        } label: {
-          Label("Configure", systemImage: "slider.horizontal.3")
-        }
-        .labelStyle(.iconOnly)
-        .help("Configure AI Chat")
+        AIChatSettingsButton()
+          .labelStyle(.iconOnly)
 
         Button {
           store.makeSurfacePrimary(.openClaw)
@@ -10044,11 +10028,7 @@ private struct OpenClawChatView: View {
     }
     .disabled(store.isSendingOpenClawMessage || store.openClawMessages.isEmpty)
 
-    Button {
-      isShowingConfiguration = true
-    } label: {
-      Label("Configure", systemImage: "slider.horizontal.3")
-    }
+    AIChatSettingsButton()
   }
 
   private var newChatButton: some View {
@@ -10085,11 +10065,7 @@ private struct OpenClawChatView: View {
       }
       .disabled(store.isSendingOpenClawMessage || store.openClawMessages.isEmpty)
 
-      Button {
-        isShowingConfiguration = true
-      } label: {
-        Label("Configure", systemImage: "slider.horizontal.3")
-      }
+      AIChatSettingsButton()
     } label: {
       Label("More chat actions", systemImage: "ellipsis.circle")
     }
@@ -11045,280 +11021,6 @@ private struct OpenClawChatScrollPositionBridge: NSViewRepresentable {
         : 1 - (clipView.bounds.origin.y / maxY)
       return min(1, max(0, raw))
     }
-  }
-}
-
-private struct OpenClawConfigurationSheet: View {
-  @Environment(WorkspaceStore.self) private var store
-  @Environment(\.dismiss) private var dismiss
-  @State private var endpoint = ""
-  @State private var agent = ""
-  @State private var handoffAssignee = ""
-  @State private var personalAssigneeNames = ""
-  @State private var remoteCorpusPath = ""
-  @State private var localEditsEnabled = false
-  @State private var briefsStartNewThread = true
-  @State private var autoSettleInterval = OpenClawAutoSettleInterval.never
-  @State private var token = ""
-  @State private var clearToken = false
-  @State private var isRequestingPairing = false
-
-  var body: some View {
-    ScrollView {
-      VStack(alignment: .leading, spacing: 16) {
-      VStack(alignment: .leading, spacing: 4) {
-        Text("AI Chat")
-          .font(.headline.weight(.semibold))
-        Text("Route each thread to a configured local or remote AI destination.")
-          .font(.callout)
-          .foregroundStyle(.secondary)
-      }
-
-      GroupBox {
-        HStack(alignment: .center, spacing: 12) {
-          Image(systemName: AIChatRuntime.codex.systemImage)
-            .font(.title3)
-            .foregroundStyle(.secondary)
-          VStack(alignment: .leading, spacing: 3) {
-            Text("Codex")
-              .font(.callout.weight(.medium))
-            Text(store.codexAccountState.label)
-              .font(.caption)
-              .foregroundStyle(
-                store.codexAccountState.isReady ? Color.secondary : Color.orange
-              )
-              .lineLimit(2)
-          }
-          Spacer(minLength: 12)
-          Button {
-            Task {
-              await store.beginCodexChatGPTLogin()
-            }
-          } label: {
-            if store.isCodexSigningIn {
-              HStack(spacing: 6) {
-                WorkspaceActivityIndicator(size: .small, style: .signal)
-                Text("Signing In")
-              }
-            } else {
-              Text("Sign In with ChatGPT")
-            }
-          }
-          .disabled(store.isCodexSigningIn)
-        }
-        .padding(.vertical, 4)
-      } label: {
-        Text("Local Codex")
-      }
-
-      GroupBox {
-        HStack(spacing: 10) {
-          Text("\(store.enabledAIChatDestinations.count) enabled")
-            .font(.callout)
-            .foregroundStyle(.secondary)
-          Spacer()
-          SettingsLink {
-            Label("Manage Destinations…", systemImage: "gearshape")
-          }
-        }
-        .padding(.vertical, 2)
-      } label: {
-        Text("AI Destinations")
-      }
-
-      VStack(alignment: .leading, spacing: 3) {
-        Text("OpenClaw Gateway")
-          .font(.callout.weight(.semibold))
-        Text("Configure the local or network gateway used by OpenClaw threads.")
-          .font(.caption)
-          .foregroundStyle(.secondary)
-      }
-
-      Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 12, verticalSpacing: 10) {
-        GridRow {
-          Text("Endpoint")
-            .font(.caption.weight(.medium))
-            .foregroundStyle(.secondary)
-          TextField("http://127.0.0.1:18789/v1/chat/completions", text: $endpoint)
-            .textFieldStyle(.roundedBorder)
-            .frame(width: 430)
-        }
-
-        GridRow {
-          Text("Chat Agent")
-            .font(.caption.weight(.medium))
-            .foregroundStyle(.secondary)
-          TextField("main", text: $agent)
-            .textFieldStyle(.roundedBorder)
-            .frame(width: 220)
-        }
-
-        GridRow {
-          Text("Handoff Assignee")
-            .font(.caption.weight(.medium))
-            .foregroundStyle(.secondary)
-          TextField("OpenClaw", text: $handoffAssignee)
-            .textFieldStyle(.roundedBorder)
-            .frame(width: 220)
-        }
-
-        GridRow {
-          Text("My Assignee Names")
-            .font(.caption.weight(.medium))
-            .foregroundStyle(.secondary)
-          VStack(alignment: .leading, spacing: 3) {
-            TextField("Avi, avi@example.com", text: $personalAssigneeNames)
-              .textFieldStyle(.roundedBorder)
-              .frame(width: 430)
-            Text("Blank ASSIGNEE always counts as you. Separate aliases with commas, semicolons, or new lines.")
-              .font(.caption2)
-              .foregroundStyle(.secondary)
-          }
-        }
-
-        GridRow {
-          Text("Remote Org2 Root")
-            .font(.caption.weight(.medium))
-            .foregroundStyle(.secondary)
-          TextField("/path/openclaw/can/read", text: $remoteCorpusPath)
-            .textFieldStyle(.roundedBorder)
-            .frame(width: 430)
-        }
-
-        GridRow {
-          Text("Local Edits")
-            .font(.caption.weight(.medium))
-            .foregroundStyle(.secondary)
-          VStack(alignment: .leading, spacing: 4) {
-            Toggle("Read and apply Org2 edits on this Mac", isOn: $localEditsEnabled)
-            Text("Uses a paired, typed Org2 node with read → preview → apply. It does not expose a shell.")
-              .font(.caption2)
-              .foregroundStyle(.secondary)
-            if localEditsEnabled || store.openClawLocalEditsEnabled {
-              Text(
-                "\(store.openClawLocalEditNodeState.label)"
-                  + (store.openClawLocalEditNodeDetail.isEmpty ? "" : " — \(store.openClawLocalEditNodeDetail)")
-              )
-              .font(.caption2)
-              .foregroundStyle(
-                store.openClawLocalEditNodeState == .connected ? Color.green : Color.secondary
-              )
-              .lineLimit(3)
-            }
-          }
-          .frame(width: 430, alignment: .leading)
-        }
-
-        GridRow {
-          Text("Briefs")
-            .font(.caption.weight(.medium))
-            .foregroundStyle(.secondary)
-          Toggle("Start node briefs in a new chat thread", isOn: $briefsStartNewThread)
-            .help("When enabled, Brief creates a fresh AI chat instead of adding the prompt to the current thread.")
-        }
-
-        GridRow {
-          Text("Settle Threads")
-            .font(.caption.weight(.medium))
-            .foregroundStyle(.secondary)
-          VStack(alignment: .leading, spacing: 3) {
-            Picker("Settle inactive threads", selection: $autoSettleInterval) {
-              ForEach(OpenClawAutoSettleInterval.allCases) { interval in
-                Text(interval.title).tag(interval)
-              }
-            }
-            .labelsHidden()
-            .frame(width: 220)
-            Text("Selected, pinned, unread, pending, or currently failed/interrupted threads stay active.")
-              .font(.caption2)
-              .foregroundStyle(.secondary)
-          }
-        }
-
-        GridRow {
-          Text("Token")
-            .font(.caption.weight(.medium))
-            .foregroundStyle(.secondary)
-          SecureField(store.openClawHasStoredToken ? "Saved token unchanged" : "Bearer token or password", text: $token)
-            .textFieldStyle(.roundedBorder)
-            .frame(width: 430)
-        }
-      }
-
-      Toggle("Clear saved token", isOn: $clearToken)
-        .disabled(!store.openClawHasStoredToken)
-
-      if !store.openClawStatusText.isEmpty {
-        Text(store.openClawStatusText)
-          .font(.caption)
-          .foregroundStyle(.secondary)
-          .lineLimit(3)
-      }
-
-      HStack {
-        Button {
-          guard saveConfiguration() else { return }
-          isRequestingPairing = true
-          Task {
-            await store.requestOpenClawGatewayPairing()
-            isRequestingPairing = false
-          }
-        } label: {
-          if isRequestingPairing {
-            HStack(spacing: 6) {
-              WorkspaceActivityIndicator(size: .small, style: .signal)
-              Text("Requesting Pairing")
-            }
-          } else {
-            Label("Save & Request Pairing", systemImage: "lock.open")
-          }
-        }
-        .disabled(isRequestingPairing)
-        .help("Create a stable OpenOrg device identity and request Gateway operator access")
-        Spacer()
-        Button("Cancel") {
-          dismiss()
-        }
-        Button("Save") {
-          if saveConfiguration() { dismiss() }
-        }
-        .buttonStyle(.borderedProminent)
-      }
-      }
-      .padding(22)
-    }
-    .frame(width: 680)
-    .frame(maxHeight: 780)
-    .task {
-      await store.refreshCodexAccount()
-    }
-    .onAppear {
-      endpoint = store.openClawEndpointText
-      agent = store.openClawAgentID
-      handoffAssignee = store.agentHandoffAssignee
-      personalAssigneeNames = store.personalAssigneeNamesText
-      remoteCorpusPath = store.openClawRemoteCorpusPath
-      localEditsEnabled = store.openClawLocalEditsEnabled
-      briefsStartNewThread = store.openClawBriefsStartNewThread
-      autoSettleInterval = store.openClawThreadSettlementSettings.interval
-      token = ""
-      clearToken = false
-    }
-  }
-
-  private func saveConfiguration() -> Bool {
-    return store.saveOpenClawConfiguration(
-      endpoint: endpoint,
-      agent: agent,
-      handoffAssignee: handoffAssignee,
-      personalAssigneeNames: personalAssigneeNames,
-      remoteCorpusPath: remoteCorpusPath,
-      briefsStartNewThread: briefsStartNewThread,
-      autoSettleInterval: autoSettleInterval,
-      localEditsEnabled: localEditsEnabled,
-      token: token,
-      clearToken: clearToken
-    )
   }
 }
 

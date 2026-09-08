@@ -88,6 +88,23 @@ struct AIChatSettingsView: View {
       }
 
       Section {
+        Toggle("Start node briefs in a new chat thread", isOn: $store.openClawBriefsStartNewThread)
+        Picker("Settle inactive threads", selection: Binding(
+          get: { store.openClawThreadSettlementSettings.interval },
+          set: { store.setOpenClawAutoSettleInterval($0) }
+        )) {
+          ForEach(OpenClawAutoSettleInterval.allCases) { interval in
+            Text(interval.title).tag(interval)
+          }
+        }
+        Text("Selected, pinned, unread, pending, or currently failed/interrupted threads stay active.")
+          .font(.callout)
+          .foregroundStyle(.secondary)
+      } header: {
+        Label("Conversations", systemImage: "bubble.left.and.bubble.right")
+      }
+
+      Section {
         HStack(spacing: 12) {
           Picker("Message sound", selection: $store.aiChatMessageSound) {
             ForEach(AIChatMessageSound.allCases) { sound in
@@ -133,6 +150,7 @@ struct AIChatSettingsView: View {
     .padding(8)
     .frame(width: 620)
     .frame(minHeight: 560)
+    .task { await store.refreshCodexAccount() }
     .sheet(item: $editedDestination) { destination in
       AIChatDestinationEditor(destination: destination)
         .environment(store)
@@ -189,6 +207,7 @@ private struct AIChatDestinationEditor: View {
   @State private var clearsSavedToken = false
   @State private var isTestingConnection = false
   @State private var connectionStatus: String?
+  @State private var isShowingOpenClawGateway = false
 
   init(destination: AIChatDestinationConfiguration) {
     _destination = State(initialValue: destination)
@@ -201,6 +220,10 @@ private struct AIChatDestinationEditor: View {
           .font(.title3.weight(.semibold))
         Spacer()
         Toggle("Enabled", isOn: $destination.isEnabled)
+      }
+
+      if destination.adapter == .codexLocal {
+        codexAccountSection
       }
 
       Form {
@@ -220,6 +243,14 @@ private struct AIChatDestinationEditor: View {
           }
           destination.model = nil
           connectionStatus = nil
+        }
+
+        if isBuiltInOpenClaw {
+          Button {
+            isShowingOpenClawGateway = true
+          } label: {
+            Label("Configure Gateway…", systemImage: "network")
+          }
         }
 
         if destination.adapter == .codexRemote {
@@ -328,6 +359,49 @@ private struct AIChatDestinationEditor: View {
     }
     .padding(20)
     .frame(width: 520)
+    .sheet(isPresented: $isShowingOpenClawGateway) {
+      OpenClawGatewayConfigurationSheet()
+        .environment(store)
+    }
+  }
+
+  private var codexAccountSection: some View {
+    GroupBox {
+      HStack(alignment: .center, spacing: 12) {
+        Image(systemName: AIChatRuntime.codex.systemImage)
+          .font(.title3)
+          .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 3) {
+          Text("Codex")
+            .font(.callout.weight(.medium))
+          Text(store.codexAccountState.label)
+            .font(.caption)
+            .foregroundStyle(
+              store.codexAccountState.isReady ? Color.secondary : Color.orange
+            )
+            .lineLimit(2)
+        }
+        Spacer(minLength: 12)
+        Button {
+          Task {
+            await store.beginCodexChatGPTLogin()
+          }
+        } label: {
+          if store.isCodexSigningIn {
+            HStack(spacing: 6) {
+              ProgressView().controlSize(.small)
+              Text("Signing In")
+            }
+          } else {
+            Text(store.codexAccountState.isReady ? "Switch ChatGPT Account…" : "Sign In with ChatGPT")
+          }
+        }
+        .disabled(store.isCodexSigningIn)
+      }
+      .padding(.vertical, 4)
+    } label: {
+      Text("Local Codex")
+    }
   }
 
   private var isBuiltIn: Bool {
