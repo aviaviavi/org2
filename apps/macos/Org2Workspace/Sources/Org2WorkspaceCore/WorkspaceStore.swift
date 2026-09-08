@@ -2830,6 +2830,7 @@ public final class WorkspaceStore {
 
   public let cli: Org2CLI
   private let defaults: UserDefaults
+  private let aiChatReadState: AIChatReadState
   private let automaticStarterCorpusURL: URL?
   private let sourceScheduleStateStore: WorkspaceSourceScheduleStateStore
   private let localDocumentPublicationHost: LocalDocumentPublicationHost
@@ -3409,6 +3410,7 @@ public final class WorkspaceStore {
     workspaceTabs = [initialWorkspaceTab]
     selectedWorkspaceTabID = initialWorkspaceTab.id
     self.defaults = defaults
+    self.aiChatReadState = AIChatReadState(defaults: defaults)
     self.localDocumentPublicationHost = localDocumentPublicationHost
       ?? LocalDocumentPublicationHost(
         storageDirectory: Self.localDocumentPublicationStorageDirectory()
@@ -27337,7 +27339,6 @@ public final class WorkspaceStore {
       return
     }
     let requiresHydration = unloadedOpenClawChatThreadIDs.contains(thread.id)
-    let clearsUnreadMessages = thread.unreadMessageCount != 0
     let selectionChanged = selectedOpenClawChatThreadID != thread.id
     saveOpenClawComposerForSelectedThread()
     if selectionChanged {
@@ -27345,7 +27346,10 @@ public final class WorkspaceStore {
     }
     touchHydratedOpenClawChatThread(thread.id)
     openClawSessionKey = thread.sessionKey
-    markOpenClawChatThreadRead(thread.id, shouldPersist: false)
+    // Refreshing a hidden selection is not an acknowledgement of its replies.
+    if persistsSelection || selectedSurface == .openClaw || isOpenClawAssistantPresented {
+      markOpenClawChatThreadRead(thread.id)
+    }
     restoreOpenClawComposer(for: thread.id)
     syncSelectedOpenClawSendState()
     aiChatConfigurationGeneration &+= 1
@@ -27378,9 +27382,6 @@ public final class WorkspaceStore {
     }
     if persistsSelection {
       persistSelectedAIChatThread()
-      if clearsUnreadMessages {
-        scheduleOpenClawTranscriptPersistenceAfterInteraction()
-      }
     }
   }
 
@@ -27641,7 +27642,7 @@ public final class WorkspaceStore {
 
   public func markSelectedOpenClawChatThreadRead() {
     guard let selectedOpenClawChatThreadID else { return }
-    markOpenClawChatThreadRead(selectedOpenClawChatThreadID, shouldPersist: true)
+    markOpenClawChatThreadRead(selectedOpenClawChatThreadID)
   }
 
   public func previewAIChatMessageSound() {
@@ -27649,9 +27650,10 @@ public final class WorkspaceStore {
     openClawIncomingMessageSoundPlayer()
   }
 
-  private func markOpenClawChatThreadRead(_ id: UUID, shouldPersist: Bool) {
+  private func markOpenClawChatThreadRead(_ id: UUID) {
     guard let index = openClawChatThreads.firstIndex(where: { $0.id == id }) else { return }
     let thread = openClawChatThreads[index]
+    aiChatReadState.markRead(thread, transcriptURL: openClawTranscriptURL)
     guard thread.unreadMessageCount != 0 else { return }
     let cachedMessageCount = (thread.isSettled
       ? archivedOpenClawChatThreadSummaries
@@ -27662,9 +27664,6 @@ public final class WorkspaceStore {
       with: thread.replacingOpenClawChatMetadata(unreadMessageCount: 0),
       messageCount: cachedMessageCount
     )
-    if shouldPersist {
-      persistOpenClawTranscript()
-    }
   }
 
   private func updateSelectedOpenClawChatThread(messages: [OpenClawChatMessage]) {
@@ -27703,6 +27702,9 @@ public final class WorkspaceStore {
       isThreadOpen: isThreadOpen,
       pendingTurnUpdate: pendingTurnUpdate
     )
+    if isThreadOpen {
+      aiChatReadState.markRead(updated, transcriptURL: targetTranscriptURL)
+    }
     if recordsMessageMutation, isActiveAIChatTranscript(targetTranscriptURL) {
       advanceAIChatMessageRevision(
         for: threadID,
@@ -36031,7 +36033,10 @@ public final class WorkspaceStore {
       currentMetadata[$0] != metadataBeforeRead[$0]
         || openClawThreadMessageRevisions[$0] != revisionsBeforeRead[$0]
     })
-    let imported = migrateAIChatThreadDestinations(loaded.snapshot.threads.filter { !protectedIDs.contains($0.id) })
+    let imported = aiChatReadState.applying(
+      to: migrateAIChatThreadDestinations(loaded.snapshot.threads.filter { !protectedIDs.contains($0.id) }),
+      transcriptURL: target
+    )
     let preserved = openClawChatThreads.filter { protectedIDs.contains($0.id) }
     let refreshedIDs = Set(currentMetadata.keys).union(imported.map(\.id)).subtracting(protectedIDs)
     saveOpenClawComposerForSelectedThread()
@@ -36541,7 +36546,9 @@ public final class WorkspaceStore {
       pair.0.sessionKey != pair.1.sessionKey
         || pair.0.destinationID != pair.1.destinationID
     }
-    openClawChatThreads = Self.sortedOpenClawChatThreadsForDisplay(migratedThreads)
+    openClawChatThreads = Self.sortedOpenClawChatThreadsForDisplay(
+      aiChatReadState.applying(to: migratedThreads, transcriptURL: openClawTranscriptURL)
+    )
     rememberCleanAIChatTranscriptMetadata()
     resetAIChatMessageRevisions(for: openClawChatThreads)
     let selectedID = [restoredSelectedAIChatThreadID(), transcript.selectedThreadID]

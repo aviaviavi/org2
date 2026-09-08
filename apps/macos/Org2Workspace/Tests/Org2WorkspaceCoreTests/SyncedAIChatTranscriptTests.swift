@@ -21,6 +21,114 @@ private actor SyncedChatSendGate {
 }
 
 final class SyncedAIChatTranscriptTests: XCTestCase {
+  @MainActor
+  func testReadBadgesStayClearedAcrossRefreshAndRestartWithoutHidingNewReplies() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let localURL = root.appendingPathComponent("local.json")
+    let remoteURL = root.appendingPathComponent("remote.json")
+    let otherURL = root.appendingPathComponent("other.json")
+    let readAt = Date(timeIntervalSince1970: 1_000)
+    let selected = OpenClawChatThread(title: "Selected", sessionKey: "selected")
+    let unread = OpenClawChatThread(
+      title: "Background", updatedAt: readAt, sessionKey: "background",
+      messages: [OpenClawChatMessage(role: .assistant, content: "Already seen", createdAt: readAt)],
+      unreadMessageCount: 1
+    )
+    let room = OpenClawChatThread(
+      title: "Shared room", updatedAt: readAt, sessionKey: "room",
+      messages: [OpenClawChatMessage(role: .assistant, content: "Room reply", createdAt: readAt)],
+      unreadMessageCount: 1, isSharedRoom: true
+    )
+    let filler = (0..<20).map { OpenClawChatThread(title: "Other \($0)", sessionKey: "other-\($0)") }
+    let settings = OpenClawThreadSettlementSettings()
+    let snapshot = AIChatTranscriptSnapshot(
+      threads: [selected] + filler + [unread, room], selectedThreadID: selected.id,
+      settlementSettings: settings
+    )
+    try AIChatTranscriptStore.shared.flush(snapshot, legacyURL: localURL)
+    try AIChatTranscriptStore.shared.flush(snapshot, legacyURL: otherURL)
+    let suite = "synced-chat-read-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()), defaults: defaults,
+      openClawTranscriptURL: localURL
+    )
+    await store.waitForAIChatTranscriptLoadForTesting()
+    try await store.waitForAIChatTranscriptPersistenceForTesting()
+    XCTAssertNotNil(store.openClawChatThreads.first { $0.id == unread.id }?.storedMessageCount)
+    store.openClawTranscriptPersistenceDelayNanoseconds = 60_000_000_000
+    store.setAIChatTranscriptWritesBlockedForTesting(true)
+    defer { store.flushDeferredAIChatTranscriptPersistence() }
+    let marker = AIChatTranscriptStore.storeDirectory(for: localURL).appendingPathComponent("migration-marker.json")
+    let before = try Data(contentsOf: marker)
+    for thread in [unread, room] {
+      store.selectOpenClawChatThread(thread.id)
+      await store.waitForAIChatThreadHydrationForTesting(thread.id)
+    }
+    store.selectOpenClawChatThread(selected.id)
+    XCTAssertEqual(store.openClawUnreadMessageCount, 0)
+    for _ in 0..<3 {
+      let refreshed = await store.refreshSyncedAIChatTranscript()
+      XCTAssertTrue(refreshed)
+      XCTAssertEqual(store.openClawUnreadMessageCount, 0, "App activation must not restore dismissed badges")
+      XCTAssertTrue(store.sidebarOpenClawChatThreadSummaries.allSatisfy { $0.unreadMessageCount == 0 })
+    }
+    XCTAssertEqual(try Data(contentsOf: marker), before, "Local read state must not rewrite synced history")
+
+    let reopened = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()), defaults: defaults,
+      openClawTranscriptURL: localURL
+    )
+    await reopened.waitForAIChatTranscriptLoadForTesting()
+    XCTAssertEqual(reopened.openClawUnreadMessageCount, 0, "Read state must survive restarting OpenOrg")
+    let otherCorpus = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()), defaults: defaults,
+      openClawTranscriptURL: otherURL
+    )
+    await otherCorpus.waitForAIChatTranscriptLoadForTesting()
+    XCTAssertEqual(otherCorpus.openClawUnreadMessageCount, 2, "Read state is scoped to its transcript")
+
+    // A larger message count must remain unread even when timestamps are equal.
+    let reply = OpenClawChatMessage(role: .assistant, content: "A genuinely new reply", createdAt: readAt)
+    let newer = unread.replacingMessages(unread.messages + [reply])
+    // Also preserve a later revision with the same message count.
+    let newerRoom = room.replacingMessages([
+      OpenClawChatMessage(role: .assistant, content: "A later room reply", createdAt: readAt.addingTimeInterval(1))
+    ])
+    try AIChatTranscriptStore.shared.flush(AIChatTranscriptSnapshot(
+      threads: [selected] + filler + [newer, newerRoom], selectedThreadID: selected.id,
+      settlementSettings: settings
+    ), legacyURL: remoteURL)
+    try replicate(remoteURL, to: localURL)
+    let refreshed = await store.refreshSyncedAIChatTranscript()
+    XCTAssertTrue(refreshed)
+    XCTAssertEqual(store.openClawChatThreads.first { $0.id == unread.id }?.unreadMessageCount, 1)
+    XCTAssertEqual(store.openClawChatThreads.first { $0.id == room.id }?.unreadMessageCount, 1)
+    XCTAssertEqual(store.openClawUnreadMessageCount, 2)
+
+    store.selectedSurface = .agenda
+    let hiddenReply = selected.replacingMessages([
+      OpenClawChatMessage(role: .assistant, content: "Unread while viewing the agenda")
+    ]).replacingOpenClawChatMetadata(unreadMessageCount: 1)
+    try AIChatTranscriptStore.shared.flush(AIChatTranscriptSnapshot(
+      threads: [hiddenReply] + filler + [newer, newerRoom], selectedThreadID: selected.id,
+      settlementSettings: settings
+    ), legacyURL: remoteURL)
+    try replicate(remoteURL, to: localURL)
+    let hiddenRefresh = await store.refreshSyncedAIChatTranscript()
+    XCTAssertTrue(hiddenRefresh)
+    XCTAssertEqual(store.selectedOpenClawChatThreadID, selected.id)
+    XCTAssertEqual(store.selectedOpenClawChatThread?.unreadMessageCount, 1,
+                   "Refreshing a chat hidden behind another surface must not mark it read")
+    store.makeSurfacePrimary(.openClaw)
+    let visibleRefresh = await store.refreshSyncedAIChatTranscript()
+    XCTAssertTrue(visibleRefresh)
+    XCTAssertEqual(store.selectedOpenClawChatThread?.unreadMessageCount, 0)
+  }
+
   private func replicate(_ source: URL, to target: URL) throws {
     // flush waits for the commit, but obsolete manifests are collected afterward.
     // Copy the fixture only after that cleanup has finished.
