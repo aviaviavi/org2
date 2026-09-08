@@ -1821,7 +1821,7 @@ final class OpenClawChatLayoutTests: XCTestCase {
     })
 
     let message = OpenClawChatMessage(role: .assistant, content: raw)
-    XCTAssertEqual(OpenClawMessageClipboard.text(for: message), presentation.normalizedText)
+    XCTAssertEqual(OpenClawMessageClipboard.text(for: message), AIChatRichClipboard.alignedMessage(presentation.normalizedText))
   }
 
   func testAssistantTableRowsExpandForWrappedCells() {

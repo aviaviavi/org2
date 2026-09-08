@@ -2367,6 +2367,7 @@ private struct SourceRunLineChartView: View {
 }
 
 private struct RenderedTableView: View {
+  @State private var selectionTableID = UUID()
   let table: OrgTableBlock
   let expansionKey: String
   @State private var visibleRowLimit: Int
@@ -2418,6 +2419,12 @@ private struct RenderedTableView: View {
                     columnIndex: columnIndex,
                     rowIndex: visibleRow.index
                   )
+                    .environment(\.aiChatTableCell, AIChatTableCell(
+                      tableID: selectionTableID,
+                      row: visibleRow.index,
+                      column: columnIndex,
+                      isHeader: table.headerRowIndex == visibleRow.index
+                    ))
                     .lineLimit(table.headerRowIndex == visibleRow.index ? 3 : nil)
                     .multilineTextAlignment(.leading)
                     .padding(.horizontal, 10)
@@ -2544,8 +2551,7 @@ private struct RenderedTableView: View {
   private func tableCell(cells: [String], columnIndex: Int, rowIndex: Int) -> some View {
     let raw = cellText(cells, at: columnIndex)
     if let binding = wholeCellColorBinding(raw) {
-      Text(binding.label)
-        .font(cellFont(rowIndex: rowIndex))
+      OrgInlineText(raw, font: cellFont(rowIndex: rowIndex))
         .foregroundStyle(binding.foreground.map(color) ?? Color.primary)
     } else {
       OrgInlineText(raw, font: cellFont(rowIndex: rowIndex))

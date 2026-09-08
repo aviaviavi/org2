@@ -1366,7 +1366,7 @@ struct AIChatTranscriptTextLayout: Equatable {
     return rects
   }
 
-  private func makeTextKitLayout(width: CGFloat) -> (
+  func makeTextKitLayout(width: CGFloat) -> (
     storage: NSTextStorage,
     layoutManager: NSLayoutManager,
     container: NSTextContainer,
@@ -1418,6 +1418,7 @@ struct AIChatTranscriptSelectableRegion: Equatable {
   let messageID: UUID
   let layout: AIChatTranscriptTextLayout
   let frame: CGRect
+  var tableCell: AIChatTableCell? = nil
 
   var text: String { layout.text }
 }
@@ -1530,32 +1531,22 @@ final class AIChatTranscriptSelectionModel {
     return range
   }
 
+  private var selectedFragments: [AIChatRichClipboard.Fragment] {
+    regions.compactMap { region in
+      guard let range = selectedRange(for: region.id) else { return nil }
+      return .init(text: (region.text as NSString).substring(with: range), cell: region.tableCell, messageID: region.messageID)
+    }
+  }
+
   var selectedText: String? {
-    var fragments: [(messageID: UUID, text: String)] = []
-    for region in regions {
-      guard let range = selectedRange(for: region.id) else { continue }
-      fragments.append((
-        messageID: region.messageID,
-        text: (region.text as NSString).substring(with: range)
-      ))
-    }
-    guard !fragments.isEmpty else { return nil }
-    var output = ""
-    var previousMessageID: UUID?
-    for fragment in fragments {
-      if !output.isEmpty {
-        output += fragment.messageID == previousMessageID ? "\n" : "\n\n"
-      }
-      output += fragment.text
-      previousMessageID = fragment.messageID
-    }
-    return output
+    let fragments = selectedFragments
+    return fragments.isEmpty ? nil : AIChatRichClipboard.selectionText(fragments)
   }
 
   @discardableResult
   func copySelection(to pasteboard: NSPasteboard = .general) -> Bool {
     guard let selectedText else { return false }
-    return OpenClawMessageClipboard.write(selectedText, to: pasteboard)
+    return OpenClawMessageClipboard.write(selectedText, html: AIChatRichClipboard.selectionHTML(selectedFragments), to: pasteboard)
   }
 
   func clear() {
@@ -1794,6 +1785,9 @@ struct AIChatTranscriptSelectableRegionPreferenceKey: PreferenceKey {
 struct AIChatTranscriptSelectableTextModifier: ViewModifier {
   @Environment(\.aiChatTranscriptSelectionModel) private var selectionModel
   @Environment(\.aiChatTranscriptSelectionMessageID) private var messageID
+  @Environment(\.aiChatTableCell) private var tableCell
+  @Environment(\.fontResolutionContext) private var fontContext
+  @Environment(\.openOrgFileReference) private var openFileReference
   @State private var regionID = UUID()
   let rawText: String
   let font: Font
@@ -1805,13 +1799,19 @@ struct AIChatTranscriptSelectableTextModifier: ViewModifier {
   func body(content: Content) -> some View {
     if let selectionModel, let messageID {
       let layout = selectionLayout
-      content
-        .background {
-          if let range = selectionModel.selectedRange(for: regionID) {
-            AIChatTranscriptSelectionHighlight(layout: layout, range: range)
-              .allowsHitTesting(false)
+      AIChatTranscriptRenderedText(
+        layout: layout,
+        range: selectionModel.selectedRange(for: regionID),
+        openLink: { url in
+          if let reference = OpenClawFileReference.fromDeepLinkURL(url) {
+            openFileReference(reference)
+          } else if url.isFileURL {
+            openFileReference(OpenClawFileReference(path: url.path, line: nil))
+          } else if ["https", "http"].contains(url.scheme?.lowercased() ?? "") {
+            NSWorkspace.shared.open(url)
           }
         }
+      )
         .background {
           GeometryReader { proxy in
             Color.clear.preference(
@@ -1820,7 +1820,8 @@ struct AIChatTranscriptSelectableTextModifier: ViewModifier {
                 id: regionID,
                 messageID: messageID,
                 layout: layout,
-                frame: proxy.frame(in: .named(AIChatTranscriptSelectionModel.coordinateSpaceName))
+                frame: proxy.frame(in: .named(AIChatTranscriptSelectionModel.coordinateSpaceName)),
+                tableCell: tableCell
               )]
             )
           }
@@ -1855,44 +1856,111 @@ struct AIChatTranscriptSelectableTextModifier: ViewModifier {
       attributed = OrgInlineAttributedString.plain(rawText, baseFont: font)
     }
     return AIChatTranscriptTextLayout(
-      attributedText: NSAttributedString(attributed),
+      attributedText: AIChatNativeTextAttributes.make(attributed, fontContext: fontContext),
       lineSpacing: lineSpacing
     )
   }
 }
 
-private struct AIChatTranscriptSelectionHighlight: NSViewRepresentable {
+// Drawing, sizing, hit testing, and selection all use the same TextKit layout.
+// A SwiftUI Text plus a separately measured background can never guarantee this.
+struct AIChatTranscriptRenderedText: NSViewRepresentable {
   let layout: AIChatTranscriptTextLayout
-  let range: NSRange
+  let range: NSRange?
+  let openLink: (URL) -> Void
 
-  func makeNSView(context: Context) -> HighlightView {
-    HighlightView(frame: .zero)
-  }
+  func makeNSView(context: Context) -> TextView { TextView(frame: .zero) }
 
-  func updateNSView(_ view: HighlightView, context: Context) {
-    view.layout = layout
+  func updateNSView(_ view: TextView, context: Context) {
+    view.textLayout = layout
     view.range = range
+    view.openLink = openLink
+    view.setAccessibilityElement(true)
+    view.setAccessibilityRole(.staticText)
+    view.setAccessibilityValue(layout.text)
+    view.invalidateIntrinsicContentSize()
     view.needsDisplay = true
   }
 
-  final class HighlightView: NSView {
-    var layout: AIChatTranscriptTextLayout?
-    var range = NSRange(location: 0, length: 0)
+  func sizeThatFits(_ proposal: ProposedViewSize, nsView: TextView, context: Context) -> CGSize? {
+    let ideal = layout.makeTextKitLayout(width: 100_000).usedRect.size
+    let width = max(1, min(proposal.width ?? ideal.width, ceil(ideal.width)))
+    let measured = layout.makeTextKitLayout(width: width).usedRect.size
+    return CGSize(width: width, height: ceil(measured.height))
+  }
 
+  final class TextView: NSView {
+    var textLayout: AIChatTranscriptTextLayout?
+    var range: NSRange?
+    var openLink: ((URL) -> Void)?
+    private var dragged = false
     override var isFlipped: Bool { true }
-
-    override func hitTest(_ point: NSPoint) -> NSView? {
-      nil
+    override func mouseDown(with event: NSEvent) { dragged = false }
+    override func mouseDragged(with event: NSEvent) { dragged = true }
+    override func mouseUp(with event: NSEvent) {
+      guard !dragged, let textLayout else { return }
+      let location = textLayout.characterLocation(in: bounds, at: convert(event.locationInWindow, from: nil))
+      guard location < textLayout.attributedText.length,
+            let url = textLayout.attributedText.attribute(.link, at: location, effectiveRange: nil) as? URL
+      else { return }
+      openLink?(url)
     }
-
     override func draw(_ dirtyRect: NSRect) {
-      super.draw(dirtyRect)
-      guard let layout, range.length > 0, bounds.width > 0 else { return }
-      NSColor.selectedTextBackgroundColor.withAlphaComponent(0.58).setFill()
-      for rect in layout.selectionRects(for: range, in: bounds) {
-        NSBezierPath(roundedRect: rect, xRadius: 2, yRadius: 2).fill()
+      guard let textLayout, bounds.width > 0 else { return }
+      let kit = textLayout.makeTextKitLayout(width: bounds.width)
+      let origin = CGPoint(x: 0, y: max(0, (bounds.height - kit.usedRect.height) / 2))
+      kit.layoutManager.drawBackground(forGlyphRange: kit.glyphRange, at: origin)
+      if let range {
+        NSColor.selectedTextBackgroundColor.withAlphaComponent(0.58).setFill()
+        for rect in textLayout.selectionRects(for: range, in: bounds) {
+          NSBezierPath(roundedRect: rect, xRadius: 2, yRadius: 2).fill()
+        }
+      }
+      kit.layoutManager.drawGlyphs(forGlyphRange: kit.glyphRange, at: origin)
+    }
+  }
+}
+
+@MainActor
+enum AIChatNativeTextAttributes {
+  static func make(_ attributed: AttributedString, fontContext: Font.Context) -> NSAttributedString {
+    let result = NSMutableAttributedString(attributedString: NSAttributedString(attributed))
+    var offset = 0
+    for run in attributed.runs {
+      let length = String(attributed[run.range].characters).utf16.count
+      let range = NSRange(location: offset, length: length)
+      let font = run.font ?? .body
+      let nativeFont: NSFont
+      if #available(macOS 26, *) {
+        nativeFont = font.resolve(in: fontContext).ctFont as NSFont
+      } else {
+        nativeFont = fallbackFont(font)
+      }
+      result.addAttribute(.font, value: nativeFont, range: range)
+      result.addAttribute(.foregroundColor, value: run.foregroundColor.map(NSColor.init) ?? NSColor.labelColor, range: range)
+      if let background = run.backgroundColor {
+        result.addAttribute(.backgroundColor, value: NSColor(background), range: range)
+      }
+      offset += length
+    }
+    return result
+  }
+
+  private static func fallbackFont(_ font: Font) -> NSFont {
+    let styles: [(Font, CGFloat)] = [(.body, 13), (.callout, 12), (.headline, 13),
+      (.title, 22), (.title2, 17), (.title3, 15), (.caption, 10), (.caption2, 10), (.footnote, 10)]
+    for (style, size) in styles {
+      for weight: Font.Weight in [.regular, .semibold, .bold] {
+        let candidate = weight == .regular ? style : style.weight(weight)
+        let native = NSFont.systemFont(ofSize: size, weight: weight == .bold ? .bold : (weight == .semibold || style == .headline ? .semibold : .regular))
+        if font == candidate { return native }
+        if font == candidate.italic() { return NSFontManager.shared.convert(native, toHaveTrait: .italicFontMask) }
       }
     }
+    if font == .system(.body, design: .monospaced) {
+      return .monospacedSystemFont(ofSize: 13, weight: .regular)
+    }
+    return .systemFont(ofSize: 13)
   }
 }
 
@@ -3215,9 +3283,9 @@ enum OpenClawMessageClipboard {
         input.content,
         extractsContexts: input.role == .user
       ).clipboardText
-      return input.role == .assistant
+      return AIChatRichClipboard.alignedMessage(input.role == .assistant
         ? OpenClawMessageOrgNormalizer.normalized(content)
-        : content
+        : content)
     }
     return input.attachmentFileNames.map { "[Attachment: \($0)]" }.joined(separator: "\n")
   }
@@ -3232,7 +3300,7 @@ enum OpenClawMessageClipboard {
       text(for: input)
     }.value
     guard !Task.isCancelled else { return false }
-    return write(preparedText, to: pasteboard)
+    return write(preparedText, html: AIChatRichClipboard.messageHTML(preparedText), to: pasteboard)
   }
 
   @MainActor
@@ -3241,7 +3309,8 @@ enum OpenClawMessageClipboard {
     _ message: OpenClawChatMessage,
     to pasteboard: NSPasteboard = .general
   ) -> Bool {
-    write(text(for: message), to: pasteboard)
+    let text = text(for: message)
+    return write(text, html: AIChatRichClipboard.messageHTML(text), to: pasteboard)
   }
 
   nonisolated static func codeSnippetText(lines: [String]) -> String {
@@ -3259,9 +3328,10 @@ enum OpenClawMessageClipboard {
 
   @MainActor
   @discardableResult
-  static func write(_ text: String, to pasteboard: NSPasteboard = .general) -> Bool {
+  static func write(_ text: String, html: String? = nil, to pasteboard: NSPasteboard = .general) -> Bool {
     let item = NSPasteboardItem()
     guard item.setString(text, forType: .string) else { return false }
+    if let html { item.setString(html, forType: .html) }
     pasteboard.clearContents()
     return pasteboard.writeObjects([item])
   }
