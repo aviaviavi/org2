@@ -23929,6 +23929,12 @@ public final class WorkspaceStore {
     Task { await client.shutdown() }
   }
 
+  public var hasWorkInProgressForTermination: Bool {
+    isSendingOpenClawMessage || !openClawSendingThreadIDs.isEmpty
+      || !aiChatDrainTasksByThreadID.isEmpty || !codexActiveTurnsByThreadID.isEmpty
+      || isRecordingMeeting || isProcessingMeeting || isRecordingOpenClawVoiceNote
+  }
+
   /// Flushes every editor and asynchronous persistence lane before AppKit is
   /// allowed to tear down the workspace. Returning `false` keeps the app open
   /// when a draft or the final transcript commit could not be made durable.

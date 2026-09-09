@@ -35,6 +35,7 @@ struct Org2WorkspaceApp: App {
         .frame(minWidth: 1080, minHeight: 680)
         .background(WorkspaceWindowConfigurator())
         .onAppear {
+          appDelegate.hasActiveWork = { [store] in store.hasWorkInProgressForTermination }
           appDelegate.prepareForTermination = { [store] in
             await store.prepareForTermination()
           }
@@ -436,7 +437,28 @@ struct Org2WorkspaceApp: App {
 private final class AppDelegate: NSObject, NSApplicationDelegate {
   private let diagnosticsHeartbeat = WorkspaceDiagnosticsHeartbeatResponder()
   var prepareForTermination: (() async -> Bool)?
-  private var isPreparingForTermination = false
+  var hasActiveWork: (() -> Bool)?
+  private var mayTerminate = false
+  private var quitAlert: NSAlert?
+  private var quitKeyMonitor: Any?
+  private var quitPromptWindow: NSWindow?
+  private var storedQuitCoordinator: WorkspaceQuitCoordinator?
+  private var quitCoordinator: WorkspaceQuitCoordinator {
+    if let storedQuitCoordinator { return storedQuitCoordinator }
+    let coordinator = WorkspaceQuitCoordinator(
+      deadline: .seconds(5),
+      save: { [weak self] in await self?.prepareForTermination?() ?? true },
+      showPrompt: { [weak self] prompt in self?.showQuitPrompt(prompt) },
+      quit: { [weak self] in
+        guard let self else { return }
+        self.mayTerminate = true
+        self.dismissQuitPrompt()
+        NSApplication.shared.terminate(nil)
+      }
+    )
+    storedQuitCoordinator = coordinator
+    return coordinator
+  }
 
   func applicationWillFinishLaunching(_ notification: Notification) {
     AppIconInstaller.install()
@@ -445,6 +467,12 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   func applicationDidFinishLaunching(_ notification: Notification) {
+    // AppKit defers its default quit Apple event while a sheet is open.
+    // Route it directly so build --restart and a second external Quit work.
+    NSAppleEventManager.shared().setEventHandler(
+      self, andSelector: #selector(handleQuitAppleEvent(_:withReplyEvent:)),
+      forEventClass: AEEventClass(kCoreEventClass), andEventID: AEEventID(kAEQuitApplication)
+    )
     AppIconInstaller.install()
     NSApplication.shared.setActivationPolicy(.regular)
     NSApplication.shared.activate(ignoringOtherApps: true)
@@ -461,23 +489,86 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     return true
   }
 
+  @objc private func handleQuitAppleEvent(
+    _ event: NSAppleEventDescriptor, withReplyEvent reply: NSAppleEventDescriptor
+  ) {
+    quitCoordinator.requestQuit(hasActiveWork: hasActiveWork?() ?? false)
+  }
+
   func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-    guard !isPreparingForTermination else { return .terminateLater }
-    guard let prepareForTermination else {
+    if mayTerminate {
       stopAppServices()
       return .terminateNow
     }
-    isPreparingForTermination = true
+    // Cancel this AppKit request while we save/show a sheet. terminateLater
+    // suppresses subsequent termination events, making an override impossible.
     Task { @MainActor in
-      let shouldTerminate = await prepareForTermination()
-      if shouldTerminate {
-        stopAppServices()
-      } else {
-        isPreparingForTermination = false
-      }
-      sender.reply(toApplicationShouldTerminate: shouldTerminate)
+      quitCoordinator.requestQuit(hasActiveWork: hasActiveWork?() ?? false)
     }
-    return .terminateLater
+    return .terminateCancel
+  }
+
+  private func showQuitPrompt(_ prompt: WorkspaceQuitCoordinator.Prompt) {
+    dismissQuitPrompt()
+    let alert = NSAlert()
+    alert.alertStyle = .warning
+    switch prompt {
+    case .activeWork:
+      alert.messageText = "Quit OpenOrg while work is in progress?"
+      alert.informativeText = "Active chats, recordings, and other work may be interrupted. OpenOrg will try to save before quitting. Choose Quit again or press ⌘Q again to quit immediately."
+    case .saveFailed:
+      alert.messageText = "Quit without saving everything?"
+      alert.informativeText = "Some changes could not be saved. Quitting now may lose unsaved edits or recent chat output."
+    case .saveTakingTooLong:
+      alert.messageText = "OpenOrg is still preparing to quit"
+      alert.informativeText = "Saving or stopping background work is taking longer than expected. You can quit now; unsaved edits or recent chat output may be lost."
+    }
+    alert.addButton(withTitle: "Quit")
+    alert.addButton(withTitle: prompt == .saveTakingTooLong ? "Keep Waiting" : "Keep Open")
+    alert.buttons[0].keyEquivalent = ""
+    alert.buttons[1].keyEquivalent = "\r"
+    quitAlert = alert
+    // A sheet keeps the application event loop responsive to AppleScript quit.
+    // Cmd-Q needs its own route because AppKit disables app menus for sheets.
+    quitKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+      if event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+         event.charactersIgnoringModifiers?.lowercased() == "q" {
+        self?.quitCoordinator.requestQuit(hasActiveWork: true)
+        return nil
+      }
+      return event
+    }
+    let parent: NSWindow
+    if let window = NSApplication.shared.mainWindow ?? NSApplication.shared.windows.first(where: { $0.isVisible && $0 != alert.window }) {
+      parent = window
+    } else {
+      let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 120),
+                            styleMask: [.titled], backing: .buffered, defer: false)
+      window.title = "OpenOrg"
+      window.center()
+      window.makeKeyAndOrderFront(nil)
+      quitPromptWindow = window
+      parent = window
+    }
+    NSApplication.shared.activate(ignoringOtherApps: true)
+    alert.beginSheetModal(for: parent) { [weak self, weak alert] response in
+      guard let self, let alert, self.quitAlert === alert else { return }
+      self.dismissQuitPrompt()
+      self.quitCoordinator.respond(to: prompt, quit: response == .alertFirstButtonReturn)
+    }
+  }
+
+  private func dismissQuitPrompt() {
+    let alert = quitAlert
+    quitAlert = nil
+    if let monitor = quitKeyMonitor { NSEvent.removeMonitor(monitor) }
+    quitKeyMonitor = nil
+    if let alert {
+      alert.window.sheetParent?.endSheet(alert.window)
+      alert.window.orderOut(nil)
+    }
+    quitPromptWindow?.close()
+    quitPromptWindow = nil
   }
 
   func applicationWillTerminate(_ notification: Notification) {

@@ -17,6 +17,7 @@ import {
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { requestAppQuit } from "./macos-app-quit.mjs";
 import { installStagedAppBundle } from "./atomic-app-bundle.mjs";
 import {
   detectNodeArchitecture,
@@ -420,23 +421,20 @@ function quitRunningInstalledApp(binaryPath) {
   if (runningPids.length === 0) return;
 
   console.log(`Build verified. Asking ${appName} to save and quit...`);
-  const quitScript = `tell application id ${JSON.stringify(bundleIdentifier)} to quit`;
-  const quitResult = spawnSync("osascript", ["-e", quitScript], {
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
+  // Do not wait for the Apple event reply: the app may be showing a quit
+  // confirmation. A second event explicitly overrides pending shutdown.
+  const quitScript = `ignoring application responses
+ tell application id ${JSON.stringify(bundleIdentifier)} to quit
+end ignoring`;
+  requestAppQuit({
+    sendQuit: () => spawnSync("osascript", ["-e", quitScript], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+      timeout: 5_000,
+    }),
+    waitForStop: (timeout) => waitForInstalledAppToStop(binaryPath, timeout),
+    onRetry: () => console.log(`${appName} is still running. Sending Quit again to confirm restart...`),
   });
-  const remainingPids = waitForInstalledAppToStop(binaryPath);
-  if (remainingPids.length === 0) return;
-
-  const quitDetail = [quitResult.stdout, quitResult.stderr]
-    .filter(Boolean)
-    .join("\n")
-    .trim();
-  throw new Error(
-    `${appName} did not finish quitting; the verified build was not installed${
-      quitDetail ? `:\n${quitDetail}` : "."
-    }`
-  );
 }
 
 function launchInstalledApp() {

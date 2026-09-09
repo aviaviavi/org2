@@ -12,6 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { requestAppQuit } from "../tools/macos-app-quit.mjs";
 import { installStagedAppBundle } from "../tools/atomic-app-bundle.mjs";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -247,3 +248,20 @@ try {
 }
 
 console.log("macOS app build-mode tests passed");
+
+// Restart retries exactly once after the save/confirmation grace period.
+for (const stopsAfter of [1, 2, Infinity]) {
+  let sent = 0;
+  let retries = 0;
+  const waits = [];
+  const attempt = () => requestAppQuit({
+    sendQuit: () => { sent++; return {}; },
+    waitForStop: (duration) => { waits.push(duration); return sent >= stopsAfter ? [] : [123]; },
+    onRetry: () => { retries++; },
+  });
+  if (stopsAfter === Infinity) assert.throws(attempt, /verified build was not installed/);
+  else attempt();
+  assert.equal(sent, stopsAfter === 1 ? 1 : 2);
+  assert.equal(retries, stopsAfter === 1 ? 0 : 1);
+  assert.deepEqual(waits, stopsAfter === 1 ? [5000] : [5000, 30000]);
+}

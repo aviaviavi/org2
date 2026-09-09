@@ -116,7 +116,8 @@ make macos-app-restart
 
 The restart target keeps the installed OpenOrg running throughout compilation
 and staged-bundle verification. Once the replacement is ready, it asks OpenOrg
-to save and quit, atomically installs the verified bundle, and immediately
+to save and quit (sending Quit again after five seconds if it is still running),
+atomically installs the verified bundle, and immediately
 reopens it. If the build fails, the running app is not interrupted. This is a
 short restart rather than hot reload, so active recordings and provider turns
 should be allowed to finish first.
