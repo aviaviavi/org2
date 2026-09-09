@@ -3156,21 +3156,11 @@ private struct OpenClawSidebarThreadRow: View {
       }
       .buttonStyle(.plain)
 
-      if isHovered {
-        Button {
-          summary.isSettled ? reopen() : settle()
-        } label: {
-          Image(systemName: summary.isSettled ? "arrow.uturn.backward.circle" : "checkmark.circle")
-            .font(.callout)
-            .frame(width: 24, height: 28)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(.secondary)
-        .help(summary.isSettled ? "Reopen thread" : "Settle thread")
-        .transition(.opacity)
-      } else {
-        Color.clear.frame(width: 24, height: 28)
+      OpenClawSidebarThreadSettlementButton(
+        isSettled: summary.isSettled,
+        isVisible: isHovered
+      ) {
+        summary.isSettled ? reopen() : settle()
       }
     }
     .padding(.trailing, 6)

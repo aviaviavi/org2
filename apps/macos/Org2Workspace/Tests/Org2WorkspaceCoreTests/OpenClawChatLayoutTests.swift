@@ -20,6 +20,18 @@ private struct TranscriptLayoutProbe: NSViewRepresentable {
   func updateNSView(_ nsView: NSView, context: Context) {}
 }
 
+private struct SidebarControlBoundsProbe: NSViewRepresentable {
+  let identifier: String
+
+  func makeNSView(context: Context) -> NSView {
+    let view = NSView(frame: .zero)
+    view.setAccessibilityIdentifier(identifier)
+    return view
+  }
+
+  func updateNSView(_ nsView: NSView, context: Context) {}
+}
+
 @MainActor
 private enum ChatAccessibilityNode {
   case view(NSView)
@@ -95,6 +107,74 @@ private func chatAccessibilityNodes(in root: NSView) -> [ChatAccessibilityNode] 
 
 @MainActor
 final class OpenClawChatLayoutTests: XCTestCase {
+  func testSidebarSettlementButtonKeepsItsSpaceAtNarrowWidths() async throws {
+    for width: CGFloat in [160, 220, 320] {
+      for settled in [false, true] {
+        var previousTitleFrame: NSRect?
+        for visible in [false, true] {
+          let row = HStack(spacing: 2) {
+            Button {} label: {
+              VStack(alignment: .leading, spacing: 2) {
+                Text("A long conversation title that fills the sidebar")
+                  .font(.callout).lineLimit(1)
+                Text("7 messages · Codex · 55m")
+                  .font(.caption2.monospaced()).lineLimit(1)
+              }
+              .frame(maxWidth: .infinity, alignment: .leading)
+              .padding(.leading, 42)
+              .padding(.vertical, 6)
+            }
+            .buttonStyle(.plain)
+            .background(SidebarControlBoundsProbe(identifier: "sidebar-title"))
+            OpenClawSidebarThreadSettlementButton(isSettled: settled, isVisible: visible) {}
+              .background(SidebarControlBoundsProbe(identifier: "sidebar-settlement"))
+          }
+          .padding(.trailing, 6)
+          .frame(width: width, height: 44)
+          .background(Color(nsColor: .windowBackgroundColor))
+          let host = NSHostingView(rootView: row)
+          let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: width, height: 44),
+            styleMask: [.borderless], backing: .buffered, defer: false
+          )
+          window.isReleasedWhenClosed = false
+          window.contentView = host
+          window.orderFrontRegardless()
+          defer { window.contentView = nil; window.close() }
+          for _ in 0..<3 {
+            host.layoutSubtreeIfNeeded()
+            try await Task.sleep(for: .milliseconds(20))
+          }
+          let probes = chatAccessibilityNodes(in: host).compactMap { node -> NSView? in
+            guard case .view(let view) = node else { return nil }
+            return view
+          }
+          let title = try XCTUnwrap(probes.first { $0.accessibilityIdentifier() == "sidebar-title" })
+          let titleFrame = title.convert(title.bounds, to: host)
+          if let previousTitleFrame {
+            XCTAssertEqual(titleFrame, previousTitleFrame, "Hover must not move or compress the title")
+          }
+          previousTitleFrame = titleFrame
+          let action = try XCTUnwrap(probes.first { $0.accessibilityIdentifier() == "sidebar-settlement" })
+          let frame = action.convert(action.bounds, to: host)
+          XCTAssertEqual(frame.width, 28, accuracy: 0.5)
+          XCTAssertEqual(frame.height, 28, accuracy: 0.5)
+          XCTAssertLessThanOrEqual(titleFrame.maxX + 2, frame.minX + 0.5)
+          XCTAssertTrue(host.bounds.contains(frame), "The entire action must remain inside the row")
+          if visible, let directory = ProcessInfo.processInfo.environment["OPENORG_LAYOUT_SNAPSHOT_DIR"],
+             let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+            host.cacheDisplay(in: host.bounds, to: bitmap)
+            let output = URL(fileURLWithPath: directory, isDirectory: true)
+            try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+            try bitmap.representation(using: .png, properties: [:])?.write(
+              to: output.appendingPathComponent("sidebar-settlement-\(Int(width))-\(settled).png")
+            )
+          }
+        }
+      }
+    }
+  }
+
   func testComposerKeepsModelControlsVisibleAcrossPaneWidths() async throws {
     let suiteName = "ChatComposerLayout.\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
