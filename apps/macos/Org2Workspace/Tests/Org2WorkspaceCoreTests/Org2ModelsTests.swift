@@ -12153,6 +12153,7 @@ final class Org2ModelsTests: XCTestCase {
 
     await store.applyTodoShortcut(.canceled, to: .agenda(second))
 
+    XCTAssertNil(store.errorText, "TODO mutation failed: \(store.errorText ?? store.statusText)")
     let updated = try String(contentsOf: note, encoding: .utf8)
     XCTAssertTrue(updated.contains("* CANCELED Second task"))
     let third = try XCTUnwrap(store.visibleAgendaItems.first { $0.headline == "Third task" })
