@@ -14,6 +14,18 @@
       "type": "string",
       "const": "0"
     },
+    "todoSequences": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["keywords", "terminal"],
+        "properties": {
+          "keywords": { "type": "array", "items": { "type": "string" } },
+          "terminal": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
     "children": {
       "type": "array",
       "items": { "$ref": "#/$defs/Node" }
@@ -53,6 +65,7 @@
         "type": { "const": "Headline" },
         "level": { "type": "integer", "minimum": 1 },
         "todo": { "type": "string" },
+        "todoTerminal": { "type": "boolean" },
         "priority": { "type": "string", "pattern": "^[A-Za-z0-9]$" },
         "commented": { "type": "boolean" },
         "tags": {

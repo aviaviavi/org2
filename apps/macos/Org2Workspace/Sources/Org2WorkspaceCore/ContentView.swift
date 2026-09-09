@@ -79,6 +79,11 @@ public struct ContentView: View {
           .help(store.isRefreshingWorkspace ? "Stop the current workspace refresh (⌘R)" : "Refresh every workspace view (⌘R)")
         }
       }
+      .safeAreaInset(edge: .top, spacing: 0) {
+        if let error = store.errorText, !error.isEmpty {
+          WorkspaceActionErrorBanner(error: error) { store.errorText = nil }
+        }
+      }
       .toolbarBackground(WorkspaceDesign.barBackground, for: .windowToolbar)
       .toolbarBackground(.visible, for: .windowToolbar)
       .keyboardEventMonitor { event, scope in

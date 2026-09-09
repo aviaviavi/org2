@@ -15,6 +15,44 @@ export type TerminalTodoStatus = Extract<TodoStatus, "done" | "canceled">;
 
 export const TODO_KEYWORDS = ["TODO", "IN_PROGRESS", "DONE", "CANCELED", "CANCELLED"] as const;
 
+/** File-local Org workflows. The last state is terminal when no separator is given. */
+export type TodoSequence = { keywords: string[]; terminal: string[] };
+export function documentTodoSequences(input: string): TodoSequence[] {
+  const sequences: TodoSequence[] = [];
+  let block: string | undefined;
+  let drawer = false;
+  for (const line of input.split(/\r?\n/)) {
+    const begin = /^\s*#\+begin_(\S+)/i.exec(line);
+    if (begin && !block) { block = begin[1].toLowerCase(); continue; }
+    if (block) {
+      if (/^\s*#\+end_(\S+)\s*$/i.exec(line)?.[1].toLowerCase() === block) block = undefined;
+      continue;
+    }
+    if (/^\s*:END:\s*$/i.test(line)) { drawer = false; continue; }
+    if (/^\s*:[A-Za-z0-9_]+:\s*$/.test(line)) { drawer = true; continue; }
+    if (drawer) continue;
+    const match = /^\s*#\+(?:TODO|SEQ_TODO|TYP_TODO):\s*(.*)$/i.exec(line);
+    if (!match) continue;
+    const tokens = match[1].trim().split(/\s+/).map(token => token.replace(/\([^)]*\)$/, ""));
+    const separator = tokens.indexOf("|");
+    const keywords = tokens.filter(token => token !== "|" && /^[\p{L}][\p{L}\p{N}_-]*$/u.test(token));
+    if (!keywords.length) continue;
+    const terminal = separator < 0 ? keywords.slice(-1) : tokens.slice(separator + 1).filter(token => keywords.includes(token));
+    sequences.push({ keywords: [...new Set(keywords)], terminal: [...new Set(terminal)] });
+  }
+  return sequences;
+}
+
+export function documentTodoKeywords(input: string): string[] {
+  return [...new Set([...TODO_KEYWORDS, ...documentTodoSequences(input).flatMap(sequence => sequence.keywords)])];
+}
+
+export function todoKeywordInWorkflow(value: string | undefined, sequences: readonly TodoSequence[]): string | undefined {
+  if (!value) return undefined;
+  return sequences.flatMap(sequence => sequence.keywords).find(keyword => keyword === value)
+    ?? normalizeTodoKeyword(value);
+}
+
 export type TodoKeyword = typeof TODO_KEYWORDS[number];
 
 const TODO_KEYWORD_SET = new Set<string>(TODO_KEYWORDS);
@@ -35,49 +73,51 @@ export function keywordFromStatus(status: TodoStatus, opts?: { canceledKeyword?:
   return opts?.canceledKeyword === "CANCELLED" ? "CANCELLED" : "CANCELED";
 }
 
-export function statusFromKeyword(keyword: string | undefined): TodoStatus {
-  const k = (keyword || "").toUpperCase();
+export function statusFromKeyword(keyword: string | undefined, sequences: readonly TodoSequence[] = []): TodoStatus {
+  const sequence = sequences.find(sequence => sequence.keywords.includes(keyword ?? ""));
+  if (sequence) return sequence.terminal.includes(keyword!) ? (keyword!.toUpperCase().startsWith("CANCEL") ? "canceled" : "done") : (keyword === "IN_PROGRESS" ? "in_progress" : "todo");
+  const k = (keyword || "").trim().toUpperCase();
   if (k === "IN_PROGRESS") return "in_progress";
   if (k === "DONE") return "done";
   if (k === "CANCELED" || k === "CANCELLED") return "canceled";
   return "todo";
 }
 
-export function terminalTodoStatusFromKeyword(keyword: string | null | undefined): TerminalTodoStatus | undefined {
-  const status = statusFromKeyword(normalizeTodoKeyword(keyword ?? undefined));
+export function terminalTodoStatusFromKeyword(keyword: string | null | undefined, sequences: readonly TodoSequence[] = []): TerminalTodoStatus | undefined {
+  const status = statusFromKeyword(keyword ?? undefined, sequences);
   return status === "done" || status === "canceled" ? status : undefined;
 }
 
-export function isTerminalTodoKeyword(keyword: string | null | undefined): boolean {
-  return terminalTodoStatusFromKeyword(keyword) !== undefined;
+export function isTerminalTodoKeyword(keyword: string | null | undefined, sequences: readonly TodoSequence[] = []): boolean {
+  return terminalTodoStatusFromKeyword(keyword, sequences) !== undefined;
 }
 
-export function isActiveTodoKeyword(keyword: string | null | undefined): boolean {
-  return Boolean(keyword) && !isTerminalTodoKeyword(keyword);
+export function isActiveTodoKeyword(keyword: string | null | undefined, sequences: readonly TodoSequence[] = []): boolean {
+  return Boolean(keyword) && !isTerminalTodoKeyword(keyword, sequences);
 }
 
 export function formatOrgTimestamp(now: Date): string {
   return formatLocalOrgTimestamp(now, { includeTime: true });
 }
 
-function parseHeadlineTodoKeyword(line: string): TodoKeyword | undefined {
+function parseHeadlineTodoKeyword(line: string, sequences: readonly TodoSequence[] = []): string | undefined {
   const m = /^(\*+)\s+(.*)$/.exec(line);
   if (!m) return undefined;
   const rest = m[2];
   const first = rest.split(/\s+/)[0] || "";
-  return normalizeTodoKeyword(first);
+  return todoKeywordInWorkflow(first, sequences);
 }
 
-function replaceOrInsertTodoKeyword(line: string, newKeyword: TodoKeyword): { line: string; oldKeyword?: TodoKeyword } {
+function replaceOrInsertTodoKeyword(line: string, newKeyword: string, sequences: readonly TodoSequence[]): { line: string; oldKeyword?: string } {
   const m = /^(\*+)\s+(.*)$/.exec(line);
   if (!m) return { line };
   const stars = m[1];
   const rest = m[2];
-  const old = parseHeadlineTodoKeyword(line);
+  const old = parseHeadlineTodoKeyword(line, sequences);
 
   if (old) {
     // Replace only the leading keyword.
-    const replaced = rest.replace(new RegExp(`^${old}\\b`), newKeyword);
+    const replaced = newKeyword + rest.slice((rest.split(/\s+/)[0] || "").length);
     return { line: `${stars} ${replaced}`, oldKeyword: old };
   }
 
@@ -125,6 +165,8 @@ function ensureLogbookDrawer(lines: string[], insertAt: number): { start: number
 export type UpdateTodoResult = {
   filePath: string;
   headingLineNumber: number; // 1-based
+  oldKeyword?: string;
+  newKeyword: string;
   oldStatus: TodoStatus;
   newStatus: TodoStatus;
   closedAt?: string;
@@ -136,6 +178,7 @@ export type UpdateTodoOptions = {
   filePath: string;
   lineNumber: number; // 1-based cursor line
   status?: TodoStatus;
+  keyword?: string;
   toggle?: boolean;
   now?: Date;
   logbook?: boolean;
@@ -178,27 +221,34 @@ export function updateTodoInText(input: string, opts: UpdateTodoOptions): Update
 
   const headingIndex = findHeadingAtOrAbove(lines, opts.lineNumber);
 
-  const oldKeyword = parseHeadlineTodoKeyword(lines[headingIndex] ?? "");
-  const oldStatus = statusFromKeyword(oldKeyword);
-
-  const targetStatus = opts.toggle ? computeToggleStatus(oldStatus) : opts.status;
-  if (!targetStatus) {
-    throw new Error("Must provide either status or toggle");
-  }
+  const sequences = documentTodoSequences(input);
+  const oldKeyword = parseHeadlineTodoKeyword(lines[headingIndex] ?? "", sequences);
+  const oldStatus = statusFromKeyword(oldKeyword, sequences);
+  const sequence = sequences.find(sequence => sequence.keywords.includes(oldKeyword ?? ""));
 
   const canceledKeywordPreference = oldKeyword === "CANCELLED" ? "CANCELLED" : undefined;
-  const newKeyword = keywordFromStatus(targetStatus, {
-    ...(canceledKeywordPreference ? { canceledKeyword: canceledKeywordPreference } : {}),
-  });
+  let newKeyword: string;
+  if (opts.keyword) {
+    const keyword = todoKeywordInWorkflow(opts.keyword, sequences);
+    if (!keyword) throw new Error(`Unknown TODO keyword "${opts.keyword}". Declare it with #+TODO: active | terminal.`);
+    newKeyword = keyword;
+  } else if (opts.toggle && sequence) {
+    newKeyword = sequence.keywords[(sequence.keywords.indexOf(oldKeyword!) + 1) % sequence.keywords.length];
+  } else {
+    const target = opts.toggle ? computeToggleStatus(oldStatus) : opts.status;
+    if (!target) throw new Error("Must provide either status, keyword, or toggle");
+    newKeyword = keywordFromStatus(target, { canceledKeyword: canceledKeywordPreference });
+  }
+  const targetStatus = statusFromKeyword(newKeyword, sequences);
 
-  const { line: newHeadlineLine } = replaceOrInsertTodoKeyword(lines[headingIndex] ?? "", newKeyword);
+  const { line: newHeadlineLine } = replaceOrInsertTodoKeyword(lines[headingIndex] ?? "", newKeyword, sequences);
   const changed = newHeadlineLine !== (lines[headingIndex] ?? "");
   lines[headingIndex] = newHeadlineLine;
 
   const subtreeEndExclusive = (): number => computeSubtreeRange(lines, headingIndex).endExclusive;
 
   // Optionally write state transition logbook entries.
-  if (oldStatus !== targetStatus) {
+  if (oldKeyword ? oldKeyword !== newKeyword : oldStatus !== targetStatus) {
     // closedAt for done/canceled; reopening clears stale CLOSED metadata.
     let closedAt: string | undefined;
     if (targetStatus === "done" || targetStatus === "canceled") {
@@ -234,7 +284,7 @@ export function updateTodoInText(input: string, opts: UpdateTodoOptions): Update
       const log2 = findDrawerInLines(lines, logbookSearchStart, endExclusive, "LOGBOOK");
       if (log2 && log2.terminated) {
         const oldKeywordForLog =
-          oldKeyword && statusFromKeyword(oldKeyword) === oldStatus
+          oldKeyword && statusFromKeyword(oldKeyword, sequences) === oldStatus
             ? oldKeyword
             : keywordFromStatus(oldStatus, {
                 ...(canceledKeywordPreference ? { canceledKeyword: canceledKeywordPreference } : {}),
@@ -247,6 +297,8 @@ export function updateTodoInText(input: string, opts: UpdateTodoOptions): Update
     return {
       filePath: opts.filePath,
       headingLineNumber: headingIndex + 1,
+      oldKeyword,
+      newKeyword,
       oldStatus,
       newStatus: targetStatus,
       ...(closedAt ? { closedAt } : {}),
@@ -258,6 +310,8 @@ export function updateTodoInText(input: string, opts: UpdateTodoOptions): Update
   return {
     filePath: opts.filePath,
     headingLineNumber: headingIndex + 1,
+    oldKeyword,
+    newKeyword,
     oldStatus,
     newStatus: targetStatus,
     changed,

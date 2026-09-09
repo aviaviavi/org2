@@ -182,3 +182,16 @@ assert.equal(cliPayload.open.length, 1);
 assert.equal(cliPayload.recentlyCompleted.length, 1);
 
 console.log("node action query tests passed");
+
+const customWorkflow = write("custom-workflow.org", `#+TODO: TODO missed | DONE SHIPPED
+* missed Follow up with [[id:${gabbyID}][Gabby]]
+* SHIPPED Delivered for [[id:${gabbyID}][Gabby]]
+CLOSED: [2026-08-19 Wed]
+* CANCELED Abandoned for [[id:${gabbyID}][Gabby]]
+CLOSED: [2026-08-19 Wed]
+`);
+const customActions = queryNodeActions(compileCorpus([files[0], customWorkflow], { rootDir: root }), {
+  object: `id:${gabbyID}`, today: "2026-08-19", recentDays: 30, openLimit: 8, completedLimit: 4,
+});
+assert.deepEqual(customActions.open.map(item => item.todo), ["missed"]);
+assert.deepEqual(customActions.recentlyCompleted.map(item => item.todo), ["SHIPPED"]);

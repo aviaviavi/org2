@@ -158,3 +158,9 @@ Download the signed and notarized app from [[file:downloads.org][Downloads]]. De
 OpenOrg checks for signed updates when it opens and every two hours by default. Use *OpenOrg → Check for Updates…* to check manually, or the *Updates* settings to turn automatic checks off and choose whether downloads should install when you quit. Update prompts can also remind you later or skip a version.
 
 For a reproducible launch or refresh problem, use the [[file:macos-diagnostics.org][macOS diagnostics guide]]. Sanitize diagnostics before sharing them, and never include credentials or private corpus content.
+
+* Custom TODO states and action feedback
+
+Add a declaration such as =#+TODO: TODO MISSED | DONE SKIPPED= to a file. States before =|= remain active; those after it are terminal. OpenOrg’s heading editor includes the declared keywords, and heading buttons use the configured active/terminal states. Marking a custom state DONE replaces its keyword, preserves the title and ID, and maintains CLOSED metadata.
+
+Workspace errors appear in a dismissible banner on the current surface, with selectable details. Failed actions no longer depend on a hidden status message; successful actions do not open confirmation dialogs.

@@ -17,7 +17,7 @@ org2 agent --help
 
 =org2 agent capabilities= emits the versioned JSON schema =org2:capabilities:v1=. It summarizes workflow families, write behavior, client roles, safety rules, and deeper documentation URLs. Use =org2 COMMAND --help= for the current flags of a specific command.
 
-When working in a corpus, look for the nearest =org2.json=. It can define file selection, recursion, ignored paths, TODO vocabulary, data-source profiles, external-source intent, publishing projects, and roam/dailies locations. Do not assume a private database or app owns the canonical state.
+When working in a corpus, look for the nearest =org2.json=. It can define file selection, recursion, ignored paths, TODO transition logging, data-source profiles, external-source intent, publishing projects, and roam/dailies locations. Do not assume a private database or app owns the canonical state.
 
 * Safe operating contract
 
@@ -63,6 +63,8 @@ org2 agent bundle --query "billing migration" --scope project:billing --since 90
 #+end_src
 
 The shorthand =org2 context QUERY= renders a cited Markdown/Org context pack for prompt assembly. =org2 compile corpus= emits a schema-versioned JSON or JSONL corpus artifact for larger downstream indexes and tools. =org2 brief= produces a human-facing synthesis from the same context substrate.
+
+TODO vocabularies belong in file-local =#+TODO:=, =#+SEQ_TODO:=, or =#+TYP_TODO:= declarations. Respect =|= terminal states and use =todo set --keyword STATE= for exact custom state names; inspect the preview before applying.
 
 * Common workflows
 

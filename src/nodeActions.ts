@@ -224,7 +224,7 @@ function actionItem(
   return {
     id: node.id || `${node.file}:${node.sourceRange.startLine}`,
     title: node.title,
-    todo: normalizeTodoKeyword(node.todo) || String(node.todo || "TODO").toUpperCase(),
+    todo: String(node.todo || "TODO"),
     file: node.file,
     line: node.sourceRange.startLine,
     lineEnd: node.sourceRange.endLine,
@@ -291,7 +291,7 @@ export function queryNodeActions(corpus: CompiledCorpus, options: NodeActionsOpt
     if (meeting) directlyRelatedMeetingKeys.add(meeting.key);
   }
 
-  const todos = corpus.nodes.filter((node) => node.kind === "heading" && normalizeTodoKeyword(node.todo));
+  const todos = corpus.nodes.filter((node) => node.kind === "heading" && node.todo);
   for (const node of todos) {
     if (
       node.links.some((link) => linkTargetsNode(link, target))
@@ -312,7 +312,7 @@ export function queryNodeActions(corpus: CompiledCorpus, options: NodeActionsOpt
   });
 
   const openAll = candidates
-    .filter(({ node }) => isActiveTodoKeyword(node.todo))
+    .filter(({ node }) => node.todoTerminal === undefined ? isActiveTodoKeyword(node.todo) : !node.todoTerminal)
     .map(({ node, relationship, meeting }) => actionItem(node, relationship, meeting, false))
     .sort((left, right) => {
       const statusRank = (item: NodeActionItem) => item.todo === "IN_PROGRESS" ? 0 : 1;
@@ -326,7 +326,10 @@ export function queryNodeActions(corpus: CompiledCorpus, options: NodeActionsOpt
 
   const todayDay = calendarDayNumber(today);
   const completedAll = candidates
-    .filter(({ node }) => normalizeTodoKeyword(node.todo) === "DONE")
+    .filter(({ node }) => {
+      const keyword = normalizeTodoKeyword(node.todo);
+      return (node.todoTerminal ?? (keyword === "DONE")) && keyword !== "CANCELED" && keyword !== "CANCELLED";
+    })
     .map(({ node, relationship, meeting }) => actionItem(node, relationship, meeting, true))
     .filter((item) => {
       if (!item.date) return false;

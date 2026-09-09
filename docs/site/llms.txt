@@ -93,3 +93,5 @@ Agents and runtime adapters should record observable execution metadata with `or
 - https://github.com/aviaviavi/org2/blob/main/spec/v0/canonical-ast.schema.json
 - https://github.com/aviaviavi/org2/blob/main/spec/v0/parsing-cases.json
 - https://github.com/aviaviavi/org2/blob/main/spec/v0/CONFORMANCE.org
+
+TODO workflows: declare file-local #+TODO: active | terminal sequences; use todo set --keyword STATE for exact custom states. See tooling-reference.html and language-reference.html.

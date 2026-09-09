@@ -20775,7 +20775,8 @@ final class Org2ModelsTests: XCTestCase {
     }
 
     var updated = try String(contentsOf: note, encoding: .utf8)
-    XCTAssertTrue(updated.contains("* DONE Parent\nBody\n* Sibling"))
+    XCTAssertTrue(updated.contains("* DONE Parent\nCLOSED:"))
+    XCTAssertTrue(updated.contains("\nBody\n* Sibling"))
 
     let doneHeading = try XCTUnwrap(store.selectedBlock)
     await store.toggleHeadingTodo(doneHeading)

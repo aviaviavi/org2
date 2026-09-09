@@ -95,7 +95,7 @@ try {
   assert.equal(cacheFiles.length, 1, "agenda should write one machine-local cache for the corpus");
   const cacheFile = cacheFiles[0];
   const coldCache = JSON.parse(fs.readFileSync(cacheFile, "utf8"));
-  assert.equal(coldCache.schemaVersion, "org2-agenda-cache/v1");
+  assert.equal(coldCache.schemaVersion, "org2-agenda-cache/v2");
   assert.equal(coldCache.rootDir, corpus, "--dir should scope the cache to the scanned corpus");
   assert.equal(findFilesNamed(corpus, "agenda-v1.json").length, 0, "derived agenda state must stay outside the corpus");
 
@@ -117,7 +117,7 @@ try {
   const concurrentOutputs = await Promise.all(Array.from({ length: 4 }, () => agendaAsync()));
   for (const output of concurrentOutputs) assert.equal(output, changedOutput);
   const recoveredCache = JSON.parse(fs.readFileSync(cacheFile, "utf8"));
-  assert.equal(recoveredCache.schemaVersion, "org2-agenda-cache/v1");
+  assert.equal(recoveredCache.schemaVersion, "org2-agenda-cache/v2");
   assert.equal(recoveredCache.rootDir, corpus);
 
   process.stdout.write("agenda incremental cache tests passed\n");

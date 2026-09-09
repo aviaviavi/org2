@@ -28,7 +28,7 @@ Related docs:
 - Normative fixtures: =.org= input → =.json= AST output
 
 ** Out of scope (explicit, non-normative for v0)
-- TODO workflow semantics (syntax may be parsed, semantics are out of scope)
+- Emacs-specific TODO hooks and interactive state-change logging prompts
 - Agenda behavior
 - Clocking
 - Property inheritance
@@ -146,7 +146,7 @@ A headline line produces a =Headline= node with:
 - =level=: the number of =*= characters.
 - =title=: an array of inline nodes, parsed using the same inline rules as paragraphs (timestamps, links, emphasis, etc.).
 
-** TODO keywords (syntax only)
+** TODO keywords and terminal states
 
 A headline title MAY begin with a TODO keyword.
 
@@ -162,9 +162,11 @@ Example:
 - =* TODO Fix bug= produces a =Headline= with =todo: "TODO"= and =title: "Fix bug"=.
 - =* DONE Ship docs= produces a =Headline= with =todo: "DONE"= and =title: "Ship docs"=.
 
-TODO workflow semantics are out of scope for v0.
+State transitions preserve the declared keyword. Terminal states represent tasks that require no further action.
 
-A document MAY extend the parsed vocabulary with =#+TODO:=, =#+SEQ_TODO:=, or =#+TYP_TODO:=. The parser MUST ignore fast-selection suffixes in parentheses and the =|= done-state separator. The exact declared keyword is stored in =todo=.
+A document MAY extend the parsed vocabulary with =#+TODO:=, =#+SEQ_TODO:=, or =#+TYP_TODO:=. The parser MUST strip fast-selection/logging suffixes in parentheses from keyword names. Keywords before =|= are active; keywords after it are terminal. If =|= is absent, only the final keyword is terminal. Multiple declarations define separate sequences. The exact declared keyword is stored in =todo=. Declarations inside blocks or drawers MUST NOT configure the document. Built-in keywords remain available; a declaration overrides their active/terminal classification.
+
+Documents with declarations expose =todoSequences= (arrays of =keywords= and =terminal= strings); their task headings expose the resolved boolean =todoTerminal=. Documents without declarations omit these fields for compatibility. Cycling follows the owning sequence and wraps to its first keyword. Entering a terminal keyword writes =CLOSED= metadata; returning to an active keyword removes it. Optional transition logbooks record exact old and new keywords, including changes between two terminal states. Fast-selection keys and Emacs logging prompt annotations are accepted syntax, not interactive UI bindings.
 
 ** Priority and COMMENT metadata
 

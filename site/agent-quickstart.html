@@ -75,7 +75,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 org2 --help
 org2 agent --help</code></pre>
 <p><code>org2 agent capabilities</code> emits the versioned JSON schema <code>org2:capabilities:v1</code>. It summarizes workflow families, write behavior, client roles, safety rules, and deeper documentation URLs. Use <code>org2 COMMAND --help</code> for the current flags of a specific command.</p>
-<p>When working in a corpus, look for the nearest <code>org2.json</code>. It can define file selection, recursion, ignored paths, TODO vocabulary, data-source profiles, external-source intent, publishing projects, and roam/dailies locations. Do not assume a private database or app owns the canonical state.</p>
+<p>When working in a corpus, look for the nearest <code>org2.json</code>. It can define file selection, recursion, ignored paths, TODO transition logging, data-source profiles, external-source intent, publishing projects, and roam/dailies locations. Do not assume a private database or app owns the canonical state.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="safe-operating-contract">Safe operating contract</h1>
@@ -113,6 +113,7 @@ org2 agent context --query &quot;billing migration risks&quot; --dir ~/notes --r
 org2 agent fetch --id NODE_ID --dir ~/notes --recursive
 org2 agent bundle --query &quot;billing migration&quot; --scope project:billing --since 90d</code></pre>
 <p>The shorthand <code>org2 context QUERY</code> renders a cited Markdown/Org context pack for prompt assembly. <code>org2 compile corpus</code> emits a schema-versioned JSON or JSONL corpus artifact for larger downstream indexes and tools. <code>org2 brief</code> produces a human-facing synthesis from the same context substrate.</p>
+<p>TODO vocabularies belong in file-local <code>#+TODO:</code>, <code>#+SEQ_TODO:</code>, or <code>#+TYP_TODO:</code> declarations. Respect <code>|</code> terminal states and use <code>todo set --keyword STATE</code> for exact custom state names; inspect the preview before applying.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="common-workflows">Common workflows</h1>

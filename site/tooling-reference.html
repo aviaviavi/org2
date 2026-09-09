@@ -343,7 +343,9 @@ org2 roam node new --dir ~/notes --title &quot;Acme Corp&quot; --apply --json</c
 <h1 id="planning-edits"><span class="org2-todo">TODO</span> + planning edits</h1>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 todo toggle --file notes.org --line 42 --apply
 org2 todo set --file notes.org --line 42 --status in_progress --apply
+org2 todo set --file notes.org --line 42 --keyword SKIPPED --apply
 org2 plan set --file notes.org --line 42 --kind scheduled --date 2026-03-25 --apply</code></pre>
+<p>Declare custom states in the target file, for example <code>#+TODO: TODO MISSED | DONE SKIPPED</code>. <code>--keyword</code> selects the exact spelling; <code>--status</code> also accepts declared custom states alongside standard aliases. Unknown keywords fail with an actionable error. <code>toggle</code> follows the current state’s sequence. Terminal transitions maintain <code>CLOSED</code>, and <code>--logbook</code> records exact state changes. JSON mutation results include <code>oldKeyword</code> and <code>newKeyword</code> alongside the compatible status buckets. Omit <code>--apply</code> to preview.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="capture-archive-refile">Capture / archive / refile</h1>

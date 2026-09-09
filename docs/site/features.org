@@ -11,7 +11,7 @@
       <h2 id="planning-knowledge-title">Planning and linked notes</h2>
       <p>TODO state, schedules, deadlines, priorities, effort, tags, IDs, aliases, and links are readable in the note. OpenOrg turns them into focused agenda views and useful context around whatever you are working on.</p>
       <ul>
-        <li>Agenda across many files, with date windows, filters, grouping, and real-world TODO vocabularies.</li>
+        <li>Agenda across many files, with date windows, filters, grouping, and file-defined TODO vocabularies with active and terminal states.</li>
         <li>A context pane brings together backlinks, related notes, and source-cited AI briefs; linked action items stay beside the note.</li>
         <li>Stable IDs, dailies, node creation, link previews, and graph-health checks keep the underlying connections portable.</li>
         <li>Preview-first mutations from the CLI and editors; writes require an explicit apply step.</li>

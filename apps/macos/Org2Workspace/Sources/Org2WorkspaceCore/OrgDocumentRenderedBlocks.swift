@@ -445,8 +445,10 @@ enum OrgRenderedLineDisplayCache {
     return cache
   }()
 
-  nonisolated static func headingTitle(rawText: String?, fallback: String) -> String {
-    cached(kind: "heading-title", rawText: rawText, fallback: fallback, parse: parseHeadingTitle)
+  nonisolated static func headingTitle(rawText: String?, fallback: String, knownTodo: String? = nil) -> String {
+    cached(kind: "heading-title:\(knownTodo ?? "")", rawText: rawText, fallback: fallback) { raw, fallback in
+      parseHeadingTitle(rawText: raw, fallback: fallback, knownTodo: knownTodo)
+    }
   }
 
   nonisolated static func listText(rawText: String?, fallback: String) -> String {
@@ -474,7 +476,7 @@ enum OrgRenderedLineDisplayCache {
     return value
   }
 
-  private static func parseHeadingTitle(rawText: String, fallback: String) -> String {
+  private static func parseHeadingTitle(rawText: String, fallback: String, knownTodo: String? = nil) -> String {
     guard let line = firstLine(in: rawText) else { return fallback }
     let stars = line.prefix { $0 == "*" }
     guard !stars.isEmpty else { return fallback }
@@ -486,7 +488,7 @@ enum OrgRenderedLineDisplayCache {
     }
 
     var tokens = rest.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
-    if let first = tokens.first, todoKeywords.contains(first.uppercased()) {
+    if let first = tokens.first, first == knownTodo || todoKeywords.contains(first.uppercased()) {
       tokens.removeFirst()
     }
     if let first = tokens.first,
@@ -1028,7 +1030,7 @@ private struct RenderedHeadingView: View {
       )
       .frame(minWidth: 12, alignment: .leading)
       if let todo = heading.todo {
-        RenderedHeadingTodoButton(todo: todo, inlineActions: inlineActions)
+        RenderedHeadingTodoButton(todo: todo, sequences: heading.todoSequences, inlineActions: inlineActions)
       }
       if let priority = heading.priority {
         RenderedHeadingPriorityMenu(priority: priority, inlineActions: inlineActions)
@@ -1118,12 +1120,13 @@ private struct RenderedHeadingView: View {
   }
 
   private var rawTitle: String {
-    OrgRenderedLineDisplayCache.headingTitle(rawText: rawText, fallback: heading.title)
+    OrgRenderedLineDisplayCache.headingTitle(rawText: rawText, fallback: heading.title, knownTodo: heading.todo)
   }
 }
 
 private struct RenderedHeadingTodoButton: View {
   let todo: String
+  let sequences: [Org2TodoSequence]
   let inlineActions: RenderedBlockInlineActions
 
   var body: some View {
@@ -1138,7 +1141,7 @@ private struct RenderedHeadingTodoButton: View {
   }
 
   private var nextStatus: String? {
-    WorkspaceStore.nextHeadingTodoStatus(after: todo)
+    WorkspaceStore.nextHeadingTodoStatus(after: todo, sequences: sequences)
   }
 }
 

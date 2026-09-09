@@ -47,6 +47,10 @@ Files may also declare their own Org-compatible vocabulary with =#+TODO:=, =#+SE
 * WAITING Publish the package
 #+end_src
 
+States before =|= are active; states after it are terminal (no further action required). Without =|=, the last keyword is terminal. Multiple declarations define independent sequences. Keywords retain their spelling and case. Built-in states remain available. Declarations inside source/example blocks and drawers do not change the workflow.
+
+Custom states work in TODO mutations, agenda filtering, and OpenOrg heading controls. Terminal states do not become overdue tasks; reopening clears =CLOSED=. Shortcut and logging annotations are accepted, but their Emacs-specific interactive prompts/keybindings are not implemented.
+
 Example:
 
 #+begin_src org

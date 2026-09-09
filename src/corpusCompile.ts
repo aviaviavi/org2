@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import v8 from "node:v8";
 import { buildGeneratedArtifactMetadata, sha256Hex, type Org2GeneratedArtifactMetadata } from "./artifactMetadata.js";
-import { normalizeTodoKeyword } from "./todo.js";
+import { documentTodoSequences, todoKeywordInWorkflow, isTerminalTodoKeyword, type TodoSequence } from "./todo.js";
 import { extractClockReport, type OrgClockInterval, type OrgClockIssue, type OrgClockSummary } from "./clock.js";
 
 export type CompiledCorpusLink = {
@@ -76,6 +76,7 @@ export type CompiledCorpusNode = {
   title: string;
   level?: number;
   todo?: string;
+  todoTerminal?: boolean;
   priority?: string;
   tags: string[];
   aliases: string[];
@@ -309,7 +310,7 @@ function stripPriority(raw: string): { title: string; priority?: string } {
   return { priority: normalizePriorityToken(match[1] || ""), title: String(match[2] || "").trim() };
 }
 
-function parseHeading(line: string): { level: number; title: string; todo?: string; priority?: string; tags: string[] } | null {
+function parseHeading(line: string, sequences: readonly TodoSequence[] = []): { level: number; title: string; todo?: string; priority?: string; tags: string[] } | null {
   const match = /^(\*+)\s+(.*?)\s*$/.exec(line);
   if (!match) return null;
   const level = (match[1] || "").length;
@@ -318,7 +319,7 @@ function parseHeading(line: string): { level: number; title: string; todo?: stri
   rest = tagStripped.title;
   let todo: string | undefined;
   const first = rest.split(/\s+/)[0] || "";
-  const normalizedTodo = normalizeTodoKeyword(first);
+  const normalizedTodo = todoKeywordInWorkflow(first, sequences);
   if (normalizedTodo) {
     todo = normalizedTodo;
     rest = rest.slice(first.length).trim();
@@ -712,8 +713,9 @@ export function compileCorpus(files: string[], opts?: { rootDir?: string; genera
       snippetStartLine: fileSnippet.startLine,
     });
 
+    const sequences = documentTodoSequences(lines.join("\n"));
     for (let i = 0; i < lines.length; i += 1) {
-      const heading = parseHeading(lines[i] || "");
+      const heading = parseHeading(lines[i] || "", sequences);
       if (!heading) continue;
       const endExclusive = headingEndExclusive(lines, i, heading.level);
       while (headingPropertyStack.length && (headingPropertyStack[headingPropertyStack.length - 1]?.level || 0) >= heading.level) headingPropertyStack.pop();
@@ -751,7 +753,10 @@ export function compileCorpus(files: string[], opts?: { rootDir?: string; genera
         snippet: headingSnippet.snippet,
         snippetStartLine: headingSnippet.startLine,
       };
-      if (heading.todo) node.todo = heading.todo;
+      if (heading.todo) {
+        node.todo = heading.todo;
+        if (sequences.length) node.todoTerminal = isTerminalTodoKeyword(heading.todo, sequences);
+      }
       const effort = effortFromProperties(headingProperties);
       if (effort) node.effort = effort;
       nodes.push(node);
@@ -798,7 +803,7 @@ type IncrementalCorpusFragment = {
 };
 
 type IncrementalCorpusCache = {
-  schemaVersion: "org2-incremental-corpus-cache/v3";
+  schemaVersion: "org2-incremental-corpus-cache/v4";
   rootDir: string;
   files: IncrementalCorpusFileFingerprint[];
   checkboxProgressByFile: Record<string, CheckboxProgress>;
@@ -1255,7 +1260,7 @@ export function compileCorpusIncremental(files: string[], opts: { rootDir?: stri
     if (fs.existsSync(cacheFile)) {
       const parsed = readIncrementalCorpusCache(cacheFile);
       if (
-        parsed.schemaVersion === "org2-incremental-corpus-cache/v3"
+        parsed.schemaVersion === "org2-incremental-corpus-cache/v4"
         && parsed.rootDir === rootDir
         && Array.isArray(parsed.files)
         && parsed.checkboxProgressByFile
@@ -1349,7 +1354,7 @@ export function compileCorpusIncremental(files: string[], opts: { rootDir?: stri
 
   try {
     writeIncrementalCorpusCache(cacheFile, {
-      schemaVersion: "org2-incremental-corpus-cache/v3",
+      schemaVersion: "org2-incremental-corpus-cache/v4",
       rootDir,
       files: current,
       checkboxProgressByFile,

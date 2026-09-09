@@ -115,6 +115,8 @@ public struct OrgEditableBlockRenderIdentity: Equatable, Sendable {
 }
 
 public struct OrgHeadingBlock: Equatable, Sendable {
+  public var todoSequences: [Org2TodoSequence] = []
+  public var todoTerminal: Bool? = nil
   public let level: Int
   public let todo: String?
   public let priority: String?
@@ -1049,13 +1051,15 @@ public enum OrgEntryRenderer {
           return
         }
         let lineText = rawText(startLine: sourceRange.startLine, endLineExclusive: sourceRange.startLine + 1)
-        let heading = parseHeading(lineText) ?? OrgHeadingBlock(
+        var heading = parseHeading(lineText, knownTodo: headline.todo) ?? OrgHeadingBlock(
           level: headline.level,
           todo: headline.todo,
           priority: nil,
           title: inlineText(headline.title),
           tags: headline.tags ?? []
         )
+        heading.todoSequences = canonicalDocument.todoSequences ?? []
+        heading.todoTerminal = headline.todoTerminal
         appendBlock(startLine: sourceRange.startLine, endLineExclusive: sourceRange.startLine + 1, rendered: .heading(heading))
         appendNodes(headline.children)
       case .paragraph(let paragraph):
@@ -1305,7 +1309,7 @@ public enum OrgEntryRenderer {
     blocks.append(.blank)
   }
 
-  private static func parseHeading(_ line: String) -> OrgHeadingBlock? {
+  private static func parseHeading(_ line: String, knownTodo: String? = nil) -> OrgHeadingBlock? {
     let stars = line.prefix { $0 == "*" }
     guard !stars.isEmpty else { return nil }
     let afterStars = line.dropFirst(stars.count)
@@ -1328,8 +1332,8 @@ public enum OrgEntryRenderer {
     var todo: String?
     var priority: String?
 
-    if let first = tokens.first, todoKeywords.contains(first.uppercased()) {
-      todo = first.uppercased()
+    if let first = tokens.first, first == knownTodo || todoKeywords.contains(first.uppercased()) {
+      todo = knownTodo ?? first.uppercased()
       tokens.removeFirst()
     }
 

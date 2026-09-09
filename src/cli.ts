@@ -21,7 +21,7 @@ import {
   type Org2PublishProjectConfig,
 } from "./config.js";
 import { resolvePublishHeadIncludes } from "./publish-defaults.js";
-import { assignTodoInText, formatOrgTimestamp, isActiveTodoKeyword, isTerminalTodoKeyword, normalizeTodoKeyword, TODO_KEYWORDS, updateTodoInText, type TodoStatus } from "./todo.js";
+import { documentTodoSequences, todoKeywordInWorkflow, type TodoSequence, assignTodoInText, formatOrgTimestamp, isActiveTodoKeyword, isTerminalTodoKeyword, normalizeTodoKeyword, TODO_KEYWORDS, updateTodoInText, type TodoStatus } from "./todo.js";
 import { planningKindFromArg, updatePlanningInText, type PlanningKindArg } from "./planning.js";
 import { computeSubtreeRange, findHeadingAtOrAbove, isHeadlineLine, upsertHeadlinePropertyInLines } from "./sourceLines.js";
 import { findBacklinksInText, type Backlink } from "./backlinks.js";
@@ -172,8 +172,8 @@ function renderBriefing(payload: ReturnType<typeof buildAgentContextPayload>, ti
   const reviewRequired = payload.results.some((node) => node.claimState.reviewStatus !== "reviewed" && node.claimState.reviewStatus !== "promoted");
   const cited = payload.results.slice(0, 8);
   const glanceNodes = [
-    ...cited.filter((node) => !isTerminalTodoKeyword(node.todo)),
-    ...cited.filter((node) => isTerminalTodoKeyword(node.todo)),
+    ...cited.filter((node) => !(node.todoTerminal ?? isTerminalTodoKeyword(node.todo))),
+    ...cited.filter((node) => node.todoTerminal ?? isTerminalTodoKeyword(node.todo)),
   ].slice(0, 5);
 
   lines.push(`${h1} ${title}`);
@@ -1166,7 +1166,7 @@ function approvalItemFromHeadline(
   properties: Record<string, string>,
 ): ApprovalQueueItem | null {
   const todo = headline.todo?.toUpperCase() ?? null;
-  if (isTerminalTodoKeyword(todo)) return null;
+  if (headline.todoTerminal ?? isTerminalTodoKeyword(todo)) return null;
 
   const sourceRange = (headline as SourceRangedHeadlineNode).sourceRange;
   if (!sourceRange) return null;
@@ -2992,9 +2992,10 @@ interface ScheduledItem {
   tags: string[];
   properties: Record<string, string>;
   habit?: HabitAgendaState;
+  todoTerminal?: boolean;
 }
 
-const AGENDA_CACHE_SCHEMA_VERSION = "org2-agenda-cache/v1";
+const AGENDA_CACHE_SCHEMA_VERSION = "org2-agenda-cache/v2";
 const AGENDA_CACHE_MAX_QUERIES = 4;
 
 type AgendaCacheFileEntry = {
@@ -4818,15 +4819,6 @@ function matchesAgendaExcludeTimeFilter(time: string | undefined, excludeTimeFil
   return !matchesAgendaTimeFilterTokenSet(time, excludeTimeFilter);
 }
 
-function matchesAgendaExcludeStatusFilter(
-  todo: string | undefined,
-  excludeStatusFilter: AgendaExcludeStatusFilter,
-): boolean {
-  if (!excludeStatusFilter || excludeStatusFilter.size === 0) return true;
-  const bucket = agendaStatusBucketForKeyword(todo);
-  if (!bucket) return true;
-  return !excludeStatusFilter.has(bucket);
-}
 
 function matchesAgendaExcludeKindFilter(
   kind: AgendaPlanningKind,
@@ -5079,7 +5071,7 @@ function extractAgendaPriorityFromHeadlineTitle(rawTitle: string): { priority?: 
   return { priority, title };
 }
 
-function parseHeadlineLine(line: string): { todo?: string; priority?: string; title: string; tags: string[]; level: number } | null {
+function parseHeadlineLine(line: string, sequences: readonly TodoSequence[] = []): { todo?: string; priority?: string; title: string; tags: string[]; level: number } | null {
   const m = /^(\*+)\s+(.*)$/.exec(line);
   if (!m) return null;
 
@@ -5107,7 +5099,7 @@ function parseHeadlineLine(line: string): { todo?: string; priority?: string; ti
   let titleRest = rest;
 
   // Heuristic: TODO keywords are usually uppercase-ish.
-  if (/^[A-Z][A-Z0-9_-]*$/.test(first) && pieces.length > 1) {
+  if ((todoKeywordInWorkflow(first, sequences) || /^[A-Z][A-Z0-9_-]*$/.test(first)) && pieces.length > 1) {
     todo = first;
     titleRest = rest.slice(first.length).trimStart();
   }
@@ -5390,6 +5382,7 @@ function findScheduledItemsInText(
 ): ScheduledItem[] {
   const items: ScheduledItem[] = [];
   const lines = content.split("\n");
+  const sequences = documentTodoSequences(content);
   const fileProperties = extractAgendaFileProperties(lines);
   const propertyStack: Array<{ level: number; effectiveProperties: Record<string, string> }> = [];
 
@@ -5411,7 +5404,7 @@ function findScheduledItemsInText(
 
     // Headline line
     if (/^(\*+)\s+/.test(line)) {
-      const parsed = parseHeadlineLine(line);
+      const parsed = parseHeadlineLine(line, sequences);
       if (parsed) {
         while (propertyStack.length && (propertyStack[propertyStack.length - 1]?.level || 0) >= parsed.level) propertyStack.pop();
         const explicitProperties = extractAgendaPropertiesNearHeadline(lines, i);
@@ -5439,9 +5432,10 @@ function findScheduledItemsInText(
     const todo = current.todo;
     if (!todo) continue;
 
-    const todoBucket = agendaStatusBucketForKeyword(todo);
+    const configured = sequences.some(sequence => sequence.keywords.includes(todo));
+    const todoBucket = isTerminalTodoKeyword(todo, sequences) ? (todo.toUpperCase().startsWith("CANCEL") ? "canceled" : "done") : configured && isTerminalTodoKeyword(todo) ? "todo" : agendaStatusBucketForKeyword(todo);
     if (statusFilter && (!todoBucket || !statusFilter.has(todoBucket))) continue;
-    if (!matchesAgendaExcludeStatusFilter(todo, excludeStatusFilter)) continue;
+    if (todoBucket && excludeStatusFilter?.has(todoBucket)) continue;
     if (!matchesAgendaTextFilter(current.title, textFilter)) continue;
     if (!matchesAgendaExcludeTextFilter(current.title, excludeTextFilter)) continue;
     if (!matchesAgendaTagFilter(current.tags, tagFilter)) continue;
@@ -5459,7 +5453,7 @@ function findScheduledItemsInText(
     if (!matchesAgendaLevelFilter(current.level, levelFilter)) continue;
     if (!matchesAgendaExcludeLevelFilter(current.level, excludeLevelFilter)) continue;
 
-    const isDoneLike = isTerminalTodoKeyword(todo);
+    const isDoneLike = isTerminalTodoKeyword(todo, sequences);
     const isProgLike = todo === "PROG" || todo === "IN_PROGRESS";
 
     // Match multiple planning tokens on a single line.
@@ -5527,6 +5521,7 @@ function findScheduledItemsInText(
           todo,
           priority: current.priority,
           body: extractAgendaEntryBody(lines, current.lineNumber),
+          ...(sequences.length ? { todoTerminal: isDoneLike } : {}),
           effort: current.effort,
           id: agendaPrimaryIdFromProperties(current.properties),
           level: current.level,
@@ -6882,7 +6877,7 @@ function compareAgendaEffortValues(
 }
 
 function agendaStatusSortBucketForItem(item: ScheduledItem): AgendaStatusBucket | null {
-  return agendaStatusBucketForKeyword(item.todo);
+  return item.todoTerminal === true ? "done" : item.todoTerminal === false && isTerminalTodoKeyword(item.todo) ? "todo" : agendaStatusBucketForKeyword(item.todo);
 }
 
 function agendaActiveTerminalSortRankForItem(item: ScheduledItem): number {
@@ -8500,6 +8495,7 @@ async function main(): Promise<void> {
   let todoFile = "";
   let todoLine = 0;
   let todoStatus: TodoStatus | "" = "";
+  let todoKeyword = "";
   let todoAssignee = "";
   let todoAgentRef = "";
   let todoGoalRef = "";
@@ -9026,6 +9022,9 @@ async function main(): Promise<void> {
         }
         i++;
       }
+    } else if (arg === "--keyword" && command === "todo") {
+      todoKeyword = args[++i] ?? "";
+      i++;
     } else if (arg === "--status") {
       i++;
       if (i < args.length) {
@@ -9036,6 +9035,7 @@ async function main(): Promise<void> {
           if (raw === "reviewed" || raw === "rejected" || raw === "deferred") aiReviewStatus = raw;
         } else {
           todoStatus = parseTodoStatusArg(args[i] ?? "");
+          if (!todoStatus) todoKeyword = args[i] ?? "";
         }
         i++;
       }
@@ -10409,7 +10409,8 @@ Flags:
   --file FILE         Target file
   --line N            Heading line number
   --pos LINE[:COL]    Heading position
-  --to TODO           Target TODO keyword for 'set'
+  --status STATUS     Standard status or declared custom keyword for 'set'
+  --keyword KEYWORD   Exact declared TODO keyword (preserves case)
   --assignee NAME     Assignee for 'assign'
   --agent-ref ID      Portable agent profile ID for 'assign'
   --goal-ref ID       Portable goal ID for 'assign'
@@ -14446,7 +14447,7 @@ Flags:
     }
 
     if (todoAction === "set") {
-      if (!todoStatus || (todoStatus !== "todo" && todoStatus !== "in_progress" && todoStatus !== "done" && todoStatus !== "canceled")) {
+      if (!todoKeyword && (!todoStatus || (todoStatus !== "todo" && todoStatus !== "in_progress" && todoStatus !== "done" && todoStatus !== "canceled"))) {
         console.error("Error: todo set requires --status todo|in_progress|done|canceled (aliases: open/backlog, in-progress/in progress/prog/doing/started/waiting/blocked/next/wip, complete/completed/finish/finished/closed/resolved, cancel/cancelled)");
         process.exit(1);
       }
@@ -14498,6 +14499,7 @@ Flags:
           filePath: todoFile,
           lineNumber: todoLine,
           ...(todoAction === "toggle" ? { toggle: true } : { status: todoStatus as TodoStatus }),
+          ...(todoKeyword ? { keyword: todoKeyword } : {}),
           ...(nowDate ? { now: nowDate } : {}),
           ...(todoLogbookEffective ? { logbook: true } : {}),
         });
@@ -14541,6 +14543,8 @@ Flags:
               : {
                   oldStatus: "oldStatus" in res ? res.oldStatus : undefined,
                   newStatus: "newStatus" in res ? res.newStatus : undefined,
+                  oldKeyword: "oldKeyword" in res ? res.oldKeyword : undefined,
+                  newKeyword: "newKeyword" in res ? res.newKeyword : undefined,
                   ...("closedAt" in res && res.closedAt ? { closedAt: res.closedAt } : {}),
                 }),
             applied: todoApply,
@@ -16159,6 +16163,7 @@ Flags:
 
       const serializeAgendaItem = (it: ScheduledItem) => ({
         todo: it.todo,
+        ...(it.todoTerminal !== undefined ? { todoTerminal: it.todoTerminal } : {}),
         headline: it.headline,
         kind: it.kind,
         file: it.filePath,

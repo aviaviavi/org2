@@ -357,6 +357,7 @@ private struct HeadingBlockEditor: View {
   let block: OrgEditableBlock
   let initialSelection: NSRange?
   private let level: Int
+  private let workflowKeywords: [String]
   @State private var todo: String
   @State private var priority: String
   @State private var title: String
@@ -371,6 +372,7 @@ private struct HeadingBlockEditor: View {
     self.initialSelection = initialSelection
     let raw = Self.rawHeadingParts(from: block.rawText, fallback: heading)
     self.level = raw.level
+    self.workflowKeywords = Array(NSOrderedSet(array: heading.todoSequences.flatMap(\.keywords) + Self.todoKeywords)) as? [String] ?? Self.todoKeywords
     _todo = State(initialValue: raw.todo)
     _priority = State(initialValue: raw.priority)
     _title = State(initialValue: raw.title)
@@ -391,7 +393,7 @@ private struct HeadingBlockEditor: View {
               todo = ""
             }
             Divider()
-            ForEach(Self.todoKeywords, id: \.self) { keyword in
+            ForEach(workflowKeywords, id: \.self) { keyword in
               Button(keyword) {
                 todo = keyword
               }
@@ -711,8 +713,8 @@ private struct HeadingBlockEditor: View {
     var todo = ""
     var priority = ""
     var tokens = rest.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
-    if let first = tokens.first, todoKeywords.contains(first.uppercased()) {
-      todo = first.uppercased()
+    if let first = tokens.first, first == fallback.todo || todoKeywords.contains(first.uppercased()) {
+      todo = fallback.todo ?? first.uppercased()
       tokens.removeFirst()
     }
     if let first = tokens.first,

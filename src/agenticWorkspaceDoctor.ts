@@ -72,6 +72,7 @@ export interface AgenticDoctorReport {
 interface HeadlineRecord {
   title: string;
   todo?: string;
+  todoTerminal?: boolean;
   level: number;
   properties: Record<string, string>;
   file: string;
@@ -307,7 +308,8 @@ function collectHeadlines(
     if (node.type !== "Headline") continue;
     const record: HeadlineRecord = {
       title: headlineTitle(node),
-      ...(node.todo ? { todo: node.todo.toUpperCase() } : {}),
+      ...(node.todo ? { todo: node.todo } : {}),
+      ...(node.todoTerminal !== undefined ? { todoTerminal: node.todoTerminal } : {}),
       level: node.level,
       properties: headlineProperties(node),
       file,
@@ -364,7 +366,7 @@ function headlineStatus(headline: HeadlineRecord): string {
 }
 
 function isPendingHeadline(headline: HeadlineRecord): boolean {
-  if (isTerminalTodoKeyword(headline.todo)) return false;
+  if ((headline.todoTerminal ?? isTerminalTodoKeyword(headline.todo))) return false;
   const status = headlineStatus(headline);
   return PENDING_HEADLINE_STATUS_PARTS.some((part) => status.includes(part));
 }
@@ -676,12 +678,12 @@ function auditHeadlineProjections(
   const openGmailDrafts = new Map<string, HeadlineRecord[]>();
 
   for (const headline of headlines) {
-    if (headline.todo && !isTerminalTodoKeyword(headline.todo)) {
+    if (headline.todo && !(headline.todoTerminal ?? isTerminalTodoKeyword(headline.todo))) {
       const titleKey = `${headline.file}\n${headline.title.toLowerCase().replace(/\s+/g, " ")}`;
       openTitles.set(titleKey, [...(openTitles.get(titleKey) || []), headline]);
     }
     const draftId = headline.properties.GMAIL_DRAFT_ID;
-    if (draftId && !isTerminalTodoKeyword(headline.todo)) openGmailDrafts.set(draftId, [...(openGmailDrafts.get(draftId) || []), headline]);
+    if (draftId && !(headline.todoTerminal ?? isTerminalTodoKeyword(headline.todo))) openGmailDrafts.set(draftId, [...(openGmailDrafts.get(draftId) || []), headline]);
 
     const runId = headline.properties.ORG2_RUN_ID;
     if (!runId) continue;
@@ -792,7 +794,7 @@ function auditHeadlineProjections(
         related: { childLine: headline.line, childTitle: headline.title },
       });
     }
-    if (isTerminalTodoKeyword(parent.todo) && isPendingHeadline(headline)) {
+    if ((parent.todoTerminal ?? isTerminalTodoKeyword(parent.todo)) && isPendingHeadline(headline)) {
       finding(findings, {
         rule: "terminal-parent-pending-child",
         severity: "error",

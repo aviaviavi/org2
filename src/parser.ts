@@ -40,7 +40,7 @@ import type {
   TimestampRangeNode,
 } from "./ast.js";
 import { parseTimestampRepeater, parseTimestampWarning } from "./timestampModifiers.js";
-import { TODO_KEYWORDS } from "./todo.js";
+import { documentTodoKeywords, documentTodoSequences, isTerminalTodoKeyword } from "./todo.js";
 
 export type ParseError = {
   message: string;
@@ -757,20 +757,6 @@ function parseHeadline(
   }
 
   return { level: stars.length, title: rest, todo, priority, ...(commented ? { commented } : {}), tags };
-}
-
-function parseDocumentTodoKeywords(input: string): string[] {
-  const keywords = new Set<string>(TODO_KEYWORDS);
-  for (const line of input.split("\n")) {
-    const match = /^\s*#\+(?:TODO|SEQ_TODO|TYP_TODO):(.*)$/i.exec(line);
-    if (!match) continue;
-    for (const token of (match[1] ?? "").trim().split(/\s+/)) {
-      if (!token || token === "|") continue;
-      const keyword = token.replace(/\([^)]*\)$/, "");
-      if (/^[A-Za-z][A-Za-z0-9_-]*$/.test(keyword)) keywords.add(keyword);
-    }
-  }
-  return [...keywords].sort((left, right) => right.length - left.length || left.localeCompare(right));
 }
 
 function getChildrenArray(node: DocumentNode | HeadlineNode): Node[] {
@@ -1536,7 +1522,9 @@ export function parseOrgToCanonicalAst(input: string, options: ParseOptions = {}
   }
 
   const lines = input.split("\n");
-  const documentTodoKeywords = parseDocumentTodoKeywords(input);
+  const sequences = documentTodoSequences(input);
+  if (sequences.length) doc.todoSequences = sequences;
+  const keywords = documentTodoKeywords(input);
   const documentEndLine = input.endsWith("\n") ? Math.max(1, lines.length - 1) : lines.length;
 
   for (let i = 0; i < lines.length; ) {
@@ -1701,7 +1689,7 @@ export function parseOrgToCanonicalAst(input: string, options: ParseOptions = {}
       endList();
       flushAffiliatedKeywords();
 
-      const { level, title, todo, priority, commented, tags } = parseHeadline(line, lineNumber, documentTodoKeywords);
+      const { level, title, todo, priority, commented, tags } = parseHeadline(line, lineNumber, keywords);
 
       while (headlineStack.length > 0 && headlineStack[headlineStack.length - 1].level >= level) {
         const popped = headlineStack.pop();
@@ -1711,7 +1699,7 @@ export function parseOrgToCanonicalAst(input: string, options: ParseOptions = {}
       const node: HeadlineNode = {
         type: "Headline",
         level,
-        ...(todo ? { todo } : {}),
+        ...(todo ? { todo, ...(sequences.length ? { todoTerminal: isTerminalTodoKeyword(todo, sequences) } : {}) } : {}),
         ...(priority ? { priority } : {}),
         ...(commented ? { commented } : {}),
         ...(tags ? { tags } : {}),

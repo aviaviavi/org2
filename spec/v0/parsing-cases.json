@@ -249,6 +249,7 @@
       "expectedAst": {
         "type": "Document",
         "version": "0",
+        "todoSequences": [{ "keywords": ["WAIT", "DONE"], "terminal": ["DONE"] }],
         "children": [
           {
             "type": "KeywordLine",
@@ -261,6 +262,7 @@
             "type": "Headline",
             "level": 1,
             "todo": "WAIT",
+            "todoTerminal": false,
             "title": [{ "type": "Text", "value": "thing" }],
             "children": []
           }

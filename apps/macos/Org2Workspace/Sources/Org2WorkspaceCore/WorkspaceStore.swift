@@ -15912,37 +15912,46 @@ public final class WorkspaceStore {
       statusText = "Block is outside the selected source"
       return
     }
-    guard case .heading(let heading) = block.rendered,
-          let currentStatus = heading.todo,
-          let nextStatus = Self.nextHeadingTodoStatus(after: currentStatus),
-          let replacement = Self.toggledHeadingTodoRawText(
-            block.rawText,
-            current: currentStatus,
-            next: nextStatus
-          )
-    else {
-      statusText = "Heading has no TODO keyword"
+    guard case .heading(let heading) = block.rendered, let currentStatus = heading.todo else {
+      errorText = "This heading has no TODO state. Edit the heading to add one."
       return
     }
-
+    guard let nextStatus = Self.nextHeadingTodoStatus(after: currentStatus, sequences: heading.todoSequences) else {
+      errorText = "No next TODO state is configured for \(currentStatus). Check this file’s #+TODO: declaration."
+      return
+    }
     isSavingBlock = true
     defer { isSavingBlock = false }
-
+    let target = HeadlineMutationTarget(file: source.file, line: block.startLine, title: heading.title)
     do {
-      try await replaceBlockSourceAndFinish(
-        source: source,
-        block: block,
-        replacement: replacement,
-        status: "\(nextStatus) -> heading",
-        selectLine: block.startLine
-      )
+      let context = try documentMutationContext(for: target)
+      let cli = self.cli
+      try await performDocumentMutation(context: context, files: [source.file]) { execution in
+        let snapshot = try await execution.readSnapshot(at: URL(fileURLWithPath: target.file))
+        let resolved = try await Self.canonicalTodoMutationTarget(target, text: snapshot.text, cli: cli)
+        let replacement = try await Self.previewCLIDocumentMutation(
+          cli: cli,
+          arguments: ["todo", "set", "--file", snapshot.url.path, "--line", "\(resolved.line)", "--keyword", nextStatus],
+          basedOn: snapshot
+        )
+        try await execution.commit(replacement, over: snapshot) { replacement, url, previous in
+          try Self.commitDocumentText(replacement, url: url, previousText: previous, operation: "TODO status update")
+        }
+      }
+      statusText = "\(nextStatus) -> \(heading.title)"
+      await refreshAfterHeadlineMutation(target)
     } catch {
       errorText = error.localizedDescription
       statusText = "TODO update failed"
     }
   }
 
-  public nonisolated static func nextHeadingTodoStatus(after current: String) -> String? {
+  public nonisolated static func nextHeadingTodoStatus(after current: String, sequences: [Org2TodoSequence] = []) -> String? {
+    if let sequence = sequences.first(where: { $0.keywords.contains(current) }) {
+      return sequence.terminal.contains(current)
+        ? sequence.keywords.first(where: { !sequence.terminal.contains($0) }) ?? "TODO"
+        : sequence.terminal.first ?? "DONE"
+    }
     let normalized = current.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
     guard !normalized.isEmpty else { return nil }
     if doneHeadingTodoKeywords.contains(normalized) {
@@ -30939,16 +30948,19 @@ public final class WorkspaceStore {
   nonisolated private static func resolveHeadlineMutationTarget(
     _ target: HeadlineMutationTarget,
     in raw: String,
-    requiresTodo: Bool = false
+    requiresTodo: Bool = false,
+    canonicalHeadlines: [Int: Org2CanonicalHeadline]? = nil
   ) throws -> HeadlineMutationTarget {
     let lines = normalizeLineEndings(raw)
       .split(separator: "\n", omittingEmptySubsequences: false)
       .map(String.init)
     let isCandidate: (Int) -> Bool = { index in
       guard lines.indices.contains(index), headingLevel(lines[index]) != nil else { return false }
+      if let canonicalHeadlines { return !requiresTodo || canonicalHeadlines[index + 1]?.todo != nil }
       return !requiresTodo || parseTodoHeading(lines[index]) != nil
     }
     let candidateTitle: (Int) -> String = { index in
+      if let headline = canonicalHeadlines?[index + 1] { return canonicalInlineText(headline.title) }
       if let heading = parseTodoHeading(lines[index]) {
         return heading.title
       }
@@ -30998,6 +31010,26 @@ public final class WorkspaceStore {
       title: candidateTitle(index),
       agendaItemID: target.agendaItemID
     )
+  }
+
+  nonisolated private static func canonicalTodoMutationTarget(
+    _ target: HeadlineMutationTarget, text: String, cli: Org2CLI
+  ) async throws -> HeadlineMutationTarget {
+    let document: Org2CanonicalDocument = try await cli.parseTextJSON(text, sourceRanges: true)
+    if document.todoSequences?.isEmpty != false {
+      return try resolveHeadlineMutationTarget(target, in: text, requiresTodo: true)
+    }
+    var headlines: [Int: Org2CanonicalHeadline] = [:]
+    func collect(_ nodes: [Org2CanonicalNode]) {
+      for node in nodes {
+        if case .headline(let heading) = node {
+          if let line = heading.sourceRange?.startLine { headlines[line] = heading }
+          collect(heading.children)
+        }
+      }
+    }
+    collect(document.children)
+    return try resolveHeadlineMutationTarget(target, in: text, requiresTodo: true, canonicalHeadlines: headlines)
   }
 
   nonisolated private static func commitDocumentText(
@@ -31612,7 +31644,7 @@ public final class WorkspaceStore {
     testMutation: (@Sendable (TodoEditStatus, String, Int) async throws -> String)? = nil
   ) async throws -> (status: String, target: HeadlineMutationTarget) {
     let snapshot = try await execution.readSnapshot(at: URL(fileURLWithPath: target.file))
-    let resolved = try resolveHeadlineMutationTarget(target, in: snapshot.text, requiresTodo: true)
+    let resolved = try await canonicalTodoMutationTarget(target, text: snapshot.text, cli: cli)
     if let testMutation {
       let updatedStatus = try await testMutation(status, resolved.file, resolved.line)
       return (updatedStatus, resolved)
@@ -31644,7 +31676,7 @@ public final class WorkspaceStore {
     execution: WorkspaceDocumentMutationExecution
   ) async throws -> (status: String, target: HeadlineMutationTarget) {
     let snapshot = try await execution.readSnapshot(at: URL(fileURLWithPath: target.file))
-    let resolved = try resolveHeadlineMutationTarget(target, in: snapshot.text, requiresTodo: true)
+    let resolved = try await canonicalTodoMutationTarget(target, text: snapshot.text, cli: cli)
     let replacement = try await previewCLIDocumentMutation(
       cli: cli,
       arguments: [
@@ -31658,7 +31690,7 @@ public final class WorkspaceStore {
       .split(separator: "\n", omittingEmptySubsequences: false)
       .map(String.init)
     guard lines.indices.contains(resolved.line - 1),
-          let heading = parseTodoHeading(lines[resolved.line - 1])
+          let keyword = lines[resolved.line - 1].split(separator: " ").dropFirst().first
     else {
       throw WorkspaceEditError.noHeadline(file: resolved.file, line: resolved.line)
     }
@@ -31670,7 +31702,7 @@ public final class WorkspaceStore {
         operation: "TODO toggle"
       )
     }
-    return (heading.todo, resolved)
+    return (String(keyword), resolved)
   }
 
   nonisolated private static func assignTodoInDocument(
@@ -31682,7 +31714,7 @@ public final class WorkspaceStore {
     execution: WorkspaceDocumentMutationExecution
   ) async throws -> HeadlineMutationTarget {
     let snapshot = try await execution.readSnapshot(at: URL(fileURLWithPath: target.file))
-    let resolved = try resolveHeadlineMutationTarget(target, in: snapshot.text, requiresTodo: true)
+    let resolved = try await canonicalTodoMutationTarget(target, text: snapshot.text, cli: cli)
     var arguments = [
       "todo", "assign",
       "--file", snapshot.url.path,

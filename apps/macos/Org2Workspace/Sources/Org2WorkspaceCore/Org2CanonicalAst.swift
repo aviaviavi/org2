@@ -3,6 +3,7 @@ import Foundation
 public struct Org2CanonicalDocument: Decodable, Equatable, Sendable {
   public let type: String
   public let version: String
+  public var todoSequences: [Org2TodoSequence]? = nil
   public let children: [Org2CanonicalNode]
 }
 
@@ -164,6 +165,7 @@ public struct Org2CanonicalHeadline: Decodable, Equatable, Sendable {
   public let type: String
   public let level: Int
   public let todo: String?
+  public var todoTerminal: Bool? = nil
   public let tags: [String]?
   public let title: [Org2CanonicalInline]
   public let children: [Org2CanonicalNode]
@@ -336,4 +338,9 @@ public struct Org2CanonicalLink: Decodable, Equatable, Sendable {
   public let raw: String
   public let targetRaw: String
   public let descriptionRaw: String?
+}
+
+public struct Org2TodoSequence: Decodable, Equatable, Sendable {
+  public let keywords: [String]
+  public let terminal: [String]
 }

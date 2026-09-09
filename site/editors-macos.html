@@ -179,6 +179,11 @@ rebuild. Renderer UI runs in a sandboxed, opaque-origin frame. See
 <p>OpenOrg checks for signed updates when it opens and every two hours by default. Use <strong>OpenOrg → Check for Updates…</strong> to check manually, or the <strong>Updates</strong> settings to turn automatic checks off and choose whether downloads should install when you quit. Update prompts can also remind you later or skip a version.</p>
 <p>For a reproducible launch or refresh problem, use the <a href="macos-diagnostics.html">macOS diagnostics guide</a>. Sanitize diagnostics before sharing them, and never include credentials or private corpus content.</p>
 </section>
+<section class="org2-headline level-1">
+<h1 id="custom-todo-states-and-action-feedback">Custom TODO states and action feedback</h1>
+<p>Add a declaration such as <code>#+TODO: TODO MISSED | DONE SKIPPED</code> to a file. States before <code>|</code> remain active; those after it are terminal. OpenOrg’s heading editor includes the declared keywords, and heading buttons use the configured active/terminal states. Marking a custom state DONE replaces its keyword, preserves the title and ID, and maintains CLOSED metadata.</p>
+<p>Workspace errors appear in a dismissible banner on the current surface, with selectable details. Failed actions no longer depend on a hidden status message; successful actions do not open confirmation dialogs.</p>
+</section>
 </main>
 </div>
 <footer class="org2-footer"><div class="org2-footer-incubator"><span>Incubated at</span><a href="https://scarf.sh" target="_blank" rel="noopener noreferrer"><img class="org2-footer-scarf-logo" src="assets/scarf-logo.svg" alt="Scarf" /></a></div><p class="org2-footer-tagline">Build your knowledge locally and put it to work.</p><img referrerpolicy="no-referrer-when-downgrade" src="https://static.scarf.sh/a.png?x-pxid=e39e0a38-773e-4446-b8b0-804f923e3dc3" alt="" /></footer>

@@ -4,7 +4,7 @@ import v8 from "node:v8";
 import { parseHeadlineTitleForRoam } from "./headlineTitle.js";
 import { defaultSearchIndexPath } from "./indexPaths.js";
 import { computeSubtreeRange } from "./sourceLines.js";
-import { isActiveTodoKeyword, normalizeTodoKeyword } from "./todo.js";
+import { documentTodoSequences, todoKeywordInWorkflow, type TodoSequence, isActiveTodoKeyword } from "./todo.js";
 
 export { defaultSearchIndexPath };
 
@@ -60,6 +60,7 @@ export type Org2SearchIndexHeading = {
 export type Org2SearchIndex = {
   $schema: "org2:search-index:v1";
   version: 1;
+  todoWorkflowVersion?: 1;
   rootDir: string;
   recursive: boolean;
   includeArchives: boolean;
@@ -153,10 +154,11 @@ function indexSearchFile(rootDir: string, absolutePath: string, stat: fs.Stats, 
 function buildSearchIndexHeadings(lines: string[]): Org2SearchIndexHeading[] {
   const headings: Org2SearchIndexHeading[] = [];
   const stack: number[] = [];
+  const sequences = documentTodoSequences(lines.join("\n"));
 
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
     const line = lines[lineIndex] || "";
-    const parsed = line.charCodeAt(0) === 42 ? parseSearchHeading(line) : null;
+    const parsed = line.charCodeAt(0) === 42 ? parseSearchHeading(line, sequences) : null;
     if (parsed) {
       while (stack.length && headings[stack[stack.length - 1]!]!.level >= parsed.level) {
         headings[stack.pop()!]!.endLine = lineIndex - 1;
@@ -227,6 +229,7 @@ export function buildSearchIndex(options: {
   const index: Org2SearchIndex = {
     $schema: "org2:search-index:v1",
     version: 1,
+    todoWorkflowVersion: 1,
     rootDir,
     recursive: options.recursive,
     includeArchives: options.includeArchives,
@@ -260,6 +263,7 @@ export function updateSearchIndex(options: {
   if (
     existing.$schema !== "org2:search-index:v1" ||
     existing.version !== 1 ||
+    existing.todoWorkflowVersion !== 1 ||
     path.resolve(existing.rootDir) !== rootDir ||
     existing.recursive !== options.recursive ||
     existing.includeArchives !== options.includeArchives
@@ -379,7 +383,7 @@ export function searchIndexedCorpus(index: Org2SearchIndex, options: Org2SearchO
   for (const file of index.files) {
     const normalizedFile = file.path.toLowerCase();
     if (fileZoneFilters.length && !fileZoneFilters.some((zone) => normalizedFile.includes(zone))) continue;
-    if (file.headings) {
+    if (file.headings && index.todoWorkflowVersion === 1) {
       collectSearchHitsForIndexedFile(file, matcher, options, hits);
     } else {
       collectSearchHitsForLines(file.path, file.lines, matcher, options, hits);
@@ -453,10 +457,11 @@ function collectSearchHitsForLines(
   subtreeHits = new Map<string, Org2SearchHit>(),
 ): void {
   const stack: SearchHeading[] = [];
+  const sequences = documentTodoSequences(lines.join("\n"));
 
   for (let j = 0; j < lines.length; j += 1) {
     const line = lines[j] || "";
-    const parsed = line.charCodeAt(0) === 42 ? parseSearchHeading(line) : null;
+    const parsed = line.charCodeAt(0) === 42 ? parseSearchHeading(line, sequences) : null;
     if (parsed) {
       while (stack.length && stack[stack.length - 1]!.level >= parsed.level) stack.pop();
       stack.push({ line: j, ...parsed });
@@ -672,7 +677,7 @@ function searchRelevanceRank(hit: Org2SearchHit, needle: string): number[] {
   return [resultKind, headingMatch, matchedHeadingLine];
 }
 
-function parseSearchHeading(line: string): Omit<SearchHeading, "line"> | null {
+function parseSearchHeading(line: string, sequences: readonly TodoSequence[] = []): Omit<SearchHeading, "line"> | null {
   const m = /^(\*+)\s+(.*)$/.exec(line);
   if (!m) return null;
   let rest = (m[2] || "").trim();
@@ -680,7 +685,7 @@ function parseSearchHeading(line: string): Omit<SearchHeading, "line"> | null {
   const tags = tagMatch ? (tagMatch[1] || "").split(":").filter(Boolean) : [];
   if (tagMatch) rest = rest.slice(0, tagMatch.index).trim();
   const parts = rest.split(/\s+/);
-  const todo = normalizeTodoKeyword(parts[0]);
+  const todo = todoKeywordInWorkflow(parts[0], sequences);
   if (todo) rest = parts.slice(1).join(" ").trim();
   return { level: (m[1] || "").length, title: parseHeadlineTitleForRoam(`${m[1]} ${rest}`), todo, tags };
 }

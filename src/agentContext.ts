@@ -244,6 +244,7 @@ type AgentNode = {
   citation: string;
   level?: number;
   todo?: string;
+  todoTerminal?: boolean;
   tags: string[];
   aliases: string[];
   properties: Record<string, string>;
@@ -450,7 +451,7 @@ function salienceScoreFor(node: CompiledCorpusNode, opts: AgentContextOptions, l
   if (explicit !== null) { score += explicit * 3; reasons.push(`explicit salience ${explicit}`); }
   const pinned = numericProperty(node, ["ORG2_PINNED", "PINNED", "IMPORTANT"]);
   if (pinned !== null && pinned > 0) { score += 4; reasons.push("pinned/important metadata"); }
-  if (isActiveTodoKeyword(node.todo)) { score += 2; reasons.push(`active TODO ${node.todo}`); }
+  if ((node.todoTerminal === undefined ? isActiveTodoKeyword(node.todo) : Boolean(node.todo) && !node.todoTerminal)) { score += 2; reasons.push(`active TODO ${node.todo}`); }
   const activePlanning = node.planning.filter((p) => p.kind === "SCHEDULED" || p.kind === "DEADLINE");
   if (activePlanning.length) { score += Math.min(3, activePlanning.length * 1.5); reasons.push("scheduled/deadline planning"); }
   const backlinkCount = inferredBacklinksFor(lookup, node).length;
@@ -499,7 +500,7 @@ function scoreNode(node: CompiledCorpusNode, terms: string[], opts: AgentContext
     score -= 5;
     selectionReason.push("downranked operational/generated file");
   }
-  const terminalTodo = terminalTodoStatusFromKeyword(node.todo);
+  const terminalTodo = node.todoTerminal === undefined ? terminalTodoStatusFromKeyword(node.todo) : node.todoTerminal ? terminalTodoStatusFromKeyword(node.todo) ?? "done" : undefined;
   if (terminalTodo === "canceled") {
     score -= 5;
     selectionReason.push("downranked canceled task");
@@ -1314,6 +1315,7 @@ function toAgentNode(corpus: CompiledCorpus, node: CompiledCorpusNode, include: 
     citation: source.citation,
     ...(node.level !== undefined ? { level: node.level } : {}),
     ...(node.todo ? { todo: node.todo } : {}),
+    ...(node.todoTerminal !== undefined ? { todoTerminal: node.todoTerminal } : {}),
     tags: node.tags,
     aliases: node.aliases,
     properties: node.effectiveProperties || node.properties,
@@ -1365,7 +1367,7 @@ function dateStringForAgentNode(node: AgentNode): string {
 }
 
 export function isStaleOpenAgentTodo(node: AgentNode, nowMs = Date.now()): boolean {
-  if (!isActiveTodoKeyword(node.todo)) return false;
+  if (!(node.todoTerminal === undefined ? isActiveTodoKeyword(node.todo) : Boolean(node.todo) && !node.todoTerminal)) return false;
   const date = dateStringForAgentNode(node);
   if (!date) return false;
   const parsed = parseIsoCalendarDate(date);
@@ -1387,7 +1389,7 @@ export function renderAgentContextPack(payload: AgentPayload, format: "markdown"
     .filter((item) => /\d{4}-\d{2}-\d{2}/.test(item.date))
     .sort((a, b) => b.date.localeCompare(a.date) || a.node.citation.localeCompare(b.node.citation))
     .slice(0, 8);
-  const todos = results.filter((node) => isActiveTodoKeyword(node.todo) && !isStaleOpenAgentTodo(node));
+  const todos = results.filter((node) => (node.todoTerminal === undefined ? isActiveTodoKeyword(node.todo) : Boolean(node.todo) && !node.todoTerminal) && !isStaleOpenAgentTodo(node));
   const staleTodos = results.filter((node) => isStaleOpenAgentTodo(node));
   const collaborationStates = results
     .filter((node): node is AgentNode & { collaboration: AgentCollaborationState } => Boolean(node.collaboration))

@@ -22,7 +22,7 @@ import {
 } from "./link-abbrev.js";
 import { parseHeadlineTitleForRoam } from "./headlineTitle.js";
 import { buildPublishDiagnosticsParams } from "./lsp-diagnostics.js";
-import { TODO_KEYWORDS, normalizeTodoKeyword, statusFromKeyword } from "./todo.js";
+import { documentTodoKeywords, TODO_KEYWORDS, normalizeTodoKeyword, statusFromKeyword } from "./todo.js";
 import { formatLocalOrgTimestamp } from "./calendarDate.js";
 
 import fs from "node:fs";
@@ -1606,22 +1606,14 @@ class LSPServer {
       });
     };
 
-    const todoKeywords = new Set<string>(TODO_KEYWORDS);
-    for (const line of lines) {
-      const todoDirective = /^\s*#\+(?:TODO|SEQ_TODO|TYP_TODO):(.*)$/i.exec(line);
-      if (!todoDirective) continue;
-      for (const token of (todoDirective[1] || "").trim().split(/\s+/)) {
-        const keyword = token.replace(/\([^)]*\)$/, "").toUpperCase();
-        if (keyword && keyword !== "|") todoKeywords.add(keyword);
-      }
-    }
+    const todoKeywords = new Set(documentTodoKeywords(lines.join("\n")));
 
     for (let lineNumber = 0; lineNumber < lines.length; lineNumber++) {
       const line = lines[lineNumber] ?? "";
 
-      const headingTodoMatch = line.match(/^(\*+\s+)([A-Z][A-Z0-9_-]*)\b/);
+      const headingTodoMatch = line.match(/^(\*+\s+)([^\s]+)(?=\s)/);
       if (headingTodoMatch) {
-        const keyword = (headingTodoMatch[2] || "").toUpperCase();
+        const keyword = headingTodoMatch[2] || "";
         if (todoKeywords.has(keyword)) {
           addToken(lineNumber, headingTodoMatch[1].length, keyword.length, SemanticTokenType.Keyword);
         }

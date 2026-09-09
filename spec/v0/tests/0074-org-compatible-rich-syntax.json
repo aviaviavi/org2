@@ -13,6 +13,7 @@
       "type": "Headline",
       "level": 1,
       "todo": "WAITING",
+      "todoTerminal": false,
       "priority": "A",
       "commented": true,
       "title": [
@@ -274,6 +275,17 @@
             }
           ]
         }
+      ]
+    }
+  ],
+  "todoSequences": [
+    {
+      "keywords": [
+        "WAITING",
+        "SHIPPED"
+      ],
+      "terminal": [
+        "SHIPPED"
       ]
     }
   ]

@@ -313,6 +313,7 @@ export type HeadlineNode = {
   type: "Headline";
   level: number;
   todo?: string;
+  todoTerminal?: boolean;
   priority?: string;
   commented?: boolean;
   tags?: string[];
@@ -360,6 +361,7 @@ export type Node =
   | TextNode;
 
 export type DocumentNode = {
+  todoSequences?: import("./todo.js").TodoSequence[];
   type: "Document";
   version: "0";
   children: Node[];
