@@ -1,6 +1,7 @@
 import AppKit
 import Darwin
 import Foundation
+import Security
 import Org2WorkspaceCore
 
 private struct ServerConfiguration: Decodable {
@@ -23,6 +24,10 @@ struct OpenOrgServer {
   @MainActor
   static func main() async {
     do {
+      // A LaunchAgent cannot answer Keychain dialogs. Blocking reads can
+      // exhaust Swift's cooperative executor and freeze the entire relay.
+      // Keep this policy process-local; the desktop retains interactive access.
+      SecKeychainSetUserInteractionAllowed(false)
       guard CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--config" else {
         throw CocoaError(.fileReadInvalidFileName)
       }
