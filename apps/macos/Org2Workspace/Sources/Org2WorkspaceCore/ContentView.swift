@@ -10093,7 +10093,9 @@ private struct OpenClawChatView: View {
           selectionModel: transcriptSelection
         ) {
           if store.openClawMessages.isEmpty {
-            EmptyChatView(statusText: store.openClawStatusText)
+            EmptyChatView(statusText: store.selectedAIChatDestination.usesBundledAgent
+              ? "Ask about your workspace, or request an edit to review."
+              : store.openClawStatusText)
               .frame(maxWidth: .infinity, minHeight: presentation.isCompact ? 140 : 220)
           } else {
             if transcriptWindow.hasEarlierMessages {

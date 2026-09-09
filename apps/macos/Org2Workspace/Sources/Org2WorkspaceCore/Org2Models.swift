@@ -2847,6 +2847,11 @@ public struct AIChatDestinationConfiguration: Identifiable, Hashable, Codable, S
   public var model: String?
   public var isEnabled: Bool
 
+  /// Optional for backwards-compatible decoding of existing destinations.
+  public var workspaceToolsEnabled: Bool? = nil
+
+  public var usesBundledAgent: Bool { adapter.isDirectProvider && workspaceToolsEnabled == true }
+
   public init(
     id: String = UUID().uuidString.lowercased(),
     name: String,

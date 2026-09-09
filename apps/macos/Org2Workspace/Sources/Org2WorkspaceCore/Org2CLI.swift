@@ -608,6 +608,8 @@ public struct Org2CLI: Sendable {
     return String(text.prefix(2_000))
   }
 
+  var runtimeNodePath: String? { nodePath ?? Self.resolveNodePath() }
+
   private static func resolveNodePath() -> String? {
     let candidates = [
       "/opt/homebrew/bin/node",

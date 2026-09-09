@@ -1715,7 +1715,7 @@ public actor CodexAppServerClient {
   \(OpenClawWorkspaceContext.responseFormattingContract)
   """
 
-  nonisolated private static let localEditDynamicTools: [JSONValue] = [
+  nonisolated static let localEditDynamicTools: [JSONValue] = [
     .object([
       "type": .string("function"),
       "name": .string("org2_thread_post"),
