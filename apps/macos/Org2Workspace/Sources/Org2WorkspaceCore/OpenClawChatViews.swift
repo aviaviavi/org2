@@ -1804,7 +1804,11 @@ struct AIChatTranscriptSelectableTextModifier: ViewModifier {
   @Environment(\.aiChatTranscriptSelectionModel) private var selectionModel
   @Environment(\.aiChatTranscriptSelectionMessageID) private var messageID
   @Environment(\.aiChatTableCell) private var tableCell
+  #if compiler(>=6.2)
   @Environment(\.fontResolutionContext) private var fontContext
+  #else
+  private let fontContext = AIChatNativeTextAttributes.FontContext()
+  #endif
   @Environment(\.openOrgFileReference) private var openFileReference
   @State private var regionID = UUID()
   let rawText: String
@@ -1941,7 +1945,15 @@ struct AIChatTranscriptRenderedText: NSViewRepresentable {
 
 @MainActor
 enum AIChatNativeTextAttributes {
-  static func make(_ attributed: AttributedString, fontContext: Font.Context) -> NSAttributedString {
+  // Runtime availability does not hide unknown SDK types from Xcode 16.
+  // Keep the existing native-font fallback buildable with that toolchain.
+  #if compiler(>=6.2)
+  typealias FontContext = Font.Context
+  #else
+  struct FontContext {}
+  #endif
+
+  static func make(_ attributed: AttributedString, fontContext: FontContext) -> NSAttributedString {
     let result = NSMutableAttributedString(attributedString: NSAttributedString(attributed))
     var offset = 0
     for run in attributed.runs {
@@ -1949,11 +1961,15 @@ enum AIChatNativeTextAttributes {
       let range = NSRange(location: offset, length: length)
       let font = run.font ?? .body
       let nativeFont: NSFont
+      #if compiler(>=6.2)
       if #available(macOS 26, *) {
         nativeFont = font.resolve(in: fontContext).ctFont as NSFont
       } else {
         nativeFont = fallbackFont(font)
       }
+      #else
+      nativeFont = fallbackFont(font)
+      #endif
       result.addAttribute(.font, value: nativeFont, range: range)
       result.addAttribute(.foregroundColor, value: run.foregroundColor.map(NSColor.init) ?? NSColor.labelColor, range: range)
       if let background = run.backgroundColor {

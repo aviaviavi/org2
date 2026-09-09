@@ -1,4 +1,4 @@
-name: OpenOrg macOS performance
+name: OpenOrg macOS correctness and performance
 
 on:
   pull_request:
@@ -44,6 +44,12 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 22
+
+      - name: Report macOS build toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+          xcrun --sdk macosx --show-sdk-version
 
       - name: Install locked dependencies
         run: npm ci

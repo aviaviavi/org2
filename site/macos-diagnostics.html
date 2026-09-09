@@ -102,6 +102,7 @@ the watchdog captures multi-second hangs, while these intervals expose visible
 jank that never becomes a hang.</p>
 <p>Run the optimized regression boundary with:</p>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run test:macos-performance</code></pre>
+<p>The GitHub Actions workflow <strong>OpenOrg macOS correctness and performance</strong> runs the correctness suite before the optimized performance gates and records its Xcode, Swift, and SDK versions. A compilation or correctness failure prevents benchmarks from running; inspect the failed step before treating the workflow result as a measured slowdown. Performance thresholds remain enforced in the release-mode step.</p>
 <p>On Apple Silicon the test launcher runs Swift natively even when npm itself is
 running through Rosetta, so the optimized test bundle matches the app's target
 architecture.</p>

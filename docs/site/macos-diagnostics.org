@@ -55,6 +55,8 @@ Run the optimized regression boundary with:
 npm run test:macos-performance
 #+end_src
 
+The GitHub Actions workflow *OpenOrg macOS correctness and performance* runs the correctness suite before the optimized performance gates and records its Xcode, Swift, and SDK versions. A compilation or correctness failure prevents benchmarks from running; inspect the failed step before treating the workflow result as a measured slowdown. Performance thresholds remain enforced in the release-mode step.
+
 On Apple Silicon the test launcher runs Swift natively even when npm itself is
 running through Rosetta, so the optimized test bundle matches the app's target
 architecture.
