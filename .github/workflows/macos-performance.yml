@@ -55,12 +55,15 @@ jobs:
         run: npm ci
 
       - name: Build shared Org2 runtime
+        id: runtime
         run: npm run build
 
       - name: Run OpenOrg macOS correctness suite
         run: swift test --package-path apps/macos/Org2Workspace
 
       - name: Run release-mode OpenOrg performance regressions
+        # A correctness failure must not leave performance unmeasured.
+        if: ${{ !cancelled() && steps.runtime.outcome == 'success' }}
         run: >-
           swift test --package-path apps/macos/Org2Workspace --configuration release
           --filter 'OpenOrgPerformanceGateTests|WorkspacePerformanceRegressionTests'
