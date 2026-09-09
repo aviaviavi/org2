@@ -9,11 +9,38 @@ final class BundledAgentTests: XCTestCase {
     var value = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(old)) as? [String: Any])
     value.removeValue(forKey: "workspaceToolsEnabled")
     var decoded = try JSONDecoder().decode(AIChatDestinationConfiguration.self, from: JSONSerialization.data(withJSONObject: value))
-    XCTAssertFalse(decoded.usesBundledAgent)
+    XCTAssertFalse(decoded.usesBundledAgent(experimentalFeaturesEnabled: true))
     decoded.workspaceToolsEnabled = true
-    XCTAssertTrue(decoded.usesBundledAgent)
+    XCTAssertFalse(decoded.usesBundledAgent(experimentalFeaturesEnabled: false))
+    XCTAssertTrue(decoded.usesBundledAgent(experimentalFeaturesEnabled: true))
     decoded.adapter = .codexLocal
-    XCTAssertFalse(decoded.usesBundledAgent)
+    XCTAssertFalse(decoded.usesBundledAgent(experimentalFeaturesEnabled: true))
+  }
+
+  func testExperimentalFeaturesDefaultOffAndPersistAcrossWorkspaces() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let suite = "BundledAgentTests.ExperimentalFeatures.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    func makeStore(_ transcript: String) -> WorkspaceStore {
+      WorkspaceStore(defaults: defaults, openClawTranscriptURL: root.appendingPathComponent(transcript), legacyDefaultsDomains: [])
+    }
+    var destination = AIChatDestinationConfiguration(name: "Local", mention: "local", adapter: .ollama)
+    destination.workspaceToolsEnabled = true
+    let store = makeStore("first.json")
+    XCTAssertFalse(store.experimentalFeaturesEnabled)
+    XCTAssertFalse(destination.usesBundledAgent(experimentalFeaturesEnabled: store.experimentalFeaturesEnabled))
+    store.experimentalFeaturesEnabled = true
+    let reopened = makeStore("second.json")
+    XCTAssertTrue(reopened.experimentalFeaturesEnabled)
+    XCTAssertTrue(destination.usesBundledAgent(experimentalFeaturesEnabled: reopened.experimentalFeaturesEnabled))
+    reopened.experimentalFeaturesEnabled = false
+    let disabled = makeStore("third.json")
+    XCTAssertFalse(disabled.experimentalFeaturesEnabled)
+    XCTAssertFalse(destination.usesBundledAgent(experimentalFeaturesEnabled: disabled.experimentalFeaturesEnabled))
+    XCTAssertEqual(destination.workspaceToolsEnabled, true, "Disabling experiments preserves the per-destination preference")
   }
 
   func testHostBindsTurnAndRequiresExactReviewedPreview() async throws {

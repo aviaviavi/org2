@@ -28,7 +28,9 @@ const server = createServer(async (request, response) => {
     const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
     const latest = body.messages.at(-1);
     let message;
-    if (latest?.role !== "tool") {
+    if (!body.tools?.length) {
+      message = { role: "assistant", content: "Fixture context-only chat: no workspace tools were offered." };
+    } else if (latest?.role !== "tool") {
       message = tool("org2_workspace_read", { path });
     } else {
       let result;

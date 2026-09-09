@@ -2521,6 +2521,15 @@ public final class WorkspaceStore {
       defaults.set(appearanceMode.rawValue, forKey: appearanceModeKey)
     }
   }
+  public var experimentalFeaturesEnabled = false {
+    didSet {
+      defaults.set(experimentalFeaturesEnabled, forKey: experimentalFeaturesEnabledKey)
+      if !experimentalFeaturesEnabled, let threadID = activeBundledAgentThreadID {
+        markOpenClawRunStopped(in: threadID, statusText: "Experimental features disabled")
+        aiChatDrainTasksByThreadID[threadID]?.task.cancel()
+      }
+    }
+  }
   public var openClawBriefsStartNewThread = true {
     didSet {
       defaults.set(openClawBriefsStartNewThread, forKey: openClawBriefsStartNewThreadKey)
@@ -2856,6 +2865,7 @@ public final class WorkspaceStore {
   private let codexSandboxAccessKey = "Org2Workspace.aiChat.codexSandboxAccess.v1"
   private let aiChatMessageSoundKey = "Org2Workspace.aiChat.messageSound.v1"
   private let appearanceModeKey = "Org2Workspace.appearance.mode.v1"
+  private let experimentalFeaturesEnabledKey = "Org2Workspace.experimentalFeatures.enabled.v1"
   private let launchGuideCompletedKey = "Org2Workspace.openOrgLaunchGuideCompleted.v1"
   private let openClawBriefsStartNewThreadKey = "Org2Workspace.openClawBriefsStartNewThread"
   private let openClawLocalEditsEnabledKey = "Org2Workspace.openClawLocalEditsEnabled.v1"
@@ -3469,6 +3479,7 @@ public final class WorkspaceStore {
     openClawIncomingMessageSoundPlayer = Self.messageSoundPlayer(for: aiChatMessageSound)
     appearanceMode = defaults.string(forKey: appearanceModeKey)
       .flatMap(WorkspaceAppearanceMode.init(rawValue:)) ?? .system
+    experimentalFeaturesEnabled = defaults.bool(forKey: experimentalFeaturesEnabledKey)
     openClawBriefsStartNewThread = defaults.object(forKey: openClawBriefsStartNewThreadKey) as? Bool ?? true
     openClawLocalEditsEnabled = defaults.bool(forKey: openClawLocalEditsEnabledKey)
     renderedDocumentWidth = defaults.string(forKey: renderedDocumentWidthKey)
@@ -23100,10 +23111,13 @@ public final class WorkspaceStore {
       }
 
       var localEditTurnID: String?
+      let usesBundledAgent = dispatchDestination.usesBundledAgent(
+        experimentalFeaturesEnabled: experimentalFeaturesEnabled
+      )
       let usesLocalEditBroker = dispatchDestination.adapter == .codexLocal
         || dispatchDestination.adapter == .codexRemote
         || dispatchDestination.adapter == .codexManagedRemote
-        || dispatchDestination.usesBundledAgent
+        || usesBundledAgent
         || (
           dispatchDestination.adapter == .openClaw
             &&
@@ -23179,6 +23193,7 @@ public final class WorkspaceStore {
             threadID: threadID,
             destination: dispatchDestination,
             localEditTurnID: localEditTurnID,
+            usesBundledAgent: usesBundledAgent,
             sendOrigin: sendOrigin
           )
         }
@@ -23197,7 +23212,7 @@ public final class WorkspaceStore {
           transcriptURL: sendOrigin.transcriptURL,
           changeSummary: nil,
           authorRuntime: chatThread.isSharedRoom ? dispatchRuntime : nil,
-          authorDestinationID: chatThread.isSharedRoom || dispatchDestination.usesBundledAgent
+          authorDestinationID: chatThread.isSharedRoom || usesBundledAgent
             ? dispatchDestinationID : nil
         )
         activeOpenClawUserMessageIDByThreadID.removeValue(forKey: threadID)
@@ -23587,13 +23602,14 @@ public final class WorkspaceStore {
     }
   }
 
-  private var activeBundledAgentTurnID: String?
+  private var activeBundledAgentThreadID: UUID?
 
   private func sendDirectProviderRequest(
     messages: [OpenClawChatMessage],
     threadID: UUID,
     destination: AIChatDestinationConfiguration,
     localEditTurnID: String?,
+    usesBundledAgent: Bool,
     sendOrigin: AIChatSendOrigin
   ) async throws -> String {
     guard destination.adapter.isDirectProvider,
@@ -23641,15 +23657,16 @@ public final class WorkspaceStore {
        isActiveAIChatSendOrigin(sendOrigin) {
       openClawStatusText = "\(destination.name) is working"
     }
-    if destination.usesBundledAgent {
+    if usesBundledAgent {
+      guard experimentalFeaturesEnabled else { throw CancellationError() }
       guard let localEditTurnID, let corpusRoot = sendOrigin.corpusRoot else {
         throw BundledAgentError(message: "Choose a corpus before using workspace tools.")
       }
-      guard activeBundledAgentTurnID == nil else {
+      guard activeBundledAgentThreadID == nil else {
         throw BundledAgentError(message: "A bundled agent turn is already running. Wait for it to finish or stop it first.")
       }
-      activeBundledAgentTurnID = localEditTurnID
-      defer { activeBundledAgentTurnID = nil }
+      activeBundledAgentThreadID = threadID
+      defer { activeBundledAgentThreadID = nil }
       let workspaceTools = BundledAgentWorkspaceTools(
         turnID: localEditTurnID, corpusRoot: corpusRoot, cli: cli, broker: localEditBroker(),
         approve: { text in await BundledAgentWorkspaceTools.review(text) }

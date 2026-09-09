@@ -71,6 +71,14 @@ private struct CorpusSettingsView: View {
   var body: some View {
     Form {
       Section {
+        Toggle("Experimental features", isOn: Binding(
+          get: { store.experimentalFeaturesEnabled },
+          set: { store.experimentalFeaturesEnabled = $0 }
+        ))
+      } footer: {
+        Text("Try features still in development, including the bundled agent in AI Chat. Applies to all workspaces on this Mac. Turning this off stops an active bundled agent turn.")
+      }
+      Section {
         if let root = store.corpusRoot {
           TextField("Name", text: $corpusName)
 

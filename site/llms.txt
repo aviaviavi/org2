@@ -4,7 +4,7 @@ Managed Remote Codex destinations reuse an existing Codex or `~/.ssh/config` hos
 
 > Org2 is a local-first knowledge compiler and runtime for Org-shaped plain text. Ordinary .org2 and .org files are canonical; agendas, graph data, context packets, reports, editor behavior, apps, and websites derive from the shared compiler/runtime.
 
-Mac direct-provider destinations can opt into experimental workspace tools through a bundled TypeScript foreground executor. It uses the app's existing Node runtime and offers bounded corpus search, effective-text reads, and SHA-bound preview/apply tools. Every patch requires native user review; secondary authorized corpora are read-only. Existing destinations keep tools disabled. The prototype is text-only, delivers complete model steps, and does not automatically resume an interrupted tool loop. It introduces no independent corpus database or scheduler.
+After enabling Settings → Workspace → Experimental features (off by default), Mac direct-provider destinations can opt into workspace tools through a bundled TypeScript foreground executor. It uses the app's existing Node runtime and offers bounded corpus search, effective-text reads, and SHA-bound preview/apply tools. Every patch requires native user review; secondary authorized corpora are read-only. Existing destinations keep tools disabled. The prototype is text-only, delivers complete model steps, and does not automatically resume an interrupted tool loop. It introduces no independent corpus database or scheduler.
 
 Installed agents should begin with:
 

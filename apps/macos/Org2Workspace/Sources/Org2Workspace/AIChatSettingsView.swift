@@ -310,13 +310,15 @@ private struct AIChatDestinationEditor: View {
         }
 
         if destination.adapter.isDirectProvider {
-          Toggle("Workspace tools (experimental)", isOn: Binding(
-            get: { destination.workspaceToolsEnabled == true },
-            set: { destination.workspaceToolsEnabled = $0 }
-          ))
-          Text("Use OpenOrg’s built-in agent to search, read, and propose edits. You review each patch before it is applied. Requires a model that supports tools; text only.")
-            .font(.caption)
-            .foregroundStyle(.secondary)
+          if store.experimentalFeaturesEnabled {
+            Toggle("Workspace tools (experimental)", isOn: Binding(
+              get: { destination.workspaceToolsEnabled == true },
+              set: { destination.workspaceToolsEnabled = $0 }
+            ))
+            Text("Use OpenOrg’s built-in agent to search, read, and propose edits. You review each patch before it is applied. Requires a model that supports tools; text only.")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
           HStack(spacing: 10) {
             Button("Test Connection") {
               testConnection()
@@ -495,9 +497,9 @@ private struct AIChatDestinationEditor: View {
         ? "This default destination uses the existing OpenClaw Gateway configuration."
         : "Routes turns to this OpenClaw gateway and agent ID with its own saved token."
     case .openAI:
-      return "Connects to OpenAI with your API key. Enable workspace tools to use the bundled agent, or leave them off for context and image chat."
+      return "Connects directly to OpenAI with your API key for context and image chat."
     case .anthropic:
-      return "Connects to Anthropic with your API key. Enable workspace tools to use the bundled agent, or leave them off for context and image chat."
+      return "Connects directly to Anthropic with your API key for context and image chat."
     case .openRouter:
       return "Connects directly to any OpenRouter model available to your API key. Enter the exact OpenRouter model ID."
     case .ollama:
