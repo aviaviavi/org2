@@ -86,11 +86,23 @@ final class Org2PDFExporter: NSObject, WKNavigationDelegate {
         padding-left: 0 !important;
         cursor: default !important;
       }
+      .org2-document-title::before,
       .org2-headline-summary::before,
+      .org2-headline-summary > h1::before,
+      .org2-headline-summary > h2::before,
+      .org2-headline-summary > h3::before,
+      .org2-headline-summary > h4::before,
+      .org2-headline-summary > h5::before,
+      .org2-headline-summary > h6::before,
       .org2-section-label::before,
       summary::-webkit-details-marker {
         display: none !important;
         content: none !important;
+      }
+      .org2-headline-body > .org2-headline {
+        border-left: 0 !important;
+        margin-left: 0 !important;
+        padding-left: 0 !important;
       }
       .org2-table-scroll { overflow: visible !important; }
       img, table, pre, blockquote, figure, .org2-chart {
