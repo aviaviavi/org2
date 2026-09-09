@@ -130,8 +130,8 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
       },
       {
         id: "planning",
-        purpose: "Build agendas, inspect the unified run/headline approval queue, and mutate file-defined TODO workflows (active and terminal states), planning, effort, habit, and clock state.",
-        commands: ["org2 agenda", "org2 todo", "org2 approvals", "org2 plan", "org2 clock", "org2 query clocks"],
+        purpose: "Build agendas, inspect the unified run/headline approval queue, and mutate file-defined TODO workflows (active and terminal states), list checkboxes, planning, effort, habit, and clock state.",
+        commands: ["org2 agenda", "org2 todo", "org2 checkbox", "org2 approvals", "org2 plan", "org2 clock", "org2 query clocks"],
         writes: "mixed",
       },
       {

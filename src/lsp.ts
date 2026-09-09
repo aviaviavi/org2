@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { updateCheckboxInText, checkboxMarkers } from "./checkbox.js";
 
 import {
   parseOrgToCanonicalAst,
@@ -266,6 +267,7 @@ const DocumentHighlightKind = {
 
 const CodeActionKind = {
   QuickFix: "quickfix",
+  RefactorRewrite: "refactor.rewrite",
 };
 
 const SemanticTokenType = {
@@ -392,7 +394,7 @@ class LSPServer {
               retriggerCharacters: ["<", "[", " "],
             },
             codeActionProvider: {
-              codeActionKinds: [CodeActionKind.QuickFix],
+              codeActionKinds: [CodeActionKind.QuickFix, CodeActionKind.RefactorRewrite],
             },
             documentFormattingProvider: true,
             documentRangeFormattingProvider: true,
@@ -634,14 +636,14 @@ class LSPServer {
         const signatureHelp = this.getSignatureHelp(doc.text, position);
         this.sendResponse(id, signatureHelp);
       } else if (method === "textDocument/codeAction") {
-        const { textDocument, context } = params;
+        const { textDocument, context, range } = params;
         const doc = this.documents.get(textDocument.uri);
         if (!doc) {
           this.sendResponse(id, []);
           return;
         }
 
-        const actions = this.getCodeActions(doc.uri, doc.text, context);
+        const actions = this.getCodeActions(doc.uri, doc.text, context, range);
         this.sendResponse(id, actions);
       } else if (method === "textDocument/formatting") {
         const { textDocument } = params;
@@ -1338,9 +1340,29 @@ class LSPServer {
     return null;
   }
 
-  private getCodeActions(sourceUri: string, text: string, context: any): CodeAction[] {
+  private getCodeActions(sourceUri: string, text: string, context: any, range?: Range): CodeAction[] {
     const actions: CodeAction[] = [];
     const diagnostics = Array.isArray(context?.diagnostics) ? (context.diagnostics as Diagnostic[]) : [];
+
+    const only = Array.isArray(context?.only) ? context.only as string[] : [];
+    const accepts = (kind: string) => only.length === 0 || only.some((prefix) => kind === prefix || kind.startsWith(`${prefix}.`));
+    if (range && accepts(CodeActionKind.RefactorRewrite)) {
+      try {
+        const edit = updateCheckboxInText(text, range.start.line + 1);
+        actions.push({
+          title: `Org2: Cycle checkbox to [${checkboxMarkers[edit.newState]}]`,
+          kind: CodeActionKind.RefactorRewrite,
+          edit: { changes: { [sourceUri]: [{
+            range: { start: { line: range.start.line, character: edit.column },
+              end: { line: range.start.line, character: edit.column + 1 } },
+            newText: checkboxMarkers[edit.newState],
+          }] } },
+        });
+      } catch {
+        // No action for prose, protected content, or an invalid document.
+      }
+    }
+    if (!accepts(CodeActionKind.QuickFix)) return actions;
 
     const parserDiagnostics = diagnostics.filter((diag) => String(diag?.code || "") === "org2-parser");
     const fullRange = this.getFullDocumentRange(text);

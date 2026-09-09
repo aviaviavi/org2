@@ -113,6 +113,7 @@ org2 agent context --query &quot;billing migration risks&quot; --dir ~/notes --r
 org2 agent fetch --id NODE_ID --dir ~/notes --recursive
 org2 agent bundle --query &quot;billing migration&quot; --scope project:billing --since 90d</code></pre>
 <p>The shorthand <code>org2 context QUERY</code> renders a cited Markdown/Org context pack for prompt assembly. <code>org2 compile corpus</code> emits a schema-versioned JSON or JSONL corpus artifact for larger downstream indexes and tools. <code>org2 brief</code> produces a human-facing synthesis from the same context substrate.</p>
+<p>Use <code>org2 checkbox --file FILE --line N</code> to preview a three-state list-checkbox cycle, or <code>checkbox set --status checked</code> to choose a state. Add <code>--apply</code> to write; carry the JSON preview revision with <code>--if-revision</code> when applying later.</p>
 <p>TODO vocabularies belong in file-local <code>#+TODO:</code>, <code>#+SEQ_TODO:</code>, or <code>#+TYP_TODO:</code> declarations. Respect <code>|</code> terminal states and use <code>todo set --keyword STATE</code> for exact custom state names; inspect the preview before applying.</p>
 </section>
 <section class="org2-headline level-1">

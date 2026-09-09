@@ -209,6 +209,7 @@ CLOSED: [2026-02-20 Fri]</code></pre>
 <li><p>Unordered markers: <code>-</code>, <code>+</code>, <code>*</code></p></li>
 <li><p>Ordered markers: <code>1.</code>, <code>1)</code></p></li>
 <li><p>Checkboxes: <code>[ ]</code>, <code>[X]</code>, <code>[x]</code>, <code>[-]</code></p></li>
+<li><p>Cycle a list checkbox with <code>org2 checkbox --file FILE --line N --apply</code>: <code>[ ]</code> → <code>[-]</code> → <code>[X]</code> → <code>[ ]</code>. The CLI and LSP code action change only the selected marker; see <a href="tooling-reference.html">Tooling reference</a>.</p></li>
 <li><p>Checkbox progress cookies: <code>[n/m]</code> and <code>[p%]</code> may appear in headings or list items; compile output exposes computed checkbox totals and lint reports stale cookies.</p></li>
 <li><p>Nested lists via indentation.</p></li>
 <li><p>Counter cookies such as <code>[@3]</code> are stored separately from the written ordered-list marker.</p></li>

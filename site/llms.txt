@@ -95,3 +95,5 @@ Agents and runtime adapters should record observable execution metadata with `or
 - https://github.com/aviaviavi/org2/blob/main/spec/v0/CONFORMANCE.org
 
 TODO workflows: declare file-local #+TODO: active | terminal sequences; use todo set --keyword STATE for exact custom states. See tooling-reference.html and language-reference.html.
+
+- List checkbox edits: `org2 checkbox --file FILE --line N` previews `[ ] -> [-] -> [X] -> [ ]`; add `--apply` to write. `checkbox set --status unchecked|indeterminate|checked` selects a state. The LSP exposes the same cycle as a code action for unsaved buffers.

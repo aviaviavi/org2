@@ -74,7 +74,8 @@ Content-Length: 87
   - `workspace/willRenameFiles` - Updates matching Org file-link targets when files are renamed in the editor workspace
     - Preserves `file:` vs bare-link style and existing `::search` suffixes
     - Returns workspace edits across open + workspace Org files
-  - `textDocument/codeAction` - Quick fixes for parser-only whitespace issues
+  - `textDocument/codeAction` - Checkbox cycling and parser whitespace fixes
+    - Cycle the list checkbox on the requested line: `[ ] -> [-] -> [X] -> [ ]` (`refactor.rewrite`), using the current unsaved buffer
     - Convert CRLF documents to LF line endings
     - Replace tab characters with two spaces
   - `textDocument/formatting` - Canonical Org formatting via the org2 printer

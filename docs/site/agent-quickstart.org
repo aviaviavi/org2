@@ -64,6 +64,8 @@ org2 agent bundle --query "billing migration" --scope project:billing --since 90
 
 The shorthand =org2 context QUERY= renders a cited Markdown/Org context pack for prompt assembly. =org2 compile corpus= emits a schema-versioned JSON or JSONL corpus artifact for larger downstream indexes and tools. =org2 brief= produces a human-facing synthesis from the same context substrate.
 
+Use =org2 checkbox --file FILE --line N= to preview a three-state list-checkbox cycle, or =checkbox set --status checked= to choose a state. Add =--apply= to write; carry the JSON preview revision with =--if-revision= when applying later.
+
 TODO vocabularies belong in file-local =#+TODO:=, =#+SEQ_TODO:=, or =#+TYP_TODO:= declarations. Respect =|= terminal states and use =todo set --keyword STATE= for exact custom state names; inspect the preview before applying.
 
 * Common workflows

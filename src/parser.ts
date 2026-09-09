@@ -1393,6 +1393,30 @@ function parseFootnoteDefinitionLine(line: string): FootnoteDefinitionNode | nul
   };
 }
 
+/** Source-edit guard, including opaque elements nested in list continuations. */
+export function isLineInOpaqueElement(input: string, line: number): boolean {
+  const lines = input.split("\n");
+  for (let i = 0; i < lines.length && i < line; ) {
+    const source = lines[i] ?? "";
+    const directive = parseSrcBlockLine(source, i + 1);
+    let next: number | undefined;
+    if (directive && isBeginSrc(directive)) {
+      next = parseSrcBlock(lines, i).nextLineIndex;
+    } else if (directive) {
+      const kind = getBlockKindFromBegin(directive);
+      if (kind) next = parseBlock(lines, i, kind).nextLineIndex;
+    } else {
+      const drawer = /^(\s*):([^:\s]+):$/.exec(source);
+      if (drawer && drawer[2] !== "END") next = parseDrawer(lines, i).nextLineIndex;
+    }
+    if (next !== undefined) {
+      if (line > i && line <= next) return true;
+      i = next;
+    } else i += 1;
+  }
+  return false;
+}
+
 export function parseOrgToCanonicalAst(input: string, options: ParseOptions = {}): DocumentNode {
   if (input.includes("\r\n")) {
     fail(makeError("Unsupported line endings: CRLF", 1, 1));
@@ -1770,6 +1794,7 @@ export function parseOrgToCanonicalAst(input: string, options: ParseOptions = {}
         listItem.counter,
         listItem.descriptionTag,
       );
+      const itemStartLine = lineNumber;
       i += 1;
 
       let itemParagraphLines: string[] = [];
@@ -1888,6 +1913,7 @@ export function parseOrgToCanonicalAst(input: string, options: ParseOptions = {}
                   nestedItem.counter,
                   nestedItem.descriptionTag,
                 );
+                const nestedStartLine = i + 1;
                 nestedList.items.push(nestedListItem);
                 i += 1;
                 
@@ -1957,6 +1983,7 @@ export function parseOrgToCanonicalAst(input: string, options: ParseOptions = {}
                             deeperItem.counter,
                             deeperItem.descriptionTag,
                           );
+                          setSourceRange(deeperListItem, i + 1, i + 1);
                           deeperList.items.push(deeperListItem);
                           i += 1;
                         }
@@ -1984,6 +2011,7 @@ export function parseOrgToCanonicalAst(input: string, options: ParseOptions = {}
                   nestedItemParaLines.push(contNestedLine.slice(nestedItemIndentColumn));
                   i += 1;
                 }
+                setSourceRange(nestedListItem, nestedStartLine, i);
               }
               continue;
             }
@@ -2037,6 +2065,7 @@ export function parseOrgToCanonicalAst(input: string, options: ParseOptions = {}
         itemParagraphLines.push(contLine.slice(listItem.indentColumn));
         i += 1;
       }
+      setSourceRange(item, itemStartLine, i);
 
       continue;
     }

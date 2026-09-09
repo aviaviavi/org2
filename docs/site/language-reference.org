@@ -129,6 +129,7 @@ Supported timestamp forms:
 - Unordered markers: =-=, =+=, =*=
 - Ordered markers: =1.=, =1)=
 - Checkboxes: =[ ]=, =[X]=, =[x]=, =[-]=
+- Cycle a list checkbox with =org2 checkbox --file FILE --line N --apply=: =[ ]= → =[-]= → =[X]= → =[ ]=. The CLI and LSP code action change only the selected marker; see [[file:tooling-reference.org][Tooling reference]].
 - Checkbox progress cookies: =[n/m]= and =[p%]= may appear in headings or list items; compile output exposes computed checkbox totals and lint reports stale cookies.
 - Nested lists via indentation.
 - Counter cookies such as =[@3]= are stored separately from the written ordered-list marker.

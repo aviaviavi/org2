@@ -348,6 +348,17 @@ org2 plan set --file notes.org --line 42 --kind scheduled --date 2026-03-25 --ap
 <p>Declare custom states in the target file, for example <code>#+TODO: TODO MISSED | DONE SKIPPED</code>. <code>--keyword</code> selects the exact spelling; <code>--status</code> also accepts declared custom states alongside standard aliases. Unknown keywords fail with an actionable error. <code>toggle</code> follows the current state’s sequence. Terminal transitions maintain <code>CLOSED</code>, and <code>--logbook</code> records exact state changes. JSON mutation results include <code>oldKeyword</code> and <code>newKeyword</code> alongside the compatible status buckets. Omit <code>--apply</code> to preview.</p>
 </section>
 <section class="org2-headline level-1">
+<h1 id="checkbox-edits">Checkbox edits</h1>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 checkbox --file notes.org --line 12
+org2 checkbox --file notes.org --line 12 --apply
+org2 checkbox set --file notes.org --line 12 --status checked --apply
+org2 checkbox --file notes.org --line 12 --format json</code></pre>
+<p>The default action, <code>cycle</code>, advances <code>[ ]</code> → <code>[-]</code> → <code>[X]</code> → <code>[ ]</code>. <code>toggle</code> is an alias for that three-state cycle. <code>set --status</code> accepts <code>unchecked</code>, <code>indeterminate</code>, or <code>checked</code>. The one-based <code>--line</code> must point to the list item itself; prose, headings, source/example blocks, and drawers are not checkbox targets. An invalid target or option exits with an error and leaves the file unchanged.</p>
+<p>Writes require <code>--apply</code>. The default output is a diff; <code>--format text</code> returns the complete edited source, and <code>--format json</code> returns an <code>org2:checkbox-edit:v1</code> envelope with the original <code>revision</code>, old/new states, and <code>changed</code>/<code>applied</code> flags. Pass the preview's <code>revision</code> as <code>--if-revision</code> when applying later to reject stale edits. <code>column</code> is the zero-based UTF-16 position of the marker character, suitable for LSP clients.</p>
+<p>Only the selected marker changes. Indentation, list numbering, counter cookies, other text, line endings, final-newline presence, and file permissions are preserved. Parent progress cookies are not recalculated. Setting an already-selected state reports no change.</p>
+<p>The LSP offers <strong>Org2: Cycle checkbox to …</strong> as a <code>refactor.rewrite</code> code action on checkbox lines. It edits the current unsaved buffer through the client, using the same checkbox semantics as the CLI.</p>
+</section>
+<section class="org2-headline level-1">
 <h1 id="capture-archive-refile">Capture / archive / refile</h1>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 capture --file inbox.org --title &quot;Quick note&quot; --template note --apply
 org2 archive --file notes.org --pos 120:0 --apply

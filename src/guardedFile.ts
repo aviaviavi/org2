@@ -10,6 +10,8 @@ export interface GuardedFileSnapshot {
 }
 
 export interface GuardedFileWriteOptions {
+  /** Preserve permissions when editing an existing ordinary source document. */
+  preserveMode?: boolean;
   /** A SHA-256 revision requires an exact match. null requires the file to be absent. */
   expectedRevision?: string | null;
 }
@@ -139,6 +141,7 @@ export function guardedWriteFile(
 
     temporary = `${absolute}.${process.pid}.${crypto.randomUUID()}.tmp`;
     writeFullyAndSync(temporary, content);
+    if (options.preserveMode && actualRevision !== null) fs.chmodSync(temporary, fs.statSync(absolute).mode & 0o777);
     fs.renameSync(temporary, absolute);
     temporary = undefined;
     syncDirectory(directory);

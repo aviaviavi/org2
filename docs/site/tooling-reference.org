@@ -295,6 +295,23 @@ org2 plan set --file notes.org --line 42 --kind scheduled --date 2026-03-25 --ap
 
 Declare custom states in the target file, for example =#+TODO: TODO MISSED | DONE SKIPPED=. =--keyword= selects the exact spelling; =--status= also accepts declared custom states alongside standard aliases. Unknown keywords fail with an actionable error. =toggle= follows the current state’s sequence. Terminal transitions maintain =CLOSED=, and =--logbook= records exact state changes. JSON mutation results include =oldKeyword= and =newKeyword= alongside the compatible status buckets. Omit =--apply= to preview.
 
+* Checkbox edits
+
+#+begin_src sh
+org2 checkbox --file notes.org --line 12
+org2 checkbox --file notes.org --line 12 --apply
+org2 checkbox set --file notes.org --line 12 --status checked --apply
+org2 checkbox --file notes.org --line 12 --format json
+#+end_src
+
+The default action, =cycle=, advances =[ ]= → =[-]= → =[X]= → =[ ]=. =toggle= is an alias for that three-state cycle. =set --status= accepts =unchecked=, =indeterminate=, or =checked=. The one-based =--line= must point to the list item itself; prose, headings, source/example blocks, and drawers are not checkbox targets. An invalid target or option exits with an error and leaves the file unchanged.
+
+Writes require =--apply=. The default output is a diff; =--format text= returns the complete edited source, and =--format json= returns an =org2:checkbox-edit:v1= envelope with the original =revision=, old/new states, and =changed=/=applied= flags. Pass the preview's =revision= as =--if-revision= when applying later to reject stale edits. =column= is the zero-based UTF-16 position of the marker character, suitable for LSP clients.
+
+Only the selected marker changes. Indentation, list numbering, counter cookies, other text, line endings, final-newline presence, and file permissions are preserved. Parent progress cookies are not recalculated. Setting an already-selected state reports no change.
+
+The LSP offers *Org2: Cycle checkbox to …* as a =refactor.rewrite= code action on checkbox lines. It edits the current unsaved buffer through the client, using the same checkbox semantics as the CLI.
+
 * Capture / archive / refile
 
 #+begin_src sh

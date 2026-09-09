@@ -8358,6 +8358,11 @@ async function main(): Promise<void> {
     const { runAgenticWorkspaceCommand } = await import("./agenticWorkspaceCli.js");
     if (await runAgenticWorkspaceCommand(args)) return;
   }
+  if (args[0] === "checkbox") {
+    const { runCheckboxCommand } = await import("./checkboxCli.js");
+    await runCheckboxCommand(args.slice(1));
+    return;
+  }
   if (args[0] === "skill") {
     const { runSkillCommand } = await import("./skillCli.js");
     if (await runSkillCommand(args)) return;
@@ -10282,6 +10287,7 @@ Core commands:
   org2 plugin <list|init|add|remove|update|sync|trust|doctor|exec|template> [options]
   org2 eval <run|fixture> RUN [options]
   org2 agenda --dir DIR [--recursive] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--tui]
+  org2 checkbox [cycle|toggle|set] --file FILE --line N [--status STATE] [--apply]
   org2 todo <set|toggle|assign|approve> --file FILE (--line N | --pos LINE[:COL]) [--apply]
   org2 approvals --dir DIR [--recursive] [--include-archives] [--index auto|never|rebuild] [--run-detail ID] [--format text|json]
   org2 plan <set|today> --file FILE (--line N | --pos LINE[:COL]) [--apply]
