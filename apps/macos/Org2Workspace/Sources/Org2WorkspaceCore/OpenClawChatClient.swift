@@ -303,6 +303,8 @@ public struct OpenClawWorkspaceContext: Sendable {
   - Emphasis uses *bold*, /italic/, =verbatim=, and ~code~ rather than Markdown **bold** or backticks.
   - Inline emphasis does not nest in Org2 v0. Close one span before starting another: write *no duplicate in* =recipes.org2=, never *no duplicate in =recipes.org2=*.
   - Document links use [[target][label]].
+  - Images in chat: include an actual image link in your reply on its own line, for example [[file:/absolute/path/qr.png][QR code]] or [[https://example.com/chart.png][Chart]]. OpenOrg renders image links inline; a prose claim that an image was sent, a tool result, or opening Preview does not embed it in the conversation. Do not put the image link inside a source block or a verbatim span.
+  - For generated images or base64 image results, save the image as a PNG or JPEG accessible to the Mac, then include that file link in your reply. Use a real existing file, not an invented path or a sandbox: URL. Relative image paths resolve against the active local corpus. A path on an SSH host is not a Mac-local path: retrieve the file to the Mac or use an explicitly mounted/synchronized local copy before linking it. Keep private images such as login QR codes local; do not upload them to a public image host. If you cannot make the image accessible, say so instead of claiming it is visible here.
   - Every tabular response uses an Org2 table. Separate the header from the body with an hline whose column joins are + characters, for example:
 
     | Stage | Average days |

@@ -1,4 +1,5 @@
 import AppKit
+import CoreImage
 import SwiftUI
 import XCTest
 @testable import Org2WorkspaceCore
@@ -2115,6 +2116,71 @@ final class OpenClawChatLayoutTests: XCTestCase {
     XCTAssertGreaterThan(wideWidths.values.reduce(0, +), 360)
     XCTAssertLessThanOrEqual(wideWidths.values.reduce(0, +), 900)
     XCTAssertGreaterThan(wideWidths[0] ?? 0, 260)
+  }
+
+  func testAssistantImageRepliesChooseTheMediaRendererWithoutOtherOrgBlocks() {
+    for raw in [
+      "[[file:/tmp/qr.png][QR code]]",
+      "[[file:qr.png][QR code]]",
+      "Scan this QR code:\n[[file:/tmp/qr.png][QR code]]",
+      "![QR code](/tmp/qr.png)",
+      "[[https://example.com/chart.png?version=2][Chart]]",
+    ] {
+      let prepared = OpenClawMessagePresentationBuilder.prepare(
+        OpenClawMessagePresentationInput(.init(role: .assistant, content: raw))
+      )
+      XCTAssertTrue(prepared.value.org?.usesStructuredRendering == true, raw)
+    }
+    let code = OpenClawMessageOrgPresentation("#+begin_src text\n[[file:/tmp/qr.png][QR code]]\n#+end_src")
+    XCTAssertEqual(code.blocks.count, 1)
+    guard case .source = code.blocks[0].rendered else { return XCTFail("Image examples in code must remain code") }
+  }
+
+  func testAssistantImageRendersInsideChatUsingLocalAndCorpusRelativePaths() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let filter = try XCTUnwrap(CIFilter(name: "CIQRCodeGenerator", parameters: [
+      "inputMessage": Data("OpenOrg inline image regression".utf8),
+    ]))
+    let qr = try XCTUnwrap(filter.outputImage).transformed(by: .init(scaleX: 8, y: 8))
+    let cgImage = try XCTUnwrap(CIContext().createCGImage(qr, from: qr.extent))
+    let png = try XCTUnwrap(NSBitmapImageRep(cgImage: cgImage).representation(using: .png, properties: [:]))
+    let file = directory.appendingPathComponent("test qr.png")
+    try png.write(to: file)
+    for target in ["file:" + file.path, "file:test qr.png"] {
+      let raw = "Scan this image from the chat:\n\n[[\(target)][QR code]]"
+      let message = OpenClawChatMessage(role: .assistant, content: raw)
+      let root = ChatBubbleView(message: message, runtime: .codex, isRoomResponse: true)
+        .environment(\.aiChatMediaCorpusRoot, directory)
+        .padding(18)
+        .frame(width: 560, alignment: .topLeading)
+        .background(Color(nsColor: .windowBackgroundColor))
+      let host = NSHostingView(rootView: root)
+      let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: 600), styleMask: [.borderless], backing: .buffered, defer: false)
+      window.isReleasedWhenClosed = false
+      window.contentView = host
+      window.orderFrontRegardless()
+      defer { window.contentView = nil; window.close() }
+      let detector = try XCTUnwrap(CIDetector(ofType: CIDetectorTypeQRCode, context: CIContext(), options: [CIDetectorAccuracy: CIDetectorAccuracyHigh]))
+      var decoded: String?
+      var lastBitmap: NSBitmapImageRep?
+      for _ in 0..<80 {
+        host.layoutSubtreeIfNeeded()
+        if let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+          host.cacheDisplay(in: host.bounds, to: bitmap)
+          lastBitmap = bitmap
+          if let image = bitmap.cgImage {
+            decoded = detector.features(in: CIImage(cgImage: image))
+              .compactMap { ($0 as? CIQRCodeFeature)?.messageString }.first
+          }
+        }
+        if decoded != nil { break }
+        try await Task.sleep(for: .milliseconds(25))
+      }
+      XCTAssertEqual(decoded, "OpenOrg inline image regression", target)
+      try lastBitmap?.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: "/tmp/openorg-inline-image.png"))
+    }
   }
 
   func testPlainAssistantMessagesKeepLightweightInlineRendering() {

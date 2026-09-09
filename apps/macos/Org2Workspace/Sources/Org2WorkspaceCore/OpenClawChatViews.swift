@@ -261,7 +261,12 @@ struct OpenClawMessageOrgPresentation: Equatable, Sendable {
     blocks = OrgEntryRenderer.parseEditable(normalizedText)
     usesStructuredRendering = blocks.contains { block in
       switch block.rendered {
-      case .paragraph, .blank:
+      case .paragraph:
+        // Image-only and prose-plus-image replies still need the media renderer.
+        // Treating all paragraphs as plain inline text silently drops previews.
+        return OrgMediaAttachment.standalone(raw: block.rawText) != nil
+          || OrgMediaAttachment.embedded(in: block.rawText) != nil
+      case .blank:
         return false
       case .heading, .planning, .properties, .quote, .source, .table,
            .horizontalRule, .listItem, .keyword:
@@ -1019,7 +1024,19 @@ enum OpenClawMessageOrgNormalizer {
   }
 }
 
+private struct AIChatMediaCorpusRootKey: EnvironmentKey {
+  static let defaultValue: URL? = nil
+}
+
+extension EnvironmentValues {
+  var aiChatMediaCorpusRoot: URL? {
+    get { self[AIChatMediaCorpusRootKey.self] }
+    set { self[AIChatMediaCorpusRootKey.self] = newValue }
+  }
+}
+
 struct OpenClawMessageBodyView: View {
+  @Environment(\.aiChatMediaCorpusRoot) private var mediaCorpusRoot
   static let maximumStructuredBlockCountPerPage = 120
 
   static func structuredBlockRange(
@@ -1110,6 +1127,7 @@ struct OpenClawMessageBodyView: View {
             RenderedBlockView(
               block: block.rendered,
               rawText: block.rawText,
+              corpusRoot: mediaCorpusRoot,
               inlineActions: .readOnly(copySourceBlock: { lines in
                 OpenClawMessageClipboard.copyCodeSnippet(lines: lines)
               })

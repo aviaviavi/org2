@@ -773,6 +773,8 @@ private struct OrgImageAttachmentView: View {
           .resizable()
           .scaledToFit()
           .frame(maxWidth: 760, maxHeight: 460, alignment: .leading)
+          .accessibilityLabel(attachment.displayName)
+          .accessibilityIdentifier("org-inline-image")
       } else {
         MissingMediaView(kind: attachment.kind, name: attachment.displayName, attemptedLoad: attemptedLoad)
           .frame(maxWidth: 760, minHeight: 96)

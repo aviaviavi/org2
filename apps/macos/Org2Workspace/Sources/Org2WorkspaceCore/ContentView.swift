@@ -9892,6 +9892,7 @@ private struct OpenClawChatView: View {
 
       chatColumn
     }
+    .environment(\.aiChatMediaCorpusRoot, store.corpusRoot)
     .task {
       await store.refreshOpenClawCommands()
     }
