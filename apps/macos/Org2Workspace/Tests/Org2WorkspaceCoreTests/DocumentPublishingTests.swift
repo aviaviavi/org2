@@ -427,7 +427,7 @@ final class DocumentPublishingTests: XCTestCase {
       sourcePath: "/tmp/report.org2",
       format: .html
     )
-    firstHost.stop()
+    await firstHost.stopAndWait()
 
     let restoredHost = LocalDocumentPublicationHost(
       bindHost: "127.0.0.1",
@@ -480,7 +480,7 @@ final class DocumentPublishingTests: XCTestCase {
       html: Data("<!doctype html><title>Restored by bootstrap</title>".utf8),
       title: "Restored by bootstrap"
     )
-    firstHost.stop()
+    await firstHost.stopAndWait()
 
     let restoredHost = LocalDocumentPublicationHost(
       bindHost: "127.0.0.1",

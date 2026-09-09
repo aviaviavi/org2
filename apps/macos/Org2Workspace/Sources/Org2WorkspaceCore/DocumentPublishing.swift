@@ -1353,6 +1353,7 @@ public final class LocalDocumentPublicationHost: @unchecked Sendable {
   private let advertisedHost: String
   private let storageDirectory: URL?
   private var listener: NWListener?
+  private var listenerShutdown: DispatchGroup?
   private var listeningPort: UInt16?
   private var persistedPort: UInt16?
   private var restorationError: LocalDocumentPublicationHostError?
@@ -1544,9 +1545,26 @@ public final class LocalDocumentPublicationHost: @unchecked Sendable {
   }
 
   public func stop() {
+    _ = stopListener()
+  }
+
+  /// Network.framework cancellation is asynchronous. Callers replacing a host
+  /// in the same process must await port release before restoring its URL.
+  func stopAndWait() async {
+    guard let shutdown = stopListener() else { return }
+    await withCheckedContinuation { continuation in
+      shutdown.notify(queue: .global(qos: .userInitiated)) {
+        continuation.resume()
+      }
+    }
+  }
+
+  private func stopListener() -> DispatchGroup? {
     stateLock.lock()
     let activeListener = listener
+    let shutdown = listenerShutdown
     listener = nil
+    listenerShutdown = nil
     listeningPort = nil
     documents = [:]
     stateLock.unlock()
@@ -1557,6 +1575,7 @@ public final class LocalDocumentPublicationHost: @unchecked Sendable {
     connections = [:]
     connectionLock.unlock()
     activeConnections.forEach { $0.cancel() }
+    return shutdown
   }
 
   deinit {
@@ -1589,6 +1608,8 @@ public final class LocalDocumentPublicationHost: @unchecked Sendable {
     }
 
     let startup = LocalPublicationListenerStartup()
+    let shutdown = DispatchGroup()
+    shutdown.enter()
     candidate.stateUpdateHandler = { state in
       switch state {
       case .ready:
@@ -1600,6 +1621,7 @@ public final class LocalDocumentPublicationHost: @unchecked Sendable {
       case .failed(let error):
         startup.complete(.failure(.startupFailed(error.localizedDescription)))
       case .cancelled:
+        shutdown.leave()
         startup.complete(.failure(.startupFailed("The listener was cancelled.")))
       default:
         break
@@ -1614,6 +1636,7 @@ public final class LocalDocumentPublicationHost: @unchecked Sendable {
       let port = try startup.wait()
       stateLock.lock()
       listener = candidate
+      listenerShutdown = shutdown
       listeningPort = port
       let shouldPersistPort = persistedPort == nil
       persistedPort = port
@@ -1625,6 +1648,7 @@ public final class LocalDocumentPublicationHost: @unchecked Sendable {
         return port
       } catch {
         listener = nil
+        listenerShutdown = nil
         listeningPort = nil
         persistedPort = requestedPort
         stateLock.unlock()
