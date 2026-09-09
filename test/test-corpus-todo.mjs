@@ -1,0 +1,77 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { parseOrgToCanonicalAst } from '../dist/parser.js';
+import { parseTodoSequenceDefinitions, updateTodoInText } from '../dist/todo.js';
+import { preparePublishedDocument } from '../dist/publishDocument.js';
+import { compileCorpusIncremental } from '../dist/corpusCompile.js';
+
+const root = fs.mkdtempSync(path.join(os.tmpdir(), 'org2-corpus-todo-'));
+const file = path.join(root, 'tasks.org');
+const configFile = path.join(root, 'org2.json');
+const source = '* missed Follow up\nSCHEDULED: <2026-09-08 Tue>\n';
+const env = { ...process.env, ORG2_INDEX_HOME: path.join(root, 'index') };
+const cli = (...args) => {
+  const result = spawnSync(process.execPath, ['dist/cli.js', ...args], { encoding: 'utf8', env });
+  assert.equal(result.status, 0, result.stderr);
+  return JSON.parse(result.stdout);
+};
+try {
+  fs.writeFileSync(file, source);
+  fs.writeFileSync(configFile, JSON.stringify({ agendaFiles: ['*.org'], todo: { writeTransitionLogbook: true }, links: { abbreviations: { test: 'https://example.org/%s' } } }));
+  const original = fs.readFileSync(configFile, 'utf8');
+  const before = cli('todo-config', 'show', '--dir', root);
+  const definitions = ['TODO missed | DONE SKIPPED', 'DRAFT REVIEW | PUBLISHED'];
+  const args = ['todo-config', 'set', '--dir', root, '--sequences-json', JSON.stringify(definitions), '--if-revision', before.revision];
+  const preview = cli(...args);
+  assert.equal(preview.applied, false);
+  assert.equal(fs.readFileSync(configFile, 'utf8'), original);
+  const saved = cli(...args, '--apply');
+  assert.equal(saved.applied, true);
+  assert.equal(JSON.parse(fs.readFileSync(configFile, 'utf8')).todo.writeTransitionLogbook, true);
+  assert.equal(JSON.parse(fs.readFileSync(configFile, 'utf8')).links.abbreviations.test, 'https://example.org/%s');
+  const ast = parseOrgToCanonicalAst(source, { sourcePath: file });
+  assert.equal(ast.children[0].todo, 'missed');
+  assert.deepEqual(ast.children[0].title, [{ type: 'Text', value: 'Follow up' }]);
+  assert.equal(ast.children[0].todoTerminal, false);
+  assert.deepEqual(ast.todoSequences[1].terminal, ['PUBLISHED']);
+  const local = parseOrgToCanonicalAst('#+TODO: missed | SKIPPED\n* REVIEW Plain\n* missed Active\n', { sourcePath: file });
+  assert.equal(local.children[1].todo, undefined, 'file declarations replace corpus sequences');
+  const published = preparePublishedDocument({ sourceText: '#+TODO: TODO | DONE\n* missed Follow up\n', sourcePath: file, line: 2 });
+  assert.deepEqual(published.document.children[0].title, [{ type: 'Text', value: 'missed Follow up' }], 'subtree publishing inherits the whole source workflow');
+  const multipleDeclarations = preparePublishedDocument({ sourceText: '#+TODO: TODO missed | DONE\n* Section\n#+TODO: DRAFT | PUBLISHED\n** missed Follow up\n', sourcePath: file, line: 2 });
+  assert.equal(JSON.stringify(multipleDeclarations.document).includes('missed Follow up'), false, 'fragment declarations do not discard the rest of the file workflow');
+  const changed = updateTodoInText(source, { filePath: file, lineNumber: 1, keyword: 'SKIPPED', now: new Date('2026-09-08T12:00:00Z') });
+  assert.match(changed.text, /^\* SKIPPED Follow up/);
+  assert.match(changed.text, /CLOSED:/);
+  assert.equal(changed.newStatus, 'done');
+  const reopened = updateTodoInText(changed.text, { filePath: file, lineNumber: 1, keyword: 'missed' });
+  assert.doesNotMatch(reopened.text, /CLOSED:/);
+  const agendaArgs = ['agenda', '--dir', root, '--from', '2026-09-08', '--to', '2026-09-08', '--format', 'json'];
+  assert.equal(cli(...agendaArgs).days.flatMap(day => day.items).some(item => item.todo === 'missed'), true);
+  const searchArgs = ['search', 'Follow up', '--dir', root, '--format', 'json'];
+  assert.equal(cli(...searchArgs, '--index', 'rebuild').results.find(hit => hit.todo === 'missed').todoTerminal, false);
+  const cache = path.join(root, 'compiled-cache.json');
+  const compile = () => compileCorpusIncremental([file], { rootDir: root, cacheFile: cache });
+  assert.equal(compile().nodes.find(node => node.todo === 'missed').todoTerminal, false);
+  assert.equal(compile().indexState.parsedFiles, 0);
+  cli('todo-config', 'set', '--dir', root, '--sequences-json', '["TODO | missed DONE SKIPPED"]', '--apply');
+  assert.equal(cli(...agendaArgs).days.flatMap(day => day.items).find(item => item.todo === 'missed').todoTerminal, true, 'agenda cache notices settings change');
+  assert.equal(cli(...searchArgs, '--index', 'current').results.find(hit => hit.todo === 'missed').todoTerminal, true, 'search notices changed defaults');
+  const recompiled = compile();
+  assert.equal(recompiled.indexState.parsedFiles, 1);
+  assert.equal(recompiled.nodes.find(node => node.todo === 'missed').todoTerminal, true);
+  const stale = spawnSync(process.execPath, ['dist/cli.js', ...args, '--apply'], { encoding: 'utf8' });
+  assert.notEqual(stale.status, 0);
+  assert.match(stale.stderr, /changed since/);
+  for (const invalid of [null, [''], ['TODO'], ['| DONE'], ['TODO |'], ['TODO || DONE'], ['TODO | DONE', 'NEXT | DONE'], ['TODO TODO | DONE'], ['TODO\n#+TITLE: Bad | DONE']]) {
+    assert.throws(() => parseTodoSequenceDefinitions(invalid));
+  }
+  assert.deepEqual(parseTodoSequenceDefinitions(['TODO(t) WAIT(w@) DONE(d!)'])[0].terminal, ['DONE']);
+  cli('todo-config', 'set', '--dir', root, '--sequences-json', '[]', '--apply');
+  assert.equal(parseOrgToCanonicalAst(source, { sourcePath: file }).children[0].todo, undefined);
+  assert.equal(fs.readFileSync(file, 'utf8'), source, 'changing settings never rewrites notes');
+} finally { fs.rmSync(root, { recursive: true, force: true }); }
+console.log('✓ Corpus TODO settings, precedence, terminal transitions, validation, and cache invalidation');

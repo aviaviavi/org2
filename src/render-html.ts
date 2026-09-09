@@ -50,6 +50,7 @@ async function main(): Promise<void> {
   try {
     document = parseOrgToCanonicalAst(renderInput, {
       sourceRanges: true,
+      sourcePath,
       sourceLineOffset,
     });
   } catch (error) {
@@ -58,6 +59,7 @@ async function main(): Promise<void> {
     renderInput = input.replace(/\t/g, "  ");
     document = parseOrgToCanonicalAst(renderInput, {
       sourceRanges: true,
+      sourcePath,
       sourceLineOffset,
     });
   }

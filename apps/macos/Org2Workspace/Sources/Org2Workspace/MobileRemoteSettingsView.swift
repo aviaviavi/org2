@@ -132,6 +132,7 @@ private struct CorpusSettingsView: View {
       } footer: {
         Text("The corpus remains an ordinary folder. Move or rename it in Finder, then open its new location here. Its portable name and kind are stored in org2.json.")
       }
+      if store.corpusRoot != nil { CorpusTodoSettingsSection() }
     }
     .formStyle(.grouped)
     .padding(8)

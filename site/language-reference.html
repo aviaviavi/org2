@@ -126,9 +126,11 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <li><p><code>CANCELLED</code> / <code>CANCELED</code></p></li>
 </ul>
 <p>Workflow tools may accept aliases such as <code>PROG</code> or <code>WAITING</code> and normalize them to one of the canonical TODO keywords above.</p>
+<p>Corpus defaults live in <code>org2.json</code> under <code>todo.sequences</code>, for example <code>{&quot;todo&quot;:{&quot;sequences&quot;:[&quot;TODO WAITING | DONE SKIPPED&quot;]}}</code>. OpenOrg exposes these under Settings → Workspace → TODO States. Each corpus sequence needs an active state and a terminal state; state names must be unique across the corpus sequences. An empty array restores built-in defaults.</p>
 <p>Files may also declare their own Org-compatible vocabulary with <code>#+TODO:</code>, <code>#+SEQ_TODO:</code>, or <code>#+TYP_TODO:</code>. Fast-selection suffixes such as <code>WAITING(w)</code> are recognized and omitted from the stored headline state:</p>
 <pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">#+TODO: IDEA(i) WAITING(w) | SHIPPED(s)
 * WAITING Publish the package</code></pre>
+<p>File-local declarations replace the corpus sequences for that file. Without a file-local declaration, parsing, editing, agendas, and compiled context use the nearest corpus configuration.</p>
 <p>States before <code>|</code> are active; states after it are terminal (no further action required). Without <code>|</code>, the last keyword is terminal. Multiple declarations define independent sequences. Keywords retain their spelling and case. Built-in states remain available. Declarations inside source/example blocks and drawers do not change the workflow.</p>
 <p>Custom states work in TODO mutations, agenda filtering, and OpenOrg heading controls. Terminal states do not become overdue tasks; reopening clears <code>CLOSED</code>. Shortcut and logging annotations are accepted, but their Emacs-specific interactive prompts/keybindings are not implemented.</p>
 <p>Example:</p>

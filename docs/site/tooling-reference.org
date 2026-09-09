@@ -293,7 +293,17 @@ org2 todo set --file notes.org --line 42 --keyword SKIPPED --apply
 org2 plan set --file notes.org --line 42 --kind scheduled --date 2026-03-25 --apply
 #+end_src
 
-Declare custom states in the target file, for example =#+TODO: TODO MISSED | DONE SKIPPED=. =--keyword= selects the exact spelling; =--status= also accepts declared custom states alongside standard aliases. Unknown keywords fail with an actionable error. =toggle= follows the current state’s sequence. Terminal transitions maintain =CLOSED=, and =--logbook= records exact state changes. JSON mutation results include =oldKeyword= and =newKeyword= alongside the compatible status buckets. Omit =--apply= to preview.
+Set corpus defaults through Settings → Workspace → TODO States in OpenOrg, or with the guarded CLI:
+
+#+begin_src sh
+org2 todo-config show --dir ~/notes
+org2 todo-config set --dir ~/notes --sequences-json '["TODO WAITING | DONE SKIPPED"]'
+org2 todo-config set --dir ~/notes --sequences-json '["TODO WAITING | DONE SKIPPED"]' --apply
+#+end_src
+
+=todo-config= returns JSON. =set= previews by default, validates active and terminal states, and preserves unrelated configuration. Pass =--if-revision= with the revision from =show= or a preview to reject stale settings; use =--sequences-json '[]'= to restore built-in defaults. Settings are stored in =org2.json= as =todo.sequences=, an array of Org-style sequence strings. Multiple sequences are supported. Corpus configuration changes invalidate affected agenda and compiled-context caches without rewriting note files.
+
+File-local declarations take precedence over corpus defaults. Declare custom states in the target file, for example =#+TODO: TODO MISSED | DONE SKIPPED=. =--keyword= selects the exact spelling; =--status= also accepts declared custom states alongside standard aliases. Unknown keywords fail with an actionable error. =toggle= follows the current state’s sequence. Terminal transitions maintain =CLOSED=, and =--logbook= records exact state changes. JSON mutation results include =oldKeyword= and =newKeyword= alongside the compatible status buckets. Omit =--apply= to preview.
 
 * Checkbox edits
 

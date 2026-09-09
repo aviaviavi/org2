@@ -9,7 +9,7 @@ import { readStdinText } from "./stdin.js";
 
 function usage(exitCode = 2): never {
   const cmd = path.basename(process.argv[1] ?? "parse");
-  console.error(`Usage: ${cmd} [--source-ranges] [--source-line-offset N] <file.org|->`);
+  console.error(`Usage: ${cmd} [--source-ranges] [--source-line-offset N] [--source-path FILE] <file.org|->`);
   process.exit(exitCode);
 }
 
@@ -21,9 +21,15 @@ async function main(): Promise<void> {
 
   let sourceRanges = false;
   let sourceLineOffset = 0;
+  let sourcePath: string | undefined;
   const positional: string[] = [];
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
+    if (arg === "--source-path") {
+      sourcePath = args[++index];
+      if (!sourcePath) usage();
+      continue;
+    }
     if (arg === "--source-ranges") {
       sourceRanges = true;
       continue;
@@ -55,7 +61,7 @@ async function main(): Promise<void> {
   }
 
   const input = filePath === "-" ? await readStdinText() : fs.readFileSync(filePath, "utf8");
-  const ast = parseOrgToCanonicalAst(input, { sourceRanges, sourceLineOffset });
+  const ast = parseOrgToCanonicalAst(input, { sourceRanges, sourceLineOffset, sourcePath: sourcePath ?? (filePath === "-" ? undefined : filePath) });
   process.stdout.write(`${JSON.stringify(ast, null, 2)}\n`);
 }
 

@@ -1,4 +1,6 @@
 import fs from "node:fs";
+import path from "node:path";
+import { findConfigFile, loadConfig } from "./config.js";
 import { formatLocalOrgTimestamp } from "./calendarDate.js";
 import {
   computeSubtreeRange,
@@ -17,7 +19,7 @@ export const TODO_KEYWORDS = ["TODO", "IN_PROGRESS", "DONE", "CANCELED", "CANCEL
 
 /** File-local Org workflows. The last state is terminal when no separator is given. */
 export type TodoSequence = { keywords: string[]; terminal: string[] };
-export function documentTodoSequences(input: string): TodoSequence[] {
+export function documentTodoSequences(input: string, defaults: readonly TodoSequence[] = []): TodoSequence[] {
   const sequences: TodoSequence[] = [];
   let block: string | undefined;
   let drawer = false;
@@ -40,11 +42,49 @@ export function documentTodoSequences(input: string): TodoSequence[] {
     const terminal = separator < 0 ? keywords.slice(-1) : tokens.slice(separator + 1).filter(token => keywords.includes(token));
     sequences.push({ keywords: [...new Set(keywords)], terminal: [...new Set(terminal)] });
   }
-  return sequences;
+  return sequences.length ? sequences : [...defaults];
 }
 
-export function documentTodoKeywords(input: string): string[] {
-  return [...new Set([...TODO_KEYWORDS, ...documentTodoSequences(input).flatMap(sequence => sequence.keywords)])];
+export function documentTodoKeywords(input: string, defaults: readonly TodoSequence[] = []): string[] {
+  return [...new Set([...TODO_KEYWORDS, ...documentTodoSequences(input, defaults).flatMap(sequence => sequence.keywords)])];
+}
+
+/** Validate portable corpus definitions using the same syntax as file declarations. */
+export function parseTodoSequenceDefinitions(value: unknown): TodoSequence[] {
+  if (!Array.isArray(value) || !value.every(item => typeof item === "string")) {
+    throw new Error("todo.sequences must be an array of strings, such as [\"TODO WAITING | DONE CANCELED\"].");
+  }
+  const result: TodoSequence[] = [];
+  const seen = new Set<string>();
+  for (const definition of value) {
+    const tokens = definition.trim().split(/\s+/);
+    if (tokens.filter((token: string) => token === "|").length > 1 || tokens.some((token: string) => token !== "|" && !/^[\p{L}][\p{L}\p{N}_-]*(?:\([^\s()]*\))?$/u.test(token))) {
+      throw new Error(`Invalid TODO sequence: ${definition}. Use space-separated keywords and one | before terminal states.`);
+    }
+    const sequence = documentTodoSequences(`#+TODO: ${definition}`)[0];
+    if (!sequence || !sequence.terminal.length || sequence.terminal.length === sequence.keywords.length) {
+      throw new Error("Each TODO sequence needs at least one active state and one terminal state.");
+    }
+    for (const token of tokens.filter((token: string) => token !== "|").map((token: string) => token.replace(/\([^)]*\)$/, ""))) {
+      if (seen.has(token)) throw new Error(`TODO keyword ${token} appears more than once. Give each state one sequence.`);
+      seen.add(token);
+    }
+    result.push(sequence);
+  }
+  return result;
+}
+
+export function todoSequencesForFile(filePath?: string, includeFileDeclarations = false): TodoSequence[] {
+  if (!filePath) return [];
+  const configPath = findConfigFile(path.dirname(path.resolve(filePath)));
+  const value = configPath ? loadConfig(configPath).todo?.sequences : undefined;
+  const defaults = value === undefined ? [] : parseTodoSequenceDefinitions(value);
+  return includeFileDeclarations && fs.existsSync(filePath)
+    ? documentTodoSequences(fs.readFileSync(filePath, "utf8"), defaults) : defaults;
+}
+
+export function todoConfigurationKey(filePath: string): string {
+  return JSON.stringify(todoSequencesForFile(filePath));
 }
 
 export function todoKeywordInWorkflow(value: string | undefined, sequences: readonly TodoSequence[]): string | undefined {
@@ -221,7 +261,7 @@ export function updateTodoInText(input: string, opts: UpdateTodoOptions): Update
 
   const headingIndex = findHeadingAtOrAbove(lines, opts.lineNumber);
 
-  const sequences = documentTodoSequences(input);
+  const sequences = documentTodoSequences(input, todoSequencesForFile(opts.filePath));
   const oldKeyword = parseHeadlineTodoKeyword(lines[headingIndex] ?? "", sequences);
   const oldStatus = statusFromKeyword(oldKeyword, sequences);
   const sequence = sequences.find(sequence => sequence.keywords.includes(oldKeyword ?? ""));
@@ -230,7 +270,7 @@ export function updateTodoInText(input: string, opts: UpdateTodoOptions): Update
   let newKeyword: string;
   if (opts.keyword) {
     const keyword = todoKeywordInWorkflow(opts.keyword, sequences);
-    if (!keyword) throw new Error(`Unknown TODO keyword "${opts.keyword}". Declare it with #+TODO: active | terminal.`);
+    if (!keyword) throw new Error(`Unknown TODO keyword "${opts.keyword}". Declare it with #+TODO: active | terminal or in org2.json todo.sequences.`);
     newKeyword = keyword;
   } else if (opts.toggle && sequence) {
     newKeyword = sequence.keywords[(sequence.keywords.indexOf(oldKeyword!) + 1) % sequence.keywords.length];

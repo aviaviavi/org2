@@ -4551,6 +4551,13 @@ public final class WorkspaceStore {
     rebuildCorpusFileWatchers()
   }
 
+  public func reloadCorpusTodoConfiguration() async {
+    for file in Array(canonicalDocumentCache.keys) { invalidateCanonicalDocumentCache(for: file) }
+    await refreshAgenda(preserveSelection: true, updatesStatus: false)
+    if isEditingEntry { scheduleSourceEditorPreview(immediate: true) }
+    else { await reloadSelectedEntrySource() }
+  }
+
   public func refreshActiveCorpusIdentity() async {
     guard let corpusRoot else {
       activeCorpusIdentity = nil
@@ -6136,7 +6143,8 @@ public final class WorkspaceStore {
         let document: Org2CanonicalDocument = try await cli.parseTextJSON(
           candidate.parseText,
           sourceRanges: true,
-          sourceLineOffset: candidate.sourceLineOffset
+          sourceLineOffset: candidate.sourceLineOffset,
+          sourcePath: candidate.file.path
         )
         guard !Task.isCancelled,
               isCurrentRunReviewPageRefresh(refreshContext)
@@ -12411,7 +12419,7 @@ public final class WorkspaceStore {
 
   public func analyzeSourceEditorText(_ text: String) async -> OrgSourceEditorSemanticSnapshot? {
     do {
-      return try await cli.analyzeEditorText(text)
+      return try await cli.analyzeEditorText(text, sourcePath: selectedEntrySource?.file)
     } catch {
       return nil
     }
@@ -31015,7 +31023,7 @@ public final class WorkspaceStore {
   nonisolated private static func canonicalTodoMutationTarget(
     _ target: HeadlineMutationTarget, text: String, cli: Org2CLI
   ) async throws -> HeadlineMutationTarget {
-    let document: Org2CanonicalDocument = try await cli.parseTextJSON(text, sourceRanges: true)
+    let document: Org2CanonicalDocument = try await cli.parseTextJSON(text, sourceRanges: true, sourcePath: target.file)
     if document.todoSequences?.isEmpty != false {
       return try resolveHeadlineMutationTarget(target, in: text, requiresTodo: true)
     }
@@ -37161,7 +37169,8 @@ public final class WorkspaceStore {
       return try await cli.parseTextJSON(
         source.text,
         sourceRanges: true,
-        sourceLineOffset: max(0, source.startLine - 1)
+        sourceLineOffset: max(0, source.startLine - 1),
+        sourcePath: source.file
       )
     }
 
@@ -37171,7 +37180,17 @@ public final class WorkspaceStore {
   private func canonicalDocument(for file: String) async throws -> Org2CanonicalDocument {
     let url = URL(fileURLWithPath: file).standardizedFileURL
     let fileContentDigest = await Task.detached(priority: .utility) {
-      Self.fileContentDigest(for: url)
+      guard let sourceDigest = Self.fileContentDigest(for: url) else { return Optional<String>.none }
+      var directory = url.deletingLastPathComponent()
+      while true {
+        let config = directory.appendingPathComponent("org2.json")
+        if FileManager.default.fileExists(atPath: config.path) {
+          return sourceDigest + ":" + (Self.fileContentDigest(for: config) ?? "unreadable")
+        }
+        let parent = directory.deletingLastPathComponent()
+        if parent == directory { return sourceDigest }
+        directory = parent
+      }
     }.value
     let cacheKey = url.path
     if let fileContentDigest,

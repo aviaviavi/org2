@@ -339,7 +339,7 @@ function loadCorpusHeadlines(root: string, findings: AgenticDoctorFinding[]): { 
   for (const file of files) {
     try {
       const raw = fs.readFileSync(file, "utf8");
-      collectHeadlines(parseOrgToCanonicalAst(raw, { sourceRanges: true }).children, file, headlines);
+      collectHeadlines(parseOrgToCanonicalAst(raw, { sourceRanges: true, sourcePath: file }).children, file, headlines);
     } catch (error) {
       finding(findings, {
         rule: "unreadable-corpus-source",

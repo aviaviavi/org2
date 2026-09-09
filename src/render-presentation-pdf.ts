@@ -60,6 +60,7 @@ async function main(): Promise<void> {
   try {
     const document = parseOrgToCanonicalAst(input, {
       sourceRanges: true,
+      sourcePath,
       sourceLineOffset,
     });
     rendered = renderPresentationToBeamer(document);

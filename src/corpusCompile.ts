@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import v8 from "node:v8";
 import { buildGeneratedArtifactMetadata, sha256Hex, type Org2GeneratedArtifactMetadata } from "./artifactMetadata.js";
-import { documentTodoSequences, todoKeywordInWorkflow, isTerminalTodoKeyword, type TodoSequence } from "./todo.js";
+import { documentTodoSequences, todoSequencesForFile, todoConfigurationKey, todoKeywordInWorkflow, isTerminalTodoKeyword, type TodoSequence } from "./todo.js";
 import { extractClockReport, type OrgClockInterval, type OrgClockIssue, type OrgClockSummary } from "./clock.js";
 
 export type CompiledCorpusLink = {
@@ -713,7 +713,7 @@ export function compileCorpus(files: string[], opts?: { rootDir?: string; genera
       snippetStartLine: fileSnippet.startLine,
     });
 
-    const sequences = documentTodoSequences(lines.join("\n"));
+    const sequences = documentTodoSequences(lines.join("\n"), todoSequencesForFile(filePath));
     for (let i = 0; i < lines.length; i += 1) {
       const heading = parseHeading(lines[i] || "", sequences);
       if (!heading) continue;
@@ -785,6 +785,7 @@ export function compileCorpus(files: string[], opts?: { rootDir?: string; genera
 
 
 type IncrementalCorpusFileFingerprint = {
+  todoConfiguration?: string;
   file: string;
   absolutePath: string;
   size: number;
@@ -1109,7 +1110,7 @@ function buildLookupIndex(nodes: CompiledCorpusNode[]): CompiledCorpusLookupInde
 
 function fileFingerprint(filePath: string, rootDir: string): IncrementalCorpusFileFingerprint {
   const stat = fs.statSync(filePath);
-  return { file: relativePath(rootDir, filePath), absolutePath: filePath, size: stat.size, mtimeMs: stat.mtimeMs, sha256: "" };
+  return { file: relativePath(rootDir, filePath), absolutePath: filePath, size: stat.size, mtimeMs: stat.mtimeMs, todoConfiguration: todoConfigurationKey(filePath), sha256: "" };
 }
 
 function incrementalCorpusBinaryCachePath(cacheFile: string): string {
@@ -1277,6 +1278,7 @@ export function compileCorpusIncremental(files: string[], opts: { rootDir?: stri
         && cached.file === entry.file
         && cached.absolutePath === entry.absolutePath
         && cached.size === entry.size
+        && (cached.todoConfiguration ?? "[]") === entry.todoConfiguration
         && cached.mtimeMs === entry.mtimeMs;
     });
   if (same) {
@@ -1327,6 +1329,7 @@ export function compileCorpusIncremental(files: string[], opts: { rootDir?: stri
         cached
         && cached.fingerprint.file === fingerprint.file
         && cached.fingerprint.size === fingerprint.size
+        && (cached.fingerprint.todoConfiguration ?? "[]") === fingerprint.todoConfiguration
         && cached.fingerprint.mtimeMs === fingerprint.mtimeMs
       ) {
         reusedFiles += 1;

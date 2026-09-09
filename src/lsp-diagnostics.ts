@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { parseOrgWithDiagnostics } from "./parser.js";
 import { evaluateTableNode, tablesInDocument } from "./tableFormula.js";
 
@@ -45,7 +46,9 @@ class DiagnosticLineTracker {
  * LSP positions are 0-based, while parser errors are 1-based.
  */
 export function buildPublishDiagnosticsParams(uri: string, text: string): PublishDiagnosticsParams {
-  const result = parseOrgWithDiagnostics(text, { sourceRanges: true });
+  let sourcePath: string | undefined;
+  try { if (uri.startsWith("file:")) sourcePath = fileURLToPath(uri); } catch { /* Non-local URI: use document declarations. */ }
+  const result = parseOrgWithDiagnostics(text, { sourceRanges: true, sourcePath });
   const tracker = new DiagnosticLineTracker(text);
 
   const diagnostics: Diagnostic[] = result.diagnostics.map((parseErr) => {

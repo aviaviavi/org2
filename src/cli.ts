@@ -21,7 +21,7 @@ import {
   type Org2PublishProjectConfig,
 } from "./config.js";
 import { resolvePublishHeadIncludes } from "./publish-defaults.js";
-import { documentTodoSequences, todoKeywordInWorkflow, type TodoSequence, assignTodoInText, formatOrgTimestamp, isActiveTodoKeyword, isTerminalTodoKeyword, normalizeTodoKeyword, TODO_KEYWORDS, updateTodoInText, type TodoStatus } from "./todo.js";
+import { documentTodoSequences, todoSequencesForFile, todoConfigurationKey, todoKeywordInWorkflow, type TodoSequence, assignTodoInText, formatOrgTimestamp, isActiveTodoKeyword, isTerminalTodoKeyword, normalizeTodoKeyword, TODO_KEYWORDS, updateTodoInText, type TodoStatus } from "./todo.js";
 import { planningKindFromArg, updatePlanningInText, type PlanningKindArg } from "./planning.js";
 import { computeSubtreeRange, findHeadingAtOrAbove, isHeadlineLine, upsertHeadlinePropertyInLines } from "./sourceLines.js";
 import { findBacklinksInText, type Backlink } from "./backlinks.js";
@@ -2999,6 +2999,7 @@ const AGENDA_CACHE_SCHEMA_VERSION = "org2-agenda-cache/v2";
 const AGENDA_CACHE_MAX_QUERIES = 4;
 
 type AgendaCacheFileEntry = {
+  todoConfiguration?: string;
   size: number;
   mtimeMs: number;
   ctimeMs: number;
@@ -5382,7 +5383,7 @@ function findScheduledItemsInText(
 ): ScheduledItem[] {
   const items: ScheduledItem[] = [];
   const lines = content.split("\n");
-  const sequences = documentTodoSequences(content);
+  const sequences = documentTodoSequences(content, todoSequencesForFile(filePath));
   const fileProperties = extractAgendaFileProperties(lines);
   const propertyStack: Array<{ level: number; effectiveProperties: Record<string, string> }> = [];
 
@@ -8358,6 +8359,11 @@ async function main(): Promise<void> {
     const { runAgenticWorkspaceCommand } = await import("./agenticWorkspaceCli.js");
     if (await runAgenticWorkspaceCommand(args)) return;
   }
+  if (args[0] === "todo-config") {
+    const { runTodoConfigCommand } = await import("./todoConfigCli.js");
+    await runTodoConfigCommand(args.slice(1));
+    return;
+  }
   if (args[0] === "checkbox") {
     const { runCheckboxCommand } = await import("./checkboxCli.js");
     await runCheckboxCommand(args.slice(1));
@@ -10287,6 +10293,7 @@ Core commands:
   org2 plugin <list|init|add|remove|update|sync|trust|doctor|exec|template> [options]
   org2 eval <run|fixture> RUN [options]
   org2 agenda --dir DIR [--recursive] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--tui]
+  org2 todo-config <show|set> --dir CORPUS [--sequences-json JSON] [--apply]
   org2 checkbox [cycle|toggle|set] --file FILE --line N [--status STATE] [--apply]
   org2 todo <set|toggle|assign|approve> --file FILE (--line N | --pos LINE[:COL]) [--apply]
   org2 approvals --dir DIR [--recursive] [--include-archives] [--index auto|never|rebuild] [--run-detail ID] [--format text|json]
@@ -11991,7 +11998,7 @@ Flags:
     const exported: Array<{ sourcePath: string; outputPath: string; outputPathAbsolute: string; title: string; changed: boolean; metadata?: ExportMetadataPayload; }> = [];
     for (const sourcePath of sourceFiles) {
       const sourceRaw = fs.readFileSync(sourcePath, "utf8").replace(/\r\n/g, "\n");
-      const sourceAst = parseOrgToCanonicalAst(sourceRaw, { sourceRanges: true });
+      const sourceAst = parseOrgToCanonicalAst(sourceRaw, { sourceRanges: true, sourcePath });
       const sourceCharts = embeddedChartsForSource(sourceRaw, sourcePath);
       const sourcePluginRenders = await pluginRendersForDocument(sourceAst, sourcePath);
 
@@ -12360,7 +12367,7 @@ Flags:
       const sourcePathInput = exportFile;
       const sourcePath = path.resolve(sourcePathInput);
       const sourceRaw = fs.readFileSync(sourcePath, "utf8").replace(/\r\n/g, "\n");
-      const sourceAst = parseOrgToCanonicalAst(sourceRaw, { sourceRanges: true });
+      const sourceAst = parseOrgToCanonicalAst(sourceRaw, { sourceRanges: true, sourcePath });
       const rendered = renderPresentationToBeamer(sourceAst);
       const fatalDiagnostics = rendered.diagnostics.filter((diagnostic) => diagnostic.severity === "error");
       if (fatalDiagnostics.length > 0) {
@@ -12574,7 +12581,7 @@ Flags:
 
       for (const sourcePath of sourceFiles) {
         const sourceRaw = fs.readFileSync(sourcePath, "utf8").replace(/\r\n/g, "\n");
-        const sourceAst = parseOrgToCanonicalAst(sourceRaw, { sourceRanges: true });
+        const sourceAst = parseOrgToCanonicalAst(sourceRaw, { sourceRanges: true, sourcePath });
         const sourceCharts = embeddedChartsForSource(sourceRaw, sourcePath);
         const sourcePluginRenders = await pluginRendersForDocument(sourceAst, sourcePath);
         const rendered = renderOrgDocumentToHtml(sourceAst, {
@@ -12711,7 +12718,7 @@ Flags:
     const sourcePathInput = exportFile;
     const sourcePath = path.resolve(sourcePathInput);
     const sourceRaw = fs.readFileSync(sourcePath, "utf8").replace(/\r\n/g, "\n");
-    const sourceAst = parseOrgToCanonicalAst(sourceRaw, { sourceRanges: true });
+    const sourceAst = parseOrgToCanonicalAst(sourceRaw, { sourceRanges: true, sourcePath });
     const sourceCharts = embeddedChartsForSource(sourceRaw, sourcePath);
     const sourcePluginRenders = await pluginRendersForDocument(sourceAst, sourcePath);
     const rendered = renderOrgDocumentToHtml(sourceAst, {
@@ -13403,6 +13410,7 @@ Flags:
         const document = parseOrgToCanonicalAst(candidate.parseText, {
           sourceRanges: true,
           sourceLineOffset: candidate.sourceLineOffset,
+          sourcePath: candidate.file,
         });
         approvalCandidates.push(...approvalCandidatesInDocument(document, candidate.file, candidate.sourceText));
       } catch (err) {
@@ -14944,10 +14952,10 @@ Flags:
   }
 
   if (command === "fmt") {
-    const formatOne = (rawIn: string, canonicalOrgSyntax = fmtCanonicalOrg): string => {
+    const formatOne = (rawIn: string, canonicalOrgSyntax = fmtCanonicalOrg, sourcePath?: string): string => {
       const normalized = rawIn.replace(/\r\n/g, "\n");
       const { text: protectedText, blocks } = protectPgpBlocks(normalized);
-      const ast = parseOrgToCanonicalAst(protectedText);
+      const ast = parseOrgToCanonicalAst(protectedText, { sourcePath });
       if (canonicalOrgSyntax) canonicalizeOrgSyntaxSugar(ast);
       const formatted = printCanonicalAstToOrg(ast);
       return restorePgpBlocks(formatted, blocks);
@@ -15114,7 +15122,7 @@ Flags:
       const changedFiles: string[] = [];
       for (const file of fmtFiles) {
         const raw = fs.readFileSync(file, "utf8");
-        const out = formatOne(raw, shouldCanonicalizeFmtFile(file));
+        const out = formatOne(raw, shouldCanonicalizeFmtFile(file), file);
         if (out !== raw.replace(/\r\n/g, "\n")) {
           changedFiles.push(file);
         }
@@ -15142,7 +15150,7 @@ Flags:
       }
       const targetFile = fmtFiles[0]!;
       const raw = fs.readFileSync(targetFile, "utf8");
-      const out = formatOne(raw, shouldCanonicalizeFmtFile(targetFile));
+      const out = formatOne(raw, shouldCanonicalizeFmtFile(targetFile), targetFile);
 
       if (fmtFormat === "json") {
         emitFmtPreviewJson(targetFile, out, out !== raw.replace(/\r\n/g, "\n"));
@@ -15157,7 +15165,7 @@ Flags:
     for (const file of fmtFiles) {
       const raw = fs.readFileSync(file, "utf8");
       const normalizedRaw = raw.replace(/\r\n/g, "\n");
-      const out = formatOne(raw, shouldCanonicalizeFmtFile(file));
+      const out = formatOne(raw, shouldCanonicalizeFmtFile(file), file);
       if (out !== normalizedRaw) {
         fs.writeFileSync(file, out, "utf8");
         changedFiles.push(file);
@@ -16053,7 +16061,7 @@ Flags:
         const absolutePath = path.resolve(filePath);
         const statBefore = fs.statSync(filePath);
         const cached = previousFiles[absolutePath];
-        if (agendaCacheFileEntryMatches(cached, statBefore)) {
+        if (agendaCacheFileEntryMatches(cached, statBefore) && (cached?.todoConfiguration ?? "[]") === todoConfigurationKey(filePath)) {
           nextFiles[absolutePath] = cached!;
           allItems.push(...cached!.items);
           continue;
@@ -16068,6 +16076,7 @@ Flags:
           && statBefore.ctimeMs === statAfter.ctimeMs
         ) {
           nextFiles[absolutePath] = {
+            todoConfiguration: todoConfigurationKey(filePath),
             size: statAfter.size,
             mtimeMs: statAfter.mtimeMs,
             ctimeMs: statAfter.ctimeMs,

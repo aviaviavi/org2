@@ -177,9 +177,11 @@ public struct Org2CLI: Sendable {
     _ text: String,
     sourceRanges: Bool = false,
     sourceLineOffset: Int = 0,
+    sourcePath: String? = nil,
     as type: T.Type = T.self
   ) async throws -> T {
     var arguments = ["-"]
+    if let sourcePath { arguments.insert(contentsOf: ["--source-path", sourcePath], at: 0) }
     if sourceLineOffset > 0 {
       arguments.insert("\(sourceLineOffset)", at: 0)
       arguments.insert("--source-line-offset", at: 0)
@@ -271,9 +273,11 @@ public struct Org2CLI: Sendable {
   public func analyzeEditorText(
     _ text: String,
     sourceLineOffset: Int = 0,
+    sourcePath: String? = nil,
     timeout: TimeInterval = 5
   ) async throws -> OrgSourceEditorSemanticSnapshot {
     var arguments: [String] = []
+    if let sourcePath { arguments.append(contentsOf: ["--source-path", sourcePath]) }
     if sourceLineOffset > 0 {
       arguments.append(contentsOf: ["--source-line-offset", "\(sourceLineOffset)"])
     }

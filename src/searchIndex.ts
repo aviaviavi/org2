@@ -4,7 +4,7 @@ import v8 from "node:v8";
 import { parseHeadlineTitleForRoam } from "./headlineTitle.js";
 import { defaultSearchIndexPath } from "./indexPaths.js";
 import { computeSubtreeRange } from "./sourceLines.js";
-import { documentTodoSequences, todoKeywordInWorkflow, type TodoSequence, isActiveTodoKeyword } from "./todo.js";
+import { documentTodoSequences, todoSequencesForFile, todoConfigurationKey, todoKeywordInWorkflow, type TodoSequence, isActiveTodoKeyword, isTerminalTodoKeyword } from "./todo.js";
 
 export { defaultSearchIndexPath };
 
@@ -37,6 +37,7 @@ export type Org2SearchIndexFile = {
    * and remain readable through the line-parser fallback.
    */
   headings?: Org2SearchIndexHeading[];
+  todoConfiguration?: string;
 };
 
 export type Org2SearchIndexHeading = {
@@ -47,6 +48,7 @@ export type Org2SearchIndexHeading = {
   level: number;
   title: string;
   todo?: string;
+  todoTerminal?: boolean;
   tags: string[];
   id?: string;
   /** The ID is visible only to matches at or after its property line. */
@@ -109,6 +111,7 @@ export type Org2SearchHit = {
   headingAncestry: SearchHeadingRef[];
   id?: string;
   todo?: string;
+  todoTerminal?: boolean;
   tags: string[];
   snippet: string;
   context: { startLine: number; endLine: number; lines: string[] };
@@ -134,7 +137,7 @@ export type Org2SearchOptions = {
   answerContext: boolean;
 };
 
-type SearchHeading = { line: number; level: number; title: string; todo?: string; tags: string[]; id?: string };
+type SearchHeading = { line: number; level: number; title: string; todo?: string; todoTerminal?: boolean; tags: string[]; id?: string };
 type SearchHeadingRef = { level: number; title: string; line: number; lineNumber: number };
 type LiteralCaseInsensitiveMatcher = { needle: string; asciiPattern?: RegExp };
 
@@ -147,14 +150,15 @@ function indexSearchFile(rootDir: string, absolutePath: string, stat: fs.Stats, 
     modifiedMs: Math.trunc(stat.mtimeMs),
     byteCount: stat.size,
     lines,
-    headings: buildSearchIndexHeadings(lines),
+    headings: buildSearchIndexHeadings(lines, absolutePath),
+    todoConfiguration: todoConfigurationKey(absolutePath),
   };
 }
 
-function buildSearchIndexHeadings(lines: string[]): Org2SearchIndexHeading[] {
+function buildSearchIndexHeadings(lines: string[], filePath: string): Org2SearchIndexHeading[] {
   const headings: Org2SearchIndexHeading[] = [];
   const stack: number[] = [];
-  const sequences = documentTodoSequences(lines.join("\n"));
+  const sequences = documentTodoSequences(lines.join("\n"), todoSequencesForFile(filePath));
 
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
     const line = lines[lineIndex] || "";
@@ -170,6 +174,7 @@ function buildSearchIndexHeadings(lines: string[]): Org2SearchIndexHeading[] {
         level: parsed.level,
         title: parsed.title,
         todo: parsed.todo,
+        ...(parsed.todoTerminal !== undefined ? { todoTerminal: parsed.todoTerminal } : {}),
         tags: parsed.tags,
         ...(parent !== undefined ? { parent } : {}),
       };
@@ -383,7 +388,7 @@ export function searchIndexedCorpus(index: Org2SearchIndex, options: Org2SearchO
   for (const file of index.files) {
     const normalizedFile = file.path.toLowerCase();
     if (fileZoneFilters.length && !fileZoneFilters.some((zone) => normalizedFile.includes(zone))) continue;
-    if (file.headings && index.todoWorkflowVersion === 1) {
+    if (file.headings && index.todoWorkflowVersion === 1 && file.todoConfiguration === todoConfigurationKey(file.path)) {
       collectSearchHitsForIndexedFile(file, matcher, options, hits);
     } else {
       collectSearchHitsForLines(file.path, file.lines, matcher, options, hits);
@@ -457,7 +462,7 @@ function collectSearchHitsForLines(
   subtreeHits = new Map<string, Org2SearchHit>(),
 ): void {
   const stack: SearchHeading[] = [];
-  const sequences = documentTodoSequences(lines.join("\n"));
+  const sequences = documentTodoSequences(lines.join("\n"), todoSequencesForFile(filePath));
 
   for (let j = 0; j < lines.length; j += 1) {
     const line = lines[j] || "";
@@ -517,6 +522,7 @@ function collectSearchHitsForLines(
       headingAncestry,
       id: current?.id,
       todo: current?.todo,
+      ...(current?.todoTerminal !== undefined ? { todoTerminal: current.todoTerminal } : {}),
       tags: current?.tags || [],
       snippet: line.trim(),
       context: { startLine: start + 1, endLine: end + 1, lines: lines.slice(start, end + 1) },
@@ -589,6 +595,7 @@ function collectSearchHitsForIndexedFile(
       headingAncestry,
       id: current?.idLine !== undefined && current.idLine <= j ? current.id : undefined,
       todo: current?.todo,
+      ...(current?.todoTerminal !== undefined ? { todoTerminal: current.todoTerminal } : {}),
       tags: current?.tags || [],
       snippet: line.trim(),
       context: { startLine: start + 1, endLine: end + 1, lines: file.lines.slice(start, end + 1) },
@@ -673,7 +680,7 @@ function searchRelevanceRank(hit: Org2SearchHit, needle: string): number[] {
 
   // Keep the broad buckets deliberately small and deterministic. The caller's
   // scan order remains the tie-breaker because modern Array.sort is stable.
-  const resultKind = isActiveTodoKeyword(todo) ? 0 : hasHeading ? 1 : 2;
+  const resultKind = (hit.todoTerminal === undefined ? isActiveTodoKeyword(todo) : Boolean(todo) && !hit.todoTerminal) ? 0 : hasHeading ? 1 : 2;
   return [resultKind, headingMatch, matchedHeadingLine];
 }
 
@@ -687,7 +694,7 @@ function parseSearchHeading(line: string, sequences: readonly TodoSequence[] = [
   const parts = rest.split(/\s+/);
   const todo = todoKeywordInWorkflow(parts[0], sequences);
   if (todo) rest = parts.slice(1).join(" ").trim();
-  return { level: (m[1] || "").length, title: parseHeadlineTitleForRoam(`${m[1]} ${rest}`), todo, tags };
+  return { level: (m[1] || "").length, title: parseHeadlineTitleForRoam(`${m[1]} ${rest}`), todo, tags, ...(todo && sequences.length ? { todoTerminal: isTerminalTodoKeyword(todo, sequences) } : {}) };
 }
 
 function subtreeEndLine(lines: string[], heading: SearchHeading | undefined, matchLine: number): number {

@@ -6,7 +6,7 @@ import { parseOrgWithDiagnostics } from "./parser.js";
 import { readStdinText } from "./stdin.js";
 
 function usage(exitCode = 2): never {
-  console.error("Usage: editor-analysis [--source-line-offset N]");
+  console.error("Usage: editor-analysis [--source-line-offset N] [--source-path FILE]");
   process.exit(exitCode);
 }
 
@@ -15,8 +15,14 @@ async function main(): Promise<void> {
   if (args.includes("--help") || args.includes("-h")) usage(0);
 
   let sourceLineOffset = 0;
+  let sourcePath: string | undefined;
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
+    if (arg === "--source-path") {
+      sourcePath = args[++index];
+      if (!sourcePath) usage();
+      continue;
+    }
     if (arg === "--source-line-offset") {
       const raw = args[index + 1];
       const parsed = parseNonNegativeIntegerArgument(raw);
@@ -37,6 +43,7 @@ async function main(): Promise<void> {
   const input = await readStdinText();
   const result = parseOrgWithDiagnostics(input, {
     sourceRanges: true,
+    sourcePath,
     sourceLineOffset,
   });
   process.stdout.write(`${JSON.stringify({

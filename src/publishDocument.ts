@@ -1,3 +1,4 @@
+import { documentTodoSequences, todoSequencesForFile } from "./todo.js";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -767,7 +768,10 @@ function hardenExternalLinks(html: string): string {
 export function preparePublishedDocument(options: PreparePublishedDocumentOptions): PreparedPublishedDocument {
   const normalizedSource = normalizeSourceText(options.sourceText);
   const selected = selectedSourceText(normalizedSource, options.line);
-  const originalDocument = parseOrgToCanonicalAst(selected.text, { sourceRanges: true });
+  const originalDocument = parseOrgToCanonicalAst(selected.text, {
+    sourceRanges: true,
+    todoSequences: documentTodoSequences(normalizedSource, todoSequencesForFile(options.sourcePath)),
+  });
   const abbreviations = mergeLinkAbbreviations([
     buildBuiltInLinkAbbreviations(options.linearTeam),
     collectLinkAbbreviationsFromRecord(options.linkAbbreviations),

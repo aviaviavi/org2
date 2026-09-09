@@ -40,7 +40,7 @@ import type {
   TimestampRangeNode,
 } from "./ast.js";
 import { parseTimestampRepeater, parseTimestampWarning } from "./timestampModifiers.js";
-import { documentTodoKeywords, documentTodoSequences, isTerminalTodoKeyword } from "./todo.js";
+import { documentTodoKeywords, documentTodoSequences, todoSequencesForFile, type TodoSequence, isTerminalTodoKeyword } from "./todo.js";
 
 export type ParseError = {
   message: string;
@@ -50,6 +50,9 @@ export type ParseError = {
 
 export type ParseOptions = {
   sourceRanges?: boolean;
+  sourcePath?: string;
+  /** Resolved whole-document workflow when parsing a selected fragment. */
+  todoSequences?: readonly TodoSequence[];
   sourceLineOffset?: number;
 };
 
@@ -1546,9 +1549,10 @@ export function parseOrgToCanonicalAst(input: string, options: ParseOptions = {}
   }
 
   const lines = input.split("\n");
-  const sequences = documentTodoSequences(input);
+  const sequences = options.todoSequences ? [...options.todoSequences]
+    : documentTodoSequences(input, todoSequencesForFile(options.sourcePath, (options.sourceLineOffset ?? 0) > 0));
   if (sequences.length) doc.todoSequences = sequences;
-  const keywords = documentTodoKeywords(input);
+  const keywords = documentTodoKeywords("", sequences);
   const documentEndLine = input.endsWith("\n") ? Math.max(1, lines.length - 1) : lines.length;
 
   for (let i = 0; i < lines.length; ) {

@@ -109,6 +109,8 @@ export interface Org2Config {
     linearTeam?: string;
   };
   todo?: {
+    /** Default Org sequences; file-local declarations take precedence. */
+    sequences?: string[];
     writeTransitionLogbook?: boolean;
   };
   publish?: {

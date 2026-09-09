@@ -161,6 +161,8 @@ For a reproducible launch or refresh problem, use the [[file:macos-diagnostics.o
 
 * Custom TODO states and action feedback
 
-Add a declaration such as =#+TODO: TODO MISSED | DONE SKIPPED= to a file. States before =|= remain active; those after it are terminal. OpenOrg’s heading editor includes the declared keywords, and heading buttons use the configured active/terminal states. Marking a custom state DONE replaces its keyword, preserves the title and ID, and maintains CLOSED metadata.
+Open Settings → Workspace → TODO States to edit corpus-wide defaults. Enter space-separated names in the Active states and Terminal states fields. Add independent sequences as needed, then choose Save TODO States. Use Built-in States clears the custom rows; Save applies that choice. Validation errors stay beside the fields, and stale settings require a reload before saving. The settings are portable corpus configuration, shared by the CLI and other clients.
+
+A file can override these defaults. Add a declaration such as =#+TODO: TODO MISSED | DONE SKIPPED= to a file. States before =|= remain active; those after it are terminal. OpenOrg’s heading editor includes the declared keywords, and heading buttons use the configured active/terminal states. Marking a custom state DONE replaces its keyword, preserves the title and ID, and maintains CLOSED metadata.
 
 Workspace errors appear in a dismissible banner on the current surface, with selectable details. Failed actions no longer depend on a hidden status message; successful actions do not open confirmation dialogs.

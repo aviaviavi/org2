@@ -23,7 +23,7 @@ import {
 } from "./link-abbrev.js";
 import { parseHeadlineTitleForRoam } from "./headlineTitle.js";
 import { buildPublishDiagnosticsParams } from "./lsp-diagnostics.js";
-import { documentTodoKeywords, TODO_KEYWORDS, normalizeTodoKeyword, statusFromKeyword } from "./todo.js";
+import { documentTodoKeywords, todoSequencesForFile, normalizeTodoKeyword, statusFromKeyword } from "./todo.js";
 import { formatLocalOrgTimestamp } from "./calendarDate.js";
 
 import fs from "node:fs";
@@ -479,7 +479,7 @@ class LSPServer {
         const { textDocument } = params;
         const doc = this.documents.get(textDocument.uri);
         if (doc) {
-          const result = parseOrgWithDiagnostics(doc.text);
+          const result = parseOrgWithDiagnostics(doc.text, { sourcePath: this.filePathFromUri(doc.uri) ?? undefined });
           const symbols = this.extractSymbols(result.ast, doc.text);
           this.sendResponse(id, symbols);
         } else {
@@ -489,7 +489,7 @@ class LSPServer {
         const { textDocument } = params;
         const doc = this.documents.get(textDocument.uri);
         if (doc) {
-          const result = parseOrgWithDiagnostics(doc.text);
+          const result = parseOrgWithDiagnostics(doc.text, { sourcePath: this.filePathFromUri(doc.uri) ?? undefined });
           const ranges = this.extractFoldingRanges(result.ast, doc.text);
           this.sendResponse(id, ranges);
         } else {
@@ -693,7 +693,7 @@ class LSPServer {
           return;
         }
 
-        const semanticTokens = this.getSemanticTokens(doc.text);
+        const semanticTokens = this.getSemanticTokens(doc.text, doc.uri);
         this.sendResponse(id, semanticTokens);
       } else if (method === "textDocument/codeLens") {
         const { textDocument } = params;
@@ -1058,13 +1058,13 @@ class LSPServer {
       }
     };
 
-    const headlineMatch = line.match(/^(\*+\s+)([A-Z]*)/);
+    const headlineMatch = line.match(/^(\*+\s+)([\p{L}\p{N}_-]*)/u);
     if (headlineMatch) {
       const keywordStart = headlineMatch[1].length;
       const typedKeyword = (headlineMatch[2] || "").toUpperCase();
       if (cursor >= keywordStart && cursor <= keywordStart + typedKeyword.length) {
-        for (const keyword of TODO_KEYWORDS) {
-          if (typedKeyword && !keyword.startsWith(typedKeyword)) {
+        for (const keyword of documentTodoKeywords(text, todoSequencesForFile(this.filePathFromUri(sourceUri) ?? undefined))) {
+          if (typedKeyword && !keyword.toUpperCase().startsWith(typedKeyword)) {
             continue;
           }
           addCompletion({
@@ -1410,7 +1410,7 @@ class LSPServer {
   }
 
   private getDocumentFormattingEdits(text: string, uri: string): TextEdit[] {
-    const formatted = this.formatCanonicalOrgText(text, this.shouldCanonicalizeOrgUri(uri));
+    const formatted = this.formatCanonicalOrgText(text, this.shouldCanonicalizeOrgUri(uri), this.filePathFromUri(uri) ?? undefined);
     if (!formatted) {
       return [];
     }
@@ -1441,7 +1441,7 @@ class LSPServer {
     const endLineExclusive = Math.min(lines.length, Math.max(startLine + 1, endLineExclusiveBase));
 
     const selectedText = lines.slice(startLine, endLineExclusive).join("\n");
-    const formatted = this.formatCanonicalOrgText(selectedText, this.shouldCanonicalizeOrgUri(uri));
+    const formatted = this.formatCanonicalOrgText(selectedText, this.shouldCanonicalizeOrgUri(uri), this.filePathFromUri(uri) ?? undefined);
     if (!formatted) {
       return [];
     }
@@ -1605,7 +1605,7 @@ class LSPServer {
     return selection ?? { range: documentRange };
   }
 
-  private getSemanticTokens(text: string): SemanticTokens {
+  private getSemanticTokens(text: string, sourceUri: string): SemanticTokens {
     const lines = text.split("\n");
     const tokens: SemanticToken[] = [];
     const seen = new Set<string>();
@@ -1628,7 +1628,7 @@ class LSPServer {
       });
     };
 
-    const todoKeywords = new Set(documentTodoKeywords(lines.join("\n")));
+    const todoKeywords = new Set(documentTodoKeywords(lines.join("\n"), todoSequencesForFile(this.filePathFromUri(sourceUri) ?? undefined)));
 
     for (let lineNumber = 0; lineNumber < lines.length; lineNumber++) {
       const line = lines[lineNumber] ?? "";
@@ -2605,11 +2605,11 @@ class LSPServer {
     }
   }
 
-  private formatCanonicalOrgText(rawText: string, canonicalOrgSyntax = false): string | null {
+  private formatCanonicalOrgText(rawText: string, canonicalOrgSyntax = false, sourcePath?: string): string | null {
     try {
       const normalized = rawText.replace(/\r\n/g, "\n");
       const { text: protectedText, blocks } = protectPgpBlocks(normalized);
-      const ast = parseOrgToCanonicalAst(protectedText);
+      const ast = parseOrgToCanonicalAst(protectedText, { sourcePath });
       if (canonicalOrgSyntax) canonicalizeOrgSyntaxSugar(ast);
       const formatted = printCanonicalAstToOrg(ast);
       return restorePgpBlocks(formatted, blocks);

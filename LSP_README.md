@@ -89,6 +89,8 @@ Content-Length: 87
   - `textDocument/inlayHint` - Inlay hints for unlabeled `[[id:...]]` and `[[file:...]]` links (resolved from heading/title metadata)
   - `textDocument/prepareCallHierarchy` + `callHierarchy/incomingCalls` + `callHierarchy/outgoingCalls` - Call hierarchy for Org ID/file links
 
+Corpus TODO defaults come from the nearest `org2.json` (`todo.sequences`); file-local TODO declarations override them. Completion and semantic tokens refresh from this configuration on each request.
+
 ## Editor Integration Examples
 
 ### VS Code
