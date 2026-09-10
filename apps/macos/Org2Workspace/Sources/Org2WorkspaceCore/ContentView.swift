@@ -3203,6 +3203,12 @@ private struct OpenClawSidebarThreadRow: View {
       }
 
       Button {
+        OpenClawMessageClipboard.write(summary.id.uuidString.lowercased())
+      } label: {
+        Label("Copy Thread ID", systemImage: "doc.on.doc")
+      }
+
+      Button {
         togglePin()
       } label: {
         Label(
@@ -3377,6 +3383,11 @@ private struct OpenClawSidebarThreadContextMenuTarget: NSViewRepresentable {
         action: #selector(forkThread)
       ))
       menu.addItem(menuItem(
+        title: "Copy Thread ID",
+        systemImage: "doc.on.doc",
+        action: #selector(copyThreadID)
+      ))
+      menu.addItem(menuItem(
         title: isPinned ? "Unpin Thread" : "Pin Thread",
         systemImage: isPinned ? "pin.slash" : "pin",
         action: #selector(toggleThreadPin)
@@ -3413,6 +3424,11 @@ private struct OpenClawSidebarThreadContextMenuTarget: NSViewRepresentable {
 
     @objc func forkThread() {
       fork?()
+    }
+
+    @objc func copyThreadID() {
+      guard let threadID else { return }
+      OpenClawMessageClipboard.write(threadID.uuidString.lowercased())
     }
 
     @objc func toggleThreadSettlement() {
