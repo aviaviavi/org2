@@ -60,7 +60,8 @@ final class SyncedAIChatTranscriptTests: XCTestCase {
     try await store.waitForAIChatTranscriptPersistenceForTesting()
     XCTAssertNotNil(store.openClawChatThreads.first { $0.id == unread.id }?.storedMessageCount)
     store.openClawTranscriptPersistenceDelayNanoseconds = 60_000_000_000
-    store.setAIChatTranscriptWritesBlockedForTesting(true)
+    // Defer writes without simulating a corrupt store: a recovery-blocked
+    // transcript intentionally reloads instead of taking the normal sync path.
     defer { store.flushDeferredAIChatTranscriptPersistence() }
     let marker = AIChatTranscriptStore.storeDirectory(for: localURL).appendingPathComponent("migration-marker.json")
     let before = try Data(contentsOf: marker)
