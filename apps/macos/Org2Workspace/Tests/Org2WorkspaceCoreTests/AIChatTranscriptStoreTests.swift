@@ -464,7 +464,7 @@ final class AIChatTranscriptStoreTests: XCTestCase {
   }
 
   @MainActor
-  func testCorruptDerivedMarkersDisplayValidatedLegacyTranscriptReadOnly() async throws {
+  func testCorruptDerivedMarkersRecoverAndNormalizeImmutableCommit() async throws {
     let fixture = try makeRecoveryFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }
     let canonicalThread = fixture.thread.replacingMessages([
@@ -497,8 +497,6 @@ final class AIChatTranscriptStoreTests: XCTestCase {
         try Data("corrupt \(name)".utf8).write(to: candidate, options: .atomic)
       }
     }
-    let derivedStoreBeforeLoad = try storeDirectorySnapshot(storeURL)
-
     let suiteName = "AIChatTranscriptStoreTests.CanonicalMarkerRecovery.\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
     defer { defaults.removePersistentDomain(forName: suiteName) }
@@ -508,24 +506,142 @@ final class AIChatTranscriptStoreTests: XCTestCase {
       legacyDefaultsDomains: []
     )
     await store.waitForAIChatTranscriptLoadForTesting()
+    try await store.waitForAIChatTranscriptPersistenceForTesting()
 
-    XCTAssertEqual(store.openClawChatThreads.map(\.id), [canonicalThread.id])
-    XCTAssertEqual(store.openClawMessages.map(\.content), ["canonical marker recovery"])
-    XCTAssertTrue(store.aiChatTranscriptRecoveryNotice?.contains("validated legacy") == true)
-    XCTAssertTrue(store.aiChatTranscriptRecoveryNotice?.contains("read-only") == true)
-    XCTAssertTrue(store.aiChatTranscriptRecoveryNotice?.contains("may be older") == true)
+    XCTAssertEqual(Set(store.openClawChatThreads.map(\.id)), Set([canonicalThread.id, derivedOnlyThread.id]))
+    XCTAssertNil(store.aiChatTranscriptRecoveryNotice)
     XCTAssertEqual(try Data(contentsOf: fixture.transcriptURL), canonicalData)
     XCTAssertEqual(try quarantinedStoreDirectories(for: fixture.transcriptURL).count, 0)
-    XCTAssertEqual(try storeDirectorySnapshot(storeURL), derivedStoreBeforeLoad)
-    let stillBlocked = try XCTUnwrap(
+    let normalized = try XCTUnwrap(
       AIChatTranscriptStore.shared.loadIfAvailable(legacyURL: fixture.transcriptURL)
     )
-    XCTAssertTrue(stillBlocked.recoveryStatus.blocksWrites)
+    XCTAssertEqual(normalized.recoveryStatus, .healthy)
+    XCTAssertEqual(Set(normalized.snapshot.threads.map(\.id)), Set([canonicalThread.id, derivedOnlyThread.id]))
+  }
 
-    _ = store.createOpenClawChatThread()
-    store.flushDeferredAIChatTranscriptPersistence()
-    XCTAssertTrue(store.errorText?.contains("writes are disabled") == true)
-    XCTAssertEqual(try storeDirectorySnapshot(storeURL), derivedStoreBeforeLoad)
+  func testRecoveryReconcilesNewestValidThreadFromDivergentBranches() throws {
+    let fixture = try makeRecoveryFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let baseDate = Date(timeIntervalSince1970: 1_700_000_000)
+    let secondID = UUID()
+    func thread(_ id: UUID, title: String, date: Date, content: String) -> OpenClawChatThread {
+      OpenClawChatThread(
+        id: id,
+        title: title,
+        createdAt: baseDate,
+        updatedAt: date,
+        sessionKey: id.uuidString.lowercased(),
+        messages: [OpenClawChatMessage(role: .assistant, content: content)]
+      )
+    }
+    let baseA = thread(fixture.thread.id, title: "A", date: baseDate, content: "base A")
+    let baseB = thread(secondID, title: "B", date: baseDate, content: "base B")
+    try AIChatTranscriptStore.shared.flush(
+      AIChatTranscriptSnapshot(
+        threads: [baseA, baseB],
+        selectedThreadID: baseA.id,
+        settlementSettings: OpenClawThreadSettlementSettings()
+      ),
+      legacyURL: fixture.transcriptURL
+    )
+    let branchB = thread(
+      secondID,
+      title: "B",
+      date: baseDate.addingTimeInterval(30),
+      content: "newest B"
+    )
+    try AIChatTranscriptStore.shared.flush(
+      AIChatTranscriptSnapshot(
+        threads: [baseA, branchB],
+        selectedThreadID: baseA.id,
+        settlementSettings: OpenClawThreadSettlementSettings()
+      ),
+      legacyURL: fixture.transcriptURL
+    )
+    let branchA = thread(
+      fixture.thread.id,
+      title: "A",
+      date: baseDate.addingTimeInterval(40),
+      content: "newest A"
+    )
+    let supersededB = thread(
+      secondID,
+      title: "B",
+      date: baseDate.addingTimeInterval(20),
+      content: "incomplete branch B"
+    )
+    try AIChatTranscriptStore.shared.flush(
+      AIChatTranscriptSnapshot(
+        threads: [branchA, supersededB],
+        selectedThreadID: branchA.id,
+        settlementSettings: OpenClawThreadSettlementSettings()
+      ),
+      legacyURL: fixture.transcriptURL
+    )
+    AIChatTranscriptStore.shared.waitUntilIdleForTesting()
+    let storeURL = AIChatTranscriptStore.storeDirectory(for: fixture.transcriptURL)
+    let currentManifest = try currentManifestObject(storeURL: storeURL)
+    let entries = try XCTUnwrap(currentManifest["threads"] as? [[String: Any]])
+    let brokenEntry = try XCTUnwrap(entries.first(where: { entry in
+      ((entry["metadata"] as? [String: Any])?["id"] as? String)?.lowercased()
+        == secondID.uuidString.lowercased()
+    }))
+    let brokenShard = try XCTUnwrap(brokenEntry["shard"] as? String)
+    try FileManager.default.removeItem(at: storeURL.appendingPathComponent(brokenShard))
+
+    let recovered = try XCTUnwrap(
+      AIChatTranscriptStore.shared.loadIfAvailable(legacyURL: fixture.transcriptURL)
+    )
+    XCTAssertEqual(recovered.recoveryStatus, .recoveredPreviousManifest)
+    let hydrated = AIChatTranscriptStore.shared.loadAllThreads(
+      replacingMetadata: recovered.snapshot.threads,
+      legacyURL: fixture.transcriptURL
+    )
+    XCTAssertEqual(
+      hydrated.first(where: { $0.id == branchA.id })?.messages.first?.content,
+      "newest A"
+    )
+    XCTAssertEqual(
+      hydrated.first(where: { $0.id == branchB.id })?.messages.first?.content,
+      "newest B"
+    )
+  }
+
+  @MainActor
+  func testRetryClearsReadOnlyRecoveryStateAfterShardArrives() async throws {
+    let fixture = try makeRecoveryFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    try AIChatTranscriptStore.shared.flush(
+      AIChatTranscriptSnapshot(
+        threads: [fixture.thread],
+        selectedThreadID: fixture.thread.id,
+        settlementSettings: OpenClawThreadSettlementSettings()
+      ),
+      legacyURL: fixture.transcriptURL
+    )
+    AIChatTranscriptStore.shared.waitUntilIdleForTesting()
+    let storeURL = AIChatTranscriptStore.storeDirectory(for: fixture.transcriptURL)
+    let shardURL = try currentShardURL(storeURL: storeURL)
+    let shardData = try Data(contentsOf: shardURL)
+    try FileManager.default.removeItem(at: shardURL)
+
+    let suiteName = "AIChatTranscriptStoreTests.RetryRecovery.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let store = WorkspaceStore(
+      defaults: defaults,
+      openClawTranscriptURL: fixture.transcriptURL,
+      legacyDefaultsDomains: []
+    )
+    await store.waitForAIChatTranscriptLoadForTesting()
+    XCTAssertNotNil(store.aiChatTranscriptRecoveryNotice)
+
+    try shardData.write(to: shardURL, options: .atomic)
+    store.retryAIChatTranscriptRecovery()
+    await store.waitForAIChatTranscriptLoadForTesting()
+
+    XCTAssertNil(store.aiChatTranscriptRecoveryNotice)
+    XCTAssertEqual(store.openClawMessages.first?.content, "original")
   }
 
   @MainActor
@@ -688,10 +804,46 @@ final class AIChatTranscriptStoreTests: XCTestCase {
     }
     AIChatTranscriptStore.shared.waitUntilIdleForTesting()
     let storeURL = AIChatTranscriptStore.storeDirectory(for: fixture.transcriptURL)
+    try ageFilesRecursively(in: storeURL, by: 31 * 24 * 60 * 60)
+    let finalThread = fixture.thread.replacingMessages([
+      OpenClawChatMessage(role: .assistant, content: "final revision")
+    ])
+    try AIChatTranscriptStore.shared.flush(
+      AIChatTranscriptSnapshot(
+        threads: [finalThread],
+        selectedThreadID: finalThread.id,
+        settlementSettings: OpenClawThreadSettlementSettings()
+      ),
+      legacyURL: fixture.transcriptURL
+    )
+    AIChatTranscriptStore.shared.waitUntilIdleForTesting()
     XCTAssertLessThanOrEqual(try fileCount(storeURL.appendingPathComponent("manifests")), 2)
     XCTAssertLessThanOrEqual(try fileCount(storeURL.appendingPathComponent("threads")), 2)
     XCTAssertLessThanOrEqual(try fileCount(storeURL.appendingPathComponent("attachments")), 2)
     XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.transcriptURL.path))
+  }
+
+  func testGarbageCollectionPreservesFreshUnreferencedSyncArtifacts() throws {
+    let fixture = try makeRecoveryFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    try writeTwoRecoveryCommits(fixture)
+    let storeURL = AIChatTranscriptStore.storeDirectory(for: fixture.transcriptURL)
+    let orphan = storeURL.appendingPathComponent("threads/fresh-sync-artifact.json")
+    try Data("still syncing".utf8).write(to: orphan, options: .atomic)
+
+    try AIChatTranscriptStore.shared.flush(
+      AIChatTranscriptSnapshot(
+        threads: [fixture.thread.replacingMessages([
+          OpenClawChatMessage(role: .assistant, content: "third committed payload")
+        ])],
+        selectedThreadID: fixture.thread.id,
+        settlementSettings: OpenClawThreadSettlementSettings()
+      ),
+      legacyURL: fixture.transcriptURL
+    )
+    AIChatTranscriptStore.shared.waitUntilIdleForTesting()
+
+    XCTAssertTrue(FileManager.default.fileExists(atPath: orphan.path))
   }
 
   func testCorruptAttachmentBlobThrowsAndIsNeverRewrittenAsEmpty() throws {
@@ -1537,17 +1689,33 @@ private extension AIChatTranscriptStoreTests {
   }
 
   func currentShardURL(storeURL: URL) throws -> URL {
+    let manifest = try currentManifestObject(storeURL: storeURL)
+    let threads = try XCTUnwrap(manifest["threads"] as? [[String: Any]])
+    let shard = try XCTUnwrap(threads.first?["shard"] as? String)
+    return storeURL.appendingPathComponent(shard)
+  }
+
+  func currentManifestObject(storeURL: URL) throws -> [String: Any] {
     let marker = try markerObject(storeURL: storeURL)
     let currentName = try XCTUnwrap(marker["currentManifest"] as? String)
     let manifestData = try Data(
       contentsOf: storeURL.appendingPathComponent("manifests/\(currentName)")
     )
-    let manifest = try XCTUnwrap(
-      JSONSerialization.jsonObject(with: manifestData) as? [String: Any]
-    )
-    let threads = try XCTUnwrap(manifest["threads"] as? [[String: Any]])
-    let shard = try XCTUnwrap(threads.first?["shard"] as? String)
-    return storeURL.appendingPathComponent(shard)
+    return try XCTUnwrap(JSONSerialization.jsonObject(with: manifestData) as? [String: Any])
+  }
+
+  func ageFilesRecursively(in directory: URL, by interval: TimeInterval) throws {
+    let date = Date().addingTimeInterval(-interval)
+    guard let enumerator = FileManager.default.enumerator(
+      at: directory,
+      includingPropertiesForKeys: [.isRegularFileKey],
+      options: [.skipsHiddenFiles]
+    ) else { return }
+    for case let url as URL in enumerator {
+      if try url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true {
+        try FileManager.default.setAttributes([.modificationDate: date], ofItemAtPath: url.path)
+      }
+    }
   }
 
   func fileCount(_ directory: URL) throws -> Int {

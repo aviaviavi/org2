@@ -36,6 +36,7 @@ struct AIChatTranscriptLoadResult: Sendable {
 final class AIChatTranscriptStore: @unchecked Sendable {
   static let shared = AIChatTranscriptStore()
   static let eagerWorkingSetLimit = 16
+  private static let garbageCollectionGraceInterval: TimeInterval = 30 * 24 * 60 * 60
 
   private struct PendingWrite {
     let generation: UInt64
@@ -595,11 +596,16 @@ final class AIChatTranscriptStore: @unchecked Sendable {
     try writeIfChanged(manifestData, to: versionedManifestURL)
 
     // Updating this marker is the only commit point.
-    let hasVersionedPrior = priorManifest.map {
-      FileManager.default.fileExists(
-        atPath: manifestDirectory.appendingPathComponent("\($0.commitID).json").path
+    // Recovery can synthesize a reconciled prior manifest from multiple
+    // immutable sync branches. Persist that complete prior before referencing
+    // it so the marker never points only at an in-memory recovery result.
+    if let priorManifest {
+      try writeIfChanged(
+        try encoder.encode(priorManifest),
+        to: manifestDirectory.appendingPathComponent("\(priorManifest.commitID).json")
       )
-    } ?? false
+    }
+    let hasVersionedPrior = priorManifest != nil
     let previousData = hasVersionedPrior ? priorManifest.flatMap { try? encoder.encode($0) } : nil
     let previousName = hasVersionedPrior ? priorManifest.map { "\($0.commitID).json" } : nil
     let marker = StoreMarker(
@@ -662,18 +668,21 @@ final class AIChatTranscriptStore: @unchecked Sendable {
        marker.version == 1,
        isValidDigest(marker.currentDigest),
        marker.previousManifest == nil || marker.previousDigest.map(isValidDigest) == true {
-      if let current = loadManifest(
+      if let current = loadManifestCandidate(
         named: marker.currentManifest,
         expectedDigest: marker.currentDigest,
         storeURL: storeURL
       ) {
-        let previous = marker.previousManifest.flatMap {
-          loadManifest(named: $0, expectedDigest: marker.previousDigest, storeURL: storeURL)
+        recoveryCandidates.append(current)
+        if isComplete(current, storeURL: storeURL) {
+          let previous = marker.previousManifest.flatMap {
+            loadManifest(named: $0, expectedDigest: marker.previousDigest, storeURL: storeURL)
+          }
+          return StoreState(current: current, previous: previous, recoveryStatus: .healthy)
         }
-        return StoreState(current: current, previous: previous, recoveryStatus: .healthy)
       }
       if let previousName = marker.previousManifest,
-         let previous = loadManifest(
+         let previous = loadManifestCandidate(
           named: previousName,
           expectedDigest: marker.previousDigest,
           storeURL: storeURL
@@ -688,7 +697,7 @@ final class AIChatTranscriptStore: @unchecked Sendable {
        marker.version == 1,
        isValidDigest(marker.currentDigest),
        marker.previousManifest == nil || marker.previousDigest.map(isValidDigest) == true {
-      if let current = loadManifest(
+      if let current = loadManifestCandidate(
         named: marker.currentManifest,
         expectedDigest: marker.currentDigest,
         storeURL: storeURL
@@ -696,7 +705,7 @@ final class AIChatTranscriptStore: @unchecked Sendable {
         recoveryCandidates.append(current)
       }
       if let previousName = marker.previousManifest,
-         let previous = loadManifest(
+         let previous = loadManifestCandidate(
           named: previousName,
           expectedDigest: marker.previousDigest,
           storeURL: storeURL
@@ -706,17 +715,27 @@ final class AIChatTranscriptStore: @unchecked Sendable {
     }
 
     // A corrupt marker never authorizes falling back to the stale monolith.
-    // Try the two redundant manifest views, newest valid generation first.
+    // Reconcile the redundant views and any immutable commits left behind by
+    // a synced writer. A complete commit supplies the known thread set while
+    // individually valid newer entries from divergent or incomplete branches
+    // preserve their newer per-thread history.
     if markerExists {
-      recoveryCandidates += [currentViewURL, previousViewURL].compactMap { loadManifest(at: $0) }
+      recoveryCandidates += recoveryManifestCandidates(storeURL: storeURL)
       let candidates = Dictionary(
         recoveryCandidates.map { ($0.commitID, $0) },
-        uniquingKeysWith: { first, _ in first }
+        uniquingKeysWith: { first, second in
+          second.generation > first.generation ? second : first
+        }
       ).values.sorted { $0.generation > $1.generation }
-      if let recovered = candidates.first {
+      if let recovered = reconciledRecoveryManifest(
+        from: Array(candidates),
+        storeURL: storeURL
+      ) {
         return StoreState(
           current: recovered,
-          previous: candidates.dropFirst().first,
+          previous: candidates.first(where: {
+            $0.commitID != recovered.commitID && isComplete($0, storeURL: storeURL)
+          }),
           recoveryStatus: .recoveredPreviousManifest
         )
       }
@@ -794,26 +813,148 @@ final class AIChatTranscriptStore: @unchecked Sendable {
     storeURL: URL
   ) -> Manifest? {
     guard name == URL(fileURLWithPath: name).lastPathComponent else { return nil }
-    let url = manifestsDirectory(storeURL: storeURL).appendingPathComponent(name)
-    guard let data = try? Data(contentsOf: url, options: .mappedIfSafe),
-          expectedDigest == nil || digest(data) == expectedDigest,
-          let manifest = try? JSONDecoder().decode(Manifest.self, from: data),
-          manifest.schema == Manifest.schemaValue,
-          manifest.version == 2,
+    guard let manifest = loadManifestCandidate(
+      named: name,
+      expectedDigest: expectedDigest,
+      storeURL: storeURL
+    ),
           isComplete(manifest, storeURL: storeURL)
     else { return nil }
     return manifest
   }
 
+  private static func loadManifestCandidate(
+    named name: String,
+    expectedDigest: String?,
+    storeURL: URL
+  ) -> Manifest? {
+    guard name == URL(fileURLWithPath: name).lastPathComponent else { return nil }
+    let url = manifestsDirectory(storeURL: storeURL).appendingPathComponent(name)
+    return loadManifestCandidate(at: url, expectedDigest: expectedDigest)
+  }
+
   private static func loadManifest(at url: URL) -> Manifest? {
     let storeURL = url.deletingLastPathComponent()
-    guard let data = try? Data(contentsOf: url, options: .mappedIfSafe),
-          let manifest = try? JSONDecoder().decode(Manifest.self, from: data),
-          manifest.schema == Manifest.schemaValue,
-          manifest.version == 2,
+    guard let manifest = loadManifestCandidate(at: url),
           isComplete(manifest, storeURL: storeURL)
     else { return nil }
     return manifest
+  }
+
+  private static func loadManifestCandidate(
+    at url: URL,
+    expectedDigest: String? = nil
+  ) -> Manifest? {
+    guard !isSymbolicLink(url),
+          let data = try? Data(contentsOf: url, options: .mappedIfSafe),
+          expectedDigest == nil || digest(data) == expectedDigest,
+          let manifest = try? JSONDecoder().decode(Manifest.self, from: data),
+          isStructurallyValid(manifest)
+    else { return nil }
+    return manifest
+  }
+
+  private static func recoveryManifestCandidates(storeURL: URL) -> [Manifest] {
+    let fileManager = FileManager.default
+    let manifestDirectory = manifestsDirectory(storeURL: storeURL)
+    var urls = (try? fileManager.contentsOfDirectory(
+      at: manifestDirectory,
+      includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey],
+      options: [.skipsHiddenFiles]
+    )) ?? []
+    let rootViews = ((try? fileManager.contentsOfDirectory(
+      at: storeURL,
+      includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey],
+      options: [.skipsHiddenFiles]
+    )) ?? []).filter {
+      $0.lastPathComponent.hasPrefix("manifest") && $0.pathExtension == "json"
+    }
+    urls += rootViews
+    return urls.compactMap { url in
+      guard let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey]),
+            values.isRegularFile == true,
+            values.isSymbolicLink != true
+      else { return nil }
+      return loadManifestCandidate(at: url)
+    }
+  }
+
+  private static func reconciledRecoveryManifest(
+    from candidates: [Manifest],
+    storeURL: URL
+  ) -> Manifest? {
+    let sorted = candidates.sorted {
+      if $0.generation != $1.generation { return $0.generation > $1.generation }
+      return $0.commitID > $1.commitID
+    }
+    guard let completeBase = sorted.first(where: { isComplete($0, storeURL: storeURL) }) else {
+      return nil
+    }
+
+    var selectedEntries: [UUID: RecoverySelectedEntry] = [:]
+    for candidate in sorted {
+      for entry in candidate.threads where loadThreadShard(entry, storeURL: storeURL) != nil {
+        let selected = RecoverySelectedEntry(entry: entry, generation: candidate.generation)
+        if let existing = selectedEntries[entry.metadata.id],
+           !prefersRecoveryEntry(selected, over: existing) {
+          continue
+        }
+        selectedEntries[entry.metadata.id] = selected
+      }
+    }
+    guard !selectedEntries.isEmpty else { return nil }
+
+    let baseIDs = completeBase.threads.map { $0.metadata.id }
+    let additionalIDs = selectedEntries.keys.filter { !baseIDs.contains($0) }.sorted {
+      let left = selectedEntries[$0]?.entry.metadata.updatedAt ?? .distantPast
+      let right = selectedEntries[$1]?.entry.metadata.updatedAt ?? .distantPast
+      if left != right { return left > right }
+      return $0.uuidString < $1.uuidString
+    }
+    let entries = (baseIDs + additionalIDs).compactMap { selectedEntries[$0]?.entry }
+    let context = sorted.first ?? completeBase
+    let selectedThreadID = context.selectedThreadID.flatMap { id in
+      selectedEntries[id] == nil ? nil : id
+    } ?? completeBase.selectedThreadID.flatMap { id in
+      selectedEntries[id] == nil ? nil : id
+    } ?? entries.first?.metadata.id
+    return Manifest(
+      schema: Manifest.schemaValue,
+      version: 2,
+      generation: (sorted.map(\.generation).max() ?? completeBase.generation) &+ 1,
+      commitID: "recovered-\(UUID().uuidString.lowercased())",
+      parentCommitID: completeBase.commitID,
+      threads: entries,
+      selectedThreadID: selectedThreadID,
+      settlementSettings: context.settlementSettings
+    )
+  }
+
+  private static func prefersRecoveryEntry(
+    _ candidate: RecoverySelectedEntry,
+    over existing: RecoverySelectedEntry
+  ) -> Bool {
+    if candidate.entry.metadata.updatedAt != existing.entry.metadata.updatedAt {
+      return candidate.entry.metadata.updatedAt > existing.entry.metadata.updatedAt
+    }
+    let candidateCount = candidate.entry.metadata.storedMessageCount ?? -1
+    let existingCount = existing.entry.metadata.storedMessageCount ?? -1
+    if candidateCount != existingCount { return candidateCount > existingCount }
+    if candidate.generation != existing.generation {
+      return candidate.generation > existing.generation
+    }
+    return candidate.entry.shardDigest > existing.entry.shardDigest
+  }
+
+  private static func isStructurallyValid(_ manifest: Manifest) -> Bool {
+    guard manifest.schema == Manifest.schemaValue,
+          manifest.version == 2,
+          !manifest.commitID.isEmpty,
+          manifest.commitID == URL(fileURLWithPath: manifest.commitID).lastPathComponent,
+          manifest.selectedThreadID == nil
+            || manifest.threads.contains(where: { $0.metadata.id == manifest.selectedThreadID })
+    else { return false }
+    return Set(manifest.threads.map { $0.metadata.id }).count == manifest.threads.count
   }
 
   /// A manifest is a usable commit only when every immutable shard it names
@@ -822,16 +963,9 @@ final class AIChatTranscriptStore: @unchecked Sendable {
   /// healthy metadata-only thread and lets recovery choose the previous
   /// complete commit instead.
   private static func isComplete(_ manifest: Manifest, storeURL: URL) -> Bool {
-    guard !manifest.commitID.isEmpty,
-          manifest.commitID == URL(fileURLWithPath: manifest.commitID).lastPathComponent,
-          manifest.selectedThreadID == nil
-            || manifest.threads.contains(where: { $0.metadata.id == manifest.selectedThreadID })
-    else { return false }
-    var threadIDs = Set<UUID>()
+    guard isStructurallyValid(manifest) else { return false }
     for entry in manifest.threads {
-      guard threadIDs.insert(entry.metadata.id).inserted,
-            loadThreadShard(entry, storeURL: storeURL) != nil
-      else { return false }
+      guard loadThreadShard(entry, storeURL: storeURL) != nil else { return false }
     }
     return true
   }
@@ -900,8 +1034,20 @@ final class AIChatTranscriptStore: @unchecked Sendable {
           let current = state.current
     else { return }
     let storeURL = storeDirectory(for: legacyURL)
+    let cutoff = Date().addingTimeInterval(-garbageCollectionGraceInterval)
+    let recentManifestFiles = recoveryManifestFiles(
+      storeURL: storeURL,
+      modifiedAfter: cutoff
+    )
     let retainedManifests = [current, state.previous].compactMap { $0 }
-    let retainedCommitFiles = Set(retainedManifests.map { "\($0.commitID).json" })
+      + recentManifestFiles.map(\.manifest)
+    var retainedCommitFiles = Set(retainedManifests.map { "\($0.commitID).json" })
+    retainedCommitFiles.formUnion(recentManifestFiles.compactMap { file in
+      file.url.deletingLastPathComponent().standardizedFileURL
+        == manifestsDirectory(storeURL: storeURL).standardizedFileURL
+        ? file.url.lastPathComponent
+        : nil
+    })
     let retainedShards = Set(retainedManifests.flatMap { $0.threads.map(\.shard) })
     var retainedBlobs = Set(retainedManifests.flatMap { manifest in
       manifest.threads.flatMap { $0.blobs ?? [] }
@@ -921,29 +1067,98 @@ final class AIChatTranscriptStore: @unchecked Sendable {
 
     removeUnretainedFiles(
       in: manifestsDirectory(storeURL: storeURL),
-      retaining: retainedCommitFiles
+      retaining: retainedCommitFiles,
+      modifiedBefore: nil
     )
     removeUnretainedFiles(
       in: threadsDirectory(storeURL: storeURL),
-      retaining: Set(retainedShards.map { URL(fileURLWithPath: $0).lastPathComponent })
+      retaining: Set(retainedShards.map { URL(fileURLWithPath: $0).lastPathComponent }),
+      modifiedBefore: cutoff
     )
     removeUnretainedFiles(
       in: attachmentsDirectory(storeURL: storeURL),
-      retaining: retainedBlobs
+      retaining: retainedBlobs,
+      modifiedBefore: cutoff
     )
   }
 
-  private static func removeUnretainedFiles(in directory: URL, retaining names: Set<String>) {
+  private struct RecoveryManifestFile {
+    let url: URL
+    let manifest: Manifest
+  }
+
+  private struct RecoverySelectedEntry {
+    let entry: ManifestThread
+    let generation: UInt64
+  }
+
+  private static func recoveryManifestFiles(
+    storeURL: URL,
+    modifiedAfter cutoff: Date
+  ) -> [RecoveryManifestFile] {
+    let fileManager = FileManager.default
+    let manifestDirectory = manifestsDirectory(storeURL: storeURL)
+    var urls = (try? fileManager.contentsOfDirectory(
+      at: manifestDirectory,
+      includingPropertiesForKeys: [
+        .isRegularFileKey, .isSymbolicLinkKey, .contentModificationDateKey,
+      ],
+      options: [.skipsHiddenFiles]
+    )) ?? []
+    urls += ((try? fileManager.contentsOfDirectory(
+      at: storeURL,
+      includingPropertiesForKeys: [
+        .isRegularFileKey, .isSymbolicLinkKey, .contentModificationDateKey,
+      ],
+      options: [.skipsHiddenFiles]
+    )) ?? []).filter {
+      $0.lastPathComponent.hasPrefix("manifest") && $0.pathExtension == "json"
+    }
+    let candidates = urls.compactMap { url -> RecoveryManifestFile? in
+      guard let values = try? url.resourceValues(forKeys: [
+        .isRegularFileKey, .isSymbolicLinkKey, .contentModificationDateKey,
+      ]),
+            values.isRegularFile == true,
+            values.isSymbolicLink != true,
+            let modifiedAt = values.contentModificationDate,
+            modifiedAt >= cutoff,
+            let manifest = loadManifestCandidate(at: url)
+      else { return nil }
+      return RecoveryManifestFile(url: url, manifest: manifest)
+    }
+    // Keep each recently observed branch tip plus its direct parent. That is
+    // enough to recover from an incomplete synced tip without retaining a
+    // full 500 KB manifest for every routine local metadata save.
+    let parentCommitIDs = Set(candidates.compactMap(\.manifest.parentCommitID))
+    let tips = candidates.filter { !parentCommitIDs.contains($0.manifest.commitID) }
+    let retainedCommitIDs = Set(tips.flatMap { file in
+      [file.manifest.commitID, file.manifest.parentCommitID].compactMap { $0 }
+    })
+    return candidates.filter { retainedCommitIDs.contains($0.manifest.commitID) }
+  }
+
+  private static func removeUnretainedFiles(
+    in directory: URL,
+    retaining names: Set<String>,
+    modifiedBefore cutoff: Date?
+  ) {
     guard let urls = try? FileManager.default.contentsOfDirectory(
       at: directory,
-      includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey],
+      includingPropertiesForKeys: [
+        .isRegularFileKey, .isSymbolicLinkKey, .contentModificationDateKey,
+      ],
       options: [.skipsHiddenFiles]
     ) else { return }
     for url in urls where !names.contains(url.lastPathComponent) {
       guard isDescendant(url, of: directory),
-            let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey]),
+            let values = try? url.resourceValues(forKeys: [
+              .isRegularFileKey, .isSymbolicLinkKey, .contentModificationDateKey,
+            ]),
             values.isRegularFile == true || values.isSymbolicLink == true
       else { continue }
+      if let cutoff {
+        guard let modifiedAt = values.contentModificationDate, modifiedAt < cutoff else { continue }
+      }
       try? FileManager.default.removeItem(at: url)
     }
   }

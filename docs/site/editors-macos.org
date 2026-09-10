@@ -116,6 +116,8 @@ Agents can display images directly in their replies with an Org image link on it
 
 Threads and their context are stored locally with the corpus. Hover a sidebar thread to reveal its Settle action; settled threads show Reopen instead. The action keeps its space in narrow sidebars so hovering does not shift the title. Long-running OpenClaw turns can stream progress, be stopped, and reconnect after an app restart when the connected runtime supports it.
 
+If chat history cannot be loaded safely, OpenOrg pauses transcript writes and shows a recovery notice with a *Retry* button. Retry after synchronization finishes or missing files are restored. Recovery can reconcile verified thread history from incomplete or divergent synced commits; recent unreferenced thread and attachment files receive a 30-day grace period before cleanup.
+
 The iOS app can relay Codex, Claude Code, and other configured chat destinations to a paired Mac over Tailscale. The selected host remains responsible for corpus access and model connections. A [[file:headless-server.org][headless OpenOrg server]] on another Mac can keep chats and scheduled automations available while the laptop is away. See [[file:getting-started.org::*iOS app][iOS setup]] for the current beta and pairing path.
 
 See [[file:agent-quickstart.org][Agent quickstart]] for permissions, runtime integration, durable runs, and automation details.

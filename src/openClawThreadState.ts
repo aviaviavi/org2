@@ -230,6 +230,7 @@ function parseManifestV2Data(
         || !Number.isSafeInteger(payload.generation)
         || (payload.generation as number) < 0
         || typeof payload.commitID !== "string"
+        || !safeManifestName(payload.commitID)
         || !Array.isArray(payload.threads)) {
       return null;
     }
@@ -244,12 +245,18 @@ function parseManifestV2Data(
       if (!metadata) return null;
       entries.push({ metadata, shard: value.shard, shardDigest: value.shardDigest });
     }
+    const threadIDs = new Set(entries.map((entry) => entry.metadata.id.toLowerCase()));
+    if (threadIDs.size !== entries.length) return null;
+    const selectedThreadID = typeof payload.selectedThreadID === "string"
+      ? payload.selectedThreadID
+      : null;
+    if (selectedThreadID && !threadIDs.has(selectedThreadID.toLowerCase())) return null;
     return {
       file,
       layout: "sharded-v2",
       threads: entries.map((entry) => entry.metadata),
       entries,
-      selectedThreadID: typeof payload.selectedThreadID === "string" ? payload.selectedThreadID : null,
+      selectedThreadID,
       settlementSettings: settlementSettings(payload),
       commitID: payload.commitID,
       generation: payload.generation as number,
@@ -309,6 +316,145 @@ function manifestNamed(
   return loadManifestV2(path.join(storeRoot, "manifests", name), expectedDigest);
 }
 
+function validManifestEntry(storeRoot: string, entry: ManifestThreadEntry): boolean {
+  try {
+    if (!isDigest(entry.shardDigest)
+        || entry.shard !== `threads/${path.basename(entry.shard)}`) {
+      return false;
+    }
+    const shardFile = confinedShardPath(storeRoot, entry.shard);
+    const data = fs.readFileSync(shardFile);
+    if (digest(data) !== entry.shardDigest) return false;
+    const shard = JSON.parse(data.toString("utf8")) as unknown;
+    if (!isRecord(shard)
+        || shard.schema !== THREAD_SHARD_SCHEMA
+        || shard.version !== 1
+        || !Array.isArray(shard.messages)) {
+      return false;
+    }
+    for (const stored of shard.messages) {
+      if (!isRecord(stored) || !isRecord(stored.message) || !Array.isArray(stored.attachments)) {
+        return false;
+      }
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function isCompleteManifest(storeRoot: string, manifest: ParsedManifest): boolean {
+  return manifest.layout === "sharded-v2"
+    && manifest.entries.every((entry) => validManifestEntry(storeRoot, entry));
+}
+
+function recoveryManifestCandidates(storeRoot: string): ParsedManifest[] {
+  const files: string[] = [];
+  const manifestsRoot = path.join(storeRoot, "manifests");
+  try {
+    files.push(...fs.readdirSync(manifestsRoot, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
+      .map((entry) => path.join(manifestsRoot, entry.name)));
+  } catch {
+    // A missing immutable directory is handled by the fail-closed path below.
+  }
+  try {
+    files.push(...fs.readdirSync(storeRoot, { withFileTypes: true })
+      .filter((entry) => (
+        entry.isFile() && entry.name.startsWith("manifest") && entry.name.endsWith(".json")
+      ))
+      .map((entry) => path.join(storeRoot, entry.name)));
+  } catch {
+    // A missing store root means there are no recovery candidates.
+  }
+  return files.map((file) => loadManifestV2(file)).filter(
+    (manifest): manifest is ParsedManifest => manifest !== null,
+  );
+}
+
+function updatedAtValue(thread: OpenClawChatThreadRecord): number {
+  if (typeof thread.updatedAt === "number") return thread.updatedAt;
+  const parsed = Date.parse(thread.updatedAt);
+  return Number.isFinite(parsed) ? parsed : Number.NEGATIVE_INFINITY;
+}
+
+function prefersRecoveryEntry(
+  candidate: { entry: ManifestThreadEntry; generation: number },
+  existing: { entry: ManifestThreadEntry; generation: number },
+): boolean {
+  const candidateUpdatedAt = updatedAtValue(candidate.entry.metadata);
+  const existingUpdatedAt = updatedAtValue(existing.entry.metadata);
+  if (candidateUpdatedAt !== existingUpdatedAt) return candidateUpdatedAt > existingUpdatedAt;
+  const candidateCount = candidate.entry.metadata.storedMessageCount ?? -1;
+  const existingCount = existing.entry.metadata.storedMessageCount ?? -1;
+  if (candidateCount !== existingCount) return candidateCount > existingCount;
+  if (candidate.generation !== existing.generation) return candidate.generation > existing.generation;
+  return candidate.entry.shardDigest > existing.entry.shardDigest;
+}
+
+function reconcileRecoveryManifest(
+  storeRoot: string,
+  candidates: ParsedManifest[],
+): ParsedManifest | null {
+  const unique = new Map<string, ParsedManifest>();
+  for (const candidate of candidates) {
+    if (!candidate.commitID) continue;
+    const existing = unique.get(candidate.commitID);
+    if (!existing || (candidate.generation ?? 0) > (existing.generation ?? 0)) {
+      unique.set(candidate.commitID, candidate);
+    }
+  }
+  const sorted = [...unique.values()].sort(
+    (left, right) => (right.generation ?? 0) - (left.generation ?? 0),
+  );
+  const completeBase = sorted.find((candidate) => isCompleteManifest(storeRoot, candidate));
+  if (!completeBase) return null;
+  if (sorted.length === 1) return completeBase;
+
+  const selectedEntries = new Map<
+    string,
+    { entry: ManifestThreadEntry; generation: number }
+  >();
+  for (const candidate of sorted) {
+    for (const entry of candidate.entries) {
+      if (!validManifestEntry(storeRoot, entry)) continue;
+      const key = entry.metadata.id.toLowerCase();
+      const selected = { entry, generation: candidate.generation ?? 0 };
+      const existing = selectedEntries.get(key);
+      if (!existing || prefersRecoveryEntry(selected, existing)) selectedEntries.set(key, selected);
+    }
+  }
+  const baseIDs = completeBase.entries.map((entry) => entry.metadata.id.toLowerCase());
+  const baseIDSet = new Set(baseIDs);
+  const additionalIDs = [...selectedEntries.keys()]
+    .filter((id) => !baseIDSet.has(id))
+    .sort((left, right) => (
+      updatedAtValue(selectedEntries.get(right)!.entry.metadata)
+        - updatedAtValue(selectedEntries.get(left)!.entry.metadata)
+        || left.localeCompare(right)
+    ));
+  const entries = [...baseIDs, ...additionalIDs]
+    .map((id) => selectedEntries.get(id)?.entry)
+    .filter((entry): entry is ManifestThreadEntry => entry !== undefined);
+  const context = sorted[0] ?? completeBase;
+  const entryIDs = new Set(entries.map((entry) => entry.metadata.id.toLowerCase()));
+  const selectedThreadID = [context.selectedThreadID, completeBase.selectedThreadID]
+    .find((id): id is string => Boolean(id && entryIDs.has(id.toLowerCase())))
+    ?? entries[0]?.metadata.id
+    ?? null;
+  const generation = Math.max(...sorted.map((candidate) => candidate.generation ?? 0)) + 1;
+  return {
+    file: completeBase.file,
+    layout: "sharded-v2",
+    threads: entries.map((entry) => entry.metadata),
+    entries,
+    selectedThreadID,
+    settlementSettings: context.settlementSettings,
+    commitID: `recovered-${completeBase.commitID}`,
+    generation,
+  };
+}
+
 function resolveShardedManifest(storeRoot: string): {
   manifest: ParsedManifest;
   recoveryStatus: OpenClawThreadRecoveryStatus;
@@ -323,9 +469,10 @@ function resolveShardedManifest(storeRoot: string): {
   const marker = parseMarker(markerFile);
   if (marker) {
     const current = manifestNamed(storeRoot, marker.currentManifest, marker.currentDigest);
-    if (current) {
+    if (current && isCompleteManifest(storeRoot, current)) {
       return { manifest: current, recoveryStatus: "healthy" };
     }
+    if (current) candidates.push(current);
     if (marker.previousManifest) {
       const previous = manifestNamed(storeRoot, marker.previousManifest, marker.previousDigest);
       if (previous) candidates.push(previous);
@@ -351,19 +498,8 @@ function resolveShardedManifest(storeRoot: string): {
   }
 
   if (markerExists) {
-    const current = loadManifestV2(currentView);
-    const previous = loadManifestV2(previousView);
-    if (current) candidates.push(current);
-    if (previous) candidates.push(previous);
-    const unique = new Map<string, ParsedManifest>();
-    for (const candidate of candidates) {
-      if (candidate.commitID && !unique.has(candidate.commitID)) {
-        unique.set(candidate.commitID, candidate);
-      }
-    }
-    const recovered = [...unique.values()].sort(
-      (left, right) => (right.generation ?? 0) - (left.generation ?? 0),
-    )[0];
+    candidates.push(...recoveryManifestCandidates(storeRoot));
+    const recovered = reconcileRecoveryManifest(storeRoot, candidates);
     if (recovered) {
       return { manifest: recovered, recoveryStatus: "recovered-previous-manifest" };
     }
@@ -373,7 +509,9 @@ function resolveShardedManifest(storeRoot: string): {
   }
 
   const v2 = loadManifestV2(currentView);
-  if (v2) return { manifest: v2, recoveryStatus: "healthy" };
+  if (v2 && isCompleteManifest(storeRoot, v2)) {
+    return { manifest: v2, recoveryStatus: "healthy" };
+  }
   const v1 = loadManifestV1(currentView);
   if (v1) return { manifest: v1, recoveryStatus: "healthy" };
   if (fs.existsSync(currentView) || fs.existsSync(previousView)) {

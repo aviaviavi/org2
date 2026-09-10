@@ -9874,14 +9874,23 @@ private struct OpenClawChatView: View {
       header
 
       if let recoveryNotice = store.aiChatTranscriptRecoveryNotice {
-        Label(recoveryNotice, systemImage: "exclamationmark.triangle.fill")
-          .font(.caption)
-          .foregroundStyle(.orange)
-          .frame(maxWidth: .infinity, alignment: .leading)
-          .padding(.horizontal, presentation.isCompact ? 10 : 16)
-          .padding(.vertical, 8)
-          .background(Color.orange.opacity(0.08))
-          .accessibilityIdentifier("ai-chat-transcript-recovery-notice")
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+          Label(recoveryNotice, systemImage: "exclamationmark.triangle.fill")
+            .frame(maxWidth: .infinity, alignment: .leading)
+          Button(store.isLoadingAIChatTranscript ? "Retrying…" : "Retry") {
+            store.retryAIChatTranscriptRecovery()
+          }
+          .buttonStyle(.bordered)
+          .controlSize(.small)
+          .disabled(store.isLoadingAIChatTranscript)
+          .accessibilityIdentifier("ai-chat-transcript-recovery-retry")
+        }
+        .font(.caption)
+        .foregroundStyle(.orange)
+        .padding(.horizontal, presentation.isCompact ? 10 : 16)
+        .padding(.vertical, 8)
+        .background(Color.orange.opacity(0.08))
+        .accessibilityIdentifier("ai-chat-transcript-recovery-notice")
         Divider()
       }
 

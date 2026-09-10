@@ -314,6 +314,46 @@ try {
   fs.rmSync(recoveryRoot, { recursive: true, force: true });
 }
 
+const missingShardRoot = fs.mkdtempSync(
+  path.join(os.tmpdir(), "org2-openclaw-missing-shard-recovery-"),
+);
+try {
+  const previous = writeShardedV2Store(missingShardRoot, {
+    commitID: "complete-previous-commit",
+    generation: 8,
+    selectedThreadID: hydratedID,
+    threads: [{
+      metadata: metadata(hydratedID, {
+        title: "Complete previous thread",
+        storedMessageCount: 1,
+      }),
+      messages: [{ role: "assistant", content: "Complete previous history" }],
+    }],
+  });
+  const current = writeShardedV2Store(missingShardRoot, {
+    commitID: "incomplete-current-commit",
+    generation: 9,
+    previousManifest: path.basename(previous.manifestFile),
+    previousDigest: sha256(previous.manifestData),
+    selectedThreadID: hydratedID,
+    threads: [{
+      metadata: metadata(hydratedID, {
+        title: "Incomplete current thread",
+        storedMessageCount: 1,
+      }),
+      messages: [{ role: "assistant", content: "Missing current history" }],
+    }],
+  });
+  fs.rmSync(path.join(current.storeRoot, current.entries[0].shard));
+
+  const recovered = loadOpenClawThreadState(missingShardRoot, { hydrateThreadID: hydratedID });
+  assert.equal(recovered.recoveryStatus, "recovered-previous-manifest");
+  assert.equal(recovered.commitID, "recovered-complete-previous-commit");
+  assert.equal(recovered.threads[0].messages[0].content, "Complete previous history");
+} finally {
+  fs.rmSync(missingShardRoot, { recursive: true, force: true });
+}
+
 const v1Root = fs.mkdtempSync(path.join(os.tmpdir(), "org2-openclaw-sharded-v1-"));
 try {
   const storeRoot = path.join(v1Root, ".org2", "openclaw-chat.store");

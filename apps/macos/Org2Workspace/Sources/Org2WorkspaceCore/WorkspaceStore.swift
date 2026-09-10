@@ -3522,7 +3522,7 @@ public final class WorkspaceStore {
     orgCryptGpgProgram = defaults.string(forKey: orgCryptGpgProgramKey) ?? "gpg"
     if usesFixedOpenClawTranscriptURL {
       if Self.shouldLoadAIChatTranscriptAsynchronously(self.openClawTranscriptURL) {
-        startFixedAIChatTranscriptLoad()
+        startAIChatTranscriptReload()
       } else {
         let loaded = loadOpenClawTranscriptForWorkspace(from: self.openClawTranscriptURL)
         aiChatTranscriptWritesBlocked = loaded.recoveryStatus.blocksWrites
@@ -36135,6 +36135,10 @@ public final class WorkspaceStore {
   @discardableResult
   func refreshSyncedAIChatTranscript() async -> Bool {
     guard hasAuthoritativeAIChatTranscriptState, !isLoadingAIChatTranscript else { return false }
+    if aiChatTranscriptWritesBlocked {
+      retryAIChatTranscriptRecovery()
+      return false
+    }
     let target = openClawTranscriptURL
     let loadGeneration = openClawTranscriptLoadGeneration
     let metadataBeforeRead = aiChatTranscriptMetadata()
@@ -36208,7 +36212,15 @@ public final class WorkspaceStore {
     return true
   }
 
-  private func startFixedAIChatTranscriptLoad() {
+  public func retryAIChatTranscriptRecovery() {
+    guard aiChatTranscriptWritesBlocked,
+          openClawTranscriptLoadTask == nil,
+          !isLoadingAIChatTranscript
+    else { return }
+    startAIChatTranscriptReload()
+  }
+
+  private func startAIChatTranscriptReload() {
     let targetURL = openClawTranscriptURL.standardizedFileURL
     let preferredSelectedThreadID = restoredSelectedAIChatThreadID()
     isLoadingAIChatTranscript = true
@@ -36496,7 +36508,9 @@ public final class WorkspaceStore {
   ) {
     switch recoveryStatus {
     case .healthy, .recoveredPreviousManifest:
+      let priorNotice = aiChatTranscriptRecoveryNotice
       aiChatTranscriptRecoveryNotice = nil
+      if errorText == priorNotice { errorText = nil }
     case .unrecoverable(let message):
       aiChatTranscriptRecoveryNotice = message
       errorText = message
@@ -36527,7 +36541,7 @@ public final class WorkspaceStore {
       return OpenClawWorkspaceTranscriptLoad(
         transcript: transcript,
         unloadedThreadIDs: loaded.unloadedThreadIDs,
-        requiresMigration: false,
+        requiresMigration: loaded.recoveryStatus == .recoveredPreviousManifest,
         recoveryStatus: loaded.recoveryStatus
       )
     }
