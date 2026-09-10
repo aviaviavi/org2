@@ -1,0 +1,1442 @@
+{
+  "schema": "org2:paste-classifier-evaluation:v1",
+  "measuredAt": "2026-09-10T03:39:57.589Z",
+  "implementation": "Multinomial logistic regression (six-way softmax), trained sparse SGD on fixed hashed token/context + numeric shape features; CPU JavaScript. No LLM, GPU or cloud service.",
+  "seed": 20260909,
+  "epochs": 100,
+  "trainingExamples": 2520,
+  "trainingMs": 764.3790839999999,
+  "finalTrainingCrossEntropy": 0.0013694402216335394,
+  "fixtures": {
+    "train": {
+      "documents": 240,
+      "nonemptyLines": 2520,
+      "families": [
+        "recipe-0",
+        "email-0",
+        "web-0",
+        "recipe-1",
+        "email-1",
+        "web-1"
+      ]
+    },
+    "validation": {
+      "documents": 6,
+      "nonemptyLines": 49,
+      "families": [
+        "valid-recipe",
+        "valid-email",
+        "valid-web",
+        "valid-recipe-2",
+        "valid-email-2",
+        "valid-web-2"
+      ]
+    },
+    "test": {
+      "documents": 18,
+      "nonemptyLines": 138,
+      "families": [
+        "test-recipe-01",
+        "test-recipe-02",
+        "test-recipe-03",
+        "test-recipe-04",
+        "test-recipe-05",
+        "test-recipe-06",
+        "test-mail-01",
+        "test-mail-02",
+        "test-mail-03",
+        "test-mail-04",
+        "test-mail-05",
+        "test-mail-06",
+        "test-web-01",
+        "test-web-02",
+        "test-web-03",
+        "test-web-04",
+        "test-web-05",
+        "test-web-06"
+      ]
+    }
+  },
+  "datasetSha256": "a5b51b9cbd2822ffc61a1264a62beba9a56b52b641a54ac30ce4e66c2e4920dd",
+  "modelSha256": "6c383b9447658b7876a1d195f93a4aa303be3d777d39f73ffacd089c410b9348",
+  "size": {
+    "parameters": 2496,
+    "featureCount": 416,
+    "classes": 6,
+    "float32WeightsBytes": 9984,
+    "modelJsonBytes": 20038,
+    "modelGzipBytes": 7757,
+    "runtimeJsBytes": 4318
+  },
+  "thresholdSelection": {
+    "target": "At least 95% structural precision on validation with >=10 accepted structural lines; lowest passing threshold, else 0.995. Not a production quality gate.",
+    "candidates": [
+      {
+        "threshold": 0.6,
+        "accepted": 49,
+        "total": 49,
+        "coverage": 1,
+        "accuracy": 0.8979591836734694,
+        "structuralAccepted": 27,
+        "structuralPrecision": 0.9259259259259259
+      },
+      {
+        "threshold": 0.7,
+        "accepted": 48,
+        "total": 49,
+        "coverage": 0.9795918367346939,
+        "accuracy": 0.8958333333333334,
+        "structuralAccepted": 26,
+        "structuralPrecision": 0.9230769230769231
+      },
+      {
+        "threshold": 0.8,
+        "accepted": 45,
+        "total": 49,
+        "coverage": 0.9183673469387755,
+        "accuracy": 0.9333333333333333,
+        "structuralAccepted": 25,
+        "structuralPrecision": 0.92
+      },
+      {
+        "threshold": 0.9,
+        "accepted": 41,
+        "total": 49,
+        "coverage": 0.8367346938775511,
+        "accuracy": 0.975609756097561,
+        "structuralAccepted": 24,
+        "structuralPrecision": 0.9583333333333334
+      },
+      {
+        "threshold": 0.95,
+        "accepted": 39,
+        "total": 49,
+        "coverage": 0.7959183673469388,
+        "accuracy": 0.9743589743589743,
+        "structuralAccepted": 22,
+        "structuralPrecision": 0.9545454545454546
+      },
+      {
+        "threshold": 0.98,
+        "accepted": 36,
+        "total": 49,
+        "coverage": 0.7346938775510204,
+        "accuracy": 0.9722222222222222,
+        "structuralAccepted": 19,
+        "structuralPrecision": 0.9473684210526315
+      },
+      {
+        "threshold": 0.995,
+        "accepted": 28,
+        "total": 49,
+        "coverage": 0.5714285714285714,
+        "accuracy": 1,
+        "structuralAccepted": 16,
+        "structuralPrecision": 1
+      }
+    ],
+    "selected": 0.9
+  },
+  "heldOut": {
+    "rawModel": {
+      "accuracy": 0.7028985507246377,
+      "macroF1": 0.6661238330506841,
+      "perLabel": {
+        "heading": {
+          "support": 26,
+          "precision": 0.6,
+          "recall": 0.6923076923076923,
+          "f1": 0.6428571428571429
+        },
+        "list": {
+          "support": 28,
+          "precision": 0.75,
+          "recall": 0.75,
+          "f1": 0.75
+        },
+        "paragraph": {
+          "support": 54,
+          "precision": 0.671875,
+          "recall": 0.7962962962962963,
+          "f1": 0.728813559322034
+        },
+        "quote": {
+          "support": 9,
+          "precision": 0.75,
+          "recall": 0.3333333333333333,
+          "f1": 0.46153846153846156
+        },
+        "code": {
+          "support": 10,
+          "precision": 1,
+          "recall": 0.4,
+          "f1": 0.5714285714285715
+        },
+        "table": {
+          "support": 11,
+          "precision": 1,
+          "recall": 0.7272727272727273,
+          "f1": 0.8421052631578948
+        }
+      },
+      "confusion": {
+        "order": [
+          "heading",
+          "list",
+          "paragraph",
+          "quote",
+          "code",
+          "table"
+        ],
+        "rowsGoldColumnsPredicted": [
+          [
+            18,
+            0,
+            8,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            21,
+            7,
+            0,
+            0,
+            0
+          ],
+          [
+            10,
+            1,
+            43,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            5,
+            3,
+            0,
+            0
+          ],
+          [
+            1,
+            3,
+            1,
+            1,
+            4,
+            0
+          ],
+          [
+            1,
+            2,
+            0,
+            0,
+            0,
+            8
+          ]
+        ]
+      }
+    },
+    "heuristic": {
+      "accuracy": 0.5289855072463768,
+      "macroF1": 0.4826107696557147,
+      "perLabel": {
+        "heading": {
+          "support": 26,
+          "precision": 0.3333333333333333,
+          "recall": 0.038461538461538464,
+          "f1": 0.06896551724137931
+        },
+        "list": {
+          "support": 28,
+          "precision": 0.8333333333333334,
+          "recall": 0.17857142857142858,
+          "f1": 0.29411764705882354
+        },
+        "paragraph": {
+          "support": 54,
+          "precision": 0.45614035087719296,
+          "recall": 0.9629629629629629,
+          "f1": 0.6190476190476191
+        },
+        "quote": {
+          "support": 9,
+          "precision": 1,
+          "recall": 0.3333333333333333,
+          "f1": 0.5
+        },
+        "code": {
+          "support": 10,
+          "precision": 1,
+          "recall": 0.4,
+          "f1": 0.5714285714285715
+        },
+        "table": {
+          "support": 11,
+          "precision": 1,
+          "recall": 0.7272727272727273,
+          "f1": 0.8421052631578948
+        }
+      },
+      "confusion": {
+        "order": [
+          "heading",
+          "list",
+          "paragraph",
+          "quote",
+          "code",
+          "table"
+        ],
+        "rowsGoldColumnsPredicted": [
+          [
+            1,
+            0,
+            25,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            5,
+            23,
+            0,
+            0,
+            0
+          ],
+          [
+            2,
+            0,
+            52,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            6,
+            3,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            5,
+            0,
+            4,
+            0
+          ],
+          [
+            0,
+            0,
+            3,
+            0,
+            0,
+            8
+          ]
+        ]
+      }
+    },
+    "selectiveModel": {
+      "threshold": 0.9,
+      "accepted": 99,
+      "total": 138,
+      "coverage": 0.717391304347826,
+      "accuracy": 0.8282828282828283,
+      "structuralAccepted": 53,
+      "structuralPrecision": 0.8301886792452831
+    },
+    "fallbackAsParagraph": {
+      "accuracy": 0.6666666666666666,
+      "macroF1": 0.6436261790294354,
+      "perLabel": {
+        "heading": {
+          "support": 26,
+          "precision": 0.7222222222222222,
+          "recall": 0.5,
+          "f1": 0.5909090909090908
+        },
+        "list": {
+          "support": 28,
+          "precision": 0.8,
+          "recall": 0.5714285714285714,
+          "f1": 0.6666666666666666
+        },
+        "paragraph": {
+          "support": 54,
+          "precision": 0.5647058823529412,
+          "recall": 0.8888888888888888,
+          "f1": 0.6906474820143885
+        },
+        "quote": {
+          "support": 9,
+          "precision": 1,
+          "recall": 0.3333333333333333,
+          "f1": 0.5
+        },
+        "code": {
+          "support": 10,
+          "precision": 1,
+          "recall": 0.4,
+          "f1": 0.5714285714285715
+        },
+        "table": {
+          "support": 11,
+          "precision": 1,
+          "recall": 0.7272727272727273,
+          "f1": 0.8421052631578948
+        }
+      },
+      "confusion": {
+        "order": [
+          "heading",
+          "list",
+          "paragraph",
+          "quote",
+          "code",
+          "table"
+        ],
+        "rowsGoldColumnsPredicted": [
+          [
+            13,
+            0,
+            13,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            16,
+            12,
+            0,
+            0,
+            0
+          ],
+          [
+            5,
+            1,
+            48,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            6,
+            3,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            5,
+            0,
+            4,
+            0
+          ],
+          [
+            0,
+            2,
+            1,
+            0,
+            0,
+            8
+          ]
+        ]
+      }
+    },
+    "byDomain": {
+      "recipe": {
+        "model": {
+          "accuracy": 0.8936170212765957,
+          "macroF1": 0.7709260837990591,
+          "perLabel": {
+            "heading": {
+              "support": 12,
+              "precision": 0.9090909090909091,
+              "recall": 0.8333333333333334,
+              "f1": 0.8695652173913043
+            },
+            "list": {
+              "support": 18,
+              "precision": 1,
+              "recall": 0.8888888888888888,
+              "f1": 0.9411764705882353
+            },
+            "paragraph": {
+              "support": 12,
+              "precision": 0.7333333333333333,
+              "recall": 0.9166666666666666,
+              "f1": 0.8148148148148148
+            },
+            "quote": {
+              "support": 1,
+              "precision": 1,
+              "recall": 1,
+              "f1": 1
+            },
+            "code": {
+              "support": 0,
+              "precision": 0,
+              "recall": 0,
+              "f1": 0
+            },
+            "table": {
+              "support": 4,
+              "precision": 1,
+              "recall": 1,
+              "f1": 1
+            }
+          },
+          "confusion": {
+            "order": [
+              "heading",
+              "list",
+              "paragraph",
+              "quote",
+              "code",
+              "table"
+            ],
+            "rowsGoldColumnsPredicted": [
+              [
+                10,
+                0,
+                2,
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                16,
+                2,
+                0,
+                0,
+                0
+              ],
+              [
+                1,
+                0,
+                11,
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                0,
+                1,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                0,
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                0,
+                0,
+                0,
+                4
+              ]
+            ]
+          }
+        },
+        "heuristic": {
+          "accuracy": 0.44680851063829785,
+          "macroF1": 0.48659340659340655,
+          "perLabel": {
+            "heading": {
+              "support": 12,
+              "precision": 1,
+              "recall": 0.08333333333333333,
+              "f1": 0.15384615384615385
+            },
+            "list": {
+              "support": 18,
+              "precision": 1,
+              "recall": 0.16666666666666666,
+              "f1": 0.2857142857142857
+            },
+            "paragraph": {
+              "support": 12,
+              "precision": 0.3157894736842105,
+              "recall": 1,
+              "f1": 0.4799999999999999
+            },
+            "quote": {
+              "support": 1,
+              "precision": 1,
+              "recall": 1,
+              "f1": 1
+            },
+            "code": {
+              "support": 0,
+              "precision": 0,
+              "recall": 0,
+              "f1": 0
+            },
+            "table": {
+              "support": 4,
+              "precision": 1,
+              "recall": 1,
+              "f1": 1
+            }
+          },
+          "confusion": {
+            "order": [
+              "heading",
+              "list",
+              "paragraph",
+              "quote",
+              "code",
+              "table"
+            ],
+            "rowsGoldColumnsPredicted": [
+              [
+                1,
+                0,
+                11,
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                3,
+                15,
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                12,
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                0,
+                1,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                0,
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                0,
+                0,
+                0,
+                4
+              ]
+            ]
+          }
+        }
+      },
+      "email": {
+        "model": {
+          "accuracy": 0.6511627906976745,
+          "macroF1": 0.51010101010101,
+          "perLabel": {
+            "heading": {
+              "support": 2,
+              "precision": 0,
+              "recall": 0,
+              "f1": 0
+            },
+            "list": {
+              "support": 5,
+              "precision": 0.75,
+              "recall": 0.6,
+              "f1": 0.6666666666666665
+            },
+            "paragraph": {
+              "support": 29,
+              "precision": 0.7692307692307693,
+              "recall": 0.6896551724137931,
+              "f1": 0.7272727272727274
+            },
+            "quote": {
+              "support": 4,
+              "precision": 1,
+              "recall": 0.5,
+              "f1": 0.6666666666666666
+            },
+            "code": {
+              "support": 3,
+              "precision": 1,
+              "recall": 1,
+              "f1": 1
+            },
+            "table": {
+              "support": 0,
+              "precision": 0,
+              "recall": 0,
+              "f1": 0
+            }
+          },
+          "confusion": {
+            "order": [
+              "heading",
+              "list",
+              "paragraph",
+              "quote",
+              "code",
+              "table"
+            ],
+            "rowsGoldColumnsPredicted": [
+              [
+                0,
+                0,
+                2,
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                3,
+                2,
+                0,
+                0,
+                0
+              ],
+              [
+                8,
+                1,
+                20,
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                2,
+                2,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                0,
+                0,
+                3,
+                0
+              ],
+              [
+                0,
+                0,
+                0,
+                0,
+                0,
+                0
+              ]
+            ]
+          }
+        },
+        "heuristic": {
+          "accuracy": 0.7441860465116279,
+          "macroF1": 0.41623931623931626,
+          "perLabel": {
+            "heading": {
+              "support": 2,
+              "precision": 0,
+              "recall": 0,
+              "f1": 0
+            },
+            "list": {
+              "support": 5,
+              "precision": 0,
+              "recall": 0,
+              "f1": 0
+            },
+            "paragraph": {
+              "support": 29,
+              "precision": 0.75,
+              "recall": 0.9310344827586207,
+              "f1": 0.8307692307692308
+            },
+            "quote": {
+              "support": 4,
+              "precision": 1,
+              "recall": 0.5,
+              "f1": 0.6666666666666666
+            },
+            "code": {
+              "support": 3,
+              "precision": 1,
+              "recall": 1,
+              "f1": 1
+            },
+            "table": {
+              "support": 0,
+              "precision": 0,
+              "recall": 0,
+              "f1": 0
+            }
+          },
+          "confusion": {
+            "order": [
+              "heading",
+              "list",
+              "paragraph",
+              "quote",
+              "code",
+              "table"
+            ],
+            "rowsGoldColumnsPredicted": [
+              [
+                0,
+                0,
+                2,
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                5,
+                0,
+                0,
+                0
+              ],
+              [
+                2,
+                0,
+                27,
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                2,
+                2,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                0,
+                0,
+                3,
+                0
+              ],
+              [
+                0,
+                0,
+                0,
+                0,
+                0,
+                0
+              ]
+            ]
+          }
+        }
+      },
+      "webpage": {
+        "model": {
+          "accuracy": 0.5625,
+          "macroF1": 0.4412139792574575,
+          "perLabel": {
+            "heading": {
+              "support": 12,
+              "precision": 0.7272727272727273,
+              "recall": 0.6666666666666666,
+              "f1": 0.6956521739130435
+            },
+            "list": {
+              "support": 5,
+              "precision": 0.25,
+              "recall": 0.4,
+              "f1": 0.3076923076923077
+            },
+            "paragraph": {
+              "support": 13,
+              "precision": 0.5217391304347826,
+              "recall": 0.9230769230769231,
+              "f1": 0.6666666666666667
+            },
+            "quote": {
+              "support": 4,
+              "precision": 0,
+              "recall": 0,
+              "f1": 0
+            },
+            "code": {
+              "support": 7,
+              "precision": 1,
+              "recall": 0.14285714285714285,
+              "f1": 0.25
+            },
+            "table": {
+              "support": 7,
+              "precision": 1,
+              "recall": 0.5714285714285714,
+              "f1": 0.7272727272727273
+            }
+          },
+          "confusion": {
+            "order": [
+              "heading",
+              "list",
+              "paragraph",
+              "quote",
+              "code",
+              "table"
+            ],
+            "rowsGoldColumnsPredicted": [
+              [
+                8,
+                0,
+                4,
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                2,
+                3,
+                0,
+                0,
+                0
+              ],
+              [
+                1,
+                0,
+                12,
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                1,
+                3,
+                0,
+                0,
+                0
+              ],
+              [
+                1,
+                3,
+                1,
+                1,
+                1,
+                0
+              ],
+              [
+                1,
+                2,
+                0,
+                0,
+                0,
+                4
+              ]
+            ]
+          }
+        },
+        "heuristic": {
+          "accuracy": 0.4166666666666667,
+          "macroF1": 0.32797312750142943,
+          "perLabel": {
+            "heading": {
+              "support": 12,
+              "precision": 0,
+              "recall": 0,
+              "f1": 0
+            },
+            "list": {
+              "support": 5,
+              "precision": 0.6666666666666666,
+              "recall": 0.4,
+              "f1": 0.5
+            },
+            "paragraph": {
+              "support": 13,
+              "precision": 0.325,
+              "recall": 1,
+              "f1": 0.4905660377358491
+            },
+            "quote": {
+              "support": 4,
+              "precision": 0,
+              "recall": 0,
+              "f1": 0
+            },
+            "code": {
+              "support": 7,
+              "precision": 1,
+              "recall": 0.14285714285714285,
+              "f1": 0.25
+            },
+            "table": {
+              "support": 7,
+              "precision": 1,
+              "recall": 0.5714285714285714,
+              "f1": 0.7272727272727273
+            }
+          },
+          "confusion": {
+            "order": [
+              "heading",
+              "list",
+              "paragraph",
+              "quote",
+              "code",
+              "table"
+            ],
+            "rowsGoldColumnsPredicted": [
+              [
+                0,
+                0,
+                12,
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                2,
+                3,
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                13,
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                4,
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                1,
+                5,
+                0,
+                1,
+                0
+              ],
+              [
+                0,
+                0,
+                3,
+                0,
+                0,
+                4
+              ]
+            ]
+          }
+        }
+      }
+    },
+    "errors": [
+      {
+        "text": "How to make it",
+        "label": "paragraph",
+        "confidence": 0.48633295112978453,
+        "gold": "heading",
+        "id": "test-recipe-01",
+        "domain": "recipe"
+      },
+      {
+        "text": "Makes about 600 ml",
+        "label": "heading",
+        "confidence": 0.4844661528016451,
+        "gold": "paragraph",
+        "id": "test-recipe-02",
+        "domain": "recipe"
+      },
+      {
+        "text": "A little chopped dill",
+        "label": "paragraph",
+        "confidence": 0.8508814213985482,
+        "gold": "list",
+        "id": "test-recipe-03",
+        "domain": "recipe"
+      },
+      {
+        "text": "Freshly ground pepper",
+        "label": "paragraph",
+        "confidence": 0.6433642658100842,
+        "gold": "list",
+        "id": "test-recipe-03",
+        "domain": "recipe"
+      },
+      {
+        "text": "Ingredients (metric)",
+        "label": "paragraph",
+        "confidence": 0.45900640908711177,
+        "gold": "heading",
+        "id": "test-recipe-05",
+        "domain": "recipe"
+      },
+      {
+        "text": "Dana",
+        "label": "heading",
+        "confidence": 0.7375671517251324,
+        "gold": "paragraph",
+        "id": "test-mail-01",
+        "domain": "email"
+      },
+      {
+        "text": "Subject: Action needed",
+        "label": "heading",
+        "confidence": 0.8177929405594944,
+        "gold": "paragraph",
+        "id": "test-mail-02",
+        "domain": "email"
+      },
+      {
+        "text": "Before our call",
+        "label": "paragraph",
+        "confidence": 0.8958171353456926,
+        "gold": "heading",
+        "id": "test-mail-02",
+        "domain": "email"
+      },
+      {
+        "text": "Review section 4.2",
+        "label": "paragraph",
+        "confidence": 0.9899463019052487,
+        "gold": "list",
+        "id": "test-mail-02",
+        "domain": "email"
+      },
+      {
+        "text": "Bring the signed form",
+        "label": "paragraph",
+        "confidence": 0.9383463812251202,
+        "gold": "list",
+        "id": "test-mail-02",
+        "domain": "email"
+      },
+      {
+        "text": "ORDER CONFIRMATION",
+        "label": "heading",
+        "confidence": 0.9999971830070067,
+        "gold": "paragraph",
+        "id": "test-mail-03",
+        "domain": "email"
+      },
+      {
+        "text": "2 x Paper notebooks — $7.50 each",
+        "label": "list",
+        "confidence": 0.9990507465029045,
+        "gold": "paragraph",
+        "id": "test-mail-03",
+        "domain": "email"
+      },
+      {
+        "text": "Re: parser bug",
+        "label": "heading",
+        "confidence": 0.6313197886417211,
+        "gold": "paragraph",
+        "id": "test-mail-04",
+        "domain": "email"
+      },
+      {
+        "text": "Hi Lee,",
+        "label": "heading",
+        "confidence": 0.9070693838028429,
+        "gold": "paragraph",
+        "id": "test-mail-05",
+        "domain": "email"
+      },
+      {
+        "text": "NOTES",
+        "label": "heading",
+        "confidence": 0.9981984820835864,
+        "gold": "paragraph",
+        "id": "test-mail-05",
+        "domain": "email"
+      },
+      {
+        "text": "Cheers",
+        "label": "heading",
+        "confidence": 0.8570994921565325,
+        "gold": "paragraph",
+        "id": "test-mail-05",
+        "domain": "email"
+      },
+      {
+        "text": "Agenda for Thursday",
+        "label": "paragraph",
+        "confidence": 0.7250923938469213,
+        "gold": "heading",
+        "id": "test-mail-06",
+        "domain": "email"
+      },
+      {
+        "text": "On Monday, Jo wrote:",
+        "label": "paragraph",
+        "confidence": 0.9832956490262357,
+        "gold": "quote",
+        "id": "test-mail-06",
+        "domain": "email"
+      },
+      {
+        "text": "We agreed to limit the meeting to 25 minutes.",
+        "label": "paragraph",
+        "confidence": 0.8014494005480698,
+        "gold": "quote",
+        "id": "test-mail-06",
+        "domain": "email"
+      },
+      {
+        "text": "Riley",
+        "label": "heading",
+        "confidence": 0.9210139451833157,
+        "gold": "paragraph",
+        "id": "test-mail-06",
+        "domain": "email"
+      },
+      {
+        "text": "Before you begin",
+        "label": "paragraph",
+        "confidence": 0.6560710373931998,
+        "gold": "heading",
+        "id": "test-web-01",
+        "domain": "webpage"
+      },
+      {
+        "text": "curl -X GET https://example.test/v1/status",
+        "label": "paragraph",
+        "confidence": 0.9999313880234623,
+        "gold": "code",
+        "id": "test-web-02",
+        "domain": "webpage"
+      },
+      {
+        "text": "Response fields",
+        "label": "paragraph",
+        "confidence": 0.5835781841312121,
+        "gold": "heading",
+        "id": "test-web-02",
+        "domain": "webpage"
+      },
+      {
+        "text": "Start    Finish    Distance",
+        "label": "heading",
+        "confidence": 0.5273751499822721,
+        "gold": "table",
+        "id": "test-web-03",
+        "domain": "webpage"
+      },
+      {
+        "text": "09:15    10:45     4.2 km",
+        "label": "list",
+        "confidence": 0.9711889493146431,
+        "gold": "table",
+        "id": "test-web-03",
+        "domain": "webpage"
+      },
+      {
+        "text": "11:00    12:30     5 km",
+        "label": "list",
+        "confidence": 0.9905862075538242,
+        "gold": "table",
+        "id": "test-web-03",
+        "domain": "webpage"
+      },
+      {
+        "text": "“Take only photographs.”",
+        "label": "list",
+        "confidence": 0.3555003634636601,
+        "gold": "quote",
+        "id": "test-web-03",
+        "domain": "webpage"
+      },
+      {
+        "text": "Home / Guides / Repairs",
+        "label": "heading",
+        "confidence": 0.9987437782109221,
+        "gold": "paragraph",
+        "id": "test-web-04",
+        "domain": "webpage"
+      },
+      {
+        "text": "Replacing a washer",
+        "label": "paragraph",
+        "confidence": 0.8926790148563916,
+        "gold": "heading",
+        "id": "test-web-04",
+        "domain": "webpage"
+      },
+      {
+        "text": "Adjustable wrench",
+        "label": "paragraph",
+        "confidence": 0.6685089428201082,
+        "gold": "list",
+        "id": "test-web-04",
+        "domain": "webpage"
+      },
+      {
+        "text": "Soft cloth",
+        "label": "paragraph",
+        "confidence": 0.7950016724951015,
+        "gold": "list",
+        "id": "test-web-04",
+        "domain": "webpage"
+      },
+      {
+        "text": "Replacement washer, 12 mm",
+        "label": "paragraph",
+        "confidence": 0.9933698505936084,
+        "gold": "list",
+        "id": "test-web-04",
+        "domain": "webpage"
+      },
+      {
+        "text": "Step by step",
+        "label": "paragraph",
+        "confidence": 0.8187734948688985,
+        "gold": "heading",
+        "id": "test-web-04",
+        "domain": "webpage"
+      },
+      {
+        "text": "#+end_example",
+        "label": "list",
+        "confidence": 0.42364400341146785,
+        "gold": "code",
+        "id": "test-web-05",
+        "domain": "webpage"
+      },
+      {
+        "text": "* TODO do not execute",
+        "label": "list",
+        "confidence": 0.9982752658013758,
+        "gold": "code",
+        "id": "test-web-05",
+        "domain": "webpage"
+      },
+      {
+        "text": ":PROPERTIES:",
+        "label": "heading",
+        "confidence": 0.4038868584079234,
+        "gold": "code",
+        "id": "test-web-05",
+        "domain": "webpage"
+      },
+      {
+        "text": ":END:",
+        "label": "quote",
+        "confidence": 0.2795944248628381,
+        "gold": "code",
+        "id": "test-web-05",
+        "domain": "webpage"
+      },
+      {
+        "text": "[[file:private.txt]]",
+        "label": "list",
+        "confidence": 0.6642893184989198,
+        "gold": "code",
+        "id": "test-web-05",
+        "domain": "webpage"
+      },
+      {
+        "text": "Q: What did you measure?",
+        "label": "paragraph",
+        "confidence": 0.9998987089420205,
+        "gold": "quote",
+        "id": "test-web-06",
+        "domain": "webpage"
+      },
+      {
+        "text": "A: Six labels across copied text.",
+        "label": "paragraph",
+        "confidence": 0.9999722572486218,
+        "gold": "quote",
+        "id": "test-web-06",
+        "domain": "webpage"
+      },
+      {
+        "text": "A: Formatting alone is not enough.",
+        "label": "paragraph",
+        "confidence": 0.9999633909641878,
+        "gold": "quote",
+        "id": "test-web-06",
+        "domain": "webpage"
+      }
+    ]
+  },
+  "latency": {
+    "environment": {
+      "node": "v25.9.0",
+      "platform": "darwin",
+      "arch": "x64",
+      "cpu": "Apple M2"
+    },
+    "batch": {
+      "lines": 140,
+      "characters": 3136
+    },
+    "model": {
+      "iterations": 500,
+      "p50Ms": 0.9231670000001486,
+      "p95Ms": 1.1407919999999194
+    },
+    "heuristic": {
+      "iterations": 500,
+      "p50Ms": 0.021666999999979453,
+      "p95Ms": 0.0263750000001437
+    },
+    "modelJsonParseAndValidate": {
+      "iterations": 500,
+      "p50Ms": 0.08362499999998363,
+      "p95Ms": 0.08441699999980301
+    },
+    "scope": "Warm in-process CPU wall time including feature extraction and model validation; excludes browser startup, rendering, clipboard and file I/O."
+  },
+  "limitations": [
+    "Small synthetic English-dominant test set; labels authored by the implementer, not independently annotated.",
+    "Train templates repeat with changed values; test layouts and families are disjoint, but the domain remains synthetic.",
+    "Some plain text is semantically ambiguous without its DOM or author intent. Softmax scores are uncalibrated.",
+    "No claimed equivalence to gpu-lexer parameter budget, GPU throughput, or real clipboard accuracy.",
+    "Classifier remains opt-in experimental. Default baseline plus literal fallback and user editing is required."
+  ]
+}

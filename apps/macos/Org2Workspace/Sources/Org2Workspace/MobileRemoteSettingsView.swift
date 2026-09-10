@@ -76,7 +76,7 @@ private struct CorpusSettingsView: View {
           set: { store.experimentalFeaturesEnabled = $0 }
         ))
       } footer: {
-        Text("Try features still in development, including the bundled agent in AI Chat. Applies to all workspaces on this Mac. Turning this off stops an active bundled agent turn.")
+        Text("Try features still in development, including Paste as Org2 in the Source editor and the bundled agent in AI Chat. Applies to all workspaces on this Mac. Turning this off stops an active bundled agent turn.")
       }
       Section {
         if let root = store.corpusRoot {

@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Paste as Org2 · Local prototype</title><link rel="stylesheet" href="/style.css"></head>
+<body><main>
+<header><span class="eyebrow">OPENORG LAB · LOCAL PROTOTYPE</span><h1>Paste as Org2</h1><p>Keep the words. Review the structure.</p></header>
+<p class="notice">Everything stays in this browser tab. This experiment edits a scratch document; download reviewed Org to use it in OpenOrg.</p>
+<div class="toolbar"><button id="example">Load synthetic recipe</button><label><input type="checkbox" id="model"> Use experimental local classifier for plain text</label><span id="model-status">Loading model…</span></div>
+<div class="columns">
+<section><h2>1. Source</h2><label for="source">Paste copied text here (HTML is captured from the paste event when available)</label><textarea id="source" placeholder="Paste a recipe, email, or webpage excerpt…" spellcheck="false"></textarea><label for="url">Source URL, if known</label><input id="url" type="text" placeholder="https://…"><details><summary>Clipboard HTML &amp; original source</summary><p id="html-status">No HTML captured.</p><button id="packet" disabled>Download original + preview packet</button></details><button class="primary" id="preview">Preview structure</button></section>
+<section><h2>2. Review &amp; edit</h2><p id="status" role="status">Paste or load an example to begin.</p><textarea id="org" aria-label="Editable Org preview" spellcheck="false" disabled></textarea><div class="toolbar"><button class="primary" id="insert" disabled>Insert reviewed Org</button><button id="cancel" disabled>Cancel</button></div><details><summary>Structure suggestions</summary><pre id="labels"></pre></details></section>
+</div>
+<section><h2>3. Scratch document</h2><p>Place the cursor or select text before previewing. Insertion requires an unchanged document.</p><textarea id="document" aria-label="Scratch Org document" spellcheck="false">#+TITLE: Paste experiment
+
+</textarea><button id="download">Download document.org</button></section>
+<footer>Model labels can be wrong. Uncertain lines and code remain literal. HTML handles headings, lists, paragraphs, quotes and simple tables; complex layouts need review. No missing information is filled in.</footer>
+</main><script type="module" src="/app.js"></script></body></html>

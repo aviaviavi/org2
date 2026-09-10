@@ -99,3 +99,5 @@ Agents and runtime adapters should record observable execution metadata with `or
 TODO workflows: corpus defaults are org2.json todo.sequences (an array of sequence strings), edited with todo-config show/set or OpenOrg Settings → Workspace → TODO States. Files override defaults with file-local #+TODO: active | terminal sequences; use todo set --keyword STATE for exact custom states. See tooling-reference.html and language-reference.html.
 
 - List checkbox edits: `org2 checkbox --file FILE --line N` previews `[ ] -> [-] -> [X] -> [ ]`; add `--apply` to write. `checkbox set --status unchecked|indeterminate|checked` selects a state. The LSP exposes the same cycle as a code action for unsaved buffers.
+
+- Experimental Paste as Org2: default-off under Settings → Workspace → Experimental features; Source-editor command with local HTML/plain-text conversion, optional tiny classifier, editable preview and explicit insertion. See https://org2.avi.press/editors-macos.html.

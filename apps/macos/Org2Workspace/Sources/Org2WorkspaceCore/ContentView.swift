@@ -13006,6 +13006,7 @@ private struct OrgSourceEditorWithLinkTools: View {
         incrementalHighlightingDelayMilliseconds: 120,
         concealsSyntax: false,
         orgWritingCommands: true,
+        pasteAsOrgEnabled: { store.experimentalFeaturesEnabled },
         textChecking: .spellingAndGrammar,
         caretPublishingDelayMilliseconds: 180,
         semanticAnalysisDelayMilliseconds: 900,

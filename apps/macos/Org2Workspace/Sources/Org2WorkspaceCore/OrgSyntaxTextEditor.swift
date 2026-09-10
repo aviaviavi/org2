@@ -1187,6 +1187,10 @@ fileprivate enum OrgSyntaxTextBoundaryCaretPlacement {
 }
 
 final class OrgSyntaxTextView: NSTextView {
+  var pasteAsOrgEnabled: (() -> Bool)?
+  var pasteDocumentIdentity: String?
+  var pasteDocumentGeneration: (() -> UInt64)?
+  var pastePreviewController: PasteAsOrg2Controller?
   var documentSelectionContext: OrgSyntaxTextSelectionContext?
   var onSaveCommand: ((OrgSyntaxTextEditorSubmitContext) -> Bool)?
   var onDeferredSaveCommand: (() -> Bool)?
@@ -1379,6 +1383,9 @@ final class OrgSyntaxTextView: NSTextView {
   }
 
   override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
+    if item.action == #selector(pasteAsOrg2(_:)) {
+      return pasteAsOrgEnabled?() == true && isEditable && pastePreviewController == nil
+    }
     if item.action == #selector(copy(_:)),
        OrgSyntaxTextSelectionBridge.selectedText(containing: self) != nil {
       return true
@@ -1971,6 +1978,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
   let incrementalHighlighting: Bool
   let incrementalHighlightingDelayMilliseconds: Int
   let concealsSyntax: Bool
+  let pasteAsOrgEnabled: (() -> Bool)?
   let orgWritingCommands: Bool
   let textChecking: OrgSyntaxTextCheckingMode
   let caretPublishingDelayMilliseconds: Int
@@ -2012,6 +2020,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     incrementalHighlightingDelayMilliseconds: Int = 0,
     concealsSyntax: Bool = true,
     orgWritingCommands: Bool = false,
+    pasteAsOrgEnabled: (() -> Bool)? = nil,
     textChecking: OrgSyntaxTextCheckingMode = .disabled,
     caretPublishingDelayMilliseconds: Int = 0,
     semanticAnalysisDelayMilliseconds: Int = 180,
@@ -2051,6 +2060,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     self.incrementalHighlightingDelayMilliseconds = incrementalHighlightingDelayMilliseconds
     self.concealsSyntax = concealsSyntax
     self.orgWritingCommands = orgWritingCommands
+    self.pasteAsOrgEnabled = pasteAsOrgEnabled
     self.textChecking = textChecking
     self.caretPublishingDelayMilliseconds = caretPublishingDelayMilliseconds
     self.semanticAnalysisDelayMilliseconds = semanticAnalysisDelayMilliseconds
@@ -2127,6 +2137,9 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
 
     let textView = OrgSyntaxTextView()
     textView.delegate = context.coordinator
+    textView.pasteAsOrgEnabled = pasteAsOrgEnabled
+    textView.pasteDocumentIdentity = documentIdentity
+    textView.pasteDocumentGeneration = documentGeneration
     textView.documentSelectionContext = documentSelectionContext
     textView.onSaveCommand = onSaveCommand
     textView.onDeferredSaveCommand = { [weak coordinator = context.coordinator, weak textView] in
@@ -2237,6 +2250,9 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     // enough to route that checkpoint through its binding, callbacks, and
     // document identity rather than whichever document is arriving now.
     let pendingTextOwner = context.coordinator.updateParent(self)
+    textView.pasteAsOrgEnabled = pasteAsOrgEnabled
+    textView.pasteDocumentIdentity = documentIdentity
+    textView.pasteDocumentGeneration = documentGeneration
     textView.documentSelectionContext = documentSelectionContext
     textView.onSaveCommand = onSaveCommand
     textView.onDeferredSaveCommand = { [weak coordinator = context.coordinator, weak textView] in
@@ -2361,6 +2377,8 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     guard let textView = scrollView.documentView as? OrgSyntaxTextView else { return }
     coordinator.prepareForDismantle(textView)
     textView.delegate = nil
+    textView.pasteAsOrgEnabled = nil
+    textView.pastePreviewController?.cancel()
     textView.onSaveCommand = nil
     textView.onDeferredSaveCommand = nil
     textView.onDeleteDocumentSelection = nil

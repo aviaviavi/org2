@@ -90,6 +90,17 @@ struct Org2WorkspaceApp: App {
         .keyboardShortcut("/", modifiers: [.command])
       }
 
+      CommandGroup(after: .pasteboard) {
+        if store.experimentalFeaturesEnabled {
+          Button("Paste as Org2…") {
+            if !NSApp.sendAction(NSSelectorFromString("pasteAsOrg2:"), to: nil, from: nil) {
+              store.statusText = "Focus the document Source editor to Paste as Org2."
+            }
+          }
+          .keyboardShortcut("v", modifiers: [.command, .shift])
+        }
+      }
+
       CommandGroup(replacing: .undoRedo) {
         Button("Undo") {
           store.performUndoCommand()
