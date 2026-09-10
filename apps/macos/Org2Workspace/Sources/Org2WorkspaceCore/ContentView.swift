@@ -3548,8 +3548,7 @@ private struct FilesView: View {
             return
           }
           performAfterSwiftUIViewUpdate {
-            guard store.selectedCorpusFileID == id else { return }
-            store.selectCorpusFile(file)
+            store.activateSelectedCorpusFileFromList(file)
           }
         }
       }

@@ -17064,6 +17064,14 @@ public final class WorkspaceStore {
     statusText = "Opened \(file.relativePath)"
   }
 
+  func activateSelectedCorpusFileFromList(_ file: CorpusFile) {
+    guard selectedSurface == .files,
+          !isWorkspaceSurfacePaneClosed,
+          selectedCorpusFileID == file.id
+    else { return }
+    selectCorpusFile(file)
+  }
+
   public func handleCorpusFileClick(
     _ file: CorpusFile,
     modifiers: NSEvent.ModifierFlags = []
@@ -19285,11 +19293,11 @@ public final class WorkspaceStore {
   }
 
   public func openDailyNote(_ target: DailyNoteTarget) {
-    startDailyNoteNavigation(target, opensFromSidebar: false)
+    startDailyNoteNavigation(date: Self.date(for: target))
   }
 
   public func openDailyNoteFromSidebar(_ target: DailyNoteTarget) {
-    startDailyNoteNavigation(target, opensFromSidebar: true)
+    openDailyNote(target)
   }
 
   public func presentDailyNoteDatePicker() {
@@ -19304,23 +19312,10 @@ public final class WorkspaceStore {
   public func openDailyNoteFromDatePicker() {
     let date = dailyNotePickerDate
     isDailyNoteDatePickerPresented = false
-    startDailyNoteNavigation(date: date, opensFromSidebar: true)
+    startDailyNoteNavigation(date: date)
   }
 
-  private func startDailyNoteNavigation(
-    _ target: DailyNoteTarget,
-    opensFromSidebar: Bool
-  ) {
-    startDailyNoteNavigation(
-      date: Self.date(for: target),
-      opensFromSidebar: opensFromSidebar
-    )
-  }
-
-  private func startDailyNoteNavigation(
-    date: Date,
-    opensFromSidebar: Bool
-  ) {
+  private func startDailyNoteNavigation(date: Date) {
     guard let corpusRoot,
           let context = captureDocumentCorpusContext()
     else {
@@ -19333,7 +19328,6 @@ public final class WorkspaceStore {
       guard let self else { return }
       await self.openDailyNote(
         date: date,
-        opensFromSidebar: opensFromSidebar,
         corpusRoot: corpusRoot,
         context: context,
         generation: generation
@@ -19343,7 +19337,6 @@ public final class WorkspaceStore {
 
   private func openDailyNote(
     date: Date,
-    opensFromSidebar: Bool,
     corpusRoot: URL,
     context: WorkspaceDocumentCorpusContext,
     generation: UInt64
@@ -19364,11 +19357,13 @@ public final class WorkspaceStore {
       else { return }
       dailyNoteActivationTask = nil
       upsertCorpusFile(file)
-      if opensFromSidebar {
-        openSidebarFile(file)
-      } else {
-        selectCorpusFile(file)
+      // Daily navigation replaces only the document, regardless of whether it
+      // came from the sidebar, a keyboard shortcut, or the date picker.
+      selectCorpusFile(file, surface: selectedSurface)
+      if selectedSurface == .files {
+        isWorkspaceSurfacePaneClosed = true
       }
+      activeWorkspacePane = .detail
       statusText = "Opened \(file.relativePath)"
     } catch {
       guard !Task.isCancelled,

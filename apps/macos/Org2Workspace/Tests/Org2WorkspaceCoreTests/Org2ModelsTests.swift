@@ -11576,7 +11576,7 @@ final class Org2ModelsTests: XCTestCase {
 
     XCTAssertTrue(FileManager.default.fileExists(atPath: today.path))
     XCTAssertEqual(store.selectedCorpusFileID, today.path)
-    XCTAssertEqual(store.selectedSurface, .files)
+    XCTAssertEqual(store.selectedSurface, .home)
 
     XCTAssertTrue(store.handleGlobalKeyDown(keyDown(
       characters: "7",
@@ -11600,7 +11600,7 @@ final class Org2ModelsTests: XCTestCase {
       .standardizedFileURL
     XCTAssertTrue(FileManager.default.fileExists(atPath: arbitrary.path))
     XCTAssertEqual(store.selectedCorpusFileID, arbitrary.path)
-    XCTAssertEqual(store.selectedSurface, .files)
+    XCTAssertEqual(store.selectedSurface, .home)
   }
 
   func testDailyNoteTargetsPutTodayFirstAndExposeCommandShortcuts() {
@@ -12859,7 +12859,7 @@ final class Org2ModelsTests: XCTestCase {
     await store.waitForDailyNoteNavigationForTesting()
 
     XCTAssertTrue(FileManager.default.fileExists(atPath: daily.path))
-    XCTAssertEqual(store.selectedSurface, .files)
+    XCTAssertEqual(store.selectedSurface, .home)
     XCTAssertEqual(store.selectedCorpusFileID, daily.path)
     XCTAssertEqual(store.selectedEntrySourceMode, .page)
     XCTAssertEqual(store.selectedLocation?.file, daily.path)
@@ -13105,7 +13105,82 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
-  func testSidebarDailyNoteNavigationMakesDocumentPrimary() async throws {
+  func testDailyNoteActionsPreserveVisibleChatAndDraft() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-daily-chat-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      openClawTranscriptURL: root.appendingPathComponent("chat.json")
+    )
+    store.setCorpusRoot(root)
+    store.createOpenClawChatThread()
+    let threadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
+    store.openClawDraft = "Keep this unsent message"
+
+    for (key, code) in [("7", UInt16(26)), ("8", UInt16(28)), ("9", UInt16(25))] {
+      store.expandSurface(.openClaw)
+      XCTAssertTrue(store.isWorkspaceDetailPaneClosed)
+      XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: key, keyCode: code, modifiers: [.command])))
+      await store.waitForDailyNoteNavigationForTesting()
+      XCTAssertEqual(store.selectedSurface, .openClaw)
+      XCTAssertEqual(store.selectedOpenClawChatThreadID, threadID)
+      XCTAssertEqual(store.openClawDraft, "Keep this unsent message")
+      XCTAssertFalse(store.isWorkspaceSurfacePaneClosed)
+      XCTAssertFalse(store.isWorkspaceDetailPaneClosed)
+      XCTAssertEqual(store.activeWorkspacePane, .detail)
+      XCTAssertNotNil(store.selectedLocation)
+    }
+
+    store.openDailyNoteFromSidebar(.today)
+    await store.waitForDailyNoteNavigationForTesting()
+    store.presentDailyNoteDatePicker()
+    store.dailyNotePickerDate = try XCTUnwrap(Calendar.current.date(from: DateComponents(year: 2024, month: 2, day: 29)))
+    store.openDailyNoteFromDatePicker()
+    await store.waitForDailyNoteNavigationForTesting()
+    XCTAssertEqual(store.selectedSurface, .openClaw)
+    XCTAssertEqual(store.selectedOpenClawChatThreadID, threadID)
+    XCTAssertEqual(store.openClawDraft, "Keep this unsent message")
+    XCTAssertFalse(store.isWorkspaceSurfacePaneClosed)
+    XCTAssertFalse(store.isWorkspaceDetailPaneClosed)
+    XCTAssertTrue(store.selectedLocation?.file.hasSuffix("/2024-02-29.org") == true)
+  }
+
+  @MainActor
+  func testDailyNoteNavigationHidesFilesAndPreservesAClosedFirstPane() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-daily-pane-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.makeSurfacePrimary(.files)
+    store.openDailyNote(.today)
+    await store.waitForDailyNoteNavigationForTesting()
+    XCTAssertEqual(store.selectedSurface, .files)
+    XCTAssertTrue(store.isWorkspaceSurfacePaneClosed)
+    XCTAssertFalse(store.isWorkspaceDetailPaneClosed)
+
+    let dailyFile = try XCTUnwrap(store.corpusFiles.first { $0.id == store.selectedCorpusFileID })
+    store.activateSelectedCorpusFileFromList(dailyFile)
+    XCTAssertTrue(store.isWorkspaceSurfacePaneClosed)
+
+    store.makeSurfacePrimary(.openClaw)
+    store.activateSelectedCorpusFileFromList(dailyFile)
+    XCTAssertEqual(store.selectedSurface, .openClaw)
+
+    store.makeSurfacePrimary(.agenda)
+    store.closeSurfacePane(.agenda)
+    store.openDailyNoteFromSidebar(.yesterday)
+    await store.waitForDailyNoteNavigationForTesting()
+    XCTAssertEqual(store.selectedSurface, .agenda)
+    XCTAssertTrue(store.isWorkspaceSurfacePaneClosed)
+    XCTAssertFalse(store.isWorkspaceDetailPaneClosed)
+  }
+
+  @MainActor
+  func testSidebarDailyNoteNavigationPreservesVisibleAgenda() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-sidebar-daily-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -13125,8 +13200,8 @@ final class Org2ModelsTests: XCTestCase {
       .appendingPathComponent("\(formatter.string(from: Date())).org")
       .standardizedFileURL
 
-    XCTAssertEqual(store.selectedSurface, .files)
-    XCTAssertTrue(store.isWorkspaceSurfacePaneClosed)
+    XCTAssertEqual(store.selectedSurface, .agenda)
+    XCTAssertFalse(store.isWorkspaceSurfacePaneClosed)
     XCTAssertFalse(store.isWorkspaceDetailPaneClosed)
     XCTAssertEqual(store.selectedEntrySourceMode, .page)
     XCTAssertEqual(store.selectedLocation?.file, daily.path)
