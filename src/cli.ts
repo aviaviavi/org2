@@ -10280,6 +10280,7 @@ Core commands:
   org2 doctor [--dir CORPUS] [--json]
   org2 ledger <list|show|create|update|event> LEDGER [ACCOUNT] [options]
   org2 corpus <show|validate|init> [--dir CORPUS] [--id ID --name NAME --kind KIND] [--apply]
+  org2 workspace agent-state --dir CORPUS --json
   org2 workspace <agenda|search> [QUERY] --mount CORPUS [--mount CORPUS ...] [--json]
   org2 goal <list|show|create|update> [options]
   org2 agent-profile <list|show|create|update|resolve> [options]

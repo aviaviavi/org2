@@ -93,6 +93,12 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
         writes: "read-only",
       },
       {
+        id: "workspace-agent-state",
+        purpose: "Read runs, workflows, goals, and agent profiles for one corpus in one process, with independent section errors and timings.",
+        commands: ["org2 workspace agent-state"],
+        writes: "read-only",
+      },
+      {
         id: "headless-server",
         purpose: "Host the OpenOrg chat relay and automation scheduler without a desktop window on macOS, pair iOS over Tailscale, and assign one explicit scheduler owner per corpus.",
         commands: ["org2 server init", "org2 server start", "org2 server status", "org2 server pair", "org2 server assign", "org2 server service", "org2 server stop", "org2 server revoke", "org2 server push-config"],

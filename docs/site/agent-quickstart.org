@@ -86,6 +86,7 @@ Run-linked approval headings are projections, not additional decisions. When =OR
 
 - *Use portable tools and models*: =runtime select= resolves capability/privacy policies, =mcp serve= exposes corpus resources and run tools, and =mcp snapshot= preserves external results with provenance.
 - *Plan and act*: =agenda=, =todo=, =approvals=, =plan=, and =clock=.
+- *Batch agent-state reads*: =org2 workspace agent-state --dir CORPUS --json= returns the normal run, workflow, goal, and agent-profile list envelopes in one process. Each section has its own value or error and elapsed time.
 - *Read across identified corpora*: =workspace agenda= and =workspace search= combine canonical per-corpus JSON results without creating a merged database or a workspace-wide write target.
 - *Refresh external mirrors*: =source list/doctor/status/bind/schedule/import/sync= orchestrates =slacrawl= and =notcrawl=. =source import= previews bounded raw captures and review-required Org2 packets; =source sync PROFILE --ingest --apply= refreshes and stages them. Portable profiles may declare validated interval or daily schedules. =source schedule= and the Mac Sources controls edit their cadence or pause/resume them; the app executes enabled schedules while running with wake/launch catch-up, while execution state remains machine-local. Profiles contain no secrets; every machine supplies its own binding or Keychain credential outside the corpus.
 - *Capture and organize*: =capture=, =archive=, and =refile=.

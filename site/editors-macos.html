@@ -177,6 +177,7 @@ rebuild. Renderer UI runs in a sandboxed, opaque-origin frame. See
 <li><p><code>Cmd-T</code> opens a tab; <code>Cmd-Shift-[</code> and <code>Cmd-Shift-]</code> move between tabs.</p></li>
 </ul>
 <p>Use the in-app keyboard shortcuts sheet for the complete map.</p>
+<p>Full refresh updates the selected document first, then runs up to two independent refresh jobs concurrently. File catalog and assigned-work refreshes stay ordered. Agent-state lists share one CLI request; native assigned-work and similar-TODO scans reuse unchanged file fragments and invalidate them on edits, replacements, or deletions. Timing records for each awaited refresh stage are available through the <a href="macos-diagnostics.html">diagnostics log</a>.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="install-and-troubleshoot">Install and troubleshoot</h1>

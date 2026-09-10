@@ -1,3 +1,4 @@
+import { workspaceAgentState, workspaceRunList, workspaceWorkflowList, workspaceGoalList, workspaceProfileList } from "./workspaceAgentState.js";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -26,7 +27,6 @@ import {
   reopenExternallyCompletedApprovalRun,
   requestAgentRunApproval,
   saveAgentRun,
-  summarizeAgentRunAttempts,
   supersedeAgentRunApproval,
   transitionAgentRun,
   updateAgentRunAssignment,
@@ -61,7 +61,6 @@ import {
   updateWorkflow,
   validateWorkflow,
   workflowTriggerEligibility,
-  workflowSourcePath,
   workflowFromRun,
   workflowExecutionPrompt,
   workflowScheduleOccurrences,
@@ -106,8 +105,6 @@ import {
   createAgentProfile,
   createGoal,
   goalPath,
-  listAgentProfiles,
-  listGoals,
   loadAgentProfileSnapshot,
   loadGoalSnapshot,
   renderAgentProfileOrg,
@@ -171,6 +168,7 @@ const HELP = `Agentic workspace commands:
   org2 ledger update LEDGER ACCOUNT [--state STATE] [--identity KEY] [--alias NAME] [--field KEY=VALUE] [--context TEXT] [--if-revision SHA256] [--apply]
   org2 ledger event LEDGER ACCOUNT --type TYPE --key IDEMPOTENCY_KEY [--run RUN --approval APPROVAL] [--decision-key KEY] [--external-id ID] [--source REF] [--data KEY=VALUE] [--actor NAME] [--note TEXT] [--if-revision SHA256] [--apply]
   org2 corpus show|validate|init [--dir CORPUS] [--id ID --name NAME --kind personal|shared|project] [--apply]
+  org2 workspace agent-state --dir CORPUS --json
   org2 workspace agenda --mount CORPUS [--mount CORPUS ...] [--from DATE --to DATE]
   org2 workspace search QUERY --mount CORPUS [--mount CORPUS ...] [--limit N]
   org2 thread list|show|post|settle|reopen|configure|auto-settle [--dir CORPUS] [--apply]
@@ -482,6 +480,11 @@ function forwardedArgs(parsed: ParsedArgs, excluded: Set<string>): string[] {
 
 async function workspaceCommand(parsed: ParsedArgs): Promise<void> {
   const action = parsed.positional[0] || "agenda";
+  if (action === "agent-state") {
+    if (flags(parsed, "mount").length) throw new Error("workspace agent-state reads one --dir corpus; --mount is not supported");
+    output(parsed, workspaceAgentState(root(parsed)));
+    return;
+  }
   const mounts = flags(parsed, "mount");
   if (mounts.length === 0) throw new Error("workspace reads require at least one --mount CORPUS");
   const args = forwardedArgs(parsed, new Set(["mount", "dir", "json", "format"]));
@@ -1010,11 +1013,8 @@ function goalCommand(parsed: ParsedArgs): void {
   const action = parsed.positional[0] || "list";
   const corpus = root(parsed);
   if (action === "list") {
-    const goals = listGoals(corpus).filter((goal) => !flag(parsed, "status") || goal.status === flag(parsed, "status"));
-    output(parsed, {
-      schema: "org2:goal-list:v1",
-      goals: goals.map((goal) => ({ ...goal, file: goalPath(corpus, goal.id) })),
-    }, goals.length ? goals.map((goal) => `${goal.id}\t${goal.status}\t${goal.title}`).join("\n") : "No goals.");
+    const payload = workspaceGoalList(corpus, flag(parsed, "status"));
+    output(parsed, payload, payload.goals.length ? payload.goals.map((goal) => `${goal.id}\t${goal.status}\t${goal.title}`).join("\n") : "No goals.");
     return;
   }
   const id = required(parsed.positional[1], `goal id is required for ${action}`);
@@ -1061,11 +1061,8 @@ function agentProfileCommand(parsed: ParsedArgs): void {
   const action = parsed.positional[0] || "list";
   const corpus = root(parsed);
   if (action === "list") {
-    const profiles = listAgentProfiles(corpus).filter((profile) => !flag(parsed, "status") || profile.status === flag(parsed, "status"));
-    output(parsed, {
-      schema: "org2:agent-profile-list:v1",
-      profiles: profiles.map((profile) => ({ ...profile, file: agentProfilePath(corpus, profile.id) })),
-    }, profiles.length ? profiles.map((profile) => `${profile.id}\t${profile.status}\t${profile.name}`).join("\n") : "No agent profiles.");
+    const payload = workspaceProfileList(corpus, flag(parsed, "status"));
+    output(parsed, payload, payload.profiles.length ? payload.profiles.map((profile) => `${profile.id}\t${profile.status}\t${profile.name}`).join("\n") : "No agent profiles.");
     return;
   }
   if (action === "resolve") {
@@ -1136,8 +1133,9 @@ async function runCommand(parsed: ParsedArgs): Promise<void> {
   }
   if (action === "list") {
     const status = flag(parsed, "status");
-    const runs = listAgentRuns(corpus).filter((run) => !status || run.status === status);
-    output(parsed, { schema: "org2:run-list:v1", runs, logicalWork: summarizeAgentRunAttempts(runs) }, runs.length ? runs.map((run) => `${run.id}\t${run.status}\t${run.attempt ? `${run.logicalWorkId}#${run.attempt.number}\t` : ""}${run.goal}`).join("\n") : "No runs."); return;
+    const payload = workspaceRunList(corpus, status);
+    const runs = payload.runs;
+    output(parsed, payload, runs.length ? runs.map((run) => `${run.id}\t${run.status}\t${run.attempt ? `${run.logicalWorkId}#${run.attempt.number}\t` : ""}${run.goal}`).join("\n") : "No runs."); return;
   }
   if (action === "normalize") { const result = normalizeLegacyAgentRuns(corpus); output(parsed, result, `created ${result.created.length}; skipped ${result.skippedExisting.length}`); return; }
   if (action === "approval-reconcile") {
@@ -1280,12 +1278,9 @@ function reviewCommand(parsed: ParsedArgs): void {
 function workflowCommand(parsed: ParsedArgs): void {
   const action = parsed.positional[0] || "list"; const corpus = root(parsed);
   if (action === "list") {
-    const workflows = listWorkflows(corpus).map((workflow) => ({
-      ...workflow,
-      file: workflowSourcePath(corpus, workflow.id),
-      legacyLocation: workflowSourcePath(corpus, workflow.id).includes(`${path.sep}.org2${path.sep}workflows${path.sep}`),
-    }));
-    output(parsed, { schema: "org2:workflow-list:v1", workflows }, workflows.length ? workflows.map((item) => `${item.id}@${item.version}\t${item.state}\t${item.title}`).join("\n") : "No workflows.");
+    const payload = workspaceWorkflowList(corpus);
+    const workflows = payload.workflows;
+    output(parsed, payload, workflows.length ? workflows.map((item) => `${item.id}@${item.version}\t${item.state}\t${item.title}`).join("\n") : "No workflows.");
     return;
   }
   if (action === "migrate") {

@@ -22,6 +22,7 @@ Main workflows:
 - =goal=, =agent-profile=, =run=, =review=, =workflow=, =artifact=, =runtime=, =mcp=, =eval=
 - =plugin= for content-addressed Git extensions, commands, templates, and document renderers
 - =corpus= identity inspection, validation, and preview-first initialization
+- =workspace agent-state --dir CORPUS --json= for a single-process, read-only batch of agent-state lists
 - =workspace agenda=, =workspace search= for read-only projections across explicitly mounted corpora
 - =source list=, =source doctor=, =source status=, =source bind=, =source schedule=, =source import=, =source sync= for external source mirrors and staged review packets
 - =compile corpus=
@@ -179,6 +180,12 @@ org2 corpus init --dir ~/team-notes --id team-notes --name "Team Notes" --kind s
 #+end_src
 
 =corpus init= previews by default, preserves unrelated =org2.json= settings, creates standard corpus zones when applied, and refuses to silently replace a different existing identity. See [[file:collaboration.org][Shared corpora and collaboration]].
+
+* Batched workspace agent state
+
+=org2 workspace agent-state --dir CORPUS --json= reads runs, workflows, goals, and agent profiles in one process. Its =org2:workspace-agent-state:v1= response has =runs=, =workflows=, =goals=, and =profiles= sections. Each contains the existing list envelope under =value=, or a section-local =error= string, plus =elapsedMilliseconds=. Clients must check each section for errors; a successful process exit does not mean every section succeeded.
+
+This is a read-only batch for one corpus, not an atomic transaction across files. It does not accept =--mount=. Existing individual list commands and their filters remain available.
 
 * Federated workspace reads
 

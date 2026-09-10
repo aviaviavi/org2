@@ -107,6 +107,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <li><p><code>goal</code>, <code>agent-profile</code>, <code>run</code>, <code>review</code>, <code>workflow</code>, <code>artifact</code>, <code>runtime</code>, <code>mcp</code>, <code>eval</code></p></li>
 <li><p><code>plugin</code> for content-addressed Git extensions, commands, templates, and document renderers</p></li>
 <li><p><code>corpus</code> identity inspection, validation, and preview-first initialization</p></li>
+<li><p><code>workspace agent-state --dir CORPUS --json</code> for a single-process, read-only batch of agent-state lists</p></li>
 <li><p><code>workspace agenda</code>, <code>workspace search</code> for read-only projections across explicitly mounted corpora</p></li>
 <li><p><code>source list</code>, <code>source doctor</code>, <code>source status</code>, <code>source bind</code>, <code>source schedule</code>, <code>source import</code>, <code>source sync</code> for external source mirrors and staged review packets</p></li>
 <li><p><code>compile corpus</code></p></li>
@@ -255,6 +256,11 @@ org2 corpus validate --dir ~/notes
 org2 corpus init --dir ~/team-notes --id team-notes --name &quot;Team Notes&quot; --kind shared
 org2 corpus init --dir ~/team-notes --id team-notes --name &quot;Team Notes&quot; --kind shared --apply</code></pre>
 <p><code>corpus init</code> previews by default, preserves unrelated <code>org2.json</code> settings, creates standard corpus zones when applied, and refuses to silently replace a different existing identity. See <a href="collaboration.html">Shared corpora and collaboration</a>.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="batched-workspace-agent-state">Batched workspace agent state</h1>
+<p><code>org2 workspace agent-state --dir CORPUS --json</code> reads runs, workflows, goals, and agent profiles in one process. Its <code>org2:workspace-agent-state:v1</code> response has <code>runs</code>, <code>workflows</code>, <code>goals</code>, and <code>profiles</code> sections. Each contains the existing list envelope under <code>value</code>, or a section-local <code>error</code> string, plus <code>elapsedMilliseconds</code>. Clients must check each section for errors; a successful process exit does not mean every section succeeded.</p>
+<p>This is a read-only batch for one corpus, not an atomic transaction across files. It does not accept <code>--mount</code>. Existing individual list commands and their filters remain available.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="federated-workspace-reads">Federated workspace reads</h1>

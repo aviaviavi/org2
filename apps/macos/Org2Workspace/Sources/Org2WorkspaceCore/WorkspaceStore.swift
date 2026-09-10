@@ -3213,8 +3213,14 @@ public final class WorkspaceStore {
   var linkedPDFDataLoaderForTesting: (@Sendable (URL) async throws -> Data)?
   private var linkedPDFLoadTask: Task<Void, Never>?
   private var linkedPDFLoadGeneration = 0
+  public private(set) var workspaceRefreshMetrics: [WorkspaceRefreshMetric] = []
+  @ObservationIgnored let workspaceTodoScanCache = WorkspaceTodoScanCache()
+  var workspaceRefreshConcurrencyForTesting = 2
+  var workspaceRefreshUsesBatchForTesting = true
+  var workspaceAgentStateLoaderForTesting: (@MainActor () async throws -> WorkspaceAgentStateSnapshot)?
   private var workspaceRefreshGeneration = 0
   private var workspaceRefreshOperationTask: Task<Void, Never>?
+  var workspaceRefreshTaskForTesting: Task<Void, Never>? { workspaceRefreshOperationTask }
   private var workspaceRefreshSlowNoticeTask: Task<Void, Never>?
   var workspaceRefreshSlowNoticeNanoseconds = WorkspaceStore.defaultWorkspaceRefreshSlowNoticeNanoseconds
   var workspaceRefreshOperationForTesting: (@MainActor @Sendable () async -> Void)?
@@ -4061,13 +4067,13 @@ public final class WorkspaceStore {
   }
 
   private func isCurrentAssignedWorkRefresh(_ context: AssignedWorkRefreshContext) -> Bool {
-    activeAssignedWorkRefreshRequestID == context.requestID
+    !Task.isCancelled && activeAssignedWorkRefreshRequestID == context.requestID
       && assignedWorkRefreshRequestGeneration == context.requestGeneration
       && isCurrentDocumentCorpusContext(context.corpus)
   }
 
   private func isCurrentSimilarTodoScan(_ context: SimilarTodoScanContext) -> Bool {
-    guard similarTodoScanRequestGeneration == context.requestGeneration,
+    guard !Task.isCancelled, similarTodoScanRequestGeneration == context.requestGeneration,
           isCurrentDocumentCorpusContext(context.corpus),
           let target = selectedHeadlineMutationTarget
     else {
@@ -4575,13 +4581,16 @@ public final class WorkspaceStore {
       activeCorpusIdentity = nil
       return
     }
+    let sessionGeneration = corpusSessionGeneration
     do {
       let status: CorpusIdentityStatus = try await cli.runJSON([
         "corpus", "show", "--dir", corpusRoot.path, "--json"
       ])
+      guard !Task.isCancelled, isCurrentCorpusSession(root: corpusRoot, generation: sessionGeneration) else { return }
       activeCorpusIdentity = status.identity
       upsertCorpusMount(path: corpusRoot.path, identity: status.identity)
     } catch {
+      guard !Task.isCancelled, isCurrentCorpusSession(root: corpusRoot, generation: sessionGeneration) else { return }
       activeCorpusIdentity = nil
       upsertCorpusMount(path: corpusRoot.path, identity: nil)
     }
@@ -4826,6 +4835,7 @@ public final class WorkspaceStore {
     workspaceRefreshGeneration += 1
     let generation = workspaceRefreshGeneration
     isRefreshingWorkspace = true
+    workspaceRefreshMetrics = []
     errorText = nil
 
     let operation = Task { @MainActor [weak self] in
@@ -4858,30 +4868,92 @@ public final class WorkspaceStore {
   }
 
   private func performWorkspaceRefresh(generation: Int) async {
-    guard shouldContinueWorkspaceRefresh(generation) else { return }
-
-    await refreshAudioSettingsStatusAsync(preserveStatusText: true)
-    // Refresh the document the user is looking at before reconciling every
-    // workspace projection. This keeps Cmd-R useful even when a later index,
-    // provider, or agent recovery refresh is slow.
-    await refreshSelectedDetailFromDisk()
+    let started = ContinuousClock.now
+    // Refresh the visible document first; the remaining independent jobs use
+    // two lanes. Files and assigned work remain an ordered dependency chain.
+    for stage in [WorkspaceRefreshStage.audio, .document, .identity] {
+      await performWorkspaceRefreshStage(stage, generation: generation)
+    }
     guard shouldContinueWorkspaceRefresh(generation) else { return }
     startPendingOpenClawTurnRecovery()
+    await WorkspaceRefreshScheduler.run(
+      stages: [.agenda, .files, .approvals, .agentState, .meetings, .sources, .threads],
+      concurrency: workspaceRefreshConcurrencyForTesting
+    ) { [weak self] stage in
+      guard let self else { return }
+      await self.performWorkspaceRefreshStage(stage, generation: generation)
+      if stage == .files {
+        await self.performWorkspaceRefreshStage(.assignedWork, generation: generation)
+      }
+    }
     guard shouldContinueWorkspaceRefresh(generation) else { return }
-    await refreshActiveCorpusIdentity()
+    refreshWorkspaceHealth()
+    refreshOrgCryptManagedRecipientFiles()
+    recordWorkspaceRefreshMetric(stage: "total", started: started)
+  }
+
+  private func performWorkspaceRefreshStage(_ stage: WorkspaceRefreshStage, generation: Int) async {
     guard shouldContinueWorkspaceRefresh(generation) else { return }
-    await refreshAgenda()
+    let started = ContinuousClock.now
+    switch stage {
+    case .audio: await refreshAudioSettingsStatusAsync(preserveStatusText: true)
+    case .document: await refreshSelectedDetailFromDisk()
+    case .identity: await refreshActiveCorpusIdentity()
+    case .agenda: await refreshAgenda(clearsError: false)
+    case .meetings: await refreshMeetings()
+    case .sources: await refreshSourceConnections()
+    case .files: await refreshCorpusFiles()
+    case .assignedWork: await refreshAssignedWork()
+    case .approvals: await refreshApprovals(clearsError: false)
+    case .agentState: await refreshWorkspaceAgentState(generation: generation)
+    case .threads: await refreshOpenClawThreads()
+    }
     guard shouldContinueWorkspaceRefresh(generation) else { return }
-    await refreshMeetings()
-    guard shouldContinueWorkspaceRefresh(generation) else { return }
-    await refreshSourceConnections()
-    guard shouldContinueWorkspaceRefresh(generation) else { return }
-    await refreshCorpusFiles()
-    guard shouldContinueWorkspaceRefresh(generation) else { return }
-    await refreshAssignedWork()
-    guard shouldContinueWorkspaceRefresh(generation) else { return }
-    await refreshApprovals()
-    guard shouldContinueWorkspaceRefresh(generation) else { return }
+    recordWorkspaceRefreshMetric(stage: stage.rawValue, started: started)
+  }
+
+  private func recordWorkspaceRefreshMetric(stage: String, started: ContinuousClock.Instant) {
+    let duration = started.duration(to: .now).components
+    let metric = WorkspaceRefreshMetric(stage: stage,
+      elapsedMilliseconds: Double(duration.seconds) * 1_000 + Double(duration.attoseconds) / 1e15)
+    workspaceRefreshMetrics.append(metric)
+    WorkspaceRefreshScheduler.record(metric)
+  }
+
+  private func refreshWorkspaceAgentState(generation: Int) async {
+    guard let root = corpusRoot else { return }
+    if workspaceRefreshUsesBatchForTesting {
+      do {
+        let pages: [RunsAndReviewPage] = [.runs, .workflows, .goals, .agents]
+        let revisions = Dictionary(uniqueKeysWithValues: pages.map {
+          ($0, runReviewPageLoadState(for: $0).dirtyGeneration)
+        })
+        let snapshot: WorkspaceAgentStateSnapshot
+        if let workspaceAgentStateLoaderForTesting {
+          snapshot = try await workspaceAgentStateLoaderForTesting()
+        } else {
+          snapshot = try await cli.runJSON([
+            "workspace", "agent-state", "--dir", root.path, "--json"
+          ])
+        }
+        // Invalidation during the batch read must not mark a stale section clean.
+        func isFresh(_ page: RunsAndReviewPage) -> Bool {
+          revisions[page] == runReviewPageLoadState(for: page).dirtyGeneration
+        }
+        guard shouldContinueWorkspaceRefresh(generation) else { return }
+        await refreshAgentRuns(prefetched: isFresh(.runs) ? snapshot.runs : nil)
+        guard shouldContinueWorkspaceRefresh(generation) else { return }
+        await refreshAgentWorkflows(prefetched: isFresh(.workflows) ? snapshot.workflows : nil)
+        guard shouldContinueWorkspaceRefresh(generation) else { return }
+        await refreshAgentGoals(prefetched: isFresh(.goals) ? snapshot.goals : nil)
+        guard shouldContinueWorkspaceRefresh(generation) else { return }
+        await refreshAgentProfiles(prefetched: isFresh(.agents) ? snapshot.profiles : nil)
+        return
+      } catch {
+        // Custom/older CLI installations can still use the ordinary list APIs.
+        guard shouldContinueWorkspaceRefresh(generation) else { return }
+      }
+    }
     await refreshAgentRuns()
     guard shouldContinueWorkspaceRefresh(generation) else { return }
     await refreshAgentWorkflows()
@@ -4889,10 +4961,6 @@ public final class WorkspaceStore {
     await refreshAgentGoals()
     guard shouldContinueWorkspaceRefresh(generation) else { return }
     await refreshAgentProfiles()
-    guard shouldContinueWorkspaceRefresh(generation) else { return }
-    refreshWorkspaceHealth()
-    refreshOrgCryptManagedRecipientFiles()
-    await refreshOpenClawThreads()
   }
 
   private func shouldContinueWorkspaceRefresh(_ generation: Int) -> Bool {
@@ -4965,14 +5033,18 @@ public final class WorkspaceStore {
       }
       return
     }
+    let sessionGeneration = corpusSessionGeneration
     let dirtyGeneration = workspaceSurfaceDirtyGenerations[.sources, default: 0]
     isLoadingSources = true
-    defer { isLoadingSources = false }
+    defer {
+      if isCurrentCorpusSession(root: corpusRoot, generation: sessionGeneration) { isLoadingSources = false }
+    }
     setSourceOperationMessage(nil, profileID: "workspace")
     do {
       let profiles: [WorkspaceSourceProfileStatus] = try await cli.runJSON(
         ["source", "list", "--dir", corpusRoot.path, "--json"]
       )
+      guard !Task.isCancelled, isCurrentCorpusSession(root: corpusRoot, generation: sessionGeneration) else { return }
       sourceProfiles = profiles
       if profiles.isEmpty {
         sourceRuntimeStatuses = [:]
@@ -4983,12 +5055,14 @@ public final class WorkspaceStore {
       let envelope: WorkspaceSourceStatusEnvelope = try await cli.runJSON(
         ["source", "status", "--dir", corpusRoot.path, "--json"]
       )
+      guard !Task.isCancelled, isCurrentCorpusSession(root: corpusRoot, generation: sessionGeneration) else { return }
       sourceRuntimeStatuses = Dictionary(uniqueKeysWithValues: envelope.sources.map { ($0.id, $0) })
       refreshSourceScheduleStates()
       markWorkspaceSurfaceCleanIfUnchanged(.sources, generation: dirtyGeneration)
     } catch is CancellationError {
       return
     } catch {
+      guard !Task.isCancelled, isCurrentCorpusSession(root: corpusRoot, generation: sessionGeneration) else { return }
       setSourceOperationMessage(error.localizedDescription, profileID: "workspace", failed: true)
     }
   }
@@ -5918,7 +5992,7 @@ public final class WorkspaceStore {
     }
   }
 
-  public func refreshAgenda(preserveSelection: Bool = false, updatesStatus: Bool = true) async {
+  public func refreshAgenda(preserveSelection: Bool = false, updatesStatus: Bool = true, clearsError: Bool = true) async {
     guard agendaTodoShortcutMutationTask == nil,
           pendingAgendaTodoShortcutMutations.isEmpty
     else {
@@ -5944,17 +6018,18 @@ public final class WorkspaceStore {
       return
     }
 
+    let sessionGeneration = corpusSessionGeneration
     let dirtyGeneration = workspaceSurfaceDirtyGenerations[.agenda, default: 0]
     isRefreshingAgenda = true
     let showsLoading = updatesStatus || agenda == nil
     if showsLoading {
       isLoadingAgenda = true
     }
-    errorText = nil
+    if clearsError { errorText = nil }
     defer {
-      isRefreshingAgenda = false
-      if showsLoading {
-        isLoadingAgenda = false
+      if isCurrentCorpusSession(root: corpusRoot, generation: sessionGeneration) {
+        isRefreshingAgenda = false
+        if showsLoading { isLoadingAgenda = false }
       }
     }
 
@@ -5976,6 +6051,7 @@ public final class WorkspaceStore {
         "--workload"
       ]
       let payload: AgendaPayload = try await cli.runJSON(arguments)
+      guard !Task.isCancelled, isCurrentCorpusSession(root: corpusRoot, generation: sessionGeneration) else { return }
       guard agendaTodoShortcutMutationTask == nil,
             pendingAgendaTodoShortcutMutations.isEmpty
       else {
@@ -5990,6 +6066,7 @@ public final class WorkspaceStore {
         statusText = "\(payload.totalItemCount) agenda item\(payload.totalItemCount == 1 ? "" : "s")\(issueSuffix)"
       }
     } catch {
+      guard !Task.isCancelled, isCurrentCorpusSession(root: corpusRoot, generation: sessionGeneration) else { return }
       errorText = error.localizedDescription
       if updatesStatus {
         statusText = "Agenda failed"
@@ -5997,7 +6074,7 @@ public final class WorkspaceStore {
     }
   }
 
-  public func refreshApprovals(updatesStatus: Bool = false) async {
+  public func refreshApprovals(updatesStatus: Bool = false, clearsError: Bool = true) async {
     guard !isRefreshingApprovals else {
       if updatesStatus {
         approvalRefreshRequestedAfterCurrent = true
@@ -6021,7 +6098,7 @@ public final class WorkspaceStore {
     if showsLoading {
       isLoadingApprovals = true
     }
-    errorText = nil
+    if clearsError { errorText = nil }
     defer {
       if isCurrentRunReviewPageRefresh(refreshContext) {
         let shouldRefreshAgain = approvalRefreshRequestedAfterCurrent
@@ -6437,7 +6514,7 @@ public final class WorkspaceStore {
     }
   }
 
-  public func refreshAgentRuns(updatesStatus: Bool = false) async {
+  public func refreshAgentRuns(updatesStatus: Bool = false, prefetched: WorkspaceAgentStateSection<AgentRunListPayload>? = nil) async {
     guard !isRefreshingAgentRuns else { return }
     guard let corpusRoot else {
       if updatesStatus { statusText = "No corpus selected" }
@@ -6466,9 +6543,14 @@ public final class WorkspaceStore {
       if let agentRunListLoaderForTesting {
         nextRuns = try await agentRunListLoaderForTesting()
       } else {
-        let payload: AgentRunListPayload = try await cli.runJSON([
-          "run", "list", "--dir", corpusRoot.path, "--json"
-        ])
+        let payload: AgentRunListPayload
+        if let prefetched {
+          payload = try prefetched.get()
+        } else {
+          payload = try await cli.runJSON([
+            "run", "list", "--dir", corpusRoot.path, "--json"
+          ])
+        }
         nextRuns = payload.runs
       }
       guard !Task.isCancelled,
@@ -6499,13 +6581,13 @@ public final class WorkspaceStore {
         statusText = "\(nextRuns.count) agent run\(nextRuns.count == 1 ? "" : "s")"
       }
     } catch {
-      guard isCurrentRunReviewPageRefresh(refreshContext) else { return }
+      guard !Task.isCancelled, isCurrentRunReviewPageRefresh(refreshContext) else { return }
       errorText = error.localizedDescription
       if updatesStatus { statusText = "Agent runs failed" }
     }
   }
 
-  public func refreshAgentWorkflows(updatesStatus: Bool = false) async {
+  public func refreshAgentWorkflows(updatesStatus: Bool = false, prefetched: WorkspaceAgentStateSection<AgentWorkflowListPayload>? = nil) async {
     guard !isRefreshingAgentWorkflows else { return }
     guard let corpusRoot else {
       agentWorkflows = []
@@ -6526,9 +6608,14 @@ public final class WorkspaceStore {
       }
     }
     do {
-      let payload: AgentWorkflowListPayload = try await cli.runJSON([
-        "workflow", "list", "--dir", corpusRoot.path, "--json"
-      ])
+      let payload: AgentWorkflowListPayload
+      if let prefetched {
+        payload = try prefetched.get()
+      } else {
+        payload = try await cli.runJSON([
+          "workflow", "list", "--dir", corpusRoot.path, "--json"
+        ])
+      }
       guard !Task.isCancelled,
             isCurrentRunReviewPageRefresh(refreshContext)
       else { return }
@@ -6552,13 +6639,13 @@ public final class WorkspaceStore {
         statusText = "\(nextWorkflows.count) workflow\(nextWorkflows.count == 1 ? "" : "s")"
       }
     } catch {
-      guard isCurrentRunReviewPageRefresh(refreshContext) else { return }
+      guard !Task.isCancelled, isCurrentRunReviewPageRefresh(refreshContext) else { return }
       errorText = error.localizedDescription
       if updatesStatus { statusText = "Workflows failed" }
     }
   }
 
-  public func refreshAgentGoals(updatesStatus: Bool = false) async {
+  public func refreshAgentGoals(updatesStatus: Bool = false, prefetched: WorkspaceAgentStateSection<AgentGoalListPayload>? = nil) async {
     guard !isRefreshingAgentGoals else { return }
     guard let corpusRoot else {
       agentGoals = []
@@ -6579,9 +6666,14 @@ public final class WorkspaceStore {
       }
     }
     do {
-      let payload: AgentGoalListPayload = try await cli.runJSON([
-        "goal", "list", "--dir", corpusRoot.path, "--json"
-      ])
+      let payload: AgentGoalListPayload
+      if let prefetched {
+        payload = try prefetched.get()
+      } else {
+        payload = try await cli.runJSON([
+          "goal", "list", "--dir", corpusRoot.path, "--json"
+        ])
+      }
       guard !Task.isCancelled,
             isCurrentRunReviewPageRefresh(refreshContext)
       else { return }
@@ -6595,13 +6687,13 @@ public final class WorkspaceStore {
         statusText = "\(payload.goals.count) goal\(payload.goals.count == 1 ? "" : "s")"
       }
     } catch {
-      guard isCurrentRunReviewPageRefresh(refreshContext) else { return }
+      guard !Task.isCancelled, isCurrentRunReviewPageRefresh(refreshContext) else { return }
       errorText = error.localizedDescription
       if updatesStatus { statusText = "Goals failed" }
     }
   }
 
-  public func refreshAgentProfiles(updatesStatus: Bool = false) async {
+  public func refreshAgentProfiles(updatesStatus: Bool = false, prefetched: WorkspaceAgentStateSection<AgentProfileListPayload>? = nil) async {
     guard !isRefreshingAgentProfiles else { return }
     guard let corpusRoot else {
       agentProfiles = []
@@ -6622,9 +6714,14 @@ public final class WorkspaceStore {
       }
     }
     do {
-      let payload: AgentProfileListPayload = try await cli.runJSON([
-        "agent-profile", "list", "--dir", corpusRoot.path, "--json"
-      ])
+      let payload: AgentProfileListPayload
+      if let prefetched {
+        payload = try prefetched.get()
+      } else {
+        payload = try await cli.runJSON([
+          "agent-profile", "list", "--dir", corpusRoot.path, "--json"
+        ])
+      }
       guard !Task.isCancelled,
             isCurrentRunReviewPageRefresh(refreshContext)
       else { return }
@@ -6638,7 +6735,7 @@ public final class WorkspaceStore {
         statusText = "\(payload.profiles.count) agent\(payload.profiles.count == 1 ? "" : "s")"
       }
     } catch {
-      guard isCurrentRunReviewPageRefresh(refreshContext) else { return }
+      guard !Task.isCancelled, isCurrentRunReviewPageRefresh(refreshContext) else { return }
       errorText = error.localizedDescription
       if updatesStatus { statusText = "Agents failed" }
     }
@@ -9477,7 +9574,7 @@ public final class WorkspaceStore {
       let items = try await Task.detached(priority: .utility) {
         try Self.scanMeetingItems(corpusRoot: corpusRoot)
       }.value
-      guard isCurrentCorpusSession(root: corpusRoot, generation: sessionGeneration) else { return }
+      guard !Task.isCancelled, isCurrentCorpusSession(root: corpusRoot, generation: sessionGeneration) else { return }
       meetings = items
       if selectedSurface == .meetings {
         statusText = "\(items.count) meeting\(items.count == 1 ? "" : "s")"
@@ -9487,7 +9584,7 @@ public final class WorkspaceStore {
       recoverInterruptedMeetingTranscriptions(knownItems: items)
       markWorkspaceSurfaceCleanIfUnchanged(.meetings, generation: dirtyGeneration)
     } catch {
-      guard isCurrentCorpusSession(root: corpusRoot, generation: sessionGeneration) else { return }
+      guard !Task.isCancelled, isCurrentCorpusSession(root: corpusRoot, generation: sessionGeneration) else { return }
       errorText = error.localizedDescription
       statusText = "Meeting scan failed"
     }
@@ -16692,6 +16789,7 @@ public final class WorkspaceStore {
       return
     }
 
+    let sessionGeneration = corpusSessionGeneration
     let dirtyGeneration = workspaceSurfaceDirtyGenerations[.openClaw, default: 0]
     isRefreshingOpenClawThreads = true
     let shouldShowLoading = showsLoading || openClawThreads.isEmpty
@@ -16699,9 +16797,9 @@ public final class WorkspaceStore {
       isLoadingOpenClawThreads = true
     }
     defer {
-      isRefreshingOpenClawThreads = false
-      if shouldShowLoading {
-        isLoadingOpenClawThreads = false
+      if isCurrentCorpusSession(root: corpusRoot, generation: sessionGeneration) {
+        isRefreshingOpenClawThreads = false
+        if shouldShowLoading { isLoadingOpenClawThreads = false }
       }
     }
 
@@ -16709,10 +16807,12 @@ public final class WorkspaceStore {
       let threads = try await Task.detached(priority: .utility) {
         try Self.scanOpenClawThreads(corpusRoot: corpusRoot)
       }.value
+      guard !Task.isCancelled, isCurrentCorpusSession(root: corpusRoot, generation: sessionGeneration) else { return }
       openClawThreads = threads
       syncOpenClawSelectionAfterRefresh()
       markWorkspaceSurfaceCleanIfUnchanged(.openClaw, generation: dirtyGeneration)
     } catch {
+      guard !Task.isCancelled, isCurrentCorpusSession(root: corpusRoot, generation: sessionGeneration) else { return }
       errorText = error.localizedDescription
       statusText = "Agent records scan failed"
     }
@@ -16767,12 +16867,14 @@ public final class WorkspaceStore {
 
       do {
         let preparation = assignedWorkScanPreparationForTesting
+        let cache = workspaceTodoScanCache
         let items = try await Task.detached(priority: .utility) {
           await preparation?()
           let scanFiles = files.isEmpty
             ? try Self.scanCorpusFiles(corpusRoot: corpusRoot)
             : files
-          return try Self.scanAssignedWorkItems(files: scanFiles)
+          let headings = try await cache.scan(files: scanFiles)
+          return Self.assignedWorkItems(headings: headings)
         }.value
         guard isCurrentAssignedWorkRefresh(request) else { return }
         let laneIsCurrent = await documentMutationLane.isCurrentAndQuiescent(laneSnapshot)
@@ -31251,12 +31353,13 @@ public final class WorkspaceStore {
       )
       do {
         let preparation = similarTodoScanPreparationForTesting
+        let cache = workspaceTodoScanCache
         let matched = try await Task.detached(priority: .utility) {
           await preparation?()
           let scanFiles = files.isEmpty
             ? try Self.scanCorpusFiles(corpusRoot: corpusRoot)
             : files
-          let allCandidates = try Self.scanTodoHeadings(files: scanFiles)
+          let allCandidates = try await cache.scan(files: scanFiles)
           return Self.similarTodoCandidates(to: target, from: allCandidates)
         }.value
         guard isCurrentSimilarTodoScan(request) else { return }
@@ -40703,8 +40806,8 @@ public final class WorkspaceStore {
     return output
   }
 
-  nonisolated private static func scanAssignedWorkItems(files: [CorpusFile]) throws -> [AssignedWorkItem] {
-    try scanTodoHeadings(files: files).compactMap { heading in
+  nonisolated private static func assignedWorkItems(headings: [SimilarTodoCandidate]) -> [AssignedWorkItem] {
+    headings.compactMap { heading in
       guard let assignee = heading.properties["ASSIGNEE"]?.trimmingCharacters(in: .whitespacesAndNewlines),
             !assignee.isEmpty
       else {
@@ -40735,7 +40838,7 @@ public final class WorkspaceStore {
     }
   }
 
-  nonisolated private static func scanTodoHeadings(files: [CorpusFile]) throws -> [SimilarTodoCandidate] {
+  nonisolated static func scanTodoHeadings(files: [CorpusFile]) throws -> [SimilarTodoCandidate] {
     var candidates: [SimilarTodoCandidate] = []
     let allowedExtensions = Set(["org", "org2"])
     for file in files {
@@ -40764,8 +40867,10 @@ public final class WorkspaceStore {
     return candidates
   }
 
+  nonisolated private static let todoHeadingRegex = try! NSRegularExpression(pattern: #"^\*+\s+(.+)$"#)
+
   nonisolated private static func parseTodoHeading(_ line: String) -> (todo: String, title: String, tags: [String])? {
-    guard let regex = try? NSRegularExpression(pattern: #"^\*+\s+(.+)$"#) else { return nil }
+    let regex = todoHeadingRegex
     let nsLine = line as NSString
     let range = NSRange(location: 0, length: nsLine.length)
     guard let match = regex.firstMatch(in: line, range: range) else { return nil }

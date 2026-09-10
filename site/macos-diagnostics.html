@@ -139,6 +139,12 @@ in-process diagnostics consumers.</p>
 <h1 id="current-recovery-boundary">Current recovery boundary</h1>
 <p>The first version is capture-only. It deliberately does not kill or relaunch a frozen app because unsaved editor state may exist. Safe cache shedding, cancellation of obsolete rendering work, and an explicit capture-and-relaunch action can be layered on after incident capture is proven reliable.</p>
 </section>
+<section class="org2-headline level-1">
+<h1 id="full-workspace-refresh-timings">Full workspace refresh timings</h1>
+<p>The <code>org.org2.workspace/WorkspaceRefresh</code> unified-log category records each awaited full-refresh stage and total wall time as <code>stage</code> and <code>elapsed_ms</code>. Stage names contain no corpus paths or document text. Independent stages overlap, so their durations do not sum to total wall time. Background health and indexing tasks may finish later. The existing <code>CLILatency</code> category separates command execution costs; <code>workspace agent-state</code> also returns timings for its individual list sections.</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">/usr/bin/log show --last 10m --info --style compact \
+  --predicate 'subsystem == &quot;org.org2.workspace&quot; &amp;&amp; (category == &quot;WorkspaceRefresh&quot; || category == &quot;CLILatency&quot;)'</code></pre>
+</section>
 </main>
 </div>
 <footer class="org2-footer"><div class="org2-footer-incubator"><span>Incubated at</span><a href="https://scarf.sh" target="_blank" rel="noopener noreferrer"><img class="org2-footer-scarf-logo" src="assets/scarf-logo.svg" alt="Scarf" /></a></div><p class="org2-footer-tagline">Build your knowledge locally and put it to work.</p><img referrerpolicy="no-referrer-when-downgrade" src="https://static.scarf.sh/a.png?x-pxid=e39e0a38-773e-4446-b8b0-804f923e3dc3" alt="" /></footer>

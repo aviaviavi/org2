@@ -103,3 +103,12 @@ The watchdog validates the portable corpus identity before writing and remains p
 * Current recovery boundary
 
 The first version is capture-only. It deliberately does not kill or relaunch a frozen app because unsaved editor state may exist. Safe cache shedding, cancellation of obsolete rendering work, and an explicit capture-and-relaunch action can be layered on after incident capture is proven reliable.
+
+* Full workspace refresh timings
+
+The =org.org2.workspace/WorkspaceRefresh= unified-log category records each awaited full-refresh stage and total wall time as =stage= and =elapsed_ms=. Stage names contain no corpus paths or document text. Independent stages overlap, so their durations do not sum to total wall time. Background health and indexing tasks may finish later. The existing =CLILatency= category separates command execution costs; =workspace agent-state= also returns timings for its individual list sections.
+
+#+begin_src sh
+/usr/bin/log show --last 10m --info --style compact \
+  --predicate 'subsystem == "org.org2.workspace" && (category == "WorkspaceRefresh" || category == "CLILatency")'
+#+end_src
