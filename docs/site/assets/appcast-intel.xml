@@ -4,30 +4,33 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>OpenOrg</title>
         <item>
-            <title>0.8.0</title>
-            <pubDate>Sun, 06 Sep 2026 12:44:33 -0700</pubDate>
+            <title>0.8.1</title>
+            <pubDate>Wed, 09 Sep 2026 19:20:38 -0700</pubDate>
             <link>https://openorg.so/downloads.html</link>
-            <sparkle:version>0.8.0</sparkle:version>
-            <sparkle:shortVersionString>0.8.0</sparkle:shortVersionString>
+            <sparkle:version>0.8.1</sparkle:version>
+            <sparkle:shortVersionString>0.8.1</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <description sparkle:format="markdown"><![CDATA[OpenOrg 0.8.0 keeps iPhone AI chat and scheduled work available through a dedicated Mac, even when your laptop is asleep or away.
+            <description sparkle:format="markdown"><![CDATA[OpenOrg 0.8.1 improves chat reliability, document export, and everyday workspace controls.
 
-- Run the chat relay and automation scheduler without a desktop window using `org2 server`. Pair, inspect, revoke devices, assign the scheduler host, and install a login service from the CLI.
-- Reuse existing corpus chat history. The Mac now refreshes conversations and messages arriving through corpus synchronization while preserving selection and unfinished drafts.
-- Give scheduled automations one explicit host. Updated Mac and server schedulers enforce that owner and suppress duplicate occurrences. Automatic failover across replicated copies is not enabled.
-- Save multiple hosts in the iOS app and choose which host handles chat. Each host retains its own protected pairing credential.
-- Improve LSP compatibility with strict clients: notifications receive no response, and split Unicode messages use correct UTF-8 byte framing.
-- Fix chat code/table scrolling, refresh stale Codex model catalogs, and keep the headless supervisor alive through temporary nonblocking input reads.
-- Make release retries reuse verified artifacts, install native dependencies separately for each Mac architecture, avoid repeated runtime builds, and stabilize the tests that delayed the previous release.
+- Chat selection stays aligned with text across messages and agent rounds. Copying tables includes rich HTML for email and aligned Org text.
+- Wrapped tables, narrow chat controls, elapsed-time labels, and Settle/Reopen buttons retain their layout. Read badges stay cleared, and image-only replies render inline.
+- Exported PDFs omit heading stars and outline guides while preserving document content and heading styles.
+- Quitting during active work shows a normal confirmation; repeating Quit exits. Build-and-restart workflows can retry Quit automatically.
+- Chat-history recovery preserves verified history from incomplete syncs, provides Retry, and protects recently synced artifacts from premature cleanup.
+- Headless-server credential access and Node executable upgrades no longer stall or crash the app in the previously identified cases.
+- Custom TODO workflows can be configured for the corpus, and native checkbox cycling is available through the CLI and LSP.
+- An optional bundled foreground agent is available behind Experimental settings; existing chat destinations retain their behavior.
 
-macOS downloads support macOS 14 or later and include the local dictation runtime. Both Apple Silicon and Intel DMGs require Developer ID signing and Apple notarization before publication. iOS 0.8.0 build 28 is distributed separately through TestFlight, subject to Apple's processing and beta review.
+The Mac release includes signed and notarized installers for Apple Silicon and Intel. macOS 14 or newer is required.
 
-For a synchronized corpus, continue a conversation from one execution host at a time. The desktop refreshes replicated history; it does not yet relay desktop messages through the headless server.
+No new iOS build is included: TestFlight 0.8.0 build 30 already contains the latest iOS changes.
+
+Full changelog: https://github.com/aviaviavi/org2/compare/0.8.0...0.8.1
 ]]></description>
-            <enclosure url="https://github.com/aviaviavi/org2/releases/download/0.8.0/OpenOrg-Intel.dmg" length="238986186" type="application/octet-stream" sparkle:edSignature="xFQHQlPfAYjUREMhrPBQFez9j3BWUcf56r/zW22fh2kKQPrjxh7DnG/vU74JS2zv2xq63pZY6vhItxqZea0ADw=="></enclosure>
+            <enclosure url="https://github.com/aviaviavi/org2/releases/download/0.8.1/OpenOrg-Intel.dmg" length="238565378" type="application/octet-stream" sparkle:edSignature="WdfTLuxiZIm92qP3gLgIk3cTMtncM4BQi4pxVHMA+NzcSiipN9vOOrUn/pG4iJLFX6PYPK7mEFjxUf86xbNLDg=="></enclosure>
         </item>
     </channel>
 </rss><!-- sparkle-signatures:
-edSignature: GjsGmmqixGDBXmToB6/s5maB3HraldJH9dpKVZiYDsBw3pbKxJy3jEkdfCues7cUII2y4sFHqbPXhf5eG3eCCw==
-length: 3002
+edSignature: 2PXTUItxrOv9o9wRbTdvlgtApL3XhejbrxaH6UZYHEioDdf7R/GUagg3Agra7EWl1+9ryK2nVIh2fyd9HgsFCQ==
+length: 2662
 -->
