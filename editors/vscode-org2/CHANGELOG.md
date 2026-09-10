@@ -4,6 +4,25 @@ All notable changes to the Org2 VS Code extension are documented in this file.
 
 ## Unreleased
 
+## 0.8.1 - 2026-09-10
+
+OpenOrg 0.8.1 improves chat reliability, document export, and everyday workspace controls.
+
+- Chat selection stays aligned with text across messages and agent rounds. Copying tables includes rich HTML for email and aligned Org text.
+- Wrapped tables, narrow chat controls, elapsed-time labels, and Settle/Reopen buttons retain their layout. Read badges stay cleared, and image-only replies render inline.
+- Exported PDFs omit heading stars and outline guides while preserving document content and heading styles.
+- Quitting during active work shows a normal confirmation; repeating Quit exits. Build-and-restart workflows can retry Quit automatically.
+- Chat-history recovery preserves verified history from incomplete syncs, provides Retry, and protects recently synced artifacts from premature cleanup.
+- Headless-server credential access and Node executable upgrades no longer stall or crash the app in the previously identified cases.
+- Custom TODO workflows can be configured for the corpus, and native checkbox cycling is available through the CLI and LSP.
+- An optional bundled foreground agent is available behind Experimental settings; existing chat destinations retain their behavior.
+
+The Mac release includes signed and notarized installers for Apple Silicon and Intel. macOS 14 or newer is required.
+
+No new iOS build is included: TestFlight 0.8.0 build 30 already contains the latest iOS changes.
+
+Full changelog: https://github.com/aviaviavi/org2/compare/0.8.0...0.8.1
+
 ## 0.8.0 - 2026-09-06
 
 OpenOrg 0.8.0 keeps iPhone AI chat and scheduled work available through a dedicated Mac, even when your laptop is asleep or away.
