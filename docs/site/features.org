@@ -148,3 +148,5 @@
 A dedicated macOS host can run the OpenOrg chat relay and automation scheduler from =org2 server= without a desktop window. iOS can save and select a Mac or server; each corpus has an explicit scheduler owner. See [[file:headless-server.org][Headless server setup]] for pairing, login-service installation, and the current host boundaries.
 
 OpenOrg also offers a default-off experimental *Paste as Org2* command in the document Source editor, with local conversion, an editable preview, optional tiny-model structure suggestions, and explicit insertion. See [[file:editors-macos.org][macOS workspace]].
+
+The iOS Files tab supports local fuzzy search across pages, headings, and entry text, with parent-note previews and rendered entry/full-note navigation. See [[file:editors.org][Editor integrations]].

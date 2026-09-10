@@ -6,3 +6,9 @@ Org2 is editor-agnostic. Editor docs are split by integration:
 - [[file:editors-vscode.org][VS Code]]
 - [[file:editors-vim.org][Vim / Neovim]]
 - [[file:editors-emacs.org][Emacs]]
+
+* iOS local search
+
+The iOS Files tab fuzzy-searches local note titles, headings, and entry text. Search =pour over=, =pourover=, or =por over= to find a matching heading; body terms such as =coffee= also find the entry. Heading matches rank above incidental body mentions. Each result shows its parent note and a short preview.
+
+Tap an Org result to open the rendered entry, including its subheadings. *Open full note* shows the complete page, and *Source* reveals the original text. Search indexes visible Org files independently of agenda selection, respects corpus ignore rules, and refreshes from the synced folder. The cached index and bundled Org2 parser/renderer work on-device without a Mac connection or an AI request. Scripts and remote embedded resources are disabled in the local rendered reader; other text files keep the source reader.

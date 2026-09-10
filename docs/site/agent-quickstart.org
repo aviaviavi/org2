@@ -164,3 +164,5 @@ The Mac chat's user-facing slash commands follow that rule: local commands such 
 For a completely new local workspace, the Mac app can initialize an empty folder with a minimal =org2.json=, inbox, welcome note, and =notes/=, =daily/=, =views/=, and =compiled/= zones. Those generated starter files are ordinary corpus text and should be treated like any other user-owned source.
 
 OpenOrg also offers a default-off experimental *Paste as Org2* command in the document Source editor, with local conversion, an editable preview, optional tiny-model structure suggestions, and explicit insertion. See [[file:editors-macos.org][macOS workspace]].
+
+The iOS Files tab can resolve local note and heading searches directly, including fuzzy title matches and entry-body matches. It opens rendered entries or complete notes using the bundled shared Org2 runtime, without requiring an agent turn or a paired Mac.

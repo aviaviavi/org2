@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import "./test-ios-transcript.mjs";
+import "./test-mobile-document.mjs";
 
 const contentView = readFileSync(
   resolve("apps/ios/Org2Mobile/Org2Mobile/ContentView.swift"),
@@ -175,3 +176,6 @@ assert.match(
 assert.match(contentView, /Saved to mobile-inbox\.org for safe desktop sync\./);
 
 console.log("iOS mobile navigation tests passed");
+
+assert.match(remoteViews, /resultsIndexID == store.searchIndex.id/, "Results must belong to the current corpus index before they can be opened");
+assert.match(remoteViews, /ForEach\(hasCurrentResults \? results : \[\]\)/);

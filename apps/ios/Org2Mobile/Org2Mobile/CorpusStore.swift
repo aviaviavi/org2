@@ -7,6 +7,8 @@ final class CorpusStore: ObservableObject {
   @Published private(set) var rootURL: URL?
   @Published private(set) var documents: [OrgDocument] = []
   @Published private(set) var corpusFiles: [CorpusFile] = []
+  @Published private(set) var searchIndex = MobileCorpusSearchIndex()
+  private var searchTodoSequences: [String] = []
   @Published private(set) var agenda: [AgendaEntry] = []
   @Published private(set) var approvals: [ApprovalEntry] = []
   @Published var isLoading = false
@@ -34,7 +36,7 @@ final class CorpusStore: ObservableObject {
   }
 
   private var hasDisplayedCorpus: Bool {
-    !documents.isEmpty || !agenda.isEmpty || !approvals.isEmpty
+    !corpusFiles.isEmpty || !documents.isEmpty || !agenda.isEmpty || !approvals.isEmpty
   }
 
   private var cacheURL: URL {
@@ -148,6 +150,10 @@ final class CorpusStore: ObservableObject {
 
       cachedFileCount = snapshot.documents.count
       corpusFiles = snapshot.files
+      searchIndex = snapshot.searchIndex
+      searchTodoSequences = snapshot.todoSequences
+      cacheHydrationGeneration += 1
+      isPreparingCorpus = false
       saveCachedCorpus(snapshot, for: rootURL)
       if hasOpenedCorpusViews {
         documents = snapshot.documents
@@ -265,6 +271,13 @@ final class CorpusStore: ObservableObject {
     }.value
   }
 
+  func renderedDocument(preview: CorpusFilePreview, entry: MobileSearchEntry?) async throws -> MobileRenderedDocument {
+    let sequences = searchTodoSequences
+    return try await Task.detached(priority: .userInitiated) {
+      try MobileDocumentRuntime().render(source: preview.content, path: preview.relativePath, entry: entry, sequences: sequences)
+    }.value
+  }
+
   func clearNotificationBadge() {
     Task {
       try? await UNUserNotificationCenter.current().setBadgeCount(0)
@@ -295,13 +308,18 @@ final class CorpusStore: ObservableObject {
       }
     }
 
-    guard let snapshot = await Task.detached(priority: .utility, operation: {
-      Self.loadValidCachedCorpus(at: cacheURL)
+    guard let restored = await Task.detached(priority: .utility, operation: { () -> (CorpusCacheSnapshot, MobileCorpusSearchIndex)? in
+      guard let snapshot = Self.loadValidCachedCorpus(at: cacheURL) else { return nil }
+      let entries = snapshot.searchEntries ?? snapshot.files.map {
+        MobileSearchEntry(path: $0.relativePath, title: $0.name, parent: "", line: 0, nodeID: "", body: "")
+      }
+      return (snapshot, MobileCorpusSearchIndex(entries: entries))
     }).value else {
       return
     }
 
     guard cacheHydrationGeneration == generation else { return }
+    let (snapshot, index) = restored
 
     if let rootURL, snapshot.rootPath != Self.cacheRootPath(for: rootURL) {
       return
@@ -310,7 +328,7 @@ final class CorpusStore: ObservableObject {
     if self.rootURL == nil {
       self.rootURL = URL(fileURLWithPath: snapshot.rootPath, isDirectory: true)
     }
-    restoreCachedCorpus(snapshot)
+    restoreCachedCorpus(snapshot, index: index)
     UserDefaults.standard.set(snapshot.rootPath, forKey: cachedRootPathKey)
   }
 
@@ -318,9 +336,11 @@ final class CorpusStore: ObservableObject {
     startCacheHydration(matching: rootURL)
   }
 
-  private func restoreCachedCorpus(_ snapshot: CorpusCacheSnapshot) {
+  private func restoreCachedCorpus(_ snapshot: CorpusCacheSnapshot, index: MobileCorpusSearchIndex) {
     documents = []
     corpusFiles = snapshot.files
+    searchIndex = index
+    searchTodoSequences = snapshot.todoSequences ?? []
     agenda = snapshot.agenda
     approvals = snapshot.approvals
     cachedFileCount = snapshot.fileCount
@@ -331,6 +351,8 @@ final class CorpusStore: ObservableObject {
   private func clearCorpusViews() {
     documents = []
     corpusFiles = []
+    searchIndex = MobileCorpusSearchIndex()
+    searchTodoSequences = []
     agenda = []
     approvals = []
     cachedFileCount = nil
@@ -358,6 +380,8 @@ final class CorpusStore: ObservableObject {
       cachedAt: Date(),
       fileCount: refreshSnapshot.documents.count,
       files: refreshSnapshot.files,
+      searchEntries: refreshSnapshot.searchEntries,
+      todoSequences: refreshSnapshot.todoSequences,
       agenda: refreshSnapshot.agenda,
       approvals: refreshSnapshot.approvals
     )
@@ -377,6 +401,11 @@ final class CorpusStore: ObservableObject {
   }
 
   private func setRootURL(_ url: URL) {
+    if rootURL != url {
+      refreshGeneration += 1
+      cacheHydrationGeneration += 1
+      clearCorpusViews()
+    }
     rootURL = url
     UserDefaults.standard.set(Self.cacheRootPath(for: url), forKey: cachedRootPathKey)
     MobileCaptureWriter.sharedDefaults.set(Self.cacheRootPath(for: url), forKey: cachedRootPathKey)
@@ -408,7 +437,28 @@ final class CorpusStore: ObservableObject {
       }
     }
 
+    let runtime = try MobileDocumentRuntime()
+    let sequences = mobileOrg2Config(in: baseURL)?.todo?.sequences ?? []
+    let parsedText = Dictionary(parsed.map { ($0.relativePath, $0.body) }, uniquingKeysWith: { first, _ in first })
+    var searchEntries: [MobileSearchEntry] = []
+    for url in viewerURLs {
+      let path = OrgParser.relativePath(for: url, rootURL: baseURL)
+      if ["org", "org2"].contains(url.pathExtension.lowercased()) {
+        do {
+          let source = try parsedText[path] ?? String(contentsOf: url, encoding: .utf8)
+          searchEntries += try runtime.index(source: source, path: path, sequences: sequences)
+          continue
+        } catch {
+          skipped.append("\(url.lastPathComponent) search: \(error.localizedDescription)")
+        }
+      }
+      searchEntries.append(MobileSearchEntry(path: path, title: url.lastPathComponent, parent: "", line: 0, nodeID: "", body: ""))
+    }
+
     return CorpusRefreshSnapshot(
+      searchIndex: MobileCorpusSearchIndex(entries: searchEntries),
+      searchEntries: searchEntries,
+      todoSequences: sequences,
       documents: parsed,
       files: viewerURLs.compactMap { corpusFile($0, rootURL: baseURL) },
       agenda: OrgParser.agendaEntries(from: parsed),
@@ -1636,6 +1686,8 @@ final class CorpusStore: ObservableObject {
 }
 
 private struct MobileOrg2Config: Decodable {
+  struct Todo: Decodable { let sequences: [String]? }
+  let todo: Todo?
   let agendaFiles: [String]?
   let recursive: Bool?
   let ignorePatterns: [String]?
@@ -1657,6 +1709,9 @@ private struct MobileAgentRunApproval: Decodable {
 }
 
 private struct CorpusRefreshSnapshot {
+  let searchIndex: MobileCorpusSearchIndex
+  let searchEntries: [MobileSearchEntry]
+  let todoSequences: [String]
   let documents: [OrgDocument]
   let files: [CorpusFile]
   let agenda: [AgendaEntry]
@@ -1684,6 +1739,8 @@ private struct CorpusCacheSnapshot: Codable {
   let cachedAt: Date
   let fileCount: Int
   let files: [CorpusFile]
+  let searchEntries: [MobileSearchEntry]?
+  let todoSequences: [String]?
   let agenda: [AgendaEntry]
   let approvals: [ApprovalEntry]
 }

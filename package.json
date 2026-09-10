@@ -94,10 +94,13 @@
     "prototype:paste": "npm run build && node tools/paste-as-org2/serve.mjs",
     "experiment:paste": "npm run build && node tools/paste-as-org2/experiment.mjs",
     "test:paste": "npm run build && node test/test-paste-as-org2.mjs",
-    "build:paste-native": "node tools/paste-as-org2/build-native.mjs"
+    "build:paste-native": "node tools/paste-as-org2/build-native.mjs",
+    "build:mobile-document": "node tools/build-mobile-document.mjs",
+    "check:mobile-document": "node tools/build-mobile-document.mjs --check"
   },
   "devDependencies": {
     "@types/node": "^22.10.7",
+    "esbuild": "0.28.2",
     "typescript": "^5.7.3"
   },
   "dependencies": {

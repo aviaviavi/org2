@@ -2,6 +2,7 @@ import PhotosUI
 import SwiftUI
 import UIKit
 import VisionKit
+import WebKit
 
 private func mobileAIRuntimeTitle(_ runtime: String) -> String {
   switch runtime {
@@ -2339,22 +2340,51 @@ private struct MobileRemoteFileCitation: Identifiable, Hashable {
 struct CorpusFileBrowserView: View {
   @EnvironmentObject private var store: CorpusStore
   @State private var query = ""
+  @State private var results: [MobileSearchEntry] = []
+  @State private var resultsQuery = ""
+  @State private var resultsIndexID: UUID?
+  private var hasCurrentResults: Bool { resultsQuery == query && resultsIndexID == store.searchIndex.id }
+  private var hasQuery: Bool { !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
   var body: some View {
     List {
       Section(store.corpusName) {
-        ForEach(filteredFiles) { file in
-          NavigationLink {
-            CorpusFileDocumentView(
-              citation: MobileRemoteFileCitation(
-                path: file.relativePath,
-                line: nil,
-                label: file.name
-              ),
-              allowsRemoteFallback: false
-            )
-          } label: {
-            fileRow(file)
+        if hasQuery {
+          ForEach(hasCurrentResults ? results : []) { entry in
+            NavigationLink {
+              CorpusFileDocumentView(
+                citation: MobileRemoteFileCitation(path: entry.path, line: entry.line > 0 ? entry.line : nil, label: entry.title),
+                allowsRemoteFallback: false,
+                entry: entry.line > 0 ? entry : nil,
+                prefersRendered: true
+              )
+            } label: {
+              VStack(alignment: .leading, spacing: 5) {
+                Label(entry.title, systemImage: entry.line > 0 ? "text.alignleft" : "doc.text")
+                  .font(.body.weight(.medium))
+                Text(entry.parent.isEmpty ? entry.path : "\(entry.parent) · \(entry.path)")
+                  .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                if !entry.body.isEmpty {
+                  Text(entry.preview(query: query)).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
+                }
+              }.padding(.vertical, 3)
+            }
+          }
+        } else {
+          ForEach(store.corpusFiles) { file in
+            NavigationLink {
+              CorpusFileDocumentView(
+                citation: MobileRemoteFileCitation(
+                  path: file.relativePath,
+                  line: nil,
+                  label: file.name
+                ),
+                allowsRemoteFallback: false,
+                prefersRendered: true
+              )
+            } label: {
+              fileRow(file)
+            }
           }
         }
       }
@@ -2362,13 +2392,15 @@ struct CorpusFileBrowserView: View {
     .overlay {
       if (store.isPreparingCorpus || store.isLoading) && store.corpusFiles.isEmpty {
         ProgressView("Loading corpus files…")
-      } else if filteredFiles.isEmpty {
+      } else if hasQuery && !hasCurrentResults {
+        ProgressView("Searching…")
+      } else if hasQuery && results.isEmpty {
         ContentUnavailableView.search(text: query)
       }
     }
     .navigationTitle("Files")
     .navigationBarTitleDisplayMode(.large)
-    .searchable(text: $query, prompt: "Search file names and paths")
+    .searchable(text: $query, prompt: "Search notes, headings, and text")
     .toolbar {
       ToolbarItem(placement: .topBarLeading) {
         MobileSidebarToolbarButton()
@@ -2389,40 +2421,23 @@ struct CorpusFileBrowserView: View {
     .refreshable {
       await store.refresh()
     }
+    .task(id: "\(store.searchIndex.id)|\(query)") {
+      let query = query
+      let index = store.searchIndex
+      do { try await Task.sleep(for: .milliseconds(100)) } catch { return }
+      let task = Task.detached(priority: .userInitiated) { index.search(query) }
+      let found = await withTaskCancellationHandler { await task.value } onCancel: { task.cancel() }
+      guard !Task.isCancelled else { return }
+      results = found
+      resultsQuery = query
+      resultsIndexID = index.id
+    }
     .task {
       store.prepareCorpusViews()
       if store.corpusFiles.isEmpty, !store.isLoading {
         await store.refresh(showsLoading: false)
       }
     }
-  }
-
-  private var filteredFiles: [CorpusFile] {
-    let terms = query
-      .lowercased()
-      .split(whereSeparator: \.isWhitespace)
-      .map(String.init)
-    guard !terms.isEmpty else { return store.corpusFiles }
-    return store.corpusFiles
-      .compactMap { file -> (file: CorpusFile, score: Int)? in
-        let name = file.name.lowercased()
-        let path = file.relativePath.lowercased()
-        guard terms.allSatisfy({ name.contains($0) || path.contains($0) }) else {
-          return nil
-        }
-        let normalizedQuery = terms.joined(separator: " ")
-        let score = name == normalizedQuery ? 300
-          : name.hasPrefix(normalizedQuery) ? 200
-          : path.hasPrefix(normalizedQuery) ? 150
-          : name.contains(normalizedQuery) ? 100
-          : 0
-        return (file, score)
-      }
-      .sorted { lhs, rhs in
-        if lhs.score != rhs.score { return lhs.score > rhs.score }
-        return lhs.file.relativePath.localizedStandardCompare(rhs.file.relativePath) == .orderedAscending
-      }
-      .map(\.file)
   }
 
   private func fileRow(_ file: CorpusFile) -> some View {
@@ -2869,6 +2884,11 @@ private struct CorpusFileDocumentView: View {
   @EnvironmentObject private var remote: MobileRemoteStore
   let citation: MobileRemoteFileCitation
   let allowsRemoteFallback: Bool
+  var entry: MobileSearchEntry? = nil
+  var prefersRendered = false
+  @State private var showsSource = false
+  @State private var rendered: MobileRenderedDocument?
+  @State private var renderError: String?
   @State private var preview: CorpusFilePreview?
   @State private var errorMessage: String?
 
@@ -2887,20 +2907,33 @@ private struct CorpusFileDocumentView: View {
           .frame(maxWidth: .infinity, maxHeight: .infinity)
       }
     }
-    .navigationTitle(preview?.title ?? citation.label)
+    .navigationTitle(rendered?.title ?? entry?.title ?? preview?.title ?? citation.label)
     .navigationBarTitleDisplayMode(.inline)
-    .task(id: citation.id) {
+    .toolbar {
+      if canRender {
+        ToolbarItem(placement: .topBarTrailing) {
+          Button(showsSource ? "Rendered" : "Source") { showsSource.toggle() }
+        }
+      }
+    }
+    .task(id: "\(store.rootURL?.path ?? "")|\(citation.id)") {
       preview = nil
+      rendered = nil
+      renderError = nil
       errorMessage = nil
       do {
-        preview = try await store.filePreview(path: citation.path, line: citation.line)
+        let loaded = try await store.filePreview(path: citation.path, line: citation.line)
+        guard !Task.isCancelled else { return }
+        preview = loaded
       } catch let localError {
+        guard !Task.isCancelled else { return }
         guard allowsRemoteFallback, remote.isPaired else {
           errorMessage = localError.localizedDescription
           return
         }
         do {
           let fetched = try await remote.filePreview(path: citation.path, line: citation.line)
+          guard !Task.isCancelled else { return }
           preview = CorpusFilePreview(
             title: fetched.title,
             relativePath: fetched.relativePath,
@@ -2912,7 +2945,22 @@ private struct CorpusFileDocumentView: View {
           errorMessage = error.localizedDescription
         }
       }
+      guard !Task.isCancelled else { return }
+      if canRender, let preview {
+        do {
+          let result = try await store.renderedDocument(preview: preview, entry: entry)
+          guard !Task.isCancelled else { return }
+          rendered = result
+        } catch {
+          guard !Task.isCancelled else { return }
+          renderError = error.localizedDescription
+        }
+      }
     }
+  }
+
+  private var canRender: Bool {
+    prefersRendered && ["org", "org2"].contains(URL(fileURLWithPath: citation.path).pathExtension.lowercased())
   }
 
   private func previewContent(_ preview: CorpusFilePreview) -> some View {
@@ -2930,7 +2978,25 @@ private struct CorpusFileDocumentView: View {
       .padding(.horizontal)
       .padding(.vertical, 10)
       Divider()
-      MobileRemoteSourceTextView(preview: preview)
+      if entry != nil {
+        NavigationLink("Open full note") {
+          CorpusFileDocumentView(
+            citation: MobileRemoteFileCitation(path: preview.relativePath, line: nil, label: preview.title),
+            allowsRemoteFallback: false, prefersRendered: true
+          )
+        }.padding(.horizontal).padding(.vertical, 8)
+      }
+      if canRender && !showsSource {
+        if let rendered {
+          MobileRenderedDocumentView(html: rendered.html)
+        } else if let renderError {
+          ContentUnavailableView("Entry Unavailable", systemImage: "doc.text", description: Text(renderError))
+        } else {
+          ProgressView("Rendering…").frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+      } else {
+        MobileRemoteSourceTextView(preview: preview)
+      }
     }
   }
 
@@ -3369,5 +3435,38 @@ private struct MobileRemoteQRScanner: UIViewControllerRepresentable {
         return
       }
     }
+  }
+}
+
+// Rendered by the bundled shared Org2 compiler; this view only presents its HTML.
+private struct MobileRenderedDocumentView: UIViewRepresentable {
+  let html: String
+  final class Coordinator: NSObject, WKNavigationDelegate {
+    var html = ""
+    func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
+                 decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void) {
+      if action.navigationType == .linkActivated {
+        if let url = action.request.url, ["https", "http", "mailto"].contains(url.scheme?.lowercased() ?? "") {
+          UIApplication.shared.open(url)
+        }
+        decisionHandler(.cancel)
+      } else { decisionHandler(action.request.url?.scheme == "about" ? .allow : .cancel) }
+    }
+  }
+  func makeCoordinator() -> Coordinator { Coordinator() }
+  func makeUIView(context: Context) -> WKWebView {
+    let configuration = WKWebViewConfiguration()
+    configuration.websiteDataStore = .nonPersistent()
+    configuration.defaultWebpagePreferences.allowsContentJavaScript = false
+    let view = WKWebView(frame: .zero, configuration: configuration)
+    view.navigationDelegate = context.coordinator
+    view.isOpaque = false
+    view.backgroundColor = .clear
+    return view
+  }
+  func updateUIView(_ view: WKWebView, context: Context) {
+    guard context.coordinator.html != html else { return }
+    context.coordinator.html = html
+    view.loadHTMLString(html, baseURL: nil)
   }
 }
