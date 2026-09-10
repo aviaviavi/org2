@@ -163,6 +163,8 @@ Use the in-app keyboard shortcuts sheet for the complete map.
 
 Full refresh updates the selected document first, then runs up to two independent refresh jobs concurrently. File catalog and assigned-work refreshes stay ordered. Agent-state lists share one CLI request; native assigned-work and similar-TODO scans reuse unchanged file fragments and invalidate them on edits, replacements, or deletions. Timing records for each awaited refresh stage are available through the [[file:macos-diagnostics.org][diagnostics log]].
 
+Large file-sync batches preserve every changed path when updating the search index. Oversized CLI argument lists travel through a private temporary file, removed after the request, so macOS process argument limits do not crash the workspace.
+
 * Install and troubleshoot
 
 Download the signed and notarized app from [[file:downloads.org][Downloads]]. Developers who want to build OpenOrg from source can follow the repository instructions on [[https://github.com/aviaviavi/org2][GitHub]].

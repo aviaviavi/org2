@@ -413,8 +413,21 @@ public struct Org2CLI: Sendable {
     let node = candidateNode.flatMap {
       Self.isLaunchableExecutable(atPath: $0) ? $0 : nil
     }
+    // NSTask raises an Objective-C exception (not a catchable Swift error)
+    // above 4096 arguments. Large sync batches can exceed that, or ARG_MAX in
+    // bytes. A Node preload restores argv before the original script starts,
+    // without consuming its stdin or requiring a newer CLI protocol.
+    let argumentTransport: Org2CLIArgumentTransport
+    do {
+      argumentTransport = try Org2CLIArgumentTransport(arguments: arguments)
+    } catch {
+      outcome = .launchFailed
+      throw error
+    }
+    defer { argumentTransport.removeTemporaryFiles() }
     process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-    process.arguments = [node ?? "node", scriptPath.path] + arguments
+    process.arguments = [node ?? "node"] + argumentTransport.nodeOptions
+      + [scriptPath.path] + argumentTransport.directArguments
     process.currentDirectoryURL = repoRoot
     process.environment = Self.processEnvironment().merging(environment) { _, override in override }
 
@@ -661,6 +674,51 @@ private final class PipeOutputCollector: @unchecked Sendable {
     let data = storage
     lock.unlock()
     return data
+  }
+}
+
+/// Keeps normal invocations unchanged; only oversized argv uses a private preload.
+struct Org2CLIArgumentTransport {
+  let directArguments: [String]
+  let nodeOptions: [String]
+  let temporaryDirectory: URL?
+
+  init(arguments: [String]) throws {
+    // Leave ample room for env, Node, the script path, and inherited environment.
+    let oversized = arguments.count > 2048
+      || arguments.reduce(0, { $0 + $1.utf8.count + 1 }) > 64 * 1024
+    guard oversized else {
+      directArguments = arguments
+      nodeOptions = []
+      temporaryDirectory = nil
+      return
+    }
+
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("openorg-cli-arguments-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(
+      at: directory, withIntermediateDirectories: false,
+      attributes: [.posixPermissions: 0o700]
+    )
+    do {
+      let preload = directory.appendingPathComponent("arguments.cjs")
+      var source = Data("process.argv = process.argv.concat(".utf8)
+      source.append(try JSONEncoder().encode(arguments))
+      source.append(Data(");\n".utf8))
+      try source.write(to: preload)
+      directArguments = []
+      nodeOptions = ["--require", preload.path]
+      temporaryDirectory = directory
+    } catch {
+      try? FileManager.default.removeItem(at: directory)
+      throw error
+    }
+  }
+
+  func removeTemporaryFiles() {
+    if let temporaryDirectory {
+      try? FileManager.default.removeItem(at: temporaryDirectory)
+    }
   }
 }
 

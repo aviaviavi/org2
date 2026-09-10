@@ -178,6 +178,7 @@ rebuild. Renderer UI runs in a sandboxed, opaque-origin frame. See
 </ul>
 <p>Use the in-app keyboard shortcuts sheet for the complete map.</p>
 <p>Full refresh updates the selected document first, then runs up to two independent refresh jobs concurrently. File catalog and assigned-work refreshes stay ordered. Agent-state lists share one CLI request; native assigned-work and similar-TODO scans reuse unchanged file fragments and invalidate them on edits, replacements, or deletions. Timing records for each awaited refresh stage are available through the <a href="macos-diagnostics.html">diagnostics log</a>.</p>
+<p>Large file-sync batches preserve every changed path when updating the search index. Oversized CLI argument lists travel through a private temporary file, removed after the request, so macOS process argument limits do not crash the workspace.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="install-and-troubleshoot">Install and troubleshoot</h1>

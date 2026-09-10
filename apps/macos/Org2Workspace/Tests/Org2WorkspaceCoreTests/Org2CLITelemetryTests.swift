@@ -21,6 +21,93 @@ private final class Org2CLIMetricRecorder: @unchecked Sendable {
 }
 
 final class Org2CLITelemetryTests: XCTestCase {
+  func testThousandsOfChangedPathsRoundTripWithoutFoundationArgumentException() async throws {
+    let root = try makeArgumentFixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let arguments = ["index", "--files"] + (0..<5000).map {
+      "/notes/\($0) spaced 'quoted' \"unicode 🦉\"\n.org"
+    } + ["--incremental", "--format", "json"]
+    let recorder = Org2CLIMetricRecorder()
+    let cli = Org2CLI(repoRoot: root, telemetryHandler: recorder.append)
+    let output = try await cli.run(arguments)
+    let payload = try JSONDecoder().decode(ArgumentFixtureOutput.self, from: output)
+    XCTAssertEqual(payload.arguments, arguments)
+    XCTAssertEqual(payload.script, root.appendingPathComponent("dist/cli.js").path)
+    let preload = try XCTUnwrap(payload.preload)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: preload))
+    XCTAssertEqual(recorder.metrics.last?.outcome, .succeeded)
+    XCTAssertEqual(recorder.metrics.last?.command, "cli.index")
+  }
+
+  func testLargeArgumentBytesAndESMEntryPointRoundTrip() async throws {
+    let root = try makeArgumentFixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    try #"{"type":"module"}"#.write(
+      to: root.appendingPathComponent("package.json"), atomically: true, encoding: .utf8
+    )
+    let arguments = ["search", String(repeating: "🦉\n'\\\"", count: 40000)]
+    let output = try await Org2CLI(repoRoot: root).run(arguments)
+    let payload = try JSONDecoder().decode(ArgumentFixtureOutput.self, from: output)
+    XCTAssertEqual(payload.arguments, arguments)
+    XCTAssertNotNil(payload.preload)
+  }
+
+  func testOversizedArgumentsPreserveStdinAndCleanUpAfterFailure() async throws {
+    let root = try makeArgumentFixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let script = root.appendingPathComponent("dist/parse.js")
+    try """
+    const fs = require('node:fs');
+    fs.writeFileSync('preload-path', process.execArgv[1]);
+    const input = fs.readFileSync(0, 'utf8');
+    process.stderr.write(input === 'stdin payload' ? 'expected failure' : 'lost stdin');
+    process.exitCode = 7;
+    """.write(to: script, atomically: true, encoding: .utf8)
+    do {
+      let _: [String: String] = try await Org2CLI(repoRoot: root).parseTextJSON(
+        "stdin payload", sourcePath: String(repeating: "long-path", count: 40000)
+      )
+      XCTFail("Expected failure")
+    } catch let error as Org2CLIError {
+      XCTAssertEqual(error, .commandFailed(status: 7, message: "expected failure"))
+    }
+    let preload = try String(contentsOf: root.appendingPathComponent("preload-path"), encoding: .utf8)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: preload))
+  }
+
+  func testArgumentTransportUsesPrivateDirectoryAndLeavesSmallRequestsUnchanged() throws {
+    let small = try Org2CLIArgumentTransport(arguments: ["version"])
+    XCTAssertEqual(small.directArguments, ["version"])
+    XCTAssertTrue(small.nodeOptions.isEmpty)
+    XCTAssertNil(small.temporaryDirectory)
+    let large = try Org2CLIArgumentTransport(arguments: Array(repeating: "file", count: 5000))
+    defer { large.removeTemporaryFiles() }
+    let directory = try XCTUnwrap(large.temporaryDirectory)
+    let attributes = try FileManager.default.attributesOfItem(atPath: directory.path)
+    XCTAssertEqual((attributes[.posixPermissions] as? NSNumber)?.intValue, 0o700)
+    XCTAssertTrue(large.directArguments.isEmpty)
+    XCTAssertEqual(large.nodeOptions.count, 2)
+  }
+
+  private struct ArgumentFixtureOutput: Decodable {
+    let arguments: [String]
+    let script: String
+    let preload: String?
+  }
+
+  private func makeArgumentFixture() throws -> URL {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-cli-arguments-test-\(UUID().uuidString)", isDirectory: true)
+    let dist = root.appendingPathComponent("dist", isDirectory: true)
+    try FileManager.default.createDirectory(at: dist, withIntermediateDirectories: true)
+    try """
+    process.stdout.write(JSON.stringify({
+      arguments: process.argv.slice(2), script: process.argv[1], preload: process.execArgv[1]
+    }));
+    """.write(to: dist.appendingPathComponent("cli.js"), atomically: true, encoding: .utf8)
+    return root
+  }
+
   func testStaleConfiguredNodeFallsBackWithoutCrashing() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-cli-stale-node-\(UUID().uuidString)", isDirectory: true)
