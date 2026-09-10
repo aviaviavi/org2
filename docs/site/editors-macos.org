@@ -116,7 +116,7 @@ Agents can display images directly in their replies with an Org image link on it
 
 *Pass to Agent* menus list active portable agent profiles from the corpus. Choosing one writes its readable name as =ASSIGNEE= and preserves its stable =AGENT_REF= plus primary =GOAL_REF= when available; the configured legacy handoff target remains available as a fallback.
 
-Threads and their context are stored locally with the corpus. Hover a sidebar thread to reveal its Settle action; settled threads show Reopen instead. The action keeps its space in narrow sidebars so hovering does not shift the title. Long-running OpenClaw turns can stream progress, be stopped, and reconnect after an app restart when the connected runtime supports it.
+Threads and their context are stored locally with the corpus. Hover or select a sidebar thread to reveal its Settle action; settled threads show Reopen instead. The selected thread keeps its action visible even when the pointer moves away. The action keeps its space in narrow sidebars so hovering does not shift the title. Long-running OpenClaw turns can stream progress, be stopped, and reconnect after an app restart when the connected runtime supports it.
 
 If chat history cannot be loaded safely, OpenOrg pauses transcript writes and shows a recovery notice with a *Retry* button. Retry after synchronization finishes or missing files are restored. Recovery can reconcile verified thread history from incomplete or divergent synced commits; recent unreferenced thread and attachment files receive a 30-day grace period before cleanup.
 

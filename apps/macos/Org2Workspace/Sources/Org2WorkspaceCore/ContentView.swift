@@ -3171,7 +3171,7 @@ private struct OpenClawSidebarThreadRow: View {
 
       OpenClawSidebarThreadSettlementButton(
         isSettled: summary.isSettled,
-        isVisible: isHovered
+        isVisible: isSelected || isHovered
       ) {
         summary.isSettled ? reopen() : settle()
       }
