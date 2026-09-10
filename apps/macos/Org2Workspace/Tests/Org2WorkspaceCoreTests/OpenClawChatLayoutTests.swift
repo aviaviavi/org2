@@ -1570,6 +1570,59 @@ final class OpenClawChatLayoutTests: XCTestCase {
     XCTAssertFalse(ChatBubbleView.managesMessageTextSelection)
   }
 
+  func testTranscriptDragUpdatesNativeHighlightBeforeMouseUp() {
+    let model = AIChatTranscriptSelectionModel()
+    let ids = [UUID(), UUID()]
+    let views = ids.map { _ in AIChatTranscriptRenderedText.TextView(frame: CGRect(x: 0, y: 0, width: 300, height: 30)) }
+    let layout = AIChatTranscriptTextLayout(attributedText: NSAttributedString(string: "Native text selection"), lineSpacing: 2)
+    for (index, view) in views.enumerated() {
+      view.textLayout = layout
+      model.register(view, for: ids[index])
+    }
+    model.updateRegions(ids.enumerated().map { index, id in
+      .init(id: id, messageID: UUID(), layout: layout, frame: CGRect(x: 0, y: index * 40, width: 300, height: 30))
+    })
+    model.beginSelection(at: CGPoint(x: 0, y: 15))
+    model.extendSelection(to: CGPoint(x: 70, y: 55))
+    XCTAssertTrue(model.isSelecting)
+    XCTAssertGreaterThan(views[0].range?.length ?? 0, 0)
+    XCTAssertGreaterThan(views[1].range?.length ?? 0, 0)
+    // No SwiftUI update, mouse-up, or run-loop drain is needed to apply ranges.
+    model.extendSelection(to: CGPoint(x: 40, y: 15))
+    XCTAssertNil(views[1].range)
+    model.clear()
+    XCTAssertNil(views[0].range)
+    model.unregister(views[0], for: ids[0])
+    model.applySelection(from: .init(regionID: ids[0], utf16Location: 0), to: .init(regionID: ids[0], utf16Location: 4))
+    XCTAssertNil(views[0].range)
+  }
+
+  func testTranscriptDragReusesNativeLayoutAndInvalidatesOnResizeOrTextChange() throws {
+    let model = AIChatTranscriptSelectionModel()
+    let id = UUID()
+    let view = AIChatTranscriptRenderedText.TextView(frame: CGRect(x: 0, y: 0, width: 500, height: 50))
+    let layout = AIChatTranscriptTextLayout(attributedText: NSAttributedString(string: String(repeating: "A wrapped sentence. ", count: 20)), lineSpacing: 2)
+    view.textLayout = layout
+    model.register(view, for: id)
+    model.updateRegions([.init(id: id, messageID: UUID(), layout: layout, frame: view.bounds)])
+    model.beginSelection(at: CGPoint(x: 0, y: 5))
+    let started = CFAbsoluteTimeGetCurrent()
+    for index in 0..<500 {
+      model.extendSelection(to: CGPoint(x: index % 480, y: 25))
+      let kit = try XCTUnwrap(view.preparedLayout(width: 500))
+      _ = layout.selectionRects(for: view.range ?? NSRange(location: 0, length: 0), in: view.bounds, using: kit)
+    }
+    let elapsed = CFAbsoluteTimeGetCurrent() - started
+    print("Transcript drag: 500 updates in \(elapsed)s, \(view.layoutBuildCount) layouts")
+    XCTAssertLessThan(elapsed, 1.0)
+    XCTAssertEqual(view.layoutBuildCount, 1)
+    _ = view.preparedLayout(width: 250)
+    XCTAssertEqual(view.layoutBuildCount, 2)
+    view.textLayout = .init(attributedText: NSAttributedString(string: "Updated"), lineSpacing: 4)
+    XCTAssertEqual(view.preparedLayout(width: 250)?.storage.string, "Updated")
+    XCTAssertEqual(view.layoutBuildCount, 3)
+  }
+
   func testTranscriptSelectionCopiesAcrossFourConsecutiveMessages() throws {
     let messageIDs = (0..<4).map { _ in UUID() }
     let regionIDs = (0..<4).map { _ in UUID() }

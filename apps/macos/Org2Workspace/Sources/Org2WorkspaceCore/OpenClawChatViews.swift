@@ -1337,8 +1337,8 @@ struct AIChatTranscriptTextLayout: Equatable {
       && lhs.attributedText.isEqual(to: rhs.attributedText)
   }
 
-  func characterLocation(in bounds: CGRect, at point: CGPoint) -> Int {
-    let textKit = makeTextKitLayout(width: bounds.width)
+  func characterLocation(in bounds: CGRect, at point: CGPoint, using prepared: TextKitLayout? = nil) -> Int {
+    let textKit = prepared ?? makeTextKitLayout(width: bounds.width)
     let localPoint = CGPoint(
       x: point.x,
       y: point.y - verticalOffset(containerHeight: bounds.height, usedHeight: textKit.usedRect.height)
@@ -1358,8 +1358,8 @@ struct AIChatTranscriptTextLayout: Equatable {
     return min(utf16Length, max(0, textKit.layoutManager.characterIndexForGlyph(at: glyphIndex)))
   }
 
-  func selectionRects(for range: NSRange, in bounds: CGRect) -> [CGRect] {
-    let textKit = makeTextKitLayout(width: bounds.width)
+  func selectionRects(for range: NSRange, in bounds: CGRect, using prepared: TextKitLayout? = nil) -> [CGRect] {
+    let textKit = prepared ?? makeTextKitLayout(width: bounds.width)
     let characterRange = NSIntersectionRange(
       range,
       NSRange(location: 0, length: attributedText.length)
@@ -1384,13 +1384,15 @@ struct AIChatTranscriptTextLayout: Equatable {
     return rects
   }
 
-  func makeTextKitLayout(width: CGFloat) -> (
+  typealias TextKitLayout = (
     storage: NSTextStorage,
     layoutManager: NSLayoutManager,
     container: NSTextContainer,
     usedRect: CGRect,
     glyphRange: NSRange
-  ) {
+  )
+
+  func makeTextKitLayout(width: CGFloat) -> TextKitLayout {
     let storage = NSTextStorage(attributedString: attributedText)
     let fullRange = NSRange(location: 0, length: storage.length)
     if storage.length > 0 {
@@ -1447,9 +1449,28 @@ struct AIChatTranscriptSelectionEndpoint: Equatable {
 }
 
 @MainActor
-@Observable
 final class AIChatTranscriptSelectionModel {
-  private(set) var selectedRanges: [UUID: NSRange] = [:]
+  // Selection is native drawing state: publishing it through SwiftUI invalidates
+  // every transcript fragment and defers highlights during event tracking.
+  private let textViews = NSMapTable<NSUUID, AIChatTranscriptRenderedText.TextView>.strongToWeakObjects()
+  private(set) var selectedRanges: [UUID: NSRange] = [:] {
+    didSet {
+      for id in Set(oldValue.keys).union(selectedRanges.keys) where oldValue[id] != selectedRanges[id] {
+        textViews.object(forKey: id as NSUUID)?.showSelection(selectedRange(for: id))
+      }
+    }
+  }
+
+  func register(_ view: AIChatTranscriptRenderedText.TextView, for id: UUID) {
+    textViews.setObject(view, forKey: id as NSUUID)
+    view.showSelection(selectedRange(for: id))
+  }
+
+  func unregister(_ view: AIChatTranscriptRenderedText.TextView, for id: UUID) {
+    if textViews.object(forKey: id as NSUUID) === view {
+      textViews.removeObject(forKey: id as NSUUID)
+    }
+  }
   private(set) var regions: [AIChatTranscriptSelectableRegion] = []
   private var anchor: AIChatTranscriptSelectionEndpoint?
   private(set) var isSelecting = false
@@ -1587,7 +1608,8 @@ final class AIChatTranscriptSelectionModel {
     )
     let location = region.layout.characterLocation(
       in: CGRect(origin: .zero, size: region.frame.size),
-      at: localPoint
+      at: localPoint,
+      using: textViews.object(forKey: region.id as NSUUID)?.preparedLayout(width: region.frame.width)
     )
     return AIChatTranscriptSelectionEndpoint(
       regionID: region.id,
@@ -1823,7 +1845,8 @@ struct AIChatTranscriptSelectableTextModifier: ViewModifier {
       let layout = selectionLayout
       AIChatTranscriptRenderedText(
         layout: layout,
-        range: selectionModel.selectedRange(for: regionID),
+        selectionModel: selectionModel,
+        regionID: regionID,
         openLink: { url in
           if let reference = OpenClawFileReference.fromDeepLinkURL(url) {
             openFileReference(reference)
@@ -1888,14 +1911,20 @@ struct AIChatTranscriptSelectableTextModifier: ViewModifier {
 // A SwiftUI Text plus a separately measured background can never guarantee this.
 struct AIChatTranscriptRenderedText: NSViewRepresentable {
   let layout: AIChatTranscriptTextLayout
-  let range: NSRange?
+  let selectionModel: AIChatTranscriptSelectionModel
+  let regionID: UUID
   let openLink: (URL) -> Void
 
   func makeNSView(context: Context) -> TextView { TextView(frame: .zero) }
 
   func updateNSView(_ view: TextView, context: Context) {
     view.textLayout = layout
-    view.range = range
+    if view.selectionModel !== selectionModel || view.regionID != regionID {
+      view.unregisterSelection()
+      view.selectionModel = selectionModel
+      view.regionID = regionID
+      selectionModel.register(view, for: regionID)
+    }
     view.openLink = openLink
     view.setAccessibilityElement(true)
     view.setAccessibilityRole(.staticText)
@@ -1905,15 +1934,64 @@ struct AIChatTranscriptRenderedText: NSViewRepresentable {
   }
 
   func sizeThatFits(_ proposal: ProposedViewSize, nsView: TextView, context: Context) -> CGSize? {
-    let ideal = layout.makeTextKitLayout(width: 100_000).usedRect.size
+    let ideal = nsView.idealSize
     let width = max(1, min(proposal.width ?? ideal.width, ceil(ideal.width)))
-    let measured = layout.makeTextKitLayout(width: width).usedRect.size
+    let measured = nsView.preparedLayout(width: width)?.usedRect.size ?? .zero
     return CGSize(width: width, height: ceil(measured.height))
   }
 
+  static func dismantleNSView(_ view: TextView, coordinator: ()) {
+    view.unregisterSelection()
+  }
+
   final class TextView: NSView {
-    var textLayout: AIChatTranscriptTextLayout?
-    var range: NSRange?
+    weak var selectionModel: AIChatTranscriptSelectionModel?
+    var regionID: UUID?
+    var textLayout: AIChatTranscriptTextLayout? {
+      didSet {
+        guard oldValue != textLayout else { return }
+        cachedLayout = nil
+        cachedIdealSize = nil
+        invalidateIntrinsicContentSize()
+        needsDisplay = true
+      }
+    }
+    private var cachedLayout: AIChatTranscriptTextLayout.TextKitLayout?
+    private var cachedWidth: CGFloat = 0
+    private var cachedIdealSize: CGSize?
+    private(set) var layoutBuildCount = 0
+    var idealSize: CGSize {
+      if let cachedIdealSize { return cachedIdealSize }
+      let size = textLayout?.makeTextKitLayout(width: 100_000).usedRect.size ?? .zero
+      cachedIdealSize = size
+      return size
+    }
+
+    func preparedLayout(width: CGFloat) -> AIChatTranscriptTextLayout.TextKitLayout? {
+      guard let textLayout else { return nil }
+      if cachedLayout == nil || cachedWidth != width {
+        cachedLayout = textLayout.makeTextKitLayout(width: width)
+        cachedWidth = width
+        layoutBuildCount += 1
+      }
+      return cachedLayout
+    }
+
+    func unregisterSelection() {
+      if let regionID { selectionModel?.unregister(self, for: regionID) }
+      selectionModel = nil
+      regionID = nil
+    }
+
+    func showSelection(_ selection: NSRange?) {
+      guard range != selection else { return }
+      range = selection
+      needsDisplay = true
+      // AppKit can paint inside the tracking run loop; SwiftUI need not commit.
+      if window != nil { displayIfNeeded() }
+    }
+
+    private(set) var range: NSRange?
     var openLink: ((URL) -> Void)?
     private var dragged = false
     override var isFlipped: Bool { true }
@@ -1921,7 +1999,7 @@ struct AIChatTranscriptRenderedText: NSViewRepresentable {
     override func mouseDragged(with event: NSEvent) { dragged = true }
     override func mouseUp(with event: NSEvent) {
       guard !dragged, let textLayout else { return }
-      let location = textLayout.characterLocation(in: bounds, at: convert(event.locationInWindow, from: nil))
+      let location = textLayout.characterLocation(in: bounds, at: convert(event.locationInWindow, from: nil), using: preparedLayout(width: bounds.width))
       guard location < textLayout.attributedText.length,
             let url = textLayout.attributedText.attribute(.link, at: location, effectiveRange: nil) as? URL
       else { return }
@@ -1929,12 +2007,12 @@ struct AIChatTranscriptRenderedText: NSViewRepresentable {
     }
     override func draw(_ dirtyRect: NSRect) {
       guard let textLayout, bounds.width > 0 else { return }
-      let kit = textLayout.makeTextKitLayout(width: bounds.width)
+      guard let kit = preparedLayout(width: bounds.width) else { return }
       let origin = CGPoint(x: 0, y: max(0, (bounds.height - kit.usedRect.height) / 2))
       kit.layoutManager.drawBackground(forGlyphRange: kit.glyphRange, at: origin)
       if let range {
         NSColor.selectedTextBackgroundColor.withAlphaComponent(0.58).setFill()
-        for rect in textLayout.selectionRects(for: range, in: bounds) {
+        for rect in textLayout.selectionRects(for: range, in: bounds, using: kit) {
           NSBezierPath(roundedRect: rect, xRadius: 2, yRadius: 2).fill()
         }
       }

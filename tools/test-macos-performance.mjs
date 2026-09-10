@@ -276,7 +276,7 @@ async function main() {
       "test",
       "--package-path", "apps/macos/Org2Workspace",
       "--configuration", "release",
-      "--filter", "OpenOrgPerformanceGateTests|WorkspacePerformanceRegressionTests",
+      "--filter", "OpenOrgPerformanceGateTests|WorkspacePerformanceRegressionTests|OpenClawChatLayoutTests/testTranscriptDrag",
     ];
     const command = supportsArm64 ? "arch" : "swift";
     const args = supportsArm64
