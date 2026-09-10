@@ -403,14 +403,18 @@ public struct Org2CLI: Sendable {
     }
 
     let process = Process()
-    let node = nodePath ?? Self.resolveNodePath()
-    if let node {
-      process.executableURL = URL(fileURLWithPath: node)
-      process.arguments = [scriptPath.path] + arguments
-    } else {
-      process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-      process.arguments = ["node", scriptPath.path] + arguments
+    // Homebrew replaces executables in place during upgrades. A Node path can
+    // therefore disappear between resolution and launch. Foundation may turn
+    // that invalid executable URL into an uncaught Objective-C exception
+    // instead of a Swift error, terminating the whole app. Always launch the
+    // stable system env binary and make Node its argument; a disappearing Node
+    // then becomes an ordinary child-process failure (status 127).
+    let candidateNode = nodePath ?? Self.resolveNodePath()
+    let node = candidateNode.flatMap {
+      Self.isLaunchableExecutable(atPath: $0) ? $0 : nil
     }
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+    process.arguments = [node ?? "node", scriptPath.path] + arguments
     process.currentDirectoryURL = repoRoot
     process.environment = Self.processEnvironment().merging(environment) { _, override in override }
 
@@ -616,7 +620,14 @@ public struct Org2CLI: Sendable {
       "/usr/local/bin/node",
       "/usr/bin/node"
     ]
-    return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
+    return candidates.first { isLaunchableExecutable(atPath: $0) }
+  }
+
+  private static func isLaunchableExecutable(atPath path: String) -> Bool {
+    var isDirectory: ObjCBool = false
+    return FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
+      && !isDirectory.boolValue
+      && FileManager.default.isExecutableFile(atPath: path)
   }
 
   static func processEnvironment() -> [String: String] {

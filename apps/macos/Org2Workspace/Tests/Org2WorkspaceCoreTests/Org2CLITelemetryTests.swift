@@ -21,6 +21,26 @@ private final class Org2CLIMetricRecorder: @unchecked Sendable {
 }
 
 final class Org2CLITelemetryTests: XCTestCase {
+  func testStaleConfiguredNodeFallsBackWithoutCrashing() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-cli-stale-node-\(UUID().uuidString)", isDirectory: true)
+    let dist = root.appendingPathComponent("dist", isDirectory: true)
+    let node = root.appendingPathComponent("temporary-node")
+    try FileManager.default.createDirectory(at: dist, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try #"process.stdout.write("fallback");"#
+      .write(to: dist.appendingPathComponent("cli.js"), atomically: true, encoding: .utf8)
+    try "#!/bin/sh\nexec /usr/bin/env node \"$@\"\n"
+      .write(to: node, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: node.path)
+
+    let cli = Org2CLI(repoRoot: root, nodePath: node.path)
+    try FileManager.default.removeItem(at: node)
+
+    let output = try await cli.run(["--version"])
+    XCTAssertEqual(String(decoding: output, as: UTF8.self), "fallback")
+  }
+
   func testRecordsSanitizedSuccessfulCommandMetric() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-cli-telemetry-success-\(UUID().uuidString)", isDirectory: true)
