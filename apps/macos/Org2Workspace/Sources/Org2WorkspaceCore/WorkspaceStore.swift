@@ -19706,7 +19706,8 @@ public final class WorkspaceStore {
     }
   }
 
-  public func attachOpenClawAttachment(data: Data, fileName: String, mimeType: String) {
+  @discardableResult
+  public func attachOpenClawAttachment(data: Data, fileName: String, mimeType: String) -> Bool {
     do {
       let attachment = try Self.openClawAttachment(
         data: data,
@@ -19715,15 +19716,17 @@ public final class WorkspaceStore {
       )
       guard !openClawPendingAttachments.contains(where: {
         $0.hasSameContent(as: attachment)
-      }) else { return }
+      }) else { return true }
       openClawPendingAttachments.append(attachment)
       if let selectedOpenClawChatThreadID {
         cacheOpenClawAttachments(openClawPendingAttachments, for: selectedOpenClawChatThreadID)
       }
       openClawStatusText = "\(openClawPendingAttachments.count) attachment\(openClawPendingAttachments.count == 1 ? "" : "s") ready"
+      return true
     } catch {
       errorText = error.localizedDescription
       openClawStatusText = "Could not attach \(fileName)"
+      return false
     }
   }
 
@@ -22514,6 +22517,10 @@ public final class WorkspaceStore {
     guard isCurrentAIChatCorpusContext(context) else { return }
     guard let thread = openClawChatThreads.first(where: { $0.id == threadID }) else { return }
     do {
+      let message = try await Task.detached {
+        try AIChatTextAttachments.expanding(message)
+      }.value
+      guard !Task.isCancelled, isCurrentAIChatCorpusContext(context) else { return }
       if let aiChatSteerHandlerForTesting {
         try await aiChatSteerHandlerForTesting(
           thread.runtime,
@@ -23244,6 +23251,10 @@ public final class WorkspaceStore {
       }
       activeOpenClawUserMessageIDByThreadID[threadID] = userMessageID
       do {
+        let requestMessages = try await Task.detached {
+          try requestMessages.map(AIChatTextAttachments.expanding)
+        }.value
+        try Task.checkCancellation()
         clearOpenClawSendFailure(
           for: userMessageID,
           in: threadID,

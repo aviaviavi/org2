@@ -159,6 +159,11 @@ struct OpenClawAsyncAttachmentImage<Placeholder: View>: View {
       }
     }
     .task(id: "\(attachment.id.uuidString)-\(attachment.persistedContentDigest)") {
+      guard OpenClawAttachmentPresentation.previewKind(for: attachment) == .image else {
+        image = nil
+        errorText = nil
+        return
+      }
       do {
         image = try await OpenClawAttachmentBackgroundCache.shared.image(for: attachment)
         errorText = nil

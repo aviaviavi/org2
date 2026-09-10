@@ -3755,7 +3755,12 @@ struct OpenClawComposerView: View {
             moveCursorToEndRequest: moveComposerCursorToEndRequest,
             onReturn: handleReturn,
             onSuggestionCommand: handleSuggestionCommand,
-            onDropAttachment: handleDropAttachment
+            onDropAttachment: handleDropAttachment,
+            onPasteLargeText: { text in
+              store.attachOpenClawAttachment(
+                data: Data(text.utf8), fileName: "Pasted Text.txt", mimeType: "text/plain"
+              )
+            }
           )
           .padding(4)
         }
@@ -4828,31 +4833,41 @@ private struct OpenClawPendingAttachmentsView: View {
 private struct OpenClawPendingAttachmentChip: View {
   @Environment(WorkspaceStore.self) private var store
   let attachment: OpenClawChatAttachment
+  @State private var isPreviewing = false
 
   var body: some View {
     HStack(spacing: 7) {
-      OpenClawAsyncAttachmentImage(attachment: attachment) { error in
-        Image(systemName: error == nil
-          ? OpenClawAttachmentPresentation.systemImage(for: attachment.mimeType)
-          : "exclamationmark.triangle")
-        .font(.caption.weight(.semibold))
-        .foregroundStyle(error == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(.orange))
-        .frame(width: 30, height: 30)
-        .background(WorkspaceDesign.subtleFill, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
-      }
-      .frame(width: 30, height: 30)
-      .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+      Button {
+        isPreviewing = true
+      } label: {
+        HStack(spacing: 7) {
+          OpenClawAsyncAttachmentImage(attachment: attachment) { error in
+            Image(systemName: error == nil
+              ? OpenClawAttachmentPresentation.systemImage(for: attachment.mimeType)
+              : "exclamationmark.triangle")
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(error == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(.orange))
+            .frame(width: 30, height: 30)
+            .background(WorkspaceDesign.subtleFill, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+          }
+          .frame(width: 30, height: 30)
+          .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
 
-      VStack(alignment: .leading, spacing: 1) {
-        Text(attachment.fileName)
-          .font(.caption.weight(.medium))
-          .lineLimit(1)
-          .truncationMode(.middle)
-        Text(ByteCountFormatter.string(fromByteCount: Int64(attachment.byteCount), countStyle: .file))
-          .font(.caption2)
-          .foregroundStyle(.secondary)
+          VStack(alignment: .leading, spacing: 1) {
+            Text(attachment.fileName)
+              .font(.caption.weight(.medium))
+              .lineLimit(1)
+              .truncationMode(.middle)
+            Text(ByteCountFormatter.string(fromByteCount: Int64(attachment.byteCount), countStyle: .file))
+              .font(.caption2)
+              .foregroundStyle(.secondary)
+          }
+          .frame(maxWidth: 150, alignment: .leading)
+        }
+        .contentShape(Rectangle())
       }
-      .frame(maxWidth: 150, alignment: .leading)
+      .buttonStyle(.plain)
+      .help("Preview attachment")
 
       Button {
         store.removeOpenClawPendingAttachment(attachment)
@@ -4871,12 +4886,17 @@ private struct OpenClawPendingAttachmentChip: View {
         .stroke(WorkspaceDesign.hairline)
     )
     .help("\(attachment.fileName) · \(ByteCountFormatter.string(fromByteCount: Int64(attachment.byteCount), countStyle: .file))")
+    .sheet(isPresented: $isPreviewing) {
+      OpenClawAttachmentPreviewView(attachment: attachment)
+    }
   }
 }
 
 enum OpenClawComposerSizing {
   static func height(for text: String, compact: Bool) -> CGFloat {
-    let visualLineCount = estimatedVisualLineCount(for: text, compact: compact)
+    // Both layouts reach their height cap within this prefix. Do not scan a
+    // restored large draft on every keystroke after it has reached that cap.
+    let visualLineCount = estimatedVisualLineCount(for: String(text.prefix(576)), compact: compact)
     let baseHeight: CGFloat = 34
     let lineHeight: CGFloat = 20
     let minHeight: CGFloat = compact ? 54 : 58
@@ -5005,13 +5025,14 @@ enum OpenClawSlashCommandSelection {
   }
 }
 
-private struct OpenClawComposerTextView: NSViewRepresentable {
+struct OpenClawComposerTextView: NSViewRepresentable {
   @Binding var text: String
   let focusOnAppear: Bool
   let moveCursorToEndRequest: Int
   let onReturn: (AIChatMessageDeliveryPreference) -> Bool
   let onSuggestionCommand: (OpenClawComposerSuggestionKeyCommand) -> Bool
   let onDropAttachment: (OpenClawComposerDropPayload) -> Bool
+  let onPasteLargeText: (String) -> Bool
 
   func makeCoordinator() -> Coordinator {
     Coordinator(parent: self)
@@ -5036,6 +5057,7 @@ private struct OpenClawComposerTextView: NSViewRepresentable {
     textView.onDropAttachment = {
       context.coordinator.parent.onDropAttachment($0)
     }
+    textView.onPasteLargeText = { context.coordinator.parent.onPasteLargeText($0) }
     textView.registerForDraggedTypes([.fileURL, .png, .tiff])
     textView.string = text
     textView.font = .systemFont(ofSize: NSFont.systemFontSize)
@@ -5077,6 +5099,7 @@ private struct OpenClawComposerTextView: NSViewRepresentable {
     textView.onDropAttachment = {
       context.coordinator.parent.onDropAttachment($0)
     }
+    textView.onPasteLargeText = { context.coordinator.parent.onPasteLargeText($0) }
     let movesCursorToEnd = context.coordinator.lastMoveCursorToEndRequest != moveCursorToEndRequest
     let selectedRange = textView.selectedRange()
     // AppKit can accept another keystroke before SwiftUI presents the state
@@ -5130,7 +5153,24 @@ private struct OpenClawComposerTextView: NSViewRepresentable {
     var onReturn: ((AIChatMessageDeliveryPreference) -> Bool)?
     var onSuggestionCommand: ((OpenClawComposerSuggestionKeyCommand) -> Bool)?
     var onDropAttachment: ((OpenClawComposerDropPayload) -> Bool)?
+    var onPasteLargeText: ((String) -> Bool)?
     private var pendingLatencyTokens: [WorkspaceInteractionLatency.Token] = []
+
+    @discardableResult
+    func attachLargePaste(from pasteboard: NSPasteboard) -> Bool {
+      guard let text = pasteboard.string(forType: .string),
+            AIChatLargePaste.shouldAttach(text)
+      else { return false }
+      return onPasteLargeText?(text) == true
+    }
+
+    override func paste(_ sender: Any?) {
+      if !attachLargePaste(from: .general) { super.paste(sender) }
+    }
+
+    override func pasteAsPlainText(_ sender: Any?) {
+      if !attachLargePaste(from: .general) { super.pasteAsPlainText(sender) }
+    }
 
     override func draw(_ dirtyRect: NSRect) {
       super.draw(dirtyRect)
