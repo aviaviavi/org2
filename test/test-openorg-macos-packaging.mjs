@@ -14,10 +14,17 @@ const intelNodeEntitlements = readFileSync(join(
   repoRoot,
   "apps", "macos", "Org2Workspace", "OpenOrgNodeIntel.entitlements"
 ), "utf8");
-const noGoogleOAuthEnvironment = { ...process.env };
-delete noGoogleOAuthEnvironment.ORG2_GOOGLE_OAUTH_CLIENT_JSON;
-delete noGoogleOAuthEnvironment.ORG2_GOOGLE_OAUTH_CLIENT_ID;
-delete noGoogleOAuthEnvironment.ORG2_GOOGLE_OAUTH_CLIENT_SECRET;
+const packagingTestEnvironment = { ...process.env };
+delete packagingTestEnvironment.ORG2_GOOGLE_OAUTH_CLIENT_JSON;
+delete packagingTestEnvironment.ORG2_GOOGLE_OAUTH_CLIENT_ID;
+delete packagingTestEnvironment.ORG2_GOOGLE_OAUTH_CLIENT_SECRET;
+// Release credentials must never turn these plan/negative checks into a real build.
+for (const key of [
+  "OPENORG_NOTARY_KEYCHAIN_PROFILE",
+  "OPENORG_NOTARY_PRIVATE_KEY_PATH",
+  "OPENORG_NOTARY_KEY_ID",
+  "OPENORG_NOTARY_ISSUER_ID",
+]) delete packagingTestEnvironment[key];
 
 assert.match(nodeEntitlements, /<key>com\.apple\.security\.cs\.allow-jit<\/key>\s*<true\/>/);
 assert.doesNotMatch(nodeEntitlements, /com\.apple\.security\.cs\.allow-unsigned-executable-memory/);
@@ -30,7 +37,7 @@ assert.match(
 const defaultPlanResult = spawnSync(process.execPath, [script, "--plan"], {
   cwd: repoRoot,
   encoding: "utf8",
-  env: noGoogleOAuthEnvironment,
+  env: packagingTestEnvironment,
 });
 assert.equal(defaultPlanResult.status, 0, defaultPlanResult.stderr);
 const defaultPlan = JSON.parse(defaultPlanResult.stdout);
@@ -44,7 +51,7 @@ if (process.platform === "darwin") {
 const planResult = spawnSync(process.execPath, [script, "--plan", "--architecture", "arm64"], {
   cwd: repoRoot,
   encoding: "utf8",
-  env: noGoogleOAuthEnvironment,
+  env: packagingTestEnvironment,
 });
 assert.equal(planResult.status, 0, planResult.stderr);
 const plan = JSON.parse(planResult.stdout);
@@ -67,7 +74,7 @@ const configuredPlanResult = spawnSync(
     cwd: repoRoot,
     encoding: "utf8",
     env: {
-      ...noGoogleOAuthEnvironment,
+      ...packagingTestEnvironment,
       ORG2_GOOGLE_OAUTH_CLIENT_JSON: "/protected/openorg-google-oauth-client.json",
     },
   }
@@ -84,7 +91,8 @@ const missingProfile = spawnSync(
   {
     cwd: repoRoot,
     encoding: "utf8",
-    env: { ...process.env, OPENORG_NOTARY_KEYCHAIN_PROFILE: "" },
+    env: packagingTestEnvironment,
+    timeout: 10_000,
   }
 );
 assert.equal(missingProfile.status, 1);
