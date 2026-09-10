@@ -2041,6 +2041,7 @@ struct ChatBubbleView: View {
   let deleteQueuedMessage: () -> Void
   @State private var isHovering = false
   @State private var didCopy = false
+  @State private var copyFeedbackTask: Task<Void, Never>?
   @State private var previewedAttachment: OpenClawChatAttachment?
   @State private var explicitlyShowsFullBody = false
   @State private var expandedBodyPageIndex = 0
@@ -2232,7 +2233,6 @@ struct ChatBubbleView: View {
       .onHover { isHovering in
         withAnimation(WorkspaceMotion.quick) {
           self.isHovering = isHovering
-          if !isHovering { didCopy = false }
         }
       }
 
@@ -2446,8 +2446,14 @@ struct ChatBubbleView: View {
   private var copyButton: some View {
     Button {
       let input = OpenClawMessageClipboard.Input(message)
-      Task { @MainActor in
-        didCopy = await OpenClawMessageClipboard.copy(input)
+      copyFeedbackTask?.cancel()
+      copyFeedbackTask = Task { @MainActor in
+        let copied = await OpenClawMessageClipboard.copy(input)
+        guard !Task.isCancelled else { return }
+        didCopy = copied
+        guard copied else { return }
+        do { try await Task.sleep(for: .seconds(2)) } catch { return }
+        didCopy = false
       }
     } label: {
       Image(systemName: didCopy ? "checkmark" : "doc.on.doc")
@@ -2460,6 +2466,11 @@ struct ChatBubbleView: View {
     .opacity(isHovering || didCopy ? 1 : 0.48)
     .help(didCopy ? "Copied" : "Copy message")
     .accessibilityLabel(didCopy ? "Message copied" : "Copy message")
+    .onDisappear {
+      copyFeedbackTask?.cancel()
+      copyFeedbackTask = nil
+      didCopy = false
+    }
   }
 
   private var roleTitle: String {

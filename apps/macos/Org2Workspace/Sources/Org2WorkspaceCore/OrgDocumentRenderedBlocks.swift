@@ -1876,8 +1876,14 @@ private struct SourceBlockCopyButton: NSViewRepresentable {
     context.coordinator.copySourceBlock = copySourceBlock
   }
 
+  static func dismantleNSView(_ button: NSButton, coordinator: Coordinator) {
+    coordinator.resetTask?.cancel()
+    coordinator.resetTask = nil
+  }
+
   @MainActor
   final class Coordinator: NSObject {
+    var resetTask: Task<Void, Never>?
     var lines: [String]
     var copySourceBlock: @MainActor @Sendable ([String]) -> Bool
 
@@ -1895,6 +1901,15 @@ private struct SourceBlockCopyButton: NSViewRepresentable {
       sender.contentTintColor = .systemGreen
       sender.toolTip = "Code copied"
       sender.setAccessibilityLabel("Code copied")
+      resetTask?.cancel()
+      resetTask = Task { @MainActor [weak sender] in
+        do { try await Task.sleep(for: .seconds(2)) } catch { return }
+        guard let sender else { return }
+        sender.image = NSImage(systemSymbolName: "doc.on.doc", accessibilityDescription: "Copy code")
+        sender.contentTintColor = .secondaryLabelColor
+        sender.toolTip = "Copy code"
+        sender.setAccessibilityLabel("Copy code")
+      }
     }
   }
 }

@@ -2236,6 +2236,7 @@ private struct ExternalThreadMessageCard: View {
   let message: ExternalThreadMessage
   let harness: ExternalThreadHarness
   @State private var didCopy = false
+  @State private var copyFeedbackTask: Task<Void, Never>?
 
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
@@ -2253,7 +2254,14 @@ private struct ExternalThreadMessageCard: View {
             "Sent \(AIChatMessageTimestampPresentation.fullText(for: message.createdAt))"
           )
         Button {
+          copyFeedbackTask?.cancel()
           didCopy = OpenClawMessageClipboard.write(message.content)
+          if didCopy {
+            copyFeedbackTask = Task { @MainActor in
+              do { try await Task.sleep(for: .seconds(2)) } catch { return }
+              didCopy = false
+            }
+          }
         } label: {
           Label(didCopy ? "Message Copied" : "Copy Message", systemImage: didCopy ? "checkmark" : "doc.on.doc")
         }
@@ -2261,6 +2269,11 @@ private struct ExternalThreadMessageCard: View {
         .buttonStyle(.plain)
         .foregroundStyle(didCopy ? Color.green : Color.secondary)
         .help(didCopy ? "Copied" : "Copy message")
+        .onDisappear {
+          copyFeedbackTask?.cancel()
+          copyFeedbackTask = nil
+          didCopy = false
+        }
       }
       Text(message.content)
         .font(.body)
