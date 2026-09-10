@@ -169,7 +169,7 @@ rebuild. Renderer UI runs in a sandboxed, opaque-origin frame. See
 <h1 id="keyboard-essentials">Keyboard essentials</h1>
 <ul>
 <li><p><code>Cmd-1</code> through <code>Cmd-6</code> open the main workspace surfaces.</p></li>
-<li><p><code>Cmd-P</code> or <code>Cmd-K</code> opens Quick Open.</p></li>
+<li><p><code>Cmd-P</code> opens Quick Open. <code>Cmd-K</code> also opens Quick Open outside the Source editor; inside it, <code>Cmd-K</code> inserts a link.</p></li>
 <li><p><code>Cmd-Ctrl-Return</code> opens global capture.</p></li>
 <li><p><code>Cmd-7</code>, <code>Cmd-8</code>, and <code>Cmd-9</code> open today's, yesterday's, and tomorrow's daily notes. Choose <strong>Daily → Choose Date…</strong> or press <code>Cmd-Shift-7</code> to open or create the daily note for any date.</p></li>
 <li><p><code>Cmd-A</code> selects visible items in Agenda, Files, Runs, or Review; <code>Shift-Up/Down</code> extends the selection.</p></li>
@@ -177,7 +177,12 @@ rebuild. Renderer UI runs in a sandboxed, opaque-origin frame. See
 <li><p><code>Cmd-R</code> refreshes the workspace when you need a manual reconciliation. Full refreshes of large corpora may take longer than 15 seconds; OpenOrg lets them continue without reporting a timeout error. Press <code>Cmd-R</code> again or click the stop control to cancel. Actual refresh errors are still reported.</p></li>
 <li><p><code>Cmd-T</code> opens a tab; <code>Cmd-Shift-[</code> and <code>Cmd-Shift-]</code> move between tabs.</p></li>
 </ul>
-<p>Use the in-app keyboard shortcuts sheet for the complete map.</p>
+<ul>
+<li><p>In AI Chat, <code>Return</code> sends or queues while a turn runs; <code>Shift-Return</code> inserts a newline. <code>Cmd-Return</code> (also <code>Cmd-Shift-Return</code>) steers a running turn, or sends normally when idle. When suggestions are visible, <code>Up/Down</code> selects and <code>Tab</code> or <code>Return</code> accepts a suggestion.</p></li>
+<li><p><code>Cmd-N</code> creates an AI thread.</p></li>
+<li><p>In Agenda, <code>w</code> schedules next Monday and <code>m</code> schedules the first of next month; uppercase <code>W</code> and <code>M</code> set the corresponding deadline.</p></li>
+</ul>
+<p>Use <strong>Help → Keyboard Shortcuts…</strong> (<code>Cmd-/</code>) for the full reference, including the Source editor commands. Shortcuts depend on the focused pane or editor; bare uppercase letters (such as <code>J</code>) in the reference mean Shift.</p>
 <p>Full refresh updates the selected document first, then runs up to two independent refresh jobs concurrently. File catalog and assigned-work refreshes stay ordered. Agent-state lists share one CLI request; native assigned-work and similar-TODO scans reuse unchanged file fragments and invalidate them on edits, replacements, or deletions. Timing records for each awaited refresh stage are available through the <a href="macos-diagnostics.html">diagnostics log</a>.</p>
 <p>Large file-sync batches preserve every changed path when updating the search index. Oversized CLI argument lists travel through a private temporary file, removed after the request, so macOS process argument limits do not crash the workspace.</p>
 </section>

@@ -11380,15 +11380,31 @@ final class Org2ModelsTests: XCTestCase {
       .all
     )
 
-    XCTAssertTrue(WorkspaceKeyboardEventRouting.defersToNativeTextFind(
+    XCTAssertTrue(WorkspaceKeyboardEventRouting.defersToNativeSourceEditor(
+      keyDown(characters: "k", keyCode: 40, modifiers: [.command]),
+      sourceEditorActive: true
+    ))
+    XCTAssertFalse(WorkspaceKeyboardEventRouting.defersToNativeSourceEditor(
+      keyDown(characters: "k", keyCode: 40, modifiers: [.command]),
+      sourceEditorActive: false
+    ))
+    XCTAssertFalse(WorkspaceKeyboardEventRouting.defersToNativeSourceEditor(
+      keyDown(characters: "K", keyCode: 40, modifiers: [.command, .shift]),
+      sourceEditorActive: true
+    ))
+    XCTAssertFalse(WorkspaceKeyboardEventRouting.defersToNativeSourceEditor(
+      keyDown(characters: "p", keyCode: 35, modifiers: [.command]),
+      sourceEditorActive: true
+    ))
+    XCTAssertTrue(WorkspaceKeyboardEventRouting.defersToNativeSourceEditor(
       keyDown(characters: "f", keyCode: 3, modifiers: [.command]),
       sourceEditorActive: true
     ))
-    XCTAssertFalse(WorkspaceKeyboardEventRouting.defersToNativeTextFind(
+    XCTAssertFalse(WorkspaceKeyboardEventRouting.defersToNativeSourceEditor(
       keyDown(characters: "F", keyCode: 3, modifiers: [.command, .shift]),
       sourceEditorActive: true
     ))
-    XCTAssertFalse(WorkspaceKeyboardEventRouting.defersToNativeTextFind(
+    XCTAssertFalse(WorkspaceKeyboardEventRouting.defersToNativeSourceEditor(
       keyDown(characters: "f", keyCode: 3, modifiers: [.command]),
       sourceEditorActive: false
     ))

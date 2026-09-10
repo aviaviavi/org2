@@ -153,7 +153,7 @@ Back up or sync the corpus with a file-oriented tool you understand, such as Git
 * Keyboard essentials
 
 - =Cmd-1= through =Cmd-6= open the main workspace surfaces.
-- =Cmd-P= or =Cmd-K= opens Quick Open.
+- =Cmd-P= opens Quick Open. =Cmd-K= also opens Quick Open outside the Source editor; inside it, =Cmd-K= inserts a link.
 - =Cmd-Ctrl-Return= opens global capture.
 - =Cmd-7=, =Cmd-8=, and =Cmd-9= open today's, yesterday's, and tomorrow's daily notes. Choose *Daily → Choose Date…* or press =Cmd-Shift-7= to open or create the daily note for any date.
 - =Cmd-A= selects visible items in Agenda, Files, Runs, or Review; =Shift-Up/Down= extends the selection.
@@ -161,7 +161,11 @@ Back up or sync the corpus with a file-oriented tool you understand, such as Git
 - =Cmd-R= refreshes the workspace when you need a manual reconciliation. Full refreshes of large corpora may take longer than 15 seconds; OpenOrg lets them continue without reporting a timeout error. Press =Cmd-R= again or click the stop control to cancel. Actual refresh errors are still reported.
 - =Cmd-T= opens a tab; =Cmd-Shift-[= and =Cmd-Shift-]= move between tabs.
 
-Use the in-app keyboard shortcuts sheet for the complete map.
+- In AI Chat, =Return= sends or queues while a turn runs; =Shift-Return= inserts a newline. =Cmd-Return= (also =Cmd-Shift-Return=) steers a running turn, or sends normally when idle. When suggestions are visible, =Up/Down= selects and =Tab= or =Return= accepts a suggestion.
+- =Cmd-N= creates an AI thread.
+- In Agenda, =w= schedules next Monday and =m= schedules the first of next month; uppercase =W= and =M= set the corresponding deadline.
+
+Use *Help → Keyboard Shortcuts…* (=Cmd-/=) for the full reference, including the Source editor commands. Shortcuts depend on the focused pane or editor; bare uppercase letters (such as =J=) in the reference mean Shift.
 
 Full refresh updates the selected document first, then runs up to two independent refresh jobs concurrently. File catalog and assigned-work refreshes stay ordered. Agent-state lists share one CLI request; native assigned-work and similar-TODO scans reuse unchanged file fragments and invalidate them on edits, replacements, or deletions. Timing records for each awaited refresh stage are available through the [[file:macos-diagnostics.org][diagnostics log]].
 

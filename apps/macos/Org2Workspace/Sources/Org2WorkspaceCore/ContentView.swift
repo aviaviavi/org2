@@ -4226,7 +4226,7 @@ private struct KeyboardShortcutsView: View {
         VStack(alignment: .leading, spacing: 4) {
           Text("Keyboard Shortcuts")
             .font(.title2.weight(.semibold))
-          Text("Command shortcuts work globally. Lists, documents, and chat panes add local keys when focused.")
+          Text("Shortcuts depend on the focused pane or editor. Bare uppercase letters mean Shift (for example, J = ⇧J).")
             .font(.callout)
             .foregroundStyle(.secondary)
         }
@@ -4247,12 +4247,13 @@ private struct KeyboardShortcutsView: View {
         ], alignment: .leading, spacing: 18) {
           ShortcutSection(title: "Workspace", shortcuts: [
             ShortcutHelpItem(keys: "⌘⇧O", action: "Open corpus"),
-            ShortcutHelpItem(keys: "⌘R", action: "Refresh workspace"),
+            ShortcutHelpItem(keys: "⌘R", action: "Refresh workspace; press again to cancel"),
             ShortcutHelpItem(keys: "⌘S", action: "Save active edit"),
-            ShortcutHelpItem(keys: "⌘P / ⌘K", action: "Quick Open"),
+            ShortcutHelpItem(keys: "⌘P", action: "Quick Open"),
+            ShortcutHelpItem(keys: "⌘K", action: "Quick Open outside the Source editor"),
             ShortcutHelpItem(keys: "⌘⌃Return", action: "Capture"),
             ShortcutHelpItem(keys: "⌘? / ⌘/", action: "Show shortcuts"),
-            ShortcutHelpItem(keys: "⌘Z / ⌘⇧Z", action: "Undo / redo workspace edit")
+            ShortcutHelpItem(keys: "⌘Z / ⌘⇧Z", action: "Undo / redo text or workspace edit")
           ])
 
           ShortcutSection(title: "Navigation", shortcuts: [
@@ -4270,7 +4271,7 @@ private struct KeyboardShortcutsView: View {
           ShortcutSection(title: "Tabs", shortcuts: [
             ShortcutHelpItem(keys: "⌘T", action: "New tab"),
             ShortcutHelpItem(keys: "⌘⇧[ / ⌘⇧]", action: "Previous / next tab"),
-            ShortcutHelpItem(keys: "⌘W", action: "Close current tab")
+            ShortcutHelpItem(keys: "⌘W", action: "Close current tab when multiple tabs are open")
           ])
 
           ShortcutSection(title: "Pane Layout", shortcuts: [
@@ -4309,12 +4310,12 @@ private struct KeyboardShortcutsView: View {
             ShortcutHelpItem(keys: "A", action: "Assign to agent"),
             ShortcutHelpItem(keys: "p then a/b/c/0", action: "Set or clear priority"),
             ShortcutHelpItem(keys: "P", action: "Apply property shortcut"),
-            ShortcutHelpItem(keys: "s / n / w / m", action: "Schedule today / tomorrow / week / month"),
-            ShortcutHelpItem(keys: "S / N / W / M", action: "Deadline today / tomorrow / week / month"),
+            ShortcutHelpItem(keys: "s / n / w / m", action: "Schedule today / tomorrow / next Monday / first of next month"),
+            ShortcutHelpItem(keys: "S / N / W / M", action: "Deadline today / tomorrow / next Monday / first of next month"),
             ShortcutHelpItem(keys: "q", action: "Quit app")
           ])
 
-          ShortcutSection(title: "Lists", shortcuts: [
+          ShortcutSection(title: "Agenda, Files, Runs & Review", shortcuts: [
             ShortcutHelpItem(keys: "⌘A / ⌘⇧A", action: "Select visible / clear selection"),
             ShortcutHelpItem(keys: "⇧↑ / ⇧↓", action: "Extend selection")
           ])
@@ -4349,8 +4350,26 @@ private struct KeyboardShortcutsView: View {
           ])
 
           ShortcutSection(title: "AI Chat", shortcuts: [
-            ShortcutHelpItem(keys: "Return", action: "Send message"),
-            ShortcutHelpItem(keys: "⌘Return", action: "Insert newline")
+            ShortcutHelpItem(keys: "⌘N", action: "New AI thread"),
+            ShortcutHelpItem(keys: "Return", action: "Send; queue while a turn is running"),
+            ShortcutHelpItem(keys: "⇧Return", action: "Insert newline"),
+            ShortcutHelpItem(keys: "⌘Return", action: "Steer running turn; send when idle"),
+            ShortcutHelpItem(keys: "⌘⇧Return", action: "Same as ⌘Return"),
+            ShortcutHelpItem(keys: "↑ / ↓", action: "Navigate visible suggestions"),
+            ShortcutHelpItem(keys: "Tab / Return", action: "Accept selected suggestion when shown")
+          ])
+
+          ShortcutSection(title: "Source Editor", shortcuts: [
+            ShortcutHelpItem(keys: "⌘⌥Return", action: "Insert heading"),
+            ShortcutHelpItem(keys: "⌘⌥L", action: "Insert list item"),
+            ShortcutHelpItem(keys: "⌘K", action: "Insert link"),
+            ShortcutHelpItem(keys: "⌘⌥← / ⌘⌥→", action: "Promote / demote"),
+            ShortcutHelpItem(keys: "⌘⌥T", action: "Cycle TODO"),
+            ShortcutHelpItem(keys: "⌘⌥S", action: "Schedule today"),
+            ShortcutHelpItem(keys: "⌘⌥D", action: "Deadline today"),
+            ShortcutHelpItem(keys: "⌘⌥[", action: "Toggle heading fold"),
+            ShortcutHelpItem(keys: "⌘⌥]", action: "Expand all headings"),
+            ShortcutHelpItem(keys: "⌘⌥↑ / ⌘⌥↓", action: "Previous / next heading")
           ])
 
           ShortcutSection(title: "Meetings", shortcuts: [
@@ -14410,7 +14429,7 @@ private struct KeyboardEventMonitor: ViewModifier {
     content
       .onAppear {
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-          if WorkspaceKeyboardEventRouting.defersToNativeTextFind(
+          if WorkspaceKeyboardEventRouting.defersToNativeSourceEditor(
             event,
             sourceEditorActive: Self.isSourceEditorActive
           ) {
@@ -14447,11 +14466,12 @@ private struct KeyboardEventMonitor: ViewModifier {
 }
 
 enum WorkspaceKeyboardEventRouting {
-  static func defersToNativeTextFind(_ event: NSEvent, sourceEditorActive: Bool) -> Bool {
+  static func defersToNativeSourceEditor(_ event: NSEvent, sourceEditorActive: Bool) -> Bool {
     guard sourceEditorActive else { return false }
     let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
     let key = (event.charactersIgnoringModifiers ?? event.characters ?? "").lowercased()
-    return modifiers == [.command] && key == "f"
+    // Let the focused source editor handle find and link insertion before workspace shortcuts.
+    return modifiers == [.command] && (key == "f" || key == "k")
   }
 
   static func scope(for event: NSEvent, textInputActive: Bool) -> WorkspaceKeyboardShortcutScope? {
