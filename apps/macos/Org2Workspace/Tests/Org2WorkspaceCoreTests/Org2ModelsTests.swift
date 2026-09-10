@@ -18878,28 +18878,68 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
-  func testWorkspaceRefreshAutomaticallyStopsAfterDeadline() async throws {
+  func testWorkspaceRefreshContinuesPastSlowNoticeAndFinishes() async throws {
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
-    store.workspaceRefreshTimeoutNanoseconds = 30_000_000
+    store.workspaceRefreshSlowNoticeNanoseconds = 30_000_000
+    let (gate, continuation) = AsyncStream<Void>.makeStream()
+    defer { continuation.finish() }
     store.workspaceRefreshOperationForTesting = {
-      do {
-        try await Task.sleep(nanoseconds: 5_000_000_000)
-      } catch {
-        return
-      }
+      for await _ in gate {}
     }
+    let refresh = Task { await store.refreshWorkspace() }
+    try await waitForCondition { store.statusText == WorkspaceStore.workspaceRefreshSlowNotice }
 
-    await store.refreshWorkspace()
+    XCTAssertTrue(store.isRefreshingWorkspace)
+    XCTAssertNil(store.errorText)
+    XCTAssertNil(store.approvalLoadErrorText)
+
+    continuation.finish()
+    await refresh.value
 
     XCTAssertFalse(store.isRefreshingWorkspace)
-    XCTAssertTrue(store.statusText.localizedCaseInsensitiveContains("timed out"))
-    XCTAssertTrue(store.errorText?.localizedCaseInsensitiveContains("timed out") == true)
-    XCTAssertNil(store.approvalLoadErrorText)
+    XCTAssertEqual(store.statusText, "Workspace refresh finished.")
+    XCTAssertNil(store.errorText)
+  }
+
+  @MainActor
+  func testWorkspaceRefreshSlowNoticePreservesActualFailure() async throws {
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.workspaceRefreshSlowNoticeNanoseconds = 0
+    let (gate, continuation) = AsyncStream<Void>.makeStream()
+    defer { continuation.finish() }
+    store.workspaceRefreshOperationForTesting = {
+      for await _ in gate {}
+    }
+    let refresh = Task { await store.refreshWorkspace() }
+    try await waitForCondition { store.statusText == WorkspaceStore.workspaceRefreshSlowNotice }
+    store.errorText = "Agenda could not be loaded."
+
+    continuation.finish()
+    await refresh.value
+
+    XCTAssertFalse(store.isRefreshingWorkspace)
+    XCTAssertEqual(store.errorText, "Agenda could not be loaded.")
+    XCTAssertEqual(store.statusText, "Agenda could not be loaded.")
+  }
+
+  @MainActor
+  func testWorkspaceRefreshCompletionCancelsPendingSlowNotice() async throws {
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.workspaceRefreshSlowNoticeNanoseconds = 30_000_000
+    store.workspaceRefreshOperationForTesting = {}
+
+    await store.refreshWorkspace()
+    try await Task.sleep(nanoseconds: 60_000_000)
+
+    XCTAssertFalse(store.isRefreshingWorkspace)
+    XCTAssertNotEqual(store.statusText, WorkspaceStore.workspaceRefreshSlowNotice)
+    XCTAssertNil(store.errorText)
   }
 
   @MainActor
   func testWorkspaceRefreshCanBeCanceledManually() async throws {
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.workspaceRefreshSlowNoticeNanoseconds = 0
     store.workspaceRefreshOperationForTesting = {
       do {
         try await Task.sleep(nanoseconds: 5_000_000_000)
@@ -18908,7 +18948,9 @@ final class Org2ModelsTests: XCTestCase {
       }
     }
     let refresh = Task { await store.refreshWorkspace() }
-    try await waitForCondition { store.isRefreshingWorkspace }
+    try await waitForCondition { store.statusText == WorkspaceStore.workspaceRefreshSlowNotice }
+    XCTAssertTrue(store.isRefreshingWorkspace)
+    XCTAssertNil(store.errorText)
 
     store.cancelWorkspaceRefresh()
     await refresh.value

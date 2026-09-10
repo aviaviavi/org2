@@ -2074,7 +2074,8 @@ public final class WorkspaceStore {
   nonisolated public static let agendaUnassignedFilter = "__unassigned__"
   nonisolated public static let agendaNoPriorityFilter = "__no_priority__"
   nonisolated public static let runReviewAutoRefreshIntervalNanoseconds: UInt64 = 60_000_000_000
-  nonisolated public static let defaultWorkspaceRefreshTimeoutNanoseconds: UInt64 = 15_000_000_000
+  nonisolated public static let defaultWorkspaceRefreshSlowNoticeNanoseconds: UInt64 = 15_000_000_000
+  nonisolated static let workspaceRefreshSlowNotice = "Workspace refresh is still running. Large workspaces can take longer; press ⌘R to cancel."
   nonisolated public static let defaultEntryRenderTimeoutNanoseconds: UInt64 = 15_000_000_000
   nonisolated public static let sourceAutoSyncCheckIntervalNanoseconds: UInt64 = 60_000_000_000
   nonisolated public static let automationScheduleCheckIntervalNanoseconds: UInt64 = 60_000_000_000
@@ -3214,8 +3215,8 @@ public final class WorkspaceStore {
   private var linkedPDFLoadGeneration = 0
   private var workspaceRefreshGeneration = 0
   private var workspaceRefreshOperationTask: Task<Void, Never>?
-  private var workspaceRefreshWatchdogTask: Task<Void, Never>?
-  var workspaceRefreshTimeoutNanoseconds = WorkspaceStore.defaultWorkspaceRefreshTimeoutNanoseconds
+  private var workspaceRefreshSlowNoticeTask: Task<Void, Never>?
+  var workspaceRefreshSlowNoticeNanoseconds = WorkspaceStore.defaultWorkspaceRefreshSlowNoticeNanoseconds
   var workspaceRefreshOperationForTesting: (@MainActor @Sendable () async -> Void)?
   var corpusFileScanForTesting: (@Sendable (URL) async throws -> [CorpusFile])?
   var incrementalCorpusChangePreparationForTesting: (@Sendable (URL, [String]) async -> Void)?
@@ -4504,8 +4505,8 @@ public final class WorkspaceStore {
     isLoadingBacklinks = false
     workspaceRefreshOperationTask?.cancel()
     workspaceRefreshOperationTask = nil
-    workspaceRefreshWatchdogTask?.cancel()
-    workspaceRefreshWatchdogTask = nil
+    workspaceRefreshSlowNoticeTask?.cancel()
+    workspaceRefreshSlowNoticeTask = nil
     workspaceRefreshGeneration += 1
     backlinks = nil
     errorText = nil
@@ -4840,7 +4841,7 @@ public final class WorkspaceStore {
       self.finishWorkspaceRefresh(generation: generation)
     }
     workspaceRefreshOperationTask = operation
-    scheduleWorkspaceRefreshWatchdog(generation: generation)
+    scheduleWorkspaceRefreshSlowNotice(generation: generation)
 
     while generation == workspaceRefreshGeneration, isRefreshingWorkspace {
       if Task.isCancelled {
@@ -4898,12 +4899,12 @@ public final class WorkspaceStore {
     generation == workspaceRefreshGeneration && isRefreshingWorkspace && !Task.isCancelled
   }
 
-  private func scheduleWorkspaceRefreshWatchdog(generation: Int) {
-    workspaceRefreshWatchdogTask?.cancel()
-    let timeout = workspaceRefreshTimeoutNanoseconds
-    workspaceRefreshWatchdogTask = Task { @MainActor [weak self] in
+  private func scheduleWorkspaceRefreshSlowNotice(generation: Int) {
+    workspaceRefreshSlowNoticeTask?.cancel()
+    let delay = workspaceRefreshSlowNoticeNanoseconds
+    workspaceRefreshSlowNoticeTask = Task { @MainActor [weak self] in
       do {
-        try await Task.sleep(nanoseconds: timeout)
+        try await Task.sleep(nanoseconds: delay)
       } catch {
         return
       }
@@ -4911,17 +4912,21 @@ public final class WorkspaceStore {
             generation == self.workspaceRefreshGeneration,
             self.isRefreshingWorkspace
       else { return }
-      let seconds = max(1, Int(ceil(Double(timeout) / 1_000_000_000)))
-      self.cancelWorkspaceRefresh(
-        message: "Workspace refresh timed out after \(seconds) seconds. Existing workspace data is still available; retry when ready."
-      )
+      // Elapsed wall time alone is not a failure: a full refresh reconciles
+      // many projections sequentially. Let it finish unless the user cancels.
+      if self.errorText == nil {
+        self.statusText = Self.workspaceRefreshSlowNotice
+      }
     }
   }
 
   private func finishWorkspaceRefresh(generation: Int) {
     guard generation == workspaceRefreshGeneration else { return }
-    workspaceRefreshWatchdogTask?.cancel()
-    workspaceRefreshWatchdogTask = nil
+    if statusText == Self.workspaceRefreshSlowNotice {
+      statusText = errorText ?? "Workspace refresh finished."
+    }
+    workspaceRefreshSlowNoticeTask?.cancel()
+    workspaceRefreshSlowNoticeTask = nil
     workspaceRefreshOperationTask = nil
     isRefreshingWorkspace = false
   }
@@ -4935,8 +4940,8 @@ public final class WorkspaceStore {
     workspaceRefreshGeneration += 1
     workspaceRefreshOperationTask?.cancel()
     workspaceRefreshOperationTask = nil
-    workspaceRefreshWatchdogTask?.cancel()
-    workspaceRefreshWatchdogTask = nil
+    workspaceRefreshSlowNoticeTask?.cancel()
+    workspaceRefreshSlowNoticeTask = nil
     isRefreshingWorkspace = false
     isLoadingAgenda = false
     isLoadingApprovals = false
