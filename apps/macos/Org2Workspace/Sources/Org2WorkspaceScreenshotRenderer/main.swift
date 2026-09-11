@@ -61,7 +61,30 @@ struct Org2WorkspaceScreenshotRenderer {
               #+begin_src sh
               org2 lint --recursive
               #+end_src
-              """
+              """,
+              changeSummary: OpenClawCorpusChangeSummary(files: [
+                OpenClawCorpusFileChange(
+                  relativePath: "apps/macos/Org2Workspace/Sources/Org2WorkspaceCore/AIChatTranscriptDocument.swift",
+                  status: .modified,
+                  insertions: 18,
+                  deletions: 4
+                )
+              ]),
+              responseTrace: OpenClawResponseTrace(
+                reasoning: "Preserve the established message interface while keeping one selectable transcript document.",
+                activities: [
+                  OpenClawRunActivity(
+                    id: "read", runID: "preview", kind: .tool,
+                    title: "Read chat presentation", detail: "OpenClawChatViews.swift",
+                    status: .succeeded
+                  ),
+                  OpenClawRunActivity(
+                    id: "test", runID: "preview", kind: .tool,
+                    title: "Run selection checks", detail: "9 tests passed",
+                    status: .succeeded
+                  ),
+                ]
+              )
             )
           ]
           if verifiesChatSelection {

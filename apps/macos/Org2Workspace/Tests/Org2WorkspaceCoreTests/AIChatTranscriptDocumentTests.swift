@@ -5,10 +5,17 @@ import XCTest
 
 @MainActor
 final class AIChatTranscriptDocumentTests: XCTestCase {
-  private func entry(_ id: String, _ html: String, role: String = "assistant") -> AIChatTranscriptHTML.Entry {
+  private func entry(
+    _ id: String,
+    _ html: String,
+    role: String = "assistant",
+    trace: AIChatTranscriptHTML.Trace? = nil,
+    changeSummary: AIChatTranscriptHTML.ChangeSummary? = nil
+  ) -> AIChatTranscriptHTML.Entry {
     .init(id: id, role: role, title: role == "user" ? "You" : "Assistant", timestamp: "Today",
-      html: html, attachments: [], failure: nil, queued: false, canSteer: false,
-      hasDetails: false, activityCount: 0)
+      html: html, contexts: [], attachments: [], failure: nil, queued: false, canSteer: false,
+      isRoomResponse: false, copied: false, isTruncated: false,
+      responseTrace: trace, changeSummary: changeSummary)
   }
   private func payload(_ entries: [AIChatTranscriptHTML.Entry], thread: String = "thread", search: String? = nil,
     generation: Int = 0, position: Double = 0) -> AIChatTranscriptHTML.Payload {
@@ -110,6 +117,37 @@ final class AIChatTranscriptDocumentTests: XCTestCase {
     let result = try await view.evaluateJavaScript("events") as? [[String: Any]] ?? []
     XCTAssertTrue(result.contains { $0["action"] as? String == "copy" && $0["id"] as? String == "copy-me" })
     XCTAssertTrue(result.contains { $0["code"] as? String == "first line\nsecond line" })
+  }
+
+  func testEstablishedMessageChromeAndInlineSummariesRemainVisible() async throws {
+    let trace = AIChatTranscriptHTML.Trace(OpenClawResponseTrace(
+      reasoning: "Checked the existing renderer before changing the transcript.",
+      activities: [OpenClawRunActivity(
+        id: "tool-1", runID: "run", kind: .tool, title: "Read source",
+        detail: "/tmp/ContentView.swift", status: .succeeded
+      )]
+    ))
+    let changeSummary = AIChatTranscriptHTML.ChangeSummary(OpenClawCorpusChangeSummary(files: [
+      OpenClawCorpusFileChange(relativePath: "ContentView.swift", status: .modified, insertions: 4, deletions: 2)
+    ]))
+    let view = try await document()
+    try await update(view, payload([entry(
+      "summaries", "<main><p>Finished the change.</p></main>",
+      trace: trace, changeSummary: changeSummary
+    )]))
+    let result = try await view.evaluateJavaScript("""
+      ({copyText:document.querySelector('.message-header button').textContent,
+        copyLabel:document.querySelector('.message-header button').getAttribute('aria-label'),
+        trace:document.querySelector('.trace').innerText,
+        changes:document.querySelector('.change-summary').innerText,
+        details:[...document.querySelectorAll('button')].some(b=>b.textContent==='Message details')})
+      """) as? [String: Any]
+    XCTAssertEqual(result?["copyText"] as? String, "")
+    XCTAssertEqual(result?["copyLabel"] as? String, "Copy message")
+    XCTAssertTrue((result?["trace"] as? String)?.contains("Approach") == true)
+    XCTAssertTrue((result?["trace"] as? String)?.contains("Read source") == true)
+    XCTAssertTrue((result?["changes"] as? String)?.contains("ContentView.swift") == true)
+    XCTAssertEqual(result?["details"] as? Bool, false)
   }
   func testOrgAndLegacyCitationsRenderAsLinksWithExactLineTargets() async throws {
     let raw = "Org [[file:/tmp/note.org::16][project notes]], legacy [source](/tmp/file.swift:42), web [site](https://example.com)."
