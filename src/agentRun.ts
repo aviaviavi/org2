@@ -1183,7 +1183,12 @@ export function loadAgentRunSnapshot(corpusRoot: string, id: string): AgentRunSn
 }
 
 export function listAgentRuns(corpusRoot: string): AgentRun[] {
-  return listAgentRunSnapshots(corpusRoot).map((snapshot) => snapshot.run);
+  // List consumers (including workspace refresh) need runs, not a retained copy
+  // of every readable projection, revision, and source-consistency result.
+  // Consume snapshots one at a time so large approval histories do not keep
+  // the entire corpus of source strings alive until the list is complete.
+  return Array.from(iterateAgentRunSnapshots(corpusRoot), (snapshot) => snapshot.run)
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id));
 }
 
 type AgentRunApprovalIndexEntry = {
@@ -1309,28 +1314,28 @@ export function listAgentRunsWithApprovals(corpusRoot: string): AgentRun[] {
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id));
 }
 
-export function listAgentRunSnapshots(corpusRoot: string): AgentRunSnapshot[] {
+function* iterateAgentRunSnapshots(corpusRoot: string): Generator<AgentRunSnapshot> {
   const dir = agentRunDirectory(corpusRoot);
-  if (!fs.existsSync(dir)) return [];
-  return fs.readdirSync(dir, { withFileTypes: true })
-    .filter((entry) => entry.isFile() && entry.name.endsWith(".org2"))
-    .map((entry) => {
-      const snapshot = readGuardedFile(path.join(dir, entry.name));
-      const run = parseAgentRunOrg(snapshot.content);
-      return {
-        file: snapshot.file,
-        revision: snapshot.revision,
-        raw: snapshot.content,
-        run,
-        sourceIssues: agentRunSourceConsistency(snapshot.content, run),
-      };
-    })
-    // Syncthing and similar tools may leave conflict copies beside the
-    // canonical run record. Those copies can contain the same durable run ID
-    // with older status or approval state, so treating every .org2 file in the
-    // directory as authoritative makes reads nondeterministic. A durable run is
-    // governed only by the path that save/load use: <run-id>.org2.
-    .filter((snapshot) => snapshot.file === agentRunPath(corpusRoot, snapshot.run.id))
+  if (!fs.existsSync(dir)) return;
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (!entry.isFile() || !entry.name.endsWith(".org2")) continue;
+    const snapshot = readGuardedFile(path.join(dir, entry.name));
+    const run = parseAgentRunOrg(snapshot.content);
+    // Syncthing conflict copies are not authoritative, even when they carry
+    // the same durable ID and a more recent timestamp.
+    if (snapshot.file !== agentRunPath(corpusRoot, run.id)) continue;
+    yield {
+      file: snapshot.file,
+      revision: snapshot.revision,
+      raw: snapshot.content,
+      run,
+      sourceIssues: agentRunSourceConsistency(snapshot.content, run),
+    };
+  }
+}
+
+export function listAgentRunSnapshots(corpusRoot: string): AgentRunSnapshot[] {
+  return Array.from(iterateAgentRunSnapshots(corpusRoot))
     .sort((a, b) => b.run.updatedAt.localeCompare(a.run.updatedAt) || a.run.id.localeCompare(b.run.id));
 }
 
