@@ -2167,7 +2167,6 @@ public final class WorkspaceStore {
   public var bulkSelectedAgendaItemIDs: Set<String> = []
   private var suppressNextAgendaSelectionActivation = false
   var projectNotes: [WorkspaceProjectNote] = []
-  var projectFilterID: String?
   var projectStatus = ""
   private var projectRefreshID = UUID()
   private var projectMutationIDs: Set<String> = []
@@ -4310,7 +4309,6 @@ public final class WorkspaceStore {
     resetCorpusFileCatalogMutations()
     resetCorpusFileDerivedState()
     projectNotes = []
-    projectFilterID = nil
     projectStatus = ""
     projectRefreshID = UUID()
     corpusRoot = standardized
@@ -6661,7 +6659,6 @@ public final class WorkspaceStore {
 
   private func applyProjectList(_ payload: WorkspaceProjectList) {
     projectNotes = payload.projects
-    if let projectFilterID, !projectNotes.contains(where: { $0.id == projectFilterID }) { self.projectFilterID = nil }
     projectStatus = payload.diagnostics.isEmpty ? "" : "\(payload.diagnostics.count) project note(s) need attention: \(payload.diagnostics[0].message)"
   }
 
@@ -6680,29 +6677,43 @@ public final class WorkspaceStore {
     }
   }
 
-  func projectIncludesThread(_ id: UUID) -> Bool {
-    guard let projectFilterID else { return true }
-    return projectNotes.first(where: { $0.id == projectFilterID })?.contains(id) == true
-  }
-
   func openProjectNote(_ project: WorkspaceProjectNote) {
     let location = OpenClawThread(title: project.title, file: project.file, line: 1,
       zone: "project", modifiedAt: nil, idValue: project.id)
     activateDetailLocation(.openClaw(location), mode: .page, surface: nil, recordsHistory: true)
   }
 
-  func createProject(title: String, color: String) async -> Bool {
+  func createProject(title: String, color: String, details: String = "", refinesWithAI: Bool = false) async -> Bool {
     guard let root = corpusRoot else { return false }
     do {
-      let args = ["project", "create", "--title", title, "--color", color, "--dir", root.path, "--json"]
+      let args = ["project", "create", "--title", title, "--color", color, "--description=\(details)", "--dir", root.path, "--json"]
       let preview: WorkspaceProjectEdit = try await cli.runJSON(args)
       guard corpusRoot == root, !Task.isCancelled else { return false }
       let result: WorkspaceProjectEdit = try await cli.runJSON(args + ["--file", preview.project.relativePath, "--id", preview.project.id, "--apply"])
       guard corpusRoot == root else { return true }
       await refreshProjects()
       guard corpusRoot == root else { return true }
-      projectFilterID = result.project.id
       openProjectNote(result.project)
+      if refinesWithAI && !details.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        let threadID = createAIChatThread(destinationID: selectedAIChatDestination.id)
+        await updateProject(result.project, threadID: threadID)
+        guard corpusRoot == root else { return true }
+        guard projectNotes.contains(where: { $0.id == result.project.id && $0.contains(threadID) }) else {
+          projectStatus = "Project created with your details, but the brief chat could not be linked."
+          return true
+        }
+        makeSurfacePrimary(.openClaw)
+        let prompt = """
+        Help me initialize this project's note: \(result.project.relativePath).
+        Read its current contents and turn the supplied description into a concise project brief.
+        Preserve the project metadata, stable ID, and chat membership. Use only the information I supplied;
+        do not invent goals, decisions, sources, or tasks. Add structure only where the details justify it,
+        and omit empty sections and placeholder TODOs. Apply the note edit using the workspace's reviewed edit tools.
+        """
+        if !sendAIChatRemoteMessage(prompt, threadID: threadID) {
+          projectStatus = "Project created with your details. AI refinement could not start; you can retry in its chat."
+        }
+      }
       return true
     } catch { if corpusRoot == root { projectStatus = error.localizedDescription }; return false }
   }

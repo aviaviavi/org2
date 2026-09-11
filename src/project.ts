@@ -47,8 +47,8 @@ export function parseProjectNote(root: string, file: string, raw: string): Proje
   const drawer = doc.children.find(n => n.type === "PropertyDrawer");
   const id = drawer?.type === "PropertyDrawer" ? drawer.properties.find(p => p.key.toUpperCase() === "ID")?.value.trim() : "";
   if (!id || id.length > 200 || /[\s\[\]]/.test(id)) throw new Error("Project note needs a stable file-level :ID:");
-  const color = value("PROJECT_COLOR") || "blue";
-  if (!(PROJECT_COLORS as readonly string[]).includes(color)) throw new Error(`Invalid project color: ${color}`);
+  const color = value("PROJECT_COLOR") || "none";
+  if (color !== "none" && !(PROJECT_COLORS as readonly string[]).includes(color) && !/^#[0-9a-f]{6}$/i.test(color)) throw new Error(`Invalid project color: ${color}`);
   const threadIDs = [...new Set(value("PROJECT_THREADS").split(/\s+/).filter(Boolean).map(x => x.toLowerCase()))];
   if (threadIDs.some(x => !uuid.test(x))) throw new Error("PROJECT_THREADS must contain stable OpenOrg thread UUIDs");
   const lines = raw.replace(/\r\n?/g, "\n").split("\n");
@@ -96,6 +96,15 @@ function setKeyword(raw: string, key: string, value: string): string {
   const lines = raw.split(newline); lines[range.startLine - 1] = line;
   return lines.join(newline);
 }
+function removeKeyword(raw: string, key: string): string {
+  const node = keywords(raw).find(n => n.keyRaw.toUpperCase() === key);
+  const range = (node as (Node & { sourceRange?: { startLine: number } }) | undefined)?.sourceRange;
+  if (!range) return raw;
+  const newline = raw.includes("\r\n") ? "\r\n" : "\n";
+  const lines = raw.split(newline);
+  lines.splice(range.startLine - 1, 1);
+  return lines.join(newline);
+}
 function ensureID(raw: string, id: string): string {
   const doc = document(raw);
   const drawer = doc.children.find(n => n.type === "PropertyDrawer");
@@ -108,7 +117,7 @@ function ensureID(raw: string, id: string): string {
   }
   return [":PROPERTIES:", idLine, ":END:", raw].join(newline);
 }
-export function createProjectNote(root: string, input: { title: string; id?: string; color?: string; file?: string; adopt?: boolean; apply?: boolean; expectedRevision?: string }) {
+export function createProjectNote(root: string, input: { title: string; description?: string; id?: string; color?: string; file?: string; adopt?: boolean; apply?: boolean; expectedRevision?: string }) {
   if (!input.title.trim() || /[\r\n]/.test(input.title)) throw new Error("Project title must be a nonempty single line");
   const cfg = config(root);
   const id = input.id ?? crypto.randomUUID();
@@ -121,10 +130,12 @@ export function createProjectNote(root: string, input: { title: string; id?: str
   if (Buffer.byteLength(previous) > maxBytes) throw new Error("Project note exceeds the 1 MiB limit");
   const kind = keywords(previous).find(n => n.keyRaw.toUpperCase() === "ORG2_KIND")?.valueRaw.trim();
   if (kind) throw new Error("This note already declares an ORG2_KIND");
-  let content = ensureID(input.adopt ? previous : "* Purpose\n\n* TODO Next action\n\n* Decisions\n\n* Sources\n", id);
+  const description = (input.description ?? "").trim();
+  if (Buffer.byteLength(description) > maxBytes / 2) throw new Error("Project description is too long");
+  let content = ensureID(input.adopt ? previous : description ? description + "\n" : "", id);
   content = setKeyword(content, "TITLE", input.title.trim());
   content = setKeyword(content, "ORG2_KIND", "project");
-  content = setKeyword(content, "PROJECT_COLOR", input.color || "blue");
+  if (input.color && input.color !== "none") content = setKeyword(content, "PROJECT_COLOR", input.color);
   const project = parseProjectNote(root, file, content);
   if (input.apply) guardedWriteFile(file, content, { expectedRevision: input.adopt ? input.expectedRevision ?? guardedContentRevision(previous) : null, preserveMode: true });
   return { schema: "org2:project-edit:v1", applied: Boolean(input.apply), baseRevision: input.adopt ? guardedContentRevision(previous) : null, project, content };
@@ -142,7 +153,7 @@ export function updateProjectNote(root: string, id: string, input: { threadID?: 
     const ids = input.remove ? project.threadIDs.filter(id => id !== threadID) : [...new Set([...project.threadIDs, threadID])];
     content = setKeyword(content, "PROJECT_THREADS", ids.join(" "));
   }
-  if (input.color) content = setKeyword(content, "PROJECT_COLOR", input.color);
+  if (input.color) content = input.color === "none" ? removeKeyword(content, "PROJECT_COLOR") : setKeyword(content, "PROJECT_COLOR", input.color);
   const updated = parseProjectNote(root, file, content);
   if (input.apply) guardedWriteFile(file, content, { expectedRevision: input.expectedRevision ?? previousRevision, preserveMode: true });
   return { schema: "org2:project-edit:v1", applied: Boolean(input.apply), baseRevision: previousRevision, project: updated, content };

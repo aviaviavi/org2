@@ -36,6 +36,12 @@ final class WorkspaceProjectTests: XCTestCase {
     XCTAssertTrue(context.localAgentSystemPrompt(runtime: "claude", runtimeTitle: "Claude Code").contains("Project brief fixture"))
   }
 
+  func testCustomProjectColorsRoundTripThroughNativePicker() {
+    for hex in ["#123456", "#000000", "#FFFFFF", "#aB12eF"] {
+      XCTAssertEqual(WorkspaceProjectPalette.hex(WorkspaceProjectPalette.tint(hex)), hex.uppercased())
+    }
+  }
+
   func testEmptyProjectListHasNoPromptOverhead() {
     XCTAssertEqual(WorkspaceProjectContext.presentation(projects: [], threadID: UUID()), "")
   }

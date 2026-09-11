@@ -177,6 +177,7 @@ containing space-separated OpenOrg chat UUIDs. Their body holds normal actions,
 decisions, and links. They are independent of agent profiles and goals.
 
 =org2 project create --title NAME --dir CORPUS --json= previews a new note.
+Add =--description TEXT= for a starting brief; empty sections and tasks are not generated.
 Apply the reviewed result with its =--id= and =--file= plus =--apply=.
 =org2 project adopt PATH --title NAME= preserves an existing note's body and
 file ID. Use =--if-revision= when adopting or updating across requests.

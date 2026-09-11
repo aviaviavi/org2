@@ -989,12 +989,15 @@ Mutations preview unless =--apply= is supplied.
 
 Create accepts =--title=, =--color=, =--file=, and =--id=. Preserve the preview's
 ID and path when applying. The default path is beneath =roam.nodesDir= (or
-=notes=), in =projects/=. Adopt takes an existing file path and preserves its
+=notes=), in =projects/=. Optional =--description TEXT= supplies the initial brief;
+without it, creation adds no placeholder sections or TODOs. Adopt takes an existing file path and preserves its
 body and file-level ID. Pass an adoption preview's =--id= and =--if-revision=
 using its project ID and =baseRevision= when applying. Update accepts =--thread UUID=, =--remove=, and
 =--color=. Adopt/update accept =--if-revision sha256:...= for guarded writes.
 
-Recognized colors are blue, teal, green, orange, red, purple, and gray. Project
+Color is optional; omitted =PROJECT_COLOR= means no color. Use =--color none=
+to clear a color. Colors may be blue, teal, green, orange, red, purple, gray, or a six-digit
+hexadecimal RGB value such as =#4A90D9=. Project
 notes may live anywhere in nonhidden corpus directories, respecting configured
 ignore patterns. Put the marker in the first 8 KiB; notes are limited to 1 MiB.
 Duplicate IDs and malformed notes produce diagnostics instead of ambiguous

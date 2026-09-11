@@ -176,7 +176,7 @@ const HELP = `Agentic workspace commands:
   org2 thread post THREAD --message TEXT --author NAME [--agent-ref ID] [--source REF] [--idempotency-key KEY] [--dir CORPUS] [--apply]
   org2 thread configure --auto-settle never|SECONDS [--dir CORPUS] [--apply]
   org2 project list|show|create|adopt|update [--dir CORPUS] [--json] [--apply]
-  org2 project create --title TEXT [--color blue|teal|green|orange|red|purple|gray] [--file PATH] [--id UUID] [--apply]
+  org2 project create --title TEXT [--description TEXT] [--color none|NAME|#RRGGBB] [--file PATH] [--id UUID] [--apply]
   org2 project adopt FILE --title TEXT [--color COLOR] [--id ID] [--if-revision SHA256] [--apply]
   org2 project update ID [--thread UUID [--remove]] [--color COLOR] [--if-revision SHA256] [--apply]
   org2 goal list|show|create|update [--dir CORPUS] [--apply]
@@ -1549,7 +1549,7 @@ function projectCommand(parsed: ParsedArgs): void {
   }
   if (action === "create" || action === "adopt") {
     output(parsed, createProjectNote(corpus, { title: required(flag(parsed, "title"), "--title is required"),
-      id: flag(parsed, "id"), color: flag(parsed, "color"), file: action === "adopt" ? required(id, "note path is required") : flag(parsed, "file"),
+      description: flag(parsed, "description"), id: flag(parsed, "id"), color: flag(parsed, "color"), file: action === "adopt" ? required(id, "note path is required") : flag(parsed, "file"),
       adopt: action === "adopt", apply: enabled(parsed, "apply"), expectedRevision: flag(parsed, "if-revision") })); return;
   }
   if (action === "update") {

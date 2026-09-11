@@ -207,15 +207,20 @@ rebuild. Renderer UI runs in a sandboxed, opaque-origin frame. See
 </section>
 <section class="org2-headline level-1">
 <h1 id="projects">Projects</h1>
-<p>Choose New Project in the sidebar, give it a name and color, then edit the
-ordinary project note for its brief and actions. The action summary includes
-TODOs inside the project note as well as tasks linked elsewhere. The document button opens the
-note; the plus button creates a linked chat. Clicking a project filters the
-chat list, and All chats clears that filter. Right-click any chat and use
-Projects to add or remove membership. A chat can belong to several projects.
-Right-click a project to change its color. Refresh projects reloads note edits.</p>
-<p>Only explicit chat membership supplies project context; merely selecting a
-sidebar filter does not change another chat's prompt. Linked chats receive a
+<p>Choose New Project in the sidebar and give it a name. Color is optional and
+new projects start without one. Choose a quick swatch or use the full macOS
+color picker, and choose No color to clear an existing color. Optional project details become
+the starting brief, with no empty sections or placeholder tasks. The AI refinement
+option opens a linked chat with your selected destination to shape those details
+into a concise brief using the normal reviewed editing tools.
+Projects expand in the sidebar to show their linked chats without filtering the
+main AI chat list. The document button opens the project note; the plus button
+creates a linked chat. The action summary includes TODOs in the note and tasks
+linked elsewhere. Use a chat's Projects menu to add or remove membership.
+A chat can belong to several projects.
+Right-click a project and choose Choose color to use the full picker, or select a quick color. Refresh projects reloads note edits.</p>
+<p>Only explicit chat membership supplies project context; expanding a
+sidebar project does not change another chat's prompt. Linked chats receive a
 bounded note excerpt with source path and revision, refreshed with the corpus.
 At most eight notes and 12,000 brief characters are included per turn. Project
 membership does not import other conversations or change corpus permissions.

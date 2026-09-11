@@ -2319,8 +2319,8 @@ private struct SidebarView: View {
   private let autoSettleChatTimer = Timer.publish(every: 300, on: .main, in: .common).autoconnect()
   private let chatSurface = WorkspaceSurface.openClaw
 
-  private var projectThreads: [OpenClawSidebarThreadSummary] { store.sidebarOpenClawChatThreadSummaries.filter { store.projectIncludesThread($0.id) } }
-  private var projectSettledThreads: [OpenClawSidebarThreadSummary] { store.sidebarSettledOpenClawChatThreadSummaries.filter { store.projectIncludesThread($0.id) } }
+  private var chatThreads: [OpenClawSidebarThreadSummary] { store.sidebarOpenClawChatThreadSummaries }
+  private var settledThreads: [OpenClawSidebarThreadSummary] { store.sidebarSettledOpenClawChatThreadSummaries }
 
   var body: some View {
     let pinnedCorpusFiles = store.pinnedCorpusFiles
@@ -2457,15 +2457,15 @@ private struct SidebarView: View {
           .help("Browse the corpus as a collapsible file tree")
         }
 
-        WorkspaceProjectSidebar()
+        WorkspaceProjectSidebar { summary in chatThreadRow(summary) }
 
         Section {
           chatSurfaceRow
             .listRowBackground(Color.clear)
 
           if isChatThreadListExpanded {
-            if projectThreads.isEmpty
-                && projectSettledThreads.isEmpty {
+            if chatThreads.isEmpty
+                && settledThreads.isEmpty {
               Text("No chat threads")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
@@ -2473,7 +2473,7 @@ private struct SidebarView: View {
                 .padding(.vertical, 3)
                 .listRowBackground(Color.clear)
             } else {
-              ForEach(projectThreads) { summary in
+              ForEach(chatThreads) { summary in
                 chatThreadRow(summary)
                   .id(OpenClawSidebarThreadRowIdentity(
                     summary: summary,
@@ -2484,14 +2484,14 @@ private struct SidebarView: View {
                   .listRowBackground(Color.clear)
               }
 
-              if !projectSettledThreads.isEmpty {
+              if !settledThreads.isEmpty {
                 settledChatThreadDisclosureRow
                   .listRowBackground(Color.clear)
               }
 
               if showsSettledChatThreads {
                 ForEach(Array(
-                  projectSettledThreads
+                  settledThreads
                     .prefix(settledChatThreadDisplayLimit)
                 )) { summary in
                   chatThreadRow(summary)
@@ -2506,7 +2506,7 @@ private struct SidebarView: View {
                 }
 
                 if settledChatThreadDisplayLimit
-                    < projectSettledThreads.count {
+                    < settledThreads.count {
                   settledChatThreadShowMoreRow
                     .listRowBackground(Color.clear)
                 }
@@ -2542,15 +2542,15 @@ private struct SidebarView: View {
         chatRenameRequest = nil
       }
     }
-    .onChange(of: projectSettledThreads.count) {
+    .onChange(of: settledThreads.count) {
       guard isChatThreadListExpanded else { return }
       settledChatThreadDisplayLimit = OpenClawSettledThreadPagination.clampedLimit(
         currentLimit: settledChatThreadDisplayLimit,
-        totalCount: projectSettledThreads.count
+        totalCount: settledThreads.count
       )
       let nextValue = OpenClawSettledThreadDisclosure.updated(
         isExpanded: showsSettledChatThreads,
-        settledThreadCount: projectSettledThreads.count
+        settledThreadCount: settledThreads.count
       )
       guard nextValue != showsSettledChatThreads else { return }
       withAnimation(WorkspaceMotion.disclosure) { showsSettledChatThreads = nextValue }
@@ -2659,7 +2659,7 @@ private struct SidebarView: View {
         HStack(spacing: 5) {
           Image(systemName: "checkmark.circle")
           Text("Settled")
-          Text("\(projectSettledThreads.count)")
+          Text("\(settledThreads.count)")
             .foregroundStyle(.tertiary)
           Spacer(minLength: 0)
           Image(systemName: "chevron.down")
@@ -2712,7 +2712,7 @@ private struct SidebarView: View {
         Image(systemName: "ellipsis.circle")
         Text(OpenClawSettledThreadPagination.moreTitle(
           currentLimit: settledChatThreadDisplayLimit,
-          totalCount: projectSettledThreads.count
+          totalCount: settledThreads.count
         ))
         Spacer(minLength: 0)
       }
@@ -2757,7 +2757,7 @@ private struct SidebarView: View {
   private func showMoreSettledChatThreads() {
     settledChatThreadDisplayLimit = OpenClawSettledThreadPagination.nextLimit(
       currentLimit: settledChatThreadDisplayLimit,
-      totalCount: projectSettledThreads.count
+      totalCount: settledThreads.count
     )
   }
 

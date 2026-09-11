@@ -15,12 +15,11 @@ try {
   assert.match(preview.project.relativePath, /^knowledge\/projects\//);
   const created = createProjectNote(root, {title: 'Launch', color: 'purple', id: preview.project.id, file: preview.project.relativePath, apply: true});
   assert.equal(created.content, preview.content);
-  assert.match(created.project.brief, /\* TODO Next action/);
+  assert.equal(created.project.brief, '');
   assert.doesNotMatch(created.project.brief, /PROJECT_COLOR|:PROPERTIES:/);
   assert.equal(listProjectNotes(root).projects.length, 1);
   const actions = queryNodeActions(compileCorpus([created.project.file], {rootDir: root}), {object: `id:${created.project.id}`});
-  assert.equal(actions.counts.open, 1);
-  assert.equal(actions.open[0].title, 'Next action');
+  assert.equal(actions.counts.open, 0);
   const cacheFile = path.join(root, '.cache.json');
   compileCorpusIncremental([created.project.file], {rootDir: root, cacheFile});
   const oldCache = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
@@ -29,7 +28,26 @@ try {
   fs.unlinkSync(cacheFile + '.v8');
   const rebuilt = compileCorpusIncremental([created.project.file], {rootDir: root, cacheFile});
   assert.equal(rebuilt.indexState.parsedFiles, 1);
-  assert.equal(queryNodeActions(rebuilt, {object: `id:${created.project.id}`}).counts.open, 1);
+  assert.equal(queryNodeActions(rebuilt, {object: `id:${created.project.id}`}).counts.open, 0);
+  const described = createProjectNote(root, {title: 'Brief', description: 'Ship a small beta.\n\n* TODO Invite testers'});
+  assert.equal(described.project.brief, 'Ship a small beta.\n\n* TODO Invite testers');
+  const cliDescription = spawnSync(process.execPath, ['dist/cli.js', 'project', 'create', '--title', 'Brief', '--description', 'A useful starting point.', '--dir', root, '--json'], {encoding: 'utf8'});
+  assert.equal(cliDescription.status, 0, cliDescription.stderr);
+  assert.equal(JSON.parse(cliDescription.stdout).project.brief, 'A useful starting point.');
+  for (const description of ['', '--keep my details literal']) {
+    const emptyCLI = spawnSync(process.execPath, ['dist/cli.js', 'project', 'create', '--title', 'Blank', `--description=${description}`, '--color', 'none', '--dir', root, '--json'], {encoding: 'utf8'});
+    assert.equal(emptyCLI.status, 0, emptyCLI.stderr);
+    assert.equal(JSON.parse(emptyCLI.stdout).project.brief, description);
+  }
+  const uncolored = createProjectNote(root, {title: 'No color'});
+  assert.equal(uncolored.project.color, 'none');
+  assert.doesNotMatch(uncolored.content, /PROJECT_COLOR/);
+  assert.equal(createProjectNote(root, {title: 'Explicit none', color: 'none'}).project.color, 'none');
+  const custom = createProjectNote(root, {title: 'Custom color', color: '#aB12EF'});
+  assert.equal(custom.project.color, '#aB12EF');
+  for (const color of ['#12345', '#1234567', '#xyzxyz']) {
+    assert.throws(() => createProjectNote(root, {title: 'Invalid color', color}), /color/);
+  }
   const scopedFile = path.join(root, 'scoped.org');
   fs.writeFileSync(scopedFile, '* Scope\n:PROPERTIES:\n:ID: scoped-project\n:ORG2_ENTITY_TYPE: project\n:END:\n** TODO Inside\n* TODO Outside\n');
   const scoped = queryNodeActions(compileCorpus([scopedFile], {rootDir: root}), {object: 'id:scoped-project'});
@@ -40,6 +58,14 @@ try {
   assert.equal(update.content, applied.content);
   assert.deepEqual(applied.project.threadIDs, [thread]);
   assert.throws(() => updateProjectNote(root, created.project.id, {color: 'red', expectedRevision: created.project.revision, apply: true}), /revision|changed|conflict/i);
+  const recolored = updateProjectNote(root, created.project.id, {color: '#234567', apply: true});
+  assert.equal(listProjectNotes(root).projects[0].color, '#234567');
+  assert.deepEqual(recolored.project.threadIDs, [thread]);
+  const cleared = updateProjectNote(root, created.project.id, {color: 'none', apply: true});
+  assert.equal(cleared.project.color, 'none');
+  assert.doesNotMatch(cleared.content, /PROJECT_COLOR/);
+  assert.deepEqual(cleared.project.threadIDs, [thread]);
+  assert.equal(listProjectNotes(root).projects[0].color, 'none');
   updateProjectNote(root, created.project.id, {threadID: thread, remove: true, apply: true});
   assert.deepEqual(listProjectNotes(root).projects[0].threadIDs, []);
   const body = ':PROPERTIES:\r\n:ID: existing-note-id\r\n:OWNER: Me\r\n:END:\r\n#+TITLE: Old\r\n* TODO Keep this action\r\nBody with [[id:another][link]].\r\n#+begin_src org\r\n#+PROJECT_COLOR: red\r\n#+end_src\r\n';
