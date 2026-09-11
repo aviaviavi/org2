@@ -232,7 +232,7 @@ Save an open project-note draft before changing its color or chat membership.</p
 </section>
 <section class="org2-headline level-1">
 <h1 id="chat-text-selection">Chat text selection</h1>
-<p>Each chat message body uses the same Org HTML renderer and WebKit selection engine as document previews. Select naturally across paragraphs, lists, tables, and code within a message; standard Copy preserves rich text. Incoming body updates wait while a text selection is active. Message headers, attachments, and action controls remain native. Selection is scoped to one message document; use the message Copy action for its complete source.</p>
+<p>The visible chat transcript is one document with one WebKit scroll surface, using the same Org HTML renderer as document previews. Drag to select across messages, paragraphs, lists, tables, and code; standard Copy preserves rich text. Incoming document updates wait while a text selection is active. Message boxes do not scroll independently. Copy buttons preserve complete message or code source. Message details and live activity open native inspectors; queued-message actions remain available beside their messages. Earlier-message paging, thread search, saved scroll position, and jump-to-latest remain available. Agents are instructed to output Org syntax throughout, including citations such as <code>[[file:notes/example.org::42][source]]</code>. Older Markdown-style chat citations remain supported.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="project-navigation-and-chat-agents">Project navigation and chat agents</h1>

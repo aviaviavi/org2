@@ -214,7 +214,7 @@ struct AIChatDocumentWebView: NSViewRepresentable {
     view.stopLoading()
   }
 
-  final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
+  class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
     let resources = OrgHTMLLocalResourceSchemeHandler()
     var html: String?
     var loaded = false

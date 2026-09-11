@@ -3207,6 +3207,7 @@ private struct OpenClawSidebarThreadRow: View {
     .padding(.trailing, 6)
     .workspaceSelectableRow(
       isSelected: isSelected,
+      showsSelectionMarker: false,
       leadingPadding: 0,
       trailingPadding: 0,
       cornerRadius: WorkspaceDesign.controlRadius
@@ -10194,207 +10195,36 @@ private struct OpenClawChatView: View {
   }
 
   private var chatTranscript: some View {
-    let scrollUpdate = OpenClawChatScrollUpdate(
-      threadID: store.selectedOpenClawChatThreadID,
-      messageCount: store.openClawMessages.count,
-      isSending: store.isSendingOpenClawMessage
-    )
-    let transcriptWindow = OpenClawChatTranscriptWindow(
+    let window = OpenClawChatTranscriptWindow(
       messages: store.openClawMessages,
       isSharedRoom: store.selectedAIChatIsSharedRoom,
       displayLimit: transcriptDisplayLimit,
       anchor: transcriptWindowAnchor
     )
-    let searchMatchMessageIDs = Set(threadFindMatches.map(\.messageID))
-    let selectedThreadFindMatch = threadFindMatches.first(where: {
-      $0.messageID == selectedThreadFindMessageID
-    })
-
-    return ScrollViewReader { proxy in
-      ScrollView {
-        OpenClawChatTranscriptStack(
-          spacing: presentation.isCompact ? 8 : 10
-        ) {
-          if store.openClawMessages.isEmpty {
-            EmptyChatView(statusText: store.selectedAIChatDestination.usesBundledAgent(
-              experimentalFeaturesEnabled: store.experimentalFeaturesEnabled
-            )
-              ? "Ask about your workspace, or request an edit to review."
-              : store.openClawStatusText)
-              .frame(maxWidth: .infinity, minHeight: presentation.isCompact ? 140 : 220)
-          } else {
-            if transcriptWindow.hasEarlierMessages {
-              Button {
-                let firstVisibleID = transcriptWindow.visibleItems.first?.id
-                if transcriptWindow.nextDisplayLimit > transcriptWindow.displayLimit {
-                  transcriptWindowAnchor = nil
-                  transcriptDisplayLimit = transcriptWindow.nextDisplayLimit
-                } else if let earlierPageAnchor = transcriptWindow.earlierPageAnchor {
-                  transcriptWindowAnchor = earlierPageAnchor
-                }
-                if let firstVisibleID {
-                  DispatchQueue.main.async {
-                    proxy.scrollTo(firstVisibleID, anchor: .top)
-                  }
-                }
-              } label: {
-                Label(
-                  transcriptWindow.earlierMessagesTitle,
-                  systemImage: "arrow.up.circle"
-                )
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 6)
-              }
-              .buttonStyle(.plain)
-              .accessibilityIdentifier("openclaw-chat-show-earlier")
-            }
-            ForEach(transcriptWindow.visibleItems) { item in
-              switch item {
-              case .message(let message):
-                ChatBubbleView(
-                  message: message,
-                  runtime: store.selectedAIChatRuntime,
-                  destinationTitlesByID: store.aiChatDestinationTitlesByID,
-                  compact: presentation.isCompact,
-                  isQueued: message.role == .user && store.isAIChatMessageQueued(message.id),
-                  isSearchMatch: searchMatchMessageIDs.contains(message.id),
-                  isSelectedSearchMatch: selectedThreadFindMessageID == message.id,
-                  selectedSearchMatchPageIndex: selectedThreadFindMatch?.messageID == message.id
-                    ? selectedThreadFindMatch?.expandedBodyPageIndex ?? 0
-                    : 0,
-                  canSteerQueuedMessage: store.canSteerQueuedAIChatMessage(message.id),
-                  steerQueuedMessage: {
-                    Task { await store.steerQueuedAIChatMessage(message.id) }
-                  },
-                  editQueuedMessage: {
-                    store.editQueuedAIChatMessage(message.id)
-                  },
-                  deleteQueuedMessage: {
-                    store.deleteQueuedAIChatMessage(message.id)
-                  }
-                )
-                .id(message.id)
-              case .round(let round):
-                AIChatRoomRoundView(
-                  round: round,
-                  compact: presentation.isCompact,
-                  searchMatchMessageIDs: searchMatchMessageIDs,
-                  selectedSearchMatchMessageID: selectedThreadFindMessageID,
-                  selectedSearchMatchPageIndex: selectedThreadFindMatch?.expandedBodyPageIndex ?? 0
-                )
-                  .id(round.id)
-              }
-            }
-            if store.isSendingOpenClawMessage && !store.selectedAIChatIsSharedRoom {
-              OpenClawLiveTypingIndicatorView(
-                liveState: store.openClawLiveState,
-                threadID: store.selectedOpenClawChatThreadID,
-                startedAt: store.openClawRequestStartedAt,
-                runtime: store.selectedAIChatActiveRuntime,
-                destinationTitle: store.aiChatDestinationTitle(store.selectedAIChatActiveDestinationID),
-                compact: presentation.isCompact,
-                onStop: {
-                  Task { await store.stopOpenClawRun() }
-                }
-              )
-                .id("openclaw-typing")
-            }
-          }
-          Color.clear
-            .frame(height: 1)
-            .id("openclaw-chat-bottom")
-            .accessibilityHidden(true)
+    return AIChatTranscriptDocument(
+      items: window.visibleItems,
+      compact: presentation.isCompact,
+      earlierTitle: window.hasEarlierMessages ? window.earlierMessagesTitle : nil,
+      searchMessageID: selectedThreadFindMessageID,
+      searchGeneration: threadFindNavigationGeneration,
+      onEarlier: {
+        if window.nextDisplayLimit > window.displayLimit {
+          transcriptWindowAnchor = nil
+          transcriptDisplayLimit = window.nextDisplayLimit
+        } else if let anchor = window.earlierPageAnchor {
+          transcriptWindowAnchor = anchor
         }
-        .padding(presentation.isCompact ? 10 : 16)
+      },
+      onPosition: { position in
+        isChatNearBottom = position >= OpenClawChatScrollVisibility.nearBottomThreshold
       }
-      .defaultScrollAnchor(.bottom)
-      // Keep the scroll container alive across thread selection. Re-keying the
-      // entire transcript here forced SwiftUI/TextKit to destroy and rebuild
-      // every visible bubble before the first frame of every thread switch.
-      // The position bridge already receives the selection generation and is
-      // the narrow place that resets per-thread scroll state.
-      .background(OpenClawChatScrollPositionBridge(
-        threadID: store.selectedOpenClawChatThreadID,
-        selectionGeneration: store.openClawChatSelectionGeneration,
-        initialPosition: store.openClawChatScrollPosition(isAssistantPanel: presentation.isCompact),
-        onPositionChange: { threadID, position in
-          let visibility = OpenClawChatScrollVisibility(
-            position: position,
-            hasContent: !store.openClawMessages.isEmpty
-          )
-          if let nextIsNearBottom = visibility.updatedNearBottomState(after: isChatNearBottom) {
-            isChatNearBottom = nextIsNearBottom
-          }
-          store.recordOpenClawChatScrollPosition(
-            position,
-            isAssistantPanel: presentation.isCompact,
-            threadID: threadID
-          )
-        },
-        onRestorationComplete: { threadID in
-          store.completeOpenClawChatScrollRestoration(threadID: threadID)
-        }
-      ))
-      .onChange(of: scrollUpdate) { previous, current in
-        switch current.automaticTarget(after: previous) {
-        case .latestMessage:
-          if isChatNearBottom {
-            proxy.scrollTo("openclaw-chat-bottom", anchor: .bottom)
-          }
-        case .typingIndicator:
-          proxy.scrollTo("openclaw-chat-bottom", anchor: .bottom)
-        case nil:
-          break
-        }
-      }
-      .onChange(of: threadFindNavigationGeneration) { _, _ in
-        guard let selectedThreadFindMessageID,
-              let match = threadFindMatches.first(where: {
-                $0.messageID == selectedThreadFindMessageID
-              })
-        else { return }
-        if !transcriptWindow.contains(match.scrollTargetID),
-           transcriptWindow.hasEarlierMessages {
-          transcriptWindowAnchor = OpenClawChatTranscriptAnchor(
-            itemID: match.scrollTargetID,
-            rawMessageIndex: match.anchorRawMessageIndex
-          )
-          DispatchQueue.main.async {
-            proxy.scrollTo(match.scrollTargetID, anchor: .center)
-          }
-        } else {
-          withAnimation(WorkspaceMotion.quick) {
-            proxy.scrollTo(match.scrollTargetID, anchor: .center)
-          }
-        }
-      }
-      .overlay(alignment: .bottomTrailing) {
-        if !isChatNearBottom && !store.openClawMessages.isEmpty {
-          Button {
-            isChatNearBottom = true
-            withAnimation(WorkspaceMotion.quick) {
-              proxy.scrollTo("openclaw-chat-bottom", anchor: .bottom)
-            }
-          } label: {
-            Image(systemName: "arrow.down")
-              .font(.system(size: 12, weight: .semibold))
-              .frame(width: 30, height: 30)
-              .background(.regularMaterial, in: Circle())
-              .overlay {
-                Circle().stroke(Color.primary.opacity(0.12), lineWidth: 1)
-              }
-              .shadow(color: .black.opacity(0.14), radius: 5, y: 2)
-          }
-          .buttonStyle(.plain)
-          .help("Jump to latest message")
-          .accessibilityLabel("Jump to latest message")
-          .padding(12)
-          .transition(.scale.combined(with: .opacity))
-        }
-      }
-      .animation(WorkspaceMotion.quick, value: isChatNearBottom)
+    )
+    .onChange(of: threadFindNavigationGeneration) { _, _ in
+      guard let match = threadFindMatches.first(where: { $0.messageID == selectedThreadFindMessageID }),
+            !window.contains(match.scrollTargetID) else { return }
+      transcriptWindowAnchor = OpenClawChatTranscriptAnchor(
+        itemID: match.scrollTargetID, rawMessageIndex: match.anchorRawMessageIndex
+      )
     }
   }
 
@@ -10859,277 +10689,6 @@ enum OpenClawChatScrollGeometry {
 
 enum OpenClawChatAccessibilityIdentity {
   static let transcriptScrollBridge = "org.openorg.chat.transcript-scroll-bridge"
-}
-
-private struct OpenClawChatScrollPositionBridge: NSViewRepresentable {
-  let threadID: UUID?
-  let selectionGeneration: Int
-  let initialPosition: Double?
-  let onPositionChange: (UUID?, Double) -> Void
-  let onRestorationComplete: (UUID?) -> Void
-
-  private var restoration: OpenClawChatScrollRestoration {
-    OpenClawChatScrollRestoration(
-      threadID: threadID,
-      selectionGeneration: selectionGeneration,
-      savedPosition: initialPosition
-    )
-  }
-
-  func makeCoordinator() -> Coordinator {
-    Coordinator(parent: self)
-  }
-
-  func makeNSView(context: Context) -> NSView {
-    let view = NSView(frame: .zero)
-    // This view already resolves the exact enclosing transcript scroll view for
-    // restoration. Publish the same stable native identity so performance and
-    // accessibility harnesses never guess among the sidebar and transcript
-    // scroll containers by geometry.
-    view.setAccessibilityIdentifier(OpenClawChatAccessibilityIdentity.transcriptScrollBridge)
-    return view
-  }
-
-  func updateNSView(_ view: NSView, context: Context) {
-    context.coordinator.updateParent(self)
-    context.coordinator.restoreIfNeeded(from: view)
-  }
-
-  static func dismantleNSView(_ view: NSView, coordinator: Coordinator) {
-    coordinator.recordCurrentPosition()
-    coordinator.stopObserving()
-  }
-
-  @MainActor
-  final class Coordinator: NSObject {
-    var parent: OpenClawChatScrollPositionBridge
-    private weak var scrollView: NSScrollView?
-    private weak var observedClipView: NSClipView?
-    private weak var observedDocumentView: NSView?
-    private var didRestore = false
-    private var isRestoring = false
-    private var restoreAttempts = 0
-    private var restoration: OpenClawChatScrollRestoration
-
-    init(parent: OpenClawChatScrollPositionBridge) {
-      self.parent = parent
-      restoration = parent.restoration
-      super.init()
-    }
-
-    func updateParent(_ parent: OpenClawChatScrollPositionBridge) {
-      let nextRestoration = parent.restoration
-      let requiresRestoration = nextRestoration.requiresNewRestoration(after: restoration)
-      if requiresRestoration {
-        // The bridge remains mounted across thread switches. Capture the old
-        // thread's position before replacing its callback with the new one.
-        recordCurrentPosition()
-      }
-      self.parent = parent
-      guard requiresRestoration else { return }
-      restoration = nextRestoration
-      didRestore = false
-      isRestoring = false
-      restoreAttempts = 0
-      stopObserving()
-    }
-
-    func restoreIfNeeded(from view: NSView) {
-      guard !didRestore else {
-        startObservingIfPossible(from: view)
-        return
-      }
-
-      DispatchQueue.main.async {
-        DispatchQueue.main.async {
-          self.attemptRestore(from: view)
-        }
-      }
-    }
-
-    private func attemptRestore(from view: NSView) {
-      guard !didRestore else {
-        startObservingIfPossible(from: view)
-        return
-      }
-      guard let scrollView = view.enclosingScrollView else {
-        scheduleRestoreRetry(from: view)
-        return
-      }
-      startObserving(scrollView)
-      if restoreIfPossible(in: scrollView) {
-        completeRestoration()
-      } else {
-        scheduleRestoreRetry(from: view)
-      }
-    }
-
-    private func scheduleRestoreRetry(from view: NSView) {
-      restoreAttempts += 1
-      guard restoreAttempts < 80 else {
-        if let scrollView = view.enclosingScrollView {
-          completeRestoration()
-          startObserving(scrollView)
-        } else {
-          completeRestoration()
-          self.startObservingIfPossible(from: view)
-        }
-        return
-      }
-      DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-        self.attemptRestore(from: view)
-      }
-    }
-
-    func recordCurrentPosition() {
-      guard didRestore,
-            !isRestoring,
-            let scrollView
-      else {
-        return
-      }
-      parent.onPositionChange(restoration.threadID, Self.normalizedPosition(in: scrollView))
-    }
-
-    private func completeRestoration() {
-      guard !didRestore else { return }
-      didRestore = true
-      parent.onRestorationComplete(restoration.threadID)
-    }
-
-    func stopObserving() {
-      if let observedClipView {
-        NotificationCenter.default.removeObserver(
-          self,
-          name: NSView.boundsDidChangeNotification,
-          object: observedClipView
-        )
-        NotificationCenter.default.removeObserver(
-          self,
-          name: NSView.frameDidChangeNotification,
-          object: observedClipView
-        )
-      }
-      if let observedDocumentView {
-        NotificationCenter.default.removeObserver(
-          self,
-          name: NSView.frameDidChangeNotification,
-          object: observedDocumentView
-        )
-      }
-      scrollView = nil
-      observedClipView = nil
-      observedDocumentView = nil
-    }
-
-    private func startObservingIfPossible(from view: NSView) {
-      guard let scrollView = view.enclosingScrollView else { return }
-      startObserving(scrollView)
-    }
-
-    private func startObserving(_ scrollView: NSScrollView) {
-      let documentView = scrollView.documentView
-      guard self.scrollView !== scrollView || observedDocumentView !== documentView else { return }
-      stopObserving()
-      self.scrollView = scrollView
-      let clipView = scrollView.contentView
-      observedClipView = clipView
-      observedDocumentView = documentView
-      clipView.postsBoundsChangedNotifications = true
-      clipView.postsFrameChangedNotifications = true
-      documentView?.postsFrameChangedNotifications = true
-      NotificationCenter.default.addObserver(
-        self,
-        selector: #selector(boundsDidChange(_:)),
-        name: NSView.boundsDidChangeNotification,
-        object: clipView
-      )
-      NotificationCenter.default.addObserver(
-        self,
-        selector: #selector(layoutDidChange(_:)),
-        name: NSView.frameDidChangeNotification,
-        object: clipView
-      )
-      if let documentView {
-        NotificationCenter.default.addObserver(
-          self,
-          selector: #selector(layoutDidChange(_:)),
-          name: NSView.frameDidChangeNotification,
-          object: documentView
-        )
-      }
-    }
-
-    @objc private func boundsDidChange(_ notification: Notification) {
-      guard !isRestoring, let scrollView else { return }
-      guard didRestore else {
-        if restoreIfPossible(in: scrollView) {
-          completeRestoration()
-        }
-        return
-      }
-      parent.onPositionChange(
-        restoration.threadID,
-        Self.normalizedPosition(in: scrollView)
-      )
-    }
-
-    @objc private func layoutDidChange(_ notification: Notification) {
-      guard !isRestoring, let scrollView else { return }
-      if didRestore {
-        constrainToDocumentIfNeeded(in: scrollView)
-      } else if restoreIfPossible(in: scrollView) {
-        completeRestoration()
-      }
-    }
-
-    private func restoreIfPossible(in scrollView: NSScrollView) -> Bool {
-      restore(scrollView, to: restoration.position)
-    }
-
-    private func restore(_ scrollView: NSScrollView, to position: Double) -> Bool {
-      guard let documentView = scrollView.documentView else { return false }
-      let clipView = scrollView.contentView
-      let maxY = max(0, documentView.bounds.height - clipView.bounds.height)
-      guard maxY > 0 else { return false }
-
-      let clamped = min(1, max(0, position))
-      var origin = clipView.bounds.origin
-      origin.y = documentView.isFlipped ? maxY * clamped : maxY * (1 - clamped)
-      isRestoring = true
-      clipView.scroll(to: origin)
-      scrollView.reflectScrolledClipView(clipView)
-      isRestoring = false
-      parent.onPositionChange(restoration.threadID, clamped)
-      return true
-    }
-
-    private func constrainToDocumentIfNeeded(in scrollView: NSScrollView) {
-      guard let constrainedBounds = OpenClawChatScrollGeometry.constrainedBounds(
-        in: scrollView
-      ) else { return }
-      let clipView = scrollView.contentView
-      isRestoring = true
-      clipView.scroll(to: constrainedBounds.origin)
-      scrollView.reflectScrolledClipView(clipView)
-      isRestoring = false
-      parent.onPositionChange(
-        restoration.threadID,
-        Self.normalizedPosition(in: scrollView)
-      )
-    }
-
-    private static func normalizedPosition(in scrollView: NSScrollView) -> Double {
-      guard let documentView = scrollView.documentView else { return 1 }
-      let clipView = scrollView.contentView
-      let maxY = max(0, documentView.bounds.height - clipView.bounds.height)
-      guard maxY > 0 else { return 1 }
-      let raw = documentView.isFlipped
-        ? clipView.bounds.origin.y / maxY
-        : 1 - (clipView.bounds.origin.y / maxY)
-      return min(1, max(0, raw))
-    }
-  }
 }
 
 private struct OrgCryptConfigurationSheet: View {

@@ -988,7 +988,7 @@ enum OpenClawMessageOrgNormalizer {
       lines[index] = indentation + hline
     }
 
-    return lines.joined(separator: "\n")
+    return AIChatCitationNormalizer.normalized(lines.joined(separator: "\n"))
   }
 
   private nonisolated static func normalizedBlockDirective(_ line: String) -> String {

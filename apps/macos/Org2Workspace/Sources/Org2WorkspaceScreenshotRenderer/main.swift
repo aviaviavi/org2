@@ -64,6 +64,10 @@ struct Org2WorkspaceScreenshotRenderer {
               """
             )
           ]
+          if verifiesChatSelection {
+            store.openClawMessages.append(OpenClawChatMessage(role: .user, content: "Select across this message boundary."))
+            store.openClawMessages.append(OpenClawChatMessage(role: .assistant, content: "The third message remains in the same document."))
+          }
         }
       }
       let verificationTabIDs: [WorkspaceTab.ID] = await MainActor.run {
@@ -178,12 +182,14 @@ struct Org2WorkspaceScreenshotRenderer {
       if CommandLine.arguments.contains("--verify-chat-selection"), let webView = firstWebView(in: hostingView) {
         let selected = try await webView.evaluateJavaScript("""
           const first=document.querySelector('main > p');
-          const last=document.querySelector('main > ul');
+          const last=document.querySelector('article:last-child main');
           const range=document.createRange(); range.setStart(first,0); range.setEndAfter(last);
           getSelection().removeAllRanges(); getSelection().addRange(range); getSelection().toString();
           """) as? String
-        guard selected?.contains("Reduce Motion support.") == true else {
-          throw ScreenshotRenderError.codeCopyVerificationFailed("Native selection did not span the paragraph and list")
+        guard selected?.contains("Reduce Motion support.") == true,
+              selected?.contains("Select across this message boundary.") == true,
+              selected?.contains("The third message remains in the same document.") == true else {
+          throw ScreenshotRenderError.codeCopyVerificationFailed("Native selection did not span all three messages")
         }
       }
     }

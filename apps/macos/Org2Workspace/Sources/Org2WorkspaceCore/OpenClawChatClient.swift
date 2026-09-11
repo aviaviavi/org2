@@ -192,7 +192,7 @@ public struct OpenClawChatClient: Sendable {
     var output = [
       OpenAIChatMessage(
         role: "system",
-        content: .text("You are OpenClaw working with the user's org2 workspace. Use the provided org2 workspace context, configured remote paths, and existing org2 tooling. Keep answers grounded in the corpus. Cite workspace facts with clickable Markdown file links using the mapped path and line number, for example [source](/path/to/file.org2:42).")
+        content: .text("You are OpenClaw working with the user's org2 workspace. Use the provided org2 workspace context, configured remote paths, and existing org2 tooling. Keep answers grounded in the corpus. Use Org syntax throughout. Cite workspace facts with Org file links using the mapped path and line number, for example [[file:/path/to/file.org2::42][source]].")
       )
     ]
 
@@ -350,7 +350,7 @@ public struct OpenClawWorkspaceContext: Sendable {
 
   Never write ##+begin_src or ##+end_src. Never use a Markdown table delimiter such as |---|---|. Do not use # headings, fenced Markdown code blocks, or Markdown task-list syntax for Org2 content. Before sending, check that every structured block is valid Org2 and correct it if necessary.
 
-  The Markdown-link form required below for clickable file-and-line citations is a deliberate OpenOrg chat transport exception; it does not change the syntax to use inside corpus content.
+  Use Org links for citations too: [[file:/absolute/path/note.org::42][source]]. Use [[https://example.com][label]] for web links. Do not emit Markdown links in new replies.
   """
 
   nonisolated static let agentOperatingGuidance = """
@@ -464,9 +464,9 @@ public struct OpenClawWorkspaceContext: Sendable {
     sections.append("""
     Clickable citations in AI chat
 
-    When referring to workspace content in your response, use Markdown links whose target is the exact mapped file path followed by a 1-based line number: [descriptive label](\(citationExamplePath):42). Relative paths are also accepted when that is how a source path appears in this context.
+    When referring to workspace content in your response, use Org file links with the exact mapped file path and a 1-based line selector: [[file:\(citationExamplePath)::42][descriptive label]]. Relative paths are also accepted when that is how a source path appears in this context.
 
-    For a line range, use [descriptive label](\(citationExamplePath):42-47); OpenOrg opens the file at the first cited line. The equivalent #L42 and #L42-L47 suffixes are accepted, but the :42 form is preferred. Do not replace the mapped path with a local path that is unavailable to the app.
+    For a line range, link to the first line and describe the range in the label: [[file:\(citationExamplePath)::42][source, lines 42–47]]. Do not replace the mapped path with a local path that is unavailable to the app.
     """)
 
     sections.append("""
