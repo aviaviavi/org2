@@ -217,3 +217,7 @@ bounded note excerpt with source path and revision, refreshed with the corpus.
 At most eight notes and 12,000 brief characters are included per turn. Project
 membership does not import other conversations or change corpus permissions.
 Save an open project-note draft before changing its color or chat membership.
+
+* Interaction feedback
+
+Action buttons use a brief native press response. Settling or reopening a chat animates its sidebar update; approval cards fade as resolved items leave the review queue or run detail. These effects respect the macOS Reduce Motion setting and do not delay actions.

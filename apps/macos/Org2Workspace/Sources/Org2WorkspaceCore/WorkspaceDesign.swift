@@ -186,6 +186,35 @@ struct WorkspaceSelectableRowModifier: ViewModifier {
 enum WorkspaceMotion {
   static let quick = Animation.easeOut(duration: 0.14)
   static let disclosure = Animation.easeInOut(duration: 0.16)
+  static let action = Animation.spring(response: 0.24, dampingFraction: 0.9)
+}
+
+/// Animate only the state supplied by the caller, never an entire refresh loop.
+private struct WorkspaceActionMotion<Value: Equatable>: ViewModifier {
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  let value: Value
+
+  func body(content: Content) -> some View {
+    content.animation(reduceMotion ? nil : WorkspaceMotion.action, value: value)
+  }
+}
+
+extension View {
+  func workspaceActionMotion<Value: Equatable>(value: Value) -> some View {
+    modifier(WorkspaceActionMotion(value: value))
+  }
+}
+
+/// A tiny physical response that does not delay or replace the action.
+struct WorkspaceQuietPressStyle: ButtonStyle {
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  func makeBody(configuration: Configuration) -> some View {
+    configuration.label
+      .scaleEffect(reduceMotion || !configuration.isPressed ? 1 : 0.94)
+      .opacity(configuration.isPressed ? 0.8 : 1)
+      .animation(reduceMotion ? nil : WorkspaceMotion.quick, value: configuration.isPressed)
+  }
 }
 
 enum WorkspaceSidebarLayout {
@@ -348,6 +377,7 @@ struct WorkspaceActionButtonStyle: ButtonStyle {
 }
 
 private struct WorkspaceActionButtonBody: View {
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   let configuration: ButtonStyleConfiguration
   let isEnabled: Bool
   @State private var isHovering = false
@@ -370,7 +400,9 @@ private struct WorkspaceActionButtonBody: View {
         in: RoundedRectangle(cornerRadius: WorkspaceDesign.controlRadius, style: .continuous)
       )
       .opacity(isEnabled ? 1 : 0.55)
-      .animation(WorkspaceMotion.quick, value: isHovering)
+      .scaleEffect(reduceMotion || !configuration.isPressed ? 1 : 0.97)
+      .animation(reduceMotion ? nil : WorkspaceMotion.quick, value: configuration.isPressed)
+      .animation(reduceMotion ? nil : WorkspaceMotion.quick, value: isHovering)
       .onHover { isHovering = $0 }
   }
 

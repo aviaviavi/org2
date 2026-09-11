@@ -15,7 +15,7 @@ struct OpenClawSidebarThreadSettlementButton: View {
         .frame(width: 28, height: 28)
         .contentShape(Rectangle())
     }
-    .buttonStyle(.plain)
+    .buttonStyle(WorkspaceQuietPressStyle())
     .fixedSize()
     .layoutPriority(1)
     .foregroundStyle(.secondary)
@@ -23,6 +23,7 @@ struct OpenClawSidebarThreadSettlementButton: View {
     .accessibilityLabel(title)
     // Keep the same control and width when hovering so the title cannot squeeze it.
     .opacity(isVisible ? 1 : 0)
+    .workspaceActionMotion(value: isVisible)
     .allowsHitTesting(isVisible)
     .accessibilityHidden(!isVisible)
   }

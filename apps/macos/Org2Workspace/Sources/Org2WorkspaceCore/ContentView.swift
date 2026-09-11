@@ -2307,6 +2307,7 @@ private struct WorkspaceDetailArea: View {
 }
 
 private struct SidebarView: View {
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(WorkspaceStore.self) private var store
   @State private var showsCommandShortcuts = false
   @State private var isChatThreadListExpanded = true
@@ -2646,8 +2647,16 @@ private struct SidebarView: View {
         }
       },
       togglePin: { store.toggleOpenClawChatThreadPin(summary.id) },
-      settle: { store.settleOpenClawChatThread(summary.id) },
-      reopen: { store.reopenOpenClawChatThread(summary.id) }
+      settle: {
+        withAnimation(reduceMotion ? nil : WorkspaceMotion.action) {
+          store.settleOpenClawChatThread(summary.id)
+        }
+      },
+      reopen: {
+        withAnimation(reduceMotion ? nil : WorkspaceMotion.action) {
+          store.reopenOpenClawChatThread(summary.id)
+        }
+      }
     )
   }
 
@@ -6505,6 +6514,7 @@ private struct RunCenterDetail: View {
                 }.buttonStyle(WorkspaceActionButtonStyle()).controlSize(.small)
               }
               .id(approval.id)
+              .transition(.opacity)
             }
             showMoreButton(for: .pendingApprovals, total: pending.count, noun: "approvals")
           }
@@ -6605,6 +6615,7 @@ private struct RunCenterDetail: View {
 
           technicalDetails
         }
+        .workspaceActionMotion(value: run.actionablePendingApprovals.map(\.id))
         .padding(WorkspaceDesign.contentInset)
         .frame(maxWidth: .infinity, alignment: .leading)
       }
@@ -7209,6 +7220,7 @@ private struct ApprovalsView: View {
       Divider()
 
       approvalList
+        .workspaceActionMotion(value: store.approvalItems.map(\.id))
     }
     .sheet(item: $discussionItem) { item in
       ApprovalDiscussionSheet(
@@ -7332,6 +7344,7 @@ private struct ApprovalsView: View {
               discussionItem = item
             }
           )
+          .transition(.opacity)
           .contentShape(Rectangle())
           .onTapGesture {
             let modifiers = NSApp.currentEvent?.modifierFlags ?? []
