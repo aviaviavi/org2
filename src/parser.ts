@@ -279,6 +279,7 @@ function parseBracketLinkAt(value: string, startIndex: number): ParsedLinkAt | n
 }
 
 function parsePlainUrlAt(value: string, startIndex: number): ParsedLinkAt | null {
+  if (!value.startsWith("http://", startIndex) && !value.startsWith("https://", startIndex)) return null;
   const rest = value.slice(startIndex);
   const match = /^(https?:\/\/[^\s]+)/.exec(rest);
   if (!match) return null;
@@ -303,6 +304,7 @@ function parsePlainUrlAt(value: string, startIndex: number): ParsedLinkAt | null
 }
 
 function parseAngleLinkAt(value: string, startIndex: number): ParsedLinkAt | null {
+  if (value[startIndex] !== "<") return null;
   const match = /^<([A-Za-z][A-Za-z0-9+.-]*:[^<>\s]+)>/.exec(value.slice(startIndex));
   if (!match) return null;
   const raw = match[0];
@@ -317,6 +319,7 @@ function parseLinkAt(value: string, startIndex: number): ParsedLinkAt | null {
 }
 
 function parseTargetAt(value: string, startIndex: number): ParsedInlineAt | null {
+  if (value[startIndex] !== "<") return null;
   const rest = value.slice(startIndex);
   const radioMatch = /^<<<([^<>\n]+)>>>/.exec(rest);
   if (radioMatch) {
@@ -330,6 +333,7 @@ function parseTargetAt(value: string, startIndex: number): ParsedInlineAt | null
 }
 
 function parseFootnoteReferenceAt(value: string, startIndex: number): ParsedInlineAt | null {
+  if (value[startIndex] !== "[") return null;
   const match = /^\[fn:([^\]\n:]*)(?::([^\]\n]*))?\]/i.exec(value.slice(startIndex));
   if (!match) return null;
   const raw = match[0];
@@ -344,6 +348,7 @@ function parseFootnoteReferenceAt(value: string, startIndex: number): ParsedInli
 }
 
 function parseCitationAt(value: string, startIndex: number): ParsedInlineAt | null {
+  if (value[startIndex] !== "[") return null;
   const match = /^\[cite(?:\/([^:\]\s]+))?:([^\]\n]+)\]/i.exec(value.slice(startIndex));
   if (!match) return null;
   const raw = match[0];
@@ -370,6 +375,7 @@ function parseCitationAt(value: string, startIndex: number): ParsedInlineAt | nu
 }
 
 function parseExportSnippetAt(value: string, startIndex: number): ParsedInlineAt | null {
+  if (value[startIndex] !== "@") return null;
   const match = /^@@([A-Za-z0-9_-]+):([\s\S]*?)@@/.exec(value.slice(startIndex));
   if (!match) return null;
   const raw = match[0];
@@ -388,6 +394,7 @@ const ORG_ENTITY_NAMES = new Set([
 ]);
 
 function parseEntityAt(value: string, startIndex: number): ParsedInlineAt | null {
+  if (value[startIndex] !== "\\") return null;
   const match = /^\\([A-Za-z]+)(?:\{\})?/.exec(value.slice(startIndex));
   if (!match || !ORG_ENTITY_NAMES.has(match[1] ?? "")) return null;
   const raw = match[0];
@@ -395,6 +402,7 @@ function parseEntityAt(value: string, startIndex: number): ParsedInlineAt | null
 }
 
 function parseLatexFragmentAt(value: string, startIndex: number): ParsedInlineAt | null {
+  if (value[startIndex] !== "$" && value[startIndex] !== "\\") return null;
   const rest = value.slice(startIndex);
   let match = /^\$\$([^\n]*?)\$\$/.exec(rest);
   if (match) {
@@ -447,6 +455,7 @@ function parseLineBreakAt(value: string, startIndex: number): ParsedInlineAt | n
 type ParsedProgressCookieAt = { node: ProgressCookieNode; endIndex: number };
 
 function parseProgressCookieAt(value: string, startIndex: number): ParsedProgressCookieAt | null {
+  if (value[startIndex] !== "[") return null;
   const rest = value.slice(startIndex);
   const fraction = /^\[(\d+)\/(\d+)\]/.exec(rest);
   if (fraction) {
@@ -462,6 +471,13 @@ function parseProgressCookieAt(value: string, startIndex: number): ParsedProgres
   return null;
 }
 
+// Ordinary prose cannot begin an inline object. Scan it without constructing
+// suffix strings or invoking every syntax recognizer at every character.
+const INLINE_START_MARKERS = new Set([
+  ...EMPHASIS_MARKERS.map(({ marker }) => marker),
+  "<", "[", "@", "$", "\\", "^", "h", // targets, timestamps, objects, and http(s)
+]);
+
 export function parseInlinesFromText(value: string): InlineNode[] {
   const out: InlineNode[] = [];
 
@@ -469,6 +485,10 @@ export function parseInlinesFromText(value: string): InlineNode[] {
   let lastTextStart = 0;
 
   while (i < value.length) {
+    if (!INLINE_START_MARKERS.has(value[i]!)) {
+      i += 1;
+      continue;
+    }
     const parsedRichObject =
       parseTargetAt(value, i) ??
       parseFootnoteReferenceAt(value, i) ??

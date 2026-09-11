@@ -335,6 +335,7 @@ var Org2MobileDocument = (() => {
     };
   }
   function parsePlainUrlAt(value, startIndex) {
+    if (!value.startsWith("http://", startIndex) && !value.startsWith("https://", startIndex)) return null;
     const rest = value.slice(startIndex);
     const match = /^(https?:\/\/[^\s]+)/.exec(rest);
     if (!match) return null;
@@ -353,6 +354,7 @@ var Org2MobileDocument = (() => {
     };
   }
   function parseAngleLinkAt(value, startIndex) {
+    if (value[startIndex] !== "<") return null;
     const match = /^<([A-Za-z][A-Za-z0-9+.-]*:[^<>\s]+)>/.exec(value.slice(startIndex));
     if (!match) return null;
     const raw = match[0];
@@ -365,6 +367,7 @@ var Org2MobileDocument = (() => {
     return parseBracketLinkAt(value, startIndex) ?? parseAngleLinkAt(value, startIndex) ?? parsePlainUrlAt(value, startIndex);
   }
   function parseTargetAt(value, startIndex) {
+    if (value[startIndex] !== "<") return null;
     const rest = value.slice(startIndex);
     const radioMatch = /^<<<([^<>\n]+)>>>/.exec(rest);
     if (radioMatch) {
@@ -377,6 +380,7 @@ var Org2MobileDocument = (() => {
     return rawInline({ type: "Target", raw, valueRaw: match[1] ?? "", radio: false }, startIndex + raw.length);
   }
   function parseFootnoteReferenceAt(value, startIndex) {
+    if (value[startIndex] !== "[") return null;
     const match = /^\[fn:([^\]\n:]*)(?::([^\]\n]*))?\]/i.exec(value.slice(startIndex));
     if (!match) return null;
     const raw = match[0];
@@ -390,6 +394,7 @@ var Org2MobileDocument = (() => {
     }, startIndex + raw.length);
   }
   function parseCitationAt(value, startIndex) {
+    if (value[startIndex] !== "[") return null;
     const match = /^\[cite(?:\/([^:\]\s]+))?:([^\]\n]+)\]/i.exec(value.slice(startIndex));
     if (!match) return null;
     const raw = match[0];
@@ -415,6 +420,7 @@ var Org2MobileDocument = (() => {
     }, startIndex + raw.length);
   }
   function parseExportSnippetAt(value, startIndex) {
+    if (value[startIndex] !== "@") return null;
     const match = /^@@([A-Za-z0-9_-]+):([\s\S]*?)@@/.exec(value.slice(startIndex));
     if (!match) return null;
     const raw = match[0];
@@ -494,12 +500,14 @@ var Org2MobileDocument = (() => {
     "deg"
   ]);
   function parseEntityAt(value, startIndex) {
+    if (value[startIndex] !== "\\") return null;
     const match = /^\\([A-Za-z]+)(?:\{\})?/.exec(value.slice(startIndex));
     if (!match || !ORG_ENTITY_NAMES.has(match[1] ?? "")) return null;
     const raw = match[0];
     return rawInline({ type: "Entity", raw, nameRaw: match[1] ?? "" }, startIndex + raw.length);
   }
   function parseLatexFragmentAt(value, startIndex) {
+    if (value[startIndex] !== "$" && value[startIndex] !== "\\") return null;
     const rest = value.slice(startIndex);
     let match = /^\$\$([^\n]*?)\$\$/.exec(rest);
     if (match) {
@@ -547,6 +555,7 @@ var Org2MobileDocument = (() => {
     return rawInline({ type: "LineBreak", raw: "\\\\" }, startIndex + 2);
   }
   function parseProgressCookieAt(value, startIndex) {
+    if (value[startIndex] !== "[") return null;
     const rest = value.slice(startIndex);
     const fraction = /^\[(\d+)\/(\d+)\]/.exec(rest);
     if (fraction) {
@@ -561,11 +570,26 @@ var Org2MobileDocument = (() => {
     }
     return null;
   }
+  var INLINE_START_MARKERS = /* @__PURE__ */ new Set([
+    ...EMPHASIS_MARKERS.map(({ marker }) => marker),
+    "<",
+    "[",
+    "@",
+    "$",
+    "\\",
+    "^",
+    "h"
+    // targets, timestamps, objects, and http(s)
+  ]);
   function parseInlinesFromText(value) {
     const out = [];
     let i = 0;
     let lastTextStart = 0;
     while (i < value.length) {
+      if (!INLINE_START_MARKERS.has(value[i])) {
+        i += 1;
+        continue;
+      }
       const parsedRichObject = parseTargetAt(value, i) ?? parseFootnoteReferenceAt(value, i) ?? parseCitationAt(value, i) ?? parseExportSnippetAt(value, i) ?? parseLatexFragmentAt(value, i) ?? parseEntityAt(value, i) ?? parseScriptAt(value, i) ?? parseLineBreakAt(value, i);
       if (parsedRichObject) {
         if (lastTextStart < i) out.push(text(value.slice(lastTextStart, i)));

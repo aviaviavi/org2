@@ -9,7 +9,7 @@ struct DocumentRegression {
     }
   }
 
-  static func main() throws {
+  static func main() async throws {
     let runtime = try MobileDocumentRuntime()
     let source = """
       #+TITLE: Recipes
@@ -46,5 +46,95 @@ struct DocumentRegression {
     let elapsed = Date().timeIntervalSince(start)
     check(elapsed < 10, "Native indexing of 300 small documents exceeded 10s: \(elapsed)")
     print("iOS JavaScriptCore bridge passed; indexed 300 recipe documents in \(elapsed)s")
+
+    let longProse = "* Long note\n" + String(repeating: "Text. ", count: 150_000)
+    let proseStart = Date()
+    let proseEntries = try runtime.index(source: longProse, path: "long.org", sequences: [])
+    let proseElapsed = Date().timeIntervalSince(proseStart)
+    check(proseEntries[1].body == String(repeating: "Text. ", count: 150_000).trimmingCharacters(in: .whitespacesAndNewlines), "Long prose changed during indexing")
+    check(proseElapsed < 2, "Long prose indexing exceeded 2s: \(proseElapsed)")
+    print("900 KB plain-prose indexing: \(proseElapsed)s")
+
+    let renderer = MobileDocumentRenderer()
+    renderer.prewarm()
+    let warmState = await renderer.stateForTesting()
+    check(warmState.hasRuntime && warmState.initializations == 1, "Prewarm must create exactly one engine")
+    let coldStart = Date()
+    for _ in 0..<10 {
+      _ = try MobileDocumentRuntime().render(source: source, path: coffee.path, entry: coffee, sequences: [])
+    }
+    let coldElapsed = Date().timeIntervalSince(coldStart)
+    let warmStart = Date()
+    for _ in 0..<10 {
+      let value = try await renderer.render(source: source, path: coffee.path, entry: coffee, sequences: [], corpusID: "a")
+      check(value.html.contains("225 g"), "Warmed renderer lost content")
+    }
+    let warmElapsed = Date().timeIntervalSince(warmStart)
+    check(warmElapsed < 1, "Ten warmed note renders exceeded the 1s regression budget")
+    print("Ten note renders: fresh engines \(coldElapsed)s, warmed renderer \(warmElapsed)s")
+
+    let changed = try await renderer.render(source: source.replacingOccurrences(of: "225 g", with: "250 g"), path: coffee.path, entry: coffee, sequences: [], corpusID: "a")
+    check(changed.html.contains("250 g") && !changed.html.contains("225 g"), "A source edit reused stale HTML")
+    let whole = try await renderer.render(source: source, path: coffee.path, entry: nil, sequences: [], corpusID: "a")
+    check(whole.html.contains("Steep 3 minutes"), "Full note reused entry HTML")
+    let changedWorkflow = try await renderer.render(source: "* READY Coffee", path: "workflow.org", entry: nil, sequences: ["READY | FINISHED"], corpusID: "b")
+    check(changedWorkflow.html.contains("org2-todo"), "Changed corpus workflow was lost")
+    let noWorkflow = try await renderer.render(source: "* READY Coffee", path: "workflow.org", entry: nil, sequences: [], corpusID: "b")
+    check(noWorkflow.html != changedWorkflow.html, "Changed TODO definitions reused stale HTML")
+    do {
+      _ = try await renderer.render(source: "* Removed", path: coffee.path, entry: coffee, sequences: [], corpusID: "a")
+      check(false, "Missing entries must still fail with a warm engine")
+    } catch { }
+    let recovered = try await renderer.render(source: source, path: coffee.path, entry: coffee, sequences: [], corpusID: "a")
+    check(recovered.html.contains("225 g"), "A failed render poisoned the reusable engine")
+    let beforeRelease = await renderer.stateForTesting()
+    check(beforeRelease.initializations == 1, "Navigation rebuilt the JavaScript engine")
+    renderer.releaseResources()
+    let released = await renderer.stateForTesting()
+    check(!released.hasRuntime && !released.hasCachedDocument, "Memory/background release retained notes or engine")
+    let cancelled = Task {
+      withUnsafeCurrentTask { $0?.cancel() }
+      return try await renderer.render(source: source, path: coffee.path, entry: coffee, sequences: [], corpusID: "a")
+    }
+    do {
+      _ = try await cancelled.value
+      check(false, "Cancelled rendering should throw")
+    } catch is CancellationError { }
+    let afterCancel = await renderer.stateForTesting()
+    check(!afterCancel.hasRuntime, "A cancelled request must not start an engine")
+    let shortLived = MobileDocumentRenderer(idleSeconds: 0.03)
+    shortLived.prewarm()
+    _ = await shortLived.stateForTesting()
+    try await Task.sleep(for: .milliseconds(100))
+    let idle = await shortLived.stateForTesting()
+    check(!idle.hasRuntime, "Idle renderer did not release resources")
+    let large = "* Large\n#+begin_src text\n" + String(repeating: "Text. ", count: 400_000) + "\n#+end_src\n"
+    _ = try await renderer.render(source: large, path: "large.org", entry: nil, sequences: [], corpusID: "a")
+    let oversized = await renderer.stateForTesting()
+    check(!oversized.hasCachedDocument, "Oversized notes must not occupy the render cache")
+    renderer.releaseResources()
+
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let destination = directory.appendingPathComponent("cache.json")
+    let writer = MobileCorpusCacheWriter()
+    await writer.save(OffMainCacheValue(value: "new"), to: destination, generation: 2)
+    await writer.save(["value": "old"], to: destination, generation: 1)
+    let saved = try JSONDecoder().decode([String: String].self, from: Data(contentsOf: destination))
+    check(saved["value"] == "new", "A delayed save overwrote a newer cache")
+    await writer.save(["value": "failed"], to: destination.appendingPathComponent("unwritable"), generation: 3)
+    await writer.save(["value": "recovered"], to: destination, generation: 4)
+    let savedAgain = try JSONDecoder().decode([String: String].self, from: Data(contentsOf: destination))
+    check(savedAgain["value"] == "recovered", "Cache saving did not recover after an I/O error")
+    print("Mobile renderer reuse, invalidation, cancellation, memory bounds, idle release, and ordered cache persistence passed")
+  }
+}
+
+private struct OffMainCacheValue: Encodable, Sendable {
+  let value: String
+  func encode(to encoder: Encoder) throws {
+    precondition(!Thread.isMainThread, "Corpus-cache encoding must leave the UI thread")
+    var container = encoder.singleValueContainer()
+    try container.encode(["value": value])
   }
 }

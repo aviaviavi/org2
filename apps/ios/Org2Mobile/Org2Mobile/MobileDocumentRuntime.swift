@@ -41,3 +41,121 @@ struct MobileRenderedDocument: Decodable, Sendable {
   let title: String
   let html: String
 }
+
+/// A single serial executor owns JavaScriptCore. Warming does not read any notes.
+/// Keep at most one small rendered result and release everything after a minute
+/// idle, on memory pressure, or when the app leaves the foreground.
+final class MobileDocumentRenderer: @unchecked Sendable {
+  private let queue = DispatchQueue(label: "org.org2.mobile.document-renderer", qos: .userInitiated)
+  private var runtime: MobileDocumentRuntime?
+  private var cached: (request: Request, document: MobileRenderedDocument)?
+  private var idleRelease: DispatchWorkItem?
+  private var initializationCount = 0
+  private let idleSeconds: Double
+  private let cacheByteLimit = 2 * 1024 * 1024
+
+  private struct Request: Equatable, Sendable {
+    let source: String
+    let path: String
+    let entry: MobileSearchEntry?
+    let sequences: [String]
+    let corpusID: String
+  }
+
+  init(idleSeconds: Double = 60) {
+    self.idleSeconds = idleSeconds
+  }
+
+  func prewarm() {
+    queue.async { [self] in
+      if runtime == nil {
+        runtime = try? MobileDocumentRuntime()
+        if runtime != nil { initializationCount += 1 }
+      }
+      scheduleIdleRelease()
+    }
+  }
+
+  func releaseResources() {
+    queue.async { [self] in
+      idleRelease?.cancel()
+      idleRelease = nil
+      cached = nil
+      runtime = nil
+    }
+  }
+
+  func render(source: String, path: String, entry: MobileSearchEntry?, sequences: [String], corpusID: String) async throws -> MobileRenderedDocument {
+    let request = Request(source: source, path: path, entry: entry, sequences: sequences, corpusID: corpusID)
+    let cancellation = RenderCancellation()
+    return try await withTaskCancellationHandler {
+      try Task.checkCancellation()
+      return try await withCheckedThrowingContinuation { continuation in
+        queue.async { [self] in
+          do {
+            try cancellation.check()
+            defer { scheduleIdleRelease() }
+            let document: MobileRenderedDocument
+            if let cached, cached.request == request {
+              document = cached.document
+            } else {
+              if runtime == nil {
+                runtime = try MobileDocumentRuntime()
+                initializationCount += 1
+              }
+              document = try runtime!.render(source: source, path: path, entry: entry, sequences: sequences)
+              // Do not retain a large note or the previous note after a miss.
+              cached = nil
+              if source.utf8.count + document.html.utf8.count + (entry?.body.utf8.count ?? 0) <= cacheByteLimit {
+                cached = (request, document)
+              }
+            }
+            try cancellation.check()
+            continuation.resume(returning: document)
+          } catch {
+            continuation.resume(throwing: error)
+          }
+        }
+      }
+    } onCancel: {
+      cancellation.cancel()
+    }
+  }
+
+  func stateForTesting() async -> (initializations: Int, hasRuntime: Bool, hasCachedDocument: Bool) {
+    await withCheckedContinuation { continuation in
+      queue.async { [self] in
+        continuation.resume(returning: (initializationCount, runtime != nil, cached != nil))
+      }
+    }
+  }
+
+  private func scheduleIdleRelease() {
+    idleRelease?.cancel()
+    let work = DispatchWorkItem { [weak self] in
+      self?.cached = nil
+      self?.runtime = nil
+      self?.idleRelease = nil
+    }
+    idleRelease = work
+    queue.asyncAfter(deadline: .now() + idleSeconds, execute: work)
+  }
+}
+
+private final class RenderCancellation: @unchecked Sendable {
+  private let lock = NSLock()
+  private var cancelled = false
+
+  func cancel() {
+    lock.lock()
+    cancelled = true
+    lock.unlock()
+  }
+
+  func check() throws {
+    lock.lock()
+    let value = cancelled
+    lock.unlock()
+    if value { throw CancellationError() }
+  }
+}

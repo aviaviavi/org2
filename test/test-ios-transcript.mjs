@@ -22,6 +22,7 @@ if (process.platform === "darwin") {
       ["xcrun", ["swiftc", "-swift-version", "6", "-O",
         resolve("apps/ios/Org2Mobile/Org2Mobile/MobileCorpusSearch.swift"),
         resolve("apps/ios/Org2Mobile/Org2Mobile/MobileDocumentRuntime.swift"),
+        resolve("apps/ios/Org2Mobile/Org2Mobile/MobileCorpusCacheWriter.swift"),
         resolve("test/ios-document-regression.swift"), "-o", executable]],
       [executable, []],
     ]) {

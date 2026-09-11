@@ -95,3 +95,9 @@ Notes:
   - every `spec/v0/tests/*.org` has a sibling `*.json` fixture (and vice versa)
   - each `*.json` conforms to `spec/v0/canonical-ast.schema.json`
 - With `--e2e` it also parses `.org` → AST using the reference parser and compares it to the sibling `*.json` (exact match).
+
+## Interactive performance regressions
+
+`node test/test-cli-startup.mjs` checks that lightweight command families do not load the document/agenda CLI. `node test/test-inline-performance.mjs` exercises large plain and mixed-syntax paragraphs in the shared parser; `node test/test-ios-transcript.mjs` covers the same runtime through native JavaScriptCore plus mobile renderer/cache lifecycles. These tests are included in the normal suite.
+
+Record the Node architecture with CLI timings. Intel Node under Rosetta has process-start overhead that does not measure the parser or command dispatcher itself. Compare before/after runs using the same executable and corpus.

@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0B2001042C20000000000001 /* MobileCorpusCacheWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B2002042C20000000000001 /* MobileCorpusCacheWriter.swift */; };
 		0B2001032C20000000000001 /* Org2MobileDocument.js in Resources */ = {isa = PBXBuildFile; fileRef = 0B2002032C20000000000001 /* Org2MobileDocument.js */; };
 		0B2001022C20000000000001 /* MobileDocumentRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B2002022C20000000000001 /* MobileDocumentRuntime.swift */; };
 		0B2001012C20000000000001 /* MobileCorpusSearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B2002012C20000000000001 /* MobileCorpusSearch.swift */; };
@@ -55,6 +56,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		0B2002042C20000000000001 /* MobileCorpusCacheWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileCorpusCacheWriter.swift; sourceTree = "<group>"; };
 		0B2002032C20000000000001 /* Org2MobileDocument.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = Org2MobileDocument.js; sourceTree = "<group>"; };
 		0B2002022C20000000000001 /* MobileDocumentRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileDocumentRuntime.swift; sourceTree = "<group>"; };
 		0B2002012C20000000000001 /* MobileCorpusSearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileCorpusSearch.swift; sourceTree = "<group>"; };
@@ -122,6 +124,7 @@
 			children = (
 				0B2002012C20000000000001 /* MobileCorpusSearch.swift */,
 				0B2002022C20000000000001 /* MobileDocumentRuntime.swift */,
+				0B2002042C20000000000001 /* MobileCorpusCacheWriter.swift */,
 				0B2002032C20000000000001 /* Org2MobileDocument.js */,
 				0A1002012C20000000000001 /* Org2MobileApp.swift */,
 				0A1002022C20000000000001 /* ContentView.swift */,
@@ -257,6 +260,7 @@
 			files = (
 				0B2001012C20000000000001 /* MobileCorpusSearch.swift in Sources */,
 				0B2001022C20000000000001 /* MobileDocumentRuntime.swift in Sources */,
+				0B2001042C20000000000001 /* MobileCorpusCacheWriter.swift in Sources */,
 				0A1001012C20000000000001 /* Org2MobileApp.swift in Sources */,
 				0A1001022C20000000000001 /* ContentView.swift in Sources */,
 				0A1001032C20000000000001 /* Models.swift in Sources */,

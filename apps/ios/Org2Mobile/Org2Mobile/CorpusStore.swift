@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import UIKit
 @preconcurrency import UserNotifications
 
 @MainActor
@@ -30,6 +31,18 @@ final class CorpusStore: ObservableObject {
   private var refreshGeneration = 0
   private var cacheHydrationGeneration = 0
   private var hasOpenedCorpusViews = false
+  private var hasLoadedCorpusSnapshot = false
+  private let documentRenderer = MobileDocumentRenderer()
+  private let cacheWriter = MobileCorpusCacheWriter()
+  private var resourceObservers: Set<AnyCancellable> = []
+
+  init() {
+    for name in [UIApplication.didReceiveMemoryWarningNotification, UIApplication.didEnterBackgroundNotification] {
+      NotificationCenter.default.publisher(for: name).sink { [documentRenderer] _ in
+        documentRenderer.releaseResources()
+      }.store(in: &resourceObservers)
+    }
+  }
 
   var corpusName: String {
     rootURL?.lastPathComponent ?? "No corpus"
@@ -117,6 +130,10 @@ final class CorpusStore: ObservableObject {
   func prepareCorpusViews() {
     hasOpenedCorpusViews = true
     guard let rootURL else { return }
+    if !ProcessInfo.processInfo.isLowPowerModeEnabled {
+      documentRenderer.prewarm()
+    }
+    guard !hasLoadedCorpusSnapshot, !isPreparingCorpus else { return }
     startCacheHydration(matching: rootURL)
   }
 
@@ -155,11 +172,10 @@ final class CorpusStore: ObservableObject {
       cacheHydrationGeneration += 1
       isPreparingCorpus = false
       saveCachedCorpus(snapshot, for: rootURL)
-      if hasOpenedCorpusViews {
-        documents = snapshot.documents
-        agenda = snapshot.agenda
-        approvals = snapshot.approvals
-      }
+      if hasOpenedCorpusViews { documents = snapshot.documents }
+      agenda = snapshot.agenda
+      approvals = snapshot.approvals
+      hasLoadedCorpusSnapshot = true
       scheduleDueTodayNotification(from: snapshot.agenda)
 
       let fileStatus = snapshot.documents.count == 1 ? "1 file" : "\(snapshot.documents.count) files"
@@ -272,10 +288,10 @@ final class CorpusStore: ObservableObject {
   }
 
   func renderedDocument(preview: CorpusFilePreview, entry: MobileSearchEntry?) async throws -> MobileRenderedDocument {
-    let sequences = searchTodoSequences
-    return try await Task.detached(priority: .userInitiated) {
-      try MobileDocumentRuntime().render(source: preview.content, path: preview.relativePath, entry: entry, sequences: sequences)
-    }.value
+    try await documentRenderer.render(
+      source: preview.content, path: preview.relativePath, entry: entry,
+      sequences: searchTodoSequences, corpusID: rootURL?.standardizedFileURL.path ?? ""
+    )
   }
 
   func clearNotificationBadge() {
@@ -337,6 +353,7 @@ final class CorpusStore: ObservableObject {
   }
 
   private func restoreCachedCorpus(_ snapshot: CorpusCacheSnapshot, index: MobileCorpusSearchIndex) {
+    hasLoadedCorpusSnapshot = true
     documents = []
     corpusFiles = snapshot.files
     searchIndex = index
@@ -349,6 +366,8 @@ final class CorpusStore: ObservableObject {
   }
 
   private func clearCorpusViews() {
+    hasLoadedCorpusSnapshot = false
+    isPreparingCorpus = false
     documents = []
     corpusFiles = []
     searchIndex = MobileCorpusSearchIndex()
@@ -386,22 +405,17 @@ final class CorpusStore: ObservableObject {
       approvals: refreshSnapshot.approvals
     )
 
-    do {
-      try FileManager.default.createDirectory(
-        at: cacheURL.deletingLastPathComponent(),
-        withIntermediateDirectories: true
-      )
-      let data = try JSONEncoder().encode(cacheSnapshot)
-      try data.write(to: cacheURL, options: .atomic)
-      UserDefaults.standard.set(cacheSnapshot.rootPath, forKey: cachedRootPathKey)
-      MobileCaptureWriter.sharedDefaults.set(cacheSnapshot.rootPath, forKey: cachedRootPathKey)
-    } catch {
-      // Cache writes should never block the live corpus view.
+    let destination = cacheURL
+    let generation = refreshGeneration
+    let writer = cacheWriter
+    Task(priority: .utility) {
+      await writer.save(cacheSnapshot, to: destination, generation: generation)
     }
   }
 
   private func setRootURL(_ url: URL) {
     if rootURL != url {
+      documentRenderer.releaseResources()
       refreshGeneration += 1
       cacheHydrationGeneration += 1
       clearCorpusViews()
@@ -1731,7 +1745,7 @@ private struct ScopedLineReplacement {
   let lines: [String]
 }
 
-private struct CorpusCacheSnapshot: Codable {
+private struct CorpusCacheSnapshot: Codable, Sendable {
   static let currentVersion = 2
 
   let version: Int

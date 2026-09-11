@@ -57,3 +57,7 @@ Mobile Remote also connects to `org2 server` on a dedicated Mac. Settings → Ho
 ## Local document runtime
 
 Run `npm run build:mobile-document` after shared parser/renderer changes and before an iOS build. The checked-in JavaScriptCore resource is verified by `npm run check:mobile-document` and `node test/test-ios-mobile-navigation.mjs`. The bridge supplies file and corpus TODO definitions explicitly and provides no filesystem APIs to JavaScript.
+
+The Files view warms one background document renderer unless Low Power Mode is active. Note opens reuse that engine and at most one rendered result, with a 2 MiB source/HTML budget. The cache key includes the full source, selected entry, path, corpus, and TODO definitions; source reads still happen on each open. The engine and result are released after 60 seconds idle, on memory pressure, and when the app enters the background. Corpus-cache encoding and atomic writes run on a separate actor, with generation ordering to prevent a delayed save from replacing a newer snapshot. Reopening Files reuses an already loaded snapshot rather than rehydrating the disk cache.
+
+`node test/test-ios-transcript.mjs` exercises renderer reuse, source/workflow invalidation, cancellation, resource release, ordered cache persistence, and long-prose performance through the actual JavaScriptCore bridge.
