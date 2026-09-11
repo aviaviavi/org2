@@ -3980,13 +3980,13 @@ ${rows}
     );
     if (meaningfulChildren.length !== 1 || meaningfulChildren[0]?.type !== "Link") return null;
     const link2 = meaningfulChildren[0];
-    if (String(link2.descriptionRaw || "").trim()) return null;
+    const description = String(link2.descriptionRaw || "").trim();
     const source = resolveImageLinkSource(link2.targetRaw, context);
     if (!source) return null;
     const expandedTarget = expandLinkAbbreviationTarget(link2.targetRaw, context.linkAbbreviations);
     const href = context.profile === "app" ? appLinkHref(link2.targetRaw, expandedTarget, context) : source;
     const sourceAttributes = renderSourceAttributes(node, context);
-    return `<figure class="org2-image-figure"${sourceAttributes}><a class="org2-image-link" href="${escapeAttr(href)}"><img class="org2-image" src="${escapeAttr(source)}" alt="${escapeAttr(imageAltText(source))}" loading="lazy" decoding="async" /></a></figure>`;
+    return `<figure class="org2-image-figure"${sourceAttributes}><a class="org2-image-link" href="${escapeAttr(href)}"><img class="org2-image" src="${escapeAttr(source)}" alt="${escapeAttr(description || imageAltText(source))}" loading="lazy" decoding="async" /></a></figure>`;
   }
   function renderInline(node, context) {
     if (node.type === "Text") return escapeHtml(node.value);

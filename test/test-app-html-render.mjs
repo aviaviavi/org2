@@ -204,6 +204,14 @@ assert.match(
   /<a class="org2-image-link" href="images\/chess-opening-study-2026\/01-alapin-sicilian\.png"><img class="org2-image" src="images\/chess-opening-study-2026\/01-alapin-sicilian\.png"/,
 );
 
+const labeledImageDocument = parseOrgToCanonicalAst('[[file:images/test image.png][Example & image]]');
+for (const render of [renderOrgDocumentToAppHtml, renderOrgDocumentToHtml]) {
+  const rendered = render(labeledImageDocument, { sourcePath: "message.org" });
+  assert.match(rendered.html, /<img class="org2-image" src="images\/test image.png" alt="Example &amp; image"/);
+  const inline = render(parseOrgToCanonicalAst('See [[file:images/test.png][image]] here.'), { sourcePath: "message.org" });
+  assert.doesNotMatch(inline.html, /<img /);
+}
+
 const publishedIndex = renderOrgExportIndexToHtml({
   title: "Org2 docs sitemap",
   items: [{ title: "Features", href: "features.html" }],

@@ -221,3 +221,7 @@ Save an open project-note draft before changing its color or chat membership.
 * Interaction feedback
 
 Action buttons use a brief native press response. Settling or reopening a chat animates its sidebar update; approval cards fade as resolved items leave the review queue or run detail. These effects respect the macOS Reduce Motion setting and do not delay actions.
+
+* Chat text selection
+
+Each chat message body uses the same Org HTML renderer and WebKit selection engine as document previews. Select naturally across paragraphs, lists, tables, and code within a message; standard Copy preserves rich text. Incoming body updates wait while a text selection is active. Message headers, attachments, and action controls remain native. Selection is scoped to one message document; use the message Copy action for its complete source.

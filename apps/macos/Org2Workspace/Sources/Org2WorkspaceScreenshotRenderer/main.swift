@@ -12,7 +12,8 @@ struct Org2WorkspaceScreenshotRenderer {
       let height = Double(ProcessInfo.processInfo.environment["ORG2_WORKSPACE_SCREENSHOT_HEIGHT"] ?? "") ?? 900
       let scale = Double(ProcessInfo.processInfo.environment["ORG2_WORKSPACE_SCREENSHOT_SCALE"] ?? "") ?? 1
       let verifiesTabs = CommandLine.arguments.contains("--verify-tabs")
-      let verifiesCodeCopy = CommandLine.arguments.contains("--verify-code-copy")
+      let verifiesChatSelection = CommandLine.arguments.contains("--verify-chat-selection")
+      let verifiesCodeCopy = CommandLine.arguments.contains("--verify-code-copy") || verifiesChatSelection
 
       _ = await MainActor.run {
         NSApplication.shared.setActivationPolicy(.prohibited)
@@ -43,7 +44,14 @@ struct Org2WorkspaceScreenshotRenderer {
             OpenClawChatMessage(
               role: .assistant,
               content: """
-              Here are two independent snippets.
+              Added in OpenOrg Preview:
+
+              - Subtle press feedback.
+              - Smooth thread settlement and reopening.
+              - Approval cards fade out as they resolve.
+              - Reduce Motion support.
+
+              Select across this paragraph and the list above.
 
               #+begin_src swift
               let answer = 42
@@ -159,6 +167,26 @@ struct Org2WorkspaceScreenshotRenderer {
     hostingView.layoutSubtreeIfNeeded()
     hostingView.displayIfNeeded()
 
+    if verifiesCodeCopy {
+      for _ in 0..<200 {
+        if let webView = firstWebView(in: hostingView),
+           (try? await webView.evaluateJavaScript("document.querySelectorAll('.chat-copy-code').length")) as? Int == 2 { break }
+        try await Task.sleep(for: .milliseconds(50))
+        hostingView.layoutSubtreeIfNeeded()
+      }
+      try await verifyCodeCopy(in: hostingView)
+      if CommandLine.arguments.contains("--verify-chat-selection"), let webView = firstWebView(in: hostingView) {
+        let selected = try await webView.evaluateJavaScript("""
+          const first=document.querySelector('main > p');
+          const last=document.querySelector('main > ul');
+          const range=document.createRange(); range.setStart(first,0); range.setEndAfter(last);
+          getSelection().removeAllRanges(); getSelection().addRange(range); getSelection().toString();
+          """) as? String
+        guard selected?.contains("Reduce Motion support.") == true else {
+          throw ScreenshotRenderError.codeCopyVerificationFailed("Native selection did not span the paragraph and list")
+        }
+      }
+    }
     if !verificationTabIDs.isEmpty {
       try await verifyTabInteractions(
         in: window,
@@ -209,31 +237,36 @@ struct Org2WorkspaceScreenshotRenderer {
       withIntermediateDirectories: true
     )
     try png.write(to: outputURL)
-    if verifiesCodeCopy {
-      try verifyCodeCopy(in: hostingView)
-    }
   }
 
   @MainActor
-  private static func verifyCodeCopy(in hostingView: NSView) throws {
-    let buttons = descendantButtons(in: hostingView).filter {
-      $0.accessibilityLabel() == "Copy code"
+  private static func verifyCodeCopy(in hostingView: NSView) async throws {
+    guard let webView = firstWebView(in: hostingView),
+      (try await webView.evaluateJavaScript("document.querySelectorAll('.chat-copy-code').length")) as? Int == 2 else {
+      throw ScreenshotRenderError.codeCopyVerificationFailed("Expected two document copy controls")
     }
-    guard buttons.count == 2 else {
-      throw ScreenshotRenderError.codeCopyVerificationFailed(
-        "rendered \(buttons.count) copy controls instead of two"
-      )
-    }
-
     let pasteboard = NSPasteboard.general
-    pasteboard.clearContents()
-    buttons[0].performClick(nil)
-    guard pasteboard.string(forType: .string) == "let answer = 42\nprint(answer)" else {
-      throw ScreenshotRenderError.codeCopyVerificationFailed(
-        "the visible control did not copy only its source block"
-      )
+    let saved = pasteboard.pasteboardItems?.map { item in
+      item.types.compactMap { type in item.data(forType: type).map { (type, $0) } }
+    } ?? []
+    defer {
+      pasteboard.clearContents()
+      let items = saved.map { values in
+        let item = NSPasteboardItem()
+        for (type, data) in values { item.setData(data, forType: type) }
+        return item
+      }
+      pasteboard.writeObjects(items)
     }
-    FileHandle.standardError.write(Data("Verified visible code-block copy control and exact clipboard payload\n".utf8))
+    try await webView.evaluateJavaScript("document.querySelector('.chat-copy-code').click(); null;")
+    for _ in 0..<40 {
+      if pasteboard.string(forType: .string) == "let answer = 42\nprint(answer)" { break }
+      try await Task.sleep(for: .milliseconds(25))
+    }
+    guard pasteboard.string(forType: .string) == "let answer = 42\nprint(answer)" else {
+      throw ScreenshotRenderError.codeCopyVerificationFailed("The document control did not copy the exact source block")
+    }
+    FileHandle.standardError.write(Data("Verified document code copy and exact clipboard payload\n".utf8))
   }
 
   @MainActor

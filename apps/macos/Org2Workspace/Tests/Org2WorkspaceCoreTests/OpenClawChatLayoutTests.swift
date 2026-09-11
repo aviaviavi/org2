@@ -556,27 +556,6 @@ final class OpenClawChatLayoutTests: XCTestCase {
     XCTAssertFalse(final.isTruncated)
   }
 
-  func testStructuredMessageBlockPagesRemainStrictlyBounded() {
-    let pageSize = OpenClawMessageBodyView.maximumStructuredBlockCountPerPage
-    let first = OpenClawMessageBodyView.structuredBlockRange(
-      blockCount: 10_000,
-      pageIndex: 0
-    )
-    let middle = OpenClawMessageBodyView.structuredBlockRange(
-      blockCount: 10_000,
-      pageIndex: 40
-    )
-    let final = OpenClawMessageBodyView.structuredBlockRange(
-      blockCount: 10_000,
-      pageIndex: .max
-    )
-
-    XCTAssertEqual(first, 0..<pageSize)
-    XCTAssertEqual(middle.count, pageSize)
-    XCTAssertLessThanOrEqual(final.count, pageSize)
-    XCTAssertEqual(final.upperBound, 10_000)
-  }
-
   func testOffMainPresentationRevisionInvalidatesSameLengthMiddleEdit() async throws {
     let messageID = UUID()
     let originalInput = OpenClawMessagePresentationInput(OpenClawChatMessage(
@@ -935,7 +914,7 @@ final class OpenClawChatLayoutTests: XCTestCase {
     let bubbleBody = source[bubbleStart.lowerBound..<bubbleEnd.lowerBound]
     XCTAssertFalse(bubbleBody.contains("OpenClawMessagePresentationCache.presentation(for: message)"))
     XCTAssertTrue(bubbleBody.contains("OpenClawMessagePresentationResolver(input: presentationInput)"))
-    XCTAssertTrue(bubbleBody.contains("allowsSynchronousStructuredPresentationFallback: false"))
+    XCTAssertFalse(bubbleBody.contains("Org2DocumentPresentation.parse("))
   }
 
   func testColdUserPlaceholderNeverExposesAutomaticContextPromptOrUserExcerpt() {
@@ -1043,7 +1022,7 @@ final class OpenClawChatLayoutTests: XCTestCase {
     XCTAssertFalse(viewSource.contains("OpenClawProgressPresentation.liveTextPresentation("))
     XCTAssertTrue(viewSource.contains("Task.sleep(for: .milliseconds(24))"))
     XCTAssertTrue(viewSource.contains("OpenClawLiveTextPreparationCoordinator.shared.prepare"))
-    XCTAssertTrue(viewSource.contains("allowsSynchronousStructuredPresentationFallback: false"))
+    XCTAssertFalse(viewSource.contains("Org2DocumentPresentation.parse("))
   }
 
   func testLivePreparationBoundsReasoningActivitiesAndRawDetailsBeforeGrouping() async throws {
@@ -1537,169 +1516,6 @@ final class OpenClawChatLayoutTests: XCTestCase {
     XCTAssertNil(nearLatest.updatedNearBottomState(after: true))
   }
 
-  func testAssistantBubbleExpandsVerticallyForWrappedText() throws {
-    let message = OpenClawChatMessage(
-      role: .assistant,
-      content: """
-      The raw version already has the bones of a very good essay. I'd expand facts and examples before editing prose: Scarf's production history, the AI workflow loop, concrete migration outcomes, and a constructive "what Haskell could become" section.
-      """
-    )
-    let view = ChatBubbleView(message: message, compact: true)
-      .frame(width: 540, alignment: .leading)
-    let hostingView = NSHostingView(rootView: view)
-
-    hostingView.frame = NSRect(x: 0, y: 0, width: 540, height: 1)
-    hostingView.layoutSubtreeIfNeeded()
-
-    XCTAssertGreaterThan(hostingView.fittingSize.height, 118)
-  }
-
-  func testChatBubblesDeferTextSelectionToTheBoundedTranscript() {
-    XCTAssertFalse(ChatBubbleView.managesMessageTextSelection)
-  }
-
-  func testTranscriptDragUpdatesNativeHighlightBeforeMouseUp() {
-    let model = AIChatTranscriptSelectionModel()
-    let ids = [UUID(), UUID()]
-    let views = ids.map { _ in AIChatTranscriptRenderedText.TextView(frame: CGRect(x: 0, y: 0, width: 300, height: 30)) }
-    let layout = AIChatTranscriptTextLayout(attributedText: NSAttributedString(string: "Native text selection"), lineSpacing: 2)
-    for (index, view) in views.enumerated() {
-      view.textLayout = layout
-      model.register(view, for: ids[index])
-    }
-    model.updateRegions(ids.enumerated().map { index, id in
-      .init(id: id, messageID: UUID(), layout: layout, frame: CGRect(x: 0, y: index * 40, width: 300, height: 30))
-    })
-    model.beginSelection(at: CGPoint(x: 0, y: 15))
-    model.extendSelection(to: CGPoint(x: 70, y: 55))
-    XCTAssertTrue(model.isSelecting)
-    XCTAssertGreaterThan(views[0].range?.length ?? 0, 0)
-    XCTAssertGreaterThan(views[1].range?.length ?? 0, 0)
-    // No SwiftUI update, mouse-up, or run-loop drain is needed to apply ranges.
-    model.extendSelection(to: CGPoint(x: 40, y: 15))
-    XCTAssertNil(views[1].range)
-    model.clear()
-    XCTAssertNil(views[0].range)
-    model.unregister(views[0], for: ids[0])
-    model.applySelection(from: .init(regionID: ids[0], utf16Location: 0), to: .init(regionID: ids[0], utf16Location: 4))
-    XCTAssertNil(views[0].range)
-  }
-
-  func testTranscriptDragReusesNativeLayoutAndInvalidatesOnResizeOrTextChange() throws {
-    let model = AIChatTranscriptSelectionModel()
-    let id = UUID()
-    let view = AIChatTranscriptRenderedText.TextView(frame: CGRect(x: 0, y: 0, width: 500, height: 50))
-    let layout = AIChatTranscriptTextLayout(attributedText: NSAttributedString(string: String(repeating: "A wrapped sentence. ", count: 20)), lineSpacing: 2)
-    view.textLayout = layout
-    model.register(view, for: id)
-    model.updateRegions([.init(id: id, messageID: UUID(), layout: layout, frame: view.bounds)])
-    model.beginSelection(at: CGPoint(x: 0, y: 5))
-    let started = CFAbsoluteTimeGetCurrent()
-    for index in 0..<500 {
-      model.extendSelection(to: CGPoint(x: index % 480, y: 25))
-      let kit = try XCTUnwrap(view.preparedLayout(width: 500))
-      _ = layout.selectionRects(for: view.range ?? NSRange(location: 0, length: 0), in: view.bounds, using: kit)
-    }
-    let elapsed = CFAbsoluteTimeGetCurrent() - started
-    print("Transcript drag: 500 updates in \(elapsed)s, \(view.layoutBuildCount) layouts")
-    XCTAssertLessThan(elapsed, 1.0)
-    XCTAssertEqual(view.layoutBuildCount, 1)
-    _ = view.preparedLayout(width: 250)
-    XCTAssertEqual(view.layoutBuildCount, 2)
-    view.textLayout = .init(attributedText: NSAttributedString(string: "Updated"), lineSpacing: 4)
-    XCTAssertEqual(view.preparedLayout(width: 250)?.storage.string, "Updated")
-    XCTAssertEqual(view.layoutBuildCount, 3)
-  }
-
-  func testTranscriptSelectionCopiesAcrossFourConsecutiveMessages() throws {
-    let messageIDs = (0..<4).map { _ in UUID() }
-    let regionIDs = (0..<4).map { _ in UUID() }
-    let texts = [
-      "First message begins here.",
-      "Second message is selected in full.",
-      "Third message is selected in full.",
-      "Fourth message ends here.",
-    ]
-    let model = AIChatTranscriptSelectionModel()
-    model.updateRegions(zip(messageIDs, texts).enumerated().map { index, pair in
-      AIChatTranscriptSelectableRegion(
-        id: regionIDs[index],
-        messageID: pair.0,
-        layout: AIChatTranscriptTextLayout(
-          attributedText: NSAttributedString(string: pair.1),
-          lineSpacing: 2
-        ),
-        frame: CGRect(x: 0, y: CGFloat(index * 60), width: 400, height: 44)
-      )
-    })
-
-    model.applySelection(
-      from: AIChatTranscriptSelectionEndpoint(regionID: regionIDs[0], utf16Location: 6),
-      to: AIChatTranscriptSelectionEndpoint(regionID: regionIDs[3], utf16Location: 14)
-    )
-
-    XCTAssertEqual(
-      try XCTUnwrap(model.selectedText),
-      "message begins here.\n\nSecond message is selected in full.\n\nThird message is selected in full.\n\nFourth message"
-    )
-    XCTAssertEqual(model.selectedRanges.count, 4)
-  }
-
-  func testTranscriptSelectionJoinsRenderedFragmentsWithinOneMessage() throws {
-    let messageID = UUID()
-    let regionIDs = (0..<3).map { _ in UUID() }
-    let texts = ["First bullet", "Second bullet wraps", "Third bullet"]
-    let model = AIChatTranscriptSelectionModel()
-    model.updateRegions(texts.enumerated().map { index, text in
-      AIChatTranscriptSelectableRegion(
-        id: regionIDs[index],
-        messageID: messageID,
-        layout: AIChatTranscriptTextLayout(
-          attributedText: NSAttributedString(string: text),
-          lineSpacing: 2
-        ),
-        frame: CGRect(x: 40, y: CGFloat(index * 50), width: 300, height: 40)
-      )
-    })
-
-    model.applySelection(
-      from: AIChatTranscriptSelectionEndpoint(regionID: regionIDs[0], utf16Location: 0),
-      to: AIChatTranscriptSelectionEndpoint(regionID: regionIDs[2], utf16Location: 12)
-    )
-
-    XCTAssertEqual(
-      try XCTUnwrap(model.selectedText),
-      "First bullet\nSecond bullet wraps\nThird bullet"
-    )
-  }
-
-  func testLongTranscriptLayoutRemainsResponsiveWithUnifiedSelection() {
-    let messages = (0..<120).map { index in
-      OpenClawChatMessage(
-        role: index.isMultiple(of: 2) ? .user : .assistant,
-        content: "Message \(index) has enough text to wrap across multiple lines in a typical chat pane. It remains copyable through the message affordance."
-      )
-    }
-    let selectionModel = AIChatTranscriptSelectionModel()
-    let view = ScrollView {
-      OpenClawChatTranscriptStack(spacing: 10, selectionModel: selectionModel) {
-        ForEach(messages) { message in
-          ChatBubbleView(message: message)
-        }
-      }
-    }
-    .frame(width: 720, height: 600)
-    let hostingView = NSHostingView(rootView: view)
-    hostingView.frame = NSRect(x: 0, y: 0, width: 720, height: 600)
-
-    let startedAt = CFAbsoluteTimeGetCurrent()
-    hostingView.layoutSubtreeIfNeeded()
-    let elapsed = CFAbsoluteTimeGetCurrent() - startedAt
-
-    XCTAssertLessThan(elapsed, 2)
-    XCTAssertEqual(hostingView.fittingSize.width, 720, accuracy: 1)
-  }
-
   func testLargeTranscriptWindowOnlyMaterializesNewestPage() {
     let messages = (0..<1_000).map { index in
       OpenClawChatMessage(role: .assistant, content: "Message \(index)")
@@ -1946,151 +1762,6 @@ final class OpenClawChatLayoutTests: XCTestCase {
     XCTAssertEqual(OpenClawMessageClipboard.text(for: message), AIChatRichClipboard.alignedMessage(presentation.normalizedText))
   }
 
-  func testAssistantTableRowsExpandForWrappedCells() {
-    let wrappedMessage = OpenClawChatMessage(
-      role: .assistant,
-      content: """
-      | Issue | Why |
-      |-------+-----|
-      | APP-21298 | PR #10422 is contained in the current production revision, whose deployment succeeded August 15, but no post-deployment verification was recorded. |
-      | APP-21299 | PR #10434 merged after the current production revision and has not reached production yet. |
-      | APP-21174 | PR #10424 is contained in the deployed production revision, but the durable run was not reconciled afterward. |
-      """
-    )
-    let singleLineMessage = OpenClawChatMessage(
-      role: .assistant,
-      content: """
-      | Issue | Why |
-      |-------+-----|
-      | APP-21298 | Deployed. |
-      | APP-21299 | Not deployed. |
-      | APP-21174 | Deployed. |
-      """
-    )
-
-    func fittingHeight(for message: OpenClawChatMessage) -> CGFloat {
-      let view = ChatBubbleView(message: message, compact: false)
-        .frame(width: 640, alignment: .leading)
-      let hostingView = NSHostingView(rootView: view)
-      hostingView.frame = NSRect(x: 0, y: 0, width: 640, height: 1)
-      hostingView.layoutSubtreeIfNeeded()
-      return hostingView.fittingSize.height
-    }
-
-    XCTAssertGreaterThan(
-      fittingHeight(for: wrappedMessage),
-      fittingHeight(for: singleLineMessage) + 40
-    )
-  }
-
-  func testAssistantTableKeepsFinalWrappedRowInsideScrollViewport() async throws {
-    let selectionModel = AIChatTranscriptSelectionModel()
-    let raw = """
-    * Framework options
-
-    | Option | Why consider it | Main reservation |
-    |--------+-----------------+------------------|
-    | Vercel AI SDK | TypeScript fit; provider abstraction, streaming, tool-loop building blocks | You still own execution policy and persistence |
-    | pi agent tooling | Closer to an embeddable, multi-provider agent engine | Check how cleanly its session/tool assumptions fit OpenOrg |
-    | LangGraph | Explicit state machines and resumable execution | Risks duplicating OpenOrg’s existing lifecycle machinery |
-    | Small custom loop over a provider SDK | Minimal conceptual footprint; OpenOrg remains authoritative | Provider quirks and recovery can grow into framework maintenance |
-
-    * My recommendation
-    """
-    let view = OpenClawMessageBodyView(
-      rawText: raw,
-      compact: false,
-      managesTextSelection: false,
-      rendersStructuredOrg2: true,
-      structuredPresentation: OpenClawMessageOrgPresentation(raw)
-    )
-    .environment(\.aiChatTranscriptSelectionModel, selectionModel)
-    .environment(\.aiChatTranscriptSelectionMessageID, UUID())
-    .onPreferenceChange(AIChatTranscriptSelectableRegionPreferenceKey.self) {
-      selectionModel.updateRegions($0)
-    }
-    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    .coordinateSpace(name: AIChatTranscriptSelectionModel.coordinateSpaceName)
-    .background(Color(nsColor: .textBackgroundColor))
-    let hostingView = NSHostingView(rootView: view)
-    let window = NSWindow(
-      contentRect: NSRect(x: 0, y: 0, width: 960, height: 900),
-      styleMask: [.borderless],
-      backing: .buffered,
-      defer: false
-    )
-    window.isReleasedWhenClosed = false
-    window.contentView = hostingView
-    window.orderFrontRegardless()
-    defer {
-      window.contentView = nil
-      window.close()
-    }
-
-    // Reuse one view to cover resizing in both directions and horizontal overflow.
-    for width: CGFloat in [960, 640, 360, 280, 960] {
-      window.setContentSize(NSSize(width: width, height: 900))
-      for _ in 0..<5 {
-        hostingView.layoutSubtreeIfNeeded()
-        try await Task.sleep(for: .milliseconds(20))
-      }
-      let nodes = chatAccessibilityNodes(in: hostingView)
-      let scrollView = try XCTUnwrap(nodes.compactMap { node -> NSScrollView? in
-        guard case .view(let view) = node else { return nil }
-        return view as? NSScrollView
-      }.first)
-      let viewport = scrollView.contentView.convert(scrollView.contentView.bounds, to: hostingView)
-      for text in [
-        "Small custom loop over a provider SDK",
-        "Minimal conceptual footprint; OpenOrg remains authoritative",
-        "Provider quirks and recovery can grow into framework maintenance",
-      ] {
-        let cell = try XCTUnwrap(selectionModel.regions.first { $0.text == text })
-        XCTAssertLessThanOrEqual(
-          cell.frame.maxY,
-          viewport.maxY,
-          "The final wrapped line must fit above the bottom of the table at width \(width)"
-        )
-      }
-      let followingHeading = try XCTUnwrap(selectionModel.regions.first {
-        $0.text == "My recommendation"
-      })
-      XCTAssertGreaterThanOrEqual(followingHeading.frame.minY, viewport.maxY)
-      XCTAssertFalse(scrollView.hasVerticalScroller)
-      XCTAssertEqual(
-        try XCTUnwrap(scrollView.documentView).frame.width > viewport.width + 1,
-        width < RenderedTableColumnWidths.minimum * 3,
-        "Narrow tables must retain horizontal scrolling"
-      )
-    }
-  }
-
-  func testAssistantSourceBlockKeepsLongJSONOnNaturalWidthLines() {
-    let raw = """
-    #+begin_src json
-    {"agenda":{"directories":["daily","weekly","monthly","quarterly","yearly"],"adapter":"docs/openorg-cadence-adapter.md"}}
-    #+end_src
-    """
-    let presentation = OpenClawMessageOrgPresentation(raw)
-    let view = OpenClawMessageBodyView(
-      rawText: raw,
-      compact: false,
-      managesTextSelection: false,
-      rendersStructuredOrg2: true,
-      structuredPresentation: presentation
-    )
-    .frame(width: 640, alignment: .leading)
-    let hostingView = NSHostingView(rootView: view)
-    hostingView.frame = NSRect(x: 0, y: 0, width: 640, height: 1)
-    hostingView.layoutSubtreeIfNeeded()
-
-    XCTAssertLessThan(
-      hostingView.fittingSize.height,
-      180,
-      "A source line inside a horizontal scroller must not wrap one glyph per row"
-    )
-  }
-
   func testVerticalWheelGesturesInsideRenderedTableRouteToTranscript() {
     let outerScrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 640, height: 300))
     outerScrollView.hasVerticalScroller = true
@@ -2255,53 +1926,6 @@ final class OpenClawChatLayoutTests: XCTestCase {
     let code = OpenClawMessageOrgPresentation("#+begin_src text\n[[file:/tmp/qr.png][QR code]]\n#+end_src")
     XCTAssertEqual(code.blocks.count, 1)
     guard case .source = code.blocks[0].rendered else { return XCTFail("Image examples in code must remain code") }
-  }
-
-  func testAssistantImageRendersInsideChatUsingLocalAndCorpusRelativePaths() async throws {
-    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-    defer { try? FileManager.default.removeItem(at: directory) }
-    let filter = try XCTUnwrap(CIFilter(name: "CIQRCodeGenerator", parameters: [
-      "inputMessage": Data("OpenOrg inline image regression".utf8),
-    ]))
-    let qr = try XCTUnwrap(filter.outputImage).transformed(by: .init(scaleX: 8, y: 8))
-    let cgImage = try XCTUnwrap(CIContext().createCGImage(qr, from: qr.extent))
-    let png = try XCTUnwrap(NSBitmapImageRep(cgImage: cgImage).representation(using: .png, properties: [:]))
-    let file = directory.appendingPathComponent("test qr.png")
-    try png.write(to: file)
-    for target in ["file:" + file.path, "file:test qr.png"] {
-      let raw = "Scan this image from the chat:\n\n[[\(target)][QR code]]"
-      let message = OpenClawChatMessage(role: .assistant, content: raw)
-      let root = ChatBubbleView(message: message, runtime: .codex, isRoomResponse: true)
-        .environment(\.aiChatMediaCorpusRoot, directory)
-        .padding(18)
-        .frame(width: 560, alignment: .topLeading)
-        .background(Color(nsColor: .windowBackgroundColor))
-      let host = NSHostingView(rootView: root)
-      let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: 600), styleMask: [.borderless], backing: .buffered, defer: false)
-      window.isReleasedWhenClosed = false
-      window.contentView = host
-      window.orderFrontRegardless()
-      defer { window.contentView = nil; window.close() }
-      let detector = try XCTUnwrap(CIDetector(ofType: CIDetectorTypeQRCode, context: CIContext(), options: [CIDetectorAccuracy: CIDetectorAccuracyHigh]))
-      var decoded: String?
-      var lastBitmap: NSBitmapImageRep?
-      for _ in 0..<80 {
-        host.layoutSubtreeIfNeeded()
-        if let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
-          host.cacheDisplay(in: host.bounds, to: bitmap)
-          lastBitmap = bitmap
-          if let image = bitmap.cgImage {
-            decoded = detector.features(in: CIImage(cgImage: image))
-              .compactMap { ($0 as? CIQRCodeFeature)?.messageString }.first
-          }
-        }
-        if decoded != nil { break }
-        try await Task.sleep(for: .milliseconds(25))
-      }
-      XCTAssertEqual(decoded, "OpenOrg inline image regression", target)
-      try lastBitmap?.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: "/tmp/openorg-inline-image.png"))
-    }
   }
 
   func testPlainAssistantMessagesKeepLightweightInlineRendering() {

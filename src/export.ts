@@ -1727,7 +1727,7 @@ function renderStandaloneImageParagraph(node: ParagraphNode, context: RenderCont
   if (meaningfulChildren.length !== 1 || meaningfulChildren[0]?.type !== "Link") return null;
 
   const link = meaningfulChildren[0];
-  if (String(link.descriptionRaw || "").trim()) return null;
+  const description = String(link.descriptionRaw || "").trim();
   const source = resolveImageLinkSource(link.targetRaw, context);
   if (!source) return null;
 
@@ -1736,7 +1736,7 @@ function renderStandaloneImageParagraph(node: ParagraphNode, context: RenderCont
     ? appLinkHref(link.targetRaw, expandedTarget, context)
     : source;
   const sourceAttributes = renderSourceAttributes(node, context);
-  return `<figure class="org2-image-figure"${sourceAttributes}><a class="org2-image-link" href="${escapeAttr(href)}"><img class="org2-image" src="${escapeAttr(source)}" alt="${escapeAttr(imageAltText(source))}" loading="lazy" decoding="async" /></a></figure>`;
+  return `<figure class="org2-image-figure"${sourceAttributes}><a class="org2-image-link" href="${escapeAttr(href)}"><img class="org2-image" src="${escapeAttr(source)}" alt="${escapeAttr(description || imageAltText(source))}" loading="lazy" decoding="async" /></a></figure>`;
 }
 
 function renderInline(node: InlineNode, context: RenderContext): string {
