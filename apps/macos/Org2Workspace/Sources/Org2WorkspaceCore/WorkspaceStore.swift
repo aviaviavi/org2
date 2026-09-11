@@ -2166,6 +2166,11 @@ public final class WorkspaceStore {
   public var selectedAgendaItemID: String?
   public var bulkSelectedAgendaItemIDs: Set<String> = []
   private var suppressNextAgendaSelectionActivation = false
+  var projectNotes: [WorkspaceProjectNote] = []
+  var projectFilterID: String?
+  var projectStatus = ""
+  private var projectRefreshID = UUID()
+  private var projectMutationIDs: Set<String> = []
   public var corpusRoot: URL?
   public private(set) var mountedCorpora: [WorkspaceCorpusMount] = []
   public private(set) var activeCorpusIdentity: CorpusIdentity?
@@ -4304,6 +4309,10 @@ public final class WorkspaceStore {
     let cachedWorkspace = corpusWorkspaceCaches[standardized.path]
     resetCorpusFileCatalogMutations()
     resetCorpusFileDerivedState()
+    projectNotes = []
+    projectFilterID = nil
+    projectStatus = ""
+    projectRefreshID = UUID()
     corpusRoot = standardized
     prepareDailyNoteDirectory(for: standardized)
     appHTMLStylesheetSnapshotTask?.cancel()
@@ -4928,6 +4937,7 @@ public final class WorkspaceStore {
         let revisions = Dictionary(uniqueKeysWithValues: pages.map {
           ($0, runReviewPageLoadState(for: $0).dirtyGeneration)
         })
+        let projectsRevision = projectRefreshID
         let snapshot: WorkspaceAgentStateSnapshot
         if let workspaceAgentStateLoaderForTesting {
           snapshot = try await workspaceAgentStateLoaderForTesting()
@@ -4948,6 +4958,8 @@ public final class WorkspaceStore {
         await refreshAgentGoals(prefetched: isFresh(.goals) ? snapshot.goals : nil)
         guard shouldContinueWorkspaceRefresh(generation) else { return }
         await refreshAgentProfiles(prefetched: isFresh(.agents) ? snapshot.profiles : nil)
+        guard shouldContinueWorkspaceRefresh(generation) else { return }
+        if projectsRevision == projectRefreshID, let projects = snapshot.projects { applyProjectList(try projects.get()) }
         return
       } catch {
         // Custom/older CLI installations can still use the ordinary list APIs.
@@ -4961,6 +4973,8 @@ public final class WorkspaceStore {
     await refreshAgentGoals()
     guard shouldContinueWorkspaceRefresh(generation) else { return }
     await refreshAgentProfiles()
+    guard shouldContinueWorkspaceRefresh(generation) else { return }
+    await refreshProjects()
   }
 
   private func shouldContinueWorkspaceRefresh(_ generation: Int) -> Bool {
@@ -6643,6 +6657,86 @@ public final class WorkspaceStore {
       errorText = error.localizedDescription
       if updatesStatus { statusText = "Workflows failed" }
     }
+  }
+
+  private func applyProjectList(_ payload: WorkspaceProjectList) {
+    projectNotes = payload.projects
+    if let projectFilterID, !projectNotes.contains(where: { $0.id == projectFilterID }) { self.projectFilterID = nil }
+    projectStatus = payload.diagnostics.isEmpty ? "" : "\(payload.diagnostics.count) project note(s) need attention: \(payload.diagnostics[0].message)"
+  }
+
+  func refreshProjects() async {
+    guard let root = corpusRoot else { projectNotes = []; return }
+    let requestID = UUID()
+    projectRefreshID = requestID
+    do {
+      let payload: WorkspaceProjectList = try await cli.runJSON(["project", "list", "--dir", root.path, "--json"])
+      guard corpusRoot == root, projectRefreshID == requestID, !Task.isCancelled else { return }
+      applyProjectList(payload)
+    } catch {
+      guard corpusRoot == root, projectRefreshID == requestID else { return }
+      projectNotes = []
+      projectStatus = "Could not load projects: \(error.localizedDescription)"
+    }
+  }
+
+  func projectIncludesThread(_ id: UUID) -> Bool {
+    guard let projectFilterID else { return true }
+    return projectNotes.first(where: { $0.id == projectFilterID })?.contains(id) == true
+  }
+
+  func openProjectNote(_ project: WorkspaceProjectNote) {
+    let location = OpenClawThread(title: project.title, file: project.file, line: 1,
+      zone: "project", modifiedAt: nil, idValue: project.id)
+    activateDetailLocation(.openClaw(location), mode: .page, surface: nil, recordsHistory: true)
+  }
+
+  func createProject(title: String, color: String) async -> Bool {
+    guard let root = corpusRoot else { return false }
+    do {
+      let args = ["project", "create", "--title", title, "--color", color, "--dir", root.path, "--json"]
+      let preview: WorkspaceProjectEdit = try await cli.runJSON(args)
+      guard corpusRoot == root, !Task.isCancelled else { return false }
+      let result: WorkspaceProjectEdit = try await cli.runJSON(args + ["--file", preview.project.relativePath, "--id", preview.project.id, "--apply"])
+      guard corpusRoot == root else { return true }
+      await refreshProjects()
+      guard corpusRoot == root else { return true }
+      projectFilterID = result.project.id
+      openProjectNote(result.project)
+      return true
+    } catch { if corpusRoot == root { projectStatus = error.localizedDescription }; return false }
+  }
+
+  func updateProject(_ project: WorkspaceProjectNote, threadID: UUID? = nil, color: String? = nil) async {
+    guard let root = corpusRoot, !projectMutationIDs.contains(project.id) else { return }
+    if selectedEntrySource?.file == project.file,
+       liveFileEditorHasUnsavedChanges || entryEditorHasUnsavedChanges || activeEditingBlock != nil {
+      projectStatus = "Save the project note before changing its chat links or color."
+      return
+    }
+    projectMutationIDs.insert(project.id)
+    defer { projectMutationIDs.remove(project.id) }
+    do {
+      var args = ["project", "update", project.id, "--dir", root.path, "--json", "--if-revision", project.revision]
+      if let threadID {
+        args += ["--thread", threadID.uuidString.lowercased()]
+        if project.contains(threadID) { args += ["--remove"] }
+      }
+      if let color { args += ["--color", color] }
+      let _: WorkspaceProjectEdit = try await cli.runJSON(args)
+      guard corpusRoot == root, !Task.isCancelled else { return }
+      let _: WorkspaceProjectEdit = try await cli.runJSON(args + ["--apply"])
+      guard corpusRoot == root else { return }
+      await refreshProjects()
+    } catch { if corpusRoot == root { projectStatus = error.localizedDescription } }
+  }
+
+  func createChatInProject(_ project: WorkspaceProjectNote) async {
+    let root = corpusRoot
+    let id = createAIChatThread(destinationID: selectedAIChatDestination.id)
+    await updateProject(project, threadID: id)
+    guard corpusRoot == root else { return }
+    makeSurfacePrimary(.openClaw)
   }
 
   public func refreshAgentGoals(updatesStatus: Bool = false, prefetched: WorkspaceAgentStateSection<AgentGoalListPayload>? = nil) async {
@@ -37791,7 +37885,8 @@ public final class WorkspaceStore {
   private func currentOpenClawWorkspaceContext(
     localEditTurnID: String? = nil,
     includesNavigationContext: Bool = true,
-    threadContinuation: AIChatThreadContinuation? = nil
+    threadContinuation: AIChatThreadContinuation? = nil,
+    projectContext: String = ""
   ) -> OpenClawWorkspaceContext {
     let source: EntrySource?
     if !includesNavigationContext {
@@ -37830,6 +37925,7 @@ public final class WorkspaceStore {
       },
       authorizedCorpora: currentAIChatCorpusContexts(),
       customInstructions: aiChatCustomInstructions,
+      projectContext: projectContext,
       threadContinuation: threadContinuation
     )
   }
@@ -37846,7 +37942,8 @@ public final class WorkspaceStore {
     currentOpenClawWorkspaceContext(
       localEditTurnID: localEditTurnID,
       includesNavigationContext: false,
-      threadContinuation: aiChatThreadContinuation(for: thread)
+      threadContinuation: aiChatThreadContinuation(for: thread),
+      projectContext: WorkspaceProjectContext.presentation(projects: projectNotes, threadID: thread.id, mappedPath: mappedPathForOpenClaw)
     )
   }
 
@@ -37936,6 +38033,7 @@ public final class WorkspaceStore {
       },
       authorizedCorpora: context.authorizedCorpora,
       customInstructions: context.customInstructions,
+      projectContext: context.projectContext,
       threadContinuation: context.threadContinuation
     )
   }

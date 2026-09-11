@@ -25,7 +25,7 @@ try {
   saveAgentProfile(root, createAgentProfile({ id: "refresh-agent", name: "Refresh agent" }), { expectedRevision: null });
   const snapshot = query(["workspace", "agent-state"]).value;
   assert.equal(snapshot.schema, "org2:workspace-agent-state:v1");
-  for (const [key, family] of [["runs", "run"], ["workflows", "workflow"], ["goals", "goal"], ["profiles", "agent-profile"]]) {
+  for (const [key, family] of [["runs", "run"], ["workflows", "workflow"], ["goals", "goal"], ["profiles", "agent-profile"], ["projects", "project"]]) {
     assert.deepEqual(snapshot[key].value, query([family, "list"]).value);
     assert.ok(snapshot[key].elapsedMilliseconds >= 0);
   }

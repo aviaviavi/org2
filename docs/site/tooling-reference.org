@@ -978,3 +978,30 @@ For full details, see:
 * Headless server CLI
 
 =org2 server init|start|status|pair|revoke|stop|assign|service|push-config= manages the macOS headless relay and scheduler. Configuration is machine-local; =server assign= previews a symbolic =automationHostRef= change in =org2.json=. The =workflow due --host-ref HOST= and scheduled =workflow run --host-ref HOST= interfaces enforce that owner. See [[file:headless-server.org][Headless server setup]] for the complete lifecycle and limitations.
+
+* Project note commands
+
+=org2 project list|show|create|adopt|update= operates on ordinary Org files.
+List returns =org2:project-list:v1= with projects and per-file diagnostics;
+create, adopt, and update return =org2:project-edit:v1= with proposed content,
+project metadata, =baseRevision= (null for new files), and =applied=.
+Mutations preview unless =--apply= is supplied.
+
+Create accepts =--title=, =--color=, =--file=, and =--id=. Preserve the preview's
+ID and path when applying. The default path is beneath =roam.nodesDir= (or
+=notes=), in =projects/=. Adopt takes an existing file path and preserves its
+body and file-level ID. Pass an adoption preview's =--id= and =--if-revision=
+using its project ID and =baseRevision= when applying. Update accepts =--thread UUID=, =--remove=, and
+=--color=. Adopt/update accept =--if-revision sha256:...= for guarded writes.
+
+Recognized colors are blue, teal, green, orange, red, purple, and gray. Project
+notes may live anywhere in nonhidden corpus directories, respecting configured
+ignore patterns. Put the marker in the first 8 KiB; notes are limited to 1 MiB.
+Duplicate IDs and malformed notes produce diagnostics instead of ambiguous
+membership. Briefs contain at most 12,000 characters. =workspace agent-state=
+also exposes an independently fallible =projects= section.
+
+The metadata is =#+ORG2_KIND: project=, =#+TITLE:=, =#+PROJECT_COLOR:=,
+=#+PROJECT_THREADS:= (space-separated chat UUIDs), and a file-level properties
+drawer containing =:ID:=. All remaining content uses normal Org headings,
+TODOs, tags, planning, and links. There is no separate project database.

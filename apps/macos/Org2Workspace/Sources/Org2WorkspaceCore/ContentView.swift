@@ -2319,6 +2319,9 @@ private struct SidebarView: View {
   private let autoSettleChatTimer = Timer.publish(every: 300, on: .main, in: .common).autoconnect()
   private let chatSurface = WorkspaceSurface.openClaw
 
+  private var projectThreads: [OpenClawSidebarThreadSummary] { store.sidebarOpenClawChatThreadSummaries.filter { store.projectIncludesThread($0.id) } }
+  private var projectSettledThreads: [OpenClawSidebarThreadSummary] { store.sidebarSettledOpenClawChatThreadSummaries.filter { store.projectIncludesThread($0.id) } }
+
   var body: some View {
     let pinnedCorpusFiles = store.pinnedCorpusFiles
     VStack(spacing: 0) {
@@ -2454,13 +2457,15 @@ private struct SidebarView: View {
           .help("Browse the corpus as a collapsible file tree")
         }
 
+        WorkspaceProjectSidebar()
+
         Section {
           chatSurfaceRow
             .listRowBackground(Color.clear)
 
           if isChatThreadListExpanded {
-            if store.sidebarOpenClawChatThreadSummaries.isEmpty
-                && store.archivedOpenClawChatThreadSummaries.isEmpty {
+            if projectThreads.isEmpty
+                && projectSettledThreads.isEmpty {
               Text("No chat threads")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
@@ -2468,7 +2473,7 @@ private struct SidebarView: View {
                 .padding(.vertical, 3)
                 .listRowBackground(Color.clear)
             } else {
-              ForEach(store.sidebarOpenClawChatThreadSummaries) { summary in
+              ForEach(projectThreads) { summary in
                 chatThreadRow(summary)
                   .id(OpenClawSidebarThreadRowIdentity(
                     summary: summary,
@@ -2479,14 +2484,14 @@ private struct SidebarView: View {
                   .listRowBackground(Color.clear)
               }
 
-              if !store.archivedOpenClawChatThreadSummaries.isEmpty {
+              if !projectSettledThreads.isEmpty {
                 settledChatThreadDisclosureRow
                   .listRowBackground(Color.clear)
               }
 
               if showsSettledChatThreads {
                 ForEach(Array(
-                  store.sidebarSettledOpenClawChatThreadSummaries
+                  projectSettledThreads
                     .prefix(settledChatThreadDisplayLimit)
                 )) { summary in
                   chatThreadRow(summary)
@@ -2501,7 +2506,7 @@ private struct SidebarView: View {
                 }
 
                 if settledChatThreadDisplayLimit
-                    < store.sidebarSettledOpenClawChatThreadSummaries.count {
+                    < projectSettledThreads.count {
                   settledChatThreadShowMoreRow
                     .listRowBackground(Color.clear)
                 }
@@ -2537,15 +2542,15 @@ private struct SidebarView: View {
         chatRenameRequest = nil
       }
     }
-    .onChange(of: store.archivedOpenClawChatThreadSummaries.count) {
+    .onChange(of: projectSettledThreads.count) {
       guard isChatThreadListExpanded else { return }
       settledChatThreadDisplayLimit = OpenClawSettledThreadPagination.clampedLimit(
         currentLimit: settledChatThreadDisplayLimit,
-        totalCount: store.sidebarSettledOpenClawChatThreadSummaries.count
+        totalCount: projectSettledThreads.count
       )
       let nextValue = OpenClawSettledThreadDisclosure.updated(
         isExpanded: showsSettledChatThreads,
-        settledThreadCount: store.archivedOpenClawChatThreadSummaries.count
+        settledThreadCount: projectSettledThreads.count
       )
       guard nextValue != showsSettledChatThreads else { return }
       withAnimation(WorkspaceMotion.disclosure) { showsSettledChatThreads = nextValue }
@@ -2654,7 +2659,7 @@ private struct SidebarView: View {
         HStack(spacing: 5) {
           Image(systemName: "checkmark.circle")
           Text("Settled")
-          Text("\(store.archivedOpenClawChatThreadSummaries.count)")
+          Text("\(projectSettledThreads.count)")
             .foregroundStyle(.tertiary)
           Spacer(minLength: 0)
           Image(systemName: "chevron.down")
@@ -2707,7 +2712,7 @@ private struct SidebarView: View {
         Image(systemName: "ellipsis.circle")
         Text(OpenClawSettledThreadPagination.moreTitle(
           currentLimit: settledChatThreadDisplayLimit,
-          totalCount: store.sidebarSettledOpenClawChatThreadSummaries.count
+          totalCount: projectSettledThreads.count
         ))
         Spacer(minLength: 0)
       }
@@ -2752,7 +2757,7 @@ private struct SidebarView: View {
   private func showMoreSettledChatThreads() {
     settledChatThreadDisplayLimit = OpenClawSettledThreadPagination.nextLimit(
       currentLimit: settledChatThreadDisplayLimit,
-      totalCount: store.sidebarSettledOpenClawChatThreadSummaries.count
+      totalCount: projectSettledThreads.count
     )
   }
 
@@ -3190,6 +3195,15 @@ private struct OpenClawSidebarThreadRow: View {
       }
     }
     .contextMenu {
+      if !store.projectNotes.isEmpty {
+        Menu("Projects") {
+          ForEach(store.projectNotes) { project in
+            Button { Task { await store.updateProject(project, threadID: summary.id) } } label: {
+              Label(project.title, systemImage: project.contains(summary.id) ? "checkmark.circle.fill" : "circle")
+            }
+          }
+        }
+      }
       Button {
         rename(summary.id)
       } label: {
@@ -3247,7 +3261,12 @@ private struct OpenClawSidebarThreadRow: View {
         fork: fork,
         togglePin: togglePin,
         settle: settle,
-        reopen: reopen
+        reopen: reopen,
+        projects: store.projectNotes,
+        toggleProject: { id in
+          guard let project = store.projectNotes.first(where: { $0.id == id }) else { return }
+          Task { await store.updateProject(project, threadID: summary.id) }
+        }
       )
     }
   }
@@ -3321,11 +3340,16 @@ private struct OpenClawSidebarThreadContextMenuTarget: NSViewRepresentable {
   let settle: () -> Void
   let reopen: () -> Void
 
+  let projects: [WorkspaceProjectNote]
+  let toggleProject: (String) -> Void
+
   func makeNSView(context: Context) -> ContextMenuView {
     ContextMenuView()
   }
 
   func updateNSView(_ view: ContextMenuView, context: Context) {
+    view.projects = projects
+    view.toggleProject = toggleProject
     view.threadID = threadID
     view.isPinned = isPinned
     view.isSettled = isSettled
@@ -3343,6 +3367,8 @@ private struct OpenClawSidebarThreadContextMenuTarget: NSViewRepresentable {
   }
 
   final class ContextMenuView: NSView {
+    var projects: [WorkspaceProjectNote] = []
+    var toggleProject: ((String) -> Void)?
     var threadID: UUID?
     var isPinned = false
     var isSettled = false
@@ -3397,6 +3423,18 @@ private struct OpenClawSidebarThreadContextMenuTarget: NSViewRepresentable {
         systemImage: isSettled ? "arrow.uturn.backward.circle" : "checkmark.circle",
         action: #selector(toggleThreadSettlement)
       ))
+      if !projects.isEmpty {
+        let submenu = NSMenu(title: "Projects")
+        for project in projects {
+          let item = menuItem(title: project.title, systemImage: "circle", action: #selector(toggleThreadProject(_:)))
+          item.representedObject = project.id
+          item.state = threadID.map { project.contains($0) } == true ? .on : .off
+          submenu.addItem(item)
+        }
+        let item = NSMenuItem(title: "Projects", action: nil, keyEquivalent: "")
+        item.submenu = submenu
+        menu.addItem(item)
+      }
       NSMenu.popUpContextMenu(menu, with: event, for: self)
     }
 
@@ -3411,6 +3449,11 @@ private struct OpenClawSidebarThreadContextMenuTarget: NSViewRepresentable {
       item.image = NSImage(systemSymbolName: systemImage, accessibilityDescription: title)
       item.isEnabled = true
       return item
+    }
+
+    @objc func toggleThreadProject(_ sender: NSMenuItem) {
+      guard let id = sender.representedObject as? String else { return }
+      toggleProject?(id)
     }
 
     @objc func renameThread() {

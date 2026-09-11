@@ -251,6 +251,7 @@ public struct OpenClawWorkspaceContext: Sendable {
   public let sourceRuntimeStatuses: [String: WorkspaceSourceRuntimeStatus]
   public let localEdit: OpenClawLocalEditWorkspaceContext?
   public let authorizedCorpora: [AIChatCorpusContext]
+  public let projectContext: String
   public let customInstructions: String
   public let threadContinuation: AIChatThreadContinuation?
 
@@ -270,6 +271,7 @@ public struct OpenClawWorkspaceContext: Sendable {
     localEdit: OpenClawLocalEditWorkspaceContext? = nil,
     authorizedCorpora: [AIChatCorpusContext] = [],
     customInstructions: String = "",
+    projectContext: String = "",
     threadContinuation: AIChatThreadContinuation? = nil
   ) {
     let localCorpusRoot = Self.cleanRoot(localCorpusRoot)
@@ -292,6 +294,7 @@ public struct OpenClawWorkspaceContext: Sendable {
     self.localEdit = localEdit
     self.authorizedCorpora = authorizedCorpora
     self.customInstructions = customInstructions.trimmingCharacters(in: .whitespacesAndNewlines)
+    self.projectContext = projectContext
     self.threadContinuation = threadContinuation
   }
 
@@ -425,6 +428,7 @@ public struct OpenClawWorkspaceContext: Sendable {
 
     sections.append(formatExternalSourceRouting())
 
+    if !projectContext.isEmpty { sections.append(projectContext) }
     if let threadContinuation {
       sections.append(threadContinuation.promptSection())
     }
@@ -515,6 +519,7 @@ public struct OpenClawWorkspaceContext: Sendable {
       """)
     }
 
+    if !projectContext.isEmpty { sections.append(projectContext) }
     if let threadContinuation {
       sections.append(threadContinuation.promptSection())
     }

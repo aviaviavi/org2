@@ -1,3 +1,4 @@
+import { listProjectNotes } from "./project.js";
 import path from "node:path";
 import { listAgentRuns, summarizeAgentRunAttempts } from "./agentRun.js";
 import { listWorkflows, workflowSourcePath } from "./agentWorkflow.js";
@@ -46,5 +47,6 @@ export function workspaceAgentState(root: string) {
     workflows: section(() => workspaceWorkflowList(root)),
     goals: section(() => workspaceGoalList(root)),
     profiles: section(() => workspaceProfileList(root)),
+    projects: section(() => listProjectNotes(root)),
   };
 }

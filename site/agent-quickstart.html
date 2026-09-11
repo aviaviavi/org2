@@ -193,6 +193,22 @@ org2 lint --dir ~/notes --recursive --format json</code></pre>
 <p>OpenOrg also offers a default-off experimental <strong>Paste as Org2</strong> command in the document Source editor, with local conversion, an editable preview, optional tiny-model structure suggestions, and explicit insertion. See <a href="editors-macos.html">macOS workspace</a>.</p>
 <p>The iOS Files tab can resolve local note and heading searches directly, including fuzzy title matches and entry-body matches. It opens rendered entries or complete notes using the bundled shared Org2 runtime, without requiring an agent turn or a paired Mac.</p>
 </section>
+<section class="org2-headline level-1">
+<h1 id="project-notes">Project notes</h1>
+<p>Use <code>org2 project list --dir CORPUS --json</code> to discover project notes and
+<code>org2 project show ID --dir CORPUS --json</code> for a bounded brief and source
+revision. Projects are ordinary files marked <code>#+ORG2_KIND: project</code> with a
+file-level <code>:ID:</code>, optional <code>#+PROJECT_COLOR:</code>, and <code>#+PROJECT_THREADS:</code>
+containing space-separated OpenOrg chat UUIDs. Their body holds normal actions,
+decisions, and links. They are independent of agent profiles and goals.</p>
+<p><code>org2 project create --title NAME --dir CORPUS --json</code> previews a new note.
+Apply the reviewed result with its <code>--id</code> and <code>--file</code> plus <code>--apply</code>.
+<code>org2 project adopt PATH --title NAME</code> preserves an existing note's body and
+file ID. Use <code>--if-revision</code> when adopting or updating across requests.
+<code>org2 project update ID --thread UUID</code> links a chat; add <code>--remove</code> to unlink.
+All writes preview by default. Linked source files are not eagerly included;
+read them through the normal authorized corpus tools when needed.</p>
+</section>
 </main>
 </div>
 <footer class="org2-footer"><div class="org2-footer-incubator"><span>Incubated at</span><a href="https://scarf.sh" target="_blank" rel="noopener noreferrer"><img class="org2-footer-scarf-logo" src="assets/scarf-logo.svg" alt="Scarf" /></a></div><p class="org2-footer-tagline">Build your knowledge locally and put it to work.</p><img referrerpolicy="no-referrer-when-downgrade" src="https://static.scarf.sh/a.png?x-pxid=e39e0a38-773e-4446-b8b0-804f923e3dc3" alt="" /></footer>

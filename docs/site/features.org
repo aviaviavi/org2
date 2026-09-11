@@ -150,3 +150,16 @@ A dedicated macOS host can run the OpenOrg chat relay and automation scheduler f
 OpenOrg also offers a default-off experimental *Paste as Org2* command in the document Source editor, with local conversion, an editable preview, optional tiny-model structure suggestions, and explicit insertion. See [[file:editors-macos.org][macOS workspace]].
 
 The iOS Files tab supports local fuzzy search across pages, headings, and entry text, with parent-note previews and rendered entry/full-note navigation. See [[file:editors.org][Editor integrations]].
+
+* Projects as ordinary notes
+
+A project is one ordinary Org file containing its purpose, TODO actions,
+decisions, and source links. OpenOrg for macOS adds a colored sidebar group,
+linked chat filtering, and a shortcut to the note. Folders and tags remain
+independent ways to organize the corpus. Several chats and agents can share
+one project; a project describes the work, while an agent describes a worker.
+
+The project note is the inspectable shared brief. Linking a chat includes a
+bounded snapshot of that note, not the history of other chats. Project grouping
+does not enforce access isolation or separate provider memory. The first
+project UI is available on macOS; the portable file and CLI are shared.

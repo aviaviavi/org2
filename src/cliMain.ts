@@ -10236,6 +10236,7 @@ Core commands:
   org2 corpus <show|validate|init> [--dir CORPUS] [--id ID --name NAME --kind KIND] [--apply]
   org2 workspace agent-state --dir CORPUS --json
   org2 workspace <agenda|search> [QUERY] --mount CORPUS [--mount CORPUS ...] [--json]
+  org2 project <list|show|create|adopt|update> [options]
   org2 goal <list|show|create|update> [options]
   org2 agent-profile <list|show|create|update|resolve> [options]
   org2 run <create|list|show|validate|start|resume|retry|cancel|complete|complete-external|reopen-external|fail|block|fork|normalize|assign|comment|outcome|runtime|step|artifact|artifact-review|validation|approval-request|approval-decide> [options]

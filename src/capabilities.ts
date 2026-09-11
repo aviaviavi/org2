@@ -94,7 +94,7 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
       },
       {
         id: "workspace-agent-state",
-        purpose: "Read runs, workflows, goals, and agent profiles for one corpus in one process, with independent section errors and timings.",
+        purpose: "Read projects, runs, workflows, goals, and agent profiles for one corpus in one process, with independent section errors and timings.",
         commands: ["org2 workspace agent-state"],
         writes: "read-only",
       },
@@ -109,6 +109,12 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
         purpose: "Manage goals and portable agent identities, post idempotent background results into AI chat, settle chat history, create destination-neutral prompt automations, inspect durable run history, and package reusable workflows.",
         commands: ["org2 doctor", "org2 goal", "org2 agent-profile", "org2 thread", "org2 run", "org2 review", "org2 workflow", "org2 eval"],
         writes: "mixed",
+      },
+      {
+        id: "project-notes",
+        purpose: "Use one ordinary Org file as a project brief with actions, source links, color, and related chat IDs; adopt existing notes without moving their content.",
+        commands: ["org2 project list", "org2 project show", "org2 project create", "org2 project adopt", "org2 project update"],
+        writes: "preview-by-default",
       },
       {
         id: "work-ledger",

@@ -1,3 +1,4 @@
+import { parseProjectNote } from "./project.js";
 import fs from "node:fs";
 import path from "node:path";
 import v8 from "node:v8";
@@ -677,6 +678,14 @@ export function compileCorpus(files: string[], opts?: { rootDir?: string; genera
     const id = keywordId || drawerId;
     const aliases = Array.from(new Set([...parseKeywordAliases(lines, 80), ...parseAliasTokens(fileDrawer?.properties.ROAM_ALIASES || "")]));
     const properties = fileDrawer?.properties || {};
+    if (!properties.ORG2_ENTITY_TYPE && !properties.ENTITY_TYPE
+        && /^#\+ORG2_KIND:\s*project\s*$/im.test(raw.slice(0, 8192))) {
+      try {
+        // Reuse project semantics so examples inside source blocks are not entities.
+        parseProjectNote(rootDir, filePath, raw);
+        properties.ORG2_ENTITY_TYPE = "project";
+      } catch { /* Invalid project notes are reported by project discovery. */ }
+    }
     const headingPropertyStack: Array<{ level: number; effectiveProperties: Record<string, string> }> = [];
     const firstHeadingIndex = lines.findIndex((line) => /^\*+\s+/.test(line || ""));
     const preambleEndExclusive = firstHeadingIndex === -1 ? lines.length : firstHeadingIndex;
@@ -804,7 +813,7 @@ type IncrementalCorpusFragment = {
 };
 
 type IncrementalCorpusCache = {
-  schemaVersion: "org2-incremental-corpus-cache/v4";
+  schemaVersion: "org2-incremental-corpus-cache/v5";
   rootDir: string;
   files: IncrementalCorpusFileFingerprint[];
   checkboxProgressByFile: Record<string, CheckboxProgress>;
@@ -1261,7 +1270,7 @@ export function compileCorpusIncremental(files: string[], opts: { rootDir?: stri
     if (fs.existsSync(cacheFile)) {
       const parsed = readIncrementalCorpusCache(cacheFile);
       if (
-        parsed.schemaVersion === "org2-incremental-corpus-cache/v4"
+        parsed.schemaVersion === "org2-incremental-corpus-cache/v5"
         && parsed.rootDir === rootDir
         && Array.isArray(parsed.files)
         && parsed.checkboxProgressByFile
@@ -1357,7 +1366,7 @@ export function compileCorpusIncremental(files: string[], opts: { rootDir?: stri
 
   try {
     writeIncrementalCorpusCache(cacheFile, {
-      schemaVersion: "org2-incremental-corpus-cache/v4",
+      schemaVersion: "org2-incremental-corpus-cache/v5",
       rootDir,
       files: current,
       checkboxProgressByFile,

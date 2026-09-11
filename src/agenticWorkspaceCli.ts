@@ -1,3 +1,4 @@
+import { createProjectNote, listProjectNotes, updateProjectNote } from "./project.js";
 import { workspaceAgentState, workspaceRunList, workspaceWorkflowList, workspaceGoalList, workspaceProfileList } from "./workspaceAgentState.js";
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -174,6 +175,10 @@ const HELP = `Agentic workspace commands:
   org2 thread list|show|post|settle|reopen|configure|auto-settle [--dir CORPUS] [--apply]
   org2 thread post THREAD --message TEXT --author NAME [--agent-ref ID] [--source REF] [--idempotency-key KEY] [--dir CORPUS] [--apply]
   org2 thread configure --auto-settle never|SECONDS [--dir CORPUS] [--apply]
+  org2 project list|show|create|adopt|update [--dir CORPUS] [--json] [--apply]
+  org2 project create --title TEXT [--color blue|teal|green|orange|red|purple|gray] [--file PATH] [--id UUID] [--apply]
+  org2 project adopt FILE --title TEXT [--color COLOR] [--id ID] [--if-revision SHA256] [--apply]
+  org2 project update ID [--thread UUID [--remove]] [--color COLOR] [--if-revision SHA256] [--apply]
   org2 goal list|show|create|update [--dir CORPUS] [--apply]
   org2 goal create ID --title TEXT [--description TEXT] [--status planned|active|achieved|canceled] [--parent-goal-ref ID] [--owner-agent-ref ID] [--measure TEXT]
   org2 agent-profile list|show|create|update|resolve [--dir CORPUS] [--apply]
@@ -1533,9 +1538,30 @@ function evalCommand(parsed: ParsedArgs): void {
   throw new Error(`unknown eval action: ${action}`);
 }
 
+function projectCommand(parsed: ParsedArgs): void {
+  const [action = "list", id] = parsed.positional;
+  const corpus = root(parsed);
+  if (action === "list") { output(parsed, listProjectNotes(corpus)); return; }
+  if (action === "show") {
+    const project = listProjectNotes(corpus).projects.find(p => p.id === id);
+    if (!project) throw new Error("Project not found or its ID is ambiguous");
+    output(parsed, project); return;
+  }
+  if (action === "create" || action === "adopt") {
+    output(parsed, createProjectNote(corpus, { title: required(flag(parsed, "title"), "--title is required"),
+      id: flag(parsed, "id"), color: flag(parsed, "color"), file: action === "adopt" ? required(id, "note path is required") : flag(parsed, "file"),
+      adopt: action === "adopt", apply: enabled(parsed, "apply"), expectedRevision: flag(parsed, "if-revision") })); return;
+  }
+  if (action === "update") {
+    output(parsed, updateProjectNote(corpus, required(id, "project ID is required"), { threadID: flag(parsed, "thread"),
+      remove: enabled(parsed, "remove"), color: flag(parsed, "color"), apply: enabled(parsed, "apply"), expectedRevision: flag(parsed, "if-revision") })); return;
+  }
+  throw new Error(`Unknown project action: ${action}`);
+}
+
 export async function runAgenticWorkspaceCommand(args: string[]): Promise<boolean> {
   const family = args[0];
-  if (!family || !["doctor", "ledger", "corpus", "workspace", "thread", "goal", "agent-profile", "run", "review", "workflow", "artifact", "runtime", "mcp", "eval"].includes(family)) return false;
+  if (!family || !["doctor", "ledger", "corpus", "workspace", "thread", "project", "goal", "agent-profile", "run", "review", "workflow", "artifact", "runtime", "mcp", "eval"].includes(family)) return false;
   const parsed = parseArgs(args.slice(1));
   if (enabled(parsed, "help") || parsed.positional[0] === "help") { output(parsed, HELP); return true; }
   if (family === "doctor") doctorCommand(parsed);
@@ -1543,6 +1569,7 @@ export async function runAgenticWorkspaceCommand(args: string[]): Promise<boolea
   else if (family === "corpus") corpusCommand(parsed);
   else if (family === "workspace") await workspaceCommand(parsed);
   else if (family === "thread") threadCommand(parsed);
+  else if (family === "project") projectCommand(parsed);
   else if (family === "goal") goalCommand(parsed);
   else if (family === "agent-profile") agentProfileCommand(parsed);
   else if (family === "run") await runCommand(parsed);

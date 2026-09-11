@@ -293,7 +293,11 @@ export function queryNodeActions(corpus: CompiledCorpus, options: NodeActionsOpt
 
   const todos = corpus.nodes.filter((node) => node.kind === "heading" && node.todo);
   for (const node of todos) {
+    const containedInProject = target.entityType === "project" && node.file === target.file
+      && (target.kind === "file" || (node.sourceRange.startLine > target.sourceRange.startLine
+        && node.sourceRange.endLine <= target.sourceRange.endLine));
     if (
+      containedInProject ||
       node.links.some((link) => linkTargetsNode(link, target))
       || titleTargetsNode(node.title, target)
       || relationshipPropertyTargetsNode(node, target)

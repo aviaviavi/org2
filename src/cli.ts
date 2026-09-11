@@ -27,7 +27,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  if (["doctor", "ledger", "corpus", "workspace", "thread", "goal", "agent-profile", "run", "review", "workflow", "artifact", "runtime", "mcp", "eval"].includes(args[0] || "")) {
+  if (["doctor", "ledger", "corpus", "workspace", "thread", "project", "goal", "agent-profile", "run", "review", "workflow", "artifact", "runtime", "mcp", "eval"].includes(args[0] || "")) {
     const { runAgenticWorkspaceCommand } = await import("./agenticWorkspaceCli.js");
     if (await runAgenticWorkspaceCommand(args)) return;
   }

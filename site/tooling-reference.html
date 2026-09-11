@@ -854,6 +854,30 @@ ORG2_GOOGLE_DRIVE_ACCESS_TOKEN=&quot;$TOKEN&quot; \
 <h1 id="headless-server-cli">Headless server CLI</h1>
 <p><code>org2 server init|start|status|pair|revoke|stop|assign|service|push-config</code> manages the macOS headless relay and scheduler. Configuration is machine-local; <code>server assign</code> previews a symbolic <code>automationHostRef</code> change in <code>org2.json</code>. The <code>workflow due --host-ref HOST</code> and scheduled <code>workflow run --host-ref HOST</code> interfaces enforce that owner. See <a href="headless-server.html">Headless server setup</a> for the complete lifecycle and limitations.</p>
 </section>
+<section class="org2-headline level-1">
+<h1 id="project-note-commands">Project note commands</h1>
+<p><code>org2 project list|show|create|adopt|update</code> operates on ordinary Org files.
+List returns <code>org2:project-list:v1</code> with projects and per-file diagnostics;
+create, adopt, and update return <code>org2:project-edit:v1</code> with proposed content,
+project metadata, <code>baseRevision</code> (null for new files), and <code>applied</code>.
+Mutations preview unless <code>--apply</code> is supplied.</p>
+<p>Create accepts <code>--title</code>, <code>--color</code>, <code>--file</code>, and <code>--id</code>. Preserve the preview's
+ID and path when applying. The default path is beneath <code>roam.nodesDir</code> (or
+<code>notes</code>), in <code>projects/</code>. Adopt takes an existing file path and preserves its
+body and file-level ID. Pass an adoption preview's <code>--id</code> and <code>--if-revision</code>
+using its project ID and <code>baseRevision</code> when applying. Update accepts <code>--thread UUID</code>, <code>--remove</code>, and
+<code>--color</code>. Adopt/update accept <code>--if-revision sha256:...</code> for guarded writes.</p>
+<p>Recognized colors are blue, teal, green, orange, red, purple, and gray. Project
+notes may live anywhere in nonhidden corpus directories, respecting configured
+ignore patterns. Put the marker in the first 8 KiB; notes are limited to 1 MiB.
+Duplicate IDs and malformed notes produce diagnostics instead of ambiguous
+membership. Briefs contain at most 12,000 characters. <code>workspace agent-state</code>
+also exposes an independently fallible <code>projects</code> section.</p>
+<p>The metadata is <code>#+ORG2_KIND: project</code>, <code>#+TITLE:</code>, <code>#+PROJECT_COLOR:</code>,
+<code>#+PROJECT_THREADS:</code> (space-separated chat UUIDs), and a file-level properties
+drawer containing <code>:ID:</code>. All remaining content uses normal Org headings,
+TODOs, tags, planning, and links. There is no separate project database.</p>
+</section>
 </main>
 </div>
 <footer class="org2-footer"><div class="org2-footer-incubator"><span>Incubated at</span><a href="https://scarf.sh" target="_blank" rel="noopener noreferrer"><img class="org2-footer-scarf-logo" src="assets/scarf-logo.svg" alt="Scarf" /></a></div><p class="org2-footer-tagline">Build your knowledge locally and put it to work.</p><img referrerpolicy="no-referrer-when-downgrade" src="https://static.scarf.sh/a.png?x-pxid=e39e0a38-773e-4446-b8b0-804f923e3dc3" alt="" /></footer>

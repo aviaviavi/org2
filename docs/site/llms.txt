@@ -105,3 +105,9 @@ TODO workflows: corpus defaults are org2.json todo.sequences (an array of sequen
 - Experimental Paste as Org2: default-off under Settings → Workspace → Experimental features; Source-editor command with local HTML/plain-text conversion, optional tiny classifier, editable preview and explicit insertion. See https://org2.avi.press/editors-macos.html.
 
 OpenOrg for iOS provides on-device fuzzy search across note titles, headings, and entry text, with previews and rendered entry/full-note navigation. No AI turn or Mac connection is needed for local lookup.
+
+Projects: org2 project list/show/create/adopt/update uses one ordinary Org note
+for a shared brief, TODO actions, color, and related chat UUIDs. Writes preview
+by default; preserve preview ID/path and use --if-revision across updates.
+OpenOrg macOS offers project groups and linked-chat context; grouping does not
+isolate permissions or provider memory. See tooling-reference.html.

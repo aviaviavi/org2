@@ -195,3 +195,20 @@ Workspace errors appear in a dismissible banner on the current surface, with sel
 Enable *Experimental features* in *Settings → Workspace*. In a document's *Source* editor (including split view), place the caret or select text, then choose *Edit → Paste as Org2…* (=⌘⇧V=). Review or edit the Org preview, then choose *Insert reviewed Org*. Cancel leaves the document unchanged; insertion uses normal editor undo and save behavior. Ordinary paste is unchanged.
 
 Conversion runs locally and only when invoked. Semantic clipboard HTML takes precedence; plain text uses conservative heuristics, with an optional tiny local structure model in the preview. The model is experimental and may mislabel structure. Words and quantities are retained; layout may flatten and uncertain material stays literal. Clipboard content is limited to 200,000 characters per format. No clipboard content is sent to an AI provider. Disabling Experimental features hides the command and prevents insertion from an open preview. The command is currently limited to the Source editor, not rendered inline editors, chat, or code-block bodies.
+
+* Projects
+
+Choose New Project in the sidebar, give it a name and color, then edit the
+ordinary project note for its brief and actions. The action summary includes
+TODOs inside the project note as well as tasks linked elsewhere. The document button opens the
+note; the plus button creates a linked chat. Clicking a project filters the
+chat list, and All chats clears that filter. Right-click any chat and use
+Projects to add or remove membership. A chat can belong to several projects.
+Right-click a project to change its color. Refresh projects reloads note edits.
+
+Only explicit chat membership supplies project context; merely selecting a
+sidebar filter does not change another chat's prompt. Linked chats receive a
+bounded note excerpt with source path and revision, refreshed with the corpus.
+At most eight notes and 12,000 brief characters are included per turn. Project
+membership does not import other conversations or change corpus permissions.
+Save an open project-note draft before changing its color or chat membership.

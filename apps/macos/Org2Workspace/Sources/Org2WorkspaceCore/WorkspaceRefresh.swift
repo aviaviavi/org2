@@ -62,4 +62,5 @@ struct WorkspaceAgentStateSnapshot: Decodable, Sendable {
   let workflows: WorkspaceAgentStateSection<AgentWorkflowListPayload>
   let goals: WorkspaceAgentStateSection<AgentGoalListPayload>
   let profiles: WorkspaceAgentStateSection<AgentProfileListPayload>
+  var projects: WorkspaceAgentStateSection<WorkspaceProjectList>? = nil
 }

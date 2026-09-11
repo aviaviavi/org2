@@ -166,3 +166,20 @@ For a completely new local workspace, the Mac app can initialize an empty folder
 OpenOrg also offers a default-off experimental *Paste as Org2* command in the document Source editor, with local conversion, an editable preview, optional tiny-model structure suggestions, and explicit insertion. See [[file:editors-macos.org][macOS workspace]].
 
 The iOS Files tab can resolve local note and heading searches directly, including fuzzy title matches and entry-body matches. It opens rendered entries or complete notes using the bundled shared Org2 runtime, without requiring an agent turn or a paired Mac.
+
+* Project notes
+
+Use =org2 project list --dir CORPUS --json= to discover project notes and
+=org2 project show ID --dir CORPUS --json= for a bounded brief and source
+revision. Projects are ordinary files marked =#+ORG2_KIND: project= with a
+file-level =:ID:=, optional =#+PROJECT_COLOR:=, and =#+PROJECT_THREADS:=
+containing space-separated OpenOrg chat UUIDs. Their body holds normal actions,
+decisions, and links. They are independent of agent profiles and goals.
+
+=org2 project create --title NAME --dir CORPUS --json= previews a new note.
+Apply the reviewed result with its =--id= and =--file= plus =--apply=.
+=org2 project adopt PATH --title NAME= preserves an existing note's body and
+file ID. Use =--if-revision= when adopting or updating across requests.
+=org2 project update ID --thread UUID= links a chat; add =--remove= to unlink.
+All writes preview by default. Linked source files are not eagerly included;
+read them through the normal authorized corpus tools when needed.
