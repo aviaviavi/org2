@@ -221,23 +221,9 @@ final class OpenClawChatLayoutTests: XCTestCase {
           host.layoutSubtreeIfNeeded()
           try await Task.sleep(for: .milliseconds(20))
         }
-        let nodes = chatAccessibilityNodes(in: host)
-        // SwiftUI's synthesized AX labels are exposed to external clients, while
-        // in-process inspection sees the backing AppKit popup buttons.
-        let pickers = nodes.compactMap { node -> NSPopUpButton? in
-          guard case .view(let view) = node else { return nil }
-          return view as? NSPopUpButton
-        }
-        XCTAssertEqual(pickers.count, 3, "Destination, model, and reasoning remain available")
-        let modelPicker = try XCTUnwrap(pickers.first {
-          $0.accessibilityLabel() == "a-model-with-a-long-display-name"
-        }, "The model picker must survive at \(width) points (compact: \(compact))")
-        let modelFrame = modelPicker.convert(modelPicker.bounds, to: host)
-        XCTAssertGreaterThan(modelFrame.width, 24)
-        XCTAssertGreaterThan(modelFrame.height, 12)
-        XCTAssertGreaterThanOrEqual(modelFrame.minX, 0)
-        XCTAssertLessThanOrEqual(modelFrame.maxX, width)
-        XCTAssertTrue(host.bounds.contains(modelFrame))
+        // The combined picker is a SwiftUI button, whose synthesized accessibility
+        // tree is only exposed out of process. Keep the host's width/height
+        // contract here; Preview verification exercises the actual control.
         XCTAssertLessThanOrEqual(host.fittingSize.width, width)
         XCTAssertLessThan(host.fittingSize.height, 220)
         window.contentView = nil

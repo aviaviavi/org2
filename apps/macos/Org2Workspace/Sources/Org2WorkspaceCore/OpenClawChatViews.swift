@@ -3796,6 +3796,7 @@ private struct OpenClawChangeDeltaView: View {
 
 struct OpenClawComposerView: View {
   @Environment(WorkspaceStore.self) private var store
+  @State private var showsModelConfiguration = false
   @State private var localDraft = ""
   @State private var lastStoreDraft = ""
   @State private var selectedSlashSuggestionIndex = 0
@@ -4015,10 +4016,7 @@ struct OpenClawComposerView: View {
     } else {
       HStack(spacing: 2) {
         runtimePicker(iconOnly: true)
-        modelPicker
-        if !store.selectedAIChatDestination.adapter.isDirectProvider {
-          reasoningPicker(iconOnly: true)
-        }
+        modelConfigurationPicker
       }
     }
   }
@@ -4076,10 +4074,7 @@ struct OpenClawComposerView: View {
       }
     } else {
       runtimePicker()
-      modelPicker
-      if !store.selectedAIChatDestination.adapter.isDirectProvider {
-        reasoningPicker()
-      }
+      modelConfigurationPicker
     }
   }
 
@@ -4293,7 +4288,7 @@ struct OpenClawComposerView: View {
         Image(systemName: "cpu")
         Text(store.selectedAIChatModelLabel)
           .lineLimit(1)
-          .frame(maxWidth: compact ? 88 : 140)
+          .frame(maxWidth: 220)
         Image(systemName: "chevron.up.chevron.down")
           .font(.caption2)
           .foregroundStyle(.tertiary)
@@ -4313,62 +4308,98 @@ struct OpenClawComposerView: View {
     .help("Choose a model for this chat, or inherit the \(store.selectedAIChatDestination.title) default")
   }
 
-  private func reasoningPicker(iconOnly: Bool = false) -> some View {
-    Menu {
-      Button {
-        store.setSelectedAIChatReasoningEffort(nil)
-      } label: {
-        HStack {
-          Text(defaultReasoningLabel)
-          if store.selectedAIChatReasoningEffort == nil {
-            Image(systemName: "checkmark")
-          }
-        }
-      }
-
-      if !store.aiChatReasoningOptions.isEmpty {
-        Divider()
-        ForEach(store.aiChatReasoningOptions) { option in
-          Button {
-            store.setSelectedAIChatReasoningEffort(option.id)
-          } label: {
-            HStack {
-              Text(option.label)
-              if option.id == store.selectedAIChatReasoningEffort {
-                Image(systemName: "checkmark")
-              }
-            }
-          }
-          .help(option.detail ?? option.id)
-        }
-      } else if store.isRefreshingAIChatConfiguration {
-        Text("Loading reasoning options…")
-      } else {
-        Text("Choose a model to load supported levels")
-      }
+  private var modelConfigurationPicker: some View {
+    Button {
+      showsModelConfiguration.toggle()
     } label: {
-      HStack(spacing: 4) {
-        Image(systemName: "brain")
-        if !iconOnly {
+      HStack(spacing: 5) {
+        Text(store.selectedAIChatModelLabel)
+          .lineLimit(1)
+          .truncationMode(.middle)
+          .frame(maxWidth: compact ? 100 : 130)
+          .fixedSize(horizontal: true, vertical: false)
+        if !store.selectedAIChatDestination.adapter.isDirectProvider {
+          Text("·").foregroundStyle(.tertiary)
           Text(store.selectedAIChatReasoningLabel)
+            .foregroundStyle(.secondary)
             .lineLimit(1)
         }
-        Image(systemName: "chevron.up.chevron.down")
-          .font(.caption2)
+        Image(systemName: "chevron.down")
+          .font(.system(size: 9, weight: .semibold))
           .foregroundStyle(.tertiary)
       }
       .font(.caption.weight(.medium))
-      .foregroundStyle(.secondary)
-      .padding(.horizontal, 5)
-      .padding(.vertical, 4)
-      .contentShape(Rectangle())
+      .padding(.horizontal, 8)
+      .padding(.vertical, 5)
+      .background(.quaternary.opacity(0.5), in: Capsule())
+      .contentShape(Capsule())
     }
-    .menuStyle(.borderlessButton)
-    .menuIndicator(.hidden)
-    .fixedSize()
+    .buttonStyle(.plain)
     .disabled(!store.canChangeSelectedAIChatConfiguration)
-    .accessibilityLabel("Reasoning effort: \(store.selectedAIChatReasoningLabel)")
-    .help("Reasoning effort: \(store.selectedAIChatReasoningLabel)")
+    .accessibilityIdentifier("ai-chat-configuration-picker")
+    .accessibilityLabel("Model: \(store.selectedAIChatModelLabel), effort: \(store.selectedAIChatReasoningLabel)")
+    .help("Choose model and reasoning effort")
+    .popover(isPresented: $showsModelConfiguration, arrowEdge: .bottom) {
+      VStack(spacing: 16) {
+        modelPicker
+        if !store.selectedAIChatDestination.adapter.isDirectProvider {
+          effortConfiguration
+        }
+      }
+      .padding(18)
+      .frame(width: 300)
+    }
+  }
+
+  private var effortConfiguration: some View {
+    VStack(spacing: 10) {
+      HStack {
+        Image(systemName: "bolt").foregroundStyle(.secondary)
+        Spacer()
+        Text(store.selectedAIChatReasoningLabel)
+          .font(.headline)
+          .foregroundStyle(.tint)
+        Spacer()
+        Button {
+          store.setSelectedAIChatReasoningEffort(nil)
+        } label: {
+          Image(systemName: "arrow.counterclockwise")
+        }
+        .buttonStyle(.plain)
+        .help(defaultReasoningLabel)
+        .accessibilityLabel("Reset to \(defaultReasoningLabel)")
+      }
+      let options = store.aiChatReasoningOptions
+      if options.count > 1 {
+        Slider(value: Binding(
+          get: {
+            let selected = store.selectedAIChatReasoningEffort ?? store.aiChatDefaultReasoningEffort
+            return Double(options.firstIndex(where: { $0.id == selected }) ?? 0)
+          },
+          set: { value in
+            let index = min(options.count - 1, max(0, Int(value.rounded())))
+            store.setSelectedAIChatReasoningEffort(options[index].id)
+          }
+        ), in: 0...Double(options.count - 1), step: 1)
+        .accessibilityLabel("Reasoning effort")
+        .accessibilityValue(store.selectedAIChatReasoningLabel)
+        HStack {
+          Text(options.first?.label ?? "")
+          Spacer()
+          Text(options.last?.label ?? "")
+        }
+        .font(.caption2)
+        .foregroundStyle(.secondary)
+      } else if let option = options.first {
+        Button(option.label) { store.setSelectedAIChatReasoningEffort(option.id) }
+      } else {
+        Text(store.isRefreshingAIChatConfiguration
+          ? "Loading reasoning options…" : "No reasoning levels reported for this model")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
+    }
+    .disabled(!store.canChangeSelectedAIChatConfiguration)
   }
 
   private var defaultReasoningLabel: String {
