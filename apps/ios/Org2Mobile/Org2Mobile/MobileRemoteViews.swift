@@ -2334,7 +2334,10 @@ private struct MobileRemoteFileCitation: Identifiable, Hashable {
   let line: Int?
   let label: String
 
-  var id: String { "\(path)#\(line ?? 0)" }
+  var target: String? = nil
+  var sourcePath: String? = nil
+  var documentLink: MobileDocumentLink? { target.flatMap { MobileDocumentLink.parse($0, relativeTo: sourcePath) } }
+  var id: String { "\(path)#\(line ?? 0)|\(target ?? "")|\(sourcePath ?? "")" }
 }
 
 struct CorpusFileBrowserView: View {
@@ -2490,11 +2493,7 @@ private enum MobileRemoteMessageMarkup {
     pattern: #"\[([^\]\n]+)\]\(([^)\n]+)\)"#
   )
   private static let orgLinkPattern = try! NSRegularExpression(
-    pattern: #"\[\[([^\]\n]+)\]\[([^\]\n]+)\]\]"#
-  )
-  private static let fileTargetPattern = try! NSRegularExpression(
-    pattern: #"^(.+\.(?:org2|org))(?::([1-9][0-9]*))?$"#,
-    options: [.caseInsensitive]
+    pattern: #"\[\[([^\]\n]+)\](?:\[([^\]\n]*)\])?\]"#
   )
   private static let orderedListPattern = try! NSRegularExpression(
     pattern: #"^([0-9]+)[.)]\s+(.+)$"#
@@ -2767,18 +2766,14 @@ private enum MobileRemoteMessageMarkup {
 
   static func fileCitation(from url: URL) -> MobileRemoteFileCitation? {
     guard url.scheme == "org2-mobile-file",
-          let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-          let path = components.queryItems?.first(where: { $0.name == "path" })?.value,
-          !path.isEmpty
+          let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
     else { return nil }
-    let line = components.queryItems?
-      .first(where: { $0.name == "line" })?
-      .value
-      .flatMap(Int.init)
-    let label = components.queryItems?
-      .first(where: { $0.name == "label" })?
-      .value ?? URL(fileURLWithPath: path).lastPathComponent
-    return MobileRemoteFileCitation(path: path, line: line, label: label)
+    let target = components.queryItems?.first(where: { $0.name == "target" })?.value
+    let path = components.queryItems?.first(where: { $0.name == "path" })?.value ?? ""
+    guard target != nil || !path.isEmpty else { return nil }
+    let line = components.queryItems?.first(where: { $0.name == "line" })?.value.flatMap(Int.init)
+    let label = components.queryItems?.first(where: { $0.name == "label" })?.value ?? target ?? path
+    return MobileRemoteFileCitation(path: path, line: line, label: label, target: target)
   }
 
   private static func renderedLinks(in content: String) -> [RenderedLink] {
@@ -2795,13 +2790,12 @@ private enum MobileRemoteMessageMarkup {
       return rendered
     }
     let orgLinks: [RenderedLink] = orgLinkPattern.matches(in: content, range: fullRange).compactMap { match -> RenderedLink? in
-      guard let targetRange = Range(match.range(at: 1), in: content),
-            let labelRange = Range(match.range(at: 2), in: content)
-      else { return nil }
+      guard let targetRange = Range(match.range(at: 1), in: content) else { return nil }
+      let labelRange = Range(match.range(at: 2), in: content)
       return renderedLink(
         range: match.range,
         target: String(content[targetRange]),
-        label: String(content[labelRange])
+        label: labelRange.map { String(content[$0]) } ?? String(content[targetRange])
       )
     }
     links.append(contentsOf: orgLinks)
@@ -2829,23 +2823,8 @@ private enum MobileRemoteMessageMarkup {
   }
 
   private static func citation(target rawTarget: String, label: String) -> MobileRemoteFileCitation? {
-    var target = rawTarget.trimmingCharacters(in: .whitespacesAndNewlines)
-    if target.hasPrefix("<"), target.hasSuffix(">") {
-      target = String(target.dropFirst().dropLast())
-    }
-    target = target.removingPercentEncoding ?? target
-    let range = NSRange(target.startIndex..<target.endIndex, in: target)
-    guard let match = fileTargetPattern.firstMatch(in: target, range: range),
-          let pathRange = Range(match.range(at: 1), in: target)
-    else { return nil }
-    let line: Int?
-    if match.range(at: 2).location != NSNotFound,
-       let lineRange = Range(match.range(at: 2), in: target) {
-      line = Int(target[lineRange])
-    } else {
-      line = nil
-    }
-    return MobileRemoteFileCitation(path: String(target[pathRange]), line: line, label: label)
+    guard let link = MobileDocumentLink.parse(rawTarget) else { return nil }
+    return MobileRemoteFileCitation(path: link.path, line: Int(link.selector), label: label, target: rawTarget)
   }
 
   private static func citationURL(_ citation: MobileRemoteFileCitation) -> URL? {
@@ -2859,6 +2838,9 @@ private enum MobileRemoteMessageMarkup {
     if let line = citation.line {
       components.queryItems?.append(URLQueryItem(name: "line", value: String(line)))
     }
+    if let target = citation.target {
+      components.queryItems?.append(URLQueryItem(name: "target", value: target))
+    }
     return components.url
   }
 }
@@ -2869,7 +2851,7 @@ private struct MobileRemoteFilePreviewSheet: View {
 
   var body: some View {
     NavigationStack {
-      CorpusFileDocumentView(citation: citation, allowsRemoteFallback: true)
+      CorpusFileDocumentView(citation: citation, allowsRemoteFallback: true, prefersRendered: citation.documentLink != nil)
       .toolbar {
         ToolbarItem(placement: .confirmationAction) {
           Button("Done") { dismiss() }
@@ -2889,6 +2871,9 @@ private struct CorpusFileDocumentView: View {
   @State private var showsSource = false
   @State private var rendered: MobileRenderedDocument?
   @State private var renderError: String?
+  @State private var linkedEntry: MobileSearchEntry?
+  @State private var nextCitation: MobileRemoteFileCitation?
+  private var selectedEntry: MobileSearchEntry? { linkedEntry ?? entry }
   @State private var preview: CorpusFilePreview?
   @State private var errorMessage: String?
 
@@ -2907,7 +2892,10 @@ private struct CorpusFileDocumentView: View {
           .frame(maxWidth: .infinity, maxHeight: .infinity)
       }
     }
-    .navigationTitle(rendered?.title ?? entry?.title ?? preview?.title ?? citation.label)
+    .navigationTitle(rendered?.title ?? selectedEntry?.title ?? preview?.title ?? citation.label)
+    .navigationDestination(item: $nextCitation) { next in
+      CorpusFileDocumentView(citation: next, allowsRemoteFallback: allowsRemoteFallback, prefersRendered: true)
+    }
     .navigationBarTitleDisplayMode(.inline)
     .toolbar {
       if canRender {
@@ -2920,9 +2908,17 @@ private struct CorpusFileDocumentView: View {
       preview = nil
       rendered = nil
       renderError = nil
+      linkedEntry = nil
       errorMessage = nil
+      var path = citation.path
       do {
-        let loaded = try await store.filePreview(path: citation.path, line: citation.line)
+        if let link = citation.documentLink { path = try await store.pathForDocumentLink(link) }
+      } catch {
+        errorMessage = error.localizedDescription
+        return
+      }
+      do {
+        let loaded = try await store.filePreview(path: path, line: citation.line)
         guard !Task.isCancelled else { return }
         preview = loaded
       } catch let localError {
@@ -2932,7 +2928,7 @@ private struct CorpusFileDocumentView: View {
           return
         }
         do {
-          let fetched = try await remote.filePreview(path: citation.path, line: citation.line)
+          let fetched = try await remote.filePreview(path: path, line: citation.line)
           guard !Task.isCancelled else { return }
           preview = CorpusFilePreview(
             title: fetched.title,
@@ -2948,7 +2944,12 @@ private struct CorpusFileDocumentView: View {
       guard !Task.isCancelled else { return }
       if canRender, let preview {
         do {
-          let result = try await store.renderedDocument(preview: preview, entry: entry)
+          if let link = citation.documentLink, !link.selector.isEmpty {
+            let resolved = try await store.entryForDocumentLink(link, preview: preview)
+            guard !Task.isCancelled else { return }
+            linkedEntry = resolved
+          }
+          let result = try await store.renderedDocument(preview: preview, entry: selectedEntry)
           guard !Task.isCancelled else { return }
           rendered = result
         } catch {
@@ -2960,7 +2961,7 @@ private struct CorpusFileDocumentView: View {
   }
 
   private var canRender: Bool {
-    prefersRendered && ["org", "org2"].contains(URL(fileURLWithPath: citation.path).pathExtension.lowercased())
+    prefersRendered && (citation.documentLink != nil || ["org", "org2"].contains(URL(fileURLWithPath: citation.path).pathExtension.lowercased()))
   }
 
   private func previewContent(_ preview: CorpusFilePreview) -> some View {
@@ -2978,17 +2979,20 @@ private struct CorpusFileDocumentView: View {
       .padding(.horizontal)
       .padding(.vertical, 10)
       Divider()
-      if entry != nil {
+      if selectedEntry != nil {
         NavigationLink("Open full note") {
           CorpusFileDocumentView(
             citation: MobileRemoteFileCitation(path: preview.relativePath, line: nil, label: preview.title),
-            allowsRemoteFallback: false, prefersRendered: true
+            allowsRemoteFallback: allowsRemoteFallback, prefersRendered: true
           )
         }.padding(.horizontal).padding(.vertical, 8)
       }
       if canRender && !showsSource {
         if let rendered {
-          MobileRenderedDocumentView(html: rendered.html)
+          MobileRenderedDocumentView(html: rendered.html) { target in
+            guard let link = MobileDocumentLink.parse(target, relativeTo: preview.relativePath) else { return }
+            nextCitation = MobileRemoteFileCitation(path: link.path, line: Int(link.selector), label: "Linked entry", target: target, sourcePath: preview.relativePath)
+          }
         } else if let renderError {
           ContentUnavailableView("Entry Unavailable", systemImage: "doc.text", description: Text(renderError))
         } else {
@@ -3441,19 +3445,31 @@ private struct MobileRemoteQRScanner: UIViewControllerRepresentable {
 // Rendered by the bundled shared Org2 compiler; this view only presents its HTML.
 private struct MobileRenderedDocumentView: UIViewRepresentable {
   let html: String
+  let openDocumentLink: (String) -> Void
   final class Coordinator: NSObject, WKNavigationDelegate {
     var html = ""
+    var openDocumentLink: (String) -> Void
+    init(openDocumentLink: @escaping (String) -> Void) { self.openDocumentLink = openDocumentLink }
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
                  decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void) {
       if action.navigationType == .linkActivated {
-        if let url = action.request.url, ["https", "http", "mailto"].contains(url.scheme?.lowercased() ?? "") {
-          UIApplication.shared.open(url)
+        if let url = action.request.url {
+          if url.scheme == "about", url.fragment != nil {
+            decisionHandler(.allow)
+            return
+          }
+          if url.scheme == "org2-workspace", url.host == "open-link",
+             let target = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "target" })?.value {
+            openDocumentLink(target)
+          } else if ["https", "http", "mailto"].contains(url.scheme?.lowercased() ?? "") {
+            UIApplication.shared.open(url)
+          }
         }
         decisionHandler(.cancel)
       } else { decisionHandler(action.request.url?.scheme == "about" ? .allow : .cancel) }
     }
   }
-  func makeCoordinator() -> Coordinator { Coordinator() }
+  func makeCoordinator() -> Coordinator { Coordinator(openDocumentLink: openDocumentLink) }
   func makeUIView(context: Context) -> WKWebView {
     let configuration = WKWebViewConfiguration()
     configuration.websiteDataStore = .nonPersistent()
@@ -3465,6 +3481,7 @@ private struct MobileRenderedDocumentView: UIViewRepresentable {
     return view
   }
   func updateUIView(_ view: WKWebView, context: Context) {
+    context.coordinator.openDocumentLink = openDocumentLink
     guard context.coordinator.html != html else { return }
     context.coordinator.html = html
     view.loadHTMLString(html, baseURL: nil)

@@ -50,3 +50,7 @@ console.log('Mobile shared parser/renderer: entry scopes, source blocks, workflo
 const table = runtime.indexDocument('* Coffee\n| Ingredient | Weight |\n|------------+--------|\n| *Water* | 225 g |', 'table.org');
 assert.match(table[1].body, /Water 225 g/);
 assert.doesNotMatch(table[1].body, /\*Water\*/);
+
+const internalLinks = runtime.renderDocument("* Start\n[[*Next][Next]] [[#custom][Custom]]\n* Next\n:PROPERTIES:\n:CUSTOM_ID: custom\n:END:", "notes.org");
+assert.match(internalLinks.html, /org2-workspace:\/\/open-link\?target=\*Next/);
+assert.match(internalLinks.html, /org2-workspace:\/\/open-link\?target=%23custom/);

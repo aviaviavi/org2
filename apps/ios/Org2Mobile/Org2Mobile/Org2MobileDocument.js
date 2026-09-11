@@ -23,7 +23,8 @@ var Org2MobileDocument = (() => {
   var mobileDocument_exports = {};
   __export(mobileDocument_exports, {
     indexDocument: () => indexDocument,
-    renderDocument: () => renderDocument
+    renderDocument: () => renderDocument,
+    resolveEntry: () => resolveEntry
   });
 
   // src/timestampModifiers.ts
@@ -2046,7 +2047,7 @@ var Org2MobileDocument = (() => {
       case "KeywordLine":
         return presentationKeyword(node.keyRaw, node.valueRaw);
       case "PropertyDrawer":
-        return node.properties.some((property) => presentationProperty(property.key));
+        return node.properties.some((property2) => presentationProperty(property2.key));
       case "Drawer":
         return node.nameRaw.trim().toUpperCase() === "PROPERTIES" && node.bodyRaw.split("\n").some((line) => {
           const match = /^\s*:([^:\s]+):/.exec(line);
@@ -3616,9 +3617,9 @@ ${defaultStyleBlock}
   function findHeadlineCustomId(node) {
     for (const child of node.children) {
       if (child.type !== "PropertyDrawer") continue;
-      for (const property of child.properties) {
-        if (String(property.key || "").trim().toUpperCase() !== "CUSTOM_ID") continue;
-        const normalized = normalizeAnchorId(property.value);
+      for (const property2 of child.properties) {
+        if (String(property2.key || "").trim().toUpperCase() !== "CUSTOM_ID") continue;
+        const normalized = normalizeAnchorId(property2.value);
         if (normalized) return normalized;
       }
     }
@@ -3892,7 +3893,7 @@ ${rows}
     return `<code>${content}</code>`;
   }
   function appLinkHref(rawTarget, expandedTarget, context) {
-    if (linkTargetNeedsHeadingAnchor(expandedTarget)) {
+    if (!context.nativeInternalLinks && linkTargetNeedsHeadingAnchor(expandedTarget)) {
       return rewriteOrgInternalHrefForHtml(expandedTarget, context);
     }
     if (/^(https?|mailto):/i.test(expandedTarget)) {
@@ -4050,7 +4051,7 @@ ${rows}
   }
   function renderPropertyDrawer(node, context) {
     if (!node.properties.length) return "";
-    const rows = node.properties.map((property) => `<dt>${escapeHtml(property.key)}</dt><dd>${escapeHtml(property.value)}</dd>`).join("\n");
+    const rows = node.properties.map((property2) => `<dt>${escapeHtml(property2.key)}</dt><dd>${escapeHtml(property2.value)}</dd>`).join("\n");
     if (context.profile === "app") {
       return `<details class="org2-properties-drawer" open${renderSourceAttributes(node, context)}>
 <summary>Properties</summary>
@@ -4380,6 +4381,7 @@ ${rows}
     const documentAbbreviations = collectLinkAbbreviationsFromDoc(doc);
     const context = {
       rewriteFileLinks: opts.rewriteFileLinks === true,
+      nativeInternalLinks: opts.nativeInternalLinks,
       profile: opts.profile,
       // Precedence: built-ins < config < document-local #+LINK
       linkAbbreviations: mergeLinkAbbreviations([builtIns, configAbbreviations, documentAbbreviations])
@@ -4468,6 +4470,7 @@ ${compatClose}${postambleSection}</body>
       rewriteFileLinks: opts.rewriteFileLinks,
       linkAbbreviations: opts.linkAbbreviations,
       linearTeam: opts.linearTeam,
+      nativeInternalLinks: opts.nativeInternalLinks,
       profile: opts.profile,
       charts: opts.charts,
       pluginRenders: opts.pluginRenders
@@ -4531,6 +4534,7 @@ ${APP_DOCUMENT_SCRIPT}
       ].filter(Boolean),
       linkAbbreviations: opts.linkAbbreviations,
       linearTeam: opts.linearTeam,
+      nativeInternalLinks: opts.nativeInternalLinks,
       profile: "app",
       charts: opts.charts,
       pluginRenders: opts.pluginRenders
@@ -4578,11 +4582,46 @@ ${APP_DOCUMENT_SCRIPT}
       return parseOrgToCanonicalAst(normalized.replace(/\t/g, "  "), options);
     }
   }
+  function property(nodes, key) {
+    const drawer = nodes.find((node) => node.type === "PropertyDrawer");
+    return drawer?.type === "PropertyDrawer" ? drawer.properties.find((p) => p.key.toUpperCase() === key)?.value ?? "" : "";
+  }
+  function resolveEntry(source, path, selector, sequences = []) {
+    const doc = parse(source, sequences);
+    const entries = indexDocument(source, path, sequences);
+    if (!selector) return { entry: null };
+    let matches = [];
+    if (selector.startsWith("id:")) {
+      matches = entries.filter((entry) => entry.nodeID === selector.slice(3));
+    } else if (/^[1-9][0-9]*$/.test(selector)) {
+      const line = Number(selector);
+      if (line > source.replace(/\r\n?/g, "\n").split("\n").length) throw new Error("The linked line no longer exists.");
+      matches = entries.filter((entry) => entry.line > 0 && entry.line <= line).slice(-1);
+      if (!matches.length) return { entry: null };
+    } else if (selector.startsWith("#")) {
+      let walk2 = function(nodes) {
+        for (const node of nodes) if (node.type === "Headline") {
+          if (property(node.children, "CUSTOM_ID") === selector.slice(1)) lines.add(node.sourceRange.startLine);
+          walk2(node.children);
+        }
+      };
+      var walk = walk2;
+      const lines = /* @__PURE__ */ new Set();
+      walk2(doc.children);
+      matches = entries.filter((entry) => lines.has(entry.line));
+      if (property(doc.children, "CUSTOM_ID") === selector.slice(1)) matches.push(entries[0]);
+    } else {
+      const title = selector.replace(/^\*+\s*/, "");
+      matches = entries.filter((entry) => entry.line > 0 && entry.title === title);
+    }
+    if (matches.length !== 1) throw new Error(matches.length ? "This entry link is ambiguous." : "The linked entry no longer exists. Refresh the corpus and try again.");
+    return { entry: matches[0].line === 0 ? null : matches[0] };
+  }
   function indexDocument(source, path, sequences = []) {
     const doc = parse(source, sequences);
     const title = doc.children.find((node) => node.type === "KeywordLine" && node.keyRaw.toUpperCase() === "TITLE");
     const pageTitle = title?.type === "KeywordLine" ? title.valueRaw.trim() : path.split("/").pop() ?? path;
-    const entries = [{ path, title: pageTitle, parent: "", line: 0, nodeID: "", body: visibleText(doc.children.filter((n) => n.type !== "Headline")) }];
+    const entries = [{ path, title: pageTitle, parent: "", line: 0, nodeID: property(doc.children, "ID"), body: visibleText(doc.children.filter((n) => n.type !== "Headline")) }];
     function walk(nodes, parents) {
       for (const node of nodes) {
         if (node.type !== "Headline") continue;
@@ -4621,6 +4660,7 @@ ${APP_DOCUMENT_SCRIPT}
     }
     const rendered = renderOrgDocumentToAppHtml(selected ? { ...doc, children: [selected] } : doc, {
       sourcePath: path,
+      nativeInternalLinks: true,
       title: selected ? inlineText(selected.title) : void 0,
       customCss: "body{padding:16px;margin:0;max-width:none} .org2-document-title::before,.org2-headline-summary::before,.org2-headline-summary>h1::before,.org2-headline-summary>h2::before,.org2-headline-summary>h3::before,.org2-headline-summary>h4::before,.org2-headline-summary>h5::before,.org2-headline-summary>h6::before{content:none} .org2-headline{border-left:0}"
     });

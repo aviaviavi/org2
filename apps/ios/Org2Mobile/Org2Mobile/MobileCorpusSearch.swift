@@ -77,3 +77,44 @@ struct MobileCorpusSearchIndex: Sendable {
     return index == needle.endIndex
   }
 }
+
+// Link transport only. Entry semantics are resolved by the shared Org2 runtime.
+struct MobileDocumentLink: Hashable, Sendable {
+  let path: String
+  let selector: String
+  let nodeID: String?
+
+  static func parse(_ raw: String, relativeTo sourcePath: String? = nil) -> Self? {
+    var target = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    if target.hasPrefix("<"), target.hasSuffix(">") { target = String(target.dropFirst().dropLast()) }
+    if let url = URL(string: target), url.scheme == "org2-workspace", url.host == "open-link",
+       let value = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "target" })?.value {
+      target = value
+    }
+    target = target.removingPercentEncoding ?? target
+    if target.hasPrefix("id:"), target.count > 3 {
+      return Self(path: "", selector: target, nodeID: String(target.dropFirst(3)))
+    }
+    if target.hasPrefix("file:") { target = String(target.dropFirst(5)) }
+    // URLs belonging to other apps are never interpreted as corpus paths.
+    if let range = target.range(of: #"^[A-Za-z][A-Za-z0-9+.-]*:"#, options: .regularExpression) {
+      let prefix = target[range].dropLast().lowercased()
+      if !prefix.hasSuffix(".org"), !prefix.hasSuffix(".org2") { return nil }
+    }
+    if (target.hasPrefix("#") || target.hasPrefix("*")), let sourcePath {
+      return Self(path: sourcePath, selector: target, nodeID: nil)
+    }
+    guard let range = target.range(of: #"\.(?:org2|org)(?=$|::|:[1-9][0-9]*(?:-[1-9][0-9]*)?$|#)"#, options: [.regularExpression, .caseInsensitive]) else { return nil }
+    var path = String(target[..<range.upperBound])
+    let suffix = String(target[range.upperBound...])
+    let selector: String
+    if suffix.hasPrefix("::") { selector = String(suffix.dropFirst(2)) }
+    else if suffix.hasPrefix(":") { selector = String(suffix.dropFirst().split(separator: "-").first ?? "") }
+    else { selector = suffix }
+    if let sourcePath, !path.hasPrefix("/"), !path.hasPrefix("~") {
+      path = (sourcePath as NSString).deletingLastPathComponent + "/" + path
+      if path.hasPrefix("/") && !(sourcePath.hasPrefix("/")) { path.removeFirst() }
+    }
+    return Self(path: path, selector: selector, nodeID: nil)
+  }
+}

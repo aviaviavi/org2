@@ -39,11 +39,48 @@ function parse(source: string, sequences: string[] = []): DocumentNode {
   }
 }
 
+function property(nodes: Node[], key: string): string {
+  const drawer = nodes.find(node => node.type === "PropertyDrawer");
+  return drawer?.type === "PropertyDrawer" ? drawer.properties.find(p => p.key.toUpperCase() === key)?.value ?? "" : "";
+}
+
+// Resolve against freshly read source, using the same AST as indexing/rendering.
+export function resolveEntry(source: string, path: string, selector: string, sequences: string[] = []) {
+  const doc = parse(source, sequences);
+  const entries = indexDocument(source, path, sequences);
+  if (!selector) return { entry: null };
+  let matches: typeof entries = [];
+  if (selector.startsWith("id:")) {
+    matches = entries.filter(entry => entry.nodeID === selector.slice(3));
+  } else if (/^[1-9][0-9]*$/.test(selector)) {
+    const line = Number(selector);
+    if (line > source.replace(/\r\n?/g, "\n").split("\n").length) throw new Error("The linked line no longer exists.");
+    matches = entries.filter(entry => entry.line > 0 && entry.line <= line).slice(-1);
+    if (!matches.length) return { entry: null };
+  } else if (selector.startsWith("#")) {
+    const lines = new Set<number>();
+    function walk(nodes: Node[]) {
+      for (const node of nodes) if (node.type === "Headline") {
+        if (property(node.children, "CUSTOM_ID") === selector.slice(1)) lines.add((node as Ranged).sourceRange!.startLine);
+        walk(node.children);
+      }
+    }
+    walk(doc.children);
+    matches = entries.filter(entry => lines.has(entry.line));
+    if (property(doc.children, "CUSTOM_ID") === selector.slice(1)) matches.push(entries[0]!);
+  } else {
+    const title = selector.replace(/^\*+\s*/, "");
+    matches = entries.filter(entry => entry.line > 0 && entry.title === title);
+  }
+  if (matches.length !== 1) throw new Error(matches.length ? "This entry link is ambiguous." : "The linked entry no longer exists. Refresh the corpus and try again.");
+  return { entry: matches[0]!.line === 0 ? null : matches[0] };
+}
+
 export function indexDocument(source: string, path: string, sequences: string[] = []) {
   const doc = parse(source, sequences);
   const title = doc.children.find(node => node.type === "KeywordLine" && node.keyRaw.toUpperCase() === "TITLE");
   const pageTitle = title?.type === "KeywordLine" ? title.valueRaw.trim() : path.split("/").pop() ?? path;
-  const entries = [{ path, title: pageTitle, parent: "", line: 0, nodeID: "", body: visibleText(doc.children.filter(n => n.type !== "Headline")) }];
+  const entries = [{ path, title: pageTitle, parent: "", line: 0, nodeID: property(doc.children, "ID"), body: visibleText(doc.children.filter(n => n.type !== "Headline")) }];
   function walk(nodes: Node[], parents: string[]) {
     for (const node of nodes) {
       if (node.type !== "Headline") continue;
@@ -77,6 +114,7 @@ export function renderDocument(source: string, path: string, line = 0, nodeID = 
   }
   const rendered = renderOrgDocumentToAppHtml(selected ? { ...doc, children: [selected] } : doc, {
     sourcePath: path,
+    nativeInternalLinks: true,
     title: selected ? inlineText(selected.title) : undefined,
     customCss: "body{padding:16px;margin:0;max-width:none} .org2-document-title::before,.org2-headline-summary::before,.org2-headline-summary>h1::before,.org2-headline-summary>h2::before,.org2-headline-summary>h3::before,.org2-headline-summary>h4::before,.org2-headline-summary>h5::before,.org2-headline-summary>h6::before{content:none} .org2-headline{border-left:0}"
   });

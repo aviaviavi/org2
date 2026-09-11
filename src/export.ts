@@ -1078,6 +1078,7 @@ type RenderContext = {
   headlineNumbers?: WeakMap<HeadlineNode, string>;
   rewriteFileLinks?: boolean;
   linkAbbreviations?: LinkAbbreviationMap;
+  nativeInternalLinks?: boolean;
   profile?: "publish" | "app";
   chartsByTableLine?: Map<number, OrgEmbeddedChart>;
   chartsByBlockLine?: Map<number, OrgEmbeddedChart>;
@@ -1618,7 +1619,7 @@ function renderEmphasis(node: EmphasisNode): string {
 }
 
 function appLinkHref(rawTarget: string, expandedTarget: string, context: RenderContext): string {
-  if (linkTargetNeedsHeadingAnchor(expandedTarget)) {
+  if (!context.nativeInternalLinks && linkTargetNeedsHeadingAnchor(expandedTarget)) {
     return rewriteOrgInternalHrefForHtml(expandedTarget, context);
   }
 
@@ -2220,6 +2221,7 @@ function buildDocumentRenderContext(
     rewriteFileLinks?: boolean;
     linkAbbreviations?: LinkAbbreviationRecord;
     linearTeam?: string;
+    nativeInternalLinks?: boolean;
     profile?: "publish" | "app";
     charts?: OrgEmbeddedChart[];
     pluginRenders?: Org2PluginRender[];
@@ -2234,6 +2236,7 @@ function buildDocumentRenderContext(
 
   const context: RenderContext = {
     rewriteFileLinks: opts.rewriteFileLinks === true,
+    nativeInternalLinks: opts.nativeInternalLinks,
     profile: opts.profile,
     // Precedence: built-ins < config < document-local #+LINK
     linkAbbreviations: mergeLinkAbbreviations([builtIns, configAbbreviations, documentAbbreviations]),
@@ -2366,6 +2369,7 @@ export function renderOrgDocumentToHtml(
     compatContentWrapper?: boolean;
     linkAbbreviations?: LinkAbbreviationRecord;
     linearTeam?: string;
+    nativeInternalLinks?: boolean;
     profile?: "publish" | "app";
     charts?: OrgEmbeddedChart[];
     pluginRenders?: Org2PluginRender[];
@@ -2382,6 +2386,7 @@ export function renderOrgDocumentToHtml(
     rewriteFileLinks: opts.rewriteFileLinks,
     linkAbbreviations: opts.linkAbbreviations,
     linearTeam: opts.linearTeam,
+    nativeInternalLinks: opts.nativeInternalLinks,
     profile: opts.profile,
     charts: opts.charts,
     pluginRenders: opts.pluginRenders,
@@ -2431,6 +2436,7 @@ export function renderOrgDocumentToAppHtml(
     linkAbbreviations?: LinkAbbreviationRecord;
     linearTeam?: string;
     customCss?: string;
+    nativeInternalLinks?: boolean;
     charts?: OrgEmbeddedChart[];
     pluginRenders?: Org2PluginRender[];
   } = {},
@@ -2455,6 +2461,7 @@ export function renderOrgDocumentToAppHtml(
     ].filter(Boolean),
     linkAbbreviations: opts.linkAbbreviations,
     linearTeam: opts.linearTeam,
+    nativeInternalLinks: opts.nativeInternalLinks,
     profile: "app",
     charts: opts.charts,
     pluginRenders: opts.pluginRenders,

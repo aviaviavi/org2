@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { copyFileSync, mkdtempSync, rmSync } from "node:fs";
+import { copyFileSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -10,7 +10,15 @@ if (process.platform === "darwin") {
   try {
     const executable = join(directory, "transcript-regression");
     copyFileSync(resolve("apps/ios/Org2Mobile/Org2Mobile/Org2MobileDocument.js"), join(directory, "Org2MobileDocument.js"));
+    const views = readFileSync(resolve("apps/ios/Org2Mobile/Org2Mobile/MobileRemoteViews.swift"), "utf8");
+    const citation = views.slice(views.indexOf("private struct MobileRemoteFileCitation:"), views.indexOf("struct CorpusFileBrowserView:"));
+    const markup = views.slice(views.indexOf("private enum MobileRemoteMessageMarkup"), views.indexOf("private struct MobileRemoteFilePreviewSheet:"));
+    const markupTest = join(directory, "markup.swift");
+    writeFileSync(markupTest, "import Foundation\nimport SwiftUI\n" + citation + markup + readFileSync(resolve("test/ios-link-markup-regression.swift"), "utf8"));
     for (const [command, args] of [
+      ["xcrun", ["swiftc", "-parse-as-library", "-swift-version", "6", "-O",
+        resolve("apps/ios/Org2Mobile/Org2Mobile/MobileCorpusSearch.swift"), markupTest, "-o", executable]],
+      [executable, []],
       ["xcrun", ["swiftc", "-swift-version", "6", "-O",
         resolve("apps/ios/Org2Mobile/Org2Mobile/MobileRemoteTranscriptPage.swift"),
         resolve("test/ios-transcript-regression.swift"), "-o", executable]],

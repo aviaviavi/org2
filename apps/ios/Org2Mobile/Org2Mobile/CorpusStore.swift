@@ -287,6 +287,24 @@ final class CorpusStore: ObservableObject {
     }.value
   }
 
+  func pathForDocumentLink(_ link: MobileDocumentLink) async throws -> String {
+    guard let nodeID = link.nodeID else { return link.path }
+    if !searchIndex.entries.contains(where: { $0.nodeID == nodeID }) { await refresh() }
+    let matches = searchIndex.entries.filter { $0.nodeID == nodeID }
+    guard matches.count == 1 else {
+      throw NSError(domain: "MobileDocumentLink", code: 1, userInfo: [NSLocalizedDescriptionKey:
+        matches.isEmpty ? "This entry ID is not available in the selected synced corpus. Refresh the corpus and try again." : "This entry ID appears more than once in the corpus."])
+    }
+    return matches[0].path
+  }
+
+  func entryForDocumentLink(_ link: MobileDocumentLink, preview: CorpusFilePreview) async throws -> MobileSearchEntry? {
+    let sequences = searchTodoSequences
+    return try await Task.detached(priority: .userInitiated) {
+      try MobileDocumentRuntime().resolveEntry(source: preview.content, path: preview.relativePath, selector: link.selector, sequences: sequences)
+    }.value
+  }
+
   func renderedDocument(preview: CorpusFilePreview, entry: MobileSearchEntry?) async throws -> MobileRenderedDocument {
     try await documentRenderer.render(
       source: preview.content, path: preview.relativePath, entry: entry,

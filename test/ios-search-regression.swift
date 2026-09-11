@@ -9,6 +9,28 @@ struct SearchRegression {
     }
   }
   static func main() throws {
+    let targets: [(String, String, String)] = [
+      ("id:coffee-id", "", "id:coffee-id"),
+      ("file:recipes.org::*Coffee", "recipes.org", "*Coffee"),
+      ("recipes.org:12", "recipes.org", "12"),
+      ("file:notes/recipes.org::*Coffee ☕", "notes/recipes.org", "*Coffee ☕"),
+      ("notes/recipes.org::#coffee", "notes/recipes.org", "#coffee"),
+      ("<notes/recipes.org:12>", "notes/recipes.org", "12"),
+      ("notes/recipes.org:12-15", "notes/recipes.org", "12"),
+      ("file:notes/My%20Recipes.org::12", "notes/My Recipes.org", "12"),
+      ("org2-workspace://open-link?target=id%3Acoffee-id", "", "id:coffee-id"),
+    ]
+    for (target, path, selector) in targets {
+      let link = MobileDocumentLink.parse(target)
+      check(link?.path == path && link?.selector == selector, "Link transport failed: \(target)")
+    }
+    check(MobileDocumentLink.parse("../recipes.org::*Coffee", relativeTo: "notes/index.org")?.path == "notes/../recipes.org", "Relative paths lost source directory")
+    check(MobileDocumentLink.parse("recipes.org", relativeTo: "index.org")?.path == "recipes.org", "Root-level relative link became absolute")
+    check(MobileDocumentLink.parse("#coffee", relativeTo: "notes/recipes.org")?.path == "notes/recipes.org", "Same-document custom ID lost source")
+    for target in ["https://example.com/note.org", "javascript:alert(1)", "id:", "note.txt", "file:"] {
+      check(MobileDocumentLink.parse(target) == nil, "Non-document target accepted: \(target)")
+    }
+
     let entries = [
       MobileSearchEntry(path: "notes/recipes.org2", title: "Recipes", parent: "", line: 0, nodeID: "", body: ""),
       MobileSearchEntry(path: "notes/recipes.org2", title: "Breakfast", parent: "Recipes", line: 2, nodeID: "", body: "We discussed pour over yesterday."),

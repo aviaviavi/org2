@@ -47,6 +47,50 @@ struct DocumentRegression {
     check(elapsed < 10, "Native indexing of 300 small documents exceeded 10s: \(elapsed)")
     print("iOS JavaScriptCore bridge passed; indexed 300 recipe documents in \(elapsed)s")
 
+    let linkedSource = """
+      :PROPERTIES:
+      :ID: document-id
+      :END:
+      #+TITLE: Link tests
+      * Coffee ☕
+      :PROPERTIES:
+      :ID: coffee-id
+      :CUSTOM_ID: coffee
+      :END:
+      Pour 225 g.
+      ** Next pour
+      Add water.
+      * Tea
+      Steep.
+      """
+    for selector in ["id:coffee-id", "#coffee", "*Coffee ☕", "6", "10"] {
+      let entry = try runtime.resolveEntry(source: linkedSource, path: "notes/recipes.org", selector: selector, sequences: [])
+      check(entry?.nodeID == "coffee-id", "Entry selector failed: \(selector)")
+      let html = try runtime.render(source: linkedSource, path: "notes/recipes.org", entry: entry, sequences: []).html
+      check(html.contains("225 g") && !html.contains("Steep."), "Entry link must render only its subtree")
+    }
+    let moved = "#+AUTHOR: Example\n" + linkedSource
+    let movedEntry = try runtime.resolveEntry(source: moved, path: "notes/recipes.org", selector: "id:coffee-id", sequences: [])
+    check(movedEntry?.line == 6, "Stable ID failed after lines moved")
+    let documentEntry = try runtime.resolveEntry(source: linkedSource, path: "notes/recipes.org", selector: "id:document-id", sequences: [])
+    check(documentEntry == nil, "Document ID should open full note")
+    let linkedIndex = try runtime.index(source: linkedSource, path: "notes/recipes.org", sequences: [])
+    check(linkedIndex.first?.nodeID == "document-id", "File IDs must be indexed")
+    for selector in ["id:missing", "#missing", "*Missing", "999"] {
+      do {
+        _ = try runtime.resolveEntry(source: linkedSource, path: "notes/recipes.org", selector: selector, sequences: [])
+        check(false, "Missing link silently opened the wrong entry: \(selector)")
+      } catch { }
+    }
+    do {
+      _ = try runtime.resolveEntry(source: "* Duplicate\n* Duplicate", path: "test.org", selector: "*Duplicate", sequences: [])
+      check(false, "Ambiguous heading links must fail")
+    } catch { }
+    let linkedHTML = try runtime.render(source: "* Links\n[[id:coffee-id][Coffee]] [[file:recipes.org::*Coffee ☕][Recipe]]", path: "links.org", entry: nil, sequences: []).html
+    check(linkedHTML.contains("org2-workspace://open-link?target=id%3Acoffee-id"), "ID link missing from rendered HTML")
+    check(linkedHTML.contains("target=file%3Arecipes.org%3A%3A*Coffee"), "Entry link missing from rendered HTML")
+    print("Entry link IDs, headings, custom IDs, line selectors, moved/missing entries and HTML passed")
+
     let longProse = "* Long note\n" + String(repeating: "Text. ", count: 150_000)
     let proseStart = Date()
     let proseEntries = try runtime.index(source: longProse, path: "long.org", sequences: [])

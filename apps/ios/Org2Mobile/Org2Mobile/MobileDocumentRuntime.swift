@@ -18,6 +18,12 @@ final class MobileDocumentRuntime {
     try call("indexDocument", arguments: [source, path, sequences])
   }
 
+  func resolveEntry(source: String, path: String, selector: String, sequences: [String]) throws -> MobileSearchEntry? {
+    struct Resolution: Decodable { let entry: MobileSearchEntry? }
+    let result: Resolution = try call("resolveEntry", arguments: [source, path, selector, sequences])
+    return result.entry
+  }
+
   func render(source: String, path: String, entry: MobileSearchEntry?, sequences: [String]) throws -> MobileRenderedDocument {
     try call("renderDocument", arguments: [source, path, entry?.line ?? 0, entry?.nodeID ?? "", sequences, entry?.title ?? ""])
   }
