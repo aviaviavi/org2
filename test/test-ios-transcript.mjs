@@ -33,6 +33,10 @@ if (process.platform === "darwin") {
         resolve("apps/ios/Org2Mobile/Org2Mobile/MobileCorpusCacheWriter.swift"),
         resolve("test/ios-document-regression.swift"), "-o", executable]],
       [executable, []],
+      ["xcrun", ["swiftc", "-swift-version", "6", "-O",
+        resolve("apps/ios/Org2Mobile/Org2Mobile/MobileNotificationRouting.swift"),
+        resolve("test/ios-notification-routing-regression.swift"), "-o", executable]],
+      [executable, []],
     ]) {
       const result = spawnSync(command, args, { encoding: "utf8", timeout: command === "xcrun" ? 180_000 : 60_000 });
       assert.equal(result.status, 0, result.error?.message ?? `${result.stdout}\n${result.stderr}`);

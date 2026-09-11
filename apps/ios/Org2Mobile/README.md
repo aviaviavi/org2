@@ -48,6 +48,8 @@ The Mac listener binds only to its Tailscale IPv4 address on port `48922`; it is
 
 Photo attachments and remote model selection require Mobile Remote protocol v2. Update both the Mac and iOS apps together; the apps reject a mismatched protocol instead of silently dropping attachments.
 
+Notification taps are retained until the root navigator accepts them, including cold launches and background resumes. Reply taps open the conversation without waiting for the host's thread list; if pairing is needed, Settings opens and the tap is retained until pairing completes. Due-today taps open Agenda, including notifications scheduled by earlier app versions. Dismissed notifications never navigate. The latest tap wins, and an accepted tap does not replay on the next activation.
+
 The app and share extension use the `group.org.org2.mobile` app group so the extension can reuse the selected corpus bookmark. Enable that App Group for both targets in the Apple developer portal before device signing.
 
 ## Headless host pairing

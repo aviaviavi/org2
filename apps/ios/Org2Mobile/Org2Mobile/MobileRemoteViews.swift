@@ -378,23 +378,9 @@ struct MobileRemoteRootView: View {
       }
       .task {
         if remote.isPaired {
-          // A notification may have launched the app before the Remote tab's
-          // initial refresh begins. Route it immediately so opening a reply is
-          // never blocked on the unrelated thread-list request, then check
-          // once more in case a notification arrived while that request ran.
-          openPendingReplyIfNeeded()
           await remote.refresh()
-          openPendingReplyIfNeeded()
         }
       }
-    }
-    .onReceive(NotificationCenter.default.publisher(for: .org2OpenRemoteThread)) { notification in
-      guard remote.isPaired,
-            let rawThreadID = notification.userInfo?["threadID"] as? String,
-            let threadID = UUID(uuidString: rawThreadID)
-      else { return }
-      _ = remote.consumePendingReplyThreadID()
-      navigate(to: threadID)
     }
     .alert("Mobile Remote", isPresented: Binding(
       get: { remote.errorMessage != nil },
@@ -410,11 +396,6 @@ struct MobileRemoteRootView: View {
     let destination = [threadID]
     guard path != destination else { return }
     path = destination
-  }
-
-  private func openPendingReplyIfNeeded() {
-    guard let pendingThreadID = remote.consumePendingReplyThreadID() else { return }
-    navigate(to: pendingThreadID)
   }
 
   private var threadList: some View {

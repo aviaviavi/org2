@@ -77,6 +77,10 @@ private struct EmptyCorpusView: View {
 }
 
 private struct WorkspaceTabs: View {
+  @EnvironmentObject private var remote: MobileRemoteStore
+  @EnvironmentObject private var store: CorpusStore
+  @Environment(\.scenePhase) private var scenePhase
+
   @State private var selection: WorkspaceTab = .initialSelection
   @State private var route: MobileWorkspaceRoute = .workspace
   @State private var isSidebarPresented = ProcessInfo.processInfo.environment["ORG2_DEBUG_SHOW_SIDEBAR"] == "1"
@@ -140,6 +144,16 @@ private struct WorkspaceTabs: View {
         isSidebarPresented = true
       }
     )
+    .onAppear { openPendingNotification() }
+    .onChange(of: scenePhase) { _, phase in
+      if phase == .active { openPendingNotification() }
+    }
+    .onChange(of: remote.isPaired) { _, paired in
+      if paired { openPendingNotification() }
+    }
+    .onReceive(NotificationCenter.default.publisher(for: .org2NotificationDestinationPending)) { _ in
+      openPendingNotification()
+    }
     .onReceive(NotificationCenter.default.publisher(for: .org2OpenMobileSidebar)) { _ in
       isSidebarPresented = true
     }
@@ -203,6 +217,24 @@ private struct WorkspaceTabs: View {
   private var selectedThreadID: UUID? {
     guard case .thread(let threadID) = route else { return nil }
     return threadID
+  }
+
+  private func openPendingNotification() {
+    let inbox = MobileNotificationInbox(defaults: .standard)
+    guard let pending = inbox.pending() else { return }
+    closeSidebar()
+    store.isDocumentPickerPresented = false
+    switch pending.destination {
+    case .thread(let threadID):
+      // Keep the tap while pairing is unavailable. Thread loading itself owns
+      // connection retries, so navigation never waits for the host/list refresh.
+      guard remote.isPaired else { route = .settings; return }
+      route = .thread(threadID)
+    case .agenda:
+      route = .workspace
+      selection = .agenda
+    }
+    inbox.acknowledge(pending)
   }
 
   private func closeSidebar() {

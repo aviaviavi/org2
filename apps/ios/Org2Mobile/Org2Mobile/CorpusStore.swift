@@ -1295,6 +1295,7 @@ final class CorpusStore: ObservableObject {
 
       for plan in plans {
         let content = UNMutableNotificationContent()
+        content.categoryIdentifier = "org2.agenda.due-today"
         content.title = "OpenOrg due today"
         content.body = Self.dueTodayNotificationBody(for: plan.entries)
         content.sound = .default

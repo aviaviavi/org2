@@ -519,14 +519,6 @@ final class MobileRemoteStore: ObservableObject {
     return isConnected
   }
 
-  func consumePendingReplyThreadID() -> UUID? {
-    guard let rawID = defaults.string(forKey: MobileRemoteNotification.pendingReplyThreadIDKey),
-          let threadID = UUID(uuidString: rawID)
-    else { return nil }
-    defaults.removeObject(forKey: MobileRemoteNotification.pendingReplyThreadIDKey)
-    return threadID
-  }
-
   private func prepareThreadNotifications() async {
     #if DEBUG
     if ProcessInfo.processInfo.environment["ORG2_DEBUG_SUPPRESS_NOTIFICATIONS"] == "1" {

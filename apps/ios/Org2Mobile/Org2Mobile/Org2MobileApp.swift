@@ -4,6 +4,7 @@ import SwiftUI
 
 extension Notification.Name {
   static let org2OpenMobileSidebar = Notification.Name("org2.openMobileSidebar")
+  static let org2NotificationDestinationPending = Notification.Name("org2.notificationDestinationPending")
   static let org2OpenRemoteThread = Notification.Name("org2.openRemoteThread")
   static let org2RemotePushTokenUpdated = Notification.Name("org2.remotePushTokenUpdated")
   static let org2RemotePushRegistrationFailed = Notification.Name("org2.remotePushRegistrationFailed")
@@ -96,24 +97,29 @@ final class Org2MobileAppDelegate: NSObject, UIApplicationDelegate, UNUserNotifi
   nonisolated func userNotificationCenter(
     _ center: UNUserNotificationCenter,
     didReceive response: UNNotificationResponse,
-    withCompletionHandler completionHandler: @escaping () -> Void
+    withCompletionHandler completionHandler: @escaping @Sendable () -> Void
   ) {
-    guard response.notification.request.content.categoryIdentifier == MobileRemoteNotification.replyCategory,
-          let rawThreadID = response.notification.request.content.userInfo["threadID"] as? String,
-          UUID(uuidString: rawThreadID) != nil
-    else {
+    // Dismissal is not a request to navigate.
+    guard response.actionIdentifier == UNNotificationDefaultActionIdentifier else {
       completionHandler()
       return
     }
-    UserDefaults.standard.set(rawThreadID, forKey: MobileRemoteNotification.pendingReplyThreadIDKey)
-    Self.recordDeliveredReply(response.notification.request.content.userInfo)
-    completionHandler()
+    let content = response.notification.request.content
+    guard let destination = MobileNotificationDestination.resolve(
+      category: content.categoryIdentifier,
+      identifier: response.notification.request.identifier,
+      userInfo: content.userInfo
+    ) else {
+      completionHandler()
+      return
+    }
+    if content.categoryIdentifier == MobileRemoteNotification.replyCategory {
+      Self.recordDeliveredReply(content.userInfo)
+    }
     DispatchQueue.main.async {
-      NotificationCenter.default.post(
-        name: .org2OpenRemoteThread,
-        object: nil,
-        userInfo: ["threadID": rawThreadID]
-      )
+      MobileNotificationInbox(defaults: .standard).enqueue(destination)
+      NotificationCenter.default.post(name: .org2NotificationDestinationPending, object: nil)
+      completionHandler()
     }
   }
 
