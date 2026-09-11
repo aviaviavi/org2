@@ -20378,6 +20378,26 @@ public final class WorkspaceStore {
     setSelectedAIChatDestination(destination.id)
   }
 
+  var selectedChatAgentRef: String? {
+    openClawChatThreads.first(where: { $0.id == selectedOpenClawChatThreadID })?.agentRef
+  }
+
+  var selectedChatAgent: AgentProfileItem? {
+    agentProfiles.first(where: { $0.id == selectedChatAgentRef })
+  }
+
+  var canChangeChatAgent: Bool {
+    guard let thread = openClawChatThreads.first(where: { $0.id == selectedOpenClawChatThreadID }) else { return false }
+    return !thread.isSharedRoom && thread.pendingTurn == nil && !openClawSendingThreadIDs.contains(thread.id)
+  }
+
+  func setSelectedChatAgent(_ profile: AgentProfileItem?) {
+    guard canChangeChatAgent,
+          let index = openClawChatThreads.firstIndex(where: { $0.id == selectedOpenClawChatThreadID }) else { return }
+    openClawChatThreads[index] = openClawChatThreads[index].replacingOpenClawChatMetadata(agentRef: .some(profile?.id))
+    persistOpenClawTranscript()
+  }
+
   public func setSelectedAIChatDestination(_ destinationID: String) {
     guard canChangeSelectedAIChatRuntime,
           let destination = aiChatDestination(id: destinationID),
@@ -27327,7 +27347,8 @@ public final class WorkspaceStore {
       roomAudience: .thread,
       roomModels: roomModels,
       roomDestinationIDs: roomDestinationIDs,
-      roomModelsByDestination: roomModelsByDestination
+      roomModelsByDestination: roomModelsByDestination,
+      agentRef: source.agentRef
     )
     openClawChatThreads.insert(forked, at: 0)
     advanceAIChatMessageRevision(
@@ -28105,7 +28126,8 @@ public final class WorkspaceStore {
       roomAudience: current.roomAudience,
       roomModels: current.roomModels,
       roomDestinationIDs: current.roomDestinationIDs,
-      roomModelsByDestination: current.roomModelsByDestination
+      roomModelsByDestination: current.roomModelsByDestination,
+      agentRef: current.agentRef
     )
   }
 
@@ -37897,7 +37919,9 @@ public final class WorkspaceStore {
     localEditTurnID: String? = nil,
     includesNavigationContext: Bool = true,
     threadContinuation: AIChatThreadContinuation? = nil,
-    projectContext: String = ""
+    projectContext: String = "",
+    chatAgentRef: String? = nil,
+    chatAgentProfile: AgentProfileItem? = nil
   ) -> OpenClawWorkspaceContext {
     let source: EntrySource?
     if !includesNavigationContext {
@@ -37937,6 +37961,8 @@ public final class WorkspaceStore {
       authorizedCorpora: currentAIChatCorpusContexts(),
       customInstructions: aiChatCustomInstructions,
       projectContext: projectContext,
+      chatAgentRef: chatAgentRef,
+      chatAgentProfile: chatAgentProfile,
       threadContinuation: threadContinuation
     )
   }
@@ -37954,7 +37980,9 @@ public final class WorkspaceStore {
       localEditTurnID: localEditTurnID,
       includesNavigationContext: false,
       threadContinuation: aiChatThreadContinuation(for: thread),
-      projectContext: WorkspaceProjectContext.presentation(projects: projectNotes, threadID: thread.id, mappedPath: mappedPathForOpenClaw)
+      projectContext: WorkspaceProjectContext.presentation(projects: projectNotes, threadID: thread.id, mappedPath: mappedPathForOpenClaw),
+      chatAgentRef: thread.agentRef,
+      chatAgentProfile: agentProfiles.first(where: { $0.id == thread.agentRef })
     )
   }
 
@@ -38045,6 +38073,8 @@ public final class WorkspaceStore {
       authorizedCorpora: context.authorizedCorpora,
       customInstructions: context.customInstructions,
       projectContext: context.projectContext,
+      chatAgentRef: context.chatAgentRef,
+      chatAgentProfile: context.chatAgentProfile,
       threadContinuation: context.threadContinuation
     )
   }

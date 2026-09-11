@@ -2316,6 +2316,7 @@ private struct SidebarView: View {
   @State private var chatRenameRequest: OpenClawThreadRenameRequest?
   @State private var chatRenameDraft = ""
   @State private var showsFileTree = false
+  @State private var projectSheet: WorkspaceProjectSheet?
 
   private let autoSettleChatTimer = Timer.publish(every: 300, on: .main, in: .common).autoconnect()
   private let chatSurface = WorkspaceSurface.openClaw
@@ -2458,7 +2459,7 @@ private struct SidebarView: View {
           .help("Browse the corpus as a collapsible file tree")
         }
 
-        WorkspaceProjectSidebar { summary in chatThreadRow(summary) }
+        WorkspaceProjectSidebar(presentedSheet: $projectSheet) { summary in chatThreadRow(summary) }
 
         Section {
           chatSurfaceRow
@@ -2524,6 +2525,9 @@ private struct SidebarView: View {
 
       SidebarCorpusSwitcher()
     }
+    // A Section inside List distributes presentation modifiers to its rows.
+    // Keep one stable sheet host for all project actions outside that list.
+    .sheet(item: $projectSheet) { sheet in sheet.content }
     .commandShortcutRevealMonitor($showsCommandShortcuts)
     .animation(WorkspaceMotion.quick, value: showsCommandShortcuts)
     .background(WorkspaceDesign.appBackground)
@@ -3130,6 +3134,16 @@ private struct OpenClawSidebarThreadRow: View {
     HStack(spacing: 2) {
       Button(action: select) {
         HStack(alignment: .center, spacing: 8) {
+          let projects = store.projectNotes.filter { $0.contains(summary.id) && $0.color != "none" }
+          if !projects.isEmpty {
+            HStack(spacing: 2) {
+              ForEach(projects.prefix(3)) { project in
+                Capsule().fill(project.tint.opacity(0.55)).frame(width: 3, height: 20)
+              }
+            }
+            .help(projects.map(\.title).joined(separator: ", "))
+            .accessibilityLabel("Projects: " + projects.map(\.title).joined(separator: ", "))
+          }
           VStack(alignment: .leading, spacing: 2) {
             Text(summary.title)
               .font(.callout.weight(isSelected ? .medium : .regular))
@@ -3177,7 +3191,7 @@ private struct OpenClawSidebarThreadRow: View {
           }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.leading, 42)
+        .padding(.leading, 12)
         .padding(.vertical, 6)
         .contentShape(Rectangle())
       }

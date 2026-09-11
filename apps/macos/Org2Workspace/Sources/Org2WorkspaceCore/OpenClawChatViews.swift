@@ -3255,24 +3255,47 @@ struct OpenClawComposerView: View {
 
   private func runtimePicker(iconOnly: Bool = false) -> some View {
     Menu {
-      ForEach(store.enabledAIChatDestinations) { destination in
-        Button {
-          store.setSelectedAIChatDestination(destination.id)
-        } label: {
-          HStack {
-            Label(destination.title, systemImage: destination.systemImage)
-            if destination.id == store.selectedAIChatDestination.id {
-              Image(systemName: "checkmark")
+      Section("Runtime") {
+        ForEach(store.enabledAIChatDestinations) { destination in
+          Button {
+            store.setSelectedAIChatDestination(destination.id)
+          } label: {
+            HStack {
+              Label(destination.title, systemImage: destination.systemImage)
+              if destination.id == store.selectedAIChatDestination.id {
+                Image(systemName: "checkmark")
+              }
             }
           }
+          .disabled(!store.canChangeSelectedAIChatRuntime)
         }
+      }
+      Section("Agent") {
+        Button {
+          store.setSelectedChatAgent(nil)
+        } label: {
+          Label("Default assistant", systemImage: store.selectedChatAgentRef == nil ? "checkmark" : "person")
+        }
+        .disabled(!store.canChangeChatAgent)
+        ForEach(store.agentProfiles) { profile in
+          Button {
+            store.setSelectedChatAgent(profile)
+          } label: {
+            Label(profile.name, systemImage: profile.id == store.selectedChatAgentRef ? "checkmark" : "person.crop.circle")
+          }
+          .disabled(!store.canChangeChatAgent)
+        }
+        if store.agentProfiles.isEmpty { Text("No agent profiles in this corpus") }
       }
     } label: {
       HStack(spacing: 4) {
         Image(systemName: store.selectedAIChatDestination.systemImage)
-        if !iconOnly { Text(store.selectedAIChatDestination.title) }
+        if !iconOnly {
+          Text(store.selectedChatAgent?.name ?? (store.selectedChatAgentRef == nil ? store.selectedAIChatDestination.title : "Unavailable agent"))
+            .lineLimit(1).truncationMode(.tail).frame(maxWidth: 180, alignment: .leading)
+        }
         Image(
-          systemName: store.canChangeSelectedAIChatRuntime
+          systemName: (store.canChangeSelectedAIChatRuntime || store.canChangeChatAgent)
             ? "chevron.up.chevron.down"
             : "lock.fill"
         )
@@ -3288,12 +3311,13 @@ struct OpenClawComposerView: View {
     .menuStyle(.borderlessButton)
     .menuIndicator(.hidden)
     .fixedSize()
-    .accessibilityLabel("AI destination: \(store.selectedAIChatDestination.title)")
-    .disabled(!store.canChangeSelectedAIChatRuntime)
+    .accessibilityLabel("AI destination: \(store.selectedAIChatDestination.title), agent: \(store.selectedChatAgent?.name ?? "Default assistant")")
+    .disabled(!store.canChangeSelectedAIChatRuntime && !store.canChangeChatAgent)
+    .task { await store.refreshAgentProfiles() }
     .help(
       store.canChangeSelectedAIChatRuntime
-        ? "Choose the AI destination for this new thread"
-        : "The AI destination is locked after the conversation starts"
+        ? "Choose an agent and runtime for this thread"
+        : "Choose an agent; the runtime is fixed after the conversation starts"
     )
   }
 

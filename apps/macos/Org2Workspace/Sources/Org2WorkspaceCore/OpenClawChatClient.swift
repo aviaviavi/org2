@@ -251,6 +251,8 @@ public struct OpenClawWorkspaceContext: Sendable {
   public let sourceRuntimeStatuses: [String: WorkspaceSourceRuntimeStatus]
   public let localEdit: OpenClawLocalEditWorkspaceContext?
   public let authorizedCorpora: [AIChatCorpusContext]
+  public let chatAgentRef: String?
+  public let chatAgentProfile: AgentProfileItem?
   public let projectContext: String
   public let customInstructions: String
   public let threadContinuation: AIChatThreadContinuation?
@@ -272,6 +274,8 @@ public struct OpenClawWorkspaceContext: Sendable {
     authorizedCorpora: [AIChatCorpusContext] = [],
     customInstructions: String = "",
     projectContext: String = "",
+    chatAgentRef: String? = nil,
+    chatAgentProfile: AgentProfileItem? = nil,
     threadContinuation: AIChatThreadContinuation? = nil
   ) {
     let localCorpusRoot = Self.cleanRoot(localCorpusRoot)
@@ -294,8 +298,31 @@ public struct OpenClawWorkspaceContext: Sendable {
     self.localEdit = localEdit
     self.authorizedCorpora = authorizedCorpora
     self.customInstructions = customInstructions.trimmingCharacters(in: .whitespacesAndNewlines)
+    self.chatAgentRef = chatAgentRef
+    self.chatAgentProfile = chatAgentProfile
     self.projectContext = projectContext
     self.threadContinuation = threadContinuation
+  }
+
+  private var chatAgentContext: String? {
+    guard let chatAgentRef else { return nil }
+    guard let profile = chatAgentProfile, profile.id == chatAgentRef else {
+      return "Selected chat agent: \(chatAgentRef)\nThe selected profile is unavailable. Tell the user; do not impersonate another agent or guess its instructions."
+    }
+    let path = Self.mappedPath(profile.file, localCorpusRoot: localCorpusRoot, remoteCorpusRoot: remoteCorpusRoot)
+    return """
+    User-selected chat agent
+    Agent: \(profile.name)
+    AGENT_REF: \(profile.id)
+    GOAL_REF: \(profile.primaryGoalRef ?? "")
+    Profile source: \(path):1
+    Profile updated: \(profile.updatedAt)
+    Description: \(String(profile.description.prefix(4000)))
+    Responsibilities: \(String(profile.responsibilities.joined(separator: "; ").prefix(4000)))
+    Capabilities: \(String(profile.capabilities.joined(separator: "; ").prefix(2000)))
+    Skills: \(String(profile.skills.joined(separator: "; ").prefix(2000)))
+    The user selected this agent for this conversation. Use its profile for your role and instructions; read the canonical profile before acting on details not included here. Preserve this thread's context and stable agent identity for related work. This selection does not grant access to other corpora, import other chats, or authorize external actions. The runtime and model are execution choices, not the agent's identity.
+    """
   }
 
   nonisolated static let responseFormattingContract = """
@@ -344,8 +371,8 @@ public struct OpenClawWorkspaceContext: Sendable {
     } else {
       resolution = "Runtime identity or corpus root is not available; do not invent an agent or goal reference."
     }
-    let selectedAgentRef = selectedCoordinationProperty("AGENT_REF")
-    let selectedGoalRef = selectedCoordinationProperty("GOAL_REF")
+    let selectedAgentRef = selectedCoordinationProperty("AGENT_REF") ?? chatAgentRef
+    let selectedGoalRef = selectedCoordinationProperty("GOAL_REF") ?? chatAgentProfile?.primaryGoalRef
     return """
     Org2 goals and agent identity
 
@@ -429,6 +456,7 @@ public struct OpenClawWorkspaceContext: Sendable {
     sections.append(formatExternalSourceRouting())
 
     if !projectContext.isEmpty { sections.append(projectContext) }
+    if let agentContext = chatAgentContext { sections.append(agentContext) }
     if let threadContinuation {
       sections.append(threadContinuation.promptSection())
     }
@@ -520,6 +548,7 @@ public struct OpenClawWorkspaceContext: Sendable {
     }
 
     if !projectContext.isEmpty { sections.append(projectContext) }
+    if let agentContext = chatAgentContext { sections.append(agentContext) }
     if let threadContinuation {
       sections.append(threadContinuation.promptSection())
     }

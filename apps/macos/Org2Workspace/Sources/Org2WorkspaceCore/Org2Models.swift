@@ -3259,6 +3259,7 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
   public let createdAt: Date
   public let updatedAt: Date
   public let runtime: AIChatRuntime
+  public let agentRef: String?
   public let destinationID: String
   public let sessionKey: String
   public let runtimeThreadID: String?
@@ -3307,8 +3308,10 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
     roomAudience: AIChatAudience = .thread,
     roomModels: AIChatRoomModelSelection = AIChatRoomModelSelection(),
     roomDestinationIDs: [String] = [],
-    roomModelsByDestination: [String: String] = [:]
+    roomModelsByDestination: [String: String] = [:],
+    agentRef: String? = nil
   ) {
+    self.agentRef = agentRef
     self.id = id
     self.title = title
     self.createdAt = createdAt
@@ -3369,6 +3372,7 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
   }
 
   enum CodingKeys: String, CodingKey {
+    case agentRef
     case id
     case title
     case createdAt
@@ -3399,6 +3403,7 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
 
   public init(from decoder: Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
+    agentRef = try container.decodeIfPresent(String.self, forKey: .agentRef)
     id = try container.decode(UUID.self, forKey: .id)
     title = try container.decode(String.self, forKey: .title)
     createdAt = try container.decode(Date.self, forKey: .createdAt)
@@ -3491,6 +3496,7 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
   }
 
   public func replacingOpenClawChatMetadata(
+    agentRef nextAgentRef: String?? = nil,
     title nextTitle: String? = nil,
     runtime nextRuntime: AIChatRuntime? = nil,
     destinationID nextDestinationID: String? = nil,
@@ -3536,7 +3542,8 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
       roomAudience: nextRoomAudience ?? roomAudience,
       roomModels: nextRoomModels ?? roomModels,
       roomDestinationIDs: nextRoomDestinationIDs ?? roomDestinationIDs,
-      roomModelsByDestination: nextRoomModelsByDestination ?? roomModelsByDestination
+      roomModelsByDestination: nextRoomModelsByDestination ?? roomModelsByDestination,
+      agentRef: nextAgentRef ?? agentRef
     )
   }
 
@@ -3567,7 +3574,8 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
       roomAudience: roomAudience,
       roomModels: roomModels,
       roomDestinationIDs: roomDestinationIDs,
-      roomModelsByDestination: roomModelsByDestination
+      roomModelsByDestination: roomModelsByDestination,
+      agentRef: agentRef
     )
   }
 
@@ -3598,7 +3606,8 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
       roomAudience: roomAudience,
       roomModels: roomModels,
       roomDestinationIDs: roomDestinationIDs,
-      roomModelsByDestination: roomModelsByDestination
+      roomModelsByDestination: roomModelsByDestination,
+      agentRef: agentRef
     )
   }
 
@@ -3642,7 +3651,8 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
       roomAudience: roomAudience,
       roomModels: roomModels,
       roomDestinationIDs: roomDestinationIDs,
-      roomModelsByDestination: roomModelsByDestination
+      roomModelsByDestination: roomModelsByDestination,
+      agentRef: agentRef
     )
   }
 
@@ -3673,7 +3683,8 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
       roomAudience: roomAudience,
       roomModels: roomModels,
       roomDestinationIDs: roomDestinationIDs,
-      roomModelsByDestination: roomModelsByDestination
+      roomModelsByDestination: roomModelsByDestination,
+      agentRef: agentRef
     )
   }
 }

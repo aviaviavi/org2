@@ -225,3 +225,17 @@ Action buttons use a brief native press response. Settling or reopening a chat a
 * Chat text selection
 
 Each chat message body uses the same Org HTML renderer and WebKit selection engine as document previews. Select naturally across paragraphs, lists, tables, and code within a message; standard Copy preserves rich text. Incoming body updates wait while a text selection is active. Message headers, attachments, and action controls remain native. Selection is scoped to one message document; use the message Copy action for its complete source.
+
+* Project navigation and chat agents
+
+Project header icons create a project or reload its notes. Colored projects add a
+subtle marker beside member threads in the main chat list; uncolored projects do
+not tint their threads. Hover over a marker to see its project names.
+
+The composer destination menu offers both runtimes and agent profiles from the
+active corpus. Choosing an agent preserves the current runtime and model, stores
+the profile's stable ID on the thread, and supplies its role, responsibilities,
+skills, and goal context on subsequent turns. An agent can change between turns;
+the runtime remains fixed once a conversation starts. Choosing Default assistant
+removes the explicit profile. Profile selection does not import other chats or
+grant additional corpus access.

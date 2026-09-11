@@ -70,11 +70,29 @@ enum WorkspaceProjectPalette {
 
 }
 
+enum WorkspaceProjectSheet: Identifiable {
+  case create
+  case color(WorkspaceProjectNote)
+
+  var id: String {
+    switch self {
+    case .create: "create"
+    case .color(let project): "color:" + project.id
+    }
+  }
+
+  @MainActor @ViewBuilder var content: some View {
+    switch self {
+    case .create: NewWorkspaceProjectSheet()
+    case .color(let project): WorkspaceProjectColorSheet(project: project)
+    }
+  }
+}
+
 struct WorkspaceProjectSidebar<ThreadRow: View>: View {
   @Environment(WorkspaceStore.self) private var store
-  @State private var presentsNewProject = false
+  @Binding var presentedSheet: WorkspaceProjectSheet?
   @State private var expandedProjects: Set<String> = []
-  @State private var projectToRecolor: WorkspaceProjectNote?
   @ViewBuilder var threadRow: (OpenClawSidebarThreadSummary) -> ThreadRow
 
   var body: some View {
@@ -107,11 +125,12 @@ struct WorkspaceProjectSidebar<ThreadRow: View>: View {
             } label: { Image(systemName: "plus") }
               .buttonStyle(.plain).help("New chat in \(project.title)")
           }
+          .padding(.leading, 12)
         }
         .listRowBackground(Color.clear)
         .contextMenu {
           Button("Open project note") { store.openProjectNote(project) }
-          Button("Choose color…") { projectToRecolor = project }
+          Button("Choose color…") { presentedSheet = .color(project) }
           Button("No color") { Task { await store.updateProject(project, color: "none") } }
           Menu("Quick colors") {
             ForEach(WorkspaceProjectPalette.names, id: \.self) { color in
@@ -124,14 +143,21 @@ struct WorkspaceProjectSidebar<ThreadRow: View>: View {
           }
         }
       }
-      Button { presentsNewProject = true } label: { Label("New Project", systemImage: "plus") }
-        .buttonStyle(.plain)
       if !store.projectStatus.isEmpty {
         Text(store.projectStatus).font(.caption).foregroundStyle(.secondary)
       }
-      Button { Task { await store.refreshProjects() } } label: { Label("Refresh projects", systemImage: "arrow.clockwise") }
-        .buttonStyle(.plain)
-    } header: { Text("Projects") }
+    } header: {
+      HStack {
+        Text("Projects")
+        Spacer()
+        Button { Task { await store.refreshProjects() } } label: {
+          Image(systemName: "arrow.clockwise")
+        }.buttonStyle(.plain).help("Refresh projects").accessibilityLabel("Refresh projects")
+        Button { presentedSheet = .create } label: {
+          Image(systemName: "plus")
+        }.buttonStyle(.plain).help("New project").accessibilityLabel("New project")
+      }
+    }
     .task(id: store.corpusRoot?.path) { expandedProjects = []; await store.refreshProjects() }
     .onChange(of: store.projectNotes) {
       guard let selected = store.selectedOpenClawChatThreadID else { return }
@@ -139,8 +165,6 @@ struct WorkspaceProjectSidebar<ThreadRow: View>: View {
         expandedProjects.insert(project.id)
       }
     }
-    .sheet(isPresented: $presentsNewProject) { NewWorkspaceProjectSheet() }
-    .sheet(item: $projectToRecolor) { project in WorkspaceProjectColorSheet(project: project) }
   }
 }
 
@@ -196,7 +220,7 @@ private struct WorkspaceProjectColorSheet: View {
       if !store.projectStatus.isEmpty { Text(store.projectStatus).font(.caption).foregroundStyle(.secondary) }
       HStack {
         Spacer()
-        Button("Cancel") { dismiss() }.disabled(isSaving)
+        Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction).disabled(isSaving)
         Button("Save") {
           isSaving = true
           Task {
@@ -236,7 +260,7 @@ private struct NewWorkspaceProjectSheet: View {
       if !store.projectStatus.isEmpty { Text(store.projectStatus).font(.caption).foregroundStyle(.secondary) }
       HStack {
         Spacer()
-        Button("Cancel") { dismiss() }.disabled(isSaving)
+        Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction).disabled(isSaving)
         Button("Create") {
           isSaving = true
           Task {
