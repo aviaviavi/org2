@@ -984,8 +984,33 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
       configuration.caseSensitive = false
       configuration.wraps = true
       configuration.backwards = backwards
-      webView.find(query, configuration: configuration) { _ in }
+      guard !query.isEmpty else {
+        webView.find(query, configuration: configuration) { _ in }
+        return
+      }
+      // WebKit find does not search a closed details subtree. Reveal only
+      // source blocks containing the query before asking it to select a match.
+      Task { @MainActor in
+        _ = try? await webView.callAsyncJavaScript(
+          Self.revealSourceSearchMatchesScript,
+          arguments: ["query": query],
+          in: nil,
+          contentWorld: .page
+        )
+        webView.find(query, configuration: configuration) { _ in }
+      }
     }
+
+    nonisolated static let revealSourceSearchMatchesScript = """
+    const needle = query.toLocaleLowerCase();
+    if (needle) {
+      for (const disclosure of document.querySelectorAll('details.org2-large-source:not([open])')) {
+        if (disclosure.querySelector('code')?.textContent.toLocaleLowerCase().includes(needle)) {
+          disclosure.open = true;
+        }
+      }
+    }
+    """
 
     func applyScrollRequest(_ request: DetailScrollRequest?, to webView: WKWebView) {
       scrollRequest = request
@@ -1039,6 +1064,8 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
               )[0];
             const target = containingTarget || followingTarget || precedingTarget;
             if (target) {
+              const source = target.closest('details.org2-large-source');
+              if (source && line > Number(source.dataset.org2StartLine || 0)) source.open = true;
               const viewportHeight = Math.max(1, window.innerHeight || 1);
               const anchorY = Math.min(Math.max(viewportHeight * 0.32, 48), viewportHeight - 1);
               const targetY = window.scrollY + target.getBoundingClientRect().top;

@@ -79,7 +79,8 @@ final class Org2PDFExporter: NSObject, WKNavigationDelegate {
       .org2-heading-ai-action,
       .org2-column-resizer,
       .org2-table-controls,
-      .org2-table-sort-button {
+      .org2-table-sort-button,
+      .org2-large-source > summary {
         display: none !important;
       }
       .org2-headline-summary {
@@ -112,10 +113,15 @@ final class Org2PDFExporter: NSObject, WKNavigationDelegate {
     </style>
     """#
 
-    guard let headEnd = html.range(of: "</head>", options: .caseInsensitive) else {
-      return printStyle + "\n" + html
+    // Reader disclosures defer large source layout, but exports must include
+    // the complete source even when it was never expanded in the reader.
+    var prepared = html.replacingOccurrences(
+      of: "<details class=\"org2-large-source\"",
+      with: "<details open class=\"org2-large-source\""
+    )
+    guard let headEnd = prepared.range(of: "</head>", options: .caseInsensitive) else {
+      return printStyle + "\n" + prepared
     }
-    var prepared = html
     prepared.insert(contentsOf: printStyle + "\n", at: headEnd.lowerBound)
     return prepared
   }

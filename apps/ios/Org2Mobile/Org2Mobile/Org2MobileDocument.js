@@ -2651,9 +2651,11 @@ details.org2-headline,
 }
 .org2-headline-summary::-webkit-details-marker,
 .org2-properties-drawer > summary::-webkit-details-marker,
+.org2-large-source > summary::-webkit-details-marker,
 .org2-drawer > summary::-webkit-details-marker { display: none; }
 .org2-headline-summary::before,
 .org2-properties-drawer > summary::before,
+.org2-large-source > summary::before,
 .org2-drawer > summary::before {
   content: "\u25B6";
   position: absolute;
@@ -2784,6 +2786,9 @@ pre, .org2-src, .org2-example, .org2-verse, .org2-export, .org2-directive {
   white-space: pre;
 }
 pre code { padding: 0; border: 0; background: transparent; font-size: inherit; }
+.org2-large-source { margin: 0.85rem 0 1rem; }
+.org2-large-source > summary { position: relative; padding-left: 1.15rem; list-style: none; cursor: pointer; color: var(--org2-muted); font-size: 0.88rem; }
+.org2-large-source > pre { margin-top: 0.5rem; }
 blockquote { margin: 0.9rem 0; padding: 0.15rem 0 0.15rem 1rem; border-left: 3px solid var(--org2-accent); color: var(--org2-muted); }
 .org2-quote { white-space: pre-wrap; overflow-wrap: anywhere; }
 ul, ol { margin: 0.55rem 0 0.9rem; padding-left: 1.55rem; }
@@ -4074,9 +4079,15 @@ ${rows}
     if (embeddedChart) return renderEmbeddedChart(embeddedChart, renderSourceAttributes(node, context));
     const languageClass = language ? ` language-${language}` : "";
     const codeClassAttr = language ? ` class="language-${escapeAttr(language)}"` : "";
-    const body = escapeHtml(node.bodyRaw.replace(/\n$/, ""));
+    const raw = node.bodyRaw.replace(/\n$/, "");
+    const body = escapeHtml(raw);
     const baseStyle = "padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;";
-    return `<pre class="org2-src${languageClass}"${renderSourceAttributes(node, context)} style="${escapeAttr(baseStyle)}"><code${codeClassAttr}>${body}</code></pre>`;
+    const pre = `<pre class="org2-src${languageClass}"${renderSourceAttributes(node, context)} style="${escapeAttr(baseStyle)}"><code${codeClassAttr}>${body}</code></pre>`;
+    const lineCount = raw.split("\n").length;
+    if (context.profile === "app" && (raw.length > 32768 || lineCount > 200)) {
+      return `<details class="org2-large-source"${renderSourceAttributes(node, context)}><summary>${language ? `${escapeHtml(language)} source` : "Source"} \xB7 ${lineCount} lines</summary>${pre}</details>`;
+    }
+    return pre;
   }
   function renderPluginFrame(render, sourceAttributes = "") {
     const identity = `${render.pluginId}:${render.rendererId}`;

@@ -11,6 +11,31 @@ import { renderOrgDocumentToAppHtml, renderOrgDocumentToHtml, renderOrgExportInd
 import { parseOrgToCanonicalAst } from "../dist/parser.js";
 import { printCanonicalAstToOrg } from "../dist/printer.js";
 
+// Audit runs can carry megabytes in one source block. Keep every byte and
+// source citation available, but defer its layout until the reader expands it.
+for (const { body, collapsed, lines } of [
+  { body: "x".repeat(32_768), collapsed: false, lines: 1 },
+  { body: "x".repeat(32_769), collapsed: true, lines: 1 },
+  { body: Array(200).fill("small").join("\n"), collapsed: false, lines: 200 },
+  { body: Array(201).fill("small").join("\n"), collapsed: true, lines: 201 },
+  { body: Array(5_500).fill('  { "evidence": "<script>&full payload</script>" }').join("\n"), collapsed: true, lines: 5_500 },
+]) {
+  const doc = parseOrgToCanonicalAst(`#+begin_src json :org2-agent-run\n${body}\n#+end_src\n`, {
+    sourceRanges: true, sourceLineOffset: 20,
+  });
+  const html = renderOrgDocumentToAppHtml(doc).html;
+  assert.equal(html.includes('<details class="org2-large-source"'), collapsed);
+  if (collapsed) {
+    assert.ok(html.includes(`<details class="org2-large-source" data-org2-start-line="21" data-org2-end-line="${lines + 22}"><summary>json source · ${lines} lines</summary><pre`));
+    assert.ok(!html.includes('<details class="org2-large-source" open'));
+  }
+  const code = /<code class="language-json">([\s\S]*?)<\/code>/.exec(html)?.[1];
+  assert.equal(code, body.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"));
+  for (const profile of [undefined, "publish"]) {
+    assert.ok(!renderOrgDocumentToHtml(doc, { profile }).html.includes('<details class="org2-large-source"'));
+  }
+}
+
 const source = `#+TITLE: App rendering
 #+HTML_HEAD: <script>globalThis.documentHeadRan = true</script>
 * TODO Review the renderer :mac:
