@@ -2471,7 +2471,7 @@ private struct SidebarView: View {
               Text("No chat threads")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
-                .padding(.leading, 42)
+                .padding(.leading, OpenClawSidebarThreadLayout.leadingPadding)
                 .padding(.vertical, 3)
                 .listRowBackground(Color.clear)
             } else {
@@ -2713,7 +2713,7 @@ private struct SidebarView: View {
         .help("Reopen last settled chat thread")
       }
     }
-    .padding(.leading, 42)
+    .padding(.leading, OpenClawSidebarThreadLayout.leadingPadding)
     .padding(.trailing, 8)
   }
 
@@ -2731,7 +2731,7 @@ private struct SidebarView: View {
       }
       .font(.caption)
       .foregroundStyle(.secondary)
-      .padding(.leading, 42)
+      .padding(.leading, OpenClawSidebarThreadLayout.leadingPadding)
       .padding(.vertical, 6)
     }
     .buttonStyle(.plain)
@@ -3042,6 +3042,10 @@ enum OpenClawSettledThreadDisclosure {
   }
 }
 
+enum OpenClawSidebarThreadLayout {
+  static let leadingPadding: CGFloat = 12
+}
+
 enum OpenClawSettledThreadPagination {
   static let pageSize = 30
 
@@ -3191,7 +3195,7 @@ private struct OpenClawSidebarThreadRow: View {
           }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.leading, 12)
+        .padding(.leading, OpenClawSidebarThreadLayout.leadingPadding)
         .padding(.vertical, 6)
         .contentShape(Rectangle())
       }
@@ -5339,12 +5343,21 @@ private struct AgentProfileRow: View {
 
 private struct WorkflowsView: View {
   @Environment(WorkspaceStore.self) private var store
+  @Environment(\.openSettings) private var openSettings
+  @AppStorage(WorkspaceSettingsNavigation.selectionKey)
+  private var settingsSelection = WorkspaceSettingsNavigation.workspace
   @State private var runWorkflow: AgentWorkflowItem?
   @State private var scheduleWorkflow: AgentWorkflowItem?
   @State private var workflowPendingDeletion: AgentWorkflowItem?
   @State private var isCreatingAutomation = false
 
   var body: some View {
+    let scheduler = AutomationSchedulerOwnershipPresentation(
+      ownerHostRef: store.automationOwnerHostRef,
+      currentHostRef: store.automationHostRef,
+      corpusName: store.activeCorpusIdentity?.name
+        ?? store.corpusRoot?.lastPathComponent
+    )
     VStack(spacing: 0) {
       HeaderBar(
         title: "Automations",
@@ -5377,19 +5390,37 @@ private struct WorkflowsView: View {
         .disabled(store.isLoadingAgentWorkflows)
       }
 
-      HStack(spacing: 6) {
+      HStack(alignment: .top, spacing: 8) {
         Image(systemName: store.automationSchedulerErrorText == nil
-          ? "clock.badge.checkmark"
+          ? scheduler.systemImage
           : "exclamationmark.triangle.fill")
+          .frame(width: 16, height: 16)
         VStack(alignment: .leading, spacing: 2) {
-          Text(store.automationSchedulerStatusText)
+          HStack(spacing: 8) {
+            Text(scheduler.title)
+              .fontWeight(.semibold)
+            Spacer(minLength: 8)
+            Button("Manage") {
+              settingsSelection = WorkspaceSettingsNavigation.workspace
+              openSettings()
+            }
+            .controlSize(.small)
+            .help("Open Settings → Workspace")
+          }
+          Text(scheduler.detail)
+            .foregroundStyle(.tertiary)
+            .fixedSize(horizontal: false, vertical: true)
+          if !scheduler.isResolved || scheduler.isCurrentHost {
+            Text(store.automationSchedulerStatusText)
+              .foregroundStyle(.tertiary)
+          }
           if let schedulerError = store.automationSchedulerErrorText {
             Text(schedulerError)
               .foregroundStyle(.red)
               .textSelection(.enabled)
           }
         }
-        Spacer()
+        .frame(maxWidth: .infinity, alignment: .leading)
       }
       .font(.caption)
       .foregroundStyle(.secondary)

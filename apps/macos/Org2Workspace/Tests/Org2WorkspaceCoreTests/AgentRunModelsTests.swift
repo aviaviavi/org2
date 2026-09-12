@@ -1495,6 +1495,7 @@ final class AgentRunModelsTests: XCTestCase {
     {
       "schema": "org2:automation-due-list:v1",
       "now": "2026-08-31T16:00:00.000Z",
+      "hostRef": "press-trial",
       "due": [{
         "workflowId": "weekly-review",
         "title": "Weekly review",
@@ -1508,7 +1509,9 @@ final class AgentRunModelsTests: XCTestCase {
       "skipped": []
     }
     """#.utf8)
-    let due = try XCTUnwrap(JSONDecoder().decode(AgentWorkflowDueListPayload.self, from: dueData).due.first)
+    let payload = try JSONDecoder().decode(AgentWorkflowDueListPayload.self, from: dueData)
+    let due = try XCTUnwrap(payload.due.first)
+    XCTAssertEqual(payload.hostRef, "press-trial")
     XCTAssertEqual(due.id, "weekly-review:schedule:2026-08-31T16:00:00.000Z")
     XCTAssertEqual(due.destinationRef, "builtin.codex")
     XCTAssertEqual(due.agentRef, "product-research")
@@ -1573,6 +1576,31 @@ final class AgentRunModelsTests: XCTestCase {
     let advanced = AutomationScheduleDraft(expression: "15 10 1,15 * *")
     XCTAssertEqual(advanced.frequency, .advanced)
     XCTAssertEqual(advanced.expression, "15 10 1,15 * *")
+  }
+
+  func testAutomationSchedulerOwnershipPresentationExplainsLocalAndRemoteOwners() {
+    let remote = AutomationSchedulerOwnershipPresentation(
+      ownerHostRef: "press-trial",
+      currentHostRef: "desktop",
+      corpusName: "Avi Press"
+    )
+    XCTAssertEqual(remote.title, "Scheduler: press-trial")
+    XCTAssertEqual(
+      remote.detail,
+      "press-trial runs scheduled automations for Avi Press. This desktop will not."
+    )
+    XCTAssertEqual(remote.systemImage, "server.rack")
+    XCTAssertFalse(remote.isCurrentHost)
+
+    let local = AutomationSchedulerOwnershipPresentation(
+      ownerHostRef: "desktop",
+      currentHostRef: "desktop",
+      corpusName: "Avi Press"
+    )
+    XCTAssertEqual(local.title, "Scheduler: This Mac")
+    XCTAssertEqual(local.detail, "This Mac runs scheduled automations for Avi Press.")
+    XCTAssertEqual(local.systemImage, "desktopcomputer")
+    XCTAssertTrue(local.isCurrentHost)
   }
 
   func testCompletedRunPresentsOutcomeAndCollapsesSupersededValidationResults() throws {

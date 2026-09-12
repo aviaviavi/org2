@@ -220,6 +220,7 @@ final class WorkspaceClaudeCodeDestinationTests: XCTestCase {
 
     let dueAt = try XCTUnwrap(ISO8601DateFormatter().date(from: "2099-08-31T16:00:30Z"))
     await store.checkDueAgentAutomations(now: dueAt)
+    XCTAssertEqual(store.automationOwnerHostRef, "desktop")
     let timeout = Date().addingTimeInterval(8)
     while Date() < timeout {
       if store.agentRuns.contains(where: {

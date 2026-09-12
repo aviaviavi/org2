@@ -1345,7 +1345,7 @@ function workflowCommand(parsed: ParsedArgs): void {
         else due.push(summary);
       }
     }
-    output(parsed, { schema: "org2:automation-due-list:v1", now, due, skipped }, due.length ? due.map((item) => `${item.workflowId}\t${item.scheduledFor}`).join("\n") : "No automations due.");
+    output(parsed, { schema: "org2:automation-due-list:v1", now, due, skipped, hostRef: owner }, due.length ? due.map((item) => `${item.workflowId}\t${item.scheduledFor}`).join("\n") : "No automations due.");
     return;
   }
   const id = required(parsed.positional[1], `workflow id is required for ${action}`);

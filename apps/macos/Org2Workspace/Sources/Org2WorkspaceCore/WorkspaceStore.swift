@@ -2235,6 +2235,7 @@ public final class WorkspaceStore {
   public private(set) var mutatingAgentWorkflowIDs: Set<AgentWorkflowItem.ID> = []
   public private(set) var automationSchedulerStatusText = "Automation scheduler is starting"
   public private(set) var automationSchedulerErrorText: String?
+  public private(set) var automationOwnerHostRef: String?
   public private(set) var agentGoals: [AgentGoalItem] = []
   public var selectedAgentGoalID: AgentGoalItem.ID?
   public private(set) var isLoadingAgentGoals = false
@@ -4312,6 +4313,7 @@ public final class WorkspaceStore {
     projectStatus = ""
     projectRefreshID = UUID()
     corpusRoot = standardized
+    automationOwnerHostRef = nil
     prepareDailyNoteDirectory(for: standardized)
     appHTMLStylesheetSnapshotTask?.cancel()
     appHTMLStylesheetSnapshot = AppHTMLStylesheetSnapshot(
@@ -5516,6 +5518,10 @@ public final class WorkspaceStore {
         "--dir", corpusRoot.path,
         "--json"
       ])
+      if let hostRef = payload.hostRef?.trimmingCharacters(in: .whitespacesAndNewlines),
+         !hostRef.isEmpty {
+        automationOwnerHostRef = hostRef
+      }
       if payload.due.isEmpty {
         automationSchedulerStatusText = payload.reason ?? (payload.skipped.isEmpty
           ? "Automations are up to date"

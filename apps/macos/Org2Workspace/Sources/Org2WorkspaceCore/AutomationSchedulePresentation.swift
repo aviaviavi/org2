@@ -1,5 +1,54 @@
 import Foundation
 
+public struct AutomationSchedulerOwnershipPresentation: Equatable, Sendable {
+  public let ownerHostRef: String?
+  public let currentHostRef: String
+  public let corpusName: String?
+
+  public init(ownerHostRef: String?, currentHostRef: String, corpusName: String?) {
+    self.ownerHostRef = Self.normalized(ownerHostRef)
+    self.currentHostRef = Self.normalized(currentHostRef) ?? "desktop"
+    self.corpusName = Self.normalized(corpusName)
+  }
+
+  public var isResolved: Bool { ownerHostRef != nil }
+
+  public var isCurrentHost: Bool {
+    guard let ownerHostRef else { return false }
+    return ownerHostRef == currentHostRef
+  }
+
+  public var title: String {
+    guard let ownerHostRef else { return "Scheduler: Checking…" }
+    return "Scheduler: \(ownerHostRef == "desktop" ? "This Mac" : ownerHostRef)"
+  }
+
+  public var detail: String {
+    let scope = corpusName.map { " for \($0)" } ?? " for this corpus"
+    guard let ownerHostRef else {
+      return "OpenOrg is checking which host runs scheduled automations\(scope)."
+    }
+    if isCurrentHost {
+      let subject = ownerHostRef == "desktop" ? "This Mac" : ownerHostRef
+      return "\(subject) runs scheduled automations\(scope)."
+    }
+    let localSubject = currentHostRef == "desktop" ? "This desktop" : "This host"
+    return "\(ownerHostRef) runs scheduled automations\(scope). \(localSubject) will not."
+  }
+
+  public var systemImage: String {
+    guard isResolved else { return "clock" }
+    return isCurrentHost ? "desktopcomputer" : "server.rack"
+  }
+
+  private static func normalized(_ value: String?) -> String? {
+    guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+          !value.isEmpty
+    else { return nil }
+    return value
+  }
+}
+
 public enum AutomationScheduleFrequency: String, CaseIterable, Identifiable, Sendable {
   case interval
   case daily

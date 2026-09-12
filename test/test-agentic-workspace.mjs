@@ -679,7 +679,9 @@ try {
     "--now", "2026-08-31T16:00:30Z", "--dir", automationRoot, "--json",
   ], { encoding: "utf8" });
   assert.equal(dueAutomation.status, 0, dueAutomation.stderr || dueAutomation.stdout);
-  assert.equal(JSON.parse(dueAutomation.stdout).due[0].scheduledFor, "2026-08-31T16:00:00.000Z");
+  const dueAutomationPayload = JSON.parse(dueAutomation.stdout);
+  assert.equal(dueAutomationPayload.hostRef, "desktop");
+  assert.equal(dueAutomationPayload.due[0].scheduledFor, "2026-08-31T16:00:00.000Z");
   const dispatchedAutomation = spawnSync(process.execPath, [
     path.resolve("dist/cli.js"), "workflow", "run", "weekly-product-update",
     "--trigger", "schedule", "--scheduled-for", "2026-08-31T16:00:00Z",

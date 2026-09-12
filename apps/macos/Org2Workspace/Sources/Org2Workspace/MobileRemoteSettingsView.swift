@@ -6,12 +6,12 @@ import UniformTypeIdentifiers
 
 struct WorkspaceSettingsView: View {
   @ObservedObject var softwareUpdates: SoftwareUpdateController
-  @AppStorage(WorkspaceSettingsNavigation.selectionKey) private var selection = "workspace"
+  @AppStorage(WorkspaceSettingsNavigation.selectionKey) private var selection = WorkspaceSettingsNavigation.workspace
 
   var body: some View {
     TabView(selection: $selection) {
       CorpusSettingsView()
-        .tag("workspace")
+        .tag(WorkspaceSettingsNavigation.workspace)
         .tabItem {
           Label("Workspace", systemImage: "folder")
         }
@@ -140,6 +140,22 @@ private struct CorpusSettingsView: View {
       } footer: {
         Text("The corpus remains an ordinary folder. Move or rename it in Finder, then open its new location here. Its portable name and kind are stored in org2.json.")
       }
+      if store.corpusRoot != nil {
+        Section {
+          LabeledContent("Scheduler") {
+            Label(
+              scheduler.title.replacingOccurrences(of: "Scheduler: ", with: ""),
+              systemImage: scheduler.systemImage
+            )
+          }
+          Text(scheduler.detail)
+            .foregroundStyle(.secondary)
+        } header: {
+          Label("Automations", systemImage: "clock.arrow.circlepath")
+        } footer: {
+          Text("Scheduler ownership applies to every automation in this corpus and is configured in org2.json.")
+        }
+      }
       if store.corpusRoot != nil { CorpusTodoSettingsSection() }
     }
     .formStyle(.grouped)
@@ -160,6 +176,15 @@ private struct CorpusSettingsView: View {
       ?? store.corpusRoot?.lastPathComponent
       ?? ""
     corpusKind = store.activeCorpusIdentity?.kind ?? "personal"
+  }
+
+  private var scheduler: AutomationSchedulerOwnershipPresentation {
+    AutomationSchedulerOwnershipPresentation(
+      ownerHostRef: store.automationOwnerHostRef,
+      currentHostRef: store.automationHostRef,
+      corpusName: store.activeCorpusIdentity?.name
+        ?? store.corpusRoot?.lastPathComponent
+    )
   }
 }
 

@@ -60,9 +60,12 @@ try {
   run("workflow", "create", "scheduled", "--title", "Test schedule", "--prompt", "Report ready", "--schedule", "every 1m",
     "--destination-ref", "builtin.codex", "--now", "2026-09-01T00:00:00.000Z", "--dir", corpus, "--json");
   const now = "2026-09-01T00:05:00.000Z";
-  assert.equal(run("workflow", "due", "--dir", corpus, "--now", now, "--json").due.length, 0, "desktop must skip a server-owned corpus");
+  const desktopDue = run("workflow", "due", "--dir", corpus, "--now", now, "--json");
+  assert.equal(desktopDue.due.length, 0, "desktop must skip a server-owned corpus");
+  assert.equal(desktopDue.hostRef, "press");
   const due = run("workflow", "due", "--host-ref", "press", "--dir", corpus, "--now", now, "--json");
   assert.equal(due.due.length, 1);
+  assert.equal(due.hostRef, "press");
   const occurrence = due.due[0].scheduledFor;
   const args = ["workflow", "run", "scheduled", "--trigger", "schedule", "--scheduled-for", occurrence, "--dir", corpus, "--json"];
   assert.equal(run(...args).eligible, false, "ownership must be rechecked at dispatch time");

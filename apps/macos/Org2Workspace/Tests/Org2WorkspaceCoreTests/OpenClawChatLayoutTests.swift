@@ -107,6 +107,10 @@ private func chatAccessibilityNodes(in root: NSView) -> [ChatAccessibilityNode] 
 
 @MainActor
 final class OpenClawChatLayoutTests: XCTestCase {
+  func testChatThreadSubtreeUsesCompactLeadingPadding() {
+    XCTAssertEqual(OpenClawSidebarThreadLayout.leadingPadding, 12)
+  }
+
   func testSidebarSettlementButtonKeepsItsSpaceAtNarrowWidths() async throws {
     for enabled in [false, true] {
       for width: CGFloat in [160, 220, 320] {
@@ -122,7 +126,7 @@ final class OpenClawChatLayoutTests: XCTestCase {
                     .font(.caption2.monospaced()).lineLimit(1)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.leading, 42)
+                .padding(.leading, OpenClawSidebarThreadLayout.leadingPadding)
                 .padding(.vertical, 6)
               }
               .buttonStyle(.plain)
