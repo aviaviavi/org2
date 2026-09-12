@@ -9,18 +9,21 @@ final class AIChatTranscriptDocumentTests: XCTestCase {
     _ id: String,
     _ html: String,
     role: String = "assistant",
+    failure: String? = nil,
     trace: AIChatTranscriptHTML.Trace? = nil,
     changeSummary: AIChatTranscriptHTML.ChangeSummary? = nil
   ) -> AIChatTranscriptHTML.Entry {
     .init(id: id, role: role, title: role == "user" ? "You" : "Assistant", timestamp: "Today",
-      html: html, contexts: [], attachments: [], failure: nil, queued: false, canSteer: false,
+      html: html, contexts: [], attachments: [], failure: failure, queued: false, canSteer: false,
       isRoomResponse: false, copied: false, isTruncated: false,
       responseTrace: trace, changeSummary: changeSummary)
   }
   private func payload(_ entries: [AIChatTranscriptHTML.Entry], thread: String = "thread", search: String? = nil,
-    generation: Int = 0, position: Double = 0) -> AIChatTranscriptHTML.Payload {
-    .init(thread: thread, entries: entries, earlier: "Show earlier messages", sending: false,
-      status: "", search: search, searchGeneration: generation, initialPosition: position, compact: false)
+    generation: Int = 0, position: Double = 0, sending: Bool = false,
+    live: AIChatTranscriptHTML.Live? = nil) -> AIChatTranscriptHTML.Payload {
+    .init(thread: thread, entries: entries, earlier: "Show earlier messages", sending: sending,
+      status: "", search: search, searchGeneration: generation, initialPosition: position, compact: false,
+      live: live)
   }
   private func document() async throws -> WKWebView {
     let view = WKWebView(frame: NSRect(x: 0, y: 0, width: 460, height: 320))
@@ -149,6 +152,134 @@ final class AIChatTranscriptDocumentTests: XCTestCase {
     XCTAssertTrue((result?["changes"] as? String)?.contains("ContentView.swift") == true)
     XCTAssertEqual(result?["details"] as? Bool, false)
   }
+
+  func testAuxiliaryControlsKeepIconsTextAndActionsAlignedAtNarrowWidths() async throws {
+    let activities = (0..<4).map { index in
+      OpenClawRunActivity(
+        id: "tool-\(index)", runID: "run", kind: .tool, title: "Activity \(index)",
+        detail: "A useful detail", status: .succeeded
+      )
+    }
+    let trace = try XCTUnwrap(AIChatTranscriptHTML.Trace(OpenClawResponseTrace(
+      reasoning: "Checked the transcript layout before updating it.",
+      activities: activities
+    )))
+    let view = try await document()
+    view.frame.size.width = 300
+    try await update(view, payload([
+      entry(
+        "failure", "<main><p>Request body.</p></main>", role: "user",
+        failure: "Codex turn failed: Selected model is at capacity. Please try a different model."
+      ),
+      entry("trace", "<main><p>Response body.</p></main>", trace: trace),
+    ], sending: true))
+
+    let result = try await view.evaluateJavaScript("""
+      (()=>{
+        const retry=document.querySelector('.failure button');
+        const toggle=document.querySelector('.disclosure-button');
+        toggle.click();
+        const toggleIcon=toggle.querySelector('.glyph').getBoundingClientRect();
+        const toggleLabel=toggle.querySelector('span:last-child').getBoundingClientRect();
+        const status=document.getElementById('status');
+        const style=e=>getComputedStyle(e);
+        return {
+          failureDisplay:style(document.querySelector('.failure')).display,
+          retryWhiteSpace:style(retry).whiteSpace,
+          retryFits:retry.scrollWidth<=retry.clientWidth,
+          toggleDisplay:style(toggle).display,
+          toggleWhiteSpace:style(toggle).whiteSpace,
+          toggleText:toggle.textContent,
+          toggleCenterDelta:Math.abs((toggleIcon.top+toggleIcon.height/2)-(toggleLabel.top+toggleLabel.height/2)),
+          statusDisplay:style(status).display,
+          statusAlignment:style(status).alignItems,
+          statusText:status.innerText
+        };
+      })()
+      """) as? [String: Any]
+    XCTAssertEqual(result?["failureDisplay"] as? String, "grid")
+    XCTAssertEqual(result?["retryWhiteSpace"] as? String, "nowrap")
+    XCTAssertEqual(result?["retryFits"] as? Bool, true)
+    XCTAssertEqual(result?["toggleDisplay"] as? String, "flex")
+    XCTAssertEqual(result?["toggleWhiteSpace"] as? String, "nowrap")
+    XCTAssertEqual(result?["toggleText"] as? String, "Show less")
+    XCTAssertLessThan(result?["toggleCenterDelta"] as? Double ?? 100, 1)
+    XCTAssertEqual(result?["statusDisplay"] as? String, "flex")
+    XCTAssertEqual(result?["statusAlignment"] as? String, "center")
+    XCTAssertEqual(result?["statusText"] as? String, "Working…Stop")
+  }
+
+  func testLiveAgentUpdatesAndAnimationRemainInsideTheSelectableDocument() async throws {
+    func activity(_ title: String, status: OpenClawRunActivity.Status) -> AIChatTranscriptHTML.Activity {
+      AIChatTranscriptHTML.Activity(OpenClawActivityFeedItem(
+        id: title, title: title, detail: "Started", latestDetail: "Still working",
+        status: status, count: 1, updatedAt: Date()
+      ))
+    }
+    func live(_ text: String) -> AIChatTranscriptHTML.Live {
+      .init(
+        title: "Codex is thinking", detail: nil,
+        quietTitle: "Waiting for Codex", quietDetail: "No new activity for 2m. It may still be working.",
+        stalledTitle: "Codex may be stalled",
+        stalledDetail: "No new activity for 10m. The run is saved; the connection or agent may be stalled.",
+        startedAtMilliseconds: Date().addingTimeInterval(-65).timeIntervalSince1970 * 1_000,
+        lastEventAtMilliseconds: Date().timeIntervalSince1970 * 1_000,
+        usesLivenessThresholds: true, animates: true, text: text,
+        hasEarlierText: true, textExpanded: false, reasoning: "Inspecting the relevant implementation.",
+        activities: [activity("Read source", status: .succeeded), activity("Run tests", status: .running)],
+        activityExpanded: false
+      )
+    }
+    let message = entry("message", "<main><p>Select this message while a live update arrives.</p></main>")
+    let firstLive = live("I found the missing live-state bridge.")
+    let view = try await document()
+    try await update(view, payload([message], sending: true, live: firstLive))
+
+    let visible = try await view.evaluateJavaScript("""
+      (()=>({
+        hidden:document.getElementById('live').hidden,
+        title:document.querySelector('.live-title').textContent,
+        text:document.querySelector('.live-text').textContent,
+        activities:document.querySelectorAll('.live-feed .activity-row').length,
+        activityTitle:document.querySelector('.live-feed .activity-title').textContent,
+        animating:document.getElementById('live').classList.contains('animating'),
+        elapsed:document.querySelector('.live-elapsed').textContent,
+        fallback:document.getElementById('status').innerText
+      }))()
+      """) as? [String: Any]
+    XCTAssertEqual(visible?["hidden"] as? Bool, false)
+    XCTAssertEqual(visible?["title"] as? String, "Codex is thinking")
+    XCTAssertEqual(visible?["text"] as? String, firstLive.text)
+    XCTAssertEqual(visible?["activities"] as? Int, 1)
+    XCTAssertEqual(visible?["activityTitle"] as? String, "Run tests")
+    XCTAssertEqual(visible?["animating"] as? Bool, true)
+    XCTAssertTrue(AIChatTranscriptHTML.style.contains("@keyframes shimmer"))
+    XCTAssertTrue((visible?["elapsed"] as? String)?.hasPrefix("1m ") == true)
+    XCTAssertEqual(visible?["fallback"] as? String, "")
+
+    try await view.evaluateJavaScript("document.querySelector('.live-stop').click(); document.querySelector('.live-activity-toggle').click(); null;")
+    let actions = try await view.evaluateJavaScript("events.map(x=>x.action)") as? [String] ?? []
+    XCTAssertTrue(actions.contains("stop"))
+    XCTAssertTrue(actions.contains("liveActivityToggle"))
+
+    try await view.evaluateJavaScript("""
+      const range=document.createRange(); range.selectNodeContents(document.querySelector('#message-message p'));
+      getSelection().removeAllRanges(); getSelection().addRange(range); null;
+      """)
+    let secondLive = live("The streamed update changed without replacing the selection.")
+    let json = try XCTUnwrap(String(data: JSONEncoder().encode(secondLive), encoding: .utf8))
+    try await view.evaluateJavaScript("window.__transcriptLiveUpdate(\(json)); null;")
+    let heldText = try await view.evaluateJavaScript("document.querySelector('.live-text').textContent") as? String
+    XCTAssertEqual(heldText, firstLive.text)
+    try await view.evaluateJavaScript("getSelection().removeAllRanges(); document.dispatchEvent(new Event('selectionchange')); null;")
+    let updatedText = try await view.evaluateJavaScript("document.querySelector('.live-text').textContent") as? String
+    XCTAssertEqual(updatedText, secondLive.text)
+    XCTAssertTrue(AIChatTranscriptWebView.documentPayloadMatches(
+      payload([message], sending: true, live: firstLive),
+      payload([message], sending: true, live: secondLive)
+    ))
+  }
+
   func testOrgAndLegacyCitationsRenderAsLinksWithExactLineTargets() async throws {
     let raw = "Org [[file:/tmp/note.org::16][project notes]], legacy [source](/tmp/file.swift:42), web [site](https://example.com)."
     let normalized = OpenClawMessageOrgNormalizer.normalized(raw)

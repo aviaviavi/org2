@@ -8,7 +8,11 @@ struct AIChatTranscriptDocument: View {
   @Environment(WorkspaceStore.self) private var store
   @Environment(\.openOrgFileReference) private var openFileReference
   @Environment(\.orgRoamLinkResolver) private var linkResolver
+  @ObservedObject private var liveState: OpenClawChatLiveState
   @State private var rendered: [UUID: RenderedBody] = [:]
+  @State private var preparedLive: PreparedLive?
+  @State private var showsAllLiveText = false
+  @State private var showsLiveActivity = false
   @State private var previewedAttachment: OpenClawChatAttachment?
   @State private var expandedMessageIDs: Set<UUID> = []
   @State private var copiedMessageID: UUID?
@@ -20,6 +24,26 @@ struct AIChatTranscriptDocument: View {
   let searchGeneration: Int
   let onEarlier: () -> Void
   let onPosition: (Double) -> Void
+
+  init(
+    liveState: OpenClawChatLiveState,
+    items: [AIChatRoomTranscriptItem],
+    compact: Bool,
+    earlierTitle: String?,
+    searchMessageID: UUID?,
+    searchGeneration: Int,
+    onEarlier: @escaping () -> Void,
+    onPosition: @escaping (Double) -> Void
+  ) {
+    _liveState = ObservedObject(wrappedValue: liveState)
+    self.items = items
+    self.compact = compact
+    self.earlierTitle = earlierTitle
+    self.searchMessageID = searchMessageID
+    self.searchGeneration = searchGeneration
+    self.onEarlier = onEarlier
+    self.onPosition = onPosition
+  }
 
   private struct RenderedBody {
     let source: String
@@ -34,6 +58,25 @@ struct AIChatTranscriptDocument: View {
     let expanded: Bool
   }
   private struct RenderKey: Equatable { let sourcePath: String; let inputs: [RenderInput] }
+  private struct LiveInput: Equatable {
+    let threadID: UUID
+    let startedAt: Date?
+    let lastEventAt: Date?
+    let runtime: AIChatRuntime
+    let destinationTitle: String
+    let connectionState: OpenClawGatewayConnectionState
+    let connectionDetail: String?
+    let runID: String?
+    let preparation: OpenClawLiveTextPreparationInput
+  }
+  private struct PreparedLive {
+    let threadID: UUID
+    let startedAt: Date?
+    let text: String?
+    let hasEarlierText: Bool
+    let reasoning: String?
+    let activities: [OpenClawActivityFeedItem]
+  }
   private struct MessageSlot {
     let message: OpenClawChatMessage
     let isRoomResponse: Bool
@@ -57,7 +100,34 @@ struct AIChatTranscriptDocument: View {
     (store.corpusRoot ?? FileManager.default.temporaryDirectory).appendingPathComponent("chat-message.org").path
   }
 
+  private var liveInput: LiveInput? {
+    guard store.isSendingOpenClawMessage,
+          !store.selectedAIChatIsSharedRoom,
+          let threadID = store.selectedOpenClawChatThreadID
+    else { return nil }
+    let snapshot = liveState.presentationSnapshot(for: threadID)
+    return LiveInput(
+      threadID: threadID,
+      startedAt: store.openClawRequestStartedAt,
+      lastEventAt: liveState.lastEventAt(for: threadID),
+      runtime: store.selectedAIChatActiveRuntime,
+      destinationTitle: store.aiChatDestinationTitle(store.selectedAIChatActiveDestinationID),
+      connectionState: liveState.connectionState(for: threadID),
+      connectionDetail: liveState.connectionDetail(for: threadID),
+      runID: liveState.activeRunID(for: threadID),
+      preparation: OpenClawLiveTextPreparationInput(
+        rawText: snapshot.streamingReply,
+        showsAll: showsAllLiveText,
+        hasOmittedPrefix: snapshot.isStreamingReplyTruncated,
+        reasoning: snapshot.reasoning,
+        reasoningHasOmittedPrefix: snapshot.isReasoningTruncated,
+        activities: liveState.runActivities(for: threadID)
+      )
+    )
+  }
+
   var body: some View {
+    let liveInput = liveInput
     let inputs = messages.map { message in
       RenderInput(id: message.id,
         text: message.content,
@@ -97,7 +167,8 @@ struct AIChatTranscriptDocument: View {
         status: store.openClawMessages.isEmpty ? "Ask about your workspace, or request an edit to review." : store.openClawStatusText,
         search: searchMessageID?.uuidString.lowercased(), searchGeneration: searchGeneration,
         initialPosition: store.openClawChatScrollPosition(isAssistantPanel: compact) ?? 1,
-        compact: compact
+        compact: compact,
+        live: liveInput.map(livePayload)
       ), sourcePath: sourcePath, corpusRoot: store.corpusRoot,
       linkResolver: linkResolver, openFileReference: openFileReference,
       onAction: handleAction,
@@ -139,6 +210,35 @@ struct AIChatTranscriptDocument: View {
         catch { /* The selectable plain body remains available. */ }
       }
     }
+    .task(id: liveInput) {
+      guard let liveInput else {
+        preparedLive = nil
+        showsAllLiveText = false
+        showsLiveActivity = false
+        return
+      }
+      if preparedLive?.threadID != liveInput.threadID || preparedLive?.startedAt != liveInput.startedAt {
+        preparedLive = nil
+      }
+      do {
+        try await Task.sleep(for: .milliseconds(24))
+      } catch {
+        return
+      }
+      let prepared = await OpenClawLiveTextPreparationCoordinator.shared.prepare(
+        streamID: liveInput.threadID,
+        input: liveInput.preparation
+      )
+      guard !Task.isCancelled else { return }
+      preparedLive = PreparedLive(
+        threadID: liveInput.threadID,
+        startedAt: liveInput.startedAt,
+        text: prepared?.text?.text,
+        hasEarlierText: prepared?.text?.hasEarlierText ?? false,
+        reasoning: prepared?.reasoning,
+        activities: prepared?.activityFeedItems ?? []
+      )
+    }
     .sheet(item: $previewedAttachment) { attachment in
       OpenClawAttachmentPreviewView(attachment: attachment)
     }
@@ -159,10 +259,60 @@ struct AIChatTranscriptDocument: View {
       ?? message.authorRuntime?.title ?? (message.role == .system ? "Org2" : store.selectedAIChatRuntime.title)
   }
 
+  private func livePayload(_ input: LiveInput) -> AIChatTranscriptHTML.Live {
+    let now = Date()
+    let presentation = OpenClawTypingIndicatorView(
+      startedAt: input.startedAt,
+      lastEventAt: input.lastEventAt,
+      runtime: input.runtime,
+      destinationTitle: input.destinationTitle,
+      connectionState: input.connectionState,
+      connectionDetail: input.connectionDetail,
+      runID: input.runID,
+      streamingReply: input.preparation.rawText,
+      streamingReplyHasOmittedPrefix: input.preparation.hasOmittedPrefix,
+      reasoning: input.preparation.reasoning,
+      reasoningHasOmittedPrefix: input.preparation.reasoningHasOmittedPrefix,
+      activities: input.preparation.activities,
+      compact: compact,
+      onStop: {}
+    )
+    let prepared = preparedLive?.threadID == input.threadID && preparedLive?.startedAt == input.startedAt
+      ? preparedLive
+      : nil
+    let displayTitle = input.destinationTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+    let resolvedTitle = displayTitle.isEmpty ? input.runtime.title : displayTitle
+    let referenceDate = input.lastEventAt ?? input.startedAt
+    let livenessAge = referenceDate.map { max(0, now.timeIntervalSince($0)) } ?? 0
+    let animates = input.connectionState != .disconnected
+      && (input.connectionState != .connected || input.runID == nil
+        || livenessAge < OpenClawTypingIndicatorView.stalledRunInterval)
+    return AIChatTranscriptHTML.Live(
+      title: presentation.statusTitle(now: now),
+      detail: presentation.statusDetail(now: now),
+      quietTitle: "Waiting for \(resolvedTitle)",
+      quietDetail: "No new activity for 2m. It may still be working.",
+      stalledTitle: "\(resolvedTitle) may be stalled",
+      stalledDetail: "No new activity for 10m. The run is saved; the connection or agent may be stalled.",
+      startedAtMilliseconds: input.startedAt.map { $0.timeIntervalSince1970 * 1_000 },
+      lastEventAtMilliseconds: referenceDate.map { $0.timeIntervalSince1970 * 1_000 },
+      usesLivenessThresholds: input.connectionState == .connected && input.runID != nil,
+      animates: animates,
+      text: prepared?.text,
+      hasEarlierText: prepared?.hasEarlierText ?? false,
+      textExpanded: showsAllLiveText,
+      reasoning: prepared?.reasoning,
+      activities: (prepared?.activities ?? []).map(AIChatTranscriptHTML.Activity.init),
+      activityExpanded: showsLiveActivity
+    )
+  }
+
   private func handleAction(_ action: String, _ id: String?, _ detail: String?) {
     if action == "restored" { store.completeOpenClawChatScrollRestoration(threadID: store.selectedOpenClawChatThreadID); return }
     if action == "earlier" { onEarlier(); return }
     if action == "stop" { Task { await store.stopOpenClawRun() }; return }
+    if action == "liveTextToggle" { showsAllLiveText.toggle(); return }
+    if action == "liveActivityToggle" { showsLiveActivity.toggle(); return }
     guard let id, let uuid = UUID(uuidString: id), let message = messages.first(where: { $0.id == uuid }) else { return }
     switch action {
     case "copy":
@@ -266,6 +416,25 @@ enum AIChatTranscriptHTML {
     }
   }
 
+  struct Live: Codable, Equatable {
+    let title: String
+    let detail: String?
+    let quietTitle: String
+    let quietDetail: String
+    let stalledTitle: String
+    let stalledDetail: String
+    let startedAtMilliseconds: Double?
+    let lastEventAtMilliseconds: Double?
+    let usesLivenessThresholds: Bool
+    let animates: Bool
+    let text: String?
+    let hasEarlierText: Bool
+    let textExpanded: Bool
+    let reasoning: String?
+    let activities: [Activity]
+    let activityExpanded: Bool
+  }
+
   struct Entry: Codable, Equatable {
     let id: String
     let role: String
@@ -293,6 +462,7 @@ enum AIChatTranscriptHTML {
     let searchGeneration: Int
     var initialPosition: Double
     let compact: Bool
+    let live: Live?
   }
 
   static let style = AIChatDocumentHTML.style + """
@@ -321,7 +491,8 @@ enum AIChatTranscriptHTML {
   .icon-button { display:grid; place-items:center; width:24px; height:24px; padding:0; opacity:.5; }
   .icon-button:hover,.icon-button.copied { opacity:1; }
   .icon-button.copied { color:#25a244; }
-  .icon-button svg,.detail-icon svg,.activity-icon svg,.change-icon svg { width:14px; height:14px; }
+  .glyph { display:inline-grid; place-items:center; flex:0 0 14px; width:14px; height:14px; line-height:0; }
+  .glyph svg,.icon-button svg,.detail-icon svg,.activity-icon svg,.change-icon svg { width:14px; height:14px; }
   .context-pills { display:flex; flex-wrap:wrap; gap:5px; margin-bottom:6px; }
   .context-pill { padding:3px 7px; border-radius:999px; font-size:10px; color:light-dark(#2773bd,#83bafa); background:light-dark(#eaf3fc,#27394b); border:1px solid light-dark(#bdd8f0,#34516b); }
   .message-card > main { min-width:0; }
@@ -334,12 +505,17 @@ enum AIChatTranscriptHTML {
   .attachment-name { display:block; margin-top:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:10px; color:light-dark(#777,#aaa); }
   .queued-actions { display:flex; align-items:center; gap:8px; margin-top:8px; font-size:11px; color:light-dark(#777,#aaa); }
   .queued-actions .spacer { flex:1; }
-  .failure { display:flex; align-items:flex-start; gap:8px; margin-top:8px; padding:7px 8px; color:light-dark(#b33820,#ffa98d); background:light-dark(#fff0ed,#3a2420); border:1px solid light-dark(#efc1b8,#704139); border-radius:6px; white-space:pre-wrap; font-size:11px; }
-  .failure button { margin-left:auto; font-weight:600; }
+  .failure { display:grid; grid-template-columns:14px minmax(0,1fr) max-content; align-items:start; gap:8px; margin-top:8px; padding:7px 8px; color:light-dark(#b33820,#ffa98d); background:light-dark(#fff0ed,#3a2420); border:1px solid light-dark(#efc1b8,#704139); border-radius:6px; font-size:11px; }
+  .failure > .glyph { margin-top:1px; }
+  .failure-copy { min-width:0; white-space:pre-wrap; overflow-wrap:anywhere; }
+  .failure button { display:inline-flex; align-items:center; justify-content:center; flex:none; min-width:max-content; white-space:nowrap; font-weight:600; line-height:1.25; }
   .expansion { margin-top:7px; font-size:11px; font-weight:500; color:light-dark(#777,#aaa); }
   .detail-block { margin-top:12px; padding-top:9px; border-top:1px solid light-dark(#dddcd7,#444642); font-size:11px; max-width:640px; }
   .detail-header { display:flex; align-items:center; gap:7px; font-weight:600; color:light-dark(#5c5c5c,#c4c4c4); }
   .detail-header .spacer { flex:1; }
+  .disclosure-button { display:inline-flex; align-items:center; justify-content:flex-start; gap:5px; flex:none; min-width:max-content; white-space:nowrap; line-height:14px; }
+  .disclosure-button .glyph { flex-basis:10px; width:10px; height:14px; }
+  .disclosure-button .glyph svg { width:10px; height:10px; }
   .reasoning-row,.activity-row,.change-row { display:flex; align-items:flex-start; gap:7px; margin-top:7px; min-width:0; }
   .reasoning-copy,.activity-copy,.change-path { min-width:0; }
   .reasoning-title,.activity-title { display:block; font-weight:500; }
@@ -357,9 +533,34 @@ enum AIChatTranscriptHTML {
   .insertions { color:#25a244; } .deletions { color:#d6483e; }
   .more-files { margin-top:7px; font-size:10px; font-weight:500; color:light-dark(#777,#aaa); }
   #earlier { display:block; margin:0 auto 12px; }
-  #status { padding:16px 0; color:light-dark(#777,#aaa); font-size:11px; }
-  #status.working::before { content:''; display:inline-block; width:5px; height:5px; margin-right:6px; border-radius:50%; background:currentColor; animation:pulse 1.2s ease-in-out infinite; }
-  @keyframes pulse { 50% { opacity:.25; } }
+  #live { box-sizing:border-box; width:100%; max-width:700px; padding:16px 10px 14px; color:light-dark(#777,#aaa); }
+  body.compact #live { max-width:430px; padding-left:6px; padding-right:6px; }
+  .live-status-row { display:flex; align-items:center; gap:8px; min-height:22px; font-size:11px; user-select:none; -webkit-user-select:none; }
+  .live-pulse { display:block; flex:0 0 5px; width:5px; height:5px; border-radius:50%; background:currentColor; }
+  #live.animating .live-pulse { animation:pulse .85s ease-in-out infinite alternate; }
+  .live-title { min-width:0; max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:500; }
+  #live.animating .live-title { color:transparent; background:linear-gradient(90deg,light-dark(#777,#aaa) 20%,light-dark(#333,#eee) 50%,light-dark(#777,#aaa) 80%); background-size:220% 100%; background-clip:text; -webkit-background-clip:text; animation:shimmer 1.7s linear infinite; }
+  .live-elapsed { flex:0 0 58px; width:58px; font:10px ui-monospace,SFMono-Regular,Menlo,monospace; color:light-dark(#999,#888); }
+  .live-stop { display:grid; place-items:center; flex:0 0 22px; width:22px; height:22px; padding:0; border-radius:50%; background:light-dark(#0000000d,#ffffff12); }
+  .live-stop .glyph,.live-stop svg { width:8px; height:8px; }
+  .live-detail { max-width:640px; margin-top:2px; font-size:10px; color:light-dark(#999,#888); white-space:pre-wrap; }
+  .live-text { max-width:640px; margin-top:9px; color:light-dark(#202020,#e7e7e7); font-size:13px; line-height:1.5; white-space:pre-wrap; }
+  .live-text-toggle { margin-top:5px; font-size:10px; font-weight:500; color:light-dark(#777,#aaa); }
+  .live-feed { max-width:640px; margin-top:9px; font-size:11px; }
+  .live-feed .reasoning-row,.live-feed .activity-row { margin-top:6px; }
+  .live-feed.expanded .reasoning-text { -webkit-line-clamp:8; }
+  .live-feed.expanded .activity-detail { -webkit-line-clamp:3; }
+  .live-running-dot { display:block; width:7px; height:7px; margin:3px; border-radius:50%; background:currentColor; animation:pulse .85s ease-in-out infinite alternate; }
+  .live-activity-toggle { margin-top:6px; font-size:10px; font-weight:500; color:light-dark(#777,#aaa); }
+  #status { display:flex; align-items:center; gap:8px; min-height:22px; padding:16px 0; color:light-dark(#777,#aaa); font-size:11px; }
+  #status.working::before { content:''; display:block; flex:0 0 5px; width:5px; height:5px; border-radius:50%; background:currentColor; animation:pulse 1.2s ease-in-out infinite; }
+  #status button { display:inline-flex; align-items:center; justify-content:center; flex:none; white-space:nowrap; line-height:1.25; }
+  @keyframes pulse { from { opacity:.55; transform:scale(.78); } to { opacity:1; transform:scale(1); } }
+  @keyframes shimmer { from { background-position:100% 0; } to { background-position:-120% 0; } }
+  @media (prefers-reduced-motion:reduce) {
+    #live.animating .live-pulse,.live-running-dot { animation:none; }
+    #live.animating .live-title { color:inherit; background:none; animation:none; }
+  }
   #latest { position:fixed; bottom:12px; right:14px; border:1px solid #8886; border-radius:20px; background:light-dark(#fff,#333); box-shadow:0 2px 6px #0002; }
   pre { max-height:none!important; height:auto!important; overflow-x:auto; overflow-y:hidden; white-space:pre; }
   table { max-width:100%; table-layout:fixed; }
@@ -367,7 +568,7 @@ enum AIChatTranscriptHTML {
 
   static let script = #"""
   (() => {
-    let current = null, pending = null, nearBottom = true, searchToken = '';
+    let current = null, pending = null, pendingLive = null, hasPendingLive = false, nearBottom = true, searchToken = '';
     const post = (action, id, detail) => webkit.messageHandlers.transcript.postMessage({action, id:id??null, detail:detail??null, thread:current?.thread??""});
     const selected = () => { const s=getSelection(); return s && !s.isCollapsed; };
     const maxScroll = () => Math.max(0,document.documentElement.scrollHeight-innerHeight);
@@ -381,7 +582,7 @@ enum AIChatTranscriptHTML {
       b.addEventListener('click',()=>post(action,id,detail)); return b;
     };
     const icon = name => {
-      const span=document.createElement('span'); span.setAttribute('aria-hidden','true');
+      const span=document.createElement('span'); span.className='glyph'; span.setAttribute('aria-hidden','true');
       const common='viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"';
       const paths={
         copy:'<rect x="8" y="7" width="11" height="13" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h3"/>',
@@ -394,13 +595,21 @@ enum AIChatTranscriptHTML {
         searchfile:'<path d="M5 3h9l4 4v6M14 3v5h5"/><circle cx="15" cy="17" r="3"/><path d="m17.5 19.5 2 2"/>',
         success:'<circle cx="12" cy="12" r="9"/><path d="m8 12 2.5 2.5L16 9"/>',
         failed:'<path d="M12 3 2.5 20h19Z"/><path d="M12 9v4M12 17h.01"/>',
-        tool:'<path d="m14.5 6.5 3-3a4 4 0 0 1-5 5L6 15l3 3 6.5-6.5a4 4 0 0 1 5-5l-3 3Z"/>'
+        tool:'<path d="m14.5 6.5 3-3a4 4 0 0 1-5 5L6 15l3 3 6.5-6.5a4 4 0 0 1 5-5l-3 3Z"/>',
+        stop:'<rect x="7" y="7" width="10" height="10" rx="1.5" fill="currentColor" stroke="none"/>',
+        chevronRight:'<path d="m9 5 7 7-7 7"/>',
+        chevronDown:'<path d="m5 9 7 7 7-7"/>',
+        chevronUp:'<path d="m5 15 7-7 7 7"/>'
       };
       span.innerHTML='<svg '+common+'>'+paths[name]+'</svg>'; return span;
     };
     const iconButton = (name, label, action, id, copied=false) => {
       const b=button('',action,id); b.className='icon-button'+(copied?' copied':'');
       b.setAttribute('aria-label',label); b.title=label; b.append(icon(name)); return b;
+    };
+    const updateDisclosure = (button, label, iconName) => {
+      const copy=document.createElement('span'); copy.textContent=label;
+      button.replaceChildren(icon(iconName),copy);
     };
     const appendDelta = (parent, insertions, deletions) => {
       const d=document.createElement('span'); d.className='delta';
@@ -461,7 +670,7 @@ enum AIChatTranscriptHTML {
       }
       if(e.failure) {
         const failure=document.createElement('div'); failure.className='failure'; failure.append(icon('failed'));
-        const copy=document.createElement('span'); copy.textContent=e.failure; failure.append(copy,button('Retry','retry',e.id)); card.append(failure);
+        const copy=document.createElement('span'); copy.className='failure-copy'; copy.textContent=e.failure; failure.append(copy,button('Retry','retry',e.id)); card.append(failure);
       }
       if(e.responseTrace) {
         const trace=document.createElement('section'); trace.className='detail-block trace';
@@ -470,7 +679,9 @@ enum AIChatTranscriptHTML {
         const canExpand=e.responseTrace.activities.length>3 || (e.responseTrace.reasoning?.length||0)>240;
         if(canExpand) {
           const spacer=document.createElement('span'); spacer.className='spacer';
-          const toggle=button('›  Show full feed'); toggle.onclick=()=>{ const expanded=trace.classList.toggle('expanded'); toggle.textContent=expanded?'⌄  Show less':'›  Show full feed'; };
+          const toggle=button(''); toggle.className='disclosure-button';
+          updateDisclosure(toggle,'Show full feed','chevronRight');
+          toggle.onclick=()=>{ const expanded=trace.classList.toggle('expanded'); updateDisclosure(toggle,expanded?'Show less':'Show full feed',expanded?'chevronDown':'chevronRight'); };
           head.append(spacer,toggle);
         }
         trace.append(head);
@@ -513,6 +724,78 @@ enum AIChatTranscriptHTML {
       if(e.role==='user') { const avatar=document.createElement('span'); avatar.className='avatar user-avatar'; avatar.append(icon('person')); a.append(avatar); }
       a.dataset.entry=JSON.stringify(e); return a;
     };
+    const ensureLive = () => {
+      const root=document.getElementById('live');
+      if(root.childElementCount) return root;
+      const status=document.createElement('div'); status.className='live-status-row';
+      const pulse=document.createElement('span'); pulse.className='live-pulse'; pulse.setAttribute('aria-hidden','true');
+      const title=document.createElement('span'); title.className='live-title';
+      const elapsed=document.createElement('time'); elapsed.className='live-elapsed';
+      const stop=button('','stop'); stop.className='live-stop'; stop.setAttribute('aria-label','Stop agent run'); stop.title='Stop this agent run'; stop.append(icon('stop'));
+      status.append(pulse,title,elapsed,stop);
+      const detail=document.createElement('div'); detail.className='live-detail';
+      const text=document.createElement('div'); text.className='live-text';
+      const textToggle=button('','liveTextToggle'); textToggle.className='disclosure-button live-text-toggle';
+      const feed=document.createElement('div'); feed.className='live-feed';
+      root.append(status,detail,text,textToggle,feed); return root;
+    };
+    const duration = milliseconds => {
+      const seconds=Math.max(0,Math.floor(milliseconds/1000));
+      if(seconds<60) return seconds+'s';
+      return Math.floor(seconds/60)+'m '+seconds%60+'s';
+    };
+    const updateLiveClock = () => {
+      const root=document.getElementById('live'), live=root.liveData;
+      if(!live || root.hidden) return;
+      const now=Date.now(), age=live.lastEventAtMilliseconds==null?0:Math.max(0,now-live.lastEventAtMilliseconds);
+      let title=live.title, detail=live.detail||'', animates=live.animates;
+      if(live.usesLivenessThresholds && age>=600000) { title=live.stalledTitle; detail=live.stalledDetail; animates=false; }
+      else if(live.usesLivenessThresholds && age>=120000) { title=live.quietTitle; detail=live.quietDetail; }
+      root.classList.toggle('animating',animates);
+      root.querySelector('.live-title').textContent=title;
+      const detailNode=root.querySelector('.live-detail'); detailNode.textContent=detail; detailNode.hidden=!detail;
+      root.querySelector('.live-elapsed').textContent=duration(now-(live.startedAtMilliseconds??now));
+    };
+    const renderLive = live => {
+      const root=ensureLive(); root.liveData=live; root.hidden=!live;
+      if(!live) return;
+      const text=root.querySelector('.live-text'); text.textContent=live.text||''; text.hidden=!live.text;
+      const textToggle=root.querySelector('.live-text-toggle'); textToggle.hidden=!live.hasEarlierText;
+      if(live.hasEarlierText) updateDisclosure(textToggle,live.textExpanded?'Show latest update':'Show all progress',live.textExpanded?'chevronUp':'chevronDown');
+      const feed=root.querySelector('.live-feed'); feed.replaceChildren(); feed.classList.toggle('expanded',live.activityExpanded);
+      if(live.activityExpanded && live.reasoning) {
+        const row=document.createElement('div'); row.className='reasoning-row detail-icon'; row.append(icon('sparkle'));
+        const copy=document.createElement('div'); copy.className='reasoning-copy';
+        const title=document.createElement('span'); title.className='reasoning-title'; title.textContent='Approach';
+        const value=document.createElement('span'); value.className='reasoning-text'; value.textContent=live.reasoning;
+        copy.append(title,value); row.append(copy); feed.append(row);
+      }
+      let activities=live.activities;
+      if(!live.activityExpanded) { const running=activities.filter(x=>x.status==='running').slice(-1)[0]; activities=running?[running]:activities.slice(-1); }
+      activities.forEach(activity=>{
+        const row=document.createElement('div'); row.className='activity-row';
+        const image=document.createElement('span'); image.className='activity-icon';
+        if(activity.status==='running') { const dot=document.createElement('span'); dot.className='live-running-dot'; image.append(dot); }
+        else image.append(icon(activity.status==='failed'?'failed':'success'));
+        const copy=document.createElement('div'); copy.className='activity-copy';
+        const title=document.createElement('span'); title.className='activity-title'; title.textContent=activity.title; copy.append(title);
+        const detail=activity.latestDetail||activity.detail;
+        if(detail) { const value=document.createElement('span'); value.className='activity-detail'; value.textContent=detail; copy.append(value); }
+        row.append(image,copy); feed.append(row);
+      });
+      if(live.activities.length || live.reasoning) {
+        const toggle=button('','liveActivityToggle'); toggle.className='disclosure-button live-activity-toggle';
+        updateDisclosure(toggle,live.activityExpanded?'Hide activity':'Show activity',live.activityExpanded?'chevronDown':'chevronRight'); feed.append(toggle);
+      }
+      feed.hidden=!feed.childElementCount; updateLiveClock();
+    };
+    window.__transcriptLiveUpdate = live => {
+      if(selected()) { pendingLive=live; hasPendingLive=true; return; }
+      const follow=nearBottom;
+      if(current) current={...current,live};
+      renderLive(live);
+      requestAnimationFrame(()=>{ if(follow) scrollTo(0,maxScroll()); report(); });
+    };
     window.__transcriptUpdate = data => {
       const changedThread=current?.thread!==data.thread;
       if(!changedThread && selected()) { pending=data; return; }
@@ -533,10 +816,11 @@ enum AIChatTranscriptHTML {
       const earlier=document.getElementById('earlier'); earlier.textContent=data.earlier||''; earlier.hidden=!data.earlier;
       const status=document.getElementById('status'); status.replaceChildren();
       document.body.classList.toggle('compact',data.compact);
-      status.classList.toggle('working',data.sending);
-      if(data.sending) { status.append(document.createTextNode('Working… '),button('Stop','stop')); }
+      current=data; renderLive(data.live||null);
+      status.classList.toggle('working',data.sending && !data.live);
+      if(data.sending && !data.live) { status.append(document.createTextNode('Working…'),button('Stop','stop')); }
       else if(!data.entries.length) status.textContent=data.status;
-      current=data; pending=null;
+      pending=null; hasPendingLive=false;
       requestAnimationFrame(()=>{
         const token=data.thread+':'+data.searchGeneration+':'+data.search;
         const target=data.search && document.getElementById('message-'+data.search);
@@ -547,17 +831,23 @@ enum AIChatTranscriptHTML {
         report();
       });
     };
-    document.addEventListener('selectionchange',()=>{ if(!selected() && pending) window.__transcriptUpdate(pending); });
+    document.addEventListener('selectionchange',()=>{
+      if(selected()) return;
+      if(pending) { const next=pending; pending=null; window.__transcriptUpdate(next); }
+      else if(hasPendingLive) { const next=pendingLive; hasPendingLive=false; pendingLive=null; window.__transcriptLiveUpdate(next); }
+    });
     document.getElementById('earlier').onclick=()=>post('earlier');
     document.getElementById('latest').onclick=()=>scrollTo(0,maxScroll());
     let scheduled=false;
     addEventListener('scroll',()=>{ if(!scheduled) { scheduled=true; requestAnimationFrame(()=>{scheduled=false; report();}); } },{passive:true});
-    new ResizeObserver(()=>{ if(current && nearBottom && !selected()) scrollTo(0,maxScroll()); }).observe(document.getElementById('messages'));
+    const resize=new ResizeObserver(()=>{ if(current && nearBottom && !selected()) scrollTo(0,maxScroll()); });
+    resize.observe(document.getElementById('messages')); resize.observe(document.getElementById('live'));
+    setInterval(updateLiveClock,1000);
   })();
   """#
 
   static let shell = """
-  <!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: http: data: org2-resource:; style-src 'unsafe-inline'; script-src 'none'; base-uri 'none'; form-action 'none'"><style>\(style)</style></head><body><button id="earlier" hidden></button><div id="messages"></div><div id="status"></div><button id="latest" hidden aria-label="Jump to latest message">↓</button></body></html>
+  <!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: http: data: org2-resource:; style-src 'unsafe-inline'; script-src 'none'; base-uri 'none'; form-action 'none'"><style>\(style)</style></head><body><button id="earlier" hidden></button><div id="messages"></div><section id="live" hidden aria-label="Live agent activity"></section><div id="status"></div><button id="latest" hidden aria-label="Jump to latest message">↓</button></body></html>
   """
 }
 
@@ -593,9 +883,28 @@ struct AIChatTranscriptWebView: NSViewRepresentable {
     c.resources.configure(source: EntrySource(file:sourcePath,startLine:1,endLineExclusive:1,text:"",isSubtree:false),corpusRoot:corpusRoot)
     var next = payload
     if let previous = c.payload, previous.thread == next.thread { next.initialPosition = previous.initialPosition }
-    guard c.payload != next else { return }
+    let previous = c.payload
+    guard previous != next else { return }
+    let onlyLiveChanged = previous.map { Self.documentPayloadMatches($0, next) } ?? false
     c.payload=next
-    if c.loaded { c.update(view) }
+    if c.loaded {
+      if onlyLiveChanged { c.updateLive(view) }
+      else { c.update(view) }
+    }
+  }
+  static func documentPayloadMatches(
+    _ lhs: AIChatTranscriptHTML.Payload,
+    _ rhs: AIChatTranscriptHTML.Payload
+  ) -> Bool {
+    lhs.thread == rhs.thread
+      && lhs.entries == rhs.entries
+      && lhs.earlier == rhs.earlier
+      && lhs.sending == rhs.sending
+      && lhs.status == rhs.status
+      && lhs.search == rhs.search
+      && lhs.searchGeneration == rhs.searchGeneration
+      && lhs.initialPosition == rhs.initialPosition
+      && lhs.compact == rhs.compact
   }
   static func dismantleNSView(_ view: WKWebView, coordinator: Coordinator) {
     AIChatDocumentWebView.dismantleNSView(view, coordinator: coordinator)
@@ -616,6 +925,18 @@ struct AIChatTranscriptWebView: NSViewRepresentable {
         return value
       }
       view.callAsyncJavaScript("window.__transcriptUpdate(data)",arguments:["data":object],in:nil,in:.page)
+    }
+    func updateLive(_ view: WKWebView) {
+      guard let payload else { return }
+      let object: Any
+      if let live = payload.live,
+         let data = try? JSONEncoder().encode(live),
+         let value = try? JSONSerialization.jsonObject(with: data) {
+        object = value
+      } else {
+        object = NSNull()
+      }
+      view.callAsyncJavaScript("window.__transcriptLiveUpdate(live)",arguments:["live":object],in:nil,in:.page)
     }
     override func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
       guard message.name=="transcript" else { super.userContentController(controller,didReceive:message); return }

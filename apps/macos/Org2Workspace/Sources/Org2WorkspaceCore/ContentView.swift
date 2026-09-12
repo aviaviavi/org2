@@ -10202,6 +10202,7 @@ private struct OpenClawChatView: View {
       anchor: transcriptWindowAnchor
     )
     return AIChatTranscriptDocument(
+      liveState: store.openClawLiveState,
       items: window.visibleItems,
       compact: presentation.isCompact,
       earlierTitle: window.hasEarlierMessages ? window.earlierMessagesTitle : nil,
