@@ -166,8 +166,8 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
       },
       {
         id: "knowledge-graph",
-        purpose: "Create and resolve IDs, backlinks, nodes, links, entities, indexes, searches, and graph reports.",
-        commands: ["org2 id", "org2 backlinks", "org2 index", "org2 search", "org2 query", "org2 entity", "org2 roam"],
+        purpose: "Create and resolve IDs, backlinks, nodes, links, entities, indexes, searches, graph reports, bounded local neighborhoods, and source-revision-guarded individual unlinked mentions.",
+        commands: ["org2 id", "org2 backlinks", "org2 index", "org2 search", "org2 query", "org2 entity", "org2 roam", "org2 roam connections", "org2 roam mention-link"],
         writes: "mixed",
       },
       {

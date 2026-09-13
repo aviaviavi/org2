@@ -16,6 +16,11 @@ function org2PackageVersion(): string {
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
+  if (args[0] === "roam" && ["connections", "mention-link"].includes(args[1] || "")) {
+    const { runRoamConnectionsCommand } = await import("./roamConnectionsCli.js");
+    await runRoamConnectionsCommand(args);
+    return;
+  }
   if (args[0] === "server") {
     const { runServerCommand } = await import("./serverCli.js");
     await runServerCommand(args.slice(1));
