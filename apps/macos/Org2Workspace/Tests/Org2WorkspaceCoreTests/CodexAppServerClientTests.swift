@@ -296,7 +296,9 @@ final class CodexAppServerClientTests: XCTestCase {
       XCTAssertTrue(prompt.contains("exactly one fewer + join than the number of columns"))
       XCTAssertTrue(prompt.contains("#+begin_src sh"))
       XCTAssertTrue(prompt.contains("Never write ##+begin_src or ##+end_src."))
-      XCTAssertTrue(prompt.contains("clickable file-and-line citations is a deliberate OpenOrg chat transport exception"))
+      XCTAssertTrue(prompt.contains("Use Org links for citations too: [[file:/absolute/path/note.org::42][source]]."))
+      XCTAssertTrue(prompt.contains("Use [[https://example.com][label]] for web links."))
+      XCTAssertTrue(prompt.contains("Do not emit Markdown links in new replies."))
     }
   }
 

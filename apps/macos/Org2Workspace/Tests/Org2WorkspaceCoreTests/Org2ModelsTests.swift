@@ -13430,8 +13430,8 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(prompt.contains("\(remoteRoot)/raw/connectors/knowledge/team"))
     XCTAssertTrue(prompt.contains("last sync: 2026-07-21T17:00:00Z"))
     XCTAssertTrue(prompt.contains("Clickable citations in AI chat"))
-    XCTAssertTrue(prompt.contains("[descriptive label](\(remoteRoot)/notes/example.org:42)"))
-    XCTAssertTrue(prompt.contains("#L42-L47"))
+    XCTAssertTrue(prompt.contains("[[file:\(remoteRoot)/notes/example.org::42][descriptive label]]"))
+    XCTAssertTrue(prompt.contains("[[file:\(remoteRoot)/notes/example.org::42][source, lines 42–47]]"))
     XCTAssertTrue(prompt.contains("\(remoteRoot)/notes/alice.org2:4"))
     XCTAssertTrue(prompt.contains("\(remoteRoot)/threads/follow-up.org2:8"))
     XCTAssertTrue(prompt.contains("~~~org"))
@@ -17209,6 +17209,10 @@ final class Org2ModelsTests: XCTestCase {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-linkify-file-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let suiteName = "Org2LinkifyCurrentFile.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
     let node = root.appendingPathComponent("docker.org2")
     let note = root.appendingPathComponent("note.org2")
     try """
@@ -17224,21 +17228,32 @@ final class Org2ModelsTests: XCTestCase {
     Docker usage should become linked.
     """.write(to: note, atomically: true, encoding: .utf8)
 
-    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
-    store.setCorpusRoot(root)
-    store.select(.openClaw(OpenClawThread(
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: root.appendingPathComponent("chat.json")
+    )
+    store.setWorkspaceRealtimeRefreshActive(false)
+    store.setCorpusRoot(root, persistsDefault: false)
+    let location = WorkspaceLocation.openClaw(OpenClawThread(
       title: "Note",
       file: note.path,
       line: 3,
       zone: "test",
       modifiedAt: nil
-    )))
+    ))
+    store.select(location)
+    await store.loadEntrySource(for: location)
+    XCTAssertEqual(store.selectedEntrySource?.file, note.path)
 
     await store.linkifyCurrentFile()
 
     let updated = try String(contentsOf: note, encoding: .utf8)
     XCTAssertTrue(updated.contains("[[id:docker-id][Docker]] usage should become linked."))
-    XCTAssertTrue(store.statusText.contains("Linkified note.org2"))
+    XCTAssertTrue(
+      store.statusText.contains("Linkified note.org2"),
+      "status: \(store.statusText); error: \(store.errorText ?? "none")"
+    )
   }
 
   func testRefreshSelectedDataNotebookUsesOneAtomicBatchCommand() {

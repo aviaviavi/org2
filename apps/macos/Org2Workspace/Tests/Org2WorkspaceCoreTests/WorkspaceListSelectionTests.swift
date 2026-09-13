@@ -122,11 +122,31 @@ final class WorkspaceListSelectionTests: XCTestCase {
 
     XCTAssertTrue(source.contains(".task(id: remote.threadDetail?.thread.id)"))
     XCTAssertFalse(source.contains("loadingView(detailIsAvailable: true)\n            .task"))
-    XCTAssertTrue(
-      source.contains(
-        "openPendingReplyIfNeeded()\n          await remote.refresh()\n          openPendingReplyIfNeeded()"
-      )
-    )
+    // Notification routing now lives above the remote list, so a cold-launch tap
+    // can open a thread before the host or list refresh finishes.
+    let mobileContentView = mobileRemoteViews.deletingLastPathComponent()
+      .appendingPathComponent("ContentView.swift")
+    let contentSource = try String(contentsOf: mobileContentView, encoding: .utf8)
+    XCTAssertTrue(contentSource.contains(".onAppear { openPendingNotification() }"))
+    XCTAssertTrue(contentSource.contains(".onChange(of: scenePhase) { _, phase in\n      if phase == .active { openPendingNotification() }"))
+    XCTAssertTrue(contentSource.contains(".onChange(of: remote.isPaired) { _, paired in\n      if paired { openPendingNotification() }"))
+    XCTAssertTrue(contentSource.contains(".onReceive(NotificationCenter.default.publisher(for: .org2NotificationDestinationPending)) { _ in\n      openPendingNotification()"))
+
+    let routingStart = try XCTUnwrap(contentSource.range(of: "private func openPendingNotification()"))
+    let routingEnd = try XCTUnwrap(contentSource.range(
+      of: "private func closeSidebar()", range: routingStart.upperBound..<contentSource.endIndex
+    ))
+    let routing = contentSource[routingStart.lowerBound..<routingEnd.lowerBound]
+    let pendingRead = try XCTUnwrap(routing.range(of: "guard let pending = inbox.pending() else { return }"))
+    let pairingGuard = try XCTUnwrap(routing.range(of: "guard remote.isPaired else { route = .settings; return }"))
+    let threadRoute = try XCTUnwrap(routing.range(of: "route = .thread(threadID)"))
+    let agendaRoute = try XCTUnwrap(routing.range(of: "selection = .agenda"))
+    let acknowledgment = try XCTUnwrap(routing.range(of: "inbox.acknowledge(pending)"))
+    XCTAssertLessThan(pendingRead.lowerBound, pairingGuard.lowerBound)
+    XCTAssertLessThan(pairingGuard.lowerBound, threadRoute.lowerBound)
+    XCTAssertLessThan(threadRoute.lowerBound, acknowledgment.lowerBound)
+    XCTAssertLessThan(agendaRoute.lowerBound, acknowledgment.lowerBound)
+    XCTAssertFalse(routing.contains("await remote.refresh()"))
   }
 
   func testIOSSharedRoomProgressUsesTheActiveDestinationName() throws {
