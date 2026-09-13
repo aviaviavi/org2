@@ -31,6 +31,7 @@ struct CanvasNodeEditor: View {
   @State var draft: CanvasEditorDraft
   let busy: Bool
   let errorMessage: String?
+  let reload: () -> Void
   let save: ([String: Any]) -> Void
 
   var body: some View {
@@ -64,7 +65,10 @@ struct CanvasNodeEditor: View {
           endPicker("To end", value: $draft.toEnd)
         }
       }
-      if let errorMessage { Text(errorMessage).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
+      if let errorMessage {
+        Text(errorMessage).font(.caption).foregroundStyle(.red).textSelection(.enabled)
+        Button("Reload board and keep draft", action: reload)
+      }
       HStack {
         Spacer()
         Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction).disabled(busy)
@@ -80,6 +84,8 @@ struct CanvasNodeEditor: View {
           .disabled(busy || (draft.type == "link" && draft.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
       }
     }.padding(22).frame(width: 470)
+      .disabled(busy)
+      .interactiveDismissDisabled(busy)
   }
 
   private func sidePicker(_ title: String, value: Binding<String>) -> some View {

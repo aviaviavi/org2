@@ -73,7 +73,9 @@ struct JSONCanvasWorkspaceView: View {
     }
     .task(id: file) { await reload(fit: true) }
     .sheet(item: $editor) { draft in
-      CanvasNodeEditor(draft: draft, busy: busy, errorMessage: error) { fields in
+      CanvasNodeEditor(draft: draft, busy: busy, errorMessage: error, reload: {
+        Task { await reload() }
+      }) { fields in
         if let id = draft.nodeID { mutate([["action": draft.type == "edge" ? "update-edge" : "update-node", "id": id, "patch": fields]], closeEditor: true) }
         else { addNode(type: draft.type, fields: fields, closeEditor: true) }
       }
@@ -111,6 +113,7 @@ struct JSONCanvasWorkspaceView: View {
       } label: { Label("Add card", systemImage: "plus") }
       .disabled(busy || payload == nil)
       Button("Connect", systemImage: "point.topleft.down.to.point.bottomright.curvepath") {
+        isPanning = false
         connectingFrom = selectedNode
       }.disabled(busy || selected == nil || nodes.count < 2)
       if busy { ProgressView().controlSize(.small) }
