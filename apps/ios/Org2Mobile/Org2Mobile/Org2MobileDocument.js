@@ -4480,7 +4480,9 @@ ${rows}
       profile: opts.profile,
       embedResolver: opts.embedResolver,
       sourcePath: opts.sourcePath,
-      embedStack: opts.sourcePath ? [opts.embedResolver?.sourceKey ?? `${node_path_default.resolve(opts.sourcePath)}:1`] : [],
+      // Reference-only clients (including the mobile JavaScriptCore bundle) have
+      // no filesystem. Only a supplied resolver needs a canonical cycle key.
+      embedStack: opts.embedResolver && opts.sourcePath ? [opts.embedResolver.sourceKey ?? `${node_path_default.resolve(opts.sourcePath)}:1`] : [],
       embedBudget: { remaining: 32, bytes: 1024 * 1024 },
       // Precedence: built-ins < config < document-local #+LINK
       linkAbbreviations: mergeLinkAbbreviations([builtIns, configAbbreviations, documentAbbreviations])

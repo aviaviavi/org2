@@ -3,6 +3,21 @@ import { copyFileSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
+import { runInNewContext } from "node:vm";
+
+// Exercise the actual shipped bundle with its strict filesystem shim on every
+// platform. A source path supplies provenance, not permission to resolve files.
+const mobileContext = {};
+runInNewContext(readFileSync(resolve("apps/ios/Org2Mobile/Org2Mobile/Org2MobileDocument.js"), "utf8"), mobileContext);
+const mobileRuntime = mobileContext.Org2MobileDocument;
+const ordinaryNote = mobileRuntime.renderDocument("* Mobile note\nReadable offline content.\n", "notes/mobile.org");
+assert.match(ordinaryNote.html, /Readable offline content/);
+const embedReference = mobileRuntime.renderDocument("* Mobile host\n#+EMBED: file:source.org\n#+EMBED: id:source-heading\n", "notes/host.org");
+assert.match(embedReference.html, /Live content is not included in this rendering/);
+assert.match(embedReference.html, /target=file%3Asource.org/);
+assert.match(embedReference.html, /target=id%3Asource-heading/);
+assert.doesNotMatch(embedReference.html, /<iframe/);
+console.log("Mobile document bundle renders source paths and embed references without filesystem access");
 
 // Compile the actual Foundation-only iOS policy, without rebuilding the Mac app.
 if (process.platform === "darwin") {
