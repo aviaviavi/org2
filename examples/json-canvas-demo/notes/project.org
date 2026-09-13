@@ -1,0 +1,8 @@
+#+TITLE: Beacon project
+#+ID: 11111111-1111-4111-8111-111111111111
+
+* Design direction
+:PROPERTIES:
+:ID: 22222222-2222-4222-8222-222222222222
+:END:
+Keep capture simple. Make the next action visible. Share ordinary files.

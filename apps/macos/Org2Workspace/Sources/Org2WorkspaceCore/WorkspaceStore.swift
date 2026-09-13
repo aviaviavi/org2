@@ -11987,6 +11987,13 @@ public final class WorkspaceStore {
     recoveryAttempt: Int
   ) async {
     guard generation == entrySourceLoadGeneration else { return }
+    if URL(fileURLWithPath: location.file).pathExtension.lowercased() == "canvas" {
+      selectedEntrySource = nil
+      selectedEntryHTML = nil
+      isLoadingEntrySource = false
+      isRenderingEntrySource = false
+      return
+    }
     activeEntrySourceLoadingGeneration = generation
     isLoadingEntrySource = true
     isRenderingEntrySource = false
@@ -12514,6 +12521,10 @@ public final class WorkspaceStore {
   }
 
   public func linkifyCurrentFile() async {
+    guard !selectedFileIsCanvas else {
+      statusText = "Edit Canvas connections on the board"
+      return
+    }
     guard let corpusRoot else {
       statusText = "No corpus selected"
       return
@@ -14053,6 +14064,93 @@ public final class WorkspaceStore {
     let file = selectedLocation?.file ?? selectedEntrySource?.file
     guard let file else { return false }
     return URL(fileURLWithPath: file).pathExtension.lowercased() == "csv"
+  }
+
+  private func jsonCanvasMutationContext(file: String, root: String) throws -> WorkspaceDocumentCorpusContext {
+    let canonicalRoot = WorkspaceDocumentMutationLane.canonicalPath(root)
+    guard corpusRoot.map({ WorkspaceDocumentMutationLane.canonicalPath($0.path) }) == canonicalRoot,
+          let context = captureDocumentCorpusContext(forFile: file),
+          context.mutationRootPath == canonicalRoot else {
+      throw WorkspaceDocumentMutationError.outsideCorpus(file: file, root: root)
+    }
+    return context
+  }
+
+  nonisolated static func jsonCanvasRelativeResourcePath(file: String, root: String) -> String? {
+    let candidate = URL(fileURLWithPath: file).standardizedFileURL.path
+    let roots = [
+      URL(fileURLWithPath: root).standardizedFileURL.path,
+      WorkspaceDocumentMutationLane.canonicalPath(root),
+    ]
+    for rootPath in roots {
+      let prefix = rootPath.hasSuffix("/") ? rootPath : rootPath + "/"
+      if candidate.hasPrefix(prefix) {
+        // Keep the candidate lexical: the shared runtime rejects symlinks below the root.
+        return String(candidate.dropFirst(prefix.count))
+      }
+    }
+    return nil
+  }
+
+  public func mutateJSONCanvas(file: String, root: String, revision: String, operations: Data) async throws -> JSONCanvasMutationPayload {
+    let context = try jsonCanvasMutationContext(file: file, root: root)
+    let cli = self.cli
+    let result: JSONCanvasMutationPayload = try await performDocumentMutation(context: context, files: [file]) { _ in
+      try await cli.runJSON([
+        "canvas", "edit", "--dir", root, "--file", file,
+        "--if-revision", revision, "--stdin", "--apply", "--json"
+      ], standardInput: operations)
+    }
+    guard isCurrentDocumentCorpusContext(context) else { return result }
+    invalidateCanonicalDocumentCache(for: file)
+    await refreshCorpusFiles()
+    guard isCurrentDocumentCorpusContext(context) else { return result }
+    statusText = "Saved Canvas"
+    return result
+  }
+
+  public func createJSONCanvasFromPanel(importing: Bool = false) async {
+    guard let root = corpusRoot else { return }
+    var importURL: URL?
+    if importing {
+      let openPanel = NSOpenPanel()
+      openPanel.title = "Import JSON Canvas"
+      openPanel.allowedContentTypes = [UTType(filenameExtension: "canvas") ?? .data]
+      openPanel.canChooseDirectories = false
+      openPanel.allowsMultipleSelection = false
+      guard openPanel.runModal() == .OK, let url = openPanel.url else { return }
+      importURL = url
+    }
+    let panel = NSSavePanel()
+    panel.title = importing ? "Save imported Canvas in this corpus" : "Create Canvas in this corpus"
+    panel.directoryURL = root
+    panel.nameFieldStringValue = importURL?.lastPathComponent ?? "Workspace.canvas"
+    panel.allowedContentTypes = [UTType(filenameExtension: "canvas") ?? .data]
+    guard panel.runModal() == .OK, let target = panel.url else { return }
+    do {
+      let context = try jsonCanvasMutationContext(file: target.path, root: root.path)
+      var arguments = ["canvas", importing ? "import" : "create", "--dir", root.path, "--file", target.path, "--apply", "--json"]
+      if let importURL { arguments += ["--from", importURL.path] }
+      let cli = self.cli
+      let command = arguments
+      let result: JSONCanvasMutationPayload = try await performDocumentMutation(context: context, files: [target.path]) { _ in
+        try await cli.runJSON(command)
+      }
+      guard isCurrentDocumentCorpusContext(context) else { return }
+      await refreshCorpusFiles()
+      guard isCurrentDocumentCorpusContext(context) else { return }
+      selectCorpusFile(CorpusFile(path: result.file, relativePath: relativePath(result.file), modifiedAt: Date(), byteCount: nil))
+      statusText = importing ? "Imported Canvas" : "Created Canvas"
+      errorText = nil
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Could not create Canvas"
+    }
+  }
+
+  public var selectedFileIsCanvas: Bool {
+    guard let file = selectedLocation?.file else { return false }
+    return URL(fileURLWithPath: file).pathExtension.lowercased() == "canvas"
   }
 
   public var selectedFileIsPDF: Bool {
@@ -26481,7 +26579,7 @@ public final class WorkspaceStore {
   ) -> CorpusFileEventClassification {
     let root = corpusRoot.standardizedFileURL.path
     let rootPrefix = root + "/"
-    let contentExtensions = Set(["org", "org2", "md", "csv"])
+    let contentExtensions = Set(["org", "org2", "md", "csv", "canvas"])
     var contentPaths: [String] = []
     var seenContentPaths = Set<String>()
     var hasAgentRunStateChanges = false
@@ -42238,7 +42336,7 @@ public final class WorkspaceStore {
   nonisolated private static func scanCorpusFiles(corpusRoot: URL) throws -> [CorpusFile] {
     let root = corpusRoot.standardizedFileURL
     let resourceKeys: Set<URLResourceKey> = [.isRegularFileKey, .isDirectoryKey, .contentModificationDateKey, .fileSizeKey]
-    let allowedExtensions = Set(["org", "org2", "md", "csv"])
+    let allowedExtensions = Set(["org", "org2", "md", "csv", "canvas"])
     guard let enumerator = FileManager.default.enumerator(
       at: root,
       includingPropertiesForKeys: Array(resourceKeys),
@@ -42285,7 +42383,7 @@ public final class WorkspaceStore {
     let root = corpusRoot.standardizedFileURL
     let url = URL(fileURLWithPath: path).standardizedFileURL
     guard url.path.hasPrefix(root.path + "/"),
-          Set(["org", "org2", "md", "csv"]).contains(url.pathExtension.lowercased()),
+          Set(["org", "org2", "md", "csv", "canvas"]).contains(url.pathExtension.lowercased()),
           !isDefaultIgnoredSyncArtifactPath(url.path),
           let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .contentModificationDateKey, .fileSizeKey]),
           values.isRegularFile == true
