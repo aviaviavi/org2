@@ -115,3 +115,5 @@ OpenOrg macOS offers project groups and linked-chat context; grouping does not
 isolate permissions or provider memory. See tooling-reference.html.
 
 Live embeds: `org2 embed resolve --target id:ID|file:relative.org --file SOURCE --dir CORPUS --json` validates portable `#+EMBED:` note/heading references read-only. OpenOrg offers insertion, source navigation and automatic source refresh; shared rendering bounds cycles, duplicate IDs and content. Exports never dereference embedded source; disclosure-safe publishing emits target-free omission markers.
+
+OpenOrg Context → Graph shows interactive one- or two-hop neighborhoods and exact unlinked title/alias mentions. Shared `org2 roam connections` returns at most 60 nodes and 200 incoming mentions from the active corpus, excluding archives, ignored files, and symlinks. `org2 roam mention-link` previews one occurrence, requires an explicit target ID and source `--if-revision`, and writes only with `--apply`; ambiguous targets are never chosen automatically.

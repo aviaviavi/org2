@@ -883,6 +883,22 @@ org2 roam graph --dir ~/notes --recursive --format json
 
 Org2 supports both title-based wiki links and explicit =id:= links, with backlinks across both forms. Linkify and graph reports are intended as compiler-style maintenance passes: preview references, strengthen links deliberately, and inspect corpus connectivity without leaving plain files. =org2 roam linkify --format json= reports exact title/alias replacements plus review-only represented-node suggestions with confidence, evidence tokens, and source ranges for headings or multi-line paragraphs; =--apply= only writes exact safe replacements, never semantic suggestions. =org2 roam graph --format report= emits a human-readable maintenance view with graph summary, orphan/high-degree nodes, alias/title collisions, unresolved or ambiguous links with file/line citations, and linkify suggestions; =--format json= includes the same =maintenance= payload for scripts and CI.
 
+** Local neighborhoods and individual mentions
+
+#+begin_src sh
+org2 roam connections --dir ~/notes --id alpha-stable --depth 2 --format json
+org2 roam connections --dir ~/notes --file ~/notes/project.org --line 17 --format json
+org2 roam mention-link --dir ~/notes --file ~/notes/meeting.org --mention KEY --target alpha-stable --if-revision sha256:HASH --format json
+# Inspect the preview, then repeat the same command with --apply.
+#+end_src
+
+=connections= returns =org2:connections:v1=: a nullable =neighborhood= with its focus, nodes, directed edges, depth, and truncation flag, plus =mentions= and =mentionsTruncated=. File and heading nodes retain one-based source lines and IDs. Graph edges reuse the roam graph's explicit-ID and unambiguous title/alias resolution. Missing focus IDs yield an empty neighborhood. A file/line focus chooses the containing stable-ID heading or file node. The command scans the active root recursively; it does not follow symlinks or implicit corpus mounts. Corpus =ignorePatterns= and default archive/build/hidden-directory exclusions apply.
+
+Each exact mention includes its source file, one-based line, zero-based UTF-16 =start=/exclusive =end= columns, context, stable occurrence key, source SHA-256 revision, candidate IDs/files/titles, and =ambiguous= flag. Results include matches for the focus's title and aliases in other files; they do not interpret semantic suggestions as exact text edits. Existing links and linkify-protected text remain unchanged. The response is bounded to 60 graph nodes and 200 mentions; explore another focus or link and refresh to continue.
+
+=mention-link= requires one occurrence key, an explicit destination ID, and the source's =--if-revision=. It rechecks the occurrence and current target index, refuses duplicate target IDs and stale source, and previews the resulting source. =--apply= makes one atomic revision-guarded write preserving line endings and file mode. It never batch-links ambiguous text or publishes a corpus. OpenOrg's Context → Graph panel consumes these same commands.
+
+
 * Org-crypt
 
 Org2 keeps the existing Org-style =:crypt:= convention and encrypts at the subtree boundary. A subtree can be encrypted symmetrically with a passphrase, or to multiple public-key recipients so the same private note can be opened by your user key, another device key, and an agent key without sharing one password around.
@@ -1046,3 +1062,5 @@ drawer containing =:ID:=. All remaining content uses normal Org headings,
 TODOs, tags, planning, and links. There is no separate project database.
 
 Property views validate source projections against canonical AST ranges: headings and property drawers in examples do not become editable rows. Malformed source notes are omitted with per-file =diagnostics= in query results, also shown in the Mac view.
+
+Raw captures remain immutable: graph reads may include them, but unlinked-mention actions exclude =raw/= and the mutation command rejects raw source edits.

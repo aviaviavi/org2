@@ -175,3 +175,34 @@ assert.match(auditText, /review suggestion:/);
 const candidates = JSON.parse(execFileSync('node', [cli, 'graph', 'repair-candidates', '--dir', tmpDir, '--recursive', '--format', 'json'], { encoding: 'utf8' }));
 assert.equal(candidates.$schema, 'org2:graph-repair-candidates:v1');
 assert.ok(candidates.candidates.length > 0);
+
+const metadataBoundary = path.join(tmpDir, 'metadata-boundary.org');
+const metadataSource = `#+TITLE: Metadata boundary
+#+DESCRIPTION: id:keyword-only [[Keyword only]]
+:PROPERTIES:
+:ID: metadata-boundary
+:ORG2_PROVENANCE: id:metadata-missing
+:RELATED: [[Metadata Wiki]]
+:END:
+Prose references id:metadata-missing and [[Metadata Wiki]].
+#+begin_src org
+#+begin_example
+#+end_example
+id:source-example [[Source example]]
+#+end_src
+  : id:fixed-width [[Fixed width]]
+* COMMENT Hidden example
+id:commented-example [[Commented example]]
+`;
+fs.writeFileSync(metadataBoundary, metadataSource);
+const metadataLint = JSON.parse(execFileSync('node', [cli, 'lint', '--file', metadataBoundary, '--format', 'json'], { encoding: 'utf8' }));
+const proseLine = metadataSource.split('\n').findIndex(line => line.startsWith('Prose references')) + 1;
+const proseFindings = metadataLint.issues.filter(issue => ['unresolved-id-link', 'unresolved-wiki-link'].includes(issue.rule));
+assert.equal(proseFindings.length, 2, 'Only actual prose should contribute graph link diagnostics');
+assert.ok(proseFindings.every(issue => issue.line === proseLine));
+assert.ok(metadataLint.issues.some(issue => issue.rule === 'artifact-provenance-id-missing'), 'Dedicated provenance validation must remain active');
+const metadataGraph = JSON.parse(execFileSync('node', [cli, 'roam', 'graph', '--dir', tmpDir, '--recursive', '--format', 'json'], { encoding: 'utf8' }));
+const metadataGraphFindings = metadataGraph.maintenance.linkFindings.filter(finding => finding.file === metadataBoundary);
+assert.equal(metadataGraphFindings.length, 2);
+assert.ok(metadataGraphFindings.every(finding => finding.line === proseLine));
+console.log('✓ graph maintenance keeps metadata, literal blocks and commented source outside prose diagnostics');

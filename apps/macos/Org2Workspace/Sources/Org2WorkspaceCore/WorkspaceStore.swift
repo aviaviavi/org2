@@ -12477,6 +12477,33 @@ public final class WorkspaceStore {
     return environment
   }
 
+  public func linkConnectionMention(_ mention: NodeUnlinkedMention, target: String, root: String) async throws {
+    guard corpusRoot?.path == root,
+          let context = captureDocumentCorpusContext(forFile: mention.file),
+          context.mutationRootPath == root else {
+      throw WorkspaceDocumentMutationError.outsideCorpus(file: mention.file, root: root)
+    }
+    if selectedEntrySource?.file == mention.file && (hasActiveEdit || liveFileEditorHasUnsavedChanges) {
+      throw NSError(domain: "OpenOrg.Connections", code: 1, userInfo: [NSLocalizedDescriptionKey: "Finish editing this source, then refresh connections before linking."])
+    }
+    let cli = self.cli
+    let result: NodeMentionLinkPayload = try await performDocumentMutation(context: context, files: [mention.file]) { _ in
+      try await cli.runJSON([
+        "roam", "mention-link", "--dir", root, "--file", mention.file,
+        "--mention", mention.id, "--target", target, "--if-revision", mention.revision,
+        "--apply", "--format", "json"
+      ])
+    }
+    guard isCurrentDocumentCorpusContext(context) else { return }
+    if result.applied {
+      invalidateCanonicalDocumentCache(for: mention.file)
+      if let selectedLocation { await loadEntrySource(for: selectedLocation) }
+      await refreshCorpusFiles()
+      if let selectedLocation { await loadBacklinks(for: selectedLocation) }
+      statusText = "Linked ‘\(mention.text)’ in \(relativePath(mention.file))"
+    }
+  }
+
   public func linkifyCurrentFile() async {
     guard let corpusRoot else {
       statusText = "No corpus selected"
@@ -44057,6 +44084,7 @@ public enum NodeContextTab: String, CaseIterable, Identifiable, Sendable {
   case overview
   case references
   case related
+  case connections
   case brief
 
   public var id: String { rawValue }
@@ -44066,6 +44094,7 @@ public enum NodeContextTab: String, CaseIterable, Identifiable, Sendable {
     case .overview: "Overview"
     case .references: "References"
     case .related: "Related"
+    case .connections: "Graph"
     case .brief: "Brief"
     }
   }

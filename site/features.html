@@ -75,7 +75,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
       <p>TODO state, schedules, deadlines, priorities, effort, tags, IDs, aliases, and links are readable in the note. OpenOrg turns them into focused agenda views and useful context around whatever you are working on.</p>
       <ul>
         <li>Agenda across many files, with date windows, filters, grouping, and corpus-wide TODO defaults in Settings, with file-specific vocabularies with active and terminal states.</li>
-        <li>A context pane brings together backlinks, related notes, and source-cited AI briefs; linked action items stay beside the note.</li>
+        <li>A context pane brings together backlinks, interactive local graphs, unlinked mentions with explicit linking, related notes, and source-cited AI briefs; linked action items stay beside the note.</li>
         <li>Full workspace refresh overlaps independent work, batches agent-state reads, and reuses unchanged native TODO scan results.</li>
         <li>Stable IDs, dailies, node creation, link previews, and graph-health checks keep the underlying connections portable.</li>
         <li>Preview-first mutations from the CLI and editors; writes require an explicit apply step.</li>
@@ -224,7 +224,7 @@ project UI is available on macOS; the portable file and CLI are shared.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="live-note-and-heading-embeds">Live note and heading embeds</h1>
-<p>OpenOrg renders portable <code>#+EMBED:</code> references to whole notes and stable-ID heading subtrees inline, with source navigation, automatic refresh, and bounded cycle/missing-target handling. Use <strong>File → Live Embed…</strong> or the source editor's <strong>Insert</strong> menu. Content stays in the canonical source; rendering is read-only and shared with the runtime. Exports retain references without fetching source content, while disclosure-safe publishing emits target-free omission markers. See <a href="editors-macos.html">OpenOrg for macOS</a> and <a href="reference.html">the command reference</a>.</p>
+<p>OpenOrg renders portable <code>#+EMBED:</code> references to whole notes and stable-ID heading subtrees inline, with source navigation, automatic refresh, and bounded cycle/missing-target handling. Use <strong>File → Live Embed…</strong> or the source editor's <strong>Insert</strong> menu. Content stays in the canonical source; rendering is read-only and shared with the runtime. HTML and reading-layout PDF exports retain references without fetching source content; Beamer export omits embed directives, while disclosure-safe publishing emits target-free omission markers. See <a href="editors-macos.html">OpenOrg for macOS</a> and <a href="reference.html">the command reference</a>.</p>
 </section>
 </main>
 </div>

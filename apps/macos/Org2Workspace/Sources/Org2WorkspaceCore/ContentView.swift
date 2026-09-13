@@ -13319,6 +13319,8 @@ private struct NodeContextPane: View {
           NodeContextReferences()
         case .related:
           NodeContextRelated()
+        case .connections:
+          NodeConnectionsView()
         case .brief:
           NodeContextBrief()
         }
