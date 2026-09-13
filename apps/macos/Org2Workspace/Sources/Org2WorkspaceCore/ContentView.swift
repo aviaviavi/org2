@@ -12107,6 +12107,10 @@ private struct OrgRenderedDocumentPreview: View {
             askAIAboutHeading: { store.askOpenClawAboutSourceHeading(at: $0) },
             performEntryAction: { store.performRenderedEntryAction($0, at: $1) },
             reportStatus: { store.statusText = $0 },
+            allowsCheckboxMutations: source.isEditable,
+            setCheckboxState: { line, checked in
+              await store.setRenderedDocumentCheckbox(at: line, checked: checked)
+            },
             allowsTablePersistence: source.isEditable,
             saveTableView: { store.requestSaveRenderedTableView($0) },
             recalculateTableFormulas: { store.requestRecalculateRenderedTableFormulas(at: $0) },

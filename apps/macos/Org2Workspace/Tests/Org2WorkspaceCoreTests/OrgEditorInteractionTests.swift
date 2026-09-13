@@ -8,6 +8,13 @@ import XCTest
 private var retainedInteractionWindows: [NSWindow] = []
 
 @MainActor
+private final class RenderedCheckboxBridgeRecorder {
+  var line: Int?
+  var checked: Bool?
+  var shouldPersist = false
+}
+
+@MainActor
 final class OrgEditorInteractionTests: XCTestCase {
   func testRenderedDocumentLoadsLocalImageBesideSourceFile() async throws {
     let root = FileManager.default.temporaryDirectory
@@ -240,6 +247,117 @@ final class OrgEditorInteractionTests: XCTestCase {
       contentWorld: .page
     )
     try await waitForCondition { receivedLine == 40 }
+  }
+
+  func testRenderedCheckboxReportsItsSourceLineAndRollsBackAFailedWrite() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-rendered-checkbox-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let file = root.appendingPathComponent("groceries.org")
+    let source = EntrySource(
+      file: file.path,
+      startLine: 40,
+      endLineExclusive: 42,
+      text: "* Groceries\n- [ ] Sriracha",
+      isSubtree: true
+    )
+    let html = try await Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()).renderAppHTML(
+      source.text,
+      sourcePath: source.file,
+      sourceLineOffset: source.startLine - 1
+    )
+    let recorder = RenderedCheckboxBridgeRecorder()
+    let content = OrgHTMLDocumentView(
+      html: html,
+      source: source,
+      corpusRoot: root,
+      searchQuery: nil,
+      searchOccurrenceIndex: nil,
+      searchOccurrenceCount: 0,
+      scrollRequest: nil,
+      layout: OrgHTMLDocumentLayout(width: .comfortable, margin: .standard),
+      askAIAboutHeading: { _ in },
+      performEntryAction: { _, _ in },
+      reportStatus: { _ in },
+      allowsCheckboxMutations: true,
+      setCheckboxState: { line, checked in
+        recorder.line = line
+        recorder.checked = checked
+        return recorder.shouldPersist
+      }
+    )
+    let hostingView = NSHostingView(rootView: content)
+    let window = NSWindow(
+      contentRect: NSRect(x: 0, y: 0, width: 600, height: 400),
+      styleMask: [.titled, .closable],
+      backing: .buffered,
+      defer: false
+    )
+    window.contentView = hostingView
+    window.makeKeyAndOrderFront(nil)
+    retainedInteractionWindows.append(window)
+
+    var webView: WKWebView?
+    try await waitForCondition {
+      webView = firstWebView(in: window.contentView)
+      return webView != nil
+    }
+    let renderedWebView = try XCTUnwrap(webView)
+    let deadline = Date().addingTimeInterval(5)
+    var checkboxIsInteractive = false
+    while Date() < deadline && !checkboxIsInteractive {
+      checkboxIsInteractive = (try? await renderedWebView.callAsyncJavaScript(
+        "return document.querySelector('li[data-org2-start-line] > input[type=checkbox]')?.disabled === false;",
+        arguments: [:],
+        in: nil,
+        contentWorld: .page
+      )) as? Bool == true
+      if !checkboxIsInteractive { try await pumpRunLoop() }
+    }
+    XCTAssertTrue(checkboxIsInteractive)
+
+    _ = try await renderedWebView.callAsyncJavaScript(
+      "document.querySelector('li[data-org2-start-line] > input[type=checkbox]').click(); return true;",
+      arguments: [:],
+      in: nil,
+      contentWorld: .page
+    )
+    try await waitForCondition { recorder.line == 41 && recorder.checked == true }
+    var rolledBack = false
+    while Date() < deadline && !rolledBack {
+      rolledBack = (try? await renderedWebView.callAsyncJavaScript(
+        """
+        const checkbox = document.querySelector('li[data-org2-start-line] > input[type=checkbox]');
+        return checkbox.checked === false && checkbox.disabled === false;
+        """,
+        arguments: [:],
+        in: nil,
+        contentWorld: .page
+      )) as? Bool == true
+      if !rolledBack { try await pumpRunLoop() }
+    }
+    XCTAssertTrue(rolledBack)
+
+    recorder.shouldPersist = true
+    recorder.line = nil
+    recorder.checked = nil
+    _ = try await renderedWebView.callAsyncJavaScript(
+      "document.querySelector('li[data-org2-start-line] > input[type=checkbox]').click(); return true;",
+      arguments: [:],
+      in: nil,
+      contentWorld: .page
+    )
+    try await waitForCondition { recorder.line == 41 && recorder.checked == true }
+    let persistedState = try await renderedWebView.callAsyncJavaScript(
+      """
+      const checkbox = document.querySelector('li[data-org2-start-line] > input[type=checkbox]');
+      return checkbox.checked === true && checkbox.disabled === true;
+      """,
+      arguments: [:],
+      in: nil,
+      contentWorld: .page
+    ) as? Bool
+    XCTAssertEqual(persistedState, true)
   }
 
   func testRenderedHeadingInstallsEntryContextMenuBridge() async throws {

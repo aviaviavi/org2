@@ -20904,6 +20904,56 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testRenderedDocumentCheckboxWritesAndRejectsAStaleSourceLine() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-html-checkbox-toggle-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("groceries.org")
+    try """
+    * Groceries
+    - [ ] Sriracha
+    - [ ] Ginger
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let itemJSON = """
+    {
+      "todo": "TODO",
+      "headline": "Groceries",
+      "kind": "SCHEDULED",
+      "file": "\(note.path)",
+      "line": 1,
+      "body": "- [ ] Sriracha\\n- [ ] Ginger",
+      "level": 1,
+      "tags": [],
+      "properties": {}
+    }
+    """
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data(itemJSON.utf8))
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.selectedEntrySourceMode = .page
+    store.select(.agenda(item))
+    await store.loadEntrySource(for: .agenda(item))
+    try await waitForEntryRender(store)
+
+    await store.setRenderedDocumentCheckbox(at: 2, checked: true)
+    try await waitForCondition {
+      (try? String(contentsOf: note, encoding: .utf8).contains("- [X] Sriracha")) == true
+    }
+    XCTAssertEqual(store.statusText, "Marked complete")
+
+    let externallyChanged = try String(contentsOf: note, encoding: .utf8)
+      .replacingOccurrences(of: "- [ ] Ginger", with: "- [ ] Fresh ginger")
+    try externallyChanged.write(to: note, atomically: true, encoding: .utf8)
+
+    await store.setRenderedDocumentCheckbox(at: 3, checked: true)
+    let preserved = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(preserved.contains("- [ ] Fresh ginger"))
+    XCTAssertFalse(preserved.contains("- [X] Fresh ginger"))
+    XCTAssertEqual(store.statusText, "Checkbox update failed")
+  }
+
+  @MainActor
   func testTogglesRenderedHeadingTodoInSource() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-heading-todo-toggle-\(UUID().uuidString)", isDirectory: true)

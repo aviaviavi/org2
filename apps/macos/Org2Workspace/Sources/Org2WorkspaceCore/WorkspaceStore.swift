@@ -972,6 +972,11 @@ private struct CompletedFileUndoSnapshot: Sendable {
   let next: String
 }
 
+private struct RenderedCheckboxMutation: Sendable {
+  let previous: String
+  let next: String
+}
+
 private struct OpenClawLocalEditDiskBaseline: Sendable {
   let existed: Bool
   let text: String
@@ -16308,6 +16313,104 @@ public final class WorkspaceStore {
     } catch {
       errorText = error.localizedDescription
       statusText = "Checkbox update failed"
+    }
+  }
+
+  @discardableResult
+  public func setRenderedDocumentCheckbox(at line: Int, checked: Bool) async -> Bool {
+    guard let source = selectedEntrySource, source.isEditable else {
+      statusText = "No editable source loaded"
+      return false
+    }
+    guard line >= source.startLine,
+          line < source.endLineExclusive,
+          let block = selectedRenderedBlocks.first(where: { candidate in
+            guard candidate.startLine == line else { return false }
+            if case .listItem(_, _, let checkbox, _) = candidate.rendered {
+              return checkbox != nil
+            }
+            return false
+          }),
+          case .listItem(_, _, let current, _) = block.rendered,
+          let current
+    else {
+      errorText = "The rendered checkbox no longer matches its source. The document was reloaded."
+      statusText = "Checkbox update conflicted"
+      if let selectedLocation { scheduleEntrySourceLoad(for: selectedLocation) }
+      return false
+    }
+
+    let target: OrgListCheckbox = checked ? .checked : .unchecked
+    guard current != target else {
+      statusText = checked ? "Already complete" : "Already incomplete"
+      if let selectedLocation { scheduleEntrySourceLoad(for: selectedLocation) }
+      return false
+    }
+    guard let replacement = Self.listItemCheckboxRawText(block.rawText, state: target) else {
+      errorText = "The rendered checkbox no longer matches its source. The document was reloaded."
+      statusText = "Checkbox update conflicted"
+      if let selectedLocation { scheduleEntrySourceLoad(for: selectedLocation) }
+      return false
+    }
+    guard let context = captureDocumentCorpusContext(forFile: source.file) else {
+      errorText = WorkspaceDocumentMutationError.outsideCorpus(
+        file: source.file,
+        root: corpusRoot?.path ?? "(none)"
+      ).localizedDescription
+      statusText = "Checkbox update failed"
+      return false
+    }
+
+    isSavingBlock = true
+    defer { isSavingBlock = false }
+
+    do {
+      let mutation: RenderedCheckboxMutation? = try await performDocumentMutation(
+        context: context,
+        files: [source.file]
+      ) { execution in
+        let snapshot = try await execution.readSnapshot(at: URL(fileURLWithPath: source.file))
+        let output = try Self.textByReplacingSourceRange(
+          in: snapshot.text,
+          file: source.file,
+          startLine: block.startLine,
+          endLineExclusive: block.endLineExclusive,
+          replacement: replacement,
+          expectedOriginal: block.rawText
+        )
+        guard output != snapshot.text else { return nil }
+        try await execution.commit(output, over: snapshot) { text, url, previous in
+          try Self.commitDocumentText(
+            text,
+            url: url,
+            previousText: previous,
+            operation: "rendered checkbox update"
+          )
+        }
+        guard snapshot.text.utf8.count <= Self.workspaceUndoSnapshotMaxBytes,
+              output.utf8.count <= Self.workspaceUndoSnapshotMaxBytes
+        else { return nil }
+        return RenderedCheckboxMutation(previous: snapshot.text, next: output)
+      }
+      if let mutation {
+        recordFileUndo(file: source.file, previous: mutation.previous, next: mutation.next)
+      }
+      invalidateCanonicalDocumentCache(for: source.file)
+      statusText = checked ? "Marked complete" : "Marked incomplete"
+      if selectedEntrySource?.id == source.id,
+         let selectedLocation {
+        scheduleEntrySourceLoad(for: selectedLocation)
+      }
+      scheduleAgendaRefresh(preserveSelection: true)
+      return true
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Checkbox update failed"
+      if selectedEntrySource?.id == source.id,
+         let selectedLocation {
+        scheduleEntrySourceLoad(for: selectedLocation)
+      }
+      return false
     }
   }
 
@@ -40404,6 +40507,13 @@ public final class WorkspaceStore {
     _ rawText: String,
     current: OrgListCheckbox
   ) -> String? {
+    listItemCheckboxRawText(rawText, state: current.toggled)
+  }
+
+  nonisolated private static func listItemCheckboxRawText(
+    _ rawText: String,
+    state: OrgListCheckbox
+  ) -> String? {
     var lines = normalizeLineEndings(rawText)
       .split(separator: "\n", omittingEmptySubsequences: false)
       .map(String.init)
@@ -40424,7 +40534,7 @@ public final class WorkspaceStore {
     let restLocation = match.range.location + match.range.length
     let restLength = max(0, (first as NSString).length - restLocation)
     let rest = (first as NSString).substring(with: NSRange(location: restLocation, length: restLength))
-    lines[0] = "\(prefix)\(current.toggled.rawMarker)\(suffix)\(rest)"
+    lines[0] = "\(prefix)\(state.rawMarker)\(suffix)\(rest)"
     return lines.joined(separator: "\n")
   }
 

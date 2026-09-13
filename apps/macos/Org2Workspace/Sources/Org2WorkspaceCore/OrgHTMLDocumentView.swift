@@ -443,6 +443,8 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
   let performEntryAction: @MainActor (OrgHTMLRenderedEntryAction, Int) -> Void
   var allowsEntryContextMenu = true
   let reportStatus: @MainActor (String) -> Void
+  var allowsCheckboxMutations = false
+  var setCheckboxState: @MainActor (_ line: Int, _ checked: Bool) async -> Bool = { _, _ in false }
   var allowsTablePersistence = false
   var saveTableView: @MainActor (OrgHTMLTableViewSnapshot) -> Void = { _ in }
   var recalculateTableFormulas: @MainActor (Int) -> Void = { _ in }
@@ -476,6 +478,10 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
       context.coordinator,
       name: Coordinator.paneActivationMessageHandlerName
     )
+    configuration.userContentController.add(
+      context.coordinator,
+      name: Coordinator.checkboxMessageHandlerName
+    )
     configuration.userContentController.addUserScript(WKUserScript(
       source: Coordinator.paneActivationInstallationScript,
       injectionTime: .atDocumentStart,
@@ -507,6 +513,9 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
     coordinator.performEntryAction = performEntryAction
     coordinator.allowsEntryContextMenu = allowsEntryContextMenu
     coordinator.reportStatus = reportStatus
+    let checkboxMutationsChanged = coordinator.allowsCheckboxMutations != allowsCheckboxMutations
+    coordinator.allowsCheckboxMutations = allowsCheckboxMutations
+    coordinator.setCheckboxState = setCheckboxState
     let tablePersistenceChanged = coordinator.allowsTablePersistence != allowsTablePersistence
     coordinator.allowsTablePersistence = allowsTablePersistence
     coordinator.saveTableView = saveTableView
@@ -527,6 +536,8 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
       )
     } else if layoutChanged {
       coordinator.applyLayout(to: webView)
+    } else if checkboxMutationsChanged {
+      coordinator.applyCheckboxMutations(to: webView)
     } else if tablePersistenceChanged {
       coordinator.applyTablePersistence(to: webView)
     } else if coordinator.searchQuery != searchQuery {
@@ -567,6 +578,9 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
     webView.configuration.userContentController.removeScriptMessageHandler(
       forName: Coordinator.paneActivationMessageHandlerName
     )
+    webView.configuration.userContentController.removeScriptMessageHandler(
+      forName: Coordinator.checkboxMessageHandlerName
+    )
   }
 
   private static func movesSearchBackward(from previous: Int?, to next: Int?, count: Int) -> Bool {
@@ -594,6 +608,7 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
     nonisolated static let tableFormulaMessageHandlerName = "org2TableFormula"
     nonisolated static let entryContextMenuMessageHandlerName = "org2EntryContextMenu"
     nonisolated static let paneActivationMessageHandlerName = "org2PaneActivation"
+    nonisolated static let checkboxMessageHandlerName = "org2CheckboxMutation"
     weak var webView: WKWebView?
     var renderID: String?
     var searchQuery: String?
@@ -612,6 +627,8 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
     var allowsEntryContextMenu = true
     var entryContextMenuLine: Int?
     var reportStatus: @MainActor (String) -> Void = { _ in }
+    var allowsCheckboxMutations = false
+    var setCheckboxState: @MainActor (_ line: Int, _ checked: Bool) async -> Bool = { _, _ in false }
     var allowsTablePersistence = false
     var saveTableView: @MainActor (OrgHTMLTableViewSnapshot) -> Void = { _ in }
     var recalculateTableFormulas: @MainActor (Int) -> Void = { _ in }
@@ -630,6 +647,7 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation?) {
       applyLayout(to: webView)
+      applyCheckboxMutations(to: webView)
       applyTablePersistence(to: webView)
       installRichCopyHandler(in: webView)
       if allowsEntryContextMenu {
@@ -674,6 +692,22 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
               let y = (payload["y"] as? NSNumber)?.doubleValue
         else { return }
         presentEntryContextMenu(line: line, x: x, y: y)
+      case Self.checkboxMessageHandlerName:
+        guard allowsCheckboxMutations,
+              let payload = message.body as? [String: Any],
+              let line = (payload["line"] as? NSNumber)?.intValue,
+              line > 0,
+              let checked = (payload["checked"] as? NSNumber)?.boolValue
+        else { return }
+        Task { @MainActor [weak self] in
+          guard let self else { return }
+          let persisted = await self.setCheckboxState(line, checked)
+          self.finishCheckboxMutation(
+            at: line,
+            requestedChecked: checked,
+            persisted: persisted
+          )
+        }
       default:
         return
       }
@@ -916,6 +950,70 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
     func applyTablePersistence(to webView: WKWebView) {
       let enabled = allowsTablePersistence ? "true" : "false"
       webView.evaluateJavaScript("window.__org2SetTablePersistenceEnabled?.(\(enabled));")
+    }
+
+    func applyCheckboxMutations(to webView: WKWebView) {
+      let enabled = allowsCheckboxMutations ? "true" : "false"
+      webView.evaluateJavaScript(Self.checkboxMutationInstallationScript)
+      webView.evaluateJavaScript("window.__org2SetCheckboxMutationsEnabled?.(\(enabled));")
+    }
+
+    func finishCheckboxMutation(
+      at line: Int,
+      requestedChecked: Bool,
+      persisted: Bool
+    ) {
+      let checked = requestedChecked ? "true" : "false"
+      let saved = persisted ? "true" : "false"
+      webView?.evaluateJavaScript(
+        "window.__org2FinishCheckboxMutation?.(\(line), \(checked), \(saved));"
+      )
+    }
+
+    nonisolated static var checkboxMutationInstallationScript: String {
+      """
+      (() => {
+        if (!window.__org2CheckboxMutationInstalled) {
+          window.__org2CheckboxMutationInstalled = true;
+          document.addEventListener('change', (event) => {
+            const checkbox = event.target instanceof HTMLInputElement ? event.target : null;
+            if (!checkbox || checkbox.type !== 'checkbox' || checkbox.dataset.org2InteractiveCheckbox !== 'true') return;
+            const item = checkbox.closest('li[data-org2-start-line]');
+            const line = Number(item?.dataset.org2StartLine || 0);
+            if (!line) return;
+            checkbox.disabled = true;
+            checkbox.setAttribute('aria-busy', 'true');
+            window.webkit.messageHandlers.\(Self.checkboxMessageHandlerName).postMessage({
+              line,
+              checked: checkbox.checked
+            });
+          }, true);
+        }
+        window.__org2SetCheckboxMutationsEnabled = (enabled) => {
+          window.__org2CheckboxMutationsEnabled = Boolean(enabled);
+          for (const checkbox of document.querySelectorAll('li[data-org2-start-line] > input[type="checkbox"]')) {
+            checkbox.dataset.org2InteractiveCheckbox = enabled ? 'true' : 'false';
+            checkbox.disabled = !enabled;
+            checkbox.style.cursor = enabled ? 'pointer' : '';
+            checkbox.removeAttribute('aria-busy');
+            checkbox.title = enabled
+              ? (checkbox.checked ? 'Mark incomplete' : 'Mark complete')
+              : '';
+          }
+        };
+        window.__org2FinishCheckboxMutation = (line, requestedChecked, persisted) => {
+          const item = document.querySelector(`li[data-org2-start-line="${line}"]`);
+          const checkbox = item?.querySelector(':scope > input[type="checkbox"]');
+          if (!checkbox) return;
+          if (!persisted) checkbox.checked = !requestedChecked;
+          checkbox.disabled = persisted || !window.__org2CheckboxMutationsEnabled;
+          checkbox.removeAttribute('aria-busy');
+          checkbox.title = checkbox.disabled
+            ? ''
+            : (checkbox.checked ? 'Mark incomplete' : 'Mark complete');
+        };
+      })();
+      """
     }
 
     func webView(
