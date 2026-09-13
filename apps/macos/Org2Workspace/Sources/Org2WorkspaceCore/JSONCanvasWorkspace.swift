@@ -305,9 +305,10 @@ struct JSONCanvasWorkspaceView: View {
     panel.title = "Add an image or attachment from this corpus"
     panel.directoryURL = root; panel.canChooseDirectories = false; panel.allowsMultipleSelection = false
     guard panel.runModal() == .OK, let url = panel.url else { return }
-    let prefix = root.standardizedFileURL.path + "/"
-    guard url.standardizedFileURL.path.hasPrefix(prefix) else { error = "Choose a file already inside this corpus."; return }
-    addNode(type: "file", fields: ["file": String(url.standardizedFileURL.path.dropFirst(prefix.count))])
+    guard let relativePath = WorkspaceStore.jsonCanvasRelativeResourcePath(file: url.path, root: root.path) else {
+      error = "Choose a file already inside this corpus."; return
+    }
+    addNode(type: "file", fields: ["file": relativePath])
   }
 
   private func open(_ resource: JSONCanvasResource?) {

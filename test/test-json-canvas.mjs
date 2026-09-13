@@ -39,8 +39,11 @@ try {
   const first = showJSONCanvas(root, file);
   const rootAlias = path.join(other, 'corpus-alias');
   fs.symlinkSync(root, rootAlias);
+  const secondRootAlias = path.join(other, 'another-corpus-alias');
+  fs.symlinkSync(root, secondRootAlias);
   assert.equal(showJSONCanvas(rootAlias, file).revision, first.revision);
   assert.equal(showJSONCanvas(rootAlias, path.join(rootAlias, 'boards', 'work.canvas')).revision, first.revision);
+  assert.equal(showJSONCanvas(rootAlias, path.join(secondRootAlias, 'boards', 'work.canvas')).revision, first.revision);
   assert.equal(editJSONCanvas(rootAlias, file, first.revision, [{ action: 'update-node', id: 'text', patch: { x: 42 } }]).applied, false);
   assert.equal(fs.readFileSync(file, 'utf8'), inputText);
   assert.deepEqual(first.document, original);
@@ -95,6 +98,9 @@ try {
   exportJSONCanvas(root, file, copy, true);
   assert.equal(fs.readFileSync(copy, 'utf8'), fs.readFileSync(file, 'utf8'));
   assert.throws(() => exportJSONCanvas(root, file, copy, true), /destination exists/);
+  const aliasExport = path.join(rootAlias, 'boards', 'alias-export.canvas');
+  exportJSONCanvas(rootAlias, file, aliasExport, true);
+  assert.equal(fs.readFileSync(aliasExport, 'utf8'), fs.readFileSync(file, 'utf8'));
   const imported = path.join(root, 'boards', 'import.canvas');
   execFileSync('node', [cli, 'canvas', 'import', '--dir', root, '--file', imported, '--from', copy, '--apply', '--json']);
   assert.equal(fs.readFileSync(imported, 'utf8'), fs.readFileSync(file, 'utf8'));
@@ -115,11 +121,21 @@ try {
   fs.symlinkSync(other, path.join(root, 'outside'));
   assert.throws(() => createJSONCanvas(root, 'outside/work.canvas', true), /symlinks/);
   assert.throws(() => createJSONCanvas(rootAlias, path.join(root, 'outside', 'work.canvas'), true), /symlinks/);
+  assert.throws(() => createJSONCanvas(rootAlias, path.join(secondRootAlias, 'outside', 'work.canvas'), true), /symlinks/);
+  fs.symlinkSync(root, path.join(root, 'root-again'));
+  assert.throws(() => showJSONCanvas(rootAlias, path.join(secondRootAlias, 'root-again', 'boards', 'work.canvas')), /symlinks/);
   fs.symlinkSync(path.join(other, "absent.canvas"), path.join(root, "dangling.canvas"));
   assert.throws(() => createJSONCanvas(root, "dangling.canvas", true), /symlinks/);
   assert.ok(fs.lstatSync(path.join(root, "dangling.canvas")).isSymbolicLink());
   fs.writeFileSync(path.join(root, "script.command"), "echo never executed\n");
   assert.throws(() => exportJSONCanvas(root, file, path.join(root, "raw", "copy.canvas"), true), /raw/);
+  for (const outputRoot of [root, rootAlias, secondRootAlias]) {
+    for (const zone of ['raw', '.org2']) {
+      const forbidden = path.join(outputRoot, zone, 'alias-export.canvas');
+      assert.throws(() => exportJSONCanvas(rootAlias, file, forbidden, true), /raw or hidden/);
+      assert.ok(!fs.existsSync(forbidden));
+    }
+  }
   const foreign = { nodes: [
     { id: 'outside', type: 'file', x: 0, y: 0, width: 200, height: 200, file: '../outside.org' },
     { id: 'symlink', type: 'file', x: 220, y: 0, width: 200, height: 200, file: 'outside/export.canvas' },

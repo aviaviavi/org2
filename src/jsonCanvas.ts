@@ -91,8 +91,7 @@ function isSymbolicLink(file: string): boolean {
   catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return false; throw error; }
 }
 
-/** Only .canvas files inside the active corpus are mutated; never follow symlinks. */
-export function scopedCanvasPath(root: string, file: string, write = false): string {
+function canvasRelativePath(root: string, file: string): string | undefined {
   const rawRoot = path.resolve(root);
   const canonicalRoot = fs.realpathSync(rawRoot);
   const candidate = path.resolve(rawRoot, file);
@@ -102,10 +101,32 @@ export function scopedCanvasPath(root: string, file: string, write = false): str
   // corpus-root alias such as /tmp. Accept either root spelling, but do not
   // resolve the candidate: symlinks below the root must still be rejected.
   if (!isInside(relative)) relative = path.relative(canonicalRoot, candidate);
-  if (!isInside(relative)) throw new Error("Canvas path must be inside the active corpus");
+  if (isInside(relative)) return relative;
+  // Native file panels can use another spelling of a parent directory (for
+  // example /var while Node uses /private/var). Find the first ancestor that
+  // names this corpus, then retain every segment below it for symlink checks.
+  const ancestors: string[] = [];
+  for (let parent = path.dirname(candidate);; parent = path.dirname(parent)) {
+    ancestors.push(parent);
+    if (parent === path.dirname(parent)) break;
+  }
+  for (const parent of ancestors.reverse()) {
+    try {
+      if (fs.realpathSync(parent) === canonicalRoot) return path.relative(parent, candidate) || undefined;
+    } catch (error) {
+      if (!["ENOENT", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error;
+    }
+  }
+  return undefined;
+}
+
+/** Only .canvas files inside the active corpus are mutated; never follow symlinks. */
+export function scopedCanvasPath(root: string, file: string, write = false): string {
+  const relative = canvasRelativePath(root, file);
+  if (relative === undefined) throw new Error("Canvas path must be inside the active corpus");
   const parts = relative.split(path.sep);
   if (parts.some(part => part.startsWith(".")) || (write && parts[0]!.toLowerCase() === "raw")) throw new Error("Canvas writes cannot target raw or hidden corpus state");
-  let current = canonicalRoot;
+  let current = fs.realpathSync(root);
   for (const part of parts) {
     current = path.join(current, part);
     if (isSymbolicLink(current)) throw new Error("Canvas paths cannot traverse symlinks");
@@ -292,9 +313,8 @@ export function createJSONCanvas(root: string, file: string, apply = false, sour
 export function exportJSONCanvas(root: string, file: string, out: string, apply = false) {
   const snapshot = readGuardedFile(scopedCanvasPath(root, file));
   parseJSONCanvas(snapshot.content);
-  const output = path.resolve(out);
-  const exportRelative = path.relative(path.resolve(root), output);
-  if (exportRelative && !exportRelative.startsWith(`..${path.sep}`) && exportRelative !== ".." && !path.isAbsolute(exportRelative)) scopedCanvasPath(root, output, true);
+  let output = path.resolve(out);
+  if (canvasRelativePath(root, output) !== undefined) output = scopedCanvasPath(root, output, true);
   if (path.extname(output).toLowerCase() !== ".canvas") throw new Error("Export must use the .canvas extension");
   if (fs.existsSync(output) || isSymbolicLink(output)) throw new Error("Export destination exists; choose another file name.");
   // Explicit export destinations may be outside the corpus. Reject symlink parents.

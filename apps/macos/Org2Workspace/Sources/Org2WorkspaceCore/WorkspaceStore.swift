@@ -14066,12 +14066,34 @@ public final class WorkspaceStore {
     return URL(fileURLWithPath: file).pathExtension.lowercased() == "csv"
   }
 
-  public func mutateJSONCanvas(file: String, root: String, revision: String, operations: Data) async throws -> JSONCanvasMutationPayload {
-    guard corpusRoot?.path == root,
+  private func jsonCanvasMutationContext(file: String, root: String) throws -> WorkspaceDocumentCorpusContext {
+    let canonicalRoot = WorkspaceDocumentMutationLane.canonicalPath(root)
+    guard corpusRoot.map({ WorkspaceDocumentMutationLane.canonicalPath($0.path) }) == canonicalRoot,
           let context = captureDocumentCorpusContext(forFile: file),
-          context.mutationRootPath == root else {
+          context.mutationRootPath == canonicalRoot else {
       throw WorkspaceDocumentMutationError.outsideCorpus(file: file, root: root)
     }
+    return context
+  }
+
+  nonisolated static func jsonCanvasRelativeResourcePath(file: String, root: String) -> String? {
+    let candidate = URL(fileURLWithPath: file).standardizedFileURL.path
+    let roots = [
+      URL(fileURLWithPath: root).standardizedFileURL.path,
+      WorkspaceDocumentMutationLane.canonicalPath(root),
+    ]
+    for rootPath in roots {
+      let prefix = rootPath.hasSuffix("/") ? rootPath : rootPath + "/"
+      if candidate.hasPrefix(prefix) {
+        // Keep the candidate lexical: the shared runtime rejects symlinks below the root.
+        return String(candidate.dropFirst(prefix.count))
+      }
+    }
+    return nil
+  }
+
+  public func mutateJSONCanvas(file: String, root: String, revision: String, operations: Data) async throws -> JSONCanvasMutationPayload {
+    let context = try jsonCanvasMutationContext(file: file, root: root)
     let cli = self.cli
     let result: JSONCanvasMutationPayload = try await performDocumentMutation(context: context, files: [file]) { _ in
       try await cli.runJSON([
@@ -14106,9 +14128,7 @@ public final class WorkspaceStore {
     panel.allowedContentTypes = [UTType(filenameExtension: "canvas") ?? .data]
     guard panel.runModal() == .OK, let target = panel.url else { return }
     do {
-      guard let context = captureDocumentCorpusContext(forFile: target.path), context.mutationRootPath == root.path else {
-        throw WorkspaceDocumentMutationError.outsideCorpus(file: target.path, root: root.path)
-      }
+      let context = try jsonCanvasMutationContext(file: target.path, root: root.path)
       var arguments = ["canvas", importing ? "import" : "create", "--dir", root.path, "--file", target.path, "--apply", "--json"]
       if let importURL { arguments += ["--from", importURL.path] }
       let cli = self.cli
