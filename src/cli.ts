@@ -36,6 +36,11 @@ async function main(): Promise<void> {
     await runTodoConfigCommand(args.slice(1));
     return;
   }
+  if (args[0] === "property-view") {
+    const { runPropertyViewsCommand } = await import("./propertyViewsCli.js");
+    await runPropertyViewsCommand(args.slice(1));
+    return;
+  }
   if (args[0] === "checkbox") {
     const { runCheckboxCommand } = await import("./checkboxCli.js");
     await runCheckboxCommand(args.slice(1));

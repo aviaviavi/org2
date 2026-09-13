@@ -136,6 +136,14 @@ Meetings can be recorded in OpenOrg or created from an existing audio file. Choo
 
 The *Sources* view manages supported Slack and Notion connections. Each connector can run on demand, pause or resume its schedule, and use a repeating interval or daily time. Imported material is staged for review rather than silently promoted into your canonical notes, and credentials remain outside the corpus.
 
+* Saved property views
+
+Choose *Property Views* in the workspace sidebar to build a saved table or card view over the active corpus. Choose *Headings*, *Notes*, or *Both*, optionally narrow the corpus-relative folder prefix, and list columns separated by commas. Built-in columns are =title=, =file=, =kind=, =todo=, =tags= and =id=; other names select case-insensitive property keys. Use *Add Filter* for equals, contains, presence or numeric conditions; choose all/any matching, a sort field and direction, and an optional grouping field. *Apply View* runs the shared compiler query. *Save View* persists it; *New* and *Duplicate* create separate definitions. *Refresh* reloads a saved definition and its current source rows.
+
+Click a property cell in either layout, edit the value, choose *Preview Change*, then *Apply to Source*. The preview shows the old local value and proposed value. An arrow marks inherited properties; editing them creates an override on the selected note or heading. Empty text creates an explicit empty value. Source links open the exact file and line. Save or cancel an open source editor before making cell edits. A stale source or saved definition fails with a refresh message instead of overwriting newer work. Built-in fields, stable IDs, =ORG2_= runtime metadata and immutable =raw/= imports remain read-only here.
+
+Definitions are ordinary =views/ID.org2-view.json= files using =org2:property-view:v1=. Copy one into another corpus's =views/= directory, keeping its filename matched to its ID, to reuse it there. Views contain relative scope and presentation/query choices, with no private database or machine paths. Rows are derived on Apply/Refresh and after a successful edit; a saved view never copies note bodies. The default builder shows at most 500 rows and indicates truncation. The CLI supports limits up to 5,000 and multiple sort fields. See [[file:tooling-reference.org][Tooling reference]] for the portable schema and automation commands.
+
 * Data notebooks and charts
 
 #+begin_export html

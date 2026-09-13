@@ -112,6 +112,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <li><p><code>source list</code>, <code>source doctor</code>, <code>source status</code>, <code>source bind</code>, <code>source schedule</code>, <code>source import</code>, <code>source sync</code> for external source mirrors and staged review packets</p></li>
 <li><p><code>compile corpus</code></p></li>
 <li><p><code>render-chart</code></p></li>
+<li><p><code>property-view</code></p></li>
 <li><p><code>query-data</code></p></li>
 <li><p><code>table recalculate</code></p></li>
 <li><p><code>roam ...</code></p></li>
@@ -419,6 +420,32 @@ y: fetches
 source: package_fetches_result
 #+end_src</pre>
 <p>Add <code>sort: x-asc</code>, <code>sort: x-desc</code>, <code>sort: y-asc</code>, or <code>sort: y-desc</code> when a chart preview should be ordered independently of the table rows. JSON output includes <code>ok</code>, <code>format</code>, <code>artifact</code>, <code>source</code>, <code>diagnostics</code>, and <code>svg</code> so VS Code, Vim, or agent tooling can show useful errors for missing columns, unsupported chart types, missing chart sorts, missing named source tables, or missing chart blocks.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="saved-property-views">Saved property views</h1>
+<p><code>org2 property-view</code> provides the shared runtime for OpenOrg's saved property tables and cards. All responses are JSON. Definitions are portable <code>org2:property-view:v1</code> JSON files in <code>views/ID.org2-view.json</code>, with the filename matching the definition ID. Querying scans ordinary <code>.org</code> and <code>.org2</code> sources in the active corpus, respects configured ignore patterns, and does not follow symlinks or read hidden directories. It reuses compiled corpus nodes and their effective property inheritance; there is no SQL or separate canonical store.</p>
+<pre class="org2-src language-json" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-json">{
+  &quot;schema&quot;: &quot;org2:property-view:v1&quot;,
+  &quot;id&quot;: &quot;open-work&quot;,
+  &quot;title&quot;: &quot;Open work by assignee&quot;,
+  &quot;layout&quot;: &quot;cards&quot;,
+  &quot;scope&quot;: { &quot;kind&quot;: &quot;heading&quot;, &quot;filePrefix&quot;: &quot;notes/&quot; },
+  &quot;columns&quot;: [&quot;title&quot;, &quot;STATUS&quot;, &quot;ASSIGNEE&quot;, &quot;EFFORT&quot;],
+  &quot;match&quot;: &quot;all&quot;,
+  &quot;filters&quot;: [{ &quot;field&quot;: &quot;STATUS&quot;, &quot;operator&quot;: &quot;is&quot;, &quot;value&quot;: &quot;open&quot; }],
+  &quot;sort&quot;: [{ &quot;field&quot;: &quot;EFFORT&quot;, &quot;direction&quot;: &quot;asc&quot; }],
+  &quot;groupBy&quot;: &quot;ASSIGNEE&quot;,
+  &quot;limit&quot;: 500
+}</code></pre>
+<p><code>scope.kind</code> is <code>file</code>, <code>heading</code> or <code>all</code>; optional <code>filePrefix</code> is a case-sensitive corpus-relative path prefix. <code>columns</code> supports 1–24 fields. Lowercase built-in fields <code>title/file/kind/todo/tags/id</code> are read-only; other field names normalize to uppercase property keys. <code>match</code> combines zero to 30 filters with <code>all</code> or <code>any</code>; zero filters select every scoped row. Operators <code>is/isNot/contains</code> compare case-insensitive strings, <code>exists/missing</code> test nonempty/empty values, and <code>gt/lt</code> compare finite numeric values. Missing values never satisfy numeric comparisons. <code>sort</code> supports up to eight fields with <code>asc/desc</code>; two numeric values sort numerically, otherwise case-insensitive lexical order applies, with source keys as stable tie-breakers. Optional <code>groupBy</code> emits a group value per row; clients preserve sorted order within each group. <code>limit</code> is 1–5,000; <code>total</code> and <code>truncated</code> report omitted rows.</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 property-view list --dir CORPUS
+org2 property-view query --dir CORPUS --view open-work
+org2 property-view query --dir CORPUS --definition '{&quot;schema&quot;:&quot;org2:property-view:v1&quot;,&quot;id&quot;:&quot;all-notes&quot;,&quot;title&quot;:&quot;All notes&quot;,&quot;layout&quot;:&quot;table&quot;,&quot;scope&quot;:{&quot;kind&quot;:&quot;file&quot;},&quot;columns&quot;:[&quot;title&quot;,&quot;ASSIGNEE&quot;],&quot;match&quot;:&quot;all&quot;,&quot;filters&quot;:[],&quot;sort&quot;:[],&quot;limit&quot;:500}'
+org2 property-view save --dir CORPUS --definition 'JSON_DEFINITION'
+org2 property-view save --dir CORPUS --definition 'JSON_DEFINITION' --apply
+org2 property-view edit --dir CORPUS --file notes/work.org --kind heading --line 12 --property STATUS --value review --if-revision 'sha256:SOURCE_REVISION'</code></pre>
+<p>For updates to an existing definition, both preview and apply require its <code>--if-revision</code> from <code>list</code> or the previous save. New saves require the destination to be absent. Each query row includes <code>file</code>, <code>kind</code>, <code>line</code>, source <code>revision</code>, local <code>properties</code>, <code>inheritedProperties</code>, requested <code>values</code>, and <code>editable</code>. Pass the exact row identity and revision to <code>edit</code>, inspect its old/proposed values and content, then repeat with <code>--apply</code>. Atomic writes check the same revision before replacement. A stale row must be queried again; never guess a line after the source changes.</p>
+<p>Editing uses canonical parsed source ranges, retains unrelated lines and CRLF line endings, and writes only the selected local drawer. Inherited values become local overrides; an empty value is explicit and does not remove a property. IDs, built-in fields and <code>ORG2_</code> metadata cannot be changed through this command. Paths outside the active corpus, hidden state and <code>raw/</code> imports are rejected. Property views do not mutate TODO keywords or stable links. Malformed or duplicate property drawers fail closed. A view definition can be copied to another corpus without machine bindings; its selected corpus-relative sources must exist there for results to appear.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="data-queries">Data queries</h1>
@@ -880,6 +907,7 @@ also exposes an independently fallible <code>projects</code> section.</p>
 <code>#+PROJECT_THREADS:</code> (space-separated chat UUIDs), and a file-level properties
 drawer containing <code>:ID:</code>. All remaining content uses normal Org headings,
 TODOs, tags, planning, and links. There is no separate project database.</p>
+<p>Property views validate source projections against canonical AST ranges: headings and property drawers in examples do not become editable rows. Malformed source notes are omitted with per-file <code>diagnostics</code> in query results, also shown in the Mac view.</p>
 </section>
 </main>
 </div>

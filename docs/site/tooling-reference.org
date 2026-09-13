@@ -27,6 +27,7 @@ Main workflows:
 - =source list=, =source doctor=, =source status=, =source bind=, =source schedule=, =source import=, =source sync= for external source mirrors and staged review packets
 - =compile corpus=
 - =render-chart=
+- =property-view=
 - =query-data=
 - =table recalculate=
 - =roam ...=
@@ -397,6 +398,41 @@ source: package_fetches_result
 #+end_example
 
 Add =sort: x-asc=, =sort: x-desc=, =sort: y-asc=, or =sort: y-desc= when a chart preview should be ordered independently of the table rows. JSON output includes =ok=, =format=, =artifact=, =source=, =diagnostics=, and =svg= so VS Code, Vim, or agent tooling can show useful errors for missing columns, unsupported chart types, missing chart sorts, missing named source tables, or missing chart blocks.
+
+* Saved property views
+
+=org2 property-view= provides the shared runtime for OpenOrg's saved property tables and cards. All responses are JSON. Definitions are portable =org2:property-view:v1= JSON files in =views/ID.org2-view.json=, with the filename matching the definition ID. Querying scans ordinary =.org= and =.org2= sources in the active corpus, respects configured ignore patterns, and does not follow symlinks or read hidden directories. It reuses compiled corpus nodes and their effective property inheritance; there is no SQL or separate canonical store.
+
+#+begin_src json
+{
+  "schema": "org2:property-view:v1",
+  "id": "open-work",
+  "title": "Open work by assignee",
+  "layout": "cards",
+  "scope": { "kind": "heading", "filePrefix": "notes/" },
+  "columns": ["title", "STATUS", "ASSIGNEE", "EFFORT"],
+  "match": "all",
+  "filters": [{ "field": "STATUS", "operator": "is", "value": "open" }],
+  "sort": [{ "field": "EFFORT", "direction": "asc" }],
+  "groupBy": "ASSIGNEE",
+  "limit": 500
+}
+#+end_src
+
+=scope.kind= is =file=, =heading= or =all=; optional =filePrefix= is a case-sensitive corpus-relative path prefix. =columns= supports 1–24 fields. Lowercase built-in fields =title/file/kind/todo/tags/id= are read-only; other field names normalize to uppercase property keys. =match= combines zero to 30 filters with =all= or =any=; zero filters select every scoped row. Operators =is/isNot/contains= compare case-insensitive strings, =exists/missing= test nonempty/empty values, and =gt/lt= compare finite numeric values. Missing values never satisfy numeric comparisons. =sort= supports up to eight fields with =asc/desc=; two numeric values sort numerically, otherwise case-insensitive lexical order applies, with source keys as stable tie-breakers. Optional =groupBy= emits a group value per row; clients preserve sorted order within each group. =limit= is 1–5,000; =total= and =truncated= report omitted rows.
+
+#+begin_src sh
+org2 property-view list --dir CORPUS
+org2 property-view query --dir CORPUS --view open-work
+org2 property-view query --dir CORPUS --definition '{"schema":"org2:property-view:v1","id":"all-notes","title":"All notes","layout":"table","scope":{"kind":"file"},"columns":["title","ASSIGNEE"],"match":"all","filters":[],"sort":[],"limit":500}'
+org2 property-view save --dir CORPUS --definition 'JSON_DEFINITION'
+org2 property-view save --dir CORPUS --definition 'JSON_DEFINITION' --apply
+org2 property-view edit --dir CORPUS --file notes/work.org --kind heading --line 12 --property STATUS --value review --if-revision 'sha256:SOURCE_REVISION'
+#+end_src
+
+For updates to an existing definition, both preview and apply require its =--if-revision= from =list= or the previous save. New saves require the destination to be absent. Each query row includes =file=, =kind=, =line=, source =revision=, local =properties=, =inheritedProperties=, requested =values=, and =editable=. Pass the exact row identity and revision to =edit=, inspect its old/proposed values and content, then repeat with =--apply=. Atomic writes check the same revision before replacement. A stale row must be queried again; never guess a line after the source changes.
+
+Editing uses canonical parsed source ranges, retains unrelated lines and CRLF line endings, and writes only the selected local drawer. Inherited values become local overrides; an empty value is explicit and does not remove a property. IDs, built-in fields and =ORG2_= metadata cannot be changed through this command. Paths outside the active corpus, hidden state and =raw/= imports are rejected. Property views do not mutate TODO keywords or stable links. Malformed or duplicate property drawers fail closed. A view definition can be copied to another corpus without machine bindings; its selected corpus-relative sources must exist there for results to appear.
 
 * Data queries
 
@@ -1008,3 +1044,5 @@ The metadata is =#+ORG2_KIND: project=, =#+TITLE:=, =#+PROJECT_COLOR:=,
 =#+PROJECT_THREADS:= (space-separated chat UUIDs), and a file-level properties
 drawer containing =:ID:=. All remaining content uses normal Org headings,
 TODOs, tags, planning, and links. There is no separate project database.
+
+Property views validate source projections against canonical AST ranges: headings and property drawers in examples do not become editable rows. Malformed source notes are omitted with per-file =diagnostics= in query results, also shown in the Mac view.

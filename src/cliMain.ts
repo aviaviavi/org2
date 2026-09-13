@@ -10283,6 +10283,7 @@ Roam / IDs:
   org2 clock --dir DIR [--recursive] [--format text|json]
   org2 compile corpus --dir DIR [--recursive] [--out FILE] [--format json|jsonl]
   org2 render-chart --file FILE [--block-id ID|--line N] [--out FILE] [--format svg|json]
+  org2 property-view list|query|save|edit --dir CORPUS [--help]
   org2 query-data (--file FILE|--stdin) [--results NAME|--line N] [--out FILE|--apply] [--format org|json]
   org2 table recalculate --file FILE [--line N] [--formula-index N] [--apply] [--format text|diff|json]
   org2 agent capabilities
