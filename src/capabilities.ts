@@ -160,8 +160,8 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
       },
       {
         id: "capture-and-organization",
-        purpose: "Capture source material and move reviewable subtrees through archive/refile workflows.",
-        commands: ["org2 capture", "org2 archive", "org2 refile"],
+        purpose: "Capture source material, import browser article/selection clips with immutable raw provenance and revision-guarded review notes, and move reviewable subtrees through archive/refile workflows.",
+        commands: ["org2 capture", "org2 browser-clip", "org2 archive", "org2 refile"],
         writes: "preview-by-default",
       },
       {

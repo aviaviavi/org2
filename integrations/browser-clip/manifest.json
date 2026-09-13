@@ -1,0 +1,8 @@
+{
+  "manifest_version": 3,
+  "name": "OpenOrg Web Clipper",
+  "version": "1.0.0",
+  "description": "Capture an article or selection as a local OpenOrg clip with source provenance.",
+  "permissions": ["activeTab", "scripting", "downloads"],
+  "action": { "default_popup": "popup.html", "default_title": "Clip to OpenOrg" }
+}

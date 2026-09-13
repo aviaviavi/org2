@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { renderCaptureEntry } from "./captureEntry.js";
 
 import {
   normalizeRoamLinkLabel,
@@ -9343,6 +9344,7 @@ Core commands:
   org2 approvals --dir DIR [--recursive] [--include-archives] [--index auto|never|rebuild] [--run-detail ID] [--format text|json]
   org2 plan <set|today> --file FILE (--line N | --pos LINE[:COL]) [--apply]
   org2 crypt <encrypt|decrypt|reencrypt> --file FILE (--line N | --pos LINE[:COL]) [--passphrase PASS] [--recipient USER]... [--recipient-file FILE]... [--default-recipient-self] [--gpg-program PATH] [--gpg-timeout SECONDS] [--apply]
+  org2 browser-clip import --file CLIP.org2clip --dir CORPUS [--if-revision HASH --if-clip-revision HASH --apply]
   org2 capture --file FILE --title TITLE [--template note|task] [--apply]
   org2 capture (--text TEXT|--stdin|--url URL|--file SOURCE) --to FILE [--title TITLE] [--apply]
   org2 archive --file FILE --pos LINE[:COL] [--archive-file FILE] [--apply]
@@ -11920,27 +11922,10 @@ Flags:
       process.exit(1);
     }
 
-    const headingLine =
-      normalizedTemplate === "task"
-        ? `* ${captureTodoKeyword} ${normalizedTitle}`
-        : `* ${normalizedTitle}`;
-    const capturedAt = formatOrgTimestamp(captureNowDate);
-    const propertyDrawer = source
-      ? [
-          ":PROPERTIES:",
-          `:SOURCE_TYPE: ${source.type}`,
-          `:SOURCE_ORIGIN: ${source.origin}`,
-          `:SOURCE_TIMESTAMP: ${source.timestamp}`,
-          source.author ? `:SOURCE_AUTHOR: ${source.author}` : "",
-          `:SOURCE_HASH: ${source.contentHash}`,
-          source.provenance ? `:SOURCE_PROVENANCE: ${source.provenance}` : "",
-          ":END:",
-        ].filter(Boolean).join("\n") + "\n"
-      : "";
-    const captureEntryText =
-      normalizedBody.length > 0
-        ? `${headingLine}\n${propertyDrawer}CAPTURED: ${capturedAt}\n\n${normalizedBody}\n`
-        : `${headingLine}\n${propertyDrawer}CAPTURED: ${capturedAt}\n`;
+    const { text: captureEntryText, capturedAt } = renderCaptureEntry({
+      title: normalizedTitle, template: normalizedTemplate, todoKeyword: captureTodoKeyword,
+      body: normalizedBody, now: captureNowDate, source,
+    });
 
     const beforeText = fs.existsSync(targetFile)
       ? fs.readFileSync(targetFile, "utf8").replace(/\r\n/g, "\n")

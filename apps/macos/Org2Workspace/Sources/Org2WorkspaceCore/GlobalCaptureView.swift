@@ -4,6 +4,7 @@ public struct GlobalCaptureView: View {
   @Environment(WorkspaceStore.self) private var store
   @Environment(\.dismiss) private var dismiss
   @State private var draft = WorkspaceCaptureDraft()
+  @State private var importingBrowserClip = false
   @FocusState private var focusedField: FocusedField?
 
   private enum FocusedField {
@@ -148,6 +149,7 @@ public struct GlobalCaptureView: View {
     .padding(20)
     .frame(width: 660)
     .frame(minHeight: 540)
+    .sheet(isPresented: $importingBrowserClip) { BrowserClipImportView() }
     .onAppear {
       draft = store.captureDraft
       focusedField = .title
@@ -162,6 +164,7 @@ public struct GlobalCaptureView: View {
       Text("Capture")
         .font(.title3.weight(.semibold))
       Spacer()
+      Button("Import Browser Clip", systemImage: "globe") { importingBrowserClip = true }
       Button {
         draft = store.captureDraftByImportingPasteboard(into: draft)
       } label: {
