@@ -1098,6 +1098,7 @@ type RenderContext = {
   embedStack?: string[];
   embedBudget?: { remaining: number; bytes: number };
   embedded?: boolean;
+  embeddedAnchorLines?: Map<string, number>;
 };
 
 export type OrgEmbeddedChart = {
@@ -1633,13 +1634,54 @@ function renderEmphasis(node: EmphasisNode): string {
   return `<code>${content}</code>`;
 }
 
+function embeddedFileLinkTarget(target: string, sourcePath: string): string {
+  const explicitFile = /^file:/i.test(target);
+  if (!explicitFile && /^[a-z][a-z0-9+.-]*:/i.test(target)) return target;
+  const source = explicitFile ? target.slice(5) : target;
+  const separator = source.indexOf("::");
+  const file = separator < 0 ? source : source.slice(0, separator);
+  const search = separator < 0 ? "" : source.slice(separator);
+  // Bare paths follow the native file router's path/extension convention.
+  // Plain fuzzy titles and stable ID links keep their existing lookup behavior.
+  if (!explicitFile && (!file.includes("/") && !path.extname(file))) return target;
+  if (file.startsWith("~")) return `file:${file}${search}`;
+  return `file:${path.resolve(path.dirname(sourcePath), file)}${search}`;
+}
+
+function embeddedAnchorKey(target: string): string {
+  return target.startsWith("#")
+    ? `#${(normalizeAnchorId(target.slice(1)) ?? "").toLowerCase()}`
+    : `*${slugifyHeadlineTitle(target.replace(/^\*+\s*/, ""))}`;
+}
+
+function embeddedSourceAnchorLines(document: DocumentNode): Map<string, number> {
+  const candidates = new Map<string, number | null>();
+  const add = (key: string, line: number) => candidates.set(key, candidates.has(key) ? null : line);
+  const visit = (nodes: Node[]) => {
+    for (const node of nodes) if (node.type === "Headline") {
+      const line = (node as SourceRangedNode).sourceRange?.startLine;
+      if (line !== undefined) {
+        const title = node.title.map(inlineToText).join("").trim() || "Untitled";
+        const customId = findHeadlineCustomId(node);
+        add(embeddedAnchorKey(`#${customId ?? slugifyHeadlineTitle(title)}`), line);
+        add(embeddedAnchorKey(`*${title}`), line);
+      }
+      visit(node.children);
+    }
+  };
+  visit(document.children);
+  // Ambiguity never chooses a different source heading on the user's behalf.
+  return new Map([...candidates].filter((entry): entry is [string, number] => entry[1] !== null));
+}
+
 function appLinkHref(rawTarget: string, expandedTarget: string, context: RenderContext): string {
   if (context.embedded && context.sourcePath) {
     rawTarget = expandedTarget;
-    if (rawTarget.startsWith("file:")) {
-      rawTarget = `file:${path.resolve(path.dirname(context.sourcePath), rawTarget.slice(5))}`;
-    } else if (linkTargetNeedsHeadingAnchor(rawTarget)) {
-      rawTarget = `file:${context.sourcePath}::${rawTarget}`;
+    if (linkTargetNeedsHeadingAnchor(rawTarget)) {
+      const line = context.embeddedAnchorLines?.get(embeddedAnchorKey(rawTarget));
+      rawTarget = `file:${context.sourcePath}${line === undefined ? "" : `::${line}`}`;
+    } else {
+      rawTarget = embeddedFileLinkTarget(rawTarget, context.sourcePath);
     }
     if (!/^(https?|mailto):/i.test(rawTarget)) return `org2-workspace://open-link?target=${encodeURIComponent(rawTarget)}`;
   }
@@ -2071,7 +2113,7 @@ function renderLiveEmbed(target: string, context: RenderContext): string {
   // Publishing never dereferences corpus content. The disclosure-safe publisher
   // further replaces this reference with a target-free omission marker.
   const reference = context.profile === "app"
-    ? `<a href="org2-workspace://open-link?target=${encodeURIComponent(context.embedded && context.sourcePath && target.startsWith("file:") ? `file:${path.resolve(path.dirname(context.sourcePath), target.slice(5))}` : target)}">Open source · ${escapeHtml(target)}</a>`
+    ? `<a href="org2-workspace://open-link?target=${encodeURIComponent(context.embedded && context.sourcePath ? embeddedFileLinkTarget(target, context.sourcePath) : target)}">Open source · ${escapeHtml(target)}</a>`
     : `<span>Live embed reference: ${escapeHtml(target)} (content not exported)</span>`;
   const shell = (body: string) => `<aside class="org2-live-embed" data-org2-live-embed="true"><header>${reference}</header>${body}</aside>`;
   if (context.profile !== "app") return shell("");
@@ -2084,6 +2126,7 @@ function renderLiveEmbed(target: string, context: RenderContext): string {
   if ((budget.bytes -= result.bytes) < 0) return shell('<p role="status">Embed content limit reached (1 MiB per render).</p>');
   const childContext: RenderContext = {
     ...context, sourcePath: result.file, embedded: true,
+    embeddedAnchorLines: embeddedSourceAnchorLines(result.sourceDocument ?? result.document),
     embedStack: [...(context.embedStack ?? []), result.key],
     headlineIds: undefined, headlineSlugIds: undefined, headlineNumbers: undefined,
     chartsByTableLine: undefined, chartsByBlockLine: undefined, pluginRendersByBlockLine: undefined,

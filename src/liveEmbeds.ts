@@ -7,7 +7,7 @@ import { parseOrgToCanonicalAst } from "./parser.js";
 
 export type LiveEmbedResolution = {
   ok: true; key: string; file: string; line: number; title: string;
-  document: DocumentNode; bytes: number;
+  document: DocumentNode; bytes: number; sourceDocument?: DocumentNode;
 } | { ok: false; message: string };
 export type LiveEmbedResolver = ((target: string, sourcePath?: string) => LiveEmbedResolution) & { sourceKey?: string };
 
@@ -67,6 +67,7 @@ export function createLiveEmbedResolver(options: { sourcePath: string; rootDir?:
       let endLine: number | undefined;
       let title: string | undefined;
       let verifiedSource: string | undefined;
+      let sourceDocument: DocumentNode | undefined;
       if (target.startsWith("id:")) {
         if (!corpus) {
           const config = configFile && fs.existsSync(configFile) ? loadConfig(configFile) : {};
@@ -98,7 +99,7 @@ export function createLiveEmbedResolver(options: { sourcePath: string; rootDir?:
             documents.set(candidateFile, source);
           }
           const range = canonicalEmbedRange(source.document, candidate);
-          return range ? [{ ...range, file: candidateFile, title: candidate.title, raw: source.raw }] : [];
+          return range ? [{ ...range, file: candidateFile, title: candidate.title, raw: source.raw, document: source.document }] : [];
         });
         if (verified.length === 0) return { ok: false, message: "Embed target is missing: ID has no matching canonical note or heading; examples are not embed targets" };
         if (verified.length !== 1) return { ok: false, message: "Embed ID is ambiguous; repair duplicate IDs before embedding" };
@@ -108,6 +109,7 @@ export function createLiveEmbedResolver(options: { sourcePath: string; rootDir?:
         endLine = selected.endLine;
         title = selected.title;
         verifiedSource = selected.raw;
+        sourceDocument = selected.document;
       } else {
         file = inside(path.resolve(path.dirname(path.resolve(sourcePath)), target.slice(5)));
       }
@@ -117,8 +119,9 @@ export function createLiveEmbedResolver(options: { sourcePath: string; rootDir?:
       const bytes = Buffer.byteLength(text);
       if (bytes > 256 * 1024) throw new Error("Embed exceeds the 256 KiB content limit; embed a smaller heading");
       const document = parseOrgToCanonicalAst(text, { sourceRanges: true, sourcePath: file, sourceLineOffset: line - 1 });
+      sourceDocument ??= endLine === undefined ? document : parseOrgToCanonicalAst(raw, { sourceRanges: true, sourcePath: file });
       const titleKeyword = document.children.find(node => node.type === "KeywordLine" && node.keyRaw.toUpperCase() === "TITLE");
-      return { ok: true, key: `${file}:${line}`, file, line, title: title ?? (titleKeyword?.type === "KeywordLine" ? titleKeyword.valueRaw.trim() : path.basename(file)), document, bytes };
+      return { ok: true, key: `${file}:${line}`, file, line, title: title ?? (titleKeyword?.type === "KeywordLine" ? titleKeyword.valueRaw.trim() : path.basename(file)), document, sourceDocument, bytes };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       return { ok: false, message: /ENOENT/.test(message) ? "Embed target is missing" : message };

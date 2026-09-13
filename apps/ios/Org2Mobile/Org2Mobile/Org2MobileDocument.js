@@ -3901,13 +3901,46 @@ ${rows}
     if (node.kind === "strike") return `<del>${content}</del>`;
     return `<code>${content}</code>`;
   }
+  function embeddedFileLinkTarget(target, sourcePath) {
+    const explicitFile = /^file:/i.test(target);
+    if (!explicitFile && /^[a-z][a-z0-9+.-]*:/i.test(target)) return target;
+    const source = explicitFile ? target.slice(5) : target;
+    const separator = source.indexOf("::");
+    const file = separator < 0 ? source : source.slice(0, separator);
+    const search = separator < 0 ? "" : source.slice(separator);
+    if (!explicitFile && (!file.includes("/") && !node_path_default.extname(file))) return target;
+    if (file.startsWith("~")) return `file:${file}${search}`;
+    return `file:${node_path_default.resolve(node_path_default.dirname(sourcePath), file)}${search}`;
+  }
+  function embeddedAnchorKey(target) {
+    return target.startsWith("#") ? `#${(normalizeAnchorId(target.slice(1)) ?? "").toLowerCase()}` : `*${slugifyHeadlineTitle(target.replace(/^\*+\s*/, ""))}`;
+  }
+  function embeddedSourceAnchorLines(document) {
+    const candidates = /* @__PURE__ */ new Map();
+    const add = (key, line) => candidates.set(key, candidates.has(key) ? null : line);
+    const visit = (nodes) => {
+      for (const node of nodes) if (node.type === "Headline") {
+        const line = node.sourceRange?.startLine;
+        if (line !== void 0) {
+          const title = node.title.map(inlineToText).join("").trim() || "Untitled";
+          const customId = findHeadlineCustomId(node);
+          add(embeddedAnchorKey(`#${customId ?? slugifyHeadlineTitle(title)}`), line);
+          add(embeddedAnchorKey(`*${title}`), line);
+        }
+        visit(node.children);
+      }
+    };
+    visit(document.children);
+    return new Map([...candidates].filter((entry) => entry[1] !== null));
+  }
   function appLinkHref(rawTarget, expandedTarget, context) {
     if (context.embedded && context.sourcePath) {
       rawTarget = expandedTarget;
-      if (rawTarget.startsWith("file:")) {
-        rawTarget = `file:${node_path_default.resolve(node_path_default.dirname(context.sourcePath), rawTarget.slice(5))}`;
-      } else if (linkTargetNeedsHeadingAnchor(rawTarget)) {
-        rawTarget = `file:${context.sourcePath}::${rawTarget}`;
+      if (linkTargetNeedsHeadingAnchor(rawTarget)) {
+        const line = context.embeddedAnchorLines?.get(embeddedAnchorKey(rawTarget));
+        rawTarget = `file:${context.sourcePath}${line === void 0 ? "" : `::${line}`}`;
+      } else {
+        rawTarget = embeddedFileLinkTarget(rawTarget, context.sourcePath);
       }
       if (!/^(https?|mailto):/i.test(rawTarget)) return `org2-workspace://open-link?target=${encodeURIComponent(rawTarget)}`;
     }
@@ -4258,7 +4291,7 @@ ${childrenHtml}
 </section>`;
   }
   function renderLiveEmbed(target, context) {
-    const reference = context.profile === "app" ? `<a href="org2-workspace://open-link?target=${encodeURIComponent(context.embedded && context.sourcePath && target.startsWith("file:") ? `file:${node_path_default.resolve(node_path_default.dirname(context.sourcePath), target.slice(5))}` : target)}">Open source \xB7 ${escapeHtml(target)}</a>` : `<span>Live embed reference: ${escapeHtml(target)} (content not exported)</span>`;
+    const reference = context.profile === "app" ? `<a href="org2-workspace://open-link?target=${encodeURIComponent(context.embedded && context.sourcePath ? embeddedFileLinkTarget(target, context.sourcePath) : target)}">Open source \xB7 ${escapeHtml(target)}</a>` : `<span>Live embed reference: ${escapeHtml(target)} (content not exported)</span>`;
     const shell = (body2) => `<aside class="org2-live-embed" data-org2-live-embed="true"><header>${reference}</header>${body2}</aside>`;
     if (context.profile !== "app") return shell("");
     if (!context.embedResolver) return shell('<p role="status">Live content is not included in this rendering. Open the source to read it.</p>');
@@ -4272,6 +4305,7 @@ ${childrenHtml}
       ...context,
       sourcePath: result.file,
       embedded: true,
+      embeddedAnchorLines: embeddedSourceAnchorLines(result.sourceDocument ?? result.document),
       embedStack: [...context.embedStack ?? [], result.key],
       headlineIds: void 0,
       headlineSlugIds: void 0,

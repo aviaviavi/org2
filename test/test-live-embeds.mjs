@@ -26,6 +26,13 @@ Live source text.
 [[*Child][Jump within source]]
 
 [[file:another.org][Related source]]
+[[another.org][Bare relative source]]
+[[FILE:another.org::*Section/Child][Case-insensitive source with heading search]]
+[[../host.org][Parent note]]
+[[Another Heading][Fuzzy heading title]]
+[[id:whole-note][Stable note link]]
+[[https://example.com/article.org][External note]]
+[[file:~/notes/another.org][Home relative note]]
 
 [[file:image.png]]
 ** Child
@@ -76,10 +83,60 @@ try {
   const frame = allFrames(html)[0];
   assert.match(frame, /Live source text/);
   assert.match(frame, /Child text/);
-  assert.ok(frame.includes(encodeURIComponent(`file:${fs.realpathSync(note)}::*Child`)));
+  assert.ok(frame.includes(encodeURIComponent(`file:${fs.realpathSync(note)}::${source.split("\n").findIndex(line => line === "** Child") + 1}`)));
   assert.doesNotMatch(frame, /Private sibling|data-org2-start-line|<script|allow-scripts/);
   assert.match(frame, new RegExp(encodeURIComponent(`file:${path.join(fs.realpathSync(root), "notes", "another.org")}`)));
+  assert.ok(frame.includes(`target=${encodeURIComponent(`file:${path.join(fs.realpathSync(root), "notes", "another.org")}`)}">Bare relative source</a>`));
+  assert.ok(frame.includes(`target=${encodeURIComponent(`file:${path.join(fs.realpathSync(root), "notes", "another.org")}::*Section/Child`)}">Case-insensitive source with heading search</a>`));
+  assert.ok(frame.includes(`target=${encodeURIComponent(`file:${path.join(fs.realpathSync(root), "host.org")}`)}">Parent note</a>`));
+  assert.ok(frame.includes(`target=${encodeURIComponent("Another Heading")}">Fuzzy heading title</a>`));
+  assert.ok(frame.includes('target=id%3Awhole-note">Stable note link</a>'));
+  assert.ok(frame.includes('href="https://example.com/article.org">External note</a>'));
+  assert.ok(frame.includes(`target=${encodeURIComponent("file:~/notes/another.org")}">Home relative note</a>`));
   assert.match(frame, new RegExp(`org2-resource://local\\?target=${encodeURIComponent(path.join(fs.realpathSync(root), "notes", "image.png"))}`));
+
+  // Embedded fragments route anchors through the full canonical source AST.
+  // A sibling outside the rendered fragment remains navigable, and examples
+  // cannot create fake targets or make real CUSTOM_IDs falsely ambiguous.
+  const anchorFile = path.join(root, "notes", "anchors.org");
+  const anchorSource = `* Embedded fragment
+:PROPERTIES:
+:ID: embed-with-anchors
+:END:
+[[#sibling-anchor][Custom sibling]]
+[[*Actual sibling][Title sibling]]
+[[#missing-anchor][Missing anchor]]
+[[#duplicate-anchor][Ambiguous anchor]]
+#+begin_src org
+* Example sibling
+:PROPERTIES:
+:CUSTOM_ID: sibling-anchor
+:END:
+#+end_src
+* Actual sibling
+:PROPERTIES:
+:CUSTOM_ID: sibling-anchor
+:END:
+Sibling content is outside fragment.
+* First duplicate
+:PROPERTIES:
+:CUSTOM_ID: duplicate-anchor
+:END:
+* Second duplicate
+:PROPERTIES:
+:CUSTOM_ID: duplicate-anchor
+:END:
+`;
+  fs.writeFileSync(anchorFile, anchorSource);
+  const anchorFrame = allFrames(render("#+EMBED: id:embed-with-anchors\n"))[0];
+  const actualAnchorLine = anchorSource.split("\n").indexOf("* Actual sibling") + 1;
+  const numericAnchorTarget = encodeURIComponent(`file:${fs.realpathSync(anchorFile)}::${actualAnchorLine}`);
+  assert.ok(anchorFrame.includes(`target=${numericAnchorTarget}">Custom sibling</a>`));
+  assert.ok(anchorFrame.includes(`target=${numericAnchorTarget}">Title sibling</a>`));
+  const anchorSourceTarget = encodeURIComponent(`file:${fs.realpathSync(anchorFile)}`);
+  assert.ok(anchorFrame.includes(`target=${anchorSourceTarget}">Missing anchor</a>`));
+  assert.ok(anchorFrame.includes(`target=${anchorSourceTarget}">Ambiguous anchor</a>`));
+  assert.doesNotMatch(anchorFrame, /Sibling content is outside fragment/);
 
   // Re-rendering reads current canonical content without copying it into the host.
   const beforeHost = fs.readFileSync(host, "utf8");
