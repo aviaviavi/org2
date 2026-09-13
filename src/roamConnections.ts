@@ -2,11 +2,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { guardedContentRevision, guardedWriteFile, readGuardedFile } from "./guardedFile.js";
 import { loadConfig, resolveFilesFromDir } from "./config.js";
-import { parseHeadlineTitleForRoam } from "./headlineTitle.js";
 import {
   buildRoamGraph, buildRoamLinkifyIndex, collectRoamNodesForIndex, escapeRegExp,
   isRoamLinkifyGenericLabel, isRoamLinkifyLabelEligible, lineAllowsRoamLinkify,
-  normalizeRoamLinkLabel, renderRoamLink, splitRoamLinkifyProtectedSegments,
+  normalizeRoamLinkLabel, readRoamSourceStructure, renderRoamLink, splitRoamLinkifyProtectedSegments,
   type RoamGraphData, type RoamGraphNode, type RoamLinkifyCandidate,
 } from "./roam.js";
 
@@ -44,28 +43,17 @@ export function findUnlinkedMentions(
     .filter(label => !ownLabels.has(label) && !/[\[\]\r\n]/.test(label)).sort((a, b) => b.length - a.length || a.localeCompare(b));
   const revision = guardedContentRevision(content);
   const mentions: RoamMention[] = [];
-  let inBlock = false, inDrawer = false;
-  let backlinksLevel: number | null = null;
-  for (const [lineIndex, line] of content.split(/\r\n|\n/).entries()) {
-    const trimmed = line.trim();
-    if (/^#\+begin_/i.test(trimmed)) { inBlock = true; continue; }
-    if (/^#\+end_/i.test(trimmed)) { inBlock = false; continue; }
-    if (inBlock) continue;
-    if (/^:(?:PROPERTIES|LOGBOOK):$/i.test(trimmed)) { inDrawer = true; continue; }
-    if (/^:END:$/i.test(trimmed)) { inDrawer = false; continue; }
-    const heading = /^(\*+)\s/.exec(line);
-    if (heading && !inDrawer) {
-      if (backlinksLevel !== null && heading[1]!.length <= backlinksLevel) backlinksLevel = null;
-      if (normalizeRoamLinkLabel(parseHeadlineTitleForRoam(line)) === "backlinks") backlinksLevel = heading[1]!.length;
-    }
-    if (backlinksLevel !== null || !lineAllowsRoamLinkify(line, inBlock, inDrawer)) continue;
+  const { lines, windows } = readRoamSourceStructure(content, file);
+  for (const [lineIndex, line] of lines.entries()) {
+    const window = windows[lineIndex];
+    if (!window || !lineAllowsRoamLinkify(line, false, false)) continue;
     const claimed: Array<{ start: number; end: number }> = [];
     for (const label of labels) {
       const candidates = (index.get(label) || []).filter(candidate => !ownIDs.has(candidate.id));
       if (!candidates.length || (targetId && !candidates.some(candidate => candidate.id === targetId))) continue;
       const regex = new RegExp(`(^|[^A-Za-z0-9_])(${escapeRegExp(candidates[0]!.label)})(?=$|[^A-Za-z0-9_])`, "gi");
-      let offset = 0;
-      for (const segment of splitRoamLinkifyProtectedSegments(line)) {
+      let offset = window.start;
+      for (const segment of splitRoamLinkifyProtectedSegments(line.slice(window.start, window.end))) {
         if (!segment.protected) {
           regex.lastIndex = 0;
           for (const match of segment.text.matchAll(regex)) {

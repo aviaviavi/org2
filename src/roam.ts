@@ -1,7 +1,8 @@
 // Shared graph, alias, and linkification semantics used by CLI and native clients.
 import fs from "node:fs";
 import path from "node:path";
-import { computeSubtreeRange } from "./sourceLines.js";
+import { parseOrgToCanonicalAst } from "./parser.js";
+import type { DocumentNode, HeadlineNode, Node } from "./ast.js";
 import { parseHeadlineTitleForRoam } from "./headlineTitle.js";
 
 export function normalizeRoamLinkLabel(raw: string): string {
@@ -112,134 +113,108 @@ export type RoamGraphData = {
   edges: RoamGraphEdge[];
 };
 
+type RoamLineWindow = { start: number; end: number };
+type RoamSourceRange = { startLine: number; endLine: number };
+
+function roamSourceRange(node: object): RoamSourceRange | undefined {
+  return (node as { sourceRange?: RoamSourceRange }).sourceRange;
+}
+
+/** Locate only the title text of an already parsed headline, preserving source columns. */
+function roamHeadlineTitleWindow(line: string, node: HeadlineNode): RoamLineWindow {
+  let start = node.level + 1;
+  let end = line.length;
+  if (node.tags?.length) end = line.lastIndexOf(":" + node.tags.join(":") + ":");
+  if (node.commented && line.slice(start).startsWith("COMMENT ")) start += "COMMENT ".length;
+  if (node.todo && line.slice(start).startsWith(node.todo + " ")) start += node.todo.length + 1;
+  if (node.priority) {
+    const priority = /^\[#[A-Za-z0-9]\]\s*/.exec(line.slice(start));
+    if (priority) start += priority[0].length;
+  }
+  if (node.commented && line.slice(start).startsWith("COMMENT ")) start += "COMMENT ".length;
+  while (start < end && /\s/.test(line[start]!)) start += 1;
+  while (end > start && /\s/.test(line[end - 1]!)) end -= 1;
+  return { start, end: Math.max(start, end) };
+}
+
+/** Canonical blocks/drawers and headline metadata are never writable mention text. */
+export function readRoamSourceStructure(content: string, filePath?: string) {
+  const lines = content.replace(/\r\n/g, "\n").split("\n");
+  const windows: Array<RoamLineWindow | null> = lines.map(line => ({ start: 0, end: line.length }));
+  const headlines = new Map<number, HeadlineNode>();
+  let document: DocumentNode;
+  try {
+    document = parseOrgToCanonicalAst(lines.join("\n"), { sourceRanges: true, sourcePath: filePath });
+  } catch {
+    // A malformed document cannot supply trustworthy IDs or safe edit ranges.
+    return { lines, windows: windows.map(() => null), headlines, document: null };
+  }
+  const protect = (node: object) => {
+    const range = roamSourceRange(node);
+    if (range) for (let line = range.startLine; line <= range.endLine; line += 1) windows[line - 1] = null;
+  };
+  const visit = (node: Node, protectedParent = false): void => {
+    if (node.type === "Headline") {
+      const range = roamSourceRange(node)!;
+      headlines.set(range.startLine, node);
+      const window = roamHeadlineTitleWindow(lines[range.startLine - 1]!, node);
+      const title = lines[range.startLine - 1]!.slice(window.start, window.end);
+      const protectedHeading = protectedParent || !!node.commented || normalizeRoamLinkLabel(title) === "backlinks";
+      if (protectedHeading) protect(node);
+      else windows[range.startLine - 1] = window;
+      node.children.forEach(child => visit(child, protectedHeading));
+    } else if (node.type === "List") {
+      node.items.forEach(child => visit(child, protectedParent));
+    } else if (node.type === "ListItem") {
+      node.children.forEach(child => visit(child, protectedParent));
+    } else if (!["Paragraph", "Table", "Text", "FootnoteDefinition"].includes(node.type)) {
+      protect(node);
+    }
+  };
+  document.children.forEach(node => visit(node));
+  return { lines, windows, headlines, document };
+}
+
 export function collectRoamNodesForIndex(content: string, filePath: string, includeDuplicateIds = false): RoamNodeForIndex[] {
-  const raw = content.replace(/\r\n/g, "\n");
-  const lines = raw.split("\n");
+  const { lines, headlines, document } = readRoamSourceStructure(content, filePath);
+  if (!document) return [];
   const nodes: RoamNodeForIndex[] = [];
-
-  const fileTitle = (() => {
-    for (let i = 0; i < Math.min(lines.length, 80); i += 1) {
-      const m = /^#\+title:\s*(.*?)\s*$/i.exec((lines[i] ?? "").trim());
-      if (m) return (m[1] || "").trim();
-    }
-    return path.basename(filePath).replace(/\.(org2|org)$/i, "");
-  })();
-
-  const fileAliases = (() => {
-    const aliases: string[] = [];
-    for (let i = 0; i < Math.min(lines.length, 80); i += 1) {
-      const m = /^#\+roam_alias(?:es)?:\s*(.*?)\s*$/i.exec((lines[i] ?? "").trim());
-      if (!m) continue;
-      aliases.push(...parseRoamAliasTokens(m[1] || ""));
-    }
-    return aliases;
-  })();
-
+  const firstHeadline = document.children.findIndex(node => node.type === "Headline");
+  const preamble = firstHeadline < 0 ? document.children : document.children.slice(0, firstHeadline);
+  const keywords = preamble.filter(node => node.type === "KeywordLine");
+  const fileTitle = keywords.find(node => node.keyRaw.toLowerCase() === "title")?.valueRaw.trim()
+    || path.basename(filePath).replace(/\.(org2|org)$/i, "");
+  const fileAliases = keywords.filter(node => /^roam_alias(?:es)?$/i.test(node.keyRaw))
+    .flatMap(node => parseRoamAliasTokens(node.valueRaw));
   const seenNodeIds = new Set<string>();
   const pushNode = (idRaw: string, labels: string[], line = 1, lineEnd = lines.length) => {
-    const id = String(idRaw || "").trim().toLowerCase();
-    if (!id) return;
-    if (!includeDuplicateIds && seenNodeIds.has(id)) return;
-
-    const uniqueLabels = Array.from(
-      new Set(
-        labels
-          .map((value) => String(value || "").trim())
-          .filter((value) => value.length > 0),
-      ),
-    );
-    if (uniqueLabels.length === 0) return;
-
+    const id = idRaw.trim().toLowerCase();
+    if (!id || (!includeDuplicateIds && seenNodeIds.has(id))) return;
+    const uniqueLabels = [...new Set(labels.map(label => label.trim()).filter(Boolean))];
+    if (!uniqueLabels.length) return;
     seenNodeIds.add(id);
     nodes.push({ id, labels: uniqueLabels, line, lineEnd });
   };
-
-  // File-level #+id
-  for (let i = 0; i < Math.min(lines.length, 30); i += 1) {
-    const m = /^#\+id:\s*(\S+)\s*$/i.exec((lines[i] ?? "").trim());
-    if (!m) continue;
-    pushNode(m[1] || "", [fileTitle, ...fileAliases]);
-    break;
+  const drawerProperties = (children: Node[]) => children.filter(node => node.type === "PropertyDrawer")
+    .flatMap(node => node.properties);
+  for (const keyword of keywords.filter(node => node.keyRaw.toLowerCase() === "id")) {
+    pushNode(keyword.valueRaw, [fileTitle, ...fileAliases]);
   }
-
-  // File-level drawer ID + aliases (allow any drawer before first headline).
-  {
-    const firstHeadlineIdx = lines.findIndex((line) => /^\*+\s+/.test(String(line || "")));
-    const scanEnd = firstHeadlineIdx === -1 ? lines.length : firstHeadlineIdx;
-
-    let propsStart = -1;
-    let propsEnd = -1;
-    for (let i = 0; i < scanEnd; i += 1) {
-      if ((lines[i] ?? "").trim() !== ":PROPERTIES:") continue;
-      propsStart = i;
-      for (let j = i + 1; j < scanEnd; j += 1) {
-        if ((lines[j] ?? "").trim() === ":END:") {
-          propsEnd = j;
-          break;
-        }
-      }
-      if (propsEnd !== -1) break;
-      propsStart = -1;
-    }
-
-    if (propsStart !== -1 && propsEnd !== -1) {
-      let topId = "";
-      const topAliases: string[] = [];
-      for (let j = propsStart + 1; j < propsEnd; j += 1) {
-        const l = (lines[j] ?? "").trim();
-        const idMatch = /^:ID:\s*(\S+)\s*$/i.exec(l);
-        if (idMatch) topId = String(idMatch[1] || "").trim();
-        const aliasMatch = /^:ROAM_ALIASES:\s*(.*?)\s*$/i.exec(l);
-        if (aliasMatch) topAliases.push(...parseRoamAliasTokens(aliasMatch[1] || ""));
-      }
-      if (topId) pushNode(topId, [fileTitle, ...fileAliases, ...topAliases]);
+  const fileProperties = drawerProperties(preamble);
+  const filePropertyAliases = fileProperties.filter(prop => /^ROAM_ALIASES$/i.test(prop.key))
+    .flatMap(prop => parseRoamAliasTokens(prop.value));
+  for (const prop of fileProperties.filter(prop => prop.key.toUpperCase() === "ID")) {
+    pushNode(prop.value, [fileTitle, ...fileAliases, ...filePropertyAliases]);
+  }
+  for (const [line, headline] of headlines) {
+    const titleWindow = roamHeadlineTitleWindow(lines[line - 1]!, headline);
+    const title = lines[line - 1]!.slice(titleWindow.start, titleWindow.end);
+    const properties = drawerProperties(headline.children);
+    const aliases = properties.filter(prop => /^ROAM_ALIASES$/i.test(prop.key)).flatMap(prop => parseRoamAliasTokens(prop.value));
+    for (const prop of properties.filter(prop => prop.key.toUpperCase() === "ID")) {
+      pushNode(prop.value, [title, ...aliases], line, roamSourceRange(headline)!.endLine);
     }
   }
-
-  let currentHeadlineTitle = "";
-  let currentHeadlineLine = -1;
-
-  for (let i = 0; i < lines.length; i += 1) {
-    const line = lines[i] ?? "";
-
-    const hm = /^(\*+)\s+/.exec(line);
-    if (hm) {
-      currentHeadlineTitle = parseHeadlineTitleForRoam(line);
-      currentHeadlineLine = i;
-      continue;
-    }
-
-    if (line.trim() !== ":PROPERTIES:") continue;
-
-    let belongsToHeadline = false;
-    if (currentHeadlineLine !== -1) {
-      const prev = (lines[i - 1] ?? "").trim();
-      if (i - 1 === currentHeadlineLine || (prev === "" && i - 2 === currentHeadlineLine)) {
-        belongsToHeadline = true;
-      }
-    }
-
-    let headlineId = "";
-    const headlineAliases: string[] = [];
-    for (let j = i + 1; j < lines.length; j += 1) {
-      const l = (lines[j] ?? "").trim();
-      if (l === ":END:") {
-        i = j;
-        break;
-      }
-
-      const idMatch = /^:ID:\s*(\S+)\s*$/i.exec(l);
-      if (idMatch) headlineId = String(idMatch[1] || "").trim();
-
-      const aliasMatch = /^:ROAM_ALIASES:\s*(.*?)\s*$/i.exec(l);
-      if (aliasMatch) headlineAliases.push(...parseRoamAliasTokens(aliasMatch[1] || ""));
-    }
-
-    if (belongsToHeadline && headlineId && currentHeadlineTitle) {
-      pushNode(headlineId, [currentHeadlineTitle, ...headlineAliases], currentHeadlineLine + 1, computeSubtreeRange(lines, currentHeadlineLine).endExclusive);
-    }
-  }
-
   return nodes;
 }
 
@@ -314,32 +289,16 @@ export function buildRoamLinkifyIndex(files: string[]): Map<string, RoamLinkifyC
 }
 
 export function extractRoamFileId(content: string): string | null {
-  const lines = content.replace(/\r\n/g, "\n").split("\n");
-
-  for (let i = 0; i < Math.min(lines.length, 30); i += 1) {
-    const m = /^#\+id:\s*(\S+)\s*$/i.exec((lines[i] ?? "").trim());
-    if (m) return String(m[1] || "").trim().toLowerCase();
-  }
-
-  let idx = 0;
-  while (idx < lines.length) {
-    const line = (lines[idx] ?? "").trim();
-    if (line === "" || line.startsWith("#")) {
-      idx += 1;
-      continue;
+  const { document } = readRoamSourceStructure(content);
+  if (!document) return null;
+  for (const node of document.children) {
+    if (node.type === "Headline") break;
+    if (node.type === "KeywordLine" && node.keyRaw.toLowerCase() === "id") return node.valueRaw.trim().toLowerCase();
+    if (node.type === "PropertyDrawer") {
+      const id = node.properties.find(prop => prop.key.toUpperCase() === "ID")?.value.trim().toLowerCase();
+      if (id) return id;
     }
-    break;
   }
-
-  if ((lines[idx] ?? "").trim() !== ":PROPERTIES:") return null;
-
-  for (let j = idx + 1; j < lines.length; j += 1) {
-    const line = (lines[j] ?? "").trim();
-    if (line === ":END:") return null;
-    const m = /^:ID:\s*(\S+)\s*$/i.exec(line);
-    if (m) return String(m[1] || "").trim().toLowerCase();
-  }
-
   return null;
 }
 
@@ -429,54 +388,20 @@ export function buildRoamGraph(files: string[]): RoamGraphData {
       continue;
     }
 
-    const lines = content.replace(/\r\n/g, "\n").split("\n");
+    const { lines, windows, headlines } = readRoamSourceStructure(content, filePath);
+    const fileNodes = collectRoamNodesForIndex(content, filePath);
     const fileId = extractRoamFileId(content);
-    let currentHeadlineLine = -1;
     let currentHeadlineId: string | null = null;
-    let inBlock = false;
 
     for (let i = 0; i < lines.length; i += 1) {
-      const line = lines[i] ?? "";
-      const trimmed = line.trim();
-
-      if (/^#\+begin_/i.test(trimmed)) {
-        inBlock = true;
+      const headline = headlines.get(i + 1);
+      if (headline) {
+        currentHeadlineId = fileNodes.find(node => node.line === i + 1)?.id || null;
         continue;
       }
-      if (/^#\+end_/i.test(trimmed)) {
-        inBlock = false;
-        continue;
-      }
-      if (inBlock) continue;
-      if (/^: /.test(line)) continue;
-
-      if (/^\*+\s+/.test(line)) {
-        currentHeadlineLine = i;
-        currentHeadlineId = null;
-        continue;
-      }
-
-      if (trimmed === ":PROPERTIES:") {
-        let belongsToHeadline = false;
-        if (currentHeadlineLine !== -1) {
-          const prev = (lines[i - 1] ?? "").trim();
-          if (i - 1 === currentHeadlineLine || (prev === "" && i - 2 === currentHeadlineLine)) {
-            belongsToHeadline = true;
-          }
-        }
-
-        for (let j = i + 1; j < lines.length; j += 1) {
-          const drawerLine = (lines[j] ?? "").trim();
-          if (drawerLine === ":END:") {
-            i = j;
-            break;
-          }
-          const idMatch = /^:ID:\s*(\S+)\s*$/i.exec(drawerLine);
-          if (belongsToHeadline && idMatch) currentHeadlineId = String(idMatch[1] || "").trim().toLowerCase();
-        }
-        continue;
-      }
-
+      const window = windows[i];
+      if (!window) continue;
+      const line = lines[i]!.slice(window.start, window.end);
       const sourceId = currentHeadlineId || fileId;
       if (!sourceId || !nodesById.has(sourceId)) continue;
 
@@ -547,7 +472,7 @@ export function lineAllowsRoamLinkify(line: string, inBlock: boolean, inDrawer: 
   if (!trimmed) return false;
   if (/^#\+/.test(trimmed)) return false;
   if (/^# /.test(trimmed)) return false;
-  if (/^: /.test(line)) return false;
+  if (/^\s*: /.test(line)) return false;
 
   return true;
 }
@@ -656,9 +581,7 @@ export function findRoamLinkifyRepresentedSuggestion(
 export function collectRoamLinkifySemanticParagraphs(lines: string[]): Array<{ startLine: number; endLine: number; text: string }> {
   const paragraphs: Array<{ startLine: number; endLine: number; text: string }> = [];
   let current: Array<{ lineNumber: number; text: string }> = [];
-  let inBlock = false;
-  let inDrawer = false;
-  let inBacklinksSectionLevel: number | null = null;
+  const { windows, headlines } = readRoamSourceStructure(lines.join("\n"));
 
   const flush = (): void => {
     if (current.length > 1) {
@@ -674,46 +597,9 @@ export function collectRoamLinkifySemanticParagraphs(lines: string[]): Array<{ s
   };
 
   for (let i = 0; i < lines.length; i += 1) {
-    const line = lines[i] || "";
-    const trimmed = line.trim();
-    const headlineMatch = /^(\*+)\s+/.exec(line);
-    if (headlineMatch) {
-      flush();
-      const level = headlineMatch[1]!.length;
-      if (inBacklinksSectionLevel !== null && level <= inBacklinksSectionLevel) {
-        inBacklinksSectionLevel = null;
-      }
-      const headlineTitle = normalizeRoamLinkLabel(parseHeadlineTitleForRoam(line));
-      if (headlineTitle === "backlinks") inBacklinksSectionLevel = level;
-      continue;
-    }
-
-    if (inBacklinksSectionLevel !== null) {
-      flush();
-      continue;
-    }
-
-    if (/^#\+begin_/i.test(trimmed)) {
-      flush();
-      inBlock = true;
-      continue;
-    }
-    if (/^#\+end_/i.test(trimmed)) {
-      flush();
-      inBlock = false;
-      continue;
-    }
-    if (trimmed === ":PROPERTIES:" || trimmed === ":LOGBOOK:") {
-      flush();
-      inDrawer = true;
-      continue;
-    }
-    if (trimmed === ":END:") {
-      flush();
-      inDrawer = false;
-      continue;
-    }
-    if (!trimmed || !lineAllowsRoamLinkify(line, inBlock, inDrawer)) {
+    const window = windows[i];
+    const line = window ? (lines[i] || "").slice(window.start, window.end) : "";
+    if (!window || headlines.has(i + 1) || !line.trim()) {
       flush();
       continue;
     }
@@ -781,9 +667,7 @@ export function applyRoamLinkifyToFile(
     .filter((label) => !isRoamLinkifyGenericLabel(label))
     .sort((a, b) => b.length - a.length || a.localeCompare(b));
 
-  let inBlock = false;
-  let inDrawer = false;
-  let inBacklinksSectionLevel: number | null = null;
+  const { windows } = readRoamSourceStructure(normalized, filePath);
   let replacements = 0;
   let ambiguousSkips = 0;
   const debugMatches: Array<{ label: string; candidate: string; line: number; count: number }> = [];
@@ -792,40 +676,11 @@ export function applyRoamLinkifyToFile(
   const representedSeen = new Set<string>();
 
   for (let i = 0; i < lines.length; i += 1) {
-    let line = lines[i] || "";
-    const trimmed = line.trim();
-    const headlineMatch = /^(\*+)\s+/.exec(line);
-    if (headlineMatch) {
-      const level = headlineMatch[1]!.length;
-      if (inBacklinksSectionLevel !== null && level <= inBacklinksSectionLevel) {
-        inBacklinksSectionLevel = null;
-      }
-      const headlineTitle = normalizeRoamLinkLabel(parseHeadlineTitleForRoam(line));
-      if (headlineTitle === "backlinks") {
-        inBacklinksSectionLevel = level;
-        continue;
-      }
-    }
-
-    if (inBacklinksSectionLevel !== null) continue;
-
-    if (/^#\+begin_/i.test(trimmed)) {
-      inBlock = true;
-      continue;
-    }
-    if (/^#\+end_/i.test(trimmed)) {
-      inBlock = false;
-      continue;
-    }
-    if (trimmed === ":PROPERTIES:" || trimmed === ":LOGBOOK:") {
-      inDrawer = true;
-      continue;
-    }
-    if (trimmed === ":END:") {
-      inDrawer = false;
-      continue;
-    }
-    if (!lineAllowsRoamLinkify(line, inBlock, inDrawer)) continue;
+    const window = windows[i];
+    if (!window) continue;
+    const originalLine = lines[i] || "";
+    let line = originalLine.slice(window.start, window.end);
+    if (!lineAllowsRoamLinkify(line, false, false)) continue;
 
     for (const normalizedLabel of labels) {
       if (ownLabels.has(normalizedLabel)) continue;
@@ -871,7 +726,7 @@ export function applyRoamLinkifyToFile(
       const replaced = replaceRoamLinkifyOutsideLinks(line, resolved);
       if (!replaced.replaced) continue;
 
-      lines[i] = replaced.line;
+      lines[i] = originalLine.slice(0, window.start) + replaced.line + originalLine.slice(window.end);
       replacements += replaced.count;
       debugMatches.push({
         label: normalizedLabel,
@@ -879,7 +734,7 @@ export function applyRoamLinkifyToFile(
         line: i + 1,
         count: replaced.count,
       });
-      line = lines[i] || line;
+      line = replaced.line;
     }
   }
 

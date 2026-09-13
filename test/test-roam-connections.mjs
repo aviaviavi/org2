@@ -6,6 +6,8 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { readRoamConnections, linkRoamMention, localRoamNeighborhood } from '../dist/roamConnections.js';
 import { guardedContentRevision } from '../dist/guardedFile.js';
+import { applyRoamLinkifyToFile, buildRoamGraph, buildRoamLinkifyIndex, collectRoamNodesForIndex } from '../dist/roam.js';
+import { parseOrgToCanonicalAst } from '../dist/parser.js';
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'org2-connections-'));
 const cli = fileURLToPath(new URL('../dist/cli.js', import.meta.url));
@@ -101,5 +103,62 @@ try {
   assert.equal(limited.mentionsTruncated, true);
   const cliRead = JSON.parse(execFileSync('node', [cli, 'roam', 'connections', '--dir', root, '--id', 'alpha-stable', '--depth', '2', '--format', 'json'], { encoding: 'utf8' }));
   assert.equal(cliRead.neighborhood.focus.id, 'alpha-stable');
+  // Canonical syntax is the authority for targets, source ownership, and safe edit spans.
+  const canonicalRoot = path.join(root, 'canonical-structure');
+  fs.mkdirSync(canonicalRoot);
+  const canonicalTarget = path.join(canonicalRoot, 'target.org');
+  fs.writeFileSync(canonicalTarget, '#+TITLE: Alpha\n#+ID: alpha-canonical\n');
+  const canonicalFile = path.join(canonicalRoot, 'source.org');
+  const canonicalOriginal = [
+    '#+TITLE: Protected source', '#+ID: protected-source',
+    '#+begin_src org', '#+begin_example', '#+end_example', 'Alpha',
+    '[[id:alpha-canonical][Alpha]]', '* Fake Topic', ':PROPERTIES:', ':ID: fake-heading-id', ':END:', '#+end_src',
+    '#+begin_example', '#+ID: fake-file-id', ':PROPERTIES:', ':ID: alpha-canonical', ':END:', '#+end_example',
+    '  : Alpha [[id:alpha-canonical][Alpha]]',
+    '* TODO [#A] Alpha :Alpha:', 'SCHEDULED: <2026-09-13 Sun>', ':PROPERTIES:', ':ID: planned-id',
+    ':ROAM_ALIASES: Planned Alias', ':END:', 'Alpha', '[[id:alpha-canonical][Alpha]]', '* Next heading', 'body', '',
+  ].join('\n');
+  fs.writeFileSync(canonicalFile, canonicalOriginal);
+  const canonicalNodes = collectRoamNodesForIndex(canonicalOriginal, canonicalFile, true);
+  assert.deepEqual(canonicalNodes.map(node => node.id), ['protected-source', 'planned-id']);
+  const plannedLine = canonicalOriginal.split('\n').indexOf('* TODO [#A] Alpha :Alpha:') + 1;
+  assert.equal(readRoamConnections(canonicalRoot, { file: canonicalFile, line: plannedLine + 6 }).neighborhood.focus.id, 'planned-id');
+  assert.equal(readRoamConnections(canonicalRoot, { id: 'fake-heading-id' }).neighborhood, null);
+  assert.equal(readRoamConnections(canonicalRoot, { id: 'fake-file-id' }).neighborhood, null);
+  const graph = buildRoamGraph([canonicalTarget, canonicalFile]);
+  assert.deepEqual(graph.edges, [{ source: 'planned-id', target: 'alpha-canonical', count: 1 }]);
+  const canonicalIndex = buildRoamLinkifyIndex([canonicalTarget, canonicalFile]);
+  assert.equal(canonicalIndex.get('planned alias')[0].id, 'planned-id');
+  // The target label must differ from this file's heading title, which suppresses self-mentions.
+  const protectedSource = canonicalOriginal.replace('* TODO [#A] Alpha :Alpha:', '* TODO [#A] Review Alpha :Alpha:');
+  fs.writeFileSync(canonicalFile, protectedSource);
+  const canonicalData = readRoamConnections(canonicalRoot, { id: 'alpha-canonical' });
+  const canonicalMentions = canonicalData.mentions.filter(mention => mention.file === canonicalFile);
+  assert.deepEqual(canonicalMentions.map(mention => mention.line), [plannedLine, plannedLine + 6]);
+  const titleMention = canonicalMentions[0];
+  assert.equal(titleMention.start, '* TODO [#A] Review '.length);
+  assert.equal(titleMention.text, 'Alpha');
+  // Reconstructing an old/forged occurrence cannot bypass the canonical source protection.
+  for (const [line, start] of [[6, 0], [19, 4], [plannedLine, '* TODO [#A] Review Alpha :'.length]]) {
+    const mentionID = guardedContentRevision(`${canonicalFile}\n${line}:${start}:${start + 5}:alpha`).slice(7);
+    assert.throws(() => linkRoamMention(canonicalRoot, {
+      file: canonicalFile, mention: mentionID, target: 'alpha-canonical', revision: titleMention.revision, apply: true,
+    }), /Mention or target changed/);
+    assert.equal(fs.readFileSync(canonicalFile, 'utf8'), protectedSource);
+  }
+  const changedTitle = linkRoamMention(canonicalRoot, {
+    file: canonicalFile, mention: titleMention.id, target: 'alpha-canonical', revision: titleMention.revision, apply: true,
+  });
+  const expectedTitle = protectedSource.replace('Review Alpha :Alpha:', 'Review [[id:alpha-canonical][Alpha]] :Alpha:');
+  assert.equal(changedTitle.preview, expectedTitle);
+  assert.equal(fs.readFileSync(canonicalFile, 'utf8'), expectedTitle);
+  const changedHeading = parseOrgToCanonicalAst(expectedTitle).children.find(node => node.type === 'Headline');
+  assert.deepEqual(changedHeading.tags, ['Alpha']);
+  assert.equal(changedHeading.todo, 'TODO');
+  assert.equal(changedHeading.priority, 'A');
+  const bulk = applyRoamLinkifyToFile(protectedSource, canonicalFile, canonicalIndex);
+  assert.equal(bulk.replacements, 2);
+  assert.equal(bulk.outText, expectedTitle.replace(':END:\nAlpha\n[[id:alpha-canonical]', ':END:\n[[id:alpha-canonical][Alpha]]\n[[id:alpha-canonical]'));
   console.log('✓ local graph, exact mentions, explicit ambiguity, guarded links, CRLF/UTF-16, corpus boundaries and bounds');
+  console.log('✓ canonical targets, planned heading ownership, nested block markers, indented fixed width and heading metadata');
 } finally { fs.rmSync(root, { recursive: true, force: true }); }
