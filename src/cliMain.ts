@@ -11,6 +11,7 @@ import {
   buildRoamLinkifyIndex,
   findRoamIdLinksInLine,
   findRoamWikiLinksInLine,
+  readRoamSourceStructure,
   buildRoamGraph,
   renderRoamLink,
   applyRoamLinkifyToFile,
@@ -1438,22 +1439,13 @@ function buildRoamGraphMaintenanceReport(
       continue;
     }
 
-    const lines = content.replace(/\r\n/g, "\n").split("\n");
-    let inBlock = false;
+    const { lines, windows } = readRoamSourceStructure(content, filePath);
     for (let i = 0; i < lines.length; i += 1) {
-      const line = lines[i] ?? "";
-      const trimmed = line.trim();
-
-      if (/^#\+begin_/i.test(trimmed)) {
-        inBlock = true;
-        continue;
-      }
-      if (/^#\+end_/i.test(trimmed)) {
-        inBlock = false;
-        continue;
-      }
-      if (inBlock) continue;
-      if (/^: /.test(line)) continue;
+      // Match graph edges and mention edits: metadata and literal blocks have
+      // their own semantics and must not also produce prose-link diagnostics.
+      const window = windows[i];
+      if (!window) continue;
+      const line = lines[i]!.slice(window.start, window.end);
 
       for (const id of findRoamIdLinksInLine(line)) {
         if (nodeIds.has(id.toLowerCase())) continue;
