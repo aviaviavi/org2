@@ -2,6 +2,91 @@ import AppKit
 import SwiftUI
 import WebKit
 
+struct AIChatTranscriptRenderedBody: Equatable {
+  let source: String
+  let expanded: Bool
+  let html: String
+  let contexts: [AIChatTranscriptHTML.Context]
+}
+
+@MainActor
+enum AIChatTranscriptRenderedBodyCache {
+  private final class Key: NSObject {
+    let messageID: UUID
+    let sourcePath: String
+    let expanded: Bool
+
+    init(messageID: UUID, sourcePath: String, expanded: Bool) {
+      self.messageID = messageID
+      self.sourcePath = sourcePath
+      self.expanded = expanded
+    }
+
+    override var hash: Int {
+      var hasher = Hasher()
+      hasher.combine(messageID)
+      hasher.combine(sourcePath)
+      hasher.combine(expanded)
+      return hasher.finalize()
+    }
+
+    override func isEqual(_ object: Any?) -> Bool {
+      guard let other = object as? Key else { return false }
+      return messageID == other.messageID
+        && sourcePath == other.sourcePath
+        && expanded == other.expanded
+    }
+  }
+
+  private final class Value: NSObject {
+    let body: AIChatTranscriptRenderedBody
+
+    init(_ body: AIChatTranscriptRenderedBody) {
+      self.body = body
+    }
+  }
+
+  private static let cache: NSCache<Key, Value> = {
+    let cache = NSCache<Key, Value>()
+    cache.countLimit = 512
+    cache.totalCostLimit = 64 * 1_024 * 1_024
+    return cache
+  }()
+
+  static func body(
+    messageID: UUID,
+    source: String,
+    expanded: Bool,
+    sourcePath: String
+  ) -> AIChatTranscriptRenderedBody? {
+    let key = Key(messageID: messageID, sourcePath: sourcePath, expanded: expanded)
+    guard let body = cache.object(forKey: key)?.body,
+          body.source == source
+    else { return nil }
+    return body
+  }
+
+  static func install(
+    _ body: AIChatTranscriptRenderedBody,
+    messageID: UUID,
+    sourcePath: String
+  ) {
+    let contextCost = body.contexts.reduce(0) {
+      $0 + $1.title.utf8.count + $1.kind.utf8.count + 32
+    }
+    let cost = max(1, body.source.utf8.count + body.html.utf8.count + contextCost)
+    cache.setObject(
+      Value(body),
+      forKey: Key(messageID: messageID, sourcePath: sourcePath, expanded: body.expanded),
+      cost: cost
+    )
+  }
+
+  static func removeAllForTesting() {
+    cache.removeAllObjects()
+  }
+}
+
 /// One DOM and one native WebKit scroll view own the entire visible transcript.
 /// Selection, autoscroll while dragging, and wheel routing are WebKit behavior.
 struct AIChatTranscriptDocument: View {
@@ -9,7 +94,7 @@ struct AIChatTranscriptDocument: View {
   @Environment(\.openOrgFileReference) private var openFileReference
   @Environment(\.orgRoamLinkResolver) private var linkResolver
   @ObservedObject private var liveState: OpenClawChatLiveState
-  @State private var rendered: [UUID: RenderedBody] = [:]
+  @State private var rendered: [UUID: AIChatTranscriptRenderedBody] = [:]
   @State private var preparedLive: PreparedLive?
   @State private var showsAllLiveText = false
   @State private var showsLiveActivity = false
@@ -45,12 +130,6 @@ struct AIChatTranscriptDocument: View {
     self.onPosition = onPosition
   }
 
-  private struct RenderedBody {
-    let source: String
-    let expanded: Bool
-    let html: String
-    let contexts: [AIChatTranscriptHTML.Context]
-  }
   private struct RenderInput: Equatable {
     let id: UUID
     let text: String
@@ -142,11 +221,14 @@ struct AIChatTranscriptDocument: View {
       )
       let resolved = rendered[message.id].flatMap {
         $0.source == input.text && $0.expanded == input.expanded ? $0 : nil
-      }
+      } ?? cachedRenderedBody(input: input)
+        ?? cachedUserBody(message: message, input: input)
+      let isPreparing = message.role == .user && resolved == nil
       return AIChatTranscriptHTML.Entry(
         id: message.id.uuidString.lowercased(), role: message.role.rawValue,
         title: title(message), timestamp: AIChatMessageTimestampPresentation.displayText(for: message.createdAt),
-        html: resolved?.html ?? AIChatDocumentHTML.plain(message.role == .user ? "Preparing message…" : excerpt.text),
+        html: resolved?.html ?? AIChatDocumentHTML.plain(isPreparing ? "" : excerpt.text),
+        preparing: isPreparing,
         contexts: resolved?.contexts ?? [],
         attachments: message.attachments.map(AIChatTranscriptHTML.Attachment.init),
         failure: message.sendFailure,
@@ -180,9 +262,30 @@ struct AIChatTranscriptDocument: View {
     )
     .task(id: RenderKey(sourcePath: sourcePath, inputs: inputs)) {
       let ids = Set(inputs.map(\.id))
-      rendered = rendered.filter { ids.contains($0.key) }
-      for input in inputs where rendered[input.id]?.source != input.text
-        || rendered[input.id]?.expanded != input.expanded {
+      var nextRendered = rendered.filter { ids.contains($0.key) }
+      for (message, input) in zip(messages, inputs)
+      where nextRendered[input.id]?.source != input.text
+        || nextRendered[input.id]?.expanded != input.expanded {
+        if let cached = cachedRenderedBody(input: input)
+          ?? cachedUserBody(message: message, input: input) {
+          nextRendered[input.id] = cached
+          AIChatTranscriptRenderedBodyCache.install(
+            cached,
+            messageID: input.id,
+            sourcePath: sourcePath
+          )
+        }
+      }
+      rendered = nextRendered
+      let unresolvedInputs = inputs.filter {
+        nextRendered[$0.id]?.source != $0.text
+          || nextRendered[$0.id]?.expanded != $0.expanded
+      }
+      // A cold user bubble should never wait behind formatted assistant HTML.
+      // Assistant excerpts are already readable while their richer rendering finishes.
+      let prioritizedInputs = unresolvedInputs.filter { !$0.formatted }
+        + unresolvedInputs.filter(\.formatted)
+      for input in prioritizedInputs {
         do {
           try Task.checkCancellation()
           let prepared = await Task.detached(priority: .userInitiated) {
@@ -200,12 +303,19 @@ struct AIChatTranscriptDocument: View {
             ? try await AIChatDocumentRenderCache.shared.render(prepared.0, sourcePath: sourcePath)
             : AIChatDocumentHTML.plain(prepared.0)
           try Task.checkCancellation()
-          rendered[input.id] = RenderedBody(
+          let renderedBody = AIChatTranscriptRenderedBody(
             source: input.text,
             expanded: input.expanded,
             html: html,
             contexts: prepared.1
           )
+          AIChatTranscriptRenderedBodyCache.install(
+            renderedBody,
+            messageID: input.id,
+            sourcePath: sourcePath
+          )
+          nextRendered[input.id] = renderedBody
+          rendered = nextRendered
         } catch is CancellationError { return }
         catch { /* The selectable plain body remains available. */ }
       }
@@ -246,6 +356,33 @@ struct AIChatTranscriptDocument: View {
       copyFeedbackTask?.cancel()
       copyFeedbackTask = nil
     }
+  }
+
+  private func cachedUserBody(
+    message: OpenClawChatMessage,
+    input: RenderInput
+  ) -> AIChatTranscriptRenderedBody? {
+    guard let prepared = AIChatTranscriptHTML.cachedUserBody(
+      for: message,
+      expanded: input.expanded
+    ) else { return nil }
+    return AIChatTranscriptRenderedBody(
+      source: input.text,
+      expanded: input.expanded,
+      html: prepared.html,
+      contexts: prepared.contexts
+    )
+  }
+
+  private func cachedRenderedBody(
+    input: RenderInput
+  ) -> AIChatTranscriptRenderedBody? {
+    AIChatTranscriptRenderedBodyCache.body(
+      messageID: input.id,
+      source: input.text,
+      expanded: input.expanded,
+      sourcePath: sourcePath
+    )
   }
 
   private func title(_ message: OpenClawChatMessage) -> String {
@@ -339,6 +476,27 @@ struct AIChatTranscriptDocument: View {
 }
 
 enum AIChatTranscriptHTML {
+  struct PreparedUserBody: Equatable {
+    let html: String
+    let contexts: [Context]
+  }
+
+  @MainActor
+  static func cachedUserBody(
+    for message: OpenClawChatMessage,
+    expanded: Bool
+  ) -> PreparedUserBody? {
+    guard message.role == .user, !expanded else { return nil }
+    let input = OpenClawMessagePresentationInput(message)
+    guard let cached = OpenClawMessagePresentationCache.cachedPresentation(for: input) else {
+      return nil
+    }
+    return PreparedUserBody(
+      html: AIChatDocumentHTML.plain(cached.body.displayedText),
+      contexts: cached.context.contexts.map(Context.init)
+    )
+  }
+
   struct Context: Codable, Equatable {
     let title: String
     let kind: String
@@ -441,6 +599,7 @@ enum AIChatTranscriptHTML {
     let title: String
     let timestamp: String
     let html: String
+    let preparing: Bool
     let contexts: [Context]
     let attachments: [Attachment]
     let failure: String?
@@ -495,6 +654,11 @@ enum AIChatTranscriptHTML {
   .glyph svg,.icon-button svg,.detail-icon svg,.activity-icon svg,.change-icon svg { width:14px; height:14px; }
   .context-pills { display:flex; flex-wrap:wrap; gap:5px; margin-bottom:6px; }
   .context-pill { padding:3px 7px; border-radius:999px; font-size:10px; color:light-dark(#2773bd,#83bafa); background:light-dark(#eaf3fc,#27394b); border:1px solid light-dark(#bdd8f0,#34516b); }
+  .message-placeholder { display:flex; align-items:center; gap:9px; min-width:215px; height:23px; padding:4px 0; color:light-dark(#777,#aaa); }
+  .message-placeholder-pulse { flex:0 0 6px; width:6px; height:6px; border-radius:50%; background:currentColor; animation:pulse .85s ease-in-out infinite alternate; }
+  .message-placeholder-lines { display:flex; flex-direction:column; gap:6px; }
+  .message-placeholder-line { display:block; width:190px; height:7px; border-radius:999px; background:currentColor; opacity:.16; animation:placeholder-pulse 1.15s ease-in-out infinite alternate; }
+  .message-placeholder-line:last-child { width:132px; animation-delay:.16s; }
   .message-card > main { min-width:0; }
   .message-card > main > :first-child { margin-top:0; }
   .message-card > main > :last-child { margin-bottom:0; }
@@ -556,9 +720,10 @@ enum AIChatTranscriptHTML {
   #status.working::before { content:''; display:block; flex:0 0 5px; width:5px; height:5px; border-radius:50%; background:currentColor; animation:pulse 1.2s ease-in-out infinite; }
   #status button { display:inline-flex; align-items:center; justify-content:center; flex:none; white-space:nowrap; line-height:1.25; }
   @keyframes pulse { from { opacity:.55; transform:scale(.78); } to { opacity:1; transform:scale(1); } }
+  @keyframes placeholder-pulse { from { opacity:.11; } to { opacity:.24; } }
   @keyframes shimmer { from { background-position:100% 0; } to { background-position:-120% 0; } }
   @media (prefers-reduced-motion:reduce) {
-    #live.animating .live-pulse,.live-running-dot { animation:none; }
+    #live.animating .live-pulse,.live-running-dot,.message-placeholder-pulse,.message-placeholder-line { animation:none; }
     #live.animating .live-title { color:inherit; background:none; animation:none; }
   }
   #latest { position:fixed; bottom:12px; right:14px; border:1px solid #8886; border-radius:20px; background:light-dark(#fff,#333); box-shadow:0 2px 6px #0002; }
@@ -569,6 +734,17 @@ enum AIChatTranscriptHTML {
   static let script = #"""
   (() => {
     let current = null, pending = null, pendingLive = null, hasPendingLive = false, nearBottom = true, searchToken = '';
+    const threadNodes = new Map(), threadNodeLimit = 8;
+    const restoreThreadNodes = (root, thread) => {
+      const nodes=threadNodes.get(thread);
+      if(!nodes) { root.replaceChildren(); return; }
+      threadNodes.delete(thread); threadNodes.set(thread,nodes);
+      root.replaceChildren(...nodes);
+    };
+    const rememberThreadNodes = (root, thread) => {
+      threadNodes.delete(thread); threadNodes.set(thread,[...root.children]);
+      while(threadNodes.size>threadNodeLimit) threadNodes.delete(threadNodes.keys().next().value);
+    };
     const post = (action, id, detail) => webkit.messageHandlers.transcript.postMessage({action, id:id??null, detail:detail??null, thread:current?.thread??""});
     const selected = () => { const s=getSelection(); return s && !s.isCollapsed; };
     const maxScroll = () => Math.max(0,document.documentElement.scrollHeight-innerHeight);
@@ -617,6 +793,17 @@ enum AIChatTranscriptHTML {
       if(deletions>0) { const n=document.createElement('span'); n.className='deletions'; n.textContent='-'+deletions; d.append(n); }
       if(!insertions && !deletions) d.textContent='0'; parent.append(d);
     };
+    const sameValue = (left,right) => {
+      if(left===right) return true;
+      if(left===null || right===null || typeof left!==typeof right || typeof left!=='object') return false;
+      if(Array.isArray(left) || Array.isArray(right)) {
+        return Array.isArray(left) && Array.isArray(right) && left.length===right.length
+          && left.every((value,index)=>sameValue(value,right[index]));
+      }
+      const leftKeys=Object.keys(left).sort(), rightKeys=Object.keys(right).sort();
+      return leftKeys.length===rightKeys.length
+        && leftKeys.every((key,index)=>key===rightKeys[index] && sameValue(left[key],right[key]));
+    };
     const makeMessage = e => {
       const a=document.createElement('article'); a.id='message-'+e.id; a.className=e.role;
       if(e.isRoomResponse) a.classList.add('room-response');
@@ -638,19 +825,28 @@ enum AIChatTranscriptHTML {
         for(const context of e.contexts) { const pill=document.createElement('span'); pill.className='context-pill'; pill.textContent=(context.isAutomatic?'✦ ':'')+context.title; pills.append(pill); }
         card.append(pills);
       }
-      const doc=new DOMParser().parseFromString(e.html,'text/html');
-      const css=doc.querySelector('style');
-      if(css && !document.getElementById('renderer-style')) { css.id='renderer-style'; document.head.prepend(css); }
-      doc.querySelectorAll('script,.org2-document-header').forEach(x=>x.remove());
-      const main=doc.querySelector('main') || doc.body;
-      const body=document.createElement('main'); body.className='org2-document'; body.append(...main.childNodes);
-      for(const pre of body.querySelectorAll('pre')) {
-        const wrap=document.createElement('div'); wrap.className='chat-code'; pre.replaceWith(wrap); wrap.append(pre);
-        const b=document.createElement('button'); b.className='chat-copy-code'; b.textContent='Copy code';
-        b.onclick=()=>webkit.messageHandlers.chatCopyCode.postMessage(pre.textContent.replace(/\n$/,'')); wrap.append(b);
+      if(e.preparing) {
+        const placeholder=document.createElement('div'); placeholder.className='message-placeholder';
+        placeholder.setAttribute('role','status'); placeholder.setAttribute('aria-label','Preparing message');
+        const pulse=document.createElement('span'); pulse.className='message-placeholder-pulse'; pulse.setAttribute('aria-hidden','true');
+        const lines=document.createElement('span'); lines.className='message-placeholder-lines'; lines.setAttribute('aria-hidden','true');
+        for(let i=0;i<2;i++) { const line=document.createElement('span'); line.className='message-placeholder-line'; lines.append(line); }
+        placeholder.append(pulse,lines); card.append(placeholder);
+      } else {
+        const doc=new DOMParser().parseFromString(e.html,'text/html');
+        const css=doc.querySelector('style');
+        if(css && !document.getElementById('renderer-style')) { css.id='renderer-style'; document.head.prepend(css); }
+        doc.querySelectorAll('script,.org2-document-header').forEach(x=>x.remove());
+        const main=doc.querySelector('main') || doc.body;
+        const body=document.createElement('main'); body.className='org2-document'; body.append(...main.childNodes);
+        for(const pre of body.querySelectorAll('pre')) {
+          const wrap=document.createElement('div'); wrap.className='chat-code'; pre.replaceWith(wrap); wrap.append(pre);
+          const b=document.createElement('button'); b.className='chat-copy-code'; b.textContent='Copy code';
+          b.onclick=()=>webkit.messageHandlers.chatCopyCode.postMessage(pre.textContent.replace(/\n$/,'')); wrap.append(b);
+        }
+        card.append(body);
       }
-      card.append(body);
-      if(e.isTruncated) { const expand=button('⌄  Show Full Message','expand',e.id); expand.className='expansion'; card.append(expand); }
+      if(!e.preparing && e.isTruncated) { const expand=button('⌄  Show Full Message','expand',e.id); expand.className='expansion'; card.append(expand); }
       if(e.attachments.length) {
         const attachments=document.createElement('div'); attachments.className='attachments';
         for(const attachment of e.attachments) {
@@ -722,7 +918,7 @@ enum AIChatTranscriptHTML {
       }
       a.append(card);
       if(e.role==='user') { const avatar=document.createElement('span'); avatar.className='avatar user-avatar'; avatar.append(icon('person')); a.append(avatar); }
-      a.dataset.entry=JSON.stringify(e); return a;
+      a._entry=e; return a;
     };
     const ensureLive = () => {
       const root=document.getElementById('live');
@@ -804,15 +1000,16 @@ enum AIChatTranscriptHTML {
       const anchor=first?{id:first.id,top:first.getBoundingClientRect().top}:null;
       const follow=nearBottom && !selected();
       const root=document.getElementById('messages');
-      if(changedThread) root.replaceChildren();
+      if(changedThread) restoreThreadNodes(root,data.thread);
       const wanted=new Set(data.entries.map(e=>'message-'+e.id));
       for(const child of [...root.children]) if(!wanted.has(child.id)) child.remove();
       data.entries.forEach((e,i)=>{
         let a=document.getElementById('message-'+e.id);
-        if(!a || a.dataset.entry!==JSON.stringify(e)) { const next=makeMessage(e); if(a) a.replaceWith(next); a=next; }
+        if(!a || !sameValue(a._entry,e)) { const next=makeMessage(e); if(a) a.replaceWith(next); a=next; }
         if(root.children[i]!==a) root.insertBefore(a,root.children[i]||null);
         a.classList.toggle('match',data.search===e.id);
       });
+      rememberThreadNodes(root,data.thread);
       const earlier=document.getElementById('earlier'); earlier.textContent=data.earlier||''; earlier.hidden=!data.earlier;
       const status=document.getElementById('status'); status.replaceChildren();
       document.body.classList.toggle('compact',data.compact);

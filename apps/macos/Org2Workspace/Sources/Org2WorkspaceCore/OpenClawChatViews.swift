@@ -968,6 +968,7 @@ enum OpenClawMessageOrgNormalizer {
 
     for index in lines.indices {
       lines[index] = normalizedBlockDirective(lines[index])
+      lines[index] = normalizedNestedInlineEmphasis(lines[index])
 
       guard index > lines.startIndex,
             isTableSeparator(lines[index]),
@@ -1003,6 +1004,142 @@ enum OpenClawMessageOrgNormalizer {
       directive == $0 || directive.hasPrefix($0 + " ") || directive.hasPrefix($0 + "\t")
     }) else { return line }
     return indentation + "#" + suffix
+  }
+
+  /// Agent replies occasionally wrap an Org verbatim/code span inside bold or
+  /// italic emphasis even though Org2 inline spans deliberately do not nest.
+  /// Keep the language rule simple and repair that common presentation mistake
+  /// at the chat boundary so both intended styles remain visible.
+  private nonisolated static func normalizedNestedInlineEmphasis(_ line: String) -> String {
+    var output = ""
+    var cursor = line.startIndex
+
+    while cursor < line.endIndex {
+      guard let repaired = repairedNestedInlineEmphasis(in: line, at: cursor) else {
+        output.append(line[cursor])
+        cursor = line.index(after: cursor)
+        continue
+      }
+      output += repaired.text
+      cursor = repaired.end
+    }
+    return output
+  }
+
+  private nonisolated static func repairedNestedInlineEmphasis(
+    in line: String,
+    at open: String.Index
+  ) -> (text: String, end: String.Index)? {
+    let marker = line[open]
+    guard marker == "*" || marker == "/" else { return nil }
+    let contentStart = line.index(after: open)
+    guard contentStart < line.endIndex,
+          !line[contentStart].isWhitespace,
+          open == line.startIndex || isInlineBoundary(line[line.index(before: open)])
+    else { return nil }
+
+    var search = contentStart
+    while search < line.endIndex, let close = line[search...].firstIndex(of: marker) {
+      let afterClose = line.index(after: close)
+      if !line[line.index(before: close)].isWhitespace,
+         afterClose == line.endIndex || isInlineBoundary(line[afterClose]) {
+        let body = String(line[contentStart..<close])
+        if let repairedBody = repairedOuterEmphasisBody(body, marker: marker) {
+          return (repairedBody, afterClose)
+        }
+      }
+      search = afterClose
+    }
+    return nil
+  }
+
+  private enum NestedInlinePiece {
+    case plain(String)
+    case protected(String)
+  }
+
+  private struct ProtectedInlineSpan {
+    let end: String.Index
+  }
+
+  private nonisolated static func repairedOuterEmphasisBody(
+    _ body: String,
+    marker: Character
+  ) -> String? {
+    var pieces: [NestedInlinePiece] = []
+    var plainStart = body.startIndex
+    var cursor = body.startIndex
+    var foundProtectedSpan = false
+
+    while cursor < body.endIndex {
+      if let protectedSpan = protectedInlineSpan(in: body, at: cursor) {
+        pieces.append(.plain(String(body[plainStart..<cursor])))
+        pieces.append(.protected(String(body[cursor..<protectedSpan.end])))
+        foundProtectedSpan = true
+        cursor = protectedSpan.end
+        plainStart = cursor
+      } else {
+        cursor = body.index(after: cursor)
+      }
+    }
+    guard foundProtectedSpan else { return nil }
+    pieces.append(.plain(String(body[plainStart...])))
+
+    return pieces.map { piece in
+      switch piece {
+      case .protected(let raw):
+        return raw
+      case .plain(let raw):
+        return emphasizedPlainSegment(raw, marker: marker)
+      }
+    }.joined()
+  }
+
+  private nonisolated static func protectedInlineSpan(
+    in text: String,
+    at open: String.Index
+  ) -> ProtectedInlineSpan? {
+    let marker = text[open]
+    guard marker == "=" || marker == "~" else { return nil }
+    let contentStart = text.index(after: open)
+    guard contentStart < text.endIndex,
+          !text[contentStart].isWhitespace,
+          open == text.startIndex || isInlineBoundary(text[text.index(before: open)])
+    else { return nil }
+
+    var search = contentStart
+    while search < text.endIndex, let close = text[search...].firstIndex(of: marker) {
+      let afterClose = text.index(after: close)
+      if !text[text.index(before: close)].isWhitespace,
+         afterClose == text.endIndex || isInlineBoundary(text[afterClose]) {
+        return ProtectedInlineSpan(end: afterClose)
+      }
+      search = afterClose
+    }
+    return nil
+  }
+
+  private nonisolated static func emphasizedPlainSegment(
+    _ raw: String,
+    marker: Character
+  ) -> String {
+    guard let contentStart = raw.firstIndex(where: { !$0.isWhitespace }),
+          let contentEndCharacter = raw.lastIndex(where: { !$0.isWhitespace })
+    else { return raw }
+    let contentEnd = raw.index(after: contentEndCharacter)
+    return String(raw[..<contentStart])
+      + String(marker) + String(raw[contentStart..<contentEnd]) + String(marker)
+      + String(raw[contentEnd...])
+  }
+
+  private nonisolated static func isInlineBoundary(_ character: Character) -> Bool {
+    if character.isWhitespace { return true }
+    let isASCIIWord = character.unicodeScalars.allSatisfy { scalar in
+      (65...90).contains(Int(scalar.value))
+        || (97...122).contains(Int(scalar.value))
+        || (48...57).contains(Int(scalar.value))
+    }
+    return !isASCIIWord
   }
 
   private nonisolated static func isTableSeparator(_ line: String) -> Bool {
@@ -2915,19 +3052,16 @@ struct OpenClawComposerView: View {
 
   var body: some View {
     let presentation = OpenClawContextPresentation(localDraft)
-    VStack(alignment: .trailing, spacing: 8) {
+    VStack(alignment: .trailing, spacing: OpenClawComposerLayout.externalSpacing) {
       let composerHeight = OpenClawComposerSizing.height(for: presentation.userText, compact: compact)
       VStack(alignment: .leading, spacing: 0) {
         if !presentation.contexts.isEmpty {
           OpenClawContextPillsView(contexts: presentation.contexts) { context in
             localDraft = presentation.removing(context)
           }
-          .padding(.horizontal, 8)
-          .padding(.top, 7)
-          .padding(.bottom, 6)
-
-          Divider()
-            .padding(.horizontal, 8)
+          .padding(.horizontal, OpenClawComposerLayout.contentInset)
+          .padding(.top, OpenClawComposerLayout.contentInset)
+          .padding(.bottom, 4)
         }
 
         ZStack(alignment: .topLeading) {
@@ -2942,8 +3076,8 @@ struct OpenClawComposerView: View {
               .lineLimit(1)
               .truncationMode(.tail)
               .frame(maxWidth: .infinity, alignment: .leading)
-              .padding(.horizontal, 10)
-              .padding(.vertical, 9)
+              .padding(.horizontal, OpenClawComposerLayout.contentInset + 1)
+              .padding(.vertical, 10)
           }
 
           OpenClawComposerTextView(
@@ -2962,12 +3096,28 @@ struct OpenClawComposerView: View {
           .padding(4)
         }
         .frame(minHeight: composerHeight, idealHeight: composerHeight, maxHeight: composerHeight)
+
+        if !store.openClawPendingAttachments.isEmpty {
+          OpenClawPendingAttachmentsView(compact: compact)
+            .padding(.horizontal, OpenClawComposerLayout.contentInset)
+            .padding(.top, 2)
+            .padding(.bottom, 6)
+        }
+
+        footer
+          .padding(.horizontal, OpenClawComposerLayout.toolbarHorizontalInset)
+          .padding(.top, 4)
+          .padding(.bottom, OpenClawComposerLayout.toolbarBottomInset)
       }
-      .background(WorkspaceDesign.surfaceBackground, in: RoundedRectangle(cornerRadius: WorkspaceDesign.cornerRadius, style: .continuous))
+      .background(
+        WorkspaceDesign.surfaceBackground,
+        in: RoundedRectangle(cornerRadius: OpenClawComposerLayout.cornerRadius, style: .continuous)
+      )
       .overlay(
-        RoundedRectangle(cornerRadius: WorkspaceDesign.cornerRadius, style: .continuous)
+        RoundedRectangle(cornerRadius: OpenClawComposerLayout.cornerRadius, style: .continuous)
           .stroke(canSend ? Color.accentColor.opacity(0.26) : WorkspaceDesign.hairline)
       )
+      .shadow(color: .black.opacity(0.035), radius: 8, y: 3)
       .animation(.easeOut(duration: 0.12), value: composerHeight)
 
       let slashSuggestions = OpenClawSlashCommands.suggestions(
@@ -2988,10 +3138,6 @@ struct OpenClawComposerView: View {
           selectedCommandID: selectedSlashSuggestion(in: slashSuggestions)?.id,
           select: completeSlashCommand
         )
-      }
-
-      if !store.openClawPendingAttachments.isEmpty {
-        OpenClawPendingAttachmentsView(compact: compact)
       }
 
       if store.selectedAIChatIsSharedRoom {
@@ -3017,8 +3163,6 @@ struct OpenClawComposerView: View {
           .padding(.horizontal, 2)
         }
       }
-
-      footer
     }
     .onAppear {
       localDraft = store.openClawDraft
@@ -3057,15 +3201,20 @@ struct OpenClawComposerView: View {
 
   private var footer: some View {
     ViewThatFits(in: .horizontal) {
-      composerFooter(showsDetailedConfiguration: true)
-      composerFooter(showsDetailedConfiguration: false)
+      composerToolbar(showsDetailedConfiguration: true)
+      composerToolbar(showsDetailedConfiguration: false)
       VStack(alignment: .leading, spacing: 6) {
-        compactConfigurationControls
+        HStack(spacing: 5) {
+          attachmentButton
+          compactConfigurationControls
+          Spacer(minLength: 0)
+        }
         HStack(spacing: 5) {
           composerStatus(compact: true)
           Spacer(minLength: 0)
-          composerActionButtons
-            .labelStyle(.iconOnly)
+          dictationButton(showsTitle: false)
+          primaryActionButton
+          deliveryOptionsMenu
         }
       }
     }
@@ -3091,18 +3240,34 @@ struct OpenClawComposerView: View {
     }
   }
 
-  private func composerFooter(showsDetailedConfiguration: Bool) -> some View {
+  private func composerToolbar(showsDetailedConfiguration: Bool) -> some View {
     HStack(spacing: showsDetailedConfiguration ? 8 : 5) {
+      attachmentButton
+      if showsDetailedConfiguration {
+        if !store.selectedAIChatIsSharedRoom {
+          runtimePicker()
+        }
+      } else if !store.selectedAIChatIsSharedRoom {
+        runtimePicker(iconOnly: true)
+      }
       composerStatus(compact: !showsDetailedConfiguration)
       Spacer(minLength: 0)
       if showsDetailedConfiguration {
-        detailedConfigurationControls
-        composerActionButtons
+        if store.selectedAIChatIsSharedRoom {
+          detailedConfigurationControls
+        } else {
+          modelConfigurationPicker
+        }
       } else {
-        compactConfigurationControls
-        composerActionButtons
-          .labelStyle(.iconOnly)
+        if store.selectedAIChatIsSharedRoom {
+          compactConfigurationControls
+        } else {
+          modelConfigurationPicker
+        }
       }
+      dictationButton(showsTitle: showsDetailedConfiguration)
+      primaryActionButton
+      deliveryOptionsMenu
     }
   }
 
@@ -3179,23 +3344,24 @@ struct OpenClawComposerView: View {
       ForEach(store.selectedAIChatRoomDestinationIDs, id: \.self) { destinationID in
         roomModelPicker(forDestinationID: destinationID)
       }
-    } else {
-      runtimePicker()
-      modelConfigurationPicker
     }
   }
 
   @ViewBuilder
-  private var composerActionButtons: some View {
+  private var attachmentButton: some View {
     Button {
       store.chooseOpenClawAttachments()
     } label: {
-      Label("Attach File", systemImage: "paperclip")
+      Label("Add attachment", systemImage: "plus")
     }
     .labelStyle(.iconOnly)
     .buttonStyle(WorkspaceActionButtonStyle())
     .help("Attach file or image")
+    .accessibilityIdentifier("ai-chat-attach-button")
+  }
 
+  @ViewBuilder
+  private func dictationButton(showsTitle: Bool) -> some View {
     Button {
       flushDraftToStore()
       if store.isRecordingOpenClawVoiceNote {
@@ -3206,10 +3372,12 @@ struct OpenClawComposerView: View {
         Task { await store.startOpenClawVoiceNoteRecording() }
       }
     } label: {
-      Label(
-        store.isRecordingOpenClawVoiceNote ? "Stop Dictation" : "Dictate",
-        systemImage: store.isRecordingOpenClawVoiceNote ? "stop.fill" : "mic.fill"
-      )
+      HStack(spacing: 6) {
+        Image(systemName: store.isRecordingOpenClawVoiceNote ? "stop.fill" : "mic.fill")
+        if showsTitle {
+          Text(store.isRecordingOpenClawVoiceNote ? "Stop Dictation" : "Dictate")
+        }
+      }
     }
     .buttonStyle(WorkspaceActionButtonStyle())
     .disabled(!store.isRecordingOpenClawVoiceNote && !store.canStartOpenClawVoiceNoteRecording)
@@ -3218,19 +3386,36 @@ struct OpenClawComposerView: View {
         ? "Stop dictating and place the transcript in the composer without sending"
         : "Start local voice dictation"
     )
+    .accessibilityLabel(store.isRecordingOpenClawVoiceNote ? "Stop Dictation" : "Dictate")
+    .accessibilityIdentifier("ai-chat-dictation-button")
+  }
 
+  private var primaryActionButton: some View {
     Button {
       performPrimaryAction(delivery: .automatic)
     } label: {
-      Label(
-        primaryActionTitle,
-        systemImage: primaryActionSystemImage
-      )
+      Image(systemName: primaryActionSystemImage)
+        .font(.system(size: 13, weight: .bold))
+        .foregroundStyle(primaryActionIsEnabled ? Color.white : WorkspaceDesign.tertiaryText)
+        .frame(
+          width: OpenClawComposerLayout.primaryActionDiameter,
+          height: OpenClawComposerLayout.primaryActionDiameter
+        )
+        .background(
+          primaryActionIsEnabled ? Color.accentColor : WorkspaceDesign.controlFill,
+          in: Circle()
+        )
+        .contentShape(Circle())
     }
-    .buttonStyle(WorkspaceActionButtonStyle())
-    .disabled(!store.isRecordingOpenClawVoiceNote && !canSend)
+    .buttonStyle(WorkspaceQuietPressStyle())
+    .disabled(!primaryActionIsEnabled)
+    .accessibilityLabel(primaryActionTitle)
+    .accessibilityIdentifier("ai-chat-primary-action-button")
     .help(primaryActionHelp)
+  }
 
+  @ViewBuilder
+  private var deliveryOptionsMenu: some View {
     if isRunning
       && !store.selectedAIChatIsSharedRoom
       && !store.isRecordingOpenClawVoiceNote
@@ -3251,6 +3436,10 @@ struct OpenClawComposerView: View {
       .fixedSize()
       .help("Steer the current turn now (⌘Return)")
     }
+  }
+
+  private var primaryActionIsEnabled: Bool {
+    store.isRecordingOpenClawVoiceNote || canSend
   }
 
   private func runtimePicker(iconOnly: Bool = false) -> some View {
@@ -4131,7 +4320,7 @@ private struct OpenClawPendingAttachmentChip: View {
     }
     .padding(.horizontal, 8)
     .padding(.vertical, 6)
-    .background(WorkspaceDesign.surfaceBackground, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+    .background(WorkspaceDesign.controlFill, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
     .overlay(
       RoundedRectangle(cornerRadius: 7, style: .continuous)
         .stroke(WorkspaceDesign.hairline)
@@ -4141,6 +4330,15 @@ private struct OpenClawPendingAttachmentChip: View {
       OpenClawAttachmentPreviewView(attachment: attachment)
     }
   }
+}
+
+enum OpenClawComposerLayout {
+  static let cornerRadius: CGFloat = 20
+  static let contentInset: CGFloat = 10
+  static let toolbarHorizontalInset: CGFloat = 9
+  static let toolbarBottomInset: CGFloat = 9
+  static let externalSpacing: CGFloat = 8
+  static let primaryActionDiameter: CGFloat = 32
 }
 
 enum OpenClawComposerSizing {

@@ -45,4 +45,47 @@ final class WorkspaceProjectTests: XCTestCase {
   func testEmptyProjectListHasNoPromptOverhead() {
     XCTAssertEqual(WorkspaceProjectContext.presentation(projects: [], threadID: UUID()), "")
   }
+
+  @MainActor
+  func testForkedThreadRetainsProjectMembership() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-project-fork-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let suiteName = "WorkspaceProjectTests.Fork.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let store = WorkspaceStore(
+      cli: Org2CLI(repoRoot: try Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: root.appendingPathComponent("chat.json"),
+      legacyDefaultsDomains: []
+    )
+    store.setCorpusRoot(root, persistsDefault: false)
+    let sourceID = store.createOpenClawChatThread(runtime: .openClaw)
+    let projectID = UUID().uuidString.lowercased()
+    let projectURL = root.appendingPathComponent("launch.org")
+    let projectText = """
+    #+ORG2_KIND: project
+    #+TITLE: Launch
+    #+PROJECT_THREADS: \(sourceID.uuidString.lowercased())
+    :PROPERTIES:
+    :ID: \(projectID)
+    :END:
+
+    Keep the launch coordinated.
+    """
+    try projectText.write(to: projectURL, atomically: true, encoding: .utf8)
+    await store.refreshProjects()
+    XCTAssertTrue(try XCTUnwrap(store.projectNotes.first).contains(sourceID))
+
+    let loadedForkID = await store.forkAIChatThread(sourceID)
+    let forkID = try XCTUnwrap(loadedForkID)
+
+    let project = try XCTUnwrap(store.projectNotes.first(where: { $0.id == projectID }))
+    XCTAssertTrue(project.contains(sourceID))
+    XCTAssertTrue(project.contains(forkID))
+    let persisted = try String(contentsOf: projectURL, encoding: .utf8)
+    XCTAssertTrue(persisted.contains(forkID.uuidString.lowercased()))
+  }
 }

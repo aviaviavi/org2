@@ -37,6 +37,34 @@ final class AIChatDocumentTests: XCTestCase {
     XCTAssertTrue((result?["text"] as? String)?.contains("Reduce Motion support.") == true)
   }
 
+  func testChatNormalizerRepairsNestedOrgCodeInsideEmphasis() async throws {
+    let raw = """
+    - *=celorga.app= — primary domain.* Natural for downloads.
+    - /Use ~celorga run~ from the CLI./
+    """
+    let normalized = OpenClawMessageOrgNormalizer.normalized(raw)
+    XCTAssertEqual(normalized, """
+    - =celorga.app= *— primary domain.* Natural for downloads.
+    - /Use/ ~celorga run~ /from the CLI./
+    """)
+
+    let cli = Org2CLI(repoRoot: try Org2CLI.defaultRepoRoot())
+    let html = try await cli.renderAppHTML(normalized, sourcePath: "/tmp/chat-test.org")
+    let view = try await document(html)
+    let result = try await view.evaluateJavaScript("""
+      (() => ({
+        code:[...document.querySelectorAll('code')].map(node => node.textContent),
+        strong:[...document.querySelectorAll('strong')].map(node => node.textContent),
+        italic:[...document.querySelectorAll('em')].map(node => node.textContent),
+        text:document.body.innerText
+      }))()
+      """) as? [String: Any]
+    XCTAssertEqual(result?["code"] as? [String], ["celorga.app", "celorga run"])
+    XCTAssertEqual(result?["strong"] as? [String], ["— primary domain."])
+    XCTAssertEqual(result?["italic"] as? [String], ["Use", "from the CLI."])
+    XCTAssertFalse((result?["text"] as? String ?? "").contains("=celorga.app="))
+  }
+
   func testSelectionSpansParagraphsListsAndTablesAndSurvivesUpdates() async throws {
     let view = try await document("<main><p>First paragraph.</p><ul><li>Second item.</li></ul><table><tr><td>Third cell.</td></tr></table></main>")
     let selected = try await view.evaluateJavaScript("""

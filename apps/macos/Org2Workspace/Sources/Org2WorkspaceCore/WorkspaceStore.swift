@@ -3088,6 +3088,8 @@ public final class WorkspaceStore {
   private var meetingTranscriptionEstimatedDuration: TimeInterval = 120
   private var openClawVoiceMeterTask: Task<Void, Never>?
   private var openClawVoiceTranscriptionProgressTask: Task<Void, Never>?
+  @ObservationIgnored private var openClawAttachmentPanel: NSOpenPanel?
+  @ObservationIgnored private var openClawAttachmentPreparationTail: Task<Void, Never>?
   private var openClawVoiceTranscriptionStartedAt: Date?
   private var openClawVoiceTranscriptionEstimatedDuration: TimeInterval = 8
   private var pendingNodeBriefArtifactRelativePath: String?
@@ -4210,6 +4212,12 @@ public final class WorkspaceStore {
       && corpusRoot?.standardizedFileURL.path == context.corpusRootPath
       && openClawTranscriptURL.standardizedFileURL.path == context.transcriptPath
       && openClawTranscriptLoadGeneration == context.transcriptLoadGeneration
+  }
+
+  private func isCurrentAIChatAttachmentContext(_ context: AIChatCorpusContextToken) -> Bool {
+    corpusSessionGeneration == context.corpusSessionGeneration
+      && corpusRoot?.standardizedFileURL.path == context.corpusRootPath
+      && openClawTranscriptURL.standardizedFileURL.path == context.transcriptPath
   }
 
   private func aiChatComposerKey(
@@ -19765,6 +19773,11 @@ public final class WorkspaceStore {
   }
 
   private func chooseOpenClawAttachments(allowedContentTypes: [UTType]?) {
+    if let openClawAttachmentPanel {
+      NSApplication.shared.activate(ignoringOtherApps: true)
+      openClawAttachmentPanel.makeKeyAndOrderFront(nil)
+      return
+    }
     let panel = NSOpenPanel()
     panel.allowsMultipleSelection = true
     panel.canChooseDirectories = false
@@ -19773,9 +19786,114 @@ public final class WorkspaceStore {
       panel.allowedContentTypes = allowedContentTypes
     }
     panel.prompt = "Attach"
-    if panel.runModal() == .OK {
-      attachOpenClawFiles(urls: panel.urls)
+    panel.message = "Choose files or images to add to this message."
+    openClawAttachmentPanel = panel
+    panel.begin { [weak self, weak panel] response in
+      let selectedURLs = response == .OK ? panel?.urls ?? [] : []
+      Task { @MainActor [weak self, weak panel] in
+        guard let self, self.openClawAttachmentPanel === panel else { return }
+        self.openClawAttachmentPanel = nil
+        guard response == .OK else { return }
+        self.enqueueOpenClawAttachmentPreparation(
+          urls: selectedURLs,
+          imagesOnly: allowedContentTypes == [.image]
+        )
+      }
     }
+  }
+
+  private func enqueueOpenClawAttachmentPreparation(
+    urls: [URL],
+    imagesOnly: Bool
+  ) {
+    guard !urls.isEmpty else { return }
+    let originThreadID = selectedOpenClawChatThreadID
+    let originContext = captureAIChatCorpusContext()
+    let previous = openClawAttachmentPreparationTail
+    openClawStatusText = urls.count == 1
+      ? "Attaching \(urls[0].lastPathComponent)…"
+      : "Attaching \(urls.count) files…"
+    openClawAttachmentPreparationTail = Task { @MainActor [weak self] in
+      _ = await previous?.value
+      guard let self else { return }
+      let results = await Task.detached(priority: .userInitiated) {
+        urls.map { url in
+          do {
+            let attachment = try imagesOnly
+              ? Self.openClawImageAttachment(from: url)
+              : Self.openClawAttachment(from: url)
+            return OpenClawAttachmentPreparationResult(
+              fileName: url.lastPathComponent,
+              attachment: attachment,
+              errorDescription: nil
+            )
+          } catch {
+            return OpenClawAttachmentPreparationResult(
+              fileName: url.lastPathComponent,
+              attachment: nil,
+              errorDescription: error.localizedDescription
+            )
+          }
+        }
+      }.value
+      self.finishOpenClawAttachmentPreparation(
+        results,
+        originThreadID: originThreadID,
+        originContext: originContext
+      )
+    }
+  }
+
+  private func finishOpenClawAttachmentPreparation(
+    _ results: [OpenClawAttachmentPreparationResult],
+    originThreadID: UUID?,
+    originContext: AIChatCorpusContextToken
+  ) {
+    let isCurrentComposer = isCurrentAIChatAttachmentContext(originContext)
+      && selectedOpenClawChatThreadID == originThreadID
+    let originAttachments: [OpenClawChatAttachment]
+    if let originThreadID {
+      let key = aiChatComposerKey(for: originThreadID, context: originContext)
+      originAttachments = openClawAttachmentsByComposerKey[key]
+        ?? (isCurrentComposer ? openClawPendingAttachments : [])
+    } else {
+      originAttachments = isCurrentComposer ? openClawPendingAttachments : []
+    }
+
+    var attachments = originAttachments
+    for result in results {
+      if let attachment = result.attachment {
+        guard !attachments.contains(where: { $0.hasSameContent(as: attachment) }) else { continue }
+        attachments.append(attachment)
+      } else if let errorDescription = result.errorDescription {
+        errorText = errorDescription
+        openClawStatusText = "Could not attach \(result.fileName)"
+      }
+    }
+
+    if let originThreadID {
+      cacheOpenClawAttachments(attachments, for: originThreadID, context: originContext)
+    }
+    guard isCurrentComposer else { return }
+    openClawPendingAttachments = attachments
+    if !attachments.isEmpty {
+      openClawStatusText = "\(attachments.count) attachment\(attachments.count == 1 ? "" : "s") ready"
+    }
+  }
+
+  func waitForOpenClawAttachmentPreparationForTesting() async {
+    await openClawAttachmentPreparationTail?.value
+  }
+
+  func enqueueOpenClawAttachmentPreparationForTesting(
+    urls: [URL],
+    imagesOnly: Bool = false
+  ) {
+    enqueueOpenClawAttachmentPreparation(urls: urls, imagesOnly: imagesOnly)
+  }
+
+  func advanceOpenClawTranscriptLoadGenerationForTesting() {
+    openClawTranscriptLoadGeneration &+= 1
   }
 
   public func attachOpenClawImages(urls: [URL]) {
@@ -27295,11 +27413,16 @@ public final class WorkspaceStore {
     asSharedRoom: Bool? = nil
   ) async -> UUID? {
     guard await hydrateOpenClawChatThreadIfNeeded(id) != nil else { return nil }
-    return forkHydratedAIChatThread(
+    let linkedProjects = projectNotes.filter { $0.contains(id) }
+    guard let forkedID = forkHydratedAIChatThread(
       id,
       selectsThread: selectsThread,
       asSharedRoom: asSharedRoom
-    )
+    ) else { return nil }
+    for project in linkedProjects {
+      await updateProject(project, threadID: forkedID)
+    }
+    return forkedID
   }
 
   private func forkHydratedAIChatThread(
@@ -43612,6 +43735,12 @@ private enum AudioSettingsError: LocalizedError {
       message
     }
   }
+}
+
+private struct OpenClawAttachmentPreparationResult: Sendable {
+  let fileName: String
+  let attachment: OpenClawChatAttachment?
+  let errorDescription: String?
 }
 
 private enum OpenClawAttachmentError: LocalizedError {

@@ -9,12 +9,13 @@ final class AIChatTranscriptDocumentTests: XCTestCase {
     _ id: String,
     _ html: String,
     role: String = "assistant",
+    preparing: Bool = false,
     failure: String? = nil,
     trace: AIChatTranscriptHTML.Trace? = nil,
     changeSummary: AIChatTranscriptHTML.ChangeSummary? = nil
   ) -> AIChatTranscriptHTML.Entry {
     .init(id: id, role: role, title: role == "user" ? "You" : "Assistant", timestamp: "Today",
-      html: html, contexts: [], attachments: [], failure: failure, queued: false, canSteer: false,
+      html: html, preparing: preparing, contexts: [], attachments: [], failure: failure, queued: false, canSteer: false,
       isRoomResponse: false, copied: false, isTruncated: false,
       responseTrace: trace, changeSummary: changeSummary)
   }
@@ -76,6 +77,62 @@ final class AIChatTranscriptDocumentTests: XCTestCase {
     let selected = try await view.evaluateJavaScript("getSelection().toString()") as? String
     XCTAssertEqual(old, false)
     XCTAssertEqual(selected, "")
+  }
+
+  func testWarmThreadSwitchReusesRenderedMessageDOM() async throws {
+    let view = try await document()
+    let first = entry("warm", "<main><p><strong>Already rendered.</strong></p></main>")
+    let second = entry("other", "<main><p>Another thread.</p></main>")
+    try await update(view, payload([first], thread: "first-thread"))
+    try await view.evaluateJavaScript(
+      "window.firstWarmMessageNode=document.getElementById('message-warm'); null;"
+    )
+
+    try await update(view, payload([second], thread: "second-thread"))
+    try await update(view, payload([first], thread: "first-thread"))
+
+    let reused = try await view.evaluateJavaScript(
+      "document.getElementById('message-warm')===window.firstWarmMessageNode"
+    ) as? Bool
+    XCTAssertEqual(reused, true)
+  }
+
+  func testWarmRenderedBodyCacheValidatesMessageRevisionAndCorpus() {
+    AIChatTranscriptRenderedBodyCache.removeAllForTesting()
+    let messageID = UUID()
+    let body = AIChatTranscriptRenderedBody(
+      source: "* Already rendered",
+      expanded: false,
+      html: "<main><strong>Already rendered</strong></main>",
+      contexts: []
+    )
+    AIChatTranscriptRenderedBodyCache.install(
+      body,
+      messageID: messageID,
+      sourcePath: "/tmp/first/chat-message.org"
+    )
+
+    XCTAssertEqual(
+      AIChatTranscriptRenderedBodyCache.body(
+        messageID: messageID,
+        source: body.source,
+        expanded: false,
+        sourcePath: "/tmp/first/chat-message.org"
+      ),
+      body
+    )
+    XCTAssertNil(AIChatTranscriptRenderedBodyCache.body(
+      messageID: messageID,
+      source: "* Edited message",
+      expanded: false,
+      sourcePath: "/tmp/first/chat-message.org"
+    ))
+    XCTAssertNil(AIChatTranscriptRenderedBodyCache.body(
+      messageID: messageID,
+      source: body.source,
+      expanded: false,
+      sourcePath: "/tmp/second/chat-message.org"
+    ))
   }
 
   func testOnlyTheTranscriptScrollsVerticallyIncludingOverCode() async throws {
@@ -151,6 +208,58 @@ final class AIChatTranscriptDocumentTests: XCTestCase {
     XCTAssertTrue((result?["trace"] as? String)?.contains("Read source") == true)
     XCTAssertTrue((result?["changes"] as? String)?.contains("ContentView.swift") == true)
     XCTAssertEqual(result?["details"] as? Bool, false)
+  }
+
+  func testPreparingMessageUsesAVisualSkeletonWithoutVisiblePlaceholderCopy() async throws {
+    let view = try await document()
+    try await update(view, payload([
+      entry("pending", AIChatDocumentHTML.plain(""), role: "user", preparing: true)
+    ]))
+
+    let result = try await view.evaluateJavaScript("""
+      (()=>{
+        const placeholder=document.querySelector('#message-pending .message-placeholder');
+        return {
+          exists:!!placeholder,
+          label:placeholder?.getAttribute('aria-label'),
+          lines:placeholder?.querySelectorAll('.message-placeholder-line').length,
+          visibleCopy:document.querySelector('#message-pending .message-card').innerText
+        };
+      })()
+      """) as? [String: Any]
+    XCTAssertEqual(result?["exists"] as? Bool, true)
+    XCTAssertEqual(result?["label"] as? String, "Preparing message")
+    XCTAssertEqual(result?["lines"] as? Int, 2)
+    XCTAssertFalse((result?["visibleCopy"] as? String ?? "").contains("Preparing message"))
+    XCTAssertTrue(AIChatTranscriptHTML.style.contains("@keyframes placeholder-pulse"))
+    XCTAssertTrue(AIChatTranscriptHTML.style.contains(".message-placeholder-pulse,.message-placeholder-line { animation:none; }"))
+  }
+
+  func testLoadedUserMessageReusesItsWarmSafePresentation() {
+    OpenClawMessagePresentationCache.removeAllForTesting()
+    let message = OpenClawChatMessage(
+      role: .user,
+      content: """
+      Use selected file “Private” at notes/private.org as context.
+      #+begin_org2_ai_context
+      PRIVATE-AUTOMATIC-PROMPT
+      #+end_org2_ai_context
+
+      Visible user message.
+      """
+    )
+    XCTAssertNil(AIChatTranscriptHTML.cachedUserBody(for: message, expanded: false))
+
+    OpenClawMessagePresentationCache.install(
+      OpenClawMessagePresentationBuilder.prepare(OpenClawMessagePresentationInput(message))
+    )
+    let warm = AIChatTranscriptHTML.cachedUserBody(for: message, expanded: false)
+
+    XCTAssertNotNil(warm)
+    XCTAssertTrue(warm?.html.contains("Visible user message.") == true)
+    XCTAssertFalse(warm?.html.contains("PRIVATE-AUTOMATIC-PROMPT") == true)
+    XCTAssertEqual(warm?.contexts.map(\.title), ["Private"])
+    XCTAssertNil(AIChatTranscriptHTML.cachedUserBody(for: message, expanded: true))
   }
 
   func testAuxiliaryControlsKeepIconsTextAndActionsAlignedAtNarrowWidths() async throws {

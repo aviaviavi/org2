@@ -3,12 +3,15 @@
 import { spawnSync } from "node:child_process";
 import {
   chmodSync,
+  closeSync,
   copyFileSync,
   cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
+  openSync,
   readFileSync,
+  readSync,
   realpathSync,
   readdirSync,
   rmSync,
@@ -45,9 +48,12 @@ const iconPath = resolve(
     ?? join(packageDir, "Sources", "Org2Workspace", "Resources", "OpenOrgAppIcon.png")
 );
 const swiftBuildArch = process.env.ORG2_WORKSPACE_SWIFT_ARCH ?? defaultSwiftBuildArch();
-const swiftScratchPath = process.env.ORG2_WORKSPACE_SWIFT_SCRATCH_PATH?.trim()
-  ? resolve(process.env.ORG2_WORKSPACE_SWIFT_SCRATCH_PATH.trim())
-  : "";
+const configuredSwiftScratchPath = process.env.ORG2_WORKSPACE_SWIFT_SCRATCH_PATH?.trim();
+const swiftScratchPath = configuredSwiftScratchPath
+  ? resolve(configuredSwiftScratchPath)
+  : buildOptions.localOptimized
+    ? join(repoRoot, ".build", "macos-local-optimized")
+    : "";
 const swiftBuildConfiguration = resolveBuildConfiguration();
 const bundledNodePath = process.env.ORG2_WORKSPACE_NODE_PATH?.trim()
   || (swiftBuildConfiguration === "release" ? discoverNodePath() : "");
@@ -90,6 +96,7 @@ function parseBuildOptions(arguments_) {
     configuration: "",
     googleOAuthClientJSON: "",
     help: false,
+    localOptimized: false,
     printConfiguration: false,
     requireGoogleOAuthClient: false,
     restart: false,
@@ -114,6 +121,9 @@ function parseBuildOptions(arguments_) {
           throw new Error("--google-oauth-client-json requires a path");
         }
         options.googleOAuthClientJSON = arguments_[index];
+        break;
+      case "--local-optimized":
+        options.localOptimized = true;
         break;
       case "--print-configuration":
         options.printConfiguration = true;
@@ -233,6 +243,8 @@ Options:
   --allow-daily-debug     Explicitly allow a debug build at org.org2.workspace
   --google-oauth-client-json PATH
                           Bundle a Google OAuth Desktop client without copying its JSON into source
+  --local-optimized       Keep -O optimization while enabling incremental Swift compilation and
+                          reuse source-runtime validation for a faster trusted local build
   --print-configuration   Print the resolved mode and paths without building
   --require-google-oauth-client
                           Fail unless a complete Google OAuth Desktop client is bundled
@@ -270,9 +282,17 @@ function defaultSwiftBuildArch() {
 function swiftBuildArgs(...args) {
   const scratchArgs = swiftScratchPath ? [...args, "--scratch-path", swiftScratchPath] : args;
   const architectureArgs = swiftBuildArch ? [...scratchArgs, "--arch", swiftBuildArch] : scratchArgs;
-  return swiftBuildConfiguration
+  const configurationArgs = swiftBuildConfiguration
     ? [...architectureArgs, "--configuration", swiftBuildConfiguration]
     : architectureArgs;
+  return buildOptions.localOptimized
+    ? [
+        ...configurationArgs,
+        "-Xswiftc", "-no-whole-module-optimization",
+        "-Xswiftc", "-incremental",
+        "-Xswiftc", "-enable-batch-mode",
+      ]
+    : configurationArgs;
 }
 
 function availableCodeSigningIdentities() {
@@ -352,6 +372,31 @@ function verifyNodeRuntime(executable) {
   }
 }
 
+const machOMagics = new Set([
+  0xfeedface,
+  0xcefaedfe,
+  0xfeedfacf,
+  0xcffaedfe,
+  0xcafebabe,
+  0xbebafeca,
+  0xcafebabf,
+  0xbfbafeca,
+]);
+
+function isMachOFile(path) {
+  let descriptor;
+  try {
+    descriptor = openSync(path, "r");
+    const header = Buffer.allocUnsafe(4);
+    return readSync(descriptor, header, 0, header.length, 0) === header.length
+      && machOMagics.has(header.readUInt32BE(0));
+  } catch {
+    return false;
+  } finally {
+    if (descriptor !== undefined) closeSync(descriptor);
+  }
+}
+
 function nestedMachOPaths(root) {
   const paths = [];
   function visit(directory) {
@@ -362,11 +407,7 @@ function nestedMachOPaths(root) {
         continue;
       }
       if (!entry.isFile()) continue;
-      const result = spawnSync("file", ["-b", path], {
-        encoding: "utf8",
-        stdio: ["ignore", "pipe", "ignore"],
-      });
-      if (result.status === 0 && result.stdout.includes("Mach-O")) {
+      if (isMachOFile(path)) {
         paths.push(path);
       }
     }
@@ -631,6 +672,7 @@ function copyOrg2Runtime(resourcesDir) {
     bundledNodePath,
     nodeArchitecture: runtimeNodeArchitecture,
   });
+  const runtimeDependencyRoot = process.env.ORG2_WORKSPACE_RUNTIME_DEPENDENCIES || repoRoot;
   const runtimePackages = [
     "@duckdb/node-api",
     "@duckdb/node-bindings",
@@ -638,7 +680,7 @@ function copyOrg2Runtime(resourcesDir) {
     "detect-libc",
   ];
   for (const packageName of runtimePackages) {
-    const source = join(process.env.ORG2_WORKSPACE_RUNTIME_DEPENDENCIES || repoRoot, "node_modules", ...packageName.split("/"));
+    const source = join(runtimeDependencyRoot, "node_modules", ...packageName.split("/"));
     if (!existsSync(source)) {
       if (swiftBuildConfiguration === "release") {
         throw new Error(`Production runtime dependency ${packageName} is missing. Run npm ci for the target Node.js architecture.`);
@@ -661,9 +703,13 @@ function copyOrg2Runtime(resourcesDir) {
   }
 
   if (runtimeNodePath) {
-    const bindingEntry = join(runtimeDir, "node_modules", "@duckdb", "node-bindings");
-    const verification = spawnSync(runtimeNodePath, ["-e", `require(${JSON.stringify(bindingEntry)})`], {
-      cwd: runtimeDir,
+    const verificationRoot = buildOptions.localOptimized ? runtimeDependencyRoot : runtimeDir;
+    const verificationNodePath = buildOptions.localOptimized
+      ? runtimeNodeSourcePath
+      : runtimeNodePath;
+    const bindingEntry = join(verificationRoot, "node_modules", "@duckdb", "node-bindings");
+    const verification = spawnSync(verificationNodePath, ["-e", `require(${JSON.stringify(bindingEntry)})`], {
+      cwd: verificationRoot,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -691,6 +737,9 @@ function copyWhisperRuntime(resourcesDir) {
   }
   if (!existsSync(bundledWhisperModelPath)) {
     throw new Error(`Bundled whisper.cpp model not found at ${bundledWhisperModelPath}`);
+  }
+  if (buildOptions.localOptimized) {
+    verifyWhisperRuntime(bundledWhisperCppPath);
   }
   if (process.platform === "darwin" && swiftBuildArch) {
     const architectures = run("lipo", ["-archs", bundledWhisperCppPath], { capture: true }).split(/\s+/);
@@ -827,6 +876,9 @@ function main() {
       "Refusing to install an implicit debug build as the daily app. Use npm run build:macos-app:debug when that is intentional."
     );
   }
+  if (buildOptions.localOptimized && swiftBuildConfiguration !== "release") {
+    throw new Error("--local-optimized requires --configuration release");
+  }
   if (
     buildOptions.requireGoogleOAuthClient
     && (!googleOAuthClientID || !googleOAuthClientSecret)
@@ -844,6 +896,9 @@ function main() {
       iconPath,
       hardenedRuntime: requestedSigningIdentity?.startsWith("Developer ID Application:") ?? false,
       installStrategy: "verified staged replacement",
+      optimizationMode: buildOptions.localOptimized
+        ? "incremental -O"
+        : swiftBuildConfiguration === "release" ? "whole-module -O" : "debug",
       nodeArchitecture: bundledNodeArchitecture,
       nodeEntitlementsPath,
       nodePath: bundledNodePath || null,
@@ -872,7 +927,7 @@ function main() {
     throw new Error("--skip-runtime-build requires an already built shared runtime");
   }
   console.log(`Building ${executableName} (${swiftBuildConfiguration})...`);
-  run("swift", swiftBuildArgs("build"), { cwd: packageDir });
+  run("swift", swiftBuildArgs("build", "--product", executableName), { cwd: packageDir });
   const buildProductsDir = run("swift", swiftBuildArgs("build", "--show-bin-path"), {
     cwd: packageDir,
     capture: true,
@@ -924,14 +979,14 @@ function main() {
       run("codesign", codesignArgs(signingIdentity, runtimeNodePath, {
         entitlements: nodeEntitlementsPath,
       }));
-      verifyNodeRuntime(runtimeNodePath);
+      if (!buildOptions.localOptimized) verifyNodeRuntime(runtimeNodePath);
     }
     for (const library of whisperRuntime.libraries) {
       run("codesign", codesignArgs(signingIdentity, library));
     }
     if (whisperRuntime.executable) {
       run("codesign", codesignArgs(signingIdentity, whisperRuntime.executable));
-      verifyWhisperRuntime(whisperRuntime.executable);
+      if (!buildOptions.localOptimized) verifyWhisperRuntime(whisperRuntime.executable);
     }
     signSparkleFramework(sparkleFrameworkPath, signingIdentity);
     for (const nestedPath of nestedMachOPaths(resourcesDir)) {

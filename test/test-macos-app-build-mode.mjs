@@ -29,11 +29,18 @@ assert.match(updaterSource, /Automatically check for updates/);
 assert.match(updaterSource, /Download updates automatically and install on quit/);
 assert.match(updaterSource, /skip a version/);
 const sharedRuntimeBuildIndex = macAppBuildSource.indexOf('run("npm", ["run", "build"]');
-const swiftAppBuildIndex = macAppBuildSource.indexOf('run("swift", swiftBuildArgs("build")');
+const swiftAppBuildIndex = macAppBuildSource.indexOf(
+  'run("swift", swiftBuildArgs("build", "--product", executableName)'
+);
 const runtimeCopyIndex = macAppBuildSource.indexOf("const runtimeNodePath = copyOrg2Runtime(resourcesDir)");
 assert.ok(sharedRuntimeBuildIndex >= 0, "macOS app builds must compile the shared runtime");
 assert.ok(sharedRuntimeBuildIndex < swiftAppBuildIndex, "shared runtime must build before the Swift app");
 assert.ok(sharedRuntimeBuildIndex < runtimeCopyIndex, "shared runtime must build before it is bundled");
+assert.doesNotMatch(
+  macAppBuildSource,
+  /run\("file"/,
+  "Mach-O discovery must not launch one subprocess for every bundled resource"
+);
 const stagedVerificationIndex = macAppBuildSource.indexOf(
   'run("codesign", ["--verify", "--deep", "--strict", stagedAppPath]);'
 );
@@ -55,7 +62,11 @@ assert.ok(
 assert.match(makefileSource, /^macos-app-restart:\n\tnpm run build:macos-app:restart$/m);
 assert.equal(
   packageJSON.scripts["build:macos-app:restart"],
-  "node tools/build-macos-app.mjs --configuration release --restart"
+  "node tools/build-macos-app.mjs --configuration release --local-optimized --restart"
+);
+assert.equal(
+  packageJSON.scripts["build:macos-app"],
+  "node tools/build-macos-app.mjs --configuration release --local-optimized"
 );
 
 function run(script, args, expectedStatus = 0, environment = process.env) {
@@ -101,6 +112,19 @@ assert.equal(defaultDaily.updates.intervalSeconds, 7200);
 assert.match(defaultDaily.updates.feedURL, /appcast-(arm64|intel)\.xml$/);
 assert.equal(defaultDaily.googleOAuthClientSource, null);
 assert.equal(defaultDaily.googleOAuthRequired, false);
+assert.equal(defaultDaily.optimizationMode, "whole-module -O");
+
+const localOptimizedDaily = JSON.parse(
+  run(
+    "tools/build-macos-app.mjs",
+    ["--configuration", "release", "--local-optimized", "--print-configuration"],
+    0,
+    noGoogleOAuthEnvironment
+  ).stdout
+);
+assert.equal(localOptimizedDaily.configuration, "release");
+assert.equal(localOptimizedDaily.optimizationMode, "incremental -O");
+assert.match(localOptimizedDaily.swiftScratchPath, /\.build\/macos-local-optimized$/);
 
 const refusedUnconfiguredDistribution = run(
   "tools/build-macos-app.mjs",
@@ -186,6 +210,18 @@ const explicitDebug = JSON.parse(
   ]).stdout
 );
 assert.equal(explicitDebug.configuration, "debug");
+
+const refusedLocalOptimizedDebug = run(
+  "tools/build-macos-app.mjs",
+  [
+    "--configuration", "debug",
+    "--allow-daily-debug",
+    "--local-optimized",
+    "--print-configuration",
+  ],
+  1
+);
+assert.match(refusedLocalOptimizedDebug.stderr, /requires --configuration release/);
 
 const restartDaily = JSON.parse(
   run("tools/build-macos-app.mjs", [

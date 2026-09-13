@@ -3952,6 +3952,31 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testOpenClawPickerPreparesAttachmentsWithoutBlockingTheMainActor() async throws {
+    let temp = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-openclaw-picker-attachments-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temp) }
+    let imageURL = temp.appendingPathComponent("sketch.png")
+    try Data(repeating: 0x5a, count: 1_000_000).write(to: imageURL)
+
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      openClawTranscriptURL: temp.appendingPathComponent("openclaw-chat.json")
+    )
+    store.enqueueOpenClawAttachmentPreparationForTesting(urls: [imageURL], imagesOnly: true)
+
+    XCTAssertTrue(store.openClawPendingAttachments.isEmpty)
+    XCTAssertTrue(store.openClawStatusText.hasPrefix("Attaching "))
+    store.advanceOpenClawTranscriptLoadGenerationForTesting()
+
+    await store.waitForOpenClawAttachmentPreparationForTesting()
+    XCTAssertEqual(store.openClawPendingAttachments.map(\.fileName), ["sketch.png"])
+    XCTAssertEqual(store.openClawPendingAttachments.first?.mimeType, "image/png")
+    XCTAssertEqual(store.openClawStatusText, "1 attachment ready")
+  }
+
+  @MainActor
   func testOpenClawReplyRecordsCorpusChangeSummary() async throws {
     let temp = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-chat-changes-\(UUID().uuidString)", isDirectory: true)
