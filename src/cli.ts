@@ -26,6 +26,11 @@ async function main(): Promise<void> {
     await runBrowserClipCommand(args.slice(1));
     return;
   }
+  if (args[0] === "canvas") {
+    const { runJSONCanvasCommand } = await import("./jsonCanvasCli.js");
+    await runJSONCanvasCommand(args);
+    return;
+  }
   if (args[0] === "server") {
     const { runServerCommand } = await import("./serverCli.js");
     await runServerCommand(args.slice(1));

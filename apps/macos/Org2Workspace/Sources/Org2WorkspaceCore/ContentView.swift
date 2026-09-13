@@ -3550,6 +3550,11 @@ private struct FilesView: View {
   var body: some View {
     VStack(spacing: 0) {
       HeaderBar(title: "Files", subtitle: store.corpusRoot?.path ?? "Corpus files", surface: .files) {
+        Menu {
+          Button("New Canvas…") { Task { await store.createJSONCanvasFromPanel() } }
+          Button("Import Canvas…") { Task { await store.createJSONCanvasFromPanel(importing: true) } }
+        } label: { Label("Canvas", systemImage: "rectangle.3.group") }
+        .disabled(store.corpusRoot == nil)
         if store.isScanningCorpusFiles {
           WorkspaceActivityIndicator(size: .small)
         }
@@ -3596,7 +3601,7 @@ private struct FilesView: View {
         WorkspaceLoadingStateView("Scanning files")
         Spacer()
       } else if store.filteredCorpusFiles.isEmpty {
-        EmptyStateView(title: "No Files", detail: "No org2, org, or markdown files matched.", action: "Refresh") {
+        EmptyStateView(title: "No Files", detail: "No Org, Markdown, CSV, or Canvas files matched.", action: "Refresh") {
           Task { await store.refreshCorpusFiles() }
         }
       } else {
@@ -3815,12 +3820,14 @@ private struct CorpusFileContextMenu: View {
       Label("Start New AI Thread", systemImage: "sparkles")
     }
 
-    Button {
-      store.selectCorpusFile(file)
-      afterOpen?()
-      Task { await store.linkifyCurrentFile() }
-    } label: {
-      Label("Linkify File", systemImage: "link")
+    if URL(fileURLWithPath: file.path).pathExtension.lowercased() != "canvas" {
+      Button {
+        store.selectCorpusFile(file)
+        afterOpen?()
+        Task { await store.linkifyCurrentFile() }
+      } label: {
+        Label("Linkify File", systemImage: "link")
+      }
     }
   }
 }
@@ -11092,7 +11099,11 @@ private struct DetailView: View {
         )
         Divider()
         VStack(spacing: 0) {
-          if store.selectedFileIsPDF {
+          if store.selectedFileIsCanvas {
+            JSONCanvasWorkspaceView(file: location.file)
+              .id(location.file)
+              .frame(minWidth: 420, idealWidth: 720, maxHeight: .infinity)
+          } else if store.selectedFileIsPDF {
             LinkedPDFPreviewPane()
               .frame(minWidth: 420, idealWidth: 560, maxHeight: .infinity)
           } else if store.isLiveFileEditorSelected {
@@ -11419,7 +11430,12 @@ private struct DetailHeader: View {
 
   private var detailActionBar: some View {
     Group {
-      if store.selectedFileIsPDF {
+      if store.selectedFileIsCanvas {
+        HStack {
+          Button("Reveal Canvas", systemImage: "folder") { store.revealFile(path: location.file) }
+          Spacer(minLength: 0)
+        }
+      } else if store.selectedFileIsPDF {
         HStack {
           WorkspaceControlStrip { sourceMenu }
           Spacer(minLength: 0)

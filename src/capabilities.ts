@@ -177,6 +177,12 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
         writes: "mixed",
       },
       {
+        id: "json-canvas",
+        purpose: "Read, create, edit, import, and export portable JSON Canvas spatial boards with guarded file revisions, local resource previews, and stable Org2 source links.",
+        commands: ["org2 canvas show", "org2 canvas targets", "org2 canvas create", "org2 canvas edit", "org2 canvas import", "org2 canvas export"],
+        writes: "preview-by-default",
+      },
+      {
         id: "data-and-charts",
         purpose: "Recalculate safe spreadsheet formulas, inspect or materialize DuckDB-backed datasets, and render deterministic charts from note-local declarations.",
         commands: ["org2 table recalculate", "org2 query-data", "org2 render-chart"],

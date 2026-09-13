@@ -9360,6 +9360,9 @@ Export / publish:
   org2 publish document --file FILE --to google-drive-pdf --pdf-file FILE.pdf [--folder-id ID] [--apply]
   org2 publish [PROJECT] [--config PATH] [--preview]
 
+Canvas:
+  org2 canvas show|targets|create|edit|import|export --dir DIR [--file FILE] [--json]
+
 Roam / IDs:
   org2 id <get|ensure> --file FILE [--line N|--pos LINE[:COL]] [--apply]
   org2 backlinks --id UUID [--dir DIR] [--recursive]

@@ -146,9 +146,10 @@ public struct Org2CLI: Sendable {
   public func runJSON<T: Decodable>(
     _ arguments: [String],
     environment: [String: String] = [:],
+    standardInput: Data? = nil,
     as type: T.Type = T.self
   ) async throws -> T {
-    let data = try await run(arguments, environment: environment)
+    let data = try await run(arguments, environment: environment, standardInput: standardInput)
     return try await decodeJSON(T.self, from: data)
   }
 
@@ -311,9 +312,9 @@ public struct Org2CLI: Sendable {
     return try JSONDecoder().decode(T.self, from: data)
   }
 
-  public func run(_ arguments: [String], environment: [String: String] = [:]) async throws -> Data {
+  public func run(_ arguments: [String], environment: [String: String] = [:], standardInput: Data? = nil) async throws -> Data {
     let operation = Task.detached(priority: .userInitiated) {
-      try runProcess(scriptPath: cliPath, arguments: arguments, environment: environment)
+      try runProcess(scriptPath: cliPath, arguments: arguments, standardInput: standardInput, environment: environment)
     }
     return try await withTaskCancellationHandler {
       try await operation.value

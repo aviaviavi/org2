@@ -1,0 +1,89 @@
+{
+  "nodes": [
+    {
+      "id": "group",
+      "type": "group",
+      "x": -30,
+      "y": -40,
+      "width": 1000,
+      "height": 520,
+      "label": "Beacon launch",
+      "color": "5"
+    },
+    {
+      "id": "brief",
+      "type": "text",
+      "x": 0,
+      "y": 20,
+      "width": 290,
+      "height": 230,
+      "text": "Launch priorities\n\n\u2022 Make capture fast\n\u2022 Keep decisions near the work\n\u2022 Ship a small, clear first version",
+      "color": "3"
+    },
+    {
+      "id": "note",
+      "type": "file",
+      "x": 340,
+      "y": 20,
+      "width": 290,
+      "height": 230,
+      "file": "notes/project.org",
+      "subpath": "#id:22222222-2222-4222-8222-222222222222",
+      "org2Ref": "id:22222222-2222-4222-8222-222222222222",
+      "color": "5"
+    },
+    {
+      "id": "image",
+      "type": "file",
+      "x": 700,
+      "y": 20,
+      "width": 230,
+      "height": 230,
+      "file": "assets/app-icon.png",
+      "color": "6"
+    },
+    {
+      "id": "link",
+      "type": "link",
+      "x": 340,
+      "y": 320,
+      "width": 290,
+      "height": 120,
+      "url": "https://jsoncanvas.org/",
+      "color": "4"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "fromNode": "brief",
+      "toNode": "note",
+      "fromSide": "right",
+      "toSide": "left",
+      "label": "Guides",
+      "color": "5"
+    },
+    {
+      "id": "e2",
+      "fromNode": "note",
+      "toNode": "image",
+      "fromSide": "right",
+      "toSide": "left",
+      "label": "Identity",
+      "color": "6"
+    },
+    {
+      "id": "e3",
+      "fromNode": "note",
+      "toNode": "link",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "label": "Portable format",
+      "color": "4"
+    }
+  ],
+  "exampleMetadata": {
+    "synthetic": true,
+    "purpose": "Portable Canvas demo; unknown fields survive edits"
+  }
+}
