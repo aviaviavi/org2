@@ -761,6 +761,7 @@ public actor CodexAppServerClient {
     case .server(_, let message):
       message.localizedCaseInsensitiveContains("active writer")
         || message.localizedCaseInsensitiveContains("writer lock")
+        || message.localizedCaseInsensitiveContains("no rollout found")
         || message.localizedCaseInsensitiveContains("not found")
         || message.localizedCaseInsensitiveContains("does not exist")
         || message.localizedCaseInsensitiveContains("unknown thread")
