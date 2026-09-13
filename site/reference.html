@@ -154,6 +154,11 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <li><p><a href="org2-vs-markdown.html">Org2 vs Markdown</a></p></li>
 </ul>
 <p>For the independently implementable language standard, see <a href="https://github.com/aviaviavi/org2/blob/main/spec/v0/SPEC.org">SPEC.org</a>, <a href="https://github.com/aviaviavi/org2/blob/main/spec/v0/GRAMMAR.ebnf">GRAMMAR.ebnf</a>, and <a href="https://github.com/aviaviavi/org2/blob/main/spec/v0/PARSING.org">PARSING.org</a>.</p>
+<section class="org2-headline level-1">
+<h1 id="live-embed-resolution">Live embed resolution</h1>
+<p><code>org2 embed resolve --target TARGET --file SOURCE [--dir CORPUS] [--json]</code> is read-only. It returns <code>org2:embed-resolution:v1</code> JSON containing a portable directive, title, resolved file, and source line, without copying source content. Targets are explicit <code>id:STABLE-ID</code> note/heading references or <code>file:relative/path.org</code> whole-note references; <code>.org2</code> remains supported. Relative paths resolve from <code>SOURCE</code>. When <code>--dir</code> is omitted, the nearest <code>org2.json</code> defines the corpus, falling back to the source directory.</p>
+<p>The shared app renderer interprets <code>#+EMBED: TARGET</code> keyword lines using compiled corpus IDs and source ranges. It rejects ambiguous IDs and out-of-corpus files, bounds cycles/depth/content, and renders source navigation beside read-only inline content. Ordinary HTML exports preserve references without resolving them; disclosure-safe <code>publish document</code> strips targets and emits an omission marker. See <a href="editors-macos.html">Live note and heading embeds</a> for insertion, refresh, and limits.</p>
+</section>
 </main>
 </div>
 <footer class="org2-footer"><div class="org2-footer-incubator"><span>Incubated at</span><a href="https://scarf.sh" target="_blank" rel="noopener noreferrer"><img class="org2-footer-scarf-logo" src="assets/scarf-logo.svg" alt="Scarf" /></a></div><p class="org2-footer-tagline">Build your knowledge locally and put it to work.</p><img referrerpolicy="no-referrer-when-downgrade" src="https://static.scarf.sh/a.png?x-pxid=e39e0a38-773e-4446-b8b0-804f923e3dc3" alt="" /></footer>

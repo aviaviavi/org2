@@ -118,6 +118,9 @@ public struct ContentView: View {
         DataSourceConfigurationSheet()
           .environment(store)
       }
+      .sheet(isPresented: $store.isLiveEmbedInsertPresented) {
+        LiveEmbedInsertSheet().environment(store)
+      }
       .sheet(isPresented: $store.isDocumentPublisherPresented) {
         DocumentPublishSheet()
           .environment(store)
@@ -11644,6 +11647,8 @@ private struct DetailHeader: View {
 
   private var sourceMenu: some View {
     Menu {
+      LiveEmbedInsertButton()
+      Divider()
       Button {
         store.togglePinnedFile(path: location.file)
       } label: {
@@ -12932,6 +12937,7 @@ private struct OrgSourceEditorWithLinkTools: View {
           Button("List Item") { store.requestSourceEditorCommand(.insertListItem) }
           Divider()
           Button("Link...") { store.requestSourceEditorCommand(.insertLink) }
+          LiveEmbedInsertButton()
           Button("Property...") { store.requestSourceEditorCommand(.insertProperty) }
         } label: {
           Label("Insert", systemImage: "plus")

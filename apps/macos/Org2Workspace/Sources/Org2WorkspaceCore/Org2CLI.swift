@@ -209,9 +209,13 @@ public struct Org2CLI: Sendable {
     sourcePath: String,
     sourceLineOffset: Int = 0,
     stylesheetPath: String? = nil,
+    corpusRootPath: String? = nil,
+    resolveEmbeds: Bool = true,
     timeout: TimeInterval = 8
   ) async throws -> String {
     var arguments = ["--source-path", sourcePath]
+    if let corpusRootPath { arguments += ["--corpus-root", corpusRootPath] }
+    if !resolveEmbeds { arguments.append("--reference-embeds") }
     if sourceLineOffset > 0 {
       arguments.append(contentsOf: ["--source-line-offset", "\(sourceLineOffset)"])
     }

@@ -81,6 +81,12 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
         writes: "preview-by-default",
       },
       {
+        id: "live-embeds",
+        purpose: "Resolve portable note and stable-ID heading embeds with source navigation, bounded live rendering, and reference-only exports.",
+        commands: ["org2 embed resolve"],
+        writes: "read-only",
+      },
+      {
         id: "cli-discovery",
         purpose: "Inspect the installed Org2 CLI version before relying on its command contract.",
         commands: ["org2 version", "org2 --version"],
