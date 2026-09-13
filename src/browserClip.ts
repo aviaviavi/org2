@@ -5,6 +5,9 @@ import { renderCaptureEntry } from "./captureEntry.js";
 import { todoSequencesForFile } from "./todo.js";
 import { buildRawCapture } from "./ingestionPipeline.js";
 import { guardedContentRevision, guardedWriteFile } from "./guardedFile.js";
+import { parseOrgToCanonicalAst } from "./parser.js";
+import { isPlanningLine } from "./sourceLines.js";
+import type { Node } from "./ast.js";
 
 export interface BrowserClip {
   schema: "org2:browser-clip:v1";
@@ -48,6 +51,37 @@ function corpusPath(root: string, relative: string): string {
   return target;
 }
 
+/** Only canonical heading metadata establishes an imported clip identity.
+ * Examples, fixed-width text and incidental drawers in a body are not receipts. */
+function importedClipHeadingLine(text: string, provenance: string): number | undefined {
+  if (!text.trim()) return undefined;
+  const normalized = text.replace(/\r\n?/g, "\n");
+  const lines = normalized.split("\n");
+  const document = parseOrgToCanonicalAst(normalized, { sourceRanges: true });
+  type RangedNode = Node & { sourceRange?: { startLine: number; endLine: number } };
+  const visit = (nodes: Node[]): number | undefined => {
+    for (const node of nodes) {
+      if (node.type !== "Headline") continue;
+      const range = (node as RangedNode).sourceRange;
+      if (!range) continue;
+      let drawerLine = range.startLine;
+      while (drawerLine < lines.length && (!lines[drawerLine]!.trim() || isPlanningLine(lines[drawerLine]!))) drawerLine++;
+      const drawer = node.children.find(child => child.type === "PropertyDrawer" && (child as RangedNode).sourceRange?.startLine === drawerLine + 1);
+      if (drawer?.type === "PropertyDrawer") {
+        const refs = drawer.properties.filter(property => property.key.toUpperCase() === "SOURCE_PROVENANCE");
+        if (refs.some(property => property.value.trim() === provenance)) {
+          if (refs.length > 1) throw new Error("Browser clip heading has duplicate SOURCE_PROVENANCE properties; repair its metadata before importing");
+          return range.startLine;
+        }
+      }
+      const nested = visit(node.children);
+      if (nested !== undefined) return nested;
+    }
+    return undefined;
+  };
+  return visit(document.children);
+}
+
 export function importBrowserClip(input: { clip: unknown; root: string; apply?: boolean; expectedRevision?: string; expectedClipRevision?: string; template?: "note" | "task" }) {
   const clip = parseBrowserClip(input.clip);
   if (input.template) clip.template = input.template;
@@ -66,8 +100,8 @@ export function importBrowserClip(input: { clip: unknown; root: string; apply?: 
   const todoKeyword = sequences.flatMap(sequence => sequence.keywords.filter(keyword => !sequence.terminal.includes(keyword)))[0] || "TODO";
   const entry = renderCaptureEntry({ todoKeyword, title: clip.title, template: clip.template, now: new Date(clip.capturedAt), body,
     source: { type: raw.sourceType, origin: clip.url, timestamp: clip.capturedAt, title: clip.title, author: clip.author || null, contentHash: raw.contentHash, provenance: `file:../raw/browser/${clipHash}.json` } });
-  const marker = `:SOURCE_PROVENANCE: file:../raw/browser/${clipHash}.json`;
-  const duplicate = before.split("\n").includes(marker);
+  const duplicateHeadingLine = importedClipHeadingLine(before, `file:../raw/browser/${clipHash}.json`);
+  const duplicate = duplicateHeadingLine !== undefined;
   const outText = duplicate ? before : `${before.trimEnd()}${before.trimEnd() ? "\n\n" : ""}${entry.text}`;
   if (input.apply) {
     if (!input.expectedRevision || !input.expectedClipRevision) throw new Error("Browser import requires --if-revision and --if-clip-revision from its preview");
@@ -77,7 +111,7 @@ export function importBrowserClip(input: { clip: unknown; root: string; apply?: 
     } else guardedWriteFile(rawFile, rawText, { expectedRevision: null });
     if (!duplicate) guardedWriteFile(file, outText, { expectedRevision: revision === "absent" ? null : revision, preserveMode: true });
   }
-  return { schema: "org2:browser-clip-import:v1", clip, clipRevision: clipHash, file, rawFile, revision, duplicate, changed: !duplicate, apply: !!input.apply, entryText: entry.text, headingLine: duplicate ? Math.max(1, before.slice(0, before.indexOf(marker)).split("\n").map((line, index) => line.startsWith("* ") ? index + 1 : 0).filter(Boolean).at(-1) || 1) : before.trimEnd() ? before.trimEnd().split("\n").length + 2 : 1 };
+  return { schema: "org2:browser-clip-import:v1", clip, clipRevision: clipHash, file, rawFile, revision, duplicate, changed: !duplicate, apply: !!input.apply, entryText: entry.text, headingLine: duplicateHeadingLine ?? (before.trimEnd() ? before.trimEnd().split(/\r\n|\n|\r/).length + 2 : 1) };
 }
 
 export async function runBrowserClipCommand(args: string[]): Promise<void> {

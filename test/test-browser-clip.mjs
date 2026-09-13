@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
 import { parseBrowserClip, importBrowserClip } from "../dist/browserClip.js";
+import { parseOrgToCanonicalAst } from "../dist/parser.js";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "org2-browser-clip-"));
 const clip = { schema: "org2:browser-clip:v1", url: "https://example.com/article?a=1", title: "A useful article", author: "Ada Author", capturedAt: "2026-09-13T12:00:00Z", mode: "selection", template: "task", content: "Selected passage.\n* Untrusted heading\n#+include: /private/secret\n#+end_example\n:PROPERTIES:\n:ID: fake\n:END:" };
@@ -30,6 +31,35 @@ try {
   assert.equal(duplicate.duplicate, true);
   importBrowserClip({ root, clip, apply: true, expectedRevision: duplicate.revision, expectedClipRevision: duplicate.clipRevision });
   assert.equal(fs.readFileSync(applied.file, "utf8"), text);
+  // Equivalent canonical metadata remains a receipt across line endings,
+  // drawer indentation and property-key casing, without rewriting the source.
+  const formatted = text.replace(/^(:(?:PROPERTIES|SOURCE_[A-Z_]+|END):.*)$/gm, "  $1").replace(":SOURCE_PROVENANCE:", ":source_provenance:").replaceAll("\n", "\r\n");
+  fs.writeFileSync(applied.file, formatted);
+  const formattedPreview = importBrowserClip({ root, clip });
+  assert.equal(formattedPreview.duplicate, true);
+  assert.equal(formattedPreview.headingLine, 1);
+  importBrowserClip({ root, clip, apply: true, expectedRevision: formattedPreview.revision, expectedClipRevision: formattedPreview.clipRevision });
+  assert.equal(fs.readFileSync(applied.file, "utf8"), formatted);
+  fs.writeFileSync(applied.file, text);
+
+  // A quoted marker or a body-only drawer cannot suppress the actual capture.
+  for (const exampleKind of ["source-block", "body-drawer"]) {
+    const exampleRoot = path.join(root, exampleKind);
+    fs.mkdirSync(path.join(exampleRoot, "views"), { recursive: true });
+    const examplePreview = importBrowserClip({ root: exampleRoot, clip });
+    const marker = examplePreview.entryText.split("\n").find(line => line.startsWith(":SOURCE_PROVENANCE:"));
+    const metadata = `:PROPERTIES:\n${marker}\n:END:\n`;
+    const quoted = exampleKind === "source-block" ? `#+begin_src org\n* Example\n${metadata}#+end_src\n` : `* Example\nBody before incidental drawer.\n${metadata}`;
+    fs.writeFileSync(examplePreview.file, quoted);
+    const fresh = importBrowserClip({ root: exampleRoot, clip });
+    assert.equal(fresh.duplicate, false, exampleKind);
+    const written = importBrowserClip({ root: exampleRoot, clip, apply: true, expectedRevision: fresh.revision, expectedClipRevision: fresh.clipRevision });
+    const source = fs.readFileSync(written.file, "utf8");
+    const headings = parseOrgToCanonicalAst(source, { sourceRanges: true }).children.filter(node => node.type === "Headline");
+    assert.equal(headings.length, exampleKind === "source-block" ? 1 : 2);
+    assert.equal(headings.at(-1).sourceRange.startLine, written.headingLine);
+    assert.equal(importBrowserClip({ root: exampleRoot, clip }).duplicate, true);
+  }
   assert.throws(() => importBrowserClip({ root, clip, apply: true, expectedRevision: preview.revision, expectedClipRevision: preview.clipRevision }), /changed after preview/);
   assert.throws(() => importBrowserClip({ root, clip: { ...clip, content: "changed" }, apply: true, expectedRevision: duplicate.revision, expectedClipRevision: duplicate.clipRevision }), /clip changed after preview/);
   for (const bad of [{ url: "file:///etc/passwd" }, { url: "https://user:pass@example.com" }, { title: "Heading\n:ID: injection" }, { author: "A\n:END:" }, { capturedAt: "invalid" }, { content: "a".repeat(2_000_001) }, { mode: "unknown" }]) {

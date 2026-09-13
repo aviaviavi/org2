@@ -18,7 +18,7 @@ try {
   await browser.send("Browser.setDownloadBehavior", { behavior: "allow", downloadPath: downloads });
   const extension = await browser.send("Extensions.loadUnpacked", { path: path.resolve("integrations/browser-clip") });
   const page = context.pages()[0];
-  await page.route("http://clip.test/**", route => route.fulfill({ contentType: "text/html", body: '<title>Field notes</title><meta name="author" content="Ada Author"><nav>Outside navigation</nav><article><h1>Field notes</h1><p id="passage">A selected passage with meaningful context.</p><p>Second paragraph.</p><script type="text/plain">private script text</script><footer>Footer noise</footer></article>' }));
+  await page.route("http://clip.test/**", route => route.fulfill({ contentType: "text/html", body: '<title>Field notes</title><meta name="author" content="Ada Author"><style>.css-hidden{display:none}.css-invisible{visibility:hidden}.transparent{opacity:0}.unrendered{content-visibility:hidden}</style><nav>Outside navigation</nav><article class="css-hidden">PRIVATE_HIDDEN_ARTICLE</article><article><h1>Field notes</h1><p id="passage">A selected passage with meaningful context.</p><p>Second paragraph.</p><div class="css-hidden"><p>PRIVATE_CSS_HIDDEN_TEXT</p></div><span class="css-invisible">PRIVATE_INVISIBLE_TEXT</span><p class="transparent">PRIVATE_TRANSPARENT_TEXT</p><div class="unrendered">PRIVATE_UNRENDERED_TEXT</div><span hidden>PRIVATE_HIDDEN_ATTRIBUTE</span><span aria-hidden="true">PRIVATE_ARIA_HIDDEN</span><script type="text/plain">private script text</script><footer>Footer noise</footer></article>' }));
   await page.goto("http://clip.test/article");
   await page.evaluate(() => { const range = document.createRange(); range.selectNodeContents(document.querySelector("#passage")); window.getSelection().removeAllRanges(); window.getSelection().addRange(range); });
   const targets = (await browser.send("Target.getTargets", { filter: [{ type: "tab", exclude: false }] })).targetInfos;
@@ -62,7 +62,8 @@ try {
   await evaluate('document.getElementById("mode").value="article"; document.getElementById("mode").dispatchEvent(new Event("change"));');
   const article = await evaluate('document.getElementById("content").value');
   assert.match(article, /Second paragraph/);
-  assert.doesNotMatch(article, /navigation|script text|Footer noise/);
+  assert.doesNotMatch(article, /navigation|script text|Footer noise|PRIVATE_/);
+  assert.match(article, /A selected passage with meaningful context/);
   await evaluate('document.getElementById("template").value="task"; document.getElementById("clip-form").requestSubmit();');
   let saved;
   for (let i = 0; i < 100; i++) {
