@@ -113,7 +113,7 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
       {
         id: "headless-server",
         purpose: "Host the OpenOrg chat relay and automation scheduler without a desktop window on macOS, pair iOS over Tailscale, and assign one explicit scheduler owner per corpus.",
-        commands: ["org2 server init", "org2 server start", "org2 server status", "org2 server pair", "org2 server assign", "org2 server service", "org2 server stop", "org2 server revoke", "org2 server push-config"],
+        commands: ["org2 server init", "org2 server start", "org2 server status", "org2 server pair", "org2 server permissions", "org2 server assign", "org2 server service", "org2 server stop", "org2 server revoke", "org2 server push-config"],
         writes: "mixed",
       },
       {

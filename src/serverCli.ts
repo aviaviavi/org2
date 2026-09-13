@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { assignAutomationHost } from "./automationHost.js";
 import { corpusIdentityStatus } from "./corpusIdentity.js";
-import { guardedWriteFile } from "./guardedFile.js";
+import { guardedWriteFile, readGuardedFile } from "./guardedFile.js";
 import { safeIdentifier } from "./safeIdentifier.js";
 
 interface ServerDestination {
@@ -29,12 +29,31 @@ export interface ServerConfiguration {
   executable: string;
   destinations: ServerDestination[];
   schedulesEnabled: boolean;
+  localAgentFilesystemAccess: "readOnly" | "workspaceWrite" | "fullAccess";
+}
+
+function localAgentFilesystemAccess(value: unknown): ServerConfiguration["localAgentFilesystemAccess"] {
+  const normalized = value === undefined || value === null
+    ? "workspace-write"
+    : String(value).trim();
+  const aliases: Record<string, ServerConfiguration["localAgentFilesystemAccess"]> = {
+    "read-only": "readOnly",
+    readOnly: "readOnly",
+    "workspace-write": "workspaceWrite",
+    workspaceWrite: "workspaceWrite",
+    "full-access": "fullAccess",
+    fullAccess: "fullAccess",
+  };
+  const access = aliases[normalized];
+  if (!access) throw new Error("Choose read-only, workspace-write, or full-access for local agent filesystem access");
+  return access;
 }
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const help = `OpenOrg headless server (macOS 14 or later)
 
-  org2 server init --dir CORPUS --host-ref HOST --bind TAILSCALE_IP [--name NAME] [--destination codex|claude|openclaw] [--apply]
+  org2 server init --dir CORPUS --host-ref HOST --bind TAILSCALE_IP [--name NAME] [--destination codex|claude|openclaw] [--filesystem-access read-only|workspace-write|full-access] [--apply]
+  org2 server permissions --filesystem-access read-only|workspace-write|full-access [--config FILE] [--apply]
   org2 server start [--config FILE]
   org2 server status|pair|stop [--config FILE]
   org2 server revoke --device-id ID [--config FILE]
@@ -46,6 +65,8 @@ init, assign, and service preview by default. init writes machine-local configur
 outside the corpus. assign chooses the corpus scheduler owner (desktop by default).
 start runs in the foreground; service installs a launchd agent that runs at login
 and restarts after failures. pair issues a one-use code valid for ten minutes.
+permissions previews or updates the local-agent filesystem policy; restart the server
+after applying it. Full access disables interactive approval prompts for local agents.
 The private control socket permits only this OS user; the relay binds only to Tailscale.
 Build the native worker with npm run build:server before starting from a checkout.
 Use --config for separate hosts. --executable PATH overrides the native worker at init.
@@ -83,6 +104,7 @@ export function validateServerConfiguration(value: unknown, configFile: string):
     throw new Error("Server configuration must be machine-local, outside the corpus and source checkout");
   }
   if (typeof config.schedulesEnabled !== "boolean") throw new Error("schedulesEnabled must be a boolean");
+  const filesystemAccess = localAgentFilesystemAccess(config.localAgentFilesystemAccess);
   if (!Array.isArray(config.destinations) || !config.destinations.length) throw new Error("Choose at least one AI destination");
   const ids = new Set<string>();
   for (const destination of config.destinations) {
@@ -99,7 +121,7 @@ export function validateServerConfiguration(value: unknown, configFile: string):
       throw new Error("Credentials must stay in the runtime's login store or Keychain");
     }
   }
-  return config;
+  return { ...config, localAgentFilesystemAccess: filesystemAccess };
 }
 
 function socketPath(configFile: string): string {
@@ -233,6 +255,7 @@ export async function runServerCommand(args: string[]): Promise<void> {
     config: { type: "string" }, dir: { type: "string" }, "host-ref": { type: "string" },
     bind: { type: "string" }, name: { type: "string" }, port: { type: "string" },
     executable: { type: "string" }, destination: { type: "string" }, "device-id": { type: "string" },
+    "filesystem-access": { type: "string" },
     "team-id": { type: "string" }, "key-id": { type: "string" }, "key-file": { type: "string" },
     apply: { type: "boolean" }, json: { type: "boolean" }, help: { type: "boolean" },
   } });
@@ -255,6 +278,7 @@ export async function runServerCommand(args: string[]): Promise<void> {
       repoRoot: packageRoot, nodePath: process.execPath,
       executable: path.resolve(values.executable || path.join(packageRoot, "apps/macos/Org2Workspace/.build/debug/OpenOrgServer")),
       schedulesEnabled: true,
+      localAgentFilesystemAccess: localAgentFilesystemAccess(values["filesystem-access"]),
       destinations: [{ id: `builtin.${destination}`, name: destination === "codex" ? "Codex" : destination === "claude" ? "Claude Code" : "OpenClaw",
         mention: destination, adapter: destination === "codex" ? "codexLocal" : destination === "claude" ? "claudeLocal" : "openClaw",
         endpoint: "", agentID: "", workspaceRoot: "", isEnabled: true }],
@@ -266,6 +290,27 @@ export async function runServerCommand(args: string[]): Promise<void> {
       guardedWriteFile(configFile, `${JSON.stringify(config, null, 2)}\n`, { expectedRevision: null });
     }
     print({ applied: !!values.apply, configFile, config });
+    return;
+  }
+  if (command === "permissions") {
+    if (!values["filesystem-access"]) throw new Error("permissions requires --filesystem-access");
+    const snapshot = readGuardedFile(configFile);
+    const current = validateServerConfiguration(JSON.parse(snapshot.content), configFile);
+    const filesystemAccess = localAgentFilesystemAccess(values["filesystem-access"]);
+    const config = { ...current, localAgentFilesystemAccess: filesystemAccess };
+    if (values.apply) {
+      guardedWriteFile(configFile, `${JSON.stringify(config, null, 2)}\n`, {
+        expectedRevision: snapshot.revision,
+        preserveMode: true,
+      });
+    }
+    print({
+      applied: !!values.apply,
+      configFile,
+      previousFilesystemAccess: current.localAgentFilesystemAccess,
+      filesystemAccess,
+      restartRequired: !!values.apply && filesystemAccess !== current.localAgentFilesystemAccess,
+    });
     return;
   }
   const config = validateServerConfiguration(JSON.parse(fs.readFileSync(configFile, "utf8")), configFile);

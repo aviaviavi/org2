@@ -889,7 +889,7 @@ ORG2_GOOGLE_DRIVE_ACCESS_TOKEN=&quot;$TOKEN&quot; \
 </section>
 <section class="org2-headline level-1">
 <h1 id="headless-server-cli">Headless server CLI</h1>
-<p><code>org2 server init|start|status|pair|revoke|stop|assign|service|push-config</code> manages the macOS headless relay and scheduler. Configuration is machine-local; <code>server assign</code> previews a symbolic <code>automationHostRef</code> change in <code>org2.json</code>. The <code>workflow due --host-ref HOST</code> and scheduled <code>workflow run --host-ref HOST</code> interfaces enforce that owner. See <a href="headless-server.html">Headless server setup</a> for the complete lifecycle and limitations.</p>
+<p><code>org2 server init|start|status|pair|revoke|stop|permissions|assign|service|push-config</code> manages the macOS headless relay and scheduler. Configuration is machine-local; <code>server permissions --filesystem-access read-only|workspace-write|full-access</code> previews or atomically updates that host's local Codex and Claude Code filesystem policy, with a restart required after a change. <code>server status</code> reports the active policy. <code>server assign</code> previews a symbolic <code>automationHostRef</code> change in <code>org2.json</code>. The <code>workflow due --host-ref HOST</code> and scheduled <code>workflow run --host-ref HOST</code> interfaces enforce that owner. See <a href="headless-server.html">Headless server setup</a> for the complete lifecycle and limitations.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="project-note-commands">Project note commands</h1>

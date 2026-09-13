@@ -44,7 +44,16 @@ try {
   assert.equal(init.applied, false);
   assert.equal(fs.existsSync(configFile), false);
   const config = init.config;
+  assert.equal(config.localAgentFilesystemAccess, "workspaceWrite");
+  const fullAccessInit = run("server", "init", "--dir", corpus, "--host-ref", "press", "--bind", "100.64.1.2",
+    "--filesystem-access", "full-access", "--config", configFile);
+  assert.equal(fullAccessInit.config.localAgentFilesystemAccess, "fullAccess");
   assert.equal(validateServerConfiguration(config, configFile).hostRef, "press");
+  const legacyConfig = { ...config };
+  delete legacyConfig.localAgentFilesystemAccess;
+  assert.equal(validateServerConfiguration(legacyConfig, configFile).localAgentFilesystemAccess, "workspaceWrite");
+  assert.throws(() => validateServerConfiguration({ ...config, localAgentFilesystemAccess: "root" }, configFile), /read-only/);
+  assert.throws(() => validateServerConfiguration({ ...config, localAgentFilesystemAccess: false }, configFile), /read-only/);
   assert.throws(() => validateServerConfiguration({ ...config, bindHost: "0.0.0.0" }, configFile), /Tailscale/);
   assert.throws(() => validateServerConfiguration({ ...config, port: 0 }, configFile), /port/);
   assert.throws(() => validateServerConfiguration(config, path.join(corpus, "server.json")), /machine-local/);
@@ -53,6 +62,16 @@ try {
   run("server", "init", "--dir", corpus, "--host-ref", "press", "--bind", "100.64.1.2", "--config", configFile, "--apply");
   assert.equal(fs.statSync(configFile).mode & 0o777, 0o600);
   assert.equal(fs.statSync(path.dirname(configFile)).mode & 0o777, 0o700);
+  const permissionsPreview = run("server", "permissions", "--filesystem-access", "full-access", "--config", configFile);
+  assert.equal(permissionsPreview.applied, false);
+  assert.equal(permissionsPreview.previousFilesystemAccess, "workspaceWrite");
+  assert.equal(permissionsPreview.filesystemAccess, "fullAccess");
+  assert.equal(JSON.parse(fs.readFileSync(configFile, "utf8")).localAgentFilesystemAccess, "workspaceWrite");
+  const permissionsApplied = run("server", "permissions", "--filesystem-access", "full-access", "--config", configFile, "--apply");
+  assert.equal(permissionsApplied.applied, true);
+  assert.equal(permissionsApplied.restartRequired, true);
+  assert.equal(JSON.parse(fs.readFileSync(configFile, "utf8")).localAgentFilesystemAccess, "fullAccess");
+  assert.equal(fs.statSync(configFile).mode & 0o777, 0o600);
   const plist = serverLaunchAgent(configFile, { ...config, name: "A & B", repoRoot: "/tmp/a&b" });
   assert.match(plist, /\/tmp\/a&amp;b\/dist\/cli.js/);
   assert.match(plist, /SuccessfulExit/);
