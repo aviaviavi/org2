@@ -9,10 +9,11 @@ import { renderOrgDocumentToAppHtml } from "./export.js";
 import { parseOrgToCanonicalAst } from "./parser.js";
 import { renderPluginSourceBlocks } from "./pluginRuntime.js";
 import { readStdinText } from "./stdin.js";
+import { createLiveEmbedResolver } from "./liveEmbeds.js";
 
 function usage(exitCode = 2): never {
   const command = path.basename(process.argv[1] ?? "render-html");
-  console.error(`Usage: ${command} [--source-path PATH] [--title TITLE] [--source-line-offset N] [--stylesheet PATH]`);
+  console.error(`Usage: ${command} [--source-path PATH] [--title TITLE] [--source-line-offset N] [--stylesheet PATH] [--corpus-root PATH] [--reference-embeds]`);
   process.exit(exitCode);
 }
 
@@ -20,6 +21,8 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2);
   let sourcePath: string | undefined;
   let title: string | undefined;
+  let corpusRoot: string | undefined;
+  let referenceEmbeds = false;
   let sourceLineOffset = 0;
   let stylesheetPath: string | undefined;
 
@@ -27,11 +30,13 @@ async function main(): Promise<void> {
     const argument = args[index];
     if (argument === "--help" || argument === "-h") usage(0);
 
-    if (argument === "--source-path" || argument === "--title" || argument === "--source-line-offset" || argument === "--stylesheet") {
+    if (argument === "--reference-embeds") { referenceEmbeds = true; continue; }
+    if (argument === "--corpus-root" || argument === "--source-path" || argument === "--title" || argument === "--source-line-offset" || argument === "--stylesheet") {
       const value = args[index + 1];
       if (value === undefined) usage();
       index += 1;
       if (argument === "--source-path") sourcePath = value;
+      if (argument === "--corpus-root") corpusRoot = value;
       if (argument === "--title") title = value;
       if (argument === "--stylesheet") stylesheetPath = value;
       if (argument === "--source-line-offset") {
@@ -90,6 +95,7 @@ async function main(): Promise<void> {
     pluginRenders,
     linkAbbreviations,
     linearTeam,
+    embedResolver: sourcePath && !referenceEmbeds ? createLiveEmbedResolver({ sourcePath, rootDir: corpusRoot }) : undefined,
   });
   process.stdout.write(rendered.html);
 }

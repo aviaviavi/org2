@@ -211,6 +211,10 @@ file ID. Use <code>--if-revision</code> when adopting or updating across request
 All writes preview by default. Linked source files are not eagerly included;
 read them through the normal authorized corpus tools when needed.</p>
 </section>
+<section class="org2-headline level-1">
+<h1 id="live-source-references">Live source references</h1>
+<p>Use <code>org2 embed resolve --target id:STABLE-ID --file notes/host.org --dir CORPUS --json</code> to validate a live note or heading reference. The read-only response supplies a portable <code>#+EMBED:</code> directive and source citation, without copying canonical content. <code>file:relative/note.org</code> embeds a whole note; ID resolution preserves compiled corpus semantics and rejects duplicates. OpenOrg renders and refreshes these references inside the active corpus. HTML/PDF exports keep references without fetching source content, and <code>publish document</code> emits a target-free omission marker. See <a href="editors-macos.html">the Mac workspace guide</a> for the insertion UI and bounded rendering behavior.</p>
+</section>
 </main>
 </div>
 <footer class="org2-footer"><div class="org2-footer-incubator"><span>Incubated at</span><a href="https://scarf.sh" target="_blank" rel="noopener noreferrer"><img class="org2-footer-scarf-logo" src="assets/scarf-logo.svg" alt="Scarf" /></a></div><p class="org2-footer-tagline">Build your knowledge locally and put it to work.</p><img referrerpolicy="no-referrer-when-downgrade" src="https://static.scarf.sh/a.png?x-pxid=e39e0a38-773e-4446-b8b0-804f923e3dc3" alt="" /></footer>

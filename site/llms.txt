@@ -113,3 +113,5 @@ for a shared brief, TODO actions, color, and related chat UUIDs. Writes preview
 by default; preserve preview ID/path and use --if-revision across updates.
 OpenOrg macOS offers project groups and linked-chat context; grouping does not
 isolate permissions or provider memory. See tooling-reference.html.
+
+Live embeds: `org2 embed resolve --target id:ID|file:relative.org --file SOURCE --dir CORPUS --json` validates portable `#+EMBED:` note/heading references read-only. OpenOrg offers insertion, source navigation and automatic source refresh; shared rendering bounds cycles, duplicate IDs and content. Exports never dereference embedded source; disclosure-safe publishing emits target-free omission markers.

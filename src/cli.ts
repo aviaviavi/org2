@@ -41,6 +41,11 @@ async function main(): Promise<void> {
     await runPropertyViewsCommand(args.slice(1));
     return;
   }
+  if (args[0] === "embed") {
+    const { runEmbedCommand } = await import("./liveEmbeds.js");
+    await runEmbedCommand(args.slice(1));
+    return;
+  }
   if (args[0] === "checkbox") {
     const { runCheckboxCommand } = await import("./checkboxCli.js");
     await runCheckboxCommand(args.slice(1));

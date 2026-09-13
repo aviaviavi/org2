@@ -247,3 +247,18 @@ skills, and goal context on subsequent turns. An agent can change between turns;
 the runtime remains fixed once a conversation starts. Choosing Default assistant
 removes the explicit profile. Profile selection does not import other chats or
 grant additional corpus access.
+
+* Live note and heading embeds
+
+Use the document *File → Live Embed…* menu, or *Insert → Live Embed…* in the source editor. Search the note list or enter =id:STABLE-ID= for a note or heading. *Insert Embed* validates the target through the shared runtime, opens the split editor, and inserts a portable =#+EMBED:= reference into your draft. Save with the normal editor controls.
+
+#+begin_example
+#+EMBED: file:../notes/project.org
+#+EMBED: id:project-decisions
+#+end_example
+
+A file target includes the whole note. An ID target includes the file or heading subtree identified by its =:ID:= property. Relative file paths resolve from the referencing note; nested references and images resolve from their own source files. The source remains canonical, and corpus file changes refresh the selected rendered document and split preview. Each embed has *Open source* navigation and a scrollable, read-only content frame; edit the original source to change its content. Embedded headings and tables do not acquire controls that could mutate the host note.
+
+Missing or duplicate IDs, cycles, and limits appear inline. Resolution stays within the active corpus, including after symlink resolution. Nesting stops after four levels, with at most 32 references and 1 MiB of total embedded content per render; a single embed is limited to 256 KiB. ID lookup scans at most 10,000 notes / 64 MiB, honors corpus ignore patterns, and excludes files larger than 4 MiB. For a large source, embed a smaller stable-ID heading or use a normal link.
+
+Exports do not fetch embedded source content. Ordinary HTML exports keep a textual source reference; *Export Current Document as PDF* keeps the source reference without its live frame. *Publish Document* replaces embeds with a target-free omission marker in every destination, including web, PDF, and Google Workspace exports. Publish the referenced source separately to review its disclosure. Source =.org= / =.org2= files preserve the portable directive.

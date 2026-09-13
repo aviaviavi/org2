@@ -34,6 +34,7 @@ import { COMPAT_CONTENT_CLOSE, COMPAT_CONTENT_OPEN, COMPAT_CONTENT_STYLE_SECTION
 import { isPresentationDocument } from "./presentation.js";
 import { evaluateTableNode } from "./tableFormula.js";
 import type { Org2PluginRender } from "./pluginRuntime.js";
+import type { LiveEmbedResolver } from "./liveEmbeds.js";
 
 function escapeHtml(value: string): string {
   return String(value)
@@ -111,7 +112,11 @@ const DOCUMENT_TOC_STYLE = `.org2-toc { border: 1px solid rgba(127,127,127,0.35)
 .org2-toc li.org2-toc-level-5 { margin-left: 3rem; }
 .org2-toc li.org2-toc-level-6 { margin-left: 3.75rem; }`;
 
-const APP_DOCUMENT_STYLE = `:root {
+const APP_DOCUMENT_STYLE = `.org2-live-embed { margin: 1rem 0; border: 1px solid var(--org2-rule); border-radius: 8px; overflow: hidden; }
+.org2-live-embed > header { padding: 9px 12px; font-size: 0.84rem; background: var(--org2-faint); }
+.org2-live-embed > p { padding: 0 12px; }
+.org2-live-embed-frame { display: block; width: 100%; height: 320px; border: 0; background: transparent; }
+:root {
   color-scheme: light dark;
   --org2-text: #18201e;
   --org2-muted: #5e6b66;
@@ -1088,6 +1093,12 @@ type RenderContext = {
   chartsByTableLine?: Map<number, OrgEmbeddedChart>;
   chartsByBlockLine?: Map<number, OrgEmbeddedChart>;
   pluginRendersByBlockLine?: Map<number, Org2PluginRender>;
+  embedResolver?: LiveEmbedResolver;
+  sourcePath?: string;
+  embedStack?: string[];
+  embedBudget?: { remaining: number; bytes: number };
+  embedded?: boolean;
+  embeddedAnchorLines?: Map<string, number>;
 };
 
 export type OrgEmbeddedChart = {
@@ -1623,7 +1634,57 @@ function renderEmphasis(node: EmphasisNode): string {
   return `<code>${content}</code>`;
 }
 
+function embeddedFileLinkTarget(target: string, sourcePath: string): string {
+  const explicitFile = /^file:/i.test(target);
+  if (!explicitFile && /^[a-z][a-z0-9+.-]*:/i.test(target)) return target;
+  const source = explicitFile ? target.slice(5) : target;
+  const separator = source.indexOf("::");
+  const file = separator < 0 ? source : source.slice(0, separator);
+  const search = separator < 0 ? "" : source.slice(separator);
+  // Bare paths follow the native file router's path/extension convention.
+  // Plain fuzzy titles and stable ID links keep their existing lookup behavior.
+  if (!explicitFile && (!file.includes("/") && !path.extname(file))) return target;
+  if (file.startsWith("~")) return `file:${file}${search}`;
+  return `file:${path.resolve(path.dirname(sourcePath), file)}${search}`;
+}
+
+function embeddedAnchorKey(target: string): string {
+  return target.startsWith("#")
+    ? `#${(normalizeAnchorId(target.slice(1)) ?? "").toLowerCase()}`
+    : `*${slugifyHeadlineTitle(target.replace(/^\*+\s*/, ""))}`;
+}
+
+function embeddedSourceAnchorLines(document: DocumentNode): Map<string, number> {
+  const candidates = new Map<string, number | null>();
+  const add = (key: string, line: number) => candidates.set(key, candidates.has(key) ? null : line);
+  const visit = (nodes: Node[]) => {
+    for (const node of nodes) if (node.type === "Headline") {
+      const line = (node as SourceRangedNode).sourceRange?.startLine;
+      if (line !== undefined) {
+        const title = node.title.map(inlineToText).join("").trim() || "Untitled";
+        const customId = findHeadlineCustomId(node);
+        add(embeddedAnchorKey(`#${customId ?? slugifyHeadlineTitle(title)}`), line);
+        add(embeddedAnchorKey(`*${title}`), line);
+      }
+      visit(node.children);
+    }
+  };
+  visit(document.children);
+  // Ambiguity never chooses a different source heading on the user's behalf.
+  return new Map([...candidates].filter((entry): entry is [string, number] => entry[1] !== null));
+}
+
 function appLinkHref(rawTarget: string, expandedTarget: string, context: RenderContext): string {
+  if (context.embedded && context.sourcePath) {
+    rawTarget = expandedTarget;
+    if (linkTargetNeedsHeadingAnchor(rawTarget)) {
+      const line = context.embeddedAnchorLines?.get(embeddedAnchorKey(rawTarget));
+      rawTarget = `file:${context.sourcePath}${line === undefined ? "" : `::${line}`}`;
+    } else {
+      rawTarget = embeddedFileLinkTarget(rawTarget, context.sourcePath);
+    }
+    if (!/^(https?|mailto):/i.test(rawTarget)) return `org2-workspace://open-link?target=${encodeURIComponent(rawTarget)}`;
+  }
   if (!context.nativeInternalLinks && linkTargetNeedsHeadingAnchor(expandedTarget)) {
     return rewriteOrgInternalHrefForHtml(expandedTarget, context);
   }
@@ -1791,7 +1852,7 @@ function renderInlineChildren(nodes: InlineNode[], context: RenderContext): stri
 type SourceRangedNode = Node & { sourceRange?: { startLine: number; endLine: number } };
 
 function renderSourceAttributes(node: Node, context: RenderContext): string {
-  if (context.profile !== "app") return "";
+  if (context.profile !== "app" || context.embedded) return "";
   const range = (node as SourceRangedNode).sourceRange;
   if (!range) return "";
   return ` data-org2-start-line="${range.startLine}" data-org2-end-line="${range.endLine}"`;
@@ -2048,6 +2109,42 @@ function renderHeadline(node: HeadlineNode, context: RenderContext): string {
   return `<section class="org2-headline level-${node.level}${node.commented ? " commented" : ""}"${renderSourceAttributes(node, context)}>\n<${headingTag}${headingIdAttr}>${headingNumber}${todo}${priority}${comment}${title}${tags}</${headingTag}>\n${childrenHtml}\n</section>`;
 }
 
+function renderLiveEmbed(target: string, context: RenderContext): string {
+  // Publishing never dereferences corpus content. The disclosure-safe publisher
+  // further replaces this reference with a target-free omission marker.
+  const reference = context.profile === "app"
+    ? `<a href="org2-workspace://open-link?target=${encodeURIComponent(context.embedded && context.sourcePath ? embeddedFileLinkTarget(target, context.sourcePath) : target)}">Open source · ${escapeHtml(target)}</a>`
+    : `<span>Live embed reference: ${escapeHtml(target)} (content not exported)</span>`;
+  const shell = (body: string) => `<aside class="org2-live-embed" data-org2-live-embed="true"><header>${reference}</header>${body}</aside>`;
+  if (context.profile !== "app") return shell("");
+  if (!context.embedResolver) return shell('<p role="status">Live content is not included in this rendering. Open the source to read it.</p>');
+  const budget = context.embedBudget!;
+  if ((context.embedStack?.length ?? 0) > 4 || budget.remaining-- <= 0) return shell('<p role="status">Embed limit reached (4 levels / 32 references).</p>');
+  const result = context.embedResolver(target, context.sourcePath);
+  if (!result.ok) return shell(`<p role="status">${escapeHtml(result.message)}</p>`);
+  if (context.embedStack?.includes(result.key)) return shell('<p role="status">Embed cycle stopped.</p>');
+  if ((budget.bytes -= result.bytes) < 0) return shell('<p role="status">Embed content limit reached (1 MiB per render).</p>');
+  const childContext: RenderContext = {
+    ...context, sourcePath: result.file, embedded: true,
+    embeddedAnchorLines: embeddedSourceAnchorLines(result.sourceDocument ?? result.document),
+    embedStack: [...(context.embedStack ?? []), result.key],
+    headlineIds: undefined, headlineSlugIds: undefined, headlineNumbers: undefined,
+    chartsByTableLine: undefined, chartsByBlockLine: undefined, pluginRendersByBlockLine: undefined,
+    linkAbbreviations: mergeLinkAbbreviations([context.linkAbbreviations ?? new Map(), collectLinkAbbreviationsFromDoc(result.document)]),
+  };
+  let body = renderNodes(result.document.children, childContext);
+  // File links and images are relative to the embedded source, never its host.
+  body = body.replace(/(<img\b[^>]*\bsrc=")([^"]+)(")/g, (match, before: string, image: string, after: string) => {
+    if (/^(?:[a-z]+:|\/\/)/i.test(image)) return match;
+    const decoded = image.replace(/&amp;/g, "&").replace(/&quot;/g, '"');
+    return `${before}org2-resource://local?target=${encodeURIComponent(path.resolve(path.dirname(result.file), decoded))}${after}`;
+  });
+  // A script-free sandbox keeps embedded source completely outside host editing,
+  // source-range selection, table mutations, and heading action affordances.
+  const frame = `<!doctype html><html><head><meta charset="utf-8"><base target="_top"><style>${APP_DOCUMENT_STYLE} body { padding: 12px; } .org2-live-embed { margin: 8px 0; }</style></head><body>${body}</body></html>`;
+  return shell(`<iframe class="org2-live-embed-frame" title="${escapeAttr(result.title)}" sandbox="allow-same-origin allow-top-navigation-by-user-activation" srcdoc="${escapeAttr(frame)}"></iframe>`);
+}
+
 function renderNode(node: Node, context: RenderContext): string {
   if (node.type === "Headline") return renderHeadline(node, context);
   if (node.type === "Paragraph") return renderParagraph(node, context);
@@ -2083,6 +2180,7 @@ function renderNode(node: Node, context: RenderContext): string {
   }
   if (node.type === "KeywordLine") {
     const key = String(node.keyRaw || "").trim().toUpperCase();
+    if (key === "EMBED") return renderLiveEmbed(node.valueRaw.trim(), context);
     if (HIDDEN_DOCUMENT_KEYWORDS.has(key)) return "";
     return `<p class="org2-keyword"><span class="org2-keyword-name">${escapeHtml(node.keyRaw)}</span>: ${escapeHtml(node.valueRaw.trim())}</p>`;
   }
@@ -2114,7 +2212,8 @@ function splitAppFileProperties(nodes: Node[]): { properties: Node[]; body: Node
     if (inPreamble && node.type === "CommentLine") continue;
     if (inPreamble && node.type === "KeywordLine") {
       const key = String(node.keyRaw || "").trim().toUpperCase();
-      if (!HIDDEN_DOCUMENT_KEYWORDS.has(key)) properties.push(node);
+      if (key === "EMBED") { inPreamble = false; body.push(node); }
+      else if (!HIDDEN_DOCUMENT_KEYWORDS.has(key)) properties.push(node);
       continue;
     }
     inPreamble = false;
@@ -2229,6 +2328,7 @@ function buildDocumentRenderContext(
   doc: DocumentNode,
   opts: {
     includeToc: boolean;
+    sourcePath?: string;
     includeTocDepth?: number;
     includeHeadlineNumbers: boolean;
     includeHeadlineNumberDepth?: number;
@@ -2239,6 +2339,7 @@ function buildDocumentRenderContext(
     profile?: "publish" | "app";
     charts?: OrgEmbeddedChart[];
     pluginRenders?: Org2PluginRender[];
+    embedResolver?: LiveEmbedResolver;
   },
 ): { context: RenderContext; tocItems: TocItem[] } {
   let tocItems: TocItem[] = [];
@@ -2252,6 +2353,12 @@ function buildDocumentRenderContext(
     rewriteFileLinks: opts.rewriteFileLinks === true,
     nativeInternalLinks: opts.nativeInternalLinks,
     profile: opts.profile,
+    embedResolver: opts.embedResolver,
+    sourcePath: opts.sourcePath,
+    // Reference-only clients (including the mobile JavaScriptCore bundle) have
+    // no filesystem. Only a supplied resolver needs a canonical cycle key.
+    embedStack: opts.embedResolver && opts.sourcePath ? [opts.embedResolver.sourceKey ?? `${path.resolve(opts.sourcePath)}:1`] : [],
+    embedBudget: { remaining: 32, bytes: 1024 * 1024 },
     // Precedence: built-ins < config < document-local #+LINK
     linkAbbreviations: mergeLinkAbbreviations([builtIns, configAbbreviations, documentAbbreviations]),
   };
@@ -2387,6 +2494,7 @@ export function renderOrgDocumentToHtml(
     profile?: "publish" | "app";
     charts?: OrgEmbeddedChart[];
     pluginRenders?: Org2PluginRender[];
+    embedResolver?: LiveEmbedResolver;
   } = {},
 ): { html: string; title: string; metadata: OrgExportMetadata } {
   const title = resolveTitle(doc, opts.title, opts.sourcePath);
@@ -2402,8 +2510,10 @@ export function renderOrgDocumentToHtml(
     linearTeam: opts.linearTeam,
     nativeInternalLinks: opts.nativeInternalLinks,
     profile: opts.profile,
+    sourcePath: opts.sourcePath,
     charts: opts.charts,
     pluginRenders: opts.pluginRenders,
+    embedResolver: opts.embedResolver,
   });
 
   const mainBody = renderMainBody({
@@ -2453,6 +2563,7 @@ export function renderOrgDocumentToAppHtml(
     nativeInternalLinks?: boolean;
     charts?: OrgEmbeddedChart[];
     pluginRenders?: Org2PluginRender[];
+    embedResolver?: LiveEmbedResolver;
   } = {},
 ): { html: string; title: string; metadata: OrgExportMetadata } {
   const customCss = String(opts.customCss || "").trim();
@@ -2479,6 +2590,7 @@ export function renderOrgDocumentToAppHtml(
     profile: "app",
     charts: opts.charts,
     pluginRenders: opts.pluginRenders,
+    embedResolver: opts.embedResolver,
   });
 }
 

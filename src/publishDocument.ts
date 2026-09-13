@@ -577,6 +577,11 @@ function sanitizeNode(node: Node, context: SanitizationContext): Node | null {
       return sanitizeListItem(node, context);
     case "KeywordLine": {
       const key = String(node.keyRaw || "").trim().toUpperCase();
+      if (key === "EMBED") {
+        redact(context, "metadata");
+        context.warnings.push("A live embed was omitted; publish its source separately to review disclosure.");
+        return { type: "Paragraph", children: [{ type: "Text", value: "[Live embed omitted from export]" }] };
+      }
       if (SAFE_SLIDE_LEVEL_KEYWORDS.has(key)) {
         const parsed = Number.parseInt(String(node.valueRaw || "").trim(), 10);
         if (!Number.isInteger(parsed) || parsed < 1 || parsed > 12) {

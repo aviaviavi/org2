@@ -2503,7 +2503,11 @@ li > .org2-image-figure { margin-top: 0.55rem; }`;
 .org2-toc li.org2-toc-level-4 { margin-left: 2.25rem; }
 .org2-toc li.org2-toc-level-5 { margin-left: 3rem; }
 .org2-toc li.org2-toc-level-6 { margin-left: 3.75rem; }`;
-  var APP_DOCUMENT_STYLE = `:root {
+  var APP_DOCUMENT_STYLE = `.org2-live-embed { margin: 1rem 0; border: 1px solid var(--org2-rule); border-radius: 8px; overflow: hidden; }
+.org2-live-embed > header { padding: 9px 12px; font-size: 0.84rem; background: var(--org2-faint); }
+.org2-live-embed > p { padding: 0 12px; }
+.org2-live-embed-frame { display: block; width: 100%; height: 320px; border: 0; background: transparent; }
+:root {
   color-scheme: light dark;
   --org2-text: #18201e;
   --org2-muted: #5e6b66;
@@ -3897,7 +3901,49 @@ ${rows}
     if (node.kind === "strike") return `<del>${content}</del>`;
     return `<code>${content}</code>`;
   }
+  function embeddedFileLinkTarget(target, sourcePath) {
+    const explicitFile = /^file:/i.test(target);
+    if (!explicitFile && /^[a-z][a-z0-9+.-]*:/i.test(target)) return target;
+    const source = explicitFile ? target.slice(5) : target;
+    const separator = source.indexOf("::");
+    const file = separator < 0 ? source : source.slice(0, separator);
+    const search = separator < 0 ? "" : source.slice(separator);
+    if (!explicitFile && (!file.includes("/") && !node_path_default.extname(file))) return target;
+    if (file.startsWith("~")) return `file:${file}${search}`;
+    return `file:${node_path_default.resolve(node_path_default.dirname(sourcePath), file)}${search}`;
+  }
+  function embeddedAnchorKey(target) {
+    return target.startsWith("#") ? `#${(normalizeAnchorId(target.slice(1)) ?? "").toLowerCase()}` : `*${slugifyHeadlineTitle(target.replace(/^\*+\s*/, ""))}`;
+  }
+  function embeddedSourceAnchorLines(document) {
+    const candidates = /* @__PURE__ */ new Map();
+    const add = (key, line) => candidates.set(key, candidates.has(key) ? null : line);
+    const visit = (nodes) => {
+      for (const node of nodes) if (node.type === "Headline") {
+        const line = node.sourceRange?.startLine;
+        if (line !== void 0) {
+          const title = node.title.map(inlineToText).join("").trim() || "Untitled";
+          const customId = findHeadlineCustomId(node);
+          add(embeddedAnchorKey(`#${customId ?? slugifyHeadlineTitle(title)}`), line);
+          add(embeddedAnchorKey(`*${title}`), line);
+        }
+        visit(node.children);
+      }
+    };
+    visit(document.children);
+    return new Map([...candidates].filter((entry) => entry[1] !== null));
+  }
   function appLinkHref(rawTarget, expandedTarget, context) {
+    if (context.embedded && context.sourcePath) {
+      rawTarget = expandedTarget;
+      if (linkTargetNeedsHeadingAnchor(rawTarget)) {
+        const line = context.embeddedAnchorLines?.get(embeddedAnchorKey(rawTarget));
+        rawTarget = `file:${context.sourcePath}${line === void 0 ? "" : `::${line}`}`;
+      } else {
+        rawTarget = embeddedFileLinkTarget(rawTarget, context.sourcePath);
+      }
+      if (!/^(https?|mailto):/i.test(rawTarget)) return `org2-workspace://open-link?target=${encodeURIComponent(rawTarget)}`;
+    }
     if (!context.nativeInternalLinks && linkTargetNeedsHeadingAnchor(expandedTarget)) {
       return rewriteOrgInternalHrefForHtml(expandedTarget, context);
     }
@@ -4034,7 +4080,7 @@ ${rows}
     return nodes.map((node) => renderInline(node, context)).join("");
   }
   function renderSourceAttributes(node, context) {
-    if (context.profile !== "app") return "";
+    if (context.profile !== "app" || context.embedded) return "";
     const range = node.sourceRange;
     if (!range) return "";
     return ` data-org2-start-line="${range.startLine}" data-org2-end-line="${range.endLine}"`;
@@ -4244,6 +4290,40 @@ ${childrenHtml}
 ${childrenHtml}
 </section>`;
   }
+  function renderLiveEmbed(target, context) {
+    const reference = context.profile === "app" ? `<a href="org2-workspace://open-link?target=${encodeURIComponent(context.embedded && context.sourcePath ? embeddedFileLinkTarget(target, context.sourcePath) : target)}">Open source \xB7 ${escapeHtml(target)}</a>` : `<span>Live embed reference: ${escapeHtml(target)} (content not exported)</span>`;
+    const shell = (body2) => `<aside class="org2-live-embed" data-org2-live-embed="true"><header>${reference}</header>${body2}</aside>`;
+    if (context.profile !== "app") return shell("");
+    if (!context.embedResolver) return shell('<p role="status">Live content is not included in this rendering. Open the source to read it.</p>');
+    const budget = context.embedBudget;
+    if ((context.embedStack?.length ?? 0) > 4 || budget.remaining-- <= 0) return shell('<p role="status">Embed limit reached (4 levels / 32 references).</p>');
+    const result = context.embedResolver(target, context.sourcePath);
+    if (!result.ok) return shell(`<p role="status">${escapeHtml(result.message)}</p>`);
+    if (context.embedStack?.includes(result.key)) return shell('<p role="status">Embed cycle stopped.</p>');
+    if ((budget.bytes -= result.bytes) < 0) return shell('<p role="status">Embed content limit reached (1 MiB per render).</p>');
+    const childContext = {
+      ...context,
+      sourcePath: result.file,
+      embedded: true,
+      embeddedAnchorLines: embeddedSourceAnchorLines(result.sourceDocument ?? result.document),
+      embedStack: [...context.embedStack ?? [], result.key],
+      headlineIds: void 0,
+      headlineSlugIds: void 0,
+      headlineNumbers: void 0,
+      chartsByTableLine: void 0,
+      chartsByBlockLine: void 0,
+      pluginRendersByBlockLine: void 0,
+      linkAbbreviations: mergeLinkAbbreviations([context.linkAbbreviations ?? /* @__PURE__ */ new Map(), collectLinkAbbreviationsFromDoc(result.document)])
+    };
+    let body = renderNodes(result.document.children, childContext);
+    body = body.replace(/(<img\b[^>]*\bsrc=")([^"]+)(")/g, (match, before, image, after) => {
+      if (/^(?:[a-z]+:|\/\/)/i.test(image)) return match;
+      const decoded = image.replace(/&amp;/g, "&").replace(/&quot;/g, '"');
+      return `${before}org2-resource://local?target=${encodeURIComponent(node_path_default.resolve(node_path_default.dirname(result.file), decoded))}${after}`;
+    });
+    const frame = `<!doctype html><html><head><meta charset="utf-8"><base target="_top"><style>${APP_DOCUMENT_STYLE} body { padding: 12px; } .org2-live-embed { margin: 8px 0; }</style></head><body>${body}</body></html>`;
+    return shell(`<iframe class="org2-live-embed-frame" title="${escapeAttr(result.title)}" sandbox="allow-same-origin allow-top-navigation-by-user-activation" srcdoc="${escapeAttr(frame)}"></iframe>`);
+  }
   function renderNode(node, context) {
     if (node.type === "Headline") return renderHeadline(node, context);
     if (node.type === "Paragraph") return renderParagraph(node, context);
@@ -4279,6 +4359,7 @@ ${childrenHtml}
     }
     if (node.type === "KeywordLine") {
       const key = String(node.keyRaw || "").trim().toUpperCase();
+      if (key === "EMBED") return renderLiveEmbed(node.valueRaw.trim(), context);
       if (HIDDEN_DOCUMENT_KEYWORDS.has(key)) return "";
       return `<p class="org2-keyword"><span class="org2-keyword-name">${escapeHtml(node.keyRaw)}</span>: ${escapeHtml(node.valueRaw.trim())}</p>`;
     }
@@ -4303,7 +4384,10 @@ ${childrenHtml}
       if (inPreamble && node.type === "CommentLine") continue;
       if (inPreamble && node.type === "KeywordLine") {
         const key = String(node.keyRaw || "").trim().toUpperCase();
-        if (!HIDDEN_DOCUMENT_KEYWORDS.has(key)) properties.push(node);
+        if (key === "EMBED") {
+          inPreamble = false;
+          body.push(node);
+        } else if (!HIDDEN_DOCUMENT_KEYWORDS.has(key)) properties.push(node);
         continue;
       }
       inPreamble = false;
@@ -4394,6 +4478,12 @@ ${rows}
       rewriteFileLinks: opts.rewriteFileLinks === true,
       nativeInternalLinks: opts.nativeInternalLinks,
       profile: opts.profile,
+      embedResolver: opts.embedResolver,
+      sourcePath: opts.sourcePath,
+      // Reference-only clients (including the mobile JavaScriptCore bundle) have
+      // no filesystem. Only a supplied resolver needs a canonical cycle key.
+      embedStack: opts.embedResolver && opts.sourcePath ? [opts.embedResolver.sourceKey ?? `${node_path_default.resolve(opts.sourcePath)}:1`] : [],
+      embedBudget: { remaining: 32, bytes: 1024 * 1024 },
       // Precedence: built-ins < config < document-local #+LINK
       linkAbbreviations: mergeLinkAbbreviations([builtIns, configAbbreviations, documentAbbreviations])
     };
@@ -4483,8 +4573,10 @@ ${compatClose}${postambleSection}</body>
       linearTeam: opts.linearTeam,
       nativeInternalLinks: opts.nativeInternalLinks,
       profile: opts.profile,
+      sourcePath: opts.sourcePath,
       charts: opts.charts,
-      pluginRenders: opts.pluginRenders
+      pluginRenders: opts.pluginRenders,
+      embedResolver: opts.embedResolver
     });
     const mainBody = renderMainBody({
       doc,
@@ -4548,7 +4640,8 @@ ${APP_DOCUMENT_SCRIPT}
       nativeInternalLinks: opts.nativeInternalLinks,
       profile: "app",
       charts: opts.charts,
-      pluginRenders: opts.pluginRenders
+      pluginRenders: opts.pluginRenders,
+      embedResolver: opts.embedResolver
     });
   }
 

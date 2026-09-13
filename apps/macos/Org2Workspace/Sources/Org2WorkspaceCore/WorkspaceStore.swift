@@ -2821,6 +2821,7 @@ public final class WorkspaceStore {
   public private(set) var dataNotebookRefreshFailure: DataNotebookRefreshFailure?
   public private(set) var dataSourceConfigurationError: String?
   public var isRenderingEntrySource = false
+  public var isLiveEmbedInsertPresented = false
   public var isEditingEntry = false
   public var isSavingEntry = false
   public var isSavingBlock = false
@@ -3311,6 +3312,7 @@ public final class WorkspaceStore {
   private var renderedBlocksCacheOrder: [String] = []
   private var renderedHTMLCache: [String: WorkspaceCacheBox<RenderedHTMLCacheEntry>] = [:]
   private var renderedHTMLCacheOrder: [String] = []
+  private var liveEmbedSourceID: String?
   private var selectedEntryHTMLRenderKey: String?
   private var entrySourceRenderIdentities: [String: String] = [:]
   private var nextSelectedEntrySourceRenderIdentity: String?
@@ -4768,6 +4770,22 @@ public final class WorkspaceStore {
     }
 
     recordCorpusFileEvents(classified.contentPaths)
+    if requiresFullScan || !classified.contentPaths.isEmpty || classified.hasConfigurationChanges {
+      // Embed contents are derived from other notes. Host-text cache keys alone
+      // cannot detect source edits, deletion, newly created IDs, or ambiguity.
+      let embedKeys = renderedHTMLCache.compactMap { key, box in
+        LiveEmbedPresentation.containsEmbeds(box.value.html) ? key : nil
+      }
+      releaseWorkspaceCacheBoxesOffMain(embedKeys.compactMap { renderedHTMLCache.removeValue(forKey: $0) })
+      renderedHTMLCacheOrder.removeAll { embedKeys.contains($0) }
+      if LiveEmbedPresentation.containsEmbeds(selectedEntryHTML)
+          || (liveEmbedSourceID != nil && liveEmbedSourceID == selectedEntrySource?.id) {
+        retrySelectedEntryRendering()
+      }
+      if isEditingEntry, LiveEmbedPresentation.containsEmbeds(sourceEditorPreviewHTML) {
+        scheduleSourceEditorPreview(immediate: true)
+      }
+    }
     if classified.hasConfigurationChanges {
       prepareDailyNoteDirectory(for: eventRoot)
       scheduleAppHTMLStylesheetSnapshotRefresh()
@@ -12708,7 +12726,8 @@ public final class WorkspaceStore {
           text,
           sourcePath: source.file,
           sourceLineOffset: max(0, source.startLine - 1),
-          stylesheetPath: self.appHTMLStylesheetPath
+          stylesheetPath: self.appHTMLStylesheetPath,
+          corpusRootPath: self.corpusRoot?.path
         )
         guard !Task.isCancelled,
               generation == self.sourceEditorPreviewGeneration,
@@ -13861,7 +13880,9 @@ public final class WorkspaceStore {
       text,
       sourcePath: standardizedSource.path,
       sourceLineOffset: 0,
-      stylesheetPath: appHTMLStylesheetPath
+      stylesheetPath: appHTMLStylesheetPath,
+      corpusRootPath: corpusRoot?.path,
+      resolveEmbeds: false
     )
   }
 
@@ -14175,6 +14196,20 @@ public final class WorkspaceStore {
     )
     insertTextInSourceEditor(text)
     return true
+  }
+
+  public func insertLiveEmbedDirective(_ directive: String) {
+    // The shared runtime has validated and generated this directive. Insertion
+    // uses the existing draft/save path and never changes the embedded source.
+    let wasEditing = isEditingEntry
+    if !wasEditing { beginEditingCurrentScope() }
+    guard isEditingEntry else { return }
+    if !wasEditing {
+      sourceEditorSelection = NSRange(location: sourceEditorInteraction.text.utf16.count, length: 0)
+    }
+    insertTextInSourceEditor("\n" + directive + "\n")
+    sourceEditorPresentation = .split
+    scheduleSourceEditorPreview(immediate: true)
   }
 
   private func insertTextInSourceEditor(_ text: String) {
@@ -37175,6 +37210,7 @@ public final class WorkspaceStore {
       renderedHTMLCacheOrder.removeAll { $0 == renderKey }
       renderedHTMLCacheOrder.append(renderKey)
       selectedEntryHTML = cachedHTML
+      liveEmbedSourceID = LiveEmbedPresentation.containsEmbeds(cachedHTML) ? source.id : nil
       selectedEntryHTMLRenderKey = renderKey
     }
 
@@ -37251,7 +37287,8 @@ public final class WorkspaceStore {
               source.text,
               sourcePath: source.file,
               sourceLineOffset: sourceLineOffset,
-              stylesheetPath: stylesheetPath
+              stylesheetPath: stylesheetPath,
+              corpusRootPath: self.corpusRoot?.path
             )
           }
           guard generation == self.entrySourceLoadGeneration,
@@ -37267,6 +37304,7 @@ public final class WorkspaceStore {
           )
           self.cacheRenderedHTML(presentedHTML, key: renderKey)
           self.selectedEntryHTML = presentedHTML
+          self.liveEmbedSourceID = LiveEmbedPresentation.containsEmbeds(presentedHTML) ? source.id : nil
           self.selectedEntryRenderError = nil
         } catch {
           guard generation == self.entrySourceLoadGeneration,

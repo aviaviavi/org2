@@ -49,3 +49,9 @@ Org2 reference is split into two detailed sections:
 - [[file:org2-vs-markdown.org][Org2 vs Markdown]]
 
 For the independently implementable language standard, see [[https://github.com/aviaviavi/org2/blob/main/spec/v0/SPEC.org][SPEC.org]], [[https://github.com/aviaviavi/org2/blob/main/spec/v0/GRAMMAR.ebnf][GRAMMAR.ebnf]], and [[https://github.com/aviaviavi/org2/blob/main/spec/v0/PARSING.org][PARSING.org]].
+
+* Live embed resolution
+
+=org2 embed resolve --target TARGET --file SOURCE [--dir CORPUS] [--json]= is read-only. It returns =org2:embed-resolution:v1= JSON containing a portable directive, title, resolved file, and source line, without copying source content. Targets are explicit =id:STABLE-ID= note/heading references or =file:relative/path.org= whole-note references; =.org2= remains supported. Relative paths resolve from =SOURCE=. When =--dir= is omitted, the nearest =org2.json= defines the corpus, falling back to the source directory.
+
+The shared app renderer interprets =#+EMBED: TARGET= keyword lines using compiled corpus IDs and source ranges. It rejects ambiguous IDs and out-of-corpus files, bounds cycles/depth/content, and renders source navigation beside read-only inline content. Ordinary HTML exports preserve references without resolving them; disclosure-safe =publish document= strips targets and emits an omission marker. See [[file:editors-macos.org][Live note and heading embeds]] for insertion, refresh, and limits.

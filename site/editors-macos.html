@@ -253,6 +253,15 @@ the runtime remains fixed once a conversation starts. Choosing Default assistant
 removes the explicit profile. Profile selection does not import other chats or
 grant additional corpus access.</p>
 </section>
+<section class="org2-headline level-1">
+<h1 id="live-note-and-heading-embeds">Live note and heading embeds</h1>
+<p>Use the document <strong>File → Live Embed…</strong> menu, or <strong>Insert → Live Embed…</strong> in the source editor. Search the note list or enter <code>id:STABLE-ID</code> for a note or heading. <strong>Insert Embed</strong> validates the target through the shared runtime, opens the split editor, and inserts a portable <code>#+EMBED:</code> reference into your draft. Save with the normal editor controls.</p>
+<pre class="org2-example">#+EMBED: file:../notes/project.org
+#+EMBED: id:project-decisions</pre>
+<p>A file target includes the whole note. An ID target includes the file or heading subtree identified by its <code>:ID:</code> property. Relative file paths resolve from the referencing note; nested references and images resolve from their own source files. The source remains canonical, and corpus file changes refresh the selected rendered document and split preview. Each embed has <strong>Open source</strong> navigation and a scrollable, read-only content frame; edit the original source to change its content. Embedded headings and tables do not acquire controls that could mutate the host note.</p>
+<p>Missing or duplicate IDs, cycles, and limits appear inline. Resolution stays within the active corpus, including after symlink resolution. Nesting stops after four levels, with at most 32 references and 1 MiB of total embedded content per render; a single embed is limited to 256 KiB. ID lookup scans at most 10,000 notes / 64 MiB, honors corpus ignore patterns, and excludes files larger than 4 MiB. For a large source, embed a smaller stable-ID heading or use a normal link.</p>
+<p>Exports do not fetch embedded source content. Ordinary HTML exports keep a textual source reference; <strong>Export Current Document as PDF</strong> keeps the source reference without its live frame. <strong>Publish Document</strong> replaces embeds with a target-free omission marker in every destination, including web, PDF, and Google Workspace exports. Publish the referenced source separately to review its disclosure. Source <code>.org</code> / <code>.org2</code> files preserve the portable directive.</p>
+</section>
 </main>
 </div>
 <footer class="org2-footer"><div class="org2-footer-incubator"><span>Incubated at</span><a href="https://scarf.sh" target="_blank" rel="noopener noreferrer"><img class="org2-footer-scarf-logo" src="assets/scarf-logo.svg" alt="Scarf" /></a></div><p class="org2-footer-tagline">Build your knowledge locally and put it to work.</p><img referrerpolicy="no-referrer-when-downgrade" src="https://static.scarf.sh/a.png?x-pxid=e39e0a38-773e-4446-b8b0-804f923e3dc3" alt="" /></footer>
