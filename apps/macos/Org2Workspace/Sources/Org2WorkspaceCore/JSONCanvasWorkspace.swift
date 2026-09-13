@@ -362,11 +362,27 @@ private struct CanvasCardContent: View {
   let node: JSONCanvasNode
   let resource: JSONCanvasResource?
 
+  private var previewImage: NSImage? {
+    guard let encoded = resource?.imageData, let data = Data(base64Encoded: encoded) else { return nil }
+    return NSImage(data: data)
+  }
+
+  private var sourceUnavailable: Bool {
+    ["missing", "ambiguous", "unsupported"].contains(resource?.status ?? "")
+  }
+
+  private var fallbackText: String {
+    if let text = resource?.text { return text }
+    if let url = resource?.url { return url }
+    if let message = resource?.message { return message }
+    return node.file ?? ""
+  }
+
   var body: some View {
     Group {
-      if let encoded = resource?.imageData, let data = Data(base64Encoded: encoded), let image = NSImage(data: data) {
+      if let image = previewImage {
         Image(nsImage: image).resizable().scaledToFit()
-      } else if resource?.status == "missing" || resource?.status == "ambiguous" || resource?.status == "unsupported" {
+      } else if sourceUnavailable {
         VStack(alignment: .leading, spacing: 6) {
           Label(resource?.status.capitalized ?? "Unavailable", systemImage: "exclamationmark.triangle")
           Text(resource?.message ?? "Source unavailable").font(.caption)
@@ -376,7 +392,7 @@ private struct CanvasCardContent: View {
       } else if node.type == "group" {
         Text(node.label ?? "Group").font(.title2).foregroundStyle(.secondary)
       } else {
-        Text(resource?.text ?? resource?.url ?? resource?.message ?? node.file ?? "").font(.callout)
+        Text(fallbackText).font(.callout)
       }
     }.padding(10).clipped()
   }

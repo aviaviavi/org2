@@ -14082,6 +14082,7 @@ public final class WorkspaceStore {
     guard isCurrentDocumentCorpusContext(context) else { return result }
     invalidateCanonicalDocumentCache(for: file)
     await refreshCorpusFiles()
+    guard isCurrentDocumentCorpusContext(context) else { return result }
     statusText = "Saved Canvas"
     return result
   }
@@ -14117,6 +14118,7 @@ public final class WorkspaceStore {
       }
       guard isCurrentDocumentCorpusContext(context) else { return }
       await refreshCorpusFiles()
+      guard isCurrentDocumentCorpusContext(context) else { return }
       selectCorpusFile(CorpusFile(path: result.file, relativePath: relativePath(result.file), modifiedAt: Date(), byteCount: nil))
       statusText = importing ? "Imported Canvas" : "Created Canvas"
       errorText = nil
