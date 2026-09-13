@@ -13,7 +13,7 @@ Both can support serious knowledge work. The main difference is where each syste
 | Runtime and license | Proprietary desktop/mobile app with public plugin APIs | Apache-2.0 parser, CLI, compiler, clients, and integrations |
 | Maturity | Established desktop and mobile products with a large community | Early alpha with working CLI, Mac app, VS Code integration, and a private-TestFlight or source-built iOS app |
 | Linked knowledge | Backlinks, outgoing links, graph, local graph, Canvas | IDs, wiki/file links, backlinks, graph reports, cited queries, and link-health operations |
-| Structured views | Bases tables, lists, cards, maps, formulas, and community views | Agenda/query outputs, data notebooks, materialized SQL views, tables, and deterministic charts |
+| Structured views | Bases tables, lists, cards, maps, formulas, and community views | Saved editable property tables/cards with filtering, sorting and grouping; agenda/query outputs, data notebooks, materialized SQL views and charts |
 | Planning | Markdown tasks, properties, Bases, core features, and plugins | Parser-defined TODO, planning, repeater, priority, effort, habit, clock, and agenda semantics |
 | Command line | First-party CLI controlling a running Obsidian app | Standalone CLI and JSON/compiler outputs that do not require a GUI client |
 | Agent workflow | Core and plugin features can operate on the vault | Cited context, durable runs, approvals, validation, workflows, and artifact provenance |
@@ -31,7 +31,7 @@ That completeness matters. Someone who wants a polished personal knowledge app c
 
 Bases stores database-like views over Markdown properties. Current core layouts include tables, lists, cards, and maps, with filtering, sorting, grouping, and formulas. Canvas supplies a visual workspace saved in the open JSON Canvas format.
 
-Org2's data views focus more on explicit datasets, SQL materialization, freshness, and report evidence. It does not currently offer an equivalent general-purpose canvas.
+Org2 offers saved table and card views over note and heading properties, with a no-SQL filter/sort/group builder and revision-guarded source editing in the Mac app. Portable view definitions live in corpus-relative JSON files. Data notebooks also cover explicit datasets, SQL materialization, freshness, and report evidence. It does not currently offer an equivalent general-purpose canvas.
 
 ** Plugins and customization
 

@@ -2557,6 +2557,7 @@ public final class WorkspaceStore {
   public var openClawVoiceTranscriptionElapsedText = ""
   public var openClawVoiceStatusText = "Dictate with local transcription."
   public var isOrgCryptConfigurationPresented = false
+  public var isPropertyViewsPresented = false
   public var isDataSourceConfigurationPresented = false
   public private(set) var scarfMetabaseHasStoredAPIKey = false
   public var orgCryptEncryptOnSave = true {

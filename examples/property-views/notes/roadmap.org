@@ -1,0 +1,40 @@
+#+title: OpenOrg sample roadmap
+:PROPERTIES:
+:ASSIGNEE: Product team
+:END:
+
+* TODO Saved property views
+:PROPERTIES:
+:ID: sample-property-views
+:STATUS: open
+:EFFORT: 8
+:AREA: Workspace
+:END:
+Build tables and cards over source-backed properties.
+
+** TODO Try an inherited assignee
+:PROPERTIES:
+:ID: sample-inherited-assignee
+:STATUS: review
+:EFFORT: 2
+:END:
+Changing ASSIGNEE in a view adds an override here.
+
+* TODO Reader polish
+:PROPERTIES:
+:ID: sample-reader-polish
+:ASSIGNEE: Design team
+:STATUS: open
+:EFFORT: 3
+:AREA: Reading
+:END:
+Keep source navigation available in every view.
+
+* DONE Shared property inheritance
+:PROPERTIES:
+:ID: sample-inheritance-complete
+:STATUS: done
+:EFFORT: 5
+:AREA: Runtime
+:END:
+The compiler owns the property values shown by clients.

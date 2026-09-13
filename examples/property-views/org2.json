@@ -1,0 +1,4 @@
+{
+  "agendaFiles": ["**/*.org"],
+  "recursive": true
+}

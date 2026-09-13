@@ -1,0 +1,13 @@
+{
+  "schema": "org2:property-view:v1",
+  "id": "roadmap",
+  "title": "Roadmap by assignee",
+  "layout": "cards",
+  "scope": { "kind": "heading", "filePrefix": "notes/" },
+  "columns": ["title", "STATUS", "ASSIGNEE", "EFFORT"],
+  "match": "all",
+  "filters": [{ "field": "STATUS", "operator": "isNot", "value": "done" }],
+  "sort": [{ "field": "EFFORT", "direction": "asc" }],
+  "groupBy": "ASSIGNEE",
+  "limit": 500
+}
