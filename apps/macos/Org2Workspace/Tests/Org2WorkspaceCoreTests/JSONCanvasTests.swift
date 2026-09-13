@@ -104,7 +104,8 @@ final class JSONCanvasTests: XCTestCase {
     XCTAssertTrue(store.selectedFileIsCanvas)
 
     let before: JSONCanvasPayload = try await cli.runJSON(["canvas", "show", "--dir", root.path, "--file", canvas.path, "--json"])
-    XCTAssertEqual(before.resources["note"]?.location?.file, source.path)
+    let resolvedSource = try XCTUnwrap(before.resources["note"]?.location?.file)
+    XCTAssertEqual(URL(fileURLWithPath: resolvedSource).resolvingSymlinksInPath(), source.resolvingSymlinksInPath())
     XCTAssertEqual(before.resources["note"]?.location?.lineForEditor, 3)
     let moved = try await store.mutateJSONCanvas(
       file: canvas.path, root: root.path, revision: before.revision,

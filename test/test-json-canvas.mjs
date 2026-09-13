@@ -37,6 +37,12 @@ try {
   assert.equal(fs.readFileSync(file, 'utf8'), inputText);
   assert.throws(() => createJSONCanvas(root, file, true), /already exists/);
   const first = showJSONCanvas(root, file);
+  const rootAlias = path.join(other, 'corpus-alias');
+  fs.symlinkSync(root, rootAlias);
+  assert.equal(showJSONCanvas(rootAlias, file).revision, first.revision);
+  assert.equal(showJSONCanvas(rootAlias, path.join(rootAlias, 'boards', 'work.canvas')).revision, first.revision);
+  assert.equal(editJSONCanvas(rootAlias, file, first.revision, [{ action: 'update-node', id: 'text', patch: { x: 42 } }]).applied, false);
+  assert.equal(fs.readFileSync(file, 'utf8'), inputText);
   assert.deepEqual(first.document, original);
   assert.equal(first.resources.note.status, 'ready');
   assert.equal(first.resources.note.title, 'Architecture');
@@ -108,6 +114,7 @@ try {
   assert.throws(() => createJSONCanvas(root, '.org2/work.canvas', true), /hidden/);
   fs.symlinkSync(other, path.join(root, 'outside'));
   assert.throws(() => createJSONCanvas(root, 'outside/work.canvas', true), /symlinks/);
+  assert.throws(() => createJSONCanvas(rootAlias, path.join(root, 'outside', 'work.canvas'), true), /symlinks/);
   fs.symlinkSync(path.join(other, "absent.canvas"), path.join(root, "dangling.canvas"));
   assert.throws(() => createJSONCanvas(root, "dangling.canvas", true), /symlinks/);
   assert.ok(fs.lstatSync(path.join(root, "dangling.canvas")).isSymbolicLink());

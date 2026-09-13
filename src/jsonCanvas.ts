@@ -94,11 +94,18 @@ function isSymbolicLink(file: string): boolean {
 /** Only .canvas files inside the active corpus are mutated; never follow symlinks. */
 export function scopedCanvasPath(root: string, file: string, write = false): string {
   const rawRoot = path.resolve(root);
-  const relative = path.relative(rawRoot, path.resolve(rawRoot, file));
-  if (!relative || relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) throw new Error("Canvas path must be inside the active corpus");
+  const canonicalRoot = fs.realpathSync(rawRoot);
+  const candidate = path.resolve(rawRoot, file);
+  const isInside = (relative: string) => Boolean(relative) && relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
+  let relative = path.relative(rawRoot, candidate);
+  // Files discovery returns canonical paths, while native URLs may retain a
+  // corpus-root alias such as /tmp. Accept either root spelling, but do not
+  // resolve the candidate: symlinks below the root must still be rejected.
+  if (!isInside(relative)) relative = path.relative(canonicalRoot, candidate);
+  if (!isInside(relative)) throw new Error("Canvas path must be inside the active corpus");
   const parts = relative.split(path.sep);
   if (parts.some(part => part.startsWith(".")) || (write && parts[0]!.toLowerCase() === "raw")) throw new Error("Canvas writes cannot target raw or hidden corpus state");
-  let current = fs.realpathSync(rawRoot);
+  let current = canonicalRoot;
   for (const part of parts) {
     current = path.join(current, part);
     if (isSymbolicLink(current)) throw new Error("Canvas paths cannot traverse symlinks");
