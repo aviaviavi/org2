@@ -997,6 +997,52 @@ final class CodexAppServerClientTests: XCTestCase {
     await client.shutdown()
   }
 
+  func testMissingRolloutAutomaticallyStartsAReplacementTask() async throws {
+    let temporaryDirectory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-codex-missing-rollout-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: temporaryDirectory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
+
+    let executable = temporaryDirectory.appendingPathComponent("fake-codex-missing-rollout")
+    let script = #"""
+    #!/bin/sh
+    while IFS= read -r line; do
+      request_id=$(printf '%s\n' "$line" | /usr/bin/sed -E 's/.*"id":([0-9]+).*/\1/')
+      case "$line" in
+        *'"method":"initialize"'*)
+          printf '{"id":%s,"result":{"userAgent":"fake-codex"}}\n' "$request_id"
+          ;;
+        *'"method":"initialized"'*)
+          ;;
+        *'"method":"thread/resume"'*)
+          printf '{"id":%s,"error":{"code":-32600,"message":"no rollout found for thread id thr-phone"}}\n' "$request_id"
+          ;;
+        *'"method":"thread/start"'*)
+          printf '{"id":%s,"result":{"thread":{"id":"thr-laptop-replacement"}}}\n' "$request_id"
+          ;;
+      esac
+    done
+    """#
+    try script.write(to: executable, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: executable.path)
+    let client = CodexAppServerClient(
+      executableURL: executable,
+      eventHandler: { _ in },
+      dynamicToolHandler: { _ in CodexDynamicToolResult(success: false, text: "unused") }
+    )
+
+    let resolution = try await client.ensureThreadRecoveringStaleSession(
+      existingThreadID: "thr-phone",
+      cwd: temporaryDirectory
+    )
+
+    XCTAssertEqual(
+      resolution,
+      CodexThreadResolution(threadID: "thr-laptop-replacement", replacedStaleThread: true)
+    )
+    await client.shutdown()
+  }
+
   func testManagedRemoteClientUsesSSHStdioJSONLTransport() async throws {
     let temporaryDirectory = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-managed-remote-client-\(UUID().uuidString)", isDirectory: true)

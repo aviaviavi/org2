@@ -9,6 +9,11 @@ struct AIChatTranscriptRenderedBody: Equatable {
   let contexts: [AIChatTranscriptHTML.Context]
 }
 
+struct AIChatTranscriptRenderedReasoning: Equatable {
+  let source: String
+  let html: String
+}
+
 @MainActor
 enum AIChatTranscriptRenderedBodyCache {
   private final class Key: NSObject {
@@ -95,6 +100,7 @@ struct AIChatTranscriptDocument: View {
   @Environment(\.orgRoamLinkResolver) private var linkResolver
   @ObservedObject private var liveState: OpenClawChatLiveState
   @State private var rendered: [UUID: AIChatTranscriptRenderedBody] = [:]
+  @State private var renderedReasoning: [UUID: AIChatTranscriptRenderedReasoning] = [:]
   @State private var preparedLive: PreparedLive?
   @State private var showsAllLiveText = false
   @State private var showsLiveActivity = false
@@ -137,6 +143,14 @@ struct AIChatTranscriptDocument: View {
     let expanded: Bool
   }
   private struct RenderKey: Equatable { let sourcePath: String; let inputs: [RenderInput] }
+  private struct ReasoningInput: Equatable {
+    let id: UUID
+    let text: String
+  }
+  private struct ReasoningRenderKey: Equatable {
+    let sourcePath: String
+    let inputs: [ReasoningInput]
+  }
   private struct LiveInput: Equatable {
     let threadID: UUID
     let startedAt: Date?
@@ -152,8 +166,10 @@ struct AIChatTranscriptDocument: View {
     let threadID: UUID
     let startedAt: Date?
     let text: String?
+    let textHTML: String?
     let hasEarlierText: Bool
     let reasoning: String?
+    let reasoningHTML: String?
     let activities: [OpenClawActivityFeedItem]
   }
   private struct MessageSlot {
@@ -213,6 +229,13 @@ struct AIChatTranscriptDocument: View {
         formatted: message.role == .assistant,
         expanded: expandedMessageIDs.contains(message.id))
     }
+    let reasoningInputs = messages.compactMap { message -> ReasoningInput? in
+      guard let trace = message.responseTrace,
+            let reasoning = OpenClawProgressPresentation.reasoningText(from: trace.reasoning),
+            !reasoning.isEmpty
+      else { return nil }
+      return ReasoningInput(id: message.id, text: reasoning)
+    }
     let entries = zip(messageSlots, inputs).map { slot, input in
       let message = slot.message
       let excerpt = OpenClawMessageBodyExcerpt(
@@ -237,7 +260,14 @@ struct AIChatTranscriptDocument: View {
         isRoomResponse: slot.isRoomResponse,
         copied: copiedMessageID == message.id,
         isTruncated: excerpt.isTruncated,
-        responseTrace: message.responseTrace.flatMap(AIChatTranscriptHTML.Trace.init),
+        responseTrace: message.responseTrace.flatMap { trace in
+          let reasoningHTML = renderedReasoning[message.id].flatMap {
+            $0.source == OpenClawProgressPresentation.reasoningText(from: trace.reasoning)
+              ? $0.html
+              : nil
+          }
+          return AIChatTranscriptHTML.Trace(trace, reasoningHTML: reasoningHTML)
+        },
         changeSummary: message.changeSummary.map(AIChatTranscriptHTML.ChangeSummary.init)
       )
     }
@@ -320,6 +350,31 @@ struct AIChatTranscriptDocument: View {
         catch { /* The selectable plain body remains available. */ }
       }
     }
+    .task(id: ReasoningRenderKey(sourcePath: sourcePath, inputs: reasoningInputs)) {
+      let ids = Set(reasoningInputs.map(\.id))
+      var nextRendered = renderedReasoning.filter { ids.contains($0.key) }
+      renderedReasoning = nextRendered
+      for input in reasoningInputs
+      where nextRendered[input.id]?.source != input.text {
+        do {
+          try Task.checkCancellation()
+          let normalized = await Task.detached(priority: .utility) {
+            OpenClawMessageOrgNormalizer.normalized(input.text)
+          }.value
+          let html = try await AIChatDocumentRenderCache.shared.render(
+            normalized,
+            sourcePath: sourcePath
+          )
+          try Task.checkCancellation()
+          nextRendered[input.id] = AIChatTranscriptRenderedReasoning(
+            source: input.text,
+            html: html
+          )
+          renderedReasoning = nextRendered
+        } catch is CancellationError { return }
+        catch { /* The selectable plain reasoning remains available. */ }
+      }
+    }
     .task(id: liveInput) {
       guard let liveInput else {
         preparedLive = nil
@@ -340,12 +395,31 @@ struct AIChatTranscriptDocument: View {
         input: liveInput.preparation
       )
       guard !Task.isCancelled else { return }
+      let text = prepared?.text?.text
+      let reasoning = prepared?.reasoning
       preparedLive = PreparedLive(
         threadID: liveInput.threadID,
         startedAt: liveInput.startedAt,
-        text: prepared?.text?.text,
+        text: text,
+        textHTML: nil,
         hasEarlierText: prepared?.text?.hasEarlierText ?? false,
-        reasoning: prepared?.reasoning,
+        reasoning: reasoning,
+        reasoningHTML: nil,
+        activities: prepared?.activityFeedItems ?? []
+      )
+      async let textHTML = renderedProgressHTML(text)
+      async let reasoningHTML = renderedProgressHTML(reasoning)
+      let renderedTextHTML = await textHTML
+      let renderedReasoningHTML = await reasoningHTML
+      guard !Task.isCancelled else { return }
+      preparedLive = PreparedLive(
+        threadID: liveInput.threadID,
+        startedAt: liveInput.startedAt,
+        text: text,
+        textHTML: renderedTextHTML,
+        hasEarlierText: prepared?.text?.hasEarlierText ?? false,
+        reasoning: reasoning,
+        reasoningHTML: renderedReasoningHTML,
         activities: prepared?.activityFeedItems ?? []
       )
     }
@@ -383,6 +457,21 @@ struct AIChatTranscriptDocument: View {
       expanded: input.expanded,
       sourcePath: sourcePath
     )
+  }
+
+  private func renderedProgressHTML(_ text: String?) async -> String? {
+    guard let text, !text.isEmpty else { return nil }
+    do {
+      let normalized = await Task.detached(priority: .utility) {
+        OpenClawMessageOrgNormalizer.normalized(text)
+      }.value
+      return try await AIChatDocumentRenderCache.shared.render(
+        normalized,
+        sourcePath: sourcePath
+      )
+    } catch {
+      return nil
+    }
   }
 
   private func title(_ message: OpenClawChatMessage) -> String {
@@ -436,9 +525,11 @@ struct AIChatTranscriptDocument: View {
       usesLivenessThresholds: input.connectionState == .connected && input.runID != nil,
       animates: animates,
       text: prepared?.text,
+      textHTML: prepared?.textHTML,
       hasEarlierText: prepared?.hasEarlierText ?? false,
       textExpanded: showsAllLiveText,
       reasoning: prepared?.reasoning,
+      reasoningHTML: prepared?.reasoningHTML,
       activities: (prepared?.activities ?? []).map(AIChatTranscriptHTML.Activity.init),
       activityExpanded: showsLiveActivity
     )
@@ -537,11 +628,13 @@ enum AIChatTranscriptHTML {
 
   struct Trace: Codable, Equatable {
     let reasoning: String?
+    let reasoningHTML: String?
     let activities: [Activity]
 
-    init?(_ trace: OpenClawResponseTrace) {
+    init?(_ trace: OpenClawResponseTrace, reasoningHTML: String? = nil) {
       guard !trace.isEmpty else { return nil }
       reasoning = OpenClawProgressPresentation.reasoningText(from: trace.reasoning)
+      self.reasoningHTML = reasoningHTML
       activities = OpenClawActivityFeed.items(from: trace.activities).map(Activity.init)
     }
   }
@@ -586,11 +679,53 @@ enum AIChatTranscriptHTML {
     let usesLivenessThresholds: Bool
     let animates: Bool
     let text: String?
+    let textHTML: String?
     let hasEarlierText: Bool
     let textExpanded: Bool
     let reasoning: String?
+    let reasoningHTML: String?
     let activities: [Activity]
     let activityExpanded: Bool
+
+    init(
+      title: String,
+      detail: String?,
+      quietTitle: String,
+      quietDetail: String,
+      stalledTitle: String,
+      stalledDetail: String,
+      startedAtMilliseconds: Double?,
+      lastEventAtMilliseconds: Double?,
+      usesLivenessThresholds: Bool,
+      animates: Bool,
+      text: String?,
+      textHTML: String? = nil,
+      hasEarlierText: Bool,
+      textExpanded: Bool,
+      reasoning: String?,
+      reasoningHTML: String? = nil,
+      activities: [Activity],
+      activityExpanded: Bool
+    ) {
+      self.title = title
+      self.detail = detail
+      self.quietTitle = quietTitle
+      self.quietDetail = quietDetail
+      self.stalledTitle = stalledTitle
+      self.stalledDetail = stalledDetail
+      self.startedAtMilliseconds = startedAtMilliseconds
+      self.lastEventAtMilliseconds = lastEventAtMilliseconds
+      self.usesLivenessThresholds = usesLivenessThresholds
+      self.animates = animates
+      self.text = text
+      self.textHTML = textHTML
+      self.hasEarlierText = hasEarlierText
+      self.textExpanded = textExpanded
+      self.reasoning = reasoning
+      self.reasoningHTML = reasoningHTML
+      self.activities = activities
+      self.activityExpanded = activityExpanded
+    }
   }
 
   struct Entry: Codable, Equatable {
@@ -684,6 +819,10 @@ enum AIChatTranscriptHTML {
   .reasoning-copy,.activity-copy,.change-path { min-width:0; }
   .reasoning-title,.activity-title { display:block; font-weight:500; }
   .reasoning-text,.activity-detail { display:-webkit-box; overflow:hidden; -webkit-box-orient:vertical; -webkit-line-clamp:2; margin-top:2px; color:light-dark(#777,#aaa); font-size:10px; white-space:pre-wrap; }
+  .reasoning-text.rendered { white-space:normal; }
+  .reasoning-text .org2-document,.live-text .org2-document { width:100%; margin:0; padding:0; color:inherit; font:inherit; }
+  .reasoning-text .org2-document > :first-child,.live-text .org2-document > :first-child { margin-top:0; }
+  .reasoning-text .org2-document > :last-child,.live-text .org2-document > :last-child { margin-bottom:0; }
   .trace.expanded .reasoning-text { -webkit-line-clamp:8; }
   .activity-detail { -webkit-line-clamp:1; white-space:normal; text-overflow:ellipsis; }
   .trace.expanded .activity-detail { -webkit-line-clamp:3; }
@@ -709,6 +848,7 @@ enum AIChatTranscriptHTML {
   .live-stop .glyph,.live-stop svg { width:8px; height:8px; }
   .live-detail { max-width:640px; margin-top:2px; font-size:10px; color:light-dark(#999,#888); white-space:pre-wrap; }
   .live-text { max-width:640px; margin-top:9px; color:light-dark(#202020,#e7e7e7); font-size:13px; line-height:1.5; white-space:pre-wrap; }
+  .live-text.rendered { white-space:normal; }
   .live-text-toggle { margin-top:5px; font-size:10px; font-weight:500; color:light-dark(#777,#aaa); }
   .live-feed { max-width:640px; margin-top:9px; font-size:11px; }
   .live-feed .reasoning-row,.live-feed .activity-row { margin-top:6px; }
@@ -804,6 +944,26 @@ enum AIChatTranscriptHTML {
       return leftKeys.length===rightKeys.length
         && leftKeys.every((key,index)=>key===rightKeys[index] && sameValue(left[key],right[key]));
     };
+    const renderedOrgBody = (html, tagName='div') => {
+      const doc=new DOMParser().parseFromString(html,'text/html');
+      const css=doc.querySelector('style');
+      if(css && !document.getElementById('renderer-style')) { css.id='renderer-style'; document.head.prepend(css); }
+      doc.querySelectorAll('script,.org2-document-header').forEach(x=>x.remove());
+      const source=doc.querySelector('main') || doc.body;
+      const body=document.createElement(tagName); body.className='org2-document'; body.append(...source.childNodes);
+      for(const pre of body.querySelectorAll('pre')) {
+        const wrap=document.createElement('div'); wrap.className='chat-code'; pre.replaceWith(wrap); wrap.append(pre);
+        const b=document.createElement('button'); b.className='chat-copy-code'; b.textContent='Copy code';
+        b.onclick=()=>webkit.messageHandlers.chatCopyCode.postMessage(pre.textContent.replace(/\n$/,'')); wrap.append(b);
+      }
+      return body;
+    };
+    const setRenderedOrgText = (node, text, html) => {
+      node.replaceChildren();
+      node.classList.toggle('rendered',!!html);
+      if(html) node.append(renderedOrgBody(html));
+      else node.textContent=text||'';
+    };
     const makeMessage = e => {
       const a=document.createElement('article'); a.id='message-'+e.id; a.className=e.role;
       if(e.isRoomResponse) a.classList.add('room-response');
@@ -833,18 +993,7 @@ enum AIChatTranscriptHTML {
         for(let i=0;i<2;i++) { const line=document.createElement('span'); line.className='message-placeholder-line'; lines.append(line); }
         placeholder.append(pulse,lines); card.append(placeholder);
       } else {
-        const doc=new DOMParser().parseFromString(e.html,'text/html');
-        const css=doc.querySelector('style');
-        if(css && !document.getElementById('renderer-style')) { css.id='renderer-style'; document.head.prepend(css); }
-        doc.querySelectorAll('script,.org2-document-header').forEach(x=>x.remove());
-        const main=doc.querySelector('main') || doc.body;
-        const body=document.createElement('main'); body.className='org2-document'; body.append(...main.childNodes);
-        for(const pre of body.querySelectorAll('pre')) {
-          const wrap=document.createElement('div'); wrap.className='chat-code'; pre.replaceWith(wrap); wrap.append(pre);
-          const b=document.createElement('button'); b.className='chat-copy-code'; b.textContent='Copy code';
-          b.onclick=()=>webkit.messageHandlers.chatCopyCode.postMessage(pre.textContent.replace(/\n$/,'')); wrap.append(b);
-        }
-        card.append(body);
+        card.append(renderedOrgBody(e.html,'main'));
       }
       if(!e.preparing && e.isTruncated) { const expand=button('⌄  Show Full Message','expand',e.id); expand.className='expansion'; card.append(expand); }
       if(e.attachments.length) {
@@ -885,7 +1034,8 @@ enum AIChatTranscriptHTML {
           const row=document.createElement('div'); row.className='reasoning-row detail-icon'; row.append(icon('sparkle'));
           const copy=document.createElement('div'); copy.className='reasoning-copy';
           const title=document.createElement('span'); title.className='reasoning-title'; title.textContent='Approach';
-          const value=document.createElement('span'); value.className='reasoning-text'; value.textContent=e.responseTrace.reasoning;
+          const value=document.createElement('div'); value.className='reasoning-text';
+          setRenderedOrgText(value,e.responseTrace.reasoning,e.responseTrace.reasoningHTML);
           copy.append(title,value); row.append(copy); trace.append(row);
         }
         const activities=e.responseTrace.activities;
@@ -955,7 +1105,7 @@ enum AIChatTranscriptHTML {
     const renderLive = live => {
       const root=ensureLive(); root.liveData=live; root.hidden=!live;
       if(!live) return;
-      const text=root.querySelector('.live-text'); text.textContent=live.text||''; text.hidden=!live.text;
+      const text=root.querySelector('.live-text'); setRenderedOrgText(text,live.text,live.textHTML); text.hidden=!live.text;
       const textToggle=root.querySelector('.live-text-toggle'); textToggle.hidden=!live.hasEarlierText;
       if(live.hasEarlierText) updateDisclosure(textToggle,live.textExpanded?'Show latest update':'Show all progress',live.textExpanded?'chevronUp':'chevronDown');
       const feed=root.querySelector('.live-feed'); feed.replaceChildren(); feed.classList.toggle('expanded',live.activityExpanded);
@@ -963,7 +1113,8 @@ enum AIChatTranscriptHTML {
         const row=document.createElement('div'); row.className='reasoning-row detail-icon'; row.append(icon('sparkle'));
         const copy=document.createElement('div'); copy.className='reasoning-copy';
         const title=document.createElement('span'); title.className='reasoning-title'; title.textContent='Approach';
-        const value=document.createElement('span'); value.className='reasoning-text'; value.textContent=live.reasoning;
+        const value=document.createElement('div'); value.className='reasoning-text';
+        setRenderedOrgText(value,live.reasoning,live.reasoningHTML);
         copy.append(title,value); row.append(copy); feed.append(row);
       }
       let activities=live.activities;

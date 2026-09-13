@@ -78,7 +78,7 @@ OpenOrg Property Views offers saved tables and cards over canonical note/heading
 
 ## Agent entry points
 
-- [Headless server](headless-server.html): macOS CLI relay and scheduler, iOS host pairing, explicit corpus automation ownership, user launchd service, and current failover boundaries.
+- [Headless server](headless-server.html): macOS CLI relay and scheduler, iOS host pairing, explicit per-host local-agent filesystem access and corpus automation ownership, user launchd service, and current failover boundaries.
 
 - https://org2.avi.press/agent-quickstart.html
 - https://org2.avi.press/mcp-and-skills.html

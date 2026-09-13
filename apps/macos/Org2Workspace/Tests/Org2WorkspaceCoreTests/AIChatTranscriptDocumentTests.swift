@@ -389,6 +389,57 @@ final class AIChatTranscriptDocumentTests: XCTestCase {
     ))
   }
 
+  func testLiveAndSavedReasoningUseOrgRendering() async throws {
+    let commentary = "I’m fixing =main=; see [[https://example.com/docs][the docs]]."
+    let reasoning = "Reuse the =Org2= renderer for *reasoning*, too."
+    let cli = Org2CLI(repoRoot: try Org2CLI.defaultRepoRoot())
+    let commentaryHTML = try await cli.renderAppHTML(
+      OpenClawMessageOrgNormalizer.normalized(commentary),
+      sourcePath: "/tmp/chat-message.org"
+    )
+    let reasoningHTML = try await cli.renderAppHTML(
+      OpenClawMessageOrgNormalizer.normalized(reasoning),
+      sourcePath: "/tmp/chat-message.org"
+    )
+    let trace = try XCTUnwrap(AIChatTranscriptHTML.Trace(
+      OpenClawResponseTrace(reasoning: reasoning),
+      reasoningHTML: reasoningHTML
+    ))
+    let live = AIChatTranscriptHTML.Live(
+      title: "Codex is thinking", detail: nil,
+      quietTitle: "Waiting for Codex", quietDetail: "Quiet",
+      stalledTitle: "Codex may be stalled", stalledDetail: "Stalled",
+      startedAtMilliseconds: Date().timeIntervalSince1970 * 1_000,
+      lastEventAtMilliseconds: Date().timeIntervalSince1970 * 1_000,
+      usesLivenessThresholds: false, animates: true,
+      text: commentary, textHTML: commentaryHTML,
+      hasEarlierText: false, textExpanded: false,
+      reasoning: reasoning, reasoningHTML: reasoningHTML,
+      activities: [], activityExpanded: true
+    )
+    let view = try await document()
+    try await update(view, payload([
+      entry("rendered-reasoning", "<main><p>Finished.</p></main>", trace: trace)
+    ], sending: true, live: live))
+
+    let result = try await view.evaluateJavaScript("""
+      ({
+        liveCode:document.querySelector('.live-text code')?.textContent,
+        liveLink:document.querySelector('.live-text a')?.textContent,
+        liveLiteral:document.querySelector('.live-text').innerText.includes('=main='),
+        traceCode:document.querySelector('.trace .reasoning-text code')?.textContent,
+        traceStrong:document.querySelector('.trace .reasoning-text strong')?.textContent,
+        liveReasoningCode:document.querySelector('.live-feed .reasoning-text code')?.textContent
+      })
+      """) as? [String: Any]
+    XCTAssertEqual(result?["liveCode"] as? String, "main")
+    XCTAssertEqual(result?["liveLink"] as? String, "the docs")
+    XCTAssertEqual(result?["liveLiteral"] as? Bool, false)
+    XCTAssertEqual(result?["traceCode"] as? String, "Org2")
+    XCTAssertEqual(result?["traceStrong"] as? String, "reasoning")
+    XCTAssertEqual(result?["liveReasoningCode"] as? String, "Org2")
+  }
+
   func testOrgAndLegacyCitationsRenderAsLinksWithExactLineTargets() async throws {
     let raw = "Org [[file:/tmp/note.org::16][project notes]], legacy [source](/tmp/file.swift:42), web [site](https://example.com)."
     let normalized = OpenClawMessageOrgNormalizer.normalized(raw)
