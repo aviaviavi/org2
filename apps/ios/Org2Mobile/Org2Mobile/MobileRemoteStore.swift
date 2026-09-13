@@ -12,7 +12,7 @@ final class MobileRemoteStore: ObservableObject {
   private static let savedHostsKey = "Org2Mobile.remote.hosts.v1"
   private static let activeHostKey = "Org2Mobile.remote.activeHost.v1"
 
-  var canChangeHost: Bool { activeRequestCount == 0 && !isPairing }
+  var canChangeHost: Bool { !isPairing }
 
   @Published private(set) var isPaired = false
   @Published private(set) var isConnected = false
@@ -65,6 +65,7 @@ final class MobileRemoteStore: ObservableObject {
   private var pollingTask: Task<Void, Never>?
   private var foregroundReplyPollingTask: Task<Void, Never>?
   private var appIsActive = false
+  private var connectionGeneration = 0
   private var pollingThreadID: UUID?
   private var pollingLeaseID: UUID?
   private var configurationRequestID: UUID?
@@ -159,7 +160,7 @@ final class MobileRemoteStore: ObservableObject {
 
   func pair() async {
     guard canChangeHost else {
-      errorMessage = "Wait for the current host request to finish before pairing."
+      errorMessage = "Finish pairing before changing hosts."
       return
     }
     isPairing = true
@@ -181,7 +182,7 @@ final class MobileRemoteStore: ObservableObject {
       let endpoint = client.endpoint.absoluteString
       let host = MobileRemoteSavedHost(id: response.deviceID, name: response.serverName, endpoint: endpoint)
       try Self.saveToken(response.accessToken, account: host.id.uuidString)
-      disconnect(forgetHost: false, checksRequests: false)
+      disconnect(forgetHost: false, checksRequests: false, unregisterPush: false)
       savedHosts.removeAll { existing in
         if existing.endpoint == endpoint { Self.deleteToken(account: existing.id.uuidString); return true }
         return false
@@ -214,7 +215,7 @@ final class MobileRemoteStore: ObservableObject {
       errorMessage = "Pair with this host again to restore its credential."
       return
     }
-    disconnect(forgetHost: false)
+    disconnect(forgetHost: false, checksRequests: false, unregisterPush: false)
     activeHostID = host.id
     activeEndpoint = host.endpoint
     endpointDraft = host.endpoint
@@ -233,12 +234,32 @@ final class MobileRemoteStore: ObservableObject {
     defaults.set(activeHostID?.uuidString, forKey: Self.activeHostKey)
   }
 
-  func disconnect(forgetHost: Bool = true, checksRequests: Bool = true) {
+  private func invalidateConnectionRequests() {
+    connectionGeneration &+= 1
+    isRefreshing = false
+    isRefreshingWorkspace = false
+    isSyncingPushRegistration = false
+    isRefreshingConfiguration = false
+    isUpdatingConfiguration = false
+    isRefreshingExternalThreads = false
+    isLoadingExternalThread = false
+  }
+
+  private func isCurrentConnection(_ generation: Int) -> Bool {
+    connectionGeneration == generation
+  }
+
+  func disconnect(
+    forgetHost: Bool = true,
+    checksRequests: Bool = true,
+    unregisterPush: Bool = true
+  ) {
     guard !checksRequests || canChangeHost else {
-      errorMessage = "Wait for the current host request to finish before disconnecting."
+      errorMessage = "Finish pairing before disconnecting."
       return
     }
-    if isPaired, let accessToken,
+    invalidateConnectionRequests()
+    if unregisterPush, isPaired, let accessToken,
        let client = try? MobileRemoteClient(endpoint: activeEndpoint, accessToken: accessToken) {
       activeRequestCount += 1
       Task {
@@ -303,11 +324,16 @@ final class MobileRemoteStore: ObservableObject {
   }
 
   func refresh(reportsErrors: Bool = true) async {
+    let generation = connectionGeneration
     activeRequestCount += 1
     defer { activeRequestCount -= 1 }
     guard isPaired, !isRefreshing else { return }
     isRefreshing = true
-    defer { isRefreshing = false }
+    defer {
+      if isCurrentConnection(generation) {
+        isRefreshing = false
+      }
+    }
     do {
       let client = try pairedClient()
       async let statusRequest = client.get("/v1/status", as: MobileRemoteServerStatus.self)
@@ -316,16 +342,19 @@ final class MobileRemoteStore: ObservableObject {
       guard nextStatus.protocolVersion == MobileRemoteWire.version else {
         throw MobileRemoteClientError.incompatibleProtocol
       }
+      guard isCurrentConnection(generation) else { return }
       status = nextStatus
       isConnected = true
       connectionError = nil
       serverName = nextStatus.serverName
-      await syncPushRegistrationIfNeeded(force: false)
-      await reconcileReplyNotifications(with: nextThreads.threads)
+      await syncPushRegistrationIfNeeded(force: false, connectionGeneration: generation)
+      await reconcileReplyNotifications(with: nextThreads.threads, connectionGeneration: generation)
+      guard isCurrentConnection(generation) else { return }
       threads = nextThreads.threads
       pruneThreadDetailCache(keeping: Set(nextThreads.threads.map(\.id)))
       defaults.set(serverName, forKey: Self.serverNameKey)
     } catch {
+      guard isCurrentConnection(generation) else { return }
       isConnected = false
       connectionError = error.localizedDescription
       if reportsErrors {
@@ -335,21 +364,28 @@ final class MobileRemoteStore: ObservableObject {
   }
 
   func refreshWorkspace(reportsErrors: Bool = true) async {
+    let generation = connectionGeneration
     activeRequestCount += 1
     defer { activeRequestCount -= 1 }
     guard isPaired, !isRefreshingWorkspace else { return }
     isRefreshingWorkspace = true
-    defer { isRefreshingWorkspace = false }
+    defer {
+      if isCurrentConnection(generation) {
+        isRefreshingWorkspace = false
+      }
+    }
     do {
       let snapshot = try await pairedClient().get(
         "/v1/workspace",
         timeout: 60,
         as: MobileRemoteWorkspaceSnapshot.self
       )
+      guard isCurrentConnection(generation) else { return }
       apply(snapshot)
       workspaceConnectionError = nil
       isConnected = true
     } catch {
+      guard isCurrentConnection(generation) else { return }
       workspaceConnectionError = error.localizedDescription
       if reportsErrors, workspaceUpdatedAt == nil {
         errorMessage = "Could not load canonical workspace data from the host. \(error.localizedDescription)"
@@ -546,11 +582,14 @@ final class MobileRemoteStore: ObservableObject {
 
   private func syncPushRegistrationIfNeeded(
     force: Bool,
-    enabled requestedEnabled: Bool? = nil
+    enabled requestedEnabled: Bool? = nil,
+    connectionGeneration expectedGeneration: Int? = nil
   ) async {
+    let generation = expectedGeneration ?? connectionGeneration
     activeRequestCount += 1
     defer { activeRequestCount -= 1 }
     guard isPaired, !isSyncingPushRegistration else { return }
+    guard isCurrentConnection(generation) else { return }
     let enabled = requestedEnabled ?? threadNotificationsEnabled
     let token = enabled
       ? defaults.string(forKey: MobileRemoteNotification.deviceTokenKey)
@@ -571,7 +610,11 @@ final class MobileRemoteStore: ObservableObject {
     let fingerprint = "\(enabled):\(environment ?? "none"):\(token ?? "none")"
     guard force || fingerprint != pushRegistrationFingerprint else { return }
     isSyncingPushRegistration = true
-    defer { isSyncingPushRegistration = false }
+    defer {
+      if isCurrentConnection(generation) {
+        isSyncingPushRegistration = false
+      }
+    }
     do {
       let response: MobileRemotePushRegistrationResponse = try await pairedClient().post(
         "/v1/push-registration",
@@ -582,6 +625,7 @@ final class MobileRemoteStore: ObservableObject {
         ),
         as: MobileRemotePushRegistrationResponse.self
       )
+      guard isCurrentConnection(generation) else { return }
       pushRegistrationFingerprint = fingerprint
       realTimeNotificationsActive = response.enabled && response.providerConfigured
       if !enabled {
@@ -592,6 +636,7 @@ final class MobileRemoteStore: ObservableObject {
         pushNotificationStatusText = "Finish push setup in OpenOrg on the Mac"
       }
     } catch {
+      guard isCurrentConnection(generation) else { return }
       realTimeNotificationsActive = false
       if status?.pushNotificationsSupported == true {
         pushNotificationStatusText = "Could not sync push notifications: \(error.localizedDescription)"
@@ -602,10 +647,12 @@ final class MobileRemoteStore: ObservableObject {
   }
 
   private func reconcileReplyNotifications(
-    with nextThreads: [MobileRemoteThreadSummary]
+    with nextThreads: [MobileRemoteThreadSummary],
+    connectionGeneration expectedGeneration: Int? = nil
   ) async {
     activeRequestCount += 1
     defer { activeRequestCount -= 1 }
+    if let expectedGeneration, !isCurrentConnection(expectedGeneration) { return }
     let baseline = replyNotificationBaseline()
     let hasBaseline = defaults.data(forKey: Self.replyNotificationBaselineKey) != nil
     let nextBaseline = Dictionary(uniqueKeysWithValues: nextThreads.compactMap { thread in
@@ -615,6 +662,7 @@ final class MobileRemoteStore: ObservableObject {
     guard hasBaseline, threadNotificationsEnabled else { return }
 
     let settings = await UNUserNotificationCenter.current().notificationSettings()
+    if let expectedGeneration, !isCurrentConnection(expectedGeneration) { return }
     guard Self.notificationAuthorizationAllowsAlerts(settings.authorizationStatus) else {
       threadNotificationsUnavailable = true
       return

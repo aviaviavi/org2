@@ -59,6 +59,7 @@ struct Org2WorkspaceApp: App {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
           store.setWorkspaceRealtimeRefreshActive(true)
           store.setRunReviewAutoRefreshActive(true, refreshImmediately: false)
+          mobileRemote.startIfConfigured()
           Task { await store.refreshAIChatConfiguration() }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
@@ -67,6 +68,7 @@ struct Org2WorkspaceApp: App {
         }
         .task {
           await store.bootstrap()
+          mobileRemote.startIfConfigured()
           store.setSourceAutoSyncActive(true)
           store.setAutomationSchedulerActive(true)
         }

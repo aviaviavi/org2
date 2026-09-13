@@ -11,7 +11,7 @@ enum MobileRemoteClientError: LocalizedError {
   var errorDescription: String? {
     switch self {
     case .invalidEndpoint:
-      "Enter a Tailscale URL such as http://100.64.0.1:48922."
+      "Enter an OpenOrg host URL such as http://100.64.0.1:48922 or http://press.local:48922."
     case .connection(let detail):
       "Could not reach the host: \(detail)"
     case .malformedResponse:
@@ -33,7 +33,7 @@ struct MobileRemoteClient: Sendable {
     guard var components = URLComponents(string: trimmed),
           components.scheme?.lowercased() == "http",
           let host = components.host,
-          Self.isTailscaleIPv4(host)
+          Self.isAllowedHost(host)
     else {
       throw MobileRemoteClientError.invalidEndpoint
     }
@@ -121,6 +121,42 @@ struct MobileRemoteClient: Sendable {
   private static func isTailscaleIPv4(_ address: String) -> Bool {
     let parts = address.split(separator: ".").compactMap { UInt8($0) }
     return parts.count == 4 && parts[0] == 100 && (64...127).contains(parts[1])
+  }
+
+  private static func isAllowedHost(_ host: String) -> Bool {
+    let normalized = host.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    guard !normalized.isEmpty, normalized == host.lowercased() else { return false }
+    if normalized == "localhost" { return true }
+    if isIPv4Address(normalized) { return true }
+    return isValidHostname(normalized)
+  }
+
+  private static func isIPv4Address(_ address: String) -> Bool {
+    let parts = address.split(separator: ".", omittingEmptySubsequences: false)
+    guard parts.count == 4 else { return false }
+    return parts.allSatisfy { UInt8($0) != nil }
+  }
+
+  private static func isValidHostname(_ host: String) -> Bool {
+    guard host.count <= 253, !host.contains("..") else { return false }
+    let labels = host.split(separator: ".", omittingEmptySubsequences: false)
+    guard !labels.isEmpty else { return false }
+    return labels.allSatisfy { label in
+      guard !label.isEmpty, label.count <= 63 else { return false }
+      guard label.first?.isASCII == true,
+            label.last?.isASCII == true,
+            isASCIILetterOrNumber(label.first),
+            isASCIILetterOrNumber(label.last)
+      else { return false }
+      return label.allSatisfy { character in
+        character.isASCII && (isASCIILetterOrNumber(character) || character == "-")
+      }
+    }
+  }
+
+  private static func isASCIILetterOrNumber(_ character: Character?) -> Bool {
+    guard let character else { return false }
+    return character.isASCII && (character.isLetter || character.isNumber)
   }
 }
 

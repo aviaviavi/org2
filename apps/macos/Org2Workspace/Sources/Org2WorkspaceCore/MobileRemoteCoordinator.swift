@@ -48,6 +48,7 @@ public final class MobileRemoteCoordinator: ObservableObject {
   private var server: MobileRemoteHTTPServer?
   private var failedPairingAttempts = 0
   private var serverGeneration = 0
+  private var restartTask: Task<Void, Never>?
 
   public init(
     defaults: UserDefaults = .standard,
@@ -171,7 +172,7 @@ public final class MobileRemoteCoordinator: ObservableObject {
 
   public func generatePairingCode() {
     guard isEnabled, isListening, endpoint != nil else {
-      statusText = "Turn on Mobile Remote with a valid Tailscale address first."
+      statusText = "Turn on Mobile Remote with this Mac’s current Tailscale address first."
       return
     }
     var random: UInt32 = 0
@@ -206,13 +207,16 @@ public final class MobileRemoteCoordinator: ObservableObject {
   }
 
   private func start() {
+    restartTask?.cancel()
+    restartTask = nil
     guard store != nil else {
       statusText = "Waiting for the workspace"
       return
     }
-    guard Self.isTailscaleIPv4(bindHost) else {
+    guard let selectedBindHost = resolvedBindHostForStart() else {
       stopServer()
-      statusText = "Enter this Mac’s Tailscale IPv4 address"
+      statusText = "Turn on Tailscale or choose this Mac’s current Tailscale IPv4 address"
+      scheduleRestartIfNeeded()
       return
     }
 
@@ -233,11 +237,15 @@ public final class MobileRemoteCoordinator: ObservableObject {
           guard self?.serverGeneration == generation else { return }
           self?.statusText = state
           self?.isListening = state.hasPrefix("Listening on ")
+          if state.hasPrefix("Failed: ") {
+            self?.server = nil
+            self?.scheduleRestartIfNeeded()
+          }
         }
       }
     )
     do {
-      try server.start(host: bindHost, port: port)
+      try server.start(host: selectedBindHost, port: port)
       self.server = server
     } catch {
       self.server = nil
@@ -254,10 +262,38 @@ public final class MobileRemoteCoordinator: ObservableObject {
   }
 
   private func stopServer() {
+    restartTask?.cancel()
+    restartTask = nil
     serverGeneration &+= 1
     server?.stop()
     server = nil
     isListening = false
+  }
+
+  private func scheduleRestartIfNeeded() {
+    guard isEnabled, restartTask == nil else { return }
+    restartTask = Task { [weak self] in
+      try? await Task.sleep(for: .seconds(5))
+      await MainActor.run {
+        guard let self, self.isEnabled, self.server == nil else { return }
+        self.restartTask = nil
+        self.start()
+      }
+    }
+  }
+
+  private func resolvedBindHostForStart() -> String? {
+    let normalized = bindHost.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard Self.isTailscaleIPv4(normalized) else { return nil }
+    let detectedAddresses = Self.tailscaleIPv4Addresses()
+    guard !detectedAddresses.isEmpty else { return nil }
+    if detectedAddresses.contains(normalized) {
+      return normalized
+    }
+    guard let detected = detectedAddresses.first else { return nil }
+    bindHost = detected
+    defaults.set(detected, forKey: Self.bindHostKey)
+    return detected
   }
 
   private func handle(_ request: MobileRemoteHTTPRequest) async -> MobileRemoteHTTPResponse {
