@@ -21,6 +21,11 @@ async function main(): Promise<void> {
     await runRoamConnectionsCommand(args);
     return;
   }
+  if (args[0] === "browser-clip") {
+    const { runBrowserClipCommand } = await import("./browserClip.js");
+    await runBrowserClipCommand(args.slice(1));
+    return;
+  }
   if (args[0] === "server") {
     const { runServerCommand } = await import("./serverCli.js");
     await runServerCommand(args.slice(1));

@@ -167,3 +167,7 @@ project UI is available on macOS; the portable file and CLI are shared.
 * Live note and heading embeds
 
 OpenOrg renders portable =#+EMBED:= references to whole notes and stable-ID heading subtrees inline, with source navigation, automatic refresh, and bounded cycle/missing-target handling. Use *File → Live Embed…* or the source editor's *Insert* menu. Content stays in the canonical source; rendering is read-only and shared with the runtime. HTML and reading-layout PDF exports retain references without fetching source content; Beamer export omits embed directives, while disclosure-safe publishing emits target-free omission markers. See [[file:editors-macos.org][OpenOrg for macOS]] and [[file:reference.org][the command reference]].
+
+* Browser article and selection clipping
+
+The OpenOrg Web Clipper saves articles or selected passages as portable =.org2clip= files. Choose a Reading note or Read later task template, preview the text, then import through the Mac Capture window. URL, available author and capture time are preserved alongside an immutable raw capture. See [[file:editors-macos.org][Mac installation and use]] and [[file:tooling-reference.org][the CLI import contract]].

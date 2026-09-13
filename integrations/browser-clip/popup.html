@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Clip to OpenOrg</title><link rel="stylesheet" href="popup.css"></head>
+<body><h1>Clip to OpenOrg</h1><p class="intro">Keep the source. Make it part of your workspace.</p>
+<p id="status" role="status">Reading this page…</p>
+<form id="clip-form">
+<div class="row"><label>Capture<select id="mode"><option value="article">Article</option><option value="selection">Selection</option></select></label>
+<label>Template<select id="template"><option value="note">Reading note</option><option value="task">Read later task</option></select></label></div>
+<label>Title<input id="title" required maxlength="8192"></label><label>Author<input id="author" maxlength="8192" placeholder="When available"></label>
+<label>Source<input id="url" readonly></label><label>Preview<textarea id="content" rows="5" readonly></textarea></label>
+<button id="save" type="submit" disabled>Save clip…</button></form>
+<p class="hint">Then open OpenOrg → Capture → Import Browser Clip. Review the clip and choose Import.</p>
+<script type="module" src="popup.js"></script></body></html>

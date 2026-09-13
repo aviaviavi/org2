@@ -1064,3 +1064,18 @@ TODOs, tags, planning, and links. There is no separate project database.
 Property views validate source projections against canonical AST ranges: headings and property drawers in examples do not become editable rows. Malformed source notes are omitted with per-file =diagnostics= in query results, also shown in the Mac view.
 
 Raw captures remain immutable: graph reads may include them, but unlinked-mention actions exclude =raw/= and the mutation command rejects raw source edits.
+
+* Browser clip import
+
+The =integrations/browser-clip/= Chromium extension produces =org2:browser-clip:v1= JSON in =.org2clip= files: =url=, =title=, optional =author=, ISO =capturedAt=, =mode= (=article= or =selection=), =template= (=note= or =task=), and plain-text =content=. The Mac Capture window exposes this same runtime import contract.
+
+#+begin_src sh
+org2 browser-clip import --file article.org2clip --dir ~/notes --json
+# Copy revision and clipRevision from that preview:
+org2 browser-clip import --file article.org2clip --dir ~/notes \
+  --if-revision sha256:DESTINATION_HASH --if-clip-revision CLIP_HASH --apply --json
+#+end_src
+
+An absent destination reports revision =absent=. Optional =--template note|task= overrides the saved template and must match between preview and apply. The importer shares =capture='s source/provenance rendering, preserves an immutable content-addressed raw envelope under =raw/browser/=, and atomically appends a literal-source note to =views/browser-clips.org=. Preview writes nothing. Both source-clip and destination revisions are checked before apply; replaying the same clip/template is idempotent. Duplicate detection reads canonical heading provenance drawers, supports CRLF and indentation, and ignores quoted examples and body-only drawers. Imports are limited to 2 MB of text and 4 MB JSON, require HTTP(S) URLs without embedded credentials, and reject paths that escape the active corpus via symlinks. This command does not fetch URLs or promote content to canonical notes.
+
+The task template chooses the first active state in the destination file or corpus TODO workflow, falling back to =TODO=. Raw-source provenance uses a file-relative link from the imported note to its immutable capture.
