@@ -26,6 +26,7 @@ struct JSONCanvasWorkspaceView: View {
   private var selected: JSONCanvasNode? { nodes.first { $0.id == selectedNode } }
 
   var body: some View {
+    let layers = JSONCanvasLayers(nodes: nodes)
     VStack(spacing: 0) {
       toolbar
       if let error {
@@ -51,9 +52,12 @@ struct JSONCanvasWorkspaceView: View {
               pan = CGSize(width: (panStart?.width ?? 0) + value.translation.width, height: (panStart?.height ?? 0) + value.translation.height)
             }.onEnded { _ in panStart = nil })
             .onTapGesture { selectedNode = nil; selectedEdge = nil }
+          ForEach(layers.groups) { node in
+            card(node).allowsHitTesting(!isPanning)
+          }
           Canvas { context, _ in drawEdges(context: &context) }
             .allowsHitTesting(false)
-          ForEach(nodes) { node in
+          ForEach(layers.cards) { node in
             card(node).allowsHitTesting(!isPanning)
           }
           if nodes.isEmpty && !busy {

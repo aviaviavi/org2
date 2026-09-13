@@ -47,6 +47,28 @@ final class JSONCanvasTests: XCTestCase {
     XCTAssertEqual(targets.targets.first?.id, "notes/a.org:17:stable-heading")
   }
 
+  func testImportedGroupsRemainBehindOverlappingCardsWithoutChangingDocumentOrder() throws {
+    let imported = #"""
+    {"nodes":[
+      {"id":"a","type":"text","text":"First","x":0,"y":0,"width":150,"height":120},
+      {"id":"group-a","type":"group","x":-10,"y":-10,"width":500,"height":400},
+      {"id":"b","type":"text","text":"Second","x":20,"y":20,"width":150,"height":120},
+      {"id":"future","type":"future-kind","x":900,"y":0,"width":100,"height":100},
+      {"id":"group-b","type":"group","x":-20,"y":-20,"width":550,"height":450}
+    ]}
+    """#
+    let document = try JSONDecoder().decode(JSONCanvasDocument.self, from: Data(imported.utf8))
+    let nodes = try XCTUnwrap(document.nodes)
+    let layers = JSONCanvasLayers(nodes: nodes)
+    XCTAssertEqual(layers.groups.map(\.id), ["group-a", "group-b"])
+    XCTAssertEqual(layers.cards.map(\.id), ["a", "b", "future"])
+    let point = CGPoint(x: 50, y: 50)
+    // Both groups contain the cards, but the foreground retains the topmost card as its hit target.
+    XCTAssertTrue(layers.groups.allSatisfy { $0.rectangle.contains(point) })
+    XCTAssertEqual(layers.cards.reversed().first { $0.rectangle.contains(point) }?.id, "b")
+    XCTAssertEqual(document.nodes?.map(\.id), ["a", "group-a", "b", "future", "group-b"])
+  }
+
   @MainActor
   func testWorkspaceCanvasMutationsPersistGeometryConnectionsAndRejectStaleRevision() async throws {
     let temporary = FileManager.default.temporaryDirectory

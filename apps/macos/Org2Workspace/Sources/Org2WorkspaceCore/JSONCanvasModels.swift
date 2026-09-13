@@ -89,6 +89,17 @@ public struct JSONCanvasTarget: Decodable, Identifiable, Sendable {
   enum CodingKeys: String, CodingKey { case title, file, line, nodeID = "id", org2Ref, subpath }
 }
 
+/// Presentation layers preserve relative order within each layer without rewriting the document.
+public struct JSONCanvasLayers: Sendable {
+  public let groups: [JSONCanvasNode]
+  public let cards: [JSONCanvasNode]
+
+  public init(nodes: [JSONCanvasNode]) {
+    groups = nodes.filter { $0.type == "group" }
+    cards = nodes.filter { $0.type != "group" }
+  }
+}
+
 public enum JSONCanvasGeometry {
   public static func bounds(_ nodes: [JSONCanvasNode]) -> CGRect {
     nodes.reduce(CGRect.null) { $0.union($1.rectangle) }
