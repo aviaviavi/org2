@@ -41,6 +41,7 @@ struct LiveEmbedInsertSheet: View {
   @State private var search = ""
   @State private var error: String?
   @State private var isResolving = false
+  @State private var resolutionTask: Task<Void, Never>?
 
   var body: some View {
     VStack(alignment: .leading, spacing: 14) {
@@ -48,6 +49,7 @@ struct LiveEmbedInsertSheet: View {
       Text("Choose a note or enter a stable note or heading ID. The source stays in its own file. Save the inserted directive to keep the reference.")
         .foregroundStyle(.secondary)
       TextField("Search notes", text: $search)
+        .disabled(isResolving)
       ScrollView {
         LazyVStack(alignment: .leading, spacing: 4) {
           ForEach(store.corpusFiles.filter {
@@ -66,36 +68,50 @@ struct LiveEmbedInsertSheet: View {
         }
       }
       .frame(height: 180)
+      .disabled(isResolving)
       TextField("file:notes/example.org or id:stable-heading-id", text: $target)
         .textFieldStyle(.roundedBorder)
         .accessibilityLabel("Embed target")
+        .disabled(isResolving)
       if let error { Text(error).foregroundStyle(.red).textSelection(.enabled) }
       HStack {
         Spacer()
-        Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+        Button("Cancel") {
+          resolutionTask?.cancel()
+          dismiss()
+        }.keyboardShortcut(.cancelAction)
         Button(isResolving ? "Resolving…" : "Insert Embed") {
           guard let source = store.selectedEntrySource else { return }
+          let submittedTarget = target
+          let submittedRoot = store.corpusRoot?.standardizedFileURL.path
           isResolving = true
           error = nil
-          Task { @MainActor in
+          resolutionTask = Task { @MainActor in
+            defer {
+              isResolving = false
+              resolutionTask = nil
+            }
+            guard !Task.isCancelled, store.isLiveEmbedInsertPresented else { return }
             do {
-              var arguments = ["embed", "resolve", "--target", target, "--file", source.file, "--json"]
-              if let root = store.corpusRoot { arguments += ["--dir", root.path] }
+              var arguments = ["embed", "resolve", "--target", submittedTarget, "--file", source.file, "--json"]
+              if let submittedRoot { arguments += ["--dir", submittedRoot] }
               let result: LiveEmbedResolution = try await store.cli.runJSON(arguments)
+              guard !Task.isCancelled, store.isLiveEmbedInsertPresented else { return }
               guard result.ok, let directive = result.directive else {
                 error = result.message ?? "The embed target could not be resolved."
-                isResolving = false
                 return
               }
-              guard store.selectedEntrySource?.id == source.id else {
+              guard store.selectedEntrySource?.id == source.id,
+                    store.corpusRoot?.standardizedFileURL.path == submittedRoot else {
                 error = "The selected document changed. Choose the destination again."
-                isResolving = false
                 return
               }
               store.insertLiveEmbedDirective(directive)
               dismiss()
-            } catch { self.error = error.localizedDescription }
-            isResolving = false
+            } catch {
+              guard !Task.isCancelled, store.isLiveEmbedInsertPresented else { return }
+              self.error = error.localizedDescription
+            }
           }
         }
         .keyboardShortcut(.defaultAction)
@@ -104,5 +120,7 @@ struct LiveEmbedInsertSheet: View {
     }
     .padding(24)
     .frame(width: 540)
+    .interactiveDismissDisabled(isResolving)
+    .onDisappear { resolutionTask?.cancel() }
   }
 }
