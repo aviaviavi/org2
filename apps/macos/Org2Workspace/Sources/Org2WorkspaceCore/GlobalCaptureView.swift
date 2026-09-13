@@ -5,6 +5,9 @@ public struct GlobalCaptureView: View {
   @Environment(\.dismiss) private var dismiss
   @State private var draft = WorkspaceCaptureDraft()
   @State private var importingBrowserClip = false
+  @State private var initialDraft: WorkspaceCaptureDraft?
+  @State private var preserveDraftAfterBrowserImport = false
+  @State private var importedBrowserClipTitle: String?
   @FocusState private var focusedField: FocusedField?
 
   private enum FocusedField {
@@ -122,6 +125,11 @@ public struct GlobalCaptureView: View {
         attachmentList
       }
 
+      if let importedBrowserClipTitle {
+        Text("Imported \(importedBrowserClipTitle). Your capture draft is still here.")
+          .font(.caption).foregroundStyle(.secondary)
+      }
+
       HStack {
         if let root = store.corpusRoot {
           Text(store.relativePath(root.path))
@@ -149,10 +157,28 @@ public struct GlobalCaptureView: View {
     .padding(20)
     .frame(width: 660)
     .frame(minHeight: 540)
-    .sheet(isPresented: $importingBrowserClip) { BrowserClipImportView() }
+    .sheet(isPresented: $importingBrowserClip) {
+      BrowserClipImportView { result in
+        if preserveDraftAfterBrowserImport {
+          importedBrowserClipTitle = result.clip.title
+        } else {
+          store.isCapturePanelPresented = false
+        }
+      }
+    }
     .onAppear {
-      draft = store.captureDraft
+      if initialDraft == nil {
+        draft = store.captureDraft
+        initialDraft = draft
+      }
       focusedField = .title
+    }
+    .onChange(of: store.browserClipImportContext?.capturePresentationID) { _, presentationID in
+      guard presentationID != nil else { return }
+      importingBrowserClip = false
+      importedBrowserClipTitle = nil
+      draft = store.captureDraft
+      initialDraft = draft
     }
   }
 
@@ -164,7 +190,12 @@ public struct GlobalCaptureView: View {
       Text("Capture")
         .font(.title3.weight(.semibold))
       Spacer()
-      Button("Import Browser Clip", systemImage: "globe") { importingBrowserClip = true }
+      Button("Import Browser Clip", systemImage: "globe") {
+        preserveDraftAfterBrowserImport = store.prepareCaptureDraftForBrowserImport(
+          draft, initialDraft: initialDraft ?? draft
+        )
+        importingBrowserClip = true
+      }
       Button {
         draft = store.captureDraftByImportingPasteboard(into: draft)
       } label: {

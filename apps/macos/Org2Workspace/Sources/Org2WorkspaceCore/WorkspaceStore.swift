@@ -2273,6 +2273,15 @@ public final class WorkspaceStore {
   public var isQuickOpenPresented = false
   public var isKeyboardShortcutsPresented = false
   public var isCapturePanelPresented = false
+  private var capturePanelPresentationID = UUID()
+  var browserClipImportContext: BrowserClipImportContext? {
+    guard isCapturePanelPresented, let corpusRoot else { return nil }
+    return BrowserClipImportContext(
+      root: corpusRoot.standardizedFileURL,
+      corpusGeneration: corpusSessionGeneration,
+      capturePresentationID: capturePanelPresentationID
+    )
+  }
   public var isDailyNoteDatePickerPresented = false
   public var dailyNotePickerDate = Date()
   public var isLaunchGuidePresented = false
@@ -33142,6 +33151,7 @@ public final class WorkspaceStore {
       statusText = "No corpus selected"
       return
     }
+    capturePanelPresentationID = UUID()
     captureDraft = draft
     isCapturePanelPresented = true
     NSApplication.shared.activate(ignoringOtherApps: true)
@@ -33149,6 +33159,14 @@ public final class WorkspaceStore {
 
   public func importPasteboardIntoCaptureDraft() {
     captureDraft = captureDraftByImportingPasteboard(into: captureDraft)
+  }
+
+  func prepareCaptureDraftForBrowserImport(
+    _ draft: WorkspaceCaptureDraft,
+    initialDraft: WorkspaceCaptureDraft
+  ) -> Bool {
+    captureDraft = draft
+    return draft != initialDraft || !draft.title.isEmpty || !draft.body.isEmpty || !draft.attachments.isEmpty
   }
 
   public func captureDraftByImportingPasteboard(into draft: WorkspaceCaptureDraft) -> WorkspaceCaptureDraft {
