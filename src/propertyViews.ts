@@ -1,14 +1,16 @@
 import fs from "node:fs";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import { compileCorpus, type CompiledCorpusNode } from "./corpusCompile.js";
 import { loadConfig, resolveFilesFromDir } from "./config.js";
 import { guardedContentRevision, guardedWriteFile, readGuardedFile } from "./guardedFile.js";
 import { parseOrgToCanonicalAst } from "./parser.js";
 import type { Node } from "./ast.js";
 import { isPlanningLine } from "./sourceLines.js";
+import { isTerminalTodoKeyword } from "./todo.js";
 
 export const PROPERTY_VIEW_SCHEMA = "org2:property-view:v1" as const;
-export type PropertyViewFilter = { field: string; operator: "is" | "isNot" | "contains" | "exists" | "missing" | "gt" | "lt"; value?: string };
+export type PropertyViewFilter = { field: string; operator: "is" | "isNot" | "contains" | "exists" | "missing" | "gt" | "lt" | "active" | "terminal"; value?: string };
 export interface PropertyViewDefinition {
   schema: typeof PROPERTY_VIEW_SCHEMA;
   id: string;
@@ -22,8 +24,14 @@ export interface PropertyViewDefinition {
   groupBy?: string;
   limit: number;
 }
-const builtins = ["title", "file", "kind", "todo", "tags", "id"];
-const operators = ["is", "isNot", "contains", "exists", "missing", "gt", "lt"];
+export interface PropertyViewSuggestion {
+  schema: "org2:property-view-suggestion:v1";
+  prompt: string;
+  summary: string;
+  definition: PropertyViewDefinition;
+}
+const builtins = ["title", "document", "file", "kind", "todo", "tags", "id"];
+const operators = ["is", "isNot", "contains", "exists", "missing", "gt", "lt", "active", "terminal"];
 const suffix = ".org2-view.json";
 function record(value: unknown): value is Record<string, unknown> { return Boolean(value && typeof value === "object" && !Array.isArray(value)); }
 function oneLine(value: unknown, label: string): string {
@@ -56,9 +64,11 @@ export function parsePropertyView(value: unknown): PropertyViewDefinition {
   const filters = value.filters.map(f => {
     if (!record(f) || !operators.includes(String(f.operator))) throw new Error("Invalid filter operator");
     const operator = f.operator as PropertyViewFilter["operator"];
+    const field = propertyViewField(f.field);
     const filterValue = f.value === undefined ? "" : oneLine(f.value, "Filter value");
     if (["gt", "lt"].includes(operator) && (!filterValue.trim() || !Number.isFinite(Number(filterValue)))) throw new Error("Numeric comparisons require a finite number");
-    return { field: propertyViewField(f.field), operator, value: filterValue };
+    if (["active", "terminal"].includes(operator) && field !== "todo") throw new Error("Active and terminal filters apply only to the todo field");
+    return { field, operator, value: filterValue };
   });
   if (!Array.isArray(value.sort) || value.sort.length > 8) throw new Error("A view supports up to 8 sort fields");
   const sort = value.sort.map(s => {
@@ -112,9 +122,89 @@ export function loadPropertyView(root: string, id: string): PropertyViewDefiniti
   if (view.id !== id) throw new Error("View ID and filename differ");
   return view;
 }
-export function propertyViewValue(node: CompiledCorpusNode, field: string): string {
+
+/** Turn a plain-language request into an inspectable starting definition.
+ * This intentionally handles a small, predictable vocabulary. The caller
+ * always previews the resulting rows before saving the view. */
+export function suggestPropertyView(promptValue: unknown): PropertyViewSuggestion {
+  const prompt = oneLine(promptValue, "View description").trim();
+  if (!prompt) throw new Error("Describe the notes or work you want to see");
+  const lower = prompt.toLowerCase();
+  const mentionsProjects = /\b(project|projects)\b/.test(lower);
+  const mentionsWork = /\b(task|tasks|todo|todos|action|actions|work|unfinished|open)\b/.test(lower);
+  const mentionsPeople = /\b(assignee|assignees|owner|owners|person|people|team)\b/.test(lower);
+  const wantsCards = /\b(card|cards|board|boards|kanban)\b/.test(lower);
+  const wantsCompleted = /\b(completed|complete|done|finished|closed)\b/.test(lower);
+  const groupByProject = /\b(group|grouped|organize|organized)\b[^.]{0,40}\b(project|projects)\b/.test(lower);
+  const groupByPerson = /\b(group|grouped|organize|organized)\b[^.]{0,40}\b(assignee|assignees|owner|owners|person|people|team)\b/.test(lower);
+
+  let title = "Notes from your workspace";
+  let scope: PropertyViewDefinition["scope"] = { kind: "file", filePrefix: "notes/" };
+  let columns = ["title", "file"];
+  let filters: PropertyViewFilter[] = [];
+  let sort: PropertyViewDefinition["sort"] = [{ field: "title", direction: "asc" }];
+  let groupBy: string | undefined;
+  let summary = "Notes in your notes folder, sorted by title.";
+
+  if (mentionsProjects && mentionsWork) {
+    title = wantsCompleted ? "Completed project actions" : "Open project actions";
+    scope = { kind: "heading", filePrefix: "notes/projects/" };
+    columns = ["title", "todo", "ASSIGNEE"];
+    filters = wantsCompleted
+      ? [{ field: "todo", operator: "is", value: "DONE" }]
+      : [
+          { field: "todo", operator: "active", value: "" },
+        ];
+    sort = [{ field: "file", direction: "asc" }, { field: "title", direction: "asc" }];
+    groupBy = groupByPerson ? "ASSIGNEE" : "document";
+    summary = wantsCompleted
+      ? "Completed TODO headings from project notes."
+      : "Unfinished TODO headings from project notes, grouped by project.";
+  } else if (mentionsWork) {
+    title = wantsCompleted ? "Completed work" : (mentionsPeople ? "Open work by assignee" : "Open work");
+    scope = { kind: "heading", filePrefix: "notes/" };
+    columns = ["title", "todo", "ASSIGNEE"];
+    filters = wantsCompleted
+      ? [{ field: "todo", operator: "is", value: "DONE" }]
+      : [
+          { field: "todo", operator: "active", value: "" },
+        ];
+    sort = [{ field: "title", direction: "asc" }];
+    if (mentionsPeople || groupByPerson) groupBy = "ASSIGNEE";
+    else if (groupByProject) groupBy = "document";
+    summary = wantsCompleted
+      ? "Completed TODO headings from your notes."
+      : groupBy === "ASSIGNEE"
+        ? "Unfinished TODO headings from your notes, grouped by assignee."
+        : "Unfinished TODO headings from your notes.";
+  } else if (mentionsProjects) {
+    title = "Project notes";
+    scope = { kind: "file", filePrefix: "notes/projects/" };
+    columns = ["title", "file"];
+    sort = [{ field: "title", direction: "asc" }];
+    summary = "Project notes, sorted by title.";
+  }
+
+  const definition: PropertyViewDefinition = {
+    schema: PROPERTY_VIEW_SCHEMA,
+    id: `view-${randomUUID()}`,
+    title,
+    layout: wantsCards ? "cards" : "table",
+    scope,
+    columns,
+    match: "all",
+    filters,
+    sort,
+    ...(groupBy ? { groupBy } : {}),
+    limit: 500,
+  };
+  return { schema: "org2:property-view-suggestion:v1", prompt, summary, definition };
+}
+type PropertyViewNode = CompiledCorpusNode & { documentTitle?: string };
+export function propertyViewValue(node: PropertyViewNode, field: string): string {
   switch (field) {
     case "title": return node.title;
+    case "document": return node.documentTitle ?? path.basename(node.file).replace(/\.(org2|org)$/i, "");
     case "file": return node.file;
     case "kind": return node.kind;
     case "todo": return node.todo ?? "";
@@ -123,7 +213,7 @@ export function propertyViewValue(node: CompiledCorpusNode, field: string): stri
     default: return node.effectiveProperties[field] ?? "";
   }
 }
-export function matchesPropertyViewFilter(node: CompiledCorpusNode, filter: PropertyViewFilter): boolean {
+export function matchesPropertyViewFilter(node: PropertyViewNode, filter: PropertyViewFilter): boolean {
   const actual = propertyViewValue(node, filter.field);
   const wanted = filter.value ?? "";
   switch (filter.operator) {
@@ -134,6 +224,8 @@ export function matchesPropertyViewFilter(node: CompiledCorpusNode, filter: Prop
     case "missing": return actual === "";
     case "gt": return actual.trim() !== "" && Number.isFinite(Number(actual)) && Number(actual) > Number(wanted);
     case "lt": return actual.trim() !== "" && Number.isFinite(Number(actual)) && Number(actual) < Number(wanted);
+    case "active": return filter.field === "todo" && Boolean(node.todo) && !(node.todoTerminal ?? isTerminalTodoKeyword(node.todo));
+    case "terminal": return filter.field === "todo" && Boolean(node.todo) && (node.todoTerminal ?? isTerminalTodoKeyword(node.todo));
   }
 }
 function compare(a: string, b: string): number {
@@ -146,7 +238,7 @@ export function editablePropertyViewField(field: string): boolean {
 }
 /** The corpus index is optimized for broad scans. Use canonical source ranges to
  * exclude examples/fences from editable views and retain only semantic drawers. */
-function canonicalPropertyViewNodes(nodes: CompiledCorpusNode[], raw: string): CompiledCorpusNode[] {
+function canonicalPropertyViewNodes(nodes: CompiledCorpusNode[], raw: string): PropertyViewNode[] {
   const document = parseOrgToCanonicalAst(raw.replace(/\r\n?/g, "\n"), { sourceRanges: true });
   const lines = raw.split(/\r\n|\n|\r/);
   const fileNode = nodes.find(n => n.kind === "file")!;
@@ -160,8 +252,9 @@ function canonicalPropertyViewNodes(nodes: CompiledCorpusNode[], raw: string): C
   const keywordValue = (key: string) => { const node = keyword(key); return node?.type === "KeywordLine" ? node.valueRaw.trim() : ""; };
   if (keywordValue("ORG2_KIND") === "project" && !properties.ORG2_ENTITY_TYPE && !properties.ENTITY_TYPE && fileNode.properties.ORG2_ENTITY_TYPE === "project") properties.ORG2_ENTITY_TYPE = "project";
   const fileEnd = firstHeading < 0 ? lines.length : ((document.children[firstHeading] as RangedNode).sourceRange?.startLine ?? 1) - 1;
-  const result: CompiledCorpusNode[] = [{ ...fileNode,
-    title: keywordValue("TITLE") || path.basename(fileNode.file).replace(/\.(org2|org)$/i, ""),
+  const documentTitle = keywordValue("TITLE") || path.basename(fileNode.file).replace(/\.(org2|org)$/i, "");
+  const result: PropertyViewNode[] = [{ ...fileNode,
+    title: documentTitle, documentTitle,
     id: (keywordValue("ID") || properties.ID || "").trim().toLowerCase() || null,
     sourceRange: { startLine: 1, endLine: Math.max(1, fileEnd) },
     properties, effectiveProperties: { ...properties }, inheritedProperties: {},
@@ -176,7 +269,7 @@ function canonicalPropertyViewNodes(nodes: CompiledCorpusNode[], raw: string): C
       while (drawerStart < lines.length && (!lines[drawerStart]!.trim() || isPlanningLine(lines[drawerStart]!))) drawerStart++;
       const local = drawerProperties(heading.children.find(n => n.type === "PropertyDrawer" && (n as RangedNode).sourceRange?.startLine === drawerStart + 1));
       const effectiveProperties = { ...inherited, ...local };
-      result.push({ ...node, sourceRange: range, id: local.ID?.trim().toLowerCase() || null, properties: local, effectiveProperties,
+      result.push({ ...node, documentTitle, sourceRange: range, id: local.ID?.trim().toLowerCase() || null, properties: local, effectiveProperties,
         inheritedProperties: Object.fromEntries(Object.entries(inherited).filter(([key]) => !(key in local))) });
       visit(heading.children, effectiveProperties);
     }
@@ -190,10 +283,15 @@ export function queryPropertyView(root: string, value: unknown) {
   const base = fs.realpathSync(root);
   const configFile = path.join(base, "org2.json");
   const config = fs.existsSync(configFile) ? loadConfig(configFile) : {};
-  const files = resolveFilesFromDir(base, ["**/*.org", "**/*.org2"], ["node_modules", "node_modules/**", ...(config.ignorePatterns ?? [])], true);
+  const discoveredFiles = resolveFilesFromDir(base, ["**/*.org", "**/*.org2"], ["node_modules", "node_modules/**", ...(config.ignorePatterns ?? [])], true);
+  // Scope before compiling. A narrow saved view should not pay the cost of
+  // parsing unrelated notes, imports, chat transcripts, or run history.
+  const files = definition.scope.filePrefix
+    ? discoveredFiles.filter(file => path.relative(base, file).replace(/\\/g, "/").startsWith(definition.scope.filePrefix!))
+    : discoveredFiles;
   const corpus = compileCorpus(files, { rootDir: base });
   const revisions = new Map(files.map(file => [path.relative(base, file).replace(/\\/g, "/"), readGuardedFile(file).revision]));
-  const nodes: CompiledCorpusNode[] = [];
+  const nodes: PropertyViewNode[] = [];
   const diagnostics: Array<{ file: string; message: string }> = [];
   const nodesByFile = new Map<string, CompiledCorpusNode[]>();
   for (const node of corpus.nodes) {

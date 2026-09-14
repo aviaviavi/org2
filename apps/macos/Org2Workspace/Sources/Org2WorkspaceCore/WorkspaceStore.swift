@@ -2578,7 +2578,6 @@ public final class WorkspaceStore {
   public var openClawVoiceTranscriptionElapsedText = ""
   public var openClawVoiceStatusText = "Dictate with local transcription."
   public var isOrgCryptConfigurationPresented = false
-  public var isPropertyViewsPresented = false
   public var isDataSourceConfigurationPresented = false
   public private(set) var scarfMetabaseHasStoredAPIKey = false
   public var orgCryptEncryptOnSave = true {
@@ -17707,7 +17706,7 @@ public final class WorkspaceStore {
       focusCorpusFileFilter()
     case .home, .openClaw:
       presentAIChatThreadFind()
-    case .meetings, .sources, .externalThreads, .skills:
+    case .savedViews, .meetings, .sources, .externalThreads, .skills:
       return focusPageSearch()
     case .search:
       if selectedLocation != nil {
@@ -27065,6 +27064,8 @@ public final class WorkspaceStore {
       } else {
         await refreshAgenda(preserveSelection: true, updatesStatus: false)
       }
+    case .savedViews:
+      break
     case .approvals:
       await refreshSelectedRunReviewPageIfNeeded()
     case .files:
@@ -27096,6 +27097,8 @@ public final class WorkspaceStore {
       false
     case .agenda:
       agendaMode == .assigned ? isRefreshingAssignedWork : isRefreshingAgenda
+    case .savedViews:
+      false
     case .approvals:
       switch runsAndReviewPage {
       case .runs: isRefreshingAgentRuns
@@ -44272,6 +44275,7 @@ private final class SourceRunOutputCollector: @unchecked Sendable {
 public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
   case home
   case agenda
+  case savedViews
   case approvals
   case files
   case search
@@ -44284,13 +44288,14 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
   public var id: String { rawValue }
 
   public static var sidebarCases: [WorkspaceSurface] {
-    [.home, .agenda, .approvals, .meetings, .sources, .skills, .externalThreads]
+    [.home, .agenda, .savedViews, .approvals, .meetings, .sources, .skills, .externalThreads]
   }
 
   public var title: String {
     switch self {
     case .home: "Home"
     case .agenda: "Agenda"
+    case .savedViews: "Saved Views"
     case .approvals: "Agent Work"
     case .files: "Files"
     case .search: "Search"
@@ -44306,6 +44311,7 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
     switch self {
     case .home: "house"
     case .agenda: "calendar"
+    case .savedViews: "tablecells"
     case .approvals: "bolt.horizontal.circle"
     case .files: "doc.text"
     case .search: "magnifyingglass"
@@ -44321,6 +44327,7 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
     switch self {
     case .home: "⌘1"
     case .agenda: "⌘2"
+    case .savedViews: ""
     case .approvals: "⌘4"
     case .files: "⌘3"
     case .search: "⌘⇧F"

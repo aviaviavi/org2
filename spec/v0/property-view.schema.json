@@ -25,8 +25,8 @@
         "type": "object", "required": ["field", "operator"],
         "properties": {
           "field": { "$ref": "#/$defs/field" },
-          "operator": { "enum": ["is", "isNot", "contains", "exists", "missing", "gt", "lt"] },
-          "value": { "type": "string", "maxLength": 4096, "pattern": "^[^\\r\\n\\u0000]*$", "description": "gt/lt require a finite numeric value." }
+          "operator": { "enum": ["is", "isNot", "contains", "exists", "missing", "gt", "lt", "active", "terminal"] },
+          "value": { "type": "string", "maxLength": 4096, "pattern": "^[^\\r\\n\\u0000]*$", "description": "gt/lt require a finite numeric value; active/terminal apply to the todo field." }
         }
       }
     },
@@ -40,5 +40,5 @@
     "groupBy": { "$ref": "#/$defs/field" },
     "limit": { "type": "integer", "minimum": 1, "maximum": 5000 }
   },
-  "$defs": { "field": { "type": "string", "pattern": "^[A-Za-z0-9_@#%+.-]+$", "description": "Lowercase title/file/kind/todo/tags/id are built-in fields; other keys normalize to uppercase property names." } }
+  "$defs": { "field": { "type": "string", "pattern": "^[A-Za-z0-9_@#%+.-]+$", "description": "Lowercase title/document/file/kind/todo/tags/id are built-in fields; other keys normalize to uppercase property names." } }
 }

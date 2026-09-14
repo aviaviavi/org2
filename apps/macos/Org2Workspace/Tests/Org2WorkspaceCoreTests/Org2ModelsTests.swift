@@ -11457,6 +11457,7 @@ final class Org2ModelsTests: XCTestCase {
   func testWorkspaceSurfaceShortcutTitlesMatchCommandNavigation() {
     XCTAssertEqual(WorkspaceSurface.home.commandShortcutTitle, "⌘1")
     XCTAssertEqual(WorkspaceSurface.agenda.commandShortcutTitle, "⌘2")
+    XCTAssertEqual(WorkspaceSurface.savedViews.commandShortcutTitle, "")
     XCTAssertEqual(WorkspaceSurface.approvals.commandShortcutTitle, "⌘4")
     XCTAssertEqual(WorkspaceSurface.files.commandShortcutTitle, "⌘3")
     XCTAssertEqual(WorkspaceSurface.search.commandShortcutTitle, "⌘⇧F")
@@ -11466,7 +11467,7 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(WorkspaceSurface.skills.commandShortcutTitle, "⌘⇧K")
     XCTAssertEqual(
       WorkspaceSurface.sidebarCases,
-      [.home, .agenda, .approvals, .meetings, .sources, .skills, .externalThreads]
+      [.home, .agenda, .savedViews, .approvals, .meetings, .sources, .skills, .externalThreads]
     )
   }
 

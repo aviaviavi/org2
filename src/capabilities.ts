@@ -76,8 +76,8 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
     workflows: [
       {
         id: "editable-property-views",
-        purpose: "Build portable saved table/card views over shared note and heading properties, filter/sort/group without SQL, and preview revision-guarded local source property edits.",
-        commands: ["org2 property-view list", "org2 property-view query", "org2 property-view save", "org2 property-view edit"],
+        purpose: "Draft portable saved table/card views in plain language, filter/sort/group shared note and heading properties without SQL, and preview revision-guarded local source property edits.",
+        commands: ["org2 property-view list", "org2 property-view suggest", "org2 property-view query", "org2 property-view save", "org2 property-view edit"],
         writes: "preview-by-default",
       },
       {

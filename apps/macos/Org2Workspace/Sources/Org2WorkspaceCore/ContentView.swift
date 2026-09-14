@@ -111,9 +111,6 @@ public struct ContentView: View {
         OpenOrgLaunchGuideView()
           .environment(store)
       }
-      .sheet(isPresented: $store.isPropertyViewsPresented) {
-        PropertyViewsSheet().environment(store)
-      }
       .sheet(isPresented: $store.isDataSourceConfigurationPresented) {
         DataSourceConfigurationSheet()
           .environment(store)
@@ -1670,6 +1667,8 @@ private struct WorkspaceSurfaceView: View {
           HomeView()
         case .agenda:
           AgendaView()
+        case .savedViews:
+          SavedViewsView()
         case .approvals:
           RunsAndReviewView()
         case .files:
@@ -2337,13 +2336,6 @@ private struct SidebarView: View {
 
       List {
         Section {
-          Button { store.isPropertyViewsPresented = true } label: {
-            Label("Property Views", systemImage: "tablecells")
-              .padding(.vertical, 4)
-          }
-          .buttonStyle(.plain)
-          .accessibilityIdentifier("workspace-property-views")
-          .disabled(store.corpusRoot == nil)
           ForEach(WorkspaceSurface.sidebarCases) { surface in
             Button {
               guard surface != store.selectedSurface else { return }

@@ -11,7 +11,7 @@ struct PropertyViewDefinition: Codable, Equatable, Sendable, Identifiable {
   struct Sort: Codable, Equatable, Sendable { var field = "title"; var direction = "asc" }
   var schema = "org2:property-view:v1"
   var id = UUID().uuidString.lowercased()
-  var title = "New property view"
+  var title = "Untitled view"
   var layout = "table"
   var scope = Scope()
   var columns = ["title", "STATUS", "ASSIGNEE"]
@@ -70,6 +70,12 @@ struct PropertyViewResult: Decodable, Sendable {
   }
 }
 struct PropertyViewSaveResult: Decodable, Sendable { let revision: String; let definition: PropertyViewDefinition }
+struct PropertyViewSuggestion: Decodable, Sendable {
+  let prompt: String
+  let summary: String
+  let definition: PropertyViewDefinition
+  let result: PropertyViewResult?
+}
 struct PropertyViewEditResult: Decodable, Sendable {
   let revision: String
   let changed: Bool
@@ -91,11 +97,11 @@ enum PropertyViewCommands {
   }
 }
 
-struct PropertyViewsSheet: View {
+struct SavedViewsView: View {
   @Environment(WorkspaceStore.self) private var store
-  @Environment(\.dismiss) private var dismiss
   @State private var saved: [SavedPropertyView] = []
   @State private var draft = PropertyViewDefinition()
+  @State private var selectedID: String?
   @State private var revision: String?
   @State private var result: PropertyViewResult?
   @State private var busy = false
@@ -103,70 +109,33 @@ struct PropertyViewsSheet: View {
   @State private var notice: String?
   @State private var discoveryWarnings: [String] = []
   @State private var editingCell: PropertyViewCellEdit?
-  @State private var isBuilderExpanded = true
+  @State private var isBuilderPresented = false
+  @State private var prompt = ""
+  @State private var suggestionSummary: String?
 
   private var root: String? { store.corpusRoot?.path }
   private var canEditSource: Bool { !store.hasActiveEdit && !store.liveFileEditorHasUnsavedChanges }
   private var hasUnrunChanges: Bool { result?.definition != draft }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 12) {
-      HStack {
-        Label("Property Views", systemImage: "tablecells").font(.title2.bold())
-        Spacer()
-        if busy { ProgressView().controlSize(.small) }
-        Button("Done") { dismiss() }.keyboardShortcut(.cancelAction)
-      }
-      Text("Saved tables and cards over notes and headings in the active corpus. Edit a property cell to update its source.")
-        .foregroundStyle(.secondary)
-      HStack {
-        Picker("Saved view", selection: Binding(get: { revision == nil ? "" : draft.id }, set: { value in selectSaved(value) })) {
-          Text("Unsaved view").tag("")
-          ForEach(saved) { view in Text(view.definition.title).tag(view.id) }
+    GeometryReader { proxy in
+      VStack(spacing: 0) {
+        pageHeader
+        Divider()
+        if proxy.size.width >= 720 {
+          HStack(spacing: 0) {
+            savedViewList
+              .frame(width: 230)
+            Divider()
+            activeContent
+          }
+        } else {
+          compactViewPicker
+          Divider()
+          activeContent
         }
-        .frame(maxWidth: 340)
-        Button("New", systemImage: "plus") {
-          draft = PropertyViewDefinition(); revision = nil; result = nil; notice = nil; error = nil
-        }
-        Button("Duplicate", systemImage: "doc.on.doc") {
-          draft.id = UUID().uuidString.lowercased(); draft.title += " copy"; revision = nil; result = nil
-        }
-        Spacer()
-        Button("Refresh", systemImage: "arrow.clockwise") { Task { await reload() } }
-          .help("Reload the saved definition and current source rows")
-        Button("Save View", systemImage: "square.and.arrow.down") { Task { await save() } }
-          .keyboardShortcut("s", modifiers: [.command])
-          .accessibilityIdentifier("property-views-save")
-      }
-      .disabled(busy || root == nil)
-
-      DisclosureGroup("View builder", isExpanded: $isBuilderExpanded) { builder.padding(.top, 8) }
-        .disabled(busy || root == nil)
-      if let error { Text(error).foregroundStyle(.red).textSelection(.enabled).accessibilityIdentifier("property-views-error") }
-      ForEach(discoveryWarnings, id: \.self) { warning in Text(warning).foregroundStyle(.orange).font(.caption) }
-      if let notice { Text(notice).foregroundStyle(.secondary).font(.caption) }
-      if !canEditSource {
-        Text("Save or cancel the open source edit before changing properties here.").foregroundStyle(.orange)
-      }
-      Divider()
-      if let result {
-        ForEach(result.diagnostics ?? [], id: \.file) { diagnostic in
-          Text("Omitted \(diagnostic.file): \(diagnostic.message)").font(.caption).foregroundStyle(.orange)
-        }
-        HStack {
-          Text("\(result.total) matches\(result.truncated ? " · showing first \(result.rows.count)" : "")")
-          Spacer()
-          if hasUnrunChanges { Text("Builder changed — Apply View to update results").foregroundStyle(.orange) }
-        }.font(.caption)
-        results(result)
-          .disabled(busy || hasUnrunChanges)
-      } else {
-        ContentUnavailableView("Build a property view", systemImage: "tablecells", description: Text("Choose a saved view or set the fields and filters above, then Apply View."))
-          .frame(maxWidth: .infinity, maxHeight: .infinity)
       }
     }
-    .padding(20)
-    .frame(minWidth: 840, idealWidth: 1080, minHeight: 620, idealHeight: 760)
     .task(id: root) { await loadInitial() }
     .sheet(item: $editingCell) { cell in
       PropertyViewCellEditor(cell: cell, root: root ?? "", canApply: canEditSource) {
@@ -174,6 +143,272 @@ struct PropertyViewsSheet: View {
         await store.refreshCorpusFiles()
       }.environment(store)
     }
+    .sheet(isPresented: $isBuilderPresented) {
+      advancedBuilder
+    }
+  }
+
+  @ViewBuilder private var activeContent: some View {
+    Group {
+      if selectedID == nil && result == nil {
+        createLanding
+      } else {
+        viewDetail
+      }
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+  }
+
+  private var compactViewPicker: some View {
+    HStack(spacing: 8) {
+      if saved.isEmpty {
+        Text("No saved views yet").foregroundStyle(.secondary)
+      } else {
+        Picker("View", selection: Binding(
+          get: { selectedID ?? "" },
+          set: { value in
+            if value.isEmpty { beginCreating() }
+            else { selectSaved(value) }
+          }
+        )) {
+          Text("Create a view").tag("")
+          ForEach(saved) { view in Text(view.definition.title).tag(view.id) }
+        }
+        .labelsHidden()
+        .frame(maxWidth: .infinity)
+      }
+      Button { beginCreating() } label: { Label("New View", systemImage: "plus") }
+        .labelStyle(.iconOnly)
+        .help("Create a view")
+    }
+    .padding(.horizontal, 12)
+    .padding(.vertical, 8)
+  }
+
+  private var pageHeader: some View {
+    HStack(spacing: 12) {
+      VStack(alignment: .leading, spacing: 2) {
+        Text("Saved Views").font(.title2.weight(.semibold))
+        Text("Live tables and boards made from your notes")
+          .font(.caption).foregroundStyle(.secondary)
+      }
+      Spacer()
+      if busy { ProgressView().controlSize(.small) }
+      Button { Task { await reload() } } label: {
+        Label("Refresh", systemImage: "arrow.clockwise")
+      }
+      .labelStyle(.iconOnly)
+      .help("Reload saved views")
+      .disabled(busy || root == nil)
+      Button { beginCreating() } label: {
+        Label("New View", systemImage: "plus")
+      }
+      .buttonStyle(.borderedProminent)
+      .disabled(busy || root == nil)
+    }
+    .padding(.horizontal, 18)
+    .padding(.vertical, 12)
+  }
+
+  private var savedViewList: some View {
+    VStack(alignment: .leading, spacing: 10) {
+      Text("YOUR VIEWS")
+        .font(.caption2.weight(.semibold))
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 14)
+        .padding(.top, 14)
+      if saved.isEmpty {
+        Text("No saved views yet")
+          .font(.callout)
+          .foregroundStyle(.tertiary)
+          .padding(.horizontal, 14)
+          .padding(.vertical, 8)
+      } else {
+        ScrollView {
+          LazyVStack(spacing: 3) {
+            ForEach(saved) { view in
+              Button { selectSaved(view.id) } label: {
+                HStack(spacing: 8) {
+                  Image(systemName: view.definition.layout == "cards" ? "rectangle.grid.2x2" : "tablecells")
+                    .foregroundStyle(Color.accentColor)
+                    .frame(width: 16)
+                  Text(view.definition.title)
+                    .lineLimit(2)
+                  Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .contentShape(Rectangle())
+                .background(
+                  selectedID == view.id ? Color.accentColor.opacity(0.12) : Color.clear,
+                  in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+                )
+              }
+              .buttonStyle(.plain)
+              .accessibilityIdentifier("saved-view-\(view.id)")
+            }
+          }
+          .padding(.horizontal, 6)
+        }
+      }
+      Spacer(minLength: 0)
+      Divider()
+      Button { beginCreating() } label: {
+        Label("Create a view", systemImage: "plus.circle")
+          .frame(maxWidth: .infinity, alignment: .leading)
+      }
+      .buttonStyle(.plain)
+      .padding(14)
+    }
+    .background(Color.primary.opacity(0.018))
+  }
+
+  private var createLanding: some View {
+    ScrollView {
+      VStack(alignment: .leading, spacing: 22) {
+        VStack(alignment: .leading, spacing: 8) {
+          Image(systemName: "tablecells")
+            .font(.system(size: 34, weight: .medium))
+            .foregroundStyle(Color.accentColor)
+          Text("See your notes as a useful view")
+            .font(.title.weight(.semibold))
+          Text("Describe what you want to see. OpenOrg will turn the properties already in your notes into a live table or board. Your Org files stay the source of truth.")
+            .font(.body)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        VStack(alignment: .leading, spacing: 10) {
+          Text("What would you like to see?").font(.headline)
+          TextField("For example: Show my unfinished project tasks grouped by project", text: $prompt, axis: .vertical)
+            .textFieldStyle(.roundedBorder)
+            .lineLimit(2...4)
+            .onSubmit { Task { await suggestAndQuery() } }
+            .accessibilityIdentifier("saved-views-prompt")
+          HStack {
+            Spacer()
+            Button("Make View") { Task { await suggestAndQuery() } }
+              .buttonStyle(.borderedProminent)
+              .disabled(prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || busy)
+              .accessibilityIdentifier("saved-views-create")
+          }
+        }
+        VStack(alignment: .leading, spacing: 10) {
+          Text("Try an example").font(.callout.weight(.semibold)).foregroundStyle(.secondary)
+          LazyVGrid(columns: [GridItem(.adaptive(minimum: 165), alignment: .leading)], alignment: .leading, spacing: 8) {
+            exampleButton("Open project actions").frame(maxWidth: .infinity, alignment: .leading)
+            exampleButton("Open work by assignee").frame(maxWidth: .infinity, alignment: .leading)
+            exampleButton("Project notes as cards").frame(maxWidth: .infinity, alignment: .leading)
+          }
+        }
+        VStack(alignment: .leading, spacing: 8) {
+          Label("What makes this different from Search?", systemImage: "lightbulb")
+            .font(.headline)
+          Text("A saved view stays organized as your notes change. You can group, sort, and update editable properties without opening every source file.")
+            .foregroundStyle(.secondary)
+        }
+        .padding(16)
+        .background(Color.accentColor.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+      }
+      .frame(maxWidth: 760, alignment: .leading)
+      .padding(22)
+    }
+  }
+
+  private func exampleButton(_ text: String) -> some View {
+    Button(text) {
+      prompt = text
+      Task { await suggestAndQuery() }
+    }
+    .buttonStyle(.bordered)
+  }
+
+  private var viewDetail: some View {
+    VStack(alignment: .leading, spacing: 0) {
+      HStack(alignment: .top, spacing: 12) {
+        VStack(alignment: .leading, spacing: 3) {
+          Text(draft.title).font(.title2.weight(.semibold))
+          Text(suggestionSummary ?? scopeSummary)
+            .font(.callout).foregroundStyle(.secondary)
+        }
+        Spacer()
+        if revision == nil {
+          Button("Save View", systemImage: "square.and.arrow.down") { Task { await save() } }
+            .buttonStyle(.borderedProminent)
+            .disabled(busy || result == nil || hasUnrunChanges)
+            .accessibilityIdentifier("property-views-save")
+        } else if saved.first(where: { $0.id == selectedID })?.definition != draft {
+          Button("Save Changes") { Task { await save() } }
+            .buttonStyle(.borderedProminent)
+            .disabled(busy || hasUnrunChanges)
+        }
+        Button("Edit View", systemImage: "slider.horizontal.3") { isBuilderPresented = true }
+          .disabled(busy)
+        Menu {
+          Button("Duplicate") { duplicateCurrent() }
+          Button("Start a New View") { beginCreating() }
+        } label: {
+          Label("More", systemImage: "ellipsis.circle")
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+      }
+      .padding(18)
+      Divider()
+      if let error {
+        Text(error).foregroundStyle(.red).textSelection(.enabled)
+          .padding(18).accessibilityIdentifier("property-views-error")
+      } else if busy && result == nil {
+        VStack(spacing: 12) {
+          ProgressView()
+          Text("Building this view…").foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+      } else if let result {
+        VStack(alignment: .leading, spacing: 10) {
+          HStack {
+            Text("\(result.total) item\(result.total == 1 ? "" : "s")\(result.truncated ? " · showing \(result.rows.count)" : "")")
+            Spacer()
+            if hasUnrunChanges { Text("Apply the edited view to update these results").foregroundStyle(.orange) }
+          }
+          .font(.caption)
+          ForEach(result.diagnostics ?? [], id: \.file) { diagnostic in
+            Text("Skipped \(diagnostic.file): \(diagnostic.message)").font(.caption).foregroundStyle(.orange)
+          }
+          results(result).disabled(busy || hasUnrunChanges)
+        }
+        .padding(18)
+      } else {
+        ContentUnavailableView("View unavailable", systemImage: "tablecells", description: Text("Refresh this saved view to load its current rows."))
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+      }
+      if let notice { Text(notice).font(.caption).foregroundStyle(.secondary).padding(.horizontal, 18).padding(.bottom, 10) }
+      ForEach(discoveryWarnings, id: \.self) { warning in Text(warning).foregroundStyle(.orange).font(.caption).padding(.horizontal, 18) }
+    }
+  }
+
+  private var scopeSummary: String {
+    let noun = draft.scope.kind == "heading" ? "headings" : draft.scope.kind == "file" ? "notes" : "notes and headings"
+    if let prefix = draft.scope.filePrefix { return "Live \(noun) from \(prefix)" }
+    return "Live \(noun) from this corpus"
+  }
+
+  private var advancedBuilder: some View {
+    VStack(alignment: .leading, spacing: 14) {
+      HStack {
+        VStack(alignment: .leading, spacing: 2) {
+          Text("Edit View").font(.title2.weight(.semibold))
+          Text("Advanced query details").font(.caption).foregroundStyle(.secondary)
+        }
+        Spacer()
+        Button("Done") { isBuilderPresented = false }.keyboardShortcut(.cancelAction)
+      }
+      builder
+      if let error { Text(error).foregroundStyle(.red).textSelection(.enabled) }
+      Text("Changes are previewed in the results before you save them.")
+        .font(.caption).foregroundStyle(.secondary)
+    }
+    .padding(22)
+    .frame(minWidth: 820, idealWidth: 940)
   }
 
   private var builder: some View {
@@ -210,9 +445,10 @@ struct PropertyViewsSheet: View {
                 Text("equals").tag("is"); Text("does not equal").tag("isNot"); Text("contains").tag("contains")
                 Text("is present").tag("exists"); Text("is missing").tag("missing")
                 Text("greater than").tag("gt"); Text("less than").tag("lt")
+                Text("is unfinished TODO").tag("active"); Text("is finished TODO").tag("terminal")
               }.labelsHidden().frame(width: 175)
               TextField("Value", text: $draft.filters[index].value)
-                .disabled(["exists", "missing"].contains(draft.filters[index].operator))
+                .disabled(["exists", "missing", "active", "terminal"].contains(draft.filters[index].operator))
               Button("Remove Filter", systemImage: "minus.circle") { draft.filters.remove(at: index) }.labelStyle(.iconOnly)
             }
           }
@@ -250,7 +486,7 @@ struct PropertyViewsSheet: View {
     } else {
       ScrollView([.vertical, .horizontal]) {
         VStack(alignment: .leading, spacing: 16) {
-          ForEach(Array(result.groups.enumerated()), id: \.offset) { _, group in
+          ForEach(Array(displayGroups(result).enumerated()), id: \.offset) { _, group in
             if result.definition.groupBy != nil {
               Text("\(group.name.isEmpty ? "No value" : group.name) · \(group.rows.count)").font(.headline)
             }
@@ -261,15 +497,15 @@ struct PropertyViewsSheet: View {
             } else {
               LazyVStack(alignment: .leading, spacing: 0) {
                 HStack {
-                  Text("Source").font(.caption.bold()).frame(width: 190, alignment: .leading)
-                  ForEach(result.definition.columns, id: \.self) { field in
+                  Text("Item").font(.caption.bold()).frame(width: 250, alignment: .leading)
+                  ForEach(displayedColumns(result), id: \.self) { field in
                     Text(field).font(.caption.bold()).frame(width: 155, alignment: .leading)
                   }
                 }.padding(8).background(.quaternary)
                 ForEach(group.rows) { row in
                   HStack(alignment: .top) {
-                    sourceButton(row).frame(width: 190, alignment: .leading)
-                    ForEach(result.definition.columns, id: \.self) { field in cell(row, field: field, result: result).frame(width: 155, alignment: .leading) }
+                    sourceButton(row).frame(width: 250, alignment: .leading)
+                    ForEach(displayedColumns(result), id: \.self) { field in cell(row, field: field, result: result).frame(width: 155, alignment: .leading) }
                   }.padding(8)
                   Divider()
                 }
@@ -282,9 +518,8 @@ struct PropertyViewsSheet: View {
   }
   private func card(_ row: PropertyViewResult.Row, result: PropertyViewResult) -> some View {
     VStack(alignment: .leading, spacing: 9) {
-      Text(row.title).font(.headline).lineLimit(2)
       sourceButton(row)
-      ForEach(result.definition.columns.filter { $0 != "title" }, id: \.self) { field in
+      ForEach(displayedColumns(result), id: \.self) { field in
         HStack(alignment: .top) { Text(field).font(.caption).foregroundStyle(.secondary).frame(width: 80, alignment: .leading); cell(row, field: field, result: result) }
       }
     }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
@@ -294,12 +529,30 @@ struct PropertyViewsSheet: View {
   private func sourceButton(_ row: PropertyViewResult.Row) -> some View {
     Button {
       guard let root else { return }
-      dismiss()
       store.openChatFileReference(.init(path: URL(fileURLWithPath: root).appendingPathComponent(row.file).path, line: row.line))
     } label: {
-      Label("\(row.file):\(row.line)", systemImage: row.kind == "file" ? "doc.text" : "number")
-        .font(.caption).lineLimit(2)
-    }.buttonStyle(.link).help("Open \(row.title) at its source")
+      HStack(alignment: .top, spacing: 8) {
+        Image(systemName: row.kind == "file" ? "doc.text" : "number")
+          .foregroundStyle(Color.accentColor)
+          .frame(width: 16)
+        VStack(alignment: .leading, spacing: 2) {
+          OrgInlineText(row.title, font: .callout.weight(.medium), managesTextSelection: false).lineLimit(2)
+          Text("\(row.file):\(row.line)").font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+        }
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+    }.buttonStyle(.plain).help("Open \(row.title) at its source")
+  }
+
+  private func displayedColumns(_ result: PropertyViewResult) -> [String] {
+    result.definition.columns.filter { !["title", "document", "file"].contains($0) }
+  }
+
+  private func displayGroups(_ result: PropertyViewResult) -> [(name: String, rows: [PropertyViewResult.Row])] {
+    result.groups.enumerated().sorted { left, right in
+      if left.element.name.isEmpty != right.element.name.isEmpty { return !left.element.name.isEmpty }
+      return left.offset < right.offset
+    }.map(\.element)
   }
   @ViewBuilder private func cell(_ row: PropertyViewResult.Row, field: String, result: PropertyViewResult) -> some View {
     if row.editable && result.editableFields.contains(field) {
@@ -316,27 +569,29 @@ struct PropertyViewsSheet: View {
 
   private func selectSaved(_ id: String) {
     guard let view = saved.first(where: { $0.id == id }) else { return }
-    draft = view.definition; revision = view.revision; result = nil; notice = nil
+    selectedID = id; prompt = ""; suggestionSummary = nil
+    draft = view.definition; revision = view.revision; result = nil; notice = nil; error = nil
     Task { await query() }
   }
   private func loadInitial() async {
     guard !busy else { return }
     busy = true
     await loadSaved()
-    if let first = saved.first { draft = first.definition; revision = first.revision }
     busy = false
-    await query()
+    selectedID = nil
+    revision = nil
+    result = nil
   }
   private func reload() async {
     guard !busy else { return }
     busy = true
-    let currentID = revision == nil ? nil : draft.id
+    let currentID = selectedID
     await loadSaved()
     if let currentID, let view = saved.first(where: { $0.id == currentID }) {
       draft = view.definition; revision = view.revision
     }
     busy = false
-    await query()
+    if currentID != nil { await query() }
   }
   private func loadSaved() async {
     guard let root else { error = "Open a corpus to use property views."; return }
@@ -367,11 +622,57 @@ struct PropertyViewsSheet: View {
       let response: PropertyViewSaveResult = try await store.cli.runJSON(arguments + ["--apply"])
       guard self.root == root else { busy = false; return }
       revision = response.revision; draft = response.definition
-      notice = "Saved views/\(draft.id).org2-view.json. Copy this file to another corpus to reuse the view."
+      selectedID = draft.id
+      notice = "Saved. This view will stay current as your notes change."
       await loadSaved()
     } catch { self.error = error.localizedDescription }
     busy = false
     await query()
+  }
+
+  private func beginCreating() {
+    selectedID = nil
+    revision = nil
+    result = nil
+    error = nil
+    notice = nil
+    prompt = ""
+    suggestionSummary = nil
+  }
+
+  private func duplicateCurrent() {
+    draft.id = "view-\(UUID().uuidString.lowercased())"
+    draft.title += " copy"
+    selectedID = nil
+    revision = nil
+    suggestionSummary = "A copy of \(draft.title.replacingOccurrences(of: " copy", with: "")), ready to adjust and save."
+  }
+
+  private func suggestAndQuery() async {
+    let request = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let root, !request.isEmpty, !busy else { return }
+    busy = true; error = nil; notice = nil; result = nil
+    do {
+      let suggestion: PropertyViewSuggestion = try await store.cli.runJSON([
+        "property-view", "suggest", "--prompt", request, "--dir", root,
+      ])
+      guard !Task.isCancelled else { busy = false; return }
+      draft = suggestion.definition
+      selectedID = nil
+      revision = nil
+      suggestionSummary = suggestion.summary
+      if let response = suggestion.result {
+        result = response
+        draft = response.definition
+        busy = false
+      } else {
+        busy = false
+        await query()
+      }
+    } catch {
+      self.error = error.localizedDescription
+      busy = false
+    }
   }
 }
 

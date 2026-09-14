@@ -17,6 +17,33 @@ final class PropertyViewTests: XCTestCase {
     XCTAssertFalse(try definition.json().contains("/Users/"))
   }
 
+  func testPlainLanguageSuggestionDecodesAsInspectableDraft() throws {
+    let data = Data("""
+    {
+      "prompt": "Show unfinished project tasks grouped by project",
+      "summary": "Unfinished TODO headings from project notes, grouped by project.",
+      "definition": {
+        "schema": "org2:property-view:v1",
+        "id": "open-project-actions",
+        "title": "Open project actions",
+        "layout": "table",
+        "scope": { "kind": "heading", "filePrefix": "notes/projects/" },
+        "columns": ["title", "todo", "ASSIGNEE"],
+        "match": "all",
+        "filters": [{ "field": "todo", "operator": "active", "value": "" }],
+        "sort": [{ "field": "document", "direction": "asc" }],
+        "groupBy": "document",
+        "limit": 500
+      }
+    }
+    """.utf8)
+    let suggestion = try JSONDecoder().decode(PropertyViewSuggestion.self, from: data)
+    XCTAssertEqual(suggestion.definition.title, "Open project actions")
+    XCTAssertEqual(suggestion.definition.scope.filePrefix, "notes/projects/")
+    XCTAssertEqual(suggestion.definition.filters.first?.operator, "active")
+    XCTAssertEqual(suggestion.definition.groupBy, "document")
+  }
+
   func testGroupsPreserveSharedRuntimeOrderAndInheritedValues() throws {
     let result = try fixtureResult()
     XCTAssertEqual(result.groups.map(\.name), ["Team B", "Team A"])

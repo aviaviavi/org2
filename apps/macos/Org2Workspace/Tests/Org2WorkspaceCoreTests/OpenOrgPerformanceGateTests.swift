@@ -1177,6 +1177,7 @@ private final class WorkspaceRenderPerformanceHarness {
     switch surface {
     case .home: ("1", [.command], 18)
     case .agenda: ("2", [.command], 19)
+    case .savedViews: nil
     case .files: ("3", [.command], 20)
     case .approvals: ("4", [.command], 21)
     case .meetings: ("5", [.command], 23)
