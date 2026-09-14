@@ -1006,11 +1006,11 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
           const checkbox = item?.querySelector(':scope > input[type="checkbox"]');
           if (!checkbox) return;
           if (!persisted) checkbox.checked = !requestedChecked;
-          checkbox.disabled = persisted || !window.__org2CheckboxMutationsEnabled;
+          checkbox.disabled = !window.__org2CheckboxMutationsEnabled;
           checkbox.removeAttribute('aria-busy');
-          checkbox.title = checkbox.disabled
-            ? ''
-            : (checkbox.checked ? 'Mark incomplete' : 'Mark complete');
+          checkbox.title = window.__org2CheckboxMutationsEnabled
+            ? (checkbox.checked ? 'Mark incomplete' : 'Mark complete')
+            : '';
         };
       })();
       """

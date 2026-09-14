@@ -78,6 +78,10 @@ private final class ThreadSafeIntRecorder: @unchecked Sendable {
     lock.withLock { storage.last }
   }
 
+  var count: Int {
+    lock.withLock { storage.count }
+  }
+
   func append(_ value: Int) {
     lock.withLock {
       storage.append(value)
@@ -20930,17 +20934,37 @@ final class Org2ModelsTests: XCTestCase {
     """
     let item = try JSONDecoder().decode(AgendaItem.self, from: Data(itemJSON.utf8))
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    let renderCalls = ThreadSafeIntRecorder()
+    store.entryHTMLRendererForTesting = { _, _, _, _ in
+      renderCalls.append(1)
+      return "<html><body>Stable rendered page</body></html>"
+    }
     store.setCorpusRoot(root)
     store.selectedEntrySourceMode = .page
     store.select(.agenda(item))
     await store.loadEntrySource(for: .agenda(item))
     try await waitForEntryRender(store)
+    let initialHTML = store.selectedEntryHTML
+    let initialRenderIdentity = store.selectedEntryHTMLRenderIdentity
+    XCTAssertEqual(renderCalls.count, 1)
 
     await store.setRenderedDocumentCheckbox(at: 2, checked: true)
     try await waitForCondition {
       (try? String(contentsOf: note, encoding: .utf8).contains("- [X] Sriracha")) == true
     }
     XCTAssertEqual(store.statusText, "Marked complete")
+    XCTAssertTrue(store.selectedEntrySource?.text.contains("- [X] Sriracha") == true)
+    XCTAssertTrue(store.selectedRenderedBlocks.contains { block in
+      if case .listItem(_, _, .checked, let text) = block.rendered {
+        return text == "Sriracha"
+      }
+      return false
+    })
+    await store.applyIncrementalCorpusChangesForTesting([note.path])
+    try await Task.sleep(nanoseconds: 250_000_000)
+    XCTAssertEqual(store.selectedEntryHTML, initialHTML)
+    XCTAssertEqual(store.selectedEntryHTMLRenderIdentity, initialRenderIdentity)
+    XCTAssertEqual(renderCalls.count, 1)
 
     let externallyChanged = try String(contentsOf: note, encoding: .utf8)
       .replacingOccurrences(of: "- [ ] Ginger", with: "- [ ] Fresh ginger")

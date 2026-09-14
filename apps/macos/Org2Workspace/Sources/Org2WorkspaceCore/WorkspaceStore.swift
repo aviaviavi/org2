@@ -973,8 +973,15 @@ private struct CompletedFileUndoSnapshot: Sendable {
 }
 
 private struct RenderedCheckboxMutation: Sendable {
-  let previous: String
+  let previousForUndo: String?
   let next: String
+  let source: EntrySource
+  let blocks: [OrgEditableBlock]
+  let blockMetadata: RenderedBlocksMetadata
+  let fileContentDigest: String
+  let fileFreshnessSignature: FileFreshnessSignature?
+  let firstOrgID: String?
+  let sourceLineIndex: OrgSourceLineIndex
 }
 
 private struct OpenClawLocalEditDiskBaseline: Sendable {
@@ -16360,12 +16367,13 @@ public final class WorkspaceStore {
       statusText = "Checkbox update failed"
       return false
     }
+    let sourceMode = selectedEntrySourceMode
 
     isSavingBlock = true
     defer { isSavingBlock = false }
 
     do {
-      let mutation: RenderedCheckboxMutation? = try await performDocumentMutation(
+      let mutation: RenderedCheckboxMutation = try await performDocumentMutation(
         context: context,
         files: [source.file]
       ) { execution in
@@ -16378,7 +16386,6 @@ public final class WorkspaceStore {
           replacement: replacement,
           expectedOriginal: block.rawText
         )
-        guard output != snapshot.text else { return nil }
         try await execution.commit(output, over: snapshot) { text, url, previous in
           try Self.commitDocumentText(
             text,
@@ -16387,20 +16394,77 @@ public final class WorkspaceStore {
             operation: "rendered checkbox update"
           )
         }
-        guard snapshot.text.utf8.count <= Self.workspaceUndoSnapshotMaxBytes,
-              output.utf8.count <= Self.workspaceUndoSnapshotMaxBytes
-        else { return nil }
-        return RenderedCheckboxMutation(previous: snapshot.text, next: output)
+        let updatedSourceText = try Self.sourceRangeText(
+          in: output,
+          file: source.file,
+          startLine: source.startLine,
+          endLineExclusive: source.endLineExclusive
+        )
+        let updatedSource = EntrySource(
+          file: source.file,
+          startLine: source.startLine,
+          endLineExclusive: source.endLineExclusive,
+          text: updatedSourceText,
+          isSubtree: source.isSubtree,
+          isEditable: source.isEditable
+        )
+        let updatedBlocks = OrgEntryRenderer.parseEditable(
+          updatedSource.text,
+          baseLine: updatedSource.startLine
+        )
+        let previousForUndo = snapshot.text.utf8.count <= Self.workspaceUndoSnapshotMaxBytes
+          && output.utf8.count <= Self.workspaceUndoSnapshotMaxBytes
+          ? snapshot.text
+          : nil
+        return RenderedCheckboxMutation(
+          previousForUndo: previousForUndo,
+          next: output,
+          source: updatedSource,
+          blocks: updatedBlocks,
+          blockMetadata: Self.renderedBlocksMetadata(for: updatedBlocks),
+          fileContentDigest: Self.contentDigest(for: Data(output.utf8)),
+          fileFreshnessSignature: Self.fileFreshnessSignature(for: snapshot.url),
+          firstOrgID: Self.firstOrgID(in: updatedSource.text),
+          sourceLineIndex: OrgSourceLineIndex(text: updatedSource.text as NSString)
+        )
       }
-      if let mutation {
-        recordFileUndo(file: source.file, previous: mutation.previous, next: mutation.next)
+      if let previous = mutation.previousForUndo {
+        recordFileUndo(file: source.file, previous: previous, next: mutation.next)
       }
       invalidateCanonicalDocumentCache(for: source.file)
-      statusText = checked ? "Marked complete" : "Marked incomplete"
-      if selectedEntrySource?.id == source.id,
-         let selectedLocation {
-        scheduleEntrySourceLoad(for: selectedLocation)
+      if selectedEntrySource?.id == source.id {
+        nextSelectedEntrySourceRenderIdentity = "file:\(mutation.fileContentDigest)|\(source.startLine)|\(source.endLineExclusive)"
+        nextSelectedEntrySourceLineIndex = mutation.sourceLineIndex
+        nextSelectedEntrySourceModifiedAt = mutation.fileFreshnessSignature?.contentModificationDate
+        let previousSource = selectedEntrySource
+        selectedEntrySource = mutation.source
+        updateEditableEntryTextFromLoadedSourceIfSafe(mutation.source, previousSource: previousSource)
+        cacheRenderedBlocks(
+          mutation.blocks,
+          metadata: mutation.blockMetadata,
+          for: mutation.source,
+          modifiedAt: mutation.fileFreshnessSignature?.contentModificationDate
+        )
+        applyRenderedBlocks(
+          mutation.blocks,
+          metadata: mutation.blockMetadata,
+          for: mutation.source
+        )
+        if let selectedLocation,
+           selectedEntrySourceMode == sourceMode {
+          cacheEntrySource(
+            mutation.source,
+            for: selectedLocation,
+            mode: sourceMode,
+            modifiedAt: mutation.fileFreshnessSignature?.contentModificationDate,
+            fileContentDigest: mutation.fileContentDigest,
+            fileFreshnessSignature: mutation.fileFreshnessSignature,
+            firstOrgID: mutation.firstOrgID,
+            sourceLineIndex: mutation.sourceLineIndex
+          )
+        }
       }
+      statusText = checked ? "Marked complete" : "Marked incomplete"
       scheduleAgendaRefresh(preserveSelection: true)
       return true
     } catch {

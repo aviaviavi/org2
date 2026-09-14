@@ -342,6 +342,12 @@ final class OrgEditorInteractionTests: XCTestCase {
     recorder.line = nil
     recorder.checked = nil
     _ = try await renderedWebView.callAsyncJavaScript(
+      "document.body.dataset.checkboxRenderSentinel = 'preserved'; return true;",
+      arguments: [:],
+      in: nil,
+      contentWorld: .page
+    )
+    _ = try await renderedWebView.callAsyncJavaScript(
       "document.querySelector('li[data-org2-start-line] > input[type=checkbox]').click(); return true;",
       arguments: [:],
       in: nil,
@@ -351,7 +357,10 @@ final class OrgEditorInteractionTests: XCTestCase {
     let persistedState = try await renderedWebView.callAsyncJavaScript(
       """
       const checkbox = document.querySelector('li[data-org2-start-line] > input[type=checkbox]');
-      return checkbox.checked === true && checkbox.disabled === true;
+      return checkbox.checked === true
+        && checkbox.disabled === false
+        && checkbox.title === 'Mark incomplete'
+        && document.body.dataset.checkboxRenderSentinel === 'preserved';
       """,
       arguments: [:],
       in: nil,
