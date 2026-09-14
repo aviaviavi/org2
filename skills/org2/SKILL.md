@@ -12,7 +12,7 @@ Treat ordinary `.org` and `.org2` files as the source of truth. Derived indexes,
 1. Identify the authorized corpus root. Do not infer access to another corpus from app history or nearby folders.
 2. Run `org2 agent capabilities` before relying on remembered commands.
 3. Read the nearest `org2.json` for corpus identity, agenda selection, ignored paths, publishing projects, and other declared behavior.
-4. Prefer MCP resources and typed tools when the harness already exposes the Org2 MCP server. Use bounded CLI JSON for capabilities that MCP does not expose.
+4. Prefer MCP resources and typed tools when the harness already exposes the Org2 MCP server. Start retrieval with `org2_search`, `org2_fetch`, or `org2_context`; their results are bounded and preserve citations. Use bounded CLI JSON for capabilities that MCP does not expose.
 
 For retrieval, start with `org2 agent search`, `org2 agent context`, or `org2 agent fetch`. Keep file paths, line ranges, IDs, provenance, and uncertainty in the result.
 

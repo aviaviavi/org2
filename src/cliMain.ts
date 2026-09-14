@@ -37,6 +37,12 @@ import {
   type Org2Config,
   type Org2PublishProjectConfig,
 } from "./config.js";
+import {
+  isDefaultArchivePath,
+  isDefaultIgnoredSyncArtifactPath,
+  isOrgLikeFileName,
+  listOrgLikeFiles,
+} from "./corpusFiles.js";
 import { resolvePublishHeadIncludes } from "./publish-defaults.js";
 import { documentTodoSequences, todoSequencesForFile, todoConfigurationKey, todoKeywordInWorkflow, type TodoSequence, assignTodoInText, formatOrgTimestamp, isActiveTodoKeyword, isTerminalTodoKeyword, normalizeTodoKeyword, TODO_KEYWORDS, updateTodoInText, type TodoStatus } from "./todo.js";
 import { planningKindFromArg, updatePlanningInText, type PlanningKindArg } from "./planning.js";
@@ -6382,62 +6388,8 @@ function applyAgendaDayLimit(items: ScheduledItem[], dayLimit: number | null): S
   return kept;
 }
 
-function isDefaultArchivePath(filePath: string): boolean {
-  const normalized = filePath.replace(/\\/g, "/").toLowerCase();
-  const base = path.basename(normalized);
-  return (
-    normalized.includes("/archive/") ||
-    normalized.includes("/archives/") ||
-    base.endsWith(".org_archive") ||
-    base.endsWith(".org2_archive") ||
-    base.endsWith(".archive") ||
-    base.includes(".archive.") ||
-    base.endsWith("_archive")
-  );
-}
-
 function isDefaultRoamLinkifyArchivedPath(filePath: string): boolean {
   return isDefaultArchivePath(filePath);
-}
-
-const DEFAULT_IGNORED_CORPUS_DIRECTORIES = new Set([
-  ".git",
-  ".hg",
-  ".svn",
-  ".stversions",
-  ".trash",
-  ".org2",
-  "node_modules",
-  "dist",
-  "build",
-  ".build",
-  "DerivedData",
-  "sync-conflicts",
-]);
-
-function isDefaultIgnoredCorpusDirectoryName(name: string): boolean {
-  return name.startsWith(".") || DEFAULT_IGNORED_CORPUS_DIRECTORIES.has(name);
-}
-
-function hasDefaultIgnoredCorpusPathComponent(filePath: string): boolean {
-  return path.normalize(filePath)
-    .split(path.sep)
-    .some((component) => DEFAULT_IGNORED_CORPUS_DIRECTORIES.has(component));
-}
-
-function isDefaultIgnoredSyncArtifactPath(filePath: string): boolean {
-  const base = path.basename(filePath);
-  return hasDefaultIgnoredCorpusPathComponent(filePath)
-    || base.startsWith(".syncthing.")
-    || base.includes(".sync-conflict-")
-    || base.endsWith(".tmp");
-}
-
-function isOrgLikeFileName(fileName: string, includeArchives = false): boolean {
-  if (fileName.startsWith(".")) return false;
-  if (isDefaultIgnoredSyncArtifactPath(fileName)) return false;
-  if (fileName.endsWith(".org") || fileName.endsWith(".org2")) return true;
-  return includeArchives && isDefaultArchivePath(fileName);
 }
 
 function resolveRoamLinkifyExclude(rootDir: string, rawExclude: string): string {
@@ -6458,36 +6410,6 @@ function filterRoamLinkifyFiles(files: string[], rootDir: string, excludes: stri
     if (isDefaultRoamLinkifyArchivedPath(resolved)) return false;
     return !excludePaths.some((excludePath) => isPathWithinOrEqual(resolved, excludePath));
   });
-}
-
-function listOrgLikeFiles(rootDir: string, recursiveScan: boolean, includeArchives = false): string[] {
-  const out: string[] = [];
-
-  const walk = (d: string): void => {
-    let entries: fs.Dirent[];
-    try {
-      entries = fs.readdirSync(d, { withFileTypes: true });
-    } catch {
-      return;
-    }
-
-    for (const ent of entries) {
-      const full = path.join(d, ent.name);
-      if (ent.isDirectory()) {
-        if (isDefaultIgnoredCorpusDirectoryName(ent.name)) continue;
-        if (recursiveScan) walk(full);
-        continue;
-      }
-
-      if (!ent.isFile()) continue;
-      if (!isOrgLikeFileName(ent.name, includeArchives)) continue;
-      if (!includeArchives && isDefaultArchivePath(full)) continue;
-      out.push(full);
-    }
-  };
-
-  walk(rootDir);
-  return out;
 }
 
 function listAgendaFiles(dirPath: string, recursiveScan: boolean, includeArchives = false): string[] {
@@ -9421,7 +9343,7 @@ Other:
   org2 version
   org2 --version
   org2 lsp
-  org2 server <init|start|status|pair|revoke|stop|assign|service|push-config> [options]
+  org2 server <init|start|status|pair|revoke|stop|permissions|token|mcp|assign|service|push-config> [options]
 
 Tips:
   - Use --help with subcommands for detailed flags (e.g., org2 agenda --help).

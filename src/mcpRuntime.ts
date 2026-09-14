@@ -1,10 +1,20 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
 import { spawnSync } from "node:child_process";
+import { buildAgentContextPayload, type AgentAction, type AgentInclude } from "./agentContext.js";
 import { listAgentRuns, loadAgentRunSnapshot, saveAgentRun, transitionAgentRun } from "./agentRun.js";
 import { instantiateWorkflow, listWorkflows, loadWorkflow } from "./agentWorkflow.js";
 import { resolveAgentProfile } from "./coordination.js";
+import { compileCorpusIncremental } from "./corpusCompile.js";
+import {
+  isDefaultArchivePath,
+  isDefaultIgnoredSyncArtifactPath,
+  isOrgLikeFileName,
+  listOrgLikeFiles,
+} from "./corpusFiles.js";
+import { defaultCorpusCachePath } from "./indexPaths.js";
 import { safeIdentifier } from "./safeIdentifier.js";
 import { queueAIChatInboxMessage } from "./aiChatInbox.js";
 
@@ -24,6 +34,14 @@ interface JsonRpcResponse {
   error?: { code: number; message: string };
 }
 
+type JsonRpcOutput = JsonRpcResponse | JsonRpcResponse[];
+
+export interface McpServerOptions {
+  readOnly?: boolean;
+}
+
+export const ORG2_MCP_PROTOCOL_VERSION = "2025-03-26";
+
 class InvalidJsonRpcRequestError extends Error {}
 
 function jsonObject(value: unknown): JsonObject | undefined {
@@ -37,7 +55,7 @@ function parseJsonRpcRequest(value: unknown): JsonRpcRequest {
   if (!request || request.jsonrpc !== "2.0" || typeof request.method !== "string" || !request.method.trim()) {
     throw new InvalidJsonRpcRequestError("invalid JSON-RPC request");
   }
-  if (request.id !== undefined && request.id !== null && typeof request.id !== "string" && typeof request.id !== "number") {
+  if (request.id !== undefined && typeof request.id !== "string" && typeof request.id !== "number") {
     throw new InvalidJsonRpcRequestError("invalid JSON-RPC request id");
   }
   const params = request.params === undefined ? {} : jsonObject(request.params);
@@ -84,6 +102,23 @@ function stringArray(value: unknown, label: string): string[] | undefined {
     throw new Error(`${label} must be an array of strings`);
   }
   return value;
+}
+
+function boundedInteger(value: unknown, label: string, fallback: number, minimum: number, maximum: number): number {
+  if (value === undefined) return fallback;
+  if (typeof value !== "number" || !Number.isInteger(value) || value < minimum || value > maximum) {
+    throw new Error(`${label} must be an integer from ${minimum} through ${maximum}`);
+  }
+  return value;
+}
+
+function agentIncludes(value: unknown): AgentInclude[] {
+  const values = stringArray(value, "include") ?? ["sources"];
+  const allowed = new Set<AgentInclude>(["sources", "backlinks", "neighbors"]);
+  if (values.some((item) => !allowed.has(item as AgentInclude))) {
+    throw new Error("include entries must be sources, backlinks, or neighbors");
+  }
+  return Array.from(new Set(values as AgentInclude[]));
 }
 
 function mcpClientDefinition(value: unknown, index: number): McpClientDefinition {
@@ -178,7 +213,7 @@ export function discoverMcpClient(root: string, clientId: string, options: { tim
   const client = loadMcpClients(root).find((item) => item.id === clientId);
   if (!client) throw new Error(`MCP client not found: ${clientId}`);
   const requests = [
-    { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "org2", version: "0.3.0" } } },
+    { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: ORG2_MCP_PROTOCOL_VERSION, capabilities: {}, clientInfo: { name: "org2", version: "0.3.0" } } },
     { jsonrpc: "2.0", method: "notifications/initialized", params: {} },
     { jsonrpc: "2.0", id: 2, method: "resources/list", params: {} },
     { jsonrpc: "2.0", id: 3, method: "tools/list", params: {} },
@@ -221,34 +256,56 @@ export function discoverMcpClient(root: string, clientId: string, options: { tim
   return { client, capabilities, ...(snapshot ? { snapshot } : {}) };
 }
 
+const RESOURCE_PAGE_SIZE = 100;
+
 function resourceList(root: string) {
-  const files: string[] = [];
-  const walk = (dir: string) => {
-    if (!fs.existsSync(dir)) return;
-    for (const item of fs.readdirSync(dir, { withFileTypes: true })) {
-      if ([".git", "node_modules", "dist", "site"].includes(item.name)) continue;
-      const absolute = path.join(dir, item.name);
-      if (item.isSymbolicLink()) continue;
-      if (item.isDirectory()) walk(absolute);
-      else if (/\.org2?$/.test(item.name)) files.push(absolute);
-    }
-  };
-  walk(root);
-  return files
+  return listOrgLikeFiles(root, true, false)
     .map((file) => path.relative(root, file))
     .sort()
     .map((name) => ({ uri: `org2://corpus/${name}`, name, mimeType: "text/org" }));
 }
 
+function resourceCursor(offset: number): string {
+  return Buffer.from(String(offset), "utf8").toString("base64url");
+}
+
+function resourceOffset(value: unknown): number {
+  if (value === undefined) return 0;
+  if (typeof value !== "string" || !value) throw new Error("resource cursor must be a string");
+  const decoded = Buffer.from(value, "base64url").toString("utf8");
+  if (!/^\d+$/.test(decoded)) throw new Error("invalid resource cursor");
+  const offset = Number(decoded);
+  if (!Number.isSafeInteger(offset) || offset < 0) throw new Error("invalid resource cursor");
+  return offset;
+}
+
 function corpusResourceFile(root: string, relative: string): string {
-  if (!/\.org2?$/.test(relative)) throw new Error("resource is not an Org2 source file");
+  const normalizedRelative = path.normalize(relative);
+  const components = normalizedRelative.split(path.sep);
+  if (!isOrgLikeFileName(path.basename(normalizedRelative), false)
+    || isDefaultArchivePath(normalizedRelative)
+    || isDefaultIgnoredSyncArtifactPath(normalizedRelative)
+    || components.some((component) => component.startsWith("."))) {
+    throw new Error("resource is not an Org2 source file exposed by this server");
+  }
   const lexicalRoot = path.resolve(root);
-  const requested = path.resolve(lexicalRoot, relative);
+  const requested = path.resolve(lexicalRoot, normalizedRelative);
   const lexicalRelative = path.relative(lexicalRoot, requested);
   if (!lexicalRelative || lexicalRelative === ".." || lexicalRelative.startsWith(`..${path.sep}`) || path.isAbsolute(lexicalRelative)) {
     throw new Error("resource is outside the corpus");
   }
-  if (fs.lstatSync(requested).isSymbolicLink()) throw new Error("resource is a symbolic link");
+  let current = lexicalRoot;
+  let requestedStat: fs.Stats | undefined;
+  for (const component of components) {
+    current = path.join(current, component);
+    try {
+      requestedStat = fs.lstatSync(current);
+    } catch {
+      throw new Error("resource does not exist");
+    }
+    if (requestedStat.isSymbolicLink()) throw new Error("resource is a symbolic link");
+  }
+  if (!requestedStat?.isFile()) throw new Error("resource is not a file");
 
   const canonicalRoot = fs.realpathSync(lexicalRoot);
   const canonicalFile = fs.realpathSync(requested);
@@ -256,43 +313,145 @@ function corpusResourceFile(root: string, relative: string): string {
   if (!canonicalRelative || canonicalRelative === ".." || canonicalRelative.startsWith(`..${path.sep}`) || path.isAbsolute(canonicalRelative)) {
     throw new Error("resource resolves outside the corpus");
   }
-  if (!fs.statSync(canonicalFile).isFile()) throw new Error("resource is not a file");
   return canonicalFile;
 }
 
-async function handle(root: string, request: JsonRpcRequest): Promise<JsonRpcResponse | null> {
+function retrievalPayload(root: string, action: AgentAction, args: JsonObject): unknown {
+  const files = listOrgLikeFiles(root, true, false).sort((left, right) => left.localeCompare(right));
+  if (files.length === 0) throw new Error("no Org files found for corpus retrieval");
+  const corpus = compileCorpusIncremental(files, {
+    rootDir: root,
+    cacheFile: defaultCorpusCachePath(root),
+  });
+  return buildAgentContextPayload(corpus, {
+    action,
+    query: action === "fetch" ? undefined : requiredString(args.query, "query"),
+    id: action === "fetch" ? requiredString(args.id, "id") : undefined,
+    limit: action === "fetch" ? 1 : boundedInteger(args.limit, "limit", 10, 1, 50),
+    maxChars: boundedInteger(args.maxChars, "maxChars", 12_000, 1_000, 50_000),
+    include: agentIncludes(args.include),
+    scope: optionalString(args.scope, "scope"),
+    since: optionalString(args.since, "since"),
+    sourceType: optionalString(args.sourceType, "sourceType"),
+    reviewStatus: optionalString(args.reviewStatus, "reviewStatus"),
+  });
+}
+
+function toolResult(payload: unknown): JsonObject {
+  return {
+    content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
+    structuredContent: payload,
+  };
+}
+
+const readOnlyAnnotations = {
+  readOnlyHint: true,
+  destructiveHint: false,
+  idempotentHint: true,
+  openWorldHint: false,
+};
+
+const writeAnnotations = {
+  readOnlyHint: false,
+  destructiveHint: false,
+  idempotentHint: false,
+  openWorldHint: false,
+};
+
+function retrievalProperties() {
+  return {
+    limit: { type: "integer", minimum: 1, maximum: 50, default: 10 },
+    maxChars: { type: "integer", minimum: 1_000, maximum: 50_000, default: 12_000 },
+    include: { type: "array", items: { type: "string", enum: ["sources", "backlinks", "neighbors"] }, default: ["sources"] },
+    scope: { type: "string" },
+    since: { type: "string" },
+    sourceType: { type: "string" },
+    reviewStatus: { type: "string" },
+  };
+}
+
+function mcpTools(readOnly: boolean) {
+  const readTools = [
+    {
+      name: "org2_search",
+      description: "Search the selected Org2 corpus and return bounded, ranked results with source citations",
+      inputSchema: { type: "object", required: ["query"], properties: { query: { type: "string" }, ...retrievalProperties() } },
+      annotations: readOnlyAnnotations,
+    },
+    {
+      name: "org2_fetch",
+      description: "Fetch one corpus node by stable Org2 ID with bounded source, backlinks, or neighbors",
+      inputSchema: { type: "object", required: ["id"], properties: { id: { type: "string" }, maxChars: { type: "integer", minimum: 1_000, maximum: 50_000, default: 12_000 }, include: { type: "array", items: { type: "string", enum: ["sources", "backlinks", "neighbors"] }, default: ["sources"] } } },
+      annotations: readOnlyAnnotations,
+    },
+    {
+      name: "org2_context",
+      description: "Assemble bounded, cited corpus context for a question without calling a model",
+      inputSchema: { type: "object", required: ["query"], properties: { query: { type: "string" }, ...retrievalProperties() } },
+      annotations: readOnlyAnnotations,
+    },
+    { name: "org2_agent_profile_resolve", description: "Resolve a runtime agent ID to a portable Org2 agent profile and primary goal", inputSchema: { type: "object", required: ["runtime", "runtimeAgentId"], properties: { runtime: { type: "string" }, runtimeAgentId: { type: "string" } } }, annotations: readOnlyAnnotations },
+    { name: "org2_run_list", description: "List durable Org2 runs and review state", inputSchema: { type: "object", properties: {} }, annotations: readOnlyAnnotations },
+  ];
+  if (readOnly) return readTools;
+  return [
+    ...readTools,
+    { name: "org2_run_create", description: "Create a durable Org2 agent run from a reusable workflow", inputSchema: { type: "object", required: ["workflow"], properties: { workflow: { type: "string" }, inputs: { type: "object" }, owner: { type: "string" }, agentRef: { type: "string" }, goalRef: { type: "string" } } }, annotations: writeAnnotations },
+    { name: "org2_run_transition", description: "Transition a durable Org2 run. Completion requires a concise, human-readable summary.", inputSchema: { type: "object", required: ["run", "status"], properties: { run: { type: "string" }, status: { type: "string" }, actor: { type: "string" }, reason: { type: "string" }, summary: { type: "string" }, highlights: { type: "array", items: { type: "string" } }, nextActions: { type: "array", items: { type: "string" } } } }, annotations: writeAnnotations },
+    { name: "org2_thread_post", description: "Post an attributed background message to an existing Org2 AI chat without starting or steering a model turn", inputSchema: { type: "object", required: ["threadId", "message", "author"], properties: { threadId: { type: "string" }, message: { type: "string" }, author: { type: "string" }, agentRef: { type: "string" }, source: { type: "string" }, idempotencyKey: { type: "string" } } }, annotations: writeAnnotations },
+  ];
+}
+
+async function handle(root: string, request: JsonRpcRequest, options: McpServerOptions): Promise<JsonRpcResponse | null> {
   const id = request.id;
   const result = (value: unknown): JsonRpcResponse => ({ jsonrpc: "2.0", id, result: value });
-  if (request.method === "initialize") return result({ protocolVersion: "2025-03-26", capabilities: { resources: {}, tools: {}, prompts: {} }, serverInfo: { name: "org2", version: "0.3.0" } });
+  const readOnly = options.readOnly === true;
+  if (request.method === "initialize") return result({
+    protocolVersion: ORG2_MCP_PROTOCOL_VERSION,
+    capabilities: { resources: { listChanged: false }, tools: { listChanged: false }, prompts: { listChanged: false } },
+    serverInfo: { name: "org2", version: "0.3.0" },
+    instructions: readOnly
+      ? "Read-only Org2 corpus. Search with org2_search, fetch stable IDs with org2_fetch, and assemble cited context with org2_context. Results are bounded and cite canonical source files and line ranges. Do not claim corpus facts without returned evidence."
+      : "Search with org2_search before broad resource reads, fetch stable IDs with org2_fetch, and use org2_context for bounded cited context. Corpus source is canonical. Run and thread tools write immediately; use them only when the user requested the action.",
+  });
   if (request.method === "notifications/initialized") return null;
-  if (request.method === "resources/list") return result({ resources: resourceList(root) });
+  if (request.method === "resources/list") {
+    const resources = resourceList(root);
+    const offset = resourceOffset(request.params.cursor);
+    if (offset > resources.length) throw new Error("resource cursor is beyond the available resources");
+    const page = resources.slice(offset, offset + RESOURCE_PAGE_SIZE);
+    const nextOffset = offset + page.length;
+    return result({ resources: page, ...(nextOffset < resources.length ? { nextCursor: resourceCursor(nextOffset) } : {}) });
+  }
   if (request.method === "resources/read") {
     const uri = String(request.params.uri || "");
     const prefix = "org2://corpus/";
     if (!uri.startsWith(prefix)) throw new Error("unsupported resource URI");
     const relative = uri.slice(prefix.length);
     const file = corpusResourceFile(root, relative);
-    return result({ contents: [{ uri, mimeType: "text/org", text: fs.readFileSync(file, "utf8") }] });
+    const text = fs.readFileSync(file, "utf8");
+    const revision = `sha256:${crypto.createHash("sha256").update(text).digest("hex")}`;
+    return result({ contents: [{ uri, mimeType: "text/org", text, _meta: { revision, lineCount: text.split("\n").length } }] });
   }
   if (request.method === "prompts/list") return result({ prompts: listWorkflows(root).map((workflow) => ({ name: workflow.id, description: workflow.description, arguments: workflow.inputs.map((input) => ({ name: input.id, description: input.description, required: input.required })) })) });
   if (request.method === "prompts/get") {
     const workflow = loadWorkflow(root, String(request.params.name || ""));
     return result({ description: workflow.description, messages: [{ role: "user", content: { type: "text", text: workflow.instructions } }] });
   }
-  if (request.method === "tools/list") return result({ tools: [
-    { name: "org2_agent_profile_resolve", description: "Resolve a runtime agent ID to a portable Org2 agent profile and primary goal", inputSchema: { type: "object", required: ["runtime", "runtimeAgentId"], properties: { runtime: { type: "string" }, runtimeAgentId: { type: "string" } } } },
-    { name: "org2_run_create", description: "Create a durable Org2 agent run from a reusable workflow", inputSchema: { type: "object", required: ["workflow"], properties: { workflow: { type: "string" }, inputs: { type: "object" }, owner: { type: "string" }, agentRef: { type: "string" }, goalRef: { type: "string" } } } },
-    { name: "org2_run_transition", description: "Transition a durable Org2 run. Completion requires a concise, human-readable summary.", inputSchema: { type: "object", required: ["run", "status"], properties: { run: { type: "string" }, status: { type: "string" }, actor: { type: "string" }, reason: { type: "string" }, summary: { type: "string" }, highlights: { type: "array", items: { type: "string" } }, nextActions: { type: "array", items: { type: "string" } } } } },
-    { name: "org2_run_list", description: "List durable Org2 runs and review state", inputSchema: { type: "object", properties: {} } },
-    { name: "org2_thread_post", description: "Post an attributed background message to an existing Org2 AI chat without starting or steering a model turn", inputSchema: { type: "object", required: ["threadId", "message", "author"], properties: { threadId: { type: "string" }, message: { type: "string" }, author: { type: "string" }, agentRef: { type: "string" }, source: { type: "string" }, idempotencyKey: { type: "string" } } } },
-  ] });
+  if (request.method === "tools/list") return result({ tools: mcpTools(readOnly) });
   if (request.method === "tools/call") {
     const name = request.params.name;
     const args = jsonObject(request.params.arguments) || {};
-    if (name === "org2_run_list") return result({ content: [{ type: "text", text: JSON.stringify(listAgentRuns(root), null, 2) }] });
+    if (name === "org2_search") return result(toolResult(retrievalPayload(root, "search", args)));
+    if (name === "org2_fetch") return result(toolResult(retrievalPayload(root, "fetch", args)));
+    if (name === "org2_context") return result(toolResult(retrievalPayload(root, "context", args)));
+    if (name === "org2_run_list") return result(toolResult(listAgentRuns(root)));
     if (name === "org2_agent_profile_resolve") {
       const resolved = resolveAgentProfile(root, requiredString(args.runtime, "runtime"), requiredString(args.runtimeAgentId, "runtimeAgentId"));
-      return result({ content: [{ type: "text", text: JSON.stringify(resolved, null, 2) }] });
+      return result(toolResult(resolved));
+    }
+    if (readOnly && ["org2_run_create", "org2_run_transition", "org2_thread_post"].includes(String(name))) {
+      throw new Error("tool is unavailable on the read-only MCP endpoint");
     }
     if (name === "org2_thread_post") {
       const queued = queueAIChatInboxMessage(
@@ -333,24 +492,70 @@ async function handle(root: string, request: JsonRpcRequest): Promise<JsonRpcRes
   return { jsonrpc: "2.0", id, error: { code: -32601, message: `method not found: ${request.method}` } };
 }
 
-export async function serveMcp(root: string, input: NodeJS.ReadableStream = process.stdin, output: NodeJS.WritableStream = process.stdout): Promise<void> {
+export async function handleMcpMessage(root: string, value: unknown, options: McpServerOptions = {}): Promise<JsonRpcOutput | null> {
+  if (Array.isArray(value)) {
+    if (value.length === 0 || value.length > 100) {
+      return { jsonrpc: "2.0", id: null, error: { code: -32600, message: "MCP batches must contain 1 through 100 messages" } };
+    }
+    const responses: JsonRpcResponse[] = [];
+    for (const item of value) {
+      const response = await handleMcpMessage(root, item, options);
+      if (response && !Array.isArray(response)) responses.push(response);
+    }
+    return responses.length > 0 ? responses : null;
+  }
+  let id: JsonRpcId = null;
+  try {
+    const parsedValue = jsonObject(value);
+    if (parsedValue
+      && parsedValue.jsonrpc === "2.0"
+      && parsedValue.method === undefined
+      && (typeof parsedValue.id === "string" || typeof parsedValue.id === "number" || parsedValue.id === null)
+      && (Object.hasOwn(parsedValue, "result") || Object.hasOwn(parsedValue, "error"))) {
+      return null;
+    }
+    if (parsedValue && (typeof parsedValue.id === "string" || typeof parsedValue.id === "number")) {
+      id = parsedValue.id as JsonRpcId;
+    }
+    const request = parseJsonRpcRequest(value);
+    if (request.id === undefined && request.method !== "notifications/initialized") return null;
+    return await handle(path.resolve(root), request, options);
+  } catch (error) {
+    const parsedValue = jsonObject(value);
+    if (parsedValue?.jsonrpc === "2.0" && typeof parsedValue.method === "string" && !Object.hasOwn(parsedValue, "id")) {
+      return null;
+    }
+    return {
+      jsonrpc: "2.0",
+      id,
+      error: {
+        code: error instanceof InvalidJsonRpcRequestError ? -32600 : -32603,
+        message: error instanceof Error ? error.message : String(error),
+      },
+    };
+  }
+}
+
+export async function serveMcp(root: string, input: NodeJS.ReadableStream = process.stdin, output: NodeJS.WritableStream = process.stdout, options: McpServerOptions = {}): Promise<void> {
   const lines = readline.createInterface({ input });
   for await (const line of lines) {
     if (!String(line).trim()) continue;
-    let response: JsonRpcResponse | null;
+    let value: unknown;
     try {
-      const value: unknown = JSON.parse(String(line));
-      response = await handle(path.resolve(root), parseJsonRpcRequest(value));
+      value = JSON.parse(String(line));
     } catch (error) {
-      response = {
+      const response: JsonRpcResponse = {
         jsonrpc: "2.0",
         id: null,
         error: {
-          code: error instanceof InvalidJsonRpcRequestError ? -32600 : -32603,
+          code: -32700,
           message: error instanceof Error ? error.message : String(error),
         },
       };
+      output.write(`${JSON.stringify(response)}\n`);
+      continue;
     }
+    const response: JsonRpcOutput | null = await handleMcpMessage(root, value, options);
     if (response) output.write(`${JSON.stringify(response)}\n`);
   }
 }

@@ -59,6 +59,8 @@ Durable delegation uses generated run records under `.org2/runs/` and authored w
     org2 review list --dir CORPUS --json
     org2 mcp serve --dir CORPUS
 
+The stdio MCP server exposes paginated Org resources, workflow prompts, bounded cited search, stable-ID fetch, context assembly, read-only coordination queries, and three trusted local run/thread mutations. A headless OpenOrg server can expose only the five read-only tools over bearer-authenticated Streamable HTTP on its Tailscale address. `org2 server token create --name CLIENT --apply` prints a client token once and stores only its SHA-256 hash in machine-local configuration; token, port, origin, and MCP state changes require a restart. Hosted systems still need an authenticated public HTTPS path that can reach this private listener.
+
 AI chat automation is also corpus-owned rather than private Mac UI state. `org2 thread list/show` reads the authoritative sharded transcript, retains legacy `.org2/openclaw-chat.json` compatibility, and projects queued operations. `thread settle/reopen`, `thread configure --auto-settle never|SECONDS`, and `thread auto-settle` preview by default; `--apply` queues an immutable operation under `.org2/ai-chat-inbox/operations/` instead of directly rewriting the transcript. The Mac app drains those operations while running or when the corpus opens, persists each result durably, and then removes its journal file. `thread post THREAD_ID --message TEXT --author NAME --agent-ref AGENT_REF --source REF --idempotency-key KEY` previews an agent-attributed, no-turn background message; `--apply` queues an append-only envelope under `.org2/ai-chat-inbox/`. The Mac app persists queued posts into the named thread, reopens a settled destination, marks it unread, and follows the normal notification path without invoking or steering an AI runtime. Settled threads retain messages, session keys, context, and searchability. Auto-settlement excludes the selected thread plus pinned, unread, or pending threads and threads whose latest delivery is still sending, failed, or interrupted. Empty threads and recovered historical failures remain eligible.
 
 Runs preserve goals, acceptance criteria, cited inputs, plans, risk, provider metadata, budgets, artifacts, approvals, validation, comments, and observable events. Workflow packages declare inputs, capabilities, writes, outputs, triggers, checks, approval boundaries, and compatibility. External MCP/connector data that becomes durable work should be stored as a provenance-bearing snapshot; credentials stay outside the corpus.
@@ -78,7 +80,7 @@ OpenOrg Saved Views offers result-first tables and cards over canonical note/hea
 
 ## Agent entry points
 
-- [Headless server](headless-server.html): macOS CLI relay and scheduler, iOS host pairing, explicit per-host local-agent filesystem access and corpus automation ownership, user launchd service, and current failover boundaries.
+- [Headless server](headless-server.html): macOS CLI relay and scheduler, optional read-only Streamable HTTP corpus MCP, hash-only per-client access tokens, iOS host pairing, explicit per-host local-agent filesystem access and corpus automation ownership, user launchd service, and current failover boundaries.
 
 - https://org2.avi.press/agent-quickstart.html
 - https://org2.avi.press/mcp-and-skills.html

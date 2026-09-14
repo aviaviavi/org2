@@ -3,10 +3,10 @@
 
 Org2 ships two complementary agent entry points:
 
-- The *MCP server* gives an MCP-capable client typed access to one explicitly selected corpus.
+- The *MCP server* gives an MCP-capable client typed, cited access to one explicitly selected corpus through local stdio or the headless server's read-only Streamable HTTP endpoint.
 - The *Org2 skill* teaches a skill-aware agent how to discover and use the broader CLI safely.
 
-MCP is the narrower typed surface. The skill is the operating guide and CLI fallback. Neither changes the corpus format or grants access to folders outside the corpus you select.
+MCP is the bounded typed surface. The skill is the operating guide and CLI fallback. Neither changes the corpus format or grants access to folders outside the corpus you select.
 
 * Start the Org2 MCP server
 
@@ -58,33 +58,67 @@ Clients that accept the common JSON server shape can use:
 
 If a GUI-launched client cannot find =org2= on its =PATH=, set =command= to the absolute executable path returned by =command -v org2=.
 
+* Connect to a headless OpenOrg server
+
+The headless server can expose the selected corpus through a separate *read-only Streamable HTTP MCP* listener on its Tailscale address. Initialize and build the server as described in [[file:headless-server.org][Headless OpenOrg server]], then preview and create a client credential:
+
+#+begin_src sh
+org2 server token create --name chatgpt
+org2 server token create --name chatgpt --apply
+org2 server start
+#+end_src
+
+Creating the first token enables the endpoint. The applied command prints the token exactly once; OpenOrg stores only its SHA-256 hash in the private machine-local server configuration. Restart an already running server after token, port, origin, or MCP state changes. =server status= reports the endpoint and non-secret token metadata.
+
+Codex CLI and the ChatGPT desktop app can use the URL and a token stored in an environment variable:
+
+#+begin_src toml
+[mcp_servers.openorg]
+url = "http://100.64.0.1:48923/mcp"
+bearer_token_env_var = "OPENORG_MCP_TOKEN"
+#+end_src
+
+The listener binds only to the configured Tailscale IPv4 address. Tailscale encrypts that private-network hop, but the URL itself is HTTP. The server does not terminate public TLS or publish itself to the internet. A hosted system such as ChatGPT web needs an HTTPS endpoint it can reach and, for ChatGPT, a plugin containing the remote MCP server. Put an authenticated TLS reverse proxy or tunnel in front only after reviewing its disclosure boundary. See the [[https://learn.chatgpt.com/docs/extend/mcp][official OpenAI MCP setup guide]] for the current distinction between local clients and hosted ChatGPT tools.
+
+The HTTP endpoint accepts =POST /mcp= with =Authorization: Bearer TOKEN=. It is stateless, negotiates the MCP =2025-03-26= protocol profile, returns JSON responses, accepts individual messages or batches of at most 100 messages, and returns =405= for the optional GET event stream. It rejects unknown browser origins unless they were explicitly allowlisted with =server mcp enable --allow-origin ORIGIN --apply= and caps request bodies at 2 MB. These transport choices follow the [[https://modelcontextprotocol.io/specification/2025-03-26/basic/transports][official MCP Streamable HTTP contract]]. It does not expose the three write tools available through trusted stdio. Create a separate token per client so access can be revoked independently:
+
+#+begin_src sh
+org2 server token list
+org2 server token revoke --id TOKEN_ID
+org2 server token revoke --id TOKEN_ID --apply
+#+end_src
+
 * What the server exposes
 
 | MCP capability | Current Org2 surface |
 |----------------+----------------------|
-| Resources | Every ordinary =.org= and =.org2= file beneath the selected corpus, addressed as =org2://corpus/PATH= |
+| Resources | Every canonical, non-hidden, non-archived =.org= and =.org2= file beneath the selected corpus, addressed as =org2://corpus/PATH= |
 | Prompts | Authored Org2 workflows, including their declared inputs |
-| Tools | Five typed coordination and durable-work operations listed below |
+| Tools | Three cited retrieval tools plus five coordination and durable-work operations; remote HTTP exposes only the five read-only tools |
 
 The current tools are:
 
+- =org2_search=: rank bounded matches and return canonical file, source-range, and citation metadata.
+- =org2_fetch=: retrieve one note or heading by stable =ID= with bounded source and optional backlinks or neighbors.
+- =org2_context=: assemble bounded, cited context for a question without calling a model.
 - =org2_agent_profile_resolve=: resolve a runtime identity to a portable agent profile and primary goal.
 - =org2_run_create=: instantiate a reusable workflow as a durable run.
 - =org2_run_transition=: move a run through its lifecycle; completion requires a reviewer-facing summary.
 - =org2_run_list=: inspect durable runs and review state.
 - =org2_thread_post=: post an attributed, idempotent background update to an existing AI chat without starting a model turn.
 
-The server is deliberately *not* a complete mirror of the CLI yet. Search, bounded context assembly, Agenda, TODO mutation, publishing, lint, graph checks, and most other commands remain CLI operations. Use the general skill below so an agent knows when to leave MCP and call CLI JSON.
+The read-only retrieval tools share the same incremental compiler and cited context substrate as =org2 agent search|fetch|context=. Result counts and context characters are capped by their schemas. Resource listing is paginated in stable lexical order, and resource reads include a SHA-256 revision plus line count. The server is still not a complete mirror of the CLI: Agenda, TODO mutation, publishing, lint, graph checks, and other specialized commands remain CLI operations. Use the general skill below so an agent knows when to leave MCP and call CLI JSON.
 
 * Corpus and safety boundaries
 
 - =--dir= selects the only corpus exposed by that server process.
-- Resource reads stay beneath the canonical corpus root, reject symlinked files, and expose only =.org= and =.org2= source.
+- Resource reads stay beneath the canonical corpus root, reject symlinked files, hidden runtime state, archives, and ignored sync artifacts, and expose only canonical =.org= and =.org2= source.
 - Workflow prompts and resource listing are read-only.
-- Run creation, run transition, and thread posting are writes. They use the same guarded Org2 records and lifecycle rules as the CLI, but the MCP call itself is the requested action; there is no second =--apply= preview inside those tools.
+- The headless HTTP endpoint exposes only =org2_search=, =org2_fetch=, =org2_context=, =org2_agent_profile_resolve=, and =org2_run_list=. Every HTTP token currently has only the =corpus:read= scope.
+- Trusted stdio additionally exposes run creation, run transition, and thread posting. Those are writes. They use the same guarded Org2 records and lifecycle rules as the CLI, but the MCP call itself is the requested action; there is no second =--apply= preview inside those tools.
 - Credentials are not read from corpus files or returned as MCP resources. Keep client secrets in the client environment or its credential store.
 
-Only enable write tools for agents you trust to act within that corpus. If a client supports per-tool approval, require confirmation for the three mutating tools.
+Only enable stdio write tools for agents you trust to act within that corpus. If a client supports per-tool approval, require confirmation for the three mutating tools. Retrieval and coordination tools carry MCP =readOnlyHint= annotations so compatible clients can apply an appropriate approval policy.
 
 * Quick protocol check
 
@@ -98,7 +132,7 @@ printf '%s\n' \
   | org2 mcp serve --dir /absolute/path/to/notes
 #+end_src
 
-You should receive an initialize result and a sorted =resources= array. A client connection test should additionally show five tools and the corpus's workflow prompts.
+You should receive an initialize result and the first sorted =resources= page. A trusted stdio client connection test should additionally show eight tools and the corpus's workflow prompts; the read-only HTTP endpoint shows five tools.
 
 * Install the general Org2 skill
 

@@ -49,9 +49,12 @@ Connect any stdio MCP client to one explicit corpus with:
 org2 mcp serve --dir /absolute/path/to/notes
 #+end_src
 
-The server exposes corpus documents as resources, authored workflows as
-prompts, and five typed tools for agent-profile resolution, durable runs, and
-background thread posting. It is intentionally narrower than the CLI.
+The server exposes canonical corpus documents as paginated resources, authored
+workflows as prompts, and eight typed tools: bounded cited search, stable-ID
+fetch, context assembly, agent-profile resolution, durable runs, and background
+thread posting. The headless OpenOrg server can expose the five read-only tools
+through bearer-authenticated Streamable HTTP while retaining hash-only,
+per-client credentials. It remains intentionally narrower than the CLI.
 
 The npm package also ships a portable general skill. Its installer previews by
 default and never overwrites a corpus-managed copy:

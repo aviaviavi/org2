@@ -145,7 +145,7 @@
 
 * Headless host
 
-A dedicated macOS host can run the OpenOrg chat relay and automation scheduler from =org2 server= without a desktop window. iOS can save and select a Mac or server; each corpus has an explicit scheduler owner, and each execution host has an explicit local-agent filesystem policy. See [[file:headless-server.org][Headless server setup]] for pairing, permissions, login-service installation, and the current host boundaries.
+A dedicated macOS host can run the OpenOrg chat relay and automation scheduler from =org2 server= without a desktop window. It can expose a separately enabled read-only Streamable HTTP MCP endpoint for bounded, cited corpus search and retrieval, using one revocable hash-only bearer credential per client. iOS can save and select a Mac or server; each corpus has an explicit scheduler owner, and each execution host has an explicit local-agent filesystem policy. See [[file:headless-server.org][Headless server setup]] for pairing, MCP access, permissions, login-service installation, and the current host boundaries.
 
 OpenOrg also offers a default-off experimental *Paste as Org2* command in the document Source editor, with local conversion, an editable preview, optional tiny-model structure suggestions, and explicit insertion. See [[file:editors-macos.org][macOS workspace]].
 

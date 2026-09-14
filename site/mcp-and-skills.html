@@ -66,10 +66,10 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 </header>
 <p>Org2 ships two complementary agent entry points:</p>
 <ul>
-<li><p>The <strong>MCP server</strong> gives an MCP-capable client typed access to one explicitly selected corpus.</p></li>
+<li><p>The <strong>MCP server</strong> gives an MCP-capable client typed, cited access to one explicitly selected corpus through local stdio or the headless server's read-only Streamable HTTP endpoint.</p></li>
 <li><p>The <strong>Org2 skill</strong> teaches a skill-aware agent how to discover and use the broader CLI safely.</p></li>
 </ul>
-<p>MCP is the narrower typed surface. The skill is the operating guide and CLI fallback. Neither changes the corpus format or grants access to folders outside the corpus you select.</p>
+<p>MCP is the bounded typed surface. The skill is the operating guide and CLI fallback. Neither changes the corpus format or grants access to folders outside the corpus you select.</p>
 <section class="org2-headline level-1">
 <h1 id="start-the-org2-mcp-server">Start the Org2 MCP server</h1>
 <p>Install the npm package, then start the local stdio server with an absolute corpus path:</p>
@@ -106,37 +106,58 @@ claude mcp get org2</code></pre>
 </section>
 </section>
 <section class="org2-headline level-1">
+<h1 id="connect-to-a-headless-openorg-server">Connect to a headless OpenOrg server</h1>
+<p>The headless server can expose the selected corpus through a separate <strong>read-only Streamable HTTP MCP</strong> listener on its Tailscale address. Initialize and build the server as described in <a href="headless-server.html">Headless OpenOrg server</a>, then preview and create a client credential:</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 server token create --name chatgpt
+org2 server token create --name chatgpt --apply
+org2 server start</code></pre>
+<p>Creating the first token enables the endpoint. The applied command prints the token exactly once; OpenOrg stores only its SHA-256 hash in the private machine-local server configuration. Restart an already running server after token, port, origin, or MCP state changes. <code>server status</code> reports the endpoint and non-secret token metadata.</p>
+<p>Codex CLI and the ChatGPT desktop app can use the URL and a token stored in an environment variable:</p>
+<pre class="org2-src language-toml" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-toml">[mcp_servers.openorg]
+url = &quot;http://100.64.0.1:48923/mcp&quot;
+bearer_token_env_var = &quot;OPENORG_MCP_TOKEN&quot;</code></pre>
+<p>The listener binds only to the configured Tailscale IPv4 address. Tailscale encrypts that private-network hop, but the URL itself is HTTP. The server does not terminate public TLS or publish itself to the internet. A hosted system such as ChatGPT web needs an HTTPS endpoint it can reach and, for ChatGPT, a plugin containing the remote MCP server. Put an authenticated TLS reverse proxy or tunnel in front only after reviewing its disclosure boundary. See the <a href="https://learn.chatgpt.com/docs/extend/mcp">official OpenAI MCP setup guide</a> for the current distinction between local clients and hosted ChatGPT tools.</p>
+<p>The HTTP endpoint accepts <code>POST /mcp</code> with <code>Authorization: Bearer TOKEN</code>. It is stateless, negotiates the MCP <code>2025-03-26</code> protocol profile, returns JSON responses, accepts individual messages or batches of at most 100 messages, and returns <code>405</code> for the optional GET event stream. It rejects unknown browser origins unless they were explicitly allowlisted with <code>server mcp enable --allow-origin ORIGIN --apply</code> and caps request bodies at 2 MB. These transport choices follow the <a href="https://modelcontextprotocol.io/specification/2025-03-26/basic/transports">official MCP Streamable HTTP contract</a>. It does not expose the three write tools available through trusted stdio. Create a separate token per client so access can be revoked independently:</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 server token list
+org2 server token revoke --id TOKEN_ID
+org2 server token revoke --id TOKEN_ID --apply</code></pre>
+</section>
+<section class="org2-headline level-1">
 <h1 id="what-the-server-exposes">What the server exposes</h1>
 <table>
 <thead>
 <tr><th>MCP capability</th><th>Current Org2 surface</th></tr>
 </thead>
 <tbody>
-<tr><td>Resources</td><td>Every ordinary <code>.org</code> and <code>.org2</code> file beneath the selected corpus, addressed as <code>org2://corpus/PATH</code></td></tr>
+<tr><td>Resources</td><td>Every canonical, non-hidden, non-archived <code>.org</code> and <code>.org2</code> file beneath the selected corpus, addressed as <code>org2://corpus/PATH</code></td></tr>
 <tr><td>Prompts</td><td>Authored Org2 workflows, including their declared inputs</td></tr>
-<tr><td>Tools</td><td>Five typed coordination and durable-work operations listed below</td></tr>
+<tr><td>Tools</td><td>Three cited retrieval tools plus five coordination and durable-work operations; remote HTTP exposes only the five read-only tools</td></tr>
 </tbody>
 </table>
 <p>The current tools are:</p>
 <ul>
+<li><p><code>org2_search</code>: rank bounded matches and return canonical file, source-range, and citation metadata.</p></li>
+<li><p><code>org2_fetch</code>: retrieve one note or heading by stable <code>ID</code> with bounded source and optional backlinks or neighbors.</p></li>
+<li><p><code>org2_context</code>: assemble bounded, cited context for a question without calling a model.</p></li>
 <li><p><code>org2_agent_profile_resolve</code>: resolve a runtime identity to a portable agent profile and primary goal.</p></li>
 <li><p><code>org2_run_create</code>: instantiate a reusable workflow as a durable run.</p></li>
 <li><p><code>org2_run_transition</code>: move a run through its lifecycle; completion requires a reviewer-facing summary.</p></li>
 <li><p><code>org2_run_list</code>: inspect durable runs and review state.</p></li>
 <li><p><code>org2_thread_post</code>: post an attributed, idempotent background update to an existing AI chat without starting a model turn.</p></li>
 </ul>
-<p>The server is deliberately <strong>not</strong> a complete mirror of the CLI yet. Search, bounded context assembly, Agenda, TODO mutation, publishing, lint, graph checks, and most other commands remain CLI operations. Use the general skill below so an agent knows when to leave MCP and call CLI JSON.</p>
+<p>The read-only retrieval tools share the same incremental compiler and cited context substrate as <code>org2 agent search|fetch|context</code>. Result counts and context characters are capped by their schemas. Resource listing is paginated in stable lexical order, and resource reads include a SHA-256 revision plus line count. The server is still not a complete mirror of the CLI: Agenda, TODO mutation, publishing, lint, graph checks, and other specialized commands remain CLI operations. Use the general skill below so an agent knows when to leave MCP and call CLI JSON.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="corpus-and-safety-boundaries">Corpus and safety boundaries</h1>
 <ul>
 <li><p><code>--dir</code> selects the only corpus exposed by that server process.</p></li>
-<li><p>Resource reads stay beneath the canonical corpus root, reject symlinked files, and expose only <code>.org</code> and <code>.org2</code> source.</p></li>
+<li><p>Resource reads stay beneath the canonical corpus root, reject symlinked files, hidden runtime state, archives, and ignored sync artifacts, and expose only canonical <code>.org</code> and <code>.org2</code> source.</p></li>
 <li><p>Workflow prompts and resource listing are read-only.</p></li>
-<li><p>Run creation, run transition, and thread posting are writes. They use the same guarded Org2 records and lifecycle rules as the CLI, but the MCP call itself is the requested action; there is no second <code>--apply</code> preview inside those tools.</p></li>
+<li><p>The headless HTTP endpoint exposes only <code>org2_search</code>, <code>org2_fetch</code>, <code>org2_context</code>, <code>org2_agent_profile_resolve</code>, and <code>org2_run_list</code>. Every HTTP token currently has only the <code>corpus:read</code> scope.</p></li>
+<li><p>Trusted stdio additionally exposes run creation, run transition, and thread posting. Those are writes. They use the same guarded Org2 records and lifecycle rules as the CLI, but the MCP call itself is the requested action; there is no second <code>--apply</code> preview inside those tools.</p></li>
 <li><p>Credentials are not read from corpus files or returned as MCP resources. Keep client secrets in the client environment or its credential store.</p></li>
 </ul>
-<p>Only enable write tools for agents you trust to act within that corpus. If a client supports per-tool approval, require confirmation for the three mutating tools.</p>
+<p>Only enable stdio write tools for agents you trust to act within that corpus. If a client supports per-tool approval, require confirmation for the three mutating tools. Retrieval and coordination tools carry MCP <code>readOnlyHint</code> annotations so compatible clients can apply an appropriate approval policy.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="quick-protocol-check">Quick protocol check</h1>
@@ -146,7 +167,7 @@ claude mcp get org2</code></pre>
   '{&quot;jsonrpc&quot;:&quot;2.0&quot;,&quot;method&quot;:&quot;notifications/initialized&quot;,&quot;params&quot;:{}}' \
   '{&quot;jsonrpc&quot;:&quot;2.0&quot;,&quot;id&quot;:2,&quot;method&quot;:&quot;resources/list&quot;,&quot;params&quot;:{}}' \
   | org2 mcp serve --dir /absolute/path/to/notes</code></pre>
-<p>You should receive an initialize result and a sorted <code>resources</code> array. A client connection test should additionally show five tools and the corpus's workflow prompts.</p>
+<p>You should receive an initialize result and the first sorted <code>resources</code> page. A trusted stdio client connection test should additionally show eight tools and the corpus's workflow prompts; the read-only HTTP endpoint shows five tools.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="install-the-general-org2-skill">Install the general Org2 skill</h1>

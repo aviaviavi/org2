@@ -70,7 +70,7 @@ You do not need to design a metaharness on day one. Use this order:
 
 Back up the corpus like any important folder, and keep tokens, runtime credentials, machine paths, and scheduler job IDs outside its files.
 
-For a client connecting outside OpenOrg, use [[file:mcp-and-skills.org][MCP and agent skills]] to configure the stdio server or install the general Org2 skill. New OpenOrg starter workspaces already include that skill for external agents. OpenOrg itself supplies the equivalent core guidance ambiently in every AI chat rather than exposing a separate =/org2= command.
+For a client connecting outside OpenOrg, use [[file:mcp-and-skills.org][MCP and agent skills]] to configure the local stdio server, connect to a headless server's read-only Streamable HTTP endpoint, or install the general Org2 skill. New OpenOrg starter workspaces already include that skill for external agents. OpenOrg itself supplies the equivalent core guidance ambiently in every AI chat rather than exposing a separate =/org2= command.
 
 ** One queue for decisions that need you
 
@@ -174,7 +174,7 @@ Use =Command-K= to quickly open any file or heading. Global search finds text, t
 
 When two ideas belong together, add a link. Org2 keeps source locations and backlinks, so a person, project, meeting, or decision stays connected to the work that came from it.
 
-OpenOrg's agent connection is provider-neutral. Other local, remote, hosted, or self-hosted tools can work with the same corpus through CLI JSON and MCP interfaces; Codex, Claude Code, and OpenClaw are convenient built-in starting points, not requirements.
+OpenOrg's agent connection is provider-neutral. Other local, remote, hosted, or self-hosted tools can work with the same corpus through CLI JSON and MCP interfaces: local stdio MCP or the headless server's read-only Streamable HTTP MCP endpoint. Codex, Claude Code, and OpenClaw are convenient built-in starting points, not requirements. A hosted service still needs a reachable authenticated HTTPS path to the private endpoint.
 
 Do not try to design the perfect folder structure on day one. A few notes plus daily capture are enough; reorganize later as useful patterns emerge.
 

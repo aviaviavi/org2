@@ -10,11 +10,27 @@ import { parseArgs } from "node:util";
 import { assignAutomationHost } from "./automationHost.js";
 import { corpusIdentityStatus } from "./corpusIdentity.js";
 import { guardedWriteFile, readGuardedFile } from "./guardedFile.js";
+import { mcpAccessTokenHash, startMcpHttpServer, type McpHttpServerHandle } from "./mcpHttp.js";
 import { safeIdentifier } from "./safeIdentifier.js";
 
 interface ServerDestination {
   id: string; name: string; mention: string; adapter: string; endpoint: string;
   agentID: string; workspaceRoot: string; isEnabled: boolean;
+}
+
+export interface ServerMcpAccessToken {
+  id: string;
+  name: string;
+  tokenHash: string;
+  scopes: ["corpus:read"];
+  createdAt: string;
+}
+
+export interface ServerMcpConfiguration {
+  enabled: boolean;
+  port: number;
+  allowedOrigins: string[];
+  accessTokens: ServerMcpAccessToken[];
 }
 
 export interface ServerConfiguration {
@@ -30,6 +46,7 @@ export interface ServerConfiguration {
   destinations: ServerDestination[];
   schedulesEnabled: boolean;
   localAgentFilesystemAccess: "readOnly" | "workspaceWrite" | "fullAccess";
+  mcp: ServerMcpConfiguration;
 }
 
 function localAgentFilesystemAccess(value: unknown): ServerConfiguration["localAgentFilesystemAccess"] {
@@ -52,8 +69,12 @@ function localAgentFilesystemAccess(value: unknown): ServerConfiguration["localA
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const help = `OpenOrg headless server (macOS 14 or later)
 
-  org2 server init --dir CORPUS --host-ref HOST --bind TAILSCALE_IP [--name NAME] [--destination codex|claude|openclaw] [--filesystem-access read-only|workspace-write|full-access] [--apply]
+  org2 server init --dir CORPUS --host-ref HOST --bind TAILSCALE_IP [--name NAME] [--destination codex|claude|openclaw] [--filesystem-access read-only|workspace-write|full-access] [--mcp-port PORT] [--apply]
   org2 server permissions --filesystem-access read-only|workspace-write|full-access [--config FILE] [--apply]
+  org2 server token create --name NAME [--config FILE] [--apply]
+  org2 server token list [--config FILE]
+  org2 server token revoke --id ID [--config FILE] [--apply]
+  org2 server mcp enable|disable [--mcp-port PORT] [--allow-origin ORIGIN ...] [--config FILE] [--apply]
   org2 server start [--config FILE]
   org2 server status|pair|stop [--config FILE]
   org2 server revoke --device-id ID [--config FILE]
@@ -67,10 +88,82 @@ start runs in the foreground; service installs a launchd agent that runs at logi
 and restarts after failures. pair issues a one-use code valid for ten minutes.
 permissions previews or updates the local-agent filesystem policy; restart the server
 after applying it. Full access disables interactive approval prompts for local agents.
+Creating a token enables a read-only Streamable HTTP MCP endpoint and prints the
+credential once. Only token hashes are stored. Token, MCP, and permission changes
+require a restart. Browser origins are rejected unless explicitly allowed.
 The private control socket permits only this OS user; the relay binds only to Tailscale.
 Build the native worker with npm run build:server before starting from a checkout.
 Use --config for separate hosts. --executable PATH overrides the native worker at init.
 `;
+
+function defaultMcpPort(relayPort: number): number {
+  return relayPort < 65_535 ? relayPort + 1 : relayPort - 1;
+}
+
+function normalizedOrigins(value: unknown): string[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
+    throw new Error("MCP allowedOrigins must be an array of URL origins");
+  }
+  return Array.from(new Set(value.map((item) => {
+    const parsed = new URL(item);
+    if (!/^https?:$/.test(parsed.protocol) || parsed.origin !== item || parsed.username || parsed.password) {
+      throw new Error(`Invalid MCP allowed origin: ${item}`);
+    }
+    return parsed.origin;
+  }))).sort();
+}
+
+function serverMcpConfiguration(value: unknown, relayPort: number): ServerMcpConfiguration {
+  if (value === undefined || value === null) {
+    return { enabled: false, port: defaultMcpPort(relayPort), allowedOrigins: [], accessTokens: [] };
+  }
+  if (typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid MCP server configuration");
+  const raw = value as Partial<ServerMcpConfiguration>;
+  if (typeof raw.enabled !== "boolean") throw new Error("MCP enabled must be a boolean");
+  if (!Number.isInteger(raw.port) || Number(raw.port) < 1 || Number(raw.port) > 65_535 || raw.port === relayPort) {
+    throw new Error("MCP port must be a valid port different from the Mobile Remote port");
+  }
+  if (!Array.isArray(raw.accessTokens)) throw new Error("MCP accessTokens must be an array");
+  const ids = new Set<string>();
+  const accessTokens = raw.accessTokens.map((rawToken, index): ServerMcpAccessToken => {
+    const label = `MCP access token ${index + 1}`;
+    if (!rawToken || typeof rawToken !== "object") throw new Error(`${label} must be an object`);
+    const token = rawToken as Partial<ServerMcpAccessToken>;
+    const id = safeIdentifier(String(token.id || ""), { label: `${label} id` });
+    if (ids.has(id)) throw new Error(`Duplicate MCP access token id: ${id}`);
+    ids.add(id);
+    if (typeof token.name !== "string" || !token.name.trim() || token.name.length > 120) {
+      throw new Error(`${label} name must contain 1-120 characters`);
+    }
+    if (typeof token.tokenHash !== "string" || !/^[a-f0-9]{64}$/.test(token.tokenHash)) {
+      throw new Error(`${label} must contain a SHA-256 token hash`);
+    }
+    if (!Array.isArray(token.scopes) || token.scopes.length !== 1 || token.scopes[0] !== "corpus:read") {
+      throw new Error(`${label} must have only the corpus:read scope`);
+    }
+    if (typeof token.createdAt !== "string" || !Number.isFinite(Date.parse(token.createdAt))) {
+      throw new Error(`${label} createdAt must be an ISO timestamp`);
+    }
+    return { id, name: token.name.trim(), tokenHash: token.tokenHash, scopes: ["corpus:read"], createdAt: token.createdAt };
+  });
+  if (raw.enabled && accessTokens.length === 0) throw new Error("Enable MCP only after creating a read-only access token");
+  return {
+    enabled: raw.enabled,
+    port: Number(raw.port),
+    allowedOrigins: normalizedOrigins(raw.allowedOrigins),
+    accessTokens,
+  };
+}
+
+function publicMcpConfiguration(config: ServerConfiguration): Record<string, unknown> {
+  return {
+    enabled: config.mcp.enabled,
+    endpoint: `http://${config.bindHost}:${config.mcp.port}/mcp`,
+    allowedOrigins: config.mcp.allowedOrigins,
+    tokens: config.mcp.accessTokens.map(({ id, name, scopes, createdAt }) => ({ id, name, scopes, createdAt })),
+  };
+}
 
 function existingRealPath(file: string): string {
   if (fs.existsSync(file)) return fs.realpathSync(file);
@@ -94,6 +187,7 @@ export function validateServerConfiguration(value: unknown, configFile: string):
     throw new Error("--bind must be this host's Tailscale IPv4 address");
   }
   if (!Number.isInteger(config.port) || config.port < 1 || config.port > 65535) throw new Error("Invalid server port");
+  const mcp = serverMcpConfiguration(config.mcp, config.port);
   for (const key of ["corpusRoot", "repoRoot", "nodePath", "executable"] as const) {
     if (typeof config[key] !== "string" || !path.isAbsolute(config[key])) throw new Error(`${key} must be an absolute path`);
   }
@@ -121,7 +215,7 @@ export function validateServerConfiguration(value: unknown, configFile: string):
       throw new Error("Credentials must stay in the runtime's login store or Keychain");
     }
   }
-  return { ...config, localAgentFilesystemAccess: filesystemAccess };
+  return { ...config, localAgentFilesystemAccess: filesystemAccess, mcp };
 }
 
 function socketPath(configFile: string): string {
@@ -163,10 +257,11 @@ async function serve(configFile: string, config: ServerConfiguration): Promise<v
       fs.unlinkSync(socket);
     }
   }
-  const pending = new Map<string, { client: net.Socket; timer: NodeJS.Timeout }>();
+  const pending = new Map<string, { client: net.Socket; timer: NodeJS.Timeout; command: string }>();
   const clients = new Set<net.Socket>();
   let stopping = false;
   let child: ReturnType<typeof spawn> | undefined;
+  let mcpServer: McpHttpServerHandle | undefined;
   const server = net.createServer((client) => {
     clients.add(client);
     client.on("close", () => clients.delete(client));
@@ -184,7 +279,7 @@ async function serve(configFile: string, config: ServerConfiguration): Promise<v
         if (!child?.stdin?.writable) throw new Error("Server worker is starting or unavailable");
         const id = crypto.randomUUID();
         const timer = setTimeout(() => { pending.delete(id); client.end('{"error":"Worker timed out"}\n'); }, 30_000);
-        pending.set(id, { client, timer });
+        pending.set(id, { client, timer, command: request.command });
         child.stdin.write(`${JSON.stringify({ ...request, id })}\n`);
       } catch (error) { client.end(`${JSON.stringify({ error: (error as Error).message })}\n`); }
     });
@@ -200,17 +295,29 @@ async function serve(configFile: string, config: ServerConfiguration): Promise<v
   process.on("SIGTERM", stop);
   process.on("SIGINT", stop);
   try {
+    if (config.mcp.enabled) {
+      mcpServer = await startMcpHttpServer({
+        root: config.corpusRoot,
+        host: config.bindHost,
+        port: config.mcp.port,
+        accessTokens: config.mcp.accessTokens,
+        allowedOrigins: config.mcp.allowedOrigins,
+      });
+    }
     child = spawn(config.executable, ["--config", configFile], { stdio: ["pipe", "pipe", "inherit"] });
     const lines = readline.createInterface({ input: child.stdout! });
     lines.on("line", (line) => {
       try {
         const event = JSON.parse(line);
-        if (event.event === "ready") process.stdout.write(`${JSON.stringify(event)}\n`);
+        if (event.event === "ready") {
+          process.stdout.write(`${JSON.stringify({ ...event, ...(mcpServer ? { mcpEndpoint: mcpServer.endpoint } : {}) })}\n`);
+        }
         const request = pending.get(event.id);
         if (request) {
           clearTimeout(request.timer);
           pending.delete(event.id);
           if (event.result?.stopped === true) event.result.supervisorPID = process.pid;
+          if (request.command === "status") event.result.mcp = publicMcpConfiguration(config);
           request.client.end(`${JSON.stringify(event.result)}\n`);
         }
       } catch { /* Native diagnostics are not control replies. */ }
@@ -225,6 +332,7 @@ async function serve(configFile: string, config: ServerConfiguration): Promise<v
     process.removeListener("SIGINT", stop);
     for (const { client, timer } of pending.values()) { clearTimeout(timer); client.destroy(); }
     for (const client of clients) client.destroy();
+    await mcpServer?.close();
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 }
@@ -255,6 +363,7 @@ export async function runServerCommand(args: string[]): Promise<void> {
     config: { type: "string" }, dir: { type: "string" }, "host-ref": { type: "string" },
     bind: { type: "string" }, name: { type: "string" }, port: { type: "string" },
     executable: { type: "string" }, destination: { type: "string" }, "device-id": { type: "string" },
+    id: { type: "string" }, "mcp-port": { type: "string" }, "allow-origin": { type: "string", multiple: true },
     "filesystem-access": { type: "string" },
     "team-id": { type: "string" }, "key-id": { type: "string" }, "key-file": { type: "string" },
     apply: { type: "boolean" }, json: { type: "boolean" }, help: { type: "boolean" },
@@ -272,13 +381,20 @@ export async function runServerCommand(args: string[]): Promise<void> {
     if (!values.dir || !values["host-ref"] || !values.bind) throw new Error("init requires --dir, --host-ref, and --bind");
     const destination = values.destination || "codex";
     if (!["codex", "claude", "openclaw"].includes(destination)) throw new Error("Choose codex, claude, or openclaw");
+    const relayPort = Number(values.port || 48922);
     const config = validateServerConfiguration({
       schema: "org2:server-config:v1", hostRef: values["host-ref"], name: values.name || `OpenOrg on ${values["host-ref"]}`,
-      corpusRoot: fs.realpathSync(path.resolve(values.dir)), bindHost: values.bind, port: Number(values.port || 48922),
+      corpusRoot: fs.realpathSync(path.resolve(values.dir)), bindHost: values.bind, port: relayPort,
       repoRoot: packageRoot, nodePath: process.execPath,
       executable: path.resolve(values.executable || path.join(packageRoot, "apps/macos/Org2Workspace/.build/debug/OpenOrgServer")),
       schedulesEnabled: true,
       localAgentFilesystemAccess: localAgentFilesystemAccess(values["filesystem-access"]),
+      mcp: {
+        enabled: false,
+        port: Number(values["mcp-port"] || defaultMcpPort(relayPort)),
+        allowedOrigins: values["allow-origin"] || [],
+        accessTokens: [],
+      },
       destinations: [{ id: `builtin.${destination}`, name: destination === "codex" ? "Codex" : destination === "claude" ? "Claude Code" : "OpenClaw",
         mention: destination, adapter: destination === "codex" ? "codexLocal" : destination === "claude" ? "claudeLocal" : "openClaw",
         endpoint: "", agentID: "", workspaceRoot: "", isEnabled: true }],
@@ -311,6 +427,77 @@ export async function runServerCommand(args: string[]): Promise<void> {
       filesystemAccess,
       restartRequired: !!values.apply && filesystemAccess !== current.localAgentFilesystemAccess,
     });
+    return;
+  }
+  if (command === "token") {
+    const action = positionals[1];
+    const snapshot = readGuardedFile(configFile);
+    const current = validateServerConfiguration(JSON.parse(snapshot.content), configFile);
+    if (action === "list") {
+      print({ configFile, mcp: publicMcpConfiguration(current) });
+      return;
+    }
+    if (action === "create") {
+      if (!values.name?.trim()) throw new Error("token create requires --name");
+      if (values.name.length > 120) throw new Error("Token name must contain 1-120 characters");
+      if (current.mcp.accessTokens.some((token) => token.name.toLowerCase() === values.name!.trim().toLowerCase())) {
+        throw new Error(`An MCP access token named ${values.name.trim()} already exists`);
+      }
+      if (!values.apply) {
+        print({ applied: false, configFile, name: values.name.trim(), scopes: ["corpus:read"], enablesMcp: !current.mcp.enabled, restartRequired: false });
+        return;
+      }
+      const accessToken = `org2_${crypto.randomBytes(32).toString("base64url")}`;
+      const token: ServerMcpAccessToken = {
+        id: `token-${crypto.randomBytes(8).toString("hex")}`,
+        name: values.name.trim(),
+        tokenHash: mcpAccessTokenHash(accessToken),
+        scopes: ["corpus:read"],
+        createdAt: new Date().toISOString(),
+      };
+      const config = validateServerConfiguration({
+        ...current,
+        mcp: { ...current.mcp, enabled: true, accessTokens: [...current.mcp.accessTokens, token] },
+      }, configFile);
+      guardedWriteFile(configFile, `${JSON.stringify(config, null, 2)}\n`, { expectedRevision: snapshot.revision, preserveMode: true });
+      print({ applied: true, configFile, token: { id: token.id, name: token.name, scopes: token.scopes, createdAt: token.createdAt }, accessToken, endpoint: publicMcpConfiguration(config).endpoint, restartRequired: true, warning: "Store this token now; OpenOrg retains only its SHA-256 hash." });
+      return;
+    }
+    if (action === "revoke") {
+      if (!values.id) throw new Error("token revoke requires --id");
+      const token = current.mcp.accessTokens.find((item) => item.id === values.id);
+      if (!token) throw new Error(`MCP access token not found: ${values.id}`);
+      const remaining = current.mcp.accessTokens.filter((item) => item.id !== token.id);
+      const config = validateServerConfiguration({
+        ...current,
+        mcp: { ...current.mcp, enabled: remaining.length > 0 && current.mcp.enabled, accessTokens: remaining },
+      }, configFile);
+      if (values.apply) {
+        guardedWriteFile(configFile, `${JSON.stringify(config, null, 2)}\n`, { expectedRevision: snapshot.revision, preserveMode: true });
+      }
+      print({ applied: !!values.apply, configFile, revoked: { id: token.id, name: token.name }, disablesMcp: remaining.length === 0, restartRequired: !!values.apply });
+      return;
+    }
+    throw new Error("token requires create, list, or revoke");
+  }
+  if (command === "mcp") {
+    const action = positionals[1];
+    if (!["enable", "disable"].includes(action || "")) throw new Error("mcp requires enable or disable");
+    const snapshot = readGuardedFile(configFile);
+    const current = validateServerConfiguration(JSON.parse(snapshot.content), configFile);
+    const enabled = action === "enable";
+    if (enabled && current.mcp.accessTokens.length === 0) throw new Error("Create a read-only MCP access token before enabling the endpoint");
+    const mcp = {
+      ...current.mcp,
+      enabled,
+      port: values["mcp-port"] === undefined ? current.mcp.port : Number(values["mcp-port"]),
+      allowedOrigins: values["allow-origin"] === undefined ? current.mcp.allowedOrigins : values["allow-origin"],
+    };
+    const config = validateServerConfiguration({ ...current, mcp }, configFile);
+    if (values.apply) {
+      guardedWriteFile(configFile, `${JSON.stringify(config, null, 2)}\n`, { expectedRevision: snapshot.revision, preserveMode: true });
+    }
+    print({ applied: !!values.apply, configFile, mcp: publicMcpConfiguration(config), restartRequired: !!values.apply });
     return;
   }
   const config = validateServerConfiguration(JSON.parse(fs.readFileSync(configFile, "utf8")), configFile);

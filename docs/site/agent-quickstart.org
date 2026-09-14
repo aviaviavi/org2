@@ -82,9 +82,9 @@ Run-linked approval headings are projections, not additional decisions. When =OR
 - *Teach and replay a fuller process*: =workflow save/run/triggers/signal/gate/package= converts a completed run into a versioned recipe with inputs, capabilities, outputs, checks, approval boundaries, and event/fresh-work gates. Triggered executions share a stable logical-work identity while each scheduled occurrence has its own numbered attempt.
 - *Scale recurring account work*: =ledger create/update/event/list/show/resolve= stores one guarded canonical account per file under =notes/LEDGER/accounts/= with stable identity keys and idempotent history. Resolve all known names, emails, domains, and source IDs before creating an account. Approval events link the canonical run decision, sent outreach requires an external receipt, and =ledger list --eligible= excludes pending or not-yet-executed approved work plus recently contacted accounts.
 - *Review and evaluate*: =doctor --dir CORPUS --json= audits contradictory run, approval, recurring-attempt, and linked-heading state without writing; =review list/show= unifies pending run approvals, review-required artifacts, clarifications, and failed checks; =eval run/fixture= checks observable outcomes and creates sanitized regression fixtures.
-- *Keep a host available*: =org2 server= runs the existing chat relay and scheduler without a desktop window on macOS. Pair iOS over Tailscale, and use preview-first =server assign --host-ref HOST= to choose one corpus scheduler owner. See [[file:headless-server.org][Headless server setup]].
+- *Keep a host available*: =org2 server= runs the existing chat relay and scheduler without a desktop window on macOS. It can also expose a bearer-authenticated, read-only Streamable HTTP MCP endpoint with bounded cited corpus retrieval. Pair iOS over Tailscale, create one hash-only MCP token per external client, and use preview-first =server assign --host-ref HOST= to choose one corpus scheduler owner. See [[file:headless-server.org][Headless server setup]].
 
-- *Use portable tools and models*: =runtime select= resolves capability/privacy policies, =mcp serve= exposes corpus resources and run tools, and =mcp snapshot= preserves external results with provenance.
+- *Use portable tools and models*: =runtime select= resolves capability/privacy policies, =mcp serve= exposes cited search, stable-ID fetch, bounded context, corpus resources, and run tools, and =mcp snapshot= preserves external results with provenance.
 - *Plan and act*: =agenda=, =todo=, =approvals=, =plan=, and =clock=.
 - *Batch agent-state reads*: =org2 workspace agent-state --dir CORPUS --json= returns the normal run, workflow, goal, and agent-profile list envelopes in one process. Each section has its own value or error and elapsed time.
 - *Read across identified corpora*: =workspace agenda= and =workspace search= combine canonical per-corpus JSON results without creating a merged database or a workspace-wide write target.
@@ -101,7 +101,7 @@ Run-linked approval headings are projections, not additional decisions. When =OR
 
 See [[file:tooling-reference.org][Tooling reference]] for commands, [[file:language-reference.org][Language reference]] for syntax, [[file:corpus-flow.org][Corpus flow]] for artifact zones and trust boundaries, and [[file:features.org][Features]] for how the pieces fit together.
 
-For an MCP-capable or skill-aware client, continue to [[file:mcp-and-skills.org][MCP and agent skills]]. That page documents the exact five-tool server surface, common stdio client setup, the packaged general Org2 skill, and the boundary where an agent should fall back to bounded CLI JSON.
+For an MCP-capable or skill-aware client, continue to [[file:mcp-and-skills.org][MCP and agent skills]]. That page documents the exact eight-tool stdio and five-tool read-only HTTP surfaces, common client setup, the packaged general Org2 skill, and the boundary where an agent should fall back to bounded CLI JSON.
 
 * Native OpenClaw lifecycle bridge
 

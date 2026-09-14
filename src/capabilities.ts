@@ -29,7 +29,7 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
       "Run `org2 version` or `org2 --version` to inspect the installed package version.",
       "Prefer JSON output for integrations (`--format json` or `--json` where supported).",
       "Use `org2 agent context|search|fetch|bundle` for bounded, cited corpus retrieval.",
-      "Use `org2 run --help` for durable delegated work, `org2 workflow` for reusable recipes, and `org2 mcp serve` for MCP discovery.",
+      "Use `org2 run --help` for durable delegated work, `org2 workflow` for reusable recipes, and `org2 mcp serve` for local MCP discovery. A headless OpenOrg server can expose the same retrieval tools through read-only Streamable HTTP MCP.",
       "Use `org2 workflow create` for a plain prompt automation, `org2 workflow due` for destination-neutral schedule checks, and preview-first `org2 workflow delete` to remove a definition without erasing run history; OpenOrg can dispatch due attempts to any configured AI destination.",
       "Use `org2 goal` for durable outcomes and `org2 agent-profile` for portable named workers plus runtime bindings; resolve a runtime agent ID before creating delegated work.",
       "Use read-only `org2 doctor --dir CORPUS --json` to find contradictory run, approval, workflow-attempt, and projected headline state before an agent acts.",
@@ -56,7 +56,7 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
       "A `run approval-decide --decision revised` request must include `--note \"Requested changes\"`; revision feedback is stored as the decision note and does not authorize the protected action.",
       "Approval decisions are item-scoped: rejecting or canceling one action leaves sibling approvals pending, and the run resumes only after the current boundary is fully decided, executing approved actions while excluding rejected or canceled ones. A client recording that one approval was completed elsewhere must cancel only that approval with an external receipt; it must not complete the containing run. Use `revised` with a concrete note when replacement material is required.",
       "Scheduled workflow runs use a stable logicalWorkId plus distinct numbered attempt records. A schedule with an event/fresh-path gate is skipped until `workflow signal` records matching work after the prior attempt.",
-      "Use `org2 server` for a standalone macOS relay and scheduler. Server configuration is machine-local; `server assign --host-ref HOST` writes only a symbolic automation owner to org2.json. iOS selects one paired host at a time; independently synced corpus copies are not a distributed lock.",
+      "Use `org2 server` for a standalone macOS relay, scheduler, and optional read-only Streamable HTTP MCP endpoint. Server configuration and MCP token hashes are machine-local; plaintext access tokens are shown once and must never enter the corpus. `server assign --host-ref HOST` writes only a symbolic automation owner to org2.json. iOS selects one paired host at a time; independently synced corpus copies are not a distributed lock.",
       "The OpenOrg scheduler catches up only the latest missed occurrence and refuses overlapping queued, running, blocked, or approval-waiting attempts. An unavailable explicit AI destination fails visibly; it must never silently reroute the prompt.",
       "Deleting a workflow is preview-first and removes only its canonical definition; preserve prior runs and never imply that deleting the definition cancels work already dispatched to a runtime.",
       "A run with a review-required artifact cannot be completed normally; after the human decision, use `org2 run artifact-review RUN_ID ARTIFACT_ID --status reviewed|rejected --actor NAME` to update both the durable run and linked Org artifact before completion.",
@@ -112,8 +112,8 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
       },
       {
         id: "headless-server",
-        purpose: "Host the OpenOrg chat relay and automation scheduler without a desktop window on macOS, pair iOS over Tailscale, and assign one explicit scheduler owner per corpus.",
-        commands: ["org2 server init", "org2 server start", "org2 server status", "org2 server pair", "org2 server permissions", "org2 server assign", "org2 server service", "org2 server stop", "org2 server revoke", "org2 server push-config"],
+        purpose: "Host the OpenOrg chat relay, automation scheduler, and an optional bearer-authenticated read-only Streamable HTTP MCP endpoint without a desktop window on macOS.",
+        commands: ["org2 server init", "org2 server start", "org2 server status", "org2 server pair", "org2 server permissions", "org2 server token", "org2 server mcp", "org2 server assign", "org2 server service", "org2 server stop", "org2 server revoke", "org2 server push-config"],
         writes: "mixed",
       },
       {
@@ -142,7 +142,7 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
       },
       {
         id: "portable-runtime",
-        purpose: "Track artifact dependencies, select eligible model runtimes by capability policy, and expose or snapshot MCP integrations.",
+        purpose: "Track artifact dependencies, select eligible model runtimes by capability policy, expose bounded corpus search, fetch, and context through MCP, or snapshot external MCP integrations.",
         commands: ["org2 artifact", "org2 runtime", "org2 mcp", "org2 skill install"],
         writes: "mixed",
       },
