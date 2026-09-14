@@ -1159,6 +1159,41 @@ private struct WorkspaceNavigationSnapshot: Hashable {
 private struct WorkspaceTabState {
   let navigation: WorkspaceNavigationSnapshot
   let backStack: [WorkspaceNavigationSnapshot]
+  let surface: WorkspaceTabSurfaceState
+  let documentViewportSourceLines: [String: Int]
+  let documentSlidePageIndexes: [String: Int]
+  let openClawChatScrollPositionsByThreadID: [UUID: Double]
+  let openClawAssistantChatScrollPositionsByThreadID: [UUID: Double]
+}
+
+private struct WorkspaceTabSurfaceState {
+  let agendaFilter: String
+  let agendaDateFilter: AgendaDateFilter
+  let agendaAssigneeFilter: String
+  let agendaStatusFilter: String
+  let agendaPriorityFilter: String
+  let agendaTopicFilter: String
+  let agendaReadScope: WorkspaceReadScope
+  let bulkSelectedAgendaItemIDs: Set<String>
+  let approvalFilter: String
+  let selectedApprovalItemIDsForAIContext: Set<ApprovalItem.ID>
+  let bulkSelectedApprovalItemIDs: Set<ApprovalItem.ID>
+  let agentRunFilter: String
+  let agentRunSelectionScope: AgentRunScope
+  let selectedAgentRunIDsForAIContext: Set<AgentRunItem.ID>
+  let corpusFileFilter: String
+  let selectedCorpusFileIDsForAIContext: Set<CorpusFile.ID>
+  let searchMode: WorkspaceSearchMode
+  let searchReadScope: WorkspaceReadScope
+  let searchQuery: String
+  let searchResults: [SearchResult]
+  let openClawChatSearchResults: [OpenClawChatSearchResult]
+  let workspaceFileSearchResults: [CorpusFile]
+  let workspacePageSearchResults: [OrgRoamNodeReference]
+  let workspaceAgentWorkSearchResults: [WorkspaceAgentWorkSearchResult]
+  let searchNodes: [OrgRoamNodeReference]
+  let externalThreadSearchQuery: String
+  let selectedExternalThreadDetail: ExternalThreadDetail?
 }
 
 private struct OpenClawContextPointer: Equatable, Sendable {
@@ -8630,6 +8665,24 @@ public final class WorkspaceStore {
     updateApprovalBulkSelectionStatusText()
   }
 
+  public func moveApprovalSelection(by delta: Int) {
+    let items = visibleApprovalItems
+    guard !items.isEmpty else {
+      statusText = "No visible approvals"
+      return
+    }
+    let currentIndex = selectedApprovalItemID.flatMap { selectedID in
+      items.firstIndex(where: { $0.id == selectedID })
+    }
+    let targetIndex: Int
+    if let currentIndex {
+      targetIndex = min(max(0, currentIndex + delta), items.count - 1)
+    } else {
+      targetIndex = delta < 0 ? items.count - 1 : 0
+    }
+    handleApprovalItemClick(items[targetIndex])
+  }
+
   public func clearApprovalBulkSelection() {
     guard !bulkSelectedApprovalItemIDs.isEmpty else { return }
     bulkSelectedApprovalItemIDs = []
@@ -11493,7 +11546,12 @@ public final class WorkspaceStore {
     }
     workspaceTabStates[selectedWorkspaceTabID] = WorkspaceTabState(
       navigation: currentWorkspaceNavigationSnapshot(),
-      backStack: workspaceNavigationBackStack
+      backStack: workspaceNavigationBackStack,
+      surface: currentWorkspaceTabSurfaceState(),
+      documentViewportSourceLines: documentViewportSourceLines,
+      documentSlidePageIndexes: documentSlidePageIndexes,
+      openClawChatScrollPositionsByThreadID: openClawChatScrollPositionsByThreadID,
+      openClawAssistantChatScrollPositionsByThreadID: openClawAssistantChatScrollPositionsByThreadID
     )
   }
 
@@ -11505,6 +11563,13 @@ public final class WorkspaceStore {
     // in-flight loads, and view-local state cannot leak into the next tab.
     clearDetailForNavigation()
     selectedWorkspaceTabID = tabID
+    restoreWorkspaceTabSurfaceState(state.surface)
+    documentViewportSourceLines = state.documentViewportSourceLines
+    documentSlidePageIndexes = state.documentSlidePageIndexes
+    openClawChatScrollPositionsByThreadID = state.openClawChatScrollPositionsByThreadID
+    openClawAssistantChatScrollPositionsByThreadID = state.openClawAssistantChatScrollPositionsByThreadID
+    defaults.set(documentViewportSourceLines, forKey: documentViewportSourceLinesKey)
+    defaults.set(documentSlidePageIndexes, forKey: documentSlidePageIndexesKey)
     workspaceNavigationBackStack = state.backStack
     restoreWorkspaceNavigationSnapshot(state.navigation)
   }
@@ -11549,8 +11614,113 @@ public final class WorkspaceStore {
         selectedExternalThreadID: nil,
         selectedWorkspaceSkillID: nil
       ),
-      backStack: []
+      backStack: [],
+      surface: initialWorkspaceTabSurfaceState(),
+      documentViewportSourceLines: documentViewportSourceLines,
+      documentSlidePageIndexes: documentSlidePageIndexes,
+      openClawChatScrollPositionsByThreadID: openClawChatScrollPositionsByThreadID,
+      openClawAssistantChatScrollPositionsByThreadID: openClawAssistantChatScrollPositionsByThreadID
     )
+  }
+
+  private func currentWorkspaceTabSurfaceState() -> WorkspaceTabSurfaceState {
+    WorkspaceTabSurfaceState(
+      agendaFilter: agendaFilter,
+      agendaDateFilter: agendaDateFilter,
+      agendaAssigneeFilter: agendaAssigneeFilter,
+      agendaStatusFilter: agendaStatusFilter,
+      agendaPriorityFilter: agendaPriorityFilter,
+      agendaTopicFilter: agendaTopicFilter,
+      agendaReadScope: agendaReadScope,
+      bulkSelectedAgendaItemIDs: bulkSelectedAgendaItemIDs,
+      approvalFilter: approvalFilter,
+      selectedApprovalItemIDsForAIContext: selectedApprovalItemIDsForAIContext,
+      bulkSelectedApprovalItemIDs: bulkSelectedApprovalItemIDs,
+      agentRunFilter: agentRunFilter,
+      agentRunSelectionScope: agentRunSelectionScope,
+      selectedAgentRunIDsForAIContext: selectedAgentRunIDsForAIContext,
+      corpusFileFilter: corpusFileFilter,
+      selectedCorpusFileIDsForAIContext: selectedCorpusFileIDsForAIContext,
+      searchMode: searchMode,
+      searchReadScope: searchReadScope,
+      searchQuery: searchQuery,
+      searchResults: searchResults,
+      openClawChatSearchResults: openClawChatSearchResults,
+      workspaceFileSearchResults: workspaceFileSearchResults,
+      workspacePageSearchResults: workspacePageSearchResults,
+      workspaceAgentWorkSearchResults: workspaceAgentWorkSearchResults,
+      searchNodes: searchNodes,
+      externalThreadSearchQuery: externalThreadSearchQuery,
+      selectedExternalThreadDetail: selectedExternalThreadDetail
+    )
+  }
+
+  private func initialWorkspaceTabSurfaceState() -> WorkspaceTabSurfaceState {
+    WorkspaceTabSurfaceState(
+      agendaFilter: "",
+      agendaDateFilter: .any,
+      agendaAssigneeFilter: "",
+      agendaStatusFilter: "",
+      agendaPriorityFilter: "",
+      agendaTopicFilter: "",
+      agendaReadScope: .activeCorpus,
+      bulkSelectedAgendaItemIDs: [],
+      approvalFilter: "",
+      selectedApprovalItemIDsForAIContext: [],
+      bulkSelectedApprovalItemIDs: [],
+      agentRunFilter: "",
+      agentRunSelectionScope: .active,
+      selectedAgentRunIDsForAIContext: [],
+      corpusFileFilter: "",
+      selectedCorpusFileIDsForAIContext: [],
+      searchMode: .text,
+      searchReadScope: .activeCorpus,
+      searchQuery: "",
+      searchResults: [],
+      openClawChatSearchResults: [],
+      workspaceFileSearchResults: [],
+      workspacePageSearchResults: [],
+      workspaceAgentWorkSearchResults: [],
+      searchNodes: [],
+      externalThreadSearchQuery: "",
+      selectedExternalThreadDetail: nil
+    )
+  }
+
+  private func restoreWorkspaceTabSurfaceState(_ state: WorkspaceTabSurfaceState) {
+    agendaFilter = state.agendaFilter
+    isUpdatingAgendaStructuredFilters = true
+    agendaDateFilter = state.agendaDateFilter
+    agendaAssigneeFilter = state.agendaAssigneeFilter
+    agendaStatusFilter = state.agendaStatusFilter
+    agendaPriorityFilter = state.agendaPriorityFilter
+    agendaTopicFilter = state.agendaTopicFilter
+    isUpdatingAgendaStructuredFilters = false
+    agendaReadScope = state.agendaReadScope
+    bulkSelectedAgendaItemIDs = state.bulkSelectedAgendaItemIDs
+    rebuildAgendaDisplayCache()
+    rebuildAssignedWorkDisplayCache()
+
+    approvalFilter = state.approvalFilter
+    selectedApprovalItemIDsForAIContext = state.selectedApprovalItemIDsForAIContext
+    bulkSelectedApprovalItemIDs = state.bulkSelectedApprovalItemIDs
+    agentRunFilter = state.agentRunFilter
+    agentRunSelectionScope = state.agentRunSelectionScope
+    selectedAgentRunIDsForAIContext = state.selectedAgentRunIDsForAIContext
+    corpusFileFilter = state.corpusFileFilter
+    selectedCorpusFileIDsForAIContext = state.selectedCorpusFileIDsForAIContext
+
+    searchMode = state.searchMode
+    searchReadScope = state.searchReadScope
+    searchQuery = state.searchQuery
+    searchResults = state.searchResults
+    openClawChatSearchResults = state.openClawChatSearchResults
+    workspaceFileSearchResults = state.workspaceFileSearchResults
+    workspacePageSearchResults = state.workspacePageSearchResults
+    workspaceAgentWorkSearchResults = state.workspaceAgentWorkSearchResults
+    searchNodes = state.searchNodes
+    externalThreadSearchQuery = state.externalThreadSearchQuery
+    selectedExternalThreadDetail = state.selectedExternalThreadDetail
   }
 
   private func resetWorkspaceTabsForCorpusChange() {
@@ -33952,6 +34122,7 @@ public final class WorkspaceStore {
         event,
         selectAll: selectAllVisibleApprovalItemsForBulkAction,
         clear: clearApprovalBulkSelection,
+        move: moveApprovalSelection,
         extend: extendApprovalBulkSelection
       )
     case .runs:
@@ -33959,6 +34130,7 @@ public final class WorkspaceStore {
         event,
         selectAll: selectAllVisibleAgentRunsForAIContext,
         clear: clearAgentRunAIContextSelection,
+        move: nil,
         extend: extendAgentRunAIContextSelection
       )
     case .goals, .agents, .workflows:
@@ -33972,6 +34144,7 @@ public final class WorkspaceStore {
       event,
       selectAll: selectAllVisibleCorpusFilesForAIContext,
       clear: clearCorpusFileAIContextSelection,
+      move: nil,
       extend: extendCorpusFileAIContextSelection
     )
   }
@@ -33980,6 +34153,7 @@ public final class WorkspaceStore {
     _ event: NSEvent,
     selectAll: () -> Void,
     clear: () -> Void,
+    move: ((Int) -> Void)?,
     extend: (Int) -> Void
   ) -> Bool {
     let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
@@ -33992,13 +34166,14 @@ public final class WorkspaceStore {
       clear()
       return true
     }
-    guard modifiers == [.shift] else { return false }
-    if event.keyCode == 125 {
-      extend(1)
+    guard event.keyCode == 125 || event.keyCode == 126 else { return false }
+    let delta = event.keyCode == 125 ? 1 : -1
+    if modifiers.isEmpty, let move {
+      move(delta)
       return true
     }
-    if event.keyCode == 126 {
-      extend(-1)
+    if modifiers == [.shift] {
+      extend(delta)
       return true
     }
     return false

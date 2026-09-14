@@ -1,6 +1,17 @@
 import AppKit
 import SwiftUI
 
+private struct WorkspaceTabIDEnvironmentKey: EnvironmentKey {
+  static let defaultValue: WorkspaceTab.ID? = nil
+}
+
+private extension EnvironmentValues {
+  var workspaceTabID: WorkspaceTab.ID? {
+    get { self[WorkspaceTabIDEnvironmentKey.self] }
+    set { self[WorkspaceTabIDEnvironmentKey.self] = newValue }
+  }
+}
+
 @MainActor
 private func performAfterSwiftUIViewUpdate(
   _ operation: @escaping @MainActor @Sendable () -> Void
@@ -8,6 +19,22 @@ private func performAfterSwiftUIViewUpdate(
   Task { @MainActor in
     await Task.yield()
     guard !Task.isCancelled else { return }
+    operation()
+  }
+}
+
+@MainActor
+private func performAfterSwiftUIViewUpdate(
+  for workspaceTabID: WorkspaceTab.ID?,
+  in store: WorkspaceStore,
+  _ operation: @escaping @MainActor @Sendable () -> Void
+) {
+  guard let workspaceTabID else { return }
+  Task { @MainActor in
+    await Task.yield()
+    guard !Task.isCancelled,
+          store.selectedWorkspaceTabID == workspaceTabID
+    else { return }
     operation()
   }
 }
@@ -30,7 +57,8 @@ public struct ContentView: View {
               max: WorkspaceSidebarLayout.maximumWidth(for: proxy.size.width)
             )
         } detail: {
-          WorkspaceMainArea()
+          WorkspaceMainArea(workspaceTabID: store.selectedWorkspaceTabID)
+            .id(store.selectedWorkspaceTabID)
         }
       }
       .toolbar {
@@ -1127,6 +1155,7 @@ private struct EditorSaveConflictSheet: View {
 
 private struct WorkspaceMainArea: View {
   @Environment(WorkspaceStore.self) private var store
+  let workspaceTabID: WorkspaceTab.ID
 
   var body: some View {
     if store.corpusRoot == nil {
@@ -1134,7 +1163,10 @@ private struct WorkspaceMainArea: View {
     } else {
       HSplitView {
         if !store.isWorkspaceSurfacePaneClosed || !store.hasWorkspaceDetailContent {
-          WorkspaceSurfaceCacheView(selectedSurface: store.selectedSurface)
+          WorkspaceSurfaceCacheView(
+            selectedSurface: store.selectedSurface,
+            workspaceTabID: workspaceTabID
+          )
             .frame(
               minWidth: WorkspaceMainSplitLayout.surfaceMinimumWidth,
               idealWidth: WorkspaceMainSplitLayout.surfaceIdealWidth
@@ -1143,6 +1175,7 @@ private struct WorkspaceMainArea: View {
 
         if store.hasWorkspaceDetailContent && !store.isWorkspaceDetailPaneClosed {
           WorkspaceDetailArea()
+            .environment(\.workspaceTabID, workspaceTabID)
             .frame(
               minWidth: WorkspaceMainSplitLayout.detailMinimumWidth,
               idealWidth: WorkspaceMainSplitLayout.detailIdealWidth
@@ -1521,6 +1554,7 @@ private struct WorkspaceSurfaceNavigationAccessibilityTarget: NSViewRepresentabl
 private struct WorkspaceSurfaceCacheView: NSViewRepresentable {
   @Environment(WorkspaceStore.self) private var store
   let selectedSurface: WorkspaceSurface
+  let workspaceTabID: WorkspaceTab.ID
 
   func makeCoordinator() -> Coordinator {
     Coordinator()
@@ -1532,27 +1566,39 @@ private struct WorkspaceSurfaceCacheView: NSViewRepresentable {
     context.coordinator.install(
       in: view,
       surface: selectedSurface,
+      workspaceTabID: workspaceTabID,
       store: store
     )
     return view
   }
 
   func updateNSView(_ view: NSView, context: Context) {
-    context.coordinator.show(surface: selectedSurface, in: view, store: store)
+    context.coordinator.show(
+      surface: selectedSurface,
+      workspaceTabID: workspaceTabID,
+      in: view,
+      store: store
+    )
   }
 
   @MainActor
   final class Coordinator {
     private var host: NSHostingView<AnyView>?
     private var activeSurface: WorkspaceSurface?
+    private var activeWorkspaceTabID: WorkspaceTab.ID?
 
     func install(
       in container: NSView,
       surface: WorkspaceSurface,
+      workspaceTabID: WorkspaceTab.ID,
       store: WorkspaceStore
     ) {
       guard host == nil else { return }
-      let host = makeHost(surface: surface, store: store)
+      let host = makeHost(
+        surface: surface,
+        workspaceTabID: workspaceTabID,
+        store: store
+      )
       container.addSubview(host)
       NSLayoutConstraint.activate([
         host.leadingAnchor.constraint(equalTo: container.leadingAnchor),
@@ -1562,40 +1608,57 @@ private struct WorkspaceSurfaceCacheView: NSViewRepresentable {
       ])
       self.host = host
       activeSurface = surface
+      activeWorkspaceTabID = workspaceTabID
     }
 
     func show(
       surface: WorkspaceSurface,
+      workspaceTabID: WorkspaceTab.ID,
       in container: NSView,
       store: WorkspaceStore
     ) {
       guard let host else {
-        install(in: container, surface: surface, store: store)
+        install(
+          in: container,
+          surface: surface,
+          workspaceTabID: workspaceTabID,
+          store: store
+        )
         return
       }
       guard host.superview === container else {
         assertionFailure("The workspace surface host must remain attached to its original container")
         return
       }
-      guard activeSurface != surface else { return }
+      guard activeSurface != surface || activeWorkspaceTabID != workspaceTabID else { return }
 
       resignFirstResponderIfContained(in: host)
       // Replacing the only host's explicitly identified root destroys the
       // outgoing SwiftUI graph. Inactive surfaces therefore receive normal
       // onDisappear/task cancellation without remaining hidden observers,
       // while the NSHostingView itself never leaves the window hierarchy.
-      host.rootView = Self.rootView(surface: surface, store: store)
+      host.rootView = Self.rootView(
+        surface: surface,
+        workspaceTabID: workspaceTabID,
+        store: store
+      )
       host.setAccessibilityIdentifier(
         WorkspaceSurfaceMountIdentity.accessibilityIdentifier(for: surface)
       )
       activeSurface = surface
+      activeWorkspaceTabID = workspaceTabID
     }
 
     private func makeHost(
       surface: WorkspaceSurface,
+      workspaceTabID: WorkspaceTab.ID,
       store: WorkspaceStore
     ) -> NSHostingView<AnyView> {
-      let host = NSHostingView(rootView: Self.rootView(surface: surface, store: store))
+      let host = NSHostingView(rootView: Self.rootView(
+        surface: surface,
+        workspaceTabID: workspaceTabID,
+        store: store
+      ))
       // The host is fully constrained to its container. Asking SwiftUI for an
       // intrinsic, minimum, and maximum size as well makes AppKit measure the
       // entire active surface during every constraint pass.
@@ -1609,15 +1672,17 @@ private struct WorkspaceSurfaceCacheView: NSViewRepresentable {
 
     private static func rootView(
       surface: WorkspaceSurface,
+      workspaceTabID: WorkspaceTab.ID,
       store: WorkspaceStore
     ) -> AnyView {
       AnyView(
         WorkspaceSurfaceView(surface: surface)
           .environment(store)
+          .environment(\.workspaceTabID, workspaceTabID)
           .environment(\.openOrgFileReference) { reference in
             store.openChatFileReference(reference)
           }
-          .id(surface)
+          .id("\(workspaceTabID.uuidString):\(surface.rawValue)")
       )
     }
 
@@ -3513,6 +3578,7 @@ private struct OpenClawUnreadBadge: View {
 
 private struct FilesView: View {
   @Environment(WorkspaceStore.self) private var store
+  @Environment(\.workspaceTabID) private var workspaceTabID
   @FocusState private var filterFocused: Bool
   @State private var filterDraft = ""
   @State private var pendingFilterUpdate: Task<Void, Never>?
@@ -3606,7 +3672,7 @@ private struct FilesView: View {
           else {
             return
           }
-          performAfterSwiftUIViewUpdate {
+          performAfterSwiftUIViewUpdate(for: workspaceTabID, in: store) {
             store.activateSelectedCorpusFileFromList(file)
           }
         }
@@ -4518,6 +4584,7 @@ private struct ShortcutSection: View {
 
 private struct AgendaView: View {
   @Environment(WorkspaceStore.self) private var store
+  @Environment(\.workspaceTabID) private var workspaceTabID
   @FocusState private var agendaFilterFocused: Bool
 
   var body: some View {
@@ -4557,11 +4624,11 @@ private struct AgendaView: View {
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     .onChange(of: store.agendaMode) {
       let mode = store.agendaMode
-      if mode == .assigned, store.agendaDateFilter != .any {
-        store.agendaDateFilter = .any
-      }
-      performAfterSwiftUIViewUpdate {
+      performAfterSwiftUIViewUpdate(for: workspaceTabID, in: store) {
         guard store.agendaMode == mode else { return }
+        if mode == .assigned, store.agendaDateFilter != .any {
+          store.agendaDateFilter = .any
+        }
         if mode == .assigned {
           Task {
             await store.refreshAssignedWork()
@@ -4578,7 +4645,7 @@ private struct AgendaView: View {
     }
     .onChange(of: store.agendaFilter) {
       let filter = store.agendaFilter
-      performAfterSwiftUIViewUpdate {
+      performAfterSwiftUIViewUpdate(for: workspaceTabID, in: store) {
         guard store.agendaFilter == filter else { return }
         store.syncAgendaSelectionAfterDisplayOptionsChange()
       }
@@ -4588,7 +4655,7 @@ private struct AgendaView: View {
     }
     .onChange(of: agendaFilterFocused) {
       let isFocused = agendaFilterFocused
-      performAfterSwiftUIViewUpdate {
+      performAfterSwiftUIViewUpdate(for: workspaceTabID, in: store) {
         guard store.isAgendaFilterFocused != isFocused else { return }
         store.isAgendaFilterFocused = isFocused
       }
@@ -5047,6 +5114,7 @@ private struct RunsAndReviewView: View {
 
 private struct GoalsView: View {
   @Environment(WorkspaceStore.self) private var store
+  @Environment(\.workspaceTabID) private var workspaceTabID
 
   var body: some View {
     VStack(spacing: 0) {
@@ -5106,7 +5174,7 @@ private struct GoalsView: View {
         .onChange(of: store.selectedAgentGoalID) {
           guard let id = store.selectedAgentGoalID,
                 let goal = store.agentGoals.first(where: { $0.id == id }) else { return }
-          performAfterSwiftUIViewUpdate {
+          performAfterSwiftUIViewUpdate(for: workspaceTabID, in: store) {
             guard store.selectedAgentGoalID == id else { return }
             store.selectAgentGoal(goal)
           }
@@ -5119,7 +5187,7 @@ private struct GoalsView: View {
     .onAppear {
       guard let id = store.selectedAgentGoalID,
             let goal = store.agentGoals.first(where: { $0.id == id }) else { return }
-      performAfterSwiftUIViewUpdate {
+      performAfterSwiftUIViewUpdate(for: workspaceTabID, in: store) {
         guard store.selectedAgentGoalID == id else { return }
         store.selectAgentGoal(goal)
       }
@@ -5188,6 +5256,7 @@ private struct AgentGoalRow: View {
 
 private struct AgentsView: View {
   @Environment(WorkspaceStore.self) private var store
+  @Environment(\.workspaceTabID) private var workspaceTabID
 
   var body: some View {
     VStack(spacing: 0) {
@@ -5263,7 +5332,7 @@ private struct AgentsView: View {
         .onChange(of: store.selectedAgentProfileID) {
           guard let id = store.selectedAgentProfileID,
                 let profile = store.agentProfiles.first(where: { $0.id == id }) else { return }
-          performAfterSwiftUIViewUpdate {
+          performAfterSwiftUIViewUpdate(for: workspaceTabID, in: store) {
             guard store.selectedAgentProfileID == id else { return }
             store.selectAgentProfile(profile)
           }
@@ -5276,7 +5345,7 @@ private struct AgentsView: View {
     .onAppear {
       guard let id = store.selectedAgentProfileID,
             let profile = store.agentProfiles.first(where: { $0.id == id }) else { return }
-      performAfterSwiftUIViewUpdate {
+      performAfterSwiftUIViewUpdate(for: workspaceTabID, in: store) {
         guard store.selectedAgentProfileID == id else { return }
         store.selectAgentProfile(profile)
       }
@@ -5349,6 +5418,7 @@ private struct AgentProfileRow: View {
 
 private struct WorkflowsView: View {
   @Environment(WorkspaceStore.self) private var store
+  @Environment(\.workspaceTabID) private var workspaceTabID
   @Environment(\.openSettings) private var openSettings
   @AppStorage(WorkspaceSettingsNavigation.selectionKey)
   private var settingsSelection = WorkspaceSettingsNavigation.workspace
@@ -5482,7 +5552,7 @@ private struct WorkflowsView: View {
         .onChange(of: store.selectedAgentWorkflowID) {
           guard let id = store.selectedAgentWorkflowID,
                 let workflow = store.agentWorkflows.first(where: { $0.id == id }) else { return }
-          performAfterSwiftUIViewUpdate {
+          performAfterSwiftUIViewUpdate(for: workspaceTabID, in: store) {
             guard store.selectedAgentWorkflowID == id else { return }
             store.selectAgentWorkflow(workflow)
           }
@@ -5967,7 +6037,7 @@ private struct RunCenterView: View {
   private static let visibleRunBatchSize = 250
 
   @Environment(WorkspaceStore.self) private var store
-  @State private var scope: AgentRunScope = .active
+  @Environment(\.workspaceTabID) private var workspaceTabID
   @State private var visibleRunLimit = Self.initialVisibleRunLimit
   @FocusState private var filterFocused: Bool
 
@@ -5995,7 +6065,7 @@ private struct RunCenterView: View {
       HStack(spacing: 10) {
         ForEach(AgentRunScope.allCases) { candidate in
           Button {
-            scope = candidate
+            store.agentRunSelectionScope = candidate
           } label: {
             RunCenterScopeMetric(
               title: candidate.rawValue,
@@ -6094,9 +6164,8 @@ private struct RunCenterView: View {
       }
     }
     .onAppear {
-      store.agentRunSelectionScope = scope
       if let selectedRun {
-        performAfterSwiftUIViewUpdate {
+        performAfterSwiftUIViewUpdate(for: workspaceTabID, in: store) {
           store.selectAgentRun(selectedRun)
         }
       }
@@ -6105,22 +6174,21 @@ private struct RunCenterView: View {
     .onChange(of: store.selectedAgentRunID) {
       guard let selectedRun else { return }
       let id = selectedRun.id
-      performAfterSwiftUIViewUpdate {
+      performAfterSwiftUIViewUpdate(for: workspaceTabID, in: store) {
         guard store.selectedAgentRunID == id else { return }
         store.selectAgentRun(selectedRun)
       }
     }
-    .onChange(of: scope) {
-      store.agentRunSelectionScope = scope
+    .onChange(of: store.agentRunSelectionScope) {
       visibleRunLimit = Self.initialVisibleRunLimit
-      performAfterSwiftUIViewUpdate {
+      performAfterSwiftUIViewUpdate(for: workspaceTabID, in: store) {
         store.reconcileAgentRunAIContextSelection(visibleIDs: visibleRunIDs)
         syncVisibleRunSelection(in: visibleEntries)
       }
     }
     .onChange(of: store.agentRunDisplayRevision) {
       visibleRunLimit = Self.initialVisibleRunLimit
-      performAfterSwiftUIViewUpdate {
+      performAfterSwiftUIViewUpdate(for: workspaceTabID, in: store) {
         store.reconcileAgentRunAIContextSelection(visibleIDs: visibleRunIDs)
         syncVisibleRunSelection(in: visibleEntries)
       }
@@ -6128,6 +6196,10 @@ private struct RunCenterView: View {
     .onChange(of: store.agentRunFilterFocusToken) {
       filterFocused = true
     }
+  }
+
+  private var scope: AgentRunScope {
+    store.agentRunSelectionScope
   }
 
   private func syncVisibleRunSelection(in visibleEntries: [AgentRunScopeEntry]) {
@@ -6366,6 +6438,7 @@ enum RunCenterDetailCollectionPresentation {
 
 private struct RunCenterDetail: View {
   @Environment(WorkspaceStore.self) private var store
+  @Environment(\.workspaceTabID) private var workspaceTabID
   @State private var clarificationResponse = ""
   @State private var clarificationError: String?
   @State private var completionSummary = ""
@@ -6843,7 +6916,7 @@ private struct RunCenterDetail: View {
     ), run.actionablePendingApprovals.contains(where: { $0.id == approvalID }) else {
       return
     }
-    performAfterSwiftUIViewUpdate {
+    performAfterSwiftUIViewUpdate(for: workspaceTabID, in: store) {
       guard RunCenterPresentation.approvalID(
         selectedApprovalItemID: store.selectedApprovalItemID,
         runID: run.id
@@ -7219,6 +7292,7 @@ private struct RunCompletionSheet: View {
 
 private struct ApprovalsView: View {
   @Environment(WorkspaceStore.self) private var store
+  @Environment(\.workspaceTabID) private var workspaceTabID
   @FocusState private var filterFocused: Bool
   @State private var discussionItem: ApprovalItem?
   @State private var discussionMessage = "I need to discuss this approval item before deciding."
@@ -7332,7 +7406,7 @@ private struct ApprovalsView: View {
       else {
         return
       }
-      performAfterSwiftUIViewUpdate {
+      performAfterSwiftUIViewUpdate(for: workspaceTabID, in: store) {
         guard store.selectedApprovalItemID == id else { return }
         store.selectApprovalItem(item)
       }
@@ -7931,6 +8005,7 @@ private struct ApprovalDiscussionSheet: View {
 
 private struct AgendaItemListView: View {
   @Environment(WorkspaceStore.self) private var store
+  @Environment(\.workspaceTabID) private var workspaceTabID
 
   var body: some View {
     WorkspaceLazyCollection {
@@ -8004,7 +8079,7 @@ private struct AgendaItemListView: View {
     _ item: AgendaItem,
     modifiers: NSEvent.ModifierFlags = []
   ) {
-    performAfterSwiftUIViewUpdate {
+    performAfterSwiftUIViewUpdate(for: workspaceTabID, in: store) {
       store.handleAgendaItemClick(item, modifiers: modifiers)
     }
   }
@@ -8012,6 +8087,7 @@ private struct AgendaItemListView: View {
 
 private struct AssignedAgendaListView: View {
   @Environment(WorkspaceStore.self) private var store
+  @Environment(\.workspaceTabID) private var workspaceTabID
 
   var body: some View {
     if store.isLoadingAssignedWork {
@@ -8069,7 +8145,7 @@ private struct AssignedAgendaListView: View {
         else {
           return
         }
-        performAfterSwiftUIViewUpdate {
+        performAfterSwiftUIViewUpdate(for: workspaceTabID, in: store) {
           guard store.selectedAssignedWorkItemID == id else { return }
           store.selectAssignedWorkItem(item)
         }
@@ -9442,6 +9518,7 @@ private struct SourceCredentialSheet: View {
 
 private struct MeetingsView: View {
   @Environment(WorkspaceStore.self) private var store
+  @Environment(\.workspaceTabID) private var workspaceTabID
 
   var body: some View {
     @Bindable var store = store
@@ -9606,7 +9683,7 @@ private struct MeetingsView: View {
           else {
             return
           }
-          performAfterSwiftUIViewUpdate {
+          performAfterSwiftUIViewUpdate(for: workspaceTabID, in: store) {
             guard store.selectedMeetingID == id else { return }
             store.selectMeeting(meeting)
           }

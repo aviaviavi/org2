@@ -143,6 +143,12 @@ final class AgentRunModelsTests: XCTestCase {
 
     let visibleApprovals = store.visibleApprovalItems
     store.selectApprovalItem(visibleApprovals[1])
+    XCTAssertTrue(store.handleWorkspaceKeyDown(selectionKeyDown(keyCode: 125)))
+    XCTAssertEqual(store.selectedApprovalItemID, visibleApprovals[2].id)
+    XCTAssertEqual(store.selectedApprovalItemIDsForAIContext, [visibleApprovals[2].id])
+    XCTAssertTrue(store.handleWorkspaceKeyDown(selectionKeyDown(keyCode: 126)))
+    XCTAssertEqual(store.selectedApprovalItemID, visibleApprovals[1].id)
+    XCTAssertEqual(store.selectedApprovalItemIDsForAIContext, [visibleApprovals[1].id])
     XCTAssertTrue(store.handleWorkspaceKeyDown(selectionKeyDown("a", keyCode: 0, modifiers: [.command])))
     XCTAssertEqual(store.bulkApprovalSelectionCount, 3)
     XCTAssertTrue(store.handleWorkspaceKeyDown(selectionKeyDown("a", keyCode: 0, modifiers: [.command, .shift])))

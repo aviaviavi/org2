@@ -36,6 +36,36 @@ final class WorkspaceTabsTests: XCTestCase {
     XCTAssertFalse(store.canNavigateBack)
   }
 
+  func testNewTabStartsWithoutTheOutgoingDocumentDetail() throws {
+    let (store, defaults, suiteName) = try makeStore()
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let file = "/tmp/outgoing-tab-detail.org"
+
+    store.selectedSurface = .agenda
+    store.selectedLocation = .openClaw(OpenClawThread(
+      title: "Outgoing detail",
+      file: file,
+      line: 1,
+      zone: "notes",
+      modifiedAt: nil
+    ))
+    store.selectedEntrySource = EntrySource(
+      file: file,
+      startLine: 1,
+      endLineExclusive: 2,
+      text: "* Outgoing detail",
+      isSubtree: false
+    )
+    XCTAssertTrue(store.hasWorkspaceDetailContent)
+
+    store.newWorkspaceTab()
+
+    XCTAssertEqual(store.selectedSurface, .home)
+    XCTAssertNil(store.selectedLocation)
+    XCTAssertNil(store.selectedEntrySource)
+    XCTAssertFalse(store.hasWorkspaceDetailContent)
+  }
+
   func testDuplicateTabCopiesCurrentLocationAndBackHistory() throws {
     let (store, defaults, suiteName) = try makeStore()
     defer { defaults.removePersistentDomain(forName: suiteName) }
@@ -112,6 +142,92 @@ final class WorkspaceTabsTests: XCTestCase {
     store.selectWorkspaceTab(secondTabID)
     XCTAssertEqual(store.selectedSurface, .agenda)
     XCTAssertNil(store.selectedWorkspaceSkillID)
+  }
+
+  func testTabsKeepFiltersSearchSelectionsAndViewportIndependent() throws {
+    let (store, defaults, suiteName) = try makeStore()
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let source = EntrySource(
+      file: "/tmp/tab-local-viewport.org",
+      startLine: 1,
+      endLineExclusive: 101,
+      text: (1...100).map { "Line \($0)" }.joined(separator: "\n"),
+      isSubtree: false
+    )
+
+    let firstTabID = store.selectedWorkspaceTabID
+    store.agendaFilter = "first agenda"
+    store.approvalFilter = "first approval"
+    store.agentRunFilter = "first run"
+    store.agentRunSelectionScope = .completed
+    store.corpusFileFilter = "first file"
+    store.searchQuery = "first search"
+    store.externalThreadSearchQuery = "first external"
+    store.bulkSelectedAgendaItemIDs = ["agenda:first"]
+    store.selectedApprovalItemIDsForAIContext = ["approval:first"]
+    store.bulkSelectedApprovalItemIDs = ["approval:first"]
+    store.selectedAgentRunIDsForAIContext = ["run:first"]
+    store.selectedCorpusFileIDsForAIContext = ["file:first"]
+    store.selectedEntrySource = source
+    store.recordDocumentViewportSourceLine(80)
+
+    let secondTabID = store.newWorkspaceTab()
+    XCTAssertEqual(store.agendaFilter, "")
+    XCTAssertEqual(store.approvalFilter, "")
+    XCTAssertEqual(store.agentRunFilter, "")
+    XCTAssertEqual(store.agentRunSelectionScope, .active)
+    XCTAssertEqual(store.corpusFileFilter, "")
+    XCTAssertEqual(store.searchQuery, "")
+    XCTAssertEqual(store.externalThreadSearchQuery, "")
+    XCTAssertTrue(store.bulkSelectedAgendaItemIDs.isEmpty)
+    XCTAssertTrue(store.selectedApprovalItemIDsForAIContext.isEmpty)
+    XCTAssertTrue(store.bulkSelectedApprovalItemIDs.isEmpty)
+    XCTAssertTrue(store.selectedAgentRunIDsForAIContext.isEmpty)
+    XCTAssertTrue(store.selectedCorpusFileIDsForAIContext.isEmpty)
+
+    store.approvalFilter = "second approval"
+    store.searchQuery = "second search"
+    store.recordDocumentViewportSourceLine(20, for: source)
+
+    store.selectWorkspaceTab(firstTabID)
+    XCTAssertEqual(store.agendaFilter, "first agenda")
+    XCTAssertEqual(store.approvalFilter, "first approval")
+    XCTAssertEqual(store.agentRunFilter, "first run")
+    XCTAssertEqual(store.agentRunSelectionScope, .completed)
+    XCTAssertEqual(store.corpusFileFilter, "first file")
+    XCTAssertEqual(store.searchQuery, "first search")
+    XCTAssertEqual(store.externalThreadSearchQuery, "first external")
+    XCTAssertEqual(store.bulkSelectedAgendaItemIDs, ["agenda:first"])
+    XCTAssertEqual(store.selectedApprovalItemIDsForAIContext, ["approval:first"])
+    XCTAssertEqual(store.bulkSelectedApprovalItemIDs, ["approval:first"])
+    XCTAssertEqual(store.selectedAgentRunIDsForAIContext, ["run:first"])
+    XCTAssertEqual(store.selectedCorpusFileIDsForAIContext, ["file:first"])
+    XCTAssertEqual(store.documentViewportSourceLine(for: source), 80)
+
+    store.selectWorkspaceTab(secondTabID)
+    XCTAssertEqual(store.approvalFilter, "second approval")
+    XCTAssertEqual(store.searchQuery, "second search")
+    XCTAssertEqual(store.documentViewportSourceLine(for: source), 20)
+  }
+
+  func testDeferredSurfaceActionsUseTheMountedTabIdentity() throws {
+    let packageRoot = URL(fileURLWithPath: #filePath)
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+    let source = try String(
+      contentsOf: packageRoot.appendingPathComponent(
+        "Sources/Org2WorkspaceCore/ContentView.swift"
+      ),
+      encoding: .utf8
+    )
+
+    XCTAssertTrue(source.contains("workspaceTabID: store.selectedWorkspaceTabID"))
+    XCTAssertTrue(source.contains(".environment(\\.workspaceTabID, workspaceTabID)"))
+    XCTAssertFalse(
+      source.contains("performAfterSwiftUIViewUpdate(for: store.selectedWorkspaceTabID"),
+      "Deferred view callbacks must compare against the tab that mounted the view, not whichever tab is selected when they fire"
+    )
   }
 
   func testActiveTabTitleRepresentsTheActiveWorkspacePane() throws {
