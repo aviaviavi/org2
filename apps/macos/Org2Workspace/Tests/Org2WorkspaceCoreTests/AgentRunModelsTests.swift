@@ -338,6 +338,7 @@ final class AgentRunModelsTests: XCTestCase {
         "responsibilities": ["Qualify accounts"],
         "capabilities": ["agent-context"],
         "skills": ["outreach"],
+        "defaultRuntime": "openclaw",
         "runtimeBindings": [{"runtime":"openclaw","runtimeAgentId":"scarf-revenue-scout"}],
         "goalRefs": ["qualified-meetings"],
         "primaryGoalRef": "qualified-meetings",
@@ -349,6 +350,8 @@ final class AgentRunModelsTests: XCTestCase {
     """#.utf8))
     let profile = try XCTUnwrap(profilePayload.profiles.first)
     XCTAssertEqual(profile.primaryGoalRef, goal.id)
+    XCTAssertEqual(profile.defaultRuntime, "openclaw")
+    XCTAssertEqual(profile.preferredChatRuntime, .openClaw)
     XCTAssertEqual(profile.runtimeBindings.first?.id, "openclaw:scarf-revenue-scout")
     XCTAssertEqual(RunsAndReviewPage.allCases, [.runs, .review, .goals, .agents, .workflows])
   }

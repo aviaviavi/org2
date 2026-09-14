@@ -5235,6 +5235,19 @@ private struct AgentsView: View {
                   Button("View Manager") { store.showAgentProfile(reportsToAgentRef) }
                 }
                 Button("Show Linked Runs") { store.showAgentRuns(agentRef: profile.id) }
+                Menu("Default Runtime") {
+                  Button("No Default") {
+                    Task { await store.setAgentProfileDefaultRuntime(profile, runtime: nil) }
+                  }
+                  Divider()
+                  ForEach(AIChatRuntime.allCases) { runtime in
+                    Button {
+                      Task { await store.setAgentProfileDefaultRuntime(profile, runtime: runtime) }
+                    } label: {
+                      Label(runtime.title, systemImage: profile.preferredChatRuntime == runtime ? "checkmark" : runtime.systemImage)
+                    }
+                  }
+                }
                 Divider()
                 ForEach(["active", "paused", "retired"], id: \.self) { status in
                   if profile.status != status {
@@ -5319,6 +5332,9 @@ private struct AgentProfileRow: View {
           Label("\(linkedRunCount) run\(linkedRunCount == 1 ? "" : "s")", systemImage: "play.circle")
         }
         .buttonStyle(.plain)
+        if let runtime = profile.preferredChatRuntime {
+          Label("Defaults to \(runtime.title)", systemImage: runtime.systemImage)
+        }
         if let binding = profile.runtimeBindings.first {
           Label("\(binding.runtime):\(binding.runtimeAgentId)", systemImage: "link")
         }

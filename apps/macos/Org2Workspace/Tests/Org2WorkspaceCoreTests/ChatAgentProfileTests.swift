@@ -20,7 +20,8 @@ final class ChatAgentProfileTests: XCTestCase {
     let ref = UUID().uuidString, goal = UUID().uuidString
     let profile = AgentProfileItem(schema: "org2:agent-profile:v1", id: ref, name: "Revenue Scout",
       description: "Find useful revenue signals", status: "active", responsibilities: ["Research accounts"],
-      capabilities: ["Research"], skills: ["account-research"], runtimeBindings: [], goalRefs: [goal],
+      capabilities: ["Research"], skills: ["account-research"], defaultRuntime: "openclaw",
+      runtimeBindings: [], goalRefs: [goal],
       primaryGoalRef: goal, reportsToAgentRef: nil, file: "/local/agent-profiles/scout.org", createdAt: "today", updatedAt: "today")
     let context = OpenClawWorkspaceContext(localCorpusRoot: "/local", remoteCorpusRoot: "/remote",
       selectedSurface: "AI Chat", selectedLocation: nil, selectedEntrySource: nil, backlinks: nil,
@@ -32,5 +33,47 @@ final class ChatAgentProfileTests: XCTestCase {
       XCTAssertTrue(prompt.contains("AGENT_REF: \(ref)"))
       XCTAssertTrue(prompt.contains("GOAL_REF: \(goal)"))
     }
+  }
+
+  @MainActor
+  func testSelectingAgentAdoptsDefaultRuntimeAndKeepsItOverrideable() throws {
+    let suiteName = "ChatAgentProfileTests.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let transcript = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-agent-profile-chat-\(UUID().uuidString).json")
+    defer { try? FileManager.default.removeItem(at: transcript) }
+    let store = WorkspaceStore(
+      defaults: defaults,
+      openClawTranscriptURL: transcript,
+      legacyDefaultsDomains: []
+    )
+    store.createAIChatThread(destinationID: AIChatDestinationConfiguration.localCodexID)
+    let profile = AgentProfileItem(
+      schema: "org2:agent-profile:v1",
+      id: "revenue-scout",
+      name: "Revenue Scout",
+      description: "",
+      status: "active",
+      responsibilities: [],
+      capabilities: [],
+      skills: [],
+      defaultRuntime: "openclaw",
+      runtimeBindings: [],
+      goalRefs: [],
+      primaryGoalRef: nil,
+      reportsToAgentRef: nil,
+      file: "/tmp/revenue-scout.org2",
+      createdAt: "today",
+      updatedAt: "today"
+    )
+
+    store.setSelectedChatAgent(profile)
+
+    XCTAssertEqual(store.selectedChatAgentRef, profile.id)
+    XCTAssertEqual(store.selectedAIChatDestination.id, AIChatDestinationConfiguration.openClawID)
+    store.setSelectedAIChatDestination(AIChatDestinationConfiguration.localCodexID)
+    XCTAssertEqual(store.selectedAIChatDestination.id, AIChatDestinationConfiguration.localCodexID)
+    XCTAssertEqual(store.selectedChatAgentRef, profile.id)
   }
 }

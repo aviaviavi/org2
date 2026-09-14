@@ -7,9 +7,11 @@ export const ORG2_GOAL_SCHEMA = "org2:goal:v1" as const;
 export const ORG2_AGENT_PROFILE_SCHEMA = "org2:agent-profile:v1" as const;
 export const GOAL_STATUSES = ["planned", "active", "achieved", "canceled"] as const;
 export const AGENT_PROFILE_STATUSES = ["active", "paused", "retired"] as const;
+export const AGENT_PROFILE_DEFAULT_RUNTIMES = ["openclaw", "codex", "claude"] as const;
 
 export type GoalStatus = typeof GOAL_STATUSES[number];
 export type AgentProfileStatus = typeof AGENT_PROFILE_STATUSES[number];
+export type AgentProfileDefaultRuntime = typeof AGENT_PROFILE_DEFAULT_RUNTIMES[number];
 
 export interface GoalRecord {
   schema: typeof ORG2_GOAL_SCHEMA;
@@ -38,6 +40,7 @@ export interface AgentProfile {
   responsibilities: string[];
   capabilities: string[];
   skills: string[];
+  defaultRuntime?: AgentProfileDefaultRuntime;
   runtimeBindings: AgentRuntimeBinding[];
   goalRefs: string[];
   primaryGoalRef?: string;
@@ -104,6 +107,9 @@ function assertAgentProfile(profile: AgentProfile): AgentProfile {
   safeIdentifier(profile.id, { label: "agent profile id" });
   if (!clean(profile.name)) throw new Error("agent profile name is required");
   if (!AGENT_PROFILE_STATUSES.includes(profile.status)) throw new Error(`invalid agent profile status: ${profile.status}`);
+  if (profile.defaultRuntime !== undefined && !AGENT_PROFILE_DEFAULT_RUNTIMES.includes(profile.defaultRuntime)) {
+    throw new Error(`invalid agent default runtime: ${profile.defaultRuntime}`);
+  }
   if (profile.reportsToAgentRef && profile.reportsToAgentRef === profile.id) throw new Error("an agent profile cannot report to itself");
   if (profile.primaryGoalRef && !profile.goalRefs.includes(profile.primaryGoalRef)) throw new Error("primaryGoalRef must also appear in goalRefs");
   const seenBindings = new Set<string>();
@@ -153,6 +159,7 @@ export function createAgentProfile(input: {
   responsibilities?: string[];
   capabilities?: string[];
   skills?: string[];
+  defaultRuntime?: AgentProfileDefaultRuntime;
   runtimeBindings?: AgentRuntimeBinding[];
   goalRefs?: string[];
   primaryGoalRef?: string;
@@ -171,6 +178,7 @@ export function createAgentProfile(input: {
     responsibilities: unique(input.responsibilities),
     capabilities: unique(input.capabilities),
     skills: unique(input.skills),
+    ...(input.defaultRuntime ? { defaultRuntime: input.defaultRuntime } : {}),
     runtimeBindings: (input.runtimeBindings || []).map((binding) => ({
       runtime: clean(binding.runtime).toLowerCase(),
       runtimeAgentId: clean(binding.runtimeAgentId),
@@ -226,6 +234,7 @@ export function renderAgentProfileOrg(profile: AgentProfile): string {
     ":KIND: agent-profile",
     `:AGENT_PROFILE_SCHEMA: ${profile.schema}`,
     `:AGENT_STATUS: ${profile.status}`,
+    ...(profile.defaultRuntime ? [`:DEFAULT_RUNTIME: ${profile.defaultRuntime}`] : []),
     ...(profile.primaryGoalRef ? [`:GOAL_REF: ${orgText(profile.primaryGoalRef)}`] : []),
     ...(profile.reportsToAgentRef ? [`:REPORTS_TO_AGENT_REF: ${orgText(profile.reportsToAgentRef)}`] : []),
     `:CREATED_AT: ${profile.createdAt}`,
@@ -233,6 +242,9 @@ export function renderAgentProfileOrg(profile: AgentProfile): string {
     ":END:",
     "",
     profile.description || "No description recorded.",
+    "",
+    "** Execution",
+    `- Default runtime: ${profile.defaultRuntime || "None recorded."}`,
     "",
     "** Responsibilities",
     ...(profile.responsibilities.length ? profile.responsibilities.map((item) => `- ${item}`) : ["- None recorded."]),

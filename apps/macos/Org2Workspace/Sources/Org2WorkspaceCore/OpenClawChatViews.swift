@@ -3245,10 +3245,11 @@ struct OpenClawComposerView: View {
       attachmentButton
       if showsDetailedConfiguration {
         if !store.selectedAIChatIsSharedRoom {
+          agentPicker()
           runtimePicker()
         }
       } else if !store.selectedAIChatIsSharedRoom {
-        runtimePicker(iconOnly: true)
+        agentPicker(iconOnly: true)
       }
       composerStatus(compact: !showsDetailedConfiguration)
       Spacer(minLength: 0)
@@ -3262,7 +3263,10 @@ struct OpenClawComposerView: View {
         if store.selectedAIChatIsSharedRoom {
           compactConfigurationControls
         } else {
-          modelConfigurationPicker
+          HStack(spacing: 2) {
+            runtimePicker(iconOnly: true)
+            modelConfigurationPicker
+          }
         }
       }
       dictationButton(showsTitle: showsDetailedConfiguration)
@@ -3287,6 +3291,7 @@ struct OpenClawComposerView: View {
       .accessibilityLabel("Shared room models")
     } else {
       HStack(spacing: 2) {
+        agentPicker(iconOnly: true)
         runtimePicker(iconOnly: true)
         modelConfigurationPicker
       }
@@ -3444,49 +3449,28 @@ struct OpenClawComposerView: View {
 
   private func runtimePicker(iconOnly: Bool = false) -> some View {
     Menu {
-      Section("Runtime") {
-        ForEach(store.enabledAIChatDestinations) { destination in
-          Button {
-            store.setSelectedAIChatDestination(destination.id)
-          } label: {
-            HStack {
-              Label(destination.title, systemImage: destination.systemImage)
-              if destination.id == store.selectedAIChatDestination.id {
-                Image(systemName: "checkmark")
-              }
+      ForEach(store.enabledAIChatDestinations) { destination in
+        Button {
+          store.setSelectedAIChatDestination(destination.id)
+        } label: {
+          HStack {
+            Label(destination.title, systemImage: destination.systemImage)
+            if destination.id == store.selectedAIChatDestination.id {
+              Image(systemName: "checkmark")
             }
           }
-          .disabled(!store.canChangeSelectedAIChatRuntime)
         }
-      }
-      Section("Agent") {
-        Button {
-          store.setSelectedChatAgent(nil)
-        } label: {
-          Label("Default assistant", systemImage: store.selectedChatAgentRef == nil ? "checkmark" : "person")
-        }
-        .disabled(!store.canChangeChatAgent)
-        ForEach(store.agentProfiles) { profile in
-          Button {
-            store.setSelectedChatAgent(profile)
-          } label: {
-            Label(profile.name, systemImage: profile.id == store.selectedChatAgentRef ? "checkmark" : "person.crop.circle")
-          }
-          .disabled(!store.canChangeChatAgent)
-        }
-        if store.agentProfiles.isEmpty { Text("No agent profiles in this corpus") }
+        .disabled(!store.canChangeSelectedAIChatRuntime)
       }
     } label: {
       HStack(spacing: 4) {
         Image(systemName: store.selectedAIChatDestination.systemImage)
         if !iconOnly {
-          Text(store.selectedChatAgent?.name ?? (store.selectedChatAgentRef == nil ? store.selectedAIChatDestination.title : "Unavailable agent"))
-            .lineLimit(1).truncationMode(.tail).frame(maxWidth: 180, alignment: .leading)
+          Text("via \(store.selectedAIChatDestination.title)")
+            .lineLimit(1).truncationMode(.tail).frame(maxWidth: 120, alignment: .leading)
         }
         Image(
-          systemName: (store.canChangeSelectedAIChatRuntime || store.canChangeChatAgent)
-            ? "chevron.up.chevron.down"
-            : "lock.fill"
+          systemName: store.canChangeSelectedAIChatRuntime ? "chevron.up.chevron.down" : "lock.fill"
         )
         .font(.caption2)
         .foregroundStyle(.tertiary)
@@ -3500,14 +3484,56 @@ struct OpenClawComposerView: View {
     .menuStyle(.borderlessButton)
     .menuIndicator(.hidden)
     .fixedSize()
-    .accessibilityLabel("AI destination: \(store.selectedAIChatDestination.title), agent: \(store.selectedChatAgent?.name ?? "Default assistant")")
-    .disabled(!store.canChangeSelectedAIChatRuntime && !store.canChangeChatAgent)
+    .accessibilityLabel("Runtime: \(store.selectedAIChatDestination.title)")
+    .disabled(!store.canChangeSelectedAIChatRuntime)
+    .help(store.canChangeSelectedAIChatRuntime ? "Choose the runtime for this thread" : "The runtime is fixed after the conversation starts")
+  }
+
+  private func agentPicker(iconOnly: Bool = false) -> some View {
+    Menu {
+      Button {
+        store.setSelectedChatAgent(nil)
+      } label: {
+        Label("Default assistant", systemImage: store.selectedChatAgentRef == nil ? "checkmark" : "person")
+      }
+      .disabled(!store.canChangeChatAgent)
+      ForEach(store.agentProfiles) { profile in
+        Button {
+          store.setSelectedChatAgent(profile)
+        } label: {
+          let defaultSuffix = profile.preferredChatRuntime.map { " · defaults to \($0.title)" } ?? ""
+          Label(
+            "\(profile.name)\(defaultSuffix)",
+            systemImage: profile.id == store.selectedChatAgentRef ? "checkmark" : "person.crop.circle"
+          )
+        }
+        .disabled(!store.canChangeChatAgent)
+      }
+      if store.agentProfiles.isEmpty { Text("No agent profiles in this corpus") }
+    } label: {
+      HStack(spacing: 4) {
+        Image(systemName: "person.crop.circle")
+        if !iconOnly {
+          Text(store.selectedChatAgent?.name ?? (store.selectedChatAgentRef == nil ? "Default assistant" : "Unavailable agent"))
+            .lineLimit(1).truncationMode(.tail).frame(maxWidth: 180, alignment: .leading)
+        }
+        Image(systemName: store.canChangeChatAgent ? "chevron.up.chevron.down" : "lock.fill")
+          .font(.caption2)
+          .foregroundStyle(.tertiary)
+      }
+      .font(.caption.weight(.medium))
+      .foregroundStyle(.secondary)
+      .padding(.horizontal, 5)
+      .padding(.vertical, 4)
+      .contentShape(Rectangle())
+    }
+    .menuStyle(.borderlessButton)
+    .menuIndicator(.hidden)
+    .fixedSize()
+    .accessibilityLabel("Agent: \(store.selectedChatAgent?.name ?? "Default assistant")")
+    .disabled(!store.canChangeChatAgent)
     .task { await store.refreshAgentProfiles() }
-    .help(
-      store.canChangeSelectedAIChatRuntime
-        ? "Choose an agent and runtime for this thread"
-        : "Choose an agent; the runtime is fixed after the conversation starts"
-    )
+    .help("Choose the agent identity and instructions; its default runtime is only a starting point")
   }
 
   private func roomModelPicker(forDestinationID destinationID: String) -> some View {

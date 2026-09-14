@@ -19,7 +19,7 @@ import { defaultRuntimePolicy, selectRuntime, validateRuntimePaths } from "../di
 import { evaluateRun, replayWorkflowFixture, sanitizeRunFixture } from "../dist/workflowEval.js";
 import {
   createAgentProfile, createGoal, listAgentProfiles, listGoals, loadAgentProfileSnapshot,
-  loadGoalSnapshot, resolveAgentProfile, saveAgentProfile, saveGoal,
+  loadGoalSnapshot, renderAgentProfileOrg, resolveAgentProfile, saveAgentProfile, saveGoal,
 } from "../dist/coordination.js";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "org2-agentic-"));
@@ -56,12 +56,20 @@ try {
     id: "scarf-support",
     name: "Scarf Support",
     responsibilities: ["Resolve customer support requests"],
+    defaultRuntime: "openclaw",
     runtimeBindings: [{ runtime: "openclaw", runtimeAgentId: "scarf-support" }],
     primaryGoalRef: revenueGoal.id,
   });
   saveAgentProfile(root, supportAgent, { expectedRevision: null });
   assert.equal(loadAgentProfileSnapshot(root, supportAgent.id).value.name, supportAgent.name);
+  assert.equal(loadAgentProfileSnapshot(root, supportAgent.id).value.defaultRuntime, "openclaw");
+  assert.match(renderAgentProfileOrg(supportAgent), /:DEFAULT_RUNTIME: openclaw/);
+  assert.match(renderAgentProfileOrg(supportAgent), /Default runtime: openclaw/);
   assert.equal(listAgentProfiles(root).length, 1);
+  assert.throws(
+    () => createAgentProfile({ id: "bad-runtime", name: "Bad runtime", defaultRuntime: "remote" }),
+    /invalid agent default runtime/,
+  );
   const listedProfiles = spawnSync(process.execPath, [
     path.resolve("dist/cli.js"), "agent-profile", "list", "--json", "--dir", root,
   ], { encoding: "utf8" });
@@ -79,6 +87,18 @@ try {
     goalRef: revenueGoal.id,
     profile: supportAgent,
   });
+  const updatedProfile = spawnSync(process.execPath, [
+    path.resolve("dist/cli.js"), "agent-profile", "update", supportAgent.id,
+    "--default-runtime", "codex", "--apply", "--json", "--dir", root,
+  ], { encoding: "utf8" });
+  assert.equal(updatedProfile.status, 0, updatedProfile.stderr || updatedProfile.stdout);
+  assert.equal(loadAgentProfileSnapshot(root, supportAgent.id).value.defaultRuntime, "codex");
+  const clearedProfile = spawnSync(process.execPath, [
+    path.resolve("dist/cli.js"), "agent-profile", "update", supportAgent.id,
+    "--default-runtime", "none", "--apply", "--json", "--dir", root,
+  ], { encoding: "utf8" });
+  assert.equal(clearedProfile.status, 0, clearedProfile.stderr || clearedProfile.stdout);
+  assert.equal(loadAgentProfileSnapshot(root, supportAgent.id).value.defaultRuntime, undefined);
 
   let run = createAgentRun({
     id: "board-brief", goal: "Prepare a cited board briefing",

@@ -100,6 +100,7 @@ import {
   type WorkLedgerAccount,
 } from "./workLedger.js";
 import {
+  AGENT_PROFILE_DEFAULT_RUNTIMES,
   AGENT_PROFILE_STATUSES,
   GOAL_STATUSES,
   agentProfilePath,
@@ -114,6 +115,7 @@ import {
   saveAgentProfile,
   saveGoal,
   type AgentRuntimeBinding,
+  type AgentProfileDefaultRuntime,
 } from "./coordination.js";
 
 interface ParsedArgs { positional: string[]; flags: Map<string, string[]>; }
@@ -182,7 +184,8 @@ const HELP = `Agentic workspace commands:
   org2 goal list|show|create|update [--dir CORPUS] [--apply]
   org2 goal create ID --title TEXT [--description TEXT] [--status planned|active|achieved|canceled] [--parent-goal-ref ID] [--owner-agent-ref ID] [--measure TEXT]
   org2 agent-profile list|show|create|update|resolve [--dir CORPUS] [--apply]
-  org2 agent-profile create ID --name TEXT [--binding RUNTIME:AGENT_ID] [--goal-ref ID] [--primary-goal-ref ID] [--responsibility TEXT] [--capability ID] [--skill ID]
+  org2 agent-profile create ID --name TEXT [--default-runtime openclaw|codex|claude] [--binding RUNTIME:AGENT_ID] [--goal-ref ID] [--primary-goal-ref ID] [--responsibility TEXT] [--capability ID] [--skill ID]
+  org2 agent-profile update ID [--default-runtime openclaw|codex|claude|none]
   org2 agent-profile resolve --runtime openclaw|codex --runtime-agent-id ID [--json]
   org2 run create --goal TEXT [--goal-ref ID] [--agent-ref ID] [--accept TEXT] [--risk CLASS] [--owner NAME] [--capability ID] [--dir CORPUS]
   org2 run show ID --with-revision --json
@@ -1014,6 +1017,11 @@ function runtimeBindings(parsed: ParsedArgs): AgentRuntimeBinding[] {
   });
 }
 
+function agentProfileDefaultRuntime(raw: string | undefined): AgentProfileDefaultRuntime | undefined {
+  if (raw === undefined || raw === "none") return undefined;
+  return choice(raw, AGENT_PROFILE_DEFAULT_RUNTIMES, "agent default runtime");
+}
+
 function goalCommand(parsed: ParsedArgs): void {
   const action = parsed.positional[0] || "list";
   const corpus = root(parsed);
@@ -1090,6 +1098,7 @@ function agentProfileCommand(parsed: ParsedArgs): void {
       responsibilities: flags(parsed, "responsibility"),
       capabilities: flags(parsed, "capability"),
       skills: flags(parsed, "skill"),
+      defaultRuntime: agentProfileDefaultRuntime(flag(parsed, "default-runtime")),
       runtimeBindings: runtimeBindings(parsed),
       goalRefs: flags(parsed, "goal-ref"),
       primaryGoalRef: flag(parsed, "primary-goal-ref"),
@@ -1112,6 +1121,7 @@ function agentProfileCommand(parsed: ParsedArgs): void {
       ...(parsed.flags.has("responsibility") ? { responsibilities: flags(parsed, "responsibility") } : {}),
       ...(parsed.flags.has("capability") ? { capabilities: flags(parsed, "capability") } : {}),
       ...(parsed.flags.has("skill") ? { skills: flags(parsed, "skill") } : {}),
+      ...(parsed.flags.has("default-runtime") ? { defaultRuntime: agentProfileDefaultRuntime(flag(parsed, "default-runtime")) } : {}),
       ...(parsed.flags.has("binding") ? { runtimeBindings: runtimeBindings(parsed) } : {}),
       goalRefs: [...new Set([...goalRefs, ...(primaryGoalRef ? [primaryGoalRef] : [])])],
       ...(primaryGoalRef !== undefined ? { primaryGoalRef } : {}),

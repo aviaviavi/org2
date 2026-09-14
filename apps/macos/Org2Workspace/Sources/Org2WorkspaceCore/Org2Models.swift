@@ -318,6 +318,7 @@ public struct AgentProfileItem: Identifiable, Decodable, Hashable, Sendable {
   public let responsibilities: [String]
   public let capabilities: [String]
   public let skills: [String]
+  public let defaultRuntime: String?
   public let runtimeBindings: [AgentRuntimeBindingItem]
   public let goalRefs: [String]
   public let primaryGoalRef: String?
@@ -325,6 +326,10 @@ public struct AgentProfileItem: Identifiable, Decodable, Hashable, Sendable {
   public let file: String
   public let createdAt: String
   public let updatedAt: String
+
+  public var preferredChatRuntime: AIChatRuntime? {
+    defaultRuntime.flatMap(AIChatRuntime.init(agentProfileValue:))
+  }
 }
 
 public struct AgentWorkflowInputItem: Decodable, Hashable, Sendable, Identifiable {
@@ -2715,6 +2720,23 @@ public enum AIChatRuntime: String, CaseIterable, Codable, Identifiable, Sendable
   case claude
 
   public var id: String { rawValue }
+
+  public init?(agentProfileValue raw: String) {
+    switch raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+    case "openclaw": self = .openClaw
+    case "codex": self = .codex
+    case "claude": self = .claude
+    default: return nil
+    }
+  }
+
+  public var agentProfileValue: String {
+    switch self {
+    case .openClaw: "openclaw"
+    case .codex: "codex"
+    case .claude: "claude"
+    }
+  }
 
   public var title: String {
     switch self {

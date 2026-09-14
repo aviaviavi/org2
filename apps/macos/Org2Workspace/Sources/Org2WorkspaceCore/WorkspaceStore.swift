@@ -6990,6 +6990,33 @@ public final class WorkspaceStore {
     }
   }
 
+  public func setAgentProfileDefaultRuntime(
+    _ profile: AgentProfileItem,
+    runtime: AIChatRuntime?
+  ) async {
+    guard let corpusRoot,
+          !mutatingAgentProfileIDs.contains(profile.id) else { return }
+    mutatingAgentProfileIDs.insert(profile.id)
+    defer { mutatingAgentProfileIDs.remove(profile.id) }
+    do {
+      _ = try await cli.run([
+        "agent-profile", "update", profile.id,
+        "--default-runtime", runtime?.agentProfileValue ?? "none",
+        "--apply",
+        "--dir", corpusRoot.path,
+        "--json"
+      ])
+      await refreshAgentProfiles()
+      if let refreshed = agentProfiles.first(where: { $0.id == profile.id }) {
+        selectAgentProfile(refreshed)
+      }
+      statusText = "\(profile.name): \(runtime.map { "defaults to \($0.title)" } ?? "no default runtime")"
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Agent update failed"
+    }
+  }
+
   private func selectCoordinationRecord(file path: String) {
     let url = URL(fileURLWithPath: path)
     let file = CorpusFile(
@@ -20861,10 +20888,22 @@ public final class WorkspaceStore {
   }
 
   func setSelectedChatAgent(_ profile: AgentProfileItem?) {
-    guard canChangeChatAgent,
-          let index = openClawChatThreads.firstIndex(where: { $0.id == selectedOpenClawChatThreadID }) else { return }
+    guard canChangeChatAgent else { return }
+    if let runtime = profile?.preferredChatRuntime,
+       canChangeSelectedAIChatRuntime,
+       let destination = preferredAIChatDestination(for: runtime),
+       destination.id != selectedAIChatDestination.id {
+      setSelectedAIChatDestination(destination.id)
+    }
+    guard let index = openClawChatThreads.firstIndex(where: { $0.id == selectedOpenClawChatThreadID }) else { return }
     openClawChatThreads[index] = openClawChatThreads[index].replacingOpenClawChatMetadata(agentRef: .some(profile?.id))
     persistOpenClawTranscript()
+  }
+
+  private func preferredAIChatDestination(for runtime: AIChatRuntime) -> AIChatDestinationConfiguration? {
+    let defaultID = AIChatDestinationConfiguration.defaultID(for: runtime)
+    return enabledAIChatDestinations.first(where: { $0.id == defaultID })
+      ?? enabledAIChatDestinations.first(where: { $0.runtime == runtime })
   }
 
   public func setSelectedAIChatDestination(_ destinationID: String) {
