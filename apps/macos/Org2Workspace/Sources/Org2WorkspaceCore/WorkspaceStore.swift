@@ -7272,6 +7272,7 @@ public final class WorkspaceStore {
         statusText: presentsThread ? "Starting \(title)" : "",
         runtime: destination.runtime,
         destinationID: destination.id,
+        inheritsChatConfiguration: false,
         defersPersistence: true,
         selectsThread: presentsThread
       )
@@ -27919,14 +27920,24 @@ public final class WorkspaceStore {
     destinationID: String? = nil,
     isSharedRoom: Bool = false,
     roomAudience: AIChatAudience = .thread,
+    inheritsChatConfiguration: Bool = true,
     defersPersistence: Bool = false,
     selectsThread: Bool = true
   ) -> OpenClawChatThread {
     let resolvedDestinationID = destinationID
       ?? AIChatDestinationConfiguration.defaultID(for: runtime)
-    let lastConfiguration = isSharedRoom
-      ? nil
-      : preferredAIChatConfiguration(forDestinationID: resolvedDestinationID)
+    let lastConfiguration: AIChatLastConfiguration?
+    if isSharedRoom {
+      lastConfiguration = nil
+    } else if inheritsChatConfiguration {
+      lastConfiguration = preferredAIChatConfiguration(forDestinationID: resolvedDestinationID)
+    } else {
+      // Automations use configured destination defaults, not unrelated chat
+      // choices that can silently require a live Gateway and prevent fallback.
+      lastConfiguration = aiChatDestination(id: resolvedDestinationID)?.model.map {
+        AIChatLastConfiguration(model: $0, reasoningEffort: nil)
+      }
+    }
     let initialRoomDestinationIDs = isSharedRoom
       ? enabledAIChatDestinations.map(\.id)
       : []

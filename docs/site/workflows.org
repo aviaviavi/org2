@@ -94,6 +94,8 @@ For each due occurrence OpenOrg:
 
 Codex, Claude Code, OpenClaw, and enabled custom or direct-provider destinations all use this path. Manual *Run Now* uses the same durable preparation and dispatch without waiting for the clock. Pausing the automation stops new attempts; it does not erase its source or history.
 
+Automation threads use the configured destination model, or the runtime default when none is configured. They do not inherit model or reasoning overrides from interactive chats. Ordinary new chats continue to remember those choices. This keeps unrelated chat preferences from forcing an OpenClaw automation to require the live Gateway when HTTP compatibility would otherwise be available; it does not bypass authentication failures or explicit destination model requirements.
+
 This first version requires OpenOrg to be running. A small background helper or provider-native scheduler can be added later without changing the workflow file or splitting its run history.
 
 * OpenClaw lifecycle integration

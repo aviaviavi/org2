@@ -1,0 +1,82 @@
+import Foundation
+import XCTest
+@testable import Org2WorkspaceCore
+
+@MainActor
+final class AutomationChatConfigurationTests: XCTestCase {
+  func testScheduledOpenClawAutomationDoesNotInheritInteractiveOverrides() async throws {
+    try await checkAutomationConfiguration(destinationModel: nil)
+  }
+
+  func testAutomationPreservesExplicitDestinationModel() async throws {
+    try await checkAutomationConfiguration(destinationModel: "configured-destination-model")
+  }
+
+  private func checkAutomationConfiguration(destinationModel: String?) async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("automation-chat-defaults-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let suiteName = "AutomationChatConfigurationTests.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let destinationID = AIChatDestinationConfiguration.openClawID
+    defaults.set(try JSONEncoder().encode([
+      destinationID: ["model": "interactive-model", "reasoningEffort": "high"]
+    ]), forKey: "Org2Workspace.aiChat.lastConfigurations.v1")
+
+    let cli = try Org2CLI(repoRoot: Org2CLI.defaultRepoRoot())
+    _ = try await cli.run([
+      "workflow", "create", "configuration-regression",
+      "--title", "Configuration regression",
+      "--prompt", "Prepare a local summary.",
+      "--destination-ref", destinationID,
+      "--schedule", "0 9 * * 1",
+      "--timezone", "America/Los_Angeles",
+      "--now", "2099-08-30T15:58:00Z",
+      "--dir", root.path, "--json"
+    ])
+    let store = WorkspaceStore(
+      cli: cli,
+      defaults: defaults,
+      openClawTranscriptURL: root.appendingPathComponent("chats.json"),
+      openClawSendHandler: { messages, _, _, _ in
+        XCTAssertTrue(messages.last(where: { $0.role == .user })?.content
+          .contains("ORG2_WORKFLOW_ID: configuration-regression") == true)
+        return "Local summary ready."
+      },
+      legacyDefaultsDomains: []
+    )
+    store.setCorpusRoot(root, persistsDefault: false)
+    if let destinationModel {
+      var destination = try XCTUnwrap(store.aiChatDestination(id: destinationID))
+      destination.model = destinationModel
+      store.updateAIChatDestination(destination)
+    }
+    store.setAutomationSchedulerActive(true, checkIntervalNanoseconds: 60_000_000_000)
+    defer { store.setAutomationSchedulerActive(false) }
+    let dueAt = try XCTUnwrap(ISO8601DateFormatter().date(from: "2099-08-31T16:00:30Z"))
+    await store.checkDueAgentAutomations(now: dueAt)
+    let timeout = Date().addingTimeInterval(8)
+    while Date() < timeout {
+      if store.agentRuns.contains(where: {
+        $0.workflowId == "configuration-regression" && $0.status == "completed"
+      }) { break }
+      try await Task.sleep(for: .milliseconds(25))
+    }
+    let run = try XCTUnwrap(store.agentRuns.first(where: { $0.workflowId == "configuration-regression" }))
+    XCTAssertEqual(run.status, "completed")
+    XCTAssertEqual(run.attempt?.triggerId, "schedule")
+    let automation = try XCTUnwrap(store.openClawChatThreads.first(where: {
+      $0.title == "Automation: Configuration regression"
+    }))
+    XCTAssertEqual(automation.model, destinationModel)
+    XCTAssertNil(automation.reasoningEffort)
+    XCTAssertEqual(automation.messages.last(where: { $0.role == .assistant })?.content, "Local summary ready.")
+
+    // Automation dispatch must not clear the user's preferences for ordinary chats.
+    store.createOpenClawChatThread()
+    XCTAssertEqual(store.selectedAIChatModel, "interactive-model")
+    XCTAssertEqual(store.selectedAIChatReasoningEffort, "high")
+  }
+}
